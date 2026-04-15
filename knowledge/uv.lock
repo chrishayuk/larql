@@ -236,6 +236,7 @@ all = [
     { name = "mlx" },
     { name = "mlx-lm" },
     { name = "nltk" },
+    { name = "tokenizers" },
     { name = "tree-sitter" },
 ]
 ast = [
@@ -244,6 +245,9 @@ ast = [
 probe = [
     { name = "mlx" },
     { name = "mlx-lm" },
+]
+vindex = [
+    { name = "tokenizers" },
 ]
 wordnet = [
     { name = "inflect" },
@@ -261,10 +265,12 @@ requires-dist = [
     { name = "nltk", marker = "extra == 'all'" },
     { name = "nltk", marker = "extra == 'wordnet'" },
     { name = "numpy" },
+    { name = "tokenizers", marker = "extra == 'all'" },
+    { name = "tokenizers", marker = "extra == 'vindex'" },
     { name = "tree-sitter", marker = "extra == 'all'" },
     { name = "tree-sitter", marker = "extra == 'ast'" },
 ]
-provides-extras = ["wordnet", "probe", "ast", "all"]
+provides-extras = ["wordnet", "probe", "vindex", "ast", "all"]
 
 [[package]]
 name = "markdown-it-py"
