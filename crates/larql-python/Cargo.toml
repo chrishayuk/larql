@@ -10,6 +10,9 @@ description = "Python bindings for LARQL knowledge graph engine and vindex"
 name = "_native"
 crate-type = ["cdylib"]
 
+[build-dependencies]
+pyo3-build-config = "0.24"
+
 [dependencies]
 larql-core = { path = "../larql-core" }
 larql-inference = { path = "../larql-inference" }
