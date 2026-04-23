@@ -46,7 +46,11 @@ blas-src = { version = "0.10", features = ["accelerate"] }
 
 [features]
 default = []
-metal = ["larql-compute/metal"]
+metal = ["larql-compute/metal", "dep:metal"]
+
+[target.'cfg(target_os = "macos")'.dependencies.metal]
+version = "0.29"
+optional = true
 
 [dev-dependencies]
 assert_approx_eq = "1"

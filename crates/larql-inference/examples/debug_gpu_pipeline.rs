@@ -3,7 +3,7 @@
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     let model = larql_inference::InferenceModel::load("google/gemma-3-4b-it")?;
-    let _weights = model.weights();
+    let weights = model.weights();
     let vd = std::path::PathBuf::from("output/gemma3-4b-v2.vindex");
     let mut index = larql_vindex::VectorIndex::load_vindex(&vd, &mut larql_vindex::SilentLoadCallbacks)?;
     let _ = index.load_attn_q4k(&vd);

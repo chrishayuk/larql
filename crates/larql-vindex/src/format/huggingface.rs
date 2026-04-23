@@ -141,7 +141,7 @@ pub use hf_hub::api::Progress as DownloadProgress;
 ///
 /// hf-hub 0.5 lays the cache out as:
 ///
-///   ```
+///   ```text
 ///   ~/.cache/huggingface/hub/datasets--{owner}--{name}/
 ///     ├── blobs/<etag>            actual file bytes
 ///     └── snapshots/<commit>/     symlinks → blobs
