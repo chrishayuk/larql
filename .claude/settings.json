@@ -1,0 +1,47 @@
+{
+  "$schema": "https://json.schemastore.org/claude-code-settings.json",
+  "hooks": {
+    "Stop": [
+      {
+        "matcher": "",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "$CLAUDE_PROJECT_DIR/.claude/hooks/verify.sh",
+            "timeout": 180
+          }
+        ]
+      }
+    ],
+    "SubagentStop": [
+      {
+        "matcher": "",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "$CLAUDE_PROJECT_DIR/.claude/hooks/verify.sh",
+            "timeout": 180
+          }
+        ]
+      }
+    ]
+  },
+  "permissions": {
+    "allow": [
+      "Bash(make traceability)",
+      "Bash(make traceability-check)",
+      "Bash(make openspec-validate)",
+      "Bash(make ci)",
+      "Bash(make ci-coverage)",
+      "Bash(make gaps)",
+      "Bash(make gaps-unbacked)",
+      "Bash(make gaps-untested)",
+      "Bash(openspec validate:*)",
+      "Bash(openspec status:*)",
+      "Bash(openspec list:*)",
+      "Bash(python3 scripts/spec-trace.py:*)",
+      "Bash(python3 scripts/spec-gap.py:*)",
+      "Bash(python3 scripts/coverage-check.py:*)"
+    ]
+  }
+}

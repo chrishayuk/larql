@@ -22,7 +22,23 @@ build/
 *.swo
 *~
 .DS_Store
-.claude/
+
+# Claude Code — most state under .claude/ is per-user (commands, skills,
+# settings.local.json). A few files are repo-shared (settings.json, the
+# verifier wiring under .claude/hooks and .claude/verifier) and are
+# explicitly re-included below.
+.claude/*
+!.claude/settings.json
+!.claude/hooks/
+!.claude/verifier/
+
+# Never commit per-session verifier state — counters, last verdicts, NDJSON
+# logs are session-local. The directory itself is kept via .gitkeep so the
+# hook can write into it on a fresh clone.
+.claude/verifier/state/*
+!.claude/verifier/state/.gitkeep
+.claude/verifier/.state-bak.*/
+.claude/verifier/.smoketest/state/
 
 # Checkpoints / temp
 *.checkpoint

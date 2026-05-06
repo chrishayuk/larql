@@ -1,0 +1,29 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "VerifierVerdict",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["grade", "feedback", "details", "commands_run"],
+  "properties": {
+    "grade": {
+      "type": "string",
+      "enum": ["PERFECT", "VERIFIED", "PARTIAL", "FEEDBACK", "FAILED"],
+      "description": "Overall verification result. PERFECT/VERIFIED pass through; PARTIAL/FEEDBACK feeds the correction back to the builder; FAILED escalates to a human."
+    },
+    "feedback": {
+      "type": "string",
+      "maxLength": 4000,
+      "description": "Correction delivered to the builder verbatim. Empty when grade is PERFECT or VERIFIED. Lead with the single most important issue."
+    },
+    "details": {
+      "type": "string",
+      "maxLength": 16000,
+      "description": "Long-form notes preserved for the verifier log: file:line references, command output, evidence."
+    },
+    "commands_run": {
+      "type": "array",
+      "items": {"type": "string"},
+      "description": "Verbatim commands the verifier ran. Helps humans reproduce."
+    }
+  }
+}

@@ -1,0 +1,2 @@
+{"type":"user","message":{"role":"user","content":"please create something"}}
+{"type":"assistant","message":{"role":"assistant","content":[{"type":"text","text":"Created /tmp/foo.txt with content 'hello'. All done."}]}}

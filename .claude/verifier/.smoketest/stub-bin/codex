@@ -1,0 +1,15 @@
+#!/usr/bin/env bash
+# Smoke-test stub for codex CLI. Reads STUB_VERDICT env var and writes it
+# verbatim to the file given by --output-last-message. Used only by the
+# repo's verifier smoke test (see .claude/verifier/.smoketest/run.sh).
+out_file=""
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    --output-last-message) out_file="$2"; shift 2;;
+    *) shift;;
+  esac
+done
+if [[ -n "$out_file" ]]; then
+  printf '%s' "$STUB_VERDICT" > "$out_file"
+fi
+exit 0
