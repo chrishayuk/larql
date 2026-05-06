@@ -84,13 +84,35 @@ Or via the Makefile: `make python-setup | python-build | python-test | python-cl
 - **Walk FFN is sparse-by-design and can beat dense** (517ms vs 535ms on Gemma 4B) because gate KNN (K≈10) skips most of the 10,240 features per layer. If you touch FFN code, preserve this invariant — see [docs/ffn-graph-layer.md](docs/ffn-graph-layer.md).
 - **MXFP4 quantized MoE (GPT-OSS) has degraded DESCRIBE/WALK** due to 4-bit precision; `INFER` is the supported path. Don't assume all model families are equivalent — see [docs/specs/vindex-operations-spec.md](docs/specs/vindex-operations-spec.md).
 
+## Spec-first workflow (OpenSpec)
+
+LARQL is spec-driven. The 14-crate workspace is decomposed into
+**44 OpenSpec capabilities** under `openspec/specs/<capability>/spec.md`.
+Every Requirement uses SHALL/MUST language; every Scenario references at
+least one backing test via a `<!-- test: <fqn> -->` HTML comment.
+
+- Authoring rules and the full capability map: [openspec/README.md](openspec/README.md).
+- Initial inventory + design: [openspec/changes/backfill-specs/](openspec/changes/backfill-specs/).
+- Requirement → test traceability matrix: [openspec/coverage/traceability.md](openspec/coverage/traceability.md).
+- Outstanding gaps: [openspec/changes/backfill-specs/gaps-unbacked-scenarios.md](openspec/changes/backfill-specs/gaps-unbacked-scenarios.md) and [gaps-untested-code.md](openspec/changes/backfill-specs/gaps-untested-code.md).
+
+Workflow:
+
+1. Add or change behavior → write a change proposal under `openspec/changes/<id>/`.
+2. Tests for new scenarios live in the same crate as the capability they back.
+3. `make ci` runs fmt/clippy/tests + `make traceability-check` + `openspec validate`.
+4. `make ci-coverage` runs cargo-llvm-cov against per-crate thresholds in `coverage-thresholds.toml` (separate CI job).
+5. After merge, `openspec archive <change>` flips the change into `openspec/specs/`.
+
 ## Where to find things
 
-- LQL language spec: [docs/specs/lql-spec.md](docs/specs/lql-spec.md) (v0.3)
-- Vindex file format: [docs/specs/vindex-format-spec.md](docs/specs/vindex-format-spec.md)
-- Operations + patches: [docs/specs/vindex-operations-spec.md](docs/specs/vindex-operations-spec.md)
-- Ecosystem (HF publish, Vindexfile): [docs/specs/vindex-ecosystem-spec.md](docs/specs/vindex-ecosystem-spec.md)
+Each capability spec already references its own per-crate docs and ADRs. The legacy entrypoints are:
+
+- LQL language spec: [crates/larql-lql/docs/spec.md](crates/larql-lql/docs/spec.md)
+- Vindex file format: [crates/larql-vindex/docs/format-spec.md](crates/larql-vindex/docs/format-spec.md)
+- Operations + patches: [crates/larql-vindex/docs/operations-spec.md](crates/larql-vindex/docs/operations-spec.md)
+- Ecosystem (HF publish, Vindexfile): [crates/larql-vindex/docs/ecosystem-spec.md](crates/larql-vindex/docs/ecosystem-spec.md)
 - Inference engine internals: [docs/inference-engine.md](docs/inference-engine.md), [docs/ffn-graph-layer.md](docs/ffn-graph-layer.md)
-- Trace format (.bin/.bndx/.ctxt): [docs/specs/trace-format-spec.md](docs/specs/trace-format-spec.md), [docs/residual-trace.md](docs/residual-trace.md)
+- Trace format: [crates/larql-inference/docs/trace-format.md](crates/larql-inference/docs/trace-format.md), [docs/residual-trace.md](docs/residual-trace.md)
 - Experimental work: [experiments/](experiments/) — numbered 01-07, each self-contained
 - Python bindings docs: [crates/larql-python/README.md](crates/larql-python/README.md), [docs/larql-python.md](docs/larql-python.md)

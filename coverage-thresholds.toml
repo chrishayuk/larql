@@ -1,0 +1,83 @@
+# Per-crate coverage thresholds enforced by `make coverage-check`.
+#
+# Schema:
+#   [crate.<name>]            # `<name>` is the Cargo `[package].name`
+#   line   = <int 0..=100>    # minimum line-coverage percentage
+#   branch = <int 0..=100>    # minimum branch-coverage percentage
+#
+# Bare `[default]` covers any crate not explicitly listed.
+#
+# Initial values are anchored at the *measured* coverage of each crate at
+# the time of backfill, rounded down to the nearest 5%, then minus a 1%
+# buffer to absorb test flakiness. Raising them is a separate change
+# with explicit reviewer ack.
+#
+# To re-anchor:
+#   make coverage
+#   python3 scripts/coverage-check.py --suggest >> coverage-thresholds.toml.new
+
+[default]
+line   = 70
+branch = 60
+
+# Production crates — high bar.
+[crate.larql-vindex]
+line   = 80
+branch = 70
+
+[crate.larql-compute]
+line   = 75
+branch = 65
+
+[crate.larql-models]
+line   = 80
+branch = 70
+
+[crate.larql-inference]
+line   = 70
+branch = 60
+
+[crate.larql-lql]
+line   = 80
+branch = 70
+
+[crate.larql-core]
+line   = 75
+branch = 65
+
+# Surface crates (CLI, server, router) — lots of glue + integration testing.
+[crate.larql-cli]
+line   = 50
+branch = 35
+
+[crate.larql-server]
+line   = 70
+branch = 55
+
+[crate.larql-router]
+line   = 60
+branch = 45
+
+# Generated proto bindings — exempt.
+[crate.larql-router-protocol]
+line   = 0
+branch = 0
+
+# Python bindings — measured by pytest-cov, not cargo-llvm-cov.
+# Skip from the cargo gate; the Python gate is a future change.
+[crate.larql-python]
+skip   = true
+
+# Bench crate — uneven coverage by design, single tier.
+[crate.kv-cache-benchmark]
+line   = 65
+branch = 50
+
+# Portable kernels — small, security-relevant.
+[crate.model-compute]
+line   = 85
+branch = 75
+
+# Empty placeholder.
+[crate.larql-experts]
+skip   = true

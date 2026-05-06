@@ -1,0 +1,73 @@
+# OpenSpec gates: traceability + change validation.
+#
+# Fast (Python + markdown only). Runs on every PR/push touching specs, scripts,
+# tests, or sources. Source-touching PRs trigger a re-run because tests being
+# renamed or removed must update their `<!-- test: ... -->` annotations.
+
+name: openspec
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'openspec/**'
+      - 'scripts/spec-trace.py'
+      - 'scripts/spec-gap.py'
+      - 'crates/**/*.rs'
+      - 'Makefile'
+      - '.github/workflows/openspec.yml'
+  pull_request:
+    branches: [main]
+    paths:
+      - 'openspec/**'
+      - 'scripts/spec-trace.py'
+      - 'scripts/spec-gap.py'
+      - 'crates/**/*.rs'
+      - 'Makefile'
+      - '.github/workflows/openspec.yml'
+  workflow_dispatch: {}
+
+concurrency:
+  group: openspec-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  validate:
+    name: openspec validate + traceability
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install OpenSpec CLI
+        run: npm install -g @fission-ai/openspec@latest
+
+      - name: openspec validate (all active changes)
+        run: |
+          fail=0
+          for change in $(ls openspec/changes 2>/dev/null | grep -v '^archive$'); do
+            echo "::group::openspec validate $change --strict"
+            openspec validate "$change" --strict || fail=1
+            echo "::endgroup::"
+          done
+          exit $fail
+
+      - name: Spec → test traceability check
+        run: python3 scripts/spec-trace.py --check
+
+      - name: Refresh unbacked-scenarios report
+        run: python3 scripts/spec-trace.py --unbacked --quiet
+
+      - name: Show summary
+        if: always()
+        run: |
+          echo "### OpenSpec summary" >> $GITHUB_STEP_SUMMARY
+          python3 scripts/spec-trace.py --quiet 2>&1 | tee -a $GITHUB_STEP_SUMMARY || true
+          echo >> $GITHUB_STEP_SUMMARY
+          echo "Traceability: \`openspec/coverage/traceability.md\`" >> $GITHUB_STEP_SUMMARY
+          echo "Unbacked scenarios: see \`openspec/changes/<active>/gaps-unbacked-scenarios.md\`" >> $GITHUB_STEP_SUMMARY

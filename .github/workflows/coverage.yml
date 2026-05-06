@@ -1,0 +1,98 @@
+# Workspace code coverage via cargo-llvm-cov.
+#
+# Heavier than the openspec gate (full Rust build + instrumented run). Runs on
+# push to main and on demand. Per-crate thresholds are enforced from
+# `coverage-thresholds.toml` via `scripts/coverage-check.py`. The HTML report
+# and coverage.json are uploaded as artefacts so engineers can drill into gaps
+# without re-running the suite locally.
+
+name: coverage
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'crates/**'
+      - 'Cargo.toml'
+      - 'Cargo.lock'
+      - 'coverage-thresholds.toml'
+      - 'scripts/coverage-check.py'
+      - 'Makefile'
+      - '.github/workflows/coverage.yml'
+  pull_request:
+    branches: [main]
+    paths:
+      - 'crates/**'
+      - 'Cargo.toml'
+      - 'Cargo.lock'
+      - 'coverage-thresholds.toml'
+      - 'scripts/coverage-check.py'
+  workflow_dispatch: {}
+
+concurrency:
+  group: coverage-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  llvm-cov:
+    name: cargo-llvm-cov + threshold gate
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install stable Rust + llvm-tools-preview
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          components: llvm-tools-preview, clippy
+
+      - name: Cache cargo registry + build artefacts
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: ${{ runner.os }}-cargo-cov-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-cargo-cov-
+
+      - name: Install cargo-llvm-cov
+        uses: taiki-e/install-action@v2
+        with:
+          tool: cargo-llvm-cov
+
+      - name: Set up Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: cargo llvm-cov (workspace)
+        run: |
+          cargo llvm-cov clean --workspace
+          cargo llvm-cov --workspace \
+            --json --output-path target/llvm-cov/coverage.json
+          cargo llvm-cov report --html --output-dir target/llvm-cov/html
+
+      - name: Enforce per-crate thresholds
+        run: python3 scripts/coverage-check.py
+
+      - name: Upload coverage artefacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage-${{ github.sha }}
+          path: |
+            target/llvm-cov/coverage.json
+            target/llvm-cov/html
+          retention-days: 30
+          if-no-files-found: warn
+
+      - name: Step summary
+        if: always()
+        run: |
+          {
+            echo "### Coverage summary"
+            echo
+            python3 scripts/coverage-check.py || true
+          } >> $GITHUB_STEP_SUMMARY

@@ -1,4 +1,4 @@
-.PHONY: build release test test-fast test-full test-integration test-models check clean fmt lint demos bench bench-save bench-check coverage coverage-summary
+.PHONY: build release test test-fast test-full test-integration test-models check clean fmt lint demos bench bench-save bench-check coverage coverage-summary coverage-check coverage-install ci-coverage traceability traceability-check gaps gaps-untested gaps-unbacked openspec-validate
 
 # Build
 build:
@@ -47,8 +47,11 @@ fmt-check:
 lint:
 	cargo clippy --workspace --tests -- -D warnings
 
-# All quality checks
-ci: fmt-check lint test-full
+# All quality checks. The traceability gate is fast (pure Python over markdown +
+# `.rs` files) and runs in CI on every PR. The coverage gate is heavier; it has
+# its own target (`ci-coverage`) and is wired into a separate CI job so spec-only
+# PRs don't pay the cost.
+ci: fmt-check lint test-full traceability-check openspec-validate
 
 # Clean
 clean:
@@ -108,26 +111,82 @@ bench-vindex-scaling:
 
 bench-all: bench-core bench-inference bench-vindex
 
-# Coverage — uses cargo-llvm-cov (install with `cargo install cargo-llvm-cov`).
-# Writes an HTML report to coverage/ that can be opened in a browser.
-# Scoped to larql-vindex by default since the audit owner cares about
-# that crate; pass CRATE=… to scope elsewhere.
-COVERAGE_CRATE ?= larql-vindex
+# Coverage — uses cargo-llvm-cov.
+#
+#   coverage          — full workspace coverage; emits HTML + JSON.
+#   coverage-summary  — terse per-crate text summary.
+#   coverage-check    — enforce per-crate thresholds in coverage-thresholds.toml.
+#   ci-coverage       — combined: regenerate + check; intended for CI.
+#   coverage-install  — install rustup component + cargo-llvm-cov.
+#
+# Pass CRATE=<name> to scope `coverage` to a single crate (HTML only).
+COVERAGE_CRATE ?=
 coverage:
 	@if ! command -v cargo-llvm-cov >/dev/null 2>&1; then \
-		echo "cargo-llvm-cov not installed. Install with:"; \
-		echo "  cargo install cargo-llvm-cov"; \
+		echo "cargo-llvm-cov not installed. Run: make coverage-install"; \
 		exit 1; \
 	fi
-	cargo llvm-cov --package $(COVERAGE_CRATE) --html --output-dir coverage
-	@echo "Report: coverage/html/index.html"
+	@if [ -n "$(COVERAGE_CRATE)" ]; then \
+		cargo llvm-cov --package $(COVERAGE_CRATE) --html --output-dir target/llvm-cov/html; \
+		echo "Report: target/llvm-cov/html/index.html"; \
+	else \
+		cargo llvm-cov --workspace --json --output-path target/llvm-cov/coverage.json; \
+		cargo llvm-cov --workspace --html --output-dir target/llvm-cov/html --no-clean; \
+		echo "JSON:  target/llvm-cov/coverage.json"; \
+		echo "HTML:  target/llvm-cov/html/index.html"; \
+	fi
 
 coverage-summary:
 	@if ! command -v cargo-llvm-cov >/dev/null 2>&1; then \
-		echo "cargo-llvm-cov not installed."; \
+		echo "cargo-llvm-cov not installed. Run: make coverage-install"; \
 		exit 1; \
 	fi
-	cargo llvm-cov --package $(COVERAGE_CRATE) --summary-only
+	cargo llvm-cov --workspace --summary-only
+
+coverage-check:
+	@if [ ! -f target/llvm-cov/coverage.json ]; then \
+		echo "target/llvm-cov/coverage.json missing — run \`make coverage\` first."; \
+		exit 1; \
+	fi
+	python3 scripts/coverage-check.py
+
+ci-coverage: coverage coverage-check
+
+coverage-install:
+	rustup component add llvm-tools-preview
+	cargo install cargo-llvm-cov --locked
+
+# OpenSpec spec → test traceability.
+#
+#   traceability         — regenerate openspec/coverage/traceability.{md,json}.
+#   traceability-check   — fail if regenerated output diverges from committed.
+#   gaps-unbacked        — write openspec/changes/<change>/gaps-unbacked-scenarios.md.
+#   gaps-untested        — write gaps-untested-code.md (requires coverage JSON).
+#   gaps                 — both gap reports.
+#   openspec-validate    — `openspec validate <change> --strict` for the active change.
+traceability:
+	python3 scripts/spec-trace.py
+
+traceability-check:
+	python3 scripts/spec-trace.py --check
+
+gaps-unbacked:
+	python3 scripts/spec-trace.py --unbacked --quiet
+
+gaps-untested:
+	@if [ ! -f target/llvm-cov/coverage.json ]; then \
+		echo "target/llvm-cov/coverage.json missing — run \`make coverage\` first."; \
+		exit 1; \
+	fi
+	python3 scripts/spec-gap.py --untested-code
+
+gaps: gaps-unbacked gaps-untested
+
+openspec-validate:
+	@for change in $$(ls openspec/changes 2>/dev/null | grep -v '^archive$$'); do \
+		echo "openspec validate $$change --strict"; \
+		openspec validate $$change --strict || exit 1; \
+	done
 
 # Python extension (managed via uv)
 python-setup:
