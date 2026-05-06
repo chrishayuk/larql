@@ -16,7 +16,10 @@
 //! [change]: ../../../../openspec/changes/cuda-and-rotorquant-kv/
 
 mod backend;
+mod cache;
+mod driver;
 mod error;
+mod matmul;
 
 pub use backend::CudaBackend;
 pub use error::CudaInitError;

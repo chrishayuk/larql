@@ -20,10 +20,28 @@ larql-models = { path = "../larql-models" }
 [target.'cfg(target_os = "linux")'.dependencies]
 blas-src = { version = "0.10", features = ["openblas"], default-features = false }
 openblas-src = { version = "0.10", features = ["system"] }
-# cudarc — high-level CUDA bindings. Pinned to 0.13.x; bump deliberately.
-# `dep:cudarc` is wired through the `cuda` feature so the dep is only
-# pulled in when explicitly requested.
-cudarc = { version = "0.13", optional = true, default-features = false, features = ["cublas", "driver"] }
+# cudarc — high-level CUDA bindings. Pinned to 0.19.x (first version
+# whose `cuda-version-from-build-system` feature autodetects the host
+# toolkit, supporting CUDA 11.04 through 13.02). `dep:cudarc` is wired
+# through the `cuda` feature so the dep is only pulled in when
+# explicitly requested.
+cudarc = { version = "0.19", optional = true, default-features = false, features = [
+    "cublas",
+    "driver",
+    # CUDA toolkit ABI to bind against. Override this in your fork if
+    # your install differs — `cuda-12050` matches CUDA 12.5.x (Ubuntu
+    # 24.04's `nvidia-cuda-toolkit` ships this), `cuda-13010` matches
+    # CUDA 13.1.x. Mismatch surfaces as
+    # `DlSym { source: "...: undefined symbol: cublasGetEmulationStrategy" }`
+    # at first dispatch — pick the variant matching libcublas.so on
+    # your `LD_LIBRARY_PATH`.
+    "cuda-12050",
+    # Dynamic loading: dlopen the CUDA runtime at startup. Avoids hard
+    # build-time linkage so the same binary runs in CPU-only contexts
+    # (returns CudaInitError::DriverMissing) and on hosts with the
+    # toolkit installed.
+    "dynamic-loading",
+] }
 
 # Metal GPU (macOS only, optional)
 [target.'cfg(target_os = "macos")'.dependencies]

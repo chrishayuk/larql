@@ -1,91 +1,102 @@
-//! `CudaBackend` — Phase-1 stub. See `mod.rs` for status.
+//! `CudaBackend` — owns the [`Driver`] and dispatches to the per-kernel
+//! wrappers in `cuda::matmul`. The kernel surface is filled in across
+//! the [`cuda-and-rotorquant-kv`][parent] sub-changes; this module's
+//! current state is `cuda-f32-baseline`.
+//!
+//! [parent]: ../../../../openspec/changes/cuda-and-rotorquant-kv/
+
+use std::sync::Arc;
 
 use ndarray::{Array2, ArrayView2};
 
 use crate::backend::{Capability, ComputeBackend, DecodeBackend, MatMul, QuantMatVec};
 
+use super::driver::Driver;
 use super::error::CudaInitError;
+use super::matmul as kernels;
 
-/// CUDA backend handle.
-///
-/// Today this just records the device index and runtime version so
-/// `device_info()` can report something useful; once kernel work
-/// lands the struct will carry cudarc handles (driver, cuBLAS,
-/// loaded modules, kernel cache).
 pub struct CudaBackend {
-    device_index: i32,
-    device_name: String,
-    runtime_version: String,
+    drv: Arc<Driver>,
 }
 
 impl CudaBackend {
-    /// Try to construct a CUDA backend on this host.
-    ///
-    /// Returns `Ok(self)` when a CUDA driver is reachable and at least
-    /// one device is enumerable; otherwise a typed
-    /// [`CudaInitError`]. Today the call is best-effort — when the
-    /// `cudarc` dep is wired in (Phase 2) this becomes a real driver
-    /// probe.
     pub fn new() -> Result<Self, CudaInitError> {
-        // Phase-1: no-op probe so the surface compiles. Real work in
-        // `cuda-f32-baseline`. The intentionally-defensive shape mirrors
-        // what the production probe will look like.
         Self::new_with_index(0)
     }
 
-    /// Same as [`Self::new`] with an explicit device index.
-    pub fn new_with_index(_index: i32) -> Result<Self, CudaInitError> {
-        // When the cuda feature is off in this build the `cudarc` dep
-        // isn't compiled in, so this entire module is gated below at
-        // crate-root level. The body here will switch to a real
-        // `cudarc::driver::CudaDevice::new(index)` call in Phase 2.
-        #[cfg(feature = "cuda")]
-        {
-            // Defer real probe to Phase 2; for now, declare success so
-            // `default_backend()` can return a CUDA box and integration
-            // tests can exercise the trait dispatch.
-            Ok(CudaBackend {
-                device_index: _index,
-                device_name: "cuda-stub".to_string(),
-                runtime_version: env!("CARGO_PKG_VERSION").to_string(),
-            })
-        }
+    pub fn new_with_index(ordinal: usize) -> Result<Self, CudaInitError> {
+        let drv = Driver::new_with_index(ordinal)?;
+        Ok(CudaBackend { drv })
+    }
 
-        #[cfg(not(feature = "cuda"))]
-        {
-            Err(CudaInitError::DriverMissing(
-                "larql-compute built without --features cuda".into(),
-            ))
+    /// Internal: contiguous row-major view of an `ArrayView2`. The
+    /// fast-path is when the view is already standard layout; we only
+    /// allocate on the slow-path (transposed / strided views).
+    fn as_contiguous<'a>(&self, m: ArrayView2<'a, f32>) -> Vec<f32> {
+        if let Some(slice) = m.as_slice() {
+            slice.to_vec()
+        } else {
+            // Strided view — collect through ndarray's iterator into a
+            // fresh Vec. Cheap on the dimensions we care about.
+            m.iter().copied().collect()
         }
     }
 }
 
-// ── Trait impls — every dispatch path is a stub ─────────────────────────
+// ── MatMul: real cuBLAS calls ──────────────────────────────────────────
 
 impl MatMul for CudaBackend {
-    fn matmul(&self, _a: ArrayView2<f32>, _b: ArrayView2<f32>) -> Array2<f32> {
-        unimplemented!(
-            "CudaBackend::matmul: stub — implement in cuda-f32-baseline (cuBLAS GEMM)"
-        );
+    fn matmul(&self, a: ArrayView2<f32>, b: ArrayView2<f32>) -> Array2<f32> {
+        let (m, k) = a.dim();
+        let (k2, n) = b.dim();
+        assert_eq!(k, k2, "matmul shape mismatch: {a:?} × {b:?}");
+
+        let a_buf = self.as_contiguous(a);
+        let b_buf = self.as_contiguous(b);
+        let out = kernels::matmul(&self.drv, &a_buf, &b_buf, m, n, k)
+            .expect("CudaBackend::matmul: cuBLAS failed");
+
+        Array2::from_shape_vec((m, n), out)
+            .expect("CudaBackend::matmul: shape mismatch on result")
     }
 
-    fn matmul_transb(&self, _a: ArrayView2<f32>, _b: ArrayView2<f32>) -> Array2<f32> {
-        unimplemented!(
-            "CudaBackend::matmul_transb: stub — implement in cuda-f32-baseline (cuBLAS GEMM)"
-        );
+    fn matmul_transb(&self, a: ArrayView2<f32>, b: ArrayView2<f32>) -> Array2<f32> {
+        // C = A * B^T  with A: m×k, B: n×k → C: m×n
+        let (m, k) = a.dim();
+        let (n, k2) = b.dim();
+        assert_eq!(k, k2, "matmul_transb shape mismatch: {a:?} × {b:?}^T");
+
+        let a_buf = self.as_contiguous(a);
+        let b_buf = self.as_contiguous(b);
+        let out = kernels::matmul_transb(&self.drv, &a_buf, &b_buf, m, n, k)
+            .expect("CudaBackend::matmul_transb: cuBLAS failed");
+
+        Array2::from_shape_vec((m, n), out)
+            .expect("CudaBackend::matmul_transb: shape mismatch on result")
+    }
+
+    fn f32_gemv(&self, w: ArrayView2<f32>, x: &[f32]) -> Option<Vec<f32>> {
+        let (n, k) = w.dim();
+        if x.len() != k {
+            return None;
+        }
+        let w_buf = self.as_contiguous(w);
+        match kernels::gemv(&self.drv, &w_buf, x, n, k) {
+            Ok(v) => Some(v),
+            Err(_) => None,
+        }
     }
 }
 
 impl QuantMatVec for CudaBackend {
-    // All methods on this trait are default-implemented (returning `None`
-    // or falling back to scalar code via the helpers in
-    // `cpu::ops::q4_common`). The defaults are safe even on a stub
-    // backend; we override per-format quant matvec in `cuda-q4-matvec`.
+    // All methods on this trait are default-implemented (returning
+    // `None` or falling back to scalar code). Q4 / Q6 land in
+    // `cuda-q4-matvec`.
 }
 
 impl DecodeBackend for CudaBackend {
-    // Default impl returns `None` for `decode_token`, which lets callers
-    // fall back to the per-layer matmul path automatically. Override in
+    // Default `decode_token` returns `None`, letting callers fall back
+    // to the per-layer matmul path. Override in
     // `cuda-fused-attention`.
 }
 
@@ -95,18 +106,14 @@ impl ComputeBackend for CudaBackend {
     }
 
     fn device_info(&self) -> String {
-        format!(
-            "cuda (device={}, name={}, build={}; stub backend, kernels not yet wired)",
-            self.device_index, self.device_name, self.runtime_version
-        )
+        self.drv.device_info()
     }
 
     fn supports(&self, cap: Capability) -> bool {
-        // Phase-1: announce the umbrella `Cuda` flag so `default_backend()`
-        // and downstream selection logic can identify us, but do NOT
-        // claim per-kernel capabilities yet. Each follow-up change flips
-        // its own flag on as the kernel lands.
-        matches!(cap, Capability::Cuda)
+        // Phase `cuda-f32-baseline`: f32 GEMM/GEMV is wired in. Other
+        // per-kernel capabilities (Q4, fused attention, RotorQuant)
+        // flip on as their sub-changes land.
+        matches!(cap, Capability::Cuda | Capability::F32Gemv)
     }
 
     fn as_any(&self) -> &dyn std::any::Any {
@@ -118,25 +125,39 @@ impl ComputeBackend for CudaBackend {
 mod tests {
     use super::*;
 
+    /// Base smoke test that runs anywhere — no GPU required when the
+    /// driver is missing, the call returns Err and the test passes.
     #[test]
-    fn name_is_cuda() {
-        let backend = CudaBackend::new().expect("stub init must succeed under --features cuda");
-        assert_eq!(backend.name(), "cuda");
+    fn driver_missing_returns_typed_error() {
+        match CudaBackend::new() {
+            Ok(b) => {
+                assert_eq!(b.name(), "cuda");
+            }
+            Err(CudaInitError::DriverMissing(_))
+            | Err(CudaInitError::NoDevices)
+            | Err(CudaInitError::ToolkitMismatch { .. }) => {
+                // Expected on a host without a working CUDA driver.
+            }
+            Err(CudaInitError::NotImplemented(_)) => {
+                panic!("backend should no longer report NotImplemented after f32 baseline");
+            }
+        }
     }
 
     #[test]
-    fn supports_cuda_capability() {
-        let backend = CudaBackend::new().expect("stub init");
-        assert!(backend.supports(Capability::Cuda));
-        // Phase-1 stub does not yet claim kernel-level capabilities.
-        assert!(!backend.supports(Capability::F32Gemv));
-        assert!(!backend.supports(Capability::FlashAttentionV2));
-        assert!(!backend.supports(Capability::KvCompressionRotorQuant));
-    }
-
-    #[test]
-    fn device_info_mentions_stub() {
-        let backend = CudaBackend::new().expect("stub init");
-        assert!(backend.device_info().contains("stub"));
+    fn supports_f32_gemv_after_baseline() {
+        // We only assert the capability set if init succeeded; on
+        // hosts without CUDA the test no-ops.
+        if let Ok(b) = CudaBackend::new() {
+            assert!(b.supports(Capability::Cuda));
+            assert!(
+                b.supports(Capability::F32Gemv),
+                "cuda-f32-baseline must advertise F32Gemv"
+            );
+            // Q4/MoE/Profile capabilities still flipped off — this
+            // catches accidental over-claiming.
+            assert!(!b.supports(Capability::DecodeToken));
+            assert!(!b.supports(Capability::Q4VecMat));
+        }
     }
 }

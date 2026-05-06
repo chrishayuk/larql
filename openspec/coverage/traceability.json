@@ -1,11 +1,11 @@
 {
   "summary": {
     "capabilities": 48,
-    "requirements": 351,
-    "scenarios": 1267,
-    "scenarios_backed": 1152,
+    "requirements": 356,
+    "scenarios": 1278,
+    "scenarios_backed": 1163,
     "scenarios_unbacked": 115,
-    "test_refs": 3146,
+    "test_refs": 3157,
     "test_refs_unresolved": 0
   },
   "capabilities": [
@@ -2092,6 +2092,141 @@
               "unbacked": true,
               "spec_file": "openspec/changes/cuda-and-rotorquant-kv/specs/compute-cuda-kernels/spec.md",
               "line": 127
+            }
+          ]
+        },
+        {
+          "name": "Driver and cuBLAS handle lifecycle",
+          "scenarios": [
+            {
+              "name": "Driver init succeeds on a CUDA host",
+              "tests_resolved": [
+                "larql_compute::test_cuda_f32::driver_init_succeeds_when_cuda_available"
+              ],
+              "tests_unresolved": [],
+              "unbacked": false,
+              "spec_file": "openspec/changes/cuda-f32-baseline/specs/compute-cuda-kernels/spec.md",
+              "line": 13
+            },
+            {
+              "name": "Driver init returns a typed error when CUDA is missing",
+              "tests_resolved": [
+                "larql_compute::cuda::backend::tests::driver_missing_returns_typed_error"
+              ],
+              "tests_unresolved": [],
+              "unbacked": false,
+              "spec_file": "openspec/changes/cuda-f32-baseline/specs/compute-cuda-kernels/spec.md",
+              "line": 18
+            },
+            {
+              "name": "Capability set reflects what's actually wired",
+              "tests_resolved": [
+                "larql_compute::cuda::backend::tests::supports_f32_gemv_after_baseline"
+              ],
+              "tests_unresolved": [],
+              "unbacked": false,
+              "spec_file": "openspec/changes/cuda-f32-baseline/specs/compute-cuda-kernels/spec.md",
+              "line": 23
+            }
+          ]
+        },
+        {
+          "name": "cuBLAS-backed f32 matmul matches CPU within 5e-4",
+          "scenarios": [
+            {
+              "name": "Square matmul matches CPU",
+              "tests_resolved": [
+                "larql_compute::test_cuda_f32::matmul_square_parity"
+              ],
+              "tests_unresolved": [],
+              "unbacked": false,
+              "spec_file": "openspec/changes/cuda-f32-baseline/specs/compute-cuda-kernels/spec.md",
+              "line": 35
+            },
+            {
+              "name": "Production-shape matmul matches CPU",
+              "tests_resolved": [
+                "larql_compute::test_cuda_f32::matmul_gemma4b_shape_parity"
+              ],
+              "tests_unresolved": [],
+              "unbacked": false,
+              "spec_file": "openspec/changes/cuda-f32-baseline/specs/compute-cuda-kernels/spec.md",
+              "line": 40
+            },
+            {
+              "name": "matmul_transb matches CPU",
+              "tests_resolved": [
+                "larql_compute::test_cuda_f32::matmul_transb_parity"
+              ],
+              "tests_unresolved": [],
+              "unbacked": false,
+              "spec_file": "openspec/changes/cuda-f32-baseline/specs/compute-cuda-kernels/spec.md",
+              "line": 45
+            }
+          ]
+        },
+        {
+          "name": "cuBLAS-backed f32 gemv at LM-head dimensions",
+          "scenarios": [
+            {
+              "name": "LM-head gemv matches CPU",
+              "tests_resolved": [
+                "larql_compute::test_cuda_f32::gemv_lm_head_parity"
+              ],
+              "tests_unresolved": [],
+              "unbacked": false,
+              "spec_file": "openspec/changes/cuda-f32-baseline/specs/compute-cuda-kernels/spec.md",
+              "line": 57
+            },
+            {
+              "name": "f32_gemv path returns Some",
+              "tests_resolved": [
+                "larql_compute::test_cuda_f32::gemv_returns_some"
+              ],
+              "tests_unresolved": [],
+              "unbacked": false,
+              "spec_file": "openspec/changes/cuda-f32-baseline/specs/compute-cuda-kernels/spec.md",
+              "line": 62
+            }
+          ]
+        },
+        {
+          "name": "Kernel cache directory is created and XDG-compliant",
+          "scenarios": [
+            {
+              "name": "Cache directory exists after first init",
+              "tests_resolved": [
+                "larql_compute::test_cuda_f32::kernel_cache_dir_created"
+              ],
+              "tests_unresolved": [],
+              "unbacked": false,
+              "spec_file": "openspec/changes/cuda-f32-baseline/specs/compute-cuda-kernels/spec.md",
+              "line": 76
+            },
+            {
+              "name": "XDG_CACHE_HOME is honoured",
+              "tests_resolved": [
+                "larql_compute::test_cuda_f32::kernel_cache_respects_xdg_cache_home"
+              ],
+              "tests_unresolved": [],
+              "unbacked": false,
+              "spec_file": "openspec/changes/cuda-f32-baseline/specs/compute-cuda-kernels/spec.md",
+              "line": 81
+            }
+          ]
+        },
+        {
+          "name": "Kernel launches MUST synchronise before returning",
+          "scenarios": [
+            {
+              "name": "Sequential matmul calls produce independent results",
+              "tests_resolved": [
+                "larql_compute::test_cuda_f32::sequential_matmul_no_contamination"
+              ],
+              "tests_unresolved": [],
+              "unbacked": false,
+              "spec_file": "openspec/changes/cuda-f32-baseline/specs/compute-cuda-kernels/spec.md",
+              "line": 90
             }
           ]
         }
@@ -17808,39 +17943,51 @@
       "crate": "larql_compute"
     },
     {
-      "fqn": "larql_compute::cuda::backend::tests::name_is_cuda",
+      "fqn": "larql_compute::cuda::backend::driver_missing_returns_typed_error",
       "file": "crates/larql-compute/src/cuda/backend.rs",
-      "line": 122,
+      "line": 131,
       "crate": "larql_compute"
     },
     {
-      "fqn": "larql_compute::cuda::backend::name_is_cuda",
+      "fqn": "larql_compute::cuda::backend::supports_f32_gemv_after_baseline",
       "file": "crates/larql-compute/src/cuda/backend.rs",
-      "line": 122,
+      "line": 148,
       "crate": "larql_compute"
     },
     {
-      "fqn": "larql_compute::cuda::backend::tests::supports_cuda_capability",
-      "file": "crates/larql-compute/src/cuda/backend.rs",
-      "line": 128,
+      "fqn": "larql_compute::cuda::matmul::tests::cuda_op_constants_are_distinct",
+      "file": "crates/larql-compute/src/cuda/matmul.rs",
+      "line": 147,
       "crate": "larql_compute"
     },
     {
-      "fqn": "larql_compute::cuda::backend::supports_cuda_capability",
-      "file": "crates/larql-compute/src/cuda/backend.rs",
-      "line": 128,
+      "fqn": "larql_compute::cuda::matmul::cuda_op_constants_are_distinct",
+      "file": "crates/larql-compute/src/cuda/matmul.rs",
+      "line": 147,
       "crate": "larql_compute"
     },
     {
-      "fqn": "larql_compute::cuda::backend::tests::device_info_mentions_stub",
-      "file": "crates/larql-compute/src/cuda/backend.rs",
-      "line": 138,
+      "fqn": "larql_compute::cuda::cache::tests::cache_dir_respects_xdg_cache_home",
+      "file": "crates/larql-compute/src/cuda/cache.rs",
+      "line": 54,
       "crate": "larql_compute"
     },
     {
-      "fqn": "larql_compute::cuda::backend::device_info_mentions_stub",
-      "file": "crates/larql-compute/src/cuda/backend.rs",
-      "line": 138,
+      "fqn": "larql_compute::cuda::cache::cache_dir_respects_xdg_cache_home",
+      "file": "crates/larql-compute/src/cuda/cache.rs",
+      "line": 54,
+      "crate": "larql_compute"
+    },
+    {
+      "fqn": "larql_compute::cuda::cache::tests::cache_dir_falls_back_to_home",
+      "file": "crates/larql-compute/src/cuda/cache.rs",
+      "line": 76,
+      "crate": "larql_compute"
+    },
+    {
+      "fqn": "larql_compute::cuda::cache::cache_dir_falls_back_to_home",
+      "file": "crates/larql-compute/src/cuda/cache.rs",
+      "line": 76,
       "crate": "larql_compute"
     },
     {
@@ -18453,6 +18600,12 @@
       "fqn": "larql_compute::test_kernel_vindex_integration::q4k_q6k_qkv_proj_matches_per_proj_dispatch",
       "file": "crates/larql-compute/tests/test_kernel_vindex_integration.rs",
       "line": 876,
+      "crate": "larql_compute"
+    },
+    {
+      "fqn": "larql_compute::test_cuda_f32::gpu_or_skip",
+      "file": "crates/larql-compute/tests/test_cuda_f32.rs",
+      "line": 20,
       "crate": "larql_compute"
     },
     {

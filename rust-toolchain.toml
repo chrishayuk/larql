@@ -1,0 +1,10 @@
+[toolchain]
+# Pin the workspace to a stable toolchain. The repo's `rust-version` is
+# 1.80, but several transitive deps require edition2024 (stabilized in
+# Rust 1.85+). Stable also unlocks llvm-tools-preview for cargo-llvm-cov.
+#
+# This file takes precedence over user-level rustup defaults inside the
+# workspace, so contributors keep their personal nightly elsewhere.
+channel = "stable"
+components = ["rustfmt", "clippy", "llvm-tools-preview"]
+profile = "minimal"
