@@ -25,7 +25,7 @@
 //! |---------|---------|------------|
 //! | CPU | (always) | BLAS f32, C kernel Q4 (ARM vdotq_s32), vector ops |
 //! | Metal | `metal` | Tiled f32, simdgroup Q4, multi-layer pipeline |
-//! | CUDA | (planned) | — |
+//! | CUDA | `cuda` | (Phase-1 stub — feature-gated scaffold; cuBLAS f32, Q4 matvec, fused attention land in follow-up changes — see openspec/changes/cuda-and-rotorquant-kv/) |
 //!
 //! ## Quick start
 //!
@@ -55,7 +55,12 @@
 //!
 //! - `metal`: Metal GPU backend (macOS only). Adds optimised Q4 shaders,
 //!   multi-layer pipeline, zero-copy mmap buffers.
-//! - `cuda`: (planned) CUDA GPU backend.
+//! - `cuda`: CUDA GPU backend (Linux + NVIDIA). Currently a feature-flag
+//!   stub — `default_backend()` will return a `CudaBackend` and
+//!   `Capability::Cuda` is advertised, but actual kernels are
+//!   `unimplemented!()` until the follow-up changes
+//!   (`cuda-f32-baseline`, `cuda-q4-matvec`, `cuda-fused-attention`)
+//!   ship. See `openspec/changes/cuda-and-rotorquant-kv/`.
 
 extern crate blas_src;
 
@@ -65,6 +70,9 @@ pub mod pipeline;
 
 #[cfg(feature = "metal")]
 pub mod metal;
+
+#[cfg(feature = "cuda")]
+pub mod cuda;
 
 // ── Re-exports: pipeline types ──
 
@@ -112,9 +120,16 @@ pub use ::metal::Buffer as MetalBuffer;
 
 /// Create the best available backend.
 ///
-/// With `--features metal`: tries Metal GPU first, auto-calibrates the
-/// FLOP threshold for hybrid CPU/GPU dispatch, falls back to CPU.
-/// Without: returns CPU (Accelerate BLAS on macOS, OpenBLAS on Linux).
+/// Precedence: **CUDA → Metal → CPU**, gated by feature flags and runtime
+/// availability. The `LARQL_BACKEND` env var (`cpu`, `metal`, `cuda`)
+/// overrides the auto-selection; an unrecognised value logs a warning
+/// and proceeds with auto-selection.
+///
+/// - With `--features cuda` on Linux + working CUDA driver → CUDA stub
+///   (real kernels land in follow-ups).
+/// - With `--features metal` on macOS → Metal GPU + hybrid dispatch
+///   calibration.
+/// - Otherwise → CPU (Accelerate BLAS on macOS, OpenBLAS on Linux).
 ///
 /// # Example
 /// ```rust,no_run
@@ -122,6 +137,37 @@ pub use ::metal::Buffer as MetalBuffer;
 /// println!("{} ({})", backend.name(), backend.device_info());
 /// ```
 pub fn default_backend() -> Box<dyn ComputeBackend> {
+    // Honour LARQL_BACKEND override before any auto-selection.
+    if let Ok(forced) = std::env::var("LARQL_BACKEND") {
+        match forced.as_str() {
+            "cpu" => return Box::new(cpu::CpuBackend),
+            #[cfg(feature = "metal")]
+            "metal" => {
+                if let Some(m) = metal::MetalBackend::new() {
+                    m.calibrate();
+                    return Box::new(m);
+                }
+                eprintln!("[compute] LARQL_BACKEND=metal but Metal not available; falling back");
+            }
+            #[cfg(feature = "cuda")]
+            "cuda" => match cuda::CudaBackend::new() {
+                Ok(c) => return Box::new(c),
+                Err(e) => eprintln!("[compute] LARQL_BACKEND=cuda but CUDA init failed: {e}; falling back"),
+            },
+            other => {
+                eprintln!("[compute] LARQL_BACKEND={other:?} not recognised; auto-selecting");
+            }
+        }
+    }
+
+    #[cfg(feature = "cuda")]
+    {
+        match cuda::CudaBackend::new() {
+            Ok(c) => return Box::new(c),
+            Err(e) => eprintln!("[compute] CUDA not available ({e}); trying next backend"),
+        }
+    }
+
     #[cfg(feature = "metal")]
     {
         if let Some(m) = metal::MetalBackend::new() {
@@ -130,6 +176,7 @@ pub fn default_backend() -> Box<dyn ComputeBackend> {
         }
         eprintln!("[compute] Metal not available, falling back to CPU");
     }
+
     Box::new(cpu::CpuBackend)
 }
 

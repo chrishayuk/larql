@@ -42,4 +42,12 @@ pub enum Capability {
     DecodeProfile,
     /// Multi-position prefill with KV cache population (`prefill_q4`).
     PrefillQ4,
+
+    // ── Capabilities introduced by openspec change `cuda-and-rotorquant-kv` ──
+    /// Backend dispatches via CUDA / cuBLAS / cudarc. Set by `CudaBackend`.
+    Cuda,
+    /// Fused Flash-Attention-v2-style attention kernel is available.
+    FlashAttentionV2,
+    /// KV-cache compression via RotorQuant `iso3` / `planar3` / `iso4` / `planar4`.
+    KvCompressionRotorQuant,
 }

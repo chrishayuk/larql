@@ -4,7 +4,7 @@ version.workspace = true
 edition.workspace = true
 authors.workspace = true
 license.workspace = true
-description = "Compute backends for LARQL — CPU (BLAS), Metal (GPU), CUDA (planned). Owns matmul dispatch, Q4 kernels, buffer management."
+description = "Compute backends for LARQL — CPU (BLAS), Metal (GPU), CUDA. Owns matmul dispatch, Q4 kernels, buffer management."
 keywords = ["matmul", "metal", "gpu", "quantization", "blas"]
 categories = ["science"]
 
@@ -20,6 +20,10 @@ larql-models = { path = "../larql-models" }
 [target.'cfg(target_os = "linux")'.dependencies]
 blas-src = { version = "0.10", features = ["openblas"], default-features = false }
 openblas-src = { version = "0.10", features = ["system"] }
+# cudarc — high-level CUDA bindings. Pinned to 0.13.x; bump deliberately.
+# `dep:cudarc` is wired through the `cuda` feature so the dep is only
+# pulled in when explicitly requested.
+cudarc = { version = "0.13", optional = true, default-features = false, features = ["cublas", "driver"] }
 
 # Metal GPU (macOS only, optional)
 [target.'cfg(target_os = "macos")'.dependencies]
@@ -38,7 +42,12 @@ openblas-src = { version = "0.10", features = ["system"] }
 [features]
 default = []
 metal = ["dep:metal", "dep:objc"]
-# cuda = []  # Future: CUDA backend
+# cuda — CUDA backend on Linux (NVIDIA GPUs). Currently a feature-flag
+# stub that compiles, registers Capability::Cuda, and dispatches every
+# kernel as `unimplemented!()`. Real kernels land in the
+# `cuda-f32-baseline`, `cuda-q4-matvec`, and `cuda-fused-attention`
+# follow-up changes; see openspec/changes/cuda-and-rotorquant-kv/.
+cuda = ["dep:cudarc"]
 
 [build-dependencies]
 cc = "1.0"

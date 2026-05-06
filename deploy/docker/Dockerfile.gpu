@@ -1,0 +1,56 @@
+# syntax=docker/dockerfile:1
+#
+# GPU attention container — runs attention + RotorQuant KV-cache on CUDA.
+# Built on nvidia/cuda devel image; requires `--gpus all` (or
+# `nvidia-container-toolkit`) at runtime.
+#
+# Build:
+#   docker build -f deploy/docker/Dockerfile.gpu -t larql-gpu:dev .
+# Run:
+#   docker run --rm --gpus all -p 8081:8080 -v larql-vindex:/data larql-gpu:dev
+
+# ---- builder: Rust + CUDA toolkit -----------------------------------------
+FROM nvidia/cuda:13.1.0-devel-ubuntu24.04 AS builder
+WORKDIR /build
+
+# Rust + build deps. We use rustup for toolchain version pinning so this
+# tracks our workspace's `rust-version`.
+RUN apt-get update && apt-get install -y --no-install-recommends \
+        ca-certificates curl pkg-config libssl-dev protobuf-compiler \
+        cmake g++ libopenblas-dev git \
+    && curl -sSf https://sh.rustup.rs | sh -s -- -y --default-toolchain stable --profile minimal \
+    && rm -rf /var/lib/apt/lists/*
+ENV PATH="/root/.cargo/bin:${PATH}"
+
+COPY Cargo.toml Cargo.lock ./
+COPY crates/ crates/
+
+# Target sm_70..sm_89 — covers Ampere through Ada.  Tune via LARQL_CUDA_ARCH.
+ARG LARQL_CUDA_ARCH="70;75;80;86;89"
+ENV LARQL_CUDA_ARCH=${LARQL_CUDA_ARCH}
+
+RUN RUSTFLAGS="-C target-feature=+avx2,+fma" \
+    cargo build --release -p larql-server --features cuda \
+ && strip target/release/larql-server
+
+# ---- runtime: CUDA runtime only -------------------------------------------
+FROM nvidia/cuda:13.1.0-runtime-ubuntu24.04
+RUN apt-get update && apt-get install -y --no-install-recommends \
+        ca-certificates libssl3 curl python3 python3-pip libopenblas0 \
+    && pip3 install --no-cache-dir --break-system-packages \
+        huggingface_hub[hf_transfer] hf_transfer \
+    && rm -rf /var/lib/apt/lists/*
+
+COPY --from=builder /build/target/release/larql-server /usr/local/bin/
+COPY deploy/docker/start.sh /start.sh
+RUN chmod +x /start.sh
+
+ENV ROLE=attention
+ENV KV_FORMAT=iso3
+EXPOSE 8080 8081
+
+# Sanity check at startup: refuse to run if no NVIDIA runtime is visible.
+HEALTHCHECK --interval=10s --timeout=3s --start-period=20s --retries=3 \
+    CMD curl -fsS http://localhost:8080/v1/health || exit 1
+
+CMD ["/start.sh"]

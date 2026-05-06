@@ -1,0 +1,36 @@
+# CPU-only fallback: single larql-server in `--role all` mode. Use this on
+# laptops or hosts without an NVIDIA GPU. KV cache stays FP16.
+#
+# Usage:
+#   cd deploy/docker
+#   docker compose -f docker-compose.cpu.yml up --build
+
+services:
+  larql:
+    build:
+      context: ../..
+      dockerfile: deploy/docker/Dockerfile.ffn
+    image: larql-ffn:dev
+    environment:
+      ROLE: all
+      PORT: 8080
+      GRPC_PORT: 8081
+      VINDEX_PATH: /data/vindex
+      HF_REPO: ${HF_REPO:-chrishayuk/gemma-4-26b-a4b-it-vindex-expert-server}
+      HF_TOKEN: ${HF_TOKEN:-}
+      WARMUP: "${WARMUP:-1}"
+      LARQL_BACKEND: cpu
+    volumes:
+      - vindex_data:/data
+    ports:
+      - "8080:8080"
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://localhost:8080/v1/health"]
+      interval: 10s
+      timeout: 3s
+      retries: 6
+      start_period: 30s
+    restart: unless-stopped
+
+volumes:
+  vindex_data:

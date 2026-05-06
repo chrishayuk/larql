@@ -1,11 +1,11 @@
 {
   "summary": {
-    "capabilities": 44,
-    "requirements": 316,
-    "scenarios": 1204,
+    "capabilities": 48,
+    "requirements": 351,
+    "scenarios": 1267,
     "scenarios_backed": 1152,
-    "scenarios_unbacked": 52,
-    "test_refs": 3083,
+    "scenarios_unbacked": 115,
+    "test_refs": 3146,
     "test_refs_unresolved": 0
   },
   "capabilities": [
@@ -1464,6 +1464,56 @@
               "line": 159
             }
           ]
+        },
+        {
+          "name": "New capability bits for CUDA, FlashAttentionV2, KvCompressionRotorQuant",
+          "scenarios": [
+            {
+              "name": "CPU backend does not claim CUDA capability",
+              "tests_resolved": [],
+              "tests_unresolved": [],
+              "unbacked": true,
+              "spec_file": "openspec/changes/cuda-and-rotorquant-kv/specs/compute-backend-traits/spec.md",
+              "line": 20
+            },
+            {
+              "name": "CUDA backend claims its full capability set",
+              "tests_resolved": [],
+              "tests_unresolved": [],
+              "unbacked": true,
+              "spec_file": "openspec/changes/cuda-and-rotorquant-kv/specs/compute-backend-traits/spec.md",
+              "line": 25
+            }
+          ]
+        },
+        {
+          "name": "Default backend honours CUDA \u2192 Metal \u2192 CPU precedence",
+          "scenarios": [
+            {
+              "name": "CUDA wins on Linux + cuda feature",
+              "tests_resolved": [],
+              "tests_unresolved": [],
+              "unbacked": true,
+              "spec_file": "openspec/changes/cuda-and-rotorquant-kv/specs/compute-backend-traits/spec.md",
+              "line": 37
+            },
+            {
+              "name": "Metal still wins on macOS without CUDA available",
+              "tests_resolved": [],
+              "tests_unresolved": [],
+              "unbacked": true,
+              "spec_file": "openspec/changes/cuda-and-rotorquant-kv/specs/compute-backend-traits/spec.md",
+              "line": 42
+            },
+            {
+              "name": "LARQL_BACKEND override is authoritative",
+              "tests_resolved": [],
+              "tests_unresolved": [],
+              "unbacked": true,
+              "spec_file": "openspec/changes/cuda-and-rotorquant-kv/specs/compute-backend-traits/spec.md",
+              "line": 47
+            }
+          ]
         }
       ]
     },
@@ -1889,6 +1939,159 @@
               "unbacked": false,
               "spec_file": "openspec/changes/backfill-specs/specs/compute-cpu-kernels/spec.md",
               "line": 324
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "compute-cuda-kernels",
+      "spec_file": "openspec/changes/cuda-and-rotorquant-kv/specs/compute-cuda-kernels/spec.md",
+      "requirements": [
+        {
+          "name": "CUDA backend implements ComputeBackend trait family",
+          "scenarios": [
+            {
+              "name": "Backend construction succeeds on a working CUDA host",
+              "tests_resolved": [],
+              "tests_unresolved": [],
+              "unbacked": true,
+              "spec_file": "openspec/changes/cuda-and-rotorquant-kv/specs/compute-cuda-kernels/spec.md",
+              "line": 14
+            },
+            {
+              "name": "Backend construction fails clearly when CUDA is missing",
+              "tests_resolved": [],
+              "tests_unresolved": [],
+              "unbacked": true,
+              "spec_file": "openspec/changes/cuda-and-rotorquant-kv/specs/compute-cuda-kernels/spec.md",
+              "line": 19
+            },
+            {
+              "name": "Capability bits reflect compiled feature set",
+              "tests_resolved": [],
+              "tests_unresolved": [],
+              "unbacked": true,
+              "spec_file": "openspec/changes/cuda-and-rotorquant-kv/specs/compute-cuda-kernels/spec.md",
+              "line": 24
+            }
+          ]
+        },
+        {
+          "name": "cuBLAS-backed f32 matmul and gemv",
+          "scenarios": [
+            {
+              "name": "f32 matmul matches the CPU reference",
+              "tests_resolved": [],
+              "tests_unresolved": [],
+              "unbacked": true,
+              "spec_file": "openspec/changes/cuda-and-rotorquant-kv/specs/compute-cuda-kernels/spec.md",
+              "line": 37
+            },
+            {
+              "name": "f32 gemv matches the CPU reference for LM-head shape",
+              "tests_resolved": [],
+              "tests_unresolved": [],
+              "unbacked": true,
+              "spec_file": "openspec/changes/cuda-and-rotorquant-kv/specs/compute-cuda-kernels/spec.md",
+              "line": 42
+            }
+          ]
+        },
+        {
+          "name": "Quantised matvec for Q4_0, Q4_K, Q4_KF, Q6_K",
+          "scenarios": [
+            {
+              "name": "Q4_K matvec parity with CPU at production dimensions",
+              "tests_resolved": [],
+              "tests_unresolved": [],
+              "unbacked": true,
+              "spec_file": "openspec/changes/cuda-and-rotorquant-kv/specs/compute-cuda-kernels/spec.md",
+              "line": 55
+            },
+            {
+              "name": "Q4_KF FFN matvec selected when manifest declares it",
+              "tests_resolved": [],
+              "tests_unresolved": [],
+              "unbacked": true,
+              "spec_file": "openspec/changes/cuda-and-rotorquant-kv/specs/compute-cuda-kernels/spec.md",
+              "line": 60
+            }
+          ]
+        },
+        {
+          "name": "Fused decode-time attention kernel",
+          "scenarios": [
+            {
+              "name": "GQA fused attention matches CPU reference",
+              "tests_resolved": [],
+              "tests_unresolved": [],
+              "unbacked": true,
+              "spec_file": "openspec/changes/cuda-and-rotorquant-kv/specs/compute-cuda-kernels/spec.md",
+              "line": 74
+            },
+            {
+              "name": "Softcap is honoured when the architecture declares it",
+              "tests_resolved": [],
+              "tests_unresolved": [],
+              "unbacked": true,
+              "spec_file": "openspec/changes/cuda-and-rotorquant-kv/specs/compute-cuda-kernels/spec.md",
+              "line": 79
+            }
+          ]
+        },
+        {
+          "name": "cudarc-driven NVRTC compilation for non-vendored kernels",
+          "scenarios": [
+            {
+              "name": "Kernel cache miss falls within the latency budget",
+              "tests_resolved": [],
+              "tests_unresolved": [],
+              "unbacked": true,
+              "spec_file": "openspec/changes/cuda-and-rotorquant-kv/specs/compute-cuda-kernels/spec.md",
+              "line": 91
+            },
+            {
+              "name": "Kernel cache hit accelerates subsequent runs",
+              "tests_resolved": [],
+              "tests_unresolved": [],
+              "unbacked": true,
+              "spec_file": "openspec/changes/cuda-and-rotorquant-kv/specs/compute-cuda-kernels/spec.md",
+              "line": 96
+            }
+          ]
+        },
+        {
+          "name": "GPU architecture targeting",
+          "scenarios": [
+            {
+              "name": "Backend boots on sm_86 hardware",
+              "tests_resolved": [],
+              "tests_unresolved": [],
+              "unbacked": true,
+              "spec_file": "openspec/changes/cuda-and-rotorquant-kv/specs/compute-cuda-kernels/spec.md",
+              "line": 109
+            }
+          ]
+        },
+        {
+          "name": "Default-backend precedence honours CUDA on Linux",
+          "scenarios": [
+            {
+              "name": "CUDA wins on Linux + cuda feature",
+              "tests_resolved": [],
+              "tests_unresolved": [],
+              "unbacked": true,
+              "spec_file": "openspec/changes/cuda-and-rotorquant-kv/specs/compute-cuda-kernels/spec.md",
+              "line": 122
+            },
+            {
+              "name": "LARQL_BACKEND override forces CPU",
+              "tests_resolved": [],
+              "tests_unresolved": [],
+              "unbacked": true,
+              "spec_file": "openspec/changes/cuda-and-rotorquant-kv/specs/compute-cuda-kernels/spec.md",
+              "line": 127
             }
           ]
         }
@@ -3601,6 +3804,85 @@
       ]
     },
     {
+      "name": "deploy-cpu-gpu-split",
+      "spec_file": "openspec/changes/cuda-and-rotorquant-kv/specs/deploy-cpu-gpu-split/spec.md",
+      "requirements": [
+        {
+          "name": "Two-Dockerfile deployment topology",
+          "scenarios": [
+            {
+              "name": "FFN image builds without CUDA installed",
+              "tests_resolved": [],
+              "tests_unresolved": [],
+              "unbacked": true,
+              "spec_file": "openspec/changes/cuda-and-rotorquant-kv/specs/deploy-cpu-gpu-split/spec.md",
+              "line": 18
+            },
+            {
+              "name": "GPU image refuses to start without an NVIDIA runtime",
+              "tests_resolved": [],
+              "tests_unresolved": [],
+              "unbacked": true,
+              "spec_file": "openspec/changes/cuda-and-rotorquant-kv/specs/deploy-cpu-gpu-split/spec.md",
+              "line": 23
+            }
+          ]
+        },
+        {
+          "name": "docker-compose orchestration for the dev box",
+          "scenarios": [
+            {
+              "name": "docker compose up brings all three services healthy",
+              "tests_resolved": [],
+              "tests_unresolved": [],
+              "unbacked": true,
+              "spec_file": "openspec/changes/cuda-and-rotorquant-kv/specs/deploy-cpu-gpu-split/spec.md",
+              "line": 41
+            }
+          ]
+        },
+        {
+          "name": "Shared vindex storage between containers",
+          "scenarios": [
+            {
+              "name": "Both containers see the same vindex bytes",
+              "tests_resolved": [],
+              "tests_unresolved": [],
+              "unbacked": true,
+              "spec_file": "openspec/changes/cuda-and-rotorquant-kv/specs/deploy-cpu-gpu-split/spec.md",
+              "line": 52
+            }
+          ]
+        },
+        {
+          "name": "Container memory budget documentation",
+          "scenarios": [
+            {
+              "name": "README has a memory budget table",
+              "tests_resolved": [],
+              "tests_unresolved": [],
+              "unbacked": true,
+              "spec_file": "openspec/changes/cuda-and-rotorquant-kv/specs/deploy-cpu-gpu-split/spec.md",
+              "line": 68
+            }
+          ]
+        },
+        {
+          "name": "Single-box mode for laptops without a GPU",
+          "scenarios": [
+            {
+              "name": "CPU compose works on a laptop",
+              "tests_resolved": [],
+              "tests_unresolved": [],
+              "unbacked": true,
+              "spec_file": "openspec/changes/cuda-and-rotorquant-kv/specs/deploy-cpu-gpu-split/spec.md",
+              "line": 80
+            }
+          ]
+        }
+      ]
+    },
+    {
       "name": "experts-tier1-and-tier2-modules",
       "spec_file": "openspec/changes/backfill-specs/specs/experts-tier1-and-tier2-modules/spec.md",
       "requirements": [
@@ -4615,6 +4897,48 @@
               "unbacked": false,
               "spec_file": "openspec/changes/backfill-specs/specs/inference-attention-and-kv/spec.md",
               "line": 209
+            }
+          ]
+        },
+        {
+          "name": "KV cache becomes parameterised by KvFormat",
+          "scenarios": [
+            {
+              "name": "Iso3 cache reads back as FP16",
+              "tests_resolved": [],
+              "tests_unresolved": [],
+              "unbacked": true,
+              "spec_file": "openspec/changes/cuda-and-rotorquant-kv/specs/inference-attention-and-kv/spec.md",
+              "line": 15
+            },
+            {
+              "name": "Cross-format cloning is allowed via FP16 round-trip",
+              "tests_resolved": [],
+              "tests_unresolved": [],
+              "unbacked": true,
+              "spec_file": "openspec/changes/cuda-and-rotorquant-kv/specs/inference-attention-and-kv/spec.md",
+              "line": 20
+            }
+          ]
+        },
+        {
+          "name": "Attention forward pass dispatches the format-specific path on the active backend",
+          "scenarios": [
+            {
+              "name": "CUDA backend uses the production kernel for Iso3",
+              "tests_resolved": [],
+              "tests_unresolved": [],
+              "unbacked": true,
+              "spec_file": "openspec/changes/cuda-and-rotorquant-kv/specs/inference-attention-and-kv/spec.md",
+              "line": 33
+            },
+            {
+              "name": "CPU backend uses the scalar reference for Iso3 (slow but correct)",
+              "tests_resolved": [],
+              "tests_unresolved": [],
+              "unbacked": true,
+              "spec_file": "openspec/changes/cuda-and-rotorquant-kv/specs/inference-attention-and-kv/spec.md",
+              "line": 38
             }
           ]
         }
@@ -5781,6 +6105,48 @@
               "unbacked": false,
               "spec_file": "openspec/changes/backfill-specs/specs/inference-residual-engine/spec.md",
               "line": 212
+            }
+          ]
+        },
+        {
+          "name": "RotorQuant engines join the engine registry",
+          "scenarios": [
+            {
+              "name": "IsoQuantEngine 3-bit creates an Iso3 KV cache",
+              "tests_resolved": [],
+              "tests_unresolved": [],
+              "unbacked": true,
+              "spec_file": "openspec/changes/cuda-and-rotorquant-kv/specs/inference-residual-engine/spec.md",
+              "line": 15
+            },
+            {
+              "name": "Engine registry remains additive \u2014 existing engines unchanged",
+              "tests_resolved": [],
+              "tests_unresolved": [],
+              "unbacked": true,
+              "spec_file": "openspec/changes/cuda-and-rotorquant-kv/specs/inference-residual-engine/spec.md",
+              "line": 20
+            }
+          ]
+        },
+        {
+          "name": "Engine selection prefers RotorQuant on CUDA + RotorQuant capability",
+          "scenarios": [
+            {
+              "name": "CUDA box auto-selects IsoQuant",
+              "tests_resolved": [],
+              "tests_unresolved": [],
+              "unbacked": true,
+              "spec_file": "openspec/changes/cuda-and-rotorquant-kv/specs/inference-residual-engine/spec.md",
+              "line": 32
+            },
+            {
+              "name": "Metal box auto-selects unchanged",
+              "tests_resolved": [],
+              "tests_unresolved": [],
+              "unbacked": true,
+              "spec_file": "openspec/changes/cuda-and-rotorquant-kv/specs/inference-residual-engine/spec.md",
+              "line": 37
             }
           ]
         }
@@ -7212,6 +7578,151 @@
               "unbacked": false,
               "spec_file": "openspec/changes/backfill-specs/specs/kv-cache-benchmark-strategies/spec.md",
               "line": 355
+            }
+          ]
+        },
+        {
+          "name": "RotorQuantStrategy joins the KV-cache strategy enum",
+          "scenarios": [
+            {
+              "name": "RotorQuantStrategy round-trip is bit-stable across runs",
+              "tests_resolved": [],
+              "tests_unresolved": [],
+              "unbacked": true,
+              "spec_file": "openspec/changes/cuda-and-rotorquant-kv/specs/kv-cache-benchmark-strategies/spec.md",
+              "line": 11
+            },
+            {
+              "name": "memory_bytes reflects the format's compression ratio",
+              "tests_resolved": [],
+              "tests_unresolved": [],
+              "unbacked": true,
+              "spec_file": "openspec/changes/cuda-and-rotorquant-kv/specs/kv-cache-benchmark-strategies/spec.md",
+              "line": 16
+            }
+          ]
+        },
+        {
+          "name": "Accuracy harness measures RotorQuant on Gemma 3 4B",
+          "scenarios": [
+            {
+              "name": "Iso3 produces published-paper PPL on wikitext-2",
+              "tests_resolved": [],
+              "tests_unresolved": [],
+              "unbacked": true,
+              "spec_file": "openspec/changes/cuda-and-rotorquant-kv/specs/kv-cache-benchmark-strategies/spec.md",
+              "line": 28
+            },
+            {
+              "name": "Comparative table includes RotorQuant rows",
+              "tests_resolved": [],
+              "tests_unresolved": [],
+              "unbacked": true,
+              "spec_file": "openspec/changes/cuda-and-rotorquant-kv/specs/kv-cache-benchmark-strategies/spec.md",
+              "line": 33
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "kv-cache-rotorquant",
+      "spec_file": "openspec/changes/cuda-and-rotorquant-kv/specs/kv-cache-rotorquant/spec.md",
+      "requirements": [
+        {
+          "name": "RotorQuant K/V cache compression API surface",
+          "scenarios": [
+            {
+              "name": "Iso3 K round-trip preserves vector direction",
+              "tests_resolved": [],
+              "tests_unresolved": [],
+              "unbacked": true,
+              "spec_file": "openspec/changes/cuda-and-rotorquant-kv/specs/kv-cache-rotorquant/spec.md",
+              "line": 19
+            },
+            {
+              "name": "Planar3 V round-trip with inverse rotation matches Triton reference",
+              "tests_resolved": [],
+              "tests_unresolved": [],
+              "unbacked": true,
+              "spec_file": "openspec/changes/cuda-and-rotorquant-kv/specs/kv-cache-rotorquant/spec.md",
+              "line": 24
+            },
+            {
+              "name": "Forward-rotation V dequant is unrepresentable in the API",
+              "tests_resolved": [],
+              "tests_unresolved": [],
+              "unbacked": true,
+              "spec_file": "openspec/changes/cuda-and-rotorquant-kv/specs/kv-cache-rotorquant/spec.md",
+              "line": 29
+            }
+          ]
+        },
+        {
+          "name": "Compression ratios match the upstream paper",
+          "scenarios": [
+            {
+              "name": "Iso3 cache size is 10.3\u00d7 smaller than FP16",
+              "tests_resolved": [],
+              "tests_unresolved": [],
+              "unbacked": true,
+              "spec_file": "openspec/changes/cuda-and-rotorquant-kv/specs/kv-cache-rotorquant/spec.md",
+              "line": 46
+            }
+          ]
+        },
+        {
+          "name": "Deferred-K quantisation during prefill",
+          "scenarios": [
+            {
+              "name": "Prefill K is FP16 in VRAM",
+              "tests_resolved": [],
+              "tests_unresolved": [],
+              "unbacked": true,
+              "spec_file": "openspec/changes/cuda-and-rotorquant-kv/specs/kv-cache-rotorquant/spec.md",
+              "line": 57
+            },
+            {
+              "name": "Decode token insertion quantises previously-deferred K",
+              "tests_resolved": [],
+              "tests_unresolved": [],
+              "unbacked": true,
+              "spec_file": "openspec/changes/cuda-and-rotorquant-kv/specs/kv-cache-rotorquant/spec.md",
+              "line": 62
+            }
+          ]
+        },
+        {
+          "name": "Vendored kernels MUST be sourced from a known upstream commit",
+          "scenarios": [
+            {
+              "name": "UPSTREAM.md is present and well-formed",
+              "tests_resolved": [],
+              "tests_unresolved": [],
+              "unbacked": true,
+              "spec_file": "openspec/changes/cuda-and-rotorquant-kv/specs/kv-cache-rotorquant/spec.md",
+              "line": 75
+            },
+            {
+              "name": "Sync target reports drift",
+              "tests_resolved": [],
+              "tests_unresolved": [],
+              "unbacked": true,
+              "spec_file": "openspec/changes/cuda-and-rotorquant-kv/specs/kv-cache-rotorquant/spec.md",
+              "line": 80
+            }
+          ]
+        },
+        {
+          "name": "Rotation tables MUST be server-issued and never client-supplied",
+          "scenarios": [
+            {
+              "name": "KvHandle is opaque",
+              "tests_resolved": [],
+              "tests_unresolved": [],
+              "unbacked": true,
+              "spec_file": "openspec/changes/cuda-and-rotorquant-kv/specs/kv-cache-rotorquant/spec.md",
+              "line": 93
             }
           ]
         }
@@ -11619,6 +12130,169 @@
               "line": 193
             }
           ]
+        },
+        {
+          "name": "Shards advertise capability sets",
+          "scenarios": [
+            {
+              "name": "Attention-only shard declares \"attention\"",
+              "tests_resolved": [],
+              "tests_unresolved": [],
+              "unbacked": true,
+              "spec_file": "openspec/changes/cuda-and-rotorquant-kv/specs/router-grid/spec.md",
+              "line": 10
+            },
+            {
+              "name": "Pre-change all-roles shard still works",
+              "tests_resolved": [],
+              "tests_unresolved": [],
+              "unbacked": true,
+              "spec_file": "openspec/changes/cuda-and-rotorquant-kv/specs/router-grid/spec.md",
+              "line": 15
+            }
+          ]
+        },
+        {
+          "name": "Router routes by capability + layer range",
+          "scenarios": [
+            {
+              "name": "Attention RPC reaches the GPU shard",
+              "tests_resolved": [],
+              "tests_unresolved": [],
+              "unbacked": true,
+              "spec_file": "openspec/changes/cuda-and-rotorquant-kv/specs/router-grid/spec.md",
+              "line": 29
+            },
+            {
+              "name": "Expert RPC reaches the CPU shard",
+              "tests_resolved": [],
+              "tests_unresolved": [],
+              "unbacked": true,
+              "spec_file": "openspec/changes/cuda-and-rotorquant-kv/specs/router-grid/spec.md",
+              "line": 34
+            },
+            {
+              "name": "Missing capability returns 503 with a useful body",
+              "tests_resolved": [],
+              "tests_unresolved": [],
+              "unbacked": true,
+              "spec_file": "openspec/changes/cuda-and-rotorquant-kv/specs/router-grid/spec.md",
+              "line": 39
+            }
+          ]
+        },
+        {
+          "name": "Heterogeneous deadlock prevention",
+          "scenarios": [
+            {
+              "name": "Attention timeout returns 504 and frees the FFN reservation",
+              "tests_resolved": [],
+              "tests_unresolved": [],
+              "unbacked": true,
+              "spec_file": "openspec/changes/cuda-and-rotorquant-kv/specs/router-grid/spec.md",
+              "line": 53
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "server-attention-service",
+      "spec_file": "openspec/changes/cuda-and-rotorquant-kv/specs/server-attention-service/spec.md",
+      "requirements": [
+        {
+          "name": "Attention session lifecycle endpoints",
+          "scenarios": [
+            {
+              "name": "Session create returns an opaque handle",
+              "tests_resolved": [],
+              "tests_unresolved": [],
+              "unbacked": true,
+              "spec_file": "openspec/changes/cuda-and-rotorquant-kv/specs/server-attention-service/spec.md",
+              "line": 17
+            },
+            {
+              "name": "Session DELETE frees VRAM",
+              "tests_resolved": [],
+              "tests_unresolved": [],
+              "unbacked": true,
+              "spec_file": "openspec/changes/cuda-and-rotorquant-kv/specs/server-attention-service/spec.md",
+              "line": 22
+            }
+          ]
+        },
+        {
+          "name": "Attention prefill endpoint",
+          "scenarios": [
+            {
+              "name": "Prefill of 1024 tokens populates the KV cache",
+              "tests_resolved": [],
+              "tests_unresolved": [],
+              "unbacked": true,
+              "spec_file": "openspec/changes/cuda-and-rotorquant-kv/specs/server-attention-service/spec.md",
+              "line": 36
+            }
+          ]
+        },
+        {
+          "name": "Attention decode endpoint",
+          "scenarios": [
+            {
+              "name": "Decode appends one position to the KV cache",
+              "tests_resolved": [],
+              "tests_unresolved": [],
+              "unbacked": true,
+              "spec_file": "openspec/changes/cuda-and-rotorquant-kv/specs/server-attention-service/spec.md",
+              "line": 47
+            }
+          ]
+        },
+        {
+          "name": "KV-cache snapshot and restore",
+          "scenarios": [
+            {
+              "name": "Snapshot then restore round-trips bit-exact",
+              "tests_resolved": [],
+              "tests_unresolved": [],
+              "unbacked": true,
+              "spec_file": "openspec/changes/cuda-and-rotorquant-kv/specs/server-attention-service/spec.md",
+              "line": 70
+            },
+            {
+              "name": "Snapshot blob carries the KV format",
+              "tests_resolved": [],
+              "tests_unresolved": [],
+              "unbacked": true,
+              "spec_file": "openspec/changes/cuda-and-rotorquant-kv/specs/server-attention-service/spec.md",
+              "line": 75
+            }
+          ]
+        },
+        {
+          "name": "gRPC parity for the HTTP surface",
+          "scenarios": [
+            {
+              "name": "gRPC service handles the same prefill",
+              "tests_resolved": [],
+              "tests_unresolved": [],
+              "unbacked": true,
+              "spec_file": "openspec/changes/cuda-and-rotorquant-kv/specs/server-attention-service/spec.md",
+              "line": 87
+            }
+          ]
+        },
+        {
+          "name": "Topology advertises the attention capability",
+          "scenarios": [
+            {
+              "name": "GPU shard refuses expert RPCs",
+              "tests_resolved": [],
+              "tests_unresolved": [],
+              "unbacked": true,
+              "spec_file": "openspec/changes/cuda-and-rotorquant-kv/specs/server-attention-service/spec.md",
+              "line": 99
+            }
+          ]
         }
       ]
     },
@@ -13119,6 +13793,35 @@
               "unbacked": false,
               "spec_file": "openspec/changes/backfill-specs/specs/server-vindex-loading/spec.md",
               "line": 149
+            }
+          ]
+        },
+        {
+          "name": "--role flag gates which weight families load",
+          "scenarios": [
+            {
+              "name": "--role attention does not allocate FFN weights",
+              "tests_resolved": [],
+              "tests_unresolved": [],
+              "unbacked": true,
+              "spec_file": "openspec/changes/cuda-and-rotorquant-kv/specs/server-vindex-loading/spec.md",
+              "line": 16
+            },
+            {
+              "name": "--role ffn refuses attention RPCs",
+              "tests_resolved": [],
+              "tests_unresolved": [],
+              "unbacked": true,
+              "spec_file": "openspec/changes/cuda-and-rotorquant-kv/specs/server-vindex-loading/spec.md",
+              "line": 21
+            },
+            {
+              "name": "--role all keeps the existing single-binary semantics",
+              "tests_resolved": [],
+              "tests_unresolved": [],
+              "unbacked": true,
+              "spec_file": "openspec/changes/cuda-and-rotorquant-kv/specs/server-vindex-loading/spec.md",
+              "line": 26
             }
           ]
         }
@@ -17102,6 +17805,42 @@
       "fqn": "larql_compute::backend::helpers::matmul_gpu_some_backend_matches_fallback",
       "file": "crates/larql-compute/src/backend/helpers.rs",
       "line": 90,
+      "crate": "larql_compute"
+    },
+    {
+      "fqn": "larql_compute::cuda::backend::tests::name_is_cuda",
+      "file": "crates/larql-compute/src/cuda/backend.rs",
+      "line": 122,
+      "crate": "larql_compute"
+    },
+    {
+      "fqn": "larql_compute::cuda::backend::name_is_cuda",
+      "file": "crates/larql-compute/src/cuda/backend.rs",
+      "line": 122,
+      "crate": "larql_compute"
+    },
+    {
+      "fqn": "larql_compute::cuda::backend::tests::supports_cuda_capability",
+      "file": "crates/larql-compute/src/cuda/backend.rs",
+      "line": 128,
+      "crate": "larql_compute"
+    },
+    {
+      "fqn": "larql_compute::cuda::backend::supports_cuda_capability",
+      "file": "crates/larql-compute/src/cuda/backend.rs",
+      "line": 128,
+      "crate": "larql_compute"
+    },
+    {
+      "fqn": "larql_compute::cuda::backend::tests::device_info_mentions_stub",
+      "file": "crates/larql-compute/src/cuda/backend.rs",
+      "line": 138,
+      "crate": "larql_compute"
+    },
+    {
+      "fqn": "larql_compute::cuda::backend::device_info_mentions_stub",
+      "file": "crates/larql-compute/src/cuda/backend.rs",
+      "line": 138,
       "crate": "larql_compute"
     },
     {

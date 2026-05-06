@@ -1,0 +1,94 @@
+# Two-container topology: GPU attention + CPU FFN, fronted by larql-router.
+#
+# Usage:
+#   cd deploy/docker
+#   docker compose up --build
+#
+# Then send queries to http://localhost:8082 (router). The router shards
+# attention RPCs to the `attention` service and FFN RPCs to the `ffn`
+# service. Both containers read the same vindex from a shared volume.
+#
+# For CPU-only laptops without an NVIDIA GPU, use docker-compose.cpu.yml
+# instead (single all-in-one larql-server).
+
+services:
+  ffn:
+    build:
+      context: ../..
+      dockerfile: deploy/docker/Dockerfile.ffn
+    image: larql-ffn:dev
+    environment:
+      ROLE: ffn
+      PORT: 8080
+      GRPC_PORT: 8081
+      VINDEX_PATH: /data/vindex
+      HF_REPO: ${HF_REPO:-chrishayuk/gemma-4-26b-a4b-it-vindex-expert-server}
+      HF_TOKEN: ${HF_TOKEN:-}
+      EXPERTS: "${EXPERTS:-}"
+      WARMUP: "${WARMUP:-1}"
+    volumes:
+      - vindex_data:/data
+    ports:
+      - "8080:8080"
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://localhost:8080/v1/health"]
+      interval: 10s
+      timeout: 3s
+      retries: 6
+      start_period: 30s
+    restart: unless-stopped
+
+  attention:
+    build:
+      context: ../..
+      dockerfile: deploy/docker/Dockerfile.gpu
+    image: larql-gpu:dev
+    environment:
+      ROLE: attention
+      PORT: 8080
+      GRPC_PORT: 8081
+      VINDEX_PATH: /data/vindex
+      HF_REPO: ${HF_REPO:-chrishayuk/gemma-4-26b-a4b-it-vindex-expert-server}
+      HF_TOKEN: ${HF_TOKEN:-}
+      KV_FORMAT: ${KV_FORMAT:-iso3}
+      LAYERS: "${LAYERS:-}"
+      LARQL_CUDA_ARCH: "${LARQL_CUDA_ARCH:-89}"
+    volumes:
+      - vindex_data:/data
+    ports:
+      - "8081:8080"
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://localhost:8080/v1/health"]
+      interval: 10s
+      timeout: 3s
+      retries: 6
+      start_period: 60s   # Longer: cudarc PTX compile + weight load.
+    restart: unless-stopped
+
+  router:
+    build:
+      context: ../..
+      dockerfile: deploy/docker/Dockerfile.ffn
+    image: larql-ffn:dev   # router lives in the same Linux/CPU image
+    entrypoint: ["larql-router"]
+    command:
+      - --port=8080
+      - --shards=ffn=http://ffn:8080,attention=http://attention:8080
+    ports:
+      - "8082:8080"
+    depends_on:
+      ffn:
+        condition: service_healthy
+      attention:
+        condition: service_healthy
+    restart: unless-stopped
+
+volumes:
+  vindex_data:

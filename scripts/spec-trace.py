@@ -143,7 +143,12 @@ def parse_spec_file(path: Path) -> Capability:
 
 
 def discover_capabilities() -> list[Capability]:
-    capabilities: list[Capability] = []
+    """Collect capabilities, MERGING requirements across every spec.md
+    that names the same capability. This matters when multiple in-flight
+    changes touch the same capability — last-wins masking would hide
+    backfilled scenarios behind a delta. We accumulate instead, dropping
+    duplicate requirement names so a change's MODIFIED rewrite still
+    overrides the original."""
     seen: dict[str, Capability] = {}
     for root in SPECS_ROOTS:
         if not root.exists():
@@ -152,10 +157,18 @@ def discover_capabilities() -> list[Capability]:
             if "/specs/" not in spec.as_posix():
                 continue
             cap = parse_spec_file(spec)
-            # Active-change spec wins over archived spec on collision.
-            seen[cap.name] = cap
-    capabilities = sorted(seen.values(), key=lambda c: c.name)
-    return capabilities
+            existing = seen.get(cap.name)
+            if existing is None:
+                seen[cap.name] = cap
+                continue
+            # Merge: append requirements that aren't already present by
+            # name. spec_file stays as the canonical (first-seen) source.
+            existing_req_names = {r.name for r in existing.requirements}
+            for req in cap.requirements:
+                if req.name not in existing_req_names:
+                    existing.requirements.append(req)
+                    existing_req_names.add(req.name)
+    return sorted(seen.values(), key=lambda c: c.name)
 
 
 # ---------- test discovery ----------------------------------------------------
