@@ -69,6 +69,8 @@ const OPENAI_CHAT_COMPLETIONS: &str = "/v1/chat/completions";
 // attention-service-routes change.
 const ATTENTION_SESSION: &str = "/v1/attention/session";
 const ATTENTION_SESSION_BY_ID: &str = "/v1/attention/session/{id}";
+const ATTENTION_PREFILL: &str = "/v1/attention/prefill";
+const ATTENTION_DECODE: &str = "/v1/attention/decode";
 const KV_CACHE_SNAPSHOT: &str = "/v1/kv-cache/snapshot";
 const KV_CACHE_RESTORE: &str = "/v1/kv-cache/restore";
 const KV_CACHE_FREE: &str = "/v1/kv-cache/free";
@@ -154,6 +156,8 @@ pub fn single_model_router(state: Arc<AppState>) -> Router {
             ATTENTION_SESSION_BY_ID,
             get(attention::handle_get_session).delete(attention::handle_delete_session),
         )
+        .route(ATTENTION_PREFILL, post(attention::handle_prefill))
+        .route(ATTENTION_DECODE, post(attention::handle_decode))
         .route(KV_CACHE_SNAPSHOT, post(attention::handle_kv_snapshot))
         .route(KV_CACHE_RESTORE, post(attention::handle_kv_restore))
         .route(KV_CACHE_FREE, post(attention::handle_kv_free))

@@ -231,6 +231,147 @@ pub struct SnapshotResponse {
     pub bytes_len: usize,
 }
 
+// ── /v1/attention/prefill ──────────────────────────────────────────────────
+
+#[derive(Deserialize)]
+pub struct PrefillRequest {
+    pub session_id: String,
+    /// `[seq_len][hidden_dim]` f32. Token embeddings the client has
+    /// already produced from its tokenizer + embedding lookup. The
+    /// attention service does NOT tokenize — that's the client's job
+    /// (or the tokenizer-cache front in front of this service).
+    pub token_embeddings: Vec<Vec<f32>>,
+}
+
+#[derive(Serialize)]
+pub struct PrefillResponse {
+    /// `[layers][seq_len][hidden_dim]` post-attention residuals.
+    pub post_attention_residuals: Vec<Vec<Vec<f32>>>,
+    pub kv_filled_through_layer: u32,
+    pub tokens_processed: usize,
+    pub latency_ms: f64,
+}
+
+pub async fn handle_prefill(
+    State(state): State<Arc<AppState>>,
+    Json(req): Json<PrefillRequest>,
+) -> impl IntoResponse {
+    state.bump_requests();
+    // Validate the session exists before doing any heavy work.
+    let session_id = SessionId(req.session_id);
+    let Some(_entry) = state.attention_sessions.get(&session_id) else {
+        return err_no_session().into_response();
+    };
+    // Validate input shape.
+    let seq_len = req.token_embeddings.len();
+    if seq_len == 0 {
+        return err_response(
+            StatusCode::BAD_REQUEST,
+            ErrorBody {
+                error: "empty_token_embeddings",
+                detail: Some("token_embeddings must contain at least one row".into()),
+            },
+        )
+        .into_response();
+    }
+    let hidden_dim = req.token_embeddings[0].len();
+    if !req
+        .token_embeddings
+        .iter()
+        .all(|row| row.len() == hidden_dim)
+    {
+        return err_response(
+            StatusCode::BAD_REQUEST,
+            ErrorBody {
+                error: "ragged_token_embeddings",
+                detail: Some(format!(
+                    "all rows must have the same hidden_dim {hidden_dim}"
+                )),
+            },
+        )
+        .into_response();
+    }
+
+    // Real attention runner integration is the next milestone — see
+    // openspec/changes/attention-service-routes/tasks.md §2.4 and the
+    // notes in routes/attention.rs:1. The wire surface is locked
+    // (this 501 exercises the request-shape validation + session
+    // lookup), so the runner can drop in without breaking clients.
+    err_response(
+        StatusCode::NOT_IMPLEMENTED,
+        ErrorBody {
+            error: "prefill_not_implemented",
+            detail: Some(format!(
+                "session ok; would prefill seq_len={seq_len} hidden_dim={hidden_dim}; runner integration pending"
+            )),
+        },
+    )
+    .into_response()
+}
+
+// ── /v1/attention/decode ───────────────────────────────────────────────────
+
+#[derive(Deserialize)]
+pub struct DecodeRequest {
+    pub session_id: String,
+    /// `[hidden_dim]` f32 — the next token's embedding.
+    pub query_token_embedding: Vec<f32>,
+}
+
+#[derive(Serialize)]
+pub struct DecodeResponse {
+    /// `[layers][hidden_dim]` post-attention residuals for the
+    /// just-appended position.
+    pub post_attention_residual: Vec<Vec<f32>>,
+    pub latency_ms: f64,
+}
+
+pub async fn handle_decode(
+    State(state): State<Arc<AppState>>,
+    Json(req): Json<DecodeRequest>,
+) -> impl IntoResponse {
+    state.bump_requests();
+    let session_id = SessionId(req.session_id);
+    let Some(entry) = state.attention_sessions.get(&session_id) else {
+        return err_no_session().into_response();
+    };
+    let hidden_dim = req.query_token_embedding.len();
+    if hidden_dim == 0 {
+        return err_response(
+            StatusCode::BAD_REQUEST,
+            ErrorBody {
+                error: "empty_query_embedding",
+                detail: None,
+            },
+        )
+        .into_response();
+    }
+    // Spec: decode-before-prefill is rejected.
+    let g = entry.read().await;
+    if !g.prefilled {
+        return err_response(
+            StatusCode::BAD_REQUEST,
+            ErrorBody {
+                error: "decode_before_prefill",
+                detail: Some("call /v1/attention/prefill first".into()),
+            },
+        )
+        .into_response();
+    }
+    drop(g);
+
+    err_response(
+        StatusCode::NOT_IMPLEMENTED,
+        ErrorBody {
+            error: "decode_not_implemented",
+            detail: Some(format!(
+                "session ok and prefilled; hidden_dim={hidden_dim}; runner integration pending"
+            )),
+        },
+    )
+    .into_response()
+}
+
 // ── /v1/kv-cache/restore ───────────────────────────────────────────────────
 
 #[derive(Deserialize)]

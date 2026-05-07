@@ -74,7 +74,7 @@ endpoint SHALL accept JSON (default) or binary
 - **WHEN** a client prefills against a `session_id` that does not exist
 - **THEN** the server SHALL return `404 Not Found` with body
   `{"error": "no_such_session"}`
-<!-- test: unbacked -->
+<!-- test: test_http_attention::prefill_unknown_session_returns_404 -->
 
 #### Scenario: binary form round-trips
 
@@ -114,7 +114,7 @@ SHALL accept JSON (default) or binary
   `/v1/attention/decode` with no prior prefill
 - **THEN** the server SHALL return `400 Bad Request` with body
   `{"error": "decode_before_prefill"}`
-<!-- test: unbacked -->
+<!-- test: test_http_attention::decode_before_prefill_returns_400 -->
 
 ### Requirement: KV-cache snapshot SHALL be a versioned binary blob
 

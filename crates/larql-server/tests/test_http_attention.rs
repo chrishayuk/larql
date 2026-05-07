@@ -305,6 +305,126 @@ async fn free_all_layers_returns_layers_freed() {
     assert!(body["layers_freed"].as_u64().unwrap() >= 1);
 }
 
+// ── prefill / decode (501 stubs — runner integration pending) ─────────────
+
+#[tokio::test]
+async fn prefill_unknown_session_returns_404() {
+    let app = single_model_router(state(vec![model("test")]));
+    let resp = post_json(
+        app,
+        "/v1/attention/prefill",
+        serde_json::json!({
+            "session_id": "01HM1MISSING0000000000000A",
+            "token_embeddings": [[0.0, 0.0, 0.0, 0.0]],
+        }),
+    )
+    .await;
+    assert_eq!(resp.status(), StatusCode::NOT_FOUND);
+}
+
+#[tokio::test]
+async fn prefill_with_empty_embeddings_returns_400() {
+    let st = state(vec![model("test")]);
+    let app = single_model_router(st.clone());
+    let body = create_session(&app, "test").await;
+    let sid = body["session_id"].as_str().unwrap().to_string();
+
+    let app2 = single_model_router(st);
+    let resp = post_json(
+        app2,
+        "/v1/attention/prefill",
+        serde_json::json!({
+            "session_id": sid,
+            "token_embeddings": [],
+        }),
+    )
+    .await;
+    assert_eq!(resp.status(), StatusCode::BAD_REQUEST);
+    let body = body_json(resp.into_body()).await;
+    assert_eq!(body["error"], "empty_token_embeddings");
+}
+
+#[tokio::test]
+async fn prefill_with_ragged_rows_returns_400() {
+    let st = state(vec![model("test")]);
+    let app = single_model_router(st.clone());
+    let body = create_session(&app, "test").await;
+    let sid = body["session_id"].as_str().unwrap().to_string();
+
+    let app2 = single_model_router(st);
+    let resp = post_json(
+        app2,
+        "/v1/attention/prefill",
+        serde_json::json!({
+            "session_id": sid,
+            "token_embeddings": [[0.0, 1.0, 2.0], [0.0]],
+        }),
+    )
+    .await;
+    assert_eq!(resp.status(), StatusCode::BAD_REQUEST);
+    let body = body_json(resp.into_body()).await;
+    assert_eq!(body["error"], "ragged_token_embeddings");
+}
+
+#[tokio::test]
+async fn prefill_with_valid_shape_returns_501_with_typed_error() {
+    let st = state(vec![model("test")]);
+    let app = single_model_router(st.clone());
+    let body = create_session(&app, "test").await;
+    let sid = body["session_id"].as_str().unwrap().to_string();
+
+    let app2 = single_model_router(st);
+    let resp = post_json(
+        app2,
+        "/v1/attention/prefill",
+        serde_json::json!({
+            "session_id": sid,
+            "token_embeddings": [[0.0, 0.1, 0.2, 0.3]],
+        }),
+    )
+    .await;
+    assert_eq!(resp.status(), StatusCode::NOT_IMPLEMENTED);
+    let body = body_json(resp.into_body()).await;
+    assert_eq!(body["error"], "prefill_not_implemented");
+}
+
+#[tokio::test]
+async fn decode_unknown_session_returns_404() {
+    let app = single_model_router(state(vec![model("test")]));
+    let resp = post_json(
+        app,
+        "/v1/attention/decode",
+        serde_json::json!({
+            "session_id": "01HM1MISSING0000000000000A",
+            "query_token_embedding": [0.0, 0.0, 0.0, 0.0],
+        }),
+    )
+    .await;
+    assert_eq!(resp.status(), StatusCode::NOT_FOUND);
+}
+
+#[tokio::test]
+async fn decode_before_prefill_returns_400() {
+    let st = state(vec![model("test")]);
+    let app = single_model_router(st.clone());
+    let body = create_session(&app, "test").await;
+    let sid = body["session_id"].as_str().unwrap().to_string();
+
+    let app2 = single_model_router(st);
+    let resp = post_json(
+        app2,
+        "/v1/attention/decode",
+        serde_json::json!({
+            "session_id": sid,
+            "query_token_embedding": [0.0, 0.0, 0.0, 0.0],
+        }),
+    )
+    .await;
+    assert_eq!(resp.status(), StatusCode::BAD_REQUEST);
+    let body = body_json(resp.into_body()).await;
+    assert_eq!(body["error"], "decode_before_prefill");
+}
+
 // ── format coverage ────────────────────────────────────────────────────────
 
 #[tokio::test]
