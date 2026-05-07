@@ -141,6 +141,7 @@ pub fn model_functional(id: &str) -> Arc<LoadedModel> {
         ffn_l2_cache: larql_server::ffn_l2_cache::FfnL2Cache::new(1),
         expert_filter: None,
         unit_filter: None,
+        moe_remote: None,
     })
 }
 
@@ -171,6 +172,7 @@ pub fn model_infer_enabled(id: &str) -> Arc<LoadedModel> {
         ffn_l2_cache: larql_server::ffn_l2_cache::FfnL2Cache::new(1),
         expert_filter: None,
         unit_filter: None,
+        moe_remote: None,
     })
 }
 
@@ -240,6 +242,7 @@ impl ModelBuilder {
             ffn_l2_cache: FfnL2Cache::new(1),
             expert_filter: None,
             unit_filter: None,
+        moe_remote: None,
         })
     }
 }

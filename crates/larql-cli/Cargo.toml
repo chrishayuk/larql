@@ -32,11 +32,19 @@ minijinja = "2"
 libc = "0.2"
 
 [features]
-default = ["metal"]
+# Default is empty so `cargo check --workspace` succeeds on Linux without
+# pulling in the macOS-only `metal` crate. macOS users opt in with
+# `cargo build --features metal`. Linux + RTX users opt into
+# `--features cuda` (forwarded to larql-compute via the `cuda` feature
+# below). See deploy/docker/ for the production build invocations.
+default = []
 metal = [
     "larql-compute/metal",
     "larql-inference/metal",
     "larql-vindex/metal",
+]
+cuda = [
+    "larql-compute/cuda",
 ]
 
 [dev-dependencies]

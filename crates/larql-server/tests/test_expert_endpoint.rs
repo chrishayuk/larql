@@ -221,6 +221,8 @@ fn make_loaded_model(
         down_top_k: 1,
         has_model_weights: false,
         model_config: None,
+        ffn_layout: None,
+        fp4: None,
     };
 
     // Build ModelWeights with expert data in raw_bytes (no mmap needed).
@@ -250,6 +252,7 @@ fn make_loaded_model(
         num_q_heads: 2,
         num_kv_heads: 2,
         rope_base: 10000.0,
+        skipped_tensors: Vec::new(),
     };
 
     let lock = OnceLock::new();

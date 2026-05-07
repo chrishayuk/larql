@@ -48,6 +48,7 @@ fn model_functional_with_labels(id: &str) -> Arc<LoadedModel> {
         ffn_l2_cache: larql_server::ffn_l2_cache::FfnL2Cache::new(1),
         expert_filter: None,
         unit_filter: None,
+        moe_remote: None,
     })
 }
 

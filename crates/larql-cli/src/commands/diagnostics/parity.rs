@@ -528,6 +528,16 @@ fn run_moe_block(
 // the full sequence). This is sufficient to locate the first diverging layer
 // but not to compute precise numeric agreement.
 
+#[cfg(not(feature = "metal"))]
+fn run_layer_diff(
+    _path: &std::path::Path,
+    _config: &larql_vindex::VindexConfig,
+    _args: &ParityArgs,
+) -> Result<(), Box<dyn std::error::Error>> {
+    Err("`larql diag parity --layer-diff` requires the `metal` feature; rebuild with --features metal on an M-series Mac (CUDA parity is a separate workstream).".into())
+}
+
+#[cfg(feature = "metal")]
 fn run_layer_diff(
     path: &std::path::Path,
     config: &larql_vindex::VindexConfig,
@@ -595,6 +605,11 @@ fn run_layer_diff(
         std::env::set_var("LARQL_METAL_DUMP_LAYERS", &metal_dense_dir);
     }
     println!("Running Metal…");
+    #[cfg(not(feature = "metal"))]
+    {
+        return Err("`larql diag parity` requires the `metal` feature; rebuild with --features metal on an M-series Mac (this command is reference-vs-CPU and the reference path is the Metal backend).".into());
+    }
+    #[cfg(feature = "metal")]
     let metal_result = {
         let backend = larql_compute::metal::MetalBackend::new()
             .ok_or("Metal backend unavailable — build with `--features metal` on M-series Mac")?;

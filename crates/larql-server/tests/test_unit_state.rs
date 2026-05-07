@@ -96,6 +96,7 @@ fn make_tiny_model(id: &str) -> Arc<LoadedModel> {
         ffn_l2_cache: FfnL2Cache::new(1),
         expert_filter: None,
         unit_filter: None,
+        moe_remote: None,
     })
 }
 
@@ -172,6 +173,7 @@ fn make_loaded_model_for_warmup() -> Arc<LoadedModel> {
         ffn_l2_cache: FfnL2Cache::new(1),
         expert_filter: None,
         unit_filter: None,
+        moe_remote: None,
     })
 }
 
