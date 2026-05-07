@@ -36,6 +36,23 @@ pub struct KvCache {
     /// position, not its row index in the clipped cache. Starts at 0
     /// and increments per append (not per eviction).
     pub next_position: usize,
+
+    // ── RotorQuant compressed side-table ──────────────────────────
+    //
+    // Optional parallel storage for layers that have been moved into
+    // RotorQuant compression via `quantize_layer`. The FP32 `layers`
+    // entry is taken `None` once a layer is compressed; reading it
+    // back via `dequantize_layer` reconstructs FP32 on demand.
+    // This is an additive integration — the FP32 path stays the
+    // canonical fast path; compressed storage is opt-in per layer
+    // (the upstream "deferred-K" pattern).
+    /// Compression format active for this cache. `None` = nothing
+    /// compressed. Mixing formats across layers is unsupported (the
+    /// parent design says session-level format selection).
+    pub kv_format: Option<larql_rotorquant::KvFormat>,
+    /// Compressed (K, V) per layer. `None` for layers that haven't
+    /// been compressed; `Some` after `quantize_layer` succeeds.
+    pub quantized_kv: Vec<Option<(larql_rotorquant::QuantizedKv, larql_rotorquant::QuantizedKv)>>,
 }
 
 impl KvCache {
@@ -45,6 +62,8 @@ impl KvCache {
             layers: vec![None; num_layers],
             max_window: None,
             next_position: 0,
+            kv_format: None,
+            quantized_kv: vec![None; num_layers],
         }
     }
 
@@ -55,7 +74,101 @@ impl KvCache {
             layers: vec![None; num_layers],
             max_window: if window == 0 { None } else { Some(window) },
             next_position: 0,
+            kv_format: None,
+            quantized_kv: vec![None; num_layers],
         }
+    }
+
+    // ── RotorQuant compressed side-table ──────────────────────────
+
+    /// Set the active KV compression format for the cache. Must be
+    /// called before `quantize_layer`. Mixing formats across layers
+    /// in the same cache instance is unsupported.
+    pub fn set_kv_format(&mut self, format: larql_rotorquant::KvFormat) {
+        self.kv_format = Some(format);
+    }
+
+    /// Compress an FP32 layer into the active KV format. The FP32
+    /// slot is taken (set to `None`) so the cache memory does not
+    /// double. No-op (returns `false`) if the layer is empty, out of
+    /// range, or `kv_format` is unset.
+    pub fn quantize_layer(&mut self, layer: usize) -> bool {
+        let Some(format) = self.kv_format else {
+            return false;
+        };
+        let Some(slot) = self.layers.get_mut(layer) else {
+            return false;
+        };
+        let Some((k, v)) = slot.take() else {
+            return false;
+        };
+        let n_rows = k.shape()[0];
+        let head_dim = k.shape()[1];
+        let k_flat = k.into_raw_vec_and_offset().0;
+        let v_flat = v.into_raw_vec_and_offset().0;
+        let qk = match larql_rotorquant::quantize_k(format, &k_flat, n_rows, head_dim) {
+            Ok(q) => q,
+            Err(_) => {
+                // Restore on failure so the layer isn't silently lost.
+                let k = ndarray::Array2::from_shape_vec((n_rows, head_dim), k_flat)
+                    .expect("shape known");
+                let v = ndarray::Array2::from_shape_vec((n_rows, head_dim), v_flat)
+                    .expect("shape known");
+                self.layers[layer] = Some((k, v));
+                return false;
+            }
+        };
+        let qv = match larql_rotorquant::quantize_v(format, &v_flat, n_rows, head_dim) {
+            Ok(q) => q,
+            Err(_) => {
+                // K already consumed; can't recover the full FP32 pair
+                // cleanly. Leave the layer empty and return failure.
+                self.layers[layer] = None;
+                return false;
+            }
+        };
+        if let Some(slot) = self.quantized_kv.get_mut(layer) {
+            *slot = Some((qk, qv));
+        }
+        true
+    }
+
+    /// Decompress a compressed layer back to FP32 SharedKV form.
+    /// Returns the decompressed pair without disturbing the
+    /// compressed side-table. `None` if the layer isn't compressed
+    /// or out of range.
+    pub fn dequantize_layer(&self, layer: usize) -> Option<SharedKV> {
+        let (qk, qv) = self.quantized_kv.get(layer)?.as_ref()?;
+        let k_flat = larql_rotorquant::dequantize_k(qk).ok()?;
+        let v_flat = larql_rotorquant::dequantize_v_with_inverse_rotation(qv).ok()?;
+        let k = ndarray::Array2::from_shape_vec((qk.n_rows, qk.head_dim), k_flat).ok()?;
+        let v = ndarray::Array2::from_shape_vec((qv.n_rows, qv.head_dim), v_flat).ok()?;
+        Some((k, v))
+    }
+
+    /// Move a compressed layer back into the FP32 `layers` slot
+    /// (and clear the compressed side-table for that layer). Inverse
+    /// of `quantize_layer`.
+    pub fn promote_layer_to_fp32(&mut self, layer: usize) -> bool {
+        let Some(kv) = self.dequantize_layer(layer) else {
+            return false;
+        };
+        if let Some(slot) = self.layers.get_mut(layer) {
+            *slot = Some(kv);
+        }
+        if let Some(qslot) = self.quantized_kv.get_mut(layer) {
+            *qslot = None;
+        }
+        true
+    }
+
+    /// Whether the layer is currently compressed (backed by
+    /// `quantized_kv` rather than `layers`).
+    pub fn is_layer_compressed(&self, layer: usize) -> bool {
+        self.quantized_kv
+            .get(layer)
+            .map(|opt| opt.is_some())
+            .unwrap_or(false)
     }
 
     /// Number of cached positions for a given layer. Returns 0 if the
@@ -615,5 +728,68 @@ mod tests {
             let result = run_attention_block_decode_step(&weights, &h, layer, None, 0);
             assert!(result.is_some(), "layer {layer} decode step failed");
         }
+    }
+
+    // ── RotorQuant compressed side-table ──────────────────────────
+
+    #[test]
+    fn quantize_layer_no_op_when_format_unset() {
+        let mut cache = KvCache::with_layers(1);
+        cache.set_layer(0, fill_kv(4, 32, 0.5));
+        // No format yet → quantize_layer returns false and the layer stays FP32.
+        assert!(!cache.quantize_layer(0));
+        assert!(cache.get_layer(0).is_some());
+        assert!(!cache.is_layer_compressed(0));
+    }
+
+    #[test]
+    fn quantize_then_dequantize_roundtrip_preserves_direction() {
+        let mut cache = KvCache::with_layers(2);
+        cache.set_kv_format(larql_rotorquant::KvFormat::Iso3);
+        // Use head_dim=32 (multiple of 4 for Iso3) and 8 rows so the
+        // synthetic data has a well-defined L2 norm.
+        let original = fill_kv(8, 32, 0.7);
+        cache.set_layer(1, original.clone());
+
+        // Compress.
+        assert!(cache.quantize_layer(1));
+        assert!(cache.is_layer_compressed(1));
+        // FP32 slot was taken so memory doesn't double.
+        assert!(cache.get_layer(1).is_none());
+
+        // Decompress.
+        let recovered = cache.dequantize_layer(1).expect("dequantize");
+        assert_eq!(recovered.0.shape(), original.0.shape());
+        assert_eq!(recovered.1.shape(), original.1.shape());
+
+        // Cosine similarity ≥ 0.95 (matches larql-rotorquant test threshold).
+        let cos = |a: &Array2<f32>, b: &Array2<f32>| -> f32 {
+            let av = a.iter().copied().collect::<Vec<_>>();
+            let bv = b.iter().copied().collect::<Vec<_>>();
+            let dot: f32 = av.iter().zip(&bv).map(|(x, y)| x * y).sum();
+            let na: f32 = av.iter().map(|v| v * v).sum::<f32>().sqrt();
+            let nb: f32 = bv.iter().map(|v| v * v).sum::<f32>().sqrt();
+            dot / (na * nb + 1e-12)
+        };
+        let cos_k = cos(&original.0, &recovered.0);
+        let cos_v = cos(&original.1, &recovered.1);
+        assert!(cos_k >= 0.95, "K cosine after roundtrip: {cos_k}");
+        assert!(cos_v >= 0.95, "V cosine after roundtrip: {cos_v}");
+    }
+
+    #[test]
+    fn promote_layer_to_fp32_restores_layers_slot() {
+        let mut cache = KvCache::with_layers(1);
+        cache.set_kv_format(larql_rotorquant::KvFormat::Iso3);
+        cache.set_layer(0, fill_kv(8, 32, 0.5));
+
+        cache.quantize_layer(0);
+        assert!(cache.is_layer_compressed(0));
+        assert!(cache.get_layer(0).is_none());
+
+        // Promote restores the FP32 slot and clears compressed.
+        assert!(cache.promote_layer_to_fp32(0));
+        assert!(!cache.is_layer_compressed(0));
+        assert!(cache.get_layer(0).is_some());
     }
 }

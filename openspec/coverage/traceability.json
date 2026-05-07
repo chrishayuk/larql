@@ -1,11 +1,11 @@
 {
   "summary": {
     "capabilities": 48,
-    "requirements": 374,
-    "scenarios": 1309,
-    "scenarios_backed": 1192,
+    "requirements": 377,
+    "scenarios": 1312,
+    "scenarios_backed": 1195,
     "scenarios_unbacked": 117,
-    "test_refs": 3188,
+    "test_refs": 3191,
     "test_refs_unresolved": 0
   },
   "capabilities": [
@@ -5249,6 +5249,51 @@
               "unbacked": true,
               "spec_file": "openspec/changes/cuda-and-rotorquant-kv/specs/inference-attention-and-kv/spec.md",
               "line": 38
+            }
+          ]
+        },
+        {
+          "name": "KvCache MUST expose a KvFormat parameter",
+          "scenarios": [
+            {
+              "name": "quantize_layer is a no-op when kv_format is unset",
+              "tests_resolved": [
+                "larql_inference::attention::decode::tests::quantize_layer_no_op_when_format_unset"
+              ],
+              "tests_unresolved": [],
+              "unbacked": false,
+              "spec_file": "openspec/changes/rotorquant-attention-integration/specs/inference-attention-and-kv/spec.md",
+              "line": 12
+            }
+          ]
+        },
+        {
+          "name": "quantize_layer + dequantize_layer round-trip preserves direction",
+          "scenarios": [
+            {
+              "name": "Iso3 quantize/dequantize roundtrip",
+              "tests_resolved": [
+                "larql_inference::attention::decode::tests::quantize_then_dequantize_roundtrip_preserves_direction"
+              ],
+              "tests_unresolved": [],
+              "unbacked": false,
+              "spec_file": "openspec/changes/rotorquant-attention-integration/specs/inference-attention-and-kv/spec.md",
+              "line": 21
+            }
+          ]
+        },
+        {
+          "name": "promote_layer_to_fp32 inverts quantize_layer",
+          "scenarios": [
+            {
+              "name": "promote restores FP32 slot and clears compressed",
+              "tests_resolved": [
+                "larql_inference::attention::decode::tests::promote_layer_to_fp32_restores_layers_slot"
+              ],
+              "tests_unresolved": [],
+              "unbacked": false,
+              "spec_file": "openspec/changes/rotorquant-attention-integration/specs/inference-attention-and-kv/spec.md",
+              "line": 33
             }
           ]
         }
@@ -19817,91 +19862,109 @@
     {
       "fqn": "larql_inference::attention::decode::kv_cache_starts_empty",
       "file": "crates/larql-inference/src/attention/decode.rs",
-      "line": 441,
+      "line": 554,
       "crate": "larql_inference"
     },
     {
       "fqn": "larql_inference::attention::decode::kv_cache_with_window_clips",
       "file": "crates/larql-inference/src/attention/decode.rs",
-      "line": 448,
+      "line": 561,
       "crate": "larql_inference"
     },
     {
       "fqn": "larql_inference::attention::decode::get_layer_returns_none_when_empty",
       "file": "crates/larql-inference/src/attention/decode.rs",
-      "line": 482,
+      "line": 595,
       "crate": "larql_inference"
     },
     {
       "fqn": "larql_inference::attention::decode::set_layer_then_get_layer_round_trips",
       "file": "crates/larql-inference/src/attention/decode.rs",
-      "line": 489,
+      "line": 602,
       "crate": "larql_inference"
     },
     {
       "fqn": "larql_inference::attention::decode::set_layer_out_of_range_is_noop",
       "file": "crates/larql-inference/src/attention/decode.rs",
-      "line": 500,
+      "line": 613,
       "crate": "larql_inference"
     },
     {
       "fqn": "larql_inference::attention::decode::clear_layer_removes_kv",
       "file": "crates/larql-inference/src/attention/decode.rs",
-      "line": 508,
+      "line": 621,
       "crate": "larql_inference"
     },
     {
       "fqn": "larql_inference::attention::decode::clone_layer_from_copies_donor_kv",
       "file": "crates/larql-inference/src/attention/decode.rs",
-      "line": 517,
+      "line": 630,
       "crate": "larql_inference"
     },
     {
       "fqn": "larql_inference::attention::decode::clone_layer_from_missing_donor_layer_is_noop",
       "file": "crates/larql-inference/src/attention/decode.rs",
-      "line": 530,
+      "line": 643,
       "crate": "larql_inference"
     },
     {
       "fqn": "larql_inference::attention::decode::clone_layer_position_range_slices_donor",
       "file": "crates/larql-inference/src/attention/decode.rs",
-      "line": 540,
+      "line": 653,
       "crate": "larql_inference"
     },
     {
       "fqn": "larql_inference::attention::decode::clone_layer_position_range_clamps_to_donor_length",
       "file": "crates/larql-inference/src/attention/decode.rs",
-      "line": 557,
+      "line": 670,
       "crate": "larql_inference"
     },
     {
       "fqn": "larql_inference::attention::decode::clone_layer_position_range_empty_slice_is_noop",
       "file": "crates/larql-inference/src/attention/decode.rs",
-      "line": 568,
+      "line": 681,
       "crate": "larql_inference"
     },
     {
       "fqn": "larql_inference::attention::decode::decode_step_output_shape",
       "file": "crates/larql-inference/src/attention/decode.rs",
-      "line": 579,
+      "line": 692,
       "crate": "larql_inference"
     },
     {
       "fqn": "larql_inference::attention::decode::decode_step_output_finite",
       "file": "crates/larql-inference/src/attention/decode.rs",
-      "line": 590,
+      "line": 703,
       "crate": "larql_inference"
     },
     {
       "fqn": "larql_inference::attention::decode::decode_step_kv_grows_with_prior",
       "file": "crates/larql-inference/src/attention/decode.rs",
-      "line": 599,
+      "line": 712,
       "crate": "larql_inference"
     },
     {
       "fqn": "larql_inference::attention::decode::decode_step_all_layers_succeed",
       "file": "crates/larql-inference/src/attention/decode.rs",
-      "line": 611,
+      "line": 724,
+      "crate": "larql_inference"
+    },
+    {
+      "fqn": "larql_inference::attention::decode::quantize_layer_no_op_when_format_unset",
+      "file": "crates/larql-inference/src/attention/decode.rs",
+      "line": 736,
+      "crate": "larql_inference"
+    },
+    {
+      "fqn": "larql_inference::attention::decode::quantize_then_dequantize_roundtrip_preserves_direction",
+      "file": "crates/larql-inference/src/attention/decode.rs",
+      "line": 746,
+      "crate": "larql_inference"
+    },
+    {
+      "fqn": "larql_inference::attention::decode::promote_layer_to_fp32_restores_layers_slot",
+      "file": "crates/larql-inference/src/attention/decode.rs",
+      "line": 781,
       "crate": "larql_inference"
     },
     {
