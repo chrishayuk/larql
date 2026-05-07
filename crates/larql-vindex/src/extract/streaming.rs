@@ -29,13 +29,84 @@ struct MmapShard {
 #[derive(Debug)]
 enum WeightSource {
     Safetensors(Vec<PathBuf>),
-    Gguf {
-        files: Vec<PathBuf>,
-        architecture: String,
-        split_count: usize,
-        tensor_count: usize,
-        three_d_tensors: usize,
-    },
+    Gguf(GgufCatalog),
+}
+
+#[derive(Debug)]
+struct GgufCatalog {
+    files: Vec<PathBuf>,
+    architecture: String,
+    split_count: usize,
+    tensors: HashMap<String, GgufTensorEntry>,
+    three_d_tensors: usize,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct GgufTensorEntry {
+    name: String,
+    shard_idx: usize,
+    dims: Vec<u64>,
+    tensor_type: u32,
+}
+
+impl GgufCatalog {
+    #[cfg_attr(not(test), allow(dead_code))]
+    fn tensor(&self, name: &str) -> Option<&GgufTensorEntry> {
+        self.tensors.get(name)
+    }
+}
+
+impl GgufTensorEntry {
+    #[cfg_attr(not(test), allow(dead_code))]
+    fn is_3d(&self) -> bool {
+        self.dims.len() == 3
+    }
+}
+
+fn build_gguf_catalog(files: &[PathBuf]) -> Result<GgufCatalog, VindexError> {
+    let mut architecture = "unknown".to_string();
+    let mut split_count = files.len();
+    let mut tensors = HashMap::new();
+    let mut three_d_tensors = 0usize;
+
+    for (shard_idx, file) in files.iter().enumerate() {
+        let gguf = larql_models::loading::gguf::GgufFile::open(file)?;
+        if architecture == "unknown" {
+            if let Some(arch) = gguf
+                .metadata
+                .get("general.architecture")
+                .and_then(|v| v.as_str())
+            {
+                architecture = arch.to_string();
+            }
+        }
+        if let Some(count) = gguf.metadata.get("split.count").and_then(|v| v.as_u32()) {
+            split_count = count as usize;
+        }
+        for info in &gguf.tensor_infos {
+            let dims = info.dims().to_vec();
+            if dims.len() == 3 {
+                three_d_tensors += 1;
+            }
+            tensors.insert(
+                info.name().to_string(),
+                GgufTensorEntry {
+                    name: info.name().to_string(),
+                    shard_idx,
+                    dims,
+                    tensor_type: info.tensor_type(),
+                },
+            );
+        }
+    }
+
+    Ok(GgufCatalog {
+        files: files.to_vec(),
+        architecture,
+        split_count,
+        tensors,
+        three_d_tensors,
+    })
 }
 
 fn discover_weight_source(model_dir: &Path) -> Result<WeightSource, VindexError> {
@@ -65,39 +136,7 @@ fn discover_weight_source(model_dir: &Path) -> Result<WeightSource, VindexError>
         return Err(VindexError::NoSafetensors(model_dir.to_path_buf()));
     }
 
-    let mut architecture = "unknown".to_string();
-    let mut split_count = gguf_files.len();
-    let mut tensor_count = 0usize;
-    let mut three_d_tensors = 0usize;
-    for file in &gguf_files {
-        let gguf = larql_models::loading::gguf::GgufFile::open(file)?;
-        if architecture == "unknown" {
-            if let Some(arch) = gguf
-                .metadata
-                .get("general.architecture")
-                .and_then(|v| v.as_str())
-            {
-                architecture = arch.to_string();
-            }
-        }
-        if let Some(count) = gguf.metadata.get("split.count").and_then(|v| v.as_u32()) {
-            split_count = count as usize;
-        }
-        tensor_count += gguf.tensor_infos.len();
-        three_d_tensors += gguf
-            .tensor_infos
-            .iter()
-            .filter(|info| info.n_dims() > 2)
-            .count();
-    }
-
-    Ok(WeightSource::Gguf {
-        files: gguf_files,
-        architecture,
-        split_count,
-        tensor_count,
-        three_d_tensors,
-    })
+    Ok(WeightSource::Gguf(build_gguf_catalog(&gguf_files)?))
 }
 
 fn collect_ext(dir: &Path, ext: &str) -> Result<Vec<PathBuf>, VindexError> {
@@ -109,20 +148,13 @@ fn collect_ext(dir: &Path, ext: &str) -> Result<Vec<PathBuf>, VindexError> {
 }
 
 fn preflight_gguf_streaming(source: &WeightSource) -> Result<(), VindexError> {
-    if let WeightSource::Gguf {
-        files,
-        architecture,
-        split_count,
-        tensor_count,
-        three_d_tensors,
-    } = source
-    {
+    if let WeightSource::Gguf(catalog) = source {
         return Err(VindexError::UnsupportedGgufStreaming {
-            architecture: architecture.clone(),
-            files: files.len(),
-            split_count: *split_count,
-            tensor_count: *tensor_count,
-            three_d_tensors: *three_d_tensors,
+            architecture: catalog.architecture.clone(),
+            files: catalog.files.len(),
+            split_count: catalog.split_count,
+            tensor_count: catalog.tensors.len(),
+            three_d_tensors: catalog.three_d_tensors,
         });
     }
     Ok(())
@@ -890,9 +922,9 @@ mod tests {
         let source = discover_weight_source(&model_dir).unwrap();
 
         match source {
-            WeightSource::Gguf { files, .. } => {
-                assert_eq!(files.len(), 1);
-                assert!(files[0].ends_with("Kimi-00001-of-00013.gguf"));
+            WeightSource::Gguf(catalog) => {
+                assert_eq!(catalog.files.len(), 1);
+                assert!(catalog.files[0].ends_with("Kimi-00001-of-00013.gguf"));
             }
             other => panic!("expected GGUF source, got {other:?}"),
         }
@@ -921,12 +953,79 @@ mod tests {
         assert!(!msg.contains("no safetensors"), "{msg}");
     }
 
+    #[test]
+    fn build_gguf_catalog_indexes_tensors_across_shards_without_reading_data() {
+        let tmp = tempfile::tempdir().unwrap();
+        let model_dir = tmp.path().join("model");
+        std::fs::create_dir_all(&model_dir).unwrap();
+        let shard0 = model_dir.join("Kimi-00001-of-00002.gguf");
+        let shard1 = model_dir.join("Kimi-00002-of-00002.gguf");
+        write_minimal_gguf(&shard0, "deepseek2", 2, true);
+        write_minimal_gguf_named_tensor(
+            &shard1,
+            "deepseek2",
+            2,
+            "blk.0.attn_q_a.weight",
+            &[7168, 1536],
+            1,
+        );
+
+        let catalog = build_gguf_catalog(&[shard0.clone(), shard1.clone()]).unwrap();
+
+        assert_eq!(catalog.architecture, "deepseek2");
+        assert_eq!(catalog.split_count, 2);
+        assert_eq!(catalog.files, vec![shard0, shard1]);
+        assert_eq!(catalog.tensors.len(), 2);
+        assert_eq!(catalog.three_d_tensors, 1);
+
+        let expert = catalog.tensor("blk.0.ffn_gate_exps.weight").unwrap();
+        assert_eq!(expert.shard_idx, 0);
+        assert_eq!(expert.dims, vec![7168, 2048, 384]);
+        assert_eq!(expert.tensor_type, 0);
+        assert!(expert.is_3d());
+
+        let q_a = catalog.tensor("blk.0.attn_q_a.weight").unwrap();
+        assert_eq!(q_a.shard_idx, 1);
+        assert_eq!(q_a.dims, vec![7168, 1536]);
+        assert!(!q_a.is_3d());
+    }
+
     fn write_minimal_gguf(path: &std::path::Path, arch: &str, split_count: u16, include_3d: bool) {
+        if include_3d {
+            write_minimal_gguf_named_tensor(
+                path,
+                arch,
+                split_count,
+                "blk.0.ffn_gate_exps.weight",
+                &[7168, 2048, 384],
+                0,
+            );
+        } else {
+            write_minimal_gguf_header(path, arch, split_count, &[]);
+        }
+    }
+
+    fn write_minimal_gguf_named_tensor(
+        path: &std::path::Path,
+        arch: &str,
+        split_count: u16,
+        name: &str,
+        dims: &[u64],
+        tensor_type: u32,
+    ) {
+        write_minimal_gguf_header(path, arch, split_count, &[(name, dims, tensor_type)]);
+    }
+
+    fn write_minimal_gguf_header(
+        path: &std::path::Path,
+        arch: &str,
+        split_count: u16,
+        tensors: &[(&str, &[u64], u32)],
+    ) {
         let mut f = std::fs::File::create(path).unwrap();
         f.write_all(&0x4655_4747u32.to_le_bytes()).unwrap(); // GGUF
         f.write_all(&3u32.to_le_bytes()).unwrap(); // version
-        let n_tensors = if include_3d { 1u64 } else { 0u64 };
-        f.write_all(&n_tensors.to_le_bytes()).unwrap();
+        f.write_all(&(tensors.len() as u64).to_le_bytes()).unwrap();
         f.write_all(&2u64.to_le_bytes()).unwrap(); // metadata count
 
         write_string(&mut f, "general.architecture");
@@ -937,13 +1036,13 @@ mod tests {
         f.write_all(&2u32.to_le_bytes()).unwrap(); // uint16
         f.write_all(&split_count.to_le_bytes()).unwrap();
 
-        if include_3d {
-            write_string(&mut f, "blk.0.ffn_gate_exps.weight");
-            f.write_all(&3u32.to_le_bytes()).unwrap(); // n_dims
-            f.write_all(&7168u64.to_le_bytes()).unwrap();
-            f.write_all(&2048u64.to_le_bytes()).unwrap();
-            f.write_all(&384u64.to_le_bytes()).unwrap();
-            f.write_all(&0u32.to_le_bytes()).unwrap(); // F32
+        for (name, dims, tensor_type) in tensors {
+            write_string(&mut f, name);
+            f.write_all(&(dims.len() as u32).to_le_bytes()).unwrap();
+            for dim in *dims {
+                f.write_all(&dim.to_le_bytes()).unwrap();
+            }
+            f.write_all(&tensor_type.to_le_bytes()).unwrap();
             f.write_all(&0u64.to_le_bytes()).unwrap(); // offset
         }
     }
