@@ -22,6 +22,7 @@ rand_distr = "0.4"
 # Always available: needed for the criterion bench (accuracy metrics, engine_kind).
 larql-inference = { path = "../larql-inference" }
 larql-compute = { path = "../larql-compute" }
+larql-rotorquant = { path = "../larql-rotorquant" }
 
 # Optional: full real-model integration (real weights, vindex, tokenizer).
 larql-vindex = { path = "../larql-vindex", optional = true }

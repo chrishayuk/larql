@@ -1,11 +1,11 @@
 {
   "summary": {
     "capabilities": 48,
-    "requirements": 369,
-    "scenarios": 1302,
-    "scenarios_backed": 1185,
+    "requirements": 374,
+    "scenarios": 1309,
+    "scenarios_backed": 1192,
     "scenarios_unbacked": 117,
-    "test_refs": 3181,
+    "test_refs": 3188,
     "test_refs_unresolved": 0
   },
   "capabilities": [
@@ -7932,6 +7932,46 @@
               "line": 33
             }
           ]
+        },
+        {
+          "name": "RotorQuantStrategy MUST implement the KvStrategy trait",
+          "scenarios": [
+            {
+              "name": "Iso3 strategy runs through the harness",
+              "tests_resolved": [
+                "kv_cache_benchmark::rotorquant::tests::iso3_strategy_runs_through_harness"
+              ],
+              "tests_unresolved": [],
+              "unbacked": false,
+              "spec_file": "openspec/changes/rotorquant-strategy/specs/kv-cache-benchmark-strategies/spec.md",
+              "line": 11
+            },
+            {
+              "name": "Planar3 strategy runs through the harness",
+              "tests_resolved": [
+                "kv_cache_benchmark::rotorquant::tests::planar3_strategy_runs_through_harness"
+              ],
+              "tests_unresolved": [],
+              "unbacked": false,
+              "spec_file": "openspec/changes/rotorquant-strategy/specs/kv-cache-benchmark-strategies/spec.md",
+              "line": 16
+            }
+          ]
+        },
+        {
+          "name": "memory_bytes MUST be smaller than Standard FP16",
+          "scenarios": [
+            {
+              "name": "iso3 memory below fp16 baseline",
+              "tests_resolved": [
+                "kv_cache_benchmark::rotorquant::tests::memory_bytes_iso3_is_smaller_than_fp16"
+              ],
+              "tests_unresolved": [],
+              "unbacked": false,
+              "spec_file": "openspec/changes/rotorquant-strategy/specs/kv-cache-benchmark-strategies/spec.md",
+              "line": 30
+            }
+          ]
         }
       ]
     },
@@ -12629,6 +12669,61 @@
               "line": 53
             }
           ]
+        },
+        {
+          "name": "ServerEntry MUST carry a capabilities set",
+          "scenarios": [
+            {
+              "name": "default capabilities cover both attention and expert",
+              "tests_resolved": [
+                "larql_router::grid::tests::default_capabilities_advertise_both_attention_and_expert"
+              ],
+              "tests_unresolved": [],
+              "unbacked": false,
+              "spec_file": "openspec/changes/router-heterogeneous-shards/specs/router-grid/spec.md",
+              "line": 11
+            }
+          ]
+        },
+        {
+          "name": "Capability-filtered routing returns the right shard",
+          "scenarios": [
+            {
+              "name": "attention RPC routes to the GPU shard",
+              "tests_resolved": [
+                "larql_router::grid::tests::route_for_capability_filters_by_capability"
+              ],
+              "tests_unresolved": [],
+              "unbacked": false,
+              "spec_file": "openspec/changes/router-heterogeneous-shards/specs/router-grid/spec.md",
+              "line": 22
+            },
+            {
+              "name": "missing capability returns None",
+              "tests_resolved": [
+                "larql_router::grid::tests::route_for_capability_returns_none_when_no_match"
+              ],
+              "tests_unresolved": [],
+              "unbacked": false,
+              "spec_file": "openspec/changes/router-heterogeneous-shards/specs/router-grid/spec.md",
+              "line": 27
+            }
+          ]
+        },
+        {
+          "name": "Pre-change shards continue to match either capability",
+          "scenarios": [
+            {
+              "name": "legacy shard receives both capability types",
+              "tests_resolved": [
+                "larql_router::grid::tests::route_for_capability_falls_back_to_default_caps_shard"
+              ],
+              "tests_unresolved": [],
+              "unbacked": false,
+              "spec_file": "openspec/changes/router-heterogeneous-shards/specs/router-grid/spec.md",
+              "line": 36
+            }
+          ]
         }
       ]
     },
@@ -16857,6 +16952,24 @@
     }
   ],
   "orphan_tests": [
+    {
+      "fqn": "kv_cache_benchmark::rotorquant::iso3_strategy_runs_through_harness",
+      "file": "crates/kv-cache-benchmark/src/rotorquant.rs",
+      "line": 266,
+      "crate": "kv_cache_benchmark"
+    },
+    {
+      "fqn": "kv_cache_benchmark::rotorquant::planar3_strategy_runs_through_harness",
+      "file": "crates/kv-cache-benchmark/src/rotorquant.rs",
+      "line": 277,
+      "crate": "kv_cache_benchmark"
+    },
+    {
+      "fqn": "kv_cache_benchmark::rotorquant::memory_bytes_iso3_is_smaller_than_fp16",
+      "file": "crates/kv-cache-benchmark/src/rotorquant.rs",
+      "line": 285,
+      "crate": "kv_cache_benchmark"
+    },
     {
       "fqn": "kv_cache_benchmark::vindex_compare::tests::argmax_finds_max",
       "file": "crates/kv-cache-benchmark/src/vindex_compare.rs",
@@ -24306,43 +24419,67 @@
     {
       "fqn": "larql_router::grid::route_uses_inclusive_layer_ranges",
       "file": "crates/larql-router/src/grid.rs",
-      "line": 436,
+      "line": 490,
       "crate": "larql_router"
     },
     {
       "fqn": "larql_router::grid::route_without_model_uses_any_model_table",
       "file": "crates/larql-router/src/grid.rs",
-      "line": 449,
+      "line": 503,
       "crate": "larql_router"
     },
     {
       "fqn": "larql_router::grid::route_prefers_least_loaded_replica",
       "file": "crates/larql-router/src/grid.rs",
-      "line": 458,
+      "line": 512,
       "crate": "larql_router"
     },
     {
       "fqn": "larql_router::grid::deregister_removes_server_from_route_table",
       "file": "crates/larql-router/src/grid.rs",
-      "line": 475,
+      "line": 529,
       "crate": "larql_router"
     },
     {
       "fqn": "larql_router::grid::heartbeat_updates_load_without_rebuilding_topology",
       "file": "crates/larql-router/src/grid.rs",
-      "line": 487,
+      "line": 541,
       "crate": "larql_router"
     },
     {
       "fqn": "larql_router::grid::route_all_returns_first_uncovered_layer",
       "file": "crates/larql-router/src/grid.rs",
-      "line": 503,
+      "line": 557,
       "crate": "larql_router"
     },
     {
       "fqn": "larql_router::grid::status_response_reports_shards_and_gaps",
       "file": "crates/larql-router/src/grid.rs",
-      "line": 512,
+      "line": 566,
+      "crate": "larql_router"
+    },
+    {
+      "fqn": "larql_router::grid::default_capabilities_advertise_both_attention_and_expert",
+      "file": "crates/larql-router/src/grid.rs",
+      "line": 599,
+      "crate": "larql_router"
+    },
+    {
+      "fqn": "larql_router::grid::route_for_capability_filters_by_capability",
+      "file": "crates/larql-router/src/grid.rs",
+      "line": 607,
+      "crate": "larql_router"
+    },
+    {
+      "fqn": "larql_router::grid::route_for_capability_returns_none_when_no_match",
+      "file": "crates/larql-router/src/grid.rs",
+      "line": 627,
+      "crate": "larql_router"
+    },
+    {
+      "fqn": "larql_router::grid::route_for_capability_falls_back_to_default_caps_shard",
+      "file": "crates/larql-router/src/grid.rs",
+      "line": 640,
       "crate": "larql_router"
     },
     {

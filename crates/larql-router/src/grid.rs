@@ -29,6 +29,29 @@ pub struct ServerEntry {
     pub ram_used: u64,
     pub requests_in_flight: u32,
     pub last_seen: Instant,
+    /// Set of capabilities this shard advertises. Backwards-compat:
+    /// pre-`router-heterogeneous-shards` shards register without
+    /// this field; they default to `{"attention", "expert"}` so they
+    /// continue to receive every RPC. Real shards send their actual
+    /// set via the announce proto extension landing with the
+    /// `attention-service-routes` change.
+    pub capabilities: Vec<String>,
+}
+
+impl ServerEntry {
+    /// Default capability set used for shards that register without
+    /// an explicit `capabilities` field. Equivalent to "this shard
+    /// accepts any RPC".
+    pub fn default_capabilities() -> Vec<String> {
+        vec!["attention".to_string(), "expert".to_string()]
+    }
+
+    /// Whether this shard advertises `cap`. Case-insensitive.
+    pub fn supports(&self, cap: &str) -> bool {
+        self.capabilities
+            .iter()
+            .any(|c| c.eq_ignore_ascii_case(cap))
+    }
 }
 
 // ── Grid state ────────────────────────────────────────────────────────────────
@@ -95,6 +118,31 @@ impl GridState {
             server_ids
                 .iter()
                 .filter_map(|id| self.servers.get(id))
+                .min_by_key(|s| s.requests_in_flight)
+                .map(|s| s.listen_url.clone())
+        })
+    }
+
+    /// Route one layer to a shard that advertises `capability`.
+    /// Lands as part of the `router-heterogeneous-shards` change —
+    /// attention RPCs filter to capability="attention", expert RPCs
+    /// to capability="expert". Returns `None` when no shard covers
+    /// the layer with the requested capability.
+    pub fn route_for_capability(
+        &self,
+        model_id: Option<&str>,
+        layer: u32,
+        capability: &str,
+    ) -> Option<String> {
+        let ids = match model_id {
+            Some(m) => self.route_table.get(&(m.to_owned(), layer)),
+            None => self.any_model_table.get(&layer),
+        };
+        ids.and_then(|server_ids| {
+            server_ids
+                .iter()
+                .filter_map(|id| self.servers.get(id))
+                .filter(|s| s.supports(capability))
                 .min_by_key(|s| s.requests_in_flight)
                 .map(|s| s.listen_url.clone())
         })
@@ -335,6 +383,11 @@ impl GridService for GridServiceImpl {
                                 ram_used: ram_bytes,
                                 requests_in_flight: 0,
                                 last_seen: Instant::now(),
+                                // Pre-`router-heterogeneous-shards` proto
+                                // doesn't carry a capabilities field on
+                                // AnnounceMsg yet; default to "everything"
+                                // so existing shards keep working.
+                                capabilities: ServerEntry::default_capabilities(),
                             };
                             state.write().await.register(entry);
                             registered_model = Some((model_id, layer_start, layer_end));
@@ -429,6 +482,7 @@ mod tests {
             ram_used: 1024,
             requests_in_flight: 0,
             last_seen: Instant::now(),
+            capabilities: ServerEntry::default_capabilities(),
         }
     }
 
@@ -524,5 +578,79 @@ mod tests {
         assert_eq!(model.gaps.len(), 1);
         assert_eq!(model.gaps[0].layer_start, 2);
         assert_eq!(model.gaps[0].layer_end, 2);
+    }
+
+    // ── router-heterogeneous-shards ──────────────────────────────────
+
+    fn entry_with_caps(
+        server_id: &str,
+        listen_url: &str,
+        model_id: &str,
+        layer_start: u32,
+        layer_end: u32,
+        capabilities: &[&str],
+    ) -> ServerEntry {
+        let mut e = entry(server_id, listen_url, model_id, layer_start, layer_end);
+        e.capabilities = capabilities.iter().map(|s| s.to_string()).collect();
+        e
+    }
+
+    #[test]
+    fn default_capabilities_advertise_both_attention_and_expert() {
+        let e = entry("a", "http://a", "model-a", 0, 0);
+        assert!(e.supports("attention"));
+        assert!(e.supports("expert"));
+        assert!(!e.supports("rotorquant"));
+    }
+
+    #[test]
+    fn route_for_capability_filters_by_capability() {
+        let mut state = GridState::default();
+        state.register(entry_with_caps(
+            "ffn", "http://ffn", "model-a", 0, 1, &["expert"],
+        ));
+        state.register(entry_with_caps(
+            "gpu", "http://gpu", "model-a", 0, 1, &["attention"],
+        ));
+
+        assert_eq!(
+            state.route_for_capability(Some("model-a"), 0, "attention"),
+            Some("http://gpu".to_string())
+        );
+        assert_eq!(
+            state.route_for_capability(Some("model-a"), 0, "expert"),
+            Some("http://ffn".to_string())
+        );
+    }
+
+    #[test]
+    fn route_for_capability_returns_none_when_no_match() {
+        let mut state = GridState::default();
+        state.register(entry_with_caps(
+            "ffn", "http://ffn", "model-a", 0, 1, &["expert"],
+        ));
+
+        assert_eq!(
+            state.route_for_capability(Some("model-a"), 0, "attention"),
+            None
+        );
+    }
+
+    #[test]
+    fn route_for_capability_falls_back_to_default_caps_shard() {
+        // Pre-`router-heterogeneous-shards` shards have the default
+        // capability set ({"attention", "expert"}); they should match
+        // either capability filter.
+        let mut state = GridState::default();
+        state.register(entry("legacy", "http://legacy", "model-a", 0, 1));
+
+        assert_eq!(
+            state.route_for_capability(Some("model-a"), 0, "attention"),
+            Some("http://legacy".to_string())
+        );
+        assert_eq!(
+            state.route_for_capability(Some("model-a"), 0, "expert"),
+            Some("http://legacy".to_string())
+        );
     }
 }

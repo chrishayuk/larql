@@ -50,6 +50,22 @@ sub-change.
   Iso4). **9/9** round-trip tests + 1 doctest pass; cosine ≥ 0.95
   including Gemma 4B head_dim=320. CUDA module is a feature-flagged
   stub today; PTX kernels land in a follow-up.
+- ✅ `rotorquant-strategy`: `RotorQuantStrategy` joins the
+  `KvStrategy` trait family in `kv-cache-benchmark`. Four
+  constructors (`iso3`, `planar3`, `iso4`, `planar4`) plumb
+  `larql-rotorquant`'s CPU reference into the same harness used by
+  Standard / TurboQuant / Markov / Apollo. **3/3** strategy tests
+  pass.
+
+### Phase 4 — Router topology
+
+- ✅ `router-heterogeneous-shards`: `ServerEntry` carries a
+  `capabilities: Vec<String>` set; `GridState::route_for_capability`
+  filters by capability + layer range. Backwards-compat default
+  for legacy shards is `["attention", "expert"]`. **4/4** new grid
+  tests pass alongside the existing 7. Proto extension to carry
+  capabilities on the announce wire ships with
+  `attention-service-routes`.
 
 ## Not yet shipped (known follow-up sub-changes)
 
@@ -60,20 +76,16 @@ that benefits from explicit human review before launching.
 - **`rotorquant-attention-integration`** — wires `KvFormat` into
   `larql_inference::attention::KvCache`; deferred-K behaviour during
   prefill; KV-surgery operations transparently quantise on insert /
-  dequant on read; `RotorQuantStrategy` joins
-  `kv-cache-benchmark::strategies`. ~3–4 days of careful
-  inference-path work.
+  dequant on read. `rotorquant-strategy` (shipped) is the
+  preliminary plumbing; full KvCache integration is the deeper
+  ~3–4-day inference-path work.
 - **`attention-service-routes`** — new HTTP + gRPC endpoints on
   `larql-server` (`/v1/attention/{session,prefill,decode}`,
   `/v1/kv-cache/{snapshot,restore,free}`); session lifecycle;
-  binary KV-snapshot wire format. Depends on test-fixture drift in
-  `larql-server/tests/test_expert_endpoint.rs` being repaired (the
-  `MoeLayerWeights` API moved from single buffers to per-expert
-  `Vec<&[u8]>`).
-- **`router-heterogeneous-shards`** — `larql-router` accepts
-  `capabilities: ["attention" | "expert"]` on shard registration;
-  routes by capability + layer range; per-hop deadline timeout
-  prevents heterogeneous deadlocks.
+  binary KV-snapshot wire format; extends `AnnounceMsg` proto with
+  the capability set so `route_for_capability` (shipped) gets real
+  data. Depends on test-fixture drift in
+  `larql-server/tests/test_expert_endpoint.rs` being repaired.
 - **`deploy-compose-end-to-end`** — `docker compose up` boots
   Gemma 4B end-to-end through the router; `make demo` target
   produces a one-shot inference; PERFORMANCE.md gets the measured
@@ -99,8 +111,10 @@ cargo test -p larql-compute --features cuda --test test_cuda_f32   →  9 tests
 cargo test -p larql-compute --features cuda --test test_cuda_q4    →  5 tests
 cargo test -p larql-compute --features cuda --test test_cuda_attn  →  6 tests
 cargo test -p larql-rotorquant                                     →  9 tests + 1 doctest
+cargo test -p kv-cache-benchmark --lib rotorquant                  →  3 tests
+cargo test -p larql-router --bin larql-router grid::tests          → 11 tests
                                                                    ────
-                                                                    30 tests
+                                                                    44 tests
 ```
 
 All require `LARQL_CUDA_AVAILABLE=1` for the GPU-gated subset; the
@@ -132,6 +146,8 @@ not on the critical path for it:
 | `876b42c` | [cuda-q4-matvec] Q4_0 / Q4_K / Q6_K matvec on cuBLAS via host dequant |
 | `0cdbf1b` | [cuda-fused-attention] scaled-softmax PTX kernel + decode_attention helper |
 | `dbf57e7` | [rotorquant-kernels] new larql-rotorquant crate with CPU reference |
+| _post-wrapup_ | [rotorquant-strategy] RotorQuantStrategy joins kv-cache-benchmark |
+| _post-wrapup_ | [router-heterogeneous-shards] capability-tagged routing in larql-router |
 
 ## Bring-up
 

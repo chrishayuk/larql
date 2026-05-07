@@ -8,6 +8,7 @@ pub mod graph_walk;
 pub mod markov_residual;
 pub mod metrics;
 pub mod model_config;
+pub mod rotorquant;
 pub mod shader_bench;
 pub mod standard_kv;
 pub mod turboquant;
