@@ -1,11 +1,11 @@
 {
   "summary": {
-    "capabilities": 48,
-    "requirements": 398,
-    "scenarios": 1348,
+    "capabilities": 49,
+    "requirements": 408,
+    "scenarios": 1376,
     "scenarios_backed": 1197,
-    "scenarios_unbacked": 151,
-    "test_refs": 3227,
+    "scenarios_unbacked": 179,
+    "test_refs": 3255,
     "test_refs_unresolved": 0
   },
   "capabilities": [
@@ -12576,8 +12576,50 @@
     },
     {
       "name": "router-grid",
-      "spec_file": "openspec/changes/backfill-specs/specs/router-grid/spec.md",
+      "spec_file": "openspec/changes/attention-service-routes/specs/router-grid/spec.md",
       "requirements": [
+        {
+          "name": "register MUST consume the capabilities field",
+          "scenarios": [
+            {
+              "name": "register stores capabilities from the announce",
+              "tests_resolved": [],
+              "tests_unresolved": [],
+              "unbacked": true,
+              "spec_file": "openspec/changes/attention-service-routes/specs/router-grid/spec.md",
+              "line": 11
+            },
+            {
+              "name": "register stores cached_prefixes from the announce",
+              "tests_resolved": [],
+              "tests_unresolved": [],
+              "unbacked": true,
+              "spec_file": "openspec/changes/attention-service-routes/specs/router-grid/spec.md",
+              "line": 20
+            }
+          ]
+        },
+        {
+          "name": "update_heartbeat MUST refresh cached_prefixes",
+          "scenarios": [
+            {
+              "name": "heartbeat updates the cached prefix bloom",
+              "tests_resolved": [],
+              "tests_unresolved": [],
+              "unbacked": true,
+              "spec_file": "openspec/changes/attention-service-routes/specs/router-grid/spec.md",
+              "line": 36
+            },
+            {
+              "name": "heartbeat without cached_prefixes preserves prior value",
+              "tests_resolved": [],
+              "tests_unresolved": [],
+              "unbacked": true,
+              "spec_file": "openspec/changes/attention-service-routes/specs/router-grid/spec.md",
+              "line": 45
+            }
+          ]
+        },
         {
           "name": "Static layer-shard parsing and ownership",
           "scenarios": [
@@ -13031,6 +13073,62 @@
       ]
     },
     {
+      "name": "router-protocol",
+      "spec_file": "openspec/changes/attention-service-routes/specs/router-protocol/spec.md",
+      "requirements": [
+        {
+          "name": "AnnounceMsg SHALL carry a capabilities list",
+          "scenarios": [
+            {
+              "name": "announce with explicit capabilities preserves the list",
+              "tests_resolved": [],
+              "tests_unresolved": [],
+              "unbacked": true,
+              "spec_file": "openspec/changes/attention-service-routes/specs/router-protocol/spec.md",
+              "line": 10
+            },
+            {
+              "name": "announce without capabilities defaults to both",
+              "tests_resolved": [],
+              "tests_unresolved": [],
+              "unbacked": true,
+              "spec_file": "openspec/changes/attention-service-routes/specs/router-protocol/spec.md",
+              "line": 17
+            }
+          ]
+        },
+        {
+          "name": "HeartbeatMsg SHALL carry the cached-prefix bloom",
+          "scenarios": [
+            {
+              "name": "heartbeat with bloom updates the entry",
+              "tests_resolved": [],
+              "tests_unresolved": [],
+              "unbacked": true,
+              "spec_file": "openspec/changes/attention-service-routes/specs/router-protocol/spec.md",
+              "line": 32
+            },
+            {
+              "name": "heartbeat without bloom leaves prior value",
+              "tests_resolved": [],
+              "tests_unresolved": [],
+              "unbacked": true,
+              "spec_file": "openspec/changes/attention-service-routes/specs/router-protocol/spec.md",
+              "line": 40
+            },
+            {
+              "name": "malformed bloom is rejected without panic",
+              "tests_resolved": [],
+              "tests_unresolved": [],
+              "unbacked": true,
+              "spec_file": "openspec/changes/attention-service-routes/specs/router-protocol/spec.md",
+              "line": 49
+            }
+          ]
+        }
+      ]
+    },
+    {
       "name": "server-attention-service",
       "spec_file": "openspec/changes/attention-service-prefill-decode-split/specs/server-attention-service/spec.md",
       "requirements": [
@@ -13115,6 +13213,188 @@
               "unbacked": true,
               "spec_file": "openspec/changes/attention-service-prefill-decode-split/specs/server-attention-service/spec.md",
               "line": 67
+            }
+          ]
+        },
+        {
+          "name": "Server SHALL expose session lifecycle endpoints",
+          "scenarios": [
+            {
+              "name": "create returns a fresh session id",
+              "tests_resolved": [],
+              "tests_unresolved": [],
+              "unbacked": true,
+              "spec_file": "openspec/changes/attention-service-routes/specs/server-attention-service/spec.md",
+              "line": 13
+            },
+            {
+              "name": "get on unknown session id returns 404",
+              "tests_resolved": [],
+              "tests_unresolved": [],
+              "unbacked": true,
+              "spec_file": "openspec/changes/attention-service-routes/specs/server-attention-service/spec.md",
+              "line": 21
+            },
+            {
+              "name": "delete makes get 404",
+              "tests_resolved": [],
+              "tests_unresolved": [],
+              "unbacked": true,
+              "spec_file": "openspec/changes/attention-service-routes/specs/server-attention-service/spec.md",
+              "line": 28
+            },
+            {
+              "name": "idle sessions are reaped after TTL",
+              "tests_resolved": [],
+              "tests_unresolved": [],
+              "unbacked": true,
+              "spec_file": "openspec/changes/attention-service-routes/specs/server-attention-service/spec.md",
+              "line": 34
+            }
+          ]
+        },
+        {
+          "name": "Prefill SHALL populate the cache and return per-layer residuals",
+          "scenarios": [
+            {
+              "name": "prefill populates all layers",
+              "tests_resolved": [],
+              "tests_unresolved": [],
+              "unbacked": true,
+              "spec_file": "openspec/changes/attention-service-routes/specs/server-attention-service/spec.md",
+              "line": 51
+            },
+            {
+              "name": "prefill returns layers \u00d7 seq_len \u00d7 hidden_dim residuals",
+              "tests_resolved": [],
+              "tests_unresolved": [],
+              "unbacked": true,
+              "spec_file": "openspec/changes/attention-service-routes/specs/server-attention-service/spec.md",
+              "line": 58
+            },
+            {
+              "name": "prefill rejects unknown session",
+              "tests_resolved": [],
+              "tests_unresolved": [],
+              "unbacked": true,
+              "spec_file": "openspec/changes/attention-service-routes/specs/server-attention-service/spec.md",
+              "line": 67
+            },
+            {
+              "name": "binary form round-trips",
+              "tests_resolved": [],
+              "tests_unresolved": [],
+              "unbacked": true,
+              "spec_file": "openspec/changes/attention-service-routes/specs/server-attention-service/spec.md",
+              "line": 74
+            }
+          ]
+        },
+        {
+          "name": "Decode SHALL advance the cache by one token and return the residual",
+          "scenarios": [
+            {
+              "name": "decode advances seqlen",
+              "tests_resolved": [],
+              "tests_unresolved": [],
+              "unbacked": true,
+              "spec_file": "openspec/changes/attention-service-routes/specs/server-attention-service/spec.md",
+              "line": 91
+            },
+            {
+              "name": "decode residual matches local reference within tolerance",
+              "tests_resolved": [],
+              "tests_unresolved": [],
+              "unbacked": true,
+              "spec_file": "openspec/changes/attention-service-routes/specs/server-attention-service/spec.md",
+              "line": 98
+            },
+            {
+              "name": "decode before prefill is rejected",
+              "tests_resolved": [],
+              "tests_unresolved": [],
+              "unbacked": true,
+              "spec_file": "openspec/changes/attention-service-routes/specs/server-attention-service/spec.md",
+              "line": 106
+            }
+          ]
+        },
+        {
+          "name": "KV-cache snapshot SHALL be a versioned binary blob",
+          "scenarios": [
+            {
+              "name": "snapshot magic + version are present",
+              "tests_resolved": [],
+              "tests_unresolved": [],
+              "unbacked": true,
+              "spec_file": "openspec/changes/attention-service-routes/specs/server-attention-service/spec.md",
+              "line": 128
+            },
+            {
+              "name": "snapshot then restore round-trips for FP32",
+              "tests_resolved": [],
+              "tests_unresolved": [],
+              "unbacked": true,
+              "spec_file": "openspec/changes/attention-service-routes/specs/server-attention-service/spec.md",
+              "line": 135
+            },
+            {
+              "name": "snapshot then restore round-trips for compressed formats",
+              "tests_resolved": [],
+              "tests_unresolved": [],
+              "unbacked": true,
+              "spec_file": "openspec/changes/attention-service-routes/specs/server-attention-service/spec.md",
+              "line": 144
+            },
+            {
+              "name": "unknown version is rejected",
+              "tests_resolved": [],
+              "tests_unresolved": [],
+              "unbacked": true,
+              "spec_file": "openspec/changes/attention-service-routes/specs/server-attention-service/spec.md",
+              "line": 152
+            }
+          ]
+        },
+        {
+          "name": "Server SHALL announce its `--role` as a router capability",
+          "scenarios": [
+            {
+              "name": "attention role announces correctly",
+              "tests_resolved": [],
+              "tests_unresolved": [],
+              "unbacked": true,
+              "spec_file": "openspec/changes/attention-service-routes/specs/server-attention-service/spec.md",
+              "line": 167
+            },
+            {
+              "name": "legacy server (no --role) announces both",
+              "tests_resolved": [],
+              "tests_unresolved": [],
+              "unbacked": true,
+              "spec_file": "openspec/changes/attention-service-routes/specs/server-attention-service/spec.md",
+              "line": 174
+            }
+          ]
+        },
+        {
+          "name": "Heartbeat SHALL include the cached-prefix bloom",
+          "scenarios": [
+            {
+              "name": "heartbeat includes the cached prefixes",
+              "tests_resolved": [],
+              "tests_unresolved": [],
+              "unbacked": true,
+              "spec_file": "openspec/changes/attention-service-routes/specs/server-attention-service/spec.md",
+              "line": 188
+            },
+            {
+              "name": "empty server emits empty bloom",
+              "tests_resolved": [],
+              "tests_unresolved": [],
+              "unbacked": true,
+              "spec_file": "openspec/changes/attention-service-routes/specs/server-attention-service/spec.md",
+              "line": 195
             }
           ]
         },
