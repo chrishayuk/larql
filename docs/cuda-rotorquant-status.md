@@ -88,16 +88,24 @@ sub-change.
   the capability set so `route_for_capability` (shipped) gets real
   data. Depends on test-fixture drift in
   `larql-server/tests/test_expert_endpoint.rs` being repaired.
-- **`rotorquant-cuda-kernels`** — replaces the CPU reference in
-  `larql-rotorquant` with PTX kernels for planar3 / iso3
-  quantize+dequantize; flips
-  `Capability::KvCompressionRotorQuant` on `CudaBackend`.
+- **`rotorquant-cuda-kernels`** — proposal-only. Four PTX kernels
+  (Iso/Planar × quantize/dequantize) compiled via cudarc NVRTC,
+  cached on disk. Round-trip cosine ≥ 0.99 vs CPU reference;
+  ≥ 10× speedup target on RTX 4090. Flips
+  `Capability::KvCompressionRotorQuant` on `CudaBackend`. See
+  `openspec/changes/rotorquant-cuda-kernels/`.
 - **`engine-rotorquant-auto-compress`** — proposal-only.
   Decorator-pattern `RotorQuantEngine { inner: Box<dyn KvEngine>,
   format: KvFormat }` that wraps any underlying engine and calls
   `cache.quantize_layer` post-decode. Adds `cache_mut()` to the
   `KvEngine` trait. Spec string: `iso3:inner=unlimited-context`.
   See `openspec/changes/engine-rotorquant-auto-compress/`.
+- **`rotorquant-promote-on-read`** — proposal-only. Companion to
+  `auto-compress`: extends `KvCache::get_layer` to transparently
+  dequantise compressed layers on read, plus a `get_layer_lazy`
+  variant for snapshot/diagnostics callers. Adds
+  `promote_on_read_count` metric. See
+  `openspec/changes/rotorquant-promote-on-read/`.
 - **`deploy-compose-end-to-end`** — `docker compose up` boots
   Gemma 4B end-to-end through the router; `make demo` target
   produces a one-shot inference; PERFORMANCE.md gets the measured

@@ -1,11 +1,11 @@
 {
   "summary": {
     "capabilities": 48,
-    "requirements": 390,
-    "scenarios": 1336,
+    "requirements": 398,
+    "scenarios": 1347,
     "scenarios_backed": 1195,
-    "scenarios_unbacked": 141,
-    "test_refs": 3215,
+    "scenarios_unbacked": 152,
+    "test_refs": 3226,
     "test_refs_unresolved": 0
   },
   "capabilities": [
@@ -5296,6 +5296,66 @@
               "line": 33
             }
           ]
+        },
+        {
+          "name": "get_layer MUST auto-promote compressed layers",
+          "scenarios": [
+            {
+              "name": "get_layer returns FP32 after compress",
+              "tests_resolved": [],
+              "tests_unresolved": [],
+              "unbacked": true,
+              "spec_file": "openspec/changes/rotorquant-promote-on-read/specs/inference-attention-and-kv/spec.md",
+              "line": 12
+            },
+            {
+              "name": "get_layer caches the promoted copy",
+              "tests_resolved": [],
+              "tests_unresolved": [],
+              "unbacked": true,
+              "spec_file": "openspec/changes/rotorquant-promote-on-read/specs/inference-attention-and-kv/spec.md",
+              "line": 17
+            }
+          ]
+        },
+        {
+          "name": "get_layer_lazy MUST be the explicit-no-promote variant",
+          "scenarios": [
+            {
+              "name": "get_layer_lazy never promotes",
+              "tests_resolved": [],
+              "tests_unresolved": [],
+              "unbacked": true,
+              "spec_file": "openspec/changes/rotorquant-promote-on-read/specs/inference-attention-and-kv/spec.md",
+              "line": 29
+            }
+          ]
+        },
+        {
+          "name": "promote_on_read_count MUST increment per promote",
+          "scenarios": [
+            {
+              "name": "counter increments only on first promote",
+              "tests_resolved": [],
+              "tests_unresolved": [],
+              "unbacked": true,
+              "spec_file": "openspec/changes/rotorquant-promote-on-read/specs/inference-attention-and-kv/spec.md",
+              "line": 41
+            }
+          ]
+        },
+        {
+          "name": "clear_layer MUST also clear compressed side-table",
+          "scenarios": [
+            {
+              "name": "clear erases both storages",
+              "tests_resolved": [],
+              "tests_unresolved": [],
+              "unbacked": true,
+              "spec_file": "openspec/changes/rotorquant-promote-on-read/specs/inference-attention-and-kv/spec.md",
+              "line": 52
+            }
+          ]
         }
       ]
     },
@@ -8181,6 +8241,74 @@
               "unbacked": true,
               "spec_file": "openspec/changes/cuda-and-rotorquant-kv/specs/kv-cache-rotorquant/spec.md",
               "line": 93
+            }
+          ]
+        },
+        {
+          "name": "CUDA backend MUST ship PTX kernels for Iso and Planar formats",
+          "scenarios": [
+            {
+              "name": "kernel compile cached on disk",
+              "tests_resolved": [],
+              "tests_unresolved": [],
+              "unbacked": true,
+              "spec_file": "openspec/changes/rotorquant-cuda-kernels/specs/kv-cache-rotorquant/spec.md",
+              "line": 7
+            }
+          ]
+        },
+        {
+          "name": "CUDA round-trip MUST cosine-match the CPU reference within 1e-3",
+          "scenarios": [
+            {
+              "name": "Iso3 K round-trip CPU \u2194 CUDA parity",
+              "tests_resolved": [],
+              "tests_unresolved": [],
+              "unbacked": true,
+              "spec_file": "openspec/changes/rotorquant-cuda-kernels/specs/kv-cache-rotorquant/spec.md",
+              "line": 16
+            },
+            {
+              "name": "Iso3 V round-trip uses inverse rotation correctly",
+              "tests_resolved": [],
+              "tests_unresolved": [],
+              "unbacked": true,
+              "spec_file": "openspec/changes/rotorquant-cuda-kernels/specs/kv-cache-rotorquant/spec.md",
+              "line": 21
+            },
+            {
+              "name": "Planar3 round-trip parity",
+              "tests_resolved": [],
+              "tests_unresolved": [],
+              "unbacked": true,
+              "spec_file": "openspec/changes/rotorquant-cuda-kernels/specs/kv-cache-rotorquant/spec.md",
+              "line": 26
+            }
+          ]
+        },
+        {
+          "name": "CUDA path MUST be \u2265 10\u00d7 faster than CPU reference",
+          "scenarios": [
+            {
+              "name": "throughput beats 10\u00d7 on Gemma 4B head shape",
+              "tests_resolved": [],
+              "tests_unresolved": [],
+              "unbacked": true,
+              "spec_file": "openspec/changes/rotorquant-cuda-kernels/specs/kv-cache-rotorquant/spec.md",
+              "line": 35
+            }
+          ]
+        },
+        {
+          "name": "Capability::KvCompressionRotorQuant MUST flip on CudaBackend",
+          "scenarios": [
+            {
+              "name": "capability bit reflects kernel availability",
+              "tests_resolved": [],
+              "tests_unresolved": [],
+              "unbacked": true,
+              "spec_file": "openspec/changes/rotorquant-cuda-kernels/specs/kv-cache-rotorquant/spec.md",
+              "line": 44
             }
           ]
         },
