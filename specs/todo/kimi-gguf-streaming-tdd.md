@@ -100,3 +100,28 @@ The role classifier can point to packed Kimi tensors, but extraction still canno
 
 ### Result
 Added private `PackedExpertSlice` geometry and `packed_expert_slice()` over catalog entries. It maps Kimi GGUF packed expert tensors from `[cols, rows, experts]` into conventional 2D expert matrices `[rows, cols]`, records expert count, per-expert element span, and element offset, and rejects out-of-range expert indices. This still performs no tensor-data reads or dequantization; the next slice can use this geometry to stream/dequantize one packed expert projection.
+
+## Next blocker: mmap/dequant one packed expert slice
+
+### Problem
+The extractor can compute which elements belong to a packed expert, but it still cannot read tensor bytes from a GGUF shard and materialize one expert projection. Query smoke requires browse extraction to build gate/up/down matrices without eager loading a whole Kimi shard.
+
+### RED plan
+1. Add a miniature GGUF fixture with one F32 packed 3D tensor `blk.0.ffn_gate_exps.weight` and dims `[4, 3, 2]`.
+2. Store two experts with distinct values in GGUF contiguous order.
+3. Assert a wished-for `read_packed_expert_slice_f32(&catalog, name, expert_idx)` returns expert 0 and expert 1 as separate conventional `3 x 4` matrices.
+4. Assert out-of-range expert indices return an error.
+
+### GREEN plan
+1. Add offset/data-offset metadata to the GGUF catalog entries.
+2. Implement a minimal mmap reader for F32 packed expert slices.
+3. Keep quantized Q4_K/Q6_K packed slice support as the next slice after the F32 seam is green.
+
+### Acceptance criteria
+- [x] RED packed-slice reader test fails before implementation.
+- [x] GREEN packed-slice reader test passes.
+- [x] Existing GGUF catalog/classifier/preflight tests still pass.
+- [x] Real Kimi smoke still returns the same unsupported-layout diagnostic until quantized packed slices are wired.
+
+### Result
+Added a minimal F32-only packed expert slice reader. `GgufCatalog` now records each tensor's shard-local tensor offset and shard data offset; `read_packed_expert_slice_f32()` mmaps the containing shard, reads only the requested expert byte range, and returns a conventional `[rows, cols]` `Array2<f32>`. This proves the tensor-data slicing seam without eager whole-tensor loads. The next blocker is quantized packed slice support for Kimi's Q4_K/Q6_K tensors.

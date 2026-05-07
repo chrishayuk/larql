@@ -47,6 +47,8 @@ struct GgufTensorEntry {
     shard_idx: usize,
     dims: Vec<u64>,
     tensor_type: u32,
+    tensor_offset: u64,
+    data_offset: u64,
 }
 
 impl GgufCatalog {
@@ -95,6 +97,8 @@ fn build_gguf_catalog(files: &[PathBuf]) -> Result<GgufCatalog, VindexError> {
                     shard_idx,
                     dims,
                     tensor_type: info.tensor_type(),
+                    tensor_offset: info.offset(),
+                    data_offset: gguf.data_offset,
                 },
             );
         }
@@ -261,6 +265,101 @@ fn packed_expert_slice(
         cols,
         element_offset,
         element_len,
+    })
+}
+
+#[cfg_attr(not(test), allow(dead_code))]
+fn read_packed_expert_slice_f32(
+    catalog: &GgufCatalog,
+    tensor_name: &str,
+    expert_idx: usize,
+) -> Result<Array2<f32>, VindexError> {
+    let entry = catalog
+        .tensor(tensor_name)
+        .ok_or_else(|| VindexError::MissingTensor(tensor_name.to_string()))?;
+    if entry.tensor_type != larql_models::quant::ggml::TYPE_F32 {
+        return Err(VindexError::UnsupportedDtype(format!(
+            "GGUF tensor {} type {} cannot be read by F32 packed-slice reader",
+            entry.name, entry.tensor_type
+        )));
+    }
+    let slice = packed_expert_slice(entry, expert_idx)?;
+    let shard_path = catalog.files.get(entry.shard_idx).ok_or_else(|| {
+        VindexError::Parse(format!(
+            "GGUF tensor {} points at missing shard index {}",
+            entry.name, entry.shard_idx
+        ))
+    })?;
+    let file = std::fs::File::open(shard_path)?;
+    let mmap = unsafe { memmap2::Mmap::map(&file)? };
+
+    let tensor_abs_offset = entry
+        .data_offset
+        .checked_add(entry.tensor_offset)
+        .ok_or_else(|| {
+            VindexError::Parse(format!(
+                "GGUF tensor {} data offset overflow: data_offset={} tensor_offset={}",
+                entry.name, entry.data_offset, entry.tensor_offset
+            ))
+        })?;
+    let slice_byte_offset = (slice.element_offset as u64)
+        .checked_mul(std::mem::size_of::<f32>() as u64)
+        .ok_or_else(|| {
+            VindexError::Parse(format!(
+                "GGUF tensor {} slice byte offset overflow: element_offset={}",
+                entry.name, slice.element_offset
+            ))
+        })?;
+    let abs_offset = tensor_abs_offset
+        .checked_add(slice_byte_offset)
+        .ok_or_else(|| {
+            VindexError::Parse(format!(
+                "GGUF tensor {} absolute slice offset overflow: tensor_offset={} slice_byte_offset={}",
+                entry.name, tensor_abs_offset, slice_byte_offset
+            ))
+        })?;
+    let byte_len = slice
+        .element_len
+        .checked_mul(std::mem::size_of::<f32>())
+        .ok_or_else(|| {
+            VindexError::Parse(format!(
+                "GGUF tensor {} slice byte length overflow: element_len={}",
+                entry.name, slice.element_len
+            ))
+        })?;
+    let start = usize::try_from(abs_offset).map_err(|_| {
+        VindexError::Parse(format!(
+            "GGUF tensor {} absolute slice offset {} exceeds usize",
+            entry.name, abs_offset
+        ))
+    })?;
+    let end = start.checked_add(byte_len).ok_or_else(|| {
+        VindexError::Parse(format!(
+            "GGUF tensor {} slice range overflows: start={} len={}",
+            entry.name, start, byte_len
+        ))
+    })?;
+    if end > mmap.len() {
+        return Err(VindexError::Parse(format!(
+            "GGUF tensor {} slice out of bounds (offset {} + size {} > file {})",
+            entry.name,
+            abs_offset,
+            byte_len,
+            mmap.len()
+        )));
+    }
+
+    let mut values = Vec::with_capacity(slice.element_len);
+    for bytes in mmap[start..end].chunks_exact(4) {
+        values.push(f32::from_le_bytes(
+            bytes.try_into().expect("chunks_exact(4)"),
+        ));
+    }
+    Array2::from_shape_vec((slice.rows, slice.cols), values).map_err(|e| {
+        VindexError::Parse(format!(
+            "GGUF tensor {} expert {} shape error: {}",
+            entry.name, expert_idx, e
+        ))
     })
 }
 
@@ -1059,7 +1158,7 @@ use crate::config::dtype::write_floats;
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::io::Write;
+    use std::io::{Seek, Write};
 
     #[test]
     fn discovers_nested_gguf_directory_instead_of_reporting_no_safetensors() {
@@ -1231,6 +1330,44 @@ mod tests {
         assert!(err.to_string().contains("expert index 384 out of range"));
     }
 
+    #[test]
+    fn read_packed_expert_slice_f32_mmaps_one_expert_without_full_tensor_load() {
+        let tmp = tempfile::tempdir().unwrap();
+        let shard = tmp.path().join("Kimi-00001-of-00001.gguf");
+        let name = "blk.0.ffn_gate_exps.weight";
+        write_minimal_gguf_header_with_f32_payload(
+            &shard,
+            "deepseek2",
+            1,
+            name,
+            &[4, 3, 2],
+            &[
+                // Expert 0: 3 rows x 4 cols, row-major after GGUF [cols, rows].
+                0.0, 1.0, 2.0, 3.0, 10.0, 11.0, 12.0, 13.0, 20.0, 21.0, 22.0, 23.0,
+                // Expert 1.
+                100.0, 101.0, 102.0, 103.0, 110.0, 111.0, 112.0, 113.0, 120.0, 121.0, 122.0, 123.0,
+            ],
+        );
+        let catalog = build_gguf_catalog(&[shard]).unwrap();
+
+        let expert0 = read_packed_expert_slice_f32(&catalog, name, 0).unwrap();
+        assert_eq!(expert0.shape(), &[3, 4]);
+        assert_eq!(
+            expert0.as_slice().unwrap(),
+            &[0.0, 1.0, 2.0, 3.0, 10.0, 11.0, 12.0, 13.0, 20.0, 21.0, 22.0, 23.0,]
+        );
+
+        let expert1 = read_packed_expert_slice_f32(&catalog, name, 1).unwrap();
+        assert_eq!(expert1.shape(), &[3, 4]);
+        assert_eq!(
+            expert1.as_slice().unwrap(),
+            &[100.0, 101.0, 102.0, 103.0, 110.0, 111.0, 112.0, 113.0, 120.0, 121.0, 122.0, 123.0,]
+        );
+
+        let err = read_packed_expert_slice_f32(&catalog, name, 2).unwrap_err();
+        assert!(err.to_string().contains("expert index 2 out of range"));
+    }
+
     fn write_minimal_gguf(path: &std::path::Path, arch: &str, split_count: u16, include_3d: bool) {
         if include_3d {
             write_minimal_gguf_named_tensor(
@@ -1255,6 +1392,29 @@ mod tests {
         tensor_type: u32,
     ) {
         write_minimal_gguf_header(path, arch, split_count, &[(name, dims, tensor_type)]);
+    }
+
+    fn write_minimal_gguf_header_with_f32_payload(
+        path: &std::path::Path,
+        arch: &str,
+        split_count: u16,
+        name: &str,
+        dims: &[u64],
+        values: &[f32],
+    ) {
+        write_minimal_gguf_header(path, arch, split_count, &[(name, dims, 0)]);
+        let mut f = std::fs::OpenOptions::new()
+            .read(true)
+            .write(true)
+            .open(path)
+            .unwrap();
+        let pos = f.seek(std::io::SeekFrom::End(0)).unwrap();
+        let data_offset = pos.div_ceil(32) * 32;
+        let padding = (data_offset - pos) as usize;
+        f.write_all(&vec![0u8; padding]).unwrap();
+        for value in values {
+            f.write_all(&value.to_le_bytes()).unwrap();
+        }
     }
 
     fn write_minimal_gguf_header(

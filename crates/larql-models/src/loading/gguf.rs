@@ -158,6 +158,10 @@ impl GgufTensorInfo {
     pub fn tensor_type(&self) -> u32 {
         self.tensor_type
     }
+
+    pub fn offset(&self) -> u64 {
+        self.offset
+    }
 }
 
 // ═══════════════════════════════════════════════════════════════
