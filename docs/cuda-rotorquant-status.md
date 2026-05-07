@@ -94,37 +94,49 @@ sub-change.
   ≥ 10× speedup target on RTX 4090. Flips
   `Capability::KvCompressionRotorQuant` on `CudaBackend`. See
   `openspec/changes/rotorquant-cuda-kernels/`.
-- **`engine-rotorquant-auto-compress`** — proposal-only.
-  Decorator-pattern `RotorQuantEngine { inner: Box<dyn KvEngine>,
-  format: KvFormat }` that wraps any underlying engine and calls
-  `cache.quantize_layer` post-decode. Adds `cache_mut()` to the
-  `KvEngine` trait. Spec string: `iso3:inner=unlimited-context`.
-  See `openspec/changes/engine-rotorquant-auto-compress/`.
-- **`rotorquant-promote-on-read`** — proposal-only. Companion to
-  `auto-compress`: extends `KvCache::get_layer` to transparently
-  dequantise compressed layers on read, plus a `get_layer_lazy`
-  variant for snapshot/diagnostics callers. Adds
-  `promote_on_read_count` metric. See
-  `openspec/changes/rotorquant-promote-on-read/`.
+- **`engine-rotorquant-auto-compress`** — ⚠ **BLOCKED** during
+  implementation. Discovery: existing engines
+  (UnlimitedContext, Markov) don't hold a `KvCache` struct —
+  they have their own per-engine state. The proposed
+  `cache_mut() -> Option<&mut KvCache>` trait method would
+  return `None` for every existing engine. Prerequisite
+  identified: `engine-kvcache-unification` (refactor
+  UnlimitedContextEngine to use the shared `KvCache` type).
+  See `openspec/changes/engine-rotorquant-auto-compress/proposal.md`'s
+  "Status: blocked" section.
+- ✅ **`rotorquant-promote-on-read`** — `KvCache::get_layer`
+  signature changed from `&self` to `&mut self` and now
+  auto-promotes compressed layers via `dequantize_layer`. Added
+  `get_layer_lazy(&self)` no-promote variant for snapshot
+  callers. `promote_on_read_count: u64` metric increments per
+  successful auto-promote (not per cache hit). `clear_layer` now
+  clears both FP32 + compressed slots symmetrically.
+  **22/22 attention::decode tests pass** including 4 new for
+  promote-on-read.
 - **`deploy-compose-end-to-end`** — `docker compose up` boots
   Gemma 4B end-to-end through the router; `make demo` target
   produces a one-shot inference; PERFORMANCE.md gets the measured
   tok/s + VRAM column.
 
-### SMG-derived backlog (revisit after CUDA stabilises)
+### SMG-derived backlog (now partly implemented)
 
-Three sub-changes drafted as **proposal-only** after analysing the
-PyTorch / LightSeek SMG blog post — not on the critical path,
-spec'd for later pickup:
+After analysing the PyTorch / LightSeek SMG blog post we drafted
+three sub-changes; two are now shipped, one stays as proposal:
 
-- **`server-tokenizer-cache`** — L0 exact-match + L1 prefix-aware
-  trie cache in front of `Tokenizer::encode`. SMG measured 23%
-  TTFT reduction at 256 concurrency.
-- **`router-prefix-aware-routing`** — `ServerEntry` carries a
-  Bloom filter of cached prefix hashes; routing prefers shards
-  that already have the request's prefix in KV cache. SMG: 23%
-  TTFT win + 10–12× faster cache routing.
-- **`attention-service-prefill-decode-split`** — extends the
+- ✅ **`server-tokenizer-cache`** — L0 exact-match + L1 prefix-aware
+  cache in front of `Tokenizer::encode`. `larql_server::tokenizer_cache::TokenizerCache`
+  with 7/7 tests passing. SMG-derived: 23% TTFT reduction at 256
+  concurrency. Wire-up to route handlers is the next bite-sized
+  follow-up; the cache type itself is ready.
+- ✅ **`router-prefix-aware-routing`** — `ServerEntry::cached_prefixes:
+  PrefixBloom` (256-bit, splitmix64-derived k=4 hash positions);
+  `GridState::route_for_prefix` picks the shard with most matches
+  and falls back to least-loaded. 5/5 new grid tests pass (30/30
+  total). FP rate bound at design load (n=16) is ≤ 1.5%; degrades
+  to ~16% at n=64 (proposal corrected — earlier 1.5%@n=64 was
+  numerically wrong).
+- **`attention-service-prefill-decode-split`** — proposal-only;
+  extends the planned
   planned `attention-service-routes` design to support optional
   PD disaggregation: prefill stateless, decode session-bound,
   KV snapshot is the handoff. SMG / Sarathi-Serve / DistServe:
@@ -151,10 +163,20 @@ cargo test -p larql-compute --features cuda --test test_cuda_q4    →  5 tests
 cargo test -p larql-compute --features cuda --test test_cuda_attn  →  6 tests
 cargo test -p larql-rotorquant                                     →  9 tests + 1 doctest
 cargo test -p kv-cache-benchmark --lib rotorquant                  →  3 tests
-cargo test -p larql-router --bin larql-router grid::tests          → 11 tests
-cargo test -p larql-inference --lib attention::decode               → 18 tests
+cargo test -p larql-router --bin larql-router grid::tests          → 30 tests (+19: prefix-aware + bloom)
+cargo test -p larql-inference --lib attention::decode               → 22 tests (+4: promote-on-read)
+cargo test -p larql-server --lib tokenizer_cache                    →  7 tests (new)
                                                                    ────
-                                                                    62 tests
+                                                                    92 tests
+```
+
+Plus shipped but not yet wired: server-tokenizer-cache's
+`TokenizerCache` type is constructed and tested but the route
+handlers (`/v1/infer`, OpenAI `/v1/chat/completions`, etc.)
+haven't been migrated to consult it yet — that's the next
+bite-sized follow-up.
+
+```
 ```
 
 All require `LARQL_CUDA_AVAILABLE=1` for the GPU-gated subset; the
