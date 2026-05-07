@@ -1,11 +1,11 @@
 {
   "summary": {
     "capabilities": 48,
-    "requirements": 356,
-    "scenarios": 1278,
-    "scenarios_backed": 1163,
+    "requirements": 361,
+    "scenarios": 1284,
+    "scenarios_backed": 1169,
     "scenarios_unbacked": 115,
-    "test_refs": 3157,
+    "test_refs": 3163,
     "test_refs_unresolved": 0
   },
   "capabilities": [
@@ -2227,6 +2227,91 @@
               "unbacked": false,
               "spec_file": "openspec/changes/cuda-f32-baseline/specs/compute-cuda-kernels/spec.md",
               "line": 90
+            }
+          ]
+        },
+        {
+          "name": "Q4_0 matvec returns real values via dequant + cuBLAS",
+          "scenarios": [
+            {
+              "name": "Q4_0 matvec parity at 1024\u00d71024",
+              "tests_resolved": [
+                "larql_compute::test_cuda_q4::q4_0_matvec_parity"
+              ],
+              "tests_unresolved": [],
+              "unbacked": false,
+              "spec_file": "openspec/changes/cuda-q4-matvec/specs/compute-cuda-kernels/spec.md",
+              "line": 12
+            }
+          ]
+        },
+        {
+          "name": "Q4_K matvec returns real values via dequant + cuBLAS",
+          "scenarios": [
+            {
+              "name": "Q4_K matvec at FFN-gate dimensions",
+              "tests_resolved": [
+                "larql_compute::test_cuda_q4::q4k_matvec_ffn_gate_parity"
+              ],
+              "tests_unresolved": [],
+              "unbacked": false,
+              "spec_file": "openspec/changes/cuda-q4-matvec/specs/compute-cuda-kernels/spec.md",
+              "line": 24
+            },
+            {
+              "name": "Q4_K matvec at LM-head dimensions",
+              "tests_resolved": [
+                "larql_compute::test_cuda_q4::q4k_matvec_lm_head_parity"
+              ],
+              "tests_unresolved": [],
+              "unbacked": false,
+              "spec_file": "openspec/changes/cuda-q4-matvec/specs/compute-cuda-kernels/spec.md",
+              "line": 29
+            }
+          ]
+        },
+        {
+          "name": "Q6_K matvec returns real values via dequant + cuBLAS",
+          "scenarios": [
+            {
+              "name": "Q6_K matvec parity at lm-head shape",
+              "tests_resolved": [
+                "larql_compute::test_cuda_q4::q6k_matvec_lm_head_parity"
+              ],
+              "tests_unresolved": [],
+              "unbacked": false,
+              "spec_file": "openspec/changes/cuda-q4-matvec/specs/compute-cuda-kernels/spec.md",
+              "line": 40
+            }
+          ]
+        },
+        {
+          "name": "Capability bits reflect Q4 path being live",
+          "scenarios": [
+            {
+              "name": "capability set tracks the kernel surface",
+              "tests_resolved": [
+                "larql_compute::cuda::backend::tests::supports_q4_matvec_after_q4_baseline"
+              ],
+              "tests_unresolved": [],
+              "unbacked": false,
+              "spec_file": "openspec/changes/cuda-q4-matvec/specs/compute-cuda-kernels/spec.md",
+              "line": 53
+            }
+          ]
+        },
+        {
+          "name": "`quant_matvec` dispatch routes through the new methods",
+          "scenarios": [
+            {
+              "name": "quant_matvec dispatch matches direct call",
+              "tests_resolved": [
+                "larql_compute::test_cuda_q4::quant_matvec_dispatches_to_q4k"
+              ],
+              "tests_unresolved": [],
+              "unbacked": false,
+              "spec_file": "openspec/changes/cuda-q4-matvec/specs/compute-cuda-kernels/spec.md",
+              "line": 65
             }
           ]
         }
@@ -17945,13 +18030,19 @@
     {
       "fqn": "larql_compute::cuda::backend::driver_missing_returns_typed_error",
       "file": "crates/larql-compute/src/cuda/backend.rs",
-      "line": 131,
+      "line": 197,
       "crate": "larql_compute"
     },
     {
       "fqn": "larql_compute::cuda::backend::supports_f32_gemv_after_baseline",
       "file": "crates/larql-compute/src/cuda/backend.rs",
-      "line": 148,
+      "line": 214,
+      "crate": "larql_compute"
+    },
+    {
+      "fqn": "larql_compute::cuda::backend::supports_q4_matvec_after_q4_baseline",
+      "file": "crates/larql-compute/src/cuda/backend.rs",
+      "line": 229,
       "crate": "larql_compute"
     },
     {
@@ -25806,6 +25897,174 @@
       "fqn": "larql_vindex::extract::stage_labels::all_labels_unique",
       "file": "crates/larql-vindex/src/extract/stage_labels.rs",
       "line": 63,
+      "crate": "larql_vindex"
+    },
+    {
+      "fqn": "larql_vindex::extract::build::tests::build_browse_writes_required_files",
+      "file": "crates/larql-vindex/src/extract/build.rs",
+      "line": 936,
+      "crate": "larql_vindex"
+    },
+    {
+      "fqn": "larql_vindex::extract::build::build_browse_writes_required_files",
+      "file": "crates/larql-vindex/src/extract/build.rs",
+      "line": 936,
+      "crate": "larql_vindex"
+    },
+    {
+      "fqn": "larql_vindex::extract::build::tests::build_browse_does_not_write_weight_files",
+      "file": "crates/larql-vindex/src/extract/build.rs",
+      "line": 959,
+      "crate": "larql_vindex"
+    },
+    {
+      "fqn": "larql_vindex::extract::build::build_browse_does_not_write_weight_files",
+      "file": "crates/larql-vindex/src/extract/build.rs",
+      "line": 959,
+      "crate": "larql_vindex"
+    },
+    {
+      "fqn": "larql_vindex::extract::build::tests::build_all_writes_weight_files",
+      "file": "crates/larql-vindex/src/extract/build.rs",
+      "line": 969,
+      "crate": "larql_vindex"
+    },
+    {
+      "fqn": "larql_vindex::extract::build::build_all_writes_weight_files",
+      "file": "crates/larql-vindex/src/extract/build.rs",
+      "line": 969,
+      "crate": "larql_vindex"
+    },
+    {
+      "fqn": "larql_vindex::extract::build::tests::build_index_json_has_correct_shape",
+      "file": "crates/larql-vindex/src/extract/build.rs",
+      "line": 989,
+      "crate": "larql_vindex"
+    },
+    {
+      "fqn": "larql_vindex::extract::build::build_index_json_has_correct_shape",
+      "file": "crates/larql-vindex/src/extract/build.rs",
+      "line": 989,
+      "crate": "larql_vindex"
+    },
+    {
+      "fqn": "larql_vindex::extract::build::tests::build_browse_has_model_weights_false",
+      "file": "crates/larql-vindex/src/extract/build.rs",
+      "line": 1002,
+      "crate": "larql_vindex"
+    },
+    {
+      "fqn": "larql_vindex::extract::build::build_browse_has_model_weights_false",
+      "file": "crates/larql-vindex/src/extract/build.rs",
+      "line": 1002,
+      "crate": "larql_vindex"
+    },
+    {
+      "fqn": "larql_vindex::extract::build::tests::build_all_has_model_weights_true",
+      "file": "crates/larql-vindex/src/extract/build.rs",
+      "line": 1010,
+      "crate": "larql_vindex"
+    },
+    {
+      "fqn": "larql_vindex::extract::build::build_all_has_model_weights_true",
+      "file": "crates/larql-vindex/src/extract/build.rs",
+      "line": 1010,
+      "crate": "larql_vindex"
+    },
+    {
+      "fqn": "larql_vindex::extract::build::tests::build_records_source_provenance",
+      "file": "crates/larql-vindex/src/extract/build.rs",
+      "line": 1018,
+      "crate": "larql_vindex"
+    },
+    {
+      "fqn": "larql_vindex::extract::build::build_records_source_provenance",
+      "file": "crates/larql-vindex/src/extract/build.rs",
+      "line": 1018,
+      "crate": "larql_vindex"
+    },
+    {
+      "fqn": "larql_vindex::extract::build::tests::build_records_checksums",
+      "file": "crates/larql-vindex/src/extract/build.rs",
+      "line": 1028,
+      "crate": "larql_vindex"
+    },
+    {
+      "fqn": "larql_vindex::extract::build::build_records_checksums",
+      "file": "crates/larql-vindex/src/extract/build.rs",
+      "line": 1028,
+      "crate": "larql_vindex"
+    },
+    {
+      "fqn": "larql_vindex::extract::build::tests::build_layer_infos_match_num_layers",
+      "file": "crates/larql-vindex/src/extract/build.rs",
+      "line": 1040,
+      "crate": "larql_vindex"
+    },
+    {
+      "fqn": "larql_vindex::extract::build::build_layer_infos_match_num_layers",
+      "file": "crates/larql-vindex/src/extract/build.rs",
+      "line": 1040,
+      "crate": "larql_vindex"
+    },
+    {
+      "fqn": "larql_vindex::extract::build::tests::build_gate_vectors_bin_size_matches_config",
+      "file": "crates/larql-vindex/src/extract/build.rs",
+      "line": 1057,
+      "crate": "larql_vindex"
+    },
+    {
+      "fqn": "larql_vindex::extract::build::build_gate_vectors_bin_size_matches_config",
+      "file": "crates/larql-vindex/src/extract/build.rs",
+      "line": 1057,
+      "crate": "larql_vindex"
+    },
+    {
+      "fqn": "larql_vindex::extract::build::tests::build_then_load_vindex_succeeds",
+      "file": "crates/larql-vindex/src/extract/build.rs",
+      "line": 1071,
+      "crate": "larql_vindex"
+    },
+    {
+      "fqn": "larql_vindex::extract::build::build_then_load_vindex_succeeds",
+      "file": "crates/larql-vindex/src/extract/build.rs",
+      "line": 1071,
+      "crate": "larql_vindex"
+    },
+    {
+      "fqn": "larql_vindex::extract::build::tests::build_then_load_gate_knn_returns_results",
+      "file": "crates/larql-vindex/src/extract/build.rs",
+      "line": 1082,
+      "crate": "larql_vindex"
+    },
+    {
+      "fqn": "larql_vindex::extract::build::build_then_load_gate_knn_returns_results",
+      "file": "crates/larql-vindex/src/extract/build.rs",
+      "line": 1082,
+      "crate": "larql_vindex"
+    },
+    {
+      "fqn": "larql_vindex::extract::build::tests::build_f16_dtype_round_trips",
+      "file": "crates/larql-vindex/src/extract/build.rs",
+      "line": 1093,
+      "crate": "larql_vindex"
+    },
+    {
+      "fqn": "larql_vindex::extract::build::build_f16_dtype_round_trips",
+      "file": "crates/larql-vindex/src/extract/build.rs",
+      "line": 1093,
+      "crate": "larql_vindex"
+    },
+    {
+      "fqn": "larql_vindex::extract::build::tests::build_idempotent_on_existing_dir",
+      "file": "crates/larql-vindex/src/extract/build.rs",
+      "line": 1104,
+      "crate": "larql_vindex"
+    },
+    {
+      "fqn": "larql_vindex::extract::build::build_idempotent_on_existing_dir",
+      "file": "crates/larql-vindex/src/extract/build.rs",
+      "line": 1104,
       "crate": "larql_vindex"
     },
     {

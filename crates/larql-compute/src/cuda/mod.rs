@@ -17,6 +17,7 @@
 
 mod backend;
 mod cache;
+mod dequant;
 mod driver;
 mod error;
 mod matmul;
