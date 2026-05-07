@@ -1,11 +1,11 @@
 {
   "summary": {
     "capabilities": 48,
-    "requirements": 387,
-    "scenarios": 1330,
+    "requirements": 390,
+    "scenarios": 1336,
     "scenarios_backed": 1195,
-    "scenarios_unbacked": 135,
-    "test_refs": 3209,
+    "scenarios_unbacked": 141,
+    "test_refs": 3215,
     "test_refs_unresolved": 0
   },
   "capabilities": [
@@ -6502,6 +6502,69 @@
               "unbacked": true,
               "spec_file": "openspec/changes/cuda-and-rotorquant-kv/specs/inference-residual-engine/spec.md",
               "line": 37
+            }
+          ]
+        },
+        {
+          "name": "KvEngine trait MUST expose cache_mut",
+          "scenarios": [
+            {
+              "name": "engines without a KvCache return None",
+              "tests_resolved": [],
+              "tests_unresolved": [],
+              "unbacked": true,
+              "spec_file": "openspec/changes/engine-rotorquant-auto-compress/specs/inference-residual-engine/spec.md",
+              "line": 11
+            },
+            {
+              "name": "engines with a KvCache return Some",
+              "tests_resolved": [],
+              "tests_unresolved": [],
+              "unbacked": true,
+              "spec_file": "openspec/changes/engine-rotorquant-auto-compress/specs/inference-residual-engine/spec.md",
+              "line": 16
+            }
+          ]
+        },
+        {
+          "name": "RotorQuantEngine MUST decorate any inner engine",
+          "scenarios": [
+            {
+              "name": "decode step compresses the inner cache",
+              "tests_resolved": [],
+              "tests_unresolved": [],
+              "unbacked": true,
+              "spec_file": "openspec/changes/engine-rotorquant-auto-compress/specs/inference-residual-engine/spec.md",
+              "line": 25
+            },
+            {
+              "name": "prefill leaves layers FP32 (deferred-K)",
+              "tests_resolved": [],
+              "tests_unresolved": [],
+              "unbacked": true,
+              "spec_file": "openspec/changes/engine-rotorquant-auto-compress/specs/inference-residual-engine/spec.md",
+              "line": 30
+            }
+          ]
+        },
+        {
+          "name": "EngineKind::RotorQuant MUST parse from a spec string",
+          "scenarios": [
+            {
+              "name": "bare iso3 parses to default inner",
+              "tests_resolved": [],
+              "tests_unresolved": [],
+              "unbacked": true,
+              "spec_file": "openspec/changes/engine-rotorquant-auto-compress/specs/inference-residual-engine/spec.md",
+              "line": 45
+            },
+            {
+              "name": "nested inner engine parses",
+              "tests_resolved": [],
+              "tests_unresolved": [],
+              "unbacked": true,
+              "spec_file": "openspec/changes/engine-rotorquant-auto-compress/specs/inference-residual-engine/spec.md",
+              "line": 50
             }
           ]
         }

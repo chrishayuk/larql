@@ -92,10 +92,12 @@ sub-change.
   `larql-rotorquant` with PTX kernels for planar3 / iso3
   quantize+dequantize; flips
   `Capability::KvCompressionRotorQuant` on `CudaBackend`.
-- **`engine-rotorquant-auto-compress`** — adds a
-  `RotorQuantEngine`/`IsoQuantEngine` to the engine registry that
-  automatically calls `quantize_layer` after each decode token
-  insertion (the upstream "deferred-K" pattern).
+- **`engine-rotorquant-auto-compress`** — proposal-only.
+  Decorator-pattern `RotorQuantEngine { inner: Box<dyn KvEngine>,
+  format: KvFormat }` that wraps any underlying engine and calls
+  `cache.quantize_layer` post-decode. Adds `cache_mut()` to the
+  `KvEngine` trait. Spec string: `iso3:inner=unlimited-context`.
+  See `openspec/changes/engine-rotorquant-auto-compress/`.
 - **`deploy-compose-end-to-end`** — `docker compose up` boots
   Gemma 4B end-to-end through the router; `make demo` target
   produces a one-shot inference; PERFORMANCE.md gets the measured
