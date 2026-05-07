@@ -20259,109 +20259,157 @@
     {
       "fqn": "larql_inference::attention::decode::kv_cache_starts_empty",
       "file": "crates/larql-inference/src/attention/decode.rs",
-      "line": 554,
+      "line": 613,
       "crate": "larql_inference"
     },
     {
       "fqn": "larql_inference::attention::decode::kv_cache_with_window_clips",
       "file": "crates/larql-inference/src/attention/decode.rs",
-      "line": 561,
+      "line": 620,
       "crate": "larql_inference"
     },
     {
       "fqn": "larql_inference::attention::decode::get_layer_returns_none_when_empty",
       "file": "crates/larql-inference/src/attention/decode.rs",
-      "line": 595,
+      "line": 654,
       "crate": "larql_inference"
     },
     {
       "fqn": "larql_inference::attention::decode::set_layer_then_get_layer_round_trips",
       "file": "crates/larql-inference/src/attention/decode.rs",
-      "line": 602,
+      "line": 661,
       "crate": "larql_inference"
     },
     {
       "fqn": "larql_inference::attention::decode::set_layer_out_of_range_is_noop",
       "file": "crates/larql-inference/src/attention/decode.rs",
-      "line": 613,
+      "line": 672,
       "crate": "larql_inference"
     },
     {
       "fqn": "larql_inference::attention::decode::clear_layer_removes_kv",
       "file": "crates/larql-inference/src/attention/decode.rs",
-      "line": 621,
+      "line": 680,
       "crate": "larql_inference"
     },
     {
       "fqn": "larql_inference::attention::decode::clone_layer_from_copies_donor_kv",
       "file": "crates/larql-inference/src/attention/decode.rs",
-      "line": 630,
+      "line": 689,
       "crate": "larql_inference"
     },
     {
       "fqn": "larql_inference::attention::decode::clone_layer_from_missing_donor_layer_is_noop",
       "file": "crates/larql-inference/src/attention/decode.rs",
-      "line": 643,
+      "line": 702,
       "crate": "larql_inference"
     },
     {
       "fqn": "larql_inference::attention::decode::clone_layer_position_range_slices_donor",
       "file": "crates/larql-inference/src/attention/decode.rs",
-      "line": 653,
+      "line": 712,
       "crate": "larql_inference"
     },
     {
       "fqn": "larql_inference::attention::decode::clone_layer_position_range_clamps_to_donor_length",
       "file": "crates/larql-inference/src/attention/decode.rs",
-      "line": 670,
+      "line": 729,
       "crate": "larql_inference"
     },
     {
       "fqn": "larql_inference::attention::decode::clone_layer_position_range_empty_slice_is_noop",
       "file": "crates/larql-inference/src/attention/decode.rs",
-      "line": 681,
+      "line": 740,
       "crate": "larql_inference"
     },
     {
       "fqn": "larql_inference::attention::decode::decode_step_output_shape",
       "file": "crates/larql-inference/src/attention/decode.rs",
-      "line": 692,
+      "line": 751,
       "crate": "larql_inference"
     },
     {
       "fqn": "larql_inference::attention::decode::decode_step_output_finite",
       "file": "crates/larql-inference/src/attention/decode.rs",
-      "line": 703,
+      "line": 762,
       "crate": "larql_inference"
     },
     {
       "fqn": "larql_inference::attention::decode::decode_step_kv_grows_with_prior",
       "file": "crates/larql-inference/src/attention/decode.rs",
-      "line": 712,
+      "line": 771,
       "crate": "larql_inference"
     },
     {
       "fqn": "larql_inference::attention::decode::decode_step_all_layers_succeed",
       "file": "crates/larql-inference/src/attention/decode.rs",
-      "line": 724,
+      "line": 783,
       "crate": "larql_inference"
     },
     {
       "fqn": "larql_inference::attention::decode::quantize_layer_no_op_when_format_unset",
       "file": "crates/larql-inference/src/attention/decode.rs",
-      "line": 736,
+      "line": 795,
       "crate": "larql_inference"
     },
     {
       "fqn": "larql_inference::attention::decode::quantize_then_dequantize_roundtrip_preserves_direction",
       "file": "crates/larql-inference/src/attention/decode.rs",
-      "line": 746,
+      "line": 805,
       "crate": "larql_inference"
     },
     {
       "fqn": "larql_inference::attention::decode::promote_layer_to_fp32_restores_layers_slot",
       "file": "crates/larql-inference/src/attention/decode.rs",
-      "line": 781,
+      "line": 842,
+      "crate": "larql_inference"
+    },
+    {
+      "fqn": "larql_inference::attention::decode::tests::get_layer_returns_fp32_after_compress",
+      "file": "crates/larql-inference/src/attention/decode.rs",
+      "line": 861,
+      "crate": "larql_inference"
+    },
+    {
+      "fqn": "larql_inference::attention::decode::get_layer_returns_fp32_after_compress",
+      "file": "crates/larql-inference/src/attention/decode.rs",
+      "line": 861,
+      "crate": "larql_inference"
+    },
+    {
+      "fqn": "larql_inference::attention::decode::tests::get_layer_caches_promoted_copy",
+      "file": "crates/larql-inference/src/attention/decode.rs",
+      "line": 873,
+      "crate": "larql_inference"
+    },
+    {
+      "fqn": "larql_inference::attention::decode::get_layer_caches_promoted_copy",
+      "file": "crates/larql-inference/src/attention/decode.rs",
+      "line": 873,
+      "crate": "larql_inference"
+    },
+    {
+      "fqn": "larql_inference::attention::decode::tests::get_layer_lazy_never_promotes",
+      "file": "crates/larql-inference/src/attention/decode.rs",
+      "line": 885,
+      "crate": "larql_inference"
+    },
+    {
+      "fqn": "larql_inference::attention::decode::get_layer_lazy_never_promotes",
+      "file": "crates/larql-inference/src/attention/decode.rs",
+      "line": 885,
+      "crate": "larql_inference"
+    },
+    {
+      "fqn": "larql_inference::attention::decode::tests::clear_layer_erases_both_storages",
+      "file": "crates/larql-inference/src/attention/decode.rs",
+      "line": 898,
+      "crate": "larql_inference"
+    },
+    {
+      "fqn": "larql_inference::attention::decode::clear_layer_erases_both_storages",
+      "file": "crates/larql-inference/src/attention/decode.rs",
+      "line": 898,
       "crate": "larql_inference"
     },
     {

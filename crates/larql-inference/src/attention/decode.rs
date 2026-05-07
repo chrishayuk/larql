@@ -53,6 +53,12 @@ pub struct KvCache {
     /// Compressed (K, V) per layer. `None` for layers that haven't
     /// been compressed; `Some` after `quantize_layer` succeeds.
     pub quantized_kv: Vec<Option<(larql_rotorquant::QuantizedKv, larql_rotorquant::QuantizedKv)>>,
+    /// Total number of auto-promotes performed by `get_layer` since
+    /// construction. Each successful `dequantize_layer` triggered
+    /// by a compressed-only read increments this counter; reads
+    /// that already had FP32 in the slot do NOT increment.
+    /// `rotorquant-promote-on-read` change.
+    pub promote_on_read_count: u64,
 }
 
 impl KvCache {
@@ -64,6 +70,7 @@ impl KvCache {
             next_position: 0,
             kv_format: None,
             quantized_kv: vec![None; num_layers],
+            promote_on_read_count: 0,
         }
     }
 
@@ -76,6 +83,7 @@ impl KvCache {
             next_position: 0,
             kv_format: None,
             quantized_kv: vec![None; num_layers],
+            promote_on_read_count: 0,
         }
     }
 
@@ -213,7 +221,47 @@ impl KvCache {
     /// Read K/V for a layer (post-RoPE K, post-V-norm V). `None` if the
     /// layer index is out of range or that layer's cache is empty (e.g.
     /// before prefill, or when the layer reuses another layer's K/V).
-    pub fn get_layer(&self, layer: usize) -> Option<&SharedKV> {
+    ///
+    /// As of `rotorquant-promote-on-read`: if the FP32 slot is empty
+    /// AND `quantized_kv[layer]` holds a compressed copy, this method
+    /// transparently dequantises and populates the FP32 slot before
+    /// returning. The compressed slot stays populated so the next
+    /// `quantize_layer` call (e.g., from the auto-compress engine
+    /// decorator) doesn't have to re-encode unchanged data.
+    /// `promote_on_read_count` increments on each such auto-promote
+    /// (not on cache hits).
+    ///
+    /// Use [`Self::get_layer_lazy`] for the explicit-no-promote variant
+    /// (snapshot serialisation, diagnostics).
+    pub fn get_layer(&mut self, layer: usize) -> Option<&SharedKV> {
+        // Fast path: FP32 slot already populated.
+        if self
+            .layers
+            .get(layer)
+            .map(|s| s.is_some())
+            .unwrap_or(false)
+        {
+            return self.layers.get(layer).and_then(|opt| opt.as_ref());
+        }
+        // Slow path: try to promote from compressed storage.
+        let promoted = self.dequantize_layer(layer);
+        if let Some(kv) = promoted {
+            if let Some(slot) = self.layers.get_mut(layer) {
+                *slot = Some(kv);
+                self.promote_on_read_count = self.promote_on_read_count.saturating_add(1);
+            }
+        }
+        self.layers.get(layer).and_then(|opt| opt.as_ref())
+    }
+
+    /// Explicit no-side-effect variant of [`Self::get_layer`].
+    ///
+    /// Returns `None` for layers that exist only in compressed
+    /// storage; **does not** promote them. Snapshot serialisation
+    /// and read-only diagnostics use this variant. Production
+    /// attention reads should use [`Self::get_layer`] which
+    /// auto-promotes.
+    pub fn get_layer_lazy(&self, layer: usize) -> Option<&SharedKV> {
         self.layers.get(layer).and_then(|opt| opt.as_ref())
     }
 
@@ -234,18 +282,29 @@ impl KvCache {
     }
 
     /// Clear a layer's cache. Subsequent decode at that layer will start
-    /// fresh — i.e. attend only to new K/V.
+    /// fresh — i.e. attend only to new K/V. Symmetric: clears both the
+    /// FP32 `layers[layer]` slot AND the compressed
+    /// `quantized_kv[layer]` slot so a stale compressed copy doesn't
+    /// outlive a clear.
     pub fn clear_layer(&mut self, layer: usize) {
         if let Some(slot) = self.layers.get_mut(layer) {
             *slot = None;
+        }
+        if let Some(qslot) = self.quantized_kv.get_mut(layer) {
+            *qslot = None;
         }
     }
 
     /// Lift `other`'s entire K/V for `layer` into `self`. No-op if either
     /// side's layer is empty or out of range. Implements lazarus
     /// `kv_inject_test` (full-layer transplant).
+    ///
+    /// Uses [`Self::get_layer_lazy`] on the donor (immutable
+    /// `&KvCache`) so a compressed-only donor layer is treated as
+    /// "missing." Callers that want to lift a compressed layer
+    /// should call `other.promote_layer_to_fp32(layer)` first.
     pub fn clone_layer_from(&mut self, other: &KvCache, layer: usize) {
-        let Some((k, v)) = other.get_layer(layer) else {
+        let Some((k, v)) = other.get_layer_lazy(layer) else {
             return;
         };
         self.set_layer(layer, (k.clone(), v.clone()));
@@ -268,7 +327,7 @@ impl KvCache {
         start: usize,
         end: usize,
     ) {
-        let Some((k, v)) = other.get_layer(layer) else {
+        let Some((k, v)) = other.get_layer_lazy(layer) else {
             return;
         };
         let cached = k.shape()[0];
@@ -552,7 +611,7 @@ mod tests {
 
     #[test]
     fn kv_cache_starts_empty() {
-        let cache = KvCache::with_layers(4);
+        let mut cache = KvCache::with_layers(4);
         assert_eq!(cache.cached_len(0), 0);
         assert_eq!(cache.next_position, 0);
     }
@@ -593,7 +652,7 @@ mod tests {
 
     #[test]
     fn get_layer_returns_none_when_empty() {
-        let cache = KvCache::with_layers(2);
+        let mut cache = KvCache::with_layers(2);
         assert!(cache.get_layer(0).is_none());
         assert!(cache.get_layer(99).is_none(), "out-of-range is None");
     }
@@ -754,8 +813,10 @@ mod tests {
         // Compress.
         assert!(cache.quantize_layer(1));
         assert!(cache.is_layer_compressed(1));
-        // FP32 slot was taken so memory doesn't double.
-        assert!(cache.get_layer(1).is_none());
+        // FP32 slot was taken so memory doesn't double. Use the
+        // lazy variant so we observe the underlying state without
+        // triggering auto-promote (rotorquant-promote-on-read).
+        assert!(cache.get_layer_lazy(1).is_none());
 
         // Decompress.
         let recovered = cache.dequantize_layer(1).expect("dequantize");
@@ -785,11 +846,64 @@ mod tests {
 
         cache.quantize_layer(0);
         assert!(cache.is_layer_compressed(0));
-        assert!(cache.get_layer(0).is_none());
+        // Lazy variant: observe FP32-slot truth without auto-promote.
+        assert!(cache.get_layer_lazy(0).is_none());
 
         // Promote restores the FP32 slot and clears compressed.
         assert!(cache.promote_layer_to_fp32(0));
         assert!(!cache.is_layer_compressed(0));
         assert!(cache.get_layer(0).is_some());
+    }
+
+    // ── rotorquant-promote-on-read ────────────────────────────────
+
+    #[test]
+    fn get_layer_returns_fp32_after_compress() {
+        let mut cache = KvCache::with_layers(1);
+        cache.set_kv_format(larql_rotorquant::KvFormat::Iso3);
+        cache.set_layer(0, fill_kv(8, 32, 0.5));
+        cache.quantize_layer(0);
+        // FP32 slot was taken; compressed slot is populated.
+        // get_layer auto-promotes and returns Some.
+        assert!(cache.get_layer(0).is_some());
+        assert_eq!(cache.promote_on_read_count, 1);
+    }
+
+    #[test]
+    fn get_layer_caches_promoted_copy() {
+        let mut cache = KvCache::with_layers(1);
+        cache.set_kv_format(larql_rotorquant::KvFormat::Iso3);
+        cache.set_layer(0, fill_kv(8, 32, 0.7));
+        cache.quantize_layer(0);
+        let _ = cache.get_layer(0); // first read promotes
+        let _ = cache.get_layer(0); // second read hits cached FP32
+        // Counter increments by exactly 1 (only the first read actually promoted).
+        assert_eq!(cache.promote_on_read_count, 1);
+    }
+
+    #[test]
+    fn get_layer_lazy_never_promotes() {
+        let mut cache = KvCache::with_layers(1);
+        cache.set_kv_format(larql_rotorquant::KvFormat::Iso3);
+        cache.set_layer(0, fill_kv(8, 32, 0.3));
+        cache.quantize_layer(0);
+        // Lazy variant returns None for compressed-only layers and
+        // does NOT mutate cache state.
+        assert!(cache.get_layer_lazy(0).is_none());
+        assert_eq!(cache.promote_on_read_count, 0);
+        assert!(cache.is_layer_compressed(0));
+    }
+
+    #[test]
+    fn clear_layer_erases_both_storages() {
+        let mut cache = KvCache::with_layers(1);
+        cache.set_kv_format(larql_rotorquant::KvFormat::Iso3);
+        cache.set_layer(0, fill_kv(8, 32, 0.4));
+        cache.quantize_layer(0);
+        assert!(cache.is_layer_compressed(0));
+        cache.clear_layer(0);
+        assert!(!cache.is_layer_compressed(0));
+        assert!(cache.get_layer(0).is_none());
+        assert!(cache.get_layer_lazy(0).is_none());
     }
 }

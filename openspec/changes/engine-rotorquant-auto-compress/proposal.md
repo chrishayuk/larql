@@ -9,6 +9,34 @@ write FP32 K/V into the cache and never call `quantize_layer`. To
 get the actual compression benefit we need an engine policy that
 drives the seam.
 
+## ⚠ Status: blocked on engine refactor
+
+While drafting the implementation we discovered that the existing
+engines do **NOT** hold a `larql_inference::attention::decode::KvCache`
+struct — they hold their own per-engine state:
+
+- `UnlimitedContextEngine::current_window_kv: Option<Vec<SharedKV>>`
+  (a vec of (K, V) pairs per layer, NOT the `KvCache` type).
+- `MarkovResidualEngine` rebuilds K/V from residuals each tick;
+  no persistent cache field.
+- `TurboQuantEngine` and `ApolloEngine` use bespoke storage.
+
+So the `cache_mut() -> Option<&mut KvCache>` trait method
+proposed here would return `None` for every existing engine,
+making the decorator a no-op in practice.
+
+**Path forward** before this proposal can be implemented:
+
+1. **`engine-kvcache-unification`** — restructure
+   `UnlimitedContextEngine` (and possibly Markov) to use the
+   shared `KvCache` type rather than per-engine storage. ~1-2
+   days of careful work.
+2. After unification ships, this proposal's decorator becomes
+   straightforwardly implementable.
+
+The proposal stays on the backlog as designed; the implementation
+order is `engine-kvcache-unification` → this change.
+
 This sub-change adds a **decorator engine** `RotorQuantEngine`
 that wraps any inner `KvEngine` and applies the upstream
 "deferred-K" pattern automatically:
