@@ -28,6 +28,10 @@ openblas-src = { version = "0.10", features = ["system"] }
 cudarc = { version = "0.19", optional = true, default-features = false, features = [
     "cublas",
     "driver",
+    # nvrtc — runtime PTX compilation for the softmax kernel
+    # (cuda-fused-attention onward). Built kernels are cached under
+    # cuda::cache::cache_dir().
+    "nvrtc",
     # CUDA toolkit ABI to bind against. Override this in your fork if
     # your install differs — `cuda-12050` matches CUDA 12.5.x (Ubuntu
     # 24.04's `nvidia-cuda-toolkit` ships this), `cuda-13010` matches

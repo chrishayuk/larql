@@ -15,6 +15,7 @@
 //!
 //! [change]: ../../../../openspec/changes/cuda-and-rotorquant-kv/
 
+pub mod attn;
 mod backend;
 mod cache;
 mod dequant;

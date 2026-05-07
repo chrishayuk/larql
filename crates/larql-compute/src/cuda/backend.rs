@@ -30,6 +30,12 @@ impl CudaBackend {
         Ok(CudaBackend { drv })
     }
 
+    /// Module-internal accessor used by `cuda::attn` so the helper
+    /// can borrow the driver without exposing it crate-wide.
+    pub(crate) fn driver(&self) -> &Driver {
+        &self.drv
+    }
+
     /// Internal: contiguous row-major view of an `ArrayView2`. The
     /// fast-path is when the view is already standard layout; we only
     /// allocate on the slow-path (transposed / strided views).
@@ -170,8 +176,8 @@ impl ComputeBackend for CudaBackend {
     fn supports(&self, cap: Capability) -> bool {
         // Capability bits flip on as sub-changes land:
         //   cuda-f32-baseline    → Cuda, F32Gemv
-        //   cuda-q4-matvec       → +QuantMatVec, +Q4VecMat (this change)
-        //   cuda-fused-attention → +DecodeToken, +PrefillQ4
+        //   cuda-q4-matvec       → +QuantMatVec, +Q4VecMat
+        //   cuda-fused-attention → +FlashAttentionV2 (this change)
         //   rotorquant-*         → +KvCompressionRotorQuant
         matches!(
             cap,
@@ -179,6 +185,7 @@ impl ComputeBackend for CudaBackend {
                 | Capability::F32Gemv
                 | Capability::QuantMatVec
                 | Capability::Q4VecMat
+                | Capability::FlashAttentionV2
         )
     }
 
@@ -232,9 +239,22 @@ mod tests {
             assert!(b.supports(Capability::QuantMatVec));
             assert!(b.supports(Capability::Q4VecMat));
             // Capabilities still off (their sub-changes haven't landed).
-            assert!(!b.supports(Capability::FlashAttentionV2));
             assert!(!b.supports(Capability::KvCompressionRotorQuant));
             assert!(!b.supports(Capability::DecodeToken));
+        }
+    }
+
+    #[test]
+    fn supports_fa2_after_fused_attention() {
+        if let Ok(b) = CudaBackend::new() {
+            // Cumulative capability set after cuda-fused-attention.
+            assert!(b.supports(Capability::Cuda));
+            assert!(b.supports(Capability::F32Gemv));
+            assert!(b.supports(Capability::QuantMatVec));
+            assert!(b.supports(Capability::Q4VecMat));
+            assert!(b.supports(Capability::FlashAttentionV2));
+            // Still off — RotorQuant lands later.
+            assert!(!b.supports(Capability::KvCompressionRotorQuant));
         }
     }
 }

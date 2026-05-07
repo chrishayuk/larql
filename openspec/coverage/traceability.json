@@ -1,11 +1,11 @@
 {
   "summary": {
     "capabilities": 48,
-    "requirements": 361,
-    "scenarios": 1284,
-    "scenarios_backed": 1169,
+    "requirements": 365,
+    "scenarios": 1291,
+    "scenarios_backed": 1176,
     "scenarios_unbacked": 115,
-    "test_refs": 3163,
+    "test_refs": 3170,
     "test_refs_unresolved": 0
   },
   "capabilities": [
@@ -2227,6 +2227,96 @@
               "unbacked": false,
               "spec_file": "openspec/changes/cuda-f32-baseline/specs/compute-cuda-kernels/spec.md",
               "line": 90
+            }
+          ]
+        },
+        {
+          "name": "Scaled-softmax CUDA kernel via NVRTC",
+          "scenarios": [
+            {
+              "name": "softmax kernel matches naive reference at small shape",
+              "tests_resolved": [
+                "larql_compute::test_cuda_attn::softmax_small_parity"
+              ],
+              "tests_unresolved": [],
+              "unbacked": false,
+              "spec_file": "openspec/changes/cuda-fused-attention/specs/compute-cuda-kernels/spec.md",
+              "line": 12
+            },
+            {
+              "name": "softmax kernel matches reference at long-row shape",
+              "tests_resolved": [
+                "larql_compute::test_cuda_attn::softmax_long_row_parity"
+              ],
+              "tests_unresolved": [],
+              "unbacked": false,
+              "spec_file": "openspec/changes/cuda-fused-attention/specs/compute-cuda-kernels/spec.md",
+              "line": 17
+            }
+          ]
+        },
+        {
+          "name": "Causal mask and softcap fold into the softmax kernel",
+          "scenarios": [
+            {
+              "name": "causal mask zeroes future positions",
+              "tests_resolved": [
+                "larql_compute::test_cuda_attn::softmax_causal_mask"
+              ],
+              "tests_unresolved": [],
+              "unbacked": false,
+              "spec_file": "openspec/changes/cuda-fused-attention/specs/compute-cuda-kernels/spec.md",
+              "line": 29
+            },
+            {
+              "name": "softcap clamps large logits",
+              "tests_resolved": [
+                "larql_compute::test_cuda_attn::softmax_softcap_50"
+              ],
+              "tests_unresolved": [],
+              "unbacked": false,
+              "spec_file": "openspec/changes/cuda-fused-attention/specs/compute-cuda-kernels/spec.md",
+              "line": 34
+            }
+          ]
+        },
+        {
+          "name": "`decode_attention` helper chains GEMM + softmax + GEMM",
+          "scenarios": [
+            {
+              "name": "decode_attention parity at small head shape",
+              "tests_resolved": [
+                "larql_compute::test_cuda_attn::decode_attention_small_parity"
+              ],
+              "tests_unresolved": [],
+              "unbacked": false,
+              "spec_file": "openspec/changes/cuda-fused-attention/specs/compute-cuda-kernels/spec.md",
+              "line": 43
+            },
+            {
+              "name": "decode_attention parity at Gemma 4B head shape",
+              "tests_resolved": [
+                "larql_compute::test_cuda_attn::decode_attention_gemma4b_head_parity"
+              ],
+              "tests_unresolved": [],
+              "unbacked": false,
+              "spec_file": "openspec/changes/cuda-fused-attention/specs/compute-cuda-kernels/spec.md",
+              "line": 48
+            }
+          ]
+        },
+        {
+          "name": "Capability::FlashAttentionV2 advertised after this change",
+          "scenarios": [
+            {
+              "name": "capability flips on",
+              "tests_resolved": [
+                "larql_compute::cuda::backend::tests::supports_fa2_after_fused_attention"
+              ],
+              "tests_unresolved": [],
+              "unbacked": false,
+              "spec_file": "openspec/changes/cuda-fused-attention/specs/compute-cuda-kernels/spec.md",
+              "line": 59
             }
           ]
         },
@@ -18030,19 +18120,25 @@
     {
       "fqn": "larql_compute::cuda::backend::driver_missing_returns_typed_error",
       "file": "crates/larql-compute/src/cuda/backend.rs",
-      "line": 197,
+      "line": 204,
       "crate": "larql_compute"
     },
     {
       "fqn": "larql_compute::cuda::backend::supports_f32_gemv_after_baseline",
       "file": "crates/larql-compute/src/cuda/backend.rs",
-      "line": 214,
+      "line": 221,
       "crate": "larql_compute"
     },
     {
       "fqn": "larql_compute::cuda::backend::supports_q4_matvec_after_q4_baseline",
       "file": "crates/larql-compute/src/cuda/backend.rs",
-      "line": 229,
+      "line": 236,
+      "crate": "larql_compute"
+    },
+    {
+      "fqn": "larql_compute::cuda::backend::supports_fa2_after_fused_attention",
+      "file": "crates/larql-compute/src/cuda/backend.rs",
+      "line": 248,
       "crate": "larql_compute"
     },
     {
