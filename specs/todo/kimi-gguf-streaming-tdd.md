@@ -75,3 +75,28 @@ The catalog can find tensor names, but extraction still cannot tell which Kimi G
 
 ### Result
 Added a private DeepSeek2/Kimi GGUF layout classifier over the header-only catalog. It maps `blk.N.ffn_*_exps.weight` packed MoE tensors to gate/up/down expert components, maps `blk.N.ffn_gate_inp.weight` as the router, and maps `blk.N.ffn_*_shexp.weight` shared-expert projections. The classifier performs no tensor-data reads; it only classifies catalog entries by name and layer, setting up the next TDD slice for packed 3D tensor slicing/dequantization.
+
+## Next blocker: packed 3D expert slice geometry
+
+### Problem
+The role classifier can point to packed Kimi tensors, but extraction still cannot address an individual expert inside a packed 3D tensor. Kimi GGUF stores expert projections as `[cols, rows, experts]` in GGUF dimension order, so the extractor needs a deterministic per-expert 2D geometry before it can stream/dequantize expert rows.
+
+### RED plan
+1. Add a synthetic Kimi packed expert tensor entry with dims `[7168, 2048, 384]`.
+2. Assert a wished-for `packed_expert_slice(entry, expert_idx)` returns conventional 2D matrix shape `[rows=2048, cols=7168]`, expert count, element span, and element offset for the requested expert.
+3. Assert the down projection dims `[2048, 7168, 384]` map to `[rows=7168, cols=2048]`.
+4. Assert an out-of-range expert index returns an error.
+
+### GREEN plan
+1. Implement header-only packed expert slice geometry over `GgufTensorEntry`.
+2. Do not read tensor bytes or dequantize yet.
+3. Keep the slice geometry private until the streaming reader consumes it.
+
+### Acceptance criteria
+- [x] RED packed-slice test fails before implementation.
+- [x] GREEN packed-slice test passes.
+- [x] Existing GGUF catalog/classifier/preflight tests still pass.
+- [x] Real Kimi smoke still returns the same unsupported-layout diagnostic.
+
+### Result
+Added private `PackedExpertSlice` geometry and `packed_expert_slice()` over catalog entries. It maps Kimi GGUF packed expert tensors from `[cols, rows, experts]` into conventional 2D expert matrices `[rows, cols]`, records expert count, per-expert element span, and element offset, and rejects out-of-range expert indices. This still performs no tensor-data reads or dequantization; the next slice can use this geometry to stream/dequantize one packed expert projection.

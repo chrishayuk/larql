@@ -191,6 +191,79 @@ fn parse_deepseek2_layer_suffix(name: &str) -> Option<(usize, &str)> {
     Some((layer, suffix))
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[cfg_attr(not(test), allow(dead_code))]
+struct PackedExpertSlice {
+    expert_idx: usize,
+    expert_count: usize,
+    rows: usize,
+    cols: usize,
+    element_offset: usize,
+    element_len: usize,
+}
+
+#[cfg_attr(not(test), allow(dead_code))]
+fn packed_expert_slice(
+    entry: &GgufTensorEntry,
+    expert_idx: usize,
+) -> Result<PackedExpertSlice, VindexError> {
+    if entry.dims.len() != 3 {
+        return Err(VindexError::Parse(format!(
+            "packed expert tensor {} must be 3D, got dims {:?}",
+            entry.name, entry.dims
+        )));
+    }
+
+    // GGUF/GGML dimension order stores the fastest-moving matrix dimension first.
+    // Kimi packed experts use [cols, rows, experts], so each expert slice is a
+    // conventional row-major [rows, cols] matrix after dequantization.
+    let cols = usize::try_from(entry.dims[0]).map_err(|_| {
+        VindexError::Parse(format!(
+            "packed expert tensor {} has too-large cols dim {}",
+            entry.name, entry.dims[0]
+        ))
+    })?;
+    let rows = usize::try_from(entry.dims[1]).map_err(|_| {
+        VindexError::Parse(format!(
+            "packed expert tensor {} has too-large rows dim {}",
+            entry.name, entry.dims[1]
+        ))
+    })?;
+    let expert_count = usize::try_from(entry.dims[2]).map_err(|_| {
+        VindexError::Parse(format!(
+            "packed expert tensor {} has too-large expert dim {}",
+            entry.name, entry.dims[2]
+        ))
+    })?;
+    if expert_idx >= expert_count {
+        return Err(VindexError::Parse(format!(
+            "packed expert tensor {} expert index {} out of range 0..{}",
+            entry.name, expert_idx, expert_count
+        )));
+    }
+    let element_len = rows.checked_mul(cols).ok_or_else(|| {
+        VindexError::Parse(format!(
+            "packed expert tensor {} slice element count overflows: rows={} cols={}",
+            entry.name, rows, cols
+        ))
+    })?;
+    let element_offset = expert_idx.checked_mul(element_len).ok_or_else(|| {
+        VindexError::Parse(format!(
+            "packed expert tensor {} expert offset overflows: expert={} len={}",
+            entry.name, expert_idx, element_len
+        ))
+    })?;
+
+    Ok(PackedExpertSlice {
+        expert_idx,
+        expert_count,
+        rows,
+        cols,
+        element_offset,
+        element_len,
+    })
+}
+
 fn discover_weight_source(model_dir: &Path) -> Result<WeightSource, VindexError> {
     let mut st_files = collect_ext(model_dir, "safetensors")?;
     if st_files.is_empty() {
@@ -1118,6 +1191,44 @@ mod tests {
         assert!(!layout
             .attention
             .contains(&"blk.0.attn_q_a.weight".to_string()));
+    }
+
+    #[test]
+    fn packed_expert_slice_maps_kimi_3d_dims_to_2d_expert_geometry() {
+        let tmp = tempfile::tempdir().unwrap();
+        let model_dir = tmp.path().join("model");
+        std::fs::create_dir_all(&model_dir).unwrap();
+        let shard = model_dir.join("Kimi-00001-of-00001.gguf");
+        write_minimal_gguf_header(
+            &shard,
+            "deepseek2",
+            1,
+            &[
+                ("blk.0.ffn_gate_exps.weight", &[7168, 2048, 384], 15),
+                ("blk.0.ffn_down_exps.weight", &[2048, 7168, 384], 15),
+            ],
+        );
+        let catalog = build_gguf_catalog(&[shard]).unwrap();
+
+        let gate =
+            packed_expert_slice(catalog.tensor("blk.0.ffn_gate_exps.weight").unwrap(), 7).unwrap();
+        assert_eq!(gate.rows, 2048);
+        assert_eq!(gate.cols, 7168);
+        assert_eq!(gate.expert_count, 384);
+        assert_eq!(gate.expert_idx, 7);
+        assert_eq!(gate.element_len, 7168 * 2048);
+        assert_eq!(gate.element_offset, 7 * 7168 * 2048);
+
+        let down = packed_expert_slice(catalog.tensor("blk.0.ffn_down_exps.weight").unwrap(), 383)
+            .unwrap();
+        assert_eq!(down.rows, 7168);
+        assert_eq!(down.cols, 2048);
+        assert_eq!(down.expert_count, 384);
+        assert_eq!(down.element_offset, 383 * 2048 * 7168);
+
+        let err = packed_expert_slice(catalog.tensor("blk.0.ffn_gate_exps.weight").unwrap(), 384)
+            .unwrap_err();
+        assert!(err.to_string().contains("expert index 384 out of range"));
     }
 
     fn write_minimal_gguf(path: &std::path::Path, arch: &str, split_count: u16, include_3d: bool) {
