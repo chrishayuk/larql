@@ -1,0 +1,154 @@
+syntax = "proto3";
+package larql.attention.v1;
+
+// ── AttentionService ─────────────────────────────────────────────────────────
+//
+// gRPC mirror of the HTTP `/v1/attention/*` and `/v1/kv-cache/*` endpoints.
+// Wire format is documented in `docs/attention-service-protocol.md`. Every
+// shape matches the HTTP body 1:1 (s/serde/proto3/) — see the openspec
+// `server-attention-service` capability for normative behaviour.
+//
+// Lands with the `attention-service-routes` change.
+
+service AttentionService {
+  rpc CreateSession (CreateSessionRequest) returns (CreateSessionResponse);
+  rpc GetSession    (GetSessionRequest)    returns (GetSessionResponse);
+  rpc DeleteSession (DeleteSessionRequest) returns (DeleteSessionResponse);
+
+  // Server-streaming: one PrefillEvent per layer. The terminal event sets
+  // `done = true` so clients can wrap the stream into a single result.
+  rpc Prefill       (PrefillRequest)       returns (stream PrefillEvent);
+
+  rpc Decode        (DecodeRequest)        returns (DecodeResponse);
+
+  rpc Snapshot      (SnapshotRequest)      returns (SnapshotResponse);
+  rpc Restore       (RestoreRequest)       returns (RestoreResponse);
+  rpc Free          (FreeRequest)          returns (FreeResponse);
+}
+
+// ── Session lifecycle ────────────────────────────────────────────────────────
+
+message CreateSessionRequest {
+  string model_id  = 1;
+  // One of "fp32" | "planar3" | "planar4" | "iso3" | "iso4". Empty
+  // string ⇒ "fp32" (default).
+  string kv_format = 2;
+  // Optional KV-snapshot blob to restore the cache from. Same byte
+  // format as Snapshot()'s `snapshot` field; empty ⇒ fresh cache.
+  bytes  restore_from_snapshot = 3;
+}
+
+message CreateSessionResponse {
+  string session_id  = 1;
+  uint32 layer_start = 2;  // inclusive
+  uint32 layer_end   = 3;  // exclusive
+  string kv_format   = 4;
+}
+
+message GetSessionRequest {
+  string session_id = 1;
+}
+
+message GetSessionResponse {
+  string session_id = 1;
+  string model_id   = 2;
+  string kv_format  = 3;
+  uint32 seq_len    = 4;
+  bool   prefilled  = 5;
+  uint32 num_layers = 6;
+}
+
+message DeleteSessionRequest {
+  string session_id = 1;
+}
+
+message DeleteSessionResponse {
+  // Empty by design — success is the gRPC OK status.
+}
+
+// ── Prefill / Decode ─────────────────────────────────────────────────────────
+
+message Vec1d {
+  repeated float values = 1;
+}
+
+message Vec2d {
+  // Outer index = row; inner index = col. `cols` is informational —
+  // every row SHALL have the same length.
+  repeated Vec1d rows = 1;
+  uint32 cols = 2;
+}
+
+message PrefillRequest {
+  string session_id        = 1;
+  // [seq_len][hidden_dim] f32. Already-embedded tokens.
+  Vec2d  token_embeddings  = 2;
+}
+
+message PrefillEvent {
+  // Layer this event covers. Events SHALL arrive in ascending order
+  // and SHALL be contiguous over the session's layer range.
+  uint32 layer            = 1;
+  // [seq_len][hidden_dim] post-attention residual for `layer`.
+  Vec2d  post_attention   = 2;
+  // Set on the final event in the stream.
+  bool   done             = 3;
+  // Total tokens processed. Mirrored on every event for client convenience.
+  uint32 tokens_processed = 4;
+  // Ms elapsed since the first event (only meaningful when `done = true`).
+  double latency_ms       = 5;
+}
+
+message DecodeRequest {
+  string session_id            = 1;
+  // [hidden_dim] f32. The next token's embedding.
+  repeated float query_token_embedding = 2;
+}
+
+message DecodeResponse {
+  // [layers][hidden_dim]
+  Vec2d  post_attention_residual = 1;
+  double latency_ms              = 2;
+}
+
+// ── KV-cache snapshot/restore/free ───────────────────────────────────────────
+
+message SnapshotRequest {
+  string session_id = 1;
+}
+
+message SnapshotResponse {
+  string session_id = 1;
+  // Raw blob (NOT base64-wrapped — the HTTP variant base64s for JSON
+  // transport; gRPC carries bytes natively). Format: see
+  // `crates/larql-server/src/kv_snapshot.rs` and
+  // `docs/attention-service-protocol.md` § "Snapshot wire format".
+  bytes  snapshot   = 2;
+  uint64 bytes_len  = 3;
+}
+
+message RestoreRequest {
+  string session_id = 1;
+  bytes  snapshot   = 2;
+}
+
+message RestoreResponse {
+  string session_id = 1;
+  uint32 seq_len    = 2;
+  uint32 num_layers = 3;
+}
+
+message FreeRequest {
+  string session_id = 1;
+  // Set the `layer` field via the optional wrapper:
+  //   `layer = 0xFFFFFFFF` ⇒ "free all layers" (matches `null` in JSON).
+  // Any other value is a specific layer index; out-of-range ⇒ 400.
+  uint32 layer = 2;
+  // When true, ignore `layer` and free every layer's K/V slot.
+  bool   all   = 3;
+}
+
+message FreeResponse {
+  string session_id   = 1;
+  uint32 layers_freed = 2;
+}

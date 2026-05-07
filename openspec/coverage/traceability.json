@@ -25381,13 +25381,13 @@
     {
       "fqn": "larql_router_protocol::tests::empty_bloom_serialises_to_32_zero_bytes",
       "file": "crates/larql-router-protocol/src/lib.rs",
-      "line": 80,
+      "line": 85,
       "crate": "larql_router_protocol"
     },
     {
       "fqn": "larql_router_protocol::tests::insert_then_serialise_round_trips",
       "file": "crates/larql-router-protocol/src/lib.rs",
-      "line": 86,
+      "line": 91,
       "crate": "larql_router_protocol"
     },
     {

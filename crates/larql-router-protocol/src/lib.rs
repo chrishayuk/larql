@@ -6,6 +6,11 @@ pub mod expert_proto {
     tonic::include_proto!("larql.expert.v1");
 }
 
+// attention-service-routes change.
+pub mod attention_proto {
+    tonic::include_proto!("larql.attention.v1");
+}
+
 pub use expert_proto::expert_service_client::ExpertServiceClient;
 pub use expert_proto::expert_service_server::{ExpertService, ExpertServiceServer};
 pub use expert_proto::{
