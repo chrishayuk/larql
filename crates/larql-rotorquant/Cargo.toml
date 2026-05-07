@@ -1,0 +1,30 @@
+[package]
+name = "larql-rotorquant"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license = "MIT"
+description = "RotorQuant K/V cache compression — block-diagonal rotations + scalar quantization. Inspired by github.com/scrya-com/rotorquant."
+keywords = ["kv-cache", "quantization", "cuda", "transformer"]
+categories = ["science"]
+
+[dependencies]
+thiserror = { workspace = true }
+
+[target.'cfg(all(target_os = "linux", target_arch = "x86_64"))'.dependencies]
+cudarc = { version = "0.19", optional = true, default-features = false, features = [
+    "cublas",
+    "driver",
+    "nvrtc",
+    "cuda-12050",
+    "dynamic-loading",
+] }
+
+[features]
+default = []
+# Enable the CUDA path. Without it the crate provides only the CPU
+# reference implementation that the round-trip tests use as oracle.
+cuda = ["dep:cudarc"]
+
+[dev-dependencies]
+# (CPU reference round-trip tests use only this crate's own API.)

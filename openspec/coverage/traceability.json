@@ -1,11 +1,11 @@
 {
   "summary": {
     "capabilities": 48,
-    "requirements": 365,
-    "scenarios": 1291,
-    "scenarios_backed": 1176,
-    "scenarios_unbacked": 115,
-    "test_refs": 3170,
+    "requirements": 369,
+    "scenarios": 1302,
+    "scenarios_backed": 1185,
+    "scenarios_unbacked": 117,
+    "test_refs": 3181,
     "test_refs_unresolved": 0
   },
   "capabilities": [
@@ -8033,6 +8033,132 @@
               "unbacked": true,
               "spec_file": "openspec/changes/cuda-and-rotorquant-kv/specs/kv-cache-rotorquant/spec.md",
               "line": 93
+            }
+          ]
+        },
+        {
+          "name": "`larql-rotorquant` crate exposes the parent-change API",
+          "scenarios": [
+            {
+              "name": "crate compiles on default features",
+              "tests_resolved": [],
+              "tests_unresolved": [],
+              "unbacked": true,
+              "spec_file": "openspec/changes/rotorquant-kernels/specs/kv-cache-rotorquant/spec.md",
+              "line": 12
+            },
+            {
+              "name": "public API matches the parent-change declaration",
+              "tests_resolved": [],
+              "tests_unresolved": [],
+              "unbacked": true,
+              "spec_file": "openspec/changes/rotorquant-kernels/specs/kv-cache-rotorquant/spec.md",
+              "line": 17
+            }
+          ]
+        },
+        {
+          "name": "Round-trip parity for all four formats on K and V",
+          "scenarios": [
+            {
+              "name": "Planar3 K round-trip",
+              "tests_resolved": [
+                "larql_rotorquant::round_trip::planar3_round_trip_k"
+              ],
+              "tests_unresolved": [],
+              "unbacked": false,
+              "spec_file": "openspec/changes/rotorquant-kernels/specs/kv-cache-rotorquant/spec.md",
+              "line": 26
+            },
+            {
+              "name": "Planar4 K round-trip",
+              "tests_resolved": [
+                "larql_rotorquant::round_trip::planar4_round_trip_k"
+              ],
+              "tests_unresolved": [],
+              "unbacked": false,
+              "spec_file": "openspec/changes/rotorquant-kernels/specs/kv-cache-rotorquant/spec.md",
+              "line": 31
+            },
+            {
+              "name": "Iso3 K round-trip",
+              "tests_resolved": [
+                "larql_rotorquant::round_trip::iso3_round_trip_k"
+              ],
+              "tests_unresolved": [],
+              "unbacked": false,
+              "spec_file": "openspec/changes/rotorquant-kernels/specs/kv-cache-rotorquant/spec.md",
+              "line": 36
+            },
+            {
+              "name": "Iso4 K round-trip",
+              "tests_resolved": [
+                "larql_rotorquant::round_trip::iso4_round_trip_k"
+              ],
+              "tests_unresolved": [],
+              "unbacked": false,
+              "spec_file": "openspec/changes/rotorquant-kernels/specs/kv-cache-rotorquant/spec.md",
+              "line": 41
+            },
+            {
+              "name": "Planar3 V round-trip with inverse rotation",
+              "tests_resolved": [
+                "larql_rotorquant::round_trip::planar3_round_trip_v"
+              ],
+              "tests_unresolved": [],
+              "unbacked": false,
+              "spec_file": "openspec/changes/rotorquant-kernels/specs/kv-cache-rotorquant/spec.md",
+              "line": 46
+            },
+            {
+              "name": "Iso3 V round-trip with inverse rotation",
+              "tests_resolved": [
+                "larql_rotorquant::round_trip::iso3_round_trip_v"
+              ],
+              "tests_unresolved": [],
+              "unbacked": false,
+              "spec_file": "openspec/changes/rotorquant-kernels/specs/kv-cache-rotorquant/spec.md",
+              "line": 51
+            },
+            {
+              "name": "Iso3 round-trip on Gemma 4B head shape",
+              "tests_resolved": [
+                "larql_rotorquant::round_trip::iso3_gemma4b_head_round_trip"
+              ],
+              "tests_unresolved": [],
+              "unbacked": false,
+              "spec_file": "openspec/changes/rotorquant-kernels/specs/kv-cache-rotorquant/spec.md",
+              "line": 56
+            }
+          ]
+        },
+        {
+          "name": "V dequantize MUST recover original-space values",
+          "scenarios": [
+            {
+              "name": "V dequant recovers original (not rotated) values",
+              "tests_resolved": [
+                "larql_rotorquant::round_trip::iso3_v_round_trip_recovers_original_not_rotated"
+              ],
+              "tests_unresolved": [],
+              "unbacked": false,
+              "spec_file": "openspec/changes/rotorquant-kernels/specs/kv-cache-rotorquant/spec.md",
+              "line": 69
+            }
+          ]
+        },
+        {
+          "name": "head_dim divisibility is enforced",
+          "scenarios": [
+            {
+              "name": "Iso3 rejects head_dim=33",
+              "tests_resolved": [
+                "larql_rotorquant::round_trip::head_dim_divisibility_is_enforced"
+              ],
+              "tests_unresolved": [],
+              "unbacked": false,
+              "spec_file": "openspec/changes/rotorquant-kernels/specs/kv-cache-rotorquant/spec.md",
+              "line": 80
             }
           ]
         }

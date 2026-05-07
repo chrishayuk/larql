@@ -14,6 +14,7 @@ members = [
     "crates/larql-router-protocol",
     "crates/larql-python",
     "crates/kv-cache-benchmark",
+    "crates/larql-rotorquant",
     # portable (extract to sibling repos later, names stable)
     "crates/model-compute",
 ]
@@ -29,6 +30,7 @@ default-members = [
     "crates/larql-router",
     "crates/larql-router-protocol",
     "crates/kv-cache-benchmark",
+    "crates/larql-rotorquant",
     "crates/model-compute",
 ]
 

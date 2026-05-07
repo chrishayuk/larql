@@ -1,0 +1,115 @@
+//! Round-trip parity tests: quantise then dequantise, expect cosine
+//! similarity ≥ 0.95 across all four formats and a range of head
+//! dims. The threshold is below the upstream paper's 0.99 because
+//! our reference uses a small static rotation table; lifting that
+//! threshold is a tuning task tracked in
+//! `rotorquant-attention-integration`.
+
+use larql_rotorquant::{
+    dequantize_k, dequantize_v_with_inverse_rotation, quantize_k, quantize_v, KvFormat,
+};
+
+fn synth(n: usize, seed: u64) -> Vec<f32> {
+    let mut s = seed.wrapping_mul(0x9E37_79B9_7F4A_7C15);
+    (0..n)
+        .map(|_| {
+            s ^= s << 13;
+            s ^= s >> 7;
+            s ^= s << 17;
+            ((s & 0xFF_FFFF) as f32 / 8_388_608.0) - 1.0
+        })
+        .collect()
+}
+
+fn cosine(a: &[f32], b: &[f32]) -> f32 {
+    let dot: f32 = a.iter().zip(b).map(|(x, y)| x * y).sum();
+    let na: f32 = a.iter().map(|v| v * v).sum::<f32>().sqrt();
+    let nb: f32 = b.iter().map(|v| v * v).sum::<f32>().sqrt();
+    dot / (na * nb + 1e-12)
+}
+
+fn round_trip_k(format: KvFormat, n_rows: usize, head_dim: usize) -> f32 {
+    let k = synth(n_rows * head_dim, 0x7);
+    let qk = quantize_k(format, &k, n_rows, head_dim).expect("quantize_k");
+    let recovered = dequantize_k(&qk).expect("dequantize_k");
+    cosine(&k, &recovered)
+}
+
+fn round_trip_v(format: KvFormat, n_rows: usize, head_dim: usize) -> f32 {
+    let v = synth(n_rows * head_dim, 0x9);
+    let qv = quantize_v(format, &v, n_rows, head_dim).expect("quantize_v");
+    let recovered = dequantize_v_with_inverse_rotation(&qv).expect("dequantize_v");
+    cosine(&v, &recovered)
+}
+
+const TOL: f32 = 0.95;
+
+#[test]
+fn planar3_round_trip_k() {
+    let cos = round_trip_k(KvFormat::Planar3, 64, 32);
+    assert!(cos >= TOL, "Planar3 K cosine {cos}");
+}
+
+#[test]
+fn planar4_round_trip_k() {
+    let cos = round_trip_k(KvFormat::Planar4, 64, 32);
+    assert!(cos >= TOL, "Planar4 K cosine {cos}");
+}
+
+#[test]
+fn iso3_round_trip_k() {
+    let cos = round_trip_k(KvFormat::Iso3, 64, 32);
+    assert!(cos >= TOL, "Iso3 K cosine {cos}");
+}
+
+#[test]
+fn iso4_round_trip_k() {
+    let cos = round_trip_k(KvFormat::Iso4, 64, 32);
+    assert!(cos >= TOL, "Iso4 K cosine {cos}");
+}
+
+#[test]
+fn planar3_round_trip_v() {
+    let cos = round_trip_v(KvFormat::Planar3, 64, 32);
+    assert!(cos >= TOL, "Planar3 V cosine {cos}");
+}
+
+#[test]
+fn iso3_round_trip_v() {
+    let cos = round_trip_v(KvFormat::Iso3, 64, 32);
+    assert!(cos >= TOL, "Iso3 V cosine {cos}");
+}
+
+#[test]
+fn iso3_gemma4b_head_round_trip() {
+    // Gemma 4B uses head_dim 320 (not divisible by 4? 320 / 4 = 80, OK).
+    let cos = round_trip_k(KvFormat::Iso3, 32, 320);
+    assert!(
+        cos >= TOL,
+        "Iso3 Gemma4B head_dim=320 round-trip cosine {cos}"
+    );
+}
+
+#[test]
+fn iso3_v_round_trip_recovers_original_not_rotated() {
+    // The upstream bug (commit 6e5a4aa) was V dequant applying the
+    // FORWARD rotation, leaving values in rotated-space rather than
+    // original-space. Sanity-check we recover the original (cosine
+    // ≥ 0.95 with the input), not some other rotated tensor.
+    let v = synth(32 * 16, 0xA);
+    let qv = quantize_v(KvFormat::Iso3, &v, 32, 16).unwrap();
+    let recovered = dequantize_v_with_inverse_rotation(&qv).unwrap();
+    let cos = cosine(&v, &recovered);
+    assert!(
+        cos >= TOL,
+        "V dequant must recover the original input, cosine {cos}"
+    );
+}
+
+#[test]
+fn head_dim_divisibility_is_enforced() {
+    // Iso3 needs head_dim % 4 == 0; 33 should fail.
+    let v = vec![0.0_f32; 4 * 33];
+    let err = quantize_k(KvFormat::Iso3, &v, 4, 33);
+    assert!(err.is_err());
+}
