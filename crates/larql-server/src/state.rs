@@ -125,7 +125,7 @@ impl LoadedModel {
     /// Returns the IDs as `Vec<u32>`. Call sites that need the full
     /// `tokenizers::Encoding` (offsets, attention mask) should keep
     /// using the raw tokeniser; the cache only holds IDs.
-    pub async fn encode_cached_ids(
+    pub fn encode_cached_ids(
         &self,
         text: &str,
         with_specials: bool,
