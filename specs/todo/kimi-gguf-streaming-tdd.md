@@ -279,3 +279,31 @@ Real Kimi Q4_K_M reaches the DeepSeek2 GGUF gate phase, but a naive dense `gate_
 
 ### Result
 Added a compact over-budget GGUF gate manifest path. When DeepSeek2/Kimi packed gate tensors would exceed the dense `gate_vectors.bin` budget, `build_gguf_streaming()` now writes `gguf_gate_manifest.json` containing the original shard/tensor geometry and dense-size estimate, then returns the next explicit blocker (`embeddings/down_meta wiring remains pending`). The real Kimi smoke produced a ~26 KiB manifest with 60 gate layers, preserved the 676,457,349,120-byte dense estimate, and did not create `gate_vectors.bin`.
+
+
+## Next blocker: GGUF embeddings before down-meta wiring
+
+### Problem
+After the compact gate manifest, the GGUF branch still had no browse-level embeddings artifact. Browse queries need embeddings; real Kimi embeddings are also large enough that dense materialization should stay budgeted.
+
+### RED plan
+1. Add a synthetic two-shard DeepSeek2 GGUF fixture with:
+   - `token_embd.weight` as a tiny F32 `[hidden, vocab]` tensor.
+   - one tiny packed gate tensor so the branch reaches the existing next blocker.
+2. Call `build_gguf_streaming()`.
+3. Assert the branch writes `embeddings.bin` before returning the current down-meta blocker, and that the bytes match the original embedding values.
+
+### GREEN plan
+1. Add a GGUF embedding tensor lookup (`token_embd.weight`, `model.embed_tokens.weight`, etc.).
+2. For bounded embeddings, read/dequantize the 2D GGUF tensor and write `embeddings.bin` in the requested storage dtype.
+3. For over-budget embeddings, write `gguf_embeddings_manifest.json` instead of creating a huge dense file.
+4. Keep down-meta generation as the next explicit unsupported blocker.
+
+### Acceptance criteria
+- [x] RED embeddings test fails before implementation because `embeddings.bin` is absent.
+- [x] GREEN embeddings test passes.
+- [x] Existing GGUF branch/gate tests still pass.
+- [x] Real Kimi smoke writes `gguf_embeddings_manifest.json` and `gguf_gate_manifest.json`, does not write dense `embeddings.bin` or `gate_vectors.bin`, and advances to the remaining down-meta blocker.
+
+### Result
+Added GGUF embedding wiring for the DeepSeek2/Kimi branch. Small F32 GGUF embeddings now materialize to `embeddings.bin`; over-budget real Kimi embeddings write a compact `gguf_embeddings_manifest.json` with tensor/source geometry instead. The real Kimi smoke produced an embeddings manifest for `token_embd.weight` (`vocab_size=163840`, `hidden_size=7168`, dense estimate `2348810240`) plus the existing gate manifest, while avoiding both dense `embeddings.bin` and dense `gate_vectors.bin`. The remaining blocker is now down-meta generation/manifesting from packed down projections.
