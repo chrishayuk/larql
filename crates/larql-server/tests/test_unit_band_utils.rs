@@ -167,6 +167,7 @@ fn make_minimal_model(layer_bands: Option<LayerBands>) -> Arc<LoadedModel> {
         expert_filter: None,
         unit_filter: None,
         moe_remote: None,
+        tokenizer_cache: std::sync::Arc::new(crate::tokenizer_cache::TokenizerCache::new(0, 0)),
     })
 }
 

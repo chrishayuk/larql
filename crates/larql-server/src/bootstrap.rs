@@ -344,6 +344,7 @@ pub fn load_single_vindex(
         moe_scratches: std::sync::Mutex::new(std::collections::HashMap::new()),
         #[cfg(feature = "metal-experts")]
         metal_ffn_layer_bufs: std::sync::OnceLock::new(),
+        tokenizer_cache: Arc::new(crate::tokenizer_cache::TokenizerCache::from_env()),
     })
 }
 

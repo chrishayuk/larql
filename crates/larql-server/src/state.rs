@@ -106,9 +106,64 @@ pub struct LoadedModel {
     /// Only populated when the server has interleaved Q4K data loaded.
     #[cfg(feature = "metal-experts")]
     pub metal_ffn_layer_bufs: std::sync::OnceLock<Vec<[larql_compute::MetalBuffer; 3]>>,
+    /// Two-tier tokenizer cache (L0 exact-match + L1 prefix-aware).
+    /// Constructed once per LoadedModel; shared across requests via
+    /// `Arc`. See `larql_server::tokenizer_cache`. Sized by env vars
+    /// `LARQL_TOKENIZER_CACHE_L0_SIZE` /
+    /// `LARQL_TOKENIZER_CACHE_L1_SIZE`. `server-tokenizer-cache` change.
+    pub tokenizer_cache: Arc<crate::tokenizer_cache::TokenizerCache>,
 }
 
 impl LoadedModel {
+    /// Encode `text` to token IDs, consulting the per-model
+    /// tokenizer cache before falling back to the cold tokeniser.
+    ///
+    /// `with_specials` mirrors `tokenizers::Tokenizer::encode`'s
+    /// boolean — it's mixed into the cache key so the same text
+    /// with different special-token treatment doesn't collide.
+    ///
+    /// Returns the IDs as `Vec<u32>`. Call sites that need the full
+    /// `tokenizers::Encoding` (offsets, attention mask) should keep
+    /// using the raw tokeniser; the cache only holds IDs.
+    pub async fn encode_cached_ids(
+        &self,
+        text: &str,
+        with_specials: bool,
+    ) -> Result<Vec<u32>, String> {
+        // The cache key folds in `with_specials` as a single-byte
+        // prefix so the two namespaces never collide.
+        let key_owned: String;
+        let key: &str = if with_specials {
+            text
+        } else {
+            key_owned = format!("\u{1}{text}");
+            &key_owned
+        };
+        if let Some((tokens, prefix_len)) = self.tokenizer_cache.get(key) {
+            if prefix_len == key.len() {
+                return Ok(tokens);
+            }
+            // L1 hit — tokenise the suffix cold and concatenate.
+            let suffix_offset = prefix_len.saturating_sub(if with_specials { 0 } else { 1 });
+            let suffix = &text[suffix_offset..];
+            let enc = self
+                .tokenizer
+                .encode(suffix, false)
+                .map_err(|e| format!("tokenize suffix: {e}"))?;
+            let mut full = tokens;
+            full.extend_from_slice(enc.get_ids());
+            self.tokenizer_cache.insert(key, &full);
+            return Ok(full);
+        }
+        let enc = self
+            .tokenizer
+            .encode(text, with_specials)
+            .map_err(|e| format!("tokenize: {e}"))?;
+        let tokens = enc.get_ids().to_vec();
+        self.tokenizer_cache.insert(key, &tokens);
+        Ok(tokens)
+    }
+
     /// Get or lazy-load model weights for inference.
     ///
     /// For `--ffn-only` servers the loader filters attention + lm_head
@@ -383,6 +438,7 @@ mod loaded_model_tests {
             expert_filter: None,
             unit_filter: None,
             moe_remote: None,
+        tokenizer_cache: std::sync::Arc::new(crate::tokenizer_cache::TokenizerCache::new(0, 0)),
             #[cfg(feature = "metal-experts")]
             metal_backend: std::sync::OnceLock::new(),
             #[cfg(feature = "metal-experts")]

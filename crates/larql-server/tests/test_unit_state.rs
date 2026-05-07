@@ -97,6 +97,7 @@ fn make_tiny_model(id: &str) -> Arc<LoadedModel> {
         expert_filter: None,
         unit_filter: None,
         moe_remote: None,
+        tokenizer_cache: std::sync::Arc::new(crate::tokenizer_cache::TokenizerCache::new(0, 0)),
     })
 }
 
@@ -174,6 +175,7 @@ fn make_loaded_model_for_warmup() -> Arc<LoadedModel> {
         expert_filter: None,
         unit_filter: None,
         moe_remote: None,
+        tokenizer_cache: std::sync::Arc::new(crate::tokenizer_cache::TokenizerCache::new(0, 0)),
     })
 }
 

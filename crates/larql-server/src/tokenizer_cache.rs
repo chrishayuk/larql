@@ -8,17 +8,20 @@
 //!      `<|assistant|>`, `<|system|>`). On hit, the suffix after the
 //!      sentinel is tokenised cold and concatenated.
 //!
-//! Both tiers are guarded by `tokio::sync::Mutex`. Each `LoadedModel`
-//! carries one `TokenizerCache`; the keys never cross models.
+//! Both tiers are guarded by `std::sync::Mutex` (sync — works from
+//! both async axum handlers and blocking spawn_blocking contexts;
+//! lock critical sections are sub-µs LRU updates). Each
+//! `LoadedModel` carries one `TokenizerCache`; the keys never cross
+//! models.
 //!
 //! Sizes are tuned via `LARQL_TOKENIZER_CACHE_L0_SIZE` (default 4096)
 //! and `LARQL_TOKENIZER_CACHE_L1_SIZE` (default 16384). Either set to
 //! 0 disables that tier.
 
 use std::num::NonZeroUsize;
+use std::sync::Mutex;
 
 use lru::LruCache;
-use tokio::sync::Mutex;
 
 /// FNV-64 prime + offset basis. Cheap, non-cryptographic, good
 /// distribution for short-to-medium strings.
@@ -95,10 +98,10 @@ impl TokenizerCache {
     /// is responsible for tokenising cold and calling `insert`.
     /// Returns `Some((tokens, prefix_len))` where `prefix_len` is the
     /// number of bytes already covered (0 for L0 hit, > 0 for L1 hit).
-    pub async fn get(&self, text: &str) -> Option<(Vec<u32>, usize)> {
+    pub fn get(&self, text: &str) -> Option<(Vec<u32>, usize)> {
         // L0 — full exact match. Promote on hit.
         {
-            let mut l0 = self.l0.lock().await;
+            let mut l0 = self.l0.lock().expect("tokenizer cache L0 mutex");
             if let Some(cache) = l0.as_mut() {
                 if let Some(tokens) = cache.get(text) {
                     return Some((tokens.clone(), text.len()));
@@ -115,7 +118,7 @@ impl TokenizerCache {
         let prefix = &bytes[..prefix_end];
         let key = fnv64(prefix);
         let alt = fnv64_alt(prefix);
-        let mut l1 = self.l1.lock().await;
+        let mut l1 = self.l1.lock().expect("tokenizer cache L1 mutex");
         if let Some(cache) = l1.as_mut() {
             if let Some(entry) = cache.get(&key) {
                 if entry.secondary_hash == alt && entry.prefix_byte_len == prefix.len() {
@@ -131,10 +134,10 @@ impl TokenizerCache {
     /// tiers. The L1 entry stores only the prefix portion of the
     /// tokens (everything generated up to and including the last
     /// special-token byte position).
-    pub async fn insert(&self, text: &str, tokens: &[u32]) {
+    pub fn insert(&self, text: &str, tokens: &[u32]) {
         // L0 — store full text.
         {
-            let mut l0 = self.l0.lock().await;
+            let mut l0 = self.l0.lock().expect("tokenizer cache L0 mutex");
             if let Some(cache) = l0.as_mut() {
                 cache.put(text.to_string(), tokens.to_vec());
             }
@@ -158,7 +161,7 @@ impl TokenizerCache {
         let prefix_tokens = tokens[..frac.min(tokens.len())].to_vec();
         let key = fnv64(&bytes[..prefix_end]);
         let alt = fnv64_alt(&bytes[..prefix_end]);
-        let mut l1 = self.l1.lock().await;
+        let mut l1 = self.l1.lock().expect("tokenizer cache L1 mutex");
         if let Some(cache) = l1.as_mut() {
             cache.put(
                 key,
@@ -226,29 +229,29 @@ fn default_special_tokens() -> Vec<&'static [u8]> {
 mod tests {
     use super::*;
 
-    #[tokio::test]
-    async fn l0_hit_returns_cached_tokens() {
+    #[test]
+    fn l0_hit_returns_cached_tokens() {
         let cache = TokenizerCache::new(16, 16);
         let tokens = vec![1u32, 2, 3, 4];
-        cache.insert("hello world", &tokens).await;
-        let hit = cache.get("hello world").await.expect("L0 hit");
+        cache.insert("hello world", &tokens);
+        let hit = cache.get("hello world").expect("L0 hit");
         assert_eq!(hit.0, tokens);
         assert_eq!(hit.1, "hello world".len());
     }
 
-    #[tokio::test]
-    async fn l1_hit_shares_chat_template_prefix() {
+    #[test]
+    fn l1_hit_shares_chat_template_prefix() {
         let cache = TokenizerCache::new(16, 16);
         let prefix = "<|im_start|>system\nYou are helpful<|im_end|>\n<|im_start|>user\n";
         let full = format!("{prefix}what is 2+2?");
         // First request: cold-encode and store.
         let cold_tokens = vec![10u32, 20, 30, 40, 50, 60, 70];
-        cache.insert(&full, &cold_tokens).await;
+        cache.insert(&full, &cold_tokens);
 
         // Second request: same prefix, different suffix.
         let full2 = format!("{prefix}what is 3+3?");
         // L0 misses (different full text); L1 should hit on the prefix.
-        let hit = cache.get(&full2).await.expect("L1 hit on prefix");
+        let hit = cache.get(&full2).expect("L1 hit on prefix");
         // L1 hits at the byte just past the LAST sentinel, not at the
         // full prefix length — anything after that sentinel must be
         // re-tokenised cold.
@@ -262,40 +265,40 @@ mod tests {
         assert!(hit.0.len() < cold_tokens.len());
     }
 
-    #[tokio::test]
-    async fn cache_miss_returns_none() {
+    #[test]
+    fn cache_miss_returns_none() {
         let cache = TokenizerCache::new(16, 16);
-        let miss = cache.get("never seen this").await;
+        let miss = cache.get("never seen this");
         assert!(miss.is_none());
     }
 
-    #[tokio::test]
-    async fn parallel_hits_no_corruption() {
+    #[test]
+    fn parallel_hits_no_corruption() {
         let cache = std::sync::Arc::new(TokenizerCache::new(64, 64));
-        cache.insert("shared", &vec![42, 43, 44]).await;
+        cache.insert("shared", &vec![42, 43, 44]);
         let mut joins = Vec::new();
         for _ in 0..32 {
             let c = cache.clone();
-            joins.push(tokio::spawn(async move {
+            joins.push(std::thread::spawn(move || {
                 for _ in 0..100 {
-                    let h = c.get("shared").await.unwrap();
+                    let h = c.get("shared").unwrap();
                     assert_eq!(h.0, vec![42, 43, 44]);
                 }
             }));
         }
         for j in joins {
-            j.await.unwrap();
+            j.join().unwrap();
         }
     }
 
-    #[tokio::test]
-    async fn disabled_tier_returns_none() {
+    #[test]
+    fn disabled_tier_returns_none() {
         // L0 disabled; only L1 works.
         let cache = TokenizerCache::new(0, 16);
-        cache.insert("hello world", &vec![1, 2]).await;
+        cache.insert("hello world", &vec![1, 2]);
         // Plain text without special tokens — L1 doesn't store it
         // (no sentinel to key on); L0 disabled means full miss.
-        assert!(cache.get("hello world").await.is_none());
+        assert!(cache.get("hello world").is_none());
     }
 
     #[test]

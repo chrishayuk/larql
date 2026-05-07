@@ -510,6 +510,7 @@ mod tests {
             expert_filter: None,
             unit_filter: None,
             moe_remote: None,
+        tokenizer_cache: std::sync::Arc::new(crate::tokenizer_cache::TokenizerCache::new(0, 0)),
             #[cfg(feature = "metal-experts")]
             metal_backend: std::sync::OnceLock::new(),
             #[cfg(feature = "metal-experts")]
