@@ -17,7 +17,7 @@ plus a `last_used: Instant` for TTL eviction.
 - **THEN** the response SHALL contain a non-empty `session_id`,
   `layer_range = [0, num_layers)`, and `kv_format = "fp32"`
 <!-- test: larql_server::attention_session::tests::insert_and_get_round_trip -->
-<!-- test: unbacked -->
+<!-- test: test_http_attention::create_session_returns_id_and_layer_range -->
 
 #### Scenario: get on unknown session id returns 404
 
@@ -25,6 +25,7 @@ plus a `last_used: Instant` for TTL eviction.
 - **THEN** the server SHALL respond `404 Not Found` with body
   `{"error": "no_such_session"}`
 <!-- test: larql_server::routes::attention::tests::get_unknown_session_returns_404 -->
+<!-- test: test_http_attention::get_unknown_session_returns_404 -->
 
 #### Scenario: delete makes get 404
 
@@ -32,6 +33,7 @@ plus a `last_used: Instant` for TTL eviction.
 - **THEN** the GET SHALL return `404 Not Found`
 <!-- test: larql_server::attention_session::tests::delete_makes_get_none -->
 <!-- test: larql_server::routes::attention::tests::delete_unknown_session_returns_404 -->
+<!-- test: test_http_attention::delete_session_then_get_returns_404 -->
 
 #### Scenario: idle sessions are reaped after TTL
 
@@ -134,6 +136,7 @@ payloads tagged as empty / fp32 / quantized.
 - **THEN** the first 4 bytes SHALL be `0x41 0x51 0x41 0x4C` (LE 'LAQA')
   and bytes 4–5 SHALL be `0x01 0x00`
 <!-- test: larql_server::kv_snapshot::tests::magic_and_version_are_present_at_known_offsets -->
+<!-- test: test_http_attention::snapshot_returns_base64_with_correct_magic -->
 
 #### Scenario: snapshot then restore round-trips for FP32
 
@@ -143,6 +146,7 @@ payloads tagged as empty / fp32 / quantized.
   the original, and decode against the new session SHALL produce the
   same residual as decode against the original would have
 <!-- test: larql_server::kv_snapshot::tests::round_trip_fp32_is_byte_identical -->
+<!-- test: test_http_attention::restore_round_trips_through_a_new_session -->
 <!-- test: unbacked -->
 
 #### Scenario: snapshot then restore round-trips for compressed formats
