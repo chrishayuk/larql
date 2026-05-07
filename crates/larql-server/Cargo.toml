@@ -17,7 +17,9 @@ path = "src/main.rs"
 [dependencies]
 larql-vindex = { path = "../larql-vindex" }
 larql-inference = { path = "../larql-inference" }
+larql-rotorquant = { path = "../larql-rotorquant" }
 larql-models = { path = "../larql-models" }
+ndarray = "0.16"
 larql-router-protocol = { path = "../larql-router-protocol" }
 # Optional Metal backend for shard-side GPU experts (macOS).  When the
 # `metal-experts` feature is enabled, the server uses

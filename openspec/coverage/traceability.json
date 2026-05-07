@@ -3,9 +3,9 @@
     "capabilities": 49,
     "requirements": 408,
     "scenarios": 1376,
-    "scenarios_backed": 1197,
-    "scenarios_unbacked": 179,
-    "test_refs": 3255,
+    "scenarios_backed": 1201,
+    "scenarios_unbacked": 175,
+    "test_refs": 3258,
     "test_refs_unresolved": 0
   },
   "capabilities": [
@@ -13324,35 +13324,43 @@
           "scenarios": [
             {
               "name": "snapshot magic + version are present",
-              "tests_resolved": [],
+              "tests_resolved": [
+                "larql_server::kv_snapshot::tests::magic_and_version_are_present_at_known_offsets"
+              ],
               "tests_unresolved": [],
-              "unbacked": true,
+              "unbacked": false,
               "spec_file": "openspec/changes/attention-service-routes/specs/server-attention-service/spec.md",
               "line": 128
             },
             {
               "name": "snapshot then restore round-trips for FP32",
-              "tests_resolved": [],
+              "tests_resolved": [
+                "larql_server::kv_snapshot::tests::round_trip_fp32_is_byte_identical"
+              ],
               "tests_unresolved": [],
-              "unbacked": true,
+              "unbacked": false,
               "spec_file": "openspec/changes/attention-service-routes/specs/server-attention-service/spec.md",
               "line": 135
             },
             {
               "name": "snapshot then restore round-trips for compressed formats",
-              "tests_resolved": [],
+              "tests_resolved": [
+                "larql_server::kv_snapshot::tests::round_trip_compressed_layer"
+              ],
               "tests_unresolved": [],
-              "unbacked": true,
+              "unbacked": false,
               "spec_file": "openspec/changes/attention-service-routes/specs/server-attention-service/spec.md",
-              "line": 144
+              "line": 145
             },
             {
               "name": "unknown version is rejected",
-              "tests_resolved": [],
+              "tests_resolved": [
+                "larql_server::kv_snapshot::tests::unknown_version_is_rejected"
+              ],
               "tests_unresolved": [],
-              "unbacked": true,
+              "unbacked": false,
               "spec_file": "openspec/changes/attention-service-routes/specs/server-attention-service/spec.md",
-              "line": 152
+              "line": 154
             }
           ]
         },
@@ -13365,7 +13373,7 @@
               "tests_unresolved": [],
               "unbacked": true,
               "spec_file": "openspec/changes/attention-service-routes/specs/server-attention-service/spec.md",
-              "line": 167
+              "line": 170
             },
             {
               "name": "legacy server (no --role) announces both",
@@ -13373,7 +13381,7 @@
               "tests_unresolved": [],
               "unbacked": true,
               "spec_file": "openspec/changes/attention-service-routes/specs/server-attention-service/spec.md",
-              "line": 174
+              "line": 177
             }
           ]
         },
@@ -13386,7 +13394,7 @@
               "tests_unresolved": [],
               "unbacked": true,
               "spec_file": "openspec/changes/attention-service-routes/specs/server-attention-service/spec.md",
-              "line": 188
+              "line": 191
             },
             {
               "name": "empty server emits empty bloom",
@@ -13394,7 +13402,7 @@
               "tests_unresolved": [],
               "unbacked": true,
               "spec_file": "openspec/changes/attention-service-routes/specs/server-attention-service/spec.md",
-              "line": 195
+              "line": 198
             }
           ]
         },
@@ -25604,6 +25612,78 @@
       "fqn": "larql_server::ffn_l2_cache::stats_json_has_expected_fields",
       "file": "crates/larql-server/src/ffn_l2_cache.rs",
       "line": 238,
+      "crate": "larql_server"
+    },
+    {
+      "fqn": "larql_server::kv_snapshot::magic_and_version_are_present_at_known_offsets",
+      "file": "crates/larql-server/src/kv_snapshot.rs",
+      "line": 489,
+      "crate": "larql_server"
+    },
+    {
+      "fqn": "larql_server::kv_snapshot::round_trip_fp32_is_byte_identical",
+      "file": "crates/larql-server/src/kv_snapshot.rs",
+      "line": 501,
+      "crate": "larql_server"
+    },
+    {
+      "fqn": "larql_server::kv_snapshot::tests::round_trip_preserves_max_window_and_promote_count",
+      "file": "crates/larql-server/src/kv_snapshot.rs",
+      "line": 516,
+      "crate": "larql_server"
+    },
+    {
+      "fqn": "larql_server::kv_snapshot::round_trip_preserves_max_window_and_promote_count",
+      "file": "crates/larql-server/src/kv_snapshot.rs",
+      "line": 516,
+      "crate": "larql_server"
+    },
+    {
+      "fqn": "larql_server::kv_snapshot::round_trip_compressed_layer",
+      "file": "crates/larql-server/src/kv_snapshot.rs",
+      "line": 528,
+      "crate": "larql_server"
+    },
+    {
+      "fqn": "larql_server::kv_snapshot::tests::empty_layers_round_trip",
+      "file": "crates/larql-server/src/kv_snapshot.rs",
+      "line": 560,
+      "crate": "larql_server"
+    },
+    {
+      "fqn": "larql_server::kv_snapshot::empty_layers_round_trip",
+      "file": "crates/larql-server/src/kv_snapshot.rs",
+      "line": 560,
+      "crate": "larql_server"
+    },
+    {
+      "fqn": "larql_server::kv_snapshot::tests::magic_mismatch_is_rejected",
+      "file": "crates/larql-server/src/kv_snapshot.rs",
+      "line": 572,
+      "crate": "larql_server"
+    },
+    {
+      "fqn": "larql_server::kv_snapshot::magic_mismatch_is_rejected",
+      "file": "crates/larql-server/src/kv_snapshot.rs",
+      "line": 572,
+      "crate": "larql_server"
+    },
+    {
+      "fqn": "larql_server::kv_snapshot::unknown_version_is_rejected",
+      "file": "crates/larql-server/src/kv_snapshot.rs",
+      "line": 585,
+      "crate": "larql_server"
+    },
+    {
+      "fqn": "larql_server::kv_snapshot::tests::truncated_input_is_rejected_cleanly",
+      "file": "crates/larql-server/src/kv_snapshot.rs",
+      "line": 601,
+      "crate": "larql_server"
+    },
+    {
+      "fqn": "larql_server::kv_snapshot::truncated_input_is_rejected_cleanly",
+      "file": "crates/larql-server/src/kv_snapshot.rs",
+      "line": 601,
       "crate": "larql_server"
     },
     {

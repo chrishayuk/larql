@@ -130,7 +130,7 @@ payloads tagged as empty / fp32 / quantized.
 - **WHEN** a client calls `/v1/kv-cache/snapshot` on a populated session
 - **THEN** the first 4 bytes SHALL be `0x41 0x51 0x41 0x4C` (LE 'LAQA')
   and bytes 4–5 SHALL be `0x01 0x00`
-<!-- test: unbacked -->
+<!-- test: larql_server::kv_snapshot::tests::magic_and_version_are_present_at_known_offsets -->
 
 #### Scenario: snapshot then restore round-trips for FP32
 
@@ -139,6 +139,7 @@ payloads tagged as empty / fp32 / quantized.
 - **THEN** every per-layer K and V buffer SHALL be byte-identical to
   the original, and decode against the new session SHALL produce the
   same residual as decode against the original would have
+<!-- test: larql_server::kv_snapshot::tests::round_trip_fp32_is_byte_identical -->
 <!-- test: unbacked -->
 
 #### Scenario: snapshot then restore round-trips for compressed formats
@@ -147,6 +148,7 @@ payloads tagged as empty / fp32 / quantized.
 - **THEN** the dequantised K and V SHALL match the original to cosine
   ≥ 0.95 (the format's published bound; round-trip dequant is the
   same as fresh dequant)
+<!-- test: larql_server::kv_snapshot::tests::round_trip_compressed_layer -->
 <!-- test: unbacked -->
 
 #### Scenario: unknown version is rejected
@@ -155,6 +157,7 @@ payloads tagged as empty / fp32 / quantized.
   version field is `0xFFFF`
 - **THEN** the server SHALL return `400 Bad Request` with body
   `{"error": "snapshot_version_unsupported"}`
+<!-- test: larql_server::kv_snapshot::tests::unknown_version_is_rejected -->
 <!-- test: unbacked -->
 
 ### Requirement: Server SHALL announce its `--role` as a router capability
