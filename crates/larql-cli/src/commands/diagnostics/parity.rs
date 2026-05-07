@@ -224,7 +224,7 @@ fn run_lm_head(
 
     let mut traces: Vec<(&str, Vec<f32>)> = vec![("reference (f32 dot)", ref_scores.clone())];
 
-    if backends.iter().any(|b| *b == "cpu") {
+    if backends.contains(&"cpu") {
         let hits = index.lm_head_knn_backend(&h1d, vocab.min(8), &cpu);
         if !hits.is_empty() {
             // hits is (token, score) sorted descending. Reconstruct a
@@ -1121,7 +1121,7 @@ fn naive_top_k(logits: &[f32], k: usize) -> (Vec<usize>, Vec<f32>) {
 }
 
 fn naive_gelu_tanh(x: f32) -> f32 {
-    let c = 0.7978845608_f32;
+    let c = 0.797_884_6_f32;
     0.5 * x * (1.0 + (c * (x + 0.044715 * x * x * x)).tanh())
 }
 
@@ -1131,11 +1131,11 @@ fn naive_silu(x: f32) -> f32 {
 
 // ── Vindex helpers ────────────────────────────────────────────────────────────
 
-fn expert_bytes<'a>(
-    weights: &'a larql_models::ModelWeights,
+fn expert_bytes(
+    weights: &larql_models::ModelWeights,
     layer: usize,
     expert: usize,
-) -> Result<(&'a [u8], &'a [u8]), Box<dyn std::error::Error>> {
+) -> Result<(&[u8], &[u8]), Box<dyn std::error::Error>> {
     let gu_key = per_layer_ffn_key(layer, expert, PER_LAYER_FFN_GATE_UP);
     let dn_key = per_layer_ffn_key(layer, expert, PER_LAYER_FFN_DOWN);
     let gu = weights
@@ -1147,7 +1147,7 @@ fn expert_bytes<'a>(
     Ok((gu, dn))
 }
 
-fn pre_experts_norm_for<'a>(weights: &'a larql_models::ModelWeights, layer: usize) -> &'a [f32] {
+fn pre_experts_norm_for(weights: &larql_models::ModelWeights, layer: usize) -> &[f32] {
     weights
         .arch
         .moe_pre_experts_norm_key(layer)
@@ -1156,7 +1156,7 @@ fn pre_experts_norm_for<'a>(weights: &'a larql_models::ModelWeights, layer: usiz
         .unwrap_or(&[])
 }
 
-fn post_experts_norm_for<'a>(weights: &'a larql_models::ModelWeights, layer: usize) -> &'a [f32] {
+fn post_experts_norm_for(weights: &larql_models::ModelWeights, layer: usize) -> &[f32] {
     weights
         .arch
         .moe_post_experts_norm_key(layer)

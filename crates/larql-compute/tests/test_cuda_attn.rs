@@ -125,17 +125,8 @@ fn softmax_small_parity() {
     // public new() and access via a trait-bypass helper. The crate
     // doesn't expose drv, so we exercise the public `decode_attention`
     // directly.
-    let cuda = decode_attention(
-        &backend,
-        &q,
-        &k,
-        &v,
-        n_q,
-        n_kv,
-        head_dim,
-        opts,
-    )
-    .expect("decode_attention");
+    let cuda = decode_attention(&backend, &q, &k, &v, n_q, n_kv, head_dim, opts)
+        .expect("decode_attention");
     let cpu = reference_attention(&q, &k, &v, n_q, n_kv, head_dim, false, 0.0);
     let diff = max_abs_diff(&cpu, &cuda);
     let cos = cosine(&cpu, &cuda);
@@ -157,17 +148,8 @@ fn softmax_long_row_parity() {
         softcap: 0.0,
     };
     let backend = CudaBackend::new().unwrap();
-    let cuda = decode_attention(
-        &backend,
-        &q,
-        &k,
-        &v,
-        n_q,
-        n_kv,
-        head_dim,
-        opts,
-    )
-    .expect("decode_attention");
+    let cuda = decode_attention(&backend, &q, &k, &v, n_q, n_kv, head_dim, opts)
+        .expect("decode_attention");
     let cpu = reference_attention(&q, &k, &v, n_q, n_kv, head_dim, false, 0.0);
     let diff = max_abs_diff(&cpu, &cuda);
     assert!(diff <= TOL_ABS, "max abs diff {diff}");
@@ -187,17 +169,8 @@ fn softmax_causal_mask() {
         softcap: 0.0,
     };
     let backend = CudaBackend::new().unwrap();
-    let cuda = decode_attention(
-        &backend,
-        &q,
-        &k,
-        &v,
-        n_q,
-        n_kv,
-        head_dim,
-        opts,
-    )
-    .expect("decode_attention");
+    let cuda = decode_attention(&backend, &q, &k, &v, n_q, n_kv, head_dim, opts)
+        .expect("decode_attention");
     let cpu = reference_attention(&q, &k, &v, n_q, n_kv, head_dim, true, 0.0);
     let diff = max_abs_diff(&cpu, &cuda);
     assert!(
@@ -214,25 +187,22 @@ fn softmax_softcap_50() {
     let head_dim = 1;
     // Inflate Q so the dot-products land outside [-1, 1] and softcap
     // actually clamps.
-    let q: Vec<f32> = synth(n_q * head_dim, 0xD1).into_iter().map(|v| v * 50.0).collect();
-    let k: Vec<f32> = synth(n_kv * head_dim, 0xD2).into_iter().map(|v| v * 50.0).collect();
+    let q: Vec<f32> = synth(n_q * head_dim, 0xD1)
+        .into_iter()
+        .map(|v| v * 50.0)
+        .collect();
+    let k: Vec<f32> = synth(n_kv * head_dim, 0xD2)
+        .into_iter()
+        .map(|v| v * 50.0)
+        .collect();
     let v = synth(n_kv * head_dim, 0xD3);
     let opts = AttentionOpts {
         causal: false,
         softcap: 50.0,
     };
     let backend = CudaBackend::new().unwrap();
-    let cuda = decode_attention(
-        &backend,
-        &q,
-        &k,
-        &v,
-        n_q,
-        n_kv,
-        head_dim,
-        opts,
-    )
-    .expect("decode_attention");
+    let cuda = decode_attention(&backend, &q, &k, &v, n_q, n_kv, head_dim, opts)
+        .expect("decode_attention");
     let cpu = reference_attention(&q, &k, &v, n_q, n_kv, head_dim, false, 50.0);
     let diff = max_abs_diff(&cpu, &cuda);
     assert!(diff <= TOL_ABS, "softcap-50 max abs diff {diff}");
@@ -252,17 +222,8 @@ fn decode_attention_small_parity() {
         softcap: 0.0,
     };
     let backend = CudaBackend::new().unwrap();
-    let cuda = decode_attention(
-        &backend,
-        &q,
-        &k,
-        &v,
-        n_q,
-        n_kv,
-        head_dim,
-        opts,
-    )
-    .expect("decode_attention");
+    let cuda = decode_attention(&backend, &q, &k, &v, n_q, n_kv, head_dim, opts)
+        .expect("decode_attention");
     let cpu = reference_attention(&q, &k, &v, n_q, n_kv, head_dim, false, 0.0);
     let diff = max_abs_diff(&cpu, &cuda);
     let cos = cosine(&cpu, &cuda);
@@ -273,7 +234,7 @@ fn decode_attention_small_parity() {
 #[test]
 fn decode_attention_gemma4b_head_parity() {
     let Some(()) = gpu_or_skip() else { return };
-    let n_q = 1;     // single decode token
+    let n_q = 1; // single decode token
     let n_kv = 2048; // mid-context
     let head_dim = 320; // Gemma 4B head_dim
     let q = synth(n_q * head_dim, 0xF1);
@@ -284,17 +245,8 @@ fn decode_attention_gemma4b_head_parity() {
         softcap: 0.0,
     };
     let backend = CudaBackend::new().unwrap();
-    let cuda = decode_attention(
-        &backend,
-        &q,
-        &k,
-        &v,
-        n_q,
-        n_kv,
-        head_dim,
-        opts,
-    )
-    .expect("decode_attention");
+    let cuda = decode_attention(&backend, &q, &k, &v, n_q, n_kv, head_dim, opts)
+        .expect("decode_attention");
     let cpu = reference_attention(&q, &k, &v, n_q, n_kv, head_dim, false, 0.0);
     let diff = max_abs_diff(&cpu, &cuda);
     let cos = cosine(&cpu, &cuda);

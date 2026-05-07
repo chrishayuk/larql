@@ -7,7 +7,7 @@ pub(super) fn insert_q4k_layer_tensors(
     layer: usize,
 ) -> Result<Vec<String>, Box<dyn std::error::Error>> {
     larql_inference::vindex::insert_q4k_layer_tensors(weights, index, layer).map_err(|err| {
-        Box::<dyn std::error::Error>::from(std::io::Error::new(std::io::ErrorKind::Other, err))
+        Box::<dyn std::error::Error>::from(std::io::Error::other(err))
     })
 }
 

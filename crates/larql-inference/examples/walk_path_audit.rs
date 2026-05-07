@@ -1,3 +1,9 @@
+// Diagnostic example carries some pre-existing lint debt that's not worth
+// refactoring here — a single audit script.
+#![allow(clippy::too_many_arguments)]
+#![allow(clippy::ptr_arg)]
+#![allow(clippy::needless_pass_by_ref_mut)]
+
 //! walk_path_audit — per-path equivalence harness for WalkFfn dispatch paths.
 //!
 //! For each path the live vindex makes available, force dispatch via a
@@ -880,12 +886,10 @@ fn render_markdown(model: &str, vindex: &PathBuf, runs: &[PathRun]) -> String {
     );
     s.push_str("|---|---|---|---|---|---|---|---|---|---|\n");
     for r in runs {
-        let top1_ok = r
+        let top1_ok = if r
             .per_prompt
             .values()
-            .all(|p| p.top1_match)
-            .then(|| "✓".to_string())
-            .unwrap_or_else(|| {
+            .all(|p| p.top1_match) { "✓".to_string() } else { {
                 let bad: Vec<_> = r
                     .per_prompt
                     .iter()
@@ -893,7 +897,7 @@ fn render_markdown(model: &str, vindex: &PathBuf, runs: &[PathRun]) -> String {
                     .map(|(k, _)| k.as_str())
                     .collect();
                 format!("✗ ({})", bad.join(","))
-            });
+            } };
         let paris_delta = r
             .per_prompt
             .get(PARIS_KEY)

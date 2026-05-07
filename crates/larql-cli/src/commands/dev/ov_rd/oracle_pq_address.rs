@@ -92,7 +92,7 @@ pub(super) fn fit_address_probe_models(
     )?;
 
     let mut models = HashMap::new();
-    for ((head, config), _) in codebooks {
+    for (head, config) in codebooks.keys() {
         let mut probe_models = Vec::new();
         for name in &names {
             let mut group_majority = Vec::with_capacity(config.groups);
@@ -230,7 +230,7 @@ pub(super) fn fit_address_prev_ffn_feature_group_models(
     )?;
 
     let mut models = HashMap::new();
-    for ((head, config), _) in codebooks {
+    for (head, config) in codebooks.keys() {
         let mut probe_models = Vec::new();
         for name in &names {
             let mut group_majority = Vec::with_capacity(config.groups);
@@ -350,7 +350,7 @@ pub(super) fn fit_address_ffn_first_feature_group_models(
     )?;
 
     let mut models = HashMap::new();
-    for ((head, config), _) in codebooks {
+    for (head, config) in codebooks.keys() {
         let mut probe_models = Vec::new();
         for name in &names {
             let mut group_majority = Vec::with_capacity(config.groups);
@@ -470,7 +470,7 @@ pub(super) fn fit_address_attention_relation_group_models(
     )?;
 
     let mut models = HashMap::new();
-    for ((head, config), _) in codebooks {
+    for (head, config) in codebooks.keys() {
         let mut probe_models = Vec::new();
         for name in &names {
             let mut group_majority = Vec::with_capacity(config.groups);
@@ -590,7 +590,7 @@ pub(super) fn fit_address_attention_cluster_group_models(
     )?;
 
     let mut models = HashMap::new();
-    for ((head, config), _) in codebooks {
+    for (head, config) in codebooks.keys() {
         let train_samples = samples.get(&(*head, *config)).cloned().unwrap_or_default();
         let feature_rows = train_samples
             .iter()
@@ -746,7 +746,7 @@ pub(super) fn fit_address_reduced_qk_cluster_group_models(
             },
         )?;
 
-        for ((head, config), _) in codebooks {
+        for (head, config) in codebooks.keys() {
             let train_samples = samples.get(&(*head, *config)).cloned().unwrap_or_default();
             let feature_rows = train_samples
                 .iter()
@@ -897,7 +897,7 @@ pub(super) fn fit_address_lsh_group_models(
     )?;
 
     let mut models = HashMap::new();
-    for ((head, config), _) in codebooks {
+    for (head, config) in codebooks.keys() {
         let mut group_majority = Vec::with_capacity(config.groups);
         for group in 0..config.groups {
             let majority = majority_counts
@@ -1018,7 +1018,7 @@ pub(super) fn fit_address_supervised_group_models(
     )?;
 
     let mut models = HashMap::new();
-    for ((head, config), _) in codebooks {
+    for (head, config) in codebooks.keys() {
         let train_samples = samples.get(&(*head, *config)).cloned().unwrap_or_default();
         let dim = train_samples.first().map(|(row, _)| row.len()).unwrap_or(0);
         let mut group_majority = Vec::with_capacity(config.groups);
@@ -1121,7 +1121,7 @@ pub(super) fn fit_majority_codes_for_codebooks(
     )?;
 
     let mut out = HashMap::new();
-    for ((head, config), _) in codebooks {
+    for (head, config) in codebooks.keys() {
         let mut group_majority = Vec::with_capacity(config.groups);
         for group in 0..config.groups {
             group_majority.push(

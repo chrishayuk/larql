@@ -646,7 +646,7 @@ impl Session {
             .into_iter()
             .map(|(tok, (count, max_score))| (tok, count, max_score))
             .collect();
-        entities.sort_by(|a, b| b.1.cmp(&a.1));
+        entities.sort_by_key(|x| std::cmp::Reverse(x.1));
         entities.truncate(limit);
 
         let mut out = Vec::new();

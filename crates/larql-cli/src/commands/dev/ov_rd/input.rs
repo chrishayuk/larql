@@ -124,7 +124,7 @@ pub(super) fn parse_pq_configs(spec: &str) -> Result<Vec<PqConfig>, Box<dyn std:
         if config.k == 0 || config.groups == 0 || config.bits_per_group == 0 {
             return Err(format!("invalid zero value in PQ config '{part}'").into());
         }
-        if config.k % config.groups != 0 {
+        if !config.k.is_multiple_of(config.groups) {
             return Err(format!("PQ config '{part}' requires K divisible by groups").into());
         }
         if config.bits_per_group > 12 {

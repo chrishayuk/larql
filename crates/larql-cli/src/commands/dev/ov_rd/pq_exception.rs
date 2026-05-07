@@ -226,7 +226,7 @@ pub(super) fn run_oracle_pq_exception(
     let mut exception_edits = parse_usize_list(&args.exception_edits)?;
     exception_edits.sort_unstable();
     exception_edits.dedup();
-    if exception_edits.is_empty() || exception_edits.iter().any(|&edits| edits == 0) {
+    if exception_edits.is_empty() || exception_edits.contains(&0) {
         return Err("--exception-edits values must be greater than zero".into());
     }
     let mut tail_fracs = parse_f64_list(&args.tail_fracs)?;

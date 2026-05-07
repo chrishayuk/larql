@@ -235,12 +235,7 @@ impl KvCache {
     /// (snapshot serialisation, diagnostics).
     pub fn get_layer(&mut self, layer: usize) -> Option<&SharedKV> {
         // Fast path: FP32 slot already populated.
-        if self
-            .layers
-            .get(layer)
-            .map(|s| s.is_some())
-            .unwrap_or(false)
-        {
+        if self.layers.get(layer).map(|s| s.is_some()).unwrap_or(false) {
             return self.layers.get(layer).and_then(|opt| opt.as_ref());
         }
         // Slow path: try to promote from compressed storage.
@@ -877,7 +872,7 @@ mod tests {
         cache.quantize_layer(0);
         let _ = cache.get_layer(0); // first read promotes
         let _ = cache.get_layer(0); // second read hits cached FP32
-        // Counter increments by exactly 1 (only the first read actually promoted).
+                                    // Counter increments by exactly 1 (only the first read actually promoted).
         assert_eq!(cache.promote_on_read_count, 1);
     }
 

@@ -78,11 +78,13 @@ fn q4_0_matvec_parity() {
 fn q4k_matvec_ffn_gate_parity() {
     let Some(cuda) = gpu_or_skip() else { return };
     let n = 10_240; // Gemma 4B intermediate
-    let k = 2_560;  // Gemma 4B hidden
+    let k = 2_560; // Gemma 4B hidden
     let weights_f32 = synth(n * k, 0xB1);
     let q4k = quantize_q4_k(&weights_f32);
     let x = synth(k, 0xB2);
-    let cpu = CpuBackend.q4k_matvec(&q4k, &x, n, k).expect("CPU q4k_matvec");
+    let cpu = CpuBackend
+        .q4k_matvec(&q4k, &x, n, k)
+        .expect("CPU q4k_matvec");
     let gpu = cuda
         .q4k_matvec(&q4k, &x, n, k)
         .expect("CUDA q4k_matvec must be Some");
@@ -100,7 +102,9 @@ fn q4k_matvec_lm_head_parity() {
     let weights_f32 = synth(n * k, 0xC1);
     let q4k = quantize_q4_k(&weights_f32);
     let x = synth(k, 0xC2);
-    let cpu = CpuBackend.q4k_matvec(&q4k, &x, n, k).expect("CPU q4k_matvec");
+    let cpu = CpuBackend
+        .q4k_matvec(&q4k, &x, n, k)
+        .expect("CPU q4k_matvec");
     let gpu = cuda
         .q4k_matvec(&q4k, &x, n, k)
         .expect("CUDA q4k_matvec must be Some");
@@ -118,7 +122,9 @@ fn q6k_matvec_lm_head_parity() {
     let weights_f32 = synth(n * k, 0xD1);
     let q6k = quantize_q6_k(&weights_f32);
     let x = synth(k, 0xD2);
-    let cpu = CpuBackend.q6k_matvec(&q6k, &x, n, k).expect("CPU q6k_matvec");
+    let cpu = CpuBackend
+        .q6k_matvec(&q6k, &x, n, k)
+        .expect("CPU q6k_matvec");
     let gpu = cuda
         .q6k_matvec(&q6k, &x, n, k)
         .expect("CUDA q6k_matvec must be Some");
@@ -136,9 +142,7 @@ fn quant_matvec_dispatches_to_q4k() {
     let weights_f32 = synth(n * k, 0xE1);
     let q4k = quantize_q4_k(&weights_f32);
     let x = synth(k, 0xE2);
-    let direct = cuda
-        .q4k_matvec(&q4k, &x, n, k)
-        .expect("direct q4k_matvec");
+    let direct = cuda.q4k_matvec(&q4k, &x, n, k).expect("direct q4k_matvec");
     let dispatched = cuda
         .quant_matvec(larql_compute::QuantFormat::Q4_K, &q4k, &x, n, k)
         .expect("quant_matvec dispatch");

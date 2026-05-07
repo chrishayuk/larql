@@ -20,7 +20,7 @@ use axum::response::Response;
 use larql_compute::Q8KActivation;
 use larql_inference::ffn::moe_remote::{
     decode_multi_layer_request, decode_multi_layer_request_q8k, encode_multi_layer_response,
-    MultiLayerResult, MULTI_LAYER_BATCH_CONTENT_TYPE, MULTI_LAYER_BATCH_Q8K_CONTENT_TYPE,
+    MultiLayerResult, MULTI_LAYER_BATCH_CONTENT_TYPE,
 };
 
 use crate::env_flags;

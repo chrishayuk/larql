@@ -22,3 +22,6 @@ ndarray = "0.16"
 memmap2 = "0.9"
 serde = { workspace = true }
 serde_json = { workspace = true }
+
+[lints]
+workspace = true

@@ -207,7 +207,7 @@ pub fn load_single_vindex(
         // `--ffn-only` skips attention weights (no infer path) but MUST
         // still mmap interleaved_q4k so per-layer walk-ffn requests can
         // call `q4k_ffn_forward_layer`.
-        let need_ffn_mmap = (!opts.no_infer && !opts.ffn_only && has_weights) || opts.ffn_only;
+        let need_ffn_mmap = opts.ffn_only || (!opts.no_infer && has_weights);
         if !opts.no_infer && !opts.ffn_only && has_weights {
             if path.join(LM_HEAD_BIN).is_file() {
                 let _ = index.load_lm_head(&path);

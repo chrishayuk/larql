@@ -623,6 +623,6 @@ pub fn select_top_k_features(
         indexed.select_nth_unstable_by(k, |a, b| b.1.abs().partial_cmp(&a.1.abs()).unwrap());
         indexed.truncate(k);
     }
-    indexed.sort_unstable_by(|a, b| a.0.cmp(&b.0));
+    indexed.sort_unstable_by_key(|x| x.0);
     indexed.into_iter().map(|(id, _)| id).collect()
 }

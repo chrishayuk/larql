@@ -720,7 +720,7 @@ fn main() {
                         "properties": {"q": {"type": "string"}},
                         "required": ["q"]}}}
             ]);
-            let names = vec!["calc".to_string(), "search".to_string()];
+            let names = ["calc".to_string(), "search".to_string()];
             let (schema, _) = synth_tools_schema(&tools, &ToolMode::Any).unwrap().unwrap();
             let mut fsm = Fsm::new(schema);
             let _ = fsm.step_str(r#"{"name":"calc","arguments":{"a":12,"b":30}}"#);

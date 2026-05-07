@@ -258,7 +258,10 @@ mod tests {
         let last_sentinel = b"<|im_start|>";
         let sentinel_end =
             find_last(prefix.as_bytes(), last_sentinel).unwrap() + last_sentinel.len();
-        assert_eq!(hit.1, sentinel_end, "prefix_len should equal last-sentinel-end");
+        assert_eq!(
+            hit.1, sentinel_end,
+            "prefix_len should equal last-sentinel-end"
+        );
         assert!(sentinel_end > 0, "sentinel must be present");
         assert!(sentinel_end < prefix.len(), "suffix-after-sentinel exists");
         assert!(!hit.0.is_empty());
@@ -275,7 +278,7 @@ mod tests {
     #[test]
     fn parallel_hits_no_corruption() {
         let cache = std::sync::Arc::new(TokenizerCache::new(64, 64));
-        cache.insert("shared", &vec![42, 43, 44]);
+        cache.insert("shared", &[42, 43, 44]);
         let mut joins = Vec::new();
         for _ in 0..32 {
             let c = cache.clone();
@@ -295,7 +298,7 @@ mod tests {
     fn disabled_tier_returns_none() {
         // L0 disabled; only L1 works.
         let cache = TokenizerCache::new(0, 16);
-        cache.insert("hello world", &vec![1, 2]);
+        cache.insert("hello world", &[1, 2]);
         // Plain text without special tokens — L1 doesn't store it
         // (no sentinel to key on); L0 disabled means full miss.
         assert!(cache.get("hello world").is_none());
@@ -311,7 +314,10 @@ mod tests {
 
     #[test]
     fn find_last_finds_last_occurrence() {
-        assert_eq!(find_last(b"abc<|im_end|>def<|im_end|>ghi", b"<|im_end|>"), Some(16));
+        assert_eq!(
+            find_last(b"abc<|im_end|>def<|im_end|>ghi", b"<|im_end|>"),
+            Some(16)
+        );
         assert_eq!(find_last(b"no needle here", b"<|im_end|>"), None);
         assert_eq!(find_last(b"", b"x"), None);
     }

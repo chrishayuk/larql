@@ -295,14 +295,13 @@ pub async fn handle_chat_completions(
                     )));
                 }
             }
-            USER_ROLE | SYSTEM_ROLE => {
-                if m.content.is_none() {
+            USER_ROLE | SYSTEM_ROLE
+                if m.content.is_none() => {
                     return Err(ServerError::BadRequest(format!(
                         "messages[{i}] role={} requires content",
                         m.role
                     )));
                 }
-            }
             _ => {}
         }
     }

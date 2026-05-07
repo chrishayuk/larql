@@ -97,8 +97,6 @@ pub fn dequantize_k(qkv: &QuantizedKv) -> Result<Vec<f32>, RotorQuantError> {
 ///
 /// The signature deliberately does not let the caller pass a rotation
 /// table; the inverse is reconstructed from `qkv.rotation_indices`.
-pub fn dequantize_v_with_inverse_rotation(
-    qkv: &QuantizedKv,
-) -> Result<Vec<f32>, RotorQuantError> {
+pub fn dequantize_v_with_inverse_rotation(qkv: &QuantizedKv) -> Result<Vec<f32>, RotorQuantError> {
     cpu_ref::dequantize(qkv, /* invert_rotation = */ true)
 }

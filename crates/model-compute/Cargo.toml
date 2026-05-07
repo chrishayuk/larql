@@ -31,3 +31,6 @@ criterion = "0.5"
 name = "wasm_dispatch"
 harness = false
 required-features = ["wasm"]
+
+[lints]
+workspace = true

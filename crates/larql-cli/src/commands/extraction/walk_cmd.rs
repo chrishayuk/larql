@@ -25,7 +25,7 @@ fn rss_mb() -> f64 {
 
 use clap::Args;
 use larql_inference::{
-    generate_with_remote_ffn_batch, predict_with_ffn, predict_with_router, vindex::WalkFfn,
+    predict_with_ffn, predict_with_router, vindex::WalkFfn,
     InferenceModel, LayerFfnRouter, LayerShardedBackend, ModelWeights, SparseFfn, WeightFfn,
 };
 use larql_vindex::{

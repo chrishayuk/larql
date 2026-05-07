@@ -93,3 +93,6 @@ harness = false
 [[bench]]
 name = "quant_matvec"
 harness = false
+
+[lints]
+workspace = true

@@ -85,7 +85,7 @@ pub(super) fn measure_code_stability(
     )?;
 
     let mut reports = HashMap::new();
-    for ((head, config), _) in codebooks {
+    for (head, config) in codebooks.keys() {
         let levels = 1usize << config.bits_per_group;
         let empty_counts = CodeDistributionCounts::new(selected_groups, levels);
         let train_counts = train.get(&(*head, *config)).unwrap_or(&empty_counts);
@@ -181,7 +181,7 @@ fn collect_code_distribution_counts(
         heads_by_layer.entry(head.layer).or_default().push(*head);
     }
     let mut counts = HashMap::new();
-    for ((head, config), _) in codebooks {
+    for (head, config) in codebooks.keys() {
         counts.insert(
             (*head, *config),
             CodeDistributionCounts::new(selected_groups, 1usize << config.bits_per_group),

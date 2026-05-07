@@ -20,7 +20,10 @@ pub fn cache_dir() -> PathBuf {
     if let Ok(xdg) = env::var("XDG_CACHE_HOME") {
         PathBuf::from(xdg).join("larql").join("cudarc")
     } else if let Ok(home) = env::var("HOME") {
-        PathBuf::from(home).join(".cache").join("larql").join("cudarc")
+        PathBuf::from(home)
+            .join(".cache")
+            .join("larql")
+            .join("cudarc")
     } else {
         PathBuf::from(".cache").join("larql").join("cudarc")
     }

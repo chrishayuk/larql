@@ -186,7 +186,7 @@ impl Session {
                 .values()
                 .map(|info| (info.original.as_str(), info))
                 .collect();
-            sorted.sort_by(|a, b| b.1.count.cmp(&a.1.count));
+            sorted.sort_by_key(|x| std::cmp::Reverse(x.1.count));
 
             let limit = if mode == DescribeMode::Verbose {
                 50
@@ -406,7 +406,7 @@ impl Session {
             .into_iter()
             .map(|(tok, (count, max_score))| (tok, count, max_score))
             .collect();
-        entities.sort_by(|a, b| b.1.cmp(&a.1));
+        entities.sort_by_key(|x| std::cmp::Reverse(x.1));
         entities.truncate(limit);
 
         let mut out = Vec::new();

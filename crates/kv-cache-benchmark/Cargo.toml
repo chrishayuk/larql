@@ -38,3 +38,6 @@ criterion = { version = "0.5", features = ["html_reports"] }
 [[bench]]
 name = "kv_strategies"
 harness = false
+
+[lints]
+workspace = true

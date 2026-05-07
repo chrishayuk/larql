@@ -52,8 +52,7 @@ impl VectorIndex {
         // Mirror the walk_ffn routing priority order (see
         // larql-inference::vindex::walk_ffn/mod.rs routing table).
         let mut parts = Vec::new();
-        if self.ffn.fp4_storage.is_some() {
-            let fp4 = self.ffn.fp4_storage.as_ref().unwrap();
+        if let Some(fp4) = self.ffn.fp4_storage.as_ref() {
             let g = fp4.manifest.projections.gate.precision;
             let u = fp4.manifest.projections.up.precision;
             let d = fp4.manifest.projections.down.precision;

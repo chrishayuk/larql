@@ -247,7 +247,6 @@ pub(super) fn capture_prev_ffn_feature_keys(
                 ple_inputs.get(layer),
                 shared_kv,
             )
-            .map(|(h_new, activation, kv_out)| (h_new, activation, kv_out))
         };
         if let Some((h_new, activation, kv_out)) = step {
             if let Some(activation) = activation {

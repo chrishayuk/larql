@@ -169,10 +169,8 @@ fn parse_model_config(config: &serde_json::Value) -> ModelConfig {
         .map(|v| v as usize)
         .unwrap_or(if default_head_dim > 0 {
             default_head_dim
-        } else if num_q_heads > 0 {
-            hidden_size / num_q_heads
         } else {
-            0
+            hidden_size.checked_div(num_q_heads).unwrap_or(0)
         });
     let num_kv_heads = text_config["num_key_value_heads"].as_u64().unwrap_or(4) as usize;
     // RoPE base: check rope_parameters.full_attention.rope_theta (Gemma 4),
