@@ -16,6 +16,7 @@ plus a `last_used: Instant` for TTL eviction.
   no other fields
 - **THEN** the response SHALL contain a non-empty `session_id`,
   `layer_range = [0, num_layers)`, and `kv_format = "fp32"`
+<!-- test: larql_server::attention_session::tests::insert_and_get_round_trip -->
 <!-- test: unbacked -->
 
 #### Scenario: get on unknown session id returns 404
@@ -29,6 +30,7 @@ plus a `last_used: Instant` for TTL eviction.
 
 - **WHEN** a client creates a session, then DELETEs it, then GETs it
 - **THEN** the GET SHALL return `404 Not Found`
+<!-- test: larql_server::attention_session::tests::delete_makes_get_none -->
 <!-- test: unbacked -->
 
 #### Scenario: idle sessions are reaped after TTL
@@ -36,6 +38,7 @@ plus a `last_used: Instant` for TTL eviction.
 - **WHEN** a session has been idle for more than `--session-ttl-secs`
   + the reaper's wake interval (30 s)
 - **THEN** a subsequent GET SHALL return `404 Not Found`
+<!-- test: larql_server::attention_session::tests::reap_drops_idle_sessions -->
 <!-- test: unbacked -->
 
 ### Requirement: Prefill SHALL populate the cache and return per-layer residuals

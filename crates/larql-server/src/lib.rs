@@ -5,6 +5,7 @@
 #![allow(clippy::result_large_err)]
 
 pub mod announce;
+pub mod attention_session;
 pub mod auth;
 pub mod band_utils;
 pub mod bootstrap;

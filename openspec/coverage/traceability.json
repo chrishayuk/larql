@@ -3,9 +3,9 @@
     "capabilities": 49,
     "requirements": 408,
     "scenarios": 1376,
-    "scenarios_backed": 1201,
-    "scenarios_unbacked": 175,
-    "test_refs": 3258,
+    "scenarios_backed": 1204,
+    "scenarios_unbacked": 172,
+    "test_refs": 3261,
     "test_refs_unresolved": 0
   },
   "capabilities": [
@@ -13221,9 +13221,11 @@
           "scenarios": [
             {
               "name": "create returns a fresh session id",
-              "tests_resolved": [],
+              "tests_resolved": [
+                "larql_server::attention_session::tests::insert_and_get_round_trip"
+              ],
               "tests_unresolved": [],
-              "unbacked": true,
+              "unbacked": false,
               "spec_file": "openspec/changes/attention-service-routes/specs/server-attention-service/spec.md",
               "line": 13
             },
@@ -13233,23 +13235,27 @@
               "tests_unresolved": [],
               "unbacked": true,
               "spec_file": "openspec/changes/attention-service-routes/specs/server-attention-service/spec.md",
-              "line": 21
+              "line": 22
             },
             {
               "name": "delete makes get 404",
-              "tests_resolved": [],
+              "tests_resolved": [
+                "larql_server::attention_session::tests::delete_makes_get_none"
+              ],
               "tests_unresolved": [],
-              "unbacked": true,
+              "unbacked": false,
               "spec_file": "openspec/changes/attention-service-routes/specs/server-attention-service/spec.md",
-              "line": 28
+              "line": 29
             },
             {
               "name": "idle sessions are reaped after TTL",
-              "tests_resolved": [],
+              "tests_resolved": [
+                "larql_server::attention_session::tests::reap_drops_idle_sessions"
+              ],
               "tests_unresolved": [],
-              "unbacked": true,
+              "unbacked": false,
               "spec_file": "openspec/changes/attention-service-routes/specs/server-attention-service/spec.md",
-              "line": 34
+              "line": 36
             }
           ]
         },
@@ -13262,7 +13268,7 @@
               "tests_unresolved": [],
               "unbacked": true,
               "spec_file": "openspec/changes/attention-service-routes/specs/server-attention-service/spec.md",
-              "line": 51
+              "line": 54
             },
             {
               "name": "prefill returns layers \u00d7 seq_len \u00d7 hidden_dim residuals",
@@ -13270,7 +13276,7 @@
               "tests_unresolved": [],
               "unbacked": true,
               "spec_file": "openspec/changes/attention-service-routes/specs/server-attention-service/spec.md",
-              "line": 58
+              "line": 61
             },
             {
               "name": "prefill rejects unknown session",
@@ -13278,7 +13284,7 @@
               "tests_unresolved": [],
               "unbacked": true,
               "spec_file": "openspec/changes/attention-service-routes/specs/server-attention-service/spec.md",
-              "line": 67
+              "line": 70
             },
             {
               "name": "binary form round-trips",
@@ -13286,7 +13292,7 @@
               "tests_unresolved": [],
               "unbacked": true,
               "spec_file": "openspec/changes/attention-service-routes/specs/server-attention-service/spec.md",
-              "line": 74
+              "line": 77
             }
           ]
         },
@@ -13299,7 +13305,7 @@
               "tests_unresolved": [],
               "unbacked": true,
               "spec_file": "openspec/changes/attention-service-routes/specs/server-attention-service/spec.md",
-              "line": 91
+              "line": 94
             },
             {
               "name": "decode residual matches local reference within tolerance",
@@ -13307,7 +13313,7 @@
               "tests_unresolved": [],
               "unbacked": true,
               "spec_file": "openspec/changes/attention-service-routes/specs/server-attention-service/spec.md",
-              "line": 98
+              "line": 101
             },
             {
               "name": "decode before prefill is rejected",
@@ -13315,7 +13321,7 @@
               "tests_unresolved": [],
               "unbacked": true,
               "spec_file": "openspec/changes/attention-service-routes/specs/server-attention-service/spec.md",
-              "line": 106
+              "line": 109
             }
           ]
         },
@@ -13330,7 +13336,7 @@
               "tests_unresolved": [],
               "unbacked": false,
               "spec_file": "openspec/changes/attention-service-routes/specs/server-attention-service/spec.md",
-              "line": 128
+              "line": 131
             },
             {
               "name": "snapshot then restore round-trips for FP32",
@@ -13340,7 +13346,7 @@
               "tests_unresolved": [],
               "unbacked": false,
               "spec_file": "openspec/changes/attention-service-routes/specs/server-attention-service/spec.md",
-              "line": 135
+              "line": 138
             },
             {
               "name": "snapshot then restore round-trips for compressed formats",
@@ -13350,7 +13356,7 @@
               "tests_unresolved": [],
               "unbacked": false,
               "spec_file": "openspec/changes/attention-service-routes/specs/server-attention-service/spec.md",
-              "line": 145
+              "line": 148
             },
             {
               "name": "unknown version is rejected",
@@ -13360,7 +13366,7 @@
               "tests_unresolved": [],
               "unbacked": false,
               "spec_file": "openspec/changes/attention-service-routes/specs/server-attention-service/spec.md",
-              "line": 154
+              "line": 157
             }
           ]
         },
@@ -13373,7 +13379,7 @@
               "tests_unresolved": [],
               "unbacked": true,
               "spec_file": "openspec/changes/attention-service-routes/specs/server-attention-service/spec.md",
-              "line": 170
+              "line": 173
             },
             {
               "name": "legacy server (no --role) announces both",
@@ -13381,7 +13387,7 @@
               "tests_unresolved": [],
               "unbacked": true,
               "spec_file": "openspec/changes/attention-service-routes/specs/server-attention-service/spec.md",
-              "line": 177
+              "line": 180
             }
           ]
         },
@@ -13394,7 +13400,7 @@
               "tests_unresolved": [],
               "unbacked": true,
               "spec_file": "openspec/changes/attention-service-routes/specs/server-attention-service/spec.md",
-              "line": 191
+              "line": 194
             },
             {
               "name": "empty server emits empty bloom",
@@ -13402,7 +13408,7 @@
               "tests_unresolved": [],
               "unbacked": true,
               "spec_file": "openspec/changes/attention-service-routes/specs/server-attention-service/spec.md",
-              "line": 198
+              "line": 201
             }
           ]
         },
@@ -25684,6 +25690,96 @@
       "fqn": "larql_server::kv_snapshot::truncated_input_is_rejected_cleanly",
       "file": "crates/larql-server/src/kv_snapshot.rs",
       "line": 601,
+      "crate": "larql_server"
+    },
+    {
+      "fqn": "larql_server::attention_session::tests::session_id_is_26_chars",
+      "file": "crates/larql-server/src/attention_session.rs",
+      "line": 274,
+      "crate": "larql_server"
+    },
+    {
+      "fqn": "larql_server::attention_session::session_id_is_26_chars",
+      "file": "crates/larql-server/src/attention_session.rs",
+      "line": 274,
+      "crate": "larql_server"
+    },
+    {
+      "fqn": "larql_server::attention_session::tests::session_ids_are_unique_under_a_burst",
+      "file": "crates/larql-server/src/attention_session.rs",
+      "line": 280,
+      "crate": "larql_server"
+    },
+    {
+      "fqn": "larql_server::attention_session::session_ids_are_unique_under_a_burst",
+      "file": "crates/larql-server/src/attention_session.rs",
+      "line": 280,
+      "crate": "larql_server"
+    },
+    {
+      "fqn": "larql_server::attention_session::tests::session_ids_lex_sort_by_creation_time",
+      "file": "crates/larql-server/src/attention_session.rs",
+      "line": 288,
+      "crate": "larql_server"
+    },
+    {
+      "fqn": "larql_server::attention_session::session_ids_lex_sort_by_creation_time",
+      "file": "crates/larql-server/src/attention_session.rs",
+      "line": 288,
+      "crate": "larql_server"
+    },
+    {
+      "fqn": "larql_server::attention_session::insert_and_get_round_trip",
+      "file": "crates/larql-server/src/attention_session.rs",
+      "line": 296,
+      "crate": "larql_server"
+    },
+    {
+      "fqn": "larql_server::attention_session::delete_makes_get_none",
+      "file": "crates/larql-server/src/attention_session.rs",
+      "line": 309,
+      "crate": "larql_server"
+    },
+    {
+      "fqn": "larql_server::attention_session::tests::cap_enforced",
+      "file": "crates/larql-server/src/attention_session.rs",
+      "line": 320,
+      "crate": "larql_server"
+    },
+    {
+      "fqn": "larql_server::attention_session::cap_enforced",
+      "file": "crates/larql-server/src/attention_session.rs",
+      "line": 320,
+      "crate": "larql_server"
+    },
+    {
+      "fqn": "larql_server::attention_session::reap_drops_idle_sessions",
+      "file": "crates/larql-server/src/attention_session.rs",
+      "line": 335,
+      "crate": "larql_server"
+    },
+    {
+      "fqn": "larql_server::attention_session::tests::iso4_session_carries_format",
+      "file": "crates/larql-server/src/attention_session.rs",
+      "line": 349,
+      "crate": "larql_server"
+    },
+    {
+      "fqn": "larql_server::attention_session::iso4_session_carries_format",
+      "file": "crates/larql-server/src/attention_session.rs",
+      "line": 349,
+      "crate": "larql_server"
+    },
+    {
+      "fqn": "larql_server::attention_session::tests::prefix_hashes_returns_one_per_session",
+      "file": "crates/larql-server/src/attention_session.rs",
+      "line": 366,
+      "crate": "larql_server"
+    },
+    {
+      "fqn": "larql_server::attention_session::prefix_hashes_returns_one_per_session",
+      "file": "crates/larql-server/src/attention_session.rs",
+      "line": 366,
       "crate": "larql_server"
     },
     {
