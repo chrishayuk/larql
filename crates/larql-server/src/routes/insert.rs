@@ -59,11 +59,13 @@ fn compute_residuals(
         req.relation.replace(['-', '_'], " "),
         req.entity
     );
-    let encoding = match model.tokenizer.encode(prompt.as_str(), true) {
-        Ok(e) => e,
+    // Routed through the per-LoadedModel TokenizerCache. Chat-template
+    // prefixes are shared across requests; cache hit skips BPE.
+    // server-tokenizer-cache change.
+    let token_ids = match model.encode_cached_ids(&prompt, true) {
+        Ok(ids) => ids,
         Err(_) => return Vec::new(),
     };
-    let token_ids: Vec<u32> = encoding.get_ids().to_vec();
 
     let walk_ffn = larql_inference::vindex::WalkFfn::new_unlimited_with_trace(weights, patched);
     let _result =
