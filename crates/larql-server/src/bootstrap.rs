@@ -792,6 +792,9 @@ pub async fn serve(cli: Cli) -> Result<(), BoxError> {
         api_key: cli.api_key.clone(),
         sessions: SessionManager::new(DEFAULT_SESSION_TTL_SECS),
         describe_cache: DescribeCache::new(cli.cache_ttl),
+        attention_sessions: std::sync::Arc::new(
+            crate::attention_session::AttentionSessionMap::new(600, 256),
+        ),
     });
 
     if cli.cache_ttl > 0 {

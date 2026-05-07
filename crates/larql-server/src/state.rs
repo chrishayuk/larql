@@ -261,6 +261,10 @@ pub struct AppState {
     pub sessions: SessionManager,
     /// DESCRIBE result cache.
     pub describe_cache: DescribeCache,
+    /// Attention KV-cache sessions (lifecycle map for the planned
+    /// `/v1/attention/{session,prefill,decode}` routes).
+    /// `attention-service-routes` change.
+    pub attention_sessions: Arc<crate::attention_session::AttentionSessionMap>,
 }
 
 impl AppState {

@@ -293,6 +293,9 @@ async fn spawn_server_with_model(model: LoadedModel) -> String {
         api_key: None,
         sessions: SessionManager::new(3600),
         describe_cache: DescribeCache::new(60),
+        attention_sessions: std::sync::Arc::new(
+            larql_server::attention_session::AttentionSessionMap::new(600, 256),
+        ),
     });
 
     let router = single_model_router(state);

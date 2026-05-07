@@ -272,6 +272,9 @@ pub fn state(models: Vec<Arc<LoadedModel>>) -> Arc<AppState> {
         api_key: None,
         sessions: SessionManager::new(3600),
         describe_cache: DescribeCache::new(0),
+        attention_sessions: std::sync::Arc::new(
+            larql_server::attention_session::AttentionSessionMap::new(600, 256),
+        ),
     })
 }
 
@@ -283,6 +286,9 @@ pub fn state_with_key(models: Vec<Arc<LoadedModel>>, key: &str) -> Arc<AppState>
         api_key: Some(key.to_string()),
         sessions: SessionManager::new(3600),
         describe_cache: DescribeCache::new(0),
+        attention_sessions: std::sync::Arc::new(
+            larql_server::attention_session::AttentionSessionMap::new(600, 256),
+        ),
     })
 }
 
@@ -294,6 +300,9 @@ pub fn state_with_cache(models: Vec<Arc<LoadedModel>>, cache_size: u64) -> Arc<A
         api_key: None,
         sessions: SessionManager::new(3600),
         describe_cache: DescribeCache::new(cache_size),
+        attention_sessions: std::sync::Arc::new(
+            larql_server::attention_session::AttentionSessionMap::new(600, 256),
+        ),
     })
 }
 
