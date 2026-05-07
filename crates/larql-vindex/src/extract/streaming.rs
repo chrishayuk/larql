@@ -284,6 +284,104 @@ fn read_packed_expert_slice_f32(
         )));
     }
     let slice = packed_expert_slice(entry, expert_idx)?;
+    let raw = read_gguf_tensor_byte_range(
+        catalog,
+        entry,
+        (slice.element_offset as u64)
+            .checked_mul(std::mem::size_of::<f32>() as u64)
+            .ok_or_else(|| {
+                VindexError::Parse(format!(
+                    "GGUF tensor {} slice byte offset overflow: element_offset={}",
+                    entry.name, slice.element_offset
+                ))
+            })?,
+        slice
+            .element_len
+            .checked_mul(std::mem::size_of::<f32>())
+            .ok_or_else(|| {
+                VindexError::Parse(format!(
+                    "GGUF tensor {} slice byte length overflow: element_len={}",
+                    entry.name, slice.element_len
+                ))
+            })?,
+    )?;
+
+    let mut values = Vec::with_capacity(slice.element_len);
+    for bytes in raw.chunks_exact(4) {
+        values.push(f32::from_le_bytes(
+            bytes.try_into().expect("chunks_exact(4)"),
+        ));
+    }
+    Array2::from_shape_vec((slice.rows, slice.cols), values).map_err(|e| {
+        VindexError::Parse(format!(
+            "GGUF tensor {} expert {} shape error: {}",
+            entry.name, expert_idx, e
+        ))
+    })
+}
+
+#[cfg_attr(not(test), allow(dead_code))]
+fn read_packed_expert_slice_q4_k(
+    catalog: &GgufCatalog,
+    tensor_name: &str,
+    expert_idx: usize,
+) -> Result<Array2<f32>, VindexError> {
+    let entry = catalog
+        .tensor(tensor_name)
+        .ok_or_else(|| VindexError::MissingTensor(tensor_name.to_string()))?;
+    if entry.tensor_type != larql_models::quant::ggml::TYPE_Q4_K {
+        return Err(VindexError::UnsupportedDtype(format!(
+            "GGUF tensor {} type {} cannot be read by Q4_K packed-slice reader",
+            entry.name, entry.tensor_type
+        )));
+    }
+    let slice = packed_expert_slice(entry, expert_idx)?;
+    let block_elems = larql_models::quant::ggml::Q4_K_BLOCK_ELEMS;
+    let block_bytes = larql_models::quant::ggml::Q4_K_BLOCK_BYTES;
+    if !slice.element_offset.is_multiple_of(block_elems)
+        || !slice.element_len.is_multiple_of(block_elems)
+    {
+        return Err(VindexError::Parse(format!(
+            "GGUF tensor {} Q4_K expert slice must be block-aligned to {} elements (offset={} len={})",
+            entry.name, block_elems, slice.element_offset, slice.element_len
+        )));
+    }
+    let block_offset = slice.element_offset / block_elems;
+    let block_len = slice.element_len / block_elems;
+    let raw = read_gguf_tensor_byte_range(
+        catalog,
+        entry,
+        (block_offset as u64)
+            .checked_mul(block_bytes as u64)
+            .ok_or_else(|| {
+                VindexError::Parse(format!(
+                    "GGUF tensor {} Q4_K slice byte offset overflow: block_offset={}",
+                    entry.name, block_offset
+                ))
+            })?,
+        block_len.checked_mul(block_bytes).ok_or_else(|| {
+            VindexError::Parse(format!(
+                "GGUF tensor {} Q4_K slice byte length overflow: block_len={}",
+                entry.name, block_len
+            ))
+        })?,
+    )?;
+    let values = larql_models::quant::ggml::dequantize_q4_k(&raw, slice.element_len)?;
+    Array2::from_shape_vec((slice.rows, slice.cols), values).map_err(|e| {
+        VindexError::Parse(format!(
+            "GGUF tensor {} expert {} Q4_K shape error: {}",
+            entry.name, expert_idx, e
+        ))
+    })
+}
+
+#[cfg_attr(not(test), allow(dead_code))]
+fn read_gguf_tensor_byte_range(
+    catalog: &GgufCatalog,
+    entry: &GgufTensorEntry,
+    tensor_relative_byte_offset: u64,
+    byte_len: usize,
+) -> Result<Vec<u8>, VindexError> {
     let shard_path = catalog.files.get(entry.shard_idx).ok_or_else(|| {
         VindexError::Parse(format!(
             "GGUF tensor {} points at missing shard index {}",
@@ -302,29 +400,12 @@ fn read_packed_expert_slice_f32(
                 entry.name, entry.data_offset, entry.tensor_offset
             ))
         })?;
-    let slice_byte_offset = (slice.element_offset as u64)
-        .checked_mul(std::mem::size_of::<f32>() as u64)
-        .ok_or_else(|| {
-            VindexError::Parse(format!(
-                "GGUF tensor {} slice byte offset overflow: element_offset={}",
-                entry.name, slice.element_offset
-            ))
-        })?;
     let abs_offset = tensor_abs_offset
-        .checked_add(slice_byte_offset)
+        .checked_add(tensor_relative_byte_offset)
         .ok_or_else(|| {
             VindexError::Parse(format!(
                 "GGUF tensor {} absolute slice offset overflow: tensor_offset={} slice_byte_offset={}",
-                entry.name, tensor_abs_offset, slice_byte_offset
-            ))
-        })?;
-    let byte_len = slice
-        .element_len
-        .checked_mul(std::mem::size_of::<f32>())
-        .ok_or_else(|| {
-            VindexError::Parse(format!(
-                "GGUF tensor {} slice byte length overflow: element_len={}",
-                entry.name, slice.element_len
+                entry.name, tensor_abs_offset, tensor_relative_byte_offset
             ))
         })?;
     let start = usize::try_from(abs_offset).map_err(|_| {
@@ -348,19 +429,7 @@ fn read_packed_expert_slice_f32(
             mmap.len()
         )));
     }
-
-    let mut values = Vec::with_capacity(slice.element_len);
-    for bytes in mmap[start..end].chunks_exact(4) {
-        values.push(f32::from_le_bytes(
-            bytes.try_into().expect("chunks_exact(4)"),
-        ));
-    }
-    Array2::from_shape_vec((slice.rows, slice.cols), values).map_err(|e| {
-        VindexError::Parse(format!(
-            "GGUF tensor {} expert {} shape error: {}",
-            entry.name, expert_idx, e
-        ))
-    })
+    Ok(mmap[start..end].to_vec())
 }
 
 fn discover_weight_source(model_dir: &Path) -> Result<WeightSource, VindexError> {
@@ -1368,6 +1437,47 @@ mod tests {
         assert!(err.to_string().contains("expert index 2 out of range"));
     }
 
+    #[test]
+    fn read_packed_expert_slice_q4_k_mmaps_block_aligned_expert_only() {
+        let tmp = tempfile::tempdir().unwrap();
+        let shard = tmp.path().join("Kimi-00001-of-00001.gguf");
+        let name = "blk.0.ffn_gate_exps.weight";
+        let mut payload = q4_k_constant_block(1);
+        payload.extend(q4_k_constant_block(2));
+        write_minimal_gguf_header_with_raw_payload(
+            &shard,
+            "deepseek2",
+            1,
+            name,
+            &[256, 1, 2],
+            larql_models::quant::ggml::TYPE_Q4_K,
+            &payload,
+        );
+        let catalog = build_gguf_catalog(&[shard]).unwrap();
+
+        let expert0 = read_packed_expert_slice_q4_k(&catalog, name, 0).unwrap();
+        assert_eq!(expert0.shape(), &[1, 256]);
+        assert!(expert0.as_slice().unwrap().iter().all(|v| *v == 1.0));
+
+        let expert1 = read_packed_expert_slice_q4_k(&catalog, name, 1).unwrap();
+        assert_eq!(expert1.shape(), &[1, 256]);
+        assert!(expert1.as_slice().unwrap().iter().all(|v| *v == 2.0));
+
+        let unaligned_shard = tmp.path().join("Kimi-unaligned.gguf");
+        write_minimal_gguf_header_with_raw_payload(
+            &unaligned_shard,
+            "deepseek2",
+            1,
+            name,
+            &[128, 1, 1],
+            larql_models::quant::ggml::TYPE_Q4_K,
+            &[],
+        );
+        let unaligned_catalog = build_gguf_catalog(&[unaligned_shard]).unwrap();
+        let err = read_packed_expert_slice_q4_k(&unaligned_catalog, name, 0).unwrap_err();
+        assert!(err.to_string().contains("block-aligned"), "{err}");
+    }
+
     fn write_minimal_gguf(path: &std::path::Path, arch: &str, split_count: u16, include_3d: bool) {
         if include_3d {
             write_minimal_gguf_named_tensor(
@@ -1402,7 +1512,31 @@ mod tests {
         dims: &[u64],
         values: &[f32],
     ) {
-        write_minimal_gguf_header(path, arch, split_count, &[(name, dims, 0)]);
+        let mut payload = Vec::with_capacity(std::mem::size_of_val(values));
+        for value in values {
+            payload.extend(value.to_le_bytes());
+        }
+        write_minimal_gguf_header_with_raw_payload(
+            path,
+            arch,
+            split_count,
+            name,
+            dims,
+            0,
+            &payload,
+        );
+    }
+
+    fn write_minimal_gguf_header_with_raw_payload(
+        path: &std::path::Path,
+        arch: &str,
+        split_count: u16,
+        name: &str,
+        dims: &[u64],
+        tensor_type: u32,
+        payload: &[u8],
+    ) {
+        write_minimal_gguf_header(path, arch, split_count, &[(name, dims, tensor_type)]);
         let mut f = std::fs::OpenOptions::new()
             .read(true)
             .write(true)
@@ -1412,9 +1546,19 @@ mod tests {
         let data_offset = pos.div_ceil(32) * 32;
         let padding = (data_offset - pos) as usize;
         f.write_all(&vec![0u8; padding]).unwrap();
-        for value in values {
-            f.write_all(&value.to_le_bytes()).unwrap();
-        }
+        f.write_all(payload).unwrap();
+    }
+
+    fn q4_k_constant_block(nibble: u8) -> Vec<u8> {
+        assert!(nibble <= 0x0f);
+        let mut block = vec![0u8; larql_models::quant::ggml::Q4_K_BLOCK_BYTES];
+        block[0..2].copy_from_slice(&0x3c00u16.to_le_bytes()); // f16 1.0 scale d
+        block[2..4].copy_from_slice(&0u16.to_le_bytes()); // f16 0.0 dmin
+        block[4..8].fill(1); // scales 0..3
+        block[8..12].fill(0); // mins 0..3; ignored because dmin=0
+        block[12..16].fill(1); // scales 4..7 in low nibble; mins ignored because dmin=0
+        block[16..].fill(nibble | (nibble << 4));
+        block
     }
 
     fn write_minimal_gguf_header(

@@ -125,3 +125,28 @@ The extractor can compute which elements belong to a packed expert, but it still
 
 ### Result
 Added a minimal F32-only packed expert slice reader. `GgufCatalog` now records each tensor's shard-local tensor offset and shard data offset; `read_packed_expert_slice_f32()` mmaps the containing shard, reads only the requested expert byte range, and returns a conventional `[rows, cols]` `Array2<f32>`. This proves the tensor-data slicing seam without eager whole-tensor loads. The next blocker is quantized packed slice support for Kimi's Q4_K/Q6_K tensors.
+
+## Next blocker: mmap/dequant one packed Q4_K expert slice
+
+### Problem
+Real Kimi Q4_K_M packed expert tensors are quantized, not F32. The extractor needs to read only the selected expert's block-aligned Q4_K byte range, dequantize that slice, and return a conventional `[rows, cols]` matrix without decoding the whole packed tensor.
+
+### RED plan
+1. Add a tiny GGUF fixture with one packed Q4_K tensor `blk.0.ffn_gate_exps.weight` and dims `[256, 1, 2]`.
+2. Store two real Q4_K blocks: expert 0 decodes to all `1.0`, expert 1 decodes to all `2.0`.
+3. Assert a wished-for `read_packed_expert_slice_q4_k(&catalog, name, expert_idx)` returns the correct `1 x 256` matrix for each expert.
+4. Assert a non-block-aligned expert slice is rejected with an actionable error.
+
+### GREEN plan
+1. Factor common mmap byte-range validation if useful, but keep scope minimal.
+2. Implement Q4_K block-aligned slice byte mapping: `(element_offset / 256) * 144` and `(element_len / 256) * 144`.
+3. Dequantize only those blocks with the existing GGML Q4_K decoder.
+
+### Acceptance criteria
+- [x] RED Q4_K packed-slice reader test fails before implementation.
+- [x] GREEN Q4_K packed-slice reader test passes.
+- [x] Existing F32 packed-slice and GGUF catalog/classifier/preflight tests still pass.
+- [x] Real Kimi smoke still returns the same unsupported-layout diagnostic until the extractor bridge is wired.
+
+### Result
+Added `read_packed_expert_slice_q4_k()` for block-aligned packed expert slices. The reader maps expert element offsets to Q4_K block byte ranges, mmaps only the containing shard range, dequantizes those blocks with the existing GGML Q4_K decoder, and returns a conventional `[rows, cols]` matrix. Shared byte-range validation now backs both F32 and Q4_K readers. The next blocker is either Q6_K packed-slice support or the first extractor bridge that consumes the classifier + slice readers for one Kimi layer.
