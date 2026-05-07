@@ -254,3 +254,28 @@ Added `write_deepseek2_packed_gate_vectors()`, a private artifact-writer seam th
 
 ### Result
 Added the first real GGUF extraction branch in `build_vindex_streaming()`: GGUF sources now dispatch to `build_gguf_streaming()` instead of stopping at generic preflight. For DeepSeek2/Kimi catalogs, the branch classifies packed expert roles, estimates the gate-vector output size, refuses enormous real Kimi writes above a conservative in-process budget, and for bounded synthetic catalogs writes `gate_vectors.bin` through `write_deepseek2_packed_gate_vectors()` before returning the next explicit unsupported blocker (`embeddings/down_meta artifact wiring remains pending`). The real Kimi smoke now advances from generic unsupported to a safe gate-vector budget diagnostic without creating a huge artifact.
+
+
+## Next blocker: compact GGUF gate manifest for over-budget Kimi gates
+
+### Problem
+Real Kimi Q4_K_M reaches the DeepSeek2 GGUF gate phase, but a naive dense `gate_vectors.bin` materialization estimates at hundreds of GB. Browse extraction needs a compact, mmap-friendly description of the original GGUF packed gate tensors so extraction can advance without writing the dense artifact.
+
+### RED plan
+1. Add a synthetic DeepSeek2 GGUF fixture whose packed gate dims make the dense gate estimate exceed the 128 MiB in-process budget.
+2. Call `build_gguf_streaming()`.
+3. Assert it does **not** create `gate_vectors.bin`, but does write `gguf_gate_manifest.json` with architecture, dense estimate, source tensor, dims, rows/cols/experts, and offset metadata.
+
+### GREEN plan
+1. Add a centralized `GGUF_GATE_MANIFEST_JSON` filename constant.
+2. Add a compact manifest writer that records original shard/tensor geometry and byte offsets instead of materializing dense gate vectors.
+3. In the over-budget DeepSeek2/Kimi branch, write the manifest and return the next unsupported blocker instead of failing before creating any useful artifact.
+
+### Acceptance criteria
+- [x] RED compact-manifest test fails before implementation.
+- [x] GREEN compact-manifest test passes.
+- [x] Existing GGUF real-branch/gate-writer tests still pass.
+- [x] Real Kimi smoke writes a small `gguf_gate_manifest.json`, does not write `gate_vectors.bin`, and advances the diagnostic past the dense-gate budget blocker.
+
+### Result
+Added a compact over-budget GGUF gate manifest path. When DeepSeek2/Kimi packed gate tensors would exceed the dense `gate_vectors.bin` budget, `build_gguf_streaming()` now writes `gguf_gate_manifest.json` containing the original shard/tensor geometry and dense-size estimate, then returns the next explicit blocker (`embeddings/down_meta wiring remains pending`). The real Kimi smoke produced a ~26 KiB manifest with 60 gate layers, preserved the 676,457,349,120-byte dense estimate, and did not create `gate_vectors.bin`.

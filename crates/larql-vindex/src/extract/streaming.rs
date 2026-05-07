@@ -22,6 +22,32 @@ use crate::format::filenames::*;
 
 const MAX_GGUF_GATE_VECTOR_BYTES: u128 = 128 * 1024 * 1024;
 
+#[derive(serde::Serialize)]
+struct GgufGateManifest {
+    version: u32,
+    architecture: String,
+    split_count: usize,
+    estimated_dense_bytes: u128,
+    dense_budget_bytes: u128,
+    dtype: String,
+    layers: Vec<GgufGateManifestLayer>,
+}
+
+#[derive(serde::Serialize)]
+struct GgufGateManifestLayer {
+    layer: usize,
+    tensor: String,
+    source_file: String,
+    shard_idx: usize,
+    tensor_type: u32,
+    dims: Vec<u64>,
+    rows: usize,
+    cols: usize,
+    experts: usize,
+    tensor_offset: u64,
+    data_offset: u64,
+}
+
 /// Mmap'd safetensors file — kept alive for the duration of extraction.
 struct MmapShard {
     _file: std::fs::File,
@@ -589,6 +615,71 @@ fn read_gguf_tensor_byte_range(
     Ok(mmap[start..end].to_vec())
 }
 
+fn write_deepseek2_gguf_gate_manifest(
+    output_dir: &Path,
+    catalog: &GgufCatalog,
+    layout: &GgufDeepseek2Layout,
+    dtype: StorageDtype,
+    estimated_dense_bytes: u128,
+) -> Result<(), VindexError> {
+    let mut layers: Vec<usize> = layout
+        .packed_experts
+        .keys()
+        .filter_map(|(layer, component)| {
+            (*component == GgufExpertComponent::Gate).then_some(*layer)
+        })
+        .collect();
+    layers.sort_unstable();
+    layers.dedup();
+
+    let mut manifest_layers = Vec::with_capacity(layers.len());
+    for layer in layers {
+        let tensor = layout
+            .packed_experts
+            .get(&(layer, GgufExpertComponent::Gate))
+            .ok_or_else(|| {
+                VindexError::MissingTensor(format!("blk.{layer}.ffn_gate_exps.weight"))
+            })?;
+        let entry = catalog
+            .tensor(tensor)
+            .ok_or_else(|| VindexError::MissingTensor(tensor.clone()))?;
+        let [cols, rows, experts] = packed_expert_dims(entry)?;
+        let source_file = catalog.files.get(entry.shard_idx).ok_or_else(|| {
+            VindexError::Parse(format!(
+                "GGUF tensor {} points at missing shard index {}",
+                entry.name, entry.shard_idx
+            ))
+        })?;
+        manifest_layers.push(GgufGateManifestLayer {
+            layer,
+            tensor: tensor.clone(),
+            source_file: source_file.display().to_string(),
+            shard_idx: entry.shard_idx,
+            tensor_type: entry.tensor_type,
+            dims: entry.dims.clone(),
+            rows,
+            cols,
+            experts,
+            tensor_offset: entry.tensor_offset,
+            data_offset: entry.data_offset,
+        });
+    }
+
+    let manifest = GgufGateManifest {
+        version: 1,
+        architecture: catalog.architecture.clone(),
+        split_count: catalog.split_count,
+        estimated_dense_bytes,
+        dense_budget_bytes: MAX_GGUF_GATE_VECTOR_BYTES,
+        dtype: format!("{:?}", dtype).to_lowercase(),
+        layers: manifest_layers,
+    };
+    let json =
+        serde_json::to_string_pretty(&manifest).map_err(|e| VindexError::Parse(e.to_string()))?;
+    std::fs::write(output_dir.join(GGUF_GATE_MANIFEST_JSON), json)?;
+    Ok(())
+}
+
 fn build_gguf_streaming(
     catalog: &GgufCatalog,
     output_dir: &Path,
@@ -602,10 +693,18 @@ fn build_gguf_streaming(
     let layout = classify_deepseek2_layout(catalog)?;
     let estimated_gate_bytes = estimate_deepseek2_gate_vector_bytes(catalog, &layout, dtype)?;
     if estimated_gate_bytes > MAX_GGUF_GATE_VECTOR_BYTES {
+        std::fs::create_dir_all(output_dir)?;
+        write_deepseek2_gguf_gate_manifest(
+            output_dir,
+            catalog,
+            &layout,
+            dtype,
+            estimated_gate_bytes,
+        )?;
         return unsupported_gguf_streaming(
             catalog,
             format!(
-                "deepseek2 gate_vectors estimate {} exceeds safe streaming budget {}; embeddings/down_meta wiring remains pending",
+                "deepseek2 after writing {GGUF_GATE_MANIFEST_JSON}; dense gate_vectors estimate {} exceeds safe streaming budget {}; embeddings/down_meta wiring remains pending",
                 estimated_gate_bytes, MAX_GGUF_GATE_VECTOR_BYTES
             ),
         );
@@ -1701,6 +1800,55 @@ mod tests {
             .map(|bytes| f32::from_le_bytes(bytes.try_into().unwrap()))
             .collect();
         assert_eq!(decoded, values);
+    }
+
+    #[test]
+    fn build_gguf_streaming_writes_compact_gate_manifest_when_dense_gate_exceeds_budget() {
+        let tmp = tempfile::tempdir().unwrap();
+        let model_dir = tmp.path().join("model");
+        std::fs::create_dir_all(&model_dir).unwrap();
+        let output_dir = tmp.path().join("out.vindex");
+        let gate_name = "blk.0.ffn_gate_exps.weight";
+        let gate_shard = model_dir.join("Kimi-00001-of-00001.gguf");
+        write_minimal_gguf_header(
+            &gate_shard,
+            "deepseek2",
+            1,
+            &[(
+                gate_name,
+                &[1024, 1024, 65],
+                larql_models::quant::ggml::TYPE_F32,
+            )],
+        );
+
+        let source = discover_weight_source(&model_dir).unwrap();
+        let WeightSource::Gguf(catalog) = source else {
+            panic!("expected GGUF catalog");
+        };
+        let mut callbacks = crate::extract::callbacks::SilentBuildCallbacks;
+
+        let err = build_gguf_streaming(&catalog, &output_dir, StorageDtype::F32, &mut callbacks)
+            .unwrap_err();
+
+        let msg = err.to_string();
+        assert!(
+            msg.contains("after writing gguf_gate_manifest.json"),
+            "{msg}"
+        );
+        assert!(
+            !output_dir.join(GATE_VECTORS_BIN).exists(),
+            "dense gate_vectors.bin must not be written for over-budget GGUF gates"
+        );
+        let manifest_text =
+            std::fs::read_to_string(output_dir.join(GGUF_GATE_MANIFEST_JSON)).unwrap();
+        let manifest: serde_json::Value = serde_json::from_str(&manifest_text).unwrap();
+        assert_eq!(manifest["architecture"], "deepseek2");
+        assert_eq!(manifest["estimated_dense_bytes"], 1024u64 * 1024 * 65 * 4);
+        assert_eq!(manifest["layers"][0]["layer"], 0);
+        assert_eq!(manifest["layers"][0]["tensor"], gate_name);
+        assert_eq!(manifest["layers"][0]["experts"], 65);
+        assert_eq!(manifest["layers"][0]["rows"], 1024);
+        assert_eq!(manifest["layers"][0]["cols"], 1024);
     }
 
     #[test]
