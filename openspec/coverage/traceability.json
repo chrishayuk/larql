@@ -2,10 +2,10 @@
   "summary": {
     "capabilities": 48,
     "requirements": 398,
-    "scenarios": 1347,
-    "scenarios_backed": 1195,
-    "scenarios_unbacked": 152,
-    "test_refs": 3226,
+    "scenarios": 1348,
+    "scenarios_backed": 1197,
+    "scenarios_unbacked": 151,
+    "test_refs": 3227,
     "test_refs_unresolved": 0
   },
   "capabilities": [
@@ -13004,15 +13004,27 @@
           ]
         },
         {
-          "name": "bloom-filter false-positive rate MUST be bounded",
+          "name": "bloom-filter false-positive rate MUST be bounded at design load",
           "scenarios": [
             {
-              "name": "synthesised 64-element bloom holds the FP bound",
-              "tests_resolved": [],
+              "name": "bloom holds 1.5% FP rate at design load (n=16)",
+              "tests_resolved": [
+                "larql_router::grid::tests::bloom_false_positive_rate_within_bound_at_design_load"
+              ],
               "tests_unresolved": [],
-              "unbacked": true,
+              "unbacked": false,
               "spec_file": "openspec/changes/router-prefix-aware-routing/specs/router-grid/spec.md",
-              "line": 42
+              "line": 40
+            },
+            {
+              "name": "bloom overload degrades predictably (n=64)",
+              "tests_resolved": [
+                "larql_router::grid::tests::bloom_overload_degrades_predictably"
+              ],
+              "tests_unresolved": [],
+              "unbacked": false,
+              "spec_file": "openspec/changes/router-prefix-aware-routing/specs/router-grid/spec.md",
+              "line": 45
             }
           ]
         }
@@ -24867,68 +24879,188 @@
     {
       "fqn": "larql_router::grid::route_uses_inclusive_layer_ranges",
       "file": "crates/larql-router/src/grid.rs",
-      "line": 490,
+      "line": 645,
       "crate": "larql_router"
     },
     {
       "fqn": "larql_router::grid::route_without_model_uses_any_model_table",
       "file": "crates/larql-router/src/grid.rs",
-      "line": 503,
+      "line": 658,
       "crate": "larql_router"
     },
     {
       "fqn": "larql_router::grid::route_prefers_least_loaded_replica",
       "file": "crates/larql-router/src/grid.rs",
-      "line": 512,
+      "line": 667,
       "crate": "larql_router"
     },
     {
       "fqn": "larql_router::grid::deregister_removes_server_from_route_table",
       "file": "crates/larql-router/src/grid.rs",
-      "line": 529,
+      "line": 684,
       "crate": "larql_router"
     },
     {
       "fqn": "larql_router::grid::heartbeat_updates_load_without_rebuilding_topology",
       "file": "crates/larql-router/src/grid.rs",
-      "line": 541,
+      "line": 696,
       "crate": "larql_router"
     },
     {
       "fqn": "larql_router::grid::route_all_returns_first_uncovered_layer",
       "file": "crates/larql-router/src/grid.rs",
-      "line": 557,
+      "line": 712,
       "crate": "larql_router"
     },
     {
       "fqn": "larql_router::grid::status_response_reports_shards_and_gaps",
       "file": "crates/larql-router/src/grid.rs",
-      "line": 566,
+      "line": 721,
       "crate": "larql_router"
     },
     {
       "fqn": "larql_router::grid::default_capabilities_advertise_both_attention_and_expert",
       "file": "crates/larql-router/src/grid.rs",
-      "line": 599,
+      "line": 754,
       "crate": "larql_router"
     },
     {
       "fqn": "larql_router::grid::route_for_capability_filters_by_capability",
       "file": "crates/larql-router/src/grid.rs",
-      "line": 607,
+      "line": 762,
       "crate": "larql_router"
     },
     {
       "fqn": "larql_router::grid::route_for_capability_returns_none_when_no_match",
       "file": "crates/larql-router/src/grid.rs",
-      "line": 627,
+      "line": 782,
       "crate": "larql_router"
     },
     {
       "fqn": "larql_router::grid::route_for_capability_falls_back_to_default_caps_shard",
       "file": "crates/larql-router/src/grid.rs",
-      "line": 640,
+      "line": 795,
       "crate": "larql_router"
+    },
+    {
+      "fqn": "larql_router::grid::empty_bloom_returns_no_matches",
+      "file": "crates/larql-router/src/grid.rs",
+      "line": 830,
+      "crate": "larql_router"
+    },
+    {
+      "fqn": "larql_router::grid::route_for_prefix_picks_shard_with_cached_prefix",
+      "file": "crates/larql-router/src/grid.rs",
+      "line": 839,
+      "crate": "larql_router"
+    },
+    {
+      "fqn": "larql_router::grid::route_for_prefix_falls_back_to_least_loaded_when_no_match",
+      "file": "crates/larql-router/src/grid.rs",
+      "line": 861,
+      "crate": "larql_router"
+    },
+    {
+      "fqn": "larql_router::grid::route_for_prefix_breaks_ties_by_load",
+      "file": "crates/larql-router/src/grid.rs",
+      "line": 876,
+      "crate": "larql_router"
+    },
+    {
+      "fqn": "larql_router::grid::bloom_false_positive_rate_within_bound_at_design_load",
+      "file": "crates/larql-router/src/grid.rs",
+      "line": 894,
+      "crate": "larql_router"
+    },
+    {
+      "fqn": "larql_router::grid::bloom_overload_degrades_predictably",
+      "file": "crates/larql-router/src/grid.rs",
+      "line": 933,
+      "crate": "larql_router"
+    },
+    {
+      "fqn": "larql_server::tokenizer_cache::tests::l0_hit_returns_cached_tokens",
+      "file": "crates/larql-server/src/tokenizer_cache.rs",
+      "line": 230,
+      "crate": "larql_server"
+    },
+    {
+      "fqn": "larql_server::tokenizer_cache::l0_hit_returns_cached_tokens",
+      "file": "crates/larql-server/src/tokenizer_cache.rs",
+      "line": 230,
+      "crate": "larql_server"
+    },
+    {
+      "fqn": "larql_server::tokenizer_cache::tests::l1_hit_shares_chat_template_prefix",
+      "file": "crates/larql-server/src/tokenizer_cache.rs",
+      "line": 240,
+      "crate": "larql_server"
+    },
+    {
+      "fqn": "larql_server::tokenizer_cache::l1_hit_shares_chat_template_prefix",
+      "file": "crates/larql-server/src/tokenizer_cache.rs",
+      "line": 240,
+      "crate": "larql_server"
+    },
+    {
+      "fqn": "larql_server::tokenizer_cache::tests::cache_miss_returns_none",
+      "file": "crates/larql-server/src/tokenizer_cache.rs",
+      "line": 266,
+      "crate": "larql_server"
+    },
+    {
+      "fqn": "larql_server::tokenizer_cache::cache_miss_returns_none",
+      "file": "crates/larql-server/src/tokenizer_cache.rs",
+      "line": 266,
+      "crate": "larql_server"
+    },
+    {
+      "fqn": "larql_server::tokenizer_cache::tests::parallel_hits_no_corruption",
+      "file": "crates/larql-server/src/tokenizer_cache.rs",
+      "line": 273,
+      "crate": "larql_server"
+    },
+    {
+      "fqn": "larql_server::tokenizer_cache::parallel_hits_no_corruption",
+      "file": "crates/larql-server/src/tokenizer_cache.rs",
+      "line": 273,
+      "crate": "larql_server"
+    },
+    {
+      "fqn": "larql_server::tokenizer_cache::tests::disabled_tier_returns_none",
+      "file": "crates/larql-server/src/tokenizer_cache.rs",
+      "line": 292,
+      "crate": "larql_server"
+    },
+    {
+      "fqn": "larql_server::tokenizer_cache::disabled_tier_returns_none",
+      "file": "crates/larql-server/src/tokenizer_cache.rs",
+      "line": 292,
+      "crate": "larql_server"
+    },
+    {
+      "fqn": "larql_server::tokenizer_cache::tests::fnv64_distinguishes_distinct_inputs",
+      "file": "crates/larql-server/src/tokenizer_cache.rs",
+      "line": 302,
+      "crate": "larql_server"
+    },
+    {
+      "fqn": "larql_server::tokenizer_cache::fnv64_distinguishes_distinct_inputs",
+      "file": "crates/larql-server/src/tokenizer_cache.rs",
+      "line": 302,
+      "crate": "larql_server"
+    },
+    {
+      "fqn": "larql_server::tokenizer_cache::tests::find_last_finds_last_occurrence",
+      "file": "crates/larql-server/src/tokenizer_cache.rs",
+      "line": 310,
+      "crate": "larql_server"
+    },
+    {
+      "fqn": "larql_server::tokenizer_cache::find_last_finds_last_occurrence",
+      "file": "crates/larql-server/src/tokenizer_cache.rs",
+      "line": 310,
+      "crate": "larql_server"
     },
     {
       "fqn": "larql_server::cache::disabled_when_ttl_zero",

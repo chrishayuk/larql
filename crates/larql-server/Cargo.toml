@@ -38,6 +38,8 @@ tower = { version = "0.5", features = ["limit"] }
 tower-http = { version = "0.6", features = ["cors", "trace"] }
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+# LRU for the tokenizer cache (server-tokenizer-cache change).
+lru = "0.12"
 
 clap = { version = "4", features = ["derive", "env"] }
 libc = "0.2"

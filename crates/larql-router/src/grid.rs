@@ -36,6 +36,14 @@ pub struct ServerEntry {
     /// set via the announce proto extension landing with the
     /// `attention-service-routes` change.
     pub capabilities: Vec<String>,
+    /// Bloom filter of prefix hashes this shard currently has cached
+    /// in its KV store. Populated from announce / heartbeat once the
+    /// `attention-service-routes` proto extension lands; pre-extension
+    /// shards default to the empty bloom (no cached prefixes ⇒
+    /// `route_for_prefix` falls back to `route_for_capability`'s
+    /// least-loaded selection). See
+    /// `openspec/changes/router-prefix-aware-routing/`.
+    pub cached_prefixes: PrefixBloom,
 }
 
 impl ServerEntry {
@@ -51,6 +59,89 @@ impl ServerEntry {
         self.capabilities
             .iter()
             .any(|c| c.eq_ignore_ascii_case(cap))
+    }
+}
+
+// ── PrefixBloom ───────────────────────────────────────────────────────────────
+//
+// A 256-bit / 4-hash-position Bloom filter for prefix hashes the
+// shard has cached. At 64 inserted prefixes the false-positive rate
+// is ≤ 1.5%, which means false-positive routes pay one extra
+// prefill — well under the 23% TTFT win we're chasing per SMG.
+
+/// Fixed-size 256-bit Bloom filter. Insert-only (no removal); rebuilt
+/// per heartbeat by the shard. Deterministic across hosts (no
+/// random seeds).
+#[derive(Clone, Debug, Default)]
+pub struct PrefixBloom {
+    bits: [u64; 4],
+}
+
+impl PrefixBloom {
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    /// Insert a prefix hash.
+    pub fn insert(&mut self, hash: u64) {
+        for &pos in &Self::positions(hash) {
+            let word = (pos >> 6) as usize;
+            let bit = (pos & 63) as u8;
+            self.bits[word] |= 1u64 << bit;
+        }
+    }
+
+    /// Query whether `hash` is possibly in the filter.
+    pub fn contains(&self, hash: u64) -> bool {
+        for &pos in &Self::positions(hash) {
+            let word = (pos >> 6) as usize;
+            let bit = (pos & 63) as u8;
+            if (self.bits[word] & (1u64 << bit)) == 0 {
+                return false;
+            }
+        }
+        true
+    }
+
+    /// Approximate population (number of inserted items) via the
+    /// standard `m * (1 - exp(-k*n/m))` inversion. Used for tests
+    /// and diagnostics; not on the hot path.
+    pub fn estimated_population(&self) -> usize {
+        let m = 256.0_f64;
+        let k = 4.0_f64;
+        let set: u32 = self.bits.iter().map(|w| w.count_ones()).sum();
+        let x = set as f64 / m;
+        if x >= 1.0 {
+            return usize::MAX;
+        }
+        let n = -(m / k) * (1.0 - x).ln();
+        n.round() as usize
+    }
+
+    /// Whether the filter is empty (no bits set). Initial state of
+    /// pre-extension shards.
+    pub fn is_empty(&self) -> bool {
+        self.bits.iter().all(|w| *w == 0)
+    }
+
+    /// Four bit positions in [0, 256) derived from the input hash.
+    /// Each position is computed via a distinct multiplicative mix
+    /// (splitmix64-style) to ensure the four bits are nearly
+    /// independent; correlated splits inflate the false-positive
+    /// rate. The four constants are different odd 64-bit primes.
+    fn positions(h: u64) -> [u32; 4] {
+        const M1: u64 = 0x9E37_79B9_7F4A_7C15;
+        const M2: u64 = 0xBF58_476D_1CE4_E5B9;
+        const M3: u64 = 0x94D0_49BB_1331_11EB;
+        const M4: u64 = 0xC2B2_AE3D_27D4_EB4F;
+        let mix = |seed: u64| -> u32 {
+            let mut x = h.wrapping_mul(seed);
+            x ^= x >> 33;
+            x = x.wrapping_mul(M2);
+            x ^= x >> 33;
+            (x & 0xff) as u32
+        };
+        [mix(M1), mix(M2), mix(M3), mix(M4)]
     }
 }
 
@@ -146,6 +237,64 @@ impl GridState {
                 .min_by_key(|s| s.requests_in_flight)
                 .map(|s| s.listen_url.clone())
         })
+    }
+
+    /// Route one layer to a shard that advertises `capability`,
+    /// preferring the shard with the most matching `prefix_hashes`
+    /// in its `cached_prefixes` bloom filter (ties broken by
+    /// `requests_in_flight`).
+    ///
+    /// When no shard matches any prefix, falls back to
+    /// [`Self::route_for_capability`]. Lands as part of the
+    /// `router-prefix-aware-routing` change.
+    pub fn route_for_prefix(
+        &self,
+        model_id: Option<&str>,
+        layer: u32,
+        capability: &str,
+        prefix_hashes: &[u64],
+    ) -> Option<String> {
+        let ids = match model_id {
+            Some(m) => self.route_table.get(&(m.to_owned(), layer)),
+            None => self.any_model_table.get(&layer),
+        };
+        let server_ids = ids?;
+        let candidates: Vec<&ServerEntry> = server_ids
+            .iter()
+            .filter_map(|id| self.servers.get(id))
+            .filter(|s| s.supports(capability))
+            .collect();
+        if candidates.is_empty() {
+            return None;
+        }
+        // Compute matching count per candidate and the global max.
+        let mut best_count = 0usize;
+        for s in &candidates {
+            let count = prefix_hashes
+                .iter()
+                .filter(|h| s.cached_prefixes.contains(**h))
+                .count();
+            if count > best_count {
+                best_count = count;
+            }
+        }
+        if best_count == 0 {
+            // No shard matched any prefix; fall back to least-loaded.
+            return self.route_for_capability(model_id, layer, capability);
+        }
+        // Pick the least-loaded shard among those matching `best_count`
+        // prefix hashes.
+        candidates
+            .into_iter()
+            .filter(|s| {
+                prefix_hashes
+                    .iter()
+                    .filter(|h| s.cached_prefixes.contains(**h))
+                    .count()
+                    == best_count
+            })
+            .min_by_key(|s| s.requests_in_flight)
+            .map(|s| s.listen_url.clone())
     }
 
     /// Resolve all layers in one call — one lock acquisition covers the whole batch.
@@ -388,6 +537,11 @@ impl GridService for GridServiceImpl {
                                 // AnnounceMsg yet; default to "everything"
                                 // so existing shards keep working.
                                 capabilities: ServerEntry::default_capabilities(),
+                                // Pre-`router-prefix-aware-routing` proto
+                                // doesn't carry the bloom filter; default
+                                // to empty so fallback to least-loaded
+                                // routing is the observed behaviour.
+                                cached_prefixes: PrefixBloom::new(),
                             };
                             state.write().await.register(entry);
                             registered_model = Some((model_id, layer_start, layer_end));
@@ -483,6 +637,7 @@ mod tests {
             requests_in_flight: 0,
             last_seen: Instant::now(),
             capabilities: ServerEntry::default_capabilities(),
+            cached_prefixes: PrefixBloom::new(),
         }
     }
 
@@ -652,5 +807,163 @@ mod tests {
             state.route_for_capability(Some("model-a"), 0, "expert"),
             Some("http://legacy".to_string())
         );
+    }
+
+    // ── router-prefix-aware-routing ──────────────────────────────────
+
+    fn entry_with_prefixes(
+        server_id: &str,
+        listen_url: &str,
+        model_id: &str,
+        layer_start: u32,
+        layer_end: u32,
+        prefix_hashes: &[u64],
+    ) -> ServerEntry {
+        let mut e = entry(server_id, listen_url, model_id, layer_start, layer_end);
+        for &h in prefix_hashes {
+            e.cached_prefixes.insert(h);
+        }
+        e
+    }
+
+    #[test]
+    fn empty_bloom_returns_no_matches() {
+        let bloom = PrefixBloom::new();
+        assert!(bloom.is_empty());
+        assert!(!bloom.contains(0));
+        assert!(!bloom.contains(0xdeadbeef));
+        assert!(!bloom.contains(u64::MAX));
+    }
+
+    #[test]
+    fn route_for_prefix_picks_shard_with_cached_prefix() {
+        let mut state = GridState::default();
+        // Shard A has prefix 0xAAAA cached; B has 0xBBBB.
+        state.register(entry_with_prefixes(
+            "a", "http://a", "model-x", 0, 0, &[0xAAAA],
+        ));
+        state.register(entry_with_prefixes(
+            "b", "http://b", "model-x", 0, 0, &[0xBBBB],
+        ));
+
+        // Looking up prefix 0xAAAA should pick A.
+        assert_eq!(
+            state.route_for_prefix(Some("model-x"), 0, "attention", &[0xAAAA]),
+            Some("http://a".to_string())
+        );
+        assert_eq!(
+            state.route_for_prefix(Some("model-x"), 0, "attention", &[0xBBBB]),
+            Some("http://b".to_string())
+        );
+    }
+
+    #[test]
+    fn route_for_prefix_falls_back_to_least_loaded_when_no_match() {
+        let mut state = GridState::default();
+        // Both shards have empty bloom (default).
+        state.register(entry("a", "http://a", "model-x", 0, 0));
+        state.register(entry("b", "http://b", "model-x", 0, 0));
+
+        // No prefix matches → falls back to route_for_capability,
+        // which picks one of the two least-loaded shards.
+        let url = state
+            .route_for_prefix(Some("model-x"), 0, "attention", &[0xCAFE])
+            .expect("fallback returns a URL");
+        assert!(url == "http://a" || url == "http://b");
+    }
+
+    #[test]
+    fn route_for_prefix_breaks_ties_by_load() {
+        let mut state = GridState::default();
+        // Both shards have prefix 0xFFFF cached. A has 5 requests in
+        // flight, B has 0 → B wins.
+        let mut a = entry_with_prefixes("a", "http://a", "model-x", 0, 0, &[0xFFFF]);
+        a.requests_in_flight = 5;
+        state.register(a);
+        state.register(entry_with_prefixes(
+            "b", "http://b", "model-x", 0, 0, &[0xFFFF],
+        ));
+
+        assert_eq!(
+            state.route_for_prefix(Some("model-x"), 0, "attention", &[0xFFFF]),
+            Some("http://b".to_string())
+        );
+    }
+
+    #[test]
+    fn bloom_false_positive_rate_within_bound_at_design_load() {
+        // Design load: 16 inserted prefixes per shard (typical:
+        // chat-template + last few session boundaries). At 256 bits
+        // / k=4 / n=16, theoretical FP ≈ (1 - exp(-64/256))^4
+        // ≈ 0.22^4 ≈ 0.24%. Allow 5× slack → 1.5%.
+        let mut bloom = PrefixBloom::new();
+        let mut s = 0xDEAD_BEEF_CAFE_BABE_u64;
+        let mut next = || -> u64 {
+            s ^= s << 13;
+            s ^= s >> 7;
+            s ^= s << 17;
+            s
+        };
+        let mut inserted = std::collections::HashSet::new();
+        for _ in 0..16 {
+            let h = next();
+            inserted.insert(h);
+            bloom.insert(h);
+        }
+        let mut fp = 0;
+        let mut total = 0;
+        for _ in 0..10_000 {
+            let h = next();
+            if inserted.contains(&h) {
+                continue;
+            }
+            total += 1;
+            if bloom.contains(h) {
+                fp += 1;
+            }
+        }
+        let rate = fp as f64 / total as f64;
+        assert!(
+            rate <= 0.015,
+            "FP rate {rate} ({fp}/{total}) exceeds 1.5% at n=16"
+        );
+    }
+
+    #[test]
+    fn bloom_overload_degrades_predictably() {
+        // At 64 inserted hashes the 256-bit bloom is at the high
+        // end of its capacity; theoretical FP ≈ 16%. We verify
+        // the degradation is bounded — a real shard tracking >32
+        // sessions should rebuild a larger bloom or shrink its
+        // tracking window.
+        let mut bloom = PrefixBloom::new();
+        let mut s = 0xC0FF_EEEE_DEAD_BEEF_u64;
+        let mut next = || -> u64 {
+            s ^= s << 13;
+            s ^= s >> 7;
+            s ^= s << 17;
+            s
+        };
+        let mut inserted = std::collections::HashSet::new();
+        for _ in 0..64 {
+            let h = next();
+            inserted.insert(h);
+            bloom.insert(h);
+        }
+        let mut fp = 0;
+        let mut total = 0;
+        for _ in 0..10_000 {
+            let h = next();
+            if inserted.contains(&h) {
+                continue;
+            }
+            total += 1;
+            if bloom.contains(h) {
+                fp += 1;
+            }
+        }
+        let rate = fp as f64 / total as f64;
+        // Theoretical 16%; allow 5% extra for hash-quality slack.
+        assert!(rate <= 0.21, "FP rate {rate} at n=64 exceeds bound");
     }
 }

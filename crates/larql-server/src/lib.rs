@@ -21,4 +21,5 @@ pub mod ratelimit;
 pub mod routes;
 pub mod session;
 pub mod state;
+pub mod tokenizer_cache;
 pub mod wire;
