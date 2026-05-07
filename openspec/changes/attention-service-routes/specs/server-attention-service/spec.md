@@ -24,14 +24,14 @@ plus a `last_used: Instant` for TTL eviction.
 - **WHEN** a client GETs `/v1/attention/session/<random-ulid>`
 - **THEN** the server SHALL respond `404 Not Found` with body
   `{"error": "no_such_session"}`
-<!-- test: unbacked -->
+<!-- test: larql_server::routes::attention::tests::get_unknown_session_returns_404 -->
 
 #### Scenario: delete makes get 404
 
 - **WHEN** a client creates a session, then DELETEs it, then GETs it
 - **THEN** the GET SHALL return `404 Not Found`
 <!-- test: larql_server::attention_session::tests::delete_makes_get_none -->
-<!-- test: unbacked -->
+<!-- test: larql_server::routes::attention::tests::delete_unknown_session_returns_404 -->
 
 #### Scenario: idle sessions are reaped after TTL
 

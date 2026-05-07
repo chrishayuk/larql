@@ -1,5 +1,6 @@
 //! Router setup — maps URL paths to handlers.
 
+pub mod attention;
 pub mod describe;
 pub mod embed;
 pub mod expert;
@@ -64,6 +65,11 @@ const TOKEN_DECODE: &str = "/v1/token/decode";
 const OPENAI_EMBEDDINGS: &str = "/v1/embeddings";
 const OPENAI_COMPLETIONS: &str = "/v1/completions";
 const OPENAI_CHAT_COMPLETIONS: &str = "/v1/chat/completions";
+
+// attention-service-routes change.
+const ATTENTION_SESSION: &str = "/v1/attention/session";
+const ATTENTION_SESSION_BY_ID: &str = "/v1/attention/session/{id}";
+const KV_CACHE_SNAPSHOT: &str = "/v1/kv-cache/snapshot";
 
 const M_DESCRIBE: &str = "/v1/{model_id}/describe";
 const M_WALK: &str = "/v1/{model_id}/walk";
@@ -140,6 +146,13 @@ pub fn single_model_router(state: Arc<AppState>) -> Router {
             OPENAI_CHAT_COMPLETIONS,
             post(openai::handle_chat_completions),
         )
+        // attention-service-routes change.
+        .route(ATTENTION_SESSION, post(attention::handle_create_session))
+        .route(
+            ATTENTION_SESSION_BY_ID,
+            get(attention::handle_get_session).delete(attention::handle_delete_session),
+        )
+        .route(KV_CACHE_SNAPSHOT, post(attention::handle_kv_snapshot))
         .with_state(state)
 }
 

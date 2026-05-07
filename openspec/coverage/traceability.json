@@ -3,8 +3,8 @@
     "capabilities": 49,
     "requirements": 408,
     "scenarios": 1376,
-    "scenarios_backed": 1211,
-    "scenarios_unbacked": 165,
+    "scenarios_backed": 1212,
+    "scenarios_unbacked": 164,
     "test_refs": 3264,
     "test_refs_unresolved": 0
   },
@@ -13242,16 +13242,19 @@
             },
             {
               "name": "get on unknown session id returns 404",
-              "tests_resolved": [],
+              "tests_resolved": [
+                "larql_server::routes::attention::tests::get_unknown_session_returns_404"
+              ],
               "tests_unresolved": [],
-              "unbacked": true,
+              "unbacked": false,
               "spec_file": "openspec/changes/attention-service-routes/specs/server-attention-service/spec.md",
               "line": 22
             },
             {
               "name": "delete makes get 404",
               "tests_resolved": [
-                "larql_server::attention_session::tests::delete_makes_get_none"
+                "larql_server::attention_session::tests::delete_makes_get_none",
+                "larql_server::routes::attention::tests::delete_unknown_session_returns_404"
               ],
               "tests_unresolved": [],
               "unbacked": false,
@@ -26229,6 +26232,66 @@
       "fqn": "larql_server::routes::stream::stream_describe_messages_builds_layer_and_done_messages",
       "file": "crates/larql-server/src/routes/stream.rs",
       "line": 553,
+      "crate": "larql_server"
+    },
+    {
+      "fqn": "larql_server::routes::attention::tests::map_kv_format_recognises_known_formats",
+      "file": "crates/larql-server/src/routes/attention.rs",
+      "line": 313,
+      "crate": "larql_server"
+    },
+    {
+      "fqn": "larql_server::routes::attention::map_kv_format_recognises_known_formats",
+      "file": "crates/larql-server/src/routes/attention.rs",
+      "line": 313,
+      "crate": "larql_server"
+    },
+    {
+      "fqn": "larql_server::routes::attention::tests::map_kv_format_rejects_unknown",
+      "file": "crates/larql-server/src/routes/attention.rs",
+      "line": 322,
+      "crate": "larql_server"
+    },
+    {
+      "fqn": "larql_server::routes::attention::map_kv_format_rejects_unknown",
+      "file": "crates/larql-server/src/routes/attention.rs",
+      "line": 322,
+      "crate": "larql_server"
+    },
+    {
+      "fqn": "larql_server::routes::attention::tests::fmt_to_str_round_trips",
+      "file": "crates/larql-server/src/routes/attention.rs",
+      "line": 328,
+      "crate": "larql_server"
+    },
+    {
+      "fqn": "larql_server::routes::attention::fmt_to_str_round_trips",
+      "file": "crates/larql-server/src/routes/attention.rs",
+      "line": 328,
+      "crate": "larql_server"
+    },
+    {
+      "fqn": "larql_server::routes::attention::delete_unknown_session_returns_404",
+      "file": "crates/larql-server/src/routes/attention.rs",
+      "line": 335,
+      "crate": "larql_server"
+    },
+    {
+      "fqn": "larql_server::routes::attention::get_unknown_session_returns_404",
+      "file": "crates/larql-server/src/routes/attention.rs",
+      "line": 345,
+      "crate": "larql_server"
+    },
+    {
+      "fqn": "larql_server::routes::attention::tests::snapshot_unknown_session_returns_404",
+      "file": "crates/larql-server/src/routes/attention.rs",
+      "line": 354,
+      "crate": "larql_server"
+    },
+    {
+      "fqn": "larql_server::routes::attention::snapshot_unknown_session_returns_404",
+      "file": "crates/larql-server/src/routes/attention.rs",
+      "line": 354,
       "crate": "larql_server"
     },
     {
