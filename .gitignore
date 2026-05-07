@@ -27,6 +27,13 @@ build/
 # Checkpoints / temp
 *.checkpoint
 
+# Coverage / profiling artifacts
+*.profraw
+*.profdata
+lcov.info
+coverage/
+tarpaulin-report.html
+
 # output
 output/
 data/
