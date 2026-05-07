@@ -1,11 +1,14 @@
 //! CUDA compute backend (Linux/NVIDIA).
 //!
-//! This is intentionally a small first slice: it accelerates the f32 GEMV
-//! surface used by LM-head / gate projections and falls back to the CPU backend
-//! for everything else.  It uses the CUDA Driver API plus dynamically loaded
-//! cuBLAS, so building the crate does not require `nvcc` or the CUDA SDK.
+//! This backend keeps the first CUDA slice build-light: it uses cuBLAS for
+//! dense f32 GEMV, dequantises Q4_0/Q4_K/F16 weights into temporary f32
+//! views for cuBLAS-backed execution, and falls back to the CPU backend for
+//! surfaces that still need dedicated kernels. It uses the CUDA Driver API plus
+//! dynamically loaded cuBLAS, so building the crate does not require `nvcc` or
+//! the CUDA SDK.
 
 use crate::backend::{Capability, ComputeBackend, DecodeBackend, MatMul, MatMulOp, QuantMatVec};
+use crate::cpu::ops::q4_common::{dequantize_q4_k, f16_to_f32, quantize_to_q8};
 use crate::cpu::CpuBackend;
 use ndarray::{Array2, ArrayView2};
 use std::ffi::{c_char, c_int, c_uint, c_void, CStr, CString};
@@ -241,6 +244,66 @@ impl Drop for CudaBackend {
     }
 }
 
+fn dequantise_q8(q8_x: &[i8], q8_scales: &[f32]) -> Vec<f32> {
+    let n_blocks = q8_x.len() / 32;
+    let mut out = Vec::with_capacity(q8_x.len());
+    for (block, scale) in q8_scales.iter().copied().take(n_blocks).enumerate() {
+        let off = block * 32;
+        for &q in &q8_x[off..off + 32] {
+            out.push(q as f32 * scale);
+        }
+    }
+    for &q in q8_x[n_blocks * 32..].iter() {
+        out.push(q as f32);
+    }
+    out
+}
+
+fn dequantise_q4_0(q4_data: &[u8], num_rows: usize, hidden: usize) -> Option<Vec<f32>> {
+    if hidden == 0 || num_rows == 0 || !hidden.is_multiple_of(32) {
+        return None;
+    }
+    let blocks_per_row = hidden / 32;
+    let row_bytes = blocks_per_row * 18;
+    if q4_data.len() < num_rows.checked_mul(row_bytes)? {
+        return None;
+    }
+
+    let mut out = vec![0.0f32; num_rows * hidden];
+    for row in 0..num_rows {
+        let row_base = row * row_bytes;
+        for block in 0..blocks_per_row {
+            let off = row_base + block * 18;
+            let scale = f16_to_f32(u16::from_le_bytes([q4_data[off], q4_data[off + 1]]));
+            let packed = &q4_data[off + 2..off + 18];
+            let out_base = row * hidden + block * 32;
+            for (i, &byte) in packed.iter().enumerate() {
+                let lo = (byte & 0x0f) as i8 - 8;
+                let hi = ((byte >> 4) & 0x0f) as i8 - 8;
+                out[out_base + i * 2] = lo as f32 * scale;
+                out[out_base + i * 2 + 1] = hi as f32 * scale;
+            }
+        }
+    }
+    Some(out)
+}
+
+fn top_k_from_scores(scores: &[f32], top_k: usize) -> Option<Vec<(u32, f32)>> {
+    if top_k == 0 || scores.is_empty() {
+        return None;
+    }
+    let mut pairs: Vec<(u32, f32)> = scores
+        .iter()
+        .copied()
+        .enumerate()
+        .filter(|(_, score)| score.is_finite())
+        .map(|(idx, score)| (idx as u32, score))
+        .collect();
+    pairs.sort_by(|a, b| b.1.total_cmp(&a.1).then_with(|| a.0.cmp(&b.0)));
+    pairs.truncate(top_k.min(pairs.len()));
+    (!pairs.is_empty()).then_some(pairs)
+}
+
 fn device_name(device: CUdevice) -> String {
     let mut buf = [0i8; 256];
     let rc = unsafe { cuDeviceGetName(buf.as_mut_ptr(), buf.len() as c_int, device) };
@@ -323,6 +386,60 @@ impl MatMul for CudaBackend {
         d_y.copy_to(&mut out)?;
         Some(out)
     }
+
+    fn f32_gemv_topk1(&self, w: ArrayView2<f32>, x: &[f32]) -> Option<(u32, f32)> {
+        let (n, k) = (w.shape()[0], w.shape()[1]);
+        if x.len() != k || n == 0 || k == 0 {
+            return None;
+        }
+        // Safe fallback: top-k is correctness-sensitive and cheap to reduce on CPU.
+        // The full-score CUDA GEMV path remains available via f32_gemv_force.
+        let x_row = ArrayView2::from_shape((1, k), x).ok()?;
+        let out = self.cpu.matmul_transb(x_row, w);
+        let scores = out.row(0).to_vec();
+        top_k_from_scores(&scores, 1)?.into_iter().next()
+    }
+
+    fn f16_gemv(&self, w_f16: &[u8], x: &[f32], n: usize, k: usize) -> Option<Vec<f32>> {
+        if w_f16.len() < n.checked_mul(k)?.checked_mul(2)? || x.len() != k {
+            return None;
+        }
+        let mut w = Vec::with_capacity(n * k);
+        for chunk in w_f16[..n * k * 2].chunks_exact(2) {
+            w.push(f16_to_f32(u16::from_le_bytes([chunk[0], chunk[1]])));
+        }
+        let view = ArrayView2::from_shape((n, k), &w).ok()?;
+        self.f32_gemv(view, x)
+    }
+
+    fn f16_gemv_force(&self, w_f16: &[u8], x: &[f32], n: usize, k: usize) -> Option<Vec<f32>> {
+        if w_f16.len() < n.checked_mul(k)?.checked_mul(2)? || x.len() != k {
+            return None;
+        }
+        let mut w = Vec::with_capacity(n * k);
+        for chunk in w_f16[..n * k * 2].chunks_exact(2) {
+            w.push(f16_to_f32(u16::from_le_bytes([chunk[0], chunk[1]])));
+        }
+        let view = ArrayView2::from_shape((n, k), &w).ok()?;
+        self.f32_gemv_force(view, x)
+    }
+
+    fn f16_gemv_topk1(&self, w_f16: &[u8], x: &[f32], n: usize, k: usize) -> Option<(u32, f32)> {
+        let scores = self.f16_gemv_force(w_f16, x, n, k)?;
+        top_k_from_scores(&scores, 1)?.into_iter().next()
+    }
+
+    fn f16_gemv_topk(
+        &self,
+        w_f16: &[u8],
+        x: &[f32],
+        n: usize,
+        k: usize,
+        top_k: usize,
+    ) -> Option<Vec<(u32, f32)>> {
+        let scores = self.f16_gemv_force(w_f16, x, n, k)?;
+        top_k_from_scores(&scores, top_k)
+    }
 }
 
 impl QuantMatVec for CudaBackend {
@@ -334,8 +451,35 @@ impl QuantMatVec for CudaBackend {
         num_rows: usize,
         hidden: usize,
     ) -> Option<Vec<f32>> {
-        self.cpu
-            .q4_matvec(q4_data, q8_x, q8_scales, num_rows, hidden)
+        let weights = dequantise_q4_0(q4_data, num_rows, hidden)?;
+        let x = dequantise_q8(q8_x, q8_scales);
+        let view = ArrayView2::from_shape((num_rows, hidden), &weights).ok()?;
+        self.f32_gemv_force(view, &x)
+    }
+
+    fn q4_matvec_topk1(
+        &self,
+        q4_data: &[u8],
+        q8_x: &[i8],
+        q8_scales: &[f32],
+        num_rows: usize,
+        hidden: usize,
+    ) -> Option<(u32, f32)> {
+        let scores = self.q4_matvec(q4_data, q8_x, q8_scales, num_rows, hidden)?;
+        top_k_from_scores(&scores, 1)?.into_iter().next()
+    }
+
+    fn q4_matvec_topk(
+        &self,
+        q4_data: &[u8],
+        q8_x: &[i8],
+        q8_scales: &[f32],
+        num_rows: usize,
+        hidden: usize,
+        top_k: usize,
+    ) -> Option<Vec<(u32, f32)>> {
+        let scores = self.q4_matvec(q4_data, q8_x, q8_scales, num_rows, hidden)?;
+        top_k_from_scores(&scores, top_k)
     }
 
     fn q4_vecmat(
@@ -349,6 +493,29 @@ impl QuantMatVec for CudaBackend {
             .q4_vecmat(activation, q4_data, intermediate, hidden)
     }
 
+    fn q4_matvec_pair_batch(
+        &self,
+        gate_q4: &[u8],
+        up_q4: &[u8],
+        x_matrix: &[f32],
+        seq_len: usize,
+        num_rows: usize,
+        hidden: usize,
+    ) -> Option<(Vec<Vec<f32>>, Vec<Vec<f32>>)> {
+        if x_matrix.len() < seq_len.checked_mul(hidden)? {
+            return None;
+        }
+        let mut gates = Vec::with_capacity(seq_len);
+        let mut ups = Vec::with_capacity(seq_len);
+        for pos in 0..seq_len {
+            let x = &x_matrix[pos * hidden..(pos + 1) * hidden];
+            let (q8_x, q8_scales) = quantize_to_q8(x);
+            gates.push(self.q4_matvec(gate_q4, &q8_x, &q8_scales, num_rows, hidden)?);
+            ups.push(self.q4_matvec(up_q4, &q8_x, &q8_scales, num_rows, hidden)?);
+        }
+        Some((gates, ups))
+    }
+
     fn q4k_matvec(
         &self,
         q4k_data: &[u8],
@@ -356,7 +523,41 @@ impl QuantMatVec for CudaBackend {
         num_rows: usize,
         hidden: usize,
     ) -> Option<Vec<f32>> {
-        self.cpu.q4k_matvec(q4k_data, x, num_rows, hidden)
+        let weights = dequantize_q4_k(q4k_data, num_rows.checked_mul(hidden)?);
+        if weights.is_empty() {
+            return None;
+        }
+        let view = ArrayView2::from_shape((num_rows, hidden), &weights).ok()?;
+        self.f32_gemv_force(view, x)
+    }
+
+    fn q4k_matvec_stride32(
+        &self,
+        q4k_data: &[u8],
+        x: &[f32],
+        num_rows: usize,
+        hidden: usize,
+    ) -> Option<Vec<f32>> {
+        self.q4k_matvec(q4k_data, x, num_rows, hidden)
+    }
+
+    fn q4k_matmul(
+        &self,
+        q4k_data: &[u8],
+        x: &[f32],
+        num_rows: usize,
+        hidden: usize,
+        seq_len: usize,
+    ) -> Option<Vec<f32>> {
+        if x.len() < seq_len.checked_mul(hidden)? {
+            return None;
+        }
+        let mut out = Vec::with_capacity(seq_len * num_rows);
+        for pos in 0..seq_len {
+            let row = &x[pos * hidden..(pos + 1) * hidden];
+            out.extend(self.q4k_matvec(q4k_data, row, num_rows, hidden)?);
+        }
+        Some(out)
     }
 
     fn q6k_matvec(
@@ -388,7 +589,11 @@ impl ComputeBackend for CudaBackend {
     fn supports(&self, cap: Capability) -> bool {
         matches!(
             cap,
-            Capability::F32Gemv | Capability::QuantMatVec | Capability::Q4VecMat
+            Capability::F32Gemv
+                | Capability::F16Gemv
+                | Capability::QuantMatVec
+                | Capability::Q4VecMat
+                | Capability::Q4PairBatch
         )
     }
 

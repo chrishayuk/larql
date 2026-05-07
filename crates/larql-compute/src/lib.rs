@@ -178,6 +178,13 @@ mod cuda_backend_tests {
         assert!(backend.name().contains("cuda"), "got {}", backend.name());
     }
 
+    fn assert_close(got: &[f32], want: &[f32], tol: f32) {
+        assert_eq!(got.len(), want.len());
+        for (idx, (g, w)) in got.iter().zip(want.iter()).enumerate() {
+            assert!((g - w).abs() < tol, "idx={idx} got={g} want={w}");
+        }
+    }
+
     #[test]
     fn cuda_backend_f32_gemv_matches_cpu() {
         let Some(cuda) = maybe_cuda() else {
@@ -194,17 +201,115 @@ mod cuda_backend_tests {
         let got = cuda
             .f32_gemv_force(w.view(), &x)
             .expect("CUDA f32_gemv_force");
-        let want = CpuBackend.f32_gemv_force(w.view(), &x).unwrap_or_else(|| {
-            let out = CpuBackend.matmul_transb(
-                Array2::from_shape_vec((1, k), x.clone()).unwrap().view(),
-                w.view(),
-            );
-            out.row(0).to_vec()
-        });
+        let out = CpuBackend.matmul_transb(
+            Array2::from_shape_vec((1, k), x.clone()).unwrap().view(),
+            w.view(),
+        );
+        let want = out.row(0).to_vec();
+        assert_close(&got, &want, 1e-3);
+    }
 
-        assert_eq!(got.len(), want.len());
-        for (idx, (g, w)) in got.iter().zip(want.iter()).enumerate() {
-            assert!((g - w).abs() < 1e-3, "idx={idx} got={g} want={w}");
-        }
+    #[test]
+    fn cuda_backend_f32_gemv_topk1_matches_cpu_argmax() {
+        let Some(cuda) = maybe_cuda() else {
+            return;
+        };
+
+        let n = 64;
+        let k = 96;
+        let w = Array2::from_shape_fn((n, k), |(row, col)| {
+            ((row * 13 + col * 7) % 29) as f32 / 13.0 - 0.7
+        });
+        let x: Vec<f32> = (0..k).map(|i| (i % 17) as f32 / 8.0 - 1.0).collect();
+        let out = CpuBackend.matmul_transb(
+            Array2::from_shape_vec((1, k), x.clone()).unwrap().view(),
+            w.view(),
+        );
+        let scores = out.row(0).to_vec();
+        let (want_idx, want_score) = scores
+            .iter()
+            .copied()
+            .enumerate()
+            .filter(|(_, score)| score.is_finite())
+            .map(|(idx, score)| (idx as u32, score))
+            .min_by(|a, b| b.1.total_cmp(&a.1).then_with(|| a.0.cmp(&b.0)))
+            .unwrap();
+
+        let got = cuda
+            .f32_gemv_topk1(w.view(), &x)
+            .expect("CUDA f32_gemv_topk1");
+        assert_eq!(got.0, want_idx);
+        assert!((got.1 - want_score).abs() < 1e-3);
+    }
+
+    #[test]
+    fn cuda_backend_q4k_matvec_and_stride32_match_cpu() {
+        let Some(cuda) = maybe_cuda() else {
+            return;
+        };
+
+        let rows = 16;
+        let hidden = 256;
+        let weights: Vec<f32> = (0..rows * hidden)
+            .map(|i| ((i * 19 + 5) % 37) as f32 / 18.0 - 1.0)
+            .collect();
+        let q4k = crate::cpu::ops::q4_common::quantize_q4_k(&weights);
+        let x: Vec<f32> = (0..hidden).map(|i| (i % 23) as f32 / 11.0 - 1.0).collect();
+
+        let want = CpuBackend.q4k_matvec(&q4k, &x, rows, hidden).unwrap();
+        let got = cuda
+            .q4k_matvec(&q4k, &x, rows, hidden)
+            .expect("CUDA q4k_matvec");
+        assert_close(&got, &want, 1e-3);
+
+        let got_stride = cuda
+            .q4k_matvec_stride32(&q4k, &x, rows, hidden)
+            .expect("CUDA q4k_matvec_stride32");
+        assert_close(&got_stride, &want, 1e-3);
+    }
+
+    #[test]
+    fn cuda_backend_q4_topk_and_pair_batch_match_cpu() {
+        let Some(cuda) = maybe_cuda() else {
+            return;
+        };
+
+        let rows = 32;
+        let hidden = 64;
+        let weights: Vec<f32> = (0..rows * hidden)
+            .map(|i| ((i * 11 + 3) % 41) as f32 / 20.0 - 1.0)
+            .collect();
+        let q4 = crate::cpu::ops::q4_common::quantize_q4_0(&weights);
+        let x: Vec<f32> = (0..hidden).map(|i| (i % 13) as f32 / 6.0 - 1.0).collect();
+        let (q8_x, q8_scales) = crate::cpu::ops::q4_common::quantize_to_q8(&x);
+
+        let scores = CpuBackend
+            .q4_matvec(&q4, &q8_x, &q8_scales, rows, hidden)
+            .unwrap();
+        let top1 = cuda
+            .q4_matvec_topk1(&q4, &q8_x, &q8_scales, rows, hidden)
+            .expect("CUDA q4_matvec_topk1");
+        let want_top1 = scores
+            .iter()
+            .copied()
+            .enumerate()
+            .max_by(|a, b| a.1.total_cmp(&b.1))
+            .map(|(idx, score)| (idx as u32, score))
+            .unwrap();
+        assert_eq!(top1.0, want_top1.0);
+        assert!((top1.1 - want_top1.1).abs() < 1e-3);
+
+        let topk = cuda
+            .q4_matvec_topk(&q4, &q8_x, &q8_scales, rows, hidden, 4)
+            .expect("CUDA q4_matvec_topk");
+        assert_eq!(topk.len(), 4);
+
+        let (gate, up) = cuda
+            .q4_matvec_pair_batch(&q4, &q4, &x, 1, rows, hidden)
+            .expect("CUDA q4_matvec_pair_batch");
+        assert_eq!(gate.len(), 1);
+        assert_eq!(up.len(), 1);
+        assert_close(&gate[0], &scores, 1e-3);
+        assert_close(&up[0], &scores, 1e-3);
     }
 }
