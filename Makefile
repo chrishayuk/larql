@@ -1,4 +1,4 @@
-.PHONY: build release test test-fast test-full test-integration test-models check clean fmt lint demos bench bench-save bench-check coverage coverage-summary coverage-check coverage-install ci-coverage traceability traceability-check gaps gaps-untested gaps-unbacked openspec-validate
+.PHONY: build release test test-fast test-full test-integration test-models check clean fmt lint demos bench bench-save bench-check coverage coverage-summary coverage-check coverage-install ci-coverage traceability traceability-check gaps gaps-untested gaps-unbacked openspec-validate test-cuda docker-ffn docker-gpu docker-up docker-down docker-logs cuda-status
 
 # Build
 build:
@@ -32,6 +32,51 @@ test-models:
 	cargo test -p larql-inference --test test_llm_dispatch -- --ignored --nocapture
 	cargo test -p larql-inference --test test_constrained_dispatch -- --ignored --nocapture
 	cargo test -p larql-inference --test test_trie_dispatch -- --ignored --nocapture
+
+# CUDA test suite — requires LARQL_CUDA_AVAILABLE=1 and a working CUDA
+# runtime (driver + libcublas matching the cudarc feature in
+# crates/larql-compute/Cargo.toml). Runs all gpu-gated parity tests for
+# f32 / Q4 / fused attention against synthetic inputs.
+test-cuda:
+	@if [ "${LARQL_CUDA_AVAILABLE}" != "1" ]; then \
+	  echo "Set LARQL_CUDA_AVAILABLE=1 to run CUDA parity tests."; \
+	  exit 2; \
+	fi
+	cargo test -p larql-compute --features cuda --test test_cuda_f32 -- --test-threads=1
+	cargo test -p larql-compute --features cuda --test test_cuda_q4  -- --test-threads=1
+	cargo test -p larql-compute --features cuda --test test_cuda_attn -- --test-threads=1
+	cargo test -p larql-rotorquant
+	@echo "All CUDA + RotorQuant parity tests passed."
+
+# Snapshot of cuda backend status against this dev box.
+cuda-status:
+	@echo "═══ CUDA capability snapshot ═══"
+	@echo
+	@nvidia-smi 2>/dev/null | grep -E 'CUDA Version|GeForce|Tesla|RTX|GTX' | head -5 || echo "(no nvidia-smi)"
+	@echo
+	@if [ -d "/usr/local/cuda/targets/x86_64-linux/lib" ]; then \
+	  echo "libcublas: $$(ls /usr/local/cuda/targets/x86_64-linux/lib/libcublas.so.* 2>/dev/null | head -1)"; \
+	fi
+	@echo
+	@cargo metadata --format-version 1 --quiet 2>/dev/null | python3 -c "import json,sys; d=json.load(sys.stdin); pkg=[p for p in d['packages'] if p['name']=='larql-compute'][0]; print(f\"larql-compute features: {list(pkg['features'].keys())}\")" 2>/dev/null || true
+
+# ── Two-container deployment ──────────────────────────────────────────
+# See deploy/docker/README.md for the full topology + VRAM budget.
+
+docker-ffn:
+	docker build -f deploy/docker/Dockerfile.ffn -t larql-ffn:dev .
+
+docker-gpu:
+	docker build -f deploy/docker/Dockerfile.gpu -t larql-gpu:dev .
+
+docker-up:
+	cd deploy/docker && docker compose up --build
+
+docker-down:
+	cd deploy/docker && docker compose down -v
+
+docker-logs:
+	cd deploy/docker && docker compose logs -f
 
 # Check (compile without building)
 check:
