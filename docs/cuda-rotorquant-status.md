@@ -67,18 +67,20 @@ sub-change.
   capabilities on the announce wire ships with
   `attention-service-routes`.
 
+### Phase 5 — Attention KvCache integration
+
+- ✅ `rotorquant-attention-integration`: `KvCache` gains a
+  `kv_format: Option<KvFormat>` parameter and a parallel
+  `quantized_kv: Vec<Option<(QuantizedKv, QuantizedKv)>>`
+  side-table. New methods: `set_kv_format`, `quantize_layer`
+  (FP32 → compressed; takes the FP32 slot to avoid memory doubling),
+  `dequantize_layer` (non-destructive readback;
+  `dequantize_v_with_inverse_rotation` for V), `promote_layer_to_fp32`,
+  `is_layer_compressed`. Round-trip cosine ≥ 0.95 on synthetic
+  Gemma-shaped data. **18/18** attention::decode tests pass
+  including 3 new for the compressed side-table.
+
 ## Not yet shipped (known follow-up sub-changes)
-
-These are designed and have spec scenarios attached to the parent
-change but aren't implemented yet. Each is a contained piece of work
-that benefits from explicit human review before launching.
-
-- **`rotorquant-attention-integration`** — wires `KvFormat` into
-  `larql_inference::attention::KvCache`; deferred-K behaviour during
-  prefill; KV-surgery operations transparently quantise on insert /
-  dequant on read. `rotorquant-strategy` (shipped) is the
-  preliminary plumbing; full KvCache integration is the deeper
-  ~3–4-day inference-path work.
 - **`attention-service-routes`** — new HTTP + gRPC endpoints on
   `larql-server` (`/v1/attention/{session,prefill,decode}`,
   `/v1/kv-cache/{snapshot,restore,free}`); session lifecycle;
@@ -86,6 +88,14 @@ that benefits from explicit human review before launching.
   the capability set so `route_for_capability` (shipped) gets real
   data. Depends on test-fixture drift in
   `larql-server/tests/test_expert_endpoint.rs` being repaired.
+- **`rotorquant-cuda-kernels`** — replaces the CPU reference in
+  `larql-rotorquant` with PTX kernels for planar3 / iso3
+  quantize+dequantize; flips
+  `Capability::KvCompressionRotorQuant` on `CudaBackend`.
+- **`engine-rotorquant-auto-compress`** — adds a
+  `RotorQuantEngine`/`IsoQuantEngine` to the engine registry that
+  automatically calls `quantize_layer` after each decode token
+  insertion (the upstream "deferred-K" pattern).
 - **`deploy-compose-end-to-end`** — `docker compose up` boots
   Gemma 4B end-to-end through the router; `make demo` target
   produces a one-shot inference; PERFORMANCE.md gets the measured
@@ -113,8 +123,9 @@ cargo test -p larql-compute --features cuda --test test_cuda_attn  →  6 tests
 cargo test -p larql-rotorquant                                     →  9 tests + 1 doctest
 cargo test -p kv-cache-benchmark --lib rotorquant                  →  3 tests
 cargo test -p larql-router --bin larql-router grid::tests          → 11 tests
+cargo test -p larql-inference --lib attention::decode               → 18 tests
                                                                    ────
-                                                                    44 tests
+                                                                    62 tests
 ```
 
 All require `LARQL_CUDA_AVAILABLE=1` for the GPU-gated subset; the
@@ -148,6 +159,7 @@ not on the critical path for it:
 | `dbf57e7` | [rotorquant-kernels] new larql-rotorquant crate with CPU reference |
 | _post-wrapup_ | [rotorquant-strategy] RotorQuantStrategy joins kv-cache-benchmark |
 | _post-wrapup_ | [router-heterogeneous-shards] capability-tagged routing in larql-router |
+| `5cb199d` | [rotorquant-attention-integration] KvFormat side-table on KvCache |
 
 ## Bring-up
 
