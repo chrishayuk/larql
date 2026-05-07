@@ -101,6 +101,25 @@ sub-change.
   produces a one-shot inference; PERFORMANCE.md gets the measured
   tok/s + VRAM column.
 
+### SMG-derived backlog (revisit after CUDA stabilises)
+
+Three sub-changes drafted as **proposal-only** after analysing the
+PyTorch / LightSeek SMG blog post — not on the critical path,
+spec'd for later pickup:
+
+- **`server-tokenizer-cache`** — L0 exact-match + L1 prefix-aware
+  trie cache in front of `Tokenizer::encode`. SMG measured 23%
+  TTFT reduction at 256 concurrency.
+- **`router-prefix-aware-routing`** — `ServerEntry` carries a
+  Bloom filter of cached prefix hashes; routing prefers shards
+  that already have the request's prefix in KV cache. SMG: 23%
+  TTFT win + 10–12× faster cache routing.
+- **`attention-service-prefill-decode-split`** — extends the
+  planned `attention-service-routes` design to support optional
+  PD disaggregation: prefill stateless, decode session-bound,
+  KV snapshot is the handoff. SMG / Sarathi-Serve / DistServe:
+  20–30% TTFT improvement.
+
 ## Snapshot of capability bits today
 
 ```rust
