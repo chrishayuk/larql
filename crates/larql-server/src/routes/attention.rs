@@ -231,6 +231,143 @@ pub struct SnapshotResponse {
     pub bytes_len: usize,
 }
 
+// ── /v1/kv-cache/restore ───────────────────────────────────────────────────
+
+#[derive(Deserialize)]
+pub struct RestoreRequest {
+    pub session_id: String,
+    /// Base64-encoded snapshot blob (same byte format as the
+    /// snapshot endpoint's `snapshot` field).
+    pub snapshot: String,
+}
+
+#[derive(Serialize)]
+pub struct RestoreResponse {
+    pub session_id: String,
+    pub seq_len: usize,
+    pub num_layers: usize,
+}
+
+pub async fn handle_kv_restore(
+    State(state): State<Arc<AppState>>,
+    Json(req): Json<RestoreRequest>,
+) -> impl IntoResponse {
+    state.bump_requests();
+    let session_id = SessionId(req.session_id);
+    let Some(entry) = state.attention_sessions.get(&session_id) else {
+        return err_no_session().into_response();
+    };
+
+    use base64::Engine;
+    let bytes = match base64::engine::general_purpose::STANDARD.decode(&req.snapshot) {
+        Ok(b) => b,
+        Err(e) => {
+            return err_response(
+                StatusCode::BAD_REQUEST,
+                ErrorBody {
+                    error: "snapshot_base64_decode_failed",
+                    detail: Some(e.to_string()),
+                },
+            )
+            .into_response();
+        }
+    };
+    let new_cache = match kv_snapshot::deserialize(&bytes) {
+        Ok(c) => c,
+        Err(e) => {
+            let err = match &e {
+                kv_snapshot::SnapshotError::UnsupportedVersion { .. } => {
+                    "snapshot_version_unsupported"
+                }
+                kv_snapshot::SnapshotError::MagicMismatch { .. } => "snapshot_magic_mismatch",
+                _ => "snapshot_invalid",
+            };
+            return err_response(
+                StatusCode::BAD_REQUEST,
+                ErrorBody {
+                    error: err,
+                    detail: Some(e.to_string()),
+                },
+            )
+            .into_response();
+        }
+    };
+
+    let mut g = entry.write().await;
+    let num_layers = new_cache.layers.len();
+    let seq_len = new_cache.next_position;
+    g.cache = new_cache;
+    g.seq_len = seq_len;
+    g.prefilled = seq_len > 0;
+    g.touch();
+
+    Json(RestoreResponse {
+        session_id: g.id.as_str().to_string(),
+        seq_len,
+        num_layers,
+    })
+    .into_response()
+}
+
+// ── /v1/kv-cache/free ──────────────────────────────────────────────────────
+
+#[derive(Deserialize)]
+pub struct FreeRequest {
+    pub session_id: String,
+    /// `None` ⇒ free every layer's K/V slot in the cache.
+    /// `Some(layer)` ⇒ free that one layer (FP32 + compressed slots).
+    #[serde(default)]
+    pub layer: Option<u32>,
+}
+
+#[derive(Serialize)]
+pub struct FreeResponse {
+    pub session_id: String,
+    pub layers_freed: u32,
+}
+
+pub async fn handle_kv_free(
+    State(state): State<Arc<AppState>>,
+    Json(req): Json<FreeRequest>,
+) -> impl IntoResponse {
+    state.bump_requests();
+    let session_id = SessionId(req.session_id);
+    let Some(entry) = state.attention_sessions.get(&session_id) else {
+        return err_no_session().into_response();
+    };
+    let mut g = entry.write().await;
+    let total_layers = g.cache.layers.len();
+    let layers_freed = match req.layer {
+        None => {
+            for layer in 0..total_layers {
+                g.cache.clear_layer(layer);
+            }
+            total_layers as u32
+        }
+        Some(layer) => {
+            let layer_us = layer as usize;
+            if layer_us >= total_layers {
+                return err_response(
+                    StatusCode::BAD_REQUEST,
+                    ErrorBody {
+                        error: "layer_out_of_range",
+                        detail: Some(format!("layer {layer} >= num_layers {total_layers}")),
+                    },
+                )
+                .into_response();
+            }
+            g.cache.clear_layer(layer_us);
+            1
+        }
+    };
+    g.touch();
+    Json(FreeResponse {
+        session_id: g.id.as_str().to_string(),
+        layers_freed,
+    })
+    .into_response()
+}
+
 // ── Restore helper ─────────────────────────────────────────────────────────
 
 fn restore_session(
@@ -362,5 +499,130 @@ mod tests {
         .await
         .into_response();
         assert_eq!(resp.status(), StatusCode::NOT_FOUND);
+    }
+
+    #[tokio::test]
+    async fn restore_unknown_session_returns_404() {
+        let state = empty_state();
+        let resp = handle_kv_restore(
+            State(state),
+            Json(RestoreRequest {
+                session_id: "01HM1MISSING0000000000000A".to_string(),
+                snapshot: String::new(),
+            }),
+        )
+        .await
+        .into_response();
+        assert_eq!(resp.status(), StatusCode::NOT_FOUND);
+    }
+
+    #[tokio::test]
+    async fn restore_with_bad_base64_returns_400() {
+        let state = empty_state();
+        // Insert a session so we get past the 404 path.
+        let id = SessionId::new();
+        let _ = state
+            .attention_sessions
+            .insert(AttentionSession::new(id.clone(), "m", 1, None))
+            .unwrap();
+        let resp = handle_kv_restore(
+            State(state),
+            Json(RestoreRequest {
+                session_id: id.as_str().to_string(),
+                snapshot: "@@@not-base64@@@".into(),
+            }),
+        )
+        .await
+        .into_response();
+        assert_eq!(resp.status(), StatusCode::BAD_REQUEST);
+    }
+
+    #[tokio::test]
+    async fn restore_with_bad_magic_returns_400() {
+        use base64::Engine;
+        let state = empty_state();
+        let id = SessionId::new();
+        let _ = state
+            .attention_sessions
+            .insert(AttentionSession::new(id.clone(), "m", 1, None))
+            .unwrap();
+        // 32 bytes of zero — passes the length check but fails magic.
+        let bytes = vec![0u8; 64];
+        let b64 = base64::engine::general_purpose::STANDARD.encode(&bytes);
+        let resp = handle_kv_restore(
+            State(state),
+            Json(RestoreRequest {
+                session_id: id.as_str().to_string(),
+                snapshot: b64,
+            }),
+        )
+        .await
+        .into_response();
+        assert_eq!(resp.status(), StatusCode::BAD_REQUEST);
+    }
+
+    #[tokio::test]
+    async fn free_unknown_session_returns_404() {
+        let state = empty_state();
+        let resp = handle_kv_free(
+            State(state),
+            Json(FreeRequest {
+                session_id: "01HM1MISSING0000000000000A".to_string(),
+                layer: None,
+            }),
+        )
+        .await
+        .into_response();
+        assert_eq!(resp.status(), StatusCode::NOT_FOUND);
+    }
+
+    #[tokio::test]
+    async fn free_layer_out_of_range_returns_400() {
+        let state = empty_state();
+        let id = SessionId::new();
+        let _ = state
+            .attention_sessions
+            .insert(AttentionSession::new(id.clone(), "m", 4, None))
+            .unwrap();
+        let resp = handle_kv_free(
+            State(state),
+            Json(FreeRequest {
+                session_id: id.as_str().to_string(),
+                layer: Some(99),
+            }),
+        )
+        .await
+        .into_response();
+        assert_eq!(resp.status(), StatusCode::BAD_REQUEST);
+    }
+
+    #[tokio::test]
+    async fn free_all_layers_clears_cache() {
+        let state = empty_state();
+        let id = SessionId::new();
+        let mut sess = AttentionSession::new(id.clone(), "m", 3, None);
+        sess.cache.layers[0] = Some((
+            ndarray::Array2::<f32>::ones((1, 4)),
+            ndarray::Array2::<f32>::ones((1, 4)),
+        ));
+        sess.cache.layers[2] = Some((
+            ndarray::Array2::<f32>::ones((1, 4)),
+            ndarray::Array2::<f32>::ones((1, 4)),
+        ));
+        let _ = state.attention_sessions.insert(sess).unwrap();
+        let resp = handle_kv_free(
+            State(state.clone()),
+            Json(FreeRequest {
+                session_id: id.as_str().to_string(),
+                layer: None,
+            }),
+        )
+        .await
+        .into_response();
+        assert_eq!(resp.status(), StatusCode::OK);
+        // All layer slots are cleared.
+        let entry = state.attention_sessions.get(&id).unwrap();
+        let g = entry.read().await;
+        assert!(g.cache.layers.iter().all(|s| s.is_none()));
     }
 }

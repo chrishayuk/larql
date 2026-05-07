@@ -623,6 +623,18 @@ pub struct Cli {
     #[arg(long, value_enum, default_value_t = ServerRole::Both)]
     pub role: ServerRole,
 
+    /// Idle TTL for attention KV sessions, in seconds. Sessions whose
+    /// `last_used` is older than this are reaped on the next 30 s
+    /// reaper tick. attention-service-routes change.
+    #[arg(long, default_value_t = 600)]
+    pub attention_session_ttl_secs: u64,
+
+    /// Max concurrent attention KV sessions. Beyond this cap the
+    /// server returns 503 from `POST /v1/attention/session`.
+    /// attention-service-routes change.
+    #[arg(long, default_value_t = 256)]
+    pub max_attention_sessions: usize,
+
     /// Server-side MoE expert shard map: `"START-END=URL,START-END=URL,..."`
     /// The walk-ffn handler dispatches MoE expert calls to these remote servers.
     /// Combine with --layers for full 2D (layer × expert) sharding.
@@ -793,9 +805,28 @@ pub async fn serve(cli: Cli) -> Result<(), BoxError> {
         sessions: SessionManager::new(DEFAULT_SESSION_TTL_SECS),
         describe_cache: DescribeCache::new(cli.cache_ttl),
         attention_sessions: std::sync::Arc::new(
-            crate::attention_session::AttentionSessionMap::new(600, 256),
+            crate::attention_session::AttentionSessionMap::new(
+                cli.attention_session_ttl_secs,
+                cli.max_attention_sessions,
+            ),
         ),
     });
+
+    // attention-service-routes change. Reap idle attention sessions
+    // every 30 s; sessions older than the configured TTL are dropped.
+    {
+        let sessions = state.attention_sessions.clone();
+        tokio::spawn(async move {
+            let mut interval = tokio::time::interval(std::time::Duration::from_secs(30));
+            loop {
+                interval.tick().await;
+                let reaped = sessions.reap_idle();
+                if reaped > 0 {
+                    tracing::debug!(reaped, active = sessions.len(), "attention-session reaper");
+                }
+            }
+        });
+    }
 
     if cli.cache_ttl > 0 {
         info!("DESCRIBE cache: {}s TTL", cli.cache_ttl);
@@ -981,6 +1012,24 @@ pub async fn serve(cli: Cli) -> Result<(), BoxError> {
                 None => (0, (m.config.num_layers.saturating_sub(1)) as u32),
             };
             let vhash = announce::vindex_identity_hash(&m.id, m.config.num_layers);
+            // attention-service-routes change. The provider closure
+            // captures the AppState's SessionMap so every heartbeat
+            // emits a fresh bloom of the prefix hashes the shard
+            // currently has cached. None ⇒ no sessions = empty bloom
+            // (the router falls back to least-loaded routing).
+            let sessions = state.attention_sessions.clone();
+            let bloom_provider: std::sync::Arc<dyn Fn() -> Option<Vec<u8>> + Send + Sync> =
+                std::sync::Arc::new(move || {
+                    let hashes = sessions.prefix_hashes(16);
+                    if hashes.is_empty() {
+                        return None;
+                    }
+                    let mut bloom = larql_router_protocol::PrefixBloomEncoded::default();
+                    for h in hashes {
+                        bloom.insert(h);
+                    }
+                    Some(bloom.to_bytes().to_vec())
+                });
             for join_url in &join_urls {
                 announce::run_announce(announce::AnnounceConfig {
                     join_url: join_url.clone(),
@@ -992,9 +1041,7 @@ pub async fn serve(cli: Cli) -> Result<(), BoxError> {
                     grid_key: cli.grid_key.clone(),
                     vindex_hash: vhash.clone(),
                     capabilities: cli.role.capabilities(),
-                    // None ⇒ heartbeat omits the bloom. Wired up
-                    // alongside the attention-session route handlers.
-                    cached_prefixes_provider: None,
+                    cached_prefixes_provider: Some(bloom_provider.clone()),
                 });
             }
         }
