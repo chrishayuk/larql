@@ -307,3 +307,32 @@ After the compact gate manifest, the GGUF branch still had no browse-level embed
 
 ### Result
 Added GGUF embedding wiring for the DeepSeek2/Kimi branch. Small F32 GGUF embeddings now materialize to `embeddings.bin`; over-budget real Kimi embeddings write a compact `gguf_embeddings_manifest.json` with tensor/source geometry instead. The real Kimi smoke produced an embeddings manifest for `token_embd.weight` (`vocab_size=163840`, `hidden_size=7168`, dense estimate `2348810240`) plus the existing gate manifest, while avoiding both dense `embeddings.bin` and dense `gate_vectors.bin`. The remaining blocker is now down-meta generation/manifesting from packed down projections.
+
+
+## Next blocker: GGUF down_meta generation/manifesting
+
+### Problem
+After GGUF embeddings, the DeepSeek2/Kimi branch still did not produce `down_meta.bin` for small browse fixtures or a compact `gguf_down_meta_manifest.json` for real Kimi. Without this, browse-level feature labels cannot be loaded or deferred safely.
+
+### RED plan
+1. Add a synthetic three-shard DeepSeek2 GGUF fixture with:
+   - tiny `token_embd.weight` dims `[hidden=2, vocab=3]`;
+   - tiny packed gate tensor so the branch reaches gate output;
+   - tiny packed down tensor `blk.0.ffn_down_exps.weight` dims `[features=2, hidden=2, experts=1]`.
+2. Run the real GGUF branch helper.
+3. Assert `down_meta.bin` exists and its binary header/records contain the expected top token ids from the embedding × down-projection dot products.
+
+### GREEN plan
+1. Add a compact `gguf_down_meta_manifest.json` artifact for over-budget real Kimi down-meta work.
+2. For bounded synthetic fixtures, read dense embeddings and packed down slices, compute top-k token ids per down feature, and write the existing binary `down_meta.bin` format.
+3. Route the GGUF extraction branch through down-meta before gate-vector/manifest handling.
+4. Keep real Kimi bounded by writing the manifest rather than materializing the impossible dense down-meta projection.
+
+### Acceptance criteria
+- [x] RED failed because `down_meta.bin` was absent.
+- [x] GREEN synthetic test writes `down_meta.bin`; feature 0 maps to token id 2 and feature 1 maps to token id 1.
+- [x] Real Kimi smoke writes `gguf_down_meta_manifest.json` and does not write `down_meta.bin`.
+- [x] Existing GGUF focused tests still pass.
+
+### Result
+Added DeepSeek2 GGUF down-meta wiring. Small fixtures now compute down-meta from dense GGUF embeddings and packed down projections and write the existing `down_meta.bin` format. Real Kimi writes compact `gguf_down_meta_manifest.json` instead: 60 packed down layers, first layer `blk.1.ffn_down_exps.weight`, dims `[2048, 7168, 384]`, features `786432`, estimated dot ops `55415386039910400`. The smoke now has embeddings, down-meta, and gate manifests while still avoiding dense `embeddings.bin`, `down_meta.bin`, and `gate_vectors.bin` for Kimi-scale artifacts. The remaining blocker is config/tokenizer/index wiring for a loadable browse-level manifest-backed vindex.

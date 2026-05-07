@@ -22,6 +22,34 @@ use crate::format::filenames::*;
 
 const MAX_GGUF_GATE_VECTOR_BYTES: u128 = 128 * 1024 * 1024;
 const MAX_GGUF_EMBEDDINGS_BYTES: u128 = 128 * 1024 * 1024;
+const MAX_GGUF_DOWN_META_DENSE_DOT_OPS: u128 = 128 * 1024 * 1024;
+
+#[derive(serde::Serialize)]
+struct GgufDownMetaManifest {
+    version: u32,
+    architecture: String,
+    split_count: usize,
+    top_k: usize,
+    estimated_dot_ops: u128,
+    dense_dot_ops_budget: u128,
+    layers: Vec<GgufDownMetaManifestLayer>,
+}
+
+#[derive(serde::Serialize)]
+struct GgufDownMetaManifestLayer {
+    layer: usize,
+    tensor: String,
+    source_file: String,
+    shard_idx: usize,
+    tensor_type: u32,
+    dims: Vec<u64>,
+    rows: usize,
+    cols: usize,
+    experts: usize,
+    features: usize,
+    tensor_offset: u64,
+    data_offset: u64,
+}
 
 #[derive(serde::Serialize)]
 struct GgufEmbeddingsManifest {
@@ -732,6 +760,240 @@ fn write_gguf_embeddings_manifest(
     Ok(())
 }
 
+fn read_gguf_embeddings_dense_if_bounded(
+    catalog: &GgufCatalog,
+) -> Result<Option<(Array2<f32>, usize, usize)>, VindexError> {
+    let Some(entry) = gguf_embedding_tensor(catalog) else {
+        return Ok(None);
+    };
+    if entry.dims.len() != 2 {
+        return Ok(None);
+    }
+    let hidden_size = entry.dims[0] as usize;
+    let vocab_size = entry.dims[1] as usize;
+    let n_elements = hidden_size.checked_mul(vocab_size).ok_or_else(|| {
+        VindexError::Parse(format!(
+            "GGUF embedding tensor {} element count overflow: hidden={} vocab={}",
+            entry.name, hidden_size, vocab_size
+        ))
+    })?;
+    if (n_elements as u128) * 4 > MAX_GGUF_EMBEDDINGS_BYTES {
+        return Ok(None);
+    }
+    let byte_len = larql_models::quant::ggml::tensor_data_size(entry.tensor_type, n_elements)
+        .map_err(|e| VindexError::Parse(e.to_string()))?;
+    let raw = read_gguf_tensor_byte_range(catalog, entry, 0, byte_len)?;
+    let values = larql_models::quant::ggml::dequantize(&raw, entry.tensor_type, n_elements)
+        .map_err(|e| VindexError::Parse(e.to_string()))?;
+    let embed = Array2::from_shape_vec((vocab_size, hidden_size), values).map_err(|e| {
+        VindexError::Parse(format!(
+            "GGUF embedding tensor {} shape error: {}",
+            entry.name, e
+        ))
+    })?;
+    Ok(Some((embed, vocab_size, hidden_size)))
+}
+
+fn estimate_deepseek2_down_meta_dot_ops(
+    catalog: &GgufCatalog,
+    layout: &GgufDeepseek2Layout,
+    vocab_size: usize,
+) -> Result<u128, VindexError> {
+    let mut total = 0u128;
+    for ((_, component), tensor_name) in &layout.packed_experts {
+        if *component != GgufExpertComponent::Down {
+            continue;
+        }
+        let entry = catalog
+            .tensor(tensor_name)
+            .ok_or_else(|| VindexError::MissingTensor(tensor_name.clone()))?;
+        let [cols, rows, experts] = packed_expert_dims(entry)?;
+        total = total
+            .checked_add(vocab_size as u128 * rows as u128 * cols as u128 * experts as u128)
+            .ok_or_else(|| {
+                VindexError::Parse(format!(
+                    "GGUF down_meta dot-op estimate overflow at tensor {}",
+                    entry.name
+                ))
+            })?;
+    }
+    Ok(total)
+}
+
+fn write_deepseek2_gguf_down_meta_manifest(
+    output_dir: &Path,
+    catalog: &GgufCatalog,
+    layout: &GgufDeepseek2Layout,
+    top_k: usize,
+    estimated_dot_ops: u128,
+) -> Result<(), VindexError> {
+    let mut layers: Vec<usize> = layout
+        .packed_experts
+        .keys()
+        .filter_map(|(layer, component)| {
+            (*component == GgufExpertComponent::Down).then_some(*layer)
+        })
+        .collect();
+    layers.sort_unstable();
+    layers.dedup();
+
+    let mut manifest_layers = Vec::with_capacity(layers.len());
+    for layer in layers {
+        let tensor = layout
+            .packed_experts
+            .get(&(layer, GgufExpertComponent::Down))
+            .ok_or_else(|| {
+                VindexError::MissingTensor(format!("blk.{layer}.ffn_down_exps.weight"))
+            })?;
+        let entry = catalog
+            .tensor(tensor)
+            .ok_or_else(|| VindexError::MissingTensor(tensor.clone()))?;
+        let [cols, rows, experts] = packed_expert_dims(entry)?;
+        let source_file = catalog.files.get(entry.shard_idx).ok_or_else(|| {
+            VindexError::Parse(format!(
+                "GGUF tensor {} points at missing shard index {}",
+                entry.name, entry.shard_idx
+            ))
+        })?;
+        manifest_layers.push(GgufDownMetaManifestLayer {
+            layer,
+            tensor: tensor.clone(),
+            source_file: source_file.display().to_string(),
+            shard_idx: entry.shard_idx,
+            tensor_type: entry.tensor_type,
+            dims: entry.dims.clone(),
+            rows,
+            cols,
+            experts,
+            features: cols * experts,
+            tensor_offset: entry.tensor_offset,
+            data_offset: entry.data_offset,
+        });
+    }
+
+    let manifest = GgufDownMetaManifest {
+        version: 1,
+        architecture: catalog.architecture.clone(),
+        split_count: catalog.split_count,
+        top_k,
+        estimated_dot_ops,
+        dense_dot_ops_budget: MAX_GGUF_DOWN_META_DENSE_DOT_OPS,
+        layers: manifest_layers,
+    };
+    let json =
+        serde_json::to_string_pretty(&manifest).map_err(|e| VindexError::Parse(e.to_string()))?;
+    std::fs::write(output_dir.join(GGUF_DOWN_META_MANIFEST_JSON), json)?;
+    Ok(())
+}
+
+fn write_deepseek2_gguf_down_meta(
+    output_dir: &Path,
+    catalog: &GgufCatalog,
+    layout: &GgufDeepseek2Layout,
+    top_k: usize,
+) -> Result<bool, VindexError> {
+    let Some((embed, vocab_size, _hidden_size)) = read_gguf_embeddings_dense_if_bounded(catalog)?
+    else {
+        let estimated_dot_ops = gguf_embedding_tensor(catalog)
+            .and_then(|entry| entry.dims.get(1).copied())
+            .map(|vocab_size| {
+                estimate_deepseek2_down_meta_dot_ops(catalog, layout, vocab_size as usize)
+            })
+            .transpose()?
+            .unwrap_or(u128::MAX);
+        write_deepseek2_gguf_down_meta_manifest(
+            output_dir,
+            catalog,
+            layout,
+            top_k,
+            estimated_dot_ops,
+        )?;
+        return Ok(false);
+    };
+    let estimated_dot_ops = estimate_deepseek2_down_meta_dot_ops(catalog, layout, vocab_size)?;
+    if estimated_dot_ops > MAX_GGUF_DOWN_META_DENSE_DOT_OPS {
+        write_deepseek2_gguf_down_meta_manifest(
+            output_dir,
+            catalog,
+            layout,
+            top_k,
+            estimated_dot_ops,
+        )?;
+        return Ok(false);
+    }
+
+    let mut layers: Vec<usize> = layout
+        .packed_experts
+        .keys()
+        .filter_map(|(layer, component)| {
+            (*component == GgufExpertComponent::Down).then_some(*layer)
+        })
+        .collect();
+    layers.sort_unstable();
+    layers.dedup();
+    let num_layers = layers
+        .iter()
+        .copied()
+        .max()
+        .map(|layer| layer + 1)
+        .unwrap_or(0);
+    let mut all_down_meta: Vec<Option<Vec<Option<crate::FeatureMeta>>>> = vec![None; num_layers];
+
+    for layer in layers {
+        let down_name = layout
+            .packed_experts
+            .get(&(layer, GgufExpertComponent::Down))
+            .ok_or_else(|| {
+                VindexError::MissingTensor(format!("blk.{layer}.ffn_down_exps.weight"))
+            })?;
+        let entry = catalog
+            .tensor(down_name)
+            .ok_or_else(|| VindexError::MissingTensor(down_name.clone()))?;
+        let [_cols, _rows, experts] = packed_expert_dims(entry)?;
+        let mut layer_meta = Vec::new();
+        for expert_idx in 0..experts {
+            let down = read_packed_expert_slice_by_type(catalog, down_name, expert_idx)?;
+            let num_features = down.shape()[1];
+            for feature in 0..num_features {
+                let col = down.column(feature);
+                let mut scores: Vec<(usize, f32)> = embed
+                    .outer_iter()
+                    .enumerate()
+                    .map(|(token_id, emb)| (token_id, emb.dot(&col)))
+                    .collect();
+                let k = top_k.min(scores.len());
+                if k > 0 && k < scores.len() {
+                    scores.select_nth_unstable_by(k, |a, b| b.1.partial_cmp(&a.1).unwrap());
+                }
+                scores.truncate(k);
+                scores.sort_unstable_by(|a, b| b.1.partial_cmp(&a.1).unwrap());
+                let top_k_entries: Vec<larql_models::TopKEntry> = scores
+                    .iter()
+                    .map(|(idx, logit)| larql_models::TopKEntry {
+                        token: format!("T{idx}"),
+                        token_id: *idx as u32,
+                        logit: *logit,
+                    })
+                    .collect();
+                let Some(first) = top_k_entries.first() else {
+                    layer_meta.push(None);
+                    continue;
+                };
+                layer_meta.push(Some(crate::FeatureMeta {
+                    top_token: first.token.clone(),
+                    top_token_id: first.token_id,
+                    c_score: first.logit,
+                    top_k: top_k_entries,
+                }));
+            }
+        }
+        all_down_meta[layer] = Some(layer_meta);
+    }
+
+    crate::format::down_meta::write_binary(output_dir, &all_down_meta, top_k)?;
+    Ok(true)
+}
+
 fn write_deepseek2_gguf_gate_manifest(
     output_dir: &Path,
     catalog: &GgufCatalog,
@@ -815,6 +1077,9 @@ fn build_gguf_streaming(
     callbacks.on_stage(STAGE_EMBEDDINGS);
     write_gguf_embeddings_if_present(output_dir, catalog, dtype)?;
     callbacks.on_stage_done(STAGE_EMBEDDINGS, 0.0);
+    callbacks.on_stage(STAGE_DOWN_META);
+    let dense_down_meta_written = write_deepseek2_gguf_down_meta(output_dir, catalog, &layout, 1)?;
+    callbacks.on_stage_done(STAGE_DOWN_META, 0.0);
 
     if estimated_gate_bytes > MAX_GGUF_GATE_VECTOR_BYTES {
         write_deepseek2_gguf_gate_manifest(
@@ -827,8 +1092,10 @@ fn build_gguf_streaming(
         return unsupported_gguf_streaming(
             catalog,
             format!(
-                "deepseek2 after writing GGUF embeddings metadata and {GGUF_GATE_MANIFEST_JSON}; dense gate_vectors estimate {} exceeds safe streaming budget {}; down_meta wiring remains pending",
-                estimated_gate_bytes, MAX_GGUF_GATE_VECTOR_BYTES
+                "deepseek2 after writing GGUF embeddings metadata, down_meta {}, and {GGUF_GATE_MANIFEST_JSON}; dense gate_vectors estimate {} exceeds safe streaming budget {}",
+                if dense_down_meta_written { "binary" } else { "manifest" },
+                estimated_gate_bytes,
+                MAX_GGUF_GATE_VECTOR_BYTES
             ),
         );
     }
@@ -867,7 +1134,10 @@ fn build_gguf_streaming(
 
     unsupported_gguf_streaming(
         catalog,
-        "deepseek2 after writing gate_vectors.bin; embeddings/down_meta artifact wiring remains pending".into(),
+        format!(
+            "deepseek2 after writing gate_vectors.bin and down_meta {}; remaining config/tokenizer artifact wiring remains pending",
+            if dense_down_meta_written { "binary" } else { "manifest" }
+        ),
     )
 }
 
@@ -1971,6 +2241,63 @@ mod tests {
     }
 
     #[test]
+    fn build_gguf_streaming_writes_down_meta_for_small_gguf_down_projection() {
+        let tmp = tempfile::tempdir().unwrap();
+        let model_dir = tmp.path().join("model");
+        std::fs::create_dir_all(&model_dir).unwrap();
+        let output_dir = tmp.path().join("out.vindex");
+
+        write_minimal_gguf_header_with_f32_payload(
+            &model_dir.join("Kimi-00001-of-00003.gguf"),
+            "deepseek2",
+            3,
+            "token_embd.weight",
+            &[2, 3],
+            &[1.0, 0.0, 2.0, 0.0, 0.0, 3.0],
+        );
+        write_minimal_gguf_header_with_f32_payload(
+            &model_dir.join("Kimi-00002-of-00003.gguf"),
+            "deepseek2",
+            3,
+            "blk.0.ffn_gate_exps.weight",
+            &[2, 1, 1],
+            &[10.0, 11.0],
+        );
+        // Conventional down slice is [hidden=2, features=2]. Feature 0 points
+        // at token 2 via the second hidden dimension; feature 1 points at token 1.
+        write_minimal_gguf_header_with_f32_payload(
+            &model_dir.join("Kimi-00003-of-00003.gguf"),
+            "deepseek2",
+            3,
+            "blk.0.ffn_down_exps.weight",
+            &[2, 2, 1],
+            &[0.0, 1.0, 1.0, 0.0],
+        );
+
+        let source = discover_weight_source(&model_dir).unwrap();
+        let WeightSource::Gguf(catalog) = source else {
+            panic!("expected GGUF catalog");
+        };
+        let mut callbacks = crate::extract::callbacks::SilentBuildCallbacks;
+
+        let err = build_gguf_streaming(&catalog, &output_dir, StorageDtype::F32, &mut callbacks)
+            .unwrap_err();
+
+        let msg = err.to_string();
+        assert!(msg.contains("after writing gate_vectors.bin"), "{msg}");
+        let bytes = std::fs::read(output_dir.join(DOWN_META_BIN)).unwrap();
+        assert_eq!(
+            u32::from_le_bytes(bytes[0..4].try_into().unwrap()),
+            0x444D4554
+        );
+        assert_eq!(u32::from_le_bytes(bytes[8..12].try_into().unwrap()), 1);
+        assert_eq!(u32::from_le_bytes(bytes[12..16].try_into().unwrap()), 1);
+        assert_eq!(u32::from_le_bytes(bytes[16..20].try_into().unwrap()), 2);
+        assert_eq!(u32::from_le_bytes(bytes[20..24].try_into().unwrap()), 2);
+        assert_eq!(u32::from_le_bytes(bytes[36..40].try_into().unwrap()), 1);
+    }
+
+    #[test]
     fn build_gguf_streaming_writes_compact_gate_manifest_when_dense_gate_exceeds_budget() {
         let tmp = tempfile::tempdir().unwrap();
         let model_dir = tmp.path().join("model");
@@ -2000,7 +2327,7 @@ mod tests {
 
         let msg = err.to_string();
         assert!(msg.contains("gguf_gate_manifest.json"), "{msg}");
-        assert!(msg.contains("down_meta wiring remains pending"), "{msg}");
+        assert!(msg.contains("down_meta manifest"), "{msg}");
         assert!(
             !output_dir.join(GATE_VECTORS_BIN).exists(),
             "dense gate_vectors.bin must not be written for over-budget GGUF gates"

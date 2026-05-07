@@ -19,6 +19,7 @@ pub const GENERATION_CONFIG_JSON: &str = "generation_config.json";
 pub const WEIGHT_MANIFEST_JSON: &str = "weight_manifest.json";
 pub const GGUF_GATE_MANIFEST_JSON: &str = "gguf_gate_manifest.json";
 pub const GGUF_EMBEDDINGS_MANIFEST_JSON: &str = "gguf_embeddings_manifest.json";
+pub const GGUF_DOWN_META_MANIFEST_JSON: &str = "gguf_down_meta_manifest.json";
 pub const KNN_STORE_BIN: &str = "knn_store.bin";
 pub const MODEL_WEIGHTS_BIN: &str = "model_weights.bin";
 
@@ -144,6 +145,7 @@ mod tests {
             WEIGHT_MANIFEST_JSON,
             GGUF_GATE_MANIFEST_JSON,
             GGUF_EMBEDDINGS_MANIFEST_JSON,
+            GGUF_DOWN_META_MANIFEST_JSON,
             KNN_STORE_BIN,
             MODEL_WEIGHTS_BIN,
             RELATION_CLUSTERS_JSON,
