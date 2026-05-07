@@ -116,11 +116,16 @@ impl AttentionService for AttentionGrpcService {
         &self,
         request: Request<AttPrefillRequest>,
     ) -> Result<Response<Self::PrefillStream>, Status> {
+        use larql_router_protocol::{Vec1d as PVec1d, Vec2d as PVec2d};
+
         let req = request.into_inner();
         let id = SessionId(req.session_id);
-        if self.state.attention_sessions.get(&id).is_none() {
-            return Err(Status::not_found("no_such_session"));
-        }
+        let entry = self
+            .state
+            .attention_sessions
+            .get(&id)
+            .ok_or_else(|| Status::not_found("no_such_session"))?;
+
         let token_embeddings = req
             .token_embeddings
             .ok_or_else(|| Status::invalid_argument("missing_token_embeddings"))?;
@@ -136,17 +141,124 @@ impl AttentionService for AttentionGrpcService {
         {
             return Err(Status::invalid_argument("ragged_token_embeddings"));
         }
-        // Mirror the HTTP path: surface a typed Unimplemented until
-        // the runner wires in. Wire shape and validation are stable.
-        Err(Status::unimplemented(format!(
-            "prefill_not_implemented: would prefill seq_len={seq_len} hidden_dim={hidden_dim}; runner integration pending"
-        )))
+
+        // Look up the model.
+        let model = {
+            let g = entry.read().await;
+            let model_id = g.model_id.clone();
+            self.state
+                .model(Some(&model_id))
+                .ok_or_else(|| Status::not_found(format!("no_such_model: {model_id}")))?
+                .clone()
+        };
+        if model.infer_disabled {
+            return Err(Status::unavailable(
+                "inference_disabled: server started with --no-infer; weights are not loaded",
+            ));
+        }
+
+        // Reshape input.
+        let mut flat = Vec::with_capacity(seq_len * hidden_dim);
+        for row in &token_embeddings.rows {
+            flat.extend_from_slice(&row.values);
+        }
+        let h0 = larql_inference::ndarray::Array2::from_shape_vec((seq_len, hidden_dim), flat)
+            .map_err(|e| Status::internal(format!("embedding_shape_error: {e}")))?;
+
+        let start = std::time::Instant::now();
+
+        let model_for_blocking = Arc::clone(&model);
+        type PrefillOk = (
+            Vec<larql_inference::ndarray::Array2<f32>>,
+            Vec<Option<larql_inference::attention::SharedKV>>,
+        );
+        let result: Result<PrefillOk, String> = tokio::task::spawn_blocking(move || {
+            let weights_guard = model_for_blocking.get_or_load_weights()?;
+            let weights: &larql_inference::ModelWeights = &weights_guard;
+            let num_layers = weights.num_layers;
+            let ffn = larql_inference::ffn::WeightFfn { weights };
+
+            let mut h = h0;
+            let mut residuals = Vec::with_capacity(num_layers);
+            let mut kvs = Vec::with_capacity(num_layers);
+            for layer in 0..num_layers {
+                match larql_inference::run_layer_with_ffn_capturing_h_post_attn(
+                    weights, &h, layer, &ffn, false, None, None,
+                ) {
+                    Some((h_next, h_post_attn, _, kv_out)) => {
+                        residuals.push(h_post_attn);
+                        kvs.push(kv_out);
+                        h = h_next;
+                    }
+                    None => {
+                        residuals.push(larql_inference::ndarray::Array2::zeros((
+                            seq_len, hidden_dim,
+                        )));
+                        kvs.push(None);
+                    }
+                }
+            }
+            Ok((residuals, kvs))
+        })
+        .await
+        .unwrap_or_else(|e| Err(format!("blocking task panicked: {e}")));
+
+        let (residuals, kvs) =
+            result.map_err(|e| Status::internal(format!("weights_load_failed: {e}")))?;
+
+        // Stash KVs into the session.
+        {
+            let mut g = entry.write().await;
+            for (layer, kv) in kvs.into_iter().enumerate() {
+                if let Some(kv) = kv {
+                    g.cache.set_layer(layer, kv);
+                }
+            }
+            g.cache.next_position = seq_len;
+            g.seq_len = seq_len;
+            g.prefilled = true;
+            g.touch();
+        }
+
+        // Stream one PrefillEvent per layer + a terminal one with done=true.
+        let (tx, rx) = tokio::sync::mpsc::channel::<Result<PrefillEvent, Status>>(32);
+        let total = residuals.len();
+        let latency_ms = start.elapsed().as_secs_f64() * 1000.0;
+        let tokens_processed = seq_len as u32;
+        tokio::spawn(async move {
+            for (layer, r) in residuals.into_iter().enumerate() {
+                let post_attention = PVec2d {
+                    cols: hidden_dim as u32,
+                    rows: (0..r.nrows())
+                        .map(|i| PVec1d {
+                            values: r.row(i).to_vec(),
+                        })
+                        .collect(),
+                };
+                let evt = PrefillEvent {
+                    layer: layer as u32,
+                    post_attention: Some(post_attention),
+                    done: layer + 1 == total,
+                    tokens_processed,
+                    latency_ms: if layer + 1 == total { latency_ms } else { 0.0 },
+                };
+                if tx.send(Ok(evt)).await.is_err() {
+                    break;
+                }
+            }
+        });
+
+        let stream = tokio_stream::wrappers::ReceiverStream::new(rx)
+            as tokio_stream::wrappers::ReceiverStream<_>;
+        Ok(Response::new(Box::pin(stream) as Self::PrefillStream))
     }
 
     async fn decode(
         &self,
         request: Request<AttDecodeRequest>,
     ) -> Result<Response<AttDecodeResponse>, Status> {
+        use larql_router_protocol::{Vec1d as PVec1d, Vec2d as PVec2d};
+
         let req = request.into_inner();
         let id = SessionId(req.session_id);
         let entry = self
@@ -157,16 +269,113 @@ impl AttentionService for AttentionGrpcService {
         if req.query_token_embedding.is_empty() {
             return Err(Status::invalid_argument("empty_query_embedding"));
         }
-        let g = entry.read().await;
-        if !g.prefilled {
-            return Err(Status::failed_precondition(
-                "decode_before_prefill: call Prefill first",
+        let hidden_dim = req.query_token_embedding.len();
+
+        let (model, abs_position) = {
+            let g = entry.read().await;
+            if !g.prefilled {
+                return Err(Status::failed_precondition(
+                    "decode_before_prefill: call Prefill first",
+                ));
+            }
+            let model_id = g.model_id.clone();
+            let abs = g.cache.next_position;
+            (
+                self.state
+                    .model(Some(&model_id))
+                    .ok_or_else(|| Status::not_found(format!("no_such_model: {model_id}")))?
+                    .clone(),
+                abs,
+            )
+        };
+        if model.infer_disabled {
+            return Err(Status::unavailable(
+                "inference_disabled: server started with --no-infer; weights are not loaded",
             ));
         }
+
+        let h_new_array = larql_inference::ndarray::Array2::from_shape_vec(
+            (1, hidden_dim),
+            req.query_token_embedding,
+        )
+        .map_err(|e| Status::internal(format!("embedding_shape_error: {e}")))?;
+
+        let start = std::time::Instant::now();
+        let mut g = entry.write().await;
+        let blocking_inputs = std::mem::take(&mut g.cache.layers);
         drop(g);
-        Err(Status::unimplemented(
-            "decode_not_implemented: runner integration pending",
-        ))
+
+        let model_for_blocking = Arc::clone(&model);
+        type DecodeOk = (
+            Vec<larql_inference::ndarray::Array2<f32>>,
+            Vec<Option<larql_inference::attention::SharedKV>>,
+        );
+        let result: Result<DecodeOk, String> = tokio::task::spawn_blocking(move || {
+            let weights_guard = model_for_blocking.get_or_load_weights()?;
+            let weights: &larql_inference::ModelWeights = &weights_guard;
+            let num_layers = weights.num_layers;
+            let ffn = larql_inference::ffn::WeightFfn { weights };
+
+            let mut layers = blocking_inputs;
+            layers.resize_with(num_layers, || None);
+            let mut h_step = h_new_array;
+            let mut residuals = Vec::with_capacity(num_layers);
+            for layer in 0..num_layers {
+                let kv_entry = layers[layer].as_ref();
+                match larql_inference::attention::run_attention_block_decode_step(
+                    weights,
+                    &h_step,
+                    layer,
+                    kv_entry,
+                    abs_position,
+                ) {
+                    Some((h_post_attn, new_kv)) => {
+                        layers[layer] = Some(new_kv);
+                        let (h_out, _) = larql_inference::forward::run_ffn(
+                            weights,
+                            &h_post_attn,
+                            layer,
+                            &ffn,
+                            false,
+                        );
+                        residuals.push(h_post_attn);
+                        h_step = h_out;
+                    }
+                    None => {
+                        residuals.push(larql_inference::ndarray::Array2::zeros((1, hidden_dim)));
+                    }
+                }
+            }
+            Ok((residuals, layers))
+        })
+        .await
+        .unwrap_or_else(|e| Err(format!("blocking task panicked: {e}")));
+
+        let (residuals, layers) =
+            result.map_err(|e| Status::internal(format!("weights_load_failed: {e}")))?;
+
+        {
+            let mut g = entry.write().await;
+            g.cache.layers = layers;
+            g.cache.next_position += 1;
+            g.seq_len += 1;
+            g.touch();
+        }
+
+        let post_attention_residual = PVec2d {
+            cols: hidden_dim as u32,
+            rows: residuals
+                .into_iter()
+                .map(|r| PVec1d {
+                    values: r.row(0).to_vec(),
+                })
+                .collect(),
+        };
+
+        Ok(Response::new(AttDecodeResponse {
+            post_attention_residual: Some(post_attention_residual),
+            latency_ms: start.elapsed().as_secs_f64() * 1000.0,
+        }))
     }
 
     async fn snapshot(
