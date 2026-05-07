@@ -4,7 +4,7 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
 use axum::middleware;
-use clap::Parser;
+use clap::{Parser, ValueEnum};
 use larql_vindex::format::filenames::*;
 use larql_vindex::{
     load_vindex_config, load_vindex_embeddings, load_vindex_tokenizer, PatchedVindex,
@@ -374,6 +374,32 @@ pub fn normalize_serve_alias(args: Vec<String>) -> Vec<String> {
 
 // ── CLI definition ────────────────────────────────────────────────────────────
 
+/// Capability role this server advertises to the router. Drives
+/// `AnnounceMsg.capabilities` and (eventually) the bootstrap's
+/// decision of which weights to mmap.
+#[derive(Copy, Clone, Debug, PartialEq, Eq, ValueEnum)]
+pub enum ServerRole {
+    /// Attention-only shard. Announces `["attention"]`.
+    Attention,
+    /// FFN-only / expert-only shard. Announces `["expert"]`.
+    Expert,
+    /// Both attention and expert (single-binary deployment).
+    /// Announces `["attention","expert"]`. Default; matches the
+    /// pre-extension router's legacy fallback.
+    Both,
+}
+
+impl ServerRole {
+    /// Capability strings to send on the announce.
+    pub fn capabilities(self) -> Vec<String> {
+        match self {
+            ServerRole::Attention => vec!["attention".into()],
+            ServerRole::Expert => vec!["expert".into()],
+            ServerRole::Both => vec!["attention".into(), "expert".into()],
+        }
+    }
+}
+
 #[derive(Parser)]
 #[command(
     name = "larql-server",
@@ -588,6 +614,14 @@ pub struct Cli {
     /// Required when the router enforces grid authentication.
     #[arg(long, env = "LARQL_GRID_KEY")]
     pub grid_key: Option<String>,
+
+    /// Capability role this server advertises to the router. Controls
+    /// which router-side `route_for_capability` filters select this
+    /// shard. Default `both` keeps backwards compat with pre-extension
+    /// shards (= the legacy default of `["attention", "expert"]`).
+    /// attention-service-routes change.
+    #[arg(long, value_enum, default_value_t = ServerRole::Both)]
+    pub role: ServerRole,
 
     /// Server-side MoE expert shard map: `"START-END=URL,START-END=URL,..."`
     /// The walk-ffn handler dispatches MoE expert calls to these remote servers.
@@ -954,9 +988,7 @@ pub async fn serve(cli: Cli) -> Result<(), BoxError> {
                     ram_bytes: 0,
                     grid_key: cli.grid_key.clone(),
                     vindex_hash: vhash.clone(),
-                    // Empty ⇒ legacy default. The --role flag wiring
-                    // (next commit on this branch) populates this.
-                    capabilities: Vec::new(),
+                    capabilities: cli.role.capabilities(),
                     // None ⇒ heartbeat omits the bloom. Wired up
                     // alongside the attention-session route handlers.
                     cached_prefixes_provider: None,
@@ -1030,6 +1062,42 @@ pub async fn serve(cli: Cli) -> Result<(), BoxError> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn role_attention_announces_attention_only() {
+        assert_eq!(
+            ServerRole::Attention.capabilities(),
+            vec!["attention".to_string()]
+        );
+    }
+
+    #[test]
+    fn role_expert_announces_expert_only() {
+        assert_eq!(
+            ServerRole::Expert.capabilities(),
+            vec!["expert".to_string()]
+        );
+    }
+
+    #[test]
+    fn role_both_announces_attention_and_expert() {
+        let caps = ServerRole::Both.capabilities();
+        assert_eq!(caps.len(), 2);
+        assert!(caps.contains(&"attention".to_string()));
+        assert!(caps.contains(&"expert".to_string()));
+    }
+
+    #[test]
+    fn cli_defaults_role_to_both() {
+        let cli = Cli::parse_from(["larql-server", "/tmp/dummy"]);
+        assert_eq!(cli.role, ServerRole::Both);
+    }
+
+    #[test]
+    fn cli_role_flag_parses_attention() {
+        let cli = Cli::parse_from(["larql-server", "/tmp/dummy", "--role", "attention"]);
+        assert_eq!(cli.role, ServerRole::Attention);
+    }
 
     fn unique_temp_dir(name: &str) -> PathBuf {
         let mut dir = std::env::temp_dir();

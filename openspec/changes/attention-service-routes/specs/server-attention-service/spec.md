@@ -175,14 +175,16 @@ announce `["expert"]`; `--role both` (default) SHALL announce
 - **WHEN** a server is started with `--role attention --router <url>`
 - **THEN** the announce payload received by the router SHALL contain
   exactly `["attention"]` in `capabilities`
-<!-- test: unbacked -->
+<!-- test: larql_server::bootstrap::tests::role_attention_announces_attention_only -->
+<!-- test: larql_server::bootstrap::tests::cli_role_flag_parses_attention -->
 
 #### Scenario: legacy server (no --role) announces both
 
 - **WHEN** a server is started with no `--role` flag
 - **THEN** the announce payload SHALL contain
   `["attention", "expert"]`
-<!-- test: unbacked -->
+<!-- test: larql_server::bootstrap::tests::role_both_announces_attention_and_expert -->
+<!-- test: larql_server::bootstrap::tests::cli_defaults_role_to_both -->
 
 ### Requirement: Heartbeat SHALL include the cached-prefix bloom
 

@@ -3,9 +3,9 @@
     "capabilities": 49,
     "requirements": 408,
     "scenarios": 1376,
-    "scenarios_backed": 1209,
-    "scenarios_unbacked": 167,
-    "test_refs": 3262,
+    "scenarios_backed": 1211,
+    "scenarios_unbacked": 165,
+    "test_refs": 3264,
     "test_refs_unresolved": 0
   },
   "capabilities": [
@@ -13386,19 +13386,25 @@
           "scenarios": [
             {
               "name": "attention role announces correctly",
-              "tests_resolved": [],
+              "tests_resolved": [
+                "larql_server::bootstrap::tests::role_attention_announces_attention_only",
+                "larql_server::bootstrap::tests::cli_role_flag_parses_attention"
+              ],
               "tests_unresolved": [],
-              "unbacked": true,
+              "unbacked": false,
               "spec_file": "openspec/changes/attention-service-routes/specs/server-attention-service/spec.md",
               "line": 173
             },
             {
               "name": "legacy server (no --role) announces both",
-              "tests_resolved": [],
+              "tests_resolved": [
+                "larql_server::bootstrap::tests::role_both_announces_attention_and_expert",
+                "larql_server::bootstrap::tests::cli_defaults_role_to_both"
+              ],
               "tests_unresolved": [],
-              "unbacked": true,
+              "unbacked": false,
               "spec_file": "openspec/changes/attention-service-routes/specs/server-attention-service/spec.md",
-              "line": 180
+              "line": 181
             }
           ]
         },
@@ -13411,7 +13417,7 @@
               "tests_unresolved": [],
               "unbacked": true,
               "spec_file": "openspec/changes/attention-service-routes/specs/server-attention-service/spec.md",
-              "line": 194
+              "line": 196
             },
             {
               "name": "empty server emits empty bloom",
@@ -13419,7 +13425,7 @@
               "tests_unresolved": [],
               "unbacked": true,
               "spec_file": "openspec/changes/attention-service-routes/specs/server-attention-service/spec.md",
-              "line": 201
+              "line": 203
             }
           ]
         },
@@ -25530,69 +25536,99 @@
       "crate": "larql_server"
     },
     {
+      "fqn": "larql_server::bootstrap::role_attention_announces_attention_only",
+      "file": "crates/larql-server/src/bootstrap.rs",
+      "line": 1067,
+      "crate": "larql_server"
+    },
+    {
+      "fqn": "larql_server::bootstrap::role_expert_announces_expert_only",
+      "file": "crates/larql-server/src/bootstrap.rs",
+      "line": 1075,
+      "crate": "larql_server"
+    },
+    {
+      "fqn": "larql_server::bootstrap::role_both_announces_attention_and_expert",
+      "file": "crates/larql-server/src/bootstrap.rs",
+      "line": 1083,
+      "crate": "larql_server"
+    },
+    {
+      "fqn": "larql_server::bootstrap::cli_defaults_role_to_both",
+      "file": "crates/larql-server/src/bootstrap.rs",
+      "line": 1091,
+      "crate": "larql_server"
+    },
+    {
+      "fqn": "larql_server::bootstrap::cli_role_flag_parses_attention",
+      "file": "crates/larql-server/src/bootstrap.rs",
+      "line": 1097,
+      "crate": "larql_server"
+    },
+    {
       "fqn": "larql_server::bootstrap::parse_unit_manifest_round_trips_per_layer_ranges",
       "file": "crates/larql-server/src/bootstrap.rs",
-      "line": 1064,
+      "line": 1132,
       "crate": "larql_server"
     },
     {
       "fqn": "larql_server::bootstrap::parse_unit_manifest_rejects_non_numeric_layer_key",
       "file": "crates/larql-server/src/bootstrap.rs",
-      "line": 1081,
+      "line": 1149,
       "crate": "larql_server"
     },
     {
       "fqn": "larql_server::bootstrap::parse_unit_manifest_rejects_reversed_range",
       "file": "crates/larql-server/src/bootstrap.rs",
-      "line": 1090,
+      "line": 1158,
       "crate": "larql_server"
     },
     {
       "fqn": "larql_server::bootstrap::parse_unit_manifest_missing_file_reports_path",
       "file": "crates/larql-server/src/bootstrap.rs",
-      "line": 1099,
+      "line": 1167,
       "crate": "larql_server"
     },
     {
       "fqn": "larql_server::bootstrap::parse_unit_manifest_accepts_empty_object",
       "file": "crates/larql-server/src/bootstrap.rs",
-      "line": 1114,
+      "line": 1182,
       "crate": "larql_server"
     },
     {
       "fqn": "larql_server::bootstrap::parse_layer_range_accepts_inclusive_cli_range",
       "file": "crates/larql-server/src/bootstrap.rs",
-      "line": 1124,
+      "line": 1192,
       "crate": "larql_server"
     },
     {
       "fqn": "larql_server::bootstrap::parse_layer_range_rejects_bad_shapes",
       "file": "crates/larql-server/src/bootstrap.rs",
-      "line": 1130,
+      "line": 1198,
       "crate": "larql_server"
     },
     {
       "fqn": "larql_server::bootstrap::normalize_serve_alias_removes_subcommand",
       "file": "crates/larql-server/src/bootstrap.rs",
-      "line": 1138,
+      "line": 1206,
       "crate": "larql_server"
     },
     {
       "fqn": "larql_server::bootstrap::normalize_serve_alias_leaves_non_alias_args_unchanged",
       "file": "crates/larql-server/src/bootstrap.rs",
-      "line": 1148,
+      "line": 1216,
       "crate": "larql_server"
     },
     {
       "fqn": "larql_server::bootstrap::discover_vindexes_returns_sorted_dirs_with_index_json",
       "file": "crates/larql-server/src/bootstrap.rs",
-      "line": 1154,
+      "line": 1222,
       "crate": "larql_server"
     },
     {
       "fqn": "larql_server::bootstrap::load_options_are_copyable",
       "file": "crates/larql-server/src/bootstrap.rs",
-      "line": 1171,
+      "line": 1239,
       "crate": "larql_server"
     },
     {
