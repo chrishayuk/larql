@@ -367,7 +367,13 @@ async fn prefill_with_ragged_rows_returns_400() {
 }
 
 #[tokio::test]
-async fn prefill_with_valid_shape_returns_501_with_typed_error() {
+async fn prefill_against_infer_disabled_model_returns_503() {
+    // The synthetic test fixture has `infer_disabled: true`, so the
+    // prefill handler runs through validation, finds the model, and
+    // refuses to load weights. This proves the runner is wired
+    // (validation + model lookup + the `infer_disabled` early-out
+    // all fire). End-to-end prefill against real weights is gated
+    // on a real model checkpoint and lives in a separate harness.
     let st = state(vec![model("test")]);
     let app = single_model_router(st.clone());
     let body = create_session(&app, "test").await;
@@ -383,9 +389,9 @@ async fn prefill_with_valid_shape_returns_501_with_typed_error() {
         }),
     )
     .await;
-    assert_eq!(resp.status(), StatusCode::NOT_IMPLEMENTED);
+    assert_eq!(resp.status(), StatusCode::SERVICE_UNAVAILABLE);
     let body = body_json(resp.into_body()).await;
-    assert_eq!(body["error"], "prefill_not_implemented");
+    assert_eq!(body["error"], "inference_disabled");
 }
 
 #[tokio::test]

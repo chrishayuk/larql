@@ -257,12 +257,10 @@ pub async fn handle_prefill(
     Json(req): Json<PrefillRequest>,
 ) -> impl IntoResponse {
     state.bump_requests();
-    // Validate the session exists before doing any heavy work.
     let session_id = SessionId(req.session_id);
-    let Some(_entry) = state.attention_sessions.get(&session_id) else {
+    let Some(entry) = state.attention_sessions.get(&session_id) else {
         return err_no_session().into_response();
     };
-    // Validate input shape.
     let seq_len = req.token_embeddings.len();
     if seq_len == 0 {
         return err_response(
@@ -292,20 +290,142 @@ pub async fn handle_prefill(
         .into_response();
     }
 
-    // Real attention runner integration is the next milestone — see
-    // openspec/changes/attention-service-routes/tasks.md §2.4 and the
-    // notes in routes/attention.rs:1. The wire surface is locked
-    // (this 501 exercises the request-shape validation + session
-    // lookup), so the runner can drop in without breaking clients.
-    err_response(
-        StatusCode::NOT_IMPLEMENTED,
-        ErrorBody {
-            error: "prefill_not_implemented",
-            detail: Some(format!(
-                "session ok; would prefill seq_len={seq_len} hidden_dim={hidden_dim}; runner integration pending"
-            )),
-        },
-    )
+    // Look up the model bound to the session.
+    let model = {
+        let g = entry.read().await;
+        let model_id = g.model_id.clone();
+        match state.model(Some(&model_id)) {
+            Some(m) => Arc::clone(m),
+            None => {
+                return err_response(
+                    StatusCode::NOT_FOUND,
+                    ErrorBody {
+                        error: "no_such_model",
+                        detail: Some(format!("model_id = {model_id}")),
+                    },
+                )
+                .into_response();
+            }
+        }
+    };
+
+    if model.infer_disabled {
+        return err_response(
+            StatusCode::SERVICE_UNAVAILABLE,
+            ErrorBody {
+                error: "inference_disabled",
+                detail: Some("server started with --no-infer; weights are not loaded".into()),
+            },
+        )
+        .into_response();
+    }
+
+    // Reshape input into [seq_len, hidden_dim].
+    let mut flat = Vec::with_capacity(seq_len * hidden_dim);
+    for row in &req.token_embeddings {
+        flat.extend_from_slice(row);
+    }
+    let h0 = match larql_inference::ndarray::Array2::from_shape_vec((seq_len, hidden_dim), flat) {
+        Ok(a) => a,
+        Err(e) => {
+            return err_response(
+                StatusCode::INTERNAL_SERVER_ERROR,
+                ErrorBody {
+                    error: "embedding_shape_error",
+                    detail: Some(e.to_string()),
+                },
+            )
+            .into_response();
+        }
+    };
+
+    let start = std::time::Instant::now();
+
+    // Heavy lifting on a blocking thread — attention is CPU-bound.
+    let model_for_blocking = Arc::clone(&model);
+    let blocking_result: Result<
+        (
+            Vec<larql_inference::ndarray::Array2<f32>>,
+            Vec<Option<larql_inference::attention::SharedKV>>,
+        ),
+        String,
+    > = tokio::task::spawn_blocking(move || {
+        let weights_guard = model_for_blocking.get_or_load_weights()?;
+        let weights: &larql_inference::ModelWeights = &weights_guard;
+        let num_layers = weights.num_layers;
+        let ffn = larql_inference::ffn::WeightFfn { weights };
+
+        let mut h = h0;
+        let mut residuals = Vec::with_capacity(num_layers);
+        let mut kvs = Vec::with_capacity(num_layers);
+
+        for layer in 0..num_layers {
+            match larql_inference::run_layer_with_ffn_capturing_h_post_attn(
+                weights, &h, layer, &ffn, false, None, None,
+            ) {
+                Some((h_next, h_post_attn, _activation, kv_out)) => {
+                    residuals.push(h_post_attn);
+                    kvs.push(kv_out);
+                    h = h_next;
+                }
+                None => {
+                    // Skipped layer (e.g. KV-shared in some Gemma variants);
+                    // emit a zero residual to keep the response shape stable.
+                    residuals.push(larql_inference::ndarray::Array2::zeros((
+                        seq_len, hidden_dim,
+                    )));
+                    kvs.push(None);
+                }
+            }
+        }
+        Ok((residuals, kvs))
+    })
+    .await
+    .unwrap_or_else(|e| Err(format!("blocking task panicked: {e}")));
+
+    let (residuals, kvs) = match blocking_result {
+        Ok(t) => t,
+        Err(detail) => {
+            return err_response(
+                StatusCode::INTERNAL_SERVER_ERROR,
+                ErrorBody {
+                    error: "weights_load_failed",
+                    detail: Some(detail),
+                },
+            )
+            .into_response();
+        }
+    };
+
+    {
+        let mut g = entry.write().await;
+        for (layer, kv) in kvs.into_iter().enumerate() {
+            if let Some(kv) = kv {
+                g.cache.set_layer(layer, kv);
+            }
+        }
+        g.cache.next_position = seq_len;
+        g.seq_len = seq_len;
+        g.prefilled = true;
+        g.touch();
+    }
+
+    let kv_filled_through_layer = residuals.len() as u32;
+    let post_attention_residuals: Vec<Vec<Vec<f32>>> = residuals
+        .iter()
+        .map(|r| {
+            (0..r.nrows())
+                .map(|i| r.row(i).to_vec())
+                .collect::<Vec<Vec<f32>>>()
+        })
+        .collect();
+
+    Json(PrefillResponse {
+        post_attention_residuals,
+        kv_filled_through_layer,
+        tokens_processed: seq_len,
+        latency_ms: start.elapsed().as_secs_f64() * 1000.0,
+    })
     .into_response()
 }
 

@@ -188,6 +188,46 @@ pub fn run_layer_with_ffn(
     Some((h_out, activation, kv_out))
 }
 
+/// Like [`run_layer_with_ffn`] but ALSO returns `h_post_attn` — the
+/// post-attention residual *before* the FFN runs. Used by the
+/// `attention-service-routes` HTTP/gRPC handlers, which expose the
+/// per-layer attention output as part of their response (and are
+/// happy to discard the FFN output, which the client routes through
+/// the FFN service / dense path / expert shards separately).
+///
+/// The returned `h_out` is the same value `run_layer_with_ffn` would
+/// have produced, so a chain of these calls equals a normal forward
+/// pass on the host attention server.
+#[allow(clippy::type_complexity)]
+pub fn run_layer_with_ffn_capturing_h_post_attn(
+    weights: &ModelWeights,
+    h: &Array2<f32>,
+    layer: usize,
+    ffn: &dyn FfnBackend,
+    capture_activation: bool,
+    ple_input: Option<&Array2<f32>>,
+    shared_kv: Option<&SharedKV>,
+) -> Option<(
+    Array2<f32>,
+    Array2<f32>,
+    Option<Array2<f32>>,
+    Option<SharedKV>,
+)> {
+    let (h_post_attn, kv_out) = if shared_kv.is_some() {
+        (
+            run_attention_inner(weights, h, layer, false, shared_kv)?.0,
+            None,
+        )
+    } else {
+        let (h_pa, kv) = run_attention_with_kv_cache(weights, h, layer)?;
+        (h_pa, Some(kv))
+    };
+    let (h_post_ffn, activation) = run_ffn(weights, &h_post_attn, layer, ffn, capture_activation);
+    let mut h_out = apply_per_layer_embedding(weights, &h_post_ffn, layer, ple_input);
+    apply_layer_scalar(weights, &mut h_out, layer);
+    Some((h_out, h_post_attn, activation, kv_out))
+}
+
 /// Run a single transformer layer, optionally capturing attention weights.
 ///
 /// Backwards-compatible wrapper: behaves identically to the pre-hook version
