@@ -268,6 +268,67 @@ fn packed_expert_slice(
     })
 }
 
+#[derive(Debug)]
+#[cfg_attr(not(test), allow(dead_code))]
+struct GgufPackedExpertLayer {
+    gate: Array2<f32>,
+    up: Array2<f32>,
+    down: Array2<f32>,
+}
+
+#[cfg_attr(not(test), allow(dead_code))]
+fn read_deepseek2_packed_expert_layer(
+    catalog: &GgufCatalog,
+    layout: &GgufDeepseek2Layout,
+    layer: usize,
+    expert_idx: usize,
+) -> Result<GgufPackedExpertLayer, VindexError> {
+    let gate_name = layout
+        .packed_experts
+        .get(&(layer, GgufExpertComponent::Gate))
+        .ok_or_else(|| VindexError::MissingTensor(format!("blk.{layer}.ffn_gate_exps.weight")))?;
+    let up_name = layout
+        .packed_experts
+        .get(&(layer, GgufExpertComponent::Up))
+        .ok_or_else(|| VindexError::MissingTensor(format!("blk.{layer}.ffn_up_exps.weight")))?;
+    let down_name = layout
+        .packed_experts
+        .get(&(layer, GgufExpertComponent::Down))
+        .ok_or_else(|| VindexError::MissingTensor(format!("blk.{layer}.ffn_down_exps.weight")))?;
+
+    Ok(GgufPackedExpertLayer {
+        gate: read_packed_expert_slice_by_type(catalog, gate_name, expert_idx)?,
+        up: read_packed_expert_slice_by_type(catalog, up_name, expert_idx)?,
+        down: read_packed_expert_slice_by_type(catalog, down_name, expert_idx)?,
+    })
+}
+
+#[cfg_attr(not(test), allow(dead_code))]
+fn read_packed_expert_slice_by_type(
+    catalog: &GgufCatalog,
+    tensor_name: &str,
+    expert_idx: usize,
+) -> Result<Array2<f32>, VindexError> {
+    let entry = catalog
+        .tensor(tensor_name)
+        .ok_or_else(|| VindexError::MissingTensor(tensor_name.to_string()))?;
+    match entry.tensor_type {
+        larql_models::quant::ggml::TYPE_F32 => {
+            read_packed_expert_slice_f32(catalog, tensor_name, expert_idx)
+        }
+        larql_models::quant::ggml::TYPE_Q4_K => {
+            read_packed_expert_slice_q4_k(catalog, tensor_name, expert_idx)
+        }
+        larql_models::quant::ggml::TYPE_Q6_K => {
+            read_packed_expert_slice_q6_k(catalog, tensor_name, expert_idx)
+        }
+        other => Err(VindexError::UnsupportedDtype(format!(
+            "GGUF tensor {} type {} is not supported by packed expert layer reader",
+            entry.name, other
+        ))),
+    }
+}
+
 #[cfg_attr(not(test), allow(dead_code))]
 fn read_packed_expert_slice_f32(
     catalog: &GgufCatalog,
@@ -1442,6 +1503,63 @@ mod tests {
         let err = packed_expert_slice(catalog.tensor("blk.0.ffn_gate_exps.weight").unwrap(), 384)
             .unwrap_err();
         assert!(err.to_string().contains("expert index 384 out of range"));
+    }
+
+    #[test]
+    fn read_deepseek2_packed_expert_layer_dispatches_quantized_roles() {
+        let tmp = tempfile::tempdir().unwrap();
+        let gate_name = "blk.0.ffn_gate_exps.weight";
+        let up_name = "blk.0.ffn_up_exps.weight";
+        let down_name = "blk.0.ffn_down_exps.weight";
+
+        let gate_shard = tmp.path().join("Kimi-00001-of-00003.gguf");
+        let mut gate_values = vec![1.0f32; 256];
+        gate_values.extend(vec![2.0f32; 256]);
+        write_minimal_gguf_header_with_f32_payload(
+            &gate_shard,
+            "deepseek2",
+            3,
+            gate_name,
+            &[256, 1, 2],
+            &gate_values,
+        );
+
+        let up_shard = tmp.path().join("Kimi-00002-of-00003.gguf");
+        let mut up_payload = q4_k_constant_block(3);
+        up_payload.extend(q4_k_constant_block(4));
+        write_minimal_gguf_header_with_raw_payload(
+            &up_shard,
+            "deepseek2",
+            3,
+            up_name,
+            &[256, 1, 2],
+            larql_models::quant::ggml::TYPE_Q4_K,
+            &up_payload,
+        );
+
+        let down_shard = tmp.path().join("Kimi-00003-of-00003.gguf");
+        let mut down_payload = q6_k_constant_block(35);
+        down_payload.extend(q6_k_constant_block(36));
+        write_minimal_gguf_header_with_raw_payload(
+            &down_shard,
+            "deepseek2",
+            3,
+            down_name,
+            &[256, 1, 2],
+            larql_models::quant::ggml::TYPE_Q6_K,
+            &down_payload,
+        );
+
+        let catalog = build_gguf_catalog(&[gate_shard, up_shard, down_shard]).unwrap();
+        let layout = classify_deepseek2_layout(&catalog).unwrap();
+
+        let expert = read_deepseek2_packed_expert_layer(&catalog, &layout, 0, 1).unwrap();
+        assert_eq!(expert.gate.shape(), &[1, 256]);
+        assert!(expert.gate.as_slice().unwrap().iter().all(|v| *v == 2.0));
+        assert_eq!(expert.up.shape(), &[1, 256]);
+        assert!(expert.up.as_slice().unwrap().iter().all(|v| *v == 4.0));
+        assert_eq!(expert.down.shape(), &[1, 256]);
+        assert!(expert.down.as_slice().unwrap().iter().all(|v| *v == 4.0));
     }
 
     #[test]

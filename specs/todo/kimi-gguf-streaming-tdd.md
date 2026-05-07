@@ -175,3 +175,30 @@ Kimi Q4_K_M mixes can store down projections and other high-precision tensors as
 
 ### Result
 Added `read_packed_expert_slice_q6_k()` for block-aligned packed expert slices. The Q4_K and Q6_K readers now share block-aligned mmap byte-range validation/dequant shaping; Q6_K maps expert element offsets to `Q6_K_BLOCK_BYTES` ranges, reads only the selected expert blocks from the containing shard, dequantizes with the existing GGML Q6_K decoder, and returns a conventional `[rows, cols]` matrix. The next blocker is the first extractor bridge that consumes the DeepSeek2 classifier plus F32/Q4_K/Q6_K packed slice readers for one Kimi layer.
+
+## Next blocker: read one DeepSeek2/Kimi packed expert layer
+
+### Problem
+The extractor now has independent readers for F32, Q4_K, and Q6_K packed expert slices, but no bridge that consumes the DeepSeek2 role classifier and returns the gate/up/down projections for a single layer/expert. Without this bridge, the GGUF extractor still cannot materialize layer data for browse-level vindex construction.
+
+### RED plan
+1. Add a synthetic three-shard DeepSeek2 GGUF fixture with packed expert role tensors for one layer:
+   - `blk.0.ffn_gate_exps.weight` as F32
+   - `blk.0.ffn_up_exps.weight` as Q4_K
+   - `blk.0.ffn_down_exps.weight` as Q6_K
+2. Classify the catalog with `classify_deepseek2_layout(&catalog)`.
+3. Assert a wished-for `read_deepseek2_packed_expert_layer(&catalog, &layout, 0, 1)` returns the expert-1 gate/up/down matrices and dispatches by tensor type.
+
+### GREEN plan
+1. Implement a small private bridge struct holding gate/up/down `Array2<f32>` matrices.
+2. Look up role tensor names via `GgufDeepseek2Layout::packed_experts`.
+3. Dispatch each tensor to the existing F32/Q4_K/Q6_K packed slice readers by GGUF tensor type.
+
+### Acceptance criteria
+- [x] RED bridge test fails before implementation.
+- [x] GREEN bridge test passes.
+- [x] Existing F32/Q4_K/Q6_K packed-slice and GGUF catalog/classifier/preflight tests still pass.
+- [x] Real Kimi smoke still returns the same unsupported-layout diagnostic until the full extractor phase is wired.
+
+### Result
+Added a private `GgufPackedExpertLayer` bridge plus `read_deepseek2_packed_expert_layer()`. The bridge consumes the DeepSeek2/Kimi role classifier, looks up one layer's packed gate/up/down expert tensors, dispatches each tensor by GGUF dtype through the existing F32/Q4_K/Q6_K packed slice readers, and returns one expert's gate/up/down matrices as conventional `[rows, cols]` arrays. Real Kimi smoke still stops at the intentional unsupported GGUF streaming boundary; the next blocker is wiring this bridge into the actual browse extraction phase so it can write gate/up/down vindex artifacts.
