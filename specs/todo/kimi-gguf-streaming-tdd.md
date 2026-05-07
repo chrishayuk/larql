@@ -47,3 +47,31 @@ The preflight knows only aggregate counts. The next extraction step needs a mmap
 
 ### Result
 Added a private header-only `GgufCatalog` in streaming extraction. It indexes tensor names across sharded GGUF files with shard index, dimensions, tensor type, architecture, split count, and 3D tensor totals. Existing unsupported Kimi diagnostics now reuse this catalog, which is the next seam for streaming packed 3D Kimi expert tensors without eager dequantization.
+
+## Next blocker: classify DeepSeek2/Kimi GGUF tensor roles
+
+### Problem
+The catalog can find tensor names, but extraction still cannot tell which Kimi GGUF tensors are packed MoE gate/up/down projections, router weights, or shared expert projections. Without that role map, the streaming extractor cannot select the right tensor and slice/expert layout for each vindex output.
+
+### RED plan
+1. Add a synthetic GGUF catalog with Kimi-style names:
+   - `blk.0.ffn_gate_exps.weight`
+   - `blk.0.ffn_up_exps.weight`
+   - `blk.0.ffn_down_exps.weight`
+   - `blk.0.ffn_gate_inp.weight`
+   - `blk.0.ffn_gate_shexp.weight`
+2. Assert a wished-for `classify_deepseek2_layout(&catalog)` returns role maps for packed expert components, router, and shared expert components by layer.
+
+### GREEN plan
+1. Implement a header-only DeepSeek2/Kimi tensor-role classifier over catalog names.
+2. Preserve dimensions in catalog entries; classification only names roles and references entries, no data reads.
+3. Keep the classifier private until the streaming reader consumes it.
+
+### Acceptance criteria
+- [x] RED role-classification test fails before implementation.
+- [x] GREEN role-classification test passes.
+- [x] Existing GGUF catalog/preflight tests still pass.
+- [x] Real Kimi smoke still returns the same unsupported-layout diagnostic.
+
+### Result
+Added a private DeepSeek2/Kimi GGUF layout classifier over the header-only catalog. It maps `blk.N.ffn_*_exps.weight` packed MoE tensors to gate/up/down expert components, maps `blk.N.ffn_gate_inp.weight` as the router, and maps `blk.N.ffn_*_shexp.weight` shared-expert projections. The classifier performs no tensor-data reads; it only classifies catalog entries by name and layer, setting up the next TDD slice for packed 3D tensor slicing/dequantization.

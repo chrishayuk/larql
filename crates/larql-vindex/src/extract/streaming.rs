@@ -109,6 +109,88 @@ fn build_gguf_catalog(files: &[PathBuf]) -> Result<GgufCatalog, VindexError> {
     })
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[cfg_attr(not(test), allow(dead_code))]
+enum GgufExpertComponent {
+    Gate,
+    Up,
+    Down,
+}
+
+#[derive(Debug, Default)]
+#[cfg_attr(not(test), allow(dead_code))]
+struct GgufDeepseek2Layout {
+    packed_experts: HashMap<(usize, GgufExpertComponent), String>,
+    routers: HashMap<usize, String>,
+    shared_experts: HashMap<(usize, GgufExpertComponent), String>,
+    attention: Vec<String>,
+}
+
+#[cfg_attr(not(test), allow(dead_code))]
+fn classify_deepseek2_layout(catalog: &GgufCatalog) -> Result<GgufDeepseek2Layout, VindexError> {
+    if catalog.architecture != "deepseek2" {
+        return Err(VindexError::Parse(format!(
+            "DeepSeek2 GGUF classifier only supports architecture=deepseek2, got {}",
+            catalog.architecture
+        )));
+    }
+    let mut layout = GgufDeepseek2Layout::default();
+    for name in catalog.tensors.keys() {
+        let Some((layer, suffix)) = parse_deepseek2_layer_suffix(name) else {
+            continue;
+        };
+        match suffix {
+            "ffn_gate_exps.weight" => {
+                layout
+                    .packed_experts
+                    .insert((layer, GgufExpertComponent::Gate), name.clone());
+            }
+            "ffn_up_exps.weight" => {
+                layout
+                    .packed_experts
+                    .insert((layer, GgufExpertComponent::Up), name.clone());
+            }
+            "ffn_down_exps.weight" => {
+                layout
+                    .packed_experts
+                    .insert((layer, GgufExpertComponent::Down), name.clone());
+            }
+            "ffn_gate_inp.weight" => {
+                layout.routers.insert(layer, name.clone());
+            }
+            "ffn_gate_shexp.weight" => {
+                layout
+                    .shared_experts
+                    .insert((layer, GgufExpertComponent::Gate), name.clone());
+            }
+            "ffn_up_shexp.weight" => {
+                layout
+                    .shared_experts
+                    .insert((layer, GgufExpertComponent::Up), name.clone());
+            }
+            "ffn_down_shexp.weight" => {
+                layout
+                    .shared_experts
+                    .insert((layer, GgufExpertComponent::Down), name.clone());
+            }
+            suffix if suffix.starts_with("attn_") => {
+                // Attention tensors are intentionally not part of vindex FFN extraction,
+                // but keeping a bucket here documents that they were recognized and skipped.
+            }
+            _ => {}
+        }
+    }
+    Ok(layout)
+}
+
+#[cfg_attr(not(test), allow(dead_code))]
+fn parse_deepseek2_layer_suffix(name: &str) -> Option<(usize, &str)> {
+    let rest = name.strip_prefix("blk.")?;
+    let (layer, suffix) = rest.split_once('.')?;
+    let layer = layer.parse().ok()?;
+    Some((layer, suffix))
+}
+
 fn discover_weight_source(model_dir: &Path) -> Result<WeightSource, VindexError> {
     let mut st_files = collect_ext(model_dir, "safetensors")?;
     if st_files.is_empty() {
@@ -988,6 +1070,54 @@ mod tests {
         assert_eq!(q_a.shard_idx, 1);
         assert_eq!(q_a.dims, vec![7168, 1536]);
         assert!(!q_a.is_3d());
+    }
+
+    #[test]
+    fn classify_deepseek2_layout_identifies_kimi_packed_expert_roles() {
+        let tmp = tempfile::tempdir().unwrap();
+        let model_dir = tmp.path().join("model");
+        std::fs::create_dir_all(&model_dir).unwrap();
+        let shard = model_dir.join("Kimi-00001-of-00001.gguf");
+        write_minimal_gguf_header(
+            &shard,
+            "deepseek2",
+            1,
+            &[
+                ("blk.0.ffn_gate_exps.weight", &[7168, 2048, 384], 15),
+                ("blk.0.ffn_up_exps.weight", &[7168, 2048, 384], 15),
+                ("blk.0.ffn_down_exps.weight", &[2048, 7168, 384], 15),
+                ("blk.0.ffn_gate_inp.weight", &[384, 7168], 1),
+                ("blk.0.ffn_gate_shexp.weight", &[7168, 2048], 1),
+                ("blk.0.attn_q_a.weight", &[1536, 7168], 1),
+            ],
+        );
+        let catalog = build_gguf_catalog(&[shard]).unwrap();
+
+        let layout = classify_deepseek2_layout(&catalog).unwrap();
+
+        assert_eq!(
+            layout.packed_experts.get(&(0, GgufExpertComponent::Gate)),
+            Some(&"blk.0.ffn_gate_exps.weight".to_string())
+        );
+        assert_eq!(
+            layout.packed_experts.get(&(0, GgufExpertComponent::Up)),
+            Some(&"blk.0.ffn_up_exps.weight".to_string())
+        );
+        assert_eq!(
+            layout.packed_experts.get(&(0, GgufExpertComponent::Down)),
+            Some(&"blk.0.ffn_down_exps.weight".to_string())
+        );
+        assert_eq!(
+            layout.routers.get(&0),
+            Some(&"blk.0.ffn_gate_inp.weight".to_string())
+        );
+        assert_eq!(
+            layout.shared_experts.get(&(0, GgufExpertComponent::Gate)),
+            Some(&"blk.0.ffn_gate_shexp.weight".to_string())
+        );
+        assert!(!layout
+            .attention
+            .contains(&"blk.0.attn_q_a.weight".to_string()));
     }
 
     fn write_minimal_gguf(path: &std::path::Path, arch: &str, split_count: u16, include_3d: bool) {
