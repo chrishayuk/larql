@@ -509,7 +509,39 @@ pub async fn handle_kv_free(
     .into_response()
 }
 
-// ── Restore helper ─────────────────────────────────────────────────────────
+// ── Restore helper (also reused by the gRPC shim) ──────────────────────────
+
+/// Map a UI-friendly KvFormat string into the internal enum. `None`
+/// in `Ok(None)` means FP32 (the default). Used by both the HTTP and
+/// gRPC create-session paths.
+pub(crate) fn parse_kv_format(s: &str) -> Result<Option<KvFormat>, String> {
+    map_kv_format(s)
+}
+
+/// Inverse of `parse_kv_format`. `None` ⇒ `"fp32"`.
+pub(crate) fn kv_format_str(f: Option<KvFormat>) -> &'static str {
+    fmt_to_str(f)
+}
+
+/// Common restore-from-bytes path. Returns either a freshly-allocated
+/// `KvCache` ready to drop into a session, or a (kebab-case error
+/// code, human-readable detail) pair the caller maps onto its
+/// transport's error type.
+///
+/// The HTTP variant base64-decodes the body before calling this; the
+/// gRPC variant passes raw bytes through.
+pub(crate) fn deserialize_snapshot_bytes(
+    bytes: &[u8],
+) -> Result<larql_inference::attention::decode::KvCache, (&'static str, String)> {
+    kv_snapshot::deserialize(bytes).map_err(|e| {
+        let code = match &e {
+            kv_snapshot::SnapshotError::UnsupportedVersion { .. } => "snapshot_version_unsupported",
+            kv_snapshot::SnapshotError::MagicMismatch { .. } => "snapshot_magic_mismatch",
+            _ => "snapshot_invalid",
+        };
+        (code, e.to_string())
+    })
+}
 
 fn restore_session(
     model_id: &str,

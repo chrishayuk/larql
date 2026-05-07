@@ -11,6 +11,19 @@ pub mod attention_proto {
     tonic::include_proto!("larql.attention.v1");
 }
 
+pub use attention_proto::attention_service_client::AttentionServiceClient;
+pub use attention_proto::attention_service_server::{AttentionService, AttentionServiceServer};
+pub use attention_proto::{
+    CreateSessionRequest as AttCreateSessionRequest,
+    CreateSessionResponse as AttCreateSessionResponse, DecodeRequest as AttDecodeRequest,
+    DecodeResponse as AttDecodeResponse, DeleteSessionRequest as AttDeleteSessionRequest,
+    DeleteSessionResponse as AttDeleteSessionResponse, FreeRequest as AttFreeRequest,
+    FreeResponse as AttFreeResponse, GetSessionRequest as AttGetSessionRequest,
+    GetSessionResponse as AttGetSessionResponse, PrefillEvent, PrefillRequest as AttPrefillRequest,
+    RestoreRequest as AttRestoreRequest, RestoreResponse as AttRestoreResponse,
+    SnapshotRequest as AttSnapshotRequest, SnapshotResponse as AttSnapshotResponse, Vec1d, Vec2d,
+};
+
 pub use expert_proto::expert_service_client::ExpertServiceClient;
 pub use expert_proto::expert_service_server::{ExpertService, ExpertServiceServer};
 pub use expert_proto::{

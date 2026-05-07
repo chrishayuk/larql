@@ -16,6 +16,7 @@ pub mod error;
 pub mod etag;
 pub mod ffn_l2_cache;
 pub mod grpc;
+pub mod grpc_attention;
 pub mod grpc_expert;
 pub mod http;
 pub mod kv_snapshot;
