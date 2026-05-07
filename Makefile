@@ -78,6 +78,12 @@ docker-down:
 docker-logs:
 	cd deploy/docker && docker compose logs -f
 
+# attention-service-routes change. Run a full HTTP smoke test against
+# a running attention server (defaults to http://localhost:8081).
+# Override target via: LARQL_ATTN_URL=... LARQL_MODEL_ID=... make attention-smoke
+attention-smoke:
+	python3 scripts/attention-service-smoke.py
+
 # Check (compile without building)
 check:
 	cargo check --workspace
