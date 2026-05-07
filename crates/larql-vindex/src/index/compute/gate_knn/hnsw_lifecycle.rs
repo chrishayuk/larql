@@ -231,11 +231,11 @@ impl VectorIndex {
         let cache = self.gate.hnsw_cache.lock().unwrap();
         let hnsw = cache[layer].as_ref()?;
 
-        let mut candidates = if self.gate.gate_mmap_dtype == crate::config::dtype::StorageDtype::F32
-            && self.gate.gate_mmap_bytes.is_some()
-        {
+        let mut candidates = if let (crate::config::dtype::StorageDtype::F32, Some(mmap)) = (
+            self.gate.gate_mmap_dtype,
+            self.gate.gate_mmap_bytes.as_ref(),
+        ) {
             // Zero-copy view onto f32-mmap.
-            let mmap = self.gate.gate_mmap_bytes.as_ref().unwrap();
             let slice = self.gate.gate_mmap_slices.get(layer)?;
             if slice.num_features == 0 {
                 return None;

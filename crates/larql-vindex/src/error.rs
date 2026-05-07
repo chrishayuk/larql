@@ -8,6 +8,14 @@ pub enum VindexError {
     NotADirectory(PathBuf),
     #[error("no safetensors files in {0}")]
     NoSafetensors(PathBuf),
+    #[error("GGUF streaming extraction is not implemented for {architecture} layout (files={files}, split={split_count}, tensors={tensor_count}, 3D tensors={three_d_tensors}). Use safetensors extraction for now; Kimi/DeepSeek2 GGUF needs sharded GGUF + packed 3D tensor streaming support.")]
+    UnsupportedGgufStreaming {
+        architecture: String,
+        files: usize,
+        split_count: usize,
+        tensor_count: usize,
+        three_d_tensors: usize,
+    },
     #[error("missing tensor: {0}")]
     MissingTensor(String),
     #[error("parse error: {0}")]
@@ -53,6 +61,23 @@ mod tests {
         let s = e.to_string();
         assert!(s.contains("no safetensors"), "{s}");
         assert!(s.contains("model"), "{s}");
+    }
+
+    #[test]
+    fn unsupported_gguf_streaming_includes_layout_context() {
+        let e = VindexError::UnsupportedGgufStreaming {
+            architecture: "deepseek2".into(),
+            files: 13,
+            split_count: 13,
+            tensor_count: 1096,
+            three_d_tensors: 302,
+        };
+        let s = e.to_string();
+        assert!(s.contains("GGUF"), "{s}");
+        assert!(s.contains("deepseek2"), "{s}");
+        assert!(s.contains("files=13"), "{s}");
+        assert!(s.contains("split=13"), "{s}");
+        assert!(s.contains("3D tensors=302"), "{s}");
     }
 
     #[test]

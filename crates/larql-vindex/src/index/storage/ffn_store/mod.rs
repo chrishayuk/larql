@@ -108,6 +108,7 @@ pub struct FfnStore {
     /// In practice only the down component (component=2) is fetched from
     /// this cache; gate/up use the NEON Q4K×Q8K kernel directly on mmap
     /// bytes and never populate their slots here.
+    #[allow(clippy::type_complexity)]
     pub q4k_ffn_once: Vec<[std::sync::OnceLock<Option<Arc<Vec<f32>>>>; 3]>,
     /// FP4 / FP8 FFN storage (exp 26).
     pub fp4_storage: Option<Arc<crate::index::fp4_storage::Fp4Storage>>,

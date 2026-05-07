@@ -102,9 +102,14 @@ pub enum GgufValue {
 impl GgufValue {
     pub fn as_u32(&self) -> Option<u32> {
         match self {
+            GgufValue::U8(v) => Some(*v as u32),
+            GgufValue::U16(v) => Some(*v as u32),
             GgufValue::U32(v) => Some(*v),
-            GgufValue::I32(v) => Some(*v as u32),
-            GgufValue::U64(v) => Some(*v as u32),
+            GgufValue::I8(v) if *v >= 0 => Some(*v as u32),
+            GgufValue::I16(v) if *v >= 0 => Some(*v as u32),
+            GgufValue::I32(v) if *v >= 0 => Some(*v as u32),
+            GgufValue::U64(v) => u32::try_from(*v).ok(),
+            GgufValue::I64(v) if *v >= 0 => u32::try_from(*v as u64).ok(),
             _ => None,
         }
     }
@@ -135,6 +140,24 @@ pub struct GgufTensorInfo {
     dims: Vec<u64>,
     tensor_type: u32,
     offset: u64,
+}
+
+impl GgufTensorInfo {
+    pub fn name(&self) -> &str {
+        &self.name
+    }
+
+    pub fn n_dims(&self) -> u32 {
+        self.n_dims
+    }
+
+    pub fn dims(&self) -> &[u64] {
+        &self.dims
+    }
+
+    pub fn tensor_type(&self) -> u32 {
+        self.tensor_type
+    }
 }
 
 // ═══════════════════════════════════════════════════════════════

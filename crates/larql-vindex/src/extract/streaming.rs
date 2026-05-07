@@ -26,6 +26,108 @@ struct MmapShard {
     mmap: memmap2::Mmap,
 }
 
+#[derive(Debug)]
+enum WeightSource {
+    Safetensors(Vec<PathBuf>),
+    Gguf {
+        files: Vec<PathBuf>,
+        architecture: String,
+        split_count: usize,
+        tensor_count: usize,
+        three_d_tensors: usize,
+    },
+}
+
+fn discover_weight_source(model_dir: &Path) -> Result<WeightSource, VindexError> {
+    let mut st_files = collect_ext(model_dir, "safetensors")?;
+    if st_files.is_empty() {
+        let weights_dir = model_dir.join("weights");
+        if weights_dir.is_dir() {
+            st_files = collect_ext(&weights_dir, "safetensors")?;
+        }
+    }
+    st_files.sort();
+    if !st_files.is_empty() {
+        return Ok(WeightSource::Safetensors(st_files));
+    }
+
+    let mut gguf_files = collect_ext(model_dir, "gguf")?;
+    if gguf_files.is_empty() {
+        for entry in std::fs::read_dir(model_dir)? {
+            let path = entry?.path();
+            if path.is_dir() {
+                gguf_files.extend(collect_ext(&path, "gguf")?);
+            }
+        }
+    }
+    gguf_files.sort();
+    if gguf_files.is_empty() {
+        return Err(VindexError::NoSafetensors(model_dir.to_path_buf()));
+    }
+
+    let mut architecture = "unknown".to_string();
+    let mut split_count = gguf_files.len();
+    let mut tensor_count = 0usize;
+    let mut three_d_tensors = 0usize;
+    for file in &gguf_files {
+        let gguf = larql_models::loading::gguf::GgufFile::open(file)?;
+        if architecture == "unknown" {
+            if let Some(arch) = gguf
+                .metadata
+                .get("general.architecture")
+                .and_then(|v| v.as_str())
+            {
+                architecture = arch.to_string();
+            }
+        }
+        if let Some(count) = gguf.metadata.get("split.count").and_then(|v| v.as_u32()) {
+            split_count = count as usize;
+        }
+        tensor_count += gguf.tensor_infos.len();
+        three_d_tensors += gguf
+            .tensor_infos
+            .iter()
+            .filter(|info| info.n_dims() > 2)
+            .count();
+    }
+
+    Ok(WeightSource::Gguf {
+        files: gguf_files,
+        architecture,
+        split_count,
+        tensor_count,
+        three_d_tensors,
+    })
+}
+
+fn collect_ext(dir: &Path, ext: &str) -> Result<Vec<PathBuf>, VindexError> {
+    Ok(std::fs::read_dir(dir)?
+        .filter_map(|e| e.ok())
+        .map(|e| e.path())
+        .filter(|p| p.extension().is_some_and(|actual| actual == ext))
+        .collect())
+}
+
+fn preflight_gguf_streaming(source: &WeightSource) -> Result<(), VindexError> {
+    if let WeightSource::Gguf {
+        files,
+        architecture,
+        split_count,
+        tensor_count,
+        three_d_tensors,
+    } = source
+    {
+        return Err(VindexError::UnsupportedGgufStreaming {
+            architecture: architecture.clone(),
+            files: files.len(),
+            split_count: *split_count,
+            tensor_count: *tensor_count,
+            three_d_tensors: *three_d_tensors,
+        });
+    }
+    Ok(())
+}
+
 /// Build a vindex by streaming from safetensors files (no full model load).
 ///
 /// Peak memory: embeddings + 1 layer of gate/down weights at a time.
@@ -68,27 +170,15 @@ pub fn build_vindex_streaming(
     let is_moe = arch.is_moe();
     let n_experts = arch.num_experts();
 
-    // Mmap all safetensors files
-    let mut st_files: Vec<PathBuf> = std::fs::read_dir(model_dir)?
-        .filter_map(|e| e.ok())
-        .map(|e| e.path())
-        .filter(|p| p.extension().is_some_and(|ext| ext == "safetensors"))
-        .collect();
-    if st_files.is_empty() {
-        let weights_dir = model_dir.join("weights");
-        if weights_dir.is_dir() {
-            st_files = std::fs::read_dir(&weights_dir)?
-                .filter_map(|e| e.ok())
-                .map(|e| e.path())
-                .filter(|p| p.extension().is_some_and(|ext| ext == "safetensors"))
-                .collect();
-        }
-    }
-    st_files.sort();
-
-    if st_files.is_empty() {
-        return Err(VindexError::NoSafetensors(model_dir.to_path_buf()));
-    }
+    // Mmap all safetensors files. If the model directory contains GGUF
+    // shards instead, fail with a GGUF-specific preflight diagnostic rather
+    // than the misleading `NoSafetensors` error. Header-only preflight keeps
+    // Kimi-sized probes cheap and avoids eager dequantization.
+    let source = discover_weight_source(model_dir)?;
+    preflight_gguf_streaming(&source)?;
+    let WeightSource::Safetensors(st_files) = source else {
+        unreachable!("preflight_gguf_streaming returns for GGUF sources");
+    };
 
     callbacks.on_stage(STAGE_LOADING);
     eprintln!(
@@ -778,3 +868,88 @@ fn normalize_key(key: &str, prefixes: &[&str]) -> String {
 }
 
 use crate::config::dtype::write_floats;
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::io::Write;
+
+    #[test]
+    fn discovers_nested_gguf_directory_instead_of_reporting_no_safetensors() {
+        let tmp = tempfile::tempdir().unwrap();
+        let model_dir = tmp.path().join("model");
+        let qdir = model_dir.join("Q4_K_M");
+        std::fs::create_dir_all(&qdir).unwrap();
+        write_minimal_gguf(
+            &qdir.join("Kimi-00001-of-00013.gguf"),
+            "deepseek2",
+            13,
+            true,
+        );
+
+        let source = discover_weight_source(&model_dir).unwrap();
+
+        match source {
+            WeightSource::Gguf { files, .. } => {
+                assert_eq!(files.len(), 1);
+                assert!(files[0].ends_with("Kimi-00001-of-00013.gguf"));
+            }
+            other => panic!("expected GGUF source, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn kimi_like_gguf_preflight_reports_actionable_unsupported_layout() {
+        let tmp = tempfile::tempdir().unwrap();
+        let model_dir = tmp.path().join("model");
+        std::fs::create_dir_all(&model_dir).unwrap();
+        write_minimal_gguf(
+            &model_dir.join("Kimi-00001-of-00013.gguf"),
+            "deepseek2",
+            13,
+            true,
+        );
+
+        let source = discover_weight_source(&model_dir).unwrap();
+        let err = preflight_gguf_streaming(&source).unwrap_err();
+        let msg = err.to_string();
+
+        assert!(msg.contains("GGUF"), "{msg}");
+        assert!(msg.contains("deepseek2"), "{msg}");
+        assert!(msg.contains("split=13"), "{msg}");
+        assert!(msg.contains("3D"), "{msg}");
+        assert!(!msg.contains("no safetensors"), "{msg}");
+    }
+
+    fn write_minimal_gguf(path: &std::path::Path, arch: &str, split_count: u16, include_3d: bool) {
+        let mut f = std::fs::File::create(path).unwrap();
+        f.write_all(&0x4655_4747u32.to_le_bytes()).unwrap(); // GGUF
+        f.write_all(&3u32.to_le_bytes()).unwrap(); // version
+        let n_tensors = if include_3d { 1u64 } else { 0u64 };
+        f.write_all(&n_tensors.to_le_bytes()).unwrap();
+        f.write_all(&2u64.to_le_bytes()).unwrap(); // metadata count
+
+        write_string(&mut f, "general.architecture");
+        f.write_all(&8u32.to_le_bytes()).unwrap(); // string
+        write_string(&mut f, arch);
+
+        write_string(&mut f, "split.count");
+        f.write_all(&2u32.to_le_bytes()).unwrap(); // uint16
+        f.write_all(&split_count.to_le_bytes()).unwrap();
+
+        if include_3d {
+            write_string(&mut f, "blk.0.ffn_gate_exps.weight");
+            f.write_all(&3u32.to_le_bytes()).unwrap(); // n_dims
+            f.write_all(&7168u64.to_le_bytes()).unwrap();
+            f.write_all(&2048u64.to_le_bytes()).unwrap();
+            f.write_all(&384u64.to_le_bytes()).unwrap();
+            f.write_all(&0u32.to_le_bytes()).unwrap(); // F32
+            f.write_all(&0u64.to_le_bytes()).unwrap(); // offset
+        }
+    }
+
+    fn write_string(mut w: impl Write, s: &str) {
+        w.write_all(&(s.len() as u64).to_le_bytes()).unwrap();
+        w.write_all(s.as_bytes()).unwrap();
+    }
+}
