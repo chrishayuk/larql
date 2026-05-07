@@ -704,11 +704,10 @@ fn grpc_stream_describe(
     req: &DescribeRequest,
     tx: &tokio::sync::mpsc::Sender<Result<DescribeLayerEvent, Status>>,
 ) {
-    let encoding = match model.tokenizer.encode(req.entity.as_str(), false) {
-        Ok(e) => e,
+    let token_ids: Vec<u32> = match model.encode_cached_ids(req.entity.as_str(), false) {
+        Ok(ids) => ids,
         Err(_) => return,
     };
-    let token_ids: Vec<u32> = encoding.get_ids().to_vec();
     if token_ids.is_empty() {
         let _ = tx.blocking_send(Ok(DescribeLayerEvent {
             layer: 0,

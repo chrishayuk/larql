@@ -171,11 +171,10 @@ async fn stream_describe_messages(
     // Run the describe in a blocking task and stream results layer by layer.
     let start = std::time::Instant::now();
 
-    let encoding = match model.tokenizer.encode(entity.as_str(), false) {
-        Ok(e) => e,
-        Err(e) => return vec![ws_error(e.to_string())],
+    let token_ids: Vec<u32> = match model.encode_cached_ids(entity.as_str(), false) {
+        Ok(ids) => ids,
+        Err(e) => return vec![ws_error(e)],
     };
-    let token_ids: Vec<u32> = encoding.get_ids().to_vec();
     if token_ids.is_empty() {
         return vec![ws_empty_done()];
     }
@@ -293,14 +292,13 @@ async fn handle_stream_infer(
         .as_str()
         .unwrap_or(crate::band_utils::INFER_MODE_WALK);
 
-    let encoding = match model.tokenizer.encode(prompt.as_str(), true) {
-        Ok(e) => e,
+    let token_ids: Vec<u32> = match model.encode_cached_ids(prompt.as_str(), true) {
+        Ok(ids) => ids,
         Err(e) => {
-            send_error(socket, e.to_string()).await;
+            send_error(socket, e).await;
             return;
         }
     };
-    let token_ids: Vec<u32> = encoding.get_ids().to_vec();
     if token_ids.is_empty() {
         send_error(socket, "empty prompt after tokenization").await;
         return;
