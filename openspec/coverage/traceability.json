@@ -1,11 +1,11 @@
 {
   "summary": {
     "capabilities": 48,
-    "requirements": 377,
-    "scenarios": 1312,
+    "requirements": 387,
+    "scenarios": 1330,
     "scenarios_backed": 1195,
-    "scenarios_unbacked": 117,
-    "test_refs": 3191,
+    "scenarios_unbacked": 135,
+    "test_refs": 3209,
     "test_refs_unresolved": 0
   },
   "capabilities": [
@@ -12769,13 +12769,152 @@
               "line": 36
             }
           ]
+        },
+        {
+          "name": "ServerEntry MUST carry a cached-prefix bloom filter",
+          "scenarios": [
+            {
+              "name": "empty bloom is the default",
+              "tests_resolved": [],
+              "tests_unresolved": [],
+              "unbacked": true,
+              "spec_file": "openspec/changes/router-prefix-aware-routing/specs/router-grid/spec.md",
+              "line": 12
+            }
+          ]
+        },
+        {
+          "name": "route_for_prefix MUST prefer the shard with the most matching prefixes",
+          "scenarios": [
+            {
+              "name": "shard with cached prefix wins over least-loaded",
+              "tests_resolved": [],
+              "tests_unresolved": [],
+              "unbacked": true,
+              "spec_file": "openspec/changes/router-prefix-aware-routing/specs/router-grid/spec.md",
+              "line": 21
+            },
+            {
+              "name": "no match falls back to load-balanced",
+              "tests_resolved": [],
+              "tests_unresolved": [],
+              "unbacked": true,
+              "spec_file": "openspec/changes/router-prefix-aware-routing/specs/router-grid/spec.md",
+              "line": 26
+            },
+            {
+              "name": "tie on prefix-match count breaks by load",
+              "tests_resolved": [],
+              "tests_unresolved": [],
+              "unbacked": true,
+              "spec_file": "openspec/changes/router-prefix-aware-routing/specs/router-grid/spec.md",
+              "line": 31
+            }
+          ]
+        },
+        {
+          "name": "bloom-filter false-positive rate MUST be bounded",
+          "scenarios": [
+            {
+              "name": "synthesised 64-element bloom holds the FP bound",
+              "tests_resolved": [],
+              "tests_unresolved": [],
+              "unbacked": true,
+              "spec_file": "openspec/changes/router-prefix-aware-routing/specs/router-grid/spec.md",
+              "line": 42
+            }
+          ]
         }
       ]
     },
     {
       "name": "server-attention-service",
-      "spec_file": "openspec/changes/cuda-and-rotorquant-kv/specs/server-attention-service/spec.md",
+      "spec_file": "openspec/changes/attention-service-prefill-decode-split/specs/server-attention-service/spec.md",
       "requirements": [
+        {
+          "name": "server SHALL support a --mode flag for PD-split",
+          "scenarios": [
+            {
+              "name": "--mode prefill rejects decode RPCs",
+              "tests_resolved": [],
+              "tests_unresolved": [],
+              "unbacked": true,
+              "spec_file": "openspec/changes/attention-service-prefill-decode-split/specs/server-attention-service/spec.md",
+              "line": 10
+            },
+            {
+              "name": "--mode decode rejects prefill RPCs",
+              "tests_resolved": [],
+              "tests_unresolved": [],
+              "unbacked": true,
+              "spec_file": "openspec/changes/attention-service-prefill-decode-split/specs/server-attention-service/spec.md",
+              "line": 15
+            },
+            {
+              "name": "--mode both accepts both",
+              "tests_resolved": [],
+              "tests_unresolved": [],
+              "unbacked": true,
+              "spec_file": "openspec/changes/attention-service-prefill-decode-split/specs/server-attention-service/spec.md",
+              "line": 20
+            }
+          ]
+        },
+        {
+          "name": "prefill MUST return a KV-snapshot blob",
+          "scenarios": [
+            {
+              "name": "prefill response includes snapshot",
+              "tests_resolved": [],
+              "tests_unresolved": [],
+              "unbacked": true,
+              "spec_file": "openspec/changes/attention-service-prefill-decode-split/specs/server-attention-service/spec.md",
+              "line": 34
+            },
+            {
+              "name": "prefill is stateless",
+              "tests_resolved": [],
+              "tests_unresolved": [],
+              "unbacked": true,
+              "spec_file": "openspec/changes/attention-service-prefill-decode-split/specs/server-attention-service/spec.md",
+              "line": 39
+            }
+          ]
+        },
+        {
+          "name": "session create MUST accept an optional restore_from_snapshot",
+          "scenarios": [
+            {
+              "name": "session boots pre-loaded from snapshot",
+              "tests_resolved": [],
+              "tests_unresolved": [],
+              "unbacked": true,
+              "spec_file": "openspec/changes/attention-service-prefill-decode-split/specs/server-attention-service/spec.md",
+              "line": 48
+            }
+          ]
+        },
+        {
+          "name": "router MUST recognise attention-prefill and attention-decode sub-capabilities",
+          "scenarios": [
+            {
+              "name": "prefill RPC routes to attention-prefill shard",
+              "tests_resolved": [],
+              "tests_unresolved": [],
+              "unbacked": true,
+              "spec_file": "openspec/changes/attention-service-prefill-decode-split/specs/server-attention-service/spec.md",
+              "line": 62
+            },
+            {
+              "name": "catch-all attention shard receives both",
+              "tests_resolved": [],
+              "tests_unresolved": [],
+              "unbacked": true,
+              "spec_file": "openspec/changes/attention-service-prefill-decode-split/specs/server-attention-service/spec.md",
+              "line": 67
+            }
+          ]
+        },
         {
           "name": "Attention session lifecycle endpoints",
           "scenarios": [
@@ -14398,6 +14537,61 @@
               "unbacked": true,
               "spec_file": "openspec/changes/cuda-and-rotorquant-kv/specs/server-vindex-loading/spec.md",
               "line": 26
+            }
+          ]
+        },
+        {
+          "name": "server SHALL maintain a two-tier tokenizer cache",
+          "scenarios": [
+            {
+              "name": "L0 hit returns cached tokens",
+              "tests_resolved": [],
+              "tests_unresolved": [],
+              "unbacked": true,
+              "spec_file": "openspec/changes/server-tokenizer-cache/specs/server-vindex-loading/spec.md",
+              "line": 19
+            },
+            {
+              "name": "L1 hit shares the chat-template prefix",
+              "tests_resolved": [],
+              "tests_unresolved": [],
+              "unbacked": true,
+              "spec_file": "openspec/changes/server-tokenizer-cache/specs/server-vindex-loading/spec.md",
+              "line": 24
+            },
+            {
+              "name": "cache miss falls back to Tokenizer::encode",
+              "tests_resolved": [],
+              "tests_unresolved": [],
+              "unbacked": true,
+              "spec_file": "openspec/changes/server-tokenizer-cache/specs/server-vindex-loading/spec.md",
+              "line": 29
+            }
+          ]
+        },
+        {
+          "name": "cache MUST be safe at high concurrency",
+          "scenarios": [
+            {
+              "name": "parallel hits don't deadlock or corrupt",
+              "tests_resolved": [],
+              "tests_unresolved": [],
+              "unbacked": true,
+              "spec_file": "openspec/changes/server-tokenizer-cache/specs/server-vindex-loading/spec.md",
+              "line": 41
+            }
+          ]
+        },
+        {
+          "name": "hash collision MUST NOT corrupt tokens",
+          "scenarios": [
+            {
+              "name": "synthesised collision is detected",
+              "tests_resolved": [],
+              "tests_unresolved": [],
+              "unbacked": true,
+              "spec_file": "openspec/changes/server-tokenizer-cache/specs/server-vindex-loading/spec.md",
+              "line": 53
             }
           ]
         }
