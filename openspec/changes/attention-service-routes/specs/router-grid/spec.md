@@ -40,7 +40,7 @@ heartbeat omitted the field) and write Some values onto
   bloom that contains hash `0xBEEF`
 - **THEN** subsequent `route_for_prefix(_, _, _, &[0xBEEF])`
   SHALL pick this shard
-<!-- test: unbacked -->
+<!-- test: larql_router::grid::tests::update_heartbeat_with_prefixes_writes_bloom_onto_entry -->
 
 #### Scenario: heartbeat without cached_prefixes preserves prior value
 
@@ -48,4 +48,4 @@ heartbeat omitted the field) and write Some values onto
   heartbeat with no `cached_prefixes` field
 - **THEN** the prior bloom SHALL remain on the entry; subsequent
   routing SHALL still find `0xBEEF`
-<!-- test: unbacked -->
+<!-- test: larql_router::grid::tests::update_heartbeat_without_prefixes_preserves_prior_bloom -->

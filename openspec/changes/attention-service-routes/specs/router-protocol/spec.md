@@ -35,7 +35,8 @@ prefixes).
   `cached_prefixes`
 - **THEN** `GridState::update_heartbeat` SHALL deserialise it into
   `PrefixBloom` and write it onto `ServerEntry::cached_prefixes`
-<!-- test: unbacked -->
+<!-- test: larql_router::grid::tests::update_heartbeat_with_prefixes_writes_bloom_onto_entry -->
+<!-- test: larql_router::grid::tests::bloom_to_wire_bytes_round_trips -->
 
 #### Scenario: heartbeat without bloom leaves prior value
 
@@ -44,7 +45,7 @@ prefixes).
 - **THEN** the existing `ServerEntry::cached_prefixes` SHALL NOT be
   cleared (heartbeats partially update; pre-extension shards never
   populate the bloom but the field remains the empty default)
-<!-- test: unbacked -->
+<!-- test: larql_router::grid::tests::update_heartbeat_without_prefixes_preserves_prior_bloom -->
 
 #### Scenario: malformed bloom is rejected without panic
 
@@ -52,4 +53,4 @@ prefixes).
   than 32
 - **THEN** `update_heartbeat` SHALL ignore the field, log a
   warning, and update CPU/RAM/in-flight as usual
-<!-- test: unbacked -->
+<!-- test: larql_router::grid::tests::bloom_from_wire_bytes_rejects_non_32_byte_input -->

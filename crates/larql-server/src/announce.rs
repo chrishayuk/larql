@@ -101,6 +101,10 @@ fn announce_message(cfg: &AnnounceConfig) -> ServerMessage {
             ram_bytes: cfg.ram_bytes,
             listen_url: cfg.listen_url.clone(),
             vindex_hash: cfg.vindex_hash.clone(),
+            // Empty ⇒ router defaults to ["attention", "expert"].
+            // attention-service-routes change. Real role-aware
+            // values are populated once the --role flag wiring lands.
+            capabilities: Vec::new(),
         })),
     }
 }
@@ -111,6 +115,10 @@ fn heartbeat_message() -> ServerMessage {
             cpu_pct: 0.0,
             ram_used: 0,
             requests_in_flight: 0,
+            // Empty ⇒ no cached prefixes. Filled in by the heartbeat
+            // task once SessionMap::prefix_hashes is wired in.
+            // attention-service-routes change.
+            cached_prefixes: Vec::new(),
         })),
     }
 }
