@@ -954,6 +954,12 @@ pub async fn serve(cli: Cli) -> Result<(), BoxError> {
                     ram_bytes: 0,
                     grid_key: cli.grid_key.clone(),
                     vindex_hash: vhash.clone(),
+                    // Empty ⇒ legacy default. The --role flag wiring
+                    // (next commit on this branch) populates this.
+                    capabilities: Vec::new(),
+                    // None ⇒ heartbeat omits the bloom. Wired up
+                    // alongside the attention-session route handlers.
+                    cached_prefixes_provider: None,
                 });
             }
         }

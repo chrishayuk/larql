@@ -41,6 +41,16 @@ pub struct AnnounceConfig {
     pub grid_key: Option<String>,
     /// Stable identity hash of the vindex (model_id + num_layers).
     pub vindex_hash: String,
+    /// Capabilities to advertise on the announce. Empty ⇒ router
+    /// defaults to `["attention", "expert"]` (legacy shard).
+    /// attention-service-routes change.
+    pub capabilities: Vec<String>,
+    /// Closure invoked on every heartbeat tick to compute the
+    /// shard's current `cached_prefixes` bloom payload (32 bytes
+    /// raw `PrefixBloom`). `None` ⇒ heartbeat omits the field.
+    /// attention-service-routes change.
+    #[allow(clippy::type_complexity)]
+    pub cached_prefixes_provider: Option<std::sync::Arc<dyn Fn() -> Option<Vec<u8>> + Send + Sync>>,
 }
 
 // ── Public entry point ─────────────────────────────────────────────────────────
@@ -101,24 +111,18 @@ fn announce_message(cfg: &AnnounceConfig) -> ServerMessage {
             ram_bytes: cfg.ram_bytes,
             listen_url: cfg.listen_url.clone(),
             vindex_hash: cfg.vindex_hash.clone(),
-            // Empty ⇒ router defaults to ["attention", "expert"].
-            // attention-service-routes change. Real role-aware
-            // values are populated once the --role flag wiring lands.
-            capabilities: Vec::new(),
+            capabilities: cfg.capabilities.clone(),
         })),
     }
 }
 
-fn heartbeat_message() -> ServerMessage {
+fn heartbeat_message(cached_prefixes: Vec<u8>) -> ServerMessage {
     ServerMessage {
         payload: Some(ServerPayload::Heartbeat(HeartbeatMsg {
             cpu_pct: 0.0,
             ram_used: 0,
             requests_in_flight: 0,
-            // Empty ⇒ no cached prefixes. Filled in by the heartbeat
-            // task once SessionMap::prefix_hashes is wired in.
-            // attention-service-routes change.
-            cached_prefixes: Vec::new(),
+            cached_prefixes,
         })),
     }
 }
@@ -163,11 +167,13 @@ async fn try_once(cfg: &AnnounceConfig) -> Result<(), Box<dyn std::error::Error 
 
     // Spawn the heartbeat sender.
     let tx_hb = tx.clone();
+    let provider = cfg.cached_prefixes_provider.clone();
     let hb_handle = tokio::spawn(async move {
         let mut interval = tokio::time::interval(HEARTBEAT_INTERVAL);
         loop {
             interval.tick().await;
-            if tx_hb.send(heartbeat_message()).await.is_err() {
+            let bloom = provider.as_ref().and_then(|f| f()).unwrap_or_default();
+            if tx_hb.send(heartbeat_message(bloom)).await.is_err() {
                 break;
             }
         }
@@ -237,6 +243,8 @@ mod tests {
             ram_bytes: 42,
             grid_key: Some("secret".into()),
             vindex_hash: "abc123".into(),
+            capabilities: Vec::new(),
+            cached_prefixes_provider: None,
         }
     }
 
@@ -275,13 +283,35 @@ mod tests {
 
     #[test]
     fn heartbeat_message_uses_zeroed_metrics() {
-        let msg = heartbeat_message();
+        let msg = heartbeat_message(Vec::new());
         let Some(ServerPayload::Heartbeat(heartbeat)) = msg.payload else {
             panic!("expected heartbeat payload");
         };
         assert_eq!(heartbeat.cpu_pct, 0.0);
         assert_eq!(heartbeat.ram_used, 0);
         assert_eq!(heartbeat.requests_in_flight, 0);
+        assert!(heartbeat.cached_prefixes.is_empty());
+    }
+
+    #[test]
+    fn heartbeat_message_carries_cached_prefixes() {
+        let bloom = vec![0xAB; 32];
+        let msg = heartbeat_message(bloom.clone());
+        let Some(ServerPayload::Heartbeat(heartbeat)) = msg.payload else {
+            panic!("expected heartbeat payload");
+        };
+        assert_eq!(heartbeat.cached_prefixes, bloom);
+    }
+
+    #[test]
+    fn announce_message_carries_capabilities() {
+        let mut cfg = config();
+        cfg.capabilities = vec!["attention".into()];
+        let msg = announce_message(&cfg);
+        let Some(ServerPayload::Announce(a)) = msg.payload else {
+            panic!("expected announce payload");
+        };
+        assert_eq!(a.capabilities, vec!["attention".to_string()]);
     }
 
     #[test]

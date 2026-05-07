@@ -25532,67 +25532,67 @@
     {
       "fqn": "larql_server::bootstrap::parse_unit_manifest_round_trips_per_layer_ranges",
       "file": "crates/larql-server/src/bootstrap.rs",
-      "line": 1058,
+      "line": 1064,
       "crate": "larql_server"
     },
     {
       "fqn": "larql_server::bootstrap::parse_unit_manifest_rejects_non_numeric_layer_key",
       "file": "crates/larql-server/src/bootstrap.rs",
-      "line": 1075,
+      "line": 1081,
       "crate": "larql_server"
     },
     {
       "fqn": "larql_server::bootstrap::parse_unit_manifest_rejects_reversed_range",
       "file": "crates/larql-server/src/bootstrap.rs",
-      "line": 1084,
+      "line": 1090,
       "crate": "larql_server"
     },
     {
       "fqn": "larql_server::bootstrap::parse_unit_manifest_missing_file_reports_path",
       "file": "crates/larql-server/src/bootstrap.rs",
-      "line": 1093,
+      "line": 1099,
       "crate": "larql_server"
     },
     {
       "fqn": "larql_server::bootstrap::parse_unit_manifest_accepts_empty_object",
       "file": "crates/larql-server/src/bootstrap.rs",
-      "line": 1108,
+      "line": 1114,
       "crate": "larql_server"
     },
     {
       "fqn": "larql_server::bootstrap::parse_layer_range_accepts_inclusive_cli_range",
       "file": "crates/larql-server/src/bootstrap.rs",
-      "line": 1118,
+      "line": 1124,
       "crate": "larql_server"
     },
     {
       "fqn": "larql_server::bootstrap::parse_layer_range_rejects_bad_shapes",
       "file": "crates/larql-server/src/bootstrap.rs",
-      "line": 1124,
+      "line": 1130,
       "crate": "larql_server"
     },
     {
       "fqn": "larql_server::bootstrap::normalize_serve_alias_removes_subcommand",
       "file": "crates/larql-server/src/bootstrap.rs",
-      "line": 1132,
+      "line": 1138,
       "crate": "larql_server"
     },
     {
       "fqn": "larql_server::bootstrap::normalize_serve_alias_leaves_non_alias_args_unchanged",
       "file": "crates/larql-server/src/bootstrap.rs",
-      "line": 1142,
+      "line": 1148,
       "crate": "larql_server"
     },
     {
       "fqn": "larql_server::bootstrap::discover_vindexes_returns_sorted_dirs_with_index_json",
       "file": "crates/larql-server/src/bootstrap.rs",
-      "line": 1148,
+      "line": 1154,
       "crate": "larql_server"
     },
     {
       "fqn": "larql_server::bootstrap::load_options_are_copyable",
       "file": "crates/larql-server/src/bootstrap.rs",
-      "line": 1165,
+      "line": 1171,
       "crate": "larql_server"
     },
     {
@@ -25946,31 +25946,43 @@
     {
       "fqn": "larql_server::announce::vindex_identity_hash_is_stable_and_hex",
       "file": "crates/larql-server/src/announce.rs",
-      "line": 244,
+      "line": 252,
       "crate": "larql_server"
     },
     {
       "fqn": "larql_server::announce::grid_bearer_value_formats_authorization",
       "file": "crates/larql-server/src/announce.rs",
-      "line": 255,
+      "line": 263,
       "crate": "larql_server"
     },
     {
       "fqn": "larql_server::announce::announce_message_copies_config_fields",
       "file": "crates/larql-server/src/announce.rs",
-      "line": 262,
+      "line": 270,
       "crate": "larql_server"
     },
     {
       "fqn": "larql_server::announce::heartbeat_message_uses_zeroed_metrics",
       "file": "crates/larql-server/src/announce.rs",
-      "line": 277,
+      "line": 285,
+      "crate": "larql_server"
+    },
+    {
+      "fqn": "larql_server::announce::heartbeat_message_carries_cached_prefixes",
+      "file": "crates/larql-server/src/announce.rs",
+      "line": 297,
+      "crate": "larql_server"
+    },
+    {
+      "fqn": "larql_server::announce::announce_message_carries_capabilities",
+      "file": "crates/larql-server/src/announce.rs",
+      "line": 307,
       "crate": "larql_server"
     },
     {
       "fqn": "larql_server::announce::dropping_message_marks_reassigned",
       "file": "crates/larql-server/src/announce.rs",
-      "line": 288,
+      "line": 318,
       "crate": "larql_server"
     },
     {
