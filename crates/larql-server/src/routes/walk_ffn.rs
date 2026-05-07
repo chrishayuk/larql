@@ -127,6 +127,7 @@ pub struct WalkFfnRequest {
     pub full_output: bool,
     /// When true, `residual` is `h_post_attn` (post-attention, pre-norm). The
     /// server runs the full hybrid MoE layer: dense-FFN + remote expert dispatch
+    ///
     /// + combine + outer norm. Requires `full_output: true` and the server to
     /// have `--moe-shards` configured.
     #[serde(default)]
@@ -422,10 +423,10 @@ pub(crate) fn run_full_output_core(
             let h1 = &h_post_ffn_dense - &x;
 
             // Build router weights from model vectors.
-            fn get_vec<'a>(
-                vectors: &'a std::collections::HashMap<String, Vec<f32>>,
+            fn get_vec(
+                vectors: &std::collections::HashMap<String, Vec<f32>>,
                 k: Option<String>,
-            ) -> &'a [f32] {
+            ) -> &[f32] {
                 k.and_then(|k| vectors.get(&k))
                     .map(|v| v.as_slice())
                     .unwrap_or(&[])
@@ -805,8 +806,8 @@ pub async fn handle_walk_ffn_q8k(
             ));
         }
 
-        let entries = decode_q8k_batch_request(&body)
-            .map_err(|e| crate::error::ServerError::BadRequest(e))?;
+        let entries =
+            decode_q8k_batch_request(&body).map_err(crate::error::ServerError::BadRequest)?;
 
         let patched = model.patched.blocking_read();
         let start = std::time::Instant::now();

@@ -45,6 +45,11 @@ mod up;
 /// clones; `Mutex` guards LRU eviction.
 pub type Q4kFfnCache = Mutex<Vec<[Option<Arc<Vec<f32>>>; 3]>>;
 
+/// Per-(layer, component) lock-free dequant slot. `OnceLock` initialises at
+/// most once over the process lifetime; the `Option` distinguishes "decoded
+/// successfully but the matrix is empty" from "not yet decoded".
+pub type Q4kFfnSlot = std::sync::OnceLock<Option<Arc<Vec<f32>>>>;
+
 /// Per-layer manifest entry for `down_features_q4k.bin` (W2). Carries
 /// the padded row width so the row decoder doesn't have to back-derive
 /// it from `length / n_features`.
@@ -108,7 +113,7 @@ pub struct FfnStore {
     /// In practice only the down component (component=2) is fetched from
     /// this cache; gate/up use the NEON Q4K×Q8K kernel directly on mmap
     /// bytes and never populate their slots here.
-    pub q4k_ffn_once: Vec<[std::sync::OnceLock<Option<Arc<Vec<f32>>>>; 3]>,
+    pub q4k_ffn_once: Vec<[Q4kFfnSlot; 3]>,
     /// FP4 / FP8 FFN storage (exp 26).
     pub fp4_storage: Option<Arc<crate::index::fp4_storage::Fp4Storage>>,
 }

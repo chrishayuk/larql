@@ -152,7 +152,9 @@ pub fn default_backend() -> Box<dyn ComputeBackend> {
             #[cfg(feature = "cuda")]
             "cuda" => match cuda::CudaBackend::new() {
                 Ok(c) => return Box::new(c),
-                Err(e) => eprintln!("[compute] LARQL_BACKEND=cuda but CUDA init failed: {e}; falling back"),
+                Err(e) => eprintln!(
+                    "[compute] LARQL_BACKEND=cuda but CUDA init failed: {e}; falling back"
+                ),
             },
             other => {
                 eprintln!("[compute] LARQL_BACKEND={other:?} not recognised; auto-selecting");

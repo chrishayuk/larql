@@ -35,6 +35,13 @@ pub struct ServerEntry {
     /// continue to receive every RPC. Real shards send their actual
     /// set via the announce proto extension landing with the
     /// `attention-service-routes` change.
+    // Read by `ServerEntry::supports` and `route_for_capability`;
+    // populated by announce/heartbeat once the proto extension lands
+    // with `attention-service-routes`. Until then the bin's
+    // register-handler hardcodes `default_capabilities()`, which is
+    // fine — but clippy can't see across that wiring boundary, so the
+    // field reads as dead until the proto change lands.
+    #[allow(dead_code)]
     pub capabilities: Vec<String>,
     /// Bloom filter of prefix hashes this shard currently has cached
     /// in its KV store. Populated from announce / heartbeat once the
@@ -43,6 +50,7 @@ pub struct ServerEntry {
     /// `route_for_prefix` falls back to `route_for_capability`'s
     /// least-loaded selection). See
     /// `openspec/changes/router-prefix-aware-routing/`.
+    #[allow(dead_code)]
     pub cached_prefixes: PrefixBloom,
 }
 
@@ -55,6 +63,7 @@ impl ServerEntry {
     }
 
     /// Whether this shard advertises `cap`. Case-insensitive.
+    #[allow(dead_code)]
     pub fn supports(&self, cap: &str) -> bool {
         self.capabilities
             .iter()
@@ -74,9 +83,18 @@ impl ServerEntry {
 /// random seeds).
 #[derive(Clone, Debug, Default)]
 pub struct PrefixBloom {
+    // Read indirectly via `count_ones()` in `estimated_population()`
+    // and bit-wise ops in `insert/contains`; clippy under bin-only
+    // crates can lose the trail.
+    #[allow(dead_code)]
     bits: [u64; 4],
 }
 
+// Most of `PrefixBloom` is unreachable from the bin entry-point until
+// the announce/heartbeat proto extensions land in
+// `attention-service-routes`. Tests cover the methods, but bin-only
+// builds drop them.
+#[allow(dead_code)]
 impl PrefixBloom {
     pub fn new() -> Self {
         Self::default()
@@ -219,6 +237,7 @@ impl GridState {
     /// attention RPCs filter to capability="attention", expert RPCs
     /// to capability="expert". Returns `None` when no shard covers
     /// the layer with the requested capability.
+    #[allow(dead_code)]
     pub fn route_for_capability(
         &self,
         model_id: Option<&str>,
@@ -247,6 +266,7 @@ impl GridState {
     /// When no shard matches any prefix, falls back to
     /// [`Self::route_for_capability`]. Lands as part of the
     /// `router-prefix-aware-routing` change.
+    #[allow(dead_code)]
     pub fn route_for_prefix(
         &self,
         model_id: Option<&str>,
@@ -762,10 +782,20 @@ mod tests {
     fn route_for_capability_filters_by_capability() {
         let mut state = GridState::default();
         state.register(entry_with_caps(
-            "ffn", "http://ffn", "model-a", 0, 1, &["expert"],
+            "ffn",
+            "http://ffn",
+            "model-a",
+            0,
+            1,
+            &["expert"],
         ));
         state.register(entry_with_caps(
-            "gpu", "http://gpu", "model-a", 0, 1, &["attention"],
+            "gpu",
+            "http://gpu",
+            "model-a",
+            0,
+            1,
+            &["attention"],
         ));
 
         assert_eq!(
@@ -782,7 +812,12 @@ mod tests {
     fn route_for_capability_returns_none_when_no_match() {
         let mut state = GridState::default();
         state.register(entry_with_caps(
-            "ffn", "http://ffn", "model-a", 0, 1, &["expert"],
+            "ffn",
+            "http://ffn",
+            "model-a",
+            0,
+            1,
+            &["expert"],
         ));
 
         assert_eq!(
@@ -840,10 +875,20 @@ mod tests {
         let mut state = GridState::default();
         // Shard A has prefix 0xAAAA cached; B has 0xBBBB.
         state.register(entry_with_prefixes(
-            "a", "http://a", "model-x", 0, 0, &[0xAAAA],
+            "a",
+            "http://a",
+            "model-x",
+            0,
+            0,
+            &[0xAAAA],
         ));
         state.register(entry_with_prefixes(
-            "b", "http://b", "model-x", 0, 0, &[0xBBBB],
+            "b",
+            "http://b",
+            "model-x",
+            0,
+            0,
+            &[0xBBBB],
         ));
 
         // Looking up prefix 0xAAAA should pick A.
@@ -881,7 +926,12 @@ mod tests {
         a.requests_in_flight = 5;
         state.register(a);
         state.register(entry_with_prefixes(
-            "b", "http://b", "model-x", 0, 0, &[0xFFFF],
+            "b",
+            "http://b",
+            "model-x",
+            0,
+            0,
+            &[0xFFFF],
         ));
 
         assert_eq!(

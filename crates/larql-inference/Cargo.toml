@@ -99,3 +99,6 @@ required-features = ["metal"]
 [dev-dependencies]
 assert_approx_eq = "1"
 tempfile = "3"
+
+[lints]
+workspace = true

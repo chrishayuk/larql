@@ -594,8 +594,6 @@ fn run_engine_q4k(
     backend: Box<dyn larql_inference::ComputeBackend>,
     args: &BenchArgs,
 ) -> Result<BenchRow, Box<dyn std::error::Error>> {
-    use larql_inference::forward::hidden_to_raw_logits;
-
     // We need two backend instances: one owned by the engine, one for Q4K calls.
     let want_metal_q4k = args.backends.contains("metal");
     let backend_for_q4k: Box<dyn larql_inference::ComputeBackend> = if want_metal_q4k {
@@ -721,7 +719,7 @@ fn run_remote_ffn_bench(
     let backend = larql_compute::default_backend();
 
     let mut cb = larql_vindex::SilentLoadCallbacks;
-    let mut weights = larql_vindex::load_model_weights_q4k(vindex_path, &mut cb)
+    let weights = larql_vindex::load_model_weights_q4k(vindex_path, &mut cb)
         .map_err(|e| format!("failed to load client weights: {e}"))?;
     let tokenizer = larql_vindex::load_vindex_tokenizer(vindex_path)
         .map_err(|e| format!("failed to load tokenizer: {e}"))?;
@@ -922,24 +920,39 @@ fn run_remote_moe_bench(
     let iters = args.moe_predispatch_iters.max(1);
 
     // Warmup.
-    let run_once = |n: usize| -> Result<larql_inference::layer_graph::grid::GridGenerateResult, String> {
-        if is_batch {
-            generate_with_remote_moe_batch(
-                &weights, &tokenizer, prompt_ids.clone(), n,
-                &index, &remote, &*backend, &eos, iters,
-            ).map_err(|e| e.to_string())
-        } else {
-            generate_with_remote_moe(
-                &weights, &tokenizer, prompt_ids.clone(), n,
-                &index, &remote, &*backend, &eos,
-            ).map_err(|e| e.to_string())
-        }
-    };
+    let run_once =
+        |n: usize| -> Result<larql_inference::layer_graph::grid::GridGenerateResult, String> {
+            if is_batch {
+                generate_with_remote_moe_batch(
+                    &weights,
+                    &tokenizer,
+                    prompt_ids.clone(),
+                    n,
+                    &index,
+                    &remote,
+                    &*backend,
+                    &eos,
+                    iters,
+                )
+                .map_err(|e| e.to_string())
+            } else {
+                generate_with_remote_moe(
+                    &weights,
+                    &tokenizer,
+                    prompt_ids.clone(),
+                    n,
+                    &index,
+                    &remote,
+                    &*backend,
+                    &eos,
+                )
+                .map_err(|e| e.to_string())
+            }
+        };
 
     let _ = run_once(args.warmup.max(1));
 
-    let result = run_once(max_tokens)
-        .map_err(|e| format!("moe bench generate failed: {e}"))?;
+    let result = run_once(max_tokens).map_err(|e| format!("moe bench generate failed: {e}"))?;
 
     let n_warm = args.warmup.min(result.decode_ms.len());
     let measured = &result.decode_ms[n_warm..];
@@ -1120,7 +1133,7 @@ fn print_table(rows: &[BenchRow]) {
         println!();
         println!(
             "  Per-stage average (remote-ffn, {} layers × RTT):",
-            r.backend.split('(').nth(0).unwrap_or("").trim()
+            r.backend.split('(').next().unwrap_or("").trim()
         );
         println!(
             "    attn+norm+lmhead {:>7.2}ms  ({:>4.1}%)",

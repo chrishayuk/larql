@@ -63,8 +63,7 @@ impl MatMul for CudaBackend {
         let out = kernels::matmul(&self.drv, &a_buf, &b_buf, m, n, k)
             .expect("CudaBackend::matmul: cuBLAS failed");
 
-        Array2::from_shape_vec((m, n), out)
-            .expect("CudaBackend::matmul: shape mismatch on result")
+        Array2::from_shape_vec((m, n), out).expect("CudaBackend::matmul: shape mismatch on result")
     }
 
     fn matmul_transb(&self, a: ArrayView2<f32>, b: ArrayView2<f32>) -> Array2<f32> {

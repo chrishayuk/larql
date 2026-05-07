@@ -142,7 +142,9 @@ pub fn model_functional(id: &str) -> Arc<LoadedModel> {
         expert_filter: None,
         unit_filter: None,
         moe_remote: None,
-        tokenizer_cache: std::sync::Arc::new(crate::tokenizer_cache::TokenizerCache::new(0, 0)),
+        tokenizer_cache: std::sync::Arc::new(larql_server::tokenizer_cache::TokenizerCache::new(
+            0, 0,
+        )),
     })
 }
 
@@ -174,7 +176,9 @@ pub fn model_infer_enabled(id: &str) -> Arc<LoadedModel> {
         expert_filter: None,
         unit_filter: None,
         moe_remote: None,
-        tokenizer_cache: std::sync::Arc::new(crate::tokenizer_cache::TokenizerCache::new(0, 0)),
+        tokenizer_cache: std::sync::Arc::new(larql_server::tokenizer_cache::TokenizerCache::new(
+            0, 0,
+        )),
     })
 }
 
@@ -244,8 +248,10 @@ impl ModelBuilder {
             ffn_l2_cache: FfnL2Cache::new(1),
             expert_filter: None,
             unit_filter: None,
-        moe_remote: None,
-        tokenizer_cache: std::sync::Arc::new(crate::tokenizer_cache::TokenizerCache::new(0, 0)),
+            moe_remote: None,
+            tokenizer_cache: std::sync::Arc::new(
+                larql_server::tokenizer_cache::TokenizerCache::new(0, 0),
+            ),
         })
     }
 }

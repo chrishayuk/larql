@@ -256,7 +256,7 @@ fn make_loaded_model(
     };
 
     let lock = OnceLock::new();
-    lock.set(weights).ok();
+    lock.set(std::sync::RwLock::new(weights)).ok();
 
     LoadedModel {
         id: "test-moe".into(),
@@ -275,7 +275,11 @@ fn make_loaded_model(
         probe_labels: HashMap::new(),
         ffn_l2_cache: FfnL2Cache::new(1),
         expert_filter: None,
+        unit_filter: None,
         moe_remote: None,
+        tokenizer_cache: std::sync::Arc::new(larql_server::tokenizer_cache::TokenizerCache::new(
+            0, 0,
+        )),
     }
 }
 
@@ -310,11 +314,21 @@ fn local_output(
     router_proj: &[f32],
     pre_norm: &[f32],
 ) -> Vec<f32> {
+    // Split the BF16 monolith into per-expert byte slices.
+    let bytes_per_gate_up = 2 * INTER * HIDDEN * 2;
+    let bytes_per_down = HIDDEN * INTER * 2;
+    let experts_gate_up: Vec<&[u8]> = (0..NUM_EXPERTS)
+        .map(|e| &gate_up[e * bytes_per_gate_up..(e + 1) * bytes_per_gate_up])
+        .collect();
+    let experts_down: Vec<&[u8]> = (0..NUM_EXPERTS)
+        .map(|e| &down[e * bytes_per_down..(e + 1) * bytes_per_down])
+        .collect();
     cpu_moe_forward(
         h,
         &MoeLayerWeights {
-            experts_gate_up: gate_up,
-            experts_down: down,
+            experts_gate_up,
+            experts_down,
+            expert_data_format: larql_compute::QuantFormat::BF16,
             router_proj,
             router_scale: &[],
             router_per_expert_scale: &[],

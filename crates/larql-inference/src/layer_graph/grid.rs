@@ -1378,7 +1378,7 @@ pub fn generate_with_remote_ffn(
             let t_ffn = std::time::Instant::now();
             // Try Q8K NEON path (avoids gate+up dequant on server; hidden must be
             // a multiple of 256 for Q8K block alignment).
-            let result = if hidden % 256 == 0 {
+            let result = if hidden.is_multiple_of(256) {
                 let h_ffn = apply_norm_for_ffn(weights, h_post_attn, layer);
                 let q8k = quantize_x_to_q8k(&h_ffn);
                 remote.forward_single_q8k(layer, &q8k).unwrap_or_else(|| {
@@ -1491,7 +1491,7 @@ fn dispatch_ffn_with_q8k_fallback(
 ) -> Vec<Vec<f32>> {
     let hidden = h_capture.first().map(|v| v.len()).unwrap_or(0);
     // Require hidden to be a multiple of 256 (Q8_K block size).
-    if hidden == 0 || hidden % 256 != 0 {
+    if hidden == 0 || !hidden.is_multiple_of(256) {
         return remote.forward_predispatch_all(h_capture);
     }
 

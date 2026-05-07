@@ -416,7 +416,7 @@ fn build_static_replacement(
         if let Some(row) = row {
             values.extend_from_slice(row);
         } else {
-            values.extend(std::iter::repeat(0.0).take(means.head_dim));
+            values.extend(std::iter::repeat_n(0.0, means.head_dim));
         }
     }
     Ok(Array2::from_shape_vec((seq_len, means.head_dim), values)?)

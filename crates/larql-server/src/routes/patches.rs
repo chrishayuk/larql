@@ -76,12 +76,10 @@ fn enrich_patch_ops(model: &crate::state::LoadedModel, patch: &mut larql_vindex:
         {
             // Synthesise gate vector if missing
             if gate_vector_b64.is_none() {
-                let encoding = model.tokenizer.encode(entity.as_str(), false);
-                if let Ok(enc) = encoding {
-                    let ids = enc.get_ids();
+                if let Ok(ids) = model.encode_cached_ids(entity.as_str(), false) {
                     if !ids.is_empty() {
                         let mut embed = vec![0.0f32; hidden];
-                        for &tok in ids {
+                        for &tok in &ids {
                             let row = model.embeddings.row(tok as usize);
                             for j in 0..hidden {
                                 embed[j] += row[j] * model.embed_scale;

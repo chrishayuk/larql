@@ -8,7 +8,7 @@
 //! 2. Normalise the row to unit length.
 //! 3. For each block-of-2 (Planar) or block-of-4 (Iso):
 //!    a. Pick the rotation index that, when applied, minimises the
-//!       sum-of-squares of the post-rotation codes (Lloyd-Max).
+//!    sum-of-squares of the post-rotation codes (Lloyd-Max).
 //!    b. Apply that rotation. Record the index.
 //! 4. Quantise each rotated coordinate to the closest codeword in
 //!    the format's codebook. Record codes.
@@ -26,9 +26,7 @@ use crate::format::{KvFormat, QuantizedKv};
 /// then multiplied by the per-row scale on dequant. The rotation
 /// step decorrelates blocks before quantisation so each codebook
 /// entry sees a tighter distribution than the raw values.
-const LM3_CODEBOOK: [f32; 8] = [
-    -0.875, -0.625, -0.375, -0.125, 0.125, 0.375, 0.625, 0.875,
-];
+const LM3_CODEBOOK: [f32; 8] = [-0.875, -0.625, -0.375, -0.125, 0.125, 0.375, 0.625, 0.875];
 
 /// 16-codeword (4-bit) uniform codebook in [-1, 1]. Mid-points of
 /// 16 equal-width bins.
@@ -127,11 +125,12 @@ fn apply_planar_inverse(rot: &[f32; 4], block: &[f32; 2]) -> [f32; 2] {
 
 fn apply_iso(rot: &[f32; 16], block: &[f32; 4]) -> [f32; 4] {
     let mut out = [0.0_f32; 4];
-    for i in 0..4 {
-        out[i] = rot[i * 4 + 0] * block[0]
-            + rot[i * 4 + 1] * block[1]
-            + rot[i * 4 + 2] * block[2]
-            + rot[i * 4 + 3] * block[3];
+    for (i, slot) in out.iter_mut().enumerate() {
+        let row = i * 4;
+        *slot = rot[row] * block[0]
+            + rot[row + 1] * block[1]
+            + rot[row + 2] * block[2]
+            + rot[row + 3] * block[3];
     }
     out
 }
@@ -139,11 +138,11 @@ fn apply_iso(rot: &[f32; 16], block: &[f32; 4]) -> [f32; 4] {
 fn apply_iso_inverse(rot: &[f32; 16], block: &[f32; 4]) -> [f32; 4] {
     // 4x4 rotation: inverse = transpose.
     let mut out = [0.0_f32; 4];
-    for i in 0..4 {
-        out[i] = rot[0 * 4 + i] * block[0]
-            + rot[1 * 4 + i] * block[1]
-            + rot[2 * 4 + i] * block[2]
-            + rot[3 * 4 + i] * block[3];
+    for (i, slot) in out.iter_mut().enumerate() {
+        *slot = rot[i] * block[0]
+            + rot[4 + i] * block[1]
+            + rot[8 + i] * block[2]
+            + rot[12 + i] * block[3];
     }
     out
 }
@@ -207,7 +206,7 @@ pub(crate) fn quantize(
     head_dim: usize,
 ) -> Result<QuantizedKv, RotorQuantError> {
     let bs = format.block_size();
-    if head_dim % bs != 0 {
+    if !head_dim.is_multiple_of(bs) {
         return Err(RotorQuantError::HeadDimNotDivisible {
             format,
             head_dim,
@@ -228,7 +227,7 @@ pub(crate) fn quantize(
     let n_blocks_per_row = head_dim / bs;
     let n_codes = n_rows * head_dim;
     let n_bits_total = n_codes * usize::from(bits);
-    let n_bytes = (n_bits_total + 7) / 8;
+    let n_bytes = n_bits_total.div_ceil(8);
 
     let mut codes = vec![0u8; n_bytes];
     let mut norms = Vec::with_capacity(n_rows);
@@ -298,9 +297,9 @@ pub(crate) fn quantize(
             }
 
             rotation_indices.push(best_rot);
-            for j in 0..bs {
+            for (j, code) in best_codes.iter().enumerate().take(bs) {
                 let bit_pos = (row * head_dim + blk * bs + j) * usize::from(bits);
-                pack_code(&mut codes, bit_pos, bits, best_codes[j]);
+                pack_code(&mut codes, bit_pos, bits, *code);
             }
         }
     }
@@ -329,7 +328,7 @@ pub(crate) fn dequantize(
     _invert_rotation: bool,
 ) -> Result<Vec<f32>, RotorQuantError> {
     let bs = qkv.format.block_size();
-    if qkv.head_dim % bs != 0 {
+    if !qkv.head_dim.is_multiple_of(bs) {
         return Err(RotorQuantError::HeadDimNotDivisible {
             format: qkv.format,
             head_dim: qkv.head_dim,
@@ -367,10 +366,10 @@ pub(crate) fn dequantize(
             let rot_idx = qkv.rotation_indices[row * n_blocks_per_row + blk] as usize;
             // Read codes back into rotated-space values.
             let mut rotated = [0.0_f32; 4];
-            for j in 0..bs {
+            for (j, slot) in rotated.iter_mut().enumerate().take(bs) {
                 let bit_pos = (row * qkv.head_dim + blk * bs + j) * usize::from(bits);
                 let code = unpack_code(&qkv.codes, bit_pos, bits) as usize;
-                rotated[j] = cb[code];
+                *slot = cb[code];
             }
             // Always apply the inverse of the forward rotation chosen
             // at quantise time. That undoes the rotation and recovers

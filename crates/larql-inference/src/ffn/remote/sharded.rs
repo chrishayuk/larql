@@ -137,7 +137,7 @@ impl LayerShardedBackend {
                 let shard_ptr = shard as *const RemoteWalkBackend;
                 if let Some(g) = shard_groups
                     .iter_mut()
-                    .find(|g| g.shard as *const RemoteWalkBackend == shard_ptr)
+                    .find(|g| std::ptr::eq(g.shard, shard_ptr))
                 {
                     g.layers.push((layer, layer));
                 } else {

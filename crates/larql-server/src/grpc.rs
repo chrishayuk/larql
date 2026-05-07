@@ -571,7 +571,7 @@ fn grpc_relations(model: &crate::state::LoadedModel) -> Result<RelationsResponse
             example,
         })
         .collect();
-    relations.sort_by(|a, b| b.count.cmp(&a.count));
+    relations.sort_by_key(|x| std::cmp::Reverse(x.count));
     let total = relations.len() as u32;
     relations.truncate(50);
 
@@ -704,11 +704,10 @@ fn grpc_stream_describe(
     req: &DescribeRequest,
     tx: &tokio::sync::mpsc::Sender<Result<DescribeLayerEvent, Status>>,
 ) {
-    let encoding = match model.tokenizer.encode(req.entity.as_str(), false) {
-        Ok(e) => e,
+    let token_ids: Vec<u32> = match model.encode_cached_ids(req.entity.as_str(), false) {
+        Ok(ids) => ids,
         Err(_) => return,
     };
-    let token_ids: Vec<u32> = encoding.get_ids().to_vec();
     if token_ids.is_empty() {
         let _ = tx.blocking_send(Ok(DescribeLayerEvent {
             layer: 0,

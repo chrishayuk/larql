@@ -295,13 +295,11 @@ pub async fn handle_chat_completions(
                     )));
                 }
             }
-            USER_ROLE | SYSTEM_ROLE => {
-                if m.content.is_none() {
-                    return Err(ServerError::BadRequest(format!(
-                        "messages[{i}] role={} requires content",
-                        m.role
-                    )));
-                }
+            USER_ROLE | SYSTEM_ROLE if m.content.is_none() => {
+                return Err(ServerError::BadRequest(format!(
+                    "messages[{i}] role={} requires content",
+                    m.role
+                )));
             }
             _ => {}
         }
@@ -447,14 +445,13 @@ fn stream_chat_completion(
         let weights: &mut larql_inference::ModelWeights = &mut weights_guard;
         let template = pick_template(&model);
         let prompt = render(template, &messages);
-        let encoding = match model.tokenizer.encode(prompt.as_str(), true) {
-            Ok(e) => e,
+        let prompt_ids: Vec<u32> = match model.encode_cached_ids(prompt.as_str(), true) {
+            Ok(ids) => ids,
             Err(e) => {
                 let _ = tx.blocking_send(error_chunk(&format!("tokenize: {e}")));
                 return;
             }
         };
-        let prompt_ids: Vec<u32> = encoding.get_ids().to_vec();
         if prompt_ids.is_empty() {
             let _ = tx.blocking_send(error_chunk("rendered prompt tokenises to empty"));
             return;

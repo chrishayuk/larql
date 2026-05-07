@@ -677,19 +677,15 @@ impl RemoteMoeBackend {
                 let t_dispatch = t0.elapsed().as_secs_f64() * 1000.0;
                 let mut h2_per_layer: Vec<Vec<f32>> = vec![vec![0.0f32; hidden]; num_layers];
                 for (_, result) in shard_results {
-                    match result {
-                        Ok(results) => {
-                            for r in results {
-                                if r.h2.len() == hidden {
-                                    for (acc, &v) in
-                                        h2_per_layer[r.layer].iter_mut().zip(r.h2.iter())
-                                    {
-                                        *acc += v;
-                                    }
+                    // partial deployment — Err contributes zeros
+                    if let Ok(results) = result {
+                        for r in results {
+                            if r.h2.len() == hidden {
+                                for (acc, &v) in h2_per_layer[r.layer].iter_mut().zip(r.h2.iter()) {
+                                    *acc += v;
                                 }
                             }
                         }
-                        Err(_) => {} // partial deployment — contribute zeros
                     }
                 }
                 let t_accum = t0.elapsed().as_secs_f64() * 1000.0;

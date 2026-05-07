@@ -257,7 +257,7 @@ fn main() {
         })
         .collect();
     let mut files = files;
-    files.sort_by(|a, b| b.1.cmp(&a.1));
+    files.sort_by_key(|x| std::cmp::Reverse(x.1));
     println!("  Files:");
     for (name, size) in &files {
         if *size > 1024 {

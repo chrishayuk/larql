@@ -9,9 +9,9 @@
 
 use std::sync::OnceLock;
 
+use larql_compute::cuda::CudaBackend;
 use larql_compute::prelude::*;
 use larql_compute::CpuBackend;
-use larql_compute::cuda::CudaBackend;
 use ndarray::Array2;
 
 /// Skip-flag for the GPU gate. We can't `return` early inside a
@@ -108,9 +108,7 @@ fn gemv_lm_head_parity() {
     let Some(cuda) = gpu_or_skip() else { return };
     // Llama-class LM head: 128256 outputs × 4096 inputs.
     let w = synth(128_256, 4096, 0x2);
-    let x: Vec<f32> = (0..4096)
-        .map(|i| ((i as f32) * 0.001).sin())
-        .collect();
+    let x: Vec<f32> = (0..4096).map(|i| ((i as f32) * 0.001).sin()).collect();
     let cpu_out = cpu_backend()
         .matmul_transb(
             Array2::from_shape_vec((1, 4096), x.clone()).unwrap().view(),
@@ -126,7 +124,11 @@ fn gemv_lm_head_parity() {
         .fold(0.0_f32, f32::max);
     assert!(max <= TOL, "max abs diff {max} exceeds {TOL}");
     // Cosine similarity for good measure.
-    let dot: f32 = cpu_out.iter().zip(cuda_out.iter()).map(|(a, b)| a * b).sum();
+    let dot: f32 = cpu_out
+        .iter()
+        .zip(cuda_out.iter())
+        .map(|(a, b)| a * b)
+        .sum();
     let na: f32 = cpu_out.iter().map(|v| v * v).sum::<f32>().sqrt();
     let nb: f32 = cuda_out.iter().map(|v| v * v).sum::<f32>().sqrt();
     let cos = dot / (na * nb + 1e-12);
@@ -190,7 +192,10 @@ fn kernel_cache_respects_xdg_cache_home() {
     if std::env::var("LARQL_CUDA_AVAILABLE").ok().as_deref() == Some("1") {
         let _ = CudaBackend::new();
         let expected = std::path::PathBuf::from("/tmp/larql-test-xdg/larql/cudarc/.version");
-        assert!(expected.exists(), "expected XDG-honoured cache at {expected:?}");
+        assert!(
+            expected.exists(),
+            "expected XDG-honoured cache at {expected:?}"
+        );
     }
     unsafe {
         match prev {

@@ -6,8 +6,7 @@
 //! as distinct rows alongside Standard / TurboQuant / Markov.
 
 use larql_rotorquant::{
-    dequantize_k, dequantize_v_with_inverse_rotation, quantize_k, quantize_v, KvFormat,
-    QuantizedKv,
+    dequantize_k, dequantize_v_with_inverse_rotation, quantize_k, quantize_v, KvFormat, QuantizedKv,
 };
 
 use crate::{model_config::ModelConfig, KvStrategy};
@@ -135,10 +134,24 @@ impl KvStrategy for RotorQuantStrategy {
         let rotation_len = read_u32(encoded, &mut p) as usize;
 
         let qk = read_quantized(
-            encoded, &mut p, self.format, n_rows, head_dim, codes_len, norms_len, rotation_len,
+            encoded,
+            &mut p,
+            self.format,
+            n_rows,
+            head_dim,
+            codes_len,
+            norms_len,
+            rotation_len,
         );
         let qv = read_quantized(
-            encoded, &mut p, self.format, n_rows, head_dim, codes_len, norms_len, rotation_len,
+            encoded,
+            &mut p,
+            self.format,
+            n_rows,
+            head_dim,
+            codes_len,
+            norms_len,
+            rotation_len,
         );
 
         let k_flat = dequantize_k(&qk).unwrap_or_default();
@@ -161,7 +174,7 @@ impl KvStrategy for RotorQuantStrategy {
         let bits = self.format.bits() as usize;
         let bs = self.format.block_size();
         let rows = seq_len * config.layers * config.kv_heads;
-        let bytes_per_row = (head_dim * bits + 7) / 8 + 4 + (head_dim / bs) * 2;
+        let bytes_per_row = (head_dim * bits).div_ceil(8) + 4 + (head_dim / bs) * 2;
         2 * rows * bytes_per_row
     }
 }

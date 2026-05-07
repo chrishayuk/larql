@@ -26,3 +26,6 @@ tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 thiserror = { workspace = true }
 futures = "0.3"
 futures-core = "0.3"
+
+[lints]
+workspace = true

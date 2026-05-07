@@ -125,11 +125,7 @@ impl LoadedModel {
     /// Returns the IDs as `Vec<u32>`. Call sites that need the full
     /// `tokenizers::Encoding` (offsets, attention mask) should keep
     /// using the raw tokeniser; the cache only holds IDs.
-    pub async fn encode_cached_ids(
-        &self,
-        text: &str,
-        with_specials: bool,
-    ) -> Result<Vec<u32>, String> {
+    pub fn encode_cached_ids(&self, text: &str, with_specials: bool) -> Result<Vec<u32>, String> {
         // The cache key folds in `with_specials` as a single-byte
         // prefix so the two namespaces never collide.
         let key_owned: String;
@@ -438,7 +434,7 @@ mod loaded_model_tests {
             expert_filter: None,
             unit_filter: None,
             moe_remote: None,
-        tokenizer_cache: std::sync::Arc::new(crate::tokenizer_cache::TokenizerCache::new(0, 0)),
+            tokenizer_cache: std::sync::Arc::new(crate::tokenizer_cache::TokenizerCache::new(0, 0)),
             #[cfg(feature = "metal-experts")]
             metal_backend: std::sync::OnceLock::new(),
             #[cfg(feature = "metal-experts")]

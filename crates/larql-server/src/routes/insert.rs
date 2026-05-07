@@ -90,11 +90,10 @@ fn apply_insert(
     let mut inserted = 0usize;
 
     // Target embedding for down vector
-    let target_encoding = match model.tokenizer.encode(req.target.as_str(), false) {
-        Ok(e) => e,
+    let target_ids: Vec<u32> = match model.encode_cached_ids(req.target.as_str(), false) {
+        Ok(ids) => ids,
         Err(_) => return (0, false),
     };
-    let target_ids: Vec<u32> = target_encoding.get_ids().to_vec();
     let target_id = target_ids.first().copied().unwrap_or(0);
 
     let mut target_embed = vec![0.0f32; hidden];
@@ -139,13 +138,12 @@ fn apply_insert(
                 }
                 gv
             } else {
-                let enc = match model.tokenizer.encode(req.entity.as_str(), false) {
-                    Ok(e) => e,
+                let ids = match model.encode_cached_ids(req.entity.as_str(), false) {
+                    Ok(ids) => ids,
                     Err(_) => continue,
                 };
-                let ids = enc.get_ids();
                 let mut ev = vec![0.0f32; hidden];
-                for &tok in ids {
+                for &tok in &ids {
                     let row = model.embeddings.row(tok as usize);
                     for j in 0..hidden {
                         ev[j] += row[j] * model.embed_scale;

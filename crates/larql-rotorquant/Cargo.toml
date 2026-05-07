@@ -28,3 +28,6 @@ cuda = ["dep:cudarc"]
 
 [dev-dependencies]
 # (CPU reference round-trip tests use only this crate's own API.)
+
+[lints]
+workspace = true

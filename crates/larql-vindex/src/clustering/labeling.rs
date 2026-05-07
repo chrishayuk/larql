@@ -68,7 +68,7 @@ pub fn auto_label_clusters(
         let label = if top.is_empty() {
             let mut freq: Vec<(String, usize)> =
                 cluster_tok.iter().map(|(t, &c)| (t.clone(), c)).collect();
-            freq.sort_by(|a, b| b.1.cmp(&a.1));
+            freq.sort_by_key(|x| std::cmp::Reverse(x.1));
             let fallback: Vec<String> = freq
                 .iter()
                 .filter(|(t, _)| t.len() >= 3)

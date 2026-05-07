@@ -26,3 +26,6 @@ msgpack = ["dep:rmp-serde"]
 
 [dev-dependencies]
 assert_approx_eq = "1"
+
+[lints]
+workspace = true

@@ -3233,7 +3233,9 @@ pub(super) fn run_oracle_pq(args: OraclePqArgs) -> Result<(), Box<dyn std::error
                         {
                             continue;
                         }
-                        if !rows_by_rank.contains_key(&cluster_model.qk_rank) {
+                        if let std::collections::hash_map::Entry::Vacant(e) =
+                            rows_by_rank.entry(cluster_model.qk_rank)
+                        {
                             let rows = if let Some(qk_rank) = cluster_model.qk_rank {
                                 capture_reduced_qk_attention_rows(
                                     &mut weights,
@@ -3250,7 +3252,7 @@ pub(super) fn run_oracle_pq(args: OraclePqArgs) -> Result<(), Box<dyn std::error
                                     *head,
                                 )?
                             };
-                            rows_by_rank.insert(cluster_model.qk_rank, rows);
+                            e.insert(rows);
                         }
                         let attention_rows = rows_by_rank
                             .get(&cluster_model.qk_rank)

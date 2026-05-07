@@ -170,33 +170,44 @@ cargo test -p larql-server --lib tokenizer_cache                    →  7 tests
                                                                     92 tests
 ```
 
-Plus shipped but not yet wired: server-tokenizer-cache's
-`TokenizerCache` type is constructed and tested but the route
-handlers (`/v1/infer`, OpenAI `/v1/chat/completions`, etc.)
-haven't been migrated to consult it yet — that's the next
-bite-sized follow-up.
-
-```
-```
+Plus shipped on the `fix/encode-cached-ids-sync` PR branch:
+`server-tokenizer-cache` is now wired into all nine
+`Tokenizer::encode` call sites in `larql-server`
+(`routes/insert.rs`, `routes/stream.rs`,
+`routes/openai/{chat,completions}.rs`, `routes/patches.rs`,
+`grpc.rs`). The `LoadedModel::encode_cached_ids(&str, bool)`
+helper is sync; cache hits skip BPE for the chat-template
+prefix shared across requests.
 
 All require `LARQL_CUDA_AVAILABLE=1` for the GPU-gated subset; the
 RotorQuant tests run anywhere (CPU reference only today).
 
-## What `cargo check --workspace` reports today
+## What `make ci` reports today
 
-Clean. 94 warnings in `larql-cli` are pre-existing dead-code /
-unused-mut style; not related to this work.
+**Green** on `fix/encode-cached-ids-sync` (PR pending; main is
+currently broken from commit `4ffdc89` which migrated
+`routes/insert.rs` before `encode_cached_ids` had been changed
+from `async fn` to `fn`).
+
+The PR also catches the workspace up to Rust 1.95's tightened
+clippy: a `[workspace.lints]` block in the root `Cargo.toml`
+allows the most pedantic of the newly-promoted lints
+(`too_many_arguments`, `manual_is_multiple_of`,
+`unnecessary_sort_by`, `manual_div_ceil`, etc.) which would
+otherwise demand churning every dev/exploratory module
+(`larql-cli/.../ov_rd/`, `parity.rs`, `shannon_cmd.rs`). New
+code should still satisfy them; this just keeps `cargo clippy
+--workspace -- -D warnings` from drowning out real issues.
 
 ## Known pre-existing breakage I did NOT fix
 
 These are workspace issues that predate the CUDA workstream and are
 not on the critical path for it:
 
-- `crates/larql-server/tests/test_expert_endpoint.rs` — fails to
-  compile because `MoeLayerWeights` API drifted (added
-  `expert_data_format`; `experts_gate_up`/`experts_down` moved from
-  `&[u8]` to `Vec<&[u8]>`). Out of scope until
-  `attention-service-routes` lands.
+- ~~`crates/larql-server/tests/test_expert_endpoint.rs` —
+  `MoeLayerWeights` API drift~~. **Repaired** on
+  `fix/encode-cached-ids-sync` (4/4 tests now pass; this also
+  unblocks `attention-service-routes`).
 
 ## Ledger of commits (most recent last)
 
@@ -211,6 +222,12 @@ not on the critical path for it:
 | _post-wrapup_ | [rotorquant-strategy] RotorQuantStrategy joins kv-cache-benchmark |
 | _post-wrapup_ | [router-heterogeneous-shards] capability-tagged routing in larql-router |
 | `5cb199d` | [rotorquant-attention-integration] KvFormat side-table on KvCache |
+| `becb5cf` | [rotorquant-promote-on-read] auto-promote on cache read |
+| `263bf6d` | [server-tokenizer-cache] [router-prefix-aware-routing] |
+| `1cedd8e`+`4ffdc89` | wire TokenizerCache into LoadedModel + first call site |
+| `0fc21a8` (PR) | make encode_cached_ids sync to match call sites |
+| `a00f28c` (PR) | migrate remaining 8 encode call sites |
+| `07d2399`+`cd23265` (PR) | rust 1.95 clippy + workspace lint policy |
 
 ## Bring-up
 

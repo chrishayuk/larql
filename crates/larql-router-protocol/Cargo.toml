@@ -15,3 +15,6 @@ tokio-stream = "0.1"
 [build-dependencies]
 tonic-build = "0.13"
 protobuf-src = "2"
+
+[lints]
+workspace = true

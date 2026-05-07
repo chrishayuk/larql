@@ -297,8 +297,8 @@ pub(super) fn fit_gamma_projected_address_models(
                         learned_epochs,
                         learned_lr,
                         learned_l2,
-                        ((*head).layer as u64) << 32
-                            ^ ((*head).head as u64) << 24
+                        (head.layer as u64) << 32
+                            ^ (head.head as u64) << 24
                             ^ (projection_layer as u64) << 8
                             ^ rank as u64,
                     ),
@@ -308,7 +308,7 @@ pub(super) fn fit_gamma_projected_address_models(
     }
 
     let mut out = HashMap::new();
-    for ((head, config), _) in codebooks {
+    for (head, config) in codebooks.keys() {
         let train_samples = samples_by_head_config
             .get(&(*head, *config))
             .cloned()
@@ -703,7 +703,7 @@ fn collect_gamma_code_samples(
         .max()
         .unwrap_or(max_head_layer);
     let max_layer = max_head_layer.max(max_projection_layer);
-    let projection_set = projection_layers.iter().copied().collect::<Vec<_>>();
+    let projection_set = projection_layers.to_vec();
     let mut all_samples = Vec::new();
 
     for (prompt_idx, record) in prompts.iter().enumerate() {

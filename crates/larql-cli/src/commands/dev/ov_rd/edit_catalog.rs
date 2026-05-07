@@ -161,7 +161,7 @@ pub(super) fn run_oracle_edit_catalog(
     if edit_counts.is_empty() {
         return Err("no edit counts selected".into());
     }
-    if edit_counts.iter().any(|&edits| edits == 0) {
+    if edit_counts.contains(&0) {
         return Err("--edit-counts values must be greater than zero".into());
     }
     let mut spaces = parse_string_list(&args.spaces)

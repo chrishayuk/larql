@@ -81,3 +81,6 @@ harness = false
 [[bench]]
 name = "cpu_vs_gpu"
 harness = false
+
+[lints]
+workspace = true
