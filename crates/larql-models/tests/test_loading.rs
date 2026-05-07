@@ -398,6 +398,50 @@ fn load_bf16_tensors_converts_to_f32() {
 }
 
 #[test]
+fn load_fp8_e4m3_tensor_uses_paired_scale_inv() {
+    let dir = TempDir::new().unwrap();
+    write_model_dir(
+        dir.path(),
+        &[
+            (
+                "embed_tokens.weight",
+                "F32",
+                &[10, 4],
+                f32_bytes(&[1.0f32; 40]),
+            ),
+            ("norm.weight", "F32", &[4], f32_bytes(&[1.0f32; 4])),
+            ("lm_head.weight", "F32", &[10, 4], f32_bytes(&[1.0f32; 40])),
+            (
+                "layers.0.mlp.experts.0.gate_proj.weight",
+                "F8_E4M3",
+                &[2, 2],
+                vec![0x38, 0x40, 0x48, 0xc0],
+            ),
+            (
+                "layers.0.mlp.experts.0.gate_proj.weight_scale_inv",
+                "F32",
+                &[1, 1],
+                f32_bytes(&[0.5]),
+            ),
+        ],
+    );
+
+    let weights = load_model_dir(dir.path()).unwrap();
+    let gate = weights
+        .tensors
+        .get("layers.0.mlp.experts.0.gate_proj.weight")
+        .unwrap();
+    assert_eq!(gate.shape(), &[2, 2]);
+    assert_eq!(gate[[0, 0]], 0.5);
+    assert_eq!(gate[[0, 1]], 1.0);
+    assert_eq!(gate[[1, 0]], 2.0);
+    assert_eq!(gate[[1, 1]], -1.0);
+    assert!(!weights
+        .tensors
+        .contains_key("layers.0.mlp.experts.0.gate_proj.weight_scale_inv"));
+}
+
+#[test]
 fn load_1d_norm_tensor_goes_into_vectors() {
     let dir = TempDir::new().unwrap();
     write_model_dir(

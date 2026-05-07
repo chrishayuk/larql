@@ -162,6 +162,79 @@ pub fn decode_e4m3(bytes: &[u8]) -> Vec<f32> {
     bytes.iter().map(|&b| e4m3_to_f32(b)).collect()
 }
 
+/// Decode an E4M3 tensor and apply per-block inverse scales.
+///
+/// Kimi K2 stores FP8 expert weights as `*.weight` plus a paired
+/// `*.weight_scale_inv` tensor. For a weight shape `[rows, cols]`, the scale
+/// tensor shape is `[ceil(rows / block_size), ceil(cols / block_size)]`; each
+/// decoded E4M3 value is multiplied by the corresponding scale block.
+pub fn decode_e4m3_scaled_blocks(
+    bytes: &[u8],
+    weight_shape: &[usize],
+    scales: &[f32],
+    scale_shape: &[usize],
+    block_size: usize,
+) -> Result<Vec<f32>, String> {
+    if weight_shape.len() != 2 {
+        return Err(format!(
+            "FP8 scaled block decode expects 2D weights, got {weight_shape:?}"
+        ));
+    }
+    if scale_shape.len() != 2 {
+        return Err(format!(
+            "FP8 scaled block decode expects 2D scales, got {scale_shape:?}"
+        ));
+    }
+    if block_size == 0 {
+        return Err("FP8 scaled block decode block_size must be > 0".to_string());
+    }
+
+    let rows = weight_shape[0];
+    let cols = weight_shape[1];
+    let scale_rows = scale_shape[0];
+    let scale_cols = scale_shape[1];
+    let expected_values = rows
+        .checked_mul(cols)
+        .ok_or_else(|| format!("FP8 tensor shape overflows: {weight_shape:?}"))?;
+    let expected_scales = scale_rows
+        .checked_mul(scale_cols)
+        .ok_or_else(|| format!("FP8 scale shape overflows: {scale_shape:?}"))?;
+
+    if bytes.len() != expected_values {
+        return Err(format!(
+            "FP8 tensor byte length {} does not match shape {:?} ({expected_values})",
+            bytes.len(),
+            weight_shape
+        ));
+    }
+    if scales.len() != expected_scales {
+        return Err(format!(
+            "FP8 scale length {} does not match shape {:?} ({expected_scales})",
+            scales.len(),
+            scale_shape
+        ));
+    }
+    if scale_rows != rows.div_ceil(block_size) || scale_cols != cols.div_ceil(block_size) {
+        return Err(format!(
+            "FP8 scale shape {:?} is incompatible with weight shape {:?} and block size {block_size}",
+            scale_shape,
+            weight_shape
+        ));
+    }
+
+    let mut out = Vec::with_capacity(expected_values);
+    for row in 0..rows {
+        let scale_row = row / block_size;
+        for col in 0..cols {
+            let scale_col = col / block_size;
+            let byte = bytes[row * cols + col];
+            let scale = scales[scale_row * scale_cols + scale_col];
+            out.push(e4m3_to_f32(byte) * scale);
+        }
+    }
+    Ok(out)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -230,6 +303,16 @@ mod tests {
         let f_back = e4m3_to_f32(b);
         // Round-to-nearest-even picks 1.0 (mantissa 0, even) over 1.125 (mantissa 1, odd).
         assert_eq!(f_back, 1.0);
+    }
+
+    #[test]
+    fn decode_e4m3_scaled_blocks_uses_kimi_block_scales() {
+        let bytes = vec![0x38, 0x40, 0x48, 0xc0]; // 1.0, 2.0, 4.0, -2.0
+        let scales = vec![0.5, 2.0, 10.0, 20.0];
+
+        let decoded = decode_e4m3_scaled_blocks(&bytes, &[2, 2], &scales, &[2, 2], 1).unwrap();
+
+        assert_eq!(decoded, vec![0.5, 4.0, 40.0, -40.0]);
     }
 
     // ── Edge cases ──────────────────────────────────────────────────────────

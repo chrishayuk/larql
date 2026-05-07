@@ -54,6 +54,7 @@ const EXPERTS_MULTI_LAYER_BATCH_Q8K: &str = "/v1/experts/multi-layer-batch-q8k";
 const EXPERT: &str = "/v1/expert/{layer}/{expert_id}";
 const EXPLAIN_INFER: &str = "/v1/explain-infer";
 const INSERT: &str = "/v1/insert";
+const MEMORY_UPDATES: &str = "/v1/memory/updates";
 const STREAM: &str = "/v1/stream";
 const WARMUP: &str = "/v1/warmup";
 const EMBED: &str = "/v1/embed";
@@ -76,6 +77,7 @@ const M_PATCHES: &str = "/v1/{model_id}/patches";
 const M_PATCH_BY_NAME: &str = "/v1/{model_id}/patches/{name}";
 const M_EXPLAIN_INFER: &str = "/v1/{model_id}/explain-infer";
 const M_INSERT: &str = "/v1/{model_id}/insert";
+const M_MEMORY_UPDATES: &str = "/v1/{model_id}/memory/updates";
 const M_EMBED: &str = "/v1/{model_id}/embed";
 const M_EMBED_TOKEN: &str = "/v1/{model_id}/embed/{token_id}";
 const M_LOGITS: &str = "/v1/{model_id}/logits";
@@ -124,6 +126,7 @@ pub fn single_model_router(state: Arc<AppState>) -> Router {
         .route(EXPERT, post(expert::handle_expert))
         .route(EXPLAIN_INFER, post(explain::handle_explain))
         .route(INSERT, post(insert::handle_insert))
+        .route(MEMORY_UPDATES, post(insert::handle_memory_update_batch))
         .route(STREAM, get(stream::handle_stream))
         .route(HEALTH, get(health::handle_health))
         .route(MODELS, get(models::handle_models))
@@ -159,6 +162,10 @@ pub fn multi_model_router(state: Arc<AppState>) -> Router {
         .route(M_PATCH_BY_NAME, delete(patches::handle_remove_patch_multi))
         .route(M_EXPLAIN_INFER, post(explain::handle_explain_multi))
         .route(M_INSERT, post(insert::handle_insert_multi))
+        .route(
+            M_MEMORY_UPDATES,
+            post(insert::handle_memory_update_batch_multi),
+        )
         // Embed server endpoints for multi-model mode
         .route(M_EMBED, post(embed::handle_embed_multi))
         .route(M_EMBED_TOKEN, get(embed::handle_embed_single_multi))

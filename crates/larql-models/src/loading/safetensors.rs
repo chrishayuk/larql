@@ -32,6 +32,8 @@ const BLOCK_SPARSE_ROUTER_WEIGHT: &str = "block_sparse_moe.gate.weight";
 const MIXTRAL_GATE_PROJ: &str = "w1";
 const MIXTRAL_DOWN_PROJ: &str = "w2";
 const MIXTRAL_UP_PROJ: &str = "w3";
+const FP8_SCALE_INV_SUFFIX: &str = "_scale_inv";
+const KIMI_FP8_BLOCK_SIZE: usize = 128;
 
 /// Returns true when `key` names a FFN weight tensor (gate/up/down projection
 /// or packed expert block). Used by `load_model_dir_walk_only` to skip
@@ -223,7 +225,10 @@ fn load_model_dir_filtered_with_validation(
                     if skip_key(&key) {
                         continue;
                     }
-                    let data = match tensor_to_f32(&view) {
+                    if is_fp8_scale_tensor(&key) {
+                        continue;
+                    }
+                    let data = match tensor_to_f32_maybe_scaled(&st, &name, &view) {
                         Ok(d) => d,
                         Err(ModelError::UnsupportedDtype(ref dtype)) => {
                             skipped_tensors.push((key, dtype.clone()));
@@ -273,7 +278,10 @@ fn load_model_dir_filtered_with_validation(
                         continue;
                     }
 
-                    let data = match tensor_to_f32(&view) {
+                    if is_fp8_scale_tensor(&key) {
+                        continue;
+                    }
+                    let data = match tensor_to_f32_maybe_scaled(&st, &name, &view) {
                         Ok(d) => d,
                         Err(ModelError::UnsupportedDtype(ref dtype)) => {
                             skipped_tensors.push((key, dtype.clone()));
@@ -582,6 +590,36 @@ fn tensor_to_f32(view: &safetensors::tensor::TensorView<'_>) -> Result<Vec<f32>,
         safetensors::Dtype::BF16 => Ok(half::decode_bf16(view.data())),
         other => Err(ModelError::UnsupportedDtype(format!("{other:?}"))),
     }
+}
+
+fn tensor_to_f32_maybe_scaled(
+    st: &safetensors::SafeTensors<'_>,
+    name: &str,
+    view: &safetensors::tensor::TensorView<'_>,
+) -> Result<Vec<f32>, ModelError> {
+    if view.dtype() == safetensors::Dtype::F8_E4M3 {
+        let scale_name = format!("{name}{FP8_SCALE_INV_SUFFIX}");
+        let scale_view = st.tensor(&scale_name).map_err(|_| {
+            ModelError::MissingTensor(format!(
+                "{scale_name} (required to dequantize FP8 tensor {name})"
+            ))
+        })?;
+        let scales = tensor_to_f32(&scale_view)?;
+        return crate::quant::fp8::decode_e4m3_scaled_blocks(
+            view.data(),
+            view.shape(),
+            &scales,
+            scale_view.shape(),
+            KIMI_FP8_BLOCK_SIZE,
+        )
+        .map_err(ModelError::Parse);
+    }
+
+    tensor_to_f32(view)
+}
+
+fn is_fp8_scale_tensor(key: &str) -> bool {
+    key.ends_with(FP8_SCALE_INV_SUFFIX)
 }
 
 #[cfg(test)]

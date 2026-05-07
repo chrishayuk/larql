@@ -86,7 +86,9 @@ pub fn detect_from_json(config: &serde_json::Value) -> Box<dyn ModelArchitecture
         // Qwen family (dense and MoE share same keys)
         t if t.starts_with("qwen") => Box::new(QwenArch::from_config(model_config)),
         // DeepSeek family (MoE + MLA)
-        t if t.starts_with("deepseek") => Box::new(DeepSeekArch::from_config(model_config)),
+        t if t.starts_with("deepseek") || t == "kimi_k2" => {
+            Box::new(DeepSeekArch::from_config(model_config))
+        }
         // StarCoder 2
         "starcoder2" => Box::new(StarCoder2Arch::from_config(model_config)),
         // Granite family (dense and MoE share same base keys)
@@ -359,6 +361,35 @@ mod tests {
         assert_eq!(arch.embed_scale(), 1.0);
         assert!(!arch.has_post_norms());
         assert!(arch.attn_q_norm_key(0).is_none());
+    }
+
+    #[test]
+    fn test_detect_kimi_k2_as_deepseek() {
+        let config = serde_json::json!({
+            "architectures": ["DeepseekV3ForCausalLM"],
+            "model_type": "kimi_k2",
+            "hidden_size": 7168,
+            "num_hidden_layers": 61,
+            "num_attention_heads": 64,
+            "num_key_value_heads": 64,
+            "n_routed_experts": 384,
+            "num_experts_per_tok": 8,
+            "moe_intermediate_size": 2048,
+            "kv_lora_rank": 512,
+            "q_lora_rank": 1536,
+            "n_shared_experts": 1,
+            "max_position_embeddings": 131072,
+        });
+
+        let arch = detect_from_json(&config);
+        assert_eq!(arch.family(), "deepseek");
+        assert!(arch.is_moe());
+        assert!(arch.uses_mla());
+        assert_eq!(arch.config().hidden_size, 7168);
+        assert_eq!(arch.config().num_layers, 61);
+        assert_eq!(arch.config().num_experts, Some(384));
+        assert_eq!(arch.config().num_experts_per_token, Some(8));
+        assert_eq!(arch.config().moe_intermediate_size, Some(2048));
     }
 
     #[test]

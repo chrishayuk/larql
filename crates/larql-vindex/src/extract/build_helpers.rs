@@ -1,3 +1,5 @@
+#![allow(dead_code)]
+
 //! Helpers for the `build_vindex` extraction pipeline.
 //!
 //! Each function is a discrete pipeline stage or utility used by

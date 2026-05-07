@@ -16,7 +16,7 @@ use crate::error::ServerError;
 use crate::session::extract_session_id;
 use crate::state::{elapsed_ms, AppState, LoadedModel};
 
-#[derive(Deserialize)]
+#[derive(Clone, Debug, Deserialize)]
 pub struct InsertRequest {
     pub entity: String,
     pub relation: String,
@@ -27,6 +27,44 @@ pub struct InsertRequest {
     pub alpha: f32,
     #[serde(default = "default_confidence")]
     pub confidence: f32,
+}
+
+#[derive(Clone, Debug, Deserialize)]
+pub struct MemoryUpdateBatchRequest {
+    /// Optional producer label, e.g. `ferrosa-memory`.
+    #[serde(default)]
+    pub source: Option<String>,
+    /// Knowledge updates to apply as INSERT patch operations.
+    pub updates: Vec<InsertRequest>,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn memory_update_batch_deserializes_ferrosa_fact_payload() {
+        let req: MemoryUpdateBatchRequest = serde_json::from_value(serde_json::json!({
+            "source": "ferrosa-memory",
+            "updates": [{
+                "entity": "Kimi K2",
+                "relation": "learned_fact",
+                "target": "vindex patches can represent long term memory",
+                "confidence": 0.97,
+                "alpha": 0.2
+            }]
+        }))
+        .unwrap();
+
+        assert_eq!(req.source.as_deref(), Some("ferrosa-memory"));
+        assert_eq!(req.updates.len(), 1);
+        assert_eq!(req.updates[0].entity, "Kimi K2");
+        assert_eq!(req.updates[0].relation, "learned_fact");
+        assert_eq!(
+            req.updates[0].target,
+            "vindex patches can represent long term memory"
+        );
+    }
 }
 
 fn default_alpha() -> f32 {
@@ -175,7 +213,8 @@ fn apply_insert(
             }],
         };
 
-        patched.insert_feature(layer, feature, gate_vec, meta);
+        patched.insert_feature(layer, feature, gate_vec.clone(), meta);
+        patched.set_up_vector(layer, feature, gate_vec);
         patched.set_down_vector(layer, feature, down_vec);
         inserted += 1;
     }
@@ -237,6 +276,35 @@ fn run_insert(
     }))
 }
 
+fn run_memory_update_batch(
+    state: &AppState,
+    model: &LoadedModel,
+    req: &MemoryUpdateBatchRequest,
+    session_id: Option<&str>,
+) -> Result<serde_json::Value, ServerError> {
+    let start = std::time::Instant::now();
+    let mut results = Vec::with_capacity(req.updates.len());
+    let mut inserted_total = 0usize;
+
+    for update in &req.updates {
+        let result = run_insert(state, model, update, session_id)?;
+        inserted_total += result
+            .get("inserted")
+            .and_then(serde_json::Value::as_u64)
+            .unwrap_or(0) as usize;
+        results.push(result);
+    }
+
+    Ok(serde_json::json!({
+        "source": req.source,
+        "updates": req.updates.len(),
+        "inserted": inserted_total,
+        "results": results,
+        "session": session_id,
+        "latency_ms": elapsed_ms(start),
+    }))
+}
+
 pub async fn handle_insert(
     State(state): State<Arc<AppState>>,
     headers: HeaderMap,
@@ -267,5 +335,40 @@ pub async fn handle_insert_multi(
         tokio::task::spawn_blocking(move || run_insert(&state2, &model, &req, sid.as_deref()))
             .await
             .map_err(|e| ServerError::Internal(e.to_string()))??;
+    Ok(Json(result))
+}
+
+pub async fn handle_memory_update_batch(
+    State(state): State<Arc<AppState>>,
+    headers: HeaderMap,
+    Json(req): Json<MemoryUpdateBatchRequest>,
+) -> Result<Json<serde_json::Value>, ServerError> {
+    state.bump_requests();
+    let model = Arc::clone(state.model_or_err(None)?);
+    let sid = extract_session_id(&headers);
+    let state2 = Arc::clone(&state);
+    let result = tokio::task::spawn_blocking(move || {
+        run_memory_update_batch(&state2, &model, &req, sid.as_deref())
+    })
+    .await
+    .map_err(|e| ServerError::Internal(e.to_string()))??;
+    Ok(Json(result))
+}
+
+pub async fn handle_memory_update_batch_multi(
+    State(state): State<Arc<AppState>>,
+    Path(model_id): Path<String>,
+    headers: HeaderMap,
+    Json(req): Json<MemoryUpdateBatchRequest>,
+) -> Result<Json<serde_json::Value>, ServerError> {
+    state.bump_requests();
+    let model = Arc::clone(state.model_or_err(Some(&model_id))?);
+    let sid = extract_session_id(&headers);
+    let state2 = Arc::clone(&state);
+    let result = tokio::task::spawn_blocking(move || {
+        run_memory_update_batch(&state2, &model, &req, sid.as_deref())
+    })
+    .await
+    .map_err(|e| ServerError::Internal(e.to_string()))??;
     Ok(Json(result))
 }
