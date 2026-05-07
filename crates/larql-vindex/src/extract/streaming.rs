@@ -330,6 +330,55 @@ fn read_packed_expert_slice_by_type(
 }
 
 #[cfg_attr(not(test), allow(dead_code))]
+fn write_deepseek2_packed_gate_vectors<W: Write>(
+    writer: &mut W,
+    catalog: &GgufCatalog,
+    layout: &GgufDeepseek2Layout,
+    layer: usize,
+    offset: u64,
+    dtype: StorageDtype,
+) -> Result<VindexLayerInfo, VindexError> {
+    let gate_name = layout
+        .packed_experts
+        .get(&(layer, GgufExpertComponent::Gate))
+        .ok_or_else(|| VindexError::MissingTensor(format!("blk.{layer}.ffn_gate_exps.weight")))?;
+    let entry = catalog
+        .tensor(gate_name)
+        .ok_or_else(|| VindexError::MissingTensor(gate_name.to_string()))?;
+    let [_cols, rows, experts] = packed_expert_dims(entry)?;
+
+    let mut length = 0u64;
+    for expert_idx in 0..experts {
+        let gate = read_packed_expert_slice_by_type(catalog, gate_name, expert_idx)?;
+        length += write_floats(writer, gate.as_slice().unwrap(), dtype)?;
+    }
+
+    Ok(VindexLayerInfo {
+        layer,
+        num_features: rows * experts,
+        offset,
+        length,
+        num_experts: Some(experts),
+        num_features_per_expert: Some(rows),
+    })
+}
+
+#[cfg_attr(not(test), allow(dead_code))]
+fn packed_expert_dims(entry: &GgufTensorEntry) -> Result<[usize; 3], VindexError> {
+    if entry.dims.len() != 3 {
+        return Err(VindexError::Parse(format!(
+            "packed expert tensor {} must have 3 dims, got {:?}",
+            entry.name, entry.dims
+        )));
+    }
+    Ok([
+        entry.dims[0] as usize,
+        entry.dims[1] as usize,
+        entry.dims[2] as usize,
+    ])
+}
+
+#[cfg_attr(not(test), allow(dead_code))]
 fn read_packed_expert_slice_f32(
     catalog: &GgufCatalog,
     tensor_name: &str,
@@ -1503,6 +1552,55 @@ mod tests {
         let err = packed_expert_slice(catalog.tensor("blk.0.ffn_gate_exps.weight").unwrap(), 384)
             .unwrap_err();
         assert!(err.to_string().contains("expert index 384 out of range"));
+    }
+
+    #[test]
+    fn write_deepseek2_packed_gate_vectors_streams_one_layer_artifact() {
+        let tmp = tempfile::tempdir().unwrap();
+        let gate_name = "blk.0.ffn_gate_exps.weight";
+        let gate_shard = tmp.path().join("Kimi-00001-of-00001.gguf");
+        let values = vec![
+            1.0f32, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0, 9.0, 10.0, 11.0, 12.0, 13.0, 14.0, 15.0,
+            16.0,
+        ];
+        write_minimal_gguf_header_with_f32_payload(
+            &gate_shard,
+            "deepseek2",
+            1,
+            gate_name,
+            &[4, 2, 2],
+            &values,
+        );
+
+        let catalog = build_gguf_catalog(&[gate_shard]).unwrap();
+        let layout = classify_deepseek2_layout(&catalog).unwrap();
+        let mut out = Vec::new();
+
+        let info = write_deepseek2_packed_gate_vectors(
+            &mut out,
+            &catalog,
+            &layout,
+            0,
+            17,
+            StorageDtype::F32,
+        )
+        .unwrap();
+
+        assert_eq!(info.layer, 0);
+        assert_eq!(info.num_features, 4);
+        assert_eq!(info.num_experts, Some(2));
+        assert_eq!(info.num_features_per_expert, Some(2));
+        assert_eq!(info.offset, 17);
+        assert_eq!(
+            info.length,
+            (values.len() * std::mem::size_of::<f32>()) as u64
+        );
+        assert_eq!(out.len(), values.len() * std::mem::size_of::<f32>());
+        let decoded: Vec<f32> = out
+            .chunks_exact(4)
+            .map(|bytes| f32::from_le_bytes(bytes.try_into().unwrap()))
+            .collect();
+        assert_eq!(decoded, values);
     }
 
     #[test]

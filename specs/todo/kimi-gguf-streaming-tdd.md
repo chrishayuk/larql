@@ -201,4 +201,28 @@ The extractor now has independent readers for F32, Q4_K, and Q6_K packed expert 
 - [x] Real Kimi smoke still returns the same unsupported-layout diagnostic until the full extractor phase is wired.
 
 ### Result
-Added a private `GgufPackedExpertLayer` bridge plus `read_deepseek2_packed_expert_layer()`. The bridge consumes the DeepSeek2/Kimi role classifier, looks up one layer's packed gate/up/down expert tensors, dispatches each tensor by GGUF dtype through the existing F32/Q4_K/Q6_K packed slice readers, and returns one expert's gate/up/down matrices as conventional `[rows, cols]` arrays. Real Kimi smoke still stops at the intentional unsupported GGUF streaming boundary; the next blocker is wiring this bridge into the actual browse extraction phase so it can write gate/up/down vindex artifacts.
+Added a private `GgufPackedExpertLayer` bridge plus `read_deepseek2_packed_expert_layer()`. The bridge consumes the DeepSeek2/Kimi role classifier, looks up one layer's packed gate/up/down expert tensors, dispatches each tensor by GGUF dtype through the existing F32/Q4_K/Q6_K packed slice readers, and returns one expert's gate/up/down matrices as conventional `[rows, cols]` arrays. Real Kimi smoke still stops at the intentional unsupported GGUF streaming boundary; the next blocker is wiring these per-expert matrices into browse extraction artifact writing.
+
+## Next blocker: stream Kimi packed gate vectors into a vindex artifact writer
+
+### Problem
+Browse extraction needs to move from per-expert readers to actual on-disk vindex artifacts. The first artifact seam is `gate_vectors.bin` plus a `VindexLayerInfo`: for one DeepSeek2/Kimi packed layer, stream each expert's gate matrix in expert order and report layer offset/length/feature counts without loading the full packed tensor.
+
+### RED plan
+1. Add a synthetic one-shard DeepSeek2 GGUF fixture with `blk.0.ffn_gate_exps.weight` as a tiny F32 packed tensor with dims `[4, 2, 2]`.
+2. Call a wished-for `write_deepseek2_packed_gate_vectors(&mut writer, &catalog, &layout, 0, offset, dtype)`.
+3. Assert it writes both expert slices in order and returns `VindexLayerInfo { num_experts: Some(2), num_features_per_expert: Some(2), num_features: 4, offset, length }`.
+
+### GREEN plan
+1. Look up the classified packed gate tensor for the layer.
+2. Infer expert count and features per expert from Kimi packed dims `[cols, rows, experts]`.
+3. Iterate experts, dispatch each gate slice by GGUF dtype, write encoded floats to the provided writer, and return the matching `VindexLayerInfo`.
+
+### Acceptance criteria
+- [x] RED gate-writer test fails before implementation.
+- [x] GREEN gate-writer test passes.
+- [x] Existing packed-slice/bridge/GGUF tests still pass.
+- [x] Real Kimi smoke still returns the same unsupported-layout diagnostic until the full extraction phase calls the writer.
+
+### Result
+Added `write_deepseek2_packed_gate_vectors()`, a private artifact-writer seam that consumes the DeepSeek2/Kimi role classifier, infers packed dims `[cols, rows, experts]`, streams each expert gate slice through the dtype-dispatch reader, writes encoded floats to a caller-provided writer, and returns the corresponding `VindexLayerInfo` with expert counts and byte offset/length. This gets GGUF/Kimi one step closer to `gate_vectors.bin`; the remaining blocker is calling this from the real GGUF extraction branch and adding corresponding down/up artifact seams.
