@@ -852,7 +852,7 @@ pub fn q6k_q8k_matvec_scalar(
     if rows == 0 || cols == 0 || w.len() < rows * row_bytes {
         return;
     }
-    for r in 0..rows {
+    for (r, out_r) in out.iter_mut().enumerate().take(rows) {
         let row_base = r * row_bytes;
         let mut acc = 0.0f32;
         for sb in 0..n_blocks {
@@ -866,9 +866,9 @@ pub fn q6k_q8k_matvec_scalar(
             let q8_qs = &q8k_x.qs[q8_base..q8_base + ELEMS_PER_BLOCK];
 
             let mut sum1: i32 = 0;
-            for g in 0..16usize {
+            for (g, &scale_byte) in sc.iter().enumerate().take(16) {
                 // 16-element group g, using scale sc[g].
-                let scale = sc[g] as i8 as i32;
+                let scale = scale_byte as i8 as i32;
                 let mut dot_g: i32 = 0;
                 for k in 0..16usize {
                     let i = g * 16 + k;
@@ -886,7 +886,7 @@ pub fn q6k_q8k_matvec_scalar(
             }
             acc += d_w * d_y * sum1 as f32;
         }
-        out[r] = acc;
+        *out_r = acc;
     }
 }
 
