@@ -34,12 +34,16 @@ libc = "0.2"
 [features]
 default = []
 # Metal is macOS-only. Enable explicitly on Apple Silicon with
-# `--features metal`; Linux/NVIDIA builds use the default CPU/OpenBLAS path
-# until a CUDA backend lands.
+# `--features metal`; Linux/NVIDIA can opt into CUDA with `--features cuda`.
 metal = [
     "larql-compute/metal",
     "larql-inference/metal",
     "larql-vindex/metal",
+]
+cuda = [
+    "larql-compute/cuda",
+    "larql-inference/cuda",
+    "larql-vindex/cuda",
 ]
 
 [dev-dependencies]

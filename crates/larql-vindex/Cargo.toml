@@ -45,6 +45,7 @@ reqwest = { version = "0.12", features = ["blocking", "json"] }
 [features]
 default = []
 metal = ["larql-compute/metal"]
+cuda = ["larql-compute/cuda"]
 
 [dev-dependencies]
 criterion = "0.5"

@@ -52,6 +52,8 @@ default = []
 # Enable Metal-backed GPU expert kernels on the shard server.  Forwards to
 # `larql-compute`'s `metal` feature.  macOS-only.
 metal-experts = ["larql-compute/metal"]
+# Enable the scoped Linux/NVIDIA CUDA backend for default inference paths.
+cuda = ["larql-compute/cuda", "larql-inference/cuda", "larql-vindex/cuda"]
 
 [build-dependencies]
 tonic-build = "0.13"

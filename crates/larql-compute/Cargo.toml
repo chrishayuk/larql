@@ -38,7 +38,9 @@ openblas-src = { version = "0.10", features = ["system"] }
 [features]
 default = []
 metal = ["dep:metal", "dep:objc"]
-# cuda = []  # Future: CUDA backend
+# Linux/NVIDIA CUDA backend. Uses the CUDA Driver API plus dynamically loaded
+# cuBLAS, so building does not require nvcc or the CUDA SDK.
+cuda = []
 
 [build-dependencies]
 cc = "1.0"
