@@ -150,3 +150,28 @@ Real Kimi Q4_K_M packed expert tensors are quantized, not F32. The extractor nee
 
 ### Result
 Added `read_packed_expert_slice_q4_k()` for block-aligned packed expert slices. The reader maps expert element offsets to Q4_K block byte ranges, mmaps only the containing shard range, dequantizes those blocks with the existing GGML Q4_K decoder, and returns a conventional `[rows, cols]` matrix. Shared byte-range validation now backs both F32 and Q4_K readers. The next blocker is either Q6_K packed-slice support or the first extractor bridge that consumes the classifier + slice readers for one Kimi layer.
+
+## Next blocker: mmap/dequant one packed Q6_K expert slice
+
+### Problem
+Kimi Q4_K_M mixes can store down projections and other high-precision tensors as Q6_K. The extractor needs the same selected-expert, block-aligned mmap/dequant path for Q6_K before a browse-level Kimi vindex can materialize reliably.
+
+### RED plan
+1. Add a tiny GGUF fixture with one packed Q6_K tensor `blk.0.ffn_down_exps.weight` and dims `[256, 1, 2]`.
+2. Store two real Q6_K blocks: expert 0 decodes to all `1.0`, expert 1 decodes to all `2.0`.
+3. Assert a wished-for `read_packed_expert_slice_q6_k(&catalog, name, expert_idx)` returns the correct `1 x 256` matrix for each expert.
+4. Assert a non-block-aligned expert slice is rejected with an actionable error.
+
+### GREEN plan
+1. Reuse the shared mmap byte-range validation from the F32/Q4_K readers.
+2. Implement Q6_K block-aligned slice byte mapping: `(element_offset / 256) * 210` and `(element_len / 256) * 210`.
+3. Dequantize only those blocks with the existing GGML Q6_K decoder.
+
+### Acceptance criteria
+- [x] RED Q6_K packed-slice reader test fails before implementation.
+- [x] GREEN Q6_K packed-slice reader test passes.
+- [x] Existing F32/Q4_K packed-slice and GGUF catalog/classifier/preflight tests still pass.
+- [x] Real Kimi smoke still returns the same unsupported-layout diagnostic until the extractor bridge is wired.
+
+### Result
+Added `read_packed_expert_slice_q6_k()` for block-aligned packed expert slices. The Q4_K and Q6_K readers now share block-aligned mmap byte-range validation/dequant shaping; Q6_K maps expert element offsets to `Q6_K_BLOCK_BYTES` ranges, reads only the selected expert blocks from the containing shard, dequantizes with the existing GGML Q6_K decoder, and returns a conventional `[rows, cols]` matrix. The next blocker is the first extractor bridge that consumes the DeepSeek2 classifier plus F32/Q4_K/Q6_K packed slice readers for one Kimi layer.

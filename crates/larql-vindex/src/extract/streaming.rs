@@ -335,15 +335,60 @@ fn read_packed_expert_slice_q4_k(
             entry.name, entry.tensor_type
         )));
     }
+    read_block_aligned_packed_expert_slice(
+        catalog,
+        entry,
+        expert_idx,
+        "Q4_K",
+        larql_models::quant::ggml::Q4_K_BLOCK_ELEMS,
+        larql_models::quant::ggml::Q4_K_BLOCK_BYTES,
+        larql_models::quant::ggml::dequantize_q4_k,
+    )
+}
+
+#[cfg_attr(not(test), allow(dead_code))]
+fn read_packed_expert_slice_q6_k(
+    catalog: &GgufCatalog,
+    tensor_name: &str,
+    expert_idx: usize,
+) -> Result<Array2<f32>, VindexError> {
+    let entry = catalog
+        .tensor(tensor_name)
+        .ok_or_else(|| VindexError::MissingTensor(tensor_name.to_string()))?;
+    if entry.tensor_type != larql_models::quant::ggml::TYPE_Q6_K {
+        return Err(VindexError::UnsupportedDtype(format!(
+            "GGUF tensor {} type {} cannot be read by Q6_K packed-slice reader",
+            entry.name, entry.tensor_type
+        )));
+    }
+    read_block_aligned_packed_expert_slice(
+        catalog,
+        entry,
+        expert_idx,
+        "Q6_K",
+        larql_models::quant::ggml::Q6_K_BLOCK_ELEMS,
+        larql_models::quant::ggml::Q6_K_BLOCK_BYTES,
+        larql_models::quant::ggml::dequantize_q6_k,
+    )
+}
+
+#[cfg_attr(not(test), allow(dead_code))]
+fn read_block_aligned_packed_expert_slice(
+    catalog: &GgufCatalog,
+    entry: &GgufTensorEntry,
+    expert_idx: usize,
+    dtype_name: &str,
+    block_elems: usize,
+    block_bytes: usize,
+    dequantize: fn(&[u8], usize) -> Result<Vec<f32>, larql_models::ModelError>,
+) -> Result<Array2<f32>, VindexError> {
     let slice = packed_expert_slice(entry, expert_idx)?;
-    let block_elems = larql_models::quant::ggml::Q4_K_BLOCK_ELEMS;
-    let block_bytes = larql_models::quant::ggml::Q4_K_BLOCK_BYTES;
     if !slice.element_offset.is_multiple_of(block_elems)
         || !slice.element_len.is_multiple_of(block_elems)
     {
         return Err(VindexError::Parse(format!(
-            "GGUF tensor {} Q4_K expert slice must be block-aligned to {} elements (offset={} len={})",
-            entry.name, block_elems, slice.element_offset, slice.element_len
+            "GGUF tensor {} {} expert slice must be block-aligned to {} elements (offset={} len={})",
+            entry.name, dtype_name, block_elems, slice.element_offset, slice.element_len
         )));
     }
     let block_offset = slice.element_offset / block_elems;
@@ -355,22 +400,22 @@ fn read_packed_expert_slice_q4_k(
             .checked_mul(block_bytes as u64)
             .ok_or_else(|| {
                 VindexError::Parse(format!(
-                    "GGUF tensor {} Q4_K slice byte offset overflow: block_offset={}",
-                    entry.name, block_offset
+                    "GGUF tensor {} {} slice byte offset overflow: block_offset={}",
+                    entry.name, dtype_name, block_offset
                 ))
             })?,
         block_len.checked_mul(block_bytes).ok_or_else(|| {
             VindexError::Parse(format!(
-                "GGUF tensor {} Q4_K slice byte length overflow: block_len={}",
-                entry.name, block_len
+                "GGUF tensor {} {} slice byte length overflow: block_len={}",
+                entry.name, dtype_name, block_len
             ))
         })?,
     )?;
-    let values = larql_models::quant::ggml::dequantize_q4_k(&raw, slice.element_len)?;
+    let values = dequantize(&raw, slice.element_len)?;
     Array2::from_shape_vec((slice.rows, slice.cols), values).map_err(|e| {
         VindexError::Parse(format!(
-            "GGUF tensor {} expert {} Q4_K shape error: {}",
-            entry.name, expert_idx, e
+            "GGUF tensor {} expert {} {} shape error: {}",
+            entry.name, expert_idx, dtype_name, e
         ))
     })
 }
@@ -1478,6 +1523,47 @@ mod tests {
         assert!(err.to_string().contains("block-aligned"), "{err}");
     }
 
+    #[test]
+    fn read_packed_expert_slice_q6_k_mmaps_block_aligned_expert_only() {
+        let tmp = tempfile::tempdir().unwrap();
+        let shard = tmp.path().join("Kimi-00001-of-00001.gguf");
+        let name = "blk.0.ffn_down_exps.weight";
+        let mut payload = q6_k_constant_block(33);
+        payload.extend(q6_k_constant_block(34));
+        write_minimal_gguf_header_with_raw_payload(
+            &shard,
+            "deepseek2",
+            1,
+            name,
+            &[256, 1, 2],
+            larql_models::quant::ggml::TYPE_Q6_K,
+            &payload,
+        );
+        let catalog = build_gguf_catalog(&[shard]).unwrap();
+
+        let expert0 = read_packed_expert_slice_q6_k(&catalog, name, 0).unwrap();
+        assert_eq!(expert0.shape(), &[1, 256]);
+        assert!(expert0.as_slice().unwrap().iter().all(|v| *v == 1.0));
+
+        let expert1 = read_packed_expert_slice_q6_k(&catalog, name, 1).unwrap();
+        assert_eq!(expert1.shape(), &[1, 256]);
+        assert!(expert1.as_slice().unwrap().iter().all(|v| *v == 2.0));
+
+        let unaligned_shard = tmp.path().join("Kimi-unaligned-q6k.gguf");
+        write_minimal_gguf_header_with_raw_payload(
+            &unaligned_shard,
+            "deepseek2",
+            1,
+            name,
+            &[128, 1, 1],
+            larql_models::quant::ggml::TYPE_Q6_K,
+            &[],
+        );
+        let unaligned_catalog = build_gguf_catalog(&[unaligned_shard]).unwrap();
+        let err = read_packed_expert_slice_q6_k(&unaligned_catalog, name, 0).unwrap_err();
+        assert!(err.to_string().contains("block-aligned"), "{err}");
+    }
+
     fn write_minimal_gguf(path: &std::path::Path, arch: &str, split_count: u16, include_3d: bool) {
         if include_3d {
             write_minimal_gguf_named_tensor(
@@ -1558,6 +1644,19 @@ mod tests {
         block[8..12].fill(0); // mins 0..3; ignored because dmin=0
         block[12..16].fill(1); // scales 4..7 in low nibble; mins ignored because dmin=0
         block[16..].fill(nibble | (nibble << 4));
+        block
+    }
+
+    fn q6_k_constant_block(raw_value: u8) -> Vec<u8> {
+        assert!(raw_value < 64);
+        let mut block = vec![0u8; larql_models::quant::ggml::Q6_K_BLOCK_BYTES];
+        let lo4 = raw_value & 0x0f;
+        let hi2 = (raw_value >> 4) & 0x03;
+        block[0..128].fill(lo4 | (lo4 << 4));
+        let hi_byte = hi2 | (hi2 << 2) | (hi2 << 4) | (hi2 << 6);
+        block[128..192].fill(hi_byte);
+        block[192..208].fill(1); // int8 scales
+        block[208..210].copy_from_slice(&0x3c00u16.to_le_bytes()); // f16 1.0 d
         block
     }
 
