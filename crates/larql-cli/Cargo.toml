@@ -32,7 +32,10 @@ minijinja = "2"
 libc = "0.2"
 
 [features]
-default = ["metal"]
+default = []
+# Metal is macOS-only. Enable explicitly on Apple Silicon with
+# `--features metal`; Linux/NVIDIA builds use the default CPU/OpenBLAS path
+# until a CUDA backend lands.
 metal = [
     "larql-compute/metal",
     "larql-inference/metal",

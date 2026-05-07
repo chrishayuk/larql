@@ -528,6 +528,16 @@ fn run_moe_block(
 // the full sequence). This is sufficient to locate the first diverging layer
 // but not to compute precise numeric agreement.
 
+#[cfg(not(feature = "metal"))]
+fn run_layer_diff(
+    _path: &std::path::Path,
+    _config: &larql_vindex::VindexConfig,
+    _args: &ParityArgs,
+) -> Result<(), Box<dyn std::error::Error>> {
+    Err("layer parity requires the macOS Metal backend; rebuild with `--features metal` on an M-series Mac".into())
+}
+
+#[cfg(feature = "metal")]
 fn run_layer_diff(
     path: &std::path::Path,
     config: &larql_vindex::VindexConfig,
@@ -596,19 +606,27 @@ fn run_layer_diff(
     }
     println!("Running Metal…");
     let metal_result = {
-        let backend = larql_compute::metal::MetalBackend::new()
-            .ok_or("Metal backend unavailable — build with `--features metal` on M-series Mac")?;
-        let cache = CachedLayerGraph::from_residuals(Vec::new());
-        generate(
-            &mut w_metal,
-            &tokenizer,
-            &token_ids,
-            1,
-            &q4_index,
-            &backend,
-            &cache,
-            0..num_layers,
-        )
+        #[cfg(feature = "metal")]
+        {
+            let backend = larql_compute::metal::MetalBackend::new().ok_or(
+                "Metal backend unavailable — build with `--features metal` on M-series Mac",
+            )?;
+            let cache = CachedLayerGraph::from_residuals(Vec::new());
+            generate(
+                &mut w_metal,
+                &tokenizer,
+                &token_ids,
+                1,
+                &q4_index,
+                &backend,
+                &cache,
+                0..num_layers,
+            )
+        }
+        #[cfg(not(feature = "metal"))]
+        {
+            return Err("layer parity requires the macOS Metal backend; rebuild with `--features metal` on an M-series Mac".into());
+        }
     };
     std::env::remove_var("LARQL_DUMP_RESIDUALS");
     std::env::remove_var("LARQL_METAL_DUMP_LAYERS");
