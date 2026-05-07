@@ -55,6 +55,12 @@ thiserror = "2"
 # -- -D warnings` (what `make ci` runs) stays green without having to
 # rewrite every utility script. New code should still strive to satisfy
 # them on its own.
+[workspace.lints.rust]
+# Many exploratory/dev modules (oracle_pq, ov_rd, shannon_cmd, parity)
+# carry their own helper utilities that are reachable from main but
+# clippy --tests can't see across that boundary cleanly.
+dead_code = "allow"
+
 [workspace.lints.clippy]
 too_many_arguments = "allow"
 needless_range_loop = "allow"

@@ -1700,9 +1700,9 @@ Total: **1954**
 
 | FQN | File:Line |
 |---|---|
-| `kv_cache_benchmark::rotorquant::iso3_strategy_runs_through_harness` | `crates/kv-cache-benchmark/src/rotorquant.rs:266` |
-| `kv_cache_benchmark::rotorquant::planar3_strategy_runs_through_harness` | `crates/kv-cache-benchmark/src/rotorquant.rs:277` |
-| `kv_cache_benchmark::rotorquant::memory_bytes_iso3_is_smaller_than_fp16` | `crates/kv-cache-benchmark/src/rotorquant.rs:285` |
+| `kv_cache_benchmark::rotorquant::iso3_strategy_runs_through_harness` | `crates/kv-cache-benchmark/src/rotorquant.rs:279` |
+| `kv_cache_benchmark::rotorquant::planar3_strategy_runs_through_harness` | `crates/kv-cache-benchmark/src/rotorquant.rs:290` |
+| `kv_cache_benchmark::rotorquant::memory_bytes_iso3_is_smaller_than_fp16` | `crates/kv-cache-benchmark/src/rotorquant.rs:298` |
 | `kv_cache_benchmark::vindex_compare::tests::argmax_finds_max` | `crates/kv-cache-benchmark/src/vindex_compare.rs:424` |
 | `kv_cache_benchmark::vindex_compare::argmax_finds_max` | `crates/kv-cache-benchmark/src/vindex_compare.rs:424` |
 | `kv_cache_benchmark::vindex_compare::tests::top_k_ids_returns_correct_indices` | `crates/kv-cache-benchmark/src/vindex_compare.rs:430` |

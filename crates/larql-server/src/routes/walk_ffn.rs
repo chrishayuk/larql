@@ -806,8 +806,8 @@ pub async fn handle_walk_ffn_q8k(
             ));
         }
 
-        let entries = decode_q8k_batch_request(&body)
-            .map_err(crate::error::ServerError::BadRequest)?;
+        let entries =
+            decode_q8k_batch_request(&body).map_err(crate::error::ServerError::BadRequest)?;
 
         let patched = model.patched.blocking_read();
         let start = std::time::Instant::now();

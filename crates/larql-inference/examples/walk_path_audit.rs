@@ -886,10 +886,10 @@ fn render_markdown(model: &str, vindex: &PathBuf, runs: &[PathRun]) -> String {
     );
     s.push_str("|---|---|---|---|---|---|---|---|---|---|\n");
     for r in runs {
-        let top1_ok = if r
-            .per_prompt
-            .values()
-            .all(|p| p.top1_match) { "✓".to_string() } else { {
+        let top1_ok = if r.per_prompt.values().all(|p| p.top1_match) {
+            "✓".to_string()
+        } else {
+            {
                 let bad: Vec<_> = r
                     .per_prompt
                     .iter()
@@ -897,7 +897,8 @@ fn render_markdown(model: &str, vindex: &PathBuf, runs: &[PathRun]) -> String {
                     .map(|(k, _)| k.as_str())
                     .collect();
                 format!("✗ ({})", bad.join(","))
-            } };
+            }
+        };
         let paris_delta = r
             .per_prompt
             .get(PARIS_KEY)

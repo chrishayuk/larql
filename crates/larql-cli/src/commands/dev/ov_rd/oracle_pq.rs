@@ -3233,7 +3233,9 @@ pub(super) fn run_oracle_pq(args: OraclePqArgs) -> Result<(), Box<dyn std::error
                         {
                             continue;
                         }
-                        if let std::collections::hash_map::Entry::Vacant(e) = rows_by_rank.entry(cluster_model.qk_rank) {
+                        if let std::collections::hash_map::Entry::Vacant(e) =
+                            rows_by_rank.entry(cluster_model.qk_rank)
+                        {
                             let rows = if let Some(qk_rank) = cluster_model.qk_rank {
                                 capture_reduced_qk_attention_rows(
                                     &mut weights,

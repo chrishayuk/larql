@@ -681,9 +681,7 @@ impl RemoteMoeBackend {
                     if let Ok(results) = result {
                         for r in results {
                             if r.h2.len() == hidden {
-                                for (acc, &v) in
-                                    h2_per_layer[r.layer].iter_mut().zip(r.h2.iter())
-                                {
+                                for (acc, &v) in h2_per_layer[r.layer].iter_mut().zip(r.h2.iter()) {
                                     *acc += v;
                                 }
                             }
