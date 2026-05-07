@@ -20,6 +20,8 @@ use crate::error::VindexError;
 use crate::extract::callbacks::IndexBuildCallbacks;
 use crate::format::filenames::*;
 
+const MAX_GGUF_GATE_VECTOR_BYTES: u128 = 128 * 1024 * 1024;
+
 /// Mmap'd safetensors file — kept alive for the duration of extraction.
 struct MmapShard {
     _file: std::fs::File,
@@ -587,6 +589,112 @@ fn read_gguf_tensor_byte_range(
     Ok(mmap[start..end].to_vec())
 }
 
+fn build_gguf_streaming(
+    catalog: &GgufCatalog,
+    output_dir: &Path,
+    dtype: StorageDtype,
+    callbacks: &mut dyn IndexBuildCallbacks,
+) -> Result<(), VindexError> {
+    if catalog.architecture != "deepseek2" {
+        return unsupported_gguf_streaming(catalog, catalog.architecture.clone());
+    }
+
+    let layout = classify_deepseek2_layout(catalog)?;
+    let estimated_gate_bytes = estimate_deepseek2_gate_vector_bytes(catalog, &layout, dtype)?;
+    if estimated_gate_bytes > MAX_GGUF_GATE_VECTOR_BYTES {
+        return unsupported_gguf_streaming(
+            catalog,
+            format!(
+                "deepseek2 gate_vectors estimate {} exceeds safe streaming budget {}; embeddings/down_meta wiring remains pending",
+                estimated_gate_bytes, MAX_GGUF_GATE_VECTOR_BYTES
+            ),
+        );
+    }
+
+    std::fs::create_dir_all(output_dir)?;
+    callbacks.on_stage(STAGE_LOADING);
+    callbacks.on_stage_done(STAGE_LOADING, 0.0);
+    callbacks.on_stage(STAGE_GATE_VECTORS);
+
+    let gate_path = output_dir.join(GATE_VECTORS_BIN);
+    let mut gate_file = BufWriter::new(std::fs::File::create(&gate_path)?);
+    let mut offset = 0u64;
+    let mut layers: Vec<usize> = layout
+        .packed_experts
+        .keys()
+        .filter_map(|(layer, component)| {
+            (*component == GgufExpertComponent::Gate).then_some(*layer)
+        })
+        .collect();
+    layers.sort_unstable();
+    layers.dedup();
+
+    for layer in layers {
+        callbacks.on_layer_start(COMP_GATE, layer, layout.packed_experts.len());
+        let start = std::time::Instant::now();
+        let info = write_deepseek2_packed_gate_vectors(
+            &mut gate_file,
+            catalog,
+            &layout,
+            layer,
+            offset,
+            dtype,
+        )?;
+        offset += info.length;
+        callbacks.on_layer_done(COMP_GATE, layer, start.elapsed().as_secs_f64() * 1000.0);
+    }
+    gate_file.flush()?;
+    callbacks.on_stage_done(STAGE_GATE_VECTORS, 0.0);
+
+    unsupported_gguf_streaming(
+        catalog,
+        "deepseek2 after writing gate_vectors.bin; embeddings/down_meta artifact wiring remains pending".into(),
+    )
+}
+
+fn estimate_deepseek2_gate_vector_bytes(
+    catalog: &GgufCatalog,
+    layout: &GgufDeepseek2Layout,
+    dtype: StorageDtype,
+) -> Result<u128, VindexError> {
+    let bytes_per_float = match dtype {
+        StorageDtype::F32 => 4u128,
+        StorageDtype::F16 => 2u128,
+    };
+    let mut total = 0u128;
+    for ((_, component), tensor_name) in &layout.packed_experts {
+        if *component != GgufExpertComponent::Gate {
+            continue;
+        }
+        let entry = catalog
+            .tensor(tensor_name)
+            .ok_or_else(|| VindexError::MissingTensor(tensor_name.clone()))?;
+        let [cols, rows, experts] = packed_expert_dims(entry)?;
+        total = total
+            .checked_add(cols as u128 * rows as u128 * experts as u128 * bytes_per_float)
+            .ok_or_else(|| {
+                VindexError::Parse(format!(
+                    "GGUF gate vector byte estimate overflow at tensor {}",
+                    entry.name
+                ))
+            })?;
+    }
+    Ok(total)
+}
+
+fn unsupported_gguf_streaming<T>(
+    catalog: &GgufCatalog,
+    architecture: String,
+) -> Result<T, VindexError> {
+    Err(VindexError::UnsupportedGgufStreaming {
+        architecture,
+        files: catalog.files.len(),
+        split_count: catalog.split_count,
+        tensor_count: catalog.tensors.len(),
+        three_d_tensors: catalog.three_d_tensors,
+    })
+}
+
 fn discover_weight_source(model_dir: &Path) -> Result<WeightSource, VindexError> {
     let mut st_files = collect_ext(model_dir, "safetensors")?;
     if st_files.is_empty() {
@@ -625,6 +733,7 @@ fn collect_ext(dir: &Path, ext: &str) -> Result<Vec<PathBuf>, VindexError> {
         .collect())
 }
 
+#[cfg_attr(not(test), allow(dead_code))]
 fn preflight_gguf_streaming(source: &WeightSource) -> Result<(), VindexError> {
     if let WeightSource::Gguf(catalog) = source {
         return Err(VindexError::UnsupportedGgufStreaming {
@@ -685,9 +794,11 @@ pub fn build_vindex_streaming(
     // than the misleading `NoSafetensors` error. Header-only preflight keeps
     // Kimi-sized probes cheap and avoids eager dequantization.
     let source = discover_weight_source(model_dir)?;
-    preflight_gguf_streaming(&source)?;
-    let WeightSource::Safetensors(st_files) = source else {
-        unreachable!("preflight_gguf_streaming returns for GGUF sources");
+    let st_files = match source {
+        WeightSource::Safetensors(st_files) => st_files,
+        WeightSource::Gguf(catalog) => {
+            return build_gguf_streaming(&catalog, output_dir, dtype, callbacks);
+        }
     };
 
     callbacks.on_stage(STAGE_LOADING);
@@ -1552,6 +1663,44 @@ mod tests {
         let err = packed_expert_slice(catalog.tensor("blk.0.ffn_gate_exps.weight").unwrap(), 384)
             .unwrap_err();
         assert!(err.to_string().contains("expert index 384 out of range"));
+    }
+
+    #[test]
+    fn build_gguf_streaming_routes_deepseek2_through_gate_phase_before_next_blocker() {
+        let tmp = tempfile::tempdir().unwrap();
+        let model_dir = tmp.path().join("model");
+        std::fs::create_dir_all(&model_dir).unwrap();
+        let output_dir = tmp.path().join("out.vindex");
+        let gate_name = "blk.0.ffn_gate_exps.weight";
+        let gate_shard = model_dir.join("Kimi-00001-of-00001.gguf");
+        let values = vec![1.0f32, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0];
+        write_minimal_gguf_header_with_f32_payload(
+            &gate_shard,
+            "deepseek2",
+            1,
+            gate_name,
+            &[2, 2, 2],
+            &values,
+        );
+
+        let source = discover_weight_source(&model_dir).unwrap();
+        let WeightSource::Gguf(catalog) = source else {
+            panic!("expected GGUF catalog");
+        };
+        let mut callbacks = crate::extract::callbacks::SilentBuildCallbacks;
+
+        let err = build_gguf_streaming(&catalog, &output_dir, StorageDtype::F32, &mut callbacks)
+            .unwrap_err();
+
+        let msg = err.to_string();
+        assert!(msg.contains("after writing gate_vectors.bin"), "{msg}");
+        let gate_bytes = std::fs::read(output_dir.join(GATE_VECTORS_BIN)).unwrap();
+        assert_eq!(gate_bytes.len(), values.len() * std::mem::size_of::<f32>());
+        let decoded: Vec<f32> = gate_bytes
+            .chunks_exact(4)
+            .map(|bytes| f32::from_le_bytes(bytes.try_into().unwrap()))
+            .collect();
+        assert_eq!(decoded, values);
     }
 
     #[test]

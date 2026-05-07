@@ -226,3 +226,31 @@ Browse extraction needs to move from per-expert readers to actual on-disk vindex
 
 ### Result
 Added `write_deepseek2_packed_gate_vectors()`, a private artifact-writer seam that consumes the DeepSeek2/Kimi role classifier, infers packed dims `[cols, rows, experts]`, streams each expert gate slice through the dtype-dispatch reader, writes encoded floats to a caller-provided writer, and returns the corresponding `VindexLayerInfo` with expert counts and byte offset/length. This gets GGUF/Kimi one step closer to `gate_vectors.bin`; the remaining blocker is calling this from the real GGUF extraction branch and adding corresponding down/up artifact seams.
+
+## Next blocker: route real GGUF extraction through the packed gate writer
+
+### Problem
+`build_vindex_streaming()` still stops all GGUF inputs at the generic unsupported preflight boundary. We need the real GGUF branch to route DeepSeek2/Kimi catalogs into a bounded gate-vector phase, while protecting real Kimi smokes from accidentally writing enormous gate artifacts before the rest of browse extraction is budgeted.
+
+### RED plan
+1. Add a synthetic GGUF model directory with one DeepSeek2 packed gate tensor.
+2. Call a wished-for private `build_gguf_streaming(&catalog, output_dir, dtype, callbacks)` route.
+3. Assert it writes `gate_vectors.bin` for the tiny fixture, then returns the next explicit unsupported blocker: embeddings/down-meta wiring after gate vectors.
+
+### GREEN plan
+1. In `build_vindex_streaming()`, branch `WeightSource::Gguf(catalog)` before safetensors mmap setup.
+2. Implement `build_gguf_streaming()` for DeepSeek2/Kimi gate phase:
+   - classify layout;
+   - estimate gate output size and refuse huge real Kimi writes with an actionable unsupported diagnostic;
+   - for small/bounded catalogs, call `write_deepseek2_packed_gate_vectors()` per layer;
+   - return the next unsupported blocker after writing gate vectors.
+3. Keep non-DeepSeek2 GGUFs on the existing unsupported diagnostic.
+
+### Acceptance criteria
+- [x] RED real-branch test fails before implementation.
+- [x] GREEN real-branch test passes.
+- [x] Existing packed-slice/bridge/gate-writer/GGUF tests still pass.
+- [x] Real Kimi smoke advances to the new bounded gate-budget/next-blocker diagnostic without large artifact writes.
+
+### Result
+Added the first real GGUF extraction branch in `build_vindex_streaming()`: GGUF sources now dispatch to `build_gguf_streaming()` instead of stopping at generic preflight. For DeepSeek2/Kimi catalogs, the branch classifies packed expert roles, estimates the gate-vector output size, refuses enormous real Kimi writes above a conservative in-process budget, and for bounded synthetic catalogs writes `gate_vectors.bin` through `write_deepseek2_packed_gate_vectors()` before returning the next explicit unsupported blocker (`embeddings/down_meta artifact wiring remains pending`). The real Kimi smoke now advances from generic unsupported to a safe gate-vector budget diagnostic without creating a huge artifact.
