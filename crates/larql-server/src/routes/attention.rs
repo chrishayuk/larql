@@ -466,29 +466,154 @@ pub async fn handle_decode(
         )
         .into_response();
     }
-    // Spec: decode-before-prefill is rejected.
-    let g = entry.read().await;
-    if !g.prefilled {
+
+    // Look up the model + check prefill state.
+    let (model, abs_position) = {
+        let g = entry.read().await;
+        if !g.prefilled {
+            return err_response(
+                StatusCode::BAD_REQUEST,
+                ErrorBody {
+                    error: "decode_before_prefill",
+                    detail: Some("call /v1/attention/prefill first".into()),
+                },
+            )
+            .into_response();
+        }
+        let model_id = g.model_id.clone();
+        let abs = g.cache.next_position;
+        match state.model(Some(&model_id)) {
+            Some(m) => (Arc::clone(m), abs),
+            None => {
+                return err_response(
+                    StatusCode::NOT_FOUND,
+                    ErrorBody {
+                        error: "no_such_model",
+                        detail: Some(format!("model_id = {model_id}")),
+                    },
+                )
+                .into_response();
+            }
+        }
+    };
+
+    if model.infer_disabled {
         return err_response(
-            StatusCode::BAD_REQUEST,
+            StatusCode::SERVICE_UNAVAILABLE,
             ErrorBody {
-                error: "decode_before_prefill",
-                detail: Some("call /v1/attention/prefill first".into()),
+                error: "inference_disabled",
+                detail: Some("server started with --no-infer; weights are not loaded".into()),
             },
         )
         .into_response();
     }
+
+    // Pull existing K/V slots out of the session under the write lock,
+    // so the blocking decode-step task can mutate them and we own the
+    // (single-thread, async-free) chain. The cache itself moves with us.
+    let entry_for_decode = Arc::clone(&entry);
+    let h_new_array = match larql_inference::ndarray::Array2::from_shape_vec(
+        (1, hidden_dim),
+        req.query_token_embedding,
+    ) {
+        Ok(a) => a,
+        Err(e) => {
+            return err_response(
+                StatusCode::INTERNAL_SERVER_ERROR,
+                ErrorBody {
+                    error: "embedding_shape_error",
+                    detail: Some(e.to_string()),
+                },
+            )
+            .into_response();
+        }
+    };
+
+    let start = std::time::Instant::now();
+
+    let mut g = entry_for_decode.write().await;
+    let blocking_inputs = std::mem::take(&mut g.cache.layers);
     drop(g);
 
-    err_response(
-        StatusCode::NOT_IMPLEMENTED,
-        ErrorBody {
-            error: "decode_not_implemented",
-            detail: Some(format!(
-                "session ok and prefilled; hidden_dim={hidden_dim}; runner integration pending"
-            )),
-        },
-    )
+    let model_for_blocking = Arc::clone(&model);
+    type DecodeOk = (
+        Vec<larql_inference::ndarray::Array2<f32>>,
+        Vec<Option<larql_inference::attention::SharedKV>>,
+    );
+    let blocking_result: Result<DecodeOk, String> = tokio::task::spawn_blocking(move || {
+        let weights_guard = model_for_blocking.get_or_load_weights()?;
+        let weights: &larql_inference::ModelWeights = &weights_guard;
+        let num_layers = weights.num_layers;
+        let ffn = larql_inference::ffn::WeightFfn { weights };
+
+        let mut layers = blocking_inputs;
+        // Pad if the cache had fewer slots than the model knows
+        // (defensive — should never happen after a real prefill).
+        layers.resize_with(num_layers, || None);
+
+        let mut h_step = h_new_array;
+        let mut residuals = Vec::with_capacity(num_layers);
+
+        for layer in 0..num_layers {
+            let kv_entry = layers[layer].as_ref();
+            match larql_inference::attention::run_attention_block_decode_step(
+                weights,
+                &h_step,
+                layer,
+                kv_entry,
+                abs_position,
+            ) {
+                Some((h_post_attn, new_kv)) => {
+                    layers[layer] = Some(new_kv);
+                    let (h_out, _) = larql_inference::forward::run_ffn(
+                        weights,
+                        &h_post_attn,
+                        layer,
+                        &ffn,
+                        false,
+                    );
+                    residuals.push(h_post_attn);
+                    h_step = h_out;
+                }
+                None => {
+                    residuals.push(larql_inference::ndarray::Array2::zeros((1, hidden_dim)));
+                }
+            }
+        }
+        Ok((residuals, layers))
+    })
+    .await
+    .unwrap_or_else(|e| Err(format!("blocking task panicked: {e}")));
+
+    let (residuals, layers) = match blocking_result {
+        Ok(t) => t,
+        Err(detail) => {
+            return err_response(
+                StatusCode::INTERNAL_SERVER_ERROR,
+                ErrorBody {
+                    error: "weights_load_failed",
+                    detail: Some(detail),
+                },
+            )
+            .into_response();
+        }
+    };
+
+    {
+        let mut g = entry_for_decode.write().await;
+        g.cache.layers = layers;
+        g.cache.next_position += 1;
+        g.seq_len += 1;
+        g.touch();
+    }
+
+    let post_attention_residual: Vec<Vec<f32>> =
+        residuals.iter().map(|r| r.row(0).to_vec()).collect();
+
+    Json(DecodeResponse {
+        post_attention_residual,
+        latency_ms: start.elapsed().as_secs_f64() * 1000.0,
+    })
     .into_response()
 }
 
