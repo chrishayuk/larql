@@ -1,11 +1,11 @@
 {
   "summary": {
     "capabilities": 49,
-    "requirements": 408,
-    "scenarios": 1378,
+    "requirements": 414,
+    "scenarios": 1388,
     "scenarios_backed": 1271,
-    "scenarios_unbacked": 107,
-    "test_refs": 3308,
+    "scenarios_unbacked": 117,
+    "test_refs": 3318,
     "test_refs_unresolved": 0
   },
   "capabilities": [
@@ -2347,6 +2347,69 @@
               "unbacked": false,
               "spec_file": "openspec/changes/cuda-fused-attention/specs/compute-cuda-kernels/spec.md",
               "line": 59
+            }
+          ]
+        },
+        {
+          "name": "cuda-oxide MUST be opt-in via a dedicated feature flag",
+          "scenarios": [
+            {
+              "name": "default build uses no cuda-oxide",
+              "tests_resolved": [],
+              "tests_unresolved": [],
+              "unbacked": true,
+              "spec_file": "openspec/changes/cuda-oxide-migration/specs/compute-cuda-kernels/spec.md",
+              "line": 11
+            },
+            {
+              "name": "enabling both cuda and cuda-oxide is rejected",
+              "tests_resolved": [],
+              "tests_unresolved": [],
+              "unbacked": true,
+              "spec_file": "openspec/changes/cuda-oxide-migration/specs/compute-cuda-kernels/spec.md",
+              "line": 18
+            },
+            {
+              "name": "cuda-oxide build requires the documented toolchain",
+              "tests_resolved": [],
+              "tests_unresolved": [],
+              "unbacked": true,
+              "spec_file": "openspec/changes/cuda-oxide-migration/specs/compute-cuda-kernels/spec.md",
+              "line": 26
+            }
+          ]
+        },
+        {
+          "name": "cuda-oxide and cudarc MUST coexist for cuBLAS",
+          "scenarios": [
+            {
+              "name": "cuBLAS gemv path is unchanged under cuda-oxide",
+              "tests_resolved": [],
+              "tests_unresolved": [],
+              "unbacked": true,
+              "spec_file": "openspec/changes/cuda-oxide-migration/specs/compute-cuda-kernels/spec.md",
+              "line": 41
+            }
+          ]
+        },
+        {
+          "name": "Phase 2 evaluation gates the rollout",
+          "scenarios": [
+            {
+              "name": "Phase 3 work blocked without a written decision",
+              "tests_resolved": [],
+              "tests_unresolved": [],
+              "unbacked": true,
+              "spec_file": "openspec/changes/cuda-oxide-migration/specs/compute-cuda-kernels/spec.md",
+              "line": 61
+            },
+            {
+              "name": "Phase 1 abort is a clean revert",
+              "tests_resolved": [],
+              "tests_unresolved": [],
+              "unbacked": true,
+              "spec_file": "openspec/changes/cuda-oxide-migration/specs/compute-cuda-kernels/spec.md",
+              "line": 70
             }
           ]
         },
@@ -8329,6 +8392,53 @@
               "unbacked": false,
               "spec_file": "openspec/specs/kv-cache-rotorquant/spec.md",
               "line": 104
+            }
+          ]
+        },
+        {
+          "name": "cuda-oxide Iso3 quantize MUST round-trip against the CPU reference",
+          "scenarios": [
+            {
+              "name": "cuda-oxide Iso3 round-trip cosine \u2265 0.99",
+              "tests_resolved": [],
+              "tests_unresolved": [],
+              "unbacked": true,
+              "spec_file": "openspec/changes/cuda-oxide-migration/specs/kv-cache-rotorquant/spec.md",
+              "line": 11
+            },
+            {
+              "name": "cuda-oxide Iso3 \u2194 CPU byte parity",
+              "tests_resolved": [],
+              "tests_unresolved": [],
+              "unbacked": true,
+              "spec_file": "openspec/changes/cuda-oxide-migration/specs/kv-cache-rotorquant/spec.md",
+              "line": 19
+            }
+          ]
+        },
+        {
+          "name": "cuda-oxide pilot MUST coexist with the cudarc-NVRTC variant",
+          "scenarios": [
+            {
+              "name": "three-way Iso3 parity (CPU / cudarc / cuda-oxide)",
+              "tests_resolved": [],
+              "tests_unresolved": [],
+              "unbacked": true,
+              "spec_file": "openspec/changes/cuda-oxide-migration/specs/kv-cache-rotorquant/spec.md",
+              "line": 38
+            }
+          ]
+        },
+        {
+          "name": "cuda-oxide tests SHALL be GPU-gated, not workspace-default",
+          "scenarios": [
+            {
+              "name": "CPU-only host does not require LLVM 21",
+              "tests_resolved": [],
+              "tests_unresolved": [],
+              "unbacked": true,
+              "spec_file": "openspec/changes/cuda-oxide-migration/specs/kv-cache-rotorquant/spec.md",
+              "line": 55
             }
           ]
         },
