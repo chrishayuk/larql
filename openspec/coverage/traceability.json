@@ -25367,6 +25367,12 @@
       "crate": "larql_models"
     },
     {
+      "fqn": "larql_rotorquant::round_trip::cuda_ffi_block_layout_matches_upstream",
+      "file": "crates/larql-rotorquant/tests/round_trip.rs",
+      "line": 150,
+      "crate": "larql_rotorquant"
+    },
+    {
       "fqn": "larql_router::grid::route_uses_inclusive_layer_ranges",
       "file": "crates/larql-router/src/grid.rs",
       "line": 720,

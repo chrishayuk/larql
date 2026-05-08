@@ -53,6 +53,8 @@ mod format;
 
 #[cfg(feature = "cuda")]
 mod cuda;
+#[cfg(feature = "cuda")]
+pub mod ffi;
 
 pub use error::RotorQuantError;
 pub use format::{KvFormat, QuantizedKv};

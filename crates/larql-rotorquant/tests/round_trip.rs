@@ -144,3 +144,13 @@ fn upstream_provenance_records_commit_and_vendored_files() {
         .join("cuda/larql_rotorquant_kernels.cu")
         .is_file());
 }
+
+#[cfg(feature = "cuda")]
+#[test]
+fn cuda_ffi_block_layout_matches_upstream() {
+    assert_eq!(larql_rotorquant::ffi::BLOCK_ELEMENTS, 128);
+    assert_eq!(larql_rotorquant::ffi::block_bytes(KvFormat::Planar3), 50);
+    assert_eq!(larql_rotorquant::ffi::block_bytes(KvFormat::Iso3), 50);
+    assert_eq!(larql_rotorquant::ffi::block_bytes(KvFormat::Planar4), 68);
+    assert_eq!(larql_rotorquant::ffi::block_bytes(KvFormat::Iso4), 68);
+}
