@@ -25711,7 +25711,13 @@
     {
       "fqn": "larql_rotorquant::cuda_oxide_round_trip::iso3_cuda_oxide_dequantize_matches_cpu",
       "file": "crates/larql-rotorquant/tests/cuda_oxide_round_trip.rs",
-      "line": 46,
+      "line": 113,
+      "crate": "larql_rotorquant"
+    },
+    {
+      "fqn": "larql_rotorquant::cuda_oxide_round_trip::cuda_oxide_dequantize_matches_cpu_for_every_format_and_kind",
+      "file": "crates/larql-rotorquant/tests/cuda_oxide_round_trip.rs",
+      "line": 155,
       "crate": "larql_rotorquant"
     },
     {

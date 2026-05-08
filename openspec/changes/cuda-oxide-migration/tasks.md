@@ -139,9 +139,13 @@
 - [ ] 8.1 Iso4 quantize (4-bit, same 4D rotation as Iso3).
 - [ ] 8.2 Planar3 quantize (3-bit, 2D Givens rotation).
 - [ ] 8.3 Planar4 quantize (4-bit, 2D Givens rotation).
-- [ ] 8.4 The dequantize side for each (4 more kernels).
-- [ ] 8.5 Cross-format parity tests: every (format, kind) combo
+- [x] 8.4 The dequantize side for each (4 more kernels).
+      Added cuda-oxide Planar3, Planar4, Iso3, and Iso4 dequantize
+      kernels behind a format-dispatching host wrapper on 2026-05-08.
+- [x] 8.5 Cross-format parity tests: every (format, kind) combo
       cuda-oxide ↔ CPU within 1e-3 max-element.
+      `cuda_oxide_dequantize_matches_cpu_for_every_format_and_kind`
+      passed in the CUDA 13.1 builder container on 2026-05-08.
 
 ### 9. Fused softmax / decode-attention kernel
 

@@ -1,7 +1,16 @@
 #![cfg(feature = "cuda-oxide")]
 
-use larql_rotorquant::{cuda_oxide, dequantize_k, quantize_k, KvFormat};
+use larql_rotorquant::{
+    cuda_oxide, dequantize_k, dequantize_v_with_inverse_rotation, quantize_k, quantize_v, KvFormat,
+    QuantizedKv,
+};
 use std::path::PathBuf;
+
+#[derive(Clone, Copy, Debug)]
+enum KvKind {
+    K,
+    V,
+}
 
 fn synth(n: usize, seed: u64) -> Vec<f32> {
     let mut s = seed.wrapping_mul(0x9E37_79B9_7F4A_7C15);
@@ -42,6 +51,64 @@ fn parity_dir() -> Option<PathBuf> {
     std::env::var_os("LARQL_ROTORQUANT_PARITY_DIR").map(PathBuf::from)
 }
 
+fn format_seed(format: KvFormat) -> u64 {
+    match format {
+        KvFormat::Planar3 => 0xA11C_E003,
+        KvFormat::Planar4 => 0xA11C_E004,
+        KvFormat::Iso3 => 0x1500_0003,
+        KvFormat::Iso4 => 0x1500_0004,
+    }
+}
+
+fn quantize_kind(
+    kind: KvKind,
+    format: KvFormat,
+    input: &[f32],
+    n_rows: usize,
+    head_dim: usize,
+) -> QuantizedKv {
+    match kind {
+        KvKind::K => quantize_k(format, input, n_rows, head_dim).expect("quantize_k"),
+        KvKind::V => quantize_v(format, input, n_rows, head_dim).expect("quantize_v"),
+    }
+}
+
+fn dequantize_kind(kind: KvKind, qkv: &QuantizedKv) -> Vec<f32> {
+    match kind {
+        KvKind::K => dequantize_k(qkv).expect("dequantize_k"),
+        KvKind::V => {
+            dequantize_v_with_inverse_rotation(qkv).expect("dequantize_v_with_inverse_rotation")
+        }
+    }
+}
+
+fn assert_cuda_oxide_dequantizes_like_cpu(format: KvFormat, kind: KvKind) {
+    if std::env::var("LARQL_CUDA_AVAILABLE").as_deref() != Ok("1") {
+        eprintln!("skipping cuda-oxide round-trip: set LARQL_CUDA_AVAILABLE=1");
+        return;
+    }
+
+    let n_rows = 64;
+    let head_dim = 320;
+    let kind_seed = match kind {
+        KvKind::K => 0x0C0D_E001,
+        KvKind::V => 0x0C0D_E002,
+    };
+    let input = synth(n_rows * head_dim, format_seed(format) ^ kind_seed);
+    let qkv = quantize_kind(kind, format, &input, n_rows, head_dim);
+    let cpu = dequantize_kind(kind, &qkv);
+
+    let ctx = cuda_oxide::CudaContext::new(0).expect("cuda context");
+    let gpu = cuda_oxide::dequantize(&ctx, &qkv).expect("cuda-oxide dequantize");
+
+    assert_eq!(gpu.len(), cpu.len());
+    let max_diff = max_abs_diff(&gpu, &cpu);
+    assert!(
+        max_diff <= 1e-3,
+        "{format:?} {kind:?} max cpu-vs-cuda-oxide diff {max_diff}"
+    );
+}
+
 #[test]
 fn iso3_cuda_oxide_dequantize_matches_cpu() {
     if std::env::var("LARQL_CUDA_AVAILABLE").as_deref() != Ok("1") {
@@ -80,6 +147,20 @@ fn iso3_cuda_oxide_dequantize_matches_cpu() {
             assert!(diff <= 1e-3, "max cudarc-vs-cuda-oxide diff {diff}");
         } else {
             eprintln!("skipping cudarc-vs-cuda-oxide fixture comparison: no cudarc fixture found");
+        }
+    }
+}
+
+#[test]
+fn cuda_oxide_dequantize_matches_cpu_for_every_format_and_kind() {
+    for format in [
+        KvFormat::Planar3,
+        KvFormat::Planar4,
+        KvFormat::Iso3,
+        KvFormat::Iso4,
+    ] {
+        for kind in [KvKind::K, KvKind::V] {
+            assert_cuda_oxide_dequantizes_like_cpu(format, kind);
         }
     }
 }
