@@ -72,11 +72,11 @@
 
 ## 9. Phase 5 — heterogeneous router topology (follow-up change `router-heterogeneous-shards`)
 
-- [ ] 9.1 `larql-router` shard registration accepts `capabilities` field.
-- [ ] 9.2 Routing layer picks shard by capability + layer range.
-- [ ] 9.3 Per-hop deadline (5 s default, env-overridable) prevents heterogeneous deadlocks.
-- [ ] 9.4 Backwards-compat: pre-change shards (no capabilities field) get `["attention","expert"]` by default.
-- [ ] 9.5 Status endpoint reports the capability map.
+- [x] 9.1 `larql-router` shard registration accepts `capabilities` field.
+- [x] 9.2 Routing layer picks shard by capability + layer range.
+- [x] 9.3 Per-hop deadline (5 s default, env-overridable) prevents heterogeneous deadlocks.
+- [x] 9.4 Backwards-compat: pre-change shards (no capabilities field) get `["attention","expert"]` by default.
+- [x] 9.5 Status endpoint reports the capability map.
 
 ## 10. Phase 5 — end-to-end docker compose (follow-up change `deploy-compose-end-to-end`)
 

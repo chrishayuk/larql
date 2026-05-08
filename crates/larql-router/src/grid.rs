@@ -450,6 +450,7 @@ impl GridState {
                         layer_end: e.layer_end,
                         server_ids: vec![e.server_id.clone()],
                         replica_count: 1,
+                        capabilities: e.capabilities.clone(),
                     })
                     .collect();
                 shards.sort_by_key(|s| s.layer_start);
@@ -492,6 +493,7 @@ impl GridState {
                 ram_used: e.ram_used,
                 requests_in_flight: e.requests_in_flight,
                 rtt_ms: 0,
+                capabilities: e.capabilities.clone(),
             })
             .collect();
 
@@ -805,9 +807,21 @@ mod tests {
         let model = &status.models[0];
         assert_eq!(model.model_id, "model-a");
         assert_eq!(model.shards.len(), 2);
+        let shard_caps: Vec<Vec<String>> = model
+            .shards
+            .iter()
+            .map(|s| s.capabilities.clone())
+            .collect();
+        assert!(shard_caps
+            .iter()
+            .all(|caps| caps == &ServerEntry::default_capabilities()));
         assert_eq!(model.gaps.len(), 1);
         assert_eq!(model.gaps[0].layer_start, 2);
         assert_eq!(model.gaps[0].layer_end, 2);
+        assert!(status
+            .servers
+            .iter()
+            .all(|s| s.capabilities == ServerEntry::default_capabilities()));
     }
 
     // ── router-heterogeneous-shards ──────────────────────────────────

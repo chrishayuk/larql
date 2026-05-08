@@ -132,6 +132,7 @@ message ShardInfo {
   uint32          layer_end     = 2;
   repeated string server_ids    = 3;
   uint32          replica_count = 4;
+  repeated string capabilities  = 5;
 }
 
 message Gap {
@@ -150,4 +151,5 @@ message ServerInfo {
   uint64 ram_used           = 8;
   uint32 requests_in_flight = 9;
   uint32 rtt_ms             = 10;
+  repeated string capabilities = 11;
 }

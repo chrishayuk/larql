@@ -27,7 +27,7 @@ use axum::body::Bytes;
 use axum::extract::State;
 use axum::http::{header, StatusCode};
 use axum::response::Response;
-use axum::routing::post;
+use axum::routing::{get, post};
 use axum::{Json, Router};
 use clap::Parser;
 use serde_json::Value;
@@ -71,8 +71,8 @@ struct Cli {
     #[arg(long, default_value = "0.0.0.0")]
     host: String,
 
-    /// Per-request timeout to backend shards, in seconds.
-    #[arg(long, default_value = "120")]
+    /// Per-hop deadline to backend shards, in seconds.
+    #[arg(long, env = "LARQL_ROUTER_HOP_DEADLINE_SECS", default_value = "5")]
     timeout_secs: u64,
 
     /// Log level.
@@ -175,6 +175,12 @@ struct AppState {
     client: reqwest::Client,
 }
 
+#[derive(Debug)]
+struct RouteMiss {
+    layer: usize,
+    capability: &'static str,
+}
+
 impl AppState {
     /// Resolve all layers in one lock acquisition.
     /// Returns Ok(layer → url) or Err(first missing layer).
@@ -182,13 +188,14 @@ impl AppState {
         &self,
         model_id: Option<&str>,
         layers: &[usize],
-    ) -> Result<HashMap<usize, String>, usize> {
+        capability: &'static str,
+    ) -> Result<HashMap<usize, String>, RouteMiss> {
         if let Some(grid) = &self.grid {
             let guard = grid.read().await;
             let mut out = HashMap::with_capacity(layers.len());
             let mut static_needed: Vec<usize> = Vec::new();
             for &layer in layers {
-                match guard.route(model_id, layer as u32) {
+                match guard.route_for_capability(model_id, layer as u32, capability) {
                     Some(url) => {
                         out.insert(layer, url);
                     }
@@ -197,22 +204,30 @@ impl AppState {
             }
             drop(guard);
             for layer in static_needed {
-                match self.static_shards.iter().find(|s| s.owns(layer)) {
+                match self
+                    .static_shards
+                    .iter()
+                    .find(|s| capability == "expert" && s.owns(layer))
+                {
                     Some(s) => {
                         out.insert(layer, s.url.clone());
                     }
-                    None => return Err(layer),
+                    None => return Err(RouteMiss { layer, capability }),
                 }
             }
             return Ok(out);
         }
         let mut out = HashMap::with_capacity(layers.len());
         for &layer in layers {
-            match self.static_shards.iter().find(|s| s.owns(layer)) {
+            match self
+                .static_shards
+                .iter()
+                .find(|s| capability == "expert" && s.owns(layer))
+            {
                 Some(s) => {
                     out.insert(layer, s.url.clone());
                 }
-                None => return Err(layer),
+                None => return Err(RouteMiss { layer, capability }),
             }
         }
         Ok(out)
@@ -289,13 +304,125 @@ async fn handle_walk_ffn_inner(
     }
 
     let mid = model_id_owned.as_deref();
-    let layer_urls = state.resolve_all(mid, &layers).await.map_err(|missing| {
-        (
-            StatusCode::BAD_REQUEST,
-            format!("layer {missing} has no owning shard in this router"),
-        )
-    })?;
+    let layer_urls = state
+        .resolve_all(mid, &layers, "expert")
+        .await
+        .map_err(|missing| {
+            (
+                StatusCode::SERVICE_UNAVAILABLE,
+                format!(
+                    "no shard advertises capability={} for layer {}",
+                    missing.capability, missing.layer
+                ),
+            )
+        })?;
 
+    proxy_walk_ffn_layers(state, body_bytes, is_binary, layer_urls, layers).await
+}
+
+async fn handle_attention_proxy(
+    State(state): State<Arc<AppState>>,
+    request: axum::extract::Request,
+) -> Response {
+    match handle_attention_proxy_inner(state, request).await {
+        Ok(r) => r,
+        Err((status, msg)) => {
+            let body = format!(r#"{{"error":{}}}"#, serde_json::Value::String(msg));
+            Response::builder()
+                .status(status)
+                .header(header::CONTENT_TYPE, "application/json")
+                .body(axum::body::Body::from(body))
+                .unwrap()
+        }
+    }
+}
+
+async fn handle_attention_proxy_inner(
+    state: Arc<AppState>,
+    request: axum::extract::Request,
+) -> Result<Response, (StatusCode, String)> {
+    let path = request.uri().path().to_string();
+    let content_type = request
+        .headers()
+        .get(header::CONTENT_TYPE)
+        .and_then(|v| v.to_str().ok())
+        .unwrap_or("application/json")
+        .to_string();
+    let method = request.method().clone();
+    let body_bytes = axum::body::to_bytes(request.into_body(), 64 * 1024 * 1024)
+        .await
+        .map_err(|e| (StatusCode::BAD_REQUEST, format!("read body: {e}")))?;
+
+    let (layers, model_id_owned) = if body_bytes.is_empty() {
+        (vec![0usize], None)
+    } else {
+        let peek: Value = serde_json::from_slice(&body_bytes)
+            .map_err(|e| (StatusCode::BAD_REQUEST, format!("invalid JSON: {e}")))?;
+        let layers = layers_from_json(&peek).unwrap_or_else(|| vec![0usize]);
+        let model_id = peek
+            .get("model_id")
+            .and_then(|v| v.as_str())
+            .map(str::to_owned);
+        (layers, model_id)
+    };
+
+    let layer_urls = state
+        .resolve_all(model_id_owned.as_deref(), &layers, "attention")
+        .await
+        .map_err(|missing| {
+            (
+                StatusCode::SERVICE_UNAVAILABLE,
+                format!(
+                    "no shard advertises capability={} for layer {}",
+                    missing.capability, missing.layer
+                ),
+            )
+        })?;
+
+    let unique_urls: std::collections::HashSet<&String> = layer_urls.values().collect();
+    if unique_urls.len() != 1 {
+        return Err((
+            StatusCode::BAD_REQUEST,
+            "attention fan-out across multiple shards is not supported".to_string(),
+        ));
+    }
+    let base_url = layer_urls.values().next().unwrap();
+    proxy_raw_to_path(
+        &state.client,
+        base_url,
+        &path,
+        method,
+        body_bytes,
+        &content_type,
+    )
+    .await
+}
+
+fn layers_from_json(peek: &Value) -> Option<Vec<usize>> {
+    if let Some(arr) = peek.get("layers").and_then(|v| v.as_array()) {
+        Some(
+            arr.iter()
+                .filter_map(|v| v.as_u64().map(|n| n as usize))
+                .collect(),
+        )
+    } else if let Some(n) = peek.get("layer").and_then(|v| v.as_u64()) {
+        Some(vec![n as usize])
+    } else if let Some(arr) = peek.get("layer_range").and_then(|v| v.as_array()) {
+        arr.first()
+            .and_then(|v| v.as_u64())
+            .map(|start| vec![start as usize])
+    } else {
+        None
+    }
+}
+
+async fn proxy_walk_ffn_layers(
+    state: Arc<AppState>,
+    body_bytes: Bytes,
+    is_binary: bool,
+    layer_urls: HashMap<usize, String>,
+    layers: Vec<usize>,
+) -> Result<Response, (StatusCode, String)> {
     // Determine unique shards.
     let unique_urls: std::collections::HashSet<&String> = layer_urls.values().collect();
 
@@ -342,24 +469,27 @@ async fn handle_walk_ffn_inner(
         let client = state.client.clone();
         let target = format!("{url}/v1/walk-ffn");
         handles.push(tokio::spawn(async move {
-            client
+            let resp = client
                 .post(&target)
                 .json(&sub_body)
                 .send()
                 .await
-                .map_err(|e| e.to_string())?
-                .json::<Value>()
+                .map_err(|e| (reqwest_error_status(&e), e.to_string()))?;
+            resp.json::<Value>()
                 .await
-                .map_err(|e| e.to_string())
+                .map_err(|e| (reqwest_error_status(&e), e.to_string()))
         }));
     }
 
     let responses: Vec<Value> = futures::future::join_all(handles)
         .await
         .into_iter()
-        .map(|jh| jh.map_err(|e| e.to_string()).and_then(|r| r))
+        .map(|jh| {
+            jh.map_err(|e| (StatusCode::BAD_GATEWAY, e.to_string()))
+                .and_then(|r| r)
+        })
         .collect::<Result<Vec<_>, _>>()
-        .map_err(|e| (StatusCode::BAD_GATEWAY, format!("shard error: {e}")))?;
+        .map_err(|(status, e)| (status, format!("shard error: {e}")))?;
 
     let mut all_results: Vec<Value> = Vec::new();
     let mut max_latency: f64 = 0.0;
@@ -398,14 +528,35 @@ async fn proxy_raw(
     body: Bytes,
     ct: &str,
 ) -> Result<Response, (StatusCode, String)> {
-    let url = format!("{base_url}/v1/walk-ffn");
+    proxy_raw_to_path(
+        client,
+        base_url,
+        "/v1/walk-ffn",
+        axum::http::Method::POST,
+        body,
+        ct,
+    )
+    .await
+}
+
+async fn proxy_raw_to_path(
+    client: &reqwest::Client,
+    base_url: &str,
+    path: &str,
+    method: axum::http::Method,
+    body: Bytes,
+    ct: &str,
+) -> Result<Response, (StatusCode, String)> {
+    let url = format!("{base_url}{path}");
+    let reqwest_method =
+        reqwest::Method::from_bytes(method.as_str().as_bytes()).unwrap_or(reqwest::Method::POST);
     let resp = client
-        .post(&url)
+        .request(reqwest_method, &url)
         .header(reqwest::header::CONTENT_TYPE, ct)
         .body(body.to_vec())
         .send()
         .await
-        .map_err(|e| (StatusCode::BAD_GATEWAY, format!("shard {base_url}: {e}")))?;
+        .map_err(|e| (reqwest_error_status(&e), format!("shard {base_url}: {e}")))?;
 
     let status = resp.status();
     let resp_ct = resp
@@ -424,6 +575,14 @@ async fn proxy_raw(
         .header(header::CONTENT_TYPE, resp_ct)
         .body(axum::body::Body::from(resp_bytes))
         .unwrap())
+}
+
+fn reqwest_error_status(e: &reqwest::Error) -> StatusCode {
+    if e.is_timeout() {
+        StatusCode::GATEWAY_TIMEOUT
+    } else {
+        StatusCode::BAD_GATEWAY
+    }
 }
 
 async fn handle_health() -> Json<Value> {
@@ -565,8 +724,18 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
 
     let app = Router::new()
         .route("/v1/walk-ffn", post(handle_walk_ffn))
-        .route("/v1/stats", axum::routing::get(handle_stats))
-        .route("/v1/health", axum::routing::get(handle_health))
+        .route("/v1/attention/session", post(handle_attention_proxy))
+        .route(
+            "/v1/attention/session/{id}",
+            get(handle_attention_proxy).delete(handle_attention_proxy),
+        )
+        .route("/v1/attention/prefill", post(handle_attention_proxy))
+        .route("/v1/attention/decode", post(handle_attention_proxy))
+        .route("/v1/kv-cache/snapshot", post(handle_attention_proxy))
+        .route("/v1/kv-cache/restore", post(handle_attention_proxy))
+        .route("/v1/kv-cache/free", post(handle_attention_proxy))
+        .route("/v1/stats", get(handle_stats))
+        .route("/v1/health", get(handle_health))
         .with_state(state);
 
     let addr = format!("{}:{}", cli.host, cli.port);
@@ -584,6 +753,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::time::Instant;
 
     // ── peek_binary ───────────────────────────────────────────────────────────
 
@@ -705,5 +875,139 @@ mod tests {
         assert!(shards[0].owns(0));
         assert!(shards[0].owns(16));
         assert!(!shards[0].owns(17));
+    }
+
+    #[test]
+    fn cli_default_hop_deadline_is_five_seconds() {
+        let cli = Cli::parse_from(["larql-router", "--shards", "0-0=http://host:8080"]);
+        assert_eq!(cli.timeout_secs, 5);
+
+        let cli = Cli::parse_from([
+            "larql-router",
+            "--shards",
+            "0-0=http://host:8080",
+            "--timeout-secs",
+            "9",
+        ]);
+        assert_eq!(cli.timeout_secs, 9);
+    }
+
+    fn grid_entry(
+        server_id: &str,
+        listen_url: &str,
+        model_id: &str,
+        layer_start: u32,
+        layer_end: u32,
+        capabilities: &[&str],
+    ) -> grid::ServerEntry {
+        grid::ServerEntry {
+            server_id: server_id.to_string(),
+            listen_url: listen_url.to_string(),
+            model_id: model_id.to_string(),
+            layer_start,
+            layer_end,
+            cpu_pct: 0.0,
+            ram_used: 1024,
+            requests_in_flight: 0,
+            last_seen: Instant::now(),
+            capabilities: capabilities.iter().map(|s| s.to_string()).collect(),
+            cached_prefixes: grid::PrefixBloom::new(),
+        }
+    }
+
+    fn test_state(grid_state: GridState) -> Arc<AppState> {
+        Arc::new(AppState {
+            static_shards: Vec::new(),
+            grid: Some(Arc::new(RwLock::new(grid_state))),
+            client: reqwest::Client::new(),
+        })
+    }
+
+    #[tokio::test]
+    async fn resolve_all_filters_grid_by_expert_capability() {
+        let mut grid = GridState::default();
+        grid.register(grid_entry(
+            "gpu",
+            "http://gpu",
+            "model-a",
+            0,
+            31,
+            &["attention"],
+        ));
+        grid.register(grid_entry(
+            "ffn",
+            "http://ffn",
+            "model-a",
+            0,
+            31,
+            &["expert"],
+        ));
+        let state = test_state(grid);
+
+        let resolved = state
+            .resolve_all(Some("model-a"), &[17], "expert")
+            .await
+            .expect("expert shard resolves");
+        assert_eq!(resolved.get(&17).map(String::as_str), Some("http://ffn"));
+    }
+
+    #[tokio::test]
+    async fn attention_proxy_missing_capability_returns_503_body() {
+        let mut grid = GridState::default();
+        grid.register(grid_entry(
+            "ffn",
+            "http://ffn",
+            "model-a",
+            0,
+            31,
+            &["expert"],
+        ));
+        let state = test_state(grid);
+        let req = axum::http::Request::builder()
+            .method("POST")
+            .uri("/v1/attention/decode")
+            .header(header::CONTENT_TYPE, "application/json")
+            .body(axum::body::Body::from(
+                r#"{"model_id":"model-a","layer":17,"session_id":"s"}"#,
+            ))
+            .unwrap();
+
+        let resp = handle_attention_proxy(State(state), req).await;
+        assert_eq!(resp.status(), StatusCode::SERVICE_UNAVAILABLE);
+        let body = axum::body::to_bytes(resp.into_body(), 1024)
+            .await
+            .expect("body bytes");
+        let body = std::str::from_utf8(&body).unwrap();
+        assert!(body.contains("no shard advertises capability=attention"));
+    }
+
+    #[tokio::test]
+    async fn proxy_raw_timeout_maps_to_504() {
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0")
+            .await
+            .expect("bind");
+        let addr = listener.local_addr().unwrap();
+        tokio::spawn(async move {
+            if let Ok((_socket, _peer)) = listener.accept().await {
+                tokio::time::sleep(std::time::Duration::from_millis(200)).await;
+            }
+        });
+
+        let client = reqwest::Client::builder()
+            .timeout(std::time::Duration::from_millis(20))
+            .build()
+            .unwrap();
+        let err = proxy_raw_to_path(
+            &client,
+            &format!("http://{addr}"),
+            "/v1/attention/decode",
+            axum::http::Method::POST,
+            Bytes::from_static(b"{}"),
+            "application/json",
+        )
+        .await
+        .expect_err("timeout should map to router error");
+
+        assert_eq!(err.0, StatusCode::GATEWAY_TIMEOUT);
     }
 }

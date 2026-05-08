@@ -42,7 +42,7 @@ or layer range was missing.
 - **WHEN** an attention RPC reaches a router whose grid contains only expert shards
 - **THEN** the response SHALL be HTTP 503 with a body containing "no shard advertises capability=attention"
 <!-- test: larql_router::grid::tests::route_for_capability_returns_none_when_no_match -->
-<!-- test: unbacked -->
+<!-- test: larql_router::tests::attention_proxy_missing_capability_returns_503_body -->
 
 ### Requirement: Heterogeneous deadlock prevention
 
@@ -56,4 +56,10 @@ shard is unhealthy.
 #### Scenario: Attention timeout returns 504 and frees the FFN reservation
 - **WHEN** an attention shard goes unresponsive mid-decode
 - **THEN** within the configured deadline the router SHALL return 504 and the corresponding FFN-shard reservation SHALL be released
-<!-- test: unbacked -->
+<!-- test: larql_router::tests::cli_default_hop_deadline_is_five_seconds -->
+<!-- test: larql_router::tests::proxy_raw_timeout_maps_to_504 -->
+
+#### Scenario: Status reports capability map
+- **WHEN** grid status is requested
+- **THEN** each shard and server entry SHALL include the capabilities registered by that shard
+<!-- test: larql_router::grid::tests::status_response_reports_shards_and_gaps -->

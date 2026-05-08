@@ -2,10 +2,10 @@
   "summary": {
     "capabilities": 49,
     "requirements": 408,
-    "scenarios": 1377,
-    "scenarios_backed": 1269,
-    "scenarios_unbacked": 108,
-    "test_refs": 3306,
+    "scenarios": 1378,
+    "scenarios_backed": 1271,
+    "scenarios_unbacked": 107,
+    "test_refs": 3308,
     "test_refs_unresolved": 0
   },
   "capabilities": [
@@ -13040,7 +13040,8 @@
             {
               "name": "Missing capability returns 503 with a useful body",
               "tests_resolved": [
-                "larql_router::grid::tests::route_for_capability_returns_none_when_no_match"
+                "larql_router::grid::tests::route_for_capability_returns_none_when_no_match",
+                "larql_router::tests::attention_proxy_missing_capability_returns_503_body"
               ],
               "tests_unresolved": [],
               "unbacked": false,
@@ -13054,11 +13055,24 @@
           "scenarios": [
             {
               "name": "Attention timeout returns 504 and frees the FFN reservation",
-              "tests_resolved": [],
+              "tests_resolved": [
+                "larql_router::tests::cli_default_hop_deadline_is_five_seconds",
+                "larql_router::tests::proxy_raw_timeout_maps_to_504"
+              ],
               "tests_unresolved": [],
-              "unbacked": true,
+              "unbacked": false,
               "spec_file": "openspec/changes/cuda-and-rotorquant-kv/specs/router-grid/spec.md",
               "line": 56
+            },
+            {
+              "name": "Status reports capability map",
+              "tests_resolved": [
+                "larql_router::grid::tests::status_response_reports_shards_and_gaps"
+              ],
+              "tests_unresolved": [],
+              "unbacked": false,
+              "spec_file": "openspec/changes/cuda-and-rotorquant-kv/specs/router-grid/spec.md",
+              "line": 62
             }
           ]
         },
@@ -25425,127 +25439,127 @@
     {
       "fqn": "larql_router::grid::route_uses_inclusive_layer_ranges",
       "file": "crates/larql-router/src/grid.rs",
-      "line": 720,
+      "line": 722,
       "crate": "larql_router"
     },
     {
       "fqn": "larql_router::grid::route_without_model_uses_any_model_table",
       "file": "crates/larql-router/src/grid.rs",
-      "line": 733,
+      "line": 735,
       "crate": "larql_router"
     },
     {
       "fqn": "larql_router::grid::route_prefers_least_loaded_replica",
       "file": "crates/larql-router/src/grid.rs",
-      "line": 742,
+      "line": 744,
       "crate": "larql_router"
     },
     {
       "fqn": "larql_router::grid::deregister_removes_server_from_route_table",
       "file": "crates/larql-router/src/grid.rs",
-      "line": 759,
+      "line": 761,
       "crate": "larql_router"
     },
     {
       "fqn": "larql_router::grid::heartbeat_updates_load_without_rebuilding_topology",
       "file": "crates/larql-router/src/grid.rs",
-      "line": 771,
+      "line": 773,
       "crate": "larql_router"
     },
     {
       "fqn": "larql_router::grid::route_all_returns_first_uncovered_layer",
       "file": "crates/larql-router/src/grid.rs",
-      "line": 787,
+      "line": 789,
       "crate": "larql_router"
     },
     {
       "fqn": "larql_router::grid::status_response_reports_shards_and_gaps",
       "file": "crates/larql-router/src/grid.rs",
-      "line": 796,
+      "line": 798,
       "crate": "larql_router"
     },
     {
       "fqn": "larql_router::grid::default_capabilities_advertise_both_attention_and_expert",
       "file": "crates/larql-router/src/grid.rs",
-      "line": 829,
+      "line": 843,
       "crate": "larql_router"
     },
     {
       "fqn": "larql_router::grid::route_for_capability_filters_by_capability",
       "file": "crates/larql-router/src/grid.rs",
-      "line": 837,
+      "line": 851,
       "crate": "larql_router"
     },
     {
       "fqn": "larql_router::grid::route_for_capability_returns_none_when_no_match",
       "file": "crates/larql-router/src/grid.rs",
-      "line": 867,
+      "line": 881,
       "crate": "larql_router"
     },
     {
       "fqn": "larql_router::grid::route_for_capability_falls_back_to_default_caps_shard",
       "file": "crates/larql-router/src/grid.rs",
-      "line": 885,
+      "line": 899,
       "crate": "larql_router"
     },
     {
       "fqn": "larql_router::grid::empty_bloom_returns_no_matches",
       "file": "crates/larql-router/src/grid.rs",
-      "line": 920,
+      "line": 934,
       "crate": "larql_router"
     },
     {
       "fqn": "larql_router::grid::route_for_prefix_picks_shard_with_cached_prefix",
       "file": "crates/larql-router/src/grid.rs",
-      "line": 929,
+      "line": 943,
       "crate": "larql_router"
     },
     {
       "fqn": "larql_router::grid::route_for_prefix_falls_back_to_least_loaded_when_no_match",
       "file": "crates/larql-router/src/grid.rs",
-      "line": 961,
+      "line": 975,
       "crate": "larql_router"
     },
     {
       "fqn": "larql_router::grid::route_for_prefix_breaks_ties_by_load",
       "file": "crates/larql-router/src/grid.rs",
-      "line": 976,
+      "line": 990,
       "crate": "larql_router"
     },
     {
       "fqn": "larql_router::grid::bloom_false_positive_rate_within_bound_at_design_load",
       "file": "crates/larql-router/src/grid.rs",
-      "line": 999,
+      "line": 1013,
       "crate": "larql_router"
     },
     {
       "fqn": "larql_router::grid::bloom_overload_degrades_predictably",
       "file": "crates/larql-router/src/grid.rs",
-      "line": 1038,
+      "line": 1052,
       "crate": "larql_router"
     },
     {
       "fqn": "larql_router::grid::bloom_to_wire_bytes_round_trips",
       "file": "crates/larql-router/src/grid.rs",
-      "line": 1078,
+      "line": 1092,
       "crate": "larql_router"
     },
     {
       "fqn": "larql_router::grid::bloom_from_wire_bytes_rejects_non_32_byte_input",
       "file": "crates/larql-router/src/grid.rs",
-      "line": 1092,
+      "line": 1106,
       "crate": "larql_router"
     },
     {
       "fqn": "larql_router::grid::update_heartbeat_with_prefixes_writes_bloom_onto_entry",
       "file": "crates/larql-router/src/grid.rs",
-      "line": 1099,
+      "line": 1113,
       "crate": "larql_router"
     },
     {
       "fqn": "larql_router::grid::update_heartbeat_without_prefixes_preserves_prior_bloom",
       "file": "crates/larql-router/src/grid.rs",
-      "line": 1112,
+      "line": 1126,
       "crate": "larql_router"
     },
     {
