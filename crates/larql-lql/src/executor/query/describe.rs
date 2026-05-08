@@ -429,40 +429,53 @@ fn describe_resolve_gguf_labels(
     let Ok(tokenizer) = larql_vindex::load_vindex_tokenizer(path) else {
         return trace;
     };
-    let mut candidates: Vec<u32> = prompt_token_ids.to_vec();
-    candidates.extend(0..semantic_token_limit as u32);
-    candidates.sort_unstable();
-    candidates.dedup();
+    let candidates =
+        super::manifest_candidate_token_ids(prompt_token_ids, vocab_size, semantic_token_limit);
     let mut resolved = 0usize;
-    for (layer, hits) in &mut trace.layers {
-        for hit in hits {
-            if resolved >= semantic_hit_limit {
-                return trace;
-            }
-            if let Ok(mut meta) = larql_vindex::load_vindex_gguf_feature_meta(
-                path,
-                *layer,
-                hit.feature,
-                &candidates,
-                4,
-            ) {
-                for entry in &mut meta.top_k {
-                    if let Ok(decoded) = tokenizer.decode(&[entry.token_id], true) {
-                        let decoded = decoded.trim().to_string();
-                        if !decoded.is_empty() {
-                            entry.token = decoded;
-                        }
+    for (layer_pos, hit_pos) in describe_resolution_order(&trace, semantic_hit_limit) {
+        let layer = trace.layers[layer_pos].0;
+        let hit = &mut trace.layers[layer_pos].1[hit_pos];
+        if let Ok(mut meta) =
+            larql_vindex::load_vindex_gguf_feature_meta(path, layer, hit.feature, &candidates, 4)
+        {
+            for entry in &mut meta.top_k {
+                if let Ok(decoded) = tokenizer.decode(&[entry.token_id], true) {
+                    let decoded = decoded.trim().to_string();
+                    if !decoded.is_empty() {
+                        entry.token = decoded;
                     }
                 }
-                if let Some(first) = meta.top_k.first() {
-                    meta.top_token = first.token.clone();
-                }
-                hit.meta = meta;
-                resolved += 1;
+            }
+            if let Some(first) = meta.top_k.first() {
+                meta.top_token = first.token.clone();
+            }
+            hit.meta = meta;
+            resolved += 1;
+            if resolved >= semantic_hit_limit {
+                break;
             }
         }
     }
     trace
+}
+
+fn describe_resolution_order(trace: &larql_vindex::WalkTrace, limit: usize) -> Vec<(usize, usize)> {
+    let mut order: Vec<(usize, usize, f32)> = trace
+        .layers
+        .iter()
+        .enumerate()
+        .flat_map(|(layer_pos, (_layer, hits))| {
+            hits.iter()
+                .enumerate()
+                .map(move |(hit_pos, hit)| (layer_pos, hit_pos, hit.gate_score.abs()))
+        })
+        .collect();
+    order.sort_by(|a, b| b.2.partial_cmp(&a.2).unwrap_or(std::cmp::Ordering::Equal));
+    order
+        .into_iter()
+        .take(limit)
+        .map(|(layer_pos, hit_pos, _)| (layer_pos, hit_pos))
+        .collect()
 }
 
 /// Walk the trace, deduplicate by lowercased target token, and apply
@@ -687,9 +700,52 @@ fn format_also(also: &[String]) -> String {
 
 #[cfg(test)]
 mod tests {
-    use super::describe_collect_edges;
+    use super::{describe_collect_edges, describe_resolution_order};
     use larql_models::TopKEntry;
     use larql_vindex::{FeatureMeta, WalkHit, WalkTrace};
+
+    #[test]
+    fn describe_resolves_highest_gate_hits_across_layers_first() {
+        let trace = WalkTrace {
+            layers: vec![
+                (
+                    1,
+                    vec![
+                        walk_hit(1, 10, 0.1, "early"),
+                        walk_hit(1, 11, 0.2, "early2"),
+                    ],
+                ),
+                (
+                    40,
+                    vec![
+                        walk_hit(40, 99, 9.0, "late"),
+                        walk_hit(40, 100, 8.0, "late2"),
+                    ],
+                ),
+            ],
+        };
+
+        let order = describe_resolution_order(&trace, 2);
+        assert_eq!(order, vec![(1, 0), (1, 1)]);
+    }
+
+    fn walk_hit(layer: usize, feature: usize, gate_score: f32, token: &str) -> WalkHit {
+        WalkHit {
+            layer,
+            feature,
+            gate_score,
+            meta: FeatureMeta {
+                top_token: token.to_string(),
+                top_token_id: 0,
+                c_score: gate_score,
+                top_k: vec![TopKEntry {
+                    token: token.to_string(),
+                    token_id: 0,
+                    logit: gate_score,
+                }],
+            },
+        }
+    }
 
     #[test]
     fn manifest_browse_describe_keeps_low_score_readable_hits() {

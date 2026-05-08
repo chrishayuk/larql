@@ -488,3 +488,47 @@ Log: `/tmp/larql-kimi-describe-manifest-policy.log`.
 
 Remaining limitation:
 - This makes `DESCRIBE` useful enough for bounded browse smoke, but the semantic quality is still bounded by the candidate token set and early gate scan. Deeper candidate sampling / better manifest gate search should improve target quality beyond fragments like `ent`.
+
+## DESCRIBE candidate sampling and cross-layer label budget
+
+Status: GREEN + real smoke.
+
+Problem: after manifest-backed `DESCRIBE` became non-empty, semantic targets were dominated by the earliest layer because selected-hit down-meta resolution spent its hit budget by layer order. Candidate labels also only used a low-id prefix, which can miss higher-vocab tokens when the candidate budget is small.
+
+RED:
+```bash
+PATH=/tmp/larql-cmake-venv/bin:$PATH cargo test -p larql-lql manifest_candidates_mix_prefix_prompt_and_vocab_stride -- --nocapture
+PATH=/tmp/larql-cmake-venv/bin:$PATH cargo test -p larql-lql describe_resolves_highest_gate_hits_across_layers_first -- --nocapture
+```
+Observed failures:
+- candidate helper did not preserve prompt/high-vocab candidates under a small limit;
+- DESCRIBE had no resolution-order seam and resolved hits by layer order.
+
+GREEN:
+- Added `manifest_candidate_token_ids(...)`, which keeps prompt token IDs, keeps a low-ID prefix, and spends the remaining bounded budget on a stride across the vocabulary.
+- `DESCRIBE` now uses the mixed candidate set for bounded down-meta label projection.
+- `DESCRIBE` now ranks selected hits by absolute gate score across all scan layers before spending the semantic label budget, instead of resolving only the first layers.
+- `SELECT` and `WALK` keep their previous prefix/prompt candidate behavior for now because broad stride candidates produced noisier table/walk labels in smoke.
+
+Real Kimi smoke:
+```bash
+PATH=/tmp/larql-cmake-venv/bin:$PATH \
+LARQL_GGUF_MANIFEST_DOWN_META_TOKENS=512 \
+LARQL_GGUF_MANIFEST_DOWN_META_HITS=12 \
+timeout 180s cargo run -q -p larql-cli -- lql \
+'USE "/home/bkearns/data/larql-smoke/kimi-q4km-loadable-smoke.vindex";
+ DESCRIBE "France" BRIEF;'
+```
+Result: `LQL_EXIT=0`, cross-band output:
+```text
+France
+  signal: diffuse (2 edges, max gate 0.1)
+  Syntax (L0-23):
+                 → Fly                      0.1  L9
+  Output (L48-60):
+                 → -header                  0.1  L53
+```
+Log: `/tmp/larql-kimi-describe-ranked-stride-only.log`.
+
+Remaining limitation:
+- This improves coverage across layers and vocab IDs without dense artifacts, but targets remain noisy. Better quality likely needs readable-token-aware candidate selection from the tokenizer vocab and/or deeper manifest gate scanning, still bounded and query-time only.
