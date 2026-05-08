@@ -27683,7 +27683,7 @@
     {
       "fqn": "larql_server::test_attention_validation::decode_returns_503_quantized_model_unsupported",
       "file": "crates/larql-server/tests/test_attention_validation.rs",
-      "line": 524,
+      "line": 526,
       "crate": "larql_server"
     },
     {

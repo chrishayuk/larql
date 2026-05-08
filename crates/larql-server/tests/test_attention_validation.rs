@@ -455,7 +455,9 @@ async fn prefill_q4k_unsupported_layer_residuals_capture_returns_501() {
 #[tokio::test]
 #[ignore]
 async fn prefill_q4k_default_returns_200_against_real_vindex() {
-    let path = std::path::Path::new("output/gemma-3-4b-it-vindex");
+    let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("../..")
+        .join("output/gemma-3-4b-it-vindex");
     assert!(
         path.is_dir(),
         "expected real Q4_K vindex at {}",

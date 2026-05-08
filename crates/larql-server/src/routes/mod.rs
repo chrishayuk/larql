@@ -30,6 +30,9 @@ use axum::Router;
 // positions into one call per layer (N_positions × top_K × hidden floats as
 // JSON). 64 MB covers: 512 positions × 8 experts × 2816 floats × ~7 bytes/float.
 const EXPERT_BATCH_BODY_LIMIT: usize = crate::http::REQUEST_BODY_LIMIT_BYTES;
+// Attention prefill and snapshot restore carry dense embeddings / base64 KV
+// blobs as JSON. Use the same bounded large-body policy as expert batches.
+const ATTENTION_BODY_LIMIT: usize = crate::http::REQUEST_BODY_LIMIT_BYTES;
 
 use crate::state::AppState;
 
@@ -151,15 +154,25 @@ pub fn single_model_router(state: Arc<AppState>) -> Router {
             post(openai::handle_chat_completions),
         )
         // attention-service-routes change.
-        .route(ATTENTION_SESSION, post(attention::handle_create_session))
+        .route(
+            ATTENTION_SESSION,
+            post(attention::handle_create_session)
+                .layer(DefaultBodyLimit::max(ATTENTION_BODY_LIMIT)),
+        )
         .route(
             ATTENTION_SESSION_BY_ID,
             get(attention::handle_get_session).delete(attention::handle_delete_session),
         )
-        .route(ATTENTION_PREFILL, post(attention::handle_prefill))
+        .route(
+            ATTENTION_PREFILL,
+            post(attention::handle_prefill).layer(DefaultBodyLimit::max(ATTENTION_BODY_LIMIT)),
+        )
         .route(ATTENTION_DECODE, post(attention::handle_decode))
         .route(KV_CACHE_SNAPSHOT, post(attention::handle_kv_snapshot))
-        .route(KV_CACHE_RESTORE, post(attention::handle_kv_restore))
+        .route(
+            KV_CACHE_RESTORE,
+            post(attention::handle_kv_restore).layer(DefaultBodyLimit::max(ATTENTION_BODY_LIMIT)),
+        )
         .route(KV_CACHE_FREE, post(attention::handle_kv_free))
         .with_state(state)
 }
