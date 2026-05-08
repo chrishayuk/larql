@@ -19247,25 +19247,25 @@
     {
       "fqn": "larql_compute::cuda::backend::driver_missing_returns_typed_error",
       "file": "crates/larql-compute/src/cuda/backend.rs",
-      "line": 203,
+      "line": 133,
       "crate": "larql_compute"
     },
     {
       "fqn": "larql_compute::cuda::backend::supports_f32_gemv_after_baseline",
       "file": "crates/larql-compute/src/cuda/backend.rs",
-      "line": 220,
+      "line": 150,
       "crate": "larql_compute"
     },
     {
       "fqn": "larql_compute::cuda::backend::supports_q4_matvec_after_q4_baseline",
       "file": "crates/larql-compute/src/cuda/backend.rs",
-      "line": 235,
+      "line": 165,
       "crate": "larql_compute"
     },
     {
       "fqn": "larql_compute::cuda::backend::supports_fa2_after_fused_attention",
       "file": "crates/larql-compute/src/cuda/backend.rs",
-      "line": 247,
+      "line": 177,
       "crate": "larql_compute"
     },
     {
@@ -19902,6 +19902,12 @@
       "fqn": "larql_compute::metal::ops::full_pipeline::kv_copy::populate_kv_one_layer_grows_empty_cache",
       "file": "crates/larql-compute/src/metal/ops/full_pipeline/kv_copy.rs",
       "line": 311,
+      "crate": "larql_compute"
+    },
+    {
+      "fqn": "larql_compute::test_cuda_q4::q4kf_matvec_ffn_gate_parity",
+      "file": "crates/larql-compute/tests/test_cuda_q4.rs",
+      "line": 162,
       "crate": "larql_compute"
     },
     {

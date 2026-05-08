@@ -20,6 +20,8 @@ set -euo pipefail
 ROLE="${ROLE:-all}"
 VINDEX_DIR="${VINDEX_PATH:-/data/vindex}"
 HF_REPO="${HF_REPO:-chrishayuk/gemma-4-26b-a4b-it-vindex-expert-server}"
+export VINDEX_PATH="$VINDEX_DIR"
+export HF_REPO
 
 # ---- preflight: GPU role needs CUDA runtime ---------------------------------
 
@@ -35,11 +37,20 @@ fi
 # ---- vindex bootstrap (download if absent / incomplete) ---------------------
 
 mkdir -p "$VINDEX_DIR"
-LAYER_COUNT=$(ls "$VINDEX_DIR/layers/"*.weights 2>/dev/null | wc -l)
 HAS_INDEX=$([ -f "$VINDEX_DIR/index.json" ] && echo yes || echo no)
 HAS_EMBED=$([ -f "$VINDEX_DIR/embeddings.bin" ] && echo yes || echo no)
-if [[ "$HAS_INDEX" == "no" || "$HAS_EMBED" == "no" || "$LAYER_COUNT" -lt 1 ]]; then
-  echo "[start.sh] vindex incomplete (index=$HAS_INDEX embed=$HAS_EMBED layers=$LAYER_COUNT) — fetching $HF_REPO"
+HAS_WEIGHT=$(
+  if compgen -G "$VINDEX_DIR/layers/*.weights" >/dev/null \
+    || [ -f "$VINDEX_DIR/interleaved_q4k.bin" ] \
+    || [ -f "$VINDEX_DIR/attn_weights_q4k.bin" ] \
+    || [ -f "$VINDEX_DIR/weights.bin" ]; then
+    echo yes
+  else
+    echo no
+  fi
+)
+if [[ "$HAS_INDEX" == "no" || "$HAS_EMBED" == "no" || "$HAS_WEIGHT" == "no" ]]; then
+  echo "[start.sh] vindex incomplete (index=$HAS_INDEX embed=$HAS_EMBED weight=$HAS_WEIGHT) — fetching $HF_REPO"
   HF_HUB_ENABLE_HF_TRANSFER=1 python3 - <<PYEOF
 import os
 from huggingface_hub import snapshot_download

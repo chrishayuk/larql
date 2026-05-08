@@ -64,11 +64,9 @@ openblas-src = { version = "0.10", features = ["system"] }
 [features]
 default = []
 metal = ["dep:metal", "dep:objc"]
-# cuda — CUDA backend on Linux (NVIDIA GPUs). Currently a feature-flag
-# stub that compiles, registers Capability::Cuda, and dispatches every
-# kernel as `unimplemented!()`. Real kernels land in the
-# `cuda-f32-baseline`, `cuda-q4-matvec`, and `cuda-fused-attention`
-# follow-up changes; see openspec/changes/cuda-and-rotorquant-kv/.
+# cuda — CUDA backend on Linux (NVIDIA GPUs). Uses cudarc/cuBLAS for
+# f32 GEMM/GEMV and correctness-first quantized matvec paths; fused
+# layer-pipeline integration remains staged through follow-up changes.
 cuda = ["dep:cudarc"]
 
 [build-dependencies]

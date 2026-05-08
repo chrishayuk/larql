@@ -25,7 +25,7 @@
 //! |---------|---------|------------|
 //! | CPU | (always) | BLAS f32, C kernel Q4 (ARM vdotq_s32), vector ops |
 //! | Metal | `metal` | Tiled f32, simdgroup Q4, multi-layer pipeline |
-//! | CUDA | `cuda` | (Phase-1 stub — feature-gated scaffold; cuBLAS f32, Q4 matvec, fused attention land in follow-up changes — see openspec/changes/cuda-and-rotorquant-kv/) |
+//! | CUDA | `cuda` | cuBLAS f32, correctness-first Q4/Q6 matvec, fused attention helpers |
 //!
 //! ## Quick start
 //!
@@ -55,12 +55,11 @@
 //!
 //! - `metal`: Metal GPU backend (macOS only). Adds optimised Q4 shaders,
 //!   multi-layer pipeline, zero-copy mmap buffers.
-//! - `cuda`: CUDA GPU backend (Linux + NVIDIA). Currently a feature-flag
-//!   stub — `default_backend()` will return a `CudaBackend` and
-//!   `Capability::Cuda` is advertised, but actual kernels are
-//!   `unimplemented!()` until the follow-up changes
-//!   (`cuda-f32-baseline`, `cuda-q4-matvec`, `cuda-fused-attention`)
-//!   ship. See `openspec/changes/cuda-and-rotorquant-kv/`.
+//! - `cuda`: CUDA GPU backend (Linux + NVIDIA). `default_backend()`
+//!   will return a `CudaBackend` when the driver is reachable. The
+//!   current backend covers cuBLAS f32 GEMM/GEMV and correctness-first
+//!   Q4/Q6 matvec dispatch; full fused layer-pipeline integration is
+//!   still staged through follow-up changes.
 
 extern crate blas_src;
 
@@ -125,8 +124,7 @@ pub use ::metal::Buffer as MetalBuffer;
 /// overrides the auto-selection; an unrecognised value logs a warning
 /// and proceeds with auto-selection.
 ///
-/// - With `--features cuda` on Linux + working CUDA driver → CUDA stub
-///   (real kernels land in follow-ups).
+/// - With `--features cuda` on Linux + working CUDA driver → CUDA.
 /// - With `--features metal` on macOS → Metal GPU + hybrid dispatch
 ///   calibration.
 /// - Otherwise → CPU (Accelerate BLAS on macOS, OpenBLAS on Linux).

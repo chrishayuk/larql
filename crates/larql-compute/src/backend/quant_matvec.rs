@@ -54,7 +54,8 @@ pub trait QuantMatVec {
         hidden: usize,
     ) -> Option<Vec<f32>> {
         match format {
-            QuantFormat::Q4_K | QuantFormat::Q4_KF => self.q4k_matvec(weights, x, num_rows, hidden),
+            QuantFormat::Q4_K => self.q4k_matvec(weights, x, num_rows, hidden),
+            QuantFormat::Q4_KF => self.q4kf_matvec(weights, x, num_rows, hidden),
             QuantFormat::Q6_K => self.q6k_matvec(weights, x, num_rows, hidden),
             QuantFormat::Q4_0 | QuantFormat::Q8_0 => {
                 let (q8_x, q8_scales) = crate::cpu::ops::q4_common::quantize_to_q8(x);
@@ -183,6 +184,17 @@ pub trait QuantMatVec {
     fn q4k_matvec(
         &self,
         _q4k_data: &[u8],
+        _x: &[f32],
+        _num_rows: usize,
+        _hidden: usize,
+    ) -> Option<Vec<f32>> {
+        None
+    }
+
+    /// Q4_KF matvec: `scores[N] = Q4_KF[N, K] @ f32_x[K]`.
+    fn q4kf_matvec(
+        &self,
+        _q4kf_data: &[u8],
         _x: &[f32],
         _num_rows: usize,
         _hidden: usize,

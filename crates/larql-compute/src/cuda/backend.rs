@@ -9,9 +9,8 @@ use std::sync::Arc;
 
 use ndarray::{Array2, ArrayView2};
 
-use crate::backend::{Capability, ComputeBackend, DecodeBackend, MatMul, QuantMatVec};
+use crate::backend::{Capability, ComputeBackend, MatMul};
 
-use super::dequant;
 use super::driver::Driver;
 use super::error::CudaInitError;
 use super::matmul as kernels;
@@ -92,75 +91,6 @@ impl MatMul for CudaBackend {
             Err(_) => None,
         }
     }
-}
-
-impl QuantMatVec for CudaBackend {
-    // ── Q4_0 ──────────────────────────────────────────────────────
-    // The trait method takes Q8-quantised input (i8 + scales) so the
-    // CPU dispatch can avoid re-quantising. We unconditionally
-    // dequantise inputs+weights to f32 and run cuBLAS gemv. Scale
-    // factors from the Q8 input become a per-block multiplier we
-    // fold back into the result.
-    fn q4_matvec(
-        &self,
-        q4_data: &[u8],
-        q8_x: &[i8],
-        q8_scales: &[f32],
-        num_rows: usize,
-        hidden: usize,
-    ) -> Option<Vec<f32>> {
-        // Reconstruct the f32 input from (q8_x, q8_scales). Q8 blocks
-        // are 32 i8 values + one f32 scale; layout invariant comes
-        // from `cpu::ops::q4_common::quantize_to_q8`.
-        const Q8_BLOCK: usize = 32;
-        if q8_x.len() != hidden || q8_scales.len() * Q8_BLOCK != hidden {
-            return None;
-        }
-        let mut x = Vec::with_capacity(hidden);
-        for (block_i, scale) in q8_scales.iter().enumerate() {
-            for j in 0..Q8_BLOCK {
-                x.push((q8_x[block_i * Q8_BLOCK + j] as f32) * scale);
-            }
-        }
-        let w = dequant::dequant_q4_0(q4_data, num_rows * hidden).ok()?;
-        kernels::gemv(&self.drv, &w, &x, num_rows, hidden).ok()
-    }
-
-    // ── Q4_K ──────────────────────────────────────────────────────
-    fn q4k_matvec(
-        &self,
-        q4k_data: &[u8],
-        x: &[f32],
-        num_rows: usize,
-        hidden: usize,
-    ) -> Option<Vec<f32>> {
-        if x.len() != hidden {
-            return None;
-        }
-        let w = dequant::dequant_q4_k(q4k_data, num_rows * hidden).ok()?;
-        kernels::gemv(&self.drv, &w, x, num_rows, hidden).ok()
-    }
-
-    // ── Q6_K ──────────────────────────────────────────────────────
-    fn q6k_matvec(
-        &self,
-        q6k_data: &[u8],
-        x: &[f32],
-        num_rows: usize,
-        hidden: usize,
-    ) -> Option<Vec<f32>> {
-        if x.len() != hidden {
-            return None;
-        }
-        let w = dequant::dequant_q6_k(q6k_data, num_rows * hidden).ok()?;
-        kernels::gemv(&self.drv, &w, x, num_rows, hidden).ok()
-    }
-}
-
-impl DecodeBackend for CudaBackend {
-    // Default `decode_token` returns `None`, letting callers fall back
-    // to the per-layer matmul path. Override in
-    // `cuda-fused-attention`.
 }
 
 impl ComputeBackend for CudaBackend {

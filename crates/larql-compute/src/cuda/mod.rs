@@ -1,27 +1,26 @@
-//! # CUDA backend (scaffolding)
+//! # CUDA backend
 //!
-//! Phase 1 of the [`cuda-and-rotorquant-kv`][change] OpenSpec change: a
-//! feature-flag stub that compiles, registers `Capability::Cuda`, and
-//! returns from `default_backend()` on Linux when the `cuda` feature is
-//! enabled and a CUDA driver is reachable.
+//! CUDA support for the [`cuda-and-rotorquant-kv`][change] OpenSpec
+//! change. The backend compiles behind `--features cuda`, registers
+//! `Capability::Cuda`, and returns from `default_backend()` on Linux
+//! when a CUDA driver is reachable.
 //!
-//! Real kernels land in follow-up changes (`cuda-f32-baseline`,
-//! `cuda-q4-matvec`, `cuda-fused-attention`); every dispatch path here
-//! either returns `None` (default trait impls already do this for the
-//! optional methods) or `unimplemented!()` for the required ones.
-//! Construction is the only thing that actually does work today: it
-//! checks that a CUDA device is reachable so callers get a clear error
-//! instead of a silent fallback.
+//! The current implementation covers cuBLAS f32 GEMM/GEMV, a
+//! correctness-first Q4/Q6 matvec path, and low-level fused attention
+//! helpers. Higher-level decode pipeline integration continues to land
+//! through focused follow-up changes.
 //!
 //! [change]: ../../../../openspec/changes/cuda-and-rotorquant-kv/
 
 pub mod attn;
 mod backend;
 mod cache;
+mod decode;
 mod dequant;
 mod driver;
 mod error;
 mod matmul;
+mod quant_matvec;
 
 pub use backend::CudaBackend;
 pub use error::CudaInitError;

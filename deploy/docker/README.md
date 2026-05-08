@@ -172,9 +172,9 @@ The CUDA backend kernel surface is **shipped** (see
 `docs/cuda-rotorquant-status.md` for the parity-test ledger).
 The attention-service-routes change is **partially shipped**:
 session lifecycle (create / get / delete), KV-cache snapshot /
-restore / free, and the role-aware capability announce all work.
-Prefill and decode still need the model-side attention runner
-wired in (next milestone).
+restore / free, role-aware capability announce, and Q4_K prefill
+all work. Q4_K decode remains intentionally unsupported until a
+one-step quantized decode helper lands.
 
 The `ffn` container works today with the existing CPU FFN
 service; the GPU container serves the session-lifecycle routes

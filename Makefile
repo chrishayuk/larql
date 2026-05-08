@@ -1,4 +1,4 @@
-.PHONY: build release test test-fast test-full test-integration test-models check clean fmt lint demos bench bench-save bench-check coverage coverage-summary coverage-check coverage-install ci-coverage traceability traceability-check gaps gaps-untested gaps-unbacked openspec-validate test-cuda docker-ffn docker-gpu docker-up docker-down docker-logs cuda-status attention-smoke attention-validate attention-validate-gemma attention-bench
+.PHONY: build release test test-fast test-full test-integration test-models check clean fmt lint demos bench bench-save bench-check coverage coverage-summary coverage-check coverage-install ci-coverage traceability traceability-check gaps gaps-untested gaps-unbacked openspec-validate ci-cuda test-cuda docker-ffn docker-gpu docker-up docker-up-cpu docker-down docker-logs cuda-status attention-smoke attention-validate attention-validate-gemma attention-bench
 
 # Build
 build:
@@ -48,6 +48,8 @@ test-cuda:
 	cargo test -p larql-rotorquant
 	@echo "All CUDA + RotorQuant parity tests passed."
 
+ci-cuda: test-cuda
+
 # Snapshot of cuda backend status against this dev box.
 cuda-status:
 	@echo "═══ CUDA capability snapshot ═══"
@@ -71,6 +73,9 @@ docker-gpu:
 
 docker-up:
 	cd deploy/docker && docker compose up --build
+
+docker-up-cpu:
+	cd deploy/docker && docker compose -f docker-compose.cpu.yml up --build
 
 docker-down:
 	cd deploy/docker && docker compose down -v

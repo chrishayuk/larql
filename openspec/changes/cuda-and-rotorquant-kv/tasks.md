@@ -1,38 +1,38 @@
 ## 1. Phase 1 — scaffolding (this change)
 
-- [ ] 1.1 Create `crates/larql-rotorquant/` skeleton (Cargo.toml, src/lib.rs with the public API surface as `unimplemented!()`, UPSTREAM.md placeholder, cuda/ dir with a README explaining the vendor strategy).
-- [ ] 1.2 Add `cuda` feature flag to `crates/larql-compute/Cargo.toml`. Add `cudarc = { version = "=0.13.x", optional = true }` as a target-gated dep on Linux.
-- [ ] 1.3 Create `crates/larql-compute/src/cuda/` with `mod.rs`, `backend.rs`, `matmul.rs`, `quant_matvec.rs`, `decode.rs`, `error.rs`. Stub `CudaBackend` impls of the trait family that return `Err(CudaInitError::NotImplemented)` or `unimplemented!()`.
-- [ ] 1.4 Update `default_backend()` in `crates/larql-compute/src/lib.rs` to honour the CUDA → Metal → CPU precedence (with `LARQL_BACKEND` override).
-- [ ] 1.5 `cargo check --features cuda` runs cleanly on the dev box.
-- [ ] 1.6 `crates/larql-compute/src/lib.rs` doc table lists CUDA in the backends table (no longer "planned").
-- [ ] 1.7 Add `--role` flag to `larql-server` (parse only — no behaviour change in this phase).
+- [x] 1.1 Create `crates/larql-rotorquant/` skeleton (Cargo.toml, src/lib.rs with the public API surface as `unimplemented!()`, UPSTREAM.md placeholder, cuda/ dir with a README explaining the vendor strategy).
+- [x] 1.2 Add `cuda` feature flag to `crates/larql-compute/Cargo.toml`. Add optional `cudarc` as a target-gated dep on Linux.
+- [x] 1.3 Create `crates/larql-compute/src/cuda/` with `mod.rs`, `backend.rs`, `matmul.rs`, `quant_matvec.rs`, `decode.rs`, `error.rs`. Stub `CudaBackend` impls of the trait family that return `Err(CudaInitError::NotImplemented)` or `unimplemented!()`.
+- [x] 1.4 Update `default_backend()` in `crates/larql-compute/src/lib.rs` to honour the CUDA → Metal → CPU precedence (with `LARQL_BACKEND` override).
+- [x] 1.5 `cargo check --features cuda` runs cleanly on the dev box.
+- [x] 1.6 `crates/larql-compute/src/lib.rs` doc table lists CUDA in the backends table (no longer "planned").
+- [x] 1.7 Add `--role` flag to `larql-server` (parse only — no behaviour change in this phase).
 
 ## 2. Phase 1 — deploy/docker (this change)
 
-- [ ] 2.1 `deploy/docker/Dockerfile.ffn` — Linux Ubuntu base, mirrors `deploy/fly/Dockerfile`, builds `cargo build --release -p larql-server`.
-- [ ] 2.2 `deploy/docker/Dockerfile.gpu` — `nvidia/cuda:13.1-devel-ubuntu24.04` base, builds with `--features cuda`.
-- [ ] 2.3 `deploy/docker/start.sh` — launcher that respects `ROLE`, `VINDEX_PATH`, `EXPERTS`, `WARMUP`, `KV_FORMAT` env vars.
-- [ ] 2.4 `deploy/docker/docker-compose.yml` — `ffn`, `attention`, `router` services with shared `vindex_data` volume; `gpus: all` on the attention service.
-- [ ] 2.5 `deploy/docker/docker-compose.cpu.yml` — single-binary fallback for non-GPU laptops.
-- [ ] 2.6 `deploy/docker/README.md` — topology diagram, VRAM / RAM budget table, build commands, troubleshooting (NVIDIA runtime, driver mismatch, large-image cleanup).
-- [ ] 2.7 `Makefile` targets: `docker-ffn`, `docker-gpu`, `docker-up`, `docker-down`, `docker-logs`.
+- [x] 2.1 `deploy/docker/Dockerfile.ffn` — Linux Ubuntu base, mirrors `deploy/fly/Dockerfile`, builds `cargo build --release -p larql-server`.
+- [x] 2.2 `deploy/docker/Dockerfile.gpu` — `nvidia/cuda:13.1-devel-ubuntu24.04` base, builds with `--features cuda`.
+- [x] 2.3 `deploy/docker/start.sh` — launcher that respects `ROLE`, `VINDEX_PATH`, `EXPERTS`, `WARMUP`, `KV_FORMAT` env vars.
+- [x] 2.4 `deploy/docker/docker-compose.yml` — `ffn`, `attention`, `router` services with shared `vindex_data` volume; `gpus: all` on the attention service.
+- [x] 2.5 `deploy/docker/docker-compose.cpu.yml` — single-binary fallback for non-GPU laptops.
+- [x] 2.6 `deploy/docker/README.md` — topology diagram, VRAM / RAM budget table, build commands, troubleshooting (NVIDIA runtime, driver mismatch, large-image cleanup).
+- [x] 2.7 `Makefile` targets: `docker-ffn`, `docker-gpu`, `docker-up`, `docker-down`, `docker-logs`.
 
 ## 3. Phase 2 — minimal CUDA backend (follow-up change `cuda-f32-baseline`)
 
-- [ ] 3.1 cuBLAS f32 GEMM via cudarc; pass the existing `test_correctness` matmul tests with feature `cuda`.
-- [ ] 3.2 cuBLAS f32 GEMV; pass existing LM-head gemv tests.
-- [ ] 3.3 Backend init compiles and caches PTX for one custom kernel (no-op kernel) to validate the cache plumbing.
+- [x] 3.1 cuBLAS f32 GEMM via cudarc; pass the existing `test_correctness` matmul tests with feature `cuda`.
+- [x] 3.2 cuBLAS f32 GEMV; pass existing LM-head gemv tests.
+- [x] 3.3 Backend init compiles and caches PTX for one custom kernel (no-op kernel) to validate the cache plumbing.
 - [ ] 3.4 `larql-cli predict` runs end-to-end on RTX 4090 in the GPU container.
-- [ ] 3.5 Wire `make ci-cuda` to run the CUDA-feature subset of the test suite when `LARQL_CUDA_AVAILABLE=1`.
+- [x] 3.5 Wire `make ci-cuda` to run the CUDA-feature subset of the test suite when `LARQL_CUDA_AVAILABLE=1`.
 
 ## 4. Phase 2 — Q4 / Q6 matvec (follow-up change `cuda-q4-matvec`)
 
-- [ ] 4.1 Q4_0 matvec kernel — match the existing CPU correctness tests.
-- [ ] 4.2 Q4_K matvec kernel — pass `test_q4k_parity` at production dimensions (Gemma 4B `hidden=2560`, `intermediate=10240`).
-- [ ] 4.3 Q4_KF matvec kernel — pass FFN routing parity tests.
-- [ ] 4.4 Q6_K matvec kernel.
-- [ ] 4.5 Update `larql-compute` `quant_matvec` dispatch table.
+- [x] 4.1 Q4_0 matvec kernel — match the existing CPU correctness tests.
+- [x] 4.2 Q4_K matvec kernel — pass `test_q4k_parity` at production dimensions (Gemma 4B `hidden=2560`, `intermediate=10240`).
+- [x] 4.3 Q4_KF matvec kernel — pass FFN routing parity tests.
+- [x] 4.4 Q6_K matvec kernel.
+- [x] 4.5 Update `larql-compute` `quant_matvec` dispatch table.
 
 ## 5. Phase 2 — fused attention (follow-up change `cuda-fused-attention`)
 

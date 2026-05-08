@@ -15,8 +15,7 @@ pub enum CudaInitError {
     NoDevices,
     /// Driver version older than the build's minimum.
     ToolkitMismatch { found: String, need: &'static str },
-    /// Phase-1 stub: feature is on but the requested kernel surface is
-    /// not yet wired up. Returned by trait impls that haven't landed.
+    /// The requested CUDA kernel surface is not wired up yet.
     NotImplemented(&'static str),
 }
 
