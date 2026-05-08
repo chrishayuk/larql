@@ -40,6 +40,11 @@ fn main() {
         .f32_gemv_force(w.view(), &x)
         .expect("CUDA f32_gemv_force warmup");
     assert_close(&cuda_ref, &cpu_ref, 1e-2);
+    let resident = cuda
+        .resident_f32_matrix(w.view())
+        .expect("CUDA resident matrix warmup");
+    let resident_ref = resident.gemv(&cuda, &x).expect("resident CUDA warmup");
+    assert_close(&resident_ref, &cpu_ref, 1e-2);
 
     let cpu_start = Instant::now();
     let mut cpu_last = Vec::new();
@@ -60,10 +65,19 @@ fn main() {
     }
     let cuda_ms = cuda_start.elapsed().as_secs_f64() * 1000.0 / iters as f64;
 
+    let resident_start = Instant::now();
+    let mut resident_last = Vec::new();
+    for _ in 0..iters {
+        resident_last = resident.gemv(&cuda, &x).expect("resident CUDA gemv");
+    }
+    let resident_ms = resident_start.elapsed().as_secs_f64() * 1000.0 / iters as f64;
+
     assert_close(&cuda_last, &cpu_last, 1e-2);
+    assert_close(&resident_last, &cpu_last, 1e-2);
     let max_abs = max_abs_diff(&cuda_last, &cpu_last);
+    let resident_max_abs = max_abs_diff(&resident_last, &cpu_last);
     println!(
-        "backend={} device={} rows={} cols={} iters={} cpu_ms_per_iter={:.3} cuda_ms_per_iter={:.3} speedup={:.3} max_abs_diff={:.6}",
+        "backend={} device={} rows={} cols={} iters={} cpu_ms_per_iter={:.3} cuda_ms_per_iter={:.3} resident_cuda_ms_per_iter={:.3} cuda_speedup={:.3} resident_cuda_speedup={:.3} max_abs_diff={:.6} resident_max_abs_diff={:.6}",
         cuda.name(),
         cuda.device_info(),
         rows,
@@ -71,8 +85,11 @@ fn main() {
         iters,
         cpu_ms,
         cuda_ms,
+        resident_ms,
         cpu_ms / cuda_ms,
+        cpu_ms / resident_ms,
         max_abs,
+        resident_max_abs,
     );
 }
 

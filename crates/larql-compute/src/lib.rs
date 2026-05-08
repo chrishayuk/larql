@@ -98,7 +98,7 @@ pub use cpu::ops::moe::{quantize_x_to_q8k, Q8KActivation};
 pub use cpu::ops::vector::{cosine, dot, norm};
 pub use cpu::CpuBackend;
 #[cfg(all(feature = "cuda", target_os = "linux"))]
-pub use cuda::CudaBackend;
+pub use cuda::{CudaBackend, CudaResidentF32Matrix};
 
 /// Read and clear the per-stage timings stored after the most recent
 /// Metal decode step. Returns `None` when `LARQL_PROFILE_SPLIT` is unset
@@ -240,6 +240,41 @@ mod cuda_backend_tests {
             .expect("CUDA f32_gemv_topk1");
         assert_eq!(got.0, want_idx);
         assert!((got.1 - want_score).abs() < 1e-3);
+    }
+
+    #[test]
+    fn cuda_backend_resident_f32_gemv_reuses_device_matrix_matches_cpu() {
+        let Some(cuda) = maybe_cuda() else {
+            return;
+        };
+
+        let n = 32;
+        let k = 48;
+        let w = Array2::from_shape_fn((n, k), |(row, col)| {
+            ((row * 11 + col * 5) % 31) as f32 / 15.0 - 1.0
+        });
+        let x1: Vec<f32> = (0..k).map(|i| (i % 13) as f32 / 6.0 - 1.0).collect();
+        let x2: Vec<f32> = (0..k).map(|i| (i % 17) as f32 / 8.0 - 0.5).collect();
+
+        let resident = cuda
+            .resident_f32_matrix(w.view())
+            .expect("copy f32 matrix once to device");
+        assert_eq!(resident.rows(), n);
+        assert_eq!(resident.cols(), k);
+
+        let got1 = resident.gemv(&cuda, &x1).expect("resident gemv #1");
+        let got2 = resident.gemv(&cuda, &x2).expect("resident gemv #2");
+        let want1 = CpuBackend.matmul_transb(
+            Array2::from_shape_vec((1, k), x1.clone()).unwrap().view(),
+            w.view(),
+        );
+        let want2 = CpuBackend.matmul_transb(
+            Array2::from_shape_vec((1, k), x2.clone()).unwrap().view(),
+            w.view(),
+        );
+
+        assert_close(&got1, &want1.row(0).to_vec(), 1e-3);
+        assert_close(&got2, &want2.row(0).to_vec(), 1e-3);
     }
 
     #[test]

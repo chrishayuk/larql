@@ -52,5 +52,7 @@ pub use gpu::{
     q4_attention_proj, run_attention_block_gpu, run_attention_with_kv,
     run_attention_with_kv_backend,
 };
+#[cfg(all(feature = "cuda", target_os = "linux"))]
+pub use gpu::{run_attention_block_cuda_resident, CudaAttentionResidency};
 pub use gqa::{gqa_attention, gqa_attention_with_all_weights, gqa_attention_with_weights};
 pub use rope::{apply_rope, apply_rope_partial, apply_rope_partial_at};

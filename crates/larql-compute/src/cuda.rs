@@ -173,6 +173,32 @@ pub struct CudaBackend {
     cpu: CpuBackend,
 }
 
+/// Row-major f32 matrix copied once into CUDA device memory.
+///
+/// This is the first persistent-residency primitive for dense attention:
+/// Q/K/V/O projection weights can live on GPU while each token/sequence input
+/// is copied for GEMV. Large MoE expert/vindex tensors should not use this path.
+pub struct CudaResidentF32Matrix {
+    data: DeviceAlloc,
+    rows: usize,
+    cols: usize,
+}
+
+impl CudaResidentF32Matrix {
+    pub fn rows(&self) -> usize {
+        self.rows
+    }
+
+    pub fn cols(&self) -> usize {
+        self.cols
+    }
+
+    /// Compute `self @ x` using the already-resident matrix.
+    pub fn gemv(&self, backend: &CudaBackend, x: &[f32]) -> Option<Vec<f32>> {
+        backend.f32_gemv_resident(self, x)
+    }
+}
+
 unsafe impl Send for CudaBackend {}
 unsafe impl Sync for CudaBackend {}
 
@@ -233,6 +259,68 @@ impl CudaBackend {
             return None;
         }
         self.cublas.lock().ok()
+    }
+
+    /// Copy a row-major f32 matrix to device memory once for repeated GEMV.
+    pub fn resident_f32_matrix(&self, w: ArrayView2<f32>) -> Option<CudaResidentF32Matrix> {
+        let (rows, cols) = (w.shape()[0], w.shape()[1]);
+        if rows == 0 || cols == 0 {
+            return None;
+        }
+        unsafe {
+            if cuCtxSetCurrent(self.context) != CUDA_SUCCESS {
+                return None;
+            }
+        }
+        let w_owned;
+        let w_slice = match w.as_slice() {
+            Some(slice) => slice,
+            None => {
+                w_owned = w.as_standard_layout().into_owned();
+                w_owned.as_slice().expect("standard layout")
+            }
+        };
+        let data = DeviceAlloc::new(std::mem::size_of_val(w_slice))?;
+        data.copy_from(w_slice)?;
+        Some(CudaResidentF32Matrix { data, rows, cols })
+    }
+
+    fn f32_gemv_resident(&self, w: &CudaResidentF32Matrix, x: &[f32]) -> Option<Vec<f32>> {
+        if x.len() != w.cols || w.rows == 0 || w.cols == 0 {
+            return None;
+        }
+        let d_x = DeviceAlloc::new(std::mem::size_of_val(x))?;
+        let d_y = DeviceAlloc::new(w.rows * std::mem::size_of::<f32>())?;
+        d_x.copy_from(x)?;
+
+        let alpha = 1.0f32;
+        let beta = 0.0f32;
+        {
+            let cublas = self.lock()?;
+            let status = unsafe {
+                (cublas.lib.sgemv)(
+                    cublas.handle,
+                    CUBLAS_OP_T,
+                    w.cols as c_int,
+                    w.rows as c_int,
+                    &alpha,
+                    w.data.0 as *const f32,
+                    w.cols as c_int,
+                    d_x.0 as *const f32,
+                    1,
+                    &beta,
+                    d_y.0 as *mut f32,
+                    1,
+                )
+            };
+            if status != CUBLAS_STATUS_SUCCESS {
+                return None;
+            }
+        }
+
+        let mut out = vec![0.0f32; w.rows];
+        d_y.copy_to(&mut out)?;
+        Some(out)
     }
 }
 

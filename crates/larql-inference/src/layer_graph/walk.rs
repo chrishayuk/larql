@@ -140,6 +140,67 @@ impl<'a> LayerGraph for GpuAttentionMmapExpertsGraph<'a> {
     }
 }
 
+#[cfg(all(feature = "cuda", target_os = "linux"))]
+/// Split-residency graph with persistent CUDA-resident attention projections.
+///
+/// Unlike `GpuAttentionMmapExpertsGraph`, this path reuses per-layer Q/K/V/O
+/// device buffers through `CudaAttentionResidency`. Experts still go through the
+/// vindex walk FFN path; `expert_backend: None` keeps them mmap/CPU-backed.
+pub struct CudaResidentAttentionMmapExpertsGraph<'a> {
+    pub index: &'a dyn larql_vindex::GateIndex,
+    pub cuda: &'a larql_compute::CudaBackend,
+    pub resident_attention: &'a [crate::attention::gpu::CudaAttentionResidency],
+    pub expert_backend: Option<&'a dyn ComputeBackend>,
+    pub layer_range: std::ops::Range<usize>,
+}
+
+#[cfg(all(feature = "cuda", target_os = "linux"))]
+impl<'a> CudaResidentAttentionMmapExpertsGraph<'a> {
+    fn resident_for_layer(
+        &self,
+        layer: usize,
+    ) -> Option<&crate::attention::gpu::CudaAttentionResidency> {
+        self.resident_attention
+            .iter()
+            .find(|resident| resident.layer() == layer)
+    }
+}
+
+#[cfg(all(feature = "cuda", target_os = "linux"))]
+impl<'a> LayerGraph for CudaResidentAttentionMmapExpertsGraph<'a> {
+    fn forward_layer(
+        &self,
+        weights: &ModelWeights,
+        h: &Array2<f32>,
+        layer: usize,
+    ) -> Option<LayerOutput> {
+        if !self.layer_range.contains(&layer) {
+            return None;
+        }
+        let resident = self.resident_for_layer(layer)?;
+        let (h_post_attn, _attn_proj, _) =
+            crate::attention::gpu::run_attention_block_cuda_resident(
+                weights, h, layer, false, self.cuda, resident,
+            )?;
+        let walk_ffn = match self.expert_backend {
+            Some(backend) => {
+                crate::vindex::WalkFfn::new_unlimited_with_backend(weights, self.index, backend)
+            }
+            None => crate::vindex::WalkFfn::new_unlimited(weights, self.index),
+        };
+        let (h_out, _) = crate::forward::run_ffn(weights, &h_post_attn, layer, &walk_ffn, false);
+        Some(LayerOutput {
+            residual: h_out,
+            activation: None,
+            attention: None,
+        })
+    }
+
+    fn name(&self) -> &str {
+        "cuda-resident-attention-mmap-experts"
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -310,6 +371,39 @@ mod tests {
 
         assert!(out.is_some(), "CUDA attention + mmap experts should run");
         assert!(g.attention_backend.name().contains("cuda"));
+        assert!(g.expert_backend.is_none(), "experts stay mmap/CPU-backed");
+    }
+    #[cfg(all(feature = "cuda", target_os = "linux"))]
+    #[test]
+    fn cuda_resident_attention_graph_runs_with_mmap_experts() {
+        let Some(cuda) = larql_compute::CudaBackend::new() else {
+            eprintln!("CUDA unavailable; skipping resident attention graph smoke");
+            return;
+        };
+        let w = weights();
+        let idx = crate::engines::test_utils::make_test_vindex(w);
+        let residents: Vec<_> = (0..w.num_layers)
+            .map(|layer| {
+                crate::attention::gpu::CudaAttentionResidency::from_layer(w, &cuda, layer)
+                    .expect("resident attention layer")
+            })
+            .collect();
+        let g = CudaResidentAttentionMmapExpertsGraph {
+            index: &idx,
+            cuda: &cuda,
+            resident_attention: &residents,
+            expert_backend: None,
+            layer_range: 0..w.num_layers,
+        };
+
+        let out = g.forward_layer(w, &input(1, w.hidden_size), 0);
+
+        assert!(
+            out.is_some(),
+            "resident CUDA attention + mmap experts should run"
+        );
+        assert_eq!(out.unwrap().residual.shape(), &[1, w.hidden_size]);
+        assert_eq!(g.name(), "cuda-resident-attention-mmap-experts");
         assert!(g.expert_backend.is_none(), "experts stay mmap/CPU-backed");
     }
 }
