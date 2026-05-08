@@ -4,7 +4,7 @@
 //! tests no-op cleanly otherwise. Reference is a naive scalar
 //! implementation — no BLAS — to keep the oracle obvious.
 
-#![cfg(feature = "cuda")]
+#![cfg(any(feature = "cuda", feature = "cuda-oxide"))]
 
 use larql_compute::cuda::attn::{
     decode_attention, fused_decode_attention, qkv_rms_proj, AttentionOpts,

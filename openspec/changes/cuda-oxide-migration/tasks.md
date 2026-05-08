@@ -155,22 +155,34 @@
 
 ### 9. Fused softmax / decode-attention kernel
 
-- [ ] 9.1 Port the NVRTC-compiled fused-softmax kernel from
+- [x] 9.1 Port the NVRTC-compiled fused-softmax kernel from
       `larql-compute/src/cuda/attn.rs` to cuda-oxide.
-- [ ] 9.2 Keep the cuBLAS GEMM calls on cudarc — they wrap the
+- [x] 9.2 Keep the cuBLAS GEMM calls on cudarc — they wrap the
       cuda-oxide softmax, not replace it.
-- [ ] 9.3 Existing `test_cuda_attn` parity tests must pass
+- [x] 9.3 Existing `test_cuda_attn` parity tests must pass
       against the cuda-oxide variant.
+      Ported `scaled_softmax` to a cargo-built cuda-oxide
+      `scaled_softmax_oxide` kernel on 2026-05-08; `decode_attention`
+      still uses cudarc/cuBLAS for QK and AV GEMMs. In the CUDA 13.1
+      builder container, `cargo +nightly-2026-04-03 test -p
+      larql-compute --features cuda-oxide --test test_cuda_attn`
+      passed 8/8 tests.
 
 ### 10. Capability bit + docs
 
-- [ ] 10.1 Flip `Capability::CudaOxide` (new) on `CudaBackend`
+- [x] 10.1 Flip `Capability::CudaOxide` (new) on `CudaBackend`
       when the feature is enabled.
-- [ ] 10.2 Refresh `docs/cuda-rotorquant-status.md` with the
+- [x] 10.2 Refresh `docs/cuda-rotorquant-status.md` with the
       Phase 3 results: throughput numbers, cold-start latency,
       PTX size on disk.
-- [ ] 10.3 Mark this OpenSpec change ready for archive once
+- [x] 10.3 Mark this OpenSpec change ready for archive once
       the throughput acceptance bar is hit on the GPU box.
+      `docs/cuda-rotorquant-status.md` now records the 2026-05-08
+      cuda-oxide Phase 3 benchmark: Iso3 dequantize 3.1905 ms/iter
+      GPU vs 10.7153 ms/iter CPU, 158.0066 ms cold first dequantize,
+      108,806-byte RotorQuant PTX, and 9,365-byte compute softmax PTX.
+      Archive remains blocked only on the separate time-gated 7.4
+      stability burn-in.
 
 ## Risk-gated checkpoints
 

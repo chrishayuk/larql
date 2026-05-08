@@ -109,6 +109,9 @@ impl ComputeBackend for CudaBackend {
     }
 
     fn supports(&self, cap: Capability) -> bool {
+        if cap == Capability::CudaOxide {
+            return cfg!(feature = "cuda-oxide");
+        }
         // Capability bits flip on as sub-changes land:
         //   cuda-f32-baseline    → Cuda, F32Gemv
         //   cuda-q4-matvec       → +QuantMatVec, +Q4VecMat
@@ -200,6 +203,16 @@ mod tests {
         if let Ok(b) = CudaBackend::new() {
             assert!(b.supports(Capability::DecodeToken));
             assert!(b.supports(Capability::PrefillQ4));
+        }
+    }
+
+    #[test]
+    fn supports_cuda_oxide_when_feature_enabled() {
+        if let Ok(b) = CudaBackend::new() {
+            assert_eq!(
+                b.supports(Capability::CudaOxide),
+                cfg!(feature = "cuda-oxide")
+            );
         }
     }
 }

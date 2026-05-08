@@ -26,6 +26,10 @@ fn main() {
     let cpu = dequantize_k(&qkv).expect("dequantize_k");
     let ctx = cuda_oxide::CudaContext::new(0).expect("cuda context");
 
+    let cold_start = Instant::now();
+    let cold_gpu = cuda_oxide::dequantize_iso3(&ctx, &qkv).expect("cold cuda-oxide dequantize");
+    let cold_elapsed = cold_start.elapsed();
+
     for _ in 0..warmup {
         let _ = cuda_oxide::dequantize_iso3(&ctx, &qkv).expect("warmup cuda-oxide dequantize");
     }
@@ -49,6 +53,11 @@ fn main() {
         .zip(&cpu)
         .map(|(a, b)| (a - b).abs())
         .fold(0.0_f32, f32::max);
+    let cold_max_diff = cold_gpu
+        .iter()
+        .zip(&cpu)
+        .map(|(a, b)| (a - b).abs())
+        .fold(0.0_f32, f32::max);
     assert_eq!(cpu_last.len(), gpu.len());
 
     let elements = n_rows * head_dim;
@@ -58,6 +67,8 @@ fn main() {
     println!("elements {elements}");
     println!("iters {iters}");
     println!("max_diff {max_diff:.8}");
+    println!("cold_max_diff {cold_max_diff:.8}");
+    println!("gpu_cold_ms {:.4}", duration_seconds(cold_elapsed) * 1000.0);
     println!("cpu_seconds_total {:.6}", duration_seconds(cpu_elapsed));
     println!("gpu_seconds_total {:.6}", duration_seconds(gpu_elapsed));
     println!(

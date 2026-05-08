@@ -20,6 +20,8 @@ mod dequant;
 mod driver;
 mod error;
 mod matmul;
+#[cfg(feature = "cuda-oxide")]
+mod oxide_kernels;
 mod quant_matvec;
 
 pub use backend::CudaBackend;

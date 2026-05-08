@@ -14,6 +14,8 @@ use cudarc::cublas::{
 };
 use cudarc::driver::{CudaFunction, CudaModule, LaunchConfig, PushKernelArg};
 use cudarc::nvrtc::compile_ptx;
+#[cfg(feature = "cuda-oxide")]
+use cudarc::nvrtc::Ptx;
 
 use super::backend::CudaBackend;
 use super::driver::Driver;
@@ -373,16 +375,31 @@ fn softmax_function(drv: &Driver) -> Result<&'static CudaFunction, CudaInitError
     if let Some((_, f)) = SOFTMAX_FUNC.get() {
         return Ok(f);
     }
-    // First call: compile PTX and load the function.
-    let ptx = compile_ptx(SOFTMAX_SRC)
-        .map_err(|e| CudaInitError::DriverMissing(format!("nvrtc compile softmax: {e:?}")))?;
-    let module = drv
-        .ctx
-        .load_module(ptx)
-        .map_err(|e| CudaInitError::DriverMissing(format!("load module: {e:?}")))?;
-    let func = module
-        .load_function("scaled_softmax")
-        .map_err(|e| CudaInitError::DriverMissing(format!("load function: {e:?}")))?;
+    #[cfg(feature = "cuda-oxide")]
+    let module = {
+        let ptx = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("larql_compute.ptx");
+        drv.ctx
+            .load_module(Ptx::from_file(ptx))
+            .map_err(|e| CudaInitError::DriverMissing(format!("load cuda-oxide softmax: {e:?}")))?
+    };
+    #[cfg(feature = "cuda-oxide")]
+    let func = module.load_function("scaled_softmax_oxide").map_err(|e| {
+        CudaInitError::DriverMissing(format!("load cuda-oxide softmax function: {e:?}"))
+    })?;
+    #[cfg(not(feature = "cuda-oxide"))]
+    let (module, func) = {
+        // First call: compile PTX and load the function.
+        let ptx = compile_ptx(SOFTMAX_SRC)
+            .map_err(|e| CudaInitError::DriverMissing(format!("nvrtc compile softmax: {e:?}")))?;
+        let module = drv
+            .ctx
+            .load_module(ptx)
+            .map_err(|e| CudaInitError::DriverMissing(format!("load module: {e:?}")))?;
+        let func = module
+            .load_function("scaled_softmax")
+            .map_err(|e| CudaInitError::DriverMissing(format!("load function: {e:?}")))?;
+        (module, func)
+    };
     let _ = SOFTMAX_FUNC.set((module, func));
     let (_, f) = SOFTMAX_FUNC.get().unwrap();
     Ok(f)
@@ -666,25 +683,36 @@ pub(crate) fn softmax_inplace(
     opts: AttentionOpts,
 ) -> Result<(), CudaInitError> {
     let func = softmax_function(drv)?;
+    #[cfg(not(feature = "cuda-oxide"))]
     // 1024 threads = max blockDim on every supported arch.
     let block_dim: u32 = 1024;
+    #[cfg(feature = "cuda-oxide")]
+    // cuda-oxide softmax is a correctness-first row-serial pilot kernel.
+    let block_dim: u32 = 1;
     let grid_dim: u32 = n_rows as u32;
     let cfg = LaunchConfig {
         grid_dim: (grid_dim, 1, 1),
         block_dim: (block_dim, 1, 1),
+        #[cfg(not(feature = "cuda-oxide"))]
         shared_mem_bytes: (block_dim as usize * std::mem::size_of::<f32>()) as u32,
+        #[cfg(feature = "cuda-oxide")]
+        shared_mem_bytes: 0,
     };
     let n_rows_i = n_rows as i32;
     let n_cols_i = n_cols as i32;
     let causal_i: i32 = if opts.causal { 1 } else { 0 };
     let softcap_f = opts.softcap;
+    #[cfg(feature = "cuda-oxide")]
+    let len = x_dev.len();
     // SAFETY: The kernel writes at most `n_rows * n_cols` f32 values
     // starting at the slice base; the buffer length matches the shape
     // (caller guarantees).
     unsafe {
-        drv.stream
-            .launch_builder(func)
-            .arg(x_dev)
+        let mut builder = drv.stream.launch_builder(func);
+        builder.arg(x_dev);
+        #[cfg(feature = "cuda-oxide")]
+        builder.arg(&len);
+        builder
             .arg(&n_rows_i)
             .arg(&n_cols_i)
             .arg(&scale)

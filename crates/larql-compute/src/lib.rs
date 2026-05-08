@@ -75,7 +75,7 @@ pub mod pipeline;
 #[cfg(feature = "metal")]
 pub mod metal;
 
-#[cfg(feature = "cuda")]
+#[cfg(any(feature = "cuda", feature = "cuda-oxide"))]
 pub mod cuda;
 
 // ── Re-exports: pipeline types ──

@@ -46,6 +46,8 @@ cudarc = { version = "0.19", optional = true, default-features = false, features
     # toolkit installed.
     "dynamic-loading",
 ] }
+cuda-device = { git = "https://github.com/NVlabs/cuda-oxide.git", rev = "6de050946cd1013335a33cf2c5144888a32efab3", package = "cuda-device", optional = true }
+cuda-host = { git = "https://github.com/NVlabs/cuda-oxide.git", rev = "6de050946cd1013335a33cf2c5144888a32efab3", package = "cuda-host", optional = true }
 
 # Metal GPU (macOS only, optional)
 [target.'cfg(target_os = "macos")'.dependencies]
@@ -71,7 +73,7 @@ cuda = ["dep:cudarc"]
 # Experimental cuda-oxide custom-kernel pilot. Kept separate from `cuda`
 # so future Rust-authored kernels can be evaluated without changing the
 # default cudarc/cuBLAS path.
-cuda-oxide = []
+cuda-oxide = ["dep:cudarc", "dep:cuda-device", "dep:cuda-host"]
 
 [build-dependencies]
 cc = "1.0"

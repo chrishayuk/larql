@@ -19489,31 +19489,43 @@
     {
       "fqn": "larql_compute::cuda::backend::driver_missing_returns_typed_error",
       "file": "crates/larql-compute/src/cuda/backend.rs",
-      "line": 142,
+      "line": 145,
       "crate": "larql_compute"
     },
     {
       "fqn": "larql_compute::cuda::backend::supports_f32_gemv_after_baseline",
       "file": "crates/larql-compute/src/cuda/backend.rs",
-      "line": 159,
+      "line": 162,
       "crate": "larql_compute"
     },
     {
       "fqn": "larql_compute::cuda::backend::supports_q4_matvec_after_q4_baseline",
       "file": "crates/larql-compute/src/cuda/backend.rs",
-      "line": 173,
+      "line": 176,
       "crate": "larql_compute"
     },
     {
       "fqn": "larql_compute::cuda::backend::supports_fa2_after_fused_attention",
       "file": "crates/larql-compute/src/cuda/backend.rs",
-      "line": 184,
+      "line": 187,
       "crate": "larql_compute"
     },
     {
       "fqn": "larql_compute::cuda::backend::supports_decode_after_cuda_decode_backend",
       "file": "crates/larql-compute/src/cuda/backend.rs",
-      "line": 199,
+      "line": 202,
+      "crate": "larql_compute"
+    },
+    {
+      "fqn": "larql_compute::cuda::backend::tests::supports_cuda_oxide_when_feature_enabled",
+      "file": "crates/larql-compute/src/cuda/backend.rs",
+      "line": 210,
+      "crate": "larql_compute"
+    },
+    {
+      "fqn": "larql_compute::cuda::backend::supports_cuda_oxide_when_feature_enabled",
+      "file": "crates/larql-compute/src/cuda/backend.rs",
+      "line": 210,
       "crate": "larql_compute"
     },
     {

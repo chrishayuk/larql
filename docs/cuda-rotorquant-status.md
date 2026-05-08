@@ -74,6 +74,40 @@ sub-change.
   | Iso3 | 19.53% | 0.984643 | 0.3933 | 24.83 |
   | Iso4 | 26.56% | 0.993546 | 0.3021 | 32.33 |
 
+- ✅ `cuda-oxide-migration` Phase 3 code path: cuda-oxide now builds
+  the custom RotorQuant kernels (Planar3 / Planar4 / Iso3 / Iso4
+  dequantize; Planar3 / Planar4 / Iso4 quantize) and the
+  `larql-compute` scaled-softmax kernel. cuBLAS GEMM remains on
+  cudarc under `--features cuda-oxide`; the cuda-oxide softmax is
+  loaded from cargo-built PTX instead of NVRTC source at first use.
+  `CudaBackend` advertises `Capability::CudaOxide` only when built
+  with the `cuda-oxide` feature.
+
+  RTX 4090 cuda-oxide benchmark, Iso3 dequantize on 16,384 × 320
+  values, 20 hot iterations, CUDA 13.1 container, 2026-05-08:
+
+  | Metric | Value |
+  | --- | ---: |
+  | max diff vs CPU dequantize | 0.00000036 |
+  | cold first dequantize latency | 158.0066 ms |
+  | CPU dequantize | 10.7153 ms/iter |
+  | cuda-oxide dequantize | 3.1905 ms/iter |
+  | CPU logical output throughput | 1.8227 GiB/s |
+  | cuda-oxide logical output throughput | 6.1218 GiB/s |
+
+  PTX produced by `cargo oxide build --arch sm_89`:
+
+  | Crate | Entries | PTX bytes |
+  | --- | --- | ---: |
+  | `larql-rotorquant` | 7 RotorQuant kernels | 108,806 |
+  | `larql-compute` | `scaled_softmax_oxide` | 9,365 |
+
+  Validation: `cargo test -p larql-rotorquant` passed on CPU; in
+  the CUDA 13.1 builder container, `larql-compute --features
+  cuda-oxide --test test_cuda_attn` passed 8/8 tests, including
+  softmax causal mask, softcap, long row, and decode-attention
+  parity.
+
 ### Phase 4 — Router topology
 
 - ✅ `router-heterogeneous-shards`: `ServerEntry` carries a
@@ -185,6 +219,7 @@ three sub-changes; two are now shipped, one stays as proposal:
 ```rust
 // On RTX 4090 / Linux + cuda feature, after this branch:
 backend.supports(Capability::Cuda)                     // true
+backend.supports(Capability::CudaOxide)                // true only with cuda-oxide feature
 backend.supports(Capability::F32Gemv)                  // true (cuda-f32-baseline)
 backend.supports(Capability::QuantMatVec)              // true (cuda-q4-matvec)
 backend.supports(Capability::Q4VecMat)                 // true (cuda-q4-matvec)
@@ -199,16 +234,20 @@ backend.supports(Capability::PrefillQ4)                // true (cuda-decode-back
 ```
 cargo test -p larql-compute --features cuda --test test_cuda_f32   →  9 tests
 cargo test -p larql-compute --features cuda --test test_cuda_q4    →  5 tests
-cargo test -p larql-compute --features cuda --test test_cuda_attn  →  6 tests
+cargo test -p larql-compute --features cuda --test test_cuda_attn  →  8 tests
+cargo test -p larql-compute --features cuda-oxide --test test_cuda_attn
+                                                                 →  8 tests
 cargo test -p larql-rotorquant                                     →  CPU reference tests
 cargo test -p larql-rotorquant --features cuda --test cuda_round_trip
                                                                  →  4 CUDA RotorQuant tests
+cargo test -p larql-rotorquant --features cuda-oxide --test cuda_oxide_round_trip
+                                                                 →  3 cuda-oxide RotorQuant tests
 cargo test -p kv-cache-benchmark --lib rotorquant                  →  3 tests
 cargo test -p larql-router --bin larql-router grid::tests          → 30 tests (+19: prefix-aware + bloom)
 cargo test -p larql-inference --lib attention::decode               → 22 tests (+4: promote-on-read)
 cargo test -p larql-server --lib tokenizer_cache                    →  7 tests (new)
                                                                    ────
-                                                                    92 tests
+                                                                   105 tests
 ```
 
 Plus shipped on the `fix/encode-cached-ids-sync` PR branch:

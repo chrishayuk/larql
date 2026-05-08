@@ -46,6 +46,8 @@ pub enum Capability {
     // ── Capabilities introduced by openspec change `cuda-and-rotorquant-kv` ──
     /// Backend dispatches via CUDA / cuBLAS / cudarc. Set by `CudaBackend`.
     Cuda,
+    /// Rust-authored custom CUDA kernels are built with cuda-oxide.
+    CudaOxide,
     /// Fused Flash-Attention-v2-style attention kernel is available.
     FlashAttentionV2,
     /// KV-cache compression via RotorQuant `iso3` / `planar3` / `iso4` / `planar4`.
