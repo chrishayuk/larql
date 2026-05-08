@@ -23,7 +23,7 @@
 - [x] 3.1 cuBLAS f32 GEMM via cudarc; pass the existing `test_correctness` matmul tests with feature `cuda`.
 - [x] 3.2 cuBLAS f32 GEMV; pass existing LM-head gemv tests.
 - [x] 3.3 Backend init compiles and caches PTX for one custom kernel (no-op kernel) to validate the cache plumbing.
-- [ ] 3.4 `larql-cli predict` runs end-to-end on RTX 4090 in the GPU container.
+- [x] 3.4 `larql-cli predict` runs end-to-end on RTX 4090 in the GPU container.
 - [x] 3.5 Wire `make ci-cuda` to run the CUDA-feature subset of the test suite when `LARQL_CUDA_AVAILABLE=1`.
 
 ## 4. Phase 2 — Q4 / Q6 matvec (follow-up change `cuda-q4-matvec`)

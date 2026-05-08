@@ -5,7 +5,7 @@
 //! around as a debug/reference path — it is the classic matmul FFN and must be
 //! bit-identical to the walk kernel on a sane model.
 
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::time::Instant;
 
 use clap::Args;
@@ -13,7 +13,7 @@ use clap::Args;
 use larql_inference::{
     calibrate_scalar_gains, predict, predict_with_ffn, predict_with_strategy,
     vindex::{WalkFfn, WalkFfnConfig},
-    FfnBackend, InferenceModel, LayerMode, WeightFfn,
+    FfnBackend, InferenceModel, InferenceWeights, LayerMode, WeightFfn,
 };
 use larql_vindex::{SilentLoadCallbacks, VectorIndex};
 
@@ -56,6 +56,11 @@ pub struct PredictArgs {
 }
 
 pub fn run(args: PredictArgs) -> Result<(), Box<dyn std::error::Error>> {
+    let model_path = Path::new(&args.model);
+    if is_vindex_dir(model_path) {
+        return run_vindex(&args, model_path);
+    }
+
     eprintln!("Loading model: {}", args.model);
     let start = Instant::now();
     let model = InferenceModel::load(&args.model)?;
@@ -82,6 +87,53 @@ pub fn run(args: PredictArgs) -> Result<(), Box<dyn std::error::Error>> {
         return run_with_mode(&model, &token_ids, args.top_k, spec, &args);
     }
     run_single(&model, &token_ids, args.top_k, &args)
+}
+
+fn is_vindex_dir(path: &Path) -> bool {
+    path.join("index.json").is_file()
+}
+
+fn run_vindex(args: &PredictArgs, path: &Path) -> Result<(), Box<dyn std::error::Error>> {
+    if args.compare {
+        return Err("--compare is only supported for raw model checkpoints".into());
+    }
+    if args.mode.is_some() {
+        return Err("--mode is only supported for raw model checkpoints".into());
+    }
+
+    eprintln!("Loading vindex model: {}", path.display());
+    let start = Instant::now();
+    let config = larql_vindex::load_vindex_config(path)?;
+    let mut cb = SilentLoadCallbacks;
+    let mut weights = InferenceWeights::load(path, &config, &mut cb)?;
+    let tokenizer = larql_vindex::load_vindex_tokenizer(path)?;
+    eprintln!(
+        "  {} layers, hidden_size={} ({}, {:.1}s)",
+        weights.as_weights().num_layers,
+        weights.as_weights().hidden_size,
+        if weights.is_quantised() {
+            "quantized"
+        } else {
+            "dense"
+        },
+        start.elapsed().as_secs_f64(),
+    );
+
+    eprintln!("Prompt: {:?}", args.prompt);
+    let token_ids = larql_inference::encode_prompt(
+        &tokenizer,
+        &*weights.as_weights().arch,
+        args.prompt.as_str(),
+    )
+    .map_err(|e| format!("tokenize error: {e}"))?;
+    eprintln!("  {} tokens: {:?}", token_ids.len(), token_ids);
+
+    let t = Instant::now();
+    let result = weights.predict_dense(&tokenizer, &token_ids, args.top_k);
+    eprintln!("  Forward pass: {:.1}s", t.elapsed().as_secs_f64());
+    print_predictions("vindex", &result.predictions);
+
+    Ok(())
 }
 
 // ── Single backend ─────────────────────────────────────────────────────

@@ -31,8 +31,8 @@ ARG LARQL_CUDA_ARCH="89"
 ENV LARQL_CUDA_ARCH=${LARQL_CUDA_ARCH}
 
 RUN RUSTFLAGS="-C target-feature=+avx2,+fma" \
-    cargo build --release -p larql-server --features cuda \
- && strip target/release/larql-server
+    cargo build --release -p larql-server -p larql-cli --features cuda \
+ && strip target/release/larql-server target/release/larql
 
 # ---- runtime: CUDA runtime only -------------------------------------------
 FROM nvidia/cuda:13.1.0-runtime-ubuntu24.04
@@ -43,6 +43,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     && rm -rf /var/lib/apt/lists/*
 
 COPY --from=builder /build/target/release/larql-server /usr/local/bin/
+COPY --from=builder /build/target/release/larql /usr/local/bin/
 COPY deploy/docker/start.sh /start.sh
 RUN chmod +x /start.sh
 
