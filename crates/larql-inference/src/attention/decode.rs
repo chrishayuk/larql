@@ -192,6 +192,13 @@ impl KvCache {
         Some((k, v))
     }
 
+    fn layer_as_fp32(&self, layer: usize) -> Option<SharedKV> {
+        if let Some(Some((k, v))) = self.layers.get(layer) {
+            return Some((k.clone(), v.clone()));
+        }
+        self.dequantize_layer(layer)
+    }
+
     /// Move a compressed layer back into the FP32 `layers` slot
     /// (and clear the compressed side-table for that layer). Inverse
     /// of `quantize_layer`.
@@ -312,6 +319,12 @@ impl KvCache {
             "K and V must have the same row count"
         );
         self.layers[layer] = Some(kv);
+        if let Some(qslot) = self.quantized_kv.get_mut(layer) {
+            *qslot = None;
+        }
+        if self.kv_format.is_some() {
+            let _ = self.quantize_layer(layer);
+        }
     }
 
     /// Clear a layer's cache. Subsequent decode at that layer will start
@@ -332,15 +345,14 @@ impl KvCache {
     /// side's layer is empty or out of range. Implements lazarus
     /// `kv_inject_test` (full-layer transplant).
     ///
-    /// Uses [`Self::get_layer_lazy`] on the donor (immutable
-    /// `&KvCache`) so a compressed-only donor layer is treated as
-    /// "missing." Callers that want to lift a compressed layer
-    /// should call `other.promote_layer_to_fp32(layer)` first.
+    /// If the donor layer is compressed, it is reconstructed to FP32
+    /// first. If the recipient has an active KV format, `set_layer`
+    /// quantizes into that recipient format on write.
     pub fn clone_layer_from(&mut self, other: &KvCache, layer: usize) {
-        let Some((k, v)) = other.get_layer_lazy(layer) else {
+        let Some((k, v)) = other.layer_as_fp32(layer) else {
             return;
         };
-        self.set_layer(layer, (k.clone(), v.clone()));
+        self.set_layer(layer, (k, v));
     }
 
     /// Lift positions `[start..end]` of `other`'s `layer` K/V into `self`.
@@ -360,7 +372,7 @@ impl KvCache {
         start: usize,
         end: usize,
     ) {
-        let Some((k, v)) = other.get_layer_lazy(layer) else {
+        let Some((k, v)) = other.layer_as_fp32(layer) else {
             return;
         };
         let cached = k.shape()[0];
@@ -774,6 +786,40 @@ mod tests {
     }
 
     #[test]
+    fn set_layer_quantizes_when_format_active() {
+        let mut cache = KvCache::with_layers_format(1, Some(larql_rotorquant::KvFormat::Iso3));
+        cache.set_layer(0, fill_kv(8, 32, 0.5));
+
+        assert!(cache.is_layer_compressed(0));
+        assert!(cache.get_layer_lazy(0).is_none());
+        assert!(cache.get_layer(0).is_some());
+    }
+
+    #[test]
+    fn clone_layer_position_range_cross_format_round_trips() {
+        let mut donor = KvCache::with_layers_format(1, Some(larql_rotorquant::KvFormat::Iso3));
+        let k = Array2::from_shape_fn((8, 32), |(r, c)| (r * 32 + c) as f32 * 0.01);
+        let v = Array2::from_shape_fn((8, 32), |(r, c)| -((r * 32 + c) as f32) * 0.01);
+        donor.set_layer(0, (k.clone(), v));
+        assert!(donor.is_layer_compressed(0));
+
+        let mut recipient =
+            KvCache::with_layers_format(1, Some(larql_rotorquant::KvFormat::Planar3));
+        recipient.clone_layer_position_range(&donor, 0, 2, 6);
+        assert!(recipient.is_layer_compressed(0));
+
+        let (rk, _) = recipient.get_layer(0).expect("recipient layer");
+        assert_eq!(rk.shape(), &[4, 32]);
+        let expected = k.slice(ndarray::s![2..6, ..]).to_owned();
+        let av = expected.iter().copied().collect::<Vec<_>>();
+        let bv = rk.iter().copied().collect::<Vec<_>>();
+        let dot: f32 = av.iter().zip(&bv).map(|(x, y)| x * y).sum();
+        let na: f32 = av.iter().map(|v| v * v).sum::<f32>().sqrt();
+        let nb: f32 = bv.iter().map(|v| v * v).sum::<f32>().sqrt();
+        assert!(dot / (na * nb + 1e-12) >= 0.90);
+    }
+
+    #[test]
     fn clone_layer_position_range_clamps_to_donor_length() {
         let mut donor = KvCache::with_layers(1);
         donor.set_layer(0, fill_kv(2, 3, 1.0));
@@ -852,11 +898,11 @@ mod tests {
     #[test]
     fn quantize_then_dequantize_roundtrip_preserves_direction() {
         let mut cache = KvCache::with_layers(2);
-        cache.set_kv_format(larql_rotorquant::KvFormat::Iso3);
         // Use head_dim=32 (multiple of 4 for Iso3) and 8 rows so the
         // synthetic data has a well-defined L2 norm.
         let original = fill_kv(8, 32, 0.7);
         cache.set_layer(1, original.clone());
+        cache.set_kv_format(larql_rotorquant::KvFormat::Iso3);
 
         // Compress.
         assert!(cache.quantize_layer(1));

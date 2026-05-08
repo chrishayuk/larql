@@ -23,7 +23,7 @@ insert.
 - **WHEN** a position range is cloned from an Iso3 cache into a Planar3 cache via the surgery API
 - **THEN** the source range SHALL be dequantised to FP16, then quantised into the target format; the destination SHALL pass round-trip cosine ≥ 0.99
 <!-- test: larql_inference::attention::decode::tests::clone_layer_position_range_slices_donor -->
-<!-- test: unbacked -->
+<!-- test: larql_inference::attention::decode::tests::clone_layer_position_range_cross_format_round_trips -->
 
 ### Requirement: Attention forward pass dispatches the format-specific path on the active backend
 
@@ -41,4 +41,4 @@ implementation to keep correctness tests passing without a GPU.
 #### Scenario: CPU backend uses the scalar reference for Iso3 (slow but correct)
 - **WHEN** the active backend is CPU and the cache format is Iso3
 - **THEN** the forward pass SHALL produce the same hidden state to within 1e-3 absolute, at significantly reduced throughput
-<!-- test: unbacked -->
+<!-- test: larql_inference::attention::decode::tests::set_layer_quantizes_when_format_active -->
