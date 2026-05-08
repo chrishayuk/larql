@@ -2,6 +2,7 @@ use kv_cache_benchmark::benchmark;
 use kv_cache_benchmark::graph_walk::GraphWalk;
 use kv_cache_benchmark::markov_residual::MarkovResidual;
 use kv_cache_benchmark::model_config::ModelConfig;
+use kv_cache_benchmark::rotorquant::RotorQuantStrategy;
 use kv_cache_benchmark::standard_kv::StandardKv;
 use kv_cache_benchmark::turboquant::TurboQuant;
 use kv_cache_benchmark::*;
@@ -81,14 +82,18 @@ fn test_comparative_table_format() {
     let standard = StandardKv;
     let tq4 = TurboQuant::new(4);
     let markov = MarkovResidual::new(512);
+    let rq_iso3 = RotorQuantStrategy::iso3();
+    let rq_planar3 = RotorQuantStrategy::planar3();
 
-    let strategies: Vec<&dyn KvStrategy> = vec![&standard, &tq4, &markov];
+    let strategies: Vec<&dyn KvStrategy> = vec![&standard, &tq4, &markov, &rq_iso3, &rq_planar3];
     let table = benchmark::format_comparative_table(&config, &strategies);
 
     assert!(table.contains("Gemma 3-4B"));
     assert!(table.contains("Standard KV"));
     assert!(table.contains("TurboQuant"));
     assert!(table.contains("Markov Residual Stream"));
+    assert!(table.contains("RotorQuant Iso3"));
+    assert!(table.contains("RotorQuant Planar3"));
 }
 
 #[test]

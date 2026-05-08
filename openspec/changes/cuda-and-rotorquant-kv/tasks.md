@@ -58,7 +58,7 @@
 - [ ] 7.2 Quantize-on-write / dequantize-on-read paths in the attention forward.
 - [ ] 7.3 Deferred-K behaviour during prefill (FP16 backing store, lazy quantize on decode insert).
 - [ ] 7.4 KV-surgery operations (`get_layer`, `set_layer`, `clone_layer_position_range`) round-trip across formats.
-- [ ] 7.5 `RotorQuantStrategy { variant: Iso3 | Planar3 | Iso4 | Planar4 }` joins `kv-cache-benchmark` strategy enum.
+- [x] 7.5 `RotorQuantStrategy { variant: Iso3 | Planar3 | Iso4 | Planar4 }` joins `kv-cache-benchmark` strategy enum.
 - [ ] 7.6 Accuracy harness reports PPL / decode tok/s alongside existing strategies; numbers within ±2% of upstream paper on Llama 3.1 8B.
 
 ## 8. Phase 4 — attention service routes (follow-up change `attention-service-routes`)

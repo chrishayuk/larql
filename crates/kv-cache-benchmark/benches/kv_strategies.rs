@@ -1,6 +1,7 @@
 use criterion::{criterion_group, criterion_main, BenchmarkId, Criterion, Throughput};
 use kv_cache_benchmark::markov_residual::MarkovResidual;
 use kv_cache_benchmark::model_config::ModelConfig;
+use kv_cache_benchmark::rotorquant::RotorQuantStrategy;
 use kv_cache_benchmark::standard_kv::StandardKv;
 use kv_cache_benchmark::turboquant::TurboQuant;
 use kv_cache_benchmark::*;
@@ -36,6 +37,22 @@ fn bench_encode(c: &mut Criterion) {
         let s = MarkovResidual::new(512);
         b.iter(|| s.encode(&keys, &values))
     });
+    group.bench_function("rotorquant_iso3", |b| {
+        let s = RotorQuantStrategy::iso3();
+        b.iter(|| s.encode(&keys, &values))
+    });
+    group.bench_function("rotorquant_planar3", |b| {
+        let s = RotorQuantStrategy::planar3();
+        b.iter(|| s.encode(&keys, &values))
+    });
+    group.bench_function("rotorquant_iso4", |b| {
+        let s = RotorQuantStrategy::iso4();
+        b.iter(|| s.encode(&keys, &values))
+    });
+    group.bench_function("rotorquant_planar4", |b| {
+        let s = RotorQuantStrategy::planar4();
+        b.iter(|| s.encode(&keys, &values))
+    });
 
     group.finish();
 }
@@ -58,7 +75,19 @@ fn bench_memory_sweep(c: &mut Criterion) {
     let standard = StandardKv;
     let tq4 = TurboQuant::new(4);
     let markov = MarkovResidual::new(512);
-    let strategies: Vec<&dyn KvStrategy> = vec![&standard, &tq4, &markov];
+    let rq_iso3 = RotorQuantStrategy::iso3();
+    let rq_planar3 = RotorQuantStrategy::planar3();
+    let rq_iso4 = RotorQuantStrategy::iso4();
+    let rq_planar4 = RotorQuantStrategy::planar4();
+    let strategies: Vec<&dyn KvStrategy> = vec![
+        &standard,
+        &tq4,
+        &markov,
+        &rq_iso3,
+        &rq_planar3,
+        &rq_iso4,
+        &rq_planar4,
+    ];
     let lengths = benchmark::CONTEXT_LENGTHS;
     c.bench_function("memory_sweep", |b| {
         b.iter(|| benchmark::memory_sweep(&config, &strategies, lengths))
