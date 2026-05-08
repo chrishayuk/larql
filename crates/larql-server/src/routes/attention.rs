@@ -90,6 +90,10 @@ fn err_response<B: serde::Serialize>(status: StatusCode, body: B) -> (StatusCode
     (status, Json(body))
 }
 
+pub(crate) fn attention_compute_backend() -> Box<dyn larql_compute::ComputeBackend> {
+    larql_compute::default_backend()
+}
+
 fn err_no_session() -> (StatusCode, Json<ErrorBody>) {
     err_response(
         StatusCode::NOT_FOUND,
@@ -532,6 +536,7 @@ pub async fn handle_prefill(
                 let weights: &larql_inference::ModelWeights = &weights_guard;
                 let num_layers = weights.num_layers;
                 let ffn = larql_inference::ffn::WeightFfn { weights };
+                let backend = attention_compute_backend();
 
                 let mut h = h0;
                 let mut residuals = if want_layer_residuals {
@@ -542,8 +547,15 @@ pub async fn handle_prefill(
                 let mut kvs = Vec::with_capacity(num_layers);
 
                 for layer in 0..num_layers {
-                    match larql_inference::run_layer_with_ffn_capturing_h_post_attn(
-                        weights, &h, layer, &ffn, false, None, None,
+                    match larql_inference::run_layer_with_ffn_capturing_h_post_attn_backend(
+                        weights,
+                        &h,
+                        layer,
+                        &ffn,
+                        false,
+                        None,
+                        None,
+                        Some(backend.as_ref()),
                     ) {
                         Some((h_next, h_post_attn, _activation, kv_out)) => {
                             if want_layer_residuals {
@@ -793,6 +805,7 @@ pub async fn handle_decode(
         let weights: &larql_inference::ModelWeights = &weights_guard;
         let num_layers = weights.num_layers;
         let ffn = larql_inference::ffn::WeightFfn { weights };
+        let backend = attention_compute_backend();
 
         let mut layers = blocking_inputs;
         // Pad if the cache had fewer slots than the model knows
@@ -804,12 +817,13 @@ pub async fn handle_decode(
 
         for layer in 0..num_layers {
             let kv_entry = layers[layer].as_ref();
-            match larql_inference::attention::run_attention_block_decode_step(
+            match larql_inference::attention::run_attention_block_decode_step_backend(
                 weights,
                 &h_step,
                 layer,
                 kv_entry,
                 abs_position,
+                Some(backend.as_ref()),
             ) {
                 Some((h_post_attn, new_kv)) => {
                     layers[layer] = Some(new_kv);
@@ -1142,6 +1156,26 @@ mod tests {
         for s in ["fp32", "planar3", "planar4", "iso3", "iso4"] {
             assert_eq!(fmt_to_str(map_kv_format(s).unwrap()), s);
         }
+    }
+
+    #[cfg(feature = "cuda")]
+    #[test]
+    fn attention_backend_honors_cuda_env_when_gpu_available() {
+        if std::env::var("LARQL_CUDA_AVAILABLE").ok().as_deref() != Some("1") {
+            eprintln!("skipping CUDA attention backend smoke: set LARQL_CUDA_AVAILABLE=1");
+            return;
+        }
+
+        static ENV_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
+        let _guard = ENV_LOCK.lock().unwrap();
+        let prior = std::env::var_os("LARQL_BACKEND");
+        std::env::set_var("LARQL_BACKEND", "cuda");
+        let backend = attention_compute_backend();
+        match prior {
+            Some(v) => std::env::set_var("LARQL_BACKEND", v),
+            None => std::env::remove_var("LARQL_BACKEND"),
+        }
+        assert_eq!(backend.name(), "cuda");
     }
 
     #[tokio::test]

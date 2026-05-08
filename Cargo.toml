@@ -47,6 +47,10 @@ serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 thiserror = "2"
 
+[workspace.metadata.larql.unstable-features]
+cuda = "Linux NVIDIA CUDA backend via cudarc/cuBLAS and NVRTC kernels."
+cuda-oxide = "Experimental cuda-oxide custom-kernel pilot; build with +nightly-2026-04-03 and keep disabled by default."
+
 # Workspace-wide clippy policy. Rust 1.95 promoted several stylistic
 # lints from `pedantic` into the default group, which would force a
 # huge amount of churn in long-standing exploratory/dev modules

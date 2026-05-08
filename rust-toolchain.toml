@@ -5,6 +5,10 @@
 #
 # This file takes precedence over user-level rustup defaults inside the
 # workspace, so contributors keep their personal nightly elsewhere.
+#
+# cuda-oxide pilot note: keep the workspace default stable. The
+# experimental `cuda-oxide` feature is built explicitly with
+# `+nightly-2026-04-03`, matching the upstream cuda-oxide toolchain pin.
 channel = "stable"
 components = ["rustfmt", "clippy", "llvm-tools-preview"]
 profile = "minimal"

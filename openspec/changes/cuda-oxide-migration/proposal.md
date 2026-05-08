@@ -43,7 +43,7 @@ and the back-out plan if cuda-oxide's alpha-quality bites us.
 
 ## What Changes
 
-### Phase 1 — Pilot: one RotorQuant Iso3 kernel in cuda-oxide
+### Phase 1 — Pilot: one RotorQuant Iso3 dequantize kernel in cuda-oxide
 
 - ADD `crates/larql-rotorquant/src/cuda_oxide/` module behind a
   new `cuda-oxide` cargo feature (off by default, mutually
@@ -52,13 +52,17 @@ and the back-out plan if cuda-oxide's alpha-quality bites us.
   pins a nightly that supports the rustc-codegen-cuda backend
   alongside the existing stable workspace; the GPU container
   builds with the nightly toolchain).
-- ADD a single `#[kernel]` Rust function for **Iso3 quantize**
-  (the simplest of the four RotorQuant formats — 3-bit per
-  coordinate, 4D quaternion rotation per block).
-- ADD a parity test that round-trips against the existing CPU
-  reference (`larql_rotorquant::cpu_ref::quantize`) with cosine
-  ≥ 0.99 — same bound as the parent `rotorquant-cuda-kernels`
-  proposal targets for cudarc-NVRTC.
+- ADD a single `#[kernel]` Rust function for **Iso3 dequantize**.
+  This is the immediate blocker discovered during
+  `cuda-decode-backend`: the vendored CUDA source exposes
+  FP16→packed quantize/copy kernels, but no CUDA dequantize path.
+- ADD a parity test that quantizes via the existing CPU reference
+  (`larql_rotorquant::cpu_ref::quantize` for `KvFormat::Iso3`)
+  and dequantizes via cuda-oxide. Recovered rows must match the
+  CPU dequantize result within 1e-3 max-element absolute
+  difference and cosine ≥ 0.99.
+- KEEP the original Iso3 quantize kernel as the next pilot step
+  only after dequantize compiles and passes parity.
 
 ### Phase 2 — Evaluation
 
@@ -66,7 +70,7 @@ After Phase 1 lands, the team measures:
 
 - **Build cost**: how much does adding cuda-oxide add to a clean
   `cargo build --features cuda-oxide`? Target: ≤ 90 s on the dev
-  box (CUDA 12.5, LLVM 21). Beyond that, contributors will skip
+  box (CUDA 13.1, LLVM 21). Beyond that, contributors will skip
   the feature.
 - **PTX size**: cuda-oxide vs hand-written PTX for the Iso3
   kernel. Target: ≤ 1.5×.
@@ -160,10 +164,12 @@ CUDA build.
   feature uses `+nightly-YYYY-MM-DD` per the upstream
   `rust-toolchain.toml`. Document this in
   `docs/cuda-rotorquant-status.md`.
-- **LLVM 21 / clang-21 build dependency.** Ubuntu 24.04 ships
-  LLVM 18 by default; LLVM 21 needs `apt.llvm.org`. Mitigation:
-  the Dockerfile pins a tag of an `nvidia/cuda` image with LLVM
-  21 already installed, OR adds the LLVM apt repo at build time.
+- **CUDA 13.1 + LLVM 21 / clang-21 build dependency.** The pinned
+  cuda-oxide commit expects CUDA driver headers that expose
+  `cuEventElapsedTime_v2`; local CUDA 12.x headers do not. Ubuntu
+  24.04 ships LLVM 18 by default; LLVM 21 needs `apt.llvm.org`.
+  Mitigation: the GPU Dockerfile uses `nvidia/cuda:13.1.0` and
+  adds the LLVM apt repo at build time.
 - **Back-out:** the `cuda-oxide` feature is off by default and
   mutually exclusive with `cuda`. Removing it is `cargo
   build --features cuda` exactly as today; no orphaned files

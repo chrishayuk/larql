@@ -151,16 +151,16 @@ fn quant_matvec_q4k_dispatches_to_q4k_kernel() {
 
 #[test]
 fn quant_matvec_q4kf_dispatches_same_as_q4k() {
-    // Q4_KF is an alias → dispatches through q4k_matvec same as Q4_K.
+    // Q4_KF is the pre-baked half-scale layout used by the fast GPU path.
     let cpu = cpu_backend();
     let hidden = 256usize;
     let rows = 4usize;
     let weights: Vec<f32> = synth_vec(rows * hidden, 15);
     let x: Vec<f32> = synth_vec(hidden, 16);
-    let q4k = quantize_q4_k(&weights);
+    let q4kf = larql_compute::cpu::ops::q4_common::quantize_q4_kf(&weights);
     let result = cpu
-        .quant_matvec(QuantFormat::Q4_KF, &q4k, &x, rows, hidden)
-        .expect("CPU should support Q4_KF via q4k_matvec");
+        .quant_matvec(QuantFormat::Q4_KF, &q4kf, &x, rows, hidden)
+        .expect("CPU should support Q4_KF via q4kf_matvec");
     assert_eq!(result.len(), rows);
 }
 

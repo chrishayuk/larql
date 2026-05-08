@@ -28,4 +28,7 @@ pub enum RotorQuantError {
     ScratchHeadDimMismatch { requested: usize, scratch: usize },
     #[error("requested {requested} rows exceeds scratch capacity {capacity}")]
     ScratchCapacityExceeded { requested: usize, capacity: usize },
+    #[cfg(feature = "cuda-oxide")]
+    #[error("cuda-oxide error: {0}")]
+    CudaOxide(String),
 }

@@ -66,7 +66,7 @@ enum Commands {
     /// Remove a cached vindex.
     Rm(rm_cmd::RmArgs),
 
-    /// Benchmark decode throughput on a real vindex (Metal / CPU / Ollama).
+    /// Benchmark decode throughput on a real vindex (Metal / CUDA / CPU / Ollama).
     Bench(bench_cmd::BenchArgs),
 
     // ── Server ──────────────────────────────────────────────────────

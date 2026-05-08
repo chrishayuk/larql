@@ -46,6 +46,7 @@ services:
       dockerfile: deploy/docker/Dockerfile.gpu
       args:
         LARQL_CUDA_ARCH: "${LARQL_CUDA_ARCH:-89}"
+        ENABLE_CUDA_OXIDE: "${ENABLE_CUDA_OXIDE:-0}"
     image: larql-gpu:dev
     gpus: all
     environment:

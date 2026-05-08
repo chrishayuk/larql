@@ -379,6 +379,54 @@ pub fn q4k_to_q4kf(q4k_data: &[u8], num_rows: usize, hidden: usize) -> Vec<u8> {
     out
 }
 
+/// Dequantize Q4_KF pre-baked half-scale blocks into f32 values.
+pub fn dequantize_q4_kf(q4kf_data: &[u8], n_elements: usize) -> Option<Vec<f32>> {
+    const BLOCK_ELEMS: usize = 256;
+    const BLOCK_BYTES: usize = crate::pipeline::Q4_KF_BLOCK_BYTES;
+
+    if !n_elements.is_multiple_of(BLOCK_ELEMS) {
+        return None;
+    }
+
+    let n_blocks = n_elements / BLOCK_ELEMS;
+    let expected = n_blocks * BLOCK_BYTES;
+    if q4kf_data.len() < expected {
+        return None;
+    }
+
+    let mut out = vec![0.0f32; n_elements];
+    for sb in 0..n_blocks {
+        let block = &q4kf_data[sb * BLOCK_BYTES..(sb + 1) * BLOCK_BYTES];
+        let mut scales = [0.0f32; 8];
+        let mut mins = [0.0f32; 8];
+        for j in 0..8 {
+            let scale = u16::from_le_bytes([block[j * 2], block[j * 2 + 1]]);
+            let min = u16::from_le_bytes([block[16 + j * 2], block[16 + j * 2 + 1]]);
+            scales[j] = f16_to_f32(scale);
+            mins[j] = f16_to_f32(min);
+        }
+
+        let quants = &block[32..160];
+        let sb_base = sb * BLOCK_ELEMS;
+        for group in 0..4 {
+            let lo_subblock = group * 2;
+            let hi_subblock = lo_subblock + 1;
+            let chunk = &quants[group * 32..(group + 1) * 32];
+            let lo_base = sb_base + lo_subblock * 32;
+            let hi_base = sb_base + hi_subblock * 32;
+            for lane in 0..32 {
+                let byte = chunk[lane];
+                out[lo_base + lane] =
+                    scales[lo_subblock] * (byte & 0x0F) as f32 - mins[lo_subblock];
+                out[hi_base + lane] =
+                    scales[hi_subblock] * ((byte >> 4) & 0x0F) as f32 - mins[hi_subblock];
+            }
+        }
+    }
+
+    Some(out)
+}
+
 /// Quantize f32 data directly to Q4_KF format (pre-baked half scales).
 pub fn quantize_q4_kf(data: &[f32]) -> Vec<u8> {
     assert!(

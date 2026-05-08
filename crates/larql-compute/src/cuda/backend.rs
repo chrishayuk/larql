@@ -6,17 +6,20 @@
 //! [parent]: ../../../../openspec/changes/cuda-and-rotorquant-kv/
 
 use std::sync::Arc;
+use std::sync::Mutex;
 
 use ndarray::{Array2, ArrayView2};
 
 use crate::backend::{Capability, ComputeBackend, MatMul};
 
+use super::decode::CudaKvCache;
 use super::driver::Driver;
 use super::error::CudaInitError;
 use super::matmul as kernels;
 
 pub struct CudaBackend {
     drv: Arc<Driver>,
+    pub(crate) kv_cache: Mutex<Option<CudaKvCache>>,
 }
 
 impl CudaBackend {
@@ -26,7 +29,10 @@ impl CudaBackend {
 
     pub fn new_with_index(ordinal: usize) -> Result<Self, CudaInitError> {
         let drv = Driver::new_with_index(ordinal)?;
-        Ok(CudaBackend { drv })
+        Ok(CudaBackend {
+            drv,
+            kv_cache: Mutex::new(None),
+        })
     }
 
     /// Module-internal accessor used by `cuda::attn` so the helper
@@ -115,6 +121,9 @@ impl ComputeBackend for CudaBackend {
                 | Capability::QuantMatVec
                 | Capability::Q4VecMat
                 | Capability::FlashAttentionV2
+                | Capability::KvCompressionRotorQuant
+                | Capability::DecodeToken
+                | Capability::PrefillQ4
         )
     }
 
@@ -156,8 +165,7 @@ mod tests {
                 b.supports(Capability::F32Gemv),
                 "cuda-f32-baseline must advertise F32Gemv"
             );
-            // Decode-token / fused attention land in cuda-fused-attention.
-            assert!(!b.supports(Capability::DecodeToken));
+            assert!(b.supports(Capability::DecodeToken));
         }
     }
 
@@ -167,9 +175,8 @@ mod tests {
             // Capabilities flipped on by cuda-q4-matvec.
             assert!(b.supports(Capability::QuantMatVec));
             assert!(b.supports(Capability::Q4VecMat));
-            // Capabilities still off (their sub-changes haven't landed).
-            assert!(!b.supports(Capability::KvCompressionRotorQuant));
-            assert!(!b.supports(Capability::DecodeToken));
+            assert!(b.supports(Capability::KvCompressionRotorQuant));
+            assert!(b.supports(Capability::DecodeToken));
         }
     }
 
@@ -182,8 +189,17 @@ mod tests {
             assert!(b.supports(Capability::QuantMatVec));
             assert!(b.supports(Capability::Q4VecMat));
             assert!(b.supports(Capability::FlashAttentionV2));
-            // Still off — RotorQuant lands later.
-            assert!(!b.supports(Capability::KvCompressionRotorQuant));
+            assert!(b.supports(Capability::DecodeToken));
+            assert!(b.supports(Capability::PrefillQ4));
+            assert!(b.supports(Capability::KvCompressionRotorQuant));
+        }
+    }
+
+    #[test]
+    fn supports_decode_after_cuda_decode_backend() {
+        if let Ok(b) = CudaBackend::new() {
+            assert!(b.supports(Capability::DecodeToken));
+            assert!(b.supports(Capability::PrefillQ4));
         }
     }
 }

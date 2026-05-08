@@ -43,6 +43,15 @@ Local integration files live outside `cuda/upstream/`:
 - `cuda/larql_rotorquant_kernels.cu`
 - `cuda/ARCHS.txt`
 
+## cuda-oxide Pilot Pin
+
+- Upstream repository: `https://github.com/NVlabs/cuda-oxide.git`
+- Upstream branch: `main`
+- Pinned commit: `6de050946cd1013335a33cf2c5144888a32efab3`
+- Pin date: `2026-05-08`
+- Purpose: experimental Iso3 dequantize kernel under the
+  `cuda-oxide` cargo feature.
+
 These files let the vendored translation unit compile outside the
 full llama.cpp source tree and expose C ABI wrapper symbols for Rust.
 

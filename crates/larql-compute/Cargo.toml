@@ -68,6 +68,10 @@ metal = ["dep:metal", "dep:objc"]
 # f32 GEMM/GEMV and correctness-first quantized matvec paths; fused
 # layer-pipeline integration remains staged through follow-up changes.
 cuda = ["dep:cudarc"]
+# Experimental cuda-oxide custom-kernel pilot. Kept separate from `cuda`
+# so future Rust-authored kernels can be evaluated without changing the
+# default cudarc/cuBLAS path.
+cuda-oxide = []
 
 [build-dependencies]
 cc = "1.0"

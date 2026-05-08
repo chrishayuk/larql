@@ -61,6 +61,11 @@
 //!   Q4/Q6 matvec dispatch; full fused layer-pipeline integration is
 //!   still staged through follow-up changes.
 
+#[cfg(all(feature = "cuda", feature = "cuda-oxide"))]
+compile_error!(
+    "features `cuda` and `cuda-oxide` are mutually exclusive; enable only one CUDA custom-kernel backend"
+);
+
 extern crate blas_src;
 
 pub mod backend;

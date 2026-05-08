@@ -1,30 +1,28 @@
 ## ADDED Requirements
 
-### Requirement: cuda-oxide Iso3 quantize MUST round-trip against the CPU reference
+### Requirement: cuda-oxide Iso3 dequantize MUST match the CPU reference
 
-The pilot kernel `larql_rotorquant::cuda_oxide::quantize_iso3` MUST
-produce a `QuantizedKv` byte-compatible with the CPU reference
-(`larql_rotorquant::cpu_ref::quantize` for `KvFormat::Iso3`). A
-round-trip through `cpu_ref::dequantize` SHALL match the input to
-cosine ≥ 0.99 per row on synthetic 64 × 320 input.
+The cuda-oxide pilot MUST reconstruct `KvFormat::Iso3`
+`QuantizedKv` buffers compatibly with the CPU reference
+(`larql_rotorquant::dequantize_k`). The input SHALL be generated
+with the existing CPU quantize path so the cuda-oxide test isolates
+dequantize behavior.
+
+#### Scenario: cuda-oxide Iso3 dequantize matches CPU dequantize
+
+- **WHEN** a synthetic 64 × 320 random input is quantized with
+  `quantize_k(KvFormat::Iso3, ...)`, then dequantized by both
+  `dequantize_k` and `cuda_oxide::dequantize_iso3`
+- **THEN** the cuda-oxide reconstruction SHALL match the CPU
+  reconstruction to max-element absolute difference ≤ 1e-3
+<!-- test: unbacked -->
 
 #### Scenario: cuda-oxide Iso3 round-trip cosine ≥ 0.99
 
-- **WHEN** the pilot kernel quantises a synthetic 64 × 320 random
-  input on the GPU and the result is dequantised on the CPU
+- **WHEN** the cuda-oxide dequantize pilot reconstructs the
+  CPU-quantized synthetic input
 - **THEN** the per-row cosine similarity vs the original input
   SHALL be ≥ 0.99
-<!-- test: unbacked -->
-
-#### Scenario: cuda-oxide Iso3 ↔ CPU byte parity
-
-- **WHEN** the same synthetic input is quantised through both
-  `cpu_ref::quantize(KvFormat::Iso3, ...)` and
-  `cuda_oxide::quantize_iso3(...)`
-- **THEN** the resulting `QuantizedKv.codes`, `.norms`, and
-  `.rotation_indices` SHALL be bit-identical (the kernels share
-  the same Lloyd-Max codebook + quaternion rotation table; any
-  divergence is a kernel bug, not a numerical artifact)
 <!-- test: unbacked -->
 
 ### Requirement: cuda-oxide pilot MUST coexist with the cudarc-NVRTC variant
@@ -37,10 +35,9 @@ pass a three-way parity test against the CPU reference within
 
 #### Scenario: three-way Iso3 parity (CPU / cudarc / cuda-oxide)
 
-- **WHEN** the same 64 × 320 input is processed through
-  `cpu_ref::quantize → cpu_ref::dequantize`,
-  `cudarc::quantize_iso3 → cpu_ref::dequantize`, and
-  `cuda_oxide::quantize_iso3 → cpu_ref::dequantize`
+- **WHEN** the same CPU-quantized 64 × 320 input is processed
+  through CPU dequantize, cudarc dequantize, and cuda-oxide
+  dequantize
 - **THEN** every pair of reconstructions SHALL agree to
   max-element absolute difference ≤ 1e-3
 <!-- test: unbacked -->

@@ -68,6 +68,30 @@ unsafe extern "C" {
         ne: i64,
         stream: *mut c_void,
     );
+    fn larql_rotorquant_dequantize_planar3_f32(
+        src: *const c_void,
+        dst: *mut c_void,
+        ne: i64,
+        stream: *mut c_void,
+    );
+    fn larql_rotorquant_dequantize_planar4_f32(
+        src: *const c_void,
+        dst: *mut c_void,
+        ne: i64,
+        stream: *mut c_void,
+    );
+    fn larql_rotorquant_dequantize_iso3_f32(
+        src: *const c_void,
+        dst: *mut c_void,
+        ne: i64,
+        stream: *mut c_void,
+    );
+    fn larql_rotorquant_dequantize_iso4_f32(
+        src: *const c_void,
+        dst: *mut c_void,
+        ne: i64,
+        stream: *mut c_void,
+    );
 }
 
 /// Number of FP16 values consumed by one upstream CUDA quantization block.
@@ -114,5 +138,39 @@ pub unsafe fn copy_f16_to_quantized(
         KvFormat::Planar4 => larql_rotorquant_cpy_f16_planar4(src, dst, ne, stream.as_raw()),
         KvFormat::Iso3 => larql_rotorquant_cpy_f16_iso3(src, dst, ne, stream.as_raw()),
         KvFormat::Iso4 => larql_rotorquant_cpy_f16_iso4(src, dst, ne, stream.as_raw()),
+    }
+}
+
+/// Launch the upstream-compatible RotorQuant-to-F32 dequantize kernel.
+///
+/// `src` points to packed RotorQuant blocks produced by
+/// [`copy_f16_to_quantized`]. `dst` points to `ne` writable `f32`
+/// values. `ne` is the number of scalar values represented by `src`,
+/// not a byte count.
+///
+/// # Safety
+///
+/// The caller must ensure:
+///
+/// - `src` and `dst` are valid device pointers in the active CUDA
+///   context.
+/// - `ne` is non-negative and divisible by [`BLOCK_ELEMENTS`].
+/// - `src` points to `ne / 128 * block_bytes(format)` readable bytes.
+/// - `dst` points to `ne * sizeof(float)` writable bytes.
+/// - `stream` is valid for the active context.
+pub unsafe fn dequantize_to_f32(
+    format: KvFormat,
+    src: *const c_void,
+    dst: *mut c_void,
+    ne: i64,
+    stream: CudaStream,
+) {
+    debug_assert!(ne >= 0);
+    debug_assert_eq!(ne as usize % BLOCK_ELEMENTS, 0);
+    match format {
+        KvFormat::Planar3 => larql_rotorquant_dequantize_planar3_f32(src, dst, ne, stream.as_raw()),
+        KvFormat::Planar4 => larql_rotorquant_dequantize_planar4_f32(src, dst, ne, stream.as_raw()),
+        KvFormat::Iso3 => larql_rotorquant_dequantize_iso3_f32(src, dst, ne, stream.as_raw()),
+        KvFormat::Iso4 => larql_rotorquant_dequantize_iso4_f32(src, dst, ne, stream.as_raw()),
     }
 }

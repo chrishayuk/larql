@@ -19,14 +19,24 @@ cudarc = { version = "0.19", optional = true, default-features = false, features
     "cuda-12050",
     "dynamic-loading",
 ] }
+cuda-core = { git = "https://github.com/NVlabs/cuda-oxide.git", rev = "6de050946cd1013335a33cf2c5144888a32efab3", package = "cuda-core", optional = true }
+cuda-host = { git = "https://github.com/NVlabs/cuda-oxide.git", rev = "6de050946cd1013335a33cf2c5144888a32efab3", package = "cuda-host", optional = true }
+cuda-device = { git = "https://github.com/NVlabs/cuda-oxide.git", rev = "6de050946cd1013335a33cf2c5144888a32efab3", package = "cuda-device", optional = true }
 
 [features]
 default = []
 # Enable the CUDA path. Without it the crate provides only the CPU
 # reference implementation that the round-trip tests use as oracle.
 cuda = ["dep:cudarc"]
+cuda-oxide = ["dep:cuda-core", "dep:cuda-host", "dep:cuda-device"]
+
+[[bin]]
+name = "larql-rotorquant"
+path = "src/bin/cuda_oxide_pilot.rs"
+required-features = ["cuda-oxide"]
 
 [dev-dependencies]
+half = "2.7"
 # (CPU reference round-trip tests use only this crate's own API.)
 
 [lints]

@@ -33,53 +33,54 @@ driver API; we don't migrate to it in Phase 1.
 - Not a Rust-CUDA debate. The existing `cudarc` path stays for
   cuBLAS. cuda-oxide isn't trying to replace BLAS.
 - Not a kernel-rewrite for performance. The pilot kernel
-  (RotorQuant Iso3 quantize) doesn't have a hand-tuned PTX
-  baseline today — both cuda-oxide and the eventual cudarc-NVRTC
-  variant would be greenfield. We pick whichever delivers the
-  better author experience at acceptable performance.
+  (RotorQuant Iso3 dequantize) is the missing device path needed
+  by `cuda-decode-backend`; both cuda-oxide and the eventual
+  cudarc-NVRTC variant are greenfield. We pick whichever delivers
+  the better author experience at acceptable performance.
 - Not a Metal migration. cuda-oxide is Linux+CUDA only today.
   Metal kernels stay in the existing Objective-C++ pipeline.
 
-## Pilot kernel: RotorQuant Iso3 quantize
+## Pilot kernel: RotorQuant Iso3 dequantize
 
-The smallest meaningful kernel. From
-`crates/larql-rotorquant/src/cpu_ref.rs::quantize` (Iso3 path):
+The smallest meaningful kernel is the one currently blocking
+RotorQuant KV-cache inference on CUDA. The vendored upstream CUDA
+source exposes FP16-to-packed quantize/copy helpers, but no CUDA
+dequantize helper. From
+`crates/larql-rotorquant/src/cpu_ref.rs::dequantize` (Iso3 path):
 
-1. For each row:
-   - Compute L2 norm; record in `norms`.
-   - Normalise the row to unit length.
+1. For each row, read the per-row absmax scale from `norms`.
 2. For each block of 4 coordinates (Iso = 4D quaternion):
-   - Try every rotation in the table (16 quaternions).
-   - Pick the one minimising sum-of-squares of the post-rotation
-     codes.
-   - Record the rotation index.
-3. Quantise each rotated coordinate to the nearest 3-bit
-   codeword (8-codeword Lloyd-Max codebook).
-4. Pack codes LSB-first into `[u8; n_codes * 3 / 8]`.
+   - Unpack 4 LSB-first 3-bit codes from the packed `codes`
+     buffer.
+   - Look up the 8-codeword Lloyd-Max values.
+   - Read the block's `rotation_idx` and apply the inverse
+     4x4 Iso rotation.
+   - Multiply by the row scale and write row-major `f32` output.
 
 This is ~150 lines of CPU Rust today. The cuda-oxide port:
-- One `#[kernel]` function: `iso3_quantize_block(row: &[f32; 4],
-  rot_table: &[[f32; 16]; 16], codebook: &[f32; 8]) -> (rotation_idx: u16, codes: [u8; 4])`
+- One `#[kernel]` function: `iso3_dequantize_block(codes,
+  norms, rotation_indices, out, n_rows, head_dim)`.
 - Host wrapper that launches it across `(n_rows × n_blocks_per_row)`
-  threads, reading from a `DeviceBuffer<f32>` and writing into
-  three `DeviceBuffer`s (codes / norms / rotation_indices).
-- Round-trip through `cpu_ref::dequantize` for parity check —
-  must match cosine ≥ 0.99 against the original input row.
+  threads, reading packed `DeviceBuffer`s and writing one
+  `DeviceBuffer<f32>`.
+- Parity check against `cpu_ref::dequantize` on CPU-quantized
+  input — max-element diff ≤ 1e-3 and cosine ≥ 0.99 against the
+  original input row.
 
 ```text
 ┌──────────────────────────────────┐
 │  larql_rotorquant::cuda_oxide    │
 │  ────────────────────────────    │
 │   #[kernel]                      │
-│   fn iso3_quantize_block(...)    │
+│   fn iso3_dequantize_block(...)  │
 │   ────────────────────────────   │
-│   pub fn quantize_iso3_oxide(    │
+│   pub fn dequantize_iso3_oxide(  │
 │     ctx: &CudaContext,           │
-│     k: &[f32], n_rows, head_dim, │
-│   ) -> QuantizedKv               │
+│     qkv: &QuantizedKv,           │
+│   ) -> Vec<f32>                  │
 └──────────────────────────────────┘
               │
-              │ same QuantizedKv shape as the CPU reference
+              │ same f32 reconstruction as the CPU reference
               ▼
 ┌──────────────────────────────────┐
 │  larql_rotorquant::cpu_ref       │
@@ -109,7 +110,7 @@ After Phase 1:
 [features]
 default = []
 cuda = ["dep:cudarc"]                                 # unchanged
-cuda-oxide = ["dep:cuda-core", "dep:cuda-host"]       # new, pilot
+cuda-oxide = ["dep:cuda-core", "dep:cuda-host", "dep:cuda-device"] # new, pilot
 ```
 
 The two features are **mutually exclusive at compile time**.
@@ -125,7 +126,11 @@ selected implementation. `BackendKind::Cudarc` and
 
 cuda-oxide pins **`nightly-2026-04-03`** (per the upstream
 README's `rust-toolchain.toml` example). The LARQL workspace
-pins stable. We don't change the workspace default.
+pins stable. We don't change the workspace default. The pilot
+also targets CUDA Toolkit **13.1**, because the pinned
+cuda-oxide commit calls driver symbols exposed by CUDA 13 headers
+(`cuEventElapsedTime_v2`) that are not generated from the dev
+box's CUDA 12.x headers.
 
 The pilot uses an **adjacent toolchain entry** in the GPU
 Dockerfile only:
@@ -146,13 +151,17 @@ make cuda-oxide-pilot   # uses +nightly-2026-04-03 internally
 The default `make ci` target stays on stable and ignores the
 cuda-oxide feature entirely.
 
-## Build dependency: LLVM 21
+## Build dependency: CUDA 13.1 + LLVM 21
 
 cuda-oxide emits PTX that requires `llc` from LLVM 21 (the
 README explicitly calls out TMA / tcgen05 / WGMMA intrinsics
 that LLVM 20 can't handle). On Ubuntu 24.04 (the GPU image
 base), LLVM 18 ships by default; LLVM 21 comes from
 `apt.llvm.org`.
+
+The GPU container base is `nvidia/cuda:13.1.0-devel-ubuntu24.04`.
+Local CUDA 12.x installations are useful for the existing cudarc
+path but do not satisfy the pinned cuda-oxide pilot.
 
 ```dockerfile
 RUN curl -sSf https://apt.llvm.org/llvm.sh | bash -s -- 21 && \
@@ -171,7 +180,7 @@ in Phase 2 — measured on RTX 4090, Gemma 4B head shape
 
 | Metric | Cudarc-NVRTC reference | cuda-oxide target |
 |---|---|---|
-| Iso3 quantize on 8 × 320 block | (TBD; build it first) | ≤ 1.25× cudarc |
+| Iso3 dequantize on 8 × 320 block | (TBD; build it first) | ≤ 1.25× cudarc |
 | Cold-start kernel-load | 200 ms (cudarc-cached) | ≤ 100 ms (PTX is cargo-built) |
 | PTX size | (TBD) | ≤ 1.5× cudarc |
 | Round-trip cosine vs CPU | ≥ 0.99 | ≥ 0.99 (same bound) |
@@ -181,14 +190,16 @@ If cuda-oxide hits "≤ 1.25× cudarc on throughput" we ship Phase
 
 ## Tests
 
-- Unit: cuda-oxide-built `iso3_quantize_block` round-trip on
-  synthetic 64×320 input → cosine ≥ 0.99 (gated on
-  `LARQL_CUDA_AVAILABLE=1` + `--features cuda-oxide`).
+- Unit: cuda-oxide-built `iso3_dequantize_block` on
+  synthetic CPU-quantized 64×320 input → max-element diff ≤ 1e-3
+  against CPU dequantize and cosine ≥ 0.99 against the original
+  row (gated on `LARQL_CUDA_AVAILABLE=1` + `--features cuda-oxide`).
 - Parity: cuda-oxide vs cpu_ref vs (when shipped) cudarc-NVRTC
-  on the same input — all three within 1e-3 max-element diff.
+  dequantize on the same quantized input — all three within
+  1e-3 max-element diff.
 - Build doctor: `make cuda-oxide-doctor` runs `cargo oxide
   doctor` on the dev box and reports missing prerequisites
-  (LLVM 21, clang-21, nightly toolchain, cuda toolkit).
+  (LLVM 21, clang-21, nightly toolchain, CUDA Toolkit 13.1).
 
 ## Documentation
 

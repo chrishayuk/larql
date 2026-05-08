@@ -48,14 +48,31 @@ sub-change.
   (zero LARQL deps; mirrors model-compute's "extract later" pattern).
   CPU reference for all four formats (Planar3 / Planar4 / Iso3 /
   Iso4). **9/9** round-trip tests + 1 doctest pass; cosine ≥ 0.95
-  including Gemma 4B head_dim=320. CUDA module is a feature-flagged
-  stub today; PTX kernels land in a follow-up.
+  including Gemma 4B head_dim=320. CUDA module exposes the upstream
+  packed FP16 → RotorQuant block-copy kernels and the matching
+  RotorQuant → FP32 dequantize kernels under `--features cuda`.
 - ✅ `rotorquant-strategy`: `RotorQuantStrategy` joins the
   `KvStrategy` trait family in `kv-cache-benchmark`. Four
   constructors (`iso3`, `planar3`, `iso4`, `planar4`) plumb
   `larql-rotorquant`'s CPU reference into the same harness used by
   Standard / TurboQuant / Markov / Apollo. **3/3** strategy tests
   pass.
+- ✅ `cuda-decode-backend` RotorQuant wrapper completion:
+  `larql-rotorquant` now round-trips all four active packed CUDA
+  formats on-device. 3-bit packed formats preserve direction at
+  ~0.985 cosine on synthetic Gemma-shaped KV rows; 4-bit packed
+  formats reach ~0.994. `CudaBackend` now advertises
+  `Capability::KvCompressionRotorQuant` after the CUDA round-trip
+  test passes.
+
+  RTX 4090 benchmark, 16,384 × 320 values, 20 iterations:
+
+  | Format | KV bytes vs FP16 | cosine | quantize+dequantize ms/iter | logical FP16 GiB/s |
+  | --- | ---: | ---: | ---: | ---: |
+  | Planar3 | 19.53% | 0.984766 | 0.3920 | 24.92 |
+  | Planar4 | 26.56% | 0.994617 | 0.3007 | 32.48 |
+  | Iso3 | 19.53% | 0.984643 | 0.3933 | 24.83 |
+  | Iso4 | 26.56% | 0.993546 | 0.3021 | 32.33 |
 
 ### Phase 4 — Router topology
 
@@ -172,8 +189,9 @@ backend.supports(Capability::F32Gemv)                  // true (cuda-f32-baselin
 backend.supports(Capability::QuantMatVec)              // true (cuda-q4-matvec)
 backend.supports(Capability::Q4VecMat)                 // true (cuda-q4-matvec)
 backend.supports(Capability::FlashAttentionV2)         // true (cuda-fused-attention)
-backend.supports(Capability::KvCompressionRotorQuant)  // false — flips on with rotorquant-attention-integration
-backend.supports(Capability::DecodeToken)              // false — trait-level decode_token still None
+backend.supports(Capability::KvCompressionRotorQuant)  // true (cuda-decode-backend)
+backend.supports(Capability::DecodeToken)              // true (cuda-decode-backend)
+backend.supports(Capability::PrefillQ4)                // true (cuda-decode-backend)
 ```
 
 ## What `make test-cuda` exercises
@@ -182,7 +200,9 @@ backend.supports(Capability::DecodeToken)              // false — trait-level 
 cargo test -p larql-compute --features cuda --test test_cuda_f32   →  9 tests
 cargo test -p larql-compute --features cuda --test test_cuda_q4    →  5 tests
 cargo test -p larql-compute --features cuda --test test_cuda_attn  →  6 tests
-cargo test -p larql-rotorquant                                     →  9 tests + 1 doctest
+cargo test -p larql-rotorquant                                     →  CPU reference tests
+cargo test -p larql-rotorquant --features cuda --test cuda_round_trip
+                                                                 →  4 CUDA RotorQuant tests
 cargo test -p kv-cache-benchmark --lib rotorquant                  →  3 tests
 cargo test -p larql-router --bin larql-router grid::tests          → 30 tests (+19: prefix-aware + bloom)
 cargo test -p larql-inference --lib attention::decode               → 22 tests (+4: promote-on-read)

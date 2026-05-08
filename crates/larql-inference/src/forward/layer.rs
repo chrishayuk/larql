@@ -228,6 +228,43 @@ pub fn run_layer_with_ffn_capturing_h_post_attn(
     Some((h_out, h_post_attn, activation, kv_out))
 }
 
+/// Backend-aware variant of [`run_layer_with_ffn_capturing_h_post_attn`].
+///
+/// Attention projections route through `backend` when provided. The rest of
+/// the layer semantics stay identical: FFN backend, PLE, layer scalar, and
+/// optional shared-KV handling are preserved.
+#[allow(clippy::type_complexity)]
+pub fn run_layer_with_ffn_capturing_h_post_attn_backend(
+    weights: &ModelWeights,
+    h: &Array2<f32>,
+    layer: usize,
+    ffn: &dyn FfnBackend,
+    capture_activation: bool,
+    ple_input: Option<&Array2<f32>>,
+    shared_kv: Option<&SharedKV>,
+    backend: Option<&dyn larql_compute::ComputeBackend>,
+) -> Option<(
+    Array2<f32>,
+    Array2<f32>,
+    Option<Array2<f32>>,
+    Option<SharedKV>,
+)> {
+    let (h_post_attn, kv_out) = if let Some(shared_kv) = shared_kv {
+        (
+            run_attention_inner(weights, h, layer, false, Some(shared_kv))?.0,
+            None,
+        )
+    } else {
+        let (h_pa, k, v) =
+            crate::attention::gpu::run_attention_with_kv_backend(weights, h, layer, backend)?;
+        (h_pa, Some((k, v)))
+    };
+    let (h_post_ffn, activation) = run_ffn(weights, &h_post_attn, layer, ffn, capture_activation);
+    let mut h_out = apply_per_layer_embedding(weights, &h_post_ffn, layer, ple_input);
+    apply_layer_scalar(weights, &mut h_out, layer);
+    Some((h_out, h_post_attn, activation, kv_out))
+}
+
 /// Run a single transformer layer, optionally capturing attention weights.
 ///
 /// Backwards-compatible wrapper: behaves identically to the pre-hook version

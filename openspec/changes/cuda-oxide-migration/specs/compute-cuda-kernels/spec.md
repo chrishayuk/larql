@@ -25,8 +25,8 @@ require the cuda-oxide toolchain — it stays on stable Rust.
 
 #### Scenario: cuda-oxide build requires the documented toolchain
 
-- **WHEN** `make cuda-oxide-pilot` runs on a host missing LLVM 21
-  or `nightly-2026-04-03`
+- **WHEN** `make cuda-oxide-pilot` runs on a host missing CUDA
+  Toolkit 13.1, LLVM 21, or `nightly-2026-04-03`
 - **THEN** the failure message SHALL surface from `cargo oxide
   doctor`, listing the missing components and how to install them
 <!-- test: unbacked -->

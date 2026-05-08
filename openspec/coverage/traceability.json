@@ -1,12 +1,12 @@
 {
   "summary": {
     "capabilities": 49,
-    "requirements": 414,
-    "scenarios": 1388,
-    "scenarios_backed": 1271,
+    "requirements": 420,
+    "scenarios": 1394,
+    "scenarios_backed": 1277,
     "scenarios_unbacked": 117,
-    "test_refs": 3318,
-    "test_refs_unresolved": 0
+    "test_refs": 3324,
+    "test_refs_unresolved": 3
   },
   "capabilities": [
     {
@@ -2122,6 +2122,51 @@
               "unbacked": true,
               "spec_file": "openspec/specs/compute-cuda-kernels/spec.md",
               "line": 141
+            }
+          ]
+        },
+        {
+          "name": "CUDA backend implements KV-cached decode",
+          "scenarios": [
+            {
+              "name": "decode_token returns a vector instead of None",
+              "tests_resolved": [],
+              "tests_unresolved": [
+                "larql_compute::test_cuda_decode::decode_token_one_layer_returns_hidden"
+              ],
+              "unbacked": false,
+              "spec_file": "openspec/changes/cuda-decode-backend/specs/compute-cuda-kernels/spec.md",
+              "line": 9
+            }
+          ]
+        },
+        {
+          "name": "CUDA backend implements Q4 prefill",
+          "scenarios": [
+            {
+              "name": "prefill_q4 populates cache length",
+              "tests_resolved": [
+                "larql_compute::test_cuda_decode::prefill_populates_kv_cache_len"
+              ],
+              "tests_unresolved": [],
+              "unbacked": false,
+              "spec_file": "openspec/changes/cuda-decode-backend/specs/compute-cuda-kernels/spec.md",
+              "line": 19
+            }
+          ]
+        },
+        {
+          "name": "CUDA decode capability bits are truthful",
+          "scenarios": [
+            {
+              "name": "decode capability is advertised",
+              "tests_resolved": [
+                "larql_compute::cuda::backend::tests::supports_decode_after_cuda_decode_backend"
+              ],
+              "tests_unresolved": [],
+              "unbacked": false,
+              "spec_file": "openspec/changes/cuda-decode-backend/specs/compute-cuda-kernels/spec.md",
+              "line": 29
             }
           ]
         },
@@ -8225,6 +8270,21 @@
           ]
         },
         {
+          "name": "CLI benchmark supports CUDA",
+          "scenarios": [
+            {
+              "name": "CUDA bench row is emitted",
+              "tests_resolved": [],
+              "tests_unresolved": [
+                "larql_cli::bench_cuda_manual_rtx4090"
+              ],
+              "unbacked": false,
+              "spec_file": "openspec/changes/cuda-decode-backend/specs/kv-cache-benchmark-strategies/spec.md",
+              "line": 8
+            }
+          ]
+        },
+        {
           "name": "RotorQuantStrategy MUST implement the KvStrategy trait",
           "scenarios": [
             {
@@ -8396,10 +8456,25 @@
           ]
         },
         {
-          "name": "cuda-oxide Iso3 quantize MUST round-trip against the CPU reference",
+          "name": "CUDA backend supports RotorQuant KV compression",
           "scenarios": [
             {
-              "name": "cuda-oxide Iso3 round-trip cosine \u2265 0.99",
+              "name": "CUDA RotorQuant round-trip preserves direction",
+              "tests_resolved": [
+                "larql_rotorquant::cuda_round_trip::iso3_cuda_preserves_direction"
+              ],
+              "tests_unresolved": [],
+              "unbacked": false,
+              "spec_file": "openspec/changes/cuda-decode-backend/specs/kv-cache-rotorquant/spec.md",
+              "line": 8
+            }
+          ]
+        },
+        {
+          "name": "cuda-oxide Iso3 dequantize MUST match the CPU reference",
+          "scenarios": [
+            {
+              "name": "cuda-oxide Iso3 dequantize matches CPU dequantize",
               "tests_resolved": [],
               "tests_unresolved": [],
               "unbacked": true,
@@ -8407,12 +8482,12 @@
               "line": 11
             },
             {
-              "name": "cuda-oxide Iso3 \u2194 CPU byte parity",
+              "name": "cuda-oxide Iso3 round-trip cosine \u2265 0.99",
               "tests_resolved": [],
               "tests_unresolved": [],
               "unbacked": true,
               "spec_file": "openspec/changes/cuda-oxide-migration/specs/kv-cache-rotorquant/spec.md",
-              "line": 19
+              "line": 20
             }
           ]
         },
@@ -8425,7 +8500,7 @@
               "tests_unresolved": [],
               "unbacked": true,
               "spec_file": "openspec/changes/cuda-oxide-migration/specs/kv-cache-rotorquant/spec.md",
-              "line": 38
+              "line": 36
             }
           ]
         },
@@ -8438,7 +8513,7 @@
               "tests_unresolved": [],
               "unbacked": true,
               "spec_file": "openspec/changes/cuda-oxide-migration/specs/kv-cache-rotorquant/spec.md",
-              "line": 55
+              "line": 52
             }
           ]
         },
@@ -13807,6 +13882,21 @@
               "unbacked": true,
               "spec_file": "openspec/changes/attention-service-routes/specs/server-attention-service/spec.md",
               "line": 208
+            }
+          ]
+        },
+        {
+          "name": "Attention service can select CUDA decode",
+          "scenarios": [
+            {
+              "name": "GPU container selects CUDA decode",
+              "tests_resolved": [],
+              "tests_unresolved": [
+                "larql_server::attention_cuda_manual_container_smoke"
+              ],
+              "unbacked": false,
+              "spec_file": "openspec/changes/cuda-decode-backend/specs/server-attention-service/spec.md",
+              "line": 8
             }
           ]
         }
@@ -19399,25 +19489,31 @@
     {
       "fqn": "larql_compute::cuda::backend::driver_missing_returns_typed_error",
       "file": "crates/larql-compute/src/cuda/backend.rs",
-      "line": 133,
+      "line": 142,
       "crate": "larql_compute"
     },
     {
       "fqn": "larql_compute::cuda::backend::supports_f32_gemv_after_baseline",
       "file": "crates/larql-compute/src/cuda/backend.rs",
-      "line": 150,
+      "line": 159,
       "crate": "larql_compute"
     },
     {
       "fqn": "larql_compute::cuda::backend::supports_q4_matvec_after_q4_baseline",
       "file": "crates/larql-compute/src/cuda/backend.rs",
-      "line": 165,
+      "line": 173,
       "crate": "larql_compute"
     },
     {
       "fqn": "larql_compute::cuda::backend::supports_fa2_after_fused_attention",
       "file": "crates/larql-compute/src/cuda/backend.rs",
-      "line": 177,
+      "line": 184,
+      "crate": "larql_compute"
+    },
+    {
+      "fqn": "larql_compute::cuda::backend::supports_decode_after_cuda_decode_backend",
+      "file": "crates/larql-compute/src/cuda/backend.rs",
+      "line": 199,
       "crate": "larql_compute"
     },
     {
@@ -20060,6 +20156,12 @@
       "fqn": "larql_compute::test_cuda_q4::q4kf_matvec_ffn_gate_parity",
       "file": "crates/larql-compute/tests/test_cuda_q4.rs",
       "line": 162,
+      "crate": "larql_compute"
+    },
+    {
+      "fqn": "larql_compute::test_cuda_decode::decode_token_one_layer_matches_scalar_reference",
+      "file": "crates/larql-compute/tests/test_cuda_decode.rs",
+      "line": 125,
       "crate": "larql_compute"
     },
     {
@@ -21739,61 +21841,61 @@
     {
       "fqn": "larql_inference::forward::layer::tests::run_ffn_shape",
       "file": "crates/larql-inference/src/forward/layer.rs",
-      "line": 341,
+      "line": 378,
       "crate": "larql_inference"
     },
     {
       "fqn": "larql_inference::forward::layer::run_ffn_shape",
       "file": "crates/larql-inference/src/forward/layer.rs",
-      "line": 341,
+      "line": 378,
       "crate": "larql_inference"
     },
     {
       "fqn": "larql_inference::forward::layer::tests::run_ffn_captures_activation",
       "file": "crates/larql-inference/src/forward/layer.rs",
-      "line": 351,
+      "line": 388,
       "crate": "larql_inference"
     },
     {
       "fqn": "larql_inference::forward::layer::run_ffn_captures_activation",
       "file": "crates/larql-inference/src/forward/layer.rs",
-      "line": 351,
+      "line": 388,
       "crate": "larql_inference"
     },
     {
       "fqn": "larql_inference::forward::layer::tests::run_ffn_output_finite",
       "file": "crates/larql-inference/src/forward/layer.rs",
-      "line": 361,
+      "line": 398,
       "crate": "larql_inference"
     },
     {
       "fqn": "larql_inference::forward::layer::run_ffn_output_finite",
       "file": "crates/larql-inference/src/forward/layer.rs",
-      "line": 361,
+      "line": 398,
       "crate": "larql_inference"
     },
     {
       "fqn": "larql_inference::forward::layer::tests::run_layer_with_ffn_shape",
       "file": "crates/larql-inference/src/forward/layer.rs",
-      "line": 370,
+      "line": 407,
       "crate": "larql_inference"
     },
     {
       "fqn": "larql_inference::forward::layer::run_layer_with_ffn_shape",
       "file": "crates/larql-inference/src/forward/layer.rs",
-      "line": 370,
+      "line": 407,
       "crate": "larql_inference"
     },
     {
       "fqn": "larql_inference::forward::layer::tests::run_layer_with_ffn_all_layers",
       "file": "crates/larql-inference/src/forward/layer.rs",
-      "line": 380,
+      "line": 417,
       "crate": "larql_inference"
     },
     {
       "fqn": "larql_inference::forward::layer::run_layer_with_ffn_all_layers",
       "file": "crates/larql-inference/src/forward/layer.rs",
-      "line": 380,
+      "line": 417,
       "crate": "larql_inference"
     },
     {
@@ -25541,9 +25643,81 @@
       "crate": "larql_models"
     },
     {
+      "fqn": "larql_rotorquant::cuda::tests::quantized_device_len_matches_active_formats",
+      "file": "crates/larql-rotorquant/src/cuda.rs",
+      "line": 117,
+      "crate": "larql_rotorquant"
+    },
+    {
+      "fqn": "larql_rotorquant::cuda::quantized_device_len_matches_active_formats",
+      "file": "crates/larql-rotorquant/src/cuda.rs",
+      "line": 117,
+      "crate": "larql_rotorquant"
+    },
+    {
+      "fqn": "larql_rotorquant::cuda::tests::quantized_device_len_rejects_partial_blocks",
+      "file": "crates/larql-rotorquant/src/cuda.rs",
+      "line": 131,
+      "crate": "larql_rotorquant"
+    },
+    {
+      "fqn": "larql_rotorquant::cuda::quantized_device_len_rejects_partial_blocks",
+      "file": "crates/larql-rotorquant/src/cuda.rs",
+      "line": 131,
+      "crate": "larql_rotorquant"
+    },
+    {
+      "fqn": "larql_rotorquant::cuda::tests::copy_f16_to_quantized_device_rejects_null_pointers",
+      "file": "crates/larql-rotorquant/src/cuda.rs",
+      "line": 136,
+      "crate": "larql_rotorquant"
+    },
+    {
+      "fqn": "larql_rotorquant::cuda::copy_f16_to_quantized_device_rejects_null_pointers",
+      "file": "crates/larql-rotorquant/src/cuda.rs",
+      "line": 136,
+      "crate": "larql_rotorquant"
+    },
+    {
+      "fqn": "larql_rotorquant::cuda::tests::dequantize_to_f32_device_rejects_null_pointers",
+      "file": "crates/larql-rotorquant/src/cuda.rs",
+      "line": 151,
+      "crate": "larql_rotorquant"
+    },
+    {
+      "fqn": "larql_rotorquant::cuda::dequantize_to_f32_device_rejects_null_pointers",
+      "file": "crates/larql-rotorquant/src/cuda.rs",
+      "line": 151,
+      "crate": "larql_rotorquant"
+    },
+    {
       "fqn": "larql_rotorquant::round_trip::cuda_ffi_block_layout_matches_upstream",
       "file": "crates/larql-rotorquant/tests/round_trip.rs",
       "line": 262,
+      "crate": "larql_rotorquant"
+    },
+    {
+      "fqn": "larql_rotorquant::cuda_oxide_round_trip::iso3_cuda_oxide_dequantize_matches_cpu",
+      "file": "crates/larql-rotorquant/tests/cuda_oxide_round_trip.rs",
+      "line": 25,
+      "crate": "larql_rotorquant"
+    },
+    {
+      "fqn": "larql_rotorquant::cuda_round_trip::planar3_cuda_preserves_direction",
+      "file": "crates/larql-rotorquant/tests/cuda_round_trip.rs",
+      "line": 100,
+      "crate": "larql_rotorquant"
+    },
+    {
+      "fqn": "larql_rotorquant::cuda_round_trip::planar4_cuda_preserves_direction",
+      "file": "crates/larql-rotorquant/tests/cuda_round_trip.rs",
+      "line": 108,
+      "crate": "larql_rotorquant"
+    },
+    {
+      "fqn": "larql_rotorquant::cuda_round_trip::iso4_cuda_preserves_direction",
+      "file": "crates/larql-rotorquant/tests/cuda_round_trip.rs",
+      "line": 124,
       "crate": "larql_rotorquant"
     },
     {
@@ -26095,73 +26269,73 @@
     {
       "fqn": "larql_server::grpc_attention::tests::delete_unknown_session_returns_not_found",
       "file": "crates/larql-server/src/grpc_attention.rs",
-      "line": 622,
+      "line": 633,
       "crate": "larql_server"
     },
     {
       "fqn": "larql_server::grpc_attention::delete_unknown_session_returns_not_found",
       "file": "crates/larql-server/src/grpc_attention.rs",
-      "line": 622,
+      "line": 633,
       "crate": "larql_server"
     },
     {
       "fqn": "larql_server::grpc_attention::tests::get_unknown_session_returns_not_found",
       "file": "crates/larql-server/src/grpc_attention.rs",
-      "line": 634,
+      "line": 645,
       "crate": "larql_server"
     },
     {
       "fqn": "larql_server::grpc_attention::get_unknown_session_returns_not_found",
       "file": "crates/larql-server/src/grpc_attention.rs",
-      "line": 634,
+      "line": 645,
       "crate": "larql_server"
     },
     {
       "fqn": "larql_server::grpc_attention::tests::snapshot_unknown_session_returns_not_found",
       "file": "crates/larql-server/src/grpc_attention.rs",
-      "line": 646,
+      "line": 657,
       "crate": "larql_server"
     },
     {
       "fqn": "larql_server::grpc_attention::snapshot_unknown_session_returns_not_found",
       "file": "crates/larql-server/src/grpc_attention.rs",
-      "line": 646,
+      "line": 657,
       "crate": "larql_server"
     },
     {
       "fqn": "larql_server::grpc_attention::tests::free_unknown_session_returns_not_found",
       "file": "crates/larql-server/src/grpc_attention.rs",
-      "line": 658,
+      "line": 669,
       "crate": "larql_server"
     },
     {
       "fqn": "larql_server::grpc_attention::free_unknown_session_returns_not_found",
       "file": "crates/larql-server/src/grpc_attention.rs",
-      "line": 658,
+      "line": 669,
       "crate": "larql_server"
     },
     {
       "fqn": "larql_server::grpc_attention::tests::restore_with_bad_magic_returns_invalid_argument",
       "file": "crates/larql-server/src/grpc_attention.rs",
-      "line": 672,
+      "line": 683,
       "crate": "larql_server"
     },
     {
       "fqn": "larql_server::grpc_attention::restore_with_bad_magic_returns_invalid_argument",
       "file": "crates/larql-server/src/grpc_attention.rs",
-      "line": 672,
+      "line": 683,
       "crate": "larql_server"
     },
     {
       "fqn": "larql_server::grpc_attention::tests::create_session_unknown_model_returns_not_found",
       "file": "crates/larql-server/src/grpc_attention.rs",
-      "line": 689,
+      "line": 700,
       "crate": "larql_server"
     },
     {
       "fqn": "larql_server::grpc_attention::create_session_unknown_model_returns_not_found",
       "file": "crates/larql-server/src/grpc_attention.rs",
-      "line": 689,
+      "line": 700,
       "crate": "larql_server"
     },
     {
@@ -26629,133 +26803,145 @@
     {
       "fqn": "larql_server::routes::attention::tests::map_kv_format_recognises_known_formats",
       "file": "crates/larql-server/src/routes/attention.rs",
-      "line": 1126,
+      "line": 1140,
       "crate": "larql_server"
     },
     {
       "fqn": "larql_server::routes::attention::map_kv_format_recognises_known_formats",
       "file": "crates/larql-server/src/routes/attention.rs",
-      "line": 1126,
+      "line": 1140,
       "crate": "larql_server"
     },
     {
       "fqn": "larql_server::routes::attention::tests::map_kv_format_rejects_unknown",
       "file": "crates/larql-server/src/routes/attention.rs",
-      "line": 1135,
+      "line": 1149,
       "crate": "larql_server"
     },
     {
       "fqn": "larql_server::routes::attention::map_kv_format_rejects_unknown",
       "file": "crates/larql-server/src/routes/attention.rs",
-      "line": 1135,
+      "line": 1149,
       "crate": "larql_server"
     },
     {
       "fqn": "larql_server::routes::attention::tests::fmt_to_str_round_trips",
       "file": "crates/larql-server/src/routes/attention.rs",
-      "line": 1141,
+      "line": 1155,
       "crate": "larql_server"
     },
     {
       "fqn": "larql_server::routes::attention::fmt_to_str_round_trips",
       "file": "crates/larql-server/src/routes/attention.rs",
-      "line": 1141,
+      "line": 1155,
+      "crate": "larql_server"
+    },
+    {
+      "fqn": "larql_server::routes::attention::tests::attention_backend_honors_cuda_env_when_gpu_available",
+      "file": "crates/larql-server/src/routes/attention.rs",
+      "line": 1163,
+      "crate": "larql_server"
+    },
+    {
+      "fqn": "larql_server::routes::attention::attention_backend_honors_cuda_env_when_gpu_available",
+      "file": "crates/larql-server/src/routes/attention.rs",
+      "line": 1163,
       "crate": "larql_server"
     },
     {
       "fqn": "larql_server::routes::attention::delete_unknown_session_returns_404",
       "file": "crates/larql-server/src/routes/attention.rs",
-      "line": 1148,
+      "line": 1182,
       "crate": "larql_server"
     },
     {
       "fqn": "larql_server::routes::attention::get_unknown_session_returns_404",
       "file": "crates/larql-server/src/routes/attention.rs",
-      "line": 1158,
+      "line": 1192,
       "crate": "larql_server"
     },
     {
       "fqn": "larql_server::routes::attention::tests::snapshot_unknown_session_returns_404",
       "file": "crates/larql-server/src/routes/attention.rs",
-      "line": 1167,
+      "line": 1201,
       "crate": "larql_server"
     },
     {
       "fqn": "larql_server::routes::attention::snapshot_unknown_session_returns_404",
       "file": "crates/larql-server/src/routes/attention.rs",
-      "line": 1167,
+      "line": 1201,
       "crate": "larql_server"
     },
     {
       "fqn": "larql_server::routes::attention::tests::restore_unknown_session_returns_404",
       "file": "crates/larql-server/src/routes/attention.rs",
-      "line": 1181,
+      "line": 1215,
       "crate": "larql_server"
     },
     {
       "fqn": "larql_server::routes::attention::restore_unknown_session_returns_404",
       "file": "crates/larql-server/src/routes/attention.rs",
-      "line": 1181,
+      "line": 1215,
       "crate": "larql_server"
     },
     {
       "fqn": "larql_server::routes::attention::tests::restore_with_bad_base64_returns_400",
       "file": "crates/larql-server/src/routes/attention.rs",
-      "line": 1196,
+      "line": 1230,
       "crate": "larql_server"
     },
     {
       "fqn": "larql_server::routes::attention::restore_with_bad_base64_returns_400",
       "file": "crates/larql-server/src/routes/attention.rs",
-      "line": 1196,
+      "line": 1230,
       "crate": "larql_server"
     },
     {
       "fqn": "larql_server::routes::attention::tests::restore_with_bad_magic_returns_400",
       "file": "crates/larql-server/src/routes/attention.rs",
-      "line": 1217,
+      "line": 1251,
       "crate": "larql_server"
     },
     {
       "fqn": "larql_server::routes::attention::restore_with_bad_magic_returns_400",
       "file": "crates/larql-server/src/routes/attention.rs",
-      "line": 1217,
+      "line": 1251,
       "crate": "larql_server"
     },
     {
       "fqn": "larql_server::routes::attention::tests::free_unknown_session_returns_404",
       "file": "crates/larql-server/src/routes/attention.rs",
-      "line": 1241,
+      "line": 1275,
       "crate": "larql_server"
     },
     {
       "fqn": "larql_server::routes::attention::free_unknown_session_returns_404",
       "file": "crates/larql-server/src/routes/attention.rs",
-      "line": 1241,
+      "line": 1275,
       "crate": "larql_server"
     },
     {
       "fqn": "larql_server::routes::attention::tests::free_layer_out_of_range_returns_400",
       "file": "crates/larql-server/src/routes/attention.rs",
-      "line": 1256,
+      "line": 1290,
       "crate": "larql_server"
     },
     {
       "fqn": "larql_server::routes::attention::free_layer_out_of_range_returns_400",
       "file": "crates/larql-server/src/routes/attention.rs",
-      "line": 1256,
+      "line": 1290,
       "crate": "larql_server"
     },
     {
       "fqn": "larql_server::routes::attention::tests::free_all_layers_clears_cache",
       "file": "crates/larql-server/src/routes/attention.rs",
-      "line": 1276,
+      "line": 1310,
       "crate": "larql_server"
     },
     {
       "fqn": "larql_server::routes::attention::free_all_layers_clears_cache",
       "file": "crates/larql-server/src/routes/attention.rs",
-      "line": 1276,
+      "line": 1310,
       "crate": "larql_server"
     },
     {

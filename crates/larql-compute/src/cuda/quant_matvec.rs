@@ -74,4 +74,8 @@ impl QuantMatVec for CudaBackend {
         let w = dequant::dequant_q6_k(q6k_data, num_rows * hidden).ok()?;
         kernels::gemv(self.driver(), &w, x, num_rows, hidden).ok()
     }
+
+    fn has_q4(&self) -> bool {
+        true
+    }
 }

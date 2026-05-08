@@ -28,7 +28,20 @@ COPY crates/ crates/
 # Target the dev-box RTX 4090 by default. CUDA 13 no longer accepts every
 # older sm_70-era target; set LARQL_CUDA_ARCH explicitly for other GPUs.
 ARG LARQL_CUDA_ARCH="89"
+ARG ENABLE_CUDA_OXIDE=0
 ENV LARQL_CUDA_ARCH=${LARQL_CUDA_ARCH}
+
+RUN if [ "$ENABLE_CUDA_OXIDE" = "1" ]; then \
+        apt-get update && apt-get install -y --no-install-recommends \
+            gnupg lsb-release wget software-properties-common && \
+        curl -sSf https://apt.llvm.org/llvm.sh | bash -s -- 21 && \
+        apt-get update && apt-get install -y --no-install-recommends \
+            libclang-common-21-dev clang-21 llvm-21 && \
+        rustup toolchain install nightly-2026-04-03 --profile minimal && \
+        rustup component add rust-src rustc-dev --toolchain nightly-2026-04-03 && \
+        cargo +nightly-2026-04-03 install --git https://github.com/NVlabs/cuda-oxide.git \
+            --rev 6de050946cd1013335a33cf2c5144888a32efab3 cargo-oxide; \
+    fi
 
 RUN RUSTFLAGS="-C target-feature=+avx2,+fma" \
     cargo build --release -p larql-server -p larql-cli --features cuda \

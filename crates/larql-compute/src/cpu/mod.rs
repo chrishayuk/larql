@@ -82,6 +82,29 @@ impl QuantMatVec for CpuBackend {
         Some(ops::q4k_matvec::dispatch(q4k_data, x, num_rows, hidden))
     }
 
+    fn q4kf_matvec(
+        &self,
+        q4kf_data: &[u8],
+        x: &[f32],
+        num_rows: usize,
+        hidden: usize,
+    ) -> Option<Vec<f32>> {
+        if x.len() != hidden {
+            return None;
+        }
+        let weights = ops::q4_common::dequantize_q4_kf(q4kf_data, num_rows * hidden)?;
+        let mut out = vec![0.0; num_rows];
+        for row in 0..num_rows {
+            let offset = row * hidden;
+            out[row] = weights[offset..offset + hidden]
+                .iter()
+                .zip(x)
+                .map(|(w, x)| w * x)
+                .sum();
+        }
+        Some(out)
+    }
+
     fn q6k_matvec(
         &self,
         q6k_data: &[u8],

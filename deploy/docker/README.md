@@ -7,6 +7,9 @@ This directory ships the two-container LARQL deployment:
 - **`Dockerfile.gpu`** — GPU container running attention + RotorQuant
   KV-cache. `nvidia/cuda:13.1.0-devel-ubuntu24.04` builder + matching
   runtime. Image size ~3 GB. Requires `--gpus all` (or `nvidia-container-toolkit`).
+  Set `ENABLE_CUDA_OXIDE=1` only for the experimental cuda-oxide
+  custom-kernel pilot; it adds LLVM 21, clang-21, a nightly Rust
+  toolchain, and roughly 400 MB to the builder image.
 - **`docker-compose.yml`** — orchestrates `ffn`, `attention`, and `router`
   on the dev box, sharing a `vindex_data` volume.
 - **`docker-compose.cpu.yml`** — single-binary fallback for hosts without
@@ -112,6 +115,7 @@ Recommended Docker flags for the GPU container:
 | `WARMUP` | ffn | `1` | pre-fault expert pages at boot |
 | `LARQL_BACKEND` | both | auto | force `cpu` / `metal` / `cuda` |
 | `LARQL_CUDA_ARCH` | gpu | `89` | nvcc target arch; use `86` for RTX 30xx, `89` for RTX 40xx |
+| `ENABLE_CUDA_OXIDE` | gpu build | `0` | install cuda-oxide pilot tooling in the builder image; only use while developing Rust-authored CUDA kernels |
 | `FFN_HOST_PORT` | compose | `8080` (`make demo`: `18080`) | host port mapped to the FFN shard |
 | `ATTENTION_HOST_PORT` | compose | `8081` (`make demo`: `18081`) | host port mapped to the attention shard |
 | `ROUTER_HOST_PORT` | compose | `8082` (`make demo`: `18082`) | host port mapped to the router |

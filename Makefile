@@ -1,4 +1,4 @@
-.PHONY: build release test test-fast test-full test-integration test-models check clean fmt lint demos demo bench bench-save bench-check coverage coverage-summary coverage-check coverage-install ci-coverage traceability traceability-check gaps gaps-untested gaps-unbacked openspec-validate ci-cuda test-cuda rotorquant-sync docker-ffn docker-gpu docker-up docker-up-cpu docker-down docker-logs cuda-status attention-smoke attention-validate attention-validate-gemma attention-bench
+.PHONY: build release test test-fast test-full test-integration test-models check clean fmt lint demos demo bench bench-save bench-check coverage coverage-summary coverage-check coverage-install ci-coverage traceability traceability-check gaps gaps-untested gaps-unbacked openspec-validate ci-cuda test-cuda rotorquant-sync cuda-rotorquant-bench cuda-oxide-doctor cuda-oxide-pilot cuda-oxide-bench docker-ffn docker-gpu docker-up docker-up-cpu docker-down docker-logs cuda-status attention-smoke attention-validate attention-validate-gemma attention-bench
 
 # Build
 build:
@@ -53,6 +53,40 @@ ci-cuda: test-cuda
 
 rotorquant-sync:
 	scripts/rotorquant-sync.sh
+
+cuda-rotorquant-bench:
+	@if [ "${LARQL_CUDA_AVAILABLE}" = "1" ]; then \
+	  cargo run --release -p larql-rotorquant --features cuda --example cuda_round_trip_bench; \
+	else \
+	  echo "Skipping CUDA RotorQuant benchmark: set LARQL_CUDA_AVAILABLE=1 to run it."; \
+	fi
+
+cuda-oxide-doctor:
+	@if ! rustup toolchain list | grep -q '^nightly-2026-04-03'; then \
+	  echo "Missing Rust toolchain: rustup toolchain install nightly-2026-04-03"; \
+	  echo "Then add components: rustup component add rust-src rustc-dev --toolchain nightly-2026-04-03"; \
+	  exit 2; \
+	fi
+	@cargo +nightly-2026-04-03 oxide doctor || { \
+	  status=$$?; \
+	  echo "cuda-oxide doctor failed. Install cargo-oxide from NVlabs/cuda-oxide at commit 6de050946cd1013335a33cf2c5144888a32efab3 and ensure LLVM 21, clang-21, and CUDA Toolkit 13.1 are visible."; \
+	  exit $$status; \
+	}
+
+cuda-oxide-pilot: cuda-oxide-doctor
+	cd crates/larql-rotorquant && CUDA_OXIDE_PTX_DIR=$$(pwd) cargo +nightly-2026-04-03 oxide build --features cuda-oxide --arch sm_89
+	@if [ "${LARQL_CUDA_AVAILABLE}" = "1" ]; then \
+	  cargo +nightly-2026-04-03 test -p larql-rotorquant --features cuda-oxide --test cuda_oxide_round_trip -- --test-threads=1; \
+	else \
+	  echo "Skipping cuda-oxide GPU round-trip test: set LARQL_CUDA_AVAILABLE=1 to run it."; \
+	fi
+
+cuda-oxide-bench: cuda-oxide-pilot
+	@if [ "${LARQL_CUDA_AVAILABLE}" = "1" ]; then \
+	  cargo +nightly-2026-04-03 run --release -p larql-rotorquant --features cuda-oxide --example cuda_oxide_iso3_bench; \
+	else \
+	  echo "Skipping cuda-oxide benchmark: set LARQL_CUDA_AVAILABLE=1 to run it."; \
+	fi
 
 # Snapshot of cuda backend status against this dev box.
 cuda-status:

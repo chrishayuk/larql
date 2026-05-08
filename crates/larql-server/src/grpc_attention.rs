@@ -24,7 +24,8 @@ use larql_router_protocol::{
 use crate::attention_session::{AttentionSession, SessionId, SessionMapError};
 use crate::kv_snapshot;
 use crate::routes::attention::{
-    check_fp32_attention_loaded, deserialize_snapshot_bytes, kv_format_str, parse_kv_format,
+    attention_compute_backend, check_fp32_attention_loaded, deserialize_snapshot_bytes,
+    kv_format_str, parse_kv_format,
 };
 use crate::state::AppState;
 
@@ -225,13 +226,21 @@ impl AttentionService for AttentionGrpcService {
                     let weights: &larql_inference::ModelWeights = &weights_guard;
                     let num_layers = weights.num_layers;
                     let ffn = larql_inference::ffn::WeightFfn { weights };
+                    let backend = attention_compute_backend();
 
                     let mut h = h0;
                     let mut residuals = Vec::with_capacity(num_layers);
                     let mut kvs = Vec::with_capacity(num_layers);
                     for layer in 0..num_layers {
-                        match larql_inference::run_layer_with_ffn_capturing_h_post_attn(
-                            weights, &h, layer, &ffn, false, None, None,
+                        match larql_inference::run_layer_with_ffn_capturing_h_post_attn_backend(
+                            weights,
+                            &h,
+                            layer,
+                            &ffn,
+                            false,
+                            None,
+                            None,
+                            Some(backend.as_ref()),
                         ) {
                             Some((h_next, h_post_attn, _, kv_out)) => {
                                 residuals.push(h_post_attn);
@@ -435,6 +444,7 @@ impl AttentionService for AttentionGrpcService {
             let weights: &larql_inference::ModelWeights = &weights_guard;
             let num_layers = weights.num_layers;
             let ffn = larql_inference::ffn::WeightFfn { weights };
+            let backend = attention_compute_backend();
 
             let mut layers = blocking_inputs;
             layers.resize_with(num_layers, || None);
@@ -442,12 +452,13 @@ impl AttentionService for AttentionGrpcService {
             let mut residuals = Vec::with_capacity(num_layers);
             for layer in 0..num_layers {
                 let kv_entry = layers[layer].as_ref();
-                match larql_inference::attention::run_attention_block_decode_step(
+                match larql_inference::attention::run_attention_block_decode_step_backend(
                     weights,
                     &h_step,
                     layer,
                     kv_entry,
                     abs_position,
+                    Some(backend.as_ref()),
                 ) {
                     Some((h_post_attn, new_kv)) => {
                         layers[layer] = Some(new_kv);

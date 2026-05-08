@@ -48,6 +48,11 @@
 //! The whole struct is reconstructible to within cosine ≥ 0.99 of
 //! the input via `dequantize_v_with_inverse_rotation`.
 
+#[cfg(all(feature = "cuda", feature = "cuda-oxide"))]
+compile_error!(
+    "features `cuda` and `cuda-oxide` are mutually exclusive; enable only one RotorQuant CUDA backend"
+);
+
 mod cpu_ref;
 mod error;
 mod format;
@@ -56,6 +61,14 @@ mod format;
 mod cuda;
 #[cfg(feature = "cuda")]
 pub mod ffi;
+#[cfg(feature = "cuda")]
+pub use cuda::{
+    copy_f16_to_quantized_device, dequantize_to_f32_device, quantized_device_len_bytes, CudaStream,
+    CUDA_BLOCK_ELEMENTS,
+};
+
+#[cfg(feature = "cuda-oxide")]
+pub mod cuda_oxide;
 
 pub use error::RotorQuantError;
 pub use format::{KvFormat, KvScratch, QuantizedKv};

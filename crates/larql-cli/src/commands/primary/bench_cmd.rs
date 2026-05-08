@@ -15,7 +15,7 @@
 //!   --prompt STR     prompt to time (default: "The capital of France is").
 //!   -n, --tokens N   decode steps to time (default: 50).
 //!   --warmup N       decode steps to run first and discard (default: 3).
-//!   --backends LIST  comma-separated: `metal`, `cpu`. Default: `metal`.
+//!   --backends LIST  comma-separated: `metal`, `cuda`, `cpu`. Default: `metal`.
 //!   --ollama MODEL   also query Ollama (e.g. `gemma3:4b`) via localhost.
 //!   --ffn URL        bench remote FFN path (attention local, FFN remote).
 //!   -v, --verbose
@@ -46,7 +46,7 @@ pub struct BenchArgs {
     #[arg(long, default_value = "3")]
     pub warmup: usize,
 
-    /// Comma-separated backend list. Supported: `metal`, `cpu`.
+    /// Comma-separated backend list. Supported: `metal`, `cuda`, `cpu`.
     #[arg(long, default_value = "metal")]
     pub backends: String,
 
@@ -119,6 +119,35 @@ struct BenchRow {
     note: String,
 }
 
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum LarqlBenchBackend {
+    Metal,
+    Cuda,
+    Cpu,
+}
+
+impl LarqlBenchBackend {
+    fn label(self) -> &'static str {
+        match self {
+            Self::Metal => "larql-metal",
+            Self::Cuda => "larql-cuda",
+            Self::Cpu => "larql-cpu",
+        }
+    }
+
+    fn request_name(self) -> &'static str {
+        match self {
+            Self::Metal => "metal",
+            Self::Cuda => "cuda",
+            Self::Cpu => "cpu",
+        }
+    }
+
+    fn is_gpu(self) -> bool {
+        matches!(self, Self::Metal | Self::Cuda)
+    }
+}
+
 pub fn run(args: BenchArgs) -> Result<(), Box<dyn std::error::Error>> {
     let vindex_path = cache::resolve_model(&args.model)?;
     if !vindex_path.is_dir() {
@@ -136,13 +165,21 @@ pub fn run(args: BenchArgs) -> Result<(), Box<dyn std::error::Error>> {
         .filter(|s| !s.is_empty())
         .collect();
     let want_metal = requested_backends.contains(&"metal");
+    let want_cuda = requested_backends.contains(&"cuda");
     let want_cpu = requested_backends.contains(&"cpu");
     let want_engine = args.engine.is_some();
     let want_ffn = args.ffn.is_some();
     let want_moe = args.moe_shards.is_some();
-    if !want_metal && !want_cpu && args.ollama.is_none() && !want_engine && !want_ffn && !want_moe {
+    if !want_metal
+        && !want_cuda
+        && !want_cpu
+        && args.ollama.is_none()
+        && !want_engine
+        && !want_ffn
+        && !want_moe
+    {
         return Err(
-            "no backends selected: pass --backends metal,cpu, --ollama, --engine, --ffn, or --moe-shards".into(),
+            "no backends selected: pass --backends metal,cuda,cpu, --ollama, --engine, --ffn, or --moe-shards".into(),
         );
     }
 
@@ -169,7 +206,7 @@ pub fn run(args: BenchArgs) -> Result<(), Box<dyn std::error::Error>> {
 
     if want_metal {
         if is_q4k {
-            rows.push(run_larql(&vindex_path, &args, /* metal */ true)?);
+            rows.push(run_larql(&vindex_path, &args, LarqlBenchBackend::Metal)?);
         } else if !want_engine {
             return Err(format!(
                 "GPU bench requires a Q4K vindex (got quant={:?}). \
@@ -179,9 +216,21 @@ pub fn run(args: BenchArgs) -> Result<(), Box<dyn std::error::Error>> {
             .into());
         }
     }
+    if want_cuda {
+        if is_q4k {
+            rows.push(run_larql(&vindex_path, &args, LarqlBenchBackend::Cuda)?);
+        } else if !want_engine {
+            return Err(format!(
+                "CUDA bench requires a Q4K vindex (got quant={:?}). \
+                 Use a q4k vindex for CUDA bench, or omit --backends and use --engine only.",
+                cfg.quant,
+            )
+            .into());
+        }
+    }
     if want_cpu {
         if is_q4k {
-            rows.push(run_larql(&vindex_path, &args, /* metal */ false)?);
+            rows.push(run_larql(&vindex_path, &args, LarqlBenchBackend::Cpu)?);
         } else if !want_engine {
             return Err(format!(
                 "CPU bench requires a Q4K vindex (got quant={:?}).",
@@ -309,16 +358,13 @@ pub fn run(args: BenchArgs) -> Result<(), Box<dyn std::error::Error>> {
 fn run_larql(
     vindex_path: &std::path::Path,
     args: &BenchArgs,
-    metal: bool,
+    kind: LarqlBenchBackend,
 ) -> Result<BenchRow, Box<dyn std::error::Error>> {
     use larql_inference::layer_graph::generate::generate;
     use larql_inference::layer_graph::CachedLayerGraph;
 
     if args.verbose {
-        eprintln!(
-            "[bench] loading vindex for {}…",
-            if metal { "metal" } else { "cpu" }
-        );
+        eprintln!("[bench] loading vindex for {}…", kind.request_name());
     }
 
     // Load the vindex once per backend. This mirrors `walk_cmd`'s Q4K
@@ -353,20 +399,37 @@ fn run_larql(
         larql_inference::encode_prompt(&tokenizer, &*weights.arch, &wrapped_prompt)
             .map_err(|e| format!("tokenize: {e}"))?;
 
-    let backend: Box<dyn larql_compute::ComputeBackend> = if metal {
-        #[cfg(feature = "metal")]
-        {
-            let b = larql_compute::metal::MetalBackend::new().ok_or(
-                "Metal backend unavailable — rebuild with `--features metal` on an M-series Mac",
-            )?;
-            Box::new(b)
+    let backend: Box<dyn larql_compute::ComputeBackend> = match kind {
+        LarqlBenchBackend::Metal => {
+            #[cfg(feature = "metal")]
+            {
+                let b = larql_compute::metal::MetalBackend::new().ok_or(
+                    "Metal backend unavailable — rebuild with `--features metal` on an M-series Mac",
+                )?;
+                Box::new(b)
+            }
+            #[cfg(not(feature = "metal"))]
+            {
+                return Err(
+                    "--backends metal requested but binary built without `--features metal`".into(),
+                );
+            }
         }
-        #[cfg(not(feature = "metal"))]
-        {
-            return Err("--metal requested but binary built without `--features metal`".into());
+        LarqlBenchBackend::Cuda => {
+            #[cfg(feature = "cuda")]
+            {
+                let b = larql_compute::cuda::CudaBackend::new()
+                    .map_err(|e| format!("CUDA backend unavailable: {e}"))?;
+                Box::new(b)
+            }
+            #[cfg(not(feature = "cuda"))]
+            {
+                return Err(
+                    "--backends cuda requested but binary built without `--features cuda`".into(),
+                );
+            }
         }
-    } else {
-        Box::new(larql_compute::CpuBackend)
+        LarqlBenchBackend::Cpu => Box::new(larql_compute::CpuBackend),
     };
 
     let cached_layers = CachedLayerGraph::from_residuals(Vec::new());
@@ -375,7 +438,7 @@ fn run_larql(
     // and populate the Metal buffer caches. The prefill timer would otherwise
     // include this one-time allocation cost even though it is amortized to zero
     // in real multi-turn usage.
-    if metal {
+    if kind.is_gpu() {
         let num_layers = weights.num_layers;
         let _ = generate(
             &mut weights,
@@ -416,7 +479,7 @@ fn run_larql(
         let (slots, bytes) = q4_index.q4k_ffn_cache_stats();
         eprintln!(
             "[bench] q4k_ffn_cache after {}: {} populated slots, {:.1} MB",
-            backend_name_for(metal),
+            kind.label(),
             slots,
             bytes as f64 / 1_048_576.0,
         );
@@ -432,7 +495,7 @@ fn run_larql(
         (result.prefill_ms, avg, 1000.0 / avg)
     };
 
-    let backend_name = backend_name_for(metal);
+    let backend_name = kind.label();
     let note = if measured_n < args.tokens {
         format!(
             "early stop @{}/{} (EOS or GPU fallback)",
@@ -461,14 +524,6 @@ fn run_larql(
         n_steps: measured_n,
         note,
     })
-}
-
-fn backend_name_for(metal: bool) -> &'static str {
-    if metal {
-        "larql-metal"
-    } else {
-        "larql-cpu"
-    }
 }
 
 /// Run the CPU KV-engine bench path for a single engine kind.

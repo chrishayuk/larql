@@ -63,7 +63,7 @@ pub use kv_generate::{
 };
 pub use layer::{
     run_attention_public, run_ffn, run_layer_with_capture_hooked, run_layer_with_ffn,
-    run_layer_with_ffn_capturing_h_post_attn,
+    run_layer_with_ffn_capturing_h_post_attn, run_layer_with_ffn_capturing_h_post_attn_backend,
 };
 pub use layer_interventions::{
     run_layer_with_mapped_head_residual_delta, run_layer_with_mapped_pre_o_head,
