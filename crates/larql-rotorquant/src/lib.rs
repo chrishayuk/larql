@@ -28,10 +28,10 @@
 //! The block-diagonal rotation idea, the deferred-K rule, and the
 //! "V dequant must invert the forward rotation" lesson all come from
 //! the upstream `feature/planarquant-kv-cache` branch of llama.cpp.
-//! Our implementation is from-scratch Rust + (optional) CUDA via
-//! cudarc — we do **not** vendor the upstream `.cu` files. The
-//! reference CPU path lives in `cpu_ref.rs` and is what the GPU
-//! kernels parity-test against.
+//! The safe Rust CPU reference path lives in `cpu_ref.rs` and is what
+//! the GPU kernels parity-test against. Upstream CUDA kernels are
+//! vendored under `cuda/upstream/`; see `UPSTREAM.md` for the exact
+//! source commit and sync procedure.
 //!
 //! ## Layout invariant
 //!

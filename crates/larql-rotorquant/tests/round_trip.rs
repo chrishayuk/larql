@@ -113,3 +113,24 @@ fn head_dim_divisibility_is_enforced() {
     let err = quantize_k(KvFormat::Iso3, &v, 4, 33);
     assert!(err.is_err());
 }
+
+#[test]
+fn upstream_provenance_records_commit_and_vendored_files() {
+    let upstream = include_str!("../UPSTREAM.md");
+    assert!(upstream.contains("https://github.com/johndpope/llama-cpp-turboquant.git"));
+    assert!(upstream.contains("08e025c06ab521e4fa9e5c08b80af57614543e53"));
+    assert!(upstream.contains("cpy-planar-iso.cu"));
+
+    let vendor_dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("cuda/upstream");
+    for name in [
+        "cpy-planar-iso.cu",
+        "cpy-planar-iso.cuh",
+        "planar-iso-constants.cuh",
+        "set-rows-planar-iso.cuh",
+    ] {
+        assert!(
+            vendor_dir.join(name).is_file(),
+            "missing vendored RotorQuant source {name}"
+        );
+    }
+}

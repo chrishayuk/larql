@@ -77,7 +77,7 @@ upstream commit and surface drift.
 #### Scenario: UPSTREAM.md is present and well-formed
 - **WHEN** the repo is fresh-cloned
 - **THEN** `crates/larql-rotorquant/UPSTREAM.md` SHALL exist and contain a SHA-1 commit hash and a fetch URL
-<!-- test: unbacked -->
+<!-- test: larql_rotorquant::round_trip::upstream_provenance_records_commit_and_vendored_files -->
 
 #### Scenario: Sync target reports drift
 - **WHEN** the upstream commit moves and `make rotorquant-sync` is run

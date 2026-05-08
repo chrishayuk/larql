@@ -3,8 +3,8 @@
     "capabilities": 49,
     "requirements": 408,
     "scenarios": 1376,
-    "scenarios_backed": 1262,
-    "scenarios_unbacked": 114,
+    "scenarios_backed": 1263,
+    "scenarios_unbacked": 113,
     "test_refs": 3301,
     "test_refs_unresolved": 0
   },
@@ -8272,9 +8272,11 @@
           "scenarios": [
             {
               "name": "UPSTREAM.md is present and well-formed",
-              "tests_resolved": [],
+              "tests_resolved": [
+                "larql_rotorquant::round_trip::upstream_provenance_records_commit_and_vendored_files"
+              ],
               "tests_unresolved": [],
-              "unbacked": true,
+              "unbacked": false,
               "spec_file": "openspec/changes/cuda-and-rotorquant-kv/specs/kv-cache-rotorquant/spec.md",
               "line": 77
             },
