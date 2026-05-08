@@ -32,7 +32,7 @@ impl Session {
         if query.is_none() {
             return Ok(vec![format!("{entity}\n  (not found)")]);
         }
-        let query = query.unwrap();
+        let (query, token_ids) = query.unwrap();
 
         // ── Phase 2: pick scan layers from band/layer filter ──
         let bands = resolve_bands(config);
@@ -40,6 +40,7 @@ impl Session {
 
         // ── Phase 3: walk + collect edges ──
         let trace = patched.walk(&query, &scan_layers, 20);
+        let trace = describe_resolve_gguf_labels(path, config.vocab_size, &token_ids, trace);
         let mut edges = describe_collect_edges(&trace, entity);
 
         // ── Phase 3b: append KNN store entries for this entity ──
@@ -308,9 +309,7 @@ impl Session {
 fn describe_build_query(
     entity: &str,
     path: &std::path::Path,
-) -> Result<Option<larql_vindex::ndarray::Array1<f32>>, LqlError> {
-    let (embed, embed_scale) = larql_vindex::load_vindex_embeddings(path)
-        .map_err(|e| LqlError::exec("failed to load embeddings", e))?;
+) -> Result<Option<(larql_vindex::ndarray::Array1<f32>, Vec<u32>)>, LqlError> {
     let tokenizer = larql_vindex::load_vindex_tokenizer(path)
         .map_err(|e| LqlError::exec("failed to load tokenizer", e))?;
 
@@ -323,20 +322,21 @@ fn describe_build_query(
         return Ok(None);
     }
 
+    let (embed, embed_scale) = larql_vindex::load_vindex_embedding_rows(path, &token_ids)
+        .map_err(|e| LqlError::exec("failed to load embeddings", e))?;
     let hidden = embed.shape()[1];
     let query = if token_ids.len() == 1 {
-        let tok = token_ids[0];
-        embed.row(tok as usize).mapv(|v| v * embed_scale)
+        embed.row(0).mapv(|v| v * embed_scale)
     } else {
         let mut avg = larql_vindex::ndarray::Array1::<f32>::zeros(hidden);
-        for &tok in &token_ids {
-            let row = embed.row(tok as usize);
+        for row_idx in 0..token_ids.len() {
+            let row = embed.row(row_idx);
             avg += &row.mapv(|v| v * embed_scale);
         }
         avg /= token_ids.len() as f32;
         avg
     };
-    Ok(Some(query))
+    Ok(Some((query, token_ids)))
 }
 
 /// Filter `all_layers` down to those covered by the requested band /
@@ -403,6 +403,65 @@ struct DescribeBands {
     syntax: Vec<FormattedEdge>,
     knowledge: Vec<FormattedEdge>,
     output_band: Vec<FormattedEdge>,
+}
+
+fn describe_resolve_gguf_labels(
+    path: &std::path::Path,
+    vocab_size: usize,
+    prompt_token_ids: &[u32],
+    mut trace: larql_vindex::WalkTrace,
+) -> larql_vindex::WalkTrace {
+    let semantic_token_limit = std::env::var("LARQL_GGUF_MANIFEST_DOWN_META_TOKENS")
+        .ok()
+        .and_then(|raw| raw.parse::<usize>().ok())
+        .filter(|&n| n > 0)
+        .unwrap_or(256)
+        .min(vocab_size);
+    let semantic_hit_limit = std::env::var("LARQL_GGUF_MANIFEST_DOWN_META_HITS")
+        .ok()
+        .and_then(|raw| raw.parse::<usize>().ok())
+        .filter(|&n| n > 0)
+        .unwrap_or(12);
+    if semantic_token_limit == 0 || semantic_hit_limit == 0 {
+        return trace;
+    }
+    let Ok(tokenizer) = larql_vindex::load_vindex_tokenizer(path) else {
+        return trace;
+    };
+    let mut candidates: Vec<u32> = prompt_token_ids.to_vec();
+    candidates.extend(0..semantic_token_limit as u32);
+    candidates.sort_unstable();
+    candidates.dedup();
+    let mut resolved = 0usize;
+    for (layer, hits) in &mut trace.layers {
+        for hit in hits {
+            if resolved >= semantic_hit_limit {
+                return trace;
+            }
+            if let Ok(mut meta) = larql_vindex::load_vindex_gguf_feature_meta(
+                path,
+                *layer,
+                hit.feature,
+                &candidates,
+                4,
+            ) {
+                for entry in &mut meta.top_k {
+                    if let Ok(decoded) = tokenizer.decode(&[entry.token_id], true) {
+                        let decoded = decoded.trim().to_string();
+                        if !decoded.is_empty() {
+                            entry.token = decoded;
+                        }
+                    }
+                }
+                if let Some(first) = meta.top_k.first() {
+                    meta.top_token = first.token.clone();
+                }
+                hit.meta = meta;
+                resolved += 1;
+            }
+        }
+    }
+    trace
 }
 
 /// Walk the trace, deduplicate by lowercased target token, and apply

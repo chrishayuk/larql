@@ -13,7 +13,7 @@ impl Session {
         order: Option<&OrderBy>,
         limit: Option<u32>,
     ) -> Result<Vec<String>, LqlError> {
-        let (path, _config, patched) = self.require_vindex()?;
+        let (path, config, patched) = self.require_vindex()?;
 
         // Handle NEAREST TO clause — KNN lookup
         if let Some(nc) = nearest {
@@ -272,6 +272,52 @@ impl Session {
         }
 
         rows.truncate(limit);
+        let semantic_token_limit = std::env::var("LARQL_GGUF_MANIFEST_DOWN_META_TOKENS")
+            .ok()
+            .and_then(|raw| raw.parse::<usize>().ok())
+            .filter(|&n| n > 0)
+            .unwrap_or(256)
+            .min(config.vocab_size);
+        let semantic_hit_limit = std::env::var("LARQL_GGUF_MANIFEST_DOWN_META_HITS")
+            .ok()
+            .and_then(|raw| raw.parse::<usize>().ok())
+            .filter(|&n| n > 0)
+            .unwrap_or(12);
+        if semantic_token_limit > 0 && semantic_hit_limit > 0 {
+            let candidates: Vec<u32> = (0..semantic_token_limit as u32).collect();
+            if let Ok(tokenizer) = larql_vindex::load_vindex_tokenizer(path) {
+                for row in rows.iter_mut().take(semantic_hit_limit) {
+                    if let Ok(mut meta) = larql_vindex::load_vindex_gguf_feature_meta(
+                        path,
+                        row.layer,
+                        row.feature,
+                        &candidates,
+                        4,
+                    ) {
+                        for entry in &mut meta.top_k {
+                            if let Ok(decoded) = tokenizer.decode(&[entry.token_id], true) {
+                                let decoded = decoded.trim().to_string();
+                                if !decoded.is_empty() {
+                                    entry.token = decoded;
+                                }
+                            }
+                        }
+                        if let Some(first) = meta.top_k.first() {
+                            row.top_token = first.token.clone();
+                        }
+                        row.also = meta
+                            .top_k
+                            .iter()
+                            .skip(1)
+                            .take(3)
+                            .map(|e| e.token.clone())
+                            .collect::<Vec<_>>()
+                            .join(", ");
+                        row.c_score = meta.c_score;
+                    }
+                }
+            }
+        }
 
         let show_relation =
             relation_filter.is_some() || rows.iter().any(|r| !r.relation.is_empty());

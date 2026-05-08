@@ -413,3 +413,40 @@ Real Kimi smoke result:
 Remaining limitations:
 - Semantic labels are bounded candidate-token labels, not exhaustive vocab labels.
 - `SELECT`/`DESCRIBE` still primarily use coordinate fallback unless they are wired to pass a vindex path and candidate set into the resolver.
+
+## SELECT/DESCRIBE manifest query continuation
+
+Status: partial GREEN + real smoke.
+
+Problem: after selected-hit down-projection labels landed in `WALK`, `SELECT ... FROM EDGES` still displayed only coordinate labels and `DESCRIBE "France" BRIEF` failed the manifest-backed path by trying to load dense `embeddings.bin`.
+
+RED smokes:
+```bash
+PATH=/tmp/larql-cmake-venv/bin:$PATH LARQL_GGUF_MANIFEST_DOWN_META_TOKENS=64 LARQL_GGUF_MANIFEST_DOWN_META_HITS=3 timeout 120s cargo run -q -p larql-cli -- lql 'USE "/home/bkearns/data/larql-smoke/kimi-q4km-loadable-smoke.vindex"; SELECT entity, target FROM EDGES LIMIT 3;'
+PATH=/tmp/larql-cmake-venv/bin:$PATH LARQL_GGUF_MANIFEST_DOWN_META_TOKENS=64 LARQL_GGUF_MANIFEST_DOWN_META_HITS=3 timeout 120s cargo run -q -p larql-cli -- lql 'USE "/home/bkearns/data/larql-smoke/kimi-q4km-loadable-smoke.vindex"; DESCRIBE "France" BRIEF;'
+```
+
+Observed RED:
+- `SELECT` returned coordinate labels like `gguf:blk.1.ffn_down_exps.weight:E0:F0`.
+- `DESCRIBE` returned `failed to load embeddings: ... embeddings.bin` because it used dense embedding loading.
+
+GREEN:
+- `SELECT` now resolves bounded displayed rows through `load_vindex_gguf_feature_meta(...)` and decodes tokenizer labels, with coordinate fallback.
+- `DESCRIBE` now builds its query with `load_vindex_embedding_rows(...)` so manifest-backed Kimi no longer requires dense `embeddings.bin`; it also attempts selected-hit label resolution before edge collection.
+
+Verification:
+```bash
+cargo fmt --all
+PATH=/tmp/larql-cmake-venv/bin:$PATH cargo check -p larql-lql
+PATH=/tmp/larql-cmake-venv/bin:$PATH LARQL_GGUF_MANIFEST_DOWN_META_TOKENS=64 LARQL_GGUF_MANIFEST_DOWN_META_HITS=3 timeout 120s cargo run -q -p larql-cli -- lql 'USE "/home/bkearns/data/larql-smoke/kimi-q4km-loadable-smoke.vindex"; SELECT entity, target FROM EDGES LIMIT 3;'
+PATH=/tmp/larql-cmake-venv/bin:$PATH LARQL_GGUF_MANIFEST_DOWN_META_TOKENS=64 LARQL_GGUF_MANIFEST_DOWN_META_HITS=3 timeout 120s cargo run -q -p larql-cli -- lql 'USE "/home/bkearns/data/larql-smoke/kimi-q4km-loadable-smoke.vindex"; DESCRIBE "France" BRIEF;'
+```
+
+Real Kimi smoke result:
+- `SELECT` exits `0` and displays decoded token labels, e.g. `] [;, \", >]` instead of GGUF coordinate placeholders.
+- `DESCRIBE` exits `0` and no longer fails on missing `embeddings.bin`; with the current content/gate thresholds it can still return `(no edges found)` for the bounded smoke.
+- Logs: `/tmp/larql-kimi-select-semantic.log`, `/tmp/larql-kimi-describe-semantic.log`.
+
+Remaining limitations:
+- `DESCRIBE` still needs a manifest-aware low-score/content policy so browse-level Kimi can surface useful edges under bounded gate scans rather than only avoiding dense-embedding failure.
+- Semantic labels are still bounded candidate-token labels, not exhaustive full-vocab labels.
