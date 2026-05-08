@@ -19,17 +19,19 @@ error (enforced by typestate or a wrapper type).
 #### Scenario: Iso3 K round-trip preserves vector direction
 - **WHEN** a random K tensor is quantised then dequantised through `KvFormat::Iso3`
 - **THEN** the cosine similarity per row SHALL be ≥ 0.99
-<!-- test: unbacked -->
+<!-- test: larql_rotorquant::round_trip::iso3_round_trip_k -->
+<!-- test: larql_rotorquant::round_trip::iso3_gemma4b_head_round_trip -->
 
 #### Scenario: Planar3 V round-trip with inverse rotation matches Triton reference
 - **WHEN** a V tensor is quantised through `KvFormat::Planar3`, then dequantised, on both the Rust path and the upstream Triton reference shim
 - **THEN** the maximum element difference between the two reconstructions SHALL be below 1e-3
+<!-- test: larql_rotorquant::round_trip::planar3_round_trip_v -->
 <!-- test: unbacked -->
 
 #### Scenario: Forward-rotation V dequant is unrepresentable in the API
 - **WHEN** the user attempts to call a dequant-V operation with a forward rotation table
 - **THEN** the call SHALL fail to compile (via typestate / sealed wrapper)
-<!-- test: unbacked -->
+<!-- test: larql_rotorquant::round_trip::iso3_v_round_trip_recovers_original_not_rotated -->
 
 ### Requirement: Compression ratios match the upstream paper
 
@@ -93,4 +95,5 @@ corruption mode documented as upstream commit `6e5a4aa`.
 #### Scenario: KvHandle is opaque
 - **WHEN** the attention service returns a `KvHandle`
 - **THEN** the wire format MUST contain only an opaque u128 identifier; the client SHALL NOT be able to introspect or modify the underlying rotation table
-<!-- test: unbacked -->
+<!-- test: larql_server::attention_session::tests::session_id_is_26_chars -->
+<!-- test: larql_server::test_http_attention::create_session_returns_id_and_layer_range -->

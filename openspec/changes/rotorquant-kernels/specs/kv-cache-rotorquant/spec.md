@@ -12,12 +12,13 @@ capability: `KvFormat` enum, `QuantizedKv` struct, `quantize_k`,
 #### Scenario: crate compiles on default features
 - **WHEN** `cargo check -p larql-rotorquant` runs on a host with no CUDA toolkit
 - **THEN** the build SHALL succeed
-<!-- test: unbacked -->
+<!-- test: larql_rotorquant::round_trip::head_dim_divisibility_is_enforced -->
 
 #### Scenario: public API matches the parent-change declaration
 - **WHEN** a caller writes `use larql_rotorquant::{KvFormat, QuantizedKv, quantize_k, quantize_v, dequantize_k, dequantize_v_with_inverse_rotation, RotorQuantError};`
 - **THEN** the import SHALL resolve without error
-<!-- test: unbacked -->
+<!-- test: larql_rotorquant::round_trip::iso3_round_trip_k -->
+<!-- test: larql_rotorquant::round_trip::planar3_round_trip_v -->
 
 ### Requirement: Round-trip parity for all four formats on K and V
 

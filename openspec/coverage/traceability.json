@@ -3,9 +3,9 @@
     "capabilities": 49,
     "requirements": 408,
     "scenarios": 1376,
-    "scenarios_backed": 1226,
-    "scenarios_unbacked": 150,
-    "test_refs": 3278,
+    "scenarios_backed": 1232,
+    "scenarios_unbacked": 144,
+    "test_refs": 3282,
     "test_refs_unresolved": 0
   },
   "capabilities": [
@@ -8152,27 +8152,34 @@
           "scenarios": [
             {
               "name": "Iso3 K round-trip preserves vector direction",
-              "tests_resolved": [],
+              "tests_resolved": [
+                "larql_rotorquant::round_trip::iso3_round_trip_k",
+                "larql_rotorquant::round_trip::iso3_gemma4b_head_round_trip"
+              ],
               "tests_unresolved": [],
-              "unbacked": true,
+              "unbacked": false,
               "spec_file": "openspec/changes/cuda-and-rotorquant-kv/specs/kv-cache-rotorquant/spec.md",
               "line": 19
             },
             {
               "name": "Planar3 V round-trip with inverse rotation matches Triton reference",
-              "tests_resolved": [],
+              "tests_resolved": [
+                "larql_rotorquant::round_trip::planar3_round_trip_v"
+              ],
               "tests_unresolved": [],
-              "unbacked": true,
+              "unbacked": false,
               "spec_file": "openspec/changes/cuda-and-rotorquant-kv/specs/kv-cache-rotorquant/spec.md",
-              "line": 24
+              "line": 25
             },
             {
               "name": "Forward-rotation V dequant is unrepresentable in the API",
-              "tests_resolved": [],
+              "tests_resolved": [
+                "larql_rotorquant::round_trip::iso3_v_round_trip_recovers_original_not_rotated"
+              ],
               "tests_unresolved": [],
-              "unbacked": true,
+              "unbacked": false,
               "spec_file": "openspec/changes/cuda-and-rotorquant-kv/specs/kv-cache-rotorquant/spec.md",
-              "line": 29
+              "line": 31
             }
           ]
         },
@@ -8185,7 +8192,7 @@
               "tests_unresolved": [],
               "unbacked": true,
               "spec_file": "openspec/changes/cuda-and-rotorquant-kv/specs/kv-cache-rotorquant/spec.md",
-              "line": 46
+              "line": 48
             }
           ]
         },
@@ -8198,7 +8205,7 @@
               "tests_unresolved": [],
               "unbacked": true,
               "spec_file": "openspec/changes/cuda-and-rotorquant-kv/specs/kv-cache-rotorquant/spec.md",
-              "line": 57
+              "line": 59
             },
             {
               "name": "Decode token insertion quantises previously-deferred K",
@@ -8206,7 +8213,7 @@
               "tests_unresolved": [],
               "unbacked": true,
               "spec_file": "openspec/changes/cuda-and-rotorquant-kv/specs/kv-cache-rotorquant/spec.md",
-              "line": 62
+              "line": 64
             }
           ]
         },
@@ -8219,7 +8226,7 @@
               "tests_unresolved": [],
               "unbacked": true,
               "spec_file": "openspec/changes/cuda-and-rotorquant-kv/specs/kv-cache-rotorquant/spec.md",
-              "line": 75
+              "line": 77
             },
             {
               "name": "Sync target reports drift",
@@ -8227,7 +8234,7 @@
               "tests_unresolved": [],
               "unbacked": true,
               "spec_file": "openspec/changes/cuda-and-rotorquant-kv/specs/kv-cache-rotorquant/spec.md",
-              "line": 80
+              "line": 82
             }
           ]
         },
@@ -8236,11 +8243,14 @@
           "scenarios": [
             {
               "name": "KvHandle is opaque",
-              "tests_resolved": [],
+              "tests_resolved": [
+                "larql_server::attention_session::tests::session_id_is_26_chars",
+                "larql_server::test_http_attention::create_session_returns_id_and_layer_range"
+              ],
               "tests_unresolved": [],
-              "unbacked": true,
+              "unbacked": false,
               "spec_file": "openspec/changes/cuda-and-rotorquant-kv/specs/kv-cache-rotorquant/spec.md",
-              "line": 93
+              "line": 95
             }
           ]
         },
@@ -8317,17 +8327,22 @@
           "scenarios": [
             {
               "name": "crate compiles on default features",
-              "tests_resolved": [],
+              "tests_resolved": [
+                "larql_rotorquant::round_trip::head_dim_divisibility_is_enforced"
+              ],
               "tests_unresolved": [],
-              "unbacked": true,
+              "unbacked": false,
               "spec_file": "openspec/changes/rotorquant-kernels/specs/kv-cache-rotorquant/spec.md",
               "line": 12
             },
             {
               "name": "public API matches the parent-change declaration",
-              "tests_resolved": [],
+              "tests_resolved": [
+                "larql_rotorquant::round_trip::iso3_round_trip_k",
+                "larql_rotorquant::round_trip::planar3_round_trip_v"
+              ],
               "tests_unresolved": [],
-              "unbacked": true,
+              "unbacked": false,
               "spec_file": "openspec/changes/rotorquant-kernels/specs/kv-cache-rotorquant/spec.md",
               "line": 17
             }
@@ -8344,7 +8359,7 @@
               "tests_unresolved": [],
               "unbacked": false,
               "spec_file": "openspec/changes/rotorquant-kernels/specs/kv-cache-rotorquant/spec.md",
-              "line": 26
+              "line": 27
             },
             {
               "name": "Planar4 K round-trip",
@@ -8354,7 +8369,7 @@
               "tests_unresolved": [],
               "unbacked": false,
               "spec_file": "openspec/changes/rotorquant-kernels/specs/kv-cache-rotorquant/spec.md",
-              "line": 31
+              "line": 32
             },
             {
               "name": "Iso3 K round-trip",
@@ -8364,7 +8379,7 @@
               "tests_unresolved": [],
               "unbacked": false,
               "spec_file": "openspec/changes/rotorquant-kernels/specs/kv-cache-rotorquant/spec.md",
-              "line": 36
+              "line": 37
             },
             {
               "name": "Iso4 K round-trip",
@@ -8374,7 +8389,7 @@
               "tests_unresolved": [],
               "unbacked": false,
               "spec_file": "openspec/changes/rotorquant-kernels/specs/kv-cache-rotorquant/spec.md",
-              "line": 41
+              "line": 42
             },
             {
               "name": "Planar3 V round-trip with inverse rotation",
@@ -8384,7 +8399,7 @@
               "tests_unresolved": [],
               "unbacked": false,
               "spec_file": "openspec/changes/rotorquant-kernels/specs/kv-cache-rotorquant/spec.md",
-              "line": 46
+              "line": 47
             },
             {
               "name": "Iso3 V round-trip with inverse rotation",
@@ -8394,7 +8409,7 @@
               "tests_unresolved": [],
               "unbacked": false,
               "spec_file": "openspec/changes/rotorquant-kernels/specs/kv-cache-rotorquant/spec.md",
-              "line": 51
+              "line": 52
             },
             {
               "name": "Iso3 round-trip on Gemma 4B head shape",
@@ -8404,7 +8419,7 @@
               "tests_unresolved": [],
               "unbacked": false,
               "spec_file": "openspec/changes/rotorquant-kernels/specs/kv-cache-rotorquant/spec.md",
-              "line": 56
+              "line": 57
             }
           ]
         },
@@ -8419,7 +8434,7 @@
               "tests_unresolved": [],
               "unbacked": false,
               "spec_file": "openspec/changes/rotorquant-kernels/specs/kv-cache-rotorquant/spec.md",
-              "line": 69
+              "line": 70
             }
           ]
         },
@@ -8434,7 +8449,7 @@
               "tests_unresolved": [],
               "unbacked": false,
               "spec_file": "openspec/changes/rotorquant-kernels/specs/kv-cache-rotorquant/spec.md",
-              "line": 80
+              "line": 81
             }
           ]
         }
