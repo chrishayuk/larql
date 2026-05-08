@@ -15,23 +15,86 @@ use std::collections::HashMap;
 /// Build a synthetic `ModelWeights` with all tensors populated.
 /// Uses `TinyModelArch` key conventions (e.g. `"0.attn.q_proj.weight"`).
 pub fn make_test_weights() -> ModelWeights {
-    const VOCAB: usize = 32;
-    const HIDDEN: usize = 16;
-    const INTER: usize = 32;
-    const NUM_Q: usize = 2;
-    const NUM_KV: usize = 1;
-    const HEAD_DIM: usize = 8;
-    const NUM_LAYERS: usize = 2;
+    make_test_weights_with(SyntheticDims::tiny())
+}
 
+/// Caller-supplied dimensions for [`make_test_weights_with`].
+/// Useful when you need the same synthetic-weights factory at a
+/// larger shape — e.g. for benchmarking the attention-service
+/// runner under realistic dims, without paying for a real
+/// model checkpoint.
+#[derive(Clone, Copy, Debug)]
+pub struct SyntheticDims {
+    pub vocab: usize,
+    pub hidden: usize,
+    pub intermediate: usize,
+    pub num_q_heads: usize,
+    pub num_kv_heads: usize,
+    pub head_dim: usize,
+    pub num_layers: usize,
+}
+
+impl SyntheticDims {
+    /// Tiny: vocab=32, hidden=16, 2 layers. Default for unit tests.
+    /// Forward pass < 1 ms on CPU.
+    pub fn tiny() -> Self {
+        Self {
+            vocab: 32,
+            hidden: 16,
+            intermediate: 32,
+            num_q_heads: 2,
+            num_kv_heads: 1,
+            head_dim: 8,
+            num_layers: 2,
+        }
+    }
+
+    /// Gemma-3-4B-shaped: vocab=262144, hidden=2560, 33 layers,
+    /// num_q=8, num_kv=4, head_dim=320, intermediate=10240.
+    /// Useful for realistic-shape benches; weight build is
+    /// noticeable (~1 GB f32) so prefer caching with `OnceLock`.
+    pub fn gemma_3_4b_like() -> Self {
+        Self {
+            vocab: 32,
+            hidden: 2560,
+            intermediate: 10240,
+            num_q_heads: 8,
+            num_kv_heads: 4,
+            head_dim: 320,
+            num_layers: 33,
+        }
+    }
+
+    /// Smaller Gemma-shaped fixture for benches that don't need the
+    /// full 33 layers — same hidden/heads but only 4 layers.
+    /// Build cost ≈ 100 MB f32; useful for parametric sweeps.
+    pub fn gemma_3_4b_4layer() -> Self {
+        Self {
+            vocab: 32,
+            hidden: 2560,
+            intermediate: 10240,
+            num_q_heads: 8,
+            num_kv_heads: 4,
+            head_dim: 320,
+            num_layers: 4,
+        }
+    }
+}
+
+/// Build synthetic weights at caller-supplied dimensions. The body
+/// is identical to [`make_test_weights`] but parameterised. Used by
+/// the `larql-server` benchmark harness to reach realistic Gemma
+/// shapes without a real checkpoint.
+pub fn make_test_weights_with(dims: SyntheticDims) -> ModelWeights {
     let arch_json = serde_json::json!({
         "model_type": "tinymodel",
-        "hidden_size": HIDDEN,
-        "num_hidden_layers": NUM_LAYERS,
-        "intermediate_size": INTER,
-        "head_dim": HEAD_DIM,
-        "num_attention_heads": NUM_Q,
-        "num_key_value_heads": NUM_KV,
-        "vocab_size": VOCAB,
+        "hidden_size": dims.hidden,
+        "num_hidden_layers": dims.num_layers,
+        "intermediate_size": dims.intermediate,
+        "head_dim": dims.head_dim,
+        "num_attention_heads": dims.num_q_heads,
+        "num_key_value_heads": dims.num_kv_heads,
+        "vocab_size": dims.vocab,
     });
     let arch = detect_from_json(&arch_json);
 
@@ -54,30 +117,32 @@ pub fn make_test_weights() -> ModelWeights {
             .into_shared()
     };
 
+    let hidden = dims.hidden;
     // Embed + lm_head
-    let embed = rand_mat(VOCAB, HIDDEN, 0.1);
-    let lm_head = rand_mat(VOCAB, HIDDEN, 0.1);
+    let embed = rand_mat(dims.vocab, hidden, 0.1);
+    let lm_head = rand_mat(dims.vocab, hidden, 0.1);
     tensors.insert(arch.embed_key().to_string(), embed.clone());
 
     // Final norm (ones → valid unweighted RMSNorm fallback)
-    vectors.insert(arch.final_norm_key().to_string(), vec![1.0; HIDDEN]);
+    vectors.insert(arch.final_norm_key().to_string(), vec![1.0; hidden]);
 
-    let q_dim = NUM_Q * HEAD_DIM;
-    let kv_dim = NUM_KV * HEAD_DIM;
+    let q_dim = dims.num_q_heads * dims.head_dim;
+    let kv_dim = dims.num_kv_heads * dims.head_dim;
+    let inter = dims.intermediate;
 
-    for layer in 0..NUM_LAYERS {
+    for layer in 0..dims.num_layers {
         // Attention projections
-        tensors.insert(arch.attn_q_key(layer), rand_mat(q_dim, HIDDEN, 0.1));
-        tensors.insert(arch.attn_k_key(layer), rand_mat(kv_dim, HIDDEN, 0.1));
-        tensors.insert(arch.attn_v_key(layer), rand_mat(kv_dim, HIDDEN, 0.1));
-        tensors.insert(arch.attn_o_key(layer), rand_mat(HIDDEN, q_dim, 0.1));
+        tensors.insert(arch.attn_q_key(layer), rand_mat(q_dim, hidden, 0.1));
+        tensors.insert(arch.attn_k_key(layer), rand_mat(kv_dim, hidden, 0.1));
+        tensors.insert(arch.attn_v_key(layer), rand_mat(kv_dim, hidden, 0.1));
+        tensors.insert(arch.attn_o_key(layer), rand_mat(hidden, q_dim, 0.1));
         // FFN — missing tensors cause panic, so always provide them
-        tensors.insert(arch.ffn_gate_key(layer), rand_mat(INTER, HIDDEN, 0.1));
-        tensors.insert(arch.ffn_up_key(layer), rand_mat(INTER, HIDDEN, 0.1));
-        tensors.insert(arch.ffn_down_key(layer), rand_mat(HIDDEN, INTER, 0.1));
+        tensors.insert(arch.ffn_gate_key(layer), rand_mat(inter, hidden, 0.1));
+        tensors.insert(arch.ffn_up_key(layer), rand_mat(inter, hidden, 0.1));
+        tensors.insert(arch.ffn_down_key(layer), rand_mat(hidden, inter, 0.1));
         // Layer norms
-        vectors.insert(arch.input_layernorm_key(layer), vec![1.0; HIDDEN]);
-        vectors.insert(arch.post_attention_layernorm_key(layer), vec![1.0; HIDDEN]);
+        vectors.insert(arch.input_layernorm_key(layer), vec![1.0; hidden]);
+        vectors.insert(arch.post_attention_layernorm_key(layer), vec![1.0; hidden]);
     }
 
     ModelWeights {
@@ -90,13 +155,13 @@ pub fn make_test_weights() -> ModelWeights {
         embed,
         lm_head,
         arch,
-        num_layers: NUM_LAYERS,
-        hidden_size: HIDDEN,
-        intermediate_size: INTER,
-        vocab_size: VOCAB,
-        head_dim: HEAD_DIM,
-        num_q_heads: NUM_Q,
-        num_kv_heads: NUM_KV,
+        num_layers: dims.num_layers,
+        hidden_size: hidden,
+        intermediate_size: inter,
+        vocab_size: dims.vocab,
+        head_dim: dims.head_dim,
+        num_q_heads: dims.num_q_heads,
+        num_kv_heads: dims.num_kv_heads,
         rope_base: 10_000.0,
     }
 }

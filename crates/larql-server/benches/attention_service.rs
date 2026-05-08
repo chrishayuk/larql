@@ -22,7 +22,9 @@ use std::sync::{Arc, OnceLock};
 use axum::body::Body;
 use axum::http::Request;
 use criterion::{criterion_group, criterion_main, BenchmarkId, Criterion, Throughput};
-use larql_inference::engines::test_utils::make_test_weights;
+use larql_inference::engines::test_utils::{
+    make_test_weights, make_test_weights_with, SyntheticDims,
+};
 use larql_inference::ndarray::Array2;
 use larql_inference::ModelWeights;
 use larql_server::attention_session::AttentionSessionMap;
@@ -120,8 +122,12 @@ fn build_loaded_model(weights: ModelWeights) -> LoadedModel {
 }
 
 fn build_state() -> Arc<AppState> {
+    build_state_for(make_test_weights())
+}
+
+fn build_state_for(weights: ModelWeights) -> Arc<AppState> {
     Arc::new(AppState {
-        models: vec![Arc::new(build_loaded_model(make_test_weights()))],
+        models: vec![Arc::new(build_loaded_model(weights))],
         started_at: std::time::Instant::now(),
         requests_served: AtomicU64::new(0),
         api_key: None,
@@ -129,6 +135,18 @@ fn build_state() -> Arc<AppState> {
         describe_cache: DescribeCache::new(0),
         attention_sessions: Arc::new(AttentionSessionMap::new(60, 256)),
     })
+}
+
+/// Gemma-3-4B-shaped synthetic state, cached because a 4-layer
+/// build is ~100 MB f32 and otherwise dominates per-iter cost.
+/// `OnceLock` rather than `LazyLock` so the criterion harness
+/// loads it lazily on the first `gemma_*` bench only.
+fn gemma_4layer_state() -> Arc<AppState> {
+    use std::sync::OnceLock;
+    static CACHED: OnceLock<Arc<AppState>> = OnceLock::new();
+    CACHED
+        .get_or_init(|| build_state_for(make_test_weights_with(SyntheticDims::gemma_3_4b_4layer())))
+        .clone()
 }
 
 fn deterministic_embeddings(seq_len: usize, hidden: usize) -> Vec<Vec<f32>> {
@@ -297,5 +315,50 @@ fn bench_snapshot(c: &mut Criterion) {
     });
 }
 
-criterion_group!(benches, bench_prefill, bench_decode, bench_snapshot);
+/// Gemma-3-4B-shaped (hidden=2560, num_q=8, num_kv=4, head_dim=320,
+/// intermediate=10240) but with only 4 layers so build/iter time
+/// stays bench-friendly. Every iteration starts from a fresh
+/// session against the cached AppState — this gates whether the
+/// per-call overhead (session create + spawn_blocking + serde
+/// round-trip) scales sanely with realistic dims.
+fn bench_prefill_gemma_shaped(c: &mut Criterion) {
+    let rt = tokio::runtime::Runtime::new().unwrap();
+    let mut group = c.benchmark_group("prefill_gemma_4layer");
+    let hidden = SyntheticDims::gemma_3_4b_4layer().hidden;
+    // Sample-size and warm-up are tightened — Gemma-shaped is
+    // ~10× the work of the tiny variant, and we don't need
+    // criterion's full statistical sweep for a regression gate.
+    group.sample_size(20);
+    group.measurement_time(std::time::Duration::from_secs(8));
+
+    for seq_len in [1usize, 8, 32] {
+        let embeddings = Arc::new(deterministic_embeddings(seq_len, hidden));
+        group.throughput(Throughput::Elements(seq_len as u64));
+        group.bench_with_input(
+            BenchmarkId::from_parameter(seq_len),
+            &embeddings,
+            |b, embeddings| {
+                let embeddings = embeddings.clone();
+                let state = gemma_4layer_state();
+                b.to_async(&rt).iter(|| {
+                    let embeddings = embeddings.clone();
+                    let state = state.clone();
+                    async move {
+                        let sid = create_session(state.clone()).await;
+                        one_prefill(state, &sid, &embeddings).await;
+                    }
+                });
+            },
+        );
+    }
+    group.finish();
+}
+
+criterion_group!(
+    benches,
+    bench_prefill,
+    bench_decode,
+    bench_snapshot,
+    bench_prefill_gemma_shaped,
+);
 criterion_main!(benches);
