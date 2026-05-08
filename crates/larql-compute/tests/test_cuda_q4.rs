@@ -139,6 +139,51 @@ fn q4k_matvec_ffn_gate_parity() {
 }
 
 #[test]
+fn q4k_matvec_small_direct_parity() {
+    let Some(cuda) = gpu_or_skip() else { return };
+    let n = 32;
+    let k = 256;
+    let weights_f32 = synth(n * k, 0xB31);
+    let q4k = quantize_q4_k(&weights_f32);
+    let x = synth(k, 0xB32);
+    let cpu = CpuBackend
+        .q4k_matvec(&q4k, &x, n, k)
+        .expect("CPU q4k_matvec");
+    let gpu = cuda
+        .q4k_matvec(&q4k, &x, n, k)
+        .expect("CUDA direct q4k_matvec must be Some");
+    let diff = max_abs_diff(&cpu, &gpu);
+    let cos = cosine(&cpu, &gpu);
+    assert!(
+        diff <= TOL_ABS,
+        "small Q4_K max abs diff {diff} > {TOL_ABS}"
+    );
+    assert!(cos >= TOL_COS, "small Q4_K cosine {cos} < {TOL_COS}");
+}
+
+#[test]
+fn q4k_matvec_host_dequant_fallback_parity() {
+    let Some(cuda) = gpu_or_skip() else { return };
+    let n = 64;
+    let k = 256;
+    let weights_f32 = synth(n * k, 0xB41);
+    let q4k = quantize_q4_k(&weights_f32);
+    let x = synth(k, 0xB42);
+    std::env::set_var("LARQL_CUDA_Q4K_HOST_DEQUANT", "1");
+    let gpu = cuda
+        .q4k_matvec(&q4k, &x, n, k)
+        .expect("CUDA host-dequant fallback q4k_matvec must be Some");
+    std::env::remove_var("LARQL_CUDA_Q4K_HOST_DEQUANT");
+    let cpu = CpuBackend
+        .q4k_matvec(&q4k, &x, n, k)
+        .expect("CPU q4k_matvec");
+    let diff = max_abs_diff(&cpu, &gpu);
+    let cos = cosine(&cpu, &gpu);
+    assert!(diff <= TOL_ABS, "fallback max abs diff {diff} > {TOL_ABS}");
+    assert!(cos >= TOL_COS, "fallback cosine {cos} < {TOL_COS}");
+}
+
+#[test]
 fn q4k_matvec_lm_head_parity() {
     let Some(cuda) = gpu_or_skip() else { return };
     let n = 128_256; // Llama-class vocab

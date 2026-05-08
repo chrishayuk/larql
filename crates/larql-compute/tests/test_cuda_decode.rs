@@ -7,6 +7,7 @@
 #![cfg(feature = "cuda")]
 
 use larql_compute::backend::{Capability, ComputeBackend, DecodeBackend};
+use larql_compute::cpu::ops::q4_common::quantize_q4_k;
 use larql_compute::cuda::CudaBackend;
 use larql_compute::{Activation, FfnType, FullPipelineLayer, NormType, QuantFormat, QuantWeight};
 
@@ -39,6 +40,14 @@ fn qw(bytes: &[u8]) -> QuantWeight<'_> {
         data: bytes,
         scales: None,
         format: QuantFormat::F32,
+    }
+}
+
+fn q4k_qw(bytes: &[u8]) -> QuantWeight<'_> {
+    QuantWeight {
+        data: bytes,
+        scales: None,
+        format: QuantFormat::Q4_K,
     }
 }
 
@@ -269,4 +278,92 @@ fn prefill_populates_kv_cache_len() {
         .expect("cuda prefill_q4 should return Some");
     assert_eq!(out.len(), seq_len * hidden);
     assert_eq!(backend.kv_cache_len(), seq_len);
+}
+
+#[test]
+fn decode_q4k_projection_uses_quant_matvec() {
+    let Some(backend) = gpu_or_skip() else { return };
+    let hidden = 256;
+    let inter = 256;
+    let head_dim = 256;
+    let num_q_heads = 1;
+    let num_kv_heads = 1;
+    let q_dim = head_dim;
+    let kv_dim = head_dim;
+
+    let input_norm = vec![1.0; hidden];
+    let post_attn_norm = vec![1.0; hidden];
+    let pre_ffn_norm = vec![1.0; hidden];
+    let post_ffn_norm = vec![1.0; hidden];
+    let wq = quantize_q4_k(&synth(q_dim * hidden, 0x510));
+    let wk = quantize_q4_k(&synth(kv_dim * hidden, 0x511));
+    let wv = quantize_q4_k(&synth(kv_dim * hidden, 0x512));
+    let wo = quantize_q4_k(&synth(hidden * q_dim, 0x513));
+    let gate = quantize_q4_k(&synth(inter * hidden, 0x514));
+    let up = quantize_q4_k(&synth(inter * hidden, 0x515));
+    let down = quantize_q4_k(&synth(hidden * inter, 0x516));
+    let make_layer = || FullPipelineLayer {
+        wq: q4k_qw(&wq),
+        wk: q4k_qw(&wk),
+        wv: q4k_qw(&wv),
+        wo: q4k_qw(&wo),
+        gate: q4k_qw(&gate),
+        up: q4k_qw(&up),
+        down: q4k_qw(&down),
+        input_norm: &input_norm,
+        post_attn_norm: &post_attn_norm,
+        pre_ffn_norm: Some(&pre_ffn_norm),
+        post_ffn_norm: Some(&post_ffn_norm),
+        norm_offset: 0.0,
+        eps: 1e-6,
+        has_post_norms: true,
+        norm_type: NormType::RmsNorm,
+        ffn_type: FfnType::Gated,
+        activation: Activation::Silu,
+        attn_scale: 1.0 / (head_dim as f32).sqrt(),
+        head_dim,
+        num_q_heads,
+        num_kv_heads,
+        rope_base: 10_000.0,
+        rotary_dim: head_dim,
+        ..FullPipelineLayer::default()
+    };
+    let x = synth(hidden, 0x520);
+
+    std::env::remove_var("LARQL_CUDA_Q4K_HOST_DEQUANT");
+    backend.reset_kv_cache();
+    let direct = backend
+        .decode_token(
+            &[make_layer()],
+            &x,
+            hidden,
+            inter,
+            q_dim,
+            kv_dim,
+            num_q_heads,
+            num_kv_heads,
+            head_dim,
+            10_000.0,
+        )
+        .expect("direct Q4_K CUDA decode should return Some");
+
+    std::env::set_var("LARQL_CUDA_Q4K_HOST_DEQUANT", "1");
+    backend.reset_kv_cache();
+    let fallback = backend
+        .decode_token(
+            &[make_layer()],
+            &x,
+            hidden,
+            inter,
+            q_dim,
+            kv_dim,
+            num_q_heads,
+            num_kv_heads,
+            head_dim,
+            10_000.0,
+        )
+        .expect("host-dequant Q4_K CUDA decode should return Some");
+    std::env::remove_var("LARQL_CUDA_Q4K_HOST_DEQUANT");
+
+    assert_close(&direct, &fallback, 2e-3);
 }

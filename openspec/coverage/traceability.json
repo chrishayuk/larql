@@ -1,11 +1,11 @@
 {
   "summary": {
     "capabilities": 49,
-    "requirements": 420,
-    "scenarios": 1394,
-    "scenarios_backed": 1277,
+    "requirements": 422,
+    "scenarios": 1398,
+    "scenarios_backed": 1281,
     "scenarios_unbacked": 117,
-    "test_refs": 3324,
+    "test_refs": 3328,
     "test_refs_unresolved": 3
   },
   "capabilities": [
@@ -2540,6 +2540,56 @@
               "unbacked": false,
               "spec_file": "openspec/changes/cuda-q4-matvec/specs/compute-cuda-kernels/spec.md",
               "line": 65
+            }
+          ]
+        },
+        {
+          "name": "CUDA Q4_K matvec uses a direct packed-weight kernel",
+          "scenarios": [
+            {
+              "name": "Direct Q4_K matvec matches CPU reference at FFN dimensions",
+              "tests_resolved": [
+                "larql_compute::test_cuda_q4::q4k_matvec_ffn_gate_parity"
+              ],
+              "tests_unresolved": [],
+              "unbacked": false,
+              "spec_file": "openspec/changes/cuda-resident-q4k-matvec/specs/compute-cuda-kernels/spec.md",
+              "line": 10
+            },
+            {
+              "name": "Direct Q4_K matvec matches CPU reference at LM-head dimensions",
+              "tests_resolved": [
+                "larql_compute::test_cuda_q4::q4k_matvec_lm_head_parity"
+              ],
+              "tests_unresolved": [],
+              "unbacked": false,
+              "spec_file": "openspec/changes/cuda-resident-q4k-matvec/specs/compute-cuda-kernels/spec.md",
+              "line": 15
+            },
+            {
+              "name": "Host-dequant fallback remains available",
+              "tests_resolved": [
+                "larql_compute::test_cuda_q4::q4k_matvec_host_dequant_fallback_parity"
+              ],
+              "tests_unresolved": [],
+              "unbacked": false,
+              "spec_file": "openspec/changes/cuda-resident-q4k-matvec/specs/compute-cuda-kernels/spec.md",
+              "line": 20
+            }
+          ]
+        },
+        {
+          "name": "CUDA decode routes Q4_K projections through quant matvec",
+          "scenarios": [
+            {
+              "name": "Decode helper dispatches Q4_K through direct matvec",
+              "tests_resolved": [
+                "larql_compute::test_cuda_decode::decode_q4k_projection_uses_quant_matvec"
+              ],
+              "tests_unresolved": [],
+              "unbacked": false,
+              "spec_file": "openspec/changes/cuda-resident-q4k-matvec/specs/compute-cuda-kernels/spec.md",
+              "line": 32
             }
           ]
         }
@@ -20165,15 +20215,21 @@
       "crate": "larql_compute"
     },
     {
+      "fqn": "larql_compute::test_cuda_q4::q4k_matvec_small_direct_parity",
+      "file": "crates/larql-compute/tests/test_cuda_q4.rs",
+      "line": 142,
+      "crate": "larql_compute"
+    },
+    {
       "fqn": "larql_compute::test_cuda_q4::q4kf_matvec_ffn_gate_parity",
       "file": "crates/larql-compute/tests/test_cuda_q4.rs",
-      "line": 162,
+      "line": 207,
       "crate": "larql_compute"
     },
     {
       "fqn": "larql_compute::test_cuda_decode::decode_token_one_layer_matches_scalar_reference",
       "file": "crates/larql-compute/tests/test_cuda_decode.rs",
-      "line": 125,
+      "line": 134,
       "crate": "larql_compute"
     },
     {

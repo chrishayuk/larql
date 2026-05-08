@@ -70,6 +70,13 @@ impl Driver {
             .map_err(|e| CudaInitError::DriverMissing(format!("htod copy: {e:?}")))
     }
 
+    /// Copy a host byte slice to a fresh device buffer.
+    pub(crate) fn device_u8_buf_from(&self, host: &[u8]) -> Result<CudaSlice<u8>, CudaInitError> {
+        self.stream
+            .clone_htod(host)
+            .map_err(|e| CudaInitError::DriverMissing(format!("htod u8 copy: {e:?}")))
+    }
+
     /// Copy a device buffer back to host (synchronous).
     pub(crate) fn to_host(&self, dev: &CudaSlice<f32>) -> Result<Vec<f32>, CudaInitError> {
         self.stream

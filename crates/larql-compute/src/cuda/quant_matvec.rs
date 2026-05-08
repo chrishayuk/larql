@@ -9,6 +9,7 @@ use crate::backend::QuantMatVec;
 use super::backend::CudaBackend;
 use super::dequant;
 use super::matmul as kernels;
+use super::q4k_direct;
 
 impl QuantMatVec for CudaBackend {
     fn q4_matvec(
@@ -42,6 +43,9 @@ impl QuantMatVec for CudaBackend {
     ) -> Option<Vec<f32>> {
         if x.len() != hidden {
             return None;
+        }
+        if std::env::var("LARQL_CUDA_Q4K_HOST_DEQUANT").ok().as_deref() != Some("1") {
+            return q4k_direct::matvec(self.driver(), q4k_data, x, num_rows, hidden).ok();
         }
         let w = dequant::dequant_q4_k(q4k_data, num_rows * hidden).ok()?;
         kernels::gemv(self.driver(), &w, x, num_rows, hidden).ok()

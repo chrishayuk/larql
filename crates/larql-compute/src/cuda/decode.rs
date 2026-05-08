@@ -2,12 +2,10 @@
 //!
 //! This is a correctness-first bridge from the full-pipeline trait to the
 //! cudarc helpers that already exist for CUDA. It keeps KV state host-visible
-//! for now and uses the current CUDA Q4/Q6 matvec dispatch, which still
-//! dequantizes weights on the host before cuBLAS. That is intentionally not
-//! the final performance shape; it makes CUDA decode real and benchmarkable
-//! before deeper residency/fusion work.
+//! for now. Q4_K projections route through the direct packed-weight CUDA
+//! matvec path; other quant formats still use the correctness-first fallback.
 
-use crate::backend::DecodeBackend;
+use crate::backend::{DecodeBackend, QuantMatVec};
 use crate::{Activation, FfnType, FullPipelineLayer, NormType, QuantFormat, QuantWeight};
 
 use super::backend::CudaBackend;
@@ -132,6 +130,12 @@ fn matvec(
 ) -> Option<Vec<f32>> {
     if x.len() != cols {
         return None;
+    }
+    match weight.format {
+        QuantFormat::Q4_K => return backend.q4k_matvec(weight.data, x, rows, cols),
+        QuantFormat::Q4_KF => return backend.q4kf_matvec(weight.data, x, rows, cols),
+        QuantFormat::Q6_K => return backend.q6k_matvec(weight.data, x, rows, cols),
+        _ => {}
     }
     let w = dequant_weight(weight, rows, cols)?;
     kernels::gemv(backend.driver(), &w, x, rows, cols).ok()
@@ -277,26 +281,36 @@ impl DecodeBackend for CudaBackend {
             let layer_rotary_dim = layer.rotary_dim;
 
             let h_attn = rms_norm_vec(&h, layer.input_norm, layer.eps, layer.norm_offset);
-            let wq = dequant_weight(layer.wq, layer_q_dim, hidden)?;
-            let wk = dequant_weight(layer.wk, layer_kv_dim, hidden)?;
-            let wv = dequant_weight(layer.wv, layer_kv_dim, hidden)?;
-            let qkv = attn::qkv_rms_proj(
-                self,
-                &h,
-                layer.input_norm,
-                &wq,
-                &wk,
-                &wv,
-                attn::QkvProjDims {
-                    hidden,
-                    q_dim: layer_q_dim,
-                    kv_dim: layer_kv_dim,
-                },
-                layer.eps,
-                layer.norm_offset,
-            )
-            .ok()?;
-            drop(h_attn);
+            let qkv = if layer.wq.format == QuantFormat::Q4_K
+                || layer.wk.format == QuantFormat::Q4_K
+                || layer.wv.format == QuantFormat::Q4_K
+            {
+                attn::QkvProjOutput {
+                    q: matvec(self, layer.wq, &h_attn, layer_q_dim, hidden)?,
+                    k: matvec(self, layer.wk, &h_attn, layer_kv_dim, hidden)?,
+                    v: matvec(self, layer.wv, &h_attn, layer_kv_dim, hidden)?,
+                }
+            } else {
+                let wq = dequant_weight(layer.wq, layer_q_dim, hidden)?;
+                let wk = dequant_weight(layer.wk, layer_kv_dim, hidden)?;
+                let wv = dequant_weight(layer.wv, layer_kv_dim, hidden)?;
+                attn::qkv_rms_proj(
+                    self,
+                    &h,
+                    layer.input_norm,
+                    &wq,
+                    &wk,
+                    &wv,
+                    attn::QkvProjDims {
+                        hidden,
+                        q_dim: layer_q_dim,
+                        kv_dim: layer_kv_dim,
+                    },
+                    layer.eps,
+                    layer.norm_offset,
+                )
+                .ok()?
+            };
 
             let kv_slot = cache.layers.get_mut(layer_idx)?;
             let attn_out = attn::fused_decode_attention(
