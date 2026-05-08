@@ -45,6 +45,7 @@ test-cuda:
 	cargo test -p larql-compute --features cuda --test test_cuda_f32 -- --test-threads=1
 	cargo test -p larql-compute --features cuda --test test_cuda_q4  -- --test-threads=1
 	cargo test -p larql-compute --features cuda --test test_cuda_attn -- --test-threads=1
+	cargo test -p larql-inference --features cuda --test test_cpu_metal_parity -- --test-threads=1
 	cargo test -p larql-rotorquant
 	@echo "All CUDA + RotorQuant parity tests passed."
 

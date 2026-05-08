@@ -36,11 +36,11 @@
 
 ## 5. Phase 2 — fused attention (follow-up change `cuda-fused-attention`)
 
-- [ ] 5.1 Fused QKV-projection + RMS norm kernel.
-- [ ] 5.2 Fused QK-norm + RoPE + softcap kernel.
-- [ ] 5.3 Fused KV-append + scaled-dot-product + softmax + V-aggregate kernel for FP16 KV.
-- [ ] 5.4 Pass `test_fused_attention` in the `cuda` feature build.
-- [ ] 5.5 Pass `test_cpu_metal_parity` extended to include CUDA.
+- [x] 5.1 Fused QKV-projection + RMS norm kernel.
+- [x] 5.2 Fused QK-norm + RoPE + softcap kernel.
+- [x] 5.3 Fused KV-append + scaled-dot-product + softmax + V-aggregate kernel for FP16 KV.
+- [x] 5.4 Pass `test_fused_attention` in the `cuda` feature build.
+- [x] 5.5 Pass `test_cpu_metal_parity` extended to include CUDA.
 
 ## 6. Phase 3 — RotorQuant kernels (follow-up change `rotorquant-kernels`)
 

@@ -19923,6 +19923,18 @@
       "crate": "larql_compute"
     },
     {
+      "fqn": "larql_compute::test_cuda_attn::fused_qkv_rms_projection_matches_cpu_reference",
+      "file": "crates/larql-compute/tests/test_cuda_attn.rs",
+      "line": 248,
+      "crate": "larql_compute"
+    },
+    {
+      "fqn": "larql_compute::test_cuda_attn::fused_decode_attention_matches_cpu_reference",
+      "file": "crates/larql-compute/tests/test_cuda_attn.rs",
+      "line": 292,
+      "crate": "larql_compute"
+    },
+    {
       "fqn": "larql_compute::test_cuda_f32::gpu_or_skip",
       "file": "crates/larql-compute/tests/test_cuda_f32.rs",
       "line": 20,
