@@ -16,10 +16,11 @@
 //! ## API surface
 //!
 //! ```rust,no_run
-//! use larql_rotorquant::{KvFormat, quantize_k, dequantize_v_with_inverse_rotation};
+//! use larql_rotorquant::{KvFormat, KvScratch, quantize_k_with_scratch, dequantize_v_with_inverse_rotation};
 //!
 //! let k = vec![0.0_f32; 128 * 32]; // [seq=128, head_dim=32]
-//! let qk = quantize_k(KvFormat::Iso3, &k, 128, 32).unwrap();
+//! let mut scratch = KvScratch::new(KvFormat::Iso3, 128, 32, 1).unwrap();
+//! let qk = quantize_k_with_scratch(KvFormat::Iso3, &k, 128, 32, &mut scratch).unwrap();
 //! // ... store qk on device or disk ...
 //! ```
 //!
@@ -57,7 +58,7 @@ mod cuda;
 pub mod ffi;
 
 pub use error::RotorQuantError;
-pub use format::{KvFormat, QuantizedKv};
+pub use format::{KvFormat, KvScratch, QuantizedKv};
 
 /// Quantise the K cache.
 ///
@@ -73,6 +74,19 @@ pub fn quantize_k(
     n_rows: usize,
     head_dim: usize,
 ) -> Result<QuantizedKv, RotorQuantError> {
+    let mut scratch = KvScratch::new(format, n_rows.max(1), head_dim, 1)?;
+    quantize_k_with_scratch(format, k, n_rows, head_dim, &mut scratch)
+}
+
+/// Quantise the K cache using caller-owned scratch state.
+pub fn quantize_k_with_scratch(
+    format: KvFormat,
+    k: &[f32],
+    n_rows: usize,
+    head_dim: usize,
+    scratch: &mut KvScratch,
+) -> Result<QuantizedKv, RotorQuantError> {
+    scratch.validate(format, n_rows, head_dim)?;
     cpu_ref::quantize(format, k, n_rows, head_dim)
 }
 
@@ -85,6 +99,19 @@ pub fn quantize_v(
     n_rows: usize,
     head_dim: usize,
 ) -> Result<QuantizedKv, RotorQuantError> {
+    let mut scratch = KvScratch::new(format, n_rows.max(1), head_dim, 1)?;
+    quantize_v_with_scratch(format, v, n_rows, head_dim, &mut scratch)
+}
+
+/// Quantise the V cache using caller-owned scratch state.
+pub fn quantize_v_with_scratch(
+    format: KvFormat,
+    v: &[f32],
+    n_rows: usize,
+    head_dim: usize,
+    scratch: &mut KvScratch,
+) -> Result<QuantizedKv, RotorQuantError> {
+    scratch.validate(format, n_rows, head_dim)?;
     cpu_ref::quantize(format, v, n_rows, head_dim)
 }
 

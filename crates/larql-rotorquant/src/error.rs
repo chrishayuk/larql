@@ -17,4 +17,15 @@ pub enum RotorQuantError {
     },
     #[error("invalid quantised buffer: {0}")]
     InvalidBuffer(String),
+    #[error("invalid scratch dimensions: {0}")]
+    InvalidScratch(String),
+    #[error("scratch format {scratch:?} does not match requested format {requested:?}")]
+    ScratchFormatMismatch {
+        requested: super::KvFormat,
+        scratch: super::KvFormat,
+    },
+    #[error("scratch head_dim {scratch} does not match requested head_dim {requested}")]
+    ScratchHeadDimMismatch { requested: usize, scratch: usize },
+    #[error("requested {requested} rows exceeds scratch capacity {capacity}")]
+    ScratchCapacityExceeded { requested: usize, capacity: usize },
 }

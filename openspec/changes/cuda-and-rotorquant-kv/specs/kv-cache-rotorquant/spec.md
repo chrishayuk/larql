@@ -22,6 +22,11 @@ error (enforced by typestate or a wrapper type).
 <!-- test: larql_rotorquant::round_trip::iso3_round_trip_k -->
 <!-- test: larql_rotorquant::round_trip::iso3_gemma4b_head_round_trip -->
 
+#### Scenario: KvScratch rejects incompatible shapes
+- **WHEN** a scratch buffer is created for a format, head dimension, and maximum row count
+- **THEN** quantisation SHALL reject mismatched formats, mismatched head dimensions, and rows beyond scratch capacity before launching kernels
+<!-- test: larql_rotorquant::round_trip::kv_scratch_rejects_incompatible_shape -->
+
 #### Scenario: Planar3 V round-trip with inverse rotation matches Triton reference
 - **WHEN** a V tensor is quantised through `KvFormat::Planar3`, then dequantised, on both the Rust path and the upstream Triton reference shim
 - **THEN** the maximum element difference between the two reconstructions SHALL be below 1e-3

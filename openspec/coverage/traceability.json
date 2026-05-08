@@ -2,10 +2,10 @@
   "summary": {
     "capabilities": 49,
     "requirements": 408,
-    "scenarios": 1376,
-    "scenarios_backed": 1263,
+    "scenarios": 1377,
+    "scenarios_backed": 1264,
     "scenarios_unbacked": 113,
-    "test_refs": 3301,
+    "test_refs": 3302,
     "test_refs_unresolved": 0
   },
   "capabilities": [
@@ -8212,6 +8212,16 @@
               "line": 19
             },
             {
+              "name": "KvScratch rejects incompatible shapes",
+              "tests_resolved": [
+                "larql_rotorquant::round_trip::kv_scratch_rejects_incompatible_shape"
+              ],
+              "tests_unresolved": [],
+              "unbacked": false,
+              "spec_file": "openspec/changes/cuda-and-rotorquant-kv/specs/kv-cache-rotorquant/spec.md",
+              "line": 25
+            },
+            {
               "name": "Planar3 V round-trip with inverse rotation matches Triton reference",
               "tests_resolved": [
                 "larql_rotorquant::round_trip::planar3_round_trip_v"
@@ -8219,7 +8229,7 @@
               "tests_unresolved": [],
               "unbacked": false,
               "spec_file": "openspec/changes/cuda-and-rotorquant-kv/specs/kv-cache-rotorquant/spec.md",
-              "line": 25
+              "line": 30
             },
             {
               "name": "Forward-rotation V dequant is unrepresentable in the API",
@@ -8229,7 +8239,7 @@
               "tests_unresolved": [],
               "unbacked": false,
               "spec_file": "openspec/changes/cuda-and-rotorquant-kv/specs/kv-cache-rotorquant/spec.md",
-              "line": 31
+              "line": 36
             }
           ]
         },
@@ -8242,7 +8252,7 @@
               "tests_unresolved": [],
               "unbacked": true,
               "spec_file": "openspec/changes/cuda-and-rotorquant-kv/specs/kv-cache-rotorquant/spec.md",
-              "line": 48
+              "line": 53
             }
           ]
         },
@@ -8255,7 +8265,7 @@
               "tests_unresolved": [],
               "unbacked": true,
               "spec_file": "openspec/changes/cuda-and-rotorquant-kv/specs/kv-cache-rotorquant/spec.md",
-              "line": 59
+              "line": 64
             },
             {
               "name": "Decode token insertion quantises previously-deferred K",
@@ -8263,7 +8273,7 @@
               "tests_unresolved": [],
               "unbacked": true,
               "spec_file": "openspec/changes/cuda-and-rotorquant-kv/specs/kv-cache-rotorquant/spec.md",
-              "line": 64
+              "line": 69
             }
           ]
         },
@@ -8278,7 +8288,7 @@
               "tests_unresolved": [],
               "unbacked": false,
               "spec_file": "openspec/changes/cuda-and-rotorquant-kv/specs/kv-cache-rotorquant/spec.md",
-              "line": 77
+              "line": 82
             },
             {
               "name": "Sync target reports drift",
@@ -8286,7 +8296,7 @@
               "tests_unresolved": [],
               "unbacked": true,
               "spec_file": "openspec/changes/cuda-and-rotorquant-kv/specs/kv-cache-rotorquant/spec.md",
-              "line": 82
+              "line": 87
             }
           ]
         },
@@ -8302,7 +8312,7 @@
               "tests_unresolved": [],
               "unbacked": false,
               "spec_file": "openspec/changes/cuda-and-rotorquant-kv/specs/kv-cache-rotorquant/spec.md",
-              "line": 95
+              "line": 100
             }
           ]
         },
@@ -25369,7 +25379,7 @@
     {
       "fqn": "larql_rotorquant::round_trip::cuda_ffi_block_layout_matches_upstream",
       "file": "crates/larql-rotorquant/tests/round_trip.rs",
-      "line": 150,
+      "line": 178,
       "crate": "larql_rotorquant"
     },
     {

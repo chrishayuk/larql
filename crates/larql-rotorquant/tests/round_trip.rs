@@ -6,7 +6,8 @@
 //! `rotorquant-attention-integration`.
 
 use larql_rotorquant::{
-    dequantize_k, dequantize_v_with_inverse_rotation, quantize_k, quantize_v, KvFormat,
+    dequantize_k, dequantize_v_with_inverse_rotation, quantize_k, quantize_k_with_scratch,
+    quantize_v, KvFormat, KvScratch, RotorQuantError,
 };
 
 fn synth(n: usize, seed: u64) -> Vec<f32> {
@@ -112,6 +113,33 @@ fn head_dim_divisibility_is_enforced() {
     let v = vec![0.0_f32; 4 * 33];
     let err = quantize_k(KvFormat::Iso3, &v, 4, 33);
     assert!(err.is_err());
+}
+
+#[test]
+fn kv_scratch_rejects_incompatible_shape() {
+    let mut scratch = KvScratch::new(KvFormat::Iso3, 8, 32, 2).expect("scratch");
+    assert_eq!(scratch.max_rows(), 16);
+
+    let k = synth(8 * 32, 0xB);
+    let qk = quantize_k_with_scratch(KvFormat::Iso3, &k, 8, 32, &mut scratch).expect("quantize");
+    assert_eq!(qk.n_rows, 8);
+
+    let err = quantize_k_with_scratch(KvFormat::Planar3, &k, 8, 32, &mut scratch).unwrap_err();
+    assert!(matches!(err, RotorQuantError::ScratchFormatMismatch { .. }));
+
+    let err = quantize_k_with_scratch(KvFormat::Iso3, &k, 8, 16, &mut scratch).unwrap_err();
+    assert!(matches!(
+        err,
+        RotorQuantError::ScratchHeadDimMismatch { .. }
+    ));
+
+    let too_many_rows = synth(17 * 32, 0xC);
+    let err =
+        quantize_k_with_scratch(KvFormat::Iso3, &too_many_rows, 17, 32, &mut scratch).unwrap_err();
+    assert!(matches!(
+        err,
+        RotorQuantError::ScratchCapacityExceeded { .. }
+    ));
 }
 
 #[test]

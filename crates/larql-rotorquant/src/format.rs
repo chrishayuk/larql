@@ -63,3 +63,111 @@ impl QuantizedKv {
         self.head_dim / self.format.block_size()
     }
 }
+
+/// Reusable shape/capacity state for RotorQuant operations.
+///
+/// The CPU reference path does not need temporary buffers today, but
+/// CUDA quantization does. Keeping the scratch object in the safe API
+/// lets inference/session code allocate once per format and reject
+/// shape mismatches before launching kernels.
+#[derive(Clone, Debug)]
+pub struct KvScratch {
+    format: KvFormat,
+    max_seq_len: usize,
+    head_dim: usize,
+    num_heads: usize,
+    workspace: Vec<f32>,
+}
+
+impl KvScratch {
+    pub fn new(
+        format: KvFormat,
+        max_seq_len: usize,
+        head_dim: usize,
+        num_heads: usize,
+    ) -> Result<Self, crate::RotorQuantError> {
+        if max_seq_len == 0 {
+            return Err(crate::RotorQuantError::InvalidScratch(
+                "max_seq_len must be non-zero".to_string(),
+            ));
+        }
+        if num_heads == 0 {
+            return Err(crate::RotorQuantError::InvalidScratch(
+                "num_heads must be non-zero".to_string(),
+            ));
+        }
+        if head_dim == 0 {
+            return Err(crate::RotorQuantError::InvalidScratch(
+                "head_dim must be non-zero".to_string(),
+            ));
+        }
+        if !head_dim.is_multiple_of(format.block_size()) {
+            return Err(crate::RotorQuantError::HeadDimNotDivisible {
+                format,
+                head_dim,
+                block_size: format.block_size(),
+            });
+        }
+
+        Ok(Self {
+            format,
+            max_seq_len,
+            head_dim,
+            num_heads,
+            workspace: Vec::new(),
+        })
+    }
+
+    pub fn format(&self) -> KvFormat {
+        self.format
+    }
+
+    pub fn max_seq_len(&self) -> usize {
+        self.max_seq_len
+    }
+
+    pub fn head_dim(&self) -> usize {
+        self.head_dim
+    }
+
+    pub fn num_heads(&self) -> usize {
+        self.num_heads
+    }
+
+    pub fn max_rows(&self) -> usize {
+        self.max_seq_len * self.num_heads
+    }
+
+    pub(crate) fn validate(
+        &mut self,
+        format: KvFormat,
+        n_rows: usize,
+        head_dim: usize,
+    ) -> Result<(), crate::RotorQuantError> {
+        if self.format != format {
+            return Err(crate::RotorQuantError::ScratchFormatMismatch {
+                requested: format,
+                scratch: self.format,
+            });
+        }
+        if self.head_dim != head_dim {
+            return Err(crate::RotorQuantError::ScratchHeadDimMismatch {
+                requested: head_dim,
+                scratch: self.head_dim,
+            });
+        }
+        let capacity = self.max_rows();
+        if n_rows > capacity {
+            return Err(crate::RotorQuantError::ScratchCapacityExceeded {
+                requested: n_rows,
+                capacity,
+            });
+        }
+
+        let needed = n_rows * head_dim;
+        if self.workspace.len() < needed {
+            self.workspace.resize(needed, 0.0);
+        }
+        Ok(())
+    }
+}
