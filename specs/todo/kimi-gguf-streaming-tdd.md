@@ -336,3 +336,34 @@ After GGUF embeddings, the DeepSeek2/Kimi branch still did not produce `down_met
 
 ### Result
 Added DeepSeek2 GGUF down-meta wiring. Small fixtures now compute down-meta from dense GGUF embeddings and packed down projections and write the existing `down_meta.bin` format. Real Kimi writes compact `gguf_down_meta_manifest.json` instead: 60 packed down layers, first layer `blk.1.ffn_down_exps.weight`, dims `[2048, 7168, 384]`, features `786432`, estimated dot ops `55415386039910400`. The smoke now has embeddings, down-meta, and gate manifests while still avoiding dense `embeddings.bin`, `down_meta.bin`, and `gate_vectors.bin` for Kimi-scale artifacts. The remaining blocker is config/tokenizer/index wiring for a loadable browse-level manifest-backed vindex.
+
+
+## Next blocker: loadable GGUF browse-level vindex wiring
+
+### Problem
+After embeddings, down-meta, and gate manifest slices, the GGUF branch still returned an unsupported error and did not write `index.json` or `tokenizer.json`. That meant real Kimi produced useful manifests but was not a loadable `.vindex` for LQL smoke tests.
+
+### RED plan
+1. Add a synthetic DeepSeek2 GGUF browse fixture with tiny embeddings, gate, and down tensors.
+2. Call the GGUF streaming branch with a real tiny tokenizer and wished-for metadata parameters.
+3. Assert extraction succeeds, writes `index.json`, `tokenizer.json`, `embeddings.bin`, `down_meta.bin`, and `gate_vectors.bin`, and can be loaded by `VectorIndex::load_vindex`.
+
+### GREEN plan
+1. Thread tokenizer, model name, and down-top-k into `build_gguf_streaming`.
+2. Write tokenizer JSON for GGUF outputs using the same tokenizer serialization as the safetensors path.
+3. Synthesize browse-level `index.json` from the GGUF catalog/layout:
+   - family `deepseek2`;
+   - num layers from max packed layer + 1;
+   - hidden/vocab from `token_embd.weight` or packed gate fallback;
+   - per-layer feature geometry from packed gate tensors;
+   - zero-length layer entries when gate vectors are manifest-backed.
+4. For small fixtures, keep dense `gate_vectors.bin`/`down_meta.bin`; for real Kimi, keep compact manifest artifacts and make the directory loadable.
+
+### Acceptance criteria
+- [x] RED failed at the intended missing production seam: `build_gguf_streaming` did not accept tokenizer/model/index metadata and did not produce loadable browse artifacts.
+- [x] GREEN synthetic fixture writes all browse artifacts and loads via `VectorIndex::load_vindex`.
+- [x] Real Kimi extraction exits `0` and writes `index.json`, `tokenizer.json`, `gguf_embeddings_manifest.json`, `gguf_down_meta_manifest.json`, and `gguf_gate_manifest.json` without dense Kimi-scale artifacts.
+- [x] LQL can `USE` the real Kimi manifest-backed vindex and execute `SELECT entity, target FROM EDGES LIMIT 10` without loader failure.
+
+### Result
+The Kimi GGUF smoke now produces a loadable manifest-backed browse vindex at `/home/bkearns/data/larql-smoke/kimi-q4km-loadable-smoke.vindex`. The real smoke exits `0`; `index.json` reports 61 layers, hidden size 7168, vocab size 163840, and 60 packed gate layer entries with zero byte lengths because gate vectors are manifest-backed. LQL load smoke exits `0` and reports the index shape; edge results are empty until manifest-backed gate/down query execution is implemented.
