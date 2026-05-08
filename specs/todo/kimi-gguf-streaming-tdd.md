@@ -450,3 +450,41 @@ Real Kimi smoke result:
 Remaining limitations:
 - `DESCRIBE` still needs a manifest-aware low-score/content policy so browse-level Kimi can surface useful edges under bounded gate scans rather than only avoiding dense-embedding failure.
 - Semantic labels are still bounded candidate-token labels, not exhaustive full-vocab labels.
+
+## DESCRIBE manifest browse low-score/content policy
+
+Status: GREEN + real smoke.
+
+Problem: compact Kimi/DeepSeek2 GGUF browse indexes use bounded manifest gate scans and selected-hit down-projection labels. Their gate magnitudes are much smaller than dense vindex scores, so `DESCRIBE` was able to load manifests but still filtered every candidate through the dense-vindex `gate >= 5.0` / content-coherence policy.
+
+RED:
+```bash
+PATH=/tmp/larql-cmake-venv/bin:$PATH cargo test -p larql-lql manifest_browse_describe_keeps_low_score_readable_hits -- --nocapture
+```
+The test first failed because `describe_collect_edges` had no manifest-browse policy seam and still only accepted dense-vindex style scores.
+
+GREEN:
+- `DESCRIBE` detects manifest-backed GGUF browse indexes via `gguf_down_meta_manifest.json`.
+- `describe_collect_edges(..., manifest_browse)` now keeps low-magnitude readable selected hits for manifest browse mode while preserving the existing dense-vindex threshold/coherence policy for normal vindexes.
+- Dense-vindex behavior is covered in the same regression: the low-score hit is rejected with `manifest_browse=false` and accepted with `manifest_browse=true`.
+
+Real Kimi smoke:
+```bash
+PATH=/tmp/larql-cmake-venv/bin:$PATH \
+LARQL_GGUF_MANIFEST_DOWN_META_TOKENS=512 \
+LARQL_GGUF_MANIFEST_DOWN_META_HITS=12 \
+timeout 180s cargo run -q -p larql-cli -- lql \
+'USE "/home/bkearns/data/larql-smoke/kimi-q4km-loadable-smoke.vindex";
+ DESCRIBE "France" BRIEF;'
+```
+Result: `LQL_EXIT=0`, non-empty output:
+```text
+France
+  signal: diffuse (1 edges, max gate 0.0)
+  Syntax (L0-23):
+                 → ent                      0.0  L1
+```
+Log: `/tmp/larql-kimi-describe-manifest-policy.log`.
+
+Remaining limitation:
+- This makes `DESCRIBE` useful enough for bounded browse smoke, but the semantic quality is still bounded by the candidate token set and early gate scan. Deeper candidate sampling / better manifest gate search should improve target quality beyond fragments like `ent`.

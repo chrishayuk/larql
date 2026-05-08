@@ -41,7 +41,8 @@ impl Session {
         // ── Phase 3: walk + collect edges ──
         let trace = patched.walk(&query, &scan_layers, 20);
         let trace = describe_resolve_gguf_labels(path, config.vocab_size, &token_ids, trace);
-        let mut edges = describe_collect_edges(&trace, entity);
+        let manifest_browse = path.join("gguf_down_meta_manifest.json").is_file();
+        let mut edges = describe_collect_edges(&trace, entity, manifest_browse);
 
         // ── Phase 3b: append KNN store entries for this entity ──
         let knn_hits = patched.knn_store.entries_for_entity(entity);
@@ -466,9 +467,13 @@ fn describe_resolve_gguf_labels(
 
 /// Walk the trace, deduplicate by lowercased target token, and apply
 /// content / coherence filters. The output is sorted descending by gate.
-fn describe_collect_edges(trace: &larql_vindex::WalkTrace, entity: &str) -> Vec<DescribeEdge> {
+fn describe_collect_edges(
+    trace: &larql_vindex::WalkTrace,
+    entity: &str,
+    manifest_browse: bool,
+) -> Vec<DescribeEdge> {
     let entity_lower = entity.to_lowercase();
-    let gate_threshold = 5.0_f32;
+    let gate_threshold = if manifest_browse { 0.0_f32 } else { 5.0_f32 };
     let mut edges: HashMap<String, DescribeEdge> = HashMap::new();
 
     for (layer_idx, hits) in &trace.layers {
@@ -477,7 +482,11 @@ fn describe_collect_edges(trace: &larql_vindex::WalkTrace, entity: &str) -> Vec<
                 continue;
             }
             let tok = &hit.meta.top_token;
-            if !is_content_token(tok) {
+            if manifest_browse {
+                if !crate::executor::helpers::is_readable_token(tok) {
+                    continue;
+                }
+            } else if !is_content_token(tok) {
                 continue;
             }
             if tok.to_lowercase() == entity_lower {
@@ -505,8 +514,15 @@ fn describe_collect_edges(trace: &larql_vindex::WalkTrace, entity: &str) -> Vec<
                 .cloned()
                 .collect();
 
-            // Coherence filter: skip weak edges with no content secondaries
-            if also.is_empty() && !also_readable.is_empty() && hit.gate_score < 20.0 {
+            // Coherence filter: skip weak dense-vindex edges with no content secondaries.
+            // Manifest-backed Kimi/DeepSeek2 browse scans use bounded gate/down-meta
+            // projections whose scores are intentionally much smaller, so keep
+            // readable selected hits instead of requiring dense-vindex magnitudes.
+            if !manifest_browse
+                && also.is_empty()
+                && !also_readable.is_empty()
+                && hit.gate_score < 20.0
+            {
                 continue;
             }
 
@@ -666,5 +682,53 @@ fn format_also(also: &[String]) -> String {
         String::new()
     } else {
         format!("  also: {}", also.join(", "))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::describe_collect_edges;
+    use larql_models::TopKEntry;
+    use larql_vindex::{FeatureMeta, WalkHit, WalkTrace};
+
+    #[test]
+    fn manifest_browse_describe_keeps_low_score_readable_hits() {
+        let trace = WalkTrace {
+            layers: vec![(
+                1,
+                vec![WalkHit {
+                    layer: 1,
+                    feature: 7,
+                    gate_score: 0.12,
+                    meta: FeatureMeta {
+                        top_token: "Paris".to_string(),
+                        top_token_id: 42,
+                        c_score: 0.12,
+                        top_k: vec![
+                            TopKEntry {
+                                token: "Paris".to_string(),
+                                token_id: 42,
+                                logit: 0.12,
+                            },
+                            TopKEntry {
+                                token: "capital".to_string(),
+                                token_id: 43,
+                                logit: 0.08,
+                            },
+                        ],
+                    },
+                }],
+            )],
+        };
+
+        let dense_edges = describe_collect_edges(&trace, "France", false);
+        assert!(dense_edges.is_empty());
+
+        let manifest_edges = describe_collect_edges(&trace, "France", true);
+        assert_eq!(manifest_edges.len(), 1);
+        assert_eq!(manifest_edges[0].original, "Paris");
+        assert_eq!(manifest_edges[0].also, vec!["capital".to_string()]);
+        assert_eq!(manifest_edges[0].best_layer, 1);
+        assert_eq!(manifest_edges[0].best_feature, 7);
     }
 }
