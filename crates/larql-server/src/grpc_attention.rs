@@ -23,7 +23,9 @@ use larql_router_protocol::{
 
 use crate::attention_session::{AttentionSession, SessionId, SessionMapError};
 use crate::kv_snapshot;
-use crate::routes::attention::{deserialize_snapshot_bytes, kv_format_str, parse_kv_format};
+use crate::routes::attention::{
+    check_fp32_attention_loaded, deserialize_snapshot_bytes, kv_format_str, parse_kv_format,
+};
 use crate::state::AppState;
 
 pub struct AttentionGrpcService {
@@ -155,6 +157,20 @@ impl AttentionService for AttentionGrpcService {
             return Err(Status::unavailable(
                 "inference_disabled: server started with --no-infer; weights are not loaded",
             ));
+        }
+
+        // Loud guard against Q4_K-quantised models (same as the HTTP
+        // path; see routes::attention::check_fp32_attention_loaded).
+        {
+            let weights_guard = model
+                .get_or_load_weights()
+                .map_err(|e| Status::internal(format!("weights_load_failed: {e}")))?;
+            if let Err(missing_layer) = check_fp32_attention_loaded(&weights_guard) {
+                return Err(Status::unavailable(format!(
+                    "quantized_model_unsupported: layer {missing_layer} has no FP32 attention tensor; \
+                     use the OpenAI completions path instead until prefill_q4 wires in"
+                )));
+            }
         }
 
         // Reshape input.
@@ -292,6 +308,18 @@ impl AttentionService for AttentionGrpcService {
             return Err(Status::unavailable(
                 "inference_disabled: server started with --no-infer; weights are not loaded",
             ));
+        }
+
+        // Loud guard against Q4_K-quantised models (same as prefill).
+        {
+            let weights_guard = model
+                .get_or_load_weights()
+                .map_err(|e| Status::internal(format!("weights_load_failed: {e}")))?;
+            if let Err(missing_layer) = check_fp32_attention_loaded(&weights_guard) {
+                return Err(Status::unavailable(format!(
+                    "quantized_model_unsupported: layer {missing_layer} has no FP32 attention tensor"
+                )));
+            }
         }
 
         let h_new_array = larql_inference::ndarray::Array2::from_shape_vec(

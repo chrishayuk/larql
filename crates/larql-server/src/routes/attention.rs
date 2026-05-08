@@ -100,6 +100,50 @@ fn err_no_session() -> (StatusCode, Json<ErrorBody>) {
     )
 }
 
+/// Verify that the loaded model has FP32 attention tensors for every
+/// layer in `0..num_layers`. The current prefill / decode runner is
+/// FP32-only (`run_layer_with_ffn_capturing_h_post_attn` →
+/// `run_attention_block_core` does `weights.tensors.get(attn_q_key)?`),
+/// so a Q4_K-quantised model — where attention weights live in
+/// `weights.packed_mmaps` — would silently drop every layer to
+/// `None` and emit zero residuals.
+///
+/// Returns `Ok(())` when every layer's `attn_q` is present in the FP32
+/// `tensors` map, or `Err(layer_index)` for the first missing layer.
+/// The route handlers map that to a 503 with `quantized_model_unsupported`
+/// so the failure is loud and points at /v1/completions for the working
+/// path. The proper fix (route through `backend.prefill_q4`) lands in a
+/// follow-up; this guard exists so the smoke test stops returning a
+/// false-positive "OK".
+pub(crate) fn check_fp32_attention_loaded(
+    weights: &larql_inference::ModelWeights,
+) -> Result<(), usize> {
+    let arch = &*weights.arch;
+    for layer in 0..weights.num_layers {
+        let key = arch.attn_q_key(layer);
+        if !weights.tensors.contains_key(&key) {
+            return Err(layer);
+        }
+    }
+    Ok(())
+}
+
+fn err_quantized_unsupported(missing_layer: usize) -> (StatusCode, Json<ErrorBody>) {
+    err_response(
+        StatusCode::SERVICE_UNAVAILABLE,
+        ErrorBody {
+            error: "quantized_model_unsupported",
+            detail: Some(format!(
+                "the attention service runner is FP32-only; this model has no FP32 \
+                 attention tensor at layer {missing_layer} (likely Q4_K-quantised). \
+                 Use POST /v1/completions for now — the Q4-aware prefill path lives \
+                 in larql_inference::layer_graph::generate_streaming and will be \
+                 wired into /v1/attention/prefill in a follow-up."
+            )),
+        },
+    )
+}
+
 // ── Handlers ───────────────────────────────────────────────────────────────
 
 pub async fn handle_create_session(
@@ -320,6 +364,27 @@ pub async fn handle_prefill(
         .into_response();
     }
 
+    // Loud guard against Q4_K-quantised models — the FP32 runner
+    // would otherwise silently emit zero residuals.
+    {
+        let weights_guard = match model.get_or_load_weights() {
+            Ok(g) => g,
+            Err(e) => {
+                return err_response(
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                    ErrorBody {
+                        error: "weights_load_failed",
+                        detail: Some(e),
+                    },
+                )
+                .into_response();
+            }
+        };
+        if let Err(missing_layer) = check_fp32_attention_loaded(&weights_guard) {
+            return err_quantized_unsupported(missing_layer).into_response();
+        }
+    }
+
     // Reshape input into [seq_len, hidden_dim].
     let mut flat = Vec::with_capacity(seq_len * hidden_dim);
     for row in &req.token_embeddings {
@@ -506,6 +571,27 @@ pub async fn handle_decode(
             },
         )
         .into_response();
+    }
+
+    // Loud guard against Q4_K-quantised models (same reasoning as
+    // handle_prefill).
+    {
+        let weights_guard = match model.get_or_load_weights() {
+            Ok(g) => g,
+            Err(e) => {
+                return err_response(
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                    ErrorBody {
+                        error: "weights_load_failed",
+                        detail: Some(e),
+                    },
+                )
+                .into_response();
+            }
+        };
+        if let Err(missing_layer) = check_fp32_attention_loaded(&weights_guard) {
+            return err_quantized_unsupported(missing_layer).into_response();
+        }
     }
 
     // Pull existing K/V slots out of the session under the write lock,

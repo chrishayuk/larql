@@ -335,6 +335,106 @@ async fn prefill_gemma_shaped_residuals_match_local_reference() {
     }
 }
 
+/// Quantised-model guard. Strip the FP32 attention tensors from a
+/// synthetic `make_test_weights` and confirm the prefill route
+/// fails loud (503 `quantized_model_unsupported`) instead of
+/// silently returning zero residuals — the bug we hit running the
+/// real Q4_K Gemma 3 4B vindex through this route.
+///
+/// Decode is checked symmetrically.
+fn build_state_with_q4k_like_weights() -> Arc<AppState> {
+    // Strip every `attn_q_proj.weight` from `weights.tensors` —
+    // `check_fp32_attention_loaded` asks the arch for the per-layer
+    // attn_q key and looks it up there. Removing those keys mimics a
+    // Q4_K-quantised model whose attention weights live in
+    // `packed_mmaps` rather than the FP32 tensor map.
+    let mut weights = make_test_weights();
+    let arch = &*weights.arch;
+    for layer in 0..weights.num_layers {
+        weights.tensors.remove(&arch.attn_q_key(layer));
+    }
+    let model = build_loaded_model(weights);
+    build_state(model)
+}
+
+#[tokio::test]
+async fn prefill_returns_503_quantized_model_unsupported() {
+    let st = build_state_with_q4k_like_weights();
+    let app = single_model_router(st.clone());
+
+    // Create a session against the q4k-like model.
+    let resp = post_json(
+        app,
+        "/v1/attention/session",
+        serde_json::json!({"model_id": MODEL_ID, "kv_format": "fp32"}),
+    )
+    .await;
+    let body = body_json(resp.into_body()).await;
+    let sid = body["session_id"].as_str().unwrap().to_string();
+
+    // Prefill should now refuse loudly.
+    let app2 = single_model_router(st);
+    let resp = post_json(
+        app2,
+        "/v1/attention/prefill",
+        serde_json::json!({
+            "session_id": sid,
+            "token_embeddings": [[0.0, 0.1, 0.2, 0.3]],
+        }),
+    )
+    .await;
+    assert_eq!(resp.status(), StatusCode::SERVICE_UNAVAILABLE);
+    let body = body_json(resp.into_body()).await;
+    assert_eq!(body["error"], "quantized_model_unsupported");
+    assert!(
+        body["detail"].as_str().unwrap_or("").contains("FP32-only"),
+        "detail should mention FP32-only; got {:?}",
+        body["detail"]
+    );
+}
+
+#[tokio::test]
+async fn decode_returns_503_quantized_model_unsupported() {
+    let st = build_state_with_q4k_like_weights();
+    let app = single_model_router(st.clone());
+
+    // Create a session.
+    let resp = post_json(
+        app,
+        "/v1/attention/session",
+        serde_json::json!({"model_id": MODEL_ID, "kv_format": "fp32"}),
+    )
+    .await;
+    let body = body_json(resp.into_body()).await;
+    let sid = body["session_id"].as_str().unwrap().to_string();
+
+    // Force-mark prefilled so the decode handler reaches the q4k guard
+    // (which lives after the prefilled check).
+    {
+        let entry = st
+            .attention_sessions
+            .get(&larql_server::attention_session::SessionId(sid.clone()))
+            .expect("session present");
+        let mut g = entry.write().await;
+        g.prefilled = true;
+        g.seq_len = 1;
+    }
+
+    let app2 = single_model_router(st);
+    let resp = post_json(
+        app2,
+        "/v1/attention/decode",
+        serde_json::json!({
+            "session_id": sid,
+            "query_token_embedding": [0.0, 0.1, 0.2, 0.3],
+        }),
+    )
+    .await;
+    assert_eq!(resp.status(), StatusCode::SERVICE_UNAVAILABLE);
+    let body = body_json(resp.into_body()).await;
+    assert_eq!(body["error"], "quantized_model_unsupported");
+}
+
 #[tokio::test]
 async fn snapshot_after_prefill_round_trips_through_restore() {
     let (server, _local, sid, st) = run_via_server_and_locally(3).await;
