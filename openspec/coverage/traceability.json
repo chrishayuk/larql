@@ -5,7 +5,7 @@
     "scenarios": 1377,
     "scenarios_backed": 1264,
     "scenarios_unbacked": 113,
-    "test_refs": 3302,
+    "test_refs": 3303,
     "test_refs_unresolved": 0
   },
   "capabilities": [
@@ -8204,7 +8204,8 @@
               "name": "Iso3 K round-trip preserves vector direction",
               "tests_resolved": [
                 "larql_rotorquant::round_trip::iso3_round_trip_k",
-                "larql_rotorquant::round_trip::iso3_gemma4b_head_round_trip"
+                "larql_rotorquant::round_trip::iso3_gemma4b_head_round_trip",
+                "larql_rotorquant::round_trip::upstream_triton_reference_iso3_round_trip"
               ],
               "tests_unresolved": [],
               "unbacked": false,
@@ -8219,17 +8220,18 @@
               "tests_unresolved": [],
               "unbacked": false,
               "spec_file": "openspec/changes/cuda-and-rotorquant-kv/specs/kv-cache-rotorquant/spec.md",
-              "line": 25
+              "line": 26
             },
             {
               "name": "Planar3 V round-trip with inverse rotation matches Triton reference",
               "tests_resolved": [
-                "larql_rotorquant::round_trip::planar3_round_trip_v"
+                "larql_rotorquant::round_trip::planar3_round_trip_v",
+                "larql_rotorquant::round_trip::upstream_triton_reference_planar3_round_trip"
               ],
               "tests_unresolved": [],
               "unbacked": false,
               "spec_file": "openspec/changes/cuda-and-rotorquant-kv/specs/kv-cache-rotorquant/spec.md",
-              "line": 30
+              "line": 31
             },
             {
               "name": "Forward-rotation V dequant is unrepresentable in the API",
@@ -8239,7 +8241,7 @@
               "tests_unresolved": [],
               "unbacked": false,
               "spec_file": "openspec/changes/cuda-and-rotorquant-kv/specs/kv-cache-rotorquant/spec.md",
-              "line": 36
+              "line": 37
             }
           ]
         },
@@ -8252,7 +8254,7 @@
               "tests_unresolved": [],
               "unbacked": true,
               "spec_file": "openspec/changes/cuda-and-rotorquant-kv/specs/kv-cache-rotorquant/spec.md",
-              "line": 53
+              "line": 54
             }
           ]
         },
@@ -8265,7 +8267,7 @@
               "tests_unresolved": [],
               "unbacked": true,
               "spec_file": "openspec/changes/cuda-and-rotorquant-kv/specs/kv-cache-rotorquant/spec.md",
-              "line": 64
+              "line": 65
             },
             {
               "name": "Decode token insertion quantises previously-deferred K",
@@ -8273,7 +8275,7 @@
               "tests_unresolved": [],
               "unbacked": true,
               "spec_file": "openspec/changes/cuda-and-rotorquant-kv/specs/kv-cache-rotorquant/spec.md",
-              "line": 69
+              "line": 70
             }
           ]
         },
@@ -8288,7 +8290,7 @@
               "tests_unresolved": [],
               "unbacked": false,
               "spec_file": "openspec/changes/cuda-and-rotorquant-kv/specs/kv-cache-rotorquant/spec.md",
-              "line": 82
+              "line": 83
             },
             {
               "name": "Sync target reports drift",
@@ -8296,7 +8298,7 @@
               "tests_unresolved": [],
               "unbacked": true,
               "spec_file": "openspec/changes/cuda-and-rotorquant-kv/specs/kv-cache-rotorquant/spec.md",
-              "line": 87
+              "line": 88
             }
           ]
         },
@@ -8312,7 +8314,7 @@
               "tests_unresolved": [],
               "unbacked": false,
               "spec_file": "openspec/changes/cuda-and-rotorquant-kv/specs/kv-cache-rotorquant/spec.md",
-              "line": 100
+              "line": 101
             }
           ]
         },
@@ -25379,7 +25381,7 @@
     {
       "fqn": "larql_rotorquant::round_trip::cuda_ffi_block_layout_matches_upstream",
       "file": "crates/larql-rotorquant/tests/round_trip.rs",
-      "line": 178,
+      "line": 262,
       "crate": "larql_rotorquant"
     },
     {

@@ -49,7 +49,7 @@
 - [x] 6.3 `build.rs` compiles the vendored kernels with `nvcc` for sm_70+ archs (override via `LARQL_CUDA_ARCH`).
 - [x] 6.4 Rust FFI wrappers in `crates/larql-rotorquant/src/ffi.rs`.
 - [x] 6.5 Safe Rust API in `crates/larql-rotorquant/src/lib.rs` (`KvFormat`, `quantize_k`, `quantize_v`, `dequantize_k`, `dequantize_v_with_inverse_rotation`, `KvScratch`).
-- [ ] 6.6 Round-trip tests against the upstream Triton reference (`crates/larql-rotorquant/ref/` shim) for `iso3` and `planar3`.
+- [x] 6.6 Round-trip tests against the upstream Triton reference (`crates/larql-rotorquant/ref/` shim) for `iso3` and `planar3`.
 - [x] 6.7 `make rotorquant-sync` target diffs vendored vs upstream and exits non-zero on drift.
 
 ## 7. Phase 3 — RotorQuant attention integration (follow-up change `rotorquant-attention-integration`)

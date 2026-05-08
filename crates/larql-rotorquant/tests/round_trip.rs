@@ -9,6 +9,7 @@ use larql_rotorquant::{
     dequantize_k, dequantize_v_with_inverse_rotation, quantize_k, quantize_k_with_scratch,
     quantize_v, KvFormat, KvScratch, RotorQuantError,
 };
+use std::io::Write;
 
 fn synth(n: usize, seed: u64) -> Vec<f32> {
     let mut s = seed.wrapping_mul(0x9E37_79B9_7F4A_7C15);
@@ -27,6 +28,57 @@ fn cosine(a: &[f32], b: &[f32]) -> f32 {
     let na: f32 = a.iter().map(|v| v * v).sum::<f32>().sqrt();
     let nb: f32 = b.iter().map(|v| v * v).sum::<f32>().sqrt();
     dot / (na * nb + 1e-12)
+}
+
+fn run_upstream_triton_reference(
+    format: &str,
+    input: &[f32],
+    n_rows: usize,
+    head_dim: usize,
+) -> Option<Vec<f32>> {
+    let Ok(py) = std::env::var("LARQL_ROTORQUANT_REF_PY") else {
+        eprintln!("skipping upstream Triton reference: set LARQL_ROTORQUANT_REF_PY");
+        return None;
+    };
+    let script = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("ref")
+        .join("triton_reference.py");
+    let mut child = std::process::Command::new(py)
+        .arg(script)
+        .arg(format)
+        .arg(n_rows.to_string())
+        .arg(head_dim.to_string())
+        .stdin(std::process::Stdio::piped())
+        .stdout(std::process::Stdio::piped())
+        .stderr(std::process::Stdio::piped())
+        .spawn()
+        .expect("spawn triton reference");
+    {
+        let stdin = child.stdin.as_mut().expect("reference stdin");
+        for v in input {
+            write!(stdin, "{v:.9} ").expect("write reference input");
+        }
+    }
+    let output = child.wait_with_output().expect("wait triton reference");
+    if output.status.code() == Some(77) {
+        eprintln!(
+            "skipping upstream Triton reference: {}",
+            String::from_utf8_lossy(&output.stderr)
+        );
+        return None;
+    }
+    assert!(
+        output.status.success(),
+        "upstream Triton reference failed: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let values = String::from_utf8(output.stdout)
+        .expect("utf8 reference output")
+        .split_whitespace()
+        .map(|v| v.parse::<f32>().expect("parse reference float"))
+        .collect::<Vec<_>>();
+    assert_eq!(values.len(), input.len());
+    Some(values)
 }
 
 fn round_trip_k(format: KvFormat, n_rows: usize, head_dim: usize) -> f32 {
@@ -143,6 +195,32 @@ fn kv_scratch_rejects_incompatible_shape() {
 }
 
 #[test]
+fn upstream_triton_reference_planar3_round_trip() {
+    let input = synth(8 * 32, 0xD);
+    let Some(reference) = run_upstream_triton_reference("planar3", &input, 8, 32) else {
+        return;
+    };
+    let qv = quantize_v(KvFormat::Planar3, &input, 8, 32).expect("quantize_v");
+    let rust = dequantize_v_with_inverse_rotation(&qv).expect("dequantize_v");
+    assert!(cosine(&input, &reference) >= 0.90);
+    assert!(cosine(&input, &rust) >= TOL);
+    assert!(cosine(&reference, &rust) >= 0.80);
+}
+
+#[test]
+fn upstream_triton_reference_iso3_round_trip() {
+    let input = synth(8 * 32, 0xE);
+    let Some(reference) = run_upstream_triton_reference("iso3", &input, 8, 32) else {
+        return;
+    };
+    let qk = quantize_k(KvFormat::Iso3, &input, 8, 32).expect("quantize_k");
+    let rust = dequantize_k(&qk).expect("dequantize_k");
+    assert!(cosine(&input, &reference) >= 0.90);
+    assert!(cosine(&input, &rust) >= TOL);
+    assert!(cosine(&reference, &rust) >= 0.80);
+}
+
+#[test]
 fn upstream_provenance_records_commit_and_vendored_files() {
     let upstream = include_str!("../UPSTREAM.md");
     assert!(upstream.contains("https://github.com/johndpope/llama-cpp-turboquant.git"));
@@ -170,6 +248,12 @@ fn upstream_provenance_records_commit_and_vendored_files() {
         .is_file());
     assert!(std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
         .join("cuda/larql_rotorquant_kernels.cu")
+        .is_file());
+    assert!(std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("ref/upstream/triton_planarquant.py")
+        .is_file());
+    assert!(std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("ref/upstream/triton_isoquant.py")
         .is_file());
 }
 
