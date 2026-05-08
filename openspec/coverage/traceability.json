@@ -3,9 +3,9 @@
     "capabilities": 49,
     "requirements": 408,
     "scenarios": 1376,
-    "scenarios_backed": 1247,
-    "scenarios_unbacked": 129,
-    "test_refs": 3293,
+    "scenarios_backed": 1253,
+    "scenarios_unbacked": 123,
+    "test_refs": 3295,
     "test_refs_unresolved": 0
   },
   "capabilities": [
@@ -13084,9 +13084,11 @@
           "scenarios": [
             {
               "name": "empty bloom is the default",
-              "tests_resolved": [],
+              "tests_resolved": [
+                "larql_router::grid::tests::empty_bloom_returns_no_matches"
+              ],
               "tests_unresolved": [],
-              "unbacked": true,
+              "unbacked": false,
               "spec_file": "openspec/changes/router-prefix-aware-routing/specs/router-grid/spec.md",
               "line": 12
             }
@@ -13097,25 +13099,31 @@
           "scenarios": [
             {
               "name": "shard with cached prefix wins over least-loaded",
-              "tests_resolved": [],
+              "tests_resolved": [
+                "larql_router::grid::tests::route_for_prefix_picks_shard_with_cached_prefix"
+              ],
               "tests_unresolved": [],
-              "unbacked": true,
+              "unbacked": false,
               "spec_file": "openspec/changes/router-prefix-aware-routing/specs/router-grid/spec.md",
               "line": 21
             },
             {
               "name": "no match falls back to load-balanced",
-              "tests_resolved": [],
+              "tests_resolved": [
+                "larql_router::grid::tests::route_for_prefix_falls_back_to_least_loaded_when_no_match"
+              ],
               "tests_unresolved": [],
-              "unbacked": true,
+              "unbacked": false,
               "spec_file": "openspec/changes/router-prefix-aware-routing/specs/router-grid/spec.md",
               "line": 26
             },
             {
               "name": "tie on prefix-match count breaks by load",
-              "tests_resolved": [],
+              "tests_resolved": [
+                "larql_router::grid::tests::route_for_prefix_breaks_ties_by_load"
+              ],
               "tests_unresolved": [],
-              "unbacked": true,
+              "unbacked": false,
               "spec_file": "openspec/changes/router-prefix-aware-routing/specs/router-grid/spec.md",
               "line": 31
             }
@@ -13157,19 +13165,25 @@
           "scenarios": [
             {
               "name": "announce with explicit capabilities preserves the list",
-              "tests_resolved": [],
+              "tests_resolved": [
+                "larql_server::announce::tests::announce_message_carries_capabilities",
+                "larql_router::grid::tests::route_for_capability_filters_by_capability"
+              ],
               "tests_unresolved": [],
-              "unbacked": true,
+              "unbacked": false,
               "spec_file": "openspec/changes/attention-service-routes/specs/router-protocol/spec.md",
               "line": 10
             },
             {
               "name": "announce without capabilities defaults to both",
-              "tests_resolved": [],
+              "tests_resolved": [
+                "larql_router::grid::tests::default_capabilities_advertise_both_attention_and_expert",
+                "larql_router::grid::tests::route_for_capability_falls_back_to_default_caps_shard"
+              ],
               "tests_unresolved": [],
-              "unbacked": true,
+              "unbacked": false,
               "spec_file": "openspec/changes/attention-service-routes/specs/router-protocol/spec.md",
-              "line": 17
+              "line": 18
             }
           ]
         },
@@ -13185,7 +13199,7 @@
               "tests_unresolved": [],
               "unbacked": false,
               "spec_file": "openspec/changes/attention-service-routes/specs/router-protocol/spec.md",
-              "line": 32
+              "line": 34
             },
             {
               "name": "heartbeat without bloom leaves prior value",
@@ -13195,7 +13209,7 @@
               "tests_unresolved": [],
               "unbacked": false,
               "spec_file": "openspec/changes/attention-service-routes/specs/router-protocol/spec.md",
-              "line": 41
+              "line": 43
             },
             {
               "name": "malformed bloom is rejected without panic",
@@ -13205,7 +13219,7 @@
               "tests_unresolved": [],
               "unbacked": false,
               "spec_file": "openspec/changes/attention-service-routes/specs/router-protocol/spec.md",
-              "line": 50
+              "line": 52
             }
           ]
         }

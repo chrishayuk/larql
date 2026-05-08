@@ -12,7 +12,7 @@ shards use the empty default.
 #### Scenario: empty bloom is the default
 - **WHEN** a `ServerEntry` is constructed without an explicit `cached_prefixes` value
 - **THEN** the bloom SHALL report no matches for any input hash
-<!-- test: unbacked -->
+<!-- test: larql_router::grid::tests::empty_bloom_returns_no_matches -->
 
 ### Requirement: route_for_prefix MUST prefer the shard with the most matching prefixes
 
@@ -21,17 +21,17 @@ shards use the empty default.
 #### Scenario: shard with cached prefix wins over least-loaded
 - **WHEN** two attention shards cover layer 0; shard A has the request's prefix in its bloom and shard B has fewer requests in flight
 - **THEN** the route SHALL return shard A's URL
-<!-- test: unbacked -->
+<!-- test: larql_router::grid::tests::route_for_prefix_picks_shard_with_cached_prefix -->
 
 #### Scenario: no match falls back to load-balanced
 - **WHEN** no shard's bloom contains any of the supplied prefix hashes
 - **THEN** the route SHALL match `route_for_capability` semantics (least-loaded among capability matches)
-<!-- test: unbacked -->
+<!-- test: larql_router::grid::tests::route_for_prefix_falls_back_to_least_loaded_when_no_match -->
 
 #### Scenario: tie on prefix-match count breaks by load
 - **WHEN** two shards both match all supplied prefix hashes and have different `requests_in_flight`
 - **THEN** the less-loaded shard SHALL win
-<!-- test: unbacked -->
+<!-- test: larql_router::grid::tests::route_for_prefix_breaks_ties_by_load -->
 
 ### Requirement: bloom-filter false-positive rate MUST be bounded at design load
 

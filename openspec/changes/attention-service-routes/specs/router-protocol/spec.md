@@ -12,14 +12,16 @@ that omit the field SHALL be treated as if they sent
 - **WHEN** a shard announces with `capabilities = ["attention"]`
 - **THEN** `GridState::register` SHALL store exactly that vec on
   `ServerEntry::capabilities`
-<!-- test: unbacked -->
+<!-- test: larql_server::announce::tests::announce_message_carries_capabilities -->
+<!-- test: larql_router::grid::tests::route_for_capability_filters_by_capability -->
 
 #### Scenario: announce without capabilities defaults to both
 
 - **WHEN** a shard announces with no `capabilities` field
 - **THEN** `ServerEntry::capabilities` SHALL be
   `["attention", "expert"]`
-<!-- test: unbacked -->
+<!-- test: larql_router::grid::tests::default_capabilities_advertise_both_attention_and_expert -->
+<!-- test: larql_router::grid::tests::route_for_capability_falls_back_to_default_caps_shard -->
 
 ### Requirement: HeartbeatMsg SHALL carry the cached-prefix bloom
 
