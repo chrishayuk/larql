@@ -289,15 +289,42 @@ pub struct PrefillRequest {
 
 #[derive(Serialize)]
 pub struct PrefillResponse {
+    /// `[seq_len][hidden_dim]` final hidden state after all attention
+    /// + FFN layers (pre final norm). Always present.
+    pub final_hidden: Vec<Vec<f32>>,
     /// `[layers][seq_len][hidden_dim]` post-attention residuals.
-    pub post_attention_residuals: Vec<Vec<Vec<f32>>>,
+    /// Only populated when the request opts in via
+    /// `?capture=layer-residuals` AND the model has FP32 attention
+    /// tensors. `None` otherwise. Q4K-quantised models cannot
+    /// produce per-layer captures through the current runner; the
+    /// wire-format-stable A.2 follow-up changes that.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub post_attention_residuals: Option<Vec<Vec<Vec<f32>>>>,
     pub kv_filled_through_layer: u32,
     pub tokens_processed: usize,
     pub latency_ms: f64,
 }
 
+/// Optional `?capture=...` query parameter. The default (no param)
+/// returns just `final_hidden`. `capture=layer-residuals` adds
+/// `post_attention_residuals` for FP32 models — a 501 fires on
+/// quantised models since that path doesn't expose per-layer
+/// captures.
+#[derive(Debug, Default, Deserialize)]
+pub struct PrefillQuery {
+    #[serde(default)]
+    pub capture: Option<String>,
+}
+
+impl PrefillQuery {
+    pub fn wants_layer_residuals(&self) -> bool {
+        matches!(self.capture.as_deref(), Some("layer-residuals"))
+    }
+}
+
 pub async fn handle_prefill(
     State(state): State<Arc<AppState>>,
+    axum::extract::Query(query): axum::extract::Query<PrefillQuery>,
     Json(req): Json<PrefillRequest>,
 ) -> impl IntoResponse {
     state.bump_requests();
@@ -406,22 +433,30 @@ pub async fn handle_prefill(
 
     let start = std::time::Instant::now();
 
+    let want_layer_residuals = query.wants_layer_residuals();
+
     // Heavy lifting on a blocking thread — attention is CPU-bound.
     let model_for_blocking = Arc::clone(&model);
-    let blocking_result: Result<
-        (
-            Vec<larql_inference::ndarray::Array2<f32>>,
-            Vec<Option<larql_inference::attention::SharedKV>>,
-        ),
-        String,
-    > = tokio::task::spawn_blocking(move || {
+    type PrefillOk = (
+        // final_h: [seq_len, hidden_dim] post-last-layer residual.
+        larql_inference::ndarray::Array2<f32>,
+        // residuals: per-layer h_post_attn — only meaningful when
+        // `want_layer_residuals`.
+        Vec<larql_inference::ndarray::Array2<f32>>,
+        Vec<Option<larql_inference::attention::SharedKV>>,
+    );
+    let blocking_result: Result<PrefillOk, String> = tokio::task::spawn_blocking(move || {
         let weights_guard = model_for_blocking.get_or_load_weights()?;
         let weights: &larql_inference::ModelWeights = &weights_guard;
         let num_layers = weights.num_layers;
         let ffn = larql_inference::ffn::WeightFfn { weights };
 
         let mut h = h0;
-        let mut residuals = Vec::with_capacity(num_layers);
+        let mut residuals = if want_layer_residuals {
+            Vec::with_capacity(num_layers)
+        } else {
+            Vec::new()
+        };
         let mut kvs = Vec::with_capacity(num_layers);
 
         for layer in 0..num_layers {
@@ -429,26 +464,28 @@ pub async fn handle_prefill(
                 weights, &h, layer, &ffn, false, None, None,
             ) {
                 Some((h_next, h_post_attn, _activation, kv_out)) => {
-                    residuals.push(h_post_attn);
+                    if want_layer_residuals {
+                        residuals.push(h_post_attn);
+                    }
                     kvs.push(kv_out);
                     h = h_next;
                 }
                 None => {
-                    // Skipped layer (e.g. KV-shared in some Gemma variants);
-                    // emit a zero residual to keep the response shape stable.
-                    residuals.push(larql_inference::ndarray::Array2::zeros((
-                        seq_len, hidden_dim,
-                    )));
+                    if want_layer_residuals {
+                        residuals.push(larql_inference::ndarray::Array2::zeros((
+                            seq_len, hidden_dim,
+                        )));
+                    }
                     kvs.push(None);
                 }
             }
         }
-        Ok((residuals, kvs))
+        Ok((h, residuals, kvs))
     })
     .await
     .unwrap_or_else(|e| Err(format!("blocking task panicked: {e}")));
 
-    let (residuals, kvs) = match blocking_result {
+    let (final_h, residuals, kvs) = match blocking_result {
         Ok(t) => t,
         Err(detail) => {
             return err_response(
@@ -462,6 +499,7 @@ pub async fn handle_prefill(
         }
     };
 
+    let kv_filled_through_layer = kvs.len() as u32;
     {
         let mut g = entry.write().await;
         for (layer, kv) in kvs.into_iter().enumerate() {
@@ -475,17 +513,27 @@ pub async fn handle_prefill(
         g.touch();
     }
 
-    let kv_filled_through_layer = residuals.len() as u32;
-    let post_attention_residuals: Vec<Vec<Vec<f32>>> = residuals
-        .iter()
-        .map(|r| {
-            (0..r.nrows())
-                .map(|i| r.row(i).to_vec())
-                .collect::<Vec<Vec<f32>>>()
-        })
+    let final_hidden: Vec<Vec<f32>> = (0..final_h.nrows())
+        .map(|i| final_h.row(i).to_vec())
         .collect();
 
+    let post_attention_residuals: Option<Vec<Vec<Vec<f32>>>> = if want_layer_residuals {
+        Some(
+            residuals
+                .iter()
+                .map(|r| {
+                    (0..r.nrows())
+                        .map(|i| r.row(i).to_vec())
+                        .collect::<Vec<Vec<f32>>>()
+                })
+                .collect(),
+        )
+    } else {
+        None
+    };
+
     Json(PrefillResponse {
+        final_hidden,
         post_attention_residuals,
         kv_filled_through_layer,
         tokens_processed: seq_len,

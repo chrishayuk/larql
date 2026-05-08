@@ -198,11 +198,11 @@ where
 
     let token_embeddings = deterministic_embeddings(seq_len, hidden);
 
-    // Server-side prefill.
+    // Server-side prefill — opt into per-layer capture (FP32 model only).
     let app2 = single_model_router(st.clone());
     let resp = post_json(
         app2,
-        "/v1/attention/prefill",
+        "/v1/attention/prefill?capture=layer-residuals",
         serde_json::json!({
             "session_id": sid,
             "token_embeddings": token_embeddings,
@@ -212,7 +212,8 @@ where
     assert_eq!(resp.status(), StatusCode::OK, "prefill failed: {:?}", resp);
     let body = body_json(resp.into_body()).await;
     let server_residuals: Vec<Vec<Vec<f32>>> =
-        serde_json::from_value(body["post_attention_residuals"].clone()).unwrap();
+        serde_json::from_value(body["post_attention_residuals"].clone())
+            .expect("layer-residuals capture must produce a populated array on FP32 models");
 
     // Local reference: same forward pass, no transport.
     let mut flat = Vec::with_capacity(seq_len * hidden);
@@ -289,11 +290,66 @@ async fn prefill_server_residuals_match_local_reference_layer_by_layer() {
 
 #[tokio::test]
 async fn prefill_response_shape_matches_layers_seq_hidden() {
+    // The shape harness uses `?capture=layer-residuals`, so the
+    // server's `post_attention_residuals` array is populated with
+    // [layers][seq][hidden] = [2][4][16] for make_test_weights.
     let (server, _local, _sid, _st) = run_via_server_and_locally(4).await;
-    // make_test_weights ⇒ 2 layers, hidden=16.
     assert_eq!(server.len(), 2);
     assert_eq!(server[0].len(), 4);
     assert_eq!(server[0][0].len(), 16);
+}
+
+#[tokio::test]
+async fn prefill_default_returns_final_hidden_only() {
+    // Without `?capture=layer-residuals`, the response SHALL contain
+    // `final_hidden: [seq_len][hidden_dim]` and SHALL omit
+    // `post_attention_residuals` entirely.
+    let weights = make_test_weights();
+    let model = build_loaded_model(weights);
+    let st = build_state(model);
+
+    let app = single_model_router(st.clone());
+    let resp = post_json(
+        app,
+        "/v1/attention/session",
+        serde_json::json!({"model_id": MODEL_ID, "kv_format": "fp32"}),
+    )
+    .await;
+    let body = body_json(resp.into_body()).await;
+    let sid = body["session_id"].as_str().unwrap().to_string();
+
+    let app2 = single_model_router(st);
+    let resp = post_json(
+        app2,
+        "/v1/attention/prefill",
+        serde_json::json!({
+            "session_id": sid,
+            "token_embeddings": deterministic_embeddings(4, 16),
+        }),
+    )
+    .await;
+    assert_eq!(resp.status(), StatusCode::OK);
+    let body = body_json(resp.into_body()).await;
+
+    let final_hidden = body["final_hidden"]
+        .as_array()
+        .expect("final_hidden present");
+    assert_eq!(final_hidden.len(), 4, "seq_len=4");
+    assert_eq!(
+        final_hidden[0].as_array().expect("row is array").len(),
+        16,
+        "hidden_dim=16",
+    );
+
+    // post_attention_residuals omitted by default — the field is
+    // serde-skipped when None, so it should be absent (not null).
+    assert!(
+        !body
+            .as_object()
+            .unwrap()
+            .contains_key("post_attention_residuals"),
+        "post_attention_residuals must be absent without capture flag, got body={body}",
+    );
 }
 
 #[tokio::test]
