@@ -15,7 +15,7 @@ this change wires them to the proto extension.)
   `GridState::register`
 - **THEN** `GridState::route_for_capability(_, _, "expert")`
   SHALL not return that shard
-<!-- test: unbacked -->
+<!-- test: larql_router::grid::tests::route_for_capability_filters_by_capability -->
 
 #### Scenario: register stores cached_prefixes from the announce
 
@@ -24,7 +24,8 @@ this change wires them to the proto extension.)
 - **THEN** `GridState::route_for_prefix(_, _, _, &[0xCAFE])`
   SHALL prefer that shard over a shard whose bloom does not
   contain `0xCAFE`
-<!-- test: unbacked -->
+<!-- test: larql_router::grid::tests::route_for_prefix_picks_shard_with_cached_prefix -->
+<!-- test: larql_router::grid::tests::update_heartbeat_with_prefixes_writes_bloom_onto_entry -->
 
 ### Requirement: update_heartbeat MUST refresh cached_prefixes
 

@@ -3,10 +3,10 @@
     "capabilities": 49,
     "requirements": 408,
     "scenarios": 1376,
-    "scenarios_backed": 1214,
-    "scenarios_unbacked": 162,
-    "test_refs": 3268,
-    "test_refs_unresolved": 7
+    "scenarios_backed": 1226,
+    "scenarios_unbacked": 150,
+    "test_refs": 3278,
+    "test_refs_unresolved": 0
   },
   "capabilities": [
     {
@@ -12583,17 +12583,22 @@
           "scenarios": [
             {
               "name": "register stores capabilities from the announce",
-              "tests_resolved": [],
+              "tests_resolved": [
+                "larql_router::grid::tests::route_for_capability_filters_by_capability"
+              ],
               "tests_unresolved": [],
-              "unbacked": true,
+              "unbacked": false,
               "spec_file": "openspec/changes/attention-service-routes/specs/router-grid/spec.md",
               "line": 11
             },
             {
               "name": "register stores cached_prefixes from the announce",
-              "tests_resolved": [],
+              "tests_resolved": [
+                "larql_router::grid::tests::route_for_prefix_picks_shard_with_cached_prefix",
+                "larql_router::grid::tests::update_heartbeat_with_prefixes_writes_bloom_onto_entry"
+              ],
               "tests_unresolved": [],
-              "unbacked": true,
+              "unbacked": false,
               "spec_file": "openspec/changes/attention-service-routes/specs/router-grid/spec.md",
               "line": 20
             }
@@ -12610,7 +12615,7 @@
               "tests_unresolved": [],
               "unbacked": false,
               "spec_file": "openspec/changes/attention-service-routes/specs/router-grid/spec.md",
-              "line": 36
+              "line": 37
             },
             {
               "name": "heartbeat without cached_prefixes preserves prior value",
@@ -12620,7 +12625,7 @@
               "tests_unresolved": [],
               "unbacked": false,
               "spec_file": "openspec/changes/attention-service-routes/specs/router-grid/spec.md",
-              "line": 45
+              "line": 46
             }
           ]
         },
@@ -12894,19 +12899,25 @@
           "scenarios": [
             {
               "name": "Attention-only shard declares \"attention\"",
-              "tests_resolved": [],
+              "tests_resolved": [
+                "larql_server::bootstrap::tests::role_attention_announces_attention_only",
+                "larql_server::announce::tests::announce_message_carries_capabilities"
+              ],
               "tests_unresolved": [],
-              "unbacked": true,
+              "unbacked": false,
               "spec_file": "openspec/changes/cuda-and-rotorquant-kv/specs/router-grid/spec.md",
               "line": 10
             },
             {
               "name": "Pre-change all-roles shard still works",
-              "tests_resolved": [],
+              "tests_resolved": [
+                "larql_router::grid::tests::default_capabilities_advertise_both_attention_and_expert",
+                "larql_router::grid::tests::route_for_capability_falls_back_to_default_caps_shard"
+              ],
               "tests_unresolved": [],
-              "unbacked": true,
+              "unbacked": false,
               "spec_file": "openspec/changes/cuda-and-rotorquant-kv/specs/router-grid/spec.md",
-              "line": 15
+              "line": 16
             }
           ]
         },
@@ -12915,27 +12926,33 @@
           "scenarios": [
             {
               "name": "Attention RPC reaches the GPU shard",
-              "tests_resolved": [],
+              "tests_resolved": [
+                "larql_router::grid::tests::route_for_capability_filters_by_capability"
+              ],
               "tests_unresolved": [],
-              "unbacked": true,
+              "unbacked": false,
               "spec_file": "openspec/changes/cuda-and-rotorquant-kv/specs/router-grid/spec.md",
-              "line": 29
+              "line": 31
             },
             {
               "name": "Expert RPC reaches the CPU shard",
-              "tests_resolved": [],
+              "tests_resolved": [
+                "larql_router::grid::tests::route_for_capability_filters_by_capability"
+              ],
               "tests_unresolved": [],
-              "unbacked": true,
+              "unbacked": false,
               "spec_file": "openspec/changes/cuda-and-rotorquant-kv/specs/router-grid/spec.md",
-              "line": 34
+              "line": 36
             },
             {
               "name": "Missing capability returns 503 with a useful body",
-              "tests_resolved": [],
+              "tests_resolved": [
+                "larql_router::grid::tests::route_for_capability_returns_none_when_no_match"
+              ],
               "tests_unresolved": [],
-              "unbacked": true,
+              "unbacked": false,
               "spec_file": "openspec/changes/cuda-and-rotorquant-kv/specs/router-grid/spec.md",
-              "line": 39
+              "line": 41
             }
           ]
         },
@@ -12948,7 +12965,7 @@
               "tests_unresolved": [],
               "unbacked": true,
               "spec_file": "openspec/changes/cuda-and-rotorquant-kv/specs/router-grid/spec.md",
-              "line": 53
+              "line": 56
             }
           ]
         },
@@ -13233,11 +13250,10 @@
             {
               "name": "create returns a fresh session id",
               "tests_resolved": [
-                "larql_server::attention_session::tests::insert_and_get_round_trip"
+                "larql_server::attention_session::tests::insert_and_get_round_trip",
+                "larql_server::test_http_attention::create_session_returns_id_and_layer_range"
               ],
-              "tests_unresolved": [
-                "test_http_attention::create_session_returns_id_and_layer_range"
-              ],
+              "tests_unresolved": [],
               "unbacked": false,
               "spec_file": "openspec/changes/attention-service-routes/specs/server-attention-service/spec.md",
               "line": 13
@@ -13245,11 +13261,10 @@
             {
               "name": "get on unknown session id returns 404",
               "tests_resolved": [
-                "larql_server::routes::attention::tests::get_unknown_session_returns_404"
+                "larql_server::routes::attention::tests::get_unknown_session_returns_404",
+                "larql_server::test_http_attention::get_unknown_session_returns_404"
               ],
-              "tests_unresolved": [
-                "test_http_attention::get_unknown_session_returns_404"
-              ],
+              "tests_unresolved": [],
               "unbacked": false,
               "spec_file": "openspec/changes/attention-service-routes/specs/server-attention-service/spec.md",
               "line": 22
@@ -13258,11 +13273,10 @@
               "name": "delete makes get 404",
               "tests_resolved": [
                 "larql_server::attention_session::tests::delete_makes_get_none",
-                "larql_server::routes::attention::tests::delete_unknown_session_returns_404"
+                "larql_server::routes::attention::tests::delete_unknown_session_returns_404",
+                "larql_server::test_http_attention::delete_session_then_get_returns_404"
               ],
-              "tests_unresolved": [
-                "test_http_attention::delete_session_then_get_returns_404"
-              ],
+              "tests_unresolved": [],
               "unbacked": false,
               "spec_file": "openspec/changes/attention-service-routes/specs/server-attention-service/spec.md",
               "line": 30
@@ -13300,10 +13314,10 @@
             },
             {
               "name": "prefill rejects unknown session",
-              "tests_resolved": [],
-              "tests_unresolved": [
-                "test_http_attention::prefill_unknown_session_returns_404"
+              "tests_resolved": [
+                "larql_server::test_http_attention::prefill_unknown_session_returns_404"
               ],
+              "tests_unresolved": [],
               "unbacked": false,
               "spec_file": "openspec/changes/attention-service-routes/specs/server-attention-service/spec.md",
               "line": 72
@@ -13339,10 +13353,10 @@
             },
             {
               "name": "decode before prefill is rejected",
-              "tests_resolved": [],
-              "tests_unresolved": [
-                "test_http_attention::decode_before_prefill_returns_400"
+              "tests_resolved": [
+                "larql_server::test_http_attention::decode_before_prefill_returns_400"
               ],
+              "tests_unresolved": [],
               "unbacked": false,
               "spec_file": "openspec/changes/attention-service-routes/specs/server-attention-service/spec.md",
               "line": 111
@@ -13355,11 +13369,10 @@
             {
               "name": "snapshot magic + version are present",
               "tests_resolved": [
-                "larql_server::kv_snapshot::tests::magic_and_version_are_present_at_known_offsets"
+                "larql_server::kv_snapshot::tests::magic_and_version_are_present_at_known_offsets",
+                "larql_server::test_http_attention::snapshot_returns_base64_with_correct_magic"
               ],
-              "tests_unresolved": [
-                "test_http_attention::snapshot_returns_base64_with_correct_magic"
-              ],
+              "tests_unresolved": [],
               "unbacked": false,
               "spec_file": "openspec/changes/attention-service-routes/specs/server-attention-service/spec.md",
               "line": 133
@@ -13367,11 +13380,10 @@
             {
               "name": "snapshot then restore round-trips for FP32",
               "tests_resolved": [
-                "larql_server::kv_snapshot::tests::round_trip_fp32_is_byte_identical"
+                "larql_server::kv_snapshot::tests::round_trip_fp32_is_byte_identical",
+                "larql_server::test_http_attention::restore_round_trips_through_a_new_session"
               ],
-              "tests_unresolved": [
-                "test_http_attention::restore_round_trips_through_a_new_session"
-              ],
+              "tests_unresolved": [],
               "unbacked": false,
               "spec_file": "openspec/changes/attention-service-routes/specs/server-attention-service/spec.md",
               "line": 141
@@ -13451,19 +13463,25 @@
           "scenarios": [
             {
               "name": "Session create returns an opaque handle",
-              "tests_resolved": [],
+              "tests_resolved": [
+                "larql_server::test_http_attention::create_session_returns_id_and_layer_range",
+                "larql_server::attention_session::tests::session_id_is_26_chars"
+              ],
               "tests_unresolved": [],
-              "unbacked": true,
+              "unbacked": false,
               "spec_file": "openspec/changes/cuda-and-rotorquant-kv/specs/server-attention-service/spec.md",
               "line": 17
             },
             {
               "name": "Session DELETE frees VRAM",
-              "tests_resolved": [],
+              "tests_resolved": [
+                "larql_server::test_http_attention::delete_session_then_get_returns_404",
+                "larql_server::attention_session::tests::delete_makes_get_none"
+              ],
               "tests_unresolved": [],
-              "unbacked": true,
+              "unbacked": false,
               "spec_file": "openspec/changes/cuda-and-rotorquant-kv/specs/server-attention-service/spec.md",
-              "line": 22
+              "line": 23
             }
           ]
         },
@@ -13476,7 +13494,7 @@
               "tests_unresolved": [],
               "unbacked": true,
               "spec_file": "openspec/changes/cuda-and-rotorquant-kv/specs/server-attention-service/spec.md",
-              "line": 36
+              "line": 38
             }
           ]
         },
@@ -13489,7 +13507,7 @@
               "tests_unresolved": [],
               "unbacked": true,
               "spec_file": "openspec/changes/cuda-and-rotorquant-kv/specs/server-attention-service/spec.md",
-              "line": 47
+              "line": 49
             }
           ]
         },
@@ -13498,19 +13516,25 @@
           "scenarios": [
             {
               "name": "Snapshot then restore round-trips bit-exact",
-              "tests_resolved": [],
+              "tests_resolved": [
+                "larql_server::kv_snapshot::tests::round_trip_fp32_is_byte_identical",
+                "larql_server::test_http_attention::restore_round_trips_through_a_new_session"
+              ],
               "tests_unresolved": [],
-              "unbacked": true,
+              "unbacked": false,
               "spec_file": "openspec/changes/cuda-and-rotorquant-kv/specs/server-attention-service/spec.md",
-              "line": 70
+              "line": 72
             },
             {
               "name": "Snapshot blob carries the KV format",
-              "tests_resolved": [],
+              "tests_resolved": [
+                "larql_server::kv_snapshot::tests::round_trip_compressed_layer",
+                "larql_server::test_http_attention::snapshot_returns_base64_with_correct_magic"
+              ],
               "tests_unresolved": [],
-              "unbacked": true,
+              "unbacked": false,
               "spec_file": "openspec/changes/cuda-and-rotorquant-kv/specs/server-attention-service/spec.md",
-              "line": 75
+              "line": 79
             }
           ]
         },
@@ -13523,7 +13547,7 @@
               "tests_unresolved": [],
               "unbacked": true,
               "spec_file": "openspec/changes/cuda-and-rotorquant-kv/specs/server-attention-service/spec.md",
-              "line": 87
+              "line": 92
             }
           ]
         },
@@ -13532,11 +13556,13 @@
           "scenarios": [
             {
               "name": "GPU shard refuses expert RPCs",
-              "tests_resolved": [],
+              "tests_resolved": [
+                "larql_server::bootstrap::tests::role_attention_announces_attention_only"
+              ],
               "tests_unresolved": [],
-              "unbacked": true,
+              "unbacked": false,
               "spec_file": "openspec/changes/cuda-and-rotorquant-kv/specs/server-attention-service/spec.md",
-              "line": 99
+              "line": 104
             }
           ]
         }
@@ -25865,12 +25891,6 @@
       "crate": "larql_server"
     },
     {
-      "fqn": "larql_server::attention_session::tests::session_id_is_26_chars",
-      "file": "crates/larql-server/src/attention_session.rs",
-      "line": 274,
-      "crate": "larql_server"
-    },
-    {
       "fqn": "larql_server::attention_session::session_id_is_26_chars",
       "file": "crates/larql-server/src/attention_session.rs",
       "line": 274,
@@ -27485,12 +27505,6 @@
       "crate": "larql_server"
     },
     {
-      "fqn": "larql_server::test_http_attention::create_session_returns_id_and_layer_range",
-      "file": "crates/larql-server/tests/test_http_attention.rs",
-      "line": 46,
-      "crate": "larql_server"
-    },
-    {
       "fqn": "larql_server::test_http_attention::create_session_for_unknown_model_returns_404",
       "file": "crates/larql-server/tests/test_http_attention.rs",
       "line": 57,
@@ -27509,33 +27523,9 @@
       "crate": "larql_server"
     },
     {
-      "fqn": "larql_server::test_http_attention::get_unknown_session_returns_404",
-      "file": "crates/larql-server/tests/test_http_attention.rs",
-      "line": 105,
-      "crate": "larql_server"
-    },
-    {
-      "fqn": "larql_server::test_http_attention::delete_session_then_get_returns_404",
-      "file": "crates/larql-server/tests/test_http_attention.rs",
-      "line": 114,
-      "crate": "larql_server"
-    },
-    {
       "fqn": "larql_server::test_http_attention::delete_unknown_session_returns_404",
       "file": "crates/larql-server/tests/test_http_attention.rs",
       "line": 131,
-      "crate": "larql_server"
-    },
-    {
-      "fqn": "larql_server::test_http_attention::snapshot_returns_base64_with_correct_magic",
-      "file": "crates/larql-server/tests/test_http_attention.rs",
-      "line": 140,
-      "crate": "larql_server"
-    },
-    {
-      "fqn": "larql_server::test_http_attention::restore_round_trips_through_a_new_session",
-      "file": "crates/larql-server/tests/test_http_attention.rs",
-      "line": 166,
       "crate": "larql_server"
     },
     {
@@ -27575,12 +27565,6 @@
       "crate": "larql_server"
     },
     {
-      "fqn": "larql_server::test_http_attention::prefill_unknown_session_returns_404",
-      "file": "crates/larql-server/tests/test_http_attention.rs",
-      "line": 311,
-      "crate": "larql_server"
-    },
-    {
       "fqn": "larql_server::test_http_attention::prefill_with_empty_embeddings_returns_400",
       "file": "crates/larql-server/tests/test_http_attention.rs",
       "line": 326,
@@ -27602,12 +27586,6 @@
       "fqn": "larql_server::test_http_attention::decode_unknown_session_returns_404",
       "file": "crates/larql-server/tests/test_http_attention.rs",
       "line": 398,
-      "crate": "larql_server"
-    },
-    {
-      "fqn": "larql_server::test_http_attention::decode_before_prefill_returns_400",
-      "file": "crates/larql-server/tests/test_http_attention.rs",
-      "line": 413,
       "crate": "larql_server"
     },
     {

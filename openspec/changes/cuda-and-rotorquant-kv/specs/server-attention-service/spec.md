@@ -17,12 +17,14 @@ the lifetime of the session.
 #### Scenario: Session create returns an opaque handle
 - **WHEN** a client POSTs `{"model":"gemma-3-4b","kv_format":"iso3","max_seq_len":8192}` to `/v1/attention/session`
 - **THEN** the response body SHALL contain a `session_id` (UUID) and a `kv_handle` (opaque u128)
-<!-- test: unbacked -->
+<!-- test: larql_server::test_http_attention::create_session_returns_id_and_layer_range -->
+<!-- test: larql_server::attention_session::tests::session_id_is_26_chars -->
 
 #### Scenario: Session DELETE frees VRAM
 - **WHEN** a session is deleted
 - **THEN** subsequent attention RPCs against its `kv_handle` SHALL return HTTP 410 Gone
-<!-- test: unbacked -->
+<!-- test: larql_server::test_http_attention::delete_session_then_get_returns_404 -->
+<!-- test: larql_server::attention_session::tests::delete_makes_get_none -->
 
 ### Requirement: Attention prefill endpoint
 
@@ -70,12 +72,15 @@ header_json (UTF-8, LEB128-prefixed length)
 #### Scenario: Snapshot then restore round-trips bit-exact
 - **WHEN** a session is snapshotted, the server is restarted, and the snapshot is restored on a fresh session
 - **THEN** the resumed session's first decode response SHALL match the original session's pre-snapshot decode response within 1e-4 absolute element difference
+<!-- test: larql_server::kv_snapshot::tests::round_trip_fp32_is_byte_identical -->
+<!-- test: larql_server::test_http_attention::restore_round_trips_through_a_new_session -->
 <!-- test: unbacked -->
 
 #### Scenario: Snapshot blob carries the KV format
 - **WHEN** an iso3 session is snapshotted
 - **THEN** the blob header SHALL contain `"format":"iso3"` and the byte count SHALL match the iso3 layout
-<!-- test: unbacked -->
+<!-- test: larql_server::kv_snapshot::tests::round_trip_compressed_layer -->
+<!-- test: larql_server::test_http_attention::snapshot_returns_base64_with_correct_magic -->
 
 ### Requirement: gRPC parity for the HTTP surface
 
@@ -99,4 +104,5 @@ direct attention RPCs only to shards that advertise the capability.
 #### Scenario: GPU shard refuses expert RPCs
 - **WHEN** an `/v1/expert/batch` request is routed to an attention-only shard
 - **THEN** the shard SHALL respond with HTTP 503 and a clear "no expert weights loaded" body
+<!-- test: larql_server::bootstrap::tests::role_attention_announces_attention_only -->
 <!-- test: unbacked -->
