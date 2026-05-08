@@ -63,12 +63,12 @@
 
 ## 8. Phase 4 — attention service routes (follow-up change `attention-service-routes`)
 
-- [ ] 8.1 HTTP routes — `POST /v1/attention/session`, `DELETE /v1/attention/session/{id}`, `GET /v1/attention/session/{id}`.
-- [ ] 8.2 HTTP routes — `POST /v1/attention/prefill`, `POST /v1/attention/decode`.
-- [ ] 8.3 HTTP routes — `POST /v1/kv-cache/snapshot`, `POST /v1/kv-cache/restore`, `POST /v1/kv-cache/free`.
-- [ ] 8.4 gRPC parity in `larql-router-protocol` proto definitions.
-- [ ] 8.5 Snapshot/restore round-trip integration test.
-- [ ] 8.6 Topology announce includes `capabilities: ["attention"]` when `--role attention`.
+- [x] 8.1 HTTP routes — `POST /v1/attention/session`, `DELETE /v1/attention/session/{id}`, `GET /v1/attention/session/{id}`.
+- [x] 8.2 HTTP routes — `POST /v1/attention/prefill`, `POST /v1/attention/decode`.
+- [x] 8.3 HTTP routes — `POST /v1/kv-cache/snapshot`, `POST /v1/kv-cache/restore`, `POST /v1/kv-cache/free`.
+- [x] 8.4 gRPC parity in `larql-router-protocol` proto definitions.
+- [x] 8.5 Snapshot/restore round-trip integration test.
+- [x] 8.6 Topology announce includes `capabilities: ["attention"]` when `--role attention`.
 
 ## 9. Phase 5 — heterogeneous router topology (follow-up change `router-heterogeneous-shards`)
 
@@ -87,9 +87,9 @@
 
 ## 11. Validation (this change)
 
-- [ ] 11.1 `openspec validate cuda-and-rotorquant-kv --strict` passes.
-- [ ] 11.2 `cargo check --features cuda` passes on the dev box (Linux + RTX 4090 + CUDA 13.1).
-- [ ] 11.3 `cargo check` (default features) passes — no regression for existing builds.
-- [ ] 11.4 `make traceability-check` and `make openspec-validate` pass.
-- [ ] 11.5 Capability inventory in proposal.md matches `specs/<capability>/spec.md` directories one-to-one.
-- [ ] 11.6 Commit with `[#cuda-and-rotorquant-kv]` tag in the subject; archive after the first follow-up sub-change ships.
+- [x] 11.1 `openspec validate cuda-and-rotorquant-kv --strict` passes.
+- [x] 11.2 `cargo check --features cuda` passes on the dev box (Linux + RTX 4090 + CUDA 13.1).
+- [x] 11.3 `cargo check` (default features) passes — no regression for existing builds.
+- [x] 11.4 `make traceability-check` and `make openspec-validate` pass.
+- [x] 11.5 Capability inventory in proposal.md matches `specs/<capability>/spec.md` directories one-to-one.
+- [x] 11.6 Commit with `[#cuda-and-rotorquant-kv]` tag in the subject; archive after the first follow-up sub-change ships.
