@@ -89,6 +89,57 @@ impl<'a> LayerGraph for PipelinedLayerGraph<'a> {
     }
 }
 
+/// Split-residency layer graph for Linux/NVIDIA-scale models.
+///
+/// Attention and dense transformer state run through `attention_backend` (CUDA
+/// on NVIDIA when available). The MoE/FFN side uses the vindex walk path and may
+/// intentionally receive no compute backend, keeping expert/vindex tensors
+/// mmap-backed and paged from disk instead of staging all experts in VRAM.
+pub struct GpuAttentionMmapExpertsGraph<'a> {
+    pub index: &'a dyn larql_vindex::GateIndex,
+    pub attention_backend: &'a dyn ComputeBackend,
+    pub expert_backend: Option<&'a dyn ComputeBackend>,
+    pub layer_range: std::ops::Range<usize>,
+}
+
+impl<'a> LayerGraph for GpuAttentionMmapExpertsGraph<'a> {
+    fn forward_layer(
+        &self,
+        weights: &ModelWeights,
+        h: &Array2<f32>,
+        layer: usize,
+    ) -> Option<LayerOutput> {
+        if !self.layer_range.contains(&layer) {
+            return None;
+        }
+
+        let (h_post_attn, _attn_proj, _) = crate::attention::run_attention_block_gpu(
+            weights,
+            h,
+            layer,
+            false,
+            Some(self.attention_backend),
+        )?;
+
+        let walk_ffn = match self.expert_backend {
+            Some(backend) => {
+                crate::vindex::WalkFfn::new_unlimited_with_backend(weights, self.index, backend)
+            }
+            None => crate::vindex::WalkFfn::new_unlimited(weights, self.index),
+        };
+        let (h_out, _) = crate::forward::run_ffn(weights, &h_post_attn, layer, &walk_ffn, false);
+        Some(LayerOutput {
+            residual: h_out,
+            activation: None,
+            attention: None,
+        })
+    }
+
+    fn name(&self) -> &str {
+        "gpu-attention-mmap-experts"
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -205,5 +256,60 @@ mod tests {
         let out = g.forward_layer(w, &h, 0);
         assert!(out.is_some(), "layer in range should produce output");
         assert_eq!(out.unwrap().residual.shape(), &[1, w.hidden_size]);
+    }
+
+    #[test]
+    fn gpu_attention_mmap_experts_graph_names_split_residency() {
+        let w = weights();
+        let idx = crate::engines::test_utils::make_test_vindex(w);
+        let g = GpuAttentionMmapExpertsGraph {
+            index: &idx,
+            attention_backend: &larql_compute::CpuBackend,
+            expert_backend: None,
+            layer_range: 0..w.num_layers,
+        };
+
+        assert_eq!(g.name(), "gpu-attention-mmap-experts");
+        assert!(g.expert_backend.is_none());
+    }
+
+    #[test]
+    fn gpu_attention_mmap_experts_graph_runs_attention_backend_with_mmap_experts() {
+        let w = weights();
+        let idx = crate::engines::test_utils::make_test_vindex(w);
+        let g = GpuAttentionMmapExpertsGraph {
+            index: &idx,
+            attention_backend: &larql_compute::CpuBackend,
+            expert_backend: None,
+            layer_range: 0..w.num_layers,
+        };
+
+        let out = g.forward_layer(w, &input(1, w.hidden_size), 0);
+
+        assert!(out.is_some(), "split-residency layer should run");
+        assert_eq!(out.unwrap().residual.shape(), &[1, w.hidden_size]);
+    }
+
+    #[cfg(all(feature = "cuda", target_os = "linux"))]
+    #[test]
+    fn gpu_attention_mmap_experts_graph_accepts_cuda_attention_without_expert_backend() {
+        let Some(cuda) = larql_compute::CudaBackend::new() else {
+            eprintln!("CUDA unavailable; skipping split-residency CUDA smoke");
+            return;
+        };
+        let w = weights();
+        let idx = crate::engines::test_utils::make_test_vindex(w);
+        let g = GpuAttentionMmapExpertsGraph {
+            index: &idx,
+            attention_backend: &cuda,
+            expert_backend: None,
+            layer_range: 0..w.num_layers,
+        };
+
+        let out = g.forward_layer(w, &input(1, w.hidden_size), 0);
+
+        assert!(out.is_some(), "CUDA attention + mmap experts should run");
+        assert!(g.attention_backend.name().contains("cuda"));
+        assert!(g.expert_backend.is_none(), "experts stay mmap/CPU-backed");
     }
 }

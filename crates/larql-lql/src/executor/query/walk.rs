@@ -3,6 +3,7 @@
 use crate::ast::{Range, WalkMode};
 use crate::error::LqlError;
 use crate::executor::Session;
+use std::collections::HashSet;
 
 impl Session {
     pub(crate) fn exec_walk(
@@ -83,14 +84,18 @@ impl Session {
         semantic_candidates.extend(0..semantic_token_limit as u32);
         semantic_candidates.sort_unstable();
         semantic_candidates.dedup();
-        let mut semantic_hits = 0usize;
-        for (layer, hits) in &trace.layers {
+        let semantic_order: HashSet<(usize, usize)> =
+            walk_resolution_order(&trace, show_per_layer, semantic_hit_limit)
+                .into_iter()
+                .collect();
+        for (layer_pos, (layer, hits)) in trace.layers.iter().enumerate() {
             if hits.is_empty() {
                 continue;
             }
-            for hit in hits.iter().take(show_per_layer) {
+            for (hit_pos, hit) in hits.iter().take(show_per_layer).enumerate() {
                 let mut meta = hit.meta.clone();
-                if semantic_hits < semantic_hit_limit && !semantic_candidates.is_empty() {
+                if semantic_order.contains(&(layer_pos, hit_pos)) && !semantic_candidates.is_empty()
+                {
                     if let Ok(resolved) = larql_vindex::load_vindex_gguf_feature_meta(
                         path,
                         *layer,
@@ -107,10 +112,10 @@ impl Session {
                                 }
                             }
                         }
-                        if let Some(first) = meta.top_k.first() {
-                            meta.top_token = first.token.clone();
+                        meta = super::prefer_readable_feature_meta(meta);
+                        if !crate::executor::helpers::is_readable_token(&meta.top_token) {
+                            meta = hit.meta.clone();
                         }
-                        semantic_hits += 1;
                     }
                 }
                 let down_top: String = meta
@@ -143,5 +148,72 @@ impl Session {
         }
 
         Ok(out)
+    }
+}
+
+fn walk_resolution_order(
+    trace: &larql_vindex::WalkTrace,
+    show_per_layer: usize,
+    limit: usize,
+) -> Vec<(usize, usize)> {
+    let mut selected = Vec::new();
+    for rank in 0..show_per_layer {
+        let mut rank_hits: Vec<(usize, usize, f32)> = trace
+            .layers
+            .iter()
+            .enumerate()
+            .filter_map(|(layer_pos, (_layer, hits))| {
+                hits.get(rank)
+                    .map(|hit| (layer_pos, rank, hit.gate_score.abs()))
+            })
+            .collect();
+        rank_hits.sort_by(|a, b| b.2.partial_cmp(&a.2).unwrap_or(std::cmp::Ordering::Equal));
+        for (layer_pos, hit_pos, _score) in rank_hits {
+            if selected.len() >= limit {
+                return selected;
+            }
+            selected.push((layer_pos, hit_pos));
+        }
+    }
+    selected
+}
+
+#[cfg(test)]
+mod tests {
+    use super::walk_resolution_order;
+    use larql_models::TopKEntry;
+    use larql_vindex::{FeatureMeta, WalkHit, WalkTrace};
+
+    fn hit(layer: usize, feature: usize, gate_score: f32) -> WalkHit {
+        WalkHit {
+            layer,
+            feature,
+            gate_score,
+            meta: FeatureMeta {
+                top_token: format!("T{feature}"),
+                top_token_id: feature as u32,
+                c_score: 0.0,
+                top_k: vec![TopKEntry {
+                    token: format!("T{feature}"),
+                    token_id: feature as u32,
+                    logit: gate_score,
+                }],
+            },
+        }
+    }
+
+    #[test]
+    fn walk_resolution_order_spreads_manifest_label_budget_across_layers() {
+        let trace = WalkTrace {
+            layers: vec![
+                (1, vec![hit(1, 10, 0.9), hit(1, 11, 0.8), hit(1, 12, 0.7)]),
+                (2, vec![hit(2, 20, 0.6), hit(2, 21, 0.5), hit(2, 22, 0.4)]),
+                (3, vec![hit(3, 30, 0.95), hit(3, 31, 0.3), hit(3, 32, 0.2)]),
+            ],
+        };
+
+        let order = walk_resolution_order(&trace, 3, 4);
+
+        assert_eq!(order, vec![(2, 0), (0, 0), (1, 0), (0, 1)]);
     }
 }

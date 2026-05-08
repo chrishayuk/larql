@@ -303,6 +303,8 @@ impl Session {
 // walk → collect edges → format). The helpers below split each phase out
 // of the main function so the orchestration reads top-down.
 
+type DescribeQuery = (larql_vindex::ndarray::Array1<f32>, Vec<u32>);
+
 /// Tokenise `entity` and build a query vector by averaging its token
 /// embeddings (single tokens get their embed row directly). Returns
 /// `Ok(None)` when the entity tokenises to nothing — the caller emits
@@ -310,7 +312,7 @@ impl Session {
 fn describe_build_query(
     entity: &str,
     path: &std::path::Path,
-) -> Result<Option<(larql_vindex::ndarray::Array1<f32>, Vec<u32>)>, LqlError> {
+) -> Result<Option<DescribeQuery>, LqlError> {
     let tokenizer = larql_vindex::load_vindex_tokenizer(path)
         .map_err(|e| LqlError::exec("failed to load tokenizer", e))?;
 
@@ -446,9 +448,7 @@ fn describe_resolve_gguf_labels(
                     }
                 }
             }
-            if let Some(first) = meta.top_k.first() {
-                meta.top_token = first.token.clone();
-            }
+            meta = super::prefer_readable_feature_meta(meta);
             hit.meta = meta;
             resolved += 1;
             if resolved >= semantic_hit_limit {

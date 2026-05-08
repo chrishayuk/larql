@@ -302,6 +302,10 @@ impl Session {
                                 }
                             }
                         }
+                        meta = super::prefer_readable_feature_meta(meta);
+                        if !crate::executor::helpers::is_readable_token(&meta.top_token) {
+                            continue;
+                        }
                         if let Some(first) = meta.top_k.first() {
                             row.top_token = first.token.clone();
                         }

@@ -62,6 +62,25 @@ pub(super) fn manifest_candidate_token_ids(
     sorted_unique(ids)
 }
 
+pub(super) fn prefer_readable_feature_meta(
+    mut meta: larql_vindex::FeatureMeta,
+) -> larql_vindex::FeatureMeta {
+    let readable: Vec<larql_models::TopKEntry> = meta
+        .top_k
+        .iter()
+        .filter(|entry| crate::executor::helpers::is_readable_token(&entry.token))
+        .cloned()
+        .collect();
+    if !readable.is_empty() {
+        meta.top_k = readable;
+        if let Some(first) = meta.top_k.first() {
+            meta.top_token = first.token.clone();
+            meta.top_token_id = first.token_id;
+        }
+    }
+    meta
+}
+
 fn sorted_unique(mut ids: Vec<u32>) -> Vec<u32> {
     ids.sort_unstable();
     ids.dedup();
@@ -83,7 +102,9 @@ pub(super) fn resolve_bands(config: &larql_vindex::VindexConfig) -> larql_vindex
 
 #[cfg(test)]
 mod tests {
-    use super::manifest_candidate_token_ids;
+    use super::{manifest_candidate_token_ids, prefer_readable_feature_meta};
+    use larql_models::TopKEntry;
+    use larql_vindex::FeatureMeta;
 
     #[test]
     fn manifest_candidates_mix_prefix_prompt_and_vocab_stride() {
@@ -99,5 +120,37 @@ mod tests {
             "large-vocab sampling should include high-id candidates"
         );
         assert!(ids.len() <= 10);
+    }
+
+    #[test]
+    fn prefer_readable_feature_meta_promotes_readable_token() {
+        let meta = FeatureMeta {
+            top_token: "�".into(),
+            top_token_id: 1,
+            c_score: 0.1,
+            top_k: vec![
+                TopKEntry {
+                    token: "�".into(),
+                    token_id: 1,
+                    logit: 3.0,
+                },
+                TopKEntry {
+                    token: "Paris".into(),
+                    token_id: 2,
+                    logit: 2.0,
+                },
+                TopKEntry {
+                    token: "France".into(),
+                    token_id: 3,
+                    logit: 1.0,
+                },
+            ],
+        };
+
+        let meta = prefer_readable_feature_meta(meta);
+
+        assert_eq!(meta.top_token, "Paris");
+        assert_eq!(meta.top_token_id, 2);
+        assert_eq!(meta.top_k[0].token, "Paris");
     }
 }

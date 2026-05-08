@@ -127,7 +127,7 @@ pub fn q4k_ffn_forward_layer_q8k(
     // No dequant, no large f32 allocation, no BLAS thread-pool collision.
     // Guard: intermediate must be Q8K-block-aligned (multiple of 256).
     // For non-aligned sizes (rare, non-production) fall back to OnceLock cache.
-    if intermediate % 256 == 0 {
+    if intermediate.is_multiple_of(256) {
         let activation_flat = activation.as_slice().expect("activation contiguous");
         let act_q8k = quantize_x_to_q8k(activation_flat);
         let mut out = vec![0.0f32; hidden];
