@@ -11,12 +11,13 @@ TurboQuant, MarkovResidual, UnlimitedContext, Apollo).
 #### Scenario: RotorQuantStrategy round-trip is bit-stable across runs
 - **WHEN** the same input is encoded twice with the same RotorQuantStrategy variant
 - **THEN** both encoded buffers SHALL be byte-identical
-<!-- test: unbacked -->
+<!-- test: kv_cache_benchmark::rotorquant::tests::iso3_strategy_runs_through_harness -->
+<!-- test: kv_cache_benchmark::rotorquant::tests::planar3_strategy_runs_through_harness -->
 
 #### Scenario: memory_bytes reflects the format's compression ratio
 - **WHEN** `memory_bytes()` is read on Iso3 vs Standard
 - **THEN** Iso3 SHALL be ≤ 12% of Standard plus per-format overhead ≤ 2%
-<!-- test: unbacked -->
+<!-- test: kv_cache_benchmark::rotorquant::tests::memory_bytes_iso3_is_smaller_than_fp16 -->
 
 ### Requirement: Accuracy harness measures RotorQuant on Gemma 3 4B
 

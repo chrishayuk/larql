@@ -3,9 +3,9 @@
     "capabilities": 49,
     "requirements": 408,
     "scenarios": 1376,
-    "scenarios_backed": 1253,
-    "scenarios_unbacked": 123,
-    "test_refs": 3295,
+    "scenarios_backed": 1257,
+    "scenarios_unbacked": 119,
+    "test_refs": 3298,
     "test_refs_unresolved": 0
   },
   "capabilities": [
@@ -5245,19 +5245,24 @@
           "scenarios": [
             {
               "name": "Iso3 cache reads back as FP16",
-              "tests_resolved": [],
+              "tests_resolved": [
+                "larql_inference::attention::decode::tests::get_layer_returns_fp32_after_compress",
+                "larql_inference::attention::decode::tests::quantize_then_dequantize_roundtrip_preserves_direction"
+              ],
               "tests_unresolved": [],
-              "unbacked": true,
+              "unbacked": false,
               "spec_file": "openspec/changes/cuda-and-rotorquant-kv/specs/inference-attention-and-kv/spec.md",
               "line": 15
             },
             {
               "name": "Cross-format cloning is allowed via FP16 round-trip",
-              "tests_resolved": [],
+              "tests_resolved": [
+                "larql_inference::attention::decode::tests::clone_layer_position_range_slices_donor"
+              ],
               "tests_unresolved": [],
-              "unbacked": true,
+              "unbacked": false,
               "spec_file": "openspec/changes/cuda-and-rotorquant-kv/specs/inference-attention-and-kv/spec.md",
-              "line": 20
+              "line": 21
             }
           ]
         },
@@ -5270,7 +5275,7 @@
               "tests_unresolved": [],
               "unbacked": true,
               "spec_file": "openspec/changes/cuda-and-rotorquant-kv/specs/inference-attention-and-kv/spec.md",
-              "line": 33
+              "line": 35
             },
             {
               "name": "CPU backend uses the scalar reference for Iso3 (slow but correct)",
@@ -5278,7 +5283,7 @@
               "tests_unresolved": [],
               "unbacked": true,
               "spec_file": "openspec/changes/cuda-and-rotorquant-kv/specs/inference-attention-and-kv/spec.md",
-              "line": 38
+              "line": 40
             }
           ]
         },
@@ -8104,19 +8109,24 @@
           "scenarios": [
             {
               "name": "RotorQuantStrategy round-trip is bit-stable across runs",
-              "tests_resolved": [],
+              "tests_resolved": [
+                "kv_cache_benchmark::rotorquant::tests::iso3_strategy_runs_through_harness",
+                "kv_cache_benchmark::rotorquant::tests::planar3_strategy_runs_through_harness"
+              ],
               "tests_unresolved": [],
-              "unbacked": true,
+              "unbacked": false,
               "spec_file": "openspec/changes/cuda-and-rotorquant-kv/specs/kv-cache-benchmark-strategies/spec.md",
               "line": 11
             },
             {
               "name": "memory_bytes reflects the format's compression ratio",
-              "tests_resolved": [],
+              "tests_resolved": [
+                "kv_cache_benchmark::rotorquant::tests::memory_bytes_iso3_is_smaller_than_fp16"
+              ],
               "tests_unresolved": [],
-              "unbacked": true,
+              "unbacked": false,
               "spec_file": "openspec/changes/cuda-and-rotorquant-kv/specs/kv-cache-benchmark-strategies/spec.md",
-              "line": 16
+              "line": 17
             }
           ]
         },
@@ -8129,7 +8139,7 @@
               "tests_unresolved": [],
               "unbacked": true,
               "spec_file": "openspec/changes/cuda-and-rotorquant-kv/specs/kv-cache-benchmark-strategies/spec.md",
-              "line": 28
+              "line": 29
             },
             {
               "name": "Comparative table includes RotorQuant rows",
@@ -8137,7 +8147,7 @@
               "tests_unresolved": [],
               "unbacked": true,
               "spec_file": "openspec/changes/cuda-and-rotorquant-kv/specs/kv-cache-benchmark-strategies/spec.md",
-              "line": 33
+              "line": 34
             }
           ]
         },

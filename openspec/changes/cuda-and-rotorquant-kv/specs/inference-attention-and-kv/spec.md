@@ -15,11 +15,13 @@ insert.
 #### Scenario: Iso3 cache reads back as FP16
 - **WHEN** a layer is read from an Iso3 cache via `get_layer(layer_id)`
 - **THEN** the result SHALL be an FP16 tensor reconstructed from the quantised storage
-<!-- test: unbacked -->
+<!-- test: larql_inference::attention::decode::tests::get_layer_returns_fp32_after_compress -->
+<!-- test: larql_inference::attention::decode::tests::quantize_then_dequantize_roundtrip_preserves_direction -->
 
 #### Scenario: Cross-format cloning is allowed via FP16 round-trip
 - **WHEN** a position range is cloned from an Iso3 cache into a Planar3 cache via the surgery API
 - **THEN** the source range SHALL be dequantised to FP16, then quantised into the target format; the destination SHALL pass round-trip cosine ≥ 0.99
+<!-- test: larql_inference::attention::decode::tests::clone_layer_position_range_slices_donor -->
 <!-- test: unbacked -->
 
 ### Requirement: Attention forward pass dispatches the format-specific path on the active backend
