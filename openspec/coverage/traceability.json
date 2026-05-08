@@ -3,8 +3,8 @@
     "capabilities": 49,
     "requirements": 408,
     "scenarios": 1376,
-    "scenarios_backed": 1242,
-    "scenarios_unbacked": 134,
+    "scenarios_backed": 1247,
+    "scenarios_unbacked": 129,
     "test_refs": 3293,
     "test_refs_unresolved": 0
   },
@@ -5332,17 +5332,21 @@
           "scenarios": [
             {
               "name": "get_layer returns FP32 after compress",
-              "tests_resolved": [],
+              "tests_resolved": [
+                "larql_inference::attention::decode::tests::get_layer_returns_fp32_after_compress"
+              ],
               "tests_unresolved": [],
-              "unbacked": true,
+              "unbacked": false,
               "spec_file": "openspec/changes/rotorquant-promote-on-read/specs/inference-attention-and-kv/spec.md",
               "line": 12
             },
             {
               "name": "get_layer caches the promoted copy",
-              "tests_resolved": [],
+              "tests_resolved": [
+                "larql_inference::attention::decode::tests::get_layer_caches_promoted_copy"
+              ],
               "tests_unresolved": [],
-              "unbacked": true,
+              "unbacked": false,
               "spec_file": "openspec/changes/rotorquant-promote-on-read/specs/inference-attention-and-kv/spec.md",
               "line": 17
             }
@@ -5353,9 +5357,11 @@
           "scenarios": [
             {
               "name": "get_layer_lazy never promotes",
-              "tests_resolved": [],
+              "tests_resolved": [
+                "larql_inference::attention::decode::tests::get_layer_lazy_never_promotes"
+              ],
               "tests_unresolved": [],
-              "unbacked": true,
+              "unbacked": false,
               "spec_file": "openspec/changes/rotorquant-promote-on-read/specs/inference-attention-and-kv/spec.md",
               "line": 29
             }
@@ -5366,9 +5372,11 @@
           "scenarios": [
             {
               "name": "counter increments only on first promote",
-              "tests_resolved": [],
+              "tests_resolved": [
+                "larql_inference::attention::decode::tests::get_layer_caches_promoted_copy"
+              ],
               "tests_unresolved": [],
-              "unbacked": true,
+              "unbacked": false,
               "spec_file": "openspec/changes/rotorquant-promote-on-read/specs/inference-attention-and-kv/spec.md",
               "line": 41
             }
@@ -5379,9 +5387,11 @@
           "scenarios": [
             {
               "name": "clear erases both storages",
-              "tests_resolved": [],
+              "tests_resolved": [
+                "larql_inference::attention::decode::tests::clear_layer_erases_both_storages"
+              ],
               "tests_unresolved": [],
-              "unbacked": true,
+              "unbacked": false,
               "spec_file": "openspec/changes/rotorquant-promote-on-read/specs/inference-attention-and-kv/spec.md",
               "line": 52
             }
@@ -20764,21 +20774,9 @@
       "crate": "larql_inference"
     },
     {
-      "fqn": "larql_inference::attention::decode::tests::get_layer_returns_fp32_after_compress",
-      "file": "crates/larql-inference/src/attention/decode.rs",
-      "line": 856,
-      "crate": "larql_inference"
-    },
-    {
       "fqn": "larql_inference::attention::decode::get_layer_returns_fp32_after_compress",
       "file": "crates/larql-inference/src/attention/decode.rs",
       "line": 856,
-      "crate": "larql_inference"
-    },
-    {
-      "fqn": "larql_inference::attention::decode::tests::get_layer_caches_promoted_copy",
-      "file": "crates/larql-inference/src/attention/decode.rs",
-      "line": 868,
       "crate": "larql_inference"
     },
     {
@@ -20788,21 +20786,9 @@
       "crate": "larql_inference"
     },
     {
-      "fqn": "larql_inference::attention::decode::tests::get_layer_lazy_never_promotes",
-      "file": "crates/larql-inference/src/attention/decode.rs",
-      "line": 880,
-      "crate": "larql_inference"
-    },
-    {
       "fqn": "larql_inference::attention::decode::get_layer_lazy_never_promotes",
       "file": "crates/larql-inference/src/attention/decode.rs",
       "line": 880,
-      "crate": "larql_inference"
-    },
-    {
-      "fqn": "larql_inference::attention::decode::tests::clear_layer_erases_both_storages",
-      "file": "crates/larql-inference/src/attention/decode.rs",
-      "line": 893,
       "crate": "larql_inference"
     },
     {

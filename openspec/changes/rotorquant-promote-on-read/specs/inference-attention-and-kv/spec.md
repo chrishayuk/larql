@@ -12,12 +12,12 @@ the unchanged data.
 #### Scenario: get_layer returns FP32 after compress
 - **WHEN** a layer is compressed via `quantize_layer` and then read via `get_layer`
 - **THEN** the call SHALL return `Some(SharedKV)` (not `None`)
-<!-- test: unbacked -->
+<!-- test: larql_inference::attention::decode::tests::get_layer_returns_fp32_after_compress -->
 
 #### Scenario: get_layer caches the promoted copy
 - **WHEN** the same compressed layer is read twice via `get_layer`
 - **THEN** the second read SHALL not invoke `dequantize_v_with_inverse_rotation` again (verified by checking the metric counter)
-<!-- test: unbacked -->
+<!-- test: larql_inference::attention::decode::tests::get_layer_caches_promoted_copy -->
 
 ### Requirement: get_layer_lazy MUST be the explicit-no-promote variant
 
@@ -29,7 +29,7 @@ diagnostics use this variant.
 #### Scenario: get_layer_lazy never promotes
 - **WHEN** a layer is compressed and read via `get_layer_lazy`
 - **THEN** the call SHALL return `None` and the FP32 slot SHALL remain empty
-<!-- test: unbacked -->
+<!-- test: larql_inference::attention::decode::tests::get_layer_lazy_never_promotes -->
 
 ### Requirement: promote_on_read_count MUST increment per promote
 
@@ -41,7 +41,7 @@ promoted layer SHALL NOT increment the counter (it tracks
 #### Scenario: counter increments only on first promote
 - **WHEN** `get_layer` is called twice on a compressed layer
 - **THEN** the counter SHALL increment by exactly 1
-<!-- test: unbacked -->
+<!-- test: larql_inference::attention::decode::tests::get_layer_caches_promoted_copy -->
 
 ### Requirement: clear_layer MUST also clear compressed side-table
 
@@ -52,4 +52,4 @@ return `None`.
 #### Scenario: clear erases both storages
 - **WHEN** a compressed layer is cleared via `clear_layer`
 - **THEN** `is_layer_compressed` SHALL return `false` and `get_layer` SHALL return `None`
-<!-- test: unbacked -->
+<!-- test: larql_inference::attention::decode::tests::clear_layer_erases_both_storages -->
