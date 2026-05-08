@@ -3,6 +3,7 @@ use ndarray::Array2;
 use super::{LayerGraph, LayerOutput};
 use crate::ffn::FfnBackend;
 use crate::model::ModelWeights;
+use crate::vindex::WalkFfnConfig;
 use larql_compute::prelude::*;
 
 // ── Walk: dense attention + vindex walk FFN ──
@@ -99,6 +100,10 @@ pub struct GpuAttentionMmapExpertsGraph<'a> {
     pub index: &'a dyn larql_vindex::GateIndex,
     pub attention_backend: &'a dyn ComputeBackend,
     pub expert_backend: Option<&'a dyn ComputeBackend>,
+    /// Explicit K schedule for mmap/vindex experts. Use sparse configs for
+    /// Kimi-scale MoE so selected expert rows/features are paged from disk
+    /// instead of forcing a dense full-layer mmap/dequant path.
+    pub expert_config: WalkFfnConfig,
     pub layer_range: std::ops::Range<usize>,
 }
 
@@ -123,9 +128,12 @@ impl<'a> LayerGraph for GpuAttentionMmapExpertsGraph<'a> {
 
         let walk_ffn = match self.expert_backend {
             Some(backend) => {
-                crate::vindex::WalkFfn::new_unlimited_with_backend(weights, self.index, backend)
+                crate::vindex::WalkFfn::from_config(weights, self.index, self.expert_config.clone())
+                    .with_backend(backend)
             }
-            None => crate::vindex::WalkFfn::new_unlimited(weights, self.index),
+            None => {
+                crate::vindex::WalkFfn::from_config(weights, self.index, self.expert_config.clone())
+            }
         };
         let (h_out, _) = crate::forward::run_ffn(weights, &h_post_attn, layer, &walk_ffn, false);
         Some(LayerOutput {
@@ -151,6 +159,10 @@ pub struct CudaResidentAttentionMmapExpertsGraph<'a> {
     pub cuda: &'a larql_compute::CudaBackend,
     pub resident_attention: &'a [crate::attention::gpu::CudaAttentionResidency],
     pub expert_backend: Option<&'a dyn ComputeBackend>,
+    /// Explicit K schedule for mmap/vindex experts. Use sparse configs for
+    /// Kimi-scale MoE so selected expert rows/features are paged from disk
+    /// instead of forcing a dense full-layer mmap/dequant path.
+    pub expert_config: WalkFfnConfig,
     pub layer_range: std::ops::Range<usize>,
 }
 
@@ -184,9 +196,12 @@ impl<'a> LayerGraph for CudaResidentAttentionMmapExpertsGraph<'a> {
             )?;
         let walk_ffn = match self.expert_backend {
             Some(backend) => {
-                crate::vindex::WalkFfn::new_unlimited_with_backend(weights, self.index, backend)
+                crate::vindex::WalkFfn::from_config(weights, self.index, self.expert_config.clone())
+                    .with_backend(backend)
             }
-            None => crate::vindex::WalkFfn::new_unlimited(weights, self.index),
+            None => {
+                crate::vindex::WalkFfn::from_config(weights, self.index, self.expert_config.clone())
+            }
         };
         let (h_out, _) = crate::forward::run_ffn(weights, &h_post_attn, layer, &walk_ffn, false);
         Some(LayerOutput {
@@ -218,6 +233,78 @@ mod tests {
     fn input(seq: usize, hidden: usize) -> Array2<f32> {
         let data: Vec<f32> = (0..seq * hidden).map(|i| (i as f32 + 1.0) * 0.01).collect();
         Array2::from_shape_vec((seq, hidden), data).unwrap()
+    }
+
+    struct CountingMmapIndex {
+        up: Array2<f32>,
+        down: Array2<f32>,
+        gate_scores_batch_calls: std::sync::atomic::AtomicUsize,
+    }
+
+    impl CountingMmapIndex {
+        fn new(hidden: usize) -> Self {
+            let features = 8;
+            let up = Array2::from_shape_vec(
+                (features, hidden),
+                (0..features * hidden)
+                    .map(|i| (i as f32 + 1.0) * 0.001)
+                    .collect(),
+            )
+            .unwrap();
+            let down = Array2::from_shape_vec(
+                (features, hidden),
+                (0..features * hidden)
+                    .map(|i| (i as f32 + 1.0) * 0.002)
+                    .collect(),
+            )
+            .unwrap();
+            Self {
+                up,
+                down,
+                gate_scores_batch_calls: std::sync::atomic::AtomicUsize::new(0),
+            }
+        }
+    }
+
+    impl larql_vindex::GateIndex for CountingMmapIndex {
+        fn gate_knn(
+            &self,
+            _layer: usize,
+            _residual: &ndarray::Array1<f32>,
+            top_k: usize,
+        ) -> Vec<(usize, f32)> {
+            vec![(0, 1.0)].into_iter().take(top_k).collect()
+        }
+
+        fn feature_meta(
+            &self,
+            _layer: usize,
+            _feature: usize,
+        ) -> Option<larql_vindex::FeatureMeta> {
+            None
+        }
+
+        fn num_features(&self, _layer: usize) -> usize {
+            self.up.nrows()
+        }
+
+        fn has_full_mmap_ffn(&self) -> bool {
+            true
+        }
+
+        fn up_layer_matrix(&self, _layer: usize) -> Option<ndarray::ArrayView2<'_, f32>> {
+            Some(self.up.view())
+        }
+
+        fn down_layer_matrix(&self, _layer: usize) -> Option<ndarray::ArrayView2<'_, f32>> {
+            Some(self.down.view())
+        }
+
+        fn gate_scores_batch(&self, _layer: usize, x: &Array2<f32>) -> Option<Array2<f32>> {
+            self.gate_scores_batch_calls
+                .fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+            Some(Array2::zeros((x.nrows(), self.up.nrows())))
+        }
     }
 
     // ── WalkLayerGraph ────────────────────────────────────────────────────────
@@ -327,6 +414,7 @@ mod tests {
             index: &idx,
             attention_backend: &larql_compute::CpuBackend,
             expert_backend: None,
+            expert_config: WalkFfnConfig::sparse(w.num_layers, 1),
             layer_range: 0..w.num_layers,
         };
 
@@ -342,6 +430,7 @@ mod tests {
             index: &idx,
             attention_backend: &larql_compute::CpuBackend,
             expert_backend: None,
+            expert_config: WalkFfnConfig::sparse(w.num_layers, 1),
             layer_range: 0..w.num_layers,
         };
 
@@ -349,6 +438,32 @@ mod tests {
 
         assert!(out.is_some(), "split-residency layer should run");
         assert_eq!(out.unwrap().residual.shape(), &[1, w.hidden_size]);
+    }
+
+    #[test]
+    fn gpu_attention_mmap_experts_graph_uses_sparse_mmap_expert_config() {
+        let w = weights();
+        let idx = CountingMmapIndex::new(w.hidden_size);
+        let g = GpuAttentionMmapExpertsGraph {
+            index: &idx,
+            attention_backend: &larql_compute::CpuBackend,
+            expert_backend: None,
+            expert_config: WalkFfnConfig::sparse(w.num_layers, 1),
+            layer_range: 0..w.num_layers,
+        };
+
+        let out = g.forward_layer(w, &input(1, w.hidden_size), 0);
+
+        assert!(
+            out.is_some(),
+            "split-residency sparse mmap expert path should run"
+        );
+        assert_eq!(
+            idx.gate_scores_batch_calls
+                .load(std::sync::atomic::Ordering::SeqCst),
+            0,
+            "sparse mmap expert config must not take the dense full_mmap gate_scores_batch path"
+        );
     }
 
     #[cfg(all(feature = "cuda", target_os = "linux"))]
@@ -364,6 +479,7 @@ mod tests {
             index: &idx,
             attention_backend: &cuda,
             expert_backend: None,
+            expert_config: WalkFfnConfig::sparse(w.num_layers, 1),
             layer_range: 0..w.num_layers,
         };
 
@@ -393,6 +509,7 @@ mod tests {
             cuda: &cuda,
             resident_attention: &residents,
             expert_backend: None,
+            expert_config: WalkFfnConfig::sparse(w.num_layers, 1),
             layer_range: 0..w.num_layers,
         };
 
