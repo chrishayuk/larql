@@ -56,9 +56,14 @@ impl GgufGateManifest {
 pub struct GgufDownMetaLayerManifest {
     pub layer: usize,
     pub tensor: String,
+    pub source_file: String,
+    pub tensor_type: u32,
+    pub rows: usize,
     pub cols: usize,
     pub experts: usize,
     pub features: usize,
+    pub tensor_offset: u64,
+    pub data_offset: u64,
 }
 
 impl GgufDownMetaManifest {

@@ -13,7 +13,7 @@ impl Session {
         mode: Option<WalkMode>,
         compare: bool,
     ) -> Result<Vec<String>, LqlError> {
-        let (path, _config, patched) = self.require_vindex()?;
+        let (path, config, patched) = self.require_vindex()?;
         let top_k = top.unwrap_or(10) as usize;
 
         let tokenizer = larql_vindex::load_vindex_tokenizer(path)
@@ -68,13 +68,52 @@ impl Session {
         out.push(String::new());
 
         let show_per_layer = if compare { 5 } else { 3 };
+        let semantic_token_limit = std::env::var("LARQL_GGUF_MANIFEST_DOWN_META_TOKENS")
+            .ok()
+            .and_then(|raw| raw.parse::<usize>().ok())
+            .filter(|&n| n > 0)
+            .unwrap_or(256)
+            .min(config.vocab_size);
+        let semantic_hit_limit = std::env::var("LARQL_GGUF_MANIFEST_DOWN_META_HITS")
+            .ok()
+            .and_then(|raw| raw.parse::<usize>().ok())
+            .filter(|&n| n > 0)
+            .unwrap_or(12);
+        let mut semantic_candidates: Vec<u32> = token_ids.clone();
+        semantic_candidates.extend(0..semantic_token_limit as u32);
+        semantic_candidates.sort_unstable();
+        semantic_candidates.dedup();
+        let mut semantic_hits = 0usize;
         for (layer, hits) in &trace.layers {
             if hits.is_empty() {
                 continue;
             }
             for hit in hits.iter().take(show_per_layer) {
-                let down_top: String = hit
-                    .meta
+                let mut meta = hit.meta.clone();
+                if semantic_hits < semantic_hit_limit && !semantic_candidates.is_empty() {
+                    if let Ok(resolved) = larql_vindex::load_vindex_gguf_feature_meta(
+                        path,
+                        *layer,
+                        hit.feature,
+                        &semantic_candidates,
+                        3,
+                    ) {
+                        meta = resolved;
+                        for entry in &mut meta.top_k {
+                            if let Ok(decoded) = tokenizer.decode(&[entry.token_id], true) {
+                                let decoded = decoded.trim().to_string();
+                                if !decoded.is_empty() {
+                                    entry.token = decoded;
+                                }
+                            }
+                        }
+                        if let Some(first) = meta.top_k.first() {
+                            meta.top_token = first.token.clone();
+                        }
+                        semantic_hits += 1;
+                    }
+                }
+                let down_top: String = meta
                     .top_k
                     .iter()
                     .take(3)
@@ -86,7 +125,7 @@ impl Session {
                     layer,
                     hit.feature,
                     hit.gate_score,
-                    format!("{:?}", hit.meta.top_token),
+                    format!("{:?}", meta.top_token),
                     down_top,
                 ));
             }

@@ -378,3 +378,38 @@ The Kimi GGUF smoke now produces a loadable manifest-backed browse vindex at `/h
 - Real smoke: `WALK "The capital of France is" TOP 10` against `/home/bkearns/data/larql-smoke/kimi-q4km-loadable-smoke.vindex` now loads tokenizer + selected embedding row, scans a bounded prefix of GGUF gate rows per layer, and emits non-empty hits with GGUF down-meta labels.
 - Bound: real manifest gate scans default to the first 64 features per layer; override with `LARQL_GGUF_MANIFEST_GATE_SCAN_FEATURES=N` for deeper smoke scans without materializing dense gates.
 - Remaining limitation: labels are manifest coordinates (`gguf:<tensor>:E<expert>:F<feature>`) until query-time down projection against `gguf_down_meta_manifest.json` computes semantic token top-k for selected hits.
+
+## Selected-hit GGUF down-projection semantic labels
+
+Status: GREEN + real smoke.
+
+Problem: manifest-backed Kimi `WALK` could query compact gate/down manifests, but displayed only coordinate placeholder labels such as `gguf:blk.N.ffn_down_exps.weight:E0:Fk` because `down_meta.bin` is intentionally absent for real Kimi.
+
+RED:
+- Added `load_vindex_gguf_feature_meta_projects_selected_down_feature`, a tiny manifest-backed F32 fixture that stores compact embeddings plus a packed down tensor and expects selected feature metadata to be produced by projecting the selected down feature against candidate token embeddings.
+- Verified the test failed first because `load_vindex_gguf_feature_meta(...)` did not exist.
+
+GREEN:
+- Added `load_vindex_gguf_feature_meta(dir, layer, feature, candidate_token_ids, top_k)`.
+- It reads `gguf_down_meta_manifest.json`, loads only the selected expert slice/feature column, reads only candidate embedding rows via `gguf_embeddings_manifest.json`, and returns `FeatureMeta` top-k token ids/logits without materializing dense `down_meta.bin` or full embeddings.
+- `WALK` now tries this resolver for a bounded number of selected hits and decodes token ids through the vindex tokenizer; it falls back to coordinate placeholders if resolution is unavailable.
+- Bounds:
+  - `LARQL_GGUF_MANIFEST_DOWN_META_TOKENS` default `256`, plus prompt token ids are always included.
+  - `LARQL_GGUF_MANIFEST_DOWN_META_HITS` default `12` selected displayed hits.
+
+Verification:
+```bash
+cargo fmt --all -- --check
+PATH=/tmp/larql-cmake-venv/bin:$PATH cargo test -p larql-vindex load_vindex_ -- --nocapture
+PATH=/tmp/larql-cmake-venv/bin:$PATH cargo check -p larql-lql
+PATH=/tmp/larql-cmake-venv/bin:$PATH LARQL_GGUF_MANIFEST_DOWN_META_TOKENS=64 LARQL_GGUF_MANIFEST_DOWN_META_HITS=3 timeout 180s cargo run -q -p larql-cli -- lql 'USE "/home/bkearns/data/larql-smoke/kimi-q4km-loadable-smoke.vindex"; WALK "The capital of France is" TOP 10 LAYERS 1-2;'
+```
+
+Real Kimi smoke result:
+- Exit `0`.
+- First selected hits now show decoded tokenizer labels, e.g. `top="X" down=[X, of, ^]`, while hits beyond the configured semantic-hit budget still show coordinate placeholders.
+- Log: `/tmp/larql-kimi-walk-semantic-downmeta-small.log`.
+
+Remaining limitations:
+- Semantic labels are bounded candidate-token labels, not exhaustive vocab labels.
+- `SELECT`/`DESCRIBE` still primarily use coordinate fallback unless they are wired to pass a vindex path and candidate set into the resolver.

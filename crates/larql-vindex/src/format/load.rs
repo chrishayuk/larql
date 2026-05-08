@@ -1,7 +1,7 @@
 //! Binary loading path for .vindex directories.
 
 use std::collections::HashMap;
-use std::io::{BufRead, BufReader};
+use std::io::{BufRead, BufReader, Read, Seek};
 use std::path::Path;
 
 use ndarray::Array2;
@@ -482,6 +482,107 @@ pub fn load_vindex_embedding_rows(
         .map_err(|e| VindexError::Parse(e.to_string()))
 }
 
+pub fn load_vindex_gguf_feature_meta(
+    dir: &Path,
+    layer: usize,
+    feature: usize,
+    candidate_token_ids: &[u32],
+    top_k: usize,
+) -> Result<crate::FeatureMeta, VindexError> {
+    let manifest_path = dir.join(GGUF_DOWN_META_MANIFEST_JSON);
+    let manifest_text = std::fs::read_to_string(&manifest_path)?;
+    let manifest: crate::index::storage::metadata_store::GgufDownMetaManifest =
+        serde_json::from_str(&manifest_text).map_err(|e| VindexError::Parse(e.to_string()))?;
+    let entry = manifest.layer(layer).ok_or_else(|| {
+        VindexError::Parse(format!("GGUF down-meta manifest missing layer {layer}"))
+    })?;
+    let down = read_gguf_down_feature_vector(entry, feature)?;
+    let (embeddings, _scale) = load_vindex_embedding_rows(dir, candidate_token_ids)?;
+    let mut scores: Vec<larql_models::TopKEntry> = embeddings
+        .outer_iter()
+        .enumerate()
+        .map(|(row_idx, emb)| {
+            let logit = emb.iter().zip(down.iter()).map(|(a, b)| a * b).sum::<f32>();
+            let token_id = candidate_token_ids[row_idx];
+            larql_models::TopKEntry {
+                token: format!("T{token_id}"),
+                token_id,
+                logit,
+            }
+        })
+        .collect();
+    scores.sort_by(|a, b| {
+        b.logit
+            .partial_cmp(&a.logit)
+            .unwrap_or(std::cmp::Ordering::Equal)
+    });
+    scores.truncate(top_k.min(scores.len()));
+    let Some(first) = scores.first() else {
+        return Err(VindexError::Parse(
+            "GGUF feature meta requires at least one candidate token".into(),
+        ));
+    };
+    Ok(crate::FeatureMeta {
+        top_token: first.token.clone(),
+        top_token_id: first.token_id,
+        c_score: first.logit,
+        top_k: scores,
+    })
+}
+
+fn read_gguf_down_feature_vector(
+    entry: &crate::index::storage::metadata_store::GgufDownMetaLayerManifest,
+    feature: usize,
+) -> Result<Vec<f32>, VindexError> {
+    if entry.cols == 0 || entry.rows == 0 || entry.experts == 0 || feature >= entry.features {
+        return Err(VindexError::Parse(format!(
+            "GGUF down-meta feature {feature} out of range for layer {} (features={})",
+            entry.layer, entry.features
+        )));
+    }
+    let expert = feature / entry.cols;
+    let local_feature = feature % entry.cols;
+    if expert >= entry.experts {
+        return Err(VindexError::Parse(format!(
+            "GGUF down-meta feature {feature} maps to expert {expert}, but layer {} has {} experts",
+            entry.layer, entry.experts
+        )));
+    }
+    let expert_elements = entry
+        .rows
+        .checked_mul(entry.cols)
+        .ok_or_else(|| VindexError::Parse("GGUF down expert element count overflow".into()))?;
+    let expert_bytes = gguf_type_byte_len(entry.tensor_type, expert_elements)?;
+    let expert_byte_offset = expert
+        .checked_mul(expert_bytes)
+        .ok_or_else(|| VindexError::Parse("GGUF down expert byte offset overflow".into()))?;
+    let absolute = entry
+        .data_offset
+        .checked_add(entry.tensor_offset)
+        .and_then(|base| base.checked_add(expert_byte_offset as u64))
+        .ok_or_else(|| VindexError::Parse("GGUF down expert absolute offset overflow".into()))?;
+    let mut file = std::fs::File::open(&entry.source_file)?;
+    file.seek(std::io::SeekFrom::Start(absolute))?;
+    let mut raw = vec![0u8; expert_bytes];
+    file.read_exact(&mut raw)?;
+    let expert_matrix =
+        larql_models::quant::ggml::dequantize(&raw, entry.tensor_type, expert_elements)
+            .map_err(|e| VindexError::Parse(e.to_string()))?;
+    let mut down = Vec::with_capacity(entry.rows);
+    for row in 0..entry.rows {
+        let idx = row
+            .checked_mul(entry.cols)
+            .and_then(|base| base.checked_add(local_feature))
+            .ok_or_else(|| VindexError::Parse("GGUF down column index overflow".into()))?;
+        down.push(*expert_matrix.get(idx).ok_or_else(|| {
+            VindexError::Parse(format!(
+                "GGUF down expert matrix missing row {row} feature {local_feature}"
+            ))
+        })?);
+    }
+    Ok(down)
+}
+
 fn gguf_type_byte_offset(tensor_type: u32, element_offset: usize) -> Result<usize, VindexError> {
     use larql_models::quant::ggml;
     match tensor_type {
@@ -889,6 +990,109 @@ mod tests {
 
         assert_eq!(index.loaded_layers(), vec![1]);
         assert_eq!(hits, vec![(2, 3.0), (0, 1.0)]);
+    }
+
+    #[test]
+    fn load_vindex_gguf_feature_meta_projects_selected_down_feature() {
+        let dir = TempDir::new().unwrap();
+        let embed_source = dir.path().join("tiny-embeddings.gguf.payload");
+        let mut embed_bytes = vec![0u8; 32];
+        for value in [1.0f32, 0.0, 0.0, 2.0, 0.0, 3.0] {
+            embed_bytes.extend_from_slice(&value.to_le_bytes());
+        }
+        std::fs::write(&embed_source, embed_bytes).unwrap();
+
+        let down_source = dir.path().join("tiny-down.gguf.payload");
+        let mut down_bytes = vec![0u8; 96];
+        // One expert, conventional down matrix rows=hidden, cols=features:
+        // [[1, 0],
+        //  [0, 1]]
+        for value in [1.0f32, 0.0, 0.0, 1.0] {
+            down_bytes.extend_from_slice(&value.to_le_bytes());
+        }
+        std::fs::write(&down_source, down_bytes).unwrap();
+
+        let index_json = serde_json::json!({
+            "version": 2,
+            "model": "test/kimi-gguf",
+            "family": "deepseek2",
+            "num_layers": 2,
+            "hidden_size": 2,
+            "intermediate_size": 2,
+            "vocab_size": 3,
+            "embed_scale": 1.0,
+            "layers": [{
+                "layer": 1,
+                "num_features": 2,
+                "offset": 0,
+                "length": 0,
+                "num_experts": 1,
+                "num_features_per_expert": 2
+            }],
+            "down_top_k": 2,
+            "has_model_weights": false,
+            "extract_level": "browse",
+            "dtype": "f32",
+            "quant": "none"
+        });
+        std::fs::write(dir.path().join("index.json"), index_json.to_string()).unwrap();
+        let embed_manifest = serde_json::json!({
+            "version": 1,
+            "architecture": "deepseek2",
+            "tensor": "token_embd.weight",
+            "source_file": embed_source.display().to_string(),
+            "shard_idx": 0,
+            "tensor_type": 0,
+            "dims": [2, 3],
+            "vocab_size": 3,
+            "hidden_size": 2,
+            "estimated_dense_bytes": 24,
+            "dense_budget_bytes": 8,
+            "dtype": "f32",
+            "tensor_offset": 8,
+            "data_offset": 24
+        });
+        std::fs::write(
+            dir.path().join("gguf_embeddings_manifest.json"),
+            serde_json::to_string_pretty(&embed_manifest).unwrap(),
+        )
+        .unwrap();
+        let down_manifest = serde_json::json!({
+            "version": 1,
+            "architecture": "deepseek2",
+            "split_count": 1,
+            "top_k": 2,
+            "estimated_dot_ops": 12,
+            "dense_dot_ops_budget": 4,
+            "layers": [{
+                "layer": 1,
+                "tensor": "blk.1.ffn_down_exps.weight",
+                "source_file": down_source.display().to_string(),
+                "shard_idx": 0,
+                "tensor_type": 0,
+                "dims": [2, 2, 1],
+                "rows": 2,
+                "cols": 2,
+                "experts": 1,
+                "features": 2,
+                "tensor_offset": 32,
+                "data_offset": 64
+            }]
+        });
+        std::fs::write(
+            dir.path().join("gguf_down_meta_manifest.json"),
+            serde_json::to_string_pretty(&down_manifest).unwrap(),
+        )
+        .unwrap();
+
+        let meta = load_vindex_gguf_feature_meta(dir.path(), 1, 1, &[0, 1, 2], 2).unwrap();
+
+        assert_eq!(meta.top_token, "T2");
+        assert_eq!(meta.top_token_id, 2);
+        assert_eq!(meta.top_k[0].token, "T2");
+        assert_eq!(meta.top_k[0].logit, 3.0);
+        assert_eq!(meta.top_k[1].token, "T1");
+        assert_eq!(meta.top_k[1].logit, 2.0);
     }
 
     #[test]
