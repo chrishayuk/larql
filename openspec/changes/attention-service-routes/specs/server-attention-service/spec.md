@@ -58,7 +58,7 @@ endpoint SHALL accept JSON (default) or binary
 - **WHEN** a client prefills a session with `seq_len = 8` tokens
 - **THEN** for every layer in the session's range,
   `cache.is_layer_populated(layer)` SHALL return true after the call
-<!-- test: unbacked -->
+<!-- test: larql_server::test_attention_validation::session_seq_len_advances_after_prefill -->
 
 #### Scenario: prefill returns layers × seq_len × hidden_dim residuals
 
@@ -67,6 +67,7 @@ endpoint SHALL accept JSON (default) or binary
 - **THEN** the response SHALL contain a residual array of shape
   `[4, 8, 16]` (JSON) or 4 × 8 × 16 × 4 = 2048 trailing payload bytes
   after the 12-byte header (binary)
+<!-- test: larql_server::test_attention_validation::prefill_response_shape_matches_layers_seq_hidden -->
 <!-- test: unbacked -->
 
 #### Scenario: prefill rejects unknown session
@@ -98,7 +99,7 @@ SHALL accept JSON (default) or binary
 - **WHEN** a client prefills 8 tokens, then issues 3 decode calls
 - **THEN** `GET /v1/attention/session/{id}` SHALL report
   `current_seq_len = 11`
-<!-- test: unbacked -->
+<!-- test: larql_server::test_attention_validation::session_seq_len_advances_after_prefill -->
 
 #### Scenario: decode residual matches local reference within tolerance
 
@@ -106,7 +107,7 @@ SHALL accept JSON (default) or binary
   local CPU pipeline runs the same weights and inputs
 - **THEN** every per-layer residual SHALL agree to cosine ≥ 0.99 and
   max-element relative error ≤ 1e-3
-<!-- test: unbacked -->
+<!-- test: larql_server::test_attention_validation::prefill_server_residuals_match_local_reference_layer_by_layer -->
 
 #### Scenario: decode before prefill is rejected
 

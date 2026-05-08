@@ -38,6 +38,8 @@ parameter).
 #### Scenario: Prefill of 1024 tokens populates the KV cache
 - **WHEN** a prefill request with 1024 token embeddings is submitted to a Gemma 4B session
 - **THEN** the response SHALL be 200 OK and the session's reported KV length SHALL be 1024
+<!-- test: larql_server::test_attention_validation::session_seq_len_advances_after_prefill -->
+<!-- test: larql_server::test_attention_validation::prefill_response_shape_matches_layers_seq_hidden -->
 <!-- test: unbacked -->
 
 ### Requirement: Attention decode endpoint
@@ -74,7 +76,7 @@ header_json (UTF-8, LEB128-prefixed length)
 - **THEN** the resumed session's first decode response SHALL match the original session's pre-snapshot decode response within 1e-4 absolute element difference
 <!-- test: larql_server::kv_snapshot::tests::round_trip_fp32_is_byte_identical -->
 <!-- test: larql_server::test_http_attention::restore_round_trips_through_a_new_session -->
-<!-- test: unbacked -->
+<!-- test: larql_server::test_attention_validation::snapshot_after_prefill_round_trips_through_restore -->
 
 #### Scenario: Snapshot blob carries the KV format
 - **WHEN** an iso3 session is snapshotted

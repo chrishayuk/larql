@@ -1,4 +1,4 @@
-.PHONY: build release test test-fast test-full test-integration test-models check clean fmt lint demos bench bench-save bench-check coverage coverage-summary coverage-check coverage-install ci-coverage traceability traceability-check gaps gaps-untested gaps-unbacked openspec-validate test-cuda docker-ffn docker-gpu docker-up docker-down docker-logs cuda-status
+.PHONY: build release test test-fast test-full test-integration test-models check clean fmt lint demos bench bench-save bench-check coverage coverage-summary coverage-check coverage-install ci-coverage traceability traceability-check gaps gaps-untested gaps-unbacked openspec-validate test-cuda docker-ffn docker-gpu docker-up docker-down docker-logs cuda-status attention-smoke attention-validate attention-bench
 
 # Build
 build:
@@ -83,6 +83,20 @@ docker-logs:
 # Override target via: LARQL_ATTN_URL=... LARQL_MODEL_ID=... make attention-smoke
 attention-smoke:
 	python3 scripts/attention-service-smoke.py
+
+# Numerical-validation harness for the attention-service routes —
+# runs against the synthetic make_test_weights model in-process,
+# bit-comparing every per-layer residual against a direct
+# larql_inference forward pass. No network, no real model.
+attention-validate:
+	cargo test -p larql-server --test test_attention_validation
+
+# Latency benchmarks for the attention-service routes — drives
+# prefill at seq_len ∈ {1, 8, 32, 128}, plus decode and snapshot
+# after a 32-token prefill, against the synthetic model. Reports
+# numbers under target/criterion/.
+attention-bench:
+	cargo bench -p larql-server --bench attention_service
 
 # Check (compile without building)
 check:

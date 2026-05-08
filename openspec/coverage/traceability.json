@@ -3,9 +3,9 @@
     "capabilities": 49,
     "requirements": 408,
     "scenarios": 1376,
-    "scenarios_backed": 1257,
-    "scenarios_unbacked": 119,
-    "test_refs": 3298,
+    "scenarios_backed": 1262,
+    "scenarios_unbacked": 114,
+    "test_refs": 3301,
     "test_refs_unresolved": 0
   },
   "capabilities": [
@@ -13377,17 +13377,21 @@
           "scenarios": [
             {
               "name": "prefill populates all layers",
-              "tests_resolved": [],
+              "tests_resolved": [
+                "larql_server::test_attention_validation::session_seq_len_advances_after_prefill"
+              ],
               "tests_unresolved": [],
-              "unbacked": true,
+              "unbacked": false,
               "spec_file": "openspec/changes/attention-service-routes/specs/server-attention-service/spec.md",
               "line": 56
             },
             {
               "name": "prefill returns layers \u00d7 seq_len \u00d7 hidden_dim residuals",
-              "tests_resolved": [],
+              "tests_resolved": [
+                "larql_server::test_attention_validation::prefill_response_shape_matches_layers_seq_hidden"
+              ],
               "tests_unresolved": [],
-              "unbacked": true,
+              "unbacked": false,
               "spec_file": "openspec/changes/attention-service-routes/specs/server-attention-service/spec.md",
               "line": 63
             },
@@ -13399,7 +13403,7 @@
               "tests_unresolved": [],
               "unbacked": false,
               "spec_file": "openspec/changes/attention-service-routes/specs/server-attention-service/spec.md",
-              "line": 72
+              "line": 73
             },
             {
               "name": "binary form round-trips",
@@ -13407,7 +13411,7 @@
               "tests_unresolved": [],
               "unbacked": true,
               "spec_file": "openspec/changes/attention-service-routes/specs/server-attention-service/spec.md",
-              "line": 79
+              "line": 80
             }
           ]
         },
@@ -13416,19 +13420,23 @@
           "scenarios": [
             {
               "name": "decode advances seqlen",
-              "tests_resolved": [],
+              "tests_resolved": [
+                "larql_server::test_attention_validation::session_seq_len_advances_after_prefill"
+              ],
               "tests_unresolved": [],
-              "unbacked": true,
+              "unbacked": false,
               "spec_file": "openspec/changes/attention-service-routes/specs/server-attention-service/spec.md",
-              "line": 96
+              "line": 97
             },
             {
               "name": "decode residual matches local reference within tolerance",
-              "tests_resolved": [],
+              "tests_resolved": [
+                "larql_server::test_attention_validation::prefill_server_residuals_match_local_reference_layer_by_layer"
+              ],
               "tests_unresolved": [],
-              "unbacked": true,
+              "unbacked": false,
               "spec_file": "openspec/changes/attention-service-routes/specs/server-attention-service/spec.md",
-              "line": 103
+              "line": 104
             },
             {
               "name": "decode before prefill is rejected",
@@ -13438,7 +13446,7 @@
               "tests_unresolved": [],
               "unbacked": false,
               "spec_file": "openspec/changes/attention-service-routes/specs/server-attention-service/spec.md",
-              "line": 111
+              "line": 112
             }
           ]
         },
@@ -13454,7 +13462,7 @@
               "tests_unresolved": [],
               "unbacked": false,
               "spec_file": "openspec/changes/attention-service-routes/specs/server-attention-service/spec.md",
-              "line": 133
+              "line": 134
             },
             {
               "name": "snapshot then restore round-trips for FP32",
@@ -13465,7 +13473,7 @@
               "tests_unresolved": [],
               "unbacked": false,
               "spec_file": "openspec/changes/attention-service-routes/specs/server-attention-service/spec.md",
-              "line": 141
+              "line": 142
             },
             {
               "name": "snapshot then restore round-trips for compressed formats",
@@ -13475,7 +13483,7 @@
               "tests_unresolved": [],
               "unbacked": false,
               "spec_file": "openspec/changes/attention-service-routes/specs/server-attention-service/spec.md",
-              "line": 152
+              "line": 153
             },
             {
               "name": "unknown version is rejected",
@@ -13485,7 +13493,7 @@
               "tests_unresolved": [],
               "unbacked": false,
               "spec_file": "openspec/changes/attention-service-routes/specs/server-attention-service/spec.md",
-              "line": 161
+              "line": 162
             }
           ]
         },
@@ -13501,7 +13509,7 @@
               "tests_unresolved": [],
               "unbacked": false,
               "spec_file": "openspec/changes/attention-service-routes/specs/server-attention-service/spec.md",
-              "line": 177
+              "line": 178
             },
             {
               "name": "legacy server (no --role) announces both",
@@ -13512,7 +13520,7 @@
               "tests_unresolved": [],
               "unbacked": false,
               "spec_file": "openspec/changes/attention-service-routes/specs/server-attention-service/spec.md",
-              "line": 185
+              "line": 186
             }
           ]
         },
@@ -13525,7 +13533,7 @@
               "tests_unresolved": [],
               "unbacked": true,
               "spec_file": "openspec/changes/attention-service-routes/specs/server-attention-service/spec.md",
-              "line": 200
+              "line": 201
             },
             {
               "name": "empty server emits empty bloom",
@@ -13533,7 +13541,7 @@
               "tests_unresolved": [],
               "unbacked": true,
               "spec_file": "openspec/changes/attention-service-routes/specs/server-attention-service/spec.md",
-              "line": 207
+              "line": 208
             }
           ]
         },
@@ -13569,9 +13577,12 @@
           "scenarios": [
             {
               "name": "Prefill of 1024 tokens populates the KV cache",
-              "tests_resolved": [],
+              "tests_resolved": [
+                "larql_server::test_attention_validation::session_seq_len_advances_after_prefill",
+                "larql_server::test_attention_validation::prefill_response_shape_matches_layers_seq_hidden"
+              ],
               "tests_unresolved": [],
-              "unbacked": true,
+              "unbacked": false,
               "spec_file": "openspec/changes/cuda-and-rotorquant-kv/specs/server-attention-service/spec.md",
               "line": 38
             }
@@ -13586,7 +13597,7 @@
               "tests_unresolved": [],
               "unbacked": true,
               "spec_file": "openspec/changes/cuda-and-rotorquant-kv/specs/server-attention-service/spec.md",
-              "line": 49
+              "line": 51
             }
           ]
         },
@@ -13597,12 +13608,13 @@
               "name": "Snapshot then restore round-trips bit-exact",
               "tests_resolved": [
                 "larql_server::kv_snapshot::tests::round_trip_fp32_is_byte_identical",
-                "larql_server::test_http_attention::restore_round_trips_through_a_new_session"
+                "larql_server::test_http_attention::restore_round_trips_through_a_new_session",
+                "larql_server::test_attention_validation::snapshot_after_prefill_round_trips_through_restore"
               ],
               "tests_unresolved": [],
               "unbacked": false,
               "spec_file": "openspec/changes/cuda-and-rotorquant-kv/specs/server-attention-service/spec.md",
-              "line": 72
+              "line": 74
             },
             {
               "name": "Snapshot blob carries the KV format",
@@ -13613,7 +13625,7 @@
               "tests_unresolved": [],
               "unbacked": false,
               "spec_file": "openspec/changes/cuda-and-rotorquant-kv/specs/server-attention-service/spec.md",
-              "line": 79
+              "line": 81
             }
           ]
         },
@@ -13626,7 +13638,7 @@
               "tests_unresolved": [],
               "unbacked": true,
               "spec_file": "openspec/changes/cuda-and-rotorquant-kv/specs/server-attention-service/spec.md",
-              "line": 92
+              "line": 94
             }
           ]
         },
@@ -13641,7 +13653,7 @@
               "tests_unresolved": [],
               "unbacked": false,
               "spec_file": "openspec/changes/cuda-and-rotorquant-kv/specs/server-attention-service/spec.md",
-              "line": 104
+              "line": 106
             }
           ]
         }

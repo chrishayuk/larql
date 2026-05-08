@@ -61,5 +61,16 @@ metal-experts = ["larql-compute/metal"]
 tonic-build = "0.13"
 protobuf-src = "2"
 
+[dev-dependencies]
+criterion = { version = "0.5", features = ["async_tokio"] }
+
+# attention-service-routes: end-to-end prefill / decode / snapshot
+# benchmark against the synthetic `make_test_weights` model. Same
+# code path the test_attention_validation integration test
+# exercises, but timed at multiple seq_lens.
+[[bench]]
+name = "attention_service"
+harness = false
+
 [lints]
 workspace = true
