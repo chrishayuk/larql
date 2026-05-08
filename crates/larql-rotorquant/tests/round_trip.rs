@@ -133,4 +133,14 @@ fn upstream_provenance_records_commit_and_vendored_files() {
             "missing vendored RotorQuant source {name}"
         );
     }
+
+    assert!(std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("build.rs")
+        .is_file());
+    assert!(std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("cuda/ARCHS.txt")
+        .is_file());
+    assert!(std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("cuda/larql_rotorquant_kernels.cu")
+        .is_file());
 }

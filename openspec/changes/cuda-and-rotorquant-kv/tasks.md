@@ -46,7 +46,7 @@
 
 - [x] 6.1 Vendor `planar3.cu`, `iso3.cu`, `planar4.cu`, `iso4.cu` from the llama.cpp fork's `feature/planarquant-kv-cache` branch into `crates/larql-rotorquant/cuda/`.
 - [x] 6.2 Record source URL + commit + date in `crates/larql-rotorquant/UPSTREAM.md`.
-- [ ] 6.3 `build.rs` compiles the vendored kernels with `nvcc` for sm_70+ archs (override via `LARQL_CUDA_ARCH`).
+- [x] 6.3 `build.rs` compiles the vendored kernels with `nvcc` for sm_70+ archs (override via `LARQL_CUDA_ARCH`).
 - [ ] 6.4 Rust FFI wrappers in `crates/larql-rotorquant/src/ffi.rs`.
 - [ ] 6.5 Safe Rust API in `crates/larql-rotorquant/src/lib.rs` (`KvFormat`, `quantize_k`, `quantize_v`, `dequantize_k`, `dequantize_v_with_inverse_rotation`, `KvScratch`).
 - [ ] 6.6 Round-trip tests against the upstream Triton reference (`crates/larql-rotorquant/ref/` shim) for `iso3` and `planar3`.

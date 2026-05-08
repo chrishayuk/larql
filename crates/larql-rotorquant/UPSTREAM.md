@@ -31,10 +31,20 @@ Vendored files live under `crates/larql-rotorquant/cuda/upstream/`:
 
 ## Local Patches
 
-None. The files under `cuda/upstream/` are byte-for-byte copies from
-the imported commit. Rust CPU reference code in `src/cpu_ref.rs` is a
-separate from-scratch implementation and is not a patched copy of the
-upstream CUDA code.
+None to the files under `cuda/upstream/`; they are byte-for-byte
+copies from the imported commit. Rust CPU reference code in
+`src/cpu_ref.rs` is a separate from-scratch implementation and is not
+a patched copy of the upstream CUDA code.
+
+Local integration files live outside `cuda/upstream/`:
+
+- `cuda/shim/common.cuh`
+- `cuda/shim/ggml-common.h`
+- `cuda/larql_rotorquant_kernels.cu`
+- `cuda/ARCHS.txt`
+
+These files let the vendored translation unit compile outside the
+full llama.cpp source tree and expose C ABI wrapper symbols for Rust.
 
 ## Sync
 
