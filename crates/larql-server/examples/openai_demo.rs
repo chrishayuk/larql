@@ -139,6 +139,7 @@ fn load_default(path: &str) -> Result<LoadedModel, Box<dyn std::error::Error + S
         release_mmap_after_request: false,
         expert_filter: None,
         unit_filter: None,
+        moe_remote: None,
     };
     load_single_vindex(path, opts)
 }

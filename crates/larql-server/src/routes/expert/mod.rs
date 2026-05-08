@@ -25,6 +25,7 @@
 //!   Metal expert buffer cache, called from boot.
 
 use serde::{Deserialize, Serialize};
+use utoipa::ToSchema;
 
 pub mod batch_legacy;
 pub mod cpu;
@@ -57,37 +58,37 @@ pub use warmup::warmup_metal_expert_cache;
 // Kept in `mod.rs` because they're shared across the single + batch_legacy
 // handlers and trivially small.
 
-#[derive(Deserialize)]
+#[derive(Deserialize, ToSchema)]
 pub struct SingleExpertRequest {
     pub residual: Vec<f32>,
 }
 
-#[derive(Serialize)]
+#[derive(Serialize, ToSchema)]
 pub struct SingleExpertResponse {
     pub output: Vec<f32>,
     pub latency_ms: f64,
 }
 
-#[derive(Deserialize)]
+#[derive(Deserialize, ToSchema)]
 pub struct BatchExpertItem {
     pub layer: usize,
     pub expert_id: usize,
     pub residual: Vec<f32>,
 }
 
-#[derive(Deserialize)]
+#[derive(Deserialize, ToSchema)]
 pub struct BatchExpertRequest {
     pub requests: Vec<BatchExpertItem>,
 }
 
-#[derive(Serialize)]
+#[derive(Serialize, ToSchema)]
 pub struct BatchExpertResult {
     pub layer: usize,
     pub expert_id: usize,
     pub output: Vec<f32>,
 }
 
-#[derive(Serialize)]
+#[derive(Serialize, ToSchema)]
 pub struct BatchExpertResponse {
     pub results: Vec<BatchExpertResult>,
     pub latency_ms: f64,

@@ -57,6 +57,21 @@ fn compute_semaphore() -> &'static Semaphore {
     })
 }
 
+#[utoipa::path(
+    post,
+    path = "/v1/experts/layer-batch",
+    tag = "expert",
+    request_body(
+        content_type = "application/octet-stream",
+        description = "Binary wire: one pre-norm residual + K (expert_id, weight) pairs for a single layer. \
+                       Router-weighted sum is returned as f32. See `docs/server-spec.md` for the exact packed layout.",
+    ),
+    responses(
+        (status = 200, content_type = "application/x-larql-ffn",
+         description = "Weighted-sum f32 output", body = Vec<u8>),
+        (status = 400, body = crate::error::ErrorBody),
+    ),
+)]
 pub async fn handle_experts_layer_batch(
     State(state): State<Arc<AppState>>,
     body: Bytes,
@@ -123,6 +138,20 @@ pub async fn handle_experts_layer_batch(
     Ok(resp)
 }
 
+#[utoipa::path(
+    post,
+    path = "/v1/experts/layer-batch-f16",
+    tag = "expert",
+    request_body(
+        content_type = "application/octet-stream",
+        description = "Same shape as `/v1/experts/layer-batch` but residual is f16 to cut upload bandwidth by 2×.",
+    ),
+    responses(
+        (status = 200, content_type = "application/x-larql-ffn",
+         description = "Weighted-sum f32 output", body = Vec<u8>),
+        (status = 400, body = crate::error::ErrorBody),
+    ),
+)]
 pub async fn handle_experts_layer_batch_f16(
     State(state): State<Arc<AppState>>,
     body: Bytes,

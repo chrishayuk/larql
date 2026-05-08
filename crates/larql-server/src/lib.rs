@@ -17,6 +17,7 @@ pub mod ffn_l2_cache;
 pub mod grpc;
 pub mod grpc_expert;
 pub mod http;
+pub mod openapi;
 pub mod ratelimit;
 pub mod routes;
 pub mod session;

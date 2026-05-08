@@ -9,7 +9,7 @@ use serde::Deserialize;
 use crate::error::ServerError;
 use crate::state::{elapsed_ms, AppState, LoadedModel};
 
-#[derive(Deserialize)]
+#[derive(Deserialize, utoipa::ToSchema)]
 pub struct SelectRequest {
     #[serde(default)]
     pub entity: Option<String>,
@@ -157,6 +157,17 @@ fn select_edges(
     }))
 }
 
+#[utoipa::path(
+    post,
+    path = "/v1/select",
+    tag = "inference",
+    request_body = SelectRequest,
+    responses(
+        (status = 200, description = "Selected edges", body = crate::openapi::schemas::SelectResponse),
+        (status = 400, body = crate::error::ErrorBody),
+        (status = 500, body = crate::error::ErrorBody),
+    ),
+)]
 pub async fn handle_select(
     State(state): State<Arc<AppState>>,
     Json(req): Json<SelectRequest>,
@@ -169,6 +180,18 @@ pub async fn handle_select(
     Ok(Json(result))
 }
 
+#[utoipa::path(
+    post,
+    path = "/v1/{model_id}/select",
+    tag = "inference",
+    params(("model_id" = String, Path, description = "Id of a loaded vindex.")),
+    request_body = SelectRequest,
+    responses(
+        (status = 200, body = crate::openapi::schemas::SelectResponse),
+        (status = 400, body = crate::error::ErrorBody),
+        (status = 404, body = crate::error::ErrorBody),
+    ),
+)]
 pub async fn handle_select_multi(
     State(state): State<Arc<AppState>>,
     Path(model_id): Path<String>,

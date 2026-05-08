@@ -464,7 +464,7 @@ where
     // that would panic on Q4K expert bytes. Token-by-token is correct and builds the
     // KV cache identically to the batched prefill.
     let h_vec = if weights.has_per_layer_ffn() {
-        #[cfg(feature = "metal")]
+        #[cfg(all(feature = "metal", target_os = "macos"))]
         {
             if let Some(metal) = backend
                 .as_any()
@@ -506,7 +506,7 @@ where
                 };
             }
         }
-        #[cfg(not(feature = "metal"))]
+        #[cfg(not(all(feature = "metal", target_os = "macos")))]
         {
             return GenerateResult {
                 tokens: Vec::new(),
@@ -697,7 +697,7 @@ where
             // Per-layer Q4_K expert format: route on CPU, dispatch expert FFNs on GPU.
             // Eliminates the BF16 dequant + CPU BLAS path and the per-layer commit
             // overhead that was doing nothing useful for MoE experts.
-            #[cfg(feature = "metal")]
+            #[cfg(all(feature = "metal", target_os = "macos"))]
             if let Some(metal) = backend
                 .as_any()
                 .downcast_ref::<larql_compute::metal::MetalBackend>()
@@ -731,7 +731,7 @@ where
                     attention.rope_base,
                 )
             }
-            #[cfg(not(feature = "metal"))]
+            #[cfg(not(all(feature = "metal", target_os = "macos")))]
             backend.decode_token(
                 &layers,
                 &x_dec,
@@ -842,7 +842,7 @@ where
                 }
                 t_embed += embed_ms;
                 t_gpu += gpu_ms;
-                #[cfg(feature = "metal")]
+                #[cfg(all(feature = "metal", target_os = "macos"))]
                 if profile_split {
                     if let Some(pt) = larql_compute::metal_take_last_split_timings() {
                         t_gate_up += pt.gate_up_ms;

@@ -48,6 +48,14 @@ fn server_boot_unix_secs(state: &AppState) -> u64 {
     now_unix.saturating_sub(uptime)
 }
 
+#[utoipa::path(
+    get,
+    path = "/v1/models",
+    tag = "browse",
+    responses(
+        (status = 200, description = "OpenAI-compatible list of loaded models", body = crate::openapi::schemas::ModelsListResponse),
+    ),
+)]
 pub async fn handle_models(State(state): State<Arc<AppState>>) -> Json<serde_json::Value> {
     state.bump_requests();
 

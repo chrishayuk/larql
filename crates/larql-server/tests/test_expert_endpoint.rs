@@ -221,6 +221,8 @@ fn make_loaded_model(
         down_top_k: 1,
         has_model_weights: false,
         model_config: None,
+        fp4: None,
+        ffn_layout: None,
     };
 
     // Build ModelWeights with expert data in raw_bytes (no mmap needed).
@@ -238,6 +240,7 @@ fn make_loaded_model(
         vectors,
         raw_bytes,
         packed_mmaps: HashMap::new(),
+        skipped_tensors: Vec::new(),
         packed_byte_ranges: HashMap::new(),
         embed: embed.clone(),
         lm_head: embed,
@@ -253,7 +256,7 @@ fn make_loaded_model(
     };
 
     let lock = OnceLock::new();
-    lock.set(weights).ok();
+    lock.set(std::sync::RwLock::new(weights)).ok();
 
     LoadedModel {
         id: "test-moe".into(),
@@ -272,7 +275,14 @@ fn make_loaded_model(
         probe_labels: HashMap::new(),
         ffn_l2_cache: FfnL2Cache::new(1),
         expert_filter: None,
+        unit_filter: None,
         moe_remote: None,
+        #[cfg(feature = "metal-experts")]
+        metal_backend: std::sync::OnceLock::new(),
+        #[cfg(feature = "metal-experts")]
+        moe_scratches: std::sync::Mutex::new(HashMap::new()),
+        #[cfg(feature = "metal-experts")]
+        metal_ffn_layer_bufs: std::sync::OnceLock::new(),
     }
 }
 
@@ -307,11 +317,16 @@ fn local_output(
     router_proj: &[f32],
     pre_norm: &[f32],
 ) -> Vec<f32> {
+    let gate_up_per_expert = gate_up.len() / NUM_EXPERTS;
+    let down_per_expert = down.len() / NUM_EXPERTS;
+    let experts_gate_up: Vec<&[u8]> = gate_up.chunks(gate_up_per_expert).collect();
+    let experts_down: Vec<&[u8]> = down.chunks(down_per_expert).collect();
     cpu_moe_forward(
         h,
         &MoeLayerWeights {
-            experts_gate_up: gate_up,
-            experts_down: down,
+            experts_gate_up,
+            experts_down,
+            expert_data_format: larql_compute::QuantFormat::BF16,
             router_proj,
             router_scale: &[],
             router_per_expert_scale: &[],

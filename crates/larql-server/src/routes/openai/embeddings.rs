@@ -118,6 +118,18 @@ pub struct EmbeddingsResponse {
     pub usage: EmbeddingsUsage,
 }
 
+#[utoipa::path(
+    post,
+    path = "/v1/embeddings",
+    tag = "openai",
+    request_body = crate::openapi::schemas::OpenAiEmbeddingsRequest,
+    responses(
+        (status = 200, description = "Mean-pooled embeddings (not contrastively trained — use at your own risk).",
+         body = crate::openapi::schemas::OpenAiEmbeddingsResponse),
+        (status = 400, body = crate::error::ErrorBody),
+        (status = 500, body = crate::error::ErrorBody),
+    ),
+)]
 pub async fn handle_embeddings(
     State(state): State<Arc<AppState>>,
     Json(req): Json<EmbeddingsRequest>,

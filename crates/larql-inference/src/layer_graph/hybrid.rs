@@ -30,7 +30,7 @@ pub fn predict_hybrid(
     layer_range: std::ops::Range<usize>,
 ) -> crate::forward::PredictResult {
     // Try the Metal hybrid path
-    #[cfg(feature = "metal")]
+    #[cfg(all(feature = "metal", target_os = "macos"))]
     {
         if let Some(result) = predict_hybrid_metal(
             weights,
@@ -60,7 +60,7 @@ pub fn predict_hybrid(
 }
 
 /// Metal-specific hybrid implementation.
-#[cfg(feature = "metal")]
+#[cfg(all(feature = "metal", target_os = "macos"))]
 #[allow(clippy::too_many_arguments)]
 fn predict_hybrid_metal(
     weights: &ModelWeights,

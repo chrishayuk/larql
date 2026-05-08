@@ -16,7 +16,7 @@ use crate::error::ServerError;
 use crate::session::extract_session_id;
 use crate::state::{elapsed_ms, AppState, LoadedModel};
 
-#[derive(Clone, Debug, Deserialize)]
+#[derive(Clone, Debug, Deserialize, utoipa::ToSchema)]
 pub struct InsertRequest {
     pub entity: String,
     pub relation: String,
@@ -305,6 +305,17 @@ fn run_memory_update_batch(
     }))
 }
 
+#[utoipa::path(
+    post,
+    path = "/v1/insert",
+    tag = "inference",
+    request_body = InsertRequest,
+    responses(
+        (status = 200, description = "Constellation insert result", body = crate::openapi::schemas::InsertResponse),
+        (status = 400, body = crate::error::ErrorBody),
+        (status = 500, body = crate::error::ErrorBody),
+    ),
+)]
 pub async fn handle_insert(
     State(state): State<Arc<AppState>>,
     headers: HeaderMap,
@@ -321,6 +332,18 @@ pub async fn handle_insert(
     Ok(Json(result))
 }
 
+#[utoipa::path(
+    post,
+    path = "/v1/{model_id}/insert",
+    tag = "inference",
+    params(("model_id" = String, Path, description = "Id of a loaded vindex.")),
+    request_body = InsertRequest,
+    responses(
+        (status = 200, body = crate::openapi::schemas::InsertResponse),
+        (status = 400, body = crate::error::ErrorBody),
+        (status = 404, body = crate::error::ErrorBody),
+    ),
+)]
 pub async fn handle_insert_multi(
     State(state): State<Arc<AppState>>,
     Path(model_id): Path<String>,

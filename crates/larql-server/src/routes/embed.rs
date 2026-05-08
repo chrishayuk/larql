@@ -15,6 +15,7 @@ use axum::http::header;
 use axum::response::{IntoResponse, Response};
 use axum::Json;
 use serde::{Deserialize, Serialize};
+use utoipa::ToSchema;
 
 use larql_inference::forward::predict::logits_to_predictions_pub;
 use larql_vindex::ndarray::Array2;
@@ -28,12 +29,12 @@ use crate::state::{AppState, LoadedModel};
 
 // ── Request / response types ──────────────────────────────────────────────────
 
-#[derive(Deserialize)]
+#[derive(Deserialize, ToSchema)]
 pub struct EmbedRequest {
     pub token_ids: Vec<u32>,
 }
 
-#[derive(Serialize)]
+#[derive(Serialize, ToSchema)]
 pub struct EmbedResponse {
     /// Row-major: seq_len × hidden_size f32 values.
     pub residual: Vec<Vec<f32>>,
@@ -42,7 +43,7 @@ pub struct EmbedResponse {
     pub latency_ms: f32,
 }
 
-#[derive(Deserialize)]
+#[derive(Deserialize, ToSchema)]
 pub struct LogitsRequest {
     /// Flat f32 residual of length hidden_size (one position, post-all-layers).
     pub residual: Vec<f32>,
@@ -105,14 +106,14 @@ fn parse_binary_logits_request(bytes: &[u8]) -> Result<Vec<f32>, ServerError> {
         .collect())
 }
 
-#[derive(Serialize)]
+#[derive(Serialize, ToSchema)]
 pub struct TokenProb {
     pub token_id: u32,
     pub token: String,
     pub prob: f32,
 }
 
-#[derive(Serialize)]
+#[derive(Serialize, ToSchema)]
 pub struct LogitsResponse {
     pub top_k: Vec<TokenProb>,
     pub latency_ms: f32,
@@ -183,6 +184,25 @@ pub(crate) fn embed_tokens(
 ///
 /// JSON response: `{"residual": [[f32, ...], ...], "seq_len": N, ...}`.
 /// Binary response: seq_len×hidden_size f32 LE, prefixed by two u32 headers.
+#[utoipa::path(
+    post,
+    path = "/v1/embed",
+    tag = "admin",
+    request_body(
+        content = EmbedRequest,
+        description = "JSON `{token_ids: [u32]}` OR binary `application/x-larql-ffn`: \
+                       `[num_tokens u32 LE][token_ids u32 LE...]`.",
+    ),
+    responses(
+        (status = 200, description = "JSON response", body = EmbedResponse),
+        (status = 200, content_type = "application/x-larql-ffn",
+         body = Vec<u8>,
+         description = "Binary response when the request used `Content-Type: application/x-larql-ffn`: \
+                        `[seq_len u32][hidden u32][seq_len × hidden f32 LE]`."),
+        (status = 400, body = crate::error::ErrorBody),
+        (status = 404, body = crate::error::ErrorBody),
+    ),
+)]
 pub async fn handle_embed(
     State(state): State<Arc<AppState>>,
     headers: axum::http::HeaderMap,
@@ -191,6 +211,19 @@ pub async fn handle_embed(
     handle_embed_inner(&state, None, headers, body).await
 }
 
+#[utoipa::path(
+    post,
+    path = "/v1/{model_id}/embed",
+    tag = "admin",
+    params(("model_id" = String, Path, description = "Id of a loaded vindex.")),
+    request_body(content = EmbedRequest, description = "JSON or binary `application/x-larql-ffn`."),
+    responses(
+        (status = 200, body = EmbedResponse),
+        (status = 200, content_type = "application/x-larql-ffn", body = Vec<u8>),
+        (status = 400, body = crate::error::ErrorBody),
+        (status = 404, body = crate::error::ErrorBody),
+    ),
+)]
 pub async fn handle_embed_multi(
     State(state): State<Arc<AppState>>,
     Path(model_id): Path<String>,
@@ -281,6 +314,21 @@ async fn handle_embed_inner(
 /// Accepts JSON (`{"residual": [...], "top_k": 5, "temperature": 1.0}`) or
 /// binary (`Content-Type: application/x-larql-ffn`, raw hidden_size f32 LE
 /// bytes). Returns JSON top-k tokens.
+#[utoipa::path(
+    post,
+    path = "/v1/logits",
+    tag = "admin",
+    request_body(
+        content = LogitsRequest,
+        description = "JSON `{residual: [f32; hidden_size], top_k, temperature}` OR binary \
+                       `application/x-larql-ffn` with raw hidden_size f32 LE bytes.",
+    ),
+    responses(
+        (status = 200, description = "Top-K tokens from lm_head", body = LogitsResponse),
+        (status = 400, body = crate::error::ErrorBody),
+        (status = 500, body = crate::error::ErrorBody),
+    ),
+)]
 pub async fn handle_logits(
     State(state): State<Arc<AppState>>,
     headers: axum::http::HeaderMap,
@@ -289,6 +337,18 @@ pub async fn handle_logits(
     handle_logits_inner(&state, None, headers, body).await
 }
 
+#[utoipa::path(
+    post,
+    path = "/v1/{model_id}/logits",
+    tag = "admin",
+    params(("model_id" = String, Path, description = "Id of a loaded vindex.")),
+    request_body(content = LogitsRequest),
+    responses(
+        (status = 200, body = LogitsResponse),
+        (status = 400, body = crate::error::ErrorBody),
+        (status = 404, body = crate::error::ErrorBody),
+    ),
+)]
 pub async fn handle_logits_multi(
     State(state): State<Arc<AppState>>,
     Path(model_id): Path<String>,
@@ -380,6 +440,18 @@ async fn handle_logits_inner(
 // ─────────────────────────────────────────────────────────────────────────────
 
 /// `GET /v1/token/encode?text=Paris`
+#[utoipa::path(
+    get,
+    path = "/v1/token/encode",
+    tag = "admin",
+    params(
+        ("text" = String, Query, description = "Text to tokenize."),
+    ),
+    responses(
+        (status = 200, description = "Token IDs for the text", body = crate::openapi::schemas::TokenEncodeResponse),
+        (status = 500, body = crate::error::ErrorBody),
+    ),
+)]
 pub async fn handle_token_encode(
     State(state): State<Arc<AppState>>,
     Query(q): Query<TokenEncodeQuery>,
@@ -387,6 +459,19 @@ pub async fn handle_token_encode(
     handle_token_encode_inner(&state, None, q)
 }
 
+#[utoipa::path(
+    get,
+    path = "/v1/{model_id}/token/encode",
+    tag = "admin",
+    params(
+        ("model_id" = String, Path, description = "Id of a loaded vindex."),
+        ("text" = String, Query, description = "Text to tokenize."),
+    ),
+    responses(
+        (status = 200, body = crate::openapi::schemas::TokenEncodeResponse),
+        (status = 404, body = crate::error::ErrorBody),
+    ),
+)]
 pub async fn handle_token_encode_multi(
     State(state): State<Arc<AppState>>,
     Path(model_id): Path<String>,
@@ -418,6 +503,19 @@ fn handle_token_encode_inner(
 // ─────────────────────────────────────────────────────────────────────────────
 
 /// `GET /v1/token/decode?ids=9515,235,1234`
+#[utoipa::path(
+    get,
+    path = "/v1/token/decode",
+    tag = "admin",
+    params(
+        ("ids" = String, Query, description = "Comma-separated token IDs, e.g. `9515,235,1234`."),
+    ),
+    responses(
+        (status = 200, description = "Decoded text", body = crate::openapi::schemas::TokenDecodeResponse),
+        (status = 400, body = crate::error::ErrorBody),
+        (status = 500, body = crate::error::ErrorBody),
+    ),
+)]
 pub async fn handle_token_decode(
     State(state): State<Arc<AppState>>,
     Query(q): Query<TokenDecodeQuery>,
@@ -425,6 +523,20 @@ pub async fn handle_token_decode(
     handle_token_decode_inner(&state, None, q)
 }
 
+#[utoipa::path(
+    get,
+    path = "/v1/{model_id}/token/decode",
+    tag = "admin",
+    params(
+        ("model_id" = String, Path, description = "Id of a loaded vindex."),
+        ("ids" = String, Query, description = "Comma-separated token IDs."),
+    ),
+    responses(
+        (status = 200, body = crate::openapi::schemas::TokenDecodeResponse),
+        (status = 400, body = crate::error::ErrorBody),
+        (status = 404, body = crate::error::ErrorBody),
+    ),
+)]
 pub async fn handle_token_decode_multi(
     State(state): State<Arc<AppState>>,
     Path(model_id): Path<String>,
@@ -482,6 +594,20 @@ fn handle_token_decode_inner(
 ///
 /// Response (JSON, if Accept: application/json):
 ///   {"token_id": N, "embedding": [f32, ...], "hidden_size": N}
+#[utoipa::path(
+    get,
+    path = "/v1/embed/{token_id}",
+    tag = "admin",
+    params(
+        ("token_id" = u32, Path, description = "Vocabulary token id."),
+    ),
+    responses(
+        (status = 200, description = "Binary f32 LE embedding (default)", content_type = "application/x-larql-ffn", body = Vec<u8>),
+        (status = 200, description = "JSON response when `Accept: application/json`", body = crate::openapi::schemas::EmbedSingleJsonResponse),
+        (status = 400, body = crate::error::ErrorBody),
+        (status = 404, body = crate::error::ErrorBody),
+    ),
+)]
 pub async fn handle_embed_single(
     State(state): State<Arc<AppState>>,
     Path(token_id): Path<u32>,
@@ -490,6 +616,21 @@ pub async fn handle_embed_single(
     handle_embed_single_inner(&state, None, token_id, headers)
 }
 
+#[utoipa::path(
+    get,
+    path = "/v1/{model_id}/embed/{token_id}",
+    tag = "admin",
+    params(
+        ("model_id" = String, Path, description = "Id of a loaded vindex."),
+        ("token_id" = u32, Path),
+    ),
+    responses(
+        (status = 200, content_type = "application/x-larql-ffn", body = Vec<u8>),
+        (status = 200, body = crate::openapi::schemas::EmbedSingleJsonResponse),
+        (status = 400, body = crate::error::ErrorBody),
+        (status = 404, body = crate::error::ErrorBody),
+    ),
+)]
 pub async fn handle_embed_single_multi(
     State(state): State<Arc<AppState>>,
     Path((model_id, token_id)): Path<(String, u32)>,

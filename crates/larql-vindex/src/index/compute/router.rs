@@ -92,7 +92,11 @@ impl RouterIndex {
         let x = embedding.view().into_shape_with_order((1, hidden)).unwrap();
         let cpu = larql_compute::CpuBackend;
         use larql_compute::MatMul;
-        let proj = cpu.matmul(x, self.weights[layer].view()); // [1, num_classes]
+        // weights[layer] is (num_experts, hidden_size) — HF nn.Linear convention
+        // (out_features × in_features). To compute scores = x @ W.T (yielding
+        // [1, num_experts]) we use matmul_transb. Plain matmul would require
+        // hidden_size == num_experts, which only happens by accident.
+        let proj = cpu.matmul_transb(x, self.weights[layer].view()); // [1, num_experts]
         let scores_1d = ndarray::Array1::from_vec(proj.into_raw_vec_and_offset().0);
         let scores_raw = scores_1d + &self.biases[layer];
 

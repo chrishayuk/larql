@@ -269,6 +269,7 @@ fn main() {
         // first half — but we set this *after* peeking at num_experts below.
         expert_filter: None,
         unit_filter: None,
+        moe_remote: None,
     };
 
     let path_str = args[1].clone();

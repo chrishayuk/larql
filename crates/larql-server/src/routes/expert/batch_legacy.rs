@@ -28,6 +28,20 @@ use crate::state::AppState;
 use super::single::run_expert;
 use super::{BatchExpertRequest, BatchExpertResponse, BatchExpertResult};
 
+#[utoipa::path(
+    post,
+    path = "/v1/expert/batch",
+    tag = "expert",
+    request_body(
+        content = crate::routes::expert::BatchExpertRequest,
+        description = "JSON `{requests:[{layer, expert_id, residual}]}` OR binary \
+                       `application/x-larql-expert` wire (see docs/server-spec.md).",
+    ),
+    responses(
+        (status = 200, description = "Per-item expert outputs", body = crate::routes::expert::BatchExpertResponse),
+        (status = 400, body = crate::error::ErrorBody),
+    ),
+)]
 pub async fn handle_expert_batch(
     State(state): State<Arc<AppState>>,
     headers: axum::http::HeaderMap,

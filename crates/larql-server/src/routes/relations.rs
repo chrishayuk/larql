@@ -136,7 +136,8 @@ fn is_content_token(tok: &str) -> bool {
     )
 }
 
-#[derive(Deserialize, Default)]
+#[derive(Deserialize, Default, utoipa::IntoParams)]
+#[into_params(parameter_in = Query)]
 pub struct RelationsParams {
     /// Filter by label source (future use).
     #[serde(default)]
@@ -250,6 +251,16 @@ fn list_relations(model: &LoadedModel) -> Result<serde_json::Value, ServerError>
     }))
 }
 
+#[utoipa::path(
+    get,
+    path = "/v1/relations",
+    tag = "browse",
+    params(RelationsParams),
+    responses(
+        (status = 200, description = "Known relation types across the knowledge band", body = crate::openapi::schemas::RelationsResponse),
+        (status = 500, body = crate::error::ErrorBody),
+    ),
+)]
 pub async fn handle_relations(
     State(state): State<Arc<AppState>>,
     Query(_params): Query<RelationsParams>,
@@ -262,6 +273,20 @@ pub async fn handle_relations(
     Ok(Json(result))
 }
 
+#[utoipa::path(
+    get,
+    path = "/v1/{model_id}/relations",
+    tag = "browse",
+    params(
+        ("model_id" = String, Path, description = "Id of a loaded vindex."),
+        RelationsParams,
+    ),
+    responses(
+        (status = 200, body = crate::openapi::schemas::RelationsResponse),
+        (status = 404, body = crate::error::ErrorBody),
+        (status = 500, body = crate::error::ErrorBody),
+    ),
+)]
 pub async fn handle_relations_multi(
     State(state): State<Arc<AppState>>,
     Path(model_id): Path<String>,

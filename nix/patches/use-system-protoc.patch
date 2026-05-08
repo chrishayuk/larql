@@ -1,0 +1,71 @@
+--- a/crates/larql-server/Cargo.toml
++++ b/crates/larql-server/Cargo.toml
+@@ -42,4 +42,3 @@
+
+ [build-dependencies]
+ tonic-build = "0.13"
+-protobuf-src = "2"
+--- a/crates/larql-server/build.rs
++++ b/crates/larql-server/build.rs
+@@ -1,6 +1,5 @@
+ fn main() -> Result<(), Box<dyn std::error::Error>> {
+-    // Use bundled protoc (no system install required).
+-    std::env::set_var("PROTOC", protobuf_src::protoc());
++    // Use system protoc (set via PROTOC env var by Nix).
+     tonic_build::compile_protos("proto/vindex.proto")?;
+     Ok(())
+ }
+--- a/crates/larql-router-protocol/Cargo.toml
++++ b/crates/larql-router-protocol/Cargo.toml
+@@ -14,4 +14,3 @@
+
+ [build-dependencies]
+ tonic-build = "0.13"
+-protobuf-src = "2"
+--- a/crates/larql-router-protocol/build.rs
++++ b/crates/larql-router-protocol/build.rs
+@@ -1,5 +1,4 @@
+ fn main() -> Result<(), Box<dyn std::error::Error>> {
+-    std::env::set_var("PROTOC", protobuf_src::protoc());
+     tonic_build::compile_protos("proto/grid.proto")?;
+     Ok(())
+ }
+--- a/crates/larql-cli/Cargo.toml
++++ b/crates/larql-cli/Cargo.toml
+@@ -32,7 +32,7 @@
+ libc = "0.2"
+
+ [features]
+-default = ["metal"]
++default = []
+ metal = [
+     "larql-compute/metal",
+     "larql-inference/metal",
+--- a/crates/larql-cli/src/commands/primary/bench_cmd.rs
++++ b/crates/larql-cli/src/commands/primary/bench_cmd.rs
+@@ -156,12 +156,19 @@
+         &tokenizer, &*weights.arch, args.prompt.as_str(),
+     ).map_err(|e| format!("tokenize: {e}"))?;
+
+-    let backend: Box<dyn larql_compute::ComputeBackend> = if metal {
+-        let b = larql_compute::metal::MetalBackend::new()
+-            .ok_or("Metal backend unavailable — rebuild with `--features metal` on an M-series Mac")?;
+-        Box::new(b)
+-    } else {
+-        Box::new(larql_compute::CpuBackend)
++    let backend: Box<dyn larql_compute::ComputeBackend> = {
++        #[cfg(feature = "metal")]
++        {
++            if metal {
++                let b = larql_compute::metal::MetalBackend::new()
++                    .ok_or("Metal backend unavailable — rebuild with `--features metal` on an M-series Mac")?;
++                Box::new(b)
++            } else {
++                Box::new(larql_compute::CpuBackend)
++            }
++        }
++        #[cfg(not(feature = "metal"))]
++        { Box::new(larql_compute::CpuBackend) }
+     };
+
+     let cached_layers = CachedLayerGraph::from_residuals(Vec::new());

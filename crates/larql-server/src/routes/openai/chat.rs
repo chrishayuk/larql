@@ -225,6 +225,20 @@ pub struct ChatCompletionsResponse {
     pub usage: ChatUsage,
 }
 
+#[utoipa::path(
+    post,
+    path = "/v1/chat/completions",
+    tag = "openai",
+    request_body = crate::openapi::schemas::OpenAiChatRequest,
+    responses(
+        (status = 200, description = "Non-streaming JSON response.",
+         body = crate::openapi::schemas::OpenAiChatResponse),
+        (status = 200, description = "SSE stream when `stream: true`. Each event is `data: <ChatCompletionChunk JSON>\\n\\n`, terminated by `data: [DONE]`.",
+         content_type = "text/event-stream", body = String),
+        (status = 400, body = crate::error::ErrorBody),
+        (status = 500, body = crate::error::ErrorBody),
+    ),
+)]
 pub async fn handle_chat_completions(
     State(state): State<Arc<AppState>>,
     Json(req): Json<ChatCompletionsRequest>,

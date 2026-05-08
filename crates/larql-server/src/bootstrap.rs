@@ -523,6 +523,10 @@ pub struct Cli {
     #[arg(long)]
     pub cors: bool,
 
+    /// Disable the built-in Swagger UI and /v1/openapi.json endpoint.
+    #[arg(long)]
+    pub no_docs: bool,
+
     /// API key for authentication (clients send Authorization: Bearer <key>).
     #[arg(long)]
     pub api_key: Option<String>,
@@ -867,6 +871,14 @@ pub async fn serve(cli: Cli) -> Result<(), BoxError> {
         if cli.trust_forwarded_for {
             info!("Rate limit: trusting X-Forwarded-For");
         }
+    }
+
+    // OpenAPI / Swagger UI. Mounted before auth so the docs stay reachable
+    // without the API key — consistent with --cors behavior. Flip the
+    // ordering if operators want docs gated.
+    if !cli.no_docs {
+        app = app.merge(crate::openapi::swagger_router());
+        info!("OpenAPI: /swagger-ui and /v1/openapi.json enabled");
     }
 
     // Auth middleware.

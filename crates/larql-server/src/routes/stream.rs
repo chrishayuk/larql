@@ -101,6 +101,25 @@ fn ws_infer_done(
     })
 }
 
+#[utoipa::path(
+    get,
+    path = "/v1/stream",
+    tag = "admin",
+    responses(
+        (status = 101, description = "\
+WebSocket upgrade. After upgrade:\n\n\
+**Client → server** (text frames, JSON):\n\
+- `{\"type\":\"describe\", \"entity\":\"France\", \"band\":\"all\"}` — streams layer-by-layer describe.\n\
+- `{\"type\":\"infer\", \"prompt\":\"The capital of France is\", \"top\":5, \"mode\":\"walk\"}` — \
+streams top-K predictions one at a time.\n\n\
+**Server → client** (text frames, JSON):\n\
+- `{\"type\":\"layer\", \"layer\":N, \"edges\":[...]}` — per-layer describe output.\n\
+- `{\"type\":\"done\", \"entity\":..., \"total_edges\":N, \"latency_ms\":M}` — describe finished.\n\
+- `{\"type\":\"prediction\", \"rank\":I, \"token\":..., \"probability\":P}` — inference result.\n\
+- `{\"type\":\"infer_done\", \"prompt\":..., \"mode\":..., \"predictions\":N, \"latency_ms\":M}` — inference finished.\n\
+- `{\"type\":\"error\", \"message\":...}` — protocol or runtime error.\n"),
+    ),
+)]
 pub async fn handle_stream(State(state): State<Arc<AppState>>, ws: WebSocketUpgrade) -> Response {
     ws.on_upgrade(move |socket| handle_socket(socket, state))
 }

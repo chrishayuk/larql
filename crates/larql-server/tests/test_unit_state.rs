@@ -96,6 +96,13 @@ fn make_tiny_model(id: &str) -> Arc<LoadedModel> {
         ffn_l2_cache: FfnL2Cache::new(1),
         expert_filter: None,
         unit_filter: None,
+        moe_remote: None,
+        #[cfg(feature = "metal-experts")]
+        metal_backend: std::sync::OnceLock::new(),
+        #[cfg(feature = "metal-experts")]
+        moe_scratches: std::sync::Mutex::new(std::collections::HashMap::new()),
+        #[cfg(feature = "metal-experts")]
+        metal_ffn_layer_bufs: std::sync::OnceLock::new(),
     })
 }
 
@@ -172,6 +179,13 @@ fn make_loaded_model_for_warmup() -> Arc<LoadedModel> {
         ffn_l2_cache: FfnL2Cache::new(1),
         expert_filter: None,
         unit_filter: None,
+        moe_remote: None,
+        #[cfg(feature = "metal-experts")]
+        metal_backend: std::sync::OnceLock::new(),
+        #[cfg(feature = "metal-experts")]
+        moe_scratches: std::sync::Mutex::new(std::collections::HashMap::new()),
+        #[cfg(feature = "metal-experts")]
+        metal_ffn_layer_bufs: std::sync::OnceLock::new(),
     })
 }
 

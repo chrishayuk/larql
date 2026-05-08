@@ -1,7 +1,6 @@
 # Rust
 target/
 **/*.rs.bk
-Cargo.lock
 
 # Python / maturin
 .venv/
@@ -33,6 +32,10 @@ build/
 lcov.info
 coverage/
 tarpaulin-report.html
+
+# Nix
+result
+result-*
 
 # output
 output/

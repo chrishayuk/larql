@@ -12,11 +12,14 @@ use crate::error::ServerError;
 use crate::session::extract_session_id;
 use crate::state::{elapsed_ms, AppState, LoadedModel};
 
-#[derive(Deserialize)]
+#[derive(Deserialize, utoipa::ToSchema)]
 pub struct InferRequest {
+    /// Prompt to run inference on.
     pub prompt: String,
+    /// Top-K next-token predictions to return.
     #[serde(default = "default_top")]
     pub top: usize,
+    /// Inference mode: `walk` (default), `dense`, or `compare`.
     #[serde(default = "default_mode")]
     pub mode: String,
 }
@@ -187,6 +190,18 @@ fn run_infer(
     Ok(serde_json::Value::Object(result))
 }
 
+#[utoipa::path(
+    post,
+    path = "/v1/infer",
+    tag = "inference",
+    request_body = InferRequest,
+    responses(
+        (status = 200, description = "Next-token predictions", body = crate::openapi::schemas::InferResponse),
+        (status = 400, body = crate::error::ErrorBody),
+        (status = 503, body = crate::error::ErrorBody, description = "Inference weights unavailable"),
+        (status = 500, body = crate::error::ErrorBody),
+    ),
+)]
 pub async fn handle_infer(
     State(state): State<Arc<AppState>>,
     headers: HeaderMap,
@@ -203,6 +218,19 @@ pub async fn handle_infer(
     Ok(Json(result))
 }
 
+#[utoipa::path(
+    post,
+    path = "/v1/{model_id}/infer",
+    tag = "inference",
+    params(("model_id" = String, Path, description = "Id of a loaded vindex.")),
+    request_body = InferRequest,
+    responses(
+        (status = 200, body = crate::openapi::schemas::InferResponse),
+        (status = 400, body = crate::error::ErrorBody),
+        (status = 404, body = crate::error::ErrorBody),
+        (status = 503, body = crate::error::ErrorBody),
+    ),
+)]
 pub async fn handle_infer_multi(
     State(state): State<Arc<AppState>>,
     Path(model_id): Path<String>,

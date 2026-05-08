@@ -26,7 +26,7 @@ use tracing::info;
 use crate::error::ServerError;
 use crate::state::{AppState, LoadedModel};
 
-#[derive(Default, Deserialize)]
+#[derive(Default, Deserialize, utoipa::ToSchema)]
 pub struct WarmupRequest {
     /// Specific layers to prefetch (`madvise WILLNEED`). Defaults to
     /// every owned layer when omitted — the typical case for boot
@@ -48,7 +48,7 @@ pub struct WarmupRequest {
     pub warmup_hnsw: bool,
 }
 
-#[derive(Serialize)]
+#[derive(Serialize, utoipa::ToSchema)]
 pub struct WarmupResponse {
     pub model: String,
     pub weights_loaded: bool,
@@ -164,6 +164,16 @@ pub async fn warmup_model_async(model: Arc<LoadedModel>, req: WarmupRequest) -> 
         .expect("warmup spawn_blocking")
 }
 
+#[utoipa::path(
+    post,
+    path = "/v1/warmup",
+    tag = "inference",
+    request_body = WarmupRequest,
+    responses(
+        (status = 200, description = "Warmup completed", body = WarmupResponse),
+        (status = 500, body = crate::error::ErrorBody),
+    ),
+)]
 pub async fn handle_warmup(
     State(state): State<Arc<AppState>>,
     body: Option<Json<WarmupRequest>>,

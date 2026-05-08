@@ -79,6 +79,15 @@ async fn add_q4k_ffn(model: &LoadedModel, mut stats: serde_json::Value) -> serde
     stats
 }
 
+#[utoipa::path(
+    get,
+    path = "/v1/stats",
+    tag = "browse",
+    responses(
+        (status = 200, description = "Model + vindex statistics", body = crate::openapi::schemas::StatsResponse),
+        (status = 404, body = crate::error::ErrorBody),
+    ),
+)]
 pub async fn handle_stats(
     State(state): State<Arc<AppState>>,
 ) -> Result<Json<serde_json::Value>, ServerError> {
@@ -88,6 +97,16 @@ pub async fn handle_stats(
     Ok(Json(add_q4k_ffn(model, stats).await))
 }
 
+#[utoipa::path(
+    get,
+    path = "/v1/{model_id}/stats",
+    tag = "browse",
+    params(("model_id" = String, Path, description = "Id of a loaded vindex.")),
+    responses(
+        (status = 200, body = crate::openapi::schemas::StatsResponse),
+        (status = 404, body = crate::error::ErrorBody),
+    ),
+)]
 pub async fn handle_stats_multi(
     State(state): State<Arc<AppState>>,
     Path(model_id): Path<String>,

@@ -14,10 +14,11 @@ use axum::extract::State;
 use axum::http::StatusCode;
 use axum::Json;
 use serde::Serialize;
+use utoipa::ToSchema;
 
 use crate::state::AppState;
 
-#[derive(Serialize)]
+#[derive(Serialize, ToSchema)]
 pub struct TopologyResponse {
     /// Model identifier (e.g. `"google/gemma-4-26B-A4B-it"`).
     pub model_id: String,
@@ -31,6 +32,15 @@ pub struct TopologyResponse {
     pub owned_end: usize,
 }
 
+#[utoipa::path(
+    get,
+    path = "/v1/expert/topology",
+    tag = "browse",
+    responses(
+        (status = 200, description = "Expert ownership range for this shard", body = TopologyResponse),
+        (status = 404, description = "Server was not launched with --experts"),
+    ),
+)]
 pub async fn handle_topology(
     State(state): State<Arc<AppState>>,
 ) -> Result<Json<TopologyResponse>, StatusCode> {

@@ -137,6 +137,21 @@ pub fn run_expert(
     Ok(output)
 }
 
+#[utoipa::path(
+    post,
+    path = "/v1/expert/{layer}/{expert_id}",
+    tag = "expert",
+    params(
+        ("layer" = usize, Path),
+        ("expert_id" = usize, Path),
+    ),
+    request_body = SingleExpertRequest,
+    responses(
+        (status = 200, description = "Expert output vector", body = SingleExpertResponse),
+        (status = 400, body = crate::error::ErrorBody),
+        (status = 404, body = crate::error::ErrorBody),
+    ),
+)]
 pub async fn handle_expert(
     State(state): State<Arc<AppState>>,
     Path((layer, expert_id)): Path<(usize, usize)>,

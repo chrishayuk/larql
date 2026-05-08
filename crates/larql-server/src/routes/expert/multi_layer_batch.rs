@@ -29,6 +29,21 @@ use crate::state::AppState;
 
 use super::cpu::{run_experts_cpu_batch, run_experts_cpu_batch_q8k_prenormed};
 
+#[utoipa::path(
+    post,
+    path = "/v1/experts/multi-layer-batch",
+    tag = "expert",
+    request_body(
+        content_type = "application/octet-stream",
+        description = "N packed layer tasks — each `(layer, residual, expert_ids, weights)`. \
+                       Server runs every task in parallel via rayon and returns N per-layer f32 outputs in one response.",
+    ),
+    responses(
+        (status = 200, content_type = "application/x-larql-ffn-multi",
+         description = "N per-layer f32 outputs, one per task", body = Vec<u8>),
+        (status = 400, body = crate::error::ErrorBody),
+    ),
+)]
 pub async fn handle_experts_multi_layer_batch(
     State(state): State<Arc<AppState>>,
     body: Bytes,
@@ -85,6 +100,21 @@ pub async fn handle_experts_multi_layer_batch(
 /// Q8K-prenormed variant: client pre-quantises h_norm, server skips
 /// `pre_experts_norm` and `quantize_h_norm_for_q4k` — just the matvec.
 /// 4× smaller upload; response is standard f32.
+#[utoipa::path(
+    post,
+    path = "/v1/experts/multi-layer-batch-q8k",
+    tag = "expert",
+    request_body(
+        content_type = "application/octet-stream",
+        description = "Same shape as `/v1/experts/multi-layer-batch` but the client has already applied `pre_experts_norm` \
+                       and quantised `h_norm` to Q8K, saving ~4× upload bandwidth. Response is standard f32.",
+    ),
+    responses(
+        (status = 200, content_type = "application/x-larql-ffn-multi",
+         description = "N per-layer f32 outputs, one per task", body = Vec<u8>),
+        (status = 400, body = crate::error::ErrorBody),
+    ),
+)]
 pub async fn handle_experts_multi_layer_batch_q8k(
     State(state): State<Arc<AppState>>,
     body: Bytes,

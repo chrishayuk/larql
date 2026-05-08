@@ -9,11 +9,15 @@ use serde::Deserialize;
 use crate::error::ServerError;
 use crate::state::{elapsed_ms, AppState, LoadedModel};
 
-#[derive(Deserialize)]
+#[derive(Deserialize, utoipa::IntoParams)]
+#[into_params(parameter_in = Query)]
 pub struct WalkParams {
+    /// Prompt text to scan for features.
     pub prompt: String,
+    /// Top-K features per layer.
     #[serde(default = "default_top")]
     pub top: usize,
+    /// Restrict scan to these layers — either a range (`"24-33"`) or a comma list (`"14,26,27"`).
     #[serde(default)]
     pub layers: Option<String>,
 }
@@ -88,6 +92,17 @@ fn walk_prompt(model: &LoadedModel, params: &WalkParams) -> Result<serde_json::V
     }))
 }
 
+#[utoipa::path(
+    get,
+    path = "/v1/walk",
+    tag = "browse",
+    params(WalkParams),
+    responses(
+        (status = 200, description = "Top feature hits for the prompt", body = crate::openapi::schemas::WalkResponse),
+        (status = 400, body = crate::error::ErrorBody),
+        (status = 500, body = crate::error::ErrorBody),
+    ),
+)]
 pub async fn handle_walk(
     State(state): State<Arc<AppState>>,
     Query(params): Query<WalkParams>,
@@ -100,6 +115,21 @@ pub async fn handle_walk(
     Ok(Json(result))
 }
 
+#[utoipa::path(
+    get,
+    path = "/v1/{model_id}/walk",
+    tag = "browse",
+    params(
+        ("model_id" = String, Path, description = "Id of a loaded vindex."),
+        WalkParams,
+    ),
+    responses(
+        (status = 200, body = crate::openapi::schemas::WalkResponse),
+        (status = 400, body = crate::error::ErrorBody),
+        (status = 404, body = crate::error::ErrorBody),
+        (status = 500, body = crate::error::ErrorBody),
+    ),
+)]
 pub async fn handle_walk_multi(
     State(state): State<Arc<AppState>>,
     Path(model_id): Path<String>,

@@ -386,7 +386,6 @@ fn validation_rejects_invalid_attention_geometry() {
     }));
     let fields = validation_fields(arch.as_ref());
 
-    assert!(fields.contains(&FIELD_HEAD_DIM));
     assert!(fields.contains(&FIELD_NUM_Q_HEADS));
 }
 

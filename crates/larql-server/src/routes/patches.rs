@@ -163,6 +163,21 @@ async fn apply_patch_to_model(
     }
 }
 
+#[utoipa::path(
+    post,
+    path = "/v1/patches/apply",
+    tag = "patches",
+    request_body(
+        content = crate::openapi::schemas::ApplyPatchBody,
+        description = "Provide either a `url` (path / http(s):// / hf://) or an inline `patch` object. \
+                       Use the `X-Session-Id` header to scope the apply to a session.",
+    ),
+    responses(
+        (status = 200, description = "Patch applied", body = crate::openapi::schemas::ApplyPatchResponse),
+        (status = 400, body = crate::error::ErrorBody),
+        (status = 500, body = crate::error::ErrorBody),
+    ),
+)]
 pub async fn handle_apply_patch(
     State(state): State<Arc<AppState>>,
     headers: HeaderMap,
@@ -172,6 +187,18 @@ pub async fn handle_apply_patch(
     apply_patch_to_model(&state, None, &headers, req).await
 }
 
+#[utoipa::path(
+    post,
+    path = "/v1/{model_id}/patches/apply",
+    tag = "patches",
+    params(("model_id" = String, Path, description = "Id of a loaded vindex.")),
+    request_body(content = crate::openapi::schemas::ApplyPatchBody),
+    responses(
+        (status = 200, body = crate::openapi::schemas::ApplyPatchResponse),
+        (status = 400, body = crate::error::ErrorBody),
+        (status = 404, body = crate::error::ErrorBody),
+    ),
+)]
 pub async fn handle_apply_patch_multi(
     State(state): State<Arc<AppState>>,
     Path(model_id): Path<String>,
@@ -214,6 +241,16 @@ async fn list_patches_for_model(
     Ok(Json(serde_json::json!({ "patches": patches })))
 }
 
+#[utoipa::path(
+    get,
+    path = "/v1/patches",
+    tag = "patches",
+    responses(
+        (status = 200, description = "Active patches for the current session or global state",
+         body = crate::openapi::schemas::ListPatchesResponse),
+        (status = 404, body = crate::error::ErrorBody),
+    ),
+)]
 pub async fn handle_list_patches(
     State(state): State<Arc<AppState>>,
     headers: HeaderMap,
@@ -222,6 +259,16 @@ pub async fn handle_list_patches(
     list_patches_for_model(&state, None, &headers).await
 }
 
+#[utoipa::path(
+    get,
+    path = "/v1/{model_id}/patches",
+    tag = "patches",
+    params(("model_id" = String, Path, description = "Id of a loaded vindex.")),
+    responses(
+        (status = 200, body = crate::openapi::schemas::ListPatchesResponse),
+        (status = 404, body = crate::error::ErrorBody),
+    ),
+)]
 pub async fn handle_list_patches_multi(
     State(state): State<Arc<AppState>>,
     Path(model_id): Path<String>,
@@ -268,6 +315,18 @@ async fn remove_patch_from_model(
     })))
 }
 
+#[utoipa::path(
+    delete,
+    path = "/v1/patches/{name}",
+    tag = "patches",
+    params(
+        ("name" = String, Path, description = "Patch description/name (or `inline-patch` if it was inlined without one)."),
+    ),
+    responses(
+        (status = 200, description = "Patch removed", body = crate::openapi::schemas::RemovePatchResponse),
+        (status = 404, body = crate::error::ErrorBody),
+    ),
+)]
 pub async fn handle_remove_patch(
     State(state): State<Arc<AppState>>,
     headers: HeaderMap,
@@ -277,6 +336,19 @@ pub async fn handle_remove_patch(
     remove_patch_from_model(&state, None, &headers, &name).await
 }
 
+#[utoipa::path(
+    delete,
+    path = "/v1/{model_id}/patches/{name}",
+    tag = "patches",
+    params(
+        ("model_id" = String, Path, description = "Id of a loaded vindex."),
+        ("name" = String, Path, description = "Patch description/name."),
+    ),
+    responses(
+        (status = 200, body = crate::openapi::schemas::RemovePatchResponse),
+        (status = 404, body = crate::error::ErrorBody),
+    ),
+)]
 pub async fn handle_remove_patch_multi(
     State(state): State<Arc<AppState>>,
     Path((model_id, name)): Path<(String, String)>,

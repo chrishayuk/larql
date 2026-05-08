@@ -18,15 +18,21 @@ use crate::state::{elapsed_ms, AppState, LoadedModel};
 
 const DESCRIBE_CACHE_CONTROL: &str = "public, max-age=86400";
 
-#[derive(Deserialize)]
+#[derive(Deserialize, utoipa::IntoParams)]
+#[into_params(parameter_in = Query)]
 pub struct DescribeParams {
+    /// Entity to describe, e.g. `France`.
     pub entity: String,
+    /// Layer band to scan: `knowledge` (default), `syntax`, `output`, or `all`.
     #[serde(default = "default_band")]
     pub band: String,
+    /// Include low-score edges in the response.
     #[serde(default)]
     pub verbose: bool,
+    /// Maximum number of edges to return.
     #[serde(default = "default_limit")]
     pub limit: usize,
+    /// Minimum gate score to include an edge.
     #[serde(default = "default_min_score")]
     pub min_score: f32,
 }
@@ -257,6 +263,19 @@ async fn describe_with_cache(
         .into_response())
 }
 
+#[utoipa::path(
+    get,
+    path = "/v1/describe",
+    tag = "browse",
+    params(DescribeParams),
+    responses(
+        (status = 200, description = "Edges for the queried entity", body = crate::openapi::schemas::DescribeResponse),
+        (status = 304, description = "Not modified (ETag match)"),
+        (status = 400, body = crate::error::ErrorBody),
+        (status = 404, body = crate::error::ErrorBody),
+        (status = 500, body = crate::error::ErrorBody),
+    ),
+)]
 pub async fn handle_describe(
     State(state): State<Arc<AppState>>,
     headers: HeaderMap,
@@ -267,6 +286,22 @@ pub async fn handle_describe(
     describe_with_cache(&state, model, &headers, params).await
 }
 
+#[utoipa::path(
+    get,
+    path = "/v1/{model_id}/describe",
+    tag = "browse",
+    params(
+        ("model_id" = String, Path, description = "Id of a loaded vindex."),
+        DescribeParams,
+    ),
+    responses(
+        (status = 200, body = crate::openapi::schemas::DescribeResponse),
+        (status = 304),
+        (status = 400, body = crate::error::ErrorBody),
+        (status = 404, body = crate::error::ErrorBody),
+        (status = 500, body = crate::error::ErrorBody),
+    ),
+)]
 pub async fn handle_describe_multi(
     State(state): State<Arc<AppState>>,
     Path(model_id): Path<String>,

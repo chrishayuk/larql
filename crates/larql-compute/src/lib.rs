@@ -66,7 +66,7 @@ pub mod cpu;
 pub mod cuda;
 pub mod pipeline;
 
-#[cfg(feature = "metal")]
+#[cfg(all(feature = "metal", target_os = "macos"))]
 pub mod metal;
 
 // ── Re-exports: pipeline types ──
@@ -104,15 +104,15 @@ pub use cuda::{CudaBackend, CudaResidentF32Matrix};
 /// Metal decode step. Returns `None` when `LARQL_PROFILE_SPLIT` is unset
 /// or no step has run yet. Used by the generate loop to accumulate
 /// gate+up / act+down averages into `StageTimings`.
-#[cfg(feature = "metal")]
+#[cfg(all(feature = "metal", target_os = "macos"))]
 pub use metal::take_last_split_timings as metal_take_last_split_timings;
-#[cfg(feature = "metal")]
+#[cfg(all(feature = "metal", target_os = "macos"))]
 pub use metal::{MetalBackend, MoeScratch};
 
 /// Re-export of the metal-rs `Buffer` type so downstream crates (e.g.
 /// `larql-server`) can hold cached `(gate_up, down)` Metal buffer pairs
 /// without taking a direct dependency on the `metal` crate.
-#[cfg(feature = "metal")]
+#[cfg(all(feature = "metal", target_os = "macos"))]
 pub use ::metal::Buffer as MetalBuffer;
 
 /// Create the best available backend.
@@ -135,7 +135,7 @@ pub fn default_backend() -> Box<dyn ComputeBackend> {
         }
         eprintln!("[compute] CUDA not available, falling back to CPU");
     }
-    #[cfg(feature = "metal")]
+    #[cfg(all(feature = "metal", target_os = "macos"))]
     {
         if let Some(m) = metal::MetalBackend::new() {
             m.calibrate();

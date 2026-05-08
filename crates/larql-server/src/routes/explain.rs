@@ -10,7 +10,7 @@ use crate::band_utils::{get_layer_bands, BAND_KNOWLEDGE, BAND_OUTPUT, BAND_SYNTA
 use crate::error::ServerError;
 use crate::state::{elapsed_ms, AppState, LoadedModel};
 
-#[derive(Deserialize)]
+#[derive(Deserialize, utoipa::ToSchema)]
 pub struct ExplainRequest {
     pub prompt: String,
     #[serde(default = "default_top")]
@@ -287,6 +287,17 @@ fn explain_infer(
     Ok(body)
 }
 
+#[utoipa::path(
+    post,
+    path = "/v1/explain-infer",
+    tag = "inference",
+    request_body = ExplainRequest,
+    responses(
+        (status = 200, description = "Predictions with per-layer feature traces", body = crate::openapi::schemas::ExplainResponse),
+        (status = 400, body = crate::error::ErrorBody),
+        (status = 500, body = crate::error::ErrorBody),
+    ),
+)]
 pub async fn handle_explain(
     State(state): State<Arc<AppState>>,
     Json(req): Json<ExplainRequest>,
@@ -299,6 +310,18 @@ pub async fn handle_explain(
     Ok(Json(result))
 }
 
+#[utoipa::path(
+    post,
+    path = "/v1/{model_id}/explain-infer",
+    tag = "inference",
+    params(("model_id" = String, Path, description = "Id of a loaded vindex.")),
+    request_body = ExplainRequest,
+    responses(
+        (status = 200, body = crate::openapi::schemas::ExplainResponse),
+        (status = 400, body = crate::error::ErrorBody),
+        (status = 404, body = crate::error::ErrorBody),
+    ),
+)]
 pub async fn handle_explain_multi(
     State(state): State<Arc<AppState>>,
     Path(model_id): Path<String>,

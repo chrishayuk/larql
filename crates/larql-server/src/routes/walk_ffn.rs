@@ -684,6 +684,25 @@ fn run_walk_ffn(state: &AppState, req: &WalkFfnRequest) -> Result<serde_json::Va
 
 // ── HTTP handler ──────────────────────────────────────────────────────────────
 
+#[utoipa::path(
+    post,
+    path = "/v1/walk-ffn",
+    tag = "expert",
+    request_body(
+        content_type = "application/x-larql-ffn",
+        description = "Dense-FFN walk. Accepts JSON `WalkFfnRequest` (Content-Type `application/json`) \
+                       OR the packed binary `application/x-larql-ffn` wire (requires `full_output = true`). \
+                       See `docs/server-spec.md` for the full wire layout.",
+    ),
+    responses(
+        (status = 200, description = "JSON result when the request was JSON",
+         content_type = "application/json", body = Vec<u8>),
+        (status = 200, description = "Binary packed output when the request was `application/x-larql-ffn`",
+         content_type = "application/x-larql-ffn", body = Vec<u8>),
+        (status = 400, body = crate::error::ErrorBody),
+        (status = 404, body = crate::error::ErrorBody),
+    ),
+)]
 pub async fn handle_walk_ffn(
     State(state): State<Arc<AppState>>,
     request: axum::extract::Request,
@@ -774,6 +793,22 @@ pub(crate) const Q8K_BATCH_CT: &str = "application/x-larql-ffn-q8k-batch";
 ///
 /// Returns 404 if the vindex doesn't have interleaved Q4K data (ffn-only
 /// servers without Q4K weights can't serve this endpoint).
+#[utoipa::path(
+    post,
+    path = "/v1/walk-ffn-q8k",
+    tag = "expert",
+    request_body(
+        content_type = "application/x-larql-ffn-q8k-batch",
+        description = "Q8K-prenormed dense-FFN batch: client has applied FFN input norm + Q8 quantisation. \
+                       404 if the vindex lacks interleaved Q4K data.",
+    ),
+    responses(
+        (status = 200, content_type = "application/x-larql-ffn-q8k-batch",
+         description = "Per-layer FFN delta as f32", body = Vec<u8>),
+        (status = 400, body = crate::error::ErrorBody),
+        (status = 404, body = crate::error::ErrorBody),
+    ),
+)]
 pub async fn handle_walk_ffn_q8k(
     State(state): State<Arc<crate::state::AppState>>,
     request: axum::extract::Request,
