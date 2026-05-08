@@ -136,9 +136,15 @@
 
 ### 8. Remaining RotorQuant formats
 
-- [ ] 8.1 Iso4 quantize (4-bit, same 4D rotation as Iso3).
-- [ ] 8.2 Planar3 quantize (3-bit, 2D Givens rotation).
-- [ ] 8.3 Planar4 quantize (4-bit, 2D Givens rotation).
+- [x] 8.1 Iso4 quantize (4-bit, same 4D rotation as Iso3).
+      Added cuda-oxide row quantize for Iso4 portable `QuantizedKv`
+      buffers on 2026-05-08.
+- [x] 8.2 Planar3 quantize (3-bit, 2D Givens rotation).
+      Added cuda-oxide row quantize for Planar3 portable
+      `QuantizedKv` buffers on 2026-05-08.
+- [x] 8.3 Planar4 quantize (4-bit, 2D Givens rotation).
+      Added cuda-oxide row quantize for Planar4 portable
+      `QuantizedKv` buffers on 2026-05-08.
 - [x] 8.4 The dequantize side for each (4 more kernels).
       Added cuda-oxide Planar3, Planar4, Iso3, and Iso4 dequantize
       kernels behind a format-dispatching host wrapper on 2026-05-08.

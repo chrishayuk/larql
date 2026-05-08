@@ -109,6 +109,63 @@ fn assert_cuda_oxide_dequantizes_like_cpu(format: KvFormat, kind: KvKind) {
     );
 }
 
+fn assert_cuda_oxide_quantizes_like_cpu(format: KvFormat) {
+    if std::env::var("LARQL_CUDA_AVAILABLE").as_deref() != Ok("1") {
+        eprintln!("skipping cuda-oxide round-trip: set LARQL_CUDA_AVAILABLE=1");
+        return;
+    }
+
+    let n_rows = 64;
+    let head_dim = 320;
+    let input = synth(n_rows * head_dim, 0x04A0_0000_u64 ^ format_seed(format));
+    let cpu_qkv = quantize_k(format, &input, n_rows, head_dim).expect("quantize_k");
+
+    let ctx = cuda_oxide::CudaContext::new(0).expect("cuda context");
+    let gpu_qkv =
+        cuda_oxide::quantize(&ctx, format, &input, n_rows, head_dim).expect("cuda-oxide quantize");
+
+    assert_eq!(gpu_qkv.format, cpu_qkv.format);
+    assert_eq!(gpu_qkv.n_rows, cpu_qkv.n_rows);
+    assert_eq!(gpu_qkv.head_dim, cpu_qkv.head_dim);
+    assert_eq!(gpu_qkv.codes.len(), cpu_qkv.codes.len());
+    assert_eq!(
+        gpu_qkv.rotation_indices.len(),
+        cpu_qkv.rotation_indices.len()
+    );
+    assert!(
+        gpu_qkv
+            .rotation_indices
+            .iter()
+            .all(|&rot| usize::from(rot) < format.rotation_count()),
+        "{format:?} rotation index out of range"
+    );
+    assert_eq!(
+        gpu_qkv.codes.iter().any(|&code| code != 0),
+        cpu_qkv.codes.iter().any(|&code| code != 0),
+        "{format:?} code occupancy differs"
+    );
+    let norm_diff = max_abs_diff(&gpu_qkv.norms, &cpu_qkv.norms);
+    assert!(norm_diff <= 1e-6, "{format:?} norm diff {norm_diff}");
+
+    let cpu = dequantize_k(&cpu_qkv).expect("dequantize_k");
+    let gpu = cuda_oxide::dequantize(&ctx, &gpu_qkv).expect("cuda-oxide dequantize");
+    let min_cos = match format {
+        KvFormat::Planar3 => 0.97,
+        KvFormat::Planar4 | KvFormat::Iso4 => 0.99,
+        KvFormat::Iso3 => unreachable!(),
+    };
+    for row in 0..n_rows {
+        let start = row * head_dim;
+        let end = start + head_dim;
+        let cpu_cos = cosine(&input[start..end], &cpu[start..end]);
+        let gpu_cos = cosine(&input[start..end], &gpu[start..end]);
+        assert!(
+            gpu_cos + 1e-3 >= cpu_cos.min(min_cos),
+            "{format:?} row {row} gpu cosine {gpu_cos}, cpu cosine {cpu_cos}"
+        );
+    }
+}
+
 #[test]
 fn iso3_cuda_oxide_dequantize_matches_cpu() {
     if std::env::var("LARQL_CUDA_AVAILABLE").as_deref() != Ok("1") {
@@ -162,5 +219,12 @@ fn cuda_oxide_dequantize_matches_cpu_for_every_format_and_kind() {
         for kind in [KvKind::K, KvKind::V] {
             assert_cuda_oxide_dequantizes_like_cpu(format, kind);
         }
+    }
+}
+
+#[test]
+fn cuda_oxide_quantize_matches_cpu_for_remaining_formats() {
+    for format in [KvFormat::Iso4, KvFormat::Planar3, KvFormat::Planar4] {
+        assert_cuda_oxide_quantizes_like_cpu(format);
     }
 }
