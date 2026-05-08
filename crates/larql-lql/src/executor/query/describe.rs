@@ -431,8 +431,27 @@ fn describe_resolve_gguf_labels(
     let Ok(tokenizer) = larql_vindex::load_vindex_tokenizer(path) else {
         return trace;
     };
-    let candidates =
-        super::manifest_candidate_token_ids(prompt_token_ids, vocab_size, semantic_token_limit);
+    let decoded_vocab: Vec<(u32, String)> = tokenizer
+        .get_vocab(true)
+        .into_values()
+        .filter(|&id| (id as usize) < vocab_size)
+        .filter_map(|id| {
+            tokenizer
+                .decode(&[id], true)
+                .ok()
+                .map(|decoded| (id, decoded.trim().to_string()))
+        })
+        .collect();
+    let candidates = if decoded_vocab.is_empty() {
+        super::manifest_candidate_token_ids(prompt_token_ids, vocab_size, semantic_token_limit)
+    } else {
+        super::manifest_candidate_token_ids_with_labels(
+            prompt_token_ids,
+            vocab_size,
+            semantic_token_limit,
+            &decoded_vocab,
+        )
+    };
     let mut resolved = 0usize;
     for (layer_pos, hit_pos) in describe_resolution_order(&trace, semantic_hit_limit) {
         let layer = trace.layers[layer_pos].0;
@@ -496,7 +515,7 @@ fn describe_collect_edges(
             }
             let tok = &hit.meta.top_token;
             if manifest_browse {
-                if !crate::executor::helpers::is_readable_token(tok) {
+                if !super::is_manifest_label_token(tok) {
                     continue;
                 }
             } else if !is_content_token(tok) {

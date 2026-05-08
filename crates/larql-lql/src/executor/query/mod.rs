@@ -62,6 +62,96 @@ pub(super) fn manifest_candidate_token_ids(
     sorted_unique(ids)
 }
 
+pub(super) fn manifest_candidate_token_ids_with_labels(
+    prompt_token_ids: &[u32],
+    vocab_size: usize,
+    limit: usize,
+    decoded_vocab: &[(u32, String)],
+) -> Vec<u32> {
+    if vocab_size == 0 || limit == 0 {
+        return sorted_unique(
+            prompt_token_ids
+                .iter()
+                .copied()
+                .filter(|&id| (id as usize) < vocab_size)
+                .collect(),
+        );
+    }
+
+    let mut ids: Vec<u32> = Vec::new();
+    let cap = limit.max(prompt_token_ids.len()).min(vocab_size);
+    for &id in prompt_token_ids {
+        if (id as usize) < vocab_size && !ids.contains(&id) {
+            ids.push(id);
+            if ids.len() >= cap {
+                return sorted_unique(ids);
+            }
+        }
+    }
+
+    let mut readable: Vec<(u32, &str)> = decoded_vocab
+        .iter()
+        .filter_map(|(id, label)| {
+            if (*id as usize) < vocab_size && is_manifest_label_token(label) {
+                Some((*id, label.as_str()))
+            } else {
+                None
+            }
+        })
+        .collect();
+    readable.sort_by_key(|(id, _)| *id);
+
+    let target = limit.min(vocab_size);
+    let remaining = target.saturating_sub(ids.len());
+    if remaining == 0 || readable.is_empty() {
+        return sorted_unique(ids);
+    }
+
+    let stride = (readable.len() / remaining.max(1)).max(1);
+    let mut pos = 0usize;
+    while ids.len() < target && pos < readable.len() {
+        let id = readable[pos].0;
+        if !ids.contains(&id) {
+            ids.push(id);
+        }
+        pos = pos.saturating_add(stride);
+    }
+    for (id, _) in readable {
+        if ids.len() >= target {
+            break;
+        }
+        if !ids.contains(&id) {
+            ids.push(id);
+        }
+    }
+
+    sorted_unique(ids)
+}
+
+pub(super) fn is_manifest_label_token(tok: &str) -> bool {
+    let tok = tok.trim();
+    if !crate::executor::helpers::is_content_token(tok) {
+        return false;
+    }
+    if tok.chars().count() < 4 {
+        return false;
+    }
+    if !tok.chars().next().is_some_and(|c| c.is_ascii_alphabetic()) {
+        return false;
+    }
+    if !tok
+        .chars()
+        .all(|c| c.is_ascii_alphabetic() || c == ' ' || c == '-')
+    {
+        return false;
+    }
+    let lower = tok.to_ascii_lowercase();
+    !matches!(
+        lower.as_str(),
+        "goto" | "ifdef" | "ifndef" | "endif" | "elsif" | "printf" | "const" | "debug"
+    )
+}
+
 pub(super) fn prefer_readable_feature_meta(
     mut meta: larql_vindex::FeatureMeta,
 ) -> larql_vindex::FeatureMeta {
@@ -102,7 +192,10 @@ pub(super) fn resolve_bands(config: &larql_vindex::VindexConfig) -> larql_vindex
 
 #[cfg(test)]
 mod tests {
-    use super::{manifest_candidate_token_ids, prefer_readable_feature_meta};
+    use super::{
+        manifest_candidate_token_ids, manifest_candidate_token_ids_with_labels,
+        prefer_readable_feature_meta,
+    };
     use larql_models::TopKEntry;
     use larql_vindex::FeatureMeta;
 
@@ -120,6 +213,49 @@ mod tests {
             "large-vocab sampling should include high-id candidates"
         );
         assert!(ids.len() <= 10);
+    }
+
+    #[test]
+    fn manifest_candidates_with_labels_prefer_readable_content_vocab() {
+        let decoded = vec![
+            (0, "<unk>".to_string()),
+            (1, "the".to_string()),
+            (2, "Paris".to_string()),
+            (3, "../".to_string()),
+            (4, "capital".to_string()),
+            (5, "-xl".to_string()),
+            (6, "goto".to_string()),
+            (900, "France".to_string()),
+            (990, "restricted".to_string()),
+        ];
+
+        let ids = manifest_candidate_token_ids_with_labels(&[900], 1_000, 5, &decoded);
+
+        assert!(ids.contains(&900), "prompt token must be retained");
+        assert!(
+            ids.contains(&2),
+            "readable content vocab should be preferred"
+        );
+        assert!(
+            ids.contains(&4),
+            "readable content vocab should be preferred"
+        );
+        assert!(
+            ids.contains(&990),
+            "high-id readable vocab should be eligible"
+        );
+        assert!(
+            !ids.contains(&0),
+            "special/non-content tokens should be skipped"
+        );
+        assert!(!ids.contains(&1), "stop words should be skipped");
+        assert!(!ids.contains(&3), "path/code fragments should be skipped");
+        assert!(
+            !ids.contains(&5),
+            "hyphen-leading fragments should be skipped"
+        );
+        assert!(!ids.contains(&6), "code-like tokens should be skipped");
+        assert!(ids.len() <= 5);
     }
 
     #[test]
