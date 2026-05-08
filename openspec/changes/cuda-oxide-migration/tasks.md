@@ -120,9 +120,12 @@
       experience in `docs/cuda-oxide-pilot-report.md`. Include
       a Rust-vs-CUDA-C side-by-side for one representative
       block of code.
-- [ ] 7.6 Decision: ship Phase 3 (yes/no/abort). Document the
+- [x] 7.6 Decision: ship Phase 3 (yes/no/abort). Document the
       decision in the same report. If "no" or "abort", revert
       Phase 1 and close the change.
+      Decision on 2026-05-08: go for Phase 3 planning. The project
+      owner accepts the PTX size miss at 2.23x vs the original 1.5x
+      target; see `docs/cuda-oxide-pilot-report.md`.
 
 ## Phase 3 — Conditional rollout (only if Phase 2 passes)
 
@@ -173,5 +176,9 @@
   size, throughput, and author experience. Build cost and
   throughput pass. PTX size misses the gate at 18,120 bytes
   vs 8,126 bytes for the quick CUDA C reference (2.23×).
+- Phase 2 decision note from 2026-05-08:
+  the project owner accepts the PTX size miss and approves
+  Phase 3 planning. This does not by itself complete the
+  separate 2-week stability burn-in task.
 - After Phase 2: explicit yes/no decision, written up in the
   pilot report. **Do NOT start Phase 3 without that document.**

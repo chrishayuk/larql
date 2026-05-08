@@ -1,6 +1,6 @@
 # cuda-oxide Pilot Report
 
-Status: Phase 1 working; Phase 2 measurements in progress.
+Status: Phase 1 working; Phase 2 go decision recorded.
 
 Date: 2026-05-08
 
@@ -126,12 +126,21 @@ let recovered = match lane {
 
 ## Decision
 
-No Phase 3 decision yet.
+Go for Phase 3 planning.
 
-The kernel is correct and faster than the CPU reference for the measured
-Gemma-shaped workload, but the PTX size gate missed badly at 2.23x the quick
-CUDA C reference. Phase 3 should stay blocked until:
+On 2026-05-08, the project owner explicitly accepted the PTX-size tradeoff:
+cuda-oxide generated 18,120 bytes of PTX for the Iso3 pilot kernel vs 8,126
+bytes for the quick CUDA C reference, a 2.23x ratio against the original
+1.5x target.
 
-1. the 2-week burn-in has no hard failures, and
-2. we either reduce the PTX size or explicitly accept the size miss with a
-   written "go" decision.
+Rationale:
+
+- The absolute PTX size is still small.
+- The kernel is correct against the CPU reference.
+- End-to-end measured throughput is faster than the CPU reference even with
+  host/device copies included.
+- Rust-side kernel authoring remains valuable enough to continue the
+  experiment despite bulkier generated PTX.
+
+This decision accepts the PTX-size gate miss only. The separate stability
+burn-in task remains tracked independently.
