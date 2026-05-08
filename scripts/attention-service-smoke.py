@@ -6,7 +6,7 @@ Exercises every endpoint in sequence:
 
   1. POST  /v1/attention/session           → session_id
   2. GET   /v1/attention/session/{id}      → state
-  3. POST  /v1/attention/prefill           → per-layer residuals
+  3. POST  /v1/attention/prefill           → final hidden state
   4. POST  /v1/attention/decode            → next-step residuals
   5. POST  /v1/kv-cache/snapshot           → versioned blob
   6. POST  /v1/kv-cache/restore (new sess) → identical post-restore state
@@ -81,6 +81,7 @@ def smoke(
     hidden_dim: int,
     seq_len: int,
     kv_format: str,
+    capture: bool,
 ) -> int:
     rng = random.Random(42)
     token_embeddings = [
@@ -90,7 +91,8 @@ def smoke(
 
     sess = requests.Session()
 
-    print(f"\n— Smoke test {base_url} (model={model_id}, kv={kv_format}, seq={seq_len}, hidden={hidden_dim}) —\n")
+    capture_label = "layer-residuals" if capture else "final-hidden"
+    print(f"\n— Smoke test {base_url} (model={model_id}, kv={kv_format}, seq={seq_len}, hidden={hidden_dim}, prefill={capture_label}) —\n")
 
     # ── 1. Create session ────────────────────────────────────────────────
     body, _ = t(
@@ -122,11 +124,14 @@ def smoke(
     print(f"     num_layers={num_layers}  seq_len={body['seq_len']}  prefilled={body['prefilled']}")
 
     # ── 3. Prefill ───────────────────────────────────────────────────────
+    prefill_path = "/v1/attention/prefill"
+    if capture:
+        prefill_path += "?capture=layer-residuals"
     body, prefill_ms = t(
         "prefill",
         lambda: expect(
             sess.post(
-                f"{base_url}/v1/attention/prefill",
+                f"{base_url}{prefill_path}",
                 json={"session_id": session_id, "token_embeddings": token_embeddings},
                 timeout=120,
             ),
@@ -134,37 +139,53 @@ def smoke(
             op="prefill",
         ),
     )
-    residuals = body["post_attention_residuals"]
-    assert len(residuals) == num_layers, f"expected {num_layers} layers, got {len(residuals)}"
-    assert len(residuals[0]) == seq_len, f"expected seq_len={seq_len} rows, got {len(residuals[0])}"
-    assert (
-        len(residuals[0][0]) == hidden_dim
-    ), f"expected hidden_dim={hidden_dim} cols, got {len(residuals[0][0])}"
-    print(
-        f"     residuals[{num_layers}][{seq_len}][{hidden_dim}]  "
-        f"runner={body['latency_ms']:.1f} ms  tokens={body['tokens_processed']}"
-    )
+    final_hidden = body["final_hidden"]
+    assert len(final_hidden) == seq_len, f"expected seq_len={seq_len} rows, got {len(final_hidden)}"
+    assert len(final_hidden[0]) == hidden_dim, f"expected hidden_dim={hidden_dim} cols, got {len(final_hidden[0])}"
+    sample = final_hidden[0][: min(8, hidden_dim)]
+    assert any(float(v) != 0.0 for v in sample), f"final_hidden leading values are all zero: {sample!r}"
+    if capture:
+        residuals = body["post_attention_residuals"]
+        assert len(residuals) == num_layers, f"expected {num_layers} layers, got {len(residuals)}"
+        assert len(residuals[0]) == seq_len, f"expected seq_len={seq_len} rows, got {len(residuals[0])}"
+        assert (
+            len(residuals[0][0]) == hidden_dim
+        ), f"expected hidden_dim={hidden_dim} cols, got {len(residuals[0][0])}"
+        print(
+            f"     final_hidden[{seq_len}][{hidden_dim}]  residuals[{num_layers}][{seq_len}][{hidden_dim}]  "
+            f"runner={body['latency_ms']:.1f} ms  tokens={body['tokens_processed']}"
+        )
+    else:
+        assert "post_attention_residuals" not in body, "post_attention_residuals should be omitted unless --capture is set"
+        print(
+            f"     final_hidden[{seq_len}][{hidden_dim}]  "
+            f"runner={body['latency_ms']:.1f} ms  tokens={body['tokens_processed']}"
+        )
 
     # ── 4. Decode ────────────────────────────────────────────────────────
-    body, decode_ms = t(
+    decode_resp, decode_ms = t(
         "decode",
-        lambda: expect(
-            sess.post(
-                f"{base_url}/v1/attention/decode",
-                json={
-                    "session_id": session_id,
-                    "query_token_embedding": query_token,
-                },
-                timeout=60,
-            ),
-            200,
-            op="decode",
+        lambda: sess.post(
+            f"{base_url}/v1/attention/decode",
+            json={
+                "session_id": session_id,
+                "query_token_embedding": query_token,
+            },
+            timeout=60,
         ),
     )
-    res1 = body["post_attention_residual"]
-    assert len(res1) == num_layers, res1
-    assert len(res1[0]) == hidden_dim, res1[0]
-    print(f"     residual[{num_layers}][{hidden_dim}]  runner={body['latency_ms']:.1f} ms")
+    if decode_resp.status_code == 503:
+        body = decode_resp.json()
+        if body.get("error") != "quantized_model_unsupported":
+            raise RuntimeError(f"decode unexpected 503 body={body!r}")
+        print("     decode skipped: quantized_model_unsupported")
+        decode_ms = 0.0
+    else:
+        body = expect(decode_resp, 200, op="decode")
+        res1 = body["post_attention_residual"]
+        assert len(res1) == num_layers, res1
+        assert len(res1[0]) == hidden_dim, res1[0]
+        print(f"     residual[{num_layers}][{hidden_dim}]  runner={body['latency_ms']:.1f} ms")
 
     # ── 5. Snapshot ──────────────────────────────────────────────────────
     body, _ = t(
@@ -252,6 +273,11 @@ def main() -> int:
         default="iso3",
         choices=["fp32", "planar3", "planar4", "iso3", "iso4"],
     )
+    p.add_argument(
+        "--capture",
+        action="store_true",
+        help="Request FP32 per-layer residual captures during prefill.",
+    )
     args = p.parse_args()
     try:
         return smoke(
@@ -260,6 +286,7 @@ def main() -> int:
             hidden_dim=args.hidden_dim,
             seq_len=args.seq_len,
             kv_format=args.kv_format,
+            capture=args.capture,
         )
     except Exception as e:
         print(f"\n  FAIL: {type(e).__name__}: {e}\n", file=sys.stderr)

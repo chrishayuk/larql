@@ -134,21 +134,59 @@ fn err_quantized_unsupported(missing_layer: usize) -> (StatusCode, Json<ErrorBod
         ErrorBody {
             error: "quantized_model_unsupported",
             detail: Some(format!(
-                "the attention service runner is FP32-only; this model has no FP32 \
-                 attention tensor at layer {missing_layer} (likely Q4_K-quantised). \
-                 Use POST /v1/completions for now — the Q4-aware prefill path lives \
-                 in larql_inference::layer_graph::generate_streaming and will be \
-                 wired into /v1/attention/prefill in a follow-up."
+                "this model has no FP32 attention tensor at layer {missing_layer} \
+                 and does not expose the recognized Q4_K layout for this operation. \
+                 Use POST /v1/completions for decode until a Q4_K one-step decode \
+                 helper lands."
             )),
         },
     )
 }
 
-// A.2 follow-up seam: replace the err_quantized_unsupported call sites
-// in `handle_prefill` / `handle_decode` (and their gRPC siblings) with
-// a dispatch to `larql_inference::vindex::prefill_q4k_from_embeddings`,
-// which is the embedding-input variant of the Q4K-aware per-layer
-// dequant path used by /v1/completions. The helper:
+fn err_layer_residuals_unsupported_on_quantized() -> (StatusCode, Json<ErrorBody>) {
+    err_response(
+        StatusCode::NOT_IMPLEMENTED,
+        ErrorBody {
+            error: "layer_residuals_unsupported_on_quantized",
+            detail: Some(
+                "capture=layer-residuals requires the FP32 attention runner; \
+                 the Q4_K prefill path only returns final_hidden"
+                    .into(),
+            ),
+        },
+    )
+}
+
+fn err_per_layer_embeddings_unsupported() -> (StatusCode, Json<ErrorBody>) {
+    err_response(
+        StatusCode::NOT_IMPLEMENTED,
+        ErrorBody {
+            error: "per_layer_embeddings_unsupported",
+            detail: Some(
+                "Q4_K prefill from embeddings currently skips per-layer embeddings; \
+                 a token_ids-aware variant must land before Gemma E2B-style PLE models \
+                 can use this route"
+                    .into(),
+            ),
+        },
+    )
+}
+
+#[derive(Clone, Copy)]
+enum PrefillWeightsMode {
+    Fp32,
+    Q4K { missing_layer: usize },
+}
+
+enum PrefillRunError {
+    WeightsLoadFailed(String),
+    QuantizedUnsupported(usize),
+}
+
+// Q4_K prefill dispatches to
+// `larql_inference::vindex::prefill_q4k_from_embeddings`, which is
+// the embedding-input variant of the Q4K-aware per-layer dequant path
+// used by /v1/completions. The helper:
 //
 //   - Takes `&mut ModelWeights` (it transiently inserts dequantised
 //     attention tensors per layer; the existing get_or_load_weights
@@ -418,9 +456,9 @@ pub async fn handle_prefill(
         .into_response();
     }
 
-    // Loud guard against Q4_K-quantised models — the FP32 runner
-    // would otherwise silently emit zero residuals.
-    {
+    let want_layer_residuals = query.wants_layer_residuals();
+
+    let prefill_mode = {
         let weights_guard = match model.get_or_load_weights() {
             Ok(g) => g,
             Err(e) => {
@@ -434,10 +472,22 @@ pub async fn handle_prefill(
                 .into_response();
             }
         };
-        if let Err(missing_layer) = check_fp32_attention_loaded(&weights_guard) {
-            return err_quantized_unsupported(missing_layer).into_response();
+        match check_fp32_attention_loaded(&weights_guard) {
+            Ok(()) => PrefillWeightsMode::Fp32,
+            Err(missing_layer) => {
+                if weights_guard.arch.has_per_layer_embeddings() {
+                    return err_per_layer_embeddings_unsupported().into_response();
+                }
+                if want_layer_residuals {
+                    return err_layer_residuals_unsupported_on_quantized().into_response();
+                }
+                if model.config.quant != larql_vindex::QuantFormat::Q4K {
+                    return err_quantized_unsupported(missing_layer).into_response();
+                }
+                PrefillWeightsMode::Q4K { missing_layer }
+            }
         }
-    }
+    };
 
     // Reshape input into [seq_len, hidden_dim].
     let mut flat = Vec::with_capacity(seq_len * hidden_dim);
@@ -460,8 +510,6 @@ pub async fn handle_prefill(
 
     let start = std::time::Instant::now();
 
-    let want_layer_residuals = query.wants_layer_residuals();
-
     // Heavy lifting on a blocking thread — attention is CPU-bound.
     let model_for_blocking = Arc::clone(&model);
     type PrefillOk = (
@@ -472,49 +520,78 @@ pub async fn handle_prefill(
         Vec<larql_inference::ndarray::Array2<f32>>,
         Vec<Option<larql_inference::attention::SharedKV>>,
     );
-    let blocking_result: Result<PrefillOk, String> = tokio::task::spawn_blocking(move || {
-        let weights_guard = model_for_blocking.get_or_load_weights()?;
-        let weights: &larql_inference::ModelWeights = &weights_guard;
-        let num_layers = weights.num_layers;
-        let ffn = larql_inference::ffn::WeightFfn { weights };
+    let blocking_result: Result<PrefillOk, PrefillRunError> =
+        tokio::task::spawn_blocking(move || match prefill_mode {
+            PrefillWeightsMode::Fp32 => {
+                let weights_guard = model_for_blocking
+                    .get_or_load_weights()
+                    .map_err(PrefillRunError::WeightsLoadFailed)?;
+                let weights: &larql_inference::ModelWeights = &weights_guard;
+                let num_layers = weights.num_layers;
+                let ffn = larql_inference::ffn::WeightFfn { weights };
 
-        let mut h = h0;
-        let mut residuals = if want_layer_residuals {
-            Vec::with_capacity(num_layers)
-        } else {
-            Vec::new()
-        };
-        let mut kvs = Vec::with_capacity(num_layers);
+                let mut h = h0;
+                let mut residuals = if want_layer_residuals {
+                    Vec::with_capacity(num_layers)
+                } else {
+                    Vec::new()
+                };
+                let mut kvs = Vec::with_capacity(num_layers);
 
-        for layer in 0..num_layers {
-            match larql_inference::run_layer_with_ffn_capturing_h_post_attn(
-                weights, &h, layer, &ffn, false, None, None,
-            ) {
-                Some((h_next, h_post_attn, _activation, kv_out)) => {
-                    if want_layer_residuals {
-                        residuals.push(h_post_attn);
+                for layer in 0..num_layers {
+                    match larql_inference::run_layer_with_ffn_capturing_h_post_attn(
+                        weights, &h, layer, &ffn, false, None, None,
+                    ) {
+                        Some((h_next, h_post_attn, _activation, kv_out)) => {
+                            if want_layer_residuals {
+                                residuals.push(h_post_attn);
+                            }
+                            kvs.push(kv_out);
+                            h = h_next;
+                        }
+                        None => {
+                            if want_layer_residuals {
+                                residuals.push(larql_inference::ndarray::Array2::zeros((
+                                    seq_len, hidden_dim,
+                                )));
+                            }
+                            kvs.push(None);
+                        }
                     }
-                    kvs.push(kv_out);
-                    h = h_next;
                 }
-                None => {
-                    if want_layer_residuals {
-                        residuals.push(larql_inference::ndarray::Array2::zeros((
-                            seq_len, hidden_dim,
-                        )));
-                    }
-                    kvs.push(None);
-                }
+                Ok((h, residuals, kvs))
             }
-        }
-        Ok((h, residuals, kvs))
-    })
-    .await
-    .unwrap_or_else(|e| Err(format!("blocking task panicked: {e}")));
+            PrefillWeightsMode::Q4K { missing_layer } => {
+                let mut weights_guard = model_for_blocking
+                    .lock_weights_for_gen()
+                    .map_err(PrefillRunError::WeightsLoadFailed)?;
+                let weights: &mut larql_inference::ModelWeights = &mut weights_guard;
+                let patched = model_for_blocking.patched.blocking_read();
+                let index = patched.base();
+                if index.attn_q4k_layer_data(missing_layer).is_none()
+                    || index.interleaved_q4k_layer_data(missing_layer).is_none()
+                {
+                    return Err(PrefillRunError::QuantizedUnsupported(missing_layer));
+                }
+                let (final_h, kvs) = larql_inference::vindex::prefill_q4k_from_embeddings(
+                    weights,
+                    h0,
+                    index,
+                    model_for_blocking.moe_remote.as_deref(),
+                );
+                Ok((final_h, Vec::new(), kvs))
+            }
+        })
+        .await
+        .unwrap_or_else(|e| {
+            Err(PrefillRunError::WeightsLoadFailed(format!(
+                "blocking task panicked: {e}"
+            )))
+        });
 
     let (final_h, residuals, kvs) = match blocking_result {
         Ok(t) => t,
-        Err(detail) => {
+        Err(PrefillRunError::WeightsLoadFailed(detail)) => {
             return err_response(
                 StatusCode::INTERNAL_SERVER_ERROR,
                 ErrorBody {
@@ -523,6 +600,9 @@ pub async fn handle_prefill(
                 },
             )
             .into_response();
+        }
+        Err(PrefillRunError::QuantizedUnsupported(missing_layer)) => {
+            return err_quantized_unsupported(missing_layer).into_response();
         }
     };
 
@@ -665,6 +745,10 @@ pub async fn handle_decode(
             }
         };
         if let Err(missing_layer) = check_fp32_attention_loaded(&weights_guard) {
+            // TODO(attention-service-routes): route quantized decode through a
+            // future `decode_q4k_one_step_from_embedding` helper. The existing
+            // Q4_K prefill helper computes a full sequence from embeddings and
+            // cannot advance one position against an existing K/V cache.
             return err_quantized_unsupported(missing_layer).into_response();
         }
     }

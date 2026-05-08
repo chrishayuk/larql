@@ -37,6 +37,7 @@ use larql_inference::engines::test_utils::{
 use larql_inference::ndarray::Array2;
 use larql_inference::{run_layer_with_ffn_capturing_h_post_attn, ModelWeights};
 use larql_server::attention_session::AttentionSessionMap;
+use larql_server::bootstrap::{load_single_vindex, LoadVindexOptions};
 use larql_server::cache::DescribeCache;
 use larql_server::ffn_l2_cache::FfnL2Cache;
 use larql_server::routes::single_model_router;
@@ -414,7 +415,7 @@ fn build_state_with_q4k_like_weights() -> Arc<AppState> {
 }
 
 #[tokio::test]
-async fn prefill_returns_503_quantized_model_unsupported() {
+async fn prefill_q4k_unsupported_layer_residuals_capture_returns_501() {
     let st = build_state_with_q4k_like_weights();
     let app = single_model_router(st.clone());
 
@@ -428,25 +429,95 @@ async fn prefill_returns_503_quantized_model_unsupported() {
     let body = body_json(resp.into_body()).await;
     let sid = body["session_id"].as_str().unwrap().to_string();
 
-    // Prefill should now refuse loudly.
+    // Per-layer residual capture is FP32-only. The default Q4_K path
+    // returns final_hidden, but this synthetic fixture only mimics the
+    // missing-FP32 guard and intentionally has no packed Q4_K slices.
     let app2 = single_model_router(st);
     let resp = post_json(
         app2,
-        "/v1/attention/prefill",
+        "/v1/attention/prefill?capture=layer-residuals",
         serde_json::json!({
             "session_id": sid,
             "token_embeddings": [[0.0, 0.1, 0.2, 0.3]],
         }),
     )
     .await;
-    assert_eq!(resp.status(), StatusCode::SERVICE_UNAVAILABLE);
+    assert_eq!(resp.status(), StatusCode::NOT_IMPLEMENTED);
     let body = body_json(resp.into_body()).await;
-    assert_eq!(body["error"], "quantized_model_unsupported");
+    assert_eq!(body["error"], "layer_residuals_unsupported_on_quantized");
     assert!(
-        body["detail"].as_str().unwrap_or("").contains("FP32-only"),
-        "detail should mention FP32-only; got {:?}",
+        body["detail"].as_str().unwrap_or("").contains("FP32"),
+        "detail should mention FP32 capture; got {:?}",
         body["detail"]
     );
+}
+
+#[tokio::test]
+#[ignore]
+async fn prefill_q4k_default_returns_200_against_real_vindex() {
+    let path = std::path::Path::new("output/gemma-3-4b-it-vindex");
+    assert!(
+        path.is_dir(),
+        "expected real Q4_K vindex at {}",
+        path.display()
+    );
+
+    let model = load_single_vindex(
+        path.to_str().unwrap(),
+        LoadVindexOptions {
+            no_infer: false,
+            ffn_only: false,
+            embed_only: false,
+            layer_range: None,
+            max_gate_cache_layers: 0,
+            max_q4k_cache_layers: 0,
+            hnsw: None,
+            warmup_hnsw: false,
+            release_mmap_after_request: false,
+            expert_filter: None,
+            unit_filter: None,
+            moe_remote: None,
+        },
+    )
+    .expect("load real Gemma Q4_K vindex");
+    let model_id = model.id.clone();
+    let hidden = model.config.hidden_size;
+    let st = build_state(model);
+
+    let app = single_model_router(st.clone());
+    let resp = post_json(
+        app,
+        "/v1/attention/session",
+        serde_json::json!({"model_id": model_id, "kv_format": "fp32"}),
+    )
+    .await;
+    assert_eq!(resp.status(), StatusCode::OK, "session create failed");
+    let body = body_json(resp.into_body()).await;
+    let sid = body["session_id"].as_str().unwrap().to_string();
+
+    let app2 = single_model_router(st);
+    let resp = post_json(
+        app2,
+        "/v1/attention/prefill",
+        serde_json::json!({
+            "session_id": sid,
+            "token_embeddings": deterministic_embeddings(4, hidden),
+        }),
+    )
+    .await;
+    assert_eq!(resp.status(), StatusCode::OK, "prefill failed: {:?}", resp);
+    let body = body_json(resp.into_body()).await;
+    let final_hidden = body["final_hidden"]
+        .as_array()
+        .expect("final_hidden present");
+    assert_eq!(final_hidden.len(), 4);
+    let first_row = final_hidden[0].as_array().expect("first row");
+    assert!(first_row.len() >= 4);
+    for (idx, value) in first_row.iter().take(4).enumerate() {
+        let value = value.as_f64().expect("final_hidden values are floats");
+        assert!(value.is_finite(), "final_hidden[0][{idx}] must be finite");
+        assert_ne!(value, 0.0, "final_hidden[0][{idx}] must be non-zero");
+    }
 }
 
 #[tokio::test]

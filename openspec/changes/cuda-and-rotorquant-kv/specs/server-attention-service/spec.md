@@ -40,7 +40,7 @@ parameter).
 - **THEN** the response SHALL be 200 OK and the session's reported KV length SHALL be 1024
 <!-- test: larql_server::test_attention_validation::session_seq_len_advances_after_prefill -->
 <!-- test: larql_server::test_attention_validation::prefill_response_shape_matches_layers_seq_hidden -->
-<!-- test: unbacked -->
+<!-- test: larql_server::test_attention_validation::prefill_q4k_default_returns_200_against_real_vindex -->
 
 ### Requirement: Attention decode endpoint
 

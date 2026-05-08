@@ -34,6 +34,22 @@ pub struct AttentionGrpcService {
 
 type PrefillStream = Pin<Box<dyn Stream<Item = Result<PrefillEvent, Status>> + Send + 'static>>;
 
+#[derive(Clone, Copy)]
+enum PrefillWeightsMode {
+    Fp32,
+    Q4K { missing_layer: usize },
+}
+
+enum PrefillStreamPayload {
+    Layers(Vec<larql_inference::ndarray::Array2<f32>>),
+    Final(larql_inference::ndarray::Array2<f32>),
+}
+
+enum PrefillRunError {
+    WeightsLoadFailed(String),
+    QuantizedUnsupported(usize),
+}
+
 #[tonic::async_trait]
 impl AttentionService for AttentionGrpcService {
     async fn create_session(
@@ -158,20 +174,32 @@ impl AttentionService for AttentionGrpcService {
                 "inference_disabled: server started with --no-infer; weights are not loaded",
             ));
         }
+        let total_layers = model.config.num_layers;
 
-        // Loud guard against Q4_K-quantised models (same as the HTTP
-        // path; see routes::attention::check_fp32_attention_loaded).
-        {
+        let prefill_mode = {
             let weights_guard = model
                 .get_or_load_weights()
                 .map_err(|e| Status::internal(format!("weights_load_failed: {e}")))?;
-            if let Err(missing_layer) = check_fp32_attention_loaded(&weights_guard) {
-                return Err(Status::unavailable(format!(
-                    "quantized_model_unsupported: layer {missing_layer} has no FP32 attention tensor; \
-                     use the OpenAI completions path instead until prefill_q4 wires in"
-                )));
+            match check_fp32_attention_loaded(&weights_guard) {
+                Ok(()) => PrefillWeightsMode::Fp32,
+                Err(missing_layer) => {
+                    if weights_guard.arch.has_per_layer_embeddings() {
+                        return Err(Status::unimplemented(
+                            "per_layer_embeddings_unsupported: Q4_K prefill from embeddings \
+                             currently skips per-layer embeddings; a token_ids-aware variant \
+                             must land before PLE models can use this route",
+                        ));
+                    }
+                    if model.config.quant != larql_vindex::QuantFormat::Q4K {
+                        return Err(Status::unavailable(format!(
+                            "quantized_model_unsupported: layer {missing_layer} has no FP32 attention tensor; \
+                             use the OpenAI completions path instead until a recognized quantized layout is present"
+                        )));
+                    }
+                    PrefillWeightsMode::Q4K { missing_layer }
+                }
             }
-        }
+        };
 
         // Reshape input.
         let mut flat = Vec::with_capacity(seq_len * hidden_dim);
@@ -185,42 +213,80 @@ impl AttentionService for AttentionGrpcService {
 
         let model_for_blocking = Arc::clone(&model);
         type PrefillOk = (
-            Vec<larql_inference::ndarray::Array2<f32>>,
+            PrefillStreamPayload,
             Vec<Option<larql_inference::attention::SharedKV>>,
         );
-        let result: Result<PrefillOk, String> = tokio::task::spawn_blocking(move || {
-            let weights_guard = model_for_blocking.get_or_load_weights()?;
-            let weights: &larql_inference::ModelWeights = &weights_guard;
-            let num_layers = weights.num_layers;
-            let ffn = larql_inference::ffn::WeightFfn { weights };
+        let result: Result<PrefillOk, PrefillRunError> =
+            tokio::task::spawn_blocking(move || match prefill_mode {
+                PrefillWeightsMode::Fp32 => {
+                    let weights_guard = model_for_blocking
+                        .get_or_load_weights()
+                        .map_err(PrefillRunError::WeightsLoadFailed)?;
+                    let weights: &larql_inference::ModelWeights = &weights_guard;
+                    let num_layers = weights.num_layers;
+                    let ffn = larql_inference::ffn::WeightFfn { weights };
 
-            let mut h = h0;
-            let mut residuals = Vec::with_capacity(num_layers);
-            let mut kvs = Vec::with_capacity(num_layers);
-            for layer in 0..num_layers {
-                match larql_inference::run_layer_with_ffn_capturing_h_post_attn(
-                    weights, &h, layer, &ffn, false, None, None,
-                ) {
-                    Some((h_next, h_post_attn, _, kv_out)) => {
-                        residuals.push(h_post_attn);
-                        kvs.push(kv_out);
-                        h = h_next;
+                    let mut h = h0;
+                    let mut residuals = Vec::with_capacity(num_layers);
+                    let mut kvs = Vec::with_capacity(num_layers);
+                    for layer in 0..num_layers {
+                        match larql_inference::run_layer_with_ffn_capturing_h_post_attn(
+                            weights, &h, layer, &ffn, false, None, None,
+                        ) {
+                            Some((h_next, h_post_attn, _, kv_out)) => {
+                                residuals.push(h_post_attn);
+                                kvs.push(kv_out);
+                                h = h_next;
+                            }
+                            None => {
+                                residuals.push(larql_inference::ndarray::Array2::zeros((
+                                    seq_len, hidden_dim,
+                                )));
+                                kvs.push(None);
+                            }
+                        }
                     }
-                    None => {
-                        residuals.push(larql_inference::ndarray::Array2::zeros((
-                            seq_len, hidden_dim,
-                        )));
-                        kvs.push(None);
-                    }
+                    Ok((PrefillStreamPayload::Layers(residuals), kvs))
                 }
-            }
-            Ok((residuals, kvs))
-        })
-        .await
-        .unwrap_or_else(|e| Err(format!("blocking task panicked: {e}")));
+                PrefillWeightsMode::Q4K { missing_layer } => {
+                    let mut weights_guard = model_for_blocking
+                        .lock_weights_for_gen()
+                        .map_err(PrefillRunError::WeightsLoadFailed)?;
+                    let weights: &mut larql_inference::ModelWeights = &mut weights_guard;
+                    let patched = model_for_blocking.patched.blocking_read();
+                    let index = patched.base();
+                    if index.attn_q4k_layer_data(missing_layer).is_none()
+                        || index.interleaved_q4k_layer_data(missing_layer).is_none()
+                    {
+                        return Err(PrefillRunError::QuantizedUnsupported(missing_layer));
+                    }
+                    let (final_h, kvs) = larql_inference::vindex::prefill_q4k_from_embeddings(
+                        weights,
+                        h0,
+                        index,
+                        model_for_blocking.moe_remote.as_deref(),
+                    );
+                    Ok((PrefillStreamPayload::Final(final_h), kvs))
+                }
+            })
+            .await
+            .unwrap_or_else(|e| {
+                Err(PrefillRunError::WeightsLoadFailed(format!(
+                    "blocking task panicked: {e}"
+                )))
+            });
 
-        let (residuals, kvs) =
-            result.map_err(|e| Status::internal(format!("weights_load_failed: {e}")))?;
+        let (payload, kvs) = match result {
+            Ok(ok) => ok,
+            Err(PrefillRunError::WeightsLoadFailed(e)) => {
+                return Err(Status::internal(format!("weights_load_failed: {e}")));
+            }
+            Err(PrefillRunError::QuantizedUnsupported(missing_layer)) => {
+                return Err(Status::unavailable(format!(
+                    "quantized_model_unsupported: layer {missing_layer} has no FP32 attention tensor"
+                )));
+            }
+        };
 
         // Stash KVs into the session.
         {
@@ -236,30 +302,54 @@ impl AttentionService for AttentionGrpcService {
             g.touch();
         }
 
-        // Stream one PrefillEvent per layer + a terminal one with done=true.
+        // Stream one PrefillEvent per layer for FP32. Q4_K emits a
+        // single terminal event with the full final hidden state in
+        // `post_attention`.
         let (tx, rx) = tokio::sync::mpsc::channel::<Result<PrefillEvent, Status>>(32);
-        let total = residuals.len();
         let latency_ms = start.elapsed().as_secs_f64() * 1000.0;
         let tokens_processed = seq_len as u32;
         tokio::spawn(async move {
-            for (layer, r) in residuals.into_iter().enumerate() {
-                let post_attention = PVec2d {
-                    cols: hidden_dim as u32,
-                    rows: (0..r.nrows())
-                        .map(|i| PVec1d {
-                            values: r.row(i).to_vec(),
-                        })
-                        .collect(),
-                };
-                let evt = PrefillEvent {
-                    layer: layer as u32,
-                    post_attention: Some(post_attention),
-                    done: layer + 1 == total,
-                    tokens_processed,
-                    latency_ms: if layer + 1 == total { latency_ms } else { 0.0 },
-                };
-                if tx.send(Ok(evt)).await.is_err() {
-                    break;
+            match payload {
+                PrefillStreamPayload::Layers(residuals) => {
+                    let total = residuals.len();
+                    for (layer, r) in residuals.into_iter().enumerate() {
+                        let post_attention = PVec2d {
+                            cols: hidden_dim as u32,
+                            rows: (0..r.nrows())
+                                .map(|i| PVec1d {
+                                    values: r.row(i).to_vec(),
+                                })
+                                .collect(),
+                        };
+                        let evt = PrefillEvent {
+                            layer: layer as u32,
+                            post_attention: Some(post_attention),
+                            done: layer + 1 == total,
+                            tokens_processed,
+                            latency_ms: if layer + 1 == total { latency_ms } else { 0.0 },
+                        };
+                        if tx.send(Ok(evt)).await.is_err() {
+                            break;
+                        }
+                    }
+                }
+                PrefillStreamPayload::Final(final_h) => {
+                    let post_attention = PVec2d {
+                        cols: hidden_dim as u32,
+                        rows: (0..final_h.nrows())
+                            .map(|i| PVec1d {
+                                values: final_h.row(i).to_vec(),
+                            })
+                            .collect(),
+                    };
+                    let evt = PrefillEvent {
+                        layer: total_layers.saturating_sub(1) as u32,
+                        post_attention: Some(post_attention),
+                        done: true,
+                        tokens_processed,
+                        latency_ms,
+                    };
+                    let _ = tx.send(Ok(evt)).await;
                 }
             }
         });
@@ -316,6 +406,8 @@ impl AttentionService for AttentionGrpcService {
                 .get_or_load_weights()
                 .map_err(|e| Status::internal(format!("weights_load_failed: {e}")))?;
             if let Err(missing_layer) = check_fp32_attention_loaded(&weights_guard) {
+                // TODO(attention-service-routes): route quantized decode through
+                // a future `decode_q4k_one_step_from_embedding` helper.
                 return Err(Status::unavailable(format!(
                     "quantized_model_unsupported: layer {missing_layer} has no FP32 attention tensor"
                 )));

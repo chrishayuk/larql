@@ -87,9 +87,13 @@ message PrefillRequest {
 
 message PrefillEvent {
   // Layer this event covers. Events SHALL arrive in ascending order
-  // and SHALL be contiguous over the session's layer range.
+  // and SHALL be contiguous over the session's layer range for FP32
+  // models. Q4_K prefill emits exactly one terminal event whose layer
+  // is `num_layers - 1` and whose `post_attention` carries the full
+  // final hidden state.
   uint32 layer            = 1;
   // [seq_len][hidden_dim] post-attention residual for `layer`.
+  // On the Q4_K single-event path this is the final hidden state.
   Vec2d  post_attention   = 2;
   // Set on the final event in the stream.
   bool   done             = 3;
