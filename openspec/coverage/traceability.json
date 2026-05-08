@@ -2135,8 +2135,8 @@
                 "larql_compute::test_cuda_decode::decode_token_one_layer_returns_hidden"
               ],
               "unbacked": false,
-              "spec_file": "openspec/changes/cuda-decode-backend/specs/compute-cuda-kernels/spec.md",
-              "line": 9
+              "spec_file": "openspec/specs/compute-cuda-kernels/spec.md",
+              "line": 152
             }
           ]
         },
@@ -2150,8 +2150,8 @@
               ],
               "tests_unresolved": [],
               "unbacked": false,
-              "spec_file": "openspec/changes/cuda-decode-backend/specs/compute-cuda-kernels/spec.md",
-              "line": 19
+              "spec_file": "openspec/specs/compute-cuda-kernels/spec.md",
+              "line": 162
             }
           ]
         },
@@ -2165,8 +2165,8 @@
               ],
               "tests_unresolved": [],
               "unbacked": false,
-              "spec_file": "openspec/changes/cuda-decode-backend/specs/compute-cuda-kernels/spec.md",
-              "line": 29
+              "spec_file": "openspec/specs/compute-cuda-kernels/spec.md",
+              "line": 172
             }
           ]
         },
@@ -7724,6 +7724,21 @@
           ]
         },
         {
+          "name": "CLI benchmark supports CUDA",
+          "scenarios": [
+            {
+              "name": "CUDA bench row is emitted",
+              "tests_resolved": [],
+              "tests_unresolved": [
+                "larql_cli::bench_cuda_manual_rtx4090"
+              ],
+              "unbacked": false,
+              "spec_file": "openspec/specs/kv-cache-benchmark-strategies/spec.md",
+              "line": 49
+            }
+          ]
+        },
+        {
           "name": "KvStrategy trait surface",
           "scenarios": [
             {
@@ -8270,21 +8285,6 @@
           ]
         },
         {
-          "name": "CLI benchmark supports CUDA",
-          "scenarios": [
-            {
-              "name": "CUDA bench row is emitted",
-              "tests_resolved": [],
-              "tests_unresolved": [
-                "larql_cli::bench_cuda_manual_rtx4090"
-              ],
-              "unbacked": false,
-              "spec_file": "openspec/changes/cuda-decode-backend/specs/kv-cache-benchmark-strategies/spec.md",
-              "line": 8
-            }
-          ]
-        },
-        {
           "name": "RotorQuantStrategy MUST implement the KvStrategy trait",
           "scenarios": [
             {
@@ -8465,8 +8465,8 @@
               ],
               "tests_unresolved": [],
               "unbacked": false,
-              "spec_file": "openspec/changes/cuda-decode-backend/specs/kv-cache-rotorquant/spec.md",
-              "line": 8
+              "spec_file": "openspec/specs/kv-cache-rotorquant/spec.md",
+              "line": 115
             }
           ]
         },
@@ -13580,6 +13580,21 @@
           ]
         },
         {
+          "name": "Attention service can select CUDA decode",
+          "scenarios": [
+            {
+              "name": "GPU container selects CUDA decode",
+              "tests_resolved": [],
+              "tests_unresolved": [
+                "larql_server::attention_cuda_manual_container_smoke"
+              ],
+              "unbacked": false,
+              "spec_file": "openspec/specs/server-attention-service/spec.md",
+              "line": 120
+            }
+          ]
+        },
+        {
           "name": "server SHALL support a --mode flag for PD-split",
           "scenarios": [
             {
@@ -13882,21 +13897,6 @@
               "unbacked": true,
               "spec_file": "openspec/changes/attention-service-routes/specs/server-attention-service/spec.md",
               "line": 208
-            }
-          ]
-        },
-        {
-          "name": "Attention service can select CUDA decode",
-          "scenarios": [
-            {
-              "name": "GPU container selects CUDA decode",
-              "tests_resolved": [],
-              "tests_unresolved": [
-                "larql_server::attention_cuda_manual_container_smoke"
-              ],
-              "unbacked": false,
-              "spec_file": "openspec/changes/cuda-decode-backend/specs/server-attention-service/spec.md",
-              "line": 8
             }
           ]
         }

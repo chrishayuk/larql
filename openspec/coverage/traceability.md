@@ -741,6 +741,7 @@ _Source: `openspec/specs/kv-cache-benchmark-strategies/spec.md`_
 | RotorQuantStrategy joins the KV-cache strategy enum | memory_bytes reflects the format's compression ratio | `kv_cache_benchmark::rotorquant::tests::memory_bytes_iso3_is_smaller_than_fp16` |
 | Accuracy harness measures RotorQuant on Gemma 3 4B | Iso3 produces published-paper PPL on wikitext-2 | `kv_cache_benchmark::test_accuracy_suite::synthetic_report_accepts_upstream_ppl_measurement_with_tolerance`<br>`kv_cache_benchmark::test_accuracy_suite::synthetic_report_flags_ppl_outside_upstream_tolerance` |
 | Accuracy harness measures RotorQuant on Gemma 3 4B | Comparative table includes RotorQuant rows | `kv_cache_benchmark::test_accuracy_suite::synthetic_strategy_report_includes_rotorquant_rows`<br>`kv_cache_benchmark::test_accuracy_suite::synthetic_strategy_report_formats_decode_throughput_and_ppl_placeholder` |
+| CLI benchmark supports CUDA | CUDA bench row is emitted | **unresolved:** `larql_cli::bench_cuda_manual_rtx4090` |
 | KvStrategy trait surface | Standard KV benchmark fills out every metric field | `kv_cache_benchmark::test_standard::test_standard_kv_benchmark_runs` |
 | KvStrategy trait surface | TurboQuant benchmark reports lossy-but-aligned reconstruction | `kv_cache_benchmark::test_turboquant::test_turboquant_benchmark_runs` |
 | ModelConfig dimensions and analytical memory | Standard KV memory matches the analytical formula | `kv_cache_benchmark::test_standard::test_standard_kv_memory_formula`<br>`kv_cache_benchmark::standard_kv::tests::test_standard_kv_memory_formula` |
@@ -788,7 +789,6 @@ _Source: `openspec/specs/kv-cache-benchmark-strategies/spec.md`_
 | Real-model integration top-1 and bit-perfect Markov | Engine performance benchmark guards accuracy and memory | `kv_cache_benchmark::test_real_model::test_engine_performance` |
 | Real-model integration top-1 and bit-perfect Markov | Adversarial entity confusion stays grounded | `kv_cache_benchmark::test_real_model::test_adversarial_entity_confusion` |
 | Test suite coverage | Workspace tests bound to this capability | `kv_cache_benchmark::test_standard::**::*`<br>`kv_cache_benchmark::test_turboquant::**::*`<br>`kv_cache_benchmark::test_markov::**::*`<br>`kv_cache_benchmark::test_unlimited_context::**::*`<br>`kv_cache_benchmark::test_apollo_accuracy::**::*`<br>`kv_cache_benchmark::test_apollo_store::**::*`<br>`kv_cache_benchmark::test_apollo_query::**::*`<br>`kv_cache_benchmark::test_graph_walk::**::*`<br>`kv_cache_benchmark::test_real_model::**::*`<br>`kv_cache_benchmark::test_comparative::**::*`<br>`kv_cache_benchmark::test_shaders::**::*` |
-| CLI benchmark supports CUDA | CUDA bench row is emitted | **unresolved:** `larql_cli::bench_cuda_manual_rtx4090` |
 | RotorQuantStrategy MUST implement the KvStrategy trait | Iso3 strategy runs through the harness | `kv_cache_benchmark::rotorquant::tests::iso3_strategy_runs_through_harness` |
 | RotorQuantStrategy MUST implement the KvStrategy trait | Planar3 strategy runs through the harness | `kv_cache_benchmark::rotorquant::tests::planar3_strategy_runs_through_harness` |
 | memory_bytes MUST be smaller than Standard FP16 | iso3 memory below fp16 baseline | `kv_cache_benchmark::rotorquant::tests::memory_bytes_iso3_is_smaller_than_fp16` |
@@ -1308,6 +1308,7 @@ _Source: `openspec/specs/server-attention-service/spec.md`_
 | KV-cache snapshot and restore | Snapshot blob carries the KV format | `larql_server::kv_snapshot::tests::round_trip_compressed_layer`<br>`larql_server::test_http_attention::snapshot_returns_base64_with_correct_magic` |
 | gRPC parity for the HTTP surface | gRPC service handles the same prefill | _unbacked_ |
 | Topology advertises the attention capability | GPU shard refuses expert RPCs | `larql_server::bootstrap::tests::role_attention_announces_attention_only` |
+| Attention service can select CUDA decode | GPU container selects CUDA decode | **unresolved:** `larql_server::attention_cuda_manual_container_smoke` |
 | server SHALL support a --mode flag for PD-split | --mode prefill rejects decode RPCs | _unbacked_ |
 | server SHALL support a --mode flag for PD-split | --mode decode rejects prefill RPCs | _unbacked_ |
 | server SHALL support a --mode flag for PD-split | --mode both accepts both | _unbacked_ |
@@ -1335,7 +1336,6 @@ _Source: `openspec/specs/server-attention-service/spec.md`_
 | Server SHALL announce its `--role` as a router capability | legacy server (no --role) announces both | `larql_server::bootstrap::tests::role_both_announces_attention_and_expert`<br>`larql_server::bootstrap::tests::cli_defaults_role_to_both` |
 | Heartbeat SHALL include the cached-prefix bloom | heartbeat includes the cached prefixes | _unbacked_ |
 | Heartbeat SHALL include the cached-prefix bloom | empty server emits empty bloom | _unbacked_ |
-| Attention service can select CUDA decode | GPU container selects CUDA decode | **unresolved:** `larql_server::attention_cuda_manual_container_smoke` |
 
 ## server-expert-service
 
