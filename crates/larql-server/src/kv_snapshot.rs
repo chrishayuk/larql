@@ -419,6 +419,7 @@ pub fn deserialize(bytes: &[u8]) -> Result<KvCache, SnapshotError> {
         next_position,
         kv_format,
         quantized_kv,
+        deferred_k: vec![false; num_layers],
         promote_on_read_count,
     })
 }

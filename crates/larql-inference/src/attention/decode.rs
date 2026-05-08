@@ -53,6 +53,9 @@ pub struct KvCache {
     /// Compressed (K, V) per layer. `None` for layers that haven't
     /// been compressed; `Some` after `quantize_layer` succeeds.
     pub quantized_kv: Vec<Option<(larql_rotorquant::QuantizedKv, larql_rotorquant::QuantizedKv)>>,
+    /// Layers written by prefill in a compressed-format session but
+    /// intentionally left in FP32 until the next decode insertion.
+    pub deferred_k: Vec<bool>,
     /// Total number of auto-promotes performed by `get_layer` since
     /// construction. Each successful `dequantize_layer` triggered
     /// by a compressed-only read increments this counter; reads
@@ -73,6 +76,7 @@ impl KvCache {
             next_position: 0,
             kv_format,
             quantized_kv: vec![None; num_layers],
+            deferred_k: vec![false; num_layers],
             promote_on_read_count: 0,
         }
     }
@@ -176,6 +180,9 @@ impl KvCache {
         if let Some(slot) = self.quantized_kv.get_mut(layer) {
             *slot = Some((qk, qv));
         }
+        if let Some(deferred) = self.deferred_k.get_mut(layer) {
+            *deferred = false;
+        }
         true
     }
 
@@ -212,6 +219,9 @@ impl KvCache {
         if let Some(qslot) = self.quantized_kv.get_mut(layer) {
             *qslot = None;
         }
+        if let Some(deferred) = self.deferred_k.get_mut(layer) {
+            *deferred = false;
+        }
         true
     }
 
@@ -222,6 +232,11 @@ impl KvCache {
             .get(layer)
             .map(|opt| opt.is_some())
             .unwrap_or(false)
+    }
+
+    /// Whether this layer is in deferred-K state.
+    pub fn is_layer_deferred_k(&self, layer: usize) -> bool {
+        self.deferred_k.get(layer).copied().unwrap_or(false)
     }
 
     /// Number of cached positions for a given layer. Returns 0 if the
@@ -322,8 +337,32 @@ impl KvCache {
         if let Some(qslot) = self.quantized_kv.get_mut(layer) {
             *qslot = None;
         }
+        if let Some(deferred) = self.deferred_k.get_mut(layer) {
+            *deferred = false;
+        }
         if self.kv_format.is_some() {
             let _ = self.quantize_layer(layer);
+        }
+    }
+
+    /// Store prefill K/V without quantizing K yet. The next formatted
+    /// [`Self::set_layer`] write for this layer quantizes the combined
+    /// cache and frees the FP32 slot.
+    pub fn set_layer_deferred_k(&mut self, layer: usize, kv: SharedKV) {
+        if layer >= self.layers.len() {
+            return;
+        }
+        debug_assert_eq!(
+            kv.0.shape()[0],
+            kv.1.shape()[0],
+            "K and V must have the same row count"
+        );
+        self.layers[layer] = Some(kv);
+        if let Some(qslot) = self.quantized_kv.get_mut(layer) {
+            *qslot = None;
+        }
+        if let Some(deferred) = self.deferred_k.get_mut(layer) {
+            *deferred = self.kv_format.is_some();
         }
     }
 
@@ -338,6 +377,9 @@ impl KvCache {
         }
         if let Some(qslot) = self.quantized_kv.get_mut(layer) {
             *qslot = None;
+        }
+        if let Some(deferred) = self.deferred_k.get_mut(layer) {
+            *deferred = false;
         }
     }
 
@@ -793,6 +835,21 @@ mod tests {
         assert!(cache.is_layer_compressed(0));
         assert!(cache.get_layer_lazy(0).is_none());
         assert!(cache.get_layer(0).is_some());
+    }
+
+    #[test]
+    fn deferred_k_prefill_quantizes_on_next_write() {
+        let mut cache = KvCache::with_layers_format(1, Some(larql_rotorquant::KvFormat::Iso3));
+        cache.set_layer_deferred_k(0, fill_kv(8, 32, 0.5));
+
+        assert!(cache.is_layer_deferred_k(0));
+        assert!(!cache.is_layer_compressed(0));
+        assert!(cache.get_layer_lazy(0).is_some());
+
+        cache.set_layer(0, fill_kv(9, 32, 0.5));
+        assert!(!cache.is_layer_deferred_k(0));
+        assert!(cache.is_layer_compressed(0));
+        assert!(cache.get_layer_lazy(0).is_none());
     }
 
     #[test]

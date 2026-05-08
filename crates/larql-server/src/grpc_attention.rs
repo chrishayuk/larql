@@ -293,7 +293,7 @@ impl AttentionService for AttentionGrpcService {
             let mut g = entry.write().await;
             for (layer, kv) in kvs.into_iter().enumerate() {
                 if let Some(kv) = kv {
-                    g.cache.set_layer(layer, kv);
+                    g.cache.set_layer_deferred_k(layer, kv);
                 }
             }
             g.cache.next_position = seq_len;
@@ -476,7 +476,16 @@ impl AttentionService for AttentionGrpcService {
 
         {
             let mut g = entry.write().await;
-            g.cache.layers = layers;
+            if g.cache.kv_format.is_some() {
+                for (layer, kv) in layers.into_iter().enumerate() {
+                    match kv {
+                        Some(kv) => g.cache.set_layer(layer, kv),
+                        None => g.cache.clear_layer(layer),
+                    }
+                }
+            } else {
+                g.cache.layers = layers;
+            }
             g.cache.next_position += 1;
             g.seq_len += 1;
             g.touch();

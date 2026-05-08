@@ -65,12 +65,12 @@ documented in upstream commit `6e5a4aa`.
 #### Scenario: Prefill K is FP16 in VRAM
 - **WHEN** a prefill of 1024 tokens completes
 - **THEN** inspecting the K cache via `KvHandle::format_at(layer)` SHALL report `Fp16` for those tokens
-<!-- test: unbacked -->
+<!-- test: larql_inference::attention::decode::tests::deferred_k_prefill_quantizes_on_next_write -->
 
 #### Scenario: Decode token insertion quantises previously-deferred K
 - **WHEN** a decode token is appended to the cache
 - **THEN** the previously-FP16 region of K MUST be quantised to the session format and the FP16 backing SHALL be freed
-<!-- test: unbacked -->
+<!-- test: larql_inference::attention::decode::tests::deferred_k_prefill_quantizes_on_next_write -->
 
 ### Requirement: Vendored kernels MUST be sourced from a known upstream commit
 

@@ -3,8 +3,8 @@
     "capabilities": 49,
     "requirements": 408,
     "scenarios": 1377,
-    "scenarios_backed": 1265,
-    "scenarios_unbacked": 112,
+    "scenarios_backed": 1267,
+    "scenarios_unbacked": 110,
     "test_refs": 3304,
     "test_refs_unresolved": 0
   },
@@ -8267,17 +8267,21 @@
           "scenarios": [
             {
               "name": "Prefill K is FP16 in VRAM",
-              "tests_resolved": [],
+              "tests_resolved": [
+                "larql_inference::attention::decode::tests::deferred_k_prefill_quantizes_on_next_write"
+              ],
               "tests_unresolved": [],
-              "unbacked": true,
+              "unbacked": false,
               "spec_file": "openspec/changes/cuda-and-rotorquant-kv/specs/kv-cache-rotorquant/spec.md",
               "line": 65
             },
             {
               "name": "Decode token insertion quantises previously-deferred K",
-              "tests_resolved": [],
+              "tests_resolved": [
+                "larql_inference::attention::decode::tests::deferred_k_prefill_quantizes_on_next_write"
+              ],
               "tests_unresolved": [],
-              "unbacked": true,
+              "unbacked": false,
               "spec_file": "openspec/changes/cuda-and-rotorquant-kv/specs/kv-cache-rotorquant/spec.md",
               "line": 70
             }
@@ -20741,151 +20745,157 @@
     {
       "fqn": "larql_inference::attention::decode::kv_cache_starts_empty",
       "file": "crates/larql-inference/src/attention/decode.rs",
-      "line": 658,
+      "line": 700,
       "crate": "larql_inference"
     },
     {
       "fqn": "larql_inference::attention::decode::kv_cache_with_window_clips",
       "file": "crates/larql-inference/src/attention/decode.rs",
-      "line": 665,
+      "line": 707,
       "crate": "larql_inference"
     },
     {
       "fqn": "larql_inference::attention::decode::kv_cache_format_is_fixed_at_construction",
       "file": "crates/larql-inference/src/attention/decode.rs",
-      "line": 691,
+      "line": 733,
       "crate": "larql_inference"
     },
     {
       "fqn": "larql_inference::attention::decode::get_layer_returns_none_when_empty",
       "file": "crates/larql-inference/src/attention/decode.rs",
-      "line": 714,
+      "line": 756,
       "crate": "larql_inference"
     },
     {
       "fqn": "larql_inference::attention::decode::set_layer_then_get_layer_round_trips",
       "file": "crates/larql-inference/src/attention/decode.rs",
-      "line": 721,
+      "line": 763,
       "crate": "larql_inference"
     },
     {
       "fqn": "larql_inference::attention::decode::set_layer_out_of_range_is_noop",
       "file": "crates/larql-inference/src/attention/decode.rs",
-      "line": 732,
+      "line": 774,
       "crate": "larql_inference"
     },
     {
       "fqn": "larql_inference::attention::decode::clear_layer_removes_kv",
       "file": "crates/larql-inference/src/attention/decode.rs",
-      "line": 740,
+      "line": 782,
       "crate": "larql_inference"
     },
     {
       "fqn": "larql_inference::attention::decode::clone_layer_from_copies_donor_kv",
       "file": "crates/larql-inference/src/attention/decode.rs",
-      "line": 749,
+      "line": 791,
       "crate": "larql_inference"
     },
     {
       "fqn": "larql_inference::attention::decode::clone_layer_from_missing_donor_layer_is_noop",
       "file": "crates/larql-inference/src/attention/decode.rs",
-      "line": 762,
+      "line": 804,
       "crate": "larql_inference"
     },
     {
       "fqn": "larql_inference::attention::decode::clone_layer_position_range_slices_donor",
       "file": "crates/larql-inference/src/attention/decode.rs",
-      "line": 772,
+      "line": 814,
       "crate": "larql_inference"
     },
     {
       "fqn": "larql_inference::attention::decode::set_layer_quantizes_when_format_active",
       "file": "crates/larql-inference/src/attention/decode.rs",
-      "line": 789,
+      "line": 831,
+      "crate": "larql_inference"
+    },
+    {
+      "fqn": "larql_inference::attention::decode::deferred_k_prefill_quantizes_on_next_write",
+      "file": "crates/larql-inference/src/attention/decode.rs",
+      "line": 841,
       "crate": "larql_inference"
     },
     {
       "fqn": "larql_inference::attention::decode::clone_layer_position_range_cross_format_round_trips",
       "file": "crates/larql-inference/src/attention/decode.rs",
-      "line": 799,
+      "line": 856,
       "crate": "larql_inference"
     },
     {
       "fqn": "larql_inference::attention::decode::clone_layer_position_range_clamps_to_donor_length",
       "file": "crates/larql-inference/src/attention/decode.rs",
-      "line": 823,
+      "line": 880,
       "crate": "larql_inference"
     },
     {
       "fqn": "larql_inference::attention::decode::clone_layer_position_range_empty_slice_is_noop",
       "file": "crates/larql-inference/src/attention/decode.rs",
-      "line": 834,
+      "line": 891,
       "crate": "larql_inference"
     },
     {
       "fqn": "larql_inference::attention::decode::decode_step_output_shape",
       "file": "crates/larql-inference/src/attention/decode.rs",
-      "line": 845,
+      "line": 902,
       "crate": "larql_inference"
     },
     {
       "fqn": "larql_inference::attention::decode::decode_step_output_finite",
       "file": "crates/larql-inference/src/attention/decode.rs",
-      "line": 856,
+      "line": 913,
       "crate": "larql_inference"
     },
     {
       "fqn": "larql_inference::attention::decode::decode_step_kv_grows_with_prior",
       "file": "crates/larql-inference/src/attention/decode.rs",
-      "line": 865,
+      "line": 922,
       "crate": "larql_inference"
     },
     {
       "fqn": "larql_inference::attention::decode::decode_step_all_layers_succeed",
       "file": "crates/larql-inference/src/attention/decode.rs",
-      "line": 877,
+      "line": 934,
       "crate": "larql_inference"
     },
     {
       "fqn": "larql_inference::attention::decode::quantize_layer_no_op_when_format_unset",
       "file": "crates/larql-inference/src/attention/decode.rs",
-      "line": 889,
+      "line": 946,
       "crate": "larql_inference"
     },
     {
       "fqn": "larql_inference::attention::decode::quantize_then_dequantize_roundtrip_preserves_direction",
       "file": "crates/larql-inference/src/attention/decode.rs",
-      "line": 899,
+      "line": 956,
       "crate": "larql_inference"
     },
     {
       "fqn": "larql_inference::attention::decode::promote_layer_to_fp32_restores_layers_slot",
       "file": "crates/larql-inference/src/attention/decode.rs",
-      "line": 936,
+      "line": 993,
       "crate": "larql_inference"
     },
     {
       "fqn": "larql_inference::attention::decode::get_layer_returns_fp32_after_compress",
       "file": "crates/larql-inference/src/attention/decode.rs",
-      "line": 955,
+      "line": 1012,
       "crate": "larql_inference"
     },
     {
       "fqn": "larql_inference::attention::decode::get_layer_caches_promoted_copy",
       "file": "crates/larql-inference/src/attention/decode.rs",
-      "line": 967,
+      "line": 1024,
       "crate": "larql_inference"
     },
     {
       "fqn": "larql_inference::attention::decode::get_layer_lazy_never_promotes",
       "file": "crates/larql-inference/src/attention/decode.rs",
-      "line": 979,
+      "line": 1036,
       "crate": "larql_inference"
     },
     {
       "fqn": "larql_inference::attention::decode::clear_layer_erases_both_storages",
       "file": "crates/larql-inference/src/attention/decode.rs",
-      "line": 992,
+      "line": 1049,
       "crate": "larql_inference"
     },
     {
@@ -25877,145 +25887,145 @@
     {
       "fqn": "larql_server::kv_snapshot::magic_and_version_are_present_at_known_offsets",
       "file": "crates/larql-server/src/kv_snapshot.rs",
-      "line": 489,
+      "line": 490,
       "crate": "larql_server"
     },
     {
       "fqn": "larql_server::kv_snapshot::round_trip_fp32_is_byte_identical",
       "file": "crates/larql-server/src/kv_snapshot.rs",
-      "line": 501,
+      "line": 502,
       "crate": "larql_server"
     },
     {
       "fqn": "larql_server::kv_snapshot::tests::round_trip_preserves_max_window_and_promote_count",
       "file": "crates/larql-server/src/kv_snapshot.rs",
-      "line": 516,
+      "line": 517,
       "crate": "larql_server"
     },
     {
       "fqn": "larql_server::kv_snapshot::round_trip_preserves_max_window_and_promote_count",
       "file": "crates/larql-server/src/kv_snapshot.rs",
-      "line": 516,
+      "line": 517,
       "crate": "larql_server"
     },
     {
       "fqn": "larql_server::kv_snapshot::round_trip_compressed_layer",
       "file": "crates/larql-server/src/kv_snapshot.rs",
-      "line": 528,
+      "line": 529,
       "crate": "larql_server"
     },
     {
       "fqn": "larql_server::kv_snapshot::tests::empty_layers_round_trip",
       "file": "crates/larql-server/src/kv_snapshot.rs",
-      "line": 560,
+      "line": 561,
       "crate": "larql_server"
     },
     {
       "fqn": "larql_server::kv_snapshot::empty_layers_round_trip",
       "file": "crates/larql-server/src/kv_snapshot.rs",
-      "line": 560,
+      "line": 561,
       "crate": "larql_server"
     },
     {
       "fqn": "larql_server::kv_snapshot::tests::magic_mismatch_is_rejected",
       "file": "crates/larql-server/src/kv_snapshot.rs",
-      "line": 572,
+      "line": 573,
       "crate": "larql_server"
     },
     {
       "fqn": "larql_server::kv_snapshot::magic_mismatch_is_rejected",
       "file": "crates/larql-server/src/kv_snapshot.rs",
-      "line": 572,
+      "line": 573,
       "crate": "larql_server"
     },
     {
       "fqn": "larql_server::kv_snapshot::unknown_version_is_rejected",
       "file": "crates/larql-server/src/kv_snapshot.rs",
-      "line": 585,
+      "line": 586,
       "crate": "larql_server"
     },
     {
       "fqn": "larql_server::kv_snapshot::tests::truncated_input_is_rejected_cleanly",
       "file": "crates/larql-server/src/kv_snapshot.rs",
-      "line": 601,
+      "line": 602,
       "crate": "larql_server"
     },
     {
       "fqn": "larql_server::kv_snapshot::truncated_input_is_rejected_cleanly",
       "file": "crates/larql-server/src/kv_snapshot.rs",
-      "line": 601,
+      "line": 602,
       "crate": "larql_server"
     },
     {
       "fqn": "larql_server::grpc_attention::tests::delete_unknown_session_returns_not_found",
       "file": "crates/larql-server/src/grpc_attention.rs",
-      "line": 612,
+      "line": 621,
       "crate": "larql_server"
     },
     {
       "fqn": "larql_server::grpc_attention::delete_unknown_session_returns_not_found",
       "file": "crates/larql-server/src/grpc_attention.rs",
-      "line": 612,
+      "line": 621,
       "crate": "larql_server"
     },
     {
       "fqn": "larql_server::grpc_attention::tests::get_unknown_session_returns_not_found",
       "file": "crates/larql-server/src/grpc_attention.rs",
-      "line": 624,
+      "line": 633,
       "crate": "larql_server"
     },
     {
       "fqn": "larql_server::grpc_attention::get_unknown_session_returns_not_found",
       "file": "crates/larql-server/src/grpc_attention.rs",
-      "line": 624,
+      "line": 633,
       "crate": "larql_server"
     },
     {
       "fqn": "larql_server::grpc_attention::tests::snapshot_unknown_session_returns_not_found",
       "file": "crates/larql-server/src/grpc_attention.rs",
-      "line": 636,
+      "line": 645,
       "crate": "larql_server"
     },
     {
       "fqn": "larql_server::grpc_attention::snapshot_unknown_session_returns_not_found",
       "file": "crates/larql-server/src/grpc_attention.rs",
-      "line": 636,
+      "line": 645,
       "crate": "larql_server"
     },
     {
       "fqn": "larql_server::grpc_attention::tests::free_unknown_session_returns_not_found",
       "file": "crates/larql-server/src/grpc_attention.rs",
-      "line": 648,
+      "line": 657,
       "crate": "larql_server"
     },
     {
       "fqn": "larql_server::grpc_attention::free_unknown_session_returns_not_found",
       "file": "crates/larql-server/src/grpc_attention.rs",
-      "line": 648,
+      "line": 657,
       "crate": "larql_server"
     },
     {
       "fqn": "larql_server::grpc_attention::tests::restore_with_bad_magic_returns_invalid_argument",
       "file": "crates/larql-server/src/grpc_attention.rs",
-      "line": 662,
+      "line": 671,
       "crate": "larql_server"
     },
     {
       "fqn": "larql_server::grpc_attention::restore_with_bad_magic_returns_invalid_argument",
       "file": "crates/larql-server/src/grpc_attention.rs",
-      "line": 662,
+      "line": 671,
       "crate": "larql_server"
     },
     {
       "fqn": "larql_server::grpc_attention::tests::create_session_unknown_model_returns_not_found",
       "file": "crates/larql-server/src/grpc_attention.rs",
-      "line": 679,
+      "line": 688,
       "crate": "larql_server"
     },
     {
       "fqn": "larql_server::grpc_attention::create_session_unknown_model_returns_not_found",
       "file": "crates/larql-server/src/grpc_attention.rs",
-      "line": 679,
+      "line": 688,
       "crate": "larql_server"
     },
     {
@@ -26483,133 +26493,133 @@
     {
       "fqn": "larql_server::routes::attention::tests::map_kv_format_recognises_known_formats",
       "file": "crates/larql-server/src/routes/attention.rs",
-      "line": 1113,
+      "line": 1122,
       "crate": "larql_server"
     },
     {
       "fqn": "larql_server::routes::attention::map_kv_format_recognises_known_formats",
       "file": "crates/larql-server/src/routes/attention.rs",
-      "line": 1113,
+      "line": 1122,
       "crate": "larql_server"
     },
     {
       "fqn": "larql_server::routes::attention::tests::map_kv_format_rejects_unknown",
       "file": "crates/larql-server/src/routes/attention.rs",
-      "line": 1122,
+      "line": 1131,
       "crate": "larql_server"
     },
     {
       "fqn": "larql_server::routes::attention::map_kv_format_rejects_unknown",
       "file": "crates/larql-server/src/routes/attention.rs",
-      "line": 1122,
+      "line": 1131,
       "crate": "larql_server"
     },
     {
       "fqn": "larql_server::routes::attention::tests::fmt_to_str_round_trips",
       "file": "crates/larql-server/src/routes/attention.rs",
-      "line": 1128,
+      "line": 1137,
       "crate": "larql_server"
     },
     {
       "fqn": "larql_server::routes::attention::fmt_to_str_round_trips",
       "file": "crates/larql-server/src/routes/attention.rs",
-      "line": 1128,
+      "line": 1137,
       "crate": "larql_server"
     },
     {
       "fqn": "larql_server::routes::attention::delete_unknown_session_returns_404",
       "file": "crates/larql-server/src/routes/attention.rs",
-      "line": 1135,
+      "line": 1144,
       "crate": "larql_server"
     },
     {
       "fqn": "larql_server::routes::attention::get_unknown_session_returns_404",
       "file": "crates/larql-server/src/routes/attention.rs",
-      "line": 1145,
+      "line": 1154,
       "crate": "larql_server"
     },
     {
       "fqn": "larql_server::routes::attention::tests::snapshot_unknown_session_returns_404",
       "file": "crates/larql-server/src/routes/attention.rs",
-      "line": 1154,
+      "line": 1163,
       "crate": "larql_server"
     },
     {
       "fqn": "larql_server::routes::attention::snapshot_unknown_session_returns_404",
       "file": "crates/larql-server/src/routes/attention.rs",
-      "line": 1154,
+      "line": 1163,
       "crate": "larql_server"
     },
     {
       "fqn": "larql_server::routes::attention::tests::restore_unknown_session_returns_404",
       "file": "crates/larql-server/src/routes/attention.rs",
-      "line": 1168,
+      "line": 1177,
       "crate": "larql_server"
     },
     {
       "fqn": "larql_server::routes::attention::restore_unknown_session_returns_404",
       "file": "crates/larql-server/src/routes/attention.rs",
-      "line": 1168,
+      "line": 1177,
       "crate": "larql_server"
     },
     {
       "fqn": "larql_server::routes::attention::tests::restore_with_bad_base64_returns_400",
       "file": "crates/larql-server/src/routes/attention.rs",
-      "line": 1183,
+      "line": 1192,
       "crate": "larql_server"
     },
     {
       "fqn": "larql_server::routes::attention::restore_with_bad_base64_returns_400",
       "file": "crates/larql-server/src/routes/attention.rs",
-      "line": 1183,
+      "line": 1192,
       "crate": "larql_server"
     },
     {
       "fqn": "larql_server::routes::attention::tests::restore_with_bad_magic_returns_400",
       "file": "crates/larql-server/src/routes/attention.rs",
-      "line": 1204,
+      "line": 1213,
       "crate": "larql_server"
     },
     {
       "fqn": "larql_server::routes::attention::restore_with_bad_magic_returns_400",
       "file": "crates/larql-server/src/routes/attention.rs",
-      "line": 1204,
+      "line": 1213,
       "crate": "larql_server"
     },
     {
       "fqn": "larql_server::routes::attention::tests::free_unknown_session_returns_404",
       "file": "crates/larql-server/src/routes/attention.rs",
-      "line": 1228,
+      "line": 1237,
       "crate": "larql_server"
     },
     {
       "fqn": "larql_server::routes::attention::free_unknown_session_returns_404",
       "file": "crates/larql-server/src/routes/attention.rs",
-      "line": 1228,
+      "line": 1237,
       "crate": "larql_server"
     },
     {
       "fqn": "larql_server::routes::attention::tests::free_layer_out_of_range_returns_400",
       "file": "crates/larql-server/src/routes/attention.rs",
-      "line": 1243,
+      "line": 1252,
       "crate": "larql_server"
     },
     {
       "fqn": "larql_server::routes::attention::free_layer_out_of_range_returns_400",
       "file": "crates/larql-server/src/routes/attention.rs",
-      "line": 1243,
+      "line": 1252,
       "crate": "larql_server"
     },
     {
       "fqn": "larql_server::routes::attention::tests::free_all_layers_clears_cache",
       "file": "crates/larql-server/src/routes/attention.rs",
-      "line": 1263,
+      "line": 1272,
       "crate": "larql_server"
     },
     {
       "fqn": "larql_server::routes::attention::free_all_layers_clears_cache",
       "file": "crates/larql-server/src/routes/attention.rs",
-      "line": 1263,
+      "line": 1272,
       "crate": "larql_server"
     },
     {
