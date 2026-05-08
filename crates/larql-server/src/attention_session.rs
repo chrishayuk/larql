@@ -93,10 +93,7 @@ impl AttentionSession {
         num_layers: usize,
         kv_format: Option<KvFormat>,
     ) -> Self {
-        let mut cache = KvCache::with_layers(num_layers);
-        if let Some(fmt) = kv_format {
-            cache.set_kv_format(fmt);
-        }
+        let cache = KvCache::with_layers_format(num_layers, kv_format);
         let now = Instant::now();
         Self {
             id,

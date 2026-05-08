@@ -62,29 +62,51 @@ pub struct KvCache {
 }
 
 impl KvCache {
-    /// Unbounded cache — grows with every decode step.
-    pub fn with_layers(num_layers: usize) -> Self {
+    fn new(
+        num_layers: usize,
+        max_window: Option<usize>,
+        kv_format: Option<larql_rotorquant::KvFormat>,
+    ) -> Self {
         Self {
             layers: vec![None; num_layers],
-            max_window: None,
+            max_window,
             next_position: 0,
-            kv_format: None,
+            kv_format,
             quantized_kv: vec![None; num_layers],
             promote_on_read_count: 0,
         }
     }
 
+    /// Unbounded cache — grows with every decode step.
+    pub fn with_layers(num_layers: usize) -> Self {
+        Self::new(num_layers, None, None)
+    }
+
+    /// Unbounded cache with a fixed KV compression format.
+    pub fn with_layers_format(
+        num_layers: usize,
+        kv_format: Option<larql_rotorquant::KvFormat>,
+    ) -> Self {
+        Self::new(num_layers, None, kv_format)
+    }
+
     /// Bounded (Markov-residual-bounded) — keeps only the last
     /// `window` positions per layer. Memory stays O(window).
     pub fn with_window(num_layers: usize, window: usize) -> Self {
-        Self {
-            layers: vec![None; num_layers],
-            max_window: if window == 0 { None } else { Some(window) },
-            next_position: 0,
-            kv_format: None,
-            quantized_kv: vec![None; num_layers],
-            promote_on_read_count: 0,
-        }
+        Self::with_window_format(num_layers, window, None)
+    }
+
+    /// Bounded cache with a fixed KV compression format.
+    pub fn with_window_format(
+        num_layers: usize,
+        window: usize,
+        kv_format: Option<larql_rotorquant::KvFormat>,
+    ) -> Self {
+        Self::new(
+            num_layers,
+            if window == 0 { None } else { Some(window) },
+            kv_format,
+        )
     }
 
     // ── RotorQuant compressed side-table ──────────────────────────
@@ -93,7 +115,23 @@ impl KvCache {
     /// called before `quantize_layer`. Mixing formats across layers
     /// in the same cache instance is unsupported.
     pub fn set_kv_format(&mut self, format: larql_rotorquant::KvFormat) {
-        self.kv_format = Some(format);
+        assert!(
+            self.try_set_kv_format(format),
+            "KvCache format is fixed after construction; allocate a fresh cache to change it"
+        );
+    }
+
+    /// Try to set the active compression format. Returns `false` if
+    /// the cache already has a different format.
+    pub fn try_set_kv_format(&mut self, format: larql_rotorquant::KvFormat) -> bool {
+        match self.kv_format {
+            Some(existing) if existing != format => false,
+            Some(_) => true,
+            None => {
+                self.kv_format = Some(format);
+                true
+            }
+        }
     }
 
     /// Compress an FP32 layer into the active KV format. The FP32
@@ -635,6 +673,21 @@ mod tests {
             cache.clip_layer(0);
         }
         assert!(cache.cached_len(0) <= 2, "window=2 should cap at 2 entries");
+    }
+
+    #[test]
+    fn kv_cache_format_is_fixed_at_construction() {
+        let mut cache = KvCache::with_layers_format(2, Some(larql_rotorquant::KvFormat::Iso3));
+        assert_eq!(cache.kv_format, Some(larql_rotorquant::KvFormat::Iso3));
+        assert!(cache.try_set_kv_format(larql_rotorquant::KvFormat::Iso3));
+        assert!(!cache.try_set_kv_format(larql_rotorquant::KvFormat::Planar3));
+
+        let windowed = KvCache::with_window_format(1, 8, Some(larql_rotorquant::KvFormat::Planar3));
+        assert_eq!(windowed.max_window, Some(8));
+        assert_eq!(
+            windowed.kv_format,
+            Some(larql_rotorquant::KvFormat::Planar3)
+        );
     }
 
     // ── KV surgery (get / set / clear / clone) ────────────────────────────────

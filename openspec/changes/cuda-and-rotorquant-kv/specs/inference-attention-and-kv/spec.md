@@ -15,6 +15,7 @@ insert.
 #### Scenario: Iso3 cache reads back as FP16
 - **WHEN** a layer is read from an Iso3 cache via `get_layer(layer_id)`
 - **THEN** the result SHALL be an FP16 tensor reconstructed from the quantised storage
+<!-- test: larql_inference::attention::decode::tests::kv_cache_format_is_fixed_at_construction -->
 <!-- test: larql_inference::attention::decode::tests::get_layer_returns_fp32_after_compress -->
 <!-- test: larql_inference::attention::decode::tests::quantize_then_dequantize_roundtrip_preserves_direction -->
 
