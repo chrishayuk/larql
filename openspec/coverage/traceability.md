@@ -159,10 +159,15 @@ _Source: `openspec/changes/backfill-specs/specs/cli-server-and-dev-commands/spec
 
 ## compute-backend-traits
 
-_Source: `openspec/changes/backfill-specs/specs/compute-backend-traits/spec.md`_
+_Source: `openspec/specs/compute-backend-traits/spec.md`_
 
 | Requirement | Scenario | Backed by |
 |---|---|---|
+| New capability bits for CUDA, FlashAttentionV2, KvCompressionRotorQuant | CPU backend does not claim CUDA capability | _unbacked_ |
+| New capability bits for CUDA, FlashAttentionV2, KvCompressionRotorQuant | CUDA backend claims its full capability set | _unbacked_ |
+| Default backend honours CUDA → Metal → CPU precedence | CUDA wins on Linux + cuda feature | _unbacked_ |
+| Default backend honours CUDA → Metal → CPU precedence | Metal still wins on macOS without CUDA available | _unbacked_ |
+| Default backend honours CUDA → Metal → CPU precedence | LARQL_BACKEND override is authoritative | _unbacked_ |
 | Trait split into focused sub-traits | ComputeBackend supertraits the four sub-traits | `larql_compute::test_pipeline_and_moe::cpu_backend_is_dyn_compatible`<br>`larql_compute::test_pipeline_and_moe::cpu_backend_name_is_nonempty`<br>`larql_compute::test_pipeline_and_moe::cpu_backend_device_info_is_nonempty` |
 | Trait split into focused sub-traits | Default backend factory exposes a usable name | `larql_compute::test_correctness::default_backend_has_name`<br>`larql_compute::test_pipeline_and_moe::default_backend_name_is_nonempty` |
 | Capability probe replaces `Option<…>` polling | CPU backend's truth table matches its real surface | `larql_compute::test_correctness::cpu_backend_capability_truth_table` |
@@ -179,11 +184,6 @@ _Source: `openspec/changes/backfill-specs/specs/compute-backend-traits/spec.md`_
 | MatMul gemv specialisations and batch dispatch | Q4 vecmat reachable through the trait surface | `larql_compute::test_backend_matmul_quant::q4_vecmat_via_trait_nonzero` |
 | DecodeBackend defaults are no-ops returning None | Default decode stubs return None / 0 on CPU | `larql_compute::test_backend_matmul_quant::default_decode_stubs` |
 | DecodeBackend defaults are no-ops returning None | Default device_info delegates to name | `larql_compute::test_backend_matmul_quant::default_device_info_delegates_to_name` |
-| New capability bits for CUDA, FlashAttentionV2, KvCompressionRotorQuant | CPU backend does not claim CUDA capability | _unbacked_ |
-| New capability bits for CUDA, FlashAttentionV2, KvCompressionRotorQuant | CUDA backend claims its full capability set | _unbacked_ |
-| Default backend honours CUDA → Metal → CPU precedence | CUDA wins on Linux + cuda feature | _unbacked_ |
-| Default backend honours CUDA → Metal → CPU precedence | Metal still wins on macOS without CUDA available | _unbacked_ |
-| Default backend honours CUDA → Metal → CPU precedence | LARQL_BACKEND override is authoritative | _unbacked_ |
 
 ## compute-cpu-kernels
 
@@ -222,7 +222,7 @@ _Source: `openspec/changes/backfill-specs/specs/compute-cpu-kernels/spec.md`_
 
 ## compute-cuda-kernels
 
-_Source: `openspec/changes/cuda-and-rotorquant-kv/specs/compute-cuda-kernels/spec.md`_
+_Source: `openspec/specs/compute-cuda-kernels/spec.md`_
 
 | Requirement | Scenario | Backed by |
 |---|---|---|
@@ -421,7 +421,7 @@ _Source: `openspec/changes/backfill-specs/specs/core-serialization/spec.md`_
 
 ## deploy-cpu-gpu-split
 
-_Source: `openspec/changes/cuda-and-rotorquant-kv/specs/deploy-cpu-gpu-split/spec.md`_
+_Source: `openspec/specs/deploy-cpu-gpu-split/spec.md`_
 
 | Requirement | Scenario | Backed by |
 |---|---|---|
@@ -500,10 +500,14 @@ _Source: `openspec/changes/backfill-specs/specs/experts-wasm-runtime/spec.md`_
 
 ## inference-attention-and-kv
 
-_Source: `openspec/changes/backfill-specs/specs/inference-attention-and-kv/spec.md`_
+_Source: `openspec/specs/inference-attention-and-kv/spec.md`_
 
 | Requirement | Scenario | Backed by |
 |---|---|---|
+| KV cache becomes parameterised by KvFormat | Iso3 cache reads back as FP16 | `larql_inference::attention::decode::tests::kv_cache_format_is_fixed_at_construction`<br>`larql_inference::attention::decode::tests::get_layer_returns_fp32_after_compress`<br>`larql_inference::attention::decode::tests::quantize_then_dequantize_roundtrip_preserves_direction` |
+| KV cache becomes parameterised by KvFormat | Cross-format cloning is allowed via FP16 round-trip | `larql_inference::attention::decode::tests::clone_layer_position_range_slices_donor`<br>`larql_inference::attention::decode::tests::clone_layer_position_range_cross_format_round_trips` |
+| Attention forward pass dispatches the format-specific path on the active backend | CUDA backend uses the production kernel for Iso3 | _unbacked_ |
+| Attention forward pass dispatches the format-specific path on the active backend | CPU backend uses the scalar reference for Iso3 (slow but correct) | `larql_inference::attention::decode::tests::set_layer_quantizes_when_format_active` |
 | BLAS-fused online-softmax GQA attention | Output shape and finiteness | `larql_inference::test_fused_attention::basic::single_token`<br>`larql_inference::test_fused_attention::basic::output_shape`<br>`larql_inference::test_fused_attention::basic::longer_sequence`<br>`larql_inference::attention::gqa::tests::gqa_output_shape`<br>`larql_inference::attention::gqa::tests::gqa_output_finite`<br>`larql_inference::attention::gqa::tests::gqa_single_token` |
 | BLAS-fused online-softmax GQA attention | Uniform attention averages V across positions | `larql_inference::test_fused_attention::basic::uniform_attention_averages_v`<br>`larql_inference::test_fused_attention::basic::single_head_small` |
 | BLAS-fused online-softmax GQA attention | Multi-head and head_dim variants match a naive reference | `larql_inference::test_fused_attention::reference_agreement::multi_head`<br>`larql_inference::test_fused_attention::edge_cases::single_token_single_dim`<br>`larql_inference::test_fused_attention::edge_cases::large_head_dim`<br>`larql_inference::test_fused_attention::edge_cases::large_head_dim_512`<br>`larql_inference::test_fused_attention::edge_cases::custom_scale` |
@@ -522,10 +526,6 @@ _Source: `openspec/changes/backfill-specs/specs/inference-attention-and-kv/spec.
 | CPU / Metal numeric parity and V-projection | Gemma 4 global layers store V as Q6K and load distinct W_V | `larql_inference::test_cpu_v_projection::vindex_stores_v_as_q6k_for_gemma4_global_layers`<br>`larql_inference::test_cpu_v_projection::cpu_q4k_load_produces_distinct_w_k_and_w_v_for_gemma4_global` |
 | CPU / Metal numeric parity and V-projection | Attention block constructs and runs across all layers | `larql_inference::attention::block::tests::attention_block_output_shape`<br>`larql_inference::attention::block::tests::attention_block_output_finite`<br>`larql_inference::attention::block::tests::attention_block_single_token`<br>`larql_inference::attention::block::tests::attention_block_all_layers`<br>`larql_inference::attention::block::tests::attention_block_with_kv_out_returns_kv` |
 | Test suite coverage | Workspace tests bound to this capability | `larql_inference::test_fused_attention::**::*`<br>`larql_inference::test_cpu_metal_parity::**::*`<br>`larql_inference::test_cpu_v_projection::**::*`<br>`larql_inference::attention::gqa::tests::**::*` |
-| KV cache becomes parameterised by KvFormat | Iso3 cache reads back as FP16 | `larql_inference::attention::decode::tests::kv_cache_format_is_fixed_at_construction`<br>`larql_inference::attention::decode::tests::get_layer_returns_fp32_after_compress`<br>`larql_inference::attention::decode::tests::quantize_then_dequantize_roundtrip_preserves_direction` |
-| KV cache becomes parameterised by KvFormat | Cross-format cloning is allowed via FP16 round-trip | `larql_inference::attention::decode::tests::clone_layer_position_range_slices_donor`<br>`larql_inference::attention::decode::tests::clone_layer_position_range_cross_format_round_trips` |
-| Attention forward pass dispatches the format-specific path on the active backend | CUDA backend uses the production kernel for Iso3 | _unbacked_ |
-| Attention forward pass dispatches the format-specific path on the active backend | CPU backend uses the scalar reference for Iso3 (slow but correct) | `larql_inference::attention::decode::tests::set_layer_quantizes_when_format_active` |
 | KvCache MUST expose a KvFormat parameter | quantize_layer is a no-op when kv_format is unset | `larql_inference::attention::decode::tests::quantize_layer_no_op_when_format_unset` |
 | quantize_layer + dequantize_layer round-trip preserves direction | Iso3 quantize/dequantize roundtrip | `larql_inference::attention::decode::tests::quantize_then_dequantize_roundtrip_preserves_direction` |
 | promote_layer_to_fp32 inverts quantize_layer | promote restores FP32 slot and clears compressed | `larql_inference::attention::decode::tests::promote_layer_to_fp32_restores_layers_slot` |
@@ -603,10 +603,14 @@ _Source: `openspec/changes/backfill-specs/specs/inference-layer-graph/spec.md`_
 
 ## inference-residual-engine
 
-_Source: `openspec/changes/backfill-specs/specs/inference-residual-engine/spec.md`_
+_Source: `openspec/specs/inference-residual-engine/spec.md`_
 
 | Requirement | Scenario | Backed by |
 |---|---|---|
+| RotorQuant engines join the engine registry | IsoQuantEngine 3-bit creates an Iso3 KV cache | _unbacked_ |
+| RotorQuant engines join the engine registry | Engine registry remains additive — existing engines unchanged | _unbacked_ |
+| Engine selection prefers RotorQuant on CUDA + RotorQuant capability | CUDA box auto-selects IsoQuant | _unbacked_ |
+| Engine selection prefers RotorQuant on CUDA + RotorQuant capability | Metal box auto-selects unchanged | _unbacked_ |
 | Pluggable KV-cache engine surface | EngineKind name parsing round-trips with and without parameters | `larql_inference::engines::tests::engine_kind_from_name_roundtrip`<br>`larql_inference::engines::tests::engine_kind_from_name_with_params`<br>`larql_inference::engines::tests::from_name_unknown_param_ignored_defaults_apply`<br>`larql_inference::engines::tests::from_name_all_engines_parseable`<br>`larql_inference::engines::tests::engine_info_summary_with_config`<br>`larql_inference::engines::tests::engine_info_summary_no_config` |
 | Pluggable KV-cache engine surface | Every engine reports zero state before prefill | `larql_inference::engines::tests::all_engines_memory_zero_before_prefill`<br>`larql_inference::engines::tests::all_engines_window_tokens_zero_before_prefill`<br>`larql_inference::engines::tests::all_engines_cold_bytes_zero_before_prefill`<br>`larql_inference::engines::tests::all_engines_have_valid_name`<br>`larql_inference::engines::tests::all_engines_info_has_nonempty_fields`<br>`larql_inference::engines::tests::all_engines_stage_summary_none_before_decode` |
 | Markov Residual engine bit-perfect bounded-window decode | Engine identity, info, and memory are zero before prefill | `larql_inference::engines::kv_engines::markov_residual::engine::tests::engine_name`<br>`larql_inference::engines::kv_engines::markov_residual::engine::tests::engine_memory_zero_before_prefill`<br>`larql_inference::engines::kv_engines::markov_residual::engine::tests::engine_info_full_window`<br>`larql_inference::engines::kv_engines::markov_residual::engine::tests::engine_info_fixed_window` |
@@ -626,10 +630,6 @@ _Source: `openspec/changes/backfill-specs/specs/inference-residual-engine/spec.m
 | Unlimited Context engine bit-exact within window with cold archival | Window close, partial window, and flush archive cold bytes correctly | `larql_inference::engines::kv_engines::unlimited_context::engine::tests::window_auto_closes_when_full`<br>`larql_inference::engines::kv_engines::unlimited_context::engine::tests::two_full_windows_archives_two`<br>`larql_inference::engines::kv_engines::unlimited_context::engine::tests::partial_window_after_process`<br>`larql_inference::engines::kv_engines::unlimited_context::engine::tests::flush_closes_partial_window`<br>`larql_inference::engines::kv_engines::unlimited_context::engine::tests::cold_bytes_grow_after_window_close` |
 | Unlimited Context engine bit-exact within window with cold archival | Token archive and checkpoint store round-trip closed windows | `larql_inference::engines::kv_engines::unlimited_context::token_archive::tests::archive_and_retrieve_roundtrip`<br>`larql_inference::engines::kv_engines::unlimited_context::token_archive::tests::total_accounting`<br>`larql_inference::engines::kv_engines::unlimited_context::token_archive::tests::retrieve_missing_returns_none`<br>`larql_inference::engines::kv_engines::unlimited_context::token_archive::tests::is_empty_on_new`<br>`larql_inference::engines::kv_engines::unlimited_context::checkpoint_store::tests::save_and_load_roundtrip`<br>`larql_inference::engines::kv_engines::unlimited_context::checkpoint_store::tests::evict_removes_window`<br>`larql_inference::engines::kv_engines::unlimited_context::checkpoint_store::tests::total_bytes_scales_with_layers_and_dim`<br>`larql_inference::engines::kv_engines::unlimited_context::checkpoint_store::tests::is_empty_on_new_store`<br>`larql_inference::engines::kv_engines::unlimited_context::checkpoint_store::tests::load_missing_returns_none` |
 | Test suite coverage | Workspace tests bound to this capability | `larql_inference::test_backend::**::*` |
-| RotorQuant engines join the engine registry | IsoQuantEngine 3-bit creates an Iso3 KV cache | _unbacked_ |
-| RotorQuant engines join the engine registry | Engine registry remains additive — existing engines unchanged | _unbacked_ |
-| Engine selection prefers RotorQuant on CUDA + RotorQuant capability | CUDA box auto-selects IsoQuant | _unbacked_ |
-| Engine selection prefers RotorQuant on CUDA + RotorQuant capability | Metal box auto-selects unchanged | _unbacked_ |
 | KvEngine trait MUST expose cache_mut | engines without a KvCache return None | _unbacked_ |
 | KvEngine trait MUST expose cache_mut | engines with a KvCache return Some | _unbacked_ |
 | RotorQuantEngine MUST decorate any inner engine | decode step compresses the inner cache | _unbacked_ |
@@ -724,10 +724,14 @@ _Source: `openspec/changes/backfill-specs/specs/kv-cache-benchmark-accuracy-suit
 
 ## kv-cache-benchmark-strategies
 
-_Source: `openspec/changes/backfill-specs/specs/kv-cache-benchmark-strategies/spec.md`_
+_Source: `openspec/specs/kv-cache-benchmark-strategies/spec.md`_
 
 | Requirement | Scenario | Backed by |
 |---|---|---|
+| RotorQuantStrategy joins the KV-cache strategy enum | RotorQuantStrategy round-trip is bit-stable across runs | `kv_cache_benchmark::rotorquant::tests::iso3_strategy_runs_through_harness`<br>`kv_cache_benchmark::rotorquant::tests::planar3_strategy_runs_through_harness` |
+| RotorQuantStrategy joins the KV-cache strategy enum | memory_bytes reflects the format's compression ratio | `kv_cache_benchmark::rotorquant::tests::memory_bytes_iso3_is_smaller_than_fp16` |
+| Accuracy harness measures RotorQuant on Gemma 3 4B | Iso3 produces published-paper PPL on wikitext-2 | `kv_cache_benchmark::test_accuracy_suite::synthetic_report_accepts_upstream_ppl_measurement_with_tolerance`<br>`kv_cache_benchmark::test_accuracy_suite::synthetic_report_flags_ppl_outside_upstream_tolerance` |
+| Accuracy harness measures RotorQuant on Gemma 3 4B | Comparative table includes RotorQuant rows | `kv_cache_benchmark::test_accuracy_suite::synthetic_strategy_report_includes_rotorquant_rows`<br>`kv_cache_benchmark::test_accuracy_suite::synthetic_strategy_report_formats_decode_throughput_and_ppl_placeholder` |
 | KvStrategy trait surface | Standard KV benchmark fills out every metric field | `kv_cache_benchmark::test_standard::test_standard_kv_benchmark_runs` |
 | KvStrategy trait surface | TurboQuant benchmark reports lossy-but-aligned reconstruction | `kv_cache_benchmark::test_turboquant::test_turboquant_benchmark_runs` |
 | ModelConfig dimensions and analytical memory | Standard KV memory matches the analytical formula | `kv_cache_benchmark::test_standard::test_standard_kv_memory_formula`<br>`kv_cache_benchmark::standard_kv::tests::test_standard_kv_memory_formula` |
@@ -775,17 +779,13 @@ _Source: `openspec/changes/backfill-specs/specs/kv-cache-benchmark-strategies/sp
 | Real-model integration top-1 and bit-perfect Markov | Engine performance benchmark guards accuracy and memory | `kv_cache_benchmark::test_real_model::test_engine_performance` |
 | Real-model integration top-1 and bit-perfect Markov | Adversarial entity confusion stays grounded | `kv_cache_benchmark::test_real_model::test_adversarial_entity_confusion` |
 | Test suite coverage | Workspace tests bound to this capability | `kv_cache_benchmark::test_standard::**::*`<br>`kv_cache_benchmark::test_turboquant::**::*`<br>`kv_cache_benchmark::test_markov::**::*`<br>`kv_cache_benchmark::test_unlimited_context::**::*`<br>`kv_cache_benchmark::test_apollo_accuracy::**::*`<br>`kv_cache_benchmark::test_apollo_store::**::*`<br>`kv_cache_benchmark::test_apollo_query::**::*`<br>`kv_cache_benchmark::test_graph_walk::**::*`<br>`kv_cache_benchmark::test_real_model::**::*`<br>`kv_cache_benchmark::test_comparative::**::*`<br>`kv_cache_benchmark::test_shaders::**::*` |
-| RotorQuantStrategy joins the KV-cache strategy enum | RotorQuantStrategy round-trip is bit-stable across runs | `kv_cache_benchmark::rotorquant::tests::iso3_strategy_runs_through_harness`<br>`kv_cache_benchmark::rotorquant::tests::planar3_strategy_runs_through_harness` |
-| RotorQuantStrategy joins the KV-cache strategy enum | memory_bytes reflects the format's compression ratio | `kv_cache_benchmark::rotorquant::tests::memory_bytes_iso3_is_smaller_than_fp16` |
-| Accuracy harness measures RotorQuant on Gemma 3 4B | Iso3 produces published-paper PPL on wikitext-2 | `kv_cache_benchmark::test_accuracy_suite::synthetic_report_accepts_upstream_ppl_measurement_with_tolerance`<br>`kv_cache_benchmark::test_accuracy_suite::synthetic_report_flags_ppl_outside_upstream_tolerance` |
-| Accuracy harness measures RotorQuant on Gemma 3 4B | Comparative table includes RotorQuant rows | `kv_cache_benchmark::test_accuracy_suite::synthetic_strategy_report_includes_rotorquant_rows`<br>`kv_cache_benchmark::test_accuracy_suite::synthetic_strategy_report_formats_decode_throughput_and_ppl_placeholder` |
 | RotorQuantStrategy MUST implement the KvStrategy trait | Iso3 strategy runs through the harness | `kv_cache_benchmark::rotorquant::tests::iso3_strategy_runs_through_harness` |
 | RotorQuantStrategy MUST implement the KvStrategy trait | Planar3 strategy runs through the harness | `kv_cache_benchmark::rotorquant::tests::planar3_strategy_runs_through_harness` |
 | memory_bytes MUST be smaller than Standard FP16 | iso3 memory below fp16 baseline | `kv_cache_benchmark::rotorquant::tests::memory_bytes_iso3_is_smaller_than_fp16` |
 
 ## kv-cache-rotorquant
 
-_Source: `openspec/changes/cuda-and-rotorquant-kv/specs/kv-cache-rotorquant/spec.md`_
+_Source: `openspec/specs/kv-cache-rotorquant/spec.md`_
 
 | Requirement | Scenario | Backed by |
 |---|---|---|
@@ -1219,10 +1219,17 @@ _Source: `openspec/changes/backfill-specs/specs/python-bindings/spec.md`_
 
 ## router-grid
 
-_Source: `openspec/changes/attention-service-routes/specs/router-grid/spec.md`_
+_Source: `openspec/specs/router-grid/spec.md`_
 
 | Requirement | Scenario | Backed by |
 |---|---|---|
+| Shards advertise capability sets | Attention-only shard declares "attention" | `larql_server::bootstrap::tests::role_attention_announces_attention_only`<br>`larql_server::announce::tests::announce_message_carries_capabilities` |
+| Shards advertise capability sets | Pre-change all-roles shard still works | `larql_router::grid::tests::default_capabilities_advertise_both_attention_and_expert`<br>`larql_router::grid::tests::route_for_capability_falls_back_to_default_caps_shard` |
+| Router routes by capability + layer range | Attention RPC reaches the GPU shard | `larql_router::grid::tests::route_for_capability_filters_by_capability` |
+| Router routes by capability + layer range | Expert RPC reaches the CPU shard | `larql_router::grid::tests::route_for_capability_filters_by_capability` |
+| Router routes by capability + layer range | Missing capability returns 503 with a useful body | `larql_router::grid::tests::route_for_capability_returns_none_when_no_match`<br>`larql_router::tests::attention_proxy_missing_capability_returns_503_body` |
+| Heterogeneous deadlock prevention | Attention timeout returns 504 and frees the FFN reservation | `larql_router::tests::cli_default_hop_deadline_is_five_seconds`<br>`larql_router::tests::proxy_raw_timeout_maps_to_504` |
+| Heterogeneous deadlock prevention | Status reports capability map | `larql_router::grid::tests::status_response_reports_shards_and_gaps` |
 | register MUST consume the capabilities field | register stores capabilities from the announce | `larql_router::grid::tests::route_for_capability_filters_by_capability` |
 | register MUST consume the capabilities field | register stores cached_prefixes from the announce | `larql_router::grid::tests::route_for_prefix_picks_shard_with_cached_prefix`<br>`larql_router::grid::tests::update_heartbeat_with_prefixes_writes_bloom_onto_entry` |
 | update_heartbeat MUST refresh cached_prefixes | heartbeat updates the cached prefix bloom | `larql_router::grid::tests::update_heartbeat_with_prefixes_writes_bloom_onto_entry` |
@@ -1249,13 +1256,6 @@ _Source: `openspec/changes/attention-service-routes/specs/router-grid/spec.md`_
 | GridService gRPC enrollment protocol | Newly-registered shard is reachable via every routing surface | `larql_router::grid::tests::route_uses_inclusive_layer_ranges`<br>`larql_router::grid::tests::route_without_model_uses_any_model_table`<br>`larql_router::grid::tests::status_response_reports_shards_and_gaps` |
 | GridService gRPC enrollment protocol | Grid identity hash is logged per registration | `larql_server::announce::tests::vindex_identity_hash_is_stable_and_hex`<br>`larql_server::test_unit_state::vindex_identity_hash_is_deterministic`<br>`larql_server::test_unit_state::vindex_identity_hash_is_hex_string` |
 | Test suite coverage | Workspace tests bound to this capability | `larql_router::tests::**::*`<br>`larql_router::grid::tests::**::*` |
-| Shards advertise capability sets | Attention-only shard declares "attention" | `larql_server::bootstrap::tests::role_attention_announces_attention_only`<br>`larql_server::announce::tests::announce_message_carries_capabilities` |
-| Shards advertise capability sets | Pre-change all-roles shard still works | `larql_router::grid::tests::default_capabilities_advertise_both_attention_and_expert`<br>`larql_router::grid::tests::route_for_capability_falls_back_to_default_caps_shard` |
-| Router routes by capability + layer range | Attention RPC reaches the GPU shard | `larql_router::grid::tests::route_for_capability_filters_by_capability` |
-| Router routes by capability + layer range | Expert RPC reaches the CPU shard | `larql_router::grid::tests::route_for_capability_filters_by_capability` |
-| Router routes by capability + layer range | Missing capability returns 503 with a useful body | `larql_router::grid::tests::route_for_capability_returns_none_when_no_match`<br>`larql_router::tests::attention_proxy_missing_capability_returns_503_body` |
-| Heterogeneous deadlock prevention | Attention timeout returns 504 and frees the FFN reservation | `larql_router::tests::cli_default_hop_deadline_is_five_seconds`<br>`larql_router::tests::proxy_raw_timeout_maps_to_504` |
-| Heterogeneous deadlock prevention | Status reports capability map | `larql_router::grid::tests::status_response_reports_shards_and_gaps` |
 | ServerEntry MUST carry a capabilities set | default capabilities cover both attention and expert | `larql_router::grid::tests::default_capabilities_advertise_both_attention_and_expert` |
 | Capability-filtered routing returns the right shard | attention RPC routes to the GPU shard | `larql_router::grid::tests::route_for_capability_filters_by_capability` |
 | Capability-filtered routing returns the right shard | missing capability returns None | `larql_router::grid::tests::route_for_capability_returns_none_when_no_match` |
@@ -1281,10 +1281,18 @@ _Source: `openspec/changes/attention-service-routes/specs/router-protocol/spec.m
 
 ## server-attention-service
 
-_Source: `openspec/changes/attention-service-prefill-decode-split/specs/server-attention-service/spec.md`_
+_Source: `openspec/specs/server-attention-service/spec.md`_
 
 | Requirement | Scenario | Backed by |
 |---|---|---|
+| Attention session lifecycle endpoints | Session create returns an opaque handle | `larql_server::test_http_attention::create_session_returns_id_and_layer_range`<br>`larql_server::attention_session::tests::session_id_is_26_chars` |
+| Attention session lifecycle endpoints | Session DELETE frees VRAM | `larql_server::test_http_attention::delete_session_then_get_returns_404`<br>`larql_server::attention_session::tests::delete_makes_get_none` |
+| Attention prefill endpoint | Prefill of 1024 tokens populates the KV cache | `larql_server::test_attention_validation::session_seq_len_advances_after_prefill`<br>`larql_server::test_attention_validation::prefill_response_shape_matches_layers_seq_hidden`<br>`larql_server::test_attention_validation::prefill_q4k_default_returns_200_against_real_vindex` |
+| Attention decode endpoint | Decode appends one position to the KV cache | _unbacked_ |
+| KV-cache snapshot and restore | Snapshot then restore round-trips bit-exact | `larql_server::kv_snapshot::tests::round_trip_fp32_is_byte_identical`<br>`larql_server::test_http_attention::restore_round_trips_through_a_new_session`<br>`larql_server::test_attention_validation::snapshot_after_prefill_round_trips_through_restore` |
+| KV-cache snapshot and restore | Snapshot blob carries the KV format | `larql_server::kv_snapshot::tests::round_trip_compressed_layer`<br>`larql_server::test_http_attention::snapshot_returns_base64_with_correct_magic` |
+| gRPC parity for the HTTP surface | gRPC service handles the same prefill | _unbacked_ |
+| Topology advertises the attention capability | GPU shard refuses expert RPCs | `larql_server::bootstrap::tests::role_attention_announces_attention_only` |
 | server SHALL support a --mode flag for PD-split | --mode prefill rejects decode RPCs | _unbacked_ |
 | server SHALL support a --mode flag for PD-split | --mode decode rejects prefill RPCs | _unbacked_ |
 | server SHALL support a --mode flag for PD-split | --mode both accepts both | _unbacked_ |
@@ -1312,14 +1320,6 @@ _Source: `openspec/changes/attention-service-prefill-decode-split/specs/server-a
 | Server SHALL announce its `--role` as a router capability | legacy server (no --role) announces both | `larql_server::bootstrap::tests::role_both_announces_attention_and_expert`<br>`larql_server::bootstrap::tests::cli_defaults_role_to_both` |
 | Heartbeat SHALL include the cached-prefix bloom | heartbeat includes the cached prefixes | _unbacked_ |
 | Heartbeat SHALL include the cached-prefix bloom | empty server emits empty bloom | _unbacked_ |
-| Attention session lifecycle endpoints | Session create returns an opaque handle | `larql_server::test_http_attention::create_session_returns_id_and_layer_range`<br>`larql_server::attention_session::tests::session_id_is_26_chars` |
-| Attention session lifecycle endpoints | Session DELETE frees VRAM | `larql_server::test_http_attention::delete_session_then_get_returns_404`<br>`larql_server::attention_session::tests::delete_makes_get_none` |
-| Attention prefill endpoint | Prefill of 1024 tokens populates the KV cache | `larql_server::test_attention_validation::session_seq_len_advances_after_prefill`<br>`larql_server::test_attention_validation::prefill_response_shape_matches_layers_seq_hidden`<br>`larql_server::test_attention_validation::prefill_q4k_default_returns_200_against_real_vindex` |
-| Attention decode endpoint | Decode appends one position to the KV cache | _unbacked_ |
-| KV-cache snapshot and restore | Snapshot then restore round-trips bit-exact | `larql_server::kv_snapshot::tests::round_trip_fp32_is_byte_identical`<br>`larql_server::test_http_attention::restore_round_trips_through_a_new_session`<br>`larql_server::test_attention_validation::snapshot_after_prefill_round_trips_through_restore` |
-| KV-cache snapshot and restore | Snapshot blob carries the KV format | `larql_server::kv_snapshot::tests::round_trip_compressed_layer`<br>`larql_server::test_http_attention::snapshot_returns_base64_with_correct_magic` |
-| gRPC parity for the HTTP surface | gRPC service handles the same prefill | _unbacked_ |
-| Topology advertises the attention capability | GPU shard refuses expert RPCs | `larql_server::bootstrap::tests::role_attention_announces_attention_only` |
 
 ## server-expert-service
 
@@ -1438,10 +1438,13 @@ _Source: `openspec/changes/backfill-specs/specs/server-infrastructure/spec.md`_
 
 ## server-vindex-loading
 
-_Source: `openspec/changes/backfill-specs/specs/server-vindex-loading/spec.md`_
+_Source: `openspec/specs/server-vindex-loading/spec.md`_
 
 | Requirement | Scenario | Backed by |
 |---|---|---|
+| --role flag gates which weight families load | --role attention does not allocate FFN weights | _unbacked_ |
+| --role flag gates which weight families load | --role ffn refuses attention RPCs | _unbacked_ |
+| --role flag gates which weight families load | --role all keeps the existing single-binary semantics | _unbacked_ |
 | Lazy bootstrap of vindex artifacts | ffn-service skips attention and embed warmup | `larql_server::bootstrap::tests::load_options_are_copyable`<br>`larql_server::state::loaded_model_tests::weights_not_loaded_by_default` |
 | Lazy bootstrap of vindex artifacts | Q4K vindexes select the q4k weight branch | `larql_server::state::loaded_model_tests::quant_format_selects_q4k_branch`<br>`larql_server::state::loaded_model_tests::weights_not_loaded_by_default` |
 | Lazy bootstrap of vindex artifacts | release-mmap flag round-trips into LoadedModel | `larql_server::state::loaded_model_tests::release_mmap_flag_round_trips_true`<br>`larql_server::state::loaded_model_tests::release_mmap_flag_round_trips_false` |
@@ -1456,9 +1459,6 @@ _Source: `openspec/changes/backfill-specs/specs/server-vindex-loading/spec.md`_
 | f16 embedding store for embed-service mode | Lookup decodes f16 rows, applies scale, and bounds-checks | `larql_server::embed_store::tests::lookup_decodes_scales_and_caches_until_cap`<br>`larql_server::embed_store::tests::lookup_rejects_out_of_range_token` |
 | f16 embedding store for embed-service mode | f16-to-f32 decode handles edge bit patterns | `larql_server::embed_store::tests::f16_to_f32_zero`<br>`larql_server::embed_store::tests::f16_to_f32_one`<br>`larql_server::embed_store::tests::f16_to_f32_neg_two`<br>`larql_server::embed_store::tests::f16_to_f32_roundtrip_approx`<br>`larql_server::embed_store::tests::f16_to_f32_subnormal_inf_and_nan` |
 | Test suite coverage | Workspace tests bound to this capability | `larql_server::test_unit_vindex::**::*`<br>`larql_server::test_unit_state::**::*`<br>`larql_server::bootstrap::tests::**::*`<br>`larql_server::state::**::*`<br>`larql_server::embed_store::tests::**::*` |
-| --role flag gates which weight families load | --role attention does not allocate FFN weights | _unbacked_ |
-| --role flag gates which weight families load | --role ffn refuses attention RPCs | _unbacked_ |
-| --role flag gates which weight families load | --role all keeps the existing single-binary semantics | _unbacked_ |
 | server SHALL maintain a two-tier tokenizer cache | L0 hit returns cached tokens | _unbacked_ |
 | server SHALL maintain a two-tier tokenizer cache | L1 hit shares the chat-template prefix | _unbacked_ |
 | server SHALL maintain a two-tier tokenizer cache | cache miss falls back to Tokenizer::encode | _unbacked_ |
