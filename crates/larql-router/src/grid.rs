@@ -100,6 +100,29 @@ impl PrefixBloom {
         Self::default()
     }
 
+    /// Decode the wire form (32 bytes, four u64 LE words) into a bloom.
+    /// Returns `None` for any other length so callers can treat that as
+    /// "no bloom on this heartbeat" without per-call validation noise.
+    pub fn from_wire_bytes(bytes: &[u8]) -> Option<Self> {
+        if bytes.len() != 32 {
+            return None;
+        }
+        let mut bits = [0u64; 4];
+        for (i, slot) in bits.iter_mut().enumerate() {
+            *slot = u64::from_le_bytes(bytes[i * 8..(i + 1) * 8].try_into().unwrap());
+        }
+        Some(Self { bits })
+    }
+
+    /// Encode into the heartbeat wire form. 32 bytes (four u64 LE).
+    pub fn to_wire_bytes(&self) -> [u8; 32] {
+        let mut out = [0u8; 32];
+        for (i, w) in self.bits.iter().enumerate() {
+            out[i * 8..(i + 1) * 8].copy_from_slice(&w.to_le_bytes());
+        }
+        out
+    }
+
     /// Insert a prefix hash.
     pub fn insert(&mut self, hash: u64) {
         for &pos in &Self::positions(hash) {
@@ -208,11 +231,29 @@ impl GridState {
         ram_used: u64,
         requests_in_flight: u32,
     ) {
+        self.update_heartbeat_with_prefixes(server_id, cpu_pct, ram_used, requests_in_flight, None);
+    }
+
+    /// Heartbeat update that also carries the shard's current
+    /// `cached_prefixes` bloom. `None` ⇒ leave the entry's prior
+    /// bloom intact (pre-extension shards never populate it; partial
+    /// heartbeats SHALL NOT clear). attention-service-routes change.
+    pub fn update_heartbeat_with_prefixes(
+        &mut self,
+        server_id: &str,
+        cpu_pct: f32,
+        ram_used: u64,
+        requests_in_flight: u32,
+        cached_prefixes: Option<PrefixBloom>,
+    ) {
         if let Some(entry) = self.servers.get_mut(server_id) {
             entry.cpu_pct = cpu_pct;
             entry.ram_used = ram_used;
             entry.requests_in_flight = requests_in_flight;
             entry.last_seen = Instant::now();
+            if let Some(b) = cached_prefixes {
+                entry.cached_prefixes = b;
+            }
         }
         // Heartbeats don't change topology — no table rebuild needed.
     }
@@ -540,8 +581,18 @@ impl GridService for GridServiceImpl {
                             layer_end,
                             ram_bytes,
                             listen_url,
+                            capabilities,
                             ..
                         }) => {
+                            // attention-service-routes change wired
+                            // capabilities through the proto. An
+                            // empty/missing field still means "legacy
+                            // shard" — fall back to default.
+                            let capabilities = if capabilities.is_empty() {
+                                ServerEntry::default_capabilities()
+                            } else {
+                                capabilities
+                            };
                             let entry = ServerEntry {
                                 server_id: sid.clone(),
                                 listen_url: listen_url.clone(),
@@ -552,15 +603,12 @@ impl GridService for GridServiceImpl {
                                 ram_used: ram_bytes,
                                 requests_in_flight: 0,
                                 last_seen: Instant::now(),
-                                // Pre-`router-heterogeneous-shards` proto
-                                // doesn't carry a capabilities field on
-                                // AnnounceMsg yet; default to "everything"
-                                // so existing shards keep working.
-                                capabilities: ServerEntry::default_capabilities(),
-                                // Pre-`router-prefix-aware-routing` proto
-                                // doesn't carry the bloom filter; default
-                                // to empty so fallback to least-loaded
-                                // routing is the observed behaviour.
+                                capabilities,
+                                // The bloom is shipped on heartbeats,
+                                // not on announce — start with the empty
+                                // default and let update_heartbeat fill
+                                // it in once the shard ships its first
+                                // post-extension heartbeat.
                                 cached_prefixes: PrefixBloom::new(),
                             };
                             state.write().await.register(entry);
@@ -577,11 +625,18 @@ impl GridService for GridServiceImpl {
                         }
 
                         ServerPayload::Heartbeat(hb) => {
-                            state.write().await.update_heartbeat(
+                            // attention-service-routes change wired
+                            // cached_prefixes through the proto. Length
+                            // != 32 ⇒ malformed; we ignore the field
+                            // (the rest of the heartbeat still applies)
+                            // and don't clear the prior bloom.
+                            let bloom = PrefixBloom::from_wire_bytes(&hb.cached_prefixes);
+                            state.write().await.update_heartbeat_with_prefixes(
                                 &sid,
                                 hb.cpu_pct,
                                 hb.ram_used,
                                 hb.requests_in_flight,
+                                bloom,
                             );
                         }
 
@@ -1015,5 +1070,58 @@ mod tests {
         let rate = fp as f64 / total as f64;
         // Theoretical 16%; allow 5% extra for hash-quality slack.
         assert!(rate <= 0.21, "FP rate {rate} at n=64 exceeds bound");
+    }
+
+    // ── attention-service-routes wiring ────────────────────────
+
+    #[test]
+    fn bloom_to_wire_bytes_round_trips() {
+        let mut a = PrefixBloom::new();
+        a.insert(0xCAFE);
+        a.insert(0xBEEF);
+        a.insert(0xDEADBEEF_u64);
+        let bytes = a.to_wire_bytes();
+        assert_eq!(bytes.len(), 32);
+        let b = PrefixBloom::from_wire_bytes(&bytes).expect("32 bytes round-trips");
+        assert!(b.contains(0xCAFE));
+        assert!(b.contains(0xBEEF));
+        assert!(b.contains(0xDEADBEEF_u64));
+    }
+
+    #[test]
+    fn bloom_from_wire_bytes_rejects_non_32_byte_input() {
+        assert!(PrefixBloom::from_wire_bytes(&[]).is_none());
+        assert!(PrefixBloom::from_wire_bytes(&[0u8; 16]).is_none());
+        assert!(PrefixBloom::from_wire_bytes(&[0u8; 33]).is_none());
+    }
+
+    #[test]
+    fn update_heartbeat_with_prefixes_writes_bloom_onto_entry() {
+        let mut state = GridState::default();
+        state.register(entry("s", "http://s", "m", 0, 0));
+        let mut bloom = PrefixBloom::new();
+        bloom.insert(0xBEEF);
+        state.update_heartbeat_with_prefixes("s", 5.0, 1024, 1, Some(bloom));
+        // Routing for the prefix should pick this shard since it's
+        // the only candidate AND has 0xBEEF in its bloom.
+        let route = state.route_for_prefix(Some("m"), 0, "attention", &[0xBEEF]);
+        assert!(route.is_some());
+    }
+
+    #[test]
+    fn update_heartbeat_without_prefixes_preserves_prior_bloom() {
+        let mut state = GridState::default();
+        state.register(entry("s", "http://s", "m", 0, 0));
+        let mut bloom = PrefixBloom::new();
+        bloom.insert(0xBEEF);
+        state.update_heartbeat_with_prefixes("s", 5.0, 1024, 1, Some(bloom));
+        // Subsequent heartbeat with no bloom should NOT clear the
+        // prior contents.
+        state.update_heartbeat("s", 6.0, 2048, 2);
+        let route = state.route_for_prefix(Some("m"), 0, "attention", &[0xBEEF]);
+        assert!(
+            route.is_some(),
+            "prior bloom must survive a heartbeat that omits the field"
+        );
     }
 }

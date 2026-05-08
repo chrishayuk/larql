@@ -31,6 +31,11 @@ message AnnounceMsg {
   uint64 ram_bytes   = 4;
   string listen_url  = 5;  // "http://server-a:8080"
   string vindex_hash = 6;
+  // Capabilities advertised by this shard, e.g. ["attention"], ["expert"],
+  // or ["attention","expert"]. Empty / missing ⇒ the router treats the
+  // shard as supporting both for backwards compatibility.
+  // attention-service-routes change.
+  repeated string capabilities = 7;
 }
 
 message AvailableMsg {
@@ -50,6 +55,12 @@ message HeartbeatMsg {
   float  cpu_pct            = 1;
   uint64 ram_used           = 2;
   uint32 requests_in_flight = 3;
+  // Raw 32-byte PrefixBloom payload (256 bits / 4 hash positions) of
+  // session prefixes this shard currently has cached. Empty / missing
+  // ⇒ no cached prefixes (router falls back to least-loaded routing).
+  // Length other than 32 is silently ignored by the router.
+  // attention-service-routes change.
+  bytes cached_prefixes = 4;
 }
 
 message DroppingMsg {

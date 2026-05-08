@@ -81,13 +81,34 @@ sub-change.
   including 3 new for the compressed side-table.
 
 ## Not yet shipped (known follow-up sub-changes)
-- **`attention-service-routes`** — new HTTP + gRPC endpoints on
-  `larql-server` (`/v1/attention/{session,prefill,decode}`,
-  `/v1/kv-cache/{snapshot,restore,free}`); session lifecycle;
-  binary KV-snapshot wire format; extends `AnnounceMsg` proto with
-  the capability set so `route_for_capability` (shipped) gets real
-  data. Depends on test-fixture drift in
-  `larql-server/tests/test_expert_endpoint.rs` being repaired.
+- **`attention-service-routes`** — partially shipped on the
+  `feat/attention-service-routes` branch (proposal + design +
+  tasks + capability deltas validated). What's already on disk:
+  - `larql_server::kv_snapshot` — versioned binary wire format
+    with magic `0x4C415141` ('LAQA'). 8/8 round-trip tests pass
+    (FP32 byte-identical, Iso4 field-by-field, magic/version
+    rejection, truncation cleanly).
+  - `larql_server::attention_session::{SessionId,
+    AttentionSession, AttentionSessionMap}` — ULID ids, per-
+    session tokio::RwLock, std-RwLock map, configurable cap +
+    TTL, reaper hook. 9/9 tests.
+  - HTTP routes — session create / get / delete + KV-cache
+    snapshot / restore / free (12/12 tests). Prefill / decode
+    are slot-reserved; their handlers wire in alongside the
+    model-side attention runner.
+  - `--role attention | expert | both` CLI flag drives
+    `AnnounceMsg.capabilities`. 5/5 tests.
+  - Proto extension: `AnnounceMsg.capabilities`,
+    `HeartbeatMsg.cached_prefixes`. 4/4 router tests round-trip
+    the bloom through the wire.
+  - 30 s tokio reaper task spawned from bootstrap.
+  - Heartbeat closure rebuilds the bloom from
+    `SessionMap::prefix_hashes(16)` on every tick.
+  - `docs/attention-service-protocol.md` — wire-format reference
+    with payload diagrams + curl/httpx examples.
+  - `deploy/docker/start.sh` translates `ROLE` to the new
+    `--role` flag; compose env documents
+    `ATTN_SESSION_TTL` / `MAX_ATTN_SESSIONS`.
 - **`rotorquant-cuda-kernels`** — proposal-only. Four PTX kernels
   (Iso/Planar × quantize/dequantize) compiled via cudarc NVRTC,
   cached on disk. Round-trip cosine ≥ 0.99 vs CPU reference;

@@ -61,8 +61,15 @@ ARGS=(
   "$VINDEX_DIR"
   --port "${PORT:-8080}"
   --host 0.0.0.0
-  --role "$ROLE"
 )
+
+# Translate ROLE (compose-friendly) → --role (server-friendly).
+# attention-service-routes change.
+case "$ROLE" in
+  ffn)         ARGS+=(--role expert) ;;
+  attention)   ARGS+=(--role attention) ;;
+  all|both|*)  ARGS+=(--role both) ;;
+esac
 
 if [[ "$ROLE" == "ffn" || "$ROLE" == "all" ]]; then
   [[ -n "${EXPERTS:-}" ]] && ARGS+=(--experts "$EXPERTS")
@@ -72,6 +79,8 @@ fi
 if [[ "$ROLE" == "attention" || "$ROLE" == "all" ]]; then
   [[ -n "${LAYERS:-}" ]] && ARGS+=(--layers "$LAYERS")
   [[ -n "${KV_FORMAT:-}" ]] && ARGS+=(--kv-format "$KV_FORMAT")
+  [[ -n "${ATTN_SESSION_TTL:-}" ]] && ARGS+=(--attention-session-ttl-secs "$ATTN_SESSION_TTL")
+  [[ -n "${MAX_ATTN_SESSIONS:-}" ]] && ARGS+=(--max-attention-sessions "$MAX_ATTN_SESSIONS")
 fi
 
 [[ -n "${GRPC_PORT:-}" ]] && ARGS+=(--grpc-port "$GRPC_PORT")

@@ -107,6 +107,33 @@ Recommended Docker flags for the GPU container:
 | `WARMUP` | ffn | `1` | pre-fault expert pages at boot |
 | `LARQL_BACKEND` | both | auto | force `cpu` / `metal` / `cuda` |
 | `LARQL_CUDA_ARCH` | gpu | `89` | nvcc target arch (`70..89`) |
+| `ATTN_SESSION_TTL` | gpu | `600` (s) | idle TTL for attention KV sessions |
+| `MAX_ATTN_SESSIONS` | gpu | `256` | concurrent-session cap on the GPU shard |
+
+`start.sh` translates `ROLE` to the server's `--role` flag:
+`ffn → expert`, `attention → attention`, `all → both`. The
+attention container also accepts `--attention-session-ttl-secs`
+and `--max-attention-sessions` via the env vars above.
+
+## Attention service endpoints
+
+The GPU container exposes the `attention-service-routes` HTTP
+surface (and gRPC equivalent) once the change ships:
+
+| Method | Path | Purpose |
+|---|---|---|
+| `POST` | `/v1/attention/session` | Create a session (FP32 or RotorQuant KV) |
+| `GET` | `/v1/attention/session/{id}` | Read state |
+| `DELETE` | `/v1/attention/session/{id}` | Drop |
+| `POST` | `/v1/attention/prefill` | Run prefill, populate cache |
+| `POST` | `/v1/attention/decode` | One decode step |
+| `POST` | `/v1/kv-cache/snapshot` | Get the cache as a versioned binary blob |
+| `POST` | `/v1/kv-cache/restore` | Replace the cache from a snapshot |
+| `POST` | `/v1/kv-cache/free` | Free one or all layers |
+
+The router uses heartbeat-bound `cached_prefixes` blooms to
+prefer shards with the warm prefix for a session — see
+`openspec/changes/router-prefix-aware-routing/`.
 
 ## Build commands
 
@@ -141,12 +168,18 @@ make docker-logs     # docker compose ... logs -f
 
 ## Status
 
-This Dockerfile pair lands the **scaffolding**. The CUDA backend itself
-is currently a feature-flag stub (see `crates/larql-compute/src/cuda/`)
-that returns `unimplemented!()` for kernel dispatch. The
-attention service routes (`/v1/attention/...`) are not yet wired —
-follow-up changes will fill them in. The `ffn` container works today
-with the existing CPU FFN service.
+The CUDA backend kernel surface is **shipped** (see
+`docs/cuda-rotorquant-status.md` for the parity-test ledger).
+The attention-service-routes change is **partially shipped**:
+session lifecycle (create / get / delete), KV-cache snapshot /
+restore / free, and the role-aware capability announce all work.
+Prefill and decode still need the model-side attention runner
+wired in (next milestone).
 
-See `openspec/changes/cuda-and-rotorquant-kv/` for the full plan and
-follow-up tasks.
+The `ffn` container works today with the existing CPU FFN
+service; the GPU container serves the session-lifecycle routes
+and accepts heartbeat-driven prefix routing from the router.
+
+See `openspec/changes/cuda-and-rotorquant-kv/` and
+`openspec/changes/attention-service-routes/` for the full plan
+and follow-up tasks.

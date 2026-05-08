@@ -1,12 +1,12 @@
 {
   "summary": {
-    "capabilities": 48,
-    "requirements": 398,
-    "scenarios": 1348,
-    "scenarios_backed": 1197,
-    "scenarios_unbacked": 151,
-    "test_refs": 3227,
-    "test_refs_unresolved": 0
+    "capabilities": 49,
+    "requirements": 408,
+    "scenarios": 1376,
+    "scenarios_backed": 1214,
+    "scenarios_unbacked": 162,
+    "test_refs": 3268,
+    "test_refs_unresolved": 7
   },
   "capabilities": [
     {
@@ -12576,8 +12576,54 @@
     },
     {
       "name": "router-grid",
-      "spec_file": "openspec/changes/backfill-specs/specs/router-grid/spec.md",
+      "spec_file": "openspec/changes/attention-service-routes/specs/router-grid/spec.md",
       "requirements": [
+        {
+          "name": "register MUST consume the capabilities field",
+          "scenarios": [
+            {
+              "name": "register stores capabilities from the announce",
+              "tests_resolved": [],
+              "tests_unresolved": [],
+              "unbacked": true,
+              "spec_file": "openspec/changes/attention-service-routes/specs/router-grid/spec.md",
+              "line": 11
+            },
+            {
+              "name": "register stores cached_prefixes from the announce",
+              "tests_resolved": [],
+              "tests_unresolved": [],
+              "unbacked": true,
+              "spec_file": "openspec/changes/attention-service-routes/specs/router-grid/spec.md",
+              "line": 20
+            }
+          ]
+        },
+        {
+          "name": "update_heartbeat MUST refresh cached_prefixes",
+          "scenarios": [
+            {
+              "name": "heartbeat updates the cached prefix bloom",
+              "tests_resolved": [
+                "larql_router::grid::tests::update_heartbeat_with_prefixes_writes_bloom_onto_entry"
+              ],
+              "tests_unresolved": [],
+              "unbacked": false,
+              "spec_file": "openspec/changes/attention-service-routes/specs/router-grid/spec.md",
+              "line": 36
+            },
+            {
+              "name": "heartbeat without cached_prefixes preserves prior value",
+              "tests_resolved": [
+                "larql_router::grid::tests::update_heartbeat_without_prefixes_preserves_prior_bloom"
+              ],
+              "tests_unresolved": [],
+              "unbacked": false,
+              "spec_file": "openspec/changes/attention-service-routes/specs/router-grid/spec.md",
+              "line": 45
+            }
+          ]
+        },
         {
           "name": "Static layer-shard parsing and ownership",
           "scenarios": [
@@ -13031,6 +13077,69 @@
       ]
     },
     {
+      "name": "router-protocol",
+      "spec_file": "openspec/changes/attention-service-routes/specs/router-protocol/spec.md",
+      "requirements": [
+        {
+          "name": "AnnounceMsg SHALL carry a capabilities list",
+          "scenarios": [
+            {
+              "name": "announce with explicit capabilities preserves the list",
+              "tests_resolved": [],
+              "tests_unresolved": [],
+              "unbacked": true,
+              "spec_file": "openspec/changes/attention-service-routes/specs/router-protocol/spec.md",
+              "line": 10
+            },
+            {
+              "name": "announce without capabilities defaults to both",
+              "tests_resolved": [],
+              "tests_unresolved": [],
+              "unbacked": true,
+              "spec_file": "openspec/changes/attention-service-routes/specs/router-protocol/spec.md",
+              "line": 17
+            }
+          ]
+        },
+        {
+          "name": "HeartbeatMsg SHALL carry the cached-prefix bloom",
+          "scenarios": [
+            {
+              "name": "heartbeat with bloom updates the entry",
+              "tests_resolved": [
+                "larql_router::grid::tests::update_heartbeat_with_prefixes_writes_bloom_onto_entry",
+                "larql_router::grid::tests::bloom_to_wire_bytes_round_trips"
+              ],
+              "tests_unresolved": [],
+              "unbacked": false,
+              "spec_file": "openspec/changes/attention-service-routes/specs/router-protocol/spec.md",
+              "line": 32
+            },
+            {
+              "name": "heartbeat without bloom leaves prior value",
+              "tests_resolved": [
+                "larql_router::grid::tests::update_heartbeat_without_prefixes_preserves_prior_bloom"
+              ],
+              "tests_unresolved": [],
+              "unbacked": false,
+              "spec_file": "openspec/changes/attention-service-routes/specs/router-protocol/spec.md",
+              "line": 41
+            },
+            {
+              "name": "malformed bloom is rejected without panic",
+              "tests_resolved": [
+                "larql_router::grid::tests::bloom_from_wire_bytes_rejects_non_32_byte_input"
+              ],
+              "tests_unresolved": [],
+              "unbacked": false,
+              "spec_file": "openspec/changes/attention-service-routes/specs/router-protocol/spec.md",
+              "line": 50
+            }
+          ]
+        }
+      ]
+    },
+    {
       "name": "server-attention-service",
       "spec_file": "openspec/changes/attention-service-prefill-decode-split/specs/server-attention-service/spec.md",
       "requirements": [
@@ -13115,6 +13224,225 @@
               "unbacked": true,
               "spec_file": "openspec/changes/attention-service-prefill-decode-split/specs/server-attention-service/spec.md",
               "line": 67
+            }
+          ]
+        },
+        {
+          "name": "Server SHALL expose session lifecycle endpoints",
+          "scenarios": [
+            {
+              "name": "create returns a fresh session id",
+              "tests_resolved": [
+                "larql_server::attention_session::tests::insert_and_get_round_trip"
+              ],
+              "tests_unresolved": [
+                "test_http_attention::create_session_returns_id_and_layer_range"
+              ],
+              "unbacked": false,
+              "spec_file": "openspec/changes/attention-service-routes/specs/server-attention-service/spec.md",
+              "line": 13
+            },
+            {
+              "name": "get on unknown session id returns 404",
+              "tests_resolved": [
+                "larql_server::routes::attention::tests::get_unknown_session_returns_404"
+              ],
+              "tests_unresolved": [
+                "test_http_attention::get_unknown_session_returns_404"
+              ],
+              "unbacked": false,
+              "spec_file": "openspec/changes/attention-service-routes/specs/server-attention-service/spec.md",
+              "line": 22
+            },
+            {
+              "name": "delete makes get 404",
+              "tests_resolved": [
+                "larql_server::attention_session::tests::delete_makes_get_none",
+                "larql_server::routes::attention::tests::delete_unknown_session_returns_404"
+              ],
+              "tests_unresolved": [
+                "test_http_attention::delete_session_then_get_returns_404"
+              ],
+              "unbacked": false,
+              "spec_file": "openspec/changes/attention-service-routes/specs/server-attention-service/spec.md",
+              "line": 30
+            },
+            {
+              "name": "idle sessions are reaped after TTL",
+              "tests_resolved": [
+                "larql_server::attention_session::tests::reap_drops_idle_sessions"
+              ],
+              "tests_unresolved": [],
+              "unbacked": false,
+              "spec_file": "openspec/changes/attention-service-routes/specs/server-attention-service/spec.md",
+              "line": 38
+            }
+          ]
+        },
+        {
+          "name": "Prefill SHALL populate the cache and return per-layer residuals",
+          "scenarios": [
+            {
+              "name": "prefill populates all layers",
+              "tests_resolved": [],
+              "tests_unresolved": [],
+              "unbacked": true,
+              "spec_file": "openspec/changes/attention-service-routes/specs/server-attention-service/spec.md",
+              "line": 56
+            },
+            {
+              "name": "prefill returns layers \u00d7 seq_len \u00d7 hidden_dim residuals",
+              "tests_resolved": [],
+              "tests_unresolved": [],
+              "unbacked": true,
+              "spec_file": "openspec/changes/attention-service-routes/specs/server-attention-service/spec.md",
+              "line": 63
+            },
+            {
+              "name": "prefill rejects unknown session",
+              "tests_resolved": [],
+              "tests_unresolved": [
+                "test_http_attention::prefill_unknown_session_returns_404"
+              ],
+              "unbacked": false,
+              "spec_file": "openspec/changes/attention-service-routes/specs/server-attention-service/spec.md",
+              "line": 72
+            },
+            {
+              "name": "binary form round-trips",
+              "tests_resolved": [],
+              "tests_unresolved": [],
+              "unbacked": true,
+              "spec_file": "openspec/changes/attention-service-routes/specs/server-attention-service/spec.md",
+              "line": 79
+            }
+          ]
+        },
+        {
+          "name": "Decode SHALL advance the cache by one token and return the residual",
+          "scenarios": [
+            {
+              "name": "decode advances seqlen",
+              "tests_resolved": [],
+              "tests_unresolved": [],
+              "unbacked": true,
+              "spec_file": "openspec/changes/attention-service-routes/specs/server-attention-service/spec.md",
+              "line": 96
+            },
+            {
+              "name": "decode residual matches local reference within tolerance",
+              "tests_resolved": [],
+              "tests_unresolved": [],
+              "unbacked": true,
+              "spec_file": "openspec/changes/attention-service-routes/specs/server-attention-service/spec.md",
+              "line": 103
+            },
+            {
+              "name": "decode before prefill is rejected",
+              "tests_resolved": [],
+              "tests_unresolved": [
+                "test_http_attention::decode_before_prefill_returns_400"
+              ],
+              "unbacked": false,
+              "spec_file": "openspec/changes/attention-service-routes/specs/server-attention-service/spec.md",
+              "line": 111
+            }
+          ]
+        },
+        {
+          "name": "KV-cache snapshot SHALL be a versioned binary blob",
+          "scenarios": [
+            {
+              "name": "snapshot magic + version are present",
+              "tests_resolved": [
+                "larql_server::kv_snapshot::tests::magic_and_version_are_present_at_known_offsets"
+              ],
+              "tests_unresolved": [
+                "test_http_attention::snapshot_returns_base64_with_correct_magic"
+              ],
+              "unbacked": false,
+              "spec_file": "openspec/changes/attention-service-routes/specs/server-attention-service/spec.md",
+              "line": 133
+            },
+            {
+              "name": "snapshot then restore round-trips for FP32",
+              "tests_resolved": [
+                "larql_server::kv_snapshot::tests::round_trip_fp32_is_byte_identical"
+              ],
+              "tests_unresolved": [
+                "test_http_attention::restore_round_trips_through_a_new_session"
+              ],
+              "unbacked": false,
+              "spec_file": "openspec/changes/attention-service-routes/specs/server-attention-service/spec.md",
+              "line": 141
+            },
+            {
+              "name": "snapshot then restore round-trips for compressed formats",
+              "tests_resolved": [
+                "larql_server::kv_snapshot::tests::round_trip_compressed_layer"
+              ],
+              "tests_unresolved": [],
+              "unbacked": false,
+              "spec_file": "openspec/changes/attention-service-routes/specs/server-attention-service/spec.md",
+              "line": 152
+            },
+            {
+              "name": "unknown version is rejected",
+              "tests_resolved": [
+                "larql_server::kv_snapshot::tests::unknown_version_is_rejected"
+              ],
+              "tests_unresolved": [],
+              "unbacked": false,
+              "spec_file": "openspec/changes/attention-service-routes/specs/server-attention-service/spec.md",
+              "line": 161
+            }
+          ]
+        },
+        {
+          "name": "Server SHALL announce its `--role` as a router capability",
+          "scenarios": [
+            {
+              "name": "attention role announces correctly",
+              "tests_resolved": [
+                "larql_server::bootstrap::tests::role_attention_announces_attention_only",
+                "larql_server::bootstrap::tests::cli_role_flag_parses_attention"
+              ],
+              "tests_unresolved": [],
+              "unbacked": false,
+              "spec_file": "openspec/changes/attention-service-routes/specs/server-attention-service/spec.md",
+              "line": 177
+            },
+            {
+              "name": "legacy server (no --role) announces both",
+              "tests_resolved": [
+                "larql_server::bootstrap::tests::role_both_announces_attention_and_expert",
+                "larql_server::bootstrap::tests::cli_defaults_role_to_both"
+              ],
+              "tests_unresolved": [],
+              "unbacked": false,
+              "spec_file": "openspec/changes/attention-service-routes/specs/server-attention-service/spec.md",
+              "line": 185
+            }
+          ]
+        },
+        {
+          "name": "Heartbeat SHALL include the cached-prefix bloom",
+          "scenarios": [
+            {
+              "name": "heartbeat includes the cached prefixes",
+              "tests_resolved": [],
+              "tests_unresolved": [],
+              "unbacked": true,
+              "spec_file": "openspec/changes/attention-service-routes/specs/server-attention-service/spec.md",
+              "line": 200
+            },
+            {
+              "name": "empty server emits empty bloom",
+              "tests_resolved": [],
+              "tests_unresolved": [],
+              "unbacked": true,
+              "spec_file": "openspec/changes/attention-service-routes/specs/server-attention-service/spec.md",
+              "line": 207
             }
           ]
         },
@@ -21123,61 +21451,61 @@
     {
       "fqn": "larql_inference::forward::layer::tests::run_ffn_shape",
       "file": "crates/larql-inference/src/forward/layer.rs",
-      "line": 301,
+      "line": 341,
       "crate": "larql_inference"
     },
     {
       "fqn": "larql_inference::forward::layer::run_ffn_shape",
       "file": "crates/larql-inference/src/forward/layer.rs",
-      "line": 301,
+      "line": 341,
       "crate": "larql_inference"
     },
     {
       "fqn": "larql_inference::forward::layer::tests::run_ffn_captures_activation",
       "file": "crates/larql-inference/src/forward/layer.rs",
-      "line": 311,
+      "line": 351,
       "crate": "larql_inference"
     },
     {
       "fqn": "larql_inference::forward::layer::run_ffn_captures_activation",
       "file": "crates/larql-inference/src/forward/layer.rs",
-      "line": 311,
+      "line": 351,
       "crate": "larql_inference"
     },
     {
       "fqn": "larql_inference::forward::layer::tests::run_ffn_output_finite",
       "file": "crates/larql-inference/src/forward/layer.rs",
-      "line": 321,
+      "line": 361,
       "crate": "larql_inference"
     },
     {
       "fqn": "larql_inference::forward::layer::run_ffn_output_finite",
       "file": "crates/larql-inference/src/forward/layer.rs",
-      "line": 321,
+      "line": 361,
       "crate": "larql_inference"
     },
     {
       "fqn": "larql_inference::forward::layer::tests::run_layer_with_ffn_shape",
       "file": "crates/larql-inference/src/forward/layer.rs",
-      "line": 330,
+      "line": 370,
       "crate": "larql_inference"
     },
     {
       "fqn": "larql_inference::forward::layer::run_layer_with_ffn_shape",
       "file": "crates/larql-inference/src/forward/layer.rs",
-      "line": 330,
+      "line": 370,
       "crate": "larql_inference"
     },
     {
       "fqn": "larql_inference::forward::layer::tests::run_layer_with_ffn_all_layers",
       "file": "crates/larql-inference/src/forward/layer.rs",
-      "line": 340,
+      "line": 380,
       "crate": "larql_inference"
     },
     {
       "fqn": "larql_inference::forward::layer::run_layer_with_ffn_all_layers",
       "file": "crates/larql-inference/src/forward/layer.rs",
-      "line": 340,
+      "line": 380,
       "crate": "larql_inference"
     },
     {
@@ -24927,104 +25255,140 @@
     {
       "fqn": "larql_router::grid::route_uses_inclusive_layer_ranges",
       "file": "crates/larql-router/src/grid.rs",
-      "line": 665,
+      "line": 720,
       "crate": "larql_router"
     },
     {
       "fqn": "larql_router::grid::route_without_model_uses_any_model_table",
       "file": "crates/larql-router/src/grid.rs",
-      "line": 678,
+      "line": 733,
       "crate": "larql_router"
     },
     {
       "fqn": "larql_router::grid::route_prefers_least_loaded_replica",
       "file": "crates/larql-router/src/grid.rs",
-      "line": 687,
+      "line": 742,
       "crate": "larql_router"
     },
     {
       "fqn": "larql_router::grid::deregister_removes_server_from_route_table",
       "file": "crates/larql-router/src/grid.rs",
-      "line": 704,
+      "line": 759,
       "crate": "larql_router"
     },
     {
       "fqn": "larql_router::grid::heartbeat_updates_load_without_rebuilding_topology",
       "file": "crates/larql-router/src/grid.rs",
-      "line": 716,
+      "line": 771,
       "crate": "larql_router"
     },
     {
       "fqn": "larql_router::grid::route_all_returns_first_uncovered_layer",
       "file": "crates/larql-router/src/grid.rs",
-      "line": 732,
+      "line": 787,
       "crate": "larql_router"
     },
     {
       "fqn": "larql_router::grid::status_response_reports_shards_and_gaps",
       "file": "crates/larql-router/src/grid.rs",
-      "line": 741,
+      "line": 796,
       "crate": "larql_router"
     },
     {
       "fqn": "larql_router::grid::default_capabilities_advertise_both_attention_and_expert",
       "file": "crates/larql-router/src/grid.rs",
-      "line": 774,
+      "line": 829,
       "crate": "larql_router"
     },
     {
       "fqn": "larql_router::grid::route_for_capability_filters_by_capability",
       "file": "crates/larql-router/src/grid.rs",
-      "line": 782,
+      "line": 837,
       "crate": "larql_router"
     },
     {
       "fqn": "larql_router::grid::route_for_capability_returns_none_when_no_match",
       "file": "crates/larql-router/src/grid.rs",
-      "line": 812,
+      "line": 867,
       "crate": "larql_router"
     },
     {
       "fqn": "larql_router::grid::route_for_capability_falls_back_to_default_caps_shard",
       "file": "crates/larql-router/src/grid.rs",
-      "line": 830,
+      "line": 885,
       "crate": "larql_router"
     },
     {
       "fqn": "larql_router::grid::empty_bloom_returns_no_matches",
       "file": "crates/larql-router/src/grid.rs",
-      "line": 865,
+      "line": 920,
       "crate": "larql_router"
     },
     {
       "fqn": "larql_router::grid::route_for_prefix_picks_shard_with_cached_prefix",
       "file": "crates/larql-router/src/grid.rs",
-      "line": 874,
+      "line": 929,
       "crate": "larql_router"
     },
     {
       "fqn": "larql_router::grid::route_for_prefix_falls_back_to_least_loaded_when_no_match",
       "file": "crates/larql-router/src/grid.rs",
-      "line": 906,
+      "line": 961,
       "crate": "larql_router"
     },
     {
       "fqn": "larql_router::grid::route_for_prefix_breaks_ties_by_load",
       "file": "crates/larql-router/src/grid.rs",
-      "line": 921,
+      "line": 976,
       "crate": "larql_router"
     },
     {
       "fqn": "larql_router::grid::bloom_false_positive_rate_within_bound_at_design_load",
       "file": "crates/larql-router/src/grid.rs",
-      "line": 944,
+      "line": 999,
       "crate": "larql_router"
     },
     {
       "fqn": "larql_router::grid::bloom_overload_degrades_predictably",
       "file": "crates/larql-router/src/grid.rs",
-      "line": 983,
+      "line": 1038,
       "crate": "larql_router"
+    },
+    {
+      "fqn": "larql_router::grid::bloom_to_wire_bytes_round_trips",
+      "file": "crates/larql-router/src/grid.rs",
+      "line": 1078,
+      "crate": "larql_router"
+    },
+    {
+      "fqn": "larql_router::grid::bloom_from_wire_bytes_rejects_non_32_byte_input",
+      "file": "crates/larql-router/src/grid.rs",
+      "line": 1092,
+      "crate": "larql_router"
+    },
+    {
+      "fqn": "larql_router::grid::update_heartbeat_with_prefixes_writes_bloom_onto_entry",
+      "file": "crates/larql-router/src/grid.rs",
+      "line": 1099,
+      "crate": "larql_router"
+    },
+    {
+      "fqn": "larql_router::grid::update_heartbeat_without_prefixes_preserves_prior_bloom",
+      "file": "crates/larql-router/src/grid.rs",
+      "line": 1112,
+      "crate": "larql_router"
+    },
+    {
+      "fqn": "larql_router_protocol::tests::empty_bloom_serialises_to_32_zero_bytes",
+      "file": "crates/larql-router-protocol/src/lib.rs",
+      "line": 98,
+      "crate": "larql_router_protocol"
+    },
+    {
+      "fqn": "larql_router_protocol::tests::insert_then_serialise_round_trips",
+      "file": "crates/larql-router-protocol/src/lib.rs",
+      "line": 104,
+      "crate": "larql_router_protocol"
     },
     {
       "fqn": "larql_server::tokenizer_cache::tests::l0_hit_returns_cached_tokens",
@@ -25201,69 +25565,99 @@
       "crate": "larql_server"
     },
     {
+      "fqn": "larql_server::bootstrap::role_attention_announces_attention_only",
+      "file": "crates/larql-server/src/bootstrap.rs",
+      "line": 1117,
+      "crate": "larql_server"
+    },
+    {
+      "fqn": "larql_server::bootstrap::role_expert_announces_expert_only",
+      "file": "crates/larql-server/src/bootstrap.rs",
+      "line": 1125,
+      "crate": "larql_server"
+    },
+    {
+      "fqn": "larql_server::bootstrap::role_both_announces_attention_and_expert",
+      "file": "crates/larql-server/src/bootstrap.rs",
+      "line": 1133,
+      "crate": "larql_server"
+    },
+    {
+      "fqn": "larql_server::bootstrap::cli_defaults_role_to_both",
+      "file": "crates/larql-server/src/bootstrap.rs",
+      "line": 1141,
+      "crate": "larql_server"
+    },
+    {
+      "fqn": "larql_server::bootstrap::cli_role_flag_parses_attention",
+      "file": "crates/larql-server/src/bootstrap.rs",
+      "line": 1147,
+      "crate": "larql_server"
+    },
+    {
       "fqn": "larql_server::bootstrap::parse_unit_manifest_round_trips_per_layer_ranges",
       "file": "crates/larql-server/src/bootstrap.rs",
-      "line": 1058,
+      "line": 1182,
       "crate": "larql_server"
     },
     {
       "fqn": "larql_server::bootstrap::parse_unit_manifest_rejects_non_numeric_layer_key",
       "file": "crates/larql-server/src/bootstrap.rs",
-      "line": 1075,
+      "line": 1199,
       "crate": "larql_server"
     },
     {
       "fqn": "larql_server::bootstrap::parse_unit_manifest_rejects_reversed_range",
       "file": "crates/larql-server/src/bootstrap.rs",
-      "line": 1084,
+      "line": 1208,
       "crate": "larql_server"
     },
     {
       "fqn": "larql_server::bootstrap::parse_unit_manifest_missing_file_reports_path",
       "file": "crates/larql-server/src/bootstrap.rs",
-      "line": 1093,
+      "line": 1217,
       "crate": "larql_server"
     },
     {
       "fqn": "larql_server::bootstrap::parse_unit_manifest_accepts_empty_object",
       "file": "crates/larql-server/src/bootstrap.rs",
-      "line": 1108,
+      "line": 1232,
       "crate": "larql_server"
     },
     {
       "fqn": "larql_server::bootstrap::parse_layer_range_accepts_inclusive_cli_range",
       "file": "crates/larql-server/src/bootstrap.rs",
-      "line": 1118,
+      "line": 1242,
       "crate": "larql_server"
     },
     {
       "fqn": "larql_server::bootstrap::parse_layer_range_rejects_bad_shapes",
       "file": "crates/larql-server/src/bootstrap.rs",
-      "line": 1124,
+      "line": 1248,
       "crate": "larql_server"
     },
     {
       "fqn": "larql_server::bootstrap::normalize_serve_alias_removes_subcommand",
       "file": "crates/larql-server/src/bootstrap.rs",
-      "line": 1132,
+      "line": 1256,
       "crate": "larql_server"
     },
     {
       "fqn": "larql_server::bootstrap::normalize_serve_alias_leaves_non_alias_args_unchanged",
       "file": "crates/larql-server/src/bootstrap.rs",
-      "line": 1142,
+      "line": 1266,
       "crate": "larql_server"
     },
     {
       "fqn": "larql_server::bootstrap::discover_vindexes_returns_sorted_dirs_with_index_json",
       "file": "crates/larql-server/src/bootstrap.rs",
-      "line": 1148,
+      "line": 1272,
       "crate": "larql_server"
     },
     {
       "fqn": "larql_server::bootstrap::load_options_are_copyable",
       "file": "crates/larql-server/src/bootstrap.rs",
-      "line": 1165,
+      "line": 1289,
       "crate": "larql_server"
     },
     {
@@ -25324,6 +25718,240 @@
       "fqn": "larql_server::ffn_l2_cache::stats_json_has_expected_fields",
       "file": "crates/larql-server/src/ffn_l2_cache.rs",
       "line": 238,
+      "crate": "larql_server"
+    },
+    {
+      "fqn": "larql_server::kv_snapshot::magic_and_version_are_present_at_known_offsets",
+      "file": "crates/larql-server/src/kv_snapshot.rs",
+      "line": 489,
+      "crate": "larql_server"
+    },
+    {
+      "fqn": "larql_server::kv_snapshot::round_trip_fp32_is_byte_identical",
+      "file": "crates/larql-server/src/kv_snapshot.rs",
+      "line": 501,
+      "crate": "larql_server"
+    },
+    {
+      "fqn": "larql_server::kv_snapshot::tests::round_trip_preserves_max_window_and_promote_count",
+      "file": "crates/larql-server/src/kv_snapshot.rs",
+      "line": 516,
+      "crate": "larql_server"
+    },
+    {
+      "fqn": "larql_server::kv_snapshot::round_trip_preserves_max_window_and_promote_count",
+      "file": "crates/larql-server/src/kv_snapshot.rs",
+      "line": 516,
+      "crate": "larql_server"
+    },
+    {
+      "fqn": "larql_server::kv_snapshot::round_trip_compressed_layer",
+      "file": "crates/larql-server/src/kv_snapshot.rs",
+      "line": 528,
+      "crate": "larql_server"
+    },
+    {
+      "fqn": "larql_server::kv_snapshot::tests::empty_layers_round_trip",
+      "file": "crates/larql-server/src/kv_snapshot.rs",
+      "line": 560,
+      "crate": "larql_server"
+    },
+    {
+      "fqn": "larql_server::kv_snapshot::empty_layers_round_trip",
+      "file": "crates/larql-server/src/kv_snapshot.rs",
+      "line": 560,
+      "crate": "larql_server"
+    },
+    {
+      "fqn": "larql_server::kv_snapshot::tests::magic_mismatch_is_rejected",
+      "file": "crates/larql-server/src/kv_snapshot.rs",
+      "line": 572,
+      "crate": "larql_server"
+    },
+    {
+      "fqn": "larql_server::kv_snapshot::magic_mismatch_is_rejected",
+      "file": "crates/larql-server/src/kv_snapshot.rs",
+      "line": 572,
+      "crate": "larql_server"
+    },
+    {
+      "fqn": "larql_server::kv_snapshot::unknown_version_is_rejected",
+      "file": "crates/larql-server/src/kv_snapshot.rs",
+      "line": 585,
+      "crate": "larql_server"
+    },
+    {
+      "fqn": "larql_server::kv_snapshot::tests::truncated_input_is_rejected_cleanly",
+      "file": "crates/larql-server/src/kv_snapshot.rs",
+      "line": 601,
+      "crate": "larql_server"
+    },
+    {
+      "fqn": "larql_server::kv_snapshot::truncated_input_is_rejected_cleanly",
+      "file": "crates/larql-server/src/kv_snapshot.rs",
+      "line": 601,
+      "crate": "larql_server"
+    },
+    {
+      "fqn": "larql_server::grpc_attention::tests::delete_unknown_session_returns_not_found",
+      "file": "crates/larql-server/src/grpc_attention.rs",
+      "line": 492,
+      "crate": "larql_server"
+    },
+    {
+      "fqn": "larql_server::grpc_attention::delete_unknown_session_returns_not_found",
+      "file": "crates/larql-server/src/grpc_attention.rs",
+      "line": 492,
+      "crate": "larql_server"
+    },
+    {
+      "fqn": "larql_server::grpc_attention::tests::get_unknown_session_returns_not_found",
+      "file": "crates/larql-server/src/grpc_attention.rs",
+      "line": 504,
+      "crate": "larql_server"
+    },
+    {
+      "fqn": "larql_server::grpc_attention::get_unknown_session_returns_not_found",
+      "file": "crates/larql-server/src/grpc_attention.rs",
+      "line": 504,
+      "crate": "larql_server"
+    },
+    {
+      "fqn": "larql_server::grpc_attention::tests::snapshot_unknown_session_returns_not_found",
+      "file": "crates/larql-server/src/grpc_attention.rs",
+      "line": 516,
+      "crate": "larql_server"
+    },
+    {
+      "fqn": "larql_server::grpc_attention::snapshot_unknown_session_returns_not_found",
+      "file": "crates/larql-server/src/grpc_attention.rs",
+      "line": 516,
+      "crate": "larql_server"
+    },
+    {
+      "fqn": "larql_server::grpc_attention::tests::free_unknown_session_returns_not_found",
+      "file": "crates/larql-server/src/grpc_attention.rs",
+      "line": 528,
+      "crate": "larql_server"
+    },
+    {
+      "fqn": "larql_server::grpc_attention::free_unknown_session_returns_not_found",
+      "file": "crates/larql-server/src/grpc_attention.rs",
+      "line": 528,
+      "crate": "larql_server"
+    },
+    {
+      "fqn": "larql_server::grpc_attention::tests::restore_with_bad_magic_returns_invalid_argument",
+      "file": "crates/larql-server/src/grpc_attention.rs",
+      "line": 542,
+      "crate": "larql_server"
+    },
+    {
+      "fqn": "larql_server::grpc_attention::restore_with_bad_magic_returns_invalid_argument",
+      "file": "crates/larql-server/src/grpc_attention.rs",
+      "line": 542,
+      "crate": "larql_server"
+    },
+    {
+      "fqn": "larql_server::grpc_attention::tests::create_session_unknown_model_returns_not_found",
+      "file": "crates/larql-server/src/grpc_attention.rs",
+      "line": 559,
+      "crate": "larql_server"
+    },
+    {
+      "fqn": "larql_server::grpc_attention::create_session_unknown_model_returns_not_found",
+      "file": "crates/larql-server/src/grpc_attention.rs",
+      "line": 559,
+      "crate": "larql_server"
+    },
+    {
+      "fqn": "larql_server::attention_session::tests::session_id_is_26_chars",
+      "file": "crates/larql-server/src/attention_session.rs",
+      "line": 274,
+      "crate": "larql_server"
+    },
+    {
+      "fqn": "larql_server::attention_session::session_id_is_26_chars",
+      "file": "crates/larql-server/src/attention_session.rs",
+      "line": 274,
+      "crate": "larql_server"
+    },
+    {
+      "fqn": "larql_server::attention_session::tests::session_ids_are_unique_under_a_burst",
+      "file": "crates/larql-server/src/attention_session.rs",
+      "line": 280,
+      "crate": "larql_server"
+    },
+    {
+      "fqn": "larql_server::attention_session::session_ids_are_unique_under_a_burst",
+      "file": "crates/larql-server/src/attention_session.rs",
+      "line": 280,
+      "crate": "larql_server"
+    },
+    {
+      "fqn": "larql_server::attention_session::tests::session_ids_lex_sort_by_creation_time",
+      "file": "crates/larql-server/src/attention_session.rs",
+      "line": 288,
+      "crate": "larql_server"
+    },
+    {
+      "fqn": "larql_server::attention_session::session_ids_lex_sort_by_creation_time",
+      "file": "crates/larql-server/src/attention_session.rs",
+      "line": 288,
+      "crate": "larql_server"
+    },
+    {
+      "fqn": "larql_server::attention_session::insert_and_get_round_trip",
+      "file": "crates/larql-server/src/attention_session.rs",
+      "line": 296,
+      "crate": "larql_server"
+    },
+    {
+      "fqn": "larql_server::attention_session::delete_makes_get_none",
+      "file": "crates/larql-server/src/attention_session.rs",
+      "line": 309,
+      "crate": "larql_server"
+    },
+    {
+      "fqn": "larql_server::attention_session::tests::cap_enforced",
+      "file": "crates/larql-server/src/attention_session.rs",
+      "line": 320,
+      "crate": "larql_server"
+    },
+    {
+      "fqn": "larql_server::attention_session::cap_enforced",
+      "file": "crates/larql-server/src/attention_session.rs",
+      "line": 320,
+      "crate": "larql_server"
+    },
+    {
+      "fqn": "larql_server::attention_session::reap_drops_idle_sessions",
+      "file": "crates/larql-server/src/attention_session.rs",
+      "line": 335,
+      "crate": "larql_server"
+    },
+    {
+      "fqn": "larql_server::attention_session::tests::iso4_session_carries_format",
+      "file": "crates/larql-server/src/attention_session.rs",
+      "line": 349,
+      "crate": "larql_server"
+    },
+    {
+      "fqn": "larql_server::attention_session::iso4_session_carries_format",
+      "file": "crates/larql-server/src/attention_session.rs",
+      "line": 349,
+      "crate": "larql_server"
+    },
+    {
+      "fqn": "larql_server::attention_session::tests::prefix_hashes_returns_one_per_session",
+      "file": "crates/larql-server/src/attention_session.rs",
+      "line": 366,
+      "crate": "larql_server"
+    },
+    {
+      "fqn": "larql_server::attention_session::prefix_hashes_returns_one_per_session",
+      "file": "crates/larql-server/src/attention_session.rs",
+      "line": 366,
       "crate": "larql_server"
     },
     {
@@ -25455,31 +26083,43 @@
     {
       "fqn": "larql_server::announce::vindex_identity_hash_is_stable_and_hex",
       "file": "crates/larql-server/src/announce.rs",
-      "line": 236,
+      "line": 252,
       "crate": "larql_server"
     },
     {
       "fqn": "larql_server::announce::grid_bearer_value_formats_authorization",
       "file": "crates/larql-server/src/announce.rs",
-      "line": 247,
+      "line": 263,
       "crate": "larql_server"
     },
     {
       "fqn": "larql_server::announce::announce_message_copies_config_fields",
       "file": "crates/larql-server/src/announce.rs",
-      "line": 254,
+      "line": 270,
       "crate": "larql_server"
     },
     {
       "fqn": "larql_server::announce::heartbeat_message_uses_zeroed_metrics",
       "file": "crates/larql-server/src/announce.rs",
-      "line": 269,
+      "line": 285,
+      "crate": "larql_server"
+    },
+    {
+      "fqn": "larql_server::announce::heartbeat_message_carries_cached_prefixes",
+      "file": "crates/larql-server/src/announce.rs",
+      "line": 297,
+      "crate": "larql_server"
+    },
+    {
+      "fqn": "larql_server::announce::announce_message_carries_capabilities",
+      "file": "crates/larql-server/src/announce.rs",
+      "line": 307,
       "crate": "larql_server"
     },
     {
       "fqn": "larql_server::announce::dropping_message_marks_reassigned",
       "file": "crates/larql-server/src/announce.rs",
-      "line": 280,
+      "line": 318,
       "crate": "larql_server"
     },
     {
@@ -25659,37 +26299,169 @@
     {
       "fqn": "larql_server::routes::stream::tests::stream_describe_messages_reports_missing_entity",
       "file": "crates/larql-server/src/routes/stream.rs",
-      "line": 531,
+      "line": 534,
       "crate": "larql_server"
     },
     {
       "fqn": "larql_server::routes::stream::stream_describe_messages_reports_missing_entity",
       "file": "crates/larql-server/src/routes/stream.rs",
-      "line": 531,
+      "line": 534,
       "crate": "larql_server"
     },
     {
       "fqn": "larql_server::routes::stream::tests::stream_describe_messages_reports_no_model",
       "file": "crates/larql-server/src/routes/stream.rs",
-      "line": 540,
+      "line": 543,
       "crate": "larql_server"
     },
     {
       "fqn": "larql_server::routes::stream::stream_describe_messages_reports_no_model",
       "file": "crates/larql-server/src/routes/stream.rs",
-      "line": 540,
+      "line": 543,
       "crate": "larql_server"
     },
     {
       "fqn": "larql_server::routes::stream::tests::stream_describe_messages_builds_layer_and_done_messages",
       "file": "crates/larql-server/src/routes/stream.rs",
-      "line": 550,
+      "line": 553,
       "crate": "larql_server"
     },
     {
       "fqn": "larql_server::routes::stream::stream_describe_messages_builds_layer_and_done_messages",
       "file": "crates/larql-server/src/routes/stream.rs",
-      "line": 550,
+      "line": 553,
+      "crate": "larql_server"
+    },
+    {
+      "fqn": "larql_server::routes::attention::tests::map_kv_format_recognises_known_formats",
+      "file": "crates/larql-server/src/routes/attention.rs",
+      "line": 868,
+      "crate": "larql_server"
+    },
+    {
+      "fqn": "larql_server::routes::attention::map_kv_format_recognises_known_formats",
+      "file": "crates/larql-server/src/routes/attention.rs",
+      "line": 868,
+      "crate": "larql_server"
+    },
+    {
+      "fqn": "larql_server::routes::attention::tests::map_kv_format_rejects_unknown",
+      "file": "crates/larql-server/src/routes/attention.rs",
+      "line": 877,
+      "crate": "larql_server"
+    },
+    {
+      "fqn": "larql_server::routes::attention::map_kv_format_rejects_unknown",
+      "file": "crates/larql-server/src/routes/attention.rs",
+      "line": 877,
+      "crate": "larql_server"
+    },
+    {
+      "fqn": "larql_server::routes::attention::tests::fmt_to_str_round_trips",
+      "file": "crates/larql-server/src/routes/attention.rs",
+      "line": 883,
+      "crate": "larql_server"
+    },
+    {
+      "fqn": "larql_server::routes::attention::fmt_to_str_round_trips",
+      "file": "crates/larql-server/src/routes/attention.rs",
+      "line": 883,
+      "crate": "larql_server"
+    },
+    {
+      "fqn": "larql_server::routes::attention::delete_unknown_session_returns_404",
+      "file": "crates/larql-server/src/routes/attention.rs",
+      "line": 890,
+      "crate": "larql_server"
+    },
+    {
+      "fqn": "larql_server::routes::attention::get_unknown_session_returns_404",
+      "file": "crates/larql-server/src/routes/attention.rs",
+      "line": 900,
+      "crate": "larql_server"
+    },
+    {
+      "fqn": "larql_server::routes::attention::tests::snapshot_unknown_session_returns_404",
+      "file": "crates/larql-server/src/routes/attention.rs",
+      "line": 909,
+      "crate": "larql_server"
+    },
+    {
+      "fqn": "larql_server::routes::attention::snapshot_unknown_session_returns_404",
+      "file": "crates/larql-server/src/routes/attention.rs",
+      "line": 909,
+      "crate": "larql_server"
+    },
+    {
+      "fqn": "larql_server::routes::attention::tests::restore_unknown_session_returns_404",
+      "file": "crates/larql-server/src/routes/attention.rs",
+      "line": 923,
+      "crate": "larql_server"
+    },
+    {
+      "fqn": "larql_server::routes::attention::restore_unknown_session_returns_404",
+      "file": "crates/larql-server/src/routes/attention.rs",
+      "line": 923,
+      "crate": "larql_server"
+    },
+    {
+      "fqn": "larql_server::routes::attention::tests::restore_with_bad_base64_returns_400",
+      "file": "crates/larql-server/src/routes/attention.rs",
+      "line": 938,
+      "crate": "larql_server"
+    },
+    {
+      "fqn": "larql_server::routes::attention::restore_with_bad_base64_returns_400",
+      "file": "crates/larql-server/src/routes/attention.rs",
+      "line": 938,
+      "crate": "larql_server"
+    },
+    {
+      "fqn": "larql_server::routes::attention::tests::restore_with_bad_magic_returns_400",
+      "file": "crates/larql-server/src/routes/attention.rs",
+      "line": 959,
+      "crate": "larql_server"
+    },
+    {
+      "fqn": "larql_server::routes::attention::restore_with_bad_magic_returns_400",
+      "file": "crates/larql-server/src/routes/attention.rs",
+      "line": 959,
+      "crate": "larql_server"
+    },
+    {
+      "fqn": "larql_server::routes::attention::tests::free_unknown_session_returns_404",
+      "file": "crates/larql-server/src/routes/attention.rs",
+      "line": 983,
+      "crate": "larql_server"
+    },
+    {
+      "fqn": "larql_server::routes::attention::free_unknown_session_returns_404",
+      "file": "crates/larql-server/src/routes/attention.rs",
+      "line": 983,
+      "crate": "larql_server"
+    },
+    {
+      "fqn": "larql_server::routes::attention::tests::free_layer_out_of_range_returns_400",
+      "file": "crates/larql-server/src/routes/attention.rs",
+      "line": 998,
+      "crate": "larql_server"
+    },
+    {
+      "fqn": "larql_server::routes::attention::free_layer_out_of_range_returns_400",
+      "file": "crates/larql-server/src/routes/attention.rs",
+      "line": 998,
+      "crate": "larql_server"
+    },
+    {
+      "fqn": "larql_server::routes::attention::tests::free_all_layers_clears_cache",
+      "file": "crates/larql-server/src/routes/attention.rs",
+      "line": 1018,
+      "crate": "larql_server"
+    },
+    {
+      "fqn": "larql_server::routes::attention::free_all_layers_clears_cache",
+      "file": "crates/larql-server/src/routes/attention.rs",
+      "line": 1018,
       "crate": "larql_server"
     },
     {
@@ -26710,6 +27482,138 @@
       "fqn": "larql_server::routes::openai::schema::fsm::depth_tracks_open_containers",
       "file": "crates/larql-server/src/routes/openai/schema/fsm.rs",
       "line": 1241,
+      "crate": "larql_server"
+    },
+    {
+      "fqn": "larql_server::test_http_attention::create_session_returns_id_and_layer_range",
+      "file": "crates/larql-server/tests/test_http_attention.rs",
+      "line": 46,
+      "crate": "larql_server"
+    },
+    {
+      "fqn": "larql_server::test_http_attention::create_session_for_unknown_model_returns_404",
+      "file": "crates/larql-server/tests/test_http_attention.rs",
+      "line": 57,
+      "crate": "larql_server"
+    },
+    {
+      "fqn": "larql_server::test_http_attention::create_session_with_unknown_kv_format_returns_400",
+      "file": "crates/larql-server/tests/test_http_attention.rs",
+      "line": 71,
+      "crate": "larql_server"
+    },
+    {
+      "fqn": "larql_server::test_http_attention::get_session_returns_state",
+      "file": "crates/larql-server/tests/test_http_attention.rs",
+      "line": 85,
+      "crate": "larql_server"
+    },
+    {
+      "fqn": "larql_server::test_http_attention::get_unknown_session_returns_404",
+      "file": "crates/larql-server/tests/test_http_attention.rs",
+      "line": 105,
+      "crate": "larql_server"
+    },
+    {
+      "fqn": "larql_server::test_http_attention::delete_session_then_get_returns_404",
+      "file": "crates/larql-server/tests/test_http_attention.rs",
+      "line": 114,
+      "crate": "larql_server"
+    },
+    {
+      "fqn": "larql_server::test_http_attention::delete_unknown_session_returns_404",
+      "file": "crates/larql-server/tests/test_http_attention.rs",
+      "line": 131,
+      "crate": "larql_server"
+    },
+    {
+      "fqn": "larql_server::test_http_attention::snapshot_returns_base64_with_correct_magic",
+      "file": "crates/larql-server/tests/test_http_attention.rs",
+      "line": 140,
+      "crate": "larql_server"
+    },
+    {
+      "fqn": "larql_server::test_http_attention::restore_round_trips_through_a_new_session",
+      "file": "crates/larql-server/tests/test_http_attention.rs",
+      "line": 166,
+      "crate": "larql_server"
+    },
+    {
+      "fqn": "larql_server::test_http_attention::restore_with_bad_magic_returns_400_with_typed_error",
+      "file": "crates/larql-server/tests/test_http_attention.rs",
+      "line": 201,
+      "crate": "larql_server"
+    },
+    {
+      "fqn": "larql_server::test_http_attention::restore_with_bad_base64_returns_400",
+      "file": "crates/larql-server/tests/test_http_attention.rs",
+      "line": 223,
+      "crate": "larql_server"
+    },
+    {
+      "fqn": "larql_server::test_http_attention::restore_unknown_session_returns_404",
+      "file": "crates/larql-server/tests/test_http_attention.rs",
+      "line": 242,
+      "crate": "larql_server"
+    },
+    {
+      "fqn": "larql_server::test_http_attention::free_unknown_session_returns_404",
+      "file": "crates/larql-server/tests/test_http_attention.rs",
+      "line": 259,
+      "crate": "larql_server"
+    },
+    {
+      "fqn": "larql_server::test_http_attention::free_layer_out_of_range_returns_400",
+      "file": "crates/larql-server/tests/test_http_attention.rs",
+      "line": 271,
+      "crate": "larql_server"
+    },
+    {
+      "fqn": "larql_server::test_http_attention::free_all_layers_returns_layers_freed",
+      "file": "crates/larql-server/tests/test_http_attention.rs",
+      "line": 290,
+      "crate": "larql_server"
+    },
+    {
+      "fqn": "larql_server::test_http_attention::prefill_unknown_session_returns_404",
+      "file": "crates/larql-server/tests/test_http_attention.rs",
+      "line": 311,
+      "crate": "larql_server"
+    },
+    {
+      "fqn": "larql_server::test_http_attention::prefill_with_empty_embeddings_returns_400",
+      "file": "crates/larql-server/tests/test_http_attention.rs",
+      "line": 326,
+      "crate": "larql_server"
+    },
+    {
+      "fqn": "larql_server::test_http_attention::prefill_with_ragged_rows_returns_400",
+      "file": "crates/larql-server/tests/test_http_attention.rs",
+      "line": 348,
+      "crate": "larql_server"
+    },
+    {
+      "fqn": "larql_server::test_http_attention::prefill_against_infer_disabled_model_returns_503",
+      "file": "crates/larql-server/tests/test_http_attention.rs",
+      "line": 370,
+      "crate": "larql_server"
+    },
+    {
+      "fqn": "larql_server::test_http_attention::decode_unknown_session_returns_404",
+      "file": "crates/larql-server/tests/test_http_attention.rs",
+      "line": 398,
+      "crate": "larql_server"
+    },
+    {
+      "fqn": "larql_server::test_http_attention::decode_before_prefill_returns_400",
+      "file": "crates/larql-server/tests/test_http_attention.rs",
+      "line": 413,
+      "crate": "larql_server"
+    },
+    {
+      "fqn": "larql_server::test_http_attention::create_session_supports_every_kv_format",
+      "file": "crates/larql-server/tests/test_http_attention.rs",
+      "line": 437,
       "crate": "larql_server"
     },
     {

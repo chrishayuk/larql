@@ -524,6 +524,9 @@ mod tests {
             api_key: None,
             sessions: SessionManager::new(3600),
             describe_cache: DescribeCache::new(0),
+            attention_sessions: std::sync::Arc::new(
+                crate::attention_session::AttentionSessionMap::new(600, 256),
+            ),
         })
     }
 
