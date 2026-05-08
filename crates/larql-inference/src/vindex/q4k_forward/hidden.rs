@@ -11,6 +11,82 @@ use crate::forward::run_layer_with_ffn;
 
 use super::tensors::{insert_q4k_layer_tensors, remove_layer_tensors};
 
+/// Like [`predict_q4k_hidden`] but takes pre-embedded inputs and
+/// returns the per-layer K/V cache alongside the final hidden state.
+/// Used by the attention-service-routes prefill handler so it can
+/// stash K/V into the session's `KvCache` without re-tokenising.
+///
+/// This variant SKIPS Per-Layer-Embeddings (Gemma 4 E2B). If the
+/// model declares `has_per_layer_embeddings()`, the caller MUST
+/// route through the token_ids-aware
+/// [`predict_q4k_hidden`] path instead — otherwise the residual
+/// stream loses the per-layer per-position contribution and the
+/// output is gibberish.
+///
+/// Returns `(final_h, kv)` where:
+/// - `final_h` is `[seq_len, hidden]` post-last-layer.
+/// - `kv[layer]` is the layer's `(k_post_rope, v)` pair when the
+///   layer participated, or `None` for skipped/KV-shared layers.
+pub fn prefill_q4k_from_embeddings(
+    weights: &mut ModelWeights,
+    h0: Array2<f32>,
+    index: &VectorIndex,
+    moe_remote: Option<&crate::ffn::RemoteMoeBackend>,
+) -> (Array2<f32>, Vec<Option<SharedKV>>) {
+    let num_layers = weights.num_layers;
+    let mut h = h0;
+    let mut kvs: Vec<Option<SharedKV>> = vec![None; num_layers];
+    let mut shared_cache: HashMap<usize, SharedKV> = HashMap::new();
+
+    for layer in 0..num_layers {
+        let inserted =
+            insert_q4k_layer_tensors(weights, index, layer).unwrap_or_else(|err| panic!("{err}"));
+
+        let shared_kv = weights
+            .arch
+            .kv_shared_source_layer(layer)
+            .and_then(|src| shared_cache.get(&src));
+        let is_moe_layer = weights.arch.is_hybrid_moe();
+        let ffn_backend = crate::ffn::WeightFfn { weights };
+
+        if is_moe_layer {
+            if let Some((h_new, kv_out)) = run_moe_layer_cpu(
+                weights,
+                &h,
+                layer,
+                &ffn_backend,
+                None, // PLE skipped for embedding-input variant
+                shared_kv,
+                moe_remote,
+            ) {
+                h = h_new;
+                if let Some(kv) = kv_out.clone() {
+                    shared_cache.insert(layer, kv.clone());
+                    kvs[layer] = Some(kv);
+                }
+            }
+        } else if let Some((h_new, _, kv_out)) = run_layer_with_ffn(
+            weights,
+            &h,
+            layer,
+            &ffn_backend,
+            false,
+            None, // PLE skipped
+            shared_kv,
+        ) {
+            h = h_new;
+            if let Some(kv) = kv_out.clone() {
+                shared_cache.insert(layer, kv.clone());
+                kvs[layer] = Some(kv);
+            }
+        }
+
+        remove_layer_tensors(weights, inserted);
+    }
+
+    (h, kvs)
+}
+
 /// Compute the final hidden state for `token_ids` against a Q4_K/Q6_K
 /// vindex, dequantising attn + FFN one layer at a time. Returns the
 /// `[seq_len, hidden]` array; caller owns the lm_head step.

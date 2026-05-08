@@ -144,6 +144,33 @@ fn err_quantized_unsupported(missing_layer: usize) -> (StatusCode, Json<ErrorBod
     )
 }
 
+// A.2 follow-up seam: replace the err_quantized_unsupported call sites
+// in `handle_prefill` / `handle_decode` (and their gRPC siblings) with
+// a dispatch to `larql_inference::vindex::prefill_q4k_from_embeddings`,
+// which is the embedding-input variant of the Q4K-aware per-layer
+// dequant path used by /v1/completions. The helper:
+//
+//   - Takes `&mut ModelWeights` (it transiently inserts dequantised
+//     attention tensors per layer; the existing get_or_load_weights
+//     returns a read guard, so use lock_weights_for_gen instead).
+//   - Returns `(final_h: Array2<f32>, kvs: Vec<Option<SharedKV>>)` —
+//     the same shape this handler already plumbs via the FP32 path.
+//   - Skips Per-Layer-Embeddings (Gemma 4 E2B). Models that declare
+//     `weights.arch.has_per_layer_embeddings()` should still 503 with a
+//     dedicated `per_layer_embeddings_unsupported` error code until a
+//     token_ids-aware variant lands.
+//
+// When wired, the FP32 vs Q4K dispatch becomes:
+//   if check_fp32_attention_loaded(&weights).is_ok() {
+//       // FP32 path (current code) — populates per-layer residuals
+//       // when ?capture=layer-residuals is set.
+//   } else {
+//       // Q4K path — call prefill_q4k_from_embeddings, populate
+//       // session.cache from kvs, return final_hidden. Per-layer
+//       // capture stays 501 on Q4K (the dequant path doesn't
+//       // expose intermediate residuals without a hook variant).
+//   }
+
 // ── Handlers ───────────────────────────────────────────────────────────────
 
 pub async fn handle_create_session(

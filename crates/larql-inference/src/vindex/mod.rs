@@ -22,7 +22,8 @@ pub use q4k_forward::{
     predict_q4k_hidden_with_replaced_head_residual_delta,
     predict_q4k_hidden_with_replaced_pre_o_head, predict_q4k_hidden_with_subtracted_pre_o_heads,
     predict_q4k_hidden_with_zeroed_pre_o_heads, predict_q4k_metal, predict_q4k_with_ffn,
-    q4k_ffn_forward_layer, q4k_ffn_forward_layer_q8k, remove_layer_tensors,
+    prefill_q4k_from_embeddings, q4k_ffn_forward_layer, q4k_ffn_forward_layer_q8k,
+    remove_layer_tensors,
 };
 pub use walk_config::WalkFfnConfig;
 pub use walk_ffn::WalkFfn;
