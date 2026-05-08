@@ -80,10 +80,10 @@
 
 ## 10. Phase 5 — end-to-end docker compose (follow-up change `deploy-compose-end-to-end`)
 
-- [ ] 10.1 Single `docker compose up` boots all three services healthy in ≤ 60 s.
-- [ ] 10.2 Gemma 3 4B end-to-end inference run (LM benchmark prompt) succeeds via the router.
-- [ ] 10.3 README documents the run, expected tok/s, expected VRAM at decode.
-- [ ] 10.4 `make demo` target boots the stack and runs a one-shot inference.
+- [x] 10.1 Single `docker compose up` boots all three services healthy in ≤ 60 s.
+- [x] 10.2 Gemma 3 4B end-to-end inference run (LM benchmark prompt) succeeds via the router.
+- [x] 10.3 README documents the run, expected tok/s, expected VRAM at decode.
+- [x] 10.4 `make demo` target boots the stack and runs a one-shot inference.
 
 ## 11. Validation (this change)
 

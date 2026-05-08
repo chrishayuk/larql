@@ -114,6 +114,7 @@ fn make_tiny_state(models: Vec<Arc<LoadedModel>>) -> Arc<AppState> {
         attention_sessions: std::sync::Arc::new(
             larql_server::attention_session::AttentionSessionMap::new(600, 256),
         ),
+        default_kv_format: None,
     })
 }
 

@@ -25751,97 +25751,103 @@
     {
       "fqn": "larql_server::bootstrap::role_attention_announces_attention_only",
       "file": "crates/larql-server/src/bootstrap.rs",
-      "line": 1117,
+      "line": 1145,
       "crate": "larql_server"
     },
     {
       "fqn": "larql_server::bootstrap::role_expert_announces_expert_only",
       "file": "crates/larql-server/src/bootstrap.rs",
-      "line": 1125,
+      "line": 1153,
       "crate": "larql_server"
     },
     {
       "fqn": "larql_server::bootstrap::role_both_announces_attention_and_expert",
       "file": "crates/larql-server/src/bootstrap.rs",
-      "line": 1133,
+      "line": 1161,
       "crate": "larql_server"
     },
     {
       "fqn": "larql_server::bootstrap::cli_defaults_role_to_both",
       "file": "crates/larql-server/src/bootstrap.rs",
-      "line": 1141,
+      "line": 1169,
       "crate": "larql_server"
     },
     {
       "fqn": "larql_server::bootstrap::cli_role_flag_parses_attention",
       "file": "crates/larql-server/src/bootstrap.rs",
-      "line": 1147,
+      "line": 1175,
+      "crate": "larql_server"
+    },
+    {
+      "fqn": "larql_server::bootstrap::cli_kv_format_flag_parses_iso3",
+      "file": "crates/larql-server/src/bootstrap.rs",
+      "line": 1181,
       "crate": "larql_server"
     },
     {
       "fqn": "larql_server::bootstrap::parse_unit_manifest_round_trips_per_layer_ranges",
       "file": "crates/larql-server/src/bootstrap.rs",
-      "line": 1182,
+      "line": 1220,
       "crate": "larql_server"
     },
     {
       "fqn": "larql_server::bootstrap::parse_unit_manifest_rejects_non_numeric_layer_key",
       "file": "crates/larql-server/src/bootstrap.rs",
-      "line": 1199,
+      "line": 1237,
       "crate": "larql_server"
     },
     {
       "fqn": "larql_server::bootstrap::parse_unit_manifest_rejects_reversed_range",
       "file": "crates/larql-server/src/bootstrap.rs",
-      "line": 1208,
+      "line": 1246,
       "crate": "larql_server"
     },
     {
       "fqn": "larql_server::bootstrap::parse_unit_manifest_missing_file_reports_path",
       "file": "crates/larql-server/src/bootstrap.rs",
-      "line": 1217,
+      "line": 1255,
       "crate": "larql_server"
     },
     {
       "fqn": "larql_server::bootstrap::parse_unit_manifest_accepts_empty_object",
       "file": "crates/larql-server/src/bootstrap.rs",
-      "line": 1232,
+      "line": 1270,
       "crate": "larql_server"
     },
     {
       "fqn": "larql_server::bootstrap::parse_layer_range_accepts_inclusive_cli_range",
       "file": "crates/larql-server/src/bootstrap.rs",
-      "line": 1242,
+      "line": 1280,
       "crate": "larql_server"
     },
     {
       "fqn": "larql_server::bootstrap::parse_layer_range_rejects_bad_shapes",
       "file": "crates/larql-server/src/bootstrap.rs",
-      "line": 1248,
+      "line": 1286,
       "crate": "larql_server"
     },
     {
       "fqn": "larql_server::bootstrap::normalize_serve_alias_removes_subcommand",
       "file": "crates/larql-server/src/bootstrap.rs",
-      "line": 1256,
+      "line": 1294,
       "crate": "larql_server"
     },
     {
       "fqn": "larql_server::bootstrap::normalize_serve_alias_leaves_non_alias_args_unchanged",
       "file": "crates/larql-server/src/bootstrap.rs",
-      "line": 1266,
+      "line": 1304,
       "crate": "larql_server"
     },
     {
       "fqn": "larql_server::bootstrap::discover_vindexes_returns_sorted_dirs_with_index_json",
       "file": "crates/larql-server/src/bootstrap.rs",
-      "line": 1272,
+      "line": 1310,
       "crate": "larql_server"
     },
     {
       "fqn": "larql_server::bootstrap::load_options_are_copyable",
       "file": "crates/larql-server/src/bootstrap.rs",
-      "line": 1289,
+      "line": 1327,
       "crate": "larql_server"
     },
     {
@@ -25979,73 +25985,73 @@
     {
       "fqn": "larql_server::grpc_attention::tests::delete_unknown_session_returns_not_found",
       "file": "crates/larql-server/src/grpc_attention.rs",
-      "line": 621,
+      "line": 622,
       "crate": "larql_server"
     },
     {
       "fqn": "larql_server::grpc_attention::delete_unknown_session_returns_not_found",
       "file": "crates/larql-server/src/grpc_attention.rs",
-      "line": 621,
+      "line": 622,
       "crate": "larql_server"
     },
     {
       "fqn": "larql_server::grpc_attention::tests::get_unknown_session_returns_not_found",
       "file": "crates/larql-server/src/grpc_attention.rs",
-      "line": 633,
+      "line": 634,
       "crate": "larql_server"
     },
     {
       "fqn": "larql_server::grpc_attention::get_unknown_session_returns_not_found",
       "file": "crates/larql-server/src/grpc_attention.rs",
-      "line": 633,
+      "line": 634,
       "crate": "larql_server"
     },
     {
       "fqn": "larql_server::grpc_attention::tests::snapshot_unknown_session_returns_not_found",
       "file": "crates/larql-server/src/grpc_attention.rs",
-      "line": 645,
+      "line": 646,
       "crate": "larql_server"
     },
     {
       "fqn": "larql_server::grpc_attention::snapshot_unknown_session_returns_not_found",
       "file": "crates/larql-server/src/grpc_attention.rs",
-      "line": 645,
+      "line": 646,
       "crate": "larql_server"
     },
     {
       "fqn": "larql_server::grpc_attention::tests::free_unknown_session_returns_not_found",
       "file": "crates/larql-server/src/grpc_attention.rs",
-      "line": 657,
+      "line": 658,
       "crate": "larql_server"
     },
     {
       "fqn": "larql_server::grpc_attention::free_unknown_session_returns_not_found",
       "file": "crates/larql-server/src/grpc_attention.rs",
-      "line": 657,
+      "line": 658,
       "crate": "larql_server"
     },
     {
       "fqn": "larql_server::grpc_attention::tests::restore_with_bad_magic_returns_invalid_argument",
       "file": "crates/larql-server/src/grpc_attention.rs",
-      "line": 671,
+      "line": 672,
       "crate": "larql_server"
     },
     {
       "fqn": "larql_server::grpc_attention::restore_with_bad_magic_returns_invalid_argument",
       "file": "crates/larql-server/src/grpc_attention.rs",
-      "line": 671,
+      "line": 672,
       "crate": "larql_server"
     },
     {
       "fqn": "larql_server::grpc_attention::tests::create_session_unknown_model_returns_not_found",
       "file": "crates/larql-server/src/grpc_attention.rs",
-      "line": 688,
+      "line": 689,
       "crate": "larql_server"
     },
     {
       "fqn": "larql_server::grpc_attention::create_session_unknown_model_returns_not_found",
       "file": "crates/larql-server/src/grpc_attention.rs",
-      "line": 688,
+      "line": 689,
       "crate": "larql_server"
     },
     {
@@ -26477,169 +26483,169 @@
     {
       "fqn": "larql_server::routes::stream::tests::stream_describe_messages_reports_missing_entity",
       "file": "crates/larql-server/src/routes/stream.rs",
-      "line": 534,
+      "line": 535,
       "crate": "larql_server"
     },
     {
       "fqn": "larql_server::routes::stream::stream_describe_messages_reports_missing_entity",
       "file": "crates/larql-server/src/routes/stream.rs",
-      "line": 534,
+      "line": 535,
       "crate": "larql_server"
     },
     {
       "fqn": "larql_server::routes::stream::tests::stream_describe_messages_reports_no_model",
       "file": "crates/larql-server/src/routes/stream.rs",
-      "line": 543,
+      "line": 544,
       "crate": "larql_server"
     },
     {
       "fqn": "larql_server::routes::stream::stream_describe_messages_reports_no_model",
       "file": "crates/larql-server/src/routes/stream.rs",
-      "line": 543,
+      "line": 544,
       "crate": "larql_server"
     },
     {
       "fqn": "larql_server::routes::stream::tests::stream_describe_messages_builds_layer_and_done_messages",
       "file": "crates/larql-server/src/routes/stream.rs",
-      "line": 553,
+      "line": 554,
       "crate": "larql_server"
     },
     {
       "fqn": "larql_server::routes::stream::stream_describe_messages_builds_layer_and_done_messages",
       "file": "crates/larql-server/src/routes/stream.rs",
-      "line": 553,
+      "line": 554,
       "crate": "larql_server"
     },
     {
       "fqn": "larql_server::routes::attention::tests::map_kv_format_recognises_known_formats",
       "file": "crates/larql-server/src/routes/attention.rs",
-      "line": 1122,
+      "line": 1126,
       "crate": "larql_server"
     },
     {
       "fqn": "larql_server::routes::attention::map_kv_format_recognises_known_formats",
       "file": "crates/larql-server/src/routes/attention.rs",
-      "line": 1122,
+      "line": 1126,
       "crate": "larql_server"
     },
     {
       "fqn": "larql_server::routes::attention::tests::map_kv_format_rejects_unknown",
       "file": "crates/larql-server/src/routes/attention.rs",
-      "line": 1131,
+      "line": 1135,
       "crate": "larql_server"
     },
     {
       "fqn": "larql_server::routes::attention::map_kv_format_rejects_unknown",
       "file": "crates/larql-server/src/routes/attention.rs",
-      "line": 1131,
+      "line": 1135,
       "crate": "larql_server"
     },
     {
       "fqn": "larql_server::routes::attention::tests::fmt_to_str_round_trips",
       "file": "crates/larql-server/src/routes/attention.rs",
-      "line": 1137,
+      "line": 1141,
       "crate": "larql_server"
     },
     {
       "fqn": "larql_server::routes::attention::fmt_to_str_round_trips",
       "file": "crates/larql-server/src/routes/attention.rs",
-      "line": 1137,
+      "line": 1141,
       "crate": "larql_server"
     },
     {
       "fqn": "larql_server::routes::attention::delete_unknown_session_returns_404",
       "file": "crates/larql-server/src/routes/attention.rs",
-      "line": 1144,
+      "line": 1148,
       "crate": "larql_server"
     },
     {
       "fqn": "larql_server::routes::attention::get_unknown_session_returns_404",
       "file": "crates/larql-server/src/routes/attention.rs",
-      "line": 1154,
+      "line": 1158,
       "crate": "larql_server"
     },
     {
       "fqn": "larql_server::routes::attention::tests::snapshot_unknown_session_returns_404",
       "file": "crates/larql-server/src/routes/attention.rs",
-      "line": 1163,
+      "line": 1167,
       "crate": "larql_server"
     },
     {
       "fqn": "larql_server::routes::attention::snapshot_unknown_session_returns_404",
       "file": "crates/larql-server/src/routes/attention.rs",
-      "line": 1163,
+      "line": 1167,
       "crate": "larql_server"
     },
     {
       "fqn": "larql_server::routes::attention::tests::restore_unknown_session_returns_404",
       "file": "crates/larql-server/src/routes/attention.rs",
-      "line": 1177,
+      "line": 1181,
       "crate": "larql_server"
     },
     {
       "fqn": "larql_server::routes::attention::restore_unknown_session_returns_404",
       "file": "crates/larql-server/src/routes/attention.rs",
-      "line": 1177,
+      "line": 1181,
       "crate": "larql_server"
     },
     {
       "fqn": "larql_server::routes::attention::tests::restore_with_bad_base64_returns_400",
       "file": "crates/larql-server/src/routes/attention.rs",
-      "line": 1192,
+      "line": 1196,
       "crate": "larql_server"
     },
     {
       "fqn": "larql_server::routes::attention::restore_with_bad_base64_returns_400",
       "file": "crates/larql-server/src/routes/attention.rs",
-      "line": 1192,
+      "line": 1196,
       "crate": "larql_server"
     },
     {
       "fqn": "larql_server::routes::attention::tests::restore_with_bad_magic_returns_400",
       "file": "crates/larql-server/src/routes/attention.rs",
-      "line": 1213,
+      "line": 1217,
       "crate": "larql_server"
     },
     {
       "fqn": "larql_server::routes::attention::restore_with_bad_magic_returns_400",
       "file": "crates/larql-server/src/routes/attention.rs",
-      "line": 1213,
+      "line": 1217,
       "crate": "larql_server"
     },
     {
       "fqn": "larql_server::routes::attention::tests::free_unknown_session_returns_404",
       "file": "crates/larql-server/src/routes/attention.rs",
-      "line": 1237,
+      "line": 1241,
       "crate": "larql_server"
     },
     {
       "fqn": "larql_server::routes::attention::free_unknown_session_returns_404",
       "file": "crates/larql-server/src/routes/attention.rs",
-      "line": 1237,
+      "line": 1241,
       "crate": "larql_server"
     },
     {
       "fqn": "larql_server::routes::attention::tests::free_layer_out_of_range_returns_400",
       "file": "crates/larql-server/src/routes/attention.rs",
-      "line": 1252,
+      "line": 1256,
       "crate": "larql_server"
     },
     {
       "fqn": "larql_server::routes::attention::free_layer_out_of_range_returns_400",
       "file": "crates/larql-server/src/routes/attention.rs",
-      "line": 1252,
+      "line": 1256,
       "crate": "larql_server"
     },
     {
       "fqn": "larql_server::routes::attention::tests::free_all_layers_clears_cache",
       "file": "crates/larql-server/src/routes/attention.rs",
-      "line": 1272,
+      "line": 1276,
       "crate": "larql_server"
     },
     {
       "fqn": "larql_server::routes::attention::free_all_layers_clears_cache",
       "file": "crates/larql-server/src/routes/attention.rs",
-      "line": 1272,
+      "line": 1276,
       "crate": "larql_server"
     },
     {
@@ -27755,25 +27761,25 @@
     {
       "fqn": "larql_server::test_attention_validation::prefill_default_returns_final_hidden_only",
       "file": "crates/larql-server/tests/test_attention_validation.rs",
-      "line": 304,
+      "line": 305,
       "crate": "larql_server"
     },
     {
       "fqn": "larql_server::test_attention_validation::prefill_gemma_shaped_residuals_match_local_reference",
       "file": "crates/larql-server/tests/test_attention_validation.rs",
-      "line": 376,
+      "line": 377,
       "crate": "larql_server"
     },
     {
       "fqn": "larql_server::test_attention_validation::prefill_q4k_unsupported_layer_residuals_capture_returns_501",
       "file": "crates/larql-server/tests/test_attention_validation.rs",
-      "line": 418,
+      "line": 419,
       "crate": "larql_server"
     },
     {
       "fqn": "larql_server::test_attention_validation::decode_returns_503_quantized_model_unsupported",
       "file": "crates/larql-server/tests/test_attention_validation.rs",
-      "line": 526,
+      "line": 527,
       "crate": "larql_server"
     },
     {

@@ -140,6 +140,7 @@ fn build_state(model: LoadedModel) -> Arc<AppState> {
         sessions: SessionManager::new(60),
         describe_cache: DescribeCache::new(0),
         attention_sessions: Arc::new(AttentionSessionMap::new(60, 16)),
+        default_kv_format: None,
     })
 }
 

@@ -25,8 +25,9 @@ ENV PATH="/root/.cargo/bin:${PATH}"
 COPY Cargo.toml Cargo.lock ./
 COPY crates/ crates/
 
-# Target sm_70..sm_89 — covers Ampere through Ada.  Tune via LARQL_CUDA_ARCH.
-ARG LARQL_CUDA_ARCH="70;75;80;86;89"
+# Target the dev-box RTX 4090 by default. CUDA 13 no longer accepts every
+# older sm_70-era target; set LARQL_CUDA_ARCH explicitly for other GPUs.
+ARG LARQL_CUDA_ARCH="89"
 ENV LARQL_CUDA_ARCH=${LARQL_CUDA_ARCH}
 
 RUN RUSTFLAGS="-C target-feature=+avx2,+fma" \

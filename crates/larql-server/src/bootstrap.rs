@@ -5,6 +5,7 @@ use std::sync::Arc;
 
 use axum::middleware;
 use clap::{Parser, ValueEnum};
+use larql_rotorquant::KvFormat;
 use larql_vindex::format::filenames::*;
 use larql_vindex::{
     load_vindex_config, load_vindex_embeddings, load_vindex_tokenizer, PatchedVindex,
@@ -400,6 +401,27 @@ impl ServerRole {
     }
 }
 
+#[derive(Copy, Clone, Debug, PartialEq, Eq, ValueEnum)]
+pub enum CliKvFormat {
+    Fp32,
+    Iso3,
+    Planar3,
+    Iso4,
+    Planar4,
+}
+
+impl CliKvFormat {
+    pub fn into_kv_format(self) -> Option<KvFormat> {
+        match self {
+            CliKvFormat::Fp32 => None,
+            CliKvFormat::Iso3 => Some(KvFormat::Iso3),
+            CliKvFormat::Planar3 => Some(KvFormat::Planar3),
+            CliKvFormat::Iso4 => Some(KvFormat::Iso4),
+            CliKvFormat::Planar4 => Some(KvFormat::Planar4),
+        }
+    }
+}
+
 #[derive(Parser)]
 #[command(
     name = "larql-server",
@@ -635,6 +657,11 @@ pub struct Cli {
     #[arg(long, default_value_t = 256)]
     pub max_attention_sessions: usize,
 
+    /// Default KV-cache format for newly-created attention sessions
+    /// whose create request omits `kv_format`.
+    #[arg(long, value_enum)]
+    pub kv_format: Option<CliKvFormat>,
+
     /// Server-side MoE expert shard map: `"START-END=URL,START-END=URL,..."`
     /// The walk-ffn handler dispatches MoE expert calls to these remote servers.
     /// Combine with --layers for full 2D (layer × expert) sharding.
@@ -810,6 +837,7 @@ pub async fn serve(cli: Cli) -> Result<(), BoxError> {
                 cli.max_attention_sessions,
             ),
         ),
+        default_kv_format: cli.kv_format.and_then(CliKvFormat::into_kv_format),
     });
 
     // attention-service-routes change. Reap idle attention sessions
@@ -1147,6 +1175,16 @@ mod tests {
     fn cli_role_flag_parses_attention() {
         let cli = Cli::parse_from(["larql-server", "/tmp/dummy", "--role", "attention"]);
         assert_eq!(cli.role, ServerRole::Attention);
+    }
+
+    #[test]
+    fn cli_kv_format_flag_parses_iso3() {
+        let cli = Cli::parse_from(["larql-server", "/tmp/dummy", "--kv-format", "iso3"]);
+        assert_eq!(cli.kv_format, Some(CliKvFormat::Iso3));
+        assert_eq!(
+            cli.kv_format.and_then(CliKvFormat::into_kv_format),
+            Some(KvFormat::Iso3)
+        );
     }
 
     fn unique_temp_dir(name: &str) -> PathBuf {

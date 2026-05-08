@@ -236,18 +236,21 @@ pub async fn handle_create_session(
             Err((status, body)) => return err_response(status, body).into_response(),
         }
     } else {
-        let kv_format = match map_kv_format(req.kv_format.as_deref().unwrap_or("fp32")) {
-            Ok(v) => v,
-            Err(detail) => {
-                return err_response(
-                    StatusCode::BAD_REQUEST,
-                    ErrorBody {
-                        error: "kv_format_unknown",
-                        detail: Some(detail),
-                    },
-                )
-                .into_response();
-            }
+        let kv_format = match req.kv_format.as_deref() {
+            Some(raw) => match map_kv_format(raw) {
+                Ok(v) => v,
+                Err(detail) => {
+                    return err_response(
+                        StatusCode::BAD_REQUEST,
+                        ErrorBody {
+                            error: "kv_format_unknown",
+                            detail: Some(detail),
+                        },
+                    )
+                    .into_response();
+                }
+            },
+            None => state.default_kv_format,
         };
         AttentionSession::new(SessionId::new(), &req.model_id, num_layers, kv_format)
     };
@@ -1115,6 +1118,7 @@ mod tests {
             sessions: crate::session::SessionManager::new(60),
             describe_cache: crate::cache::DescribeCache::new(0),
             attention_sessions: Arc::new(AttentionSessionMap::new(60, 16)),
+            default_kv_format: None,
         })
     }
 

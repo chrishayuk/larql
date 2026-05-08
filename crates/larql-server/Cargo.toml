@@ -56,6 +56,13 @@ default = []
 # Enable Metal-backed GPU expert kernels on the shard server.  Forwards to
 # `larql-compute`'s `metal` feature.  macOS-only.
 metal-experts = ["larql-compute/metal"]
+# Enable Linux CUDA-backed attention / RotorQuant code paths in the shard
+# server. The Docker GPU image builds `larql-server --features cuda`.
+cuda = [
+    "larql-compute/cuda",
+    "larql-inference/cuda",
+    "larql-rotorquant/cuda",
+]
 
 [build-dependencies]
 tonic-build = "0.13"

@@ -24,6 +24,9 @@ docker compose up --build
 
 # router on host:8082, attention on host:8081 (debug), ffn on host:8080 (debug)
 curl http://localhost:8082/v1/health
+
+# boot, wait for all three health checks, and run one prompt via the router
+make -C ../.. demo
 ```
 
 ## Quick start (CPU laptop)
@@ -59,8 +62,9 @@ client request   →   │   larql-router   │   (port 8082)
                               (shared, read-only)
 ```
 
-The router routes by capability + layer range. The `attention` shard
-declares `capabilities: ["attention"]`; the `ffn` shard declares
+The router runs a self-assembling grid on port 50052 and routes by
+capability + layer range. The `attention` shard joins with
+`capabilities: ["attention"]`; the `ffn` shard joins with
 `capabilities: ["expert"]`. Backwards-compat: a single `--role all`
 container declares both.
 
@@ -99,6 +103,7 @@ Recommended Docker flags for the GPU container:
 |---|---|---|---|
 | `ROLE` | both | container default | `ffn` / `attention` / `all` |
 | `VINDEX_PATH` | both | `/data/vindex` | local path for the shared vindex |
+| `VINDEX_SOURCE` | compose | `vindex_data` | Docker named volume or host bind source mounted at `/data/vindex` |
 | `HF_REPO` | both | gemma-4 expert server | repo to fetch if vindex absent |
 | `HF_TOKEN` | both | unset | optional, for private repos |
 | `KV_FORMAT` | gpu | `iso3` | `fp16` / `iso3` / `planar3` / `iso4` / `planar4` |
@@ -106,9 +111,14 @@ Recommended Docker flags for the GPU container:
 | `LAYERS` | gpu | unset | attention layer range like `0-15` |
 | `WARMUP` | ffn | `1` | pre-fault expert pages at boot |
 | `LARQL_BACKEND` | both | auto | force `cpu` / `metal` / `cuda` |
-| `LARQL_CUDA_ARCH` | gpu | `89` | nvcc target arch (`70..89`) |
+| `LARQL_CUDA_ARCH` | gpu | `89` | nvcc target arch; use `86` for RTX 30xx, `89` for RTX 40xx |
+| `FFN_HOST_PORT` | compose | `8080` (`make demo`: `18080`) | host port mapped to the FFN shard |
+| `ATTENTION_HOST_PORT` | compose | `8081` (`make demo`: `18081`) | host port mapped to the attention shard |
+| `ROUTER_HOST_PORT` | compose | `8082` (`make demo`: `18082`) | host port mapped to the router |
 | `ATTN_SESSION_TTL` | gpu | `600` (s) | idle TTL for attention KV sessions |
 | `MAX_ATTN_SESSIONS` | gpu | `256` | concurrent-session cap on the GPU shard |
+| `JOIN` | both | compose-set | router grid URL, `http://router:50052` |
+| `PUBLIC_URL` | both | compose-set | shard URL announced to the router |
 
 `start.sh` translates `ROLE` to the server's `--role` flag:
 `ffn → expert`, `attention → attention`, `all → both`. The
@@ -146,7 +156,38 @@ make docker-up       # docker compose -f deploy/docker/docker-compose.yml up
 make docker-up-cpu   # docker compose -f deploy/docker/docker-compose.cpu.yml up
 make docker-down     # docker compose ... down -v
 make docker-logs     # docker compose ... logs -f
+make demo            # compose up -d, wait <=60s, one-shot router-backed prompt
 ```
+
+## Demo Run
+
+`make demo` uses `output/gemma-3-4b-it-vindex` when it exists on the
+host, mounts it into both containers, waits up to 60 seconds for
+`ffn`, `attention`, and `router` health checks, then runs:
+
+```bash
+larql dev walk \
+  --index output/gemma-3-4b-it-vindex \
+  --prompt "The capital of France is" \
+  --predict \
+  --predict-top-k 3 \
+  --max-tokens 1 \
+  --ffn-remote http://127.0.0.1:18082
+```
+
+This is the current one-shot Gemma 3 4B path: attention runs in the
+local CLI driver and FFN calls go through `larql-router` to the `ffn`
+container. The `attention` container is still booted and health-checked
+by the same demo so the split topology is live before the prompt runs.
+
+Expected warm local numbers on the RTX 4090 box:
+
+| Path | Prompt | Expected |
+|---|---|---:|
+| Compose service boot, cached images | `make demo` | ≤ 60 s; observed 13 s on the RTX 4090 box |
+| Router-backed one-shot | `The capital of France is` | first token in a few seconds on cold mmap; roughly 0.2-1 tok/s for the 1-token smoke |
+| FFN hop deadline | router → `ffn` | 5 s default via `LARQL_ROUTER_HOP_DEADLINE_SECS` |
+| GPU VRAM at decode | `attention` idle + iso3 KV | ~3.0 GB at 8k Gemma 3 4B context |
 
 ## Troubleshooting
 
@@ -155,8 +196,8 @@ make docker-logs     # docker compose ... logs -f
   nvidia/cuda:13.1.0-base-ubuntu24.04 nvidia-smi` works first.
 - **GPU image is huge / slow to build** — `nvidia/cuda:13.1.0-devel`
   is ~3 GB. Use BuildKit cache: `DOCKER_BUILDKIT=1` is on by default in
-  recent Docker. Add `--build-arg LARQL_CUDA_ARCH=89` to skip extra
-  archs.
+  recent Docker. The default build arg is `LARQL_CUDA_ARCH=89` for the
+  RTX 4090 dev box; override it for a different NVIDIA generation.
 - **CUDA driver/toolkit mismatch** — error like `CUDA error: forward
   compatibility was attempted on non supported HW`. Update the
   driver to ≥ the toolkit's minimum (CUDA 13.x needs ≥ 545.x).

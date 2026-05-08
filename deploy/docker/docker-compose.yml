@@ -26,23 +26,28 @@ services:
       HF_TOKEN: ${HF_TOKEN:-}
       EXPERTS: "${EXPERTS:-}"
       WARMUP: "${WARMUP:-1}"
+      JOIN: http://router:50052
+      PUBLIC_URL: http://ffn:8080
     volumes:
-      - vindex_data:/data
+      - ${VINDEX_SOURCE:-vindex_data}:/data/vindex
     ports:
-      - "8080:8080"
+      - "${FFN_HOST_PORT:-8080}:8080"
     healthcheck:
       test: ["CMD", "curl", "-fsS", "http://localhost:8080/v1/health"]
-      interval: 10s
+      interval: 5s
       timeout: 3s
-      retries: 6
-      start_period: 30s
+      retries: 8
+      start_period: 20s
     restart: unless-stopped
 
   attention:
     build:
       context: ../..
       dockerfile: deploy/docker/Dockerfile.gpu
+      args:
+        LARQL_CUDA_ARCH: "${LARQL_CUDA_ARCH:-89}"
     image: larql-gpu:dev
+    gpus: all
     environment:
       ROLE: attention
       PORT: 8080
@@ -53,23 +58,18 @@ services:
       KV_FORMAT: ${KV_FORMAT:-iso3}
       LAYERS: "${LAYERS:-}"
       LARQL_CUDA_ARCH: "${LARQL_CUDA_ARCH:-89}"
+      JOIN: http://router:50052
+      PUBLIC_URL: http://attention:8080
     volumes:
-      - vindex_data:/data
+      - ${VINDEX_SOURCE:-vindex_data}:/data/vindex
     ports:
-      - "8081:8080"
-    deploy:
-      resources:
-        reservations:
-          devices:
-            - driver: nvidia
-              count: all
-              capabilities: [gpu]
+      - "${ATTENTION_HOST_PORT:-8081}:8080"
     healthcheck:
       test: ["CMD", "curl", "-fsS", "http://localhost:8080/v1/health"]
-      interval: 10s
+      interval: 5s
       timeout: 3s
-      retries: 6
-      start_period: 60s   # Longer: cudarc PTX compile + weight load.
+      retries: 8
+      start_period: 20s   # cudarc PTX compile + weight load should still fit under 60 s warm.
     restart: unless-stopped
 
   router:
@@ -80,14 +80,16 @@ services:
     entrypoint: ["larql-router"]
     command:
       - --port=8080
-      - --shards=ffn=http://ffn:8080,attention=http://attention:8080
+      - --grid-port=50052
+      - --timeout-secs=${LARQL_ROUTER_HOP_DEADLINE_SECS:-5}
     ports:
-      - "8082:8080"
-    depends_on:
-      ffn:
-        condition: service_healthy
-      attention:
-        condition: service_healthy
+      - "${ROUTER_HOST_PORT:-8082}:8080"
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://localhost:8080/v1/health"]
+      interval: 5s
+      timeout: 3s
+      retries: 8
+      start_period: 5s
     restart: unless-stopped
 
 volumes:

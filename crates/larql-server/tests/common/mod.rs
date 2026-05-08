@@ -275,6 +275,7 @@ pub fn state(models: Vec<Arc<LoadedModel>>) -> Arc<AppState> {
         attention_sessions: std::sync::Arc::new(
             larql_server::attention_session::AttentionSessionMap::new(600, 256),
         ),
+        default_kv_format: None,
     })
 }
 
@@ -289,6 +290,7 @@ pub fn state_with_key(models: Vec<Arc<LoadedModel>>, key: &str) -> Arc<AppState>
         attention_sessions: std::sync::Arc::new(
             larql_server::attention_session::AttentionSessionMap::new(600, 256),
         ),
+        default_kv_format: None,
     })
 }
 
@@ -303,6 +305,7 @@ pub fn state_with_cache(models: Vec<Arc<LoadedModel>>, cache_size: u64) -> Arc<A
         attention_sessions: std::sync::Arc::new(
             larql_server::attention_session::AttentionSessionMap::new(600, 256),
         ),
+        default_kv_format: None,
     })
 }
 

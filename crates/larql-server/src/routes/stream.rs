@@ -527,6 +527,7 @@ mod tests {
             attention_sessions: std::sync::Arc::new(
                 crate::attention_session::AttentionSessionMap::new(600, 256),
             ),
+            default_kv_format: None,
         })
     }
 

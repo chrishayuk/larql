@@ -1,4 +1,4 @@
-.PHONY: build release test test-fast test-full test-integration test-models check clean fmt lint demos bench bench-save bench-check coverage coverage-summary coverage-check coverage-install ci-coverage traceability traceability-check gaps gaps-untested gaps-unbacked openspec-validate ci-cuda test-cuda rotorquant-sync docker-ffn docker-gpu docker-up docker-up-cpu docker-down docker-logs cuda-status attention-smoke attention-validate attention-validate-gemma attention-bench
+.PHONY: build release test test-fast test-full test-integration test-models check clean fmt lint demos demo bench bench-save bench-check coverage coverage-summary coverage-check coverage-install ci-coverage traceability traceability-check gaps gaps-untested gaps-unbacked openspec-validate ci-cuda test-cuda rotorquant-sync docker-ffn docker-gpu docker-up docker-up-cpu docker-down docker-logs cuda-status attention-smoke attention-validate attention-validate-gemma attention-bench
 
 # Build
 build:
@@ -86,6 +86,9 @@ docker-down:
 
 docker-logs:
 	cd deploy/docker && docker compose logs -f
+
+demo:
+	deploy/docker/demo.sh
 
 # attention-service-routes change. Run a full HTTP smoke test against
 # a running attention server (defaults to http://localhost:8081).

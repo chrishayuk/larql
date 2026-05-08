@@ -14,6 +14,8 @@
 #   KV_FORMAT     fp16 | iso3 | planar3 | iso4 | planar4 (attention/all only)
 #   WARMUP        "1" pre-faults expert pages at boot
 #   LARQL_BACKEND override compute backend (cpu | metal | cuda)
+#   JOIN          router grid URL, e.g. http://router:50052
+#   PUBLIC_URL    URL announced to the router, e.g. http://ffn:8080
 
 set -euo pipefail
 
@@ -26,8 +28,13 @@ export HF_REPO
 # ---- preflight: GPU role needs CUDA runtime ---------------------------------
 
 if [[ "$ROLE" == "attention" || "$ROLE" == "all" ]]; then
-  if [[ "${LARQL_BACKEND:-}" != "cpu" ]] && command -v nvidia-smi >/dev/null 2>&1; then
-    if ! nvidia-smi >/dev/null 2>&1; then
+  if [[ "${LARQL_BACKEND:-}" != "cpu" ]]; then
+    if command -v nvidia-smi >/dev/null 2>&1; then
+      if ! nvidia-smi >/dev/null 2>&1; then
+        echo "[start.sh] no NVIDIA runtime detected. Run with --gpus=all or set LARQL_BACKEND=cpu." >&2
+        exit 1
+      fi
+    elif [[ ! -e /dev/nvidiactl && ! -e /proc/driver/nvidia/version ]]; then
       echo "[start.sh] no NVIDIA runtime detected. Run with --gpus=all or set LARQL_BACKEND=cpu." >&2
       exit 1
     fi
@@ -95,6 +102,8 @@ if [[ "$ROLE" == "attention" || "$ROLE" == "all" ]]; then
 fi
 
 [[ -n "${GRPC_PORT:-}" ]] && ARGS+=(--grpc-port "$GRPC_PORT")
+[[ -n "${JOIN:-}" ]] && ARGS+=(--join "$JOIN")
+[[ -n "${PUBLIC_URL:-}" ]] && ARGS+=(--public-url "$PUBLIC_URL")
 
 echo "[start.sh] role=$ROLE backend=${LARQL_BACKEND:-auto} kv=${KV_FORMAT:-fp16}"
 echo "[start.sh] exec: larql-server ${ARGS[*]}"

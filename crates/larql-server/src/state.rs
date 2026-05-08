@@ -265,6 +265,9 @@ pub struct AppState {
     /// `/v1/attention/{session,prefill,decode}` routes).
     /// `attention-service-routes` change.
     pub attention_sessions: Arc<crate::attention_session::AttentionSessionMap>,
+    /// Default KV compression format for newly-created attention sessions
+    /// when the request omits `kv_format`.
+    pub default_kv_format: Option<larql_rotorquant::KvFormat>,
 }
 
 impl AppState {

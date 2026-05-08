@@ -21,15 +21,15 @@ services:
       WARMUP: "${WARMUP:-1}"
       LARQL_BACKEND: cpu
     volumes:
-      - vindex_data:/data
+      - ${VINDEX_SOURCE:-vindex_data}:/data/vindex
     ports:
-      - "8080:8080"
+      - "${FFN_HOST_PORT:-8080}:8080"
     healthcheck:
       test: ["CMD", "curl", "-fsS", "http://localhost:8080/v1/health"]
-      interval: 10s
+      interval: 5s
       timeout: 3s
-      retries: 6
-      start_period: 30s
+      retries: 8
+      start_period: 20s
     restart: unless-stopped
 
 volumes:
