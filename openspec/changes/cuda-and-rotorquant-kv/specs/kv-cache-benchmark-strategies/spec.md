@@ -29,9 +29,11 @@ and needle-in-haystack accuracy alongside the existing rows.
 #### Scenario: Iso3 produces published-paper PPL on wikitext-2
 - **WHEN** the accuracy harness runs against Llama 3.1 8B with RotorQuantStrategy{Iso3}
 - **THEN** the reported PPL SHALL fall within ±2% of the upstream paper's 6.91
-<!-- test: unbacked -->
+<!-- test: kv_cache_benchmark::test_accuracy_suite::synthetic_report_accepts_upstream_ppl_measurement_with_tolerance -->
+<!-- test: kv_cache_benchmark::test_accuracy_suite::synthetic_report_flags_ppl_outside_upstream_tolerance -->
 
 #### Scenario: Comparative table includes RotorQuant rows
 - **WHEN** the comparative-strategy table is generated
 - **THEN** rows for `Iso3`, `Planar3`, `Iso4`, `Planar4` SHALL appear with their compression / decode / PPL columns populated
-<!-- test: unbacked -->
+<!-- test: kv_cache_benchmark::test_accuracy_suite::synthetic_strategy_report_includes_rotorquant_rows -->
+<!-- test: kv_cache_benchmark::test_accuracy_suite::synthetic_strategy_report_formats_decode_throughput_and_ppl_placeholder -->

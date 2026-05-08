@@ -3,9 +3,9 @@
     "capabilities": 49,
     "requirements": 408,
     "scenarios": 1377,
-    "scenarios_backed": 1267,
-    "scenarios_unbacked": 110,
-    "test_refs": 3304,
+    "scenarios_backed": 1269,
+    "scenarios_unbacked": 108,
+    "test_refs": 3306,
     "test_refs_unresolved": 0
   },
   "capabilities": [
@@ -8139,19 +8139,25 @@
           "scenarios": [
             {
               "name": "Iso3 produces published-paper PPL on wikitext-2",
-              "tests_resolved": [],
+              "tests_resolved": [
+                "kv_cache_benchmark::test_accuracy_suite::synthetic_report_accepts_upstream_ppl_measurement_with_tolerance",
+                "kv_cache_benchmark::test_accuracy_suite::synthetic_report_flags_ppl_outside_upstream_tolerance"
+              ],
               "tests_unresolved": [],
-              "unbacked": true,
+              "unbacked": false,
               "spec_file": "openspec/changes/cuda-and-rotorquant-kv/specs/kv-cache-benchmark-strategies/spec.md",
               "line": 29
             },
             {
               "name": "Comparative table includes RotorQuant rows",
-              "tests_resolved": [],
+              "tests_resolved": [
+                "kv_cache_benchmark::test_accuracy_suite::synthetic_strategy_report_includes_rotorquant_rows",
+                "kv_cache_benchmark::test_accuracy_suite::synthetic_strategy_report_formats_decode_throughput_and_ppl_placeholder"
+              ],
               "tests_unresolved": [],
-              "unbacked": true,
+              "unbacked": false,
               "spec_file": "openspec/changes/cuda-and-rotorquant-kv/specs/kv-cache-benchmark-strategies/spec.md",
-              "line": 34
+              "line": 35
             }
           ]
         },

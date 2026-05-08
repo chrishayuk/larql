@@ -20,14 +20,59 @@ fn synthetic_strategy_report_includes_rotorquant_rows() {
 #[test]
 fn synthetic_strategy_report_formats_decode_throughput_and_ppl_placeholder() {
     let rows = synthetic::synthetic_strategy_report(
-        &kv_cache_benchmark::model_config::ModelConfig::llama_8b(),
+        &kv_cache_benchmark::model_config::ModelConfig::llama_31_8b(),
         1,
         11,
     );
     let table = synthetic::format_synthetic_strategy_report(&rows);
     assert!(table.contains("decode tok/s"));
     assert!(table.contains("RotorQuant Iso3"));
-    assert!(table.contains("real-only"));
+    assert!(table.contains("real-only/6.91"));
+}
+
+#[test]
+fn synthetic_report_accepts_upstream_ppl_measurement_with_tolerance() {
+    let mut rows = synthetic::synthetic_strategy_report(
+        &kv_cache_benchmark::model_config::ModelConfig::llama_31_8b(),
+        1,
+        13,
+    );
+    synthetic::apply_ppl_measurements(
+        &mut rows,
+        &[synthetic::PplMeasurement {
+            strategy: "RotorQuant Iso3".to_string(),
+            ppl: 6.91,
+        }],
+    );
+
+    let checks = synthetic::upstream_ppl_checks(&rows);
+    assert_eq!(checks.len(), 1);
+    assert!(checks[0].passed);
+    assert!(checks[0].delta_pct <= synthetic::UPSTREAM_PPL_TOLERANCE_PCT);
+
+    let table = synthetic::format_synthetic_strategy_report(&rows);
+    assert!(table.contains("6.91 (0.0% ok)"));
+}
+
+#[test]
+fn synthetic_report_flags_ppl_outside_upstream_tolerance() {
+    let mut rows = synthetic::synthetic_strategy_report(
+        &kv_cache_benchmark::model_config::ModelConfig::llama_31_8b(),
+        1,
+        17,
+    );
+    synthetic::apply_ppl_measurements(
+        &mut rows,
+        &[synthetic::PplMeasurement {
+            strategy: "RotorQuant Iso3".to_string(),
+            ppl: 7.20,
+        }],
+    );
+
+    let checks = synthetic::upstream_ppl_checks(&rows);
+    assert_eq!(checks.len(), 1);
+    assert!(!checks[0].passed);
+    assert!(checks[0].delta_pct > synthetic::UPSTREAM_PPL_TOLERANCE_PCT);
 }
 
 #[cfg(feature = "real-model")]

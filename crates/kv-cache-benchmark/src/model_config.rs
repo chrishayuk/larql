@@ -30,10 +30,13 @@ impl ModelConfig {
         }
     }
 
-    /// Llama 3 8B
-    pub fn llama_8b() -> Self {
+    /// Llama 3.1 8B
+    ///
+    /// Llama 3 8B and 3.1 8B use the same KV-cache dimensions. Keep the
+    /// older `llama_8b` constructor as an alias for existing callers.
+    pub fn llama_31_8b() -> Self {
         Self {
-            name: "Llama 3 8B",
+            name: "Llama 3.1 8B",
             layers: 32,
             kv_heads: 8,
             q_heads: 32,
@@ -42,6 +45,11 @@ impl ModelConfig {
             intermediate_dim: 14336,
             vocab_size: 128256,
         }
+    }
+
+    /// Llama 3 / 3.1 8B.
+    pub fn llama_8b() -> Self {
+        Self::llama_31_8b()
     }
 
     /// Llama 3 70B (config-level only, not running the full model)
@@ -76,6 +84,6 @@ impl ModelConfig {
 
     /// All standard benchmark models.
     pub fn all() -> Vec<Self> {
-        vec![Self::gemma_4b(), Self::llama_8b(), Self::llama_70b()]
+        vec![Self::gemma_4b(), Self::llama_31_8b(), Self::llama_70b()]
     }
 }

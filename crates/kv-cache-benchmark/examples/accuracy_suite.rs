@@ -14,9 +14,17 @@
 fn main() {
     use kv_cache_benchmark::accuracy_suite::prompts;
     use kv_cache_benchmark::accuracy_suite::runner;
+    use kv_cache_benchmark::accuracy_suite::synthetic;
+    use kv_cache_benchmark::model_config::ModelConfig;
 
     let args: Vec<String> = std::env::args().collect();
     let quick = args.iter().any(|a| a == "--quick");
+    let iso3_ppl = parse_flag_f64(&args, "--iso3-ppl").or_else(|| {
+        std::env::var("LARQL_ROTORQUANT_ISO3_PPL")
+            .ok()?
+            .parse()
+            .ok()
+    });
 
     // Load model
     let model_name = args
@@ -75,6 +83,35 @@ fn main() {
 
     let strategy_accuracy = runner::compute_strategy_accuracy(&prompt_results);
     println!("{}", runner::format_accuracy_table(&strategy_accuracy));
+
+    let mut kv_rows =
+        synthetic::synthetic_strategy_report(&ModelConfig::llama_31_8b(), 32, 20260508);
+    if let Some(ppl) = iso3_ppl {
+        synthetic::apply_ppl_measurements(
+            &mut kv_rows,
+            &[synthetic::PplMeasurement {
+                strategy: "RotorQuant Iso3".to_string(),
+                ppl,
+            }],
+        );
+    }
+    println!("{}", synthetic::format_synthetic_strategy_report(&kv_rows));
+    for check in synthetic::upstream_ppl_checks(&kv_rows) {
+        println!(
+            "  {} upstream PPL check: measured {:.2}, target {:.2}, delta {:.2}% (limit {:.1}%)",
+            check.strategy,
+            check.measured_ppl,
+            check.upstream_ppl,
+            check.delta_pct,
+            check.tolerance_pct,
+        );
+        assert!(
+            check.passed,
+            "{} PPL {:.2} is outside ±{:.1}% of upstream {:.2}",
+            check.strategy, check.measured_ppl, check.tolerance_pct, check.upstream_ppl,
+        );
+    }
+
     println!("{}", runner::format_category_breakdown(&prompt_results));
 
     // ── Test 4: Generation stability ──
@@ -118,10 +155,48 @@ fn main() {
         .and_then(|s| s.parse::<usize>().ok())
         .unwrap_or(32);
 
-    let config = ModelConfig::llama_8b();
-    let rows = synthetic::synthetic_strategy_report(&config, seq_len, 20260508);
+    let iso3_ppl = parse_flag_f64(&args, "--iso3-ppl").or_else(|| {
+        std::env::var("LARQL_ROTORQUANT_ISO3_PPL")
+            .ok()?
+            .parse()
+            .ok()
+    });
+
+    let config = ModelConfig::llama_31_8b();
+    let mut rows = synthetic::synthetic_strategy_report(&config, seq_len, 20260508);
+    if let Some(ppl) = iso3_ppl {
+        synthetic::apply_ppl_measurements(
+            &mut rows,
+            &[synthetic::PplMeasurement {
+                strategy: "RotorQuant Iso3".to_string(),
+                ppl,
+            }],
+        );
+    }
     println!("{}", synthetic::format_synthetic_strategy_report(&rows));
+    for check in synthetic::upstream_ppl_checks(&rows) {
+        println!(
+            "  {} upstream PPL check: measured {:.2}, target {:.2}, delta {:.2}% (limit {:.1}%)",
+            check.strategy,
+            check.measured_ppl,
+            check.upstream_ppl,
+            check.delta_pct,
+            check.tolerance_pct,
+        );
+        assert!(
+            check.passed,
+            "{} PPL {:.2} is outside ±{:.1}% of upstream {:.2}",
+            check.strategy, check.measured_ppl, check.tolerance_pct, check.upstream_ppl,
+        );
+    }
     println!(
-        "PPL rows require real model weights:\n  cargo run --example accuracy_suite --features real-model -- <model-name> <vindex-path> --quick"
+        "PPL rows require real model weights:\n  cargo run --example accuracy_suite --features real-model -- <model-name> <vindex-path> --quick --iso3-ppl <measured-ppl>"
     );
+}
+
+fn parse_flag_f64(args: &[String], flag: &str) -> Option<f64> {
+    args.iter()
+        .position(|a| a == flag)
+        .and_then(|i| args.get(i + 1))
+        .and_then(|v| v.parse().ok())
 }
