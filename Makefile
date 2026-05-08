@@ -1,4 +1,4 @@
-.PHONY: build release test test-fast test-full test-integration test-models check clean fmt lint demos bench bench-save bench-check coverage coverage-summary coverage-check coverage-install ci-coverage traceability traceability-check gaps gaps-untested gaps-unbacked openspec-validate test-cuda docker-ffn docker-gpu docker-up docker-down docker-logs cuda-status attention-smoke attention-validate attention-bench
+.PHONY: build release test test-fast test-full test-integration test-models check clean fmt lint demos bench bench-save bench-check coverage coverage-summary coverage-check coverage-install ci-coverage traceability traceability-check gaps gaps-untested gaps-unbacked openspec-validate test-cuda docker-ffn docker-gpu docker-up docker-down docker-logs cuda-status attention-smoke attention-validate attention-validate-gemma attention-bench
 
 # Build
 build:
@@ -90,6 +90,12 @@ attention-smoke:
 # larql_inference forward pass. No network, no real model.
 attention-validate:
 	cargo test -p larql-server --test test_attention_validation
+
+# Same as attention-validate, but at Gemma-3-4B-shaped synthetic
+# dimensions (hidden=2560, num_q=8, num_kv=4, head_dim=320,
+# 4 layers). Takes ~10s due to the synthetic weight build.
+attention-validate-gemma:
+	cargo test -p larql-server --test test_attention_validation -- --ignored prefill_gemma_shaped
 
 # Latency benchmarks for the attention-service routes — drives
 # prefill at seq_len ∈ {1, 8, 32, 128}, plus decode and snapshot

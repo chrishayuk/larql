@@ -27662,6 +27662,12 @@
       "crate": "larql_server"
     },
     {
+      "fqn": "larql_server::test_attention_validation::prefill_gemma_shaped_residuals_match_local_reference",
+      "file": "crates/larql-server/tests/test_attention_validation.rs",
+      "line": 319,
+      "crate": "larql_server"
+    },
+    {
       "fqn": "larql_vindex::describe::label_source_display_all_variants",
       "file": "crates/larql-vindex/src/describe.rs",
       "line": 60,

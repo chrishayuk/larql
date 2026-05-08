@@ -31,7 +31,9 @@ use std::sync::{Arc, OnceLock};
 
 use axum::body::Body;
 use axum::http::StatusCode;
-use larql_inference::engines::test_utils::make_test_weights;
+use larql_inference::engines::test_utils::{
+    make_test_weights, make_test_weights_with, SyntheticDims,
+};
 use larql_inference::ndarray::Array2;
 use larql_inference::{run_layer_with_ffn_capturing_h_post_attn, ModelWeights};
 use larql_server::attention_session::AttentionSessionMap;
@@ -155,14 +157,29 @@ fn deterministic_embeddings(seq_len: usize, hidden: usize) -> Vec<Vec<f32>> {
 async fn run_via_server_and_locally(
     seq_len: usize,
 ) -> (Vec<Vec<Vec<f32>>>, Vec<Array2<f32>>, String, Arc<AppState>) {
-    let weights = make_test_weights();
+    run_via_server_and_locally_with(seq_len, make_test_weights, make_test_weights).await
+}
+
+/// Generic core. Takes two factory closures so the same test body
+/// can validate against either tiny or Gemma-shaped synthetics.
+/// Both factories MUST produce identical weights (we call them
+/// twice — once for the server's `LoadedModel`, once for the
+/// in-process reference). `make_test_weights` is deterministic by
+/// LCG seed, so two calls return the same values.
+async fn run_via_server_and_locally_with<F, G>(
+    seq_len: usize,
+    server_weights_factory: F,
+    ref_weights_factory: G,
+) -> (Vec<Vec<Vec<f32>>>, Vec<Array2<f32>>, String, Arc<AppState>)
+where
+    F: FnOnce() -> ModelWeights,
+    G: FnOnce() -> ModelWeights,
+{
+    let weights = server_weights_factory();
     let hidden = weights.hidden_size;
     let num_layers = weights.num_layers;
 
-    // Snapshot the weights for the local reference path BEFORE moving
-    // them into LoadedModel — `make_test_weights` is deterministic so
-    // we could call it twice, but cloning is cheaper.
-    let ref_weights = make_test_weights();
+    let ref_weights = ref_weights_factory();
 
     let model = build_loaded_model(weights);
     let st = build_state(model);
@@ -288,6 +305,34 @@ async fn session_seq_len_advances_after_prefill() {
     let body = body_json(resp.into_body()).await;
     assert_eq!(body["seq_len"], 7);
     assert_eq!(body["prefilled"], true);
+}
+
+/// Same validation contract as the tiny-shape test, but at
+/// Gemma-3-4B head dimensions (hidden=2560, num_q=8, num_kv=4,
+/// head_dim=320, intermediate=10240, 4 layers). Confirms the
+/// runner's numerical correctness scales to realistic dims, not
+/// just unit-test sizes. Marked `#[ignore]` so `cargo test`
+/// doesn't pay the ~3s weight-build cost on every run; opt in
+/// via `make attention-validate-gemma`.
+#[tokio::test]
+#[ignore]
+async fn prefill_gemma_shaped_residuals_match_local_reference() {
+    let factory = || make_test_weights_with(SyntheticDims::gemma_3_4b_4layer());
+    let (server, local, _sid, _st) = run_via_server_and_locally_with(2, factory, factory).await;
+
+    assert_eq!(server.len(), local.len(), "layer count mismatch");
+    for (layer, (s, l)) in server.iter().zip(local.iter()).enumerate() {
+        for (row_idx, server_row) in s.iter().enumerate() {
+            let local_row = l.row(row_idx);
+            for (j, (&sv, &lv)) in server_row.iter().zip(local_row.iter()).enumerate() {
+                let abs_diff = (sv - lv).abs();
+                assert!(
+                    abs_diff <= 1e-3,
+                    "layer {layer} row {row_idx} col {j}: server={sv} local={lv} diff={abs_diff}"
+                );
+            }
+        }
+    }
 }
 
 #[tokio::test]
