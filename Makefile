@@ -1,4 +1,4 @@
-.PHONY: build release test test-fast test-full test-integration test-models check clean fmt lint demos demo bench bench-save bench-check coverage coverage-summary coverage-check coverage-install ci-coverage traceability traceability-check gaps gaps-untested gaps-unbacked openspec-validate ci-cuda test-cuda rotorquant-sync cuda-rotorquant-bench cuda-oxide-doctor cuda-oxide-pilot cuda-oxide-bench docker-ffn docker-gpu docker-up docker-up-cpu docker-down docker-logs cuda-status attention-smoke attention-validate attention-validate-gemma attention-bench
+.PHONY: build release test test-fast test-full test-integration test-models check clean fmt lint demos demo bench bench-save bench-check coverage coverage-summary coverage-check coverage-install ci-coverage traceability traceability-check gaps gaps-untested gaps-unbacked openspec-validate ci-cuda test-cuda rotorquant-sync cuda-rotorquant-bench cuda-oxide-doctor cuda-oxide-pilot cuda-oxide-cross-parity cuda-oxide-bench docker-ffn docker-gpu docker-up docker-up-cpu docker-down docker-logs cuda-status attention-smoke attention-validate attention-validate-gemma attention-bench
 
 # Build
 build:
@@ -80,6 +80,18 @@ cuda-oxide-pilot: cuda-oxide-doctor
 	else \
 	  echo "Skipping cuda-oxide GPU round-trip test: set LARQL_CUDA_AVAILABLE=1 to run it."; \
 	fi
+
+cuda-oxide-cross-parity: cuda-oxide-doctor
+	@if [ "${LARQL_CUDA_AVAILABLE}" != "1" ]; then \
+	  echo "Set LARQL_CUDA_AVAILABLE=1 to run cuda-oxide/cudarc parity."; \
+	  exit 2; \
+	fi
+	@set -e; \
+	tmp=$$(mktemp -d); \
+	trap 'rm -rf "$$tmp"' EXIT; \
+	LARQL_ROTORQUANT_PARITY_DIR=$$tmp cargo test -p larql-rotorquant --features cuda --test cuda_round_trip iso3_quantized_layout_dequantizes_like_cpu_reference -- --test-threads=1 --nocapture; \
+	cd crates/larql-rotorquant && CUDA_OXIDE_PTX_DIR=$$(pwd) cargo +nightly-2026-04-03 oxide build --features cuda-oxide --arch sm_89; \
+	LARQL_ROTORQUANT_PARITY_DIR=$$tmp cargo +nightly-2026-04-03 test -p larql-rotorquant --features cuda-oxide --test cuda_oxide_round_trip iso3_cuda_oxide_dequantize_matches_cpu -- --test-threads=1 --nocapture
 
 cuda-oxide-bench: cuda-oxide-pilot
 	@if [ "${LARQL_CUDA_AVAILABLE}" = "1" ]; then \

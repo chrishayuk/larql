@@ -69,10 +69,15 @@
       cosine ≥ 0.99 per row.
 - [x] 4.2 Skip with a clear message when `LARQL_CUDA_AVAILABLE`
       is not set. Don't fail the build on CPU-only hosts.
-- [ ] 4.3 Cross-implementation parity (when
+- [x] 4.3 Cross-implementation parity (when
       `rotorquant-cuda-kernels` ships its cudarc variant in
       parallel): same quantized input through both dequantize
       backends, max-element diff ≤ 1e-3.
+      Implemented as `make cuda-oxide-cross-parity`: the cudarc
+      `cuda` feature writes an Iso3 portable-`QuantizedKv` dequant
+      fixture, then the mutually exclusive `cuda-oxide` feature rebuilds
+      PTX and compares against that fixture. Passed in the CUDA 13.1
+      builder container on 2026-05-08.
 
 ### 5. Container image (GPU only)
 

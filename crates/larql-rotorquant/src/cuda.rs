@@ -109,6 +109,69 @@ pub unsafe fn dequantize_to_f32_device(
     Ok(elements)
 }
 
+/// Launch a cudarc-compatible CUDA C dequantize kernel for the portable
+/// CPU-reference Iso3 `QuantizedKv` layout.
+///
+/// This parity wrapper exists specifically to compare the cudarc/NVCC
+/// custom-kernel path with the cuda-oxide pilot path. It consumes the
+/// same logical buffers as `cuda_oxide::dequantize_iso3`: packed 3-bit
+/// `codes`, per-row `norms`, and per-block `rotation_indices`.
+///
+/// # Safety
+///
+/// The caller must ensure all pointers are valid device pointers for the
+/// active CUDA context, the source buffers contain a valid Iso3
+/// `QuantizedKv` layout, `dst_device` is writable for
+/// `n_rows * head_dim` `f32` values, and `stream` remains valid until
+/// the kernel completes.
+pub unsafe fn dequantize_iso3_quantized_device(
+    codes_device: *const c_void,
+    norms_device: *const c_void,
+    rotations_device: *const c_void,
+    dst_device: *mut c_void,
+    n_rows: usize,
+    head_dim: usize,
+    stream: CudaStream,
+) -> Result<usize, RotorQuantError> {
+    if codes_device.is_null() {
+        return Err(RotorQuantError::InvalidBuffer(
+            "CUDA Iso3 codes pointer is null".into(),
+        ));
+    }
+    if norms_device.is_null() {
+        return Err(RotorQuantError::InvalidBuffer(
+            "CUDA Iso3 norms pointer is null".into(),
+        ));
+    }
+    if rotations_device.is_null() {
+        return Err(RotorQuantError::InvalidBuffer(
+            "CUDA Iso3 rotation pointer is null".into(),
+        ));
+    }
+    if dst_device.is_null() {
+        return Err(RotorQuantError::InvalidBuffer(
+            "CUDA Iso3 destination pointer is null".into(),
+        ));
+    }
+    if !head_dim.is_multiple_of(KvFormat::Iso3.block_size()) {
+        return Err(RotorQuantError::HeadDimNotDivisible {
+            format: KvFormat::Iso3,
+            head_dim,
+            block_size: KvFormat::Iso3.block_size(),
+        });
+    }
+    ffi::dequantize_cpu_ref_iso3_to_f32(
+        codes_device,
+        norms_device,
+        rotations_device,
+        dst_device,
+        n_rows as i64,
+        head_dim as i64,
+        stream,
+    );
+    Ok(n_rows * head_dim)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -155,6 +218,23 @@ mod tests {
                 std::ptr::null(),
                 std::ptr::null_mut(),
                 128,
+                CudaStream::null(),
+            )
+        }
+        .unwrap_err();
+        assert!(matches!(err, RotorQuantError::InvalidBuffer(_)));
+    }
+
+    #[test]
+    fn dequantize_iso3_quantized_device_rejects_null_pointers() {
+        let err = unsafe {
+            dequantize_iso3_quantized_device(
+                std::ptr::null(),
+                std::ptr::null(),
+                std::ptr::null(),
+                std::ptr::null_mut(),
+                1,
+                4,
                 CudaStream::null(),
             )
         }

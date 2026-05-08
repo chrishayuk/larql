@@ -63,8 +63,8 @@ mod cuda;
 pub mod ffi;
 #[cfg(feature = "cuda")]
 pub use cuda::{
-    copy_f16_to_quantized_device, dequantize_to_f32_device, quantized_device_len_bytes, CudaStream,
-    CUDA_BLOCK_ELEMENTS,
+    copy_f16_to_quantized_device, dequantize_iso3_quantized_device, dequantize_to_f32_device,
+    quantized_device_len_bytes, CudaStream, CUDA_BLOCK_ELEMENTS,
 };
 
 #[cfg(feature = "cuda-oxide")]

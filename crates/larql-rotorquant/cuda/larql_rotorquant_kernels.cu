@@ -212,3 +212,111 @@ extern "C" void larql_rotorquant_dequantize_iso4_f32(
     kernel_dequantize_iso4_f32<<<blocks, threads, 0, stream>>>(
         (const block_iso4_0 *)src, (float *)dst, n_blocks);
 }
+
+__device__ __forceinline__ uint8_t larql_rotorquant_unpack_lsb_code(
+    const uint8_t * codes,
+    int64_t bit_pos,
+    uint8_t bits
+) {
+    const uint32_t mask = (1u << bits) - 1u;
+    const int64_t byte = bit_pos >> 3;
+    const uint32_t shift = (uint32_t)(bit_pos & 7);
+    const uint32_t lo = codes[byte];
+    const uint32_t hi = (shift + bits > 8) ? codes[byte + 1] : 0u;
+    return (uint8_t)(((lo | (hi << 8)) >> shift) & mask);
+}
+
+__device__ __forceinline__ float larql_rotorquant_lm3_cpu_ref(uint8_t code) {
+    switch (code & 0x7) {
+        case 0: return -0.875f;
+        case 1: return -0.625f;
+        case 2: return -0.375f;
+        case 3: return -0.125f;
+        case 4: return  0.125f;
+        case 5: return  0.375f;
+        case 6: return  0.625f;
+        default: return 0.875f;
+    }
+}
+
+__device__ __forceinline__ void larql_rotorquant_cpu_ref_iso_coeffs(
+    int rot,
+    float * a,
+    float * b,
+    float * c
+) {
+    const float half = (float)rot * 1.5707963267948966f / 15.0f;
+    float s;
+    float w;
+    sincosf(half, &s, &w);
+    const float ss_over_3 = (s * s) / 3.0f;
+    const float ws_over_sqrt3 = w * s * 0.5773502691896258f;
+    *a = 1.0f - 4.0f * ss_over_3;
+    *b = 2.0f * (ss_over_3 - ws_over_sqrt3);
+    *c = 2.0f * (ss_over_3 + ws_over_sqrt3);
+}
+
+__global__ void kernel_dequantize_cpu_ref_iso3_f32(
+    const uint8_t * __restrict__ codes,
+    const float * __restrict__ norms,
+    const uint16_t * __restrict__ rotation_indices,
+    float * __restrict__ dst,
+    int64_t n_rows,
+    int64_t head_dim
+) {
+    const int64_t elem = blockIdx.x * blockDim.x + threadIdx.x;
+    const int64_t total = n_rows * head_dim;
+    if (elem >= total) return;
+
+    const int64_t row = elem / head_dim;
+    const int64_t col = elem - row * head_dim;
+    const int64_t block = col / 4;
+    const int lane = (int)(col - block * 4);
+    const int64_t blocks_per_row = head_dim / 4;
+    const int rot = (int)rotation_indices[row * blocks_per_row + block];
+    const int64_t base_code = row * head_dim + block * 4;
+
+    const float r0 = larql_rotorquant_lm3_cpu_ref(
+        larql_rotorquant_unpack_lsb_code(codes, (base_code + 0) * 3, 3));
+    const float r1 = larql_rotorquant_lm3_cpu_ref(
+        larql_rotorquant_unpack_lsb_code(codes, (base_code + 1) * 3, 3));
+    const float r2 = larql_rotorquant_lm3_cpu_ref(
+        larql_rotorquant_unpack_lsb_code(codes, (base_code + 2) * 3, 3));
+    const float r3 = larql_rotorquant_lm3_cpu_ref(
+        larql_rotorquant_unpack_lsb_code(codes, (base_code + 3) * 3, 3));
+
+    float a;
+    float b;
+    float c;
+    larql_rotorquant_cpu_ref_iso_coeffs(rot, &a, &b, &c);
+    float recovered;
+    switch (lane) {
+        case 0: recovered = a * r0 + c * r1 + b * r2; break;
+        case 1: recovered = b * r0 + a * r1 + c * r2; break;
+        case 2: recovered = c * r0 + b * r1 + a * r2; break;
+        default: recovered = r3; break;
+    }
+
+    dst[elem] = recovered * norms[row];
+}
+
+extern "C" void larql_rotorquant_dequantize_cpu_ref_iso3_f32(
+    const void * codes,
+    const void * norms,
+    const void * rotation_indices,
+    void * dst,
+    long long n_rows,
+    long long head_dim,
+    cudaStream_t stream
+) {
+    const int64_t total = n_rows * head_dim;
+    const int threads = 256;
+    const int blocks = (total + threads - 1) / threads;
+    kernel_dequantize_cpu_ref_iso3_f32<<<blocks, threads, 0, stream>>>(
+        (const uint8_t *)codes,
+        (const float *)norms,
+        (const uint16_t *)rotation_indices,
+        (float *)dst,
+        n_rows,
+        head_dim);
+}

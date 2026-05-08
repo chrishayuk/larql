@@ -92,6 +92,15 @@ unsafe extern "C" {
         ne: i64,
         stream: *mut c_void,
     );
+    fn larql_rotorquant_dequantize_cpu_ref_iso3_f32(
+        codes: *const c_void,
+        norms: *const c_void,
+        rotation_indices: *const c_void,
+        dst: *mut c_void,
+        n_rows: i64,
+        head_dim: i64,
+        stream: *mut c_void,
+    );
 }
 
 /// Number of FP16 values consumed by one upstream CUDA quantization block.
@@ -173,4 +182,39 @@ pub unsafe fn dequantize_to_f32(
         KvFormat::Iso3 => larql_rotorquant_dequantize_iso3_f32(src, dst, ne, stream.as_raw()),
         KvFormat::Iso4 => larql_rotorquant_dequantize_iso4_f32(src, dst, ne, stream.as_raw()),
     }
+}
+
+/// Launch a CUDA C parity kernel for the portable CPU-reference Iso3
+/// `QuantizedKv` layout.
+///
+/// This is separate from the upstream packed-block wrappers above: it
+/// consumes the same `codes`, `norms`, and `rotation_indices` buffers as
+/// the cuda-oxide pilot kernel, which lets the two mutually exclusive
+/// cargo features be compared through the same deterministic fixture.
+///
+/// # Safety
+///
+/// The caller must ensure all pointers are valid device pointers in the
+/// active CUDA context, `dst` is writable for `n_rows * head_dim` `f32`
+/// values, and `stream` is valid until the launched kernel completes.
+pub unsafe fn dequantize_cpu_ref_iso3_to_f32(
+    codes: *const c_void,
+    norms: *const c_void,
+    rotation_indices: *const c_void,
+    dst: *mut c_void,
+    n_rows: i64,
+    head_dim: i64,
+    stream: CudaStream,
+) {
+    debug_assert!(n_rows >= 0);
+    debug_assert!(head_dim >= 0);
+    larql_rotorquant_dequantize_cpu_ref_iso3_f32(
+        codes,
+        norms,
+        rotation_indices,
+        dst,
+        n_rows,
+        head_dim,
+        stream.as_raw(),
+    );
 }

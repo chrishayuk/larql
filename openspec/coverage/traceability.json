@@ -25645,49 +25645,61 @@
     {
       "fqn": "larql_rotorquant::cuda::tests::quantized_device_len_matches_active_formats",
       "file": "crates/larql-rotorquant/src/cuda.rs",
-      "line": 117,
+      "line": 180,
       "crate": "larql_rotorquant"
     },
     {
       "fqn": "larql_rotorquant::cuda::quantized_device_len_matches_active_formats",
       "file": "crates/larql-rotorquant/src/cuda.rs",
-      "line": 117,
+      "line": 180,
       "crate": "larql_rotorquant"
     },
     {
       "fqn": "larql_rotorquant::cuda::tests::quantized_device_len_rejects_partial_blocks",
       "file": "crates/larql-rotorquant/src/cuda.rs",
-      "line": 131,
+      "line": 194,
       "crate": "larql_rotorquant"
     },
     {
       "fqn": "larql_rotorquant::cuda::quantized_device_len_rejects_partial_blocks",
       "file": "crates/larql-rotorquant/src/cuda.rs",
-      "line": 131,
+      "line": 194,
       "crate": "larql_rotorquant"
     },
     {
       "fqn": "larql_rotorquant::cuda::tests::copy_f16_to_quantized_device_rejects_null_pointers",
       "file": "crates/larql-rotorquant/src/cuda.rs",
-      "line": 136,
+      "line": 199,
       "crate": "larql_rotorquant"
     },
     {
       "fqn": "larql_rotorquant::cuda::copy_f16_to_quantized_device_rejects_null_pointers",
       "file": "crates/larql-rotorquant/src/cuda.rs",
-      "line": 136,
+      "line": 199,
       "crate": "larql_rotorquant"
     },
     {
       "fqn": "larql_rotorquant::cuda::tests::dequantize_to_f32_device_rejects_null_pointers",
       "file": "crates/larql-rotorquant/src/cuda.rs",
-      "line": 151,
+      "line": 214,
       "crate": "larql_rotorquant"
     },
     {
       "fqn": "larql_rotorquant::cuda::dequantize_to_f32_device_rejects_null_pointers",
       "file": "crates/larql-rotorquant/src/cuda.rs",
-      "line": 151,
+      "line": 214,
+      "crate": "larql_rotorquant"
+    },
+    {
+      "fqn": "larql_rotorquant::cuda::tests::dequantize_iso3_quantized_device_rejects_null_pointers",
+      "file": "crates/larql-rotorquant/src/cuda.rs",
+      "line": 229,
+      "crate": "larql_rotorquant"
+    },
+    {
+      "fqn": "larql_rotorquant::cuda::dequantize_iso3_quantized_device_rejects_null_pointers",
+      "file": "crates/larql-rotorquant/src/cuda.rs",
+      "line": 229,
       "crate": "larql_rotorquant"
     },
     {
@@ -25699,25 +25711,31 @@
     {
       "fqn": "larql_rotorquant::cuda_oxide_round_trip::iso3_cuda_oxide_dequantize_matches_cpu",
       "file": "crates/larql-rotorquant/tests/cuda_oxide_round_trip.rs",
-      "line": 25,
+      "line": 46,
       "crate": "larql_rotorquant"
     },
     {
       "fqn": "larql_rotorquant::cuda_round_trip::planar3_cuda_preserves_direction",
       "file": "crates/larql-rotorquant/tests/cuda_round_trip.rs",
-      "line": 100,
+      "line": 161,
       "crate": "larql_rotorquant"
     },
     {
       "fqn": "larql_rotorquant::cuda_round_trip::planar4_cuda_preserves_direction",
       "file": "crates/larql-rotorquant/tests/cuda_round_trip.rs",
-      "line": 108,
+      "line": 169,
       "crate": "larql_rotorquant"
     },
     {
       "fqn": "larql_rotorquant::cuda_round_trip::iso4_cuda_preserves_direction",
       "file": "crates/larql-rotorquant/tests/cuda_round_trip.rs",
-      "line": 124,
+      "line": 185,
+      "crate": "larql_rotorquant"
+    },
+    {
+      "fqn": "larql_rotorquant::cuda_round_trip::iso3_quantized_layout_dequantizes_like_cpu_reference",
+      "file": "crates/larql-rotorquant/tests/cuda_round_trip.rs",
+      "line": 193,
       "crate": "larql_rotorquant"
     },
     {

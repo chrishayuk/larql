@@ -77,6 +77,7 @@ fn main() {
         }
     }
     println!("cargo:rustc-link-lib=dylib=cudart");
+    println!("cargo:rustc-link-lib=dylib=stdc++");
 }
 
 fn run(cmd: &mut Command, name: &str) {

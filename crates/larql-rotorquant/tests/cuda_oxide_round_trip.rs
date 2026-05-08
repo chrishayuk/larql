@@ -1,6 +1,7 @@
 #![cfg(feature = "cuda-oxide")]
 
 use larql_rotorquant::{cuda_oxide, dequantize_k, quantize_k, KvFormat};
+use std::path::PathBuf;
 
 fn synth(n: usize, seed: u64) -> Vec<f32> {
     let mut s = seed.wrapping_mul(0x9E37_79B9_7F4A_7C15);
@@ -19,6 +20,26 @@ fn cosine(a: &[f32], b: &[f32]) -> f32 {
     let na: f32 = a.iter().map(|v| v * v).sum::<f32>().sqrt();
     let nb: f32 = b.iter().map(|v| v * v).sum::<f32>().sqrt();
     dot / (na * nb + 1e-12)
+}
+
+fn max_abs_diff(a: &[f32], b: &[f32]) -> f32 {
+    a.iter()
+        .zip(b)
+        .map(|(x, y)| (x - y).abs())
+        .fold(0.0_f32, f32::max)
+}
+
+fn read_f32le(path: PathBuf) -> Option<Vec<f32>> {
+    let bytes = std::fs::read(path).ok()?;
+    let mut values = Vec::with_capacity(bytes.len() / 4);
+    for chunk in bytes.chunks_exact(4) {
+        values.push(f32::from_le_bytes([chunk[0], chunk[1], chunk[2], chunk[3]]));
+    }
+    Some(values)
+}
+
+fn parity_dir() -> Option<PathBuf> {
+    std::env::var_os("LARQL_ROTORQUANT_PARITY_DIR").map(PathBuf::from)
 }
 
 #[test]
@@ -50,5 +71,15 @@ fn iso3_cuda_oxide_dequantize_matches_cpu() {
         let end = start + head_dim;
         let cos = cosine(&input[start..end], &gpu[start..end]);
         assert!(cos >= 0.99, "row {row} cosine {cos}");
+    }
+
+    if let Some(dir) = parity_dir() {
+        if let Some(cudarc) = read_f32le(dir.join("cudarc_iso3_dequant.f32le")) {
+            assert_eq!(cudarc.len(), gpu.len());
+            let diff = max_abs_diff(&cudarc, &gpu);
+            assert!(diff <= 1e-3, "max cudarc-vs-cuda-oxide diff {diff}");
+        } else {
+            eprintln!("skipping cudarc-vs-cuda-oxide fixture comparison: no cudarc fixture found");
+        }
     }
 }
