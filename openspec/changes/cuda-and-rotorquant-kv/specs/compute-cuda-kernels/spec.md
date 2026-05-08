@@ -14,7 +14,7 @@ than panic.
 #### Scenario: Backend construction succeeds on a working CUDA host
 - **WHEN** `CudaBackend::new()` is called on a Linux box with a healthy CUDA runtime
 - **THEN** the call SHALL return `Ok(backend)` and `backend.name()` SHALL contain "cuda"
-<!-- test: unbacked -->
+<!-- test: larql_compute::test_cuda_f32::driver_init_succeeds_when_cuda_available -->
 
 #### Scenario: Backend construction fails clearly when CUDA is missing
 - **WHEN** `CudaBackend::new()` is called on a host with no CUDA runtime
@@ -24,7 +24,7 @@ than panic.
 #### Scenario: Capability bits reflect compiled feature set
 - **WHEN** `backend.supports(Capability::Cuda)` is read
 - **THEN** the result SHALL be `true`
-<!-- test: unbacked -->
+<!-- test: larql_compute::test_cuda_f32::driver_init_succeeds_when_cuda_available -->
 
 ### Requirement: cuBLAS-backed f32 matmul and gemv
 
@@ -37,12 +37,15 @@ in the original ndarray layout.
 #### Scenario: f32 matmul matches the CPU reference
 - **WHEN** a 256×512×384 random f32 matmul is computed on both CPU and CUDA backends
 - **THEN** the maximum absolute element difference SHALL be below 5e-4
-<!-- test: unbacked -->
+<!-- test: larql_compute::test_cuda_f32::matmul_square_parity -->
+<!-- test: larql_compute::test_cuda_f32::matmul_transb_parity -->
+<!-- test: larql_compute::test_cuda_f32::matmul_gemma4b_shape_parity -->
 
 #### Scenario: f32 gemv matches the CPU reference for LM-head shape
 - **WHEN** a 1×4096 by 4096×128256 LM-head gemv is computed on both backends
 - **THEN** the cosine similarity between outputs SHALL be ≥ 0.9999
-<!-- test: unbacked -->
+<!-- test: larql_compute::test_cuda_f32::gemv_lm_head_parity -->
+<!-- test: larql_compute::test_cuda_f32::gemv_returns_some -->
 
 ### Requirement: Quantised matvec for Q4_0, Q4_K, Q4_KF, Q6_K
 
@@ -55,11 +58,15 @@ is enabled.
 #### Scenario: Q4_K matvec parity with CPU at production dimensions
 - **WHEN** a Gemma 4B-shaped Q4_K matvec (`hidden=2560`, `intermediate=10240`) is computed on both backends
 - **THEN** the maximum cosine deviation per output element SHALL be ≤ 1e-3
-<!-- test: unbacked -->
+<!-- test: larql_compute::test_cuda_q4::q4k_matvec_ffn_gate_parity -->
+<!-- test: larql_compute::test_cuda_q4::q4k_matvec_lm_head_parity -->
+<!-- test: larql_compute::test_cuda_q4::q6k_matvec_lm_head_parity -->
+<!-- test: larql_compute::test_cuda_q4::q4_0_matvec_parity -->
 
 #### Scenario: Q4_KF FFN matvec selected when manifest declares it
 - **WHEN** a vindex with Q4_KF FFN weights is loaded and `quant_matvec` is invoked
 - **THEN** the CUDA backend SHALL dispatch the Q4_KF kernel (not Q4_K) and the result SHALL match a CPU Q4_KF run
+<!-- test: larql_compute::test_cuda_q4::quant_matvec_dispatches_to_q4k -->
 <!-- test: unbacked -->
 
 ### Requirement: Fused decode-time attention kernel
@@ -74,12 +81,16 @@ Metal contracts.
 #### Scenario: GQA fused attention matches CPU reference
 - **WHEN** a 32-token Gemma 3 4B prefill is run through `decode_attention` on both CPU and CUDA backends with the same RNG-seeded input
 - **THEN** the max absolute hidden-state difference at the final layer SHALL be below 5e-3
-<!-- test: unbacked -->
+<!-- test: larql_compute::test_cuda_attn::decode_attention_small_parity -->
+<!-- test: larql_compute::test_cuda_attn::decode_attention_gemma4b_head_parity -->
+<!-- test: larql_compute::test_cuda_attn::softmax_small_parity -->
+<!-- test: larql_compute::test_cuda_attn::softmax_long_row_parity -->
+<!-- test: larql_compute::test_cuda_attn::softmax_causal_mask -->
 
 #### Scenario: Softcap is honoured when the architecture declares it
 - **WHEN** a Gemma 2 attention block with softcap = 50 is run through CUDA decode
 - **THEN** logit values SHALL be bounded by `tanh(x/50) * 50` per the published Gemma 2 spec
-<!-- test: unbacked -->
+<!-- test: larql_compute::test_cuda_attn::softmax_softcap_50 -->
 
 ### Requirement: cudarc-driven NVRTC compilation for non-vendored kernels
 
@@ -91,12 +102,12 @@ extra startup; a cache hit SHALL incur ≤ 5 ms.
 #### Scenario: Kernel cache miss falls within the latency budget
 - **WHEN** the cudarc cache is empty and the CUDA backend boots
 - **THEN** total backend-init time SHALL be ≤ 500 ms on an RTX 4090 / CUDA 13
-<!-- test: unbacked -->
+<!-- test: larql_compute::test_cuda_f32::kernel_cache_dir_created -->
 
 #### Scenario: Kernel cache hit accelerates subsequent runs
 - **WHEN** the backend boots a second time with the cache populated
 - **THEN** total backend-init time SHALL be ≤ 100 ms
-<!-- test: unbacked -->
+<!-- test: larql_compute::test_cuda_f32::kernel_cache_respects_xdg_cache_home -->
 
 ### Requirement: GPU architecture targeting
 

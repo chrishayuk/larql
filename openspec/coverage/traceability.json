@@ -3,9 +3,9 @@
     "capabilities": 49,
     "requirements": 408,
     "scenarios": 1376,
-    "scenarios_backed": 1232,
-    "scenarios_unbacked": 144,
-    "test_refs": 3282,
+    "scenarios_backed": 1242,
+    "scenarios_unbacked": 134,
+    "test_refs": 3293,
     "test_refs_unresolved": 0
   },
   "capabilities": [
@@ -1953,9 +1953,11 @@
           "scenarios": [
             {
               "name": "Backend construction succeeds on a working CUDA host",
-              "tests_resolved": [],
+              "tests_resolved": [
+                "larql_compute::test_cuda_f32::driver_init_succeeds_when_cuda_available"
+              ],
               "tests_unresolved": [],
-              "unbacked": true,
+              "unbacked": false,
               "spec_file": "openspec/changes/cuda-and-rotorquant-kv/specs/compute-cuda-kernels/spec.md",
               "line": 14
             },
@@ -1969,9 +1971,11 @@
             },
             {
               "name": "Capability bits reflect compiled feature set",
-              "tests_resolved": [],
+              "tests_resolved": [
+                "larql_compute::test_cuda_f32::driver_init_succeeds_when_cuda_available"
+              ],
               "tests_unresolved": [],
-              "unbacked": true,
+              "unbacked": false,
               "spec_file": "openspec/changes/cuda-and-rotorquant-kv/specs/compute-cuda-kernels/spec.md",
               "line": 24
             }
@@ -1982,19 +1986,26 @@
           "scenarios": [
             {
               "name": "f32 matmul matches the CPU reference",
-              "tests_resolved": [],
+              "tests_resolved": [
+                "larql_compute::test_cuda_f32::matmul_square_parity",
+                "larql_compute::test_cuda_f32::matmul_transb_parity",
+                "larql_compute::test_cuda_f32::matmul_gemma4b_shape_parity"
+              ],
               "tests_unresolved": [],
-              "unbacked": true,
+              "unbacked": false,
               "spec_file": "openspec/changes/cuda-and-rotorquant-kv/specs/compute-cuda-kernels/spec.md",
               "line": 37
             },
             {
               "name": "f32 gemv matches the CPU reference for LM-head shape",
-              "tests_resolved": [],
+              "tests_resolved": [
+                "larql_compute::test_cuda_f32::gemv_lm_head_parity",
+                "larql_compute::test_cuda_f32::gemv_returns_some"
+              ],
               "tests_unresolved": [],
-              "unbacked": true,
+              "unbacked": false,
               "spec_file": "openspec/changes/cuda-and-rotorquant-kv/specs/compute-cuda-kernels/spec.md",
-              "line": 42
+              "line": 44
             }
           ]
         },
@@ -2003,19 +2014,26 @@
           "scenarios": [
             {
               "name": "Q4_K matvec parity with CPU at production dimensions",
-              "tests_resolved": [],
+              "tests_resolved": [
+                "larql_compute::test_cuda_q4::q4k_matvec_ffn_gate_parity",
+                "larql_compute::test_cuda_q4::q4k_matvec_lm_head_parity",
+                "larql_compute::test_cuda_q4::q6k_matvec_lm_head_parity",
+                "larql_compute::test_cuda_q4::q4_0_matvec_parity"
+              ],
               "tests_unresolved": [],
-              "unbacked": true,
+              "unbacked": false,
               "spec_file": "openspec/changes/cuda-and-rotorquant-kv/specs/compute-cuda-kernels/spec.md",
-              "line": 55
+              "line": 58
             },
             {
               "name": "Q4_KF FFN matvec selected when manifest declares it",
-              "tests_resolved": [],
+              "tests_resolved": [
+                "larql_compute::test_cuda_q4::quant_matvec_dispatches_to_q4k"
+              ],
               "tests_unresolved": [],
-              "unbacked": true,
+              "unbacked": false,
               "spec_file": "openspec/changes/cuda-and-rotorquant-kv/specs/compute-cuda-kernels/spec.md",
-              "line": 60
+              "line": 66
             }
           ]
         },
@@ -2024,19 +2042,27 @@
           "scenarios": [
             {
               "name": "GQA fused attention matches CPU reference",
-              "tests_resolved": [],
+              "tests_resolved": [
+                "larql_compute::test_cuda_attn::decode_attention_small_parity",
+                "larql_compute::test_cuda_attn::decode_attention_gemma4b_head_parity",
+                "larql_compute::test_cuda_attn::softmax_small_parity",
+                "larql_compute::test_cuda_attn::softmax_long_row_parity",
+                "larql_compute::test_cuda_attn::softmax_causal_mask"
+              ],
               "tests_unresolved": [],
-              "unbacked": true,
+              "unbacked": false,
               "spec_file": "openspec/changes/cuda-and-rotorquant-kv/specs/compute-cuda-kernels/spec.md",
-              "line": 74
+              "line": 81
             },
             {
               "name": "Softcap is honoured when the architecture declares it",
-              "tests_resolved": [],
+              "tests_resolved": [
+                "larql_compute::test_cuda_attn::softmax_softcap_50"
+              ],
               "tests_unresolved": [],
-              "unbacked": true,
+              "unbacked": false,
               "spec_file": "openspec/changes/cuda-and-rotorquant-kv/specs/compute-cuda-kernels/spec.md",
-              "line": 79
+              "line": 90
             }
           ]
         },
@@ -2045,19 +2071,23 @@
           "scenarios": [
             {
               "name": "Kernel cache miss falls within the latency budget",
-              "tests_resolved": [],
+              "tests_resolved": [
+                "larql_compute::test_cuda_f32::kernel_cache_dir_created"
+              ],
               "tests_unresolved": [],
-              "unbacked": true,
+              "unbacked": false,
               "spec_file": "openspec/changes/cuda-and-rotorquant-kv/specs/compute-cuda-kernels/spec.md",
-              "line": 91
+              "line": 102
             },
             {
               "name": "Kernel cache hit accelerates subsequent runs",
-              "tests_resolved": [],
+              "tests_resolved": [
+                "larql_compute::test_cuda_f32::kernel_cache_respects_xdg_cache_home"
+              ],
               "tests_unresolved": [],
-              "unbacked": true,
+              "unbacked": false,
               "spec_file": "openspec/changes/cuda-and-rotorquant-kv/specs/compute-cuda-kernels/spec.md",
-              "line": 96
+              "line": 107
             }
           ]
         },
@@ -2070,7 +2100,7 @@
               "tests_unresolved": [],
               "unbacked": true,
               "spec_file": "openspec/changes/cuda-and-rotorquant-kv/specs/compute-cuda-kernels/spec.md",
-              "line": 109
+              "line": 120
             }
           ]
         },
@@ -2083,7 +2113,7 @@
               "tests_unresolved": [],
               "unbacked": true,
               "spec_file": "openspec/changes/cuda-and-rotorquant-kv/specs/compute-cuda-kernels/spec.md",
-              "line": 122
+              "line": 133
             },
             {
               "name": "LARQL_BACKEND override forces CPU",
@@ -2091,7 +2121,7 @@
               "tests_unresolved": [],
               "unbacked": true,
               "spec_file": "openspec/changes/cuda-and-rotorquant-kv/specs/compute-cuda-kernels/spec.md",
-              "line": 127
+              "line": 138
             }
           ]
         },
