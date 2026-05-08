@@ -367,3 +367,14 @@ After embeddings, down-meta, and gate manifest slices, the GGUF branch still ret
 
 ### Result
 The Kimi GGUF smoke now produces a loadable manifest-backed browse vindex at `/home/bkearns/data/larql-smoke/kimi-q4km-loadable-smoke.vindex`. The real smoke exits `0`; `index.json` reports 61 layers, hidden size 7168, vocab size 163840, and 60 packed gate layer entries with zero byte lengths because gate vectors are manifest-backed. LQL load smoke exits `0` and reports the index shape; edge results are empty until manifest-backed gate/down query execution is implemented.
+
+## Query-time manifest-backed browse execution slice
+
+- RED: `load_vindex_uses_gguf_down_meta_manifest_for_feature_scans` showed manifest-backed Kimi browse vindexes loaded with zero gate/down metadata, so `SELECT ... FROM EDGES` returned no rows.
+- GREEN: loader now attaches compact GGUF down-meta manifests and exposes layer/feature metadata without materializing `down_meta.bin`; real Kimi `SELECT entity, target FROM EDGES LIMIT 10` now returns manifest-backed rows.
+- RED: `load_vindex_embedding_rows_reads_gguf_manifest_selected_tokens` covered the missing query-time embedding path for over-budget GGUF embeddings.
+- GREEN: `load_vindex_embedding_rows()` can read only selected token rows from dense `embeddings.bin` or from `gguf_embeddings_manifest.json` using GGUF byte offsets and Q4_K/Q6_K block alignment checks.
+- RED/GREEN: `load_vindex_uses_gguf_gate_manifest_for_bounded_gate_knn` covers bounded manifest-backed gate KNN from compact `gguf_gate_manifest.json`.
+- Real smoke: `WALK "The capital of France is" TOP 10` against `/home/bkearns/data/larql-smoke/kimi-q4km-loadable-smoke.vindex` now loads tokenizer + selected embedding row, scans a bounded prefix of GGUF gate rows per layer, and emits non-empty hits with GGUF down-meta labels.
+- Bound: real manifest gate scans default to the first 64 features per layer; override with `LARQL_GGUF_MANIFEST_GATE_SCAN_FEATURES=N` for deeper smoke scans without materializing dense gates.
+- Remaining limitation: labels are manifest coordinates (`gguf:<tensor>:E<expert>:F<feature>`) until query-time down projection against `gguf_down_meta_manifest.json` computes semantic token top-k for selected hits.

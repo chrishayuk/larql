@@ -35,6 +35,10 @@ impl VectorIndex {
         if let Some(ref dm) = self.metadata.down_meta_mmap {
             return dm.feature_meta(layer, feature);
         }
+        // Manifest path for over-budget GGUF/Kimi browse-level indexes.
+        if let Some(ref manifest) = self.metadata.gguf_down_meta_manifest {
+            return manifest.feature_meta(layer, feature);
+        }
         None
     }
 
@@ -118,6 +122,16 @@ impl VectorIndex {
                 return n;
             }
         }
+        if let Some(ref manifest) = self.metadata.gguf_down_meta_manifest {
+            if let Some(entry) = manifest.layer(layer) {
+                return entry.features;
+            }
+        }
+        if let Some(ref manifest) = self.metadata.gguf_gate_manifest {
+            if let Some(entry) = manifest.layer(layer) {
+                return entry.feature_count();
+            }
+        }
         0
     }
 
@@ -144,6 +158,9 @@ impl VectorIndex {
         if let Some(ref dm) = self.metadata.down_meta_mmap {
             return dm.total_features();
         }
+        if let Some(ref manifest) = self.metadata.gguf_down_meta_manifest {
+            return manifest.total_features();
+        }
         self.metadata
             .down_meta
             .iter()
@@ -155,7 +172,7 @@ impl VectorIndex {
     /// Layers that have gate vectors loaded.
     pub fn loaded_layers(&self) -> Vec<usize> {
         if self.gate.gate_mmap_bytes.is_some() {
-            return self
+            let mmap_layers: Vec<usize> = self
                 .gate
                 .gate_mmap_slices
                 .iter()
@@ -163,13 +180,27 @@ impl VectorIndex {
                 .filter(|(_, s)| s.num_features > 0)
                 .map(|(i, _)| i)
                 .collect();
+            if !mmap_layers.is_empty() {
+                return mmap_layers;
+            }
         }
-        self.gate
+        let heap_layers: Vec<usize> = self
+            .gate
             .gate_vectors
             .iter()
             .enumerate()
             .filter_map(|(i, v)| v.as_ref().map(|_| i))
-            .collect()
+            .collect();
+        if !heap_layers.is_empty() {
+            return heap_layers;
+        }
+        if let Some(ref manifest) = self.metadata.gguf_down_meta_manifest {
+            return manifest.loaded_layers();
+        }
+        if let Some(ref manifest) = self.metadata.gguf_gate_manifest {
+            return manifest.loaded_layers();
+        }
+        Vec::new()
     }
 
     /// Access down metadata for a specific layer.

@@ -81,7 +81,8 @@ pub use extract::{
 pub use format::checksums;
 pub use format::down_meta;
 pub use format::load::{
-    load_feature_labels, load_vindex_config, load_vindex_embeddings, load_vindex_tokenizer,
+    load_feature_labels, load_vindex_config, load_vindex_embedding_rows, load_vindex_embeddings,
+    load_vindex_tokenizer,
 };
 // Model loading: use larql_models::{load_model_dir, resolve_model_path, load_gguf} directly
 pub use format::huggingface::{

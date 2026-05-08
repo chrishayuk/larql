@@ -16,8 +16,6 @@ impl Session {
         let (path, _config, patched) = self.require_vindex()?;
         let top_k = top.unwrap_or(10) as usize;
 
-        let (embed, embed_scale) = larql_vindex::load_vindex_embeddings(path)
-            .map_err(|e| LqlError::exec("failed to load embeddings", e))?;
         let tokenizer = larql_vindex::load_vindex_tokenizer(path)
             .map_err(|e| LqlError::exec("failed to load tokenizer", e))?;
 
@@ -35,7 +33,9 @@ impl Session {
             .decode(&[last_tok], true)
             .unwrap_or_else(|_| format!("T{last_tok}"));
 
-        let embed_row = embed.row(last_tok as usize);
+        let (embed_rows, embed_scale) = larql_vindex::load_vindex_embedding_rows(path, &[last_tok])
+            .map_err(|e| LqlError::exec("failed to load embeddings", e))?;
+        let embed_row = embed_rows.row(0);
         let query: larql_vindex::ndarray::Array1<f32> = embed_row.mapv(|v| v * embed_scale);
 
         let all_layers = patched.loaded_layers();

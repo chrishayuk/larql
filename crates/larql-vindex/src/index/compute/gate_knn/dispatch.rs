@@ -10,9 +10,90 @@ use ndarray::{Array1, Array2, ArrayView2};
 use super::top_k_by_abs;
 use crate::index::core::VectorIndex;
 use crate::index::storage::gate_store::{gate_matmul, gemv};
+use crate::index::storage::metadata_store::GgufGateLayerManifest;
 use crate::index::types::*;
 
+fn read_gguf_manifest_row(
+    file: &mut std::fs::File,
+    entry: &GgufGateLayerManifest,
+    feature: usize,
+) -> Option<Vec<f32>> {
+    let feature_count = entry.feature_count();
+    if feature >= feature_count || entry.cols == 0 || entry.rows == 0 || entry.experts == 0 {
+        return None;
+    }
+    let element_offset = feature.checked_mul(entry.cols)?;
+    let byte_offset = gguf_type_byte_offset(entry.tensor_type, element_offset)?;
+    let byte_len = gguf_type_byte_len(entry.tensor_type, entry.cols)?;
+    let absolute = entry
+        .data_offset
+        .checked_add(entry.tensor_offset)?
+        .checked_add(byte_offset as u64)?;
+    use std::io::{Read, Seek};
+    file.seek(std::io::SeekFrom::Start(absolute)).ok()?;
+    let mut raw = vec![0u8; byte_len];
+    file.read_exact(&mut raw).ok()?;
+    larql_models::quant::ggml::dequantize(&raw, entry.tensor_type, entry.cols).ok()
+}
+
+fn gguf_type_byte_offset(tensor_type: u32, element_offset: usize) -> Option<usize> {
+    use larql_models::quant::ggml;
+    match tensor_type {
+        ggml::TYPE_F32 => element_offset.checked_mul(4),
+        ggml::TYPE_F16 | ggml::TYPE_BF16 => element_offset.checked_mul(2),
+        ggml::TYPE_Q4_K if element_offset.is_multiple_of(ggml::K_QUANT_BLOCK_ELEMS) => {
+            Some(element_offset / ggml::K_QUANT_BLOCK_ELEMS * ggml::Q4_K_BLOCK_BYTES)
+        }
+        ggml::TYPE_Q6_K if element_offset.is_multiple_of(ggml::K_QUANT_BLOCK_ELEMS) => {
+            Some(element_offset / ggml::K_QUANT_BLOCK_ELEMS * ggml::Q6_K_BLOCK_BYTES)
+        }
+        _ => None,
+    }
+}
+
+fn gguf_type_byte_len(tensor_type: u32, n_elements: usize) -> Option<usize> {
+    larql_models::quant::ggml::tensor_data_size(tensor_type, n_elements).ok()
+}
+
 impl VectorIndex {
+    fn gate_knn_gguf_manifest(
+        &self,
+        layer: usize,
+        residual: &Array1<f32>,
+        top_k: usize,
+    ) -> Option<Vec<(usize, f32)>> {
+        let manifest = self.metadata.gguf_gate_manifest.as_ref()?;
+        let entry = manifest.layer(layer)?;
+        let feature_count = entry.feature_count();
+        if entry.cols != self.hidden_size || feature_count == 0 {
+            return None;
+        }
+        let scan_limit = std::env::var("LARQL_GGUF_MANIFEST_GATE_SCAN_FEATURES")
+            .ok()
+            .and_then(|raw| raw.parse::<usize>().ok())
+            .filter(|&n| n > 0)
+            .unwrap_or(64)
+            .min(feature_count);
+        let mut scores = Vec::with_capacity(scan_limit);
+        let mut file = std::fs::File::open(&entry.source_file).ok()?;
+        for feature in 0..scan_limit {
+            let row = read_gguf_manifest_row(&mut file, entry, feature)?;
+            let score = row
+                .iter()
+                .zip(residual.iter())
+                .map(|(a, b)| a * b)
+                .sum::<f32>();
+            scores.push((feature, score));
+        }
+        scores.sort_by(|a, b| {
+            b.1.abs()
+                .partial_cmp(&a.1.abs())
+                .unwrap_or(std::cmp::Ordering::Equal)
+        });
+        scores.truncate(top_k);
+        Some(scores)
+    }
+
     /// Gate KNN: find the top-K features at a layer whose gate vectors have
     /// the highest dot product with the input residual. Uses BLAS matmul.
     ///
@@ -38,6 +119,13 @@ impl VectorIndex {
         // Fast path: f32 mmap zero-copy (no allocation, no clone)
         if let Some(scores) = self.gate_knn_mmap_fast(layer, residual) {
             return Self::top_k_from_scores(&scores, top_k);
+        }
+
+        // Fallback: manifest-backed GGUF/Kimi scan. This deliberately scans a
+        // bounded feature prefix per layer so browse queries can execute without
+        // materializing multi-hundred-GB dense gate tables.
+        if let Some(results) = self.gate_knn_gguf_manifest(layer, residual, top_k) {
+            return results;
         }
 
         // Fallback: resolve_gate (copies data for heap/f16 paths)

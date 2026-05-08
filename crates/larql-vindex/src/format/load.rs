@@ -9,7 +9,8 @@ use ndarray::Array2;
 use crate::config::VindexConfig;
 use crate::error::VindexError;
 use crate::format::filenames::{
-    DOWN_META_BIN, EMBEDDINGS_BIN, GATE_VECTORS_BIN, INDEX_JSON, INTERLEAVED_Q4K_BIN,
+    DOWN_META_BIN, EMBEDDINGS_BIN, GATE_VECTORS_BIN, GGUF_DOWN_META_MANIFEST_JSON,
+    GGUF_EMBEDDINGS_MANIFEST_JSON, GGUF_GATE_MANIFEST_JSON, INDEX_JSON, INTERLEAVED_Q4K_BIN,
     INTERLEAVED_Q4K_MANIFEST_JSON, LM_HEAD_BIN, LM_HEAD_Q4_BIN, TOKENIZER_JSON,
 };
 use crate::index::{IndexLoadCallbacks, VectorIndex};
@@ -173,6 +174,23 @@ impl VectorIndex {
         // (4× slower fallback to the f32 BLAS gemv).
         if config.vocab_size > 0 {
             index.vocab_size = config.vocab_size;
+        }
+
+        let gguf_down_meta_manifest_path = dir.join(GGUF_DOWN_META_MANIFEST_JSON);
+        if gguf_down_meta_manifest_path.exists() {
+            let manifest_text = std::fs::read_to_string(&gguf_down_meta_manifest_path)?;
+            let manifest: crate::index::storage::metadata_store::GgufDownMetaManifest =
+                serde_json::from_str(&manifest_text)
+                    .map_err(|e| VindexError::Parse(e.to_string()))?;
+            index.metadata.gguf_down_meta_manifest = Some(std::sync::Arc::new(manifest));
+        }
+        let gguf_gate_manifest_path = dir.join(GGUF_GATE_MANIFEST_JSON);
+        if gguf_gate_manifest_path.exists() {
+            let manifest_text = std::fs::read_to_string(&gguf_gate_manifest_path)?;
+            let manifest: crate::index::storage::metadata_store::GgufGateManifest =
+                serde_json::from_str(&manifest_text)
+                    .map_err(|e| VindexError::Parse(e.to_string()))?;
+            index.metadata.gguf_gate_manifest = Some(std::sync::Arc::new(manifest));
         }
 
         // Opportunistically wire up FFN payload mmaps so walk_ffn_sparse can
@@ -385,6 +403,120 @@ pub fn load_vindex_embeddings(dir: &Path) -> Result<(Array2<f32>, f32), VindexEr
         .map_err(|e| VindexError::Parse(e.to_string()))?;
 
     Ok((embed, config.embed_scale))
+}
+
+#[derive(serde::Deserialize)]
+struct GgufEmbeddingsManifestForLoad {
+    source_file: String,
+    tensor_type: u32,
+    vocab_size: usize,
+    hidden_size: usize,
+    tensor_offset: u64,
+    data_offset: u64,
+}
+
+pub fn load_vindex_embedding_rows(
+    dir: &Path,
+    token_ids: &[u32],
+) -> Result<(Array2<f32>, f32), VindexError> {
+    let config = load_vindex_config(dir)?;
+    if dir.join(EMBEDDINGS_BIN).exists() {
+        let (embed, scale) = load_vindex_embeddings(dir)?;
+        let mut rows = Vec::with_capacity(token_ids.len() * config.hidden_size);
+        for &token_id in token_ids {
+            let idx = token_id as usize;
+            if idx >= embed.nrows() {
+                return Err(VindexError::Parse(format!(
+                    "token id {idx} out of embedding vocab range {}",
+                    embed.nrows()
+                )));
+            }
+            rows.extend(embed.row(idx).iter().copied());
+        }
+        return Array2::from_shape_vec((token_ids.len(), config.hidden_size), rows)
+            .map(|rows| (rows, scale))
+            .map_err(|e| VindexError::Parse(e.to_string()));
+    }
+
+    let manifest_path = dir.join(GGUF_EMBEDDINGS_MANIFEST_JSON);
+    let manifest_text = std::fs::read_to_string(&manifest_path)?;
+    let manifest: GgufEmbeddingsManifestForLoad =
+        serde_json::from_str(&manifest_text).map_err(|e| VindexError::Parse(e.to_string()))?;
+    if manifest.hidden_size != config.hidden_size || manifest.vocab_size != config.vocab_size {
+        return Err(VindexError::Parse(format!(
+            "GGUF embeddings manifest shape mismatch: manifest vocab={} hidden={} index vocab={} hidden={}",
+            manifest.vocab_size, manifest.hidden_size, config.vocab_size, config.hidden_size
+        )));
+    }
+    let mut rows = Vec::with_capacity(token_ids.len() * manifest.hidden_size);
+    for &token_id in token_ids {
+        let idx = token_id as usize;
+        if idx >= manifest.vocab_size {
+            return Err(VindexError::Parse(format!(
+                "token id {idx} out of embedding vocab range {}",
+                manifest.vocab_size
+            )));
+        }
+        let element_offset = idx
+            .checked_mul(manifest.hidden_size)
+            .ok_or_else(|| VindexError::Parse("GGUF embedding row offset overflow".into()))?;
+        let byte_offset = gguf_type_byte_offset(manifest.tensor_type, element_offset)?;
+        let byte_len = gguf_type_byte_len(manifest.tensor_type, manifest.hidden_size)?;
+        let absolute = manifest
+            .data_offset
+            .checked_add(manifest.tensor_offset)
+            .and_then(|base| base.checked_add(byte_offset as u64))
+            .ok_or_else(|| VindexError::Parse("GGUF embedding byte offset overflow".into()))?;
+        let mut file = std::fs::File::open(&manifest.source_file)?;
+        use std::io::{Read, Seek};
+        file.seek(std::io::SeekFrom::Start(absolute))?;
+        let mut raw = vec![0u8; byte_len];
+        file.read_exact(&mut raw)?;
+        let row =
+            larql_models::quant::ggml::dequantize(&raw, manifest.tensor_type, manifest.hidden_size)
+                .map_err(|e| VindexError::Parse(e.to_string()))?;
+        rows.extend(row);
+    }
+    Array2::from_shape_vec((token_ids.len(), manifest.hidden_size), rows)
+        .map(|rows| (rows, config.embed_scale))
+        .map_err(|e| VindexError::Parse(e.to_string()))
+}
+
+fn gguf_type_byte_offset(tensor_type: u32, element_offset: usize) -> Result<usize, VindexError> {
+    use larql_models::quant::ggml;
+    match tensor_type {
+        ggml::TYPE_F32 => element_offset
+            .checked_mul(4)
+            .ok_or_else(|| VindexError::Parse("F32 byte offset overflow".into())),
+        ggml::TYPE_F16 | ggml::TYPE_BF16 => element_offset
+            .checked_mul(2)
+            .ok_or_else(|| VindexError::Parse("F16/BF16 byte offset overflow".into())),
+        ggml::TYPE_Q4_K => {
+            if !element_offset.is_multiple_of(ggml::K_QUANT_BLOCK_ELEMS) {
+                return Err(VindexError::Parse(format!(
+                    "Q4_K embedding row offset {element_offset} is not block-aligned"
+                )));
+            }
+            Ok(element_offset / ggml::K_QUANT_BLOCK_ELEMS * ggml::Q4_K_BLOCK_BYTES)
+        }
+        ggml::TYPE_Q6_K => {
+            if !element_offset.is_multiple_of(ggml::K_QUANT_BLOCK_ELEMS) {
+                return Err(VindexError::Parse(format!(
+                    "Q6_K embedding row offset {element_offset} is not block-aligned"
+                )));
+            }
+            Ok(element_offset / ggml::K_QUANT_BLOCK_ELEMS * ggml::Q6_K_BLOCK_BYTES)
+        }
+        other => Err(VindexError::Parse(format!(
+            "GGUF embedding row loading unsupported for tensor type {}",
+            ggml::type_name(other)
+        ))),
+    }
+}
+
+fn gguf_type_byte_len(tensor_type: u32, n_elements: usize) -> Result<usize, VindexError> {
+    larql_models::quant::ggml::tensor_data_size(tensor_type, n_elements)
+        .map_err(|e| VindexError::Parse(e.to_string()))
 }
 
 /// Load tokenizer from a .vindex directory.
@@ -632,5 +764,196 @@ mod tests {
         assert!(index.is_layer_owned(2));
         assert!(!index.is_layer_owned(0));
         assert!(!index.is_layer_owned(3));
+    }
+
+    #[test]
+    fn load_vindex_embedding_rows_reads_gguf_manifest_selected_tokens() {
+        let dir = TempDir::new().unwrap();
+        let source = dir.path().join("tiny-embeddings.gguf.payload");
+        let mut bytes = vec![0u8; 96];
+        for value in [1.0f32, 2.0, 3.0, 4.0, 5.0, 6.0] {
+            bytes.extend_from_slice(&value.to_le_bytes());
+        }
+        std::fs::write(&source, bytes).unwrap();
+        let index_json = serde_json::json!({
+            "version": 2,
+            "model": "test/kimi-gguf",
+            "family": "deepseek2",
+            "num_layers": 1,
+            "hidden_size": 2,
+            "intermediate_size": 2,
+            "vocab_size": 3,
+            "embed_scale": 0.5,
+            "layers": [],
+            "down_top_k": 5,
+            "has_model_weights": false,
+            "extract_level": "browse",
+            "dtype": "f32",
+            "quant": "none"
+        });
+        std::fs::write(dir.path().join("index.json"), index_json.to_string()).unwrap();
+        let manifest = serde_json::json!({
+            "version": 1,
+            "architecture": "deepseek2",
+            "tensor": "token_embd.weight",
+            "source_file": source.display().to_string(),
+            "shard_idx": 0,
+            "tensor_type": 0,
+            "dims": [2, 3],
+            "vocab_size": 3,
+            "hidden_size": 2,
+            "estimated_dense_bytes": 24,
+            "dense_budget_bytes": 8,
+            "dtype": "f32",
+            "tensor_offset": 32,
+            "data_offset": 64
+        });
+        std::fs::write(
+            dir.path().join("gguf_embeddings_manifest.json"),
+            serde_json::to_string_pretty(&manifest).unwrap(),
+        )
+        .unwrap();
+
+        let (rows, scale) = load_vindex_embedding_rows(dir.path(), &[2, 0]).unwrap();
+
+        assert_eq!(scale, 0.5);
+        assert_eq!(rows.shape(), &[2, 2]);
+        assert_eq!(rows.row(0).to_vec(), vec![5.0, 6.0]);
+        assert_eq!(rows.row(1).to_vec(), vec![1.0, 2.0]);
+    }
+
+    #[test]
+    fn load_vindex_uses_gguf_gate_manifest_for_bounded_gate_knn() {
+        let dir = TempDir::new().unwrap();
+        let source = dir.path().join("tiny-gates.gguf.payload");
+        let mut bytes = vec![0u8; 96];
+        for value in [1.0f32, 0.0, 0.0, 2.0, 3.0, 0.0, 0.0, 4.0] {
+            bytes.extend_from_slice(&value.to_le_bytes());
+        }
+        std::fs::write(&source, bytes).unwrap();
+        let json = serde_json::json!({
+            "version": 2,
+            "model": "test/kimi-gguf",
+            "family": "deepseek2",
+            "num_layers": 3,
+            "hidden_size": 2,
+            "intermediate_size": 2,
+            "vocab_size": 3,
+            "embed_scale": 1.0,
+            "layers": [{
+                "layer": 1,
+                "num_features": 4,
+                "offset": 0,
+                "length": 0,
+                "num_experts": 2,
+                "num_features_per_expert": 2
+            }],
+            "down_top_k": 5,
+            "has_model_weights": false,
+            "extract_level": "browse",
+            "dtype": "f32",
+            "quant": "none"
+        });
+        std::fs::write(dir.path().join("index.json"), json.to_string()).unwrap();
+        let manifest = serde_json::json!({
+            "version": 1,
+            "architecture": "deepseek2",
+            "split_count": 1,
+            "estimated_dense_bytes": 32,
+            "dense_budget_bytes": 8,
+            "layers": [{
+                "layer": 1,
+                "tensor": "blk.1.ffn_gate_exps.weight",
+                "source_file": source.display().to_string(),
+                "shard_idx": 0,
+                "tensor_type": 0,
+                "dims": [2, 2, 2],
+                "rows": 2,
+                "cols": 2,
+                "experts": 2,
+                "features": 4,
+                "tensor_offset": 32,
+                "data_offset": 64
+            }]
+        });
+        std::fs::write(
+            dir.path().join("gguf_gate_manifest.json"),
+            serde_json::to_string_pretty(&manifest).unwrap(),
+        )
+        .unwrap();
+
+        let mut cb = crate::index::SilentLoadCallbacks;
+        let index = VectorIndex::load_vindex(dir.path(), &mut cb).unwrap();
+        let residual = ndarray::Array1::from_vec(vec![1.0, 0.0]);
+        let hits = index.gate_knn(1, &residual, 2);
+
+        assert_eq!(index.loaded_layers(), vec![1]);
+        assert_eq!(hits, vec![(2, 3.0), (0, 1.0)]);
+    }
+
+    #[test]
+    fn load_vindex_uses_gguf_down_meta_manifest_for_feature_scans() {
+        let dir = TempDir::new().unwrap();
+        let json = serde_json::json!({
+            "version": 2,
+            "model": "test/kimi-gguf",
+            "family": "deepseek2",
+            "num_layers": 3,
+            "hidden_size": 2,
+            "intermediate_size": 2,
+            "vocab_size": 3,
+            "embed_scale": 1.0,
+            "layers": [{
+                "layer": 1,
+                "num_features": 4,
+                "offset": 0,
+                "length": 0,
+                "num_experts": 2,
+                "num_features_per_expert": 2
+            }],
+            "down_top_k": 5,
+            "has_model_weights": false,
+            "extract_level": "browse",
+            "dtype": "f32",
+            "quant": "none"
+        });
+        std::fs::write(dir.path().join("index.json"), json.to_string()).unwrap();
+        let manifest = serde_json::json!({
+            "version": 1,
+            "architecture": "deepseek2",
+            "split_count": 1,
+            "top_k": 5,
+            "estimated_dot_ops": 999,
+            "dense_dot_ops_budget": 10,
+            "layers": [{
+                "layer": 1,
+                "tensor": "blk.1.ffn_down_exps.weight",
+                "source_file": "/tmp/kimi-00001.gguf",
+                "shard_idx": 0,
+                "tensor_type": 14,
+                "dims": [2, 2, 2],
+                "rows": 2,
+                "cols": 2,
+                "experts": 2,
+                "features": 4,
+                "tensor_offset": 128,
+                "data_offset": 64
+            }]
+        });
+        std::fs::write(
+            dir.path().join("gguf_down_meta_manifest.json"),
+            serde_json::to_string_pretty(&manifest).unwrap(),
+        )
+        .unwrap();
+
+        let mut cb = crate::index::SilentLoadCallbacks;
+        let index = VectorIndex::load_vindex(dir.path(), &mut cb).unwrap();
+
+        assert_eq!(index.loaded_layers(), vec![1]);
+        assert_eq!(index.num_features(1), 4);
+        assert_eq!(index.total_down_meta(), 4);
+        let meta = index.feature_meta(1, 3).unwrap();
+        assert_eq!(meta.top_token, "gguf:blk.1.ffn_down_exps.weight:E1:F1");
+        assert_eq!(meta.top_k[0].token, meta.top_token);
     }
 }
