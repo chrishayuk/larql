@@ -14,3 +14,4 @@ pub mod needle;
 pub mod prompts;
 #[cfg(feature = "real-model")]
 pub mod runner;
+pub mod synthetic;

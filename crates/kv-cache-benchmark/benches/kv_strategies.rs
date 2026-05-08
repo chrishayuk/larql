@@ -57,6 +57,46 @@ fn bench_encode(c: &mut Criterion) {
     group.finish();
 }
 
+fn bench_decode(c: &mut Criterion) {
+    let config = ModelConfig::gemma_4b();
+    let dim = config.kv_dim();
+
+    let mut rng = StdRng::seed_from_u64(43);
+    let keys: Vec<Vec<f32>> = (0..200)
+        .map(|_| (0..dim).map(|_| rng.gen_range(-1.0f32..1.0f32)).collect())
+        .collect();
+    let values: Vec<Vec<f32>> = (0..200)
+        .map(|_| (0..dim).map(|_| rng.gen_range(-1.0f32..1.0f32)).collect())
+        .collect();
+
+    let iso3 = RotorQuantStrategy::iso3();
+    let planar3 = RotorQuantStrategy::planar3();
+    let iso4 = RotorQuantStrategy::iso4();
+    let planar4 = RotorQuantStrategy::planar4();
+    let encoded_iso3 = iso3.encode(&keys, &values);
+    let encoded_planar3 = planar3.encode(&keys, &values);
+    let encoded_iso4 = iso4.encode(&keys, &values);
+    let encoded_planar4 = planar4.encode(&keys, &values);
+
+    let mut group = c.benchmark_group("decode");
+    group.throughput(Throughput::Elements((keys.len() * 2) as u64));
+
+    group.bench_function("rotorquant_iso3", |b| {
+        b.iter(|| iso3.decode(&encoded_iso3, keys.len(), dim))
+    });
+    group.bench_function("rotorquant_planar3", |b| {
+        b.iter(|| planar3.decode(&encoded_planar3, keys.len(), dim))
+    });
+    group.bench_function("rotorquant_iso4", |b| {
+        b.iter(|| iso4.decode(&encoded_iso4, keys.len(), dim))
+    });
+    group.bench_function("rotorquant_planar4", |b| {
+        b.iter(|| planar4.decode(&encoded_planar4, keys.len(), dim))
+    });
+
+    group.finish();
+}
+
 fn bench_wht(c: &mut Criterion) {
     let mut group = c.benchmark_group("wht");
     for dim in [128, 256] {
@@ -233,6 +273,7 @@ fn bench_engine_memory_accounting(c: &mut Criterion) {
 criterion_group!(
     benches,
     bench_encode,
+    bench_decode,
     bench_wht,
     bench_memory_sweep,
     bench_accuracy_metrics,

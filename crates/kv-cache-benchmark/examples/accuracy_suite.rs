@@ -107,7 +107,21 @@ fn main() {
 
 #[cfg(not(feature = "real-model"))]
 fn main() {
-    eprintln!("This example requires the 'real-model' feature:");
-    eprintln!("  cargo run --example accuracy_suite --features real-model");
-    eprintln!("  cargo run --example accuracy_suite --features real-model -- --quick");
+    use kv_cache_benchmark::accuracy_suite::synthetic;
+    use kv_cache_benchmark::model_config::ModelConfig;
+
+    let args: Vec<String> = std::env::args().collect();
+    let seq_len = args
+        .iter()
+        .position(|a| a == "--seq-len")
+        .and_then(|i| args.get(i + 1))
+        .and_then(|s| s.parse::<usize>().ok())
+        .unwrap_or(32);
+
+    let config = ModelConfig::llama_8b();
+    let rows = synthetic::synthetic_strategy_report(&config, seq_len, 20260508);
+    println!("{}", synthetic::format_synthetic_strategy_report(&rows));
+    println!(
+        "PPL rows require real model weights:\n  cargo run --example accuracy_suite --features real-model -- <model-name> <vindex-path> --quick"
+    );
 }

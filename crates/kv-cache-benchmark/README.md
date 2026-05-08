@@ -67,7 +67,7 @@ Apollo runs on the CPU compressed path (4 layers via `forward_from_layer`).
 cargo bench -p kv-cache-benchmark --bench kv_strategies
 ```
 
-34 benchmarks across 6 groups: encode, wht, memory_sweep, accuracy, engine_kind, engine_memory.
+38 benchmarks across 7 groups: encode, decode, wht, memory_sweep, accuracy, engine_kind, engine_memory.
 
 ### Latest measured run — 2026-04-23, Gemma 3 4B (q4k vindex)
 

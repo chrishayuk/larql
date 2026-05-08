@@ -2,6 +2,34 @@
 //! These test the prompt sets, needle generation, and formatting
 //! without needing model weights.
 
+use kv_cache_benchmark::accuracy_suite::synthetic;
+
+#[test]
+fn synthetic_strategy_report_includes_rotorquant_rows() {
+    let rows = synthetic::synthetic_strategy_report(
+        &kv_cache_benchmark::model_config::ModelConfig::llama_8b(),
+        2,
+        7,
+    );
+    let names: Vec<&str> = rows.iter().map(|r| r.strategy.as_str()).collect();
+    assert!(names.iter().any(|n| n.contains("RotorQuant Iso3")));
+    assert!(names.iter().any(|n| n.contains("RotorQuant Planar3")));
+    assert!(rows.iter().all(|r| r.decode_tok_s.is_finite()));
+}
+
+#[test]
+fn synthetic_strategy_report_formats_decode_throughput_and_ppl_placeholder() {
+    let rows = synthetic::synthetic_strategy_report(
+        &kv_cache_benchmark::model_config::ModelConfig::llama_8b(),
+        1,
+        11,
+    );
+    let table = synthetic::format_synthetic_strategy_report(&rows);
+    assert!(table.contains("decode tok/s"));
+    assert!(table.contains("RotorQuant Iso3"));
+    assert!(table.contains("real-only"));
+}
+
 #[cfg(feature = "real-model")]
 mod with_model {
     use kv_cache_benchmark::accuracy_suite::needle;
