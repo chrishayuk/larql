@@ -526,9 +526,9 @@ pub fn qkv_rms_proj(
     let wq_dev = drv.device_buf_from(wq)?;
     let wk_dev = drv.device_buf_from(wk)?;
     let wv_dev = drv.device_buf_from(wv)?;
-    let mut q_dev = drv.device_alloc(dims.q_dim)?;
-    let mut k_dev = drv.device_alloc(dims.kv_dim)?;
-    let mut v_dev = drv.device_alloc(dims.kv_dim)?;
+    let mut q_dev = drv.device_alloc_uninit(dims.q_dim)?;
+    let mut k_dev = drv.device_alloc_uninit(dims.kv_dim)?;
+    let mut v_dev = drv.device_alloc_uninit(dims.kv_dim)?;
 
     let block_dim: u32 = 256;
     let total_rows = dims.q_dim + dims.kv_dim + dims.kv_dim;
@@ -624,7 +624,7 @@ pub fn fused_decode_attention(
     let mut v_cache_dev = drv.device_buf_from(v_cache)?;
     let q_norm_dev = drv.device_buf_from(q_norm)?;
     let k_norm_dev = drv.device_buf_from(k_norm)?;
-    let mut out_dev = drv.device_alloc(q_dim)?;
+    let mut out_dev = drv.device_alloc_uninit(q_dim)?;
 
     let block_dim: u32 = 256;
     let cfg = LaunchConfig {
@@ -733,7 +733,7 @@ pub fn fused_decode_attention_device_kv(
     let func = fused_decode_attention_function(drv)?;
     let q_norm_dev = drv.device_buf_from(q_norm)?;
     let k_norm_dev = drv.device_buf_from(k_norm)?;
-    let mut out_dev = drv.device_alloc(q_dim)?;
+    let mut out_dev = drv.device_alloc_uninit(q_dim)?;
 
     let block_dim: u32 = 256;
     let cfg = LaunchConfig {
@@ -844,7 +844,7 @@ pub fn fused_decode_attention_device(
     let mut v_cache_dev = drv.device_buf_from(v_cache)?;
     let q_norm_dev = drv.device_buf_from(q_norm)?;
     let k_norm_dev = drv.device_buf_from(k_norm)?;
-    let mut out_dev = drv.device_alloc(q_dim)?;
+    let mut out_dev = drv.device_alloc_uninit(q_dim)?;
 
     let block_dim: u32 = 256;
     let cfg = LaunchConfig {
@@ -992,7 +992,7 @@ pub fn decode_attention(
     let k_dev = drv.device_buf_from(k)?;
     let v_dev = drv.device_buf_from(v)?;
 
-    let mut logits_dev = drv.device_alloc(n_q * n_kv)?;
+    let mut logits_dev = drv.device_alloc_uninit(n_q * n_kv)?;
     let cfg_qk = GemmConfig {
         transa: CUBLAS_OP_T,
         transb: CUBLAS_OP_N,
@@ -1022,7 +1022,7 @@ pub fn decode_attention(
     //   want col-major out (head_dim, n_q) = V^T_cm × attn_cm
     // cuBLAS: transa=N, transb=N, M=head_dim, N=n_q, K=n_kv,
     //         lda=head_dim, ldb=n_kv, ldc=head_dim.
-    let mut out_dev = drv.device_alloc(n_q * head_dim)?;
+    let mut out_dev = drv.device_alloc_uninit(n_q * head_dim)?;
     let cfg_av = GemmConfig {
         transa: CUBLAS_OP_N,
         transb: CUBLAS_OP_N,

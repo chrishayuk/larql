@@ -157,7 +157,7 @@ pub(crate) fn matvec_device(
 
     let drv = backend.driver();
     let func = q4k_matvec_function(drv)?;
-    let mut y_dev = drv.device_alloc(rows)?;
+    let mut y_dev = drv.device_alloc_uninit(rows)?;
     let rows_i = rows as i32;
     let hidden_i = hidden as i32;
     let blocks_per_row_i = blocks_per_row as i32;

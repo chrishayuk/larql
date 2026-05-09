@@ -171,7 +171,7 @@ pub(crate) fn rms_norm_device(
     }
     let drv = backend.driver();
     let func = load_kernel(drv, &RMS_NORM_FUNC, RMS_NORM_SRC, "rms_norm_vec_f32")?;
-    let mut out = drv.device_alloc(n)?;
+    let mut out = drv.device_alloc_uninit(n)?;
     // 1024 threads = max blockDim on every supported arch. Single
     // block — sufficient for hidden=2560 with a strided loop.
     let block_dim: u32 = 1024;
@@ -229,7 +229,7 @@ pub(crate) fn silu_gate_up_device(
         SILU_GATE_UP_SRC,
         "silu_gate_up_f32",
     )?;
-    let mut out = drv.device_alloc(n)?;
+    let mut out = drv.device_alloc_uninit(n)?;
     let block_dim: u32 = 256;
     let cfg = LaunchConfig {
         grid_dim: ((n as u32).div_ceil(block_dim), 1, 1),

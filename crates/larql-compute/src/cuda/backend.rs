@@ -25,6 +25,12 @@ pub struct CudaBackend {
     pub(crate) kv_cache: Mutex<Option<CudaKvCache>>,
     q4k_device_cache: Mutex<HashMap<DeviceBytesKey, CudaSlice<u8>>>,
     q6k_f32_device_cache: Mutex<HashMap<DeviceBytesKey, CudaSlice<f32>>>,
+    /// Per-pointer cache of small f32 weights (norms etc.) so the
+    /// per-layer norm-weight htod's collapse to a one-time upload per
+    /// host buffer. Keyed by host pointer + length + content hash so
+    /// distinct host buffers with identical bytes still collide
+    /// safely.
+    f32_norm_device_cache: Mutex<HashMap<DeviceBytesKey, CudaSlice<f32>>>,
 }
 
 impl CudaBackend {
@@ -39,6 +45,7 @@ impl CudaBackend {
             kv_cache: Mutex::new(None),
             q4k_device_cache: Mutex::new(HashMap::new()),
             q6k_f32_device_cache: Mutex::new(HashMap::new()),
+            f32_norm_device_cache: Mutex::new(HashMap::new()),
         })
     }
 
@@ -119,6 +126,37 @@ impl CudaBackend {
     /// crate-private `Driver::device_buf_from`.
     pub(crate) fn htod_f32(&self, host: &[f32]) -> Result<CudaSlice<f32>, CudaInitError> {
         self.drv.device_buf_from(host)
+    }
+
+    /// Cached H2D for small f32 weights (norm vectors etc.).
+    /// First call htod's and stashes the device buffer; subsequent
+    /// calls with the same host pointer/content return a borrow of
+    /// the cached buffer via the closure. Used by the device-resident
+    /// decode path to avoid re-uploading the same per-layer norm
+    /// weights on every token.
+    pub(crate) fn with_norm_device_buf<R>(
+        &self,
+        host: &[f32],
+        f: impl FnOnce(&CudaSlice<f32>) -> Result<R, CudaInitError>,
+    ) -> Result<R, CudaInitError> {
+        // SAFETY: f32 has no padding; reinterpreting as bytes for a
+        // hash key is well-defined.
+        let bytes: &[u8] = unsafe {
+            std::slice::from_raw_parts(host.as_ptr() as *const u8, std::mem::size_of_val(host))
+        };
+        let key = DeviceBytesKey::from_slice(bytes);
+        let mut cache = self
+            .f32_norm_device_cache
+            .lock()
+            .map_err(|_| CudaInitError::DriverMissing("f32 norm cache poisoned".into()))?;
+        if !cache.contains_key(&key) {
+            let dev = self.drv.device_buf_from(host)?;
+            cache.insert(key, dev);
+        }
+        let dev = cache
+            .get(&key)
+            .ok_or_else(|| CudaInitError::DriverMissing("f32 norm cache insert failed".into()))?;
+        f(dev)
     }
 
     /// D2H copy. Synchronises the stream first.

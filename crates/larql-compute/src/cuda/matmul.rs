@@ -39,7 +39,7 @@ pub(crate) fn matmul(
     // First operand passed to cuBLAS is our row-major B; second is row-major A.
     let a_dev = drv.device_buf_from(a)?;
     let b_dev = drv.device_buf_from(b)?;
-    let mut c_dev = drv.device_alloc(m * n)?;
+    let mut c_dev = drv.device_alloc_uninit(m * n)?;
 
     let cfg = GemmConfig {
         transa: CUBLAS_OP_N,
@@ -92,7 +92,7 @@ pub(crate) fn matmul_transb(
 
     let a_dev = drv.device_buf_from(a)?;
     let b_dev = drv.device_buf_from(b)?;
-    let mut c_dev = drv.device_alloc(m * n)?;
+    let mut c_dev = drv.device_alloc_uninit(m * n)?;
 
     let cfg = GemmConfig {
         transa: CUBLAS_OP_T,
@@ -149,7 +149,7 @@ pub(crate) fn gemv_device_w(
     debug_assert_eq!(x.len(), k, "x length mismatch");
 
     let x_dev = drv.device_buf_from(x)?;
-    let mut y_dev = drv.device_alloc(n)?;
+    let mut y_dev = drv.device_alloc_uninit(n)?;
     let cfg = GemmConfig {
         transa: CUBLAS_OP_T,
         transb: CUBLAS_OP_N,
@@ -185,7 +185,7 @@ pub(crate) fn gemv_device_inout(
     debug_assert_eq!(w_dev.len(), n * k, "W length mismatch");
     debug_assert_eq!(x_dev.len(), k, "x length mismatch");
 
-    let mut y_dev = drv.device_alloc(n)?;
+    let mut y_dev = drv.device_alloc_uninit(n)?;
     let cfg = GemmConfig {
         transa: CUBLAS_OP_T,
         transb: CUBLAS_OP_N,

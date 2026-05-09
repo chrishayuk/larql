@@ -741,35 +741,22 @@ impl CudaBackend {
             };
             let layer_rotary_dim = layer.rotary_dim;
 
-            // Norm-weight htod's (small, ~10 KB each). A follow-up can
-            // cache these by host pointer to drop the per-call htod
-            // overhead; the bench shows it isn't on the critical path
-            // yet.
-            let t = std::time::Instant::now();
-            let input_norm_dev = self.htod_f32(layer.input_norm).ok()?;
-            let post_attn_norm_dev = self.htod_f32(layer.post_attn_norm).ok()?;
-            let pre_ffn_norm_dev = match layer.pre_ffn_norm {
-                Some(w) => Some(self.htod_f32(w).ok()?),
-                None => None,
-            };
-            let post_ffn_norm_dev = match layer.post_ffn_norm {
-                Some(w) if !w.is_empty() => Some(self.htod_f32(w).ok()?),
-                _ => None,
-            };
-            sync_if_profile(self);
-            prof.htod += t.elapsed();
-
             // ── 1. Pre-attn norm: h_attn = rms_norm(h, input_norm) ──
+            // norm weights are cached by host pointer so they htod
+            // exactly once per session, not once per token.
             let t = std::time::Instant::now();
-            let h_attn_dev = elem::rms_norm_device(
-                self,
-                &h_dev,
-                Some(&input_norm_dev),
-                hidden,
-                layer.eps,
-                layer.norm_offset,
-            )
-            .ok()?;
+            let h_attn_dev = self
+                .with_norm_device_buf(layer.input_norm, |w_dev| {
+                    elem::rms_norm_device(
+                        self,
+                        &h_dev,
+                        Some(w_dev),
+                        hidden,
+                        layer.eps,
+                        layer.norm_offset,
+                    )
+                })
+                .ok()?;
             sync_if_profile(self);
             prof.norm_cpu += t.elapsed();
 
@@ -827,15 +814,18 @@ impl CudaBackend {
             // ── 5. h += norm(attn_delta) (or just attn_delta) ──────
             let t = std::time::Instant::now();
             if layer.has_post_norms {
-                let normed = elem::rms_norm_device(
-                    self,
-                    &attn_delta_dev,
-                    Some(&post_attn_norm_dev),
-                    hidden,
-                    layer.eps,
-                    layer.norm_offset,
-                )
-                .ok()?;
+                let normed = self
+                    .with_norm_device_buf(layer.post_attn_norm, |w_dev| {
+                        elem::rms_norm_device(
+                            self,
+                            &attn_delta_dev,
+                            Some(w_dev),
+                            hidden,
+                            layer.eps,
+                            layer.norm_offset,
+                        )
+                    })
+                    .ok()?;
                 elem::add_in_place_device(self, &mut h_dev, &normed).ok()?;
             } else {
                 elem::add_in_place_device(self, &mut h_dev, &attn_delta_dev).ok()?;
@@ -844,21 +834,24 @@ impl CudaBackend {
             prof.residual_cpu += t.elapsed();
 
             // ── 6. h_ffn = rms_norm(h, ffn_norm_weight) ────────────
-            let ffn_norm_dev = if layer.has_post_norms {
-                pre_ffn_norm_dev.as_ref().unwrap_or(&post_attn_norm_dev)
+            let ffn_norm_weight: &[f32] = if layer.has_post_norms {
+                layer.pre_ffn_norm.unwrap_or(layer.post_attn_norm)
             } else {
-                &post_attn_norm_dev
+                layer.post_attn_norm
             };
             let t = std::time::Instant::now();
-            let h_ffn_dev = elem::rms_norm_device(
-                self,
-                &h_dev,
-                Some(ffn_norm_dev),
-                hidden,
-                layer.eps,
-                layer.norm_offset,
-            )
-            .ok()?;
+            let h_ffn_dev = self
+                .with_norm_device_buf(ffn_norm_weight, |w_dev| {
+                    elem::rms_norm_device(
+                        self,
+                        &h_dev,
+                        Some(w_dev),
+                        hidden,
+                        layer.eps,
+                        layer.norm_offset,
+                    )
+                })
+                .ok()?;
             sync_if_profile(self);
             prof.norm_cpu += t.elapsed();
 
@@ -886,20 +879,20 @@ impl CudaBackend {
             // ── 10. h += norm(ffn_delta) (or just ffn_delta) ───────
             let t = std::time::Instant::now();
             if layer.has_post_norms {
-                if let Some(post_norm_dev) = post_ffn_norm_dev.as_ref() {
-                    let normed = elem::rms_norm_device(
-                        self,
-                        &ffn_delta_dev,
-                        Some(post_norm_dev),
-                        hidden,
-                        layer.eps,
-                        layer.norm_offset,
-                    )
-                    .ok()?;
-                    elem::add_in_place_device(self, &mut h_dev, &normed).ok()?;
-                } else {
-                    // post_ffn_norm absent → normalise without weight
-                    let normed = elem::rms_norm_device(
+                let normed = match layer.post_ffn_norm {
+                    Some(w) if !w.is_empty() => self
+                        .with_norm_device_buf(w, |w_dev| {
+                            elem::rms_norm_device(
+                                self,
+                                &ffn_delta_dev,
+                                Some(w_dev),
+                                hidden,
+                                layer.eps,
+                                layer.norm_offset,
+                            )
+                        })
+                        .ok()?,
+                    _ => elem::rms_norm_device(
                         self,
                         &ffn_delta_dev,
                         None,
@@ -907,9 +900,9 @@ impl CudaBackend {
                         layer.eps,
                         layer.norm_offset,
                     )
-                    .ok()?;
-                    elem::add_in_place_device(self, &mut h_dev, &normed).ok()?;
-                }
+                    .ok()?,
+                };
+                elem::add_in_place_device(self, &mut h_dev, &normed).ok()?;
             } else {
                 elem::add_in_place_device(self, &mut h_dev, &ffn_delta_dev).ok()?;
             }
