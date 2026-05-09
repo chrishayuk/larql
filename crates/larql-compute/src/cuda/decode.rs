@@ -1663,17 +1663,19 @@ impl CudaBackend {
             )?;
 
             // 6. h += [norm(attn_delta) | attn_delta]
+            // `cuda-fused-norm-add`: combine `rms_norm + add_in_place`
+            // into one kernel — saves the `attn_normed` write+read.
             if let Some(post_attn_norm) = arcs.post_attn_norm.as_ref() {
-                elem::rms_norm_device_into(
+                elem::rms_norm_add_device(
                     self,
+                    &mut scratch.h,
                     &scratch.attn_delta,
                     Some(post_attn_norm),
-                    &mut scratch.attn_normed,
                     hidden,
                     layer.eps,
                     layer.norm_offset,
+                    1.0,
                 )?;
-                elem::add_in_place_device(self, &mut scratch.h, &scratch.attn_normed)?;
             } else {
                 elem::add_in_place_device(self, &mut scratch.h, &scratch.attn_delta)?;
             }
@@ -1740,35 +1742,33 @@ impl CudaBackend {
                 inter,
             )?;
 
-            // 11. h += [norm(ffn_delta) | ffn_delta]
+            // 11. h += [norm(ffn_delta) | ffn_delta] (× layer_scalar)
+            // `cuda-fused-norm-add`: combine norm + add (+ optional
+            // scalar multiply via `scale`) into one kernel. Saves
+            // the `ffn_normed` write+read AND the separate
+            // `scale_inplace` launch when `layer_scalar` is set.
+            let layer_scale = if layer.layer_scalar != 0.0 && layer.layer_scalar != 1.0 {
+                layer.layer_scalar
+            } else {
+                1.0
+            };
             if layer.has_post_norms {
-                if let Some(post_ffn_norm) = arcs.post_ffn_norm.as_ref() {
-                    elem::rms_norm_device_into(
-                        self,
-                        &scratch.ffn_delta,
-                        Some(post_ffn_norm),
-                        &mut scratch.ffn_normed,
-                        hidden,
-                        layer.eps,
-                        layer.norm_offset,
-                    )?;
-                } else {
-                    elem::rms_norm_device_into(
-                        self,
-                        &scratch.ffn_delta,
-                        None,
-                        &mut scratch.ffn_normed,
-                        hidden,
-                        layer.eps,
-                        layer.norm_offset,
-                    )?;
-                }
-                elem::add_in_place_device(self, &mut scratch.h, &scratch.ffn_normed)?;
+                let weight = arcs.post_ffn_norm.as_ref().map(|a| a.as_ref());
+                elem::rms_norm_add_device(
+                    self,
+                    &mut scratch.h,
+                    &scratch.ffn_delta,
+                    weight,
+                    hidden,
+                    layer.eps,
+                    layer.norm_offset,
+                    layer_scale,
+                )?;
             } else {
                 elem::add_in_place_device(self, &mut scratch.h, &scratch.ffn_delta)?;
-            }
-            if layer.layer_scalar != 0.0 && layer.layer_scalar != 1.0 {
-                elem::scale_inplace_device(self, &mut scratch.h, layer.layer_scalar)?;
+                if layer_scale != 1.0 {
+                    elem::scale_inplace_device(self, &mut scratch.h, layer_scale)?;
+                }
             }
         }
         Ok(())

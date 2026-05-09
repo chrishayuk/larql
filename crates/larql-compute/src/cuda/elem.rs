@@ -108,6 +108,56 @@ extern "C" __global__ void add_in_place_f32(
 }
 "#;
 
+/// `cuda-fused-norm-add`: `dst[i] += rms_norm(src, weight)[i] * scale`
+/// in one kernel. TensorRT-LLM-style residual fusion: combines the
+/// post-attn (and post-ffn) `rms_norm + add_in_place` pair into a
+/// single kernel. Saves the `attn_normed`/`ffn_normed` intermediate
+/// buffer write+read (10 KB / layer / op × 34 layers × 2 ops/layer
+/// ≈ 680 KB / token) and one launch per fusion. `scale` defaults
+/// to 1.0; the captured-graph pipeline passes `layer_scalar` here
+/// so the post-FFN scale also folds in.
+const RMS_NORM_ADD_SRC: &str = r#"
+extern "C" __global__ void rms_norm_add_f32(
+    float*       __restrict__ dst,
+    const float* __restrict__ src,
+    const float* __restrict__ weight,
+    int   n,
+    int   has_weight,
+    float eps,
+    float norm_offset,
+    float scale
+) {
+    int tid  = threadIdx.x;
+    int bdim = blockDim.x;
+    extern __shared__ float smem[];
+
+    float ss = 0.0f;
+    for (int i = tid; i < n; i += bdim) {
+        float v = src[i];
+        ss += v * v;
+    }
+    smem[tid] = ss;
+    __syncthreads();
+    for (int s = bdim / 2; s > 0; s >>= 1) {
+        if (tid < s) smem[tid] += smem[tid + s];
+        __syncthreads();
+    }
+    float inv_rms = rsqrtf(smem[0] / (float)n + eps);
+
+    if (has_weight) {
+        for (int i = tid; i < n; i += bdim) {
+            float n_i = src[i] * inv_rms * (weight[i] + norm_offset);
+            dst[i] += n_i * scale;
+        }
+    } else {
+        for (int i = tid; i < n; i += bdim) {
+            float n_i = src[i] * inv_rms;
+            dst[i] += n_i * scale;
+        }
+    }
+}
+"#;
+
 /// `dst[i] *= scalar`. Used for the per-layer residual scale (Gemma's
 /// `layer_scalar`). Trivial element-wise.
 const SCALE_INPLACE_SRC: &str = r#"
@@ -224,6 +274,7 @@ static SCALE_INPLACE_FUNC: OnceLock<(std::sync::Arc<CudaModule>, CudaFunction)> 
 static QUANTIZE_Q8_1_FUNC: OnceLock<(std::sync::Arc<CudaModule>, CudaFunction)> = OnceLock::new();
 static F32_TO_F16_FUNC: OnceLock<(std::sync::Arc<CudaModule>, CudaFunction)> = OnceLock::new();
 static F16_TO_F32_FUNC: OnceLock<(std::sync::Arc<CudaModule>, CudaFunction)> = OnceLock::new();
+static RMS_NORM_ADD_FUNC: OnceLock<(std::sync::Arc<CudaModule>, CudaFunction)> = OnceLock::new();
 
 fn load_kernel(
     drv: &Driver,
@@ -753,6 +804,70 @@ pub(crate) fn scale_inplace_batch_device(
     scalar: f32,
 ) -> Result<(), CudaInitError> {
     scale_inplace_device(backend, dst_seq, scalar)
+}
+
+/// `cuda-fused-norm-add`: `dst[i] += rms_norm(src, weight)[i] * scale`
+/// in one kernel. Fuses the legacy `rms_norm_device_into(...)` +
+/// `add_in_place_device(dst, normed)` pair, eliminating the
+/// intermediate `normed` buffer entirely. `weight = None` skips
+/// the per-element multiply (post-FFN with no post_ffn_norm).
+/// `scale != 1.0` folds in the per-layer Gemma residual multiplier.
+pub(crate) fn rms_norm_add_device(
+    backend: &CudaBackend,
+    dst: &mut CudaSlice<f32>,
+    src: &CudaSlice<f32>,
+    weight_dev: Option<&CudaSlice<f32>>,
+    n: usize,
+    eps: f32,
+    norm_offset: f32,
+    scale: f32,
+) -> Result<(), CudaInitError> {
+    if dst.len() != n || src.len() != n {
+        return Err(CudaInitError::DriverMissing(format!(
+            "rms_norm_add shape: dst={} src={} n={n}",
+            dst.len(),
+            src.len(),
+        )));
+    }
+    if let Some(w) = weight_dev {
+        if w.len() != n {
+            return Err(CudaInitError::DriverMissing(format!(
+                "rms_norm_add weight len {} != n {n}",
+                w.len()
+            )));
+        }
+    }
+    let drv = backend.driver();
+    let func = load_kernel(
+        drv,
+        &RMS_NORM_ADD_FUNC,
+        RMS_NORM_ADD_SRC,
+        "rms_norm_add_f32",
+    )?;
+    let block_dim: u32 = 1024;
+    let cfg = LaunchConfig {
+        grid_dim: (1, 1, 1),
+        block_dim: (block_dim, 1, 1),
+        shared_mem_bytes: block_dim * std::mem::size_of::<f32>() as u32,
+    };
+    let n_i = n as i32;
+    let has_weight_i: i32 = if weight_dev.is_some() { 1 } else { 0 };
+    let weight_arg: &CudaSlice<f32> = weight_dev.unwrap_or(src);
+    unsafe {
+        drv.stream
+            .launch_builder(func)
+            .arg(dst)
+            .arg(src)
+            .arg(weight_arg)
+            .arg(&n_i)
+            .arg(&has_weight_i)
+            .arg(&eps)
+            .arg(&norm_offset)
+            .arg(&scale)
+            .launch(cfg)
+            .map_err(|e| CudaInitError::DriverMissing(format!("launch rms_norm_add: {e:?}")))?;
+    }
+    Ok(())
 }
 
 /// `cuda-prefill-tensor-cores`: convert a device-resident f32 buffer
