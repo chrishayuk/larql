@@ -9,7 +9,6 @@ use cudarc::cublas::{
     Gemm, GemmConfig,
 };
 use cudarc::driver::CudaSlice;
-use half::f16;
 
 use super::driver::Driver;
 use super::error::CudaInitError;

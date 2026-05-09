@@ -281,18 +281,12 @@ impl CudaKvCache {
                 // 2-byte element, which is the f16 representation of
                 // +0.0 — the same semantic zero as the legacy f32
                 // path's 0x00000000.
-                let k = drv
-                    .stream
-                    .alloc_zeros::<half::f16>(n)
-                    .map_err(|e| super::error::CudaInitError::DriverMissing(format!(
-                        "alloc f16 K slab: {e:?}"
-                    )))?;
-                let v = drv
-                    .stream
-                    .alloc_zeros::<half::f16>(n)
-                    .map_err(|e| super::error::CudaInitError::DriverMissing(format!(
-                        "alloc f16 V slab: {e:?}"
-                    )))?;
+                let k = drv.stream.alloc_zeros::<half::f16>(n).map_err(|e| {
+                    super::error::CudaInitError::DriverMissing(format!("alloc f16 K slab: {e:?}"))
+                })?;
+                let v = drv.stream.alloc_zeros::<half::f16>(n).map_err(|e| {
+                    super::error::CudaInitError::DriverMissing(format!("alloc f16 V slab: {e:?}"))
+                })?;
                 Ok(CudaKvLayer {
                     num_kv_heads,
                     head_dim,
@@ -2001,7 +1995,7 @@ impl CudaBackend {
         let mut t_gate_up = std::time::Duration::ZERO;
         let mut t_silu = std::time::Duration::ZERO;
         let mut t_down = std::time::Duration::ZERO;
-        let mut t_resid = std::time::Duration::ZERO;
+        let t_resid = std::time::Duration::ZERO;
         let sync_p = |b: &CudaBackend| {
             if prefill_profile {
                 let _ = b.driver().sync();

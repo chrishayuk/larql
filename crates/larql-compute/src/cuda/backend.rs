@@ -606,10 +606,7 @@ impl MatMul for CudaBackend {
             return None;
         }
         let w_buf = self.as_contiguous(w);
-        match kernels::gemv(&self.drv, &w_buf, x, n, k) {
-            Ok(v) => Some(v),
-            Err(_) => None,
-        }
+        kernels::gemv(&self.drv, &w_buf, x, n, k).ok()
     }
 }
 

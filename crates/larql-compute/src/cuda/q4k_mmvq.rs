@@ -599,9 +599,7 @@ pub(crate) fn matvec_device_into(
 ) -> Result<(), CudaInitError> {
     if q4k_mmvq_use_coop(rows, hidden) {
         let q4k_dev = backend.arc_q4k_device_buf(q4k_data)?;
-        return matvec_device_into_with_dev_coop(
-            backend, &q4k_dev, x_q8_1, y_dev, rows, hidden,
-        );
+        return matvec_device_into_with_dev_coop(backend, &q4k_dev, x_q8_1, y_dev, rows, hidden);
     }
     if rows == 0 || hidden == 0 || !hidden.is_multiple_of(Q4K_BLOCK_ELEMS) {
         return Err(CudaInitError::DriverMissing(format!(
@@ -793,18 +791,14 @@ mod tests {
 
             // Legacy 1-warp/row, rpb=4 (production default).
             for _ in 0..5 {
-                matvec_device_into_with_dev_tiled(
-                    &backend, &q4k_dev, &q8, &mut y, rows, hidden, 4,
-                )
-                .ok();
+                matvec_device_into_with_dev_tiled(&backend, &q4k_dev, &q8, &mut y, rows, hidden, 4)
+                    .ok();
             }
             backend.driver().sync().expect("sync");
             let t = std::time::Instant::now();
             for _ in 0..n_iters {
-                matvec_device_into_with_dev_tiled(
-                    &backend, &q4k_dev, &q8, &mut y, rows, hidden, 4,
-                )
-                .expect("legacy");
+                matvec_device_into_with_dev_tiled(&backend, &q4k_dev, &q8, &mut y, rows, hidden, 4)
+                    .expect("legacy");
             }
             backend.driver().sync().expect("sync");
             let legacy_us = t.elapsed().as_secs_f64() * 1e6 / n_iters as f64;
@@ -858,9 +852,7 @@ mod tests {
 
         for (label, rows, hidden) in shapes {
             let w_q4k = quantize_q4_k(&synth(rows * hidden, 0x9000));
-            let q4k_dev = backend
-                .arc_q4k_device_buf(&w_q4k)
-                .expect("htod q4k");
+            let q4k_dev = backend.arc_q4k_device_buf(&w_q4k).expect("htod q4k");
 
             let x = synth(hidden, 0x9100);
             let x_dev = backend.htod_f32(&x).expect("htod x");
@@ -873,13 +865,7 @@ mod tests {
             // Warmup once so caches/JIT/scheduling settle.
             for &rpb in &[1u32, 2, 4, 8, 16] {
                 let _ = matvec_device_into_with_dev_tiled(
-                    &backend,
-                    &q4k_dev,
-                    &q8,
-                    &mut y,
-                    rows,
-                    hidden,
-                    rpb,
+                    &backend, &q4k_dev, &q8, &mut y, rows, hidden, rpb,
                 );
             }
             backend.driver().sync().expect("sync");
@@ -893,13 +879,7 @@ mod tests {
                 let t = std::time::Instant::now();
                 for _ in 0..n_iters {
                     matvec_device_into_with_dev_tiled(
-                        &backend,
-                        &q4k_dev,
-                        &q8,
-                        &mut y,
-                        rows,
-                        hidden,
-                        rpb,
+                        &backend, &q4k_dev, &q8, &mut y, rows, hidden, rpb,
                     )
                     .expect("launch");
                 }
