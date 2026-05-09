@@ -173,34 +173,37 @@ which are additive.
 
 ## Acceptance bar
 
-Phase 1 is "ship it" on these numbers, measured on the dev box
-(RTX 4090, CUDA 13.1, Gemma 3 4B Q4_K vindex, 20 tokens after 3
-warmup):
+Final numbers measured on the dev box (RTX 4090, CUDA 13.1,
+Gemma 3 4B Q4_K vindex, 20 tokens after 3 warmup):
 
-| Metric | Pre-Phase 1 | Phase 1 actual | Phase 1 target | Phase 3 target |
+| Metric | Pre-change | Phase 1 | **Phase 3 (final)** | Target |
 |---|---:|---:|---:|---:|
-| `decode ms/token` | 162.72 | **152.73** | ≤ 100 | ≤ 60 |
-| `GPU fwd ms/token` | 160.820 | **151.024** | ≤ 95 | ≤ 55 |
-| `tok/s` | 6.1 | **6.5** | ≥ 10 | ≥ 16 |
-| Bit parity vs host fallback | — | **≤ 1e-3 max-element** | ≤ 1e-3 max-element | ≤ 1e-3 max-element |
+| `decode ms/token` | 162.72 | 152.73 | **27.37** | ≤ 60 |
+| `GPU fwd ms/token` | 160.820 | 151.024 | **25.416** | ≤ 55 |
+| `prefill ms` | 1100.7 | 1100.7 | **227.3** | — |
+| `tok/s` | 6.1 | 6.5 | **36.5** | ≥ 16 |
+| Bit parity vs host fallback | — | ≤ 1e-3 | ≤ 1e-3 | ≤ 1e-3 |
 
-`LARQL_CUDA_DECODE_HOST_FALLBACK=1` control on the same build:
-`decode 158.88 ms/token`, `GPU fwd 157.166 ms/token` — the new
-default beats the legacy path by ~6 ms/token (3.8%) at parity.
+**Phase 3 beats every target.** Decode 5.94× faster than the
+pre-change baseline; throughput up 6×. Phase 2 was profiled
+out of scope (its targeted ops summed to <6 ms/tok and weren't
+on the critical path); Phase 3's device-resident KV cache
+removed the 2.2 GB/token of PCIe traffic that was 86.5% of the
+pre-Phase-3 cost.
 
-**Phase 1 misses the target.** Per the proposal's own decision
-gate ("if `decode ms/token > 120`, inspect for residual sync"),
-Phase 2 (GPU `rms_norm` / `silu_gate_up` / `add_in_place`)
-remains needed to clear the bar. Sync overhead is not the
-dominant cost at this scale; the remaining ~150 ms/token is
-spread across cuBLAS launch + arithmetic on the projection
-GEMVs, the K/V cache D2H per layer (Phase 3), and per-call
-allocation. Phase 2 will eliminate 4 of the 5 remaining D2H
-per layer (gate, up, attn_delta, ffn_delta) and is expected
-to land most of the remaining headroom.
+Post-Phase-3 profile (steady state, 26.6 ms/tok total):
 
-Phase 1 ships as-is on the strength of: (a) parity correctness,
-(b) measured improvement vs the host-fallback control, and
-(c) being a strict prerequisite for Phase 2 — without the
-device-resident projection API the GPU norm/activate kernels
-have nowhere to read their inputs from on the device.
+```
+proj_wo         7.02ms (26.3%)
+norm_cpu        5.67ms (21.3%)   ← Phase 2's old target, now small
+proj_gate_up    5.17ms (19.4%)
+proj_down       4.21ms (15.8%)
+proj_qkv        1.79ms ( 6.7%)
+htod            0.89ms ( 3.3%)
+attn_call       0.50ms ( 1.9%)   ← was 144.7ms before Phase 3
+dtoh_*          1.42ms ( 5.3%)
+residual_cpu    0.24ms ( 0.9%)
+```
+
+Compute (cuBLAS launch + arithmetic on projections) is now the
+dominant cost; the change ships and archives.

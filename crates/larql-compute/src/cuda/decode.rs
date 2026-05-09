@@ -109,15 +109,17 @@ fn layer_supports_device_path(layer: &FullPipelineLayer<'_>) -> bool {
 
 const DEFAULT_CUDA_KV_CACHE_MAX_SEQ: usize = 4096;
 
-#[derive(Debug, Clone)]
-struct CudaKvLayer {
-    num_kv_heads: usize,
-    head_dim: usize,
-    k: Vec<f32>,
-    v: Vec<f32>,
+/// Per-layer K/V cache storage. `cuda-decode-device-resident` Phase 3
+/// switched these from `Vec<f32>` to `CudaSlice<f32>` so
+/// `fused_decode_attention_device_kv` can read prior tokens and append
+/// the new row without any per-call PCIe transfer.
+pub(crate) struct CudaKvLayer {
+    pub(crate) num_kv_heads: usize,
+    pub(crate) head_dim: usize,
+    pub(crate) k: CudaSlice<f32>,
+    pub(crate) v: CudaSlice<f32>,
 }
 
-#[derive(Debug, Clone)]
 pub(crate) struct CudaKvCache {
     max_seq: usize,
     len: usize,
@@ -125,27 +127,40 @@ pub(crate) struct CudaKvCache {
 }
 
 impl CudaKvCache {
-    fn new(shapes: &[(usize, usize)], max_seq: usize) -> Self {
+    /// `cuda-decode-device-resident` Phase 3: allocate the K/V slabs
+    /// directly on the device, zero-initialised. Each layer's slab is
+    /// `max_seq × num_kv_heads × head_dim × f32`.
+    fn new_device(
+        backend: &CudaBackend,
+        shapes: &[(usize, usize)],
+        max_seq: usize,
+    ) -> Result<Self, super::error::CudaInitError> {
         let layers = shapes
             .iter()
             .map(|&(num_kv_heads, head_dim)| {
                 let n = max_seq * num_kv_heads * head_dim;
-                CudaKvLayer {
+                let zeros = vec![0.0_f32; n];
+                Ok(CudaKvLayer {
                     num_kv_heads,
                     head_dim,
-                    k: vec![0.0; n],
-                    v: vec![0.0; n],
-                }
+                    k: backend.htod_f32(&zeros)?,
+                    v: backend.htod_f32(&zeros)?,
+                })
             })
-            .collect();
-        Self {
+            .collect::<Result<Vec<_>, super::error::CudaInitError>>()?;
+        Ok(Self {
             max_seq,
             len: 0,
             layers,
-        }
+        })
     }
 
-    fn ensure_for_layers(&mut self, layers: &[FullPipelineLayer<'_>], max_seq: usize) {
+    fn ensure_for_layers(
+        &mut self,
+        backend: &CudaBackend,
+        layers: &[FullPipelineLayer<'_>],
+        max_seq: usize,
+    ) -> Result<(), super::error::CudaInitError> {
         let shapes: Vec<(usize, usize)> = layers
             .iter()
             .map(|layer| (layer.num_kv_heads.max(1), layer.head_dim.max(1)))
@@ -158,8 +173,9 @@ impl CudaKvCache {
                 .zip(shapes.iter())
                 .any(|(got, want)| got.num_kv_heads != want.0 || got.head_dim != want.1);
         if mismatch {
-            *self = Self::new(&shapes, max_seq);
+            *self = Self::new_device(backend, &shapes, max_seq)?;
         }
+        Ok(())
     }
 }
 
@@ -295,7 +311,7 @@ impl DecodeBackend for CudaBackend {
 
     fn preallocate_kv_cache_per_layer(&self, shapes: &[(usize, usize)], max_seq: usize) {
         if let Ok(mut cache) = self.kv_cache.lock() {
-            *cache = Some(CudaKvCache::new(shapes, max_seq));
+            *cache = CudaKvCache::new_device(self, shapes, max_seq).ok();
         }
     }
 
@@ -322,26 +338,36 @@ impl DecodeBackend for CudaBackend {
                 })
                 .unwrap_or_default();
             shapes.resize(layer + 1, (num_kv_heads, head_dim));
-            *guard = Some(CudaKvCache::new(
-                &shapes,
-                seq_len.max(DEFAULT_CUDA_KV_CACHE_MAX_SEQ),
-            ));
+            let max_seq = seq_len.max(DEFAULT_CUDA_KV_CACHE_MAX_SEQ);
+            *guard = CudaKvCache::new_device(self, &shapes, max_seq).ok();
         }
         let Some(cache) = guard.as_mut() else {
             return;
         };
+        // Copy seq_len rows from the seeded host data into the
+        // device-resident slabs at the start of the slab. Phase 3
+        // replaced the per-element `copy_from_slice` with a single
+        // htod into the device buffer at offset 0.
+        let n = seq_len * num_kv_heads * head_dim;
+        if k_data.len() < n || v_data.len() < n {
+            return;
+        }
         let Some(slot) = cache.layers.get_mut(layer) else {
             return;
         };
-        if slot.num_kv_heads != num_kv_heads || slot.head_dim != head_dim {
+        if slot.num_kv_heads != num_kv_heads
+            || slot.head_dim != head_dim
+            || slot.k.len() < n
+            || slot.v.len() < n
+        {
             return;
         }
-        let n = seq_len * num_kv_heads * head_dim;
-        if k_data.len() < n || v_data.len() < n || slot.k.len() < n || slot.v.len() < n {
+        if let Err(_e) = self.htod_into_slice(&k_data[..n], &mut slot.k, 0) {
             return;
         }
-        slot.k[..n].copy_from_slice(&k_data[..n]);
-        slot.v[..n].copy_from_slice(&v_data[..n]);
+        if let Err(_e) = self.htod_into_slice(&v_data[..n], &mut slot.v, 0) {
+            return;
+        }
         cache.len = cache.len.max(seq_len);
     }
 
@@ -445,11 +471,14 @@ impl DecodeBackend for CudaBackend {
 }
 
 impl CudaBackend {
-    /// Legacy host-bouncing decode path. Kept verbatim from the
-    /// pre-`cuda-decode-device-resident` implementation so it can
-    /// double as a parity reference and as the runtime back-out via
-    /// `LARQL_CUDA_DECODE_HOST_FALLBACK=1`. Every projection round-
-    /// trips through `Vec<f32>`.
+    /// Legacy host-bouncing decode path. Used as a parity reference
+    /// and as the runtime back-out via
+    /// `LARQL_CUDA_DECODE_HOST_FALLBACK=1`. Every projection
+    /// round-trips through `Vec<f32>`. Phase 3 made the K/V cache
+    /// device-resident; the fallback dtoh's it into a temporary
+    /// host slab before the host-input attention call and htod's
+    /// the result back. This is intentionally slow — the path is
+    /// for parity testing, not production.
     #[allow(clippy::too_many_arguments)]
     pub(crate) fn decode_token_host_fallback(
         &self,
@@ -479,10 +508,16 @@ impl CudaBackend {
                     )
                 })
                 .collect();
-            *guard = Some(CudaKvCache::new(&shapes, DEFAULT_CUDA_KV_CACHE_MAX_SEQ));
+            *guard = CudaKvCache::new_device(self, &shapes, DEFAULT_CUDA_KV_CACHE_MAX_SEQ).ok();
         }
         let cache = guard.as_mut()?;
-        cache.ensure_for_layers(layers, cache.max_seq.max(DEFAULT_CUDA_KV_CACHE_MAX_SEQ));
+        cache
+            .ensure_for_layers(
+                self,
+                layers,
+                cache.max_seq.max(DEFAULT_CUDA_KV_CACHE_MAX_SEQ),
+            )
+            .ok()?;
         let pos = cache.len;
         if pos >= cache.max_seq {
             return None;
@@ -541,14 +576,21 @@ impl CudaBackend {
                 .ok()?
             };
 
+            let max_seq = cache.max_seq;
             let kv_slot = cache.layers.get_mut(layer_idx)?;
+            // Phase 3: dtoh device cache → host vec for the legacy
+            // host-input attention call, then htod the updated cache
+            // back into the device buffers. Slow on purpose; this
+            // path exists for parity correctness only.
+            let kv_host_k = self.dtoh_f32(&kv_slot.k).ok()?;
+            let kv_host_v = self.dtoh_f32(&kv_slot.v).ok()?;
             let attn_out = attn::fused_decode_attention(
                 self,
                 &qkv.q,
                 &qkv.k,
                 &qkv.v,
-                &kv_slot.k,
-                &kv_slot.v,
+                &kv_host_k,
+                &kv_host_v,
                 layer.q_norm_weight,
                 layer.k_norm_weight,
                 attn::FusedDecodeAttentionOpts {
@@ -556,7 +598,7 @@ impl CudaBackend {
                     num_kv_heads: layer_num_kv_heads,
                     head_dim: layer_head_dim,
                     pos,
-                    max_seq: cache.max_seq,
+                    max_seq,
                     rotary_dim: layer_rotary_dim,
                     rope_base: layer_rope_base,
                     eps: layer.eps,
@@ -566,8 +608,10 @@ impl CudaBackend {
                 },
             )
             .ok()?;
-            kv_slot.k = attn_out.k_cache;
-            kv_slot.v = attn_out.v_cache;
+            self.htod_into_slice(&attn_out.k_cache, &mut kv_slot.k, 0)
+                .ok()?;
+            self.htod_into_slice(&attn_out.v_cache, &mut kv_slot.v, 0)
+                .ok()?;
 
             let attn_delta =
                 matvec(self, layer.wo, &attn_out.out, hidden, layer_q_dim).or_else(|| {
@@ -659,10 +703,16 @@ impl CudaBackend {
                     )
                 })
                 .collect();
-            *guard = Some(CudaKvCache::new(&shapes, DEFAULT_CUDA_KV_CACHE_MAX_SEQ));
+            *guard = CudaKvCache::new_device(self, &shapes, DEFAULT_CUDA_KV_CACHE_MAX_SEQ).ok();
         }
         let cache = guard.as_mut()?;
-        cache.ensure_for_layers(layers, cache.max_seq.max(DEFAULT_CUDA_KV_CACHE_MAX_SEQ));
+        cache
+            .ensure_for_layers(
+                self,
+                layers,
+                cache.max_seq.max(DEFAULT_CUDA_KV_CACHE_MAX_SEQ),
+            )
+            .ok()?;
         let pos = cache.len;
         if pos >= cache.max_seq {
             return None;
@@ -710,16 +760,17 @@ impl CudaBackend {
             sync_if_profile(self);
             prof.proj_qkv += t.elapsed();
 
-            // ── 3. Fused decode attention (device q/k/v in, device out) ─
+            // ── 3. Fused decode attention — Phase 3 device-resident KV ─
+            let max_seq = cache.max_seq;
             let kv_slot = cache.layers.get_mut(layer_idx)?;
             let t = std::time::Instant::now();
-            let attn_out = attn::fused_decode_attention_device(
+            let attn_out_dev = attn::fused_decode_attention_device_kv(
                 self,
                 &q_dev,
                 &k_dev,
                 &v_dev,
-                &kv_slot.k,
-                &kv_slot.v,
+                &mut kv_slot.k,
+                &mut kv_slot.v,
                 layer.q_norm_weight,
                 layer.k_norm_weight,
                 attn::FusedDecodeAttentionOpts {
@@ -727,7 +778,7 @@ impl CudaBackend {
                     num_kv_heads: layer_num_kv_heads,
                     head_dim: layer_head_dim,
                     pos,
-                    max_seq: cache.max_seq,
+                    max_seq,
                     rotary_dim: layer_rotary_dim,
                     rope_base: layer_rope_base,
                     eps: layer.eps,
@@ -738,9 +789,6 @@ impl CudaBackend {
             )
             .ok()?;
             prof.attn_call += t.elapsed();
-            kv_slot.k = attn_out.k_cache;
-            kv_slot.v = attn_out.v_cache;
-            let attn_out_dev: CudaSlice<f32> = attn_out.out;
 
             // ── 4. wo projection ───────────────────────────────────
             let t = std::time::Instant::now();

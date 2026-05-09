@@ -132,6 +132,30 @@ impl CudaBackend {
         self.drv.device_alloc(len)
     }
 
+    /// H2D copy a host slice into an existing device buffer at the
+    /// given element offset. `cuda-decode-device-resident` Phase 3
+    /// uses this to write a single K/V row into the persistent
+    /// device-resident KV cache slab without reallocating.
+    pub(crate) fn htod_into_slice(
+        &self,
+        src: &[f32],
+        dst: &mut CudaSlice<f32>,
+        offset: usize,
+    ) -> Result<(), CudaInitError> {
+        if offset + src.len() > dst.len() {
+            return Err(CudaInitError::DriverMissing(format!(
+                "htod_into_slice OOB: offset {offset} + len {} > dst {}",
+                src.len(),
+                dst.len(),
+            )));
+        }
+        let mut sub = dst.slice_mut(offset..offset + src.len());
+        self.drv
+            .stream
+            .memcpy_htod(src, &mut sub)
+            .map_err(|e| CudaInitError::DriverMissing(format!("memcpy_htod into slice: {e:?}")))
+    }
+
     /// Q4_K matvec, device input + device output.
     pub(crate) fn q4k_matvec_device(
         &self,
