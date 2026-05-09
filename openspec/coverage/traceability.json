@@ -1,12 +1,12 @@
 {
   "summary": {
-    "capabilities": 49,
-    "requirements": 467,
-    "scenarios": 1450,
-    "scenarios_backed": 1299,
+    "capabilities": 50,
+    "requirements": 473,
+    "scenarios": 1460,
+    "scenarios_backed": 1309,
     "scenarios_unbacked": 151,
-    "test_refs": 3381,
-    "test_refs_unresolved": 4
+    "test_refs": 3391,
+    "test_refs_unresolved": 14
   },
   "capabilities": [
     {
@@ -7510,6 +7510,142 @@
               "unbacked": true,
               "spec_file": "openspec/changes/engine-rotorquant-auto-compress/specs/inference-residual-engine/spec.md",
               "line": 50
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "inference-speculative-decoding",
+      "spec_file": "openspec/changes/cuda-speculative-decoding/specs/inference-speculative-decoding/spec.md",
+      "requirements": [
+        {
+          "name": "SpeculativeDecoder produces tokens identical to non-speculative decode",
+          "scenarios": [
+            {
+              "name": "token-ID parity on 256-prompt eval at temperature 0",
+              "tests_resolved": [],
+              "tests_unresolved": [
+                "larql_inference::test_speculative_parity::greedy_parity_256_prompts"
+              ],
+              "unbacked": false,
+              "spec_file": "openspec/changes/cuda-speculative-decoding/specs/inference-speculative-decoding/spec.md",
+              "line": 11
+            },
+            {
+              "name": "token-ID parity on 256-prompt eval at temperature 0.7 with seeded RNG",
+              "tests_resolved": [],
+              "tests_unresolved": [
+                "larql_inference::test_speculative_parity::seeded_temp_parity_256_prompts"
+              ],
+              "unbacked": false,
+              "spec_file": "openspec/changes/cuda-speculative-decoding/specs/inference-speculative-decoding/spec.md",
+              "line": 16
+            }
+          ]
+        },
+        {
+          "name": "SpeculativeDecoder is gated by LARQL_SPECULATIVE_DECODE",
+          "scenarios": [
+            {
+              "name": "unset env var falls through to existing path",
+              "tests_resolved": [],
+              "tests_unresolved": [
+                "larql_inference::test_speculative_dispatch::unset_env_uses_legacy_path"
+              ],
+              "unbacked": false,
+              "spec_file": "openspec/changes/cuda-speculative-decoding/specs/inference-speculative-decoding/spec.md",
+              "line": 28
+            },
+            {
+              "name": "env=0 also falls through",
+              "tests_resolved": [],
+              "tests_unresolved": [
+                "larql_inference::test_speculative_dispatch::env_zero_uses_legacy_path"
+              ],
+              "unbacked": false,
+              "spec_file": "openspec/changes/cuda-speculative-decoding/specs/inference-speculative-decoding/spec.md",
+              "line": 33
+            }
+          ]
+        },
+        {
+          "name": "Verification kernel implements exact rejection sampling",
+          "scenarios": [
+            {
+              "name": "verify_tree matches CPU reference on 64 fixed RNG seeds",
+              "tests_resolved": [],
+              "tests_unresolved": [
+                "larql_compute::test_cuda_verify_tree::matches_cpu_reference_64_seeds"
+              ],
+              "unbacked": false,
+              "spec_file": "openspec/changes/cuda-speculative-decoding/specs/inference-speculative-decoding/spec.md",
+              "line": 55
+            },
+            {
+              "name": "residual sampling normalises correctly",
+              "tests_resolved": [],
+              "tests_unresolved": [
+                "larql_compute::test_cuda_verify_tree::residual_zero_falls_back_to_target"
+              ],
+              "unbacked": false,
+              "spec_file": "openspec/changes/cuda-speculative-decoding/specs/inference-speculative-decoding/spec.md",
+              "line": 60
+            }
+          ]
+        },
+        {
+          "name": "Speculative depth is bounded by sliding window",
+          "scenarios": [
+            {
+              "name": "depth clamps near sliding-window boundary",
+              "tests_resolved": [],
+              "tests_unresolved": [
+                "larql_inference::test_speculative_swa_clamp::clamps_to_window_remainder"
+              ],
+              "unbacked": false,
+              "spec_file": "openspec/changes/cuda-speculative-decoding/specs/inference-speculative-decoding/spec.md",
+              "line": 73
+            }
+          ]
+        },
+        {
+          "name": "Rotorquant supports rolling back speculative KV writes",
+          "scenarios": [
+            {
+              "name": "compress_with_window_lag holds slot uncompressed for the lag window",
+              "tests_resolved": [],
+              "tests_unresolved": [
+                "larql_rotorquant::test_window_lag::holds_within_lag"
+              ],
+              "unbacked": false,
+              "spec_file": "openspec/changes/cuda-speculative-decoding/specs/inference-speculative-decoding/spec.md",
+              "line": 86
+            },
+            {
+              "name": "rollback restores prior slot count",
+              "tests_resolved": [],
+              "tests_unresolved": [
+                "larql_rotorquant::test_window_lag::rollback_round_trip"
+              ],
+              "unbacked": false,
+              "spec_file": "openspec/changes/cuda-speculative-decoding/specs/inference-speculative-decoding/spec.md",
+              "line": 91
+            }
+          ]
+        },
+        {
+          "name": "Performance gates speculative-rollout default",
+          "scenarios": [
+            {
+              "name": "bench reports gate metrics in machine-readable form",
+              "tests_resolved": [],
+              "tests_unresolved": [
+                "larql_compute::test_decode_speculative_bench::gate_metric_format"
+              ],
+              "unbacked": false,
+              "spec_file": "openspec/changes/cuda-speculative-decoding/specs/inference-speculative-decoding/spec.md",
+              "line": 109
             }
           ]
         }
