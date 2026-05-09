@@ -265,6 +265,70 @@ pub(crate) fn matvec_device(
     Ok(y_dev)
 }
 
+/// `cuda-decode-cuda-graph`: variant of `matvec_device_into` that
+/// takes a pre-resolved Q4_K weight buffer (already in the device
+/// cache) instead of host bytes. Avoids the cache-lock acquisition
+/// in the captured graph's hot loop.
+pub(crate) fn matvec_device_into_with_dev(
+    backend: &CudaBackend,
+    q4k_dev: &CudaSlice<u8>,
+    x_q8_1: &Q8_1Buf,
+    y_dev: &mut CudaSlice<f32>,
+    rows: usize,
+    hidden: usize,
+) -> Result<(), CudaInitError> {
+    if rows == 0 || hidden == 0 || !hidden.is_multiple_of(Q4K_BLOCK_ELEMS) {
+        return Err(CudaInitError::DriverMissing(format!(
+            "invalid q4k_mmvq shape rows={rows} hidden={hidden}",
+        )));
+    }
+    let n_super_blocks = hidden / Q4K_BLOCK_ELEMS;
+    let expected_q4k_bytes = rows
+        .checked_mul(n_super_blocks)
+        .and_then(|v| v.checked_mul(Q4K_BLOCK_BYTES))
+        .ok_or_else(|| CudaInitError::DriverMissing("q4k byte size overflow".to_string()))?;
+    if q4k_dev.len() != expected_q4k_bytes {
+        return Err(CudaInitError::DriverMissing(format!(
+            "q4k_dev length mismatch: got {}, expected {expected_q4k_bytes}",
+            q4k_dev.len()
+        )));
+    }
+    if x_q8_1.n_blocks * 32 != hidden {
+        return Err(CudaInitError::DriverMissing(format!(
+            "q8_1 input block count mismatch: {} blocks for hidden={hidden}",
+            x_q8_1.n_blocks,
+        )));
+    }
+    if y_dev.len() != rows {
+        return Err(CudaInitError::DriverMissing(format!(
+            "q4k_mmvq y length mismatch: y={} != rows={rows}",
+            y_dev.len(),
+        )));
+    }
+
+    let drv = backend.driver();
+    let func = q4k_mmvq_function(drv)?;
+    let rows_i = rows as i32;
+    let n_super_blocks_i = n_super_blocks as i32;
+    let cfg = LaunchConfig {
+        grid_dim: ((rows as u32).div_ceil(ROWS_PER_BLOCK), 1, 1),
+        block_dim: (WARP_SIZE, ROWS_PER_BLOCK, 1),
+        shared_mem_bytes: 0,
+    };
+    unsafe {
+        drv.stream
+            .launch_builder(func)
+            .arg(q4k_dev)
+            .arg(&x_q8_1.bytes)
+            .arg(y_dev)
+            .arg(&rows_i)
+            .arg(&n_super_blocks_i)
+            .launch(cfg)
+            .map_err(|e| CudaInitError::DriverMissing(format!("launch q4k_mmvq: {e:?}")))?;
+    }
+    Ok(())
+}
+
 /// `cuda-decode-cuda-graph` companion: write q4k_mmvq output into a
 /// caller-provided buffer instead of allocating a fresh one. Used by
 /// `decode_token_device` once `DecodeScratch` is available so the

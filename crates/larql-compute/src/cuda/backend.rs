@@ -112,9 +112,10 @@ impl CudaBackend {
     ) -> Result<Arc<CudaSlice<u8>>, CudaInitError> {
         let key = DeviceBytesKey::from_slice(host);
         {
-            let cache = self.q4k_device_cache.lock().map_err(|_| {
-                CudaInitError::DriverMissing("q4k device cache poisoned".into())
-            })?;
+            let cache = self
+                .q4k_device_cache
+                .lock()
+                .map_err(|_| CudaInitError::DriverMissing("q4k device cache poisoned".into()))?;
             if let Some(arc) = cache.get(&key) {
                 return Ok(Arc::clone(arc));
             }
@@ -147,9 +148,10 @@ impl CudaBackend {
     ) -> Result<Arc<CudaSlice<u8>>, CudaInitError> {
         let key = DeviceBytesKey::from_slice(host);
         {
-            let cache = self.q6k_packed_device_cache.lock().map_err(|_| {
-                CudaInitError::DriverMissing("q6k packed cache poisoned".into())
-            })?;
+            let cache = self
+                .q6k_packed_device_cache
+                .lock()
+                .map_err(|_| CudaInitError::DriverMissing("q6k packed cache poisoned".into()))?;
             if let Some(arc) = cache.get(&key) {
                 return Ok(Arc::clone(arc));
             }
@@ -282,9 +284,10 @@ impl CudaBackend {
         };
         let key = DeviceBytesKey::from_slice(bytes);
         {
-            let cache = self.f32_norm_device_cache.lock().map_err(|_| {
-                CudaInitError::DriverMissing("f32 norm cache poisoned".into())
-            })?;
+            let cache = self
+                .f32_norm_device_cache
+                .lock()
+                .map_err(|_| CudaInitError::DriverMissing("f32 norm cache poisoned".into()))?;
             if let Some(arc) = cache.get(&key) {
                 return Ok(Arc::clone(arc));
             }

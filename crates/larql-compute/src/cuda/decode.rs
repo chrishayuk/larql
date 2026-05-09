@@ -8,11 +8,14 @@
 use crate::backend::{DecodeBackend, QuantMatVec};
 use crate::{Activation, FfnType, FullPipelineLayer, NormType, QuantFormat, QuantWeight};
 
+use std::sync::Arc;
+
 use cudarc::driver::CudaSlice;
 
-use super::backend::CudaBackend;
+use super::backend::{CudaBackend, DecodeGraph};
 use super::elem::Q8_1Buf;
 use super::matmul as kernels;
+use super::scratch::{DecodeScratch, DecodeScratchShape};
 use super::{attn, dequant, elem, q4k_mmvq, q6k_mmvq};
 
 /// `LARQL_CUDA_Q4K_MMVQ=0` disables the new Q4_K × Q8_1 mmvq path
@@ -46,6 +49,14 @@ fn host_fallback_enabled() -> bool {
 /// added syncs make the path slower than the unprofiled version.
 fn decode_profile_enabled() -> bool {
     std::env::var("LARQL_CUDA_DECODE_PROFILE").ok().as_deref() == Some("1")
+}
+
+/// `LARQL_CUDA_DECODE_GRAPH=0` disables the CUDA Graph capture path
+/// and forces every decode token through the per-call kernel-launch
+/// `decode_token_device_legacy`. Default = enabled. Used as the
+/// parity back-out for `cuda-decode-cuda-graph`.
+fn decode_graph_enabled() -> bool {
+    std::env::var("LARQL_CUDA_DECODE_GRAPH").ok().as_deref() != Some("0")
 }
 
 #[derive(Default, Debug, Clone)]
@@ -121,7 +132,91 @@ fn layer_supports_device_path(layer: &FullPipelineLayer<'_>) -> bool {
         && proj_ok(layer.down.format)
 }
 
+/// `cuda-decode-cuda-graph`: every captured kernel has its weight
+/// pointers, shape constants, and norm-flag baked in at capture time,
+/// so the captured graph is only valid when the layer set is uniform
+/// in those dimensions. Non-mmvq formats (FP16, Q4_KF, etc.) are
+/// excluded — only Q4_K and Q6_K have `_into` matvec kernels. MoE
+/// layers, FFN-remote, gated/standard mismatches, and per-layer
+/// activation differences are all rejected here.
+fn decode_graph_supports_layers(layers: &[FullPipelineLayer<'_>]) -> bool {
+    use QuantFormat::*;
+    if layers.is_empty() {
+        return false;
+    }
+    let proj_ok = |fmt| matches!(fmt, Q4_K | Q6_K);
+    let first = &layers[0];
+    if first.moe.is_some()
+        || first.ffn_is_remote
+        || first.norm_type != NormType::RmsNorm
+        || first.ffn_type != FfnType::Gated
+        || first.has_v_norm
+    {
+        return false;
+    }
+    let head_dim = first.head_dim;
+    let num_q_heads = first.num_q_heads;
+    let num_kv_heads = first.num_kv_heads;
+    let activation = first.activation;
+    let has_post_norms = first.has_post_norms;
+    layers.iter().all(|l| {
+        l.moe.is_none()
+            && !l.ffn_is_remote
+            && l.norm_type == NormType::RmsNorm
+            && l.ffn_type == FfnType::Gated
+            && !l.has_v_norm
+            && proj_ok(l.wq.format)
+            && proj_ok(l.wk.format)
+            && proj_ok(l.wv.format)
+            && proj_ok(l.wo.format)
+            && proj_ok(l.gate.format)
+            && proj_ok(l.up.format)
+            && proj_ok(l.down.format)
+            && l.head_dim == head_dim
+            && l.num_q_heads == num_q_heads
+            && l.num_kv_heads == num_kv_heads
+            && l.activation == activation
+            && l.has_post_norms == has_post_norms
+    })
+}
+
 const DEFAULT_CUDA_KV_CACHE_MAX_SEQ: usize = 4096;
+
+/// `cuda-decode-cuda-graph`: per-layer Arc clones of every cached
+/// device buffer the captured graph reads. Held for the duration of
+/// the capture region (and pre-fetch) so the cache locks aren't
+/// re-acquired inside the hot loop and the device pointers are
+/// guaranteed to live until end_capture.
+struct LayerArcs {
+    input_norm: Arc<CudaSlice<f32>>,
+    /// `None` when the layer has no post-attn norm (Llama style).
+    post_attn_norm: Option<Arc<CudaSlice<f32>>>,
+    ffn_norm: Arc<CudaSlice<f32>>,
+    /// `None` when the layer has no post-ffn norm or the weight slice
+    /// is empty.
+    post_ffn_norm: Option<Arc<CudaSlice<f32>>>,
+    /// QK-norm weights. Filled with a shared zero buffer when the
+    /// layer disables QK-norm so the kernel still has a valid
+    /// pointer (use_qk_norm == 0 prevents dereference).
+    q_norm: Arc<CudaSlice<f32>>,
+    k_norm: Arc<CudaSlice<f32>>,
+    use_qk_norm: bool,
+
+    wq: Arc<CudaSlice<u8>>,
+    wq_format: QuantFormat,
+    wk: Arc<CudaSlice<u8>>,
+    wk_format: QuantFormat,
+    wv: Arc<CudaSlice<u8>>,
+    wv_format: QuantFormat,
+    wo: Arc<CudaSlice<u8>>,
+    wo_format: QuantFormat,
+    gate: Arc<CudaSlice<u8>>,
+    gate_format: QuantFormat,
+    up: Arc<CudaSlice<u8>>,
+    up_format: QuantFormat,
+    down: Arc<CudaSlice<u8>>,
+    down_format: QuantFormat,
+}
 
 /// Per-layer K/V cache storage. `cuda-decode-device-resident` Phase 3
 /// switched these from `Vec<f32>` to `CudaSlice<f32>` so
@@ -791,7 +886,7 @@ impl CudaBackend {
         hidden: usize,
         inter: usize,
         q_dim: usize,
-        _kv_dim: usize,
+        kv_dim: usize,
         num_q_heads: usize,
         num_kv_heads: usize,
         head_dim: usize,
@@ -800,6 +895,34 @@ impl CudaBackend {
         if x.len() != hidden || layers.is_empty() {
             return None;
         }
+
+        // `cuda-decode-cuda-graph`: try the captured-graph path first.
+        // Falls through to the legacy per-call kernel launch path on
+        // unsupported layers (non-Q4_K/Q6_K weights, MoE, mixed
+        // shapes), missing capabilities, or any error.
+        if decode_graph_enabled()
+            && !host_fallback_enabled()
+            && decode_graph_supports_layers(layers)
+        {
+            if let Some(out) = self.decode_token_device_graph_attempt(
+                layers,
+                x,
+                hidden,
+                inter,
+                q_dim,
+                kv_dim,
+                num_q_heads,
+                num_kv_heads,
+                head_dim,
+                rope_base,
+            ) {
+                return Some(out);
+            }
+            // Fall through to legacy on None — the helper logs the
+            // reason if `LARQL_CUDA_DECODE_GRAPH_DEBUG=1`.
+        }
+        let _ = kv_dim;
+
         let mut guard = self.kv_cache.lock().ok()?;
         if guard.is_none() {
             let shapes: Vec<(usize, usize)> = layers
@@ -1123,6 +1246,547 @@ impl CudaBackend {
 
         cache.len = pos + 1;
         Some(h)
+    }
+
+    /// `cuda-decode-cuda-graph`: captured-graph variant of
+    /// `decode_token_device`. Returns `Some(h)` on success, `None` on
+    /// any unsupported configuration / capture failure. The dispatcher
+    /// in `decode_token_device` falls back to the legacy per-call path.
+    ///
+    /// Lifecycle on a fresh shape:
+    ///   call #0: lazy-allocate `DecodeScratch`; run kernels normally
+    ///            so weight/norm caches are warmed; dtoh result.
+    ///   call #1: still no graph; run kernels under `begin_capture` /
+    ///            `end_capture`, store the resulting graph.
+    ///   call ≥2: write `pos_dev` + `scratch.h`, `graph.launch()`,
+    ///            sync, dtoh `scratch.h`.
+    #[allow(clippy::too_many_arguments)]
+    pub(crate) fn decode_token_device_graph_attempt(
+        &self,
+        layers: &[FullPipelineLayer<'_>],
+        x: &[f32],
+        hidden: usize,
+        inter: usize,
+        _q_dim: usize,
+        _kv_dim: usize,
+        num_q_heads: usize,
+        num_kv_heads: usize,
+        head_dim: usize,
+        rope_base: f32,
+    ) -> Option<Vec<f32>> {
+        use cudarc::driver::sys::{CUgraphInstantiate_flags, CUstreamCaptureMode};
+
+        if x.len() != hidden || layers.is_empty() {
+            return None;
+        }
+
+        let first = &layers[0];
+        let layer_head_dim = first.head_dim.max(head_dim).max(1);
+        let layer_num_q_heads = first.num_q_heads.max(num_q_heads).max(1);
+        let layer_num_kv_heads = first.num_kv_heads.max(num_kv_heads).max(1);
+        let layer_q_dim = layer_num_q_heads * layer_head_dim;
+        let layer_kv_dim = layer_num_kv_heads * layer_head_dim;
+        if !hidden.is_multiple_of(32)
+            || !layer_q_dim.is_multiple_of(32)
+            || !inter.is_multiple_of(32)
+        {
+            return None;
+        }
+
+        let shape = DecodeScratchShape {
+            hidden,
+            q_dim: layer_q_dim,
+            kv_dim: layer_kv_dim,
+            inter,
+            head_dim: layer_head_dim,
+        };
+
+        // ── Scratch allocation ────────────────────────────────────
+        {
+            let mut scratch_guard = self.decode_scratch.lock().ok()?;
+            let need_realloc = match &*scratch_guard {
+                Some(s) => !s.shape.matches(&shape),
+                None => true,
+            };
+            if need_realloc {
+                *scratch_guard = Some(DecodeScratch::allocate(self.driver(), shape).ok()?);
+                *self.decode_graph.lock().ok()? = None;
+                *self.decode_warmup_count.lock().ok()? = 0;
+            }
+        }
+
+        // ── KV cache ──────────────────────────────────────────────
+        let mut kv_guard = self.kv_cache.lock().ok()?;
+        if kv_guard.is_none() {
+            let shapes: Vec<(usize, usize)> = layers
+                .iter()
+                .map(|l| {
+                    (
+                        l.num_kv_heads.max(num_kv_heads).max(1),
+                        l.head_dim.max(head_dim).max(1),
+                    )
+                })
+                .collect();
+            *kv_guard = CudaKvCache::new_device(self, &shapes, DEFAULT_CUDA_KV_CACHE_MAX_SEQ).ok();
+        }
+        let cache = kv_guard.as_mut()?;
+        cache
+            .ensure_for_layers(
+                self,
+                layers,
+                cache.max_seq.max(DEFAULT_CUDA_KV_CACHE_MAX_SEQ),
+            )
+            .ok()?;
+        let pos = cache.len;
+        if pos >= cache.max_seq {
+            return None;
+        }
+
+        // ── Pre-fetch all per-layer cached buffers as Arc clones ──
+        // Holding these Arcs across the capture region keeps the
+        // cached weight + norm device pointers alive AND stable, so
+        // the captured graph's kernel args remain valid for replay.
+        let zero_norm_host = vec![0.0_f32; layer_head_dim];
+        let zero_norm = self.arc_norm_device_buf(&zero_norm_host).ok()?;
+        let mut layer_arcs: Vec<LayerArcs> = Vec::with_capacity(layers.len());
+        for layer in layers {
+            let input_norm = self.arc_norm_device_buf(layer.input_norm).ok()?;
+            let post_attn_norm = if layer.has_post_norms {
+                Some(self.arc_norm_device_buf(layer.post_attn_norm).ok()?)
+            } else {
+                None
+            };
+            let ffn_norm_host: &[f32] = if layer.has_post_norms {
+                layer.pre_ffn_norm.unwrap_or(layer.post_attn_norm)
+            } else {
+                layer.post_attn_norm
+            };
+            let ffn_norm = self.arc_norm_device_buf(ffn_norm_host).ok()?;
+            let post_ffn_norm = if layer.has_post_norms {
+                match layer.post_ffn_norm {
+                    Some(w) if !w.is_empty() => Some(self.arc_norm_device_buf(w).ok()?),
+                    _ => None,
+                }
+            } else {
+                None
+            };
+            let q_norm = match layer.q_norm_weight {
+                Some(w) => self.arc_norm_device_buf(w).ok()?,
+                None => Arc::clone(&zero_norm),
+            };
+            let k_norm = match layer.k_norm_weight {
+                Some(w) => self.arc_norm_device_buf(w).ok()?,
+                None => Arc::clone(&zero_norm),
+            };
+            let use_qk_norm = layer.q_norm_weight.is_some() && layer.k_norm_weight.is_some();
+            let wq = self.arc_qweight(layer.wq).ok()?;
+            let wk = self.arc_qweight(layer.wk).ok()?;
+            let wv = self.arc_qweight(layer.wv).ok()?;
+            let wo = self.arc_qweight(layer.wo).ok()?;
+            let gate = self.arc_qweight(layer.gate).ok()?;
+            let up = self.arc_qweight(layer.up).ok()?;
+            let down = self.arc_qweight(layer.down).ok()?;
+            layer_arcs.push(LayerArcs {
+                input_norm,
+                post_attn_norm,
+                ffn_norm,
+                post_ffn_norm,
+                q_norm,
+                k_norm,
+                use_qk_norm,
+                wq,
+                wq_format: layer.wq.format,
+                wk,
+                wk_format: layer.wk.format,
+                wv,
+                wv_format: layer.wv.format,
+                wo,
+                wo_format: layer.wo.format,
+                gate,
+                gate_format: layer.gate.format,
+                up,
+                up_format: layer.up.format,
+                down,
+                down_format: layer.down.format,
+            });
+        }
+
+        // ── htod x → scratch.h, htod pos → scratch.pos ────────────
+        let mut scratch_guard = self.decode_scratch.lock().ok()?;
+        let scratch = scratch_guard.as_mut()?;
+        self.htod_into_slice(x, &mut scratch.h, 0).ok()?;
+        let pos_i = pos as i32;
+        self.driver()
+            .stream
+            .memcpy_htod(std::slice::from_ref(&pos_i), &mut scratch.pos)
+            .ok()?;
+
+        // ── Replay path: graph already captured ───────────────────
+        {
+            let graph_guard = self.decode_graph.lock().ok()?;
+            if let Some(graph) = &*graph_guard {
+                graph.0.launch().ok()?;
+                self.driver().sync().ok()?;
+                let result = self.driver().to_host(&scratch.h).ok()?;
+                cache.len = pos + 1;
+                return Some(result);
+            }
+        }
+
+        // ── Decide whether to capture this iteration ──────────────
+        // Use call-counter: call #0 warms caches running normally;
+        // call #1 records the graph. Subsequent calls hit the replay
+        // branch above.
+        let do_capture = {
+            let mut w = self.decode_warmup_count.lock().ok()?;
+            let count = *w;
+            *w = count + 1;
+            count == 1
+        };
+
+        // Drain any pre-capture stream work so begin_capture sees a
+        // clean state — STREAM_CAPTURE_ISOLATION otherwise.
+        self.driver().sync().ok()?;
+        if do_capture {
+            self.driver()
+                .stream
+                .begin_capture(CUstreamCaptureMode::CU_STREAM_CAPTURE_MODE_RELAXED)
+                .ok()?;
+        }
+
+        // ── Run the per-layer pipeline using scratch + arcs ──────
+        let pipeline_ok = self
+            .run_decode_pipeline_into_scratch(
+                scratch,
+                cache,
+                &layer_arcs,
+                layers,
+                hidden,
+                inter,
+                layer_q_dim,
+                layer_kv_dim,
+                layer_head_dim,
+                layer_num_q_heads,
+                layer_num_kv_heads,
+                rope_base,
+            )
+            .is_ok();
+
+        if do_capture {
+            let graph = match self.driver().stream.end_capture(
+                CUgraphInstantiate_flags::CUDA_GRAPH_INSTANTIATE_FLAG_AUTO_FREE_ON_LAUNCH,
+            ) {
+                Ok(Some(g)) => Some(g),
+                Ok(None) => {
+                    eprintln!("[cuda-decode-cuda-graph] end_capture returned no graph");
+                    None
+                }
+                Err(e) => {
+                    eprintln!("[cuda-decode-cuda-graph] end_capture failed: {e:?}");
+                    None
+                }
+            };
+            if !pipeline_ok || graph.is_none() {
+                // Capture surfaced an error or graph instantiation
+                // failed. Reset warmup so the next call retries.
+                *self.decode_warmup_count.lock().ok()? = 0;
+                return None;
+            }
+            let graph = graph.unwrap();
+            // Run the freshly-captured graph to actually compute the
+            // output (capture only RECORDS — kernels haven't run).
+            graph.launch().ok()?;
+            *self.decode_graph.lock().ok()? = Some(DecodeGraph(graph));
+        }
+
+        if !pipeline_ok {
+            return None;
+        }
+
+        self.driver().sync().ok()?;
+        let result = self.driver().to_host(&scratch.h).ok()?;
+        cache.len = pos + 1;
+        Some(result)
+    }
+
+    /// Helper: arc-fetch a per-layer quant weight buffer. Q4_K /
+    /// Q6_K route through their respective packed-bytes caches.
+    fn arc_qweight(
+        &self,
+        weight: QuantWeight<'_>,
+    ) -> Result<Arc<CudaSlice<u8>>, super::error::CudaInitError> {
+        match weight.format {
+            QuantFormat::Q4_K => self.arc_q4k_device_buf(weight.data),
+            QuantFormat::Q6_K => self.arc_q6k_packed_device_buf(weight.data),
+            other => Err(super::error::CudaInitError::DriverMissing(format!(
+                "decode_graph: unsupported quant format {other:?}",
+            ))),
+        }
+    }
+
+    /// `cuda-decode-cuda-graph`: per-layer kernel pipeline that writes
+    /// into `DecodeScratch`. Identical mathematically to the legacy
+    /// `decode_token_device` body, but every output buffer is
+    /// pre-allocated in the scratch and every cached weight/norm
+    /// pointer comes from the pre-fetched `LayerArcs`. Safe to run
+    /// either eagerly (call #0) or under `begin_capture` (call #1).
+    #[allow(clippy::too_many_arguments)]
+    fn run_decode_pipeline_into_scratch(
+        &self,
+        scratch: &mut DecodeScratch,
+        cache: &mut CudaKvCache,
+        layer_arcs: &[LayerArcs],
+        layers: &[FullPipelineLayer<'_>],
+        hidden: usize,
+        inter: usize,
+        layer_q_dim: usize,
+        layer_kv_dim: usize,
+        layer_head_dim: usize,
+        layer_num_q_heads: usize,
+        layer_num_kv_heads: usize,
+        rope_base: f32,
+    ) -> Result<(), super::error::CudaInitError> {
+        for (layer_idx, layer) in layers.iter().enumerate() {
+            let arcs = &layer_arcs[layer_idx];
+            let layer_rope_base = if layer.rope_base != 0.0 {
+                layer.rope_base
+            } else {
+                rope_base
+            };
+            let layer_rotary_dim = layer.rotary_dim;
+
+            // 1. h_attn = rms_norm(h, input_norm)
+            elem::rms_norm_device_into(
+                self,
+                &scratch.h,
+                Some(&arcs.input_norm),
+                &mut scratch.h_attn,
+                hidden,
+                layer.eps,
+                layer.norm_offset,
+            )?;
+
+            // 2. h_attn_q8_1 = quantize(h_attn)
+            elem::quantize_q8_1_device_into(
+                self,
+                &scratch.h_attn,
+                &mut scratch.h_attn_q8_1.bytes,
+                hidden,
+            )?;
+
+            // 3. q/k/v projections (Q4_K / Q6_K mmvq via Q8_1 input)
+            self.proj_q8_1_into(
+                arcs.wq_format,
+                &arcs.wq,
+                &scratch.h_attn_q8_1,
+                &mut scratch.q,
+                layer_q_dim,
+                hidden,
+            )?;
+            self.proj_q8_1_into(
+                arcs.wk_format,
+                &arcs.wk,
+                &scratch.h_attn_q8_1,
+                &mut scratch.k,
+                layer_kv_dim,
+                hidden,
+            )?;
+            self.proj_q8_1_into(
+                arcs.wv_format,
+                &arcs.wv,
+                &scratch.h_attn_q8_1,
+                &mut scratch.v,
+                layer_kv_dim,
+                hidden,
+            )?;
+
+            // 4. Fused attention (device KV, device pos)
+            let max_seq = cache.max_seq;
+            let kv_slot = cache.layers.get_mut(layer_idx).ok_or_else(|| {
+                super::error::CudaInitError::DriverMissing(
+                    "decode_graph: kv slot missing for layer".into(),
+                )
+            })?;
+            attn::fused_decode_attention_device_kv_into(
+                self,
+                &scratch.q,
+                &scratch.k,
+                &scratch.v,
+                &mut kv_slot.k,
+                &mut kv_slot.v,
+                &arcs.q_norm,
+                &arcs.k_norm,
+                &scratch.pos,
+                &mut scratch.attn_out,
+                arcs.use_qk_norm,
+                attn::FusedDecodeAttentionOpts {
+                    num_q_heads: layer_num_q_heads,
+                    num_kv_heads: layer_num_kv_heads,
+                    head_dim: layer_head_dim,
+                    pos: 0, // not consumed by `_into`; pos read from `scratch.pos`
+                    max_seq,
+                    rotary_dim: layer_rotary_dim,
+                    rope_base: layer_rope_base,
+                    eps: layer.eps,
+                    qk_norm_offset: layer.qk_norm_offset,
+                    attn_scale: layer.attn_scale,
+                    softcap: 0.0,
+                },
+            )?;
+
+            // 5. wo projection (attn_out → attn_delta).
+            elem::quantize_q8_1_device_into(
+                self,
+                &scratch.attn_out,
+                &mut scratch.attn_out_q8_1.bytes,
+                layer_q_dim,
+            )?;
+            self.proj_q8_1_into(
+                arcs.wo_format,
+                &arcs.wo,
+                &scratch.attn_out_q8_1,
+                &mut scratch.attn_delta,
+                hidden,
+                layer_q_dim,
+            )?;
+
+            // 6. h += [norm(attn_delta) | attn_delta]
+            if let Some(post_attn_norm) = arcs.post_attn_norm.as_ref() {
+                elem::rms_norm_device_into(
+                    self,
+                    &scratch.attn_delta,
+                    Some(post_attn_norm),
+                    &mut scratch.attn_normed,
+                    hidden,
+                    layer.eps,
+                    layer.norm_offset,
+                )?;
+                elem::add_in_place_device(self, &mut scratch.h, &scratch.attn_normed)?;
+            } else {
+                elem::add_in_place_device(self, &mut scratch.h, &scratch.attn_delta)?;
+            }
+
+            // 7. h_ffn = rms_norm(h, ffn_norm)
+            elem::rms_norm_device_into(
+                self,
+                &scratch.h,
+                Some(&arcs.ffn_norm),
+                &mut scratch.h_ffn,
+                hidden,
+                layer.eps,
+                layer.norm_offset,
+            )?;
+
+            // 8. h_ffn_q8_1 = quantize(h_ffn); gate/up projections.
+            elem::quantize_q8_1_device_into(
+                self,
+                &scratch.h_ffn,
+                &mut scratch.h_ffn_q8_1.bytes,
+                hidden,
+            )?;
+            self.proj_q8_1_into(
+                arcs.gate_format,
+                &arcs.gate,
+                &scratch.h_ffn_q8_1,
+                &mut scratch.gate,
+                inter,
+                hidden,
+            )?;
+            self.proj_q8_1_into(
+                arcs.up_format,
+                &arcs.up,
+                &scratch.h_ffn_q8_1,
+                &mut scratch.up,
+                inter,
+                hidden,
+            )?;
+
+            // 9. silu/gelu gate × up.
+            let gelu_tanh = matches!(layer.activation, Activation::GeluTanh);
+            elem::silu_gate_up_device_into(
+                self,
+                &scratch.gate,
+                &scratch.up,
+                &mut scratch.act,
+                inter,
+                gelu_tanh,
+            )?;
+
+            // 10. down projection (act → ffn_delta).
+            elem::quantize_q8_1_device_into(
+                self,
+                &scratch.act,
+                &mut scratch.act_q8_1.bytes,
+                inter,
+            )?;
+            self.proj_q8_1_into(
+                arcs.down_format,
+                &arcs.down,
+                &scratch.act_q8_1,
+                &mut scratch.ffn_delta,
+                hidden,
+                inter,
+            )?;
+
+            // 11. h += [norm(ffn_delta) | ffn_delta]
+            if layer.has_post_norms {
+                if let Some(post_ffn_norm) = arcs.post_ffn_norm.as_ref() {
+                    elem::rms_norm_device_into(
+                        self,
+                        &scratch.ffn_delta,
+                        Some(post_ffn_norm),
+                        &mut scratch.ffn_normed,
+                        hidden,
+                        layer.eps,
+                        layer.norm_offset,
+                    )?;
+                } else {
+                    elem::rms_norm_device_into(
+                        self,
+                        &scratch.ffn_delta,
+                        None,
+                        &mut scratch.ffn_normed,
+                        hidden,
+                        layer.eps,
+                        layer.norm_offset,
+                    )?;
+                }
+                elem::add_in_place_device(self, &mut scratch.h, &scratch.ffn_normed)?;
+            } else {
+                elem::add_in_place_device(self, &mut scratch.h, &scratch.ffn_delta)?;
+            }
+            if layer.layer_scalar != 0.0 && layer.layer_scalar != 1.0 {
+                elem::scale_inplace_device(self, &mut scratch.h, layer.layer_scalar)?;
+            }
+        }
+        Ok(())
+    }
+
+    /// Q4_K / Q6_K mmvq projection writing into a caller-provided
+    /// output buffer.
+    fn proj_q8_1_into(
+        &self,
+        format: QuantFormat,
+        weight: &CudaSlice<u8>,
+        x_q8_1: &Q8_1Buf,
+        out: &mut CudaSlice<f32>,
+        rows: usize,
+        cols: usize,
+    ) -> Result<(), super::error::CudaInitError> {
+        // `_into` matvec helpers expect host bytes for the cache key
+        // lookup. Since we already hold a cached Arc, we go through
+        // a back-door that takes the device pointer directly.
+        match format {
+            QuantFormat::Q4_K => {
+                q4k_mmvq::matvec_device_into_with_dev(self, weight, x_q8_1, out, rows, cols)
+            }
+            QuantFormat::Q6_K => {
+                q6k_mmvq::matvec_device_into_with_dev(self, weight, x_q8_1, out, rows, cols)
+            }
+            other => Err(super::error::CudaInitError::DriverMissing(format!(
+                "decode_graph proj: unsupported format {other:?}",
+            ))),
+        }
     }
 
     /// Q-format-aware projection GEMM for batched prefill. Routes

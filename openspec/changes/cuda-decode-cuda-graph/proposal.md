@@ -181,13 +181,64 @@ that allocate then call `_into`.
 Measured on the dev box (RTX 4090, CUDA 12.5, Gemma 3 4B Q4_K
 vindex, 6-token prompt, 20 decode tokens after 3 warmup):
 
-| Metric | Pre-change | Target | Comparator |
-|---|---:|---:|---:|
-| `decode ms/token` | 9.35 | ≤ 7 | llama.cpp 4.40 |
-| `tok/s` | 107 | ≥ 140 | llama.cpp 227.5 |
-| Bit parity vs no-graph path | — | ≤ 1e-3 max-element | — |
+| Metric | Pre-change | Target | **Actual** | Comparator |
+|---|---:|---:|---:|---:|
+| `decode ms/token` | 9.62 | ≤ 7 | **8.52** | llama.cpp 4.40 |
+| `tok/s` | 103.9 | ≥ 140 | **117.4** | llama.cpp 227.5 |
+| Bit parity vs no-graph path | — | ≤ 1e-3 | **passes** | — |
 
-If the decode improvement is < 1 ms (i.e., > 8.5 ms post-
-change), launch overhead is not the dominant cost and the
-profile will show where the actual wall-clock time goes.
-Tensor Cores are then the next move.
+The actual decode improvement is ~1.1 ms (~11%), well short of the
+2-4 ms targeted. The original 3-5 ms estimate of pure host launch
+overhead was optimistic — once kernels are queued the GPU work
+itself dominates the wall-clock, and most of the 5-10 µs
+`cuLaunchKernel` host cost is hidden behind kernel execution.
+
+The remaining ≥ 4 ms gap with llama-cpp-turboquant is in compute,
+not in launch overhead. Tensor Cores (Q4_K matvec via WMMA) are the
+next move — that's where the actual mmvq throughput ceiling lives.
+CUDA Graph capture stays valuable as the foundation for that work
+(stable scratch buffers + device-side `pos` make Tensor Core
+kernels trivial to slot in).
+
+### Foundation work shipped (always-on)
+
+These land regardless of whether the graph path produces a useful
+speedup — they're prerequisites for any future capture work and
+clean improvements on their own:
+
+- **Non-default stream + `disable_event_tracking`** in
+  `Driver::new_with_index`. The legacy default stream rejects
+  `cuStreamBeginCapture` (`CUDA_ERROR_STREAM_CAPTURE_UNSUPPORTED`),
+  and cudarc's per-slice event tracking injects cross-stream
+  `stream.wait(event)` calls inside the capture region
+  (`CUDA_ERROR_STREAM_CAPTURE_ISOLATION`). Both are now resolved.
+- **Device-side `pos` arg** in `fused_decode_attention_f32`. Lets
+  captured graphs replay with a different `pos` value without
+  re-capture (immediate kernel args are baked at capture time).
+- **`Arc<CudaSlice>` cached weight + norm buffers**. Lets the graph
+  pre-fetch all per-layer cached pointers without holding the
+  cache Mutex across the capture region. Cheap clones; no extra
+  device-memory pressure.
+- **`_into` kernel-wrapper variants** (`rms_norm_device_into`,
+  `silu_gate_up_device_into`, `quantize_q8_1_device_into`,
+  `q4k_mmvq::matvec_device_into[_with_dev]`,
+  `q6k_mmvq::matvec_device_into[_with_dev]`,
+  `fused_decode_attention_device_kv_into`). Stable destination
+  pointers are a prerequisite for graph capture; the freshly-
+  allocating wrappers are now thin shims around the `_into` form
+  so there's a single source of truth.
+- **`DecodeScratch`** (in `cuda::scratch`). Pre-allocated per-decode
+  intermediate buffers (h, q/k/v, attn_out, gate/up/act, the four
+  Q8_1 scratches, plus `pos_dev`). Reused across same-shape decode
+  calls — the scratch shape lookup is `O(1)` per call and zero
+  device allocs on the steady-state path.
+
+### Back-out env vars
+
+- `LARQL_CUDA_DECODE_GRAPH=0` — force every decode token through
+  the legacy per-call kernel-launch path. Use to verify parity or
+  to isolate a regression.
+- The legacy path is still fully wired and tested; the dispatcher
+  in `decode_token_device` falls back automatically when the layer
+  set is unsupported (MoE, non-mmvq formats, mixed shapes,
+  LayerNorm, Standard FFN).

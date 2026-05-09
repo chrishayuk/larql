@@ -13,9 +13,9 @@
 
 use cudarc::driver::CudaSlice;
 
+use super::driver::Driver;
 use super::elem::Q8_1Buf;
 use super::error::CudaInitError;
-use super::driver::Driver;
 
 /// Shape that uniquely identifies the buffer sizing for a decode
 /// pipeline. Two scratch buffers with equal `Shape` are bit-for-bit
