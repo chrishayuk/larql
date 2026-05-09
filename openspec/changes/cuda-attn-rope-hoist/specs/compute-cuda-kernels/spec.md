@@ -21,7 +21,7 @@ them via a single load instead of recomputing the rotation.
 
 ### Requirement: attn_call profile bucket SHALL drop materially after the hoist
 
-`attn_call` profile bucket SHALL drop to ≤ 4 ms (down from the post-`cuda-q4k-mmvq-int8` 6.35 ms) on the dev-box bench after this change ships. A
+`attn_call` profile bucket SHALL drop to ≤ 4 ms (down from the post-`cuda-q4k-mmvq-int8` 6.35 ms) on the dev-box bench after this change ships. **Actual**: 3.68 ms — cleared. A
 miss by > 25% (i.e., `attn_call > 5 ms`) SHALL trigger a
 profile-and-document write-up identifying the residual cost
 before the change is archived.

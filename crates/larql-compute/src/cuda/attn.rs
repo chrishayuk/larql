@@ -196,6 +196,11 @@ extern "C" __global__ void fused_decode_attention_f32(
     extern __shared__ float smem[];
     float* scores = smem;
     float* scratch = smem + max_seq;
+    // Pre-rotated Q vector. cuda-attn-rope-hoist Phase 1: computed
+    // once per attn call (depends only on `pos`, not `j`), then read
+    // by every iteration of the score loop. Saves ~n_ctx redundant
+    // (cosf, sinf, powf) triples per (head, d).
+    float* q_rot = smem + max_seq + bdim;
 
     int group = max(1, num_q_heads / max(1, num_kv_heads));
     int kvh = min(num_kv_heads - 1, qh / group);
@@ -226,6 +231,35 @@ extern "C" __global__ void fused_decode_attention_f32(
         __syncthreads();
     }
     float k_inv = rsqrtf(scratch[0] / (float)head_dim + eps);
+
+    // ── Pre-rotate Q once per attention call ────────────────────────
+    // Q's RoPE rotation depends only on `pos`, not on `j`. The score
+    // loop below previously recomputed it per `(j, d)` — with
+    // n_ctx ≈ 25 active threads and head_dim = 256 that's ~6 400
+    // redundant trig triples per Q head per layer call. Hoist:
+    int rdim_pre = (rotary_dim == 0) ? head_dim : min(rotary_dim, head_dim);
+    int hdim_pre = rdim_pre / 2;
+    for (int d = tid; d < head_dim; d += bdim) {
+        float qv = q_head[d];
+        if (use_qk_norm) qv *= q_inv * (q_norm[d] + qk_norm_offset);
+        if (d < rdim_pre) {
+            int pair = d % hdim_pre;
+            bool imag = d >= hdim_pre;
+            float re = q_head[pair];
+            float im = q_head[pair + hdim_pre];
+            if (use_qk_norm) {
+                re *= q_inv * (q_norm[pair]            + qk_norm_offset);
+                im *= q_inv * (q_norm[pair + hdim_pre] + qk_norm_offset);
+            }
+            float freq  = 1.0f / powf(rope_base, (float)(2 * pair) / (float)rdim_pre);
+            float angle = (float)pos * freq;
+            float c = cosf(angle);
+            float s = sinf(angle);
+            qv = imag ? (re * s + im * c) : (re * c - im * s);
+        }
+        q_rot[d] = qv;
+    }
+    __syncthreads();
 
     // Append the current K/V once per KV head. Other Q heads sharing
     // the same KV head compute against k_new/v_new directly for pos.
@@ -266,26 +300,8 @@ extern "C" __global__ void fused_decode_attention_f32(
     for (int j = tid; j < n_ctx; j += bdim) {
         float dot = 0.f;
         for (int d = 0; d < head_dim; d++) {
-            float qv = q_head[d];
-            if (use_qk_norm) qv *= q_inv * (q_norm[d] + qk_norm_offset);
-
-            int rdim = (rotary_dim == 0) ? head_dim : min(rotary_dim, head_dim);
-            if (d < rdim) {
-                int hdim = rdim / 2;
-                int pair = d % hdim;
-                bool imag = d >= hdim;
-                float re = q_head[pair];
-                float im = q_head[pair + hdim];
-                if (use_qk_norm) {
-                    re *= q_inv * (q_norm[pair] + qk_norm_offset);
-                    im *= q_inv * (q_norm[pair + hdim] + qk_norm_offset);
-                }
-                float freq = 1.0f / powf(rope_base, (float)(2 * pair) / (float)rdim);
-                float angle = (float)pos * freq;
-                float c = cosf(angle);
-                float s = sinf(angle);
-                qv = imag ? (re * s + im * c) : (re * c - im * s);
-            }
+            // Q is pre-rotated above (cuda-attn-rope-hoist).
+            float qv = q_rot[d];
 
             float kv;
             if (j == pos) {
@@ -630,7 +646,8 @@ pub fn fused_decode_attention(
     let cfg = LaunchConfig {
         grid_dim: (opts.num_q_heads as u32, 1, 1),
         block_dim: (block_dim, 1, 1),
-        shared_mem_bytes: ((opts.max_seq + block_dim as usize) * std::mem::size_of::<f32>()) as u32,
+        shared_mem_bytes: ((opts.max_seq + block_dim as usize + opts.head_dim)
+            * std::mem::size_of::<f32>()) as u32,
     };
     let num_q_heads_i = opts.num_q_heads as i32;
     let num_kv_heads_i = opts.num_kv_heads as i32;
@@ -739,7 +756,8 @@ pub fn fused_decode_attention_device_kv(
     let cfg = LaunchConfig {
         grid_dim: (opts.num_q_heads as u32, 1, 1),
         block_dim: (block_dim, 1, 1),
-        shared_mem_bytes: ((opts.max_seq + block_dim as usize) * std::mem::size_of::<f32>()) as u32,
+        shared_mem_bytes: ((opts.max_seq + block_dim as usize + opts.head_dim)
+            * std::mem::size_of::<f32>()) as u32,
     };
     let num_q_heads_i = opts.num_q_heads as i32;
     let num_kv_heads_i = opts.num_kv_heads as i32;
@@ -850,7 +868,8 @@ pub fn fused_decode_attention_device(
     let cfg = LaunchConfig {
         grid_dim: (opts.num_q_heads as u32, 1, 1),
         block_dim: (block_dim, 1, 1),
-        shared_mem_bytes: ((opts.max_seq + block_dim as usize) * std::mem::size_of::<f32>()) as u32,
+        shared_mem_bytes: ((opts.max_seq + block_dim as usize + opts.head_dim)
+            * std::mem::size_of::<f32>()) as u32,
     };
     let num_q_heads_i = opts.num_q_heads as i32;
     let num_kv_heads_i = opts.num_kv_heads as i32;

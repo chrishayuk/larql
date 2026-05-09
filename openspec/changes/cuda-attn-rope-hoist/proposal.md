@@ -172,23 +172,46 @@ existing `fused_decode_attention_device_kv` kernel.
 
 ## Acceptance bar
 
-Measured on the dev box (RTX 4090, CUDA 12.5, Gemma 3 4B Q4_K
-vindex, 20 tokens after 3 warmup):
+Final numbers measured on the dev box (RTX 4090, CUDA 12.5,
+Gemma 3 4B Q4_K vindex, 20 tokens after 3 warmup):
 
-| Metric | Pre-change (post-mmvq) | Target |
-|---|---:|---:|
-| `decode ms/token` | 15.55 | ≤ 13 |
-| `GPU fwd ms/token` | 13.567 | ≤ 11 |
-| `tok/s` | 64.3 | ≥ 77 |
-| `attn_call` (profile) | 6.35 ms | ≤ 4 ms |
-| Bit parity vs host fallback | ≤ 1e-3 | ≤ 1e-3 |
+| Metric | Pre-change | **Actual** | Target |
+|---|---:|---:|---:|
+| `decode ms/token` | 15.55 | **12.88** | ≤ 13 ✓ |
+| `GPU fwd ms/token` | 13.567 | **10.898** | ≤ 11 ✓ |
+| `tok/s` | 64.3 | **77.6** | ≥ 77 ✓ |
+| `attn_call` (profile) | 6.35 ms | **3.68 ms** | ≤ 4 ms ✓ |
+| Bit parity vs host fallback | ≤ 1e-3 | **passes** | ≤ 1e-3 ✓ |
 
-The attention-kernel-internal change targets a **2-3 ms/token
-decode reduction**. If the profile shows `attn_call` did not
-materially drop (e.g., < 1 ms reduction), the rotation was
-not on the critical path after all and we should profile
-deeper before further work — likely cause would be `cosf`/
-`sinf` already being well-pipelined by the SFU even with
-redundancy, in which case the residual cost is the dot-product
-itself and the next move is to fuse Q × K dot and softmax into
-a tiled FlashAttention-style kernel (separate change).
+**Cleared every gate.** The hoist saved 2.67 ms/token
+(–42% on `attn_call`), within the predicted 2-3 ms range.
+The new top bucket is `proj_down` (Q6_K cuBLAS GEMV) at
+4.06 ms — the natural target for the next mmvq port
+(`cuda-q6k-mmvq`).
+
+Post-hoist profile (steady state, 12.57 ms/tok total):
+
+```
+proj_down       4.06 ms (32%)   ← NEW TOP: Q6_K cuBLAS GEMV
+attn_call       3.68 ms (29%)   ← was 6.35 ms before
+proj_gate_up    1.38 ms (11%)
+norm_cpu        1.04 ms ( 8%)
+proj_qkv        1.02 ms ( 8%)
+residual_cpu    1.00 ms ( 8%)
+proj_wo         0.36 ms ( 3%)
+htod/dtoh       ~0.02 ms
+```
+
+Combined progress vs the pre-LARQL-CUDA-work baseline
+(162.72 ms/tok, 6.1 tok/s):
+
+| | Baseline | After hoist | Speedup |
+|---|---:|---:|---:|
+| decode ms/tok | 162.72 | **12.88** | **12.63×** |
+| tok/s | 6.1 | **77.6** | **12.72×** |
+
+Closes the gap with llama-cpp-turboquant
+(4.40 ms/tok / 227.5 tok/s) from 4.43× (pre-mmvq) to **2.93×**.
+The next two natural follow-ups (Q6_K mmvq, then a tiled
+FlashAttention-style fused kernel) should each chip another
+1-3 ms.
