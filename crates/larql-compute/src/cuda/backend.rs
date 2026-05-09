@@ -5,14 +5,17 @@
 //!
 //! [parent]: ../../../../openspec/changes/cuda-and-rotorquant-kv/
 
+use std::collections::HashMap;
 use std::sync::Arc;
 use std::sync::Mutex;
 
+use cudarc::driver::CudaSlice;
 use ndarray::{Array2, ArrayView2};
 
 use crate::backend::{Capability, ComputeBackend, MatMul};
 
 use super::decode::CudaKvCache;
+use super::dequant;
 use super::driver::Driver;
 use super::error::CudaInitError;
 use super::matmul as kernels;
@@ -20,6 +23,8 @@ use super::matmul as kernels;
 pub struct CudaBackend {
     drv: Arc<Driver>,
     pub(crate) kv_cache: Mutex<Option<CudaKvCache>>,
+    q4k_device_cache: Mutex<HashMap<DeviceBytesKey, CudaSlice<u8>>>,
+    q6k_f32_device_cache: Mutex<HashMap<DeviceBytesKey, CudaSlice<f32>>>,
 }
 
 impl CudaBackend {
@@ -32,6 +37,8 @@ impl CudaBackend {
         Ok(CudaBackend {
             drv,
             kv_cache: Mutex::new(None),
+            q4k_device_cache: Mutex::new(HashMap::new()),
+            q6k_f32_device_cache: Mutex::new(HashMap::new()),
         })
     }
 
@@ -39,6 +46,65 @@ impl CudaBackend {
     /// can borrow the driver without exposing it crate-wide.
     pub(crate) fn driver(&self) -> &Driver {
         &self.drv
+    }
+
+    pub(crate) fn with_q4k_device_buf<R>(
+        &self,
+        host: &[u8],
+        f: impl FnOnce(&CudaSlice<u8>) -> Result<R, CudaInitError>,
+    ) -> Result<R, CudaInitError> {
+        let key = DeviceBytesKey::from_slice(host);
+        let mut cache = self
+            .q4k_device_cache
+            .lock()
+            .map_err(|_| CudaInitError::DriverMissing("q4k device cache poisoned".into()))?;
+        if !cache.contains_key(&key) {
+            let dev = self.drv.device_u8_buf_from(host)?;
+            cache.insert(key, dev);
+        }
+        let dev = cache
+            .get(&key)
+            .ok_or_else(|| CudaInitError::DriverMissing("q4k cache insert failed".into()))?;
+        f(dev)
+    }
+
+    pub(crate) fn with_q6k_f32_device_buf<R>(
+        &self,
+        host: &[u8],
+        n_elements: usize,
+        f: impl FnOnce(&CudaSlice<f32>) -> Result<R, CudaInitError>,
+    ) -> Result<R, CudaInitError> {
+        let key = DeviceBytesKey::from_slice(host);
+        let mut cache = self
+            .q6k_f32_device_cache
+            .lock()
+            .map_err(|_| CudaInitError::DriverMissing("q6k device cache poisoned".into()))?;
+        if !cache.contains_key(&key) {
+            let w = dequant::dequant_q6_k(host, n_elements)
+                .map_err(|e| CudaInitError::DriverMissing(format!("q6k dequant: {e:?}")))?;
+            let dev = self.drv.device_buf_from(&w)?;
+            cache.insert(key, dev);
+        }
+        let dev = cache
+            .get(&key)
+            .ok_or_else(|| CudaInitError::DriverMissing("q6k cache insert failed".into()))?;
+        f(dev)
+    }
+
+    #[doc(hidden)]
+    pub fn q4k_device_cache_len(&self) -> usize {
+        self.q4k_device_cache
+            .lock()
+            .map(|cache| cache.len())
+            .unwrap_or(0)
+    }
+
+    #[doc(hidden)]
+    pub fn q6k_f32_device_cache_len(&self) -> usize {
+        self.q6k_f32_device_cache
+            .lock()
+            .map(|cache| cache.len())
+            .unwrap_or(0)
     }
 
     /// Internal: contiguous row-major view of an `ArrayView2`. The
@@ -51,6 +117,33 @@ impl CudaBackend {
             // Strided view — collect through ndarray's iterator into a
             // fresh Vec. Cheap on the dimensions we care about.
             m.iter().copied().collect()
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+struct DeviceBytesKey {
+    ptr: usize,
+    len: usize,
+    head: u64,
+    tail: u64,
+}
+
+impl DeviceBytesKey {
+    fn from_slice(bytes: &[u8]) -> Self {
+        fn read_u64(bytes: &[u8]) -> u64 {
+            let mut out = [0u8; 8];
+            let n = bytes.len().min(out.len());
+            out[..n].copy_from_slice(&bytes[..n]);
+            u64::from_le_bytes(out)
+        }
+
+        let tail_start = bytes.len().saturating_sub(8);
+        Self {
+            ptr: bytes.as_ptr() as usize,
+            len: bytes.len(),
+            head: read_u64(bytes),
+            tail: read_u64(&bytes[tail_start..]),
         }
     }
 }

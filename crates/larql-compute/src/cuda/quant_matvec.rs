@@ -45,7 +45,7 @@ impl QuantMatVec for CudaBackend {
             return None;
         }
         if std::env::var("LARQL_CUDA_Q4K_HOST_DEQUANT").ok().as_deref() != Some("1") {
-            return q4k_direct::matvec(self.driver(), q4k_data, x, num_rows, hidden).ok();
+            return q4k_direct::matvec(self, q4k_data, x, num_rows, hidden).ok();
         }
         let w = dequant::dequant_q4_k(q4k_data, num_rows * hidden).ok()?;
         kernels::gemv(self.driver(), &w, x, num_rows, hidden).ok()
@@ -74,6 +74,13 @@ impl QuantMatVec for CudaBackend {
     ) -> Option<Vec<f32>> {
         if x.len() != hidden {
             return None;
+        }
+        if std::env::var("LARQL_CUDA_Q6K_HOST_DEQUANT").ok().as_deref() != Some("1") {
+            return self
+                .with_q6k_f32_device_buf(q6k_data, num_rows * hidden, |w_dev| {
+                    kernels::gemv_device_w(self.driver(), w_dev, x, num_rows, hidden)
+                })
+                .ok();
         }
         let w = dequant::dequant_q6_k(q6k_data, num_rows * hidden).ok()?;
         kernels::gemv(self.driver(), &w, x, num_rows, hidden).ok()

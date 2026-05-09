@@ -375,6 +375,14 @@ fn run_larql(
     let mut q4_index = larql_vindex::VectorIndex::load_vindex(vindex_path, &mut cb)?;
     q4_index.load_attn_q4k(vindex_path)?;
     q4_index.load_interleaved_q4k(vindex_path)?;
+    if let Err(e) = q4_index.load_lm_head_q4(vindex_path) {
+        if args.verbose {
+            eprintln!(
+                "[bench] lm_head_q4 unavailable for {}: {e}",
+                kind.request_name()
+            );
+        }
+    }
 
     let cfg = larql_vindex::load_vindex_config(vindex_path)?;
     if cfg.quant != larql_vindex::QuantFormat::Q4K {

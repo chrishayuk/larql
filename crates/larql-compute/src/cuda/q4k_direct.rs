@@ -11,12 +11,14 @@ use std::sync::OnceLock;
 use cudarc::driver::{CudaFunction, CudaModule, LaunchConfig, PushKernelArg};
 use cudarc::nvrtc::compile_ptx;
 
+use super::backend::CudaBackend;
 use super::driver::Driver;
 use super::error::CudaInitError;
 
 const Q4K_BLOCK_ELEMS: usize = 256;
 const Q4K_BLOCK_BYTES: usize = 144;
-const THREADS_PER_ROW: u32 = 256;
+const THREADS_PER_ROW: u32 = 128;
+const ROWS_PER_BLOCK: u32 = 4;
 
 const Q4K_MATVEC_SRC: &str = r#"
 __device__ float larql_f16_to_f32(unsigned short h) {
@@ -57,11 +59,13 @@ extern "C" __global__ void q4k_matvec_direct(
     int hidden,
     int blocks_per_row
 ) {
-    int row = blockIdx.x;
+    int row = blockIdx.x * blockDim.y + threadIdx.y;
     if (row >= rows) return;
     int tid = threadIdx.x;
     int bdim = blockDim.x;
+    int row_lane = threadIdx.y;
     extern __shared__ float smem[];
+    float* row_smem = smem + row_lane * bdim;
 
     float acc = 0.0f;
     const unsigned char* row_base = q4k + (unsigned long long)row * blocks_per_row * 144ull;
@@ -87,13 +91,13 @@ extern "C" __global__ void q4k_matvec_direct(
         }
     }
 
-    smem[tid] = acc;
+    row_smem[tid] = acc;
     __syncthreads();
     for (int stride = bdim >> 1; stride > 0; stride >>= 1) {
-        if (tid < stride) smem[tid] += smem[tid + stride];
+        if (tid < stride) row_smem[tid] += row_smem[tid + stride];
         __syncthreads();
     }
-    if (tid == 0) y[row] = smem[0];
+    if (tid == 0) y[row] = row_smem[0];
 }
 "#;
 
@@ -118,7 +122,7 @@ fn q4k_matvec_function(drv: &Driver) -> Result<&'static CudaFunction, CudaInitEr
 }
 
 pub(crate) fn matvec(
-    drv: &Driver,
+    backend: &CudaBackend,
     q4k_data: &[u8],
     x: &[f32],
     rows: usize,
@@ -141,33 +145,56 @@ pub(crate) fn matvec(
             q4k_data.len()
         )));
     }
+    let trace_min_rows = std::env::var("LARQL_CUDA_Q4K_TRACE_MIN_ROWS")
+        .ok()
+        .and_then(|v| v.parse::<usize>().ok())
+        .unwrap_or(100_000);
+    let trace = std::env::var("LARQL_CUDA_Q4K_TRACE").ok().as_deref() == Some("1")
+        && rows >= trace_min_rows;
+    let t0 = if trace {
+        Some(std::time::Instant::now())
+    } else {
+        None
+    };
 
+    let drv = backend.driver();
     let func = q4k_matvec_function(drv)?;
-    let q4k_dev = drv.device_u8_buf_from(q4k_data)?;
     let x_dev = drv.device_buf_from(x)?;
     let mut y_dev = drv.device_alloc(rows)?;
     let rows_i = rows as i32;
     let hidden_i = hidden as i32;
     let blocks_per_row_i = blocks_per_row as i32;
     let cfg = LaunchConfig {
-        grid_dim: (rows as u32, 1, 1),
-        block_dim: (THREADS_PER_ROW, 1, 1),
-        shared_mem_bytes: THREADS_PER_ROW * std::mem::size_of::<f32>() as u32,
+        grid_dim: ((rows as u32).div_ceil(ROWS_PER_BLOCK), 1, 1),
+        block_dim: (THREADS_PER_ROW, ROWS_PER_BLOCK, 1),
+        shared_mem_bytes: THREADS_PER_ROW * ROWS_PER_BLOCK * std::mem::size_of::<f32>() as u32,
     };
 
-    unsafe {
-        drv.stream
-            .launch_builder(func)
-            .arg(&q4k_dev)
-            .arg(&x_dev)
-            .arg(&mut y_dev)
-            .arg(&rows_i)
-            .arg(&hidden_i)
-            .arg(&blocks_per_row_i)
-            .launch(cfg)
-            .map_err(|e| CudaInitError::DriverMissing(format!("launch q4k_matvec: {e:?}")))?;
-    }
+    backend.with_q4k_device_buf(q4k_data, |q4k_dev| {
+        unsafe {
+            drv.stream
+                .launch_builder(func)
+                .arg(q4k_dev)
+                .arg(&x_dev)
+                .arg(&mut y_dev)
+                .arg(&rows_i)
+                .arg(&hidden_i)
+                .arg(&blocks_per_row_i)
+                .launch(cfg)
+                .map_err(|e| CudaInitError::DriverMissing(format!("launch q4k_matvec: {e:?}")))?;
+        }
+        Ok(())
+    })?;
 
     drv.sync()?;
-    drv.to_host(&y_dev)
+    let out = drv.to_host(&y_dev)?;
+    if let Some(t0) = t0 {
+        eprintln!(
+            "[cuda-q4k] rows={rows} hidden={hidden} bytes={} cache_slots={} elapsed_ms={:.3}",
+            q4k_data.len(),
+            backend.q4k_device_cache_len(),
+            t0.elapsed().as_secs_f64() * 1000.0,
+        );
+    }
+    Ok(out)
 }

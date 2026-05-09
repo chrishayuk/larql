@@ -184,6 +184,36 @@ fn q4k_matvec_host_dequant_fallback_parity() {
 }
 
 #[test]
+fn q4k_matvec_reuses_device_cache() {
+    let Some(cuda) = gpu_or_skip() else { return };
+    let n = 64;
+    let k = 256;
+    let weights_f32 = synth(n * k, 0xB51);
+    let q4k = quantize_q4_k(&weights_f32);
+    let x1 = synth(k, 0xB52);
+    let x2 = synth(k, 0xB53);
+    assert_eq!(cuda.q4k_device_cache_len(), 0);
+
+    let gpu1 = cuda
+        .q4k_matvec(&q4k, &x1, n, k)
+        .expect("first CUDA q4k_matvec");
+    assert_eq!(cuda.q4k_device_cache_len(), 1);
+    let gpu2 = cuda
+        .q4k_matvec(&q4k, &x2, n, k)
+        .expect("second CUDA q4k_matvec should reuse cache");
+    assert_eq!(cuda.q4k_device_cache_len(), 1);
+
+    let cpu1 = CpuBackend
+        .q4k_matvec(&q4k, &x1, n, k)
+        .expect("CPU q4k_matvec x1");
+    let cpu2 = CpuBackend
+        .q4k_matvec(&q4k, &x2, n, k)
+        .expect("CPU q4k_matvec x2");
+    assert!(max_abs_diff(&cpu1, &gpu1) <= TOL_ABS);
+    assert!(max_abs_diff(&cpu2, &gpu2) <= TOL_ABS);
+}
+
+#[test]
 fn q4k_matvec_lm_head_parity() {
     let Some(cuda) = gpu_or_skip() else { return };
     let n = 128_256; // Llama-class vocab
@@ -241,6 +271,36 @@ fn q6k_matvec_lm_head_parity() {
     let cos = cosine(&cpu, &gpu);
     assert!(diff <= TOL_ABS, "Q6_K max abs diff {diff} > {TOL_ABS}");
     assert!(cos >= TOL_COS, "Q6_K cosine {cos} < {TOL_COS}");
+}
+
+#[test]
+fn q6k_matvec_reuses_device_cache() {
+    let Some(cuda) = gpu_or_skip() else { return };
+    let n = 64;
+    let k = 256;
+    let weights_f32 = synth(n * k, 0xD51);
+    let q6k = quantize_q6_k(&weights_f32);
+    let x1 = synth(k, 0xD52);
+    let x2 = synth(k, 0xD53);
+    assert_eq!(cuda.q6k_f32_device_cache_len(), 0);
+
+    let gpu1 = cuda
+        .q6k_matvec(&q6k, &x1, n, k)
+        .expect("first CUDA q6k_matvec");
+    assert_eq!(cuda.q6k_f32_device_cache_len(), 1);
+    let gpu2 = cuda
+        .q6k_matvec(&q6k, &x2, n, k)
+        .expect("second CUDA q6k_matvec should reuse cache");
+    assert_eq!(cuda.q6k_f32_device_cache_len(), 1);
+
+    let cpu1 = CpuBackend
+        .q6k_matvec(&q6k, &x1, n, k)
+        .expect("CPU q6k_matvec x1");
+    let cpu2 = CpuBackend
+        .q6k_matvec(&q6k, &x2, n, k)
+        .expect("CPU q6k_matvec x2");
+    assert!(max_abs_diff(&cpu1, &gpu1) <= TOL_ABS);
+    assert!(max_abs_diff(&cpu2, &gpu2) <= TOL_ABS);
 }
 
 #[test]

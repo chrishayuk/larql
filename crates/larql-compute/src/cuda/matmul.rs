@@ -8,6 +8,7 @@ use cudarc::cublas::{
     sys::cublasOperation_t::{CUBLAS_OP_N, CUBLAS_OP_T},
     Gemm, GemmConfig,
 };
+use cudarc::driver::CudaSlice;
 
 use super::driver::Driver;
 use super::error::CudaInitError;
@@ -135,6 +136,40 @@ pub(crate) fn gemv(
     debug_assert_eq!(w.len(), n * k, "W length mismatch");
     debug_assert_eq!(x.len(), k, "x length mismatch");
     matmul_transb(drv, x, w, 1, n, k)
+}
+
+pub(crate) fn gemv_device_w(
+    drv: &Driver,
+    w_dev: &CudaSlice<f32>,
+    x: &[f32],
+    n: usize,
+    k: usize,
+) -> Result<Vec<f32>, CudaInitError> {
+    debug_assert_eq!(w_dev.len(), n * k, "W length mismatch");
+    debug_assert_eq!(x.len(), k, "x length mismatch");
+
+    let x_dev = drv.device_buf_from(x)?;
+    let mut y_dev = drv.device_alloc(n)?;
+    let cfg = GemmConfig {
+        transa: CUBLAS_OP_T,
+        transb: CUBLAS_OP_N,
+        m: n as i32,
+        n: 1,
+        k: k as i32,
+        alpha: 1.0_f32,
+        lda: k as i32,
+        ldb: k as i32,
+        beta: 0.0_f32,
+        ldc: n as i32,
+    };
+
+    unsafe {
+        drv.blas
+            .gemm(cfg, w_dev, &x_dev, &mut y_dev)
+            .map_err(|e| CudaInitError::DriverMissing(format!("cublas gemv_device_w: {e:?}")))?;
+    }
+    drv.sync()?;
+    drv.to_host(&y_dev)
 }
 
 #[cfg(test)]
