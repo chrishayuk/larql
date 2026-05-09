@@ -21,12 +21,12 @@ The f16 cache SHALL only populate when the gate is on.
   trials each
 <!-- test: unbacked -->
 
-### Requirement: f16 prefill SHALL produce parity-equivalent output
+### Requirement: f16 prefill SHALL produce parity output vs the f32 path
 
-`LARQL_CUDA_PREFILL_TENSOR_CORES=1` and the default f32 path
-SHALL produce identical generated text on the same prompt for
-the same model. f16 input + f32 accumulator keeps per-element
-error ≤ 1e-3 against the existing f32 reference.
+`LARQL_CUDA_PREFILL_TENSOR_CORES=1` SHALL produce bit-equivalent
+generated text vs the default f32 path on the same prompt and
+model. f16 input + f32 accumulator MUST keep per-element error
+≤ 1e-3 against the f32 reference.
 
 #### Scenario: generated text matches across the gate
 
