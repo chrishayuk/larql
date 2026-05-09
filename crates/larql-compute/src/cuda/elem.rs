@@ -35,13 +35,20 @@ extern "C" __global__ void rms_norm_vec_f32(
     float norm_offset,
     float* out
 ) {
-    int tid = threadIdx.x;
+    // One CUDA block per row. Single-row callers launch with
+    // grid_dim = (1, 1, 1); batched callers launch with
+    // grid_dim = (seq_len, 1, 1). cuda-prefill-batched-q4k
+    // generalisation.
+    int row  = blockIdx.x;
+    int tid  = threadIdx.x;
     int bdim = blockDim.x;
     extern __shared__ float smem[];
+    const float* x_row   = x   + (size_t)row * n;
+    float*       out_row = out + (size_t)row * n;
 
     float ss = 0.0f;
     for (int i = tid; i < n; i += bdim) {
-        float v = x[i];
+        float v = x_row[i];
         ss += v * v;
     }
     smem[tid] = ss;
@@ -54,11 +61,11 @@ extern "C" __global__ void rms_norm_vec_f32(
 
     if (has_weight) {
         for (int i = tid; i < n; i += bdim) {
-            out[i] = x[i] * inv_rms * (weight[i] + norm_offset);
+            out_row[i] = x_row[i] * inv_rms * (weight[i] + norm_offset);
         }
     } else {
         for (int i = tid; i < n; i += bdim) {
-            out[i] = x[i] * inv_rms;
+            out_row[i] = x_row[i] * inv_rms;
         }
     }
 }
@@ -455,6 +462,98 @@ pub(crate) fn quantize_q8_1_device(
     }
 
     Ok(Q8_1Buf { bytes, n_blocks })
+}
+
+/// Batched RMSNorm. Applies single-row rms_norm to each row of an
+/// `[seq_len, n]` device buffer independently; one CUDA block per row.
+/// Reuses `RMS_NORM_FUNC` (the kernel is grid-agnostic for `seq_len ≥ 1`).
+/// `cuda-prefill-batched-q4k` Phase 1.
+pub(crate) fn rms_norm_batch_device(
+    backend: &CudaBackend,
+    x_seq: &CudaSlice<f32>,
+    weight_dev: Option<&CudaSlice<f32>>,
+    n: usize,
+    seq_len: usize,
+    eps: f32,
+    norm_offset: f32,
+) -> Result<CudaSlice<f32>, CudaInitError> {
+    if x_seq.len() != n * seq_len {
+        return Err(CudaInitError::DriverMissing(format!(
+            "rms_norm_batch_device: x_seq.len={} != n*seq_len={}*{}",
+            x_seq.len(),
+            n,
+            seq_len,
+        )));
+    }
+    if let Some(w) = weight_dev {
+        if w.len() != n {
+            return Err(CudaInitError::DriverMissing(format!(
+                "rms_norm_batch_device: weight_dev.len={} != n={}",
+                w.len(),
+                n,
+            )));
+        }
+    }
+    let drv = backend.driver();
+    let func = load_kernel(drv, &RMS_NORM_FUNC, RMS_NORM_SRC, "rms_norm_vec_f32")?;
+    let mut out = drv.device_alloc_uninit(n * seq_len)?;
+    let block_dim: u32 = 1024;
+    let cfg = LaunchConfig {
+        grid_dim: (seq_len as u32, 1, 1),
+        block_dim: (block_dim, 1, 1),
+        shared_mem_bytes: block_dim * std::mem::size_of::<f32>() as u32,
+    };
+    let n_i = n as i32;
+    let has_weight_i: i32 = if weight_dev.is_some() { 1 } else { 0 };
+    let placeholder = out.clone();
+    let weight_arg = weight_dev.unwrap_or(&placeholder);
+    unsafe {
+        drv.stream
+            .launch_builder(func)
+            .arg(x_seq)
+            .arg(weight_arg)
+            .arg(&n_i)
+            .arg(&has_weight_i)
+            .arg(&eps)
+            .arg(&norm_offset)
+            .arg(&mut out)
+            .launch(cfg)
+            .map_err(|e| CudaInitError::DriverMissing(format!("launch rms_norm_batch: {e:?}")))?;
+    }
+    Ok(out)
+}
+
+/// Batched silu/gelu × up. The underlying kernel is purely
+/// element-wise (`out[i] = act(gate[i]) * up[i]`), so batching is
+/// just calling it with `n = seq_len * inter`. Provided as a thin
+/// wrapper for clarity at the call site.
+pub(crate) fn silu_gate_up_batch_device(
+    backend: &CudaBackend,
+    gate_seq: &CudaSlice<f32>,
+    up_seq: &CudaSlice<f32>,
+    n_total: usize,
+    gelu_tanh: bool,
+) -> Result<CudaSlice<f32>, CudaInitError> {
+    silu_gate_up_device(backend, gate_seq, up_seq, n_total, gelu_tanh)
+}
+
+/// Batched in-place add. The single-row kernel is element-wise; batch
+/// just means calling with the full `[seq_len * n]` length.
+pub(crate) fn add_in_place_batch_device(
+    backend: &CudaBackend,
+    dst_seq: &mut CudaSlice<f32>,
+    delta_seq: &CudaSlice<f32>,
+) -> Result<(), CudaInitError> {
+    add_in_place_device(backend, dst_seq, delta_seq)
+}
+
+/// Batched in-place scale.
+pub(crate) fn scale_inplace_batch_device(
+    backend: &CudaBackend,
+    dst_seq: &mut CudaSlice<f32>,
+    scalar: f32,
+) -> Result<(), CudaInitError> {
+    scale_inplace_device(backend, dst_seq, scalar)
 }
 
 #[cfg(test)]

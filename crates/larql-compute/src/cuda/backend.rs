@@ -26,6 +26,7 @@ pub struct CudaBackend {
     q4k_device_cache: Mutex<HashMap<DeviceBytesKey, CudaSlice<u8>>>,
     q6k_f32_device_cache: Mutex<HashMap<DeviceBytesKey, CudaSlice<f32>>>,
     q6k_packed_device_cache: Mutex<HashMap<DeviceBytesKey, CudaSlice<u8>>>,
+    q4k_f32_device_cache: Mutex<HashMap<DeviceBytesKey, CudaSlice<f32>>>,
     /// Per-pointer cache of small f32 weights (norms etc.) so the
     /// per-layer norm-weight htod's collapse to a one-time upload per
     /// host buffer. Keyed by host pointer + length + content hash so
@@ -47,6 +48,7 @@ impl CudaBackend {
             q4k_device_cache: Mutex::new(HashMap::new()),
             q6k_f32_device_cache: Mutex::new(HashMap::new()),
             q6k_packed_device_cache: Mutex::new(HashMap::new()),
+            q4k_f32_device_cache: Mutex::new(HashMap::new()),
             f32_norm_device_cache: Mutex::new(HashMap::new()),
         })
     }
@@ -98,6 +100,34 @@ impl CudaBackend {
         let dev = cache
             .get(&key)
             .ok_or_else(|| CudaInitError::DriverMissing("q6k packed cache insert failed".into()))?;
+        f(dev)
+    }
+
+    /// Per-pointer cache of *dequantised* f32 Q4_K weights on the
+    /// device. `cuda-prefill-batched-q4k` uses this for cuBLAS GEMM
+    /// during prefill — re-reading 9.6 GB of f32 weights is faster
+    /// than per-call dequant. Decode still uses the packed cache via
+    /// `with_q4k_device_buf` + mmvq.
+    pub(crate) fn with_q4k_f32_device_buf<R>(
+        &self,
+        host: &[u8],
+        n_elements: usize,
+        f: impl FnOnce(&CudaSlice<f32>) -> Result<R, CudaInitError>,
+    ) -> Result<R, CudaInitError> {
+        let key = DeviceBytesKey::from_slice(host);
+        let mut cache = self
+            .q4k_f32_device_cache
+            .lock()
+            .map_err(|_| CudaInitError::DriverMissing("q4k f32 cache poisoned".into()))?;
+        if !cache.contains_key(&key) {
+            let w = dequant::dequant_q4_k(host, n_elements)
+                .map_err(|e| CudaInitError::DriverMissing(format!("q4k dequant: {e:?}")))?;
+            let dev = self.drv.device_buf_from(&w)?;
+            cache.insert(key, dev);
+        }
+        let dev = cache
+            .get(&key)
+            .ok_or_else(|| CudaInitError::DriverMissing("q4k f32 cache insert failed".into()))?;
         f(dev)
     }
 

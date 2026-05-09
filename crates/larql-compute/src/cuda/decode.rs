@@ -488,6 +488,44 @@ impl DecodeBackend for CudaBackend {
         if x.len() != seq_len * hidden {
             return None;
         }
+        // `cuda-prefill-batched-q4k`: try the batched GEMM path first.
+        // Falls back to the per-position decode loop on env-var
+        // override or unsupported layer formats. Q4_K and Q6_K are
+        // covered; other formats use the legacy path.
+        let prefill_host_fallback = std::env::var("LARQL_CUDA_PREFILL_HOST_FALLBACK")
+            .ok()
+            .as_deref()
+            == Some("1");
+        let all_supported = layers.iter().all(|l| {
+            l.norm_type == NormType::RmsNorm
+                && l.ffn_type == FfnType::Gated
+                && l.moe.is_none()
+                && !l.ffn_is_remote
+                && matches!(l.wq.format, QuantFormat::Q4_K | QuantFormat::Q6_K)
+                && matches!(l.wk.format, QuantFormat::Q4_K | QuantFormat::Q6_K)
+                && matches!(l.wv.format, QuantFormat::Q4_K | QuantFormat::Q6_K)
+                && matches!(l.wo.format, QuantFormat::Q4_K | QuantFormat::Q6_K)
+                && matches!(l.gate.format, QuantFormat::Q4_K | QuantFormat::Q6_K)
+                && matches!(l.up.format, QuantFormat::Q4_K | QuantFormat::Q6_K)
+                && matches!(l.down.format, QuantFormat::Q4_K | QuantFormat::Q6_K)
+        });
+        if !prefill_host_fallback && all_supported {
+            if let Some(out) = self.prefill_q4_seq_device(
+                layers,
+                x,
+                hidden,
+                inter,
+                q_dim,
+                kv_dim,
+                seq_len,
+                num_q_heads,
+                num_kv_heads,
+                head_dim,
+                rope_base,
+            ) {
+                return Some(out);
+            }
+        }
         self.reset_kv_cache();
         let mut out = Vec::with_capacity(x.len());
         for pos in 0..seq_len {
@@ -1051,5 +1089,355 @@ impl CudaBackend {
 
         cache.len = pos + 1;
         Some(h)
+    }
+
+    /// Q-format-aware projection GEMM for batched prefill. Routes
+    /// Q4_K and Q6_K through their respective f32 device caches (one-
+    /// time dequant per session) and runs the projection as a cuBLAS
+    /// `(seq_len, hidden) × (out_dim, hidden)^T → (seq_len, out_dim)`
+    /// GEMM. `cuda-prefill-batched-q4k` Phase 1.
+    fn gemm_proj_seq(
+        &self,
+        weight: QuantWeight<'_>,
+        x_seq: &CudaSlice<f32>,
+        seq_len: usize,
+        out_dim: usize,
+        hidden: usize,
+    ) -> Option<CudaSlice<f32>> {
+        let n_elements = out_dim * hidden;
+        match weight.format {
+            QuantFormat::Q4_K => self
+                .with_q4k_f32_device_buf(weight.data, n_elements, |w_dev| {
+                    kernels::matmul_transb_device_inout(
+                        self.driver(),
+                        x_seq,
+                        w_dev,
+                        seq_len,
+                        out_dim,
+                        hidden,
+                    )
+                })
+                .ok(),
+            QuantFormat::Q6_K => self
+                .with_q6k_f32_device_buf(weight.data, n_elements, |w_dev| {
+                    kernels::matmul_transb_device_inout(
+                        self.driver(),
+                        x_seq,
+                        w_dev,
+                        seq_len,
+                        out_dim,
+                        hidden,
+                    )
+                })
+                .ok(),
+            _ => None,
+        }
+    }
+
+    /// Batched prefill via cuBLAS f32 GEMM. Replaces the per-position
+    /// `decode_token` loop in `prefill_q4` with a single GEMM per
+    /// projection per layer; attention stays per-position because
+    /// seq_len is bounded and the per-call kernel is already
+    /// device-resident. `cuda-prefill-batched-q4k` Phase 1.
+    #[allow(clippy::too_many_arguments)]
+    pub(crate) fn prefill_q4_seq_device(
+        &self,
+        layers: &[FullPipelineLayer<'_>],
+        x: &[f32],
+        hidden: usize,
+        inter: usize,
+        q_dim: usize,
+        _kv_dim: usize,
+        seq_len: usize,
+        num_q_heads: usize,
+        num_kv_heads: usize,
+        head_dim: usize,
+        rope_base: f32,
+    ) -> Option<Vec<f32>> {
+        if x.len() != seq_len * hidden || layers.is_empty() || seq_len == 0 {
+            return None;
+        }
+
+        // Reset KV cache for a fresh prefill.
+        self.reset_kv_cache();
+        let mut guard = self.kv_cache.lock().ok()?;
+        if guard.is_none() {
+            let shapes: Vec<(usize, usize)> = layers
+                .iter()
+                .map(|layer| {
+                    (
+                        layer.num_kv_heads.max(num_kv_heads).max(1),
+                        layer.head_dim.max(head_dim).max(1),
+                    )
+                })
+                .collect();
+            *guard = CudaKvCache::new_device(self, &shapes, DEFAULT_CUDA_KV_CACHE_MAX_SEQ).ok();
+        }
+        let cache = guard.as_mut()?;
+        cache
+            .ensure_for_layers(
+                self,
+                layers,
+                cache.max_seq.max(DEFAULT_CUDA_KV_CACHE_MAX_SEQ),
+            )
+            .ok()?;
+        if seq_len > cache.max_seq {
+            return None;
+        }
+
+        // Initial: htod the whole prompt as `[seq_len, hidden]`.
+        let mut h_seq = self.htod_f32(x).ok()?;
+
+        let prefill_profile =
+            std::env::var("LARQL_CUDA_PREFILL_PROFILE").ok().as_deref() == Some("1");
+        let mut t_norm = std::time::Duration::ZERO;
+        let mut t_qkv = std::time::Duration::ZERO;
+        let mut t_attn = std::time::Duration::ZERO;
+        let mut t_wo = std::time::Duration::ZERO;
+        let mut t_gate_up = std::time::Duration::ZERO;
+        let mut t_silu = std::time::Duration::ZERO;
+        let mut t_down = std::time::Duration::ZERO;
+        let mut t_resid = std::time::Duration::ZERO;
+        let sync_p = |b: &CudaBackend| {
+            if prefill_profile {
+                let _ = b.driver().sync();
+            }
+        };
+
+        for (layer_idx, layer) in layers.iter().enumerate() {
+            let layer_head_dim = layer.head_dim.max(head_dim);
+            let layer_num_q_heads = layer.num_q_heads.max(num_q_heads);
+            let layer_num_kv_heads = layer.num_kv_heads.max(num_kv_heads);
+            let layer_q_dim = layer_num_q_heads * layer_head_dim;
+            let layer_kv_dim = layer_num_kv_heads * layer_head_dim;
+            let layer_rope_base = if layer.rope_base != 0.0 {
+                layer.rope_base
+            } else {
+                rope_base
+            };
+            let layer_rotary_dim = layer.rotary_dim;
+
+            // 1. Pre-attn rms_norm (batched).
+            let t = std::time::Instant::now();
+            let h_attn_seq = self
+                .with_norm_device_buf(layer.input_norm, |w_dev| {
+                    elem::rms_norm_batch_device(
+                        self,
+                        &h_seq,
+                        Some(w_dev),
+                        hidden,
+                        seq_len,
+                        layer.eps,
+                        layer.norm_offset,
+                    )
+                })
+                .ok()?;
+            sync_p(self);
+            t_norm += t.elapsed();
+
+            // 2. QKV projections via cuBLAS f32 GEMM.
+            let t = std::time::Instant::now();
+            let q_seq = self.gemm_proj_seq(layer.wq, &h_attn_seq, seq_len, layer_q_dim, hidden)?;
+            let k_seq = self.gemm_proj_seq(layer.wk, &h_attn_seq, seq_len, layer_kv_dim, hidden)?;
+            let v_seq = self.gemm_proj_seq(layer.wv, &h_attn_seq, seq_len, layer_kv_dim, hidden)?;
+            sync_p(self);
+            t_qkv += t.elapsed();
+
+            // 3. Per-position attention loop. Reusable per-row buffers
+            //    avoid reallocation; dtod copies are bandwidth-bound at
+            //    ~kv_dim*4 bytes ≈ 1 KB each, negligible vs the kernel.
+            let max_seq = cache.max_seq;
+            let kv_slot = cache.layers.get_mut(layer_idx)?;
+            let mut q_pos = self.alloc_f32(layer_q_dim).ok()?;
+            let mut k_pos = self.alloc_f32(layer_kv_dim).ok()?;
+            let mut v_pos = self.alloc_f32(layer_kv_dim).ok()?;
+            let mut attn_out_seq = self.alloc_f32(seq_len * layer_q_dim).ok()?;
+
+            let t = std::time::Instant::now();
+            for pos in 0..seq_len {
+                let q_off = pos * layer_q_dim;
+                let kv_off = pos * layer_kv_dim;
+                self.driver()
+                    .stream
+                    .memcpy_dtod(&q_seq.slice(q_off..q_off + layer_q_dim), &mut q_pos)
+                    .ok()?;
+                self.driver()
+                    .stream
+                    .memcpy_dtod(&k_seq.slice(kv_off..kv_off + layer_kv_dim), &mut k_pos)
+                    .ok()?;
+                self.driver()
+                    .stream
+                    .memcpy_dtod(&v_seq.slice(kv_off..kv_off + layer_kv_dim), &mut v_pos)
+                    .ok()?;
+
+                let attn_out_pos = attn::fused_decode_attention_device_kv(
+                    self,
+                    &q_pos,
+                    &k_pos,
+                    &v_pos,
+                    &mut kv_slot.k,
+                    &mut kv_slot.v,
+                    layer.q_norm_weight,
+                    layer.k_norm_weight,
+                    attn::FusedDecodeAttentionOpts {
+                        num_q_heads: layer_num_q_heads,
+                        num_kv_heads: layer_num_kv_heads,
+                        head_dim: layer_head_dim,
+                        pos,
+                        max_seq,
+                        rotary_dim: layer_rotary_dim,
+                        rope_base: layer_rope_base,
+                        eps: layer.eps,
+                        qk_norm_offset: layer.qk_norm_offset,
+                        attn_scale: layer.attn_scale,
+                        softcap: 0.0,
+                    },
+                )
+                .ok()?;
+                self.driver()
+                    .stream
+                    .memcpy_dtod(
+                        &attn_out_pos,
+                        &mut attn_out_seq.slice_mut(q_off..q_off + layer_q_dim),
+                    )
+                    .ok()?;
+            }
+
+            sync_p(self);
+            t_attn += t.elapsed();
+
+            // 4. wo projection via batched GEMM.
+            let t = std::time::Instant::now();
+            let attn_delta_seq =
+                self.gemm_proj_seq(layer.wo, &attn_out_seq, seq_len, hidden, layer_q_dim)?;
+            sync_p(self);
+            t_wo += t.elapsed();
+
+            // 5. Residual + optional post-attn rms_norm.
+            if layer.has_post_norms {
+                let normed = self
+                    .with_norm_device_buf(layer.post_attn_norm, |w_dev| {
+                        elem::rms_norm_batch_device(
+                            self,
+                            &attn_delta_seq,
+                            Some(w_dev),
+                            hidden,
+                            seq_len,
+                            layer.eps,
+                            layer.norm_offset,
+                        )
+                    })
+                    .ok()?;
+                elem::add_in_place_batch_device(self, &mut h_seq, &normed).ok()?;
+            } else {
+                elem::add_in_place_batch_device(self, &mut h_seq, &attn_delta_seq).ok()?;
+            }
+
+            // 6. Pre-FFN rms_norm (batched).
+            let ffn_norm_weight: &[f32] = if layer.has_post_norms {
+                layer.pre_ffn_norm.unwrap_or(layer.post_attn_norm)
+            } else {
+                layer.post_attn_norm
+            };
+            let h_ffn_seq = self
+                .with_norm_device_buf(ffn_norm_weight, |w_dev| {
+                    elem::rms_norm_batch_device(
+                        self,
+                        &h_seq,
+                        Some(w_dev),
+                        hidden,
+                        seq_len,
+                        layer.eps,
+                        layer.norm_offset,
+                    )
+                })
+                .ok()?;
+
+            // 7. gate / up via batched GEMM.
+            let t = std::time::Instant::now();
+            let gate_seq = self.gemm_proj_seq(layer.gate, &h_ffn_seq, seq_len, inter, hidden)?;
+            let up_seq = self.gemm_proj_seq(layer.up, &h_ffn_seq, seq_len, inter, hidden)?;
+            sync_p(self);
+            t_gate_up += t.elapsed();
+
+            // 8. silu / gelu (batched element-wise).
+            let t = std::time::Instant::now();
+            let gelu_tanh = matches!(layer.activation, Activation::GeluTanh);
+            let act_seq = elem::silu_gate_up_batch_device(
+                self,
+                &gate_seq,
+                &up_seq,
+                seq_len * inter,
+                gelu_tanh,
+            )
+            .ok()?;
+            sync_p(self);
+            t_silu += t.elapsed();
+
+            // 9. down via batched GEMM.
+            let t = std::time::Instant::now();
+            let ffn_delta_seq = self.gemm_proj_seq(layer.down, &act_seq, seq_len, hidden, inter)?;
+            sync_p(self);
+            t_down += t.elapsed();
+
+            // 10. Residual + optional post-FFN rms_norm.
+            if layer.has_post_norms {
+                let normed = match layer.post_ffn_norm {
+                    Some(w) if !w.is_empty() => self
+                        .with_norm_device_buf(w, |w_dev| {
+                            elem::rms_norm_batch_device(
+                                self,
+                                &ffn_delta_seq,
+                                Some(w_dev),
+                                hidden,
+                                seq_len,
+                                layer.eps,
+                                layer.norm_offset,
+                            )
+                        })
+                        .ok()?,
+                    _ => elem::rms_norm_batch_device(
+                        self,
+                        &ffn_delta_seq,
+                        None,
+                        hidden,
+                        seq_len,
+                        layer.eps,
+                        layer.norm_offset,
+                    )
+                    .ok()?,
+                };
+                elem::add_in_place_batch_device(self, &mut h_seq, &normed).ok()?;
+            } else {
+                elem::add_in_place_batch_device(self, &mut h_seq, &ffn_delta_seq).ok()?;
+            }
+
+            if layer.layer_scalar != 0.0 && layer.layer_scalar != 1.0 {
+                elem::scale_inplace_batch_device(self, &mut h_seq, layer.layer_scalar).ok()?;
+            }
+            // q_dim assertion satisfied — silence unused warning.
+            let _ = q_dim;
+        }
+
+        if prefill_profile {
+            let ms = |d: std::time::Duration| d.as_secs_f64() * 1000.0;
+            eprintln!(
+                "[cuda-prefill-profile] seq_len={seq_len} layers={} \
+                 norm={:.2}ms qkv={:.2}ms attn={:.2}ms wo={:.2}ms \
+                 gate_up={:.2}ms silu={:.2}ms down={:.2}ms",
+                layers.len(),
+                ms(t_norm),
+                ms(t_qkv),
+                ms(t_attn),
+                ms(t_wo),
+                ms(t_gate_up),
+                ms(t_silu),
+                ms(t_down),
+            );
+            let _ = t_resid;
+        }
+
+        cache.len = seq_len;
+        self.dtoh_f32(&h_seq).ok()
     }
 }
