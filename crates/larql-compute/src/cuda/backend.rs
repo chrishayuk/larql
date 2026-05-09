@@ -515,4 +515,100 @@ mod tests {
             );
         }
     }
+
+    /// `cuda-decode-cuda-graph` viability probe: confirms that
+    /// cudarc 0.19's stream capture / graph replay mechanism actually
+    /// works for our usage pattern (NVRTC-compiled kernel launched via
+    /// `launch_builder`). If this test fails, the broader change is
+    /// dead in the water and we'd skip the multi-day refactor.
+    #[test]
+    fn cuda_graph_capture_replay_smoke_test() {
+        use cudarc::driver::sys::{CUgraphInstantiate_flags, CUstreamCaptureMode};
+        use cudarc::driver::{LaunchConfig, PushKernelArg};
+        use cudarc::nvrtc::compile_ptx;
+
+        if std::env::var("LARQL_CUDA_AVAILABLE").ok().as_deref() != Some("1") {
+            return;
+        }
+        let Ok(backend) = CudaBackend::new() else {
+            return;
+        };
+        // `Driver::new_with_index` already disabled event tracking
+        // and switched to a non-default stream — both prerequisites
+        // for CUDA Graph capture (CUDA_ERROR_STREAM_CAPTURE_ISOLATION
+        // otherwise). Capture on the same stream that owns the
+        // buffers.
+        let ctx = &backend.driver().ctx;
+        let stream = backend.driver().stream.clone();
+
+        let src = r#"
+extern "C" __global__ void axpb(const float* x, float* y, int n, float a, float b) {
+    int i = blockIdx.x * blockDim.x + threadIdx.x;
+    if (i < n) y[i] = a * x[i] + b;
+}
+"#;
+        let ptx = compile_ptx(src).expect("compile axpb");
+        let module = ctx.load_module(ptx).expect("load axpb module");
+        let func = module.load_function("axpb").expect("load axpb function");
+
+        let n = 1024_usize;
+        let x_host: Vec<f32> = (0..n).map(|i| i as f32).collect();
+        let x_dev = stream.clone_htod(&x_host).expect("htod");
+        let mut y_dev = unsafe { stream.alloc::<f32>(n).expect("alloc y") };
+        // Drain pending alloc/htod work BEFORE entering capture mode —
+        // CUDA_ERROR_STREAM_CAPTURE_ISOLATION otherwise.
+        stream.synchronize().expect("pre-capture sync");
+
+        let cfg = LaunchConfig {
+            grid_dim: ((n as u32).div_ceil(256), 1, 1),
+            block_dim: (256, 1, 1),
+            shared_mem_bytes: 0,
+        };
+        let n_i = n as i32;
+        let a = 2.0_f32;
+        let b = 1.0_f32;
+
+        // Compute the reference on host (avoid any cross-stream dep
+        // confusion from a prior on-device launch).
+        let y_ref: Vec<f32> = x_host.iter().map(|&xi| a * xi + b).collect();
+
+        // ── Capture ────────────────────────────────
+        stream
+            .begin_capture(CUstreamCaptureMode::CU_STREAM_CAPTURE_MODE_RELAXED)
+            .expect("begin_capture");
+        unsafe {
+            stream
+                .launch_builder(&func)
+                .arg(&x_dev)
+                .arg(&mut y_dev)
+                .arg(&n_i)
+                .arg(&a)
+                .arg(&b)
+                .launch(cfg)
+                .expect("launch in capture");
+        }
+        let graph = stream
+            .end_capture(CUgraphInstantiate_flags::CUDA_GRAPH_INSTANTIATE_FLAG_AUTO_FREE_ON_LAUNCH)
+            .expect("end_capture")
+            .expect("graph should not be empty");
+
+        // Trash the output buffer to make sure replay actually does work.
+        stream.memset_zeros(&mut y_dev).expect("memset");
+        stream.synchronize().expect("sync");
+
+        // ── Replay ──────────────────────────────────
+        graph.launch().expect("graph launch");
+        stream.synchronize().expect("sync");
+        let y_replay = stream.clone_dtoh(&y_dev).expect("dtoh replay");
+
+        let max_diff = y_ref
+            .iter()
+            .zip(&y_replay)
+            .map(|(a, b)| (a - b).abs())
+            .fold(0.0_f32, f32::max);
+        assert!(
+            max_diff < 1e-6,
+            "graph replay drift {max_diff} > 1e-6 — capture mechanism is broken"
+        );
+    }
 }

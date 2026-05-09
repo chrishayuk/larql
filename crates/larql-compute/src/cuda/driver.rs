@@ -34,7 +34,21 @@ impl Driver {
     pub fn new_with_index(ordinal: usize) -> Result<Arc<Self>, CudaInitError> {
         let ctx = CudaContext::new(ordinal)
             .map_err(|e| CudaInitError::DriverMissing(format!("{e:?}")))?;
-        let stream = ctx.default_stream();
+        // CUDA Graph capture (cuda-decode-cuda-graph) requires a non-
+        // default stream. Disable cudarc's per-slice event tracking
+        // BEFORE allocating any buffer so that `device_ptr_mut` never
+        // injects cross-stream `stream.wait(event)` calls inside a
+        // capture region (CUDA_ERROR_STREAM_CAPTURE_ISOLATION).
+        // SAFETY: LARQL drives the GPU from a single stream and
+        // synchronises explicitly at every host↔device boundary, so
+        // the per-slice events are unused. cudarc's safety contract
+        // for `disable_event_tracking` (no concurrent multi-stream
+        // writes, no use-after-free across streams) holds because
+        // there is only ever one stream.
+        unsafe { ctx.disable_event_tracking() };
+        let stream = ctx
+            .new_stream()
+            .map_err(|e| CudaInitError::DriverMissing(format!("new_stream: {e:?}")))?;
         let blas = CudaBlas::new(stream.clone())
             .map_err(|e| CudaInitError::DriverMissing(format!("cuBLAS init: {e:?}")))?;
 
