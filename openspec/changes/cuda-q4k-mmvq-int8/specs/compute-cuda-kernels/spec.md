@@ -28,15 +28,18 @@ ported close-to-verbatim from llama.cpp's
 `vec_dot_q4_K_q8_1_impl_vmmq` with provenance recorded in the
 NVRTC source comment.
 
-#### Scenario: mmvq output matches the f32 direct kernel within 1e-3
+#### Scenario: mmvq output matches the f32 direct kernel on Q8_1-dequantized input within 1e-3
 
 - **WHEN** a random Q4_K packed weight `[rows=4096, hidden=2560]`
-  is multiplied by a random f32 input via both
-  `q4k_matvec_device` (f32 direct path) and the new
-  `q4k_matvec_device_mmvq` path (input quantized to Q8_1 first)
+  is multiplied by a random f32 input that has been quantised
+  to Q8_1 and dequantised back to f32; the dequantised f32 is
+  fed to `q4k_direct::matvec_device`, and the same Q8_1 form is
+  fed to `q4k_matvec_device_mmvq`
 - **THEN** the two output `Vec<f32>`s SHALL agree to max-element
-  absolute difference ≤ 1e-3
-<!-- test: unbacked -->
+  absolute difference ≤ 1e-3 (this isolates kernel arithmetic;
+  comparing mmvq directly to `q4k_direct(f32_input)` is bounded
+  by Q8_1 quantisation noise, not kernel correctness)
+<!-- test: larql_compute::cuda::q4k_mmvq::tests::q4k_mmvq_matches_q4k_direct_on_dequantized_input -->
 
 ### Requirement: Q4_K matvec dispatch SHALL be runtime-selectable
 

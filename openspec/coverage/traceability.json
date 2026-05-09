@@ -3,8 +3,8 @@
     "capabilities": 49,
     "requirements": 436,
     "scenarios": 1418,
-    "scenarios_backed": 1290,
-    "scenarios_unbacked": 128,
+    "scenarios_backed": 1291,
+    "scenarios_unbacked": 127,
     "test_refs": 3348,
     "test_refs_unresolved": 4
   },
@@ -2743,10 +2743,12 @@
           "name": "Q4_K \u00d7 Q8_1 mmvq kernel SHALL match the existing direct f32 kernel",
           "scenarios": [
             {
-              "name": "mmvq output matches the f32 direct kernel within 1e-3",
-              "tests_resolved": [],
+              "name": "mmvq output matches the f32 direct kernel on Q8_1-dequantized input within 1e-3",
+              "tests_resolved": [
+                "larql_compute::cuda::q4k_mmvq::tests::q4k_mmvq_matches_q4k_direct_on_dequantized_input"
+              ],
               "tests_unresolved": [],
-              "unbacked": true,
+              "unbacked": false,
               "spec_file": "openspec/changes/cuda-q4k-mmvq-int8/specs/compute-cuda-kernels/spec.md",
               "line": 31
             }
@@ -2761,7 +2763,7 @@
               "tests_unresolved": [],
               "unbacked": true,
               "spec_file": "openspec/changes/cuda-q4k-mmvq-int8/specs/compute-cuda-kernels/spec.md",
-              "line": 49
+              "line": 52
             }
           ]
         },
@@ -2774,7 +2776,7 @@
               "tests_unresolved": [],
               "unbacked": true,
               "spec_file": "openspec/changes/cuda-q4k-mmvq-int8/specs/compute-cuda-kernels/spec.md",
-              "line": 67
+              "line": 70
             }
           ]
         },
@@ -2787,7 +2789,7 @@
               "tests_unresolved": [],
               "unbacked": true,
               "spec_file": "openspec/changes/cuda-q4k-mmvq-int8/specs/compute-cuda-kernels/spec.md",
-              "line": 93
+              "line": 96
             }
           ]
         },
@@ -19836,6 +19838,12 @@
       "fqn": "larql_compute::cuda::matmul::cuda_op_constants_are_distinct",
       "file": "crates/larql-compute/src/cuda/matmul.rs",
       "line": 217,
+      "crate": "larql_compute"
+    },
+    {
+      "fqn": "larql_compute::cuda::q4k_mmvq::q4k_mmvq_matches_q4k_direct_on_dequantized_input",
+      "file": "crates/larql-compute/src/cuda/q4k_mmvq.rs",
+      "line": 358,
       "crate": "larql_compute"
     },
     {

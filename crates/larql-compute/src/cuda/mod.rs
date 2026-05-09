@@ -24,6 +24,7 @@ mod matmul;
 #[cfg(feature = "cuda-oxide")]
 mod oxide_kernels;
 mod q4k_direct;
+mod q4k_mmvq;
 mod quant_matvec;
 
 pub use backend::CudaBackend;
