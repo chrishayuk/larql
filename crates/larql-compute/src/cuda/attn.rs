@@ -12,10 +12,10 @@ use cudarc::cublas::{
     sys::cublasOperation_t::{CUBLAS_OP_N, CUBLAS_OP_T},
     Gemm, GemmConfig,
 };
-use cudarc::driver::{CudaFunction, CudaModule, LaunchConfig, PushKernelArg};
-use cudarc::nvrtc::compile_ptx;
+use cudarc::driver::{CudaFunction, CudaModule, CudaSlice, LaunchConfig, PushKernelArg};
 #[cfg(feature = "cuda-oxide")]
 use cudarc::nvrtc::Ptx;
+use cudarc::nvrtc::{compile_ptx, compile_ptx_with_opts, CompileOptions};
 
 use super::backend::CudaBackend;
 use super::driver::Driver;
@@ -74,7 +74,7 @@ extern "C" __global__ void scaled_softmax(
     // ── Pass 2: exp + sum ─────────────────────────────────────────
     float my_sum = 0.f;
     for (int j = tid; j < n_cols; j += bdim) {
-        float e = expf(r[j] - row_max);
+        float e = __expf(r[j] - row_max);
         r[j] = e;
         my_sum += e;
     }
@@ -167,19 +167,35 @@ extern "C" __global__ void qkv_rms_proj_f32(
 const FUSED_DECODE_ATTN_SRC: &str = r#"
 #define NEG_INF (__int_as_float(0xff800000))
 
+// `cuda-attn-wmma-f16kv` Phase 1: K/V cache is now f16. Reads convert
+// to f32 via `cvt.f32.f16`; writes convert from f32 via
+// `cvt.rn.f16.f32`. Q/K_new/V_new/out stay in f32 — the kernel's
+// internal compute is still f32, only the K/V slab's storage and
+// HBM bandwidth are halved.
+__device__ float ld_kvcache(const unsigned short* p) {
+    float f;
+    asm("cvt.f32.f16 %0, %1;" : "=f"(f) : "h"(p[0]));
+    return f;
+}
+__device__ void st_kvcache(unsigned short* p, float v) {
+    unsigned short h;
+    asm("cvt.rn.f16.f32 %0, %1;" : "=h"(h) : "f"(v));
+    p[0] = h;
+}
+
 extern "C" __global__ void fused_decode_attention_f32(
     const float* q,
     const float* k_new,
     const float* v_new,
-    float* k_cache,
-    float* v_cache,
+    unsigned short* k_cache,
+    unsigned short* v_cache,
     const float* q_norm,
     const float* k_norm,
     float* out,
     int num_q_heads,
     int num_kv_heads,
     int head_dim,
-    int pos,
+    const int* pos_dev,
     int max_seq,
     int rotary_dim,
     float rope_base,
@@ -187,15 +203,38 @@ extern "C" __global__ void fused_decode_attention_f32(
     float qk_norm_offset,
     float attn_scale,
     float softcap,
-    int use_qk_norm
+    int use_qk_norm,
+    int d_split
 ) {
+    // cuda-decode-cuda-graph: `pos` is read from device memory so the
+    // captured graph can be replayed after writing a new value into
+    // `*pos_dev` instead of re-launching with a different immediate
+    // kernel arg (graphs bake in immediate args at capture time).
+    int pos = *pos_dev;
     int qh = blockIdx.x;
-    if (qh >= num_q_heads || pos >= max_seq) return;
+    // cuda-attn-grid-split: each q_head's output is split across
+    // `d_split` blocks (blockIdx.y). Each block computes a slice
+    // `[d_start, d_end)` of `out[qh, :]`. The Q/K reductions and the
+    // softmax-of-scores are recomputed redundantly in each chunk
+    // (the per-block work doesn't depend on `d`), but the
+    // additional grid parallelism gets us from 8 → 8*d_split blocks
+    // — closer to the RTX 4090's 128 SMs. K/V cache writes are
+    // gated to `dchunk == 0` to avoid duplicate writes.
+    int dchunk = blockIdx.y;
+    if (qh >= num_q_heads || dchunk >= d_split || pos >= max_seq) return;
+    int d_per_chunk = head_dim / d_split;
+    int d_start = dchunk * d_per_chunk;
+    int d_end   = d_start + d_per_chunk;
     int tid = threadIdx.x;
     int bdim = blockDim.x;
     extern __shared__ float smem[];
     float* scores = smem;
     float* scratch = smem + max_seq;
+    // Pre-rotated Q vector. cuda-attn-rope-hoist Phase 1: computed
+    // once per attn call (depends only on `pos`, not `j`), then read
+    // by every iteration of the score loop. Saves ~n_ctx redundant
+    // (cosf, sinf, powf) triples per (head, d).
+    float* q_rot = smem + max_seq + bdim;
 
     int group = max(1, num_q_heads / max(1, num_kv_heads));
     int kvh = min(num_kv_heads - 1, qh / group);
@@ -227,9 +266,40 @@ extern "C" __global__ void fused_decode_attention_f32(
     }
     float k_inv = rsqrtf(scratch[0] / (float)head_dim + eps);
 
+    // ── Pre-rotate Q once per attention call ────────────────────────
+    // Q's RoPE rotation depends only on `pos`, not on `j`. The score
+    // loop below previously recomputed it per `(j, d)` — with
+    // n_ctx ≈ 25 active threads and head_dim = 256 that's ~6 400
+    // redundant trig triples per Q head per layer call. Hoist:
+    int rdim_pre = (rotary_dim == 0) ? head_dim : min(rotary_dim, head_dim);
+    int hdim_pre = rdim_pre / 2;
+    for (int d = tid; d < head_dim; d += bdim) {
+        float qv = q_head[d];
+        if (use_qk_norm) qv *= q_inv * (q_norm[d] + qk_norm_offset);
+        if (d < rdim_pre) {
+            int pair = d % hdim_pre;
+            bool imag = d >= hdim_pre;
+            float re = q_head[pair];
+            float im = q_head[pair + hdim_pre];
+            if (use_qk_norm) {
+                re *= q_inv * (q_norm[pair]            + qk_norm_offset);
+                im *= q_inv * (q_norm[pair + hdim_pre] + qk_norm_offset);
+            }
+            float freq  = 1.0f / __powf(rope_base, (float)(2 * pair) / (float)rdim_pre);
+            float angle = (float)pos * freq;
+            float c = __cosf(angle);
+            float s = __sinf(angle);
+            qv = imag ? (re * s + im * c) : (re * c - im * s);
+        }
+        q_rot[d] = qv;
+    }
+    __syncthreads();
+
     // Append the current K/V once per KV head. Other Q heads sharing
     // the same KV head compute against k_new/v_new directly for pos.
-    if ((qh % group) == 0) {
+    // cuda-attn-grid-split: gate K/V cache writes to dchunk == 0 so
+    // multiple chunks for the same q_head don't double-write.
+    if ((qh % group) == 0 && dchunk == 0) {
         for (int d = tid; d < head_dim; d += bdim) {
             float kv = k_head[d];
             if (use_qk_norm) kv *= k_inv * (k_norm[d] + qk_norm_offset);
@@ -247,17 +317,17 @@ extern "C" __global__ void fused_decode_attention_f32(
                     re *= k_inv * (k_norm[pair] + qk_norm_offset);
                     im *= k_inv * (k_norm[pair + hdim] + qk_norm_offset);
                 }
-                float freq = 1.0f / powf(rope_base, (float)(2 * pair) / (float)rdim);
+                float freq = 1.0f / __powf(rope_base, (float)(2 * pair) / (float)rdim);
                 float angle = (float)pos * freq;
-                float c = cosf(angle);
-                float s = sinf(angle);
+                float c = __cosf(angle);
+                float s = __sinf(angle);
                 k_rot = imag ? (re * s + im * c) : (re * c - im * s);
             } else {
                 k_rot = kv;
             }
             size_t idx = ((size_t)pos * num_kv_heads + kvh) * head_dim + d;
-            k_cache[idx] = k_rot;
-            v_cache[idx] = v_head[d];
+            st_kvcache(k_cache + idx, k_rot);
+            st_kvcache(v_cache + idx, v_head[d]);
         }
     }
     __syncthreads();
@@ -266,26 +336,8 @@ extern "C" __global__ void fused_decode_attention_f32(
     for (int j = tid; j < n_ctx; j += bdim) {
         float dot = 0.f;
         for (int d = 0; d < head_dim; d++) {
-            float qv = q_head[d];
-            if (use_qk_norm) qv *= q_inv * (q_norm[d] + qk_norm_offset);
-
-            int rdim = (rotary_dim == 0) ? head_dim : min(rotary_dim, head_dim);
-            if (d < rdim) {
-                int hdim = rdim / 2;
-                int pair = d % hdim;
-                bool imag = d >= hdim;
-                float re = q_head[pair];
-                float im = q_head[pair + hdim];
-                if (use_qk_norm) {
-                    re *= q_inv * (q_norm[pair] + qk_norm_offset);
-                    im *= q_inv * (q_norm[pair + hdim] + qk_norm_offset);
-                }
-                float freq = 1.0f / powf(rope_base, (float)(2 * pair) / (float)rdim);
-                float angle = (float)pos * freq;
-                float c = cosf(angle);
-                float s = sinf(angle);
-                qv = imag ? (re * s + im * c) : (re * c - im * s);
-            }
+            // Q is pre-rotated above (cuda-attn-rope-hoist).
+            float qv = q_rot[d];
 
             float kv;
             if (j == pos) {
@@ -300,17 +352,17 @@ extern "C" __global__ void fused_decode_attention_f32(
                         re *= k_inv * (k_norm[pair] + qk_norm_offset);
                         im *= k_inv * (k_norm[pair + hdim] + qk_norm_offset);
                     }
-                    float freq = 1.0f / powf(rope_base, (float)(2 * pair) / (float)rdim);
+                    float freq = 1.0f / __powf(rope_base, (float)(2 * pair) / (float)rdim);
                     float angle = (float)pos * freq;
-                    float c = cosf(angle);
-                    float s = sinf(angle);
+                    float c = __cosf(angle);
+                    float s = __sinf(angle);
                     kv = imag ? (re * s + im * c) : (re * c - im * s);
                 } else {
                     kv = k_head[d];
                     if (use_qk_norm) kv *= k_inv * (k_norm[d] + qk_norm_offset);
                 }
             } else {
-                kv = k_cache[((size_t)j * num_kv_heads + kvh) * head_dim + d];
+                kv = ld_kvcache(k_cache + ((size_t)j * num_kv_heads + kvh) * head_dim + d);
             }
             dot += qv * kv;
         }
@@ -338,7 +390,246 @@ extern "C" __global__ void fused_decode_attention_f32(
 
     float my_sum = 0.f;
     for (int j = tid; j < n_ctx; j += bdim) {
-        float e = expf(scores[j] - row_max);
+        float e = __expf(scores[j] - row_max);
+        scores[j] = e;
+        my_sum += e;
+    }
+    scratch[tid] = my_sum;
+    __syncthreads();
+    for (int stride = bdim / 2; stride > 0; stride >>= 1) {
+        if (tid < stride) scratch[tid] += scratch[tid + stride];
+        __syncthreads();
+    }
+    float inv_sum = 1.f / scratch[0];
+
+    // cuda-attn-grid-split: each block writes only its `[d_start, d_end)`
+    // slice of `out[qh, :]`. With d_split == 1 this collapses to the
+    // legacy full-head_dim loop.
+    for (int d = tid + d_start; d < d_end; d += bdim) {
+        float acc = 0.f;
+        for (int j = 0; j < n_ctx; j++) {
+            float prob = scores[j] * inv_sum;
+            float vv = (j == pos)
+                ? v_head[d]
+                : ld_kvcache(v_cache + ((size_t)j * num_kv_heads + kvh) * head_dim + d);
+            acc += prob * vv;
+        }
+        out[(size_t)qh * head_dim + d] = acc;
+    }
+}
+"#;
+
+/// Batched-prefill K/V cache writer. One CUDA block per
+/// `(seq_pos, kv_head)` pair; rotates K with RoPE (and optional
+/// QK-norm) and writes to `k_cache[base_pos + sp, kvh, :]`. V is a
+/// raw copy. Runs as kernel 1 of the two-kernel batched prefill
+/// attention dispatch (`cuda-prefill-batched-attention`).
+const KV_CACHE_WRITE_SEQ_SRC: &str = r#"
+// `cuda-attn-wmma-f16kv` Phase 1: K/V cache is f16. Write-side
+// helper converts f32 → f16 via `cvt.rn.f16.f32`.
+__device__ void st_kv_seq(unsigned short* p, float v) {
+    unsigned short h;
+    asm("cvt.rn.f16.f32 %0, %1;" : "=h"(h) : "f"(v));
+    p[0] = h;
+}
+
+extern "C" __global__ void kv_cache_write_seq_f32(
+    const float* k_seq,
+    const float* v_seq,
+    unsigned short* k_cache,
+    unsigned short* v_cache,
+    const float* k_norm,
+    int num_kv_heads,
+    int head_dim,
+    int base_pos,
+    int seq_len,
+    int max_seq,
+    int rotary_dim,
+    float rope_base,
+    float eps,
+    float qk_norm_offset,
+    int use_qk_norm
+) {
+    int sp  = blockIdx.x;
+    int kvh = blockIdx.y;
+    if (sp >= seq_len || kvh >= num_kv_heads) return;
+    int pos = base_pos + sp;
+    if (pos >= max_seq) return;
+
+    int tid  = threadIdx.x;
+    int bdim = blockDim.x;
+    extern __shared__ float scratch[];
+
+    const float* k_head = k_seq + ((size_t)sp * num_kv_heads + kvh) * head_dim;
+    const float* v_head = v_seq + ((size_t)sp * num_kv_heads + kvh) * head_dim;
+
+    float k_ss = 0.f;
+    for (int d = tid; d < head_dim; d += bdim) {
+        float kv = k_head[d];
+        k_ss += kv * kv;
+    }
+    scratch[tid] = k_ss;
+    __syncthreads();
+    for (int stride = bdim / 2; stride > 0; stride >>= 1) {
+        if (tid < stride) scratch[tid] += scratch[tid + stride];
+        __syncthreads();
+    }
+    float k_inv = rsqrtf(scratch[0] / (float)head_dim + eps);
+
+    int rdim = (rotary_dim == 0) ? head_dim : min(rotary_dim, head_dim);
+    int hdim = rdim / 2;
+    for (int d = tid; d < head_dim; d += bdim) {
+        float k_rot;
+        if (d < rdim) {
+            int pair = d % hdim;
+            bool imag = d >= hdim;
+            float re = k_head[pair];
+            float im = k_head[pair + hdim];
+            if (use_qk_norm) {
+                re *= k_inv * (k_norm[pair]        + qk_norm_offset);
+                im *= k_inv * (k_norm[pair + hdim] + qk_norm_offset);
+            }
+            float freq  = 1.0f / __powf(rope_base, (float)(2 * pair) / (float)rdim);
+            float angle = (float)pos * freq;
+            float c = __cosf(angle);
+            float s = __sinf(angle);
+            k_rot = imag ? (re * s + im * c) : (re * c - im * s);
+        } else {
+            float kv = k_head[d];
+            if (use_qk_norm) kv *= k_inv * (k_norm[d] + qk_norm_offset);
+            k_rot = kv;
+        }
+        size_t idx = ((size_t)pos * num_kv_heads + kvh) * head_dim + d;
+        st_kv_seq(k_cache + idx, k_rot);
+        st_kv_seq(v_cache + idx, v_head[d]);
+    }
+}
+"#;
+
+/// Batched-prefill attention kernel. `grid_dim = (num_q_heads,
+/// seq_len, 1)`, one block per `(qh, sp)` pair. Reads K/V from the
+/// cache (written by `kv_cache_write_seq_f32`) over positions
+/// `[0, base_pos + sp]` causally. Q-RoPE pre-rotation hoisted into
+/// shared memory (same trick as `cuda-attn-rope-hoist`).
+const FUSED_PREFILL_ATTN_SRC: &str = r#"
+#define NEG_INF (__int_as_float(0xff800000))
+
+// `cuda-attn-wmma-f16kv` Phase 1: K/V cache is f16 — read via cvt.
+__device__ float ld_kvc_pf(const unsigned short* p) {
+    float f;
+    asm("cvt.f32.f16 %0, %1;" : "=f"(f) : "h"(p[0]));
+    return f;
+}
+
+extern "C" __global__ void fused_prefill_attention_f32(
+    const float* q_seq,        // [seq_len, num_q_heads, head_dim]
+    const unsigned short* k_cache, // [max_seq, num_kv_heads, head_dim] (f16 since cuda-attn-wmma-f16kv)
+    const unsigned short* v_cache, // same shape
+    const float* q_norm,
+    float* out_seq,            // [seq_len, num_q_heads, head_dim]
+    int num_q_heads,
+    int num_kv_heads,
+    int head_dim,
+    int base_pos,
+    int seq_len,
+    int max_seq,
+    int rotary_dim,
+    float rope_base,
+    float eps,
+    float qk_norm_offset,
+    float attn_scale,
+    float softcap,
+    int use_qk_norm
+) {
+    int qh = blockIdx.x;
+    int sp = blockIdx.y;
+    if (qh >= num_q_heads || sp >= seq_len) return;
+    int pos = base_pos + sp;
+    if (pos >= max_seq) return;
+
+    int tid = threadIdx.x;
+    int bdim = blockDim.x;
+    extern __shared__ float smem[];
+    float* scores  = smem;
+    float* scratch = smem + max_seq;
+    float* q_rot   = smem + max_seq + bdim;
+
+    int group = max(1, num_q_heads / max(1, num_kv_heads));
+    int kvh = min(num_kv_heads - 1, qh / group);
+    const float* q_head = q_seq + (size_t)(sp * num_q_heads + qh) * head_dim;
+
+    float q_ss = 0.f;
+    for (int d = tid; d < head_dim; d += bdim) {
+        float qv = q_head[d];
+        q_ss += qv * qv;
+    }
+    scratch[tid] = q_ss;
+    __syncthreads();
+    for (int stride = bdim / 2; stride > 0; stride >>= 1) {
+        if (tid < stride) scratch[tid] += scratch[tid + stride];
+        __syncthreads();
+    }
+    float q_inv = rsqrtf(scratch[0] / (float)head_dim + eps);
+
+    // Pre-rotate Q once (depends only on `pos`, not on `j`).
+    int rdim_pre = (rotary_dim == 0) ? head_dim : min(rotary_dim, head_dim);
+    int hdim_pre = rdim_pre / 2;
+    for (int d = tid; d < head_dim; d += bdim) {
+        float qv = q_head[d];
+        if (use_qk_norm) qv *= q_inv * (q_norm[d] + qk_norm_offset);
+        if (d < rdim_pre) {
+            int pair = d % hdim_pre;
+            bool imag = d >= hdim_pre;
+            float re = q_head[pair];
+            float im = q_head[pair + hdim_pre];
+            if (use_qk_norm) {
+                re *= q_inv * (q_norm[pair]            + qk_norm_offset);
+                im *= q_inv * (q_norm[pair + hdim_pre] + qk_norm_offset);
+            }
+            float freq  = 1.0f / __powf(rope_base, (float)(2 * pair) / (float)rdim_pre);
+            float angle = (float)pos * freq;
+            float c = __cosf(angle);
+            float s = __sinf(angle);
+            qv = imag ? (re * s + im * c) : (re * c - im * s);
+        }
+        q_rot[d] = qv;
+    }
+    __syncthreads();
+
+    int n_ctx = pos + 1;
+
+    for (int j = tid; j < n_ctx; j += bdim) {
+        float dot = 0.f;
+        for (int d = 0; d < head_dim; d++) {
+            float qv = q_rot[d];
+            float kv = ld_kvc_pf(k_cache + ((size_t)j * num_kv_heads + kvh) * head_dim + d);
+            dot += qv * kv;
+        }
+        float logit = dot * attn_scale;
+        if (softcap > 0.f) logit = softcap * tanhf(logit / softcap);
+        scores[j] = logit;
+    }
+    for (int j = tid + n_ctx; j < max_seq; j += bdim) {
+        scores[j] = NEG_INF;
+    }
+    __syncthreads();
+
+    float my_max = NEG_INF;
+    for (int j = tid; j < n_ctx; j += bdim) {
+        float s = scores[j];
+        if (s > my_max) my_max = s;
+    }
+    scratch[tid] = my_max;
+    __syncthreads();
+    for (int stride = bdim / 2; stride > 0; stride >>= 1) {
+        if (tid < stride) scratch[tid] = fmaxf(scratch[tid], scratch[tid + stride]);
+        __syncthreads();
+    }
+    float row_max = scratch[0];
+
+    float my_sum = 0.f;
+    for (int j = tid; j < n_ctx; j += bdim) {
+        float e = __expf(scores[j] - row_max);
         scores[j] = e;
         my_sum += e;
     }
@@ -354,12 +645,10 @@ extern "C" __global__ void fused_decode_attention_f32(
         float acc = 0.f;
         for (int j = 0; j < n_ctx; j++) {
             float prob = scores[j] * inv_sum;
-            float vv = (j == pos)
-                ? v_head[d]
-                : v_cache[((size_t)j * num_kv_heads + kvh) * head_dim + d];
+            float vv   = ld_kvc_pf(v_cache + ((size_t)j * num_kv_heads + kvh) * head_dim + d);
             acc += prob * vv;
         }
-        out[(size_t)qh * head_dim + d] = acc;
+        out_seq[(size_t)(sp * num_q_heads + qh) * head_dim + d] = acc;
     }
 }
 "#;
@@ -369,6 +658,10 @@ extern "C" __global__ void fused_decode_attention_f32(
 static SOFTMAX_FUNC: OnceLock<(std::sync::Arc<CudaModule>, CudaFunction)> = OnceLock::new();
 static QKV_RMS_PROJ_FUNC: OnceLock<(std::sync::Arc<CudaModule>, CudaFunction)> = OnceLock::new();
 static FUSED_DECODE_ATTN_FUNC: OnceLock<(std::sync::Arc<CudaModule>, CudaFunction)> =
+    OnceLock::new();
+static KV_CACHE_WRITE_SEQ_FUNC: OnceLock<(std::sync::Arc<CudaModule>, CudaFunction)> =
+    OnceLock::new();
+static FUSED_PREFILL_ATTN_FUNC: OnceLock<(std::sync::Arc<CudaModule>, CudaFunction)> =
     OnceLock::new();
 
 fn softmax_function(drv: &Driver) -> Result<&'static CudaFunction, CudaInitError> {
@@ -423,11 +716,55 @@ fn qkv_rms_proj_function(drv: &Driver) -> Result<&'static CudaFunction, CudaInit
     Ok(f)
 }
 
+/// `cuda-attn-grid-split`: choose how many `head_dim` chunks to split
+/// each q_head's output across. With `d_split = 1` the kernel runs as
+/// before (1 block per q_head); with `d_split > 1` the grid grows to
+/// `(num_q_heads, d_split, 1)` and the per-block output loop only
+/// covers `head_dim / d_split` elements.
+///
+/// `LARQL_CUDA_ATTN_DSPLIT=N` (1, 2, 4, 8, 16) overrides the default;
+/// `=0` is treated as 1 (no split). `head_dim` must be divisible by
+/// the chosen value or we fall back to 1.
+pub(crate) fn choose_attn_d_split(num_q_heads: usize, head_dim: usize) -> i32 {
+    let chosen: i32 = std::env::var("LARQL_CUDA_ATTN_DSPLIT")
+        .ok()
+        .and_then(|v| v.parse::<i32>().ok())
+        .filter(|n| matches!(*n, 0 | 1 | 2 | 4 | 8 | 16))
+        .unwrap_or_else(|| {
+            // Heuristic: target ≥ 32 blocks per kernel call so we
+            // get a few blocks per SM-quarter. RTX 4090 has 128 SMs;
+            // 32 blocks ≈ 1 block per 4 SMs, leaving room for the
+            // mmvq kernels' tail to overlap on the other SMs.
+            let target_blocks: usize = 32;
+            let needed = target_blocks.div_ceil(num_q_heads.max(1));
+            // Snap to the largest power of 2 ≤ needed (and ≤ 16).
+            let mut k = 1;
+            while k * 2 <= needed.min(16) {
+                k *= 2;
+            }
+            k as i32
+        });
+    let chosen = if chosen == 0 { 1 } else { chosen };
+    if chosen <= 1 || head_dim % (chosen as usize) != 0 {
+        1
+    } else {
+        chosen
+    }
+}
+
 fn fused_decode_attention_function(drv: &Driver) -> Result<&'static CudaFunction, CudaInitError> {
     if let Some((_, f)) = FUSED_DECODE_ATTN_FUNC.get() {
         return Ok(f);
     }
-    let ptx = compile_ptx(FUSED_DECODE_ATTN_SRC).map_err(|e| {
+    // --use_fast_math: swap cosf/sinf/expf/tanhf for the SFU-fast
+    // __cosf/__sinf/__expf/__tanhf intrinsics. RoPE and softmax both
+    // benefit; numerical drift stays inside the existing 1e-3 parity
+    // bound. ~3× faster trig on the SFU pipeline.
+    let opts = CompileOptions {
+        use_fast_math: Some(true),
+        ..Default::default()
+    };
+    let ptx = compile_ptx_with_opts(FUSED_DECODE_ATTN_SRC, opts).map_err(|e| {
         CudaInitError::DriverMissing(format!("nvrtc compile fused_decode_attention: {e:?}"))
     })?;
     let module = drv
@@ -487,6 +824,20 @@ pub struct FusedDecodeAttentionOutput {
     pub v_cache: Vec<f32>,
 }
 
+/// Device-resident output of [`fused_decode_attention_device`].
+/// `cuda-decode-device-resident` Phase 1.
+///
+/// `out` stays on the GPU so the next projection (wo) can run
+/// without an extra round trip. `k_cache` / `v_cache` come back to
+/// the host because Phase 1 still stores the KV cache as
+/// `Vec<f32>`. Phase 3 swaps those for `CudaSlice<f32>` and drops
+/// the dtoh.
+pub struct FusedDecodeAttentionDeviceOutput {
+    pub out: CudaSlice<f32>,
+    pub k_cache: Vec<f32>,
+    pub v_cache: Vec<f32>,
+}
+
 #[allow(clippy::too_many_arguments)]
 pub fn qkv_rms_proj(
     backend: &CudaBackend,
@@ -512,9 +863,9 @@ pub fn qkv_rms_proj(
     let wq_dev = drv.device_buf_from(wq)?;
     let wk_dev = drv.device_buf_from(wk)?;
     let wv_dev = drv.device_buf_from(wv)?;
-    let mut q_dev = drv.device_alloc(dims.q_dim)?;
-    let mut k_dev = drv.device_alloc(dims.kv_dim)?;
-    let mut v_dev = drv.device_alloc(dims.kv_dim)?;
+    let mut q_dev = drv.device_alloc_uninit(dims.q_dim)?;
+    let mut k_dev = drv.device_alloc_uninit(dims.kv_dim)?;
+    let mut v_dev = drv.device_alloc_uninit(dims.kv_dim)?;
 
     let block_dim: u32 = 256;
     let total_rows = dims.q_dim + dims.kv_dim + dims.kv_dim;
@@ -606,22 +957,38 @@ pub fn fused_decode_attention(
     let q_dev = drv.device_buf_from(q)?;
     let k_new_dev = drv.device_buf_from(k_new)?;
     let v_new_dev = drv.device_buf_from(v_new)?;
-    let mut k_cache_dev = drv.device_buf_from(k_cache)?;
-    let mut v_cache_dev = drv.device_buf_from(v_cache)?;
+    // `cuda-attn-wmma-f16kv` Phase 1: kernel expects f16 K/V cache.
+    // Convert host-side f32 → f16 once and htod the f16 buffer.
+    let k_cache_h: Vec<half::f16> = k_cache.iter().map(|&v| half::f16::from_f32(v)).collect();
+    let v_cache_h: Vec<half::f16> = v_cache.iter().map(|&v| half::f16::from_f32(v)).collect();
+    let mut k_cache_dev = drv
+        .stream
+        .clone_htod(&k_cache_h)
+        .map_err(|e| CudaInitError::DriverMissing(format!("htod k_cache f16: {e:?}")))?;
+    let mut v_cache_dev = drv
+        .stream
+        .clone_htod(&v_cache_h)
+        .map_err(|e| CudaInitError::DriverMissing(format!("htod v_cache f16: {e:?}")))?;
     let q_norm_dev = drv.device_buf_from(q_norm)?;
     let k_norm_dev = drv.device_buf_from(k_norm)?;
-    let mut out_dev = drv.device_alloc(q_dim)?;
+    let mut out_dev = drv.device_alloc_uninit(q_dim)?;
+    // cuda-decode-cuda-graph: pos is read from device memory.
+    let pos_dev = drv
+        .stream
+        .clone_htod(&[opts.pos as i32])
+        .map_err(|e| CudaInitError::DriverMissing(format!("htod pos: {e:?}")))?;
 
     let block_dim: u32 = 256;
+    let d_split_i = choose_attn_d_split(opts.num_q_heads, opts.head_dim);
     let cfg = LaunchConfig {
-        grid_dim: (opts.num_q_heads as u32, 1, 1),
+        grid_dim: (opts.num_q_heads as u32, d_split_i as u32, 1),
         block_dim: (block_dim, 1, 1),
-        shared_mem_bytes: ((opts.max_seq + block_dim as usize) * std::mem::size_of::<f32>()) as u32,
+        shared_mem_bytes: ((opts.max_seq + block_dim as usize + opts.head_dim)
+            * std::mem::size_of::<f32>()) as u32,
     };
     let num_q_heads_i = opts.num_q_heads as i32;
     let num_kv_heads_i = opts.num_kv_heads as i32;
     let head_dim_i = opts.head_dim as i32;
-    let pos_i = opts.pos as i32;
     let max_seq_i = opts.max_seq as i32;
     let rotary_dim_i = opts.rotary_dim as i32;
     let use_qk_norm_i = if use_qk_norm { 1_i32 } else { 0_i32 };
@@ -640,7 +1007,7 @@ pub fn fused_decode_attention(
             .arg(&num_q_heads_i)
             .arg(&num_kv_heads_i)
             .arg(&head_dim_i)
-            .arg(&pos_i)
+            .arg(&pos_dev)
             .arg(&max_seq_i)
             .arg(&rotary_dim_i)
             .arg(&opts.rope_base)
@@ -649,6 +1016,7 @@ pub fn fused_decode_attention(
             .arg(&opts.attn_scale)
             .arg(&opts.softcap)
             .arg(&use_qk_norm_i)
+            .arg(&d_split_i)
             .launch(cfg)
             .map_err(|e| {
                 CudaInitError::DriverMissing(format!("launch fused_decode_attention: {e:?}"))
@@ -656,10 +1024,367 @@ pub fn fused_decode_attention(
     }
 
     drv.sync()?;
+    // `cuda-attn-wmma-f16kv` Phase 1: dtoh f16 → host, convert to f32
+    // for the public `FusedDecodeAttentionOutput { k_cache: Vec<f32>,
+    // v_cache: Vec<f32> }` contract.
+    let k_cache_f16: Vec<half::f16> = drv
+        .stream
+        .clone_dtoh(&k_cache_dev)
+        .map_err(|e| CudaInitError::DriverMissing(format!("dtoh k_cache f16: {e:?}")))?;
+    let v_cache_f16: Vec<half::f16> = drv
+        .stream
+        .clone_dtoh(&v_cache_dev)
+        .map_err(|e| CudaInitError::DriverMissing(format!("dtoh v_cache f16: {e:?}")))?;
     Ok(FusedDecodeAttentionOutput {
         out: drv.to_host(&out_dev)?,
-        k_cache: drv.to_host(&k_cache_dev)?,
-        v_cache: drv.to_host(&v_cache_dev)?,
+        k_cache: k_cache_f16.iter().map(|v| v.to_f32()).collect(),
+        v_cache: v_cache_f16.iter().map(|v| v.to_f32()).collect(),
+    })
+}
+
+/// `cuda-decode-device-resident` Phase 3: full device-resident
+/// fused decode attention. Q/K-new/V-new are `CudaSlice<f32>`
+/// (Phase 1) **and** the K/V cache is now `&mut CudaSlice<f32>`
+/// — the kernel reads prior tokens from it and writes the new row
+/// in place at `pos`, with zero PCIe traffic. Returns just the
+/// attention output as a device-resident slice.
+#[allow(clippy::too_many_arguments)]
+pub fn fused_decode_attention_device_kv(
+    backend: &CudaBackend,
+    q_dev: &CudaSlice<f32>,
+    k_new_dev: &CudaSlice<f32>,
+    v_new_dev: &CudaSlice<f32>,
+    k_cache_dev: &mut CudaSlice<half::f16>,
+    v_cache_dev: &mut CudaSlice<half::f16>,
+    q_norm: Option<&[f32]>,
+    k_norm: Option<&[f32]>,
+    opts: FusedDecodeAttentionOpts,
+) -> Result<CudaSlice<f32>, CudaInitError> {
+    let q_dim = opts.num_q_heads * opts.head_dim;
+    let kv_dim = opts.num_kv_heads * opts.head_dim;
+    let cache_len = opts.max_seq * opts.num_kv_heads * opts.head_dim;
+    assert_eq!(q_dev.len(), q_dim);
+    assert_eq!(k_new_dev.len(), kv_dim);
+    assert_eq!(v_new_dev.len(), kv_dim);
+    assert_eq!(k_cache_dev.len(), cache_len);
+    assert_eq!(v_cache_dev.len(), cache_len);
+    assert!(opts.pos < opts.max_seq);
+
+    let use_qk_norm = q_norm.is_some() && k_norm.is_some();
+    let q_norm_owned;
+    let k_norm_owned;
+    let q_norm = match q_norm {
+        Some(w) => {
+            assert_eq!(w.len(), opts.head_dim);
+            w
+        }
+        None => {
+            q_norm_owned = vec![0.0_f32; opts.head_dim];
+            &q_norm_owned
+        }
+    };
+    let k_norm = match k_norm {
+        Some(w) => {
+            assert_eq!(w.len(), opts.head_dim);
+            w
+        }
+        None => {
+            k_norm_owned = vec![0.0_f32; opts.head_dim];
+            &k_norm_owned
+        }
+    };
+
+    let drv = backend.driver();
+    let func = fused_decode_attention_function(drv)?;
+    let q_norm_dev = drv.device_buf_from(q_norm)?;
+    let k_norm_dev = drv.device_buf_from(k_norm)?;
+    let mut out_dev = drv.device_alloc_uninit(q_dim)?;
+    // cuda-decode-cuda-graph: pos is read from device memory.
+    let pos_dev = drv
+        .stream
+        .clone_htod(&[opts.pos as i32])
+        .map_err(|e| CudaInitError::DriverMissing(format!("htod pos: {e:?}")))?;
+
+    let block_dim: u32 = 256;
+    let d_split_i = choose_attn_d_split(opts.num_q_heads, opts.head_dim);
+    let cfg = LaunchConfig {
+        grid_dim: (opts.num_q_heads as u32, d_split_i as u32, 1),
+        block_dim: (block_dim, 1, 1),
+        shared_mem_bytes: ((opts.max_seq + block_dim as usize + opts.head_dim)
+            * std::mem::size_of::<f32>()) as u32,
+    };
+    let num_q_heads_i = opts.num_q_heads as i32;
+    let num_kv_heads_i = opts.num_kv_heads as i32;
+    let head_dim_i = opts.head_dim as i32;
+    let max_seq_i = opts.max_seq as i32;
+    let rotary_dim_i = opts.rotary_dim as i32;
+    let use_qk_norm_i = if use_qk_norm { 1_i32 } else { 0_i32 };
+
+    unsafe {
+        drv.stream
+            .launch_builder(func)
+            .arg(q_dev)
+            .arg(k_new_dev)
+            .arg(v_new_dev)
+            .arg(k_cache_dev)
+            .arg(v_cache_dev)
+            .arg(&q_norm_dev)
+            .arg(&k_norm_dev)
+            .arg(&mut out_dev)
+            .arg(&num_q_heads_i)
+            .arg(&num_kv_heads_i)
+            .arg(&head_dim_i)
+            .arg(&pos_dev)
+            .arg(&max_seq_i)
+            .arg(&rotary_dim_i)
+            .arg(&opts.rope_base)
+            .arg(&opts.eps)
+            .arg(&opts.qk_norm_offset)
+            .arg(&opts.attn_scale)
+            .arg(&opts.softcap)
+            .arg(&use_qk_norm_i)
+            .arg(&d_split_i)
+            .launch(cfg)
+            .map_err(|e| {
+                CudaInitError::DriverMissing(format!(
+                    "launch fused_decode_attention_device_kv: {e:?}"
+                ))
+            })?;
+    }
+
+    // Phase 3: no sync, no dtoh of K/V cache slabs. The kernel
+    // wrote the new row into k_cache_dev/v_cache_dev at `pos`;
+    // those buffers are persistent across calls so subsequent
+    // tokens read them without any PCIe traffic.
+    Ok(out_dev)
+}
+
+/// `cuda-decode-cuda-graph` variant of
+/// [`fused_decode_attention_device_kv`]. Differs in three ways:
+///
+/// * `pos_dev`, `q_norm_dev`, `k_norm_dev` come pre-allocated from
+///   `DecodeScratch` — no per-call htod / alloc that would create
+///   spurious memory nodes inside the captured graph.
+/// * `out_dev` is supplied by the caller (`scratch.attn_out`) instead
+///   of being freshly allocated, so the captured kernel uses a
+///   stable destination pointer across replays.
+/// * Returns `()` — the result lives in `out_dev`.
+///
+/// The caller MUST `htod_into_slice(&[pos_i], pos_dev, 0)` before
+/// each replay and ensure `q_norm_dev` / `k_norm_dev` already hold
+/// the per-layer norm weights (or zeros if `use_qk_norm == 0`).
+#[allow(clippy::too_many_arguments)]
+pub fn fused_decode_attention_device_kv_into(
+    backend: &CudaBackend,
+    q_dev: &CudaSlice<f32>,
+    k_new_dev: &CudaSlice<f32>,
+    v_new_dev: &CudaSlice<f32>,
+    k_cache_dev: &mut CudaSlice<half::f16>,
+    v_cache_dev: &mut CudaSlice<half::f16>,
+    q_norm_dev: &CudaSlice<f32>,
+    k_norm_dev: &CudaSlice<f32>,
+    pos_dev: &CudaSlice<i32>,
+    out_dev: &mut CudaSlice<f32>,
+    use_qk_norm: bool,
+    opts: FusedDecodeAttentionOpts,
+) -> Result<(), CudaInitError> {
+    let q_dim = opts.num_q_heads * opts.head_dim;
+    let kv_dim = opts.num_kv_heads * opts.head_dim;
+    let cache_len = opts.max_seq * opts.num_kv_heads * opts.head_dim;
+    debug_assert_eq!(q_dev.len(), q_dim);
+    debug_assert_eq!(k_new_dev.len(), kv_dim);
+    debug_assert_eq!(v_new_dev.len(), kv_dim);
+    debug_assert_eq!(k_cache_dev.len(), cache_len);
+    debug_assert_eq!(v_cache_dev.len(), cache_len);
+    debug_assert_eq!(out_dev.len(), q_dim);
+    debug_assert_eq!(pos_dev.len(), 1);
+    debug_assert_eq!(q_norm_dev.len(), opts.head_dim);
+    debug_assert_eq!(k_norm_dev.len(), opts.head_dim);
+
+    let drv = backend.driver();
+    let func = fused_decode_attention_function(drv)?;
+
+    let block_dim: u32 = 256;
+    let d_split_i = choose_attn_d_split(opts.num_q_heads, opts.head_dim);
+    let cfg = LaunchConfig {
+        grid_dim: (opts.num_q_heads as u32, d_split_i as u32, 1),
+        block_dim: (block_dim, 1, 1),
+        shared_mem_bytes: ((opts.max_seq + block_dim as usize + opts.head_dim)
+            * std::mem::size_of::<f32>()) as u32,
+    };
+    let num_q_heads_i = opts.num_q_heads as i32;
+    let num_kv_heads_i = opts.num_kv_heads as i32;
+    let head_dim_i = opts.head_dim as i32;
+    let max_seq_i = opts.max_seq as i32;
+    let rotary_dim_i = opts.rotary_dim as i32;
+    let use_qk_norm_i = if use_qk_norm { 1_i32 } else { 0_i32 };
+
+    unsafe {
+        drv.stream
+            .launch_builder(func)
+            .arg(q_dev)
+            .arg(k_new_dev)
+            .arg(v_new_dev)
+            .arg(k_cache_dev)
+            .arg(v_cache_dev)
+            .arg(q_norm_dev)
+            .arg(k_norm_dev)
+            .arg(out_dev)
+            .arg(&num_q_heads_i)
+            .arg(&num_kv_heads_i)
+            .arg(&head_dim_i)
+            .arg(pos_dev)
+            .arg(&max_seq_i)
+            .arg(&rotary_dim_i)
+            .arg(&opts.rope_base)
+            .arg(&opts.eps)
+            .arg(&opts.qk_norm_offset)
+            .arg(&opts.attn_scale)
+            .arg(&opts.softcap)
+            .arg(&use_qk_norm_i)
+            .arg(&d_split_i)
+            .launch(cfg)
+            .map_err(|e| {
+                CudaInitError::DriverMissing(format!(
+                    "launch fused_decode_attention_device_kv_into: {e:?}"
+                ))
+            })?;
+    }
+    Ok(())
+}
+
+/// Device-resident variant of [`fused_decode_attention`]. Q / K-new /
+/// V-new come in as `CudaSlice<f32>` (already produced by
+/// `q4k_matvec_device` etc.) and the attention output stays on the
+/// GPU. Phase 1 still pulls the K/V cache back to host because
+/// `CudaKvCache` is `Vec<f32>`-backed; that goes away in Phase 3.
+#[allow(clippy::too_many_arguments)]
+pub fn fused_decode_attention_device(
+    backend: &CudaBackend,
+    q_dev: &CudaSlice<f32>,
+    k_new_dev: &CudaSlice<f32>,
+    v_new_dev: &CudaSlice<f32>,
+    k_cache: &[f32],
+    v_cache: &[f32],
+    q_norm: Option<&[f32]>,
+    k_norm: Option<&[f32]>,
+    opts: FusedDecodeAttentionOpts,
+) -> Result<FusedDecodeAttentionDeviceOutput, CudaInitError> {
+    let q_dim = opts.num_q_heads * opts.head_dim;
+    let kv_dim = opts.num_kv_heads * opts.head_dim;
+    let cache_len = opts.max_seq * opts.num_kv_heads * opts.head_dim;
+    assert_eq!(q_dev.len(), q_dim);
+    assert_eq!(k_new_dev.len(), kv_dim);
+    assert_eq!(v_new_dev.len(), kv_dim);
+    assert_eq!(k_cache.len(), cache_len);
+    assert_eq!(v_cache.len(), cache_len);
+    assert!(opts.pos < opts.max_seq);
+
+    let use_qk_norm = q_norm.is_some() && k_norm.is_some();
+    let q_norm_owned;
+    let k_norm_owned;
+    let q_norm = match q_norm {
+        Some(w) => {
+            assert_eq!(w.len(), opts.head_dim);
+            w
+        }
+        None => {
+            q_norm_owned = vec![0.0_f32; opts.head_dim];
+            &q_norm_owned
+        }
+    };
+    let k_norm = match k_norm {
+        Some(w) => {
+            assert_eq!(w.len(), opts.head_dim);
+            w
+        }
+        None => {
+            k_norm_owned = vec![0.0_f32; opts.head_dim];
+            &k_norm_owned
+        }
+    };
+
+    let drv = backend.driver();
+    let func = fused_decode_attention_function(drv)?;
+    // `cuda-attn-wmma-f16kv` Phase 1: kernel expects f16 K/V cache.
+    let k_cache_h: Vec<half::f16> = k_cache.iter().map(|&v| half::f16::from_f32(v)).collect();
+    let v_cache_h: Vec<half::f16> = v_cache.iter().map(|&v| half::f16::from_f32(v)).collect();
+    let mut k_cache_dev = drv
+        .stream
+        .clone_htod(&k_cache_h)
+        .map_err(|e| CudaInitError::DriverMissing(format!("htod k_cache f16: {e:?}")))?;
+    let mut v_cache_dev = drv
+        .stream
+        .clone_htod(&v_cache_h)
+        .map_err(|e| CudaInitError::DriverMissing(format!("htod v_cache f16: {e:?}")))?;
+    let q_norm_dev = drv.device_buf_from(q_norm)?;
+    let k_norm_dev = drv.device_buf_from(k_norm)?;
+    let mut out_dev = drv.device_alloc_uninit(q_dim)?;
+    // cuda-decode-cuda-graph: pos is read from device memory.
+    let pos_dev = drv
+        .stream
+        .clone_htod(&[opts.pos as i32])
+        .map_err(|e| CudaInitError::DriverMissing(format!("htod pos: {e:?}")))?;
+
+    let block_dim: u32 = 256;
+    let d_split_i = choose_attn_d_split(opts.num_q_heads, opts.head_dim);
+    let cfg = LaunchConfig {
+        grid_dim: (opts.num_q_heads as u32, d_split_i as u32, 1),
+        block_dim: (block_dim, 1, 1),
+        shared_mem_bytes: ((opts.max_seq + block_dim as usize + opts.head_dim)
+            * std::mem::size_of::<f32>()) as u32,
+    };
+    let num_q_heads_i = opts.num_q_heads as i32;
+    let num_kv_heads_i = opts.num_kv_heads as i32;
+    let head_dim_i = opts.head_dim as i32;
+    let max_seq_i = opts.max_seq as i32;
+    let rotary_dim_i = opts.rotary_dim as i32;
+    let use_qk_norm_i = if use_qk_norm { 1_i32 } else { 0_i32 };
+
+    unsafe {
+        drv.stream
+            .launch_builder(func)
+            .arg(q_dev)
+            .arg(k_new_dev)
+            .arg(v_new_dev)
+            .arg(&mut k_cache_dev)
+            .arg(&mut v_cache_dev)
+            .arg(&q_norm_dev)
+            .arg(&k_norm_dev)
+            .arg(&mut out_dev)
+            .arg(&num_q_heads_i)
+            .arg(&num_kv_heads_i)
+            .arg(&head_dim_i)
+            .arg(&pos_dev)
+            .arg(&max_seq_i)
+            .arg(&rotary_dim_i)
+            .arg(&opts.rope_base)
+            .arg(&opts.eps)
+            .arg(&opts.qk_norm_offset)
+            .arg(&opts.attn_scale)
+            .arg(&opts.softcap)
+            .arg(&use_qk_norm_i)
+            .arg(&d_split_i)
+            .launch(cfg)
+            .map_err(|e| {
+                CudaInitError::DriverMissing(format!("launch fused_decode_attention_device: {e:?}"))
+            })?;
+    }
+
+    drv.sync()?;
+    // `cuda-attn-wmma-f16kv` Phase 1: cache slabs are f16; convert.
+    let k_cache_f16: Vec<half::f16> = drv
+        .stream
+        .clone_dtoh(&k_cache_dev)
+        .map_err(|e| CudaInitError::DriverMissing(format!("dtoh k_cache f16: {e:?}")))?;
+    let v_cache_f16: Vec<half::f16> = drv
+        .stream
+        .clone_dtoh(&v_cache_dev)
+        .map_err(|e| CudaInitError::DriverMissing(format!("dtoh v_cache f16: {e:?}")))?;
+    Ok(FusedDecodeAttentionDeviceOutput {
+        out: out_dev,
+        k_cache: k_cache_f16.iter().map(|v| v.to_f32()).collect(),
+        v_cache: v_cache_f16.iter().map(|v| v.to_f32()).collect(),
     })
 }
 
@@ -756,7 +1481,7 @@ pub fn decode_attention(
     let k_dev = drv.device_buf_from(k)?;
     let v_dev = drv.device_buf_from(v)?;
 
-    let mut logits_dev = drv.device_alloc(n_q * n_kv)?;
+    let mut logits_dev = drv.device_alloc_uninit(n_q * n_kv)?;
     let cfg_qk = GemmConfig {
         transa: CUBLAS_OP_T,
         transb: CUBLAS_OP_N,
@@ -786,7 +1511,7 @@ pub fn decode_attention(
     //   want col-major out (head_dim, n_q) = V^T_cm × attn_cm
     // cuBLAS: transa=N, transb=N, M=head_dim, N=n_q, K=n_kv,
     //         lda=head_dim, ldb=n_kv, ldc=head_dim.
-    let mut out_dev = drv.device_alloc(n_q * head_dim)?;
+    let mut out_dev = drv.device_alloc_uninit(n_q * head_dim)?;
     let cfg_av = GemmConfig {
         transa: CUBLAS_OP_N,
         transb: CUBLAS_OP_N,
@@ -807,4 +1532,214 @@ pub fn decode_attention(
 
     drv.sync()?;
     drv.to_host(&out_dev)
+}
+
+fn kv_cache_write_seq_function(drv: &Driver) -> Result<&'static CudaFunction, CudaInitError> {
+    if let Some((_, f)) = KV_CACHE_WRITE_SEQ_FUNC.get() {
+        return Ok(f);
+    }
+    let opts = CompileOptions {
+        use_fast_math: Some(true),
+        ..Default::default()
+    };
+    let ptx = compile_ptx_with_opts(KV_CACHE_WRITE_SEQ_SRC, opts).map_err(|e| {
+        CudaInitError::DriverMissing(format!("nvrtc compile kv_cache_write_seq: {e:?}"))
+    })?;
+    let module = drv.ctx.load_module(ptx).map_err(|e| {
+        CudaInitError::DriverMissing(format!("load kv_cache_write_seq module: {e:?}"))
+    })?;
+    let func = module
+        .load_function("kv_cache_write_seq_f32")
+        .map_err(|e| {
+            CudaInitError::DriverMissing(format!("load kv_cache_write_seq function: {e:?}"))
+        })?;
+    let _ = KV_CACHE_WRITE_SEQ_FUNC.set((module, func));
+    let (_, f) = KV_CACHE_WRITE_SEQ_FUNC.get().unwrap();
+    Ok(f)
+}
+
+fn fused_prefill_attention_function(drv: &Driver) -> Result<&'static CudaFunction, CudaInitError> {
+    if let Some((_, f)) = FUSED_PREFILL_ATTN_FUNC.get() {
+        return Ok(f);
+    }
+    let opts = CompileOptions {
+        use_fast_math: Some(true),
+        ..Default::default()
+    };
+    let ptx = compile_ptx_with_opts(FUSED_PREFILL_ATTN_SRC, opts).map_err(|e| {
+        CudaInitError::DriverMissing(format!("nvrtc compile fused_prefill_attention: {e:?}"))
+    })?;
+    let module = drv.ctx.load_module(ptx).map_err(|e| {
+        CudaInitError::DriverMissing(format!("load fused_prefill_attention module: {e:?}"))
+    })?;
+    let func = module
+        .load_function("fused_prefill_attention_f32")
+        .map_err(|e| {
+            CudaInitError::DriverMissing(format!("load fused_prefill_attention function: {e:?}"))
+        })?;
+    let _ = FUSED_PREFILL_ATTN_FUNC.set((module, func));
+    let (_, f) = FUSED_PREFILL_ATTN_FUNC.get().unwrap();
+    Ok(f)
+}
+
+/// Batched-prefill attention dispatch. `cuda-prefill-batched-attention`.
+///
+/// Runs in two passes on the same stream:
+///   1. `kv_cache_write_seq_f32` writes all `seq_len` K (with
+///      RoPE / QK-norm) and V rows into the cache slabs at
+///      positions `[base_pos, base_pos + seq_len)`.
+///   2. `fused_prefill_attention_f32` computes causal attention
+///      for every `(qh, sp)` pair against the cache, returning
+///      `out_seq: [seq_len, num_q_heads × head_dim]`.
+#[allow(clippy::too_many_arguments)]
+pub fn fused_prefill_attention_seq_device(
+    backend: &CudaBackend,
+    q_seq: &CudaSlice<f32>,
+    k_seq: &CudaSlice<f32>,
+    v_seq: &CudaSlice<f32>,
+    k_cache: &mut CudaSlice<half::f16>,
+    v_cache: &mut CudaSlice<half::f16>,
+    q_norm: Option<&[f32]>,
+    k_norm: Option<&[f32]>,
+    base_pos: usize,
+    seq_len: usize,
+    opts: FusedDecodeAttentionOpts,
+) -> Result<CudaSlice<f32>, CudaInitError> {
+    let q_dim = opts.num_q_heads * opts.head_dim;
+    let kv_dim = opts.num_kv_heads * opts.head_dim;
+    let cache_len = opts.max_seq * opts.num_kv_heads * opts.head_dim;
+    if q_seq.len() != seq_len * q_dim {
+        return Err(CudaInitError::DriverMissing(format!(
+            "q_seq.len={} != seq_len*q_dim={}*{}",
+            q_seq.len(),
+            seq_len,
+            q_dim,
+        )));
+    }
+    if k_seq.len() != seq_len * kv_dim || v_seq.len() != seq_len * kv_dim {
+        return Err(CudaInitError::DriverMissing(format!(
+            "k_seq/v_seq.len mismatch for seq_len*kv_dim={}*{}",
+            seq_len, kv_dim,
+        )));
+    }
+    if k_cache.len() != cache_len || v_cache.len() != cache_len {
+        return Err(CudaInitError::DriverMissing(format!(
+            "k_cache/v_cache.len mismatch for max_seq*num_kv_heads*head_dim={}",
+            cache_len,
+        )));
+    }
+    if base_pos + seq_len > opts.max_seq {
+        return Err(CudaInitError::DriverMissing(format!(
+            "base_pos+seq_len={}>{}=max_seq",
+            base_pos + seq_len,
+            opts.max_seq,
+        )));
+    }
+
+    let use_qk_norm = q_norm.is_some() && k_norm.is_some();
+    let q_norm_owned;
+    let k_norm_owned;
+    let q_norm = match q_norm {
+        Some(w) => {
+            assert_eq!(w.len(), opts.head_dim);
+            w
+        }
+        None => {
+            q_norm_owned = vec![0.0_f32; opts.head_dim];
+            &q_norm_owned
+        }
+    };
+    let k_norm = match k_norm {
+        Some(w) => {
+            assert_eq!(w.len(), opts.head_dim);
+            w
+        }
+        None => {
+            k_norm_owned = vec![0.0_f32; opts.head_dim];
+            &k_norm_owned
+        }
+    };
+
+    let drv = backend.driver();
+    let func_kv = kv_cache_write_seq_function(drv)?;
+    let func_attn = fused_prefill_attention_function(drv)?;
+    let q_norm_dev = drv.device_buf_from(q_norm)?;
+    let k_norm_dev = drv.device_buf_from(k_norm)?;
+    let mut out_seq = drv.device_alloc_uninit(seq_len * q_dim)?;
+
+    let block_dim_kv: u32 = 256;
+    let cfg_kv = LaunchConfig {
+        grid_dim: (seq_len as u32, opts.num_kv_heads as u32, 1),
+        block_dim: (block_dim_kv, 1, 1),
+        shared_mem_bytes: (block_dim_kv as usize * std::mem::size_of::<f32>()) as u32,
+    };
+    let num_kv_heads_i = opts.num_kv_heads as i32;
+    let head_dim_i = opts.head_dim as i32;
+    let base_pos_i = base_pos as i32;
+    let seq_len_i = seq_len as i32;
+    let max_seq_i = opts.max_seq as i32;
+    let rotary_dim_i = opts.rotary_dim as i32;
+    let use_qk_norm_i = if use_qk_norm { 1_i32 } else { 0_i32 };
+
+    unsafe {
+        drv.stream
+            .launch_builder(func_kv)
+            .arg(k_seq)
+            .arg(v_seq)
+            .arg(&mut *k_cache)
+            .arg(&mut *v_cache)
+            .arg(&k_norm_dev)
+            .arg(&num_kv_heads_i)
+            .arg(&head_dim_i)
+            .arg(&base_pos_i)
+            .arg(&seq_len_i)
+            .arg(&max_seq_i)
+            .arg(&rotary_dim_i)
+            .arg(&opts.rope_base)
+            .arg(&opts.eps)
+            .arg(&opts.qk_norm_offset)
+            .arg(&use_qk_norm_i)
+            .launch(cfg_kv)
+            .map_err(|e| {
+                CudaInitError::DriverMissing(format!("launch kv_cache_write_seq: {e:?}"))
+            })?;
+    }
+
+    let block_dim_attn: u32 = 256;
+    let cfg_attn = LaunchConfig {
+        grid_dim: (opts.num_q_heads as u32, seq_len as u32, 1),
+        block_dim: (block_dim_attn, 1, 1),
+        shared_mem_bytes: ((opts.max_seq + block_dim_attn as usize + opts.head_dim)
+            * std::mem::size_of::<f32>()) as u32,
+    };
+    let num_q_heads_i = opts.num_q_heads as i32;
+
+    unsafe {
+        drv.stream
+            .launch_builder(func_attn)
+            .arg(q_seq)
+            .arg(&*k_cache)
+            .arg(&*v_cache)
+            .arg(&q_norm_dev)
+            .arg(&mut out_seq)
+            .arg(&num_q_heads_i)
+            .arg(&num_kv_heads_i)
+            .arg(&head_dim_i)
+            .arg(&base_pos_i)
+            .arg(&seq_len_i)
+            .arg(&max_seq_i)
+            .arg(&rotary_dim_i)
+            .arg(&opts.rope_base)
+            .arg(&opts.eps)
+            .arg(&opts.qk_norm_offset)
+            .arg(&opts.attn_scale)
+            .arg(&opts.softcap)
+            .arg(&use_qk_norm_i)
+            .launch(cfg_attn)
+            .map_err(|e| {
+                CudaInitError::DriverMissing(format!("launch fused_prefill_attention: {e:?}"))
+            })?;
+    }
+
+    Ok(out_seq)
 }

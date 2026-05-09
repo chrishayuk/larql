@@ -343,8 +343,19 @@ fn fused_decode_attention_matches_cpu_reference() {
     let cos = cosine(&out_cpu, &cuda.out);
     assert!(diff <= 2e-3, "fused decode max abs diff {diff}");
     assert!(cos >= 0.9999, "fused decode cosine {cos}");
-    assert!(max_abs_diff(&k_cpu, &cuda.k_cache) <= 1e-3);
-    assert!(max_abs_diff(&v_cpu, &cuda.v_cache) <= 1e-6);
+    // `cuda-attn-wmma-f16kv` Phase 1: K/V cache stores f16 — V is a
+    // straight f32→f16→f32 round-trip so error scales with element
+    // magnitude (~5e-4 absolute for ~1.0-magnitude inputs). K is
+    // rotated and quantized similarly. Both bounds loosened from the
+    // original 1e-3 / 1e-6 to 5e-3.
+    assert!(
+        max_abs_diff(&k_cpu, &cuda.k_cache) <= 5e-3,
+        "k_cache f16 quant exceeds 5e-3"
+    );
+    assert!(
+        max_abs_diff(&v_cpu, &cuda.v_cache) <= 5e-3,
+        "v_cache f16 quant exceeds 5e-3"
+    );
 }
 
 #[test]

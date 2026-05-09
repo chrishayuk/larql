@@ -18,12 +18,16 @@ mod cache;
 mod decode;
 mod dequant;
 mod driver;
+mod elem;
 mod error;
 mod matmul;
 #[cfg(feature = "cuda-oxide")]
 mod oxide_kernels;
 mod q4k_direct;
+mod q4k_mmvq;
+mod q6k_mmvq;
 mod quant_matvec;
+mod scratch;
 
 pub use backend::CudaBackend;
 pub use error::CudaInitError;

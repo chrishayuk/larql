@@ -45,8 +45,17 @@ cudarc = { version = "0.19", optional = true, default-features = false, features
     # (returns CudaInitError::DriverMissing) and on hosts with the
     # toolkit installed.
     "dynamic-loading",
+    # f16 — exposes `Gemm<half::f16>` / `Gemm<half::bf16>` for the
+    # `cuda-prefill-tensor-cores` change. cuBLAS routes f16 inputs +
+    # f32 accumulator through Tensor Cores on Ada/Ampere/Hopper.
+    "f16",
 ] }
 cuda-device = { git = "https://github.com/NVlabs/cuda-oxide.git", rev = "6de050946cd1013335a33cf2c5144888a32efab3", package = "cuda-device", optional = true }
+# half — fp16 / bf16 numeric types. Used by `cuda-prefill-tensor-cores`
+# to pass f16 GEMM inputs through cuBLAS hgemm. Re-exported by cudarc
+# under the `f16` feature, but we depend on it directly so non-CUDA
+# builds don't pay for it.
+half = { version = "2", optional = true, features = ["num-traits"] }
 cuda-host = { git = "https://github.com/NVlabs/cuda-oxide.git", rev = "6de050946cd1013335a33cf2c5144888a32efab3", package = "cuda-host", optional = true }
 
 # Metal GPU (macOS only, optional)
@@ -69,7 +78,7 @@ metal = ["dep:metal", "dep:objc"]
 # cuda — CUDA backend on Linux (NVIDIA GPUs). Uses cudarc/cuBLAS for
 # f32 GEMM/GEMV and correctness-first quantized matvec paths; fused
 # layer-pipeline integration remains staged through follow-up changes.
-cuda = ["dep:cudarc"]
+cuda = ["dep:cudarc", "dep:half"]
 # Experimental cuda-oxide custom-kernel pilot. Kept separate from `cuda`
 # so future Rust-authored kernels can be evaluated without changing the
 # default cudarc/cuBLAS path.
