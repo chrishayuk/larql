@@ -25734,6 +25734,54 @@
       "crate": "larql_inference"
     },
     {
+      "fqn": "larql_inference::speculative::dispatch::returns_none_on_empty_drafter_even_when_env_enabled",
+      "file": "crates/larql-inference/src/speculative/dispatch.rs",
+      "line": 132,
+      "crate": "larql_inference"
+    },
+    {
+      "fqn": "larql_inference::speculative::dispatch::returns_none_when_env_disabled",
+      "file": "crates/larql-inference/src/speculative/dispatch.rs",
+      "line": 109,
+      "crate": "larql_inference"
+    },
+    {
+      "fqn": "larql_inference::speculative::dispatch::returns_none_when_target_forward_violates_contract",
+      "file": "crates/larql-inference/src/speculative/dispatch.rs",
+      "line": 194,
+      "crate": "larql_inference"
+    },
+    {
+      "fqn": "larql_inference::speculative::dispatch::returns_some_tokens_on_successful_step",
+      "file": "crates/larql-inference/src/speculative/dispatch.rs",
+      "line": 155,
+      "crate": "larql_inference"
+    },
+    {
+      "fqn": "larql_inference::speculative::dispatch::tests::returns_none_on_empty_drafter_even_when_env_enabled",
+      "file": "crates/larql-inference/src/speculative/dispatch.rs",
+      "line": 132,
+      "crate": "larql_inference"
+    },
+    {
+      "fqn": "larql_inference::speculative::dispatch::tests::returns_none_when_env_disabled",
+      "file": "crates/larql-inference/src/speculative/dispatch.rs",
+      "line": 109,
+      "crate": "larql_inference"
+    },
+    {
+      "fqn": "larql_inference::speculative::dispatch::tests::returns_none_when_target_forward_violates_contract",
+      "file": "crates/larql-inference/src/speculative/dispatch.rs",
+      "line": 194,
+      "crate": "larql_inference"
+    },
+    {
+      "fqn": "larql_inference::speculative::dispatch::tests::returns_some_tokens_on_successful_step",
+      "file": "crates/larql-inference/src/speculative/dispatch.rs",
+      "line": 155,
+      "crate": "larql_inference"
+    },
+    {
       "fqn": "larql_inference::speculative::eagle::from_checkpoint_records_path",
       "file": "crates/larql-inference/src/speculative/eagle.rs",
       "line": 85,
@@ -25772,25 +25820,25 @@
     {
       "fqn": "larql_inference::speculative::effective_depth_clamps_to_swa_remainder",
       "file": "crates/larql-inference/src/speculative/mod.rs",
-      "line": 165,
+      "line": 167,
       "crate": "larql_inference"
     },
     {
       "fqn": "larql_inference::speculative::env_garbage_uses_legacy_path",
       "file": "crates/larql-inference/src/speculative/mod.rs",
-      "line": 154,
+      "line": 156,
       "crate": "larql_inference"
     },
     {
       "fqn": "larql_inference::speculative::env_one_enables_spec_path",
       "file": "crates/larql-inference/src/speculative/mod.rs",
-      "line": 143,
+      "line": 145,
       "crate": "larql_inference"
     },
     {
       "fqn": "larql_inference::speculative::env_zero_uses_legacy_path",
       "file": "crates/larql-inference/src/speculative/mod.rs",
-      "line": 132,
+      "line": 134,
       "crate": "larql_inference"
     },
     {
@@ -25856,31 +25904,31 @@
     {
       "fqn": "larql_inference::speculative::tests::effective_depth_clamps_to_swa_remainder",
       "file": "crates/larql-inference/src/speculative/mod.rs",
-      "line": 165,
+      "line": 167,
       "crate": "larql_inference"
     },
     {
       "fqn": "larql_inference::speculative::tests::env_garbage_uses_legacy_path",
       "file": "crates/larql-inference/src/speculative/mod.rs",
-      "line": 154,
+      "line": 156,
       "crate": "larql_inference"
     },
     {
       "fqn": "larql_inference::speculative::tests::env_one_enables_spec_path",
       "file": "crates/larql-inference/src/speculative/mod.rs",
-      "line": 143,
+      "line": 145,
       "crate": "larql_inference"
     },
     {
       "fqn": "larql_inference::speculative::tests::tree_nodes_caps_at_64",
       "file": "crates/larql-inference/src/speculative/mod.rs",
-      "line": 183,
+      "line": 185,
       "crate": "larql_inference"
     },
     {
       "fqn": "larql_inference::speculative::tests::tree_nodes_default_is_seven",
       "file": "crates/larql-inference/src/speculative/mod.rs",
-      "line": 177,
+      "line": 179,
       "crate": "larql_inference"
     },
     {
@@ -25982,19 +26030,19 @@
     {
       "fqn": "larql_inference::speculative::tree_nodes_caps_at_64",
       "file": "crates/larql-inference/src/speculative/mod.rs",
-      "line": 183,
+      "line": 185,
       "crate": "larql_inference"
     },
     {
       "fqn": "larql_inference::speculative::tree_nodes_default_is_seven",
       "file": "crates/larql-inference/src/speculative/mod.rs",
-      "line": 177,
+      "line": 179,
       "crate": "larql_inference"
     },
     {
       "fqn": "larql_inference::speculative::unset_env_uses_legacy_path",
       "file": "crates/larql-inference/src/speculative/mod.rs",
-      "line": 118,
+      "line": 120,
       "crate": "larql_inference"
     },
     {

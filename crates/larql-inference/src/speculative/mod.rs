@@ -14,11 +14,13 @@
 
 use std::env;
 
+pub mod dispatch;
 pub mod eagle;
 pub mod orchestrator;
 pub mod tree;
 pub mod verify;
 
+pub use dispatch::maybe_speculative_step;
 pub use eagle::EagleDraftHead;
 pub use orchestrator::{build_linear_tree, SpeculativeStep, StepOutcome};
 pub use tree::{DraftTree, TreeAttentionMask, TreeNode};
