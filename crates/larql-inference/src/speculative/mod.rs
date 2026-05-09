@@ -15,9 +15,11 @@
 use std::env;
 
 pub mod eagle;
+pub mod tree;
 pub mod verify;
 
 pub use eagle::EagleDraftHead;
+pub use tree::{DraftTree, TreeAttentionMask, TreeNode};
 pub use verify::{verify_and_accept, AcceptedSpan};
 
 pub type TokenId = u32;
