@@ -15,12 +15,14 @@
 use std::env;
 
 pub mod eagle;
+pub mod orchestrator;
 pub mod tree;
 pub mod verify;
 
 pub use eagle::EagleDraftHead;
+pub use orchestrator::{build_linear_tree, SpeculativeStep, StepOutcome};
 pub use tree::{DraftTree, TreeAttentionMask, TreeNode};
-pub use verify::{verify_and_accept, verify_tree, AcceptedSpan};
+pub use verify::{verify_and_accept, verify_tree, AcceptedSpan, VerifyRng};
 
 pub type TokenId = u32;
 
