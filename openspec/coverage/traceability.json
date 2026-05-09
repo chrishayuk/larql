@@ -1,11 +1,11 @@
 {
   "summary": {
     "capabilities": 49,
-    "requirements": 444,
-    "scenarios": 1427,
+    "requirements": 446,
+    "scenarios": 1429,
     "scenarios_backed": 1292,
-    "scenarios_unbacked": 135,
-    "test_refs": 3357,
+    "scenarios_unbacked": 137,
+    "test_refs": 3359,
     "test_refs_unresolved": 4
   },
   "capabilities": [
@@ -2609,6 +2609,32 @@
               "unbacked": true,
               "spec_file": "openspec/changes/cuda-oxide-migration/specs/compute-cuda-kernels/spec.md",
               "line": 70
+            }
+          ]
+        },
+        {
+          "name": "prefill attention SHALL run as a single batched launch",
+          "scenarios": [
+            {
+              "name": "batched-attn output matches per-position loop within 1e-3",
+              "tests_resolved": [],
+              "tests_unresolved": [],
+              "unbacked": true,
+              "spec_file": "openspec/changes/cuda-prefill-batched-attention/specs/compute-cuda-kernels/spec.md",
+              "line": 7
+            }
+          ]
+        },
+        {
+          "name": "attn profile bucket SHALL drop to \u2264 5 ms after batching",
+          "scenarios": [
+            {
+              "name": "profile bucket cleared at acceptance OR documented on miss",
+              "tests_resolved": [],
+              "tests_unresolved": [],
+              "unbacked": true,
+              "spec_file": "openspec/changes/cuda-prefill-batched-attention/specs/compute-cuda-kernels/spec.md",
+              "line": 22
             }
           ]
         },

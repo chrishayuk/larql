@@ -380,11 +380,234 @@ extern "C" __global__ void fused_decode_attention_f32(
 }
 "#;
 
+/// Batched-prefill K/V cache writer. One CUDA block per
+/// `(seq_pos, kv_head)` pair; rotates K with RoPE (and optional
+/// QK-norm) and writes to `k_cache[base_pos + sp, kvh, :]`. V is a
+/// raw copy. Runs as kernel 1 of the two-kernel batched prefill
+/// attention dispatch (`cuda-prefill-batched-attention`).
+const KV_CACHE_WRITE_SEQ_SRC: &str = r#"
+extern "C" __global__ void kv_cache_write_seq_f32(
+    const float* k_seq,
+    const float* v_seq,
+    float* k_cache,
+    float* v_cache,
+    const float* k_norm,
+    int num_kv_heads,
+    int head_dim,
+    int base_pos,
+    int seq_len,
+    int max_seq,
+    int rotary_dim,
+    float rope_base,
+    float eps,
+    float qk_norm_offset,
+    int use_qk_norm
+) {
+    int sp  = blockIdx.x;
+    int kvh = blockIdx.y;
+    if (sp >= seq_len || kvh >= num_kv_heads) return;
+    int pos = base_pos + sp;
+    if (pos >= max_seq) return;
+
+    int tid  = threadIdx.x;
+    int bdim = blockDim.x;
+    extern __shared__ float scratch[];
+
+    const float* k_head = k_seq + ((size_t)sp * num_kv_heads + kvh) * head_dim;
+    const float* v_head = v_seq + ((size_t)sp * num_kv_heads + kvh) * head_dim;
+
+    float k_ss = 0.f;
+    for (int d = tid; d < head_dim; d += bdim) {
+        float kv = k_head[d];
+        k_ss += kv * kv;
+    }
+    scratch[tid] = k_ss;
+    __syncthreads();
+    for (int stride = bdim / 2; stride > 0; stride >>= 1) {
+        if (tid < stride) scratch[tid] += scratch[tid + stride];
+        __syncthreads();
+    }
+    float k_inv = rsqrtf(scratch[0] / (float)head_dim + eps);
+
+    int rdim = (rotary_dim == 0) ? head_dim : min(rotary_dim, head_dim);
+    int hdim = rdim / 2;
+    for (int d = tid; d < head_dim; d += bdim) {
+        float k_rot;
+        if (d < rdim) {
+            int pair = d % hdim;
+            bool imag = d >= hdim;
+            float re = k_head[pair];
+            float im = k_head[pair + hdim];
+            if (use_qk_norm) {
+                re *= k_inv * (k_norm[pair]        + qk_norm_offset);
+                im *= k_inv * (k_norm[pair + hdim] + qk_norm_offset);
+            }
+            float freq  = 1.0f / powf(rope_base, (float)(2 * pair) / (float)rdim);
+            float angle = (float)pos * freq;
+            float c = cosf(angle);
+            float s = sinf(angle);
+            k_rot = imag ? (re * s + im * c) : (re * c - im * s);
+        } else {
+            float kv = k_head[d];
+            if (use_qk_norm) kv *= k_inv * (k_norm[d] + qk_norm_offset);
+            k_rot = kv;
+        }
+        size_t idx = ((size_t)pos * num_kv_heads + kvh) * head_dim + d;
+        k_cache[idx] = k_rot;
+        v_cache[idx] = v_head[d];
+    }
+}
+"#;
+
+/// Batched-prefill attention kernel. `grid_dim = (num_q_heads,
+/// seq_len, 1)`, one block per `(qh, sp)` pair. Reads K/V from the
+/// cache (written by `kv_cache_write_seq_f32`) over positions
+/// `[0, base_pos + sp]` causally. Q-RoPE pre-rotation hoisted into
+/// shared memory (same trick as `cuda-attn-rope-hoist`).
+const FUSED_PREFILL_ATTN_SRC: &str = r#"
+#define NEG_INF (__int_as_float(0xff800000))
+
+extern "C" __global__ void fused_prefill_attention_f32(
+    const float* q_seq,        // [seq_len, num_q_heads, head_dim]
+    const float* k_cache,      // [max_seq, num_kv_heads, head_dim] (already populated)
+    const float* v_cache,      // same shape
+    const float* q_norm,
+    float* out_seq,            // [seq_len, num_q_heads, head_dim]
+    int num_q_heads,
+    int num_kv_heads,
+    int head_dim,
+    int base_pos,
+    int seq_len,
+    int max_seq,
+    int rotary_dim,
+    float rope_base,
+    float eps,
+    float qk_norm_offset,
+    float attn_scale,
+    float softcap,
+    int use_qk_norm
+) {
+    int qh = blockIdx.x;
+    int sp = blockIdx.y;
+    if (qh >= num_q_heads || sp >= seq_len) return;
+    int pos = base_pos + sp;
+    if (pos >= max_seq) return;
+
+    int tid = threadIdx.x;
+    int bdim = blockDim.x;
+    extern __shared__ float smem[];
+    float* scores  = smem;
+    float* scratch = smem + max_seq;
+    float* q_rot   = smem + max_seq + bdim;
+
+    int group = max(1, num_q_heads / max(1, num_kv_heads));
+    int kvh = min(num_kv_heads - 1, qh / group);
+    const float* q_head = q_seq + (size_t)(sp * num_q_heads + qh) * head_dim;
+
+    float q_ss = 0.f;
+    for (int d = tid; d < head_dim; d += bdim) {
+        float qv = q_head[d];
+        q_ss += qv * qv;
+    }
+    scratch[tid] = q_ss;
+    __syncthreads();
+    for (int stride = bdim / 2; stride > 0; stride >>= 1) {
+        if (tid < stride) scratch[tid] += scratch[tid + stride];
+        __syncthreads();
+    }
+    float q_inv = rsqrtf(scratch[0] / (float)head_dim + eps);
+
+    // Pre-rotate Q once (depends only on `pos`, not on `j`).
+    int rdim_pre = (rotary_dim == 0) ? head_dim : min(rotary_dim, head_dim);
+    int hdim_pre = rdim_pre / 2;
+    for (int d = tid; d < head_dim; d += bdim) {
+        float qv = q_head[d];
+        if (use_qk_norm) qv *= q_inv * (q_norm[d] + qk_norm_offset);
+        if (d < rdim_pre) {
+            int pair = d % hdim_pre;
+            bool imag = d >= hdim_pre;
+            float re = q_head[pair];
+            float im = q_head[pair + hdim_pre];
+            if (use_qk_norm) {
+                re *= q_inv * (q_norm[pair]            + qk_norm_offset);
+                im *= q_inv * (q_norm[pair + hdim_pre] + qk_norm_offset);
+            }
+            float freq  = 1.0f / powf(rope_base, (float)(2 * pair) / (float)rdim_pre);
+            float angle = (float)pos * freq;
+            float c = cosf(angle);
+            float s = sinf(angle);
+            qv = imag ? (re * s + im * c) : (re * c - im * s);
+        }
+        q_rot[d] = qv;
+    }
+    __syncthreads();
+
+    int n_ctx = pos + 1;
+
+    for (int j = tid; j < n_ctx; j += bdim) {
+        float dot = 0.f;
+        for (int d = 0; d < head_dim; d++) {
+            float qv = q_rot[d];
+            float kv = k_cache[((size_t)j * num_kv_heads + kvh) * head_dim + d];
+            dot += qv * kv;
+        }
+        float logit = dot * attn_scale;
+        if (softcap > 0.f) logit = softcap * tanhf(logit / softcap);
+        scores[j] = logit;
+    }
+    for (int j = tid + n_ctx; j < max_seq; j += bdim) {
+        scores[j] = NEG_INF;
+    }
+    __syncthreads();
+
+    float my_max = NEG_INF;
+    for (int j = tid; j < n_ctx; j += bdim) {
+        float s = scores[j];
+        if (s > my_max) my_max = s;
+    }
+    scratch[tid] = my_max;
+    __syncthreads();
+    for (int stride = bdim / 2; stride > 0; stride >>= 1) {
+        if (tid < stride) scratch[tid] = fmaxf(scratch[tid], scratch[tid + stride]);
+        __syncthreads();
+    }
+    float row_max = scratch[0];
+
+    float my_sum = 0.f;
+    for (int j = tid; j < n_ctx; j += bdim) {
+        float e = expf(scores[j] - row_max);
+        scores[j] = e;
+        my_sum += e;
+    }
+    scratch[tid] = my_sum;
+    __syncthreads();
+    for (int stride = bdim / 2; stride > 0; stride >>= 1) {
+        if (tid < stride) scratch[tid] += scratch[tid + stride];
+        __syncthreads();
+    }
+    float inv_sum = 1.f / scratch[0];
+
+    for (int d = tid; d < head_dim; d += bdim) {
+        float acc = 0.f;
+        for (int j = 0; j < n_ctx; j++) {
+            float prob = scores[j] * inv_sum;
+            float vv   = v_cache[((size_t)j * num_kv_heads + kvh) * head_dim + d];
+            acc += prob * vv;
+        }
+        out_seq[(size_t)(sp * num_q_heads + qh) * head_dim + d] = acc;
+    }
+}
+"#;
+
 /// Lazily-loaded softmax module + function. cudarc's `CudaContext` is
 /// `Send + Sync`; `OnceLock` gives us thread-safe one-time init.
 static SOFTMAX_FUNC: OnceLock<(std::sync::Arc<CudaModule>, CudaFunction)> = OnceLock::new();
 static QKV_RMS_PROJ_FUNC: OnceLock<(std::sync::Arc<CudaModule>, CudaFunction)> = OnceLock::new();
 static FUSED_DECODE_ATTN_FUNC: OnceLock<(std::sync::Arc<CudaModule>, CudaFunction)> =
+    OnceLock::new();
+static KV_CACHE_WRITE_SEQ_FUNC: OnceLock<(std::sync::Arc<CudaModule>, CudaFunction)> =
+    OnceLock::new();
+static FUSED_PREFILL_ATTN_FUNC: OnceLock<(std::sync::Arc<CudaModule>, CudaFunction)> =
     OnceLock::new();
 
 fn softmax_function(drv: &Driver) -> Result<&'static CudaFunction, CudaInitError> {
@@ -1062,4 +1285,206 @@ pub fn decode_attention(
 
     drv.sync()?;
     drv.to_host(&out_dev)
+}
+
+fn kv_cache_write_seq_function(drv: &Driver) -> Result<&'static CudaFunction, CudaInitError> {
+    if let Some((_, f)) = KV_CACHE_WRITE_SEQ_FUNC.get() {
+        return Ok(f);
+    }
+    let ptx = compile_ptx(KV_CACHE_WRITE_SEQ_SRC).map_err(|e| {
+        CudaInitError::DriverMissing(format!("nvrtc compile kv_cache_write_seq: {e:?}"))
+    })?;
+    let module = drv.ctx.load_module(ptx).map_err(|e| {
+        CudaInitError::DriverMissing(format!("load kv_cache_write_seq module: {e:?}"))
+    })?;
+    let func = module
+        .load_function("kv_cache_write_seq_f32")
+        .map_err(|e| {
+            CudaInitError::DriverMissing(format!("load kv_cache_write_seq function: {e:?}"))
+        })?;
+    let _ = KV_CACHE_WRITE_SEQ_FUNC.set((module, func));
+    let (_, f) = KV_CACHE_WRITE_SEQ_FUNC.get().unwrap();
+    Ok(f)
+}
+
+fn fused_prefill_attention_function(drv: &Driver) -> Result<&'static CudaFunction, CudaInitError> {
+    if let Some((_, f)) = FUSED_PREFILL_ATTN_FUNC.get() {
+        return Ok(f);
+    }
+    let ptx = compile_ptx(FUSED_PREFILL_ATTN_SRC).map_err(|e| {
+        CudaInitError::DriverMissing(format!("nvrtc compile fused_prefill_attention: {e:?}"))
+    })?;
+    let module = drv.ctx.load_module(ptx).map_err(|e| {
+        CudaInitError::DriverMissing(format!("load fused_prefill_attention module: {e:?}"))
+    })?;
+    let func = module
+        .load_function("fused_prefill_attention_f32")
+        .map_err(|e| {
+            CudaInitError::DriverMissing(format!("load fused_prefill_attention function: {e:?}"))
+        })?;
+    let _ = FUSED_PREFILL_ATTN_FUNC.set((module, func));
+    let (_, f) = FUSED_PREFILL_ATTN_FUNC.get().unwrap();
+    Ok(f)
+}
+
+/// Batched-prefill attention dispatch. `cuda-prefill-batched-attention`.
+///
+/// Runs in two passes on the same stream:
+///   1. `kv_cache_write_seq_f32` writes all `seq_len` K (with
+///      RoPE / QK-norm) and V rows into the cache slabs at
+///      positions `[base_pos, base_pos + seq_len)`.
+///   2. `fused_prefill_attention_f32` computes causal attention
+///      for every `(qh, sp)` pair against the cache, returning
+///      `out_seq: [seq_len, num_q_heads × head_dim]`.
+#[allow(clippy::too_many_arguments)]
+pub fn fused_prefill_attention_seq_device(
+    backend: &CudaBackend,
+    q_seq: &CudaSlice<f32>,
+    k_seq: &CudaSlice<f32>,
+    v_seq: &CudaSlice<f32>,
+    k_cache: &mut CudaSlice<f32>,
+    v_cache: &mut CudaSlice<f32>,
+    q_norm: Option<&[f32]>,
+    k_norm: Option<&[f32]>,
+    base_pos: usize,
+    seq_len: usize,
+    opts: FusedDecodeAttentionOpts,
+) -> Result<CudaSlice<f32>, CudaInitError> {
+    let q_dim = opts.num_q_heads * opts.head_dim;
+    let kv_dim = opts.num_kv_heads * opts.head_dim;
+    let cache_len = opts.max_seq * opts.num_kv_heads * opts.head_dim;
+    if q_seq.len() != seq_len * q_dim {
+        return Err(CudaInitError::DriverMissing(format!(
+            "q_seq.len={} != seq_len*q_dim={}*{}",
+            q_seq.len(),
+            seq_len,
+            q_dim,
+        )));
+    }
+    if k_seq.len() != seq_len * kv_dim || v_seq.len() != seq_len * kv_dim {
+        return Err(CudaInitError::DriverMissing(format!(
+            "k_seq/v_seq.len mismatch for seq_len*kv_dim={}*{}",
+            seq_len, kv_dim,
+        )));
+    }
+    if k_cache.len() != cache_len || v_cache.len() != cache_len {
+        return Err(CudaInitError::DriverMissing(format!(
+            "k_cache/v_cache.len mismatch for max_seq*num_kv_heads*head_dim={}",
+            cache_len,
+        )));
+    }
+    if base_pos + seq_len > opts.max_seq {
+        return Err(CudaInitError::DriverMissing(format!(
+            "base_pos+seq_len={}>{}=max_seq",
+            base_pos + seq_len,
+            opts.max_seq,
+        )));
+    }
+
+    let use_qk_norm = q_norm.is_some() && k_norm.is_some();
+    let q_norm_owned;
+    let k_norm_owned;
+    let q_norm = match q_norm {
+        Some(w) => {
+            assert_eq!(w.len(), opts.head_dim);
+            w
+        }
+        None => {
+            q_norm_owned = vec![0.0_f32; opts.head_dim];
+            &q_norm_owned
+        }
+    };
+    let k_norm = match k_norm {
+        Some(w) => {
+            assert_eq!(w.len(), opts.head_dim);
+            w
+        }
+        None => {
+            k_norm_owned = vec![0.0_f32; opts.head_dim];
+            &k_norm_owned
+        }
+    };
+
+    let drv = backend.driver();
+    let func_kv = kv_cache_write_seq_function(drv)?;
+    let func_attn = fused_prefill_attention_function(drv)?;
+    let q_norm_dev = drv.device_buf_from(q_norm)?;
+    let k_norm_dev = drv.device_buf_from(k_norm)?;
+    let mut out_seq = drv.device_alloc_uninit(seq_len * q_dim)?;
+
+    let block_dim_kv: u32 = 256;
+    let cfg_kv = LaunchConfig {
+        grid_dim: (seq_len as u32, opts.num_kv_heads as u32, 1),
+        block_dim: (block_dim_kv, 1, 1),
+        shared_mem_bytes: (block_dim_kv as usize * std::mem::size_of::<f32>()) as u32,
+    };
+    let num_kv_heads_i = opts.num_kv_heads as i32;
+    let head_dim_i = opts.head_dim as i32;
+    let base_pos_i = base_pos as i32;
+    let seq_len_i = seq_len as i32;
+    let max_seq_i = opts.max_seq as i32;
+    let rotary_dim_i = opts.rotary_dim as i32;
+    let use_qk_norm_i = if use_qk_norm { 1_i32 } else { 0_i32 };
+
+    unsafe {
+        drv.stream
+            .launch_builder(func_kv)
+            .arg(k_seq)
+            .arg(v_seq)
+            .arg(&mut *k_cache)
+            .arg(&mut *v_cache)
+            .arg(&k_norm_dev)
+            .arg(&num_kv_heads_i)
+            .arg(&head_dim_i)
+            .arg(&base_pos_i)
+            .arg(&seq_len_i)
+            .arg(&max_seq_i)
+            .arg(&rotary_dim_i)
+            .arg(&opts.rope_base)
+            .arg(&opts.eps)
+            .arg(&opts.qk_norm_offset)
+            .arg(&use_qk_norm_i)
+            .launch(cfg_kv)
+            .map_err(|e| {
+                CudaInitError::DriverMissing(format!("launch kv_cache_write_seq: {e:?}"))
+            })?;
+    }
+
+    let block_dim_attn: u32 = 256;
+    let cfg_attn = LaunchConfig {
+        grid_dim: (opts.num_q_heads as u32, seq_len as u32, 1),
+        block_dim: (block_dim_attn, 1, 1),
+        shared_mem_bytes: ((opts.max_seq + block_dim_attn as usize + opts.head_dim)
+            * std::mem::size_of::<f32>()) as u32,
+    };
+    let num_q_heads_i = opts.num_q_heads as i32;
+
+    unsafe {
+        drv.stream
+            .launch_builder(func_attn)
+            .arg(q_seq)
+            .arg(&*k_cache)
+            .arg(&*v_cache)
+            .arg(&q_norm_dev)
+            .arg(&mut out_seq)
+            .arg(&num_q_heads_i)
+            .arg(&num_kv_heads_i)
+            .arg(&head_dim_i)
+            .arg(&base_pos_i)
+            .arg(&seq_len_i)
+            .arg(&max_seq_i)
+            .arg(&rotary_dim_i)
+            .arg(&opts.rope_base)
+            .arg(&opts.eps)
+            .arg(&opts.qk_norm_offset)
+            .arg(&opts.attn_scale)
+            .arg(&opts.softcap)
+            .arg(&use_qk_norm_i)
+            .launch(cfg_attn)
+            .map_err(|e| {
+                CudaInitError::DriverMissing(format!("launch fused_prefill_attention: {e:?}"))
+            })?;
+    }
+
+    Ok(out_seq)
 }

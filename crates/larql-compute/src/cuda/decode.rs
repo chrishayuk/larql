@@ -1243,47 +1243,35 @@ impl CudaBackend {
             sync_p(self);
             t_qkv += t.elapsed();
 
-            // 3. Per-position attention loop. Reusable per-row buffers
-            //    avoid reallocation; dtod copies are bandwidth-bound at
-            //    ~kv_dim*4 bytes ≈ 1 KB each, negligible vs the kernel.
+            // 3. Batched attention. cuda-prefill-batched-attention:
+            //    one launch writes all seq_len K/V to cache (with RoPE),
+            //    a second launch computes causal Q×K^T softmax × V for
+            //    every (qh, sp) pair. Falls back to the per-position
+            //    loop when LARQL_CUDA_PREFILL_BATCHED_ATTN=0.
             let max_seq = cache.max_seq;
             let kv_slot = cache.layers.get_mut(layer_idx)?;
-            let mut q_pos = self.alloc_f32(layer_q_dim).ok()?;
-            let mut k_pos = self.alloc_f32(layer_kv_dim).ok()?;
-            let mut v_pos = self.alloc_f32(layer_kv_dim).ok()?;
-            let mut attn_out_seq = self.alloc_f32(seq_len * layer_q_dim).ok()?;
-
             let t = std::time::Instant::now();
-            for pos in 0..seq_len {
-                let q_off = pos * layer_q_dim;
-                let kv_off = pos * layer_kv_dim;
-                self.driver()
-                    .stream
-                    .memcpy_dtod(&q_seq.slice(q_off..q_off + layer_q_dim), &mut q_pos)
-                    .ok()?;
-                self.driver()
-                    .stream
-                    .memcpy_dtod(&k_seq.slice(kv_off..kv_off + layer_kv_dim), &mut k_pos)
-                    .ok()?;
-                self.driver()
-                    .stream
-                    .memcpy_dtod(&v_seq.slice(kv_off..kv_off + layer_kv_dim), &mut v_pos)
-                    .ok()?;
-
-                let attn_out_pos = attn::fused_decode_attention_device_kv(
+            let attn_out_seq = if std::env::var("LARQL_CUDA_PREFILL_BATCHED_ATTN")
+                .ok()
+                .as_deref()
+                != Some("0")
+            {
+                attn::fused_prefill_attention_seq_device(
                     self,
-                    &q_pos,
-                    &k_pos,
-                    &v_pos,
+                    &q_seq,
+                    &k_seq,
+                    &v_seq,
                     &mut kv_slot.k,
                     &mut kv_slot.v,
                     layer.q_norm_weight,
                     layer.k_norm_weight,
+                    0,
+                    seq_len,
                     attn::FusedDecodeAttentionOpts {
                         num_q_heads: layer_num_q_heads,
                         num_kv_heads: layer_num_kv_heads,
                         head_dim: layer_head_dim,
-                        pos,
+                        pos: 0, // unused on the seq path; kernel uses base_pos+sp
                         max_seq,
                         rotary_dim: layer_rotary_dim,
                         rope_base: layer_rope_base,
@@ -1293,16 +1281,62 @@ impl CudaBackend {
                         softcap: 0.0,
                     },
                 )
-                .ok()?;
-                self.driver()
-                    .stream
-                    .memcpy_dtod(
-                        &attn_out_pos,
-                        &mut attn_out_seq.slice_mut(q_off..q_off + layer_q_dim),
+                .ok()?
+            } else {
+                // Back-out path: per-position fused_decode_attention loop.
+                let mut q_pos = self.alloc_f32(layer_q_dim).ok()?;
+                let mut k_pos = self.alloc_f32(layer_kv_dim).ok()?;
+                let mut v_pos = self.alloc_f32(layer_kv_dim).ok()?;
+                let mut attn_out_seq = self.alloc_f32(seq_len * layer_q_dim).ok()?;
+                for pos in 0..seq_len {
+                    let q_off = pos * layer_q_dim;
+                    let kv_off = pos * layer_kv_dim;
+                    self.driver()
+                        .stream
+                        .memcpy_dtod(&q_seq.slice(q_off..q_off + layer_q_dim), &mut q_pos)
+                        .ok()?;
+                    self.driver()
+                        .stream
+                        .memcpy_dtod(&k_seq.slice(kv_off..kv_off + layer_kv_dim), &mut k_pos)
+                        .ok()?;
+                    self.driver()
+                        .stream
+                        .memcpy_dtod(&v_seq.slice(kv_off..kv_off + layer_kv_dim), &mut v_pos)
+                        .ok()?;
+                    let attn_out_pos = attn::fused_decode_attention_device_kv(
+                        self,
+                        &q_pos,
+                        &k_pos,
+                        &v_pos,
+                        &mut kv_slot.k,
+                        &mut kv_slot.v,
+                        layer.q_norm_weight,
+                        layer.k_norm_weight,
+                        attn::FusedDecodeAttentionOpts {
+                            num_q_heads: layer_num_q_heads,
+                            num_kv_heads: layer_num_kv_heads,
+                            head_dim: layer_head_dim,
+                            pos,
+                            max_seq,
+                            rotary_dim: layer_rotary_dim,
+                            rope_base: layer_rope_base,
+                            eps: layer.eps,
+                            qk_norm_offset: layer.qk_norm_offset,
+                            attn_scale: layer.attn_scale,
+                            softcap: 0.0,
+                        },
                     )
                     .ok()?;
-            }
-
+                    self.driver()
+                        .stream
+                        .memcpy_dtod(
+                            &attn_out_pos,
+                            &mut attn_out_seq.slice_mut(q_off..q_off + layer_q_dim),
+                        )
+                        .ok()?;
+                }
+                attn_out_seq
+            };
             sync_p(self);
             t_attn += t.elapsed();
 
