@@ -103,6 +103,22 @@ pub struct BenchArgs {
     /// Verbose load / warmup logging.
     #[arg(short, long)]
     pub verbose: bool,
+
+    /// Off-the-shelf draft model vindex for speculative decoding.
+    /// When set together with `LARQL_SPECULATIVE_DECODE=1`, the bench
+    /// loads this vindex as a `SmallModelDrafter` for the speculative
+    /// path. When unset (or env flag off), bench runs the existing
+    /// non-speculative path bit-exactly.
+    ///
+    /// Example: `--draft-model /path/to/gemma-3-270m-vindex`
+    ///
+    /// First slice: drafter is loaded and held by the bench process
+    /// (proves the loader works on the target hardware) but not yet
+    /// dispatched into the decode loop. Wiring the call site is the
+    /// next slice. Until then this flag is purely a "did the drafter
+    /// load successfully" check.
+    #[arg(long, value_name = "VINDEX_PATH")]
+    pub draft_model: Option<String>,
 }
 
 struct BenchRow {
@@ -195,6 +211,39 @@ pub fn run(args: BenchArgs) -> Result<(), Box<dyn std::error::Error>> {
             .map(|m| format!(", ollama={m}"))
             .unwrap_or_default(),
     );
+
+    // Speculative-decode drafter — first slice of phase 4 CLI wiring.
+    // Loads the off-the-shelf draft model if `--draft-model <path>` is
+    // given. Held in scope for the duration of the bench run; the
+    // call-site dispatch into the decode loop lands in the next slice.
+    let _draft = if let Some(draft_path) = args.draft_model.as_deref() {
+        let resolved = cache::resolve_model(draft_path)?;
+        match larql_inference::speculative::SmallModelDrafter::from_vindex(&resolved) {
+            Ok(d) => {
+                let env_on = larql_inference::speculative::enabled();
+                println!(
+                    "Speculative drafter: loaded from {} ({}) — env LARQL_SPECULATIVE_DECODE={}",
+                    resolved.display(),
+                    if env_on {
+                        "active"
+                    } else {
+                        "loaded but env disabled"
+                    },
+                    if env_on { "1" } else { "unset/0" },
+                );
+                Some(d)
+            }
+            Err(e) => {
+                eprintln!(
+                    "warning: --draft-model {} failed to load: {e}; continuing without speculative path",
+                    resolved.display(),
+                );
+                None
+            }
+        }
+    } else {
+        None
+    };
     println!();
 
     let mut rows: Vec<BenchRow> = Vec::new();
