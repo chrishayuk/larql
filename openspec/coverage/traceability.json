@@ -1,11 +1,11 @@
 {
   "summary": {
     "capabilities": 49,
-    "requirements": 425,
-    "scenarios": 1402,
+    "requirements": 431,
+    "scenarios": 1413,
     "scenarios_backed": 1285,
-    "scenarios_unbacked": 117,
-    "test_refs": 3332,
+    "scenarios_unbacked": 128,
+    "test_refs": 3343,
     "test_refs_unresolved": 4
   },
   "capabilities": [
@@ -2167,6 +2167,124 @@
               "unbacked": false,
               "spec_file": "openspec/specs/compute-cuda-kernels/spec.md",
               "line": 172
+            }
+          ]
+        },
+        {
+          "name": "CudaBackend MUST expose device-resident matvec variants",
+          "scenarios": [
+            {
+              "name": "q4k_matvec_device returns same bytes as host variant",
+              "tests_resolved": [],
+              "tests_unresolved": [],
+              "unbacked": true,
+              "spec_file": "openspec/changes/cuda-decode-device-resident/specs/compute-cuda-kernels/spec.md",
+              "line": 14
+            },
+            {
+              "name": "device-resident matvec reuses the device weight cache",
+              "tests_resolved": [],
+              "tests_unresolved": [],
+              "unbacked": true,
+              "spec_file": "openspec/changes/cuda-decode-device-resident/specs/compute-cuda-kernels/spec.md",
+              "line": 23
+            }
+          ]
+        },
+        {
+          "name": "decode_token MUST keep per-layer state on the device",
+          "scenarios": [
+            {
+              "name": "device-resident decode produces identical output to host fallback",
+              "tests_resolved": [],
+              "tests_unresolved": [],
+              "unbacked": true,
+              "spec_file": "openspec/changes/cuda-decode-device-resident/specs/compute-cuda-kernels/spec.md",
+              "line": 40
+            },
+            {
+              "name": "greedy decode against real Gemma 3 4B Q4_K vindex matches host fallback",
+              "tests_resolved": [],
+              "tests_unresolved": [],
+              "unbacked": true,
+              "spec_file": "openspec/changes/cuda-decode-device-resident/specs/compute-cuda-kernels/spec.md",
+              "line": 49
+            }
+          ]
+        },
+        {
+          "name": "CUDA decode MUST expose a host-fallback escape hatch",
+          "scenarios": [
+            {
+              "name": "env var routes to the host fallback",
+              "tests_resolved": [],
+              "tests_unresolved": [],
+              "unbacked": true,
+              "spec_file": "openspec/changes/cuda-decode-device-resident/specs/compute-cuda-kernels/spec.md",
+              "line": 64
+            }
+          ]
+        },
+        {
+          "name": "GPU rms_norm / silu / add kernels SHALL match the CPU reference",
+          "scenarios": [
+            {
+              "name": "rms_norm_vec_device matches CPU reference",
+              "tests_resolved": [],
+              "tests_unresolved": [],
+              "unbacked": true,
+              "spec_file": "openspec/changes/cuda-decode-device-resident/specs/compute-cuda-kernels/spec.md",
+              "line": 80
+            },
+            {
+              "name": "silu_gate_up_device matches CPU reference",
+              "tests_resolved": [],
+              "tests_unresolved": [],
+              "unbacked": true,
+              "spec_file": "openspec/changes/cuda-decode-device-resident/specs/compute-cuda-kernels/spec.md",
+              "line": 87
+            },
+            {
+              "name": "add_in_place_device is bit-equal to CPU add",
+              "tests_resolved": [],
+              "tests_unresolved": [],
+              "unbacked": true,
+              "spec_file": "openspec/changes/cuda-decode-device-resident/specs/compute-cuda-kernels/spec.md",
+              "line": 94
+            }
+          ]
+        },
+        {
+          "name": "K/V cache SHALL live on the device after Phase 3",
+          "scenarios": [
+            {
+              "name": "populate_kv_layer round-trips through device buffers",
+              "tests_resolved": [],
+              "tests_unresolved": [],
+              "unbacked": true,
+              "spec_file": "openspec/changes/cuda-decode-device-resident/specs/compute-cuda-kernels/spec.md",
+              "line": 111
+            },
+            {
+              "name": "fused_decode_attention_device accepts device K/V cache",
+              "tests_resolved": [],
+              "tests_unresolved": [],
+              "unbacked": true,
+              "spec_file": "openspec/changes/cuda-decode-device-resident/specs/compute-cuda-kernels/spec.md",
+              "line": 119
+            }
+          ]
+        },
+        {
+          "name": "Bench acceptance gates SHALL match the proposal targets",
+          "scenarios": [
+            {
+              "name": "Phase 1 misses gate triggers profile-and-document",
+              "tests_resolved": [],
+              "tests_unresolved": [],
+              "unbacked": true,
+              "spec_file": "openspec/changes/cuda-decode-device-resident/specs/compute-cuda-kernels/spec.md",
+              "line": 144
             }
           ]
         },
