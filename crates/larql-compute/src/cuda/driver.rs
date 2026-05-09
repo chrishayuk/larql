@@ -113,6 +113,31 @@ impl Driver {
             .map_err(|e| CudaInitError::DriverMissing(format!("dtoh copy: {e:?}")))
     }
 
+    /// Allocate a device-side `i32` buffer with `len` zero-initialised
+    /// elements.
+    pub(crate) fn device_alloc_i32(&self, len: usize) -> Result<CudaSlice<i32>, CudaInitError> {
+        self.stream
+            .alloc_zeros::<i32>(len)
+            .map_err(|e| CudaInitError::DriverMissing(format!("device alloc i32: {e:?}")))
+    }
+
+    /// Copy a host `i32` slice to a fresh device buffer.
+    pub(crate) fn device_i32_buf_from(
+        &self,
+        host: &[i32],
+    ) -> Result<CudaSlice<i32>, CudaInitError> {
+        self.stream
+            .clone_htod(host)
+            .map_err(|e| CudaInitError::DriverMissing(format!("htod i32 copy: {e:?}")))
+    }
+
+    /// Copy a device `i32` buffer back to host (synchronous).
+    pub(crate) fn to_host_i32(&self, dev: &CudaSlice<i32>) -> Result<Vec<i32>, CudaInitError> {
+        self.stream
+            .clone_dtoh(dev)
+            .map_err(|e| CudaInitError::DriverMissing(format!("dtoh i32 copy: {e:?}")))
+    }
+
     /// Best-effort device name string for diagnostics.
     pub(crate) fn device_info(&self) -> String {
         // cudarc 0.19 has no high-level "device name" accessor; we
