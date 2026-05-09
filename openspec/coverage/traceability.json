@@ -3,8 +3,8 @@
     "capabilities": 49,
     "requirements": 436,
     "scenarios": 1418,
-    "scenarios_backed": 1289,
-    "scenarios_unbacked": 129,
+    "scenarios_backed": 1290,
+    "scenarios_unbacked": 128,
     "test_refs": 3348,
     "test_refs_unresolved": 4
   },
@@ -2729,9 +2729,11 @@
           "scenarios": [
             {
               "name": "Q8_1 quantize \u2192 dequantize round-trips to within one quantum",
-              "tests_resolved": [],
+              "tests_resolved": [
+                "larql_compute::cuda::elem::tests::q8_1_quantize_roundtrips_to_within_quant_noise"
+              ],
               "tests_unresolved": [],
-              "unbacked": true,
+              "unbacked": false,
               "spec_file": "openspec/changes/cuda-q4k-mmvq-int8/specs/compute-cuda-kernels/spec.md",
               "line": 12
             }
@@ -19858,6 +19860,12 @@
       "fqn": "larql_compute::cuda::cache::cache_dir_falls_back_to_home",
       "file": "crates/larql-compute/src/cuda/cache.rs",
       "line": 79,
+      "crate": "larql_compute"
+    },
+    {
+      "fqn": "larql_compute::cuda::elem::q8_1_quantize_roundtrips_to_within_quant_noise",
+      "file": "crates/larql-compute/src/cuda/elem.rs",
+      "line": 499,
       "crate": "larql_compute"
     },
     {

@@ -17,7 +17,7 @@ SHALL refuse other sizes.
 - **THEN** the per-element absolute error SHALL be ≤
   `(amax_block / 127.0)`, i.e. one Q8_1 quantum, for every
   element of every block
-<!-- test: unbacked -->
+<!-- test: larql_compute::cuda::elem::tests::q8_1_quantize_roundtrips_to_within_quant_noise -->
 
 ### Requirement: Q4_K × Q8_1 mmvq kernel SHALL match the existing direct f32 kernel
 

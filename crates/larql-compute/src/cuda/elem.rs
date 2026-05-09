@@ -114,10 +114,77 @@ extern "C" __global__ void scale_inplace_f32(
 }
 "#;
 
+/// Q8_1 quantize. Memory layout matches llama.cpp's `block_q8_1`
+/// (`ggml/src/ggml-cuda/common.cuh`):
+///
+/// ```text
+/// struct __align__(4) block_q8_1 {
+///     half2  ds;     // (fp16 scale, fp16 scale * sum_of_block)
+///     int8_t qs[32]; // 32 quantised input values
+/// }; // 36 bytes per block, alignment 4
+/// ```
+///
+/// One warp per 32-element block; warp-shuffle reductions for both
+/// the amax (→ scale) and the per-block sum.
+///
+/// `cuda-q4k-mmvq-int8` Phase 1.
+const QUANTIZE_Q8_1_SRC: &str = r#"
+__device__ unsigned short f32_to_f16_bits(float v) {
+    unsigned short h;
+    asm("cvt.rn.f16.f32 %0, %1;" : "=h"(h) : "f"(v));
+    return h;
+}
+
+extern "C" __global__ void quantize_q8_1_f32(
+    const float* __restrict__ x,
+    int n_blocks,
+    unsigned char* __restrict__ out
+) {
+    int b = blockIdx.x;
+    if (b >= n_blocks) return;
+    int t = threadIdx.x; // 0..31
+
+    float v = x[(size_t)b * 32 + t];
+
+    // amax across the warp
+    float amax = fabsf(v);
+    #pragma unroll
+    for (int o = 16; o > 0; o >>= 1) {
+        float r = __shfl_xor_sync(0xffffffff, amax, o);
+        amax = fmaxf(amax, r);
+    }
+
+    float scale = amax / 127.0f;
+    float inv_scale = (scale > 0.0f) ? (1.0f / scale) : 0.0f;
+    int q = __float2int_rn(v * inv_scale);
+    if (q > 127) q = 127;
+    if (q < -128) q = -128;
+
+    // sum across the warp
+    float sum_x = v;
+    #pragma unroll
+    for (int o = 16; o > 0; o >>= 1) {
+        sum_x += __shfl_xor_sync(0xffffffff, sum_x, o);
+    }
+
+    // Write the 36-byte block. ds occupies bytes [0..4] as a packed
+    // half2 (lo: scale, hi: scale * sum). qs occupies bytes [4..36].
+    unsigned char* block_ptr = out + (size_t)b * 36;
+    if (t == 0) {
+        unsigned short s_h = f32_to_f16_bits(scale);
+        unsigned short m_h = f32_to_f16_bits(scale * sum_x);
+        unsigned int packed = (unsigned int)s_h | ((unsigned int)m_h << 16);
+        *((unsigned int*)block_ptr) = packed;
+    }
+    block_ptr[4 + t] = (unsigned char)((signed char)q);
+}
+"#;
+
 static RMS_NORM_FUNC: OnceLock<(std::sync::Arc<CudaModule>, CudaFunction)> = OnceLock::new();
 static SILU_GATE_UP_FUNC: OnceLock<(std::sync::Arc<CudaModule>, CudaFunction)> = OnceLock::new();
 static ADD_IN_PLACE_FUNC: OnceLock<(std::sync::Arc<CudaModule>, CudaFunction)> = OnceLock::new();
 static SCALE_INPLACE_FUNC: OnceLock<(std::sync::Arc<CudaModule>, CudaFunction)> = OnceLock::new();
+static QUANTIZE_Q8_1_FUNC: OnceLock<(std::sync::Arc<CudaModule>, CudaFunction)> = OnceLock::new();
 
 fn load_kernel(
     drv: &Driver,
@@ -323,4 +390,162 @@ pub(crate) fn scale_inplace_device(
             .map_err(|e| CudaInitError::DriverMissing(format!("launch scale_inplace: {e:?}")))?;
     }
     Ok(())
+}
+
+/// Device-resident Q8_1 buffer. Layout is the packed `block_q8_1[]`
+/// from llama.cpp: 36 bytes per 32-element block, of which the first
+/// 4 are a `half2 ds` (fp16 scale, fp16 scale × sum) and the
+/// following 32 are signed-int8 quants. `cuda-q4k-mmvq-int8` Phase 1.
+pub(crate) struct Q8_1Buf {
+    /// Raw packed bytes; length = `n_blocks * 36`.
+    pub(crate) bytes: cudarc::driver::CudaSlice<u8>,
+    /// Number of 32-element blocks; total elements quantised = `n_blocks * 32`.
+    pub(crate) n_blocks: usize,
+}
+
+/// Quantise a device-resident f32 vector to Q8_1. `n` MUST be a
+/// multiple of 32 (one Q8_1 block per 32 elements).
+pub(crate) fn quantize_q8_1_device(
+    backend: &CudaBackend,
+    x_dev: &CudaSlice<f32>,
+    n: usize,
+) -> Result<Q8_1Buf, CudaInitError> {
+    if x_dev.len() != n {
+        return Err(CudaInitError::DriverMissing(format!(
+            "quantize_q8_1_device: x_dev.len={} != n={}",
+            x_dev.len(),
+            n
+        )));
+    }
+    if n % 32 != 0 {
+        return Err(CudaInitError::DriverMissing(format!(
+            "quantize_q8_1_device: n={n} must be a multiple of 32",
+        )));
+    }
+    let n_blocks = n / 32;
+    let bytes_len = n_blocks * 36;
+
+    let drv = backend.driver();
+    let func = load_kernel(
+        drv,
+        &QUANTIZE_Q8_1_FUNC,
+        QUANTIZE_Q8_1_SRC,
+        "quantize_q8_1_f32",
+    )?;
+    let mut bytes = drv
+        .stream
+        .alloc_zeros::<u8>(bytes_len)
+        .map_err(|e| CudaInitError::DriverMissing(format!("alloc q8_1 bytes: {e:?}")))?;
+
+    let n_blocks_i = n_blocks as i32;
+    let cfg = LaunchConfig {
+        grid_dim: (n_blocks as u32, 1, 1),
+        block_dim: (32, 1, 1),
+        shared_mem_bytes: 0,
+    };
+
+    unsafe {
+        drv.stream
+            .launch_builder(func)
+            .arg(x_dev)
+            .arg(&n_blocks_i)
+            .arg(&mut bytes)
+            .launch(cfg)
+            .map_err(|e| CudaInitError::DriverMissing(format!("launch quantize_q8_1: {e:?}")))?;
+    }
+
+    Ok(Q8_1Buf { bytes, n_blocks })
+}
+
+#[cfg(test)]
+mod tests {
+    //! Inline kernel tests gated on `LARQL_CUDA_AVAILABLE=1`. Run with:
+    //! `LARQL_CUDA_AVAILABLE=1 cargo test -p larql-compute --features cuda --lib`.
+
+    use super::*;
+    use larql_models::quant::half::f16_to_f32;
+
+    fn gpu_or_skip() -> Option<CudaBackend> {
+        if std::env::var("LARQL_CUDA_AVAILABLE").ok().as_deref() != Some("1") {
+            eprintln!("skipping CUDA q8_1 quantize test: set LARQL_CUDA_AVAILABLE=1");
+            return None;
+        }
+        CudaBackend::new().ok()
+    }
+
+    /// Dequantise the packed `block_q8_1[]` byte stream on host.
+    /// Returns `(reconstructed_values, per_block_scale)`.
+    fn dequant_q8_1_host(bytes: &[u8], n_blocks: usize) -> (Vec<f32>, Vec<f32>) {
+        assert_eq!(bytes.len(), n_blocks * 36);
+        let mut out = Vec::with_capacity(n_blocks * 32);
+        let mut scales = Vec::with_capacity(n_blocks);
+        for b in 0..n_blocks {
+            let base = b * 36;
+            let scale_bits = u16::from_le_bytes([bytes[base], bytes[base + 1]]);
+            let scale = f16_to_f32(scale_bits);
+            scales.push(scale);
+            for i in 0..32 {
+                let q = bytes[base + 4 + i] as i8;
+                out.push(scale * (q as f32));
+            }
+        }
+        (out, scales)
+    }
+
+    /// `cuda-q4k-mmvq-int8` Phase 1: quantising and dequantising a
+    /// random vector via the GPU kernel SHALL match the original
+    /// within one Q8_1 quantum (per-block-`amax / 127`).
+    #[test]
+    fn q8_1_quantize_roundtrips_to_within_quant_noise() {
+        let Some(backend) = gpu_or_skip() else { return };
+
+        let n = 2560;
+        // Synthetic input with a wide dynamic range so multiple blocks
+        // see different per-block amax values.
+        let mut s: u64 = 0xDEAD_BEEF_DEAD_BEEF;
+        let x: Vec<f32> = (0..n)
+            .map(|_| {
+                s ^= s << 13;
+                s ^= s >> 7;
+                s ^= s << 17;
+                ((s & 0xFF_FFFF) as f32 / 8_388_608.0) - 0.5
+            })
+            .collect();
+
+        let x_dev = backend.htod_f32(&x).expect("htod x");
+        let buf = quantize_q8_1_device(&backend, &x_dev, n).expect("quantize_q8_1_device");
+        backend.driver().sync().expect("sync");
+        let bytes: Vec<u8> = backend
+            .driver()
+            .stream
+            .clone_dtoh(&buf.bytes)
+            .expect("dtoh q8_1 bytes");
+
+        assert_eq!(bytes.len(), buf.n_blocks * 36);
+        assert_eq!(buf.n_blocks, n / 32);
+
+        let (recon, scales) = dequant_q8_1_host(&bytes, buf.n_blocks);
+        assert_eq!(recon.len(), n);
+
+        // Per-block: max |original - reconstructed| ≤ per-block amax / 127
+        // (one Q8_1 quantum). Allow a small fp16 fudge factor for the
+        // half-precision scale rounding.
+        let mut worst_per_quantum_ratio: f32 = 0.0;
+        for b in 0..buf.n_blocks {
+            let block_amax = (0..32).map(|i| x[b * 32 + i].abs()).fold(0.0_f32, f32::max);
+            let scale = scales[b];
+            // The kernel's scale = block_amax / 127, but quantised
+            // through fp16 — so the quantum is ~ scale itself.
+            let quantum = scale.max(block_amax / 127.0).max(1e-9);
+            for i in 0..32 {
+                let err = (x[b * 32 + i] - recon[b * 32 + i]).abs();
+                worst_per_quantum_ratio = worst_per_quantum_ratio.max(err / quantum);
+            }
+        }
+        assert!(
+            worst_per_quantum_ratio <= 1.05,
+            "Q8_1 round-trip error exceeds 1.05 quanta ({worst_per_quantum_ratio}); kernel \
+             likely has a quantization or fp16-scale bug",
+        );
+    }
 }
