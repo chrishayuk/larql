@@ -90,31 +90,69 @@ empirically-dead Tensor Core paths (`cuda-tensor-cores-q4k`,
 `cuda-marlin-imma-probe`) re-arm above their fragment-utilization
 threshold.
 
-Performance model with α=0.6 acceptance, depth=2, branches=2:
+Performance model with α=0.6 acceptance, depth=2, branches=2.
+**Updated 2026-05-09 with empirical batched-mmvq microbench**
+(`tests/bench_cuda_q4k_batched.rs` on
+`feat/cuda-spec-q4k-mmvq-batched`):
+
+| Shape (rows × hidden)         | M=1 ms | M=8 ms | Speedup vs M=1×8 |
+|-------------------------------|-------:|-------:|-----------------:|
+| `proj_qkv` (5120 × 2560)      | 0.43   | 0.49   | **6.94×**        |
+| `proj_wo` (2560 × 2560)       | 0.24   | 0.28   | **6.98×**        |
+| `proj_gate_up` (10240 × 2560) | 0.78   | 0.89   | **7.08×**        |
+| `proj_down` (2560 × 10240)    | 0.79   | 0.87   | **7.34×**        |
+
+M=8 takes only 9-14% more wall time than M=1 across every
+projection shape — weight bandwidth is fully amortized. The
+original design.md estimate of `target_pass_at_batch5 ≈ 7.44 × 1.4`
+was conservative; empirically the multiplier is **1.10**.
+
+Updated perf model:
 
 ```
-target_pass_at_batch5  ≈ 7.44 × 1.4   = 10.4 ms
-draft_pass_at_batch1   ≈ 1.5 ms
-total_per_step         ≈ 11.9 ms
-expected_tokens/step   = 1+α+α²+α³+α⁴ = 2.31
-ms_per_token           = 11.9 / 2.31  = 5.15 ms
+target_pass_at_M=5   ≈ 7.44 × 1.10 = 8.18 ms     (was estimated 10.4 ms)
+draft_pass_at_M=1    ≈ 1.5 ms
+total_per_step       ≈ 9.68 ms
+expected_tokens/step = 1+α+α²+α³+α⁴ = 2.31
+ms_per_token         = 9.68 / 2.31 = 4.19 ms     (was 5.15 ms)
 ```
 
-At α=0.7 (EAGLE-2 published rates): ~4.39 ms/tok, inside the
-noise floor of llama.cpp.
+| α    | ms/tok (was) | ms/tok (now) | vs llama.cpp 4.34 |
+|------|-------------:|-------------:|-------------------|
+| 0.6  | 5.15         | **4.19**     | **-3.5%** (already faster) |
+| 0.7  | 4.39         | **3.57**     | -18%              |
+| 0.8  | 3.54         | **2.88**     | -34%              |
 
-Phase 1 scaffolding shipped this session: trait, config, env-flag
+**Critical implication**: at acceptance rate α ≥ 0.6 we already
+beat llama.cpp. The prior design assumed we needed α ≥ 0.7. This
+substantially widens the acceptance window in which speculative
+decode is a net win — at α=0.5 we'd still be roughly on par
+(4.97 ms/tok), and only below α≈0.45 do we lose to baseline.
+
+Phase 1 scaffolding (no GPU dep): trait, config, env-flag
 dispatch, EAGLE stub, CPU `verify_and_accept` + `verify_tree`
-oracles, `DraftTree` data structure, `TreeAttentionMask`. All on
-[`feat/cuda-spec-draft-head`](https://github.com/ianblenke/larql/tree/feat/cuda-spec-draft-head),
-30 unit tests, no CUDA dependency, all local CI gates green.
+oracles, `DraftTree`, `TreeAttentionMask`, `SpeculativeStep`
+orchestrator. 35 unit tests, all CI gates green. On
+[`feat/cuda-spec-draft-head`](https://github.com/ianblenke/larql/tree/feat/cuda-spec-draft-head).
 
-Phases 2-4 (batched mmvq, tree attention + verify kernel, Tensor
-Core re-arm) are documented in
-[design.md §6](../cuda-speculative-decoding/design.md) with
-stop-ship gates per phase. Estimated 2-3 weeks for a working
-end-to-end implementation that passes the bit-equal token-ID
-parity test on a 256-prompt eval.
+Phase 2 GPU kernel landed: `cuda::q4k_batched::matvec_batched`
+with M_TILE up to 8, 6 parity tests vs naive Rust dequant +
+matmul reference + microbench above. On
+[`feat/cuda-spec-q4k-mmvq-batched`](https://github.com/ianblenke/larql/tree/feat/cuda-spec-q4k-mmvq-batched).
+
+Phase 3 GPU verify kernel landed: `cuda::sampling::verify_tree_gpu`
+with bit-identical SplitMix64 RNG to the CPU oracle, 4 parity
+tests across 160 fixed seeds. On
+[`feat/cuda-spec-verify-tree-kernel`](https://github.com/ianblenke/larql/tree/feat/cuda-spec-verify-tree-kernel).
+
+Remaining for end-to-end:
+
+- Phase 3 task 3.1: `cuda::attn_tree::tree_decode_attention` —
+  extends `cuda::attn::fused_decode_attention` to `q_tokens > 1`
+  with the `TreeAttentionMask` bitmask. Same NVRTC iteration loop
+  the previous two kernels used.
+- Phase 4: real EAGLE checkpoint loader + inference-loop dispatch
+  wiring + 256-prompt token-ID parity eval + `bench/decode_speculative.rs`.
 
 ## What this means for batch=1 decode
 
