@@ -1,11 +1,11 @@
 {
   "summary": {
     "capabilities": 49,
-    "requirements": 451,
-    "scenarios": 1434,
+    "requirements": 454,
+    "scenarios": 1437,
     "scenarios_backed": 1293,
-    "scenarios_unbacked": 141,
-    "test_refs": 3364,
+    "scenarios_unbacked": 144,
+    "test_refs": 3367,
     "test_refs_unresolved": 4
   },
   "capabilities": [
@@ -2195,6 +2195,45 @@
               "unbacked": true,
               "spec_file": "openspec/changes/cuda-attn-rope-hoist/specs/compute-cuda-kernels/spec.md",
               "line": 29
+            }
+          ]
+        },
+        {
+          "name": "decode_token_device SHALL use a pre-allocated scratch buffer",
+          "scenarios": [
+            {
+              "name": "scratch reused across decode calls",
+              "tests_resolved": [],
+              "tests_unresolved": [],
+              "unbacked": true,
+              "spec_file": "openspec/changes/cuda-decode-cuda-graph/specs/compute-cuda-kernels/spec.md",
+              "line": 7
+            }
+          ]
+        },
+        {
+          "name": "fused_decode_attention_device_kv SHALL take device-side pos",
+          "scenarios": [
+            {
+              "name": "pos updates between graph replays",
+              "tests_resolved": [],
+              "tests_unresolved": [],
+              "unbacked": true,
+              "spec_file": "openspec/changes/cuda-decode-cuda-graph/specs/compute-cuda-kernels/spec.md",
+              "line": 19
+            }
+          ]
+        },
+        {
+          "name": "decode_token_device SHALL replay a captured CUDA graph after the first call",
+          "scenarios": [
+            {
+              "name": "bench gate cleared after graph replay",
+              "tests_resolved": [],
+              "tests_unresolved": [],
+              "unbacked": true,
+              "spec_file": "openspec/changes/cuda-decode-cuda-graph/specs/compute-cuda-kernels/spec.md",
+              "line": 32
             }
           ]
         },
