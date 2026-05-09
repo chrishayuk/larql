@@ -179,7 +179,7 @@ extern "C" __global__ void fused_decode_attention_f32(
     int num_q_heads,
     int num_kv_heads,
     int head_dim,
-    int pos,
+    const int* pos_dev,
     int max_seq,
     int rotary_dim,
     float rope_base,
@@ -189,6 +189,11 @@ extern "C" __global__ void fused_decode_attention_f32(
     float softcap,
     int use_qk_norm
 ) {
+    // cuda-decode-cuda-graph: `pos` is read from device memory so the
+    // captured graph can be replayed after writing a new value into
+    // `*pos_dev` instead of re-launching with a different immediate
+    // kernel arg (graphs bake in immediate args at capture time).
+    int pos = *pos_dev;
     int qh = blockIdx.x;
     if (qh >= num_q_heads || pos >= max_seq) return;
     int tid = threadIdx.x;
@@ -872,6 +877,11 @@ pub fn fused_decode_attention(
     let q_norm_dev = drv.device_buf_from(q_norm)?;
     let k_norm_dev = drv.device_buf_from(k_norm)?;
     let mut out_dev = drv.device_alloc_uninit(q_dim)?;
+    // cuda-decode-cuda-graph: pos is read from device memory.
+    let pos_dev = drv
+        .stream
+        .clone_htod(&[opts.pos as i32])
+        .map_err(|e| CudaInitError::DriverMissing(format!("htod pos: {e:?}")))?;
 
     let block_dim: u32 = 256;
     let cfg = LaunchConfig {
@@ -883,7 +893,6 @@ pub fn fused_decode_attention(
     let num_q_heads_i = opts.num_q_heads as i32;
     let num_kv_heads_i = opts.num_kv_heads as i32;
     let head_dim_i = opts.head_dim as i32;
-    let pos_i = opts.pos as i32;
     let max_seq_i = opts.max_seq as i32;
     let rotary_dim_i = opts.rotary_dim as i32;
     let use_qk_norm_i = if use_qk_norm { 1_i32 } else { 0_i32 };
@@ -902,7 +911,7 @@ pub fn fused_decode_attention(
             .arg(&num_q_heads_i)
             .arg(&num_kv_heads_i)
             .arg(&head_dim_i)
-            .arg(&pos_i)
+            .arg(&pos_dev)
             .arg(&max_seq_i)
             .arg(&rotary_dim_i)
             .arg(&opts.rope_base)
@@ -982,6 +991,11 @@ pub fn fused_decode_attention_device_kv(
     let q_norm_dev = drv.device_buf_from(q_norm)?;
     let k_norm_dev = drv.device_buf_from(k_norm)?;
     let mut out_dev = drv.device_alloc_uninit(q_dim)?;
+    // cuda-decode-cuda-graph: pos is read from device memory.
+    let pos_dev = drv
+        .stream
+        .clone_htod(&[opts.pos as i32])
+        .map_err(|e| CudaInitError::DriverMissing(format!("htod pos: {e:?}")))?;
 
     let block_dim: u32 = 256;
     let cfg = LaunchConfig {
@@ -993,7 +1007,6 @@ pub fn fused_decode_attention_device_kv(
     let num_q_heads_i = opts.num_q_heads as i32;
     let num_kv_heads_i = opts.num_kv_heads as i32;
     let head_dim_i = opts.head_dim as i32;
-    let pos_i = opts.pos as i32;
     let max_seq_i = opts.max_seq as i32;
     let rotary_dim_i = opts.rotary_dim as i32;
     let use_qk_norm_i = if use_qk_norm { 1_i32 } else { 0_i32 };
@@ -1012,7 +1025,7 @@ pub fn fused_decode_attention_device_kv(
             .arg(&num_q_heads_i)
             .arg(&num_kv_heads_i)
             .arg(&head_dim_i)
-            .arg(&pos_i)
+            .arg(&pos_dev)
             .arg(&max_seq_i)
             .arg(&rotary_dim_i)
             .arg(&opts.rope_base)
@@ -1034,6 +1047,98 @@ pub fn fused_decode_attention_device_kv(
     // those buffers are persistent across calls so subsequent
     // tokens read them without any PCIe traffic.
     Ok(out_dev)
+}
+
+/// `cuda-decode-cuda-graph` variant of
+/// [`fused_decode_attention_device_kv`]. Differs in three ways:
+///
+/// * `pos_dev`, `q_norm_dev`, `k_norm_dev` come pre-allocated from
+///   `DecodeScratch` — no per-call htod / alloc that would create
+///   spurious memory nodes inside the captured graph.
+/// * `out_dev` is supplied by the caller (`scratch.attn_out`) instead
+///   of being freshly allocated, so the captured kernel uses a
+///   stable destination pointer across replays.
+/// * Returns `()` — the result lives in `out_dev`.
+///
+/// The caller MUST `htod_into_slice(&[pos_i], pos_dev, 0)` before
+/// each replay and ensure `q_norm_dev` / `k_norm_dev` already hold
+/// the per-layer norm weights (or zeros if `use_qk_norm == 0`).
+#[allow(clippy::too_many_arguments)]
+pub fn fused_decode_attention_device_kv_into(
+    backend: &CudaBackend,
+    q_dev: &CudaSlice<f32>,
+    k_new_dev: &CudaSlice<f32>,
+    v_new_dev: &CudaSlice<f32>,
+    k_cache_dev: &mut CudaSlice<f32>,
+    v_cache_dev: &mut CudaSlice<f32>,
+    q_norm_dev: &CudaSlice<f32>,
+    k_norm_dev: &CudaSlice<f32>,
+    pos_dev: &CudaSlice<i32>,
+    out_dev: &mut CudaSlice<f32>,
+    use_qk_norm: bool,
+    opts: FusedDecodeAttentionOpts,
+) -> Result<(), CudaInitError> {
+    let q_dim = opts.num_q_heads * opts.head_dim;
+    let kv_dim = opts.num_kv_heads * opts.head_dim;
+    let cache_len = opts.max_seq * opts.num_kv_heads * opts.head_dim;
+    debug_assert_eq!(q_dev.len(), q_dim);
+    debug_assert_eq!(k_new_dev.len(), kv_dim);
+    debug_assert_eq!(v_new_dev.len(), kv_dim);
+    debug_assert_eq!(k_cache_dev.len(), cache_len);
+    debug_assert_eq!(v_cache_dev.len(), cache_len);
+    debug_assert_eq!(out_dev.len(), q_dim);
+    debug_assert_eq!(pos_dev.len(), 1);
+    debug_assert_eq!(q_norm_dev.len(), opts.head_dim);
+    debug_assert_eq!(k_norm_dev.len(), opts.head_dim);
+
+    let drv = backend.driver();
+    let func = fused_decode_attention_function(drv)?;
+
+    let block_dim: u32 = 256;
+    let cfg = LaunchConfig {
+        grid_dim: (opts.num_q_heads as u32, 1, 1),
+        block_dim: (block_dim, 1, 1),
+        shared_mem_bytes: ((opts.max_seq + block_dim as usize + opts.head_dim)
+            * std::mem::size_of::<f32>()) as u32,
+    };
+    let num_q_heads_i = opts.num_q_heads as i32;
+    let num_kv_heads_i = opts.num_kv_heads as i32;
+    let head_dim_i = opts.head_dim as i32;
+    let max_seq_i = opts.max_seq as i32;
+    let rotary_dim_i = opts.rotary_dim as i32;
+    let use_qk_norm_i = if use_qk_norm { 1_i32 } else { 0_i32 };
+
+    unsafe {
+        drv.stream
+            .launch_builder(func)
+            .arg(q_dev)
+            .arg(k_new_dev)
+            .arg(v_new_dev)
+            .arg(k_cache_dev)
+            .arg(v_cache_dev)
+            .arg(q_norm_dev)
+            .arg(k_norm_dev)
+            .arg(out_dev)
+            .arg(&num_q_heads_i)
+            .arg(&num_kv_heads_i)
+            .arg(&head_dim_i)
+            .arg(pos_dev)
+            .arg(&max_seq_i)
+            .arg(&rotary_dim_i)
+            .arg(&opts.rope_base)
+            .arg(&opts.eps)
+            .arg(&opts.qk_norm_offset)
+            .arg(&opts.attn_scale)
+            .arg(&opts.softcap)
+            .arg(&use_qk_norm_i)
+            .launch(cfg)
+            .map_err(|e| {
+                CudaInitError::DriverMissing(format!(
+                    "launch fused_decode_attention_device_kv_into: {e:?}"
+                ))
+            })?;
+    }
+    Ok(())
 }
 
 /// Device-resident variant of [`fused_decode_attention`]. Q / K-new /
@@ -1094,6 +1199,11 @@ pub fn fused_decode_attention_device(
     let q_norm_dev = drv.device_buf_from(q_norm)?;
     let k_norm_dev = drv.device_buf_from(k_norm)?;
     let mut out_dev = drv.device_alloc_uninit(q_dim)?;
+    // cuda-decode-cuda-graph: pos is read from device memory.
+    let pos_dev = drv
+        .stream
+        .clone_htod(&[opts.pos as i32])
+        .map_err(|e| CudaInitError::DriverMissing(format!("htod pos: {e:?}")))?;
 
     let block_dim: u32 = 256;
     let cfg = LaunchConfig {
@@ -1105,7 +1215,6 @@ pub fn fused_decode_attention_device(
     let num_q_heads_i = opts.num_q_heads as i32;
     let num_kv_heads_i = opts.num_kv_heads as i32;
     let head_dim_i = opts.head_dim as i32;
-    let pos_i = opts.pos as i32;
     let max_seq_i = opts.max_seq as i32;
     let rotary_dim_i = opts.rotary_dim as i32;
     let use_qk_norm_i = if use_qk_norm { 1_i32 } else { 0_i32 };
@@ -1124,7 +1233,7 @@ pub fn fused_decode_attention_device(
             .arg(&num_q_heads_i)
             .arg(&num_kv_heads_i)
             .arg(&head_dim_i)
-            .arg(&pos_i)
+            .arg(&pos_dev)
             .arg(&max_seq_i)
             .arg(&rotary_dim_i)
             .arg(&opts.rope_base)

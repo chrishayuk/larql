@@ -216,6 +216,70 @@ fn load_kernel(
     Ok(f)
 }
 
+/// `cuda-decode-cuda-graph` companion: write rms_norm output into a
+/// caller-provided buffer instead of allocating a fresh one. Used by
+/// `decode_token_device` once the persistent `DecodeScratch` is
+/// available so the captured CUDA Graph sees stable pointers across
+/// replays. The free-allocating [`rms_norm_device`] becomes a thin
+/// wrapper that just allocates `out` and dispatches here.
+pub(crate) fn rms_norm_device_into(
+    backend: &CudaBackend,
+    x_dev: &CudaSlice<f32>,
+    weight_dev: Option<&CudaSlice<f32>>,
+    out: &mut CudaSlice<f32>,
+    n: usize,
+    eps: f32,
+    norm_offset: f32,
+) -> Result<(), CudaInitError> {
+    if x_dev.len() != n || out.len() != n {
+        return Err(CudaInitError::DriverMissing(format!(
+            "rms_norm_device_into shape: x_dev.len={} out.len={} n={}",
+            x_dev.len(),
+            out.len(),
+            n
+        )));
+    }
+    if let Some(w) = weight_dev {
+        if w.len() != n {
+            return Err(CudaInitError::DriverMissing(format!(
+                "rms_norm_device_into: weight_dev.len={} != n={}",
+                w.len(),
+                n
+            )));
+        }
+    }
+    let drv = backend.driver();
+    let func = load_kernel(drv, &RMS_NORM_FUNC, RMS_NORM_SRC, "rms_norm_vec_f32")?;
+    let block_dim: u32 = 1024;
+    let cfg = LaunchConfig {
+        grid_dim: (1, 1, 1),
+        block_dim: (block_dim, 1, 1),
+        shared_mem_bytes: block_dim * std::mem::size_of::<f32>() as u32,
+    };
+    let n_i = n as i32;
+    let has_weight_i: i32 = if weight_dev.is_some() { 1 } else { 0 };
+    // The kernel never dereferences `weight_arg` when has_weight=0,
+    // but launch_builder still binds the pointer. Reuse `x_dev` as
+    // the placeholder — it's a valid device pointer the kernel won't
+    // read on the unused path. Avoids aliasing the mutable `out`
+    // borrow.
+    let weight_arg: &CudaSlice<f32> = weight_dev.unwrap_or(x_dev);
+    unsafe {
+        drv.stream
+            .launch_builder(func)
+            .arg(x_dev)
+            .arg(weight_arg)
+            .arg(&n_i)
+            .arg(&has_weight_i)
+            .arg(&eps)
+            .arg(&norm_offset)
+            .arg(out)
+            .launch(cfg)
+            .map_err(|e| CudaInitError::DriverMissing(format!("launch rms_norm: {e:?}")))?;
+    }
+    Ok(())
+}
+
 /// Device-resident RMSNorm. Allocates a fresh output buffer of length
 /// `n`. `weight` may be `None` (matches the CPU fallback when the
 /// caller passes an empty norm slice).
@@ -278,6 +342,53 @@ pub(crate) fn rms_norm_device(
             .map_err(|e| CudaInitError::DriverMissing(format!("launch rms_norm: {e:?}")))?;
     }
     Ok(out)
+}
+
+/// `cuda-decode-cuda-graph` companion: writes silu/gelu gate × up
+/// output into the caller-provided `out` buffer.
+pub(crate) fn silu_gate_up_device_into(
+    backend: &CudaBackend,
+    gate_dev: &CudaSlice<f32>,
+    up_dev: &CudaSlice<f32>,
+    out: &mut CudaSlice<f32>,
+    n: usize,
+    gelu_tanh: bool,
+) -> Result<(), CudaInitError> {
+    if gate_dev.len() != n || up_dev.len() != n || out.len() != n {
+        return Err(CudaInitError::DriverMissing(format!(
+            "silu_gate_up_device_into shape: gate={} up={} out={} n={n}",
+            gate_dev.len(),
+            up_dev.len(),
+            out.len(),
+        )));
+    }
+    let drv = backend.driver();
+    let func = load_kernel(
+        drv,
+        &SILU_GATE_UP_FUNC,
+        SILU_GATE_UP_SRC,
+        "silu_gate_up_f32",
+    )?;
+    let block_dim: u32 = 256;
+    let cfg = LaunchConfig {
+        grid_dim: ((n as u32).div_ceil(block_dim), 1, 1),
+        block_dim: (block_dim, 1, 1),
+        shared_mem_bytes: 0,
+    };
+    let n_i = n as i32;
+    let gelu_i: i32 = if gelu_tanh { 1 } else { 0 };
+    unsafe {
+        drv.stream
+            .launch_builder(func)
+            .arg(gate_dev)
+            .arg(up_dev)
+            .arg(&n_i)
+            .arg(&gelu_i)
+            .arg(out)
+            .launch(cfg)
+            .map_err(|e| CudaInitError::DriverMissing(format!("launch silu_gate_up: {e:?}")))?;
+    }
+    Ok(())
 }
 
 /// Device-resident silu/gelu gate × up. `gelu_tanh` selects the
@@ -408,6 +519,62 @@ pub(crate) struct Q8_1Buf {
     pub(crate) bytes: cudarc::driver::CudaSlice<u8>,
     /// Number of 32-element blocks; total elements quantised = `n_blocks * 32`.
     pub(crate) n_blocks: usize,
+}
+
+/// `cuda-decode-cuda-graph` companion: quantise into a caller-
+/// provided Q8_1 byte buffer. The buffer's length MUST be exactly
+/// `n / 32 * 36` and `n` MUST be a multiple of 32.
+pub(crate) fn quantize_q8_1_device_into(
+    backend: &CudaBackend,
+    x_dev: &CudaSlice<f32>,
+    bytes: &mut CudaSlice<u8>,
+    n: usize,
+) -> Result<(), CudaInitError> {
+    if x_dev.len() != n {
+        return Err(CudaInitError::DriverMissing(format!(
+            "quantize_q8_1_device_into: x_dev.len={} != n={}",
+            x_dev.len(),
+            n
+        )));
+    }
+    if !n.is_multiple_of(32) {
+        return Err(CudaInitError::DriverMissing(format!(
+            "quantize_q8_1_device_into: n={n} must be a multiple of 32",
+        )));
+    }
+    let n_blocks = n / 32;
+    let bytes_len = n_blocks * 36;
+    if bytes.len() != bytes_len {
+        return Err(CudaInitError::DriverMissing(format!(
+            "quantize_q8_1_device_into: bytes.len={} != expected={}",
+            bytes.len(),
+            bytes_len
+        )));
+    }
+
+    let drv = backend.driver();
+    let func = load_kernel(
+        drv,
+        &QUANTIZE_Q8_1_FUNC,
+        QUANTIZE_Q8_1_SRC,
+        "quantize_q8_1_f32",
+    )?;
+    let n_blocks_i = n_blocks as i32;
+    let cfg = LaunchConfig {
+        grid_dim: (n_blocks as u32, 1, 1),
+        block_dim: (32, 1, 1),
+        shared_mem_bytes: 0,
+    };
+    unsafe {
+        drv.stream
+            .launch_builder(func)
+            .arg(x_dev)
+            .arg(&n_blocks_i)
+            .arg(bytes)
+            .launch(cfg)
+            .map_err(|e| CudaInitError::DriverMissing(format!("launch quantize_q8_1: {e:?}")))?;
+    }
+    Ok(())
 }
 
 /// Quantise a device-resident f32 vector to Q8_1. `n` MUST be a

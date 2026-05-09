@@ -19,20 +19,51 @@ use super::dequant;
 use super::driver::Driver;
 use super::error::CudaInitError;
 use super::matmul as kernels;
+use super::scratch::DecodeScratch;
+use cudarc::driver::CudaGraph;
+
+/// `cuda-decode-cuda-graph`: thin Send-marker wrapper around cudarc's
+/// `CudaGraph`. The graph's internal `CUgraph` / `CUgraphExec` are
+/// raw pointers which aren't `Send`/`Sync` by default; CUDA's driver
+/// API is thread-safe for graph launches as long as the owning
+/// context is bound to the calling thread, and `CudaBackend` already
+/// follows that contract via `bind_to_thread`. We therefore mark the
+/// wrapper `Send + Sync` so it can live in `Mutex<Option<…>>`.
+pub(crate) struct DecodeGraph(pub(crate) CudaGraph);
+unsafe impl Send for DecodeGraph {}
+unsafe impl Sync for DecodeGraph {}
 
 pub struct CudaBackend {
     drv: Arc<Driver>,
     pub(crate) kv_cache: Mutex<Option<CudaKvCache>>,
-    q4k_device_cache: Mutex<HashMap<DeviceBytesKey, CudaSlice<u8>>>,
-    q6k_f32_device_cache: Mutex<HashMap<DeviceBytesKey, CudaSlice<f32>>>,
-    q6k_packed_device_cache: Mutex<HashMap<DeviceBytesKey, CudaSlice<u8>>>,
-    q4k_f32_device_cache: Mutex<HashMap<DeviceBytesKey, CudaSlice<f32>>>,
+    // `cuda-decode-cuda-graph`: caches store `Arc<CudaSlice>` so the
+    // captured-graph decode path can hold cheap clones of the
+    // cached device pointers across the capture region without
+    // serialising on the cache locks. Cache values are immutable
+    // for the lifetime of the model — Arc::clone is the right
+    // primitive.
+    q4k_device_cache: Mutex<HashMap<DeviceBytesKey, Arc<CudaSlice<u8>>>>,
+    q6k_f32_device_cache: Mutex<HashMap<DeviceBytesKey, Arc<CudaSlice<f32>>>>,
+    q6k_packed_device_cache: Mutex<HashMap<DeviceBytesKey, Arc<CudaSlice<u8>>>>,
+    q4k_f32_device_cache: Mutex<HashMap<DeviceBytesKey, Arc<CudaSlice<f32>>>>,
     /// Per-pointer cache of small f32 weights (norms etc.) so the
     /// per-layer norm-weight htod's collapse to a one-time upload per
     /// host buffer. Keyed by host pointer + length + content hash so
     /// distinct host buffers with identical bytes still collide
     /// safely.
-    f32_norm_device_cache: Mutex<HashMap<DeviceBytesKey, CudaSlice<f32>>>,
+    f32_norm_device_cache: Mutex<HashMap<DeviceBytesKey, Arc<CudaSlice<f32>>>>,
+    /// `cuda-decode-cuda-graph`: pre-allocated per-decode scratch
+    /// buffers. `None` until the first decode_token_device call sees
+    /// a shape; reused on every subsequent same-shape call.
+    pub(crate) decode_scratch: Mutex<Option<DecodeScratch>>,
+    /// Captured decode graph + the warmup-call counter. The graph is
+    /// captured on the call AFTER the scratch is first populated (so
+    /// every weight/norm cache is already warm and the captured graph
+    /// holds no htod nodes). Subsequent calls replay the graph.
+    pub(crate) decode_graph: Mutex<Option<DecodeGraph>>,
+    /// Number of decode_token_device calls since scratch was last
+    /// (re)allocated. The capture happens at call #2.
+    pub(crate) decode_warmup_count: Mutex<u32>,
 }
 
 impl CudaBackend {
@@ -50,6 +81,9 @@ impl CudaBackend {
             q6k_packed_device_cache: Mutex::new(HashMap::new()),
             q4k_f32_device_cache: Mutex::new(HashMap::new()),
             f32_norm_device_cache: Mutex::new(HashMap::new()),
+            decode_scratch: Mutex::new(None),
+            decode_graph: Mutex::new(None),
+            decode_warmup_count: Mutex::new(0),
         })
     }
 
@@ -64,19 +98,34 @@ impl CudaBackend {
         host: &[u8],
         f: impl FnOnce(&CudaSlice<u8>) -> Result<R, CudaInitError>,
     ) -> Result<R, CudaInitError> {
+        let arc = self.arc_q4k_device_buf(host)?;
+        f(&arc)
+    }
+
+    /// `cuda-decode-cuda-graph`: Arc-cloned device buffer for the
+    /// graph-capture path. Holds no lock once it returns — the Arc
+    /// keeps the cached buffer alive even if the cache is later
+    /// re-locked.
+    pub(crate) fn arc_q4k_device_buf(
+        &self,
+        host: &[u8],
+    ) -> Result<Arc<CudaSlice<u8>>, CudaInitError> {
         let key = DeviceBytesKey::from_slice(host);
+        {
+            let cache = self.q4k_device_cache.lock().map_err(|_| {
+                CudaInitError::DriverMissing("q4k device cache poisoned".into())
+            })?;
+            if let Some(arc) = cache.get(&key) {
+                return Ok(Arc::clone(arc));
+            }
+        }
+        let arc = Arc::new(self.drv.device_u8_buf_from(host)?);
         let mut cache = self
             .q4k_device_cache
             .lock()
             .map_err(|_| CudaInitError::DriverMissing("q4k device cache poisoned".into()))?;
-        if !cache.contains_key(&key) {
-            let dev = self.drv.device_u8_buf_from(host)?;
-            cache.insert(key, dev);
-        }
-        let dev = cache
-            .get(&key)
-            .ok_or_else(|| CudaInitError::DriverMissing("q4k cache insert failed".into()))?;
-        f(dev)
+        let entry = cache.entry(key).or_insert_with(|| Arc::clone(&arc));
+        Ok(Arc::clone(entry))
     }
 
     /// Per-pointer cache of *packed* Q6_K weight bytes on the
@@ -88,19 +137,30 @@ impl CudaBackend {
         host: &[u8],
         f: impl FnOnce(&CudaSlice<u8>) -> Result<R, CudaInitError>,
     ) -> Result<R, CudaInitError> {
+        let arc = self.arc_q6k_packed_device_buf(host)?;
+        f(&arc)
+    }
+
+    pub(crate) fn arc_q6k_packed_device_buf(
+        &self,
+        host: &[u8],
+    ) -> Result<Arc<CudaSlice<u8>>, CudaInitError> {
         let key = DeviceBytesKey::from_slice(host);
+        {
+            let cache = self.q6k_packed_device_cache.lock().map_err(|_| {
+                CudaInitError::DriverMissing("q6k packed cache poisoned".into())
+            })?;
+            if let Some(arc) = cache.get(&key) {
+                return Ok(Arc::clone(arc));
+            }
+        }
+        let arc = Arc::new(self.drv.device_u8_buf_from(host)?);
         let mut cache = self
             .q6k_packed_device_cache
             .lock()
             .map_err(|_| CudaInitError::DriverMissing("q6k packed cache poisoned".into()))?;
-        if !cache.contains_key(&key) {
-            let dev = self.drv.device_u8_buf_from(host)?;
-            cache.insert(key, dev);
-        }
-        let dev = cache
-            .get(&key)
-            .ok_or_else(|| CudaInitError::DriverMissing("q6k packed cache insert failed".into()))?;
-        f(dev)
+        let entry = cache.entry(key).or_insert_with(|| Arc::clone(&arc));
+        Ok(Arc::clone(entry))
     }
 
     /// Per-pointer cache of *dequantised* f32 Q4_K weights on the
@@ -115,20 +175,26 @@ impl CudaBackend {
         f: impl FnOnce(&CudaSlice<f32>) -> Result<R, CudaInitError>,
     ) -> Result<R, CudaInitError> {
         let key = DeviceBytesKey::from_slice(host);
+        {
+            let cache = self
+                .q4k_f32_device_cache
+                .lock()
+                .map_err(|_| CudaInitError::DriverMissing("q4k f32 cache poisoned".into()))?;
+            if let Some(arc) = cache.get(&key) {
+                return f(arc);
+            }
+        }
+        let w = dequant::dequant_q4_k(host, n_elements)
+            .map_err(|e| CudaInitError::DriverMissing(format!("q4k dequant: {e:?}")))?;
+        let arc = Arc::new(self.drv.device_buf_from(&w)?);
         let mut cache = self
             .q4k_f32_device_cache
             .lock()
             .map_err(|_| CudaInitError::DriverMissing("q4k f32 cache poisoned".into()))?;
-        if !cache.contains_key(&key) {
-            let w = dequant::dequant_q4_k(host, n_elements)
-                .map_err(|e| CudaInitError::DriverMissing(format!("q4k dequant: {e:?}")))?;
-            let dev = self.drv.device_buf_from(&w)?;
-            cache.insert(key, dev);
-        }
-        let dev = cache
-            .get(&key)
-            .ok_or_else(|| CudaInitError::DriverMissing("q4k f32 cache insert failed".into()))?;
-        f(dev)
+        let entry = cache.entry(key).or_insert_with(|| Arc::clone(&arc));
+        let arc = Arc::clone(entry);
+        drop(cache);
+        f(&arc)
     }
 
     pub(crate) fn with_q6k_f32_device_buf<R>(
@@ -138,20 +204,26 @@ impl CudaBackend {
         f: impl FnOnce(&CudaSlice<f32>) -> Result<R, CudaInitError>,
     ) -> Result<R, CudaInitError> {
         let key = DeviceBytesKey::from_slice(host);
+        {
+            let cache = self
+                .q6k_f32_device_cache
+                .lock()
+                .map_err(|_| CudaInitError::DriverMissing("q6k device cache poisoned".into()))?;
+            if let Some(arc) = cache.get(&key) {
+                return f(arc);
+            }
+        }
+        let w = dequant::dequant_q6_k(host, n_elements)
+            .map_err(|e| CudaInitError::DriverMissing(format!("q6k dequant: {e:?}")))?;
+        let arc = Arc::new(self.drv.device_buf_from(&w)?);
         let mut cache = self
             .q6k_f32_device_cache
             .lock()
             .map_err(|_| CudaInitError::DriverMissing("q6k device cache poisoned".into()))?;
-        if !cache.contains_key(&key) {
-            let w = dequant::dequant_q6_k(host, n_elements)
-                .map_err(|e| CudaInitError::DriverMissing(format!("q6k dequant: {e:?}")))?;
-            let dev = self.drv.device_buf_from(&w)?;
-            cache.insert(key, dev);
-        }
-        let dev = cache
-            .get(&key)
-            .ok_or_else(|| CudaInitError::DriverMissing("q6k cache insert failed".into()))?;
-        f(dev)
+        let entry = cache.entry(key).or_insert_with(|| Arc::clone(&arc));
+        let arc = Arc::clone(entry);
+        drop(cache);
+        f(&arc)
     }
 
     #[doc(hidden)]
@@ -195,24 +267,35 @@ impl CudaBackend {
         host: &[f32],
         f: impl FnOnce(&CudaSlice<f32>) -> Result<R, CudaInitError>,
     ) -> Result<R, CudaInitError> {
+        let arc = self.arc_norm_device_buf(host)?;
+        f(&arc)
+    }
+
+    pub(crate) fn arc_norm_device_buf(
+        &self,
+        host: &[f32],
+    ) -> Result<Arc<CudaSlice<f32>>, CudaInitError> {
         // SAFETY: f32 has no padding; reinterpreting as bytes for a
         // hash key is well-defined.
         let bytes: &[u8] = unsafe {
             std::slice::from_raw_parts(host.as_ptr() as *const u8, std::mem::size_of_val(host))
         };
         let key = DeviceBytesKey::from_slice(bytes);
+        {
+            let cache = self.f32_norm_device_cache.lock().map_err(|_| {
+                CudaInitError::DriverMissing("f32 norm cache poisoned".into())
+            })?;
+            if let Some(arc) = cache.get(&key) {
+                return Ok(Arc::clone(arc));
+            }
+        }
+        let arc = Arc::new(self.drv.device_buf_from(host)?);
         let mut cache = self
             .f32_norm_device_cache
             .lock()
             .map_err(|_| CudaInitError::DriverMissing("f32 norm cache poisoned".into()))?;
-        if !cache.contains_key(&key) {
-            let dev = self.drv.device_buf_from(host)?;
-            cache.insert(key, dev);
-        }
-        let dev = cache
-            .get(&key)
-            .ok_or_else(|| CudaInitError::DriverMissing("f32 norm cache insert failed".into()))?;
-        f(dev)
+        let entry = cache.entry(key).or_insert_with(|| Arc::clone(&arc));
+        Ok(Arc::clone(entry))
     }
 
     /// D2H copy. Synchronises the stream first.
