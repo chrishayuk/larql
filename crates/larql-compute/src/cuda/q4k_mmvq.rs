@@ -219,23 +219,109 @@ extern "C" __global__ void mul_mat_vec_q4_K_q8_1_f32(
         dst[row] = partial;
     }
 }
+
+// `cuda-q4k-mmvq-warp-cooperative`: 4-warp / 1-row variant. Adapted
+// from llama.cpp's `mul_mat_vec_q` parameterisation
+// (NVIDIA/GENERIC table, ncols_dst = 1 → nwarps = 4,
+// rows_per_cuda_block = 1). All 128 threads in a block cooperate on
+// ONE output row — for a row with `n_super_blocks` super-blocks we
+// process 8 super-blocks per iteration (4 warps × 2 SB/warp), so
+// the inner-loop count drops from `n_super_blocks / 2` (1-warp
+// version) to `n_super_blocks / 8`. On the Gemma 3 4B `down`
+// projection (40 super-blocks/row) that's a 4× reduction in per-warp
+// work and the matching 4× increase in grid blocks (one block per
+// row instead of one per 4 rows) keeps every SM busy.
+extern "C" __global__ void mul_mat_vec_q4_K_q8_1_f32_coop(
+    const unsigned char* __restrict__ vbq,
+    const unsigned char* __restrict__ vy,
+    float*               __restrict__ dst,
+    int rows,
+    int n_super_blocks
+) {
+    int row = blockIdx.x;
+    if (row >= rows) return;
+
+    int tid_x = threadIdx.x;                 // 0..31 (lane)
+    int tid_y = threadIdx.y;                 // 0..NWARPS-1 (warp)
+    int tid   = blockDim.x * tid_y + tid_x;  // 0..(32*NWARPS - 1)
+
+    // For Q4_K with vdr = 2, qi = 32 → qi/vdr = 16 lanes per
+    // super-block-iqs slice. With 128 threads (4 warps × 32 lanes),
+    // we have 8 distinct super-blocks worked on per loop iteration.
+    int kbx_lane = tid / 16;                  // 0..7
+    int iqs      = 2 * (tid % 16);            // 0, 2, ..., 30
+
+    const unsigned char* row_base =
+        vbq + (size_t)row * (size_t)n_super_blocks * 144ull;
+
+    float partial = 0.0f;
+    // blocks_per_iter = 8 → loop count is n_super_blocks / 8.
+    for (int kbx_base = 0; kbx_base + kbx_lane < n_super_blocks; kbx_base += 8) {
+        int kbx = kbx_base + kbx_lane;
+        if (kbx >= n_super_blocks) break;
+        int kby = kbx * 8;
+        partial += vec_dot_q4_K_q8_1_impl_vmmq(
+            row_base + (size_t)kbx * 144, vy, kby, iqs
+        );
+    }
+
+    // Warp-reduce within each warp first (32 lanes → 1 per warp).
+    #pragma unroll
+    for (int o = 16; o > 0; o >>= 1) {
+        partial += __shfl_xor_sync(0xffffffff, partial, o);
+    }
+
+    // Cross-warp reduce via shared memory: NWARPS lane-0s → 1.
+    extern __shared__ float warp_sums[];
+    if (tid_x == 0) warp_sums[tid_y] = partial;
+    __syncthreads();
+    if (tid_y == 0 && tid_x == 0) {
+        float total = 0.0f;
+        for (int w = 0; w < blockDim.y; ++w) total += warp_sums[w];
+        dst[row] = total;
+    }
+}
 "#;
 
 static Q4K_MMVQ_FUNC: OnceLock<(std::sync::Arc<CudaModule>, CudaFunction)> = OnceLock::new();
+static Q4K_MMVQ_COOP_FUNC: OnceLock<(std::sync::Arc<CudaModule>, CudaFunction)> = OnceLock::new();
 
-fn q4k_mmvq_function(drv: &Driver) -> Result<&'static CudaFunction, CudaInitError> {
-    if let Some((_, f)) = Q4K_MMVQ_FUNC.get() {
-        return Ok(f);
+/// `cuda-q4k-mmvq-warp-cooperative`: shape-aware dispatcher. Returns
+/// true when the cooperative-warp kernel is faster than the legacy
+/// 1-warp-per-row kernel for the given shape. The empirical sweep
+/// (`q4k_mmvq_legacy_vs_coop_sweep` on RTX 4090) shows:
+///
+/// - Long rows (`n_super_blocks ≥ 16`, i.e. `hidden ≥ 4096`):
+///   coop wins. Each block has enough super-blocks for the 4-way
+///   warp split to amortise the cross-warp reduction. Gemma 3 4B
+///   `down` (hidden = 10240, n_sb = 40): **1.26× speedup**.
+/// - Few rows (`rows ≤ 1024`): coop wins because the legacy
+///   `rows / 4` grid doesn't saturate the chip. Gemma 3 4B `kv`
+///   (rows = 1024): **1.39× speedup**.
+/// - Tall narrow rows (`rows ≥ 2048`, `n_super_blocks ≤ 10`):
+///   legacy wins. The cross-warp reduction overhead outweighs the
+///   parallelism gain when per-block work is small. Gemma 3 4B
+///   `gate` / `up` (rows = 10240, n_sb = 10): coop is **0.86×**
+///   the speed (i.e., 16% slower).
+///
+/// `LARQL_CUDA_Q4K_COOP=1` forces coop on every shape;
+/// `LARQL_CUDA_Q4K_COOP=0` forces legacy; default = shape-aware
+/// dispatch.
+fn q4k_mmvq_use_coop(rows: usize, hidden: usize) -> bool {
+    match std::env::var("LARQL_CUDA_Q4K_COOP").ok().as_deref() {
+        Some("1") => return true,
+        Some("0") => return false,
+        _ => {}
     }
-    // dp4a was introduced in sm_61 (Pascal). NVRTC's default target
-    // (`compute_52`) doesn't include it; compile against compute_61
-    // so the PTX is JIT'able on every supported card.
-    // `LARQL_CUDA_Q4K_ARCH` overrides the NVRTC PTX target (e.g.
-    // `compute_89` for sm_89-specific PTX). Default = compute_61,
-    // which is forward-compatible with every supported card; the
-    // driver JIT specialises to the actual compute capability at
-    // runtime, so a higher arch only matters if the kernel uses
-    // PTX intrinsics gated on it.
+    let n_super_blocks = hidden / Q4K_BLOCK_ELEMS;
+    n_super_blocks >= 16 || rows <= 1024
+}
+
+fn q4k_mmvq_compile() -> Result<cudarc::nvrtc::Ptx, CudaInitError> {
+    // dp4a was introduced in sm_61 (Pascal). `LARQL_CUDA_Q4K_ARCH`
+    // overrides the NVRTC PTX target (e.g. `compute_89` for sm_89).
+    // Default = compute_61 — forward-compatible; the driver JIT
+    // specialises to the actual compute capability at runtime.
     let arch: Option<&'static str> = match std::env::var("LARQL_CUDA_Q4K_ARCH").ok().as_deref() {
         Some("compute_61") => Some("compute_61"),
         Some("compute_70") => Some("compute_70"),
@@ -249,8 +335,15 @@ fn q4k_mmvq_function(drv: &Driver) -> Result<&'static CudaFunction, CudaInitErro
         arch,
         ..Default::default()
     };
-    let ptx = compile_ptx_with_opts(Q4K_MMVQ_SRC, opts)
-        .map_err(|e| CudaInitError::DriverMissing(format!("nvrtc compile q4k_mmvq: {e:?}")))?;
+    compile_ptx_with_opts(Q4K_MMVQ_SRC, opts)
+        .map_err(|e| CudaInitError::DriverMissing(format!("nvrtc compile q4k_mmvq: {e:?}")))
+}
+
+fn q4k_mmvq_function(drv: &Driver) -> Result<&'static CudaFunction, CudaInitError> {
+    if let Some((_, f)) = Q4K_MMVQ_FUNC.get() {
+        return Ok(f);
+    }
+    let ptx = q4k_mmvq_compile()?;
     let module = drv
         .ctx
         .load_module(ptx)
@@ -260,6 +353,23 @@ fn q4k_mmvq_function(drv: &Driver) -> Result<&'static CudaFunction, CudaInitErro
         .map_err(|e| CudaInitError::DriverMissing(format!("load q4k_mmvq function: {e:?}")))?;
     let _ = Q4K_MMVQ_FUNC.set((module, func));
     let (_, f) = Q4K_MMVQ_FUNC.get().unwrap();
+    Ok(f)
+}
+
+fn q4k_mmvq_coop_function(drv: &Driver) -> Result<&'static CudaFunction, CudaInitError> {
+    if let Some((_, f)) = Q4K_MMVQ_COOP_FUNC.get() {
+        return Ok(f);
+    }
+    let ptx = q4k_mmvq_compile()?;
+    let module = drv
+        .ctx
+        .load_module(ptx)
+        .map_err(|e| CudaInitError::DriverMissing(format!("load q4k_mmvq_coop module: {e:?}")))?;
+    let func = module
+        .load_function("mul_mat_vec_q4_K_q8_1_f32_coop")
+        .map_err(|e| CudaInitError::DriverMissing(format!("load q4k_mmvq_coop function: {e:?}")))?;
+    let _ = Q4K_MMVQ_COOP_FUNC.set((module, func));
+    let (_, f) = Q4K_MMVQ_COOP_FUNC.get().unwrap();
     Ok(f)
 }
 
@@ -292,6 +402,9 @@ pub(crate) fn matvec_device_into_with_dev(
     rows: usize,
     hidden: usize,
 ) -> Result<(), CudaInitError> {
+    if q4k_mmvq_use_coop(rows, hidden) {
+        return matvec_device_into_with_dev_coop(backend, q4k_dev, x_q8_1, y_dev, rows, hidden);
+    }
     matvec_device_into_with_dev_tiled(
         backend,
         q4k_dev,
@@ -301,6 +414,72 @@ pub(crate) fn matvec_device_into_with_dev(
         hidden,
         choose_rows_per_block(rows, hidden),
     )
+}
+
+/// `cuda-q4k-mmvq-warp-cooperative`: the 4-warp-per-row variant.
+/// Grid is `(rows, 1, 1)` — one block per output row. Each block
+/// has `WARP_SIZE × NWARPS = 32 × 4 = 128` threads cooperating on
+/// the row's super-blocks (`blocks_per_iter = 8`). Cross-warp
+/// reduction uses `NWARPS × 4` bytes of shared memory.
+pub(crate) fn matvec_device_into_with_dev_coop(
+    backend: &CudaBackend,
+    q4k_dev: &CudaSlice<u8>,
+    x_q8_1: &Q8_1Buf,
+    y_dev: &mut CudaSlice<f32>,
+    rows: usize,
+    hidden: usize,
+) -> Result<(), CudaInitError> {
+    if rows == 0 || hidden == 0 || !hidden.is_multiple_of(Q4K_BLOCK_ELEMS) {
+        return Err(CudaInitError::DriverMissing(format!(
+            "invalid q4k_mmvq shape rows={rows} hidden={hidden}",
+        )));
+    }
+    let n_super_blocks = hidden / Q4K_BLOCK_ELEMS;
+    let expected_q4k_bytes = rows
+        .checked_mul(n_super_blocks)
+        .and_then(|v| v.checked_mul(Q4K_BLOCK_BYTES))
+        .ok_or_else(|| CudaInitError::DriverMissing("q4k byte size overflow".to_string()))?;
+    if q4k_dev.len() != expected_q4k_bytes {
+        return Err(CudaInitError::DriverMissing(format!(
+            "q4k_dev length mismatch: got {}, expected {expected_q4k_bytes}",
+            q4k_dev.len()
+        )));
+    }
+    if x_q8_1.n_blocks * 32 != hidden {
+        return Err(CudaInitError::DriverMissing(format!(
+            "q8_1 input block count mismatch: {} blocks for hidden={hidden}",
+            x_q8_1.n_blocks,
+        )));
+    }
+    if y_dev.len() != rows {
+        return Err(CudaInitError::DriverMissing(format!(
+            "q4k_mmvq y length mismatch: y={} != rows={rows}",
+            y_dev.len(),
+        )));
+    }
+
+    const COOP_NWARPS: u32 = 4;
+    let drv = backend.driver();
+    let func = q4k_mmvq_coop_function(drv)?;
+    let rows_i = rows as i32;
+    let n_super_blocks_i = n_super_blocks as i32;
+    let cfg = LaunchConfig {
+        grid_dim: (rows as u32, 1, 1),
+        block_dim: (WARP_SIZE, COOP_NWARPS, 1),
+        shared_mem_bytes: COOP_NWARPS * std::mem::size_of::<f32>() as u32,
+    };
+    unsafe {
+        drv.stream
+            .launch_builder(func)
+            .arg(q4k_dev)
+            .arg(&x_q8_1.bytes)
+            .arg(y_dev)
+            .arg(&rows_i)
+            .arg(&n_super_blocks_i)
+            .launch(cfg)
+            .map_err(|e| CudaInitError::DriverMissing(format!("launch q4k_mmvq_coop: {e:?}")))?;
+    }
+    Ok(())
 }
 
 /// `cuda-q4k-mmvq-down-tile`: shape-aware tile chooser. The kernel is
@@ -426,6 +605,12 @@ pub(crate) fn matvec_device_into(
     rows: usize,
     hidden: usize,
 ) -> Result<(), CudaInitError> {
+    if q4k_mmvq_use_coop(rows, hidden) {
+        let q4k_dev = backend.arc_q4k_device_buf(q4k_data)?;
+        return matvec_device_into_with_dev_coop(
+            backend, &q4k_dev, x_q8_1, y_dev, rows, hidden,
+        );
+    }
     if rows == 0 || hidden == 0 || !hidden.is_multiple_of(Q4K_BLOCK_ELEMS) {
         return Err(CudaInitError::DriverMissing(format!(
             "invalid q4k_mmvq shape rows={rows} hidden={hidden}",
@@ -590,6 +775,74 @@ mod tests {
     ///
     /// Picks the best tile per shape and updates `choose_rows_per_block`
     /// accordingly.
+    #[test]
+    #[ignore = "manual microbench; warmups + repeated launches"]
+    fn q4k_mmvq_legacy_vs_coop_sweep() {
+        let Some(backend) = gpu_or_skip() else { return };
+
+        let shapes = [
+            ("q     ", 2048, 2560),
+            ("kv    ", 1024, 2560),
+            ("wo    ", 2560, 2048),
+            ("gate  ", 10240, 2560),
+            ("up    ", 10240, 2560),
+            ("down  ", 2560, 10240),
+        ];
+
+        let n_iters: usize = 200;
+
+        for (label, rows, hidden) in shapes {
+            let w_q4k = quantize_q4_k(&synth(rows * hidden, 0x9000));
+            let q4k_dev = backend.arc_q4k_device_buf(&w_q4k).expect("htod q4k");
+            let x = synth(hidden, 0x9100);
+            let x_dev = backend.htod_f32(&x).expect("htod x");
+            let q8 = quantize_q8_1_device(&backend, &x_dev, hidden).expect("q8_1");
+            let mut y = backend.alloc_f32(rows).expect("alloc y");
+
+            // Legacy 1-warp/row, rpb=4 (production default).
+            for _ in 0..5 {
+                matvec_device_into_with_dev_tiled(
+                    &backend, &q4k_dev, &q8, &mut y, rows, hidden, 4,
+                )
+                .ok();
+            }
+            backend.driver().sync().expect("sync");
+            let t = std::time::Instant::now();
+            for _ in 0..n_iters {
+                matvec_device_into_with_dev_tiled(
+                    &backend, &q4k_dev, &q8, &mut y, rows, hidden, 4,
+                )
+                .expect("legacy");
+            }
+            backend.driver().sync().expect("sync");
+            let legacy_us = t.elapsed().as_secs_f64() * 1e6 / n_iters as f64;
+
+            // Coop 4-warps/row.
+            for _ in 0..5 {
+                matvec_device_into_with_dev_coop(&backend, &q4k_dev, &q8, &mut y, rows, hidden)
+                    .ok();
+            }
+            backend.driver().sync().expect("sync");
+            let t = std::time::Instant::now();
+            for _ in 0..n_iters {
+                matvec_device_into_with_dev_coop(&backend, &q4k_dev, &q8, &mut y, rows, hidden)
+                    .expect("coop");
+            }
+            backend.driver().sync().expect("sync");
+            let coop_us = t.elapsed().as_secs_f64() * 1e6 / n_iters as f64;
+
+            let speedup = legacy_us / coop_us;
+            println!(
+                "[mmvq_coop] {label} rows={rows:>5} hidden={hidden:>5}  \
+                 legacy={legacy_us:>5.1}µs  coop={coop_us:>5.1}µs  \
+                 speedup={speedup:.2}× (>1 means coop faster)"
+            );
+        }
+    }
+
+    /// `cuda-q4k-mmvq-down-tile` microbench: sweeps `rows_per_block` ∈
+    /// {1, 2, 4, 8, 16} for representative Gemma 3 4B Q4_K projection
+    /// shapes and prints per-call wall-clock time.
     #[test]
     #[ignore = "manual microbench; warmups + repeated launches"]
     fn q4k_mmvq_rows_per_block_sweep() {
