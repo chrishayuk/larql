@@ -17,12 +17,14 @@ use std::env;
 pub mod dispatch;
 pub mod eagle;
 pub mod orchestrator;
+pub mod small_model;
 pub mod tree;
 pub mod verify;
 
 pub use dispatch::maybe_speculative_step;
 pub use eagle::EagleDraftHead;
 pub use orchestrator::{build_linear_tree, SpeculativeStep, StepOutcome};
+pub use small_model::SmallModelDrafter;
 pub use tree::{DraftTree, TreeAttentionMask, TreeNode};
 pub use verify::{verify_and_accept, verify_tree, AcceptedSpan, VerifyRng};
 
@@ -38,15 +40,36 @@ pub struct DraftToken {
 }
 
 /// Caller-supplied draft model. Phase 1 ships [`EagleDraftHead`];
-/// other implementations (n-gram, smaller-target-model) can plug in.
+/// off-the-shelf small-model drafters use [`small_model::SmallModelDrafter`].
+///
+/// Drafter impls fall into two categories:
+///
+/// - **Hidden-state drafters** (e.g. EAGLE) — use `h_target` to propose
+///   conditionally on the target's hidden state. These typically share
+///   the target's tokenizer and live in the same process.
+/// - **Off-the-shelf drafters** — load a separate small model and
+///   maintain their own KV cache + token history. They ignore
+///   `h_target` and rely on `accept()` to keep history in sync with
+///   the target's accepted span.
 pub trait Drafter {
-    /// Propose `n` candidate continuations from the target's last
-    /// hidden state `h_target`. Returns at most `n` tokens; fewer
-    /// is allowed (e.g. when constrained by sliding window).
+    /// Propose `n` candidate continuations. Returns at most `n`
+    /// tokens; fewer is allowed (e.g. when constrained by sliding
+    /// window or when the drafter declines).
+    ///
+    /// `h_target` is the target model's last hidden state at the
+    /// current generation position. Hidden-state drafters use this;
+    /// off-the-shelf drafters ignore it.
     fn propose(&mut self, h_target: &[f32], n: usize) -> Vec<DraftToken>;
 
-    /// Reset any per-sequence draft state (e.g. draft KV cache).
+    /// Reset any per-sequence draft state (e.g. draft KV cache,
+    /// token history). Called at the start of each new generation.
     fn reset(&mut self);
+
+    /// Notify the drafter of tokens the target accepted. Off-the-shelf
+    /// drafters use this to advance their internal token history so the
+    /// next `propose()` call sees the right context. Hidden-state
+    /// drafters typically no-op (default impl).
+    fn accept(&mut self, _accepted: &[TokenId]) {}
 }
 
 /// Speculative-decoder configuration. Defaults match design.md
