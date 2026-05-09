@@ -42,25 +42,17 @@ const ROWS_PER_BLOCK: u32 = 4;
 /// Q4_K × Q8_1 mmvq kernel. One CUDA block = `ROWS_PER_BLOCK` warps =
 /// `ROWS_PER_BLOCK` output rows.
 const Q4K_MMVQ_SRC: &str = r#"
-// fp16 → f32 helper. NVRTC-friendly (no cuda_fp16.h required).
+// fp16 → f32 via the hardware `cvt.f32.f16` PTX intrinsic. NVRTC
+// doesn't auto-include cuda_fp16.h, but we don't need it — inline
+// PTX produces the same single SASS instruction. Replaces the
+// software-emulation bit-twiddling ladder that was here previously
+// (`cuda-mmvq-hw-f16-cvt`). The Q4_K mmvq path calls this 4× per
+// super-block (d, dmin, d8_0, d8_1) per row, so on long-row shapes
+// the saving compounds.
 __device__ float larql_f16_to_f32(unsigned short h) {
-    unsigned int sign = ((unsigned int)h & 0x8000u) << 16;
-    unsigned int mant = (unsigned int)h & 0x03ffu;
-    int exp = ((int)h >> 10) & 0x1f;
-    unsigned int bits;
-    if (exp == 0) {
-        if (mant == 0u) {
-            bits = sign;
-        } else {
-            float v = (float)mant * 5.960464477539063e-8f;
-            return (sign != 0u) ? -v : v;
-        }
-    } else if (exp == 31) {
-        bits = sign | 0x7f800000u | (mant << 13);
-    } else {
-        bits = sign | ((unsigned int)(exp + 112) << 23) | (mant << 13);
-    }
-    return __uint_as_float(bits);
+    float f;
+    asm("cvt.f32.f16 %0, %1;" : "=f"(f) : "h"(h));
+    return f;
 }
 
 // __dp4a is not exposed as a built-in by NVRTC without including

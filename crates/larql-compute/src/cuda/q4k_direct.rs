@@ -21,24 +21,14 @@ const THREADS_PER_ROW: u32 = 128;
 const ROWS_PER_BLOCK: u32 = 4;
 
 const Q4K_MATVEC_SRC: &str = r#"
+// `cuda-mmvq-hw-f16-cvt`: hardware cvt.f32.f16 instead of the
+// hand-rolled software emulation (single SASS instruction; the
+// previous bit-twiddling ladder was ~20 instructions). Consistent
+// with q4k_mmvq.rs and q6k_mmvq.rs.
 __device__ float larql_f16_to_f32(unsigned short h) {
-    unsigned int sign = ((unsigned int)h & 0x8000u) << 16;
-    unsigned int mant = (unsigned int)h & 0x03ffu;
-    int exp = ((int)h >> 10) & 0x1f;
-    unsigned int bits;
-    if (exp == 0) {
-        if (mant == 0u) {
-            bits = sign;
-        } else {
-            float v = (float)mant * 5.960464477539063e-8f; // 2^-24
-            return (sign != 0u) ? -v : v;
-        }
-    } else if (exp == 31) {
-        bits = sign | 0x7f800000u | (mant << 13);
-    } else {
-        bits = sign | ((unsigned int)(exp + 112) << 23) | (mant << 13);
-    }
-    return __uint_as_float(bits);
+    float f;
+    asm("cvt.f32.f16 %0, %1;" : "=f"(f) : "h"(h));
+    return f;
 }
 
 __device__ unsigned char q4k_scale(const unsigned char* packed, int j) {
