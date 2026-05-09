@@ -13,13 +13,19 @@ use cudarc::driver::CudaSlice;
 use super::backend::CudaBackend;
 use super::elem::Q8_1Buf;
 use super::matmul as kernels;
-use super::{attn, dequant, elem, q4k_mmvq};
+use super::{attn, dequant, elem, q4k_mmvq, q6k_mmvq};
 
 /// `LARQL_CUDA_Q4K_MMVQ=0` disables the new Q4_K × Q8_1 mmvq path
 /// and forces the existing f32-direct Q4_K matvec. Default behaviour
 /// (`unset` or `=1`) routes Q4_K projections through mmvq.
 fn q4k_mmvq_enabled() -> bool {
     std::env::var("LARQL_CUDA_Q4K_MMVQ").ok().as_deref() != Some("0")
+}
+
+/// `LARQL_CUDA_Q6K_MMVQ=0` disables the new Q6_K × Q8_1 mmvq path
+/// and forces the existing f32-cached Q6_K GEMV. Default = enabled.
+fn q6k_mmvq_enabled() -> bool {
+    std::env::var("LARQL_CUDA_Q6K_MMVQ").ok().as_deref() != Some("0")
 }
 
 /// `LARQL_CUDA_DECODE_HOST_FALLBACK=1` forces the legacy
@@ -304,6 +310,11 @@ fn matvec_device_mmvq(
     if let (QuantFormat::Q4_K, Some(q8)) = (weight.format, x_q8_1) {
         if q4k_mmvq_enabled() {
             return q4k_mmvq::matvec_device(backend, weight.data, q8, rows, cols).ok();
+        }
+    }
+    if let (QuantFormat::Q6_K, Some(q8)) = (weight.format, x_q8_1) {
+        if q6k_mmvq_enabled() {
+            return q6k_mmvq::matvec_device(backend, weight.data, q8, rows, cols).ok();
         }
     }
     matvec_device(backend, weight, x_dev, rows, cols)
@@ -791,12 +802,15 @@ impl CudaBackend {
 
             // ── 2. Q/K/V projections — shared Q8_1 input (Phase 3) ─
             // Quantize h_attn once per layer; share across q/k/v.
-            let h_attn_q8_1 = if q4k_mmvq_enabled()
+            let any_qkv_mmvq = (q4k_mmvq_enabled()
                 && (layer.wq.format == QuantFormat::Q4_K
                     || layer.wk.format == QuantFormat::Q4_K
-                    || layer.wv.format == QuantFormat::Q4_K)
-                && hidden.is_multiple_of(32)
-            {
+                    || layer.wv.format == QuantFormat::Q4_K))
+                || (q6k_mmvq_enabled()
+                    && (layer.wq.format == QuantFormat::Q6_K
+                        || layer.wk.format == QuantFormat::Q6_K
+                        || layer.wv.format == QuantFormat::Q6_K));
+            let h_attn_q8_1 = if any_qkv_mmvq && hidden.is_multiple_of(32) {
                 elem::quantize_q8_1_device(self, &h_attn_dev, hidden).ok()
             } else {
                 None
@@ -860,11 +874,10 @@ impl CudaBackend {
             sync_if_profile(self);
             prof.attn_call += t.elapsed();
 
-            // ── 4. wo projection — Q8_1 quantize for single-use Q4_K ─
-            let attn_out_q8_1 = if q4k_mmvq_enabled()
-                && layer.wo.format == QuantFormat::Q4_K
-                && layer_q_dim.is_multiple_of(32)
-            {
+            // ── 4. wo projection — Q8_1 quantize for single-use Q4/Q6_K ─
+            let wo_mmvq = (q4k_mmvq_enabled() && layer.wo.format == QuantFormat::Q4_K)
+                || (q6k_mmvq_enabled() && layer.wo.format == QuantFormat::Q6_K);
+            let attn_out_q8_1 = if wo_mmvq && layer_q_dim.is_multiple_of(32) {
                 elem::quantize_q8_1_device(self, &attn_out_dev, layer_q_dim).ok()
             } else {
                 None
@@ -976,9 +989,17 @@ impl CudaBackend {
             sync_if_profile(self);
             prof.norm_cpu += t.elapsed();
 
-            // ── 9. down projection ─────────────────────────────────
+            // ── 9. down projection — Q8_1 quantize for Q4/Q6_K mmvq ─
+            let down_mmvq = (q4k_mmvq_enabled() && layer.down.format == QuantFormat::Q4_K)
+                || (q6k_mmvq_enabled() && layer.down.format == QuantFormat::Q6_K);
+            let act_q8_1 = if down_mmvq && inter.is_multiple_of(32) {
+                elem::quantize_q8_1_device(self, &act_dev, inter).ok()
+            } else {
+                None
+            };
             let t = std::time::Instant::now();
-            let ffn_delta_dev = matvec_device(self, layer.down, &act_dev, hidden, inter)?;
+            let ffn_delta_dev =
+                matvec_device_mmvq(self, layer.down, &act_dev, act_q8_1.as_ref(), hidden, inter)?;
             sync_if_profile(self);
             prof.proj_down += t.elapsed();
 

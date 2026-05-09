@@ -25,6 +25,7 @@ pub struct CudaBackend {
     pub(crate) kv_cache: Mutex<Option<CudaKvCache>>,
     q4k_device_cache: Mutex<HashMap<DeviceBytesKey, CudaSlice<u8>>>,
     q6k_f32_device_cache: Mutex<HashMap<DeviceBytesKey, CudaSlice<f32>>>,
+    q6k_packed_device_cache: Mutex<HashMap<DeviceBytesKey, CudaSlice<u8>>>,
     /// Per-pointer cache of small f32 weights (norms etc.) so the
     /// per-layer norm-weight htod's collapse to a one-time upload per
     /// host buffer. Keyed by host pointer + length + content hash so
@@ -45,6 +46,7 @@ impl CudaBackend {
             kv_cache: Mutex::new(None),
             q4k_device_cache: Mutex::new(HashMap::new()),
             q6k_f32_device_cache: Mutex::new(HashMap::new()),
+            q6k_packed_device_cache: Mutex::new(HashMap::new()),
             f32_norm_device_cache: Mutex::new(HashMap::new()),
         })
     }
@@ -72,6 +74,30 @@ impl CudaBackend {
         let dev = cache
             .get(&key)
             .ok_or_else(|| CudaInitError::DriverMissing("q4k cache insert failed".into()))?;
+        f(dev)
+    }
+
+    /// Per-pointer cache of *packed* Q6_K weight bytes on the
+    /// device. Parallel to `with_q4k_device_buf`. First call htod's
+    /// the packed 210 B/super-block stream; later calls borrow.
+    /// Used by the Q6_K mmvq path (`cuda-q6k-mmvq`).
+    pub(crate) fn with_q6k_packed_device_buf<R>(
+        &self,
+        host: &[u8],
+        f: impl FnOnce(&CudaSlice<u8>) -> Result<R, CudaInitError>,
+    ) -> Result<R, CudaInitError> {
+        let key = DeviceBytesKey::from_slice(host);
+        let mut cache = self
+            .q6k_packed_device_cache
+            .lock()
+            .map_err(|_| CudaInitError::DriverMissing("q6k packed cache poisoned".into()))?;
+        if !cache.contains_key(&key) {
+            let dev = self.drv.device_u8_buf_from(host)?;
+            cache.insert(key, dev);
+        }
+        let dev = cache
+            .get(&key)
+            .ok_or_else(|| CudaInitError::DriverMissing("q6k packed cache insert failed".into()))?;
         f(dev)
     }
 

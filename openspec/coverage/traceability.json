@@ -1,11 +1,11 @@
 {
   "summary": {
     "capabilities": 49,
-    "requirements": 438,
-    "scenarios": 1420,
+    "requirements": 441,
+    "scenarios": 1423,
     "scenarios_backed": 1292,
-    "scenarios_unbacked": 128,
-    "test_refs": 3350,
+    "scenarios_unbacked": 131,
+    "test_refs": 3353,
     "test_refs_unresolved": 4
   },
   "capabilities": [
@@ -2818,6 +2818,45 @@
               "unbacked": true,
               "spec_file": "openspec/changes/cuda-q4k-mmvq-int8/specs/compute-cuda-kernels/spec.md",
               "line": 97
+            }
+          ]
+        },
+        {
+          "name": "Q6_K \u00d7 Q8_1 mmvq kernel SHALL match the existing f32 GEMV",
+          "scenarios": [
+            {
+              "name": "mmvq matches the f32 path on Q8_1-dequantised input within 1e-3",
+              "tests_resolved": [],
+              "tests_unresolved": [],
+              "unbacked": true,
+              "spec_file": "openspec/changes/cuda-q6k-mmvq/specs/compute-cuda-kernels/spec.md",
+              "line": 7
+            }
+          ]
+        },
+        {
+          "name": "Q6_K matvec dispatch SHALL be runtime-selectable",
+          "scenarios": [
+            {
+              "name": "env var routes between mmvq and f32 paths",
+              "tests_resolved": [],
+              "tests_unresolved": [],
+              "unbacked": true,
+              "spec_file": "openspec/changes/cuda-q6k-mmvq/specs/compute-cuda-kernels/spec.md",
+              "line": 17
+            }
+          ]
+        },
+        {
+          "name": "proj_down profile bucket SHALL drop materially after the port",
+          "scenarios": [
+            {
+              "name": "bench cleared at acceptance OR profile-documented on miss",
+              "tests_resolved": [],
+              "tests_unresolved": [],
+              "unbacked": true,
+              "spec_file": "openspec/changes/cuda-q6k-mmvq/specs/compute-cuda-kernels/spec.md",
+              "line": 27
             }
           ]
         },
@@ -19817,43 +19856,55 @@
     {
       "fqn": "larql_compute::cuda::backend::driver_missing_returns_typed_error",
       "file": "crates/larql-compute/src/cuda/backend.rs",
-      "line": 389,
+      "line": 415,
       "crate": "larql_compute"
     },
     {
       "fqn": "larql_compute::cuda::backend::supports_f32_gemv_after_baseline",
       "file": "crates/larql-compute/src/cuda/backend.rs",
-      "line": 406,
+      "line": 432,
       "crate": "larql_compute"
     },
     {
       "fqn": "larql_compute::cuda::backend::supports_q4_matvec_after_q4_baseline",
       "file": "crates/larql-compute/src/cuda/backend.rs",
-      "line": 420,
+      "line": 446,
       "crate": "larql_compute"
     },
     {
       "fqn": "larql_compute::cuda::backend::supports_fa2_after_fused_attention",
       "file": "crates/larql-compute/src/cuda/backend.rs",
-      "line": 431,
+      "line": 457,
       "crate": "larql_compute"
     },
     {
       "fqn": "larql_compute::cuda::backend::supports_decode_after_cuda_decode_backend",
       "file": "crates/larql-compute/src/cuda/backend.rs",
-      "line": 446,
+      "line": 472,
       "crate": "larql_compute"
     },
     {
       "fqn": "larql_compute::cuda::backend::tests::supports_cuda_oxide_when_feature_enabled",
       "file": "crates/larql-compute/src/cuda/backend.rs",
-      "line": 454,
+      "line": 480,
       "crate": "larql_compute"
     },
     {
       "fqn": "larql_compute::cuda::backend::supports_cuda_oxide_when_feature_enabled",
       "file": "crates/larql-compute/src/cuda/backend.rs",
-      "line": 454,
+      "line": 480,
+      "crate": "larql_compute"
+    },
+    {
+      "fqn": "larql_compute::cuda::q6k_mmvq::tests::q6k_mmvq_matches_q6k_f32_on_dequantized_input",
+      "file": "crates/larql-compute/src/cuda/q6k_mmvq.rs",
+      "line": 305,
+      "crate": "larql_compute"
+    },
+    {
+      "fqn": "larql_compute::cuda::q6k_mmvq::q6k_mmvq_matches_q6k_f32_on_dequantized_input",
+      "file": "crates/larql-compute/src/cuda/q6k_mmvq.rs",
+      "line": 305,
       "crate": "larql_compute"
     },
     {
