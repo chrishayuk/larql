@@ -120,7 +120,10 @@ mod tests {
         unsafe {
             env::remove_var("LARQL_SPECULATIVE_DECODE");
         }
-        assert!(!enabled(), "unset LARQL_SPECULATIVE_DECODE must disable spec path");
+        assert!(
+            !enabled(),
+            "unset LARQL_SPECULATIVE_DECODE must disable spec path"
+        );
     }
 
     #[test]

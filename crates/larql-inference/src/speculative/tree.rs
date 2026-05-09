@@ -60,7 +60,11 @@ impl DraftTree {
     /// Build a balanced K-ary tree of `depth` levels with `branches`
     /// fanout per level, using a constant `proposer` to fill each
     /// slot. Convenience for tests and the depth=2/branches=2 default.
-    pub fn balanced(depth: usize, branches: usize, mut proposer: impl FnMut(usize) -> DraftToken) -> Self {
+    pub fn balanced(
+        depth: usize,
+        branches: usize,
+        mut proposer: impl FnMut(usize) -> DraftToken,
+    ) -> Self {
         let root = proposer(0);
         let mut tree = Self::from_root(root);
         let mut frontier = vec![0usize];
@@ -289,10 +293,7 @@ mod tests {
         let mask = TreeAttentionMask::build(&tree, kv_len);
 
         // Node 4 should see [0, 2, 4] in tree, not 1 or 3.
-        let want_for_4: Vec<usize> = vec![0, n2, n4]
-            .into_iter()
-            .map(|i| kv_len + i)
-            .collect();
+        let want_for_4: Vec<usize> = vec![0, n2, n4].into_iter().map(|i| kv_len + i).collect();
         for j in kv_len..(kv_len + tree.len()) {
             let allowed = mask.allows(n4, j);
             let expected = want_for_4.contains(&j);
@@ -303,10 +304,7 @@ mod tests {
         }
 
         // Node 3 should see [0, 1, 3], not 2 or 4.
-        let want_for_3: Vec<usize> = vec![0, n1, n3]
-            .into_iter()
-            .map(|i| kv_len + i)
-            .collect();
+        let want_for_3: Vec<usize> = vec![0, n1, n3].into_iter().map(|i| kv_len + i).collect();
         for j in kv_len..(kv_len + tree.len()) {
             let allowed = mask.allows(n3, j);
             let expected = want_for_3.contains(&j);

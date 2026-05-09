@@ -29,9 +29,7 @@ impl AcceptedSpan {
     /// Total tokens emitted by this step (accepted + corrected +
     /// bonus). Always ≥ 1.
     pub fn emitted_count(&self) -> usize {
-        self.accepted.len()
-            + self.corrected.is_some() as usize
-            + self.bonus.is_some() as usize
+        self.accepted.len() + self.corrected.is_some() as usize + self.bonus.is_some() as usize
     }
 
     /// Flat token sequence in emit order: accepted, then corrected
@@ -193,8 +191,14 @@ mod tests {
         // p_target == p_draft on each position → ratio = 1.0 → always accept.
         let vocab = 4;
         let draft = vec![
-            DraftToken { id: 1, p_draft: 1.0 },
-            DraftToken { id: 2, p_draft: 1.0 },
+            DraftToken {
+                id: 1,
+                p_draft: 1.0,
+            },
+            DraftToken {
+                id: 2,
+                p_draft: 1.0,
+            },
         ];
         let p_target = vec![unit(1, vocab), unit(2, vocab)];
         let mut rng = VerifyRng::new(0xDEAD_BEEF);
@@ -210,7 +214,10 @@ mod tests {
         // Draft proposes id=0 with p=1.0, but target's mass is on id=1.
         // Acceptance prob = p_target[0]/p_draft[0] = 0/1 = 0 → reject.
         let vocab = 4;
-        let draft = vec![DraftToken { id: 0, p_draft: 1.0 }];
+        let draft = vec![DraftToken {
+            id: 0,
+            p_draft: 1.0,
+        }];
         let p_target = vec![unit(1, vocab)];
         let mut rng = VerifyRng::new(0xCAFE_F00D);
         let span = verify_and_accept(&p_target, &draft, &mut rng);
@@ -225,8 +232,14 @@ mod tests {
         // Second position: certain reject.
         let vocab = 4;
         let draft = vec![
-            DraftToken { id: 1, p_draft: 1.0 },
-            DraftToken { id: 0, p_draft: 1.0 },
+            DraftToken {
+                id: 1,
+                p_draft: 1.0,
+            },
+            DraftToken {
+                id: 0,
+                p_draft: 1.0,
+            },
         ];
         let p_target = vec![unit(1, vocab), unit(2, vocab)];
         let mut rng = VerifyRng::new(42);
@@ -250,7 +263,10 @@ mod tests {
         // Easier: construct an explicit case via direct call to
         // sample_residual.
         let p_target = vec![1.0, 0.0];
-        let d = DraftToken { id: 0, p_draft: 1.0 };
+        let d = DraftToken {
+            id: 0,
+            p_draft: 1.0,
+        };
         let mut rng = VerifyRng::new(7);
         let id = sample_residual(&p_target, &d, &mut rng);
         // Residual is zero → falls back to p_target (which is one-hot at 0).

@@ -85,7 +85,8 @@ mod tests {
     fn from_checkpoint_records_path() {
         let head = EagleDraftHead::from_checkpoint("/tmp/draft.safetensors").unwrap();
         assert_eq!(
-            head.checkpoint_path().map(|p| p.to_string_lossy().into_owned()),
+            head.checkpoint_path()
+                .map(|p| p.to_string_lossy().into_owned()),
             Some("/tmp/draft.safetensors".to_string())
         );
     }
