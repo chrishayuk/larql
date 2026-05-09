@@ -421,6 +421,49 @@ impl CudaBackend {
             .map_err(|e| CudaInitError::DriverMissing(format!("memcpy_htod into slice: {e:?}")))
     }
 
+    /// `cuda-attn-wmma-f16kv` Phase 1: host f32 → device f16, with
+    /// element-wise round-to-nearest conversion on the host. Used by
+    /// `populate_kv_layer` and the legacy host-fallback decode path
+    /// to write into the new f16 K/V cache.
+    pub(crate) fn htod_f32_as_f16_into_slice(
+        &self,
+        src: &[f32],
+        dst: &mut CudaSlice<half::f16>,
+        offset: usize,
+    ) -> Result<(), CudaInitError> {
+        if offset + src.len() > dst.len() {
+            return Err(CudaInitError::DriverMissing(format!(
+                "htod_f32_as_f16 OOB: offset {offset} + len {} > dst {}",
+                src.len(),
+                dst.len(),
+            )));
+        }
+        let h: Vec<half::f16> = src.iter().map(|&v| half::f16::from_f32(v)).collect();
+        let mut sub = dst.slice_mut(offset..offset + h.len());
+        self.drv
+            .stream
+            .memcpy_htod(&h, &mut sub)
+            .map_err(|e| CudaInitError::DriverMissing(format!("memcpy_htod f16: {e:?}")))
+    }
+
+    /// `cuda-attn-wmma-f16kv` Phase 1: device f16 → host f32 vec.
+    /// Round-trips through the host conversion so the legacy
+    /// `decode_token` path's `fused_decode_attention(&[f32], &[f32])`
+    /// host wrapper still gets the f32 it expects. Slow on purpose;
+    /// this is back-out / parity only.
+    pub(crate) fn dtoh_f16_as_f32(
+        &self,
+        dev: &CudaSlice<half::f16>,
+    ) -> Result<Vec<f32>, CudaInitError> {
+        self.drv.sync()?;
+        let h: Vec<half::f16> = self
+            .drv
+            .stream
+            .clone_dtoh(dev)
+            .map_err(|e| CudaInitError::DriverMissing(format!("dtoh f16: {e:?}")))?;
+        Ok(h.iter().map(|v| v.to_f32()).collect())
+    }
+
     /// Q4_K matvec, device input + device output.
     pub(crate) fn q4k_matvec_device(
         &self,

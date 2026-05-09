@@ -167,12 +167,28 @@ extern "C" __global__ void qkv_rms_proj_f32(
 const FUSED_DECODE_ATTN_SRC: &str = r#"
 #define NEG_INF (__int_as_float(0xff800000))
 
+// `cuda-attn-wmma-f16kv` Phase 1: K/V cache is now f16. Reads convert
+// to f32 via `cvt.f32.f16`; writes convert from f32 via
+// `cvt.rn.f16.f32`. Q/K_new/V_new/out stay in f32 — the kernel's
+// internal compute is still f32, only the K/V slab's storage and
+// HBM bandwidth are halved.
+__device__ float ld_kvcache(const unsigned short* p) {
+    float f;
+    asm("cvt.f32.f16 %0, %1;" : "=f"(f) : "h"(p[0]));
+    return f;
+}
+__device__ void st_kvcache(unsigned short* p, float v) {
+    unsigned short h;
+    asm("cvt.rn.f16.f32 %0, %1;" : "=h"(h) : "f"(v));
+    p[0] = h;
+}
+
 extern "C" __global__ void fused_decode_attention_f32(
     const float* q,
     const float* k_new,
     const float* v_new,
-    float* k_cache,
-    float* v_cache,
+    unsigned short* k_cache,
+    unsigned short* v_cache,
     const float* q_norm,
     const float* k_norm,
     float* out,
@@ -310,8 +326,8 @@ extern "C" __global__ void fused_decode_attention_f32(
                 k_rot = kv;
             }
             size_t idx = ((size_t)pos * num_kv_heads + kvh) * head_dim + d;
-            k_cache[idx] = k_rot;
-            v_cache[idx] = v_head[d];
+            st_kvcache(k_cache + idx, k_rot);
+            st_kvcache(v_cache + idx, v_head[d]);
         }
     }
     __syncthreads();
@@ -346,7 +362,7 @@ extern "C" __global__ void fused_decode_attention_f32(
                     if (use_qk_norm) kv *= k_inv * (k_norm[d] + qk_norm_offset);
                 }
             } else {
-                kv = k_cache[((size_t)j * num_kv_heads + kvh) * head_dim + d];
+                kv = ld_kvcache(k_cache + ((size_t)j * num_kv_heads + kvh) * head_dim + d);
             }
             dot += qv * kv;
         }
@@ -395,7 +411,7 @@ extern "C" __global__ void fused_decode_attention_f32(
             float prob = scores[j] * inv_sum;
             float vv = (j == pos)
                 ? v_head[d]
-                : v_cache[((size_t)j * num_kv_heads + kvh) * head_dim + d];
+                : ld_kvcache(v_cache + ((size_t)j * num_kv_heads + kvh) * head_dim + d);
             acc += prob * vv;
         }
         out[(size_t)qh * head_dim + d] = acc;
@@ -409,11 +425,19 @@ extern "C" __global__ void fused_decode_attention_f32(
 /// raw copy. Runs as kernel 1 of the two-kernel batched prefill
 /// attention dispatch (`cuda-prefill-batched-attention`).
 const KV_CACHE_WRITE_SEQ_SRC: &str = r#"
+// `cuda-attn-wmma-f16kv` Phase 1: K/V cache is f16. Write-side
+// helper converts f32 → f16 via `cvt.rn.f16.f32`.
+__device__ void st_kv_seq(unsigned short* p, float v) {
+    unsigned short h;
+    asm("cvt.rn.f16.f32 %0, %1;" : "=h"(h) : "f"(v));
+    p[0] = h;
+}
+
 extern "C" __global__ void kv_cache_write_seq_f32(
     const float* k_seq,
     const float* v_seq,
-    float* k_cache,
-    float* v_cache,
+    unsigned short* k_cache,
+    unsigned short* v_cache,
     const float* k_norm,
     int num_kv_heads,
     int head_dim,
@@ -476,8 +500,8 @@ extern "C" __global__ void kv_cache_write_seq_f32(
             k_rot = kv;
         }
         size_t idx = ((size_t)pos * num_kv_heads + kvh) * head_dim + d;
-        k_cache[idx] = k_rot;
-        v_cache[idx] = v_head[d];
+        st_kv_seq(k_cache + idx, k_rot);
+        st_kv_seq(v_cache + idx, v_head[d]);
     }
 }
 "#;
@@ -490,10 +514,17 @@ extern "C" __global__ void kv_cache_write_seq_f32(
 const FUSED_PREFILL_ATTN_SRC: &str = r#"
 #define NEG_INF (__int_as_float(0xff800000))
 
+// `cuda-attn-wmma-f16kv` Phase 1: K/V cache is f16 — read via cvt.
+__device__ float ld_kvc_pf(const unsigned short* p) {
+    float f;
+    asm("cvt.f32.f16 %0, %1;" : "=f"(f) : "h"(p[0]));
+    return f;
+}
+
 extern "C" __global__ void fused_prefill_attention_f32(
     const float* q_seq,        // [seq_len, num_q_heads, head_dim]
-    const float* k_cache,      // [max_seq, num_kv_heads, head_dim] (already populated)
-    const float* v_cache,      // same shape
+    const unsigned short* k_cache, // [max_seq, num_kv_heads, head_dim] (f16 since cuda-attn-wmma-f16kv)
+    const unsigned short* v_cache, // same shape
     const float* q_norm,
     float* out_seq,            // [seq_len, num_q_heads, head_dim]
     int num_q_heads,
@@ -571,7 +602,7 @@ extern "C" __global__ void fused_prefill_attention_f32(
         float dot = 0.f;
         for (int d = 0; d < head_dim; d++) {
             float qv = q_rot[d];
-            float kv = k_cache[((size_t)j * num_kv_heads + kvh) * head_dim + d];
+            float kv = ld_kvc_pf(k_cache + ((size_t)j * num_kv_heads + kvh) * head_dim + d);
             dot += qv * kv;
         }
         float logit = dot * attn_scale;
@@ -614,7 +645,7 @@ extern "C" __global__ void fused_prefill_attention_f32(
         float acc = 0.f;
         for (int j = 0; j < n_ctx; j++) {
             float prob = scores[j] * inv_sum;
-            float vv   = v_cache[((size_t)j * num_kv_heads + kvh) * head_dim + d];
+            float vv   = ld_kvc_pf(v_cache + ((size_t)j * num_kv_heads + kvh) * head_dim + d);
             acc += prob * vv;
         }
         out_seq[(size_t)(sp * num_q_heads + qh) * head_dim + d] = acc;
@@ -926,8 +957,18 @@ pub fn fused_decode_attention(
     let q_dev = drv.device_buf_from(q)?;
     let k_new_dev = drv.device_buf_from(k_new)?;
     let v_new_dev = drv.device_buf_from(v_new)?;
-    let mut k_cache_dev = drv.device_buf_from(k_cache)?;
-    let mut v_cache_dev = drv.device_buf_from(v_cache)?;
+    // `cuda-attn-wmma-f16kv` Phase 1: kernel expects f16 K/V cache.
+    // Convert host-side f32 → f16 once and htod the f16 buffer.
+    let k_cache_h: Vec<half::f16> = k_cache.iter().map(|&v| half::f16::from_f32(v)).collect();
+    let v_cache_h: Vec<half::f16> = v_cache.iter().map(|&v| half::f16::from_f32(v)).collect();
+    let mut k_cache_dev = drv
+        .stream
+        .clone_htod(&k_cache_h)
+        .map_err(|e| CudaInitError::DriverMissing(format!("htod k_cache f16: {e:?}")))?;
+    let mut v_cache_dev = drv
+        .stream
+        .clone_htod(&v_cache_h)
+        .map_err(|e| CudaInitError::DriverMissing(format!("htod v_cache f16: {e:?}")))?;
     let q_norm_dev = drv.device_buf_from(q_norm)?;
     let k_norm_dev = drv.device_buf_from(k_norm)?;
     let mut out_dev = drv.device_alloc_uninit(q_dim)?;
@@ -983,10 +1024,21 @@ pub fn fused_decode_attention(
     }
 
     drv.sync()?;
+    // `cuda-attn-wmma-f16kv` Phase 1: dtoh f16 → host, convert to f32
+    // for the public `FusedDecodeAttentionOutput { k_cache: Vec<f32>,
+    // v_cache: Vec<f32> }` contract.
+    let k_cache_f16: Vec<half::f16> = drv
+        .stream
+        .clone_dtoh(&k_cache_dev)
+        .map_err(|e| CudaInitError::DriverMissing(format!("dtoh k_cache f16: {e:?}")))?;
+    let v_cache_f16: Vec<half::f16> = drv
+        .stream
+        .clone_dtoh(&v_cache_dev)
+        .map_err(|e| CudaInitError::DriverMissing(format!("dtoh v_cache f16: {e:?}")))?;
     Ok(FusedDecodeAttentionOutput {
         out: drv.to_host(&out_dev)?,
-        k_cache: drv.to_host(&k_cache_dev)?,
-        v_cache: drv.to_host(&v_cache_dev)?,
+        k_cache: k_cache_f16.iter().map(|v| v.to_f32()).collect(),
+        v_cache: v_cache_f16.iter().map(|v| v.to_f32()).collect(),
     })
 }
 
@@ -1002,8 +1054,8 @@ pub fn fused_decode_attention_device_kv(
     q_dev: &CudaSlice<f32>,
     k_new_dev: &CudaSlice<f32>,
     v_new_dev: &CudaSlice<f32>,
-    k_cache_dev: &mut CudaSlice<f32>,
-    v_cache_dev: &mut CudaSlice<f32>,
+    k_cache_dev: &mut CudaSlice<half::f16>,
+    v_cache_dev: &mut CudaSlice<half::f16>,
     q_norm: Option<&[f32]>,
     k_norm: Option<&[f32]>,
     opts: FusedDecodeAttentionOpts,
@@ -1127,8 +1179,8 @@ pub fn fused_decode_attention_device_kv_into(
     q_dev: &CudaSlice<f32>,
     k_new_dev: &CudaSlice<f32>,
     v_new_dev: &CudaSlice<f32>,
-    k_cache_dev: &mut CudaSlice<f32>,
-    v_cache_dev: &mut CudaSlice<f32>,
+    k_cache_dev: &mut CudaSlice<half::f16>,
+    v_cache_dev: &mut CudaSlice<half::f16>,
     q_norm_dev: &CudaSlice<f32>,
     k_norm_dev: &CudaSlice<f32>,
     pos_dev: &CudaSlice<i32>,
@@ -1254,8 +1306,17 @@ pub fn fused_decode_attention_device(
 
     let drv = backend.driver();
     let func = fused_decode_attention_function(drv)?;
-    let mut k_cache_dev = drv.device_buf_from(k_cache)?;
-    let mut v_cache_dev = drv.device_buf_from(v_cache)?;
+    // `cuda-attn-wmma-f16kv` Phase 1: kernel expects f16 K/V cache.
+    let k_cache_h: Vec<half::f16> = k_cache.iter().map(|&v| half::f16::from_f32(v)).collect();
+    let v_cache_h: Vec<half::f16> = v_cache.iter().map(|&v| half::f16::from_f32(v)).collect();
+    let mut k_cache_dev = drv
+        .stream
+        .clone_htod(&k_cache_h)
+        .map_err(|e| CudaInitError::DriverMissing(format!("htod k_cache f16: {e:?}")))?;
+    let mut v_cache_dev = drv
+        .stream
+        .clone_htod(&v_cache_h)
+        .map_err(|e| CudaInitError::DriverMissing(format!("htod v_cache f16: {e:?}")))?;
     let q_norm_dev = drv.device_buf_from(q_norm)?;
     let k_norm_dev = drv.device_buf_from(k_norm)?;
     let mut out_dev = drv.device_alloc_uninit(q_dim)?;
@@ -1311,12 +1372,19 @@ pub fn fused_decode_attention_device(
     }
 
     drv.sync()?;
-    let k_cache_host = drv.to_host(&k_cache_dev)?;
-    let v_cache_host = drv.to_host(&v_cache_dev)?;
+    // `cuda-attn-wmma-f16kv` Phase 1: cache slabs are f16; convert.
+    let k_cache_f16: Vec<half::f16> = drv
+        .stream
+        .clone_dtoh(&k_cache_dev)
+        .map_err(|e| CudaInitError::DriverMissing(format!("dtoh k_cache f16: {e:?}")))?;
+    let v_cache_f16: Vec<half::f16> = drv
+        .stream
+        .clone_dtoh(&v_cache_dev)
+        .map_err(|e| CudaInitError::DriverMissing(format!("dtoh v_cache f16: {e:?}")))?;
     Ok(FusedDecodeAttentionDeviceOutput {
         out: out_dev,
-        k_cache: k_cache_host,
-        v_cache: v_cache_host,
+        k_cache: k_cache_f16.iter().map(|v| v.to_f32()).collect(),
+        v_cache: v_cache_f16.iter().map(|v| v.to_f32()).collect(),
     })
 }
 
@@ -1529,8 +1597,8 @@ pub fn fused_prefill_attention_seq_device(
     q_seq: &CudaSlice<f32>,
     k_seq: &CudaSlice<f32>,
     v_seq: &CudaSlice<f32>,
-    k_cache: &mut CudaSlice<f32>,
-    v_cache: &mut CudaSlice<f32>,
+    k_cache: &mut CudaSlice<half::f16>,
+    v_cache: &mut CudaSlice<half::f16>,
     q_norm: Option<&[f32]>,
     k_norm: Option<&[f32]>,
     base_pos: usize,

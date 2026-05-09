@@ -234,11 +234,21 @@ struct LayerArcs {
 /// switched these from `Vec<f32>` to `CudaSlice<f32>` so
 /// `fused_decode_attention_device_kv` can read prior tokens and append
 /// the new row without any per-call PCIe transfer.
+///
+/// `cuda-attn-wmma-f16kv` Phase 1 switched the storage type from
+/// `CudaSlice<f32>` to `CudaSlice<half::f16>`, halving the K/V slab's
+/// HBM footprint (≈ 1.3 GB → 660 MB on Gemma 3 4B at max_seq=4096)
+/// and halving the per-step K/V read bandwidth in the fused attention
+/// kernel. The kernel converts each cache element to f32 on read via
+/// `cvt.f32.f16` and converts the new K-rotated/V-raw values to f16
+/// on write via `cvt.rn.f16.f32`. This is independent of (and
+/// complementary to) `larql_rotorquant`, which targets the
+/// host-side inference cache with deeper 3-4 bit compression.
 pub(crate) struct CudaKvLayer {
     pub(crate) num_kv_heads: usize,
     pub(crate) head_dim: usize,
-    pub(crate) k: CudaSlice<f32>,
-    pub(crate) v: CudaSlice<f32>,
+    pub(crate) k: CudaSlice<half::f16>,
+    pub(crate) v: CudaSlice<half::f16>,
 }
 
 pub(crate) struct CudaKvCache {
@@ -266,11 +276,28 @@ impl CudaKvCache {
             .iter()
             .map(|&(num_kv_heads, head_dim)| {
                 let n = max_seq * num_kv_heads * head_dim;
+                // `cuda-attn-wmma-f16kv` Phase 1: zero-init f16 K/V
+                // slabs on device. `alloc_zeros` writes 0x0000 to each
+                // 2-byte element, which is the f16 representation of
+                // +0.0 — the same semantic zero as the legacy f32
+                // path's 0x00000000.
+                let k = drv
+                    .stream
+                    .alloc_zeros::<half::f16>(n)
+                    .map_err(|e| super::error::CudaInitError::DriverMissing(format!(
+                        "alloc f16 K slab: {e:?}"
+                    )))?;
+                let v = drv
+                    .stream
+                    .alloc_zeros::<half::f16>(n)
+                    .map_err(|e| super::error::CudaInitError::DriverMissing(format!(
+                        "alloc f16 V slab: {e:?}"
+                    )))?;
                 Ok(CudaKvLayer {
                     num_kv_heads,
                     head_dim,
-                    k: drv.device_alloc(n)?,
-                    v: drv.device_alloc(n)?,
+                    k,
+                    v,
                 })
             })
             .collect::<Result<Vec<_>, super::error::CudaInitError>>()?;
@@ -543,10 +570,10 @@ impl DecodeBackend for CudaBackend {
         {
             return;
         }
-        if let Err(_e) = self.htod_into_slice(&k_data[..n], &mut slot.k, 0) {
+        if let Err(_e) = self.htod_f32_as_f16_into_slice(&k_data[..n], &mut slot.k, 0) {
             return;
         }
-        if let Err(_e) = self.htod_into_slice(&v_data[..n], &mut slot.v, 0) {
+        if let Err(_e) = self.htod_f32_as_f16_into_slice(&v_data[..n], &mut slot.v, 0) {
             return;
         }
         cache.len = cache.len.max(seq_len);
@@ -801,8 +828,12 @@ impl CudaBackend {
             // host-input attention call, then htod the updated cache
             // back into the device buffers. Slow on purpose; this
             // path exists for parity correctness only.
-            let kv_host_k = self.dtoh_f32(&kv_slot.k).ok()?;
-            let kv_host_v = self.dtoh_f32(&kv_slot.v).ok()?;
+            // `cuda-attn-wmma-f16kv` Phase 1: cache slabs are now f16
+            // — round-trip through host with element-wise convert
+            // so the legacy host attention wrapper still receives
+            // f32 inputs.
+            let kv_host_k = self.dtoh_f16_as_f32(&kv_slot.k).ok()?;
+            let kv_host_v = self.dtoh_f16_as_f32(&kv_slot.v).ok()?;
             let attn_out = attn::fused_decode_attention(
                 self,
                 &qkv.q,
@@ -827,9 +858,11 @@ impl CudaBackend {
                 },
             )
             .ok()?;
-            self.htod_into_slice(&attn_out.k_cache, &mut kv_slot.k, 0)
+            // `cuda-attn-wmma-f16kv` Phase 1: cache is f16; convert
+            // before write-back.
+            self.htod_f32_as_f16_into_slice(&attn_out.k_cache, &mut kv_slot.k, 0)
                 .ok()?;
-            self.htod_into_slice(&attn_out.v_cache, &mut kv_slot.v, 0)
+            self.htod_f32_as_f16_into_slice(&attn_out.v_cache, &mut kv_slot.v, 0)
                 .ok()?;
 
             let attn_delta =
