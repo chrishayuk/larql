@@ -480,3 +480,110 @@ fn decode_token_phase1_matches_host_fallback() {
         );
     }
 }
+
+/// `cuda-decode-cuda-graph` parity gate. Runs five decode steps with
+/// the captured-graph path enabled (default), then re-runs with
+/// `LARQL_CUDA_DECODE_GRAPH=0` forcing the legacy per-call kernel-
+/// launch path. Asserts per-step max-element ≤ 1e-3. This locks in
+/// the back-out contract: turning the graph path off SHALL produce
+/// bit-equivalent output to leaving it on.
+///
+/// <!-- test:
+/// openspec/changes/cuda-decode-cuda-graph/specs/compute-cuda-kernels/spec.md
+/// → "decode_token_device SHALL replay a captured CUDA graph" + the
+/// scenario "scratch reused across decode calls" -->
+#[test]
+fn decode_token_graph_matches_per_call_over_5_steps() {
+    let Some(backend) = gpu_or_skip() else { return };
+    let hidden = 256;
+    let inter = 256;
+    let head_dim = 256;
+    let num_q_heads = 1;
+    let num_kv_heads = 1;
+    let q_dim = head_dim;
+    let kv_dim = head_dim;
+
+    let input_norm = vec![1.0; hidden];
+    let post_attn_norm = vec![1.0; hidden];
+    let pre_ffn_norm = vec![1.0; hidden];
+    let post_ffn_norm = vec![1.0; hidden];
+    let wq = quantize_q4_k(&synth(q_dim * hidden, 0x710));
+    let wk = quantize_q4_k(&synth(kv_dim * hidden, 0x711));
+    let wv = quantize_q4_k(&synth(kv_dim * hidden, 0x712));
+    let wo = quantize_q4_k(&synth(hidden * q_dim, 0x713));
+    let gate = quantize_q4_k(&synth(inter * hidden, 0x714));
+    let up = quantize_q4_k(&synth(inter * hidden, 0x715));
+    let down = quantize_q4_k(&synth(hidden * inter, 0x716));
+    let make_layer = || FullPipelineLayer {
+        wq: q4k_qw(&wq),
+        wk: q4k_qw(&wk),
+        wv: q4k_qw(&wv),
+        wo: q4k_qw(&wo),
+        gate: q4k_qw(&gate),
+        up: q4k_qw(&up),
+        down: q4k_qw(&down),
+        input_norm: &input_norm,
+        post_attn_norm: &post_attn_norm,
+        pre_ffn_norm: Some(&pre_ffn_norm),
+        post_ffn_norm: Some(&post_ffn_norm),
+        norm_offset: 0.0,
+        eps: 1e-6,
+        has_post_norms: true,
+        norm_type: NormType::RmsNorm,
+        ffn_type: FfnType::Gated,
+        activation: Activation::Silu,
+        attn_scale: 1.0 / (head_dim as f32).sqrt(),
+        head_dim,
+        num_q_heads,
+        num_kv_heads,
+        rope_base: 10_000.0,
+        rotary_dim: head_dim,
+        ..FullPipelineLayer::default()
+    };
+
+    let run_five_steps = || -> Vec<Vec<f32>> {
+        backend.reset_kv_cache();
+        let mut outs = Vec::with_capacity(5);
+        for step in 0..5 {
+            let x = synth(hidden, 0x800 + step as u64);
+            let out = backend
+                .decode_token(
+                    &[make_layer()],
+                    &x,
+                    hidden,
+                    inter,
+                    q_dim,
+                    kv_dim,
+                    num_q_heads,
+                    num_kv_heads,
+                    head_dim,
+                    10_000.0,
+                )
+                .expect("decode_token");
+            outs.push(out);
+        }
+        outs
+    };
+
+    // Captured-graph path (default).
+    std::env::remove_var("LARQL_CUDA_DECODE_GRAPH");
+    std::env::remove_var("LARQL_CUDA_DECODE_HOST_FALLBACK");
+    let graph_outs = run_five_steps();
+
+    // Per-call kernel-launch path (back-out).
+    std::env::set_var("LARQL_CUDA_DECODE_GRAPH", "0");
+    let legacy_outs = run_five_steps();
+    std::env::remove_var("LARQL_CUDA_DECODE_GRAPH");
+
+    for (i, (g, l)) in graph_outs.iter().zip(legacy_outs.iter()).enumerate() {
+        let max_diff = g
+            .iter()
+            .zip(l)
+            .map(|(a, b)| (a - b).abs())
+            .fold(0.0_f32, f32::max);
+        assert!(
+            max_diff <= 1e-3,
+            "step {i}: graph vs legacy max-element diff {max_diff} > 1e-3",
+        );
+    }
+}

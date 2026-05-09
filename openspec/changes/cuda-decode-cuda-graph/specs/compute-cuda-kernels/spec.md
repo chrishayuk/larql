@@ -9,8 +9,10 @@
 - **WHEN** `decode_token_device` is called five times in a row
   with the same model
 - **THEN** the second through fifth calls SHALL NOT allocate
-  any new device buffers for intermediate state
-<!-- test: unbacked -->
+  any new device buffers for intermediate state, AND the per-step
+  output SHALL agree to ≤ 1e-3 max-element with the
+  `LARQL_CUDA_DECODE_GRAPH=0` (per-call kernel-launch) path
+<!-- test: larql_compute::tests::test_cuda_decode::decode_token_graph_matches_per_call_over_5_steps -->
 
 ### Requirement: fused_decode_attention_device_kv SHALL take device-side pos
 
