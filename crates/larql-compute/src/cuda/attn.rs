@@ -187,7 +187,8 @@ extern "C" __global__ void fused_decode_attention_f32(
     float qk_norm_offset,
     float attn_scale,
     float softcap,
-    int use_qk_norm
+    int use_qk_norm,
+    int d_split
 ) {
     // cuda-decode-cuda-graph: `pos` is read from device memory so the
     // captured graph can be replayed after writing a new value into
@@ -195,7 +196,19 @@ extern "C" __global__ void fused_decode_attention_f32(
     // kernel arg (graphs bake in immediate args at capture time).
     int pos = *pos_dev;
     int qh = blockIdx.x;
-    if (qh >= num_q_heads || pos >= max_seq) return;
+    // cuda-attn-grid-split: each q_head's output is split across
+    // `d_split` blocks (blockIdx.y). Each block computes a slice
+    // `[d_start, d_end)` of `out[qh, :]`. The Q/K reductions and the
+    // softmax-of-scores are recomputed redundantly in each chunk
+    // (the per-block work doesn't depend on `d`), but the
+    // additional grid parallelism gets us from 8 → 8*d_split blocks
+    // — closer to the RTX 4090's 128 SMs. K/V cache writes are
+    // gated to `dchunk == 0` to avoid duplicate writes.
+    int dchunk = blockIdx.y;
+    if (qh >= num_q_heads || dchunk >= d_split || pos >= max_seq) return;
+    int d_per_chunk = head_dim / d_split;
+    int d_start = dchunk * d_per_chunk;
+    int d_end   = d_start + d_per_chunk;
     int tid = threadIdx.x;
     int bdim = blockDim.x;
     extern __shared__ float smem[];
@@ -268,7 +281,9 @@ extern "C" __global__ void fused_decode_attention_f32(
 
     // Append the current K/V once per KV head. Other Q heads sharing
     // the same KV head compute against k_new/v_new directly for pos.
-    if ((qh % group) == 0) {
+    // cuda-attn-grid-split: gate K/V cache writes to dchunk == 0 so
+    // multiple chunks for the same q_head don't double-write.
+    if ((qh % group) == 0 && dchunk == 0) {
         for (int d = tid; d < head_dim; d += bdim) {
             float kv = k_head[d];
             if (use_qk_norm) kv *= k_inv * (k_norm[d] + qk_norm_offset);
@@ -371,7 +386,10 @@ extern "C" __global__ void fused_decode_attention_f32(
     }
     float inv_sum = 1.f / scratch[0];
 
-    for (int d = tid; d < head_dim; d += bdim) {
+    // cuda-attn-grid-split: each block writes only its `[d_start, d_end)`
+    // slice of `out[qh, :]`. With d_split == 1 this collapses to the
+    // legacy full-head_dim loop.
+    for (int d = tid + d_start; d < d_end; d += bdim) {
         float acc = 0.f;
         for (int j = 0; j < n_ctx; j++) {
             float prob = scores[j] * inv_sum;
@@ -667,6 +685,42 @@ fn qkv_rms_proj_function(drv: &Driver) -> Result<&'static CudaFunction, CudaInit
     Ok(f)
 }
 
+/// `cuda-attn-grid-split`: choose how many `head_dim` chunks to split
+/// each q_head's output across. With `d_split = 1` the kernel runs as
+/// before (1 block per q_head); with `d_split > 1` the grid grows to
+/// `(num_q_heads, d_split, 1)` and the per-block output loop only
+/// covers `head_dim / d_split` elements.
+///
+/// `LARQL_CUDA_ATTN_DSPLIT=N` (1, 2, 4, 8, 16) overrides the default;
+/// `=0` is treated as 1 (no split). `head_dim` must be divisible by
+/// the chosen value or we fall back to 1.
+pub(crate) fn choose_attn_d_split(num_q_heads: usize, head_dim: usize) -> i32 {
+    let chosen: i32 = std::env::var("LARQL_CUDA_ATTN_DSPLIT")
+        .ok()
+        .and_then(|v| v.parse::<i32>().ok())
+        .filter(|n| matches!(*n, 0 | 1 | 2 | 4 | 8 | 16))
+        .unwrap_or_else(|| {
+            // Heuristic: target ≥ 32 blocks per kernel call so we
+            // get a few blocks per SM-quarter. RTX 4090 has 128 SMs;
+            // 32 blocks ≈ 1 block per 4 SMs, leaving room for the
+            // mmvq kernels' tail to overlap on the other SMs.
+            let target_blocks: usize = 32;
+            let needed = target_blocks.div_ceil(num_q_heads.max(1));
+            // Snap to the largest power of 2 ≤ needed (and ≤ 16).
+            let mut k = 1;
+            while k * 2 <= needed.min(16) {
+                k *= 2;
+            }
+            k as i32
+        });
+    let chosen = if chosen == 0 { 1 } else { chosen };
+    if chosen <= 1 || head_dim % (chosen as usize) != 0 {
+        1
+    } else {
+        chosen
+    }
+}
+
 fn fused_decode_attention_function(drv: &Driver) -> Result<&'static CudaFunction, CudaInitError> {
     if let Some((_, f)) = FUSED_DECODE_ATTN_FUNC.get() {
         return Ok(f);
@@ -884,8 +938,9 @@ pub fn fused_decode_attention(
         .map_err(|e| CudaInitError::DriverMissing(format!("htod pos: {e:?}")))?;
 
     let block_dim: u32 = 256;
+    let d_split_i = choose_attn_d_split(opts.num_q_heads, opts.head_dim);
     let cfg = LaunchConfig {
-        grid_dim: (opts.num_q_heads as u32, 1, 1),
+        grid_dim: (opts.num_q_heads as u32, d_split_i as u32, 1),
         block_dim: (block_dim, 1, 1),
         shared_mem_bytes: ((opts.max_seq + block_dim as usize + opts.head_dim)
             * std::mem::size_of::<f32>()) as u32,
@@ -920,6 +975,7 @@ pub fn fused_decode_attention(
             .arg(&opts.attn_scale)
             .arg(&opts.softcap)
             .arg(&use_qk_norm_i)
+            .arg(&d_split_i)
             .launch(cfg)
             .map_err(|e| {
                 CudaInitError::DriverMissing(format!("launch fused_decode_attention: {e:?}"))
@@ -998,8 +1054,9 @@ pub fn fused_decode_attention_device_kv(
         .map_err(|e| CudaInitError::DriverMissing(format!("htod pos: {e:?}")))?;
 
     let block_dim: u32 = 256;
+    let d_split_i = choose_attn_d_split(opts.num_q_heads, opts.head_dim);
     let cfg = LaunchConfig {
-        grid_dim: (opts.num_q_heads as u32, 1, 1),
+        grid_dim: (opts.num_q_heads as u32, d_split_i as u32, 1),
         block_dim: (block_dim, 1, 1),
         shared_mem_bytes: ((opts.max_seq + block_dim as usize + opts.head_dim)
             * std::mem::size_of::<f32>()) as u32,
@@ -1034,6 +1091,7 @@ pub fn fused_decode_attention_device_kv(
             .arg(&opts.attn_scale)
             .arg(&opts.softcap)
             .arg(&use_qk_norm_i)
+            .arg(&d_split_i)
             .launch(cfg)
             .map_err(|e| {
                 CudaInitError::DriverMissing(format!(
@@ -1095,8 +1153,9 @@ pub fn fused_decode_attention_device_kv_into(
     let func = fused_decode_attention_function(drv)?;
 
     let block_dim: u32 = 256;
+    let d_split_i = choose_attn_d_split(opts.num_q_heads, opts.head_dim);
     let cfg = LaunchConfig {
-        grid_dim: (opts.num_q_heads as u32, 1, 1),
+        grid_dim: (opts.num_q_heads as u32, d_split_i as u32, 1),
         block_dim: (block_dim, 1, 1),
         shared_mem_bytes: ((opts.max_seq + block_dim as usize + opts.head_dim)
             * std::mem::size_of::<f32>()) as u32,
@@ -1131,6 +1190,7 @@ pub fn fused_decode_attention_device_kv_into(
             .arg(&opts.attn_scale)
             .arg(&opts.softcap)
             .arg(&use_qk_norm_i)
+            .arg(&d_split_i)
             .launch(cfg)
             .map_err(|e| {
                 CudaInitError::DriverMissing(format!(
@@ -1206,8 +1266,9 @@ pub fn fused_decode_attention_device(
         .map_err(|e| CudaInitError::DriverMissing(format!("htod pos: {e:?}")))?;
 
     let block_dim: u32 = 256;
+    let d_split_i = choose_attn_d_split(opts.num_q_heads, opts.head_dim);
     let cfg = LaunchConfig {
-        grid_dim: (opts.num_q_heads as u32, 1, 1),
+        grid_dim: (opts.num_q_heads as u32, d_split_i as u32, 1),
         block_dim: (block_dim, 1, 1),
         shared_mem_bytes: ((opts.max_seq + block_dim as usize + opts.head_dim)
             * std::mem::size_of::<f32>()) as u32,
@@ -1242,6 +1303,7 @@ pub fn fused_decode_attention_device(
             .arg(&opts.attn_scale)
             .arg(&opts.softcap)
             .arg(&use_qk_norm_i)
+            .arg(&d_split_i)
             .launch(cfg)
             .map_err(|e| {
                 CudaInitError::DriverMissing(format!("launch fused_decode_attention_device: {e:?}"))
