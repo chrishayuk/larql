@@ -23,7 +23,7 @@ use std::time::Instant;
 
 use larql_compute::cuda::attn_tree::{tree_decode_attention, TreeAttentionOpts};
 use larql_compute::cuda::q4k_batched::matvec_batched;
-use larql_compute::cuda::sampling::verify_tree_gpu;
+use larql_compute::cuda::sampling::{verify_tree_gpu, verify_tree_gpu_parallel};
 use larql_compute::cuda::CudaBackend;
 
 const Q4K_BLOCK_BYTES: usize = 144;
@@ -225,20 +225,38 @@ fn bench_synthetic_speculative_step_at_gemma_shapes() {
                 let _ =
                     verify_tree_gpu(&backend, &p_target_rows, &drafts, &pdraft, VOCAB, 0).unwrap();
             }
-            let verify_ms = t0.elapsed().as_secs_f64() * 1000.0 / viters as f64;
+            let verify_serial_ms = t0.elapsed().as_secs_f64() * 1000.0 / viters as f64;
+
+            // Parallel kernel.
+            for _ in 0..2 {
+                let _ =
+                    verify_tree_gpu_parallel(&backend, &p_target_rows, &drafts, &pdraft, VOCAB, 0)
+                        .unwrap();
+            }
+            let t1 = Instant::now();
+            for _ in 0..viters {
+                let _ =
+                    verify_tree_gpu_parallel(&backend, &p_target_rows, &drafts, &pdraft, VOCAB, 0)
+                        .unwrap();
+            }
+            let verify_parallel_ms = t1.elapsed().as_secs_f64() * 1000.0 / viters as f64;
+            let speedup = verify_serial_ms / verify_parallel_ms;
             eprintln!(
-                "  M={m}: verify_tree at vocab={VOCAB} m={m}: {verify_ms:.3} ms (single-thread serial — needs parallel reduction)"
+                "  M={m}: verify_tree at vocab={VOCAB}: serial {verify_serial_ms:.3} ms  parallel {verify_parallel_ms:.3} ms  speedup {speedup:.1}×"
             );
 
-            let total_step = layers_ms + verify_ms;
-            eprintln!("  M={m}: TOTAL synthetic step (layers + verify) = {total_step:.2} ms");
+            let total_step_serial = layers_ms + verify_serial_ms;
+            let total_step_parallel = layers_ms + verify_parallel_ms;
+            eprintln!(
+                "  M={m}: TOTAL step (layers + verify) = serial {total_step_serial:.2} ms  parallel {total_step_parallel:.2} ms"
+            );
 
-            // Compute ms/tok for various α.
+            // ms/tok for various α (parallel verify path).
             for alpha in &[0.5_f64, 0.6, 0.7, 0.8] {
                 let exp_tokens: f64 = (0..m).map(|k| alpha.powi(k as i32)).sum::<f64>();
-                let ms_per_tok = total_step / exp_tokens;
+                let ms_per_tok = total_step_parallel / exp_tokens;
                 eprintln!(
-                    "    α={alpha}: expected_tokens/step={exp_tokens:.2} → {ms_per_tok:.2} ms/tok"
+                    "    α={alpha}: expected_tokens/step={exp_tokens:.2} → {ms_per_tok:.2} ms/tok (parallel)"
                 );
             }
         }
