@@ -144,21 +144,26 @@ impl CudaKvCache {
     /// `cuda-decode-device-resident` Phase 3: allocate the K/V slabs
     /// directly on the device, zero-initialised. Each layer's slab is
     /// `max_seq × num_kv_heads × head_dim × f32`.
+    ///
+    /// Uses `device_alloc` (cuMemAllocAsync + memset_d8_async) for
+    /// zero-init, NOT htod from a host zeros buffer — the latter
+    /// pays a PCIe roundtrip (~38 ms per Gemma 3 4B-sized cache at
+    /// PCIe 4.0). Device-side memset is HBM-bound at ~1.8 ms.
     fn new_device(
         backend: &CudaBackend,
         shapes: &[(usize, usize)],
         max_seq: usize,
     ) -> Result<Self, super::error::CudaInitError> {
+        let drv = backend.driver();
         let layers = shapes
             .iter()
             .map(|&(num_kv_heads, head_dim)| {
                 let n = max_seq * num_kv_heads * head_dim;
-                let zeros = vec![0.0_f32; n];
                 Ok(CudaKvLayer {
                     num_kv_heads,
                     head_dim,
-                    k: backend.htod_f32(&zeros)?,
-                    v: backend.htod_f32(&zeros)?,
+                    k: drv.device_alloc(n)?,
+                    v: drv.device_alloc(n)?,
                 })
             })
             .collect::<Result<Vec<_>, super::error::CudaInitError>>()?;
@@ -167,6 +172,21 @@ impl CudaKvCache {
             len: 0,
             layers,
         })
+    }
+
+    /// Returns true if this cache's shapes match the requested
+    /// `shapes` and `max_seq`. Used to make
+    /// `preallocate_kv_cache_per_layer` idempotent — reuse the
+    /// existing 1 GB-sized cache instead of re-allocating it on
+    /// every prefill_start.
+    fn matches_shape(&self, shapes: &[(usize, usize)], max_seq: usize) -> bool {
+        self.max_seq == max_seq
+            && self.layers.len() == shapes.len()
+            && self
+                .layers
+                .iter()
+                .zip(shapes)
+                .all(|(got, want)| got.num_kv_heads == want.0 && got.head_dim == want.1)
     }
 
     fn ensure_for_layers(
@@ -351,7 +371,21 @@ impl DecodeBackend for CudaBackend {
 
     fn preallocate_kv_cache_per_layer(&self, shapes: &[(usize, usize)], max_seq: usize) {
         if let Ok(mut cache) = self.kv_cache.lock() {
-            *cache = CudaKvCache::new_device(self, shapes, max_seq).ok();
+            // Idempotent: if the existing cache already matches the
+            // requested shape, just reset `len` to 0 instead of
+            // re-allocating the ~1 GB of K/V slabs. The bench harness
+            // calls this on every prefill_start; without this guard
+            // every prefill pays a fresh device alloc + memset for
+            // the full max_seq cache — ~38 ms per Gemma 3 4B prefill.
+            let needs_alloc = match cache.as_ref() {
+                Some(existing) => !existing.matches_shape(shapes, max_seq),
+                None => true,
+            };
+            if needs_alloc {
+                *cache = CudaKvCache::new_device(self, shapes, max_seq).ok();
+            } else if let Some(existing) = cache.as_mut() {
+                existing.len = 0;
+            }
         }
     }
 
@@ -1147,7 +1181,7 @@ impl CudaBackend {
         hidden: usize,
         inter: usize,
         q_dim: usize,
-        _kv_dim: usize,
+        kv_dim: usize,
         seq_len: usize,
         num_q_heads: usize,
         num_kv_heads: usize,
@@ -1156,6 +1190,28 @@ impl CudaBackend {
     ) -> Option<Vec<f32>> {
         if x.len() != seq_len * hidden || layers.is_empty() || seq_len == 0 {
             return None;
+        }
+
+        // Fast path: seq_len=1 prefill is a single transformer pass —
+        // delegate to `decode_token_device` to use the optimized mmvq
+        // path instead of the f32-GEMM batched path (which is slower
+        // for M=1). The bench harness in larql-inference calls
+        // `prefill_q4` with seq_len=1 for the first token of every
+        // generate, so this is hot.
+        if seq_len == 1 {
+            self.reset_kv_cache();
+            return self.decode_token_device(
+                layers,
+                x,
+                hidden,
+                inter,
+                q_dim,
+                kv_dim,
+                num_q_heads,
+                num_kv_heads,
+                head_dim,
+                rope_base,
+            );
         }
 
         // Reset KV cache for a fresh prefill.
