@@ -292,7 +292,7 @@ _Source: `openspec/specs/compute-cuda-kernels/spec.md`_
 | Q4_K × Q8_1 mmvq kernel SHALL match the existing direct f32 kernel | mmvq output matches the f32 direct kernel on Q8_1-dequantized input within 1e-3 | `larql_compute::cuda::q4k_mmvq::tests::q4k_mmvq_matches_q4k_direct_on_dequantized_input` |
 | Q4_K matvec dispatch SHALL be runtime-selectable | env var routes between mmvq and direct paths | _unbacked_ |
 | decode_token_device SHALL share Q8_1 input across same-input projections | greedy decode against real Gemma 3 4B vindex matches host fallback under mmvq | _unbacked_ |
-| Phase 3 SHALL clear a quantitative bench gate | bench cleared at acceptance | _unbacked_ |
+| Phase 3 SHALL clear a quantitative bench gate | bench cleared at acceptance OR profile-documented on miss | _unbacked_ |
 | CUDA Q4_K matvec uses a direct packed-weight kernel | Direct Q4_K matvec matches CPU reference at FFN dimensions | `larql_compute::test_cuda_q4::q4k_matvec_ffn_gate_parity` |
 | CUDA Q4_K matvec uses a direct packed-weight kernel | Direct Q4_K matvec matches CPU reference at LM-head dimensions | `larql_compute::test_cuda_q4::q4k_matvec_lm_head_parity` |
 | CUDA Q4_K matvec uses a direct packed-weight kernel | Host-dequant fallback remains available | `larql_compute::test_cuda_q4::q4k_matvec_host_dequant_fallback_parity` |

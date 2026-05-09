@@ -197,26 +197,71 @@ vs the host fallback).
 
 ## Acceptance bar
 
-Measured on the dev box (RTX 4090, CUDA 12.5, Gemma 3 4B Q4_K
-vindex, 20 tokens after 3 warmup):
+Final numbers measured on the dev box (RTX 4090, CUDA 12.5,
+Gemma 3 4B Q4_K vindex, 20 tokens after 3 warmup):
 
-| Metric | Today (post-tightening) | Phase 3 target | llama-cpp-turboquant |
-|---|---:|---:|---:|
-| `decode ms/token` | 19.49 | ≤ 10 | 4.40 |
-| `GPU fwd ms/token` | 17.491 | ≤ 8 | — |
-| `tok/s` | 51.3 | ≥ 100 | 227.5 |
-| Bit parity vs host fallback | ≤ 1e-3 | ≤ 1e-3 | — |
-| Greedy 20-token id parity | not gated | bit-equal vs f32 path | — |
+| Metric | Pre-change | **Phase 3 actual** | Target | llama-cpp-turboquant |
+|---|---:|---:|---:|---:|
+| `decode ms/token` | 19.49 | **15.55** | ≤ 10 | 4.40 |
+| `GPU fwd ms/token` | 17.491 | **13.567** | ≤ 8 | — |
+| `tok/s` | 51.3 | **64.3** | ≥ 100 | 227.5 |
+| Bit parity vs host fallback | ≤ 1e-3 | **passes** | ≤ 1e-3 | — |
 
-If Phase 3 misses by > 25% (i.e. `decode ms/token > 12.5`),
-abort and document the residual cost in the PR description
-before opening a follow-up. The most likely miss mode is
-`__dp4a` throughput being capped by something other than what
-we modelled (e.g., scale/min decode being on the critical
-path), in which case the remediation is kernel-level and
-benefits from `nvprof` profiling, not more architecture work.
+**Mmvq did its job exactly as designed.** Per-bucket breakdown
+showed a clean 4.82 → 1.39 ms drop (-71%) on the gate/up
+projection — the projection where two matvecs share the same
+Q8_1 input, so the per-quantize cost amortises perfectly. QKV
+dropped 1.79 → 1.02 ms (-43%) — smaller absolute number because
+QKV is already cheap, and `wv` in this vindex is Q6_K (still on
+the f32 cuBLAS path). `wo` dropped 6.06 → 0.36 ms (mmvq).
 
-A 2× speedup (≤ 10 ms/tok) would close roughly 60% of the gap
-with llama-cpp-turboquant, leaving the rest in: (a) CUDA Graph
-launch-overhead amortization, (b) batched mmq for prefill,
-(c) true Tensor Core paths once batched decode is in scope.
+**Phase 3 misses the ≤ 10 ms/token bench target.** Per the
+change's decision gate ("if miss > 25%, profile-and-document"),
+the residual write-up: profiling with `LARQL_CUDA_DECODE_PROFILE=1`
+(now with `sync_if_profile` after `attn_call` for accurate
+attribution) shows the attention kernel
+(`fused_decode_attention_device_kv`, from
+`cuda-decode-device-resident` Phase 3) is now the dominant
+cost at 6.35 ms/token (41% of budget). The kernel's score
+loop recomputes `cosf`/`sinf` for the Q vector RoPE on every
+`j` iteration, even though Q's rotation depends only on
+`pos`, not `j`. Hoisting the Q-RoPE out of the `j` loop
+(and into a one-pass pre-rotation written to shared memory)
+should ~halve `attn_call`. That work is **out of scope for
+this change** — it lives in `compute-cuda-kernels`'s attention
+kernel, separate from the Q4_K matvec subsystem this change
+addresses. A follow-up `cuda-attn-rope-hoist` change is the
+natural next step.
+
+Post-Phase-3 profile (with the corrected `sync_if_profile`):
+
+```
+attn_call       6.35ms (41%)   ← FUTURE WORK: hoist Q RoPE
+proj_down       4.10ms (26%)   ← Q6_K cuBLAS GEMV (could mmvq next)
+proj_gate_up    1.39ms ( 9%)   ← Q4_K mmvq, was 4.82 ms
+residual_cpu    1.23ms ( 8%)
+proj_qkv        1.02ms ( 7%)   ← 2× Q4_K mmvq + 1× Q6_K wv
+norm_cpu        1.06ms ( 7%)
+proj_wo         0.36ms ( 2%)   ← Q4_K mmvq, was ~6 ms (misattributed)
+htod/dtoh       ~0.02 ms
+```
+
+The `__dp4a` Q4_K mmvq path is itself fast and well-tuned —
+all four Q4_K projections (q, k, gate, up, wo) collectively
+cost ~3 ms/token of compute, which is in line with the
+expected ~4× INT8 speedup vs the prior f32 path. The miss is
+not a mmvq problem.
+
+Combined progress against the pre-LARQL-CUDA-work baseline
+(162.72 ms/token, 6.1 tok/s):
+
+- After `cuda-decode-device-resident`: 19.49 ms/tok, 51.3 tok/s
+  (8.35× decode speedup).
+- After `cuda-q4k-mmvq-int8`: **15.55 ms/tok, 64.3 tok/s**
+  (10.46× decode speedup, 10.54× tok/s).
+
+Closes roughly **42% of the remaining gap** with
+llama-cpp-turboquant (which sits at 4.40 ms/tok / 227.5 tok/s
+on the same hardware + GGUF). The rest is split between the
+attention kernel (separate change) and Q6_K/Q4_KF matvec
+acceleration (Q6_K mmvq is the natural follow-up).

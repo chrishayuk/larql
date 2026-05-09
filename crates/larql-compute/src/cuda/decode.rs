@@ -11,8 +11,16 @@ use crate::{Activation, FfnType, FullPipelineLayer, NormType, QuantFormat, Quant
 use cudarc::driver::CudaSlice;
 
 use super::backend::CudaBackend;
+use super::elem::Q8_1Buf;
 use super::matmul as kernels;
-use super::{attn, dequant, elem};
+use super::{attn, dequant, elem, q4k_mmvq};
+
+/// `LARQL_CUDA_Q4K_MMVQ=0` disables the new Q4_K × Q8_1 mmvq path
+/// and forces the existing f32-direct Q4_K matvec. Default behaviour
+/// (`unset` or `=1`) routes Q4_K projections through mmvq.
+fn q4k_mmvq_enabled() -> bool {
+    std::env::var("LARQL_CUDA_Q4K_MMVQ").ok().as_deref() != Some("0")
+}
 
 /// `LARQL_CUDA_DECODE_HOST_FALLBACK=1` forces the legacy
 /// `decode_token_host_fallback` path that bounces every projection
@@ -278,6 +286,27 @@ fn matvec_device(
             .ok(),
         _ => None,
     }
+}
+
+/// Q4_K mmvq-aware matvec dispatch. If the weight is Q4_K and
+/// `LARQL_CUDA_Q4K_MMVQ` is enabled and a `Q8_1Buf` is supplied,
+/// routes through `q4k_mmvq::matvec_device` (INT8 SIMD via
+/// `__dp4a`). Otherwise falls back to `matvec_device` (f32 direct).
+/// `cuda-q4k-mmvq-int8` Phase 3.
+fn matvec_device_mmvq(
+    backend: &CudaBackend,
+    weight: QuantWeight<'_>,
+    x_dev: &CudaSlice<f32>,
+    x_q8_1: Option<&Q8_1Buf>,
+    rows: usize,
+    cols: usize,
+) -> Option<CudaSlice<f32>> {
+    if let (QuantFormat::Q4_K, Some(q8)) = (weight.format, x_q8_1) {
+        if q4k_mmvq_enabled() {
+            return q4k_mmvq::matvec_device(backend, weight.data, q8, rows, cols).ok();
+        }
+    }
+    matvec_device(backend, weight, x_dev, rows, cols)
 }
 
 impl DecodeBackend for CudaBackend {
@@ -760,11 +789,43 @@ impl CudaBackend {
             sync_if_profile(self);
             prof.norm_cpu += t.elapsed();
 
-            // ── 2. Q/K/V projections ───────────────────────────────
+            // ── 2. Q/K/V projections — shared Q8_1 input (Phase 3) ─
+            // Quantize h_attn once per layer; share across q/k/v.
+            let h_attn_q8_1 = if q4k_mmvq_enabled()
+                && (layer.wq.format == QuantFormat::Q4_K
+                    || layer.wk.format == QuantFormat::Q4_K
+                    || layer.wv.format == QuantFormat::Q4_K)
+                && hidden.is_multiple_of(32)
+            {
+                elem::quantize_q8_1_device(self, &h_attn_dev, hidden).ok()
+            } else {
+                None
+            };
             let t = std::time::Instant::now();
-            let q_dev = matvec_device(self, layer.wq, &h_attn_dev, layer_q_dim, hidden)?;
-            let k_dev = matvec_device(self, layer.wk, &h_attn_dev, layer_kv_dim, hidden)?;
-            let v_dev = matvec_device(self, layer.wv, &h_attn_dev, layer_kv_dim, hidden)?;
+            let q_dev = matvec_device_mmvq(
+                self,
+                layer.wq,
+                &h_attn_dev,
+                h_attn_q8_1.as_ref(),
+                layer_q_dim,
+                hidden,
+            )?;
+            let k_dev = matvec_device_mmvq(
+                self,
+                layer.wk,
+                &h_attn_dev,
+                h_attn_q8_1.as_ref(),
+                layer_kv_dim,
+                hidden,
+            )?;
+            let v_dev = matvec_device_mmvq(
+                self,
+                layer.wv,
+                &h_attn_dev,
+                h_attn_q8_1.as_ref(),
+                layer_kv_dim,
+                hidden,
+            )?;
             sync_if_profile(self);
             prof.proj_qkv += t.elapsed();
 
@@ -796,18 +857,41 @@ impl CudaBackend {
                 },
             )
             .ok()?;
+            sync_if_profile(self);
             prof.attn_call += t.elapsed();
 
-            // ── 4. wo projection ───────────────────────────────────
+            // ── 4. wo projection — Q8_1 quantize for single-use Q4_K ─
+            let attn_out_q8_1 = if q4k_mmvq_enabled()
+                && layer.wo.format == QuantFormat::Q4_K
+                && layer_q_dim.is_multiple_of(32)
+            {
+                elem::quantize_q8_1_device(self, &attn_out_dev, layer_q_dim).ok()
+            } else {
+                None
+            };
             let t = std::time::Instant::now();
-            let attn_delta_dev = matvec_device(self, layer.wo, &attn_out_dev, hidden, layer_q_dim)
-                .or_else(|| {
-                    if q_dim != layer_q_dim {
-                        None
-                    } else {
-                        matvec_device(self, layer.wo, &attn_out_dev, hidden, q_dim)
-                    }
-                })?;
+            let attn_delta_dev = matvec_device_mmvq(
+                self,
+                layer.wo,
+                &attn_out_dev,
+                attn_out_q8_1.as_ref(),
+                hidden,
+                layer_q_dim,
+            )
+            .or_else(|| {
+                if q_dim != layer_q_dim {
+                    None
+                } else {
+                    matvec_device_mmvq(
+                        self,
+                        layer.wo,
+                        &attn_out_dev,
+                        attn_out_q8_1.as_ref(),
+                        hidden,
+                        q_dim,
+                    )
+                }
+            })?;
             sync_if_profile(self);
             prof.proj_wo += t.elapsed();
 
@@ -855,10 +939,32 @@ impl CudaBackend {
             sync_if_profile(self);
             prof.norm_cpu += t.elapsed();
 
-            // ── 7. gate / up projections ───────────────────────────
+            // ── 7. gate / up projections — shared Q8_1 input ───────
+            let h_ffn_q8_1 = if q4k_mmvq_enabled()
+                && (layer.gate.format == QuantFormat::Q4_K || layer.up.format == QuantFormat::Q4_K)
+                && hidden.is_multiple_of(32)
+            {
+                elem::quantize_q8_1_device(self, &h_ffn_dev, hidden).ok()
+            } else {
+                None
+            };
             let t = std::time::Instant::now();
-            let gate_dev = matvec_device(self, layer.gate, &h_ffn_dev, inter, hidden)?;
-            let up_dev = matvec_device(self, layer.up, &h_ffn_dev, inter, hidden)?;
+            let gate_dev = matvec_device_mmvq(
+                self,
+                layer.gate,
+                &h_ffn_dev,
+                h_ffn_q8_1.as_ref(),
+                inter,
+                hidden,
+            )?;
+            let up_dev = matvec_device_mmvq(
+                self,
+                layer.up,
+                &h_ffn_dev,
+                h_ffn_q8_1.as_ref(),
+                inter,
+                hidden,
+            )?;
             sync_if_profile(self);
             prof.proj_gate_up += t.elapsed();
 

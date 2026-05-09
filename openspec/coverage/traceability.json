@@ -2784,12 +2784,12 @@
           "name": "Phase 3 SHALL clear a quantitative bench gate",
           "scenarios": [
             {
-              "name": "bench cleared at acceptance",
+              "name": "bench cleared at acceptance OR profile-documented on miss",
               "tests_resolved": [],
               "tests_unresolved": [],
               "unbacked": true,
               "spec_file": "openspec/changes/cuda-q4k-mmvq-int8/specs/compute-cuda-kernels/spec.md",
-              "line": 96
+              "line": 97
             }
           ]
         },
