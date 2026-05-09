@@ -78,13 +78,48 @@
       kernel arithmetic plus the inevitable K/V cache D2H per
       layer is. See PR description for the bench numbers.
 
-## Phase 2 — DROPPED
+## Phase 2 — Revisited and shipped after Phase 3
 
-After Phase 1, profiling under `LARQL_CUDA_DECODE_PROFILE=1`
-showed the targeted ops (rms_norm + silu_gate_up + add_in_place)
-sum to <6 ms/tok — not on the critical path. Phase 2 work is
-out of scope; the time saved in those ops would not have
-cleared the ≤80 ms/tok target.
+Phase 2 was deferred after Phase 1's profile showed the
+targeted ops were <6 ms/tok = 3.4% of total — not worth the
+implementation cost at that point. After Phase 3 removed the
+K/V cache transfers and decode dropped from 152 to 27 ms/tok,
+those same ops became 21% of the residual budget — the
+cheapest remaining lever — so Phase 2 was revisited.
+
+### 6. New kernels (`crates/larql-compute/src/cuda/elem.rs`)
+
+- [x] 6.1 `rms_norm_device(x_dev, weight_dev, n, eps, offset)`
+      — single-block NVRTC kernel, 1024 threads, parallel
+      reduction. `weight_dev: Option<&CudaSlice<f32>>` lets the
+      caller pass `None` when the host side would have used an
+      empty slice.
+- [x] 6.2 `silu_gate_up_device(gate_dev, up_dev, n, gelu_tanh)`
+      — element-wise; supports both `Activation::Silu` and
+      `Activation::GeluTanh` via a flag.
+- [x] 6.3 `add_in_place_device(dst, delta)` — element-wise.
+- [x] 6.4 `scale_inplace_device(dst, scalar)` — element-wise;
+      used for the per-layer `layer_scalar` multiplier.
+
+### 7. Wire into decode_token_device
+
+- [x] 7.1 Initial `htod_f32(x)` produces `h_dev: CudaSlice<f32>`
+      that lives across the entire layer loop.
+- [x] 7.2 Per layer: pre-attn norm, optional post-attn norm of
+      delta, residual add, pre-FFN norm, gate/up, silu/gelu,
+      down, optional post-FFN norm of delta, residual add,
+      optional layer-scalar — all on device.
+- [x] 7.3 Single `dtoh_f32(h_dev)` after the layer loop returns
+      the `Vec<f32>` to the caller. No per-layer host crossings.
+
+### 8. Tests + bench
+
+- [x] 8.1 `decode_token_phase1_matches_host_fallback` — same
+      multi-step parity test from Phase 1 — still passes after
+      Phase 2. Covers GPU rms_norm + silu + add + scale against
+      the host CPU helpers within 1e-3 max-element.
+- [x] 8.2 Bench: `decode 20.13 ms/tok`, `GPU fwd 18.175 ms`,
+      `49.7 tok/s` — clears every target with margin.
 
 ## Phase 3 — Device-resident KV cache (now the only post-P1 work)
 

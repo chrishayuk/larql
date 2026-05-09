@@ -176,34 +176,41 @@ which are additive.
 Final numbers measured on the dev box (RTX 4090, CUDA 13.1,
 Gemma 3 4B Q4_K vindex, 20 tokens after 3 warmup):
 
-| Metric | Pre-change | Phase 1 | **Phase 3 (final)** | Target |
-|---|---:|---:|---:|---:|
-| `decode ms/token` | 162.72 | 152.73 | **27.37** | ≤ 60 |
-| `GPU fwd ms/token` | 160.820 | 151.024 | **25.416** | ≤ 55 |
-| `prefill ms` | 1100.7 | 1100.7 | **227.3** | — |
-| `tok/s` | 6.1 | 6.5 | **36.5** | ≥ 16 |
-| Bit parity vs host fallback | — | ≤ 1e-3 | ≤ 1e-3 | ≤ 1e-3 |
+| Metric | Pre-change | Phase 1 | Phase 3 | **Phase 2** | Target |
+|---|---:|---:|---:|---:|---:|
+| `decode ms/token` | 162.72 | 152.73 | 27.37 | **20.13** | ≤ 60 |
+| `GPU fwd ms/token` | 160.820 | 151.024 | 25.416 | **18.175** | ≤ 55 |
+| `prefill ms` | 1100.7 | 1100.7 | 227.3 | **184.7** | — |
+| `tok/s` | 6.1 | 6.5 | 36.5 | **49.7** | ≥ 16 |
+| Bit parity vs host fallback | — | ≤ 1e-3 | ≤ 1e-3 | **≤ 1e-3** | ≤ 1e-3 |
 
-**Phase 3 beats every target.** Decode 5.94× faster than the
-pre-change baseline; throughput up 6×. Phase 2 was profiled
-out of scope (its targeted ops summed to <6 ms/tok and weren't
-on the critical path); Phase 3's device-resident KV cache
-removed the 2.2 GB/token of PCIe traffic that was 86.5% of the
-pre-Phase-3 cost.
+**Final result: 8.08× faster decode, 8.15× throughput vs the
+pre-change baseline.** Phase 2 was originally dropped after
+Phase 1 because its targeted ops (rms_norm + silu + add) summed
+to <6 ms/tok and weren't on the critical path. After Phase 3
+removed the K/V cache transfers, those same ops became 21% of
+the budget — the cheapest remaining lever — so Phase 2 was
+revisited with NVRTC kernels for `rms_norm_vec_device`,
+`silu_gate_up_device`, `add_in_place_device`, and
+`scale_inplace_device`. Decode now keeps `h` on the device
+across the entire layer loop with a single H2D (input) and a
+single D2H (output) per token.
 
-Post-Phase-3 profile (steady state, 26.6 ms/tok total):
+Post-Phase-2 profile (steady state, 21 ms/tok total):
 
 ```
-proj_wo         7.02ms (26.3%)
-norm_cpu        5.67ms (21.3%)   ← Phase 2's old target, now small
-proj_gate_up    5.17ms (19.4%)
-proj_down       4.21ms (15.8%)
-proj_qkv        1.79ms ( 6.7%)
-htod            0.89ms ( 3.3%)
-attn_call       0.50ms ( 1.9%)   ← was 144.7ms before Phase 3
-dtoh_*          1.42ms ( 5.3%)
-residual_cpu    0.24ms ( 0.9%)
+proj_wo         6.54ms (31.0%)   ← biggest now: cuBLAS GEMV
+proj_gate_up    4.82ms (22.8%)   ← Q4_K direct matvec
+proj_down       4.20ms (19.9%)   ← Q6_K cached f32 GEMV
+proj_qkv        1.70ms ( 8.1%)   ← Q4_K direct matvec
+norm_cpu        1.37ms ( 6.5%)   ← GPU norm/silu kernel launch only
+residual_cpu    1.25ms ( 5.9%)   ← GPU add/scale kernel launch only
+htod            0.65ms ( 3.1%)   ← per-layer norm-weight htod's
+attn_call       0.54ms ( 2.6%)
+dtoh            0.01ms ( 0.1%)   ← single dtoh per token
 ```
 
-Compute (cuBLAS launch + arithmetic on projections) is now the
-dominant cost; the change ships and archives.
+The remaining cost is dominated by pure compute on the
+projection GEMVs (≈82% of the budget). Further wins past 20
+ms/tok require Tensor Cores (BF16 path) or Q4_K kernel tuning
+— out of scope for this change. Archive on next pass.

@@ -12,7 +12,7 @@ use cudarc::driver::CudaSlice;
 
 use super::backend::CudaBackend;
 use super::matmul as kernels;
-use super::{attn, dequant};
+use super::{attn, dequant, elem};
 
 /// `LARQL_CUDA_DECODE_HOST_FALLBACK=1` forces the legacy
 /// `decode_token_host_fallback` path that bounces every projection
@@ -664,16 +664,13 @@ impl CudaBackend {
         Some(h)
     }
 
-    /// Device-resident decode path. `cuda-decode-device-resident`
-    /// Phase 1.
-    ///
-    /// Per-layer the projections (Q/K/V/O/gate/up/down) hold their
-    /// inputs and outputs as `CudaSlice<f32>` so the seven matvec
-    /// outputs no longer dtoh after each launch. `rms_norm` and the
-    /// silu/gate-up activation still run on host (Phase 2 will move
-    /// them onto the GPU). Returns `None` if any projection format
-    /// is unsupported on the device path; callers should fall back
-    /// to `decode_token_host_fallback`.
+    /// Device-resident decode path.
+    /// `cuda-decode-device-resident` Phase 2: `h` stays on the device
+    /// across the entire layer loop. RMSNorm, silu/gelu activation,
+    /// residual add, and the per-layer scalar all run as their own
+    /// kernels (`super::elem`). Only one H2D (initial input) and one
+    /// D2H (final output) cross the bus per token, plus the small
+    /// per-layer norm-weight htod's.
     #[allow(clippy::too_many_arguments)]
     pub(crate) fn decode_token_device(
         &self,
@@ -691,7 +688,6 @@ impl CudaBackend {
         if x.len() != hidden || layers.is_empty() {
             return None;
         }
-        let mut h = x.to_vec();
         let mut guard = self.kv_cache.lock().ok()?;
         if guard.is_none() {
             let shapes: Vec<(usize, usize)> = layers
@@ -720,13 +716,17 @@ impl CudaBackend {
 
         let profile_on = decode_profile_enabled();
         let mut prof = DecodeProfile::default();
-        // Forces queued GPU work to drain so the next section's
-        // wall-clock measurement reflects only its own kernels.
         let sync_if_profile = |b: &CudaBackend| {
             if profile_on {
                 let _ = b.driver().sync();
             }
         };
+
+        // ── Initial H2D: input row → device-resident running residual ─
+        let t = std::time::Instant::now();
+        let mut h_dev = self.htod_f32(x).ok()?;
+        sync_if_profile(self);
+        prof.htod += t.elapsed();
 
         for (layer_idx, layer) in layers.iter().enumerate() {
             let layer_head_dim = layer.head_dim.max(head_dim);
@@ -741,18 +741,39 @@ impl CudaBackend {
             };
             let layer_rotary_dim = layer.rotary_dim;
 
-            // ── 1. RMSNorm (CPU) ───────────────────────────────────
+            // Norm-weight htod's (small, ~10 KB each). A follow-up can
+            // cache these by host pointer to drop the per-call htod
+            // overhead; the bench shows it isn't on the critical path
+            // yet.
             let t = std::time::Instant::now();
-            let h_attn = rms_norm_vec(&h, layer.input_norm, layer.eps, layer.norm_offset);
-            prof.norm_cpu += t.elapsed();
-
-            // ── 1b. htod h_attn ────────────────────────────────────
-            let t = std::time::Instant::now();
-            let h_attn_dev = self.htod_f32(&h_attn).ok()?;
+            let input_norm_dev = self.htod_f32(layer.input_norm).ok()?;
+            let post_attn_norm_dev = self.htod_f32(layer.post_attn_norm).ok()?;
+            let pre_ffn_norm_dev = match layer.pre_ffn_norm {
+                Some(w) => Some(self.htod_f32(w).ok()?),
+                None => None,
+            };
+            let post_ffn_norm_dev = match layer.post_ffn_norm {
+                Some(w) if !w.is_empty() => Some(self.htod_f32(w).ok()?),
+                _ => None,
+            };
             sync_if_profile(self);
             prof.htod += t.elapsed();
 
-            // ── 2. Q/K/V projections, device-resident ──────────────
+            // ── 1. Pre-attn norm: h_attn = rms_norm(h, input_norm) ──
+            let t = std::time::Instant::now();
+            let h_attn_dev = elem::rms_norm_device(
+                self,
+                &h_dev,
+                Some(&input_norm_dev),
+                hidden,
+                layer.eps,
+                layer.norm_offset,
+            )
+            .ok()?;
+            sync_if_profile(self);
+            prof.norm_cpu += t.elapsed();
+
+            // ── 2. Q/K/V projections ───────────────────────────────
             let t = std::time::Instant::now();
             let q_dev = matvec_device(self, layer.wq, &h_attn_dev, layer_q_dim, hidden)?;
             let k_dev = matvec_device(self, layer.wk, &h_attn_dev, layer_kv_dim, hidden)?;
@@ -760,7 +781,7 @@ impl CudaBackend {
             sync_if_profile(self);
             prof.proj_qkv += t.elapsed();
 
-            // ── 3. Fused decode attention — Phase 3 device-resident KV ─
+            // ── 3. Fused decode attention (Phase 3 device KV cache) ─
             let max_seq = cache.max_seq;
             let kv_slot = cache.layers.get_mut(layer_idx)?;
             let t = std::time::Instant::now();
@@ -803,42 +824,43 @@ impl CudaBackend {
             sync_if_profile(self);
             prof.proj_wo += t.elapsed();
 
-            // ── 4b. dtoh attn_delta ────────────────────────────────
+            // ── 5. h += norm(attn_delta) (or just attn_delta) ──────
             let t = std::time::Instant::now();
-            let attn_delta = self.dtoh_f32(&attn_delta_dev).ok()?;
-            prof.dtoh_attn_delta += t.elapsed();
-
-            // ── 5. Residual + post-attn rms (CPU) ──────────────────
-            let t = std::time::Instant::now();
-            let mut h_post_attn = h.clone();
             if layer.has_post_norms {
-                let normed = rms_norm_vec(
-                    &attn_delta,
-                    layer.post_attn_norm,
+                let normed = elem::rms_norm_device(
+                    self,
+                    &attn_delta_dev,
+                    Some(&post_attn_norm_dev),
+                    hidden,
                     layer.eps,
                     layer.norm_offset,
-                );
-                add_in_place(&mut h_post_attn, &normed);
+                )
+                .ok()?;
+                elem::add_in_place_device(self, &mut h_dev, &normed).ok()?;
             } else {
-                add_in_place(&mut h_post_attn, &attn_delta);
+                elem::add_in_place_device(self, &mut h_dev, &attn_delta_dev).ok()?;
             }
+            sync_if_profile(self);
             prof.residual_cpu += t.elapsed();
 
-            // ── 6. Pre-FFN rms (CPU) ───────────────────────────────
-            let ffn_norm_weight = if layer.has_post_norms {
-                layer.pre_ffn_norm.unwrap_or(layer.post_attn_norm)
+            // ── 6. h_ffn = rms_norm(h, ffn_norm_weight) ────────────
+            let ffn_norm_dev = if layer.has_post_norms {
+                pre_ffn_norm_dev.as_ref().unwrap_or(&post_attn_norm_dev)
             } else {
-                layer.post_attn_norm
+                &post_attn_norm_dev
             };
             let t = std::time::Instant::now();
-            let h_ffn = rms_norm_vec(&h_post_attn, ffn_norm_weight, layer.eps, layer.norm_offset);
-            prof.norm_cpu += t.elapsed();
-
-            // ── 6b. htod h_ffn ─────────────────────────────────────
-            let t = std::time::Instant::now();
-            let h_ffn_dev = self.htod_f32(&h_ffn).ok()?;
+            let h_ffn_dev = elem::rms_norm_device(
+                self,
+                &h_dev,
+                Some(ffn_norm_dev),
+                hidden,
+                layer.eps,
+                layer.norm_offset,
+            )
+            .ok()?;
             sync_if_profile(self);
-            prof.htod += t.elapsed();
+            prof.norm_cpu += t.elapsed();
 
             // ── 7. gate / up projections ───────────────────────────
             let t = std::time::Instant::now();
@@ -847,22 +869,13 @@ impl CudaBackend {
             sync_if_profile(self);
             prof.proj_gate_up += t.elapsed();
 
-            // ── 7b. dtoh gate / up ─────────────────────────────────
+            // ── 8. silu_gate_up_device(gate, up) ───────────────────
             let t = std::time::Instant::now();
-            let gate = self.dtoh_f32(&gate_dev).ok()?;
-            let up = self.dtoh_f32(&up_dev).ok()?;
-            prof.dtoh_gate_up += t.elapsed();
-
-            // ── 8. Activation (CPU) ────────────────────────────────
-            let t = std::time::Instant::now();
-            let act = activate(&gate, &up, layer.activation);
-            prof.norm_cpu += t.elapsed();
-
-            // ── 8b. htod act ───────────────────────────────────────
-            let t = std::time::Instant::now();
-            let act_dev = self.htod_f32(&act).ok()?;
+            let gelu_tanh = matches!(layer.activation, Activation::GeluTanh);
+            let act_dev =
+                elem::silu_gate_up_device(self, &gate_dev, &up_dev, inter, gelu_tanh).ok()?;
             sync_if_profile(self);
-            prof.htod += t.elapsed();
+            prof.norm_cpu += t.elapsed();
 
             // ── 9. down projection ─────────────────────────────────
             let t = std::time::Instant::now();
@@ -870,29 +883,47 @@ impl CudaBackend {
             sync_if_profile(self);
             prof.proj_down += t.elapsed();
 
-            // ── 9b. dtoh ffn_delta ─────────────────────────────────
+            // ── 10. h += norm(ffn_delta) (or just ffn_delta) ───────
             let t = std::time::Instant::now();
-            let ffn_delta = self.dtoh_f32(&ffn_delta_dev).ok()?;
-            prof.dtoh_ffn_delta += t.elapsed();
-
-            // ── 10. Residual + optional post-ffn rms (CPU) ─────────
-            let t = std::time::Instant::now();
-            let mut h_out = h_post_attn;
             if layer.has_post_norms {
-                let post = layer.post_ffn_norm.unwrap_or(&[]);
-                let normed = rms_norm_vec(&ffn_delta, post, layer.eps, layer.norm_offset);
-                add_in_place(&mut h_out, &normed);
+                if let Some(post_norm_dev) = post_ffn_norm_dev.as_ref() {
+                    let normed = elem::rms_norm_device(
+                        self,
+                        &ffn_delta_dev,
+                        Some(post_norm_dev),
+                        hidden,
+                        layer.eps,
+                        layer.norm_offset,
+                    )
+                    .ok()?;
+                    elem::add_in_place_device(self, &mut h_dev, &normed).ok()?;
+                } else {
+                    // post_ffn_norm absent → normalise without weight
+                    let normed = elem::rms_norm_device(
+                        self,
+                        &ffn_delta_dev,
+                        None,
+                        hidden,
+                        layer.eps,
+                        layer.norm_offset,
+                    )
+                    .ok()?;
+                    elem::add_in_place_device(self, &mut h_dev, &normed).ok()?;
+                }
             } else {
-                add_in_place(&mut h_out, &ffn_delta);
+                elem::add_in_place_device(self, &mut h_dev, &ffn_delta_dev).ok()?;
             }
             if layer.layer_scalar != 0.0 && layer.layer_scalar != 1.0 {
-                for v in &mut h_out {
-                    *v *= layer.layer_scalar;
-                }
+                elem::scale_inplace_device(self, &mut h_dev, layer.layer_scalar).ok()?;
             }
-            h = h_out;
+            sync_if_profile(self);
             prof.residual_cpu += t.elapsed();
         }
+
+        // ── Final D2H: device-resident `h` → host Vec<f32> ─────────
+        let t = std::time::Instant::now();
+        let h = self.dtoh_f32(&h_dev).ok()?;
+        prof.dtoh_ffn_delta += t.elapsed();
 
         if profile_on {
             prof.report(layers.len());

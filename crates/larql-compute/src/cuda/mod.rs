@@ -18,6 +18,7 @@ mod cache;
 mod decode;
 mod dequant;
 mod driver;
+mod elem;
 mod error;
 mod matmul;
 #[cfg(feature = "cuda-oxide")]
