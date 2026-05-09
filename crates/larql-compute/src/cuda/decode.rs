@@ -25,6 +25,74 @@ fn host_fallback_enabled() -> bool {
         == Some("1")
 }
 
+/// `LARQL_CUDA_DECODE_PROFILE=1` enables per-section instrumentation
+/// inside `decode_token_device`. Adds a `drv.sync()` at each section
+/// boundary (so wall-clock time accounts for GPU work too) and
+/// prints a one-line breakdown per token. Disabled by default; the
+/// added syncs make the path slower than the unprofiled version.
+fn decode_profile_enabled() -> bool {
+    std::env::var("LARQL_CUDA_DECODE_PROFILE").ok().as_deref() == Some("1")
+}
+
+#[derive(Default, Debug, Clone)]
+struct DecodeProfile {
+    norm_cpu: std::time::Duration,
+    htod: std::time::Duration,
+    proj_qkv: std::time::Duration,
+    attn_call: std::time::Duration,
+    proj_wo: std::time::Duration,
+    dtoh_attn_delta: std::time::Duration,
+    proj_gate_up: std::time::Duration,
+    dtoh_gate_up: std::time::Duration,
+    proj_down: std::time::Duration,
+    dtoh_ffn_delta: std::time::Duration,
+    residual_cpu: std::time::Duration,
+}
+
+impl DecodeProfile {
+    fn total(&self) -> std::time::Duration {
+        self.norm_cpu
+            + self.htod
+            + self.proj_qkv
+            + self.attn_call
+            + self.proj_wo
+            + self.dtoh_attn_delta
+            + self.proj_gate_up
+            + self.dtoh_gate_up
+            + self.proj_down
+            + self.dtoh_ffn_delta
+            + self.residual_cpu
+    }
+
+    fn report(&self, layers: usize) {
+        let total = self.total();
+        let ms = |d: std::time::Duration| d.as_secs_f64() * 1000.0;
+        let pct = |d: std::time::Duration| {
+            if total.is_zero() {
+                0.0
+            } else {
+                d.as_secs_f64() / total.as_secs_f64() * 100.0
+            }
+        };
+        eprintln!(
+            "[cuda-decode-profile] token total={:.2}ms ({} layers)\n  norm_cpu       {:6.2}ms ({:4.1}%)\n  htod           {:6.2}ms ({:4.1}%)\n  proj_qkv       {:6.2}ms ({:4.1}%)\n  attn_call      {:6.2}ms ({:4.1}%)\n  proj_wo        {:6.2}ms ({:4.1}%)\n  dtoh_attn_d    {:6.2}ms ({:4.1}%)\n  proj_gate_up   {:6.2}ms ({:4.1}%)\n  dtoh_gate_up   {:6.2}ms ({:4.1}%)\n  proj_down      {:6.2}ms ({:4.1}%)\n  dtoh_ffn_d     {:6.2}ms ({:4.1}%)\n  residual_cpu   {:6.2}ms ({:4.1}%)",
+            ms(total),
+            layers,
+            ms(self.norm_cpu), pct(self.norm_cpu),
+            ms(self.htod), pct(self.htod),
+            ms(self.proj_qkv), pct(self.proj_qkv),
+            ms(self.attn_call), pct(self.attn_call),
+            ms(self.proj_wo), pct(self.proj_wo),
+            ms(self.dtoh_attn_delta), pct(self.dtoh_attn_delta),
+            ms(self.proj_gate_up), pct(self.proj_gate_up),
+            ms(self.dtoh_gate_up), pct(self.dtoh_gate_up),
+            ms(self.proj_down), pct(self.proj_down),
+            ms(self.dtoh_ffn_delta), pct(self.dtoh_ffn_delta),
+            ms(self.residual_cpu), pct(self.residual_cpu),
+        );
+    }
+}
+
 /// Layer projections eligible for the device-resident hot path. Other
 /// formats (FP16, etc.) hit the host fallback silently.
 fn layer_supports_device_path(layer: &FullPipelineLayer<'_>) -> bool {
@@ -600,6 +668,16 @@ impl CudaBackend {
             return None;
         }
 
+        let profile_on = decode_profile_enabled();
+        let mut prof = DecodeProfile::default();
+        // Forces queued GPU work to drain so the next section's
+        // wall-clock measurement reflects only its own kernels.
+        let sync_if_profile = |b: &CudaBackend| {
+            if profile_on {
+                let _ = b.driver().sync();
+            }
+        };
+
         for (layer_idx, layer) in layers.iter().enumerate() {
             let layer_head_dim = layer.head_dim.max(head_dim);
             let layer_num_q_heads = layer.num_q_heads.max(num_q_heads);
@@ -613,17 +691,28 @@ impl CudaBackend {
             };
             let layer_rotary_dim = layer.rotary_dim;
 
-            // ── 1. RMSNorm (CPU) → htod h_attn ──────────────────────
+            // ── 1. RMSNorm (CPU) ───────────────────────────────────
+            let t = std::time::Instant::now();
             let h_attn = rms_norm_vec(&h, layer.input_norm, layer.eps, layer.norm_offset);
-            let h_attn_dev = self.htod_f32(&h_attn).ok()?;
+            prof.norm_cpu += t.elapsed();
 
-            // ── 2. Q/K/V projections, device-resident ────────────────
+            // ── 1b. htod h_attn ────────────────────────────────────
+            let t = std::time::Instant::now();
+            let h_attn_dev = self.htod_f32(&h_attn).ok()?;
+            sync_if_profile(self);
+            prof.htod += t.elapsed();
+
+            // ── 2. Q/K/V projections, device-resident ──────────────
+            let t = std::time::Instant::now();
             let q_dev = matvec_device(self, layer.wq, &h_attn_dev, layer_q_dim, hidden)?;
             let k_dev = matvec_device(self, layer.wk, &h_attn_dev, layer_kv_dim, hidden)?;
             let v_dev = matvec_device(self, layer.wv, &h_attn_dev, layer_kv_dim, hidden)?;
+            sync_if_profile(self);
+            prof.proj_qkv += t.elapsed();
 
             // ── 3. Fused decode attention (device q/k/v in, device out) ─
             let kv_slot = cache.layers.get_mut(layer_idx)?;
+            let t = std::time::Instant::now();
             let attn_out = attn::fused_decode_attention_device(
                 self,
                 &q_dev,
@@ -648,11 +737,13 @@ impl CudaBackend {
                 },
             )
             .ok()?;
+            prof.attn_call += t.elapsed();
             kv_slot.k = attn_out.k_cache;
             kv_slot.v = attn_out.v_cache;
             let attn_out_dev: CudaSlice<f32> = attn_out.out;
 
-            // ── 4. wo projection (device-resident) ──────────────────
+            // ── 4. wo projection ───────────────────────────────────
+            let t = std::time::Instant::now();
             let attn_delta_dev = matvec_device(self, layer.wo, &attn_out_dev, hidden, layer_q_dim)
                 .or_else(|| {
                     if q_dim != layer_q_dim {
@@ -661,9 +752,16 @@ impl CudaBackend {
                         matvec_device(self, layer.wo, &attn_out_dev, hidden, q_dim)
                     }
                 })?;
-            let attn_delta = self.dtoh_f32(&attn_delta_dev).ok()?;
+            sync_if_profile(self);
+            prof.proj_wo += t.elapsed();
 
-            // ── 5. Residual + post-attn rms (CPU; Phase 2 moves to GPU) ─
+            // ── 4b. dtoh attn_delta ────────────────────────────────
+            let t = std::time::Instant::now();
+            let attn_delta = self.dtoh_f32(&attn_delta_dev).ok()?;
+            prof.dtoh_attn_delta += t.elapsed();
+
+            // ── 5. Residual + post-attn rms (CPU) ──────────────────
+            let t = std::time::Instant::now();
             let mut h_post_attn = h.clone();
             if layer.has_post_norms {
                 let normed = rms_norm_vec(
@@ -676,31 +774,61 @@ impl CudaBackend {
             } else {
                 add_in_place(&mut h_post_attn, &attn_delta);
             }
+            prof.residual_cpu += t.elapsed();
 
-            // ── 6. Pre-FFN rms (CPU) → htod h_ffn ───────────────────
+            // ── 6. Pre-FFN rms (CPU) ───────────────────────────────
             let ffn_norm_weight = if layer.has_post_norms {
                 layer.pre_ffn_norm.unwrap_or(layer.post_attn_norm)
             } else {
                 layer.post_attn_norm
             };
+            let t = std::time::Instant::now();
             let h_ffn = rms_norm_vec(&h_post_attn, ffn_norm_weight, layer.eps, layer.norm_offset);
-            let h_ffn_dev = self.htod_f32(&h_ffn).ok()?;
+            prof.norm_cpu += t.elapsed();
 
-            // ── 7. gate / up projections, device-resident ──────────
+            // ── 6b. htod h_ffn ─────────────────────────────────────
+            let t = std::time::Instant::now();
+            let h_ffn_dev = self.htod_f32(&h_ffn).ok()?;
+            sync_if_profile(self);
+            prof.htod += t.elapsed();
+
+            // ── 7. gate / up projections ───────────────────────────
+            let t = std::time::Instant::now();
             let gate_dev = matvec_device(self, layer.gate, &h_ffn_dev, inter, hidden)?;
             let up_dev = matvec_device(self, layer.up, &h_ffn_dev, inter, hidden)?;
+            sync_if_profile(self);
+            prof.proj_gate_up += t.elapsed();
+
+            // ── 7b. dtoh gate / up ─────────────────────────────────
+            let t = std::time::Instant::now();
             let gate = self.dtoh_f32(&gate_dev).ok()?;
             let up = self.dtoh_f32(&up_dev).ok()?;
+            prof.dtoh_gate_up += t.elapsed();
 
-            // ── 8. Activation (CPU; Phase 2 moves to GPU) ──────────
+            // ── 8. Activation (CPU) ────────────────────────────────
+            let t = std::time::Instant::now();
             let act = activate(&gate, &up, layer.activation);
-            let act_dev = self.htod_f32(&act).ok()?;
+            prof.norm_cpu += t.elapsed();
 
-            // ── 9. down projection, device-resident ────────────────
+            // ── 8b. htod act ───────────────────────────────────────
+            let t = std::time::Instant::now();
+            let act_dev = self.htod_f32(&act).ok()?;
+            sync_if_profile(self);
+            prof.htod += t.elapsed();
+
+            // ── 9. down projection ─────────────────────────────────
+            let t = std::time::Instant::now();
             let ffn_delta_dev = matvec_device(self, layer.down, &act_dev, hidden, inter)?;
+            sync_if_profile(self);
+            prof.proj_down += t.elapsed();
+
+            // ── 9b. dtoh ffn_delta ─────────────────────────────────
+            let t = std::time::Instant::now();
             let ffn_delta = self.dtoh_f32(&ffn_delta_dev).ok()?;
+            prof.dtoh_ffn_delta += t.elapsed();
 
             // ── 10. Residual + optional post-ffn rms (CPU) ─────────
+            let t = std::time::Instant::now();
             let mut h_out = h_post_attn;
             if layer.has_post_norms {
                 let post = layer.post_ffn_norm.unwrap_or(&[]);
@@ -715,6 +843,11 @@ impl CudaBackend {
                 }
             }
             h = h_out;
+            prof.residual_cpu += t.elapsed();
+        }
+
+        if profile_on {
+            prof.report(layers.len());
         }
 
         cache.len = pos + 1;

@@ -221,3 +221,56 @@ archives.
   longer sync — it's compute. Phase 3 is unlikely to help much;
   pivot to kernel-fusion work.
 - After Phase 3: bake-in. Archive the change.
+
+## Phase 1 profile (2026-05-08, RTX 4090, Gemma 3 4B Q4_K)
+
+Per-token breakdown from `LARQL_CUDA_DECODE_PROFILE=1` averaged
+across 5 decode steps (3 tokens after 1 warmup, total 168 ms/tok):
+
+```
+attn_call      144.7 ms  86.5%   ← fused_decode_attention_device
+norm_cpu         5.7 ms   3.4%   rms_norm + activate + add (CPU)
+proj_gate_up     5.0 ms   3.0%   gate + up matvec_device
+proj_down        4.8 ms   2.8%   down matvec_device
+proj_wo          3.0 ms   1.8%   wo matvec_device
+proj_qkv         1.8 ms   1.1%   q + k + v matvec_device
+htod             1.0 ms   0.6%   h_attn + h_ffn + act H2D
+dtoh_gate_up     0.6 ms   0.4%   gate + up D2H
+dtoh_attn_delta  0.3 ms   0.2%
+residual_cpu     0.3 ms   0.2%
+dtoh_ffn_delta   0.2 ms   0.1%
+```
+
+Each `attn_call` is 4.26 ms/layer. The K/V cache slabs at
+`max_seq=4096 × num_kv_heads=4 × head_dim=256 × f32` = 16 MB per
+slab. `fused_decode_attention_device` does 2 H2D + 2 D2H of
+those slabs per call → 64 MB × 34 layers = **2.2 GB of PCIe
+traffic per token**. At PCIe 4.0 x16's ~28 GB/s effective that's
+~78 ms/token — accounting for ~54% of the `attn_call` cost. The
+remaining ~66 ms is the kernel arithmetic itself.
+
+### Strategic implication
+
+**Phase 2 is no longer worth doing.** The proposal allocated
+Phase 2 to remove ~6 ms of host crossings (rms_norm, silu_gate_up,
+add_in_place). The profile shows those crossings sum to <6 ms.
+Even fully eliminated, decode ms/token drops from 153 to ~147 —
+still a long way from the ≤80 Phase 2 target.
+
+**Phase 3 is the only path to the proposal's targets.** Replacing
+`CudaKvLayer::{k, v}: Vec<f32>` with `CudaSlice<f32>` removes the
+2 H2D + 2 D2H inside every `fused_decode_attention_device` call.
+Predicted decode ms/token after Phase 3: ~70-75 (PCIe traffic
+goes to zero; kernel time stays). That clears the ≤80 ms Phase 2
+target *and* approaches the ≤60 ms Phase 3 target without any
+norm/activate kernel work.
+
+The plan therefore changes:
+- **Skip Phase 2** entirely. The targeted ops are not on the
+  critical path.
+- **Phase 3 becomes Phase 2** — fold the device-resident KV
+  cache type swap into the next merge.
+- If post-Phase-3 numbers still miss ≤ 60 ms/tok, the residual
+  cost is kernel-internal and warrants either a fused-FA2-style
+  rewrite (separate change) or just bench-archiving at whatever
+  the new floor turns out to be.
