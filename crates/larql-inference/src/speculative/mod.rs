@@ -20,7 +20,7 @@ pub mod verify;
 
 pub use eagle::EagleDraftHead;
 pub use tree::{DraftTree, TreeAttentionMask, TreeNode};
-pub use verify::{verify_and_accept, AcceptedSpan};
+pub use verify::{verify_and_accept, verify_tree, AcceptedSpan};
 
 pub type TokenId = u32;
 

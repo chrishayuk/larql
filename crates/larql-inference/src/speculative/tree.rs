@@ -148,6 +148,46 @@ impl DraftTree {
     pub fn tokens(&self) -> Vec<TokenId> {
         self.nodes.iter().map(|n| n.token.id).collect()
     }
+
+    /// Children-of map. `result[i]` is the indices of `i`'s children
+    /// in the order they were added.
+    pub fn children_map(&self) -> Vec<Vec<usize>> {
+        let mut children: Vec<Vec<usize>> = vec![Vec::new(); self.nodes.len()];
+        for (i, n) in self.nodes.iter().enumerate() {
+            if let Some(p) = n.parent {
+                children[p].push(i);
+            }
+        }
+        children
+    }
+
+    /// Most-likely root-to-leaf path by descending through the
+    /// child with the highest `p_draft` at each level. Ties broken
+    /// by lowest index (deterministic). Returns node indices
+    /// starting at the root.
+    pub fn most_likely_path(&self) -> Vec<usize> {
+        let children = self.children_map();
+        let mut path = vec![0usize];
+        let mut cur = 0usize;
+        loop {
+            let kids = &children[cur];
+            if kids.is_empty() {
+                return path;
+            }
+            let next = *kids
+                .iter()
+                .max_by(|&&a, &&b| {
+                    let pa = self.nodes[a].token.p_draft;
+                    let pb = self.nodes[b].token.p_draft;
+                    pa.partial_cmp(&pb)
+                        .unwrap_or(std::cmp::Ordering::Equal)
+                        .then_with(|| b.cmp(&a)) // lower idx wins on tie
+                })
+                .expect("non-empty children");
+            path.push(next);
+            cur = next;
+        }
+    }
 }
 
 /// Per-q-token attention mask for a draft tree, packed as a bitmask

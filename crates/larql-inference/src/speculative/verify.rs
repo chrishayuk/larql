@@ -9,6 +9,7 @@
 //! The rule guarantees the output distribution is identical to
 //! direct sampling from the target. Proof: see paper §3.
 
+use super::tree::DraftTree;
 use super::{DraftToken, TokenId};
 
 /// Result of one speculative step's verification.
@@ -176,8 +177,45 @@ fn sample_categorical(p: &[f32], rng: &mut VerifyRng) -> TokenId {
     (p.len() - 1) as TokenId
 }
 
+/// Tree verification — picks the most-likely-by-p_draft root-to-leaf
+/// path and applies linear `verify_and_accept` to it. This is the
+/// CPU oracle for phase 3's GPU `verify_tree` kernel; the GPU
+/// kernel SHALL emit the same `AcceptedSpan` given the same tree,
+/// per-node target distributions, and seeded RNG.
+///
+/// `p_target_per_node[i]` is the target distribution at tree node
+/// `i` (so `p_target_per_node.len() == tree.len()`). `tree`'s root
+/// is the first drafted token (depth=0); subsequent levels are
+/// continuations.
+///
+/// Rationale: the most-likely path is what production tree-decoders
+/// (Medusa, EAGLE) verify first; sibling-path fallback is a phase 4
+/// refinement. Restricting phase 3 to single-path verification
+/// keeps the kernel small and the parity oracle simple while still
+/// delivering the architectural batch=N>1 win on which Tensor Cores
+/// re-arm.
+pub fn verify_tree(
+    tree: &DraftTree,
+    p_target_per_node: &[Vec<f32>],
+    rng: &mut VerifyRng,
+) -> AcceptedSpan {
+    assert_eq!(
+        p_target_per_node.len(),
+        tree.len(),
+        "verify_tree: per-node p_target length must equal tree node count"
+    );
+    let path = tree.most_likely_path();
+    let drafts: Vec<DraftToken> = path
+        .iter()
+        .map(|&i| tree.nodes()[i].token.clone())
+        .collect();
+    let p_at_path: Vec<Vec<f32>> = path.iter().map(|&i| p_target_per_node[i].clone()).collect();
+    verify_and_accept(&p_at_path, &drafts, rng)
+}
+
 #[cfg(test)]
 mod tests {
+    use super::super::tree::DraftTree;
     use super::*;
 
     fn unit(id: TokenId, vocab: usize) -> Vec<f32> {
@@ -325,6 +363,164 @@ mod tests {
             assert!(
                 diff < 0.03,
                 "vocab {i}: observed {observed:.4} vs expected {expected:.4}, diff {diff:.4}"
+            );
+        }
+    }
+
+    fn linear_tree(ids: &[(TokenId, f32)]) -> DraftTree {
+        let mut iter = ids.iter();
+        let &(rid, rp) = iter.next().expect("non-empty");
+        let mut t = DraftTree::from_root(DraftToken {
+            id: rid,
+            p_draft: rp,
+        });
+        let mut parent = 0;
+        for &(id, p) in iter {
+            parent = t.add_child(parent, DraftToken { id, p_draft: p });
+        }
+        t
+    }
+
+    #[test]
+    fn verify_tree_linear_matches_verify_and_accept() {
+        // Linear tree (depth=2, branches=1). verify_tree must
+        // produce the same span as feeding the same drafts straight
+        // into verify_and_accept.
+        let vocab = 4;
+        let drafts = [(1u32, 1.0_f32), (2u32, 1.0_f32), (3u32, 1.0_f32)];
+        let tree = linear_tree(&drafts);
+        let p_target = vec![unit(1, vocab), unit(2, vocab), unit(3, vocab)];
+
+        let mut rng_a = VerifyRng::new(0xABCD_1234);
+        let span_tree = verify_tree(&tree, &p_target, &mut rng_a);
+
+        let mut rng_b = VerifyRng::new(0xABCD_1234);
+        let drafts_v: Vec<DraftToken> = drafts
+            .iter()
+            .map(|&(id, p)| DraftToken { id, p_draft: p })
+            .collect();
+        let span_linear = verify_and_accept(&p_target, &drafts_v, &mut rng_b);
+
+        assert_eq!(span_tree, span_linear);
+    }
+
+    #[test]
+    fn verify_tree_picks_highest_p_draft_path() {
+        // Tree:
+        //   0 (root, drafted as id=1)
+        //   ├── 1 (id=2, p_draft=0.3)
+        //   └── 2 (id=3, p_draft=0.7)  <-- most likely
+        //         ├── 3 (id=4, p_draft=0.6)  <-- most likely under 2
+        //         └── 4 (id=5, p_draft=0.4)
+        //   └── ...
+        // Path verifier picks: 0 → 2 → 3.
+        let mut tree = DraftTree::from_root(DraftToken {
+            id: 1,
+            p_draft: 1.0,
+        });
+        let _n1 = tree.add_child(
+            0,
+            DraftToken {
+                id: 2,
+                p_draft: 0.3,
+            },
+        );
+        let n2 = tree.add_child(
+            0,
+            DraftToken {
+                id: 3,
+                p_draft: 0.7,
+            },
+        );
+        let _n3 = tree.add_child(
+            n2,
+            DraftToken {
+                id: 4,
+                p_draft: 0.6,
+            },
+        );
+        let _n4 = tree.add_child(
+            n2,
+            DraftToken {
+                id: 5,
+                p_draft: 0.4,
+            },
+        );
+
+        let path = tree.most_likely_path();
+        assert_eq!(path, vec![0, n2, _n3]);
+
+        // p_target one-hot at the path's drafted ids → certain accept all.
+        let vocab = 8;
+        let mut p_target = vec![unit(0, vocab); tree.len()];
+        p_target[0] = unit(1, vocab); // root accepts to id=1
+        p_target[n2] = unit(3, vocab);
+        p_target[_n3] = unit(4, vocab);
+
+        let mut rng = VerifyRng::new(0xFEEDFACE);
+        let span = verify_tree(&tree, &p_target, &mut rng);
+        assert_eq!(span.accepted, vec![1, 3, 4]);
+        assert!(span.bonus.is_some());
+    }
+
+    #[test]
+    fn verify_tree_rejects_along_path_emits_corrected() {
+        // Most-likely path is [0, 1]. p_target rejects at root.
+        let vocab = 4;
+        let tree = linear_tree(&[(0, 1.0), (1, 1.0)]);
+        // Target wants id=2 at root → reject.
+        let p_target = vec![unit(2, vocab), unit(1, vocab)];
+        let mut rng = VerifyRng::new(0xCAFE_BEEF);
+        let span = verify_tree(&tree, &p_target, &mut rng);
+        assert!(span.accepted.is_empty());
+        assert_eq!(span.corrected, Some(2));
+        assert!(span.bonus.is_none());
+    }
+
+    #[test]
+    fn verify_tree_panics_on_length_mismatch() {
+        let tree = linear_tree(&[(0, 1.0), (1, 1.0), (2, 1.0)]); // 3 nodes
+        let p_target = vec![unit(0, 4), unit(1, 4)]; // only 2
+        let mut rng = VerifyRng::new(0);
+        let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            verify_tree(&tree, &p_target, &mut rng);
+        }));
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn verify_tree_distributional_parity_at_depth2() {
+        // Linear tree depth=2 with p_draft at the leaf set equal
+        // to the target mass at the drafted id, so acceptance prob
+        // = 1.0 at every level. Bonus is then sampled from p_target
+        // at the deepest accepted node — should match its multinomial
+        // shape over many seeds.
+        let vocab = 8;
+        let p_at_leaf: Vec<f32> = (1..=vocab as u32).map(|x| x as f32).collect();
+        let total: f32 = p_at_leaf.iter().sum();
+        let p_at_leaf_norm: Vec<f32> = p_at_leaf.iter().map(|x| x / total).collect();
+        let drafted_leaf_id: TokenId = 3;
+        let p_draft_leaf = p_at_leaf_norm[drafted_leaf_id as usize];
+
+        let tree = linear_tree(&[(1, 1.0), (2, 1.0), (drafted_leaf_id, p_draft_leaf)]);
+        let p_target = vec![unit(1, vocab), unit(2, vocab), p_at_leaf_norm.clone()];
+
+        let n_trials = 20_000;
+        let mut hist = vec![0u32; vocab];
+        for seed in 0..n_trials {
+            let mut rng = VerifyRng::new(seed as u64);
+            let span = verify_tree(&tree, &p_target, &mut rng);
+            assert_eq!(span.accepted, vec![1, 2, drafted_leaf_id]);
+            let bonus = span.bonus.expect("all-accept must produce bonus");
+            hist[bonus as usize] += 1;
+        }
+        for i in 0..vocab {
+            let observed = hist[i] as f32 / n_trials as f32;
+            let expected = p_at_leaf_norm[i];
+            let diff = (observed - expected).abs();
+            assert!(
+                diff < 0.03,
+                "vocab {i}: observed {observed:.4} vs expected {expected:.4}"
             );
         }
     }
