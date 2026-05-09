@@ -87,6 +87,7 @@ pub mod model;
 pub mod prompt;
 pub mod residual;
 pub mod residual_diff;
+pub mod speculative;
 pub mod tokenizer;
 pub mod trace;
 pub mod trie;

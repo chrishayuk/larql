@@ -28,12 +28,12 @@ non-speculative `decode_token` path bit-exactly.
 #### Scenario: unset env var falls through to existing path
 - **WHEN** `LARQL_SPECULATIVE_DECODE` is unset and a single token is decoded
 - **THEN** the dispatched path SHALL be the existing non-speculative `decode_token`, and the output SHALL be bit-exactly equal to the pre-speculative behaviour on a fixed input
-<!-- test: larql_inference::test_speculative_dispatch::unset_env_uses_legacy_path -->
+<!-- test: larql_inference::speculative::tests::unset_env_uses_legacy_path -->
 
 #### Scenario: env=0 also falls through
 - **WHEN** `LARQL_SPECULATIVE_DECODE=0` is set
 - **THEN** the dispatched path SHALL be the legacy non-speculative path
-<!-- test: larql_inference::test_speculative_dispatch::env_zero_uses_legacy_path -->
+<!-- test: larql_inference::speculative::tests::env_zero_uses_legacy_path -->
 
 ### Requirement: Verification kernel implements exact rejection sampling
 
