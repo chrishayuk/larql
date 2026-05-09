@@ -1,11 +1,11 @@
 {
   "summary": {
     "capabilities": 50,
-    "requirements": 473,
-    "scenarios": 1460,
+    "requirements": 474,
+    "scenarios": 1461,
     "scenarios_backed": 1309,
-    "scenarios_unbacked": 151,
-    "test_refs": 3391,
+    "scenarios_unbacked": 152,
+    "test_refs": 3392,
     "test_refs_unresolved": 12
   },
   "capabilities": [
@@ -2433,6 +2433,19 @@
               "unbacked": true,
               "spec_file": "openspec/changes/cuda-decode-device-resident/specs/compute-cuda-kernels/spec.md",
               "line": 153
+            }
+          ]
+        },
+        {
+          "name": "Post-8.04-ms checkpoint follow-up consolidation document",
+          "scenarios": [
+            {
+              "name": "navigation aid lets a fresh contributor identify the next-step architectural path",
+              "tests_resolved": [],
+              "tests_unresolved": [],
+              "unbacked": true,
+              "spec_file": "openspec/changes/cuda-decode-perf-results-followup/specs/compute-cuda-kernels/spec.md",
+              "line": 28
             }
           ]
         },
@@ -20243,6 +20256,18 @@
       "crate": "larql_compute"
     },
     {
+      "fqn": "larql_compute::bench_cuda_q4k_batched::bench_q4k_batched_gemma_shapes",
+      "file": "crates/larql-compute/tests/bench_cuda_q4k_batched.rs",
+      "line": 137,
+      "crate": "larql_compute"
+    },
+    {
+      "fqn": "larql_compute::bench_cuda_speculative_step::bench_synthetic_speculative_step_at_gemma_shapes",
+      "file": "crates/larql-compute/tests/bench_cuda_speculative_step.rs",
+      "line": 130,
+      "crate": "larql_compute"
+    },
+    {
       "fqn": "larql_compute::cpu::ops::attention::causal_mask",
       "file": "crates/larql-compute/src/cpu/ops/attention.rs",
       "line": 83,
@@ -21089,6 +21114,36 @@
       "crate": "larql_compute"
     },
     {
+      "fqn": "larql_compute::test_cuda_attn_tree::tree_attention_gemma_4b_head_shape_q5",
+      "file": "crates/larql-compute/tests/test_cuda_attn_tree.rs",
+      "line": 280,
+      "crate": "larql_compute"
+    },
+    {
+      "fqn": "larql_compute::test_cuda_attn_tree::tree_attention_q1_full_mask_matches_reference",
+      "file": "crates/larql-compute/tests/test_cuda_attn_tree.rs",
+      "line": 125,
+      "crate": "larql_compute"
+    },
+    {
+      "fqn": "larql_compute::test_cuda_attn_tree::tree_attention_q1_matches_q5_first_slice",
+      "file": "crates/larql-compute/tests/test_cuda_attn_tree.rs",
+      "line": 324,
+      "crate": "larql_compute"
+    },
+    {
+      "fqn": "larql_compute::test_cuda_attn_tree::tree_attention_q4_softcap_matches_reference",
+      "file": "crates/larql-compute/tests/test_cuda_attn_tree.rs",
+      "line": 238,
+      "crate": "larql_compute"
+    },
+    {
+      "fqn": "larql_compute::test_cuda_attn_tree::tree_attention_q5_with_per_q_mask_matches_reference",
+      "file": "crates/larql-compute/tests/test_cuda_attn_tree.rs",
+      "line": 165,
+      "crate": "larql_compute"
+    },
+    {
       "fqn": "larql_compute::test_cuda_decode::decode_token_one_layer_matches_scalar_reference",
       "file": "crates/larql-compute/tests/test_cuda_decode.rs",
       "line": 134,
@@ -21110,6 +21165,78 @@
       "fqn": "larql_compute::test_cuda_q4::q4kf_matvec_ffn_gate_parity",
       "file": "crates/larql-compute/tests/test_cuda_q4.rs",
       "line": 237,
+      "crate": "larql_compute"
+    },
+    {
+      "fqn": "larql_compute::test_cuda_q4k_batched::q4k_batched_m1_equals_m4_per_position",
+      "file": "crates/larql-compute/tests/test_cuda_q4k_batched.rs",
+      "line": 301,
+      "crate": "larql_compute"
+    },
+    {
+      "fqn": "larql_compute::test_cuda_q4k_batched::q4k_batched_m1_matches_naive_reference",
+      "file": "crates/larql-compute/tests/test_cuda_q4k_batched.rs",
+      "line": 268,
+      "crate": "larql_compute"
+    },
+    {
+      "fqn": "larql_compute::test_cuda_q4k_batched::q4k_batched_m4_matches_naive_reference",
+      "file": "crates/larql-compute/tests/test_cuda_q4k_batched.rs",
+      "line": 286,
+      "crate": "larql_compute"
+    },
+    {
+      "fqn": "larql_compute::test_cuda_q4k_batched::q4k_batched_max_m_tile_is_8",
+      "file": "crates/larql-compute/tests/test_cuda_q4k_batched.rs",
+      "line": 327,
+      "crate": "larql_compute"
+    },
+    {
+      "fqn": "larql_compute::test_cuda_q4k_batched::q4k_batched_rejects_oversized_m",
+      "file": "crates/larql-compute/tests/test_cuda_q4k_batched.rs",
+      "line": 341,
+      "crate": "larql_compute"
+    },
+    {
+      "fqn": "larql_compute::test_cuda_q4k_batched::q4k_dequant_round_trip_self_consistent",
+      "file": "crates/larql-compute/tests/test_cuda_q4k_batched.rs",
+      "line": 249,
+      "crate": "larql_compute"
+    },
+    {
+      "fqn": "larql_compute::test_cuda_verify_tree::verify_tree_64_seeds_synthetic_match_cpu",
+      "file": "crates/larql-compute/tests/test_cuda_verify_tree.rs",
+      "line": 206,
+      "crate": "larql_compute"
+    },
+    {
+      "fqn": "larql_compute::test_cuda_verify_tree::verify_tree_all_accept_one_hot",
+      "file": "crates/larql-compute/tests/test_cuda_verify_tree.rs",
+      "line": 164,
+      "crate": "larql_compute"
+    },
+    {
+      "fqn": "larql_compute::test_cuda_verify_tree::verify_tree_certain_reject_at_root",
+      "file": "crates/larql-compute/tests/test_cuda_verify_tree.rs",
+      "line": 182,
+      "crate": "larql_compute"
+    },
+    {
+      "fqn": "larql_compute::test_cuda_verify_tree::verify_tree_mixed_acceptance_regime",
+      "file": "crates/larql-compute/tests/test_cuda_verify_tree.rs",
+      "line": 252,
+      "crate": "larql_compute"
+    },
+    {
+      "fqn": "larql_compute::test_cuda_verify_tree::verify_tree_parallel_distribution_at_vocab_256",
+      "file": "crates/larql-compute/tests/test_cuda_verify_tree.rs",
+      "line": 324,
+      "crate": "larql_compute"
+    },
+    {
+      "fqn": "larql_compute::test_cuda_verify_tree::verify_tree_parallel_matches_serial_at_small_vocab",
+      "file": "crates/larql-compute/tests/test_cuda_verify_tree.rs",
+      "line": 284,
       "crate": "larql_compute"
     },
     {
