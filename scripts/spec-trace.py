@@ -692,7 +692,10 @@ def trace(capabilities: list[Capability], tests: list[TestFn]) -> dict:
         )
         summary["capabilities"] += 1
 
-    # orphan tests = tests in the workspace not referenced by any scenario
+    # orphan tests = tests in the workspace not referenced by any scenario.
+    # Sort deterministically (filesystem walk order from `rglob` is not
+    # stable across machines, so without an explicit sort the regenerated
+    # JSON differs between local and CI even with identical source).
     referenced_keys = set(referenced)
     orphan_tests = []
     for t in tests:
@@ -706,6 +709,7 @@ def trace(capabilities: list[Capability], tests: list[TestFn]) -> dict:
                     "crate": t.crate,
                 }
             )
+    orphan_tests.sort(key=lambda o: (o["fqn"], o["file"], o["line"]))
 
     return {
         "summary": summary,
