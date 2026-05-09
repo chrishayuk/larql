@@ -230,8 +230,23 @@ fn q4k_mmvq_function(drv: &Driver) -> Result<&'static CudaFunction, CudaInitErro
     // dp4a was introduced in sm_61 (Pascal). NVRTC's default target
     // (`compute_52`) doesn't include it; compile against compute_61
     // so the PTX is JIT'able on every supported card.
+    // `LARQL_CUDA_Q4K_ARCH` overrides the NVRTC PTX target (e.g.
+    // `compute_89` for sm_89-specific PTX). Default = compute_61,
+    // which is forward-compatible with every supported card; the
+    // driver JIT specialises to the actual compute capability at
+    // runtime, so a higher arch only matters if the kernel uses
+    // PTX intrinsics gated on it.
+    let arch: Option<&'static str> = match std::env::var("LARQL_CUDA_Q4K_ARCH").ok().as_deref() {
+        Some("compute_61") => Some("compute_61"),
+        Some("compute_70") => Some("compute_70"),
+        Some("compute_75") => Some("compute_75"),
+        Some("compute_80") => Some("compute_80"),
+        Some("compute_86") => Some("compute_86"),
+        Some("compute_89") => Some("compute_89"),
+        _ => Some("compute_61"),
+    };
     let opts = CompileOptions {
-        arch: Some("compute_61"),
+        arch,
         ..Default::default()
     };
     let ptx = compile_ptx_with_opts(Q4K_MMVQ_SRC, opts)
@@ -277,10 +292,80 @@ pub(crate) fn matvec_device_into_with_dev(
     rows: usize,
     hidden: usize,
 ) -> Result<(), CudaInitError> {
+    matvec_device_into_with_dev_tiled(
+        backend,
+        q4k_dev,
+        x_q8_1,
+        y_dev,
+        rows,
+        hidden,
+        choose_rows_per_block(rows, hidden),
+    )
+}
+
+/// `cuda-q4k-mmvq-down-tile`: shape-aware tile chooser. The kernel is
+/// blockDim.y-agnostic, so different launches can pick different
+/// `ROWS_PER_BLOCK` without recompiling. Empirically:
+///
+/// - Tall, narrow weights (`rows ≥ hidden`, e.g. gate/up at
+///   10240 × 2560) want **larger tiles** — 4 is fine; the per-block
+///   working set stays ≤ 6 KB and the L1 cache is comfortable.
+/// - Short, wide weights (`rows < hidden`, e.g. proj_down at
+///   2560 × 10240) need **smaller tiles** — at `rows_per_block = 4`
+///   each block reads ~23 KB of weights, and with 5 blocks resident
+///   per SM that's ~115 KB / 128 KB L1 — tight enough to evict and
+///   thrash. Halving the tile to 2 cuts per-block working set to
+///   ~11.5 KB and doubles block count, restoring L1 headroom.
+pub(crate) fn choose_rows_per_block(_rows: usize, _hidden: usize) -> u32 {
+    // `LARQL_CUDA_Q4K_RPB=N` overrides the default (1, 2, 4, 8, 16).
+    // Used by `q4k_mmvq_rows_per_block_sweep` and as a back-out.
+    if let Ok(val) = std::env::var("LARQL_CUDA_Q4K_RPB") {
+        if let Ok(n) = val.parse::<u32>() {
+            if [1, 2, 4, 8, 16].contains(&n) {
+                return n;
+            }
+        }
+    }
+    // Empirical: a real-decode sweep on Gemma 3 4B Q4_K (RTX 4090,
+    // graph path on, all shapes forced to the same `rows_per_block`)
+    // showed:
+    //
+    //   rpb=1: 8.45 ms/tok  rpb=2: 8.66 ms/tok  rpb=4: 8.28 ms/tok
+    //   rpb=8: 8.29 ms/tok  rpb=16: 8.31 ms/tok
+    //
+    // rpb=4 is best across all projections — including the
+    // suspected-asymmetric `proj_down` (rows=2560, hidden=10240) — so
+    // the original constant stays. The proj_down vs proj_gate_up
+    // wallclock gap (47 µs vs 21 µs in `LARQL_CUDA_DECODE_PROFILE=1`
+    // buckets) is mostly a profile-sync artifact; HBM bandwidth on
+    // the down shape is bounded by access-pattern coalescing, not
+    // by tile granularity.
+    ROWS_PER_BLOCK
+}
+
+/// `cuda-q4k-mmvq-down-tile`: parameterised `matvec_device_into_with_dev`
+/// that takes `rows_per_block` explicitly. Used by the shape-aware
+/// dispatcher above and by the in-tree microbench
+/// (`bench_rows_per_block_sweep`).
+#[allow(clippy::too_many_arguments)]
+pub(crate) fn matvec_device_into_with_dev_tiled(
+    backend: &CudaBackend,
+    q4k_dev: &CudaSlice<u8>,
+    x_q8_1: &Q8_1Buf,
+    y_dev: &mut CudaSlice<f32>,
+    rows: usize,
+    hidden: usize,
+    rows_per_block: u32,
+) -> Result<(), CudaInitError> {
     if rows == 0 || hidden == 0 || !hidden.is_multiple_of(Q4K_BLOCK_ELEMS) {
         return Err(CudaInitError::DriverMissing(format!(
             "invalid q4k_mmvq shape rows={rows} hidden={hidden}",
         )));
+    }
+    if rows_per_block == 0 {
+        return Err(CudaInitError::DriverMissing(
+            "q4k_mmvq rows_per_block must be > 0".into(),
+        ));
     }
     let n_super_blocks = hidden / Q4K_BLOCK_ELEMS;
     let expected_q4k_bytes = rows
@@ -311,8 +396,8 @@ pub(crate) fn matvec_device_into_with_dev(
     let rows_i = rows as i32;
     let n_super_blocks_i = n_super_blocks as i32;
     let cfg = LaunchConfig {
-        grid_dim: ((rows as u32).div_ceil(ROWS_PER_BLOCK), 1, 1),
-        block_dim: (WARP_SIZE, ROWS_PER_BLOCK, 1),
+        grid_dim: ((rows as u32).div_ceil(rows_per_block), 1, 1),
+        block_dim: (WARP_SIZE, rows_per_block, 1),
         shared_mem_bytes: 0,
     };
     unsafe {
@@ -381,9 +466,10 @@ pub(crate) fn matvec_device_into(
     let func = q4k_mmvq_function(drv)?;
     let rows_i = rows as i32;
     let n_super_blocks_i = n_super_blocks as i32;
+    let rows_per_block = choose_rows_per_block(rows, hidden);
     let cfg = LaunchConfig {
-        grid_dim: ((rows as u32).div_ceil(ROWS_PER_BLOCK), 1, 1),
-        block_dim: (WARP_SIZE, ROWS_PER_BLOCK, 1),
+        grid_dim: ((rows as u32).div_ceil(rows_per_block), 1, 1),
+        block_dim: (WARP_SIZE, rows_per_block, 1),
         shared_mem_bytes: 0,
     };
 
@@ -490,6 +576,93 @@ mod tests {
                 "rows={rows} hidden={hidden}: kernel arithmetic max diff {max_diff} > 1e-3 \
                  (Q8_1-dequantized reference)",
             );
+        }
+    }
+
+    /// `cuda-q4k-mmvq-down-tile` microbench: sweeps `rows_per_block` ∈
+    /// {1, 2, 4, 8, 16} for representative Gemma 3 4B Q4_K projection
+    /// shapes and prints per-call wall-clock time. Run manually with:
+    ///
+    /// ```text
+    /// LARQL_CUDA_AVAILABLE=1 cargo test -p larql-compute --features cuda \
+    ///   --lib q4k_mmvq_rows_per_block_sweep -- --ignored --nocapture
+    /// ```
+    ///
+    /// Picks the best tile per shape and updates `choose_rows_per_block`
+    /// accordingly.
+    #[test]
+    #[ignore = "manual microbench; warmups + repeated launches"]
+    fn q4k_mmvq_rows_per_block_sweep() {
+        let Some(backend) = gpu_or_skip() else { return };
+
+        // Gemma 3 4B Q4_K projection shapes (rows, hidden):
+        //   qkv      :  8*256 ×  2560  (q),   4*256 ×  2560  (k/v)
+        //   wo       :   2560 × 8*256
+        //   gate/up  :  10240 ×  2560
+        //   down     :   2560 × 10240
+        let shapes = [
+            ("q     ", 2048, 2560),
+            ("kv    ", 1024, 2560),
+            ("wo    ", 2560, 2048),
+            ("gate  ", 10240, 2560),
+            ("up    ", 10240, 2560),
+            ("down  ", 2560, 10240),
+        ];
+
+        let n_iters: usize = 200;
+
+        for (label, rows, hidden) in shapes {
+            let w_q4k = quantize_q4_k(&synth(rows * hidden, 0x9000));
+            let q4k_dev = backend
+                .arc_q4k_device_buf(&w_q4k)
+                .expect("htod q4k");
+
+            let x = synth(hidden, 0x9100);
+            let x_dev = backend.htod_f32(&x).expect("htod x");
+            let q8 = quantize_q8_1_device(&backend, &x_dev, hidden).expect("q8_1");
+
+            let mut y = backend.alloc_f32(rows).expect("alloc y");
+
+            print!("[mmvq_sweep] {label}  rows={rows:>5} hidden={hidden:>5}  ");
+
+            // Warmup once so caches/JIT/scheduling settle.
+            for &rpb in &[1u32, 2, 4, 8, 16] {
+                let _ = matvec_device_into_with_dev_tiled(
+                    &backend,
+                    &q4k_dev,
+                    &q8,
+                    &mut y,
+                    rows,
+                    hidden,
+                    rpb,
+                );
+            }
+            backend.driver().sync().expect("sync");
+
+            for &rpb in &[1u32, 2, 4, 8, 16] {
+                if (rows as u32) % rpb != 0 {
+                    print!("rpb{rpb}=-      ");
+                    continue;
+                }
+                // Time `n_iters` launches; report per-call µs.
+                let t = std::time::Instant::now();
+                for _ in 0..n_iters {
+                    matvec_device_into_with_dev_tiled(
+                        &backend,
+                        &q4k_dev,
+                        &q8,
+                        &mut y,
+                        rows,
+                        hidden,
+                        rpb,
+                    )
+                    .expect("launch");
+                }
+                backend.driver().sync().expect("sync");
+                let us = t.elapsed().as_secs_f64() * 1e6 / n_iters as f64;
+                print!("rpb{rpb}={us:>5.1}µs  ");
+            }
+            println!();
         }
     }
 }
