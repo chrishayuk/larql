@@ -74,6 +74,7 @@ jobs:
 
       - name: cargo llvm-cov (workspace)
         run: |
+          mkdir -p target/llvm-cov/html
           cargo llvm-cov clean --workspace
           cargo llvm-cov --workspace \
             --json --output-path target/llvm-cov/coverage.json
