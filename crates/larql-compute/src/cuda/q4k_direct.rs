@@ -8,7 +8,7 @@
 
 use std::sync::OnceLock;
 
-use cudarc::driver::{CudaFunction, CudaModule, LaunchConfig, PushKernelArg};
+use cudarc::driver::{CudaFunction, CudaModule, CudaSlice, LaunchConfig, PushKernelArg};
 use cudarc::nvrtc::compile_ptx;
 
 use super::backend::CudaBackend;
@@ -121,17 +121,26 @@ fn q4k_matvec_function(drv: &Driver) -> Result<&'static CudaFunction, CudaInitEr
     Ok(f)
 }
 
-pub(crate) fn matvec(
+/// Device-resident Q4_K matvec. Same kernel as [`matvec`] but takes
+/// a device-side input slice and returns a device-side output slice
+/// — no implicit `htod` / `dtoh` and no `sync` between launches.
+/// `cuda-decode-device-resident` Phase 1.
+///
+/// The kernel itself is unchanged from the host-input variant; only
+/// the host↔device plumbing differs. Callers that want a `Vec<f32>`
+/// can keep using [`matvec`], which now wraps this function.
+pub(crate) fn matvec_device(
     backend: &CudaBackend,
     q4k_data: &[u8],
-    x: &[f32],
+    x_dev: &CudaSlice<f32>,
     rows: usize,
     hidden: usize,
-) -> Result<Vec<f32>, CudaInitError> {
-    if rows == 0 || hidden == 0 || x.len() != hidden || !hidden.is_multiple_of(Q4K_BLOCK_ELEMS) {
+) -> Result<CudaSlice<f32>, CudaInitError> {
+    if rows == 0 || hidden == 0 || x_dev.len() != hidden || !hidden.is_multiple_of(Q4K_BLOCK_ELEMS)
+    {
         return Err(CudaInitError::DriverMissing(format!(
             "invalid q4k matvec shape rows={rows} hidden={hidden} x_len={}",
-            x.len()
+            x_dev.len()
         )));
     }
     let blocks_per_row = hidden / Q4K_BLOCK_ELEMS;
@@ -145,21 +154,9 @@ pub(crate) fn matvec(
             q4k_data.len()
         )));
     }
-    let trace_min_rows = std::env::var("LARQL_CUDA_Q4K_TRACE_MIN_ROWS")
-        .ok()
-        .and_then(|v| v.parse::<usize>().ok())
-        .unwrap_or(100_000);
-    let trace = std::env::var("LARQL_CUDA_Q4K_TRACE").ok().as_deref() == Some("1")
-        && rows >= trace_min_rows;
-    let t0 = if trace {
-        Some(std::time::Instant::now())
-    } else {
-        None
-    };
 
     let drv = backend.driver();
     let func = q4k_matvec_function(drv)?;
-    let x_dev = drv.device_buf_from(x)?;
     let mut y_dev = drv.device_alloc(rows)?;
     let rows_i = rows as i32;
     let hidden_i = hidden as i32;
@@ -175,7 +172,7 @@ pub(crate) fn matvec(
             drv.stream
                 .launch_builder(func)
                 .arg(q4k_dev)
-                .arg(&x_dev)
+                .arg(x_dev)
                 .arg(&mut y_dev)
                 .arg(&rows_i)
                 .arg(&hidden_i)
@@ -186,6 +183,37 @@ pub(crate) fn matvec(
         Ok(())
     })?;
 
+    Ok(y_dev)
+}
+
+pub(crate) fn matvec(
+    backend: &CudaBackend,
+    q4k_data: &[u8],
+    x: &[f32],
+    rows: usize,
+    hidden: usize,
+) -> Result<Vec<f32>, CudaInitError> {
+    if rows == 0 || hidden == 0 || x.len() != hidden || !hidden.is_multiple_of(Q4K_BLOCK_ELEMS) {
+        return Err(CudaInitError::DriverMissing(format!(
+            "invalid q4k matvec shape rows={rows} hidden={hidden} x_len={}",
+            x.len()
+        )));
+    }
+    let trace_min_rows = std::env::var("LARQL_CUDA_Q4K_TRACE_MIN_ROWS")
+        .ok()
+        .and_then(|v| v.parse::<usize>().ok())
+        .unwrap_or(100_000);
+    let trace = std::env::var("LARQL_CUDA_Q4K_TRACE").ok().as_deref() == Some("1")
+        && rows >= trace_min_rows;
+    let t0 = if trace {
+        Some(std::time::Instant::now())
+    } else {
+        None
+    };
+
+    let drv = backend.driver();
+    let x_dev = drv.device_buf_from(x)?;
+    let y_dev = matvec_device(backend, q4k_data, &x_dev, rows, hidden)?;
     drv.sync()?;
     let out = drv.to_host(&y_dev)?;
     if let Some(t0) = t0 {

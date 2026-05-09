@@ -107,6 +107,95 @@ impl CudaBackend {
             .unwrap_or(0)
     }
 
+    // ── Device-resident projection helpers ────────────────────────────
+    //
+    // `cuda-decode-device-resident` Phase 1 — keep per-layer state on
+    // the GPU through the projection chain. Each helper takes a
+    // `CudaSlice<f32>` input and returns a `CudaSlice<f32>` output;
+    // there is no implicit `htod` / `dtoh` and no `sync` between
+    // launches.
+
+    /// H2D copy of an f32 host slice. Thin wrapper around the
+    /// crate-private `Driver::device_buf_from`.
+    pub(crate) fn htod_f32(&self, host: &[f32]) -> Result<CudaSlice<f32>, CudaInitError> {
+        self.drv.device_buf_from(host)
+    }
+
+    /// D2H copy. Synchronises the stream first.
+    pub(crate) fn dtoh_f32(&self, dev: &CudaSlice<f32>) -> Result<Vec<f32>, CudaInitError> {
+        self.drv.sync()?;
+        self.drv.to_host(dev)
+    }
+
+    /// Allocate an uninitialised device buffer.
+    pub(crate) fn alloc_f32(&self, len: usize) -> Result<CudaSlice<f32>, CudaInitError> {
+        self.drv.device_alloc(len)
+    }
+
+    /// Q4_K matvec, device input + device output.
+    pub(crate) fn q4k_matvec_device(
+        &self,
+        q4k_data: &[u8],
+        x_dev: &CudaSlice<f32>,
+        rows: usize,
+        hidden: usize,
+    ) -> Result<CudaSlice<f32>, CudaInitError> {
+        super::q4k_direct::matvec_device(self, q4k_data, x_dev, rows, hidden)
+    }
+
+    /// Q6_K matvec, device input + device output. Goes through the
+    /// dequantised-f32 device cache and a cuBLAS gemv.
+    pub(crate) fn q6k_matvec_device(
+        &self,
+        q6k_data: &[u8],
+        x_dev: &CudaSlice<f32>,
+        rows: usize,
+        hidden: usize,
+    ) -> Result<CudaSlice<f32>, CudaInitError> {
+        if x_dev.len() != hidden {
+            return Err(CudaInitError::DriverMissing(format!(
+                "q6k_matvec_device input mismatch: x_dev.len={} hidden={hidden}",
+                x_dev.len(),
+            )));
+        }
+        self.with_q6k_f32_device_buf(q6k_data, rows * hidden, |w_dev| {
+            kernels::gemv_device_inout(self.driver(), w_dev, x_dev, rows, hidden)
+        })
+    }
+
+    /// Q4_KF matvec, device input + device output. Q4_KF is rare on
+    /// production vindexes so this path keeps the host-dequant + cuBLAS
+    /// shape; the dequant trip happens once per call.
+    pub(crate) fn q4kf_matvec_device(
+        &self,
+        q4kf_data: &[u8],
+        x_dev: &CudaSlice<f32>,
+        rows: usize,
+        hidden: usize,
+    ) -> Result<CudaSlice<f32>, CudaInitError> {
+        if x_dev.len() != hidden {
+            return Err(CudaInitError::DriverMissing(format!(
+                "q4kf_matvec_device input mismatch: x_dev.len={} hidden={hidden}",
+                x_dev.len(),
+            )));
+        }
+        let w = dequant::dequant_q4_kf(q4kf_data, rows * hidden)
+            .map_err(|e| CudaInitError::DriverMissing(format!("q4kf dequant: {e:?}")))?;
+        let w_dev = self.drv.device_buf_from(&w)?;
+        kernels::gemv_device_inout(self.driver(), &w_dev, x_dev, rows, hidden)
+    }
+
+    /// f32 GEMV, device input + device output.
+    pub(crate) fn f32_gemv_device(
+        &self,
+        w_dev: &CudaSlice<f32>,
+        x_dev: &CudaSlice<f32>,
+        rows: usize,
+        hidden: usize,
+    ) -> Result<CudaSlice<f32>, CudaInitError> {
+        kernels::gemv_device_inout(self.driver(), w_dev, x_dev, rows, hidden)
+    }
+
     /// Internal: contiguous row-major view of an `ArrayView2`. The
     /// fast-path is when the view is already standard layout; we only
     /// allocate on the slow-path (transposed / strided views).

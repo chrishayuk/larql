@@ -12,7 +12,7 @@ use cudarc::cublas::{
     sys::cublasOperation_t::{CUBLAS_OP_N, CUBLAS_OP_T},
     Gemm, GemmConfig,
 };
-use cudarc::driver::{CudaFunction, CudaModule, LaunchConfig, PushKernelArg};
+use cudarc::driver::{CudaFunction, CudaModule, CudaSlice, LaunchConfig, PushKernelArg};
 use cudarc::nvrtc::compile_ptx;
 #[cfg(feature = "cuda-oxide")]
 use cudarc::nvrtc::Ptx;
@@ -487,6 +487,20 @@ pub struct FusedDecodeAttentionOutput {
     pub v_cache: Vec<f32>,
 }
 
+/// Device-resident output of [`fused_decode_attention_device`].
+/// `cuda-decode-device-resident` Phase 1.
+///
+/// `out` stays on the GPU so the next projection (wo) can run
+/// without an extra round trip. `k_cache` / `v_cache` come back to
+/// the host because Phase 1 still stores the KV cache as
+/// `Vec<f32>`. Phase 3 swaps those for `CudaSlice<f32>` and drops
+/// the dtoh.
+pub struct FusedDecodeAttentionDeviceOutput {
+    pub out: CudaSlice<f32>,
+    pub k_cache: Vec<f32>,
+    pub v_cache: Vec<f32>,
+}
+
 #[allow(clippy::too_many_arguments)]
 pub fn qkv_rms_proj(
     backend: &CudaBackend,
@@ -660,6 +674,118 @@ pub fn fused_decode_attention(
         out: drv.to_host(&out_dev)?,
         k_cache: drv.to_host(&k_cache_dev)?,
         v_cache: drv.to_host(&v_cache_dev)?,
+    })
+}
+
+/// Device-resident variant of [`fused_decode_attention`]. Q / K-new /
+/// V-new come in as `CudaSlice<f32>` (already produced by
+/// `q4k_matvec_device` etc.) and the attention output stays on the
+/// GPU. Phase 1 still pulls the K/V cache back to host because
+/// `CudaKvCache` is `Vec<f32>`-backed; that goes away in Phase 3.
+#[allow(clippy::too_many_arguments)]
+pub fn fused_decode_attention_device(
+    backend: &CudaBackend,
+    q_dev: &CudaSlice<f32>,
+    k_new_dev: &CudaSlice<f32>,
+    v_new_dev: &CudaSlice<f32>,
+    k_cache: &[f32],
+    v_cache: &[f32],
+    q_norm: Option<&[f32]>,
+    k_norm: Option<&[f32]>,
+    opts: FusedDecodeAttentionOpts,
+) -> Result<FusedDecodeAttentionDeviceOutput, CudaInitError> {
+    let q_dim = opts.num_q_heads * opts.head_dim;
+    let kv_dim = opts.num_kv_heads * opts.head_dim;
+    let cache_len = opts.max_seq * opts.num_kv_heads * opts.head_dim;
+    assert_eq!(q_dev.len(), q_dim);
+    assert_eq!(k_new_dev.len(), kv_dim);
+    assert_eq!(v_new_dev.len(), kv_dim);
+    assert_eq!(k_cache.len(), cache_len);
+    assert_eq!(v_cache.len(), cache_len);
+    assert!(opts.pos < opts.max_seq);
+
+    let use_qk_norm = q_norm.is_some() && k_norm.is_some();
+    let q_norm_owned;
+    let k_norm_owned;
+    let q_norm = match q_norm {
+        Some(w) => {
+            assert_eq!(w.len(), opts.head_dim);
+            w
+        }
+        None => {
+            q_norm_owned = vec![0.0_f32; opts.head_dim];
+            &q_norm_owned
+        }
+    };
+    let k_norm = match k_norm {
+        Some(w) => {
+            assert_eq!(w.len(), opts.head_dim);
+            w
+        }
+        None => {
+            k_norm_owned = vec![0.0_f32; opts.head_dim];
+            &k_norm_owned
+        }
+    };
+
+    let drv = backend.driver();
+    let func = fused_decode_attention_function(drv)?;
+    let mut k_cache_dev = drv.device_buf_from(k_cache)?;
+    let mut v_cache_dev = drv.device_buf_from(v_cache)?;
+    let q_norm_dev = drv.device_buf_from(q_norm)?;
+    let k_norm_dev = drv.device_buf_from(k_norm)?;
+    let mut out_dev = drv.device_alloc(q_dim)?;
+
+    let block_dim: u32 = 256;
+    let cfg = LaunchConfig {
+        grid_dim: (opts.num_q_heads as u32, 1, 1),
+        block_dim: (block_dim, 1, 1),
+        shared_mem_bytes: ((opts.max_seq + block_dim as usize) * std::mem::size_of::<f32>()) as u32,
+    };
+    let num_q_heads_i = opts.num_q_heads as i32;
+    let num_kv_heads_i = opts.num_kv_heads as i32;
+    let head_dim_i = opts.head_dim as i32;
+    let pos_i = opts.pos as i32;
+    let max_seq_i = opts.max_seq as i32;
+    let rotary_dim_i = opts.rotary_dim as i32;
+    let use_qk_norm_i = if use_qk_norm { 1_i32 } else { 0_i32 };
+
+    unsafe {
+        drv.stream
+            .launch_builder(func)
+            .arg(q_dev)
+            .arg(k_new_dev)
+            .arg(v_new_dev)
+            .arg(&mut k_cache_dev)
+            .arg(&mut v_cache_dev)
+            .arg(&q_norm_dev)
+            .arg(&k_norm_dev)
+            .arg(&mut out_dev)
+            .arg(&num_q_heads_i)
+            .arg(&num_kv_heads_i)
+            .arg(&head_dim_i)
+            .arg(&pos_i)
+            .arg(&max_seq_i)
+            .arg(&rotary_dim_i)
+            .arg(&opts.rope_base)
+            .arg(&opts.eps)
+            .arg(&opts.qk_norm_offset)
+            .arg(&opts.attn_scale)
+            .arg(&opts.softcap)
+            .arg(&use_qk_norm_i)
+            .launch(cfg)
+            .map_err(|e| {
+                CudaInitError::DriverMissing(format!("launch fused_decode_attention_device: {e:?}"))
+            })?;
+    }
+
+    drv.sync()?;
+    let k_cache_host = drv.to_host(&k_cache_dev)?;
+    let v_cache_host = drv.to_host(&v_cache_dev)?;
+    Ok(FusedDecodeAttentionDeviceOutput {
+        out: out_dev,
+        k_cache: k_cache_host,
+        v_cache: v_cache_host,
     })
 }
 

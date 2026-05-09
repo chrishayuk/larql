@@ -44,7 +44,7 @@ final `Vec<f32>` return SHALL be produced by a single
   `LARQL_CUDA_DECODE_HOST_FALLBACK=1`
 - **THEN** the two output vectors SHALL agree to max-element
   absolute difference ≤ 1e-3
-<!-- test: unbacked -->
+<!-- test: larql_compute::tests::test_cuda_decode::decode_token_phase1_matches_host_fallback -->
 
 #### Scenario: greedy decode against real Gemma 3 4B Q4_K vindex matches host fallback
 
@@ -67,7 +67,7 @@ use the new device-resident path.
   environment and `decode_token` is called
 - **THEN** the host-bouncing implementation
   (`decode_token_host_fallback`) SHALL be invoked
-<!-- test: unbacked -->
+<!-- test: larql_compute::tests::test_cuda_decode::decode_token_phase1_matches_host_fallback -->
 
 ### Requirement: GPU rms_norm / silu / add kernels SHALL match the CPU reference
 

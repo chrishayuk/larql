@@ -367,3 +367,116 @@ fn decode_q4k_projection_uses_quant_matvec() {
 
     assert_close(&direct, &fallback, 2e-3);
 }
+
+/// `cuda-decode-device-resident` Phase 1: the new device-resident
+/// `decode_token_device` path must match the legacy host-bouncing path
+/// to within 1e-3 max-element. We drive both paths off the same
+/// backend with a fresh KV cache between calls and assert parity.
+#[test]
+fn decode_token_phase1_matches_host_fallback() {
+    let Some(backend) = gpu_or_skip() else { return };
+    let hidden = 256;
+    let inter = 256;
+    let head_dim = 256;
+    let num_q_heads = 1;
+    let num_kv_heads = 1;
+    let q_dim = head_dim;
+    let kv_dim = head_dim;
+
+    let input_norm = vec![1.0; hidden];
+    let post_attn_norm = vec![1.0; hidden];
+    let pre_ffn_norm = vec![1.0; hidden];
+    let post_ffn_norm = vec![1.0; hidden];
+    let wq = quantize_q4_k(&synth(q_dim * hidden, 0x610));
+    let wk = quantize_q4_k(&synth(kv_dim * hidden, 0x611));
+    let wv = quantize_q4_k(&synth(kv_dim * hidden, 0x612));
+    let wo = quantize_q4_k(&synth(hidden * q_dim, 0x613));
+    let gate = quantize_q4_k(&synth(inter * hidden, 0x614));
+    let up = quantize_q4_k(&synth(inter * hidden, 0x615));
+    let down = quantize_q4_k(&synth(hidden * inter, 0x616));
+    let make_layer = || FullPipelineLayer {
+        wq: q4k_qw(&wq),
+        wk: q4k_qw(&wk),
+        wv: q4k_qw(&wv),
+        wo: q4k_qw(&wo),
+        gate: q4k_qw(&gate),
+        up: q4k_qw(&up),
+        down: q4k_qw(&down),
+        input_norm: &input_norm,
+        post_attn_norm: &post_attn_norm,
+        pre_ffn_norm: Some(&pre_ffn_norm),
+        post_ffn_norm: Some(&post_ffn_norm),
+        norm_offset: 0.0,
+        eps: 1e-6,
+        has_post_norms: true,
+        norm_type: NormType::RmsNorm,
+        ffn_type: FfnType::Gated,
+        activation: Activation::Silu,
+        attn_scale: 1.0 / (head_dim as f32).sqrt(),
+        head_dim,
+        num_q_heads,
+        num_kv_heads,
+        rope_base: 10_000.0,
+        rotary_dim: head_dim,
+        ..FullPipelineLayer::default()
+    };
+
+    // Device-resident path (default).
+    std::env::remove_var("LARQL_CUDA_DECODE_HOST_FALLBACK");
+    let mut device_outs: Vec<Vec<f32>> = Vec::new();
+    backend.reset_kv_cache();
+    for step in 0..3 {
+        let x = synth(hidden, 0x700 + step as u64);
+        let out = backend
+            .decode_token(
+                &[make_layer()],
+                &x,
+                hidden,
+                inter,
+                q_dim,
+                kv_dim,
+                num_q_heads,
+                num_kv_heads,
+                head_dim,
+                10_000.0,
+            )
+            .expect("device-resident decode");
+        device_outs.push(out);
+    }
+
+    // Host-fallback path.
+    std::env::set_var("LARQL_CUDA_DECODE_HOST_FALLBACK", "1");
+    let mut host_outs: Vec<Vec<f32>> = Vec::new();
+    backend.reset_kv_cache();
+    for step in 0..3 {
+        let x = synth(hidden, 0x700 + step as u64);
+        let out = backend
+            .decode_token(
+                &[make_layer()],
+                &x,
+                hidden,
+                inter,
+                q_dim,
+                kv_dim,
+                num_q_heads,
+                num_kv_heads,
+                head_dim,
+                10_000.0,
+            )
+            .expect("host-fallback decode");
+        host_outs.push(out);
+    }
+    std::env::remove_var("LARQL_CUDA_DECODE_HOST_FALLBACK");
+
+    for (i, (d, h)) in device_outs.iter().zip(host_outs.iter()).enumerate() {
+        let max_diff = d
+            .iter()
+            .zip(h)
+            .map(|(a, b)| (a - b).abs())
+            .fold(0.0_f32, f32::max);
+        assert!(
+            max_diff <= 1e-3,
+            "decode step {i}: max-element diff {max_diff} > 1e-3 between device and host paths",
+        );
+    }
+}

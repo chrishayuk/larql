@@ -3,8 +3,8 @@
     "capabilities": 49,
     "requirements": 431,
     "scenarios": 1413,
-    "scenarios_backed": 1285,
-    "scenarios_unbacked": 128,
+    "scenarios_backed": 1287,
+    "scenarios_unbacked": 126,
     "test_refs": 3343,
     "test_refs_unresolved": 4
   },
@@ -2196,9 +2196,11 @@
           "scenarios": [
             {
               "name": "device-resident decode produces identical output to host fallback",
-              "tests_resolved": [],
+              "tests_resolved": [
+                "larql_compute::tests::test_cuda_decode::decode_token_phase1_matches_host_fallback"
+              ],
               "tests_unresolved": [],
-              "unbacked": true,
+              "unbacked": false,
               "spec_file": "openspec/changes/cuda-decode-device-resident/specs/compute-cuda-kernels/spec.md",
               "line": 40
             },
@@ -2217,9 +2219,11 @@
           "scenarios": [
             {
               "name": "env var routes to the host fallback",
-              "tests_resolved": [],
+              "tests_resolved": [
+                "larql_compute::tests::test_cuda_decode::decode_token_phase1_matches_host_fallback"
+              ],
               "tests_unresolved": [],
-              "unbacked": true,
+              "unbacked": false,
               "spec_file": "openspec/changes/cuda-decode-device-resident/specs/compute-cuda-kernels/spec.md",
               "line": 64
             }
@@ -19712,55 +19716,55 @@
     {
       "fqn": "larql_compute::cuda::backend::driver_missing_returns_typed_error",
       "file": "crates/larql-compute/src/cuda/backend.rs",
-      "line": 238,
+      "line": 327,
       "crate": "larql_compute"
     },
     {
       "fqn": "larql_compute::cuda::backend::supports_f32_gemv_after_baseline",
       "file": "crates/larql-compute/src/cuda/backend.rs",
-      "line": 255,
+      "line": 344,
       "crate": "larql_compute"
     },
     {
       "fqn": "larql_compute::cuda::backend::supports_q4_matvec_after_q4_baseline",
       "file": "crates/larql-compute/src/cuda/backend.rs",
-      "line": 269,
+      "line": 358,
       "crate": "larql_compute"
     },
     {
       "fqn": "larql_compute::cuda::backend::supports_fa2_after_fused_attention",
       "file": "crates/larql-compute/src/cuda/backend.rs",
-      "line": 280,
+      "line": 369,
       "crate": "larql_compute"
     },
     {
       "fqn": "larql_compute::cuda::backend::supports_decode_after_cuda_decode_backend",
       "file": "crates/larql-compute/src/cuda/backend.rs",
-      "line": 295,
+      "line": 384,
       "crate": "larql_compute"
     },
     {
       "fqn": "larql_compute::cuda::backend::tests::supports_cuda_oxide_when_feature_enabled",
       "file": "crates/larql-compute/src/cuda/backend.rs",
-      "line": 303,
+      "line": 392,
       "crate": "larql_compute"
     },
     {
       "fqn": "larql_compute::cuda::backend::supports_cuda_oxide_when_feature_enabled",
       "file": "crates/larql-compute/src/cuda/backend.rs",
-      "line": 303,
+      "line": 392,
       "crate": "larql_compute"
     },
     {
       "fqn": "larql_compute::cuda::matmul::tests::cuda_op_constants_are_distinct",
       "file": "crates/larql-compute/src/cuda/matmul.rs",
-      "line": 182,
+      "line": 217,
       "crate": "larql_compute"
     },
     {
       "fqn": "larql_compute::cuda::matmul::cuda_op_constants_are_distinct",
       "file": "crates/larql-compute/src/cuda/matmul.rs",
-      "line": 182,
+      "line": 217,
       "crate": "larql_compute"
     },
     {

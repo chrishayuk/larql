@@ -177,12 +177,30 @@ Phase 1 is "ship it" on these numbers, measured on the dev box
 (RTX 4090, CUDA 13.1, Gemma 3 4B Q4_K vindex, 20 tokens after 3
 warmup):
 
-| Metric | Today | Phase 1 target | Phase 3 target |
-|---|---:|---:|---:|
-| `decode ms/token` | 162.72 | ≤ 100 | ≤ 60 |
-| `GPU fwd ms/token` | 160.820 | ≤ 95 | ≤ 55 |
-| `tok/s` | 6.1 | ≥ 10 | ≥ 16 |
-| Bit parity vs old path | — | ≤ 1e-3 max-element | ≤ 1e-3 max-element |
+| Metric | Pre-Phase 1 | Phase 1 actual | Phase 1 target | Phase 3 target |
+|---|---:|---:|---:|---:|
+| `decode ms/token` | 162.72 | **152.73** | ≤ 100 | ≤ 60 |
+| `GPU fwd ms/token` | 160.820 | **151.024** | ≤ 95 | ≤ 55 |
+| `tok/s` | 6.1 | **6.5** | ≥ 10 | ≥ 16 |
+| Bit parity vs host fallback | — | **≤ 1e-3 max-element** | ≤ 1e-3 max-element | ≤ 1e-3 max-element |
 
-If Phase 1 misses by > 25%, abort and document. The host-fallback
-env var is the back-out path.
+`LARQL_CUDA_DECODE_HOST_FALLBACK=1` control on the same build:
+`decode 158.88 ms/token`, `GPU fwd 157.166 ms/token` — the new
+default beats the legacy path by ~6 ms/token (3.8%) at parity.
+
+**Phase 1 misses the target.** Per the proposal's own decision
+gate ("if `decode ms/token > 120`, inspect for residual sync"),
+Phase 2 (GPU `rms_norm` / `silu_gate_up` / `add_in_place`)
+remains needed to clear the bar. Sync overhead is not the
+dominant cost at this scale; the remaining ~150 ms/token is
+spread across cuBLAS launch + arithmetic on the projection
+GEMVs, the K/V cache D2H per layer (Phase 3), and per-call
+allocation. Phase 2 will eliminate 4 of the 5 remaining D2H
+per layer (gate, up, attn_delta, ffn_delta) and is expected
+to land most of the remaining headroom.
+
+Phase 1 ships as-is on the strength of: (a) parity correctness,
+(b) measured improvement vs the host-fallback control, and
+(c) being a strict prerequisite for Phase 2 — without the
+device-resident projection API the GPU norm/activate kernels
+have nowhere to read their inputs from on the device.

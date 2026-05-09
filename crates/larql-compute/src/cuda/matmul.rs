@@ -172,6 +172,41 @@ pub(crate) fn gemv_device_w(
     drv.to_host(&y_dev)
 }
 
+/// Device-resident GEMV: `y = W * x` with both `W` and `x` already on
+/// device, output also on device. No `htod`, no `dtoh`, no `sync`.
+/// `cuda-decode-device-resident` Phase 1.
+pub(crate) fn gemv_device_inout(
+    drv: &Driver,
+    w_dev: &CudaSlice<f32>,
+    x_dev: &CudaSlice<f32>,
+    n: usize,
+    k: usize,
+) -> Result<CudaSlice<f32>, CudaInitError> {
+    debug_assert_eq!(w_dev.len(), n * k, "W length mismatch");
+    debug_assert_eq!(x_dev.len(), k, "x length mismatch");
+
+    let mut y_dev = drv.device_alloc(n)?;
+    let cfg = GemmConfig {
+        transa: CUBLAS_OP_T,
+        transb: CUBLAS_OP_N,
+        m: n as i32,
+        n: 1,
+        k: k as i32,
+        alpha: 1.0_f32,
+        lda: k as i32,
+        ldb: k as i32,
+        beta: 0.0_f32,
+        ldc: n as i32,
+    };
+
+    unsafe {
+        drv.blas.gemm(cfg, w_dev, x_dev, &mut y_dev).map_err(|e| {
+            CudaInitError::DriverMissing(format!("cublas gemv_device_inout: {e:?}"))
+        })?;
+    }
+    Ok(y_dev)
+}
+
 #[cfg(test)]
 mod tests {
     // The real correctness gate is in tests/test_cuda_f32.rs (gated on
