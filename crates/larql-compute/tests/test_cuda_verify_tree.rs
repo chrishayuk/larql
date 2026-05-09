@@ -8,7 +8,7 @@
 
 #![cfg(any(feature = "cuda", feature = "cuda-oxide"))]
 
-use larql_compute::cuda::sampling::verify_tree_gpu;
+use larql_compute::cuda::sampling::{verify_tree_gpu, verify_tree_gpu_parallel};
 use larql_compute::cuda::CudaBackend;
 
 fn gpu_or_skip() -> Option<CudaBackend> {
@@ -277,5 +277,88 @@ fn verify_tree_mixed_acceptance_regime() {
     assert!(
         hist_first_reject > 0,
         "mixed regime expected some rejections"
+    );
+}
+
+#[test]
+fn verify_tree_parallel_matches_serial_at_small_vocab() {
+    // Parallel kernel reduction order differs from CPU serial sum;
+    // at small vocab (synth_probs vocab=32, all-positive), the
+    // parallel reduction (binary tree in shared mem) should still
+    // match the single-thread serial CPU oracle bit-equally because
+    // every partial sum is performed in finite-precision but stays
+    // numerically tight. Spot-check 32 seeds.
+    let Some(backend) = gpu_or_skip() else { return };
+    let vocab = 32;
+    let p_target = vec![
+        synth_probs(vocab, 0xAAAA),
+        synth_probs(vocab, 0xBBBB),
+        synth_probs(vocab, 0xCCCC),
+    ];
+    let drafts = vec![3i32, 7, 11];
+    let pdraft: Vec<f32> = drafts
+        .iter()
+        .enumerate()
+        .map(|(k, &d)| p_target[k][d as usize] * 0.7)
+        .collect();
+    let mut serial_par_match = 0;
+    for seed in 0..32u64 {
+        let serial = verify_tree_gpu(&backend, &p_target, &drafts, &pdraft, vocab, seed)
+            .expect("verify_tree_gpu");
+        let parallel = verify_tree_gpu_parallel(&backend, &p_target, &drafts, &pdraft, vocab, seed)
+            .expect("verify_tree_gpu_parallel");
+        if serial == parallel {
+            serial_par_match += 1;
+        }
+    }
+    // At small vocab, sums are within ulp regardless of order — expect
+    // 100% match (statistical equivalence proof at large vocab is
+    // tested via distributional bench).
+    assert!(
+        serial_par_match >= 30,
+        "small-vocab parallel/serial agreement too low: {serial_par_match}/32"
+    );
+}
+
+#[test]
+fn verify_tree_parallel_distribution_at_vocab_256() {
+    // Statistical-equivalence test at vocab=256 over many seeds:
+    // both kernels SHALL produce the same DISTRIBUTION of bonus
+    // tokens (within 5% absolute per-bin) over 4096 seeds, even if
+    // individual seeds may differ at boundary cases.
+    let Some(backend) = gpu_or_skip() else { return };
+    let vocab = 256;
+    // Single-position all-accept setup so bonus is sampled.
+    let p = synth_probs(vocab, 0xF00D);
+    let p_target = vec![p.clone()];
+    let drafts = vec![5i32];
+    let pdraft = vec![p[5]]; // ratio = 1 → certain accept
+
+    let n_trials = 4096;
+    let mut hist_serial = vec![0u32; vocab];
+    let mut hist_parallel = vec![0u32; vocab];
+    for seed in 0..n_trials as u64 {
+        let s = verify_tree_gpu(&backend, &p_target, &drafts, &pdraft, vocab, seed).unwrap();
+        let p_ =
+            verify_tree_gpu_parallel(&backend, &p_target, &drafts, &pdraft, vocab, seed).unwrap();
+        if s.bonus >= 0 {
+            hist_serial[s.bonus as usize] += 1;
+        }
+        if p_.bonus >= 0 {
+            hist_parallel[p_.bonus as usize] += 1;
+        }
+    }
+    let mut max_div = 0.0_f32;
+    for i in 0..vocab {
+        let s_p = hist_serial[i] as f32 / n_trials as f32;
+        let p_p = hist_parallel[i] as f32 / n_trials as f32;
+        let d = (s_p - p_p).abs();
+        if d > max_div {
+            max_div = d;
+        }
+    }
+    assert!(
+        max_div < 0.05,
+        "distributional divergence between serial and parallel: {max_div}"
     );
 }

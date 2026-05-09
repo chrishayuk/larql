@@ -138,6 +138,16 @@ impl Driver {
             .map_err(|e| CudaInitError::DriverMissing(format!("dtoh i32 copy: {e:?}")))
     }
 
+    /// Copy a host `u32` slice to a fresh device buffer.
+    pub(crate) fn device_u32_buf_from(
+        &self,
+        host: &[u32],
+    ) -> Result<CudaSlice<u32>, CudaInitError> {
+        self.stream
+            .clone_htod(host)
+            .map_err(|e| CudaInitError::DriverMissing(format!("htod u32 copy: {e:?}")))
+    }
+
     /// Best-effort device name string for diagnostics.
     pub(crate) fn device_info(&self) -> String {
         // cudarc 0.19 has no high-level "device name" accessor; we
