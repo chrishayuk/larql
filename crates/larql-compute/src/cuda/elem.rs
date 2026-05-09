@@ -90,7 +90,7 @@ extern "C" __global__ void silu_gate_up_f32(
     if (gelu) {
         a = 0.5f * g * (1.0f + tanhf(0.7978845608f * (g + 0.044715f * g * g * g)));
     } else {
-        a = g / (1.0f + expf(-g));
+        a = g / (1.0f + __expf(-g));
     }
     out[idx] = a * up[idx];
 }
