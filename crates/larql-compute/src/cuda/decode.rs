@@ -59,6 +59,18 @@ fn decode_graph_enabled() -> bool {
     std::env::var("LARQL_CUDA_DECODE_GRAPH").ok().as_deref() != Some("0")
 }
 
+/// `LARQL_CUDA_PREFILL_TENSOR_CORES=1` routes the prefill projection
+/// GEMM through the f16 / Tensor Core cuBLAS path (`hgemm` with
+/// `CUBLAS_COMPUTE_32F` accumulator). Default = off because the
+/// f16 cache is a one-time, per-session memory commitment in
+/// addition to the existing f32 cache. `cuda-prefill-tensor-cores`.
+fn prefill_tensor_cores_enabled() -> bool {
+    std::env::var("LARQL_CUDA_PREFILL_TENSOR_CORES")
+        .ok()
+        .as_deref()
+        == Some("1")
+}
+
 #[derive(Default, Debug, Clone)]
 struct DecodeProfile {
     norm_cpu: std::time::Duration,
@@ -1790,10 +1802,18 @@ impl CudaBackend {
     }
 
     /// Q-format-aware projection GEMM for batched prefill. Routes
-    /// Q4_K and Q6_K through their respective f32 device caches (one-
-    /// time dequant per session) and runs the projection as a cuBLAS
+    /// Q4_K and Q6_K through their respective f32 (or f16, with
+    /// `LARQL_CUDA_PREFILL_TENSOR_CORES=1`) device caches (one-time
+    /// dequant per session) and runs the projection as a cuBLAS
     /// `(seq_len, hidden) × (out_dim, hidden)^T → (seq_len, out_dim)`
-    /// GEMM. `cuda-prefill-batched-q4k` Phase 1.
+    /// GEMM.
+    ///
+    /// f16 path (`cuda-prefill-tensor-cores`):
+    /// 1. Convert `x_seq` (f32) → fresh f16 buffer.
+    /// 2. cuBLAS hgemm against the cached f16 weight (Tensor Cores
+    ///    on Ada/Ampere/Hopper).
+    /// 3. Convert the f16 result → fresh f32 buffer for the rest of
+    ///    the pipeline.
     fn gemm_proj_seq(
         &self,
         weight: QuantWeight<'_>,
@@ -1803,6 +1823,37 @@ impl CudaBackend {
         hidden: usize,
     ) -> Option<CudaSlice<f32>> {
         let n_elements = out_dim * hidden;
+        if prefill_tensor_cores_enabled() {
+            let x_f16 = super::elem::f32_to_f16_device(self, x_seq).ok()?;
+            let out_f16 = match weight.format {
+                QuantFormat::Q4_K => self
+                    .with_q4k_f16_device_buf(weight.data, n_elements, |w_dev| {
+                        kernels::matmul_transb_device_inout_f16(
+                            self.driver(),
+                            &x_f16,
+                            w_dev,
+                            seq_len,
+                            out_dim,
+                            hidden,
+                        )
+                    })
+                    .ok()?,
+                QuantFormat::Q6_K => self
+                    .with_q6k_f16_device_buf(weight.data, n_elements, |w_dev| {
+                        kernels::matmul_transb_device_inout_f16(
+                            self.driver(),
+                            &x_f16,
+                            w_dev,
+                            seq_len,
+                            out_dim,
+                            hidden,
+                        )
+                    })
+                    .ok()?,
+                _ => return None,
+            };
+            return super::elem::f16_to_f32_device(self, &out_f16).ok();
+        }
         match weight.format {
             QuantFormat::Q4_K => self
                 .with_q4k_f32_device_buf(weight.data, n_elements, |w_dev| {

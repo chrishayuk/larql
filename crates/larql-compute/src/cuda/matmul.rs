@@ -9,6 +9,7 @@ use cudarc::cublas::{
     Gemm, GemmConfig,
 };
 use cudarc::driver::CudaSlice;
+use half::f16;
 
 use super::driver::Driver;
 use super::error::CudaInitError;
@@ -204,6 +205,48 @@ pub(crate) fn matmul_transb_device_inout(
     unsafe {
         drv.blas.gemm(cfg, b_dev, a_dev, &mut c_dev).map_err(|e| {
             CudaInitError::DriverMissing(format!("cublas matmul_transb_device: {e:?}"))
+        })?;
+    }
+    Ok(c_dev)
+}
+
+/// `cuda-prefill-tensor-cores`: device-resident GEMM `C = A * B^T`
+/// in f16 inputs / f16 outputs. cuBLAS routes this through cublasGemmEx
+/// with `CUBLAS_COMPUTE_32F` accumulator on Ada/Ampere/Hopper, which
+/// dispatches to Tensor Cores for an ~2-4× speedup over SGEMM on
+/// the same shapes. The output stays in f16 — convert back to f32
+/// via `elem::f16_to_f32_device` on the way out of the prefill GEMM
+/// path.
+pub(crate) fn matmul_transb_device_inout_f16(
+    drv: &Driver,
+    a_dev: &CudaSlice<half::f16>,
+    b_dev: &CudaSlice<half::f16>,
+    m: usize,
+    n: usize,
+    k: usize,
+) -> Result<CudaSlice<half::f16>, CudaInitError> {
+    debug_assert_eq!(a_dev.len(), m * k, "A length mismatch");
+    debug_assert_eq!(b_dev.len(), n * k, "B length mismatch");
+    let mut c_dev = unsafe {
+        drv.stream
+            .alloc::<half::f16>(m * n)
+            .map_err(|e| CudaInitError::DriverMissing(format!("alloc f16 c: {e:?}")))?
+    };
+    let cfg = GemmConfig {
+        transa: CUBLAS_OP_T,
+        transb: CUBLAS_OP_N,
+        m: n as i32,
+        n: m as i32,
+        k: k as i32,
+        alpha: half::f16::from_f32_const(1.0),
+        lda: k as i32,
+        ldb: k as i32,
+        beta: half::f16::from_f32_const(0.0),
+        ldc: n as i32,
+    };
+    unsafe {
+        drv.blas.gemm(cfg, b_dev, a_dev, &mut c_dev).map_err(|e| {
+            CudaInitError::DriverMissing(format!("cublas matmul_transb_device_f16: {e:?}"))
         })?;
     }
     Ok(c_dev)

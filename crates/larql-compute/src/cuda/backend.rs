@@ -46,6 +46,12 @@ pub struct CudaBackend {
     q6k_f32_device_cache: Mutex<HashMap<DeviceBytesKey, Arc<CudaSlice<f32>>>>,
     q6k_packed_device_cache: Mutex<HashMap<DeviceBytesKey, Arc<CudaSlice<u8>>>>,
     q4k_f32_device_cache: Mutex<HashMap<DeviceBytesKey, Arc<CudaSlice<f32>>>>,
+    /// `cuda-prefill-tensor-cores`: dequantised + downcast f16
+    /// weights for the f16 cuBLAS GEMM prefill path. Halves the
+    /// device memory vs `q4k_f32_device_cache` and unlocks Tensor
+    /// Cores in cuBLAS hgemm.
+    q4k_f16_device_cache: Mutex<HashMap<DeviceBytesKey, Arc<CudaSlice<half::f16>>>>,
+    q6k_f16_device_cache: Mutex<HashMap<DeviceBytesKey, Arc<CudaSlice<half::f16>>>>,
     /// Per-pointer cache of small f32 weights (norms etc.) so the
     /// per-layer norm-weight htod's collapse to a one-time upload per
     /// host buffer. Keyed by host pointer + length + content hash so
@@ -80,6 +86,8 @@ impl CudaBackend {
             q6k_f32_device_cache: Mutex::new(HashMap::new()),
             q6k_packed_device_cache: Mutex::new(HashMap::new()),
             q4k_f32_device_cache: Mutex::new(HashMap::new()),
+            q4k_f16_device_cache: Mutex::new(HashMap::new()),
+            q6k_f16_device_cache: Mutex::new(HashMap::new()),
             f32_norm_device_cache: Mutex::new(HashMap::new()),
             decode_scratch: Mutex::new(None),
             decode_graph: Mutex::new(None),
@@ -170,6 +178,83 @@ impl CudaBackend {
     /// during prefill — re-reading 9.6 GB of f32 weights is faster
     /// than per-call dequant. Decode still uses the packed cache via
     /// `with_q4k_device_buf` + mmvq.
+    /// `cuda-prefill-tensor-cores`: f16 cache for cuBLAS hgemm.
+    /// Dequantises Q4_K bytes via `dequant_q4_k`, downcasts each
+    /// element to f16 on the host (one-time per session), and uploads
+    /// the f16 buffer. Halves the device memory of the equivalent
+    /// f32 cache (`q4k_f32_device_cache`) and unlocks Tensor Cores
+    /// in `matmul_transb_device_inout_f16`.
+    pub(crate) fn with_q4k_f16_device_buf<R>(
+        &self,
+        host: &[u8],
+        n_elements: usize,
+        f: impl FnOnce(&CudaSlice<half::f16>) -> Result<R, CudaInitError>,
+    ) -> Result<R, CudaInitError> {
+        let key = DeviceBytesKey::from_slice(host);
+        {
+            let cache = self
+                .q4k_f16_device_cache
+                .lock()
+                .map_err(|_| CudaInitError::DriverMissing("q4k f16 cache poisoned".into()))?;
+            if let Some(arc) = cache.get(&key) {
+                return f(arc);
+            }
+        }
+        let w_f32 = dequant::dequant_q4_k(host, n_elements)
+            .map_err(|e| CudaInitError::DriverMissing(format!("q4k dequant: {e:?}")))?;
+        let w_f16: Vec<half::f16> = w_f32.iter().map(|&v| half::f16::from_f32(v)).collect();
+        let arc = Arc::new(
+            self.drv
+                .stream
+                .clone_htod(&w_f16)
+                .map_err(|e| CudaInitError::DriverMissing(format!("htod q4k f16: {e:?}")))?,
+        );
+        let mut cache = self
+            .q4k_f16_device_cache
+            .lock()
+            .map_err(|_| CudaInitError::DriverMissing("q4k f16 cache poisoned".into()))?;
+        let entry = cache.entry(key).or_insert_with(|| Arc::clone(&arc));
+        let arc = Arc::clone(entry);
+        drop(cache);
+        f(&arc)
+    }
+
+    /// `cuda-prefill-tensor-cores`: f16 cache for Q6_K weights.
+    pub(crate) fn with_q6k_f16_device_buf<R>(
+        &self,
+        host: &[u8],
+        n_elements: usize,
+        f: impl FnOnce(&CudaSlice<half::f16>) -> Result<R, CudaInitError>,
+    ) -> Result<R, CudaInitError> {
+        let key = DeviceBytesKey::from_slice(host);
+        {
+            let cache = self
+                .q6k_f16_device_cache
+                .lock()
+                .map_err(|_| CudaInitError::DriverMissing("q6k f16 cache poisoned".into()))?;
+            if let Some(arc) = cache.get(&key) {
+                return f(arc);
+            }
+        }
+        let w_f32 = dequant::dequant_q6_k(host, n_elements)
+            .map_err(|e| CudaInitError::DriverMissing(format!("q6k dequant: {e:?}")))?;
+        let w_f16: Vec<half::f16> = w_f32.iter().map(|&v| half::f16::from_f32(v)).collect();
+        let arc = Arc::new(
+            self.drv
+                .stream
+                .clone_htod(&w_f16)
+                .map_err(|e| CudaInitError::DriverMissing(format!("htod q6k f16: {e:?}")))?,
+        );
+        let mut cache = self
+            .q6k_f16_device_cache
+            .lock()
+            .map_err(|_| CudaInitError::DriverMissing("q6k f16 cache poisoned".into()))?;
+        let entry = cache.entry(key).or_insert_with(|| Arc::clone(&arc));
+        let arc = Arc::clone(entry);
+        drop(cache);
+        f(&arc)
+    }
+
     pub(crate) fn with_q4k_f32_device_buf<R>(
         &self,
         host: &[u8],

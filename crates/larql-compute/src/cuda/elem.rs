@@ -187,11 +187,43 @@ extern "C" __global__ void quantize_q8_1_f32(
 }
 "#;
 
+/// `cuda-prefill-tensor-cores`: f32 ↔ f16 element-wise convert.
+/// Used to bridge the prefill GEMM's f16 inputs/outputs with the
+/// rest of the f32 pipeline. cuBLAS hgemm uses a Tensor Core path
+/// on Ada/Ampere/Hopper for f16 inputs + f32 accumulator.
+const F32_F16_CONVERT_SRC: &str = r#"
+extern "C" __global__ void f32_to_f16(
+    const float* __restrict__ in,
+    unsigned short* __restrict__ out,
+    int n
+) {
+    int i = blockIdx.x * blockDim.x + threadIdx.x;
+    if (i >= n) return;
+    unsigned short h;
+    asm("cvt.rn.f16.f32 %0, %1;" : "=h"(h) : "f"(in[i]));
+    out[i] = h;
+}
+
+extern "C" __global__ void f16_to_f32(
+    const unsigned short* __restrict__ in,
+    float* __restrict__ out,
+    int n
+) {
+    int i = blockIdx.x * blockDim.x + threadIdx.x;
+    if (i >= n) return;
+    float f;
+    asm("cvt.f32.f16 %0, %1;" : "=f"(f) : "h"(in[i]));
+    out[i] = f;
+}
+"#;
+
 static RMS_NORM_FUNC: OnceLock<(std::sync::Arc<CudaModule>, CudaFunction)> = OnceLock::new();
 static SILU_GATE_UP_FUNC: OnceLock<(std::sync::Arc<CudaModule>, CudaFunction)> = OnceLock::new();
 static ADD_IN_PLACE_FUNC: OnceLock<(std::sync::Arc<CudaModule>, CudaFunction)> = OnceLock::new();
 static SCALE_INPLACE_FUNC: OnceLock<(std::sync::Arc<CudaModule>, CudaFunction)> = OnceLock::new();
 static QUANTIZE_Q8_1_FUNC: OnceLock<(std::sync::Arc<CudaModule>, CudaFunction)> = OnceLock::new();
+static F32_TO_F16_FUNC: OnceLock<(std::sync::Arc<CudaModule>, CudaFunction)> = OnceLock::new();
+static F16_TO_F32_FUNC: OnceLock<(std::sync::Arc<CudaModule>, CudaFunction)> = OnceLock::new();
 
 fn load_kernel(
     drv: &Driver,
@@ -721,6 +753,70 @@ pub(crate) fn scale_inplace_batch_device(
     scalar: f32,
 ) -> Result<(), CudaInitError> {
     scale_inplace_device(backend, dst_seq, scalar)
+}
+
+/// `cuda-prefill-tensor-cores`: convert a device-resident f32 buffer
+/// to a fresh device-resident f16 buffer. Element-wise CVT with
+/// round-to-nearest. Used to bridge the prefill GEMM's f16 inputs
+/// with the rest of the f32 pipeline.
+pub(crate) fn f32_to_f16_device(
+    backend: &CudaBackend,
+    in_f32: &CudaSlice<f32>,
+) -> Result<CudaSlice<half::f16>, CudaInitError> {
+    let n = in_f32.len();
+    let drv = backend.driver();
+    let func = load_kernel(drv, &F32_TO_F16_FUNC, F32_F16_CONVERT_SRC, "f32_to_f16")?;
+    let mut out = unsafe {
+        drv.stream
+            .alloc::<half::f16>(n)
+            .map_err(|e| CudaInitError::DriverMissing(format!("alloc f16: {e:?}")))?
+    };
+    let block_dim: u32 = 256;
+    let cfg = LaunchConfig {
+        grid_dim: ((n as u32).div_ceil(block_dim), 1, 1),
+        block_dim: (block_dim, 1, 1),
+        shared_mem_bytes: 0,
+    };
+    let n_i = n as i32;
+    unsafe {
+        drv.stream
+            .launch_builder(func)
+            .arg(in_f32)
+            .arg(&mut out)
+            .arg(&n_i)
+            .launch(cfg)
+            .map_err(|e| CudaInitError::DriverMissing(format!("launch f32_to_f16: {e:?}")))?;
+    }
+    Ok(out)
+}
+
+/// `cuda-prefill-tensor-cores`: convert a device-resident f16 buffer
+/// to a fresh device-resident f32 buffer.
+pub(crate) fn f16_to_f32_device(
+    backend: &CudaBackend,
+    in_f16: &CudaSlice<half::f16>,
+) -> Result<CudaSlice<f32>, CudaInitError> {
+    let n = in_f16.len();
+    let drv = backend.driver();
+    let func = load_kernel(drv, &F16_TO_F32_FUNC, F32_F16_CONVERT_SRC, "f16_to_f32")?;
+    let mut out = drv.device_alloc_uninit(n)?;
+    let block_dim: u32 = 256;
+    let cfg = LaunchConfig {
+        grid_dim: ((n as u32).div_ceil(block_dim), 1, 1),
+        block_dim: (block_dim, 1, 1),
+        shared_mem_bytes: 0,
+    };
+    let n_i = n as i32;
+    unsafe {
+        drv.stream
+            .launch_builder(func)
+            .arg(in_f16)
+            .arg(&mut out)
+            .arg(&n_i)
+            .launch(cfg)
+            .map_err(|e| CudaInitError::DriverMissing(format!("launch f16_to_f32: {e:?}")))?;
+    }
+    Ok(out)
 }
 
 #[cfg(test)]
