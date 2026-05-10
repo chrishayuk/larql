@@ -76,16 +76,34 @@ pub fn target_forward_via_speculative_decode(
         // canonical history before this call. We don't try to fix it.
         return None;
     }
-    let mut per_node = Vec::with_capacity(tree.len());
-    for node_idx in 0..tree.len() {
-        // Build chain = root → ... → this_node (root-first order).
-        let chain: Vec<TokenId> = tree
-            .ancestors(node_idx)
-            .iter()
-            .rev()
-            .map(|&i| tree.nodes()[i].token.id)
-            .collect();
-        // Embed each chain token to its [hidden]-shaped vector.
+
+    // Linear-chain optimization: when the tree has exactly one root-to-leaf
+    // path (branches=1), walking the chain ONCE captures all per-node
+    // hiddens. The chain order matches BFS order because each subsequent
+    // node has the previous as parent, so `hiddens[k]` corresponds to
+    // `tree.nodes()[k]`. This drops cost from O(N×D) to O(N) — for the
+    // typical depth=2 b=1 default, that's 2 decode_token calls instead of 3.
+    let paths = tree.root_to_leaf_paths();
+    if paths.len() == 1 {
+        let path = &paths[0];
+        debug_assert_eq!(
+            path.len(),
+            tree.len(),
+            "linear tree must have all nodes on the single path"
+        );
+        // Path order IS the chain order for a linear tree built via
+        // build_linear_tree (root → child → ... → leaf, indices 0..N-1).
+        // Verify defensively: each path[k] should equal k.
+        for (k, &node_idx) in path.iter().enumerate() {
+            if node_idx != k {
+                // Tree is single-path but not built linearly — fall through
+                // to the general per-node walk below for safety.
+                return target_forward_via_speculative_decode_per_node(
+                    weights, history, tree, backend, layers, dims,
+                );
+            }
+        }
+        let chain: Vec<TokenId> = path.iter().map(|&i| tree.nodes()[i].token.id).collect();
         let x_per_token: Vec<Vec<f32>> = chain
             .iter()
             .map(|&tok| {
@@ -93,8 +111,64 @@ pub fn target_forward_via_speculative_decode(
                 h.row(0).to_vec()
             })
             .collect();
-        // Backend processes the chain (advances cache, returns
-        // per-position hiddens, restores cache to pre-call length).
+        let hiddens = backend.decode_tokens_speculative(
+            layers,
+            &x_per_token,
+            dims.hidden,
+            dims.intermediate,
+            dims.q_dim,
+            dims.kv_dim,
+            dims.num_q_heads,
+            dims.num_kv_heads,
+            dims.head_dim,
+            dims.rope_base,
+        )?;
+        if hiddens.len() != tree.len() {
+            return None;
+        }
+        let mut per_node = Vec::with_capacity(tree.len());
+        for h in hiddens {
+            let h_arr = Array2::from_shape_vec((1, dims.hidden), h).ok()?;
+            per_node.push(crate::forward::full_vocab_probs(weights, &h_arr, 1.0));
+        }
+        return Some(per_node);
+    }
+
+    // General tree case (branches > 1): per-node walks with rollback.
+    target_forward_via_speculative_decode_per_node(weights, history, tree, backend, layers, dims)
+}
+
+/// Per-node fallback for non-linear trees. Walks each tree node's
+/// ancestor chain through `decode_tokens_speculative` independently
+/// (cache rolled back between calls). Cost: O(N × max_depth).
+///
+/// Used by `target_forward_via_speculative_decode` when the tree has
+/// branching (`paths.len() > 1`). For linear trees (the typical
+/// branches=1 default), the caller takes the O(N) optimized path
+/// instead.
+fn target_forward_via_speculative_decode_per_node(
+    weights: &ModelWeights,
+    _history: &[TokenId],
+    tree: &DraftTree,
+    backend: &dyn DecodeBackend,
+    layers: &[FullPipelineLayer<'_>],
+    dims: TargetForwardDims,
+) -> Option<Vec<Vec<f32>>> {
+    let mut per_node = Vec::with_capacity(tree.len());
+    for node_idx in 0..tree.len() {
+        let chain: Vec<TokenId> = tree
+            .ancestors(node_idx)
+            .iter()
+            .rev()
+            .map(|&i| tree.nodes()[i].token.id)
+            .collect();
+        let x_per_token: Vec<Vec<f32>> = chain
+            .iter()
+            .map(|&tok| {
+                let h = crate::forward::embed_tokens_pub(weights, &[tok]);
+                h.row(0).to_vec()
+            })
+            .collect();
         let hiddens = backend.decode_tokens_speculative(
             layers,
             &x_per_token,
@@ -110,8 +184,6 @@ pub fn target_forward_via_speculative_decode(
         if hiddens.len() != chain.len() {
             return None;
         }
-        // The LAST hidden in the chain is the target's prediction at
-        // this tree node's position. Apply lm_head + softmax.
         let last = hiddens.last()?;
         let h_arr = Array2::from_shape_vec((1, dims.hidden), last.clone()).ok()?;
         let probs = crate::forward::full_vocab_probs(weights, &h_arr, 1.0);

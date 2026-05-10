@@ -26063,73 +26063,73 @@
     {
       "fqn": "larql_inference::speculative::target_forward::batched_stub_panics_until_phase4c",
       "file": "crates/larql-inference/src/speculative/target_forward.rs",
-      "line": 422,
+      "line": 494,
       "crate": "larql_inference"
     },
     {
       "fqn": "larql_inference::speculative::target_forward::empty_history_with_root_only_tree_works",
       "file": "crates/larql-inference/src/speculative/target_forward.rs",
-      "line": 479,
+      "line": 551,
       "crate": "larql_inference"
     },
     {
       "fqn": "larql_inference::speculative::target_forward::linear_chain_returns_n_distributions",
       "file": "crates/larql-inference/src/speculative/target_forward.rs",
-      "line": 274,
+      "line": 346,
       "crate": "larql_inference"
     },
     {
       "fqn": "larql_inference::speculative::target_forward::root_distribution_matches_predict_q4k_full_vocab_probs_on_history_plus_root",
       "file": "crates/larql-inference/src/speculative/target_forward.rs",
-      "line": 317,
+      "line": 389,
       "crate": "larql_inference"
     },
     {
       "fqn": "larql_inference::speculative::target_forward::tests::batched_stub_panics_until_phase4c",
       "file": "crates/larql-inference/src/speculative/target_forward.rs",
-      "line": 422,
+      "line": 494,
       "crate": "larql_inference"
     },
     {
       "fqn": "larql_inference::speculative::target_forward::tests::empty_history_with_root_only_tree_works",
       "file": "crates/larql-inference/src/speculative/target_forward.rs",
-      "line": 479,
+      "line": 551,
       "crate": "larql_inference"
     },
     {
       "fqn": "larql_inference::speculative::target_forward::tests::linear_chain_returns_n_distributions",
       "file": "crates/larql-inference/src/speculative/target_forward.rs",
-      "line": 274,
+      "line": 346,
       "crate": "larql_inference"
     },
     {
       "fqn": "larql_inference::speculative::target_forward::tests::root_distribution_matches_predict_q4k_full_vocab_probs_on_history_plus_root",
       "file": "crates/larql-inference/src/speculative/target_forward.rs",
-      "line": 317,
+      "line": 389,
       "crate": "larql_inference"
     },
     {
       "fqn": "larql_inference::speculative::target_forward::tests::via_speculative_decode_returns_none_without_kv_cache",
       "file": "crates/larql-inference/src/speculative/target_forward.rs",
-      "line": 441,
+      "line": 513,
       "crate": "larql_inference"
     },
     {
       "fqn": "larql_inference::speculative::target_forward::tests::with_hidden_callback_matches_naive",
       "file": "crates/larql-inference/src/speculative/target_forward.rs",
-      "line": 355,
+      "line": 427,
       "crate": "larql_inference"
     },
     {
       "fqn": "larql_inference::speculative::target_forward::via_speculative_decode_returns_none_without_kv_cache",
       "file": "crates/larql-inference/src/speculative/target_forward.rs",
-      "line": 441,
+      "line": 513,
       "crate": "larql_inference"
     },
     {
       "fqn": "larql_inference::speculative::target_forward::with_hidden_callback_matches_naive",
       "file": "crates/larql-inference/src/speculative/target_forward.rs",
-      "line": 355,
+      "line": 427,
       "crate": "larql_inference"
     },
     {
