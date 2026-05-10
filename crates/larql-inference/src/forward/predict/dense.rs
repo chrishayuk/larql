@@ -74,6 +74,38 @@ pub fn full_vocab_probs(weights: &ModelWeights, h: &Array2<f32>, temperature: f3
         .collect()
 }
 
+/// Batched variant of [`full_vocab_probs`] — returns one vocab-sized
+/// probability vector per row of `h_batch` (shape `[N, hidden]`).
+///
+/// Used by phase 4c's `target_forward_batched` to compute per-tree-node
+/// target distributions in one call site. This is the **C.1 stub** —
+/// CPU-batched (sequential calls to `full_vocab_probs` per row),
+/// correctness-first. Phase 4c task C.2 can replace this with a true
+/// batched GPU kernel (lm_head gemm + per-row softmax) for the perf
+/// win.
+///
+/// **Parity contract**: row `k` of the output SHALL bit-equal
+/// `full_vocab_probs(weights, &h_batch.row(k).to_owned_2d(), temperature)`
+/// for `0 ≤ k < N`. Phase 4c's GPU implementation must satisfy this
+/// within fp32 ordering tolerance (1e-5 absolute per element).
+pub fn full_vocab_probs_batched(
+    weights: &ModelWeights,
+    h_batch: &Array2<f32>,
+    temperature: f32,
+) -> Vec<Vec<f32>> {
+    let n = h_batch.shape()[0];
+    let mut out = Vec::with_capacity(n);
+    for k in 0..n {
+        // Slice the k-th row as its own [1, hidden] view, then collect
+        // to an owned Array2 (full_vocab_probs takes a single
+        // hidden-row 2D layout). This is sequential — phase 4c's GPU
+        // path batches the lm_head matmul + softmax in one launch.
+        let row = h_batch.slice(ndarray::s![k..k + 1, ..]).to_owned();
+        out.push(full_vocab_probs(weights, &row, temperature));
+    }
+    out
+}
+
 pub(crate) fn logits_to_predictions(
     weights: &ModelWeights,
     h: &Array2<f32>,

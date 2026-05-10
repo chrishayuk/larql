@@ -79,6 +79,47 @@ fn full_vocab_probs_argmax_matches_predict_q4k_top1() {
 }
 
 #[test]
+fn full_vocab_probs_batched_matches_per_row_calls() {
+    // Phase 4c task C.1 contract: full_vocab_probs_batched(h_batch)[k]
+    // SHALL bit-equal full_vocab_probs(h_batch.row(k)) for each k.
+    // Locks the parity contract phase 4c's GPU implementation must satisfy.
+    let Some(path) = vindex_path_or_skip() else {
+        return;
+    };
+    let (mut weights, _tok, index) = load(&path);
+    // Get a real hidden state by running a forward pass on a short prompt.
+    let prompt = vec![2u32, 100, 200];
+    let h_real = larql_inference::vindex::predict_q4k_hidden(&mut weights, &prompt, &index, None);
+    // Build a synthetic batch of N hidden states by stacking variants
+    // of h_real with small perturbations (so each row is distinct).
+    let hidden = h_real.shape()[1];
+    let n = 3usize;
+    let last_row = h_real.row(h_real.shape()[0] - 1);
+    let mut batch = ndarray::Array2::<f32>::zeros((n, hidden));
+    for k in 0..n {
+        for d in 0..hidden {
+            // Perturb each row slightly so they're not identical.
+            batch[[k, d]] = last_row[d] + (k as f32) * 1e-3;
+        }
+    }
+
+    let via_batched = larql_inference::full_vocab_probs_batched(&weights, &batch, 1.0);
+    assert_eq!(via_batched.len(), n);
+
+    for k in 0..n {
+        let row_2d = batch.slice(ndarray::s![k..k + 1, ..]).to_owned();
+        let via_single = larql_inference::full_vocab_probs(&weights, &row_2d, 1.0);
+        assert_eq!(via_batched[k].len(), via_single.len(), "row {k} length");
+        for (i, (a, b)) in via_batched[k].iter().zip(&via_single).enumerate() {
+            assert!(
+                (a - b).abs() < 1e-7,
+                "row {k} vocab {i}: batched {a} vs single {b}"
+            );
+        }
+    }
+}
+
+#[test]
 fn full_vocab_probs_top1_probability_matches_predict_q4k() {
     let Some(path) = vindex_path_or_skip() else {
         return;
