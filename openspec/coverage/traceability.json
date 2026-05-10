@@ -26032,37 +26032,49 @@
     {
       "fqn": "larql_inference::speculative::target_forward::empty_history_with_root_only_tree_works",
       "file": "crates/larql-inference/src/speculative/target_forward.rs",
-      "line": 166,
+      "line": 278,
       "crate": "larql_inference"
     },
     {
       "fqn": "larql_inference::speculative::target_forward::linear_chain_returns_n_distributions",
       "file": "crates/larql-inference/src/speculative/target_forward.rs",
-      "line": 85,
+      "line": 131,
       "crate": "larql_inference"
     },
     {
       "fqn": "larql_inference::speculative::target_forward::root_distribution_matches_predict_q4k_full_vocab_probs_on_history_plus_root",
       "file": "crates/larql-inference/src/speculative/target_forward.rs",
-      "line": 128,
+      "line": 174,
       "crate": "larql_inference"
     },
     {
       "fqn": "larql_inference::speculative::target_forward::tests::empty_history_with_root_only_tree_works",
       "file": "crates/larql-inference/src/speculative/target_forward.rs",
-      "line": 166,
+      "line": 278,
       "crate": "larql_inference"
     },
     {
       "fqn": "larql_inference::speculative::target_forward::tests::linear_chain_returns_n_distributions",
       "file": "crates/larql-inference/src/speculative/target_forward.rs",
-      "line": 85,
+      "line": 131,
       "crate": "larql_inference"
     },
     {
       "fqn": "larql_inference::speculative::target_forward::tests::root_distribution_matches_predict_q4k_full_vocab_probs_on_history_plus_root",
       "file": "crates/larql-inference/src/speculative/target_forward.rs",
-      "line": 128,
+      "line": 174,
+      "crate": "larql_inference"
+    },
+    {
+      "fqn": "larql_inference::speculative::target_forward::tests::with_hidden_callback_matches_naive",
+      "file": "crates/larql-inference/src/speculative/target_forward.rs",
+      "line": 212,
+      "crate": "larql_inference"
+    },
+    {
+      "fqn": "larql_inference::speculative::target_forward::with_hidden_callback_matches_naive",
+      "file": "crates/larql-inference/src/speculative/target_forward.rs",
+      "line": 212,
       "crate": "larql_inference"
     },
     {
