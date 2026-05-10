@@ -26570,6 +26570,12 @@
       "crate": "larql_inference"
     },
     {
+      "fqn": "larql_inference::test_speculative_parity::parity_at_scale_256_prompts",
+      "file": "crates/larql-inference/tests/test_speculative_parity.rs",
+      "line": 281,
+      "crate": "larql_inference"
+    },
+    {
       "fqn": "larql_inference::test_target_forward_parity::target_forward_via_speculative_decode_matches_naive_64_seeds",
       "file": "crates/larql-inference/tests/test_target_forward_parity.rs",
       "line": 150,
