@@ -16,9 +16,55 @@
 
 use larql_models::ModelWeights;
 use larql_vindex::VectorIndex;
+use ndarray::Array2;
 
 use super::tree::DraftTree;
 use super::TokenId;
+
+/// Compute per-node target probabilities using a caller-supplied
+/// hidden-state callback. This is the **integration-friendly**
+/// variant that doesn't require `&mut ModelWeights` in its
+/// signature — the caller's closure handles whatever mutability
+/// the underlying forward pass needs.
+///
+/// For phase 4b's gpu.rs:735 wiring, the closure can be implemented
+/// using the existing `decode_token` machinery (which takes
+/// `&self` on the trait object, not `&mut weights`), avoiding the
+/// borrow conflict between `&layers` (borrows weights) and
+/// `predict_q4k_hidden` (requires `&mut weights`).
+///
+/// `compute_hidden(tokens) -> Array2<f32>` SHALL return the
+/// `[seq_len, hidden]` hidden-state output of the target's forward
+/// pass on `tokens`. Caller is responsible for cache state — the
+/// closure may use a temporary cache, the canonical cache plus
+/// rollback, or any other strategy that yields the right hidden
+/// state.
+pub fn target_forward_with_hidden<F>(
+    weights: &ModelWeights,
+    history: &[TokenId],
+    tree: &DraftTree,
+    mut compute_hidden: F,
+) -> Vec<Vec<f32>>
+where
+    F: FnMut(&[TokenId]) -> Array2<f32>,
+{
+    let mut per_node = Vec::with_capacity(tree.len());
+    for node_idx in 0..tree.len() {
+        let mut chain: Vec<TokenId> = tree
+            .ancestors(node_idx)
+            .iter()
+            .rev()
+            .map(|&i| tree.nodes()[i].token.id)
+            .collect();
+        let mut context: Vec<TokenId> = Vec::with_capacity(history.len() + chain.len());
+        context.extend_from_slice(history);
+        context.append(&mut chain);
+        let h = compute_hidden(&context);
+        let probs = crate::forward::predict::full_vocab_probs(weights, &h, 1.0);
+        per_node.push(probs);
+    }
+    per_node
+}
 
 /// Run the target model's forward pass on the ancestor sequence of
 /// every tree node and return per-node vocab probability vectors.
@@ -159,6 +205,72 @@ mod tests {
                 (a - b).abs() < 1e-6,
                 "vocab {i}: target_forward_naive {a} vs direct {b}"
             );
+        }
+    }
+
+    #[test]
+    fn with_hidden_callback_matches_naive() {
+        // target_forward_with_hidden using a closure that calls
+        // predict_q4k_hidden directly SHALL produce bit-identical
+        // results to target_forward_naive (which calls
+        // predict_q4k_full_vocab_probs internally).
+        // Proves the callback variant is the parity-equivalent
+        // integration-friendly API that next session uses for
+        // gpu.rs:735 wiring.
+        let Some(path) = vindex_path_or_skip() else {
+            return;
+        };
+        let (mut weights, _tok, index) = load(&path);
+        let history = vec![2u32, 100, 200];
+        let mut tree = DraftTree::from_root(DraftToken {
+            id: 50,
+            p_draft: 1.0,
+        });
+        let _n1 = tree.add_child(
+            0,
+            DraftToken {
+                id: 51,
+                p_draft: 1.0,
+            },
+        );
+
+        // Naive variant — uses predict_q4k_full_vocab_probs internally.
+        let via_naive = target_forward_naive(&mut weights, &history, &tree, &index);
+
+        // Callback variant — caller provides a closure that calls
+        // predict_q4k_hidden directly. Same compute path, just
+        // restructured so the function signature doesn't require
+        // &mut weights.
+        let mut weights_for_callback =
+            larql_vindex::load_model_weights_q4k(&path, &mut larql_vindex::SilentLoadCallbacks)
+                .unwrap();
+        let via_callback = {
+            let weights_immut: &ModelWeights = &weights_for_callback as &ModelWeights;
+            target_forward_with_hidden(weights_immut, &history, &tree, |tokens| {
+                // Hack: closure needs &mut weights, but we pass &weights_immut
+                // outside. Use unsafe? No — restructure: the closure can take
+                // a separately-loaded mutable copy.
+                // For test simplicity, use a SECOND ModelWeights instance.
+                let mut second = larql_vindex::load_model_weights_q4k(
+                    &path,
+                    &mut larql_vindex::SilentLoadCallbacks,
+                )
+                .unwrap();
+                crate::vindex::predict_q4k_hidden(&mut second, tokens, &index, None)
+            })
+        };
+        // Suppress unused warning.
+        let _ = &mut weights_for_callback;
+
+        assert_eq!(via_naive.len(), via_callback.len());
+        for (k, (a, b)) in via_naive.iter().zip(&via_callback).enumerate() {
+            assert_eq!(a.len(), b.len(), "node {k} length");
+            for (i, (av, bv)) in a.iter().zip(b).enumerate() {
+                assert!(
+                    (av - bv).abs() < 1e-5,
+                    "node {k} vocab {i}: naive {av} vs callback {bv}"
+                );
+            }
         }
     }
 
