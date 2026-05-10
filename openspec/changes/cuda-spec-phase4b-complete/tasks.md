@@ -11,7 +11,12 @@
 ## Phase 4c — batched (next)
 
 - [x] C.1 `larql_inference::full_vocab_probs_batched` (CPU-batched first cut, parity-tested) — landed PR #24
-- [ ] C.2 `larql_inference::speculative::target_forward_batched` — composes `cuda::q4k_batched::matvec_batched` (M_TILE=tree_len) + `cuda::attn_tree::tree_decode_attention` + `full_vocab_probs_batched` for the lm_head step. Replaces the `unimplemented!()` stub from PR #23.
+- C.2 `target_forward_batched` — composes `cuda::q4k_batched::matvec_batched` (M_TILE=tree_len) + `cuda::attn_tree::tree_decode_attention` + lm_head softmax. Replaces the `unimplemented!()` stub from PR #23.
+  - [x] **C.2.a** `DecodeBackend::decode_tokens_speculative` trait method + default impl (sequential decode_token + cache rollback) — landed PR #26
+  - [x] **C.2.b** `target_forward_via_speculative_decode` composes the trait method with `full_vocab_probs` for per-tree-node distributions — landed PR #26 (~500× speedup over naive at depth=2 b=1)
+  - [x] **C.2.c** Linear-chain optimization: detect branches=1 trees and walk chain ONCE (O(N×D) → O(N)) — landed PR #27
+  - [ ] **C.2.d** `gpu.rs:735` integration switch from `try_thread_speculative_step_v2` (separate ModelWeights + naive) to a new `try_thread_speculative_step_v3` that uses canonical backend + `target_forward_via_speculative_decode`. Measurement gate: end-to-end ms/tok must drop from naive's ~25 s/tok to ≤ 100 ms/tok at depth=2 b=1 (the ~250× speedup the function provides should propagate through to wall time).
+  - [ ] **C.2.e** True batched `CudaBackend::decode_tokens_speculative` override: composes `cuda::q4k_batched::matvec_batched` (M_TILE=N) + `cuda::attn_tree::tree_decode_attention` (per-q tree mask) + per-position RoPE + KV writes at speculative positions + batched RMSNorm (new kernel needed) + batched lm_head + softmax. **This is the architectural perf win**: ~5–10 ms per call instead of C.2.c's ~15 ms.
 - [ ] C.3 KV rollback semantics — track pre-speculative cache_len; on rejection at tree node `r`, call `backend.truncate_kv_cache(cache_len + r)` (API already exists on `CudaBackend`)
 - [x] ~~C.4 `rotorquant-window-lag` prereq~~ — **NOT NEEDED**. Confirmed the CUDA decode path uses plain f16 KV cache (`cuda::decode::CudaKvLayer { k: CudaSlice<half::f16>, v: ... }`) — it does NOT use rotorquant compression. The `larql_rotorquant` crate is only used by the host-side `larql_inference::attention::decode::KvCache` (CPU/Metal paths). Phase 4c can proceed without any rotorquant changes.
 - [ ] C.5 Tests: `target_forward_batched_matches_naive_64_seeds` (the load-bearing parity gate)
