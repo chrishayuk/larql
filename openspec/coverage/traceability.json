@@ -1,11 +1,11 @@
 {
   "summary": {
-    "capabilities": 50,
-    "requirements": 484,
-    "scenarios": 1476,
+    "capabilities": 51,
+    "requirements": 487,
+    "scenarios": 1484,
     "scenarios_backed": 1315,
-    "scenarios_unbacked": 161,
-    "test_refs": 3407,
+    "scenarios_unbacked": 169,
+    "test_refs": 3415,
     "test_refs_unresolved": 17
   },
   "capabilities": [
@@ -4993,6 +4993,54 @@
       ]
     },
     {
+      "name": "cuda-spec-tree-attention",
+      "spec_file": "openspec/changes/cuda-spec-branching-tree/specs/cuda-spec-tree-attention/spec.md",
+      "requirements": [
+        {
+          "name": "Tree-mask batched attention kernel for spec verify",
+          "scenarios": [
+            {
+              "name": "linear-chain tree-mask is bit-identical to causal mask",
+              "tests_resolved": [],
+              "tests_unresolved": [],
+              "unbacked": true,
+              "spec_file": "openspec/changes/cuda-spec-branching-tree/specs/cuda-spec-tree-attention/spec.md",
+              "line": 46
+            },
+            {
+              "name": "tree-mask attention matches CPU reference on random trees",
+              "tests_resolved": [],
+              "tests_unresolved": [],
+              "unbacked": true,
+              "spec_file": "openspec/changes/cuda-spec-branching-tree/specs/cuda-spec-tree-attention/spec.md",
+              "line": 55
+            },
+            {
+              "name": "sibling branches don't leak attention",
+              "tests_resolved": [],
+              "tests_unresolved": [],
+              "unbacked": true,
+              "spec_file": "openspec/changes/cuda-spec-branching-tree/specs/cuda-spec-tree-attention/spec.md",
+              "line": 65
+            }
+          ]
+        },
+        {
+          "name": "Ancestor bitset construction is consistent with DraftTree::ancestors",
+          "scenarios": [
+            {
+              "name": "bitset matches DraftTree::ancestors for branching=2 depth=2",
+              "tests_resolved": [],
+              "tests_unresolved": [],
+              "unbacked": true,
+              "spec_file": "openspec/changes/cuda-spec-branching-tree/specs/cuda-spec-tree-attention/spec.md",
+              "line": 88
+            }
+          ]
+        }
+      ]
+    },
+    {
       "name": "deploy-cpu-gpu-split",
       "spec_file": "openspec/specs/deploy-cpu-gpu-split/spec.md",
       "requirements": [
@@ -7530,8 +7578,45 @@
     },
     {
       "name": "inference-speculative-decoding",
-      "spec_file": "openspec/changes/cuda-spec-phase4-integration/specs/inference-speculative-decoding/spec.md",
+      "spec_file": "openspec/changes/cuda-spec-branching-tree/specs/inference-speculative-decoding/spec.md",
       "requirements": [
+        {
+          "name": "Branching-tree spec decode amortises forward cost across multiple chains",
+          "scenarios": [
+            {
+              "name": "branches=1 preserves linear bit-exactness",
+              "tests_resolved": [],
+              "tests_unresolved": [],
+              "unbacked": true,
+              "spec_file": "openspec/changes/cuda-spec-branching-tree/specs/inference-speculative-decoding/spec.md",
+              "line": 44
+            },
+            {
+              "name": "branches>1 yields more emits per spec iter on repetitive prompts",
+              "tests_resolved": [],
+              "tests_unresolved": [],
+              "unbacked": true,
+              "spec_file": "openspec/changes/cuda-spec-branching-tree/specs/inference-speculative-decoding/spec.md",
+              "line": 52
+            },
+            {
+              "name": "tree-mask attention parity vs CPU reference",
+              "tests_resolved": [],
+              "tests_unresolved": [],
+              "unbacked": true,
+              "spec_file": "openspec/changes/cuda-spec-branching-tree/specs/inference-speculative-decoding/spec.md",
+              "line": 61
+            },
+            {
+              "name": "depth=2 branches=2 hits the D.3 perf-flip gate",
+              "tests_resolved": [],
+              "tests_unresolved": [],
+              "unbacked": true,
+              "spec_file": "openspec/changes/cuda-spec-branching-tree/specs/inference-speculative-decoding/spec.md",
+              "line": 69
+            }
+          ]
+        },
         {
           "name": "Dispatch decision tree at the per-token call site",
           "scenarios": [
