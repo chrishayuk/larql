@@ -196,6 +196,80 @@ pub fn try_thread_speculative_step_v2(
     })
 }
 
+/// **Phase 4c task C.2.d** — borrow-conflict-free dispatch using the
+/// canonical backend (no separate `SpeculativeTargetExecutor` needed).
+/// Composes `super::target_forward::target_forward_via_speculative_decode`
+/// (the C.2.b/c work — sequential decode_token + KV rollback, with
+/// linear-chain optimization) with `verify_tree` to produce the
+/// accepted span.
+///
+/// **Vs `try_thread_speculative_step_v2`**: v2 uses a separately-loaded
+/// `ModelWeights` instance (~6 GB peak heap, ~6s drafter forward per
+/// proposal because predict_q4k from-scratch). v3 uses the canonical
+/// backend's KV cache via decode_token (~7.5 ms per token) — drops
+/// target_forward cost from ~12s to ~15ms (~800× speedup).
+///
+/// Drafter still uses the SmallModelDrafter path (own KV cache via
+/// predict_q4k from scratch) — drafter perf optimization is a
+/// separate slice.
+///
+/// Returns `Some(emitted_tokens)` on a successful step (caller MUST
+/// advance the canonical KV cache by `tokens.len()`); `None` to fall
+/// through to the existing non-speculative path.
+///
+/// Returns `None` when:
+/// - `LARQL_SPECULATIVE_DECODE` is unset / not `1`
+/// - thread-local `THREAD_DRAFTER` is None
+/// - `backend.has_kv_cache()` returns false
+/// - `backend.kv_cache_len() != history.len()` (caller contract violation)
+/// - SWA window leaves no slack
+/// - drafter declines (empty proposals)
+#[allow(clippy::too_many_arguments)]
+pub fn try_thread_speculative_step_v3(
+    weights: &ModelWeights,
+    history: &[TokenId],
+    cache_len: usize,
+    backend: &dyn larql_compute::backend::DecodeBackend,
+    layers: &[larql_compute::FullPipelineLayer<'_>],
+    dims: super::target_forward::TargetForwardDims,
+) -> Option<Vec<TokenId>> {
+    if !super::enabled() {
+        return None;
+    }
+    THREAD_DRAFTER.with(|d_cell| {
+        let mut d_ref = d_cell.borrow_mut();
+        let drafter = d_ref.as_mut()?;
+        let cfg = THREAD_CFG.with(|c| *c.borrow());
+        let depth = cfg.effective_depth(cache_len);
+        if depth == 0 {
+            return None;
+        }
+        drafter.seed_history(history);
+        let drafts = drafter.propose(&[], depth);
+        if drafts.is_empty() {
+            return None;
+        }
+        let tree = build_linear_tree(&drafts);
+        let p_target = super::target_forward::target_forward_via_speculative_decode(
+            weights, history, &tree, backend, layers, dims,
+        )?;
+        if p_target.len() != tree.len() {
+            return None;
+        }
+        let span = THREAD_RNG.with(|r_cell| {
+            let mut r_ref = r_cell.borrow_mut();
+            let rng = r_ref.get_or_insert_with(|| VerifyRng::new(0xCAFE_BABE_DEAD_F00D));
+            verify_tree(&tree, &p_target, rng)
+        });
+        let emitted = span.tokens();
+        if emitted.is_empty() {
+            return None;
+        }
+        drafter.accept(&emitted);
+        Some(emitted)
+    })
+}
+
 /// Try one speculative step using the thread-local drafter (if set).
 /// Returns `Some(tokens)` on success — caller MUST advance KV cache by
 /// `tokens.len()` positions. `None` to fall through to the existing

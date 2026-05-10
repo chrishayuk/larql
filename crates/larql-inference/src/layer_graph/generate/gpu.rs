@@ -678,6 +678,22 @@ where
                 .chain(generated_ids.iter().copied())
                 .collect();
             let cache_len = history.len();
+            // C.2.d STATUS: v3 helper exists in wiring.rs but is NOT
+            // wired here yet. The current speculative emit loop advances
+            // the canonical cache by N-1 (not N), leaving cache_len ==
+            // history.len() - 1 entering the next iteration. v3's
+            // strict cache contract requires equality, so it would
+            // return None on every other iteration and fall back to v2.
+            //
+            // Resolving requires restructuring the cache-advance flow
+            // to either (a) advance by N (and skip the next iter's
+            // redundant decode_token of the last emitted) or (b) drop
+            // v3's strict check and have target_forward_via_speculative_decode
+            // catch the cache up internally. Both touch hot-path
+            // logic and need careful unit testing.
+            //
+            // For now: keep using v2 (correct, slow). C.2.d follow-up
+            // PR resolves the cache-state contract before flipping to v3.
             if let Some(emitted) =
                 crate::speculative::try_thread_speculative_step_v2(&*weights, &history, cache_len)
             {
