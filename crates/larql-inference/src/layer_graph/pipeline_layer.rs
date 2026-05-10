@@ -7,10 +7,10 @@
 use crate::model::ModelWeights;
 use larql_compute::{FullPipelineLayer, MoeLayerWeights, QuantFormat, QuantWeight};
 
-pub(crate) const DEFAULT_GPU_KV_CACHE_MAX_SEQ: usize = 4096;
+pub const DEFAULT_GPU_KV_CACHE_MAX_SEQ: usize = 4096;
 
 #[derive(Debug, Clone, Copy, PartialEq)]
-pub(crate) struct AttentionGeometry {
+pub struct AttentionGeometry {
     pub q_dim: usize,
     pub kv_dim: usize,
     pub num_q_heads: usize,
@@ -19,7 +19,7 @@ pub(crate) struct AttentionGeometry {
     pub rope_base: f32,
 }
 
-pub(crate) fn attention_geometry_for_arch_layer(
+pub fn attention_geometry_for_arch_layer(
     weights: &ModelWeights,
     layer: usize,
 ) -> AttentionGeometry {
@@ -50,7 +50,7 @@ pub(crate) fn attention_geometry_for_pipeline_layer(
     }
 }
 
-pub(crate) fn kv_cache_shapes_for_arch(weights: &ModelWeights) -> Vec<(usize, usize)> {
+pub fn kv_cache_shapes_for_arch(weights: &ModelWeights) -> Vec<(usize, usize)> {
     let arch = &*weights.arch;
     (0..weights.num_layers)
         .map(|layer| {

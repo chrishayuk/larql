@@ -26570,6 +26570,12 @@
       "crate": "larql_inference"
     },
     {
+      "fqn": "larql_inference::test_target_forward_parity::target_forward_via_speculative_decode_matches_naive_64_seeds",
+      "file": "crates/larql-inference/tests/test_target_forward_parity.rs",
+      "line": 150,
+      "crate": "larql_inference"
+    },
+    {
       "fqn": "larql_inference::tokenizer::maybe_prepend_bos_empty_input",
       "file": "crates/larql-inference/src/tokenizer.rs",
       "line": 110,
