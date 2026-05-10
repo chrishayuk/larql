@@ -1,11 +1,11 @@
 {
   "summary": {
     "capabilities": 50,
-    "requirements": 478,
-    "scenarios": 1467,
-    "scenarios_backed": 1309,
-    "scenarios_unbacked": 158,
-    "test_refs": 3398,
+    "requirements": 479,
+    "scenarios": 1470,
+    "scenarios_backed": 1310,
+    "scenarios_unbacked": 160,
+    "test_refs": 3401,
     "test_refs_unresolved": 12
   },
   "capabilities": [
@@ -7597,6 +7597,37 @@
               "unbacked": true,
               "spec_file": "openspec/changes/cuda-spec-phase4-integration/specs/inference-speculative-decoding/spec.md",
               "line": 91
+            }
+          ]
+        },
+        {
+          "name": "Phase 4b naive end-to-end speculative decode is the parity oracle",
+          "scenarios": [
+            {
+              "name": "env-OFF preserves baseline bit-exactly",
+              "tests_resolved": [],
+              "tests_unresolved": [],
+              "unbacked": true,
+              "spec_file": "openspec/changes/cuda-spec-phase4b-complete/specs/inference-speculative-decoding/spec.md",
+              "line": 24
+            },
+            {
+              "name": "env-ON dispatch emits tokens through the speculative path",
+              "tests_resolved": [],
+              "tests_unresolved": [],
+              "unbacked": true,
+              "spec_file": "openspec/changes/cuda-spec-phase4b-complete/specs/inference-speculative-decoding/spec.md",
+              "line": 30
+            },
+            {
+              "name": "first-token parity between speculative and baseline",
+              "tests_resolved": [
+                "larql_inference::test_speculative_parity::token_id_parity_speculative_vs_baseline_short_prompt"
+              ],
+              "tests_unresolved": [],
+              "unbacked": false,
+              "spec_file": "openspec/changes/cuda-spec-phase4b-complete/specs/inference-speculative-decoding/spec.md",
+              "line": 36
             }
           ]
         },
@@ -26423,12 +26454,6 @@
       "fqn": "larql_inference::test_gemma3_smoke::first_token_matches_expected_surface",
       "file": "crates/larql-inference/tests/test_gemma3_smoke.rs",
       "line": 42,
-      "crate": "larql_inference"
-    },
-    {
-      "fqn": "larql_inference::test_speculative_parity::token_id_parity_speculative_vs_baseline_short_prompt",
-      "file": "crates/larql-inference/tests/test_speculative_parity.rs",
-      "line": 113,
       "crate": "larql_inference"
     },
     {
