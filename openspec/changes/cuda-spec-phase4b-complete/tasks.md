@@ -26,6 +26,21 @@
 | 4B target / 270M drafter, all fixes + GPU lm_head for full_vocab_probs (env-ON) | 55.43 | gate met (≤100 ms/iter) |
 | 4B target / 270M drafter, **C.2.e batched override gated at n<4** (env-ON) | **48.96** | C.2.e was 7ms slower at small N due to cuBLAS overhead — now opt-in via `LARQL_CUDA_SPEC_BATCHED_MIN_N` |
 
+**Depth sweep on RTX 4090 (`LARQL_SPEC_DEPTH=N` via `bench --draft-model`):**
+
+| depth | ms/iter | tok/s | C.2.e batched on / off |
+|---|---|---|---|
+| 2 | 49.34 | 20.3 | n=3 → falls through to sequential (default) |
+| 3 | 64.86 | 15.4 | n=3 → falls through |
+| 4 | 75.69 | 13.2 | **75.69 vs 79.65 — batched saves 4 ms** |
+| 5 | 85.49 | 11.7 | 85.49 vs 95.72 — batched saves 10 ms |
+| 6 | 94.79 | 10.5 | 94.79 vs 110.00 — batched saves 15 ms |
+| 8 | 116.11 | 8.6 | (extrapolated to ~20+ ms savings) |
+
+At α=0 (the bench prompt's empirical accept rate with the 270M IT drafter), per-iter cost grows linearly with depth (~10–15 ms per added position) but emit count stays flat at ~2 tokens/iter (bonus + picked), so **depth=2 is empirically optimal at α=0**. Higher depth = more wasted draft + verify work.
+
+C.2.e's `n>=4` threshold is empirically correct: at n=3 the batched path is 7 ms *slower*; at n=4 it saves 4 ms; the crossover is at n≈3.5. Lowering the threshold below 4 would require a different (smaller-batch-aware) kernel — cuBLAS GEMM has fixed per-launch overhead that no amount of tuning gets past at n=3.
+
 **Effective per-emitted-token at 55 ms/iter and ~3 tokens/iter**: **~18 ms/tok**. Spec dispatch is now competitive with plain decode (7.4 ms/tok at α=1, ~7.4 × 3 = 22 ms for the same 3-token-equivalent work) and would beat it once the drafter (270M) gets faster — drafter cost still ≈ 80% of each spec iter.
 
 The wall-clock gate of ≤ 100 ms/tok is **NOT** met under any configuration. The spec helper itself (`target_forward_via_speculative_decode` + commit phase) is fast (~50 ms per iter via the canonical backend); the dominant cost is `SmallModelDrafter::propose`, which calls `predict_q4k` **from scratch** on the full history per drafted token (×depth per iter). Smaller drafter ≈ smaller per-call cost but the from-scratch forward is still O(N) in history length; the cost scales linearly per drafted token, hits the wall-clock budget hard.

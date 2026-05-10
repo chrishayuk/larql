@@ -226,9 +226,14 @@ pub fn run(args: BenchArgs) -> Result<(), Box<dyn std::error::Error>> {
             Ok(drafter) => {
                 let env_on = larql_inference::speculative::enabled();
                 larql_inference::speculative::set_thread_drafter(Some(drafter));
+                let spec_depth: usize = std::env::var("LARQL_SPEC_DEPTH")
+                    .ok()
+                    .and_then(|s| s.parse().ok())
+                    .filter(|&d: &usize| (1..=16).contains(&d))
+                    .unwrap_or(2);
                 larql_inference::speculative::set_thread_spec_config(
                     larql_inference::speculative::SpecConfig {
-                        depth: 2,
+                        depth: spec_depth,
                         branches: 1,
                         swa_window: None,
                     },
