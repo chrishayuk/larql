@@ -24395,19 +24395,19 @@
     {
       "fqn": "larql_inference::forward::predict::topk_sort_all_nan_doesnt_panic",
       "file": "crates/larql-inference/src/forward/predict/mod.rs",
-      "line": 68,
+      "line": 69,
       "crate": "larql_inference"
     },
     {
       "fqn": "larql_inference::forward::predict::topk_sort_nan_last_preserves_real_max",
       "file": "crates/larql-inference/src/forward/predict/mod.rs",
-      "line": 42,
+      "line": 43,
       "crate": "larql_inference"
     },
     {
       "fqn": "larql_inference::forward::predict::topk_sort_no_nan_is_plain_descending",
       "file": "crates/larql-inference/src/forward/predict/mod.rs",
-      "line": 83,
+      "line": 84,
       "crate": "larql_inference"
     },
     {
@@ -26451,6 +26451,12 @@
       "crate": "larql_inference"
     },
     {
+      "fqn": "larql_inference::test_full_vocab_probs::full_vocab_probs_batched_matches_per_row_calls",
+      "file": "crates/larql-inference/tests/test_full_vocab_probs.rs",
+      "line": 82,
+      "crate": "larql_inference"
+    },
+    {
       "fqn": "larql_inference::test_full_vocab_probs::full_vocab_probs_normalize_to_one",
       "file": "crates/larql-inference/tests/test_full_vocab_probs.rs",
       "line": 34,
@@ -26459,7 +26465,7 @@
     {
       "fqn": "larql_inference::test_full_vocab_probs::full_vocab_probs_top1_probability_matches_predict_q4k",
       "file": "crates/larql-inference/tests/test_full_vocab_probs.rs",
-      "line": 82,
+      "line": 123,
       "crate": "larql_inference"
     },
     {
