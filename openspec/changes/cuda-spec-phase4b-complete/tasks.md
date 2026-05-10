@@ -10,12 +10,18 @@
 
 ## Phase 4c — batched (next)
 
-- [ ] C.1 `cuda::sampling::full_softmax_batched` — vocab-sized softmax across q_tokens in one kernel
-- [ ] C.2 `larql_inference::speculative::target_forward_batched` — composes `q4k_batched` (M_TILE=tree_len) + `attn_tree` + `full_softmax_batched`
-- [ ] C.3 KV rollback semantics — track pre-speculative cache_len; truncate on rejection at tree node `r`
-- [ ] C.4 `rotorquant-window-lag` (separate prereq proposal) — defer rotor compression by `lag` positions for the speculative window
+- [x] C.1 `larql_inference::full_vocab_probs_batched` (CPU-batched first cut, parity-tested) — landed PR #24
+- [ ] C.2 `larql_inference::speculative::target_forward_batched` — composes `cuda::q4k_batched::matvec_batched` (M_TILE=tree_len) + `cuda::attn_tree::tree_decode_attention` + `full_vocab_probs_batched` for the lm_head step. Replaces the `unimplemented!()` stub from PR #23.
+- [ ] C.3 KV rollback semantics — track pre-speculative cache_len; on rejection at tree node `r`, call `backend.truncate_kv_cache(cache_len + r)` (API already exists on `CudaBackend`)
+- [x] ~~C.4 `rotorquant-window-lag` prereq~~ — **NOT NEEDED**. Confirmed the CUDA decode path uses plain f16 KV cache (`cuda::decode::CudaKvLayer { k: CudaSlice<half::f16>, v: ... }`) — it does NOT use rotorquant compression. The `larql_rotorquant` crate is only used by the host-side `larql_inference::attention::decode::KvCache` (CPU/Metal paths). Phase 4c can proceed without any rotorquant changes.
 - [ ] C.5 Tests: `target_forward_batched_matches_naive_64_seeds` (the load-bearing parity gate)
 - [ ] C.6 Stop-ship: per-step latency ≤ 1.6× single-token decode; 256-prompt token-ID parity vs phase 4b naive
+
+**Optional optimization for C.1**: replace `full_vocab_probs_batched`'s
+sequential per-row implementation with a true batched GPU kernel
+(lm_head gemm at M=tree_len + per-row softmax). Same signature,
+parity contract already locked. Worth it if profiling shows the
+sequential lm_head calls are the bottleneck after C.2 lands.
 
 ## Phase 4d — bench + flip
 
