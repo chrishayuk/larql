@@ -402,17 +402,7 @@ impl Drafter for SmallModelDrafter {
         // Prefer the KV-cached incremental path. Fall back to the
         // legacy from-scratch `predict_q4k` loop if the backend
         // lacks KV support or if any cache step fails.
-        let dbg = std::env::var("LARQL_DRAFTER_PROFILE").ok().as_deref() == Some("1");
-        let t0 = std::time::Instant::now();
         if let Some(drafts) = self.propose_incremental(n) {
-            if dbg {
-                eprintln!(
-                    "[drafter] propose n={n} cache_len={} hist={} elapsed={:.2}ms",
-                    self.cache_len,
-                    self.history.len(),
-                    t0.elapsed().as_secs_f64() * 1000.0
-                );
-            }
             return drafts;
         }
         let mut drafts = Vec::with_capacity(n);

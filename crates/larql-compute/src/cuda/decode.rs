@@ -795,7 +795,20 @@ impl DecodeBackend for CudaBackend {
                 && matches!(l.down.format, QuantFormat::Q4_K | QuantFormat::Q6_K)
         });
         let batched_off = std::env::var("LARQL_CUDA_SPEC_BATCHED").ok().as_deref() == Some("0");
-        if !all_supported || batched_off {
+        // Below this seq_len threshold, the cuBLAS-GEMM-based batched
+        // path (`prefill_q4_seq_device`) loses to the sequential
+        // `decode_token` loop because of fixed per-launch overhead.
+        // Empirically on RTX 4090 with Gemma 3 4B Q4_K_M and a
+        // depth=2 b=1 chain (n=3), the batched path is ~7 ms/iter
+        // SLOWER (~42 ms vs ~35 ms helper time). Default threshold
+        // is 4: the override fires for trees with 4+ nodes (e.g.
+        // depth=3 chains or branching trees). Override via
+        // `LARQL_CUDA_SPEC_BATCHED_MIN_N=<usize>` for benchmarking.
+        let batched_min_n: usize = std::env::var("LARQL_CUDA_SPEC_BATCHED_MIN_N")
+            .ok()
+            .and_then(|s| s.parse().ok())
+            .unwrap_or(4);
+        if !all_supported || batched_off || n < batched_min_n {
             // Fall through to the sequential default: N decode_token
             // calls + truncate. Inlined because Rust traits lack `super`.
             let pre_len = self.kv_cache_len();

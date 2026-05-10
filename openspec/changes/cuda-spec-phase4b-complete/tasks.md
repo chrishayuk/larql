@@ -23,7 +23,8 @@
 | 4B target / 4B drafter (env-ON) | 22 527 | drafter == target, no drafter KV cache |
 | 4B target / 270M drafter, no drafter KV cache (env-ON) | 2 150 | 10× speedup from smaller drafter |
 | 4B target / 270M drafter, drafter KV cache + CUDA non-square QKV fix (env-ON) | 1 419 | full chain enabled |
-| 4B target / 270M drafter, all fixes + GPU lm_head for full_vocab_probs (env-ON) | **55.43** | **gate met (≤100 ms/iter)** |
+| 4B target / 270M drafter, all fixes + GPU lm_head for full_vocab_probs (env-ON) | 55.43 | gate met (≤100 ms/iter) |
+| 4B target / 270M drafter, **C.2.e batched override gated at n<4** (env-ON) | **48.96** | C.2.e was 7ms slower at small N due to cuBLAS overhead — now opt-in via `LARQL_CUDA_SPEC_BATCHED_MIN_N` |
 
 **Effective per-emitted-token at 55 ms/iter and ~3 tokens/iter**: **~18 ms/tok**. Spec dispatch is now competitive with plain decode (7.4 ms/tok at α=1, ~7.4 × 3 = 22 ms for the same 3-token-equivalent work) and would beat it once the drafter (270M) gets faster — drafter cost still ≈ 80% of each spec iter.
 
