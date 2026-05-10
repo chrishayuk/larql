@@ -66,6 +66,50 @@ where
     per_node
 }
 
+/// **Phase 4c skeleton** — batched target forward via composing the
+/// 3 GPU kernels in main (`q4k_batched` + `attn_tree` + `verify_tree_p`).
+///
+/// Replaces the naive O(40x) re-runs of `target_forward_naive` with
+/// a single batched forward pass at `q_tokens = tree.len()`, then a
+/// batched lm_head + softmax per tree node.
+///
+/// This stub exists to lock the function signature for phase 4c. The
+/// implementation lands in the phase 4c PR series — see
+/// `openspec/changes/cuda-spec-phase4b-complete/tasks.md` task list
+/// C.1–C.6 for the breakdown.
+///
+/// **Parity contract** (load-bearing): `target_forward_batched(...)`
+/// SHALL produce the same `Vec<Vec<f32>>` output as
+/// `target_forward_naive(...)` on the same `(history, tree)` inputs,
+/// within fp32 ordering tolerance (1e-5 absolute per element). The
+/// existing `with_hidden_callback_matches_naive` test demonstrates
+/// the pattern at small scale; phase 4c task C.5 scales it to 64
+/// fixed RNG seeds.
+///
+/// Currently returns `unimplemented!()`. Phase 4c implementation
+/// composes the kernels via:
+///   1. `cuda::q4k_batched::matvec_batched` for Q/K/V/wo/gate_up/down
+///      projections at `M_TILE = tree.len()` (microbench: 7× speedup
+///      at M=8 vs M=1×8)
+///   2. `cuda::attn_tree::tree_decode_attention` for attention with
+///      the per-q ancestor mask
+///   3. lm_head + softmax over vocab for each of `tree.len()` hidden
+///      states (new helper needed: `cuda::sampling::full_softmax_batched`
+///      or sequential calls to `crate::forward::predict::full_vocab_probs`)
+#[allow(unused_variables, unused_mut)]
+pub fn target_forward_batched(
+    weights: &mut ModelWeights,
+    history: &[TokenId],
+    tree: &DraftTree,
+    index: &VectorIndex,
+) -> Vec<Vec<f32>> {
+    unimplemented!(
+        "phase 4c — see openspec/changes/cuda-spec-phase4b-complete/tasks.md \
+         tasks C.1-C.6 for the implementation breakdown. Until then, callers \
+         use target_forward_naive (slow but correct) as the parity oracle."
+    )
+}
+
 /// Run the target model's forward pass on the ancestor sequence of
 /// every tree node and return per-node vocab probability vectors.
 ///
@@ -272,6 +316,26 @@ mod tests {
                 );
             }
         }
+    }
+
+    #[test]
+    #[should_panic(expected = "phase 4c")]
+    fn batched_stub_panics_until_phase4c() {
+        // Phase 4c skeleton: target_forward_batched is a stub until
+        // tasks C.1-C.6 land. This test asserts the stub fires (rather
+        // than silently returning wrong output) and will start failing
+        // when C.2 implements the real body — at which point the test
+        // gets removed/replaced with the actual parity test.
+        let Some(path) = vindex_path_or_skip() else {
+            panic!("phase 4c stub test requires LARQL_FULL_VOCAB_PROBS_VINDEX env var");
+        };
+        let (mut weights, _tok, index) = load(&path);
+        let history = vec![2u32];
+        let tree = DraftTree::from_root(DraftToken {
+            id: 50,
+            p_draft: 1.0,
+        });
+        let _ = target_forward_batched(&mut weights, &history, &tree, &index);
     }
 
     #[test]
