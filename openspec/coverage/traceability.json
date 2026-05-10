@@ -1,11 +1,11 @@
 {
   "summary": {
     "capabilities": 50,
-    "requirements": 474,
-    "scenarios": 1461,
+    "requirements": 478,
+    "scenarios": 1467,
     "scenarios_backed": 1309,
-    "scenarios_unbacked": 152,
-    "test_refs": 3392,
+    "scenarios_unbacked": 158,
+    "test_refs": 3398,
     "test_refs_unresolved": 12
   },
   "capabilities": [
@@ -7530,8 +7530,76 @@
     },
     {
       "name": "inference-speculative-decoding",
-      "spec_file": "openspec/changes/cuda-speculative-decoding/specs/inference-speculative-decoding/spec.md",
+      "spec_file": "openspec/changes/cuda-spec-phase4-integration/specs/inference-speculative-decoding/spec.md",
       "requirements": [
+        {
+          "name": "Dispatch decision tree at the per-token call site",
+          "scenarios": [
+            {
+              "name": "env unset with drafter passed produces bit-exact legacy output",
+              "tests_resolved": [],
+              "tests_unresolved": [],
+              "unbacked": true,
+              "spec_file": "openspec/changes/cuda-spec-phase4-integration/specs/inference-speculative-decoding/spec.md",
+              "line": 23
+            },
+            {
+              "name": "env on with drafter advances cache and drafter history together",
+              "tests_resolved": [],
+              "tests_unresolved": [],
+              "unbacked": true,
+              "spec_file": "openspec/changes/cuda-spec-phase4-integration/specs/inference-speculative-decoding/spec.md",
+              "line": 29
+            }
+          ]
+        },
+        {
+          "name": "Naive sequential target_forward implementation",
+          "scenarios": [
+            {
+              "name": "predict_full_vocab_probs sums to 1.0 within fp32 tolerance",
+              "tests_resolved": [],
+              "tests_unresolved": [],
+              "unbacked": true,
+              "spec_file": "openspec/changes/cuda-spec-phase4-integration/specs/inference-speculative-decoding/spec.md",
+              "line": 47
+            },
+            {
+              "name": "target_forward_naive at deepest node matches non-speculative argmax",
+              "tests_resolved": [],
+              "tests_unresolved": [],
+              "unbacked": true,
+              "spec_file": "openspec/changes/cuda-spec-phase4-integration/specs/inference-speculative-decoding/spec.md",
+              "line": 53
+            }
+          ]
+        },
+        {
+          "name": "KV cache rollback on rejected speculative span",
+          "scenarios": [
+            {
+              "name": "batched rejection at depth 1 truncates cache cleanly",
+              "tests_resolved": [],
+              "tests_unresolved": [],
+              "unbacked": true,
+              "spec_file": "openspec/changes/cuda-spec-phase4-integration/specs/inference-speculative-decoding/spec.md",
+              "line": 72
+            }
+          ]
+        },
+        {
+          "name": "Phase-4 default-flip is gated by acceptance rate and ms/tok",
+          "scenarios": [
+            {
+              "name": "bench reports gate metrics and exit code reflects pass/fail",
+              "tests_resolved": [],
+              "tests_unresolved": [],
+              "unbacked": true,
+              "spec_file": "openspec/changes/cuda-spec-phase4-integration/specs/inference-speculative-decoding/spec.md",
+              "line": 91
+            }
+          ]
+        },
         {
           "name": "SpeculativeDecoder produces tokens identical to non-speculative decode",
           "scenarios": [
