@@ -21,6 +21,8 @@
 //! naive path is **3× slower than baseline** — strictly a parity
 //! oracle for phase 4c's batched implementation.
 
+use std::cell::RefCell;
+
 use larql_models::ModelWeights;
 use larql_vindex::VectorIndex;
 
@@ -29,6 +31,80 @@ use super::small_model::SmallModelDrafter;
 use super::target_forward::target_forward_naive;
 use super::verify::{verify_tree, VerifyRng};
 use super::{Drafter, SpecConfig, TokenId};
+
+thread_local! {
+    /// Per-thread speculative drafter. Set by the caller (e.g.
+    /// `larql bench` after `--draft-model` loads) before invoking
+    /// `generate_streaming`; read by the per-token loop in
+    /// `layer_graph::generate::gpu` to opt into speculative dispatch.
+    ///
+    /// Thread-local is the surgery-free alternative to changing the
+    /// signature of `generate()` and its 17 call sites. Single-thread
+    /// bench/CLI use case fits perfectly; if multi-thread serving
+    /// adopts speculative later, signature plumbing becomes worth it.
+    static THREAD_DRAFTER: RefCell<Option<SmallModelDrafter>> = const { RefCell::new(None) };
+    static THREAD_RNG: RefCell<Option<VerifyRng>> = const { RefCell::new(None) };
+    static THREAD_CFG: RefCell<SpecConfig> = const {
+        RefCell::new(SpecConfig {
+            depth: 2,
+            branches: 1,
+            swa_window: None,
+        })
+    };
+}
+
+/// Install a drafter on the current thread. Pass `None` to clear.
+pub fn set_thread_drafter(d: Option<SmallModelDrafter>) {
+    THREAD_DRAFTER.with(|cell| {
+        *cell.borrow_mut() = d;
+    });
+}
+
+/// Install a SpecConfig on the current thread (overrides default
+/// depth=2 branches=1).
+pub fn set_thread_spec_config(cfg: SpecConfig) {
+    THREAD_CFG.with(|cell| {
+        *cell.borrow_mut() = cfg;
+    });
+}
+
+/// Install an RNG seed on the current thread. The RNG is consumed
+/// (mutated) by each speculative step.
+pub fn set_thread_rng(seed: u64) {
+    THREAD_RNG.with(|cell| {
+        *cell.borrow_mut() = Some(VerifyRng::new(seed));
+    });
+}
+
+/// Try one speculative step using the thread-local drafter (if set).
+/// Returns `Some(tokens)` on success — caller MUST advance KV cache by
+/// `tokens.len()` positions. `None` to fall through to the existing
+/// non-speculative path.
+///
+/// `weights`, `history`, `index` come from the inference loop's
+/// existing scope. Drafter, RNG, and SpecConfig come from
+/// thread-locals — set by the caller (e.g. `larql bench`) before
+/// generate begins.
+pub fn try_thread_speculative_step(
+    weights: &mut ModelWeights,
+    history: &[TokenId],
+    cache_len: usize,
+    index: &VectorIndex,
+) -> Option<Vec<TokenId>> {
+    if !super::enabled() {
+        return None;
+    }
+    THREAD_DRAFTER.with(|drafter_cell| {
+        let mut drafter_ref = drafter_cell.borrow_mut();
+        let drafter = drafter_ref.as_mut()?;
+        let cfg = THREAD_CFG.with(|c| *c.borrow());
+        THREAD_RNG.with(|rng_cell| {
+            let mut rng_ref = rng_cell.borrow_mut();
+            let rng = rng_ref.get_or_insert_with(|| VerifyRng::new(0xCAFE_BABE_DEAD_F00D));
+            run_naive_step(weights, drafter, history, cache_len, cfg, index, rng)
+        })
+    })
+}
 
 /// One speculative step using the naive sequential `target_forward`.
 /// Returns `Some(emitted_tokens)` on a successful step (caller MUST

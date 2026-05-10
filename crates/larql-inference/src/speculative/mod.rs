@@ -30,7 +30,10 @@ pub use small_model::SmallModelDrafter;
 pub use target_forward::target_forward_naive;
 pub use tree::{DraftTree, TreeAttentionMask, TreeNode};
 pub use verify::{verify_and_accept, verify_tree, AcceptedSpan, VerifyRng};
-pub use wiring::run_naive_step;
+pub use wiring::{
+    run_naive_step, set_thread_drafter, set_thread_rng, set_thread_spec_config,
+    try_thread_speculative_step,
+};
 
 pub type TokenId = u32;
 

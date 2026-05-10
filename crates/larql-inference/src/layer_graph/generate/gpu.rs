@@ -649,6 +649,21 @@ where
     let mut t_lmhead = 0.0f64;
     let mut t_detok = 0.0f64;
 
+    // Phase 4b dispatch site: this loop's per-iteration top is where
+    // `crate::speculative::try_thread_speculative_step` would slot in.
+    // **Blocked**: `layers` borrows from `weights` (via
+    // `build_pipeline_layers`), and `predict_q4k_full_vocab_probs`
+    // (target_forward_naive's inner call) requires `&mut weights`.
+    // The two cannot coexist in the loop body. Resolving requires:
+    //   (a) restructure target_forward to use the existing decode_token
+    //       + a separate lm_head probability pass (no &mut weights), or
+    //   (b) clone ModelWeights to a separate instance for speculative
+    //       re-runs (expensive — multi-GB), or
+    //   (c) drop &mut from predict_q4k_hidden by avoiding
+    //       insert_q4k_layer_tensors — would require a new dequant path.
+    // Tracked in `cuda-spec-phase4-integration` design notes; phase 4c
+    // sidesteps this by composing GPU kernels that own their own
+    // mutable scratch.
     for _step in 1..max_tokens {
         let decode_start = std::time::Instant::now();
 
