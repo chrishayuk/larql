@@ -37,16 +37,15 @@ pub fn logits_to_predictions_pub(
     logits_to_predictions(weights, h, tokenizer, top_k, temperature)
 }
 
-pub(crate) fn logits_to_predictions(
-    weights: &ModelWeights,
-    h: &Array2<f32>,
-    tokenizer: &tokenizers::Tokenizer,
-    top_k: usize,
-    temperature: f32,
-) -> PredictResult {
+/// Project the final hidden state to a full softmax distribution over
+/// the vocabulary. Same compute as [`logits_to_predictions`] but
+/// returns the raw probability vector without top-k truncation.
+///
+/// Used by `larql_inference::speculative::target_forward` (phase 4b)
+/// to feed `verify_and_accept` per-position target distributions.
+pub fn full_vocab_probs(weights: &ModelWeights, h: &Array2<f32>, temperature: f32) -> Vec<f32> {
     let seq_len = h.shape()[0];
     let norm_offset = weights.arch.norm_weight_offset();
-
     let h_final = apply_norm(weights, h, weights.arch.final_norm_key(), norm_offset);
 
     let logits_scale = weights.arch.logits_scaling();
@@ -69,10 +68,20 @@ pub(crate) fn logits_to_predictions(
 
     let max_logit = logits.iter().copied().fold(f32::NEG_INFINITY, f32::max);
     let exp_sum: f64 = logits.iter().map(|l| ((l - max_logit) as f64).exp()).sum();
-    let probs: Vec<f32> = logits
+    logits
         .iter()
         .map(|l| (((l - max_logit) as f64).exp() / exp_sum) as f32)
-        .collect();
+        .collect()
+}
+
+pub(crate) fn logits_to_predictions(
+    weights: &ModelWeights,
+    h: &Array2<f32>,
+    tokenizer: &tokenizers::Tokenizer,
+    top_k: usize,
+    temperature: f32,
+) -> PredictResult {
+    let probs = full_vocab_probs(weights, h, temperature);
 
     let mut indexed: Vec<(usize, f32)> = probs.iter().copied().enumerate().collect();
     let k = top_k.min(indexed.len());
