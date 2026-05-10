@@ -36,7 +36,7 @@ pub use verify::{verify_and_accept, verify_tree, AcceptedSpan, VerifyRng};
 pub use wiring::{
     run_naive_step, set_thread_drafter, set_thread_rng, set_thread_spec_config,
     set_thread_target_executor, try_thread_speculative_step, try_thread_speculative_step_v2,
-    SpeculativeTargetExecutor,
+    try_thread_speculative_step_v3, SpeculativeTargetExecutor,
 };
 
 pub type TokenId = u32;
