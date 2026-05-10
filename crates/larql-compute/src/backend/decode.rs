@@ -220,6 +220,72 @@ pub trait DecodeBackend {
         )
     }
 
+    /// Speculative-decode forward: process `x_per_token.len()` tokens
+    /// through all layers with KV cache, returning the per-position
+    /// hidden state for each.
+    ///
+    /// **Cache semantics**: this method advances the KV cache during
+    /// processing then RESTORES it to its pre-call length. The
+    /// caller (typically `larql_inference::speculative`) explores N
+    /// candidate tokens without committing them; on acceptance, the
+    /// caller separately calls `decode_token` for each accepted
+    /// token to commit it permanently to the cache.
+    ///
+    /// Returns `Some(hiddens)` on success — `hiddens.len() ==
+    /// x_per_token.len()`, with `hiddens[k]` the `[hidden]`-shaped
+    /// output of the target's forward pass after consuming
+    /// `x_per_token[..=k]`. Returns `None` if any per-token
+    /// `decode_token` call fails (cache state restored regardless).
+    ///
+    /// **Default impl**: sequential `decode_token` calls + cache
+    /// rollback via `truncate_kv_cache`. Backends with batched
+    /// kernels (`cuda::q4k_batched` + `cuda::attn_tree`) MAY
+    /// override for the perf win — phase 4c task C.2 implements
+    /// this for `CudaBackend`.
+    #[allow(clippy::too_many_arguments)]
+    fn decode_tokens_speculative(
+        &self,
+        layers: &[crate::FullPipelineLayer<'_>],
+        x_per_token: &[Vec<f32>],
+        hidden: usize,
+        inter: usize,
+        q_dim: usize,
+        kv_dim: usize,
+        num_q_heads: usize,
+        num_kv_heads: usize,
+        head_dim: usize,
+        rope_base: f32,
+    ) -> Option<Vec<Vec<f32>>> {
+        if !self.has_kv_cache() {
+            return None;
+        }
+        let pre_len = self.kv_cache_len();
+        let mut hiddens: Vec<Vec<f32>> = Vec::with_capacity(x_per_token.len());
+        for x in x_per_token {
+            match self.decode_token(
+                layers,
+                x,
+                hidden,
+                inter,
+                q_dim,
+                kv_dim,
+                num_q_heads,
+                num_kv_heads,
+                head_dim,
+                rope_base,
+            ) {
+                Some(h) => hiddens.push(h),
+                None => {
+                    // Restore cache before bailing.
+                    self.truncate_kv_cache(pre_len);
+                    return None;
+                }
+            }
+        }
+        self.truncate_kv_cache(pre_len);
+        Some(hiddens)
+    }
+
     /// Multi-position prefill with KV-cache population. Stores
     /// post-RoPE K/V in the cache; returns the final hidden state
     /// `[seq_len * hidden]` for all positions.

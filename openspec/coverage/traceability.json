@@ -25919,25 +25919,25 @@
     {
       "fqn": "larql_inference::speculative::effective_depth_clamps_to_swa_remainder",
       "file": "crates/larql-inference/src/speculative/mod.rs",
-      "line": 200,
+      "line": 201,
       "crate": "larql_inference"
     },
     {
       "fqn": "larql_inference::speculative::env_garbage_uses_legacy_path",
       "file": "crates/larql-inference/src/speculative/mod.rs",
-      "line": 189,
+      "line": 190,
       "crate": "larql_inference"
     },
     {
       "fqn": "larql_inference::speculative::env_one_enables_spec_path",
       "file": "crates/larql-inference/src/speculative/mod.rs",
-      "line": 178,
+      "line": 179,
       "crate": "larql_inference"
     },
     {
       "fqn": "larql_inference::speculative::env_zero_uses_legacy_path",
       "file": "crates/larql-inference/src/speculative/mod.rs",
-      "line": 167,
+      "line": 168,
       "crate": "larql_inference"
     },
     {
@@ -26063,91 +26063,103 @@
     {
       "fqn": "larql_inference::speculative::target_forward::batched_stub_panics_until_phase4c",
       "file": "crates/larql-inference/src/speculative/target_forward.rs",
-      "line": 323,
+      "line": 422,
       "crate": "larql_inference"
     },
     {
       "fqn": "larql_inference::speculative::target_forward::empty_history_with_root_only_tree_works",
       "file": "crates/larql-inference/src/speculative/target_forward.rs",
-      "line": 342,
+      "line": 479,
       "crate": "larql_inference"
     },
     {
       "fqn": "larql_inference::speculative::target_forward::linear_chain_returns_n_distributions",
       "file": "crates/larql-inference/src/speculative/target_forward.rs",
-      "line": 175,
+      "line": 274,
       "crate": "larql_inference"
     },
     {
       "fqn": "larql_inference::speculative::target_forward::root_distribution_matches_predict_q4k_full_vocab_probs_on_history_plus_root",
       "file": "crates/larql-inference/src/speculative/target_forward.rs",
-      "line": 218,
+      "line": 317,
       "crate": "larql_inference"
     },
     {
       "fqn": "larql_inference::speculative::target_forward::tests::batched_stub_panics_until_phase4c",
       "file": "crates/larql-inference/src/speculative/target_forward.rs",
-      "line": 323,
+      "line": 422,
       "crate": "larql_inference"
     },
     {
       "fqn": "larql_inference::speculative::target_forward::tests::empty_history_with_root_only_tree_works",
       "file": "crates/larql-inference/src/speculative/target_forward.rs",
-      "line": 342,
+      "line": 479,
       "crate": "larql_inference"
     },
     {
       "fqn": "larql_inference::speculative::target_forward::tests::linear_chain_returns_n_distributions",
       "file": "crates/larql-inference/src/speculative/target_forward.rs",
-      "line": 175,
+      "line": 274,
       "crate": "larql_inference"
     },
     {
       "fqn": "larql_inference::speculative::target_forward::tests::root_distribution_matches_predict_q4k_full_vocab_probs_on_history_plus_root",
       "file": "crates/larql-inference/src/speculative/target_forward.rs",
-      "line": 218,
+      "line": 317,
+      "crate": "larql_inference"
+    },
+    {
+      "fqn": "larql_inference::speculative::target_forward::tests::via_speculative_decode_returns_none_without_kv_cache",
+      "file": "crates/larql-inference/src/speculative/target_forward.rs",
+      "line": 441,
       "crate": "larql_inference"
     },
     {
       "fqn": "larql_inference::speculative::target_forward::tests::with_hidden_callback_matches_naive",
       "file": "crates/larql-inference/src/speculative/target_forward.rs",
-      "line": 256,
+      "line": 355,
+      "crate": "larql_inference"
+    },
+    {
+      "fqn": "larql_inference::speculative::target_forward::via_speculative_decode_returns_none_without_kv_cache",
+      "file": "crates/larql-inference/src/speculative/target_forward.rs",
+      "line": 441,
       "crate": "larql_inference"
     },
     {
       "fqn": "larql_inference::speculative::target_forward::with_hidden_callback_matches_naive",
       "file": "crates/larql-inference/src/speculative/target_forward.rs",
-      "line": 256,
+      "line": 355,
       "crate": "larql_inference"
     },
     {
       "fqn": "larql_inference::speculative::tests::effective_depth_clamps_to_swa_remainder",
       "file": "crates/larql-inference/src/speculative/mod.rs",
-      "line": 200,
+      "line": 201,
       "crate": "larql_inference"
     },
     {
       "fqn": "larql_inference::speculative::tests::env_garbage_uses_legacy_path",
       "file": "crates/larql-inference/src/speculative/mod.rs",
-      "line": 189,
+      "line": 190,
       "crate": "larql_inference"
     },
     {
       "fqn": "larql_inference::speculative::tests::env_one_enables_spec_path",
       "file": "crates/larql-inference/src/speculative/mod.rs",
-      "line": 178,
+      "line": 179,
       "crate": "larql_inference"
     },
     {
       "fqn": "larql_inference::speculative::tests::tree_nodes_caps_at_64",
       "file": "crates/larql-inference/src/speculative/mod.rs",
-      "line": 218,
+      "line": 219,
       "crate": "larql_inference"
     },
     {
       "fqn": "larql_inference::speculative::tests::tree_nodes_default_is_seven",
       "file": "crates/larql-inference/src/speculative/mod.rs",
-      "line": 212,
+      "line": 213,
       "crate": "larql_inference"
     },
     {
@@ -26249,19 +26261,19 @@
     {
       "fqn": "larql_inference::speculative::tree_nodes_caps_at_64",
       "file": "crates/larql-inference/src/speculative/mod.rs",
-      "line": 218,
+      "line": 219,
       "crate": "larql_inference"
     },
     {
       "fqn": "larql_inference::speculative::tree_nodes_default_is_seven",
       "file": "crates/larql-inference/src/speculative/mod.rs",
-      "line": 212,
+      "line": 213,
       "crate": "larql_inference"
     },
     {
       "fqn": "larql_inference::speculative::unset_env_uses_legacy_path",
       "file": "crates/larql-inference/src/speculative/mod.rs",
-      "line": 153,
+      "line": 154,
       "crate": "larql_inference"
     },
     {
