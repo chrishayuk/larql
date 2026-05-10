@@ -843,17 +843,24 @@ where
                 head_dim: attention.head_dim,
                 rope_base: attention.rope_base,
             };
-            if let Some(emitted) = crate::speculative::try_thread_speculative_step_v3(
-                &*weights,
-                &spec_history,
-                spec_history.len(),
-                backend,
-                index,
-                &layers,
-                spec_dims,
-            ) {
+            if let Some((emitted, bonus_hidden)) =
+                crate::speculative::try_thread_speculative_step_v3(
+                    &*weights,
+                    &spec_history,
+                    spec_history.len(),
+                    backend,
+                    index,
+                    &layers,
+                    spec_dims,
+                )
+            {
+                // **Skip-redundant-commit (phase 4c)**: v3 already
+                // committed the accepted span (R drafts + 1 bonus) to
+                // the canonical KV cache and returned the bonus's
+                // hidden state. We just emit each token to the user
+                // and use the bonus_hidden for the post-bonus sample
+                // — no per-token decode_token here.
                 let mut break_outer = false;
-                let mut last_h_emit: Option<Vec<f32>> = None;
                 for &spec_tok in &emitted {
                     let tok_str = detok.push(spec_tok);
                     // p_target placeholder — phase 4d's bench-cmd plumbs
@@ -866,58 +873,16 @@ where
                         break_outer = true;
                         break;
                     }
-                    let h_tok_emit = crate::forward::embed_tokens_pub(weights, &[spec_tok]);
-                    let x_emit: Vec<f32> = h_tok_emit.row(0).to_vec();
-                    match backend.decode_token(
-                        &layers,
-                        &x_emit,
-                        hidden,
-                        intermediate,
-                        attention.q_dim,
-                        attention.kv_dim,
-                        attention.num_q_heads,
-                        attention.num_kv_heads,
-                        attention.head_dim,
-                        attention.rope_base,
-                    ) {
-                        Some(h) => last_h_emit = Some(h),
-                        None => {
-                            // Mid-commit GPU failure — cache is partially
-                            // advanced, matching the existing GPU-failure
-                            // semantics (bail out of generate).
-                            break_outer = true;
-                            break;
-                        }
-                    }
                 }
                 if break_outer {
                     break;
                 }
                 // Sample one more from the post-bonus hidden and emit
-                // it as a real user-visible token. This is the natural
-                // continuation of the spec step: the bonus's hidden
-                // state predicts the next token, and emitting it here
-                // (rather than deferring to the next iter's body
-                // decode) keeps the loop invariant aligned with v3's
-                // cache contract.
-                //
-                // Why this is required: if we only set `current_token_id
-                // = next` without pushing it to `generated_ids`, the
-                // next iter's body decode would advance the cache by 1
-                // without growing `generated_ids` — leaving cache_len
-                // == history.len() + 1 at the next dispatch, which v3
-                // rejects (and the user would never see `next` in the
-                // output stream). Emitting and pushing keeps cache_len
-                // == history.len() - 1 at iter top (the loop's
-                // existing invariant), and v3's contract is then
-                // re-satisfied after the next iter's body decode.
-                let Some(h_last) = last_h_emit else {
-                    // Unreachable: helper rejects empty emitted, and a
-                    // non-empty emitted always produces last_h_emit
-                    // (or breaks via EOS / GPU failure handled above).
-                    break;
-                };
-                let h_arr_emit = ndarray::Array2::from_shape_vec((1, hidden), h_last).unwrap();
+                // it as a real user-visible token — keeps the loop
+                // invariant aligned (next iter's body decode picks up
+                // `current_token_id` as the not-yet-decoded input).
+                let h_arr_emit =
+                    ndarray::Array2::from_shape_vec((1, hidden), bonus_hidden).unwrap();
                 let h_final_emit = crate::forward::apply_norm(
                     weights,
                     &h_arr_emit,

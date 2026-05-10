@@ -867,6 +867,117 @@ impl DecodeBackend for CudaBackend {
         }
         Some(hiddens)
     }
+
+    /// Phase 4c skip-redundant-commit override. Mirrors
+    /// `decode_tokens_speculative` (sequential default + C.2.e batched
+    /// path) but does NOT truncate the cache on success — caller is
+    /// responsible for the final cache length. See the trait method's
+    /// docstring for the rationale.
+    #[allow(clippy::too_many_arguments)]
+    fn decode_tokens_speculative_keep_cache(
+        &self,
+        layers: &[FullPipelineLayer<'_>],
+        x_per_token: &[Vec<f32>],
+        hidden: usize,
+        inter: usize,
+        q_dim: usize,
+        kv_dim: usize,
+        num_q_heads: usize,
+        num_kv_heads: usize,
+        head_dim: usize,
+        rope_base: f32,
+    ) -> Option<Vec<Vec<f32>>> {
+        if !self.has_kv_cache() {
+            return None;
+        }
+        let n = x_per_token.len();
+        if n == 0 {
+            return Some(Vec::new());
+        }
+        if x_per_token.iter().any(|x| x.len() != hidden) {
+            return None;
+        }
+
+        let all_supported = layers.iter().all(|l| {
+            l.norm_type == NormType::RmsNorm
+                && l.ffn_type == FfnType::Gated
+                && l.moe.is_none()
+                && !l.ffn_is_remote
+                && matches!(l.wq.format, QuantFormat::Q4_K | QuantFormat::Q6_K)
+                && matches!(l.wk.format, QuantFormat::Q4_K | QuantFormat::Q6_K)
+                && matches!(l.wv.format, QuantFormat::Q4_K | QuantFormat::Q6_K)
+                && matches!(l.wo.format, QuantFormat::Q4_K | QuantFormat::Q6_K)
+                && matches!(l.gate.format, QuantFormat::Q4_K | QuantFormat::Q6_K)
+                && matches!(l.up.format, QuantFormat::Q4_K | QuantFormat::Q6_K)
+                && matches!(l.down.format, QuantFormat::Q4_K | QuantFormat::Q6_K)
+        });
+        let batched_off = std::env::var("LARQL_CUDA_SPEC_BATCHED").ok().as_deref() == Some("0");
+        let batched_min_n: usize = std::env::var("LARQL_CUDA_SPEC_BATCHED_MIN_N")
+            .ok()
+            .and_then(|s| s.parse().ok())
+            .unwrap_or(4);
+        if !all_supported || batched_off || n < batched_min_n {
+            // Sequential decode_token loop. NO truncate on success
+            // (the whole point of `_keep_cache`).
+            let pre_len = self.kv_cache_len();
+            let mut hiddens: Vec<Vec<f32>> = Vec::with_capacity(n);
+            for x in x_per_token {
+                match self.decode_token(
+                    layers,
+                    x,
+                    hidden,
+                    inter,
+                    q_dim,
+                    kv_dim,
+                    num_q_heads,
+                    num_kv_heads,
+                    head_dim,
+                    rope_base,
+                ) {
+                    Some(h) => hiddens.push(h),
+                    None => {
+                        // Restore cache on error.
+                        self.truncate_kv_cache(pre_len);
+                        return None;
+                    }
+                }
+            }
+            return Some(hiddens);
+        }
+
+        // Batched seq_device path. The seq_device helper already
+        // leaves cache at pre_len + n (it sets cache.len = base_pos +
+        // seq_len). No additional truncate is what we want here.
+        let pre_len = self.kv_cache_len();
+        let mut x_flat: Vec<f32> = Vec::with_capacity(n * hidden);
+        for x in x_per_token {
+            x_flat.extend_from_slice(x);
+        }
+        let h_flat = self.decode_tokens_speculative_seq_device(
+            layers,
+            &x_flat,
+            hidden,
+            inter,
+            q_dim,
+            kv_dim,
+            n,
+            num_q_heads,
+            num_kv_heads,
+            head_dim,
+            rope_base,
+            pre_len,
+        )?;
+        if h_flat.len() != n * hidden {
+            // Defensive: restore on shape mismatch.
+            self.truncate_kv_cache(pre_len);
+            return None;
+        }
+        let mut hiddens = Vec::with_capacity(n);
+        for i in 0..n {
+            hiddens.push(h_flat[i * hidden..(i + 1) * hidden].to_vec());
+        }
+        Some(hiddens)
+    }
 }
 
 impl CudaBackend {

@@ -29,6 +29,7 @@ pub use orchestrator::{build_linear_tree, SpeculativeStep, StepOutcome};
 pub use small_model::SmallModelDrafter;
 pub use target_forward::{
     target_forward_batched, target_forward_naive, target_forward_via_speculative_decode,
+    target_forward_via_speculative_decode_keep_cache_with_probs,
     target_forward_via_speculative_decode_with_probs, target_forward_with_hidden,
     TargetForwardDims,
 };
