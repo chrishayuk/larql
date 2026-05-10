@@ -5,6 +5,7 @@
 //! replace these bodies without changing the public `QuantMatVec` trait.
 
 use crate::backend::QuantMatVec;
+use crate::{QuantFormat, QuantWeight};
 
 use super::backend::CudaBackend;
 use super::dequant;
@@ -45,7 +46,24 @@ impl QuantMatVec for CudaBackend {
             return None;
         }
         if std::env::var("LARQL_CUDA_Q4K_HOST_DEQUANT").ok().as_deref() != Some("1") {
-            return q4k_direct::matvec(self, q4k_data, x, num_rows, hidden).ok();
+            if let Ok(out) = q4k_direct::matvec(self, q4k_data, x, num_rows, hidden) {
+                return Some(out);
+            }
+            // Fallback: dequant Q4_K once + cuBLAS GEMV via the
+            // session-cached f16/f32 weight buffer. Handles the
+            // non-multiple-of-256 hidden case the direct kernel
+            // rejects (e.g. Gemma 3 270M's lm_head: hidden=640
+            // and vocab=262144). Mirrors the per-token decode
+            // fallback in `decode::matvec_device_mmvq` so the
+            // same dequantized buffer is reused across calls.
+            let x_dev = self.htod_f32(x).ok()?;
+            let weight = QuantWeight {
+                data: q4k_data,
+                scales: None,
+                format: QuantFormat::Q4_K,
+            };
+            let y_dev = self.gemm_proj_seq(weight, &x_dev, 1, num_rows, hidden)?;
+            return self.dtoh_f32(&y_dev).ok();
         }
         let w = dequant::dequant_q4_k(q4k_data, num_rows * hidden).ok()?;
         kernels::gemv(self.driver(), &w, x, num_rows, hidden).ok()

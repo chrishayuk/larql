@@ -1,12 +1,12 @@
 {
   "summary": {
     "capabilities": 50,
-    "requirements": 479,
-    "scenarios": 1470,
-    "scenarios_backed": 1310,
-    "scenarios_unbacked": 160,
-    "test_refs": 3401,
-    "test_refs_unresolved": 12
+    "requirements": 484,
+    "scenarios": 1476,
+    "scenarios_backed": 1315,
+    "scenarios_unbacked": 161,
+    "test_refs": 3407,
+    "test_refs_unresolved": 17
   },
   "capabilities": [
     {
@@ -9558,6 +9558,89 @@
               "unbacked": true,
               "spec_file": "openspec/changes/rotorquant-cuda-kernels/specs/kv-cache-rotorquant/spec.md",
               "line": 44
+            }
+          ]
+        },
+        {
+          "name": "CudaKvCache MUST expose a KvFormat parameter",
+          "scenarios": [
+            {
+              "name": "quantize_layer is a no-op when kv_format is unset",
+              "tests_resolved": [],
+              "tests_unresolved": [
+                "larql_compute::test_cuda_kv_rotorquant::cuda_kvcache_quantize_layer_no_op_when_format_unset"
+              ],
+              "unbacked": false,
+              "spec_file": "openspec/changes/rotorquant-cuda-kvcache-integration/specs/kv-cache-rotorquant/spec.md",
+              "line": 13
+            }
+          ]
+        },
+        {
+          "name": "CudaKvCache quantize_layer + dequantize_layer round-trip MUST preserve direction",
+          "scenarios": [
+            {
+              "name": "Iso3 quantize then dequantize round-trip on CudaKvCache preserves direction",
+              "tests_resolved": [],
+              "tests_unresolved": [
+                "larql_compute::test_cuda_kv_rotorquant::cuda_kvcache_iso3_quantize_then_dequantize_roundtrip_preserves_direction"
+              ],
+              "unbacked": false,
+              "spec_file": "openspec/changes/rotorquant-cuda-kvcache-integration/specs/kv-cache-rotorquant/spec.md",
+              "line": 23
+            },
+            {
+              "name": "Planar3 quantize then dequantize round-trip on CudaKvCache preserves direction",
+              "tests_resolved": [],
+              "tests_unresolved": [
+                "larql_compute::test_cuda_kv_rotorquant::cuda_kvcache_planar3_quantize_then_dequantize_roundtrip_preserves_direction"
+              ],
+              "unbacked": false,
+              "spec_file": "openspec/changes/rotorquant-cuda-kvcache-integration/specs/kv-cache-rotorquant/spec.md",
+              "line": 29
+            }
+          ]
+        },
+        {
+          "name": "CudaKvCache promote_layer_to_fp32 inverts quantize_layer",
+          "scenarios": [
+            {
+              "name": "promote restores f16 slot and clears compressed entry",
+              "tests_resolved": [],
+              "tests_unresolved": [
+                "larql_compute::test_cuda_kv_rotorquant::cuda_kvcache_promote_layer_to_fp32_restores_f16_slot"
+              ],
+              "unbacked": false,
+              "spec_file": "openspec/changes/rotorquant-cuda-kvcache-integration/specs/kv-cache-rotorquant/spec.md",
+              "line": 43
+            }
+          ]
+        },
+        {
+          "name": "CUDA decode_attention MUST transparently dequantize compressed layers on read",
+          "scenarios": [
+            {
+              "name": "attention output with one compressed layer matches uncompressed within cosine 0.95",
+              "tests_resolved": [],
+              "tests_unresolved": [
+                "larql_compute::test_cuda_kv_rotorquant::cuda_decode_attention_with_compressed_layer_matches_uncompressed_within_cosine_0_95"
+              ],
+              "unbacked": false,
+              "spec_file": "openspec/changes/rotorquant-cuda-kvcache-integration/specs/kv-cache-rotorquant/spec.md",
+              "line": 53
+            }
+          ]
+        },
+        {
+          "name": "decode_tokens_speculative MUST leave compressed layers unaffected",
+          "scenarios": [
+            {
+              "name": "speculative dispatch with a compressed layer leaves the compressed slot intact",
+              "tests_resolved": [],
+              "tests_unresolved": [],
+              "unbacked": true,
+              "spec_file": "openspec/changes/rotorquant-cuda-kvcache-integration/specs/kv-cache-rotorquant/spec.md",
+              "line": 63
             }
           ]
         },
@@ -20873,55 +20956,55 @@
     {
       "fqn": "larql_compute::cuda::backend::cuda_graph_capture_replay_smoke_test",
       "file": "crates/larql-compute/src/cuda/backend.rs",
-      "line": 736,
+      "line": 809,
       "crate": "larql_compute"
     },
     {
       "fqn": "larql_compute::cuda::backend::driver_missing_returns_typed_error",
       "file": "crates/larql-compute/src/cuda/backend.rs",
-      "line": 656,
+      "line": 729,
       "crate": "larql_compute"
     },
     {
       "fqn": "larql_compute::cuda::backend::supports_cuda_oxide_when_feature_enabled",
       "file": "crates/larql-compute/src/cuda/backend.rs",
-      "line": 721,
+      "line": 794,
       "crate": "larql_compute"
     },
     {
       "fqn": "larql_compute::cuda::backend::supports_decode_after_cuda_decode_backend",
       "file": "crates/larql-compute/src/cuda/backend.rs",
-      "line": 713,
+      "line": 786,
       "crate": "larql_compute"
     },
     {
       "fqn": "larql_compute::cuda::backend::supports_f32_gemv_after_baseline",
       "file": "crates/larql-compute/src/cuda/backend.rs",
-      "line": 673,
+      "line": 746,
       "crate": "larql_compute"
     },
     {
       "fqn": "larql_compute::cuda::backend::supports_fa2_after_fused_attention",
       "file": "crates/larql-compute/src/cuda/backend.rs",
-      "line": 698,
+      "line": 771,
       "crate": "larql_compute"
     },
     {
       "fqn": "larql_compute::cuda::backend::supports_q4_matvec_after_q4_baseline",
       "file": "crates/larql-compute/src/cuda/backend.rs",
-      "line": 687,
+      "line": 760,
       "crate": "larql_compute"
     },
     {
       "fqn": "larql_compute::cuda::backend::tests::cuda_graph_capture_replay_smoke_test",
       "file": "crates/larql-compute/src/cuda/backend.rs",
-      "line": 736,
+      "line": 809,
       "crate": "larql_compute"
     },
     {
       "fqn": "larql_compute::cuda::backend::tests::supports_cuda_oxide_when_feature_enabled",
       "file": "crates/larql-compute/src/cuda/backend.rs",
-      "line": 721,
+      "line": 794,
       "crate": "larql_compute"
     },
     {
@@ -25919,25 +26002,25 @@
     {
       "fqn": "larql_inference::speculative::effective_depth_clamps_to_swa_remainder",
       "file": "crates/larql-inference/src/speculative/mod.rs",
-      "line": 201,
+      "line": 202,
       "crate": "larql_inference"
     },
     {
       "fqn": "larql_inference::speculative::env_garbage_uses_legacy_path",
       "file": "crates/larql-inference/src/speculative/mod.rs",
-      "line": 190,
+      "line": 191,
       "crate": "larql_inference"
     },
     {
       "fqn": "larql_inference::speculative::env_one_enables_spec_path",
       "file": "crates/larql-inference/src/speculative/mod.rs",
-      "line": 179,
+      "line": 180,
       "crate": "larql_inference"
     },
     {
       "fqn": "larql_inference::speculative::env_zero_uses_legacy_path",
       "file": "crates/larql-inference/src/speculative/mod.rs",
-      "line": 168,
+      "line": 169,
       "crate": "larql_inference"
     },
     {
@@ -26003,163 +26086,163 @@
     {
       "fqn": "larql_inference::speculative::small_model::accept_advances_history",
       "file": "crates/larql-inference/src/speculative/small_model.rs",
-      "line": 186,
+      "line": 506,
       "crate": "larql_inference"
     },
     {
       "fqn": "larql_inference::speculative::small_model::loads_from_env_pointed_vindex_or_skips",
       "file": "crates/larql-inference/src/speculative/small_model.rs",
-      "line": 152,
+      "line": 472,
       "crate": "larql_inference"
     },
     {
       "fqn": "larql_inference::speculative::small_model::propose_zero_returns_empty",
       "file": "crates/larql-inference/src/speculative/small_model.rs",
-      "line": 207,
+      "line": 527,
       "crate": "larql_inference"
     },
     {
       "fqn": "larql_inference::speculative::small_model::reset_clears_history",
       "file": "crates/larql-inference/src/speculative/small_model.rs",
-      "line": 197,
+      "line": 517,
       "crate": "larql_inference"
     },
     {
       "fqn": "larql_inference::speculative::small_model::seed_history_then_propose_returns_n_drafts",
       "file": "crates/larql-inference/src/speculative/small_model.rs",
-      "line": 164,
+      "line": 484,
       "crate": "larql_inference"
     },
     {
       "fqn": "larql_inference::speculative::small_model::tests::accept_advances_history",
       "file": "crates/larql-inference/src/speculative/small_model.rs",
-      "line": 186,
+      "line": 506,
       "crate": "larql_inference"
     },
     {
       "fqn": "larql_inference::speculative::small_model::tests::loads_from_env_pointed_vindex_or_skips",
       "file": "crates/larql-inference/src/speculative/small_model.rs",
-      "line": 152,
+      "line": 472,
       "crate": "larql_inference"
     },
     {
       "fqn": "larql_inference::speculative::small_model::tests::propose_zero_returns_empty",
       "file": "crates/larql-inference/src/speculative/small_model.rs",
-      "line": 207,
+      "line": 527,
       "crate": "larql_inference"
     },
     {
       "fqn": "larql_inference::speculative::small_model::tests::reset_clears_history",
       "file": "crates/larql-inference/src/speculative/small_model.rs",
-      "line": 197,
+      "line": 517,
       "crate": "larql_inference"
     },
     {
       "fqn": "larql_inference::speculative::small_model::tests::seed_history_then_propose_returns_n_drafts",
       "file": "crates/larql-inference/src/speculative/small_model.rs",
-      "line": 164,
+      "line": 484,
       "crate": "larql_inference"
     },
     {
       "fqn": "larql_inference::speculative::target_forward::batched_stub_panics_until_phase4c",
       "file": "crates/larql-inference/src/speculative/target_forward.rs",
-      "line": 494,
+      "line": 561,
       "crate": "larql_inference"
     },
     {
       "fqn": "larql_inference::speculative::target_forward::empty_history_with_root_only_tree_works",
       "file": "crates/larql-inference/src/speculative/target_forward.rs",
-      "line": 551,
+      "line": 618,
       "crate": "larql_inference"
     },
     {
       "fqn": "larql_inference::speculative::target_forward::linear_chain_returns_n_distributions",
       "file": "crates/larql-inference/src/speculative/target_forward.rs",
-      "line": 346,
+      "line": 413,
       "crate": "larql_inference"
     },
     {
       "fqn": "larql_inference::speculative::target_forward::root_distribution_matches_predict_q4k_full_vocab_probs_on_history_plus_root",
       "file": "crates/larql-inference/src/speculative/target_forward.rs",
-      "line": 389,
+      "line": 456,
       "crate": "larql_inference"
     },
     {
       "fqn": "larql_inference::speculative::target_forward::tests::batched_stub_panics_until_phase4c",
       "file": "crates/larql-inference/src/speculative/target_forward.rs",
-      "line": 494,
+      "line": 561,
       "crate": "larql_inference"
     },
     {
       "fqn": "larql_inference::speculative::target_forward::tests::empty_history_with_root_only_tree_works",
       "file": "crates/larql-inference/src/speculative/target_forward.rs",
-      "line": 551,
+      "line": 618,
       "crate": "larql_inference"
     },
     {
       "fqn": "larql_inference::speculative::target_forward::tests::linear_chain_returns_n_distributions",
       "file": "crates/larql-inference/src/speculative/target_forward.rs",
-      "line": 346,
+      "line": 413,
       "crate": "larql_inference"
     },
     {
       "fqn": "larql_inference::speculative::target_forward::tests::root_distribution_matches_predict_q4k_full_vocab_probs_on_history_plus_root",
       "file": "crates/larql-inference/src/speculative/target_forward.rs",
-      "line": 389,
+      "line": 456,
       "crate": "larql_inference"
     },
     {
       "fqn": "larql_inference::speculative::target_forward::tests::via_speculative_decode_returns_none_without_kv_cache",
       "file": "crates/larql-inference/src/speculative/target_forward.rs",
-      "line": 513,
+      "line": 580,
       "crate": "larql_inference"
     },
     {
       "fqn": "larql_inference::speculative::target_forward::tests::with_hidden_callback_matches_naive",
       "file": "crates/larql-inference/src/speculative/target_forward.rs",
-      "line": 427,
+      "line": 494,
       "crate": "larql_inference"
     },
     {
       "fqn": "larql_inference::speculative::target_forward::via_speculative_decode_returns_none_without_kv_cache",
       "file": "crates/larql-inference/src/speculative/target_forward.rs",
-      "line": 513,
+      "line": 580,
       "crate": "larql_inference"
     },
     {
       "fqn": "larql_inference::speculative::target_forward::with_hidden_callback_matches_naive",
       "file": "crates/larql-inference/src/speculative/target_forward.rs",
-      "line": 427,
+      "line": 494,
       "crate": "larql_inference"
     },
     {
       "fqn": "larql_inference::speculative::tests::effective_depth_clamps_to_swa_remainder",
       "file": "crates/larql-inference/src/speculative/mod.rs",
-      "line": 201,
+      "line": 202,
       "crate": "larql_inference"
     },
     {
       "fqn": "larql_inference::speculative::tests::env_garbage_uses_legacy_path",
       "file": "crates/larql-inference/src/speculative/mod.rs",
-      "line": 190,
+      "line": 191,
       "crate": "larql_inference"
     },
     {
       "fqn": "larql_inference::speculative::tests::env_one_enables_spec_path",
       "file": "crates/larql-inference/src/speculative/mod.rs",
-      "line": 179,
+      "line": 180,
       "crate": "larql_inference"
     },
     {
       "fqn": "larql_inference::speculative::tests::tree_nodes_caps_at_64",
       "file": "crates/larql-inference/src/speculative/mod.rs",
-      "line": 219,
+      "line": 220,
       "crate": "larql_inference"
     },
     {
       "fqn": "larql_inference::speculative::tests::tree_nodes_default_is_seven",
       "file": "crates/larql-inference/src/speculative/mod.rs",
-      "line": 213,
+      "line": 214,
       "crate": "larql_inference"
     },
     {
@@ -26261,19 +26344,19 @@
     {
       "fqn": "larql_inference::speculative::tree_nodes_caps_at_64",
       "file": "crates/larql-inference/src/speculative/mod.rs",
-      "line": 219,
+      "line": 220,
       "crate": "larql_inference"
     },
     {
       "fqn": "larql_inference::speculative::tree_nodes_default_is_seven",
       "file": "crates/larql-inference/src/speculative/mod.rs",
-      "line": 213,
+      "line": 214,
       "crate": "larql_inference"
     },
     {
       "fqn": "larql_inference::speculative::unset_env_uses_legacy_path",
       "file": "crates/larql-inference/src/speculative/mod.rs",
-      "line": 154,
+      "line": 155,
       "crate": "larql_inference"
     },
     {
@@ -26423,37 +26506,37 @@
     {
       "fqn": "larql_inference::speculative::wiring::returns_none_when_env_disabled",
       "file": "crates/larql-inference/src/speculative/wiring.rs",
-      "line": 375,
+      "line": 506,
       "crate": "larql_inference"
     },
     {
       "fqn": "larql_inference::speculative::wiring::returns_none_when_swa_window_exhausted",
       "file": "crates/larql-inference/src/speculative/wiring.rs",
-      "line": 455,
+      "line": 586,
       "crate": "larql_inference"
     },
     {
       "fqn": "larql_inference::speculative::wiring::returns_some_tokens_when_env_enabled_and_drafter_proposes",
       "file": "crates/larql-inference/src/speculative/wiring.rs",
-      "line": 401,
+      "line": 532,
       "crate": "larql_inference"
     },
     {
       "fqn": "larql_inference::speculative::wiring::tests::returns_none_when_env_disabled",
       "file": "crates/larql-inference/src/speculative/wiring.rs",
-      "line": 375,
+      "line": 506,
       "crate": "larql_inference"
     },
     {
       "fqn": "larql_inference::speculative::wiring::tests::returns_none_when_swa_window_exhausted",
       "file": "crates/larql-inference/src/speculative/wiring.rs",
-      "line": 455,
+      "line": 586,
       "crate": "larql_inference"
     },
     {
       "fqn": "larql_inference::speculative::wiring::tests::returns_some_tokens_when_env_enabled_and_drafter_proposes",
       "file": "crates/larql-inference/src/speculative/wiring.rs",
-      "line": 401,
+      "line": 532,
       "crate": "larql_inference"
     },
     {

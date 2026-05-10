@@ -375,6 +375,13 @@ fn detect_from_json_validated_returns_validation_error() {
 
 #[test]
 fn validation_rejects_invalid_attention_geometry() {
+    // The historical "head_dim must divide hidden_size" check was
+    // relaxed in the gemma-3-270m drafter slice (hidden=640 head_dim=256
+    // is a valid non-square QKV architecture; q_dim and kv_dim are
+    // sized by num_q_heads/num_kv_heads * head_dim, not by hidden).
+    // The remaining attention-geometry check ("Q heads divide evenly
+    // by KV heads") still flags `num_attention_heads=10` /
+    // `num_key_value_heads=3`.
     let arch = detect_from_json(&serde_json::json!({
         "model_type": "llama",
         "hidden_size": 4100,
@@ -386,7 +393,6 @@ fn validation_rejects_invalid_attention_geometry() {
     }));
     let fields = validation_fields(arch.as_ref());
 
-    assert!(fields.contains(&FIELD_HEAD_DIM));
     assert!(fields.contains(&FIELD_NUM_Q_HEADS));
 }
 
