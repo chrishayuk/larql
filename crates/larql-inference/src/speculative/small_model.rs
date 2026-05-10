@@ -54,10 +54,15 @@ pub struct SmallModelDrafter {
 }
 
 impl SmallModelDrafter {
-    /// Load a small-model drafter from a vindex directory.
+    /// Load a small-model drafter from a LARQL vindex directory.
+    /// Uses the same Q4_K vindex loader as `larql bench` (peak heap
+    /// ~6 GB for 31B vs ~127 GB for the float path) — see
+    /// `larql_vindex::load_model_weights_q4k`.
     pub fn from_vindex(path: impl AsRef<Path>) -> Result<Self, InferenceError> {
         let path = path.as_ref().to_path_buf();
-        let weights = larql_models::load_model_dir(&path)?;
+        let mut callbacks = larql_vindex::SilentLoadCallbacks;
+        let weights = larql_vindex::load_model_weights_q4k(&path, &mut callbacks)
+            .map_err(InferenceError::Vindex)?;
         let tokenizer = load_tokenizer(&path).map_err(|e| {
             InferenceError::Parse(format!("SmallModelDrafter load tokenizer: {e:?}"))
         })?;
