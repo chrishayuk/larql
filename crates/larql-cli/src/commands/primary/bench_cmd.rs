@@ -216,34 +216,64 @@ pub fn run(args: BenchArgs) -> Result<(), Box<dyn std::error::Error>> {
     // Loads the off-the-shelf draft model if `--draft-model <path>` is
     // given. Held in scope for the duration of the bench run; the
     // call-site dispatch into the decode loop lands in the next slice.
-    let _draft = if let Some(draft_path) = args.draft_model.as_deref() {
+    // Install speculative drafter + target executor on this thread.
+    // Required for the per-token loop in larql_inference::layer_graph::generate
+    // to opt into speculative decoding (only fires when env LARQL_SPECULATIVE_DECODE=1).
+    if let Some(draft_path) = args.draft_model.as_deref() {
         let resolved = cache::resolve_model(draft_path)?;
         match larql_inference::speculative::SmallModelDrafter::from_vindex(&resolved) {
-            Ok(d) => {
+            Ok(drafter) => {
                 let env_on = larql_inference::speculative::enabled();
-                println!(
-                    "Speculative drafter: loaded from {} ({}) — env LARQL_SPECULATIVE_DECODE={}",
-                    resolved.display(),
-                    if env_on {
-                        "active"
-                    } else {
-                        "loaded but env disabled"
-                    },
-                    if env_on { "1" } else { "unset/0" },
-                );
-                Some(d)
+                // Install the drafter on this thread.
+                larql_inference::speculative::set_thread_drafter(Some(drafter));
+                // Install a SECOND ModelWeights instance for speculative
+                // target re-runs, loaded from the SAME vindex as the bench's
+                // canonical target. Mmap means zero RSS overhead despite
+                // the apparent duplication. Resolves the borrow conflict
+                // between `&layers` (canonical) and `&mut weights` (speculative).
+                match larql_inference::speculative::SpeculativeTargetExecutor::from_vindex(
+                    &vindex_path,
+                ) {
+                    Ok(exec) => {
+                        larql_inference::speculative::set_thread_target_executor(Some(exec));
+                        // Default to depth=2 branches=1 (linear chain) for the naive path.
+                        larql_inference::speculative::set_thread_spec_config(
+                            larql_inference::speculative::SpecConfig {
+                                depth: 2,
+                                branches: 1,
+                                swa_window: None,
+                            },
+                        );
+                        larql_inference::speculative::set_thread_rng(0xCAFE_BABE_DEAD_F00D);
+                        println!(
+                            "Speculative drafter: loaded from {} ({}) — env LARQL_SPECULATIVE_DECODE={}",
+                            resolved.display(),
+                            if env_on {
+                                "active (drafter + target executor installed)"
+                            } else {
+                                "loaded but env disabled"
+                            },
+                            if env_on { "1" } else { "unset/0" },
+                        );
+                    }
+                    Err(e) => {
+                        eprintln!(
+                            "warning: speculative target executor failed to load from {}: {e}; \
+                             clearing drafter — bench will run non-speculative",
+                            vindex_path.display(),
+                        );
+                        larql_inference::speculative::set_thread_drafter(None);
+                    }
+                }
             }
             Err(e) => {
                 eprintln!(
                     "warning: --draft-model {} failed to load: {e}; continuing without speculative path",
                     resolved.display(),
                 );
-                None
             }
         }
-    } else {
-        None
-    };
+    }
     println!();
 
     let mut rows: Vec<BenchRow> = Vec::new();

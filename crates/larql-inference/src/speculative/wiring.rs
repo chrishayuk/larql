@@ -22,15 +22,55 @@
 //! oracle for phase 4c's batched implementation.
 
 use std::cell::RefCell;
+use std::path::Path;
 
 use larql_models::ModelWeights;
 use larql_vindex::VectorIndex;
+use ndarray::Array2;
+
+use crate::error::InferenceError;
 
 use super::orchestrator::build_linear_tree;
 use super::small_model::SmallModelDrafter;
-use super::target_forward::target_forward_naive;
+use super::target_forward::{target_forward_naive, target_forward_with_hidden};
 use super::verify::{verify_tree, VerifyRng};
 use super::{Drafter, SpecConfig, TokenId};
+
+/// Owns a separate `ModelWeights` instance + `VectorIndex` for
+/// speculative target re-runs. The bench loads this from the
+/// SAME vindex bytes as the canonical target — mmap means zero
+/// additional RSS despite logically duplicating the weights.
+///
+/// Resolves the borrow conflict at gpu.rs:735 documented in PR #18:
+/// the canonical decode loop holds `&layers` (borrowing the canonical
+/// weights), while the speculative target needs `&mut weights`. Owning
+/// a separate instance gives the speculative path its own mutable
+/// surface without touching the canonical one.
+pub struct SpeculativeTargetExecutor {
+    weights: ModelWeights,
+    index: VectorIndex,
+}
+
+impl SpeculativeTargetExecutor {
+    /// Load a separate weights+vindex pair from the same directory the
+    /// canonical target is using. Mmap is the underlying storage, so
+    /// peak RSS is unaffected.
+    pub fn from_vindex(path: impl AsRef<Path>) -> Result<Self, InferenceError> {
+        let path = path.as_ref();
+        let mut callbacks = larql_vindex::SilentLoadCallbacks;
+        let weights = larql_vindex::load_model_weights_q4k(path, &mut callbacks)
+            .map_err(InferenceError::Vindex)?;
+        let index = crate::open_inference_vindex(path)?;
+        Ok(Self { weights, index })
+    }
+
+    /// Run the target's full forward pass on `tokens` and return the
+    /// `[seq_len, hidden]` hidden state. Used as the closure body for
+    /// `target_forward_with_hidden`.
+    pub fn compute_hidden(&mut self, tokens: &[TokenId]) -> Array2<f32> {
+        crate::vindex::predict_q4k_hidden(&mut self.weights, tokens, &self.index, None)
+    }
+}
 
 thread_local! {
     /// Per-thread speculative drafter. Set by the caller (e.g.
@@ -51,6 +91,11 @@ thread_local! {
             swa_window: None,
         })
     };
+    /// Per-thread separately-loaded target executor. Set by the
+    /// caller before generate() begins; read by `try_thread_speculative_step_v2`.
+    /// Resolves the borrow conflict by owning its own `&mut ModelWeights`
+    /// independent of the canonical loop's weights.
+    static THREAD_TARGET_EXEC: RefCell<Option<SpeculativeTargetExecutor>> = const { RefCell::new(None) };
 }
 
 /// Install a drafter on the current thread. Pass `None` to clear.
@@ -74,6 +119,81 @@ pub fn set_thread_rng(seed: u64) {
     THREAD_RNG.with(|cell| {
         *cell.borrow_mut() = Some(VerifyRng::new(seed));
     });
+}
+
+/// Install a separate target executor on the current thread. Pass
+/// `None` to clear. Required for `try_thread_speculative_step_v2`
+/// to dispatch.
+pub fn set_thread_target_executor(exec: Option<SpeculativeTargetExecutor>) {
+    THREAD_TARGET_EXEC.with(|cell| {
+        *cell.borrow_mut() = exec;
+    });
+}
+
+/// Borrow-conflict-free dispatch helper. Takes `&ModelWeights`
+/// (immutable) for the lm_head + softmax projection inside
+/// `target_forward_with_hidden`. Mutability for `predict_q4k_hidden`
+/// comes from the thread-local `SpeculativeTargetExecutor`.
+///
+/// Returns `Some(emitted_tokens)` on a successful step (caller MUST
+/// advance KV cache by `tokens.len()`); `None` to fall through to
+/// the existing non-speculative path.
+///
+/// Returns `None` when:
+/// - `LARQL_SPECULATIVE_DECODE` is unset / not `1`
+/// - thread-local `THREAD_DRAFTER` is None
+/// - thread-local `THREAD_TARGET_EXEC` is None
+/// - SWA window leaves no slack
+/// - drafter declines (empty proposals)
+pub fn try_thread_speculative_step_v2(
+    weights: &ModelWeights,
+    history: &[TokenId],
+    cache_len: usize,
+) -> Option<Vec<TokenId>> {
+    if !super::enabled() {
+        return None;
+    }
+    THREAD_DRAFTER.with(|d_cell| {
+        let mut d_ref = d_cell.borrow_mut();
+        let drafter = d_ref.as_mut()?;
+        THREAD_TARGET_EXEC.with(|t_cell| {
+            let mut t_ref = t_cell.borrow_mut();
+            let target = t_ref.as_mut()?;
+            let cfg = THREAD_CFG.with(|c| *c.borrow());
+            let depth = cfg.effective_depth(cache_len);
+            if depth == 0 {
+                return None;
+            }
+            // Re-seed the drafter's internal history with the loop's
+            // canonical context every iteration. Wasteful (clones the
+            // history) but correct — without this, the drafter has no
+            // context for its propose() call. Phase 4c can optimize
+            // by tracking drafter history incrementally.
+            drafter.seed_history(history);
+            let drafts = drafter.propose(&[], depth);
+            if drafts.is_empty() {
+                return None;
+            }
+            let tree = build_linear_tree(&drafts);
+            let p_target = target_forward_with_hidden(weights, history, &tree, |toks| {
+                target.compute_hidden(toks)
+            });
+            if p_target.len() != tree.len() {
+                return None;
+            }
+            let span = THREAD_RNG.with(|r_cell| {
+                let mut r_ref = r_cell.borrow_mut();
+                let rng = r_ref.get_or_insert_with(|| VerifyRng::new(0xCAFE_BABE_DEAD_F00D));
+                verify_tree(&tree, &p_target, rng)
+            });
+            let emitted = span.tokens();
+            if emitted.is_empty() {
+                return None;
+            }
+            drafter.accept(&emitted);
+            Some(emitted)
+        })
+    })
 }
 
 /// Try one speculative step using the thread-local drafter (if set).

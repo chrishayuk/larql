@@ -32,7 +32,8 @@ pub use tree::{DraftTree, TreeAttentionMask, TreeNode};
 pub use verify::{verify_and_accept, verify_tree, AcceptedSpan, VerifyRng};
 pub use wiring::{
     run_naive_step, set_thread_drafter, set_thread_rng, set_thread_spec_config,
-    try_thread_speculative_step,
+    set_thread_target_executor, try_thread_speculative_step, try_thread_speculative_step_v2,
+    SpeculativeTargetExecutor,
 };
 
 pub type TokenId = u32;
