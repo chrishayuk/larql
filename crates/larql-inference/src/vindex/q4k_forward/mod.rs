@@ -20,7 +20,7 @@ mod walk_ffn;
 pub use generation::{
     generate_q4k_cpu, generate_q4k_cpu_constrained, generate_q4k_cpu_constrained_streaming,
     generate_q4k_cpu_constrained_streaming_sampled, generate_q4k_cpu_remote, is_end_of_turn,
-    predict_q4k,
+    predict_q4k, predict_q4k_full_vocab_probs,
 };
 pub use hidden::{predict_q4k_hidden, prefill_q4k_from_embeddings};
 pub use hooks::predict_q4k_hidden_hooked;

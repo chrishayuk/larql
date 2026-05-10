@@ -24,7 +24,7 @@ pub use raw::{
 };
 
 pub use dense::{
-    logit_lens_top1, logits_to_predictions_pub, predict, predict_from_hidden,
+    full_vocab_probs, logit_lens_top1, logits_to_predictions_pub, predict, predict_from_hidden,
     predict_from_hidden_with_ffn, predict_with_ffn_trace, predict_with_temperature,
 };
 

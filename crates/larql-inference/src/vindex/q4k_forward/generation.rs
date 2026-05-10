@@ -18,6 +18,21 @@ pub fn predict_q4k(
     crate::forward::predict::logits_to_predictions_pub(weights, &h, tokenizer, top_k, 1.0)
 }
 
+/// Full softmax distribution over the vocabulary at the next position.
+///
+/// Same compute as [`predict_q4k`] but skips the top-k truncation and
+/// returns the full `Vec<f32>` of length `vocab_size`. Used by phase 4b's
+/// naive `target_forward` to feed `verify_and_accept` per-position
+/// target distributions.
+pub fn predict_q4k_full_vocab_probs(
+    weights: &mut ModelWeights,
+    token_ids: &[u32],
+    index: &VectorIndex,
+) -> Vec<f32> {
+    let h = predict_q4k_hidden(weights, token_ids, index, None);
+    crate::forward::predict::full_vocab_probs(weights, &h, 1.0)
+}
+
 /// Common end-of-turn / EOS markers across Gemma, Llama, Mistral, ChatML.
 pub fn is_end_of_turn(token: &str) -> bool {
     matches!(
