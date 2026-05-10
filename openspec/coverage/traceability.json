@@ -26426,6 +26426,12 @@
       "crate": "larql_inference"
     },
     {
+      "fqn": "larql_inference::test_speculative_parity::token_id_parity_speculative_vs_baseline_short_prompt",
+      "file": "crates/larql-inference/tests/test_speculative_parity.rs",
+      "line": 113,
+      "crate": "larql_inference"
+    },
+    {
       "fqn": "larql_inference::tokenizer::maybe_prepend_bos_empty_input",
       "file": "crates/larql-inference/src/tokenizer.rs",
       "line": 110,
