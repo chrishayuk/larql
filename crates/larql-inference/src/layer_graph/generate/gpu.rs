@@ -649,97 +649,36 @@ where
     let mut t_lmhead = 0.0f64;
     let mut t_detok = 0.0f64;
 
-    // Phase 4b dispatch: speculative path via try_thread_speculative_step_v2.
-    // The v2 helper is borrow-conflict-free — it takes `&ModelWeights`
-    // (immutable, compatible with `&layers`'s borrow) and uses a
-    // thread-local `SpeculativeTargetExecutor` for the `&mut weights`
-    // it needs internally (PR #19's resolution).
+    // Phase 4c task C.2.d — speculative dispatch via try_thread_speculative_step_v3.
+    //
+    // The v3 helper requires `backend.kv_cache_len() == history.len()`
+    // at the call site. The natural place this contract holds is
+    // *after* the iter body's `decode_token(current_token_id)` call —
+    // before that point the cache is one short (current_token_id has
+    // been pushed to `generated_ids` but not yet decoded). So the
+    // dispatch lives below, right after `let result = ...` produces
+    // the hidden for current_token_id.
+    //
+    // On v3 success we commit ALL N emitted tokens to the canonical
+    // cache and capture the final hidden, then sample the next-iter's
+    // input from that hidden via the same lm_head + sampler machinery
+    // the normal path uses. The sampled token becomes the next iter's
+    // `current_token_id` — consumed by the next iter's body decode,
+    // matching the loop's existing invariant exactly.
+    //
+    // On v3 None (env off / drafter unset / SWA exhausted / drafter
+    // declined / cache-contract failed), the iter body falls through
+    // unchanged — env-OFF baseline is bit-exact.
     //
     // Setup: caller (e.g. `larql bench --draft-model <path>`) calls
     //   speculative::set_thread_drafter(Some(SmallModelDrafter::from_vindex(...)))
-    //   speculative::set_thread_target_executor(Some(SpeculativeTargetExecutor::from_vindex(...)))
     //   speculative::set_thread_spec_config(SpecConfig { depth: N, branches: 1, .. })
     //   speculative::set_thread_rng(seed)
-    // before calling generate(). With env LARQL_SPECULATIVE_DECODE=1
-    // the speculative dispatch fires per iteration; otherwise no-op
-    // (existing path bit-exact).
-    //
-    // KV cache management: on Some(emitted), we advance the canonical
-    // cache by N-1 in-loop decode_token calls (last token left for
-    // current_token_id flow). Wasteful but correct — phase 4c batches.
+    // before calling generate(). v3 does NOT need the
+    // SpeculativeTargetExecutor (v2's separate-weights workaround) —
+    // it uses the canonical backend's KV cache via decode_token.
     for _step in 1..max_tokens {
         let decode_start = std::time::Instant::now();
-
-        // ── Speculative dispatch (no-op when env off / drafter unset) ──
-        {
-            let history: Vec<u32> = token_ids
-                .iter()
-                .copied()
-                .chain(generated_ids.iter().copied())
-                .collect();
-            let cache_len = history.len();
-            // C.2.d STATUS: v3 helper exists in wiring.rs but is NOT
-            // wired here yet. The current speculative emit loop advances
-            // the canonical cache by N-1 (not N), leaving cache_len ==
-            // history.len() - 1 entering the next iteration. v3's
-            // strict cache contract requires equality, so it would
-            // return None on every other iteration and fall back to v2.
-            //
-            // Resolving requires restructuring the cache-advance flow
-            // to either (a) advance by N (and skip the next iter's
-            // redundant decode_token of the last emitted) or (b) drop
-            // v3's strict check and have target_forward_via_speculative_decode
-            // catch the cache up internally. Both touch hot-path
-            // logic and need careful unit testing.
-            //
-            // For now: keep using v2 (correct, slow). C.2.d follow-up
-            // PR resolves the cache-state contract before flipping to v3.
-            if let Some(emitted) =
-                crate::speculative::try_thread_speculative_step_v2(&*weights, &history, cache_len)
-            {
-                let n = emitted.len();
-                let mut break_outer = false;
-                for (i, &spec_tok) in emitted.iter().enumerate() {
-                    let tok_str = detok.push(spec_tok);
-                    let prob = 1.0_f64;
-                    on_token(spec_tok, &tok_str, prob);
-                    tokens.push((tok_str.clone(), prob));
-                    generated_ids.push(spec_tok);
-                    if eos.is_eos_with_tokenizer(spec_tok, &tok_str, tokenizer) {
-                        break_outer = true;
-                        break;
-                    }
-                    // Advance canonical cache for all but the last
-                    // emitted (the last advances naturally via
-                    // current_token_id_outer in the next iter).
-                    if i < n - 1 {
-                        let h_tok = crate::forward::embed_tokens_pub(weights, &[spec_tok]);
-                        let x_dec: Vec<f32> = h_tok.row(0).to_vec();
-                        let _ = backend.decode_token(
-                            &layers,
-                            &x_dec,
-                            hidden,
-                            intermediate,
-                            attention.q_dim,
-                            attention.kv_dim,
-                            attention.num_q_heads,
-                            attention.num_kv_heads,
-                            attention.head_dim,
-                            attention.rope_base,
-                        );
-                    }
-                }
-                if break_outer {
-                    break;
-                }
-                if let Some(&last) = emitted.last() {
-                    current_token_id = last;
-                }
-                let step_ms = decode_start.elapsed().as_secs_f64() * 1000.0;
-                decode_ms.push(step_ms);
-                continue;
-            }
-        }
 
         let t0 = std::time::Instant::now();
         let h_tok = crate::forward::embed_tokens_pub(weights, &[current_token_id]);
@@ -871,6 +810,159 @@ where
         }
 
         if let Some(h_out) = result {
+            // ── Phase 4c task C.2.d — speculative dispatch (v3) ──
+            //
+            // The body's `decode_token` above just advanced the cache
+            // by 1 to cover `current_token_id` (= generated_ids.last()),
+            // so `kv_cache_len() == prompt + generated_ids.len() ==
+            // history.len()` — exactly v3's contract.
+            //
+            // Returns None when LARQL_SPECULATIVE_DECODE is unset, no
+            // thread drafter is installed, or the drafter declines.
+            // In that case we fall through to the existing sample path
+            // below, preserving the env-OFF baseline bit-exactly.
+            //
+            // On Some(emitted): commit each emitted token via
+            // decode_token (capturing the last hidden), then sample
+            // the next-iter's `current_token_id` from that hidden via
+            // the normal lm_head + sampler machinery. The sampled
+            // token enters the next iter as the not-yet-decoded input,
+            // matching the loop's existing invariant.
+            let spec_history: Vec<u32> = token_ids
+                .iter()
+                .copied()
+                .chain(generated_ids.iter().copied())
+                .collect();
+            let spec_dims = crate::speculative::TargetForwardDims {
+                hidden,
+                intermediate,
+                q_dim: attention.q_dim,
+                kv_dim: attention.kv_dim,
+                num_q_heads: attention.num_q_heads,
+                num_kv_heads: attention.num_kv_heads,
+                head_dim: attention.head_dim,
+                rope_base: attention.rope_base,
+            };
+            if let Some(emitted) = crate::speculative::try_thread_speculative_step_v3(
+                &*weights,
+                &spec_history,
+                spec_history.len(),
+                backend,
+                index,
+                &layers,
+                spec_dims,
+            ) {
+                let mut break_outer = false;
+                let mut last_h_emit: Option<Vec<f32>> = None;
+                for &spec_tok in &emitted {
+                    let tok_str = detok.push(spec_tok);
+                    // p_target placeholder — phase 4d's bench-cmd plumbs
+                    // verify-step probabilities if analytics need them.
+                    let prob = 1.0_f64;
+                    on_token(spec_tok, &tok_str, prob);
+                    tokens.push((tok_str.clone(), prob));
+                    generated_ids.push(spec_tok);
+                    if eos.is_eos_with_tokenizer(spec_tok, &tok_str, tokenizer) {
+                        break_outer = true;
+                        break;
+                    }
+                    let h_tok_emit = crate::forward::embed_tokens_pub(weights, &[spec_tok]);
+                    let x_emit: Vec<f32> = h_tok_emit.row(0).to_vec();
+                    match backend.decode_token(
+                        &layers,
+                        &x_emit,
+                        hidden,
+                        intermediate,
+                        attention.q_dim,
+                        attention.kv_dim,
+                        attention.num_q_heads,
+                        attention.num_kv_heads,
+                        attention.head_dim,
+                        attention.rope_base,
+                    ) {
+                        Some(h) => last_h_emit = Some(h),
+                        None => {
+                            // Mid-commit GPU failure — cache is partially
+                            // advanced, matching the existing GPU-failure
+                            // semantics (bail out of generate).
+                            break_outer = true;
+                            break;
+                        }
+                    }
+                }
+                if break_outer {
+                    break;
+                }
+                // Sample one more from the post-bonus hidden and emit
+                // it as a real user-visible token. This is the natural
+                // continuation of the spec step: the bonus's hidden
+                // state predicts the next token, and emitting it here
+                // (rather than deferring to the next iter's body
+                // decode) keeps the loop invariant aligned with v3's
+                // cache contract.
+                //
+                // Why this is required: if we only set `current_token_id
+                // = next` without pushing it to `generated_ids`, the
+                // next iter's body decode would advance the cache by 1
+                // without growing `generated_ids` — leaving cache_len
+                // == history.len() + 1 at the next dispatch, which v3
+                // rejects (and the user would never see `next` in the
+                // output stream). Emitting and pushing keeps cache_len
+                // == history.len() - 1 at iter top (the loop's
+                // existing invariant), and v3's contract is then
+                // re-satisfied after the next iter's body decode.
+                let Some(h_last) = last_h_emit else {
+                    // Unreachable: helper rejects empty emitted, and a
+                    // non-empty emitted always produces last_h_emit
+                    // (or breaks via EOS / GPU failure handled above).
+                    break;
+                };
+                let h_arr_emit = ndarray::Array2::from_shape_vec((1, hidden), h_last).unwrap();
+                let h_final_emit = crate::forward::apply_norm(
+                    weights,
+                    &h_arr_emit,
+                    weights.arch.final_norm_key(),
+                    norm_offset,
+                );
+                let h_1d_emit = h_final_emit.row(0).to_owned();
+                let hits_emit = lm_head_topk(index, weights, &h_1d_emit, knn_k, backend);
+                let Some(picked_id) =
+                    sampler.sample_from_topk_with_history(&hits_emit, &generated_ids)
+                else {
+                    if profile {
+                        eprintln!(
+                            "[profile] step={} spec_v3 lm_head empty after commit; break",
+                            _step,
+                        );
+                    }
+                    break;
+                };
+                let tok_str_picked = detok.push(picked_id);
+                let score_picked = hits_emit
+                    .iter()
+                    .find(|(t, _)| *t == picked_id)
+                    .map(|(_, s)| *s)
+                    .unwrap_or(0.0);
+                let prob_picked = crate::layer_graph::logits::softmax_prob(
+                    score_picked,
+                    &hits_emit,
+                    weights.arch.logits_scaling(),
+                    weights.arch.final_logit_softcapping(),
+                );
+                let is_eos_picked =
+                    eos.is_eos_with_tokenizer(picked_id, &tok_str_picked, tokenizer);
+                on_token(picked_id, &tok_str_picked, prob_picked);
+                tokens.push((tok_str_picked, prob_picked));
+                generated_ids.push(picked_id);
+                current_token_id = picked_id;
+                let step_ms = decode_start.elapsed().as_secs_f64() * 1000.0;
+                decode_ms.push(step_ms);
+                if is_eos_picked {
+                    break;
+                }
+                continue;
+            }
+
             let t2 = std::time::Instant::now();
             let h_arr = ndarray::Array2::from_shape_vec((1, hidden), h_out).unwrap();
             let h_final = crate::forward::apply_norm(

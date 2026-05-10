@@ -229,7 +229,8 @@ pub fn try_thread_speculative_step_v3(
     weights: &ModelWeights,
     history: &[TokenId],
     cache_len: usize,
-    backend: &dyn larql_compute::backend::DecodeBackend,
+    backend: &dyn larql_compute::ComputeBackend,
+    index: &larql_vindex::VectorIndex,
     layers: &[larql_compute::FullPipelineLayer<'_>],
     dims: super::target_forward::TargetForwardDims,
 ) -> Option<Vec<TokenId>> {
@@ -250,8 +251,68 @@ pub fn try_thread_speculative_step_v3(
             return None;
         }
         let tree = build_linear_tree(&drafts);
-        let p_target = super::target_forward::target_forward_via_speculative_decode(
-            weights, history, &tree, backend, layers, dims,
+
+        // GPU lm_head closure: routes the per-tree-node `apply_norm +
+        // dot_proj + softmax` through the index's lm_head Q4_K bytes
+        // (or the f16 mmap fallback) via `lm_head_knn_backend`-style
+        // dispatch. On 4B with the `q4k_matvec` fix, this drops each
+        // call from ~50-100 ms (CPU `dot_proj`) to ~2 ms.
+        //
+        // This is the dominant remaining bottleneck once the per-token
+        // decode + drafter slices land — the helper makes 3 lm_head
+        // calls per spec iter at depth=2 b=1.
+        let arch = &*weights.arch;
+        let final_norm = weights.tensors.get(arch.final_norm_key());
+        let norm_offset = arch.norm_weight_offset();
+        let logits_scale = arch.logits_scaling();
+        let final_softcap = arch.final_logit_softcapping();
+        let compute_probs = |h: &[f32]| -> Vec<f32> {
+            let h_arr = match ndarray::Array2::from_shape_vec((1, h.len()), h.to_vec()) {
+                Ok(a) => a,
+                Err(_) => return Vec::new(),
+            };
+            let h_final = match final_norm {
+                Some(_) => {
+                    crate::forward::apply_norm(weights, &h_arr, arch.final_norm_key(), norm_offset)
+                }
+                None => h_arr,
+            };
+            let h_1d = h_final.row(0).to_owned();
+            let logits = compute_full_vocab_logits(weights, index, backend, &h_1d);
+            if logits.is_empty() {
+                return Vec::new();
+            }
+            // Scale + softcap + softmax. Mirrors `predict::dense::full_vocab_probs`.
+            let inv_scale = 1.0 / logits_scale;
+            let scaled: Vec<f32> = logits
+                .iter()
+                .map(|&v| {
+                    let mut l = v * inv_scale;
+                    if let Some(cap) = final_softcap {
+                        l = (l / cap).tanh() * cap;
+                    }
+                    l
+                })
+                .collect();
+            let max_logit = scaled.iter().copied().fold(f32::NEG_INFINITY, f32::max);
+            let exp_sum: f64 = scaled.iter().map(|l| ((l - max_logit) as f64).exp()).sum();
+            if exp_sum <= 0.0 {
+                return Vec::new();
+            }
+            scaled
+                .iter()
+                .map(|l| (((l - max_logit) as f64).exp() / exp_sum) as f32)
+                .collect()
+        };
+
+        let p_target = super::target_forward::target_forward_via_speculative_decode_with_probs(
+            weights,
+            history,
+            &tree,
+            backend,
+            layers,
+            dims,
+            compute_probs,
         )?;
         if p_target.len() != tree.len() {
             return None;
@@ -268,6 +329,76 @@ pub fn try_thread_speculative_step_v3(
         drafter.accept(&emitted);
         Some(emitted)
     })
+}
+
+/// Run lm_head on `h_1d` via the GPU path (Q4_K or f16 GEMV via the
+/// index's lm_head bytes). Falls through to the CPU `backend_lm_head_scores`
+/// path when the index lacks lm_head Q4 bytes AND f16 GEMV isn't
+/// specialised for the backend. Returns the full vocab logit vector
+/// (NOT softmax'd — caller applies scaling + softcap + softmax).
+fn compute_full_vocab_logits(
+    weights: &ModelWeights,
+    index: &larql_vindex::VectorIndex,
+    backend: &dyn larql_compute::ComputeBackend,
+    h_1d: &ndarray::Array1<f32>,
+) -> Vec<f32> {
+    let vocab = index.vocab_size;
+    let hidden = h_1d.len();
+    if vocab == 0 || hidden == 0 {
+        return Vec::new();
+    }
+    let x = match h_1d.as_slice() {
+        Some(s) => s,
+        None => return Vec::new(),
+    };
+
+    // 1. Q4_K path (CudaBackend's q4k_matvec falls back to dequant +
+    //    cuBLAS GEMV when the kernel constraint isn't met).
+    if backend.has_q4() {
+        let q4_bytes: Option<&[u8]> = index
+            .projections
+            .lm_head_q4_mmap
+            .as_ref()
+            .map(|m| m.as_ref() as &[u8])
+            .or_else(|| {
+                index
+                    .projections
+                    .lm_head_q4_synth
+                    .as_ref()
+                    .map(|v| v.as_slice())
+            });
+        if let Some(q4_data) = q4_bytes {
+            if let Some(scores) = backend.q4k_matvec(q4_data, x, vocab, hidden) {
+                if scores.len() == vocab {
+                    return scores;
+                }
+            }
+        }
+    }
+    // 2. f16 mmap path (tied embeddings re-used as lm_head).
+    if let Some(ref f16_mmap) = index.projections.lm_head_f16_mmap {
+        let expected = vocab * hidden * 2;
+        if f16_mmap.len() >= expected {
+            if let Some(scores) = backend.f16_gemv(&f16_mmap[..expected], x, vocab, hidden) {
+                if scores.len() == vocab {
+                    return scores;
+                }
+            }
+        }
+    }
+    // 3. Last resort: f32 GEMV against `weights.lm_head` (slow CPU path).
+    let lm = &weights.lm_head;
+    if lm.is_empty() {
+        return Vec::new();
+    }
+    if let Some(scores) = backend.f32_gemv(lm.view(), x) {
+        return scores;
+    }
+    let q_row = match h_1d.view().into_shape_with_order((1, hidden)) {
+        Ok(r) => r,
+        Err(_) => return Vec::new(),
+    };
+    backend.matmul_transb(q_row, lm.view()).row(0).to_vec()
 }
 
 /// Try one speculative step using the thread-local drafter (if set).

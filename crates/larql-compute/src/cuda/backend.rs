@@ -58,6 +58,14 @@ pub struct CudaBackend {
     /// distinct host buffers with identical bytes still collide
     /// safely.
     f32_norm_device_cache: Mutex<HashMap<DeviceBytesKey, Arc<CudaSlice<f32>>>>,
+    /// Per-pointer cache of f16 weight bytes (e.g. tied-embedding
+    /// `embeddings.bin` reused as lm_head) converted to device-resident
+    /// f32 for cuBLAS GEMV. Avoids re-uploading the 168 MB lm_head
+    /// matrix on every drafted token. Used by `f16_gemv` on
+    /// architectures where the Q4_K matvec kernel can't run (e.g.
+    /// Gemma 3 270M's lm_head with hidden=640 — not a multiple of
+    /// the 256-element Q4_K super-block).
+    f16_f32_device_cache: Mutex<HashMap<DeviceBytesKey, Arc<CudaSlice<f32>>>>,
     /// `cuda-decode-cuda-graph`: pre-allocated per-decode scratch
     /// buffers. `None` until the first decode_token_device call sees
     /// a shape; reused on every subsequent same-shape call.
@@ -89,6 +97,7 @@ impl CudaBackend {
             q4k_f16_device_cache: Mutex::new(HashMap::new()),
             q6k_f16_device_cache: Mutex::new(HashMap::new()),
             f32_norm_device_cache: Mutex::new(HashMap::new()),
+            f16_f32_device_cache: Mutex::new(HashMap::new()),
             decode_scratch: Mutex::new(None),
             decode_graph: Mutex::new(None),
             decode_warmup_count: Mutex::new(0),
@@ -278,6 +287,53 @@ impl CudaBackend {
             .q4k_f32_device_cache
             .lock()
             .map_err(|_| CudaInitError::DriverMissing("q4k f32 cache poisoned".into()))?;
+        let entry = cache.entry(key).or_insert_with(|| Arc::clone(&arc));
+        let arc = Arc::clone(entry);
+        drop(cache);
+        f(&arc)
+    }
+
+    /// Cache f16 weight bytes (host mmap or Vec) converted once to a
+    /// device-resident f32 buffer. The cache is keyed by host pointer
+    /// + length + content hash; subsequent calls with the SAME host
+    /// buffer return the cached `CudaSlice<f32>` without re-uploading
+    /// the 168 MB lm_head matrix. Used by `f16_gemv` for the lm_head
+    /// path on architectures where the Q4_K direct kernel can't run.
+    pub(crate) fn with_f16_f32_device_buf<R>(
+        &self,
+        host_f16_bytes: &[u8],
+        n_elements: usize,
+        f: impl FnOnce(&CudaSlice<f32>) -> Result<R, CudaInitError>,
+    ) -> Result<R, CudaInitError> {
+        if host_f16_bytes.len() < n_elements * 2 {
+            return Err(CudaInitError::DriverMissing(format!(
+                "f16 source bytes too short: got {}, need {}",
+                host_f16_bytes.len(),
+                n_elements * 2
+            )));
+        }
+        let key = DeviceBytesKey::from_slice(host_f16_bytes);
+        {
+            let cache = self
+                .f16_f32_device_cache
+                .lock()
+                .map_err(|_| CudaInitError::DriverMissing("f16 f32 cache poisoned".into()))?;
+            if let Some(arc) = cache.get(&key) {
+                return f(arc);
+            }
+        }
+        let f16_slice: &[half::f16] = unsafe {
+            std::slice::from_raw_parts(host_f16_bytes.as_ptr() as *const half::f16, n_elements)
+        };
+        let mut w_f32 = Vec::with_capacity(n_elements);
+        for &h in f16_slice {
+            w_f32.push(h.to_f32());
+        }
+        let arc = Arc::new(self.drv.device_buf_from(&w_f32)?);
+        let mut cache = self
+            .f16_f32_device_cache
+            .lock()
+            .map_err(|_| CudaInitError::DriverMissing("f16 f32 cache poisoned".into()))?;
         let entry = cache.entry(key).or_insert_with(|| Arc::clone(&arc));
         let arc = Arc::clone(entry);
         drop(cache);
@@ -607,6 +663,23 @@ impl MatMul for CudaBackend {
         }
         let w_buf = self.as_contiguous(w);
         kernels::gemv(&self.drv, &w_buf, x, n, k).ok()
+    }
+
+    /// f16 GEMV via session-cached dequantized f32 weight + cuBLAS sgemv.
+    /// Lets `lm_head_knn_backend` route through CUDA on tied-embedding
+    /// models (e.g. Gemma 3 270M) where the Q4_K direct matvec rejects
+    /// non-multiple-of-256 hidden dims and the f16 mmap'd embeddings
+    /// are the lm_head. First call uploads the dequantized weight
+    /// (~84 MB f32 for 270M lm_head); subsequent calls reuse the cache.
+    fn f16_gemv(&self, w_f16: &[u8], x: &[f32], n: usize, k: usize) -> Option<Vec<f32>> {
+        if x.len() != k || w_f16.len() < n * k * 2 {
+            return None;
+        }
+        let n_elements = n * k;
+        self.with_f16_f32_device_buf(&w_f16[..n_elements * 2], n_elements, |w_dev| {
+            kernels::gemv_device_w(&self.drv, w_dev, x, n, k)
+        })
+        .ok()
     }
 }
 

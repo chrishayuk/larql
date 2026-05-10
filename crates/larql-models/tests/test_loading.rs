@@ -9,7 +9,7 @@ use tempfile::TempDir;
 
 use larql_models::{
     load_model_dir, load_model_dir_filtered, load_model_dir_validated, load_model_dir_walk_only,
-    load_model_dir_walk_only_validated, validation::FIELD_HEAD_DIM, ModelError,
+    load_model_dir_walk_only_validated, validation::FIELD_NUM_Q_HEADS, ModelError,
 };
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -307,6 +307,10 @@ fn load_f32_tensors_correct_values() {
     assert!((weights.embed[[9, 3]] - known[39]).abs() < 1e-5);
 }
 
+// Trigger an invalid attention geometry that survives the
+// gemma-3-270m head_dim relaxation: num_attention_heads=3 /
+// num_key_value_heads=2 fails the "Q heads divide evenly by KV
+// heads" check, which is still validated.
 #[test]
 fn load_model_dir_validated_rejects_invalid_config() {
     let dir = TempDir::new().unwrap();
@@ -314,10 +318,10 @@ fn load_model_dir_validated_rejects_invalid_config() {
         dir.path(),
         serde_json::json!({
             "model_type": "llama",
-            "hidden_size": 5,
+            "hidden_size": 6,
             "num_hidden_layers": 1,
             "intermediate_size": 16,
-            "num_attention_heads": 2,
+            "num_attention_heads": 3,
             "num_key_value_heads": 2,
             "head_dim": 2,
             "vocab_size": 10,
@@ -326,11 +330,11 @@ fn load_model_dir_validated_rejects_invalid_config() {
     );
 
     let permissive = load_model_dir(dir.path()).unwrap();
-    assert_eq!(permissive.hidden_size, 5);
+    assert_eq!(permissive.hidden_size, 6);
 
     match load_model_dir_validated(dir.path()) {
         Err(ModelError::ConfigValidation(errors)) => {
-            assert!(errors.iter().any(|error| error.field == FIELD_HEAD_DIM));
+            assert!(errors.iter().any(|error| error.field == FIELD_NUM_Q_HEADS));
         }
         _ => panic!("expected config validation error"),
     }
@@ -343,10 +347,10 @@ fn load_model_dir_walk_only_validated_rejects_invalid_config() {
         dir.path(),
         serde_json::json!({
             "model_type": "llama",
-            "hidden_size": 5,
+            "hidden_size": 6,
             "num_hidden_layers": 1,
             "intermediate_size": 16,
-            "num_attention_heads": 2,
+            "num_attention_heads": 3,
             "num_key_value_heads": 2,
             "head_dim": 2,
             "vocab_size": 10,
@@ -356,7 +360,7 @@ fn load_model_dir_walk_only_validated_rejects_invalid_config() {
 
     match load_model_dir_walk_only_validated(dir.path()) {
         Err(ModelError::ConfigValidation(errors)) => {
-            assert!(errors.iter().any(|error| error.field == FIELD_HEAD_DIM));
+            assert!(errors.iter().any(|error| error.field == FIELD_NUM_Q_HEADS));
         }
         _ => panic!("expected config validation error"),
     }

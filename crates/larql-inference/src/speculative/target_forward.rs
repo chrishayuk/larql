@@ -68,6 +68,50 @@ pub fn target_forward_via_speculative_decode(
     layers: &[FullPipelineLayer<'_>],
     dims: TargetForwardDims,
 ) -> Option<Vec<Vec<f32>>> {
+    target_forward_via_speculative_decode_with_probs(
+        weights,
+        history,
+        tree,
+        backend,
+        layers,
+        dims,
+        |h| {
+            // CPU fallback: apply_norm + dot_proj + softmax via
+            // ndarray BLAS. ~50-100 ms per call on 4B (vocab=262144,
+            // hidden=2560). Suitable for tests and callers without a
+            // ComputeBackend in scope.
+            let h_arr = match Array2::from_shape_vec((1, h.len()), h.to_vec()) {
+                Ok(a) => a,
+                Err(_) => return Vec::new(),
+            };
+            crate::forward::full_vocab_probs(weights, &h_arr, 1.0)
+        },
+    )
+}
+
+/// Variant of [`target_forward_via_speculative_decode`] that takes a
+/// caller-supplied closure for the per-node lm_head + softmax step.
+/// Lets the v3 spec dispatch route the lm_head GEMV through the GPU
+/// (via `backend.q4k_matvec` on the index's lm_head bytes), avoiding
+/// the ~50-100 ms CPU `dot_proj` per call that dominates spec wall-time
+/// once the per-token decode and drafter slices are unblocked.
+///
+/// `compute_probs(h)` SHALL return the full softmax distribution
+/// (length `vocab`) for the post-final-norm hidden state `h` (length
+/// `dims.hidden`). Returning an empty Vec aborts the call (the helper
+/// returns `None`).
+pub fn target_forward_via_speculative_decode_with_probs<F>(
+    weights: &ModelWeights,
+    history: &[TokenId],
+    tree: &DraftTree,
+    backend: &dyn DecodeBackend,
+    layers: &[FullPipelineLayer<'_>],
+    dims: TargetForwardDims,
+    mut compute_probs: F,
+) -> Option<Vec<Vec<f32>>>
+where
+    F: FnMut(&[f32]) -> Vec<f32>,
+{
     if !backend.has_kv_cache() {
         return None;
     }
@@ -99,7 +143,13 @@ pub fn target_forward_via_speculative_decode(
                 // Tree is single-path but not built linearly — fall through
                 // to the general per-node walk below for safety.
                 return target_forward_via_speculative_decode_per_node(
-                    weights, history, tree, backend, layers, dims,
+                    weights,
+                    history,
+                    tree,
+                    backend,
+                    layers,
+                    dims,
+                    compute_probs,
                 );
             }
         }
@@ -128,14 +178,25 @@ pub fn target_forward_via_speculative_decode(
         }
         let mut per_node = Vec::with_capacity(tree.len());
         for h in hiddens {
-            let h_arr = Array2::from_shape_vec((1, dims.hidden), h).ok()?;
-            per_node.push(crate::forward::full_vocab_probs(weights, &h_arr, 1.0));
+            let probs = compute_probs(&h);
+            if probs.is_empty() {
+                return None;
+            }
+            per_node.push(probs);
         }
         return Some(per_node);
     }
 
     // General tree case (branches > 1): per-node walks with rollback.
-    target_forward_via_speculative_decode_per_node(weights, history, tree, backend, layers, dims)
+    target_forward_via_speculative_decode_per_node(
+        weights,
+        history,
+        tree,
+        backend,
+        layers,
+        dims,
+        compute_probs,
+    )
 }
 
 /// Per-node fallback for non-linear trees. Walks each tree node's
@@ -146,14 +207,18 @@ pub fn target_forward_via_speculative_decode(
 /// branching (`paths.len() > 1`). For linear trees (the typical
 /// branches=1 default), the caller takes the O(N) optimized path
 /// instead.
-fn target_forward_via_speculative_decode_per_node(
+fn target_forward_via_speculative_decode_per_node<F>(
     weights: &ModelWeights,
     _history: &[TokenId],
     tree: &DraftTree,
     backend: &dyn DecodeBackend,
     layers: &[FullPipelineLayer<'_>],
     dims: TargetForwardDims,
-) -> Option<Vec<Vec<f32>>> {
+    mut compute_probs: F,
+) -> Option<Vec<Vec<f32>>>
+where
+    F: FnMut(&[f32]) -> Vec<f32>,
+{
     let mut per_node = Vec::with_capacity(tree.len());
     for node_idx in 0..tree.len() {
         let chain: Vec<TokenId> = tree
@@ -185,8 +250,10 @@ fn target_forward_via_speculative_decode_per_node(
             return None;
         }
         let last = hiddens.last()?;
-        let h_arr = Array2::from_shape_vec((1, dims.hidden), last.clone()).ok()?;
-        let probs = crate::forward::full_vocab_probs(weights, &h_arr, 1.0);
+        let probs = compute_probs(last);
+        if probs.is_empty() {
+            return None;
+        }
         per_node.push(probs);
     }
     Some(per_node)

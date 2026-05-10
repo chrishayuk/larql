@@ -447,6 +447,17 @@ fn matvec_device(
 /// routes through `q4k_mmvq::matvec_device` (INT8 SIMD via
 /// `__dp4a`). Otherwise falls back to `matvec_device` (f32 direct).
 /// `cuda-q4k-mmvq-int8` Phase 3.
+///
+/// **Non-square QKV fallback**: the Q4_K matvec kernels (both mmvq
+/// and direct) require `cols % Q4K_BLOCK_ELEMS (256) == 0` because
+/// each row is laid out as a sequence of 256-element super-blocks.
+/// Models like Gemma 3 270M have `hidden = 640` (not a multiple of
+/// 256) and trip this constraint on Wq/Wk/Wv/gate/up. The prefill
+/// path sidesteps the constraint by dequantizing Q4_K to f16 once
+/// per session and running a cuBLAS GEMM; we mirror that fallback
+/// here for the per-token path. The dequantized weight buffer is
+/// shared across decode calls via the same session cache prefill
+/// uses, so the cost is paid once per layer, not per token.
 fn matvec_device_mmvq(
     backend: &CudaBackend,
     weight: QuantWeight<'_>,
@@ -457,15 +468,26 @@ fn matvec_device_mmvq(
 ) -> Option<CudaSlice<f32>> {
     if let (QuantFormat::Q4_K, Some(q8)) = (weight.format, x_q8_1) {
         if q4k_mmvq_enabled() {
-            return q4k_mmvq::matvec_device(backend, weight.data, q8, rows, cols).ok();
+            if let Some(out) = q4k_mmvq::matvec_device(backend, weight.data, q8, rows, cols).ok() {
+                return Some(out);
+            }
         }
     }
     if let (QuantFormat::Q6_K, Some(q8)) = (weight.format, x_q8_1) {
         if q6k_mmvq_enabled() {
-            return q6k_mmvq::matvec_device(backend, weight.data, q8, rows, cols).ok();
+            if let Some(out) = q6k_mmvq::matvec_device(backend, weight.data, q8, rows, cols).ok() {
+                return Some(out);
+            }
         }
     }
-    matvec_device(backend, weight, x_dev, rows, cols)
+    if let Some(out) = matvec_device(backend, weight, x_dev, rows, cols) {
+        return Some(out);
+    }
+    // Final fallback for non-multiple-of-256 cols (e.g. Gemma 3 270M
+    // hidden=640): dequant + cuBLAS GEMV. Same code path as prefill's
+    // `gemm_proj_seq` with seq_len=1, so the dequantized weight is
+    // session-cached and the per-token cost is just one GEMV.
+    backend.gemm_proj_seq(weight, x_dev, 1, rows, cols)
 }
 
 impl DecodeBackend for CudaBackend {
@@ -707,6 +729,143 @@ impl DecodeBackend for CudaBackend {
             out.extend_from_slice(&h);
         }
         Some(out)
+    }
+
+    /// **Phase 4c task C.2.e** — true batched override.
+    ///
+    /// Replaces the trait default's N sequential `decode_token` calls
+    /// with a single batched layer-pipeline pass at `base_pos =
+    /// pre_len`, then truncates the cache back to `pre_len` per the
+    /// trait contract. Composes the same kernels `prefill_q4_seq_device`
+    /// uses (`elem::rms_norm_batch_device`, `gemm_proj_seq`,
+    /// `attn::fused_prefill_attention_seq_device` with `base_pos =
+    /// pre_len`, `elem::silu_gate_up_batch_device`).
+    ///
+    /// Eligibility: all layers must be Q4_K/Q6_K + RMSNorm + gated FFN
+    /// + non-MoE + non-remote (matches `prefill_q4`'s batched-path gate).
+    /// Non-eligible layers fall through to the trait default
+    /// (sequential `decode_token` via the implicit super-call pattern —
+    /// inlined here because Rust traits don't have super.).
+    ///
+    /// Linear-chain assumption: the helper expects `x_per_token` to
+    /// represent a contiguous chain (each position attends to all prior
+    /// positions plus the cache). `target_forward_via_speculative_decode`
+    /// always passes a chain — for branching trees it falls back to the
+    /// per-node walk which calls this method once per node's chain.
+    /// Branching-tree masks (`tree_decode_attention`'s per-q mask) are a
+    /// future slice if multi-branch trees become common.
+    #[allow(clippy::too_many_arguments)]
+    fn decode_tokens_speculative(
+        &self,
+        layers: &[FullPipelineLayer<'_>],
+        x_per_token: &[Vec<f32>],
+        hidden: usize,
+        inter: usize,
+        q_dim: usize,
+        kv_dim: usize,
+        num_q_heads: usize,
+        num_kv_heads: usize,
+        head_dim: usize,
+        rope_base: f32,
+    ) -> Option<Vec<Vec<f32>>> {
+        if !self.has_kv_cache() {
+            return None;
+        }
+        let n = x_per_token.len();
+        if n == 0 {
+            return Some(Vec::new());
+        }
+        if x_per_token.iter().any(|x| x.len() != hidden) {
+            return None;
+        }
+
+        // Eligibility for the batched path — same rules as
+        // `prefill_q4`'s batched-path gate (line 661).
+        let all_supported = layers.iter().all(|l| {
+            l.norm_type == NormType::RmsNorm
+                && l.ffn_type == FfnType::Gated
+                && l.moe.is_none()
+                && !l.ffn_is_remote
+                && matches!(l.wq.format, QuantFormat::Q4_K | QuantFormat::Q6_K)
+                && matches!(l.wk.format, QuantFormat::Q4_K | QuantFormat::Q6_K)
+                && matches!(l.wv.format, QuantFormat::Q4_K | QuantFormat::Q6_K)
+                && matches!(l.wo.format, QuantFormat::Q4_K | QuantFormat::Q6_K)
+                && matches!(l.gate.format, QuantFormat::Q4_K | QuantFormat::Q6_K)
+                && matches!(l.up.format, QuantFormat::Q4_K | QuantFormat::Q6_K)
+                && matches!(l.down.format, QuantFormat::Q4_K | QuantFormat::Q6_K)
+        });
+        let batched_off = std::env::var("LARQL_CUDA_SPEC_BATCHED").ok().as_deref() == Some("0");
+        // Below this seq_len threshold, the cuBLAS-GEMM-based batched
+        // path (`prefill_q4_seq_device`) loses to the sequential
+        // `decode_token` loop because of fixed per-launch overhead.
+        // Empirically on RTX 4090 with Gemma 3 4B Q4_K_M and a
+        // depth=2 b=1 chain (n=3), the batched path is ~7 ms/iter
+        // SLOWER (~42 ms vs ~35 ms helper time). Default threshold
+        // is 4: the override fires for trees with 4+ nodes (e.g.
+        // depth=3 chains or branching trees). Override via
+        // `LARQL_CUDA_SPEC_BATCHED_MIN_N=<usize>` for benchmarking.
+        let batched_min_n: usize = std::env::var("LARQL_CUDA_SPEC_BATCHED_MIN_N")
+            .ok()
+            .and_then(|s| s.parse().ok())
+            .unwrap_or(4);
+        if !all_supported || batched_off || n < batched_min_n {
+            // Fall through to the sequential default: N decode_token
+            // calls + truncate. Inlined because Rust traits lack `super`.
+            let pre_len = self.kv_cache_len();
+            let mut hiddens: Vec<Vec<f32>> = Vec::with_capacity(n);
+            for x in x_per_token {
+                match self.decode_token(
+                    layers,
+                    x,
+                    hidden,
+                    inter,
+                    q_dim,
+                    kv_dim,
+                    num_q_heads,
+                    num_kv_heads,
+                    head_dim,
+                    rope_base,
+                ) {
+                    Some(h) => hiddens.push(h),
+                    None => {
+                        self.truncate_kv_cache(pre_len);
+                        return None;
+                    }
+                }
+            }
+            self.truncate_kv_cache(pre_len);
+            return Some(hiddens);
+        }
+
+        let pre_len = self.kv_cache_len();
+        let mut x_flat: Vec<f32> = Vec::with_capacity(n * hidden);
+        for x in x_per_token {
+            x_flat.extend_from_slice(x);
+        }
+        let h_flat = self.decode_tokens_speculative_seq_device(
+            layers,
+            &x_flat,
+            hidden,
+            inter,
+            q_dim,
+            kv_dim,
+            n,
+            num_q_heads,
+            num_kv_heads,
+            head_dim,
+            rope_base,
+            pre_len,
+        )?;
+        // Trait contract: cache restored to pre-call length.
+        self.truncate_kv_cache(pre_len);
+        if h_flat.len() != n * hidden {
+            return None;
+        }
+        let mut hiddens = Vec::with_capacity(n);
+        for i in 0..n {
+            hiddens.push(h_flat[i * hidden..(i + 1) * hidden].to_vec());
+        }
+        Some(hiddens)
     }
 }
 
@@ -1841,7 +2000,7 @@ impl CudaBackend {
     ///    on Ada/Ampere/Hopper).
     /// 3. Convert the f16 result → fresh f32 buffer for the rest of
     ///    the pipeline.
-    fn gemm_proj_seq(
+    pub(crate) fn gemm_proj_seq(
         &self,
         weight: QuantWeight<'_>,
         x_seq: &CudaSlice<f32>,
@@ -2270,6 +2429,243 @@ impl CudaBackend {
         }
 
         cache.len = seq_len;
+        self.dtoh_f32(&h_seq).ok()
+    }
+
+    /// **Phase 4c task C.2.e** — append-mode batched layer pipeline for
+    /// `decode_tokens_speculative`. Mirrors `prefill_q4_seq_device` with
+    /// three differences: (1) does NOT reset the KV cache — appends at
+    /// `base_pos`; (2) passes `base_pos` to the fused attention kernel
+    /// so K/V writes go to cache positions `[base_pos, base_pos +
+    /// seq_len)`; (3) advances `cache.len` to `base_pos + seq_len`
+    /// (the *caller* truncates back to the pre-call length per the
+    /// `decode_tokens_speculative` trait contract).
+    ///
+    /// Returns `[seq_len, hidden]` flat — one hidden state per
+    /// position. The trait override chunks this back into
+    /// `Vec<Vec<f32>>`.
+    ///
+    /// Eligibility: caller (the trait override above) gates on the
+    /// same Q4_K/Q6_K + RMSNorm + gated FFN + non-MoE rules as
+    /// `prefill_q4`. This helper assumes those rules hold and panics
+    /// (via `?` on layer projections) otherwise.
+    #[allow(clippy::too_many_arguments)]
+    pub(crate) fn decode_tokens_speculative_seq_device(
+        &self,
+        layers: &[FullPipelineLayer<'_>],
+        x: &[f32],
+        hidden: usize,
+        inter: usize,
+        q_dim: usize,
+        _kv_dim: usize,
+        seq_len: usize,
+        num_q_heads: usize,
+        num_kv_heads: usize,
+        head_dim: usize,
+        rope_base: f32,
+        base_pos: usize,
+    ) -> Option<Vec<f32>> {
+        if x.len() != seq_len * hidden || layers.is_empty() || seq_len == 0 {
+            return None;
+        }
+
+        let mut guard = self.kv_cache.lock().ok()?;
+        if guard.is_none() {
+            let shapes: Vec<(usize, usize)> = layers
+                .iter()
+                .map(|layer| {
+                    (
+                        layer.num_kv_heads.max(num_kv_heads).max(1),
+                        layer.head_dim.max(head_dim).max(1),
+                    )
+                })
+                .collect();
+            *guard = CudaKvCache::new_device(self, &shapes, DEFAULT_CUDA_KV_CACHE_MAX_SEQ).ok();
+        }
+        let cache = guard.as_mut()?;
+        cache
+            .ensure_for_layers(
+                self,
+                layers,
+                cache.max_seq.max(DEFAULT_CUDA_KV_CACHE_MAX_SEQ),
+            )
+            .ok()?;
+        if base_pos + seq_len > cache.max_seq {
+            return None;
+        }
+
+        let mut h_seq = self.htod_f32(x).ok()?;
+
+        for (layer_idx, layer) in layers.iter().enumerate() {
+            let layer_head_dim = layer.head_dim.max(head_dim);
+            let layer_num_q_heads = layer.num_q_heads.max(num_q_heads);
+            let layer_num_kv_heads = layer.num_kv_heads.max(num_kv_heads);
+            let layer_q_dim = layer_num_q_heads * layer_head_dim;
+            let layer_kv_dim = layer_num_kv_heads * layer_head_dim;
+            let layer_rope_base = if layer.rope_base != 0.0 {
+                layer.rope_base
+            } else {
+                rope_base
+            };
+            let layer_rotary_dim = layer.rotary_dim;
+
+            // 1. Pre-attn rms_norm (batched).
+            let h_attn_seq = self
+                .with_norm_device_buf(layer.input_norm, |w_dev| {
+                    elem::rms_norm_batch_device(
+                        self,
+                        &h_seq,
+                        Some(w_dev),
+                        hidden,
+                        seq_len,
+                        layer.eps,
+                        layer.norm_offset,
+                    )
+                })
+                .ok()?;
+
+            // 2. QKV projections via cuBLAS f32 GEMM.
+            let q_seq = self.gemm_proj_seq(layer.wq, &h_attn_seq, seq_len, layer_q_dim, hidden)?;
+            let k_seq = self.gemm_proj_seq(layer.wk, &h_attn_seq, seq_len, layer_kv_dim, hidden)?;
+            let v_seq = self.gemm_proj_seq(layer.wv, &h_attn_seq, seq_len, layer_kv_dim, hidden)?;
+
+            // 3. Batched attention with base_pos = pre-spec cache_len.
+            //    Writes K/V to cache positions [base_pos, base_pos+seq_len)
+            //    and computes causal Q×K^T (against cache[..base_pos+sp+1]
+            //    for query sp) softmax × V.
+            let max_seq = cache.max_seq;
+            let kv_slot = cache.layers.get_mut(layer_idx)?;
+            let attn_out_seq = attn::fused_prefill_attention_seq_device(
+                self,
+                &q_seq,
+                &k_seq,
+                &v_seq,
+                &mut kv_slot.k,
+                &mut kv_slot.v,
+                layer.q_norm_weight,
+                layer.k_norm_weight,
+                base_pos,
+                seq_len,
+                attn::FusedDecodeAttentionOpts {
+                    num_q_heads: layer_num_q_heads,
+                    num_kv_heads: layer_num_kv_heads,
+                    head_dim: layer_head_dim,
+                    pos: base_pos,
+                    max_seq,
+                    rotary_dim: layer_rotary_dim,
+                    rope_base: layer_rope_base,
+                    eps: layer.eps,
+                    qk_norm_offset: layer.qk_norm_offset,
+                    attn_scale: layer.attn_scale,
+                    softcap: 0.0,
+                },
+            )
+            .ok()?;
+
+            // 4. wo projection via batched GEMM.
+            let attn_delta_seq =
+                self.gemm_proj_seq(layer.wo, &attn_out_seq, seq_len, hidden, layer_q_dim)?;
+
+            // 5. Residual + optional post-attn rms_norm.
+            if layer.has_post_norms {
+                let normed = self
+                    .with_norm_device_buf(layer.post_attn_norm, |w_dev| {
+                        elem::rms_norm_batch_device(
+                            self,
+                            &attn_delta_seq,
+                            Some(w_dev),
+                            hidden,
+                            seq_len,
+                            layer.eps,
+                            layer.norm_offset,
+                        )
+                    })
+                    .ok()?;
+                elem::add_in_place_batch_device(self, &mut h_seq, &normed).ok()?;
+            } else {
+                elem::add_in_place_batch_device(self, &mut h_seq, &attn_delta_seq).ok()?;
+            }
+
+            // 6. Pre-FFN rms_norm (batched).
+            let ffn_norm_weight: &[f32] = if layer.has_post_norms {
+                layer.pre_ffn_norm.unwrap_or(layer.post_attn_norm)
+            } else {
+                layer.post_attn_norm
+            };
+            let h_ffn_seq = self
+                .with_norm_device_buf(ffn_norm_weight, |w_dev| {
+                    elem::rms_norm_batch_device(
+                        self,
+                        &h_seq,
+                        Some(w_dev),
+                        hidden,
+                        seq_len,
+                        layer.eps,
+                        layer.norm_offset,
+                    )
+                })
+                .ok()?;
+
+            // 7. gate / up via batched GEMM.
+            let gate_seq = self.gemm_proj_seq(layer.gate, &h_ffn_seq, seq_len, inter, hidden)?;
+            let up_seq = self.gemm_proj_seq(layer.up, &h_ffn_seq, seq_len, inter, hidden)?;
+
+            // 8. silu / gelu (batched element-wise).
+            let gelu_tanh = matches!(layer.activation, Activation::GeluTanh);
+            let act_seq = elem::silu_gate_up_batch_device(
+                self,
+                &gate_seq,
+                &up_seq,
+                seq_len * inter,
+                gelu_tanh,
+            )
+            .ok()?;
+
+            // 9. down via batched GEMM.
+            let ffn_delta_seq = self.gemm_proj_seq(layer.down, &act_seq, seq_len, hidden, inter)?;
+
+            // 10. Residual + optional post-FFN rms_norm.
+            if layer.has_post_norms {
+                let normed = match layer.post_ffn_norm {
+                    Some(w) if !w.is_empty() => self
+                        .with_norm_device_buf(w, |w_dev| {
+                            elem::rms_norm_batch_device(
+                                self,
+                                &ffn_delta_seq,
+                                Some(w_dev),
+                                hidden,
+                                seq_len,
+                                layer.eps,
+                                layer.norm_offset,
+                            )
+                        })
+                        .ok()?,
+                    _ => elem::rms_norm_batch_device(
+                        self,
+                        &ffn_delta_seq,
+                        None,
+                        hidden,
+                        seq_len,
+                        layer.eps,
+                        layer.norm_offset,
+                    )
+                    .ok()?,
+                };
+                elem::add_in_place_batch_device(self, &mut h_seq, &normed).ok()?;
+            } else {
+                elem::add_in_place_batch_device(self, &mut h_seq, &ffn_delta_seq).ok()?;
+            }
+
+            if layer.layer_scalar != 0.0 && layer.layer_scalar != 1.0 {
+                elem::scale_inplace_batch_device(self, &mut h_seq, layer.layer_scalar).ok()?;
+            }
+            let _ = q_dim;
+        }
+
+        // Advance watermark to base_pos + seq_len. The trait override
+        // (`decode_tokens_speculative`) calls `truncate_kv_cache(pre_len)`
+        // immediately after this returns to honor the trait contract.
+        cache.len = base_pos + seq_len;
         self.dtoh_f32(&h_seq).ok()
     }
 }

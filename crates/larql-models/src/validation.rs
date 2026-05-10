@@ -226,16 +226,15 @@ fn validate_fraction(errors: &mut Vec<ConfigValidationError>, field: &'static st
     }
 }
 
-fn validate_hidden_head_dim(cfg: &ModelConfig, errors: &mut Vec<ConfigValidationError>) {
-    if cfg.hidden_size > 0 && cfg.head_dim > 0 && !cfg.hidden_size.is_multiple_of(cfg.head_dim) {
-        errors.push(ConfigValidationError::new(
-            FIELD_HEAD_DIM,
-            format!(
-                "head_dim {} must divide hidden_size {}",
-                cfg.head_dim, cfg.hidden_size
-            ),
-        ));
-    }
+fn validate_hidden_head_dim(_cfg: &ModelConfig, _errors: &mut Vec<ConfigValidationError>) {
+    // Phase 4c spec-decode investigation: Gemma 3 270M has hidden=640
+    // but head_dim=256 (q_dim = 4*256 = 1024, kv_dim = 1*256 = 256).
+    // The Q/K/V projections are sized by `num_q_heads * head_dim` and
+    // `num_kv_heads * head_dim`, NOT by `hidden_size`. The historical
+    // assumption that head_dim divides hidden_size held for Gemma 3 4B
+    // (10*256=2560) but is not architecturally required. Validator
+    // relaxed to accept non-square QKV projections; the actual
+    // dimensional checks happen in the QKV-projection code paths.
 }
 
 fn validate_attention_heads(
@@ -387,7 +386,7 @@ fn validate_per_layer_overrides<A: ModelArchitecture + ?Sized>(
 
 fn validate_one_layer<A: ModelArchitecture + ?Sized>(
     arch: &A,
-    cfg: &ModelConfig,
+    _cfg: &ModelConfig,
     layer: usize,
     errors: &mut Vec<ConfigValidationError>,
 ) -> bool {
@@ -404,16 +403,10 @@ fn validate_one_layer<A: ModelArchitecture + ?Sized>(
         ));
         return false;
     }
-    if cfg.hidden_size > 0 && !cfg.hidden_size.is_multiple_of(head_dim) {
-        errors.push(ConfigValidationError::new(
-            FIELD_HEAD_DIM_FOR_LAYER,
-            format!(
-                "layer {layer} head_dim {head_dim} must divide hidden_size {}",
-                cfg.hidden_size
-            ),
-        ));
-        return false;
-    }
+    // Same relaxation as `validate_hidden_head_dim` above: head_dim
+    // does not need to divide hidden_size on architectures where the
+    // Q/K/V projections are sized independently of hidden (e.g.
+    // Gemma 3 270M: hidden=640, head_dim=256).
     if num_q_heads == 0 {
         errors.push(ConfigValidationError::new(
             FIELD_NUM_Q_HEADS_FOR_LAYER,
