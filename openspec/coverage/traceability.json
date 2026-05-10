@@ -25820,25 +25820,25 @@
     {
       "fqn": "larql_inference::speculative::effective_depth_clamps_to_swa_remainder",
       "file": "crates/larql-inference/src/speculative/mod.rs",
-      "line": 190,
+      "line": 192,
       "crate": "larql_inference"
     },
     {
       "fqn": "larql_inference::speculative::env_garbage_uses_legacy_path",
       "file": "crates/larql-inference/src/speculative/mod.rs",
-      "line": 179,
+      "line": 181,
       "crate": "larql_inference"
     },
     {
       "fqn": "larql_inference::speculative::env_one_enables_spec_path",
       "file": "crates/larql-inference/src/speculative/mod.rs",
-      "line": 168,
+      "line": 170,
       "crate": "larql_inference"
     },
     {
       "fqn": "larql_inference::speculative::env_zero_uses_legacy_path",
       "file": "crates/larql-inference/src/speculative/mod.rs",
-      "line": 157,
+      "line": 159,
       "crate": "larql_inference"
     },
     {
@@ -25962,33 +25962,69 @@
       "crate": "larql_inference"
     },
     {
+      "fqn": "larql_inference::speculative::target_forward::empty_history_with_root_only_tree_works",
+      "file": "crates/larql-inference/src/speculative/target_forward.rs",
+      "line": 166,
+      "crate": "larql_inference"
+    },
+    {
+      "fqn": "larql_inference::speculative::target_forward::linear_chain_returns_n_distributions",
+      "file": "crates/larql-inference/src/speculative/target_forward.rs",
+      "line": 85,
+      "crate": "larql_inference"
+    },
+    {
+      "fqn": "larql_inference::speculative::target_forward::root_distribution_matches_predict_q4k_full_vocab_probs_on_history_plus_root",
+      "file": "crates/larql-inference/src/speculative/target_forward.rs",
+      "line": 128,
+      "crate": "larql_inference"
+    },
+    {
+      "fqn": "larql_inference::speculative::target_forward::tests::empty_history_with_root_only_tree_works",
+      "file": "crates/larql-inference/src/speculative/target_forward.rs",
+      "line": 166,
+      "crate": "larql_inference"
+    },
+    {
+      "fqn": "larql_inference::speculative::target_forward::tests::linear_chain_returns_n_distributions",
+      "file": "crates/larql-inference/src/speculative/target_forward.rs",
+      "line": 85,
+      "crate": "larql_inference"
+    },
+    {
+      "fqn": "larql_inference::speculative::target_forward::tests::root_distribution_matches_predict_q4k_full_vocab_probs_on_history_plus_root",
+      "file": "crates/larql-inference/src/speculative/target_forward.rs",
+      "line": 128,
+      "crate": "larql_inference"
+    },
+    {
       "fqn": "larql_inference::speculative::tests::effective_depth_clamps_to_swa_remainder",
       "file": "crates/larql-inference/src/speculative/mod.rs",
-      "line": 190,
+      "line": 192,
       "crate": "larql_inference"
     },
     {
       "fqn": "larql_inference::speculative::tests::env_garbage_uses_legacy_path",
       "file": "crates/larql-inference/src/speculative/mod.rs",
-      "line": 179,
+      "line": 181,
       "crate": "larql_inference"
     },
     {
       "fqn": "larql_inference::speculative::tests::env_one_enables_spec_path",
       "file": "crates/larql-inference/src/speculative/mod.rs",
-      "line": 168,
+      "line": 170,
       "crate": "larql_inference"
     },
     {
       "fqn": "larql_inference::speculative::tests::tree_nodes_caps_at_64",
       "file": "crates/larql-inference/src/speculative/mod.rs",
-      "line": 208,
+      "line": 210,
       "crate": "larql_inference"
     },
     {
       "fqn": "larql_inference::speculative::tests::tree_nodes_default_is_seven",
       "file": "crates/larql-inference/src/speculative/mod.rs",
-      "line": 202,
+      "line": 204,
       "crate": "larql_inference"
     },
     {
@@ -26090,19 +26126,19 @@
     {
       "fqn": "larql_inference::speculative::tree_nodes_caps_at_64",
       "file": "crates/larql-inference/src/speculative/mod.rs",
-      "line": 208,
+      "line": 210,
       "crate": "larql_inference"
     },
     {
       "fqn": "larql_inference::speculative::tree_nodes_default_is_seven",
       "file": "crates/larql-inference/src/speculative/mod.rs",
-      "line": 202,
+      "line": 204,
       "crate": "larql_inference"
     },
     {
       "fqn": "larql_inference::speculative::unset_env_uses_legacy_path",
       "file": "crates/larql-inference/src/speculative/mod.rs",
-      "line": 143,
+      "line": 145,
       "crate": "larql_inference"
     },
     {

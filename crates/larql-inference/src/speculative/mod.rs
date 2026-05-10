@@ -18,6 +18,7 @@ pub mod dispatch;
 pub mod eagle;
 pub mod orchestrator;
 pub mod small_model;
+pub mod target_forward;
 pub mod tree;
 pub mod verify;
 
@@ -25,6 +26,7 @@ pub use dispatch::maybe_speculative_step;
 pub use eagle::EagleDraftHead;
 pub use orchestrator::{build_linear_tree, SpeculativeStep, StepOutcome};
 pub use small_model::SmallModelDrafter;
+pub use target_forward::target_forward_naive;
 pub use tree::{DraftTree, TreeAttentionMask, TreeNode};
 pub use verify::{verify_and_accept, verify_tree, AcceptedSpan, VerifyRng};
 
