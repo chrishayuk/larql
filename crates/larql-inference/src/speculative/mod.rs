@@ -17,6 +17,7 @@ use std::env;
 pub mod dispatch;
 pub mod eagle;
 pub mod orchestrator;
+pub mod prompt_lookup;
 pub mod small_model;
 pub mod target_forward;
 pub mod tree;
@@ -26,6 +27,7 @@ pub mod wiring;
 pub use dispatch::maybe_speculative_step;
 pub use eagle::EagleDraftHead;
 pub use orchestrator::{build_linear_tree, SpeculativeStep, StepOutcome};
+pub use prompt_lookup::PromptLookupDrafter;
 pub use small_model::SmallModelDrafter;
 pub use target_forward::{
     target_forward_batched, target_forward_naive, target_forward_via_speculative_decode,
@@ -37,8 +39,9 @@ pub use tree::{DraftTree, TreeAttentionMask, TreeNode};
 pub use verify::{verify_and_accept, verify_tree, AcceptedSpan, VerifyRng};
 pub use wiring::{
     run_naive_step, set_thread_drafter, set_thread_rng, set_thread_spec_config,
-    set_thread_target_executor, try_thread_speculative_step, try_thread_speculative_step_v2,
-    try_thread_speculative_step_v3, SpeculativeTargetExecutor,
+    set_thread_spec_stats, set_thread_target_executor, take_thread_spec_stats,
+    try_thread_speculative_step, try_thread_speculative_step_v2, try_thread_speculative_step_v3,
+    SpecStats, SpeculativeTargetExecutor,
 };
 
 pub type TokenId = u32;
@@ -83,6 +86,22 @@ pub trait Drafter {
     /// next `propose()` call sees the right context. Hidden-state
     /// drafters typically no-op (default impl).
     fn accept(&mut self, _accepted: &[TokenId]) {}
+
+    /// Seed (or extend) the drafter's history with the canonical
+    /// generation history (= prompt + accepted span so far). Called by
+    /// the v3 dispatch at the top of every iter so the drafter knows
+    /// the canonical context.
+    ///
+    /// Off-the-shelf drafters that maintain their own history use this
+    /// to align with the target's accepted span. Hidden-state drafters
+    /// typically no-op (default impl).
+    ///
+    /// Implementations SHOULD recognize prefix-extension (`tokens` is
+    /// a prefix-extension of the existing history) and append the new
+    /// suffix without resetting any cached state — without this fast
+    /// path every iter would re-prefill, defeating any incremental
+    /// optimization.
+    fn seed_history(&mut self, _tokens: &[TokenId]) {}
 }
 
 /// Speculative-decoder configuration. Defaults match design.md

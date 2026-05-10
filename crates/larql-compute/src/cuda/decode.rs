@@ -468,14 +468,14 @@ fn matvec_device_mmvq(
 ) -> Option<CudaSlice<f32>> {
     if let (QuantFormat::Q4_K, Some(q8)) = (weight.format, x_q8_1) {
         if q4k_mmvq_enabled() {
-            if let Some(out) = q4k_mmvq::matvec_device(backend, weight.data, q8, rows, cols).ok() {
+            if let Ok(out) = q4k_mmvq::matvec_device(backend, weight.data, q8, rows, cols) {
                 return Some(out);
             }
         }
     }
     if let (QuantFormat::Q6_K, Some(q8)) = (weight.format, x_q8_1) {
         if q6k_mmvq_enabled() {
-            if let Some(out) = q6k_mmvq::matvec_device(backend, weight.data, q8, rows, cols).ok() {
+            if let Ok(out) = q6k_mmvq::matvec_device(backend, weight.data, q8, rows, cols) {
                 return Some(out);
             }
         }

@@ -446,6 +446,12 @@ impl Drafter for SmallModelDrafter {
         // Cache stays at the old `cache_len`; the next propose() will
         // sync forward by `accepted.len()` decode_token calls.
     }
+
+    fn seed_history(&mut self, tokens: &[TokenId]) {
+        // Delegate to the inherent method (the impl that knows about
+        // prefix-extension + KV cache reset).
+        SmallModelDrafter::seed_history(self, tokens);
+    }
 }
 
 #[cfg(test)]

@@ -213,50 +213,78 @@ pub fn run(args: BenchArgs) -> Result<(), Box<dyn std::error::Error>> {
     );
 
     // Speculative-decode drafter install — phase 4c task C.2.d (v3
-    // dispatch). Loads the draft model if `--draft-model <path>` is
-    // given and installs the thread-local drafter + spec config + RNG
-    // that `generate_streaming` reads when `LARQL_SPECULATIVE_DECODE=1`.
+    // dispatch). Two drafter types are selectable:
+    //
+    // - `LARQL_DRAFTER=prompt_lookup` — n-gram lookup against history,
+    //   no separate model, no training. Best on RAG / structured-output
+    //   / prompt-echoing workloads. Zero per-token GPU cost on propose.
+    //   `--draft-model` is ignored when this is set.
+    // - Default (with `--draft-model <path>`): off-the-shelf small
+    //   model drafter via `SmallModelDrafter::from_vindex`.
     //
     // v3 uses the canonical backend's KV cache via decode_token, so it
     // does NOT need the v2-era `SpeculativeTargetExecutor` (a second
     // ModelWeights load). The v2 install was retired in C.2.d.
-    if let Some(draft_path) = args.draft_model.as_deref() {
+    let drafter_kind = std::env::var("LARQL_DRAFTER")
+        .ok()
+        .unwrap_or_else(|| "small_model".to_string());
+    let drafter_installed: Option<&'static str> = if drafter_kind == "prompt_lookup" {
+        let pld = larql_inference::speculative::PromptLookupDrafter::new();
+        larql_inference::speculative::set_thread_drafter(Some(Box::new(pld)));
+        Some("prompt_lookup")
+    } else if let Some(draft_path) = args.draft_model.as_deref() {
         let resolved = cache::resolve_model(draft_path)?;
         match larql_inference::speculative::SmallModelDrafter::from_vindex(&resolved) {
             Ok(drafter) => {
-                let env_on = larql_inference::speculative::enabled();
-                larql_inference::speculative::set_thread_drafter(Some(drafter));
-                let spec_depth: usize = std::env::var("LARQL_SPEC_DEPTH")
-                    .ok()
-                    .and_then(|s| s.parse().ok())
-                    .filter(|&d: &usize| (1..=16).contains(&d))
-                    .unwrap_or(2);
-                larql_inference::speculative::set_thread_spec_config(
-                    larql_inference::speculative::SpecConfig {
-                        depth: spec_depth,
-                        branches: 1,
-                        swa_window: None,
-                    },
-                );
-                larql_inference::speculative::set_thread_rng(0xCAFE_BABE_DEAD_F00D);
                 println!(
-                    "Speculative drafter: loaded from {} ({}) — env LARQL_SPECULATIVE_DECODE={}",
+                    "Speculative drafter: loaded from {} (small_model)",
                     resolved.display(),
-                    if env_on {
-                        "active (v3 dispatch installed)"
-                    } else {
-                        "loaded but env disabled"
-                    },
-                    if env_on { "1" } else { "unset/0" },
                 );
+                larql_inference::speculative::set_thread_drafter(Some(Box::new(drafter)));
+                Some("small_model")
             }
             Err(e) => {
                 eprintln!(
                     "warning: --draft-model {} failed to load: {e}; continuing without speculative path",
                     resolved.display(),
                 );
+                None
             }
         }
+    } else {
+        None
+    };
+
+    if let Some(kind) = drafter_installed {
+        let env_on = larql_inference::speculative::enabled();
+        let spec_depth: usize = std::env::var("LARQL_SPEC_DEPTH")
+            .ok()
+            .and_then(|s| s.parse().ok())
+            .filter(|&d: &usize| (1..=16).contains(&d))
+            .unwrap_or(2);
+        larql_inference::speculative::set_thread_spec_config(
+            larql_inference::speculative::SpecConfig {
+                depth: spec_depth,
+                branches: 1,
+                swa_window: None,
+            },
+        );
+        larql_inference::speculative::set_thread_rng(0xCAFE_BABE_DEAD_F00D);
+        // Install α-telemetry accumulator. The summary block
+        // at the bottom of `run_larql` reads this back via
+        // `take_thread_spec_stats()` and reports aggregate
+        // accept rate + emit/iter histograms when env=ON.
+        larql_inference::speculative::set_thread_spec_stats(Some(
+            larql_inference::speculative::SpecStats::default(),
+        ));
+        println!(
+            "Speculative drafter: kind={kind} depth={spec_depth} env LARQL_SPECULATIVE_DECODE={}",
+            if env_on {
+                "1 (active)"
+            } else {
+                "unset/0 (loaded but env disabled)"
+            },
+        );
     }
     println!();
 
@@ -407,6 +435,47 @@ pub fn run(args: BenchArgs) -> Result<(), Box<dyn std::error::Error>> {
     }
 
     print_table(&rows);
+
+    // α telemetry block — only prints when the spec dispatch fired
+    // and recorded at least one iter. The accumulator was installed
+    // by the `--draft-model` setup above; we take it back after all
+    // backends have finished benching so the numbers reflect the
+    // total spec activity in this run.
+    if let Some(stats) = larql_inference::speculative::take_thread_spec_stats() {
+        if stats.n_iters() > 0 {
+            let alphas = stats.alpha_distribution();
+            let p25 = alphas[alphas.len() / 4];
+            let p50 = alphas[alphas.len() / 2];
+            let p75 = alphas[(alphas.len() * 3) / 4];
+            let mean = alphas.iter().sum::<f64>() / alphas.len() as f64;
+            let total_drafts = stats.total_drafts();
+            let total_accepted = stats.total_accepted();
+            // Emit count = sum(R + 1) per iter (accepted span + bonus
+            // from spec) + 1 picked_id appended by the dispatcher.
+            // What we record here is just R from the spec helper —
+            // the dispatcher's emit count is total_accepted +
+            // n_iters (R+1 per iter from spec, + the picked_id is
+            // sampled by the dispatcher and not in our spec-iter
+            // telemetry).
+            let spec_emitted = total_accepted + stats.n_iters();
+            println!();
+            println!("  Speculative α (drafts accepted / proposed):");
+            println!(
+                "    aggregate α: {:.3} ({}/{} drafts accepted across {} iters)",
+                stats.alpha(),
+                total_accepted,
+                total_drafts,
+                stats.n_iters()
+            );
+            println!("    per-iter α:  p25={p25:.3}  p50={p50:.3}  p75={p75:.3}  mean={mean:.3}",);
+            println!(
+                "    spec emit:   {} tokens from verify (R+1 per iter); +{} picked_id sampled by dispatcher = {} total user-visible spec tokens",
+                spec_emitted,
+                stats.n_iters(),
+                spec_emitted + stats.n_iters()
+            );
+        }
+    }
     Ok(())
 }
 

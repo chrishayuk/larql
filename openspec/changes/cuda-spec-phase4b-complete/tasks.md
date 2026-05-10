@@ -86,6 +86,57 @@ sequential lm_head calls are the bottleneck after C.2 lands.
 - [ ] D.4 Update `cuda-decode-perf-results-followup` retrospective with measured numbers
 - [ ] D.5 Archive `cuda-spec-phase4b-complete` after phase 4d's default flips
 
+### D.0 Drafter-quality investigation (2026-05-09…10)
+
+User constraint: training-bound drafters (EAGLE, Medusa, distilled
+small models) are not viable because Qwen 3.6 + similar open-source
+models churn fast — each new model requires re-extracting a vindex,
+and adding per-model EAGLE training on top of that is operationally
+infeasible. Pursuing no-training drafters only.
+
+Landed: `PromptLookupDrafter` (`crates/larql-inference/src/speculative/prompt_lookup.rs`).
+N-gram lookup against (prompt + accepted-span) history, no model
+weights, zero per-token GPU cost on propose. Drafter is selected via
+`LARQL_DRAFTER=prompt_lookup` (defaults to `small_model`). 10 unit
+tests cover empty history, no-match, simple repetition, multiple
+matches, accept extends history, prefix-extension via seed_history,
+lookback bound, max-n truncation.
+
+`THREAD_DRAFTER` is now `Option<Box<dyn Drafter>>` (was
+`Option<SmallModelDrafter>`) — `set_thread_drafter` accepts any
+Drafter impl; `run_naive_step` now takes `&mut dyn Drafter`.
+
+Hardware findings on RTX 4090 (Gemma 3 4B Q4_K_M target):
+
+| Workload | Drafter | depth | α | ms/tok | vs plain |
+|---|---|---|---|---|---|
+| Translation-echo (heavy prompt repetition) | PLD | 4 | 0.829 | 30.7 | 4.1× slower |
+| Brown-fox-echo (prompt repeats final phrase) | PLD | 4 | 0.725 | 37.5 | 5.0× slower |
+| Alphabet-list (loose repetition) | PLD | 8 | 0.013 | — | — |
+| Plain decode baseline | — | — | — | 7.45–7.53 | 1.0× |
+
+PLD demonstrates **α > 0 is achievable without training** — drafter
+quality is no longer the bottleneck on workloads with prompt
+repetition. But even at α=0.83, spec wall-clock is 4× slower than
+plain decode.
+
+Verify-path cost breakdown per spec iter (D=4):
+- Batched forward (D+1 nodes): ~30 ms (5× plain decode's 7.5 ms)
+- D+1 lm_head + softmax: ~10 ms
+- verify_tree sample: ~1 ms
+- Bonus decode: ~7.5 ms
+- Total: ~50 ms/iter, emits ~4.3 tokens
+
+To beat plain decode at α=0.83, iter cost must drop below `(D+1) ×
+plain_decode_ms × accept_rate = 5 × 7.5 × 0.83 ≈ 31 ms`. Current ~50
+ms means ~1.6× away from break-even.
+
+**Conclusion**: drafter quality goal achieved on prompt-echoing
+workloads. Next bottleneck is the verify-path's batched-forward
+efficiency, not drafter accuracy. Future work for D.3 perf gate
+should target making the D+1-token batched forward cost closer to
+2× plain decode (currently 5×) rather than further drafter work.
+
 ## Validation (this PR)
 
 - [x] V.1 `openspec validate cuda-spec-phase4b-complete --strict` passes

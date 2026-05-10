@@ -158,7 +158,7 @@ fn token_id_parity_speculative_vs_baseline_short_prompt() {
     // Install drafter for the spec path.
     let drafter_loaded =
         larql_inference::speculative::SmallModelDrafter::from_vindex(&drafter).expect("drafter");
-    larql_inference::speculative::set_thread_drafter(Some(drafter_loaded));
+    larql_inference::speculative::set_thread_drafter(Some(Box::new(drafter_loaded)));
     larql_inference::speculative::set_thread_spec_config(
         larql_inference::speculative::SpecConfig {
             depth: 2,
@@ -335,7 +335,7 @@ fn parity_at_scale_256_prompts() {
     let t_drafter_load = std::time::Instant::now();
     let drafter_loaded =
         larql_inference::speculative::SmallModelDrafter::from_vindex(&drafter).expect("drafter");
-    larql_inference::speculative::set_thread_drafter(Some(drafter_loaded));
+    larql_inference::speculative::set_thread_drafter(Some(Box::new(drafter_loaded)));
     larql_inference::speculative::set_thread_spec_config(
         larql_inference::speculative::SpecConfig {
             depth: 2,

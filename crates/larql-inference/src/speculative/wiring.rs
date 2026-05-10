@@ -31,7 +31,6 @@ use ndarray::Array2;
 use crate::error::InferenceError;
 
 use super::orchestrator::build_linear_tree;
-use super::small_model::SmallModelDrafter;
 use super::target_forward::{target_forward_naive, target_forward_with_hidden};
 use super::verify::{verify_tree, VerifyRng};
 use super::{Drafter, SpecConfig, TokenId};
@@ -82,7 +81,7 @@ thread_local! {
     /// signature of `generate()` and its 17 call sites. Single-thread
     /// bench/CLI use case fits perfectly; if multi-thread serving
     /// adopts speculative later, signature plumbing becomes worth it.
-    static THREAD_DRAFTER: RefCell<Option<SmallModelDrafter>> = const { RefCell::new(None) };
+    static THREAD_DRAFTER: RefCell<Option<Box<dyn super::Drafter>>> = const { RefCell::new(None) };
     static THREAD_RNG: RefCell<Option<VerifyRng>> = const { RefCell::new(None) };
     static THREAD_CFG: RefCell<SpecConfig> = const {
         RefCell::new(SpecConfig {
@@ -96,10 +95,79 @@ thread_local! {
     /// Resolves the borrow conflict by owning its own `&mut ModelWeights`
     /// independent of the canonical loop's weights.
     static THREAD_TARGET_EXEC: RefCell<Option<SpeculativeTargetExecutor>> = const { RefCell::new(None) };
+    /// Per-thread spec-step telemetry. When `Some`, every successful
+    /// `try_thread_speculative_step_v3` call appends a row recording
+    /// the iter's draft + accept counts. Bench / phase-4d harnesses
+    /// install `Some(SpecStats::default())` before `generate()`,
+    /// take it back via `take_thread_spec_stats()` afterwards, and
+    /// compute α + emit-rate aggregates.
+    static THREAD_SPEC_STATS: RefCell<Option<SpecStats>> = const { RefCell::new(None) };
+}
+
+/// Per-iter accept-rate telemetry collected by
+/// `try_thread_speculative_step_v3` when a stats accumulator is
+/// installed via [`set_thread_spec_stats`]. Empty by default.
+///
+/// Shape: parallel arrays, one row per spec iter that ran.
+/// `iter_n_drafts[k] == cfg.depth` for iter k (constant per session
+/// unless cfg changes mid-run); `iter_n_accepted[k]` is R, the
+/// number of drafts the verifier accepted before the first rejection
+/// (0 ≤ R ≤ depth).
+///
+/// α (acceptance rate) for iter k is `iter_n_accepted[k] / iter_n_drafts[k]`.
+/// Aggregate α is `sum(n_accepted) / sum(n_drafts)`.
+#[derive(Debug, Clone, Default)]
+pub struct SpecStats {
+    pub iter_n_drafts: Vec<usize>,
+    pub iter_n_accepted: Vec<usize>,
+}
+
+impl SpecStats {
+    /// Total drafts proposed across all spec iters.
+    pub fn total_drafts(&self) -> usize {
+        self.iter_n_drafts.iter().sum()
+    }
+
+    /// Total drafts accepted across all spec iters.
+    pub fn total_accepted(&self) -> usize {
+        self.iter_n_accepted.iter().sum()
+    }
+
+    /// Aggregate accept rate α = accepted / drafted. Returns 0.0 when
+    /// no spec iter ran.
+    pub fn alpha(&self) -> f64 {
+        let drafts = self.total_drafts();
+        if drafts == 0 {
+            return 0.0;
+        }
+        self.total_accepted() as f64 / drafts as f64
+    }
+
+    /// Number of spec iters recorded.
+    pub fn n_iters(&self) -> usize {
+        self.iter_n_drafts.len()
+    }
+
+    /// Per-iter α distribution as sorted ascending Vec<f64> for
+    /// percentile reporting. Returns an empty vec when no iters ran.
+    pub fn alpha_distribution(&self) -> Vec<f64> {
+        let mut alphas: Vec<f64> = self
+            .iter_n_drafts
+            .iter()
+            .zip(&self.iter_n_accepted)
+            .map(|(&d, &a)| if d == 0 { 0.0 } else { a as f64 / d as f64 })
+            .collect();
+        alphas.sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
+        alphas
+    }
 }
 
 /// Install a drafter on the current thread. Pass `None` to clear.
-pub fn set_thread_drafter(d: Option<SmallModelDrafter>) {
+///
+/// Accepts any `Box<dyn Drafter>` — caller chooses between
+/// [`SmallModelDrafter`] (separate weights), [`PromptLookupDrafter`]
+/// (no model, n-gram lookup), or any future Drafter impl.
+pub fn set_thread_drafter(d: Option<Box<dyn super::Drafter>>) {
     THREAD_DRAFTER.with(|cell| {
         *cell.borrow_mut() = d;
     });
@@ -128,6 +196,22 @@ pub fn set_thread_target_executor(exec: Option<SpeculativeTargetExecutor>) {
     THREAD_TARGET_EXEC.with(|cell| {
         *cell.borrow_mut() = exec;
     });
+}
+
+/// Install a stats accumulator on the current thread. While
+/// installed, every successful `try_thread_speculative_step_v3` call
+/// appends a row to it. Pass `None` to clear / disable.
+pub fn set_thread_spec_stats(stats: Option<SpecStats>) {
+    THREAD_SPEC_STATS.with(|cell| {
+        *cell.borrow_mut() = stats;
+    });
+}
+
+/// Take the current thread's spec stats, replacing with `None`.
+/// Returns the accumulated rows since the last `set_thread_spec_stats`
+/// or `take_thread_spec_stats` call.
+pub fn take_thread_spec_stats() -> Option<SpecStats> {
+    THREAD_SPEC_STATS.with(|cell| cell.borrow_mut().take())
 }
 
 /// Borrow-conflict-free dispatch helper. Takes `&ModelWeights`
@@ -385,6 +469,18 @@ pub fn try_thread_speculative_step_v3(
         };
 
         drafter.accept(&emitted);
+
+        // Telemetry: record this iter's draft + accept counts if a
+        // stats accumulator is installed via `set_thread_spec_stats`.
+        // No-op when unset (default).
+        let n_drafts = drafts.len();
+        THREAD_SPEC_STATS.with(|cell| {
+            if let Some(stats) = cell.borrow_mut().as_mut() {
+                stats.iter_n_drafts.push(n_drafts);
+                stats.iter_n_accepted.push(r_accepted);
+            }
+        });
+
         Some((emitted, bonus_hidden))
     })
 }
@@ -484,7 +580,15 @@ pub fn try_thread_speculative_step(
         THREAD_RNG.with(|rng_cell| {
             let mut rng_ref = rng_cell.borrow_mut();
             let rng = rng_ref.get_or_insert_with(|| VerifyRng::new(0xCAFE_BABE_DEAD_F00D));
-            run_naive_step(weights, drafter, history, cache_len, cfg, index, rng)
+            run_naive_step(
+                weights,
+                drafter.as_mut(),
+                history,
+                cache_len,
+                cfg,
+                index,
+                rng,
+            )
         })
     })
 }
@@ -508,7 +612,7 @@ pub fn try_thread_speculative_step(
 /// window.
 pub fn run_naive_step(
     weights: &mut ModelWeights,
-    drafter: &mut SmallModelDrafter,
+    drafter: &mut dyn Drafter,
     history: &[TokenId],
     cache_len: usize,
     cfg: SpecConfig,
@@ -542,6 +646,7 @@ pub fn run_naive_step(
 
 #[cfg(test)]
 mod tests {
+    use super::super::small_model::SmallModelDrafter;
     use super::*;
     use std::env;
 
