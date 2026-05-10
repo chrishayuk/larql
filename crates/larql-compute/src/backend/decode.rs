@@ -286,6 +286,74 @@ pub trait DecodeBackend {
         Some(hiddens)
     }
 
+    /// Variant of [`Self::decode_tokens_speculative`] that does NOT
+    /// truncate the KV cache on success — the cache is left advanced
+    /// by `x_per_token.len()` positions. The CALLER is responsible for
+    /// truncating to the desired position (typically `pre_len + R`
+    /// where R is the number of accepted tokens after `verify_tree`)
+    /// and re-decoding the bonus token at position `pre_len + R`.
+    ///
+    /// **Why this exists** (phase 4c skip-redundant-commit): the
+    /// previous flow ran the helper, truncated cache back to pre_len,
+    /// then re-decoded ALL R+1 emitted tokens to commit them. The
+    /// first R of those re-decodes were redundant — the helper had
+    /// just decoded the same R tokens (drafts[0..R-1]). With this
+    /// keep-cache variant, the helper's chain decode commits drafts
+    /// to cache; the caller then truncates to drop drafts[R..N-1]
+    /// and re-decodes only the bonus (which is a resampled token,
+    /// not equal to drafts[R]).
+    ///
+    /// On error, cache IS restored to pre_len (matches the truncate
+    /// variant's error semantics).
+    ///
+    /// Returns `Some(hiddens)` with `hiddens[k]` = post-token-k hidden,
+    /// same shape as [`Self::decode_tokens_speculative`].
+    #[allow(clippy::too_many_arguments)]
+    fn decode_tokens_speculative_keep_cache(
+        &self,
+        layers: &[crate::FullPipelineLayer<'_>],
+        x_per_token: &[Vec<f32>],
+        hidden: usize,
+        inter: usize,
+        q_dim: usize,
+        kv_dim: usize,
+        num_q_heads: usize,
+        num_kv_heads: usize,
+        head_dim: usize,
+        rope_base: f32,
+    ) -> Option<Vec<Vec<f32>>> {
+        if !self.has_kv_cache() {
+            return None;
+        }
+        let pre_len = self.kv_cache_len();
+        let mut hiddens: Vec<Vec<f32>> = Vec::with_capacity(x_per_token.len());
+        for x in x_per_token {
+            match self.decode_token(
+                layers,
+                x,
+                hidden,
+                inter,
+                q_dim,
+                kv_dim,
+                num_q_heads,
+                num_kv_heads,
+                head_dim,
+                rope_base,
+            ) {
+                Some(h) => hiddens.push(h),
+                None => {
+                    // Restore cache before bailing — same as the
+                    // truncate variant's error semantics so callers
+                    // don't have to handle a partial-advance state.
+                    self.truncate_kv_cache(pre_len);
+                    return None;
+                }
+            }
+        }
+        // NO truncate on success — cache is left at pre_len + n.
+        Some(hiddens)
+    }
+
     /// Multi-position prefill with KV-cache population. Stores
     /// post-RoPE K/V in the cache; returns the final hidden state
     /// `[seq_len * hidden]` for all positions.

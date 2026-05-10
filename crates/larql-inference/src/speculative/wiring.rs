@@ -224,6 +224,26 @@ pub fn try_thread_speculative_step_v2(
 /// - `backend.kv_cache_len() != history.len()` (caller contract violation)
 /// - SWA window leaves no slack
 /// - drafter declines (empty proposals)
+///
+/// **Phase 4c skip-redundant-commit**: on success, this method:
+///   1. Runs the spec helper via `_keep_cache_with_probs` — the
+///      backend's KV cache is left advanced by `tree.len()` after
+///      the chain decode (drafts are committed to cache).
+///   2. Calls `verify_tree` to compute the accepted span (R + 1
+///      bonus).
+///   3. Truncates the cache to `pre_len + R` (drops drafts[R..N-1]).
+///   4. `decode_token`s the bonus to fill position `pre_len + R`,
+///      capturing its hidden state for the caller's next-token sample.
+///   5. Returns `(emitted, bonus_hidden)`.
+///
+/// Net cache state on return: `pre_len + R + 1` (= history.len() +
+/// emitted.len()), with R drafted tokens kept from the helper's
+/// chain decode and the bonus re-decoded fresh. The dispatcher does
+/// NOT need a commit phase — it just emits to the user and uses the
+/// returned `bonus_hidden` for the post-bonus sample.
+///
+/// On failure (helper None, verify empty, etc.), cache state is
+/// restored to `pre_len`.
 #[allow(clippy::too_many_arguments)]
 pub fn try_thread_speculative_step_v3(
     weights: &ModelWeights,
@@ -233,7 +253,7 @@ pub fn try_thread_speculative_step_v3(
     index: &larql_vindex::VectorIndex,
     layers: &[larql_compute::FullPipelineLayer<'_>],
     dims: super::target_forward::TargetForwardDims,
-) -> Option<Vec<TokenId>> {
+) -> Option<(Vec<TokenId>, Vec<f32>)> {
     if !super::enabled() {
         return None;
     }
@@ -257,10 +277,6 @@ pub fn try_thread_speculative_step_v3(
         // (or the f16 mmap fallback) via `lm_head_knn_backend`-style
         // dispatch. On 4B with the `q4k_matvec` fix, this drops each
         // call from ~50-100 ms (CPU `dot_proj`) to ~2 ms.
-        //
-        // This is the dominant remaining bottleneck once the per-token
-        // decode + drafter slices land — the helper makes 3 lm_head
-        // calls per spec iter at depth=2 b=1.
         let arch = &*weights.arch;
         let final_norm = weights.tensors.get(arch.final_norm_key());
         let norm_offset = arch.norm_weight_offset();
@@ -282,7 +298,6 @@ pub fn try_thread_speculative_step_v3(
             if logits.is_empty() {
                 return Vec::new();
             }
-            // Scale + softcap + softmax. Mirrors `predict::dense::full_vocab_probs`.
             let inv_scale = 1.0 / logits_scale;
             let scaled: Vec<f32> = logits
                 .iter()
@@ -305,16 +320,22 @@ pub fn try_thread_speculative_step_v3(
                 .collect()
         };
 
-        let p_target = super::target_forward::target_forward_via_speculative_decode_with_probs(
-            weights,
-            history,
-            &tree,
-            backend,
-            layers,
-            dims,
-            compute_probs,
-        )?;
+        // Skip-redundant-commit path: helper leaves cache at pre_len+N.
+        let pre_len = history.len();
+        let p_target =
+            super::target_forward::target_forward_via_speculative_decode_keep_cache_with_probs(
+                weights,
+                history,
+                &tree,
+                backend,
+                layers,
+                dims,
+                compute_probs,
+            )?;
         if p_target.len() != tree.len() {
+            // Defensive: helper success implies length match, but
+            // restore on the off chance.
+            backend.truncate_kv_cache(pre_len);
             return None;
         }
         let span = THREAD_RNG.with(|r_cell| {
@@ -324,10 +345,47 @@ pub fn try_thread_speculative_step_v3(
         });
         let emitted = span.tokens();
         if emitted.is_empty() {
+            backend.truncate_kv_cache(pre_len);
             return None;
         }
+
+        // Truncate cache to keep the R accepted drafts; the bonus
+        // (emitted's last) is a resampled token NOT equal to drafts[R],
+        // so it needs a fresh decode_token to write the right K/V.
+        let r_accepted = emitted.len() - 1;
+        backend.truncate_kv_cache(pre_len + r_accepted);
+
+        // Decode the bonus to fill position pre_len + r_accepted.
+        let bonus = match emitted.last().copied() {
+            Some(b) => b,
+            None => {
+                backend.truncate_kv_cache(pre_len);
+                return None;
+            }
+        };
+        let h_embed = crate::forward::embed_tokens_pub(weights, &[bonus]);
+        let x: Vec<f32> = h_embed.row(0).to_vec();
+        let bonus_hidden = match backend.decode_token(
+            layers,
+            &x,
+            dims.hidden,
+            dims.intermediate,
+            dims.q_dim,
+            dims.kv_dim,
+            dims.num_q_heads,
+            dims.num_kv_heads,
+            dims.head_dim,
+            dims.rope_base,
+        ) {
+            Some(h) => h,
+            None => {
+                backend.truncate_kv_cache(pre_len);
+                return None;
+            }
+        };
+
         drafter.accept(&emitted);
-        Some(emitted)
+        Some((emitted, bonus_hidden))
     })
 }
 

@@ -199,6 +199,102 @@ where
     )
 }
 
+/// **Phase 4c skip-redundant-commit variant.** Same as
+/// [`target_forward_via_speculative_decode_with_probs`] but uses the
+/// keep-cache decode path: the backend's KV cache is left advanced
+/// by `tree.len()` positions on success (one cache slot per drafted
+/// token). The CALLER is responsible for truncating to the correct
+/// position after `verify_tree` decides which prefix is accepted —
+/// typically `truncate_kv_cache(pre_len + R)` then `decode_token(bonus)`
+/// to fill the bonus position.
+///
+/// Linear-chain only: branching trees fall back to the existing
+/// (truncate) `target_forward_via_speculative_decode_with_probs` path.
+/// On any failure, cache state is RESTORED to pre-call length.
+pub fn target_forward_via_speculative_decode_keep_cache_with_probs<F>(
+    weights: &ModelWeights,
+    history: &[TokenId],
+    tree: &DraftTree,
+    backend: &dyn DecodeBackend,
+    layers: &[FullPipelineLayer<'_>],
+    dims: TargetForwardDims,
+    mut compute_probs: F,
+) -> Option<Vec<Vec<f32>>>
+where
+    F: FnMut(&[f32]) -> Vec<f32>,
+{
+    if !backend.has_kv_cache() {
+        return None;
+    }
+    let pre_len = backend.kv_cache_len();
+    if pre_len != history.len() {
+        return None;
+    }
+
+    let paths = tree.root_to_leaf_paths();
+    if paths.len() != 1 {
+        return target_forward_via_speculative_decode_with_probs(
+            weights,
+            history,
+            tree,
+            backend,
+            layers,
+            dims,
+            compute_probs,
+        );
+    }
+    let path = &paths[0];
+    debug_assert_eq!(path.len(), tree.len());
+    for (k, &node_idx) in path.iter().enumerate() {
+        if node_idx != k {
+            return target_forward_via_speculative_decode_with_probs(
+                weights,
+                history,
+                tree,
+                backend,
+                layers,
+                dims,
+                compute_probs,
+            );
+        }
+    }
+
+    let chain: Vec<TokenId> = path.iter().map(|&i| tree.nodes()[i].token.id).collect();
+    let x_per_token: Vec<Vec<f32>> = chain
+        .iter()
+        .map(|&tok| {
+            let h = crate::forward::embed_tokens_pub(weights, &[tok]);
+            h.row(0).to_vec()
+        })
+        .collect();
+    let hiddens = backend.decode_tokens_speculative_keep_cache(
+        layers,
+        &x_per_token,
+        dims.hidden,
+        dims.intermediate,
+        dims.q_dim,
+        dims.kv_dim,
+        dims.num_q_heads,
+        dims.num_kv_heads,
+        dims.head_dim,
+        dims.rope_base,
+    )?;
+    if hiddens.len() != tree.len() {
+        backend.truncate_kv_cache(pre_len);
+        return None;
+    }
+    let mut per_node = Vec::with_capacity(tree.len());
+    for h in hiddens {
+        let probs = compute_probs(&h);
+        if probs.is_empty() {
+            backend.truncate_kv_cache(pre_len);
+            return None;
+        }
+        per_node.push(probs);
+    }
+    Some(per_node)
+}
+
 /// Per-node fallback for non-linear trees. Walks each tree node's
 /// ancestor chain through `decode_tokens_speculative` independently
 /// (cache rolled back between calls). Cost: O(N × max_depth).
