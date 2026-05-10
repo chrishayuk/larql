@@ -25888,25 +25888,25 @@
     {
       "fqn": "larql_inference::speculative::effective_depth_clamps_to_swa_remainder",
       "file": "crates/larql-inference/src/speculative/mod.rs",
-      "line": 197,
+      "line": 198,
       "crate": "larql_inference"
     },
     {
       "fqn": "larql_inference::speculative::env_garbage_uses_legacy_path",
       "file": "crates/larql-inference/src/speculative/mod.rs",
-      "line": 186,
+      "line": 187,
       "crate": "larql_inference"
     },
     {
       "fqn": "larql_inference::speculative::env_one_enables_spec_path",
       "file": "crates/larql-inference/src/speculative/mod.rs",
-      "line": 175,
+      "line": 176,
       "crate": "larql_inference"
     },
     {
       "fqn": "larql_inference::speculative::env_zero_uses_legacy_path",
       "file": "crates/larql-inference/src/speculative/mod.rs",
-      "line": 164,
+      "line": 165,
       "crate": "larql_inference"
     },
     {
@@ -26080,31 +26080,31 @@
     {
       "fqn": "larql_inference::speculative::tests::effective_depth_clamps_to_swa_remainder",
       "file": "crates/larql-inference/src/speculative/mod.rs",
-      "line": 197,
+      "line": 198,
       "crate": "larql_inference"
     },
     {
       "fqn": "larql_inference::speculative::tests::env_garbage_uses_legacy_path",
       "file": "crates/larql-inference/src/speculative/mod.rs",
-      "line": 186,
+      "line": 187,
       "crate": "larql_inference"
     },
     {
       "fqn": "larql_inference::speculative::tests::env_one_enables_spec_path",
       "file": "crates/larql-inference/src/speculative/mod.rs",
-      "line": 175,
+      "line": 176,
       "crate": "larql_inference"
     },
     {
       "fqn": "larql_inference::speculative::tests::tree_nodes_caps_at_64",
       "file": "crates/larql-inference/src/speculative/mod.rs",
-      "line": 215,
+      "line": 216,
       "crate": "larql_inference"
     },
     {
       "fqn": "larql_inference::speculative::tests::tree_nodes_default_is_seven",
       "file": "crates/larql-inference/src/speculative/mod.rs",
-      "line": 209,
+      "line": 210,
       "crate": "larql_inference"
     },
     {
@@ -26206,19 +26206,19 @@
     {
       "fqn": "larql_inference::speculative::tree_nodes_caps_at_64",
       "file": "crates/larql-inference/src/speculative/mod.rs",
-      "line": 215,
+      "line": 216,
       "crate": "larql_inference"
     },
     {
       "fqn": "larql_inference::speculative::tree_nodes_default_is_seven",
       "file": "crates/larql-inference/src/speculative/mod.rs",
-      "line": 209,
+      "line": 210,
       "crate": "larql_inference"
     },
     {
       "fqn": "larql_inference::speculative::unset_env_uses_legacy_path",
       "file": "crates/larql-inference/src/speculative/mod.rs",
-      "line": 150,
+      "line": 151,
       "crate": "larql_inference"
     },
     {
@@ -26368,37 +26368,37 @@
     {
       "fqn": "larql_inference::speculative::wiring::returns_none_when_env_disabled",
       "file": "crates/larql-inference/src/speculative/wiring.rs",
-      "line": 181,
+      "line": 301,
       "crate": "larql_inference"
     },
     {
       "fqn": "larql_inference::speculative::wiring::returns_none_when_swa_window_exhausted",
       "file": "crates/larql-inference/src/speculative/wiring.rs",
-      "line": 261,
+      "line": 381,
       "crate": "larql_inference"
     },
     {
       "fqn": "larql_inference::speculative::wiring::returns_some_tokens_when_env_enabled_and_drafter_proposes",
       "file": "crates/larql-inference/src/speculative/wiring.rs",
-      "line": 207,
+      "line": 327,
       "crate": "larql_inference"
     },
     {
       "fqn": "larql_inference::speculative::wiring::tests::returns_none_when_env_disabled",
       "file": "crates/larql-inference/src/speculative/wiring.rs",
-      "line": 181,
+      "line": 301,
       "crate": "larql_inference"
     },
     {
       "fqn": "larql_inference::speculative::wiring::tests::returns_none_when_swa_window_exhausted",
       "file": "crates/larql-inference/src/speculative/wiring.rs",
-      "line": 261,
+      "line": 381,
       "crate": "larql_inference"
     },
     {
       "fqn": "larql_inference::speculative::wiring::tests::returns_some_tokens_when_env_enabled_and_drafter_proposes",
       "file": "crates/larql-inference/src/speculative/wiring.rs",
-      "line": 207,
+      "line": 327,
       "crate": "larql_inference"
     },
     {

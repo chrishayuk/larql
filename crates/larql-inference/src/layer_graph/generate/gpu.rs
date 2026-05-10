@@ -649,23 +649,81 @@ where
     let mut t_lmhead = 0.0f64;
     let mut t_detok = 0.0f64;
 
-    // Phase 4b dispatch site: this loop's per-iteration top is where
-    // `crate::speculative::try_thread_speculative_step` would slot in.
-    // **Blocked**: `layers` borrows from `weights` (via
-    // `build_pipeline_layers`), and `predict_q4k_full_vocab_probs`
-    // (target_forward_naive's inner call) requires `&mut weights`.
-    // The two cannot coexist in the loop body. Resolving requires:
-    //   (a) restructure target_forward to use the existing decode_token
-    //       + a separate lm_head probability pass (no &mut weights), or
-    //   (b) clone ModelWeights to a separate instance for speculative
-    //       re-runs (expensive — multi-GB), or
-    //   (c) drop &mut from predict_q4k_hidden by avoiding
-    //       insert_q4k_layer_tensors — would require a new dequant path.
-    // Tracked in `cuda-spec-phase4-integration` design notes; phase 4c
-    // sidesteps this by composing GPU kernels that own their own
-    // mutable scratch.
+    // Phase 4b dispatch: speculative path via try_thread_speculative_step_v2.
+    // The v2 helper is borrow-conflict-free — it takes `&ModelWeights`
+    // (immutable, compatible with `&layers`'s borrow) and uses a
+    // thread-local `SpeculativeTargetExecutor` for the `&mut weights`
+    // it needs internally (PR #19's resolution).
+    //
+    // Setup: caller (e.g. `larql bench --draft-model <path>`) calls
+    //   speculative::set_thread_drafter(Some(SmallModelDrafter::from_vindex(...)))
+    //   speculative::set_thread_target_executor(Some(SpeculativeTargetExecutor::from_vindex(...)))
+    //   speculative::set_thread_spec_config(SpecConfig { depth: N, branches: 1, .. })
+    //   speculative::set_thread_rng(seed)
+    // before calling generate(). With env LARQL_SPECULATIVE_DECODE=1
+    // the speculative dispatch fires per iteration; otherwise no-op
+    // (existing path bit-exact).
+    //
+    // KV cache management: on Some(emitted), we advance the canonical
+    // cache by N-1 in-loop decode_token calls (last token left for
+    // current_token_id flow). Wasteful but correct — phase 4c batches.
     for _step in 1..max_tokens {
         let decode_start = std::time::Instant::now();
+
+        // ── Speculative dispatch (no-op when env off / drafter unset) ──
+        {
+            let history: Vec<u32> = token_ids
+                .iter()
+                .copied()
+                .chain(generated_ids.iter().copied())
+                .collect();
+            let cache_len = history.len();
+            if let Some(emitted) =
+                crate::speculative::try_thread_speculative_step_v2(&*weights, &history, cache_len)
+            {
+                let n = emitted.len();
+                let mut break_outer = false;
+                for (i, &spec_tok) in emitted.iter().enumerate() {
+                    let tok_str = detok.push(spec_tok);
+                    let prob = 1.0_f64;
+                    on_token(spec_tok, &tok_str, prob);
+                    tokens.push((tok_str.clone(), prob));
+                    generated_ids.push(spec_tok);
+                    if eos.is_eos_with_tokenizer(spec_tok, &tok_str, tokenizer) {
+                        break_outer = true;
+                        break;
+                    }
+                    // Advance canonical cache for all but the last
+                    // emitted (the last advances naturally via
+                    // current_token_id_outer in the next iter).
+                    if i < n - 1 {
+                        let h_tok = crate::forward::embed_tokens_pub(weights, &[spec_tok]);
+                        let x_dec: Vec<f32> = h_tok.row(0).to_vec();
+                        let _ = backend.decode_token(
+                            &layers,
+                            &x_dec,
+                            hidden,
+                            intermediate,
+                            attention.q_dim,
+                            attention.kv_dim,
+                            attention.num_q_heads,
+                            attention.num_kv_heads,
+                            attention.head_dim,
+                            attention.rope_base,
+                        );
+                    }
+                }
+                if break_outer {
+                    break;
+                }
+                if let Some(&last) = emitted.last() {
+                    current_token_id = last;
+                }
+                let step_ms = decode_start.elapsed().as_secs_f64() * 1000.0;
+                decode_ms.push(step_ms);
+                continue;
+            }
+        }
 
         let t0 = std::time::Instant::now();
         let h_tok = crate::forward::embed_tokens_pub(weights, &[current_token_id]);
