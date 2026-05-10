@@ -21,6 +21,7 @@ pub mod small_model;
 pub mod target_forward;
 pub mod tree;
 pub mod verify;
+pub mod wiring;
 
 pub use dispatch::maybe_speculative_step;
 pub use eagle::EagleDraftHead;
@@ -29,6 +30,7 @@ pub use small_model::SmallModelDrafter;
 pub use target_forward::target_forward_naive;
 pub use tree::{DraftTree, TreeAttentionMask, TreeNode};
 pub use verify::{verify_and_accept, verify_tree, AcceptedSpan, VerifyRng};
+pub use wiring::run_naive_step;
 
 pub type TokenId = u32;
 
