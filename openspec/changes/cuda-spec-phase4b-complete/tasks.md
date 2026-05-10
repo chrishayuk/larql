@@ -137,6 +137,45 @@ efficiency, not drafter accuracy. Future work for D.3 perf gate
 should target making the D+1-token batched forward cost closer to
 2× plain decode (currently 5×) rather than further drafter work.
 
+### D.0.1 Batched lm_head for spec verify (2026-05-10)
+
+Per-iter trace at depth=4, α=0.83 on translation-echo prompt:
+
+| Stage | Legacy (4× q4k_matvec) | Batched (1× gemm_proj_seq) |
+|---|---|---|
+| forward (4 tok batched) | 18.5 ms | 18.5 ms |
+| lm_head + softmax | 24.0 ms (4 calls) | 21.0 ms (1 call) |
+| verify_tree | 0.7 ms | 0.5 ms |
+| bonus decode_token | 6.5 ms | 6.5 ms |
+| **iter total** | **49.7 ms** | **46.5 ms** |
+| Wall-clock ms/tok | 31.13 | 29.59 |
+| Speedup | 1.0× | 1.05× |
+
+Landed: backend's `q4k_matmul` (was a default-None trait method) now
+implements via `gemm_proj_seq` for `seq_len > 1` (cached f16 dequant
++ cuBLAS hgemm), delegates to `q4k_matvec` direct kernel for
+`seq_len == 1`. Batched Q4_K kernel `q4k_batched::matvec_batched`
+fixed to use the cached device-side Q4_K buffer (was re-uploading
+the 377 MB lm_head weight every call, making it slower than the
+per-row fallback). New env var `LARQL_SPEC_BATCHED_LMH=0` opts out.
+
+The lm_head batching saves ~3 ms/iter (~5% wall-clock). Smaller
+than expected because `q4k_direct::matvec` already amortises
+dequant via the f16/u8 device-buf cache, so the batching wins are
+limited to the ~1 ms × 3 saved kernel launches.
+
+**Where the time still goes** (depth=4, α=0.83):
+- 18.5 ms forward (40%) — 952 small GEMM launches across 34 layers ×
+  7 ops × 4 tokens. CUDA Graphs would amortise launch overhead but
+  require capturing the full layer pipeline (not just decode_token).
+- 21.0 ms lm_head + softmax (45%) — cuBLAS hgemm at M=4 against the
+  ~1.3 GB cached f16 lm_head weight. 600× theoretical FLOPs so likely
+  bandwidth-limited on the 1.3 GB read; small further wins possible by
+  fusing the per-row scale + softcap + softmax with the GEMM output.
+- 6.5 ms bonus decode_token (14%) — single full forward to write the
+  bonus K/V slot. Could be eliminated by deferring bonus K/V into the
+  next iter's spec batch (~13% iter savings, ~0.7 ms/tok).
+
 ## Validation (this PR)
 
 - [x] V.1 `openspec validate cuda-spec-phase4b-complete --strict` passes

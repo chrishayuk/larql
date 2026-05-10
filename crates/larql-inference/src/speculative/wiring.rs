@@ -356,77 +356,128 @@ pub fn try_thread_speculative_step_v3(
         }
         let tree = build_linear_tree(&drafts);
 
-        // GPU lm_head closure: routes the per-tree-node `apply_norm +
-        // dot_proj + softmax` through the index's lm_head Q4_K bytes
-        // (or the f16 mmap fallback) via `lm_head_knn_backend`-style
-        // dispatch. On 4B with the `q4k_matvec` fix, this drops each
-        // call from ~50-100 ms (CPU `dot_proj`) to ~2 ms.
         let arch = &*weights.arch;
         let final_norm = weights.tensors.get(arch.final_norm_key());
         let norm_offset = arch.norm_weight_offset();
         let logits_scale = arch.logits_scaling();
         let final_softcap = arch.final_logit_softcapping();
-        let compute_probs = |h: &[f32]| -> Vec<f32> {
-            let h_arr = match ndarray::Array2::from_shape_vec((1, h.len()), h.to_vec()) {
-                Ok(a) => a,
-                Err(_) => return Vec::new(),
-            };
-            let h_final = match final_norm {
-                Some(_) => {
-                    crate::forward::apply_norm(weights, &h_arr, arch.final_norm_key(), norm_offset)
-                }
-                None => h_arr,
-            };
-            let h_1d = h_final.row(0).to_owned();
-            let logits = compute_full_vocab_logits(weights, index, backend, &h_1d);
-            if logits.is_empty() {
-                return Vec::new();
-            }
-            let inv_scale = 1.0 / logits_scale;
-            let scaled: Vec<f32> = logits
-                .iter()
-                .map(|&v| {
-                    let mut l = v * inv_scale;
-                    if let Some(cap) = final_softcap {
-                        l = (l / cap).tanh() * cap;
-                    }
-                    l
-                })
-                .collect();
-            let max_logit = scaled.iter().copied().fold(f32::NEG_INFINITY, f32::max);
-            let exp_sum: f64 = scaled.iter().map(|l| ((l - max_logit) as f64).exp()).sum();
-            if exp_sum <= 0.0 {
-                return Vec::new();
-            }
-            scaled
-                .iter()
-                .map(|l| (((l - max_logit) as f64).exp() / exp_sum) as f32)
-                .collect()
-        };
 
         // Skip-redundant-commit path: helper leaves cache at pre_len+N.
         let pre_len = history.len();
-        let p_target =
-            super::target_forward::target_forward_via_speculative_decode_keep_cache_with_probs(
+        let trace = std::env::var("LARQL_SPEC_TRACE").ok().as_deref() == Some("1");
+        let use_batched_lmh =
+            std::env::var("LARQL_SPEC_BATCHED_LMH").ok().as_deref() != Some("0");
+        let t0 = std::time::Instant::now();
+        let n_lmh_calls = std::cell::Cell::new(0usize);
+        let t_fwd_only;
+        let t_lmh;
+        let p_target = if use_batched_lmh {
+            // Phase 4d batched-lm_head: get all hiddens first (one
+            // batched forward), then run final_norm + lm_head + softmax
+            // once across the whole tree. Saves ~3-5 ms per tree node
+            // vs the per-node compute_probs loop because the Q4_K
+            // matmul amortises dequant + launch overhead.
+            let hiddens =
+                super::target_forward::target_forward_via_speculative_decode_keep_cache_hiddens(
+                    weights, history, &tree, backend, layers, dims,
+                )?;
+            t_fwd_only = t0.elapsed();
+            let t_lmh_start = std::time::Instant::now();
+            let probs = compute_full_vocab_probs_batched(
                 weights,
-                history,
-                &tree,
+                index,
                 backend,
-                layers,
-                dims,
-                compute_probs,
-            )?;
+                &hiddens,
+                arch.final_norm_key(),
+                norm_offset,
+                logits_scale,
+                final_softcap,
+                final_norm.is_some(),
+            );
+            t_lmh = t_lmh_start.elapsed();
+            n_lmh_calls.set(1);
+            match probs {
+                Some(p) if p.len() == tree.len() => p,
+                _ => {
+                    backend.truncate_kv_cache(pre_len);
+                    return None;
+                }
+            }
+        } else {
+            // Legacy per-node compute_probs closure path.
+            let t_lmh_total = std::cell::Cell::new(std::time::Duration::ZERO);
+            let timed_compute_probs = |h: &[f32]| -> Vec<f32> {
+                let t = std::time::Instant::now();
+                let h_arr = match ndarray::Array2::from_shape_vec((1, h.len()), h.to_vec()) {
+                    Ok(a) => a,
+                    Err(_) => return Vec::new(),
+                };
+                let h_final = match final_norm {
+                    Some(_) => crate::forward::apply_norm(
+                        weights,
+                        &h_arr,
+                        arch.final_norm_key(),
+                        norm_offset,
+                    ),
+                    None => h_arr,
+                };
+                let h_1d = h_final.row(0).to_owned();
+                let logits = compute_full_vocab_logits(weights, index, backend, &h_1d);
+                if logits.is_empty() {
+                    return Vec::new();
+                }
+                let inv_scale = 1.0 / logits_scale;
+                let scaled: Vec<f32> = logits
+                    .iter()
+                    .map(|&v| {
+                        let mut l = v * inv_scale;
+                        if let Some(cap) = final_softcap {
+                            l = (l / cap).tanh() * cap;
+                        }
+                        l
+                    })
+                    .collect();
+                let max_logit = scaled.iter().copied().fold(f32::NEG_INFINITY, f32::max);
+                let exp_sum: f64 =
+                    scaled.iter().map(|l| ((l - max_logit) as f64).exp()).sum();
+                if exp_sum <= 0.0 {
+                    return Vec::new();
+                }
+                let r: Vec<f32> = scaled
+                    .iter()
+                    .map(|l| (((l - max_logit) as f64).exp() / exp_sum) as f32)
+                    .collect();
+                t_lmh_total.set(t_lmh_total.get() + t.elapsed());
+                n_lmh_calls.set(n_lmh_calls.get() + 1);
+                r
+            };
+            let p =
+                super::target_forward::target_forward_via_speculative_decode_keep_cache_with_probs(
+                    weights,
+                    history,
+                    &tree,
+                    backend,
+                    layers,
+                    dims,
+                    timed_compute_probs,
+                )?;
+            let total = t0.elapsed();
+            t_lmh = t_lmh_total.get();
+            t_fwd_only = total.saturating_sub(t_lmh);
+            p
+        };
         if p_target.len() != tree.len() {
-            // Defensive: helper success implies length match, but
-            // restore on the off chance.
             backend.truncate_kv_cache(pre_len);
             return None;
         }
+
+        let t_v0 = std::time::Instant::now();
         let span = THREAD_RNG.with(|r_cell| {
             let mut r_ref = r_cell.borrow_mut();
             let rng = r_ref.get_or_insert_with(|| VerifyRng::new(0xCAFE_BABE_DEAD_F00D));
             verify_tree(&tree, &p_target, rng)
         });
+        let t_verify = t_v0.elapsed();
         let emitted = span.tokens();
         if emitted.is_empty() {
             backend.truncate_kv_cache(pre_len);
@@ -447,6 +498,7 @@ pub fn try_thread_speculative_step_v3(
                 return None;
             }
         };
+        let t_b0 = std::time::Instant::now();
         let h_embed = crate::forward::embed_tokens_pub(weights, &[bonus]);
         let x: Vec<f32> = h_embed.row(0).to_vec();
         let bonus_hidden = match backend.decode_token(
@@ -468,7 +520,22 @@ pub fn try_thread_speculative_step_v3(
             }
         };
 
+        let t_bonus = t_b0.elapsed();
         drafter.accept(&emitted);
+
+        if trace {
+            eprintln!(
+                "[spec_iter] depth={} accepted={} fwd_no_lmh={:?} lmh_total={:?} ({} calls) verify={:?} bonus={:?} total={:?}",
+                drafts.len(),
+                r_accepted,
+                t_fwd_only,
+                t_lmh,
+                n_lmh_calls.get(),
+                t_verify,
+                t_bonus,
+                t0.elapsed(),
+            );
+        }
 
         // Telemetry: record this iter's draft + accept counts if a
         // stats accumulator is installed via `set_thread_spec_stats`.
@@ -485,11 +552,124 @@ pub fn try_thread_speculative_step_v3(
     })
 }
 
+/// Phase 4d batched-lm_head: run final_norm + lm_head + softmax on
+/// all `hiddens` rows in a single GEMM call (Q4_K matmul against the
+/// index's lm_head). Returns one prob vector per row, or `None` on
+/// any failure (caller falls back to the per-row `compute_probs`).
+///
+/// At depth=4 with α=0.83, this saves ~17-20 ms/iter vs the per-row
+/// `compute_full_vocab_logits` loop because the underlying batched
+/// Q4_K kernel amortises dequant + launch overhead across rows.
+#[allow(clippy::too_many_arguments)]
+fn compute_full_vocab_probs_batched(
+    weights: &ModelWeights,
+    index: &larql_vindex::VectorIndex,
+    backend: &dyn larql_compute::ComputeBackend,
+    hiddens: &[Vec<f32>],
+    final_norm_key: &str,
+    norm_offset: f32,
+    logits_scale: f32,
+    final_softcap: Option<f32>,
+    has_final_norm: bool,
+) -> Option<Vec<Vec<f32>>> {
+    let m = hiddens.len();
+    if m == 0 {
+        return Some(Vec::new());
+    }
+    let hidden = hiddens[0].len();
+    if hidden == 0 || hiddens.iter().any(|h| h.len() != hidden) {
+        return None;
+    }
+    let vocab = index.vocab_size;
+    if vocab == 0 {
+        return None;
+    }
+
+    // 1. Apply final norm batched (per-row, since `apply_norm` is
+    //    inherently per-row but cheap on hidden=2560).
+    let mut h_normed: Vec<f32> = Vec::with_capacity(m * hidden);
+    for h in hiddens {
+        if has_final_norm {
+            let h_arr = ndarray::Array2::from_shape_vec((1, hidden), h.clone()).ok()?;
+            let h_final = crate::forward::apply_norm(weights, &h_arr, final_norm_key, norm_offset);
+            h_normed.extend_from_slice(h_final.row(0).as_slice()?);
+        } else {
+            h_normed.extend_from_slice(h);
+        }
+    }
+
+    // 2. Single batched Q4_K matmul → all M × vocab logits in one call.
+    let logits_flat: Vec<f32> = if backend.has_q4() {
+        let q4_bytes: Option<&[u8]> = index
+            .projections
+            .lm_head_q4_mmap
+            .as_ref()
+            .map(|m| m.as_ref() as &[u8])
+            .or_else(|| {
+                index
+                    .projections
+                    .lm_head_q4_synth
+                    .as_ref()
+                    .map(|v| v.as_slice())
+            });
+        match q4_bytes {
+            Some(q4) => match backend.q4k_matmul(q4, &h_normed, vocab, hidden, m) {
+                Some(logits) if logits.len() == m * vocab => logits,
+                _ => {
+                    // Fallback: per-row matvec when batched kernel rejects shape.
+                    let mut all = Vec::with_capacity(m * vocab);
+                    for row in 0..m {
+                        let xr = &h_normed[row * hidden..(row + 1) * hidden];
+                        let scores = backend.q4k_matvec(q4, xr, vocab, hidden)?;
+                        if scores.len() != vocab {
+                            return None;
+                        }
+                        all.extend_from_slice(&scores);
+                    }
+                    all
+                }
+            },
+            None => return None,
+        }
+    } else {
+        return None;
+    };
+
+    // 3. Per-row scale + softcap + softmax.
+    let inv_scale = 1.0 / logits_scale;
+    let mut probs: Vec<Vec<f32>> = Vec::with_capacity(m);
+    for row in 0..m {
+        let raw = &logits_flat[row * vocab..(row + 1) * vocab];
+        let scaled: Vec<f32> = raw
+            .iter()
+            .map(|&v| {
+                let mut l = v * inv_scale;
+                if let Some(cap) = final_softcap {
+                    l = (l / cap).tanh() * cap;
+                }
+                l
+            })
+            .collect();
+        let max_logit = scaled.iter().copied().fold(f32::NEG_INFINITY, f32::max);
+        let exp_sum: f64 = scaled.iter().map(|l| ((l - max_logit) as f64).exp()).sum();
+        if exp_sum <= 0.0 {
+            return None;
+        }
+        let p: Vec<f32> = scaled
+            .iter()
+            .map(|l| (((l - max_logit) as f64).exp() / exp_sum) as f32)
+            .collect();
+        probs.push(p);
+    }
+    Some(probs)
+}
+
 /// Run lm_head on `h_1d` via the GPU path (Q4_K or f16 GEMV via the
 /// index's lm_head bytes). Falls through to the CPU `backend_lm_head_scores`
 /// path when the index lacks lm_head Q4 bytes AND f16 GEMV isn't
 /// specialised for the backend. Returns the full vocab logit vector
 /// (NOT softmax'd — caller applies scaling + softcap + softmax).
+#[allow(dead_code)]
 fn compute_full_vocab_logits(
     weights: &ModelWeights,
     index: &larql_vindex::VectorIndex,

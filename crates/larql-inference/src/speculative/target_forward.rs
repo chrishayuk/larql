@@ -199,6 +199,73 @@ where
     )
 }
 
+/// **Phase 4d batched-lm_head variant.** Same as
+/// [`target_forward_via_speculative_decode_keep_cache_with_probs`] but
+/// returns the per-node hidden states directly (post-block, pre-final-
+/// norm) instead of running compute_probs per-row. Lets the caller
+/// batch the final-norm + lm_head + softmax across all nodes in a
+/// single GEMM, which is the dominant cost at α > 0.
+///
+/// On success: cache is at `pre_len + tree.len()`; caller truncates +
+/// decodes bonus exactly like the `_with_probs` variant.
+/// On failure: cache is RESTORED to `pre_len`.
+///
+/// Linear-chain only.
+pub fn target_forward_via_speculative_decode_keep_cache_hiddens(
+    weights: &ModelWeights,
+    history: &[TokenId],
+    tree: &DraftTree,
+    backend: &dyn DecodeBackend,
+    layers: &[FullPipelineLayer<'_>],
+    dims: TargetForwardDims,
+) -> Option<Vec<Vec<f32>>> {
+    if !backend.has_kv_cache() {
+        return None;
+    }
+    let pre_len = backend.kv_cache_len();
+    if pre_len != history.len() {
+        return None;
+    }
+
+    let paths = tree.root_to_leaf_paths();
+    if paths.len() != 1 {
+        return None;
+    }
+    let path = &paths[0];
+    debug_assert_eq!(path.len(), tree.len());
+    for (k, &node_idx) in path.iter().enumerate() {
+        if node_idx != k {
+            return None;
+        }
+    }
+
+    let chain: Vec<TokenId> = path.iter().map(|&i| tree.nodes()[i].token.id).collect();
+    let x_per_token: Vec<Vec<f32>> = chain
+        .iter()
+        .map(|&tok| {
+            let h = crate::forward::embed_tokens_pub(weights, &[tok]);
+            h.row(0).to_vec()
+        })
+        .collect();
+    let hiddens = backend.decode_tokens_speculative_keep_cache(
+        layers,
+        &x_per_token,
+        dims.hidden,
+        dims.intermediate,
+        dims.q_dim,
+        dims.kv_dim,
+        dims.num_q_heads,
+        dims.num_kv_heads,
+        dims.head_dim,
+        dims.rope_base,
+    )?;
+    if hiddens.len() != tree.len() {
+        backend.truncate_kv_cache(pre_len);
+        return None;
+    }
+    Some(hiddens)
+}
+
 /// **Phase 4c skip-redundant-commit variant.** Same as
 /// [`target_forward_via_speculative_decode_with_probs`] but uses the
 /// keep-cache decode path: the backend's KV cache is left advanced

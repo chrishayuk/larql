@@ -203,8 +203,6 @@ pub fn matvec_batched(
     let x_dev = drv.device_buf_from(x_batched)?;
     let mut y_dev = drv.device_alloc(m_tile * rows)?;
 
-    let q4k_dev = drv.device_u8_buf_from(q4k_data)?;
-
     let rows_i = rows as i32;
     let hidden_i = hidden as i32;
     let blocks_per_row_i = blocks_per_row as i32;
@@ -219,19 +217,26 @@ pub fn matvec_batched(
             * std::mem::size_of::<f32>() as u32,
     };
 
-    unsafe {
-        drv.stream
-            .launch_builder(func)
-            .arg(&q4k_dev)
-            .arg(&x_dev)
-            .arg(&mut y_dev)
-            .arg(&rows_i)
-            .arg(&hidden_i)
-            .arg(&blocks_per_row_i)
-            .arg(&m_tile_i)
-            .launch(cfg)
-            .map_err(|e| CudaInitError::DriverMissing(format!("launch q4k_batched: {e:?}")))?;
-    }
+    // Use the cached device-side Q4_K buffer (matches q4k_direct's
+    // pattern). Without this we'd re-upload the entire 377 MB lm_head
+    // weight every call, which dominates wall-clock and made the
+    // batched path slower than the per-row fallback.
+    backend.with_q4k_device_buf(q4k_data, |q4k_dev| {
+        unsafe {
+            drv.stream
+                .launch_builder(func)
+                .arg(q4k_dev)
+                .arg(&x_dev)
+                .arg(&mut y_dev)
+                .arg(&rows_i)
+                .arg(&hidden_i)
+                .arg(&blocks_per_row_i)
+                .arg(&m_tile_i)
+                .launch(cfg)
+                .map_err(|e| CudaInitError::DriverMissing(format!("launch q4k_batched: {e:?}")))?;
+        }
+        Ok(())
+    })?;
     drv.sync()?;
     drv.to_host(&y_dev)
 }

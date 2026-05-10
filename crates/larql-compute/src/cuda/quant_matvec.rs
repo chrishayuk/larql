@@ -107,4 +107,55 @@ impl QuantMatVec for CudaBackend {
     fn has_q4(&self) -> bool {
         true
     }
+
+    /// Phase 4d batched-lm_head: amortised Q4_K matmul for spec-decode
+    /// verify. Routes to `gemm_proj_seq` (cached Q4_K → f16 dequant +
+    /// cuBLAS hgemm tensor cores) for `seq_len > 1`. The dequantized
+    /// f16 weight is cached via `with_q4k_f16_device_buf`, so repeated
+    /// calls in the spec loop pay dequant cost once. For `seq_len == 1`
+    /// the per-row `q4k_matvec` direct kernel is faster (no f16 cast
+    /// overhead) so we delegate there.
+    fn q4k_matmul(
+        &self,
+        q4k_data: &[u8],
+        x: &[f32],
+        num_rows: usize,
+        hidden: usize,
+        seq_len: usize,
+    ) -> Option<Vec<f32>> {
+        if seq_len == 0 || x.len() != seq_len * hidden {
+            return None;
+        }
+        if seq_len == 1 {
+            return self.q4k_matvec(q4k_data, x, num_rows, hidden);
+        }
+
+        // GEMM path via cached f16 weight + cuBLAS hgemm. Falls back
+        // to per-row matvec when the kernel constraint isn't met.
+        let weight = QuantWeight {
+            data: q4k_data,
+            scales: None,
+            format: QuantFormat::Q4_K,
+        };
+        let x_dev = self.htod_f32(x).ok()?;
+        if let Some(y_dev) = self.gemm_proj_seq(weight, &x_dev, seq_len, num_rows, hidden) {
+            // Output layout is row-major [seq_len, num_rows] from
+            // matmul_transb_device_inout (and its f16 variant). That
+            // matches the expected q4k_matmul output, so dtoh directly.
+            return self.dtoh_f32(&y_dev).ok();
+        }
+
+        // Fallback: per-row q4k_matvec. Loses batching efficiency but
+        // preserves correctness for shapes the GEMM path rejects.
+        let mut out = Vec::with_capacity(seq_len * num_rows);
+        for m in 0..seq_len {
+            let row = &x[m * hidden..(m + 1) * hidden];
+            let scores = self.q4k_matvec(q4k_data, row, num_rows, hidden)?;
+            if scores.len() != num_rows {
+                return None;
+            }
+            out.extend_from_slice(&scores);
+        }
+        Some(out)
+    }
 }
