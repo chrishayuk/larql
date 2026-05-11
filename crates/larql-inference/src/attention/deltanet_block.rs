@@ -208,6 +208,13 @@ fn silu(x: f32) -> f32 {
 
 /// RMSNorm on a single 1-D vector with weight broadcast across the
 /// last axis. `(x / sqrt(mean(x²) + eps)) * weight`.
+///
+/// `pub(crate)` so the qwen35 full-attention block can reuse it for
+/// its pre-norm step.
+pub(crate) fn rms_norm_1d_pub(x: &Array1<f32>, weight: &[f32], eps: f32) -> Array1<f32> {
+    rms_norm_1d(x, weight, eps)
+}
+
 fn rms_norm_1d(x: &Array1<f32>, weight: &[f32], eps: f32) -> Array1<f32> {
     debug_assert_eq!(x.len(), weight.len());
     let n = x.len();

@@ -14,6 +14,7 @@ pub mod deltanet_state;
 pub mod gpu;
 pub mod gqa;
 pub mod qwen35_attn;
+pub mod qwen35_block;
 pub mod rope;
 
 use ndarray::Array2;
