@@ -199,28 +199,99 @@ pub fn qwen35_attention_block_step(
     append_row(&mut kv_layer.0, k_roped.row(0));
     append_row(&mut kv_layer.1, v_2d_in.row(0));
 
-    // 7. GQA softmax attention.
-    //    Q: [1, q_dim].   K/V cumulative: [seq_len_post_append, kv_dim].
-    let seq_len = kv_layer.0.shape()[0];
+    // 7. GQA softmax attention — single-row Q, cumulative K/V.
+    //    The existing `gqa::gqa_attention` requires Q, K, V to share
+    //    the same row count (used by prefill); for autoregressive
+    //    decode we do a focused single-row scan here.
+    let q_row = q_roped.row(0).to_owned();
     let scale = (dims.head_dim as f64).powf(-0.5);
-    let attn_out = super::gqa::gqa_attention(
-        &q_roped,
+    let attn_out_1d = gqa_decode_step(
+        &q_row,
         &kv_layer.0,
         &kv_layer.1,
         dims.n_head,
+        dims.n_head_kv,
         dims.head_dim,
-        dims.gqa_reps(),
         scale,
-        seq_len,
     );
-
-    // 8. Apply the per-head Q-gate (sigmoid'd). Re-use C.3.
-    let mut attn_out = attn_out;
+    // Wrap back into 1-row matrix to reuse the C.3 gate-apply helper.
+    let mut attn_out = attn_out_1d
+        .into_shape_with_order((1, dims.q_dim()))
+        .expect("attn_out reshape");
     apply_q_gate(&mut attn_out, &gate_2d);
 
     // 9. Output projection: y = attn_output @ attn_out[0].
     let attn_out_1d = attn_out.row(0).to_owned();
     weights.attn_output.dot(&attn_out_1d)
+}
+
+/// Autoregressive GQA softmax attention for a single new Q row over
+/// cumulative K/V slabs.
+///
+/// - `q`: `[num_q * head_dim]` — the new token's Q (post-RMSNorm + RoPE).
+/// - `k_cache`, `v_cache`: `[seq_len, num_kv * head_dim]` — cumulative
+///   K/V (the new row already appended).
+/// - `num_q`, `num_kv`, `head_dim`: layer shapes (GQA repeat factor
+///   = `num_q / num_kv`).
+/// - `scale`: typically `1 / sqrt(head_dim)`.
+///
+/// Returns `[num_q * head_dim]`.
+///
+/// Per-head loop with stable softmax (subtract row max before exp).
+/// The KV-head index for Q head `h` is `h / reps` (repeat-interleave).
+fn gqa_decode_step(
+    q: &Array1<f32>,
+    k_cache: &Array2<f32>,
+    v_cache: &Array2<f32>,
+    num_q: usize,
+    num_kv: usize,
+    head_dim: usize,
+    scale: f64,
+) -> Array1<f32> {
+    let seq_len = k_cache.shape()[0];
+    debug_assert!(seq_len > 0, "k_cache must have at least the new token");
+    debug_assert_eq!(q.len(), num_q * head_dim);
+    debug_assert_eq!(k_cache.shape()[1], num_kv * head_dim);
+    debug_assert_eq!(v_cache.shape()[1], num_kv * head_dim);
+    debug_assert!(
+        num_q.is_multiple_of(num_kv) && num_kv > 0,
+        "num_q ({num_q}) must be a multiple of num_kv ({num_kv})"
+    );
+
+    let reps = num_q / num_kv;
+    let scale_f32 = scale as f32;
+    let mut out = Array1::<f32>::zeros(num_q * head_dim);
+    let mut scores = vec![0.0_f32; seq_len];
+
+    for h in 0..num_q {
+        let kv_h = h / reps;
+        // 1. Scores[t] = (q_h · k_cache[t, kv_h]) * scale.
+        for t in 0..seq_len {
+            let mut dot = 0.0_f32;
+            for d in 0..head_dim {
+                dot += q[h * head_dim + d] * k_cache[[t, kv_h * head_dim + d]];
+            }
+            scores[t] = dot * scale_f32;
+        }
+        // 2. Stable softmax.
+        let max = scores.iter().copied().fold(f32::NEG_INFINITY, f32::max);
+        let mut exp_sum = 0.0_f32;
+        for s in scores.iter_mut() {
+            *s = (*s - max).exp();
+            exp_sum += *s;
+        }
+        let inv_sum = 1.0 / exp_sum;
+        // 3. Weighted sum with V.
+        for d in 0..head_dim {
+            let mut acc = 0.0_f32;
+            for t in 0..seq_len {
+                acc += scores[t] * inv_sum * v_cache[[t, kv_h * head_dim + d]];
+            }
+            out[h * head_dim + d] = acc;
+        }
+    }
+
+    out
 }
 
 /// Append a row to a `[N, dim]` matrix, growing it to `[N+1, dim]`.
