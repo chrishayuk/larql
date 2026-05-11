@@ -8,6 +8,7 @@
 
 pub mod block;
 pub mod decode;
+pub mod deltanet_recurrence;
 pub mod deltanet_state;
 pub mod gpu;
 pub mod gqa;
