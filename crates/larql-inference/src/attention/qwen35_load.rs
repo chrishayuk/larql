@@ -511,4 +511,176 @@ mod tests {
             Ok(_) => panic!("expected NotHybrid, got Ok"),
         }
     }
+
+    // ── C.4e: end-to-end bridge → forward integration ──
+    //
+    // These tests feed the typed `Qwen35Weights` produced by
+    // `load_qwen35_weights` into `qwen35_forward_step` to verify
+    // the bridge produces structurally compatible output. They
+    // exercise both layer kinds in one forward call (the tiny
+    // config has 2 linear + 2 attention layers).
+
+    fn integration_dn_dims(cfg: &ModelConfig) -> crate::attention::deltanet_block::DeltaNetDims {
+        crate::attention::deltanet_block::DeltaNetDims {
+            hidden: cfg.hidden_size,
+            head_v_dim: cfg.ssm_state_size.unwrap(),
+            n_v_heads: cfg.ssm_dt_rank.unwrap(),
+            n_k_heads: cfg.ssm_group_count.unwrap(),
+            d_conv: cfg.ssm_conv_kernel.unwrap(),
+            eps: 1e-6,
+        }
+    }
+
+    fn integration_attn_dims(
+        cfg: &ModelConfig,
+    ) -> crate::attention::qwen35_block::Qwen35AttentionDims {
+        crate::attention::qwen35_block::Qwen35AttentionDims {
+            hidden: cfg.hidden_size,
+            n_head: cfg.num_q_heads,
+            n_head_kv: cfg.num_kv_heads,
+            head_dim: cfg.head_dim,
+            rotary_dim: cfg.head_dim,
+            rope_base: cfg.rope_base,
+            eps: 1e-6,
+        }
+    }
+
+    fn layer_kinds(arch: &Qwen35Arch) -> Vec<bool> {
+        (0..arch.config().num_layers)
+            .map(|l| arch.is_linear_attention_layer(l))
+            .collect()
+    }
+
+    #[test]
+    fn integration_bridge_forward_one_token_returns_finite_vocab_logits() {
+        let cfg = qwen35_tiny_config();
+        let (mw, arch) = build_model_weights(cfg.clone());
+        let w = load_qwen35_weights(&mw, &arch).expect("load");
+
+        let dn_dims = integration_dn_dims(&cfg);
+        let attn_dims = integration_attn_dims(&cfg);
+        let kinds = layer_kinds(&arch);
+        let mut cache = crate::attention::qwen35_block::DeltaNetHybridCache::allocate(
+            &kinds,
+            attn_dims.kv_dim(),
+            dn_dims.d_conv,
+            dn_dims.conv_dim(),
+            dn_dims.head_v_dim,
+            dn_dims.n_v_heads,
+        );
+
+        let logits = crate::attention::qwen35_forward::qwen35_forward_step(
+            3, &w, &dn_dims, &attn_dims, &mut cache, 1e-6,
+        );
+        assert_eq!(logits.len(), cfg.vocab_size.unwrap());
+        assert!(
+            logits.iter().all(|v| v.is_finite()),
+            "logits must all be finite"
+        );
+        assert_eq!(cache.next_position, 1);
+    }
+
+    #[test]
+    fn integration_bridge_forward_grows_kv_and_advances_position_over_two_tokens() {
+        let cfg = qwen35_tiny_config();
+        let (mw, arch) = build_model_weights(cfg.clone());
+        let w = load_qwen35_weights(&mw, &arch).expect("load");
+
+        let dn_dims = integration_dn_dims(&cfg);
+        let attn_dims = integration_attn_dims(&cfg);
+        let kinds = layer_kinds(&arch);
+        let mut cache = crate::attention::qwen35_block::DeltaNetHybridCache::allocate(
+            &kinds,
+            attn_dims.kv_dim(),
+            dn_dims.d_conv,
+            dn_dims.conv_dim(),
+            dn_dims.head_v_dim,
+            dn_dims.n_v_heads,
+        );
+
+        let _ = crate::attention::qwen35_forward::qwen35_forward_step(
+            1, &w, &dn_dims, &attn_dims, &mut cache, 1e-6,
+        );
+        let _ = crate::attention::qwen35_forward::qwen35_forward_step(
+            2, &w, &dn_dims, &attn_dims, &mut cache, 1e-6,
+        );
+        assert_eq!(cache.next_position, 2);
+        // Every full-attn layer's KV slab should have grown to 2 rows.
+        for (layer_idx, kv) in cache.kv_layers.iter().enumerate() {
+            let is_linear = (layer_idx + 1) % 2 != 0;
+            match (kv, is_linear) {
+                (None, true) => {} // linear layer — no KV slab
+                (Some((k, v)), false) => {
+                    assert_eq!(
+                        k.shape()[0],
+                        2,
+                        "full-attn layer {layer_idx} K should have 2 rows"
+                    );
+                    assert_eq!(
+                        v.shape()[0],
+                        2,
+                        "full-attn layer {layer_idx} V should have 2 rows"
+                    );
+                }
+                _ => panic!("layer {layer_idx}: KV slot kind mismatch"),
+            }
+        }
+    }
+
+    #[test]
+    fn integration_bridge_forward_dn_state_carries_across_two_tokens() {
+        let cfg = qwen35_tiny_config();
+        let (mw, arch) = build_model_weights(cfg.clone());
+        let w = load_qwen35_weights(&mw, &arch).expect("load");
+
+        let dn_dims = integration_dn_dims(&cfg);
+        let attn_dims = integration_attn_dims(&cfg);
+        let kinds = layer_kinds(&arch);
+        let mut cache = crate::attention::qwen35_block::DeltaNetHybridCache::allocate(
+            &kinds,
+            attn_dims.kv_dim(),
+            dn_dims.d_conv,
+            dn_dims.conv_dim(),
+            dn_dims.head_v_dim,
+            dn_dims.n_v_heads,
+        );
+
+        let _ = crate::attention::qwen35_forward::qwen35_forward_step(
+            5, &w, &dn_dims, &attn_dims, &mut cache, 1e-6,
+        );
+        // The first linear layer's recurrent state should be off zero.
+        let mass_layer0_after_1: f32 = cache.dn_state.layers[0]
+            .as_ref()
+            .expect("linear layer 0 has dn_state")
+            .recurrent_state
+            .iter()
+            .map(|&v| v.abs())
+            .sum();
+        assert!(
+            mass_layer0_after_1 > 0.0,
+            "layer 0 recurrent_state should be non-zero after one step"
+        );
+
+        // Layer 1 (full-attn) should have no dn_state slot.
+        assert!(cache.dn_state.layers[1].is_none());
+
+        let _ = crate::attention::qwen35_forward::qwen35_forward_step(
+            7, &w, &dn_dims, &attn_dims, &mut cache, 1e-6,
+        );
+        let mass_layer0_after_2: f32 = cache.dn_state.layers[0]
+            .as_ref()
+            .unwrap()
+            .recurrent_state
+            .iter()
+            .map(|&v| v.abs())
+            .sum();
+        assert!(
+            mass_layer0_after_2 > 0.0,
+            "layer 0 recurrent_state still non-zero after second step"
+        );
+        assert!(
+            mass_layer0_after_2.is_finite(),
+            "recurrent_state must remain finite"
+        );
+    }
 }
