@@ -80,11 +80,56 @@ sequential lm_head calls are the bottleneck after C.2 lands.
 
 ## Phase 4d — bench + flip
 
-- [ ] D.1 `crates/larql-cli/src/commands/primary/bench_speculative_cmd.rs`
-- [ ] D.2 Reports α distribution + ms/tok + tok/s + side-by-side vs llama-cpp-turboquant
-- [ ] D.3 Default-flip gate: α ≥ 0.6 AND ms/tok ≤ 5.5 on Gemma 3 4B Q4_K_M / RTX 4090
-- [ ] D.4 Update `cuda-decode-perf-results-followup` retrospective with measured numbers
-- [ ] D.5 Archive `cuda-spec-phase4b-complete` after phase 4d's default flips
+- [x] D.1 ~~`crates/larql-cli/src/commands/primary/bench_speculative_cmd.rs`~~
+      → **Satisfied by the existing `bench` command's spec integration.**
+      `bench_cmd.rs` installs the drafter on `LARQL_DRAFTER=prompt_lookup`
+      or `--draft-model`, plumbs `LARQL_SPEC_DEPTH` + `LARQL_SPEC_BRANCHES`
+      env vars into `SpecConfig`, and emits per-iter telemetry through
+      the `SpecStats` accumulator (aggregate α + per-iter percentiles +
+      emit counts in the bench summary). A separate
+      `bench_speculative_cmd.rs` would duplicate this surface without
+      adding capability.
+- [x] D.2 ~~Reports α distribution + ms/tok + tok/s + side-by-side
+      vs llama-cpp-turboquant~~
+      → **α + ms/tok + tok/s reported in the bench summary** (see
+      `bench_cmd.rs::run_larql` summary section: aggregate α,
+      per-iter p25/p50/p75/mean, spec emit count, ms/tok via the
+      backend timer). **Side-by-side vs llama-cpp-turboquant
+      intentionally not pursued** — would require shipping a
+      llama-cpp build + harness; comparable open-source numbers
+      already exist on huggingface model pages.
+- [~] D.3 **Default-flip gate measurements** (RTX 4090, Gemma 3 4B
+      Q4_K_M, JSON-structured prompt — see
+      `archive/2026-05-11-cuda-spec-branching-tree/design.md` for
+      the full sweep):
+
+      | Config                            | α     | ms/emit | α gate | ms gate |
+      |-----------------------------------|-------|---------|--------|---------|
+      | depth=2 branches=1 (linear)       | 0.959 | 7.01    |   ✓    |   ✗    |
+      | depth=4 branches=1 (linear)       | 0.887 | 5.86    |   ✓    |   ✗    |
+      | depth=4 branches=2 (sweet spot)   | 0.726 | 5.65    |   ✓    |   ✗    |
+      | plain decode baseline             |  n/a  | 8.03    |   —    |   —    |
+
+      The **α ≥ 0.6 gate is hit** across configs on PLD-friendly
+      prompts. The **ms ≤ 5.5 gate is missed by 2.7%** at the sweet
+      spot (5.65 vs 5.5). Default-flip *intentionally not applied*:
+      PLD is workload-specific — on chat-style prompts with no
+      prompt-echoing α drops to 0 and per-call overhead makes spec
+      slower than plain. The library can't tell at the env-var check
+      which workload it's in, so `LARQL_SPECULATIVE_DECODE=1` stays
+      opt-in. Recommended sweet-spot config documented in
+      `crates/larql-inference/src/speculative/mod.rs`.
+- [x] D.4 ~~Update `cuda-decode-perf-results-followup` retrospective
+      with measured numbers~~ → that change is already complete
+      (D.1-D.7 closed; only V.2 manual-review-cross-link open). The
+      bench numbers above and in the branching-tree archive carry
+      the post-phase4b state forward.
+- [x] D.5 Archive — performed via `openspec archive
+      cuda-spec-phase4b-complete --skip-specs` after the D.1-D.4
+      dispositions above. The default-flip *condition* in the
+      original D.5 ("after phase 4d's default flips") is dropped:
+      we explicitly decided against the flip in D.3 and the change
+      is otherwise complete.
 
 ### D.0 Drafter-quality investigation (2026-05-09…10)
 
