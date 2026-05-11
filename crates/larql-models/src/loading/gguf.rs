@@ -449,6 +449,37 @@ impl GgufFile {
             config[HF_VOCAB_SIZE] = serde_json::json!(vocab_size);
         }
 
+        // ── Qwen 3.6 hybrid metadata flow-through ──
+        // Forward the SSM / DeltaNet keys + multi-section RoPE
+        // partition so they round-trip into ModelConfig +
+        // VindexModelConfig.
+        if let Some(v) = get_arch_u32_opt(GGUF_FULL_ATTENTION_INTERVAL) {
+            config["full_attention_interval"] = serde_json::json!(v);
+        }
+        if let Some(v) = get_arch_u32_opt(GGUF_SSM_STATE_SIZE) {
+            config["ssm_state_size"] = serde_json::json!(v);
+        }
+        if let Some(v) = get_arch_u32_opt(GGUF_SSM_INNER_SIZE) {
+            config["ssm_inner_size"] = serde_json::json!(v);
+        }
+        if let Some(v) = get_arch_u32_opt(GGUF_SSM_DT_RANK) {
+            config["ssm_dt_rank"] = serde_json::json!(v);
+        }
+        if let Some(v) = get_arch_u32_opt(GGUF_SSM_GROUP_COUNT) {
+            config["ssm_group_count"] = serde_json::json!(v);
+        }
+        if let Some(v) = get_arch_u32_opt(GGUF_SSM_CONV_KERNEL) {
+            config["ssm_conv_kernel"] = serde_json::json!(v);
+        }
+        // rope.dimension_sections is a u32 array in GGUF metadata.
+        let sections_key = format!("{prefix}{GGUF_ROPE_DIMENSION_SECTIONS}");
+        if let Some(GgufValue::Array(arr)) = self.metadata.get(&sections_key) {
+            let sections: Vec<u32> = arr.iter().filter_map(|v| v.as_u32()).collect();
+            if !sections.is_empty() {
+                config["rope_dimension_sections"] = serde_json::json!(sections);
+            }
+        }
+
         config
     }
 }

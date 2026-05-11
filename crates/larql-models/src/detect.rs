@@ -13,6 +13,7 @@ use crate::architectures::llama::LlamaArch;
 use crate::architectures::mistral::MistralArch;
 use crate::architectures::mixtral::MixtralArch;
 use crate::architectures::qwen::QwenArch;
+use crate::architectures::qwen35::{Qwen35Arch, Qwen35MoeArch};
 use crate::architectures::starcoder2::StarCoder2Arch;
 use crate::architectures::tinymodel::TinyModelArch;
 use crate::config::{ModelArchitecture, ModelConfig, RopeScaling};
@@ -83,6 +84,11 @@ pub fn detect_from_json(config: &serde_json::Value) -> Box<dyn ModelArchitecture
         "mixtral" => Box::new(MixtralArch::from_config(model_config)),
         // GPT-OSS (MoE, MXFP4 packed experts)
         "gpt_oss" => Box::new(GptOssArch::from_config(model_config)),
+        // Qwen 3.6 hybrid Gated DeltaNet + attention (must come before
+        // the generic `qwen` prefix match below or it'd be misrouted to
+        // `QwenArch`).
+        "qwen35moe" => Box::new(Qwen35MoeArch::from_config(model_config)),
+        "qwen35" => Box::new(Qwen35Arch::from_config(model_config)),
         // Qwen family (dense and MoE share same keys)
         t if t.starts_with("qwen") => Box::new(QwenArch::from_config(model_config)),
         // DeepSeek family (MoE + MLA)
@@ -268,6 +274,27 @@ fn parse_model_config(config: &serde_json::Value) -> ModelConfig {
         .map(|v| v as usize)
         .filter(|&v| v > 0);
 
+    // ── Hybrid Gated DeltaNet + attention (Qwen 3.6) ──
+    // Both the GGUF `to_config_json` mapper and any future
+    // safetensors-side config emit these at the top-level / under
+    // text_config; we check both and prefer text_config.
+    let full_attention_interval = text_config["full_attention_interval"]
+        .as_u64()
+        .map(|v| v as usize);
+    let ssm_state_size = text_config["ssm_state_size"].as_u64().map(|v| v as usize);
+    let ssm_inner_size = text_config["ssm_inner_size"].as_u64().map(|v| v as usize);
+    let ssm_dt_rank = text_config["ssm_dt_rank"].as_u64().map(|v| v as usize);
+    let ssm_group_count = text_config["ssm_group_count"].as_u64().map(|v| v as usize);
+    let ssm_conv_kernel = text_config["ssm_conv_kernel"].as_u64().map(|v| v as usize);
+    let rope_dimension_sections = text_config["rope_dimension_sections"]
+        .as_array()
+        .map(|arr| {
+            arr.iter()
+                .filter_map(|v| v.as_u64().map(|x| x as usize))
+                .collect::<Vec<_>>()
+        })
+        .filter(|v| !v.is_empty());
+
     ModelConfig {
         model_type,
         num_layers,
@@ -304,6 +331,13 @@ fn parse_model_config(config: &serde_json::Value) -> ModelConfig {
         enable_moe_block,
         top_k_experts,
         moe_intermediate_size,
+        full_attention_interval,
+        ssm_state_size,
+        ssm_inner_size,
+        ssm_dt_rank,
+        ssm_group_count,
+        ssm_conv_kernel,
+        rope_dimension_sections,
     }
 }
 
@@ -573,6 +607,92 @@ mod tests {
             arch.expert_ffn_down_key(0, 5).unwrap(),
             "layers.0.mlp.experts.5.down_proj.weight"
         );
+    }
+
+    #[test]
+    fn test_detect_qwen35_routes_to_qwen35_arch() {
+        // Matches GGUF metadata for unsloth/Qwen3.6-27B-GGUF
+        // (after `to_config_json` normalises `qwen35.*` keys).
+        let config = serde_json::json!({
+            "model_type": "qwen35",
+            "hidden_size": 5120,
+            "intermediate_size": 17408,
+            "num_hidden_layers": 64,
+            "num_attention_heads": 24,
+            "num_key_value_heads": 4,
+            "head_dim": 256,
+            "rope_theta": 10_000_000.0,
+            "vocab_size": 262144,
+            "full_attention_interval": 4,
+            "ssm_state_size": 128,
+            "ssm_inner_size": 6144,
+            "ssm_dt_rank": 48,
+            "ssm_group_count": 16,
+            "ssm_conv_kernel": 4,
+            "rope_dimension_sections": [16, 24, 24, 0],
+        });
+
+        let arch = detect_from_json(&config);
+        assert_eq!(arch.family(), "qwen35");
+        assert_eq!(arch.full_attention_interval(), 4);
+        assert_eq!(arch.ssm_state_size(), 128);
+        assert!(arch.is_linear_attention_layer(0));
+        assert!(!arch.is_linear_attention_layer(3));
+        assert!(arch.has_post_norms());
+        // Tensor key shape for a linear layer.
+        assert_eq!(arch.attn_qkv_key(0).unwrap(), "layers.0.attn_qkv.weight");
+    }
+
+    #[test]
+    fn test_detect_qwen35moe_routes_to_qwen35moe_arch() {
+        // Matches GGUF metadata for unsloth/Qwen3.6-35B-A3B-GGUF.
+        let config = serde_json::json!({
+            "model_type": "qwen35moe",
+            "hidden_size": 4096,
+            "intermediate_size": 4096,
+            "num_hidden_layers": 40,
+            "num_attention_heads": 16,
+            "num_key_value_heads": 2,
+            "head_dim": 256,
+            "vocab_size": 262144,
+            "full_attention_interval": 4,
+            "ssm_state_size": 128,
+            "ssm_inner_size": 4096,
+            "ssm_dt_rank": 32,
+            "ssm_group_count": 16,
+            "ssm_conv_kernel": 4,
+            "num_experts": 256,
+            "num_experts_per_tok": 8,
+            "moe_intermediate_size": 512,
+        });
+
+        let arch = detect_from_json(&config);
+        assert_eq!(arch.family(), "qwen35moe");
+        assert!(arch.is_moe());
+        assert_eq!(arch.num_experts(), 256);
+        assert_eq!(arch.num_experts_per_token(), 8);
+        assert!(arch.is_linear_attention_layer(0));
+        assert!(!arch.is_linear_attention_layer(3));
+        assert_eq!(arch.moe_router_key(0).unwrap(), "layers.0.mlp.gate.weight");
+    }
+
+    #[test]
+    fn test_detect_qwen3_still_routes_to_qwen_arch() {
+        // Regression: the explicit `qwen35`/`qwen35moe` arms must
+        // not steal qwen3/qwen3_moe routing.
+        let config = serde_json::json!({
+            "model_type": "qwen3",
+            "hidden_size": 2048,
+            "intermediate_size": 6144,
+            "num_hidden_layers": 28,
+            "num_attention_heads": 16,
+            "num_key_value_heads": 8,
+        });
+        let arch = detect_from_json(&config);
+        assert_eq!(arch.family(), "qwen3");
+        // QwenArch defaults: no hybrid routing.
+        assert!(!arch.is_linear_attention_layer(0));
+        assert_eq!(arch.full_attention_interval(), 0);
     }
 
     #[test]
