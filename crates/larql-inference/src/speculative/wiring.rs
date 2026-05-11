@@ -598,8 +598,13 @@ fn compute_full_vocab_probs_batched(
         }
     }
 
-    // 2. Single batched Q4_K matmul → all M × vocab logits in one call.
-    let logits_flat: Vec<f32> = if backend.has_q4() {
+    // 2. Fused GEMM + softmax (`q4k_matmul_softmax`) — keeps logits
+    //    device-resident between the matmul and softmax kernels,
+    //    skipping a 4 MB f32 dtoh+htod round-trip. Falls back to the
+    //    separate calls (and CPU softmax if both are unavailable).
+    let inv_scale = 1.0 / logits_scale;
+    let softcap_f = final_softcap.unwrap_or(0.0);
+    let probs_flat: Vec<f32> = if backend.has_q4() {
         let q4_bytes: Option<&[u8]> = index
             .projections
             .lm_head_q4_mmap
@@ -613,20 +618,45 @@ fn compute_full_vocab_probs_batched(
                     .map(|v| v.as_slice())
             });
         match q4_bytes {
-            Some(q4) => match backend.q4k_matmul(q4, &h_normed, vocab, hidden, m) {
-                Some(logits) if logits.len() == m * vocab => logits,
+            Some(q4) => match backend
+                .q4k_matmul_softmax(q4, &h_normed, vocab, hidden, m, inv_scale, softcap_f)
+            {
+                Some(probs) if probs.len() == m * vocab => probs,
                 _ => {
-                    // Fallback: per-row matvec when batched kernel rejects shape.
-                    let mut all = Vec::with_capacity(m * vocab);
-                    for row in 0..m {
-                        let xr = &h_normed[row * hidden..(row + 1) * hidden];
-                        let scores = backend.q4k_matvec(q4, xr, vocab, hidden)?;
-                        if scores.len() != vocab {
-                            return None;
-                        }
-                        all.extend_from_slice(&scores);
+                    // Backend doesn't have a fused path or matmul rejected
+                    // the shape — fall back to separate GEMM + softmax,
+                    // optionally CPU softmax if backend has no softmax.
+                    let mut logits = backend.q4k_matmul(q4, &h_normed, vocab, hidden, m)?;
+                    if logits.len() != m * vocab {
+                        return None;
                     }
-                    all
+                    if backend
+                        .softmax_inplace_batched(&mut logits, m, vocab, inv_scale, softcap_f)
+                        .is_none()
+                    {
+                        // CPU softmax fallback.
+                        for row in 0..m {
+                            let raw = &mut logits[row * vocab..(row + 1) * vocab];
+                            for v in raw.iter_mut() {
+                                let mut l = *v * inv_scale;
+                                if let Some(cap) = final_softcap {
+                                    l = (l / cap).tanh() * cap;
+                                }
+                                *v = l;
+                            }
+                            let max_logit =
+                                raw.iter().copied().fold(f32::NEG_INFINITY, f32::max);
+                            let exp_sum: f64 =
+                                raw.iter().map(|l| ((l - max_logit) as f64).exp()).sum();
+                            if exp_sum <= 0.0 {
+                                return None;
+                            }
+                            for v in raw.iter_mut() {
+                                *v = (((*v - max_logit) as f64).exp() / exp_sum) as f32;
+                            }
+                        }
+                    }
+                    logits
                 }
             },
             None => return None,
@@ -635,31 +665,9 @@ fn compute_full_vocab_probs_batched(
         return None;
     };
 
-    // 3. Per-row scale + softcap + softmax.
-    let inv_scale = 1.0 / logits_scale;
     let mut probs: Vec<Vec<f32>> = Vec::with_capacity(m);
     for row in 0..m {
-        let raw = &logits_flat[row * vocab..(row + 1) * vocab];
-        let scaled: Vec<f32> = raw
-            .iter()
-            .map(|&v| {
-                let mut l = v * inv_scale;
-                if let Some(cap) = final_softcap {
-                    l = (l / cap).tanh() * cap;
-                }
-                l
-            })
-            .collect();
-        let max_logit = scaled.iter().copied().fold(f32::NEG_INFINITY, f32::max);
-        let exp_sum: f64 = scaled.iter().map(|l| ((l - max_logit) as f64).exp()).sum();
-        if exp_sum <= 0.0 {
-            return None;
-        }
-        let p: Vec<f32> = scaled
-            .iter()
-            .map(|l| (((l - max_logit) as f64).exp() / exp_sum) as f32)
-            .collect();
-        probs.push(p);
+        probs.push(probs_flat[row * vocab..(row + 1) * vocab].to_vec());
     }
     Some(probs)
 }

@@ -233,6 +233,151 @@ Next bottlenecks (in order of remaining cost):
 - 18 ms forward kernel compute itself — the GEMM is what it is; no
   win without different precision or sparsity.
 
+### D.0.3 GPU softmax for spec verify lm_head (2026-05-10)
+
+Surprise finding: the "21 ms lm_head GEMM" was actually ~5 ms GEMM
+plus **~16 ms CPU scalar softmax** at vocab=262144 × m=4 rows. The
+per-element `f32::exp` + `f32::tanh` calls in the host softmax loop
+were the dominant cost, not the cuBLAS hgemm.
+
+Fix: added `softmax_inplace_batched` to the `QuantMatVec` backend
+trait and overrode it on `CudaBackend` to dispatch to the existing
+`scaled_softmax` CUDA kernel (was already used by attention). The
+kernel fuses scale + softcap + per-row max + exp + sum + normalize
+in three passes with shared-memory reductions.
+
+Measured impact (RTX 4090, Gemma 3 4B Q4_K_M, depth=4, α=0.83,
+translation-echo prompt, 3-run median):
+
+| Path | lmh_total | iter total | ms/tok |
+|---|---|---|---|
+| Pre-#37 (CPU softmax)                | 21.0 ms | 46.3 | 29.38 |
+| #37 GPU softmax                      | 4.7 ms  | 28.3 | **21.78** |
+| **Improvement**                      | -77%    | -39% | **-26%** |
+
+This is the biggest single win in the spec perf chain so far —
+~4.5× speedup on the lm_head step. Cumulative from baseline:
+
+| | ms/tok | Improvement |
+|---|---|---|
+| Baseline (sequential lm_head, CPU softmax)  | 31.13 | — |
+| #35 (batched lm_head)                       | 29.66 | -4.7% |
+| #36 (CUDA Graphs A+B+C)                     | 29.38 | -5.6% |
+| **#37 (GPU softmax)**                       | **21.78** | **-30%** |
+| Plain decode floor                          | 7.34  | (4.6× of plain) |
+
+Surprisingly large win because:
+- `f32::exp` is a slow libm call (~30-50 ns per element).
+- vocab=262144 × m=4 rows = 1M exp calls per iter → ~30-50 ms naive.
+- Even with -O3 vectorisation, scalar `f32::exp` doesn't auto-vectorise
+  well — the bench was seeing ~16 ms for the loop.
+- The GPU `scaled_softmax` kernel does the same work in ~0.5-1 ms
+  including htod/dtoh.
+
+This makes the lm_head step competitive with plain decode's
+`lm_head_topk` (~1.3 ms per token). The next bottlenecks:
+- 18 ms forward kernel compute — needs precision/sparsity changes.
+- 6.5 ms bonus decode — defer into next iter's spec batch.
+
+Spec at 21.78 ms/tok vs plain at 7.34 ms/tok means spec is still
+**~3× slower than plain decode** end-to-end. The D.3 perf flip gate
+(≤1.6× plain decode = ≤11.7 ms/tok) is no longer hopeless but still
+out of reach. Two more changes could plausibly close most of the gap:
+- Deferred bonus (~14% iter savings) → ~18.7 ms/tok (2.5× plain).
+- Mixed-precision lm_head via `cublasGemmEx` → another ~1-2 ms saved.
+- Combined: ~17 ms/tok (~2.3× plain).
+
+### D.0.4 Depth-2 is the sweet spot (2026-05-10)
+
+With the GPU softmax landed in #37, depth-2 is now the wall-clock
+optimum. Earlier depth sweeps (D.0 / phase 4d) preferred depth=4
+because the CPU softmax cost was amortised across more drafts; with
+softmax now 4×-faster, the depth=4 forward overhead dominates.
+
+Depth sweep on RTX 4090, Gemma 3 4B Q4_K_M, translation-echo prompt,
+`--tokens 64`:
+
+| Depth | α      | ms/tok | Vs plain (7.53) | Per-iter fwd |
+|-------|--------|--------|----------------|---------------|
+| 2     | 0.855  | **18.38** | 2.44×       | 12.5 ms       |
+| 3     | 0.839  | 21.41  | 2.84×          | ~15 ms        |
+| 4     | 0.829  | 21.87  | 2.91×          | 18.0 ms       |
+
+The `bench_cmd.rs` already defaults to depth=2 when
+`LARQL_SPEC_DEPTH` isn't set, so this is the actual user experience.
+
+Per-iter cost breakdown at depth=2 (α=0.855):
+- Forward (2 tokens batched): 12.5 ms (52%)
+- lm_head + softmax: 4.2 ms (17%)
+- verify_tree: 0.7 ms (3%)
+- Bonus decode: 6.4 ms (26%)
+- **Iter total: 24 ms / ~2.7 emits = 8.9 ms per emit**
+
+To hit the D.3 perf-flip gate (≤1.6× plain = ≤11.7 ms/tok wall-clock),
+the iter cost would need to drop to ~13 ms (~6 ms less per iter).
+The largest remaining levers are:
+- Forward kernel compute (12.5 ms) — already at theoretical for the
+  GEMM shapes; no easy win.
+- Bonus decode (6.4 ms) — same speed as plain decode; would need to
+  defer K/V write into next iter's spec batch (architectural change,
+  loses picked_id amortisation in naive form).
+- Branching tree (depth=2 branches=2 = 7 nodes) — could yield more
+  emits per iter, but requires PLD to propose multiple chains and a
+  branching keep-cache helper. Substantial refactor.
+
+### Cumulative perf story (2026-05-09…10)
+
+| | ms/tok | Δ from prev | Total Δ |
+|---|---|---|---|
+| Session start (depth=2, CPU softmax)        | 31.13 |    —   |    —    |
+| #35 batched lm_head                         | 29.66 | -4.7%  | -4.7%   |
+| #36 CUDA Graphs A+B+C                       | 29.38 | -0.9%  | -5.6%   |
+| **#37 GPU softmax**                         | **21.78** | -26%   | **-30%** |
+| #37 + fused GEMM+softmax                    | 18.15 | -17%   | **-42%** |
+| (depth=2 default vs older depth=4 baseline) | 18.15 |   —   | **-42%** |
+| Plain decode floor                          | 7.53  |        | 2.41× spec |
+
+The single biggest contributor was #37 (GPU softmax) — a 26% wall-
+clock improvement from moving the per-row scalar `f32::exp` loop to
+the existing `scaled_softmax` CUDA kernel. The CUDA Graphs work in
+#36 contributed ~1% wall-clock; most of its theoretical benefit was
+eaten by modern CUDA 12+ driver having already amortised launch
+overhead to ~1 µs per kernel.
+
+### Out-of-scope levers for future work
+
+After this session's wins, remaining gap (18.15 → 11.7 ms/tok for the
+D.3 perf-flip gate) requires architectural changes:
+
+- **Branching trees (depth=2 branches=2 → 7-node tree)**: more emits
+  per spec iter via parallel chain verification. Blocked on:
+  - PLD must produce multiple n-gram matches as branches (small change).
+  - Spec scratch + graph capture path currently linear-chain-only;
+    needs branching-tree variant (~200 LoC).
+  - **Tree-aware attention mask**: position k attends only to its
+    ancestors in the tree, not siblings. Current `fused_prefill_attn`
+    is purely causal (each position attends to all earlier positions),
+    which is wrong for non-root branch positions. Requires a new
+    `fused_prefill_attn_tree_mask` kernel (~150 LoC of CUDA).
+  - Total estimated effort: 400-600 LoC, multi-day.
+
+- **Deferred bonus into next iter's spec batch**: skips the per-iter
+  bonus decode_token (5.6 ms) by including the previous-iter's bonus
+  as the first position of the next iter's spec batch. Spec forward
+  grows from M=depth to M=depth+1, adding ~3-4 ms; net savings ~2 ms.
+  Requires:
+  - Carry `pending_bonus_id` between iters (thread-local).
+  - Special-case position-0 of spec forward (no verify since bonus is
+    already accepted by previous iter).
+  - Handle the first iter (no pending bonus) and the last iter (EOS
+    flush) corner cases.
+  - Estimated effort: 200-300 LoC, moderate refactor risk.
+
+- **Mixed-precision lm_head via cublasGemmEx**: skip 2-4 f32↔f16
+  conversion kernels by letting cuBLAS do the conversion internally.
+  Modest gain (~1-2 ms saved) at moderate refactor cost. Lower
+  priority than the two above.
+
 ## Validation (this PR)
 
 - [x] V.1 `openspec validate cuda-spec-phase4b-complete --strict` passes

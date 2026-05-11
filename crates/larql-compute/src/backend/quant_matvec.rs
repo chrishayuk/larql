@@ -254,4 +254,50 @@ pub trait QuantMatVec {
     fn has_q4(&self) -> bool {
         false
     }
+
+    /// Batched in-place row-wise softmax with optional pre-scale and
+    /// softcap. Applies, for each row `r ∈ [0, n_rows)`:
+    /// 1. `x[r, j] *= scale` for all `j ∈ [0, n_cols)`.
+    /// 2. if `softcap > 0`: `x[r, j] = softcap * tanh(x[r, j] / softcap)`.
+    /// 3. `x[r, j] = exp(x[r, j] - max(x[r, :])) / sum(exp(x[r, :] - max))`.
+    ///
+    /// Used by speculative decode's `compute_full_vocab_probs_batched`
+    /// to skip the CPU-side scalar softmax (which dominates the spec
+    /// verify path at vocab=262144 × 4 rows). CUDA backend overrides
+    /// with the on-device `scaled_softmax` kernel; default returns
+    /// `None` so callers can fall back to a CPU loop.
+    fn softmax_inplace_batched(
+        &self,
+        _x: &mut [f32],
+        _n_rows: usize,
+        _n_cols: usize,
+        _scale: f32,
+        _softcap: f32,
+    ) -> Option<()> {
+        None
+    }
+
+    /// Fused Q4_K matmul + scale + softcap + softmax for the spec verify
+    /// lm_head step. Equivalent to calling
+    /// [`q4k_matmul`](Self::q4k_matmul) followed by
+    /// [`softmax_inplace_batched`](Self::softmax_inplace_batched) but
+    /// keeps the logits device-resident between the two — saves the
+    /// 4 MB f32 dtoh+htod round-trip at vocab=262144, m=4.
+    ///
+    /// Returns `m * num_rows` f32 probs row-major, or `None` if any
+    /// step fails. Default falls back to the separate calls.
+    fn q4k_matmul_softmax(
+        &self,
+        q4k_data: &[u8],
+        x: &[f32],
+        num_rows: usize,
+        hidden: usize,
+        seq_len: usize,
+        scale: f32,
+        softcap: f32,
+    ) -> Option<Vec<f32>> {
+        let mut logits = self.q4k_matmul(q4k_data, x, num_rows, hidden, seq_len)?;
+        self.softmax_inplace_batched(&mut logits, seq_len, num_rows, scale, softcap)?;
+        Some(logits)
+    }
 }

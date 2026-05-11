@@ -158,4 +158,92 @@ impl QuantMatVec for CudaBackend {
         }
         Some(out)
     }
+
+    /// `cuda-spec-lmh-softmax`: GPU-side batched softmax with scale +
+    /// softcap. Wraps the existing `scaled_softmax` kernel
+    /// (cuda/attn.rs) plus host↔device transfer. Replaces the per-row
+    /// CPU softmax in `compute_full_vocab_probs_batched`, which at
+    /// vocab=262144 × 4 rows was the dominant cost in the spec verify
+    /// lm_head step (~10-15 ms/iter on Gemma 3 4B).
+    fn softmax_inplace_batched(
+        &self,
+        x: &mut [f32],
+        n_rows: usize,
+        n_cols: usize,
+        scale: f32,
+        softcap: f32,
+    ) -> Option<()> {
+        if x.len() != n_rows * n_cols || n_rows == 0 || n_cols == 0 {
+            return None;
+        }
+        let drv = self.driver();
+        let mut x_dev = self.htod_f32(x).ok()?;
+        super::attn::softmax_inplace(
+            drv,
+            &mut x_dev,
+            n_rows,
+            n_cols,
+            scale,
+            super::attn::AttentionOpts {
+                causal: false,
+                softcap,
+            },
+        )
+        .ok()?;
+        let result = self.dtoh_f32(&x_dev).ok()?;
+        x.copy_from_slice(&result);
+        Some(())
+    }
+
+    /// `cuda-spec-lmh-fused`: GEMM + scale + softcap + softmax all
+    /// device-resident. Eliminates the 4 MB dtoh+htod round-trip of
+    /// logits between the matmul and the softmax kernels.
+    fn q4k_matmul_softmax(
+        &self,
+        q4k_data: &[u8],
+        x: &[f32],
+        num_rows: usize,
+        hidden: usize,
+        seq_len: usize,
+        scale: f32,
+        softcap: f32,
+    ) -> Option<Vec<f32>> {
+        if seq_len == 0 || x.len() != seq_len * hidden {
+            return None;
+        }
+
+        // Reuse the existing GEMM dispatch logic by routing through
+        // `gemm_proj_seq` (device-resident output) when seq_len > 1.
+        // For seq_len == 1 we fall back to per-row q4k_matvec via
+        // q4k_matmul + the standard softmax path — at M=1 the direct
+        // mmvq kernel beats cuBLAS hgemm so we don't want to force
+        // the GEMM path here.
+        if seq_len == 1 {
+            let mut logits = self.q4k_matmul(q4k_data, x, num_rows, hidden, seq_len)?;
+            self.softmax_inplace_batched(&mut logits, seq_len, num_rows, scale, softcap)?;
+            return Some(logits);
+        }
+
+        use crate::{QuantFormat, QuantWeight};
+        let weight = QuantWeight {
+            data: q4k_data,
+            scales: None,
+            format: QuantFormat::Q4_K,
+        };
+        let x_dev = self.htod_f32(x).ok()?;
+        let mut logits_dev = self.gemm_proj_seq(weight, &x_dev, seq_len, num_rows, hidden)?;
+        super::attn::softmax_inplace(
+            self.driver(),
+            &mut logits_dev,
+            seq_len,
+            num_rows,
+            scale,
+            super::attn::AttentionOpts {
+                causal: false,
+                softcap,
+            },
+        )
+        .ok()?;
+        self.dtoh_f32(&logits_dev).ok()
+    }
 }
