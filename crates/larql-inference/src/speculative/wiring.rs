@@ -350,11 +350,23 @@ pub fn try_thread_speculative_step_v3(
             return None;
         }
         drafter.seed_history(history);
-        let drafts = drafter.propose(&[], depth);
-        if drafts.is_empty() {
-            return None;
-        }
-        let tree = build_linear_tree(&drafts);
+        // `cuda-spec-branching-tree` T3.4: when cfg.branches > 1, ask
+        // the drafter for a tree of parallel chains. The drafter
+        // returns a linear DraftTree if it has only one match (i.e.
+        // PLD-tree at branches=2 degrades on non-repetitive prompts),
+        // so this is purely additive — never slower than linear.
+        let tree = if cfg.branches > 1 {
+            match drafter.propose_tree(&[], depth, cfg.branches) {
+                Some(t) => t,
+                None => return None,
+            }
+        } else {
+            let drafts = drafter.propose(&[], depth);
+            if drafts.is_empty() {
+                return None;
+            }
+            build_linear_tree(&drafts)
+        };
 
         let arch = &*weights.arch;
         let final_norm = weights.tensors.get(arch.final_norm_key());
@@ -524,9 +536,20 @@ pub fn try_thread_speculative_step_v3(
         drafter.accept(&emitted);
 
         if trace {
+            // `cuda-spec-branching-tree` T4.1: include tree shape so
+            // bench traces show when the drafter is branching. Linear
+            // = single root-to-leaf path (most_likely path covers
+            // every node); else branching with the node count.
+            let n_paths = tree.root_to_leaf_paths().len();
+            let shape = if n_paths <= 1 {
+                "linear".to_string()
+            } else {
+                format!("branching({n_paths} paths)")
+            };
             eprintln!(
-                "[spec_iter] depth={} accepted={} fwd_no_lmh={:?} lmh_total={:?} ({} calls) verify={:?} bonus={:?} total={:?}",
-                drafts.len(),
+                "[spec_iter] depth={} shape={} accepted={} fwd_no_lmh={:?} lmh_total={:?} ({} calls) verify={:?} bonus={:?} total={:?}",
+                tree.len(),
+                shape,
                 r_accepted,
                 t_fwd_only,
                 t_lmh,
@@ -540,7 +563,7 @@ pub fn try_thread_speculative_step_v3(
         // Telemetry: record this iter's draft + accept counts if a
         // stats accumulator is installed via `set_thread_spec_stats`.
         // No-op when unset (default).
-        let n_drafts = drafts.len();
+        let n_drafts = tree.len();
         THREAD_SPEC_STATS.with(|cell| {
             if let Some(stats) = cell.borrow_mut().as_mut() {
                 stats.iter_n_drafts.push(n_drafts);
@@ -644,8 +667,7 @@ fn compute_full_vocab_probs_batched(
                                 }
                                 *v = l;
                             }
-                            let max_logit =
-                                raw.iter().copied().fold(f32::NEG_INFINITY, f32::max);
+                            let max_logit = raw.iter().copied().fold(f32::NEG_INFINITY, f32::max);
                             let exp_sum: f64 =
                                 raw.iter().map(|l| ((l - max_logit) as f64).exp()).sum();
                             if exp_sum <= 0.0 {

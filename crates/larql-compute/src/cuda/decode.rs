@@ -978,6 +978,88 @@ impl DecodeBackend for CudaBackend {
         }
         Some(hiddens)
     }
+
+    /// `cuda-spec-branching-tree` T3.2 CUDA override: dispatch the
+    /// tree-mask seq_device path for branching draft trees. Returns
+    /// `None` (caller falls back to per-node) if the tree exceeds the
+    /// kernel's 64-node cap or the GEMM-required quant rules aren't
+    /// met, mirroring the linear-chain eligibility gate.
+    #[allow(clippy::too_many_arguments)]
+    fn decode_tokens_speculative_tree_keep_cache(
+        &self,
+        layers: &[FullPipelineLayer<'_>],
+        x_per_node: &[Vec<f32>],
+        ancestors: &[u64],
+        hidden: usize,
+        inter: usize,
+        q_dim: usize,
+        kv_dim: usize,
+        num_q_heads: usize,
+        num_kv_heads: usize,
+        head_dim: usize,
+        rope_base: f32,
+    ) -> Option<Vec<Vec<f32>>> {
+        if !self.has_kv_cache() {
+            return None;
+        }
+        let n = x_per_node.len();
+        if n == 0 || n > 64 || n != ancestors.len() {
+            return None;
+        }
+        if x_per_node.iter().any(|x| x.len() != hidden) {
+            return None;
+        }
+
+        // Same quant-format eligibility gate as the linear path —
+        // outside it, fall back to per-node so a layer-mix doesn't
+        // panic deep in the seq kernel.
+        let all_supported = layers.iter().all(|l| {
+            l.norm_type == NormType::RmsNorm
+                && l.ffn_type == FfnType::Gated
+                && l.moe.is_none()
+                && !l.ffn_is_remote
+                && matches!(l.wq.format, QuantFormat::Q4_K | QuantFormat::Q6_K)
+                && matches!(l.wk.format, QuantFormat::Q4_K | QuantFormat::Q6_K)
+                && matches!(l.wv.format, QuantFormat::Q4_K | QuantFormat::Q6_K)
+                && matches!(l.wo.format, QuantFormat::Q4_K | QuantFormat::Q6_K)
+                && matches!(l.gate.format, QuantFormat::Q4_K | QuantFormat::Q6_K)
+                && matches!(l.up.format, QuantFormat::Q4_K | QuantFormat::Q6_K)
+                && matches!(l.down.format, QuantFormat::Q4_K | QuantFormat::Q6_K)
+        });
+        if !all_supported {
+            return None;
+        }
+
+        let pre_len = self.kv_cache_len();
+        let mut x_flat: Vec<f32> = Vec::with_capacity(n * hidden);
+        for x in x_per_node {
+            x_flat.extend_from_slice(x);
+        }
+        let h_flat = self.decode_tokens_speculative_tree_seq_device(
+            layers,
+            &x_flat,
+            hidden,
+            inter,
+            q_dim,
+            kv_dim,
+            n,
+            num_q_heads,
+            num_kv_heads,
+            head_dim,
+            rope_base,
+            pre_len,
+            ancestors,
+        )?;
+        if h_flat.len() != n * hidden {
+            self.truncate_kv_cache(pre_len);
+            return None;
+        }
+        let mut hiddens = Vec::with_capacity(n);
+        for i in 0..n {
+            hiddens.push(h_flat[i * hidden..(i + 1) * hidden].to_vec());
+        }
+        Some(hiddens)
+    }
 }
 
 impl CudaBackend {
@@ -2655,6 +2737,90 @@ impl CudaBackend {
         rope_base: f32,
         base_pos: usize,
     ) -> Option<Vec<f32>> {
+        self.decode_tokens_speculative_seq_device_inner(
+            layers,
+            x,
+            hidden,
+            inter,
+            q_dim,
+            _kv_dim,
+            seq_len,
+            num_q_heads,
+            num_kv_heads,
+            head_dim,
+            rope_base,
+            base_pos,
+            None,
+        )
+    }
+
+    /// `cuda-spec-branching-tree` T3.2: tree-shaped variant of
+    /// [`decode_tokens_speculative_seq_device`]. Processes a flattened
+    /// `[seq_len, hidden]` tree input plus a per-node ancestor bitset
+    /// array. Internally dispatches the tree-mask attention kernel and
+    /// uses a distinct scratch + graph cache keyed by
+    /// `SpecScratchKey::tree(seq_len, shape)`.
+    ///
+    /// `ancestors[n]` SHALL be the u64 bitset returned by
+    /// `DraftTree::ancestor_bitsets()`. `ancestors.len() == seq_len`.
+    ///
+    /// On any tree-kernel error the caller SHOULD fall back to the
+    /// per-node `target_forward_via_speculative_decode_per_node` path
+    /// (the conservative fallback preserved across this change).
+    #[allow(clippy::too_many_arguments)]
+    pub(crate) fn decode_tokens_speculative_tree_seq_device(
+        &self,
+        layers: &[FullPipelineLayer<'_>],
+        x: &[f32],
+        hidden: usize,
+        inter: usize,
+        q_dim: usize,
+        kv_dim: usize,
+        seq_len: usize,
+        num_q_heads: usize,
+        num_kv_heads: usize,
+        head_dim: usize,
+        rope_base: f32,
+        base_pos: usize,
+        ancestors: &[u64],
+    ) -> Option<Vec<f32>> {
+        if ancestors.len() != seq_len {
+            return None;
+        }
+        self.decode_tokens_speculative_seq_device_inner(
+            layers,
+            x,
+            hidden,
+            inter,
+            q_dim,
+            kv_dim,
+            seq_len,
+            num_q_heads,
+            num_kv_heads,
+            head_dim,
+            rope_base,
+            base_pos,
+            Some(ancestors),
+        )
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    fn decode_tokens_speculative_seq_device_inner(
+        &self,
+        layers: &[FullPipelineLayer<'_>],
+        x: &[f32],
+        hidden: usize,
+        inter: usize,
+        q_dim: usize,
+        _kv_dim: usize,
+        seq_len: usize,
+        num_q_heads: usize,
+        num_kv_heads: usize,
+        head_dim: usize,
+        rope_base: f32,
+        base_pos: usize,
+        tree_ancestors: Option<&[u64]>,
+    ) -> Option<Vec<f32>> {
         if x.len() != seq_len * hidden || layers.is_empty() || seq_len == 0 {
             return None;
         }
@@ -2704,7 +2870,14 @@ impl CudaBackend {
                 rope_base,
                 base_pos,
                 cache,
+                tree_ancestors,
             );
+        }
+        // Tree-mode without scratch is unsupported — the legacy
+        // (non-scratch) path below uses the causal kernel only. Caller
+        // SHOULD have LARQL_CUDA_SPEC_SCRATCH on (default).
+        if tree_ancestors.is_some() {
+            return None;
         }
 
         let mut h_seq = self.htod_f32(x).ok()?;
@@ -2912,8 +3085,9 @@ impl CudaBackend {
         rope_base: f32,
         base_pos: usize,
         cache: &mut CudaKvCache,
+        tree_ancestors: Option<&[u64]>,
     ) -> Option<Vec<f32>> {
-        use super::scratch::{DecodeScratchShape, SpecDecodeScratch};
+        use super::scratch::{DecodeScratchShape, SpecDecodeScratch, SpecScratchKey};
 
         let shape = DecodeScratchShape {
             hidden,
@@ -2922,7 +3096,12 @@ impl CudaBackend {
             inter,
             head_dim,
         };
-        let key = (seq_len, shape);
+        let is_tree = tree_ancestors.is_some();
+        let key = if is_tree {
+            SpecScratchKey::tree(seq_len, shape)
+        } else {
+            SpecScratchKey::linear(seq_len, shape)
+        };
         let mut scratch_map = self.spec_decode_scratch.lock().ok()?;
         let scratch = match scratch_map.entry(key) {
             std::collections::hash_map::Entry::Occupied(e) => e.into_mut(),
@@ -2944,6 +3123,19 @@ impl CudaBackend {
             .stream
             .memcpy_htod(std::slice::from_ref(&base_pos_i32), &mut scratch.base_pos)
             .ok()?;
+
+        // `cuda-spec-branching-tree` T3.2: upload per-node ancestor
+        // bitsets when running the tree path. The captured graph
+        // references `&scratch.ancestors` as a stable device pointer;
+        // bitset values are updated host-side between replays
+        // (different tree shapes share a scratch key on `seq_len`).
+        if let Some(ancestors) = tree_ancestors {
+            debug_assert_eq!(ancestors.len(), seq_len);
+            self.driver()
+                .stream
+                .memcpy_htod(ancestors, &mut scratch.ancestors)
+                .ok()?;
+        }
 
         // ── Phase C: replay captured graph if available ──────────
         let graph_enabled = std::env::var("LARQL_CUDA_SPEC_GRAPH").ok().as_deref() != Some("0");
@@ -3047,35 +3239,60 @@ impl CudaBackend {
             // 3. Batched attention into scratch.attn_out via the
             //    pos_dev variant (reads base_pos from scratch.base_pos).
             //    No alloc, no memcpy_dtod, graph-capturable.
+            //
+            //    `cuda-spec-branching-tree` T3.2: when running the tree
+            //    path, dispatch the tree-mask variant which additionally
+            //    reads `scratch.ancestors[sp]` to mask sibling-branch
+            //    positions.
             let max_seq = cache.max_seq;
             let kv_slot = cache.layers.get_mut(layer_idx)?;
-            attn::fused_prefill_attention_seq_device_into_pos_dev(
-                self,
-                &scratch.q,
-                &scratch.k,
-                &scratch.v,
-                &mut kv_slot.k,
-                &mut kv_slot.v,
-                layer.q_norm_weight,
-                layer.k_norm_weight,
-                &mut scratch.attn_out,
-                &scratch.base_pos,
-                seq_len,
-                attn::FusedDecodeAttentionOpts {
-                    num_q_heads: layer_num_q_heads,
-                    num_kv_heads: layer_num_kv_heads,
-                    head_dim: layer_head_dim,
-                    pos: base_pos,
-                    max_seq,
-                    rotary_dim: layer_rotary_dim,
-                    rope_base: layer_rope_base,
-                    eps: layer.eps,
-                    qk_norm_offset: layer.qk_norm_offset,
-                    attn_scale: layer.attn_scale,
-                    softcap: 0.0,
-                },
-            )
-            .ok()?;
+            let opts = attn::FusedDecodeAttentionOpts {
+                num_q_heads: layer_num_q_heads,
+                num_kv_heads: layer_num_kv_heads,
+                head_dim: layer_head_dim,
+                pos: base_pos,
+                max_seq,
+                rotary_dim: layer_rotary_dim,
+                rope_base: layer_rope_base,
+                eps: layer.eps,
+                qk_norm_offset: layer.qk_norm_offset,
+                attn_scale: layer.attn_scale,
+                softcap: 0.0,
+            };
+            if is_tree {
+                attn::fused_prefill_attention_tree_seq_device_into_pos_dev(
+                    self,
+                    &scratch.q,
+                    &scratch.k,
+                    &scratch.v,
+                    &mut kv_slot.k,
+                    &mut kv_slot.v,
+                    layer.q_norm_weight,
+                    layer.k_norm_weight,
+                    &mut scratch.attn_out,
+                    &scratch.base_pos,
+                    &scratch.ancestors,
+                    seq_len,
+                    opts,
+                )
+                .ok()?;
+            } else {
+                attn::fused_prefill_attention_seq_device_into_pos_dev(
+                    self,
+                    &scratch.q,
+                    &scratch.k,
+                    &scratch.v,
+                    &mut kv_slot.k,
+                    &mut kv_slot.v,
+                    layer.q_norm_weight,
+                    layer.k_norm_weight,
+                    &mut scratch.attn_out,
+                    &scratch.base_pos,
+                    seq_len,
+                    opts,
+                )
+                .ok()?;
+            }
 
             // 4. wo projection → scratch.attn_delta.
             self.gemm_proj_seq_into(

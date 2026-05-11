@@ -177,23 +177,32 @@ fn sample_categorical(p: &[f32], rng: &mut VerifyRng) -> TokenId {
     (p.len() - 1) as TokenId
 }
 
-/// Tree verification — picks the most-likely-by-p_draft root-to-leaf
-/// path and applies linear `verify_and_accept` to it. This is the
-/// CPU oracle for phase 3's GPU `verify_tree` kernel; the GPU
-/// kernel SHALL emit the same `AcceptedSpan` given the same tree,
-/// per-node target distributions, and seeded RNG.
+/// Tree verification — `cuda-spec-branching-tree`: multi-path
+/// verification picks the root-to-leaf path with the longest
+/// accepted prefix.
+///
+/// **Algorithm.** Each tree node gets one RNG draw (in BFS / tree-
+/// index order, so every node consumes exactly one `u ∈ [0, 1)`).
+/// A node is **accepted** iff `u < p_target[node.id] / p_draft[node.id]`
+/// (the standard Leviathan ratio). For each root-to-leaf path we
+/// then compute its **accepted prefix length** = the longest prefix
+/// where every ancestor was accepted. We pick the path with the
+/// largest prefix; ties are broken by lowest leaf index (which means
+/// the rightmost-match chain wins on PLD-tree's equal-`p_draft`
+/// case, preserving the linear-PLD ordering when no branch helps).
+///
+/// **Correctness.** For a linear chain (one root-to-leaf path), this
+/// reduces bit-exactly to `verify_and_accept` — same draws, same
+/// accept rule, same fallback to residual sampling on rejection.
+/// For branching trees the per-node `u`s are shared across paths
+/// that include the same node, preserving the unbiased emission
+/// property: each `(node, p_target, p_draft)` triple consumes
+/// exactly one RNG sample regardless of how many paths it's on.
 ///
 /// `p_target_per_node[i]` is the target distribution at tree node
 /// `i` (so `p_target_per_node.len() == tree.len()`). `tree`'s root
 /// is the first drafted token (depth=0); subsequent levels are
 /// continuations.
-///
-/// Rationale: the most-likely path is what production tree-decoders
-/// (Medusa, EAGLE) verify first; sibling-path fallback is a phase 4
-/// refinement. Restricting phase 3 to single-path verification
-/// keeps the kernel small and the parity oracle simple while still
-/// delivering the architectural batch=N>1 win on which Tensor Cores
-/// re-arm.
 pub fn verify_tree(
     tree: &DraftTree,
     p_target_per_node: &[Vec<f32>],
@@ -204,13 +213,91 @@ pub fn verify_tree(
         tree.len(),
         "verify_tree: per-node p_target length must equal tree node count"
     );
-    let path = tree.most_likely_path();
-    let drafts: Vec<DraftToken> = path
+
+    // Fast path: linear chain (one root-to-leaf path) preserves
+    // exact bit-parity with the pre-branching baseline. For linear
+    // PLD this is the same code path that the old `verify_tree`
+    // ran, so existing tests (e.g. `verify_tree_linear_matches_
+    // verify_and_accept`) stay green.
+    let paths = tree.root_to_leaf_paths();
+    if paths.len() == 1 {
+        let path = &paths[0];
+        let drafts: Vec<DraftToken> = path
+            .iter()
+            .map(|&i| tree.nodes()[i].token.clone())
+            .collect();
+        let p_at_path: Vec<Vec<f32>> = path.iter().map(|&i| p_target_per_node[i].clone()).collect();
+        return verify_and_accept(&p_at_path, &drafts, rng);
+    }
+
+    // Multi-path. Step 1: one RNG draw per node, in BFS order.
+    let n = tree.len();
+    let mut node_u = vec![0.0_f32; n];
+    for slot in &mut node_u {
+        *slot = rng.next_f32();
+    }
+
+    // Step 2: per-node accept flag from the Leviathan ratio.
+    let mut accept = vec![false; n];
+    for i in 0..n {
+        let tok = &tree.nodes()[i].token;
+        let pt = p_target_per_node[i][tok.id as usize];
+        let pd = tok.p_draft.max(f32::MIN_POSITIVE);
+        let ratio = (pt / pd).min(1.0);
+        accept[i] = node_u[i] < ratio;
+    }
+
+    // Step 3: per-path accepted prefix length. A prefix of length k
+    // means nodes path[0..k] are all accepted; path[k] is rejected
+    // (or k == path.len() = all-accept).
+    let mut best_path_idx = 0usize;
+    let mut best_prefix_len = 0usize;
+    let mut best_leaf_idx = usize::MAX;
+    for (pi, path) in paths.iter().enumerate() {
+        let mut k = 0usize;
+        while k < path.len() && accept[path[k]] {
+            k += 1;
+        }
+        let leaf = *path.last().unwrap();
+        // Pick the path with the longest accepted prefix. Tie-break
+        // by lowest leaf index, which matches `most_likely_path`'s
+        // deterministic tie-break (rightmost-match wins under PLD's
+        // equal-p_draft rule).
+        if k > best_prefix_len || (k == best_prefix_len && leaf < best_leaf_idx) {
+            best_path_idx = pi;
+            best_prefix_len = k;
+            best_leaf_idx = leaf;
+        }
+    }
+
+    let best_path = &paths[best_path_idx];
+    let accepted_ids: Vec<TokenId> = best_path[..best_prefix_len]
         .iter()
-        .map(|&i| tree.nodes()[i].token.clone())
+        .map(|&i| tree.nodes()[i].token.id)
         .collect();
-    let p_at_path: Vec<Vec<f32>> = path.iter().map(|&i| p_target_per_node[i].clone()).collect();
-    verify_and_accept(&p_at_path, &drafts, rng)
+
+    if best_prefix_len == best_path.len() {
+        // Full accept along the chosen path → bonus from leaf p_target.
+        let leaf = *best_path.last().unwrap();
+        let bonus = sample_categorical(&p_target_per_node[leaf], rng);
+        AcceptedSpan {
+            accepted: accepted_ids,
+            corrected: None,
+            bonus: Some(bonus),
+        }
+    } else {
+        // Reject at depth `best_prefix_len`: sample corrected from
+        // residual at the rejected node (same rule as the linear
+        // path).
+        let reject_idx = best_path[best_prefix_len];
+        let rejected_token = &tree.nodes()[reject_idx].token;
+        let corrected = sample_residual(&p_target_per_node[reject_idx], rejected_token, rng);
+        AcceptedSpan {
+            accepted: accepted_ids,
+            corrected: Some(corrected),
+            bonus: None,
+        }
+    }
 }
 
 #[cfg(test)]
@@ -523,5 +610,185 @@ mod tests {
                 "vocab {i}: observed {observed:.4} vs expected {expected:.4}"
             );
         }
+    }
+
+    // ── Multi-path verify_tree (cuda-spec-branching-tree) ──────────
+
+    #[test]
+    fn verify_tree_branching_picks_longest_accepting_path() {
+        // Tree:
+        //   0 (id=1)           p_target = one-hot at 1  → certain accept
+        //   ├─ 1 (id=2)        p_target = one-hot at 9  → certain reject
+        //   │     └─ 3 (id=4)  unreachable (parent rejected)
+        //   └─ 2 (id=3)        p_target = one-hot at 3  → certain accept
+        //         └─ 4 (id=5)  p_target = one-hot at 5  → certain accept
+        //
+        // Path A = [0, 1, 3]: prefix len = 1 (rejects at node 1)
+        // Path B = [0, 2, 4]: prefix len = 3 (full accept)
+        // Multi-path verifier MUST pick path B → emit [1, 3, 5] + bonus.
+        let vocab = 8;
+        let mut tree = DraftTree::from_root(DraftToken {
+            id: 1,
+            p_draft: 1.0,
+        });
+        let n1 = tree.add_child(
+            0,
+            DraftToken {
+                id: 2,
+                p_draft: 1.0,
+            },
+        );
+        let n2 = tree.add_child(
+            0,
+            DraftToken {
+                id: 3,
+                p_draft: 1.0,
+            },
+        );
+        let _n3 = tree.add_child(
+            n1,
+            DraftToken {
+                id: 4,
+                p_draft: 1.0,
+            },
+        );
+        let _n4 = tree.add_child(
+            n2,
+            DraftToken {
+                id: 5,
+                p_draft: 1.0,
+            },
+        );
+
+        let p_target = vec![
+            unit(1, vocab),                    // node 0: accept id=1
+            unit(9 % vocab as TokenId, vocab), // node 1: reject id=2
+            unit(3, vocab),                    // node 2: accept id=3
+            unit(0, vocab),                    // node 3: unreachable
+            unit(5, vocab),                    // node 4: accept id=5
+        ];
+
+        let mut rng = VerifyRng::new(0xDEAD_FACE);
+        let span = verify_tree(&tree, &p_target, &mut rng);
+        assert_eq!(
+            span.accepted,
+            vec![1, 3, 5],
+            "multi-path must emit the chain through B, not A"
+        );
+        assert!(
+            span.bonus.is_some(),
+            "all-accept along path B must emit a bonus"
+        );
+        assert!(span.corrected.is_none());
+    }
+
+    #[test]
+    fn verify_tree_branching_more_emits_than_linear_on_same_seed() {
+        // Linear depth=2 vs branching depth=2 branches=2 on the same
+        // seed and same effective target distribution: branching
+        // SHALL produce ≥ as many accepted tokens.
+        //
+        // Setup: prompt where the rightmost match (linear) leads to a
+        // certain reject mid-chain, but the second match's chain
+        // leads to a full accept. Multi-path verify rescues the iter.
+        let vocab = 8;
+
+        // Linear tree: [1, 2] — both p_draft=1.0.
+        let linear = {
+            let mut t = DraftTree::from_root(DraftToken {
+                id: 1,
+                p_draft: 1.0,
+            });
+            t.add_child(
+                0,
+                DraftToken {
+                    id: 2,
+                    p_draft: 1.0,
+                },
+            );
+            t
+        };
+        // Linear's p_target: accept root id=1, reject child id=2.
+        let p_linear = vec![unit(1, vocab), unit(7, vocab)];
+
+        // Branching tree: root 1, children [2, 3].
+        let branch = {
+            let mut t = DraftTree::from_root(DraftToken {
+                id: 1,
+                p_draft: 1.0,
+            });
+            t.add_child(
+                0,
+                DraftToken {
+                    id: 2,
+                    p_draft: 1.0,
+                },
+            );
+            t.add_child(
+                0,
+                DraftToken {
+                    id: 3,
+                    p_draft: 1.0,
+                },
+            );
+            t
+        };
+        // Branching p_target: accept root id=1, reject id=2 (path
+        // A), accept id=3 (path B).
+        let p_branch = vec![unit(1, vocab), unit(7, vocab), unit(3, vocab)];
+
+        let seed = 0xBEEF_CAFE_F00D_1234;
+        let mut rng_l = VerifyRng::new(seed);
+        let span_linear = verify_tree(&linear, &p_linear, &mut rng_l);
+        let mut rng_b = VerifyRng::new(seed);
+        let span_branch = verify_tree(&branch, &p_branch, &mut rng_b);
+
+        // Linear: accept [1], reject at id=2 → corrected sampled
+        // from residual at p_target[1] (one-hot at 7 → corrected = 7).
+        assert_eq!(span_linear.accepted, vec![1]);
+        assert_eq!(span_linear.corrected, Some(7));
+        // Branching: path B accepts in full → [1, 3] + bonus.
+        assert_eq!(span_branch.accepted, vec![1, 3]);
+        assert!(span_branch.bonus.is_some());
+
+        // The whole point: branching emitted ≥ 1 more token from
+        // verify than linear did from verify.
+        assert!(
+            span_branch.accepted.len() > span_linear.accepted.len(),
+            "branching SHALL accept more tokens than linear on this seed"
+        );
+    }
+
+    #[test]
+    fn verify_tree_branching_picks_lower_leaf_idx_on_tie() {
+        // Two paths, identical accepted-prefix length → pick the one
+        // with the lowest leaf index (which under PLD ordering is the
+        // rightmost-match chain).
+        let vocab = 8;
+        let mut tree = DraftTree::from_root(DraftToken {
+            id: 1,
+            p_draft: 1.0,
+        });
+        let _n1 = tree.add_child(
+            0,
+            DraftToken {
+                id: 2,
+                p_draft: 1.0,
+            },
+        ); // leaf 1
+        let _n2 = tree.add_child(
+            0,
+            DraftToken {
+                id: 3,
+                p_draft: 1.0,
+            },
+        ); // leaf 2
+           // Both leaves accept fully.
+        let p_target = vec![unit(1, vocab), unit(2, vocab), unit(3, vocab)];
+        let mut rng = VerifyRng::new(42);
+        let span = verify_tree(&tree, &p_target, &mut rng);
+        // Path through lower leaf idx (1) = id 2; not (2) = id 3.
+        assert_eq!(span.accepted, vec![1, 2]);
+        assert!(span.bonus.is_some());
     }
 }

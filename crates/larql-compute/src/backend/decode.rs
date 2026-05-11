@@ -286,6 +286,40 @@ pub trait DecodeBackend {
         Some(hiddens)
     }
 
+    /// `cuda-spec-branching-tree` T3.2: tree-shaped variant of
+    /// [`Self::decode_tokens_speculative_keep_cache`]. Processes a
+    /// branching draft tree in one batched forward, masking attention
+    /// per-node so siblings don't leak.
+    ///
+    /// `ancestors[n]` SHALL be the u64 bitset for node `n` (per
+    /// `DraftTree::ancestor_bitsets()`). `ancestors.len() ==
+    /// x_per_node.len() <= 64`.
+    ///
+    /// On `None` (backend lacks tree-mask kernel, or tree size
+    /// exceeds the kernel's cap), the caller SHALL fall back to the
+    /// per-node `decode_token` path. Cache is restored to `pre_len`
+    /// on any error.
+    ///
+    /// Default impl returns `None` so backends without the tree-mask
+    /// kernel route to the conservative per-node fallback.
+    #[allow(clippy::too_many_arguments)]
+    fn decode_tokens_speculative_tree_keep_cache(
+        &self,
+        _layers: &[crate::FullPipelineLayer<'_>],
+        _x_per_node: &[Vec<f32>],
+        _ancestors: &[u64],
+        _hidden: usize,
+        _inter: usize,
+        _q_dim: usize,
+        _kv_dim: usize,
+        _num_q_heads: usize,
+        _num_kv_heads: usize,
+        _head_dim: usize,
+        _rope_base: f32,
+    ) -> Option<Vec<Vec<f32>>> {
+        None
+    }
+
     /// Variant of [`Self::decode_tokens_speculative`] that does NOT
     /// truncate the KV cache on success — the cache is left advanced
     /// by `x_per_token.len()` positions. The CALLER is responsible for

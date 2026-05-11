@@ -35,6 +35,48 @@ impl DecodeScratchShape {
     }
 }
 
+/// Cache key for the spec batched-seq scratch + graph maps.
+/// `cuda-spec-branching-tree` T3.1 extends the original
+/// `(seq_len, DecodeScratchShape)` tuple with an `is_tree`
+/// discriminator so the linear-chain and tree-mask attention paths
+/// don't share a captured graph (they call different kernels).
+///
+/// Different in-flight tree shapes with the same `seq_len` (e.g. PLD
+/// returning a 4-node linear chain one iter and a 4-node tree the
+/// next) are already distinguished by `is_tree`. Tree shapes that
+/// differ in node count (depth=2 branches=2 → 7 nodes vs depth=3
+/// branches=1 → 4 nodes) are distinguished by `seq_len`. We don't
+/// need a finer tree_layout_hash because the kernel reads the
+/// ancestor bitsets from the scratch buffer at replay time, so the
+/// captured launch is correct for any bitset layout sharing the same
+/// `(seq_len, shape)`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub(crate) struct SpecScratchKey {
+    pub seq_len: usize,
+    pub shape: DecodeScratchShape,
+    /// `false` = linear-chain causal kernel; `true` = tree-mask
+    /// kernel with per-node ancestor bitsets.
+    pub is_tree: bool,
+}
+
+impl SpecScratchKey {
+    pub fn linear(seq_len: usize, shape: DecodeScratchShape) -> Self {
+        Self {
+            seq_len,
+            shape,
+            is_tree: false,
+        }
+    }
+
+    pub fn tree(seq_len: usize, shape: DecodeScratchShape) -> Self {
+        Self {
+            seq_len,
+            shape,
+            is_tree: true,
+        }
+    }
+}
+
 /// Pre-allocated per-decode buffers. Owned by `CudaBackend` and reused
 /// across every `decode_token_device` call with the same shape. The
 /// CUDA Graph capture path writes its kernel outputs into these
@@ -115,6 +157,13 @@ pub(crate) struct SpecDecodeScratch {
     // Device-side base_pos slot (Phase B will let the captured graph
     // re-read this between replays at different cache positions).
     pub base_pos: CudaSlice<i32>,
+
+    // `cuda-spec-branching-tree` T3.1: per-tree-node ancestor bitsets.
+    // Sized for `seq_len` u64 entries (= cap of 64 nodes — matches
+    // `SpecConfig::tree_nodes()` cap). Unused on the linear-chain
+    // path; written by the tree dispatch path before each replay so a
+    // captured graph references a stable device pointer.
+    pub ancestors: CudaSlice<u64>,
 }
 
 impl SpecDecodeScratch {
@@ -166,6 +215,10 @@ impl SpecDecodeScratch {
                 .stream
                 .alloc_zeros::<i32>(1)
                 .map_err(|e| CudaInitError::DriverMissing(format!("alloc base_pos: {e:?}")))?,
+            ancestors: drv
+                .stream
+                .alloc_zeros::<u64>(n)
+                .map_err(|e| CudaInitError::DriverMissing(format!("alloc ancestors: {e:?}")))?,
         })
     }
 }

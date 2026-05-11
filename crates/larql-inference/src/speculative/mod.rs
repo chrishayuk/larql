@@ -1,16 +1,61 @@
 //! Speculative decoding (`inference-speculative-decoding`).
 //!
 //! Phase 1 scaffolding: trait, config, env-flag dispatch, and the
-//! CPU reference `verify_and_accept` that later phases will use as
+//! CPU reference `verify_and_accept` that later phases use as
 //! the parity oracle for the GPU `verify_tree` kernel.
 //!
 //! The full design lives in
 //! [openspec/changes/cuda-speculative-decoding](
 //! ../../../../openspec/changes/cuda-speculative-decoding/proposal.md).
 //!
+//! ## Linear vs branching draft trees
+//!
+//! Drafters propose candidate continuations in two shapes:
+//!
+//! - **Linear chain** (default, `cfg.branches == 1`): the drafter
+//!   returns a depth-N chain via [`Drafter::propose`]. The v3 dispatch
+//!   builds a [`DraftTree`] from the chain ([`build_linear_tree`])
+//!   and verifies via the existing per-position rejection-sampling
+//!   loop.
+//! - **Branching tree** (`cfg.branches > 1`, `cuda-spec-branching-tree`):
+//!   the drafter returns a [`DraftTree`] directly via
+//!   [`Drafter::propose_tree`]. Multiple parallel chains share a
+//!   root token; chains with a common prefix merge into a shared
+//!   subtree. Verifier picks the most-likely root-to-leaf path
+//!   ([`verify_tree`]).
+//!
 //! Activation is gated by `LARQL_SPECULATIVE_DECODE=1`. Any other
 //! value (unset, empty, `0`, anything else) falls through to the
 //! existing non-speculative `decode_token` path bit-exactly.
+//! `LARQL_SPEC_BRANCHES=N` (range 1..=8, default 1) enables branching
+//! when the drafter supports it (e.g. [`PromptLookupDrafter`]).
+//!
+//! The CUDA backend's tree path uses a tree-mask attention kernel
+//! (`fused_prefill_attention_tree_mask_f32`) that filters per-position
+//! attention via a per-node ancestor bitset built from
+//! [`DraftTree::ancestor_bitsets`]. Sibling chains share K/V cache
+//! slots at `base_pos + tree_index` (Strategy A in the design doc);
+//! the mask prevents sibling-branch leakage. Linear-chain inputs
+//! reduce bit-exactly to the existing causal kernel.
+//!
+//! ## Recommended configuration (PLD-friendly workloads)
+//!
+//! Bench results on RTX 4090, Gemma 3 4B Q4_K_M (2026-05-10) — see
+//! `openspec/changes/cuda-spec-branching-tree/design.md` for the full
+//! sweep:
+//!
+//! ```text
+//! LARQL_SPECULATIVE_DECODE=1
+//! LARQL_DRAFTER=prompt_lookup
+//! LARQL_SPEC_DEPTH=4
+//! LARQL_SPEC_BRANCHES=2
+//! ```
+//!
+//! On JSON-structured / RAG / code-completion prompts this yields
+//! ~1.42× FASTER than plain decode. PLD is **workload-specific**:
+//! on chat-style prompts with no prompt-echoing PLD's α drops to 0
+//! and the per-call overhead makes spec slower than plain decode,
+//! so we keep the env var opt-in rather than default-on.
 
 use std::env;
 
@@ -103,6 +148,29 @@ pub trait Drafter {
     /// path every iter would re-prefill, defeating any incremental
     /// optimization.
     fn seed_history(&mut self, _tokens: &[TokenId]) {}
+
+    /// Propose a tree of `branches` parallel chains, each up to
+    /// `depth` tokens deep. Returns `None` if the drafter declines
+    /// (= empty `propose`).
+    ///
+    /// The default impl wraps [`Drafter::propose`] into a linear
+    /// chain (1 branch, `depth` tokens). Drafters that can cheaply
+    /// produce alternative continuations (e.g. PLD with multiple
+    /// n-gram matches) override this to return a true branching
+    /// tree. `branches == 1` SHALL produce a tree bit-identical to
+    /// the linear path so existing tests stay green.
+    fn propose_tree(
+        &mut self,
+        h_target: &[f32],
+        depth: usize,
+        _branches: usize,
+    ) -> Option<DraftTree> {
+        let proposals = self.propose(h_target, depth);
+        if proposals.is_empty() {
+            return None;
+        }
+        Some(orchestrator::build_linear_tree(&proposals))
+    }
 }
 
 /// Speculative-decoder configuration. Defaults match design.md

@@ -55,6 +55,7 @@
 //! and the technique described in
 //! https://github.com/apoorvumang/prompt-lookup-decoding.
 
+use super::tree::DraftTree;
 use super::{DraftToken, Drafter, TokenId};
 
 /// Default suffix length used by `PromptLookupDrafter::new()`.
@@ -106,35 +107,58 @@ impl PromptLookupDrafter {
     /// last `suffix_len` tokens. Returns the slice immediately
     /// following the match (up to `n` tokens). `None` if no match.
     fn lookup_continuation(&self, n: usize) -> Option<&[TokenId]> {
-        let h = &self.history;
-        let needle_start = h.len().checked_sub(self.suffix_len)?;
-        let suffix = &h[needle_start..];
-        // Earliest start position to consider — bound by
-        // lookback_limit so we don't scan a 32k-token context every
-        // propose call.
-        let scan_start = h.len().saturating_sub(self.lookback_limit);
-        // Iterate candidate match starts from rightmost to leftmost
-        // within the lookback window. Stop at `needle_start - 1` so
-        // we never match the suffix against itself.
-        if needle_start <= scan_start {
-            return None;
+        self.lookup_continuations(n, 1).into_iter().next()
+    }
+
+    /// Search history for up to `branches` most-recent (rightmost)
+    /// distinct matches of the last `suffix_len` tokens. Returns one
+    /// continuation slice per match (each up to `n` tokens), ordered
+    /// rightmost-first. Duplicate continuations (token-equal to an
+    /// earlier match's continuation) are filtered out so each entry
+    /// represents a genuinely distinct candidate path. Returns an
+    /// empty Vec on no matches.
+    fn lookup_continuations(&self, n: usize, branches: usize) -> Vec<&[TokenId]> {
+        if n == 0 || branches == 0 {
+            return Vec::new();
         }
+        let h = &self.history;
+        let needle_start = match h.len().checked_sub(self.suffix_len) {
+            Some(v) => v,
+            None => return Vec::new(),
+        };
+        let suffix = &h[needle_start..];
+        let scan_start = h.len().saturating_sub(self.lookback_limit);
+        if needle_start <= scan_start {
+            return Vec::new();
+        }
+        let mut out: Vec<&[TokenId]> = Vec::with_capacity(branches);
         for cand in (scan_start..needle_start).rev() {
+            if out.len() >= branches {
+                break;
+            }
             if cand + self.suffix_len > h.len() {
                 continue;
             }
-            if h[cand..cand + self.suffix_len] == *suffix {
-                let cont_start = cand + self.suffix_len;
-                if cont_start >= h.len() {
-                    continue;
-                }
-                let take = (h.len() - cont_start).min(n);
-                if take > 0 {
-                    return Some(&h[cont_start..cont_start + take]);
-                }
+            if h[cand..cand + self.suffix_len] != *suffix {
+                continue;
             }
+            let cont_start = cand + self.suffix_len;
+            if cont_start >= h.len() {
+                continue;
+            }
+            let take = (h.len() - cont_start).min(n);
+            if take == 0 {
+                continue;
+            }
+            let cont = &h[cont_start..cont_start + take];
+            // Dedupe: an earlier (more recent) match may yield the
+            // same continuation, which would be a wasted branch.
+            if out.contains(&cont) {
+                continue;
+            }
+            out.push(cont);
         }
-        None
+        out
     }
 }
 
@@ -183,6 +207,60 @@ impl Drafter for PromptLookupDrafter {
         }
         self.history.clear();
         self.history.extend_from_slice(tokens);
+    }
+
+    fn propose_tree(
+        &mut self,
+        _h_target: &[f32],
+        depth: usize,
+        branches: usize,
+    ) -> Option<DraftTree> {
+        if depth == 0 || branches == 0 {
+            return None;
+        }
+        let conts = self.lookup_continuations(depth, branches);
+        if conts.is_empty() {
+            return None;
+        }
+
+        // Root = rightmost match's first continuation token. Chains
+        // that start with a different token cannot merge under this
+        // root (DraftTree has a single root), so they're dropped.
+        // This keeps the contract simple and matches what verifier
+        // expects: the root is the drafted token immediately after
+        // the current target hidden state.
+        let root_id = conts[0][0];
+        let mut tree = DraftTree::from_root(DraftToken {
+            id: root_id,
+            p_draft: 1.0,
+        });
+
+        for cont in conts.iter() {
+            if cont[0] != root_id {
+                continue;
+            }
+            // Walk down from root, descending into the child whose
+            // token matches `tok`; when no such child exists, branch
+            // off by appending a new child. Subsequent tokens hang
+            // off that new child as a linear tail.
+            let mut cur = 0usize;
+            for &tok in &cont[1..] {
+                let existing = (0..tree.nodes().len()).find(|&i| {
+                    tree.nodes()[i].parent == Some(cur) && tree.nodes()[i].token.id == tok
+                });
+                cur = match existing {
+                    Some(c) => c,
+                    None => tree.add_child(
+                        cur,
+                        DraftToken {
+                            id: tok,
+                            p_draft: 1.0,
+                        },
+                    ),
+                };
+            }
+        }
+        Some(tree)
     }
 }
 
@@ -285,6 +363,282 @@ mod tests {
         assert!(
             drafts.is_empty(),
             "match outside lookback window must not be returned"
+        );
+    }
+
+    // ------------------------------------------------------------
+    // PLD-tree (propose_tree) tests
+    // ------------------------------------------------------------
+
+    fn collect_children(tree: &DraftTree, parent: usize) -> Vec<(usize, TokenId)> {
+        tree.nodes()
+            .iter()
+            .enumerate()
+            .filter(|(_, n)| n.parent == Some(parent))
+            .map(|(i, n)| (i, n.token.id))
+            .collect()
+    }
+
+    #[test]
+    fn propose_tree_empty_history_returns_none() {
+        let mut d = PromptLookupDrafter::new();
+        assert!(d.propose_tree(&[], 4, 2).is_none());
+    }
+
+    #[test]
+    fn propose_tree_branches_one_is_linear_chain() {
+        // branches=1 SHALL produce a tree bit-identical to
+        // build_linear_tree on the same PLD continuation.
+        let mut d = PromptLookupDrafter::with_config(2, 1024);
+        d.seed_history(&[1, 2, 3, 4, 1, 2]);
+
+        let mut d_copy = d.clone();
+        let linear_drafts = d.propose(&[], 4);
+        let linear_tree = super::super::build_linear_tree(&linear_drafts);
+
+        let tree = d_copy
+            .propose_tree(&[], 4, 1)
+            .expect("non-empty continuation");
+
+        // Same node count, same flat token sequence, same depths.
+        assert_eq!(tree.len(), linear_tree.len());
+        assert_eq!(tree.tokens(), linear_tree.tokens());
+        for i in 0..tree.len() {
+            assert_eq!(tree.nodes()[i].parent, linear_tree.nodes()[i].parent);
+            assert_eq!(tree.nodes()[i].depth, linear_tree.nodes()[i].depth);
+        }
+    }
+
+    #[test]
+    fn propose_tree_single_match_degrades_to_linear() {
+        // Suffix matches in only one place → tree is a depth-N chain.
+        let mut d = PromptLookupDrafter::with_config(2, 1024);
+        d.seed_history(&[7, 8, 9, 10, 7, 8]);
+        // Match at pos 0 → continuation [9, 10, 7, 8]. Only one match
+        // (the suffix itself is excluded), so branches=2 still yields
+        // a linear chain.
+        let tree = d
+            .propose_tree(&[], 4, 2)
+            .expect("non-empty single-match tree");
+        let paths = tree.root_to_leaf_paths();
+        assert_eq!(paths.len(), 1, "single match must yield exactly one path");
+        assert_eq!(tree.tokens(), vec![9, 10, 7, 8]);
+        assert_eq!(tree.max_depth(), 3);
+    }
+
+    #[test]
+    fn propose_tree_two_matches_disjoint_after_root() {
+        // Two matches that share their FIRST continuation token but
+        // diverge after that. PLD-tree merges the shared root and
+        // branches at depth 1.
+        //
+        // History laid out so the suffix [1, 2] appears at positions
+        // 0 and 4, with different continuations after one shared token:
+        //   pos 0: 1 2 5 7 ...   → cont = [5, 7]
+        //   pos 4: 1 2 5 6 1 2   → cont = [5, 6]  (rightmost)
+        //   suffix at pos 6 = [1, 2] (excluded from itself)
+        let mut d = PromptLookupDrafter::with_config(2, 1024);
+        d.seed_history(&[1, 2, 5, 7, 1, 2, 5, 6, 1, 2]);
+        let tree = d.propose_tree(&[], 2, 2).expect("two matches available");
+
+        // Root = 5 (shared first token across both matches).
+        assert_eq!(tree.root().token.id, 5);
+        // Two depth-1 children: 6 (from rightmost match) and 7 (from
+        // older match). Order of insertion is rightmost-first.
+        let kids = collect_children(&tree, 0);
+        let kid_ids: Vec<TokenId> = kids.iter().map(|(_, id)| *id).collect();
+        assert_eq!(kid_ids, vec![6, 7], "rightmost match's child added first");
+        // Total: 1 root + 2 children = 3 nodes (no shared-prefix
+        // beyond the root, no merging beyond depth 1).
+        assert_eq!(tree.len(), 3);
+    }
+
+    #[test]
+    fn propose_tree_two_matches_shared_prefix_merge() {
+        // Two matches share TWO continuation tokens, then diverge.
+        // History: [1, 2, 9, 8, 7, 1, 2, 9, 8, 6, 1, 2]
+        //   suffix at pos 10 = [1, 2]
+        //   match at pos 5: cont = [9, 8, 6]  (rightmost)
+        //   match at pos 0: cont = [9, 8, 7]
+        //   shared prefix: [9, 8]; diverge at depth 2 (6 vs 7).
+        let mut d = PromptLookupDrafter::with_config(2, 1024);
+        d.seed_history(&[1, 2, 9, 8, 7, 1, 2, 9, 8, 6, 1, 2]);
+        let tree = d.propose_tree(&[], 3, 2).expect("two matches");
+
+        assert_eq!(tree.root().token.id, 9, "shared root token");
+        // Depth-1: only one child (8), because both chains share it.
+        let depth1 = collect_children(&tree, 0);
+        assert_eq!(depth1.len(), 1);
+        assert_eq!(depth1[0].1, 8);
+        // Depth-2: two siblings (6 and 7), both children of node "8".
+        let depth1_idx = depth1[0].0;
+        let depth2 = collect_children(&tree, depth1_idx);
+        let depth2_ids: Vec<TokenId> = depth2.iter().map(|(_, id)| *id).collect();
+        assert_eq!(depth2_ids, vec![6, 7]);
+        // Total: 1 root + 1 + 2 = 4 nodes (vs 6 without merging).
+        assert_eq!(tree.len(), 4);
+    }
+
+    #[test]
+    fn propose_tree_drops_chains_with_different_root() {
+        // Two matches with DIFFERENT first continuation tokens cannot
+        // merge under one DraftTree root. The rightmost match wins;
+        // the other is dropped (degrades to a single-chain tree).
+        // History: [1, 2, 4, 5, 1, 2, 3, 7, 1, 2]
+        //   suffix at pos 8 = [1, 2]
+        //   match at pos 4: cont = [3, 7]  (rightmost)
+        //   match at pos 0: cont = [4, 5]  (different first token)
+        let mut d = PromptLookupDrafter::with_config(2, 1024);
+        d.seed_history(&[1, 2, 4, 5, 1, 2, 3, 7, 1, 2]);
+        let tree = d
+            .propose_tree(&[], 2, 4)
+            .expect("at least one match exists");
+
+        assert_eq!(tree.root().token.id, 3, "rightmost match's first token");
+        // Only the rightmost chain is in the tree.
+        let paths = tree.root_to_leaf_paths();
+        assert_eq!(paths.len(), 1, "non-matching root drops second chain");
+        assert_eq!(tree.tokens(), vec![3, 7]);
+    }
+
+    #[test]
+    fn propose_tree_dedupes_identical_continuations() {
+        // Two matches with bit-identical continuations dedupe — we
+        // don't waste a branch slot on a repeat. Result is a single
+        // linear chain.
+        // History: [1, 2, 5, 6, 9, 9, 1, 2, 5, 6, 1, 2]
+        //   suffix at pos 10 = [1, 2]
+        //   match at pos 6: cont = [5, 6]   (rightmost)
+        //   match at pos 0: cont = [5, 6]   (same → dedup'd)
+        let mut d = PromptLookupDrafter::with_config(2, 1024);
+        d.seed_history(&[1, 2, 5, 6, 9, 9, 1, 2, 5, 6, 1, 2]);
+        let tree = d.propose_tree(&[], 2, 2).expect("matches exist");
+        let paths = tree.root_to_leaf_paths();
+        assert_eq!(paths.len(), 1);
+        assert_eq!(tree.tokens(), vec![5, 6]);
+        assert_eq!(tree.len(), 2);
+    }
+
+    #[test]
+    fn propose_tree_caps_at_branches() {
+        // Three distinct matches with shared root but disjoint depth-1
+        // tokens. branches=2 means we only take the first two.
+        // History: [1, 2, 9, 4, 1, 2, 9, 5, 1, 2, 9, 6, 1, 2]
+        //   suffix at pos 12 = [1, 2]
+        //   match at pos 8:  cont = [9, 6]   (rightmost)
+        //   match at pos 4:  cont = [9, 5]
+        //   match at pos 0:  cont = [9, 4]   (dropped at branches=2)
+        let mut d = PromptLookupDrafter::with_config(2, 1024);
+        d.seed_history(&[1, 2, 9, 4, 1, 2, 9, 5, 1, 2, 9, 6, 1, 2]);
+        let tree = d.propose_tree(&[], 2, 2).expect("three matches");
+        let depth1 = collect_children(&tree, 0);
+        let ids: Vec<TokenId> = depth1.iter().map(|(_, id)| *id).collect();
+        assert_eq!(ids, vec![6, 5], "branches=2 keeps rightmost two");
+        assert_eq!(tree.len(), 3, "1 root + 2 depth-1 children");
+    }
+
+    #[test]
+    fn propose_tree_branches_zero_returns_none() {
+        // branches=0 is a no-op — caller bug, but degrade gracefully.
+        let mut d = PromptLookupDrafter::with_config(2, 1024);
+        d.seed_history(&[1, 2, 3, 4, 1, 2]);
+        assert!(d.propose_tree(&[], 4, 0).is_none());
+    }
+
+    #[test]
+    fn propose_tree_branching_parity_256_synthetic_prompts() {
+        // `cuda-spec-branching-tree` T4.2: the parity contract for
+        // PLD-tree against PLD-linear. The branching tree is purely
+        // **additive** on top of the rightmost match — never replaces
+        // it. Concretely:
+        //
+        //   For any history H, `propose_tree(depth, branches=2)`
+        //   builds the rightmost match's continuation as the first
+        //   chain (nodes [0..L]), then adds nodes from older matches
+        //   only via merge-or-branch onto that first chain. The
+        //   subtree rooted at node 0 always contains the linear
+        //   chain as a depth-first root-to-leaf prefix.
+        //
+        // We verify two invariants on 256 synthetic prompts:
+        //   (a) The first `L` nodes of the branching tree (where
+        //       L = linear_tree.len()) have the same tokens as the
+        //       linear tree (same insertion order = same indices).
+        //   (b) Branching's node count is ≥ linear's node count —
+        //       never fewer nodes.
+        //
+        // We also confirm we're exercising the multi-match code path
+        // by counting how many prompts produced a branching shape.
+        let mut linear_only = 0usize;
+        let mut branching_count = 0usize;
+        for seed in 0u64..256 {
+            // 32 tokens drawn from a tiny vocab (mod 8) so n-gram
+            // matches are common enough to bias toward repetition.
+            let mut s = seed.wrapping_mul(0x9E37_79B9_7F4A_7C15);
+            let mut hist = Vec::with_capacity(32);
+            for _ in 0..32 {
+                s ^= s << 13;
+                s ^= s >> 7;
+                s ^= s << 17;
+                hist.push((s & 0x7) as TokenId);
+            }
+
+            let mut linear = PromptLookupDrafter::with_config(2, 4096);
+            linear.seed_history(&hist);
+            let tree_linear = match linear.propose_tree(&[], 4, 1) {
+                Some(t) => t,
+                None => continue, // No match — both paths trivially equal.
+            };
+
+            let mut branching = PromptLookupDrafter::with_config(2, 4096);
+            branching.seed_history(&hist);
+            let tree_branch = match branching.propose_tree(&[], 4, 2) {
+                Some(t) => t,
+                None => {
+                    panic!("branches=2 returned None where branches=1 found a match (seed={seed})")
+                }
+            };
+
+            // Invariant (a): first L nodes of branching == linear.
+            let linear_tokens = tree_linear.tokens();
+            let l = linear_tokens.len();
+            let branch_prefix: Vec<TokenId> = tree_branch
+                .nodes()
+                .iter()
+                .take(l)
+                .map(|n| n.token.id)
+                .collect();
+            assert_eq!(
+                linear_tokens,
+                branch_prefix,
+                "seed={seed}: branching tree's first {l} nodes don't match the linear chain. \
+                 hist={hist:?} linear={linear_tokens:?} branch_prefix={branch_prefix:?} \
+                 branch_all={:?}",
+                tree_branch.tokens()
+            );
+
+            // Invariant (b): branching never shrinks below linear.
+            assert!(
+                tree_branch.len() >= tree_linear.len(),
+                "seed={seed}: branching tree shrunk below linear ({} < {})",
+                tree_branch.len(),
+                tree_linear.len()
+            );
+
+            if tree_branch.root_to_leaf_paths().len() == 1 && tree_branch.len() == tree_linear.len()
+            {
+                linear_only += 1;
+            } else {
+                branching_count += 1;
+            }
+        }
+
+        // We expect SOME branching trees on synthetic repetitive
+        // inputs. Zero means the test isn't exercising the multi-
+        // match path.
+        assert!(
+            branching_count > 0,
+            "256 synthetic prompts produced no branching shapes \
+             (linear_only={linear_only}) — test isn't exercising propose_tree's multi-match path"
         );
     }
 

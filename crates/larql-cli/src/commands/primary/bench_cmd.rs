@@ -262,10 +262,19 @@ pub fn run(args: BenchArgs) -> Result<(), Box<dyn std::error::Error>> {
             .and_then(|s| s.parse().ok())
             .filter(|&d: &usize| (1..=16).contains(&d))
             .unwrap_or(2);
+        // `cuda-spec-branching-tree` T3.4: opt-in via env. Default is
+        // 1 (= linear, bit-exact with the pre-branching baseline). 2-8
+        // enables tree drafting when the drafter supports it (e.g.
+        // PromptLookupDrafter::propose_tree).
+        let spec_branches: usize = std::env::var("LARQL_SPEC_BRANCHES")
+            .ok()
+            .and_then(|s| s.parse().ok())
+            .filter(|&b: &usize| (1..=8).contains(&b))
+            .unwrap_or(1);
         larql_inference::speculative::set_thread_spec_config(
             larql_inference::speculative::SpecConfig {
                 depth: spec_depth,
-                branches: 1,
+                branches: spec_branches,
                 swa_window: None,
             },
         );
@@ -278,7 +287,7 @@ pub fn run(args: BenchArgs) -> Result<(), Box<dyn std::error::Error>> {
             larql_inference::speculative::SpecStats::default(),
         ));
         println!(
-            "Speculative drafter: kind={kind} depth={spec_depth} env LARQL_SPECULATIVE_DECODE={}",
+            "Speculative drafter: kind={kind} depth={spec_depth} branches={spec_branches} env LARQL_SPECULATIVE_DECODE={}",
             if env_on {
                 "1 (active)"
             } else {

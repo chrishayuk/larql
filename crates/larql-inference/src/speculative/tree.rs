@@ -118,6 +118,32 @@ impl DraftTree {
         out
     }
 
+    /// Per-node ancestor bitsets for use by the GPU tree-mask
+    /// attention kernel. Bit `k` of `bitsets[n]` is set iff position
+    /// `k` is an ancestor of `n` (inclusive of self).
+    ///
+    /// Capped at 64 nodes; positions beyond bit 63 cannot be
+    /// represented in a `u64`. For a linear chain, node `k`'s bitset
+    /// is `(1 << (k+1)) - 1` — bit-identical to a causal mask, so the
+    /// kernel reduces exactly to the causal-only path.
+    pub fn ancestor_bitsets(&self) -> Vec<u64> {
+        debug_assert!(
+            self.nodes.len() <= 64,
+            "tree exceeds 64 nodes — ancestor bitset overflows u64"
+        );
+        let mut out = vec![0u64; self.nodes.len()];
+        // BFS order guarantees parent has lower index than child,
+        // so we can build each node's set from its parent's in O(1).
+        for (i, n) in self.nodes.iter().enumerate() {
+            let parent_mask = match n.parent {
+                Some(p) => out[p],
+                None => 0,
+            };
+            out[i] = parent_mask | (1u64 << i);
+        }
+        out
+    }
+
     /// All root-to-leaf paths through the tree. Each path is a
     /// sequence of node indices starting from the root. A leaf is
     /// any node with no children.
@@ -285,6 +311,58 @@ mod tests {
         for p in &paths {
             assert_eq!(p.len(), 3);
             assert_eq!(p[0], 0);
+        }
+    }
+
+    #[test]
+    fn ancestor_bitsets_linear_chain_is_causal() {
+        // A linear chain of 5 nodes: each node's bitset is the
+        // causal mask `(1 << (k+1)) - 1`.
+        let mut tree = DraftTree::from_root(t(0));
+        let mut p = 0;
+        for i in 1..5 {
+            p = tree.add_child(p, t(i as TokenId));
+        }
+        let bs = tree.ancestor_bitsets();
+        assert_eq!(bs.len(), 5);
+        for k in 0..5 {
+            assert_eq!(bs[k], (1u64 << (k + 1)) - 1);
+        }
+    }
+
+    #[test]
+    fn ancestor_bitsets_branching_depth2() {
+        // Tree:   0
+        //        / \
+        //       1   2
+        //      / \   \
+        //     3   4   5
+        let mut tree = DraftTree::from_root(t(0));
+        let n1 = tree.add_child(0, t(1));
+        let n2 = tree.add_child(0, t(2));
+        let n3 = tree.add_child(n1, t(3));
+        let n4 = tree.add_child(n1, t(4));
+        let n5 = tree.add_child(n2, t(5));
+        let bs = tree.ancestor_bitsets();
+        // 0: {0}
+        assert_eq!(bs[0], 0b000001);
+        // 1: {0, 1}
+        assert_eq!(bs[n1], 0b000011);
+        // 2: {0, 2}
+        assert_eq!(bs[n2], 0b000101);
+        // 3: {0, 1, 3}
+        assert_eq!(bs[n3], 0b001011);
+        // 4: {0, 1, 4}
+        assert_eq!(bs[n4], 0b010011);
+        // 5: {0, 2, 5}
+        assert_eq!(bs[n5], 0b100101);
+        // Sanity: each bitset matches tree.ancestors(node).
+        for i in 0..tree.len() {
+            let mut from_anc = 0u64;
+            for a in tree.ancestors(i) {
+                from_anc |= 1u64 << a;
+            }
+            assert_eq!(bs[i], from_anc, "node {i}");
         }
     }
 

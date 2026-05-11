@@ -316,3 +316,27 @@ fn default_decode_stubs() {
     assert!(!be.has_kv_cache());
     be.reset_kv_cache(); // default no-op, must not panic
 }
+
+#[test]
+fn default_speculative_tree_keep_cache_returns_none() {
+    // `cuda-spec-branching-tree` T3.2 default: backends that don't
+    // implement the tree-mask kernel return None so the spec
+    // dispatcher routes to the conservative fallback.
+    let be = MinimalBackend;
+    let x = vec![vec![0.0_f32; 16]; 3];
+    let ancestors = vec![0b001, 0b011, 0b101]; // 3-node tree
+    let out = be.decode_tokens_speculative_tree_keep_cache(
+        &[],
+        &x,
+        &ancestors,
+        16,
+        16,
+        16,
+        16,
+        1,
+        1,
+        16,
+        10_000.0,
+    );
+    assert!(out.is_none());
+}

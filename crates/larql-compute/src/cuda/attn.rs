@@ -653,6 +653,175 @@ extern "C" __global__ void fused_prefill_attention_f32(
 }
 "#;
 
+/// `cuda-spec-branching-tree` T2.2: tree-mask variant of the
+/// batched-prefill attention kernel. Identical to
+/// `fused_prefill_attention_f32` except the per-position loop filters
+/// `j` against a per-tree-node ancestor bitset, so siblings in a
+/// branching draft tree don't leak attention across each other.
+///
+/// Masking rule:
+/// - `j ∈ [0, base_pos)` → prior history, fully causal (no mask, as
+///   before).
+/// - `j ∈ [base_pos, base_pos + sp]` → in-tree position. Allowed iff
+///   bit `(j - base_pos)` of `ancestors_dev[sp]` is set.
+///
+/// For a linear chain, `ancestors_dev[sp] = (1 << (sp+1)) - 1`, so
+/// every in-tree position up to and including `sp` is allowed → the
+/// kernel reduces bit-exactly to the causal-only kernel.
+const FUSED_PREFILL_ATTN_TREE_SRC: &str = r#"
+#define NEG_INF (__int_as_float(0xff800000))
+
+__device__ float ld_kvc_pft(const unsigned short* p) {
+    float f;
+    asm("cvt.f32.f16 %0, %1;" : "=f"(f) : "h"(p[0]));
+    return f;
+}
+
+extern "C" __global__ void fused_prefill_attention_tree_mask_f32(
+    const float* q_seq,
+    const unsigned short* k_cache,
+    const unsigned short* v_cache,
+    const float* q_norm,
+    float* out_seq,
+    int num_q_heads,
+    int num_kv_heads,
+    int head_dim,
+    const int* base_pos_dev,
+    const unsigned long long* ancestors_dev, // [seq_len] u64 bitsets
+    int seq_len,
+    int max_seq,
+    int rotary_dim,
+    float rope_base,
+    float eps,
+    float qk_norm_offset,
+    float attn_scale,
+    float softcap,
+    int use_qk_norm
+) {
+    int qh = blockIdx.x;
+    int sp = blockIdx.y;
+    if (qh >= num_q_heads || sp >= seq_len) return;
+    int base_pos = (*base_pos_dev);
+    int pos = base_pos + sp;
+    if (pos >= max_seq) return;
+
+    int tid = threadIdx.x;
+    int bdim = blockDim.x;
+    extern __shared__ float smem[];
+    float* scores  = smem;
+    float* scratch = smem + max_seq;
+    float* q_rot   = smem + max_seq + bdim;
+
+    int group = max(1, num_q_heads / max(1, num_kv_heads));
+    int kvh = min(num_kv_heads - 1, qh / group);
+    const float* q_head = q_seq + (size_t)(sp * num_q_heads + qh) * head_dim;
+
+    float q_ss = 0.f;
+    for (int d = tid; d < head_dim; d += bdim) {
+        float qv = q_head[d];
+        q_ss += qv * qv;
+    }
+    scratch[tid] = q_ss;
+    __syncthreads();
+    for (int stride = bdim / 2; stride > 0; stride >>= 1) {
+        if (tid < stride) scratch[tid] += scratch[tid + stride];
+        __syncthreads();
+    }
+    float q_inv = rsqrtf(scratch[0] / (float)head_dim + eps);
+
+    int rdim_pre = (rotary_dim == 0) ? head_dim : min(rotary_dim, head_dim);
+    int hdim_pre = rdim_pre / 2;
+    for (int d = tid; d < head_dim; d += bdim) {
+        float qv = q_head[d];
+        if (use_qk_norm) qv *= q_inv * (q_norm[d] + qk_norm_offset);
+        if (d < rdim_pre) {
+            int pair = d % hdim_pre;
+            bool imag = d >= hdim_pre;
+            float re = q_head[pair];
+            float im = q_head[pair + hdim_pre];
+            if (use_qk_norm) {
+                re *= q_inv * (q_norm[pair]            + qk_norm_offset);
+                im *= q_inv * (q_norm[pair + hdim_pre] + qk_norm_offset);
+            }
+            float freq  = 1.0f / __powf(rope_base, (float)(2 * pair) / (float)rdim_pre);
+            float angle = (float)pos * freq;
+            float c = __cosf(angle);
+            float s = __sinf(angle);
+            qv = imag ? (re * s + im * c) : (re * c - im * s);
+        }
+        q_rot[d] = qv;
+    }
+    __syncthreads();
+
+    int n_ctx = pos + 1;
+    unsigned long long anc = ancestors_dev[sp];
+
+    for (int j = tid; j < n_ctx; j += bdim) {
+        // Tree-mask: in-tree positions filtered by ancestor bitset.
+        // History positions (j < base_pos) are always allowed.
+        bool allow = true;
+        if (j >= base_pos) {
+            int bit = j - base_pos;
+            allow = ((anc >> bit) & 1ULL) != 0ULL;
+        }
+        if (!allow) {
+            scores[j] = NEG_INF;
+            continue;
+        }
+        float dot = 0.f;
+        for (int d = 0; d < head_dim; d++) {
+            float qv = q_rot[d];
+            float kv = ld_kvc_pft(k_cache + ((size_t)j * num_kv_heads + kvh) * head_dim + d);
+            dot += qv * kv;
+        }
+        float logit = dot * attn_scale;
+        if (softcap > 0.f) logit = softcap * tanhf(logit / softcap);
+        scores[j] = logit;
+    }
+    for (int j = tid + n_ctx; j < max_seq; j += bdim) {
+        scores[j] = NEG_INF;
+    }
+    __syncthreads();
+
+    float my_max = NEG_INF;
+    for (int j = tid; j < n_ctx; j += bdim) {
+        float s = scores[j];
+        if (s > my_max) my_max = s;
+    }
+    scratch[tid] = my_max;
+    __syncthreads();
+    for (int stride = bdim / 2; stride > 0; stride >>= 1) {
+        if (tid < stride) scratch[tid] = fmaxf(scratch[tid], scratch[tid + stride]);
+        __syncthreads();
+    }
+    float row_max = scratch[0];
+
+    float my_sum = 0.f;
+    for (int j = tid; j < n_ctx; j += bdim) {
+        float e = __expf(scores[j] - row_max);
+        scores[j] = e;
+        my_sum += e;
+    }
+    scratch[tid] = my_sum;
+    __syncthreads();
+    for (int stride = bdim / 2; stride > 0; stride >>= 1) {
+        if (tid < stride) scratch[tid] += scratch[tid + stride];
+        __syncthreads();
+    }
+    float inv_sum = 1.f / scratch[0];
+
+    for (int d = tid; d < head_dim; d += bdim) {
+        float acc = 0.f;
+        for (int j = 0; j < n_ctx; j++) {
+            float prob = scores[j] * inv_sum;
+            float vv   = ld_kvc_pft(v_cache + ((size_t)j * num_kv_heads + kvh) * head_dim + d);
+            acc += prob * vv;
+        }
+        out_seq[(size_t)(sp * num_q_heads + qh) * head_dim + d] = acc;
+    }
+}
+"#;
+
 /// Lazily-loaded softmax module + function. cudarc's `CudaContext` is
 /// `Send + Sync`; `OnceLock` gives us thread-safe one-time init.
 static SOFTMAX_FUNC: OnceLock<(std::sync::Arc<CudaModule>, CudaFunction)> = OnceLock::new();
@@ -662,6 +831,8 @@ static FUSED_DECODE_ATTN_FUNC: OnceLock<(std::sync::Arc<CudaModule>, CudaFunctio
 static KV_CACHE_WRITE_SEQ_FUNC: OnceLock<(std::sync::Arc<CudaModule>, CudaFunction)> =
     OnceLock::new();
 static FUSED_PREFILL_ATTN_FUNC: OnceLock<(std::sync::Arc<CudaModule>, CudaFunction)> =
+    OnceLock::new();
+static FUSED_PREFILL_ATTN_TREE_FUNC: OnceLock<(std::sync::Arc<CudaModule>, CudaFunction)> =
     OnceLock::new();
 
 fn softmax_function(drv: &Driver) -> Result<&'static CudaFunction, CudaInitError> {
@@ -1582,6 +1753,32 @@ fn fused_prefill_attention_function(drv: &Driver) -> Result<&'static CudaFunctio
     Ok(f)
 }
 
+fn fused_prefill_attention_tree_function(
+    drv: &Driver,
+) -> Result<&'static CudaFunction, CudaInitError> {
+    if let Some((_, f)) = FUSED_PREFILL_ATTN_TREE_FUNC.get() {
+        return Ok(f);
+    }
+    let opts = CompileOptions {
+        use_fast_math: Some(true),
+        ..Default::default()
+    };
+    let ptx = compile_ptx_with_opts(FUSED_PREFILL_ATTN_TREE_SRC, opts).map_err(|e| {
+        CudaInitError::DriverMissing(format!("nvrtc compile fused_prefill_attn_tree: {e:?}"))
+    })?;
+    let module = drv.ctx.load_module(ptx).map_err(|e| {
+        CudaInitError::DriverMissing(format!("load fused_prefill_attn_tree module: {e:?}"))
+    })?;
+    let func = module
+        .load_function("fused_prefill_attention_tree_mask_f32")
+        .map_err(|e| {
+            CudaInitError::DriverMissing(format!("load fused_prefill_attn_tree function: {e:?}"))
+        })?;
+    let _ = FUSED_PREFILL_ATTN_TREE_FUNC.set((module, func));
+    let (_, f) = FUSED_PREFILL_ATTN_TREE_FUNC.get().unwrap();
+    Ok(f)
+}
+
 /// Pre-allocated-output variant: writes the attention output into the
 /// caller-supplied `out_seq` (must have at least `seq_len * q_dim`
 /// elements). Same contract / kernel launches as
@@ -1827,6 +2024,177 @@ pub fn fused_prefill_attention_seq_device_into_pos_dev(
         use_qk_norm_i,
         cfg_kv,
     )?;
+
+    Ok(())
+}
+
+/// `cuda-spec-branching-tree` T2.3: tree-mask variant of
+/// [`fused_prefill_attention_seq_device_into_pos_dev`]. Adds an
+/// `ancestors_dev` device-resident u64 array — one bitset per tree
+/// node — that masks attention to ancestor-only positions within the
+/// tree slice of the cache.
+///
+/// Contract:
+/// - `ancestors_dev.len() >= seq_len`. Bit `k` of `ancestors_dev[sp]`
+///   is set iff position `k` (in tree-local coords) is an ancestor of
+///   tree node `sp` (inclusive of self). Construct via
+///   `DraftTree::ancestor_bitsets()`.
+/// - K/V cache writes happen at `base_pos + tree_index` linearly — the
+///   existing `kv_cache_write_seq_f32` kernel is reused unchanged
+///   (Strategy A from the design doc).
+/// - Linear-chain trees (bitset `(1 << (k+1)) - 1`) SHALL produce
+///   bit-identical output to
+///   [`fused_prefill_attention_seq_device_into_pos_dev`].
+#[allow(clippy::too_many_arguments)]
+pub fn fused_prefill_attention_tree_seq_device_into_pos_dev(
+    backend: &CudaBackend,
+    q_seq: &CudaSlice<f32>,
+    k_seq: &CudaSlice<f32>,
+    v_seq: &CudaSlice<f32>,
+    k_cache: &mut CudaSlice<half::f16>,
+    v_cache: &mut CudaSlice<half::f16>,
+    q_norm: Option<&[f32]>,
+    k_norm: Option<&[f32]>,
+    out_seq: &mut CudaSlice<f32>,
+    base_pos_dev: &CudaSlice<i32>,
+    ancestors_dev: &CudaSlice<u64>,
+    seq_len: usize,
+    opts: FusedDecodeAttentionOpts,
+) -> Result<(), CudaInitError> {
+    let q_dim = opts.num_q_heads * opts.head_dim;
+    let kv_dim = opts.num_kv_heads * opts.head_dim;
+    let cache_len = opts.max_seq * opts.num_kv_heads * opts.head_dim;
+    if q_seq.len() < seq_len * q_dim
+        || k_seq.len() < seq_len * kv_dim
+        || v_seq.len() < seq_len * kv_dim
+        || out_seq.len() < seq_len * q_dim
+        || k_cache.len() != cache_len
+        || v_cache.len() != cache_len
+        || ancestors_dev.len() < seq_len
+    {
+        return Err(CudaInitError::DriverMissing(
+            "fused_prefill_attention_tree_seq_device_into_pos_dev: shape mismatch".into(),
+        ));
+    }
+    if seq_len > 64 {
+        // Ancestor bitsets are u64 — one bit per tree position. A
+        // tree larger than 64 nodes cannot be represented; caller
+        // SHOULD have capped tree size via SpecConfig::tree_nodes().
+        return Err(CudaInitError::DriverMissing(
+            "fused_prefill_attention_tree_seq_device_into_pos_dev: seq_len > 64".into(),
+        ));
+    }
+
+    let q_norm_owned;
+    let k_norm_owned;
+    let q_norm = match q_norm {
+        Some(w) => {
+            assert_eq!(w.len(), opts.head_dim);
+            w
+        }
+        None => {
+            q_norm_owned = vec![0.0_f32; opts.head_dim];
+            &q_norm_owned
+        }
+    };
+    let k_norm = match k_norm {
+        Some(w) => {
+            assert_eq!(w.len(), opts.head_dim);
+            w
+        }
+        None => {
+            k_norm_owned = vec![0.0_f32; opts.head_dim];
+            &k_norm_owned
+        }
+    };
+    let use_qk_norm = !q_norm.iter().all(|&v| v == 0.0) || !k_norm.iter().all(|&v| v == 0.0);
+
+    let drv = backend.driver();
+    let func_kv = kv_cache_write_seq_function(drv)?;
+    let func_attn = fused_prefill_attention_tree_function(drv)?;
+    let q_norm_arc = backend.arc_norm_device_buf(q_norm)?;
+    let k_norm_arc = backend.arc_norm_device_buf(k_norm)?;
+
+    let block_dim_kv: u32 = 256;
+    let cfg_kv = LaunchConfig {
+        grid_dim: (seq_len as u32, opts.num_kv_heads as u32, 1),
+        block_dim: (block_dim_kv, 1, 1),
+        shared_mem_bytes: (block_dim_kv as usize * std::mem::size_of::<f32>()) as u32,
+    };
+    let num_kv_heads_i = opts.num_kv_heads as i32;
+    let head_dim_i = opts.head_dim as i32;
+    let seq_len_i = seq_len as i32;
+    let max_seq_i = opts.max_seq as i32;
+    let rotary_dim_i = opts.rotary_dim as i32;
+    let use_qk_norm_i = if use_qk_norm { 1_i32 } else { 0_i32 };
+
+    // Reuse the existing K/V write kernel — Strategy A from the
+    // design doc: K/V at base_pos + tree_index linearly, ancestor
+    // mask filters reads.
+    unsafe {
+        drv.stream
+            .launch_builder(func_kv)
+            .arg(k_seq)
+            .arg(v_seq)
+            .arg(&mut *k_cache)
+            .arg(&mut *v_cache)
+            .arg(&*k_norm_arc)
+            .arg(&num_kv_heads_i)
+            .arg(&head_dim_i)
+            .arg(base_pos_dev)
+            .arg(&seq_len_i)
+            .arg(&max_seq_i)
+            .arg(&rotary_dim_i)
+            .arg(&opts.rope_base)
+            .arg(&opts.eps)
+            .arg(&opts.qk_norm_offset)
+            .arg(&use_qk_norm_i)
+            .launch(cfg_kv)
+            .map_err(|e| {
+                CudaInitError::DriverMissing(format!(
+                    "launch kv_cache_write_seq_pos_dev (tree): {e:?}"
+                ))
+            })?;
+    }
+
+    let block_dim_attn: u32 = 256;
+    let cfg_attn = LaunchConfig {
+        grid_dim: (opts.num_q_heads as u32, seq_len as u32, 1),
+        block_dim: (block_dim_attn, 1, 1),
+        shared_mem_bytes: ((opts.max_seq + block_dim_attn as usize + opts.head_dim)
+            * std::mem::size_of::<f32>()) as u32,
+    };
+    let num_q_heads_i = opts.num_q_heads as i32;
+
+    unsafe {
+        drv.stream
+            .launch_builder(func_attn)
+            .arg(q_seq)
+            .arg(&*k_cache)
+            .arg(&*v_cache)
+            .arg(&*q_norm_arc)
+            .arg(out_seq)
+            .arg(&num_q_heads_i)
+            .arg(&num_kv_heads_i)
+            .arg(&head_dim_i)
+            .arg(base_pos_dev)
+            .arg(ancestors_dev)
+            .arg(&seq_len_i)
+            .arg(&max_seq_i)
+            .arg(&rotary_dim_i)
+            .arg(&opts.rope_base)
+            .arg(&opts.eps)
+            .arg(&opts.qk_norm_offset)
+            .arg(&opts.attn_scale)
+            .arg(&opts.softcap)
+            .arg(&use_qk_norm_i)
+            .launch(cfg_attn)
+            .map_err(|e| {
+                CudaInitError::DriverMissing(format!(
+                    "launch fused_prefill_attention_tree_mask_pos_dev: {e:?}"
+                ))
+            })?;
+    }
 
     Ok(())
 }
@@ -2081,4 +2449,277 @@ pub fn fused_prefill_attention_seq_device(
     }
 
     Ok(out_seq)
+}
+
+#[cfg(all(test, any(feature = "cuda", feature = "cuda-oxide")))]
+mod tree_mask_tests {
+    //! `cuda-spec-branching-tree` T2.5+T2.6 — parity tests for the
+    //! tree-mask batched-prefill attention kernel.
+    //!
+    //! Strategy: GPU-vs-GPU comparison against the existing causal
+    //! `fused_prefill_attention_seq_device_into_pos_dev`. Re-using
+    //! the production causal kernel as the oracle avoids re-deriving
+    //! the full kernel arithmetic (RMS-Q, RoPE, GQA, softmax) in pure
+    //! Rust, while still exactly exercising the tree-mask contract.
+    //!
+    //! Gated on `LARQL_CUDA_AVAILABLE=1` like the other CUDA tests.
+
+    use super::{
+        fused_prefill_attention_seq_device_into_pos_dev,
+        fused_prefill_attention_tree_seq_device_into_pos_dev, FusedDecodeAttentionOpts,
+    };
+    use crate::cuda::CudaBackend;
+    use half::f16;
+
+    fn gpu_or_skip() -> Option<CudaBackend> {
+        if std::env::var("LARQL_CUDA_AVAILABLE").ok().as_deref() != Some("1") {
+            return None;
+        }
+        CudaBackend::new().ok()
+    }
+
+    fn synth(n: usize, seed: u64) -> Vec<f32> {
+        let mut s = seed.wrapping_mul(0x9E37_79B9_7F4A_7C15);
+        (0..n)
+            .map(|_| {
+                s ^= s << 13;
+                s ^= s >> 7;
+                s ^= s << 17;
+                ((s & 0xFF_FFFF) as f32 / 8_388_608.0) - 1.0
+            })
+            .collect()
+    }
+
+    fn make_opts(
+        num_q_heads: usize,
+        num_kv_heads: usize,
+        head_dim: usize,
+        max_seq: usize,
+    ) -> FusedDecodeAttentionOpts {
+        FusedDecodeAttentionOpts {
+            num_q_heads,
+            num_kv_heads,
+            head_dim,
+            pos: 0,
+            max_seq,
+            rotary_dim: head_dim,
+            rope_base: 10_000.0,
+            eps: 1e-6,
+            qk_norm_offset: 0.0,
+            attn_scale: 1.0 / (head_dim as f32).sqrt(),
+            softcap: 0.0,
+        }
+    }
+
+    /// Build f16 KV-cache device buffer, seeded with history at slot 0
+    /// and zeros elsewhere.
+    fn seed_kv_cache(
+        backend: &CudaBackend,
+        history_f32: &[f32],
+        max_seq: usize,
+        num_kv_heads: usize,
+        head_dim: usize,
+    ) -> (
+        cudarc::driver::CudaSlice<f16>,
+        cudarc::driver::CudaSlice<f16>,
+    ) {
+        let cache_len = max_seq * num_kv_heads * head_dim;
+        let mut host_k = vec![f16::from_f32(0.0); cache_len];
+        let mut host_v = vec![f16::from_f32(0.0); cache_len];
+        for (i, &v) in history_f32.iter().enumerate() {
+            host_k[i] = f16::from_f32(v);
+            host_v[i] = f16::from_f32(v);
+        }
+        let drv = backend.driver();
+        let k_dev = drv.stream.clone_htod(&host_k).expect("memcpy k_cache seed");
+        let v_dev = drv.stream.clone_htod(&host_v).expect("memcpy v_cache seed");
+        (k_dev, v_dev)
+    }
+
+    #[test]
+    fn tree_mask_linear_chain_bit_exact_vs_causal() {
+        // T2.6: when ancestor bitsets are `(1 << (k+1)) - 1`
+        // (= causal mask), the tree-mask kernel SHALL produce
+        // bit-identical output to the existing causal kernel.
+        let Some(backend) = gpu_or_skip() else { return };
+
+        let num_q_heads = 8;
+        let num_kv_heads = 2;
+        let head_dim = 64;
+        let max_seq = 128;
+        let seq_len = 4;
+        let base_pos: i32 = 16;
+
+        let opts = make_opts(num_q_heads, num_kv_heads, head_dim, max_seq);
+        let q_dim = num_q_heads * head_dim;
+        let kv_dim = num_kv_heads * head_dim;
+
+        let q_host = synth(seq_len * q_dim, 0xA);
+        let k_host = synth(seq_len * kv_dim, 0xB);
+        let v_host = synth(seq_len * kv_dim, 0xC);
+        let history = synth(base_pos as usize * kv_dim, 0xD);
+        let base_pos_host = [base_pos];
+
+        let drv = backend.driver();
+        let q_dev = drv.stream.clone_htod(&q_host).expect("q");
+        let k_dev = drv.stream.clone_htod(&k_host).expect("k");
+        let v_dev = drv.stream.clone_htod(&v_host).expect("v");
+        let base_pos_dev = drv.stream.clone_htod(&base_pos_host).expect("base_pos");
+
+        // Causal-only baseline.
+        let (mut k_cache_a, mut v_cache_a) =
+            seed_kv_cache(&backend, &history, max_seq, num_kv_heads, head_dim);
+        let mut out_a = drv
+            .stream
+            .clone_htod(&vec![0.0_f32; seq_len * q_dim])
+            .expect("out_a");
+        fused_prefill_attention_seq_device_into_pos_dev(
+            &backend,
+            &q_dev,
+            &k_dev,
+            &v_dev,
+            &mut k_cache_a,
+            &mut v_cache_a,
+            None,
+            None,
+            &mut out_a,
+            &base_pos_dev,
+            seq_len,
+            opts,
+        )
+        .expect("causal kernel");
+
+        // Tree-mask with linear-chain bitsets.
+        let (mut k_cache_b, mut v_cache_b) =
+            seed_kv_cache(&backend, &history, max_seq, num_kv_heads, head_dim);
+        let mut out_b = drv
+            .stream
+            .clone_htod(&vec![0.0_f32; seq_len * q_dim])
+            .expect("out_b");
+        let ancestors: Vec<u64> = (0..seq_len).map(|k| (1u64 << (k + 1)) - 1).collect();
+        let ancestors_dev = drv.stream.clone_htod(&ancestors).expect("ancestors");
+        fused_prefill_attention_tree_seq_device_into_pos_dev(
+            &backend,
+            &q_dev,
+            &k_dev,
+            &v_dev,
+            &mut k_cache_b,
+            &mut v_cache_b,
+            None,
+            None,
+            &mut out_b,
+            &base_pos_dev,
+            &ancestors_dev,
+            seq_len,
+            opts,
+        )
+        .expect("tree kernel");
+
+        drv.sync().expect("sync");
+        let host_a = drv.to_host(&out_a).expect("dtoh a");
+        let host_b = drv.to_host(&out_b).expect("dtoh b");
+        assert_eq!(host_a.len(), host_b.len());
+        for (i, (a, b)) in host_a.iter().zip(host_b.iter()).enumerate() {
+            assert_eq!(
+                a.to_bits(),
+                b.to_bits(),
+                "linear-chain tree-mask must be bit-exact at idx {i}: {a} vs {b}"
+            );
+        }
+    }
+
+    #[test]
+    fn tree_mask_sibling_no_leak() {
+        // T2.5 scenario "sibling branches don't leak attention".
+        //
+        //          0 (root)
+        //         /        \
+        //        1          2
+        //
+        // ancestors[2] = {0, 2} — excludes node 1. Changing node 1's
+        // K/V (chain-B's slot) MUST NOT change node 2's output.
+        let Some(backend) = gpu_or_skip() else { return };
+
+        let num_q_heads = 4;
+        let num_kv_heads = 2;
+        let head_dim = 32;
+        let max_seq = 16;
+        let seq_len = 3;
+        let base_pos: i32 = 4;
+
+        let opts = make_opts(num_q_heads, num_kv_heads, head_dim, max_seq);
+        let q_dim = num_q_heads * head_dim;
+        let kv_dim = num_kv_heads * head_dim;
+
+        let q_host = synth(seq_len * q_dim, 0xF1);
+        let k_host = synth(seq_len * kv_dim, 0xF2);
+        let v_host = synth(seq_len * kv_dim, 0xF3);
+        let history = synth(base_pos as usize * kv_dim, 0xF4);
+        let base_pos_host = [base_pos];
+
+        let ancestors: Vec<u64> = vec![0b001, 0b011, 0b101];
+
+        let drv = backend.driver();
+        let q_dev = drv.stream.clone_htod(&q_host).expect("q");
+        let base_pos_dev = drv.stream.clone_htod(&base_pos_host).expect("base_pos");
+        let ancestors_dev = drv.stream.clone_htod(&ancestors).expect("ancestors");
+
+        let run = |poison_node_1: bool| -> Vec<f32> {
+            let mut k_local = k_host.clone();
+            let mut v_local = v_host.clone();
+            if poison_node_1 {
+                // Replace node 1's K/V row with a distinctive pattern.
+                // Node 1's K/V occupies indices [kv_dim, 2*kv_dim).
+                for s in k_local[kv_dim..2 * kv_dim].iter_mut() {
+                    *s = 5.0;
+                }
+                for s in v_local[kv_dim..2 * kv_dim].iter_mut() {
+                    *s = 7.0;
+                }
+            }
+            let k_dev = drv.stream.clone_htod(&k_local).expect("k");
+            let v_dev = drv.stream.clone_htod(&v_local).expect("v");
+            let (mut k_cache, mut v_cache) =
+                seed_kv_cache(&backend, &history, max_seq, num_kv_heads, head_dim);
+            let mut out = drv
+                .stream
+                .clone_htod(&vec![0.0_f32; seq_len * q_dim])
+                .expect("out");
+            fused_prefill_attention_tree_seq_device_into_pos_dev(
+                &backend,
+                &q_dev,
+                &k_dev,
+                &v_dev,
+                &mut k_cache,
+                &mut v_cache,
+                None,
+                None,
+                &mut out,
+                &base_pos_dev,
+                &ancestors_dev,
+                seq_len,
+                opts,
+            )
+            .expect("tree kernel");
+            drv.sync().expect("sync");
+            drv.to_host(&out).expect("dtoh")
+        };
+
+        let out_clean = run(false);
+        let out_poisoned = run(true);
+
+        // Node 2 occupies output rows [2 * q_dim, 3 * q_dim).
+        let start = 2 * q_dim;
+        let end = 3 * q_dim;
+        for i in start..end {
+            assert_eq!(
+                out_clean[i].to_bits(),
+                out_poisoned[i].to_bits(),
+                "sibling leak at output idx {i} (node 2 row): \
+                 clean {} vs poisoned {} — node 2 must not see node 1's K/V",
+                out_clean[i],
+                out_poisoned[i],
+            );
+        }
+    }
 }

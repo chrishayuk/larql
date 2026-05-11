@@ -210,7 +210,11 @@ where
 /// decodes bonus exactly like the `_with_probs` variant.
 /// On failure: cache is RESTORED to `pre_len`.
 ///
-/// Linear-chain only.
+/// `cuda-spec-branching-tree` T3.3: handles branching trees via
+/// `decode_tokens_speculative_tree_keep_cache`. Linear chains take the
+/// existing batched path (bit-exact). The tree path falls back to
+/// `None` on any backend failure so the v3 dispatcher can run the
+/// conservative per-node fallback.
 pub fn target_forward_via_speculative_decode_keep_cache_hiddens(
     weights: &ModelWeights,
     history: &[TokenId],
@@ -228,37 +232,56 @@ pub fn target_forward_via_speculative_decode_keep_cache_hiddens(
     }
 
     let paths = tree.root_to_leaf_paths();
-    if paths.len() != 1 {
-        return None;
-    }
-    let path = &paths[0];
-    debug_assert_eq!(path.len(), tree.len());
-    for (k, &node_idx) in path.iter().enumerate() {
-        if node_idx != k {
-            return None;
+    let is_linear = {
+        if paths.len() != 1 {
+            false
+        } else {
+            let path = &paths[0];
+            path.len() == tree.len() && path.iter().enumerate().all(|(k, &i)| i == k)
         }
-    }
+    };
 
-    let chain: Vec<TokenId> = path.iter().map(|&i| tree.nodes()[i].token.id).collect();
-    let x_per_token: Vec<Vec<f32>> = chain
+    let nodes = tree.nodes();
+    let x_per_node: Vec<Vec<f32>> = nodes
         .iter()
-        .map(|&tok| {
-            let h = crate::forward::embed_tokens_pub(weights, &[tok]);
+        .map(|n| {
+            let h = crate::forward::embed_tokens_pub(weights, &[n.token.id]);
             h.row(0).to_vec()
         })
         .collect();
-    let hiddens = backend.decode_tokens_speculative_keep_cache(
-        layers,
-        &x_per_token,
-        dims.hidden,
-        dims.intermediate,
-        dims.q_dim,
-        dims.kv_dim,
-        dims.num_q_heads,
-        dims.num_kv_heads,
-        dims.head_dim,
-        dims.rope_base,
-    )?;
+
+    let hiddens = if is_linear {
+        backend.decode_tokens_speculative_keep_cache(
+            layers,
+            &x_per_node,
+            dims.hidden,
+            dims.intermediate,
+            dims.q_dim,
+            dims.kv_dim,
+            dims.num_q_heads,
+            dims.num_kv_heads,
+            dims.head_dim,
+            dims.rope_base,
+        )?
+    } else {
+        // Branching tree → tree-mask kernel. Default trait impl
+        // returns `None` for non-CUDA backends, which routes the v3
+        // dispatcher to the conservative per-node fallback.
+        let ancestors = tree.ancestor_bitsets();
+        backend.decode_tokens_speculative_tree_keep_cache(
+            layers,
+            &x_per_node,
+            &ancestors,
+            dims.hidden,
+            dims.intermediate,
+            dims.q_dim,
+            dims.kv_dim,
+            dims.num_q_heads,
+            dims.num_kv_heads,
+            dims.head_dim,
+            dims.rope_base,
+        )?
+    };
     if hiddens.len() != tree.len() {
         backend.truncate_kv_cache(pre_len);
         return None;

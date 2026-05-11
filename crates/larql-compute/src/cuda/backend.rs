@@ -19,7 +19,7 @@ use super::dequant;
 use super::driver::Driver;
 use super::error::CudaInitError;
 use super::matmul as kernels;
-use super::scratch::{DecodeScratch, DecodeScratchShape, SpecDecodeScratch};
+use super::scratch::{DecodeScratch, SpecDecodeScratch, SpecScratchKey};
 use cudarc::driver::CudaGraph;
 
 /// `cuda-decode-cuda-graph`: thin Send-marker wrapper around cudarc's
@@ -81,18 +81,18 @@ pub struct CudaBackend {
     /// `cuda-spec-cuda-graph` Phase A: pre-allocated per-(seq_len,
     /// shape) scratch buffers for the spec batched seq forward path.
     /// Eliminates ~714 device_alloc calls per spec iter on Gemma 3 4B.
-    pub(crate) spec_decode_scratch: Mutex<HashMap<(usize, DecodeScratchShape), SpecDecodeScratch>>,
+    pub(crate) spec_decode_scratch: Mutex<HashMap<SpecScratchKey, SpecDecodeScratch>>,
     /// `cuda-spec-cuda-graph` Phase C: captured CUDA Graph for the
     /// spec batched seq forward, one per (seq_len, shape). Captured
     /// on the call AFTER the scratch is first warmed; subsequent
     /// calls replay the graph after writing `base_pos` + input to
     /// the scratch slots.
-    pub(crate) spec_decode_graph: Mutex<HashMap<(usize, DecodeScratchShape), DecodeGraph>>,
+    pub(crate) spec_decode_graph: Mutex<HashMap<SpecScratchKey, DecodeGraph>>,
     /// Warmup counter per (seq_len, shape) for the spec graph capture.
     /// Capture happens at count == 1 (the second call); call 0 warms
     /// every cache / scratch buffer so the captured graph has no
     /// allocations in it.
-    pub(crate) spec_decode_warmup: Mutex<HashMap<(usize, DecodeScratchShape), u32>>,
+    pub(crate) spec_decode_warmup: Mutex<HashMap<SpecScratchKey, u32>>,
 }
 
 impl CudaBackend {

@@ -116,3 +116,70 @@ slower than linear when only linear-shaped trees come in.
 - **Should the tree path co-exist with deferred-bonus?** Probably yes
   — they're orthogonal. Land branching first (bigger win), then
   layer deferred-bonus on top.
+
+## Bench results (RTX 4090, Gemma 3 4B Q4_K_M, 2026-05-10)
+
+Run on a JSON-structured prompt (PLD-friendly: highly repetitive
+inventory list with predictable continuations). Each iter time is
+the trace's `total=` field; ms/emit is per-emitted-user-token (not
+the bench's `ms/tok` which divides wall-clock by requested-tokens
+and so under-reports spec throughput).
+
+```
+plain decode                                                  8.03 ms/tok
+LARQL_DRAFTER=prompt_lookup LARQL_SPECULATIVE_DECODE=1
+  depth=2 branches=1 (linear)   α=0.959  3.92 emit/iter  7.01 ms/emit
+  depth=3 branches=1 (linear)   α=0.954  4.86 emit/iter  7.62 ms/emit
+  depth=4 branches=1 (linear)   α=0.887  5.54 emit/iter  5.86 ms/emit
+  depth=2 branches=2            α=0.648  3.92 emit/iter  7.71 ms/emit
+  depth=3 branches=2            α=0.720  4.86 emit/iter  6.41 ms/emit
+  depth=4 branches=2            α=0.726  5.63 emit/iter  5.65 ms/emit  ★ sweet spot
+  depth=2 branches=4            α=0.647  3.92 emit/iter  7.74 ms/emit
+  depth=3 branches=4            α=0.487  4.86 emit/iter  6.50 ms/emit
+  depth=4 branches=4            α=0.385  5.68 emit/iter  5.97 ms/emit
+```
+
+The D.3 perf-flip gate (≤1.6× plain = ≤12.85 ms/emit on this run)
+is hit by every config. **Sweet spot: depth=4 branches=2 → 1.42×
+FASTER than plain decode.** Branching adds 3-4% over linear at
+depth=4; deeper or wider trees don't help because PLD-tree's shape
+is fundamentally limited (each match is a single linear chain, so
+the tree maxes out at `min(branches, n-gram-matches)` distinct
+chains rather than a true K-ary tree).
+
+PLD is **workload-specific**: on a chat-style prompt with no
+echoing ("Q: ... A: ..."), the JSON-prompt sweet-spot config gives
+α=0 (zero drafts accepted) and the warmup tax + per-call overhead
+makes spec slower than plain. Default-flipping
+`LARQL_SPECULATIVE_DECODE=1` would help PLD-friendly workloads but
+hurt everything else. We keep the env var opt-in and document the
+sweet-spot config here for users who know their workload echoes
+the prompt.
+
+## verify_tree multi-path
+
+The original `verify_tree` picked a single root-to-leaf path (the
+most-likely under `p_draft` with lowest-index tie-break) and ran
+the linear `verify_and_accept` on it. This was correct for
+single-path drafters (EAGLE-1, depth-N linear PLD) but ignored the
+extra chains a branching drafter proposes, so branches=2 added
+forward work without harvesting more emits per iter.
+
+This change extends `verify_tree` to **multi-path verification**:
+
+1. Draw one `u ∈ [0, 1)` per tree node (BFS order).
+2. Per-node accept iff `u < p_target[id] / p_draft[id]`.
+3. For each root-to-leaf path, find its accepted-prefix length.
+4. Pick the path with the longest prefix; tie-break by lowest leaf
+   index (preserves the linear-PLD rightmost-match ordering).
+5. If the prefix is the whole path, sample bonus from
+   `p_target[leaf]`; else sample corrected from residual at the
+   rejected node.
+
+Correctness: each `(node, p_target, p_draft)` triple consumes
+exactly one RNG sample regardless of how many paths it's on, so the
+unbiased emission property of the Leviathan rejection rule
+generalises across paths. Linear chains (one root-to-leaf path)
+take the fast-path and run `verify_and_accept` bit-exactly — the
+existing `verify_tree_linear_matches_verify_and_accept` test stays
+green.

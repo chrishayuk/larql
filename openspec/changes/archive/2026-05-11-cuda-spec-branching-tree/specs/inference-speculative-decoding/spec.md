@@ -75,3 +75,38 @@ Dispatch contract:
 - **THEN** the wall-clock SHALL be ≤ 11.7 ms/tok (= 1.6× plain
   decode floor of 7.53 ms/tok on RTX 4090)
 <!-- test: unbacked -->
+
+### Requirement: Multi-path tree verification picks the longest accepting chain
+
+`verify_tree` SHALL implement multi-path verification when the
+input tree has more than one root-to-leaf path. For each tree
+node `n`, the verifier SHALL consume exactly one RNG draw
+`u_n ∈ [0, 1)` (in BFS / tree-index order) and SHALL accept `n`
+iff `u_n < p_target[n.id] / p_draft[n.id]` (Leviathan ratio). The
+emitted span SHALL come from the root-to-leaf path with the
+longest accepted-ancestor-prefix; ties SHALL be broken by lowest
+leaf index (preserving the rightmost-match ordering produced by
+PLD-tree).
+
+Linear (single-path) trees SHALL reduce bit-exactly to
+`verify_and_accept` — same RNG draws, same accept rule, same
+residual sampling on rejection. This preserves parity with the
+pre-branching baseline so existing single-path drafters keep
+their emit distributions.
+
+#### Scenario: branching-tree verifier rescues mid-chain rejection
+
+- **WHEN** a 2-branch tree's first chain (e.g. PLD-tree's rightmost
+  match) rejects mid-chain AND the second chain accepts fully
+- **THEN** the emitted span SHALL come from the second chain (= more
+  emits than the linear baseline on the same RNG seed)
+<!-- test: speculative::verify::tests::verify_tree_branching_more_emits_than_linear_on_same_seed -->
+
+#### Scenario: linear-chain verification preserves bit-parity
+
+- **WHEN** `verify_tree` is invoked on a tree with exactly one
+  root-to-leaf path (i.e. linear chain)
+- **THEN** the returned `AcceptedSpan` SHALL be bit-identical to
+  feeding the same drafts + per-position target distributions into
+  `verify_and_accept` with the same seeded RNG
+<!-- test: speculative::verify::tests::verify_tree_linear_matches_verify_and_accept -->
