@@ -12,6 +12,7 @@ pub mod deltanet_recurrence;
 pub mod deltanet_state;
 pub mod gpu;
 pub mod gqa;
+pub mod qwen35_attn;
 pub mod rope;
 
 use ndarray::Array2;
