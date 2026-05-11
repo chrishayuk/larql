@@ -777,4 +777,90 @@ mod tests {
             );
         }
     }
+
+    // ── C.4g: real-GGUF single-token forward smoke ──
+    //
+    // Gated on the same `LARQL_QWEN35_GGUF` env var as the bridge
+    // smoke test. Loads the GGUF, builds the bridge, allocates a
+    // hybrid cache, then runs `qwen35_forward_step` for one token.
+    // Asserts the logits are finite, shape matches vocab, and that
+    // the cache position advanced. Verifies the entire C.1 → C.4f
+    // stack composes against real Q4_K_S weights without panicking,
+    // NaN-ing, or shape-mismatching.
+    //
+    // Out-of-scope: matching llama.cpp's logits or argmax (that's
+    // C.5 parity oracle). Here we only assert the forward runs to
+    // completion and produces a finite distribution.
+    #[test]
+    fn real_gguf_qwen35_forward_one_token_smoke() {
+        let path = match std::env::var("LARQL_QWEN35_GGUF") {
+            Ok(p) => p,
+            Err(_) => {
+                eprintln!("LARQL_QWEN35_GGUF unset — skipping real-GGUF forward smoke test");
+                return;
+            }
+        };
+        let weights = larql_models::load_gguf(std::path::Path::new(&path))
+            .expect("load_gguf failed on Qwen3.6 GGUF");
+        let w = load_qwen35_weights(&weights, &*weights.arch).expect("load_qwen35_weights failed");
+
+        let arch = &*weights.arch;
+        let dn_dims = crate::attention::deltanet_block::DeltaNetDims {
+            hidden: weights.hidden_size,
+            head_v_dim: arch.ssm_state_size(),
+            n_v_heads: arch.ssm_dt_rank(),
+            n_k_heads: arch.ssm_group_count(),
+            d_conv: arch.ssm_conv_kernel(),
+            eps: 1e-6,
+        };
+        let rotary_dim: usize = arch
+            .rope_dimension_sections()
+            .map(|s| s.iter().sum())
+            .unwrap_or(weights.head_dim);
+        let attn_dims = crate::attention::qwen35_block::Qwen35AttentionDims {
+            hidden: weights.hidden_size,
+            n_head: weights.num_q_heads,
+            n_head_kv: weights.num_kv_heads,
+            head_dim: weights.head_dim,
+            rotary_dim,
+            rope_base: weights.rope_base,
+            eps: 1e-6,
+        };
+        let layer_kinds: Vec<bool> = (0..weights.num_layers)
+            .map(|l| arch.is_linear_attention_layer(l))
+            .collect();
+        let mut cache = crate::attention::qwen35_block::DeltaNetHybridCache::allocate(
+            &layer_kinds,
+            attn_dims.kv_dim(),
+            dn_dims.d_conv,
+            dn_dims.conv_dim(),
+            dn_dims.head_v_dim,
+            dn_dims.n_v_heads,
+        );
+
+        let token: u32 = 0; // any in-vocab token works for shape/finite check
+        let t = std::time::Instant::now();
+        let logits = crate::attention::qwen35_forward::qwen35_forward_step(
+            token, &w, &dn_dims, &attn_dims, &mut cache, 1e-6,
+        );
+        eprintln!("forward(one token) took {:?}", t.elapsed());
+
+        let vocab = weights.embed.shape()[0];
+        assert_eq!(logits.len(), vocab, "logits vocab dim");
+        assert!(
+            logits.iter().all(|v| v.is_finite()),
+            "all logits must be finite (sample: {:?})",
+            &logits.as_slice().unwrap()[..5.min(logits.len())]
+        );
+        assert_eq!(cache.next_position, 1);
+
+        // Spot-check: at least one logit should be non-zero (a
+        // uniform-zero output would indicate a silent zero-out
+        // somewhere in the stack).
+        let max_abs = logits.iter().fold(0.0_f32, |acc, &v| acc.max(v.abs()));
+        assert!(
+            max_abs > 0.0,
+            "max |logit| should be > 0; got {max_abs} (uniform zero output)"
+        );
+    }
 }
