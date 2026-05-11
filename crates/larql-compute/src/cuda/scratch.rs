@@ -20,7 +20,7 @@ use super::error::CudaInitError;
 /// Shape that uniquely identifies the buffer sizing for a decode
 /// pipeline. Two scratch buffers with equal `Shape` are bit-for-bit
 /// reusable — captured graphs are also keyed by this shape.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub(crate) struct DecodeScratchShape {
     pub hidden: usize,
     pub q_dim: usize,
@@ -71,6 +71,103 @@ pub(crate) struct DecodeScratch {
     // attention kernel's `pos` from this buffer; the host writes the
     // current `pos` into it before each replay (one i32 → 4 B htod).
     pub pos: CudaSlice<i32>,
+}
+
+/// Phase A of `cuda-spec-cuda-graph`: pre-allocated scratch buffers
+/// for the spec batched seq forward path (`decode_tokens_speculative_
+/// seq_device`). Same role as [`DecodeScratch`] but every buffer is
+/// sized for `seq_len > 1` rows. Reused across spec iters at the same
+/// `(seq_len, shape)`; shape mismatch invalidates and re-allocates.
+///
+/// Per-call savings: ~714 device_alloc calls collapse into one-time
+/// alloc at first use. Also gives the CUDA Graph capture (Phase C) a
+/// stable pointer set across replays.
+pub(crate) struct SpecDecodeScratch {
+    pub shape: DecodeScratchShape,
+    pub seq_len: usize,
+
+    // Running residual; persistent across layers within one spec iter.
+    pub h: CudaSlice<f32>,
+
+    // Pre-attn pipeline (per-seq).
+    pub h_attn: CudaSlice<f32>,
+    pub q: CudaSlice<f32>,
+    pub k: CudaSlice<f32>,
+    pub v: CudaSlice<f32>,
+    pub attn_out: CudaSlice<f32>,
+    pub attn_delta: CudaSlice<f32>,
+    pub attn_normed: CudaSlice<f32>,
+
+    // FFN pipeline (per-seq).
+    pub h_ffn: CudaSlice<f32>,
+    pub gate: CudaSlice<f32>,
+    pub up: CudaSlice<f32>,
+    pub act: CudaSlice<f32>,
+    pub ffn_delta: CudaSlice<f32>,
+    pub ffn_normed: CudaSlice<f32>,
+
+    // f16 ping-pong buffers for cuBLAS hgemm (input + output).
+    // Sized for the maximum projection across the layer pipeline
+    // (typically `inter` for FFN, `q_dim` for attention output).
+    pub x_f16_in: CudaSlice<half::f16>,
+    pub gemm_out_f16: CudaSlice<half::f16>,
+
+    // Device-side base_pos slot (Phase B will let the captured graph
+    // re-read this between replays at different cache positions).
+    pub base_pos: CudaSlice<i32>,
+}
+
+impl SpecDecodeScratch {
+    /// Maximum projection out_dim we need scratch space for. Conservative:
+    /// covers attention's q_dim and FFN's inter (whichever is larger).
+    fn max_proj_out_dim(shape: DecodeScratchShape) -> usize {
+        shape
+            .q_dim
+            .max(shape.kv_dim)
+            .max(shape.inter)
+            .max(shape.hidden)
+    }
+
+    pub fn allocate(
+        drv: &Driver,
+        shape: DecodeScratchShape,
+        seq_len: usize,
+    ) -> Result<Self, CudaInitError> {
+        let n = seq_len;
+        let max_out = Self::max_proj_out_dim(shape);
+        Ok(SpecDecodeScratch {
+            shape,
+            seq_len,
+            h: drv.device_alloc_uninit(n * shape.hidden)?,
+            h_attn: drv.device_alloc_uninit(n * shape.hidden)?,
+            q: drv.device_alloc_uninit(n * shape.q_dim)?,
+            k: drv.device_alloc_uninit(n * shape.kv_dim)?,
+            v: drv.device_alloc_uninit(n * shape.kv_dim)?,
+            attn_out: drv.device_alloc_uninit(n * shape.q_dim)?,
+            attn_delta: drv.device_alloc_uninit(n * shape.hidden)?,
+            attn_normed: drv.device_alloc_uninit(n * shape.hidden)?,
+            h_ffn: drv.device_alloc_uninit(n * shape.hidden)?,
+            gate: drv.device_alloc_uninit(n * shape.inter)?,
+            up: drv.device_alloc_uninit(n * shape.inter)?,
+            act: drv.device_alloc_uninit(n * shape.inter)?,
+            ffn_delta: drv.device_alloc_uninit(n * shape.hidden)?,
+            ffn_normed: drv.device_alloc_uninit(n * shape.hidden)?,
+            x_f16_in: unsafe {
+                drv.stream
+                    .alloc::<half::f16>(n * shape.hidden.max(shape.inter))
+                    .map_err(|e| CudaInitError::DriverMissing(format!("alloc x_f16_in: {e:?}")))?
+            },
+            gemm_out_f16: unsafe {
+                drv.stream.alloc::<half::f16>(n * max_out).map_err(|e| {
+                    CudaInitError::DriverMissing(format!("alloc gemm_out_f16: {e:?}"))
+                })?
+            },
+            base_pos: drv
+                .stream
+                .alloc_zeros::<i32>(1)
+                .map_err(|e| CudaInitError::DriverMissing(format!("alloc base_pos: {e:?}")))?,
+        })
+    }
 }
 
 impl DecodeScratch {

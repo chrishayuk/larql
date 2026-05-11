@@ -176,6 +176,63 @@ limited to the ~1 ms × 3 saved kernel launches.
   bonus K/V slot. Could be eliminated by deferring bonus K/V into the
   next iter's spec batch (~13% iter savings, ~0.7 ms/tok).
 
+### D.0.2 CUDA Graphs for spec batched forward (2026-05-10)
+
+Implemented in three phases:
+
+- **Phase A**: `SpecDecodeScratch` (one-time per (seq_len, model_shape)
+  pre-allocation of every per-layer intermediate). Added `_into`
+  variants for `rms_norm_batch_device`, `f32_to_f16_device`,
+  `f16_to_f32_device`, `matmul_transb_device_inout_f16`,
+  `gemm_proj_seq`, `fused_prefill_attention_seq_device`. Eliminates
+  ~714 device_alloc + ~952 cudaFree calls per spec iter on Gemma 3 4B.
+- **Phase B**: Modified `kv_cache_write_seq_f32` + `fused_prefill_attn`
+  CUDA kernels to read `base_pos` from a `const int*` device pointer
+  instead of an immediate int arg. Lets the captured graph be replayed
+  at a different cache position via a 4-byte `memcpy_htod` into the
+  pos slot. Added `fused_prefill_attention_seq_device_into_pos_dev`
+  variant that takes the device pointer directly (graph-capturable).
+- **Phase C**: Capture-on-second-call + replay pattern. New
+  `spec_decode_graph` cache (`HashMap<(seq_len, shape), DecodeGraph>`)
+  on `CudaBackend`. Each spec iter writes `x` and `base_pos` to scratch
+  slots, then launches the captured graph (one launch replaces ~952
+  individual kernel launches).
+
+Measured impact (RTX 4090, Gemma 3 4B Q4_K_M, depth=4, α=0.83):
+
+| Path | Forward time | Iter total | ms/tok | Vs prev |
+|---|---|---|---|---|
+| Pre-#35 (sequential lm_head)        | 18.5 ms | 49.7 | 31.13 | — |
+| #35 batched lm_head only            | 18.5 ms | 46.5 | 29.66 | -4.7% |
+| Phase A (scratch, no graph)         | 18.7 ms | 46.7 | 29.66 | neutral |
+| Phase B (pos-dev attn kernels)      | 18.7 ms | 46.7 | 29.62 | neutral |
+| Phase C (graph capture + replay)    | 17.8 ms | 46.3 | 29.38 | -0.9% |
+| **Total improvement from baseline** |         |      |       | **-5.6%** |
+
+Phase C captures the full per-layer pipeline (~952 kernel launches)
+into one graph, replayed in subsequent iters via a single launch +
+two 4-byte `memcpy_htod` updates (input embedding + base_pos). The
+~0.9 ms iter savings (~2%) is smaller than projected because:
+
+- Modern CUDA 12+ driver has per-kernel launch overhead of ~1 µs
+  (was 5-10 µs on older drivers), so 952 launches × 1 µs ≈ 1 ms is
+  near our floor.
+- cuBLAS GEMM internal work dominates the per-kernel cost at our
+  shapes (M=4, K=2560, N=10240), so kernel-launch amortisation alone
+  has limited headroom.
+
+Opt-out envs (default ON):
+- `LARQL_CUDA_SPEC_SCRATCH=0` — Phase A scratch off, use legacy alloc path.
+- `LARQL_CUDA_SPEC_GRAPH=0` — Phase C graph off, use Phase A+B replay path.
+
+Next bottlenecks (in order of remaining cost):
+- 21 ms lm_head GEMM at M=4 — bandwidth-limited reading 1.3 GB f16
+  weight. Could try in-place f32→f16→GEMM→f32 via `cublasGemmEx`
+  mixed-precision to skip the conversion-kernel pair.
+- 6.5 ms bonus decode — defer into next iter's spec batch.
+- 18 ms forward kernel compute itself — the GEMM is what it is; no
+  win without different precision or sparsity.
+
 ## Validation (this PR)
 
 - [x] V.1 `openspec validate cuda-spec-phase4b-complete --strict` passes

@@ -224,13 +224,51 @@ pub(crate) fn matmul_transb_device_inout_f16(
     n: usize,
     k: usize,
 ) -> Result<CudaSlice<half::f16>, CudaInitError> {
-    debug_assert_eq!(a_dev.len(), m * k, "A length mismatch");
-    debug_assert_eq!(b_dev.len(), n * k, "B length mismatch");
     let mut c_dev = unsafe {
         drv.stream
             .alloc::<half::f16>(m * n)
             .map_err(|e| CudaInitError::DriverMissing(format!("alloc f16 c: {e:?}")))?
     };
+    matmul_transb_device_inout_f16_into(drv, a_dev, b_dev, &mut c_dev, m, n, k)?;
+    Ok(c_dev)
+}
+
+/// Pre-allocated-output variant: writes the hgemm result into the
+/// caller-supplied `c_dev` (must have at least `m * n` elements; any
+/// trailing elements are untouched). Companion to
+/// [`matmul_transb_device_inout_f16`] for the spec-batched scratch
+/// path.
+pub(crate) fn matmul_transb_device_inout_f16_into(
+    drv: &Driver,
+    a_dev: &CudaSlice<half::f16>,
+    b_dev: &CudaSlice<half::f16>,
+    c_dev: &mut CudaSlice<half::f16>,
+    m: usize,
+    n: usize,
+    k: usize,
+) -> Result<(), CudaInitError> {
+    // Scratch buffers may be sized for the maximum projection in the
+    // pipeline, so accept `>=` not `==`. cuBLAS reads only m*k / n*k
+    // elements and writes only m*n.
+    debug_assert!(
+        a_dev.len() >= m * k,
+        "A length mismatch: {} < {}",
+        a_dev.len(),
+        m * k
+    );
+    debug_assert!(
+        b_dev.len() >= n * k,
+        "B length mismatch: {} < {}",
+        b_dev.len(),
+        n * k
+    );
+    if c_dev.len() < m * n {
+        return Err(CudaInitError::DriverMissing(format!(
+            "matmul_transb_device_inout_f16_into: c.len={} < m*n={}",
+            c_dev.len(),
+            m * n,
+        )));
+    }
     let cfg = GemmConfig {
         transa: CUBLAS_OP_T,
         transb: CUBLAS_OP_N,
@@ -244,11 +282,11 @@ pub(crate) fn matmul_transb_device_inout_f16(
         ldc: n as i32,
     };
     unsafe {
-        drv.blas.gemm(cfg, b_dev, a_dev, &mut c_dev).map_err(|e| {
-            CudaInitError::DriverMissing(format!("cublas matmul_transb_device_f16: {e:?}"))
+        drv.blas.gemm(cfg, b_dev, a_dev, c_dev).map_err(|e| {
+            CudaInitError::DriverMissing(format!("cublas matmul_transb_device_f16_into: {e:?}"))
         })?;
     }
-    Ok(c_dev)
+    Ok(())
 }
 
 /// Device-resident GEMV: `y = W * x` with both `W` and `x` already on

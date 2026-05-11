@@ -441,7 +441,7 @@ extern "C" __global__ void kv_cache_write_seq_f32(
     const float* k_norm,
     int num_kv_heads,
     int head_dim,
-    int base_pos,
+    const int* base_pos_dev,
     int seq_len,
     int max_seq,
     int rotary_dim,
@@ -453,7 +453,7 @@ extern "C" __global__ void kv_cache_write_seq_f32(
     int sp  = blockIdx.x;
     int kvh = blockIdx.y;
     if (sp >= seq_len || kvh >= num_kv_heads) return;
-    int pos = base_pos + sp;
+    int pos = (*base_pos_dev) + sp;
     if (pos >= max_seq) return;
 
     int tid  = threadIdx.x;
@@ -530,7 +530,7 @@ extern "C" __global__ void fused_prefill_attention_f32(
     int num_q_heads,
     int num_kv_heads,
     int head_dim,
-    int base_pos,
+    const int* base_pos_dev,
     int seq_len,
     int max_seq,
     int rotary_dim,
@@ -544,7 +544,7 @@ extern "C" __global__ void fused_prefill_attention_f32(
     int qh = blockIdx.x;
     int sp = blockIdx.y;
     if (qh >= num_q_heads || sp >= seq_len) return;
-    int pos = base_pos + sp;
+    int pos = (*base_pos_dev) + sp;
     if (pos >= max_seq) return;
 
     int tid = threadIdx.x;
@@ -1582,16 +1582,347 @@ fn fused_prefill_attention_function(drv: &Driver) -> Result<&'static CudaFunctio
     Ok(f)
 }
 
-/// Batched-prefill attention dispatch. `cuda-prefill-batched-attention`.
+/// Pre-allocated-output variant: writes the attention output into the
+/// caller-supplied `out_seq` (must have at least `seq_len * q_dim`
+/// elements). Same contract / kernel launches as
+/// [`fused_prefill_attention_seq_device`] otherwise.
 ///
-/// Runs in two passes on the same stream:
-///   1. `kv_cache_write_seq_f32` writes all `seq_len` K (with
-///      RoPE / QK-norm) and V rows into the cache slabs at
-///      positions `[base_pos, base_pos + seq_len)`.
-///   2. `fused_prefill_attention_f32` computes causal attention
-///      for every `(qh, sp)` pair against the cache, returning
-///      `out_seq: [seq_len, num_q_heads × head_dim]`.
+/// `cuda-spec-cuda-graph` Phase A companion — lets the spec batched
+/// forward keep its attention output in a scratch buffer instead of
+/// alloc+memcpy-dtod per layer.
 #[allow(clippy::too_many_arguments)]
+pub fn fused_prefill_attention_seq_device_into(
+    backend: &CudaBackend,
+    q_seq: &CudaSlice<f32>,
+    k_seq: &CudaSlice<f32>,
+    v_seq: &CudaSlice<f32>,
+    k_cache: &mut CudaSlice<half::f16>,
+    v_cache: &mut CudaSlice<half::f16>,
+    q_norm: Option<&[f32]>,
+    k_norm: Option<&[f32]>,
+    out_seq: &mut CudaSlice<f32>,
+    base_pos: usize,
+    seq_len: usize,
+    opts: FusedDecodeAttentionOpts,
+) -> Result<(), CudaInitError> {
+    let q_dim = opts.num_q_heads * opts.head_dim;
+    let kv_dim = opts.num_kv_heads * opts.head_dim;
+    let cache_len = opts.max_seq * opts.num_kv_heads * opts.head_dim;
+    if q_seq.len() < seq_len * q_dim {
+        return Err(CudaInitError::DriverMissing(format!(
+            "q_seq.len={} < seq_len*q_dim={}*{}",
+            q_seq.len(),
+            seq_len,
+            q_dim,
+        )));
+    }
+    if k_seq.len() < seq_len * kv_dim || v_seq.len() < seq_len * kv_dim {
+        return Err(CudaInitError::DriverMissing(format!(
+            "k_seq/v_seq.len mismatch for seq_len*kv_dim={}*{}",
+            seq_len, kv_dim,
+        )));
+    }
+    if out_seq.len() < seq_len * q_dim {
+        return Err(CudaInitError::DriverMissing(format!(
+            "out_seq.len={} < seq_len*q_dim={}*{}",
+            out_seq.len(),
+            seq_len,
+            q_dim,
+        )));
+    }
+    if k_cache.len() != cache_len || v_cache.len() != cache_len {
+        return Err(CudaInitError::DriverMissing(format!(
+            "k_cache/v_cache.len mismatch for max_seq*num_kv_heads*head_dim={}",
+            cache_len,
+        )));
+    }
+    if base_pos + seq_len > opts.max_seq {
+        return Err(CudaInitError::DriverMissing(format!(
+            "base_pos+seq_len={}>{}=max_seq",
+            base_pos + seq_len,
+            opts.max_seq,
+        )));
+    }
+
+    let q_norm_owned;
+    let k_norm_owned;
+    let q_norm = match q_norm {
+        Some(w) => {
+            assert_eq!(w.len(), opts.head_dim);
+            w
+        }
+        None => {
+            q_norm_owned = vec![0.0_f32; opts.head_dim];
+            &q_norm_owned
+        }
+    };
+    let k_norm = match k_norm {
+        Some(w) => {
+            assert_eq!(w.len(), opts.head_dim);
+            w
+        }
+        None => {
+            k_norm_owned = vec![0.0_f32; opts.head_dim];
+            &k_norm_owned
+        }
+    };
+    let use_qk_norm = !q_norm.iter().all(|&v| v == 0.0) || !k_norm.iter().all(|&v| v == 0.0);
+
+    let drv = backend.driver();
+    let func_kv = kv_cache_write_seq_function(drv)?;
+    let func_attn = fused_prefill_attention_function(drv)?;
+    // q_norm / k_norm: cache via arc_norm_device_buf (keyed by host
+    // pointer). On the spec hot path this collapses to a one-time
+    // upload per (layer, q_norm or k_norm host slice).
+    let q_norm_arc = backend.arc_norm_device_buf(q_norm)?;
+    let k_norm_arc = backend.arc_norm_device_buf(k_norm)?;
+
+    let block_dim_kv: u32 = 256;
+    let cfg_kv = LaunchConfig {
+        grid_dim: (seq_len as u32, opts.num_kv_heads as u32, 1),
+        block_dim: (block_dim_kv, 1, 1),
+        shared_mem_bytes: (block_dim_kv as usize * std::mem::size_of::<f32>()) as u32,
+    };
+    let num_kv_heads_i = opts.num_kv_heads as i32;
+    let head_dim_i = opts.head_dim as i32;
+    let base_pos_i = base_pos as i32;
+    let base_pos_dev = drv
+        .stream
+        .clone_htod(&[base_pos_i])
+        .map_err(|e| CudaInitError::DriverMissing(format!("clone_htod base_pos: {e:?}")))?;
+    let seq_len_i = seq_len as i32;
+    let max_seq_i = opts.max_seq as i32;
+    let rotary_dim_i = opts.rotary_dim as i32;
+    let use_qk_norm_i = if use_qk_norm { 1_i32 } else { 0_i32 };
+
+    fused_prefill_attention_launch_pos_dev(
+        drv,
+        func_kv,
+        func_attn,
+        q_seq,
+        k_seq,
+        v_seq,
+        k_cache,
+        v_cache,
+        &k_norm_arc,
+        &q_norm_arc,
+        out_seq,
+        &base_pos_dev,
+        seq_len,
+        opts,
+        num_kv_heads_i,
+        head_dim_i,
+        seq_len_i,
+        max_seq_i,
+        rotary_dim_i,
+        use_qk_norm_i,
+        cfg_kv,
+    )?;
+
+    Ok(())
+}
+
+/// `cuda-spec-cuda-graph` Phase B: variant of
+/// [`fused_prefill_attention_seq_device_into`] that takes `base_pos`
+/// as a pre-existing device-side i32 slot. Lets a captured CUDA Graph
+/// be replayed at a different cache position via `memcpy_htod` into
+/// the slot, without re-launching the wrapper.
+///
+/// Required for the spec batched forward's graph-capture path. The
+/// caller (typically a `SpecDecodeScratch`) owns `base_pos_dev` and
+/// writes the current position into it before each invocation.
+#[allow(clippy::too_many_arguments)]
+pub fn fused_prefill_attention_seq_device_into_pos_dev(
+    backend: &CudaBackend,
+    q_seq: &CudaSlice<f32>,
+    k_seq: &CudaSlice<f32>,
+    v_seq: &CudaSlice<f32>,
+    k_cache: &mut CudaSlice<half::f16>,
+    v_cache: &mut CudaSlice<half::f16>,
+    q_norm: Option<&[f32]>,
+    k_norm: Option<&[f32]>,
+    out_seq: &mut CudaSlice<f32>,
+    base_pos_dev: &CudaSlice<i32>,
+    seq_len: usize,
+    opts: FusedDecodeAttentionOpts,
+) -> Result<(), CudaInitError> {
+    let q_dim = opts.num_q_heads * opts.head_dim;
+    let kv_dim = opts.num_kv_heads * opts.head_dim;
+    let cache_len = opts.max_seq * opts.num_kv_heads * opts.head_dim;
+    if q_seq.len() < seq_len * q_dim
+        || k_seq.len() < seq_len * kv_dim
+        || v_seq.len() < seq_len * kv_dim
+        || out_seq.len() < seq_len * q_dim
+        || k_cache.len() != cache_len
+        || v_cache.len() != cache_len
+    {
+        return Err(CudaInitError::DriverMissing(
+            "fused_prefill_attention_seq_device_into_pos_dev: shape mismatch".into(),
+        ));
+    }
+
+    let q_norm_owned;
+    let k_norm_owned;
+    let q_norm = match q_norm {
+        Some(w) => {
+            assert_eq!(w.len(), opts.head_dim);
+            w
+        }
+        None => {
+            q_norm_owned = vec![0.0_f32; opts.head_dim];
+            &q_norm_owned
+        }
+    };
+    let k_norm = match k_norm {
+        Some(w) => {
+            assert_eq!(w.len(), opts.head_dim);
+            w
+        }
+        None => {
+            k_norm_owned = vec![0.0_f32; opts.head_dim];
+            &k_norm_owned
+        }
+    };
+    let use_qk_norm = !q_norm.iter().all(|&v| v == 0.0) || !k_norm.iter().all(|&v| v == 0.0);
+
+    let drv = backend.driver();
+    let func_kv = kv_cache_write_seq_function(drv)?;
+    let func_attn = fused_prefill_attention_function(drv)?;
+    let q_norm_arc = backend.arc_norm_device_buf(q_norm)?;
+    let k_norm_arc = backend.arc_norm_device_buf(k_norm)?;
+
+    let block_dim_kv: u32 = 256;
+    let cfg_kv = LaunchConfig {
+        grid_dim: (seq_len as u32, opts.num_kv_heads as u32, 1),
+        block_dim: (block_dim_kv, 1, 1),
+        shared_mem_bytes: (block_dim_kv as usize * std::mem::size_of::<f32>()) as u32,
+    };
+    let num_kv_heads_i = opts.num_kv_heads as i32;
+    let head_dim_i = opts.head_dim as i32;
+    let seq_len_i = seq_len as i32;
+    let max_seq_i = opts.max_seq as i32;
+    let rotary_dim_i = opts.rotary_dim as i32;
+    let use_qk_norm_i = if use_qk_norm { 1_i32 } else { 0_i32 };
+
+    fused_prefill_attention_launch_pos_dev(
+        drv,
+        func_kv,
+        func_attn,
+        q_seq,
+        k_seq,
+        v_seq,
+        k_cache,
+        v_cache,
+        &k_norm_arc,
+        &q_norm_arc,
+        out_seq,
+        base_pos_dev,
+        seq_len,
+        opts,
+        num_kv_heads_i,
+        head_dim_i,
+        seq_len_i,
+        max_seq_i,
+        rotary_dim_i,
+        use_qk_norm_i,
+        cfg_kv,
+    )?;
+
+    Ok(())
+}
+
+/// Shared kernel-launch helper for the `_pos_dev` family. Avoids
+/// duplicating the launch builder code between the alloc-base_pos
+/// wrapper and the device-pointer wrapper.
+#[allow(clippy::too_many_arguments)]
+fn fused_prefill_attention_launch_pos_dev(
+    drv: &Driver,
+    func_kv: &CudaFunction,
+    func_attn: &CudaFunction,
+    q_seq: &CudaSlice<f32>,
+    k_seq: &CudaSlice<f32>,
+    v_seq: &CudaSlice<f32>,
+    k_cache: &mut CudaSlice<half::f16>,
+    v_cache: &mut CudaSlice<half::f16>,
+    k_norm_dev: &CudaSlice<f32>,
+    q_norm_dev: &CudaSlice<f32>,
+    out_seq: &mut CudaSlice<f32>,
+    base_pos_dev: &CudaSlice<i32>,
+    seq_len: usize,
+    opts: FusedDecodeAttentionOpts,
+    num_kv_heads_i: i32,
+    head_dim_i: i32,
+    seq_len_i: i32,
+    max_seq_i: i32,
+    rotary_dim_i: i32,
+    use_qk_norm_i: i32,
+    cfg_kv: LaunchConfig,
+) -> Result<(), CudaInitError> {
+    unsafe {
+        drv.stream
+            .launch_builder(func_kv)
+            .arg(k_seq)
+            .arg(v_seq)
+            .arg(&mut *k_cache)
+            .arg(&mut *v_cache)
+            .arg(k_norm_dev)
+            .arg(&num_kv_heads_i)
+            .arg(&head_dim_i)
+            .arg(base_pos_dev)
+            .arg(&seq_len_i)
+            .arg(&max_seq_i)
+            .arg(&rotary_dim_i)
+            .arg(&opts.rope_base)
+            .arg(&opts.eps)
+            .arg(&opts.qk_norm_offset)
+            .arg(&use_qk_norm_i)
+            .launch(cfg_kv)
+            .map_err(|e| {
+                CudaInitError::DriverMissing(format!("launch kv_cache_write_seq_pos_dev: {e:?}"))
+            })?;
+    }
+
+    let block_dim_attn: u32 = 256;
+    let cfg_attn = LaunchConfig {
+        grid_dim: (opts.num_q_heads as u32, seq_len as u32, 1),
+        block_dim: (block_dim_attn, 1, 1),
+        shared_mem_bytes: ((opts.max_seq + block_dim_attn as usize + opts.head_dim)
+            * std::mem::size_of::<f32>()) as u32,
+    };
+    let num_q_heads_i = opts.num_q_heads as i32;
+
+    unsafe {
+        drv.stream
+            .launch_builder(func_attn)
+            .arg(q_seq)
+            .arg(&*k_cache)
+            .arg(&*v_cache)
+            .arg(q_norm_dev)
+            .arg(out_seq)
+            .arg(&num_q_heads_i)
+            .arg(&num_kv_heads_i)
+            .arg(&head_dim_i)
+            .arg(base_pos_dev)
+            .arg(&seq_len_i)
+            .arg(&max_seq_i)
+            .arg(&rotary_dim_i)
+            .arg(&opts.rope_base)
+            .arg(&opts.eps)
+            .arg(&opts.qk_norm_offset)
+            .arg(&opts.attn_scale)
+            .arg(&opts.softcap)
+            .arg(&use_qk_norm_i)
+            .launch(cfg_attn)
+            .map_err(|e| {
+                CudaInitError::DriverMissing(format!(
+                    "launch fused_prefill_attention_pos_dev: {e:?}"
+                ))
+            })?;
+    }
+
+    Ok(())
+}
+
 pub fn fused_prefill_attention_seq_device(
     backend: &CudaBackend,
     q_seq: &CudaSlice<f32>,
@@ -1676,6 +2007,14 @@ pub fn fused_prefill_attention_seq_device(
     let num_kv_heads_i = opts.num_kv_heads as i32;
     let head_dim_i = opts.head_dim as i32;
     let base_pos_i = base_pos as i32;
+    // Allocate a small device int slot for base_pos. The kernel now
+    // reads pos from `const int*` so a captured CUDA Graph can replay
+    // at a different position via `memcpy_htod`. For non-captured
+    // calls this is a one-time htod of 4 bytes per launch.
+    let base_pos_dev = drv
+        .stream
+        .clone_htod(&[base_pos_i])
+        .map_err(|e| CudaInitError::DriverMissing(format!("clone_htod base_pos: {e:?}")))?;
     let seq_len_i = seq_len as i32;
     let max_seq_i = opts.max_seq as i32;
     let rotary_dim_i = opts.rotary_dim as i32;
@@ -1691,7 +2030,7 @@ pub fn fused_prefill_attention_seq_device(
             .arg(&k_norm_dev)
             .arg(&num_kv_heads_i)
             .arg(&head_dim_i)
-            .arg(&base_pos_i)
+            .arg(&base_pos_dev)
             .arg(&seq_len_i)
             .arg(&max_seq_i)
             .arg(&rotary_dim_i)
@@ -1725,7 +2064,7 @@ pub fn fused_prefill_attention_seq_device(
             .arg(&num_q_heads_i)
             .arg(&num_kv_heads_i)
             .arg(&head_dim_i)
-            .arg(&base_pos_i)
+            .arg(&base_pos_dev)
             .arg(&seq_len_i)
             .arg(&max_seq_i)
             .arg(&rotary_dim_i)

@@ -21041,55 +21041,55 @@
     {
       "fqn": "larql_compute::cuda::backend::cuda_graph_capture_replay_smoke_test",
       "file": "crates/larql-compute/src/cuda/backend.rs",
-      "line": 809,
+      "line": 827,
       "crate": "larql_compute"
     },
     {
       "fqn": "larql_compute::cuda::backend::driver_missing_returns_typed_error",
       "file": "crates/larql-compute/src/cuda/backend.rs",
-      "line": 729,
+      "line": 747,
       "crate": "larql_compute"
     },
     {
       "fqn": "larql_compute::cuda::backend::supports_cuda_oxide_when_feature_enabled",
       "file": "crates/larql-compute/src/cuda/backend.rs",
-      "line": 794,
+      "line": 812,
       "crate": "larql_compute"
     },
     {
       "fqn": "larql_compute::cuda::backend::supports_decode_after_cuda_decode_backend",
       "file": "crates/larql-compute/src/cuda/backend.rs",
-      "line": 786,
+      "line": 804,
       "crate": "larql_compute"
     },
     {
       "fqn": "larql_compute::cuda::backend::supports_f32_gemv_after_baseline",
       "file": "crates/larql-compute/src/cuda/backend.rs",
-      "line": 746,
+      "line": 764,
       "crate": "larql_compute"
     },
     {
       "fqn": "larql_compute::cuda::backend::supports_fa2_after_fused_attention",
       "file": "crates/larql-compute/src/cuda/backend.rs",
-      "line": 771,
+      "line": 789,
       "crate": "larql_compute"
     },
     {
       "fqn": "larql_compute::cuda::backend::supports_q4_matvec_after_q4_baseline",
       "file": "crates/larql-compute/src/cuda/backend.rs",
-      "line": 760,
+      "line": 778,
       "crate": "larql_compute"
     },
     {
       "fqn": "larql_compute::cuda::backend::tests::cuda_graph_capture_replay_smoke_test",
       "file": "crates/larql-compute/src/cuda/backend.rs",
-      "line": 809,
+      "line": 827,
       "crate": "larql_compute"
     },
     {
       "fqn": "larql_compute::cuda::backend::tests::supports_cuda_oxide_when_feature_enabled",
       "file": "crates/larql-compute/src/cuda/backend.rs",
-      "line": 794,
+      "line": 812,
       "crate": "larql_compute"
     },
     {
@@ -21119,19 +21119,19 @@
     {
       "fqn": "larql_compute::cuda::elem::q8_1_quantize_roundtrips_to_within_quant_noise",
       "file": "crates/larql-compute/src/cuda/elem.rs",
-      "line": 976,
+      "line": 1128,
       "crate": "larql_compute"
     },
     {
       "fqn": "larql_compute::cuda::matmul::cuda_op_constants_are_distinct",
       "file": "crates/larql-compute/src/cuda/matmul.rs",
-      "line": 296,
+      "line": 334,
       "crate": "larql_compute"
     },
     {
       "fqn": "larql_compute::cuda::matmul::tests::cuda_op_constants_are_distinct",
       "file": "crates/larql-compute/src/cuda/matmul.rs",
-      "line": 296,
+      "line": 334,
       "crate": "larql_compute"
     },
     {

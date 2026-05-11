@@ -2111,6 +2111,85 @@ impl CudaBackend {
     ///    on Ada/Ampere/Hopper).
     /// 3. Convert the f16 result → fresh f32 buffer for the rest of
     ///    the pipeline.
+    /// Pre-allocated-output variant of [`gemm_proj_seq`]. Writes the
+    /// f32 projection into `out_f32` and reuses the caller-supplied
+    /// `x_f16_scratch` and `out_f16_scratch` for the intermediate
+    /// f16 buffers (must each have at least `seq_len*hidden` and
+    /// `seq_len*out_dim` elements respectively). Pure-`_into` version
+    /// for `cuda-spec-cuda-graph` Phase A.
+    #[allow(clippy::too_many_arguments)]
+    pub(crate) fn gemm_proj_seq_into(
+        &self,
+        weight: QuantWeight<'_>,
+        x_seq: &CudaSlice<f32>,
+        x_f16_scratch: &mut CudaSlice<half::f16>,
+        out_f16_scratch: &mut CudaSlice<half::f16>,
+        out_f32: &mut CudaSlice<f32>,
+        seq_len: usize,
+        out_dim: usize,
+        hidden: usize,
+    ) -> Option<()> {
+        let n_elements = out_dim * hidden;
+        if !prefill_tensor_cores_enabled() {
+            // Slow path: just delegate to the allocating variant + a
+            // device→device copy. Phase A only optimises the f16
+            // hgemm path (the default).
+            let tmp = self.gemm_proj_seq(weight, x_seq, seq_len, out_dim, hidden)?;
+            self.driver()
+                .stream
+                .memcpy_dtod(&tmp, &mut out_f32.slice_mut(..tmp.len()))
+                .ok()?;
+            return Some(());
+        }
+        // f32_to_f16: the kernel reads min(in.len(), arg n) elements. We
+        // pass the entire `x_seq` (length = seq_len*hidden), so the f16
+        // scratch's first seq_len*hidden elements get populated.
+        super::elem::f32_to_f16_device_into(self, x_seq, x_f16_scratch).ok()?;
+        match weight.format {
+            QuantFormat::Q4_K => self
+                .with_q4k_f16_device_buf(weight.data, n_elements, |w_dev| {
+                    kernels::matmul_transb_device_inout_f16_into(
+                        self.driver(),
+                        x_f16_scratch,
+                        w_dev,
+                        out_f16_scratch,
+                        seq_len,
+                        out_dim,
+                        hidden,
+                    )
+                })
+                .ok()?,
+            QuantFormat::Q6_K => self
+                .with_q6k_f16_device_buf(weight.data, n_elements, |w_dev| {
+                    kernels::matmul_transb_device_inout_f16_into(
+                        self.driver(),
+                        x_f16_scratch,
+                        w_dev,
+                        out_f16_scratch,
+                        seq_len,
+                        out_dim,
+                        hidden,
+                    )
+                })
+                .ok()?,
+            _ => return None,
+        }
+        // f16_to_f32: same — kernel reads in_f16.len() elements. But the
+        // scratch is sized to max_out, so we'd convert extra garbage at
+        // the tail. To avoid that, slice the input to exactly seq_len *
+        // out_dim before conversion. cudarc CudaSlice doesn't directly
+        // expose len-clamping conversion, so we do a transient clone
+        // of just the active prefix instead — TODO replace with a
+        // length-arg variant of f16_to_f32 if hot.
+        let nseq_outdim = seq_len * out_dim;
+        debug_assert!(out_f16_scratch.len() >= nseq_outdim);
+        // The conversion kernel only processes `out_f32.len()` elements,
+        // so passing out_f32 (sized exactly seq_len*out_dim) bounds the
+        // work correctly even though out_f16_scratch may be larger.
+        super::elem::f16_to_f32_device_into_with_len(self, out_f16_scratch, out_f32, nseq_outdim)
+            .ok()
+    }
+
     pub(crate) fn gemm_proj_seq(
         &self,
         weight: QuantWeight<'_>,
@@ -2605,6 +2684,29 @@ impl CudaBackend {
             return None;
         }
 
+        // `cuda-spec-cuda-graph` Phase A: route through pre-allocated
+        // scratch buffers. Eliminates ~714 per-call device_alloc's
+        // (each GEMM helper internally allocates 3 buffers; ×7 ops
+        // ×34 layers). Env opt-out for fallback comparisons.
+        let use_scratch = std::env::var("LARQL_CUDA_SPEC_SCRATCH").ok().as_deref() != Some("0");
+        if use_scratch {
+            return self.decode_tokens_speculative_seq_device_scratch(
+                layers,
+                x,
+                hidden,
+                inter,
+                q_dim,
+                _kv_dim,
+                seq_len,
+                num_q_heads,
+                num_kv_heads,
+                head_dim,
+                rope_base,
+                base_pos,
+                cache,
+            );
+        }
+
         let mut h_seq = self.htod_f32(x).ok()?;
 
         for (layer_idx, layer) in layers.iter().enumerate() {
@@ -2778,5 +2880,381 @@ impl CudaBackend {
         // immediately after this returns to honor the trait contract.
         cache.len = base_pos + seq_len;
         self.dtoh_f32(&h_seq).ok()
+    }
+
+    /// `cuda-spec-cuda-graph` Phase A/B/C: scratch + graph variant of
+    /// `decode_tokens_speculative_seq_device`. Functionally identical
+    /// but:
+    /// - Phase A: every per-layer intermediate is written into a
+    ///   pre-allocated [`SpecDecodeScratch`] buffer.
+    /// - Phase B: the attention kernels read `base_pos` from a
+    ///   device-side i32 slot so the kernel launches can be captured.
+    /// - Phase C: on the second call at a given `(seq_len, shape)`,
+    ///   captures a CUDA Graph spanning the full per-layer pipeline.
+    ///   Subsequent calls just `memcpy_htod` the input + base_pos and
+    ///   replay the graph — collapsing ~952 kernel launches into one.
+    ///
+    /// Returns the same flat `[seq_len, hidden]` f32 vector as the
+    /// legacy path. Cache `len` is advanced by the caller.
+    #[allow(clippy::too_many_arguments)]
+    fn decode_tokens_speculative_seq_device_scratch(
+        &self,
+        layers: &[FullPipelineLayer<'_>],
+        x: &[f32],
+        hidden: usize,
+        inter: usize,
+        q_dim: usize,
+        kv_dim_param: usize,
+        seq_len: usize,
+        num_q_heads: usize,
+        num_kv_heads: usize,
+        head_dim: usize,
+        rope_base: f32,
+        base_pos: usize,
+        cache: &mut CudaKvCache,
+    ) -> Option<Vec<f32>> {
+        use super::scratch::{DecodeScratchShape, SpecDecodeScratch};
+
+        let shape = DecodeScratchShape {
+            hidden,
+            q_dim,
+            kv_dim: kv_dim_param,
+            inter,
+            head_dim,
+        };
+        let key = (seq_len, shape);
+        let mut scratch_map = self.spec_decode_scratch.lock().ok()?;
+        let scratch = match scratch_map.entry(key) {
+            std::collections::hash_map::Entry::Occupied(e) => e.into_mut(),
+            std::collections::hash_map::Entry::Vacant(e) => {
+                let s = SpecDecodeScratch::allocate(self.driver(), shape, seq_len).ok()?;
+                e.insert(s)
+            }
+        };
+
+        // Copy input x → scratch.h (length seq_len * hidden).
+        self.driver().stream.memcpy_htod(x, &mut scratch.h).ok()?;
+
+        // Phase B: write base_pos to scratch.base_pos so the attn
+        // kernels (now reading `const int* base_pos_dev`) pick up the
+        // current cache position. A captured CUDA Graph (Phase C) just
+        // re-runs the kernels after this single i32 memcpy_htod.
+        let base_pos_i32 = base_pos as i32;
+        self.driver()
+            .stream
+            .memcpy_htod(std::slice::from_ref(&base_pos_i32), &mut scratch.base_pos)
+            .ok()?;
+
+        // ── Phase C: replay captured graph if available ──────────
+        let graph_enabled = std::env::var("LARQL_CUDA_SPEC_GRAPH").ok().as_deref() != Some("0");
+        if graph_enabled {
+            let graph_guard = self.spec_decode_graph.lock().ok()?;
+            if let Some(graph) = graph_guard.get(&key) {
+                graph.0.launch().ok()?;
+                drop(graph_guard);
+                self.driver().sync().ok()?;
+                cache.len = base_pos + seq_len;
+                return self.dtoh_f32(&scratch.h).ok();
+            }
+            drop(graph_guard);
+        }
+
+        // ── Decide whether to capture this iteration ──────────────
+        // Pattern matches `decode_token_device`: warm caches on call
+        // 0, capture on call 1, replay on call 2+.
+        let do_capture = if graph_enabled {
+            let mut counts = self.spec_decode_warmup.lock().ok()?;
+            let count = *counts.entry(key).or_insert(0);
+            counts.insert(key, count + 1);
+            count == 1
+        } else {
+            false
+        };
+
+        // Drain any pre-capture stream work so begin_capture sees a
+        // clean state — STREAM_CAPTURE_ISOLATION otherwise.
+        if do_capture {
+            self.driver().sync().ok()?;
+            self.driver()
+                .stream
+                .begin_capture(
+                    cudarc::driver::sys::CUstreamCaptureMode::CU_STREAM_CAPTURE_MODE_RELAXED,
+                )
+                .ok()?;
+        }
+
+        for (layer_idx, layer) in layers.iter().enumerate() {
+            let layer_head_dim = layer.head_dim.max(head_dim);
+            let layer_num_q_heads = layer.num_q_heads.max(num_q_heads);
+            let layer_num_kv_heads = layer.num_kv_heads.max(num_kv_heads);
+            let layer_q_dim = layer_num_q_heads * layer_head_dim;
+            let layer_kv_dim = layer_num_kv_heads * layer_head_dim;
+            let layer_rope_base = if layer.rope_base != 0.0 {
+                layer.rope_base
+            } else {
+                rope_base
+            };
+            let layer_rotary_dim = layer.rotary_dim;
+
+            // 1. Pre-attn rms_norm → scratch.h_attn (split-borrow).
+            {
+                let input_norm_arc = self.arc_norm_device_buf(layer.input_norm).ok()?;
+                elem::rms_norm_batch_device_into(
+                    self,
+                    &scratch.h,
+                    Some(&input_norm_arc),
+                    &mut scratch.h_attn,
+                    hidden,
+                    seq_len,
+                    layer.eps,
+                    layer.norm_offset,
+                )
+                .ok()?;
+            }
+
+            // 2. QKV projections via gemm_proj_seq_into.
+            self.gemm_proj_seq_into(
+                layer.wq,
+                &scratch.h_attn,
+                &mut scratch.x_f16_in,
+                &mut scratch.gemm_out_f16,
+                &mut scratch.q,
+                seq_len,
+                layer_q_dim,
+                hidden,
+            )?;
+            self.gemm_proj_seq_into(
+                layer.wk,
+                &scratch.h_attn,
+                &mut scratch.x_f16_in,
+                &mut scratch.gemm_out_f16,
+                &mut scratch.k,
+                seq_len,
+                layer_kv_dim,
+                hidden,
+            )?;
+            self.gemm_proj_seq_into(
+                layer.wv,
+                &scratch.h_attn,
+                &mut scratch.x_f16_in,
+                &mut scratch.gemm_out_f16,
+                &mut scratch.v,
+                seq_len,
+                layer_kv_dim,
+                hidden,
+            )?;
+
+            // 3. Batched attention into scratch.attn_out via the
+            //    pos_dev variant (reads base_pos from scratch.base_pos).
+            //    No alloc, no memcpy_dtod, graph-capturable.
+            let max_seq = cache.max_seq;
+            let kv_slot = cache.layers.get_mut(layer_idx)?;
+            attn::fused_prefill_attention_seq_device_into_pos_dev(
+                self,
+                &scratch.q,
+                &scratch.k,
+                &scratch.v,
+                &mut kv_slot.k,
+                &mut kv_slot.v,
+                layer.q_norm_weight,
+                layer.k_norm_weight,
+                &mut scratch.attn_out,
+                &scratch.base_pos,
+                seq_len,
+                attn::FusedDecodeAttentionOpts {
+                    num_q_heads: layer_num_q_heads,
+                    num_kv_heads: layer_num_kv_heads,
+                    head_dim: layer_head_dim,
+                    pos: base_pos,
+                    max_seq,
+                    rotary_dim: layer_rotary_dim,
+                    rope_base: layer_rope_base,
+                    eps: layer.eps,
+                    qk_norm_offset: layer.qk_norm_offset,
+                    attn_scale: layer.attn_scale,
+                    softcap: 0.0,
+                },
+            )
+            .ok()?;
+
+            // 4. wo projection → scratch.attn_delta.
+            self.gemm_proj_seq_into(
+                layer.wo,
+                &scratch.attn_out,
+                &mut scratch.x_f16_in,
+                &mut scratch.gemm_out_f16,
+                &mut scratch.attn_delta,
+                seq_len,
+                hidden,
+                layer_q_dim,
+            )?;
+
+            // 5. Residual + optional post-attn rms_norm.
+            if layer.has_post_norms {
+                let post_attn_norm_arc = self.arc_norm_device_buf(layer.post_attn_norm).ok()?;
+                elem::rms_norm_batch_device_into(
+                    self,
+                    &scratch.attn_delta,
+                    Some(&post_attn_norm_arc),
+                    &mut scratch.attn_normed,
+                    hidden,
+                    seq_len,
+                    layer.eps,
+                    layer.norm_offset,
+                )
+                .ok()?;
+                elem::add_in_place_batch_device(self, &mut scratch.h, &scratch.attn_normed).ok()?;
+            } else {
+                elem::add_in_place_batch_device(self, &mut scratch.h, &scratch.attn_delta).ok()?;
+            }
+
+            // 6. Pre-FFN rms_norm → scratch.h_ffn.
+            let ffn_norm_weight: &[f32] = if layer.has_post_norms {
+                layer.pre_ffn_norm.unwrap_or(layer.post_attn_norm)
+            } else {
+                layer.post_attn_norm
+            };
+            {
+                let ffn_norm_arc = self.arc_norm_device_buf(ffn_norm_weight).ok()?;
+                elem::rms_norm_batch_device_into(
+                    self,
+                    &scratch.h,
+                    Some(&ffn_norm_arc),
+                    &mut scratch.h_ffn,
+                    hidden,
+                    seq_len,
+                    layer.eps,
+                    layer.norm_offset,
+                )
+                .ok()?;
+            }
+
+            // 7. gate / up via gemm_proj_seq_into.
+            self.gemm_proj_seq_into(
+                layer.gate,
+                &scratch.h_ffn,
+                &mut scratch.x_f16_in,
+                &mut scratch.gemm_out_f16,
+                &mut scratch.gate,
+                seq_len,
+                inter,
+                hidden,
+            )?;
+            self.gemm_proj_seq_into(
+                layer.up,
+                &scratch.h_ffn,
+                &mut scratch.x_f16_in,
+                &mut scratch.gemm_out_f16,
+                &mut scratch.up,
+                seq_len,
+                inter,
+                hidden,
+            )?;
+
+            // 8. silu / gelu × up → scratch.act (use _into variant).
+            let gelu_tanh = matches!(layer.activation, Activation::GeluTanh);
+            // silu_gate_up_device_into expects strict `n` length on gate/up/out.
+            // Our scratch buffers are sized exactly `seq_len * inter` for gate,
+            // up, and act, so the contract holds.
+            elem::silu_gate_up_device_into(
+                self,
+                &scratch.gate,
+                &scratch.up,
+                &mut scratch.act,
+                seq_len * inter,
+                gelu_tanh,
+            )
+            .ok()?;
+
+            // 9. down → scratch.ffn_delta.
+            self.gemm_proj_seq_into(
+                layer.down,
+                &scratch.act,
+                &mut scratch.x_f16_in,
+                &mut scratch.gemm_out_f16,
+                &mut scratch.ffn_delta,
+                seq_len,
+                hidden,
+                inter,
+            )?;
+
+            // 10. Residual + optional post-FFN rms_norm.
+            if layer.has_post_norms {
+                let normed_src = match layer.post_ffn_norm {
+                    Some(w) if !w.is_empty() => {
+                        let post_ffn_norm_arc = self.arc_norm_device_buf(w).ok()?;
+                        elem::rms_norm_batch_device_into(
+                            self,
+                            &scratch.ffn_delta,
+                            Some(&post_ffn_norm_arc),
+                            &mut scratch.ffn_normed,
+                            hidden,
+                            seq_len,
+                            layer.eps,
+                            layer.norm_offset,
+                        )
+                        .ok()?;
+                        true
+                    }
+                    _ => {
+                        elem::rms_norm_batch_device_into(
+                            self,
+                            &scratch.ffn_delta,
+                            None,
+                            &mut scratch.ffn_normed,
+                            hidden,
+                            seq_len,
+                            layer.eps,
+                            layer.norm_offset,
+                        )
+                        .ok()?;
+                        true
+                    }
+                };
+                let _ = normed_src;
+                elem::add_in_place_batch_device(self, &mut scratch.h, &scratch.ffn_normed).ok()?;
+            } else {
+                elem::add_in_place_batch_device(self, &mut scratch.h, &scratch.ffn_delta).ok()?;
+            }
+
+            if layer.layer_scalar != 0.0 && layer.layer_scalar != 1.0 {
+                elem::scale_inplace_batch_device(self, &mut scratch.h, layer.layer_scalar).ok()?;
+            }
+        }
+
+        // End graph capture if this was the capture iteration. The
+        // captured graph is stored so subsequent calls at the same
+        // (seq_len, shape) replay it directly.
+        if do_capture {
+            match self.driver().stream.end_capture(
+                cudarc::driver::sys::CUgraphInstantiate_flags::CUDA_GRAPH_INSTANTIATE_FLAG_AUTO_FREE_ON_LAUNCH,
+            ) {
+                Ok(Some(graph)) => {
+                    // Replay the freshly-captured graph to actually run
+                    // the kernels (capture only records).
+                    graph.launch().ok()?;
+                    if let Ok(mut graphs) = self.spec_decode_graph.lock() {
+                        graphs.insert(key, DecodeGraph(graph));
+                    }
+                }
+                Ok(None) => {
+                    eprintln!("[cuda-spec-cuda-graph] end_capture returned no graph");
+                    // Reset warmup so the next call retries capture.
+                    if let Ok(mut counts) = self.spec_decode_warmup.lock() {
+                        counts.insert(key, 0);
+                    }
+                }
+                Err(e) => {
+                    eprintln!("[cuda-spec-cuda-graph] end_capture failed: {e:?}");
+                    if let Ok(mut counts) = self.spec_decode_warmup.lock() {
+                        counts.insert(key, 0);
+                    }
+                }
+            }
+        }
+
+        cache.len = base_pos + seq_len;
+        // dtoh the residual hidden state.
+        self.dtoh_f32(&scratch.h).ok()
     }
 }

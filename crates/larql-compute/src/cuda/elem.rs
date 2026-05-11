@@ -715,6 +715,67 @@ pub(crate) fn quantize_q8_1_device(
 }
 
 /// Batched RMSNorm. Applies single-row rms_norm to each row of an
+/// Pre-allocated-output variant of [`rms_norm_batch_device`].
+/// Writes into the caller-supplied `out` buffer (same size contract).
+/// Used by the spec batched forward's scratch-based path so the
+/// captured CUDA Graph (Phase C of `cuda-spec-cuda-graph`) sees
+/// stable output pointers across replays.
+pub(crate) fn rms_norm_batch_device_into(
+    backend: &CudaBackend,
+    x_seq: &CudaSlice<f32>,
+    weight_dev: Option<&CudaSlice<f32>>,
+    out: &mut CudaSlice<f32>,
+    n: usize,
+    seq_len: usize,
+    eps: f32,
+    norm_offset: f32,
+) -> Result<(), CudaInitError> {
+    if x_seq.len() != n * seq_len || out.len() != n * seq_len {
+        return Err(CudaInitError::DriverMissing(format!(
+            "rms_norm_batch_device_into: x_seq.len={} out.len={} n*seq_len={}",
+            x_seq.len(),
+            out.len(),
+            n * seq_len,
+        )));
+    }
+    if let Some(w) = weight_dev {
+        if w.len() != n {
+            return Err(CudaInitError::DriverMissing(format!(
+                "rms_norm_batch_device_into: weight_dev.len={} != n={}",
+                w.len(),
+                n,
+            )));
+        }
+    }
+    let drv = backend.driver();
+    let func = load_kernel(drv, &RMS_NORM_FUNC, RMS_NORM_SRC, "rms_norm_vec_f32")?;
+    let block_dim: u32 = 1024;
+    let cfg = LaunchConfig {
+        grid_dim: (seq_len as u32, 1, 1),
+        block_dim: (block_dim, 1, 1),
+        shared_mem_bytes: block_dim * std::mem::size_of::<f32>() as u32,
+    };
+    let n_i = n as i32;
+    let has_weight_i: i32 = if weight_dev.is_some() { 1 } else { 0 };
+    let weight_arg: &CudaSlice<f32> = weight_dev.unwrap_or(x_seq);
+    unsafe {
+        drv.stream
+            .launch_builder(func)
+            .arg(x_seq)
+            .arg(weight_arg)
+            .arg(&n_i)
+            .arg(&has_weight_i)
+            .arg(&eps)
+            .arg(&norm_offset)
+            .arg(out)
+            .launch(cfg)
+            .map_err(|e| {
+                CudaInitError::DriverMissing(format!("launch rms_norm_batch_into: {e:?}"))
+            })?;
+    }
+    Ok(())
+}
+
 /// `[seq_len, n]` device buffer independently; one CUDA block per row.
 /// Reuses `RMS_NORM_FUNC` (the kernel is grid-agnostic for `seq_len ≥ 1`).
 /// `cuda-prefill-batched-q4k` Phase 1.
@@ -874,6 +935,97 @@ pub(crate) fn rms_norm_add_device(
 /// to a fresh device-resident f16 buffer. Element-wise CVT with
 /// round-to-nearest. Used to bridge the prefill GEMM's f16 inputs
 /// with the rest of the f32 pipeline.
+/// Pre-allocated-output variant: writes f16 conversion into `out`
+/// (must be at least `in_f32.len()` long; excess bytes are not
+/// touched). Lets the spec-batched scratch own a single ping-pong
+/// f16 buffer that's reused across every GEMM in the layer.
+pub(crate) fn f32_to_f16_device_into(
+    backend: &CudaBackend,
+    in_f32: &CudaSlice<f32>,
+    out: &mut CudaSlice<half::f16>,
+) -> Result<(), CudaInitError> {
+    let n = in_f32.len();
+    if out.len() < n {
+        return Err(CudaInitError::DriverMissing(format!(
+            "f32_to_f16_device_into: out.len={} < in.len={n}",
+            out.len(),
+        )));
+    }
+    let drv = backend.driver();
+    let func = load_kernel(drv, &F32_TO_F16_FUNC, F32_F16_CONVERT_SRC, "f32_to_f16")?;
+    let block_dim: u32 = 256;
+    let cfg = LaunchConfig {
+        grid_dim: ((n as u32).div_ceil(block_dim), 1, 1),
+        block_dim: (block_dim, 1, 1),
+        shared_mem_bytes: 0,
+    };
+    let n_i = n as i32;
+    unsafe {
+        drv.stream
+            .launch_builder(func)
+            .arg(in_f32)
+            .arg(out)
+            .arg(&n_i)
+            .launch(cfg)
+            .map_err(|e| CudaInitError::DriverMissing(format!("launch f32_to_f16_into: {e:?}")))?;
+    }
+    Ok(())
+}
+
+/// Pre-allocated-output variant of [`f16_to_f32_device`]. Processes
+/// `in_f16.len()` elements.
+pub(crate) fn f16_to_f32_device_into(
+    backend: &CudaBackend,
+    in_f16: &CudaSlice<half::f16>,
+    out: &mut CudaSlice<f32>,
+) -> Result<(), CudaInitError> {
+    let n = in_f16.len();
+    f16_to_f32_device_into_with_len(backend, in_f16, out, n)
+}
+
+/// Variant of [`f16_to_f32_device_into`] that processes only the
+/// first `n` elements of `in_f16`. Used by the spec-batched scratch
+/// path where the f16 buffer is sized for the maximum projection but
+/// each call needs to convert only `seq_len * out_dim` of it.
+pub(crate) fn f16_to_f32_device_into_with_len(
+    backend: &CudaBackend,
+    in_f16: &CudaSlice<half::f16>,
+    out: &mut CudaSlice<f32>,
+    n: usize,
+) -> Result<(), CudaInitError> {
+    if in_f16.len() < n {
+        return Err(CudaInitError::DriverMissing(format!(
+            "f16_to_f32_device_into_with_len: in.len={} < n={n}",
+            in_f16.len(),
+        )));
+    }
+    if out.len() < n {
+        return Err(CudaInitError::DriverMissing(format!(
+            "f16_to_f32_device_into_with_len: out.len={} < n={n}",
+            out.len(),
+        )));
+    }
+    let drv = backend.driver();
+    let func = load_kernel(drv, &F16_TO_F32_FUNC, F32_F16_CONVERT_SRC, "f16_to_f32")?;
+    let block_dim: u32 = 256;
+    let cfg = LaunchConfig {
+        grid_dim: ((n as u32).div_ceil(block_dim), 1, 1),
+        block_dim: (block_dim, 1, 1),
+        shared_mem_bytes: 0,
+    };
+    let n_i = n as i32;
+    unsafe {
+        drv.stream
+            .launch_builder(func)
+            .arg(in_f16)
+            .arg(out)
+            .arg(&n_i)
+            .launch(cfg)
+            .map_err(|e| CudaInitError::DriverMissing(format!("launch f16_to_f32_into: {e:?}")))?;
+    }
+    Ok(())
+}
+
 pub(crate) fn f32_to_f16_device(
     backend: &CudaBackend,
     in_f32: &CudaSlice<f32>,
