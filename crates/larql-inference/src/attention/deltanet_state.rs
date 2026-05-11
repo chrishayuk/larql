@@ -137,7 +137,7 @@ impl DeltaNetStateCache {
 /// `d_conv = 1` is degenerate: state is empty, output is `weight[0]
 /// .* new` element-wise.
 pub fn causal_conv1d_step(
-    weight: &Array2<f32>,
+    weight: ndarray::ArrayView2<f32>,
     state: &mut Array2<f32>,
     new: &Array1<f32>,
 ) -> Array1<f32> {
@@ -290,7 +290,7 @@ mod tests {
         let weight = array![[2.0, 3.0, 4.0]];
         let mut state = Array2::<f32>::zeros((0, 3));
         let new = array![1.0, 1.0, 1.0];
-        let out = causal_conv1d_step(&weight, &mut state, &new);
+        let out = causal_conv1d_step(weight.view(), &mut state, &new);
         assert_eq!(out.to_vec(), vec![2.0, 3.0, 4.0]);
     }
 
@@ -303,13 +303,13 @@ mod tests {
         let weight = array![[0.5, 1.5], [2.0, 3.0]];
         let mut state = Array2::<f32>::zeros((1, 2));
         let new1 = array![1.0, 2.0];
-        let out1 = causal_conv1d_step(&weight, &mut state, &new1);
+        let out1 = causal_conv1d_step(weight.view(), &mut state, &new1);
         // out1 = 2.0*1.0, 3.0*2.0
         assert_eq!(out1.to_vec(), vec![2.0, 6.0]);
         // After call 1, state[0] = new1 = [1.0, 2.0]
         assert_eq!(state.row(0).to_vec(), vec![1.0, 2.0]);
         let new2 = array![10.0, 20.0];
-        let out2 = causal_conv1d_step(&weight, &mut state, &new2);
+        let out2 = causal_conv1d_step(weight.view(), &mut state, &new2);
         // out2[c] = w00*state[0,c] + w10*new2[c]
         //   c=0: 0.5*1 + 2.0*10 = 20.5
         //   c=1: 1.5*2 + 3.0*20 = 63.0
@@ -328,7 +328,7 @@ mod tests {
         let mut state = Array2::<f32>::zeros((3, 1));
         for (i, v) in [1.0, 2.0, 3.0, 4.0].iter().enumerate() {
             let new = array![*v];
-            let out = causal_conv1d_step(&weight, &mut state, &new);
+            let out = causal_conv1d_step(weight.view(), &mut state, &new);
             // Pre-step state: rows[0..3]; new at row 3 (slot 0 of
             // the kernel). Output = w0*s0 + w1*s1 + w2*s2 + w3*new.
             let expected = match i {

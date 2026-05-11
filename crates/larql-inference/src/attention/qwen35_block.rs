@@ -28,32 +28,36 @@
 //! block. The full glue that runs the embed → 64 layers → final
 //! norm → lm_head pipeline lives in a follow-up (Phase C.4c).
 
-use ndarray::{Array1, Array2};
+use ndarray::{ArcArray2, Array1, Array2};
+use std::sync::Arc;
 
 use super::deltanet_block::{deltanet_block_step, DeltaNetDims, DeltaNetLayerWeights};
 use super::deltanet_state::{sigmoid, DeltaNetLayerState, DeltaNetStateCache};
 use super::qwen35_attn::{apply_q_gate, split_q_gate};
 
-/// Borrowed weight references for one full-attention layer.
+/// One full-attention layer's weight tensors.
 ///
-/// All projection tensors are stored `[out_features, in_features]`
-/// (matvec is `y = W @ x`).
-pub struct Qwen35AttentionLayerWeights<'a> {
+/// Stored as `ArcArray2<f32>` / `Arc<[f32]>` so cloning the struct
+/// (e.g. when building a Qwen35Weights view) only bumps Arc
+/// refcounts — no data copies. Shape convention: every projection
+/// has `[out_features, in_features]` (matvec is `y = W @ x`).
+#[derive(Clone)]
+pub struct Qwen35AttentionLayerWeights {
     /// Pre-attention RMSNorm weight `[hidden]`.
-    pub attn_norm: &'a [f32],
+    pub attn_norm: Arc<[f32]>,
     /// Fused Q + per-head gate projection
     /// `[2 * n_head * head_dim, hidden]`.
-    pub attn_q: &'a Array2<f32>,
+    pub attn_q: ArcArray2<f32>,
     /// K projection `[n_head_kv * head_dim, hidden]`.
-    pub attn_k: &'a Array2<f32>,
+    pub attn_k: ArcArray2<f32>,
     /// V projection `[n_head_kv * head_dim, hidden]`.
-    pub attn_v: &'a Array2<f32>,
+    pub attn_v: ArcArray2<f32>,
     /// Per-head Q RMSNorm weight `[head_dim]`.
-    pub attn_q_norm: &'a [f32],
+    pub attn_q_norm: Arc<[f32]>,
     /// Per-head K RMSNorm weight `[head_dim]`.
-    pub attn_k_norm: &'a [f32],
+    pub attn_k_norm: Arc<[f32]>,
     /// Output projection `[hidden, n_head * head_dim]`.
-    pub attn_output: &'a Array2<f32>,
+    pub attn_output: ArcArray2<f32>,
 }
 
 /// Shape constants for the full-attention layers (uniform across
@@ -139,7 +143,7 @@ pub fn qwen35_attention_block_step(
     debug_assert_eq!(weights.attn_output.shape(), [dims.hidden, dims.q_dim()]);
 
     // 1. Pre-attention RMSNorm.
-    let x_norm = super::deltanet_block::rms_norm_1d_pub(x, weights.attn_norm, dims.eps);
+    let x_norm = super::deltanet_block::rms_norm_1d_pub(x, &weights.attn_norm, dims.eps);
 
     // 2. Projections.
     let q_fused_1d = weights.attn_q.dot(&x_norm); // [fused_q_dim]
@@ -157,7 +161,7 @@ pub fn qwen35_attention_block_step(
     // 4. Per-head RMSNorm for Q and K.
     let q_normed = crate::residual::rms_norm_heads(
         &q_2d,
-        weights.attn_q_norm,
+        &weights.attn_q_norm,
         dims.n_head,
         dims.head_dim,
         0.0,
@@ -167,7 +171,7 @@ pub fn qwen35_attention_block_step(
         .expect("k reshape");
     let k_normed = crate::residual::rms_norm_heads(
         &k_2d_in,
-        weights.attn_k_norm,
+        &weights.attn_k_norm,
         dims.n_head_kv,
         dims.head_dim,
         0.0,
@@ -392,13 +396,15 @@ impl DeltaNetHybridCache {
     }
 }
 
-/// Weight references for one Qwen 3.6 layer, tagged with the layer
+/// Weight bundle for one Qwen 3.6 layer, tagged with the layer
 /// kind. The router consumes this to know which block path to run.
-pub enum Qwen35LayerWeights<'a> {
+/// Cloning is cheap (Arc bumps only).
+#[derive(Clone)]
+pub enum Qwen35LayerWeights {
     /// Gated DeltaNet linear-attention layer (Qwen 3.6: 48 of 64).
-    Linear(DeltaNetLayerWeights<'a>),
+    Linear(DeltaNetLayerWeights),
     /// Full softmax-attention layer (Qwen 3.6: 16 of 64).
-    Attention(Qwen35AttentionLayerWeights<'a>),
+    Attention(Qwen35AttentionLayerWeights),
 }
 
 /// Per-layer router: dispatches the layer kind to the right block
@@ -450,6 +456,55 @@ mod tests {
     use super::*;
     use crate::attention::deltanet_state::{DeltaNetLayerState, DeltaNetStateCache};
     use ndarray::Array2;
+    use std::sync::Arc as StdArc;
+
+    #[allow(clippy::too_many_arguments)]
+    fn make_dn_w(
+        attn_norm: Vec<f32>,
+        attn_qkv: Array2<f32>,
+        attn_gate: Array2<f32>,
+        ssm_conv1d: Array2<f32>,
+        ssm_dt: Vec<f32>,
+        ssm_a: Vec<f32>,
+        ssm_beta: Array2<f32>,
+        ssm_alpha: Array2<f32>,
+        ssm_norm: Vec<f32>,
+        ssm_out: Array2<f32>,
+    ) -> DeltaNetLayerWeights {
+        DeltaNetLayerWeights {
+            attn_norm: StdArc::from(attn_norm.as_slice()),
+            attn_qkv: attn_qkv.into_shared(),
+            attn_gate: attn_gate.into_shared(),
+            ssm_conv1d: ssm_conv1d.into_shared(),
+            ssm_dt: StdArc::from(ssm_dt.as_slice()),
+            ssm_a: StdArc::from(ssm_a.as_slice()),
+            ssm_beta: ssm_beta.into_shared(),
+            ssm_alpha: ssm_alpha.into_shared(),
+            ssm_norm: StdArc::from(ssm_norm.as_slice()),
+            ssm_out: ssm_out.into_shared(),
+        }
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    fn make_attn_w(
+        attn_norm: Vec<f32>,
+        attn_q: Array2<f32>,
+        attn_k: Array2<f32>,
+        attn_v: Array2<f32>,
+        attn_q_norm: Vec<f32>,
+        attn_k_norm: Vec<f32>,
+        attn_output: Array2<f32>,
+    ) -> Qwen35AttentionLayerWeights {
+        Qwen35AttentionLayerWeights {
+            attn_norm: StdArc::from(attn_norm.as_slice()),
+            attn_q: attn_q.into_shared(),
+            attn_k: attn_k.into_shared(),
+            attn_v: attn_v.into_shared(),
+            attn_q_norm: StdArc::from(attn_q_norm.as_slice()),
+            attn_k_norm: StdArc::from(attn_k_norm.as_slice()),
+            attn_output: attn_output.into_shared(),
+        }
+    }
 
     fn tiny_attn_dims() -> Qwen35AttentionDims {
         Qwen35AttentionDims {
@@ -593,29 +648,18 @@ mod tests {
         );
 
         // DeltaNet weights (constant-filled for shape correctness).
-        let attn_norm = vec![1.0_f32; dn_dims.hidden];
-        let attn_qkv = Array2::from_elem((dn_dims.conv_dim(), dn_dims.hidden), 0.1_f32);
-        let attn_gate = Array2::from_elem((dn_dims.value_dim(), dn_dims.hidden), 0.1_f32);
-        let ssm_conv1d = Array2::from_elem((dn_dims.d_conv, dn_dims.conv_dim()), 0.5_f32);
-        let ssm_dt = vec![0.0_f32; dn_dims.n_v_heads];
-        let ssm_a = vec![-1.0_f32; dn_dims.n_v_heads];
-        let ssm_beta = Array2::from_elem((dn_dims.n_v_heads, dn_dims.hidden), 0.1_f32);
-        let ssm_alpha = Array2::from_elem((dn_dims.n_v_heads, dn_dims.hidden), 0.1_f32);
-        let ssm_norm = vec![1.0_f32; dn_dims.head_v_dim];
-        let ssm_out = Array2::from_elem((dn_dims.hidden, dn_dims.value_dim()), 0.5_f32);
-
-        let dn_weights = DeltaNetLayerWeights {
-            attn_norm: &attn_norm,
-            attn_qkv: &attn_qkv,
-            attn_gate: &attn_gate,
-            ssm_conv1d: &ssm_conv1d,
-            ssm_dt: &ssm_dt,
-            ssm_a: &ssm_a,
-            ssm_beta: &ssm_beta,
-            ssm_alpha: &ssm_alpha,
-            ssm_norm: &ssm_norm,
-            ssm_out: &ssm_out,
-        };
+        let dn_weights = make_dn_w(
+            vec![1.0_f32; dn_dims.hidden],
+            Array2::from_elem((dn_dims.conv_dim(), dn_dims.hidden), 0.1_f32),
+            Array2::from_elem((dn_dims.value_dim(), dn_dims.hidden), 0.1_f32),
+            Array2::from_elem((dn_dims.d_conv, dn_dims.conv_dim()), 0.5_f32),
+            vec![0.0_f32; dn_dims.n_v_heads],
+            vec![-1.0_f32; dn_dims.n_v_heads],
+            Array2::from_elem((dn_dims.n_v_heads, dn_dims.hidden), 0.1_f32),
+            Array2::from_elem((dn_dims.n_v_heads, dn_dims.hidden), 0.1_f32),
+            vec![1.0_f32; dn_dims.head_v_dim],
+            Array2::from_elem((dn_dims.hidden, dn_dims.value_dim()), 0.5_f32),
+        );
         let layer_weights = Qwen35LayerWeights::Linear(dn_weights);
 
         let x = Array1::from_elem(dn_dims.hidden, 1.0_f32);
@@ -645,23 +689,15 @@ mod tests {
             dn_dims.n_v_heads,
         );
 
-        let attn_norm = vec![1.0_f32; attn_dims.hidden];
-        let attn_q = Array2::zeros((attn_dims.fused_q_dim(), attn_dims.hidden));
-        let attn_k = Array2::zeros((attn_dims.kv_dim(), attn_dims.hidden));
-        let attn_v = Array2::zeros((attn_dims.kv_dim(), attn_dims.hidden));
-        let attn_q_norm = vec![1.0_f32; attn_dims.head_dim];
-        let attn_k_norm = vec![1.0_f32; attn_dims.head_dim];
-        let attn_output = Array2::zeros((attn_dims.hidden, attn_dims.q_dim()));
-
-        let attn_weights = Qwen35AttentionLayerWeights {
-            attn_norm: &attn_norm,
-            attn_q: &attn_q,
-            attn_k: &attn_k,
-            attn_v: &attn_v,
-            attn_q_norm: &attn_q_norm,
-            attn_k_norm: &attn_k_norm,
-            attn_output: &attn_output,
-        };
+        let attn_weights = make_attn_w(
+            vec![1.0_f32; attn_dims.hidden],
+            Array2::zeros((attn_dims.fused_q_dim(), attn_dims.hidden)),
+            Array2::zeros((attn_dims.kv_dim(), attn_dims.hidden)),
+            Array2::zeros((attn_dims.kv_dim(), attn_dims.hidden)),
+            vec![1.0_f32; attn_dims.head_dim],
+            vec![1.0_f32; attn_dims.head_dim],
+            Array2::zeros((attn_dims.hidden, attn_dims.q_dim())),
+        );
         let layer_weights = Qwen35LayerWeights::Attention(attn_weights);
 
         let x = Array1::from_elem(attn_dims.hidden, 1.0_f32);

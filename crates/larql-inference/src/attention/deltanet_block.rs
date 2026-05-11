@@ -32,38 +32,45 @@
 //! y = ssm_out @ o                          # [hidden]
 //! ```
 
-use ndarray::{Array1, Array2, Axis};
+use ndarray::{ArcArray2, Array1, Array2, Axis};
 
 use super::deltanet_recurrence::delta_net_step;
 use super::deltanet_state::{
     causal_conv1d_step, l2_normalize_per_head, sigmoid, softplus, DeltaNetLayerState,
 };
 
-/// Borrowed references to one DeltaNet layer's weight tensors.
+/// One DeltaNet layer's weight tensors.
 ///
-/// Weight shape convention: every projection tensor has shape
+/// Stored as `ArcArray2<f32>` so cloning the struct (e.g. when
+/// building a `Qwen35Weights` view) only bumps Arc refcounts — no
+/// data copies. Shape convention: every projection has
 /// `[out_features, in_features]` (matvec is `y = W @ x`).
-pub struct DeltaNetLayerWeights<'a> {
+///
+/// 1-D tensors (norms, scalar per-head) are `Arc<[f32]>` for the
+/// same cheap-clone reason; callers index with `.as_ref()` to get
+/// `&[f32]`.
+#[derive(Clone)]
+pub struct DeltaNetLayerWeights {
     /// Pre-mixer RMSNorm weight `[hidden]`.
-    pub attn_norm: &'a [f32],
+    pub attn_norm: std::sync::Arc<[f32]>,
     /// Fused QKV projection `[conv_dim, hidden]`.
-    pub attn_qkv: &'a Array2<f32>,
+    pub attn_qkv: ArcArray2<f32>,
     /// Z-gate projection `[value_dim, hidden]`.
-    pub attn_gate: &'a Array2<f32>,
+    pub attn_gate: ArcArray2<f32>,
     /// Causal depthwise Conv1D weight `[d_conv, conv_dim]`.
-    pub ssm_conv1d: &'a Array2<f32>,
+    pub ssm_conv1d: ArcArray2<f32>,
     /// Per-head bias added to `alpha` before softplus `[n_v_heads]`.
-    pub ssm_dt: &'a [f32],
+    pub ssm_dt: std::sync::Arc<[f32]>,
     /// Per-head log-decay scalar `[n_v_heads]`.
-    pub ssm_a: &'a [f32],
+    pub ssm_a: std::sync::Arc<[f32]>,
     /// Beta projection `[n_v_heads, hidden]`.
-    pub ssm_beta: &'a Array2<f32>,
+    pub ssm_beta: ArcArray2<f32>,
     /// Alpha projection `[n_v_heads, hidden]`.
-    pub ssm_alpha: &'a Array2<f32>,
+    pub ssm_alpha: ArcArray2<f32>,
     /// Post-mixer per-head RMSNorm weight `[head_v_dim]`.
-    pub ssm_norm: &'a [f32],
+    pub ssm_norm: std::sync::Arc<[f32]>,
     /// Output projection `[hidden, value_dim]`.
-    pub ssm_out: &'a Array2<f32>,
+    pub ssm_out: ArcArray2<f32>,
 }
 
 /// Per-layer shape constants. All architectures in scope (Qwen 3.6
@@ -128,7 +135,7 @@ pub fn deltanet_block_step(
     debug_assert_eq!(weights.ssm_out.shape(), [dims.hidden, dims.value_dim()]);
 
     // 1. Pre-mixer RMSNorm.
-    let x_norm = rms_norm_1d(x, weights.attn_norm, dims.eps);
+    let x_norm = rms_norm_1d(x, &weights.attn_norm, dims.eps);
 
     // 2. Projections (matvec).
     let qkv_mixed = weights.attn_qkv.dot(&x_norm); // [conv_dim]
@@ -143,7 +150,8 @@ pub fn deltanet_block_step(
         .collect();
 
     // 3. Causal Conv1D-with-state, then SiLU element-wise.
-    let mut qkv_conv = causal_conv1d_step(weights.ssm_conv1d, &mut state.conv_state, &qkv_mixed);
+    let mut qkv_conv =
+        causal_conv1d_step(weights.ssm_conv1d.view(), &mut state.conv_state, &qkv_mixed);
     for v in qkv_conv.iter_mut() {
         *v = silu(*v);
     }
@@ -185,7 +193,7 @@ pub fn deltanet_block_step(
         .expect("o reshape");
     let o_normed = crate::residual::rms_norm_heads(
         &o_2d,
-        weights.ssm_norm,
+        &weights.ssm_norm,
         dims.n_v_heads,
         dims.head_v_dim,
         0.0,
@@ -227,6 +235,37 @@ fn rms_norm_1d(x: &Array1<f32>, weight: &[f32], eps: f32) -> Array1<f32> {
 mod tests {
     use super::*;
     use ndarray::Array2;
+    use std::sync::Arc;
+
+    /// Convenience: build a `DeltaNetLayerWeights` from owned Vec /
+    /// Array2 inputs, doing the Arc / ArcArray wrap inline. Reduces
+    /// per-test boilerplate (10 fields × Arc-conversion).
+    #[allow(clippy::too_many_arguments)]
+    fn make_dn_weights(
+        attn_norm: Vec<f32>,
+        attn_qkv: Array2<f32>,
+        attn_gate: Array2<f32>,
+        ssm_conv1d: Array2<f32>,
+        ssm_dt: Vec<f32>,
+        ssm_a: Vec<f32>,
+        ssm_beta: Array2<f32>,
+        ssm_alpha: Array2<f32>,
+        ssm_norm: Vec<f32>,
+        ssm_out: Array2<f32>,
+    ) -> DeltaNetLayerWeights {
+        DeltaNetLayerWeights {
+            attn_norm: Arc::from(attn_norm.as_slice()),
+            attn_qkv: attn_qkv.into_shared(),
+            attn_gate: attn_gate.into_shared(),
+            ssm_conv1d: ssm_conv1d.into_shared(),
+            ssm_dt: Arc::from(ssm_dt.as_slice()),
+            ssm_a: Arc::from(ssm_a.as_slice()),
+            ssm_beta: ssm_beta.into_shared(),
+            ssm_alpha: ssm_alpha.into_shared(),
+            ssm_norm: Arc::from(ssm_norm.as_slice()),
+            ssm_out: ssm_out.into_shared(),
+        }
+    }
 
     /// Tiny end-to-end shape check: build a 1-head linear-attention
     /// layer with deterministic weights, feed it a known input, and
@@ -253,31 +292,20 @@ mod tests {
         let value_dim = dims.value_dim();
         let key_dim = dims.key_dim();
 
-        let attn_norm = vec![1.0_f32; dims.hidden];
-        // Use small constant weights so we can predict shape + non-
-        // zero output without overflowing.
-        let attn_qkv = Array2::from_elem((conv_dim, dims.hidden), 0.1_f32);
-        let attn_gate = Array2::from_elem((value_dim, dims.hidden), 0.1_f32);
-        let ssm_conv1d = Array2::from_elem((dims.d_conv, conv_dim), 0.5_f32);
-        let ssm_dt = vec![0.0_f32; dims.n_v_heads];
-        let ssm_a = vec![-1.0_f32; dims.n_v_heads]; // moderate decay
-        let ssm_beta = Array2::from_elem((dims.n_v_heads, dims.hidden), 0.1_f32);
-        let ssm_alpha = Array2::from_elem((dims.n_v_heads, dims.hidden), 0.1_f32);
-        let ssm_norm = vec![1.0_f32; dims.head_v_dim];
-        let ssm_out = Array2::from_elem((dims.hidden, value_dim), 0.5_f32);
-
-        let weights = DeltaNetLayerWeights {
-            attn_norm: &attn_norm,
-            attn_qkv: &attn_qkv,
-            attn_gate: &attn_gate,
-            ssm_conv1d: &ssm_conv1d,
-            ssm_dt: &ssm_dt,
-            ssm_a: &ssm_a,
-            ssm_beta: &ssm_beta,
-            ssm_alpha: &ssm_alpha,
-            ssm_norm: &ssm_norm,
-            ssm_out: &ssm_out,
-        };
+        // Small constant weights so we can predict shape + non-zero
+        // output without overflowing.
+        let weights = make_dn_weights(
+            vec![1.0_f32; dims.hidden],
+            Array2::from_elem((conv_dim, dims.hidden), 0.1_f32),
+            Array2::from_elem((value_dim, dims.hidden), 0.1_f32),
+            Array2::from_elem((dims.d_conv, conv_dim), 0.5_f32),
+            vec![0.0_f32; dims.n_v_heads],
+            vec![-1.0_f32; dims.n_v_heads], // moderate decay
+            Array2::from_elem((dims.n_v_heads, dims.hidden), 0.1_f32),
+            Array2::from_elem((dims.n_v_heads, dims.hidden), 0.1_f32),
+            vec![1.0_f32; dims.head_v_dim],
+            Array2::from_elem((dims.hidden, value_dim), 0.5_f32),
+        );
 
         let mut state =
             DeltaNetLayerState::allocate(dims.d_conv, conv_dim, dims.head_v_dim, dims.n_v_heads);
@@ -318,29 +346,18 @@ mod tests {
         let conv_dim = dims.conv_dim();
         let value_dim = dims.value_dim();
 
-        let attn_norm = vec![1.0_f32; dims.hidden];
-        let attn_qkv = Array2::zeros((conv_dim, dims.hidden));
-        let attn_gate = Array2::zeros((value_dim, dims.hidden));
-        let ssm_conv1d = Array2::zeros((dims.d_conv, conv_dim));
-        let ssm_dt = vec![0.0_f32; dims.n_v_heads];
-        let ssm_a = vec![0.0_f32; dims.n_v_heads];
-        let ssm_beta = Array2::zeros((dims.n_v_heads, dims.hidden));
-        let ssm_alpha = Array2::zeros((dims.n_v_heads, dims.hidden));
-        let ssm_norm = vec![1.0_f32; dims.head_v_dim];
-        let ssm_out = Array2::zeros((dims.hidden, value_dim));
-
-        let weights = DeltaNetLayerWeights {
-            attn_norm: &attn_norm,
-            attn_qkv: &attn_qkv,
-            attn_gate: &attn_gate,
-            ssm_conv1d: &ssm_conv1d,
-            ssm_dt: &ssm_dt,
-            ssm_a: &ssm_a,
-            ssm_beta: &ssm_beta,
-            ssm_alpha: &ssm_alpha,
-            ssm_norm: &ssm_norm,
-            ssm_out: &ssm_out,
-        };
+        let weights = make_dn_weights(
+            vec![1.0_f32; dims.hidden],
+            Array2::zeros((conv_dim, dims.hidden)),
+            Array2::zeros((value_dim, dims.hidden)),
+            Array2::zeros((dims.d_conv, conv_dim)),
+            vec![0.0_f32; dims.n_v_heads],
+            vec![0.0_f32; dims.n_v_heads],
+            Array2::zeros((dims.n_v_heads, dims.hidden)),
+            Array2::zeros((dims.n_v_heads, dims.hidden)),
+            vec![1.0_f32; dims.head_v_dim],
+            Array2::zeros((dims.hidden, value_dim)),
+        );
 
         let mut state =
             DeltaNetLayerState::allocate(dims.d_conv, conv_dim, dims.head_v_dim, dims.n_v_heads);
@@ -397,29 +414,18 @@ mod tests {
         let conv_dim = dims.conv_dim();
         let value_dim = dims.value_dim();
 
-        let attn_norm = vec![1.0_f32; dims.hidden];
-        let attn_qkv = Array2::from_elem((conv_dim, dims.hidden), 0.1_f32);
-        let attn_gate = Array2::from_elem((value_dim, dims.hidden), 0.1_f32);
-        let ssm_conv1d = Array2::from_elem((dims.d_conv, conv_dim), 0.5_f32);
-        let ssm_dt = vec![0.0_f32; dims.n_v_heads];
-        let ssm_a = vec![0.0_f32; dims.n_v_heads]; // no decay; state accumulates
-        let ssm_beta = Array2::from_elem((dims.n_v_heads, dims.hidden), 0.1_f32);
-        let ssm_alpha = Array2::from_elem((dims.n_v_heads, dims.hidden), 0.0_f32);
-        let ssm_norm = vec![1.0_f32; dims.head_v_dim];
-        let ssm_out = Array2::from_elem((dims.hidden, value_dim), 0.5_f32);
-
-        let weights = DeltaNetLayerWeights {
-            attn_norm: &attn_norm,
-            attn_qkv: &attn_qkv,
-            attn_gate: &attn_gate,
-            ssm_conv1d: &ssm_conv1d,
-            ssm_dt: &ssm_dt,
-            ssm_a: &ssm_a,
-            ssm_beta: &ssm_beta,
-            ssm_alpha: &ssm_alpha,
-            ssm_norm: &ssm_norm,
-            ssm_out: &ssm_out,
-        };
+        let weights = make_dn_weights(
+            vec![1.0_f32; dims.hidden],
+            Array2::from_elem((conv_dim, dims.hidden), 0.1_f32),
+            Array2::from_elem((value_dim, dims.hidden), 0.1_f32),
+            Array2::from_elem((dims.d_conv, conv_dim), 0.5_f32),
+            vec![0.0_f32; dims.n_v_heads],
+            vec![0.0_f32; dims.n_v_heads], // no decay; state accumulates
+            Array2::from_elem((dims.n_v_heads, dims.hidden), 0.1_f32),
+            Array2::from_elem((dims.n_v_heads, dims.hidden), 0.0_f32),
+            vec![1.0_f32; dims.head_v_dim],
+            Array2::from_elem((dims.hidden, value_dim), 0.5_f32),
+        );
 
         let mut state =
             DeltaNetLayerState::allocate(dims.d_conv, conv_dim, dims.head_v_dim, dims.n_v_heads);
