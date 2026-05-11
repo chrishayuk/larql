@@ -1001,4 +1001,167 @@ mod tests {
         }
         dot / (na * nb)
     }
+
+    // ── C.4i: real text round-trip via sibling tokenizer.json ──
+    //
+    // Same gating as C.4f–C.4h. Loads the tokenizer that ships
+    // alongside the GGUF, encodes a short prompt, prefills the
+    // hybrid cache token-by-token, then argmax-decodes a handful
+    // of generations. Asserts:
+    //
+    // - Tokenizer loads.
+    // - Encoding the prompt yields at least one token id within
+    //   vocab range.
+    // - Every prefill + decode step produces finite logits.
+    // - The decoded continuation is a non-empty string.
+    //
+    // Out of scope: any semantic check on the generated text or
+    // parity vs llama.cpp's output (Phase C.5). Here we only
+    // assert the text→tokens→forward→tokens→text plumbing works
+    // end to end against real Qwen3.6 27B Q4_K_S weights.
+    #[test]
+    fn real_gguf_qwen35_tokenizer_roundtrip() {
+        let path = match std::env::var("LARQL_QWEN35_GGUF") {
+            Ok(p) => p,
+            Err(_) => {
+                eprintln!("LARQL_QWEN35_GGUF unset — skipping tokenizer round-trip");
+                return;
+            }
+        };
+        let gguf_path = std::path::PathBuf::from(&path);
+        let model_dir = gguf_path
+            .parent()
+            .expect("LARQL_QWEN35_GGUF must point to a file in a directory");
+
+        let tokenizer = match crate::tokenizer::load_tokenizer(model_dir) {
+            Ok(t) => t,
+            Err(e) => {
+                eprintln!("no tokenizer.json sibling next to GGUF ({e:?}) — skipping");
+                return;
+            }
+        };
+
+        let prompt = "Hello";
+        let encoding = tokenizer.encode(prompt, true).expect("encode prompt");
+        let prompt_ids: Vec<u32> = encoding.get_ids().to_vec();
+        eprintln!("prompt {prompt:?} → tokens {prompt_ids:?}");
+        assert!(!prompt_ids.is_empty(), "empty prompt tokenization");
+
+        let weights =
+            larql_models::load_gguf(&gguf_path).expect("load_gguf failed on Qwen3.6 GGUF");
+        let vocab = weights.embed.shape()[0];
+        assert!(
+            prompt_ids.iter().all(|&id| (id as usize) < vocab),
+            "tokenizer produced an out-of-vocab id: {prompt_ids:?}, vocab={vocab}"
+        );
+
+        let w = load_qwen35_weights(&weights, &*weights.arch).expect("bridge load");
+
+        let arch = &*weights.arch;
+        let dn_dims = crate::attention::deltanet_block::DeltaNetDims {
+            hidden: weights.hidden_size,
+            head_v_dim: arch.ssm_state_size(),
+            n_v_heads: arch.ssm_dt_rank(),
+            n_k_heads: arch.ssm_group_count(),
+            d_conv: arch.ssm_conv_kernel(),
+            eps: 1e-6,
+        };
+        let rotary_dim: usize = arch
+            .rope_dimension_sections()
+            .map(|s| s.iter().sum())
+            .unwrap_or(weights.head_dim);
+        let attn_dims = crate::attention::qwen35_block::Qwen35AttentionDims {
+            hidden: weights.hidden_size,
+            n_head: weights.num_q_heads,
+            n_head_kv: weights.num_kv_heads,
+            head_dim: weights.head_dim,
+            rotary_dim,
+            rope_base: weights.rope_base,
+            eps: 1e-6,
+        };
+        let layer_kinds: Vec<bool> = (0..weights.num_layers)
+            .map(|l| arch.is_linear_attention_layer(l))
+            .collect();
+        let mut cache = crate::attention::qwen35_block::DeltaNetHybridCache::allocate(
+            &layer_kinds,
+            attn_dims.kv_dim(),
+            dn_dims.d_conv,
+            dn_dims.conv_dim(),
+            dn_dims.head_v_dim,
+            dn_dims.n_v_heads,
+        );
+
+        // 1. Prefill: feed every prompt token through the forward,
+        //    keeping only the last token's logits.
+        let mut last_logits: Option<ndarray::Array1<f32>> = None;
+        let total = std::time::Instant::now();
+        for (i, &tok) in prompt_ids.iter().enumerate() {
+            let t = std::time::Instant::now();
+            let logits = crate::attention::qwen35_forward::qwen35_forward_step(
+                tok, &w, &dn_dims, &attn_dims, &mut cache, 1e-6,
+            );
+            assert!(
+                logits.iter().all(|v| v.is_finite()),
+                "prefill step {i} (token={tok}): all logits must be finite"
+            );
+            eprintln!(
+                "prefill step {i}: token={tok} forward took {:?}",
+                t.elapsed()
+            );
+            last_logits = Some(logits);
+        }
+
+        // 2. Decode N tokens by argmax from the prefilled cache.
+        const N_GEN: usize = 4;
+        let mut generated: Vec<u32> = Vec::with_capacity(N_GEN);
+        let mut logits = last_logits.expect("at least one prompt token");
+        for step in 0..N_GEN {
+            let (next_id, _) = logits.iter().enumerate().fold(
+                (0_usize, f32::NEG_INFINITY),
+                |(best_idx, best_v), (i, &v)| {
+                    if v > best_v {
+                        (i, v)
+                    } else {
+                        (best_idx, best_v)
+                    }
+                },
+            );
+            generated.push(next_id as u32);
+            if step + 1 < N_GEN {
+                let t = std::time::Instant::now();
+                logits = crate::attention::qwen35_forward::qwen35_forward_step(
+                    next_id as u32,
+                    &w,
+                    &dn_dims,
+                    &attn_dims,
+                    &mut cache,
+                    1e-6,
+                );
+                eprintln!(
+                    "decode step {step}: token={next_id} forward took {:?}",
+                    t.elapsed()
+                );
+                assert!(
+                    logits.iter().all(|v| v.is_finite()),
+                    "decode step {step}: all logits must be finite"
+                );
+            }
+        }
+        eprintln!("total round-trip time {:?}", total.elapsed());
+
+        // 3. Decode generated tokens back to text.
+        let continuation = tokenizer
+            .decode(&generated, false)
+            .expect("decode generated tokens");
+        eprintln!("prompt {prompt:?} + generated {generated:?} → continuation {continuation:?}");
+
+        // The strict end-to-end gate: the decoded continuation should
+        // not be empty. Empty would indicate the generator produced
+        // only special tokens that the decoder elided, or that
+        // tokenizer / id mismatch left us decoding garbage.
+        assert!(
+            !continuation.is_empty(),
+            "decoded continuation is empty; generated ids: {generated:?}"
+        );
+    }
 }
