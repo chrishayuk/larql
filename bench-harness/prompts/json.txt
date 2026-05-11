@@ -1,0 +1,6 @@
+List five items from the following inventory in JSON format. Inventory items: apple, banana, cherry, date, elderberry, fig, grape. Output as JSON with keys "name" and "id":
+{
+  "items": [
+    {"name": "apple", "id": 1},
+    {"name": "banana", "id": 2},
+    {"name": "cherry", "id": 3},

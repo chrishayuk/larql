@@ -61,6 +61,79 @@ pub struct VindexModelConfig {
     /// wrong token (observed: "Paris" → "hyperparameters").
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub final_logit_softcapping: Option<f64>,
+
+    // ── Qwen 3.6 Gated DeltaNet / hybrid-attention metadata ──
+    // All optional. Present only on `qwen35` / `qwen35moe` arch. See
+    // `openspec/changes/inference-qwen35-deltanet/design.md` for the
+    // role of each.
+    /// Stride at which a full softmax-attention layer appears.
+    /// Layer `i` is full-attention iff `(i + 1) % full_attention_interval == 0`.
+    /// Qwen 3.6 27B: 4 (16 full-attn + 48 DeltaNet layers in 64 total).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub full_attention_interval: Option<usize>,
+    /// DeltaNet per-head state width (`S_k = S_v`). Qwen 3.6: 128.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub ssm_state_size: Option<usize>,
+    /// DeltaNet value-stream width: `head_v_dim * n_v_heads`.
+    /// Qwen 3.6: 6144 (dense) / 4096 (35B-A3B MoE).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub ssm_inner_size: Option<usize>,
+    /// DeltaNet number of V heads — confusingly named `time_step_rank`
+    /// in GGUF metadata. Qwen 3.6: 48 (dense) / 32 (35B-A3B).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub ssm_dt_rank: Option<usize>,
+    /// DeltaNet number of K heads — GGUF metadata calls this
+    /// `group_count`. K is broadcast (V_heads / K_heads)× to match V.
+    /// Qwen 3.6: 16.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub ssm_group_count: Option<usize>,
+    /// DeltaNet causal Conv1D kernel size. Qwen 3.6: 4.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub ssm_conv_kernel: Option<usize>,
+    /// Multi-section RoPE dimension partition (for Qwen 3.6 attention
+    /// layers). Each entry is a per-section dimension count; sections
+    /// receive distinct rotation frequencies. None = vanilla single-
+    /// section RoPE.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub rope_dimension_sections: Option<Vec<usize>>,
+}
+
+impl Default for VindexModelConfig {
+    /// Minimal placeholder config — caller MUST overwrite the
+    /// architecture-essential fields (`model_type`, `head_dim`,
+    /// `num_q_heads`, `num_kv_heads`, `rope_base`). Default exists
+    /// so call sites can use `..Default::default()` to fill in the
+    /// growing set of optional fields without touching every init
+    /// when a new architecture lands.
+    fn default() -> Self {
+        Self {
+            model_type: String::new(),
+            head_dim: 0,
+            num_q_heads: 0,
+            num_kv_heads: 0,
+            rope_base: 0.0,
+            sliding_window: None,
+            moe: None,
+            global_head_dim: None,
+            num_global_kv_heads: None,
+            partial_rotary_factor: None,
+            sliding_window_pattern: None,
+            layer_types: None,
+            attention_k_eq_v: false,
+            num_kv_shared_layers: None,
+            per_layer_embed_dim: None,
+            rope_local_base: None,
+            query_pre_attn_scalar: None,
+            final_logit_softcapping: None,
+            full_attention_interval: None,
+            ssm_state_size: None,
+            ssm_inner_size: None,
+            ssm_dt_rank: None,
+            ssm_group_count: None,
+            ssm_conv_kernel: None,
+            rope_dimension_sections: None,
+        }
+    }
 }
 
 /// MoE (Mixture of Experts) configuration.
@@ -114,6 +187,13 @@ mod tests {
             rope_local_base: None,
             query_pre_attn_scalar: None,
             final_logit_softcapping: None,
+            full_attention_interval: None,
+            ssm_state_size: None,
+            ssm_inner_size: None,
+            ssm_dt_rank: None,
+            ssm_group_count: None,
+            ssm_conv_kernel: None,
+            rope_dimension_sections: None,
         }
     }
 
@@ -183,5 +263,48 @@ mod tests {
         let moe: MoeConfig = serde_json::from_str(json).unwrap();
         assert!(!moe.shared_expert);
         assert!(!moe.hybrid);
+    }
+
+    #[test]
+    fn qwen35_deltanet_fields_round_trip() {
+        let mut cfg = minimal_model_config();
+        cfg.model_type = "qwen35".into();
+        cfg.full_attention_interval = Some(4);
+        cfg.ssm_state_size = Some(128);
+        cfg.ssm_inner_size = Some(6144);
+        cfg.ssm_dt_rank = Some(48);
+        cfg.ssm_group_count = Some(16);
+        cfg.ssm_conv_kernel = Some(4);
+        cfg.rope_dimension_sections = Some(vec![16, 24, 24, 0]);
+        let j = serde_json::to_string(&cfg).unwrap();
+        let back: VindexModelConfig = serde_json::from_str(&j).unwrap();
+        assert_eq!(back.model_type, "qwen35");
+        assert_eq!(back.full_attention_interval, Some(4));
+        assert_eq!(back.ssm_state_size, Some(128));
+        assert_eq!(back.ssm_inner_size, Some(6144));
+        assert_eq!(back.ssm_dt_rank, Some(48));
+        assert_eq!(back.ssm_group_count, Some(16));
+        assert_eq!(back.ssm_conv_kernel, Some(4));
+        assert_eq!(back.rope_dimension_sections, Some(vec![16, 24, 24, 0]));
+    }
+
+    #[test]
+    fn qwen35_fields_omitted_when_none() {
+        let cfg = minimal_model_config();
+        let j = serde_json::to_string(&cfg).unwrap();
+        for k in [
+            "full_attention_interval",
+            "ssm_state_size",
+            "ssm_inner_size",
+            "ssm_dt_rank",
+            "ssm_group_count",
+            "ssm_conv_kernel",
+            "rope_dimension_sections",
+        ] {
+            assert!(
+                !j.contains(k),
+                "qwen35 field `{k}` SHALL be omitted when None"
+            );
+        }
     }
 }

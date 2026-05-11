@@ -590,6 +590,7 @@ pub fn write_model_weights_with_opts(
         rope_local_base: cfg.rope_local_base,
         query_pre_attn_scalar: cfg.query_pre_attn_scalar,
         final_logit_softcapping: cfg.final_logit_softcapping,
+        ..Default::default()
     });
 
     let config_json =

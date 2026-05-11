@@ -487,6 +487,7 @@ impl<'a> BuildContext<'a> {
                     rope_local_base: cfg.rope_local_base,
                     query_pre_attn_scalar: cfg.query_pre_attn_scalar,
                     final_logit_softcapping: cfg.final_logit_softcapping,
+                    ..Default::default()
                 })
             },
             fp4: None,
@@ -791,6 +792,7 @@ pub fn build_vindex_resume(
                 rope_local_base: cfg.rope_local_base,
                 query_pre_attn_scalar: cfg.query_pre_attn_scalar,
                 final_logit_softcapping: cfg.final_logit_softcapping,
+                ..Default::default()
             })
         },
         fp4: None,

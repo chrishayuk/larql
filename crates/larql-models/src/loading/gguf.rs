@@ -44,6 +44,47 @@ const GGUF_ATTENTION_KEY_LENGTH: &str = "attention.key_length";
 const GGUF_ROPE_FREQ_BASE: &str = "rope.freq_base";
 const GGUF_VOCAB_SIZE: &str = "vocab_size";
 
+// ── Qwen 3.6 (qwen35 / qwen35moe) Gated DeltaNet metadata keys ─────────────
+// All are `<arch>.<key>` per GGUF convention; the loader scopes by prefix.
+// `pub(crate)` so the Qwen35Arch handler (Phase B) can use the same source
+// of truth as the loader.
+#[allow(dead_code)]
+pub(crate) const GGUF_FULL_ATTENTION_INTERVAL: &str = "full_attention_interval";
+#[allow(dead_code)]
+pub(crate) const GGUF_SSM_STATE_SIZE: &str = "ssm.state_size";
+#[allow(dead_code)]
+pub(crate) const GGUF_SSM_INNER_SIZE: &str = "ssm.inner_size";
+#[allow(dead_code)]
+pub(crate) const GGUF_SSM_DT_RANK: &str = "ssm.time_step_rank"; // = n_v_heads
+#[allow(dead_code)]
+pub(crate) const GGUF_SSM_GROUP_COUNT: &str = "ssm.group_count"; // = n_k_heads
+#[allow(dead_code)]
+pub(crate) const GGUF_SSM_CONV_KERNEL: &str = "ssm.conv_kernel"; // = d_conv
+#[allow(dead_code)]
+pub(crate) const GGUF_ROPE_DIMENSION_SECTIONS: &str = "rope.dimension_sections";
+
+// Per-layer DeltaNet / Qwen3-Next tensor name suffixes (used by the
+// `Qwen35Arch` handler landing in Phase B; defined here so the GGUF→
+// vindex key normaliser has one source of truth).
+#[allow(dead_code)]
+pub(crate) const GGUF_TENSOR_ATTN_QKV: &str = "attn_qkv"; // fused Q+K+V projection
+#[allow(dead_code)]
+pub(crate) const GGUF_TENSOR_ATTN_GATE: &str = "attn_gate"; // Z gate (DeltaNet) / Q-gate (full-attn fused)
+#[allow(dead_code)]
+pub(crate) const GGUF_TENSOR_SSM_CONV1D: &str = "ssm_conv1d"; // depthwise Conv1D over QKV
+#[allow(dead_code)]
+pub(crate) const GGUF_TENSOR_SSM_DT: &str = "ssm_dt"; // bias added to alpha
+#[allow(dead_code)]
+pub(crate) const GGUF_TENSOR_SSM_A: &str = "ssm_a"; // per-head log-decay
+#[allow(dead_code)]
+pub(crate) const GGUF_TENSOR_SSM_BETA: &str = "ssm_beta"; // delta-rule learning-rate proj
+#[allow(dead_code)]
+pub(crate) const GGUF_TENSOR_SSM_ALPHA: &str = "ssm_alpha"; // pre-softplus gate proj
+#[allow(dead_code)]
+pub(crate) const GGUF_TENSOR_SSM_NORM: &str = "ssm_norm"; // post-mixer RMSNorm
+#[allow(dead_code)]
+pub(crate) const GGUF_TENSOR_SSM_OUT: &str = "ssm_out"; // output projection
+
 const HF_MODEL_TYPE: &str = "model_type";
 const HF_HIDDEN_SIZE: &str = "hidden_size";
 const HF_NUM_HIDDEN_LAYERS: &str = "num_hidden_layers";
@@ -355,11 +396,21 @@ impl GgufFile {
                 .and_then(|v| v.as_f64())
         };
 
-        // Map GGUF architecture names to HF model_type
+        // Map GGUF architecture names to HF model_type.
+        //
+        // `qwen35` (Qwen 3.6 dense, 27B) and `qwen35moe` (Qwen 3.6 MoE,
+        // 35B-A3B) are **hybrid Gated DeltaNet + full-attention**
+        // architectures, NOT pure transformer Qwen3. They preserve the
+        // qwen-family prefix so detect.rs's `t.starts_with("qwen")` route
+        // still picks them up, but downstream (per the
+        // `inference-qwen35-deltanet` openspec change) they SHALL be
+        // handled by a `Qwen35Arch` / `Qwen35MoeArch` rather than the
+        // pure-transformer `QwenArch`.
         let model_type = match arch.as_str() {
             "llama" => "llama",
             "gemma" | "gemma2" | "gemma3" | "gemma4" => &arch,
             "qwen" | "qwen2" => "qwen2",
+            "qwen35" | "qwen35moe" => &arch,
             "mistral" => "mistral",
             "mixtral" => "mixtral",
             "phi" | "phi2" | "phi3" => "phi",
