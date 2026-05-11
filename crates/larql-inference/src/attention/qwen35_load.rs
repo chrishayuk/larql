@@ -1164,4 +1164,168 @@ mod tests {
             "decoded continuation is empty; generated ids: {generated:?}"
         );
     }
+
+    // ── C.4j: chat-template prompt forward ──
+    //
+    // Same gating as C.4f–C.4i. Runs the full pipeline with a
+    // Qwen3-style chat-formatted prompt rather than raw text. The
+    // expectation: an instruction-tuned model should produce
+    // sensible text when given properly formatted input. If output
+    // is gibberish for in-distribution input, the C.1–C.4 forward
+    // path has a real correctness bug that needs investigation
+    // BEFORE moving on to C.5 / Phase D.
+    //
+    // For Qwen 3.6 the standard chat format is:
+    //
+    //   <|im_start|>user\n<text><|im_end|>\n<|im_start|>assistant\n
+    //
+    // The tokenizer recognises `<|im_start|>` (id=248045) and
+    // `<|im_end|>` (id=248046, also the EOS) as special tokens,
+    // so a plain-string prompt encodes correctly.
+    //
+    // This test reports — it doesn't strictly assert the output is
+    // meaningful (that requires parity vs llama.cpp). What it DOES
+    // assert is the same plumbing gates as C.4i: tokens in range,
+    // finite logits, non-empty decode.
+    #[test]
+    fn real_gguf_qwen35_chat_prompt_forward() {
+        let path = match std::env::var("LARQL_QWEN35_GGUF") {
+            Ok(p) => p,
+            Err(_) => {
+                eprintln!("LARQL_QWEN35_GGUF unset — skipping chat-prompt forward");
+                return;
+            }
+        };
+        let gguf_path = std::path::PathBuf::from(&path);
+        let model_dir = gguf_path
+            .parent()
+            .expect("LARQL_QWEN35_GGUF must point to a file in a directory");
+        let tokenizer = match crate::tokenizer::load_tokenizer(model_dir) {
+            Ok(t) => t,
+            Err(e) => {
+                eprintln!("no tokenizer.json sibling next to GGUF ({e:?}) — skipping");
+                return;
+            }
+        };
+
+        let prompt = "<|im_start|>user\nHi<|im_end|>\n<|im_start|>assistant\n";
+        let encoding = tokenizer.encode(prompt, true).expect("encode prompt");
+        let prompt_ids: Vec<u32> = encoding.get_ids().to_vec();
+        eprintln!("prompt has {} tokens: {prompt_ids:?}", prompt_ids.len());
+
+        let weights = larql_models::load_gguf(&gguf_path).expect("load_gguf");
+        let vocab = weights.embed.shape()[0];
+        assert!(
+            prompt_ids.iter().all(|&id| (id as usize) < vocab),
+            "tokenizer produced an out-of-vocab id"
+        );
+        let w = load_qwen35_weights(&weights, &*weights.arch).expect("bridge load");
+
+        let arch = &*weights.arch;
+        let dn_dims = crate::attention::deltanet_block::DeltaNetDims {
+            hidden: weights.hidden_size,
+            head_v_dim: arch.ssm_state_size(),
+            n_v_heads: arch.ssm_dt_rank(),
+            n_k_heads: arch.ssm_group_count(),
+            d_conv: arch.ssm_conv_kernel(),
+            eps: 1e-6,
+        };
+        let rotary_dim: usize = arch
+            .rope_dimension_sections()
+            .map(|s| s.iter().sum())
+            .unwrap_or(weights.head_dim);
+        let attn_dims = crate::attention::qwen35_block::Qwen35AttentionDims {
+            hidden: weights.hidden_size,
+            n_head: weights.num_q_heads,
+            n_head_kv: weights.num_kv_heads,
+            head_dim: weights.head_dim,
+            rotary_dim,
+            rope_base: weights.rope_base,
+            eps: 1e-6,
+        };
+        let layer_kinds: Vec<bool> = (0..weights.num_layers)
+            .map(|l| arch.is_linear_attention_layer(l))
+            .collect();
+        let mut cache = crate::attention::qwen35_block::DeltaNetHybridCache::allocate(
+            &layer_kinds,
+            attn_dims.kv_dim(),
+            dn_dims.d_conv,
+            dn_dims.conv_dim(),
+            dn_dims.head_v_dim,
+            dn_dims.n_v_heads,
+        );
+
+        // Prefill.
+        let mut last_logits: Option<ndarray::Array1<f32>> = None;
+        for (i, &tok) in prompt_ids.iter().enumerate() {
+            let t = std::time::Instant::now();
+            let logits = crate::attention::qwen35_forward::qwen35_forward_step(
+                tok, &w, &dn_dims, &attn_dims, &mut cache, 1e-6,
+            );
+            eprintln!("prefill {i:2}: token={tok:>6} forward {:?}", t.elapsed());
+            assert!(
+                logits.iter().all(|v| v.is_finite()),
+                "prefill {i} (token={tok}): finite logits"
+            );
+            last_logits = Some(logits);
+        }
+
+        // Decode up to N tokens or until EOS.
+        const N_GEN: usize = 8;
+        const EOS: u32 = 248046; // <|im_end|>
+        let mut generated: Vec<u32> = Vec::with_capacity(N_GEN);
+        let mut logits = last_logits.expect("at least one prompt token");
+        for step in 0..N_GEN {
+            let (next_id, top_v) = logits.iter().enumerate().fold(
+                (0_usize, f32::NEG_INFINITY),
+                |(best_idx, best_v), (i, &v)| {
+                    if v > best_v {
+                        (i, v)
+                    } else {
+                        (best_idx, best_v)
+                    }
+                },
+            );
+            let next_u32 = next_id as u32;
+            generated.push(next_u32);
+            // Diagnostic: top-3 at each decode step.
+            let mut indexed: Vec<(usize, f32)> =
+                logits.iter().enumerate().map(|(i, &v)| (i, v)).collect();
+            indexed.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal));
+            eprintln!(
+                "decode {step}: argmax={next_u32} ({top_v:.3}) top-3={:?}",
+                &indexed[..3.min(indexed.len())]
+            );
+            if next_u32 == EOS {
+                eprintln!("hit EOS at decode step {step}, stopping");
+                break;
+            }
+            if step + 1 < N_GEN {
+                let t = std::time::Instant::now();
+                logits = crate::attention::qwen35_forward::qwen35_forward_step(
+                    next_u32, &w, &dn_dims, &attn_dims, &mut cache, 1e-6,
+                );
+                eprintln!("decode {step} continuation forward {:?}", t.elapsed());
+                assert!(
+                    logits.iter().all(|v| v.is_finite()),
+                    "decode {step}: finite logits"
+                );
+            }
+        }
+
+        let continuation = tokenizer
+            .decode(&generated, false)
+            .expect("decode generated");
+        eprintln!(
+            "assistant generated {} tokens: {generated:?}",
+            generated.len()
+        );
+        eprintln!("decoded continuation: {continuation:?}");
+
+        // Plumbing gate (same as C.4i).
+        assert!(
+            !continuation.is_empty(),
+            "decoded continuation is empty; generated ids: {generated:?}"
+        );
+    }
 }
