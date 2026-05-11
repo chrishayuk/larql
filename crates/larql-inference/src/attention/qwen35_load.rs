@@ -122,7 +122,15 @@ fn load_deltanet_layer(
         "ssm_conv1d_key",
         "linear",
     )?;
-    let ssm_conv1d = get_tensor(weights, &ssm_conv1d_key)?;
+    // GGUF stores ssm_conv1d as `[d_conv, conv_dim]` in GGML's
+    // (cols, rows) order, which the loader's standard dim-swap
+    // produces as `[conv_dim, d_conv]` in HF's `[rows, cols]`.
+    // The forward path (causal_conv1d_step) expects rows = d_conv
+    // and cols = conv_dim (per-tap-channel layout), so transpose
+    // once at load time. Trivial cost: 48 layers × 4 × 10240 f32
+    // ≈ 7.8 MB total for Qwen 3.6 27B, done once.
+    let ssm_conv1d_raw = get_tensor(weights, &ssm_conv1d_key)?;
+    let ssm_conv1d = ssm_conv1d_raw.t().to_owned().into_shared();
     let ssm_dt_key = require_key(arch.ssm_dt_key(layer), layer, "ssm_dt_key", "linear")?;
     let ssm_dt = get_vec(weights, &ssm_dt_key)?;
     let ssm_a_key = require_key(arch.ssm_a_key(layer), layer, "ssm_a_key", "linear")?;
@@ -311,8 +319,10 @@ mod tests {
         for layer in 0..arch.config().num_layers {
             let prefix = format!("layers.{layer}.");
             vectors.insert(format!("{prefix}input_layernorm.weight"), vec![1.0; hidden]);
+            // Qwen35Arch overrides post_attention_layernorm_key →
+            // `post_attention_norm.weight` (GGUF-native naming).
             vectors.insert(
-                format!("{prefix}post_attention_layernorm.weight"),
+                format!("{prefix}post_attention_norm.weight"),
                 vec![1.0; hidden],
             );
             tensors.insert(
@@ -337,9 +347,12 @@ mod tests {
                     format!("{prefix}attn_gate.weight"),
                     make_2d(value_dim, hidden, 0.1),
                 );
+                // Match the real GGUF layout `[conv_dim, d_conv]` —
+                // the bridge transposes to `[d_conv, conv_dim]` for
+                // the forward path.
                 tensors.insert(
                     format!("{prefix}ssm_conv1d.weight"),
-                    make_2d(arch.ssm_conv_kernel(), conv_dim, 0.5),
+                    make_2d(conv_dim, arch.ssm_conv_kernel(), 0.5),
                 );
                 vectors.insert(format!("{prefix}ssm_dt.bias"), vec![0.0; n_v_heads]);
                 vectors.insert(format!("{prefix}ssm_a"), vec![-1.0; n_v_heads]);
@@ -373,14 +386,9 @@ mod tests {
                     format!("{prefix}self_attn.o_proj.weight"),
                     make_2d(hidden, q_dim, 0.5),
                 );
-                vectors.insert(
-                    format!("{prefix}self_attn.q_norm.weight"),
-                    vec![1.0; head_dim],
-                );
-                vectors.insert(
-                    format!("{prefix}self_attn.k_norm.weight"),
-                    vec![1.0; head_dim],
-                );
+                // GGUF-native naming (no `self_attn` infix).
+                vectors.insert(format!("{prefix}attn_q_norm.weight"), vec![1.0; head_dim]);
+                vectors.insert(format!("{prefix}attn_k_norm.weight"), vec![1.0; head_dim]);
             }
         }
     }
@@ -682,5 +690,91 @@ mod tests {
             mass_layer0_after_2.is_finite(),
             "recurrent_state must remain finite"
         );
+    }
+
+    // ── C.4f: real-GGUF smoke test ──
+    //
+    // Gated on `LARQL_QWEN35_GGUF=/path/to/Qwen3.6-*.gguf`. If the
+    // env var is unset, the test is a no-op. Loads the GGUF, builds
+    // the Qwen35Arch / Qwen35MoeArch from its metadata, runs the
+    // bridge, and asserts every layer's weights are present with
+    // the expected shapes. Does NOT run the forward (which would
+    // need ~50 GB working memory after Q*K dequant); just verifies
+    // every key the bridge expects is in the loaded `ModelWeights`.
+    #[test]
+    fn real_gguf_qwen35_bridge_smoke() {
+        let path = match std::env::var("LARQL_QWEN35_GGUF") {
+            Ok(p) => p,
+            Err(_) => {
+                eprintln!("LARQL_QWEN35_GGUF unset — skipping real-GGUF smoke test");
+                return;
+            }
+        };
+        let weights = larql_models::load_gguf(std::path::Path::new(&path))
+            .expect("load_gguf failed on Qwen3.6 GGUF");
+        let arch_family = weights.arch.family().to_string();
+        assert!(
+            matches!(arch_family.as_str(), "qwen35" | "qwen35moe"),
+            "GGUF arch must be qwen35 or qwen35moe, got `{arch_family}`"
+        );
+
+        let w = load_qwen35_weights(&weights, &*weights.arch).expect("load_qwen35_weights failed");
+        assert_eq!(w.layers.len(), weights.num_layers);
+        assert_eq!(w.embed.shape()[1], weights.hidden_size);
+        assert_eq!(w.lm_head.shape()[1], weights.hidden_size);
+        assert_eq!(w.final_norm.len(), weights.hidden_size);
+
+        // Spot-check the first linear and first full-attn layer's
+        // tensor shapes.
+        let conv_kernel = weights.arch.ssm_conv_kernel();
+        let head_v_dim = weights.arch.ssm_state_size();
+        let n_v_heads = weights.arch.ssm_dt_rank();
+        let n_k_heads = weights.arch.ssm_group_count();
+        let value_dim = head_v_dim * n_v_heads;
+        let key_dim = head_v_dim * n_k_heads;
+        let conv_dim = 2 * key_dim + value_dim;
+
+        for (idx, layer) in w.layers.iter().enumerate() {
+            match &layer.block {
+                Qwen35LayerWeights::Linear(dn) => {
+                    assert_eq!(
+                        dn.ssm_conv1d.shape(),
+                        &[conv_kernel, conv_dim],
+                        "layer {idx} ssm_conv1d shape (after bridge transpose)"
+                    );
+                    assert_eq!(dn.ssm_a.len(), n_v_heads, "layer {idx} ssm_a");
+                    assert_eq!(dn.ssm_dt.len(), n_v_heads, "layer {idx} ssm_dt");
+                    assert_eq!(dn.ssm_norm.len(), head_v_dim, "layer {idx} ssm_norm");
+                    assert_eq!(
+                        dn.attn_qkv.shape(),
+                        &[conv_dim, weights.hidden_size],
+                        "layer {idx} attn_qkv"
+                    );
+                }
+                Qwen35LayerWeights::Attention(at) => {
+                    let head_dim = weights.head_dim;
+                    assert_eq!(
+                        at.attn_q_norm.len(),
+                        head_dim,
+                        "layer {idx} attn_q_norm len"
+                    );
+                    assert_eq!(
+                        at.attn_k_norm.len(),
+                        head_dim,
+                        "layer {idx} attn_k_norm len"
+                    );
+                    assert_eq!(
+                        at.attn_q.shape(),
+                        &[2 * weights.num_q_heads * head_dim, weights.hidden_size],
+                        "layer {idx} attn_q (fused Q+gate)"
+                    );
+                }
+            }
+            assert_eq!(
+                layer.attn_post_norm.len(),
+                weights.hidden_size,
+                "layer {idx} attn_post_norm"
+            );
+        }
     }
 }

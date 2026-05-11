@@ -92,6 +92,13 @@ impl TestMoeArch {
                 attention_k_eq_v: false,
                 per_layer_embed_dim: None,
                 num_kv_shared_layers: None,
+                full_attention_interval: None,
+                ssm_state_size: None,
+                ssm_inner_size: None,
+                ssm_dt_rank: None,
+                ssm_group_count: None,
+                ssm_conv_kernel: None,
+                rope_dimension_sections: None,
             },
         }
     }

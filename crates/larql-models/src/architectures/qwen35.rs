@@ -169,29 +169,35 @@ impl ModelArchitecture for Qwen35Arch {
     // ── Full-attention layer tensor keys ──
     //
     // GGUF→HF key replacement maps `attn_q.` → `self_attn.q_proj.`
-    // etc. So the standard ModelArchitecture default impls return
-    // the right HF-style keys for the full-attention layers — we
-    // just need to add the per-head Q/K norm keys which are
-    // Qwen3-Next-specific (different shape from QwenArch's `q_norm`).
+    // etc. for the projection weights. The per-head Q/K RMSNorm
+    // tensors keep their GGUF-native names (`attn_q_norm.weight` /
+    // `attn_k_norm.weight`) — the substring `attn_q.` is NOT a
+    // match against `attn_q_norm.` (underscore, not dot), so the
+    // existing GGUF→HF normalizer leaves them alone.
 
     fn attn_q_per_head_norm_key(&self, layer: usize) -> Option<String> {
         if self.is_linear_attention_layer(layer) {
             return None;
         }
-        Some(format!(
-            "{}self_attn.q_norm.weight",
-            self.layer_prefix(layer)
-        ))
+        Some(format!("{}attn_q_norm.weight", self.layer_prefix(layer)))
     }
 
     fn attn_k_per_head_norm_key(&self, layer: usize) -> Option<String> {
         if self.is_linear_attention_layer(layer) {
             return None;
         }
-        Some(format!(
-            "{}self_attn.k_norm.weight",
-            self.layer_prefix(layer)
-        ))
+        Some(format!("{}attn_k_norm.weight", self.layer_prefix(layer)))
+    }
+
+    // ── Post-attention RMSNorm (Gemma-2-style pre+post sandwich) ──
+    //
+    // Qwen 3.6 GGUFs store the post-attention norm as
+    // `blk.N.post_attention_norm.weight` (no `_layernorm` suffix),
+    // which the GGUF→HF normalizer doesn't touch — so the key in
+    // `ModelWeights.vectors` is `layers.N.post_attention_norm.weight`.
+    // The trait default returns `..._layernorm.weight`; override.
+    fn post_attention_layernorm_key(&self, layer: usize) -> String {
+        format!("{}post_attention_norm.weight", self.layer_prefix(layer))
     }
 }
 
@@ -291,6 +297,9 @@ impl ModelArchitecture for Qwen35MoeArch {
     }
     fn attn_k_per_head_norm_key(&self, layer: usize) -> Option<String> {
         self.inner.attn_k_per_head_norm_key(layer)
+    }
+    fn post_attention_layernorm_key(&self, layer: usize) -> String {
+        self.inner.post_attention_layernorm_key(layer)
     }
 
     // ── MoE-specific overrides ──
@@ -468,14 +477,23 @@ mod tests {
         assert_eq!(arch.attn_qkv_key(3), None);
         assert_eq!(arch.attn_gate_key(3), None);
         assert_eq!(arch.ssm_conv1d_key(3), None);
-        // Per-head Q/K norms present.
+        // Per-head Q/K norms present — GGUF-native names
+        // (the existing GGUF→HF normalizer doesn't rewrite
+        // `attn_q_norm.` because the rule is `attn_q.` with a
+        // trailing dot, not underscore).
         assert_eq!(
             arch.attn_q_per_head_norm_key(3),
-            Some("layers.3.self_attn.q_norm.weight".into())
+            Some("layers.3.attn_q_norm.weight".into())
         );
         assert_eq!(
             arch.attn_k_per_head_norm_key(3),
-            Some("layers.3.self_attn.k_norm.weight".into())
+            Some("layers.3.attn_k_norm.weight".into())
+        );
+        // Post-attention RMSNorm key — Qwen 3.6 GGUF stores it
+        // as `post_attention_norm.weight` (no `_layernorm` suffix).
+        assert_eq!(
+            arch.post_attention_layernorm_key(3),
+            "layers.3.post_attention_norm.weight"
         );
         // Standard Q/K/V/O keys from default trait impls.
         assert_eq!(arch.attn_q_key(3), "layers.3.self_attn.q_proj.weight");
