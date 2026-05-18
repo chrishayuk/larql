@@ -285,8 +285,8 @@ mod tests {
 
     // ── Profiling ─────────────────────────────────────────────────────────────
 
-    #[cfg_attr(not(target_arch = "wasm32"), test)]
-    #[cfg_attr(target_arch = "wasm32", wasm_bindgen_test::wasm_bindgen_test)]
+    #[cfg(not(target_arch = "wasm32"))]
+    #[test]
     fn with_profiling_enables_profiling_branch() {
         let weights = make_test_weights();
         let mut engine = MarkovResidualEngine::new(None).with_profiling(true);
@@ -315,8 +315,8 @@ mod tests {
         );
     }
 
-    #[cfg_attr(not(target_arch = "wasm32"), test)]
-    #[cfg_attr(target_arch = "wasm32", wasm_bindgen_test::wasm_bindgen_test)]
+    #[cfg(not(target_arch = "wasm32"))]
+    #[test]
     fn profiling_decode_path_matches_unprofiled_shape() {
         // Two engines: one profiled, one not. Both should yield hidden states
         // of the same shape after the same prefill+decode sequence.

@@ -174,19 +174,19 @@ jobs:
         run: cargo fmt -p larql-vindex -- --check
 
       - name: Check all targets
-        run: cargo check -p larql-vindex --target ${{ matrix.target }} --all-targets
+        run: cargo check -p larql-vindex --target ${{ matrix.target }} --all-targets --features remote
 
       - name: Check examples
-        run: cargo check -p larql-vindex --target ${{ matrix.target }} --examples
+        run: cargo check -p larql-vindex --target ${{ matrix.target }} --examples --features remote
 
       - name: Clippy
-        run: cargo clippy -p larql-vindex --target ${{ matrix.target }} --all-targets -- -D warnings
+        run: cargo clippy -p larql-vindex --target ${{ matrix.target }} --all-targets --features remote -- -D warnings
 
       - name: Tests
-        run: cargo test -p larql-vindex --target ${{ matrix.target }}
+        run: cargo test -p larql-vindex --target ${{ matrix.target }} --features remote
 
       - name: Benchmark compile/tests
-        run: cargo test -p larql-vindex --target ${{ matrix.target }} --benches
+        run: cargo test -p larql-vindex --target ${{ matrix.target }} --benches --features remote
 
   coverage:
     name: coverage - ubuntu
@@ -211,10 +211,10 @@ jobs:
         uses: taiki-e/install-action@cargo-llvm-cov
 
       - name: Coverage summary
-        run: cargo llvm-cov --package larql-vindex --summary-only --fail-under-lines "$LARQL_VINDEX_COVERAGE_MIN"
+        run: cargo llvm-cov --package larql-vindex --features remote --summary-only --fail-under-lines "$LARQL_VINDEX_COVERAGE_MIN"
 
       - name: Coverage policy
         run: |
           mkdir -p coverage/larql-vindex
-          cargo llvm-cov report --package larql-vindex --json --summary-only --output-path coverage/larql-vindex/summary.json
+          cargo llvm-cov report --package larql-vindex --features remote --json --summary-only --output-path coverage/larql-vindex/summary.json
           python3 scripts/check_coverage_policy.py coverage/larql-vindex/summary.json crates/larql-vindex/coverage-policy.json

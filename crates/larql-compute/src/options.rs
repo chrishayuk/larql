@@ -217,8 +217,8 @@ mod tests {
         with_env_vars(&[(name, value)], f)
     }
 
-    #[cfg_attr(not(target_arch = "wasm32"), test)]
-    #[cfg_attr(target_arch = "wasm32", wasm_bindgen_test::wasm_bindgen_test)]
+    #[cfg(not(target_arch = "wasm32"))]
+    #[test]
     fn env_flag_and_value_helpers_read_presence_and_content() {
         with_env(ENV_GPU_TIMING, Some("1"), || {
             assert!(env_flag(ENV_GPU_TIMING));
@@ -238,8 +238,8 @@ mod tests {
         });
     }
 
-    #[cfg_attr(not(target_arch = "wasm32"), test)]
-    #[cfg_attr(target_arch = "wasm32", wasm_bindgen_test::wasm_bindgen_test)]
+    #[cfg(not(target_arch = "wasm32"))]
+    #[test]
     fn env_numeric_and_boolean_helpers_parse_expected_forms() {
         with_env(ENV_STAGE_DUMP_LAYER, Some("7"), || {
             assert_eq!(env_usize(ENV_STAGE_DUMP_LAYER), Some(7));
@@ -274,8 +274,8 @@ mod tests {
         });
     }
 
-    #[cfg_attr(not(target_arch = "wasm32"), test)]
-    #[cfg_attr(target_arch = "wasm32", wasm_bindgen_test::wasm_bindgen_test)]
+    #[cfg(not(target_arch = "wasm32"))]
+    #[test]
     fn legacy_alias_helpers_still_work() {
         with_env_vars(
             &[(ENV_SKIP_MOE, None), (ENV_SKIP_MOE_LEGACY, Some("1"))],
@@ -300,8 +300,8 @@ mod tests {
         );
     }
 
-    #[cfg_attr(not(target_arch = "wasm32"), test)]
-    #[cfg_attr(target_arch = "wasm32", wasm_bindgen_test::wasm_bindgen_test)]
+    #[cfg(not(target_arch = "wasm32"))]
+    #[test]
     fn env_flag_any_and_debug_helpers_cover_absent_and_present_cases() {
         with_env_vars(
             &[

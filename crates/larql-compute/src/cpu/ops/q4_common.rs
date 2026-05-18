@@ -5,6 +5,12 @@
 
 use larql_models::quant::ggml::LEGACY_BLOCK_ELEMS;
 
+// On non-wasm32 platforms the two entry points are provided by the C kernel
+// in csrc/q4_dot.c (ARM vdotq_s32 / x86 AVX2 / scalar fallback).  On
+// wasm32-unknown-unknown the C build step is skipped (build.rs early-returns),
+// so we supply pure-Rust scalar equivalents below instead of importing from
+// the "env" WASM module, which Node.js cannot resolve.
+#[cfg(not(target_arch = "wasm32"))]
 extern "C" {
     /// C kernel: Q4_0 × Q8_0 matrix-vector multiply with ARM vdotq_s32.
     pub fn q4_0_matvec_c(
@@ -24,6 +30,86 @@ extern "C" {
         intermediate: usize,
         hidden: usize,
     );
+}
+
+/// Pure-Rust scalar Q4_0 × Q8_0 matvec for wasm32 (mirrors C scalar fallback).
+///
+/// # Safety
+/// All pointers must be valid for the given dimensions. `q4_data` must point to
+/// `num_rows * (hidden/32) * 18` bytes, `q8_x` to `hidden` i8 values,
+/// `q8_scales` to `hidden/32` f32 values, and `scores` to `num_rows` f32 slots.
+#[cfg(target_arch = "wasm32")]
+pub unsafe fn q4_0_matvec_c(
+    q4_data: *const u8,
+    q8_x: *const i8,
+    q8_scales: *const f32,
+    scores: *mut f32,
+    num_rows: usize,
+    hidden: usize,
+) {
+    let blocks_per_row = hidden / 32;
+    let bytes_per_row = blocks_per_row * 18;
+    for row in 0..num_rows {
+        let mut acc = 0.0f32;
+        let row_data = q4_data.add(row * bytes_per_row);
+        for b in 0..blocks_per_row {
+            let block = row_data.add(b * 18);
+            let scale_bits = u16::from_le_bytes([*block, *block.add(1)]);
+            let combined_scale = crate::cpu::ops::q4_common::f16_to_f32(scale_bits) * *q8_scales.add(b);
+            let quants = block.add(2);
+            let q8_ptr = q8_x.add(b * 32);
+            for j in 0..16usize {
+                let byte = *quants.add(j);
+                let lo_v = (byte & 0x0F) as i32 - 8;
+                let hi_v = ((byte >> 4) & 0x0F) as i32 - 8;
+                acc += lo_v as f32 * (*q8_ptr.add(j * 2)) as f32 * combined_scale;
+                acc += hi_v as f32 * (*q8_ptr.add(j * 2 + 1)) as f32 * combined_scale;
+            }
+        }
+        *scores.add(row) = acc;
+    }
+}
+
+/// Pure-Rust scalar Q4_0 vecmat for wasm32 (mirrors C scalar fallback).
+///
+/// # Safety
+/// All pointers must be valid for the given dimensions. `activation` must point
+/// to `intermediate` f32 values, `q4_data` to `intermediate * (hidden/32) * 18`
+/// bytes, and `out` to `hidden` f32 slots (zeroed by this function).
+#[cfg(target_arch = "wasm32")]
+pub unsafe fn q4_0_vecmat_c(
+    activation: *const f32,
+    q4_data: *const u8,
+    out: *mut f32,
+    intermediate: usize,
+    hidden: usize,
+) {
+    let blocks_per_row = hidden / 32;
+    let bytes_per_row = blocks_per_row * 18;
+    for j in 0..hidden {
+        *out.add(j) = 0.0f32;
+    }
+    for row in 0..intermediate {
+        let act = *activation.add(row);
+        if act > -1e-10 && act < 1e-10 {
+            continue;
+        }
+        let row_data = q4_data.add(row * bytes_per_row);
+        for b in 0..blocks_per_row {
+            let block = row_data.add(b * 18);
+            let scale_bits = u16::from_le_bytes([*block, *block.add(1)]);
+            let scale = crate::cpu::ops::q4_common::f16_to_f32(scale_bits) * act;
+            let quants = block.add(2);
+            let o = out.add(b * 32);
+            for j in 0..16usize {
+                let byte = *quants.add(j);
+                let lo_v = (byte & 0x0F) as i32 - 8;
+                let hi_v = ((byte >> 4) & 0x0F) as i32 - 8;
+                *o.add(j * 2) += lo_v as f32 * scale;
+                *o.add(j * 2 + 1) += hi_v as f32 * scale;
+            }
+        }
+    }
 }
 
 /// Pre-quantize f32 vector to Q8_0 (int8 + per-block f32 scale).

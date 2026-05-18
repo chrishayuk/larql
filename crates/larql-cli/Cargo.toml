@@ -17,7 +17,7 @@ larql-inference = { path = "../larql-inference" }
 larql-kv = { path = "../larql-kv" }
 larql-models = { path = "../larql-models" }
 larql-lql = { path = "../larql-lql" }
-larql-vindex = { path = "../larql-vindex" }
+larql-vindex = { path = "../larql-vindex", features = ["remote"] }
 clap = { version = "4", features = ["derive", "env"] }
 indicatif = "0.17"
 base64 = "0.22"

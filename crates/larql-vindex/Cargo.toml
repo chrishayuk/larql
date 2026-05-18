@@ -54,14 +54,21 @@ libc = "0.2"
 [target.'cfg(not(target_arch = "wasm32"))'.dependencies]
 # Tokenizer — onig/Oniguruma backend; not wasm-safe (wasm32 uses unstable_wasm below).
 tokenizers = "0.21"
-# Blocking HTTP with ring-based TLS — incompatible with wasm32.
-reqwest = { version = "0.12", default-features = false, features = ["blocking", "json", "rustls-tls"] }
-# HuggingFace Hub — ureq backend pulls in socks/OS sockets; not wasm-safe.
-hf-hub = { version = "0.5", default-features = false, features = ["ureq"] }
+# Blocking HTTP with ring-based TLS — incompatible with wasm32. Optional: activated
+# by the `remote` feature. Edge crates (larql-cli, larql-server) enable `remote`;
+# pure-compute consumers (larql-kv) do not.
+reqwest = { version = "0.12", default-features = false, features = ["blocking", "json", "rustls-tls"], optional = true }
+# HuggingFace Hub — ureq backend pulls in socks/OS sockets; not wasm-safe. Optional.
+hf-hub = { version = "0.5", default-features = false, features = ["ureq"], optional = true }
 
 [features]
 default = []
 metal = ["larql-compute/metal"]
+# Enables HTTP I/O: HuggingFace Hub download/publish, reqwest.
+# Edge crates (larql-cli, larql-server) enable this; pure-compute
+# consumers (larql-kv, larql-lql) do not, keeping their wasm32 dep
+# graph free of browser-fetch bindings.
+remote = ["dep:reqwest", "dep:hf-hub"]
 
 [dev-dependencies]
 criterion = "0.5"
@@ -121,5 +128,8 @@ harness = false
 getrandom = { workspace = true }
 # Tokenizer with fancy-regex backend — no Oniguruma C bindings.
 tokenizers = { version = "0.21", default-features = false, features = ["unstable_wasm"] }
-# Async HTTP without blocking API or ring TLS (uses browser fetch).
-reqwest = { version = "0.12", default-features = false, features = ["json"] }
+# Async HTTP uses browser fetch — generates wasm "env" host imports that
+# Node.js cannot resolve. Optional: only enable with the `remote` feature
+# (browser-only consumers). Pure-compute consumers (larql-kv) must not
+# enable `remote` so their wasm-pack --node tests pass.
+reqwest = { version = "0.12", default-features = false, features = ["json"], optional = true }

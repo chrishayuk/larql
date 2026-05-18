@@ -87,7 +87,7 @@ pub use format::load::{
     load_feature_labels, load_vindex_config, load_vindex_embeddings, load_vindex_tokenizer,
 };
 // Model loading: use larql_models::{load_model_dir, resolve_model_path, load_gguf} directly
-#[cfg(not(target_arch = "wasm32"))]
+#[cfg(all(not(target_arch = "wasm32"), feature = "remote"))]
 pub use format::huggingface::{
     dataset_repo_exists, download_hf_weights, ensure_collection, fetch_collection_items,
     is_hf_path, publish_vindex, publish_vindex_with_opts, repo_exists,

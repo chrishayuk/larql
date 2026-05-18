@@ -360,8 +360,8 @@ mod cache_format_tests {
     /// each key without serializing readers (the perf claim isn't
     /// asserted here, but the absence of deadlock and content-identity
     /// regression is).
-    #[cfg_attr(not(target_arch = "wasm32"), test)]
-    #[cfg_attr(target_arch = "wasm32", wasm_bindgen_test::wasm_bindgen_test)]
+    #[cfg(not(target_arch = "wasm32"))]
+    #[test]
     fn parallel_hits_do_not_deadlock_or_corrupt() {
         // Pre-warm: a few small BF16 entries.
         let entries: Vec<Vec<u8>> = (0..4)

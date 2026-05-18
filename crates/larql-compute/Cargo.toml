@@ -55,6 +55,10 @@ heavy_tests = []
 # Enable wasm_bindgen_test runner for in-browser unit-test runs.
 browser-tests = []
 # cuda = []  # Future: CUDA backend
+# Required by examples that use `extern crate blas_src`. Cargo skips
+# examples whose required-features are not active, so wasm-pack (which
+# never enables `native`) won't attempt to compile them.
+native = []
 
 [build-dependencies]
 cc = "1.0"
@@ -69,6 +73,42 @@ wasm-bindgen-test = "0.3"
 
 [target.'cfg(not(target_arch = "wasm32"))'.dev-dependencies]
 criterion = "0.5"
+
+[[example]]
+name = "compare_decode"
+required-features = ["native"]
+
+[[example]]
+name = "compare_formats"
+required-features = ["native"]
+
+[[example]]
+name = "compare_generation"
+required-features = ["native"]
+
+[[example]]
+name = "compare_ollama"
+required-features = ["native"]
+
+[[example]]
+name = "compare_pipeline"
+required-features = ["native"]
+
+[[example]]
+name = "demo_architecture"
+required-features = ["native"]
+
+[[example]]
+name = "demo_basic"
+required-features = ["native"]
+
+[[example]]
+name = "demo_ridge_solve"
+required-features = ["native"]
+
+[[example]]
+name = "diag_profile_kernels"
+required-features = ["native"]
 
 [[bench]]
 name = "matmul"

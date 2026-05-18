@@ -52,7 +52,7 @@ tonic-build = "0.13"
 protobuf-src = "2"
 
 [target.'cfg(not(target_arch = "wasm32"))'.dependencies]
-larql-vindex = { path = "../larql-vindex" }
+larql-vindex = { path = "../larql-vindex", features = ["remote"] }
 larql-inference = { path = "../larql-inference" }
 larql-models = { path = "../larql-models" }
 # Optional Metal backend for shard-side GPU experts (macOS).  When the

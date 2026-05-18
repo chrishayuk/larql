@@ -148,8 +148,8 @@ mod tests {
         assert_eq!(acc.count, 0);
     }
 
-    #[cfg_attr(not(target_arch = "wasm32"), test)]
-    #[cfg_attr(target_arch = "wasm32", wasm_bindgen_test::wasm_bindgen_test)]
+    #[cfg(not(target_arch = "wasm32"))]
+    #[test]
     fn stage_accumulator_records_and_averages() {
         let mut acc = StageAccumulator::default();
         for _ in 0..3 {
@@ -167,8 +167,8 @@ mod tests {
         assert!(avg >= 50.0, "expected avg ≥50 µs, got {avg}");
     }
 
-    #[cfg_attr(not(target_arch = "wasm32"), test)]
-    #[cfg_attr(target_arch = "wasm32", wasm_bindgen_test::wasm_bindgen_test)]
+    #[cfg(not(target_arch = "wasm32"))]
+    #[test]
     fn stage_accumulator_clone_preserves_state() {
         let mut acc = StageAccumulator::default();
         let t = Instant::now();
@@ -179,8 +179,8 @@ mod tests {
         assert_eq!(copy.total_us, acc.total_us);
     }
 
-    #[cfg_attr(not(target_arch = "wasm32"), test)]
-    #[cfg_attr(target_arch = "wasm32", wasm_bindgen_test::wasm_bindgen_test)]
+    #[cfg(not(target_arch = "wasm32"))]
+    #[test]
     fn engine_profiler_summary_reflects_decode_total_steps() {
         let mut prof = EngineProfiler::default();
         for _ in 0..5 {
@@ -194,8 +194,8 @@ mod tests {
         assert_eq!(summary.avg_attention_us, 0.0);
     }
 
-    #[cfg_attr(not(target_arch = "wasm32"), test)]
-    #[cfg_attr(target_arch = "wasm32", wasm_bindgen_test::wasm_bindgen_test)]
+    #[cfg(not(target_arch = "wasm32"))]
+    #[test]
     fn engine_profiler_summary_carries_per_stage_averages() {
         let mut prof = EngineProfiler::default();
         let t = Instant::now();

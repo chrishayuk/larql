@@ -96,9 +96,14 @@ jobs:
           RUSTFLAGS: ${{ matrix.mode.rustflags }}
         run: cargo clippy -p larql-kv --target wasm32-unknown-unknown -- -D warnings
 
-      # larql-kv → larql-inference/larql-vindex → reqwest browser-fetch on
-      # wasm32 → WASM "env" host imports Node.js cannot resolve. Firefox is
-      # the only viable wasm-pack test runner for this crate.
+      # larql-vindex no longer includes reqwest in its default wasm32 dep graph
+      # (reqwest is now optional, gated by the `remote` feature which larql-kv
+      # does not enable). Node.js can resolve all remaining WASM host imports.
+      - name: wasm-pack test · node
+        env:
+          RUSTFLAGS: ${{ matrix.mode.rustflags }}
+        run: wasm-pack test --node crates/larql-kv
+
       - name: wasm-pack test · firefox
         env:
           RUSTFLAGS: ${{ matrix.mode.rustflags }}

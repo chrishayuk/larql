@@ -185,17 +185,17 @@ fn resolve_vindexfile_path(
     path: &str,
     working_dir: &Path,
 ) -> Result<std::path::PathBuf, VindexError> {
-    #[cfg(not(target_arch = "wasm32"))]
+    #[cfg(all(not(target_arch = "wasm32"), feature = "remote"))]
     if crate::format::huggingface::is_hf_path(path) {
         // Use the same resolver `larql run` and `larql extract` use
         // — caches under HF's standard cache dir, conditional fetch
         // by ETag. Returns the local snapshot path.
         return crate::format::huggingface::resolve_hf_vindex(path);
     }
-    #[cfg(target_arch = "wasm32")]
+    #[cfg(any(target_arch = "wasm32", not(feature = "remote")))]
     if path.starts_with("hf://") {
         return Err(VindexError::Parse(
-            "HuggingFace paths are not supported in WASM builds; \
+            "HuggingFace paths are not supported without the `remote` feature; \
              download the vindex locally first"
                 .into(),
         ));
