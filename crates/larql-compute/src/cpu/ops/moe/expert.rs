@@ -25,8 +25,12 @@ use std::time::Instant;
 struct Instant;
 #[cfg(target_arch = "wasm32")]
 impl Instant {
-    fn now() -> Self { Self }
-    fn elapsed(self) -> std::time::Duration { std::time::Duration::ZERO }
+    fn now() -> Self {
+        Self
+    }
+    fn elapsed(self) -> std::time::Duration {
+        std::time::Duration::ZERO
+    }
 }
 // `q4k_q8k_gate_up_into` exists for future kernel exploration but is not
 // wired into the hot path — see comment in `run_single_expert_q4k_q8k_into`.

@@ -55,7 +55,8 @@ pub unsafe fn q4_0_matvec_c(
         for b in 0..blocks_per_row {
             let block = row_data.add(b * 18);
             let scale_bits = u16::from_le_bytes([*block, *block.add(1)]);
-            let combined_scale = crate::cpu::ops::q4_common::f16_to_f32(scale_bits) * *q8_scales.add(b);
+            let combined_scale =
+                crate::cpu::ops::q4_common::f16_to_f32(scale_bits) * *q8_scales.add(b);
             let quants = block.add(2);
             let q8_ptr = q8_x.add(b * 32);
             for j in 0..16usize {
