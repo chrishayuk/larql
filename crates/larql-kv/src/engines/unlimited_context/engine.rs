@@ -409,10 +409,9 @@ pub(crate) fn q4k_prefill_metal(
     let gate_index: &dyn GateIndex = index;
     let (q4_ffn_mmap, ffn_is_q4k) = if let Some(m) = gate_index.interleaved_q4k_mmap_ref() {
         (m, true)
-    } else if let Some(m) = gate_index.interleaved_q4_mmap_ref() {
-        (m, false)
     } else {
-        return None;
+        let m = gate_index.interleaved_q4_mmap_ref()?;
+        (m, false)
     };
     index.attn_q4k_layer_data(0)?;
 
@@ -476,10 +475,9 @@ pub(crate) fn q4k_decode_token(
     let gate_index: &dyn GateIndex = index;
     let (q4_ffn_mmap, ffn_is_q4k) = if let Some(m) = gate_index.interleaved_q4k_mmap_ref() {
         (m, true)
-    } else if let Some(m) = gate_index.interleaved_q4_mmap_ref() {
-        (m, false)
     } else {
-        return None;
+        let m = gate_index.interleaved_q4_mmap_ref()?;
+        (m, false)
     };
 
     let hidden = weights.hidden_size;

@@ -11,7 +11,7 @@ larql-compute = { path = "../larql-compute" }
 larql-core = { path = "../larql-core" }
 larql-inference = { path = "../larql-inference" }
 larql-models = { path = "../larql-models" }
-larql-vindex = { path = "../larql-vindex" }
+larql-vindex = { path = "../larql-vindex", features = ["remote"] }
 ndarray = "0.16"
 serde = { workspace = true, features = ["derive"] }
 serde_json = { workspace = true }
