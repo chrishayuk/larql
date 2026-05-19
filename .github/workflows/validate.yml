@@ -195,6 +195,10 @@ jobs:
     name: changelog (git-cliff consistency)
     runs-on: ubuntu-24.04
     needs: commits
+    # Only enforce on the transition from draft → ready; skip during active
+    # development (opened / synchronize / reopened). Still runs on push to
+    # main and workflow_dispatch.
+    if: github.event_name != 'pull_request' || github.event.action == 'ready_for_review'
     steps:
       - name: Checkout
         uses: actions/checkout@v6
