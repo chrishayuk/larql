@@ -9,6 +9,7 @@ description = "HTTP server for vindex knowledge queries and inference"
 [lib]
 name = "larql_server"
 path = "src/lib.rs"
+crate-type = ["cdylib", "rlib"]
 
 [[bin]]
 name = "larql-server"
@@ -76,3 +77,6 @@ utoipa-swagger-ui = { version = "9", features = ["axum"] }
 
 [target.'cfg(target_arch = "wasm32")'.dependencies]
 getrandom = { workspace = true }
+
+[dev-dependencies]
+wasm-bindgen-test = "0.3"

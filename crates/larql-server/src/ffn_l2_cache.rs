@@ -114,7 +114,13 @@ impl FfnL2Cache {
 mod tests {
     use super::*;
 
-    #[test]
+    #[cfg(all(test, target_arch = "wasm32"))]
+    use wasm_bindgen_test::wasm_bindgen_test;
+    #[cfg(all(test, target_arch = "wasm32"))]
+    wasm_bindgen_test::wasm_bindgen_test_configure!(run_in_node_experimental);
+
+    #[cfg_attr(not(target_arch = "wasm32"), test)]
+    #[cfg_attr(target_arch = "wasm32", wasm_bindgen_test)]
     fn key_matches_l1_scheme() {
         // L1 and L2 use identical key derivation — cross-tier consistency.
         fn l1_key(ids: &[usize]) -> u64 {
@@ -129,14 +135,16 @@ mod tests {
         assert_eq!(FfnL2Cache::key(&ids), l1_key(&ids));
     }
 
-    #[test]
+    #[cfg_attr(not(target_arch = "wasm32"), test)]
+    #[cfg_attr(target_arch = "wasm32", wasm_bindgen_test)]
     fn key_is_order_independent() {
         let k1 = FfnL2Cache::key(&[3, 1, 4, 1, 5]);
         let k2 = FfnL2Cache::key(&[5, 4, 3, 1, 1]);
         assert_eq!(k1, k2);
     }
 
-    #[test]
+    #[cfg_attr(not(target_arch = "wasm32"), test)]
+    #[cfg_attr(target_arch = "wasm32", wasm_bindgen_test)]
     fn miss_then_hit() {
         let cache = FfnL2Cache::new(4);
         let key = FfnL2Cache::key(&[10, 20]);
@@ -150,7 +158,8 @@ mod tests {
         assert_eq!(cache.hits(), 1);
     }
 
-    #[test]
+    #[cfg_attr(not(target_arch = "wasm32"), test)]
+    #[cfg_attr(target_arch = "wasm32", wasm_bindgen_test)]
     fn hit_rate_computation() {
         let cache = FfnL2Cache::new(2);
         let k = FfnL2Cache::key(&[1]);
@@ -166,7 +175,8 @@ mod tests {
         assert!((cache.hit_rate() - 2.0 / 3.0).abs() < 1e-9);
     }
 
-    #[test]
+    #[cfg_attr(not(target_arch = "wasm32"), test)]
+    #[cfg_attr(target_arch = "wasm32", wasm_bindgen_test)]
     fn capacity_cap() {
         let cache = FfnL2Cache::with_max_entries(1, 2);
         let k0 = FfnL2Cache::key(&[0]);
@@ -183,7 +193,8 @@ mod tests {
         assert!(cache.get(0, k2).is_none());
     }
 
-    #[test]
+    #[cfg_attr(not(target_arch = "wasm32"), test)]
+    #[cfg_attr(target_arch = "wasm32", wasm_bindgen_test)]
     fn layers_are_independent() {
         let cache = FfnL2Cache::new(4);
         let key = FfnL2Cache::key(&[7]);
@@ -195,7 +206,8 @@ mod tests {
         assert!(cache.get(1, key).is_none());
     }
 
-    #[test]
+    #[cfg_attr(not(target_arch = "wasm32"), test)]
+    #[cfg_attr(target_arch = "wasm32", wasm_bindgen_test)]
     fn out_of_range_layer_is_safe() {
         let cache = FfnL2Cache::new(2);
         let key = FfnL2Cache::key(&[1]);
@@ -203,7 +215,8 @@ mod tests {
         cache.insert(99, key, vec![1.0]); // must not panic
     }
 
-    #[test]
+    #[cfg_attr(not(target_arch = "wasm32"), test)]
+    #[cfg_attr(target_arch = "wasm32", wasm_bindgen_test)]
     fn arc_values_are_shared_not_cloned() {
         let cache = FfnL2Cache::new(2);
         let key = FfnL2Cache::key(&[42]);
@@ -214,7 +227,8 @@ mod tests {
         assert!(std::sync::Arc::ptr_eq(&a, &b));
     }
 
-    #[test]
+    #[cfg_attr(not(target_arch = "wasm32"), test)]
+    #[cfg_attr(target_arch = "wasm32", wasm_bindgen_test)]
     fn concurrent_reads_do_not_panic() {
         use std::sync::Arc as StdArc;
         let cache = StdArc::new(FfnL2Cache::new(4));
@@ -234,7 +248,8 @@ mod tests {
         }
     }
 
-    #[test]
+    #[cfg_attr(not(target_arch = "wasm32"), test)]
+    #[cfg_attr(target_arch = "wasm32", wasm_bindgen_test)]
     fn stats_json_has_expected_fields() {
         let cache = FfnL2Cache::new(3);
         let stats = cache.stats();

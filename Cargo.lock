@@ -2039,6 +2039,19 @@ dependencies = [
 ]
 
 [[package]]
+name = "larql-browser-cli"
+version = "0.1.0"
+dependencies = [
+ "getrandom 0.3.4",
+ "larql-lql",
+ "rayon",
+ "serde_json",
+ "wasm-bindgen",
+ "wasm-bindgen-rayon",
+ "wasm-bindgen-test",
+]
+
+[[package]]
 name = "larql-cli"
 version = "0.1.0"
 dependencies = [
@@ -2295,6 +2308,7 @@ dependencies = [
  "tracing-subscriber",
  "utoipa",
  "utoipa-swagger-ui",
+ "wasm-bindgen-test",
 ]
 
 [[package]]

@@ -21,6 +21,8 @@ members = [
     "crates/model-compute",
     # WASM bindings for browser/Node.js (serial + parallel variants)
     "crates/larql-wasm",
+    # Browser CLI — LQL session and inference surface compiled to WASM
+    "crates/larql-browser-cli",
 ]
 default-members = [
     "crates/larql-models",

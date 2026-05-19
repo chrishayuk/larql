@@ -69,19 +69,27 @@ impl DescribeCache {
 mod tests {
     use super::*;
 
-    #[test]
+    #[cfg(all(test, target_arch = "wasm32"))]
+    use wasm_bindgen_test::wasm_bindgen_test;
+    #[cfg(all(test, target_arch = "wasm32"))]
+    wasm_bindgen_test::wasm_bindgen_test_configure!(run_in_node_experimental);
+
+    #[cfg_attr(not(target_arch = "wasm32"), test)]
+    #[cfg_attr(target_arch = "wasm32", wasm_bindgen_test)]
     fn disabled_when_ttl_zero() {
         let cache = DescribeCache::new(0);
         assert!(!cache.is_enabled());
     }
 
-    #[test]
+    #[cfg_attr(not(target_arch = "wasm32"), test)]
+    #[cfg_attr(target_arch = "wasm32", wasm_bindgen_test)]
     fn enabled_when_ttl_nonzero() {
         let cache = DescribeCache::new(60);
         assert!(cache.is_enabled());
     }
 
-    #[test]
+    #[cfg_attr(not(target_arch = "wasm32"), test)]
+    #[cfg_attr(target_arch = "wasm32", wasm_bindgen_test)]
     fn put_and_get() {
         let cache = DescribeCache::new(60);
         let key = DescribeCache::key("model", "France", "knowledge", 20, 5.0);
@@ -90,13 +98,15 @@ mod tests {
         assert_eq!(cache.get(&key), Some(value));
     }
 
-    #[test]
+    #[cfg_attr(not(target_arch = "wasm32"), test)]
+    #[cfg_attr(target_arch = "wasm32", wasm_bindgen_test)]
     fn miss_on_unknown_key() {
         let cache = DescribeCache::new(60);
         assert_eq!(cache.get("nonexistent"), None);
     }
 
-    #[test]
+    #[cfg_attr(not(target_arch = "wasm32"), test)]
+    #[cfg_attr(target_arch = "wasm32", wasm_bindgen_test)]
     fn expired_entry_returns_none() {
         let cache = DescribeCache::new(0); // 0 → disabled, but let's test with 1ns TTL
                                            // Can't easily test TTL expiration in a unit test without sleeping,
@@ -108,13 +118,15 @@ mod tests {
         assert_eq!(cache.get(&key), None);
     }
 
-    #[test]
+    #[cfg_attr(not(target_arch = "wasm32"), test)]
+    #[cfg_attr(target_arch = "wasm32", wasm_bindgen_test)]
     fn key_format() {
         let key = DescribeCache::key("gemma-3-4b-it", "France", "knowledge", 20, 5.0);
         assert_eq!(key, "gemma-3-4b-it:France:knowledge:20:5");
     }
 
-    #[test]
+    #[cfg_attr(not(target_arch = "wasm32"), test)]
+    #[cfg_attr(target_arch = "wasm32", wasm_bindgen_test)]
     fn different_params_different_keys() {
         let k1 = DescribeCache::key("model", "France", "knowledge", 20, 5.0);
         let k2 = DescribeCache::key("model", "Germany", "knowledge", 20, 5.0);

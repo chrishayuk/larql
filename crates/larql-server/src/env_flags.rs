@@ -105,7 +105,13 @@ pub fn moe_batch_mode() -> Option<String> {
 mod tests {
     use super::*;
 
-    #[test]
+    #[cfg(all(test, target_arch = "wasm32"))]
+    use wasm_bindgen_test::wasm_bindgen_test;
+    #[cfg(all(test, target_arch = "wasm32"))]
+    wasm_bindgen_test::wasm_bindgen_test_configure!(run_in_node_experimental);
+
+    #[cfg_attr(not(target_arch = "wasm32"), test)]
+    #[cfg_attr(target_arch = "wasm32", wasm_bindgen_test)]
     fn names_are_larql_prefixed_and_unique() {
         let names = [
             MOE_TIMING,

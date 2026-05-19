@@ -22,14 +22,21 @@ pub fn matches_etag(if_none_match: Option<&str>, etag: &str) -> bool {
 mod tests {
     use super::*;
 
-    #[test]
+    #[cfg(all(test, target_arch = "wasm32"))]
+    use wasm_bindgen_test::wasm_bindgen_test;
+    #[cfg(all(test, target_arch = "wasm32"))]
+    wasm_bindgen_test::wasm_bindgen_test_configure!(run_in_node_experimental);
+
+    #[cfg_attr(not(target_arch = "wasm32"), test)]
+    #[cfg_attr(target_arch = "wasm32", wasm_bindgen_test)]
     fn etag_is_quoted() {
         let etag = compute_etag(&serde_json::json!({"hello": "world"}));
         assert!(etag.starts_with('"'));
         assert!(etag.ends_with('"'));
     }
 
-    #[test]
+    #[cfg_attr(not(target_arch = "wasm32"), test)]
+    #[cfg_attr(target_arch = "wasm32", wasm_bindgen_test)]
     fn same_body_same_etag() {
         let body = serde_json::json!({"entity": "France", "edges": []});
         let e1 = compute_etag(&body);
@@ -37,32 +44,37 @@ mod tests {
         assert_eq!(e1, e2);
     }
 
-    #[test]
+    #[cfg_attr(not(target_arch = "wasm32"), test)]
+    #[cfg_attr(target_arch = "wasm32", wasm_bindgen_test)]
     fn different_body_different_etag() {
         let e1 = compute_etag(&serde_json::json!({"entity": "France"}));
         let e2 = compute_etag(&serde_json::json!({"entity": "Germany"}));
         assert_ne!(e1, e2);
     }
 
-    #[test]
+    #[cfg_attr(not(target_arch = "wasm32"), test)]
+    #[cfg_attr(target_arch = "wasm32", wasm_bindgen_test)]
     fn matches_exact() {
         let etag = compute_etag(&serde_json::json!({"x": 1}));
         assert!(matches_etag(Some(&etag), &etag));
     }
 
-    #[test]
+    #[cfg_attr(not(target_arch = "wasm32"), test)]
+    #[cfg_attr(target_arch = "wasm32", wasm_bindgen_test)]
     fn matches_wildcard() {
         let etag = compute_etag(&serde_json::json!({"x": 1}));
         assert!(matches_etag(Some("*"), &etag));
     }
 
-    #[test]
+    #[cfg_attr(not(target_arch = "wasm32"), test)]
+    #[cfg_attr(target_arch = "wasm32", wasm_bindgen_test)]
     fn no_match_on_none() {
         let etag = compute_etag(&serde_json::json!({"x": 1}));
         assert!(!matches_etag(None, &etag));
     }
 
-    #[test]
+    #[cfg_attr(not(target_arch = "wasm32"), test)]
+    #[cfg_attr(target_arch = "wasm32", wasm_bindgen_test)]
     fn no_match_on_different() {
         let etag = compute_etag(&serde_json::json!({"x": 1}));
         assert!(!matches_etag(Some("\"wrong\""), &etag));

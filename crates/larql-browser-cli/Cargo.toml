@@ -1,0 +1,34 @@
+[package]
+name = "larql-browser-cli"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+description = "In-browser WASM CLI — LQL session and inference surface for browser/Node.js"
+keywords = ["wasm", "cli", "lql", "webassembly"]
+categories = ["wasm", "web-programming"]
+
+[lib]
+crate-type = ["cdylib", "rlib"]
+
+[features]
+default = []
+# Multi-threaded variant via wasm-bindgen-rayon (Web Workers + SharedArrayBuffer).
+# Requires nightly Rust and atomics target features at build time.
+parallel = ["dep:wasm-bindgen-rayon", "dep:rayon"]
+# Opt-in gate for the Firefox browser-based wasm_bindgen_test runner.
+browser-tests = []
+
+[dependencies]
+larql-lql   = { path = "../larql-lql" }
+wasm-bindgen = "0.2"
+serde_json   = { workspace = true }
+
+wasm-bindgen-rayon = { version = "1", optional = true }
+rayon              = { version = "1", optional = true }
+
+[target.'cfg(target_arch = "wasm32")'.dependencies]
+getrandom_03 = { workspace = true }
+
+[dev-dependencies]
+wasm-bindgen-test = "0.3"
