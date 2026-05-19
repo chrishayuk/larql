@@ -120,6 +120,25 @@ required-features = ["metal"]
 name = "stage_bisect"
 required-features = ["metal"]
 
+# These examples use `extern crate blas_src` which is a native-only dep
+# (not present in the wasm32 target dep graph). Gate them so `cargo test
+# --target wasm32-unknown-unknown` skips compiling them.
+[[example]]
+name = "bench_seqlen"
+required-features = ["metal"]
+
+[[example]]
+name = "moe_grid_generate"
+required-features = ["metal"]
+
+[[example]]
+name = "test_q4_projection_cosine"
+required-features = ["metal"]
+
+[[example]]
+name = "test_q4_accuracy"
+required-features = ["metal"]
+
 [dev-dependencies]
 assert_approx_eq = "1"
 tempfile = "3"
