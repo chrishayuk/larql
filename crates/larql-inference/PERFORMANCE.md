@@ -2,6 +2,96 @@
 
 Machine: M3 Max, macOS. Gemma 3 4B (34 layers, hidden=2560, vocab=262K).
 
+## CPU headline (2026-05-15)
+
+`larql bench output/gemma3-4b-q4k-v2.vindex --cpu --tokens 16 --warmup 1 --profile`:
+
+```
+Backend       prefill    ms/tok    tok/s   steps
+larql-cpu     2517 ms    67-70 ms  14.5-14.9 15
+llama.cpp     47 ms      24.2 ms   41.37     16  (Q4_K_M, BLAS, ngl=0, 12 threads)
+```
+
+**Decode 2.78× behind llama.cpp; prefill 55× behind.** ~40× over the
+pre-branch 0.36 tok/s baseline. Detailed side-by-side:
+`bench/baselines/cpu/COMPARISON.md`.
+
+Per-step CPU decode breakdown (post-branch):
+
+| Stage | ms/tok | % | What runs |
+|---|---:|---:|---|
+| CPU fwd | 58-70 | 85-88% | 33 layers × 6 Q4_K matvec (Q/K/V/O/gate/up) + 1 Q6_K matvec (down). NEON inner with 4-way f32x4 accumulators; rayon-parallel via `par_chunks_mut(32)` across rows; K+V and gate+up share inputs via `q4k_dual_matvec` |
+| LM head | 9-10 | 12-15% | Q4_K matvec against the vindex's synthesised `lm_head_q4` view (262K vocab); same NEON kernel |
+| **Total** | **67-78** | **100%** | **= 14.5-14.9 tok/s** |
+
+### Six CPU optimisations on this branch
+
+| Change | Decode (tok/s) | Δ vs prior | Δ vs baseline |
+|---|---:|---:|---:|
+| Baseline (legacy O(N²) per-step path)  | 0.36  | —      | 1.0× |
+| + KV-cached decode (`predict_q4k_prefill` + `predict_q4k_decode_step`) | ~1.5 | 4.2× | 4.2× |
+| + Direct Q4_K matvec, no per-step dequant (`predict_q4k_decode_step_direct`) | 2.6 | 1.7× | 7.2× |
+| + Row-parallel f32 lm_head sgemv (`parallel_lm_head_logits`) | 5.4 | 2.1× | 15× |
+| + NEON Q4_K / Q6_K / f32_dot kernels | 9.9 | 1.8× | 28× |
+| + Q4_K lm_head (synth from f16 embed, `logits_to_predictions_q4_lm_head`) | 12.6 | 1.27× | 35× |
+| + 4-way acc NEON + fused gate+up / K+V dual-matvec | 13.1 | 1.04× | 36× |
+| + `par_chunks_mut(32)` outer rayon (q4k_matvec + dual + q6k_matvec) | 14.5–14.9 | 1.10× | 40× |
+
+The fused gate+up and K+V dual-matvec changes are bit-exact w.r.t. two
+sequential calls but didn't move the bench needle — both
+`h_norm` (10 KB) and `h_in_post_norm` (10 KB) fit in L1 across separate
+matvec calls, so the predicted re-stream saving wasn't real. Kept the
+code (one fewer Vec alloc + one fewer rayon launch per pair) but it was
+a wrong hypothesis.
+
+### Where the 2.78× decode gap to llama.cpp lives
+
+Effective Q4_K weight read bandwidth on M3 Max: **~33 GB/s** for us,
+**~95 GB/s** for llama.cpp. Both well below LPDDR5 peak (~400 GB/s).
+The 2.78× ratio matches the bandwidth ratio almost exactly.
+
+Closing it is hand-tuned kernel work:
+1. **Hand-rolled aarch64 asm** matching llama.cpp's per-cycle byte
+   throughput — they hit ~95 GB/s effective, we top out at ~33 GB/s
+   with NEON intrinsics + chunked rayon.
+2. **Multi-superblock interleaving in NEON Q4_K** — process 2+
+   super-blocks of one row concurrently to hide M3's load latency
+   between successive Q4_K block reads. *Tried 2026-05-15 with a
+   split-accumulator outer unroll; null result. LLVM already
+   schedules the row loop fine. Future: lower-level asm to force the
+   exact interleaving.*
+3. **Prefetch hints** ahead of the inner FMA loop (`vld1q_u8` to a
+   discarded register or inline `prfm pldl1keep` asm).
+
+Previously-tried-and-killed micro-opts:
+* Multi-accumulator unroll across super-blocks (null on this branch —
+  helper-function inlining already produces the schedule LLVM wants).
+* Fused gate+up dual-matvec (bit-exact but no speedup — `h_in` is
+  10 KB and stays in L1 across separate matvecs).
+* Fused K+V dual-matvec (same reason as gate+up — kept for the
+  one-fewer-rayon-dispatch saving).
+
+### Where the 55× prefill gap lives
+
+Prefill is still on the legacy `predict_q4k_prefill` path:
+dequantise each layer's Q/K/V/O/gate/up/down to f32 once per layer
+(~75 ms × 33 layers ≈ 2.5 s), then run per-position attention + FFN
+over the prompt. llama.cpp does batched gemm: weights read once,
+applied to all 5 prompt positions in a single Accelerate sgemm call.
+
+The fix is to route prefill through a CPU `q4k_matmul` (multi-row
+matvec). Backend trait declares it; CPU backend returns `None` today.
+A working implementation would amortise weight reads across `seq_len`
+positions — estimated prefill ~300 ms (vs 2 593 ms now), gap drops from
+55× to ~6×. The remaining 6× is the same kernel bandwidth gap as
+decode.
+
+**Caveat** — see `project_prefill_matmul_falsified` memory. That entry
+documents a failed Metal-side experiment with the same idea, but Metal
+already runs per-position Q4_K matvec without dequant; the bottleneck
+there was different. CPU still pays full dequant cost today, so the
+matmul-amortisation argument applies.
+
 ## Real-vindex headline (2026-05-02)
 
 `larql bench output/gemma3-4b-q4k-v2.vindex --tokens 30 --warmup 8`:

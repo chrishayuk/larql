@@ -22,7 +22,7 @@ use std::collections::HashMap;
 use std::path::Path;
 
 use larql_vindex::{
-    build_vindex_streaming, ExtractLevel, Q4kWriteOptions, QuantFormat, SilentBuildCallbacks,
+    build_vindex_streaming, ExtractLevel, KquantWriteOptions, QuantFormat, SilentBuildCallbacks,
     StorageDtype, WriteWeightsOptions,
 };
 
@@ -179,7 +179,7 @@ fn streaming_extract_mixtral_exercises_moe_arms() {
         StorageDtype::F32,
         QuantFormat::None,
         WriteWeightsOptions::default(),
-        Q4kWriteOptions::default(),
+        KquantWriteOptions::default(),
         false, // drop_gate_vectors
         &mut cb,
     )
@@ -418,7 +418,7 @@ fn streaming_extract_gemma4_hybrid_moe_exercises_packed_bf16_arms() {
         StorageDtype::F32,
         QuantFormat::None,
         WriteWeightsOptions::default(),
-        Q4kWriteOptions::default(),
+        KquantWriteOptions::default(),
         false,
         &mut cb,
     )
@@ -664,7 +664,7 @@ fn streaming_extract_gpt_oss_exercises_packed_mxfp4_arms() {
         StorageDtype::F32,
         QuantFormat::None,
         WriteWeightsOptions::default(),
-        Q4kWriteOptions::default(),
+        KquantWriteOptions::default(),
         false,
         &mut cb,
     )
@@ -803,7 +803,7 @@ fn streaming_extract_mixtral_resumes_when_run_twice_on_same_output_dir() {
         StorageDtype::F32,
         QuantFormat::None,
         WriteWeightsOptions::default(),
-        Q4kWriteOptions::default(),
+        KquantWriteOptions::default(),
         false,
         &mut cb,
     )
@@ -834,7 +834,7 @@ fn streaming_extract_mixtral_resumes_when_run_twice_on_same_output_dir() {
         StorageDtype::F32,
         QuantFormat::None,
         WriteWeightsOptions::default(),
-        Q4kWriteOptions::default(),
+        KquantWriteOptions::default(),
         false,
         &mut cb2,
     )
@@ -886,7 +886,7 @@ fn streaming_extract_mixtral_with_real_tokenizer_records_top_k_entries() {
         StorageDtype::F32,
         QuantFormat::None,
         WriteWeightsOptions::default(),
-        Q4kWriteOptions::default(),
+        KquantWriteOptions::default(),
         false,
         &mut cb,
     )
@@ -948,7 +948,7 @@ fn streaming_extract_mixtral_with_drop_gate_vectors_removes_zero_byte_file() {
             level: ExtractLevel::Browse,
             ffn_compact: false,
         },
-        Q4kWriteOptions::default(),
+        KquantWriteOptions::default(),
         true, // drop_gate_vectors
         &mut cb,
     )
@@ -1014,7 +1014,7 @@ fn streaming_extract_mixtral_with_summary_k_runs_svd_and_caps_down_meta() {
         StorageDtype::F32,
         QuantFormat::None,
         WriteWeightsOptions::default(),
-        Q4kWriteOptions::default(),
+        KquantWriteOptions::default(),
         false,
         &mut cb,
     )

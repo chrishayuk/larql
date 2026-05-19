@@ -225,6 +225,15 @@ and [`docs/adr/0008-embed-server.md`](docs/adr/0008-embed-server.md).
 
 ### Publish to HuggingFace — full + slices + collections
 
+Every published vindex carries a versioned on-disk contract. The
+`crates/larql-vindex-spec` crate defines the v1 manifest schema —
+hardened provenance (pinned upstream commit + per-shard safetensors
+digests), closed enums for `extract_level` / `dtype` / `quant`, and a
+20 GiB shard cap. Repos stamp `library_name: larql` in their model
+card so the Hub filters them at
+[`huggingface.co/models?library=larql`](https://huggingface.co/models?library=larql).
+The contract lives in [`crates/larql-vindex-spec/SPEC.md`](crates/larql-vindex-spec/SPEC.md).
+
 `larql publish` combines `slice` + `hf publish` and adds HuggingFace
 **collections**: one run uploads six sibling repos and files them into
 three nested collections (model / family / library) for discovery.
@@ -714,6 +723,8 @@ The full surface is documented in `crates/larql-inference/ROADMAP.md` §
 | [docs/specs/vindex-format-spec.md](docs/specs/vindex-format-spec.md) | Vindex file format specification (v0.3, ~98% implemented) |
 | [docs/specs/vindex-operations-spec.md](docs/specs/vindex-operations-spec.md) | Vindex operations, API, patches (~98% implemented) |
 | [docs/specs/vindex-ecosystem-spec.md](docs/specs/vindex-ecosystem-spec.md) | Distributed hosting, HuggingFace, Vindexfile (~85% implemented) |
+| [crates/larql-vindex-spec/SPEC.md](crates/larql-vindex-spec/SPEC.md) | Vindex v1 public contract — manifest schema, sharding rule, validation thresholds, model card tags |
+| [crates/larql-vindex-spec/schema/vindex-v1.schema.json](crates/larql-vindex-spec/schema/vindex-v1.schema.json) | JSON Schema 2020-12 mirror of the v1 manifest |
 | [docs/lql-guide.md](docs/lql-guide.md) | LQL quick start guide |
 | [docs/cli.md](docs/cli.md) | CLI reference |
 | [docs/inference-engine.md](docs/inference-engine.md) | Inference engine — BLAS-fused attention, Metal GPU, auto-calibration |
@@ -726,6 +737,8 @@ The full surface is documented in `crates/larql-inference/ROADMAP.md` §
 | [docs/adr/0010-quic-grid-transport.md](docs/adr/0010-quic-grid-transport.md) | QUIC transport for grid (planned) |
 | [docs/adr/0011-grid-self-balancing.md](docs/adr/0011-grid-self-balancing.md) | Grid Mode B + dynamic rebalancing (planned) |
 | [docs/adr/0012-grid-benchmarking.md](docs/adr/0012-grid-benchmarking.md) | Grid benchmarking infrastructure — criterion + CLI + CI gate |
+| [docs/diagnoses/shannon-cross-engine-divergence.md](docs/diagnoses/shannon-cross-engine-divergence.md) | Forward-pass correctness diagnostic via `larql shannon verify` — three-engine bits/char comparison against HF/PyTorch and MLX, plus the three bugs it surfaced |
+| [scripts/README_shannon_score.md](scripts/README_shannon_score.md) | Cross-engine Shannon scorers — `larql shannon verify` + standalone scripts for MLX and HF |
 
 ## Platform Support
 
@@ -743,6 +756,7 @@ macOS gets Metal GPU acceleration. Linux and Windows run the same CPU path (BLAS
 cargo build --release                    # optimised build
 cargo build --release --features metal   # with Metal GPU backend (macOS only)
 cargo test                               # all tests across all crates
+.venv/bin/python scripts/diagnose_models.py    # cross-engine correctness sweep — see below
 cargo test -p larql-inference            # inference engine tests (109 tests)
 cargo test -p larql-inference --features metal  # + Metal GPU tests (115 tests)
 cargo test -p larql-lql                  # LQL parser + executor tests (272 tests)
@@ -822,6 +836,44 @@ parses 100 mixed statements in ~78 µs (1.28 M stmts/s); `vindex_ops`
 runs production-sized Gemma 4B gate KNN in ~2.78 ms/layer; `compile`
 runs `COMPILE INTO VINDEX` in ~1.84 ms (no patches) to 2.41 ms (with
 `down_weights.bin`).
+
+### Cross-engine correctness check
+
+`larql shannon verify` runs the LARQL Rust forward pass alongside HF/PyTorch
+and MLX reference scorers on the same corpus and prints a bits/char delta
+table — the strongest unit-of-observable check that LARQL's forward path
+matches the canonical references end-to-end.
+
+```bash
+# Single model.
+larql shannon verify google/gemma-3-4b-it \
+    --corpus data/gutenberg/frankenstein.txt \
+    --bytes 1024 \
+    --threshold 0.5
+
+# All supported architectures (SmolLM2, Llama 3.2, Mistral 7B, Gemma 3 4B)
+# + the Q4K Metal vindex path for models with a local vindex.
+.venv/bin/python scripts/diagnose_models.py
+```
+
+PyTorch and `mlx_lm` are required in `.venv` for the reference scorers
+(see [`scripts/README_shannon_score.md`](scripts/README_shannon_score.md)).
+
+When the verifier reports a real divergence, the bisection methodology
+and the env-var diagnostic instruments are documented in
+[`docs/diagnoses/shannon-cross-engine-divergence.md`](docs/diagnoses/shannon-cross-engine-divergence.md).
+The 2026-05-15 sweep identified — and the loader fix in `larql-models`
+landed by 2026-05-16 closed — three config-loading bugs (unparsed
+`rms_norm_eps`, missing per-layer-type `rope_scaling` for Gemma 3,
+missing `llama3` rope_scaling for Llama 3.x). Post-fix, all four
+reference architectures match HF F32 to <0.01% bits/char with no env
+vars set.
+
+The CI workflow at
+[`.github/workflows/shannon-verify.yml`](.github/workflows/shannon-verify.yml)
+runs `larql shannon verify` against HF/PyTorch on SmolLM2-135M for every
+PR + push to main. Any future regression in the Rust forward path that
+drifts past 0.5% bits/char trips the gate before merge.
 
 ## License
 

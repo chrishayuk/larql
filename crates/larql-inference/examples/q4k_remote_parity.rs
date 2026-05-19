@@ -1,7 +1,7 @@
 //! Q4_K dense-remote parity check — the Act 1.5 story as a cargo example.
 //!
 //! Drives both ends of the Q4_K remote-FFN split on a single machine:
-//! local `predict_q4k` vs `predict_q4k_with_ffn` pointing at a running
+//! local `predict_kquant` vs `predict_kquant_with_ffn` pointing at a running
 //! `larql serve --ffn-only` on the same vindex. Asserts:
 //!
 //! - top-1 token id matches between local and remote forwards
@@ -49,9 +49,9 @@ use std::path::PathBuf;
 use std::time::{Duration, Instant};
 
 use larql_inference::ffn::{RemoteFfnConfig, RemoteWalkBackend};
-use larql_inference::vindex::{predict_q4k, predict_q4k_with_ffn};
+use larql_inference::vindex::{predict_kquant, predict_kquant_with_ffn};
 use larql_vindex::{
-    load_model_weights_q4k, load_vindex_config, load_vindex_tokenizer, QuantFormat,
+    load_model_weights_kquant, load_vindex_config, load_vindex_tokenizer, QuantFormat,
     SilentLoadCallbacks, VectorIndex,
 };
 
@@ -121,8 +121,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     // ── Load tokenizer + Q4K weights shared by both paths ──
     let tokenizer = load_vindex_tokenizer(&vindex_path)?;
     let mut cb = SilentLoadCallbacks;
-    let mut weights_local = load_model_weights_q4k(&vindex_path, &mut cb)?;
-    let mut weights_remote = load_model_weights_q4k(&vindex_path, &mut cb)?;
+    let mut weights_local = load_model_weights_kquant(&vindex_path, &mut cb)?;
+    let mut weights_remote = load_model_weights_kquant(&vindex_path, &mut cb)?;
 
     // Tokenise the prompt through the architecture-specific encoder (adds BOS etc.).
     let token_ids = larql_inference::encode_prompt(&tokenizer, &*weights_local.arch, &prompt)
@@ -131,11 +131,11 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     // ── Local path: full q4k forward in-process ──
     let mut local_index = VectorIndex::load_vindex(&vindex_path, &mut cb)?;
-    local_index.load_attn_q4k(&vindex_path)?;
-    local_index.load_interleaved_q4k(&vindex_path)?;
+    local_index.load_attn_kquant(&vindex_path)?;
+    local_index.load_interleaved_kquant(&vindex_path)?;
 
     let t_local = Instant::now();
-    let local_result = predict_q4k(
+    let local_result = predict_kquant(
         &mut weights_local,
         &tokenizer,
         &token_ids,
@@ -159,13 +159,13 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         "remote hidden_size mismatch",
     );
 
-    // Client-side VectorIndex: only attention Q4_K mmap, NO interleaved_q4k.bin.
+    // Client-side VectorIndex: only attention Q4_K mmap, NO interleaved_kquant.bin.
     // (The FFN lives on the server; loading it client-side would defeat the demo.)
     let mut remote_index = VectorIndex::load_vindex(&vindex_path, &mut cb)?;
-    remote_index.load_attn_q4k(&vindex_path)?;
+    remote_index.load_attn_kquant(&vindex_path)?;
 
     let t_remote = Instant::now();
-    let remote_result = predict_q4k_with_ffn(
+    let remote_result = predict_kquant_with_ffn(
         &mut weights_remote,
         &tokenizer,
         &token_ids,

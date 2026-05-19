@@ -9,9 +9,8 @@ use ndarray::Array2;
 use crate::config::VindexConfig;
 use crate::error::VindexError;
 use crate::format::filenames::{
-    DOWN_META_BIN, DOWN_META_JSONL, EMBEDDINGS_BIN, GATE_VECTORS_BIN, INDEX_JSON,
-    INTERLEAVED_Q4K_BIN, INTERLEAVED_Q4K_MANIFEST_JSON, LM_HEAD_BIN, LM_HEAD_Q4_BIN,
-    TOKENIZER_JSON,
+    has_kquant_lm_head, resolve_interleaved_kquant, DOWN_META_BIN, DOWN_META_JSONL, EMBEDDINGS_BIN,
+    GATE_VECTORS_BIN, INDEX_JSON, LM_HEAD_BIN, TOKENIZER_JSON,
 };
 use crate::index::storage::ffn_store::FFN_COMPONENTS_PER_LAYER;
 use crate::index::{IndexLoadCallbacks, VectorIndex};
@@ -54,12 +53,12 @@ impl VectorIndex {
         let hidden_size = config.hidden_size;
 
         // Load gate vectors from binary. If `gate_vectors.bin` is
-        // missing but `interleaved_q4k.bin` is present, synthesize an
+        // missing but `interleaved_kquant.bin` is present, synthesize an
         // anonymous mmap by dequantizing the Q4K gate slices at f16 —
         // that's dedup #2 in action (a Q4K vindex extracted with
         // `--drop-gate-vectors` carries gate weights only once, Q4K).
         let gate_path = dir.join(GATE_VECTORS_BIN);
-        let interleaved_q4k_path = dir.join(INTERLEAVED_Q4K_BIN);
+        let interleaved_kquant_path = resolve_interleaved_kquant(dir).bin;
 
         let (gate_mmap, gate_slices, gate_dtype) = if gate_path.exists() {
             callbacks.on_file_start("gate_vectors", &gate_path.display().to_string());
@@ -91,10 +90,10 @@ impl VectorIndex {
                 start.elapsed().as_secs_f64() * 1000.0,
             );
             (gate_mmap, gate_slices, config.dtype)
-        } else if interleaved_q4k_path.exists() {
+        } else if interleaved_kquant_path.exists() {
             callbacks.on_file_start(
-                "gate_vectors (synth from Q4K)",
-                &interleaved_q4k_path.display().to_string(),
+                "gate_vectors (synth from k-quant)",
+                &interleaved_kquant_path.display().to_string(),
             );
             let start = std::time::Instant::now();
             let (gate_mmap, gate_slices) =
@@ -111,7 +110,7 @@ impl VectorIndex {
                 crate::config::dtype::StorageDtype::F16,
             )
         } else {
-            // Neither gate_vectors.bin nor interleaved_q4k.bin present.
+            // Neither gate_vectors.bin nor interleaved_kquant.bin present.
             // This is the attention-only client-side slice (produced by
             // `larql slice --preset client`): the client runs attention
             // locally and delegates gate-KNN + FFN to the remote server
@@ -183,13 +182,13 @@ impl VectorIndex {
             index.set_layer_range(range);
         }
 
-        let _ = index.load_interleaved_q4k(dir);
+        let _ = index.load_interleaved_kquant(dir);
         let _ = index.load_interleaved_q4(dir);
         let _ = index.load_interleaved(dir);
         let _ = index.load_up_features(dir);
         let _ = index.load_down_features(dir);
         // W2: feature-major Q4_K down. Optional file; when present the
-        // CPU sparse walk skips the `q4k_ffn_layer` cache for component=2.
+        // CPU sparse walk skips the `kquant_ffn_layer` cache for component=2.
         let _ = index.load_down_features_q4k(dir);
         // Opt-in FP4/FP8 storage (exp 26): present iff `index.json.fp4`
         // is set. Non-fatal if absent or malformed — other FFN mmaps
@@ -218,8 +217,7 @@ impl VectorIndex {
         // `lm_head_q4.bin` is present in the vindex directory. The
         // untied models that ship those files are always extracted with
         // one of them, so presence is a reliable untied-signal.
-        let has_separate_lm_head =
-            dir.join(LM_HEAD_BIN).exists() || dir.join(LM_HEAD_Q4_BIN).exists();
+        let has_separate_lm_head = dir.join(LM_HEAD_BIN).exists() || has_kquant_lm_head(dir);
         if !has_separate_lm_head {
             if let Ok(f) = std::fs::File::open(dir.join(EMBEDDINGS_BIN)) {
                 if let Ok(mmap) = unsafe { memmap2::Mmap::map(&f) } {
@@ -229,7 +227,7 @@ impl VectorIndex {
                             index.vocab_size = config.vocab_size;
                         }
                         index.set_lm_head_f16_mmap(std::sync::Arc::new(mmap));
-                        index.synthesize_lm_head_q4();
+                        index.synthesize_lm_head_kquant();
                     }
                 }
             }
@@ -239,7 +237,7 @@ impl VectorIndex {
     }
 }
 
-/// Dequantize gate slices from `interleaved_q4k.bin` into an anonymous
+/// Dequantize gate slices from `interleaved_kquant.bin` into an anonymous
 /// f16 mmap shaped like a real `gate_vectors.bin` file. Used when a
 /// Q4K vindex was extracted with `--drop-gate-vectors`.
 ///
@@ -251,11 +249,14 @@ fn synthesize_gate_from_q4k(
     hidden_size: usize,
     layer_range: Option<(usize, usize)>,
 ) -> Result<(memmap2::Mmap, Vec<crate::index::core::GateLayerSlice>), VindexError> {
-    let interleaved_path = dir.join(INTERLEAVED_Q4K_BIN);
-    let manifest_path = dir.join(INTERLEAVED_Q4K_MANIFEST_JSON);
+    let resolved = resolve_interleaved_kquant(dir);
+    let interleaved_path = resolved.bin;
+    let manifest_path = resolved
+        .manifest
+        .expect("interleaved kquant resolver always pairs a manifest");
     if !manifest_path.exists() {
         return Err(VindexError::Parse(format!(
-            "interleaved_q4k_manifest.json missing alongside {}",
+            "interleaved k-quant manifest missing alongside {}",
             interleaved_path.display()
         )));
     }
@@ -317,7 +318,7 @@ fn synthesize_gate_from_q4k(
         let length = gate_entry["length"].as_u64().unwrap_or(0) as usize;
         let format = gate_entry["format"].as_str().ok_or_else(|| {
             VindexError::Parse(format!(
-                "interleaved_q4k_manifest gate entry at layer {} missing `format`",
+                "interleaved_kquant_manifest gate entry at layer {} missing `format`",
                 info.layer
             ))
         })?;
@@ -326,19 +327,19 @@ fn synthesize_gate_from_q4k(
         // string-compare here.
         let format_info = crate::quant::registry::lookup(format).ok_or_else(|| {
             VindexError::Parse(format!(
-                "interleaved_q4k_manifest layer {}: unknown format tag {format:?}",
+                "interleaved_kquant_manifest layer {}: unknown format tag {format:?}",
                 info.layer
             ))
         })?;
         let end = offset.checked_add(length).ok_or_else(|| {
             VindexError::Parse(format!(
-                "interleaved_q4k_manifest layer {}: offset+length overflow ({offset}+{length})",
+                "interleaved_kquant_manifest layer {}: offset+length overflow ({offset}+{length})",
                 info.layer
             ))
         })?;
         if end > iq4_mmap.len() {
             return Err(VindexError::Parse(format!(
-                "interleaved_q4k_manifest layer {}: gate slice {offset}..{end} exceeds mmap length {}",
+                "interleaved_kquant_manifest layer {}: gate slice {offset}..{end} exceeds mmap length {}",
                 info.layer,
                 iq4_mmap.len()
             )));

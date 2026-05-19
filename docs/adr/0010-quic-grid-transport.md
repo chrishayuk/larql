@@ -1,6 +1,6 @@
 # ADR-0010 — QUIC Transport for Grid gRPC Streams
 
-**Status:** Accepted — not yet implemented  
+**Status:** Accepted — shipped 2026-05-15 as GT7. Opt-in via `--features quic` + `--quic-port`; HTTP/2 over a single QUIC bi-stream, TLS 1.3, SHA-256 fingerprint pinning on the client side. Real HTTP/3 (per-stream independence) tracked as post-GT7 in ROADMAP.  
 **Depends on:** ADR-0004 (Self-Assembling Grid)
 
 ---
@@ -70,7 +70,7 @@ announce.rs                           main.rs
   parse --join quic://router:50053      spawn QuicGridEndpoint on --quic-port
   connect via quinn::Endpoint           QuicGridEndpoint: accepts QUIC streams
   open QUIC stream to router            each stream → GridService.join() handler
-  wrap stream as tonic Channel          (existing grid.rs logic unchanged)
+  wrap stream as tonic Channel          (existing grid/service.rs logic unchanged)
   send AnnounceMsg, Heartbeat, etc.
 
 transport/quic.rs (new, shared)

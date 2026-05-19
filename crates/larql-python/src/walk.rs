@@ -15,12 +15,13 @@ use larql_inference::ffn::FfnBackend;
 use larql_inference::forward::{
     capture_donor_state_with_ffn, embedding_neighbors as li_embedding_neighbors,
     embedding_row as li_embedding_row, embedding_row_scaled as li_embedding_row_scaled,
-    generate_cached_hooked, logit_lens_topk, patch_and_trace_with_ffn,
+    logit_lens_topk, patch_and_trace_with_ffn,
     project_through_unembed as li_project_through_unembed, trace_forward_full_hooked,
     track_race as li_track_race, track_token as li_track_token,
     unembedding_row as li_unembedding_row, RecordHook, SteerHook, ZeroAblateHook,
 };
 use larql_inference::{predict_with_ffn, ModelWeights, WalkFfn};
+use larql_kv::generation::generate_cached_hooked;
 use larql_vindex::format::filenames::{
     ATTN_WEIGHTS_BIN, DOWN_WEIGHTS_BIN, EMBEDDINGS_BIN, GATE_VECTORS_BIN, LM_HEAD_BIN,
     MODEL_WEIGHTS_BIN, NORMS_BIN, UP_WEIGHTS_BIN, WEIGHT_MANIFEST_JSON,

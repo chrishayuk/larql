@@ -101,6 +101,188 @@ fn num_features_oob_layer_returns_zero() {
     assert_eq!(v.num_features(99), 0);
 }
 
+// ── num_features Q4K-width fallback ──
+//
+// Regression guard for the 100× decode regression on Gemma 3 4B Q4K:
+// a vindex with only Q4K FFN bytes (no `gate_vectors.bin`, no FP4)
+// must surface a non-zero intermediate width via `num_features` so
+// the WalkFfn ladder doesn't drop to the dense f32 fallback and
+// `kquant_matmul_transb` doesn't return zero-row matrices.
+
+/// Build a synthetic Q4_K interleaved manifest with the given
+/// intermediate width on every layer. Byte payloads are zero — content
+/// is irrelevant for the width derivation (`num_features` reads byte
+/// *length* from the manifest, not the encoded scales).
+fn install_synthetic_q4k(v: &mut VectorIndex, intermediate: usize) {
+    use crate::index::storage::ffn_store::FFN_COMPONENTS_PER_LAYER;
+    use crate::quant::registry::lookup;
+    let hidden = v.hidden_size;
+    let bytes_per_row = lookup("Q4_K")
+        .expect("Q4_K registered")
+        .bytes_per_row(hidden)
+        .expect("hidden is block-aligned");
+    let gate_up_bytes = intermediate * bytes_per_row;
+    let down_bytes = hidden * bytes_per_row;
+    let per_layer = gate_up_bytes * 2 + down_bytes;
+    let total = per_layer * v.num_layers;
+
+    let payload = vec![0u8; total];
+    let mut manifest = Vec::with_capacity(v.num_layers * FFN_COMPONENTS_PER_LAYER);
+    let mut offset = 0;
+    for _ in 0..v.num_layers {
+        manifest.push((offset, gate_up_bytes, "Q4_K".to_string()));
+        offset += gate_up_bytes;
+        manifest.push((offset, gate_up_bytes, "Q4_K".to_string()));
+        offset += gate_up_bytes;
+        manifest.push((offset, down_bytes, "Q4_K".to_string()));
+        offset += down_bytes;
+    }
+
+    let mut anon = memmap2::MmapMut::map_anon(total).unwrap();
+    anon.copy_from_slice(&payload);
+    let mmap = std::sync::Arc::new(anon.make_read_only().unwrap());
+    let storage = std::sync::Arc::make_mut(&mut v.storage);
+    storage.set_interleaved_kquant(mmap, Some(manifest));
+}
+
+#[test]
+fn num_features_falls_back_to_q4k_width() {
+    let mut v = VectorIndex::empty(2, 256);
+    install_synthetic_q4k(&mut v, 768);
+    assert_eq!(v.num_features(0), 768);
+    assert_eq!(v.num_features(1), 768);
+}
+
+#[test]
+fn num_features_q4k_fallback_returns_zero_for_oob_layer() {
+    let mut v = VectorIndex::empty(2, 256);
+    install_synthetic_q4k(&mut v, 768);
+    assert_eq!(v.num_features(99), 0);
+}
+
+#[test]
+fn num_features_legacy_gate_wins_over_q4k_fallback() {
+    // Q4K width says 768 but heap gate vectors say 5 — heap wins (it's
+    // the legacy KNN feature count, takes priority).
+    let mut v = VectorIndex::empty(2, 256);
+    v.gate.gate_vectors[0] = Some(Array2::<f32>::zeros((5, 256)));
+    install_synthetic_q4k(&mut v, 768);
+    assert_eq!(v.num_features(0), 5, "heap gate vectors take priority");
+    // Layer without heap gate falls through to Q4K width.
+    assert_eq!(v.num_features(1), 768);
+}
+
+#[test]
+fn q4k_ffn_intermediate_width_returns_some_for_real_manifest() {
+    let mut v = VectorIndex::empty(3, 256);
+    install_synthetic_q4k(&mut v, 1024);
+    for layer in 0..3 {
+        assert_eq!(v.kquant_ffn_intermediate_width(layer), Some(1024));
+    }
+}
+
+#[test]
+fn q4k_ffn_intermediate_width_none_when_no_manifest() {
+    let v = VectorIndex::empty(2, 256);
+    assert!(v.kquant_ffn_intermediate_width(0).is_none());
+}
+
+#[test]
+fn q4k_ffn_intermediate_width_none_on_unknown_format() {
+    // Manifest claims format "QX_K" — not in the registry. `lookup` must
+    // return None so the fallback skips this layer rather than guessing
+    // a stride. Without this guard a future format tag could silently
+    // produce wrong widths.
+    use crate::index::storage::ffn_store::FFN_COMPONENTS_PER_LAYER;
+    let mut v = VectorIndex::empty(1, 256);
+    let total = FFN_COMPONENTS_PER_LAYER * 256; // any nonzero size
+    let mut anon = memmap2::MmapMut::map_anon(total).unwrap();
+    anon[..total].fill(0);
+    let mmap = std::sync::Arc::new(anon.make_read_only().unwrap());
+    let manifest = vec![
+        (0, 256, "QX_K".to_string()),
+        (256, 256, "QX_K".to_string()),
+        (512, 256, "QX_K".to_string()),
+    ];
+    let storage = std::sync::Arc::make_mut(&mut v.storage);
+    storage.set_interleaved_kquant(mmap, Some(manifest));
+    assert!(v.kquant_ffn_intermediate_width(0).is_none());
+}
+
+#[test]
+fn q4k_ffn_intermediate_width_none_when_bytes_not_a_whole_row() {
+    // Gate byte length isn't a multiple of `bytes_per_row(hidden)`.
+    // The fallback must refuse to round — silent rounding would hide a
+    // corrupt or stale manifest.
+    use crate::index::storage::ffn_store::FFN_COMPONENTS_PER_LAYER;
+    use crate::quant::registry::lookup;
+    let mut v = VectorIndex::empty(1, 256);
+    let bytes_per_row = lookup("Q4_K").unwrap().bytes_per_row(256).unwrap();
+    // Truncate by one byte → not a whole row.
+    let gate_len = bytes_per_row * 3 - 1;
+    let up_len = bytes_per_row * 3;
+    let down_len = bytes_per_row * 256;
+    let total = gate_len + up_len + down_len;
+    let mut anon = memmap2::MmapMut::map_anon(total).unwrap();
+    anon[..total].fill(0);
+    let mmap = std::sync::Arc::new(anon.make_read_only().unwrap());
+    let mut manifest = Vec::with_capacity(FFN_COMPONENTS_PER_LAYER);
+    let mut offset = 0;
+    manifest.push((offset, gate_len, "Q4_K".to_string()));
+    offset += gate_len;
+    manifest.push((offset, up_len, "Q4_K".to_string()));
+    offset += up_len;
+    manifest.push((offset, down_len, "Q4_K".to_string()));
+    let storage = std::sync::Arc::make_mut(&mut v.storage);
+    storage.set_interleaved_kquant(mmap, Some(manifest));
+    assert!(v.kquant_ffn_intermediate_width(0).is_none());
+}
+
+#[test]
+fn num_features_q4k_fallback_real_gemma_test_fixture() {
+    // The synthetic-Q4K test fixture in `larql-inference::test_utils` is
+    // the closest thing to a real Gemma 3 4B Q4K vindex shape: no
+    // `gate_vectors.bin`, no FP4 storage, only Q4K FFN bytes. Before the
+    // Q4K width fallback this returned 0 and WalkFfn fell through to
+    // dense f32 matmul — the 100× decode regression. Build the same
+    // shape inline (avoids a cross-crate test dep) and assert
+    // `num_features` reports the real intermediate width.
+    use crate::index::storage::ffn_store::FFN_COMPONENTS_PER_LAYER;
+    use crate::quant::registry::lookup;
+    let hidden = 256;
+    let intermediate = 256;
+    let num_layers = 2;
+    let mut v = VectorIndex::empty(num_layers, hidden);
+    let bytes_per_row = lookup("Q4_K").unwrap().bytes_per_row(hidden).unwrap();
+    let gate_up = intermediate * bytes_per_row;
+    let down = hidden * bytes_per_row;
+    let per_layer = gate_up * 2 + down;
+    let total = per_layer * num_layers;
+    let mut anon = memmap2::MmapMut::map_anon(total).unwrap();
+    anon[..total].fill(0);
+    let mmap = std::sync::Arc::new(anon.make_read_only().unwrap());
+    let mut manifest = Vec::with_capacity(num_layers * FFN_COMPONENTS_PER_LAYER);
+    let mut offset = 0;
+    for _ in 0..num_layers {
+        manifest.push((offset, gate_up, "Q4_K".to_string()));
+        offset += gate_up;
+        manifest.push((offset, gate_up, "Q4_K".to_string()));
+        offset += gate_up;
+        manifest.push((offset, down, "Q4_K".to_string()));
+        offset += down;
+    }
+    let storage = std::sync::Arc::make_mut(&mut v.storage);
+    storage.set_interleaved_kquant(mmap, Some(manifest));
+    for layer in 0..num_layers {
+        assert_eq!(
+            v.num_features(layer),
+            intermediate,
+            "Q4K-only vindex must surface intermediate width — \
+             regressing this re-introduces the 100× FFN slowdown"
+        );
+    }
+}
+
 // ── total_gate_vectors / total_down_meta ──
 
 #[test]

@@ -11,6 +11,23 @@ Legacy research commands gated under `larql dev <subcmd>` for backwards-compat.
 Dual cache (HuggingFace hub + `~/.cache/larql/local/`) with shorthand resolution
 (`larql run gemma3-4b-it-vindex`).
 
+The `shannon` family was extended in 2026-05-16 with **`larql shannon
+verify`** — a cross-engine bits/char correctness check that orchestrates
+the LARQL Rust forward (in-process) against HF/PyTorch and MLX reference
+scorers (subprocesses driving
+`scripts/shannon_score_{hf,mlx}.py`). Prints a delta table, exits
+non-zero if any pair-wise delta exceeds `--threshold` (default 0.5%).
+First serious application surfaced four config-loading bugs in
+`larql-models` (rms_norm_eps not parsed; Gemma 3 per-layer-type
+rope_scaling missing; llama3 rope_scaling missing; StarCoder2
+norm_epsilon alias). The CI gate at
+[`.github/workflows/shannon-verify.yml`](../../.github/workflows/shannon-verify.yml)
+runs this on every PR. Per-arch sweep:
+[`scripts/diagnose_models.py`](../../scripts/diagnose_models.py). See
+[`docs/cli.md#cross-engine-verify`](../../docs/cli.md#cross-engine-verify)
+and
+[`docs/diagnoses/shannon-cross-engine-divergence.md`](../../docs/diagnoses/shannon-cross-engine-divergence.md).
+
 ---
 
 ## P1: Generation UX

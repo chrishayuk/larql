@@ -59,6 +59,7 @@ impl TestMoeArch {
         Self {
             cfg: ModelConfig {
                 model_type: "test-moe".to_string(),
+                norm_eps: None,
                 num_layers: 1,
                 hidden_size: HIDDEN,
                 intermediate_size: 16,
@@ -264,7 +265,7 @@ fn make_loaded_model(
         id: "test-moe".into(),
         path: PathBuf::from("/nonexistent"),
         config,
-        patched: tokio::sync::RwLock::new(patched),
+        patched: std::sync::Arc::new(tokio::sync::RwLock::new(patched)),
         embeddings: Array2::zeros((VOCAB, HIDDEN)),
         embed_scale: 1.0,
         tokenizer,
@@ -280,6 +281,7 @@ fn make_loaded_model(
             larql_server::metrics::LayerLatencyTracker::new(),
         ),
         requests_in_flight: std::sync::Arc::new(std::sync::atomic::AtomicU32::new(0)),
+        requests_total: std::sync::Arc::new(std::sync::atomic::AtomicU64::new(0)),
         expert_filter: None,
         unit_filter: None,
         moe_remote: None,

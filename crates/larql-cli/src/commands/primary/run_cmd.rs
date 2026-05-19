@@ -27,19 +27,32 @@ use clap::Args;
 use crate::commands::extraction::walk_cmd;
 use crate::commands::primary::cache;
 
-/// KV cache strategy selector. Picks how the autoregressive decode
-/// stores past-token state.
+/// Legacy `--kv-cache` flag enum. Retained for backward compatibility;
+/// each variant resolves to an `EngineKind` in
+/// `walk_cmd::generate_stream`:
+///
+/// | `--kv-cache` value | `EngineKind` |
+/// |---|---|
+/// | `standard` (default) | `Standard { window_size: None }` |
+/// | `markov-bounded` | `Standard { window_size: Some(--context-window) }` |
+/// | `none` | `NoCache` |
+///
+/// New callers should prefer `--engine SPEC` / `LARQL_KV_ENGINE` instead
+/// — they accept the full engine catalog (MarkovResidual, UnlimitedContext,
+/// TurboQuant, Apollo) not just the three legacy cache strategies.
+/// See `crates/larql-inference/docs/specs/kv-engine-unification.md` §6.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum KvCacheKind {
-    /// Full FP32 K/V per layer, unbounded growth. Correct over any
-    /// context length.
+    /// → `EngineKind::Standard { window_size: None }`. Full FP32 K/V per
+    /// layer, unbounded growth. Correct over any context length.
     Standard,
+    /// → `EngineKind::Standard { window_size: Some(--context-window) }`.
     /// Sliding window — keep only the last `context_window` positions.
-    /// Memory stays O(window). Older tokens drop off the back of
-    /// the cache (StreamingLLM-style).
+    /// Memory stays O(window). Older tokens drop off the back of the
+    /// cache (StreamingLLM-style).
     MarkovBounded,
-    /// No cache — re-run full forward over the growing sequence every
-    /// step. O(N²) wall time. Correctness fallback.
+    /// → `EngineKind::NoCache`. Re-runs full forward over the growing
+    /// sequence every step. O(N²) wall time. Correctness fallback.
     None,
 }
 
@@ -74,7 +87,7 @@ pub struct RunArgs {
     #[arg(short = 'n', long = "max-tokens", default_value = "64")]
     pub max_tokens: usize,
 
-    /// KV cache strategy for autoregressive decode.
+    /// KV cache strategy for autoregressive decode (legacy flag).
     ///
     ///   standard         — Full FP32 K/V, unbounded. Correct over any
     ///                      context length. Memory grows O(context).
@@ -85,9 +98,9 @@ pub struct RunArgs {
     ///                      step (O(N²) total). Useful for correctness
     ///                      checks; unusable for long outputs.
     ///
-    /// See `crates/kv-cache-benchmark/` for the strategy taxonomy and
-    /// roadmap items (turboquant, markov-full) not yet wired to the
-    /// live decode path.
+    /// Each value maps to an `EngineKind` internally (see `KvCacheKind`
+    /// docs). For the full engine catalog (MarkovResidual,
+    /// UnlimitedContext, TurboQuant, Apollo), use `--engine` instead.
     #[arg(long, default_value = "standard", value_parser = parse_kv_cache)]
     pub kv_cache: KvCacheKind,
 
@@ -95,6 +108,24 @@ pub struct RunArgs {
     /// otherwise. `0` = unbounded (same as `standard`).
     #[arg(long, default_value = "0")]
     pub context_window: usize,
+
+    /// KV engine spec, overrides `--kv-cache` when set. Accepts the same
+    /// syntax `larql bench --engine` parses:
+    ///
+    ///   standard                    — production K/V cache (default)
+    ///   standard:window=1024        — sliding-window K/V
+    ///   no-cache                    — full re-forward per step (O(N²))
+    ///   markov-rs[:window=N]        — residual-stream replacement
+    ///   unlimited-context:window=N  — per-window K/V checkpoints
+    ///   turbo-quant[:bits=3|4]      — WHT + Lloyd-Max codec
+    ///   apollo:layer=N,coef=F,top_k=K — boundary-residual injection (bench-only)
+    ///
+    /// Falls back to the `LARQL_KV_ENGINE` env var when unset, and to
+    /// the `--kv-cache` mapping when both are absent. CLI flag wins over
+    /// env var; env var wins over `--kv-cache`. See
+    /// `crates/larql-inference/docs/specs/kv-engine-unification.md`.
+    #[arg(long, value_name = "SPEC")]
+    pub engine: Option<String>,
 
     /// Show the top-K prediction table for each step instead of just
     /// the argmax. Implied by `--verbose`.
@@ -351,6 +382,7 @@ fn build_walk_args(
         max_tokens: args.max_tokens,
         kv_cache: args.kv_cache,
         context_window: args.context_window,
+        engine: args.engine.clone(),
         layers: None,
         predict_top_k: args.top,
         predict: true,
@@ -439,19 +471,19 @@ fn run_with_moe_shards(
 
     // Client loads attn + dense FFN + norms + router weights — no expert bytes.
     let mut cb = larql_vindex::SilentLoadCallbacks;
-    let weights = larql_vindex::load_model_weights_q4k(vindex_path, &mut cb)
+    let weights = larql_vindex::load_model_weights_kquant(vindex_path, &mut cb)
         .map_err(|e| format!("failed to load client weights: {e}"))?;
     let tokenizer = larql_vindex::load_vindex_tokenizer(vindex_path)
         .map_err(|e| format!("failed to load tokenizer: {e}"))?;
     let mut index = larql_vindex::VectorIndex::load_vindex(vindex_path, &mut cb)
         .map_err(|e| format!("failed to load vindex: {e}"))?;
     index
-        .load_attn_q4k(vindex_path)
+        .load_attn_kquant(vindex_path)
         .map_err(|e| format!("failed to load attn Q4K: {e}"))?;
     index
-        .load_interleaved_q4k(vindex_path)
+        .load_interleaved_kquant(vindex_path)
         .map_err(|e| format!("failed to load interleaved Q4K: {e}"))?;
-    let _ = index.load_lm_head_q4(vindex_path);
+    let _ = index.load_lm_head_kquant(vindex_path);
 
     // Prompt-shape options (centralised in `larql_inference::chat::render_user_prompt`):
     //   default              → chat_template.jinja with auto-injected default system prompt for Gemma 4
@@ -566,19 +598,19 @@ fn run_with_remote_ffn(
     eprintln!("  FFN:        remote  ({})  dispatch={dispatch}", ffn_url);
 
     let mut cb = larql_vindex::SilentLoadCallbacks;
-    let weights = larql_vindex::load_model_weights_q4k(vindex_path, &mut cb)
+    let weights = larql_vindex::load_model_weights_kquant(vindex_path, &mut cb)
         .map_err(|e| format!("failed to load client weights: {e}"))?;
     let tokenizer = larql_vindex::load_vindex_tokenizer(vindex_path)
         .map_err(|e| format!("failed to load tokenizer: {e}"))?;
     let mut index = larql_vindex::VectorIndex::load_vindex(vindex_path, &mut cb)
         .map_err(|e| format!("failed to load vindex: {e}"))?;
     index
-        .load_attn_q4k(vindex_path)
+        .load_attn_kquant(vindex_path)
         .map_err(|e| format!("failed to load attn Q4K: {e}"))?;
     index
-        .load_interleaved_q4k(vindex_path)
+        .load_interleaved_kquant(vindex_path)
         .map_err(|e| format!("failed to load interleaved Q4K: {e}"))?;
-    let _ = index.load_lm_head_q4(vindex_path);
+    let _ = index.load_lm_head_kquant(vindex_path);
 
     let wrapped_prompt =
         larql_inference::chat::render_user_prompt(vindex_path, weights.arch.family(), prompt)?;
@@ -645,7 +677,7 @@ fn run_with_remote_ffn(
 /// | vindex quant | `--metal` | strategy                                    |
 /// |--------------|-----------|---------------------------------------------|
 /// | Q4_K         | yes       | `layer_graph::generate` (KV-cached, fast)   |
-/// | Q4_K         | no        | `vindex::generate_q4k_cpu` (per-step, slow) |
+/// | Q4_K         | no        | `vindex::generate_kquant_cpu` (per-step, slow) |
 /// | f32          | any       | `forward::generate_cached` (CPU, F32)       |
 ///
 /// Chat mode (no prompt): drops into a stdin REPL over the same loaded model.
@@ -665,7 +697,7 @@ mod experts {
     enum Strategy {
         /// Q4_K vindex + Metal backend. KV-cached decode via `layer_graph::generate`.
         MetalQ4K,
-        /// Q4_K vindex, no Metal. Loops `predict_q4k` per token (O(N²)).
+        /// Q4_K vindex, no Metal. Loops `predict_kquant` per token (O(N²)).
         CpuQ4K,
         /// Non-quantised vindex. CPU `generate_cached` with full f32 weights.
         CpuF32,
@@ -686,7 +718,7 @@ mod experts {
     struct Runtime {
         weights: larql_inference::ModelWeights,
         tokenizer: tokenizers::Tokenizer,
-        q4_index: Option<VectorIndex>,
+        index: Option<VectorIndex>,
         strategy: Strategy,
     }
 
@@ -726,7 +758,7 @@ mod experts {
 
             let text = match self.strategy {
                 Strategy::MetalQ4K => {
-                    let q4_index = self.q4_index.as_ref().expect("metal-q4k needs q4_index");
+                    let index = self.index.as_ref().expect("metal-q4k needs index");
                     let backend = larql_compute::default_backend();
                     let cached_layers =
                         larql_inference::layer_graph::CachedLayerGraph::from_residuals(Vec::new());
@@ -739,7 +771,7 @@ mod experts {
                             &self.tokenizer,
                             &token_ids,
                             max_tokens,
-                            q4_index,
+                            index,
                             &*backend,
                             &cached_layers,
                             0..num_layers,
@@ -751,7 +783,7 @@ mod experts {
                             &self.tokenizer,
                             &token_ids,
                             max_tokens,
-                            q4_index,
+                            index,
                             &*backend,
                             &cached_layers,
                             0..num_layers,
@@ -760,25 +792,25 @@ mod experts {
                     result.tokens.iter().map(|(t, _)| t.as_str()).collect()
                 }
                 Strategy::CpuQ4K => {
-                    let q4_index = self.q4_index.as_ref().expect("cpu-q4k needs q4_index");
+                    let index = self.index.as_ref().expect("cpu-q4k needs index");
                     let toks = if let Some(ops) = mask_op_names {
                         let mut mask = OpNameMask::new(ops.to_vec(), &self.tokenizer);
                         mask.set_seed_text(OP_CALL_PREFIX);
-                        larql_inference::vindex::generate_q4k_cpu_constrained(
+                        larql_inference::vindex::generate_kquant_cpu_constrained(
                             &mut self.weights,
                             &self.tokenizer,
                             &token_ids,
                             max_tokens,
-                            q4_index,
+                            index,
                             |ids, logits| mask.apply(ids, logits),
                         )
                     } else {
-                        larql_inference::vindex::generate_q4k_cpu(
+                        larql_inference::vindex::generate_kquant_cpu(
                             &mut self.weights,
                             &self.tokenizer,
                             &token_ids,
                             max_tokens,
-                            q4_index,
+                            index,
                         )
                     };
                     toks.into_iter().map(|(t, _)| t).collect()
@@ -791,7 +823,7 @@ mod experts {
                     if let Some(ops) = mask_op_names {
                         let mut mask = OpNameMask::new(ops.to_vec(), &self.tokenizer);
                         mask.set_seed_text(OP_CALL_PREFIX);
-                        larql_inference::forward::generate_cached_constrained(
+                        larql_kv::generation::generate_cached_constrained(
                             &self.weights,
                             &self.tokenizer,
                             &ffn,
@@ -801,7 +833,7 @@ mod experts {
                             |_id, tok| text.push_str(tok),
                         );
                     } else {
-                        larql_inference::forward::generate_cached(
+                        larql_kv::generation::generate_cached(
                             &self.weights,
                             &self.tokenizer,
                             &ffn,
@@ -901,7 +933,8 @@ mod experts {
     /// Whether the active compute backend can serve Q4 work-sets via Metal.
     /// Wraps the impure `default_backend()` call so [`pick_strategy`] stays pure.
     fn metal_ready_for_q4(want_metal: bool) -> bool {
-        want_metal && larql_compute::default_backend().has_q4()
+        want_metal
+            && larql_compute::default_backend().supports_quant(::larql_compute::QuantFormat::Q4_K)
     }
 
     /// Pure strategy selector: given the vindex quant format and whether
@@ -929,13 +962,13 @@ mod experts {
             );
         }
 
-        let (weights, q4_index) = match strategy {
+        let (weights, index) = match strategy {
             Strategy::MetalQ4K | Strategy::CpuQ4K => {
-                let weights = larql_vindex::load_model_weights_q4k(vindex_path, &mut cb)?;
+                let weights = larql_vindex::load_model_weights_kquant(vindex_path, &mut cb)?;
                 let mut idx = VectorIndex::load_vindex(vindex_path, &mut cb)?;
-                idx.load_attn_q4k(vindex_path)?;
-                idx.load_interleaved_q4k(vindex_path)?;
-                let _ = idx.load_lm_head_q4(vindex_path);
+                idx.load_attn_kquant(vindex_path)?;
+                idx.load_interleaved_kquant(vindex_path)?;
+                let _ = idx.load_lm_head_kquant(vindex_path);
                 (weights, Some(idx))
             }
             Strategy::CpuF32 => {
@@ -951,7 +984,7 @@ mod experts {
         Ok(Runtime {
             weights,
             tokenizer,
-            q4_index,
+            index,
             strategy,
         })
     }

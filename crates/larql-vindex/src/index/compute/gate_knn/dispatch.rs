@@ -317,7 +317,7 @@ impl VectorIndex {
 
         // 1. Pinned Q4 (fastest — data already in RAM)
         if let Some(q4_data) = residency.pinned_q4(layer) {
-            if backend.has_q4() {
+            if backend.supports_quant(::larql_compute::QuantFormat::Q4_K) {
                 let x = residual.as_slice().unwrap();
                 let (q8_x, q8_scales) = larql_compute::cpu::q4::quantize_to_q8(x);
                 let num_features = self.num_features(layer);
@@ -351,7 +351,7 @@ impl VectorIndex {
         top_k: usize,
         backend: &dyn larql_compute::ComputeBackend,
     ) -> Option<Vec<(usize, f32)>> {
-        if !backend.has_q4() {
+        if !backend.supports_quant(::larql_compute::QuantFormat::Q4_K) {
             return None;
         }
         let q4_data = self.gate_q4_data(layer)?;

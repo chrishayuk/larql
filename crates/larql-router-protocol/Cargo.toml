@@ -11,6 +11,61 @@ tonic = "0.13"
 prost = "0.13"
 tokio = { version = "1", features = ["full"] }
 tokio-stream = "0.1"
+tracing = "0.1"
+
+# QUIC transport (ADR-0010). Optional + opt-in: TCP gRPC remains the
+# default. quinn already lives in the workspace lockfile via reqwest, so
+# declaring it here as an explicit feature dependency doesn't enlarge the
+# dependency closure.
+quinn = { version = "0.11", optional = true, default-features = false, features = ["runtime-tokio", "rustls-ring"] }
+rustls = { version = "0.23", optional = true, default-features = false, features = ["ring", "std"] }
+rcgen = { version = "0.13", optional = true }
+rustls-pemfile = { version = "2", optional = true }
+hyper-util = { version = "0.1", optional = true, features = ["tokio"] }
+tower = { version = "0.5", optional = true }
+# SHA-256 for cert pinning. Pulled in only with the `quic` feature.
+sha2 = { version = "0.10", optional = true }
+
+# ADR-0019 HTTP/3 shard transport. h3 + h3-quinn give per-stream
+# independence for MoE expert fan-out (ADR-0018). Reuses the same
+# rustls + quinn TLS setup as ADR-0010 (`quic` feature).
+h3 = { version = "0.0.8", optional = true }
+h3-quinn = { version = "0.0.10", optional = true }
+# h3-axum bridges an axum::Router to an h3 connection — Phase 2 server-side.
+h3-axum = { version = "0.2", optional = true }
+axum = { version = "0.8", optional = true }
+http = { version = "1", optional = true }
+http-body-util = { version = "0.1", optional = true }
+bytes = { version = "1", optional = true }
+futures = { version = "0.3", optional = true }
+
+[features]
+default = []
+quic = [
+    "dep:quinn",
+    "dep:rustls",
+    "dep:rcgen",
+    "dep:rustls-pemfile",
+    "dep:hyper-util",
+    "dep:tower",
+    "dep:sha2",
+]
+# ADR-0019: real HTTP/3 for shard fan-out. Built on top of `quic`
+# (shares TLS / endpoint setup) plus the h3 framing layer.
+http3 = [
+    "quic",
+    "dep:h3",
+    "dep:h3-quinn",
+    "dep:h3-axum",
+    "dep:axum",
+    "dep:http",
+    "dep:http-body-util",
+    "dep:bytes",
+    "dep:futures",
+]
+
+[dev-dependencies]
+serde_json = { workspace = true }
 
 [build-dependencies]
 tonic-build = "0.13"

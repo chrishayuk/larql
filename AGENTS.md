@@ -28,7 +28,6 @@ larql-lql         lexer/parser/executor/REPL + USE REMOTE client
 larql-server      HTTP + gRPC server serving vindexes
 larql-cli         top-level `larql` binary (every subcommand lives in commands/)
 larql-python      PyO3 bindings (maturin-built, module name `larql._native`)
-kv-cache-benchmark    standalone benchmark crate
 
 # Portable (no LARQL deps; extract to sibling repo later, name stable)
 model-compute         bounded native kernels (arithmetic/datetime) and optional

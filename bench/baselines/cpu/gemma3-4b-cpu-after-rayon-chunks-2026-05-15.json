@@ -1,0 +1,33 @@
+{
+  "timestamp": "1778883884",
+  "model": "output/gemma3-4b-q4k-v2.vindex",
+  "prompt": "The capital of France is",
+  "tokens": 16,
+  "wire": null,
+  "concurrent": 1,
+  "results": [
+    {
+      "backend": "larql-cpu",
+      "prefill_ms": 2691.692375,
+      "ms_per_tok": {
+        "mean": 81.84635286666665,
+        "p50": 82.440625,
+        "p99": 86.625458
+      },
+      "tok_per_s": 12.218015402947385,
+      "wire_bytes_per_tok": null,
+      "stages": {
+        "embed_ms": 0.0,
+        "gpu_fwd_ms": 0.0,
+        "cpu_fwd_ms": 74.43409375000002,
+        "gate_up_ms": 0.0,
+        "down_ms": 0.0,
+        "final_norm_ms": 0.0,
+        "lm_head_ms": 10.168552187500001,
+        "detok_ms": 0.0
+      },
+      "n_steps": 15,
+      "note": "early stop @15/16 (EOS or GPU fallback); cpu q4k (KV-cached decode)"
+    }
+  ]
+}

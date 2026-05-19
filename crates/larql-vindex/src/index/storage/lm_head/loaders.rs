@@ -28,15 +28,18 @@ impl VectorIndex {
     ///
     /// Older vindexes without a manifest entry for lm_head still load (the
     /// extractor wrote the file directly), but no format check happens.
-    pub fn load_lm_head_q4(&mut self, dir: &std::path::Path) -> Result<(), VindexError> {
-        let path = dir.join(LM_HEAD_Q4_BIN);
+    pub fn load_lm_head_kquant(&mut self, dir: &std::path::Path) -> Result<(), VindexError> {
+        let path = resolve_lm_head_kquant(dir).bin;
         if !path.exists() {
-            return Err(VindexError::Parse("lm_head_q4.bin not found".into()));
+            return Err(VindexError::Parse(format!(
+                "lm_head k-quant file not found (looked for {} and legacy {})",
+                LM_HEAD_KQUANT_BIN, LEGACY_LM_HEAD_Q4_BIN
+            )));
         }
         if let Some(manifest_kind) = read_lm_head_manifest_kind(dir) {
             if manifest_kind != crate::format::weights::write_f32::kind::TENSOR_Q4K {
                 return Err(VindexError::Parse(format!(
-                    "lm_head_q4.bin manifest mismatch: expected kind \"{}\", \
+                    "lm_head k-quant manifest mismatch: expected kind \"{}\", \
                      found \"{}\". This indicates the vindex was extracted with \
                      a writer that disagrees with the Q4_K matvec dispatch path \
                      — refusing to load to avoid silent garbage logits.",
@@ -54,32 +57,39 @@ impl VectorIndex {
         if self.vocab_size == 0 && self.hidden_size > 0 {
             let bytes = mmap.len();
             let denom = self.hidden_size * Q4_BYTES_PER_ELEM_NUM;
-            if let Some(vocab) = (bytes * Q4_BYTES_PER_ELEM_DEN).checked_div(denom) {
+            // u64 multiply guards 32-bit hosts (e.g. armv7-android) where
+            // `bytes * Q4_BYTES_PER_ELEM_DEN` can overflow `usize` before the
+            // division for large lm_head mmaps.
+            if let Some(vocab) = (bytes as u64)
+                .checked_mul(Q4_BYTES_PER_ELEM_DEN as u64)
+                .and_then(|v| v.checked_div(denom as u64))
+                .and_then(|v| usize::try_from(v).ok())
+            {
                 if vocab > 0 {
                     self.vocab_size = vocab;
                 }
             }
         }
-        Arc::make_mut(&mut self.storage).set_lm_head_q4_mmap(Arc::new(mmap));
+        Arc::make_mut(&mut self.storage).set_lm_head_kquant_mmap(Arc::new(mmap));
         Ok(())
     }
 
     /// Whether Q4 lm_head is loaded (from file or synthesized from f16 embeddings).
-    pub fn has_lm_head_q4(&self) -> bool {
-        self.storage.has_lm_head_q4()
+    pub fn has_lm_head_kquant(&self) -> bool {
+        self.storage.has_lm_head_kquant()
     }
 
     /// Synthesize Q4_0 lm_head in RAM from the f16 embeddings mmap.
     /// No-op if a Q4 source already exists or preconditions are not met.
-    pub fn synthesize_lm_head_q4(&mut self) {
-        if self.storage.has_lm_head_q4() {
+    pub fn synthesize_lm_head_kquant(&mut self) {
+        if self.storage.has_lm_head_kquant() {
             return;
         }
         let vocab = self.vocab_size;
         let hidden = self.hidden_size;
         // Q4_K quantises in `K_QUANT_BLOCK_ELEMS`-element super-blocks, so
         // `hidden` must be a multiple of that (matches the on-disk
-        // `lm_head_q4.bin` writer in `format/weights/write_q4k/mod.rs`).
+        // `lm_head_q4.bin` writer in `format/weights/write_kquant/mod.rs`).
         // Earlier code used Q4_0 (32-element blocks) here but
         // `lm_head_knn_backend` dispatches `q4k_matvec` for both the mmap and
         // synth paths — keeping the synth bytes in Q4_K avoids the format-
@@ -109,7 +119,7 @@ impl VectorIndex {
             *slot = larql_models::quant::half::f16_to_f32(bits);
         }
         let q4k = larql_compute::cpu::ops::q4_common::quantize_q4_k(&all_f32);
-        Arc::make_mut(&mut self.storage).set_lm_head_q4_synth(Arc::new(q4k));
+        Arc::make_mut(&mut self.storage).set_lm_head_kquant_synth(Arc::new(q4k));
     }
 
     /// Adopt the vindex's f16 `embeddings.bin` mmap as an f16 view of the

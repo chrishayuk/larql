@@ -62,7 +62,7 @@ pub use sparse_compute::{
     sparse_ffn_forward, sparse_ffn_forward_with_full_overrides, sparse_ffn_forward_with_overrides,
     FeatureSlotOverride,
 };
-pub use weight::{dense_ffn_forward_backend, BackendFfn, WeightFfn};
+pub use weight::{dense_ffn_forward_backend, BackendFfn, NullFfn, WeightFfn};
 
 // ── Per-layer backend selection ──
 

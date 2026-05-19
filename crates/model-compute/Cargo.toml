@@ -17,7 +17,7 @@ wasm = ["dep:wasmtime"]
 thiserror = { workspace = true }
 
 # Feature: native kernels
-evalexpr = { version = "12", optional = true }
+evalexpr = { version = "11", optional = true }
 chrono = { version = "0.4", optional = true, default-features = false, features = ["std", "clock"] }
 
 # Feature: wasm host

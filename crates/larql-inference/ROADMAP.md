@@ -1579,6 +1579,40 @@ Canonical implementation lives in `forward/ops.rs`, exported via `forward/mod.rs
 ### `forward/ple.rs` hardcodes `1e-6` norm epsilon ✅ Fixed 2026-04-26
 `1e-6` replaced with `arch.norm_eps()` for consistency.
 
+### `rms_norm` / `layer_norm` default eps in CPU forward path ✅ Fixed 2026-05-16
+The CPU forward path (`forward/{layer,ops}.rs`, attention/block.rs,
+attention/decode.rs) was reading `crate::residual::rms_norm(...)` which
+defaulted to `DEFAULT_EPS = 1e-6`, ignoring `arch.norm_eps()`. New
+`rms_norm_for_arch` / `layer_norm_for_arch` helpers in `residual.rs`
+consult `arch.norm_eps()` (now config-driven in larql-models) with the
+`LARQL_NORM_EPS_OVERRIDE` env var as diagnostic override. Production
+callers switched. Closed Mistral 7B's +8.2% bits/char drift and most of
+Llama 3.2's +0.59%. See
+[`docs/diagnoses/shannon-cross-engine-divergence.md`](../../docs/diagnoses/shannon-cross-engine-divergence.md).
+
+### Shannon cross-engine verify instrument + RoPE scaling support ✅ Landed 2026-05-16
+- `attention/rope.rs`: new `Llama3Scaling` struct + `apply_rope_partial_at_full`
+  variant that consumes both `position_divisor` (linear `rope_scaling.factor`)
+  and `llama3_scaling` (wavelength-dependent per-channel `inv_freq`
+  adjustment matching HF's `_compute_llama3_parameters`). Default
+  `apply_rope_partial_at` is now a wrapper passing `1.0` / `None`.
+- `attention/block.rs` + `attention/decode.rs`: prefill and decode RoPE
+  call sites route through `apply_rope_partial_at_full` with
+  `pos_divisor` and `llama3` sourced from
+  `layer_graph::pipeline_layer::effective_rope_position_divisor_for_layer`
+  and `effective_llama3_rope_scaling` (arch-driven, env-var override).
+- `layer_graph/pipeline_layer.rs`: five `OnceLock`-gated diagnostic env
+  vars (`LARQL_FORCE_GLOBAL_LAYERS`, `LARQL_ROPE_POS_DIVISOR`,
+  `LARQL_ROPE_POS_DIVISOR_GLOBAL`, `LARQL_LLAMA3_ROPE_SCALING`,
+  `LARQL_NORM_EPS_OVERRIDE`) — production code paths reach for the arch
+  first and fall back to env-var overrides for bisection. No behaviour
+  change when unset.
+
+The `larql shannon verify` CLI command in larql-cli orchestrates this
+forward path against HF/PyTorch + MLX reference scorers. See
+[`docs/cli.md`](../../../docs/cli.md#cross-engine-verify) and
+[`scripts/README_shannon_score.md`](../../../scripts/README_shannon_score.md).
+
 ### `grid.rs` undocumented `SKIP_MOE` env var ✅ Fixed 2026-04-26
 Added `# Diagnostics` section to module doc.
 
@@ -1659,7 +1693,7 @@ P0 validation" (SQ1, SQ2). Re-promotion conditions are recorded there.
 
 | # | Spec | Status | Why queued |
 |---|------|--------|------------|
-| SQ1 | [`markov-residual-engine.md`](docs/specs/markov-residual-engine.md) | reviewed, impl not started | Reference impl already works in `kv-cache-benchmark`; lifting it without first resolving the trait-vs-sibling shape against `UnlimitedContextEngine` / `ApolloEngine` risks forcing the other two engines into a shape that doesn't fit. V1/V2 also produce the measurement infrastructure that proves the migration didn't regress. |
+| SQ1 | [`markov-residual-engine.md`](docs/specs/markov-residual-engine.md) | ✅ shipped | Production impl lives in `larql_kv::engines::markov_residual`. The trait-vs-sibling question resolved via `KvEngine` + `KvDispatch`. The `kv-cache-benchmark` reference impl that the spec lifted from was retired in 2026-05-16. |
 | SQ2 | [`vindex-as-ffn.md`](docs/specs/vindex-as-ffn.md) | reviewed, impl not started | §5.4 cost model says it's a wash on typical decode K (256–1024) without large compiled-fact corpora. R6 (depth-fraction probe) needs to land before the per-arch layer policy is automated rather than hand-calibrated. No current video / research workflow needs the paraphrase-reach the lookup buys above the existing L1 i16 cos≥0.999 cache. |
 
 These are not P0/P1-active. Top-level roadmap is the source of truth

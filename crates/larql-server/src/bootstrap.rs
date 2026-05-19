@@ -167,7 +167,7 @@ pub fn load_single_vindex(
         );
     }
     if opts.max_q4k_cache_layers > 0 {
-        index.set_q4k_ffn_cache_max_layers(opts.max_q4k_cache_layers);
+        index.set_kquant_ffn_cache_max_layers(opts.max_q4k_cache_layers);
         info!(
             "  Q4K FFN cache: LRU, max {} layers",
             opts.max_q4k_cache_layers
@@ -212,9 +212,9 @@ pub fn load_single_vindex(
         if let Ok(()) = index.load_up_features(&path) {
             info!("  Up features: loaded (full mmap FFN)")
         }
-        if index.has_down_features_q4k() {
+        if index.has_down_features_kquant() {
             info!(
-                "  Down features Q4K: loaded (W2 — per-feature decode skips q4k_ffn_layer cache)"
+                "  Down features Q4K: loaded (W2 — per-feature decode skips kquant_ffn_layer cache)"
             );
         }
 
@@ -225,21 +225,21 @@ pub fn load_single_vindex(
         // these the Q4K decode panics with "attn Q4K slices missing".
         //
         // `--ffn-only` skips attention weights (no infer path) but MUST
-        // still mmap interleaved_q4k so per-layer walk-ffn requests can
-        // call `q4k_ffn_forward_layer`.
+        // still mmap interleaved_kquant so per-layer walk-ffn requests can
+        // call `kquant_ffn_forward_layer`.
         let need_ffn_mmap = opts.ffn_only || (!opts.no_infer && has_weights);
         if !opts.no_infer && !opts.ffn_only && has_weights {
             if path.join(LM_HEAD_BIN).is_file() {
                 let _ = index.load_lm_head(&path);
             }
-            if path.join(LM_HEAD_Q4_BIN).is_file() {
-                let _ = index.load_lm_head_q4(&path);
+            if has_kquant_lm_head(&path) {
+                let _ = index.load_lm_head_kquant(&path);
             }
-            if path.join(ATTN_WEIGHTS_Q4K_BIN).is_file() {
-                if let Err(e) = index.load_attn_q4k(&path) {
-                    warn!("  Attn Q4K: failed to load ({e}) — generation may not work");
+            if has_kquant_attn_weights(&path) {
+                if let Err(e) = index.load_attn_kquant(&path) {
+                    warn!("  Attn k-quant: failed to load ({e}) — generation may not work");
                 } else {
-                    info!("  Attn Q4K: loaded (inference path enabled)");
+                    info!("  Attn k-quant: loaded (inference path enabled)");
                 }
             } else if path.join(ATTN_WEIGHTS_Q8_BIN).is_file() {
                 if let Err(e) = index.load_attn_q8(&path) {
@@ -248,11 +248,11 @@ pub fn load_single_vindex(
             }
         }
         if need_ffn_mmap {
-            if path.join(INTERLEAVED_Q4K_BIN).is_file() {
-                if let Err(e) = index.load_interleaved_q4k(&path) {
-                    warn!("  Interleaved Q4K: failed to load ({e})");
+            if has_kquant_interleaved(&path) {
+                if let Err(e) = index.load_interleaved_kquant(&path) {
+                    warn!("  Interleaved k-quant: failed to load ({e})");
                 } else if opts.ffn_only {
-                    info!("  Interleaved Q4K: loaded (ffn-service)");
+                    info!("  Interleaved k-quant: loaded (ffn-service)");
                 }
             } else if path.join(INTERLEAVED_Q4_BIN).is_file() {
                 if let Err(e) = index.load_interleaved_q4(&path) {
@@ -343,7 +343,7 @@ pub fn load_single_vindex(
         id,
         path,
         config,
-        patched: RwLock::new(patched),
+        patched: Arc::new(RwLock::new(patched)),
         embeddings,
         embed_scale,
         tokenizer,
@@ -357,6 +357,7 @@ pub fn load_single_vindex(
         ffn_l2_cache: crate::ffn_l2_cache::FfnL2Cache::new(num_layers),
         layer_latency_tracker: std::sync::Arc::new(crate::metrics::LayerLatencyTracker::new()),
         requests_in_flight: std::sync::Arc::new(std::sync::atomic::AtomicU32::new(0)),
+        requests_total: std::sync::Arc::new(std::sync::atomic::AtomicU64::new(0)),
         expert_filter: opts.expert_filter,
         unit_filter: opts.unit_filter.clone(),
         moe_remote: opts.moe_remote.clone(),
@@ -580,6 +581,16 @@ pub struct Cli {
     #[arg(long)]
     pub grpc_port: Option<u16>,
 
+    /// Cosine threshold for the Exp 53 `ShardService.Query` KNN cache.
+    /// When set, the gRPC server registers a `ShardService` backed by
+    /// an in-memory cache; clients hit it when their query vector
+    /// matches an indexed entry at `cos >= tau`. Disk-format loaders
+    /// are a follow-up — the v1 cache starts empty and is populated
+    /// in-process (typically by tests). Common production value is
+    /// `0.97` matching the Python prototype.
+    #[arg(long, value_name = "TAU")]
+    pub shard_query_tau: Option<f32>,
+
     /// TLS certificate path for HTTPS.
     #[arg(long)]
     pub tls_cert: Option<PathBuf>,
@@ -587,6 +598,22 @@ pub struct Cli {
     /// TLS private key path for HTTPS.
     #[arg(long)]
     pub tls_key: Option<PathBuf>,
+
+    /// ADR-0019: enable an HTTP/3 listener on this port. Routers
+    /// opting into the h3 shard transport (`--http3-shards`) connect
+    /// here for per-stream-independent fan-out (escapes TCP HoL
+    /// blocking on parallel MoE expert sub-requests). Requires
+    /// building with `--features http3`. Coexists with the HTTP/1.1
+    /// listener on `--port`; both serve the same axum::Router.
+    ///
+    /// TLS reuse: if `--tls-cert` and `--tls-key` are set, the h3
+    /// listener uses the same cert. Otherwise, an in-memory
+    /// self-signed cert is generated at startup and its SHA-256
+    /// fingerprint is logged — clients pin it via
+    /// `--shard-cert-fingerprint` on the router side.
+    #[arg(long)]
+    #[cfg(feature = "http3")]
+    pub http3_port: Option<u16>,
 
     /// Bind a Unix domain socket alongside the TCP listener for same-host
     /// MoE shard clients.  Skips the kernel TCP stack and saves ~50 µs/call
@@ -627,6 +654,13 @@ pub struct Cli {
     #[arg(long, value_name = "PATH")]
     pub vindex_store: Option<String>,
 
+    /// ADR-0010: SHA-256 fingerprint (hex) of the router's QUIC server
+    /// cert. Required only when `--join` uses the `quic://` scheme.
+    /// Without this, the QUIC client skips certificate verification —
+    /// LAN / dev only.
+    #[arg(long, value_name = "HEX")]
+    pub quic_cert_fingerprint: Option<String>,
+
     /// Server-side MoE expert shard map: `"START-END=URL,START-END=URL,..."`
     /// The walk-ffn handler dispatches MoE expert calls to these remote servers.
     /// Combine with --layers for full 2D (layer × expert) sharding.
@@ -647,6 +681,69 @@ pub struct Cli {
 /// UDS / TLS / gRPC sockets) and run forever.
 ///
 /// `main` is a thin wrapper: parse `Cli`, init tracing, hand off here. Splitting
+/// ADR-0019 — spawn an HTTP/3 listener alongside the existing
+/// HTTP/1.1 TCP listener when `--http3-port` is set. Reuses the
+/// TLS cert from `--tls-cert`/`--tls-key` if both are set;
+/// otherwise auto-generates a self-signed leaf cert and prints its
+/// fingerprint so the router operator can pin it.
+///
+/// The h3 listener serves the same `axum::Router` as the dense
+/// path — handlers are identical, only the transport differs.
+#[cfg(feature = "http3")]
+async fn spawn_http3_listener_if_configured(cli: &Cli, app: axum::Router) -> Result<(), BoxError> {
+    let Some(port) = cli.http3_port else {
+        return Ok(());
+    };
+
+    use larql_router_protocol::transport::h3 as h3_transport;
+    use larql_router_protocol::transport::quic as quic_transport;
+
+    // Install the rustls ring crypto provider once. Safe to call
+    // multiple times — second call is a no-op.
+    let _ = rustls::crypto::ring::default_provider().install_default();
+
+    // TLS material: prefer `--tls-cert`/`--tls-key` (reuses the HTTPS
+    // pair); fall back to an auto-generated self-signed cert. We
+    // print the fingerprint either way so operators have one log
+    // line they can hand to the router's `--shard-cert-fingerprint`.
+    let tls = if let (Some(cert_path), Some(key_path)) = (&cli.tls_cert, &cli.tls_key) {
+        let cert_pem = std::fs::read_to_string(cert_path)
+            .map_err(|e| format!("read --tls-cert {}: {e}", cert_path.display()))?;
+        let key_pem = std::fs::read_to_string(key_path)
+            .map_err(|e| format!("read --tls-key {}: {e}", key_path.display()))?;
+        // Server name embedded in the cert isn't used by the router
+        // when fingerprint-pinning, but we keep the convention here.
+        quic_transport::SelfSignedTls {
+            cert_pem,
+            key_pem,
+            fingerprint: String::new(),
+            server_name: "larql-server".to_string(),
+        }
+    } else {
+        let generated = quic_transport::self_signed_tls("larql-server")
+            .map_err(|e| format!("self-signed cert generation: {e}"))?;
+        info!(
+            fingerprint = %generated.fingerprint,
+            "HTTP/3: generated self-signed cert. Routers must pin this \
+             fingerprint via --shard-cert-fingerprint when opting into \
+             --http3-shards."
+        );
+        generated
+    };
+
+    let addr: std::net::SocketAddr = format!("{}:{}", cli.host, port).parse()?;
+    let endpoint = h3_transport::server_endpoint(addr, &tls)
+        .map_err(|e| format!("h3 endpoint bind {addr}: {e}"))?;
+    info!("Listening: h3 (HTTP/3 over QUIC) on {addr}");
+
+    tokio::spawn(async move {
+        if let Err(e) = h3_transport::serve_axum(endpoint, app).await {
+            tracing::error!("h3 listener crashed: {e:#}");
+        }
+    });
+    Ok(())
+}
+
 /// the orchestration out lets integration tests drive boot without going
 /// through `clap::Parser::parse_from`.
 pub async fn serve(cli: Cli) -> Result<(), BoxError> {
@@ -943,6 +1040,28 @@ pub async fn serve(cli: Cli) -> Result<(), BoxError> {
     if let Some(grpc_port) = cli.grpc_port {
         let grpc_addr = format!("{}:{}", cli.host, grpc_port).parse()?;
         let grpc_state = Arc::clone(&state);
+        // Exp 53 ShardService. Vindex-backed: the cache shares the
+        // server's loaded `PatchedVindex`, so "compiled facts" live as
+        // vindex patches (via `PatchedVindex::add_patch` etc.) and we
+        // don't maintain a separate on-disk cache format. Opt-in via
+        // `--shard-query-tau`; deployments that don't set it pay zero
+        // for the feature.
+        let shard_source = cli.shard_query_tau.and_then(|tau| {
+            let model = state.models.first()?;
+            info!(
+                "ShardService: enabled on model {} with tau={tau} (vindex-backed)",
+                model.id
+            );
+            // Share the model's live `Arc<RwLock<PatchedVindex>>` —
+            // patches added at runtime via `model.patched.write().await`
+            // are immediately visible to the shard service, and the
+            // shard service sees the same patch lineage the inference
+            // path walks. No snapshot, no clone of the base.
+            Some(crate::shard_query::ShardSource::vindex(
+                std::sync::Arc::clone(&model.patched),
+                tau,
+            ))
+        });
         info!("gRPC: listening on {}", grpc_addr);
         tokio::spawn(async move {
             let vindex_svc = grpc::VindexGrpcService {
@@ -951,14 +1070,17 @@ pub async fn serve(cli: Cli) -> Result<(), BoxError> {
             let expert_svc = grpc_expert::ExpertGrpcService {
                 state: Arc::clone(&grpc_state),
             };
-            if let Err(e) = tonic::transport::Server::builder()
+            let mut builder = tonic::transport::Server::builder()
                 .add_service(
                     grpc::proto::vindex_service_server::VindexServiceServer::new(vindex_svc),
                 )
-                .add_service(larql_router_protocol::ExpertServiceServer::new(expert_svc))
-                .serve(grpc_addr)
-                .await
-            {
+                .add_service(larql_router_protocol::ExpertServiceServer::new(expert_svc));
+            if let Some(source) = shard_source {
+                let shard_svc = crate::shard_query::ShardGrpcService::new(source);
+                builder =
+                    builder.add_service(larql_router_protocol::ShardServiceServer::new(shard_svc));
+            }
+            if let Err(e) = builder.serve(grpc_addr).await {
                 tracing::error!("gRPC server error: {}", e);
             }
         });
@@ -1000,6 +1122,7 @@ pub async fn serve(cli: Cli) -> Result<(), BoxError> {
                             disk_bytes: 0, // TODO: query disk
                             store_path: store_path.clone(),
                             grid_key: cli.grid_key.clone(),
+                            quic_cert_fingerprint: cli.quic_cert_fingerprint.clone(),
                         });
                     }
                 }
@@ -1009,6 +1132,19 @@ pub async fn serve(cli: Cli) -> Result<(), BoxError> {
             }
         }
 
+        // If the deployer supplied --available-ram alongside a loaded model,
+        // build a reusable Mode B fallback config so the server re-enters the
+        // available pool after a drain instead of just disconnecting (GT6
+        // §Phase B2). The construction logic + tests live in `announce.rs`.
+        let available_after_drain = announce::build_available_after_drain(
+            cli.available_ram
+                .as_deref()
+                .and_then(|s| parse_ram_bytes(s).ok()),
+            &listen_url,
+            cli.vindex_store.as_deref(),
+            cli.grid_key.as_deref(),
+        );
+
         for m in &models {
             let (layer_start, layer_end) = match layer_range {
                 Some((s, e)) => (s as u32, (e - 1) as u32),
@@ -1016,6 +1152,11 @@ pub async fn serve(cli: Cli) -> Result<(), BoxError> {
             };
             let vhash = announce::vindex_identity_hash(&m.id, m.config.num_layers);
             for join_url in &join_urls {
+                let avail = available_after_drain.as_ref().map(|base| {
+                    let mut a = base.clone();
+                    a.join_url = join_url.clone();
+                    a
+                });
                 announce::run_announce(announce::AnnounceConfig {
                     join_url: join_url.clone(),
                     model_id: m.id.clone(),
@@ -1027,6 +1168,9 @@ pub async fn serve(cli: Cli) -> Result<(), BoxError> {
                     vindex_hash: vhash.clone(),
                     latency_tracker: m.layer_latency_tracker.clone(),
                     requests_in_flight: m.requests_in_flight.clone(),
+                    requests_total: m.requests_total.clone(),
+                    available_after_drain: avail,
+                    quic_cert_fingerprint: cli.quic_cert_fingerprint.clone(),
                 });
             }
         }
@@ -1082,6 +1226,15 @@ pub async fn serve(cli: Cli) -> Result<(), BoxError> {
                 uds_path.display()
             );
         }
+
+        // ADR-0019: optional HTTP/3 listener alongside the HTTP/1.1
+        // TCP listener. Spawned only when `--http3-port` is set and
+        // the crate is built with `--features http3`. Both listeners
+        // share the same `axum::Router`, so request handlers are
+        // identical regardless of transport — the only difference is
+        // per-stream independence on the wire.
+        #[cfg(feature = "http3")]
+        spawn_http3_listener_if_configured(&cli, app.clone()).await?;
 
         info!("Listening: http://{}", addr);
         // `set_nodelay(true)` on every accepted connection — disables

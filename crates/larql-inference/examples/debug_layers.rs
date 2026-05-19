@@ -6,12 +6,12 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let vd = std::path::PathBuf::from("output/gemma3-4b-v2.vindex");
     let mut index =
         larql_vindex::VectorIndex::load_vindex(&vd, &mut larql_vindex::SilentLoadCallbacks)?;
-    let _ = index.load_attn_q4k(&vd);
-    let _ = index.load_interleaved_q4k(&vd);
+    let _ = index.load_attn_kquant(&vd);
+    let _ = index.load_interleaved_kquant(&vd);
     let backend = larql_inference::default_backend();
     let gate_index: &dyn larql_vindex::GateIndex = &index;
 
-    let q4_ffn_mmap = gate_index.interleaved_q4k_mmap_ref().unwrap();
+    let q4_ffn_mmap = gate_index.interleaved_kquant_mmap_ref().unwrap();
     let intermediate = gate_index.num_features(0);
     let hidden = weights.hidden_size;
     let q4_ffn_per_matrix = (intermediate * hidden).div_ceil(256) * 148;

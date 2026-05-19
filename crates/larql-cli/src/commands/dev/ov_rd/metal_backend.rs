@@ -14,7 +14,7 @@ pub(super) fn init(use_metal: bool) -> Option<Backend> {
 
     #[cfg(all(feature = "metal", target_os = "macos"))]
     {
-        match larql_compute::metal::MetalBackend::new() {
+        match larql_compute_metal::MetalBackend::new() {
             Some(b) => {
                 eprintln!("Metal backend: initialized (GPU-accelerated forward passes)");
                 Some(Box::new(b))
@@ -45,7 +45,12 @@ pub(super) fn try_metal_baseline(
     index: &larql_vindex::VectorIndex,
     backend: &Backend,
 ) -> Option<ndarray::Array2<f32>> {
-    larql_inference::vindex::predict_q4k_metal_hidden(weights, token_ids, index, backend.as_ref())
+    larql_inference::vindex::predict_kquant_metal_hidden(
+        weights,
+        token_ids,
+        index,
+        backend.as_ref(),
+    )
 }
 
 /// Capture the target head's pre-W_O output at `target_layer` using GPU,
@@ -60,7 +65,7 @@ pub(super) fn try_metal_capture_pre_wo(
     target_head: usize,
     backend: &Backend,
 ) -> Option<Vec<f32>> {
-    larql_inference::vindex::predict_q4k_metal_capture_pre_wo(
+    larql_inference::vindex::predict_kquant_metal_capture_pre_wo(
         weights,
         token_ids,
         index,
@@ -83,7 +88,7 @@ pub(super) fn try_metal(
     replacement_delta: &ndarray::Array2<f32>,
     backend: &Backend,
 ) -> Option<ndarray::Array2<f32>> {
-    larql_inference::vindex::predict_q4k_metal_with_replaced_head_residual_delta(
+    larql_inference::vindex::predict_kquant_metal_with_replaced_head_residual_delta(
         weights,
         token_ids,
         index,

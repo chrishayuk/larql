@@ -29,7 +29,7 @@ fn main() {
 
     eprintln!("Loading Q4K vindex from {}...", vindex_dir.display());
     let mut cb = larql_vindex::SilentLoadCallbacks;
-    let mut q4k = larql_vindex::load_model_weights_q4k(&vindex_dir, &mut cb).expect("q4k load");
+    let mut q4k = larql_vindex::load_model_weights_kquant(&vindex_dir, &mut cb).expect("q4k load");
     eprintln!("  q4k tensors:   {}", q4k.tensors.len());
 
     // Also dequantise layer 0's attn/FFN Q4K blocks into q4k.tensors so the
@@ -37,9 +37,11 @@ fn main() {
     let mut attn_cb = larql_vindex::SilentLoadCallbacks;
     let mut index =
         larql_vindex::VectorIndex::load_vindex(&vindex_dir, &mut attn_cb).expect("vindex load");
-    index.load_attn_q4k(&vindex_dir).expect("load_attn_q4k");
     index
-        .load_interleaved_q4k(&vindex_dir)
+        .load_attn_kquant(&vindex_dir)
+        .expect("load_attn_kquant");
+    index
+        .load_interleaved_kquant(&vindex_dir)
         .expect("load_interleaved");
     for layer in [0usize, 10] {
         let hidden = q4k.hidden_size;
@@ -61,8 +63,8 @@ fn main() {
         };
         let q_dim = num_q * hd;
         let kv_dim = num_kv * hd;
-        let attn = index.attn_q4k_layer_data(layer).unwrap();
-        let ffn = index.interleaved_q4k_layer_data(layer).unwrap();
+        let attn = index.attn_kquant_layer_data(layer).unwrap();
+        let ffn = index.interleaved_kquant_layer_data(layer).unwrap();
         let dequant = |(bytes, fmt): (&[u8], &str), rows: usize, cols: usize| {
             let n = rows * cols;
             let padded = n.div_ceil(256) * 256;

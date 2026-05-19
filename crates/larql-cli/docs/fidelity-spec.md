@@ -4,9 +4,14 @@
 **Source experiments:** Shannon Exp 34 (internal bit contribution),
 Exp 35 (FFN functional fidelity), Exp 36 (patch propagation),
 Exp 37 (bit-budget additivity).
-**Crates touched:** `larql-cli` (new subcommand), `kv-cache-benchmark`
-(reusable bridges already exist), `larql-inference` (read-only consumer of
-internal forward-pass intermediates).
+**Crates touched:** `larql-cli` (new subcommand), `larql-inference`
+(read-only consumer of internal forward-pass intermediates).
+**Historical note:** earlier drafts pointed at reusable bridges in
+`kv-cache-benchmark/examples/{q4k_ffn_raw_bridge,patch_propagation_q4k,
+bit_budget_additivity_q4k}.rs`. That crate was retired in 2026-05-16 and
+its experiment-specific bridges were dropped — the work needs to be
+redone against the production `larql_kv::vindex_compare` API or rebuilt
+fresh inside `larql-cli`.
 
 ## 1. Purpose
 
@@ -133,20 +138,19 @@ Determinism rules:
 
 ## 5. Reuse
 
-The implementation should sit on top of the existing bridges:
+The closest current building block is
+`crates/larql-kv/src/vindex_compare.rs` + its `vindex_compare` example,
+which already forward-passes two vindexes through the same model and emits
+the per-prompt + aggregate fidelity report (cos / KL / top-K jaccard /
+argmax agreement). Lifting it into a CLI subcommand is mostly:
 
-```
-crates/kv-cache-benchmark/examples/q4k_ffn_raw_bridge.rs
-crates/kv-cache-benchmark/examples/patch_propagation_q4k.rs
-crates/kv-cache-benchmark/examples/bit_budget_additivity_q4k.rs
-```
-
-These already export real FFN inputs from the Python side, run the
-production Rust q4k path, and import outputs back. Lifting them into a CLI
-subcommand is mostly:
-
-1. Replace the JSONL-from-Python entry point with a Rust corpus loader.
-2. Replace the result-files-on-disk handoff with in-process arrays.
+1. Replace the example's CLI-args main with a `clap` subcommand.
+2. Add the Shannon-style internal-bit-contribution / patch-propagation /
+   bit-budget-additivity scoring on top of the existing per-prompt
+   `PromptReport` shape — these used to live in
+   `kv-cache-benchmark/examples/{q4k_ffn_raw_bridge,patch_propagation_q4k,
+   bit_budget_additivity_q4k}.rs` (retired 2026-05-16) and need a fresh
+   port against the production `WalkFfn`/`kquant_ffn_forward_layer` API.
 3. Wrap the existing harness in `commands/dev/fidelity/`.
 
 The harness must remain reusable in the bench crate; do not delete the
@@ -206,8 +210,9 @@ Operational guardrails surfaced by the experiments:
 - `~/chris-source/chris-experiments/shannon/34_internal_bit_contribution/SPEC.md`
 - `~/chris-source/chris-experiments/shannon/36_patch_propagation/SPEC.md`
 - `~/chris-source/chris-experiments/shannon/37_bit_budget_additivity/SPEC.md`
-- `crates/kv-cache-benchmark/examples/q4k_ffn_raw_bridge.rs`
-- `crates/kv-cache-benchmark/examples/patch_propagation_q4k.rs`
-- `crates/kv-cache-benchmark/examples/bit_budget_additivity_q4k.rs`
+- `crates/larql-kv/src/vindex_compare.rs` + `examples/vindex_compare.rs`
+  — production A/B comparator; closest live equivalent of the retired
+  `kv-cache-benchmark` experiment bridges (q4k_ffn_raw_bridge,
+  patch_propagation_q4k, bit_budget_additivity_q4k).
 - Memory: `feedback_isolated_vs_batched_kernel_profile` — batched fidelity
   is what predicts end-to-end; isolated kernel cosine does not.

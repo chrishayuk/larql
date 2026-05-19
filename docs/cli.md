@@ -234,6 +234,7 @@ larql shannon decode google/gemma-3-4b-it --vindex ./gemma-q4k.vindex --metal --
 | `layers` | Per-layer Shannon bits via the final-norm logit lens. At every layer L (embed plus each post-block residual), project through `final_norm + lm_head` and report bits/token, KL-to-final, and adjacent `bits_saved[L]` deltas. |
 | `encode` | Write a real arithmetic-coded bitstream driven by model probabilities. Intended for short excerpts. |
 | `decode` | Reconstruct text from `encode` output using the same model. |
+| `verify` | Three-engine cross-engine correctness check (LARQL Rust ↔ HF/PyTorch ↔ MLX) on the same corpus. Pretty delta table, exits non-zero if any pair-wise delta exceeds `--threshold`. See [Cross-engine verify](#cross-engine-verify) below. |
 
 Without `--vindex`, `encode` / `decode` rerun the dense model for each
 recovered token and are intended only for short excerpts. With `--vindex
@@ -243,6 +244,75 @@ LM-head query for each forced token. The vindex codec is segmented into
 float drift. The payload is real entropy-coded data; the file also includes a
 small header with the first token, token count, original byte count, context
 size, and payload length.
+
+#### Cross-engine verify
+
+`larql shannon verify` orchestrates the three independent bits/char scorers
+(LARQL Rust in-process, plus MLX and HF/PyTorch as Python subprocesses) on
+the same corpus and prints a delta table. Exits non-zero if any pair-wise
+delta exceeds `--threshold`.
+
+```bash
+larql shannon verify google/gemma-3-4b-it \
+    --corpus data/gutenberg/frankenstein.txt \
+    --bytes 1024 \
+    --context 512 --stride 256 \
+    --threshold 0.5
+```
+
+Output:
+
+```
+engine     tokens   bits/token    bits/char     total bits   Δ vs ref    elapsed
+--------------------------------------------------------------------------------
+rust          247       4.3239       1.0712       1068.014    +0.000%       6.6s
+mlx           247       4.3264       1.0718       1068.611    +0.056%       5.2s
+hf            247       4.3239       1.0712       1068.011          —       6.8s
+
+max pair-wise delta: 0.056% (mlx vs hf)
+threshold:           0.500%
+PASS
+```
+
+Flags:
+
+| Flag | Default | Meaning |
+|---|---|---|
+| `--engines mlx,hf` | both | Comma list. `rust` always runs. |
+| `--threshold 0.5` | 0.5% | PASS/FAIL boundary on max pair-wise delta. |
+| `--python` | `.venv/bin/python` | Interpreter for the MLX and HF scripts. |
+| `--mlx-script` | `scripts/shannon_score_mlx.py` | Path to the MLX scorer. |
+| `--hf-script` | `scripts/shannon_score_hf.py` | Path to the HF scorer. |
+| `--hf-device` | `cpu` | `cpu` is deterministic; `mps` is faster on Apple Silicon. |
+
+Apparent quirks worth knowing about (also in
+[`scripts/README_shannon_score.md`](../scripts/README_shannon_score.md)):
+
+- The corpus is CRLF-normalized internally (Python `read_text` strips `\r`
+  silently; LARQL Rust doesn't, and the difference would split tokenization).
+- BOS handling matches LARQL's `encode_prompt(..., add_special_tokens=true)`
+  semantics; don't strip BOS from the Python scripts manually.
+- F32 throughout — the Python references cast bf16/fp16 weights to F32 on
+  load. Mixed-precision would introduce its own noise.
+
+When verify reports a real divergence, see
+[`docs/diagnoses/shannon-cross-engine-divergence.md`](diagnoses/shannon-cross-engine-divergence.md)
+for the bisection methodology and the three diagnostic env vars
+(`LARQL_FORCE_GLOBAL_LAYERS`, `LARQL_ROPE_POS_DIVISOR_GLOBAL`,
+`LARQL_LLAMA3_ROPE_SCALING`, `LARQL_NORM_EPS_OVERRIDE`) used to localise
+the bugs in LARQL's forward path.
+
+For a multi-architecture sweep covering F32 reference and the Q4K Metal
+path in one shot:
+
+```bash
+.venv/bin/python scripts/diagnose_models.py
+```
+
+That runs `shannon verify` against every architecture LARQL supports
+(SmolLM2, Llama, Mistral, Gemma 3) and additionally runs `shannon encode
+--vindex --metal` for models with a local Q4K vindex to verify the GPU
+path stays within typical Q4K_M quantization gap (~30–40%).
 
 ### `larql pull`
 
@@ -895,10 +965,10 @@ larql extract-index [MODEL] --output <OUTPUT> [OPTIONS]
 | `-o, --output <OUTPUT>` | Output path for the `.vindex` directory | — |
 | `--level <LEVEL>` | `browse` / `attention` / `inference` / `all` — strict increasing tiers. See below. | `inference` |
 | `--f32` | Opt out of f16 on side-channel tensors. Rarely wanted — doubles file sizes. | off (f16) |
-| `--quant <FORMAT>` | Inline-quantise forward-pass weights: `none` or `q4k`. `q4k` emits Q4_K/Q6_K Ollama-compatible blocks; implies `--level all` + f16 side-channels. | `none` |
+| `--quant <FORMAT>` | Inline-quantise forward-pass weights: `none`, `q4k`, or `kquant` (alias). The k-quant family emits Q4_K/Q6_K Ollama-compatible blocks; implies `--level all` + f16 side-channels. | `none` |
 | `--compact` | Skip `up_weights.bin` + `down_weights.bin`; FFN weights live only in feature-major files. `WalkFfn`-only. | off |
-| `--drop-gate-vectors` | Skip `gate_vectors.bin` entirely; loader rebuilds gate from `interleaved_q4k.bin` at load. Only with `--quant q4k`. | off |
-| `--down-q4k` | Quantise FFN down-proj as Q4_K instead of Q6_K. Saves ~1.8 GB on 31B, cuts down-matmul cost ~1.5–1.7× at decode. Introduces ~2.5× more probability-redistribution noise (top-1 + top-5 preserved). Validated by `walk_correctness`, which auto-relaxes its prob-delta gate from 0.02 to 0.035 when it detects Q4_K down. Only with `--quant q4k`. | off |
+| `--drop-gate-vectors` | Skip `gate_vectors.bin` entirely; loader rebuilds gate from `interleaved_kquant.bin` (or legacy `interleaved_q4k.bin`) at load. Only with `--quant q4k` / `kquant`. | off |
+| `--down-q4k` | Quantise FFN down-proj as Q4_K instead of Q6_K. Saves ~1.8 GB on 31B, cuts down-matmul cost ~1.5–1.7× at decode. Introduces ~2.5× more probability-redistribution noise (top-1 + top-5 preserved). Validated by `walk_correctness`, which auto-relaxes its prob-delta gate from 0.02 to 0.035 when it detects Q4_K down. Only with `--quant q4k` / `kquant`. | off |
 | `--from-vectors <PATH>` | Build from already-extracted NDJSON vector files instead of model weights | — |
 | `--down-top-k <N>` | Top-K tokens per feature in down metadata | 10 |
 | `--include-weights` | Alias for `--level all` (deprecated — use `--level` directly) | — |
@@ -954,14 +1024,20 @@ larql extract -o gemma3-4b.vindex --from-vectors vectors/
 larql extract google/gemma-3-4b-it -o gemma3-4b.vindex --resume
 ```
 
-**`--quant q4k` details:**
+**`--quant q4k` (alias `--quant kquant`) details:**
 
 - Q/K/O + gate/up: Q4_K (148 bytes per 256 values)
 - V + down: Q6_K (210 bytes per 256 values), or Q4_K with `--down-q4k`
-- `--level browse` is implicitly promoted to `--level all` — the Q4_K
-  writer materialises all of attention, FFN, norms, and `lm_head` in
-  one pass, so a browse-only Q4_K vindex would be incoherent.
-- Side-channel tensors that Q4_K doesn't quantise — `gate_vectors.bin`
+- Writers emit `attn_weights_kquant.bin`, `interleaved_kquant.bin`,
+  `lm_head_kquant.bin` (plus matching `*_manifest.json` sidecars).
+  Readers also accept the legacy `*_q4k.bin` / `lm_head_q4.bin`
+  filenames so pre-rename vindexes keep loading. `index.json` records
+  `"quant": "q4k"` for v1 vindexes; readers accept `"kquant"` too.
+- `--level browse` is implicitly promoted to `--level all` — the
+  k-quant writer materialises all of attention, FFN, norms, and
+  `lm_head` in one pass, so a browse-only k-quant vindex would be
+  incoherent.
+- Side-channel tensors that k-quant doesn't quantise — `gate_vectors.bin`
   and `embeddings.bin` — are stored at f16 by default under `--quant q4k`.
   Leaving them at f32 pairs 4-bit main weights with 32-bit lookup
   tables, roughly doubling the vindex footprint for no accuracy gain.

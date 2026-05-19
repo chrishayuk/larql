@@ -11,7 +11,7 @@
 //!   --model HF_ID       (override; default reads it from vindex index.json)
 //!
 //! Like `streaming_demo`, this loads weights + tokenizer + arch from the
-//! vindex (`load_model_weights_q4k`) rather than re-downloading the
+//! vindex (`load_model_weights_kquant`) rather than re-downloading the
 //! safetensors via `InferenceModel::load`. The vindex's transformed
 //! `norms.bin` doesn't match HF's raw norms — using the wrong source
 //! produced first-token gibberish on Gemma 4 26B-A4B even though every
@@ -64,7 +64,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let model_name: String = model_override.unwrap_or(config.model.clone());
 
     let mut cb = larql_vindex::SilentLoadCallbacks;
-    let mut weights = larql_vindex::load_model_weights_q4k(&vindex_path, &mut cb)?;
+    let mut weights = larql_vindex::load_model_weights_kquant(&vindex_path, &mut cb)?;
     let tokenizer = larql_vindex::load_vindex_tokenizer(&vindex_path)?;
     let num_layers = weights.num_layers;
 

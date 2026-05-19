@@ -5,7 +5,7 @@ use std::time::Instant;
 use clap::Args;
 use larql_inference::{encode_prompt, hidden_to_raw_logits};
 use larql_vindex::{
-    load_model_weights_q4k, load_vindex_tokenizer, SilentLoadCallbacks, VectorIndex,
+    load_model_weights_kquant, load_vindex_tokenizer, SilentLoadCallbacks, VectorIndex,
 };
 use ndarray::{s, Array2};
 
@@ -209,9 +209,9 @@ pub(super) fn run_oracle_roundtrip(
     let start = Instant::now();
     let mut cb = SilentLoadCallbacks;
     let mut index = VectorIndex::load_vindex(&args.index, &mut cb)?;
-    index.load_attn_q4k(&args.index)?;
-    index.load_interleaved_q4k(&args.index)?;
-    let mut weights = load_model_weights_q4k(&args.index, &mut cb)?;
+    index.load_attn_kquant(&args.index)?;
+    index.load_interleaved_kquant(&args.index)?;
+    let mut weights = load_model_weights_kquant(&args.index, &mut cb)?;
     let tokenizer = load_vindex_tokenizer(&args.index)?;
     if weights.arch.is_hybrid_moe() {
         return Err("ov-rd oracle-roundtrip currently supports dense FFN vindexes only".into());
@@ -270,7 +270,7 @@ pub(super) fn run_oracle_roundtrip(
         let stratum = record.stratum.as_deref().unwrap_or("unknown");
 
         let baseline_hidden =
-            larql_inference::vindex::predict_q4k_hidden(&mut weights, &token_ids, &index, None);
+            larql_inference::vindex::predict_kquant_hidden(&mut weights, &token_ids, &index, None);
         let baseline_logits = final_logits(&weights, &baseline_hidden);
         let baseline_logp = log_softmax(&baseline_logits);
 
@@ -330,9 +330,9 @@ pub(super) fn run_oracle_lowrank(
     let start = Instant::now();
     let mut cb = SilentLoadCallbacks;
     let mut index = VectorIndex::load_vindex(&args.index, &mut cb)?;
-    index.load_attn_q4k(&args.index)?;
-    index.load_interleaved_q4k(&args.index)?;
-    let mut weights = load_model_weights_q4k(&args.index, &mut cb)?;
+    index.load_attn_kquant(&args.index)?;
+    index.load_interleaved_kquant(&args.index)?;
+    let mut weights = load_model_weights_kquant(&args.index, &mut cb)?;
     let tokenizer = load_vindex_tokenizer(&args.index)?;
     if weights.arch.is_hybrid_moe() {
         return Err("ov-rd oracle-lowrank currently supports dense FFN vindexes only".into());
@@ -414,7 +414,7 @@ pub(super) fn run_oracle_lowrank(
         let stratum = record.stratum.as_deref().unwrap_or("unknown");
 
         let baseline_hidden =
-            larql_inference::vindex::predict_q4k_hidden(&mut weights, &token_ids, &index, None);
+            larql_inference::vindex::predict_kquant_hidden(&mut weights, &token_ids, &index, None);
         let baseline_logits = final_logits(&weights, &baseline_hidden);
         let baseline_logp = log_softmax(&baseline_logits);
         let baseline_top1 = argmax(&baseline_logits);
@@ -548,7 +548,7 @@ fn forward_q4k_oracle_roundtrip_head(
 ) -> Result<(Array2<f32>, RoundtripPatchMetrics), Box<dyn std::error::Error>> {
     let mut metrics = None;
 
-    let h = larql_inference::vindex::predict_q4k_hidden_with_mapped_pre_o_head(
+    let h = larql_inference::vindex::predict_kquant_hidden_with_mapped_pre_o_head(
         weights,
         token_ids,
         index,
@@ -605,7 +605,7 @@ fn forward_q4k_oracle_lowrank_head(
 ) -> Result<(Array2<f32>, RoundtripPatchMetrics), Box<dyn std::error::Error>> {
     let mut metrics = None;
 
-    let h = larql_inference::vindex::predict_q4k_hidden_with_mapped_pre_o_head(
+    let h = larql_inference::vindex::predict_kquant_hidden_with_mapped_pre_o_head(
         weights,
         token_ids,
         index,

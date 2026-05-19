@@ -31,7 +31,7 @@ pub(super) fn forward_q4k_oracle_pq_head(
     let mut metrics = None;
     let mut oracle_codes = Vec::new();
 
-    let h = larql_inference::vindex::predict_q4k_hidden_with_mapped_pre_o_head(
+    let h = larql_inference::vindex::predict_kquant_hidden_with_mapped_pre_o_head(
         weights,
         token_ids,
         index,
@@ -107,7 +107,7 @@ pub(super) fn forward_q4k_oracle_pq_mode_d_head(
     stratum: &str,
 ) -> Result<Array2<f32>, Box<dyn std::error::Error>> {
     let hidden_size = weights.hidden_size;
-    larql_inference::vindex::predict_q4k_hidden_with_mapped_head_residual_delta(
+    larql_inference::vindex::predict_kquant_hidden_with_mapped_head_residual_delta(
         weights,
         token_ids,
         index,
@@ -159,7 +159,7 @@ pub(super) fn forward_q4k_predicted_address_mode_d_head(
     }
     let replacement_delta =
         Array2::from_shape_vec((token_ids.len(), weights.hidden_size), replacement_delta)?;
-    larql_inference::vindex::predict_q4k_hidden_with_replaced_head_residual_delta(
+    larql_inference::vindex::predict_kquant_hidden_with_replaced_head_residual_delta(
         weights,
         token_ids,
         index,

@@ -1,7 +1,7 @@
 //! ffn_profile — per-phase FFN timing on a loaded vindex.
 //!
 //! Times each stage of a K=full walk at one layer:
-//!   gate_scores_batch, q4k_matmul_transb(up), q4k_matmul_transb(down).
+//!   gate_scores_batch, kquant_matmul_transb(up), kquant_matmul_transb(down).
 //! Prints medians across iterations. Run:
 //!   cargo run --release -p larql-inference --example ffn_profile -- \
 //!     --model MODEL --vindex DIR [--layer 30] [--seq-len 6] [--iters 20]
@@ -128,7 +128,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     // Warmup — make sure mmap pages and Q4K metadata are hot.
     for _ in 0..2 {
         let _ = index.gate_scores_batch_backend(args.layer, &x, backend_ref);
-        let _ = index.q4k_matmul_transb(args.layer, 1, x_flat, args.seq_len, backend_ref);
+        let _ = index.kquant_matmul_transb(args.layer, 1, x_flat, args.seq_len, backend_ref);
     }
 
     // --- Gate scores (CPU BLAS path) ---
@@ -151,7 +151,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let mut up_ms = Vec::with_capacity(args.iters);
     for _ in 0..args.iters {
         let t = Instant::now();
-        let _ = index.q4k_matmul_transb(args.layer, 1, x_flat, args.seq_len, backend_ref);
+        let _ = index.kquant_matmul_transb(args.layer, 1, x_flat, args.seq_len, backend_ref);
         up_ms.push(t.elapsed().as_secs_f64() * 1000.0);
     }
 
@@ -162,7 +162,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let mut down_ms = Vec::with_capacity(args.iters);
     for _ in 0..args.iters {
         let t = Instant::now();
-        let _ = index.q4k_matmul_transb(args.layer, 2, &act_vec, args.seq_len, backend_ref);
+        let _ = index.kquant_matmul_transb(args.layer, 2, &act_vec, args.seq_len, backend_ref);
         down_ms.push(t.elapsed().as_secs_f64() * 1000.0);
     }
 
@@ -191,11 +191,11 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     );
     println!(
         "  {:<28}  {:>6.1}ms  {:>6.1}ms",
-        "q4k_matmul_transb (up)", u_med, u_p99
+        "kquant_matmul_transb (up)", u_med, u_p99
     );
     println!(
         "  {:<28}  {:>6.1}ms  {:>6.1}ms",
-        "q4k_matmul_transb (down)", d_med, d_p99
+        "kquant_matmul_transb (down)", d_med, d_p99
     );
     println!("  {}", "-".repeat(58));
     let layer_total_cpu = gc_med + u_med + d_med;

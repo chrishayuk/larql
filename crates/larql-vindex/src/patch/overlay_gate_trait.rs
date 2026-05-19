@@ -141,43 +141,43 @@ impl QuantizedFfnAccess for PatchedVindex {
         self.base.interleaved_q4_mmap_ref()
     }
 
-    fn has_interleaved_q4k(&self) -> bool {
-        self.base.has_interleaved_q4k()
+    fn has_interleaved_kquant(&self) -> bool {
+        self.base.has_interleaved_kquant()
     }
 
-    fn interleaved_q4k_mmap_ref(&self) -> Option<&[u8]> {
-        self.base.interleaved_q4k_mmap_ref()
+    fn interleaved_kquant_mmap_ref(&self) -> Option<&[u8]> {
+        self.base.interleaved_kquant_mmap_ref()
     }
 
-    fn interleaved_q4k_layer_data(&self, layer: usize) -> Option<[(&[u8], &str); 3]> {
-        self.base.interleaved_q4k_layer_data(layer)
+    fn interleaved_kquant_layer_data(&self, layer: usize) -> Option<[(&[u8], &str); 3]> {
+        self.base.interleaved_kquant_layer_data(layer)
     }
 
-    fn q4k_ffn_layer(&self, layer: usize, component: usize) -> Option<std::sync::Arc<Vec<f32>>> {
-        self.base.q4k_ffn_layer(layer, component)
+    fn kquant_ffn_layer(&self, layer: usize, component: usize) -> Option<std::sync::Arc<Vec<f32>>> {
+        self.base.kquant_ffn_layer(layer, component)
     }
 
-    fn q4k_ffn_row_into(
+    fn kquant_ffn_row_into(
         &self,
         layer: usize,
         component: usize,
         feat: usize,
         out: &mut [f32],
     ) -> bool {
-        self.base.q4k_ffn_row_into(layer, component, feat, out)
+        self.base.kquant_ffn_row_into(layer, component, feat, out)
     }
 
-    fn q4k_ffn_row_dot(
+    fn kquant_ffn_row_dot(
         &self,
         layer: usize,
         component: usize,
         feat: usize,
         x: &[f32],
     ) -> Option<f32> {
-        self.base.q4k_ffn_row_dot(layer, component, feat, x)
+        self.base.kquant_ffn_row_dot(layer, component, feat, x)
     }
 
-    fn q4k_ffn_row_scaled_add_via_cache(
+    fn kquant_ffn_row_scaled_add_via_cache(
         &self,
         layer: usize,
         component: usize,
@@ -186,14 +186,14 @@ impl QuantizedFfnAccess for PatchedVindex {
         out: &mut [f32],
     ) -> bool {
         self.base
-            .q4k_ffn_row_scaled_add_via_cache(layer, component, feat, alpha, out)
+            .kquant_ffn_row_scaled_add_via_cache(layer, component, feat, alpha, out)
     }
 
-    fn has_down_features_q4k(&self) -> bool {
-        self.base.has_down_features_q4k()
+    fn has_down_features_kquant(&self) -> bool {
+        self.base.has_down_features_kquant()
     }
 
-    fn q4k_down_feature_scaled_add(
+    fn kquant_down_feature_scaled_add(
         &self,
         layer: usize,
         feat: usize,
@@ -201,10 +201,10 @@ impl QuantizedFfnAccess for PatchedVindex {
         out: &mut [f32],
     ) -> bool {
         self.base
-            .q4k_down_feature_scaled_add(layer, feat, alpha, out)
+            .kquant_down_feature_scaled_add(layer, feat, alpha, out)
     }
 
-    fn q4k_ffn_row_scaled_add(
+    fn kquant_ffn_row_scaled_add(
         &self,
         layer: usize,
         component: usize,
@@ -213,10 +213,10 @@ impl QuantizedFfnAccess for PatchedVindex {
         out: &mut [f32],
     ) -> bool {
         self.base
-            .q4k_ffn_row_scaled_add(layer, component, feat, alpha, out)
+            .kquant_ffn_row_scaled_add(layer, component, feat, alpha, out)
     }
 
-    fn q4k_matmul_transb(
+    fn kquant_matmul_transb(
         &self,
         layer: usize,
         component: usize,
@@ -225,7 +225,7 @@ impl QuantizedFfnAccess for PatchedVindex {
         backend: Option<&dyn larql_compute::ComputeBackend>,
     ) -> Option<Vec<f32>> {
         self.base
-            .q4k_matmul_transb(layer, component, x, x_rows, backend)
+            .kquant_matmul_transb(layer, component, x, x_rows, backend)
     }
 }
 

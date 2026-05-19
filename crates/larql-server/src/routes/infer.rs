@@ -302,4 +302,39 @@ mod tests {
         assert_eq!(predictions[0]["token"], "Paris");
         assert_eq!(predictions[0]["probability"], 0.1235);
     }
+
+    #[test]
+    fn format_knn_override_without_model_top1_emits_no_top1_key() {
+        let ovr = larql_inference::KnnOverride {
+            token: "Paris".into(),
+            cosine: 0.92,
+            layer: 17,
+        };
+        let v = format_knn_override(&ovr, None);
+        assert_eq!(v["token"], "Paris");
+        let cos = v["cosine"].as_f64().unwrap();
+        assert!((cos - 0.92).abs() < 1e-4, "got {cos}");
+        assert_eq!(v["layer"], 17);
+        assert_eq!(v["source"], "knn_override");
+        assert_eq!(v["stage"], "post_logits");
+        assert_eq!(v["materialized"], false);
+        assert!(
+            v.get("model_top1").is_none(),
+            "no model_top1 when not supplied"
+        );
+    }
+
+    #[test]
+    fn format_knn_override_with_model_top1_includes_rounded_probability() {
+        let ovr = larql_inference::KnnOverride {
+            token: "Berlin".into(),
+            cosine: 0.87,
+            layer: 14,
+        };
+        let top1 = ("Madrid".to_string(), 0.987654321);
+        let v = format_knn_override(&ovr, Some(&top1));
+        assert_eq!(v["model_top1"]["token"], "Madrid");
+        // Probability is rounded to 4 decimals (round_probability * 10000).
+        assert_eq!(v["model_top1"]["probability"], 0.9877);
+    }
 }

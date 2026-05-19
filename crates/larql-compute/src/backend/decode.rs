@@ -206,7 +206,7 @@ pub trait DecodeBackend {
     /// post-RoPE K/V in the cache; returns the final hidden state
     /// `[seq_len * hidden]` for all positions.
     #[allow(clippy::too_many_arguments)]
-    fn prefill_q4(
+    fn prefill_kquant(
         &self,
         _layers: &[crate::FullPipelineLayer<'_>],
         _x: &[f32],
@@ -226,7 +226,7 @@ pub trait DecodeBackend {
     /// For AHORD oracle code computation: runs only layers 0..=target_layer on GPU
     /// (not all 34 layers), giving ~34× speedup for target_layer=0 over CPU.
     #[allow(clippy::too_many_arguments)]
-    fn full_pipeline_q4_capture_pre_wo(
+    fn full_pipeline_kquant_capture_pre_wo(
         &self,
         _layers: &[crate::FullPipelineLayer<'_>],
         _x: &[f32],
@@ -241,14 +241,14 @@ pub trait DecodeBackend {
         None
     }
 
-    /// Like `prefill_q4` but replaces one attention head's residual contribution
+    /// Like `prefill_kquant` but replaces one attention head's residual contribution
     /// at `target_layer` with `replacement_delta` — the AHORD Mode D injection path.
     ///
-    /// Uses the same KV cache + per-position RoPE setup as `prefill_q4`, so positional
+    /// Uses the same KV cache + per-position RoPE setup as `prefill_kquant`, so positional
     /// encodings are correct for all seq_len positions. Default returns `None`; the
     /// Metal backend overrides with the intervention-aware dispatch.
     #[allow(clippy::too_many_arguments)]
-    fn prefill_q4_with_head_replacement(
+    fn prefill_kquant_with_head_replacement(
         &self,
         layers: &[crate::FullPipelineLayer<'_>],
         x: &[f32],
@@ -262,6 +262,6 @@ pub trait DecodeBackend {
         replacement_delta: &[f32],
     ) -> Option<Vec<f32>> {
         let _ = (target_layer, target_head, replacement_delta);
-        self.prefill_q4(layers, x, hidden, inter, seq_len, use_qk_norm, softcap)
+        self.prefill_kquant(layers, x, hidden, inter, seq_len, use_qk_norm, softcap)
     }
 }

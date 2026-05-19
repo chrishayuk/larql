@@ -9,6 +9,30 @@ pre-1.0 phase. Forward-looking work lives in [`ROADMAP.md`](ROADMAP.md).
 Entries migrated from ROADMAP.md on 2026-05-10; pre-2026-05-10 entries
 preserve the date and voice they were originally written in.
 
+## [2026-05-17] — `DumpConfig` env-var cache drop
+
+Removed the `OnceLock` cache from `forward::dump_config::DumpConfig::get()`;
+the function now reads `LARQL_CPU_DUMP_LAYERS` / `LARQL_CPU_STAGE_DUMP` /
+`LARQL_STAGE_DUMP_LAYER` fresh on every call. The cached design silently
+broke any test fixture that rotated the dump-dir tempdir between calls —
+the second call would still hand out the path of the first (now-dropped)
+tempdir, and writes failed with `No such file or directory`.
+
+Root cause was visible in `tests/test_cpu_metal_parity.rs`: the suite's
+four cases run back-to-back, each calling `ResidualCapture::cpu_prefill`
+which allocates a fresh `tempfile::TempDir` and stomps the env var. The
+first case got the live dir; cases 2-4 wrote to a deleted path. Surfaced
+as `parity_gemma4_31b_dense_prefill` / `parity_llama2_7b_prefill` /
+`parity_mistral_7b_prefill` panicking on `CPU dump missing for layer 0`.
+
+Perf delta: ~150 ns per env-var read × ~170 reads per token (34 layers
+× 5 stage gates) = ~25 µs/token, or ~0.07% of a 35 ms decode step.
+`DumpConfig::current()` is the new canonical name; `get()` remains as an
+alias for back-compat. Four callers (`attention/block.rs`,
+`forward/layer.rs`, `vindex/kquant_forward/hidden.rs` × 2) bind the
+config to a local before calling `.layer_dir()` / `.stage_dir(layer)`
+so the returned `&str` doesn't borrow from a temporary.
+
 ## [2026-05-10] — A1+A2+A3 model architecture independence hardening
 
 Closed the "Open: Model architecture independence hardening" section of

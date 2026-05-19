@@ -80,7 +80,7 @@ pub struct ExtractIndexArgs {
 
     /// Skip writing `gate_vectors.bin`. Only valid with `--quant q4k`
     /// — the loader rebuilds the f16 gate by dequantizing
-    /// `interleaved_q4k.bin` at vindex-load time. Saves ~1.7 GB on a
+    /// `interleaved_kquant.bin` at vindex-load time. Saves ~1.7 GB on a
     /// 4B q4k vindex / ~14 GB on a 31B q4k vindex; costs ~1.6 s / ~12 s
     /// of CPU at load. See
     /// `cargo run --release -p larql-vindex --example bench_gate_dequant`
@@ -99,7 +99,7 @@ pub struct ExtractIndexArgs {
     down_q4k: bool,
 
     /// Emit `down_features_q4k.bin` (W2 feature-major down) so per-feature
-    /// row decode can skip the `q4k_ffn_layer` cache. Adds ~14 MB / layer
+    /// row decode can skip the `kquant_ffn_layer` cache. Adds ~14 MB / layer
     /// at Gemma 4B dims; eliminates the ~840 MB heap cache ceiling on
     /// CPU sparse walk and frees the same headroom across all grid shards.
     /// Requires `--quant q4k`.
@@ -114,8 +114,14 @@ pub struct ExtractIndexArgs {
 fn parse_quant(s: &str) -> Result<larql_vindex::QuantFormat, String> {
     match s.to_lowercase().as_str() {
         "none" | "" => Ok(larql_vindex::QuantFormat::None),
-        "q4k" | "q4_k" => Ok(larql_vindex::QuantFormat::Q4K),
-        _ => Err(format!("unknown quant format: {s} (expected: none, q4k)")),
+        // `q4k` is the legacy tag preserved for back-compat; `kquant`
+        // is the post-rename canonical tag. Both map to the same
+        // `QuantFormat::Q4K` variant — they differ only in how the
+        // value is spelled on disk in `index.json` / on the CLI.
+        "q4k" | "q4_k" | "kquant" => Ok(larql_vindex::QuantFormat::Q4K),
+        _ => Err(format!(
+            "unknown quant format: {s} (expected: none, q4k, kquant)"
+        )),
     }
 }
 
@@ -306,8 +312,12 @@ pub fn run(args: ExtractIndexArgs) -> Result<(), Box<dyn std::error::Error>> {
                     .into(),
             );
         }
-        let q4k_opts = larql_vindex::Q4kWriteOptions {
-            down_q4k: args.down_q4k,
+        let q4k_opts = larql_vindex::KquantWriteOptions {
+            down_proj: if args.down_q4k {
+                larql_vindex::DownProjFormat::Q4K
+            } else {
+                larql_vindex::DownProjFormat::Q6K
+            },
             feature_major_down: args.feature_major_down,
         };
 

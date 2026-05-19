@@ -149,6 +149,15 @@ fn mixtral_no_packed_keys() {
     assert!(arch.packed_gate_up_blocks_key(0).is_none());
 }
 
+#[test]
+fn mixtral_config_accessor_returns_loaded_config() {
+    let arch = mixtral_arch();
+    let config = arch.config();
+    assert_eq!(config.hidden_size, 4096);
+    assert_eq!(config.num_layers, 32);
+    assert_eq!(config.intermediate_size, 14336);
+}
+
 // ═══════════════════════════════════════════════════════════════
 // Dense model — no MoE
 // ═══════════════════════════════════════════════════════════════
@@ -1118,6 +1127,15 @@ fn qwen_qk_norm_keys() {
         arch.attn_k_norm_key(0).unwrap(),
         "layers.0.self_attn.k_norm.weight"
     );
+}
+
+#[test]
+fn qwen_dense_returns_none_for_moe_keys() {
+    let arch = qwen_arch();
+    assert!(arch.moe_router_key(0).is_none());
+    assert!(arch.expert_ffn_gate_key(0, 0).is_none());
+    assert!(arch.expert_ffn_up_key(0, 0).is_none());
+    assert!(arch.expert_ffn_down_key(0, 0).is_none());
 }
 
 // ═══════════════════════════════════════════════════════════════

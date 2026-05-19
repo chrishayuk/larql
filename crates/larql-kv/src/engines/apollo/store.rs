@@ -639,6 +639,51 @@ mod tests {
         }
     }
 
+    /// Drive the npy error-wrap path in `load_boundaries` (lines 181-184):
+    /// write a malformed window_000.npy so `npy::read_f32_1d` fails.
+    #[test]
+    fn load_boundaries_malformed_npy_returns_npy_error() {
+        let dir = TempDir::new().unwrap();
+        write_minimal_store(dir.path(), 1, 4, 3, &[]);
+        // Overwrite the boundary file with garbage bytes.
+        let bdir = dir.path().join("boundaries");
+        std::fs::write(bdir.join("window_000.npy"), b"NOT_AN_NPY_BLOB").unwrap();
+        let err = ApolloStore::load(dir.path()).unwrap_err();
+        assert!(
+            matches!(err, StoreLoadError::Npy { .. }),
+            "expected Npy error, got {err:?}"
+        );
+    }
+
+    /// Drive the `load_boundary_residual` npy error path (lines 193-196):
+    /// optional file — when present and malformed, the wrap fires; when
+    /// absent, `.ok()` in the caller swallows it (already covered).
+    #[test]
+    fn load_boundary_residual_malformed_npy_returns_none_via_ok() {
+        let dir = TempDir::new().unwrap();
+        write_minimal_store(dir.path(), 1, 4, 3, &[]);
+        // Plant a malformed boundary_residual.npy.
+        std::fs::write(dir.path().join("boundary_residual.npy"), b"bogus").unwrap();
+        // Loader's `.ok()` on load_boundary_residual swallows the error;
+        // the store loads successfully with `boundary_residual = None`.
+        let store = ApolloStore::load(dir.path()).expect("store loads despite malformed residual");
+        assert!(store.boundary_residual.is_none());
+    }
+
+    /// Drive the npz / zip error-wrap path in `load_window_tokens`
+    /// (lines 206-209): write a non-zip file as window_token_lists.npz.
+    #[test]
+    fn load_window_tokens_malformed_npz_returns_zip_error() {
+        let dir = TempDir::new().unwrap();
+        write_minimal_store(dir.path(), 1, 4, 3, &[]);
+        std::fs::write(dir.path().join("window_token_lists.npz"), b"NOT_A_ZIP").unwrap();
+        let err = ApolloStore::load(dir.path()).unwrap_err();
+        assert!(
+            matches!(err, StoreLoadError::Zip { .. }),
+            "expected Zip error on malformed npz, got {err:?}"
+        );
+    }
+
     #[test]
     fn load_invalid_manifest_json_returns_json_error() {
         let dir = TempDir::new().unwrap();

@@ -1,6 +1,6 @@
 # ADR-0011 — Grid Self-Balancing: Mode B + Dynamic Rebalancing
 
-**Status:** Accepted — Mode A complete; Mode B + rebalancing not yet implemented  
+**Status:** Accepted — shipped 2026-05-13 (Mode B Phase B1) and 2026-05-15 (Phase B2 drain-then-reassign + replication + hot-shard load-rate elevation + stale-heartbeat eviction). Per-layer latency imbalance detection landed under GT6. Code lives in `crates/larql-router/src/grid/replication.rs` + `crates/larql-router/src/tasks/rebalancer/{hot_shard,replication,eviction,imbalance}.rs`.  
 **Depends on:** ADR-0004 (Self-Assembling Grid)  
 **Supersedes:** ADR-0004 §"Mode B — Available" (stub)
 
@@ -251,8 +251,8 @@ larql-router
 | File | Change |
 |---|---|
 | `crates/larql-router-protocol/proto/grid.proto` | ADD `LayerLatency`, extend `HeartbeatMsg` |
-| `crates/larql-router/src/grid.rs` | ADD `available_servers`, `pending_assignments`, `check_imbalance`, `initiate_unassign`, `assign_available` |
-| `crates/larql-router/src/rebalancer.rs` | NEW — background rebalancer task |
+| `crates/larql-router/src/grid/` | `mod.rs` holds `available_servers`; `replication.rs` holds `try_assign_gap` / `try_replicate_from_available` / `send_assign_to_named_available`; `hot_shard.rs` holds `hot_layer_ranges` + `mark_elevated`. (Final shipped layout post-2026-05-16 split.) |
+| `crates/larql-router/src/tasks/rebalancer/` | Background rebalancer task split into `mod.rs` (loop), `config.rs`, `hot_shard.rs`, `replication.rs`, `eviction.rs`, `imbalance.rs`. |
 | `crates/larql-router/src/main.rs` | Spawn rebalancer task; add CLI flags |
 | `crates/larql-server/src/announce.rs` | Handle `AssignMsg` → trigger `shard_loader`; handle `UnassignMsg` → drain + `DroppingMsg` |
 | `crates/larql-server/src/shard_loader.rs` | NEW — HTTP range download, hash verify, atomic rename |

@@ -7,7 +7,7 @@ use larql_inference::forward::ple::precompute_per_layer_inputs;
 use larql_inference::forward::{dot_proj, embed_tokens_pub, run_layer_with_ffn};
 use larql_inference::{encode_prompt, WeightFfn};
 use larql_vindex::{
-    load_model_weights_q4k, load_vindex_tokenizer, SilentLoadCallbacks, VectorIndex,
+    load_model_weights_kquant, load_vindex_tokenizer, SilentLoadCallbacks, VectorIndex,
 };
 use ndarray::{s, Array2};
 
@@ -62,9 +62,9 @@ pub(super) fn run_capture(args: CaptureArgs) -> Result<(), Box<dyn std::error::E
     let start = Instant::now();
     let mut cb = SilentLoadCallbacks;
     let mut index = VectorIndex::load_vindex(&args.index, &mut cb)?;
-    index.load_attn_q4k(&args.index)?;
-    index.load_interleaved_q4k(&args.index)?;
-    let mut weights = load_model_weights_q4k(&args.index, &mut cb)?;
+    index.load_attn_kquant(&args.index)?;
+    index.load_interleaved_kquant(&args.index)?;
+    let mut weights = load_model_weights_kquant(&args.index, &mut cb)?;
     let tokenizer = load_vindex_tokenizer(&args.index)?;
     eprintln!(
         "  {} layers, hidden_size={}, q_heads={}, head_dim={} ({:.1}s)",

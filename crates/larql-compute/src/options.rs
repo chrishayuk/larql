@@ -124,46 +124,48 @@ pub const ENV_DECODE_STAGE_TIMING: &str = "LARQL_DECODE_STAGE_TIMING";
 /// Debug-only outer norm bypass in Metal MoE combine.
 pub const ENV_SKIP_OUTER_NORM: &str = "SKIP_OUTER_NORM";
 
-pub(crate) fn env_flag(name: &str) -> bool {
+// Helpers below are `pub` (not `pub(crate)`) because sibling backend
+// crates (`larql-compute-metal`, future `larql-compute-vulkan`, …)
+// share the same env-toggle vocabulary defined above.  Keeping the
+// parsers private would force every backend to duplicate the
+// `env::var_os`/`parse::<usize>` boilerplate and risk drift in how
+// "set" / "true" / "1" are interpreted across backends.
+
+pub fn env_flag(name: &str) -> bool {
     std::env::var_os(name).is_some()
 }
 
-pub(crate) fn env_flag_any(names: &[&str]) -> bool {
+pub fn env_flag_any(names: &[&str]) -> bool {
     names.iter().any(|name| env_flag(name))
 }
 
-pub(crate) fn env_usize(name: &str) -> Option<usize> {
+pub fn env_usize(name: &str) -> Option<usize> {
     std::env::var(name).ok()?.parse().ok()
 }
 
-#[allow(dead_code)]
-pub(crate) fn env_value(name: &str) -> Option<String> {
+pub fn env_value(name: &str) -> Option<String> {
     std::env::var(name).ok()
 }
 
-#[allow(dead_code)]
-pub(crate) fn env_nonempty_value(name: &str) -> Option<String> {
+pub fn env_nonempty_value(name: &str) -> Option<String> {
     env_value(name).filter(|value| !value.is_empty())
 }
 
-#[allow(dead_code)]
-pub(crate) fn env_opt_in(name: &str) -> bool {
+pub fn env_opt_in(name: &str) -> bool {
     matches!(
         std::env::var(name).as_deref(),
         Ok("1") | Ok("true") | Ok("on") | Ok("yes")
     )
 }
 
-#[allow(dead_code)]
-pub(crate) fn env_opt_out(name: &str) -> bool {
+pub fn env_opt_out(name: &str) -> bool {
     matches!(
         std::env::var(name).as_deref(),
         Ok("0") | Ok("false") | Ok("off") | Ok("no")
     )
 }
 
-#[allow(dead_code)]
-pub(crate) fn env_not_zero_or_default(name: &str, default: bool) -> bool {
+pub fn env_not_zero_or_default(name: &str, default: bool) -> bool {
     std::env::var(name)
         .map(|value| value != "0")
         .unwrap_or(default)
@@ -177,8 +179,7 @@ pub(crate) fn skip_moe_enabled() -> bool {
     env_flag_any(&[ENV_SKIP_MOE, ENV_SKIP_MOE_LEGACY])
 }
 
-#[allow(dead_code)]
-pub(crate) fn split_profile_requested() -> bool {
+pub fn split_profile_requested() -> bool {
     env_flag_any(&[ENV_PROFILE_SPLIT, ENV_DECODE_STAGE_TIMING])
 }
 

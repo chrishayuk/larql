@@ -93,8 +93,8 @@ pub fn generate_with_remote_moe(
 
     // ── Prefill ───────────────────────────────────────────────────────────────
     //
-    // Run one `decode_token_with_moe` per prompt token rather than `prefill_q4`.
-    // `prefill_q4` does not correctly apply MoE experts for hybrid-MoE post-norm
+    // Run one `decode_token_with_moe` per prompt token rather than `prefill_kquant`.
+    // `prefill_kquant` does not correctly apply MoE experts for hybrid-MoE post-norm
     // models (Gemma 4 26B-A4B), so the first-token prediction and subsequent KV
     // cache entries are wrong.  Sequential decode builds the KV cache correctly
     // — each token processes with the proper remote expert contribution.

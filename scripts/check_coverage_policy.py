@@ -64,6 +64,11 @@ def main() -> int:
     exclude_globs = policy.get("exclude_globs", [])
     default_min = float(policy["default_line_min_percent"])
     total_min = float(policy.get("total_line_min_percent", 0.0))
+    # Optional: floor computed over included files only (excludes I/O
+    # wrappers + main.rs + similar from the denominator). When this is
+    # set, it's checked in addition to `total_line_min_percent`. Useful
+    # for binary crates where a chunk of code is intentionally untested.
+    included_total_min = float(policy.get("included_total_line_min_percent", 0.0))
     per_file_min = {
         str(path): float(minimum)
         for path, minimum in policy.get("per_file_line_min_percent", {}).items()
@@ -81,6 +86,8 @@ def main() -> int:
     checked = 0
     debt = 0
     seen: set[str] = set()
+    included_covered = 0
+    included_count = 0
     for file_entry in data["files"]:
         rel_path = repo_relative(file_entry["filename"], repo_root)
         if include_globs and not matches_any(rel_path, include_globs):
@@ -102,6 +109,25 @@ def main() -> int:
                 f"{rel_path}: lines {line_percent:.2f}% below minimum {minimum:.2f}%"
             )
 
+        # Sum for the included-only total. cargo-llvm-cov reports
+        # `count` (total instrumented lines) and `covered` (hits) per
+        # file; if `covered` isn't present, derive it from percent.
+        lines_block = file_entry["summary"]["lines"]
+        if "covered" in lines_block:
+            covered = int(lines_block["covered"])
+        else:
+            covered = int(round(line_count * line_percent / 100.0))
+        included_count += line_count
+        included_covered += covered
+
+    included_pct = (
+        100.0 * included_covered / included_count if included_count > 0 else 0.0
+    )
+    if included_total_min > 0 and included_pct + EPSILON < included_total_min:
+        failures.append(
+            f"INCLUDED total lines {included_pct:.2f}% below minimum {included_total_min:.2f}%"
+        )
+
     stale = sorted(set(per_file_min) - seen)
     for rel_path in stale:
         failures.append(f"{rel_path}: policy entry did not match any covered file")
@@ -113,9 +139,12 @@ def main() -> int:
         return 1
 
     at_default = checked - debt
+    included_note = (
+        f", included {included_pct:.2f}%" if included_total_min > 0 else ""
+    )
     print(
         "Coverage policy passed: "
-        f"total {total_percent:.2f}% lines, "
+        f"total {total_percent:.2f}% lines{included_note}, "
         f"{checked} files checked, "
         f"{at_default} files at {default_min:.1f}% default, "
         f"{debt} debt baselines."

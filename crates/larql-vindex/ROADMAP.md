@@ -1,8 +1,8 @@
 # Roadmap — larql-vindex
 
-## Current state (as of 2026-05-10)
+## Current state (as of 2026-05-16)
 
-- **922 lib tests** on `larql-vindex` (`cargo test -p larql-vindex
+- **975 lib tests** on `larql-vindex` (`cargo test -p larql-vindex
   --lib`). Crate-local checks are wired through `make larql-vindex-ci`:
   fmt, clippy `-D warnings`, tests, example compile checks, bench
   compile/tests, and coverage policy. All four self-contained examples
@@ -68,6 +68,17 @@
 - HNSW graph index wired into `gate_knn` (opt-in via `--hnsw`).
 - Q4_K dequant cache LRU-bounded via `--max-q4k-cache-layers`.
 - Patch system for editable knowledge (`PatchedVindex` overlay).
+  **2026-05-16 `gate_knn` optimization pass** (driven by the Exp 53
+  shard service's bench gap): empty-base short-circuit when the
+  layer has no native features, O(overrides²) → O(overrides) merge
+  via `HashMap<feat, hit_idx>`, `argmax` instead of sort at
+  `top_k = 1`, sort-skip when only deletions modified hits, lazy
+  per-layer contiguous gate-override matrix with per-layer
+  invalidation. Wins: vindex↔cache gap closed from ~20% to ~7% on
+  the steady-state shard-query bench; cross-layer mutation cost
+  cut by ~17% (218.8 → 181.9 µs at n=256/d=1024) because mutating
+  layer B no longer evicts layer A's cache. See
+  `crates/larql-server/benches/shard_query.rs`.
 - **Vindexfile `FROM hf://...`** — HF resolution wired through the
   same resolver `larql run` and `larql extract` use.
 - **Streaming extract checkpoints + auto-resume** — phase-level
@@ -79,12 +90,12 @@
   larql-vindex-coverage-html` (cargo-llvm-cov) enforce both the
   aggregate line floor and `coverage-policy.json`.
 - **Coverage ratchet**: aggregate floor is 71% lines from the
-  2026-05-08 baseline of 71.56%; current measured **90.04% lines**
-  as of 2026-05-10 (cleared the workspace 90% line for the first
-  time after the post-`VindexStorage` push). Per-source-file
-  default is 90%; files below that are explicit debt baselines
-  (40 entries) and should only move upward. **86 of 126 files at
-  the 90% default**, up from 41 on 2026-05-08.
+  2026-05-08 baseline of 71.56%; current measured **90.86% lines**
+  as of 2026-05-16, with **105 of 147 files at the 90% default**
+  and 42 debt baselines. The `patch/overlay.rs` baseline (82%) is
+  the one entry the 2026-05-16 gate_knn optimization touched —
+  added LayerGateCache code paths + targeted unit tests; file now
+  sits at 88.61%.
 - **Cross-platform CI**: `.github/workflows/larql-vindex.yml` runs
   format, check, examples, clippy, tests, and bench compile/tests on
   Linux, Windows, and macOS. Coverage policy runs on Ubuntu.

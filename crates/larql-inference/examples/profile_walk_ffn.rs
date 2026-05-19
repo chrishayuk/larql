@@ -95,9 +95,9 @@ fn main() {
 
     let backend = larql_inference::default_backend();
     eprintln!(
-        "  backend: {} (has_q4={})\n",
+        "  backend: {} (supports Q4_K = {})\n",
         backend.name(),
-        backend.has_q4()
+        backend.supports_quant(::larql_compute::QuantFormat::Q4_K)
     );
 
     let iters = 20;

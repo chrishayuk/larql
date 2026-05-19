@@ -81,3 +81,77 @@ impl Default for WalkFfnConfig {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn dense_sets_none_for_every_layer() {
+        let cfg = WalkFfnConfig::dense(4);
+        assert_eq!(cfg.num_layers(), 4);
+        for l in 0..4 {
+            assert_eq!(cfg.k_for(l), None);
+            assert!(!cfg.is_sparse(l));
+        }
+        assert_eq!(cfg.activation_floor, 0.0);
+    }
+
+    #[test]
+    fn sparse_sets_uniform_k_for_every_layer() {
+        let cfg = WalkFfnConfig::sparse(3, 64);
+        for l in 0..3 {
+            assert_eq!(cfg.k_for(l), Some(64));
+            assert!(cfg.is_sparse(l));
+        }
+    }
+
+    #[test]
+    fn hybrid_splits_at_sparse_from_index() {
+        let cfg = WalkFfnConfig::hybrid(6, 3, 16);
+        assert_eq!(cfg.k_for(0), None);
+        assert_eq!(cfg.k_for(2), None);
+        assert_eq!(cfg.k_for(3), Some(16));
+        assert_eq!(cfg.k_for(5), Some(16));
+    }
+
+    #[test]
+    fn hybrid_clamps_sparse_from_to_num_layers() {
+        // sparse_from > num_layers must not panic — clamps so nothing
+        // is sparse.
+        let cfg = WalkFfnConfig::hybrid(4, 99, 8);
+        for l in 0..4 {
+            assert_eq!(cfg.k_for(l), None);
+        }
+    }
+
+    #[test]
+    fn with_floor_sets_activation_floor() {
+        let cfg = WalkFfnConfig::dense(2).with_floor(0.01);
+        assert_eq!(cfg.activation_floor, 0.01);
+    }
+
+    #[test]
+    fn k_for_clamps_out_of_range_to_last_entry() {
+        let cfg = WalkFfnConfig::hybrid(4, 2, 32);
+        // Layer 99 clamps to last (index 3) — sparse.
+        assert_eq!(cfg.k_for(99), Some(32));
+    }
+
+    #[test]
+    fn k_for_empty_config_returns_none() {
+        let cfg = WalkFfnConfig::default();
+        assert_eq!(cfg.num_layers(), 0);
+        assert_eq!(cfg.k_for(0), None);
+        assert_eq!(cfg.k_for(99), None);
+        assert!(!cfg.is_sparse(0));
+    }
+
+    #[test]
+    fn default_matches_empty_dense() {
+        let d = WalkFfnConfig::default();
+        let e = WalkFfnConfig::dense(0);
+        assert_eq!(d.num_layers(), e.num_layers());
+        assert_eq!(d.activation_floor, e.activation_floor);
+    }
+}

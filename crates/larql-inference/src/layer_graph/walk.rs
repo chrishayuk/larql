@@ -72,7 +72,7 @@ impl<'a> LayerGraph for PipelinedLayerGraph<'a> {
 
         // FFN: use WalkFfn which handles Q4 dispatch internally.
         // WalkFfn checks for Q4 interleaved data and routes to Metal Q4
-        // when backend.has_q4(), falling back to f32 BLAS otherwise.
+        // when backend.supports_quant(::larql_compute::QuantFormat::Q4_K), falling back to f32 BLAS otherwise.
         // This ensures the norm/residual logic matches exactly.
         let walk_ffn =
             crate::vindex::WalkFfn::new_unlimited_with_backend(weights, self.index, self.backend);

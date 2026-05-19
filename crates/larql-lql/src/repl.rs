@@ -55,69 +55,27 @@ pub fn run_repl() {
         };
 
         match rl.readline(prompt) {
-            Ok(line) => {
-                let trimmed = line.trim();
-
-                // Exit commands
-                if statement_buf.is_empty() {
-                    match trimmed.to_lowercase().as_str() {
-                        "exit" | "quit" | "\\q" => break,
-                        "clear" | "clear;" => {
-                            print!("\x1B[2J\x1B[1;1H");
-                            use std::io::Write;
-                            std::io::stdout().flush().ok();
-                            continue;
-                        }
-                        "help" | "\\h" | "\\?" => {
-                            print_help();
-                            continue;
-                        }
-                        "" => continue,
-                        _ => {}
-                    }
-                }
-
-                if !statement_buf.is_empty() {
-                    statement_buf.push('\n');
-                }
-                statement_buf.push_str(&line);
-
-                // Check if statement is complete
-                let trimmed_stmt = statement_buf.trim();
-                if !trimmed_stmt.ends_with(';')
-                    && !trimmed_stmt.to_uppercase().starts_with("STATS")
-                    && !trimmed_stmt.to_uppercase().starts_with("SHOW MODELS")
-                    && !is_complete_statement(trimmed_stmt)
-                {
+            Ok(line) => match classify_input(&line, &mut statement_buf) {
+                LineAction::Exit => break,
+                LineAction::Clear => {
+                    print!("\x1B[2J\x1B[1;1H");
+                    use std::io::Write;
+                    std::io::stdout().flush().ok();
                     continue;
                 }
-
-                let input = statement_buf.trim().to_string();
-                statement_buf.clear();
-
-                if input.is_empty() {
+                LineAction::Help => {
+                    print_help();
                     continue;
                 }
-
-                // Add to history
-                let _ = rl.add_history_entry(&input);
-
-                match parser::parse(&input) {
-                    Ok(stmt) => match session.execute(&stmt) {
-                        Ok(lines) => {
-                            for line in &lines {
-                                println!("{line}");
-                            }
-                        }
-                        Err(e) => {
-                            eprintln!("Error: {e}");
-                        }
-                    },
-                    Err(e) => {
-                        eprintln!("Error: {e}");
+                LineAction::Skip | LineAction::NeedMore => continue,
+                LineAction::Execute(input) => {
+                    if input.is_empty() {
+                        continue;
                     }
+                    let _ = rl.add_history_entry(&input);
+                    execute_and_print(&mut session, &input);
                 }
-            }
+            },
             Err(ReadlineError::Interrupted) => {
                 // Ctrl-C: clear current buffer
                 if !statement_buf.is_empty() {
@@ -166,51 +124,24 @@ fn run_repl_basic() {
             Ok(_) => {}
         }
 
-        let trimmed = line_buf.trim();
-        if statement_buf.is_empty() {
-            match trimmed.to_lowercase().as_str() {
-                "exit" | "quit" | "\\q" => break,
-                "clear" | "clear;" => {
-                    print!("\x1B[2J\x1B[1;1H");
-                    use std::io::Write;
-                    std::io::stdout().flush().ok();
-                    continue;
-                }
-                "help" | "\\h" | "\\?" => {
-                    print_help();
-                    continue;
-                }
-                "" => continue,
-                _ => {}
+        match classify_input(&line_buf, &mut statement_buf) {
+            LineAction::Exit => break,
+            LineAction::Clear => {
+                print!("\x1B[2J\x1B[1;1H");
+                use std::io::Write;
+                std::io::stdout().flush().ok();
+                continue;
             }
-        }
-
-        statement_buf.push_str(&line_buf);
-
-        let trimmed_stmt = statement_buf.trim();
-        if !is_complete_statement(trimmed_stmt) {
-            continue;
-        }
-
-        let input = statement_buf.trim().to_string();
-        statement_buf.clear();
-        if input.is_empty() {
-            continue;
-        }
-
-        match parser::parse(&input) {
-            Ok(stmt) => match session.execute(&stmt) {
-                Ok(lines) => {
-                    for line in &lines {
-                        println!("{line}");
-                    }
+            LineAction::Help => {
+                print_help();
+                continue;
+            }
+            LineAction::Skip | LineAction::NeedMore => continue,
+            LineAction::Execute(input) => {
+                if input.is_empty() {
+                    continue;
                 }
-                Err(e) => {
-                    eprintln!("Error: {e}");
-                }
-            },
-            Err(e) => {
-                eprintln!("Error: {e}");
+                execute_and_print(&mut session, &input);
             }
         }
     }
@@ -255,6 +186,92 @@ pub fn run_batch(input: &str) -> Result<Vec<String>, Box<dyn std::error::Error>>
 
 fn is_complete_statement(s: &str) -> bool {
     s.ends_with(';')
+}
+
+/// Outcome of feeding one raw line from the REPL editor into the input
+/// classifier. The classifier owns the meta-command vocabulary and the
+/// multi-line accumulation rule so both `run_repl` (rustyline-backed)
+/// and `run_repl_basic` (stdin-fallback) share the policy.
+#[derive(Debug, PartialEq, Eq)]
+pub(crate) enum LineAction {
+    /// `exit` / `quit` / `\q` at a fresh prompt — leave the loop.
+    Exit,
+    /// `clear` / `clear;` at a fresh prompt — clear screen, prompt again.
+    Clear,
+    /// `help` / `\h` / `\?` at a fresh prompt — print help, prompt again.
+    Help,
+    /// Empty line at a fresh prompt — re-prompt without touching the buffer.
+    Skip,
+    /// Line appended to the accumulation buffer but statement isn't
+    /// complete yet — keep collecting lines.
+    NeedMore,
+    /// Buffer is complete; the inner string is the trimmed statement
+    /// ready for `parser::parse`. The classifier has already cleared
+    /// the accumulation buffer.
+    Execute(String),
+}
+
+/// Feed one raw line from the editor into the REPL input state. Returns
+/// the action the loop should take. Pure-ish: the only side effect is
+/// mutating `buf` (the multi-line accumulation buffer the loop owns).
+///
+/// Behaviour:
+/// - Meta commands (`exit` / `quit` / `\q` / `clear` / `help` / empty)
+///   only fire when `buf` is empty — once a statement starts they're
+///   treated as ordinary text so the user can include them in SQL.
+/// - A statement is "complete" when it ends with `;` *or* when its
+///   first word is one of the two semicolon-optional bare commands
+///   (`STATS`, `SHOW MODELS`). Anything else returns `NeedMore`.
+/// - On `Execute`, `buf` is drained — caller doesn't need to clear it.
+pub(crate) fn classify_input(line: &str, buf: &mut String) -> LineAction {
+    let trimmed = line.trim();
+    if buf.is_empty() {
+        match trimmed.to_lowercase().as_str() {
+            "exit" | "quit" | "\\q" => return LineAction::Exit,
+            "clear" | "clear;" => return LineAction::Clear,
+            "help" | "\\h" | "\\?" => return LineAction::Help,
+            "" => return LineAction::Skip,
+            _ => {}
+        }
+    }
+
+    if !buf.is_empty() {
+        buf.push('\n');
+    }
+    buf.push_str(line);
+
+    let trimmed_stmt = buf.trim();
+    if !trimmed_stmt.ends_with(';')
+        && !trimmed_stmt.to_uppercase().starts_with("STATS")
+        && !trimmed_stmt.to_uppercase().starts_with("SHOW MODELS")
+        && !is_complete_statement(trimmed_stmt)
+    {
+        return LineAction::NeedMore;
+    }
+
+    let stmt = std::mem::take(buf).trim().to_string();
+    LineAction::Execute(stmt)
+}
+
+/// Parse `input`, execute against `session`, print results (or error)
+/// to stdout/stderr. Shared by `run_repl` and `run_repl_basic` so the
+/// error-path formatting is identical across the two front-ends.
+fn execute_and_print(session: &mut Session, input: &str) {
+    match parser::parse(input) {
+        Ok(stmt) => match session.execute(&stmt) {
+            Ok(lines) => {
+                for line in &lines {
+                    println!("{line}");
+                }
+            }
+            Err(e) => {
+                eprintln!("Error: {e}");
+            }
+        },
+        Err(e) => {
+            eprintln!("Error: {e}");
+        }
+    }
 }
 
 fn split_statements(input: &str) -> Vec<String> {
@@ -528,5 +545,162 @@ mod tests {
     #[test]
     fn dirs_or_home_returns_either_some_or_none() {
         let _ = super::dirs_or_home();
+    }
+
+    // ── classify_input: meta commands ──────────────────────────────────
+
+    #[test]
+    fn classify_exit_quit_q_at_fresh_prompt() {
+        for word in ["exit", "quit", "\\q", "EXIT", "Quit", "  exit  "] {
+            let mut buf = String::new();
+            assert_eq!(
+                classify_input(word, &mut buf),
+                LineAction::Exit,
+                "expected Exit for {word:?}",
+            );
+            assert!(buf.is_empty());
+        }
+    }
+
+    #[test]
+    fn classify_clear_at_fresh_prompt() {
+        for word in ["clear", "clear;", "CLEAR", "  Clear  "] {
+            let mut buf = String::new();
+            assert_eq!(classify_input(word, &mut buf), LineAction::Clear);
+            assert!(buf.is_empty());
+        }
+    }
+
+    #[test]
+    fn classify_help_at_fresh_prompt() {
+        for word in ["help", "\\h", "\\?", "HELP"] {
+            let mut buf = String::new();
+            assert_eq!(classify_input(word, &mut buf), LineAction::Help);
+            assert!(buf.is_empty());
+        }
+    }
+
+    #[test]
+    fn classify_empty_line_at_fresh_prompt_skips() {
+        let mut buf = String::new();
+        assert_eq!(classify_input("", &mut buf), LineAction::Skip);
+        assert_eq!(classify_input("    ", &mut buf), LineAction::Skip);
+        assert!(buf.is_empty());
+    }
+
+    #[test]
+    fn classify_meta_commands_only_fire_at_fresh_prompt() {
+        // Once a statement is in flight, `exit` / `help` / `clear` are
+        // appended verbatim so the user can include them in literals.
+        let mut buf = String::from("SELECT * FROM EDGES");
+        let outcome = classify_input("exit", &mut buf);
+        // The buf doesn't end with `;` and isn't a bare STATS/SHOW MODELS,
+        // so it stays incomplete → NeedMore.
+        assert_eq!(outcome, LineAction::NeedMore);
+        assert!(buf.contains("exit"));
+    }
+
+    // ── classify_input: accumulation + completeness ────────────────────
+
+    #[test]
+    fn classify_single_complete_statement_executes() {
+        let mut buf = String::new();
+        let outcome = classify_input("SHOW MODELS;", &mut buf);
+        match outcome {
+            LineAction::Execute(s) => assert_eq!(s, "SHOW MODELS;"),
+            other => panic!("expected Execute, got {other:?}"),
+        }
+        assert!(buf.is_empty(), "buffer should be drained on Execute");
+    }
+
+    #[test]
+    fn classify_multi_line_accumulates_until_semicolon() {
+        let mut buf = String::new();
+        assert_eq!(classify_input("SELECT *", &mut buf), LineAction::NeedMore);
+        assert_eq!(
+            classify_input("  FROM EDGES", &mut buf),
+            LineAction::NeedMore
+        );
+        let outcome = classify_input("  WHERE layer = 5;", &mut buf);
+        match outcome {
+            LineAction::Execute(s) => {
+                assert!(s.contains("SELECT *"));
+                assert!(s.contains("FROM EDGES"));
+                assert!(s.contains("WHERE layer = 5;"));
+            }
+            other => panic!("expected Execute, got {other:?}"),
+        }
+        assert!(buf.is_empty());
+    }
+
+    #[test]
+    fn classify_bare_stats_executes_without_semicolon() {
+        let mut buf = String::new();
+        match classify_input("STATS", &mut buf) {
+            LineAction::Execute(s) => assert_eq!(s, "STATS"),
+            other => panic!("expected Execute (bare STATS), got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn classify_bare_show_models_executes_without_semicolon() {
+        let mut buf = String::new();
+        match classify_input("SHOW MODELS", &mut buf) {
+            LineAction::Execute(s) => assert_eq!(s, "SHOW MODELS"),
+            other => panic!("expected Execute (bare SHOW MODELS), got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn classify_stats_keyword_case_insensitive() {
+        let mut buf = String::new();
+        assert!(matches!(
+            classify_input("stats", &mut buf),
+            LineAction::Execute(_)
+        ));
+        let mut buf2 = String::new();
+        assert!(matches!(
+            classify_input("StAtS", &mut buf2),
+            LineAction::Execute(_)
+        ));
+    }
+
+    #[test]
+    fn classify_incomplete_statement_returns_need_more() {
+        let mut buf = String::new();
+        assert_eq!(classify_input("SELECT 1", &mut buf), LineAction::NeedMore);
+        assert!(!buf.is_empty());
+    }
+
+    #[test]
+    fn classify_drains_buffer_on_execute() {
+        let mut buf = String::from("partial");
+        // First call: append, statement still incomplete (no `;`).
+        assert_eq!(
+            classify_input(" continuation;", &mut buf),
+            LineAction::Execute(String::from("partial\n continuation;")),
+        );
+        assert!(buf.is_empty(), "Execute must drain the buffer");
+    }
+
+    // ── execute_and_print smoke ────────────────────────────────────────
+
+    #[test]
+    fn execute_and_print_runs_show_models_without_panic() {
+        let mut session = crate::executor::Session::new();
+        super::execute_and_print(&mut session, "SHOW MODELS;");
+    }
+
+    #[test]
+    fn execute_and_print_parse_error_does_not_panic() {
+        let mut session = crate::executor::Session::new();
+        super::execute_and_print(&mut session, "GARBAGE STATEMENT");
+    }
+
+    #[test]
+    fn execute_and_print_execution_error_does_not_panic() {
+        let mut session = crate::executor::Session::new();
+        // STATS without USE → executor error path, not a parse error.
+        super::execute_and_print(&mut session, "STATS;");
     }
 }

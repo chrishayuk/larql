@@ -56,7 +56,7 @@ use larql_compute::{ComputeBackend, CpuBackend};
 use larql_inference::layer_graph::{generate, lm_head_topk, CachedLayerGraph};
 use larql_inference::wrap_chat_prompt;
 use larql_vindex::{
-    load_model_weights_q4k, load_vindex_config, load_vindex_tokenizer, SilentLoadCallbacks,
+    load_model_weights_kquant, load_vindex_config, load_vindex_tokenizer, SilentLoadCallbacks,
     VectorIndex,
 };
 
@@ -322,7 +322,7 @@ fn capture_top5(
     // (test_cpu_metal_parity passes), and the LM head matvec is the
     // same `f32_gemv` either way. What we're isolating in this test
     // is "did the model's output for this prompt drift?"
-    let h_full = larql_inference::vindex::predict_q4k_hidden(weights, prompt_ids, index, None);
+    let h_full = larql_inference::vindex::predict_kquant_hidden(weights, prompt_ids, index, None);
     let last_pos = h_full.shape()[0] - 1;
     let h_last = h_full.row(last_pos).to_owned();
 
@@ -359,24 +359,24 @@ fn check_golden(
     let cfg = load_vindex_config(&vindex_path).map_err(|e| format!("load_vindex_config: {e}"))?;
     let tokenizer =
         load_vindex_tokenizer(&vindex_path).map_err(|e| format!("load_vindex_tokenizer: {e}"))?;
-    let mut q4_index =
+    let mut index =
         VectorIndex::load_vindex(&vindex_path, &mut cb).map_err(|e| format!("load vindex: {e}"))?;
-    q4_index
-        .load_attn_q4k(&vindex_path)
-        .map_err(|e| format!("load_attn_q4k: {e}"))?;
-    q4_index
-        .load_interleaved_q4k(&vindex_path)
-        .map_err(|e| format!("load_interleaved_q4k: {e}"))?;
-    let _ = q4_index.load_lm_head_q4(&vindex_path);
+    index
+        .load_attn_kquant(&vindex_path)
+        .map_err(|e| format!("load_attn_kquant: {e}"))?;
+    index
+        .load_interleaved_kquant(&vindex_path)
+        .map_err(|e| format!("load_interleaved_kquant: {e}"))?;
+    let _ = index.load_lm_head_kquant(&vindex_path);
 
-    let mut weights =
-        load_model_weights_q4k(&vindex_path, &mut cb).map_err(|e| format!("load weights: {e}"))?;
+    let mut weights = load_model_weights_kquant(&vindex_path, &mut cb)
+        .map_err(|e| format!("load weights: {e}"))?;
 
     let wrap = wrap_chat_prompt(&vindex_path, Some(cfg.model.as_str()), PROMPT);
     let prompt_ids = larql_inference::encode_prompt(&tokenizer, &*weights.arch, &wrap.prompt)
         .map_err(|e| format!("encode_prompt: {e}"))?;
 
-    let top5 = capture_top5(&mut weights, &tokenizer, &q4_index, backend, &prompt_ids)?;
+    let top5 = capture_top5(&mut weights, &tokenizer, &index, backend, &prompt_ids)?;
     let actual_ids: [u32; 5] =
         std::array::from_fn(|i| top5.get(i).map(|t| t.0).unwrap_or(u32::MAX));
     let actual_top1_logit = top5[0].1;
@@ -421,8 +421,8 @@ fn check_golden(
 }
 
 #[cfg(all(feature = "metal", target_os = "macos"))]
-fn metal_backend() -> Option<larql_compute::metal::MetalBackend> {
-    larql_compute::metal::MetalBackend::new()
+fn metal_backend() -> Option<larql_compute_metal::MetalBackend> {
+    larql_compute_metal::MetalBackend::new()
 }
 
 // ── Per-architecture × backend tests ───────────────────────────────────────

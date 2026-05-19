@@ -12,6 +12,7 @@ pub mod openai;
 pub mod patches;
 pub mod relations;
 pub mod select;
+pub mod shard;
 pub mod stats;
 pub mod stream;
 pub mod topology;
@@ -61,6 +62,10 @@ const EMBED_TOKEN: &str = "/v1/embed/{token_id}";
 const LOGITS: &str = "/v1/logits";
 const TOKEN_ENCODE: &str = "/v1/token/encode";
 const TOKEN_DECODE: &str = "/v1/token/decode";
+// Mode B shard handoff: donor streams its on-disk vindex as a tar so a
+// freshly-assigned spare server can mirror the shard locally.
+const SHARD: &str = "/v1/shard/{model_id}/{range}";
+
 const OPENAI_EMBEDDINGS: &str = "/v1/embeddings";
 const OPENAI_COMPLETIONS: &str = "/v1/completions";
 const OPENAI_CHAT_COMPLETIONS: &str = "/v1/chat/completions";
@@ -134,6 +139,7 @@ pub fn single_model_router(state: Arc<AppState>) -> Router {
         .route(LOGITS, post(embed::handle_logits))
         .route(TOKEN_ENCODE, get(embed::handle_token_encode))
         .route(TOKEN_DECODE, get(embed::handle_token_decode))
+        .route(SHARD, get(shard::handle_shard))
         .route(OPENAI_EMBEDDINGS, post(openai::handle_embeddings))
         .route(OPENAI_COMPLETIONS, post(openai::handle_completions))
         .route(
@@ -165,6 +171,7 @@ pub fn multi_model_router(state: Arc<AppState>) -> Router {
         .route(M_LOGITS, post(embed::handle_logits_multi))
         .route(M_TOKEN_ENCODE, get(embed::handle_token_encode_multi))
         .route(M_TOKEN_DECODE, get(embed::handle_token_decode_multi))
+        .route(SHARD, get(shard::handle_shard))
         // OpenAI-compat endpoints (multi-model: client passes `model` in body).
         .route(OPENAI_EMBEDDINGS, post(openai::handle_embeddings))
         .route(OPENAI_COMPLETIONS, post(openai::handle_completions))

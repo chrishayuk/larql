@@ -62,19 +62,17 @@ impl QuantFormat {
         Some(elems.div_ceil(block_elems) * block_bytes)
     }
 
-    /// Whether this format uses the GGUF "Q4_K family" 256-element
-    /// super-block layout that flows through the dedicated Q4_K /
-    /// Q4_KF / Q6_K matvec dispatchers (vs the legacy block-32
-    /// Q4_0 / Q8_0 path). Used to gate the "skip Q8 quantize"
-    /// fast path in `residual_norm` and FFN routing.
+    /// Whether this format uses the GGUF k-quant 256-element super-block
+    /// layout that flows through the dedicated Q4_K / Q4_KF / Q6_K matvec
+    /// dispatchers (vs the legacy block-32 Q4_0 / Q8_0 path). Used to gate
+    /// the "skip Q8 quantize" fast path in `residual_norm` and FFN routing.
     ///
-    /// Adding a future Q4_K-style format (e.g. a hypothetical Q5_K)
-    /// would update this one method, not the ~10 OR-chains it
-    /// currently replaces. Roadmap #7 (`FormatRoute` enum) is the
-    /// fuller version of this idea; this helper is the contained
-    /// step that addresses the user-visible code-duplication cost
-    /// without rippling through 49 files.
-    pub fn is_q4k_family(self) -> bool {
+    /// Adding a future k-quant format (e.g. Q5_K) extends this one method,
+    /// not the ~10 OR-chains it currently replaces. Roadmap #7
+    /// (`FormatRoute` enum) is the fuller version of this idea; this helper
+    /// is the contained step that addresses the user-visible code-duplication
+    /// cost without rippling through 49 files.
+    pub fn is_kquant_family(self) -> bool {
         matches!(self, Self::Q4_K | Self::Q4_KF | Self::Q6_K)
     }
 
@@ -87,7 +85,7 @@ impl QuantFormat {
 
     /// Whether this format uses the legacy block-32 Q8 dispatch path
     /// (`q4_matvec` / `q8_matvec` against pre-quantised Q8 input). The
-    /// inverse of [`Self::is_q4k_family`] for the dense matvec dispatch
+    /// inverse of [`Self::is_kquant_family`] for the dense matvec dispatch
     /// (the float-input `BF16` / `F16` / `F32` branches don't run on
     /// these dispatchers, so `is_legacy_q8` covers exactly the rest).
     pub fn is_legacy_q8(self) -> bool {
@@ -537,6 +535,18 @@ pub struct FullPipelineLayer<'a> {
     /// production case for every model except E2B and similar future
     /// KV-shared archs.
     pub kv_shared_source: Option<usize>,
+
+    /// Granite-style residual-stream multiplier. The residual add inside
+    /// each transformer block becomes `h += residual_multiplier * x` where
+    /// `x` is the attention output (post-W_O) or FFN output (post-down).
+    /// Granite 4.1: 0.22 on 3B/8B, 0.175 on 30B (μP scaling). Every other
+    /// model: 1.0 (identity — keep the residual add unchanged).
+    ///
+    /// Plumbed through `encode_post_attn` / `encode_post_ffn` →
+    /// `encode_residual_add` → the `residual_add` Metal shader's `b_scale`
+    /// binding. The shader treats 1.0 as a no-op so non-Granite paths are
+    /// bit-identical to the pre-Granite implementation.
+    pub residual_multiplier: f32,
 }
 
 impl<'a> FullPipelineLayer<'a> {
@@ -716,6 +726,7 @@ impl Default for FullPipelineLayer<'_> {
             ple_projection: None,
             ple_post_norm: None,
             kv_shared_source: None,
+            residual_multiplier: 1.0,
         }
     }
 }
@@ -827,23 +838,23 @@ mod tests {
         assert_ne!(QuantFormat::Q4_0, QuantFormat::Q4_KF);
     }
 
-    /// Pin the Q4_K-family taxonomy. Adding a new format requires
+    /// Pin the k-quant family taxonomy. Adding a new format requires
     /// updating exactly one of these classifiers.
     #[test]
     fn quant_format_classifiers() {
-        // Q4_K family (256-element super-blocks)
-        assert!(QuantFormat::Q4_K.is_q4k_family());
-        assert!(QuantFormat::Q4_KF.is_q4k_family());
-        assert!(QuantFormat::Q6_K.is_q4k_family());
+        // k-quant family (256-element super-blocks)
+        assert!(QuantFormat::Q4_K.is_kquant_family());
+        assert!(QuantFormat::Q4_KF.is_kquant_family());
+        assert!(QuantFormat::Q6_K.is_kquant_family());
         // Legacy block-32 Q8 path
         assert!(QuantFormat::Q4_0.is_legacy_q8());
         assert!(QuantFormat::Q8_0.is_legacy_q8());
         // Float-input formats are neither
         for fmt in [QuantFormat::BF16, QuantFormat::F16, QuantFormat::F32] {
-            assert!(!fmt.is_q4k_family());
+            assert!(!fmt.is_kquant_family());
             assert!(!fmt.is_legacy_q8());
         }
-        // Q4_KF is a subset of Q4_K-family
+        // Q4_KF is a subset of the k-quant family
         assert!(QuantFormat::Q4_KF.is_q4kf());
         assert!(!QuantFormat::Q4_K.is_q4kf());
         assert!(!QuantFormat::Q6_K.is_q4kf());

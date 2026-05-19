@@ -63,14 +63,14 @@ enum ConvertCommand {
 
     /// Retrofit `down_features_q4k.bin` (W2 feature-major down) into
     /// an existing Q4K vindex without re-quantising. Reads the down
-    /// portion of `interleaved_q4k.bin` per layer, transposes to
+    /// portion of `interleaved_kquant.bin` per layer, transposes to
     /// `[intermediate, hidden]`, re-quantises at the same precision
     /// the source used, and writes the W2 file + manifest in place.
     /// Idempotent — silent no-op when the file is already present.
     /// See ADR-009 for the architectural rationale.
     AddFeatureMajorDown {
         /// Vindex directory to retrofit. Must already have
-        /// `interleaved_q4k.bin` + manifest (i.e. `quant: q4k` in
+        /// `interleaved_kquant.bin` + manifest (i.e. `quant: q4k` in
         /// `index.json`).
         #[arg(long)]
         input: PathBuf,
@@ -107,7 +107,7 @@ enum QuantizeCommand {
         down_q4k: bool,
 
         /// Emit `down_features_q4k.bin` (W2 feature-major down) so per-feature
-        /// row decode can skip the `q4k_ffn_layer` cache. Adds ~14 MB / layer
+        /// row decode can skip the `kquant_ffn_layer` cache. Adds ~14 MB / layer
         /// at Gemma 4B dims; eliminates the ~840 MB heap cache ceiling.
         /// Recommended for CPU sparse walk and grid/MoE workloads.
         #[arg(long)]
@@ -222,7 +222,7 @@ fn run_add_feature_major_down(
             report.num_layers, mb, report.wall_time,
         );
         eprintln!(
-            "  per-feature down decode now skips q4k_ffn_layer cache \
+            "  per-feature down decode now skips kquant_ffn_layer cache \
              (verify via GET /v1/stats → q4k_ffn.feature_major_down: true)"
         );
     }

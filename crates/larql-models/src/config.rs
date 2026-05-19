@@ -54,17 +54,45 @@ pub enum ExpertFormat {
     PackedBF16,
 }
 
-/// RoPE scaling configuration (YaRN, linear, dynamic).
+/// RoPE scaling configuration (YaRN, linear, dynamic, llama3, default).
+///
+/// `scaling_type` matches HF's `rope_type` field:
+/// - `"default"` / `""`: no scaling, standard RoPE
+/// - `"linear"`: divide position by `factor` (Gemma 3 uses this on global
+///   layers only via the structured per-layer-type form)
+/// - `"llama3"`: wavelength-dependent per-channel scaling — needs all four
+///   `llama3_*` fields populated
+/// - `"yarn"`, `"dynamic"`: not yet honoured in the forward path
 #[derive(Debug, Clone)]
 pub struct RopeScaling {
     pub scaling_type: String,
     pub factor: f64,
+    /// `llama3` rope scaling: `low_freq_factor`. Unused for other types.
+    pub llama3_low_freq_factor: Option<f64>,
+    /// `llama3` rope scaling: `high_freq_factor`. Unused for other types.
+    pub llama3_high_freq_factor: Option<f64>,
+    /// `llama3` rope scaling: `original_max_position_embeddings`. Unused for other types.
+    pub llama3_original_max_position_embeddings: Option<f64>,
+    /// True when the parsed `rope_scaling` block was the structured Gemma 3
+    /// per-layer-type form (`{full_attention: {...}, sliding_attention: {...}}`)
+    /// and `factor`/`scaling_type` reflect the *global / full-attention* slot
+    /// only. The sliding-attention slot for that form is always
+    /// `{rope_type: default}` with the model's `rope_local_base` — no extra
+    /// scaling to remember.
+    pub gemma3_global_only: bool,
 }
 
 /// Model dimensions and architecture parameters, parsed from config.json.
 #[derive(Debug, Clone)]
 pub struct ModelConfig {
     pub model_type: String,
+    /// RMS-norm / LayerNorm epsilon parsed from `rms_norm_eps` (or
+    /// `layer_norm_eps` for LN architectures). `None` means the loader
+    /// found no value and callers should fall back to their architecture
+    /// default. Bug 2 in `docs/diagnoses/shannon-cross-engine-divergence.md`
+    /// was the hardcoded 1e-6 in `ModelArchitecture::norm_eps()` ignoring
+    /// this field; Mistral / Llama / Gemma all ship `1e-5` and need it.
+    pub norm_eps: Option<f64>,
     pub num_layers: usize,
     pub hidden_size: usize,
     pub intermediate_size: usize,
@@ -781,8 +809,50 @@ pub trait ModelArchitecture: Send + Sync {
             .map_or(1.0, |s| s.factor)
     }
 
-    /// Norm epsilon for RMSNorm / LayerNorm. Default: 1e-6.
+    /// Norm epsilon for RMSNorm / LayerNorm. Reads `config.norm_eps` (parsed
+    /// from `rms_norm_eps` / `layer_norm_eps` / `layer_norm_epsilon` /
+    /// `norm_epsilon` in config.json by `detect::parser`) and falls back to
+    /// [`crate::defaults::DEFAULT_NORM_EPS`] only when the model's config
+    /// does not specify one. Most modern architectures (Llama 3.x, Mistral,
+    /// Gemma 3, StarCoder2) ship 1e-5 explicitly.
     fn norm_eps(&self) -> f32 {
-        1e-6
+        self.config()
+            .norm_eps
+            .map(|v| v as f32)
+            .unwrap_or(crate::defaults::DEFAULT_NORM_EPS)
     }
+
+    /// Per-layer RoPE position divisor from `rope_scaling`. Used to honour
+    /// linear rope-scaling and the Gemma 3 per-layer-type structured form.
+    /// Default: 1.0 (no scaling).
+    ///
+    /// Gemma 3 overrides this to return the linear `factor` on global
+    /// layers only and 1.0 on sliding layers, matching the HF
+    /// `Gemma3TextConfig.rope_scaling.full_attention` structure.
+    fn rope_position_divisor_for_layer(&self, _layer: usize) -> f64 {
+        1.0
+    }
+
+    /// `llama3` RoPE scaling parameters when the architecture uses them.
+    /// Default: `None`. Llama 3.x overrides to return the parsed factor
+    /// and frequency-band thresholds. Consumed by
+    /// `larql-inference::attention::rope::apply_rope_partial_at_full`.
+    fn llama3_rope_scaling(&self) -> Option<Llama3RopeScaling> {
+        None
+    }
+}
+
+/// `llama3` rope scaling parameters. Lives in larql-models so both the
+/// config parser and the forward-pass crate share the same type without
+/// crossing dependencies.
+///
+/// Applied as a wavelength-dependent per-channel adjustment to `inv_freq`
+/// — see HF's `_compute_llama3_parameters` in `modeling_rope_utils.py`.
+/// The actual math lives in `larql-inference::attention::rope`.
+#[derive(Debug, Clone, Copy)]
+pub struct Llama3RopeScaling {
+    pub factor: f64,
+    pub low_freq_factor: f64,
+    pub high_freq_factor: f64,
+    pub original_max_position_embeddings: f64,
 }

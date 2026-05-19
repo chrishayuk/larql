@@ -42,7 +42,7 @@ pub enum Capability {
     DecodeQ4KMoe,
     /// Per-stage timing decode (`decode_token_split_profile`).
     DecodeProfile,
-    /// Multi-position prefill with KV cache population (`prefill_q4`).
+    /// Multi-position prefill with KV cache population (`prefill_kquant`).
     PrefillQ4,
     /// Heterogeneous attention geometry: layers in the same model can
     /// have different `head_dim`, `num_kv_heads`, `num_q_heads`,
@@ -55,4 +55,35 @@ pub enum Capability {
     /// the same geometry) is supported by every backend regardless of
     /// this capability.
     HeterogeneousAttention,
+
+    // ── KvDispatch (engine-facing intents) ────────────────────────────
+    // See `crates/larql-inference/docs/specs/compute-backend-redesign.md`
+    // §5 for the intent vocabulary these capabilities cover. Defaults to
+    // `false`; backends override per intent as native kernels land. The
+    // current `CpuBackend` will say `true` for the f32 CPU-fallback
+    // variants of these once Step 2b lands; Metal/Vulkan say `true` for
+    // the fused/specialised variants as those land in steps 5/6.
+    /// Native fused single-kernel attention step over a `KvHandle`.
+    /// Backends without this fall back to decomposed dispatch.
+    FusedAttentionStep,
+    /// Specialised windowed-attention shader variant (window size
+    /// baked into the pipeline via specialisation constants).
+    /// `standard:window=N` benefits when present.
+    WindowedAttentionStep,
+    /// Native K/V codec kernel (TurboQuant compress/decompress on
+    /// the GPU). Backends without this fall back to dequant → f32
+    /// append → requant.
+    NativeKvCodec,
+    /// Boundary-residual upload can be pipelined with the first
+    /// attention dispatch (Metal explicit barrier, Vulkan equivalent).
+    /// Apollo's compressed path benefits when present.
+    PipelinedBoundaryUpload,
+    /// Fused `residual_add + rmsnorm` in one kernel (D-RMS-FUSE target).
+    FusedResidualNorm,
+    /// Backend can allocate a device-resident `KvHandle` (Metal
+    /// `MTLBuffer`, Vulkan `VkBuffer`). CPU returns a host-allocated
+    /// handle. Strictly, every backend will say `true` here; the flag
+    /// exists so future "compute backend that doesn't store K/V at all"
+    /// configurations (e.g., a router proxy) can opt out.
+    KvHandleNative,
 }

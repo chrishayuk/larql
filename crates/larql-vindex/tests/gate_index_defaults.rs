@@ -27,7 +27,7 @@ struct DummyGateIndex {
     down_features: Vec<Vec<f32>>,
     has_full_mmap_ffn: bool,
     has_interleaved_q4: bool,
-    has_interleaved_q4k: bool,
+    has_interleaved_kquant: bool,
     has_fp4_storage: bool,
 }
 
@@ -47,7 +47,7 @@ impl DummyGateIndex {
 
     fn q4k() -> Self {
         Self {
-            has_interleaved_q4k: true,
+            has_interleaved_kquant: true,
             ..Self::default()
         }
     }
@@ -137,11 +137,11 @@ impl QuantizedFfnAccess for DummyGateIndex {
         self.has_interleaved_q4
     }
 
-    fn has_interleaved_q4k(&self) -> bool {
-        self.has_interleaved_q4k
+    fn has_interleaved_kquant(&self) -> bool {
+        self.has_interleaved_kquant
     }
 
-    fn q4k_ffn_row_dot(
+    fn kquant_ffn_row_dot(
         &self,
         _layer: usize,
         _component: usize,
@@ -151,7 +151,7 @@ impl QuantizedFfnAccess for DummyGateIndex {
         Some(Q4K_DOT)
     }
 
-    fn q4k_ffn_row_into(
+    fn kquant_ffn_row_into(
         &self,
         _layer: usize,
         _component: usize,
@@ -162,7 +162,7 @@ impl QuantizedFfnAccess for DummyGateIndex {
         true
     }
 
-    fn q4k_ffn_row_scaled_add(
+    fn kquant_ffn_row_scaled_add(
         &self,
         _layer: usize,
         _component: usize,
@@ -175,7 +175,7 @@ impl QuantizedFfnAccess for DummyGateIndex {
         true
     }
 
-    fn q4k_ffn_row_scaled_add_via_cache(
+    fn kquant_ffn_row_scaled_add_via_cache(
         &self,
         _layer: usize,
         _component: usize,

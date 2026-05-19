@@ -83,6 +83,16 @@ pub fn decode_q8k_batch_response(body: &[u8]) -> Result<HashMap<usize, Vec<f32>>
         ));
     }
     let num_entries = u32::from_le_bytes(body[0..4].try_into().unwrap()) as usize;
+    // Each response entry needs at least 8 bytes (layer_idx + hidden);
+    // guard the with_capacity allocation against a garbage 4-byte
+    // body that decodes `num_entries = u32::MAX`.
+    let max_possible_entries = body.len().saturating_sub(4) / 8;
+    if num_entries > max_possible_entries {
+        return Err(format!(
+            "q8k batch response: num_entries={num_entries} exceeds capacity for body of {} bytes",
+            body.len()
+        ));
+    }
     let mut offset = 4usize;
     let mut out = HashMap::with_capacity(num_entries);
     for i in 0..num_entries {
@@ -127,6 +137,19 @@ pub fn decode_q8k_batch_request(body: &[u8]) -> Result<Vec<Q8KRequestEntry>, Str
         return Err(format!("q8k batch request too short: {} bytes", body.len()));
     }
     let num_entries = u32::from_le_bytes(body[0..4].try_into().unwrap()) as usize;
+    // Each entry occupies at least 8 bytes (layer_idx u32 + n_blocks u32),
+    // so a body with `num_entries > (body.len() - 4) / 8` is malformed.
+    // Without this guard a 4-byte garbage body of `[0xFF; 4]` decodes
+    // `num_entries = u32::MAX` and the `Vec::with_capacity` below tries
+    // to reserve ~320 GiB, aborting the process — see PR 104 CI
+    // `walk_ffn_q8k_garbage_body_with_q4k_returns_400`.
+    let max_possible_entries = body.len().saturating_sub(4) / 8;
+    if num_entries > max_possible_entries {
+        return Err(format!(
+            "q8k batch request: num_entries={num_entries} exceeds capacity for body of {} bytes",
+            body.len()
+        ));
+    }
     let mut offset = 4usize;
     let mut entries = Vec::with_capacity(num_entries);
     for i in 0..num_entries {

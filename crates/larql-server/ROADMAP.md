@@ -1164,26 +1164,37 @@ http://localhost:8080/v1/chat/completions` streams tokens in SSE format.
 
 #### GT7 — QUIC transport for grid
 
-**Status**: Not started.
+**Status**: ✅ **Shipped 2026-05-15 (router) + earlier on the server side; ROADMAP entry was stale.**
 
-**Spec**: ADR-0010 (full spec).
+Feature-gated by `--features quic` on both `larql-server` and
+`larql-router`. The transport wrapper lives in
+`crates/larql-router-protocol/src/transport/quic.rs` (shared between
+both crates so client + server code paths stay in sync).
 
-Feature-gated (`cargo build --features quic`). QUIC is opt-in; TCP gRPC
-remains the default and is never removed.
+Server side (`crates/larql-server/`):
+- `connect_grid_channel` (`src/announce.rs:282-339`) parses `quic://`
+  scheme on `--join` URLs and dispatches to the QUIC client endpoint;
+  fingerprint pinning via `--quic-cert-fingerprint <SHA-256>`. Falls
+  through to plain TCP gRPC for `http://` URLs.
+- `--quic-cert-fingerprint` flag wired through to both `AnnounceConfig`
+  and `AvailableConfig` (`src/bootstrap.rs:662, 1125-1128, 1176`).
 
-- Add `quinn = "0.11"` as optional dep in `Cargo.toml` behind `quic` feature.
-- New `src/transport/` directory:
-  - `src/transport/quic.rs`: quinn endpoint setup, stream wrapper as
-    `AsyncRead + AsyncWrite`, tonic channel factory.
-  - `src/transport/mod.rs`: re-export; feature-gated.
-- `bootstrap.rs`: accept `--quic-port N`; generate self-signed TLS cert if
-  not provided; spawn QUIC listener.
-- `announce.rs`: parse `quic://` scheme in `--join`; use QUIC transport
-  instead of TCP for the GridService.Join stream.
+Router side (`crates/larql-router/`):
+- `--quic-port`, `--quic-cert`, `--quic-key`, `--quic-server-name`
+  flags accept QUIC `Join` connections via the same QUIC endpoint.
+- Self-signed TLS cert auto-generated when `--quic-cert`/`--quic-key`
+  aren't passed; server logs the SHA-256 fingerprint for clients to
+  pin.
 
-**Acceptance**: `larql serve --join quic://router:50053 --layers 0-14` appears
-in `larql-router` grid-status after connecting via QUIC. Measured RTT in
-grid-status is ≤ TCP RTT on LAN; lower on lossy WAN paths.
+Acceptance test:
+`crates/larql-router-protocol/tests/test_quic_roundtrip.rs` — opens a
+real QUIC endpoint, runs `Join` over the wrapper, asserts streaming
+announce/heartbeat semantics survive the transport swap.
+
+**Limitation (clarified in ADR-0019):** This is QUIC-as-TCP-replacement
+(HTTP/2 over a single QUIC bi-stream). True HTTP/3 with per-stream
+independence shipped separately under ADR-0019 (router) for the MoE
+expert fan-out path, behind `--http3-shards` / `--http3-port`.
 
 ---
 
@@ -1191,60 +1202,69 @@ grid-status is ≤ TCP RTT on LAN; lower on lossy WAN paths.
 
 #### GT5 — Gap-fill assignment
 
-**Status**: Not started.
+**Status**: ✅ **Shipped 2026-05-13 (router) + 2026-05-16 (server end-to-end test).**
 
-**Spec**: ADR-0011 §Phase B1 Protocol.
+Server-side `run_available_loop` in `crates/larql-server/src/announce.rs`
+sends `AvailableMsg` → handles `AssignMsg` by calling
+`shard_loader::download_and_load_shard` (atomic tar-then-rename, SHA-256
+verification when a real content hash is provided) → sends `ReadyMsg`
+or `RefuseMsg(reason="download_failed")` → loops until `AckMsg` from
+the router. Public `try_once_available` entry point lets integration
+tests drive a full handshake end-to-end. Router-side serves
+`GET /v1/shard/{model_id}/{start}-{end}` as a streamed tar
+(`crates/larql-server/src/routes/shard.rs`; documented in
+[`docs/router-spec.md`](docs/router-spec.md) §4).
 
-A server starts with no shard loaded:
-```bash
-larql serve --join grpc://router:50052 \
-            --available-ram 24GB \
-            --vindex-store /mnt/shards/
-```
+Wired end-to-end + tested:
+- `tests/test_grid_mode_b.rs::mode_b_full_vertical_handoff` — protocol-level
+  drive of the gRPC stream + direct `shard_loader` call (covers AssignMsg
+  shape, hash propagation, tar unpack).
+- `tests/test_grid_mode_b.rs::mode_b_try_once_available_drives_full_handshake`
+  — exercises the production `try_once_available` loop end-to-end (Available
+  → Assign → download → Ready → Ack) against an in-process router.
+- `tests/test_grid_mode_b.rs::no_assign_when_gap_has_no_surviving_origin`
+  — router declines to assign when no live replica can be origin.
 
-Router changes (`grid.rs`):
-- Add `available_servers: HashMap<String, AvailableEntry>` to `GridState`.
-- Add `pending_assignments: HashMap<String, AssignmentRecord>`.
-- On `AvailableMsg`: call `check_coverage_gaps()`, select gap, send `AssignMsg`.
-- Assignment timeout: 10 min default (configurable `--assignment-timeout`).
+**Known follow-up — GT5 hash semantics mismatch (P1):**
+`vindex_identity_hash` (announce.rs:183) emits a 16-hex model-identity
+tag (`u64.hash`-based), but `shard_loader` verifies SHA-256 of the
+downloaded tar bytes against `AssignMsg.shard_hash`. Today this
+"works" only because deployments pass an empty/placeholder hash so
+the verification is skipped (see the `skip_hash` branch at
+`shard_loader.rs:62`). Real hash verification — meaning the donor
+hashes its on-disk shard at announce time and the spare verifies the
+download against that — is a follow-up. ADR-0011 left this implicit;
+the right shape is probably a new optional `shard_content_sha256`
+field on `AnnounceMsg` distinct from `vindex_hash`.
 
-Server changes:
-- `announce.rs`: handle `AssignMsg` → spawn `shard_loader::download_shard()`.
-- New `src/shard_loader.rs`:
-  - `async fn download_shard(origin_url, store_path, expected_hash, progress)`
-  - HTTP range requests (resumable); SHA-256 verify; atomic rename.
-- After successful load: send `ReadyMsg`; announce loop transitions to Mode A.
-- On failure: send `RefuseMsg(reason="download_failed")`; re-enter available state.
-
-New server endpoint: `GET /v1/shard/{model_id}/{layer_start}-{layer_end}` —
-streams the shard directory as a tar for peer-to-peer distribution.
-
-**Acceptance**: `larql serve --join grpc://router --available-ram 24GB`
-appears in `/grid-status` as "available"; after `AssignMsg`, transitions to
-"loading"; after `ReadyMsg`, appears as "serving" with correct layer range.
+**Mode A AssignMsg edge case:** `announce.rs:413-428` now logs a
+descriptive warning when an already-serving Mode A stream receives an
+unexpected AssignMsg (router bug — AssignMsg should target Mode B
+available pool only). Previously logged "Mode B not implemented",
+which was misleading because Mode B *is* implemented in
+`run_available_loop`; the stub was for a different code path.
 
 #### GT6 — Dynamic rebalancing
 
-**Status**: Not started. Requires GT5.
+**Status**: ✅ **Shipped 2026-05-13 (router) + earlier on the server side; ROADMAP entry was stale.**
 
-**Spec**: ADR-0011 §Phase B2 Protocol.
+Server-side `announce.rs:416-442` handles `UnassignMsg` by polling
+`requests_in_flight` for up to 30 s (`DRAIN_TIMEOUT`), then sending
+`DroppingMsg(reason="reassigned")` and either exiting cleanly or
+re-entering Mode B on the same gRPC stream via `run_available_loop`
+when `available_after_drain` is configured (ADR-0011 §Phase B2).
+Router-side rebalancer task lives at
+`crates/larql-router/src/tasks/rebalancer/` (6-module folder shipped
+in ADR-0016) with periodic ticks for replication, eviction,
+imbalance detection, and hot-shard elevation. Latency-driven
+rebalancing reads `LayerLatency.avg_ms` from heartbeats (GT3); under-
+replication tick pulls spares from the available pool.
 
-New `crates/larql-router/src/rebalancer.rs`:
-- Background tokio task, 30s check interval (configurable).
-- Triggers when: `max(avg_layer_latency_ms) / min(avg_layer_latency_ms) > 2.0`
-  sustained over 60s, AND a spare `AvailableEntry` exists.
-- Action: send `UnassignMsg(reason="rebalancing")` to overloaded server.
-
-Server drain protocol (in `announce.rs`):
-- On `UnassignMsg`: set `draining = true` on the shard.
-- Wait up to 30s for in-flight requests to complete (tracked via atomic counter).
-- Unload shard weights from memory.
-- Send `DroppingMsg(reason="reassigned")`.
-- Re-enter `AvailableMsg` loop for new assignment.
-
-**Acceptance**: Two servers covering the same layer range with artificial load
-skew (one processing 5× more requests): rebalancer detects imbalance, drains
-the overloaded server, load re-equalises within 2 rebalance cycles.
+Tested:
+- `tests/test_grid_drain_reassign.rs::drain_then_reassign_via_available_after_drain`
+  — drives the full UnassignMsg → drain → DroppingMsg → re-enter Mode B path.
+- Router-side replication + rebalancer covered in
+  `crates/larql-router/tests/test_admin_rpcs.rs` and the chaos test.
 
 ---
 
@@ -1252,34 +1272,43 @@ the overloaded server, load re-equalises within 2 rebalance cycles.
 
 #### GT8 — `larql bench` grid/wire/transport extensions
 
-**Status**: Not started.
+**Status**: ✅ **Shipped 2026-05-15.** All flags except `--transport` (which
+waits on GT7 QUIC) are live. The CLI now lives under `crates/larql-cli/src/commands/primary/bench/`
+as a folder of single-responsibility modules with per-file 90%+ test coverage
+gated by `crates/larql-cli/coverage-policy.json`.
 
-**Spec**: ADR-0012 §Layer 1.
+**What shipped:**
 
-All benchmarks are architecture-agnostic: `hidden_size`, `num_layers`,
-`quant_format` are read from vindex config. No model-family constants
-in the bench code.
+- `--bench-grid` — 1..N shard sweep over a `--moe-shards` map; emits
+  `shard_efficiency = tok/s / (N × single_shard_tok/s)` per row.
+- `--wire f32,f16,i8` — one row per format against `--ffn`; the parity
+  guarantee is at the codec level (`larql-inference/WirePreference` chooses
+  the best mutually-supported format).
+- `--concurrent N` — spawns N parallel client threads per backend; aggregate
+  tok/s = sum(client.tok_per_s), p99 = max(client.p99). Production wire path
+  is `std::thread::spawn` over the existing sync bench fn — no async refactor.
+- `--output json` / `--output-file PATH` — emits the ADR-0012 envelope:
+  `{timestamp, model, prompt, tokens, wire, concurrent, results[...]}`.
 
-New flags added to `bench_cmd.rs`:
-```
---bench-grid          Shard-count scaling sweep
---wire f32,f16,i8     Wire format comparison (requires --ffn)
---transport http,quic Transport comparison (requires --join or --ffn)
---concurrent N        Concurrent client simulation
---output json         Machine-readable JSON
---output-file PATH    JSON destination (default stdout)
-```
+**Module layout** (`commands/primary/bench/`):
+- `args.rs` — clap `BenchArgs`.
+- `row.rs` — `BenchRow` + `BenchJsonRow` + `BenchJsonResult` + percentile helpers.
+- `helpers.rs` — wire-list parser, concurrent aggregator, shard-efficiency math.
+- `output.rs` — table renderer split into pure `Vec<String>` formatters.
+- `ollama.rs` — Ollama side-by-side bench (curl wrapper isolated behind a
+  `Fetcher` indirection so the orchestration is unit-testable).
+- `engine.rs` — KV-engine post-processing helpers.
+- `local.rs` — local Metal/CPU post-processing helpers.
+- `remote_ffn.rs` — concurrent-row aggregation, FFN summary, label composer.
+- `remote_moe.rs` — shard-map parser, MoE summary, label composer.
+- `*_runtime.rs` — I/O wrappers (`run_larql`, `run_engine*`, `run_remote_ffn_bench`, `run_remote_moe_bench`). Excluded from the per-file coverage gate.
+- `run.rs` — top-level dispatch. Excluded from the per-file coverage gate.
 
-New bench submodules (under `commands/primary/bench/`):
-- `grid.rs` — scaling sweep: 1..N shards, report tok/s + p50/p99/shard_efficiency
-- `wire.rs` — wire format comparison: encode/decode timing + bandwidth + parity check
-- `transport.rs` — TCP vs QUIC comparison
+`--transport http,quic` is documented but deferred to GT7 (ADR-0010 QUIC).
 
-JSON schema: `{timestamp, model, grid, wire, transport, concurrent, results{tok_per_s, ms_per_tok{mean,p50,p95,p99}, wire_bytes_per_tok, per_layer_rtt_ms[]}}`.
-
-**Acceptance**: `larql bench <vindex> --ffn URL --wire f32,f16 --output json`
-emits valid JSON with both wire format results; `wire_bytes_per_tok` for f16
-is within 2% of `wire_bytes_per_tok(f32) / 2`.
+**Acceptance**: `larql bench <vindex> --ffn URL --wire f32,f16 --output json --output-file out.json`
+writes a JSON envelope containing both wire format results with their
+`wire_bytes_per_tok` and `ms_per_tok.{mean,p50,p99}` fields populated.
 
 #### GT9 — Criterion micro-benchmarks
 
@@ -1299,18 +1328,25 @@ Run with: `make bench-wire` / `make bench-routing`.
 
 #### GT10 — CI regression gate
 
-**Status**: Not started. Requires GT8.
+**Status**: ✅ **Shipped 2026-05-15.** Scripts + comparator + baselines
+directory all live; the script writes the first run as the baseline and
+compares subsequent runs against it.
 
-**Spec**: ADR-0012 §Layer 3.
+**Files:**
+- `scripts/bench-grid-regress.sh` — wraps `larql bench ... --wire f32,f16 --output json`,
+  compares against `bench/baselines/grid-<model>.json`. Saves the current
+  run as baseline when none exists. Env vars: `LARQL_BENCH_VINDEX`,
+  `LARQL_BENCH_FFN_URL`, optional `LARQL_TOK_PER_S_THRESHOLD` (default 0.05),
+  `LARQL_P99_THRESHOLD` (default 0.10).
+- `scripts/bench_compare.py` — pure-stdlib JSON diff. Fails if any `backend`
+  in the baseline regresses tok/s by more than the threshold or rises p99
+  by more than the threshold.
+- `bench/baselines/README.md` — workflow for updating baselines after a
+  deliberate perf improvement.
 
-- `scripts/bench-grid-regress.sh`: runs `larql bench --output json`, compares
-  against baseline in `bench/baselines/<model>.json`.
-- `scripts/bench_compare.py`: fails if tok/s drops >5% or p99 rises >10%.
-- Baselines committed to repo; updated explicitly after intentional improvements.
-- `Makefile` targets: `bench-wire`, `bench-routing`, `bench-grid`, `bench-all`.
-
-**Acceptance**: `make bench-grid MODEL=gemma3-4b-q4k` exits 0 on a clean run;
-exits 1 if a deliberate 10% regression is introduced.
+**Acceptance**: `LARQL_BENCH_VINDEX=… LARQL_BENCH_FFN_URL=… ./scripts/bench-grid-regress.sh gemma3-4b-q4k`
+exits 0 on a clean run; exits 1 with a per-backend failure list if any
+threshold trips.
 
 ---
 

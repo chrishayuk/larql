@@ -937,6 +937,47 @@ mod tests {
     }
 
     #[test]
+    fn hf_hub_cache_honours_hf_hub_cache_env() {
+        let _lock = HOME_LOCK.lock().unwrap();
+        let tmp = TempDir::new().unwrap();
+        let prior_hub = std::env::var_os("HF_HUB_CACHE");
+        let prior_home_var = std::env::var_os("HF_HOME");
+        std::env::set_var("HF_HUB_CACHE", tmp.path());
+        // HF_HUB_CACHE wins over HF_HOME — clear it to avoid ambiguity.
+        std::env::remove_var("HF_HOME");
+        let got = hf_hub_cache();
+        match prior_hub {
+            Some(v) => std::env::set_var("HF_HUB_CACHE", v),
+            None => std::env::remove_var("HF_HUB_CACHE"),
+        }
+        if let Some(v) = prior_home_var {
+            std::env::set_var("HF_HOME", v);
+        }
+        assert_eq!(got, tmp.path());
+    }
+
+    #[test]
+    fn hf_hub_cache_honours_hf_home_env_when_hub_cache_unset() {
+        let _lock = HOME_LOCK.lock().unwrap();
+        let tmp = TempDir::new().unwrap();
+        let prior_hub = std::env::var_os("HF_HUB_CACHE");
+        let prior_home_var = std::env::var_os("HF_HOME");
+        // HF_HUB_CACHE must be unset for the HF_HOME branch to fire.
+        std::env::remove_var("HF_HUB_CACHE");
+        std::env::set_var("HF_HOME", tmp.path());
+        let got = hf_hub_cache();
+        match prior_hub {
+            Some(v) => std::env::set_var("HF_HUB_CACHE", v),
+            None => std::env::remove_var("HF_HUB_CACHE"),
+        }
+        match prior_home_var {
+            Some(v) => std::env::set_var("HF_HOME", v),
+            None => std::env::remove_var("HF_HOME"),
+        }
+        assert_eq!(got, tmp.path().join("hub"));
+    }
+
+    #[test]
     fn resolve_model_path_hf_cache_fallback_config_json() {
         let _lock = HOME_LOCK.lock().unwrap();
         let home = TempDir::new().unwrap();

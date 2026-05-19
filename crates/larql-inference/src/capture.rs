@@ -123,6 +123,22 @@ impl InferenceModel {
         &self.tokenizer
     }
 
+    /// Construct an `InferenceModel` directly from in-memory parts.
+    /// Bypasses the disk-loading path so tests and embedders that
+    /// already hold a `ModelWeights` + `Tokenizer` pair don't need to
+    /// materialise a synthetic model directory.
+    pub fn from_parts(
+        weights: ModelWeights,
+        tokenizer: tokenizers::Tokenizer,
+        model_name: impl Into<String>,
+    ) -> Self {
+        Self {
+            weights,
+            tokenizer,
+            model_name: model_name.into(),
+        }
+    }
+
     /// Capture residuals and optionally activations for a list of entities.
     pub fn capture(
         &self,
@@ -428,5 +444,164 @@ mod tests {
         assert!(is_leap_year(2024)); // /4
         assert!(!is_leap_year(2023));
         assert!(!is_leap_year(2100)); // /100 not /400
+    }
+
+    // ── InferenceModel::capture (full pipeline against the synthetic
+    //    in-memory weights, via `InferenceModel::from_parts`) ───────────
+    use crate::test_utils::{make_test_weights, synthetic_tokenizer_json};
+
+    fn fresh_inference_model() -> InferenceModel {
+        let weights = make_test_weights();
+        // On-disk-shape tokenizer so `[N]` encodes to a single in-vocab id
+        // (the default `make_test_tokenizer` has a Whitespace pre-tokenizer
+        // that splits `[N]` into `[`, `N`, `]` — all UNK).
+        let json = synthetic_tokenizer_json(weights.vocab_size);
+        let tokenizer =
+            tokenizers::Tokenizer::from_bytes(json.as_bytes()).expect("synthetic tokenizer");
+        InferenceModel::from_parts(weights, tokenizer, "synthetic-tinymodel")
+    }
+
+    #[test]
+    fn inference_model_from_parts_and_accessors() {
+        let model = fresh_inference_model();
+        assert_eq!(model.num_layers(), 2);
+        assert_eq!(model.hidden_size(), 16);
+        assert!(model.weights().vocab_size > 0);
+        let _ = model.tokenizer();
+    }
+
+    #[test]
+    fn inference_model_weights_mut_returns_mutable_borrow() {
+        let mut model = fresh_inference_model();
+        let original = model.weights().rope_base;
+        let w = model.weights_mut();
+        w.rope_base = 99999.0;
+        assert_eq!(model.weights().rope_base, 99999.0);
+        model.weights_mut().rope_base = original;
+    }
+
+    /// The in-memory `make_test_tokenizer` path produces a Whitespace
+    /// pretokenizer that splits `[N]` into UNK tokens. The on-disk
+    /// fixture uses a different (null-pretokenizer) tokenizer JSON —
+    /// confirms we're picking up the right one for these tests.
+    #[test]
+    fn fresh_inference_model_tokenizes_bracket_form_to_single_id() {
+        let model = fresh_inference_model();
+        let enc = model.tokenizer().encode("[5]", false).expect("encode");
+        assert_eq!(enc.get_ids(), &[5u32]);
+    }
+
+    /// `capture` happy path — residuals only (no activations). Drives
+    /// the entity loop, residual JSONL writing, project_to_vocab, and
+    /// the SilentCallbacks no-op trait.
+    #[test]
+    fn capture_writes_residuals_jsonl_with_silent_callbacks() {
+        let model = fresh_inference_model();
+        let out_dir = tempfile::tempdir().expect("out tempdir");
+        let config = CaptureConfig::default();
+        let mut cb = SilentCallbacks;
+        // Entities use vocab tokens that the synthetic tokenizer
+        // (pre_tokenizer=null in the on-disk variant) decodes to a
+        // single id each.
+        let entities = vec!["[1]".to_string(), "[2]".to_string()];
+        let (res_count, act_count) = model
+            .capture(&entities, &config, out_dir.path(), &mut cb)
+            .expect("capture must succeed");
+        assert!(res_count > 0, "should produce at least one residual record");
+        assert_eq!(act_count, 0, "capture_activations=false → no activations");
+
+        let residual_path = out_dir.path().join("residuals.vectors.jsonl");
+        let bytes = std::fs::read(&residual_path).expect("residuals.vectors.jsonl");
+        let text = String::from_utf8_lossy(&bytes);
+        // Header line + at least one record line.
+        assert!(
+            text.lines().count() > 1,
+            "expected header + ≥1 record, got {} line(s)",
+            text.lines().count()
+        );
+        // The activations file is not created when capture_activations
+        // is false (the writer is None throughout).
+        assert!(!out_dir.path().join("activations.jsonl").exists());
+    }
+
+    /// `capture` with activations on — drives the
+    /// `if let Some(ref mut writer)` activations branch and the
+    /// `FeatureActivation` record path.
+    #[test]
+    fn capture_writes_activations_jsonl_when_enabled() {
+        let model = fresh_inference_model();
+        let out_dir = tempfile::tempdir().expect("out tempdir");
+        let config = CaptureConfig {
+            layers: vec![0, 1],
+            prompt_template: Some("entity is {entity}".into()),
+            capture_activations: true,
+            activation_top_k: 4,
+        };
+        let mut cb = SilentCallbacks;
+        let entities = vec!["[3]".to_string()];
+        let (_res, act_count) = model
+            .capture(&entities, &config, out_dir.path(), &mut cb)
+            .expect("capture must succeed");
+        assert!(
+            act_count > 0,
+            "should produce at least one activation record"
+        );
+
+        let act_path = out_dir.path().join("activations.jsonl");
+        assert!(act_path.exists(), "activations.jsonl must be written");
+    }
+
+    /// `capture` with an empty entity list still creates the residuals
+    /// file (just the header line) and returns zero counts.
+    #[test]
+    fn capture_with_no_entities_writes_header_only() {
+        let model = fresh_inference_model();
+        let out_dir = tempfile::tempdir().expect("out tempdir");
+        let config = CaptureConfig::default();
+        let mut cb = SilentCallbacks;
+        let (res_count, act_count) = model
+            .capture(&[], &config, out_dir.path(), &mut cb)
+            .expect("capture must succeed with empty entities");
+        assert_eq!(res_count, 0);
+        assert_eq!(act_count, 0);
+        let residual_path = out_dir.path().join("residuals.vectors.jsonl");
+        assert!(residual_path.exists());
+    }
+
+    /// `capture` skips entities whose tokenization is empty
+    /// (line 185-187 `continue`).
+    #[test]
+    fn capture_skips_empty_tokenization_entities() {
+        let model = fresh_inference_model();
+        let out_dir = tempfile::tempdir().expect("out tempdir");
+        let config = CaptureConfig::default();
+        let mut cb = SilentCallbacks;
+        // Empty prompt → tokenizer should produce empty token list,
+        // triggering the `continue` branch.
+        let entities = vec![String::new()];
+        let (res_count, _act_count) = model
+            .capture(&entities, &config, out_dir.path(), &mut cb)
+            .expect("capture must succeed even when entity skipped");
+        // No residuals because every entity was skipped.
+        assert_eq!(res_count, 0);
+    }
+
+    #[test]
+    fn capture_default_config_uses_last_layer_when_empty() {
+        // CaptureConfig::default() yields layers=Vec::new(); the capture
+        // loop falls through to `[num_layers-1]`. Drives the
+        // `if config.layers.is_empty()` branch on line 164.
+        let model = fresh_inference_model();
+        let out_dir = tempfile::tempdir().expect("out tempdir");
+        let cfg = CaptureConfig::default();
+        assert!(cfg.layers.is_empty());
+        let mut cb = SilentCallbacks;
+        let entities = vec!["[1]".to_string()];
+        let (res_count, _) = model
+            .capture(&entities, &cfg, out_dir.path(), &mut cb)
+            .expect("capture");
+        // Default config captures last layer only → exactly 1 residual
+        // per entity.
+        assert_eq!(res_count, 1);
     }
 }

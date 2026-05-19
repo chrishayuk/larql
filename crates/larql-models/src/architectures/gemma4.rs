@@ -224,7 +224,9 @@ impl ModelArchitecture for Gemma4Arch {
 
     fn rope_base_for_layer(&self, layer: usize) -> f64 {
         if self.is_sliding_window_layer(layer) {
-            self.config.rope_local_base.unwrap_or(10_000.0)
+            self.config
+                .rope_local_base
+                .unwrap_or(crate::defaults::ROPE_BASE_DEFAULT)
         } else {
             self.config.rope_base
         }

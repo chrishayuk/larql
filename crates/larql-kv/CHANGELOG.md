@@ -6,6 +6,64 @@ The format follows [Keep a Changelog](https://keepachangelog.com/) conventions
 with dated entries (`YYYY-MM-DD`) instead of semantic versions during the
 pre-1.0 phase. Forward-looking work lives in [`ROADMAP.md`](ROADMAP.md).
 
+## [2026-05-16] — KV engine unification (steps 1-5 of 7)
+
+Unifies the parallel "live decode cache" and "research KV engine" code
+paths so `larql run` / `larql walk` dispatch through the same `KvEngine`
+trait that `larql bench --engine` uses. Spec at
+[`crates/larql-inference/docs/specs/kv-engine-unification.md`](../larql-inference/docs/specs/kv-engine-unification.md).
+
+**Trait surface relocated.** `KvEngine` + `EngineInfo` +
+`DecodeStageSummary` now live in `larql-inference::kv_engine`; this
+crate re-exports them so `larql_kv::KvEngine` keeps the same public
+shape. Engine impls in `larql-kv/src/engines/*` continue to write
+`impl KvEngine for ...` against the same trait — just resolved through
+the re-export. The trait moved upstream so the dispatch entry point
+(`larql_inference::forward::generate_with_engine`) can reference it
+without inducing a circular dep on `larql-kv`. See spec §10.4.
+
+**Trait widened for FFN dispatch.** `KvEngine::{prefill, decode_step,
+prefill_q4k, decode_step_q4k}` now take `ffn: &dyn FfnBackend` after
+`weights`. Existing four engines ignore the parameter (FFN is recomputed
+from weights as before); new param is plumbing for future engines that
+route FFN remotely (`RemoteWalkBackend`, `RemoteMoeBackend`).
+`larql_inference::ffn::NullFfn` added as a trait-satisfying stub that
+holds no references — used by Q4K callers where `&mut weights` rules
+out a `WeightFfn`.
+
+**Two new engines** in `larql-kv/src/engines/`:
+
+- `StandardEngine` — wraps the production K/V tensor cache. `window=None`
+  matches today's `--kv-cache standard`; `Some(N)` matches
+  `--kv-cache markov-bounded --context-window N`. Bit-identical output.
+- `NoCacheEngine` — wraps the O(N²) re-forward fallback. Matches today's
+  `--kv-cache none` on non-PLE architectures.
+
+`EngineKind` gains `Standard { window_size: Option<usize> }` and
+`NoCache` variants. `from_name` recognises `standard[:window=N]`,
+`markov-bounded[:window=N]` (legacy alias → `Standard`), `no-cache`,
+`none` (legacy → `NoCache`), plus existing aliases.
+
+**Default flipped** to engine dispatch. `walk_cmd::generate_stream` no
+longer carries the legacy `match` over `KvCacheKind`; it builds an
+`EngineKind` from the flag and drives `generate_with_engine`.
+
+**Bit-parity gate** lives in `larql-kv/src/engines/{standard,no_cache}.rs`:
+- `Standard { window=None }` vs `generate_cached_backend(window=None)` ✓
+- `Standard { window=Some(3) }` vs `generate_cached_backend(window=Some(3))` ✓
+- `Standard { window=Some(64) }` short-prompt edge case ✓
+- `NoCacheEngine` vs legacy `predict_with_ffn` loop ✓ (non-PLE)
+
+**Engine-trait dispatch overhead** measured at ~1.6 % (within noise) on
+the synthetic test substrate. See [`PERFORMANCE.md`](PERFORMANCE.md).
+
+**Coverage:** new files land at 99.1 % (`standard.rs`) and 96.1 %
+(`no_cache.rs`); upstream `kv_engine.rs` at 94.3 %. Per-file 90 % floor
+met for everything new.
+
+Steps 6 (CLI `--engine` flag, `LARQL_KV_ENGINE` env var, server wiring,
+ROADMAP update) and 7 (cleanup) pending.
+
 ## [2026-05-10] — Coverage push
 
 Total line coverage **67.44 % → 85.13 %** (+17.69 pp, 217 tests, +66 vs

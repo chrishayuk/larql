@@ -61,7 +61,7 @@ fn bench_f32_gemv(c: &mut Criterion) {
     let mut group = c.benchmark_group("cpu_vs_gpu/f32_gemv_single_position");
     let cpu = CpuBackend;
     #[cfg(all(feature = "metal", target_os = "macos"))]
-    let metal = larql_compute::MetalBackend::new();
+    let metal = larql_compute_metal::MetalBackend::new();
 
     for &(name, features, hidden) in configs() {
         let gate = synth_matrix(features, hidden);
@@ -99,7 +99,7 @@ fn bench_f32_batch_matmul(c: &mut Criterion) {
     let mut group = c.benchmark_group("cpu_vs_gpu/f32_batch_matmul_seq64");
     let cpu = CpuBackend;
     #[cfg(all(feature = "metal", target_os = "macos"))]
-    let metal = larql_compute::MetalBackend::new();
+    let metal = larql_compute_metal::MetalBackend::new();
 
     let seq_len = 64usize; // typical mid-size prefill batch
     for &(name, features, hidden) in configs() {
@@ -132,7 +132,7 @@ fn bench_q4_matvec(c: &mut Criterion) {
     let mut group = c.benchmark_group("cpu_vs_gpu/q4_matvec_decode");
     let cpu = CpuBackend;
     #[cfg(all(feature = "metal", target_os = "macos"))]
-    let metal = larql_compute::MetalBackend::new();
+    let metal = larql_compute_metal::MetalBackend::new();
 
     for &(name, features, hidden) in configs() {
         let gate = synth_matrix(features, hidden);

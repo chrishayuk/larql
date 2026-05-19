@@ -42,17 +42,17 @@ pub fn predict_honest(
     }
 
     // GPU pipeline: decode (seq=1) uses decode_token/full_pipeline_q4,
-    // prefill (seq>1) uses prefill_q4 for GPU-accelerated multi-position inference.
+    // prefill (seq>1) uses prefill_kquant for GPU-accelerated multi-position inference.
     let seq_len = h.shape()[0];
-    let used_gpu = if backend.has_q4() {
+    let used_gpu = if backend.supports_quant(::larql_compute::QuantFormat::Q4_K) {
         let gate_index: &dyn larql_vindex::GateIndex = index;
         // Prefer Q4_K FFN (Ollama-compatible) over Q4_0
-        let (q4_ffn, ffn_is_q4k) = if let Some(mmap) = gate_index.interleaved_q4k_mmap_ref() {
+        let (q4_ffn, ffn_is_q4k) = if let Some(mmap) = gate_index.interleaved_kquant_mmap_ref() {
             (Some(mmap), true)
         } else {
             (gate_index.interleaved_q4_mmap_ref(), false)
         };
-        let has_q4k = index.attn_q4k_layer_data(layer_range.start).is_some();
+        let has_q4k = index.attn_kquant_layer_data(layer_range.start).is_some();
         let has_q8 = index.attn_q8_layer_data(layer_range.start).is_some();
 
         if let Some(q4_ffn_mmap) = q4_ffn {
@@ -125,7 +125,7 @@ pub fn predict_honest(
                     // handling needs further work (see ADR-009).
                     let x: Vec<f32> = h.as_slice().unwrap_or(&[]).to_vec();
 
-                    if let Some(result) = backend.prefill_q4(
+                    if let Some(result) = backend.prefill_kquant(
                         &layers,
                         &x,
                         hidden,

@@ -37,7 +37,7 @@ jobs:
         os: [ubuntu-latest, windows-latest, macos-14]
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
 
       - name: Install stable Rust
         uses: dtolnay/rust-toolchain@stable
@@ -45,7 +45,7 @@ jobs:
           components: clippy, rustfmt
 
       - name: Cache cargo registry + build artefacts
-        uses: actions/cache@v4
+        uses: actions/cache@v5
         with:
           path: |
             ~/.cargo/registry
@@ -62,7 +62,10 @@ jobs:
         run: cargo check -p larql-models --all-targets
 
       - name: Clippy (warnings as errors)
-        run: cargo clippy -p larql-models --all-targets -- -D warnings
+        # `--no-deps` so warnings in sibling crates' in-flight work do
+        # not promote to errors here; matches the local `make
+        # larql-models-lint` target.
+        run: cargo clippy -p larql-models --all-targets --no-deps -- -D warnings
 
       - name: Test
         run: cargo test -p larql-models
@@ -76,7 +79,7 @@ jobs:
     timeout-minutes: 20
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
 
       - name: Install stable Rust
         uses: dtolnay/rust-toolchain@stable
@@ -84,5 +87,9 @@ jobs:
       - name: Install cargo-llvm-cov
         uses: taiki-e/install-action@cargo-llvm-cov
 
-      - name: Coverage summary
-        run: cargo llvm-cov --package larql-models --summary-only
+      - name: Coverage policy gate
+        # `make larql-models-coverage-summary` runs `cargo llvm-cov`
+        # with the floor check AND calls `scripts/check_coverage_policy.py`,
+        # so any regression on the per-file debt baselines or the total
+        # floor fails CI here.
+        run: make larql-models-coverage-summary

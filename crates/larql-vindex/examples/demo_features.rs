@@ -686,6 +686,9 @@ fn make_config(
             safetensors_sha256: None,
             extracted_at: "2026-04-01T00:00:00Z".into(),
             larql_version: env!("CARGO_PKG_VERSION").into(),
+            base_model_sha: None,
+            extractor_sha: None,
+            base_safetensors_sha256: None,
         }),
         checksums: larql_vindex::format::checksums::compute_checksums(
             &std::env::temp_dir().join("larql_vindex_showcase"),

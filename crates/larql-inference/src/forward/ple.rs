@@ -288,4 +288,59 @@ mod tests {
     fn softmax_empty_input_returns_empty() {
         assert!(crate::forward::softmax(&[]).is_empty());
     }
+
+    // ── PLE-enabled arch: full body coverage via synthetic E2B-like weights ──
+
+    /// `precompute_per_layer_inputs` on the synthetic Gemma-4-E2B-like
+    /// arch drives the full body (lines 29-105): non-empty num_layers loop,
+    /// stream-1 projection + RMSNorm, stream-2 embed lookup, sqrt(2)
+    /// rescale. Returns one `[seq, ple_dim]` array per layer.
+    #[test]
+    fn precompute_runs_full_body_on_synthetic_e2b_arch() {
+        use crate::test_utils::make_synthetic_e2b_like_weights;
+        let weights = make_synthetic_e2b_like_weights();
+        let token_ids = &[0u32, 1, 2];
+        let embeds = input(token_ids.len(), weights.hidden_size);
+        let result = precompute_per_layer_inputs(&weights, &embeds, token_ids);
+        assert_eq!(
+            result.len(),
+            weights.num_layers,
+            "PLE arch should produce one array per layer"
+        );
+        for (i, layer_input) in result.iter().enumerate() {
+            assert_eq!(
+                layer_input.shape(),
+                &[token_ids.len(), 4],
+                "layer {i} input must be [seq, ple_dim]"
+            );
+            assert!(
+                layer_input.iter().all(|v| v.is_finite()),
+                "layer {i} input must be finite"
+            );
+        }
+    }
+
+    /// `apply_per_layer_embedding` on the synthetic E2B-like arch with a
+    /// precomputed per-layer input drives the full body (lines 136-169):
+    /// gate matmul, gelu_tanh, gated multiply, projection, post-PLE norm,
+    /// residual add.
+    #[test]
+    fn apply_per_layer_embedding_runs_full_body_on_synthetic_e2b_arch() {
+        use crate::test_utils::make_synthetic_e2b_like_weights;
+        let weights = make_synthetic_e2b_like_weights();
+        let token_ids = &[0u32, 1];
+        let embeds = input(token_ids.len(), weights.hidden_size);
+        let ple_inputs = precompute_per_layer_inputs(&weights, &embeds, token_ids);
+        assert_eq!(ple_inputs.len(), weights.num_layers);
+
+        let h = input(token_ids.len(), weights.hidden_size);
+        for (layer, ple_input) in ple_inputs.iter().enumerate() {
+            let out = apply_per_layer_embedding(&weights, &h, layer, Some(ple_input));
+            assert_eq!(out.shape(), h.shape());
+            assert!(
+                out.iter().all(|v| v.is_finite()),
+                "layer {layer} non-finite"
+            );
+        }
+    }
 }

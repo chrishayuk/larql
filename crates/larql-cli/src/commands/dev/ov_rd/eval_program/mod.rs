@@ -6,7 +6,7 @@ pub(super) use args::EvalProgramArgs;
 use std::collections::HashMap;
 
 use larql_inference::encode_prompt;
-use larql_vindex::{load_model_weights_q4k, load_vindex_tokenizer, SilentLoadCallbacks};
+use larql_vindex::{load_model_weights_kquant, load_vindex_tokenizer, SilentLoadCallbacks};
 use serde::Serialize;
 
 use super::address::attention_argmax;
@@ -112,9 +112,9 @@ pub(super) fn run_eval_program(args: EvalProgramArgs) -> Result<(), Box<dyn std:
 
     let mut cb = SilentLoadCallbacks;
     let mut index = larql_vindex::VectorIndex::load_vindex(&args.index, &mut cb)?;
-    index.load_attn_q4k(&args.index)?;
-    index.load_interleaved_q4k(&args.index)?;
-    let mut weights = load_model_weights_q4k(&args.index, &mut cb)?;
+    index.load_attn_kquant(&args.index)?;
+    index.load_interleaved_kquant(&args.index)?;
+    let mut weights = load_model_weights_kquant(&args.index, &mut cb)?;
     let tokenizer = load_vindex_tokenizer(&args.index)?;
 
     let metal_backend = super::metal_backend::init(args.metal);
@@ -254,10 +254,15 @@ pub(super) fn run_eval_program(args: EvalProgramArgs) -> Result<(), Box<dyn std:
             {
                 h
             } else {
-                larql_inference::vindex::predict_q4k_hidden(&mut weights, &token_ids, &index, None)
+                larql_inference::vindex::predict_kquant_hidden(
+                    &mut weights,
+                    &token_ids,
+                    &index,
+                    None,
+                )
             }
         } else {
-            larql_inference::vindex::predict_q4k_hidden(&mut weights, &token_ids, &index, None)
+            larql_inference::vindex::predict_kquant_hidden(&mut weights, &token_ids, &index, None)
         };
         let baseline_logits = final_logits(&weights, &baseline_h);
         let baseline_logp = log_softmax(&baseline_logits);

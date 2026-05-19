@@ -11,17 +11,35 @@ Describes *what a model is* without performing any computation. Every model arch
 | Architecture | Model Type | Key Features |
 |-------------|-----------|--------------|
 | **Gemma 4** | `gemma4*` | Per-layer head_dim, partial RoPE, K=V sharing, V-norm, PLE, KV layer sharing, layer scalars |
-| **Gemma 3** | `gemma3*` | QK-norm, 4 norms/layer, sliding window (every 6th full), dual RoPE bases |
+| **Gemma 3** | `gemma3*` | QK-norm, 4 norms/layer, sliding window (every 6th full), dual RoPE bases, per-layer-type `rope_scaling` |
 | **Gemma 2** | `gemma2`, `gemma` | QK-norm, attn/final logit softcapping, 4 norms/layer |
-| **Llama** | `llama*` | GQA, RoPE scaling (linear, YaRN, llama3) |
+| **Llama** | `llama*` | GQA, `rope_scaling = linear/yarn/llama3` |
 | **Mistral** | `mistral` | GQA, sliding window |
 | **Mixtral** | `mixtral` | MoE (PerExpert), block_sparse_moe routing |
 | **Qwen** | `qwen*` | Attention bias, GQA |
 | **DeepSeek** | `deepseek*` | MoE + MLA (multi-head latent attention), KV/Q compression |
 | **GPT-OSS** | `gpt_oss` | MoE (PackedMxfp4), fused expert blocks, e8m0 scales |
 | **Granite** | `granite*` | Embedding/residual/attention/logits multipliers |
-| **StarCoder2** | `starcoder2` | LayerNorm, GELU, FFN bias, attention bias |
+| **StarCoder2** | `starcoder2` | LayerNorm, GELU, FFN bias, attention bias, `norm_epsilon` field |
+| **GPT-2** | `gpt2` | LayerNorm, fused `c_attn` QKV, learned position embeddings, legacy `n_embd` / `n_layer` / `n_head` config aliases |
 | **Generic** | (fallback) | Safe defaults for unknown model_type values |
+
+### Config fields parsed (selection)
+
+Field aliases live in `detect/config_io.rs` so the loader and the parser
+agree on what names to accept. Drift between the two was bug 2 in the
+[Shannon cross-engine diagnostic](../../docs/diagnoses/shannon-cross-engine-divergence.md).
+
+| Canonical | Aliases recognised | Notes |
+|---|---|---|
+| `hidden_size` | `n_embd` | GPT-2 legacy |
+| `num_hidden_layers` | `n_layer` | GPT-2 legacy |
+| `num_attention_heads` | `n_head` | GPT-2 legacy |
+| `intermediate_size` | `n_inner` | GPT-2 derives `4 * n_embd` if both absent |
+| `rms_norm_eps` | `layer_norm_eps`, `layer_norm_epsilon`, `norm_epsilon` | RMSNorm + LayerNorm families |
+| `rope_theta` | `rope_parameters.full_attention.rope_theta` | Gemma 3/4 structured form |
+| `rope_local_base_freq` | `rope_parameters.sliding_attention.rope_theta` | Gemma 3/4 sliding layers |
+| `rope_scaling` | flat `{rope_type, factor, ...}` and Gemma 3 structured `{full_attention, sliding_attention}` | `linear`, `llama3`, and `default` interpreted |
 
 ## Architecture Detection
 

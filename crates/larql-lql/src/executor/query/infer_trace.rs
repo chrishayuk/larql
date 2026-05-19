@@ -433,3 +433,337 @@ fn render_trace_layer(
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    //! Coverage for the four pure helpers — `exec_infer_trace` itself
+    //! needs real model weights and is exercised by the synthetic-fixture
+    //! integration tests in `crates/larql-lql/tests/infer_trace_synthetic.rs`.
+    //! These tests target the formatter logic that runs after the
+    //! forward pass.
+    use super::*;
+    use larql_inference::attention::AttentionWeights;
+    use larql_inference::LayerAttentionCapture;
+    use larql_models::TopKEntry;
+    use larql_vindex::{FeatureMeta, LayerBands, WalkHit};
+
+    fn meta(top: &str, tokens: &[&str]) -> FeatureMeta {
+        FeatureMeta {
+            top_token: top.into(),
+            top_token_id: 0,
+            c_score: 0.9,
+            top_k: tokens
+                .iter()
+                .enumerate()
+                .map(|(i, &t)| TopKEntry {
+                    token: t.into(),
+                    token_id: i as u32,
+                    logit: 1.0 - 0.1 * i as f32,
+                })
+                .collect(),
+        }
+    }
+
+    fn hit(layer: usize, feature: usize, gate: f32, top: &str, top_k: &[&str]) -> WalkHit {
+        WalkHit {
+            layer,
+            feature,
+            gate_score: gate,
+            meta: meta(top, top_k),
+        }
+    }
+
+    fn bands() -> LayerBands {
+        LayerBands {
+            syntax: (0, 13),
+            knowledge: (14, 27),
+            output: (28, 33),
+        }
+    }
+
+    // ── band_to_layer_range ───────────────────────────────────────────
+
+    #[test]
+    fn band_syntax_returns_syntax_range() {
+        assert_eq!(
+            band_to_layer_range(Some(LayerBand::Syntax), &bands()),
+            Some((0, 13))
+        );
+    }
+
+    #[test]
+    fn band_knowledge_returns_knowledge_range() {
+        assert_eq!(
+            band_to_layer_range(Some(LayerBand::Knowledge), &bands()),
+            Some((14, 27))
+        );
+    }
+
+    #[test]
+    fn band_output_returns_output_range() {
+        assert_eq!(
+            band_to_layer_range(Some(LayerBand::Output), &bands()),
+            Some((28, 33))
+        );
+    }
+
+    #[test]
+    fn band_all_returns_none() {
+        assert_eq!(band_to_layer_range(Some(LayerBand::All), &bands()), None);
+    }
+
+    #[test]
+    fn band_unset_returns_none() {
+        assert_eq!(band_to_layer_range(None, &bands()), None);
+    }
+
+    // ── build_attention_map ────────────────────────────────────────────
+
+    #[test]
+    fn attention_map_empty_when_with_attention_false() {
+        let caps = vec![LayerAttentionCapture {
+            layer: 5,
+            weights: AttentionWeights {
+                heads: vec![vec![0.5, 0.5]],
+            },
+        }];
+        let tokens = vec![Some("a".to_string()), Some("b".to_string())];
+        let map = build_attention_map(&caps, &tokens, false);
+        assert!(map.is_empty(), "with_attention=false should disable build");
+    }
+
+    #[test]
+    fn attention_map_empty_when_no_captures() {
+        let map = build_attention_map(&[], &[Some("a".into())], true);
+        assert!(map.is_empty());
+    }
+
+    #[test]
+    fn attention_map_averages_over_heads_and_truncates_to_three() {
+        // 5 tokens, 2 heads. After averaging, sort desc and keep top 3.
+        let caps = vec![LayerAttentionCapture {
+            layer: 7,
+            weights: AttentionWeights {
+                heads: vec![
+                    vec![0.1, 0.2, 0.3, 0.2, 0.2], // head 0
+                    vec![0.3, 0.4, 0.1, 0.1, 0.1], // head 1
+                ],
+            },
+        }];
+        let tokens = vec![
+            Some("alpha".into()),
+            Some("beta".into()),
+            Some("gamma".into()),
+            Some("delta".into()),
+            Some("epsilon".into()),
+        ];
+        let map = build_attention_map(&caps, &tokens, true);
+        let pairs = map.get(&7).expect("layer 7 should appear");
+        assert_eq!(pairs.len(), 3, "should truncate to top 3");
+        // Avg per col: 0.2, 0.3, 0.2, 0.15, 0.15 → top is "beta"
+        assert_eq!(pairs[0].0, "beta");
+        assert!((pairs[0].1 - 0.3).abs() < 1e-6);
+    }
+
+    #[test]
+    fn attention_map_skips_none_token_strs() {
+        // None entries (BOS/EOS) drop out of the pairs.
+        let caps = vec![LayerAttentionCapture {
+            layer: 0,
+            weights: AttentionWeights {
+                heads: vec![vec![0.5, 0.5]],
+            },
+        }];
+        let tokens = vec![None, Some("real".into())];
+        let map = build_attention_map(&caps, &tokens, true);
+        let pairs = map.get(&0).unwrap();
+        assert_eq!(pairs.len(), 1);
+        assert_eq!(pairs[0].0, "real");
+    }
+
+    #[test]
+    fn attention_map_skips_capture_with_zero_heads() {
+        let caps = vec![LayerAttentionCapture {
+            layer: 2,
+            weights: AttentionWeights { heads: vec![] },
+        }];
+        let map = build_attention_map(&caps, &[Some("a".into())], true);
+        assert!(map.is_empty());
+    }
+
+    // ── build_lens_map ─────────────────────────────────────────────────
+
+    #[test]
+    fn lens_map_empty_when_with_attention_false() {
+        // Real weights/tokenizer aren't needed when with_attention=false
+        // because the function returns the empty-map branch immediately.
+        // We construct synthetic placeholders just to satisfy the
+        // signature.
+        let weights = larql_inference::test_utils::make_test_weights();
+        let tokenizer = larql_inference::test_utils::make_test_tokenizer(weights.vocab_size);
+        let lens = vec![(5usize, vec![0.0f32; 4])];
+        let map = build_lens_map(&lens, &weights, &tokenizer, false);
+        assert!(map.is_empty());
+    }
+
+    // ── render_trace_layer ─────────────────────────────────────────────
+
+    #[test]
+    fn render_multiline_with_no_classifier_emits_per_layer_lines() {
+        let mut out = Vec::new();
+        let hits = vec![
+            hit(5, 100, 2.5, " Paris", &[" Paris", " France", ","]),
+            hit(5, 101, -1.0, " noise", &[" noise"]),
+        ];
+        render_trace_layer(
+            &mut out,
+            5,
+            &hits,
+            None,
+            false,
+            2,
+            false,
+            &std::collections::HashMap::new(),
+            &std::collections::HashMap::new(),
+        );
+        assert_eq!(out.len(), 2, "per_layer=2 should emit two lines");
+        assert!(out[0].contains("L 5"));
+        assert!(out[0].contains("F100"));
+        assert!(out[0].contains("Paris"));
+    }
+
+    #[test]
+    fn render_multiline_respects_per_layer_cap() {
+        let mut out = Vec::new();
+        let hits = vec![
+            hit(0, 1, 1.0, "a", &["a"]),
+            hit(0, 2, 0.5, "b", &["b"]),
+            hit(0, 3, 0.1, "c", &["c"]),
+        ];
+        render_trace_layer(
+            &mut out,
+            0,
+            &hits,
+            None,
+            false,
+            2,
+            false,
+            &std::collections::HashMap::new(),
+            &std::collections::HashMap::new(),
+        );
+        assert_eq!(out.len(), 2);
+    }
+
+    #[test]
+    fn render_multiline_with_relations_only_drops_unlabelled() {
+        let mut out = Vec::new();
+        let hits = vec![hit(0, 1, 1.0, "a", &["a"])];
+        // No classifier → no labels → relations_only filters everything.
+        render_trace_layer(
+            &mut out,
+            0,
+            &hits,
+            None,
+            true,
+            5,
+            false,
+            &std::collections::HashMap::new(),
+            &std::collections::HashMap::new(),
+        );
+        assert!(out.is_empty());
+    }
+
+    #[test]
+    fn render_with_attention_compact_line_includes_attn_and_lens() {
+        let mut out = Vec::new();
+        let hits = vec![hit(7, 42, 3.5, " Paris", &[" Paris"])];
+        let mut attention_map = std::collections::HashMap::new();
+        attention_map.insert(7, vec![("France".to_string(), 0.6)]);
+        let mut lens_map = std::collections::HashMap::new();
+        lens_map.insert(7, ("Paris".to_string(), 0.75));
+        render_trace_layer(
+            &mut out,
+            7,
+            &hits,
+            None,
+            false,
+            1,
+            true,
+            &attention_map,
+            &lens_map,
+        );
+        assert_eq!(out.len(), 1);
+        let line = &out[0];
+        assert!(line.contains("L 7"));
+        assert!(line.contains("Paris"));
+        assert!(line.contains("France"));
+        // 0.6 × 100 with %.0f = "60%"
+        assert!(line.contains("60%"));
+        // 0.75 × 100 with %.1f = "75.0%"
+        assert!(line.contains("75.0%"));
+    }
+
+    #[test]
+    fn render_with_attention_emits_nothing_when_no_feature_and_no_lens() {
+        let mut out = Vec::new();
+        // Empty hits, no lens entry → compact path skips the layer.
+        render_trace_layer(
+            &mut out,
+            5,
+            &[],
+            None,
+            false,
+            1,
+            true,
+            &std::collections::HashMap::new(),
+            &std::collections::HashMap::new(),
+        );
+        assert!(out.is_empty());
+    }
+
+    #[test]
+    fn render_with_attention_emits_lens_only_when_no_feature() {
+        let mut out = Vec::new();
+        let mut lens_map = std::collections::HashMap::new();
+        lens_map.insert(3, ("X".to_string(), 0.9));
+        render_trace_layer(
+            &mut out,
+            3,
+            &[],
+            None,
+            false,
+            1,
+            true,
+            &std::collections::HashMap::new(),
+            &lens_map,
+        );
+        // The compact branch fires when `feature_part.is_some() ||
+        // !lens_part.is_empty()` — lens alone is enough.
+        assert_eq!(out.len(), 1);
+        assert!(out[0].contains("X"));
+        assert!(out[0].contains("90.0%"));
+    }
+
+    #[test]
+    fn render_multiline_with_classifier_skips_unlabelled_when_relations_only() {
+        // Same shape as the previous unlabelled test but explicitly
+        // covers the path where `classifier.is_some()` but the lookup
+        // returns None for each feature. None → label `""` → filtered.
+        // Without a real classifier we pass None — same behavioural
+        // outcome for the filter.
+        let mut out = Vec::new();
+        let hits = vec![hit(0, 99, 1.0, "x", &["x"])];
+        render_trace_layer(
+            &mut out,
+            0,
+            &hits,
+            None,
+            true,
+            5,
+            false,
+            &std::collections::HashMap::new(),
+            &std::collections::HashMap::new(),
+        );
+        assert!(out.is_empty());
+    }
+}

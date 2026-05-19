@@ -1013,6 +1013,10 @@ fn make_full_test_vindex_dir(tag: &str) -> std::path::PathBuf {
         rope_local_base: None,
         query_pre_attn_scalar: None,
         final_logit_softcapping: None,
+        attention_multiplier: None,
+        residual_multiplier: None,
+        logits_scaling: None,
+        norm_eps: None,
     };
 
     let mut config = VindexConfig {
@@ -1238,6 +1242,10 @@ fn make_large_test_vindex_dir(tag: &str) -> std::path::PathBuf {
         rope_local_base: None,
         query_pre_attn_scalar: None,
         final_logit_softcapping: None,
+        attention_multiplier: None,
+        residual_multiplier: None,
+        logits_scaling: None,
+        norm_eps: None,
     };
 
     let mut config = VindexConfig {
@@ -1388,6 +1396,10 @@ fn make_moe_test_vindex_dir(tag: &str) -> std::path::PathBuf {
         rope_local_base: None,
         query_pre_attn_scalar: None,
         final_logit_softcapping: None,
+        attention_multiplier: None,
+        residual_multiplier: None,
+        logits_scaling: None,
+        norm_eps: None,
     };
 
     let mut config = VindexConfig {

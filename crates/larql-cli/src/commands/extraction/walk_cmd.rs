@@ -87,6 +87,12 @@ pub struct WalkArgs {
     #[arg(long, default_value = "0")]
     pub context_window: usize,
 
+    /// KV engine spec — overrides `--kv-cache` when set. See `larql run
+    /// --help` for the full syntax. Falls back to the `LARQL_KV_ENGINE`
+    /// env var when unset.
+    #[arg(long, value_name = "SPEC")]
+    pub engine: Option<String>,
+
     /// Run full forward pass with walk FFN and show predictions (requires --model).
     #[arg(long)]
     pub predict: bool,
@@ -401,7 +407,7 @@ fn run_with_vindex_weights(
     // BEFORE calling it to avoid a confusing error for Q4 users.
     let cfg = larql_vindex::load_vindex_config(vindex_path)?;
     if cfg.quant == larql_vindex::QuantFormat::Q4K {
-        let mut weights = larql_vindex::load_model_weights_q4k(vindex_path, &mut *cb)?;
+        let mut weights = larql_vindex::load_model_weights_kquant(vindex_path, &mut *cb)?;
         let tokenizer = load_vindex_tokenizer(vindex_path)?;
         vlog!(
             verbose,
@@ -411,7 +417,7 @@ fn run_with_vindex_weights(
             load_start.elapsed().as_secs_f64()
         );
         // RSS now = attn weights + embeddings + norms. FFN payload (gate_vectors,
-        // interleaved_q4k) is demand-paged; pages fault in during inference.
+        // interleaved_kquant) is demand-paged; pages fault in during inference.
         vlog!(verbose, "  RSS after weights: {:.1} GB", rss_mb() / 1024.0);
         if args.ffn_remote.is_some() {
             return run_predict_q4k_remote(&mut weights, &tokenizer, args, vindex_path);
@@ -491,17 +497,17 @@ fn run_predict_q4k(
 
     // The Q4 vindex we loaded already lives inside the VectorIndex used by
     // the walk caller, but we need our OWN VectorIndex with the Q4 mmaps
-    // loaded (load_attn_q4k, load_interleaved_q4k) since the caller's index
+    // loaded (load_attn_kquant, load_interleaved_kquant) since the caller's index
     // might have been constructed without those accessors wired up.
     let vindex_path = args
         .index
         .as_deref()
         .ok_or("--index required for Q4 predict path")?;
     let mut cb = larql_vindex::SilentLoadCallbacks;
-    let mut q4_index = VectorIndex::load_vindex(vindex_path, &mut cb)?;
-    q4_index.load_attn_q4k(vindex_path)?;
-    q4_index.load_interleaved_q4k(vindex_path)?;
-    let _ = q4_index.load_lm_head_q4(vindex_path);
+    let mut index = VectorIndex::load_vindex(vindex_path, &mut cb)?;
+    index.load_attn_kquant(vindex_path)?;
+    index.load_interleaved_kquant(vindex_path)?;
+    let _ = index.load_lm_head_kquant(vindex_path);
 
     // Metal Q4K path (`--metal`) routes autoregressive generation through the
     // fused `full_pipeline_q4` prefill + `decode_token` KV-cached decode in
@@ -517,19 +523,40 @@ fn run_predict_q4k(
     // and is wired to `--metal`; that path is KV-cached and much faster.
     if args.max_tokens > 1 && !args.metal {
         // CPU Q4K autoregressive: per-step, dequantise layer weights
-        // just-in-time (`predict_q4k` does this internally) and loop.
+        // just-in-time (`predict_kquant` does this internally) and loop.
         // Not token-cached, so O(N²) but correct. For speed use --metal.
-        return run_q4k_generate_cpu(weights, tokenizer, &token_ids, args, &q4_index);
+        return run_q4k_generate_cpu(weights, tokenizer, &token_ids, args, &index);
     }
 
     let result = if args.metal {
-        let backend = larql_compute::default_backend();
-        if !backend.has_q4() {
-            return Err(
-                "Metal backend unavailable — rebuild with `--features metal` \
-                and run on an M-series Mac."
-                    .into(),
-            );
+        // `larql_compute::default_backend()` always returns CPU since
+        // the GPU-backend extraction (see its doc-comment). GPU
+        // selection is the caller's responsibility — mirror what
+        // `bench/local_runtime.rs::build_runtime` does and reach for
+        // `MetalBackend::new()` directly when `--metal` is set, so the
+        // fused Q4 prefill + KV-cached decode kernels actually fire
+        // here. The previous `default_backend()` call silently fell
+        // through to CPU's `generate_via_cpu_q4k` fallback which
+        // produces degenerate output ("ikea ikea ikea…"), masquerading
+        // as a Granite/Gemma forward-path regression.
+        let backend: Box<dyn larql_compute::ComputeBackend> = {
+            #[cfg(all(feature = "metal", target_os = "macos"))]
+            {
+                let b = larql_compute_metal::MetalBackend::new().ok_or(
+                    "Metal backend unavailable — rebuild with `--features metal` \
+                     on an M-series Mac.",
+                )?;
+                Box::new(b)
+            }
+            #[cfg(not(all(feature = "metal", target_os = "macos")))]
+            {
+                return Err("`--metal` requires the `metal` feature on macOS".into());
+            }
+        };
+        if !backend.supports_quant(::larql_compute::QuantFormat::Q4_K) {
+            return Err("Metal backend doesn't report Q4_K support — \
+                 check `larql diag <vindex>` for backend capabilities."
+                .into());
         }
         vlog!(
             verbose,
@@ -550,7 +577,7 @@ fn run_predict_q4k(
                 tokenizer,
                 &token_ids,
                 args.max_tokens,
-                &q4_index,
+                &index,
                 &*backend,
                 &cached_layers,
                 0..num_layers,
@@ -571,22 +598,22 @@ fn run_predict_q4k(
             }
             return Ok(());
         }
-        larql_inference::vindex::predict_q4k_metal(
+        larql_inference::vindex::predict_kquant_metal(
             weights,
             tokenizer,
             &token_ids,
             args.predict_top_k,
-            &q4_index,
+            &index,
             &*backend,
         )
     } else {
         vlog!(verbose, "Backend: CPU (Accelerate + dequantise-per-layer)");
-        larql_inference::vindex::predict_q4k(
+        larql_inference::vindex::predict_kquant(
             weights,
             tokenizer,
             &token_ids,
             args.predict_top_k,
-            &q4_index,
+            &index,
         )
     };
     vlog!(
@@ -605,7 +632,7 @@ fn run_predict_q4k(
 /// The existing `run_predict_remote` path expects attention tensors to live
 /// inside `ModelWeights.tensors`, which is true only after the per-layer
 /// Q4K dequant. So instead of routing through `run_predict_remote` we call
-/// `predict_q4k_with_ffn` directly with a `RemoteWalkBackend` — that path
+/// `predict_kquant_with_ffn` directly with a `RemoteWalkBackend` — that path
 /// dequantises only Q/K/V/O per layer and skips the FFN dequant entirely.
 fn run_predict_q4k_remote(
     weights: &mut ModelWeights,
@@ -638,8 +665,8 @@ fn run_predict_q4k_remote(
     // Build a fresh VectorIndex with the q4k attention mmap wired in.
     // Q4K FFN mmap is NOT loaded — FFN runs on the server.
     let mut cb = larql_vindex::SilentLoadCallbacks;
-    let mut q4_index = VectorIndex::load_vindex(vindex_path, &mut cb)?;
-    q4_index.load_attn_q4k(vindex_path)?;
+    let mut index = VectorIndex::load_vindex(vindex_path, &mut cb)?;
+    index.load_attn_kquant(vindex_path)?;
 
     let token_ids = larql_inference::encode_prompt(tokenizer, &*weights.arch, args.prompt.as_str())
         .map_err(|e| format!("tokenize error: {e}"))?;
@@ -651,12 +678,12 @@ fn run_predict_q4k_remote(
     );
 
     let start = Instant::now();
-    let result = larql_inference::vindex::predict_q4k_with_ffn(
+    let result = larql_inference::vindex::predict_kquant_with_ffn(
         weights,
         tokenizer,
         &token_ids,
         args.predict_top_k,
-        &q4_index,
+        &index,
         &remote,
     );
     let elapsed = start.elapsed();
@@ -674,14 +701,14 @@ fn run_predict_q4k_remote(
 }
 
 /// CPU Q4K autoregressive generation. Per-step: dequantise the layer's
-/// Q/K/V/O + gate/up/down weights (via `predict_q4k` internals), run
+/// Q/K/V/O + gate/up/down weights (via `predict_kquant` internals), run
 /// the forward pass, take argmax, append, repeat. Streams tokens.
 fn run_q4k_generate_cpu(
     weights: &mut ModelWeights,
     tokenizer: &tokenizers::Tokenizer,
     initial_ids: &[u32],
     args: &WalkArgs,
-    q4_index: &VectorIndex,
+    index: &VectorIndex,
 ) -> Result<(), Box<dyn std::error::Error>> {
     use std::io::Write;
     let verbose = args.verbose;
@@ -690,7 +717,7 @@ fn run_q4k_generate_cpu(
     let start = Instant::now();
 
     for _step in 0..args.max_tokens {
-        let result = larql_inference::vindex::predict_q4k(weights, tokenizer, &ids, 1, q4_index);
+        let result = larql_inference::vindex::predict_kquant(weights, tokenizer, &ids, 1, index);
         let next_id = match result.token_ids.first() {
             Some(&id) => id,
             None => break,
@@ -923,23 +950,23 @@ fn run_predict_remote(
         // requests. Requires the Q4K vindex with interleaved FFN mmap.
         use larql_inference::generate_with_remote_ffn_batch;
         let mut cb = SilentLoadCallbacks;
-        let mut q4_index = VectorIndex::load_vindex(
+        let mut index = VectorIndex::load_vindex(
             args.index
                 .as_deref()
                 .expect("index required for batch dispatch"),
             &mut cb,
         )?;
-        q4_index.load_attn_q4k(
+        index.load_attn_kquant(
             args.index
                 .as_deref()
                 .expect("index required for batch dispatch"),
         )?;
-        q4_index.load_interleaved_q4k(
+        index.load_interleaved_kquant(
             args.index
                 .as_deref()
                 .expect("index required for batch dispatch"),
         )?;
-        let _ = q4_index.load_lm_head_q4(
+        let _ = index.load_lm_head_kquant(
             args.index
                 .as_deref()
                 .expect("index required for batch dispatch"),
@@ -960,7 +987,7 @@ fn run_predict_remote(
             tokenizer,
             batch_ids,
             args.max_tokens,
-            &q4_index,
+            &index,
             &*backend,
             &remote,
             &eos,
@@ -1043,61 +1070,76 @@ fn generate_stream(
     // that limit, so projections run on CPU BLAS even when Metal is
     // available. Real GPU wins require either the Q4K `full_pipeline`
     // (already wired via `--metal` on Q4K vindexes) or batched decode.
-    let backend = larql_compute::default_backend();
+    let backend = larql_inference::default_engine_backend();
+    // Captured for the verbose label after `backend` is consumed by the
+    // engine builder.
+    let backend_name = backend.name().to_string();
 
-    let (generated, label) = match args.kv_cache {
-        KvCacheKind::Standard | KvCacheKind::MarkovBounded => {
-            let window = if args.kv_cache == KvCacheKind::MarkovBounded && args.context_window > 0 {
-                Some(args.context_window)
-            } else {
-                None
+    // Unified `KvEngine` dispatch. Resolution precedence:
+    //   1. `--engine SPEC` flag (parsed by `EngineKind::from_name`)
+    //   2. `LARQL_KV_ENGINE` env var (same parser)
+    //   3. `--kv-cache standard|markov-bounded|none` legacy mapping
+    // CLI flag wins over env var; env var wins over `--kv-cache`. See
+    // `crates/larql-inference/docs/specs/kv-engine-unification.md` §6.
+    use larql_kv::EngineKind;
+    let engine_spec = args
+        .engine
+        .clone()
+        .or_else(|| std::env::var("LARQL_KV_ENGINE").ok());
+    let (kind, label) = match engine_spec {
+        Some(spec) => {
+            let kind = EngineKind::from_name(&spec).unwrap_or_else(|| {
+                eprintln!(
+                    "warning: unknown --engine spec {spec:?}, falling back to standard (unbounded)"
+                );
+                EngineKind::Standard { window_size: None }
+            });
+            let label = match &kind {
+                EngineKind::Standard { window_size: None } => "engine=standard",
+                EngineKind::Standard {
+                    window_size: Some(_),
+                } => "engine=standard (windowed)",
+                EngineKind::NoCache => "engine=no-cache",
+                EngineKind::MarkovResidual { .. } => "engine=markov-rs",
+                EngineKind::UnlimitedContext { .. } => "engine=unlimited-context",
+                EngineKind::TurboQuant { .. } => "engine=turbo-quant",
+                EngineKind::Apollo { .. } => "engine=apollo",
+                EngineKind::BoundaryKv { .. } => "engine=boundary-kv",
+                EngineKind::MarkovResidualCodec { .. } => "engine=markov-rs-codec",
             };
-            let g = larql_inference::forward::generate_cached_backend(
-                weights,
-                tokenizer,
-                ffn,
-                initial_ids,
-                max_tokens,
-                Some(&*backend),
-                window,
-                |_id, tok| {
-                    print!("{tok}");
-                    let _ = stdout.flush();
+            (kind, label)
+        }
+        None => match args.kv_cache {
+            KvCacheKind::Standard => (
+                EngineKind::Standard { window_size: None },
+                "standard KV cache",
+            ),
+            KvCacheKind::MarkovBounded => (
+                EngineKind::Standard {
+                    window_size: if args.context_window > 0 {
+                        Some(args.context_window)
+                    } else {
+                        None
+                    },
                 },
-            );
-            let label = if window.is_some() {
-                "Markov-bounded KV cache"
-            } else {
-                "standard KV cache"
-            };
-            (g, label)
-        }
-        KvCacheKind::None => {
-            // No-cache: run full forward per step. O(N²).
-            let mut ids = initial_ids.to_vec();
-            let mut generated = Vec::with_capacity(max_tokens);
-            for _ in 0..max_tokens {
-                let result = predict_with_ffn(weights, tokenizer, &ids, 1, ffn);
-                let next_id = match result.token_ids.first() {
-                    Some(&id) => id,
-                    None => break,
-                };
-                let tok_str = result
-                    .predictions
-                    .first()
-                    .map(|p| p.0.as_str())
-                    .unwrap_or("");
-                print!("{tok_str}");
-                let _ = stdout.flush();
-                ids.push(next_id);
-                generated.push(next_id);
-                if is_stop_token(tok_str) {
-                    break;
-                }
-            }
-            (generated, "no cache (O(N²))")
-        }
+                "Markov-bounded KV cache",
+            ),
+            KvCacheKind::None => (EngineKind::NoCache, "no cache (O(N²))"),
+        },
     };
+    let mut engine = kind.build(backend);
+    let generated = larql_kv::generation::generate_with_engine(
+        engine.as_mut(),
+        weights,
+        tokenizer,
+        ffn,
+        initial_ids,
+        max_tokens,
+        |_id, tok| {
+            print!("{tok}");
+            let _ = stdout.flush();
+        },
+    );
     println!();
     if verbose {
         // Honest reporting: the backend is `backend.name()` but the
@@ -1110,7 +1152,7 @@ fn generate_stream(
             "  Generated {} tokens ({}) — backend={} (decode matmuls usually below GPU threshold)",
             generated.len(),
             label,
-            backend.name(),
+            backend_name,
         );
     }
     generated

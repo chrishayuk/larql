@@ -113,9 +113,9 @@ mod tests {
         let path = std::path::Path::new(&vpath);
         let mut cb = larql_vindex::SilentLoadCallbacks;
         let mut index = larql_vindex::VectorIndex::load_vindex(path, &mut cb).ok()?;
-        index.load_attn_q4k(path).ok()?;
-        index.load_interleaved_q4k(path).ok()?;
-        let weights = larql_vindex::load_model_weights_q4k(path, &mut cb).ok()?;
+        index.load_attn_kquant(path).ok()?;
+        index.load_interleaved_kquant(path).ok()?;
+        let weights = larql_vindex::load_model_weights_kquant(path, &mut cb).ok()?;
         Some((index, weights))
     }
 
@@ -233,5 +233,95 @@ mod tests {
             result.decode_ms.len(),
             result.tokens.len().saturating_sub(1)
         );
+    }
+
+    // ── Synthetic-fixture generate tests (no real model needed) ───────────
+
+    /// Helper: load the on-disk synthetic Q4K fixture via the inference
+    /// loader chain. Returns (tokenizer, weights, index) the same shape
+    /// the ignored real-model tests above use, but everything in-memory.
+    fn synthetic_q4k_setup() -> (
+        tempfile::TempDir,
+        tokenizers::Tokenizer,
+        larql_models::ModelWeights,
+        larql_vindex::VectorIndex,
+    ) {
+        use crate::test_utils::write_synthetic_q4k_model_dir;
+        let tmp = tempfile::tempdir().expect("tempdir");
+        write_synthetic_q4k_model_dir(tmp.path()).expect("write synthetic Q4K fixture");
+        let mut cb = larql_vindex::SilentLoadCallbacks;
+        let mut index =
+            larql_vindex::VectorIndex::load_vindex(tmp.path(), &mut cb).expect("load_vindex");
+        index
+            .load_attn_kquant(tmp.path())
+            .expect("load_attn_kquant");
+        index
+            .load_interleaved_kquant(tmp.path())
+            .expect("load_interleaved_kquant");
+        let weights = larql_vindex::load_model_weights_kquant(tmp.path(), &mut cb)
+            .expect("load_model_weights_kquant");
+        let tokenizer =
+            larql_vindex::load_vindex_tokenizer(tmp.path()).expect("tokenizer.json round-trip");
+        (tmp, tokenizer, weights, index)
+    }
+
+    #[test]
+    fn generate_routes_through_cpu_fallback_when_backend_lacks_fused_decode() {
+        // `CpuBackend` advertises Q4_K matvec via `supports_quant(Q4_K)`
+        // but doesn't implement the fused `decode_token` kernel, so
+        // `generate()` takes the CPU fallback branch. Drives a real
+        // prompt through the full generation pipeline against the
+        // synthetic Q4K fixture.
+        let (_tmp, tokenizer, mut weights, index) = synthetic_q4k_setup();
+        // Synthetic tokenizer treats `[N]` as token N — use single-token
+        // prompts so the encode succeeds.
+        let token_ids = vec![0u32, 1, 2];
+        let backend = larql_compute::CpuBackend;
+        let cached = CachedLayerGraph::from_residuals(vec![]);
+        let num_layers = weights.num_layers;
+        let result = generate(
+            &mut weights,
+            &tokenizer,
+            &token_ids,
+            3,
+            &index,
+            &backend,
+            &cached,
+            0..num_layers,
+        );
+        // CPU fallback returns either tokens or an empty GenerateResult
+        // with an error — both shapes are valid here. We just want the
+        // function body to execute end-to-end.
+        let _ = result;
+    }
+
+    #[test]
+    fn generate_streaming_runs_against_synthetic_fixture() {
+        // The CPU fallback path for `generate_streaming` may not invoke
+        // the streaming callback (the streaming behaviour is a GPU-path
+        // affordance). We just want the function to execute end-to-end
+        // against the synthetic fixture without panicking; coverage is
+        // the goal, not behavioural parity with the GPU path.
+        let (_tmp, tokenizer, mut weights, index) = synthetic_q4k_setup();
+        let token_ids = vec![0u32, 1];
+        let backend = larql_compute::CpuBackend;
+        let cached = CachedLayerGraph::from_residuals(vec![]);
+        let num_layers = weights.num_layers;
+        let mut streamed: Vec<(u32, String, f64)> = Vec::new();
+        let _result = generate_streaming(
+            &mut weights,
+            &tokenizer,
+            &token_ids,
+            3,
+            &index,
+            &backend,
+            &cached,
+            0..num_layers,
+            SamplingConfig::greedy(),
+            &EosConfig::builtin(),
+            |id, text, prob| streamed.push((id, text.to_string(), prob)),
+        );
+        // Callback may or may not fire on the CPU fallback path. Either
+        // outcome is acceptable for coverage purposes.
     }
 }

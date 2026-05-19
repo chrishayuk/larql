@@ -106,6 +106,52 @@ mod tests {
     use super::*;
 
     #[test]
+    fn cached_is_set_with_set_env_returns_true() {
+        // Unique name so we don't collide with other test ordering.
+        let name = "LARQL_TEST_CACHED_IS_SET_SET";
+        std::env::set_var(name, "1");
+        static SLOT: OnceLock<bool> = OnceLock::new();
+        // SAFETY: not actually unsafe, just unwrapping a leaked static.
+        // We can't pass a fresh OnceLock per call without unsafe, so this
+        // test owns one static permanently. That's fine for a single shot.
+        assert!(cached_is_set(&SLOT, name));
+        // Second call hits the cache; same result.
+        assert!(cached_is_set(&SLOT, name));
+        std::env::remove_var(name);
+    }
+
+    #[test]
+    fn cached_is_set_with_unset_env_returns_false() {
+        let name = "LARQL_TEST_CACHED_IS_SET_UNSET_XYZ";
+        std::env::remove_var(name);
+        static SLOT: OnceLock<bool> = OnceLock::new();
+        assert!(!cached_is_set(&SLOT, name));
+    }
+
+    #[test]
+    fn presence_accessors_return_a_bool_without_panicking() {
+        // The values depend on the test environment; we only assert the
+        // accessors run and return something (the cached read path).
+        let _ = moe_timing_enabled();
+        let _ = http_timing_enabled();
+        let _ = no_warmup();
+        let _ = use_legacy_cpu();
+        let _ = use_metal_experts();
+        let _ = disable_metal_experts();
+        let _ = disable_q4k_direct();
+        let _ = metal_vs_cpu_debug();
+    }
+
+    #[test]
+    fn moe_batch_mode_returns_none_when_unset_or_value_when_set() {
+        std::env::remove_var(MOE_BATCH_MODE);
+        assert!(moe_batch_mode().is_none());
+        std::env::set_var(MOE_BATCH_MODE, "stream");
+        assert_eq!(moe_batch_mode().as_deref(), Some("stream"));
+        std::env::remove_var(MOE_BATCH_MODE);
+    }
+
+    #[test]
     fn names_are_larql_prefixed_and_unique() {
         let names = [
             MOE_TIMING,

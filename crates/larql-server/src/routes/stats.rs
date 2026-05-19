@@ -64,8 +64,8 @@ fn build_stats(model: &LoadedModel) -> serde_json::Value {
 /// block in once we have an `.await`-friendly read guard.
 async fn add_q4k_ffn(model: &LoadedModel, mut stats: serde_json::Value) -> serde_json::Value {
     let p = model.patched.read().await;
-    let (slots, bytes) = p.base.q4k_ffn_cache_stats();
-    let has_fm = p.base.has_down_features_q4k();
+    let (slots, bytes) = p.base.kquant_ffn_cache_stats();
+    let has_fm = p.base.has_down_features_kquant();
     if let Some(obj) = stats.as_object_mut() {
         obj.insert(
             "q4k_ffn".into(),

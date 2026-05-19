@@ -6,12 +6,12 @@
 
 pub mod compute;
 pub mod engine;
-pub mod q4k;
 pub mod store;
+pub mod walk;
 
 pub use compute::{
     kv_memory_bytes_for_seq, recompute_kv, rs_decode_step, rs_prefill, RsPrefillResult,
 };
 pub use engine::MarkovResidualEngine;
-pub use q4k::ensure_attn_tensors_dequantised;
 pub use store::RsStore;
+pub use walk::ensure_attn_tensors_dequantised;

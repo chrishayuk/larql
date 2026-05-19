@@ -11,7 +11,7 @@
 //! Re-extracting from scratch works (`larql extract ...`) but is slow and
 //! forces the user to re-apply any manual patches (e.g. the outer-norm
 //! tensors we back-filled earlier). This tool rebuilds only the `down_proj`
-//! bytes in `interleaved_q4k.bin` and updates the manifest.
+//! bytes in `interleaved_kquant.bin` and updates the manifest.
 //!
 //! Run with:
 //! ```bash

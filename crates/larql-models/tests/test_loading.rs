@@ -1199,3 +1199,67 @@ fn load_filtered_validated_runs_with_validation() {
         .expect("validated filter accepts minimal model");
     assert!(weights.tensors.contains_key("embed_tokens.weight"));
 }
+
+// ─────────────────────────────────────────────────────────────────
+// Coverage for the file-vs-directory + missing-file early-return arms
+// in `loading/safetensors.rs::load_model_dir_filtered_with_validation`.
+// ─────────────────────────────────────────────────────────────────
+
+#[test]
+fn load_model_dir_errors_when_path_points_at_a_non_gguf_file() {
+    // `path.is_file()` true, extension != gguf → NotADirectory.
+    let dir = TempDir::new().unwrap();
+    let bogus = dir.path().join("random.txt");
+    std::fs::write(&bogus, "not a model").unwrap();
+    match load_model_dir(&bogus) {
+        Err(ModelError::NotADirectory(p)) => assert_eq!(p, bogus),
+        Err(e) => panic!("expected NotADirectory, got error: {e}"),
+        Ok(_) => panic!("expected NotADirectory, got Ok"),
+    }
+}
+
+#[test]
+fn load_model_dir_errors_when_path_does_not_exist() {
+    // Neither file nor directory — falls into the second NotADirectory
+    // branch (line 121).
+    let dir = TempDir::new().unwrap();
+    let missing = dir.path().join("does-not-exist");
+    match load_model_dir(&missing) {
+        Err(ModelError::NotADirectory(p)) => assert_eq!(p, missing),
+        Err(e) => panic!("expected NotADirectory, got error: {e}"),
+        Ok(_) => panic!("expected NotADirectory, got Ok"),
+    }
+}
+
+#[test]
+fn load_model_dir_errors_when_safetensors_missing_in_directory() {
+    // Empty directory (no safetensors, no GGUF) — exercises the
+    // "no safetensors files in {path}" branch.
+    let dir = TempDir::new().unwrap();
+    // Must still have config.json so detect_architecture passes.
+    let config = serde_json::json!({
+        "model_type": "llama",
+        "hidden_size": 4,
+        "num_hidden_layers": 1,
+        "intermediate_size": 16,
+    });
+    std::fs::write(dir.path().join("config.json"), config.to_string()).unwrap();
+    match load_model_dir(dir.path()) {
+        Err(ModelError::NoSafetensors(p)) => assert_eq!(p, dir.path()),
+        Err(e) => panic!("expected NoSafetensors, got error: {e}"),
+        Ok(_) => panic!("expected NoSafetensors, got Ok"),
+    }
+}
+
+#[test]
+fn load_model_dir_filtered_skip_predicate_omits_filtered_tensors() {
+    // `load_model_dir_filtered` accepts a closure that returns true for
+    // tensors to skip. Covers the filter branch + the resulting
+    // skipped-tensor accounting.
+    let dir = TempDir::new().unwrap();
+    write_model_dir(dir.path(), &minimal_tensors());
+    let weights = load_model_dir_filtered(dir.path(), |name| name == "norm.weight")
+        .expect("filtered load should succeed");
+    assert!(weights.tensors.contains_key("embed_tokens.weight"));
+    assert!(!weights.tensors.contains_key("norm.weight"));
+}

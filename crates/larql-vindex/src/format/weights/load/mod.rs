@@ -6,11 +6,11 @@
 //! recorded in `index.json`.
 //!
 //! Structure (round-5, 2026-05-09): `mod.rs` holds the public API
-//! (`LoadWeightsOptions`, `load_model_weights*`, `load_model_weights_q4k*`,
+//! (`LoadWeightsOptions`, `load_model_weights*`, `load_model_weights_kquant*`,
 //! `find_tokenizer_path`, `expert_in_shard`) plus tests. The two heavy
 //! loader bodies live in:
 //! - [`f32`] — `load_model_weights_with_opts`
-//! - [`q4k`] — `load_model_weights_q4k_shard`
+//! - [`q4k`] — `load_model_weights_kquant_shard`
 
 mod arch;
 mod embeddings;
@@ -134,29 +134,29 @@ pub fn load_model_weights_with_opts(
 /// Load the minimum ModelWeights needed to drive a Q4_K vindex forward pass.
 ///
 /// Q4 vindexes store attn / FFN weights as packed blocks in
-/// `attn_weights_q4k.bin` and `interleaved_q4k.bin`; the forward pass reads
-/// those through [`crate::index::VectorIndex::attn_q4k_layer_data`] /
-/// [`crate::index::VectorIndex::interleaved_q4k_layer_data`] and
+/// `attn_weights_q4k.bin` and `interleaved_kquant.bin`; the forward pass reads
+/// those through [`crate::index::VectorIndex::attn_kquant_layer_data`] /
+/// [`crate::index::VectorIndex::interleaved_kquant_layer_data`] and
 /// dequantises on demand, so the `ModelWeights.tensors` map stays empty.
-pub fn load_model_weights_q4k(
+pub fn load_model_weights_kquant(
     dir: &Path,
     callbacks: &mut dyn IndexLoadCallbacks,
 ) -> Result<ModelWeights, VindexError> {
-    load_model_weights_q4k_shard(dir, callbacks, None)
+    load_model_weights_kquant_shard(dir, callbacks, None)
 }
 
-/// Expert-shard variant of [`load_model_weights_q4k`].
+/// Expert-shard variant of [`load_model_weights_kquant`].
 ///
 /// Identical to the full loader except that when `expert_filter` is `Some((start,
 /// end_excl))`, per-layer expert entries outside `[start, end_excl)` are not
 /// inserted into `packed_byte_ranges`. Body in
-/// [`q4k::load_model_weights_q4k_shard`].
-pub fn load_model_weights_q4k_shard(
+/// [`q4k::load_model_weights_kquant_shard`].
+pub fn load_model_weights_kquant_shard(
     dir: &Path,
     callbacks: &mut dyn IndexLoadCallbacks,
     expert_filter: Option<(usize, usize)>,
 ) -> Result<ModelWeights, VindexError> {
-    q4k::load_model_weights_q4k_shard(dir, callbacks, expert_filter)
+    q4k::load_model_weights_kquant_shard(dir, callbacks, expert_filter)
 }
 
 /// Find the tokenizer path near a model or vindex directory.

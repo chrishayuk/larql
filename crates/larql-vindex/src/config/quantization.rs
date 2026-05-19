@@ -12,11 +12,20 @@ use crate::format::filenames::{DOWN_FEATURES_FP8_BIN, GATE_VECTORS_FP4_BIN, UP_F
 
 use super::compliance::ComplianceGate;
 
+/// Per-vindex quant scheme. Mirrors the `quant` enum in the v1 wire
+/// schema (`crates/larql-vindex-spec/schema/vindex-v1.schema.json`):
+/// readers accept `"none"`, `"q4k"`, and `"kquant"`; writers continue
+/// to emit `"q4k"` for v1 vindexes so existing tooling keeps round-
+/// tripping. A future v2 schema flips the canonical tag to `"kquant"`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
 #[serde(rename_all = "lowercase")]
 pub enum QuantFormat {
     #[default]
     None,
+    /// Q4_K / Q6_K family. Serialises as `"q4k"`. Accepts the alias
+    /// `"kquant"` on Deserialize so vindexes written under the new
+    /// canonical tag still load.
+    #[serde(alias = "kquant")]
     Q4K,
 }
 
@@ -165,6 +174,23 @@ mod tests {
     fn quant_format_serde_round_trip() {
         let j = serde_json::to_string(&QuantFormat::Q4K).unwrap();
         let back: QuantFormat = serde_json::from_str(&j).unwrap();
+        assert_eq!(back, QuantFormat::Q4K);
+    }
+
+    #[test]
+    fn quant_format_serializes_as_q4k_not_kquant() {
+        // v1 wire-format contract: writers MUST emit `"q4k"` for the
+        // k-quant variant so vindexes published by post-rename binaries
+        // still load in pre-rename readers that don't know `"kquant"`.
+        // Flip this assertion only when the spec bumps to v2.
+        assert_eq!(serde_json::to_string(&QuantFormat::Q4K).unwrap(), "\"q4k\"");
+    }
+
+    #[test]
+    fn quant_format_deserialize_accepts_kquant_alias() {
+        // Forward-compat: a vindex written under the future v2 canonical
+        // tag `"kquant"` loads in v1 readers as the same `Q4K` variant.
+        let back: QuantFormat = serde_json::from_str("\"kquant\"").unwrap();
         assert_eq!(back, QuantFormat::Q4K);
     }
 

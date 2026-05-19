@@ -225,6 +225,25 @@ pub trait QuantMatVec {
         None
     }
 
+    /// Fused two-weight Q4_K matvec sharing one input vector.
+    ///
+    /// `out_a[N] = W_a[N, K] · x[K]`, `out_b[N] = W_b[N, K] · x[K]`
+    /// where W_a and W_b have identical `(num_rows, hidden)` shape and
+    /// `x` is shared. The decode-step gate+up projections fit exactly.
+    ///
+    /// Returns `None` if the backend doesn't implement the fused path;
+    /// the caller falls back to two sequential `q4k_matvec` calls.
+    fn q4k_dual_matvec(
+        &self,
+        _q4k_a: &[u8],
+        _q4k_b: &[u8],
+        _x: &[f32],
+        _num_rows: usize,
+        _hidden: usize,
+    ) -> Option<(Vec<f32>, Vec<f32>)> {
+        None
+    }
+
     /// Q4_K matvec with stride-32 lane access pattern. Same Q4_K input
     /// format as [`q4k_matvec`](Self::q4k_matvec) but the per-row
     /// reduction tree mirrors `f16_gemv` — lane `k` accumulates the
@@ -273,8 +292,15 @@ pub trait QuantMatVec {
         None
     }
 
-    /// Whether this backend implements any Q4 fused operation.
-    fn has_q4(&self) -> bool {
+    /// Whether this backend implements quantised matvec on `format`.
+    ///
+    /// "Implements" means at minimum a single-matrix matvec path for the
+    /// format (e.g. `q4k_matvec`, `q6k_matvec`). Backends advertise per
+    /// format so the dispatcher can route Q4_K to one backend and Q6_K to
+    /// another without a separate predicate per format. Default impl:
+    /// `false` for every format — backends must opt in.
+    fn supports_quant(&self, format: QuantFormat) -> bool {
+        let _ = format;
         false
     }
 }

@@ -6,7 +6,6 @@
 use super::gqa::{
     gqa_attention_with_all_weights, gqa_attention_with_weights, gqa_reduced_qk_all_weights,
 };
-use super::rope::apply_rope_partial;
 use super::{AttentionAllWeights, AttentionWeights, SharedKV};
 use ndarray::{s, Array2};
 
@@ -333,7 +332,8 @@ fn run_attention_block_core(
     // Default is layer 0 (noise budget); set LARQL_STAGE_DUMP_LAYER=<N> to
     // capture a specific layer instead — Gemma 4 global layers (5, 11, …)
     // are useful for bisecting partial-RoPE / V-norm interactions.
-    let stage_dump = crate::forward::dump_config::DumpConfig::get().stage_dir(layer);
+    let dump_cfg = crate::forward::dump_config::DumpConfig::get();
+    let stage_dump = dump_cfg.stage_dir(layer);
     let dump_f32 = |name: &str, arr: &Array2<f32>| {
         if let Some(dir) = stage_dump {
             let slice = arr.as_slice().unwrap_or(&[]);
@@ -376,9 +376,21 @@ fn run_attention_block_core(
     dump_f32("q_out_after_qk_norm", &q_normed);
 
     // RoPE on Q
-    let layer_rope_base = arch.rope_base_for_layer(layer);
+    let layer_rope_base = crate::forward_overrides::effective_rope_base_for_layer(arch, layer);
     let rotary_frac = arch.rotary_fraction_for_layer(layer);
-    let q_rope = apply_rope_partial(&q_normed, num_q, head_dim, layer_rope_base, rotary_frac);
+    let pos_divisor =
+        crate::forward_overrides::effective_rope_position_divisor_for_layer(arch, layer);
+    let llama3 = crate::forward_overrides::effective_llama3_rope_scaling(arch);
+    let q_rope = crate::attention::rope::apply_rope_partial_at_full(
+        &q_normed,
+        num_q,
+        head_dim,
+        layer_rope_base,
+        rotary_frac,
+        0,
+        pos_divisor,
+        llama3,
+    );
 
     // K/V: either from shared cache or computed fresh
     let (k_rope, v_final) = if let Some((cached_k, cached_v)) = shared_kv {
@@ -434,7 +446,16 @@ fn run_attention_block_core(
             k_full.clone()
         };
 
-        let k_r = apply_rope_partial(&k_normed, num_kv, head_dim, layer_rope_base, rotary_frac);
+        let k_r = crate::attention::rope::apply_rope_partial_at_full(
+            &k_normed,
+            num_kv,
+            head_dim,
+            layer_rope_base,
+            rotary_frac,
+            0,
+            pos_divisor,
+            llama3,
+        );
         (k_r, v_full)
     };
 

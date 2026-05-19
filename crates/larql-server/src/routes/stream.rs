@@ -681,12 +681,12 @@ mod tests {
             id: "model".into(),
             path: std::path::PathBuf::from("/nonexistent"),
             config,
-            patched: RwLock::new(PatchedVindex::new(VectorIndex::new(
+            patched: Arc::new(RwLock::new(PatchedVindex::new(VectorIndex::new(
                 vec![Some(gate)],
                 vec![Some(meta)],
                 1,
                 4,
-            ))),
+            )))),
             embeddings,
             embed_scale: 1.0,
             tokenizer: functional_tokenizer(),
@@ -700,6 +700,7 @@ mod tests {
             ffn_l2_cache: FfnL2Cache::new(1),
             layer_latency_tracker: std::sync::Arc::new(crate::metrics::LayerLatencyTracker::new()),
             requests_in_flight: std::sync::Arc::new(std::sync::atomic::AtomicU32::new(0)),
+            requests_total: std::sync::Arc::new(std::sync::atomic::AtomicU64::new(0)),
             expert_filter: None,
             unit_filter: None,
             moe_remote: None,

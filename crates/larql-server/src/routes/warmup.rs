@@ -99,7 +99,7 @@ pub fn warmup_model(model: &LoadedModel, req: &WarmupRequest) -> WarmupResponse 
     let (experts_prefetched, expert_prefetch_ms) = (0usize, 0u64);
 
     // ── 2. Per-layer Q4K mmap prefetch (madvise WILLNEED) ──
-    // Uses the existing `prefetch_interleaved_q4k_layer` accessor —
+    // Uses the existing `prefetch_interleaved_kquant_layer` accessor —
     // it madvises the layer's slice into the page cache without
     // dequantising or decoding anything.
     let prefetch_t = Instant::now();
@@ -114,7 +114,7 @@ pub fn warmup_model(model: &LoadedModel, req: &WarmupRequest) -> WarmupResponse 
             if layer >= model.config.num_layers {
                 continue;
             }
-            p.base.prefetch_interleaved_q4k_layer(layer);
+            p.base.prefetch_interleaved_kquant_layer(layer);
             prefetched += 1;
         }
     }

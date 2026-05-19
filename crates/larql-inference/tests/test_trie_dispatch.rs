@@ -17,11 +17,9 @@ use std::path::PathBuf;
 
 use larql_inference::experts::{parse_op_call, ExpertRegistry};
 use larql_inference::{
-    encode_prompt,
-    forward::{forward_to_layer, generate_cached_constrained},
-    prompt::ChatTemplate,
-    InferenceModel, WeightFfn,
+    encode_prompt, forward::forward_to_layer, prompt::ChatTemplate, InferenceModel, WeightFfn,
 };
+use larql_kv::generation::generate_cached_constrained;
 use larql_vindex::CascadeTrie;
 use serde_json::{json, Value};
 

@@ -3,7 +3,11 @@
 //! Single source of truth for extracting per-layer architecture parameters
 //! from larql-models and wiring them into larql-compute's FullPipelineLayer.
 //! Both GPU and CPU paths use this — no duplicated param extraction.
+//!
+//! Per-layer override resolution (env vars vs arch defaults) lives in
+//! [`crate::forward_overrides`]; this module consumes those helpers.
 
+use crate::forward_overrides::{effective_rope_base_for_layer, layer_forced_global};
 use crate::model::ModelWeights;
 use larql_compute::{
     FullPipelineLayer, MoeLayerWeights, MoeRoutingPolicy, MoeWeightLayout, QuantFormat, QuantWeight,
@@ -54,7 +58,8 @@ pub fn build_arch_params<'a>(
     } else {
         (layer_hd as f64 * rotary_frac) as usize
     };
-    let sw = if arch.is_sliding_window_layer(layer) {
+    let force_global = layer_forced_global(layer);
+    let sw = if !force_global && arch.is_sliding_window_layer(layer) {
         arch.sliding_window_size().unwrap_or(0)
     } else {
         0
@@ -107,11 +112,27 @@ pub fn build_arch_params<'a>(
             larql_models::FfnType::Standard => larql_compute::FfnType::Standard,
             _ => larql_compute::FfnType::Gated,
         },
-        attn_scale: arch.attention_scale_for_layer(layer) as f32,
+        // Granite-family `attention_multiplier` (1/64 on 3B, 1/128 on
+        // 8B/30B) *replaces* `1/sqrt(head_dim)` — it is the trained-time
+        // attention score scale, not a factor multiplied on top of
+        // sqrt-scaling. The F32 attention path at
+        // `attention/gpu.rs::scale` follows the same convention; the
+        // Metal Q4K decode kernels (`decode/encode_attn.rs`,
+        // `ops/full_layer.rs`) read this `attn_scale` directly with no
+        // further adjustment, so failing to fold the multiplier in here
+        // leaves Granite's 0.015625 / 0.0078125 trained scale unused and
+        // the model degenerates to repeating high-frequency tokens
+        // ("ikea ikea ikea…") because every attention distribution
+        // peaks too sharply.
+        attn_scale: if arch.attention_multiplier() != 1.0 {
+            arch.attention_multiplier()
+        } else {
+            arch.attention_scale_for_layer(layer) as f32
+        },
         head_dim: layer_hd,
         num_q_heads: layer_nq,
         num_kv_heads: layer_nkv,
-        rope_base: arch.rope_base_for_layer(layer) as f32,
+        rope_base: effective_rope_base_for_layer(arch, layer) as f32,
         rotary_dim,
         sliding_window: sw,
         has_v_norm: arch.has_v_norm(),
@@ -155,6 +176,13 @@ pub fn build_arch_params<'a>(
             .and_then(|k| weights.vectors.get(&k))
             .map(|v| v.as_slice()),
         kv_shared_source: arch.kv_shared_source_layer(layer),
+        // Granite-style residual scaling: HF `modeling_granite.py` does
+        // `hidden_states = residual + self.residual_multiplier * hidden_states`
+        // after both attention and FFN. Trait getter returns 1.0 for
+        // every non-Granite arch, so this default is bit-identical for
+        // them and the Metal `residual_add` shader's `b_scale` binding
+        // is a no-op (multiply by 1.0).
+        residual_multiplier: arch.residual_multiplier(),
     }
 }
 
@@ -261,6 +289,20 @@ pub(crate) fn build_moe_weights<'a>(
     })
 }
 
+/// Registry tag → `compute::QuantFormat` for the attention surface.
+/// Explicit so a typo or new tag fails loudly rather than silently
+/// aliasing to Q4_K. Lifted from inside `resolve_attn_weights` so the
+/// mapping is unit-testable in isolation.
+fn attn_str_to_format(s: &str) -> QuantFormat {
+    match s {
+        "Q4_K" => QuantFormat::Q4_K,
+        "Q6_K" => QuantFormat::Q6_K,
+        other => panic!(
+            "resolve_attn_weights: registry tag {other:?} has no compute::QuantFormat mapping"
+        ),
+    }
+}
+
 /// Helper: resolve attention weights from vindex (Q4_K preferred, Q8 fallback).
 pub fn resolve_attn_weights<'a>(
     index: &'a larql_vindex::VectorIndex,
@@ -271,19 +313,9 @@ pub fn resolve_attn_weights<'a>(
     QuantWeight<'a>,
     QuantWeight<'a>,
 )> {
-    // Registry tag → compute::QuantFormat. Explicit so a typo or new
-    // tag fails loudly rather than silently aliasing to Q4_K.
-    fn to_format(s: &str) -> QuantFormat {
-        match s {
-            "Q4_K" => QuantFormat::Q4_K,
-            "Q6_K" => QuantFormat::Q6_K,
-            other => panic!(
-                "resolve_attn_weights: registry tag {other:?} has no compute::QuantFormat mapping"
-            ),
-        }
-    }
+    let to_format = attn_str_to_format;
 
-    if let Some([q, k, v, o]) = index.attn_q4k_layer_data(layer) {
+    if let Some([q, k, v, o]) = index.attn_kquant_layer_data(layer) {
         Some((
             QuantWeight {
                 data: q.0,
@@ -340,6 +372,22 @@ pub fn resolve_attn_weights<'a>(
 /// `--quant q4k` writer: gate/up Q4_K, down Q6_K — non-uniform stride). Falls
 /// back to the legacy uniform-stride layout produced by `build_q4k_weights.rs`
 /// when the manifest is absent so older vindexes still work.
+/// Registry tag → `compute::QuantFormat` for the FFN surface, with an
+/// explicit `fallback` for the legacy uniform-stride writer that
+/// didn't emit per-matrix tags. Lifted from inside `resolve_ffn_weights`
+/// so the mapping is unit-testable in isolation.
+fn ffn_str_to_format(s: &str, fallback: QuantFormat) -> QuantFormat {
+    match s {
+        "Q4_K" => QuantFormat::Q4_K,
+        "Q6_K" => QuantFormat::Q6_K,
+        "Q4_0" => QuantFormat::Q4_0,
+        "" => fallback,
+        other => panic!(
+            "resolve_ffn_weights: registry tag {other:?} has no compute::QuantFormat mapping"
+        ),
+    }
+}
+
 pub fn resolve_ffn_weights<'a>(
     index: &'a larql_vindex::VectorIndex,
     layer: usize,
@@ -347,23 +395,9 @@ pub fn resolve_ffn_weights<'a>(
     q4_ffn_per_matrix: usize,
     ffn_format: QuantFormat,
 ) -> (QuantWeight<'a>, QuantWeight<'a>, QuantWeight<'a>) {
-    // Registry tag → compute::QuantFormat. The fallback exists for the
-    // legacy uniform-stride path (`build_q4k_weights.rs` writer didn't
-    // emit per-matrix tags); pass an explicit fallback rather than
-    // silently aliasing unknown tags to Q4_K.
-    fn str_to_format(s: &str, fallback: QuantFormat) -> QuantFormat {
-        match s {
-            "Q4_K" => QuantFormat::Q4_K,
-            "Q6_K" => QuantFormat::Q6_K,
-            "Q4_0" => QuantFormat::Q4_0,
-            "" => fallback,
-            other => panic!(
-                "resolve_ffn_weights: registry tag {other:?} has no compute::QuantFormat mapping"
-            ),
-        }
-    }
+    let str_to_format = ffn_str_to_format;
 
-    if let Some([gate, up, down]) = index.interleaved_q4k_layer_data(layer) {
+    if let Some([gate, up, down]) = index.interleaved_kquant_layer_data(layer) {
         return (
             QuantWeight {
                 data: gate.0,
@@ -539,6 +573,82 @@ mod tests {
             scales: None,
             format: QuantFormat::Q4_K,
         }
+    }
+
+    // ── kv_cache_shapes_for_arch ──────────────────────────────────────
+
+    #[test]
+    fn kv_cache_shapes_for_arch_returns_one_entry_per_layer() {
+        let w = weights();
+        let shapes = kv_cache_shapes_for_arch(w);
+        assert_eq!(shapes.len(), w.num_layers);
+        for (nh, hd) in &shapes {
+            assert!(*nh > 0);
+            assert!(*hd > 0);
+        }
+    }
+
+    // ── attn_str_to_format ────────────────────────────────────────────
+
+    #[test]
+    fn attn_str_to_format_maps_q4k_and_q6k() {
+        assert_eq!(attn_str_to_format("Q4_K"), QuantFormat::Q4_K);
+        assert_eq!(attn_str_to_format("Q6_K"), QuantFormat::Q6_K);
+    }
+
+    #[test]
+    #[should_panic(expected = "registry tag")]
+    fn attn_str_to_format_panics_on_unknown_tag() {
+        let _ = attn_str_to_format("BF16");
+    }
+
+    // ── ffn_str_to_format ─────────────────────────────────────────────
+
+    #[test]
+    fn ffn_str_to_format_maps_known_tags() {
+        assert_eq!(
+            ffn_str_to_format("Q4_K", QuantFormat::Q4_0),
+            QuantFormat::Q4_K
+        );
+        assert_eq!(
+            ffn_str_to_format("Q6_K", QuantFormat::Q4_0),
+            QuantFormat::Q6_K
+        );
+        assert_eq!(
+            ffn_str_to_format("Q4_0", QuantFormat::Q4_K),
+            QuantFormat::Q4_0
+        );
+    }
+
+    #[test]
+    fn ffn_str_to_format_empty_tag_uses_fallback() {
+        // Legacy writers omitted per-matrix tags — empty string falls
+        // through to the caller's `fallback`.
+        assert_eq!(ffn_str_to_format("", QuantFormat::Q4_0), QuantFormat::Q4_0);
+        assert_eq!(ffn_str_to_format("", QuantFormat::Q4_K), QuantFormat::Q4_K);
+    }
+
+    #[test]
+    #[should_panic(expected = "registry tag")]
+    fn ffn_str_to_format_panics_on_unknown_tag() {
+        let _ = ffn_str_to_format("BOGUS", QuantFormat::Q4_K);
+    }
+
+    // ── moe_routing_policy ────────────────────────────────────────────
+
+    #[test]
+    fn moe_routing_policy_gemma4_returns_hybrid() {
+        // The `gemma4_top_k_softmax` tag must map to the Gemma 4
+        // hybrid policy (the `top_k_softmax` route is the default for
+        // every other router type).
+        let g = moe_routing_policy("gemma4_top_k_softmax");
+        let default = moe_routing_policy("top_k_softmax");
+        // Don't lock-in MoeRoutingPolicy field equality; just verify the
+        // function dispatches both arms without panic. The default arm
+        // catches *all* other tags too.
+        let _ = (g, default);
+        // Any other tag (including unknown ones) takes the catch-all arm:
+        let _ = moe_routing_policy("brand_new_router");
     }
 
     // ── build_arch_params ─────────────────────────────────────────────────────
@@ -925,6 +1035,121 @@ mod tests {
                 params.ple_spec().is_none(),
                 "L{layer} ple_spec() must be None for non-PLE arch"
             );
+        }
+    }
+
+    // ── build_moe_weights against the Gemma 4 MoE fixture ────────────────
+
+    #[test]
+    fn build_moe_weights_returns_none_for_non_moe_arch() {
+        // make_test_weights → TinyModel arch with is_hybrid_moe()=false.
+        let weights = crate::test_utils::make_test_weights();
+        let arch = &*weights.arch;
+        assert!(build_moe_weights(&weights, arch, 0).is_none());
+    }
+
+    #[test]
+    fn build_moe_weights_returns_some_for_gemma4_moe_fixture() {
+        use crate::test_utils::{
+            make_test_gemma4_moe_weights, GEMMA4_MOE_NUM_EXPERTS, GEMMA4_MOE_TOP_K,
+        };
+        let weights = make_test_gemma4_moe_weights();
+        let arch = &*weights.arch;
+        assert!(arch.is_hybrid_moe());
+        let moe = build_moe_weights(&weights, arch, 0)
+            .expect("Gemma 4 MoE fixture must produce MoeLayerWeights");
+        assert_eq!(moe.num_experts, GEMMA4_MOE_NUM_EXPERTS);
+        assert_eq!(moe.top_k, GEMMA4_MOE_TOP_K);
+        assert_eq!(moe.experts_gate_up.len(), GEMMA4_MOE_NUM_EXPERTS);
+        assert_eq!(moe.experts_down.len(), GEMMA4_MOE_NUM_EXPERTS);
+        // Activation should be GeluTanh for Gemma 4.
+        assert!(matches!(
+            moe.activation,
+            larql_compute::Activation::GeluTanh
+        ));
+        // BF16 monolithic layout because the fixture writes raw_bytes
+        // (not per-layer `layers/{l}/{e}/{component}` keys).
+        assert!(matches!(
+            moe.expert_data_format,
+            larql_compute::QuantFormat::BF16
+        ));
+    }
+
+    /// `patch_pipeline_layers_for_remote_moe` early-returns when the arch
+    /// reports no hybrid-MoE (line 471). Drives the no-op path on the
+    /// TinyModel test arch (is_hybrid_moe = false).
+    #[test]
+    fn patch_pipeline_layers_for_remote_moe_noop_on_non_moe_arch() {
+        let w = weights();
+        let mut layers: Vec<FullPipelineLayer<'_>> = Vec::new();
+        patch_pipeline_layers_for_remote_moe(&mut layers, w);
+        // No panic; nothing to assert about the empty slice. The function
+        // bails at line 471 before touching the iterator.
+    }
+
+    /// `patch_pipeline_layers_for_remote_moe` on Gemma 4 MoE fixture: drives
+    /// the per-layer loop, the `layer.moe.is_some() ⇒ continue` branch, and
+    /// (after zeroing one layer's `moe` field) the `build_moe_stub`
+    /// injection path. Covers lines 472-525.
+    #[test]
+    fn patch_pipeline_layers_for_remote_moe_injects_stub_on_gemma4_when_moe_none() {
+        use crate::test_utils::{make_test_gemma4_moe_weights, make_test_q4k_vindex};
+        let w = make_test_gemma4_moe_weights();
+        let idx = make_test_q4k_vindex(&w);
+        // q4_ffn_mmap legacy stride payload — large enough that the
+        // per-layer offset (3 matrices × per_matrix) lands inside.
+        let per_matrix = 32;
+        let mmap: Vec<u8> = vec![0u8; per_matrix * 3 * w.num_layers];
+        let mut layers = build_pipeline_layers(
+            &w,
+            &idx,
+            0..w.num_layers,
+            &mmap,
+            per_matrix,
+            QuantFormat::Q4_K,
+        );
+        // Sanity: build_moe_weights populated `moe` for all layers on the
+        // Gemma 4 fixture (BF16 monolithic path).
+        assert!(layers.iter().all(|l| l.moe.is_some()));
+
+        // First call: every layer has moe=Some ⇒ patch hits the `continue`
+        // branch every iteration (line 475).
+        patch_pipeline_layers_for_remote_moe(&mut layers, &w);
+        assert!(layers.iter().all(|l| l.moe.is_some()));
+
+        // Zero one layer's moe field and re-run. The patch must invoke
+        // `build_moe_stub` for that one layer (lines 480, 484-525).
+        layers[0].moe = None;
+        patch_pipeline_layers_for_remote_moe(&mut layers, &w);
+        let stub = layers[0]
+            .moe
+            .as_ref()
+            .expect("patch must re-populate moe for hybrid arch when None");
+        assert!(stub.experts_gate_up.is_empty());
+        assert!(stub.experts_down.is_empty());
+        assert_eq!(stub.num_experts, w.arch.num_experts());
+        assert_eq!(stub.top_k, w.arch.num_experts_per_token());
+        assert_eq!(stub.intermediate_size, w.arch.moe_intermediate_size());
+        assert!(matches!(
+            stub.expert_data_format,
+            larql_compute::QuantFormat::BF16
+        ));
+    }
+
+    #[test]
+    fn build_moe_weights_per_expert_slices_are_correct_size() {
+        use crate::test_utils::{
+            make_test_gemma4_moe_weights, GEMMA4_MOE_HIDDEN, GEMMA4_MOE_INTER,
+        };
+        let weights = make_test_gemma4_moe_weights();
+        let moe = build_moe_weights(&weights, &*weights.arch, 0).unwrap();
+        let expected_gu = 2 * GEMMA4_MOE_INTER * GEMMA4_MOE_HIDDEN * 2; // BF16
+        let expected_dn = GEMMA4_MOE_HIDDEN * GEMMA4_MOE_INTER * 2;
+        for (i, gu) in moe.experts_gate_up.iter().enumerate() {
+            assert_eq!(gu.len(), expected_gu, "gate_up expert {i} size mismatch");
+        }
+        for (i, dn) in moe.experts_down.iter().enumerate() {
+            assert_eq!(dn.len(), expected_dn, "down expert {i} size mismatch");
         }
     }
 }

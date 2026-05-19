@@ -548,4 +548,85 @@ mod tests {
             assert!(out.residual.iter().all(|v| v.is_finite()), "layer {layer}");
         }
     }
+
+    /// `TemplateUniverse::build` entity loop body — lines 80-113.
+    ///
+    /// `universe_build_empty_entities_is_empty` covers the no-entity
+    /// scaffolding; this test drives the body by passing real entities
+    /// through a pre-tokenizer-free tokenizer (built from the same JSON
+    /// the on-disk fixture uses) so `tokenizer.encode("[0] [1]")` lands
+    /// in-vocab and `trace_forward_full` completes without UNK panics.
+    #[test]
+    fn universe_build_with_real_entities_drives_loop_body() {
+        let w = weights();
+        let ffn = WeightFfn { weights: w };
+        // pre_tokenizer = null tokenizer so "[N]" stays a single token.
+        let tok_json = crate::test_utils::synthetic_tokenizer_json(w.vocab_size);
+        let tokenizer = tokenizers::Tokenizer::from_bytes(tok_json.as_bytes()).expect("tokenizer");
+        let universe = TemplateUniverse::build(
+            w,
+            &tokenizer,
+            "real-entities",
+            "[5] {}",
+            &["[0]", "[1]", "[2]"],
+            &ffn,
+            0.0, // floor=0 ⇒ insert every fired feature, exercising both branches.
+        );
+        assert_eq!(universe.name, "real-entities");
+        // Body of the loop should have inserted at least *some* features
+        // somewhere across the 2-layer fixture — the inner
+        // `set.insert(*feat)` branch is what we want covered.
+        assert!(
+            universe.total_features() > 0,
+            "build should populate feature set across layers"
+        );
+    }
+
+    /// With both interleaved-f32 AND feature-major payloads attached to
+    /// the vindex, `up_layer_matrix` / `down_layer_matrix` /
+    /// `gate_scores_batch` all return Some, so `guided_walk_ffn` runs the
+    /// inner per-feature loop (lines 240-269) instead of bailing at the
+    /// up/down early-return guards.
+    ///
+    /// `InterleavedF32TestFixtures` alone only populates `interleaved_*`
+    /// storage, which serves `interleaved_up` / `interleaved_down` —
+    /// **not** `up_layer_matrix` (that one reads `up_features`).
+    /// So we also attach the feature-major payload before constructing
+    /// the GuidedWalkLayerGraph.
+    #[test]
+    fn guided_walk_with_interleaved_f32_runs_inner_accumulation_loop() {
+        use crate::test_utils::{
+            attach_feature_major_f32_to_test_vindex, attach_interleaved_f32_to_test_vindex,
+            make_test_vindex, make_test_weights,
+        };
+        let w = make_test_weights();
+        let mut index = make_test_vindex(&w);
+        attach_interleaved_f32_to_test_vindex(&w, &mut index);
+        attach_feature_major_f32_to_test_vindex(&w, &mut index);
+
+        // Supply a non-empty feature universe so the inner loop iterates.
+        let mut features = std::collections::HashMap::new();
+        for layer in 0..w.num_layers {
+            // intermediate_size is small in the synthetic fixture, pick a few.
+            features.insert(layer, vec![0usize, 3, 7]);
+        }
+        let universe = TemplateUniverse {
+            name: "interleaved-test".into(),
+            features,
+        };
+        let g = GuidedWalkLayerGraph {
+            weights: &w,
+            universe: &universe,
+            index: &index,
+        };
+        let h = input(2, w.hidden_size);
+        for layer in 0..w.num_layers {
+            let out = g.forward_layer(&w, &h, layer).expect("layer must run");
+            assert_eq!(out.residual.shape(), &[2, w.hidden_size]);
+            assert!(
+                out.residual.iter().all(|v| v.is_finite()),
+                "layer {layer} guided walk residual must be finite"
+            );
+        }
+    }
 }

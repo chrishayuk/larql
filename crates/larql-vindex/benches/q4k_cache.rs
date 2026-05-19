@@ -1,12 +1,12 @@
 //! Q4_K dequant cache vs row-level — measures the trade-off the LRU
-//! bound (`set_q4k_ffn_cache_max_layers`) controls.
+//! bound (`set_kquant_ffn_cache_max_layers`) controls.
 //!
 //! Two strategies for serving full-K FFN compute on Q4_K bytes:
 //!
 //! 1. **Cached**: dequantise the whole layer to f32 once
 //!    (`dequantize_q4_k` over intermediate × hidden), then do plain
 //!    f32 scaled-adds across all `K` features. Pays a big up-front
-//!    decode cost; amortises across K. This is what `q4k_ffn_layer`
+//!    decode cost; amortises across K. This is what `kquant_ffn_layer`
 //!    populates and the CPU per-position fallback uses.
 //!
 //! 2. **Row**: for each feature, fused `q4k_row_scaled_add` directly
@@ -44,7 +44,7 @@ fn make_q4k_layer(intermediate: usize, hidden: usize) -> (Vec<u8>, usize, usize)
 
 /// "Cached" strategy: dequantise the whole layer once, then iterate
 /// features doing plain f32 scaled-adds. Mirrors what
-/// `q4k_ffn_layer` + caller does, minus the Arc/lock overhead.
+/// `kquant_ffn_layer` + caller does, minus the Arc/lock overhead.
 fn cached_full_k_scaled_add(
     bytes: &[u8],
     intermediate: usize,
@@ -66,7 +66,7 @@ fn cached_full_k_scaled_add(
 }
 
 /// "Row" strategy: fused dequant + scaled-add per feature. Mirrors
-/// `q4k_ffn_row_scaled_add` (the path the row-level optimisation
+/// `kquant_ffn_row_scaled_add` (the path the row-level optimisation
 /// uses).
 fn row_level_scaled_add(bytes: &[u8], _intermediate: usize, hidden: usize, k: usize) -> Vec<f32> {
     let info = lookup("Q4_K").expect("Q4_K registered");
@@ -116,7 +116,7 @@ fn bench_cached_vs_row(c: &mut Criterion) {
 
 /// W2 — down leg specifically. Down is stored `[hidden, intermediate]`
 /// on disk (PyTorch `nn.Linear` orientation). The legacy
-/// `q4k_ffn_layer` cache amortises the transpose by dequantising the
+/// `kquant_ffn_layer` cache amortises the transpose by dequantising the
 /// whole layer once. The W2 fix emits a feature-major Q4_K down file
 /// at extract time so per-feature decode is a single row dequant —
 /// no transpose, no cache, no Mutex.
@@ -125,9 +125,9 @@ fn bench_cached_vs_row(c: &mut Criterion) {
 /// scaled-adds:
 /// - `cache_transpose`: dequantise the `[hidden, intermediate]` layer
 ///   to f32, transpose to feature-major, then plain scaled-add per
-///   feature. Models the legacy `q4k_ffn_row_scaled_add_via_cache`.
+///   feature. Models the legacy `kquant_ffn_row_scaled_add_via_cache`.
 /// - `feature_major`: per feature, fused `q4k_row_scaled_add` against
-///   feature-major Q4_K bytes. Models `q4k_down_feature_scaled_add`.
+///   feature-major Q4_K bytes. Models `kquant_down_feature_scaled_add`.
 fn bench_down_cache_vs_feature_major(c: &mut Criterion) {
     use larql_compute::cpu::ops::q4_common::quantize_q4_k;
     let mut group = c.benchmark_group("q4k_down_cache_vs_feature_major");

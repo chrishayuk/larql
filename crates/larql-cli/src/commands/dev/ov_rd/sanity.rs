@@ -4,7 +4,7 @@ use std::time::Instant;
 use clap::Args;
 use larql_inference::{encode_prompt, hidden_to_raw_logits};
 use larql_vindex::{
-    load_model_weights_q4k, load_vindex_tokenizer, SilentLoadCallbacks, VectorIndex,
+    load_model_weights_kquant, load_vindex_tokenizer, SilentLoadCallbacks, VectorIndex,
 };
 use ndarray::{s, Array2};
 
@@ -98,9 +98,9 @@ pub(super) fn run_sanity_check(args: SanityCheckArgs) -> Result<(), Box<dyn std:
     let start = Instant::now();
     let mut cb = SilentLoadCallbacks;
     let mut index = VectorIndex::load_vindex(&args.index, &mut cb)?;
-    index.load_attn_q4k(&args.index)?;
-    index.load_interleaved_q4k(&args.index)?;
-    let mut weights = load_model_weights_q4k(&args.index, &mut cb)?;
+    index.load_attn_kquant(&args.index)?;
+    index.load_interleaved_kquant(&args.index)?;
+    let mut weights = load_model_weights_kquant(&args.index, &mut cb)?;
     let tokenizer = load_vindex_tokenizer(&args.index)?;
     if weights.arch.is_hybrid_moe() {
         return Err("ov-rd sanity-check currently supports dense FFN vindexes only".into());
@@ -142,7 +142,7 @@ pub(super) fn run_sanity_check(args: SanityCheckArgs) -> Result<(), Box<dyn std:
         let stratum = record.stratum.as_deref().unwrap_or("unknown");
 
         let baseline_hidden =
-            larql_inference::vindex::predict_q4k_hidden(&mut weights, &token_ids, &index, None);
+            larql_inference::vindex::predict_kquant_hidden(&mut weights, &token_ids, &index, None);
         let baseline_logits = final_logits(&weights, &baseline_hidden);
         let baseline_logp = log_softmax(&baseline_logits);
 
@@ -214,7 +214,7 @@ fn forward_q4k_noop_replace_pre_o_head(
     index: &VectorIndex,
     head: HeadId,
 ) -> Result<Array2<f32>, Box<dyn std::error::Error>> {
-    larql_inference::vindex::predict_q4k_hidden_with_mapped_pre_o_head(
+    larql_inference::vindex::predict_kquant_hidden_with_mapped_pre_o_head(
         weights,
         token_ids,
         index,
@@ -231,7 +231,7 @@ fn forward_q4k_subtract_pre_o_head(
     index: &VectorIndex,
     head: HeadId,
 ) -> Result<Array2<f32>, Box<dyn std::error::Error>> {
-    larql_inference::vindex::predict_q4k_hidden_with_subtracted_pre_o_heads(
+    larql_inference::vindex::predict_kquant_hidden_with_subtracted_pre_o_heads(
         weights,
         token_ids,
         index,
@@ -247,7 +247,7 @@ fn forward_q4k_noop_replace_head_residual_delta(
     index: &VectorIndex,
     head: HeadId,
 ) -> Result<Array2<f32>, Box<dyn std::error::Error>> {
-    larql_inference::vindex::predict_q4k_hidden_with_original_head_residual_delta(
+    larql_inference::vindex::predict_kquant_hidden_with_original_head_residual_delta(
         weights, token_ids, index, head.layer, head.head,
     )
     .map_err(Into::into)

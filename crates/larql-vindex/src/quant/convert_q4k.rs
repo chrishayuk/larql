@@ -26,7 +26,7 @@ use crate::config::types::VindexConfig;
 use crate::error::VindexError;
 use crate::format::filenames::*;
 use crate::format::weights::{
-    load_model_weights, write_model_weights_q4k_with_opts, Q4kWriteOptions,
+    load_model_weights, write_model_weights_kquant_with_opts, KquantWriteOptions,
 };
 use crate::index::storage::ffn_store::{FFN_COMPONENTS_PER_LAYER, FFN_DOWN};
 use crate::IndexLoadCallbacks;
@@ -35,13 +35,13 @@ use crate::IndexLoadCallbacks;
 pub struct Q4kConvertConfig {
     /// Quantise FFN down-proj as Q4_K instead of Q6_K. Default false
     /// preserves the Ollama-compatible Q4_K_M mix (Q4_K gate/up, Q6_K
-    /// down). See `write_model_weights_q4k_with_opts` for the
+    /// down). See `write_model_weights_kquant_with_opts` for the
     /// tradeoff.
     pub down_q4k: bool,
     /// Emit `down_features_q4k.bin` (W2 feature-major down) so per-feature
-    /// row decode can skip the `q4k_ffn_layer` cache. Disk grows by
+    /// row decode can skip the `kquant_ffn_layer` cache. Disk grows by
     /// roughly one extra down-leg per layer; load-time RSS drops because
-    /// the cache stays empty. See `Q4kWriteOptions::feature_major_down`.
+    /// the cache stays empty. See `KquantWriteOptions::feature_major_down`.
     pub feature_major_down: bool,
     /// Overwrite `dst` if it already exists.
     pub force: bool,
@@ -125,7 +125,7 @@ pub fn vindex_to_q4k(
     // Load ModelWeights from the source vindex. This reads
     // attn_weights.bin / up_weights.bin / down_weights.bin /
     // embeddings.bin / norms.bin / lm_head.bin (as applicable) into
-    // the same ModelWeights shape `write_model_weights_q4k_with_opts`
+    // the same ModelWeights shape `write_model_weights_kquant_with_opts`
     // consumes.
     let mut cb = SilentCallbacks;
     let weights = load_model_weights(src, &mut cb as &mut dyn IndexLoadCallbacks)?;
@@ -137,15 +137,19 @@ pub fn vindex_to_q4k(
         .map_err(|e| VindexError::Parse(format!("seed staging index.json: {e}")))?;
 
     // Write Q4K files into the staging directory. Produces
-    // attn_weights_q4k.bin + manifest, interleaved_q4k.bin + manifest,
+    // attn_weights_q4k.bin + manifest, interleaved_kquant.bin + manifest,
     // lm_head_q4.bin, norms.bin, weight_manifest.json. Also rewrites
     // index.json with quant=q4k.
-    let opts = Q4kWriteOptions {
-        down_q4k: config.down_q4k,
+    let opts = KquantWriteOptions {
+        down_proj: if config.down_q4k {
+            crate::DownProjFormat::Q4K
+        } else {
+            crate::DownProjFormat::Q6K
+        },
         feature_major_down: config.feature_major_down,
     };
     let mut build_cb = SilentCallbacks;
-    write_model_weights_q4k_with_opts(
+    write_model_weights_kquant_with_opts(
         &weights,
         &dst_tmp,
         &mut build_cb as &mut dyn crate::IndexBuildCallbacks,
@@ -157,12 +161,12 @@ pub fn vindex_to_q4k(
     // Excludes the f32 weight files that the Q4K path replaces.
     let handled_by_writer: std::collections::HashSet<&str> = [
         INDEX_JSON,
-        // Written by write_model_weights_q4k:
-        ATTN_WEIGHTS_Q4K_BIN,
-        ATTN_WEIGHTS_Q4K_MANIFEST_JSON,
-        INTERLEAVED_Q4K_BIN,
-        INTERLEAVED_Q4K_MANIFEST_JSON,
-        LM_HEAD_Q4_BIN,
+        // Written by write_model_weights_kquant:
+        ATTN_WEIGHTS_KQUANT_BIN,
+        ATTN_WEIGHTS_KQUANT_MANIFEST_JSON,
+        INTERLEAVED_KQUANT_BIN,
+        INTERLEAVED_KQUANT_MANIFEST_JSON,
+        LM_HEAD_KQUANT_BIN,
         NORMS_BIN,
     ]
     .iter()
@@ -236,11 +240,11 @@ pub fn vindex_to_q4k(
     })?;
 
     // Size reporting. FFN src = up_weights.bin + down_weights.bin
-    // (already dense f32). FFN dst = interleaved_q4k.bin.
+    // (already dense f32). FFN dst = interleaved_kquant.bin.
     let src_ffn_bytes = size_of(&src.join(UP_WEIGHTS_BIN)).unwrap_or(0)
         + size_of(&src.join(DOWN_WEIGHTS_BIN)).unwrap_or(0)
         + size_of(&src.join(GATE_VECTORS_BIN)).unwrap_or(0);
-    let dst_ffn_bytes = size_of(&dst.join(INTERLEAVED_Q4K_BIN)).unwrap_or(0)
+    let dst_ffn_bytes = size_of(&dst.join(INTERLEAVED_KQUANT_BIN)).unwrap_or(0)
         + size_of(&dst.join(GATE_VECTORS_BIN)).unwrap_or(0);
     let compression = if dst_ffn_bytes == 0 {
         1.0
@@ -310,23 +314,23 @@ pub struct AddFeatureMajorDownReport {
 
 /// Retrofit `down_features_q4k.bin` into an existing Q4K vindex
 /// without re-quantising the rest of the weights. Reads the down
-/// portion of `interleaved_q4k.bin` per layer, transposes to
+/// portion of `interleaved_kquant.bin` per layer, transposes to
 /// `[intermediate, hidden]`, re-quantises at the same precision the
 /// source used, and writes the W2 file + manifest in place.
 ///
 /// Idempotent: if `down_features_q4k.bin` already exists, returns
 /// `Ok` with `skipped: true` and doesn't touch the directory.
 ///
-/// Precondition: the vindex must have `interleaved_q4k.bin` +
-/// `interleaved_q4k_manifest.json` (i.e. `quant: q4k` in
+/// Precondition: the vindex must have `interleaved_kquant.bin` +
+/// `interleaved_kquant_manifest.json` (i.e. `quant: q4k` in
 /// `index.json`). Browse-only / f32-only vindexes don't.
 pub fn add_feature_major_down(vindex_dir: &Path) -> Result<AddFeatureMajorDownReport, VindexError> {
-    use crate::format::weights::write_q4k::feature_major_down::FeatureMajorDownState;
+    use crate::format::weights::write_kquant::feature_major_down::FeatureMajorDownState;
     use crate::format::weights::Q4kManifestEntry;
 
     let started = Instant::now();
-    let dst = vindex_dir.join(DOWN_FEATURES_Q4K_BIN);
-    let dst_manifest = vindex_dir.join(DOWN_FEATURES_Q4K_MANIFEST_JSON);
+    let dst = vindex_dir.join(DOWN_FEATURES_KQUANT_BIN);
+    let dst_manifest = vindex_dir.join(DOWN_FEATURES_KQUANT_MANIFEST_JSON);
 
     if dst.exists() && dst_manifest.exists() {
         let config = crate::format::load::load_vindex_config(vindex_dir)?;
@@ -339,26 +343,26 @@ pub fn add_feature_major_down(vindex_dir: &Path) -> Result<AddFeatureMajorDownRe
         });
     }
 
-    // Source: interleaved_q4k.bin + manifest.
-    let interleaved_path = vindex_dir.join(INTERLEAVED_Q4K_BIN);
-    let interleaved_manifest_path = vindex_dir.join(INTERLEAVED_Q4K_MANIFEST_JSON);
+    // Source: interleaved_kquant.bin + manifest.
+    let interleaved_path = vindex_dir.join(INTERLEAVED_KQUANT_BIN);
+    let interleaved_manifest_path = vindex_dir.join(INTERLEAVED_KQUANT_MANIFEST_JSON);
     if !interleaved_path.exists() || !interleaved_manifest_path.exists() {
         return Err(VindexError::Parse(format!(
             "{} expects {} + {} (run extract with --quant q4k first)",
             vindex_dir.display(),
-            INTERLEAVED_Q4K_BIN,
-            INTERLEAVED_Q4K_MANIFEST_JSON,
+            INTERLEAVED_KQUANT_BIN,
+            INTERLEAVED_KQUANT_MANIFEST_JSON,
         )));
     }
     let manifest_text = std::fs::read_to_string(&interleaved_manifest_path)?;
     let entries: Vec<Q4kManifestEntry> = serde_json::from_str(&manifest_text)
-        .map_err(|e| VindexError::Parse(format!("{INTERLEAVED_Q4K_MANIFEST_JSON}: {e}")))?;
+        .map_err(|e| VindexError::Parse(format!("{INTERLEAVED_KQUANT_MANIFEST_JSON}: {e}")))?;
 
     let config = crate::format::load::load_vindex_config(vindex_dir)?;
     let num_layers = config.num_layers;
     if entries.len() < num_layers * FFN_COMPONENTS_PER_LAYER {
         return Err(VindexError::Parse(format!(
-            "{INTERLEAVED_Q4K_MANIFEST_JSON} has {} entries, expected {} \
+            "{INTERLEAVED_KQUANT_MANIFEST_JSON} has {} entries, expected {} \
              ({FFN_COMPONENTS_PER_LAYER} per layer for {num_layers} layers)",
             entries.len(),
             num_layers * FFN_COMPONENTS_PER_LAYER,
@@ -367,28 +371,28 @@ pub fn add_feature_major_down(vindex_dir: &Path) -> Result<AddFeatureMajorDownRe
 
     let file = std::fs::File::open(&interleaved_path)?;
     let mmap = unsafe { memmap2::Mmap::map(&file) }
-        .map_err(|e| VindexError::Parse(format!("mmap {INTERLEAVED_Q4K_BIN}: {e}")))?;
+        .map_err(|e| VindexError::Parse(format!("mmap {INTERLEAVED_KQUANT_BIN}: {e}")))?;
 
     let mut state = FeatureMajorDownState::new(&dst, num_layers)?;
 
     // Down is the third entry per layer ([gate, up, down] in the writer).
     for layer in 0..num_layers {
         let down = &entries[layer * FFN_COMPONENTS_PER_LAYER + FFN_DOWN];
-        let format = down.format;
+        let format = down.format.clone();
         let info = crate::quant::registry::lookup(down.format_tag()).ok_or_else(|| {
             VindexError::Parse(format!(
-                "unknown quant format {:?} in {INTERLEAVED_Q4K_MANIFEST_JSON} for layer {layer}",
+                "unknown quant format {:?} in {INTERLEAVED_KQUANT_MANIFEST_JSON} for layer {layer}",
                 down.format_tag(),
             ))
         })?;
         let rows = down.shape.first().copied().ok_or_else(|| {
             VindexError::Parse(format!(
-                "down shape missing rows in {INTERLEAVED_Q4K_MANIFEST_JSON} for layer {layer}"
+                "down shape missing rows in {INTERLEAVED_KQUANT_MANIFEST_JSON} for layer {layer}"
             ))
         })?;
         let cols = down.shape.get(1).copied().ok_or_else(|| {
             VindexError::Parse(format!(
-                "down shape missing cols in {INTERLEAVED_Q4K_MANIFEST_JSON} for layer {layer}"
+                "down shape missing cols in {INTERLEAVED_KQUANT_MANIFEST_JSON} for layer {layer}"
             ))
         })?;
         // Source disk layout for down is `[hidden=rows, padded_intermediate=cols]`.

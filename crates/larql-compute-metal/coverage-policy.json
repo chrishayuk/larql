@@ -1,0 +1,11 @@
+{
+  "policy_note": "Default policy is 90% line coverage per source file. Every src/ file in this crate now clears the 90% floor without per-file debt baselines. Coverage runs use `--test-threads=1` (see Makefile) to serialise env-sensitive tests across lib + integration binaries. Session 6 close (2026-05-16): TOTAL 97.28%, 59/59 files at ≥90%. The static `CALL_COUNT < 3` guard in `decode/diag.rs::log_decode_entry` is exercised via `tests/test_decode_diag.rs`, a dedicated integration binary that gets a fresh process where the counter starts at 0.",
+  "include_globs": [
+    "crates/larql-compute-metal/src/*.rs",
+    "crates/larql-compute-metal/src/**/*.rs"
+  ],
+  "exclude_globs": [],
+  "default_line_min_percent": 90.0,
+  "total_line_min_percent": 97.0,
+  "per_file_line_min_percent": {}
+}

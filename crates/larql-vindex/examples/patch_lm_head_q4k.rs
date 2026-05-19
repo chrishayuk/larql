@@ -3,7 +3,7 @@
 //! For tied-embedding models (Gemma 2/3/4) the output projection is identical
 //! to `embed_tokens.weight`, which the vindex stores in `embeddings.bin`.
 //! This tool reads that matrix, quantises it to Q4_K (matching the format
-//! expected by `load_model_weights_q4k`), and writes `lm_head_q4.bin` next
+//! expected by `load_model_weights_kquant`), and writes `lm_head_q4.bin` next
 //! to it.  It also appends a `weight_manifest.json` entry so subsequent
 //! loads recognise the file.
 //!

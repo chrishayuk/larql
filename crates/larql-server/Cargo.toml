@@ -24,6 +24,7 @@ larql-router-protocol = { path = "../larql-router-protocol" }
 # `MetalBackend::run_experts_preselected_metal` to dispatch each layer's
 # selected experts on the GPU instead of running them per-expert on CPU.
 larql-compute = { path = "../larql-compute" }
+larql-compute-metal = { path = "../larql-compute-metal", optional = true }
 
 axum = { version = "0.8", features = ["ws"] }
 half = "2"
@@ -39,8 +40,15 @@ tokio-stream = "0.1"
 tonic = "0.13"
 prost = "0.13"
 async-stream = "0.3"
+# rustls is only used when the `quic` feature is on (announce.rs installs
+# the ring crypto provider before opening a QUIC client endpoint).
+rustls = { version = "0.23", optional = true, default-features = false, features = ["ring", "std"] }
+bytes = "1"
 futures = "0.3"
 rayon = "1.10"
+# tar — used by /v1/shard route for Mode B handoff and shard_loader for the
+# matching client unpack path. Pure-Rust; no system dep.
+tar = "0.4"
 tower = { version = "0.5", features = ["limit"] }
 tower-http = { version = "0.6", features = ["cors", "trace"] }
 tracing = "0.1"
@@ -56,11 +64,41 @@ base64 = "0.22"
 utoipa = { version = "5", features = ["axum_extras", "preserve_order"] }
 utoipa-swagger-ui = { version = "9", features = ["axum"] }
 
+[dev-dependencies]
+tempfile = "3"
+# Integration test wires a real GridServiceImpl alongside the server. Dev-only.
+larql-router = { path = "../larql-router" }
+# Mirrors larql-router's GridState lock primitive (parking_lot::RwLock,
+# 2026-05-16) so integration tests can construct an
+# `Arc<parking_lot::RwLock<GridState>>` to pass into
+# `GridServiceImpl::new`.
+parking_lot = "0.12"
+# Q4K synthetic vindex fixture writes a tiny Llama-shaped safetensors
+# model to a tempdir, then runs it through `build_vindex_streaming`
+# (`tests/common/synthetic_q4k_vindex.rs`). Matches the version pinned
+# by larql-vindex so the safetensors writer stays in sync with the
+# extraction reader.
+safetensors = "0.7"
+# Exp 53 ShardService criterion benches.
+criterion = { version = "0.5", features = ["html_reports"] }
+
+[[bench]]
+name = "shard_query"
+harness = false
+
 [features]
 default = []
 # Enable Metal-backed GPU expert kernels on the shard server.  Forwards to
 # `larql-compute`'s `metal` feature.  macOS-only.
-metal-experts = ["larql-compute/metal"]
+metal-experts = ["dep:larql-compute-metal"]
+# ADR-0010 QUIC transport for the grid `Join` stream. Servers can connect
+# to the router via `--join quic://router:PORT` when this is on. Forwards
+# to larql-router-protocol so all QUIC code paths share one feature flag.
+quic = ["larql-router-protocol/quic", "dep:rustls"]
+# ADR-0019: real HTTP/3 listener on `--http3-port`. Built on top of
+# `quic` (shares TLS/endpoint setup) plus the h3 framing layer in
+# `larql-router-protocol::transport::h3`.
+http3 = ["quic", "larql-router-protocol/http3"]
 
 [build-dependencies]
 tonic-build = "0.13"

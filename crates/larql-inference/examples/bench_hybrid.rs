@@ -45,15 +45,15 @@ fn main() {
 
     // Load optional data files
     let _ = index.load_down_features(&vindex_dir);
-    let _ = index.load_attn_q4k(&vindex_dir);
-    let _ = index.load_interleaved_q4k(&vindex_dir);
+    let _ = index.load_attn_kquant(&vindex_dir);
+    let _ = index.load_interleaved_kquant(&vindex_dir);
     let _ = index.load_interleaved_q4(&vindex_dir);
     let _ = index.load_lm_head(&vindex_dir);
 
     let gate_index: &dyn larql_vindex::GateIndex = &index;
     eprintln!("  down_features: {}", gate_index.has_down_features());
-    eprintln!("  attn Q4K: {}", index.attn_q4k_layer_data(0).is_some());
-    eprintln!("  interleaved Q4K: {}", gate_index.has_interleaved_q4k());
+    eprintln!("  attn Q4K: {}", index.attn_kquant_layer_data(0).is_some());
+    eprintln!("  interleaved Q4K: {}", gate_index.has_interleaved_kquant());
     eprintln!(
         "  interleaved Q4: {}",
         gate_index.interleaved_q4_mmap_ref().is_some()

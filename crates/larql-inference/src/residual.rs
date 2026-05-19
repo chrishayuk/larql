@@ -6,11 +6,33 @@ use ndarray::Array2;
 /// Callers should prefer passing `arch.norm_eps()` explicitly.
 pub const DEFAULT_EPS: f64 = 1e-6;
 
-/// RMS norm with configurable weight offset and epsilon.
-/// offset=1.0 for Gemma 2/3 (weight = 1 + learned), offset=0.0 for most layers.
-/// Uses f64 accumulation for the sum-of-squares to avoid order-dependent rounding.
+/// RMS norm with the legacy default epsilon ([`DEFAULT_EPS`] = 1e-6).
+///
+/// Prefer [`rms_norm_for_arch`] when an architecture handle is available —
+/// it reads `arch.norm_eps()` from the parsed config (Mistral / Llama 3 /
+/// Gemma 3 ship `rms_norm_eps = 1e-5`, not 1e-6), with the
+/// `LARQL_NORM_EPS_OVERRIDE` env var taking precedence for diagnostic
+/// bisection. This bare version is for tests and for code paths that
+/// genuinely have no model context.
 pub fn rms_norm(x: &Array2<f32>, weight: Option<&Vec<f32>>, offset: f32) -> Array2<f32> {
     rms_norm_eps(x, weight, offset, DEFAULT_EPS)
+}
+
+/// RMS norm with eps sourced from `arch.norm_eps()` (parsed from config.json)
+/// or overridden by `LARQL_NORM_EPS_OVERRIDE`. The arch-driven path is the
+/// permanent fix for bug 2 in
+/// `docs/diagnoses/shannon-cross-engine-divergence.md`; the env var stays
+/// as a diagnostic instrument.
+pub fn rms_norm_for_arch(
+    x: &Array2<f32>,
+    weight: Option<&Vec<f32>>,
+    offset: f32,
+    arch: &dyn larql_models::ModelArchitecture,
+) -> Array2<f32> {
+    let eps = crate::forward_overrides::norm_eps_override()
+        .map(|v| v as f64)
+        .unwrap_or_else(|| arch.norm_eps() as f64);
+    rms_norm_eps(x, weight, offset, eps)
 }
 
 /// RMS norm with explicit epsilon.
@@ -40,12 +62,31 @@ pub fn rms_norm_eps(
 
 /// LayerNorm: (x - mean) / std * weight + bias.
 /// Uses f64 accumulation for mean/variance.
+///
+/// Prefer [`layer_norm_for_arch`] when an architecture handle is available
+/// — it reads `arch.norm_eps()` from the parsed config (StarCoder2 ships
+/// `norm_epsilon = 1e-5`, GPT-2 ships `layer_norm_epsilon = 1e-5`).
 pub fn layer_norm(
     x: &Array2<f32>,
     weight: Option<&Vec<f32>>,
     bias: Option<&Vec<f32>>,
 ) -> Array2<f32> {
     layer_norm_eps(x, weight, bias, DEFAULT_EPS)
+}
+
+/// LayerNorm with eps sourced from `arch.norm_eps()` (parsed from
+/// `norm_epsilon` / `layer_norm_eps` / `layer_norm_epsilon`), overridden
+/// by `LARQL_NORM_EPS_OVERRIDE`. Companion to [`rms_norm_for_arch`].
+pub fn layer_norm_for_arch(
+    x: &Array2<f32>,
+    weight: Option<&Vec<f32>>,
+    bias: Option<&Vec<f32>>,
+    arch: &dyn larql_models::ModelArchitecture,
+) -> Array2<f32> {
+    let eps = crate::forward_overrides::norm_eps_override()
+        .map(|v| v as f64)
+        .unwrap_or_else(|| arch.norm_eps() as f64);
+    layer_norm_eps(x, weight, bias, eps)
 }
 
 /// LayerNorm with explicit epsilon.
@@ -269,6 +310,103 @@ mod tests {
             assert!(
                 (s - 2.0 * u).abs() < 1e-5,
                 "weight=2 should double the output"
+            );
+        }
+    }
+
+    // ── rms_norm_for_arch / layer_norm_for_arch eps wiring ───────────────────
+    //
+    // The default `rms_norm` (legacy) uses DEFAULT_EPS = 1e-6. The
+    // arch-aware variants must read `arch.norm_eps()`. These are the
+    // unit-level gates for bug 2 in
+    // docs/diagnoses/shannon-cross-engine-divergence.md.
+
+    fn build_arch_with_eps(eps: f64) -> Box<dyn larql_models::ModelArchitecture> {
+        larql_models::detect_from_json(&serde_json::json!({
+            "model_type": "llama",
+            "hidden_size": 8,
+            "num_hidden_layers": 2,
+            "intermediate_size": 32,
+            "num_attention_heads": 2,
+            "num_key_value_heads": 2,
+            "rms_norm_eps": eps,
+        }))
+    }
+
+    #[test]
+    fn rms_norm_for_arch_reads_arch_eps_not_default() {
+        // Construct a residual where the squared mean is small enough that
+        // 1e-6 vs 1e-5 changes the rsqrt term measurably (>1e-4 ULP), so
+        // the two eps values produce visibly different outputs.
+        let x = Array2::from_shape_vec((1, 4), vec![0.001_f32, 0.001, 0.001, 0.001]).unwrap();
+        let arch_strict = build_arch_with_eps(1e-6);
+        let arch_loose = build_arch_with_eps(1e-5);
+        let out_strict = rms_norm_for_arch(&x, None, 0.0, &*arch_strict);
+        let out_loose = rms_norm_for_arch(&x, None, 0.0, &*arch_loose);
+        let max_diff = out_strict
+            .iter()
+            .zip(out_loose.iter())
+            .map(|(a, b)| (a - b).abs())
+            .fold(0.0_f32, f32::max);
+        assert!(
+            max_diff > 0.01,
+            "arch.norm_eps() not honoured: outputs match with eps 1e-6 vs 1e-5 (max diff {max_diff})"
+        );
+    }
+
+    #[test]
+    fn rms_norm_for_arch_falls_back_to_default_when_arch_omits_eps() {
+        // Build an arch without rms_norm_eps so arch.norm_eps() returns
+        // the trait default (DEFAULT_NORM_EPS = 1e-6). Result should match
+        // bare rms_norm exactly.
+        let arch = larql_models::detect_from_json(&serde_json::json!({
+            "model_type": "llama",
+            "hidden_size": 8,
+            "num_hidden_layers": 2,
+            "intermediate_size": 32,
+            "num_attention_heads": 2,
+            "num_key_value_heads": 2,
+        }));
+        let x = Array2::from_shape_vec((1, 4), vec![1.0_f32, 2.0, 3.0, 4.0]).unwrap();
+        let out_arch = rms_norm_for_arch(&x, None, 0.0, &*arch);
+        let out_default = rms_norm(&x, None, 0.0);
+        for (a, d) in out_arch.iter().zip(out_default.iter()) {
+            assert!(
+                (a - d).abs() < 1e-7,
+                "arch.norm_eps() fallback must equal DEFAULT_EPS path"
+            );
+        }
+    }
+
+    #[test]
+    fn layer_norm_for_arch_reads_arch_eps_not_default() {
+        let x = Array2::from_shape_vec((1, 4), vec![0.001_f32, 0.001, 0.001, 0.001]).unwrap();
+        let arch_strict = build_arch_with_eps(1e-6);
+        let arch_loose = build_arch_with_eps(1e-5);
+        let out_strict = layer_norm_for_arch(&x, None, None, &*arch_strict);
+        let out_loose = layer_norm_for_arch(&x, None, None, &*arch_loose);
+        let max_diff = out_strict
+            .iter()
+            .zip(out_loose.iter())
+            .map(|(a, b)| (a - b).abs())
+            .fold(0.0_f32, f32::max);
+        // LayerNorm subtracts mean first; for a uniform vector the
+        // numerator is 0 and the output is determined entirely by eps
+        // through the variance term. Either eps produces 0/sqrt(eps) = 0
+        // for both, so this case is degenerate. Use a non-uniform vector
+        // to exercise the eps difference.
+        if max_diff <= 1e-6 {
+            let x2 = Array2::from_shape_vec((1, 4), vec![0.001_f32, 0.002, 0.003, 0.004]).unwrap();
+            let s = layer_norm_for_arch(&x2, None, None, &*arch_strict);
+            let l = layer_norm_for_arch(&x2, None, None, &*arch_loose);
+            let d = s
+                .iter()
+                .zip(l.iter())
+                .map(|(a, b)| (a - b).abs())
+                .fold(0.0_f32, f32::max);
+            assert!(
+                d > 1e-5,
+                "layer_norm_for_arch did not honour arch.norm_eps()"
             );
         }
     }

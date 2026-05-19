@@ -1,6 +1,50 @@
 # Roadmap — larql-models
 
-## Current: 12 architectures, 286 tests, safetensors + GGUF loading, 77.86% line / 78.30% function coverage
+## Current: 12 architectures, 337 tests (227 src + 82 + 28 integration), safetensors + GGUF loading, config-driven `rope_scaling` / `norm_eps` / GPT-2 legacy aliases
+
+## Config-loading correctness pass 2026-05-16
+
+Cross-engine Shannon verify (`larql shannon verify`) on Linux + macOS
+revealed four config-loading defects in `larql-models` that drove the
+LARQL Rust forward path off by 5.4 % (Gemma 3 4B) to 8.2 % (Mistral 7B)
+bits/char relative to HF transformers. All four are now fixed in the
+loader itself — env-var diagnostics stay in tree but production runs
+need zero overrides:
+
+| # | Bug | Models affected | Fix site |
+|--:|---|---|---|
+| 1 | `rms_norm_eps` from config.json was never read; trait default 1e-6 used everywhere | Mistral 7B, Llama 3.2, Gemma 3 4B | `parser.rs` parses `rms_norm_eps` / `layer_norm_eps` / `layer_norm_epsilon` / `norm_epsilon` (StarCoder2) into `ModelConfig.norm_eps`; default `norm_eps()` reads it |
+| 2 | Per-layer-type `rope_scaling` (Gemma 3 structured `{full_attention, sliding_attention}` form) was not honoured | Gemma 3 4B | `RopeScaling.gemma3_global_only`; `Gemma3Arch::rope_position_divisor_for_layer` returns `factor` on full-attention layers only |
+| 3 | `rope_scaling = llama3` (wavelength-dependent per-channel factors) was not implemented | Llama 3.2 1B | New `Llama3RopeScaling` type in `config.rs`; `LlamaArch::llama3_rope_scaling` returns parsed params; `attention/rope.rs::Llama3Scaling::apply` mirrors HF's `_compute_llama3_parameters` |
+| 4 | `norm_epsilon` alias not recognised (StarCoder2's name for `rms_norm_eps`) | StarCoder2 3B | Added to the alias list in `parser.rs` |
+
+Plus GPT-2 config aliases (`n_embd` / `n_layer` / `n_head` / `n_inner`)
+parsed via the new alias-list machinery in
+`detect/config_io.rs::CONFIG_KEY_*_ALIASES`. Loader path now resolves
+`openai-community/gpt2`; raw-safetensors tensor-key renaming
+(`wte`/`wpe`/`c_attn` → canonical) is a separate scope kept for the
+GPT-2 safetensors loader item below.
+
+Shared numerical defaults moved to a new `defaults` module
+(`DEFAULT_NORM_EPS`, `ROPE_BASE_GEMMA`, `ROPE_BASE_DEFAULT`) so the
+parser fallback, the trait default, and the per-arch fallback all
+reference the same value — the drift between these three sites was
+the mechanism of bug 1.
+
+Verification:
+`scripts/diagnose_models.py` (multi-arch sweep across SmolLM2-135M,
+Llama-3.2-1B, Qwen3-0.6B, Gemma-2-2B, StarCoder2-3B, Mistral-7B-v0.1,
+Gemma-3-4B-it) reports 7/9 PASS at <0.5 % threshold with **zero env
+vars set**. The two ERR rows are pre-existing issues unrelated to this
+work (Granite-4.0-micro MoE validator strictness; Gemma-4 not yet
+supported by HF transformers in `.venv`).
+
+CI gate at `.github/workflows/shannon-verify.yml` runs
+`larql shannon verify HuggingFaceTB/SmolLM2-135M --engines hf` on
+every PR + push to main.
+
+Diagnostic doc:
+[`docs/diagnoses/shannon-cross-engine-divergence.md`](../../docs/diagnoses/shannon-cross-engine-divergence.md).
 
 ## Roadmap Review 2026-04-26
 
@@ -12,7 +56,15 @@ byte ranges. It also added targeted regression coverage and refreshed CI to
 run rustfmt plus a crate-scoped coverage summary.
 
 Recommended next sequence:
-- Add Phi-3 / Phi-4 architecture support first. It is low effort, exercises the new validation path, and expands coverage without changing the trait.
+- **GPT-2 raw-safetensors tensor-key renaming.** Config parses cleanly
+  now; tensor loading needs the `wte` / `wpe` / `h.N.attn.c_attn` /
+  `h.N.mlp.c_fc` → canonical mapping in `loading/safetensors.rs` (the
+  existing `gpt2.rs` arch assumes GGUF→HF normalisation has already run).
+- **Granite-4 MoE validator relaxation** so `granite-4.0-micro` loads —
+  the dense Granite-4 model carries hybrid MoE *flags* without expert
+  tensors, which the current validator rejects.
+- Add Phi-3 / Phi-4 architecture support. Low effort, exercises the
+  validation path, expands coverage without changing the trait.
 - Use validated loading/detection APIs at downstream inference/extraction boundaries.
 - Defer large loading changes until after architecture coverage. ADR-008 defines the additive lazy/quantized weight API shape.
 

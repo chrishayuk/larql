@@ -9,7 +9,7 @@ use super::ple::apply_per_layer_embedding;
 use crate::attention::{AttentionWeights, SharedKV};
 use crate::ffn::FfnBackend;
 use crate::model::ModelWeights;
-use crate::residual::rms_norm;
+use crate::residual::rms_norm_for_arch;
 use ndarray::Array2;
 
 /// Public wrapper for run_attention — used by diagnostic/capture tooling.
@@ -75,7 +75,8 @@ pub fn run_ffn(
     // Layer-0 (or LARQL_STAGE_DUMP_LAYER) stage dumps — matches the Metal
     // `LARQL_METAL_DUMP_LAYERS` convention. Lets us diff per-stage
     // intermediates between CPU and Metal.
-    let stage_dump_dir = super::dump_config::DumpConfig::get().stage_dir(layer);
+    let dump_cfg = super::dump_config::DumpConfig::get();
+    let stage_dump_dir = dump_cfg.stage_dir(layer);
     let dump_f32 = |name: &str, arr: &Array2<f32>| {
         if let Some(dir) = stage_dump_dir {
             let slice = arr.as_slice().unwrap_or(&[]);
@@ -92,7 +93,7 @@ pub fn run_ffn(
     };
     let h_ffn = match pre_ffn_key {
         Some(key) => apply_norm(weights, h_post_attn, &key, norm_offset),
-        None => rms_norm(h_post_attn, None, norm_offset),
+        None => rms_norm_for_arch(h_post_attn, None, norm_offset, &*weights.arch),
     };
     dump_f32("ffn_norm_out", &h_ffn);
 
@@ -108,7 +109,7 @@ pub fn run_ffn(
     let h_out = if arch.has_post_norms() {
         let normed = match arch.post_feedforward_layernorm_key(layer) {
             Some(key) => apply_norm(weights, &ffn_out, &key, norm_offset),
-            None => rms_norm(&ffn_out, None, norm_offset),
+            None => rms_norm_for_arch(&ffn_out, None, norm_offset, &*weights.arch),
         };
         if res_mult != 1.0 {
             h_post_attn + &(&normed * res_mult)
@@ -146,7 +147,7 @@ pub(crate) fn apply_layer_scalar(weights: &ModelWeights, h: &mut Array2<f32>, la
 ///
 /// Handles: attention → FFN → per-layer embedding → layer_scalar.
 /// All four steps are needed for Gemma 4 correctness. Exposed `pub` so
-/// alternate forward drivers (notably `vindex::predict_q4k`) get the same
+/// alternate forward drivers (notably `vindex::predict_kquant`) get the same
 /// sequence as `predict_with_temperature` without duplicating logic.
 #[allow(clippy::type_complexity)]
 pub fn run_layer_with_ffn(

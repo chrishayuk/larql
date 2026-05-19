@@ -34,15 +34,15 @@ pub fn load_model_weights_with_opts(
 
     // `load_model_weights` only knows how to reconstruct the full float
     // `ModelWeights` struct. A Q4_K vindex stores weights in
-    // `attn_weights_q4k.bin` + `interleaved_q4k.bin` + per-tensor manifests
-    // and must be accessed via `VectorIndex::load_attn_q4k` +
-    // `VectorIndex::load_interleaved_q4k` (which return raw quantised
+    // `attn_weights_q4k.bin` + `interleaved_kquant.bin` + per-tensor manifests
+    // and must be accessed via `VectorIndex::load_attn_kquant` +
+    // `VectorIndex::load_interleaved_kquant` (which return raw quantised
     // bytes that compute dequantises on the fly). Surface a clear error
     // instead of producing a confusing "attn_weights.bin not found".
     if config.quant != crate::QuantFormat::None {
         return Err(VindexError::Parse(format!(
             "vindex is quantised ({}). `load_model_weights` only handles float weights. \
-             Call `VectorIndex::load_attn_q4k` + `load_interleaved_q4k` on the loaded \
+             Call `VectorIndex::load_attn_kquant` + `load_interleaved_kquant` on the loaded \
              VectorIndex instead.",
             config.quant,
         )));
@@ -229,8 +229,8 @@ pub fn load_model_weights_with_opts(
     // Gate vectors from gate_vectors.bin — only when running in non-Q4 mode.
     //
     // In Q4 vindexes (quant=q4k) the forward pass reads FFN weights straight
-    // from the Q4-packed `interleaved_q4k.bin` mmap via
-    // `VectorIndex::interleaved_q4k_layer_data`, so expanding `gate_vectors.bin`
+    // from the Q4-packed `interleaved_kquant.bin` mmap via
+    // `VectorIndex::interleaved_kquant_layer_data`, so expanding `gate_vectors.bin`
     // into an f32 HashMap just to have an unused copy wastes ~27 GB of heap at
     // 31B scale and prevents the model from loading on a 96 GB machine.
     // gate_vectors → FFN gate tensors. Skip when the caller doesn't
@@ -278,7 +278,7 @@ pub fn load_model_weights_with_opts(
     // final logits projection. Falls through to embed-tied derivation below
     // if the file is absent (or dequantisation fails).
     if lm_head_loaded.is_none() && !opts.skip_lm_head {
-        let lm_q4_path = dir.join(LM_HEAD_Q4_BIN);
+        let lm_q4_path = crate::format::filenames::resolve_lm_head_kquant(dir).bin;
         if lm_q4_path.exists() {
             if let Some(model_cfg) = config.model_config.as_ref() {
                 // lm_head shape is (vocab_size, hidden_size) — same as embed.

@@ -454,4 +454,266 @@ mod tests {
             vec![0.0; hidden]
         );
     }
+
+    // ENV_LOCK protects tests that set process-wide env vars. The cpu_moe_forward
+    // hot path reads `LARQL_SKIP_MOE`, `LARQL_MOE_DEBUG`, and (once per thread,
+    // through a TLS cache) `LARQL_MOE_FWD_TIMING`.
+    static ENV_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
+
+    fn with_env<T>(vars: &[(&'static str, Option<&'static str>)], f: impl FnOnce() -> T) -> T {
+        // Recover from prior-test panics so an unrelated failure in one
+        // env-sensitive test doesn't cascade-fail the others.
+        let _guard = ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+        let previous: Vec<_> = vars
+            .iter()
+            .map(|(name, _)| (*name, std::env::var_os(name)))
+            .collect();
+        for (name, value) in vars {
+            match value {
+                Some(v) => std::env::set_var(name, v),
+                None => std::env::remove_var(name),
+            }
+        }
+        let result = f();
+        for (name, value) in previous {
+            match value {
+                Some(v) => std::env::set_var(name, v),
+                None => std::env::remove_var(name),
+            }
+        }
+        result
+    }
+
+    fn trivial_moe_inputs() -> (usize, usize, Vec<u8>, Vec<u8>, Vec<f32>, Vec<f32>) {
+        let hidden = 8;
+        let inter = 2;
+        let gate_up = bf16_fill(2 * inter * hidden, 1.0);
+        let down = bf16_fill(hidden * inter, 1.0);
+        let router = vec![1.0f32; hidden];
+        let h = vec![1.0f32; hidden];
+        (hidden, inter, gate_up, down, router, h)
+    }
+
+    #[test]
+    fn returns_zero_vec_when_num_experts_zero() {
+        let (hidden, inter, gate_up, down, router, h) = trivial_moe_inputs();
+        let moe = MoeLayerWeights {
+            num_experts: 0,
+            ..one_expert_moe(
+                hidden,
+                inter,
+                vec![gate_up.as_slice()],
+                vec![down.as_slice()],
+                &router,
+                QuantFormat::BF16,
+            )
+        };
+        assert_eq!(cpu_moe_forward(&h, &moe, 0.0, 1e-6), vec![0.0; hidden]);
+    }
+
+    #[test]
+    fn returns_zero_vec_when_top_k_zero() {
+        let (hidden, inter, gate_up, down, router, h) = trivial_moe_inputs();
+        let moe = MoeLayerWeights {
+            top_k: 0,
+            ..one_expert_moe(
+                hidden,
+                inter,
+                vec![gate_up.as_slice()],
+                vec![down.as_slice()],
+                &router,
+                QuantFormat::BF16,
+            )
+        };
+        assert_eq!(cpu_moe_forward(&h, &moe, 0.0, 1e-6), vec![0.0; hidden]);
+    }
+
+    #[test]
+    fn returns_zero_vec_when_intermediate_size_zero() {
+        let (hidden, inter, gate_up, down, router, h) = trivial_moe_inputs();
+        let moe = MoeLayerWeights {
+            intermediate_size: 0,
+            ..one_expert_moe(
+                hidden,
+                inter,
+                vec![gate_up.as_slice()],
+                vec![down.as_slice()],
+                &router,
+                QuantFormat::BF16,
+            )
+        };
+        assert_eq!(cpu_moe_forward(&h, &moe, 0.0, 1e-6), vec![0.0; hidden]);
+    }
+
+    #[test]
+    fn returns_zero_vec_when_router_proj_empty() {
+        let (hidden, inter, gate_up, down, _, h) = trivial_moe_inputs();
+        let empty: [f32; 0] = [];
+        let moe = MoeLayerWeights {
+            router_proj: &empty,
+            ..one_expert_moe(
+                hidden,
+                inter,
+                vec![gate_up.as_slice()],
+                vec![down.as_slice()],
+                &empty,
+                QuantFormat::BF16,
+            )
+        };
+        assert_eq!(cpu_moe_forward(&h, &moe, 0.0, 1e-6), vec![0.0; hidden]);
+    }
+
+    #[test]
+    fn returns_zero_vec_when_experts_gate_up_table_empty() {
+        let (hidden, inter, _, down, router, h) = trivial_moe_inputs();
+        let moe = one_expert_moe(
+            hidden,
+            inter,
+            vec![],
+            vec![down.as_slice()],
+            &router,
+            QuantFormat::BF16,
+        );
+        assert_eq!(cpu_moe_forward(&h, &moe, 0.0, 1e-6), vec![0.0; hidden]);
+    }
+
+    #[test]
+    fn returns_zero_vec_when_experts_down_table_empty() {
+        let (hidden, inter, gate_up, _, router, h) = trivial_moe_inputs();
+        let moe = one_expert_moe(
+            hidden,
+            inter,
+            vec![gate_up.as_slice()],
+            vec![],
+            &router,
+            QuantFormat::BF16,
+        );
+        assert_eq!(cpu_moe_forward(&h, &moe, 0.0, 1e-6), vec![0.0; hidden]);
+    }
+
+    #[test]
+    fn skip_moe_env_returns_zero_vec_before_running_experts() {
+        let (hidden, inter, gate_up, down, router, h) = trivial_moe_inputs();
+        let moe = one_expert_moe(
+            hidden,
+            inter,
+            vec![gate_up.as_slice()],
+            vec![down.as_slice()],
+            &router,
+            QuantFormat::BF16,
+        );
+        let out = with_env(&[(crate::options::ENV_SKIP_MOE, Some("1"))], || {
+            cpu_moe_forward(&h, &moe, 0.0, 1e-6)
+        });
+        assert_eq!(out, vec![0.0; hidden]);
+    }
+
+    #[test]
+    fn moe_debug_env_exercises_diagnostic_branches() {
+        // Pre-experts + router norm + scale arrays populated so the debug
+        // branch reads non-empty buffers (rms calculations).
+        let hidden = 8;
+        let inter = 2;
+        let gate_up = bf16_fill(2 * inter * hidden, 1.0);
+        let down = bf16_fill(hidden * inter, 1.0);
+        let router = vec![0.5f32; hidden];
+        let pre = vec![1.0f32; hidden];
+        let rnorm = vec![1.0f32; hidden];
+        // `router_scale` is element-wise multiplied with `router_in` (zip), so
+        // it must match `hidden` in length to avoid silently truncating the
+        // router input vector.
+        let rscale = vec![1.0f32; hidden];
+        let post = vec![1.0f32; hidden];
+        let moe = MoeLayerWeights {
+            pre_experts_norm: &pre,
+            router_norm: &rnorm,
+            router_scale: &rscale,
+            post_experts_norm: &post,
+            ..one_expert_moe(
+                hidden,
+                inter,
+                vec![gate_up.as_slice()],
+                vec![down.as_slice()],
+                &router,
+                QuantFormat::BF16,
+            )
+        };
+        let h = vec![0.25f32; hidden];
+
+        let out = with_env(&[(crate::options::ENV_MOE_DEBUG, Some("1"))], || {
+            cpu_moe_forward(&h, &moe, 0.0, 1e-6)
+        });
+        assert_eq!(out.len(), hidden);
+        assert!(out.iter().all(|v| v.is_finite()));
+    }
+
+    #[test]
+    fn moe_fwd_timing_env_prints_timing_block() {
+        // FWD_TIMING is a TLS-cached read of the env var, evaluated lazily on
+        // first hit per thread.  Run the entire call on a fresh
+        // `std::thread::spawn` so the TLS init sees the env var set to "1"
+        // instead of inheriting an earlier `false` from this test process's
+        // main thread.
+        let (hidden, inter, gate_up, down, router, h) = trivial_moe_inputs();
+
+        let result = with_env(&[(crate::options::ENV_MOE_FWD_TIMING, Some("1"))], || {
+            std::thread::spawn(move || {
+                let moe = one_expert_moe(
+                    hidden,
+                    inter,
+                    vec![gate_up.as_slice()],
+                    vec![down.as_slice()],
+                    &router,
+                    QuantFormat::BF16,
+                );
+                cpu_moe_forward(&h, &moe, 0.0, 1e-6)
+            })
+            .join()
+            .expect("timing thread did not panic")
+        });
+        assert_eq!(result.len(), hidden);
+        assert!(result.iter().all(|v| v.is_finite()));
+    }
+
+    #[test]
+    fn scratch_reallocates_when_dimensions_change_between_calls() {
+        // Force rayon's worker TLS to hold a scratch for one shape, then call
+        // again with different (hidden, inter) so the size-mismatch branch
+        // (`*scratch = ExpertScratch::new(...)`) is taken.  We don't assert
+        // the path runs on every worker — rayon may schedule onto a
+        // freshly-warmed thread — but the par_iter is non-empty on either
+        // shape, so at least one worker hits the branch.
+        let first_h = 8usize;
+        let first_inter = 2usize;
+        let first_gate_up = bf16_fill(2 * first_inter * first_h, 1.0);
+        let first_down = bf16_fill(first_h * first_inter, 1.0);
+        let first_router = vec![1.0f32; first_h];
+        let first_moe = one_expert_moe(
+            first_h,
+            first_inter,
+            vec![first_gate_up.as_slice()],
+            vec![first_down.as_slice()],
+            &first_router,
+            QuantFormat::BF16,
+        );
+        let out_a = cpu_moe_forward(&vec![1.0; first_h], &first_moe, 0.0, 1e-6);
+        assert_eq!(out_a.len(), first_h);
+
+        let second_h = 16usize;
+        let second_inter = 4usize;
+        let second_gate_up = bf16_fill(2 * second_inter * second_h, 1.0);
+        let second_down = bf16_fill(second_h * second_inter, 1.0);
+        let second_router = vec![1.0f32; second_h];
+        let second_moe = one_expert_moe(
+            second_h,
+            second_inter,
+            vec![second_gate_up.as_slice()],
+            vec![second_down.as_slice()],
+            &second_router,
+            QuantFormat::BF16,
+        );
+        let out_b = cpu_moe_forward(&vec![1.0; second_h], &second_moe, 0.0, 1e-6);
+        assert_eq!(out_b.len(), second_h);
+        assert!(out_b.iter().all(|v| v.is_finite()));
+    }
 }

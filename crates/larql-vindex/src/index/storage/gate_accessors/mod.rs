@@ -59,7 +59,7 @@ impl VectorIndex {
             let d = fp4.manifest.projections.down.precision;
             parts.push(format!("FP4 sparse (gate={g}, up={u}, down={d})"));
         }
-        if self.storage.has_interleaved_q4k() {
+        if self.storage.has_interleaved_kquant() {
             parts.push("Q4K interleaved".into());
         }
         if self.storage.has_interleaved_q4() {
@@ -84,11 +84,17 @@ impl VectorIndex {
     /// Number of features indexed at a layer.
     ///
     /// Check order: legacy gate mmap slices → legacy heap gate vectors
-    /// → FP4 storage's per-layer feature counts (exp 26). The FP4
-    /// fallback fires when an FP4-only vindex has no legacy
-    /// `gate_vectors.bin` mapped — without this, the walk kernel
-    /// sees `num_features == 0` and falls through to the safetensors
-    /// weights path, silently bypassing the vindex entirely.
+    /// → FP4 storage's per-layer feature counts (exp 26) → Q4_K/Q6_K
+    /// FFN intermediate width derived from the gate manifest entry.
+    ///
+    /// The FP4 fallback fires when an FP4-only vindex has no legacy
+    /// `gate_vectors.bin` mapped. The Q4K fallback fires for
+    /// quantised-FFN-only vindexes (Gemma 3 4B Q4K and similar) where
+    /// gate vectors live inside `interleaved_kquant.bin` and no separate
+    /// `gate_vectors.bin` is emitted. Without these fallbacks the walk
+    /// kernel sees `num_features == 0` and falls through to the
+    /// safetensors weights path — silently bypassing the vindex and
+    /// regressing FFN throughput ~100× on Gemma 3 4B Q4K.
     pub fn num_features(&self, layer: usize) -> usize {
         if self.storage.has_gate_vectors() {
             let n = self
@@ -115,10 +121,39 @@ impl VectorIndex {
         // `index.json.layers[]` at load time.
         if let Some(ref fp4) = self.ffn.fp4_storage {
             if let Some(&n) = fp4.layer_features.get(layer) {
-                return n;
+                if n > 0 {
+                    return n;
+                }
             }
         }
+        // Q4_K/Q6_K FFN width fallback — derive intermediate dim from
+        // the gate component's manifest byte length. Same data the
+        // matmul kernel consults, so this can't drift out of sync.
+        if let Some(n) = self.kquant_ffn_intermediate_width(layer) {
+            return n;
+        }
         0
+    }
+
+    /// FFN intermediate width derived from the layer's gate Q4_K/Q6_K
+    /// manifest entry. Returns `None` when no Q4K FFN bytes are mapped
+    /// for this layer, the format tag is unknown to the registry, or
+    /// the recorded byte length isn't a whole number of rows.
+    ///
+    /// Surface used as a `num_features` fallback for FFN-only vindexes
+    /// (no gate_vectors.bin, no FP4 storage). Reading the same manifest
+    /// the matmul kernel reads keeps the width authoritative — there's
+    /// no shape duplication that could drift.
+    pub(crate) fn kquant_ffn_intermediate_width(&self, layer: usize) -> Option<usize> {
+        let slices = self.interleaved_kquant_layer_data(layer)?;
+        let (gate_bytes, gate_fmt) = slices[0];
+        let info = crate::quant::registry::lookup(gate_fmt)?;
+        let bytes_per_row = info.bytes_per_row(self.hidden_size)?;
+        let len = gate_bytes.len();
+        if !len.is_multiple_of(bytes_per_row) {
+            return None;
+        }
+        Some(len / bytes_per_row)
     }
 
     /// Total gate vectors loaded across all layers.

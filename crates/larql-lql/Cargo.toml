@@ -8,6 +8,7 @@ description = "LQL parser, executor, and REPL for LARQL"
 
 [dependencies]
 larql-compute = { path = "../larql-compute" }
+larql-compute-metal = { path = "../larql-compute-metal", optional = true }
 larql-core = { path = "../larql-core" }
 larql-inference = { path = "../larql-inference" }
 larql-models = { path = "../larql-models" }
@@ -24,7 +25,7 @@ default = []
 # Enable Metal-accelerated paths in `larql-compute` / `larql-inference`.
 # Mirrors the features in those crates so workspace tests can be built
 # with `--features metal` from this package.
-metal = ["larql-compute/metal", "larql-inference/metal", "larql-vindex/metal"]
+metal = ["dep:larql-compute-metal", "larql-inference/metal", "larql-vindex/metal"]
 
 [dev-dependencies]
 criterion = "0.5"
@@ -33,6 +34,10 @@ criterion = "0.5"
 # `mockito::Server`, points the session at it via `USE "<url>"`, and
 # asserts on the canned response.
 mockito = "1.7"
+# Tempdirs for the synthetic-model integration tests that need an
+# on-disk vindex+weights fixture (see
+# `larql_inference::test_utils::write_synthetic_model_dir`).
+tempfile = "3"
 
 [[bench]]
 name = "parser"

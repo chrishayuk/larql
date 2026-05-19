@@ -73,11 +73,11 @@ fn main() -> Result<(), BoxErr> {
     let t0 = std::time::Instant::now();
     let mut cb = SilentLoadCallbacks;
     let mut index = VectorIndex::load_vindex(&vindex_path, &mut cb)?;
-    index.load_attn_q4k(&vindex_path).ok();
-    index.load_interleaved_q4k(&vindex_path).ok();
+    index.load_attn_kquant(&vindex_path).ok();
+    index.load_interleaved_kquant(&vindex_path).ok();
 
     let cfg = larql_vindex::load_vindex_config(&vindex_path)?;
-    let weights = larql_vindex::load_model_weights_q4k(&vindex_path, &mut cb)?;
+    let weights = larql_vindex::load_model_weights_kquant(&vindex_path, &mut cb)?;
     let tokenizer = load_vindex_tokenizer(&vindex_path)?;
     println!(
         "done ({:.1}s)  model={} layers={} hidden={}",
@@ -89,7 +89,7 @@ fn main() -> Result<(), BoxErr> {
 
     // ── Backend (Metal or CPU) ────────────────────────────────────────────────
     #[cfg(all(feature = "metal", target_os = "macos"))]
-    let backend = larql_compute::MetalBackend::new().ok_or("Metal not available")?;
+    let backend = larql_compute_metal::MetalBackend::new().ok_or("Metal not available")?;
     #[cfg(not(all(feature = "metal", target_os = "macos")))]
     let backend = larql_compute::CpuBackend;
 

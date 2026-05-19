@@ -36,7 +36,7 @@ type RowDotFn = fn(&[u8], &[f32]) -> Result<f32, larql_models::ModelError>;
 type RowScaledAddFn = fn(&[u8], f32, &mut [f32]) -> Result<(), larql_models::ModelError>;
 
 /// One entry in the format registry. `tag` is the on-disk string
-/// (matches what's in `interleaved_q4k_manifest.json`).
+/// (matches what's in `interleaved_kquant_manifest.json`).
 pub struct QuantFormatInfo {
     /// Serialized identifier — appears in manifests and the
     /// `QuantBlockFormat` serde enum.

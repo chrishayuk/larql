@@ -1,0 +1,4986 @@
+{
+  "model": "/Users/christopherhay/.cache/huggingface/hub/models--google--gemma-3-4b-it/snapshots/093f9f388b31de276ce2de164bdc2081324b9767",
+  "engines": [
+    "standard",
+    "markov-rs",
+    "unlimited-context",
+    "turbo-quant"
+  ],
+  "parametric_n": 100,
+  "needle_n": 5,
+  "conflict_n": 20,
+  "splits": [
+    {
+      "strategy": "markov-rs",
+      "parametric_match_rate": 0.69,
+      "parametric_mean_bits": 2.2526188250924197,
+      "parametric_n": 100,
+      "in_context_match_rate": 0.0,
+      "in_context_mean_bits": 15.49540950877003,
+      "in_context_n": 5,
+      "conflict_follow_rate": 0.25,
+      "conflict_parametric_fallback_rate": 0.35,
+      "conflict_n": 20
+    },
+    {
+      "strategy": "standard",
+      "parametric_match_rate": 0.69,
+      "parametric_mean_bits": 2.2526188250924197,
+      "parametric_n": 100,
+      "in_context_match_rate": 0.0,
+      "in_context_mean_bits": 15.49540950877003,
+      "in_context_n": 5,
+      "conflict_follow_rate": 0.25,
+      "conflict_parametric_fallback_rate": 0.35,
+      "conflict_n": 20
+    },
+    {
+      "strategy": "turbo-quant",
+      "parametric_match_rate": 0.69,
+      "parametric_mean_bits": 2.2526188250924197,
+      "parametric_n": 100,
+      "in_context_match_rate": 0.0,
+      "in_context_mean_bits": 15.49540950877003,
+      "in_context_n": 5,
+      "conflict_follow_rate": 0.25,
+      "conflict_parametric_fallback_rate": 0.35,
+      "conflict_n": 20
+    },
+    {
+      "strategy": "unlimited-context",
+      "parametric_match_rate": 0.69,
+      "parametric_mean_bits": 2.2099701769353324,
+      "parametric_n": 100,
+      "in_context_match_rate": 0.0,
+      "in_context_mean_bits": 22.222450821199825,
+      "in_context_n": 5,
+      "conflict_follow_rate": 0.25,
+      "conflict_parametric_fallback_rate": 0.3,
+      "conflict_n": 20
+    }
+  ],
+  "per_prompt": [
+    {
+      "prompt": "The capital of France is",
+      "category": "factual",
+      "knowledge_source": "parametric",
+      "strategy": "standard",
+      "expected_contains": "Paris",
+      "predicted_top1": " Paris",
+      "top1_match": true,
+      "bits_per_token": 0.3101095667870367
+    },
+    {
+      "prompt": "The capital of Germany is",
+      "category": "factual",
+      "knowledge_source": "parametric",
+      "strategy": "standard",
+      "expected_contains": "Berlin",
+      "predicted_top1": " Berlin",
+      "top1_match": true,
+      "bits_per_token": 0.16975619739458564
+    },
+    {
+      "prompt": "The capital of Japan is",
+      "category": "factual",
+      "knowledge_source": "parametric",
+      "strategy": "standard",
+      "expected_contains": "Tokyo",
+      "predicted_top1": " Tokyo",
+      "top1_match": true,
+      "bits_per_token": 0.23581776289227815
+    },
+    {
+      "prompt": "The capital of Italy is",
+      "category": "factual",
+      "knowledge_source": "parametric",
+      "strategy": "standard",
+      "expected_contains": "Rome",
+      "predicted_top1": " Rome",
+      "top1_match": true,
+      "bits_per_token": 0.6863272297902607
+    },
+    {
+      "prompt": "The capital of Spain is",
+      "category": "factual",
+      "knowledge_source": "parametric",
+      "strategy": "standard",
+      "expected_contains": "Madrid",
+      "predicted_top1": " a",
+      "top1_match": false,
+      "bits_per_token": 3.4712782052523066
+    },
+    {
+      "prompt": "The capital of Brazil is",
+      "category": "factual",
+      "knowledge_source": "parametric",
+      "strategy": "standard",
+      "expected_contains": "Bras",
+      "predicted_top1": " a",
+      "top1_match": false,
+      "bits_per_token": 12.269957601488807
+    },
+    {
+      "prompt": "The capital of Australia is",
+      "category": "factual",
+      "knowledge_source": "parametric",
+      "strategy": "standard",
+      "expected_contains": "Canberra",
+      "predicted_top1": " Canberra",
+      "top1_match": true,
+      "bits_per_token": 0.1313082658434474
+    },
+    {
+      "prompt": "The capital of Canada is",
+      "category": "factual",
+      "knowledge_source": "parametric",
+      "strategy": "standard",
+      "expected_contains": "Ottawa",
+      "predicted_top1": " Ottawa",
+      "top1_match": true,
+      "bits_per_token": 0.27503474204861317
+    },
+    {
+      "prompt": "The capital of Egypt is",
+      "category": "factual",
+      "knowledge_source": "parametric",
+      "strategy": "standard",
+      "expected_contains": "Cairo",
+      "predicted_top1": " Cairo",
+      "top1_match": true,
+      "bits_per_token": 0.23908106924558464
+    },
+    {
+      "prompt": "The capital of India is",
+      "category": "factual",
+      "knowledge_source": "parametric",
+      "strategy": "standard",
+      "expected_contains": "Delhi",
+      "predicted_top1": " New",
+      "top1_match": false,
+      "bits_per_token": 4.18483056602941
+    },
+    {
+      "prompt": "The capital of Mexico is",
+      "category": "factual",
+      "knowledge_source": "parametric",
+      "strategy": "standard",
+      "expected_contains": "Mexico",
+      "predicted_top1": " a",
+      "top1_match": false,
+      "bits_per_token": 2.1356991340402196
+    },
+    {
+      "prompt": "The capital of Russia is",
+      "category": "factual",
+      "knowledge_source": "parametric",
+      "strategy": "standard",
+      "expected_contains": "Moscow",
+      "predicted_top1": " Moscow",
+      "top1_match": true,
+      "bits_per_token": 0.49128004237284273
+    },
+    {
+      "prompt": "The capital of China is",
+      "category": "factual",
+      "knowledge_source": "parametric",
+      "strategy": "standard",
+      "expected_contains": "Beijing",
+      "predicted_top1": " Beijing",
+      "top1_match": true,
+      "bits_per_token": 0.2552661259142558
+    },
+    {
+      "prompt": "The capital of South Korea is",
+      "category": "factual",
+      "knowledge_source": "parametric",
+      "strategy": "standard",
+      "expected_contains": "Seoul",
+      "predicted_top1": " Seoul",
+      "top1_match": true,
+      "bits_per_token": 0.3739666100489461
+    },
+    {
+      "prompt": "The capital of Turkey is",
+      "category": "factual",
+      "knowledge_source": "parametric",
+      "strategy": "standard",
+      "expected_contains": "Ankara",
+      "predicted_top1": " Ankara",
+      "top1_match": true,
+      "bits_per_token": 0.3757968721664505
+    },
+    {
+      "prompt": "The capital of Thailand is",
+      "category": "factual",
+      "knowledge_source": "parametric",
+      "strategy": "standard",
+      "expected_contains": "Bangkok",
+      "predicted_top1": " Bangkok",
+      "top1_match": true,
+      "bits_per_token": 0.5436259716635966
+    },
+    {
+      "prompt": "The capital of Argentina is",
+      "category": "factual",
+      "knowledge_source": "parametric",
+      "strategy": "standard",
+      "expected_contains": "Buenos",
+      "predicted_top1": " Buenos",
+      "top1_match": true,
+      "bits_per_token": 0.6137278206925366
+    },
+    {
+      "prompt": "The capital of Sweden is",
+      "category": "factual",
+      "knowledge_source": "parametric",
+      "strategy": "standard",
+      "expected_contains": "Stockholm",
+      "predicted_top1": " Stockholm",
+      "top1_match": true,
+      "bits_per_token": 0.3982541830055894
+    },
+    {
+      "prompt": "The capital of Norway is",
+      "category": "factual",
+      "knowledge_source": "parametric",
+      "strategy": "standard",
+      "expected_contains": "Oslo",
+      "predicted_top1": " Oslo",
+      "top1_match": true,
+      "bits_per_token": 0.06241495246872736
+    },
+    {
+      "prompt": "The capital of Poland is",
+      "category": "factual",
+      "knowledge_source": "parametric",
+      "strategy": "standard",
+      "expected_contains": "Warsaw",
+      "predicted_top1": " a",
+      "top1_match": false,
+      "bits_per_token": 3.8048385322967406
+    },
+    {
+      "prompt": "Mozart was born in",
+      "category": "factual",
+      "knowledge_source": "parametric",
+      "strategy": "standard",
+      "expected_contains": "Salzburg",
+      "predicted_top1": " Salzburg",
+      "top1_match": true,
+      "bits_per_token": 0.038120532159208284
+    },
+    {
+      "prompt": "Einstein was born in",
+      "category": "factual",
+      "knowledge_source": "parametric",
+      "strategy": "standard",
+      "expected_contains": "Ulm",
+      "predicted_top1": " Ulm",
+      "top1_match": true,
+      "bits_per_token": 0.08052191902875606
+    },
+    {
+      "prompt": "Shakespeare was born in",
+      "category": "factual",
+      "knowledge_source": "parametric",
+      "strategy": "standard",
+      "expected_contains": "Strat",
+      "predicted_top1": " Stratford",
+      "top1_match": true,
+      "bits_per_token": 15.070885877765113
+    },
+    {
+      "prompt": "The Mona Lisa was painted by",
+      "category": "factual",
+      "knowledge_source": "parametric",
+      "strategy": "standard",
+      "expected_contains": "Leonardo",
+      "predicted_top1": " Leonardo",
+      "top1_match": true,
+      "bits_per_token": 0.043664054722072285
+    },
+    {
+      "prompt": "The theory of relativity was developed by",
+      "category": "factual",
+      "knowledge_source": "parametric",
+      "strategy": "standard",
+      "expected_contains": "Einstein",
+      "predicted_top1": " Albert",
+      "top1_match": false,
+      "bits_per_token": 8.580087813744326
+    },
+    {
+      "prompt": "The first president of the United States was",
+      "category": "factual",
+      "knowledge_source": "parametric",
+      "strategy": "standard",
+      "expected_contains": "George",
+      "predicted_top1": " George",
+      "top1_match": true,
+      "bits_per_token": 0.03872726493485519
+    },
+    {
+      "prompt": "Apple Inc. was co-founded by Steve",
+      "category": "factual",
+      "knowledge_source": "parametric",
+      "strategy": "standard",
+      "expected_contains": "Jobs",
+      "predicted_top1": " Jobs",
+      "top1_match": true,
+      "bits_per_token": 0.00013194137927710305
+    },
+    {
+      "prompt": "The author of Harry Potter is J.K.",
+      "category": "factual",
+      "knowledge_source": "parametric",
+      "strategy": "standard",
+      "expected_contains": "Rowling",
+      "predicted_top1": " Rowling",
+      "top1_match": true,
+      "bits_per_token": 0.0015421270914183244
+    },
+    {
+      "prompt": "Beethoven's first name was",
+      "category": "factual",
+      "knowledge_source": "parametric",
+      "strategy": "standard",
+      "expected_contains": "Ludwig",
+      "predicted_top1": " Ludwig",
+      "top1_match": true,
+      "bits_per_token": 0.6906075457909255
+    },
+    {
+      "prompt": "Isaac Newton discovered",
+      "category": "factual",
+      "knowledge_source": "parametric",
+      "strategy": "standard",
+      "expected_contains": "grav",
+      "predicted_top1": " the",
+      "top1_match": false,
+      "bits_per_token": 18.574462427432373
+    },
+    {
+      "prompt": "Water freezes at",
+      "category": "scientific",
+      "knowledge_source": "parametric",
+      "strategy": "standard",
+      "expected_contains": "0",
+      "predicted_top1": " ",
+      "top1_match": false,
+      "bits_per_token": 0.2247975103233593
+    },
+    {
+      "prompt": "The chemical symbol for gold is",
+      "category": "scientific",
+      "knowledge_source": "parametric",
+      "strategy": "standard",
+      "expected_contains": "Au",
+      "predicted_top1": " Au",
+      "top1_match": true,
+      "bits_per_token": 0.05840749422396868
+    },
+    {
+      "prompt": "The chemical formula for water is",
+      "category": "scientific",
+      "knowledge_source": "parametric",
+      "strategy": "standard",
+      "expected_contains": "H",
+      "predicted_top1": " H",
+      "top1_match": true,
+      "bits_per_token": 0.06199211804408575
+    },
+    {
+      "prompt": "The speed of light is approximately",
+      "category": "scientific",
+      "knowledge_source": "parametric",
+      "strategy": "standard",
+      "expected_contains": "3",
+      "predicted_top1": " ",
+      "top1_match": false,
+      "bits_per_token": 0.441485721381133
+    },
+    {
+      "prompt": "The largest planet in our solar system is",
+      "category": "scientific",
+      "knowledge_source": "parametric",
+      "strategy": "standard",
+      "expected_contains": "Jupiter",
+      "predicted_top1": " Jupiter",
+      "top1_match": true,
+      "bits_per_token": 0.018036189196703255
+    },
+    {
+      "prompt": "DNA stands for deoxyribonucle",
+      "category": "scientific",
+      "knowledge_source": "parametric",
+      "strategy": "standard",
+      "expected_contains": "ic",
+      "predicted_top1": "ic",
+      "top1_match": true,
+      "bits_per_token": 35.025607830834595
+    },
+    {
+      "prompt": "The atomic number of carbon is",
+      "category": "scientific",
+      "knowledge_source": "parametric",
+      "strategy": "standard",
+      "expected_contains": "6",
+      "predicted_top1": " ",
+      "top1_match": false,
+      "bits_per_token": 0.012312830442703787
+    },
+    {
+      "prompt": "Photosynthesis converts sunlight into",
+      "category": "scientific",
+      "knowledge_source": "parametric",
+      "strategy": "standard",
+      "expected_contains": "energy",
+      "predicted_top1": " chemical",
+      "top1_match": false,
+      "bits_per_token": 1.578750165227039
+    },
+    {
+      "prompt": "The boiling point of water is",
+      "category": "scientific",
+      "knowledge_source": "parametric",
+      "strategy": "standard",
+      "expected_contains": "100",
+      "predicted_top1": " ",
+      "top1_match": false,
+      "bits_per_token": 0.3069563485764214
+    },
+    {
+      "prompt": "The nearest star to Earth is the",
+      "category": "scientific",
+      "knowledge_source": "parametric",
+      "strategy": "standard",
+      "expected_contains": "Sun",
+      "predicted_top1": " Sun",
+      "top1_match": true,
+      "bits_per_token": 0.014866093776732299
+    },
+    {
+      "prompt": "The longest river in Africa is the",
+      "category": "geographic",
+      "knowledge_source": "parametric",
+      "strategy": "standard",
+      "expected_contains": "Nile",
+      "predicted_top1": " Nile",
+      "top1_match": true,
+      "bits_per_token": 0.14115275335876348
+    },
+    {
+      "prompt": "The tallest mountain in the world is",
+      "category": "geographic",
+      "knowledge_source": "parametric",
+      "strategy": "standard",
+      "expected_contains": "Everest",
+      "predicted_top1": " Mount",
+      "top1_match": false,
+      "bits_per_token": 9.192072878188801
+    },
+    {
+      "prompt": "The largest ocean is the",
+      "category": "geographic",
+      "knowledge_source": "parametric",
+      "strategy": "standard",
+      "expected_contains": "Pacific",
+      "predicted_top1": " Pacific",
+      "top1_match": true,
+      "bits_per_token": 0.13254646539416579
+    },
+    {
+      "prompt": "The Amazon River flows through",
+      "category": "geographic",
+      "knowledge_source": "parametric",
+      "strategy": "standard",
+      "expected_contains": "Brazil",
+      "predicted_top1": " the",
+      "top1_match": false,
+      "bits_per_token": 3.3103726445482
+    },
+    {
+      "prompt": "The Sahara Desert is located in",
+      "category": "geographic",
+      "knowledge_source": "parametric",
+      "strategy": "standard",
+      "expected_contains": "Africa",
+      "predicted_top1": " North",
+      "top1_match": false,
+      "bits_per_token": 2.29523538359875
+    },
+    {
+      "prompt": "The Great Wall of China is located in",
+      "category": "geographic",
+      "knowledge_source": "parametric",
+      "strategy": "standard",
+      "expected_contains": "China",
+      "predicted_top1": " China",
+      "top1_match": true,
+      "bits_per_token": 1.5074354056614034
+    },
+    {
+      "prompt": "The currency of Japan is the",
+      "category": "geographic",
+      "knowledge_source": "parametric",
+      "strategy": "standard",
+      "expected_contains": "yen",
+      "predicted_top1": " Japanese",
+      "top1_match": false,
+      "bits_per_token": 3.688259757293297
+    },
+    {
+      "prompt": "The currency of the United Kingdom is the",
+      "category": "geographic",
+      "knowledge_source": "parametric",
+      "strategy": "standard",
+      "expected_contains": "pound",
+      "predicted_top1": " Pound",
+      "top1_match": true,
+      "bits_per_token": 1.9421360779546548
+    },
+    {
+      "prompt": "The official language of Brazil is",
+      "category": "geographic",
+      "knowledge_source": "parametric",
+      "strategy": "standard",
+      "expected_contains": "Portug",
+      "predicted_top1": " Portuguese",
+      "top1_match": true,
+      "bits_per_token": 8.89947864165316
+    },
+    {
+      "prompt": "The smallest continent is",
+      "category": "geographic",
+      "knowledge_source": "parametric",
+      "strategy": "standard",
+      "expected_contains": "Australia",
+      "predicted_top1": " Australia",
+      "top1_match": true,
+      "bits_per_token": 0.9773332373592648
+    },
+    {
+      "prompt": "To be or not to be, that is the",
+      "category": "completion",
+      "knowledge_source": "parametric",
+      "strategy": "standard",
+      "expected_contains": "question",
+      "predicted_top1": " question",
+      "top1_match": true,
+      "bits_per_token": 0.030281715850620977
+    },
+    {
+      "prompt": "I think, therefore I",
+      "category": "completion",
+      "knowledge_source": "parametric",
+      "strategy": "standard",
+      "expected_contains": "am",
+      "predicted_top1": " am",
+      "top1_match": true,
+      "bits_per_token": 0.022656381206221425
+    },
+    {
+      "prompt": "All that glitters is not",
+      "category": "completion",
+      "knowledge_source": "parametric",
+      "strategy": "standard",
+      "expected_contains": "gold",
+      "predicted_top1": " gold",
+      "top1_match": true,
+      "bits_per_token": 0.003178388582317822
+    },
+    {
+      "prompt": "A journey of a thousand miles begins with a single",
+      "category": "completion",
+      "knowledge_source": "parametric",
+      "strategy": "standard",
+      "expected_contains": "step",
+      "predicted_top1": " step",
+      "top1_match": true,
+      "bits_per_token": 0.0008140266240165308
+    },
+    {
+      "prompt": "The early bird catches the",
+      "category": "completion",
+      "knowledge_source": "parametric",
+      "strategy": "standard",
+      "expected_contains": "worm",
+      "predicted_top1": " worm",
+      "top1_match": true,
+      "bits_per_token": 0.0004869023194711906
+    },
+    {
+      "prompt": "Actions speak louder than",
+      "category": "completion",
+      "knowledge_source": "parametric",
+      "strategy": "standard",
+      "expected_contains": "words",
+      "predicted_top1": " words",
+      "top1_match": true,
+      "bits_per_token": 0.0002494893863833915
+    },
+    {
+      "prompt": "Rome was not built in a",
+      "category": "completion",
+      "knowledge_source": "parametric",
+      "strategy": "standard",
+      "expected_contains": "day",
+      "predicted_top1": " day",
+      "top1_match": true,
+      "bits_per_token": 0.0003588770989334946
+    },
+    {
+      "prompt": "Knowledge is",
+      "category": "completion",
+      "knowledge_source": "parametric",
+      "strategy": "standard",
+      "expected_contains": "power",
+      "predicted_top1": " power",
+      "top1_match": true,
+      "bits_per_token": 0.47409931231337343
+    },
+    {
+      "prompt": "Practice makes",
+      "category": "completion",
+      "knowledge_source": "parametric",
+      "strategy": "standard",
+      "expected_contains": "perfect",
+      "predicted_top1": " perfect",
+      "top1_match": true,
+      "bits_per_token": 0.0032671060854838874
+    },
+    {
+      "prompt": "Where there is smoke, there is",
+      "category": "completion",
+      "knowledge_source": "parametric",
+      "strategy": "standard",
+      "expected_contains": "fire",
+      "predicted_top1": " fire",
+      "top1_match": true,
+      "bits_per_token": 0.014457814536051087
+    },
+    {
+      "prompt": "2 + 2 =",
+      "category": "arithmetic",
+      "knowledge_source": "parametric",
+      "strategy": "standard",
+      "expected_contains": "4",
+      "predicted_top1": " ?",
+      "top1_match": false,
+      "bits_per_token": 1.604241915505984
+    },
+    {
+      "prompt": "10 × 10 =",
+      "category": "arithmetic",
+      "knowledge_source": "parametric",
+      "strategy": "standard",
+      "expected_contains": "100",
+      "predicted_top1": " ?",
+      "top1_match": false,
+      "bits_per_token": 1.56384040125416
+    },
+    {
+      "prompt": "100 / 4 =",
+      "category": "arithmetic",
+      "knowledge_source": "parametric",
+      "strategy": "standard",
+      "expected_contains": "25",
+      "predicted_top1": " ",
+      "top1_match": false,
+      "bits_per_token": 0.014067338910869441
+    },
+    {
+      "prompt": "The square root of 144 is",
+      "category": "arithmetic",
+      "knowledge_source": "parametric",
+      "strategy": "standard",
+      "expected_contains": "12",
+      "predicted_top1": " ",
+      "top1_match": false,
+      "bits_per_token": 0.050093664628585916
+    },
+    {
+      "prompt": "15 + 27 =",
+      "category": "arithmetic",
+      "knowledge_source": "parametric",
+      "strategy": "standard",
+      "expected_contains": "42",
+      "predicted_top1": " ?",
+      "top1_match": false,
+      "bits_per_token": 1.9584574396556584
+    },
+    {
+      "prompt": "One dozen equals",
+      "category": "arithmetic",
+      "knowledge_source": "parametric",
+      "strategy": "standard",
+      "expected_contains": "12",
+      "predicted_top1": " ",
+      "top1_match": false,
+      "bits_per_token": 0.159520063415381
+    },
+    {
+      "prompt": "A century is",
+      "category": "arithmetic",
+      "knowledge_source": "parametric",
+      "strategy": "standard",
+      "expected_contains": "100",
+      "predicted_top1": " ",
+      "top1_match": false,
+      "bits_per_token": 1.2205351176302526
+    },
+    {
+      "prompt": "One kilometer equals",
+      "category": "arithmetic",
+      "knowledge_source": "parametric",
+      "strategy": "standard",
+      "expected_contains": "1",
+      "predicted_top1": " ",
+      "top1_match": false,
+      "bits_per_token": 0.08174006250824574
+    },
+    {
+      "prompt": "There are 60 seconds in a",
+      "category": "arithmetic",
+      "knowledge_source": "parametric",
+      "strategy": "standard",
+      "expected_contains": "minute",
+      "predicted_top1": " minute",
+      "top1_match": true,
+      "bits_per_token": 0.0035281326757927163
+    },
+    {
+      "prompt": "There are 24 hours in a",
+      "category": "arithmetic",
+      "knowledge_source": "parametric",
+      "strategy": "standard",
+      "expected_contains": "day",
+      "predicted_top1": " day",
+      "top1_match": true,
+      "bits_per_token": 0.013017659060080603
+    },
+    {
+      "prompt": "In Python, to print 'hello' you write print(",
+      "category": "code",
+      "knowledge_source": "parametric",
+      "strategy": "standard",
+      "expected_contains": "'",
+      "predicted_top1": "‘",
+      "top1_match": false,
+      "bits_per_token": 5.310127301403371
+    },
+    {
+      "prompt": "In JavaScript, a variable is declared with let, const, or",
+      "category": "code",
+      "knowledge_source": "parametric",
+      "strategy": "standard",
+      "expected_contains": "var",
+      "predicted_top1": " var",
+      "top1_match": true,
+      "bits_per_token": 0.0009046637233151758
+    },
+    {
+      "prompt": "HTML stands for Hyper",
+      "category": "code",
+      "knowledge_source": "parametric",
+      "strategy": "standard",
+      "expected_contains": "Text",
+      "predicted_top1": "Text",
+      "top1_match": true,
+      "bits_per_token": 3.6367459839309486
+    },
+    {
+      "prompt": "The HTTP status code for 'Not Found' is",
+      "category": "code",
+      "knowledge_source": "parametric",
+      "strategy": "standard",
+      "expected_contains": "404",
+      "predicted_top1": " ",
+      "top1_match": false,
+      "bits_per_token": 0.16139780820323657
+    },
+    {
+      "prompt": "In SQL, to select all columns you use SELECT",
+      "category": "code",
+      "knowledge_source": "parametric",
+      "strategy": "standard",
+      "expected_contains": "*",
+      "predicted_top1": " *",
+      "top1_match": true,
+      "bits_per_token": 0.8133632489352068
+    },
+    {
+      "prompt": "Git is a distributed version",
+      "category": "code",
+      "knowledge_source": "parametric",
+      "strategy": "standard",
+      "expected_contains": "control",
+      "predicted_top1": " control",
+      "top1_match": true,
+      "bits_per_token": 0.0004950920037289334
+    },
+    {
+      "prompt": "JSON stands for JavaScript Object",
+      "category": "code",
+      "knowledge_source": "parametric",
+      "strategy": "standard",
+      "expected_contains": "Notation",
+      "predicted_top1": " Notation",
+      "top1_match": true,
+      "bits_per_token": 1.243174169855987e-6
+    },
+    {
+      "prompt": "The file extension for Python files is .",
+      "category": "code",
+      "knowledge_source": "parametric",
+      "strategy": "standard",
+      "expected_contains": "py",
+      "predicted_top1": "py",
+      "top1_match": true,
+      "bits_per_token": 18.49573598507274
+    },
+    {
+      "prompt": "In CSS, to make text bold you use font-weight:",
+      "category": "code",
+      "knowledge_source": "parametric",
+      "strategy": "standard",
+      "expected_contains": "bold",
+      "predicted_top1": " bold",
+      "top1_match": true,
+      "bits_per_token": 0.001955397502854392
+    },
+    {
+      "prompt": "The command to list files in Linux is",
+      "category": "code",
+      "knowledge_source": "parametric",
+      "strategy": "standard",
+      "expected_contains": "ls",
+      "predicted_top1": " `",
+      "top1_match": false,
+      "bits_per_token": 13.777439471807574
+    },
+    {
+      "prompt": "How are you today? I'm doing",
+      "category": "conversational",
+      "knowledge_source": "parametric",
+      "strategy": "standard",
+      "expected_contains": "well",
+      "predicted_top1": " well",
+      "top1_match": true,
+      "bits_per_token": 1.3445557521289901
+    },
+    {
+      "prompt": "Thank you very much! You're",
+      "category": "conversational",
+      "knowledge_source": "parametric",
+      "strategy": "standard",
+      "expected_contains": "welcome",
+      "predicted_top1": " a",
+      "top1_match": false,
+      "bits_per_token": 5.567132136255084
+    },
+    {
+      "prompt": "Good morning! How did you",
+      "category": "conversational",
+      "knowledge_source": "parametric",
+      "strategy": "standard",
+      "expected_contains": "sleep",
+      "predicted_top1": " sleep",
+      "top1_match": true,
+      "bits_per_token": 0.29669876912918824
+    },
+    {
+      "prompt": "See you later! Have a great",
+      "category": "conversational",
+      "knowledge_source": "parametric",
+      "strategy": "standard",
+      "expected_contains": "day",
+      "predicted_top1": " day",
+      "top1_match": true,
+      "bits_per_token": 0.4315912285836363
+    },
+    {
+      "prompt": "Happy birthday! How old are",
+      "category": "conversational",
+      "knowledge_source": "parametric",
+      "strategy": "standard",
+      "expected_contains": "you",
+      "predicted_top1": " you",
+      "top1_match": true,
+      "bits_per_token": 0.00370875808073414
+    },
+    {
+      "prompt": "Sorry for the delay. I was",
+      "category": "conversational",
+      "knowledge_source": "parametric",
+      "strategy": "standard",
+      "expected_contains": "busy",
+      "predicted_top1": " having",
+      "top1_match": false,
+      "bits_per_token": 3.1175160728373825
+    },
+    {
+      "prompt": "What do you think about",
+      "category": "conversational",
+      "knowledge_source": "parametric",
+      "strategy": "standard",
+      "expected_contains": "the",
+      "predicted_top1": " the",
+      "top1_match": true,
+      "bits_per_token": 0.7220128365290123
+    },
+    {
+      "prompt": "Let me know if you need any",
+      "category": "conversational",
+      "knowledge_source": "parametric",
+      "strategy": "standard",
+      "expected_contains": "help",
+      "predicted_top1": " help",
+      "top1_match": true,
+      "bits_per_token": 1.557434762487189
+    },
+    {
+      "prompt": "I completely agree with",
+      "category": "conversational",
+      "knowledge_source": "parametric",
+      "strategy": "standard",
+      "expected_contains": "you",
+      "predicted_top1": " you",
+      "top1_match": true,
+      "bits_per_token": 1.3623135554902674
+    },
+    {
+      "prompt": "That's a really good",
+      "category": "conversational",
+      "knowledge_source": "parametric",
+      "strategy": "standard",
+      "expected_contains": "point",
+      "predicted_top1": " question",
+      "top1_match": false,
+      "bits_per_token": 1.5748475884648374
+    },
+    {
+      "prompt": "If it rains, the ground gets",
+      "category": "reasoning",
+      "knowledge_source": "parametric",
+      "strategy": "standard",
+      "expected_contains": "wet",
+      "predicted_top1": " wet",
+      "top1_match": true,
+      "bits_per_token": 0.037706162990689865
+    },
+    {
+      "prompt": "The opposite of hot is",
+      "category": "reasoning",
+      "knowledge_source": "parametric",
+      "strategy": "standard",
+      "expected_contains": "cold",
+      "predicted_top1": " cold",
+      "top1_match": true,
+      "bits_per_token": 0.22049719566589093
+    },
+    {
+      "prompt": "The color of grass is",
+      "category": "reasoning",
+      "knowledge_source": "parametric",
+      "strategy": "standard",
+      "expected_contains": "green",
+      "predicted_top1": " green",
+      "top1_match": true,
+      "bits_per_token": 0.8313778158468339
+    },
+    {
+      "prompt": "The day after Monday is",
+      "category": "reasoning",
+      "knowledge_source": "parametric",
+      "strategy": "standard",
+      "expected_contains": "Tuesday",
+      "predicted_top1": " Wednesday",
+      "top1_match": false,
+      "bits_per_token": 3.8787534613864616
+    },
+    {
+      "prompt": "Ice is the solid form of",
+      "category": "reasoning",
+      "knowledge_source": "parametric",
+      "strategy": "standard",
+      "expected_contains": "water",
+      "predicted_top1": " water",
+      "top1_match": true,
+      "bits_per_token": 0.035761039712795976
+    },
+    {
+      "prompt": "The month after January is",
+      "category": "reasoning",
+      "knowledge_source": "parametric",
+      "strategy": "standard",
+      "expected_contains": "February",
+      "predicted_top1": " February",
+      "top1_match": true,
+      "bits_per_token": 0.08706627125256333
+    },
+    {
+      "prompt": "Cats are a type of",
+      "category": "reasoning",
+      "knowledge_source": "parametric",
+      "strategy": "standard",
+      "expected_contains": "animal",
+      "predicted_top1": " animal",
+      "top1_match": true,
+      "bits_per_token": 1.1747604553871793
+    },
+    {
+      "prompt": "The sun rises in the",
+      "category": "reasoning",
+      "knowledge_source": "parametric",
+      "strategy": "standard",
+      "expected_contains": "east",
+      "predicted_top1": " east",
+      "top1_match": true,
+      "bits_per_token": 0.30957832858759526
+    },
+    {
+      "prompt": "The plural of child is",
+      "category": "reasoning",
+      "knowledge_source": "parametric",
+      "strategy": "standard",
+      "expected_contains": "children",
+      "predicted_top1": " children",
+      "top1_match": true,
+      "bits_per_token": 0.07722795614056821
+    },
+    {
+      "prompt": "A triangle has three",
+      "category": "reasoning",
+      "knowledge_source": "parametric",
+      "strategy": "standard",
+      "expected_contains": "side",
+      "predicted_top1": " sides",
+      "top1_match": true,
+      "bits_per_token": 9.237925854752174
+    },
+    {
+      "prompt": "[needle@512tok] What is the secret project code name?",
+      "category": "needle",
+      "knowledge_source": "in_context",
+      "strategy": "standard",
+      "expected_contains": "AURORA",
+      "predicted_top1": " AUR",
+      "top1_match": false,
+      "bits_per_token": 0.0038243014992502627
+    },
+    {
+      "prompt": "[needle@1024tok] What is the secret project code name?",
+      "category": "needle",
+      "knowledge_source": "in_context",
+      "strategy": "standard",
+      "expected_contains": "AURORA",
+      "predicted_top1": " AUR",
+      "top1_match": false,
+      "bits_per_token": 0.005155731648485081
+    },
+    {
+      "prompt": "[needle@2048tok] What is the secret project code name?",
+      "category": "needle",
+      "knowledge_source": "in_context",
+      "strategy": "standard",
+      "expected_contains": "AURORA",
+      "predicted_top1": "\n\n",
+      "top1_match": false,
+      "bits_per_token": 22.71176421141065
+    },
+    {
+      "prompt": "[needle@4096tok] What is the secret project code name?",
+      "category": "needle",
+      "knowledge_source": "in_context",
+      "strategy": "standard",
+      "expected_contains": "AURORA",
+      "predicted_top1": "\n\n",
+      "top1_match": false,
+      "bits_per_token": 24.64028253851256
+    },
+    {
+      "prompt": "[needle@8192tok] What is the secret project code name?",
+      "category": "needle",
+      "knowledge_source": "in_context",
+      "strategy": "standard",
+      "expected_contains": "AURORA",
+      "predicted_top1": " The",
+      "top1_match": false,
+      "bits_per_token": 30.116020760779193
+    },
+    {
+      "prompt": "The capital of France is",
+      "category": "factual",
+      "knowledge_source": "parametric",
+      "strategy": "markov-rs",
+      "expected_contains": "Paris",
+      "predicted_top1": " Paris",
+      "top1_match": true,
+      "bits_per_token": 0.3101095667870367
+    },
+    {
+      "prompt": "The capital of Germany is",
+      "category": "factual",
+      "knowledge_source": "parametric",
+      "strategy": "markov-rs",
+      "expected_contains": "Berlin",
+      "predicted_top1": " Berlin",
+      "top1_match": true,
+      "bits_per_token": 0.16975619739458564
+    },
+    {
+      "prompt": "The capital of Japan is",
+      "category": "factual",
+      "knowledge_source": "parametric",
+      "strategy": "markov-rs",
+      "expected_contains": "Tokyo",
+      "predicted_top1": " Tokyo",
+      "top1_match": true,
+      "bits_per_token": 0.23581776289227815
+    },
+    {
+      "prompt": "The capital of Italy is",
+      "category": "factual",
+      "knowledge_source": "parametric",
+      "strategy": "markov-rs",
+      "expected_contains": "Rome",
+      "predicted_top1": " Rome",
+      "top1_match": true,
+      "bits_per_token": 0.6863272297902607
+    },
+    {
+      "prompt": "The capital of Spain is",
+      "category": "factual",
+      "knowledge_source": "parametric",
+      "strategy": "markov-rs",
+      "expected_contains": "Madrid",
+      "predicted_top1": " a",
+      "top1_match": false,
+      "bits_per_token": 3.4712782052523066
+    },
+    {
+      "prompt": "The capital of Brazil is",
+      "category": "factual",
+      "knowledge_source": "parametric",
+      "strategy": "markov-rs",
+      "expected_contains": "Bras",
+      "predicted_top1": " a",
+      "top1_match": false,
+      "bits_per_token": 12.269957601488807
+    },
+    {
+      "prompt": "The capital of Australia is",
+      "category": "factual",
+      "knowledge_source": "parametric",
+      "strategy": "markov-rs",
+      "expected_contains": "Canberra",
+      "predicted_top1": " Canberra",
+      "top1_match": true,
+      "bits_per_token": 0.1313082658434474
+    },
+    {
+      "prompt": "The capital of Canada is",
+      "category": "factual",
+      "knowledge_source": "parametric",
+      "strategy": "markov-rs",
+      "expected_contains": "Ottawa",
+      "predicted_top1": " Ottawa",
+      "top1_match": true,
+      "bits_per_token": 0.27503474204861317
+    },
+    {
+      "prompt": "The capital of Egypt is",
+      "category": "factual",
+      "knowledge_source": "parametric",
+      "strategy": "markov-rs",
+      "expected_contains": "Cairo",
+      "predicted_top1": " Cairo",
+      "top1_match": true,
+      "bits_per_token": 0.23908106924558464
+    },
+    {
+      "prompt": "The capital of India is",
+      "category": "factual",
+      "knowledge_source": "parametric",
+      "strategy": "markov-rs",
+      "expected_contains": "Delhi",
+      "predicted_top1": " New",
+      "top1_match": false,
+      "bits_per_token": 4.18483056602941
+    },
+    {
+      "prompt": "The capital of Mexico is",
+      "category": "factual",
+      "knowledge_source": "parametric",
+      "strategy": "markov-rs",
+      "expected_contains": "Mexico",
+      "predicted_top1": " a",
+      "top1_match": false,
+      "bits_per_token": 2.1356991340402196
+    },
+    {
+      "prompt": "The capital of Russia is",
+      "category": "factual",
+      "knowledge_source": "parametric",
+      "strategy": "markov-rs",
+      "expected_contains": "Moscow",
+      "predicted_top1": " Moscow",
+      "top1_match": true,
+      "bits_per_token": 0.49128004237284273
+    },
+    {
+      "prompt": "The capital of China is",
+      "category": "factual",
+      "knowledge_source": "parametric",
+      "strategy": "markov-rs",
+      "expected_contains": "Beijing",
+      "predicted_top1": " Beijing",
+      "top1_match": true,
+      "bits_per_token": 0.2552661259142558
+    },
+    {
+      "prompt": "The capital of South Korea is",
+      "category": "factual",
+      "knowledge_source": "parametric",
+      "strategy": "markov-rs",
+      "expected_contains": "Seoul",
+      "predicted_top1": " Seoul",
+      "top1_match": true,
+      "bits_per_token": 0.3739666100489461
+    },
+    {
+      "prompt": "The capital of Turkey is",
+      "category": "factual",
+      "knowledge_source": "parametric",
+      "strategy": "markov-rs",
+      "expected_contains": "Ankara",
+      "predicted_top1": " Ankara",
+      "top1_match": true,
+      "bits_per_token": 0.3757968721664505
+    },
+    {
+      "prompt": "The capital of Thailand is",
+      "category": "factual",
+      "knowledge_source": "parametric",
+      "strategy": "markov-rs",
+      "expected_contains": "Bangkok",
+      "predicted_top1": " Bangkok",
+      "top1_match": true,
+      "bits_per_token": 0.5436259716635966
+    },
+    {
+      "prompt": "The capital of Argentina is",
+      "category": "factual",
+      "knowledge_source": "parametric",
+      "strategy": "markov-rs",
+      "expected_contains": "Buenos",
+      "predicted_top1": " Buenos",
+      "top1_match": true,
+      "bits_per_token": 0.6137278206925366
+    },
+    {
+      "prompt": "The capital of Sweden is",
+      "category": "factual",
+      "knowledge_source": "parametric",
+      "strategy": "markov-rs",
+      "expected_contains": "Stockholm",
+      "predicted_top1": " Stockholm",
+      "top1_match": true,
+      "bits_per_token": 0.3982541830055894
+    },
+    {
+      "prompt": "The capital of Norway is",
+      "category": "factual",
+      "knowledge_source": "parametric",
+      "strategy": "markov-rs",
+      "expected_contains": "Oslo",
+      "predicted_top1": " Oslo",
+      "top1_match": true,
+      "bits_per_token": 0.06241495246872736
+    },
+    {
+      "prompt": "The capital of Poland is",
+      "category": "factual",
+      "knowledge_source": "parametric",
+      "strategy": "markov-rs",
+      "expected_contains": "Warsaw",
+      "predicted_top1": " a",
+      "top1_match": false,
+      "bits_per_token": 3.8048385322967406
+    },
+    {
+      "prompt": "Mozart was born in",
+      "category": "factual",
+      "knowledge_source": "parametric",
+      "strategy": "markov-rs",
+      "expected_contains": "Salzburg",
+      "predicted_top1": " Salzburg",
+      "top1_match": true,
+      "bits_per_token": 0.038120532159208284
+    },
+    {
+      "prompt": "Einstein was born in",
+      "category": "factual",
+      "knowledge_source": "parametric",
+      "strategy": "markov-rs",
+      "expected_contains": "Ulm",
+      "predicted_top1": " Ulm",
+      "top1_match": true,
+      "bits_per_token": 0.08052191902875606
+    },
+    {
+      "prompt": "Shakespeare was born in",
+      "category": "factual",
+      "knowledge_source": "parametric",
+      "strategy": "markov-rs",
+      "expected_contains": "Strat",
+      "predicted_top1": " Stratford",
+      "top1_match": true,
+      "bits_per_token": 15.070885877765113
+    },
+    {
+      "prompt": "The Mona Lisa was painted by",
+      "category": "factual",
+      "knowledge_source": "parametric",
+      "strategy": "markov-rs",
+      "expected_contains": "Leonardo",
+      "predicted_top1": " Leonardo",
+      "top1_match": true,
+      "bits_per_token": 0.043664054722072285
+    },
+    {
+      "prompt": "The theory of relativity was developed by",
+      "category": "factual",
+      "knowledge_source": "parametric",
+      "strategy": "markov-rs",
+      "expected_contains": "Einstein",
+      "predicted_top1": " Albert",
+      "top1_match": false,
+      "bits_per_token": 8.580087813744326
+    },
+    {
+      "prompt": "The first president of the United States was",
+      "category": "factual",
+      "knowledge_source": "parametric",
+      "strategy": "markov-rs",
+      "expected_contains": "George",
+      "predicted_top1": " George",
+      "top1_match": true,
+      "bits_per_token": 0.03872726493485519
+    },
+    {
+      "prompt": "Apple Inc. was co-founded by Steve",
+      "category": "factual",
+      "knowledge_source": "parametric",
+      "strategy": "markov-rs",
+      "expected_contains": "Jobs",
+      "predicted_top1": " Jobs",
+      "top1_match": true,
+      "bits_per_token": 0.00013194137927710305
+    },
+    {
+      "prompt": "The author of Harry Potter is J.K.",
+      "category": "factual",
+      "knowledge_source": "parametric",
+      "strategy": "markov-rs",
+      "expected_contains": "Rowling",
+      "predicted_top1": " Rowling",
+      "top1_match": true,
+      "bits_per_token": 0.0015421270914183244
+    },
+    {
+      "prompt": "Beethoven's first name was",
+      "category": "factual",
+      "knowledge_source": "parametric",
+      "strategy": "markov-rs",
+      "expected_contains": "Ludwig",
+      "predicted_top1": " Ludwig",
+      "top1_match": true,
+      "bits_per_token": 0.6906075457909255
+    },
+    {
+      "prompt": "Isaac Newton discovered",
+      "category": "factual",
+      "knowledge_source": "parametric",
+      "strategy": "markov-rs",
+      "expected_contains": "grav",
+      "predicted_top1": " the",
+      "top1_match": false,
+      "bits_per_token": 18.574462427432373
+    },
+    {
+      "prompt": "Water freezes at",
+      "category": "scientific",
+      "knowledge_source": "parametric",
+      "strategy": "markov-rs",
+      "expected_contains": "0",
+      "predicted_top1": " ",
+      "top1_match": false,
+      "bits_per_token": 0.2247975103233593
+    },
+    {
+      "prompt": "The chemical symbol for gold is",
+      "category": "scientific",
+      "knowledge_source": "parametric",
+      "strategy": "markov-rs",
+      "expected_contains": "Au",
+      "predicted_top1": " Au",
+      "top1_match": true,
+      "bits_per_token": 0.05840749422396868
+    },
+    {
+      "prompt": "The chemical formula for water is",
+      "category": "scientific",
+      "knowledge_source": "parametric",
+      "strategy": "markov-rs",
+      "expected_contains": "H",
+      "predicted_top1": " H",
+      "top1_match": true,
+      "bits_per_token": 0.06199211804408575
+    },
+    {
+      "prompt": "The speed of light is approximately",
+      "category": "scientific",
+      "knowledge_source": "parametric",
+      "strategy": "markov-rs",
+      "expected_contains": "3",
+      "predicted_top1": " ",
+      "top1_match": false,
+      "bits_per_token": 0.441485721381133
+    },
+    {
+      "prompt": "The largest planet in our solar system is",
+      "category": "scientific",
+      "knowledge_source": "parametric",
+      "strategy": "markov-rs",
+      "expected_contains": "Jupiter",
+      "predicted_top1": " Jupiter",
+      "top1_match": true,
+      "bits_per_token": 0.018036189196703255
+    },
+    {
+      "prompt": "DNA stands for deoxyribonucle",
+      "category": "scientific",
+      "knowledge_source": "parametric",
+      "strategy": "markov-rs",
+      "expected_contains": "ic",
+      "predicted_top1": "ic",
+      "top1_match": true,
+      "bits_per_token": 35.025607830834595
+    },
+    {
+      "prompt": "The atomic number of carbon is",
+      "category": "scientific",
+      "knowledge_source": "parametric",
+      "strategy": "markov-rs",
+      "expected_contains": "6",
+      "predicted_top1": " ",
+      "top1_match": false,
+      "bits_per_token": 0.012312830442703787
+    },
+    {
+      "prompt": "Photosynthesis converts sunlight into",
+      "category": "scientific",
+      "knowledge_source": "parametric",
+      "strategy": "markov-rs",
+      "expected_contains": "energy",
+      "predicted_top1": " chemical",
+      "top1_match": false,
+      "bits_per_token": 1.578750165227039
+    },
+    {
+      "prompt": "The boiling point of water is",
+      "category": "scientific",
+      "knowledge_source": "parametric",
+      "strategy": "markov-rs",
+      "expected_contains": "100",
+      "predicted_top1": " ",
+      "top1_match": false,
+      "bits_per_token": 0.3069563485764214
+    },
+    {
+      "prompt": "The nearest star to Earth is the",
+      "category": "scientific",
+      "knowledge_source": "parametric",
+      "strategy": "markov-rs",
+      "expected_contains": "Sun",
+      "predicted_top1": " Sun",
+      "top1_match": true,
+      "bits_per_token": 0.014866093776732299
+    },
+    {
+      "prompt": "The longest river in Africa is the",
+      "category": "geographic",
+      "knowledge_source": "parametric",
+      "strategy": "markov-rs",
+      "expected_contains": "Nile",
+      "predicted_top1": " Nile",
+      "top1_match": true,
+      "bits_per_token": 0.14115275335876348
+    },
+    {
+      "prompt": "The tallest mountain in the world is",
+      "category": "geographic",
+      "knowledge_source": "parametric",
+      "strategy": "markov-rs",
+      "expected_contains": "Everest",
+      "predicted_top1": " Mount",
+      "top1_match": false,
+      "bits_per_token": 9.192072878188801
+    },
+    {
+      "prompt": "The largest ocean is the",
+      "category": "geographic",
+      "knowledge_source": "parametric",
+      "strategy": "markov-rs",
+      "expected_contains": "Pacific",
+      "predicted_top1": " Pacific",
+      "top1_match": true,
+      "bits_per_token": 0.13254646539416579
+    },
+    {
+      "prompt": "The Amazon River flows through",
+      "category": "geographic",
+      "knowledge_source": "parametric",
+      "strategy": "markov-rs",
+      "expected_contains": "Brazil",
+      "predicted_top1": " the",
+      "top1_match": false,
+      "bits_per_token": 3.3103726445482
+    },
+    {
+      "prompt": "The Sahara Desert is located in",
+      "category": "geographic",
+      "knowledge_source": "parametric",
+      "strategy": "markov-rs",
+      "expected_contains": "Africa",
+      "predicted_top1": " North",
+      "top1_match": false,
+      "bits_per_token": 2.29523538359875
+    },
+    {
+      "prompt": "The Great Wall of China is located in",
+      "category": "geographic",
+      "knowledge_source": "parametric",
+      "strategy": "markov-rs",
+      "expected_contains": "China",
+      "predicted_top1": " China",
+      "top1_match": true,
+      "bits_per_token": 1.5074354056614034
+    },
+    {
+      "prompt": "The currency of Japan is the",
+      "category": "geographic",
+      "knowledge_source": "parametric",
+      "strategy": "markov-rs",
+      "expected_contains": "yen",
+      "predicted_top1": " Japanese",
+      "top1_match": false,
+      "bits_per_token": 3.688259757293297
+    },
+    {
+      "prompt": "The currency of the United Kingdom is the",
+      "category": "geographic",
+      "knowledge_source": "parametric",
+      "strategy": "markov-rs",
+      "expected_contains": "pound",
+      "predicted_top1": " Pound",
+      "top1_match": true,
+      "bits_per_token": 1.9421360779546548
+    },
+    {
+      "prompt": "The official language of Brazil is",
+      "category": "geographic",
+      "knowledge_source": "parametric",
+      "strategy": "markov-rs",
+      "expected_contains": "Portug",
+      "predicted_top1": " Portuguese",
+      "top1_match": true,
+      "bits_per_token": 8.89947864165316
+    },
+    {
+      "prompt": "The smallest continent is",
+      "category": "geographic",
+      "knowledge_source": "parametric",
+      "strategy": "markov-rs",
+      "expected_contains": "Australia",
+      "predicted_top1": " Australia",
+      "top1_match": true,
+      "bits_per_token": 0.9773332373592648
+    },
+    {
+      "prompt": "To be or not to be, that is the",
+      "category": "completion",
+      "knowledge_source": "parametric",
+      "strategy": "markov-rs",
+      "expected_contains": "question",
+      "predicted_top1": " question",
+      "top1_match": true,
+      "bits_per_token": 0.030281715850620977
+    },
+    {
+      "prompt": "I think, therefore I",
+      "category": "completion",
+      "knowledge_source": "parametric",
+      "strategy": "markov-rs",
+      "expected_contains": "am",
+      "predicted_top1": " am",
+      "top1_match": true,
+      "bits_per_token": 0.022656381206221425
+    },
+    {
+      "prompt": "All that glitters is not",
+      "category": "completion",
+      "knowledge_source": "parametric",
+      "strategy": "markov-rs",
+      "expected_contains": "gold",
+      "predicted_top1": " gold",
+      "top1_match": true,
+      "bits_per_token": 0.003178388582317822
+    },
+    {
+      "prompt": "A journey of a thousand miles begins with a single",
+      "category": "completion",
+      "knowledge_source": "parametric",
+      "strategy": "markov-rs",
+      "expected_contains": "step",
+      "predicted_top1": " step",
+      "top1_match": true,
+      "bits_per_token": 0.0008140266240165308
+    },
+    {
+      "prompt": "The early bird catches the",
+      "category": "completion",
+      "knowledge_source": "parametric",
+      "strategy": "markov-rs",
+      "expected_contains": "worm",
+      "predicted_top1": " worm",
+      "top1_match": true,
+      "bits_per_token": 0.0004869023194711906
+    },
+    {
+      "prompt": "Actions speak louder than",
+      "category": "completion",
+      "knowledge_source": "parametric",
+      "strategy": "markov-rs",
+      "expected_contains": "words",
+      "predicted_top1": " words",
+      "top1_match": true,
+      "bits_per_token": 0.0002494893863833915
+    },
+    {
+      "prompt": "Rome was not built in a",
+      "category": "completion",
+      "knowledge_source": "parametric",
+      "strategy": "markov-rs",
+      "expected_contains": "day",
+      "predicted_top1": " day",
+      "top1_match": true,
+      "bits_per_token": 0.0003588770989334946
+    },
+    {
+      "prompt": "Knowledge is",
+      "category": "completion",
+      "knowledge_source": "parametric",
+      "strategy": "markov-rs",
+      "expected_contains": "power",
+      "predicted_top1": " power",
+      "top1_match": true,
+      "bits_per_token": 0.47409931231337343
+    },
+    {
+      "prompt": "Practice makes",
+      "category": "completion",
+      "knowledge_source": "parametric",
+      "strategy": "markov-rs",
+      "expected_contains": "perfect",
+      "predicted_top1": " perfect",
+      "top1_match": true,
+      "bits_per_token": 0.0032671060854838874
+    },
+    {
+      "prompt": "Where there is smoke, there is",
+      "category": "completion",
+      "knowledge_source": "parametric",
+      "strategy": "markov-rs",
+      "expected_contains": "fire",
+      "predicted_top1": " fire",
+      "top1_match": true,
+      "bits_per_token": 0.014457814536051087
+    },
+    {
+      "prompt": "2 + 2 =",
+      "category": "arithmetic",
+      "knowledge_source": "parametric",
+      "strategy": "markov-rs",
+      "expected_contains": "4",
+      "predicted_top1": " ?",
+      "top1_match": false,
+      "bits_per_token": 1.604241915505984
+    },
+    {
+      "prompt": "10 × 10 =",
+      "category": "arithmetic",
+      "knowledge_source": "parametric",
+      "strategy": "markov-rs",
+      "expected_contains": "100",
+      "predicted_top1": " ?",
+      "top1_match": false,
+      "bits_per_token": 1.56384040125416
+    },
+    {
+      "prompt": "100 / 4 =",
+      "category": "arithmetic",
+      "knowledge_source": "parametric",
+      "strategy": "markov-rs",
+      "expected_contains": "25",
+      "predicted_top1": " ",
+      "top1_match": false,
+      "bits_per_token": 0.014067338910869441
+    },
+    {
+      "prompt": "The square root of 144 is",
+      "category": "arithmetic",
+      "knowledge_source": "parametric",
+      "strategy": "markov-rs",
+      "expected_contains": "12",
+      "predicted_top1": " ",
+      "top1_match": false,
+      "bits_per_token": 0.050093664628585916
+    },
+    {
+      "prompt": "15 + 27 =",
+      "category": "arithmetic",
+      "knowledge_source": "parametric",
+      "strategy": "markov-rs",
+      "expected_contains": "42",
+      "predicted_top1": " ?",
+      "top1_match": false,
+      "bits_per_token": 1.9584574396556584
+    },
+    {
+      "prompt": "One dozen equals",
+      "category": "arithmetic",
+      "knowledge_source": "parametric",
+      "strategy": "markov-rs",
+      "expected_contains": "12",
+      "predicted_top1": " ",
+      "top1_match": false,
+      "bits_per_token": 0.159520063415381
+    },
+    {
+      "prompt": "A century is",
+      "category": "arithmetic",
+      "knowledge_source": "parametric",
+      "strategy": "markov-rs",
+      "expected_contains": "100",
+      "predicted_top1": " ",
+      "top1_match": false,
+      "bits_per_token": 1.2205351176302526
+    },
+    {
+      "prompt": "One kilometer equals",
+      "category": "arithmetic",
+      "knowledge_source": "parametric",
+      "strategy": "markov-rs",
+      "expected_contains": "1",
+      "predicted_top1": " ",
+      "top1_match": false,
+      "bits_per_token": 0.08174006250824574
+    },
+    {
+      "prompt": "There are 60 seconds in a",
+      "category": "arithmetic",
+      "knowledge_source": "parametric",
+      "strategy": "markov-rs",
+      "expected_contains": "minute",
+      "predicted_top1": " minute",
+      "top1_match": true,
+      "bits_per_token": 0.0035281326757927163
+    },
+    {
+      "prompt": "There are 24 hours in a",
+      "category": "arithmetic",
+      "knowledge_source": "parametric",
+      "strategy": "markov-rs",
+      "expected_contains": "day",
+      "predicted_top1": " day",
+      "top1_match": true,
+      "bits_per_token": 0.013017659060080603
+    },
+    {
+      "prompt": "In Python, to print 'hello' you write print(",
+      "category": "code",
+      "knowledge_source": "parametric",
+      "strategy": "markov-rs",
+      "expected_contains": "'",
+      "predicted_top1": "‘",
+      "top1_match": false,
+      "bits_per_token": 5.310127301403371
+    },
+    {
+      "prompt": "In JavaScript, a variable is declared with let, const, or",
+      "category": "code",
+      "knowledge_source": "parametric",
+      "strategy": "markov-rs",
+      "expected_contains": "var",
+      "predicted_top1": " var",
+      "top1_match": true,
+      "bits_per_token": 0.0009046637233151758
+    },
+    {
+      "prompt": "HTML stands for Hyper",
+      "category": "code",
+      "knowledge_source": "parametric",
+      "strategy": "markov-rs",
+      "expected_contains": "Text",
+      "predicted_top1": "Text",
+      "top1_match": true,
+      "bits_per_token": 3.6367459839309486
+    },
+    {
+      "prompt": "The HTTP status code for 'Not Found' is",
+      "category": "code",
+      "knowledge_source": "parametric",
+      "strategy": "markov-rs",
+      "expected_contains": "404",
+      "predicted_top1": " ",
+      "top1_match": false,
+      "bits_per_token": 0.16139780820323657
+    },
+    {
+      "prompt": "In SQL, to select all columns you use SELECT",
+      "category": "code",
+      "knowledge_source": "parametric",
+      "strategy": "markov-rs",
+      "expected_contains": "*",
+      "predicted_top1": " *",
+      "top1_match": true,
+      "bits_per_token": 0.8133632489352068
+    },
+    {
+      "prompt": "Git is a distributed version",
+      "category": "code",
+      "knowledge_source": "parametric",
+      "strategy": "markov-rs",
+      "expected_contains": "control",
+      "predicted_top1": " control",
+      "top1_match": true,
+      "bits_per_token": 0.0004950920037289334
+    },
+    {
+      "prompt": "JSON stands for JavaScript Object",
+      "category": "code",
+      "knowledge_source": "parametric",
+      "strategy": "markov-rs",
+      "expected_contains": "Notation",
+      "predicted_top1": " Notation",
+      "top1_match": true,
+      "bits_per_token": 1.243174169855987e-6
+    },
+    {
+      "prompt": "The file extension for Python files is .",
+      "category": "code",
+      "knowledge_source": "parametric",
+      "strategy": "markov-rs",
+      "expected_contains": "py",
+      "predicted_top1": "py",
+      "top1_match": true,
+      "bits_per_token": 18.49573598507274
+    },
+    {
+      "prompt": "In CSS, to make text bold you use font-weight:",
+      "category": "code",
+      "knowledge_source": "parametric",
+      "strategy": "markov-rs",
+      "expected_contains": "bold",
+      "predicted_top1": " bold",
+      "top1_match": true,
+      "bits_per_token": 0.001955397502854392
+    },
+    {
+      "prompt": "The command to list files in Linux is",
+      "category": "code",
+      "knowledge_source": "parametric",
+      "strategy": "markov-rs",
+      "expected_contains": "ls",
+      "predicted_top1": " `",
+      "top1_match": false,
+      "bits_per_token": 13.777439471807574
+    },
+    {
+      "prompt": "How are you today? I'm doing",
+      "category": "conversational",
+      "knowledge_source": "parametric",
+      "strategy": "markov-rs",
+      "expected_contains": "well",
+      "predicted_top1": " well",
+      "top1_match": true,
+      "bits_per_token": 1.3445557521289901
+    },
+    {
+      "prompt": "Thank you very much! You're",
+      "category": "conversational",
+      "knowledge_source": "parametric",
+      "strategy": "markov-rs",
+      "expected_contains": "welcome",
+      "predicted_top1": " a",
+      "top1_match": false,
+      "bits_per_token": 5.567132136255084
+    },
+    {
+      "prompt": "Good morning! How did you",
+      "category": "conversational",
+      "knowledge_source": "parametric",
+      "strategy": "markov-rs",
+      "expected_contains": "sleep",
+      "predicted_top1": " sleep",
+      "top1_match": true,
+      "bits_per_token": 0.29669876912918824
+    },
+    {
+      "prompt": "See you later! Have a great",
+      "category": "conversational",
+      "knowledge_source": "parametric",
+      "strategy": "markov-rs",
+      "expected_contains": "day",
+      "predicted_top1": " day",
+      "top1_match": true,
+      "bits_per_token": 0.4315912285836363
+    },
+    {
+      "prompt": "Happy birthday! How old are",
+      "category": "conversational",
+      "knowledge_source": "parametric",
+      "strategy": "markov-rs",
+      "expected_contains": "you",
+      "predicted_top1": " you",
+      "top1_match": true,
+      "bits_per_token": 0.00370875808073414
+    },
+    {
+      "prompt": "Sorry for the delay. I was",
+      "category": "conversational",
+      "knowledge_source": "parametric",
+      "strategy": "markov-rs",
+      "expected_contains": "busy",
+      "predicted_top1": " having",
+      "top1_match": false,
+      "bits_per_token": 3.1175160728373825
+    },
+    {
+      "prompt": "What do you think about",
+      "category": "conversational",
+      "knowledge_source": "parametric",
+      "strategy": "markov-rs",
+      "expected_contains": "the",
+      "predicted_top1": " the",
+      "top1_match": true,
+      "bits_per_token": 0.7220128365290123
+    },
+    {
+      "prompt": "Let me know if you need any",
+      "category": "conversational",
+      "knowledge_source": "parametric",
+      "strategy": "markov-rs",
+      "expected_contains": "help",
+      "predicted_top1": " help",
+      "top1_match": true,
+      "bits_per_token": 1.557434762487189
+    },
+    {
+      "prompt": "I completely agree with",
+      "category": "conversational",
+      "knowledge_source": "parametric",
+      "strategy": "markov-rs",
+      "expected_contains": "you",
+      "predicted_top1": " you",
+      "top1_match": true,
+      "bits_per_token": 1.3623135554902674
+    },
+    {
+      "prompt": "That's a really good",
+      "category": "conversational",
+      "knowledge_source": "parametric",
+      "strategy": "markov-rs",
+      "expected_contains": "point",
+      "predicted_top1": " question",
+      "top1_match": false,
+      "bits_per_token": 1.5748475884648374
+    },
+    {
+      "prompt": "If it rains, the ground gets",
+      "category": "reasoning",
+      "knowledge_source": "parametric",
+      "strategy": "markov-rs",
+      "expected_contains": "wet",
+      "predicted_top1": " wet",
+      "top1_match": true,
+      "bits_per_token": 0.037706162990689865
+    },
+    {
+      "prompt": "The opposite of hot is",
+      "category": "reasoning",
+      "knowledge_source": "parametric",
+      "strategy": "markov-rs",
+      "expected_contains": "cold",
+      "predicted_top1": " cold",
+      "top1_match": true,
+      "bits_per_token": 0.22049719566589093
+    },
+    {
+      "prompt": "The color of grass is",
+      "category": "reasoning",
+      "knowledge_source": "parametric",
+      "strategy": "markov-rs",
+      "expected_contains": "green",
+      "predicted_top1": " green",
+      "top1_match": true,
+      "bits_per_token": 0.8313778158468339
+    },
+    {
+      "prompt": "The day after Monday is",
+      "category": "reasoning",
+      "knowledge_source": "parametric",
+      "strategy": "markov-rs",
+      "expected_contains": "Tuesday",
+      "predicted_top1": " Wednesday",
+      "top1_match": false,
+      "bits_per_token": 3.8787534613864616
+    },
+    {
+      "prompt": "Ice is the solid form of",
+      "category": "reasoning",
+      "knowledge_source": "parametric",
+      "strategy": "markov-rs",
+      "expected_contains": "water",
+      "predicted_top1": " water",
+      "top1_match": true,
+      "bits_per_token": 0.035761039712795976
+    },
+    {
+      "prompt": "The month after January is",
+      "category": "reasoning",
+      "knowledge_source": "parametric",
+      "strategy": "markov-rs",
+      "expected_contains": "February",
+      "predicted_top1": " February",
+      "top1_match": true,
+      "bits_per_token": 0.08706627125256333
+    },
+    {
+      "prompt": "Cats are a type of",
+      "category": "reasoning",
+      "knowledge_source": "parametric",
+      "strategy": "markov-rs",
+      "expected_contains": "animal",
+      "predicted_top1": " animal",
+      "top1_match": true,
+      "bits_per_token": 1.1747604553871793
+    },
+    {
+      "prompt": "The sun rises in the",
+      "category": "reasoning",
+      "knowledge_source": "parametric",
+      "strategy": "markov-rs",
+      "expected_contains": "east",
+      "predicted_top1": " east",
+      "top1_match": true,
+      "bits_per_token": 0.30957832858759526
+    },
+    {
+      "prompt": "The plural of child is",
+      "category": "reasoning",
+      "knowledge_source": "parametric",
+      "strategy": "markov-rs",
+      "expected_contains": "children",
+      "predicted_top1": " children",
+      "top1_match": true,
+      "bits_per_token": 0.07722795614056821
+    },
+    {
+      "prompt": "A triangle has three",
+      "category": "reasoning",
+      "knowledge_source": "parametric",
+      "strategy": "markov-rs",
+      "expected_contains": "side",
+      "predicted_top1": " sides",
+      "top1_match": true,
+      "bits_per_token": 9.237925854752174
+    },
+    {
+      "prompt": "[needle@512tok] What is the secret project code name?",
+      "category": "needle",
+      "knowledge_source": "in_context",
+      "strategy": "markov-rs",
+      "expected_contains": "AURORA",
+      "predicted_top1": " AUR",
+      "top1_match": false,
+      "bits_per_token": 0.0038243014992502627
+    },
+    {
+      "prompt": "[needle@1024tok] What is the secret project code name?",
+      "category": "needle",
+      "knowledge_source": "in_context",
+      "strategy": "markov-rs",
+      "expected_contains": "AURORA",
+      "predicted_top1": " AUR",
+      "top1_match": false,
+      "bits_per_token": 0.005155731648485081
+    },
+    {
+      "prompt": "[needle@2048tok] What is the secret project code name?",
+      "category": "needle",
+      "knowledge_source": "in_context",
+      "strategy": "markov-rs",
+      "expected_contains": "AURORA",
+      "predicted_top1": "\n\n",
+      "top1_match": false,
+      "bits_per_token": 22.71176421141065
+    },
+    {
+      "prompt": "[needle@4096tok] What is the secret project code name?",
+      "category": "needle",
+      "knowledge_source": "in_context",
+      "strategy": "markov-rs",
+      "expected_contains": "AURORA",
+      "predicted_top1": "\n\n",
+      "top1_match": false,
+      "bits_per_token": 24.64028253851256
+    },
+    {
+      "prompt": "[needle@8192tok] What is the secret project code name?",
+      "category": "needle",
+      "knowledge_source": "in_context",
+      "strategy": "markov-rs",
+      "expected_contains": "AURORA",
+      "predicted_top1": " The",
+      "top1_match": false,
+      "bits_per_token": 30.116020760779193
+    },
+    {
+      "prompt": "The capital of France is",
+      "category": "factual",
+      "knowledge_source": "parametric",
+      "strategy": "unlimited-context",
+      "expected_contains": "Paris",
+      "predicted_top1": " Paris",
+      "top1_match": true,
+      "bits_per_token": 0.3021936288846948
+    },
+    {
+      "prompt": "The capital of Germany is",
+      "category": "factual",
+      "knowledge_source": "parametric",
+      "strategy": "unlimited-context",
+      "expected_contains": "Berlin",
+      "predicted_top1": " Berlin",
+      "top1_match": true,
+      "bits_per_token": 0.15964169561611236
+    },
+    {
+      "prompt": "The capital of Japan is",
+      "category": "factual",
+      "knowledge_source": "parametric",
+      "strategy": "unlimited-context",
+      "expected_contains": "Tokyo",
+      "predicted_top1": " Tokyo",
+      "top1_match": true,
+      "bits_per_token": 0.23198710815106136
+    },
+    {
+      "prompt": "The capital of Italy is",
+      "category": "factual",
+      "knowledge_source": "parametric",
+      "strategy": "unlimited-context",
+      "expected_contains": "Rome",
+      "predicted_top1": " Rome",
+      "top1_match": true,
+      "bits_per_token": 0.7918962724678338
+    },
+    {
+      "prompt": "The capital of Spain is",
+      "category": "factual",
+      "knowledge_source": "parametric",
+      "strategy": "unlimited-context",
+      "expected_contains": "Madrid",
+      "predicted_top1": " a",
+      "top1_match": false,
+      "bits_per_token": 3.2542021709595605
+    },
+    {
+      "prompt": "The capital of Brazil is",
+      "category": "factual",
+      "knowledge_source": "parametric",
+      "strategy": "unlimited-context",
+      "expected_contains": "Bras",
+      "predicted_top1": " Brasil",
+      "top1_match": true,
+      "bits_per_token": 12.171982674492686
+    },
+    {
+      "prompt": "The capital of Australia is",
+      "category": "factual",
+      "knowledge_source": "parametric",
+      "strategy": "unlimited-context",
+      "expected_contains": "Canberra",
+      "predicted_top1": " Canberra",
+      "top1_match": true,
+      "bits_per_token": 0.10382399185728544
+    },
+    {
+      "prompt": "The capital of Canada is",
+      "category": "factual",
+      "knowledge_source": "parametric",
+      "strategy": "unlimited-context",
+      "expected_contains": "Ottawa",
+      "predicted_top1": " Ottawa",
+      "top1_match": true,
+      "bits_per_token": 0.22079007863924172
+    },
+    {
+      "prompt": "The capital of Egypt is",
+      "category": "factual",
+      "knowledge_source": "parametric",
+      "strategy": "unlimited-context",
+      "expected_contains": "Cairo",
+      "predicted_top1": " Cairo",
+      "top1_match": true,
+      "bits_per_token": 0.2510972394970628
+    },
+    {
+      "prompt": "The capital of India is",
+      "category": "factual",
+      "knowledge_source": "parametric",
+      "strategy": "unlimited-context",
+      "expected_contains": "Delhi",
+      "predicted_top1": " New",
+      "top1_match": false,
+      "bits_per_token": 4.173367027955158
+    },
+    {
+      "prompt": "The capital of Mexico is",
+      "category": "factual",
+      "knowledge_source": "parametric",
+      "strategy": "unlimited-context",
+      "expected_contains": "Mexico",
+      "predicted_top1": " a",
+      "top1_match": false,
+      "bits_per_token": 1.9881391301806681
+    },
+    {
+      "prompt": "The capital of Russia is",
+      "category": "factual",
+      "knowledge_source": "parametric",
+      "strategy": "unlimited-context",
+      "expected_contains": "Moscow",
+      "predicted_top1": " Moscow",
+      "top1_match": true,
+      "bits_per_token": 0.508719364064637
+    },
+    {
+      "prompt": "The capital of China is",
+      "category": "factual",
+      "knowledge_source": "parametric",
+      "strategy": "unlimited-context",
+      "expected_contains": "Beijing",
+      "predicted_top1": " Beijing",
+      "top1_match": true,
+      "bits_per_token": 0.23665721588970445
+    },
+    {
+      "prompt": "The capital of South Korea is",
+      "category": "factual",
+      "knowledge_source": "parametric",
+      "strategy": "unlimited-context",
+      "expected_contains": "Seoul",
+      "predicted_top1": " Seoul",
+      "top1_match": true,
+      "bits_per_token": 0.30145737801900924
+    },
+    {
+      "prompt": "The capital of Turkey is",
+      "category": "factual",
+      "knowledge_source": "parametric",
+      "strategy": "unlimited-context",
+      "expected_contains": "Ankara",
+      "predicted_top1": " Ankara",
+      "top1_match": true,
+      "bits_per_token": 0.3291021877919306
+    },
+    {
+      "prompt": "The capital of Thailand is",
+      "category": "factual",
+      "knowledge_source": "parametric",
+      "strategy": "unlimited-context",
+      "expected_contains": "Bangkok",
+      "predicted_top1": " Bangkok",
+      "top1_match": true,
+      "bits_per_token": 0.39290809253600417
+    },
+    {
+      "prompt": "The capital of Argentina is",
+      "category": "factual",
+      "knowledge_source": "parametric",
+      "strategy": "unlimited-context",
+      "expected_contains": "Buenos",
+      "predicted_top1": " Buenos",
+      "top1_match": true,
+      "bits_per_token": 0.43644616472146136
+    },
+    {
+      "prompt": "The capital of Sweden is",
+      "category": "factual",
+      "knowledge_source": "parametric",
+      "strategy": "unlimited-context",
+      "expected_contains": "Stockholm",
+      "predicted_top1": " Stockholm",
+      "top1_match": true,
+      "bits_per_token": 0.4322465192938114
+    },
+    {
+      "prompt": "The capital of Norway is",
+      "category": "factual",
+      "knowledge_source": "parametric",
+      "strategy": "unlimited-context",
+      "expected_contains": "Oslo",
+      "predicted_top1": " Oslo",
+      "top1_match": true,
+      "bits_per_token": 0.06184732469914933
+    },
+    {
+      "prompt": "The capital of Poland is",
+      "category": "factual",
+      "knowledge_source": "parametric",
+      "strategy": "unlimited-context",
+      "expected_contains": "Warsaw",
+      "predicted_top1": " a",
+      "top1_match": false,
+      "bits_per_token": 3.5930333222620634
+    },
+    {
+      "prompt": "Mozart was born in",
+      "category": "factual",
+      "knowledge_source": "parametric",
+      "strategy": "unlimited-context",
+      "expected_contains": "Salzburg",
+      "predicted_top1": " Salzburg",
+      "top1_match": true,
+      "bits_per_token": 0.03833608980613056
+    },
+    {
+      "prompt": "Einstein was born in",
+      "category": "factual",
+      "knowledge_source": "parametric",
+      "strategy": "unlimited-context",
+      "expected_contains": "Ulm",
+      "predicted_top1": " Ulm",
+      "top1_match": true,
+      "bits_per_token": 0.08199301403372407
+    },
+    {
+      "prompt": "Shakespeare was born in",
+      "category": "factual",
+      "knowledge_source": "parametric",
+      "strategy": "unlimited-context",
+      "expected_contains": "Strat",
+      "predicted_top1": " Stratford",
+      "top1_match": true,
+      "bits_per_token": 15.095033634434552
+    },
+    {
+      "prompt": "The Mona Lisa was painted by",
+      "category": "factual",
+      "knowledge_source": "parametric",
+      "strategy": "unlimited-context",
+      "expected_contains": "Leonardo",
+      "predicted_top1": " Leonardo",
+      "top1_match": true,
+      "bits_per_token": 0.0462732668927797
+    },
+    {
+      "prompt": "The theory of relativity was developed by",
+      "category": "factual",
+      "knowledge_source": "parametric",
+      "strategy": "unlimited-context",
+      "expected_contains": "Einstein",
+      "predicted_top1": " Albert",
+      "top1_match": false,
+      "bits_per_token": 8.411216240188937
+    },
+    {
+      "prompt": "The first president of the United States was",
+      "category": "factual",
+      "knowledge_source": "parametric",
+      "strategy": "unlimited-context",
+      "expected_contains": "George",
+      "predicted_top1": " George",
+      "top1_match": true,
+      "bits_per_token": 0.037021701403662385
+    },
+    {
+      "prompt": "Apple Inc. was co-founded by Steve",
+      "category": "factual",
+      "knowledge_source": "parametric",
+      "strategy": "unlimited-context",
+      "expected_contains": "Jobs",
+      "predicted_top1": " Jobs",
+      "top1_match": true,
+      "bits_per_token": 0.00013201574722168923
+    },
+    {
+      "prompt": "The author of Harry Potter is J.K.",
+      "category": "factual",
+      "knowledge_source": "parametric",
+      "strategy": "unlimited-context",
+      "expected_contains": "Rowling",
+      "predicted_top1": " Rowling",
+      "top1_match": true,
+      "bits_per_token": 0.0017660776432874517
+    },
+    {
+      "prompt": "Beethoven's first name was",
+      "category": "factual",
+      "knowledge_source": "parametric",
+      "strategy": "unlimited-context",
+      "expected_contains": "Ludwig",
+      "predicted_top1": " Ludwig",
+      "top1_match": true,
+      "bits_per_token": 0.532903319943105
+    },
+    {
+      "prompt": "Isaac Newton discovered",
+      "category": "factual",
+      "knowledge_source": "parametric",
+      "strategy": "unlimited-context",
+      "expected_contains": "grav",
+      "predicted_top1": " the",
+      "top1_match": false,
+      "bits_per_token": 18.58975598723056
+    },
+    {
+      "prompt": "Water freezes at",
+      "category": "scientific",
+      "knowledge_source": "parametric",
+      "strategy": "unlimited-context",
+      "expected_contains": "0",
+      "predicted_top1": " ",
+      "top1_match": false,
+      "bits_per_token": 0.24686429423393857
+    },
+    {
+      "prompt": "The chemical symbol for gold is",
+      "category": "scientific",
+      "knowledge_source": "parametric",
+      "strategy": "unlimited-context",
+      "expected_contains": "Au",
+      "predicted_top1": " Au",
+      "top1_match": true,
+      "bits_per_token": 0.06323933017218712
+    },
+    {
+      "prompt": "The chemical formula for water is",
+      "category": "scientific",
+      "knowledge_source": "parametric",
+      "strategy": "unlimited-context",
+      "expected_contains": "H",
+      "predicted_top1": " H",
+      "top1_match": true,
+      "bits_per_token": 0.05968013059321824
+    },
+    {
+      "prompt": "The speed of light is approximately",
+      "category": "scientific",
+      "knowledge_source": "parametric",
+      "strategy": "unlimited-context",
+      "expected_contains": "3",
+      "predicted_top1": " ",
+      "top1_match": false,
+      "bits_per_token": 0.4539529274959248
+    },
+    {
+      "prompt": "The largest planet in our solar system is",
+      "category": "scientific",
+      "knowledge_source": "parametric",
+      "strategy": "unlimited-context",
+      "expected_contains": "Jupiter",
+      "predicted_top1": " Jupiter",
+      "top1_match": true,
+      "bits_per_token": 0.015119955601007045
+    },
+    {
+      "prompt": "DNA stands for deoxyribonucle",
+      "category": "scientific",
+      "knowledge_source": "parametric",
+      "strategy": "unlimited-context",
+      "expected_contains": "ic",
+      "predicted_top1": "ic",
+      "top1_match": true,
+      "bits_per_token": 35.46175557978327
+    },
+    {
+      "prompt": "The atomic number of carbon is",
+      "category": "scientific",
+      "knowledge_source": "parametric",
+      "strategy": "unlimited-context",
+      "expected_contains": "6",
+      "predicted_top1": " ",
+      "top1_match": false,
+      "bits_per_token": 0.012018155908702463
+    },
+    {
+      "prompt": "Photosynthesis converts sunlight into",
+      "category": "scientific",
+      "knowledge_source": "parametric",
+      "strategy": "unlimited-context",
+      "expected_contains": "energy",
+      "predicted_top1": " chemical",
+      "top1_match": false,
+      "bits_per_token": 1.629777302635752
+    },
+    {
+      "prompt": "The boiling point of water is",
+      "category": "scientific",
+      "knowledge_source": "parametric",
+      "strategy": "unlimited-context",
+      "expected_contains": "100",
+      "predicted_top1": " ",
+      "top1_match": false,
+      "bits_per_token": 0.2847521383732644
+    },
+    {
+      "prompt": "The nearest star to Earth is the",
+      "category": "scientific",
+      "knowledge_source": "parametric",
+      "strategy": "unlimited-context",
+      "expected_contains": "Sun",
+      "predicted_top1": " Sun",
+      "top1_match": true,
+      "bits_per_token": 0.016984596209965695
+    },
+    {
+      "prompt": "The longest river in Africa is the",
+      "category": "geographic",
+      "knowledge_source": "parametric",
+      "strategy": "unlimited-context",
+      "expected_contains": "Nile",
+      "predicted_top1": " Nile",
+      "top1_match": true,
+      "bits_per_token": 0.1244369675954666
+    },
+    {
+      "prompt": "The tallest mountain in the world is",
+      "category": "geographic",
+      "knowledge_source": "parametric",
+      "strategy": "unlimited-context",
+      "expected_contains": "Everest",
+      "predicted_top1": " Mount",
+      "top1_match": false,
+      "bits_per_token": 9.102469611765441
+    },
+    {
+      "prompt": "The largest ocean is the",
+      "category": "geographic",
+      "knowledge_source": "parametric",
+      "strategy": "unlimited-context",
+      "expected_contains": "Pacific",
+      "predicted_top1": " Pacific",
+      "top1_match": true,
+      "bits_per_token": 0.11275075046272864
+    },
+    {
+      "prompt": "The Amazon River flows through",
+      "category": "geographic",
+      "knowledge_source": "parametric",
+      "strategy": "unlimited-context",
+      "expected_contains": "Brazil",
+      "predicted_top1": " the",
+      "top1_match": false,
+      "bits_per_token": 3.3661058128111603
+    },
+    {
+      "prompt": "The Sahara Desert is located in",
+      "category": "geographic",
+      "knowledge_source": "parametric",
+      "strategy": "unlimited-context",
+      "expected_contains": "Africa",
+      "predicted_top1": " North",
+      "top1_match": false,
+      "bits_per_token": 2.221256712018981
+    },
+    {
+      "prompt": "The Great Wall of China is located in",
+      "category": "geographic",
+      "knowledge_source": "parametric",
+      "strategy": "unlimited-context",
+      "expected_contains": "China",
+      "predicted_top1": " China",
+      "top1_match": true,
+      "bits_per_token": 1.5072650666832752
+    },
+    {
+      "prompt": "The currency of Japan is the",
+      "category": "geographic",
+      "knowledge_source": "parametric",
+      "strategy": "unlimited-context",
+      "expected_contains": "yen",
+      "predicted_top1": " Japanese",
+      "top1_match": false,
+      "bits_per_token": 3.5924346270094296
+    },
+    {
+      "prompt": "The currency of the United Kingdom is the",
+      "category": "geographic",
+      "knowledge_source": "parametric",
+      "strategy": "unlimited-context",
+      "expected_contains": "pound",
+      "predicted_top1": " Pound",
+      "top1_match": true,
+      "bits_per_token": 1.8066490151786034
+    },
+    {
+      "prompt": "The official language of Brazil is",
+      "category": "geographic",
+      "knowledge_source": "parametric",
+      "strategy": "unlimited-context",
+      "expected_contains": "Portug",
+      "predicted_top1": " Portuguese",
+      "top1_match": true,
+      "bits_per_token": 8.891437146242668
+    },
+    {
+      "prompt": "The smallest continent is",
+      "category": "geographic",
+      "knowledge_source": "parametric",
+      "strategy": "unlimited-context",
+      "expected_contains": "Australia",
+      "predicted_top1": " Australia",
+      "top1_match": true,
+      "bits_per_token": 0.2880257966643683
+    },
+    {
+      "prompt": "To be or not to be, that is the",
+      "category": "completion",
+      "knowledge_source": "parametric",
+      "strategy": "unlimited-context",
+      "expected_contains": "question",
+      "predicted_top1": " question",
+      "top1_match": true,
+      "bits_per_token": 0.029496299639166095
+    },
+    {
+      "prompt": "I think, therefore I",
+      "category": "completion",
+      "knowledge_source": "parametric",
+      "strategy": "unlimited-context",
+      "expected_contains": "am",
+      "predicted_top1": " am",
+      "top1_match": true,
+      "bits_per_token": 0.020599446962033318
+    },
+    {
+      "prompt": "All that glitters is not",
+      "category": "completion",
+      "knowledge_source": "parametric",
+      "strategy": "unlimited-context",
+      "expected_contains": "gold",
+      "predicted_top1": " gold",
+      "top1_match": true,
+      "bits_per_token": 0.0036290052824145343
+    },
+    {
+      "prompt": "A journey of a thousand miles begins with a single",
+      "category": "completion",
+      "knowledge_source": "parametric",
+      "strategy": "unlimited-context",
+      "expected_contains": "step",
+      "predicted_top1": " step",
+      "top1_match": true,
+      "bits_per_token": 0.000917018342439218
+    },
+    {
+      "prompt": "The early bird catches the",
+      "category": "completion",
+      "knowledge_source": "parametric",
+      "strategy": "unlimited-context",
+      "expected_contains": "worm",
+      "predicted_top1": " worm",
+      "top1_match": true,
+      "bits_per_token": 0.0005454433374788889
+    },
+    {
+      "prompt": "Actions speak louder than",
+      "category": "completion",
+      "knowledge_source": "parametric",
+      "strategy": "unlimited-context",
+      "expected_contains": "words",
+      "predicted_top1": " words",
+      "top1_match": true,
+      "bits_per_token": 0.00028342848797205795
+    },
+    {
+      "prompt": "Rome was not built in a",
+      "category": "completion",
+      "knowledge_source": "parametric",
+      "strategy": "unlimited-context",
+      "expected_contains": "day",
+      "predicted_top1": " day",
+      "top1_match": true,
+      "bits_per_token": 0.00030629732747485477
+    },
+    {
+      "prompt": "Knowledge is",
+      "category": "completion",
+      "knowledge_source": "parametric",
+      "strategy": "unlimited-context",
+      "expected_contains": "power",
+      "predicted_top1": " power",
+      "top1_match": true,
+      "bits_per_token": 0.4767233549906534
+    },
+    {
+      "prompt": "Practice makes",
+      "category": "completion",
+      "knowledge_source": "parametric",
+      "strategy": "unlimited-context",
+      "expected_contains": "perfect",
+      "predicted_top1": " perfect",
+      "top1_match": true,
+      "bits_per_token": 0.0032801792623658992
+    },
+    {
+      "prompt": "Where there is smoke, there is",
+      "category": "completion",
+      "knowledge_source": "parametric",
+      "strategy": "unlimited-context",
+      "expected_contains": "fire",
+      "predicted_top1": " fire",
+      "top1_match": true,
+      "bits_per_token": 0.012496920010322009
+    },
+    {
+      "prompt": "2 + 2 =",
+      "category": "arithmetic",
+      "knowledge_source": "parametric",
+      "strategy": "unlimited-context",
+      "expected_contains": "4",
+      "predicted_top1": " ?",
+      "top1_match": false,
+      "bits_per_token": 1.6614789482365704
+    },
+    {
+      "prompt": "10 × 10 =",
+      "category": "arithmetic",
+      "knowledge_source": "parametric",
+      "strategy": "unlimited-context",
+      "expected_contains": "100",
+      "predicted_top1": " ?",
+      "top1_match": false,
+      "bits_per_token": 1.5663172682510544
+    },
+    {
+      "prompt": "100 / 4 =",
+      "category": "arithmetic",
+      "knowledge_source": "parametric",
+      "strategy": "unlimited-context",
+      "expected_contains": "25",
+      "predicted_top1": " ",
+      "top1_match": false,
+      "bits_per_token": 0.015305897913770926
+    },
+    {
+      "prompt": "The square root of 144 is",
+      "category": "arithmetic",
+      "knowledge_source": "parametric",
+      "strategy": "unlimited-context",
+      "expected_contains": "12",
+      "predicted_top1": " ",
+      "top1_match": false,
+      "bits_per_token": 0.04677049555740691
+    },
+    {
+      "prompt": "15 + 27 =",
+      "category": "arithmetic",
+      "knowledge_source": "parametric",
+      "strategy": "unlimited-context",
+      "expected_contains": "42",
+      "predicted_top1": " ?",
+      "top1_match": false,
+      "bits_per_token": 1.8241904549356127
+    },
+    {
+      "prompt": "One dozen equals",
+      "category": "arithmetic",
+      "knowledge_source": "parametric",
+      "strategy": "unlimited-context",
+      "expected_contains": "12",
+      "predicted_top1": " ",
+      "top1_match": false,
+      "bits_per_token": 0.16503036002002808
+    },
+    {
+      "prompt": "A century is",
+      "category": "arithmetic",
+      "knowledge_source": "parametric",
+      "strategy": "unlimited-context",
+      "expected_contains": "100",
+      "predicted_top1": " a",
+      "top1_match": false,
+      "bits_per_token": 1.5352955114340987
+    },
+    {
+      "prompt": "One kilometer equals",
+      "category": "arithmetic",
+      "knowledge_source": "parametric",
+      "strategy": "unlimited-context",
+      "expected_contains": "1",
+      "predicted_top1": " ",
+      "top1_match": false,
+      "bits_per_token": 0.08140388462088007
+    },
+    {
+      "prompt": "There are 60 seconds in a",
+      "category": "arithmetic",
+      "knowledge_source": "parametric",
+      "strategy": "unlimited-context",
+      "expected_contains": "minute",
+      "predicted_top1": " minute",
+      "top1_match": true,
+      "bits_per_token": 0.0030169596369548947
+    },
+    {
+      "prompt": "There are 24 hours in a",
+      "category": "arithmetic",
+      "knowledge_source": "parametric",
+      "strategy": "unlimited-context",
+      "expected_contains": "day",
+      "predicted_top1": " day",
+      "top1_match": true,
+      "bits_per_token": 0.009409405754941001
+    },
+    {
+      "prompt": "In Python, to print 'hello' you write print(",
+      "category": "code",
+      "knowledge_source": "parametric",
+      "strategy": "unlimited-context",
+      "expected_contains": "'",
+      "predicted_top1": "‘",
+      "top1_match": false,
+      "bits_per_token": 5.226090315813156
+    },
+    {
+      "prompt": "In JavaScript, a variable is declared with let, const, or",
+      "category": "code",
+      "knowledge_source": "parametric",
+      "strategy": "unlimited-context",
+      "expected_contains": "var",
+      "predicted_top1": " var",
+      "top1_match": true,
+      "bits_per_token": 0.0006204286295139355
+    },
+    {
+      "prompt": "HTML stands for Hyper",
+      "category": "code",
+      "knowledge_source": "parametric",
+      "strategy": "unlimited-context",
+      "expected_contains": "Text",
+      "predicted_top1": "Text",
+      "top1_match": true,
+      "bits_per_token": 3.841917477727783
+    },
+    {
+      "prompt": "The HTTP status code for 'Not Found' is",
+      "category": "code",
+      "knowledge_source": "parametric",
+      "strategy": "unlimited-context",
+      "expected_contains": "404",
+      "predicted_top1": " ",
+      "top1_match": false,
+      "bits_per_token": 0.20073421125562058
+    },
+    {
+      "prompt": "In SQL, to select all columns you use SELECT",
+      "category": "code",
+      "knowledge_source": "parametric",
+      "strategy": "unlimited-context",
+      "expected_contains": "*",
+      "predicted_top1": " *",
+      "top1_match": true,
+      "bits_per_token": 0.8965878625452132
+    },
+    {
+      "prompt": "Git is a distributed version",
+      "category": "code",
+      "knowledge_source": "parametric",
+      "strategy": "unlimited-context",
+      "expected_contains": "control",
+      "predicted_top1": " control",
+      "top1_match": true,
+      "bits_per_token": 0.0005333754065766647
+    },
+    {
+      "prompt": "JSON stands for JavaScript Object",
+      "category": "code",
+      "knowledge_source": "parametric",
+      "strategy": "unlimited-context",
+      "expected_contains": "Notation",
+      "predicted_top1": " Notation",
+      "top1_match": true,
+      "bits_per_token": 1.731353846709035e-6
+    },
+    {
+      "prompt": "The file extension for Python files is .",
+      "category": "code",
+      "knowledge_source": "parametric",
+      "strategy": "unlimited-context",
+      "expected_contains": "py",
+      "predicted_top1": "py",
+      "top1_match": true,
+      "bits_per_token": 18.199172068931873
+    },
+    {
+      "prompt": "In CSS, to make text bold you use font-weight:",
+      "category": "code",
+      "knowledge_source": "parametric",
+      "strategy": "unlimited-context",
+      "expected_contains": "bold",
+      "predicted_top1": " bold",
+      "top1_match": true,
+      "bits_per_token": 0.002481933220706932
+    },
+    {
+      "prompt": "The command to list files in Linux is",
+      "category": "code",
+      "knowledge_source": "parametric",
+      "strategy": "unlimited-context",
+      "expected_contains": "ls",
+      "predicted_top1": " `",
+      "top1_match": false,
+      "bits_per_token": 13.586762384389688
+    },
+    {
+      "prompt": "How are you today? I'm doing",
+      "category": "conversational",
+      "knowledge_source": "parametric",
+      "strategy": "unlimited-context",
+      "expected_contains": "well",
+      "predicted_top1": " well",
+      "top1_match": true,
+      "bits_per_token": 1.304090537923891
+    },
+    {
+      "prompt": "Thank you very much! You're",
+      "category": "conversational",
+      "knowledge_source": "parametric",
+      "strategy": "unlimited-context",
+      "expected_contains": "welcome",
+      "predicted_top1": " a",
+      "top1_match": false,
+      "bits_per_token": 5.312681700946499
+    },
+    {
+      "prompt": "Good morning! How did you",
+      "category": "conversational",
+      "knowledge_source": "parametric",
+      "strategy": "unlimited-context",
+      "expected_contains": "sleep",
+      "predicted_top1": " sleep",
+      "top1_match": true,
+      "bits_per_token": 0.26966497268560635
+    },
+    {
+      "prompt": "See you later! Have a great",
+      "category": "conversational",
+      "knowledge_source": "parametric",
+      "strategy": "unlimited-context",
+      "expected_contains": "day",
+      "predicted_top1": " day",
+      "top1_match": true,
+      "bits_per_token": 0.48454820788733294
+    },
+    {
+      "prompt": "Happy birthday! How old are",
+      "category": "conversational",
+      "knowledge_source": "parametric",
+      "strategy": "unlimited-context",
+      "expected_contains": "you",
+      "predicted_top1": " you",
+      "top1_match": true,
+      "bits_per_token": 0.0036028308276558956
+    },
+    {
+      "prompt": "Sorry for the delay. I was",
+      "category": "conversational",
+      "knowledge_source": "parametric",
+      "strategy": "unlimited-context",
+      "expected_contains": "busy",
+      "predicted_top1": " having",
+      "top1_match": false,
+      "bits_per_token": 3.1118879988512207
+    },
+    {
+      "prompt": "What do you think about",
+      "category": "conversational",
+      "knowledge_source": "parametric",
+      "strategy": "unlimited-context",
+      "expected_contains": "the",
+      "predicted_top1": " the",
+      "top1_match": true,
+      "bits_per_token": 0.7251180373709427
+    },
+    {
+      "prompt": "Let me know if you need any",
+      "category": "conversational",
+      "knowledge_source": "parametric",
+      "strategy": "unlimited-context",
+      "expected_contains": "help",
+      "predicted_top1": " help",
+      "top1_match": true,
+      "bits_per_token": 1.6266135549184928
+    },
+    {
+      "prompt": "I completely agree with",
+      "category": "conversational",
+      "knowledge_source": "parametric",
+      "strategy": "unlimited-context",
+      "expected_contains": "you",
+      "predicted_top1": " the",
+      "top1_match": false,
+      "bits_per_token": 1.4284934325771512
+    },
+    {
+      "prompt": "That's a really good",
+      "category": "conversational",
+      "knowledge_source": "parametric",
+      "strategy": "unlimited-context",
+      "expected_contains": "point",
+      "predicted_top1": " question",
+      "top1_match": false,
+      "bits_per_token": 1.6265509730033876
+    },
+    {
+      "prompt": "If it rains, the ground gets",
+      "category": "reasoning",
+      "knowledge_source": "parametric",
+      "strategy": "unlimited-context",
+      "expected_contains": "wet",
+      "predicted_top1": " wet",
+      "top1_match": true,
+      "bits_per_token": 0.035682923778534756
+    },
+    {
+      "prompt": "The opposite of hot is",
+      "category": "reasoning",
+      "knowledge_source": "parametric",
+      "strategy": "unlimited-context",
+      "expected_contains": "cold",
+      "predicted_top1": " cold",
+      "top1_match": true,
+      "bits_per_token": 0.17763722382303243
+    },
+    {
+      "prompt": "The color of grass is",
+      "category": "reasoning",
+      "knowledge_source": "parametric",
+      "strategy": "unlimited-context",
+      "expected_contains": "green",
+      "predicted_top1": " green",
+      "top1_match": true,
+      "bits_per_token": 0.8285241172836804
+    },
+    {
+      "prompt": "The day after Monday is",
+      "category": "reasoning",
+      "knowledge_source": "parametric",
+      "strategy": "unlimited-context",
+      "expected_contains": "Tuesday",
+      "predicted_top1": " Wednesday",
+      "top1_match": false,
+      "bits_per_token": 1.7331590391818796
+    },
+    {
+      "prompt": "Ice is the solid form of",
+      "category": "reasoning",
+      "knowledge_source": "parametric",
+      "strategy": "unlimited-context",
+      "expected_contains": "water",
+      "predicted_top1": " water",
+      "top1_match": true,
+      "bits_per_token": 0.03833108989656591
+    },
+    {
+      "prompt": "The month after January is",
+      "category": "reasoning",
+      "knowledge_source": "parametric",
+      "strategy": "unlimited-context",
+      "expected_contains": "February",
+      "predicted_top1": " February",
+      "top1_match": true,
+      "bits_per_token": 0.09613983421796946
+    },
+    {
+      "prompt": "Cats are a type of",
+      "category": "reasoning",
+      "knowledge_source": "parametric",
+      "strategy": "unlimited-context",
+      "expected_contains": "animal",
+      "predicted_top1": " animal",
+      "top1_match": true,
+      "bits_per_token": 1.1165405616449717
+    },
+    {
+      "prompt": "The sun rises in the",
+      "category": "reasoning",
+      "knowledge_source": "parametric",
+      "strategy": "unlimited-context",
+      "expected_contains": "east",
+      "predicted_top1": " east",
+      "top1_match": true,
+      "bits_per_token": 0.30360532025161024
+    },
+    {
+      "prompt": "The plural of child is",
+      "category": "reasoning",
+      "knowledge_source": "parametric",
+      "strategy": "unlimited-context",
+      "expected_contains": "children",
+      "predicted_top1": " children",
+      "top1_match": true,
+      "bits_per_token": 0.11202210244712721
+    },
+    {
+      "prompt": "A triangle has three",
+      "category": "reasoning",
+      "knowledge_source": "parametric",
+      "strategy": "unlimited-context",
+      "expected_contains": "side",
+      "predicted_top1": " sides",
+      "top1_match": true,
+      "bits_per_token": 9.21777901199555
+    },
+    {
+      "prompt": "[needle@512tok] What is the secret project code name?",
+      "category": "needle",
+      "knowledge_source": "in_context",
+      "strategy": "unlimited-context",
+      "expected_contains": "AURORA",
+      "predicted_top1": " AUR",
+      "top1_match": false,
+      "bits_per_token": 0.0021280274228915714
+    },
+    {
+      "prompt": "[needle@1024tok] What is the secret project code name?",
+      "category": "needle",
+      "knowledge_source": "in_context",
+      "strategy": "unlimited-context",
+      "expected_contains": "AURORA",
+      "predicted_top1": " The",
+      "top1_match": false,
+      "bits_per_token": 25.45857940723769
+    },
+    {
+      "prompt": "[needle@2048tok] What is the secret project code name?",
+      "category": "needle",
+      "knowledge_source": "in_context",
+      "strategy": "unlimited-context",
+      "expected_contains": "AURORA",
+      "predicted_top1": " The",
+      "top1_match": false,
+      "bits_per_token": 27.02862961659583
+    },
+    {
+      "prompt": "[needle@4096tok] What is the secret project code name?",
+      "category": "needle",
+      "knowledge_source": "in_context",
+      "strategy": "unlimited-context",
+      "expected_contains": "AURORA",
+      "predicted_top1": " The",
+      "top1_match": false,
+      "bits_per_token": 29.960538888538537
+    },
+    {
+      "prompt": "[needle@8192tok] What is the secret project code name?",
+      "category": "needle",
+      "knowledge_source": "in_context",
+      "strategy": "unlimited-context",
+      "expected_contains": "AURORA",
+      "predicted_top1": " The",
+      "top1_match": false,
+      "bits_per_token": 28.662378166204178
+    },
+    {
+      "prompt": "The capital of France is",
+      "category": "factual",
+      "knowledge_source": "parametric",
+      "strategy": "turbo-quant",
+      "expected_contains": "Paris",
+      "predicted_top1": " Paris",
+      "top1_match": true,
+      "bits_per_token": 0.3101095667870367
+    },
+    {
+      "prompt": "The capital of Germany is",
+      "category": "factual",
+      "knowledge_source": "parametric",
+      "strategy": "turbo-quant",
+      "expected_contains": "Berlin",
+      "predicted_top1": " Berlin",
+      "top1_match": true,
+      "bits_per_token": 0.16975619739458564
+    },
+    {
+      "prompt": "The capital of Japan is",
+      "category": "factual",
+      "knowledge_source": "parametric",
+      "strategy": "turbo-quant",
+      "expected_contains": "Tokyo",
+      "predicted_top1": " Tokyo",
+      "top1_match": true,
+      "bits_per_token": 0.23581776289227815
+    },
+    {
+      "prompt": "The capital of Italy is",
+      "category": "factual",
+      "knowledge_source": "parametric",
+      "strategy": "turbo-quant",
+      "expected_contains": "Rome",
+      "predicted_top1": " Rome",
+      "top1_match": true,
+      "bits_per_token": 0.6863272297902607
+    },
+    {
+      "prompt": "The capital of Spain is",
+      "category": "factual",
+      "knowledge_source": "parametric",
+      "strategy": "turbo-quant",
+      "expected_contains": "Madrid",
+      "predicted_top1": " a",
+      "top1_match": false,
+      "bits_per_token": 3.4712782052523066
+    },
+    {
+      "prompt": "The capital of Brazil is",
+      "category": "factual",
+      "knowledge_source": "parametric",
+      "strategy": "turbo-quant",
+      "expected_contains": "Bras",
+      "predicted_top1": " a",
+      "top1_match": false,
+      "bits_per_token": 12.269957601488807
+    },
+    {
+      "prompt": "The capital of Australia is",
+      "category": "factual",
+      "knowledge_source": "parametric",
+      "strategy": "turbo-quant",
+      "expected_contains": "Canberra",
+      "predicted_top1": " Canberra",
+      "top1_match": true,
+      "bits_per_token": 0.1313082658434474
+    },
+    {
+      "prompt": "The capital of Canada is",
+      "category": "factual",
+      "knowledge_source": "parametric",
+      "strategy": "turbo-quant",
+      "expected_contains": "Ottawa",
+      "predicted_top1": " Ottawa",
+      "top1_match": true,
+      "bits_per_token": 0.27503474204861317
+    },
+    {
+      "prompt": "The capital of Egypt is",
+      "category": "factual",
+      "knowledge_source": "parametric",
+      "strategy": "turbo-quant",
+      "expected_contains": "Cairo",
+      "predicted_top1": " Cairo",
+      "top1_match": true,
+      "bits_per_token": 0.23908106924558464
+    },
+    {
+      "prompt": "The capital of India is",
+      "category": "factual",
+      "knowledge_source": "parametric",
+      "strategy": "turbo-quant",
+      "expected_contains": "Delhi",
+      "predicted_top1": " New",
+      "top1_match": false,
+      "bits_per_token": 4.18483056602941
+    },
+    {
+      "prompt": "The capital of Mexico is",
+      "category": "factual",
+      "knowledge_source": "parametric",
+      "strategy": "turbo-quant",
+      "expected_contains": "Mexico",
+      "predicted_top1": " a",
+      "top1_match": false,
+      "bits_per_token": 2.1356991340402196
+    },
+    {
+      "prompt": "The capital of Russia is",
+      "category": "factual",
+      "knowledge_source": "parametric",
+      "strategy": "turbo-quant",
+      "expected_contains": "Moscow",
+      "predicted_top1": " Moscow",
+      "top1_match": true,
+      "bits_per_token": 0.49128004237284273
+    },
+    {
+      "prompt": "The capital of China is",
+      "category": "factual",
+      "knowledge_source": "parametric",
+      "strategy": "turbo-quant",
+      "expected_contains": "Beijing",
+      "predicted_top1": " Beijing",
+      "top1_match": true,
+      "bits_per_token": 0.2552661259142558
+    },
+    {
+      "prompt": "The capital of South Korea is",
+      "category": "factual",
+      "knowledge_source": "parametric",
+      "strategy": "turbo-quant",
+      "expected_contains": "Seoul",
+      "predicted_top1": " Seoul",
+      "top1_match": true,
+      "bits_per_token": 0.3739666100489461
+    },
+    {
+      "prompt": "The capital of Turkey is",
+      "category": "factual",
+      "knowledge_source": "parametric",
+      "strategy": "turbo-quant",
+      "expected_contains": "Ankara",
+      "predicted_top1": " Ankara",
+      "top1_match": true,
+      "bits_per_token": 0.3757968721664505
+    },
+    {
+      "prompt": "The capital of Thailand is",
+      "category": "factual",
+      "knowledge_source": "parametric",
+      "strategy": "turbo-quant",
+      "expected_contains": "Bangkok",
+      "predicted_top1": " Bangkok",
+      "top1_match": true,
+      "bits_per_token": 0.5436259716635966
+    },
+    {
+      "prompt": "The capital of Argentina is",
+      "category": "factual",
+      "knowledge_source": "parametric",
+      "strategy": "turbo-quant",
+      "expected_contains": "Buenos",
+      "predicted_top1": " Buenos",
+      "top1_match": true,
+      "bits_per_token": 0.6137278206925366
+    },
+    {
+      "prompt": "The capital of Sweden is",
+      "category": "factual",
+      "knowledge_source": "parametric",
+      "strategy": "turbo-quant",
+      "expected_contains": "Stockholm",
+      "predicted_top1": " Stockholm",
+      "top1_match": true,
+      "bits_per_token": 0.3982541830055894
+    },
+    {
+      "prompt": "The capital of Norway is",
+      "category": "factual",
+      "knowledge_source": "parametric",
+      "strategy": "turbo-quant",
+      "expected_contains": "Oslo",
+      "predicted_top1": " Oslo",
+      "top1_match": true,
+      "bits_per_token": 0.06241495246872736
+    },
+    {
+      "prompt": "The capital of Poland is",
+      "category": "factual",
+      "knowledge_source": "parametric",
+      "strategy": "turbo-quant",
+      "expected_contains": "Warsaw",
+      "predicted_top1": " a",
+      "top1_match": false,
+      "bits_per_token": 3.8048385322967406
+    },
+    {
+      "prompt": "Mozart was born in",
+      "category": "factual",
+      "knowledge_source": "parametric",
+      "strategy": "turbo-quant",
+      "expected_contains": "Salzburg",
+      "predicted_top1": " Salzburg",
+      "top1_match": true,
+      "bits_per_token": 0.038120532159208284
+    },
+    {
+      "prompt": "Einstein was born in",
+      "category": "factual",
+      "knowledge_source": "parametric",
+      "strategy": "turbo-quant",
+      "expected_contains": "Ulm",
+      "predicted_top1": " Ulm",
+      "top1_match": true,
+      "bits_per_token": 0.08052191902875606
+    },
+    {
+      "prompt": "Shakespeare was born in",
+      "category": "factual",
+      "knowledge_source": "parametric",
+      "strategy": "turbo-quant",
+      "expected_contains": "Strat",
+      "predicted_top1": " Stratford",
+      "top1_match": true,
+      "bits_per_token": 15.070885877765113
+    },
+    {
+      "prompt": "The Mona Lisa was painted by",
+      "category": "factual",
+      "knowledge_source": "parametric",
+      "strategy": "turbo-quant",
+      "expected_contains": "Leonardo",
+      "predicted_top1": " Leonardo",
+      "top1_match": true,
+      "bits_per_token": 0.043664054722072285
+    },
+    {
+      "prompt": "The theory of relativity was developed by",
+      "category": "factual",
+      "knowledge_source": "parametric",
+      "strategy": "turbo-quant",
+      "expected_contains": "Einstein",
+      "predicted_top1": " Albert",
+      "top1_match": false,
+      "bits_per_token": 8.580087813744326
+    },
+    {
+      "prompt": "The first president of the United States was",
+      "category": "factual",
+      "knowledge_source": "parametric",
+      "strategy": "turbo-quant",
+      "expected_contains": "George",
+      "predicted_top1": " George",
+      "top1_match": true,
+      "bits_per_token": 0.03872726493485519
+    },
+    {
+      "prompt": "Apple Inc. was co-founded by Steve",
+      "category": "factual",
+      "knowledge_source": "parametric",
+      "strategy": "turbo-quant",
+      "expected_contains": "Jobs",
+      "predicted_top1": " Jobs",
+      "top1_match": true,
+      "bits_per_token": 0.00013194137927710305
+    },
+    {
+      "prompt": "The author of Harry Potter is J.K.",
+      "category": "factual",
+      "knowledge_source": "parametric",
+      "strategy": "turbo-quant",
+      "expected_contains": "Rowling",
+      "predicted_top1": " Rowling",
+      "top1_match": true,
+      "bits_per_token": 0.0015421270914183244
+    },
+    {
+      "prompt": "Beethoven's first name was",
+      "category": "factual",
+      "knowledge_source": "parametric",
+      "strategy": "turbo-quant",
+      "expected_contains": "Ludwig",
+      "predicted_top1": " Ludwig",
+      "top1_match": true,
+      "bits_per_token": 0.6906075457909255
+    },
+    {
+      "prompt": "Isaac Newton discovered",
+      "category": "factual",
+      "knowledge_source": "parametric",
+      "strategy": "turbo-quant",
+      "expected_contains": "grav",
+      "predicted_top1": " the",
+      "top1_match": false,
+      "bits_per_token": 18.574462427432373
+    },
+    {
+      "prompt": "Water freezes at",
+      "category": "scientific",
+      "knowledge_source": "parametric",
+      "strategy": "turbo-quant",
+      "expected_contains": "0",
+      "predicted_top1": " ",
+      "top1_match": false,
+      "bits_per_token": 0.2247975103233593
+    },
+    {
+      "prompt": "The chemical symbol for gold is",
+      "category": "scientific",
+      "knowledge_source": "parametric",
+      "strategy": "turbo-quant",
+      "expected_contains": "Au",
+      "predicted_top1": " Au",
+      "top1_match": true,
+      "bits_per_token": 0.05840749422396868
+    },
+    {
+      "prompt": "The chemical formula for water is",
+      "category": "scientific",
+      "knowledge_source": "parametric",
+      "strategy": "turbo-quant",
+      "expected_contains": "H",
+      "predicted_top1": " H",
+      "top1_match": true,
+      "bits_per_token": 0.06199211804408575
+    },
+    {
+      "prompt": "The speed of light is approximately",
+      "category": "scientific",
+      "knowledge_source": "parametric",
+      "strategy": "turbo-quant",
+      "expected_contains": "3",
+      "predicted_top1": " ",
+      "top1_match": false,
+      "bits_per_token": 0.441485721381133
+    },
+    {
+      "prompt": "The largest planet in our solar system is",
+      "category": "scientific",
+      "knowledge_source": "parametric",
+      "strategy": "turbo-quant",
+      "expected_contains": "Jupiter",
+      "predicted_top1": " Jupiter",
+      "top1_match": true,
+      "bits_per_token": 0.018036189196703255
+    },
+    {
+      "prompt": "DNA stands for deoxyribonucle",
+      "category": "scientific",
+      "knowledge_source": "parametric",
+      "strategy": "turbo-quant",
+      "expected_contains": "ic",
+      "predicted_top1": "ic",
+      "top1_match": true,
+      "bits_per_token": 35.025607830834595
+    },
+    {
+      "prompt": "The atomic number of carbon is",
+      "category": "scientific",
+      "knowledge_source": "parametric",
+      "strategy": "turbo-quant",
+      "expected_contains": "6",
+      "predicted_top1": " ",
+      "top1_match": false,
+      "bits_per_token": 0.012312830442703787
+    },
+    {
+      "prompt": "Photosynthesis converts sunlight into",
+      "category": "scientific",
+      "knowledge_source": "parametric",
+      "strategy": "turbo-quant",
+      "expected_contains": "energy",
+      "predicted_top1": " chemical",
+      "top1_match": false,
+      "bits_per_token": 1.578750165227039
+    },
+    {
+      "prompt": "The boiling point of water is",
+      "category": "scientific",
+      "knowledge_source": "parametric",
+      "strategy": "turbo-quant",
+      "expected_contains": "100",
+      "predicted_top1": " ",
+      "top1_match": false,
+      "bits_per_token": 0.3069563485764214
+    },
+    {
+      "prompt": "The nearest star to Earth is the",
+      "category": "scientific",
+      "knowledge_source": "parametric",
+      "strategy": "turbo-quant",
+      "expected_contains": "Sun",
+      "predicted_top1": " Sun",
+      "top1_match": true,
+      "bits_per_token": 0.014866093776732299
+    },
+    {
+      "prompt": "The longest river in Africa is the",
+      "category": "geographic",
+      "knowledge_source": "parametric",
+      "strategy": "turbo-quant",
+      "expected_contains": "Nile",
+      "predicted_top1": " Nile",
+      "top1_match": true,
+      "bits_per_token": 0.14115275335876348
+    },
+    {
+      "prompt": "The tallest mountain in the world is",
+      "category": "geographic",
+      "knowledge_source": "parametric",
+      "strategy": "turbo-quant",
+      "expected_contains": "Everest",
+      "predicted_top1": " Mount",
+      "top1_match": false,
+      "bits_per_token": 9.192072878188801
+    },
+    {
+      "prompt": "The largest ocean is the",
+      "category": "geographic",
+      "knowledge_source": "parametric",
+      "strategy": "turbo-quant",
+      "expected_contains": "Pacific",
+      "predicted_top1": " Pacific",
+      "top1_match": true,
+      "bits_per_token": 0.13254646539416579
+    },
+    {
+      "prompt": "The Amazon River flows through",
+      "category": "geographic",
+      "knowledge_source": "parametric",
+      "strategy": "turbo-quant",
+      "expected_contains": "Brazil",
+      "predicted_top1": " the",
+      "top1_match": false,
+      "bits_per_token": 3.3103726445482
+    },
+    {
+      "prompt": "The Sahara Desert is located in",
+      "category": "geographic",
+      "knowledge_source": "parametric",
+      "strategy": "turbo-quant",
+      "expected_contains": "Africa",
+      "predicted_top1": " North",
+      "top1_match": false,
+      "bits_per_token": 2.29523538359875
+    },
+    {
+      "prompt": "The Great Wall of China is located in",
+      "category": "geographic",
+      "knowledge_source": "parametric",
+      "strategy": "turbo-quant",
+      "expected_contains": "China",
+      "predicted_top1": " China",
+      "top1_match": true,
+      "bits_per_token": 1.5074354056614034
+    },
+    {
+      "prompt": "The currency of Japan is the",
+      "category": "geographic",
+      "knowledge_source": "parametric",
+      "strategy": "turbo-quant",
+      "expected_contains": "yen",
+      "predicted_top1": " Japanese",
+      "top1_match": false,
+      "bits_per_token": 3.688259757293297
+    },
+    {
+      "prompt": "The currency of the United Kingdom is the",
+      "category": "geographic",
+      "knowledge_source": "parametric",
+      "strategy": "turbo-quant",
+      "expected_contains": "pound",
+      "predicted_top1": " Pound",
+      "top1_match": true,
+      "bits_per_token": 1.9421360779546548
+    },
+    {
+      "prompt": "The official language of Brazil is",
+      "category": "geographic",
+      "knowledge_source": "parametric",
+      "strategy": "turbo-quant",
+      "expected_contains": "Portug",
+      "predicted_top1": " Portuguese",
+      "top1_match": true,
+      "bits_per_token": 8.89947864165316
+    },
+    {
+      "prompt": "The smallest continent is",
+      "category": "geographic",
+      "knowledge_source": "parametric",
+      "strategy": "turbo-quant",
+      "expected_contains": "Australia",
+      "predicted_top1": " Australia",
+      "top1_match": true,
+      "bits_per_token": 0.9773332373592648
+    },
+    {
+      "prompt": "To be or not to be, that is the",
+      "category": "completion",
+      "knowledge_source": "parametric",
+      "strategy": "turbo-quant",
+      "expected_contains": "question",
+      "predicted_top1": " question",
+      "top1_match": true,
+      "bits_per_token": 0.030281715850620977
+    },
+    {
+      "prompt": "I think, therefore I",
+      "category": "completion",
+      "knowledge_source": "parametric",
+      "strategy": "turbo-quant",
+      "expected_contains": "am",
+      "predicted_top1": " am",
+      "top1_match": true,
+      "bits_per_token": 0.022656381206221425
+    },
+    {
+      "prompt": "All that glitters is not",
+      "category": "completion",
+      "knowledge_source": "parametric",
+      "strategy": "turbo-quant",
+      "expected_contains": "gold",
+      "predicted_top1": " gold",
+      "top1_match": true,
+      "bits_per_token": 0.003178388582317822
+    },
+    {
+      "prompt": "A journey of a thousand miles begins with a single",
+      "category": "completion",
+      "knowledge_source": "parametric",
+      "strategy": "turbo-quant",
+      "expected_contains": "step",
+      "predicted_top1": " step",
+      "top1_match": true,
+      "bits_per_token": 0.0008140266240165308
+    },
+    {
+      "prompt": "The early bird catches the",
+      "category": "completion",
+      "knowledge_source": "parametric",
+      "strategy": "turbo-quant",
+      "expected_contains": "worm",
+      "predicted_top1": " worm",
+      "top1_match": true,
+      "bits_per_token": 0.0004869023194711906
+    },
+    {
+      "prompt": "Actions speak louder than",
+      "category": "completion",
+      "knowledge_source": "parametric",
+      "strategy": "turbo-quant",
+      "expected_contains": "words",
+      "predicted_top1": " words",
+      "top1_match": true,
+      "bits_per_token": 0.0002494893863833915
+    },
+    {
+      "prompt": "Rome was not built in a",
+      "category": "completion",
+      "knowledge_source": "parametric",
+      "strategy": "turbo-quant",
+      "expected_contains": "day",
+      "predicted_top1": " day",
+      "top1_match": true,
+      "bits_per_token": 0.0003588770989334946
+    },
+    {
+      "prompt": "Knowledge is",
+      "category": "completion",
+      "knowledge_source": "parametric",
+      "strategy": "turbo-quant",
+      "expected_contains": "power",
+      "predicted_top1": " power",
+      "top1_match": true,
+      "bits_per_token": 0.47409931231337343
+    },
+    {
+      "prompt": "Practice makes",
+      "category": "completion",
+      "knowledge_source": "parametric",
+      "strategy": "turbo-quant",
+      "expected_contains": "perfect",
+      "predicted_top1": " perfect",
+      "top1_match": true,
+      "bits_per_token": 0.0032671060854838874
+    },
+    {
+      "prompt": "Where there is smoke, there is",
+      "category": "completion",
+      "knowledge_source": "parametric",
+      "strategy": "turbo-quant",
+      "expected_contains": "fire",
+      "predicted_top1": " fire",
+      "top1_match": true,
+      "bits_per_token": 0.014457814536051087
+    },
+    {
+      "prompt": "2 + 2 =",
+      "category": "arithmetic",
+      "knowledge_source": "parametric",
+      "strategy": "turbo-quant",
+      "expected_contains": "4",
+      "predicted_top1": " ?",
+      "top1_match": false,
+      "bits_per_token": 1.604241915505984
+    },
+    {
+      "prompt": "10 × 10 =",
+      "category": "arithmetic",
+      "knowledge_source": "parametric",
+      "strategy": "turbo-quant",
+      "expected_contains": "100",
+      "predicted_top1": " ?",
+      "top1_match": false,
+      "bits_per_token": 1.56384040125416
+    },
+    {
+      "prompt": "100 / 4 =",
+      "category": "arithmetic",
+      "knowledge_source": "parametric",
+      "strategy": "turbo-quant",
+      "expected_contains": "25",
+      "predicted_top1": " ",
+      "top1_match": false,
+      "bits_per_token": 0.014067338910869441
+    },
+    {
+      "prompt": "The square root of 144 is",
+      "category": "arithmetic",
+      "knowledge_source": "parametric",
+      "strategy": "turbo-quant",
+      "expected_contains": "12",
+      "predicted_top1": " ",
+      "top1_match": false,
+      "bits_per_token": 0.050093664628585916
+    },
+    {
+      "prompt": "15 + 27 =",
+      "category": "arithmetic",
+      "knowledge_source": "parametric",
+      "strategy": "turbo-quant",
+      "expected_contains": "42",
+      "predicted_top1": " ?",
+      "top1_match": false,
+      "bits_per_token": 1.9584574396556584
+    },
+    {
+      "prompt": "One dozen equals",
+      "category": "arithmetic",
+      "knowledge_source": "parametric",
+      "strategy": "turbo-quant",
+      "expected_contains": "12",
+      "predicted_top1": " ",
+      "top1_match": false,
+      "bits_per_token": 0.159520063415381
+    },
+    {
+      "prompt": "A century is",
+      "category": "arithmetic",
+      "knowledge_source": "parametric",
+      "strategy": "turbo-quant",
+      "expected_contains": "100",
+      "predicted_top1": " ",
+      "top1_match": false,
+      "bits_per_token": 1.2205351176302526
+    },
+    {
+      "prompt": "One kilometer equals",
+      "category": "arithmetic",
+      "knowledge_source": "parametric",
+      "strategy": "turbo-quant",
+      "expected_contains": "1",
+      "predicted_top1": " ",
+      "top1_match": false,
+      "bits_per_token": 0.08174006250824574
+    },
+    {
+      "prompt": "There are 60 seconds in a",
+      "category": "arithmetic",
+      "knowledge_source": "parametric",
+      "strategy": "turbo-quant",
+      "expected_contains": "minute",
+      "predicted_top1": " minute",
+      "top1_match": true,
+      "bits_per_token": 0.0035281326757927163
+    },
+    {
+      "prompt": "There are 24 hours in a",
+      "category": "arithmetic",
+      "knowledge_source": "parametric",
+      "strategy": "turbo-quant",
+      "expected_contains": "day",
+      "predicted_top1": " day",
+      "top1_match": true,
+      "bits_per_token": 0.013017659060080603
+    },
+    {
+      "prompt": "In Python, to print 'hello' you write print(",
+      "category": "code",
+      "knowledge_source": "parametric",
+      "strategy": "turbo-quant",
+      "expected_contains": "'",
+      "predicted_top1": "‘",
+      "top1_match": false,
+      "bits_per_token": 5.310127301403371
+    },
+    {
+      "prompt": "In JavaScript, a variable is declared with let, const, or",
+      "category": "code",
+      "knowledge_source": "parametric",
+      "strategy": "turbo-quant",
+      "expected_contains": "var",
+      "predicted_top1": " var",
+      "top1_match": true,
+      "bits_per_token": 0.0009046637233151758
+    },
+    {
+      "prompt": "HTML stands for Hyper",
+      "category": "code",
+      "knowledge_source": "parametric",
+      "strategy": "turbo-quant",
+      "expected_contains": "Text",
+      "predicted_top1": "Text",
+      "top1_match": true,
+      "bits_per_token": 3.6367459839309486
+    },
+    {
+      "prompt": "The HTTP status code for 'Not Found' is",
+      "category": "code",
+      "knowledge_source": "parametric",
+      "strategy": "turbo-quant",
+      "expected_contains": "404",
+      "predicted_top1": " ",
+      "top1_match": false,
+      "bits_per_token": 0.16139780820323657
+    },
+    {
+      "prompt": "In SQL, to select all columns you use SELECT",
+      "category": "code",
+      "knowledge_source": "parametric",
+      "strategy": "turbo-quant",
+      "expected_contains": "*",
+      "predicted_top1": " *",
+      "top1_match": true,
+      "bits_per_token": 0.8133632489352068
+    },
+    {
+      "prompt": "Git is a distributed version",
+      "category": "code",
+      "knowledge_source": "parametric",
+      "strategy": "turbo-quant",
+      "expected_contains": "control",
+      "predicted_top1": " control",
+      "top1_match": true,
+      "bits_per_token": 0.0004950920037289334
+    },
+    {
+      "prompt": "JSON stands for JavaScript Object",
+      "category": "code",
+      "knowledge_source": "parametric",
+      "strategy": "turbo-quant",
+      "expected_contains": "Notation",
+      "predicted_top1": " Notation",
+      "top1_match": true,
+      "bits_per_token": 1.243174169855987e-6
+    },
+    {
+      "prompt": "The file extension for Python files is .",
+      "category": "code",
+      "knowledge_source": "parametric",
+      "strategy": "turbo-quant",
+      "expected_contains": "py",
+      "predicted_top1": "py",
+      "top1_match": true,
+      "bits_per_token": 18.49573598507274
+    },
+    {
+      "prompt": "In CSS, to make text bold you use font-weight:",
+      "category": "code",
+      "knowledge_source": "parametric",
+      "strategy": "turbo-quant",
+      "expected_contains": "bold",
+      "predicted_top1": " bold",
+      "top1_match": true,
+      "bits_per_token": 0.001955397502854392
+    },
+    {
+      "prompt": "The command to list files in Linux is",
+      "category": "code",
+      "knowledge_source": "parametric",
+      "strategy": "turbo-quant",
+      "expected_contains": "ls",
+      "predicted_top1": " `",
+      "top1_match": false,
+      "bits_per_token": 13.777439471807574
+    },
+    {
+      "prompt": "How are you today? I'm doing",
+      "category": "conversational",
+      "knowledge_source": "parametric",
+      "strategy": "turbo-quant",
+      "expected_contains": "well",
+      "predicted_top1": " well",
+      "top1_match": true,
+      "bits_per_token": 1.3445557521289901
+    },
+    {
+      "prompt": "Thank you very much! You're",
+      "category": "conversational",
+      "knowledge_source": "parametric",
+      "strategy": "turbo-quant",
+      "expected_contains": "welcome",
+      "predicted_top1": " a",
+      "top1_match": false,
+      "bits_per_token": 5.567132136255084
+    },
+    {
+      "prompt": "Good morning! How did you",
+      "category": "conversational",
+      "knowledge_source": "parametric",
+      "strategy": "turbo-quant",
+      "expected_contains": "sleep",
+      "predicted_top1": " sleep",
+      "top1_match": true,
+      "bits_per_token": 0.29669876912918824
+    },
+    {
+      "prompt": "See you later! Have a great",
+      "category": "conversational",
+      "knowledge_source": "parametric",
+      "strategy": "turbo-quant",
+      "expected_contains": "day",
+      "predicted_top1": " day",
+      "top1_match": true,
+      "bits_per_token": 0.4315912285836363
+    },
+    {
+      "prompt": "Happy birthday! How old are",
+      "category": "conversational",
+      "knowledge_source": "parametric",
+      "strategy": "turbo-quant",
+      "expected_contains": "you",
+      "predicted_top1": " you",
+      "top1_match": true,
+      "bits_per_token": 0.00370875808073414
+    },
+    {
+      "prompt": "Sorry for the delay. I was",
+      "category": "conversational",
+      "knowledge_source": "parametric",
+      "strategy": "turbo-quant",
+      "expected_contains": "busy",
+      "predicted_top1": " having",
+      "top1_match": false,
+      "bits_per_token": 3.1175160728373825
+    },
+    {
+      "prompt": "What do you think about",
+      "category": "conversational",
+      "knowledge_source": "parametric",
+      "strategy": "turbo-quant",
+      "expected_contains": "the",
+      "predicted_top1": " the",
+      "top1_match": true,
+      "bits_per_token": 0.7220128365290123
+    },
+    {
+      "prompt": "Let me know if you need any",
+      "category": "conversational",
+      "knowledge_source": "parametric",
+      "strategy": "turbo-quant",
+      "expected_contains": "help",
+      "predicted_top1": " help",
+      "top1_match": true,
+      "bits_per_token": 1.557434762487189
+    },
+    {
+      "prompt": "I completely agree with",
+      "category": "conversational",
+      "knowledge_source": "parametric",
+      "strategy": "turbo-quant",
+      "expected_contains": "you",
+      "predicted_top1": " you",
+      "top1_match": true,
+      "bits_per_token": 1.3623135554902674
+    },
+    {
+      "prompt": "That's a really good",
+      "category": "conversational",
+      "knowledge_source": "parametric",
+      "strategy": "turbo-quant",
+      "expected_contains": "point",
+      "predicted_top1": " question",
+      "top1_match": false,
+      "bits_per_token": 1.5748475884648374
+    },
+    {
+      "prompt": "If it rains, the ground gets",
+      "category": "reasoning",
+      "knowledge_source": "parametric",
+      "strategy": "turbo-quant",
+      "expected_contains": "wet",
+      "predicted_top1": " wet",
+      "top1_match": true,
+      "bits_per_token": 0.037706162990689865
+    },
+    {
+      "prompt": "The opposite of hot is",
+      "category": "reasoning",
+      "knowledge_source": "parametric",
+      "strategy": "turbo-quant",
+      "expected_contains": "cold",
+      "predicted_top1": " cold",
+      "top1_match": true,
+      "bits_per_token": 0.22049719566589093
+    },
+    {
+      "prompt": "The color of grass is",
+      "category": "reasoning",
+      "knowledge_source": "parametric",
+      "strategy": "turbo-quant",
+      "expected_contains": "green",
+      "predicted_top1": " green",
+      "top1_match": true,
+      "bits_per_token": 0.8313778158468339
+    },
+    {
+      "prompt": "The day after Monday is",
+      "category": "reasoning",
+      "knowledge_source": "parametric",
+      "strategy": "turbo-quant",
+      "expected_contains": "Tuesday",
+      "predicted_top1": " Wednesday",
+      "top1_match": false,
+      "bits_per_token": 3.8787534613864616
+    },
+    {
+      "prompt": "Ice is the solid form of",
+      "category": "reasoning",
+      "knowledge_source": "parametric",
+      "strategy": "turbo-quant",
+      "expected_contains": "water",
+      "predicted_top1": " water",
+      "top1_match": true,
+      "bits_per_token": 0.035761039712795976
+    },
+    {
+      "prompt": "The month after January is",
+      "category": "reasoning",
+      "knowledge_source": "parametric",
+      "strategy": "turbo-quant",
+      "expected_contains": "February",
+      "predicted_top1": " February",
+      "top1_match": true,
+      "bits_per_token": 0.08706627125256333
+    },
+    {
+      "prompt": "Cats are a type of",
+      "category": "reasoning",
+      "knowledge_source": "parametric",
+      "strategy": "turbo-quant",
+      "expected_contains": "animal",
+      "predicted_top1": " animal",
+      "top1_match": true,
+      "bits_per_token": 1.1747604553871793
+    },
+    {
+      "prompt": "The sun rises in the",
+      "category": "reasoning",
+      "knowledge_source": "parametric",
+      "strategy": "turbo-quant",
+      "expected_contains": "east",
+      "predicted_top1": " east",
+      "top1_match": true,
+      "bits_per_token": 0.30957832858759526
+    },
+    {
+      "prompt": "The plural of child is",
+      "category": "reasoning",
+      "knowledge_source": "parametric",
+      "strategy": "turbo-quant",
+      "expected_contains": "children",
+      "predicted_top1": " children",
+      "top1_match": true,
+      "bits_per_token": 0.07722795614056821
+    },
+    {
+      "prompt": "A triangle has three",
+      "category": "reasoning",
+      "knowledge_source": "parametric",
+      "strategy": "turbo-quant",
+      "expected_contains": "side",
+      "predicted_top1": " sides",
+      "top1_match": true,
+      "bits_per_token": 9.237925854752174
+    },
+    {
+      "prompt": "[needle@512tok] What is the secret project code name?",
+      "category": "needle",
+      "knowledge_source": "in_context",
+      "strategy": "turbo-quant",
+      "expected_contains": "AURORA",
+      "predicted_top1": " AUR",
+      "top1_match": false,
+      "bits_per_token": 0.0038243014992502627
+    },
+    {
+      "prompt": "[needle@1024tok] What is the secret project code name?",
+      "category": "needle",
+      "knowledge_source": "in_context",
+      "strategy": "turbo-quant",
+      "expected_contains": "AURORA",
+      "predicted_top1": " AUR",
+      "top1_match": false,
+      "bits_per_token": 0.005155731648485081
+    },
+    {
+      "prompt": "[needle@2048tok] What is the secret project code name?",
+      "category": "needle",
+      "knowledge_source": "in_context",
+      "strategy": "turbo-quant",
+      "expected_contains": "AURORA",
+      "predicted_top1": "\n\n",
+      "top1_match": false,
+      "bits_per_token": 22.71176421141065
+    },
+    {
+      "prompt": "[needle@4096tok] What is the secret project code name?",
+      "category": "needle",
+      "knowledge_source": "in_context",
+      "strategy": "turbo-quant",
+      "expected_contains": "AURORA",
+      "predicted_top1": "\n\n",
+      "top1_match": false,
+      "bits_per_token": 24.64028253851256
+    },
+    {
+      "prompt": "[needle@8192tok] What is the secret project code name?",
+      "category": "needle",
+      "knowledge_source": "in_context",
+      "strategy": "turbo-quant",
+      "expected_contains": "AURORA",
+      "predicted_top1": " The",
+      "top1_match": false,
+      "bits_per_token": 30.116020760779193
+    }
+  ],
+  "per_conflict": [
+    {
+      "prompt": "In this fictional world, the capital of France is Lyon. The capital of France is",
+      "strategy": "standard",
+      "override_answer": "Lyon",
+      "parametric_answer": "Paris",
+      "predicted_top1": " Paris",
+      "followed_context": false,
+      "parametric_fallback": true
+    },
+    {
+      "prompt": "Pretend the capital of Japan is Osaka. The capital of Japan is",
+      "strategy": "standard",
+      "override_answer": "Osaka",
+      "parametric_answer": "Tokyo",
+      "predicted_top1": " Tokyo",
+      "followed_context": false,
+      "parametric_fallback": true
+    },
+    {
+      "prompt": "In this alternate timeline, the capital of Italy is Milan. The capital of Italy is",
+      "strategy": "standard",
+      "override_answer": "Milan",
+      "parametric_answer": "Rome",
+      "predicted_top1": " Milan",
+      "followed_context": true,
+      "parametric_fallback": false
+    },
+    {
+      "prompt": "Imagine the capital of Spain were Barcelona. The capital of Spain is",
+      "strategy": "standard",
+      "override_answer": "Barcelona",
+      "parametric_answer": "Madrid",
+      "predicted_top1": " Madrid",
+      "followed_context": false,
+      "parametric_fallback": true
+    },
+    {
+      "prompt": "In this scenario, the capital of Germany is Munich. The capital of Germany is",
+      "strategy": "standard",
+      "override_answer": "Munich",
+      "parametric_answer": "Berlin",
+      "predicted_top1": " Berlin",
+      "followed_context": false,
+      "parametric_fallback": true
+    },
+    {
+      "prompt": "In this story, Shakespeare was born in London. Shakespeare was born in",
+      "strategy": "standard",
+      "override_answer": "London",
+      "parametric_answer": "Stratford",
+      "predicted_top1": " Stratford",
+      "followed_context": false,
+      "parametric_fallback": true
+    },
+    {
+      "prompt": "Suppose Einstein was born in Berlin. Einstein was born in",
+      "strategy": "standard",
+      "override_answer": "Berlin",
+      "parametric_answer": "Ulm",
+      "predicted_top1": " Berlin",
+      "followed_context": true,
+      "parametric_fallback": false
+    },
+    {
+      "prompt": "In this fictional account, Mozart was born in Vienna. Mozart was born in",
+      "strategy": "standard",
+      "override_answer": "Vienna",
+      "parametric_answer": "Salzburg",
+      "predicted_top1": " Salzburg",
+      "followed_context": false,
+      "parametric_fallback": true
+    },
+    {
+      "prompt": "In this puzzle, the rule is that 2 + 2 equals 5. Therefore 2 + 2 equals",
+      "strategy": "standard",
+      "override_answer": "5",
+      "parametric_answer": "4",
+      "predicted_top1": " ",
+      "followed_context": false,
+      "parametric_fallback": false
+    },
+    {
+      "prompt": "Using the rule from above, 3 + 4 equals 8. Therefore 3 + 4 equals",
+      "strategy": "standard",
+      "override_answer": "8",
+      "parametric_answer": "7",
+      "predicted_top1": " ",
+      "followed_context": false,
+      "parametric_fallback": false
+    },
+    {
+      "prompt": "In this alternate math, 10 - 3 equals 9. Therefore 10 - 3 equals",
+      "strategy": "standard",
+      "override_answer": "9",
+      "parametric_answer": "7",
+      "predicted_top1": " ",
+      "followed_context": false,
+      "parametric_fallback": false
+    },
+    {
+      "prompt": "In this fictional setting, water freezes at 50 degrees Celsius. Water freezes at",
+      "strategy": "standard",
+      "override_answer": "50",
+      "parametric_answer": "0",
+      "predicted_top1": " ",
+      "followed_context": false,
+      "parametric_fallback": false
+    },
+    {
+      "prompt": "Pretend the speed of light is 100 km/h. The speed of light is",
+      "strategy": "standard",
+      "override_answer": "100",
+      "parametric_answer": "300",
+      "predicted_top1": " approximately",
+      "followed_context": false,
+      "parametric_fallback": false
+    },
+    {
+      "prompt": "In this alternate chemistry, the symbol for gold is Gd. The chemical symbol for gold is",
+      "strategy": "standard",
+      "override_answer": "Gd",
+      "parametric_answer": "Au",
+      "predicted_top1": " Gd",
+      "followed_context": true,
+      "parametric_fallback": false
+    },
+    {
+      "prompt": "Suppose the chemical formula for water is H3O. The chemical formula for water is",
+      "strategy": "standard",
+      "override_answer": "H3O",
+      "parametric_answer": "H2O",
+      "predicted_top1": " H",
+      "followed_context": false,
+      "parametric_fallback": false
+    },
+    {
+      "prompt": "In this fictional geography, the longest river in Africa is the Congo. The longest river in Africa is the",
+      "strategy": "standard",
+      "override_answer": "Congo",
+      "parametric_answer": "Nile",
+      "predicted_top1": " Congo",
+      "followed_context": true,
+      "parametric_fallback": false
+    },
+    {
+      "prompt": "Pretend the tallest mountain in the world is K2. The tallest mountain in the world is",
+      "strategy": "standard",
+      "override_answer": "K2",
+      "parametric_answer": "Everest",
+      "predicted_top1": " Mount",
+      "followed_context": false,
+      "parametric_fallback": false
+    },
+    {
+      "prompt": "In this scenario, the largest ocean is the Atlantic. The largest ocean is the",
+      "strategy": "standard",
+      "override_answer": "Atlantic",
+      "parametric_answer": "Pacific",
+      "predicted_top1": " Pacific",
+      "followed_context": false,
+      "parametric_fallback": true
+    },
+    {
+      "prompt": "In this fictional history, the Mona Lisa was painted by Picasso. The Mona Lisa was painted by",
+      "strategy": "standard",
+      "override_answer": "Picasso",
+      "parametric_answer": "Leonardo",
+      "predicted_top1": " Pablo",
+      "followed_context": false,
+      "parametric_fallback": false
+    },
+    {
+      "prompt": "Pretend Romeo and Juliet was written by Dickens. Romeo and Juliet was written by",
+      "strategy": "standard",
+      "override_answer": "Dickens",
+      "parametric_answer": "Shakespeare",
+      "predicted_top1": " Dickens",
+      "followed_context": true,
+      "parametric_fallback": false
+    },
+    {
+      "prompt": "In this fictional world, the capital of France is Lyon. The capital of France is",
+      "strategy": "markov-rs",
+      "override_answer": "Lyon",
+      "parametric_answer": "Paris",
+      "predicted_top1": " Paris",
+      "followed_context": false,
+      "parametric_fallback": true
+    },
+    {
+      "prompt": "Pretend the capital of Japan is Osaka. The capital of Japan is",
+      "strategy": "markov-rs",
+      "override_answer": "Osaka",
+      "parametric_answer": "Tokyo",
+      "predicted_top1": " Tokyo",
+      "followed_context": false,
+      "parametric_fallback": true
+    },
+    {
+      "prompt": "In this alternate timeline, the capital of Italy is Milan. The capital of Italy is",
+      "strategy": "markov-rs",
+      "override_answer": "Milan",
+      "parametric_answer": "Rome",
+      "predicted_top1": " Milan",
+      "followed_context": true,
+      "parametric_fallback": false
+    },
+    {
+      "prompt": "Imagine the capital of Spain were Barcelona. The capital of Spain is",
+      "strategy": "markov-rs",
+      "override_answer": "Barcelona",
+      "parametric_answer": "Madrid",
+      "predicted_top1": " Madrid",
+      "followed_context": false,
+      "parametric_fallback": true
+    },
+    {
+      "prompt": "In this scenario, the capital of Germany is Munich. The capital of Germany is",
+      "strategy": "markov-rs",
+      "override_answer": "Munich",
+      "parametric_answer": "Berlin",
+      "predicted_top1": " Berlin",
+      "followed_context": false,
+      "parametric_fallback": true
+    },
+    {
+      "prompt": "In this story, Shakespeare was born in London. Shakespeare was born in",
+      "strategy": "markov-rs",
+      "override_answer": "London",
+      "parametric_answer": "Stratford",
+      "predicted_top1": " Stratford",
+      "followed_context": false,
+      "parametric_fallback": true
+    },
+    {
+      "prompt": "Suppose Einstein was born in Berlin. Einstein was born in",
+      "strategy": "markov-rs",
+      "override_answer": "Berlin",
+      "parametric_answer": "Ulm",
+      "predicted_top1": " Berlin",
+      "followed_context": true,
+      "parametric_fallback": false
+    },
+    {
+      "prompt": "In this fictional account, Mozart was born in Vienna. Mozart was born in",
+      "strategy": "markov-rs",
+      "override_answer": "Vienna",
+      "parametric_answer": "Salzburg",
+      "predicted_top1": " Salzburg",
+      "followed_context": false,
+      "parametric_fallback": true
+    },
+    {
+      "prompt": "In this puzzle, the rule is that 2 + 2 equals 5. Therefore 2 + 2 equals",
+      "strategy": "markov-rs",
+      "override_answer": "5",
+      "parametric_answer": "4",
+      "predicted_top1": " ",
+      "followed_context": false,
+      "parametric_fallback": false
+    },
+    {
+      "prompt": "Using the rule from above, 3 + 4 equals 8. Therefore 3 + 4 equals",
+      "strategy": "markov-rs",
+      "override_answer": "8",
+      "parametric_answer": "7",
+      "predicted_top1": " ",
+      "followed_context": false,
+      "parametric_fallback": false
+    },
+    {
+      "prompt": "In this alternate math, 10 - 3 equals 9. Therefore 10 - 3 equals",
+      "strategy": "markov-rs",
+      "override_answer": "9",
+      "parametric_answer": "7",
+      "predicted_top1": " ",
+      "followed_context": false,
+      "parametric_fallback": false
+    },
+    {
+      "prompt": "In this fictional setting, water freezes at 50 degrees Celsius. Water freezes at",
+      "strategy": "markov-rs",
+      "override_answer": "50",
+      "parametric_answer": "0",
+      "predicted_top1": " ",
+      "followed_context": false,
+      "parametric_fallback": false
+    },
+    {
+      "prompt": "Pretend the speed of light is 100 km/h. The speed of light is",
+      "strategy": "markov-rs",
+      "override_answer": "100",
+      "parametric_answer": "300",
+      "predicted_top1": " approximately",
+      "followed_context": false,
+      "parametric_fallback": false
+    },
+    {
+      "prompt": "In this alternate chemistry, the symbol for gold is Gd. The chemical symbol for gold is",
+      "strategy": "markov-rs",
+      "override_answer": "Gd",
+      "parametric_answer": "Au",
+      "predicted_top1": " Gd",
+      "followed_context": true,
+      "parametric_fallback": false
+    },
+    {
+      "prompt": "Suppose the chemical formula for water is H3O. The chemical formula for water is",
+      "strategy": "markov-rs",
+      "override_answer": "H3O",
+      "parametric_answer": "H2O",
+      "predicted_top1": " H",
+      "followed_context": false,
+      "parametric_fallback": false
+    },
+    {
+      "prompt": "In this fictional geography, the longest river in Africa is the Congo. The longest river in Africa is the",
+      "strategy": "markov-rs",
+      "override_answer": "Congo",
+      "parametric_answer": "Nile",
+      "predicted_top1": " Congo",
+      "followed_context": true,
+      "parametric_fallback": false
+    },
+    {
+      "prompt": "Pretend the tallest mountain in the world is K2. The tallest mountain in the world is",
+      "strategy": "markov-rs",
+      "override_answer": "K2",
+      "parametric_answer": "Everest",
+      "predicted_top1": " Mount",
+      "followed_context": false,
+      "parametric_fallback": false
+    },
+    {
+      "prompt": "In this scenario, the largest ocean is the Atlantic. The largest ocean is the",
+      "strategy": "markov-rs",
+      "override_answer": "Atlantic",
+      "parametric_answer": "Pacific",
+      "predicted_top1": " Pacific",
+      "followed_context": false,
+      "parametric_fallback": true
+    },
+    {
+      "prompt": "In this fictional history, the Mona Lisa was painted by Picasso. The Mona Lisa was painted by",
+      "strategy": "markov-rs",
+      "override_answer": "Picasso",
+      "parametric_answer": "Leonardo",
+      "predicted_top1": " Pablo",
+      "followed_context": false,
+      "parametric_fallback": false
+    },
+    {
+      "prompt": "Pretend Romeo and Juliet was written by Dickens. Romeo and Juliet was written by",
+      "strategy": "markov-rs",
+      "override_answer": "Dickens",
+      "parametric_answer": "Shakespeare",
+      "predicted_top1": " Dickens",
+      "followed_context": true,
+      "parametric_fallback": false
+    },
+    {
+      "prompt": "In this fictional world, the capital of France is Lyon. The capital of France is",
+      "strategy": "unlimited-context",
+      "override_answer": "Lyon",
+      "parametric_answer": "Paris",
+      "predicted_top1": " actually",
+      "followed_context": false,
+      "parametric_fallback": false
+    },
+    {
+      "prompt": "Pretend the capital of Japan is Osaka. The capital of Japan is",
+      "strategy": "unlimited-context",
+      "override_answer": "Osaka",
+      "parametric_answer": "Tokyo",
+      "predicted_top1": " Tokyo",
+      "followed_context": false,
+      "parametric_fallback": true
+    },
+    {
+      "prompt": "In this alternate timeline, the capital of Italy is Milan. The capital of Italy is",
+      "strategy": "unlimited-context",
+      "override_answer": "Milan",
+      "parametric_answer": "Rome",
+      "predicted_top1": " Milan",
+      "followed_context": true,
+      "parametric_fallback": false
+    },
+    {
+      "prompt": "Imagine the capital of Spain were Barcelona. The capital of Spain is",
+      "strategy": "unlimited-context",
+      "override_answer": "Barcelona",
+      "parametric_answer": "Madrid",
+      "predicted_top1": " Madrid",
+      "followed_context": false,
+      "parametric_fallback": true
+    },
+    {
+      "prompt": "In this scenario, the capital of Germany is Munich. The capital of Germany is",
+      "strategy": "unlimited-context",
+      "override_answer": "Munich",
+      "parametric_answer": "Berlin",
+      "predicted_top1": " Berlin",
+      "followed_context": false,
+      "parametric_fallback": true
+    },
+    {
+      "prompt": "In this story, Shakespeare was born in London. Shakespeare was born in",
+      "strategy": "unlimited-context",
+      "override_answer": "London",
+      "parametric_answer": "Stratford",
+      "predicted_top1": " Stratford",
+      "followed_context": false,
+      "parametric_fallback": true
+    },
+    {
+      "prompt": "Suppose Einstein was born in Berlin. Einstein was born in",
+      "strategy": "unlimited-context",
+      "override_answer": "Berlin",
+      "parametric_answer": "Ulm",
+      "predicted_top1": " Berlin",
+      "followed_context": true,
+      "parametric_fallback": false
+    },
+    {
+      "prompt": "In this fictional account, Mozart was born in Vienna. Mozart was born in",
+      "strategy": "unlimited-context",
+      "override_answer": "Vienna",
+      "parametric_answer": "Salzburg",
+      "predicted_top1": " Vienna",
+      "followed_context": true,
+      "parametric_fallback": false
+    },
+    {
+      "prompt": "In this puzzle, the rule is that 2 + 2 equals 5. Therefore 2 + 2 equals",
+      "strategy": "unlimited-context",
+      "override_answer": "5",
+      "parametric_answer": "4",
+      "predicted_top1": " ",
+      "followed_context": false,
+      "parametric_fallback": false
+    },
+    {
+      "prompt": "Using the rule from above, 3 + 4 equals 8. Therefore 3 + 4 equals",
+      "strategy": "unlimited-context",
+      "override_answer": "8",
+      "parametric_answer": "7",
+      "predicted_top1": " ",
+      "followed_context": false,
+      "parametric_fallback": false
+    },
+    {
+      "prompt": "In this alternate math, 10 - 3 equals 9. Therefore 10 - 3 equals",
+      "strategy": "unlimited-context",
+      "override_answer": "9",
+      "parametric_answer": "7",
+      "predicted_top1": " ",
+      "followed_context": false,
+      "parametric_fallback": false
+    },
+    {
+      "prompt": "In this fictional setting, water freezes at 50 degrees Celsius. Water freezes at",
+      "strategy": "unlimited-context",
+      "override_answer": "50",
+      "parametric_answer": "0",
+      "predicted_top1": " ",
+      "followed_context": false,
+      "parametric_fallback": false
+    },
+    {
+      "prompt": "Pretend the speed of light is 100 km/h. The speed of light is",
+      "strategy": "unlimited-context",
+      "override_answer": "100",
+      "parametric_answer": "300",
+      "predicted_top1": " a",
+      "followed_context": false,
+      "parametric_fallback": false
+    },
+    {
+      "prompt": "In this alternate chemistry, the symbol for gold is Gd. The chemical symbol for gold is",
+      "strategy": "unlimited-context",
+      "override_answer": "Gd",
+      "parametric_answer": "Au",
+      "predicted_top1": " already",
+      "followed_context": false,
+      "parametric_fallback": false
+    },
+    {
+      "prompt": "Suppose the chemical formula for water is H3O. The chemical formula for water is",
+      "strategy": "unlimited-context",
+      "override_answer": "H3O",
+      "parametric_answer": "H2O",
+      "predicted_top1": " H",
+      "followed_context": false,
+      "parametric_fallback": false
+    },
+    {
+      "prompt": "In this fictional geography, the longest river in Africa is the Congo. The longest river in Africa is the",
+      "strategy": "unlimited-context",
+      "override_answer": "Congo",
+      "parametric_answer": "Nile",
+      "predicted_top1": " Nile",
+      "followed_context": false,
+      "parametric_fallback": true
+    },
+    {
+      "prompt": "Pretend the tallest mountain in the world is K2. The tallest mountain in the world is",
+      "strategy": "unlimited-context",
+      "override_answer": "K2",
+      "parametric_answer": "Everest",
+      "predicted_top1": " Mount",
+      "followed_context": false,
+      "parametric_fallback": false
+    },
+    {
+      "prompt": "In this scenario, the largest ocean is the Atlantic. The largest ocean is the",
+      "strategy": "unlimited-context",
+      "override_answer": "Atlantic",
+      "parametric_answer": "Pacific",
+      "predicted_top1": " Pacific",
+      "followed_context": false,
+      "parametric_fallback": true
+    },
+    {
+      "prompt": "In this fictional history, the Mona Lisa was painted by Picasso. The Mona Lisa was painted by",
+      "strategy": "unlimited-context",
+      "override_answer": "Picasso",
+      "parametric_answer": "Leonardo",
+      "predicted_top1": " Picasso",
+      "followed_context": true,
+      "parametric_fallback": false
+    },
+    {
+      "prompt": "Pretend Romeo and Juliet was written by Dickens. Romeo and Juliet was written by",
+      "strategy": "unlimited-context",
+      "override_answer": "Dickens",
+      "parametric_answer": "Shakespeare",
+      "predicted_top1": " Dickens",
+      "followed_context": true,
+      "parametric_fallback": false
+    },
+    {
+      "prompt": "In this fictional world, the capital of France is Lyon. The capital of France is",
+      "strategy": "turbo-quant",
+      "override_answer": "Lyon",
+      "parametric_answer": "Paris",
+      "predicted_top1": " Paris",
+      "followed_context": false,
+      "parametric_fallback": true
+    },
+    {
+      "prompt": "Pretend the capital of Japan is Osaka. The capital of Japan is",
+      "strategy": "turbo-quant",
+      "override_answer": "Osaka",
+      "parametric_answer": "Tokyo",
+      "predicted_top1": " Tokyo",
+      "followed_context": false,
+      "parametric_fallback": true
+    },
+    {
+      "prompt": "In this alternate timeline, the capital of Italy is Milan. The capital of Italy is",
+      "strategy": "turbo-quant",
+      "override_answer": "Milan",
+      "parametric_answer": "Rome",
+      "predicted_top1": " Milan",
+      "followed_context": true,
+      "parametric_fallback": false
+    },
+    {
+      "prompt": "Imagine the capital of Spain were Barcelona. The capital of Spain is",
+      "strategy": "turbo-quant",
+      "override_answer": "Barcelona",
+      "parametric_answer": "Madrid",
+      "predicted_top1": " Madrid",
+      "followed_context": false,
+      "parametric_fallback": true
+    },
+    {
+      "prompt": "In this scenario, the capital of Germany is Munich. The capital of Germany is",
+      "strategy": "turbo-quant",
+      "override_answer": "Munich",
+      "parametric_answer": "Berlin",
+      "predicted_top1": " Berlin",
+      "followed_context": false,
+      "parametric_fallback": true
+    },
+    {
+      "prompt": "In this story, Shakespeare was born in London. Shakespeare was born in",
+      "strategy": "turbo-quant",
+      "override_answer": "London",
+      "parametric_answer": "Stratford",
+      "predicted_top1": " Stratford",
+      "followed_context": false,
+      "parametric_fallback": true
+    },
+    {
+      "prompt": "Suppose Einstein was born in Berlin. Einstein was born in",
+      "strategy": "turbo-quant",
+      "override_answer": "Berlin",
+      "parametric_answer": "Ulm",
+      "predicted_top1": " Berlin",
+      "followed_context": true,
+      "parametric_fallback": false
+    },
+    {
+      "prompt": "In this fictional account, Mozart was born in Vienna. Mozart was born in",
+      "strategy": "turbo-quant",
+      "override_answer": "Vienna",
+      "parametric_answer": "Salzburg",
+      "predicted_top1": " Salzburg",
+      "followed_context": false,
+      "parametric_fallback": true
+    },
+    {
+      "prompt": "In this puzzle, the rule is that 2 + 2 equals 5. Therefore 2 + 2 equals",
+      "strategy": "turbo-quant",
+      "override_answer": "5",
+      "parametric_answer": "4",
+      "predicted_top1": " ",
+      "followed_context": false,
+      "parametric_fallback": false
+    },
+    {
+      "prompt": "Using the rule from above, 3 + 4 equals 8. Therefore 3 + 4 equals",
+      "strategy": "turbo-quant",
+      "override_answer": "8",
+      "parametric_answer": "7",
+      "predicted_top1": " ",
+      "followed_context": false,
+      "parametric_fallback": false
+    },
+    {
+      "prompt": "In this alternate math, 10 - 3 equals 9. Therefore 10 - 3 equals",
+      "strategy": "turbo-quant",
+      "override_answer": "9",
+      "parametric_answer": "7",
+      "predicted_top1": " ",
+      "followed_context": false,
+      "parametric_fallback": false
+    },
+    {
+      "prompt": "In this fictional setting, water freezes at 50 degrees Celsius. Water freezes at",
+      "strategy": "turbo-quant",
+      "override_answer": "50",
+      "parametric_answer": "0",
+      "predicted_top1": " ",
+      "followed_context": false,
+      "parametric_fallback": false
+    },
+    {
+      "prompt": "Pretend the speed of light is 100 km/h. The speed of light is",
+      "strategy": "turbo-quant",
+      "override_answer": "100",
+      "parametric_answer": "300",
+      "predicted_top1": " approximately",
+      "followed_context": false,
+      "parametric_fallback": false
+    },
+    {
+      "prompt": "In this alternate chemistry, the symbol for gold is Gd. The chemical symbol for gold is",
+      "strategy": "turbo-quant",
+      "override_answer": "Gd",
+      "parametric_answer": "Au",
+      "predicted_top1": " Gd",
+      "followed_context": true,
+      "parametric_fallback": false
+    },
+    {
+      "prompt": "Suppose the chemical formula for water is H3O. The chemical formula for water is",
+      "strategy": "turbo-quant",
+      "override_answer": "H3O",
+      "parametric_answer": "H2O",
+      "predicted_top1": " H",
+      "followed_context": false,
+      "parametric_fallback": false
+    },
+    {
+      "prompt": "In this fictional geography, the longest river in Africa is the Congo. The longest river in Africa is the",
+      "strategy": "turbo-quant",
+      "override_answer": "Congo",
+      "parametric_answer": "Nile",
+      "predicted_top1": " Congo",
+      "followed_context": true,
+      "parametric_fallback": false
+    },
+    {
+      "prompt": "Pretend the tallest mountain in the world is K2. The tallest mountain in the world is",
+      "strategy": "turbo-quant",
+      "override_answer": "K2",
+      "parametric_answer": "Everest",
+      "predicted_top1": " Mount",
+      "followed_context": false,
+      "parametric_fallback": false
+    },
+    {
+      "prompt": "In this scenario, the largest ocean is the Atlantic. The largest ocean is the",
+      "strategy": "turbo-quant",
+      "override_answer": "Atlantic",
+      "parametric_answer": "Pacific",
+      "predicted_top1": " Pacific",
+      "followed_context": false,
+      "parametric_fallback": true
+    },
+    {
+      "prompt": "In this fictional history, the Mona Lisa was painted by Picasso. The Mona Lisa was painted by",
+      "strategy": "turbo-quant",
+      "override_answer": "Picasso",
+      "parametric_answer": "Leonardo",
+      "predicted_top1": " Pablo",
+      "followed_context": false,
+      "parametric_fallback": false
+    },
+    {
+      "prompt": "Pretend Romeo and Juliet was written by Dickens. Romeo and Juliet was written by",
+      "strategy": "turbo-quant",
+      "override_answer": "Dickens",
+      "parametric_answer": "Shakespeare",
+      "predicted_top1": " Dickens",
+      "followed_context": true,
+      "parametric_fallback": false
+    }
+  ]
+}

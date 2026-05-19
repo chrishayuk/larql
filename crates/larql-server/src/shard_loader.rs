@@ -1,28 +1,19 @@
-//! Mode B shard downloader — HTTP range download, SHA-256 verify, atomic rename.
+//! Mode B shard downloader — streams a tar from the donor's `/v1/shard`
+//! endpoint, optionally verifies the SHA-256 of the byte stream, and
+//! unpacks it into `store_path/{model_id}/layers-{start}-{end}/`.
 //!
-//! Called when the server receives an `AssignMsg` from the router.
-//! The shard is downloaded from `origin_url`, verified against `expected_hash`,
-//! and stored atomically at `store_path/model_id/layers-{start}-{end}/`.
-//!
-//! Current implementation: downloads a single tarball from
-//! `{origin_url}/v1/shard/{model_id}/{layer_start}-{layer_end}` and unpacks it.
-//!
-//! The `expected_hash` field from `AssignMsg` is the SHA-256 of the tarball.
-//! An empty hash ("0000000000000000" or "") skips the hash check — useful for
-//! development; not recommended for production.
+//! The unpack is atomic: the tar is unpacked into a sibling `.tmp` directory
+//! that is renamed onto the final path on success. A partial download leaves
+//! a `.tmp` directory behind which the next attempt removes.
 
 use sha2::{Digest, Sha256};
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use tracing::{info, warn};
 
 const SHARD_ENDPOINT: &str = "/v1/shard";
 
-/// Download a shard from `origin_url`, verify the hash, store at
-/// `store_path/model_id/layers-{layer_start}-{layer_end}/`, and announce
-/// it available to the server (by creating the shard directory).
-///
-/// This is a best-effort async implementation: it uses `reqwest` for
-/// HTTP download and `tokio::fs` for async file I/O.
+/// Download a shard tar from `origin_url`, verify the hash, atomically unpack
+/// to `store_path/{model_id}/layers-{layer_start}-{layer_end}/`.
 pub async fn download_and_load_shard(
     origin_url: &str,
     store_path: &str,
@@ -36,19 +27,26 @@ pub async fn download_and_load_shard(
         origin_url.trim_end_matches('/')
     );
 
-    let shard_dir = PathBuf::from(store_path)
-        .join(model_id)
-        .join(format!("layers-{layer_start}-{layer_end}"));
-    let tmp_path = shard_dir.with_extension("tmp");
+    let model_dir = PathBuf::from(store_path).join(model_id);
+    let shard_dir = model_dir.join(format!("layers-{layer_start}-{layer_end}"));
+    let tmp_dir = model_dir.join(format!(".tmp-layers-{layer_start}-{layer_end}"));
 
-    // Create parent directories.
-    tokio::fs::create_dir_all(store_path).await?;
+    tokio::fs::create_dir_all(&model_dir).await?;
 
-    info!(url = %url, dest = %tmp_path.display(), "Mode B: downloading shard…");
+    // Remove a stale tmp directory from an earlier aborted attempt.
+    if tokio::fs::metadata(&tmp_dir).await.is_ok() {
+        let _ = tokio::fs::remove_dir_all(&tmp_dir).await;
+    }
+    // If the final shard already exists, treat as success (idempotent).
+    if tokio::fs::metadata(&shard_dir).await.is_ok() {
+        info!(dest = %shard_dir.display(), "Mode B: shard already present — skipping download");
+        return Ok(());
+    }
 
-    // HTTP download.
+    info!(url = %url, dest = %shard_dir.display(), "Mode B: downloading shard tar…");
+
     let client = reqwest::Client::builder()
-        .timeout(std::time::Duration::from_secs(600)) // 10 min for large shards
+        .timeout(std::time::Duration::from_secs(600))
         .build()?;
     let resp = client.get(&url).send().await?;
     if !resp.status().is_success() {
@@ -58,10 +56,9 @@ pub async fn download_and_load_shard(
     let bytes = resp.bytes().await?;
     info!(
         bytes = bytes.len(),
-        "Mode B: download complete — verifying hash…"
+        "Mode B: download complete — unpacking…"
     );
 
-    // Hash verification (skip if empty/placeholder hash).
     let skip_hash = expected_hash.is_empty()
         || expected_hash == "0000000000000000"
         || expected_hash.chars().all(|c| c == '0');
@@ -80,36 +77,166 @@ pub async fn download_and_load_shard(
         warn!("Mode B: hash check skipped (placeholder hash)");
     }
 
-    // Write to tmp, then atomically rename to final location.
-    // The shard is a flat-file vindex directory packed as a single-file tar.
-    // For now: write the raw bytes as-is (origin server sends the directory
-    // content; in production this would be a tar that gets unpacked).
-    tokio::fs::create_dir_all(&shard_dir.parent().unwrap_or(&shard_dir)).await?;
-    tokio::fs::write(&tmp_path, &bytes).await?;
-    tokio::fs::rename(&tmp_path, &shard_dir).await?;
+    // Unpack in a blocking task — `tar::Archive` is sync I/O.
+    let tmp_dir_for_blocking = tmp_dir.clone();
+    let bytes_for_blocking = bytes.clone();
+    tokio::task::spawn_blocking(move || -> std::io::Result<()> {
+        std::fs::create_dir_all(&tmp_dir_for_blocking)?;
+        let cursor = std::io::Cursor::new(bytes_for_blocking);
+        let mut archive = tar::Archive::new(cursor);
+        archive.unpack(&tmp_dir_for_blocking)?;
+        Ok(())
+    })
+    .await
+    .map_err(|e| format!("unpack task join failed: {e}"))??;
 
-    info!(
-        dest = %shard_dir.display(),
-        "Mode B: shard stored — ready"
-    );
+    // Atomic rename onto the final path.
+    if let Err(e) = tokio::fs::rename(&tmp_dir, &shard_dir).await {
+        // Best-effort cleanup of the half-unpacked tmp dir.
+        let _ = tokio::fs::remove_dir_all(&tmp_dir).await;
+        return Err(format!(
+            "atomic rename {} -> {} failed: {e}",
+            tmp_dir.display(),
+            shard_dir.display()
+        )
+        .into());
+    }
+
+    info!(dest = %shard_dir.display(), "Mode B: shard unpacked — ready");
     Ok(())
+}
+
+#[allow(dead_code)] // exposed for tests + future external callers
+pub fn shard_dest_path(store_path: &str, model_id: &str, start: u32, end: u32) -> PathBuf {
+    Path::new(store_path)
+        .join(model_id)
+        .join(format!("layers-{start}-{end}"))
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use tempfile::TempDir;
+
+    fn build_tar_in_memory(files: &[(&str, &[u8])]) -> Vec<u8> {
+        let mut buf = Vec::new();
+        {
+            let mut tar = tar::Builder::new(&mut buf);
+            for (name, content) in files {
+                let mut header = tar::Header::new_gnu();
+                header.set_size(content.len() as u64);
+                header.set_mode(0o644);
+                header.set_cksum();
+                tar.append_data(&mut header, name, *content).unwrap();
+            }
+            tar.finish().unwrap();
+        }
+        buf
+    }
 
     #[test]
-    fn shard_dir_path_is_deterministic() {
-        let dir = PathBuf::from("/mnt/shards")
-            .join("gemma4-26b")
-            .join("layers-0-14");
-        let expected = PathBuf::from("/mnt/shards")
-            .join("gemma4-26b")
-            .join("layers-0-14");
-        // Build the expected value the same way the code under test does, so
-        // the comparison works under whatever the host separator is — Windows
-        // produces `\` joins, Unix produces `/`.
-        assert_eq!(dir, expected);
+    fn shard_dest_path_combines_segments() {
+        let p = shard_dest_path("/mnt/shards", "gemma4-26b", 0, 14);
+        assert!(p.ends_with("gemma4-26b/layers-0-14") || p.ends_with("gemma4-26b\\layers-0-14"));
+    }
+
+    #[tokio::test]
+    async fn unpacks_tar_into_atomic_destination() {
+        // End-to-end: serve a tar from a hyper-axum test server and verify the
+        // client unpacks it into the right directory atomically.
+        use axum::body::Body;
+        use axum::extract::Path;
+        use axum::http::{header, StatusCode};
+        use axum::response::Response;
+        use axum::routing::get;
+        use axum::Router;
+
+        async fn serve_tar(Path((_model, _range)): Path<(String, String)>) -> Response {
+            let tar = build_tar_in_memory(&[
+                ("index.json", b"{\"hello\":\"world\"}"),
+                ("layer-0.bin", &[1u8, 2, 3, 4]),
+            ]);
+            Response::builder()
+                .status(StatusCode::OK)
+                .header(header::CONTENT_TYPE, "application/x-tar")
+                .body(Body::from(tar))
+                .unwrap()
+        }
+
+        let app = Router::new().route("/v1/shard/{model_id}/{range}", get(serve_tar));
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let addr = listener.local_addr().unwrap();
+        let server_handle = tokio::spawn(async move {
+            axum::serve(listener, app).await.unwrap();
+        });
+
+        let tmp = TempDir::new().unwrap();
+        let store = tmp.path().to_str().unwrap();
+        let origin = format!("http://{addr}");
+
+        download_and_load_shard(&origin, store, "", "gemma-test", 0, 5)
+            .await
+            .expect("download must succeed");
+
+        let dest = shard_dest_path(store, "gemma-test", 0, 5);
+        assert!(dest.is_dir(), "shard directory not created at {dest:?}");
+        let manifest = std::fs::read(dest.join("index.json")).unwrap();
+        assert_eq!(manifest, b"{\"hello\":\"world\"}");
+        let layer = std::fs::read(dest.join("layer-0.bin")).unwrap();
+        assert_eq!(layer, &[1u8, 2, 3, 4]);
+
+        // tmp directory must have been renamed away.
+        let tmp_dir = tmp.path().join("gemma-test").join(".tmp-layers-0-5");
+        assert!(
+            !tmp_dir.exists(),
+            "stale tmp directory survived: {tmp_dir:?}"
+        );
+
+        // Idempotent re-call must not fail.
+        download_and_load_shard(&origin, store, "", "gemma-test", 0, 5)
+            .await
+            .expect("re-download must be idempotent");
+
+        server_handle.abort();
+    }
+
+    #[tokio::test]
+    async fn rejects_hash_mismatch() {
+        use axum::body::Body;
+        use axum::extract::Path;
+        use axum::http::{header, StatusCode};
+        use axum::response::Response;
+        use axum::routing::get;
+        use axum::Router;
+
+        async fn serve_tar(Path((_m, _r)): Path<(String, String)>) -> Response {
+            let tar = build_tar_in_memory(&[("a.txt", b"hi")]);
+            Response::builder()
+                .status(StatusCode::OK)
+                .header(header::CONTENT_TYPE, "application/x-tar")
+                .body(Body::from(tar))
+                .unwrap()
+        }
+
+        let app = Router::new().route("/v1/shard/{model_id}/{range}", get(serve_tar));
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let addr = listener.local_addr().unwrap();
+        tokio::spawn(async move { axum::serve(listener, app).await.unwrap() });
+
+        let tmp = TempDir::new().unwrap();
+        let store = tmp.path().to_str().unwrap();
+        let origin = format!("http://{addr}");
+
+        let err = download_and_load_shard(
+            &origin,
+            store,
+            "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff",
+            "gemma-test",
+            0,
+            0,
+        )
+        .await
+        .expect_err("expected hash mismatch error");
+        assert!(format!("{err}").contains("hash mismatch"));
     }
 }

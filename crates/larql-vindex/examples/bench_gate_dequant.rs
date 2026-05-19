@@ -5,7 +5,7 @@
 //!
 //! 1. `gate_vectors.bin` — the feature-major, f16-or-f32 copy used by
 //!    the gate KNN on every `DESCRIBE`/`WALK`/`INFER` call.
-//! 2. `interleaved_q4k.bin` — the Q4_K-packed copy used by the FFN
+//! 2. `interleaved_kquant.bin` — the Q4_K-packed copy used by the FFN
 //!    forward pass.
 //!
 //! These are the same numbers at two different precisions. If startup
@@ -26,7 +26,7 @@
 //! ```
 //!
 //! Requires a vindex extracted with `--quant q4k` (so
-//! `interleaved_q4k.bin` + its manifest exist) *and* still carrying
+//! `interleaved_kquant.bin` + its manifest exist) *and* still carrying
 //! `gate_vectors.bin` (so approach A can be measured against it).
 //! Every q4k extract today satisfies both.
 
@@ -88,7 +88,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     if !vindex_path.is_dir() {
         eprintln!(
             "usage: bench_gate_dequant --vindex PATH [--iters N]\n\
-             Requires a Q4K vindex containing both gate_vectors.bin and interleaved_q4k.bin.",
+             Requires a Q4K vindex containing both gate_vectors.bin and interleaved_kquant.bin.",
         );
         std::process::exit(1);
     }
@@ -115,14 +115,14 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let gate_gb = file_size_gb(&gate_path);
     let interleaved_gb = file_size_gb(&interleaved_path);
     println!("\n  gate_vectors.bin:   {gate_gb:.2} GB   (savings if dropped)");
-    println!("  interleaved_q4k.bin: {interleaved_gb:.2} GB  (kept, contains gate slice)");
+    println!("  interleaved_kquant.bin: {interleaved_gb:.2} GB  (kept, contains gate slice)");
 
-    // ── Load the index (both gate_vectors and interleaved_q4k must be mmap'd) ──
+    // ── Load the index (both gate_vectors and interleaved_kquant must be mmap'd) ──
     let mut cb = SilentLoadCallbacks;
     let rss_before_load = rss_mb();
     let t0 = Instant::now();
     let mut idx = VectorIndex::load_vindex(&vindex_path, &mut cb)?;
-    idx.load_interleaved_q4k(&vindex_path)?;
+    idx.load_interleaved_kquant(&vindex_path)?;
     let load_ms = t0.elapsed().as_secs_f64() * 1000.0;
     let rss_after_load = rss_mb();
     println!(
@@ -153,7 +153,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         println!("  iter {iter}: {elapsed_ms:7.1}ms  (checksum {sum:+.4e})");
     }
 
-    // ── Approach B: dequantize gate slice from interleaved_q4k.bin, pack as f16 ──
+    // ── Approach B: dequantize gate slice from interleaved_kquant.bin, pack as f16 ──
     println!("\n── Approach B: dequantize Q4K gate per layer → f16 buffer ──");
     let mut b_times = Vec::with_capacity(iters);
     let mut peak_layer_f16_bytes: usize = 0;
@@ -165,7 +165,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         let mut peak_rss_iter: f64 = rss_start;
         for layer in 0..num_layers {
             let layer_data = idx
-                .interleaved_q4k_layer_data(layer)
+                .interleaved_kquant_layer_data(layer)
                 .ok_or("missing interleaved manifest entry")?;
             let (gate_bytes, gate_format) = layer_data[0];
             if gate_format != "Q4_K" {

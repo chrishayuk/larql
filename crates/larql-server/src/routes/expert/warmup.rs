@@ -91,7 +91,7 @@ pub fn warmup_hnsw_unit_cache(model: &LoadedModel) -> Result<(usize, usize, usiz
 /// allocates ~10MB × experts_owned × num_layers of Metal-resident memory).
 #[cfg(all(feature = "metal-experts", target_os = "macos"))]
 pub fn warmup_metal_expert_cache(model: &LoadedModel) -> Result<usize, String> {
-    use larql_compute::MetalBackend;
+    use larql_compute_metal::MetalBackend;
 
     if env_flags::no_warmup() {
         return Ok(0);

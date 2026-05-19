@@ -1,0 +1,14 @@
+[package]
+name = "larql-vindex-spec"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+description = "Public contract for the vindex on-disk format: Rust types, JSON Schema, validation thresholds. Zero larql-* deps."
+keywords = ["vindex", "spec", "schema", "manifest"]
+categories = ["data-structures", "encoding"]
+
+[dependencies]
+serde = { workspace = true }
+serde_json = { workspace = true }
+thiserror = { workspace = true }

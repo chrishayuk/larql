@@ -9,15 +9,15 @@
 use crate::config::{ModelConfig, RopeScaling};
 
 use super::config_io::{
-    CONFIG_KEY_HIDDEN_SIZE, CONFIG_KEY_INTERMEDIATE_SIZE, CONFIG_KEY_NUM_HIDDEN_LAYERS,
+    CONFIG_KEY_HIDDEN_SIZE_ALIASES, CONFIG_KEY_INTERMEDIATE_SIZE_ALIASES,
+    CONFIG_KEY_NUM_ATTENTION_HEADS_ALIASES, CONFIG_KEY_NUM_HIDDEN_LAYERS_ALIASES,
     CONFIG_KEY_TEXT_CONFIG,
 };
 
 // ── RoPE base defaults ───────────────────────────────────────────────────────
-/// Default RoPE theta for Gemma family models.
-const ROPE_BASE_GEMMA: f64 = 1_000_000.0;
-/// Default RoPE theta for all other model families.
-const ROPE_BASE_DEFAULT: f64 = 10_000.0;
+// Shared with `architectures/gemma{3,4}.rs` and `config.rs` via `defaults`,
+// so the loader fallback and the per-arch fallback agree.
+use crate::defaults::{ROPE_BASE_DEFAULT, ROPE_BASE_GEMMA};
 
 // ── Architecture-class defaults for attention-shape fields ──────────────────
 // These are NOT topology guesses — they're the values transformers uses
@@ -57,17 +57,22 @@ fn field_u64(config: &serde_json::Value, keys: &[&str]) -> Option<u64> {
     keys.iter().find_map(|k| config[k].as_u64())
 }
 
-/// Read a topology field as `usize`, preferring `text_config` (multimodal
-/// nesting) and falling back to the top-level object. Returns 0 when the
-/// field is absent or not a `u64`; the configured field validators reject
-/// 0 at the next layer, so the magic-number guess defaults (e.g. 2048)
-/// don't leak in and masquerade as a real model topology.
-fn topology_field(config: &serde_json::Value, text_config: &serde_json::Value, key: &str) -> usize {
-    text_config
-        .get(key)
-        .and_then(|v| v.as_u64())
-        .or_else(|| config.get(key).and_then(|v| v.as_u64()))
-        .unwrap_or(0) as usize
+/// Read a topology field by alias list as `usize`, preferring `text_config`
+/// (multimodal nesting) and falling back to the top-level object. The first
+/// alias to resolve wins. Returns 0 when no alias is present; the configured
+/// field validators reject 0 at the next layer, so the magic-number guess
+/// defaults (e.g. 2048) don't leak in and masquerade as a real model topology.
+///
+/// Alias lists live in `config_io.rs` so the loader's `require_config_fields`
+/// validator and this parser agree on what names are acceptable for each
+/// canonical field — see [`super::config_io::CONFIG_KEY_HIDDEN_SIZE_ALIASES`]
+/// (GPT-2's `n_embd` etc.).
+fn topology_field(
+    config: &serde_json::Value,
+    text_config: &serde_json::Value,
+    aliases: &[&str],
+) -> usize {
+    super::config_io::read_aliased_u64(config, text_config, aliases).unwrap_or(0) as usize
 }
 
 /// Parse [`ModelConfig`] from a `config.json` JSON value.
@@ -95,16 +100,27 @@ pub(super) fn parse_model_config(config: &serde_json::Value) -> ModelConfig {
     // (test ergonomics); the validator catches the zero downstream
     // rather than letting a magic-number default impersonate a real
     // topology and panic deep inside extract.
-    let num_layers = topology_field(config, text_config, CONFIG_KEY_NUM_HIDDEN_LAYERS);
-    let hidden_size = topology_field(config, text_config, CONFIG_KEY_HIDDEN_SIZE);
-    let intermediate_size = topology_field(config, text_config, CONFIG_KEY_INTERMEDIATE_SIZE);
+    let num_layers = topology_field(config, text_config, CONFIG_KEY_NUM_HIDDEN_LAYERS_ALIASES);
+    let hidden_size = topology_field(config, text_config, CONFIG_KEY_HIDDEN_SIZE_ALIASES);
+    let mut intermediate_size =
+        topology_field(config, text_config, CONFIG_KEY_INTERMEDIATE_SIZE_ALIASES);
+    // GPT-2 doesn't ship `n_inner` and HF computes intermediate_size as
+    // `4 * n_embd` at the model boundary. Reproduce that here so the
+    // validator (which has already accepted the missing field via the
+    // gpt2-specific alias rule) doesn't surface a 0.
+    if intermediate_size == 0 && model_type == "gpt2" && hidden_size > 0 {
+        intermediate_size = 4 * hidden_size;
+    }
     // Gemma HF configs commonly omit num_attention_heads, head_dim, and
     // num_key_value_heads — they're architecture-class defaults from
     // transformers. See the `DEFAULT_*` constants for the values used.
     let default_head_dim: usize = if is_gemma { DEFAULT_HEAD_DIM_GEMMA } else { 0 };
-    let num_q_heads = text_config["num_attention_heads"]
-        .as_u64()
-        .unwrap_or(DEFAULT_NUM_ATTENTION_HEADS) as usize;
+    let num_q_heads = super::config_io::read_aliased_u64(
+        config,
+        text_config,
+        CONFIG_KEY_NUM_ATTENTION_HEADS_ALIASES,
+    )
+    .unwrap_or(DEFAULT_NUM_ATTENTION_HEADS) as usize;
     // head_dim: explicit config value, Gemma class default, or compute
     // from hidden/heads (the conventional MHA invariant).
     let head_dim = text_config["head_dim"]
@@ -151,20 +167,68 @@ pub(super) fn parse_model_config(config: &serde_json::Value) -> ModelConfig {
     let kv_lora_rank = text_config["kv_lora_rank"].as_u64().map(|v| v as usize);
     let q_lora_rank = text_config["q_lora_rank"].as_u64().map(|v| v as usize);
 
-    // RoPE scaling
+    // RoPE scaling. Four shapes appear in the wild:
+    //
+    // 1. Flat with `factor` (Llama 2-style linear, simple `rope_type=linear`).
+    // 2. `rope_type=llama3` with the four wavelength-band fields below.
+    // 3. Gemma 3 structured per-layer-type:
+    //      `{full_attention: {rope_type: linear, factor: N, ...},
+    //        sliding_attention: {rope_type: default, ...}}`
+    //    In that shape, only the `full_attention` slot carries a non-default
+    //    scaling — sliding layers use plain RoPE — so we lift its `rope_type`
+    //    + `factor` and mark `gemma3_global_only = true`.
+    // 4. Missing entirely (older Llama, Mistral) → `None`.
     let rope_scaling = text_config.get("rope_scaling").and_then(|rs| {
-        // HF uses "type" for most models, but Llama 3.1+ uses "rope_type"
+        // Gemma 3 per-layer-type form.
+        if let Some(full) = rs.get("full_attention") {
+            let scaling_type = full
+                .get("rope_type")
+                .or_else(|| full.get("type"))
+                .and_then(|v| v.as_str())?
+                .to_string();
+            let factor = full.get("factor")?.as_f64()?;
+            return Some(RopeScaling {
+                scaling_type,
+                factor,
+                llama3_low_freq_factor: None,
+                llama3_high_freq_factor: None,
+                llama3_original_max_position_embeddings: None,
+                gemma3_global_only: true,
+            });
+        }
+        // Flat form (Llama, Mistral, Gemma 1/2, etc.).
         let scaling_type = rs
             .get("type")
             .or_else(|| rs.get("rope_type"))
             .and_then(|v| v.as_str())?
             .to_string();
         let factor = rs.get("factor")?.as_f64()?;
+        let llama3_low = rs.get("low_freq_factor").and_then(|v| v.as_f64());
+        let llama3_high = rs.get("high_freq_factor").and_then(|v| v.as_f64());
+        let llama3_old_ctx = rs
+            .get("original_max_position_embeddings")
+            .and_then(|v| v.as_f64());
         Some(RopeScaling {
             scaling_type,
             factor,
+            llama3_low_freq_factor: llama3_low,
+            llama3_high_freq_factor: llama3_high,
+            llama3_original_max_position_embeddings: llama3_old_ctx,
+            gemma3_global_only: false,
         })
     });
+
+    // RMS-norm / LayerNorm epsilon. Field-name aliases across families:
+    //  - `rms_norm_eps`           — Llama, Mistral, Gemma
+    //  - `layer_norm_eps`         — BERT-family
+    //  - `layer_norm_epsilon`     — GPT-2
+    //  - `norm_epsilon`           — StarCoder2
+    // Most modern archs ship 1e-5; older ones used 1e-6. None → arch default.
+    let norm_eps = text_config["rms_norm_eps"]
+        .as_f64()
+        .or_else(|| text_config["layer_norm_eps"].as_f64())
+        .or_else(|| text_config["layer_norm_epsilon"].as_f64())
+        .or_else(|| text_config["norm_epsilon"].as_f64());
 
     // Softcapping and attention scale
     let attn_logit_softcapping = text_config["attn_logit_softcapping"].as_f64();
@@ -215,6 +279,7 @@ pub(super) fn parse_model_config(config: &serde_json::Value) -> ModelConfig {
 
     ModelConfig {
         model_type,
+        norm_eps,
         num_layers,
         hidden_size,
         intermediate_size,

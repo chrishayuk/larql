@@ -344,6 +344,44 @@ mod tests {
         assert!(results.is_empty());
     }
 
+    #[test]
+    fn dequant_expert_rejects_blocks_overflow() {
+        // groups=2 keeps `groups * 32 = 64` from panicking at L42, then
+        // out_features × groups overflows the checked_mul chain.
+        let big = usize::MAX / 2 + 1;
+        match dequantize_expert(&[], &[], big, 2) {
+            Err(ModelError::Parse(msg)) => {
+                assert!(msg.contains("block count overflow"), "got: {msg}");
+            }
+            other => panic!("expected Parse error, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn dequant_all_experts_rejects_blocks_per_expert_overflow() {
+        // Same pattern — keep groups small so `groups * 32` is fine, blow
+        // up `out_features.checked_mul(groups)` instead.
+        let big = usize::MAX / 2 + 1;
+        match dequantize_all_experts(&[], &[], 1, big, 2) {
+            Err(ModelError::Parse(msg)) => {
+                assert!(msg.contains("blocks_per_expert overflow"), "got: {msg}");
+            }
+            other => panic!("expected Parse error, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn dequant_all_experts_rejects_total_overflow_on_huge_num_experts() {
+        // blocks_per_expert = 16, scales_per_expert = 1. num_experts =
+        // usize::MAX overflows the `num_experts × blocks_per_expert` check.
+        match dequantize_all_experts(&[], &[], usize::MAX, 1, 1) {
+            Err(ModelError::Parse(msg)) => {
+                assert!(msg.contains("total blocks overflow"), "got: {msg}");
+            }
+            other => panic!("expected Parse error, got {other:?}"),
+        }
+    }
+
     // ── split_gate_up_experts ──
 
     #[test]

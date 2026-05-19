@@ -21,7 +21,7 @@ use larql_vindex::{GateIndex, KnnStore, PatchedVindex, VectorIndex, WalkHit};
 use tokenizers::Tokenizer;
 
 use crate::model::ModelWeights;
-use crate::vindex::predict_q4k_with_ffn;
+use crate::vindex::predict_kquant_with_ffn;
 use crate::vindex::WalkFfn;
 
 use super::predict::predict_with_ffn;
@@ -98,7 +98,7 @@ pub fn infer_patched(
 }
 
 /// Q4K variant of `infer_patched`. Identical contract but routes the forward
-/// pass through `predict_q4k_with_ffn`, which dequantises one layer at a time
+/// pass through `predict_kquant_with_ffn`, which dequantises one layer at a time
 /// from the vindex instead of reading pre-loaded f32 tensors.
 pub fn infer_patched_q4k(
     weights: &mut ModelWeights,
@@ -110,7 +110,7 @@ pub fn infer_patched_q4k(
     index: &VectorIndex,
 ) -> InferPatchedResult {
     // SAFETY: WalkFfn reads only `weights.arch` and `weights.vectors` (neither
-    // of which is mutated by `predict_q4k_with_ffn`). The q4k forward pass
+    // of which is mutated by `predict_kquant_with_ffn`). The q4k forward pass
     // mutates only `weights.tensors` (inserting/removing per-layer attn matrices).
     // These are non-overlapping HashMap fields — the aliased read is sound.
     let weights_ref: &ModelWeights = unsafe { &*(weights as *const ModelWeights) };
@@ -119,7 +119,7 @@ pub fn infer_patched_q4k(
     let start = std::time::Instant::now();
     let PredictResult {
         predictions: raw, ..
-    } = predict_q4k_with_ffn(weights, tokenizer, token_ids, top_k, index, &walk_ffn);
+    } = predict_kquant_with_ffn(weights, tokenizer, token_ids, top_k, index, &walk_ffn);
     let walk_ms = start.elapsed().as_secs_f64() * 1000.0;
 
     let residuals = walk_ffn.take_residuals();
@@ -420,6 +420,30 @@ mod tests {
         let patched = larql_vindex::PatchedVindex::new(fx.index);
         let trace = walk_trace_from_residuals(&[], &patched);
         assert!(trace.is_empty());
+    }
+
+    #[test]
+    fn infer_patched_q4k_returns_predictions_via_quantised_path() {
+        // Exercises `infer_patched_q4k` end-to-end — same contract as
+        // `infer_patched` but routes through the Q4K dequant forward
+        // path. Uses the Q4KTestFixtures so the vindex has Q4K bytes
+        // for attention + FFN.
+        use crate::test_utils::Q4KTestFixtures;
+        let mut fx = Q4KTestFixtures::build();
+        let tokens = vec![0u32, 1, 2];
+        let result = infer_patched_q4k(
+            &mut fx.weights,
+            &fx.tokenizer,
+            &fx.index,
+            None,
+            &tokens,
+            5,
+            &fx.index,
+        );
+        assert!(result.predictions.len() <= 5);
+        assert!(result.knn_override.is_none());
+        assert_eq!(result.model_top1, result.predictions.first().cloned());
+        assert!(result.walk_ms >= 0.0);
     }
 
     #[test]

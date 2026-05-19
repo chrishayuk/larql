@@ -46,7 +46,7 @@ pub fn build_vindex_streaming(
     dtype: StorageDtype,
     quant: QuantFormat,
     weight_opts: crate::format::weights::WriteWeightsOptions,
-    q4k_opts: crate::format::weights::Q4kWriteOptions,
+    q4k_opts: crate::format::weights::KquantWriteOptions,
     // Skip writing `gate_vectors.bin` entirely. Only valid when
     // `quant == Q4K` — the loader synthesizes gate from Q4K at load
     // time. Refused otherwise because without a Q4K interleaved file

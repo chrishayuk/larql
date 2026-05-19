@@ -4,7 +4,8 @@
 //! flag set and ollama-style ergonomics. Research/power-user tooling lives
 //! under `larql dev <subcmd>`.
 
-pub mod bench_cmd;
+pub mod accuracy_cmd;
+pub mod bench;
 pub mod cache;
 pub mod diag_cmd;
 pub mod link_cmd;

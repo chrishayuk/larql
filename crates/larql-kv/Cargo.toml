@@ -11,32 +11,37 @@ description = "Pluggable KV-cache engines for larql-inference (markov-rs, unlimi
 [dependencies]
 larql-inference = { path = "../larql-inference" }
 larql-compute = { path = "../larql-compute" }
+larql-compute-metal = { path = "../larql-compute-metal", optional = true }
 larql-vindex = { path = "../larql-vindex" }
+larql-boundary = { path = "../larql-boundary" }
 
 serde = { workspace = true }
 serde_json = { workspace = true }
 thiserror = { workspace = true }
 
-ndarray = { version = "0.16", features = ["blas"] }
+ndarray = "0.16"
 zip = { version = "2", default-features = false }
 
 rand = "0.8"
 rand_distr = "0.4"
 
 [target.'cfg(target_os = "linux")'.dependencies]
+ndarray = { version = "0.16", features = ["blas"] }
 blas-src = { version = "0.10", features = ["openblas"], default-features = false }
 openblas-src = { version = "0.10", features = ["system"] }
 
 [target.'cfg(target_os = "macos")'.dependencies]
+ndarray = { version = "0.16", features = ["blas"] }
 blas-src = { version = "0.10", features = ["accelerate"] }
 
 [target.'cfg(target_os = "windows")'.dependencies]
+ndarray = { version = "0.16", features = ["blas"] }
 blas-src = { version = "0.10", features = ["openblas"], default-features = false }
 openblas-src = { version = "0.10", features = ["system"] }
 
 [features]
 default = []
-metal = ["larql-compute/metal", "larql-inference/metal"]
+metal = ["dep:larql-compute-metal", "larql-inference/metal"]
 
 [dev-dependencies]
 criterion = { version = "0.5", features = ["html_reports"] }

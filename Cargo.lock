@@ -1197,9 +1197,9 @@ dependencies = [
 
 [[package]]
 name = "evalexpr"
-version = "12.0.3"
+version = "11.3.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "ae893d2d5e908b78f151ed89de3bfc272cdf6d368c7ed866942f98e24dea208a"
+checksum = "b6aff27af350e7b53e82aac3e5ab6389abd8f280640ac034508dff0608c4c7e5"
 
 [[package]]
 name = "fallible-iterator"
@@ -1520,6 +1520,49 @@ dependencies = [
  "tokio",
  "tokio-util",
  "tracing",
+]
+
+[[package]]
+name = "h3"
+version = "0.0.8"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "10872b55cfb02a821b69dc7cf8dc6a71d6af25eb9a79662bec4a9d016056b3be"
+dependencies = [
+ "bytes",
+ "fastrand",
+ "futures-util",
+ "http",
+ "pin-project-lite",
+ "tokio",
+]
+
+[[package]]
+name = "h3-axum"
+version = "0.2.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "60560d71e2ecf73a9b7eb9e82197b65cfe9f2a30e3ce226237c83ded454b6d75"
+dependencies = [
+ "axum",
+ "bytes",
+ "h3",
+ "h3-quinn",
+ "http",
+ "http-body-util",
+ "tower",
+]
+
+[[package]]
+name = "h3-quinn"
+version = "0.0.10"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "8b2e732c8d91a74731663ac8479ab505042fbf547b9a207213ab7fbcbfc4f8b4"
+dependencies = [
+ "bytes",
+ "futures",
+ "h3",
+ "quinn",
+ "tokio",
+ "tokio-util",
 ]
 
 [[package]]
@@ -2039,26 +2082,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "kv-cache-benchmark"
-version = "0.1.0"
-dependencies = [
- "criterion",
- "larql-compute",
- "larql-inference",
- "larql-kv",
- "larql-models",
- "larql-vindex",
- "ndarray",
- "rand 0.8.6",
- "rand_distr",
- "serde",
- "serde_json",
- "thiserror 2.0.18",
- "tokenizers",
- "zip 2.4.2",
-]
-
-[[package]]
 name = "larql-boundary"
 version = "0.1.0"
 dependencies = [
@@ -2076,6 +2099,7 @@ dependencies = [
  "clap",
  "indicatif 0.17.11",
  "larql-compute",
+ "larql-compute-metal",
  "larql-core",
  "larql-inference",
  "larql-kv",
@@ -2086,6 +2110,7 @@ dependencies = [
  "memmap2",
  "minijinja",
  "ndarray",
+ "rayon",
  "reqwest",
  "safetensors",
  "serde",
@@ -2105,10 +2130,25 @@ dependencies = [
  "larql-models",
  "libc",
  "memmap2",
+ "ndarray",
+ "openblas-src",
+ "rayon",
+ "serde_json",
+]
+
+[[package]]
+name = "larql-compute-metal"
+version = "0.1.0"
+dependencies = [
+ "blas-src",
+ "criterion",
+ "larql-compute",
+ "larql-models",
+ "libc",
+ "memmap2",
  "metal",
  "ndarray",
  "objc",
- "openblas-src",
  "rayon",
  "serde_json",
 ]
@@ -2138,6 +2178,7 @@ dependencies = [
  "futures",
  "half",
  "larql-compute",
+ "larql-compute-metal",
  "larql-core",
  "larql-kv",
  "larql-models",
@@ -2173,7 +2214,9 @@ version = "0.1.0"
 dependencies = [
  "blas-src",
  "criterion",
+ "larql-boundary",
  "larql-compute",
+ "larql-compute-metal",
  "larql-inference",
  "larql-vindex",
  "ndarray",
@@ -2193,6 +2236,7 @@ version = "0.1.0"
 dependencies = [
  "criterion",
  "larql-compute",
+ "larql-compute-metal",
  "larql-core",
  "larql-inference",
  "larql-models",
@@ -2203,6 +2247,7 @@ dependencies = [
  "rustyline",
  "serde",
  "serde_json",
+ "tempfile",
  "thiserror 2.0.18",
 ]
 
@@ -2226,6 +2271,7 @@ version = "0.1.0"
 dependencies = [
  "larql-core",
  "larql-inference",
+ "larql-kv",
  "larql-lql",
  "larql-models",
  "larql-vindex",
@@ -2247,13 +2293,18 @@ dependencies = [
  "futures",
  "futures-core",
  "larql-router-protocol",
+ "parking_lot",
+ "prometheus",
  "reqwest",
+ "rustls",
  "serde",
  "serde_json",
+ "tempfile",
  "thiserror 2.0.18",
  "tokio",
  "tokio-stream",
  "tonic",
+ "tower",
  "tracing",
  "tracing-subscriber",
 ]
@@ -2262,12 +2313,29 @@ dependencies = [
 name = "larql-router-protocol"
 version = "0.1.0"
 dependencies = [
+ "axum",
+ "bytes",
+ "futures",
+ "h3",
+ "h3-axum",
+ "h3-quinn",
+ "http",
+ "http-body-util",
+ "hyper-util",
  "prost",
  "protobuf-src",
+ "quinn",
+ "rcgen",
+ "rustls",
+ "rustls-pemfile",
+ "serde_json",
+ "sha2",
  "tokio",
  "tokio-stream",
  "tonic",
  "tonic-build",
+ "tower",
+ "tracing",
 ]
 
 [[package]]
@@ -2278,24 +2346,33 @@ dependencies = [
  "axum",
  "axum-server",
  "base64 0.22.1",
+ "bytes",
  "clap",
+ "criterion",
  "futures",
  "half",
  "larql-compute",
+ "larql-compute-metal",
  "larql-inference",
  "larql-models",
+ "larql-router",
  "larql-router-protocol",
  "larql-vindex",
  "libc",
  "memmap2",
+ "parking_lot",
  "prost",
  "protobuf-src",
  "rayon",
  "reqwest",
+ "rustls",
+ "safetensors",
  "serde",
  "serde_json",
  "sha2",
  "subtle",
+ "tar",
+ "tempfile",
  "thiserror 2.0.18",
  "tokio",
  "tokio-stream",
@@ -2318,8 +2395,10 @@ dependencies = [
  "criterion",
  "hf-hub",
  "larql-compute",
+ "larql-compute-metal",
  "larql-core",
  "larql-models",
+ "larql-vindex-spec",
  "libc",
  "memmap2",
  "mockito",
@@ -2335,6 +2414,15 @@ dependencies = [
  "tempfile",
  "thiserror 2.0.18",
  "tokenizers",
+]
+
+[[package]]
+name = "larql-vindex-spec"
+version = "0.1.0"
+dependencies = [
+ "serde",
+ "serde_json",
+ "thiserror 2.0.18",
 ]
 
 [[package]]
@@ -2977,6 +3065,16 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "57c0d7b74b563b49d38dae00a0c37d4d6de9b432382b2892f0574ddcae73fd0a"
 
 [[package]]
+name = "pem"
+version = "3.0.6"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "1d30c53c26bc5b31a98cd02d20f25a7c8567146caf63ed593a9d87b2775291be"
+dependencies = [
+ "base64 0.22.1",
+ "serde_core",
+]
+
+[[package]]
 name = "pem-rfc7468"
 version = "1.0.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -3138,6 +3236,20 @@ dependencies = [
 ]
 
 [[package]]
+name = "prometheus"
+version = "0.13.4"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "3d33c28a30771f7f96db69893f78b857f7450d7e0237e9c8fc6427a81bae7ed1"
+dependencies = [
+ "cfg-if",
+ "fnv",
+ "lazy_static",
+ "memchr",
+ "parking_lot",
+ "thiserror 1.0.69",
+]
+
+[[package]]
 name = "prost"
 version = "0.13.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -3291,6 +3403,7 @@ checksum = "b9e20a958963c291dc322d98411f541009df2ced7b5a4f2bd52337638cfccf20"
 dependencies = [
  "bytes",
  "cfg_aliases",
+ "futures-io",
  "pin-project-lite",
  "quinn-proto",
  "quinn-udp",
@@ -3473,6 +3586,19 @@ checksum = "22e18b0f0062d30d4230b2e85ff77fdfe4326feb054b9783a3460d8435c8ab91"
 dependencies = [
  "crossbeam-deque",
  "crossbeam-utils",
+]
+
+[[package]]
+name = "rcgen"
+version = "0.13.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "75e669e5202259b5314d1ea5397316ad400819437857b90861765f24c4cf80a2"
+dependencies = [
+ "pem",
+ "ring",
+ "rustls-pki-types",
+ "time",
+ "yasna",
 ]
 
 [[package]]
@@ -5756,6 +5882,15 @@ checksum = "32e45ad4206f6d2479085147f02bc2ef834ac85886624a23575ae137c8aa8156"
 dependencies = [
  "libc",
  "rustix 1.1.4",
+]
+
+[[package]]
+name = "yasna"
+version = "0.5.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "e17bb3549cc1321ae1296b9cdc2698e2b6cb1992adfa19a8c72e5b7a738f44cd"
+dependencies = [
+ "time",
 ]
 
 [[package]]

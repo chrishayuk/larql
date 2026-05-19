@@ -284,7 +284,7 @@ fn q4k_end_to_end_from_synthetic_safetensors() {
         larql_vindex::StorageDtype::F32,
         larql_vindex::QuantFormat::None,
         larql_vindex::WriteWeightsOptions::default(),
-        larql_vindex::Q4kWriteOptions::default(),
+        larql_vindex::KquantWriteOptions::default(),
         false,
         &mut cb,
     )
@@ -309,17 +309,32 @@ fn q4k_end_to_end_from_synthetic_safetensors() {
     assert!(dst_dir.exists());
 
     // ── Output layout ──
+    //
+    // New writers emit kquant-canonical filenames; legacy q4k names
+    // must NOT be present in fresh output.
     for f in [
         "index.json",
+        "attn_weights_kquant.bin",
+        "attn_weights_kquant_manifest.json",
+        "interleaved_kquant.bin",
+        "interleaved_kquant_manifest.json",
+        "lm_head_kquant.bin",
+        "norms.bin",
+        "weight_manifest.json",
+    ] {
+        assert!(dst_dir.join(f).exists(), "expected {f} in output");
+    }
+    for f in [
         "attn_weights_q4k.bin",
         "attn_weights_q4k_manifest.json",
         "interleaved_q4k.bin",
         "interleaved_q4k_manifest.json",
         "lm_head_q4.bin",
-        "norms.bin",
-        "weight_manifest.json",
     ] {
-        assert!(dst_dir.join(f).exists(), "expected {f} in output");
+        assert!(
+            !dst_dir.join(f).exists(),
+            "legacy q4k file {f} must not appear in fresh writes"
+        );
     }
 
     // The f32 weight files vindex_to_q4k explicitly skips from hard-linking.
@@ -356,8 +371,8 @@ fn q4k_end_to_end_from_synthetic_safetensors() {
     // pattern as `streaming_extract_q4k_from_safetensors`'s round-trip.
     let mut lcb = larql_vindex::SilentLoadCallbacks;
     let mut index = larql_vindex::VectorIndex::load_vindex(&dst_dir, &mut lcb).unwrap();
-    index.load_attn_q4k(&dst_dir).unwrap();
-    let slices = index.attn_q4k_layer_data(0).expect("layer 0 attn data");
+    index.load_attn_kquant(&dst_dir).unwrap();
+    let slices = index.attn_kquant_layer_data(0).expect("layer 0 attn data");
     assert_eq!(slices[0].1, "Q4_K", "Q slot format");
     assert_eq!(slices[2].1, "Q6_K", "V slot format");
 
@@ -394,7 +409,7 @@ fn q4k_end_to_end_from_synthetic_safetensors() {
 /// `feature_major_down=true`, load, then ask the dispatch path for one
 /// feature's down vector. With the new file present, the dispatch
 /// should serve the row from `down_features_q4k.bin` and skip the
-/// cache (asserted via `q4k_ffn_cache_stats`).
+/// cache (asserted via `kquant_ffn_cache_stats`).
 #[test]
 fn q4k_feature_major_down_round_trip() {
     use larql_vindex::QuantFormat;
@@ -422,7 +437,7 @@ fn q4k_feature_major_down_round_trip() {
         larql_vindex::StorageDtype::F32,
         QuantFormat::None,
         larql_vindex::WriteWeightsOptions::default(),
-        larql_vindex::Q4kWriteOptions::default(),
+        larql_vindex::KquantWriteOptions::default(),
         false,
         &mut cb,
     )
@@ -436,11 +451,11 @@ fn q4k_feature_major_down_round_trip() {
 
     // ── Files emitted ──
     assert!(
-        dst_dir.join(DOWN_FEATURES_Q4K_BIN).exists(),
+        dst_dir.join(DOWN_FEATURES_KQUANT_BIN).exists(),
         "down_features_q4k.bin must be emitted when feature_major_down=true"
     );
     assert!(
-        dst_dir.join(DOWN_FEATURES_Q4K_MANIFEST_JSON).exists(),
+        dst_dir.join(DOWN_FEATURES_KQUANT_MANIFEST_JSON).exists(),
         "down_features_q4k_manifest.json must be emitted alongside it"
     );
 
@@ -448,7 +463,7 @@ fn q4k_feature_major_down_round_trip() {
     let mut lcb = larql_vindex::SilentLoadCallbacks;
     let index = larql_vindex::VectorIndex::load_vindex(&dst_dir, &mut lcb).unwrap();
     assert!(
-        index.has_down_features_q4k(),
+        index.has_down_features_kquant(),
         "loader must surface the feature-major down file"
     );
 
@@ -460,14 +475,14 @@ fn q4k_feature_major_down_round_trip() {
     let layer = 0;
     let feat = 1usize;
     assert!(
-        index.q4k_down_feature_scaled_add(layer, feat, alpha, &mut out),
+        index.kquant_down_feature_scaled_add(layer, feat, alpha, &mut out),
         "feature-major down decode must succeed when the file is present"
     );
-    let (cache_slots, cache_bytes) = index.q4k_ffn_cache_stats();
+    let (cache_slots, cache_bytes) = index.kquant_ffn_cache_stats();
     assert_eq!(
         (cache_slots, cache_bytes),
         (0, 0),
-        "feature-major path must NOT have populated the legacy q4k_ffn_layer cache"
+        "feature-major path must NOT have populated the legacy kquant_ffn_layer cache"
     );
 
     // ── Round-trip the values: decoded row must approximate
@@ -487,4 +502,107 @@ fn q4k_feature_major_down_round_trip() {
             "down[{layer}][feat={feat}][{h}] diverged: got {got}, expected {want}"
         );
     }
+}
+
+/// End-to-end legacy-name round-trip: write a kquant vindex with the
+/// new canonical filenames, then rename the on-disk files to the
+/// pre-rename `*_q4k.bin` / `lm_head_q4.bin` names and confirm the
+/// dual-read loaders still pick them up.
+///
+/// This is the regression that protects existing HF-hosted vindexes
+/// (gemma3-4b-v2 etc.) — they were published before the rename and we
+/// must keep loading them without re-extraction.
+#[test]
+fn legacy_q4k_filenames_load_via_dual_read() {
+    use larql_vindex::QuantFormat;
+
+    let tmp = TempDir::new("legacy_dual_read");
+    let model_dir = tmp.0.join("model");
+    let src_dir = tmp.0.join("src.vindex");
+    let dst_dir = tmp.0.join("dst.vindex");
+
+    let hidden = 8usize;
+    let intermediate = 4usize;
+    let num_layers = 2usize;
+    let vocab = 16usize;
+    let tokenizer =
+        write_synthetic_llama_model(&model_dir, hidden, intermediate, num_layers, vocab);
+
+    // 1. Write an f32 vindex.
+    let mut cb = larql_vindex::SilentBuildCallbacks;
+    larql_vindex::build_vindex_streaming(
+        &model_dir,
+        &tokenizer,
+        "test/legacy-round-trip",
+        &src_dir,
+        4,
+        larql_vindex::ExtractLevel::Inference,
+        larql_vindex::StorageDtype::F32,
+        QuantFormat::None,
+        larql_vindex::WriteWeightsOptions::default(),
+        larql_vindex::KquantWriteOptions::default(),
+        false,
+        &mut cb,
+    )
+    .unwrap();
+
+    // 2. Convert to k-quant. New writers emit *_kquant.bin filenames.
+    vindex_to_q4k(&src_dir, &dst_dir, &Q4kConvertConfig::default()).unwrap();
+
+    // Sanity: kquant filenames are present, q4k-named files absent.
+    assert!(dst_dir.join(ATTN_WEIGHTS_KQUANT_BIN).is_file());
+    assert!(dst_dir.join(ATTN_WEIGHTS_KQUANT_MANIFEST_JSON).is_file());
+    assert!(dst_dir.join(INTERLEAVED_KQUANT_BIN).is_file());
+    assert!(dst_dir.join(INTERLEAVED_KQUANT_MANIFEST_JSON).is_file());
+    assert!(dst_dir.join(LM_HEAD_KQUANT_BIN).is_file());
+
+    // 3. Simulate a pre-rename on-disk layout: rename the new files
+    //    back to the legacy q4k names.
+    std::fs::rename(
+        dst_dir.join(ATTN_WEIGHTS_KQUANT_BIN),
+        dst_dir.join(LEGACY_ATTN_WEIGHTS_Q4K_BIN),
+    )
+    .unwrap();
+    std::fs::rename(
+        dst_dir.join(ATTN_WEIGHTS_KQUANT_MANIFEST_JSON),
+        dst_dir.join(LEGACY_ATTN_WEIGHTS_Q4K_MANIFEST_JSON),
+    )
+    .unwrap();
+    std::fs::rename(
+        dst_dir.join(INTERLEAVED_KQUANT_BIN),
+        dst_dir.join(LEGACY_INTERLEAVED_Q4K_BIN),
+    )
+    .unwrap();
+    std::fs::rename(
+        dst_dir.join(INTERLEAVED_KQUANT_MANIFEST_JSON),
+        dst_dir.join(LEGACY_INTERLEAVED_Q4K_MANIFEST_JSON),
+    )
+    .unwrap();
+    std::fs::rename(
+        dst_dir.join(LM_HEAD_KQUANT_BIN),
+        dst_dir.join(LEGACY_LM_HEAD_Q4_BIN),
+    )
+    .unwrap();
+
+    // 4. Confirm dual-read picks up the legacy names.
+    assert!(has_kquant_attn_weights(&dst_dir));
+    assert!(has_kquant_interleaved(&dst_dir));
+    assert!(has_kquant_lm_head(&dst_dir));
+
+    // 5. Load each through the real loader entry points.
+    let mut lcb = larql_vindex::SilentLoadCallbacks;
+    let mut index = larql_vindex::VectorIndex::load_vindex(&dst_dir, &mut lcb).unwrap();
+    index
+        .load_attn_kquant(&dst_dir)
+        .expect("load_attn_kquant must accept legacy attn_weights_q4k.bin");
+    index
+        .load_interleaved_kquant(&dst_dir)
+        .expect("load_interleaved_kquant must accept legacy interleaved_q4k.bin");
+    index
+        .load_lm_head_kquant(&dst_dir)
+        .expect("load_lm_head_kquant must accept legacy lm_head_q4.bin");
+
+    assert!(index.attn_kquant_layer_data(0).is_some());
+    assert!(index.has_interleaved_kquant());
+    assert!(index.has_lm_head_kquant());
 }

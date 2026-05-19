@@ -199,7 +199,7 @@ pub fn q4k_row_scaled_add(data: &[u8], alpha: f32, out: &mut [f32]) -> Result<()
 
 #[inline]
 #[allow(dead_code)]
-fn q4k_row_scaled_add_scalar(data: &[u8], alpha: f32, out: &mut [f32], n_blocks: usize) {
+pub(super) fn q4k_row_scaled_add_scalar(data: &[u8], alpha: f32, out: &mut [f32], n_blocks: usize) {
     for sb in 0..n_blocks {
         let block = &data[sb * 144..(sb + 1) * 144];
         let d = f16_to_f32(u16::from_le_bytes([block[0], block[1]]));

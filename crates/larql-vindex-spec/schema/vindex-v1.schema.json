@@ -1,0 +1,162 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://huggingface.co/larql/vindex-spec/raw/main/vindex-v1.schema.json",
+  "title": "VindexManifest",
+  "description": "Vindex Spec v1 manifest. Mirrors the Rust types in larql-vindex-spec/src/lib.rs; Rust is authoritative. Loader-domain fields (layer_bands, model_config, fp4, ffn_layout, ...) are not validated by this schema and pass through unchanged.",
+  "type": "object",
+  "additionalProperties": true,
+  "required": [
+    "vindex_spec_version",
+    "version",
+    "model",
+    "family",
+    "source",
+    "checksums",
+    "num_layers",
+    "hidden_size",
+    "intermediate_size",
+    "vocab_size",
+    "embed_scale",
+    "extract_level",
+    "dtype",
+    "quant",
+    "layers",
+    "down_top_k",
+    "has_model_weights"
+  ],
+  "properties": {
+    "vindex_spec_version": {
+      "type": "integer",
+      "const": 1,
+      "description": "Public spec version. Must equal 1 for v1 manifests."
+    },
+    "version": {
+      "type": "integer",
+      "minimum": 0,
+      "description": "On-disk file-format version. Independent of vindex_spec_version."
+    },
+    "model": {
+      "type": "string",
+      "description": "Upstream model identifier (e.g. 'google/gemma-3-4b-it')."
+    },
+    "family": {
+      "type": "string",
+      "description": "Architecture family for loader dispatch."
+    },
+    "source": { "$ref": "#/$defs/Source" },
+    "checksums": {
+      "type": "object",
+      "description": "Map of filename -> SHA256 hex digest. Must cover every .bin referenced by the manifest.",
+      "additionalProperties": {
+        "type": "string",
+        "pattern": "^[0-9a-f]{64}$"
+      }
+    },
+    "num_layers": { "type": "integer", "minimum": 0 },
+    "hidden_size": { "type": "integer", "minimum": 1 },
+    "intermediate_size": { "type": "integer", "minimum": 1 },
+    "vocab_size": { "type": "integer", "minimum": 1 },
+    "embed_scale": { "type": "number" },
+    "extract_level": {
+      "enum": ["browse", "attention", "inference", "all"],
+      "description": "Browse < Attention < Inference < All. Each tier is a superset of the previous."
+    },
+    "dtype": {
+      "enum": ["f32", "f16"],
+      "description": "Storage precision for non-quantised float tensors."
+    },
+    "quant": {
+      "enum": ["none", "q4k", "kquant"],
+      "description": "Quant scheme for FFN weight files. v1 readers accept either `q4k` or `kquant` (the post-rename canonical tag); v1 writers continue to emit `q4k` so vindexes published before the rename keep their wire format. A v2 schema will flip the writer to `kquant`."
+    },
+    "layers": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/LayerEntry" }
+    },
+    "down_top_k": { "type": "integer", "minimum": 1 },
+    "has_model_weights": { "type": "boolean" }
+  },
+  "$defs": {
+    "Source": {
+      "type": "object",
+      "required": [
+        "huggingface_repo",
+        "huggingface_revision",
+        "base_model_sha",
+        "base_safetensors_sha256",
+        "extracted_at",
+        "larql_version",
+        "extractor_sha"
+      ],
+      "properties": {
+        "huggingface_repo": { "type": "string" },
+        "huggingface_revision": { "type": "string" },
+        "base_model_sha": {
+          "type": "string",
+          "description": "Upstream git commit SHA pinning the exact bytes the vindex was built from."
+        },
+        "base_safetensors_sha256": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{64}$"
+          }
+        },
+        "extracted_at": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "larql_version": { "type": "string" },
+        "extractor_sha": { "type": "string" }
+      }
+    },
+    "LayerEntry": {
+      "type": "object",
+      "required": ["layer", "num_features"],
+      "description": "Layer slot. Exactly one of single-file (file+offset+length) or sharded form must be present. MoE-only fields (num_experts, num_features_per_expert) are optional.",
+      "properties": {
+        "layer": { "type": "integer", "minimum": 0 },
+        "num_features": { "type": "integer", "minimum": 1 },
+        "file": { "type": "string" },
+        "offset": { "type": "integer", "minimum": 0 },
+        "length": { "type": "integer", "minimum": 0 },
+        "shards": {
+          "type": "array",
+          "minItems": 1,
+          "items": { "$ref": "#/$defs/ShardSlot" }
+        },
+        "num_experts": { "type": "integer", "minimum": 1 },
+        "num_features_per_expert": { "type": "integer", "minimum": 1 }
+      },
+      "oneOf": [
+        {
+          "required": ["file", "offset", "length"],
+          "not": { "required": ["shards"] }
+        },
+        {
+          "required": ["shards"],
+          "not": {
+            "anyOf": [
+              { "required": ["file"] },
+              { "required": ["offset"] },
+              { "required": ["length"] }
+            ]
+          }
+        }
+      ]
+    },
+    "ShardSlot": {
+      "type": "object",
+      "required": ["file", "offset", "length"],
+      "properties": {
+        "file": {
+          "type": "string",
+          "pattern": ".+-[0-9]{5}-of-[0-9]{5}\\.bin$",
+          "description": "Convention: <base>-NNNNN-of-NNNNN.bin, zero-padded, 1-indexed."
+        },
+        "offset": { "type": "integer", "minimum": 0 },
+        "length": { "type": "integer", "minimum": 0 }
+      }
+    }
+  }
+}

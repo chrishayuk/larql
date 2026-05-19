@@ -28,7 +28,7 @@ use std::path::{Path, PathBuf};
 use sha2::{Digest, Sha256};
 
 use larql_vindex::{
-    build_vindex_streaming, ExtractLevel, Q4kWriteOptions, QuantFormat, SilentBuildCallbacks,
+    build_vindex_streaming, ExtractLevel, KquantWriteOptions, QuantFormat, SilentBuildCallbacks,
     StorageDtype, WriteWeightsOptions,
 };
 
@@ -133,7 +133,7 @@ fn run_extract(model_dir: &Path, output_dir: &Path) {
         StorageDtype::F32,
         QuantFormat::None,
         WriteWeightsOptions::default(),
-        Q4kWriteOptions::default(),
+        KquantWriteOptions::default(),
         false,
         &mut cb,
     )

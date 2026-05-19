@@ -18,7 +18,7 @@
 //! enough to survive an Accelerate point release reordering FMAs:
 //!
 //!   - exact paths (interleaved, full_mmap, exact):            cos ≥ 0.99999, rel_L2 ≤ 1e-2
-//!   - quantized (interleaved_q4k:dequant, interleaved_q4):    cos ≥ 0.99,    rel_L2 ≤ 5e-3
+//!   - quantized (interleaved_kquant:dequant, interleaved_q4):    cos ≥ 0.99,    rel_L2 ≤ 5e-3
 //!   - fp4 (fp4_storage:sparse):                               cos ≥ 0.98,    rel_L2 ≤ 1e-2
 //!
 //! `rel_L2` opens loose; tighten to `measured_worst × 4` per path in a
@@ -125,7 +125,7 @@ const BOUND_QUANTIZED: PathBound = PathBound {
     // similar-magnitude vectors, rel_L2 ≈ √(2(1-cos)), so cos = 0.99
     // implies rel_L2 ≈ 0.14, and the f16-style 1e-2 ceiling would be
     // mathematically impossible here. Canonical Q4K measurement on Gemma
-    // 3 4B is rel_L2 = 1.205e-1 (worst at L10/code/1, interleaved_q4k
+    // 3 4B is rel_L2 = 1.205e-1 (worst at L10/code/1, interleaved_kquant
     // path); 4× headroom puts the ceiling at ~5e-1. See
     // walk_path_audit_gemma3_4b_q4k_baseline.md for the derivation.
     rel_l2: 5e-1,
@@ -167,7 +167,7 @@ fn bound_for_bucket(bucket: StorageBucket) -> PathBound {
 fn bound_for(path: &str) -> PathBound {
     if path.starts_with("fp4_storage") {
         BOUND_FP4
-    } else if path.starts_with("interleaved_q4k") || path.starts_with("interleaved_q4") {
+    } else if path.starts_with("interleaved_kquant") || path.starts_with("interleaved_q4") {
         BOUND_QUANTIZED
     } else {
         BOUND_EXACT
@@ -371,31 +371,31 @@ impl<'a> QuantizedFfnAccess for MaskedGateIndex<'a> {
     fn interleaved_q4_mmap_ref(&self) -> Option<&[u8]> {
         self.inner.interleaved_q4_mmap_ref()
     }
-    fn has_interleaved_q4k(&self) -> bool {
-        !self.mask.hide_q4k && self.inner.has_interleaved_q4k()
+    fn has_interleaved_kquant(&self) -> bool {
+        !self.mask.hide_q4k && self.inner.has_interleaved_kquant()
     }
-    fn interleaved_q4k_mmap_ref(&self) -> Option<&[u8]> {
-        self.inner.interleaved_q4k_mmap_ref()
+    fn interleaved_kquant_mmap_ref(&self) -> Option<&[u8]> {
+        self.inner.interleaved_kquant_mmap_ref()
     }
-    fn prefetch_interleaved_q4k_layer(&self, l: usize) {
-        self.inner.prefetch_interleaved_q4k_layer(l)
+    fn prefetch_interleaved_kquant_layer(&self, l: usize) {
+        self.inner.prefetch_interleaved_kquant_layer(l)
     }
-    fn interleaved_q4k_layer_data(&self, l: usize) -> Option<[(&[u8], &str); 3]> {
-        self.inner.interleaved_q4k_layer_data(l)
+    fn interleaved_kquant_layer_data(&self, l: usize) -> Option<[(&[u8], &str); 3]> {
+        self.inner.interleaved_kquant_layer_data(l)
     }
-    fn has_down_features_q4k(&self) -> bool {
-        self.inner.has_down_features_q4k()
+    fn has_down_features_kquant(&self) -> bool {
+        self.inner.has_down_features_kquant()
     }
-    fn q4k_ffn_layer(&self, l: usize, c: usize) -> Option<std::sync::Arc<Vec<f32>>> {
-        self.inner.q4k_ffn_layer(l, c)
+    fn kquant_ffn_layer(&self, l: usize, c: usize) -> Option<std::sync::Arc<Vec<f32>>> {
+        self.inner.kquant_ffn_layer(l, c)
     }
-    fn q4k_ffn_row_into(&self, l: usize, c: usize, f: usize, out: &mut [f32]) -> bool {
-        self.inner.q4k_ffn_row_into(l, c, f, out)
+    fn kquant_ffn_row_into(&self, l: usize, c: usize, f: usize, out: &mut [f32]) -> bool {
+        self.inner.kquant_ffn_row_into(l, c, f, out)
     }
-    fn q4k_ffn_row_dot(&self, l: usize, c: usize, f: usize, x: &[f32]) -> Option<f32> {
-        self.inner.q4k_ffn_row_dot(l, c, f, x)
+    fn kquant_ffn_row_dot(&self, l: usize, c: usize, f: usize, x: &[f32]) -> Option<f32> {
+        self.inner.kquant_ffn_row_dot(l, c, f, x)
     }
-    fn q4k_ffn_row_scaled_add_via_cache(
+    fn kquant_ffn_row_scaled_add_via_cache(
         &self,
         l: usize,
         c: usize,
@@ -403,9 +403,10 @@ impl<'a> QuantizedFfnAccess for MaskedGateIndex<'a> {
         a: f32,
         out: &mut [f32],
     ) -> bool {
-        self.inner.q4k_ffn_row_scaled_add_via_cache(l, c, f, a, out)
+        self.inner
+            .kquant_ffn_row_scaled_add_via_cache(l, c, f, a, out)
     }
-    fn q4k_ffn_row_scaled_add(
+    fn kquant_ffn_row_scaled_add(
         &self,
         l: usize,
         c: usize,
@@ -413,12 +414,12 @@ impl<'a> QuantizedFfnAccess for MaskedGateIndex<'a> {
         a: f32,
         out: &mut [f32],
     ) -> bool {
-        self.inner.q4k_ffn_row_scaled_add(l, c, f, a, out)
+        self.inner.kquant_ffn_row_scaled_add(l, c, f, a, out)
     }
-    fn q4k_down_feature_scaled_add(&self, l: usize, f: usize, a: f32, out: &mut [f32]) -> bool {
-        self.inner.q4k_down_feature_scaled_add(l, f, a, out)
+    fn kquant_down_feature_scaled_add(&self, l: usize, f: usize, a: f32, out: &mut [f32]) -> bool {
+        self.inner.kquant_down_feature_scaled_add(l, f, a, out)
     }
-    fn q4k_matmul_transb(
+    fn kquant_matmul_transb(
         &self,
         l: usize,
         c: usize,
@@ -426,7 +427,7 @@ impl<'a> QuantizedFfnAccess for MaskedGateIndex<'a> {
         x_rows: usize,
         backend: Option<&dyn larql_compute::ComputeBackend>,
     ) -> Option<Vec<f32>> {
-        self.inner.q4k_matmul_transb(l, c, x, x_rows, backend)
+        self.inner.kquant_matmul_transb(l, c, x, x_rows, backend)
     }
 }
 
@@ -464,7 +465,7 @@ struct PathSpec {
     sparse_k: Option<usize>,
     /// Assertion bound for this path. Set explicitly per spec — for paths
     /// whose precision is fixed by the path itself (e.g. `interleaved` is
-    /// always f32; `interleaved_q4k` is always Q4K), this is hardcoded to
+    /// always f32; `interleaved_kquant` is always Q4K), this is hardcoded to
     /// the right bucket. For `sparse`, which dispatches through the
     /// unified `ffn_row_*` chain and walks whatever data the vindex
     /// carries, the bucket is determined by `index.primary_storage_bucket()`.
@@ -481,7 +482,7 @@ fn enumerate_paths(index: &VectorIndex) -> Vec<PathSpec> {
     // ffn_row_* dispatch picks. Always available since it doesn't depend
     // on any has_* flag. Bucket is *vindex-dependent*: on an f16 vindex
     // sparse walks f32 features (Exact); on a Q4K vindex sparse walks
-    // Q4K via q4k_ffn_row_dot (Quantized). primary_storage_bucket()
+    // Q4K via kquant_ffn_row_dot (Quantized). primary_storage_bucket()
     // encapsulates that mapping so future storage formats inherit it.
     out.push(PathSpec {
         name: "sparse",
@@ -544,11 +545,11 @@ fn enumerate_paths(index: &VectorIndex) -> Vec<PathSpec> {
         });
     }
 
-    // interleaved_q4k:dequant — mask everything above it. Always
+    // interleaved_kquant:dequant — mask everything above it. Always
     // Quantized: dequants Q4K bytes per layer.
-    if index.has_interleaved_q4k() {
+    if index.has_interleaved_kquant() {
         out.push(PathSpec {
-            name: "interleaved_q4k",
+            name: "interleaved_kquant",
             mask: PathMask {
                 hide_fp4: true,
                 hide_q4: true,

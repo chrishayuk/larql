@@ -37,7 +37,7 @@ pub trait FfnRowAccess: NativeFfnAccess + QuantizedFfnAccess + Fp4FfnAccess {
     //
     // Overriding these in a concrete impl is rarely correct — the default
     // logic is the contract. Override the *specific* backend methods
-    // (`fp4_ffn_row_dot`, `q4k_ffn_row_dot`, etc.) instead.
+    // (`fp4_ffn_row_dot`, `kquant_ffn_row_dot`, etc.) instead.
 
     /// Unified fused dequant + dot. `component`: 0=gate, 1=up, 2=down.
     /// Returns the dot product `row(layer, component, feat) · x` from
@@ -94,8 +94,8 @@ pub trait FfnRowAccess: NativeFfnAccess + QuantizedFfnAccess + Fp4FfnAccess {
             _ => {}
         }
         // 3. Q4K fallback.
-        if self.has_interleaved_q4k() {
-            return self.q4k_ffn_row_dot(layer, component, feat, x);
+        if self.has_interleaved_kquant() {
+            return self.kquant_ffn_row_dot(layer, component, feat, x);
         }
         None
     }
@@ -161,18 +161,19 @@ pub trait FfnRowAccess: NativeFfnAccess + QuantizedFfnAccess + Fp4FfnAccess {
             }
             _ => return false,
         }
-        if self.has_interleaved_q4k() {
+        if self.has_interleaved_kquant() {
             if component == FFN_DOWN {
                 // W2: prefer the feature-major down file when present —
                 // a single row decode beats the whole-layer dequant +
                 // transpose path. Fall back to the cache for vindexes
                 // extracted before the feature-major down emit landed.
-                if self.q4k_down_feature_scaled_add(layer, feat, alpha, out) {
+                if self.kquant_down_feature_scaled_add(layer, feat, alpha, out) {
                     return true;
                 }
-                return self.q4k_ffn_row_scaled_add_via_cache(layer, component, feat, alpha, out);
+                return self
+                    .kquant_ffn_row_scaled_add_via_cache(layer, component, feat, alpha, out);
             }
-            return self.q4k_ffn_row_scaled_add(layer, component, feat, alpha, out);
+            return self.kquant_ffn_row_scaled_add(layer, component, feat, alpha, out);
         }
         false
     }
@@ -228,8 +229,8 @@ pub trait FfnRowAccess: NativeFfnAccess + QuantizedFfnAccess + Fp4FfnAccess {
             }
             _ => return false,
         }
-        if self.has_interleaved_q4k() {
-            return self.q4k_ffn_row_into(layer, component, feat, out);
+        if self.has_interleaved_kquant() {
+            return self.kquant_ffn_row_into(layer, component, feat, out);
         }
         false
     }
@@ -254,7 +255,7 @@ pub trait FfnRowAccess: NativeFfnAccess + QuantizedFfnAccess + Fp4FfnAccess {
             // over Q4K, so sparse on a mixed (f32 + Q4K) vindex walks
             // f32 features and lands in the Exact bucket.
             StorageBucket::Exact
-        } else if self.has_interleaved_q4k() || self.has_interleaved_q4() {
+        } else if self.has_interleaved_kquant() || self.has_interleaved_q4() {
             StorageBucket::Quantized
         } else {
             StorageBucket::Exact

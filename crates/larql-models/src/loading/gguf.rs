@@ -999,6 +999,7 @@ mod tests {
     ) -> crate::config::ModelConfig {
         crate::config::ModelConfig {
             model_type: "gpt2".into(),
+            norm_eps: None,
             num_layers,
             hidden_size: hidden,
             intermediate_size: 4 * hidden,
@@ -1137,6 +1138,7 @@ mod tests {
 
         let cfg = ModelConfig {
             model_type: "gpt2".into(),
+            norm_eps: None,
             num_layers: 1,
             hidden_size: 4,
             intermediate_size: 12,
@@ -1400,4 +1402,329 @@ mod tests {
     }
 
     // Dequant tests are in format::quant::ggml::tests
+
+    // ─────────────────────────────────────────────────────────────────
+    // Byte-reading helpers + read_value/read_array_element variant
+    // coverage. The existing GGUF-builder tests only emit STRING / U32 /
+    // FLOAT32 metadata; the read-side dispatch arms for U8, I8, U16,
+    // I16, I32, U64, I64, F64, Bool, ARRAY, and the unknown-type error
+    // branch are exercised here directly.
+    // ─────────────────────────────────────────────────────────────────
+
+    #[test]
+    fn read_value_dispatches_every_supported_variant() {
+        use std::io::Cursor;
+        // U8 (tag 0): tag(u32) + 1 byte payload.
+        let mut buf = Vec::new();
+        buf.extend_from_slice(&GGUF_TYPE_UINT8.to_le_bytes());
+        buf.push(0xAB);
+        assert!(matches!(
+            read_value(&mut Cursor::new(buf)).unwrap(),
+            GgufValue::U8(0xAB)
+        ));
+
+        // I8 (tag 1).
+        let mut buf = Vec::new();
+        buf.extend_from_slice(&GGUF_TYPE_INT8.to_le_bytes());
+        buf.push(0xFFu8); // -1 as i8
+        assert!(matches!(
+            read_value(&mut Cursor::new(buf)).unwrap(),
+            GgufValue::I8(-1)
+        ));
+
+        // U16 (tag 2).
+        let mut buf = Vec::new();
+        buf.extend_from_slice(&GGUF_TYPE_UINT16.to_le_bytes());
+        buf.extend_from_slice(&12345u16.to_le_bytes());
+        assert!(matches!(
+            read_value(&mut Cursor::new(buf)).unwrap(),
+            GgufValue::U16(12345)
+        ));
+
+        // I16 (tag 3).
+        let mut buf = Vec::new();
+        buf.extend_from_slice(&GGUF_TYPE_INT16.to_le_bytes());
+        buf.extend_from_slice(&(-7i16).to_le_bytes());
+        assert!(matches!(
+            read_value(&mut Cursor::new(buf)).unwrap(),
+            GgufValue::I16(-7)
+        ));
+
+        // I32 (tag 5).
+        let mut buf = Vec::new();
+        buf.extend_from_slice(&GGUF_TYPE_INT32.to_le_bytes());
+        buf.extend_from_slice(&(-65_536i32).to_le_bytes());
+        assert!(matches!(
+            read_value(&mut Cursor::new(buf)).unwrap(),
+            GgufValue::I32(-65_536)
+        ));
+
+        // BOOL (tag 7): tag + 1 byte (0 = false, nonzero = true).
+        let mut buf = Vec::new();
+        buf.extend_from_slice(&GGUF_TYPE_BOOL.to_le_bytes());
+        buf.push(1u8);
+        assert!(matches!(
+            read_value(&mut Cursor::new(buf)).unwrap(),
+            GgufValue::Bool(true)
+        ));
+        let mut buf = Vec::new();
+        buf.extend_from_slice(&GGUF_TYPE_BOOL.to_le_bytes());
+        buf.push(0u8);
+        assert!(matches!(
+            read_value(&mut Cursor::new(buf)).unwrap(),
+            GgufValue::Bool(false)
+        ));
+
+        // U64 (tag 10).
+        let mut buf = Vec::new();
+        buf.extend_from_slice(&GGUF_TYPE_UINT64.to_le_bytes());
+        buf.extend_from_slice(&(u64::MAX - 3).to_le_bytes());
+        let v = read_value(&mut Cursor::new(buf)).unwrap();
+        match v {
+            GgufValue::U64(x) => assert_eq!(x, u64::MAX - 3),
+            other => panic!("expected U64, got {other:?}"),
+        }
+
+        // I64 (tag 11).
+        let mut buf = Vec::new();
+        buf.extend_from_slice(&GGUF_TYPE_INT64.to_le_bytes());
+        buf.extend_from_slice(&(-9_999_999i64).to_le_bytes());
+        let v = read_value(&mut Cursor::new(buf)).unwrap();
+        match v {
+            GgufValue::I64(x) => assert_eq!(x, -9_999_999),
+            other => panic!("expected I64, got {other:?}"),
+        }
+
+        // F64 (tag 12).
+        let mut buf = Vec::new();
+        buf.extend_from_slice(&GGUF_TYPE_FLOAT64.to_le_bytes());
+        buf.extend_from_slice(&std::f64::consts::PI.to_le_bytes());
+        let v = read_value(&mut Cursor::new(buf)).unwrap();
+        match v {
+            GgufValue::F64(x) => {
+                assert!((x - std::f64::consts::PI).abs() < 1e-12);
+            }
+            other => panic!("expected F64, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn read_value_array_recurses_through_read_array_element() {
+        use std::io::Cursor;
+        // Array of 3 U32 values.
+        let mut buf = Vec::new();
+        buf.extend_from_slice(&GGUF_TYPE_ARRAY.to_le_bytes());
+        buf.extend_from_slice(&GGUF_TYPE_UINT32.to_le_bytes());
+        buf.extend_from_slice(&3u64.to_le_bytes());
+        for v in [10u32, 20, 30] {
+            buf.extend_from_slice(&v.to_le_bytes());
+        }
+        match read_value(&mut Cursor::new(buf)).unwrap() {
+            GgufValue::Array(elems) => {
+                assert_eq!(elems.len(), 3);
+                assert!(matches!(elems[0], GgufValue::U32(10)));
+                assert!(matches!(elems[1], GgufValue::U32(20)));
+                assert!(matches!(elems[2], GgufValue::U32(30)));
+            }
+            other => panic!("expected Array, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn read_array_element_dispatches_every_supported_variant() {
+        use std::io::Cursor;
+
+        type VariantCase = (u32, Vec<u8>, fn(GgufValue));
+        let cases: &[VariantCase] = &[
+            (GGUF_TYPE_UINT8, vec![0x42], |v| {
+                assert!(matches!(v, GgufValue::U8(0x42)))
+            }),
+            (GGUF_TYPE_INT8, vec![0xFE], |v| {
+                assert!(matches!(v, GgufValue::I8(-2)))
+            }),
+            (GGUF_TYPE_UINT16, 500u16.to_le_bytes().to_vec(), |v| {
+                assert!(matches!(v, GgufValue::U16(500)))
+            }),
+            (GGUF_TYPE_INT16, (-9i16).to_le_bytes().to_vec(), |v| {
+                assert!(matches!(v, GgufValue::I16(-9)))
+            }),
+            (GGUF_TYPE_UINT32, 7u32.to_le_bytes().to_vec(), |v| {
+                assert!(matches!(v, GgufValue::U32(7)))
+            }),
+            (GGUF_TYPE_INT32, (-77_777i32).to_le_bytes().to_vec(), |v| {
+                assert!(matches!(v, GgufValue::I32(-77_777)))
+            }),
+            (
+                GGUF_TYPE_FLOAT32,
+                2.5f32.to_le_bytes().to_vec(),
+                |v| match v {
+                    GgufValue::F32(x) => assert_eq!(x, 2.5),
+                    other => panic!("expected F32, got {other:?}"),
+                },
+            ),
+            (GGUF_TYPE_BOOL, vec![1u8], |v| {
+                assert!(matches!(v, GgufValue::Bool(true)))
+            }),
+            (
+                GGUF_TYPE_UINT64,
+                12345u64.to_le_bytes().to_vec(),
+                |v| match v {
+                    GgufValue::U64(x) => assert_eq!(x, 12345),
+                    other => panic!("expected U64, got {other:?}"),
+                },
+            ),
+            (
+                GGUF_TYPE_INT64,
+                (-1234i64).to_le_bytes().to_vec(),
+                |v| match v {
+                    GgufValue::I64(x) => assert_eq!(x, -1234),
+                    other => panic!("expected I64, got {other:?}"),
+                },
+            ),
+            (
+                GGUF_TYPE_FLOAT64,
+                1.5f64.to_le_bytes().to_vec(),
+                |v| match v {
+                    GgufValue::F64(x) => assert_eq!(x, 1.5),
+                    other => panic!("expected F64, got {other:?}"),
+                },
+            ),
+        ];
+
+        for (tag, bytes, check) in cases {
+            let v = read_array_element(&mut Cursor::new(bytes.clone()), *tag).unwrap();
+            check(v);
+        }
+    }
+
+    #[test]
+    fn read_array_element_string_variant() {
+        use std::io::Cursor;
+        let mut buf = Vec::new();
+        buf.extend_from_slice(&6u64.to_le_bytes());
+        buf.extend_from_slice(b"hello!");
+        match read_array_element(&mut Cursor::new(buf), GGUF_TYPE_STRING).unwrap() {
+            GgufValue::String(s) => assert_eq!(s, "hello!"),
+            other => panic!("expected String, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn read_value_unknown_metadata_type_errors() {
+        use std::io::Cursor;
+        let mut buf = Vec::new();
+        buf.extend_from_slice(&999u32.to_le_bytes());
+        match read_value(&mut Cursor::new(buf)) {
+            Err(ModelError::Parse(msg)) => {
+                assert!(msg.contains("unknown GGUF metadata type"), "got: {msg}");
+            }
+            other => panic!("expected Parse error, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn read_array_element_unknown_type_errors() {
+        use std::io::Cursor;
+        match read_array_element(&mut Cursor::new(Vec::new()), 9999) {
+            Err(ModelError::Parse(msg)) => {
+                assert!(
+                    msg.contains("unknown GGUF array element type"),
+                    "got: {msg}"
+                );
+            }
+            other => panic!("expected Parse error, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn read_string_rejects_non_utf8() {
+        use std::io::Cursor;
+        let mut buf = Vec::new();
+        buf.extend_from_slice(&3u64.to_le_bytes());
+        buf.extend_from_slice(&[0xFF, 0xFE, 0xFD]); // invalid UTF-8
+        match read_string(&mut Cursor::new(buf)) {
+            Err(ModelError::Parse(_)) => {}
+            other => panic!("expected Parse error, got {other:?}"),
+        }
+    }
+
+    // GgufValue::as_* — coverage for the tiny accessor impls.
+
+    #[test]
+    fn gguf_value_as_u32_handles_three_int_variants() {
+        assert_eq!(GgufValue::U32(7).as_u32(), Some(7));
+        assert_eq!(GgufValue::I32(-1).as_u32(), Some(u32::MAX));
+        assert_eq!(GgufValue::U64(42).as_u32(), Some(42));
+        assert_eq!(GgufValue::String("x".into()).as_u32(), None);
+    }
+
+    #[test]
+    fn gguf_value_as_str_returns_string_payload() {
+        assert_eq!(GgufValue::String("hi".into()).as_str(), Some("hi"));
+        assert_eq!(GgufValue::U32(1).as_str(), None);
+    }
+
+    #[test]
+    fn gguf_value_as_f64_widens_f32_and_returns_f64_payload() {
+        assert_eq!(GgufValue::F32(1.5).as_f64(), Some(1.5));
+        assert_eq!(GgufValue::F64(2.5).as_f64(), Some(2.5));
+        assert_eq!(GgufValue::U32(1).as_f64(), None);
+    }
+
+    #[test]
+    fn read_tokenizer_vocab_size_reads_vocab_object_length() {
+        let dir = tempfile::TempDir::new().unwrap();
+        let gguf = dir.path().join("model.gguf");
+        let tokenizer_json = serde_json::json!({
+            TOKENIZER_MODEL: {
+                TOKENIZER_VOCAB: {
+                    "<unk>": 0,
+                    "<bos>": 1,
+                    "<eos>": 2,
+                    "a": 3,
+                    "b": 4,
+                }
+            }
+        });
+        std::fs::write(dir.path().join(TOKENIZER_JSON), tokenizer_json.to_string()).unwrap();
+        assert_eq!(read_tokenizer_vocab_size(&gguf), Some(5));
+    }
+
+    #[test]
+    fn read_tokenizer_vocab_size_returns_none_when_tokenizer_json_absent() {
+        let dir = tempfile::TempDir::new().unwrap();
+        // model.gguf path with no tokenizer.json next to it.
+        assert_eq!(
+            read_tokenizer_vocab_size(&dir.path().join("model.gguf")),
+            None
+        );
+    }
+
+    #[test]
+    fn read_tokenizer_vocab_size_returns_none_when_vocab_empty() {
+        let dir = tempfile::TempDir::new().unwrap();
+        let gguf = dir.path().join("model.gguf");
+        // Empty vocab object — filtered out by `.filter(|&v| v > 0)`.
+        let tokenizer_json = serde_json::json!({
+            TOKENIZER_MODEL: {
+                TOKENIZER_VOCAB: {}
+            }
+        });
+        std::fs::write(dir.path().join(TOKENIZER_JSON), tokenizer_json.to_string()).unwrap();
+        assert_eq!(read_tokenizer_vocab_size(&gguf), None);
+    }
+
+    #[test]
+    fn read_tokenizer_vocab_size_returns_none_on_malformed_json() {
+        let dir = tempfile::TempDir::new().unwrap();
+        let gguf = dir.path().join("model.gguf");
+        std::fs::write(dir.path().join(TOKENIZER_JSON), b"not-json").unwrap();
+        assert_eq!(read_tokenizer_vocab_size(&gguf), None);
+    }
+
+    #[test]
+    fn read_tokenizer_vocab_size_returns_none_when_path_has_no_parent() {
+        // PathBuf::new() has no parent — exercises the early-return at L525.
+        assert_eq!(read_tokenizer_vocab_size(std::path::Path::new("")), None);
+    }
 }

@@ -4,12 +4,12 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let vd = std::path::PathBuf::from("output/gemma3-4b-v2.vindex");
     let mut index =
         larql_vindex::VectorIndex::load_vindex(&vd, &mut larql_vindex::SilentLoadCallbacks)?;
-    let _ = index.load_attn_q4k(&vd);
+    let _ = index.load_attn_kquant(&vd);
     let backend = larql_compute::default_backend();
 
     println!("=== Q6_K V projection debug ===\n");
 
-    if let Some([_q, _k, v, _o]) = index.attn_q4k_layer_data(0) {
+    if let Some([_q, _k, v, _o]) = index.attn_kquant_layer_data(0) {
         let v_data = v.0;
         let v_format = v.1;
         println!("V data: {} bytes, format={}", v_data.len(), v_format);

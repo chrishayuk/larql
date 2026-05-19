@@ -12,7 +12,8 @@
 //! decompresses the full prior K/V for attention, appends the new token's
 //! K/V, then re-compresses and stores the updated cache.
 
-use larql_compute::{cpu_backend, ComputeBackend};
+use larql_compute::ComputeBackend;
+use larql_inference::{cpu_engine_backend, EngineBackend};
 use larql_vindex::VectorIndex;
 use ndarray::{s, Array2};
 
@@ -23,7 +24,7 @@ use larql_inference::attention::SharedKV;
 use larql_inference::attention::{
     run_attention_block_decode_step_backend, run_attention_with_kv_backend,
 };
-use larql_inference::ffn::BackendFfn;
+use larql_inference::ffn::{BackendFfn, FfnBackend};
 use larql_inference::forward::{embed_tokens_pub, run_ffn};
 use larql_inference::model::ModelWeights;
 use larql_inference::vindex::{WalkFfn, WalkFfnConfig};
@@ -180,17 +181,17 @@ pub(super) fn last_row(h: &Array2<f32>) -> Array2<f32> {
 
 pub struct TurboQuantEngine {
     tq: TurboQuant,
-    backend: Box<dyn ComputeBackend>,
+    backend: Box<dyn EngineBackend>,
     layers: Vec<CompressedLayer>,
     abs_position: usize,
 }
 
 impl TurboQuantEngine {
     pub fn new(bits: u8) -> Self {
-        Self::with_backend(bits, cpu_backend())
+        Self::with_backend(bits, cpu_engine_backend())
     }
 
-    pub fn with_backend(bits: u8, backend: Box<dyn ComputeBackend>) -> Self {
+    pub fn with_backend(bits: u8, backend: Box<dyn EngineBackend>) -> Self {
         Self {
             tq: TurboQuant::new(bits),
             backend,
@@ -219,9 +220,14 @@ impl KvEngine for TurboQuantEngine {
         }
     }
 
-    fn prefill(&mut self, weights: &ModelWeights, token_ids: &[u32]) -> Option<Array2<f32>> {
+    fn prefill(
+        &mut self,
+        weights: &ModelWeights,
+        _ffn: &dyn FfnBackend,
+        token_ids: &[u32],
+    ) -> Option<Array2<f32>> {
         let num_layers = weights.num_layers;
-        let be = Some(self.backend.as_ref());
+        let be = Some(self.backend.as_compute());
         let mut h = embed_tokens_pub(weights, token_ids);
         self.layers.clear();
 
@@ -242,7 +248,12 @@ impl KvEngine for TurboQuantEngine {
         Some(last_row(&h))
     }
 
-    fn decode_step(&mut self, weights: &ModelWeights, token_id: u32) -> Option<Array2<f32>> {
+    fn decode_step(
+        &mut self,
+        weights: &ModelWeights,
+        _ffn: &dyn FfnBackend,
+        token_id: u32,
+    ) -> Option<Array2<f32>> {
         let num_layers = weights.num_layers;
         let abs_position = self.abs_position;
         let mut h = embed_tokens_pub(weights, &[token_id]);
@@ -288,49 +299,114 @@ impl KvEngine for TurboQuantEngine {
         self.layers.iter().map(|l| l.memory_bytes()).sum()
     }
 
-    /// Q4K path: use Metal full pipeline for compute (same as MarkovRS/UnlimitedContext),
-    /// giving ~97 tok/s. At window boundaries, compress K/V checkpoints with TurboQuant
-    /// (36 KB/window vs 278 KB for UnlimitedContext — 7.7× smaller boundary checkpoints).
-    ///
-    /// Falls back to CPU dequant path when Metal is unavailable.
-    fn prefill_q4k(
+    /// Q4K path: always run the per-layer compression cycle (capture
+    /// K/V per layer, WHT+Lloyd-Max encode, decompress prior, etc.).
+    /// The whole point of this engine is the compressed K/V state; the
+    /// backend's fused fast path skips every compression step, so
+    /// bypassing to it would defeat the engine. Callers wanting the
+    /// fused speed select `StandardEngine` explicitly.
+    fn prefill_quant(
         &mut self,
         weights: &mut ModelWeights,
+        _ffn: &dyn FfnBackend,
         index: &VectorIndex,
         token_ids: &[u32],
         backend: &dyn ComputeBackend,
     ) -> Option<Array2<f32>> {
-        use crate::engines::unlimited_context::engine::q4k_prefill_metal;
-        // Try Metal full pipeline first.
-        if let Some(h) = q4k_prefill_metal(weights, index, token_ids, backend) {
-            self.abs_position = token_ids.len();
-            return Some(h);
-        }
-        // CPU Q4K fallback with dequantised attention + WalkFfn FFN.
-        self.prefill_q4k_cpu(weights, index, token_ids, backend)
+        self.prefill_kquant_cpu(weights, index, token_ids, backend)
     }
 
-    fn decode_step_q4k(
+    fn decode_step_quant(
         &mut self,
         weights: &mut ModelWeights,
+        _ffn: &dyn FfnBackend,
         index: &VectorIndex,
         token_id: u32,
         backend: &dyn ComputeBackend,
     ) -> Option<Array2<f32>> {
-        use crate::engines::unlimited_context::engine::q4k_decode_token;
-        if let Some(h) = q4k_decode_token(weights, index, token_id, backend) {
-            self.abs_position += 1;
-            return Some(h);
-        }
-        // CPU Q4K fallback.
         self.decode_step_q4k_cpu(weights, index, token_id, backend)
+    }
+
+    // ── Executor-aware migration (Phase 2 of engine-state-vs-execution spec) ──
+    //
+    // The legacy `prefill_kquant_cpu` / `decode_step_q4k_cpu` paths construct
+    // their own `WalkFfn` and ignore the FFN parameter. The methods below
+    // drive the per-layer loop through a caller-supplied `LayerExecutor` and
+    // honor the FFN dispatcher — required for `larql bench --ffn
+    // http://shard:8080` to route through the remote shard.
+    //
+    // Compression policy (WHT + Lloyd-Max per layer) is engine state and
+    // stays here; only the per-layer compute is delegated.
+    fn prefill_quant_via_executor(
+        &mut self,
+        weights: &mut ModelWeights,
+        executor: &dyn larql_inference::layer_executor::LayerExecutor,
+        ffn: &dyn FfnBackend,
+        index: &VectorIndex,
+        token_ids: &[u32],
+    ) -> Option<Array2<f32>> {
+        use larql_inference::layer_executor::ExecutorDispatchKind;
+        if matches!(executor.dispatch_kind(), ExecutorDispatchKind::Fused) {
+            return self.prefill_quant(weights, ffn, index, token_ids, executor.backend());
+        }
+        ensure_attn_tensors_dequantised(weights, index);
+        let num_layers = weights.num_layers;
+        let mut h = embed_tokens_pub(weights, token_ids);
+        self.layers.clear();
+
+        for layer in 0..num_layers {
+            let (h_out, kv) = executor.run_prefill_layer(weights, layer, &h, ffn)?;
+            self.layers.push(CompressedLayer::compress(&kv, &self.tq));
+            h = h_out;
+        }
+
+        self.abs_position = token_ids.len();
+        Some(last_row(&h))
+    }
+
+    fn decode_step_quant_via_executor(
+        &mut self,
+        weights: &mut ModelWeights,
+        executor: &dyn larql_inference::layer_executor::LayerExecutor,
+        ffn: &dyn FfnBackend,
+        index: &VectorIndex,
+        token_id: u32,
+    ) -> Option<Array2<f32>> {
+        use larql_inference::layer_executor::ExecutorDispatchKind;
+        if matches!(executor.dispatch_kind(), ExecutorDispatchKind::Fused) {
+            return self.decode_step_quant(weights, ffn, index, token_id, executor.backend());
+        }
+        ensure_attn_tensors_dequantised(weights, index);
+        let num_layers = weights.num_layers;
+        let abs_position = self.abs_position;
+        let mut h = embed_tokens_pub(weights, &[token_id]);
+
+        for layer in 0..num_layers {
+            let prior_kv = self.layers[layer].decompress(&self.tq);
+            let (h_out, updated_kv) =
+                executor.run_decode_layer(weights, layer, &h, &prior_kv, abs_position, ffn)?;
+            let arch = &*weights.arch;
+            let kv_dim = arch.num_kv_heads_for_layer(layer) * arch.head_dim_for_layer(layer);
+            let head_dim = detect_head_dim(kv_dim);
+            self.layers[layer] = CompressedLayer {
+                compressed_k: compress_matrix(&updated_kv.0, &self.tq, head_dim),
+                compressed_v: compress_matrix(&updated_kv.1, &self.tq, head_dim),
+                num_vecs: updated_kv.0.shape()[0],
+                kv_dim,
+                head_dim,
+            };
+            h = h_out;
+        }
+
+        self.abs_position += 1;
+        Some(last_row(&h))
     }
 }
 
 // ── CPU Q4K helper methods (not part of the KvEngine trait) ──────────────────
 
 impl TurboQuantEngine {
-    fn prefill_q4k_cpu(
+    fn prefill_kquant_cpu(
         &mut self,
         weights: &mut ModelWeights,
         index: &VectorIndex,
@@ -343,14 +419,27 @@ impl TurboQuantEngine {
         let mut h = embed_tokens_pub(weights, token_ids);
         self.layers.clear();
 
+        // Hoist WalkFfn — was rebuilt 34× per prefill.
+        let walk_ffn = WalkFfn::from_config(weights, index, WalkFfnConfig::dense(num_layers))
+            .with_backend(backend);
+
         for layer in 0..num_layers {
             let (h_post_attn, k, v) = run_attention_with_kv_backend(weights, &h, layer, be)?;
             self.layers
                 .push(CompressedLayer::compress(&(k, v), &self.tq));
 
-            let walk_ffn = WalkFfn::from_config(weights, index, WalkFfnConfig::dense(num_layers))
-                .with_backend(backend);
-            let (h_out, _) = run_ffn(weights, &h_post_attn, layer, &walk_ffn, false);
+            // Native-quantised FFN; falls back to WalkFfn → dense f32.
+            let h_out = larql_inference::vindex::ffn_decode_step_native(
+                weights,
+                index,
+                backend,
+                &h_post_attn,
+                layer,
+            )
+            .unwrap_or_else(|| {
+                let (h, _) = run_ffn(weights, &h_post_attn, layer, &walk_ffn, false);
+                h
+            });
             h = h_out;
         }
 
@@ -370,16 +459,32 @@ impl TurboQuantEngine {
         let abs_position = self.abs_position;
         let mut h = embed_tokens_pub(weights, &[token_id]);
 
+        // Hoist WalkFfn — was rebuilt 34× per decode step.
+        let walk_ffn = WalkFfn::from_config(weights, index, WalkFfnConfig::dense(num_layers))
+            .with_backend(backend);
+
         for layer in 0..num_layers {
             let prior_kv = self.layers[layer].decompress(&self.tq);
-            let (h_post_attn, updated_kv) = run_attention_block_decode_step_backend(
+            // Try native-quantised attention helper; fall back to f32.
+            let (h_post_attn, updated_kv) = larql_inference::vindex::attention_decode_step_native(
                 weights,
+                index,
+                backend,
                 &h,
                 layer,
                 Some(&prior_kv),
                 abs_position,
-                Some(backend),
-            )?;
+            )
+            .or_else(|| {
+                run_attention_block_decode_step_backend(
+                    weights,
+                    &h,
+                    layer,
+                    Some(&prior_kv),
+                    abs_position,
+                    Some(backend),
+                )
+            })?;
             let arch = &*weights.arch;
             let kv_dim = arch.num_kv_heads_for_layer(layer) * arch.head_dim_for_layer(layer);
             self.layers[layer] = CompressedLayer {
@@ -389,9 +494,18 @@ impl TurboQuantEngine {
                 kv_dim,
                 head_dim: detect_head_dim(kv_dim),
             };
-            let walk_ffn = WalkFfn::from_config(weights, index, WalkFfnConfig::dense(num_layers))
-                .with_backend(backend);
-            let (h_out, _) = run_ffn(weights, &h_post_attn, layer, &walk_ffn, false);
+            // Native-quantised FFN; falls back to WalkFfn → dense f32.
+            let h_out = larql_inference::vindex::ffn_decode_step_native(
+                weights,
+                index,
+                backend,
+                &h_post_attn,
+                layer,
+            )
+            .unwrap_or_else(|| {
+                let (h, _) = run_ffn(weights, &h_post_attn, layer, &walk_ffn, false);
+                h
+            });
             h = h_out;
         }
 
@@ -627,16 +741,18 @@ mod tests {
 #[cfg(test)]
 mod integration_tests {
     use super::*;
+    use larql_inference::ffn::WeightFfn;
     use larql_inference::forward::hidden_to_raw_logits;
     use larql_inference::test_utils::make_test_weights;
 
     #[test]
     fn prefill_compresses_kv_for_all_layers() {
         let weights = make_test_weights();
+        let ffn = WeightFfn { weights: &weights };
         let mut engine = TurboQuantEngine::new(4);
         assert_eq!(engine.memory_bytes(), 0);
         let h = engine
-            .prefill(&weights, &[0u32, 1, 2])
+            .prefill(&weights, &ffn, &[0u32, 1, 2])
             .expect("prefill failed");
         assert_eq!(h.shape(), &[1, weights.hidden_size]);
         assert_eq!(
@@ -650,11 +766,12 @@ mod integration_tests {
     #[test]
     fn decode_step_grows_compressed_cache() {
         let weights = make_test_weights();
+        let ffn = WeightFfn { weights: &weights };
         let mut engine = TurboQuantEngine::new(4);
-        engine.prefill(&weights, &[0u32]).expect("prefill");
+        engine.prefill(&weights, &ffn, &[0u32]).expect("prefill");
         let mem_before = engine.memory_bytes();
 
-        engine.decode_step(&weights, 1).expect("decode_step");
+        engine.decode_step(&weights, &ffn, 1).expect("decode_step");
         // After decode: K/V cache has one more entry per layer → more compressed bytes
         assert!(
             engine.memory_bytes() > mem_before,
@@ -665,12 +782,13 @@ mod integration_tests {
     #[test]
     fn logits_finite_after_prefill_and_decode() {
         let weights = make_test_weights();
+        let ffn = WeightFfn { weights: &weights };
         let mut engine = TurboQuantEngine::new(4);
-        let h_pre = engine.prefill(&weights, &[0u32, 1]).expect("prefill");
+        let h_pre = engine.prefill(&weights, &ffn, &[0u32, 1]).expect("prefill");
         assert!(hidden_to_raw_logits(&weights, &h_pre)
             .iter()
             .all(|v| v.is_finite()));
-        let h_dec = engine.decode_step(&weights, 2).expect("decode");
+        let h_dec = engine.decode_step(&weights, &ffn, 2).expect("decode");
         assert!(hidden_to_raw_logits(&weights, &h_dec)
             .iter()
             .all(|v| v.is_finite()));
@@ -679,16 +797,160 @@ mod integration_tests {
     #[test]
     fn three_bit_engine_also_works() {
         let weights = make_test_weights();
+        let ffn = WeightFfn { weights: &weights };
         let mut engine = TurboQuantEngine::new(3);
-        let h = engine.prefill(&weights, &[0u32]).expect("3-bit prefill");
+        let h = engine
+            .prefill(&weights, &ffn, &[0u32])
+            .expect("3-bit prefill");
         assert_eq!(h.shape(), &[1, weights.hidden_size]);
         // 3-bit uses fewer bytes per compressed vector
         let mem3 = engine.memory_bytes();
         let mut engine4 = TurboQuantEngine::new(4);
-        engine4.prefill(&weights, &[0u32]).expect("4-bit prefill");
+        engine4
+            .prefill(&weights, &ffn, &[0u32])
+            .expect("4-bit prefill");
         assert!(
             mem3 < engine4.memory_bytes(),
             "3-bit should use less memory than 4-bit"
+        );
+    }
+
+    // ── Q4K paths via CPU fallback ────────────────────────────────────────
+    //
+    // `fused_prefill` / `fused_decode_step` return `None` on a CPU
+    // backend, so the engine falls through to `prefill_kquant_cpu` /
+    // `decode_step_q4k_cpu` against the synthetic VectorIndex. Exercises
+    // the Q4K branches without needing a real Metal-quantised model.
+
+    #[test]
+    fn prefill_q4k_cpu_fallback_compresses_kv() {
+        use larql_inference::ffn::NullFfn;
+        let mut weights = make_test_weights();
+        let index = larql_inference::test_utils::make_test_vindex(&weights);
+        let backend = larql_compute::cpu_backend();
+        let ffn = NullFfn;
+        let mut engine = TurboQuantEngine::new(4);
+        let h = engine
+            .prefill_quant(&mut weights, &ffn, &index, &[0u32, 1, 2], &*backend)
+            .expect("prefill_quant cpu fallback");
+        assert_eq!(h.shape(), &[1, weights.hidden_size]);
+        assert_eq!(
+            engine.layers.len(),
+            weights.num_layers,
+            "one CompressedLayer per model layer after prefill_quant"
+        );
+        assert!(engine.memory_bytes() > 0);
+    }
+
+    #[test]
+    fn decode_step_q4k_cpu_fallback_grows_compressed_cache() {
+        use larql_inference::ffn::NullFfn;
+        let mut weights = make_test_weights();
+        let index = larql_inference::test_utils::make_test_vindex(&weights);
+        let backend = larql_compute::cpu_backend();
+        let ffn = NullFfn;
+        let mut engine = TurboQuantEngine::new(4);
+        engine
+            .prefill_quant(&mut weights, &ffn, &index, &[0u32, 1], &*backend)
+            .expect("prefill_quant");
+        let mem_before = engine.memory_bytes();
+        let h = engine
+            .decode_step_quant(&mut weights, &ffn, &index, 2, &*backend)
+            .expect("decode_step_quant cpu fallback");
+        assert_eq!(h.shape(), &[1, weights.hidden_size]);
+        assert!(
+            engine.memory_bytes() > mem_before,
+            "compressed cache should grow after decode_step_quant"
+        );
+    }
+
+    // ── Phase 2: executor-driven path ─────────────────────────────────────
+
+    #[test]
+    fn prefill_quant_via_executor_compresses_kv() {
+        use larql_inference::ffn::NullFfn;
+        use larql_inference::layer_executor::LocalWalkExecutor;
+        let mut weights = make_test_weights();
+        let index = larql_inference::test_utils::make_test_vindex(&weights);
+        let backend = larql_compute::cpu_backend();
+        let executor = LocalWalkExecutor::new(&*backend);
+        let ffn = NullFfn;
+        let mut engine = TurboQuantEngine::new(4);
+        let h = engine
+            .prefill_quant_via_executor(&mut weights, &executor, &ffn, &index, &[0u32, 1, 2])
+            .expect("executor prefill");
+        assert_eq!(h.shape(), &[1, weights.hidden_size]);
+        assert_eq!(engine.layers.len(), weights.num_layers);
+        assert!(engine.memory_bytes() > 0);
+    }
+
+    #[test]
+    fn decode_step_quant_via_executor_grows_cache() {
+        use larql_inference::ffn::NullFfn;
+        use larql_inference::layer_executor::LocalWalkExecutor;
+        let mut weights = make_test_weights();
+        let index = larql_inference::test_utils::make_test_vindex(&weights);
+        let backend = larql_compute::cpu_backend();
+        let executor = LocalWalkExecutor::new(&*backend);
+        let ffn = NullFfn;
+        let mut engine = TurboQuantEngine::new(4);
+        engine
+            .prefill_quant_via_executor(&mut weights, &executor, &ffn, &index, &[0u32, 1])
+            .expect("prefill");
+        let mem_before = engine.memory_bytes();
+        let h = engine
+            .decode_step_quant_via_executor(&mut weights, &executor, &ffn, &index, 2)
+            .expect("decode");
+        assert_eq!(h.shape(), &[1, weights.hidden_size]);
+        assert!(engine.memory_bytes() > mem_before);
+    }
+
+    /// Counting FFN — proves the executor path dispatches through the
+    /// caller-supplied backend instead of constructing a local `WalkFfn`.
+    struct CountingFfn {
+        calls: std::sync::atomic::AtomicUsize,
+        hidden: usize,
+    }
+    impl larql_inference::ffn::FfnBackend for CountingFfn {
+        fn forward(&self, _layer: usize, x: &ndarray::Array2<f32>) -> ndarray::Array2<f32> {
+            self.calls.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+            ndarray::Array2::zeros((x.shape()[0], self.hidden))
+        }
+        fn forward_with_activation(
+            &self,
+            layer: usize,
+            x: &ndarray::Array2<f32>,
+        ) -> (ndarray::Array2<f32>, ndarray::Array2<f32>) {
+            let out = self.forward(layer, x);
+            (out.clone(), out)
+        }
+        fn name(&self) -> &str {
+            "counting"
+        }
+    }
+
+    #[test]
+    fn executor_path_honors_ffn_parameter() {
+        use larql_inference::layer_executor::LocalWalkExecutor;
+        let mut weights = make_test_weights();
+        let index = larql_inference::test_utils::make_test_vindex(&weights);
+        let backend = larql_compute::cpu_backend();
+        let executor = LocalWalkExecutor::new(&*backend);
+        let ffn = CountingFfn {
+            calls: std::sync::atomic::AtomicUsize::new(0),
+            hidden: weights.hidden_size,
+        };
+        let mut engine = TurboQuantEngine::new(4);
+        engine
+            .prefill_quant_via_executor(&mut weights, &executor, &ffn, &index, &[0u32, 1, 2])
+            .expect("prefill via executor");
+        // Prefill runs FFN once per layer (single chunked sequence).
+        let call_count = ffn.calls.load(std::sync::atomic::Ordering::SeqCst);
+        assert_eq!(
+            call_count, weights.num_layers,
+            "executor path should dispatch FFN through the supplied backend \
+             once per layer; got {call_count} for {} layers",
+            weights.num_layers
         );
     }
 }

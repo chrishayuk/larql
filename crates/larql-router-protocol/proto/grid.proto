@@ -9,6 +9,22 @@ service GridService {
 
   // Read-only grid status (admin / monitoring).
   rpc Status(StatusRequest) returns (StatusResponse);
+
+  // ADR-0004 Phase 5 admin RPCs. Each is idempotent at the wire level:
+  // the caller is expected to surface the AdminAck back to whoever asked.
+
+  // Send `UnassignMsg(reason="admin_drain")` to a named server. The server
+  // drains in-flight requests and exits its serving state. Returns `Ok`
+  // if the UnassignMsg was queued, `Err` with a message if the server_id
+  // is unknown or its outbound channel is full.
+  rpc DrainServer(DrainRequest) returns (AdminAck);
+
+  // Force-assign a layer range to either a named server (when
+  // `target_server_id` is set) or to any available server. The router
+  // resolves the origin via the existing find_origin_for path. Returns
+  // `Ok` on dispatch, `Err` with a message if no origin or no available
+  // server matches.
+  rpc AssignRange(AssignRangeRequest) returns (AdminAck);
 }
 
 // ── Server → Router ───────────────────────────────────────────────────────────
@@ -31,6 +47,13 @@ message AnnounceMsg {
   uint64 ram_bytes   = 4;
   string listen_url  = 5;  // "http://server-a:8080"
   string vindex_hash = 6;
+  // ADR-0018 — MoE expert ownership. `expert_count == 0` (both fields
+  // defaulted) means "dense, every layer is monolithic." When nonzero
+  // these advertise the *contiguous expert ID range* this server owns
+  // across all the layers it covers. Backward-compatible — old
+  // dense-only clients will send 0/0 and route via the dense path.
+  uint32 expert_start = 7;  // inclusive (meaningful only when expert_count > 0)
+  uint32 expert_end   = 8;  // inclusive (meaningful only when expert_count > 0)
 }
 
 message AvailableMsg {
@@ -44,6 +67,10 @@ message ReadyMsg {
   uint32 layer_start = 2;
   uint32 layer_end   = 3;
   string listen_url  = 4;
+  // ADR-0018 — MoE expert ownership for the freshly-loaded shard.
+  // Defaults 0/0 for dense.
+  uint32 expert_start = 5;
+  uint32 expert_end   = 6;
 }
 
 message LayerLatency {
@@ -57,6 +84,11 @@ message HeartbeatMsg {
   uint64 ram_used           = 2;
   uint32 requests_in_flight = 3;
   repeated LayerLatency layer_stats = 4;
+  // Shard-scoped request rate measured over the last heartbeat interval.
+  // Used by the rebalancer's hot-shard check (treats a range as effectively
+  // under-replicated when this exceeds the configured threshold). Zero
+  // when the server has not been processing requests.
+  float req_per_sec = 5;
 }
 
 message DroppingMsg {
@@ -90,6 +122,10 @@ message AssignMsg {
   uint32 layer_end   = 3;
   string origin_url  = 4;
   string shard_hash  = 5;
+  // ADR-0018 — MoE expert range the spare is being asked to load.
+  // Defaults 0/0 for dense assignments.
+  uint32 expert_start = 6;
+  uint32 expert_end   = 7;
 }
 
 message UnassignMsg {
@@ -133,6 +169,31 @@ message ShardInfo {
 message Gap {
   uint32 layer_start = 1;
   uint32 layer_end   = 2;
+}
+
+// ── Admin RPCs (ADR-0004 Phase 5) ────────────────────────────────────────────
+
+message DrainRequest {
+  string server_id = 1;
+  string reason    = 2;  // free-form, surfaced to the server as `UnassignMsg.reason`
+}
+
+message AssignRangeRequest {
+  string model_id           = 1;
+  uint32 layer_start        = 2;  // inclusive
+  uint32 layer_end          = 3;  // inclusive
+  // When set, target this specific available server. When empty, the
+  // router picks any spare with enough RAM.
+  string target_server_id   = 4;
+  // Used only when no live replica covers the requested range. Lets the
+  // operator point the new assignment at an external origin (S3, etc.).
+  string explicit_origin_url   = 5;
+  string explicit_origin_hash  = 6;
+}
+
+message AdminAck {
+  bool ok = 1;
+  string message = 2;  // human-readable; empty on success when nothing useful to say
 }
 
 message ServerInfo {

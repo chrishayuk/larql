@@ -1,7 +1,7 @@
 //! Q4_K weight loader — reconstructs the minimum `ModelWeights` needed
 //! to drive a Q4_K vindex forward pass: embeddings, norms, optional
 //! `lm_head`, and packed-byte-range references for `attn_weights_q4k.bin`,
-//! `interleaved_q4k.bin`, and the per-layer `layers/layer_{L:02}.weights`
+//! `interleaved_kquant.bin`, and the per-layer `layers/layer_{L:02}.weights`
 //! files. The forward pass dequantises on demand.
 
 use std::collections::HashMap;
@@ -19,7 +19,7 @@ use crate::index::core::IndexLoadCallbacks;
 use super::super::write_f32::{kind, WeightEntry};
 use super::expert_in_shard;
 
-/// Expert-shard variant of [`super::load_model_weights_q4k`].
+/// Expert-shard variant of [`super::load_model_weights_kquant`].
 ///
 /// Identical to the full loader except that when `expert_filter` is `Some((start,
 /// end_excl))`, per-layer expert entries outside `[start, end_excl)` are not
@@ -31,7 +31,7 @@ use super::expert_in_shard;
 /// `expert_filter = Some((0, 16))` and loads only experts 0–15, reducing
 /// steady-state RSS from ~15 GB (all 128 experts) to ~120 MB (16 experts × 30
 /// layers × 4 MB each).
-pub fn load_model_weights_q4k_shard(
+pub fn load_model_weights_kquant_shard(
     dir: &Path,
     callbacks: &mut dyn IndexLoadCallbacks,
     expert_filter: Option<(usize, usize)>,
@@ -45,7 +45,7 @@ pub fn load_model_weights_q4k_shard(
     }
     if config.quant != crate::QuantFormat::Q4K {
         return Err(VindexError::Parse(format!(
-            "load_model_weights_q4k expects a Q4_K vindex, got quant={}",
+            "load_model_weights_kquant expects a Q4_K vindex, got quant={}",
             config.quant,
         )));
     }
@@ -217,9 +217,11 @@ pub fn load_model_weights_q4k_shard(
         }
     }
 
-    // lm_head_q4.bin (Q4_K of the output projection) — dequant to f32. If
+    // k-quant LM head (Q4_K of the output projection) — dequant to f32.
+    // Resolves the new `lm_head_kquant.bin` first; falls back to the
+    // legacy `lm_head_q4.bin` for vindexes built before the rename. If
     // absent (tied embeddings), fall back to embed.clone() below.
-    let lm_q4_path = dir.join(LM_HEAD_Q4_BIN);
+    let lm_q4_path = crate::format::filenames::resolve_lm_head_kquant(dir).bin;
     if lm_q4_path.exists() {
         let bytes = std::fs::read(&lm_q4_path)?;
         let num_floats = config.vocab_size * config.hidden_size;

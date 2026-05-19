@@ -65,16 +65,13 @@ impl NativeFfnAccess for Stub {
 }
 
 impl QuantizedFfnAccess for Stub {
-    fn has_interleaved_q4k(&self) -> bool {
+    fn has_interleaved_kquant(&self) -> bool {
         self.q4k_dot.is_some() || self.q4k_scaled_add_returns || self.q4k_into_returns
     }
-    fn q4k_ffn_row_dot(&self, _: usize, _: usize, _: usize, _: &[f32]) -> Option<f32> {
+    fn kquant_ffn_row_dot(&self, _: usize, _: usize, _: usize, _: &[f32]) -> Option<f32> {
         self.q4k_dot
     }
-    fn q4k_ffn_row_scaled_add(&self, _: usize, _: usize, _: usize, _: f32, _: &mut [f32]) -> bool {
-        self.q4k_scaled_add_returns
-    }
-    fn q4k_ffn_row_scaled_add_via_cache(
+    fn kquant_ffn_row_scaled_add(
         &self,
         _: usize,
         _: usize,
@@ -84,10 +81,20 @@ impl QuantizedFfnAccess for Stub {
     ) -> bool {
         self.q4k_scaled_add_returns
     }
-    fn q4k_down_feature_scaled_add(&self, _: usize, _: usize, _: f32, _: &mut [f32]) -> bool {
+    fn kquant_ffn_row_scaled_add_via_cache(
+        &self,
+        _: usize,
+        _: usize,
+        _: usize,
+        _: f32,
+        _: &mut [f32],
+    ) -> bool {
+        self.q4k_scaled_add_returns
+    }
+    fn kquant_down_feature_scaled_add(&self, _: usize, _: usize, _: f32, _: &mut [f32]) -> bool {
         self.q4k_down_feature_returns
     }
-    fn q4k_ffn_row_into(&self, _: usize, _: usize, _: usize, _: &mut [f32]) -> bool {
+    fn kquant_ffn_row_into(&self, _: usize, _: usize, _: usize, _: &mut [f32]) -> bool {
         self.q4k_into_returns
     }
 }

@@ -76,6 +76,7 @@ Dense FFN models have no explicit gate matrix — the FFN is `W_out @ GELU(W_in 
 - **Per-Layer Embeddings (Gemma 4 E2B):** Carried in `ple_weights.bin` at f16. `VectorIndex::num_features(layer)` is the authoritative per-layer FFN width for models with `use_double_wide_mlp=True`.
 - **Logit softcap (Gemma 2/3/4):** `final_logit_softcapping` is stored in `index.json::model_config` and reapplied before softmax at inference time. Dropping it silently mis-peaks the top-1 token.
 - **Cross-layer KV sharing (Gemma 4 E2B):** `num_kv_shared_layers` in `model_config` drives the forward-pass cache. Storage is unchanged — the source-layer Q4K weights still ship; the reader skips K/V compute at shared layers.
+- **Granite-family scaling multipliers (Granite 3.x, 4.0, 4.1):** `attention_multiplier`, `residual_multiplier`, `logits_scaling`, and `norm_eps` live in `index.json::model_config`; `embed_scale` (== `embedding_multiplier`) is captured at the top level of `index.json` (legacy carve-out). The loader's `build_arch_json` re-emits all five through the safetensors-style field names so `detect_from_json` populates `ModelConfig`, and the forward path reads them through `arch.embed_scale()` / `arch.attention_multiplier()` / `arch.residual_multiplier()` / `arch.logits_scaling()` / `arch.norm_eps()`. Without these the reconstructed arch defaults each to 1.0 (or the arch-class `norm_eps` default), the Metal/CPU Q4K forward runs without Granite scaling, and the model emits gibberish.
 
 ---
 
@@ -525,7 +526,18 @@ The central configuration file. Version 2 is the current format.
     "sliding_window": 1024,
     "attention_type": "gqa",
     "activation": "geglu",
-    "tie_word_embeddings": true
+    "tie_word_embeddings": true,
+    // Granite-family scaling multipliers (see §2 "Granite-family
+    // scaling multipliers"). All four optional; when absent the
+    // reconstructed arch's trait getters return 1.0 (multipliers) or
+    // the arch-class default (norm_eps). Required for any
+    // GraniteForCausalLM variant — without them the model emits
+    // gibberish from `larql run` even though the safetensors path is
+    // correct.
+    "attention_multiplier": 0.015625,
+    "residual_multiplier": 0.22,
+    "logits_scaling": 10.0,
+    "norm_eps": 0.00001
   },
 
   // FFN weight layout. "per_layer" = layers/layer_{L}.weights, one file per layer,

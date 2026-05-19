@@ -61,6 +61,37 @@ pub struct VindexModelConfig {
     /// wrong token (observed: "Paris" → "hyperparameters").
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub final_logit_softcapping: Option<f64>,
+
+    // ── Granite-family scaling multipliers ──
+    // None on every other arch. Captured at vindex-build time so the
+    // reconstructed `ModelArchitecture` knows about them at load time;
+    // without these the vindex Metal forward path silently runs with
+    // all three at 1.0 and Granite emits gibberish (the safetensors
+    // detect path picks them up from config.json directly, which is why
+    // `shannon verify` was clean while `larql run` on a Granite vindex
+    // was not). `embedding_multiplier` is already captured at the top
+    // level of `VindexConfig` as `embed_scale`.
+    /// Attention score multiplier (Granite 4.1: 1/64 on 3B, 1/128 on
+    /// 8B/30B). Applied on top of 1/sqrt(head_dim) — see
+    /// [`larql_models::ModelArchitecture::attention_multiplier`].
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub attention_multiplier: Option<f64>,
+    /// Residual-stream scaling factor applied after attention and FFN
+    /// additions (Granite 4.1: 0.22 on 3B/8B, 0.175 on 30B).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub residual_multiplier: Option<f64>,
+    /// Logits scaling factor — final logits are divided by this before
+    /// softmax (Granite 4.1: 10 on 3B, 16 on 8B/30B).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub logits_scaling: Option<f64>,
+    /// RMS-norm / LayerNorm epsilon parsed from `rms_norm_eps` (or
+    /// `layer_norm_eps`). Llama 3, Mistral, Gemma 3, and Granite 4.1 all
+    /// ship 1e-5; older default was 1e-6. Captured here so the vindex
+    /// load path doesn't silently fall back to the arch-class default —
+    /// same regression mode that broke the safetensors path before the
+    /// fix in `docs/diagnoses/shannon-cross-engine-divergence.md`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub norm_eps: Option<f64>,
 }
 
 /// MoE (Mixture of Experts) configuration.
@@ -130,6 +161,10 @@ impl VindexModelConfig {
             rope_local_base: cfg.rope_local_base,
             query_pre_attn_scalar: cfg.query_pre_attn_scalar,
             final_logit_softcapping: cfg.final_logit_softcapping,
+            attention_multiplier: cfg.attention_multiplier,
+            residual_multiplier: cfg.residual_multiplier,
+            logits_scaling: cfg.logits_scaling,
+            norm_eps: cfg.norm_eps,
         }
     }
 }
@@ -158,6 +193,10 @@ mod tests {
             rope_local_base: None,
             query_pre_attn_scalar: None,
             final_logit_softcapping: None,
+            attention_multiplier: None,
+            residual_multiplier: None,
+            logits_scaling: None,
+            norm_eps: None,
         }
     }
 
@@ -227,5 +266,200 @@ mod tests {
         let moe: MoeConfig = serde_json::from_str(json).unwrap();
         assert!(!moe.shared_expert);
         assert!(!moe.hybrid);
+    }
+
+    #[test]
+    fn granite_scalars_round_trip_through_from_arch() {
+        // Granite 4.1 3B exact config. The four scalars must survive
+        // arch detect → from_arch → JSON → deserialize so the vindex
+        // load path can hand them back to the forward pass.
+        let arch = larql_models::detect_from_json(&serde_json::json!({
+            "model_type": "granite",
+            "hidden_size": 2560,
+            "num_hidden_layers": 40,
+            "intermediate_size": 8192,
+            "num_attention_heads": 40,
+            "num_key_value_heads": 8,
+            "rms_norm_eps": 1e-05,
+            "attention_multiplier": 0.015625,
+            "embedding_multiplier": 12.0,
+            "logits_scaling": 10.0,
+            "residual_multiplier": 0.22,
+        }));
+        let vc = VindexModelConfig::from_arch(&*arch);
+        assert_eq!(vc.attention_multiplier, Some(0.015625));
+        assert_eq!(vc.residual_multiplier, Some(0.22));
+        assert_eq!(vc.logits_scaling, Some(10.0));
+        assert_eq!(vc.norm_eps, Some(1e-05));
+
+        let json = serde_json::to_string(&vc).unwrap();
+        // All four must serialise (regression: an earlier vindex format
+        // dropped them silently, so Granite 4.1 vindexes loaded with
+        // multipliers defaulted to 1.0 and the model emitted garbage).
+        assert!(json.contains("\"attention_multiplier\":0.015625"), "{json}");
+        assert!(json.contains("\"residual_multiplier\":0.22"), "{json}");
+        assert!(json.contains("\"logits_scaling\":10.0"), "{json}");
+        // `serde_json::to_string` emits this f64 as `0.00001`, not
+        // `1e-5`; numeric equality (not text equality) is what matters.
+        assert!(json.contains("\"norm_eps\":0.00001"), "{json}");
+
+        let back: VindexModelConfig = serde_json::from_str(&json).unwrap();
+        assert_eq!(back.attention_multiplier, Some(0.015625));
+        assert_eq!(back.residual_multiplier, Some(0.22));
+        assert_eq!(back.logits_scaling, Some(10.0));
+        assert_eq!(back.norm_eps, Some(1e-05));
+    }
+
+    #[test]
+    fn moe_arch_populates_moe_field_via_from_arch() {
+        // Mixtral exercises the `if arch.is_moe()` Some-branch in
+        // from_arch — the Granite/Llama tests above only hit the
+        // None-branch.
+        let arch = larql_models::detect_from_json(&serde_json::json!({
+            "model_type": "mixtral",
+            "hidden_size": 4096,
+            "num_hidden_layers": 32,
+            "intermediate_size": 14336,
+            "num_attention_heads": 32,
+            "num_key_value_heads": 8,
+            "num_local_experts": 8,
+            "num_experts_per_tok": 2,
+        }));
+        let vc = VindexModelConfig::from_arch(&*arch);
+        let moe = vc.moe.expect("MoE arch must populate moe field");
+        assert_eq!(moe.num_experts, 8);
+        assert_eq!(moe.top_k, 2);
+    }
+
+    #[test]
+    fn gemma4_a4b_hybrid_moe_populates_intermediate_size_and_hybrid() {
+        // Gemma 4 A4B is hybrid MoE with a distinct
+        // moe_intermediate_size. Hits the from_arch branches:
+        //   - `Some(arch.moe_intermediate_size())` (the > 0 path)
+        //   - `hybrid: arch.is_hybrid_moe()` returning true
+        //   - `router_type: arch.moe_router_type().into()` for the
+        //     non-default gemma4 router
+        let arch = larql_models::detect_from_json(&serde_json::json!({
+            "model_type": "gemma4_text",
+            "hidden_size": 2048,
+            "num_hidden_layers": 30,
+            "intermediate_size": 8192,
+            "num_attention_heads": 8,
+            "num_key_value_heads": 2,
+            "head_dim": 256,
+            "num_experts": 128,
+            "num_experts_per_tok": 8,
+            "moe_intermediate_size": 768,
+            "enable_moe_block": true,
+        }));
+        let vc = VindexModelConfig::from_arch(&*arch);
+        {
+            let moe = vc.moe.as_ref().expect("Gemma 4 A4B must be MoE");
+            assert_eq!(moe.num_experts, 128);
+            assert_eq!(moe.top_k, 8);
+            assert_eq!(moe.moe_intermediate_size, Some(768));
+            assert!(moe.hybrid, "Gemma 4 A4B is hybrid MoE");
+        }
+
+        // Serialise and check hybrid + moe_intermediate_size land in JSON.
+        let json = serde_json::to_string(&vc).unwrap();
+        assert!(json.contains("\"hybrid\":true"), "{json}");
+        assert!(json.contains("\"moe_intermediate_size\":768"), "{json}");
+
+        let back: VindexModelConfig = serde_json::from_str(&json).unwrap();
+        let back_moe = back.moe.unwrap();
+        assert!(back_moe.hybrid);
+        assert_eq!(back_moe.moe_intermediate_size, Some(768));
+    }
+
+    #[test]
+    fn moe_config_with_shared_expert_round_trips() {
+        // shared_expert=true exercises the non-default branch of the
+        // bool field; existing tests only hit shared_expert=false.
+        let moe = MoeConfig {
+            num_experts: 64,
+            top_k: 6,
+            shared_expert: true,
+            router_type: "top_k_softmax".into(),
+            moe_intermediate_size: None,
+            hybrid: false,
+        };
+        let json = serde_json::to_string(&moe).unwrap();
+        assert!(json.contains("\"shared_expert\":true"), "{json}");
+        let back: MoeConfig = serde_json::from_str(&json).unwrap();
+        assert!(back.shared_expert);
+    }
+
+    #[test]
+    fn norm_eps_field_round_trips_independent_of_granite_scalars() {
+        // norm_eps lives under skip_serializing_if; cover the Some-branch
+        // standalone (no Granite multipliers).
+        let mut cfg = minimal_model_config();
+        cfg.norm_eps = Some(1e-6);
+        let json = serde_json::to_string(&cfg).unwrap();
+        assert!(json.contains("\"norm_eps\""), "{json}");
+        let back: VindexModelConfig = serde_json::from_str(&json).unwrap();
+        assert_eq!(back.norm_eps, Some(1e-6));
+    }
+
+    #[test]
+    fn gemma4_per_layer_attn_geometry_round_trips() {
+        // Gemma 4 sets the optional per-layer attention fields
+        // (global_head_dim, sliding_window_pattern, partial_rotary_factor,
+        // layer_types). These fields exist in VindexModelConfig but
+        // the granite/llama tests don't exercise them — populate them
+        // directly via the struct so the serde derive macros and the
+        // skip_serializing_if branches all get coverage.
+        let mut cfg = minimal_model_config();
+        cfg.global_head_dim = Some(512);
+        cfg.num_global_kv_heads = Some(2);
+        cfg.partial_rotary_factor = Some(0.25);
+        cfg.sliding_window_pattern = Some(6);
+        cfg.layer_types = Some(vec!["sliding_attention".into(), "full_attention".into()]);
+        cfg.num_kv_shared_layers = Some(2);
+        cfg.per_layer_embed_dim = Some(256);
+        cfg.rope_local_base = Some(10_000.0);
+        cfg.query_pre_attn_scalar = Some(1.0);
+        cfg.final_logit_softcapping = Some(30.0);
+
+        let json = serde_json::to_string(&cfg).unwrap();
+        assert!(json.contains("global_head_dim"));
+        assert!(json.contains("sliding_window_pattern"));
+        assert!(json.contains("layer_types"));
+
+        let back: VindexModelConfig = serde_json::from_str(&json).unwrap();
+        assert_eq!(back.global_head_dim, Some(512));
+        assert_eq!(back.num_global_kv_heads, Some(2));
+        assert_eq!(back.partial_rotary_factor, Some(0.25));
+        assert_eq!(back.sliding_window_pattern, Some(6));
+        assert_eq!(back.layer_types.as_ref().map(|v| v.len()), Some(2));
+        assert_eq!(back.num_kv_shared_layers, Some(2));
+        assert_eq!(back.per_layer_embed_dim, Some(256));
+        assert_eq!(back.rope_local_base, Some(10_000.0));
+        assert_eq!(back.query_pre_attn_scalar, Some(1.0));
+        assert_eq!(back.final_logit_softcapping, Some(30.0));
+    }
+
+    #[test]
+    fn granite_scalars_absent_for_non_granite_arch() {
+        // Llama and Mistral don't carry these multipliers; verify the
+        // serialised JSON omits the fields entirely so existing vindexes
+        // on those arches are byte-stable after a round trip.
+        let arch = larql_models::detect_from_json(&serde_json::json!({
+            "model_type": "llama",
+            "hidden_size": 4096,
+            "num_hidden_layers": 32,
+            "intermediate_size": 14336,
+            "num_attention_heads": 32,
+            "num_key_value_heads": 8,
+        }));
+        let vc = VindexModelConfig::from_arch(&*arch);
+        assert!(vc.attention_multiplier.is_none());
+        assert!(vc.residual_multiplier.is_none());
+        assert!(vc.logits_scaling.is_none());
+        let json = serde_json::to_string(&vc).unwrap();
+        assert!(!json.contains("attention_multiplier"));
+        assert!(!json.contains("residual_multiplier"));
+        assert!(!json.contains("logits_scaling"));
     }
 }

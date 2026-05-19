@@ -55,9 +55,12 @@ fn cpu_matmul_transb_matches_ndarray() {
 }
 
 #[test]
-fn cpu_has_q4() {
+fn cpu_supports_q4_k() {
     let cpu = cpu_backend();
-    assert!(cpu.has_q4(), "CPU backend should support Q4");
+    assert!(
+        cpu.supports_quant(larql_compute::QuantFormat::Q4_K),
+        "CPU backend should support Q4_K"
+    );
 }
 
 #[test]

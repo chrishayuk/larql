@@ -16,7 +16,7 @@ impl<'a> StreamingContext<'a> {
     /// If `drop_gate_vectors` is set we still walk every layer to build
     /// `layer_infos` (num_features per layer is part of `index.json`)
     /// but redirect writes to `/dev/null` (`io::sink`). The gate bytes
-    /// are recoverable from `interleaved_q4k.bin` at load time.
+    /// are recoverable from `interleaved_kquant.bin` at load time.
     pub(in crate::extract::streaming) fn write_gate_vectors(&mut self) -> Result<(), VindexError> {
         self.callbacks.on_stage(STAGE_GATE_VECTORS);
         let gate_path = self.output_dir.join(GATE_VECTORS_BIN);

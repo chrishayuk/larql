@@ -1,5 +1,5 @@
-//! Shared manifest entry shape used by `write_q4k` to emit
-//! `attn_weights_q4k_manifest.json`, `interleaved_q4k_manifest.json`,
+//! Shared manifest entry shape used by `write_kquant` to emit
+//! `attn_weights_q4k_manifest.json`, `interleaved_kquant_manifest.json`,
 //! and `down_features_q4k_manifest.json`. Pulled out so the loaders in
 //! `index/storage/ffn_store.rs` can deserialise into a typed struct
 //! instead of poking `serde_json::Value` with string keys — silently
@@ -18,7 +18,7 @@
 
 use serde::{Deserialize, Serialize};
 
-use super::write_q4k::QuantBlockFormat;
+use super::write_kquant::QuantBlockFormat;
 
 /// One manifest entry describing one Q4_K/Q6_K-encoded tensor slice.
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -38,13 +38,13 @@ impl Q4kManifestEntry {
         self.shape.get(1).copied()
     }
 
-    /// Format tag as the on-disk string (`"Q4_K"` / `"Q6_K"`).
-    /// `quant::registry::lookup` consumes this directly.
-    pub fn format_tag(&self) -> &'static str {
-        match self.format {
-            QuantBlockFormat::Q4K => "Q4_K",
-            QuantBlockFormat::Q6K => "Q6_K",
-        }
+    /// Format tag as the on-disk string (`"Q4_K"` / `"Q6_K"` / …).
+    /// `quant::registry::lookup` consumes this directly. Lifetime is
+    /// borrowed because the `Other(String)` variant carries a runtime
+    /// tag that future formats use to round-trip through the manifest
+    /// without a typed enum variant.
+    pub fn format_tag(&self) -> &str {
+        self.format.tag()
     }
 }
 

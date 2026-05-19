@@ -26,7 +26,7 @@ pub(super) struct MmapShard {
 /// Sink for gate-vector bytes. With `--drop-gate-vectors` the writer
 /// still walks every layer (so `layer_infos` is populated for
 /// `index.json`) but redirects bytes to `/dev/null` — they're
-/// recoverable from `interleaved_q4k.bin` at load time.
+/// recoverable from `interleaved_kquant.bin` at load time.
 pub(super) enum GateSink {
     File(BufWriter<std::fs::File>),
     Discard(std::io::Sink),

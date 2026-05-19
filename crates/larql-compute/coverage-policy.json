@@ -1,14 +1,11 @@
 {
-  "policy_note": "Default policy is 90% line coverage per source file. The per-file entries below are existing debt baselines from cargo-llvm-cov and should only ratchet upward.",
+  "policy_note": "Default policy is 90% line coverage per source file. After the larql-compute-metal extraction (ADR-019), this crate is CPU-side only — the trait, the CpuBackend impl, pipeline types, and env-option helpers. Every file is expected to clear the 90% floor without `exclude_globs` hacks. GPU-shader coverage lives in `crates/larql-compute-metal/coverage-policy.json`.",
   "include_globs": [
     "crates/larql-compute/src/*.rs",
     "crates/larql-compute/src/**/*.rs"
   ],
   "exclude_globs": [],
   "default_line_min_percent": 90.0,
-  "total_line_min_percent": 93.5,
-  "per_file_line_min_percent": {
-    "crates/larql-compute/src/cpu/ops/moe/expert.rs": 78.9,
-    "crates/larql-compute/src/cpu/ops/moe/forward.rs": 84.0
-  }
+  "total_line_min_percent": 95.0,
+  "per_file_line_min_percent": {}
 }

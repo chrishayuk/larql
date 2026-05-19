@@ -171,4 +171,37 @@ mod tests {
             assert!((orig - dec).abs() < 0.01 * orig.abs().max(0.001));
         }
     }
+
+    #[test]
+    fn f16_subnormal_round_trip() {
+        // Exercise the `exp == 0 && mant != 0` denormal branch in
+        // f16_to_f32 (lines 22-29). 0x0001 is the smallest positive
+        // subnormal: 2^-24 ≈ 5.96e-8.
+        let bits: u16 = 0x0001;
+        let decoded = f16_to_f32(bits);
+        assert!(decoded > 0.0, "smallest subnormal must decode positive");
+        assert!(decoded < 1e-6, "subnormal magnitude should be tiny");
+        // A larger subnormal should still be in (0, 2^-14).
+        let mid_sub = f16_to_f32(0x03FF);
+        assert!(mid_sub > 0.0 && mid_sub < 6.1e-5);
+    }
+
+    #[test]
+    fn f16_overflow_to_infinity_and_nan_paths() {
+        // f32 magnitude beyond f16 max overflows to ±inf — hits the
+        // `exp16 >= 31` branch (line 54) in f32_to_f16.
+        let big = 1.0e20f32;
+        let bits_pos = f32_to_f16(big);
+        assert_eq!(bits_pos, 0x7C00, "+inf encoding");
+        let bits_neg = f32_to_f16(-big);
+        assert_eq!(bits_neg, 0xFC00, "-inf encoding");
+        // f32 NaN with non-zero mantissa hits the line-50 NaN branch
+        // in f32_to_f16 (sign | 0x7C00 | 0x0200).
+        let nan_bits = f32_to_f16(f32::NAN);
+        let mantissa = nan_bits & 0x03FF;
+        assert!(
+            nan_bits & 0x7C00 == 0x7C00 && mantissa != 0,
+            "NaN must round-trip with non-zero mantissa, got bits={nan_bits:#06x}"
+        );
+    }
 }

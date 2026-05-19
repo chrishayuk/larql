@@ -18,40 +18,161 @@
 //! HTTP 400 (use the batched JSON format or route per-shard manually).
 
 use larql_router::grid;
-use larql_router::rebalancer;
+use larql_router::tasks::rebalancer;
 
-use std::collections::HashMap;
 use std::net::SocketAddr;
 use std::sync::Arc;
 
-use axum::body::Bytes;
-use axum::extract::State;
-use axum::http::{header, StatusCode};
-use axum::response::Response;
-use axum::routing::post;
-use axum::{Json, Router};
 use clap::Parser;
-use serde_json::Value;
-use tokio::sync::RwLock;
+use parking_lot::RwLock;
 use tonic::transport::Server as GrpcServer;
 use tracing::{info, warn};
 
-use grid::{GridServiceImpl, GridState};
+use grid::service::GridServiceImpl;
+use grid::GridState;
 use larql_router_protocol::GridServiceServer;
 
-// ── Binary wire format constants ───────────────────────────────────────────────
+#[cfg(feature = "quic")]
+fn spawn_quic_listener(
+    cli: &Cli,
+    state: Arc<RwLock<GridState>>,
+    quic_port: u16,
+    metrics: Arc<larql_router::metrics::RouterMetrics>,
+) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+    use larql_router_protocol::transport::quic::{
+        self_signed_tls, server_endpoint, spawn_accept_loop, SelfSignedTls,
+    };
+    use tokio_stream::wrappers::ReceiverStream;
 
-const BINARY_CT: &str = "application/x-larql-ffn";
-const BATCH_MARKER: u32 = 0xFFFF_FFFF;
+    // Install the rustls ring crypto provider once. Safe to call from
+    // anywhere; subsequent calls are no-ops.
+    let _ = rustls::crypto::ring::default_provider().install_default();
+
+    let tls = match (cli.quic_cert.as_ref(), cli.quic_key.as_ref()) {
+        (Some(cert), Some(key)) => {
+            let cert_pem = std::fs::read_to_string(cert)
+                .map_err(|e| format!("read --quic-cert {}: {e}", cert.display()))?;
+            let key_pem = std::fs::read_to_string(key)
+                .map_err(|e| format!("read --quic-key {}: {e}", key.display()))?;
+            SelfSignedTls {
+                cert_pem,
+                key_pem,
+                fingerprint: String::new(),
+                server_name: cli.quic_server_name.clone(),
+            }
+        }
+        (None, None) => {
+            let generated = self_signed_tls(&cli.quic_server_name)
+                .map_err(|e| format!("self-signed cert generation: {e}"))?;
+            info!(
+                fingerprint = %generated.fingerprint,
+                server_name = %generated.server_name,
+                "QUIC: generated self-signed cert. Clients must pin this fingerprint via --quic-cert-fingerprint."
+            );
+            generated
+        }
+        _ => {
+            return Err(
+                "--quic-cert and --quic-key must be provided together (or neither, for self-signed)"
+                    .into(),
+            );
+        }
+    };
+
+    let quic_addr: SocketAddr = format!("{}:{}", cli.host, quic_port).parse()?;
+    let endpoint = server_endpoint(quic_addr, &tls)
+        .map_err(|e| format!("QUIC endpoint bind {quic_addr}: {e}"))?;
+    info!("Grid QUIC server listening: {quic_addr}");
+
+    let svc = GridServiceServer::new(
+        GridServiceImpl::new_with_key(state, cli.grid_key.clone()).with_metrics(metrics),
+    );
+    let rx = spawn_accept_loop(endpoint);
+    let incoming = ReceiverStream::new(rx);
+    tokio::spawn(async move {
+        if let Err(e) = GrpcServer::builder()
+            .add_service(svc)
+            .serve_with_incoming(incoming)
+            .await
+        {
+            tracing::error!("QUIC server error: {e}");
+        }
+    });
+    Ok(())
+}
+
+use larql_router::shards::parse_shards;
 
 // ── CLI ────────────────────────────────────────────────────────────────────────
 
+/// Top-level CLI. When no subcommand is given, the router runs as a daemon
+/// using the flags on the `Cli` struct (the historical behavior). The
+/// `Admin` subcommands open a one-shot client connection to a running
+/// router and exit.
 #[derive(Parser)]
 #[command(
     name = "larql-router",
     version,
     about = "Layer-sharding proxy for larql-server"
 )]
+struct CliRoot {
+    #[command(subcommand)]
+    admin: Option<AdminCmd>,
+
+    #[command(flatten)]
+    daemon: Cli,
+}
+
+#[derive(clap::Subcommand)]
+enum AdminCmd {
+    /// Print the current grid status (servers, shards, gaps).
+    Status {
+        /// Router gRPC URL. Default: `http://localhost:50052`.
+        #[arg(long, default_value = "http://localhost:50052")]
+        router: String,
+    },
+    /// Report coverage gaps per model.
+    Gaps {
+        #[arg(long, default_value = "http://localhost:50052")]
+        router: String,
+        /// Filter to a single model_id. Empty = all models.
+        #[arg(long)]
+        model: Option<String>,
+    },
+    /// Send `UnassignMsg` to a serving server so it drains and exits.
+    Drain {
+        #[arg(long, default_value = "http://localhost:50052")]
+        router: String,
+        /// server_id (as returned by `status`).
+        #[arg(long)]
+        server: String,
+        /// Free-form reason; surfaced to the server as `UnassignMsg.reason`.
+        #[arg(long, default_value = "admin_drain")]
+        reason: String,
+    },
+    /// Force-assign a layer range to an available server.
+    Assign {
+        #[arg(long, default_value = "http://localhost:50052")]
+        router: String,
+        #[arg(long)]
+        model: String,
+        /// Inclusive layer range, e.g. `0-14`.
+        #[arg(long, value_name = "START-END")]
+        layers: String,
+        /// Optional named available server; otherwise any spare is used.
+        #[arg(long)]
+        server: Option<String>,
+        /// Optional external origin URL (S3, etc.); otherwise resolved
+        /// from the live coverage matrix.
+        #[arg(long)]
+        origin_url: Option<String>,
+        /// Hash to pin against when `--origin-url` is set.
+        #[arg(long, default_value = "")]
+        origin_hash: String,
+    },
+}
+
+#[derive(Parser)]
 struct Cli {
     /// Static shard map: comma-separated "START-END=URL" entries (inclusive bounds).
     /// Example: "0-16=http://host-a:8080,17-33=http://host-b:8081"
@@ -96,405 +217,200 @@ struct Cli {
     /// for the same layer before the rebalancer acts.
     #[arg(long, default_value = "2.0")]
     rebalance_threshold: f32,
+
+    /// Hot-shard replication: per-replica request rate (req/s) above
+    /// which a shard is treated as effectively under-replicated. When
+    /// a shard's max req_per_sec across replicas exceeds this value,
+    /// the rebalancer pulls one extra spare from the available pool;
+    /// when the rate subsides the extra replica is dropped on the next
+    /// over-replication tick. Unset (default) disables the check.
+    #[arg(long)]
+    hot_shard_rps: Option<f32>,
+
+    /// ADR-0020: per-replica in-flight saturation ceiling. When set,
+    /// `route()` filters out replicas whose `requests_in_flight` is
+    /// at or above this value before picking. If every owning
+    /// replica is saturated, the router 503s with `Retry-After: 0.5`
+    /// instead of piling more load onto a stuck shard.
+    /// Default disabled (matches pre-ADR-0020 behavior). Pick a
+    /// value with `2 × target_replicas × rps_per_replica × p99_s`
+    /// as a starting point.
+    #[arg(long)]
+    saturation_ceiling: Option<u32>,
+
+    /// ADR-0021: hedged-dispatch delay in milliseconds. When set, the
+    /// multi-shard fan-out picks a secondary replica per sub-request
+    /// and dispatches it after `--hedge-after-ms` if the primary
+    /// hasn't responded. Halves p99 tail latency in topologies with
+    /// `--target-replicas ≥ 2` at the cost of ~2× shard load on the
+    /// tail. Default disabled (matches pre-ADR-0021 behavior); only
+    /// fires on multi-shard requests, never on single-shard
+    /// `proxy_raw`. Operator signals: `larql_router_route_hedge_fires_total`
+    /// (how often the hedge fires) and `larql_router_route_hedge_wins_total`
+    /// (how often it actually beats the primary).
+    #[arg(long)]
+    hedge_after_ms: Option<u64>,
+
+    /// ADR-0014 hysteresis: ratio of the elevation threshold below
+    /// which a hot shard demotes. Default `0.8` means elevate at
+    /// `--hot-shard-rps T`, demote only when the rate falls below
+    /// `0.8 × T`. Prevents oscillation at the boundary. Values
+    /// outside `(0.0, 1.0]` clamp to the default. `1.0` disables
+    /// hysteresis (elevate and demote at the same threshold).
+    #[arg(long, default_value = "0.8")]
+    hot_shard_demote_ratio: f32,
+
+    /// Active-probe RTT: cadence (in seconds) at which the router
+    /// issues `GET {listen_url}/v1/health` against every serving
+    /// server. The measured round-trip lands on `ServerEntry.rtt_ms`
+    /// and is used by `route()` as a tie-breaker after GT3 per-layer
+    /// latency. `0` (default) disables probing — the feature is
+    /// opt-in because GT3 already subsumes RTT once heartbeats carry
+    /// `layer_stats`, so this mainly helps cold-start and
+    /// cross-region tie-breaking.
+    #[arg(long, default_value = "0")]
+    rtt_probe_interval_secs: u64,
+
+    /// ADR-0019: enable HTTP/3 shard transport. When set, MoE
+    /// expert fan-out (ADR-0018) dispatches through an h3 client
+    /// per shard host — each parallel sub-request runs as an
+    /// independent QUIC stream, escaping TCP HoL blocking on the
+    /// HTTP/2-over-TCP path. Requires building with
+    /// `--features http3` AND each `larql-server` shard listening
+    /// on `--http3-port` (server-side ADR-0019 wiring).
+    ///
+    /// Dense routing keeps the existing reqwest HTTP/2 path —
+    /// HTTP/3 only swings the needle for parallel per-token
+    /// fan-outs, which is the MoE workload.
+    #[arg(long, default_value = "false")]
+    #[cfg(feature = "http3")]
+    http3_shards: bool,
+
+    /// ADR-0019: SHA-256 fingerprint (hex) of each shard's
+    /// HTTP/3 TLS cert. Required when `--http3-shards` is set
+    /// unless the operator wants `AcceptAny` (LAN/dev).
+    /// Pin one fingerprint per process — all shards in the grid
+    /// must present the same cert.
+    #[arg(long)]
+    #[cfg(feature = "http3")]
+    shard_cert_fingerprint: Option<String>,
+
+    /// Phase 4: number of replicas to maintain per shard range.
+    /// 1 = no replication (default). >1 enables auto-replication: when fewer
+    /// than N servers cover a range, the router pulls from the available
+    /// pool to bring the count back up; when more than N cover it, the
+    /// rebalancer drops the least-loaded one.
+    #[arg(long, default_value = "1")]
+    target_replicas: u32,
+
+    /// ADR-0010: enable the QUIC grid listener on this port. Requires
+    /// building with `--features quic`. When set, servers can join via
+    /// `quic://router:PORT`. Coexists with the TCP `--grid-port` listener;
+    /// neither replaces the other.
+    #[arg(long)]
+    #[cfg(feature = "quic")]
+    quic_port: Option<u16>,
+
+    /// ADR-0010: TLS certificate PEM for the QUIC listener. If omitted,
+    /// the router generates a self-signed cert at startup and prints its
+    /// SHA-256 fingerprint (which clients pin via
+    /// `--quic-cert-fingerprint`).
+    #[arg(long)]
+    #[cfg(feature = "quic")]
+    quic_cert: Option<std::path::PathBuf>,
+
+    /// ADR-0010: TLS private key PEM matching `--quic-cert`.
+    #[arg(long)]
+    #[cfg(feature = "quic")]
+    quic_key: Option<std::path::PathBuf>,
+
+    /// ADR-0010: Server name (TLS SNI) embedded in the auto-generated
+    /// self-signed cert. Clients must connect with this name. Default
+    /// `"router"`.
+    #[arg(long, default_value = "router")]
+    #[cfg(feature = "quic")]
+    quic_server_name: String,
 }
 
 // ── Static shard map ───────────────────────────────────────────────────────────
+//
+// `Shard`, `parse_shards`, `peek_binary`, `find_shard_for_layer` moved to
+// `larql_router::shards` so they can be unit-tested independently of the
+// HTTP/gRPC dispatch in this file.
 
-#[derive(Clone, Debug)]
-struct Shard {
-    layer_start: usize, // inclusive
-    layer_end: usize,   // exclusive
-    url: String,
-}
-
-impl Shard {
-    fn owns(&self, layer: usize) -> bool {
-        layer >= self.layer_start && layer < self.layer_end
-    }
-}
-
-fn parse_shards(spec: &str) -> Result<Vec<Shard>, String> {
-    let mut shards = Vec::new();
-    for entry in spec.split(',') {
-        let entry = entry.trim();
-        if entry.is_empty() {
-            continue;
-        }
-        let (range, url) = entry
-            .split_once('=')
-            .ok_or_else(|| format!("expected 'START-END=URL', got '{entry}'"))?;
-        let (start_s, end_s) = range
-            .split_once('-')
-            .ok_or_else(|| format!("expected 'START-END', got '{range}'"))?;
-        let start: usize = start_s
-            .trim()
-            .parse()
-            .map_err(|_| format!("invalid start '{start_s}'"))?;
-        let end: usize = end_s
-            .trim()
-            .parse()
-            .map_err(|_| format!("invalid end '{end_s}'"))?;
-        if end < start {
-            return Err(format!("end ({end}) must be >= start ({start})"));
-        }
-        shards.push(Shard {
-            layer_start: start,
-            layer_end: end + 1,
-            url: url.trim().to_string(),
-        });
-    }
-    if shards.is_empty() {
-        return Err("no shards specified".into());
-    }
-    Ok(shards)
-}
-
-// ── Binary routing ─────────────────────────────────────────────────────────────
-
-/// Extract layer indices from a binary request body without parsing the residual.
-///
-/// Returns `None` if the header is malformed or truncated.
-pub(crate) fn peek_binary(body: &[u8]) -> Option<Vec<usize>> {
-    if body.len() < 4 {
-        return None;
-    }
-    let first = u32::from_le_bytes(body[0..4].try_into().ok()?);
-    if first == BATCH_MARKER {
-        if body.len() < 8 {
-            return None;
-        }
-        let n = u32::from_le_bytes(body[4..8].try_into().ok()?) as usize;
-        let needed = 8 + n * 4;
-        if body.len() < needed {
-            return None;
-        }
-        let layers = (0..n)
-            .map(|i| u32::from_le_bytes(body[8 + i * 4..12 + i * 4].try_into().unwrap()) as usize)
-            .collect();
-        Some(layers)
-    } else {
-        Some(vec![first as usize])
-    }
-}
-
-// ── App state ──────────────────────────────────────────────────────────────────
-
-struct AppState {
-    /// Static shards from --shards (may be empty).
-    static_shards: Vec<Shard>,
-    /// Grid state from --grid-port (None if grid mode not enabled).
-    grid: Option<Arc<RwLock<GridState>>>,
-    client: reqwest::Client,
-}
-
-impl AppState {
-    /// Resolve all layers in one lock acquisition.
-    /// Returns Ok(layer → url) or Err(first missing layer).
-    async fn resolve_all(
-        &self,
-        model_id: Option<&str>,
-        layers: &[usize],
-    ) -> Result<HashMap<usize, String>, usize> {
-        if let Some(grid) = &self.grid {
-            let guard = grid.read().await;
-            let mut out = HashMap::with_capacity(layers.len());
-            let mut static_needed: Vec<usize> = Vec::new();
-            for &layer in layers {
-                match guard.route(model_id, layer as u32) {
-                    Some(url) => {
-                        out.insert(layer, url);
-                    }
-                    None => static_needed.push(layer),
-                }
-            }
-            drop(guard);
-            for layer in static_needed {
-                match self.static_shards.iter().find(|s| s.owns(layer)) {
-                    Some(s) => {
-                        out.insert(layer, s.url.clone());
-                    }
-                    None => return Err(layer),
-                }
-            }
-            return Ok(out);
-        }
-        let mut out = HashMap::with_capacity(layers.len());
-        for &layer in layers {
-            match self.static_shards.iter().find(|s| s.owns(layer)) {
-                Some(s) => {
-                    out.insert(layer, s.url.clone());
-                }
-                None => return Err(layer),
-            }
-        }
-        Ok(out)
-    }
-}
-
-// ── Route handler ──────────────────────────────────────────────────────────────
-
-async fn handle_walk_ffn(
-    State(state): State<Arc<AppState>>,
-    request: axum::extract::Request,
-) -> Response {
-    match handle_walk_ffn_inner(state, request).await {
-        Ok(r) => r,
-        Err((status, msg)) => {
-            // Always return errors as JSON regardless of input content-type.
-            let body = format!(r#"{{"error":{}}}"#, serde_json::Value::String(msg));
-            Response::builder()
-                .status(status)
-                .header(header::CONTENT_TYPE, "application/json")
-                .body(axum::body::Body::from(body))
-                .unwrap()
-        }
-    }
-}
-
-async fn handle_walk_ffn_inner(
-    state: Arc<AppState>,
-    request: axum::extract::Request,
-) -> Result<Response, (StatusCode, String)> {
-    let is_binary = request
-        .headers()
-        .get(header::CONTENT_TYPE)
-        .and_then(|v| v.to_str().ok())
-        .map(|ct| ct.starts_with(BINARY_CT))
-        .unwrap_or(false);
-
-    let body_bytes = axum::body::to_bytes(request.into_body(), 64 * 1024 * 1024)
-        .await
-        .map_err(|e| (StatusCode::BAD_REQUEST, format!("read body: {e}")))?;
-
-    let (layers, model_id_owned): (Vec<usize>, Option<String>) = if is_binary {
-        let layers = peek_binary(&body_bytes).ok_or_else(|| {
-            (
-                StatusCode::BAD_REQUEST,
-                "binary: truncated or malformed header".to_string(),
-            )
-        })?;
-        (layers, None)
-    } else {
-        let peek: Value = serde_json::from_slice(&body_bytes)
-            .map_err(|e| (StatusCode::BAD_REQUEST, format!("invalid JSON: {e}")))?;
-        let layers: Vec<usize> = if let Some(arr) = peek.get("layers").and_then(|v| v.as_array()) {
-            arr.iter()
-                .filter_map(|v| v.as_u64().map(|n| n as usize))
-                .collect()
-        } else if let Some(n) = peek.get("layer").and_then(|v| v.as_u64()) {
-            vec![n as usize]
-        } else {
-            return Err((
-                StatusCode::BAD_REQUEST,
-                "must provide 'layer' or 'layers'".to_string(),
-            ));
-        };
-        let model_id = peek
-            .get("model_id")
-            .and_then(|v| v.as_str())
-            .map(str::to_owned);
-        (layers, model_id)
-    };
-
-    if layers.is_empty() {
-        return Err((StatusCode::BAD_REQUEST, "empty layer list".to_string()));
-    }
-
-    let mid = model_id_owned.as_deref();
-    let layer_urls = state.resolve_all(mid, &layers).await.map_err(|missing| {
-        (
-            StatusCode::BAD_REQUEST,
-            format!("layer {missing} has no owning shard in this router"),
-        )
-    })?;
-
-    // Determine unique shards.
-    let unique_urls: std::collections::HashSet<&String> = layer_urls.values().collect();
-
-    if unique_urls.len() == 1 || layers.len() == 1 {
-        // All layers on the same shard — proxy raw bytes unchanged.
-        let url = layer_urls.values().next().unwrap();
-        let ct = if is_binary {
-            BINARY_CT
-        } else {
-            "application/json"
-        };
-        return proxy_raw(&state.client, url, body_bytes, ct).await;
-    }
-
-    // Multi-shard dispatch.
-    if is_binary {
-        return Err((
-            StatusCode::BAD_REQUEST,
-            "binary fan-out across multiple shards is not supported; use JSON or split by shard"
-                .to_string(),
-        ));
-    }
-
-    // JSON fan-out: group layers by URL, dispatch in parallel, merge.
-    let body_value: Value = serde_json::from_slice(&body_bytes)
-        .map_err(|e| (StatusCode::BAD_REQUEST, format!("invalid JSON: {e}")))?;
-
-    let mut by_url: HashMap<String, Vec<usize>> = HashMap::new();
-    for (&layer, url) in &layer_urls {
-        by_url.entry(url.clone()).or_default().push(layer);
-    }
-
-    let mut handles = Vec::new();
-    for (url, shard_layers) in &by_url {
-        let mut sub_body = body_value.clone();
-        if shard_layers.len() == 1 {
-            sub_body["layer"] = Value::from(shard_layers[0]);
-            sub_body.as_object_mut().unwrap().remove("layers");
-        } else {
-            sub_body["layers"] =
-                Value::Array(shard_layers.iter().map(|&l| Value::from(l)).collect());
-            sub_body.as_object_mut().unwrap().remove("layer");
-        }
-        let client = state.client.clone();
-        let target = format!("{url}/v1/walk-ffn");
-        handles.push(tokio::spawn(async move {
-            client
-                .post(&target)
-                .json(&sub_body)
-                .send()
-                .await
-                .map_err(|e| e.to_string())?
-                .json::<Value>()
-                .await
-                .map_err(|e| e.to_string())
-        }));
-    }
-
-    let responses: Vec<Value> = futures::future::join_all(handles)
-        .await
-        .into_iter()
-        .map(|jh| jh.map_err(|e| e.to_string()).and_then(|r| r))
-        .collect::<Result<Vec<_>, _>>()
-        .map_err(|e| (StatusCode::BAD_GATEWAY, format!("shard error: {e}")))?;
-
-    let mut all_results: Vec<Value> = Vec::new();
-    let mut max_latency: f64 = 0.0;
-    for resp in responses {
-        if let Some(arr) = resp.get("results").and_then(|v| v.as_array()) {
-            all_results.extend(arr.iter().cloned());
-        } else if resp.get("layer").is_some() {
-            all_results.push(resp.clone());
-        }
-        if let Some(ms) = resp.get("latency_ms").and_then(|v| v.as_f64()) {
-            if ms > max_latency {
-                max_latency = ms;
-            }
-        }
-    }
-    all_results.sort_by_key(|r| r.get("layer").and_then(|v| v.as_u64()).unwrap_or(0));
-
-    let merged = serde_json::json!({
-        "results": all_results,
-        "latency_ms": (max_latency * 10.0).round() / 10.0,
-    });
-    let json_bytes = serde_json::to_vec(&merged)
-        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
-    Ok(Response::builder()
-        .status(StatusCode::OK)
-        .header(header::CONTENT_TYPE, "application/json")
-        .body(axum::body::Body::from(json_bytes))
-        .unwrap())
-}
-
-/// Forward raw bytes to a shard, passing the Content-Type header through.
-/// The shard's response status and Content-Type are preserved unchanged.
-async fn proxy_raw(
-    client: &reqwest::Client,
-    base_url: &str,
-    body: Bytes,
-    ct: &str,
-) -> Result<Response, (StatusCode, String)> {
-    let url = format!("{base_url}/v1/walk-ffn");
-    let resp = client
-        .post(&url)
-        .header(reqwest::header::CONTENT_TYPE, ct)
-        .body(body.to_vec())
-        .send()
-        .await
-        .map_err(|e| (StatusCode::BAD_GATEWAY, format!("shard {base_url}: {e}")))?;
-
-    let status = resp.status();
-    let resp_ct = resp
-        .headers()
-        .get(reqwest::header::CONTENT_TYPE)
-        .and_then(|v| v.to_str().ok())
-        .unwrap_or("application/json")
-        .to_string();
-    let resp_bytes = resp
-        .bytes()
-        .await
-        .map_err(|e| (StatusCode::BAD_GATEWAY, format!("read shard response: {e}")))?;
-
-    Ok(Response::builder()
-        .status(status.as_u16())
-        .header(header::CONTENT_TYPE, resp_ct)
-        .body(axum::body::Body::from(resp_bytes))
-        .unwrap())
-}
-
-async fn handle_health() -> Json<Value> {
-    Json(serde_json::json!({"status": "ok"}))
-}
-
-/// Proxy /v1/stats to the first reachable shard so that clients connecting
-/// via RemoteWalkBackend (which reads hidden_size from /v1/stats) work
-/// transparently through the router.
-async fn handle_stats(State(state): State<Arc<AppState>>) -> Response {
-    // Collect candidate shard URLs: grid shards first, then static.
-    let mut candidates: Vec<String> = Vec::new();
-    if let Some(grid) = &state.grid {
-        let guard = grid.read().await;
-        for url in guard.all_shard_urls() {
-            candidates.push(url);
-        }
-    }
-    for shard in &state.static_shards {
-        if !candidates.contains(&shard.url) {
-            candidates.push(shard.url.clone());
-        }
-    }
-    for url in candidates {
-        let stats_url = format!("{url}/v1/stats");
-        if let Ok(resp) = state.client.get(&stats_url).send().await {
-            if resp.status().is_success() {
-                if let Ok(bytes) = resp.bytes().await {
-                    return Response::builder()
-                        .status(StatusCode::OK)
-                        .header(header::CONTENT_TYPE, "application/json")
-                        .body(axum::body::Body::from(bytes))
-                        .unwrap();
-                }
-            }
-        }
-    }
-    // No shard reachable — return minimal synthetic stats so callers don't fail hard.
-    Response::builder()
-        .status(StatusCode::SERVICE_UNAVAILABLE)
-        .header(header::CONTENT_TYPE, "application/json")
-        .body(axum::body::Body::from(r#"{"error":"no shard reachable"}"#))
-        .unwrap()
-}
+// `AppState`, the HTTP handlers, and the `build_router` factory live in
+// `larql_router::http` so they can be exercised by integration tests
+// without spawning the binary.
+use larql_router::http::{build_router, AppState};
 
 // ── Main ───────────────────────────────────────────────────────────────────────
 
+// ── Admin subcommand dispatch (ADR-0004 Phase 5) ───────────────────────────────
+
+async fn run_admin(cmd: AdminCmd) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+    use larql_router::admin::{admin_assign, admin_drain, admin_gaps, admin_status};
+
+    match cmd {
+        AdminCmd::Status { router } => {
+            for line in admin_status(&router).await? {
+                println!("{line}");
+            }
+        }
+        AdminCmd::Gaps { router, model } => {
+            for line in admin_gaps(&router, model.as_deref()).await? {
+                println!("{line}");
+            }
+        }
+        AdminCmd::Drain {
+            router,
+            server,
+            reason,
+        } => {
+            let ack = admin_drain(&router, &server, &reason).await?;
+            if ack.ok {
+                println!("ok: drained {server}");
+            } else {
+                eprintln!("error: {}", ack.message);
+                std::process::exit(2);
+            }
+        }
+        AdminCmd::Assign {
+            router,
+            model,
+            layers,
+            server,
+            origin_url,
+            origin_hash,
+        } => {
+            let ack = admin_assign(
+                &router,
+                &model,
+                &layers,
+                server.as_deref(),
+                origin_url.as_deref(),
+                &origin_hash,
+            )
+            .await?;
+            if ack.ok {
+                println!("ok: assigned {model}");
+            } else {
+                eprintln!("error: {}", ack.message);
+                std::process::exit(2);
+            }
+        }
+    }
+    Ok(())
+}
+
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
-    // Accept both `larql-router <args>` and `larql-router route <args>`.
     let args: Vec<String> = std::env::args().collect();
-    let filtered: Vec<String> = if args.len() > 1 && args[1] == "route" {
-        std::iter::once(args[0].clone())
-            .chain(args[2..].iter().cloned())
-            .collect()
-    } else {
-        args
-    };
-    let cli = Cli::parse_from(filtered);
+    let filtered = larql_router::cli_helpers::filter_legacy_route_arg(args);
+    let root = CliRoot::parse_from(filtered);
+    if let Some(admin) = root.admin {
+        return run_admin(admin).await;
+    }
+    let cli = root.daemon;
 
     tracing_subscriber::fmt()
         .with_env_filter(
@@ -505,17 +421,14 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
 
     info!("larql-router v{}", env!("CARGO_PKG_VERSION"));
 
-    if cli.shards.is_none() && cli.grid_port.is_none() {
-        eprintln!("error: must provide --shards or --grid-port (or both)");
+    if let Err(msg) =
+        larql_router::cli_helpers::validate_daemon_inputs(cli.shards.as_deref(), cli.grid_port)
+    {
+        eprintln!("error: {msg}");
         std::process::exit(1);
     }
 
-    let client = reqwest::Client::builder()
-        .timeout(std::time::Duration::from_secs(cli.timeout_secs))
-        .tcp_keepalive(std::time::Duration::from_secs(30))
-        .pool_idle_timeout(std::time::Duration::from_secs(90))
-        .pool_max_idle_per_host(16)
-        .build()?;
+    let client = larql_router::cli_helpers::build_shard_client(cli.timeout_secs)?;
 
     let static_shards = if let Some(spec) = &cli.shards {
         let shards = parse_shards(spec).map_err(|e| format!("--shards: {e}"))?;
@@ -551,11 +464,42 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
         None
     };
 
+    // ADR-0017: build the metrics registry early so the rebalancer + RTT
+    // probe + HTTP route handlers all share one Arc<RouterMetrics>.
+    let metrics = larql_router::metrics::RouterMetrics::new();
+
     if let (Some(grid_port), Some(state)) = (cli.grid_port, &grid_state) {
-        let svc = GridServiceServer::new(GridServiceImpl::new_with_key(
-            state.clone(),
-            cli.grid_key.clone(),
-        ));
+        // Phase 4: install target_replicas before any servers register so
+        // the first under-/over-replication check sees the right target.
+        state.write().set_target_replicas(cli.target_replicas);
+        if cli.target_replicas > 1 {
+            info!(
+                target_replicas = cli.target_replicas,
+                "Replication: enabled"
+            );
+        }
+        // ADR-0020 — install the saturation ceiling. None = disabled.
+        state.write().set_saturation_ceiling(cli.saturation_ceiling);
+        if let Some(ceiling) = cli.saturation_ceiling {
+            info!(
+                ceiling,
+                "Saturation backpressure: enabled (route() 503s when every replica >= ceiling)"
+            );
+        }
+
+        // ADR-0021 — hedged-dispatch info log; the AppState already
+        // carries the delay through to handle_walk_ffn_inner.
+        if let Some(ms) = cli.hedge_after_ms {
+            info!(
+                hedge_after_ms = ms,
+                "Hedged dispatch: enabled (fires a secondary replica when primary > {ms} ms)"
+            );
+        }
+
+        let svc = GridServiceServer::new(
+            GridServiceImpl::new_with_key(state.clone(), cli.grid_key.clone())
+                .with_metrics(metrics.clone()),
+        );
         let grpc_addr: SocketAddr = format!("{}:{}", cli.host, grid_port).parse()?;
         info!("Grid gRPC server listening: {grpc_addr}");
         tokio::spawn(async move {
@@ -568,32 +512,79 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
             }
         });
 
+        // ADR-0010: spawn a QUIC accept loop in parallel when --quic-port
+        // is set. Same gRPC service implementation, different transport.
+        #[cfg(feature = "quic")]
+        if let Some(quic_port) = cli.quic_port {
+            spawn_quic_listener(&cli, state.clone(), quic_port, metrics.clone())?;
+        }
+
         // GT6: spawn dynamic rebalancer (disabled when interval == 0).
         if cli.rebalance_interval > 0 {
             let rebalance_cfg = rebalancer::RebalancerConfig::from_cli(
                 cli.rebalance_interval,
                 cli.rebalance_threshold,
-            );
+            )
+            .with_hot_shard_threshold(cli.hot_shard_rps)
+            .with_hot_shard_demote_ratio(cli.hot_shard_demote_ratio);
             info!(
                 interval_s = cli.rebalance_interval,
                 threshold = cli.rebalance_threshold,
+                hot_shard_rps = ?cli.hot_shard_rps,
                 "Rebalancer: enabled"
             );
-            rebalancer::spawn(state.clone(), rebalance_cfg);
+            rebalancer::spawn(state.clone(), rebalance_cfg, Some(metrics.clone()));
+        }
+
+        // Optional RTT probe loop — opt-in via --rtt-probe-interval-secs.
+        if let Some(rtt_cfg) =
+            larql_router::tasks::rtt_probe::RttProbeConfig::from_cli(cli.rtt_probe_interval_secs)
+        {
+            info!(
+                interval_s = cli.rtt_probe_interval_secs,
+                "RTT probe: enabled"
+            );
+            larql_router::tasks::rtt_probe::spawn(state.clone(), rtt_cfg, Some(metrics.clone()));
         }
     }
+
+    // Snapshot grid gauges now so /metrics has values before the
+    // first rebalancer tick fires. The rebalancer tick (if enabled)
+    // keeps refreshing these every interval.
+    if let Some(g) = grid_state.as_ref() {
+        metrics.refresh_gauges(&g.read());
+    }
+
+    // ADR-0019 — build the H3Client when `--http3-shards` is on.
+    // Held as an `Option`: dense routing keeps reqwest unchanged.
+    #[cfg(feature = "http3")]
+    let h3_client = if cli.http3_shards {
+        let _ = rustls::crypto::ring::default_provider().install_default();
+        let h3 = larql_router_protocol::transport::h3::H3Client::new(
+            "0.0.0.0:0".parse().unwrap(),
+            cli.shard_cert_fingerprint.clone(),
+        )
+        .map_err(|e| format!("HTTP/3 client setup: {e}"))?;
+        info!(
+            fingerprint = ?cli.shard_cert_fingerprint,
+            "HTTP/3 shard transport: enabled"
+        );
+        Some(Arc::new(h3))
+    } else {
+        None
+    };
 
     let state = Arc::new(AppState {
         static_shards,
         grid: grid_state,
         client,
+        metrics: Some(metrics.clone()),
+        #[cfg(feature = "http3")]
+        h3_client,
+        hedge_after: cli.hedge_after_ms.map(std::time::Duration::from_millis),
     });
 
-    let app = Router::new()
-        .route("/v1/walk-ffn", post(handle_walk_ffn))
-        .route("/v1/stats", axum::routing::get(handle_stats))
-        .route("/v1/health", axum::routing::get(handle_health))
-        .with_state(state);
+    let app = build_router(state);
 
     let addr = format!("{}:{}", cli.host, cli.port);
     info!("HTTP listening: http://{}", addr);
@@ -601,135 +592,4 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     axum::serve(listener, app).await?;
 
     Ok(())
-}
-
-// ══════════════════════════════════════════════════════════════════════════════
-// Tests
-// ══════════════════════════════════════════════════════════════════════════════
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    // ── peek_binary ───────────────────────────────────────────────────────────
-
-    fn make_binary_single(layer: u32, residual_floats: usize) -> Vec<u8> {
-        let mut buf = Vec::new();
-        buf.extend_from_slice(&layer.to_le_bytes());
-        buf.extend_from_slice(&1u32.to_le_bytes()); // seq_len
-        buf.extend_from_slice(&1u32.to_le_bytes()); // flags (full_output)
-        buf.extend_from_slice(&8092u32.to_le_bytes()); // top_k
-        buf.extend(std::iter::repeat_n(0u8, residual_floats * 4));
-        buf
-    }
-
-    fn make_binary_batch(layers: &[u32], residual_floats: usize) -> Vec<u8> {
-        let mut buf = Vec::new();
-        buf.extend_from_slice(&BATCH_MARKER.to_le_bytes());
-        buf.extend_from_slice(&(layers.len() as u32).to_le_bytes());
-        for &l in layers {
-            buf.extend_from_slice(&l.to_le_bytes());
-        }
-        buf.extend_from_slice(&1u32.to_le_bytes()); // seq_len
-        buf.extend_from_slice(&1u32.to_le_bytes()); // flags
-        buf.extend_from_slice(&8092u32.to_le_bytes()); // top_k
-        buf.extend(std::iter::repeat_n(0u8, residual_floats * 4));
-        buf
-    }
-
-    #[test]
-    fn peek_binary_single_layer() {
-        let body = make_binary_single(5, 4);
-        let layers = peek_binary(&body).unwrap();
-        assert_eq!(layers, vec![5]);
-    }
-
-    #[test]
-    fn peek_binary_batch_layers() {
-        let body = make_binary_batch(&[5, 20, 30], 4);
-        let layers = peek_binary(&body).unwrap();
-        assert_eq!(layers, vec![5, 20, 30]);
-    }
-
-    #[test]
-    fn peek_binary_empty_body_returns_none() {
-        assert!(peek_binary(&[]).is_none());
-    }
-
-    #[test]
-    fn peek_binary_truncated_single_returns_value() {
-        // Only 4 bytes — enough for a single-layer marker.
-        let buf = 7u32.to_le_bytes();
-        let layers = peek_binary(&buf).unwrap();
-        assert_eq!(layers, vec![7]);
-    }
-
-    #[test]
-    fn peek_binary_batch_truncated_layer_list_returns_none() {
-        // Claims 10 layers but only provides 2 u32s after num_layers.
-        let mut buf = Vec::new();
-        buf.extend_from_slice(&BATCH_MARKER.to_le_bytes());
-        buf.extend_from_slice(&10u32.to_le_bytes()); // num_layers = 10
-        buf.extend_from_slice(&0u32.to_le_bytes()); // layer 0
-        buf.extend_from_slice(&1u32.to_le_bytes()); // layer 1 — only 2 of 10
-        assert!(peek_binary(&buf).is_none());
-    }
-
-    #[test]
-    fn peek_binary_zero_batch_layers() {
-        let body = make_binary_batch(&[], 4);
-        let layers = peek_binary(&body).unwrap();
-        assert!(layers.is_empty());
-    }
-
-    // ── parse_shards ──────────────────────────────────────────────────────────
-
-    #[test]
-    fn parse_shards_single_entry() {
-        let shards = parse_shards("0-16=http://host-a:8080").unwrap();
-        assert_eq!(shards.len(), 1);
-        assert_eq!(shards[0].layer_start, 0);
-        assert_eq!(shards[0].layer_end, 17); // exclusive
-        assert_eq!(shards[0].url, "http://host-a:8080");
-    }
-
-    #[test]
-    fn parse_shards_two_entries() {
-        let shards = parse_shards("0-16=http://host-a:8080,17-33=http://host-b:8081").unwrap();
-        assert_eq!(shards.len(), 2);
-        assert!(shards[0].owns(0));
-        assert!(shards[0].owns(16));
-        assert!(!shards[0].owns(17));
-        assert!(shards[1].owns(17));
-        assert!(shards[1].owns(33));
-    }
-
-    #[test]
-    fn parse_shards_empty_string_errors() {
-        assert!(parse_shards("").is_err());
-    }
-
-    #[test]
-    fn parse_shards_missing_url_errors() {
-        assert!(parse_shards("0-16").is_err());
-    }
-
-    #[test]
-    fn parse_shards_end_less_than_start_errors() {
-        assert!(parse_shards("16-0=http://host:8080").is_err());
-    }
-
-    #[test]
-    fn parse_shards_ignores_trailing_comma() {
-        let shards = parse_shards("0-16=http://host:8080,").unwrap();
-        assert_eq!(shards.len(), 1);
-    }
-
-    #[test]
-    fn shard_owns_inclusive_bounds() {
-        let shards = parse_shards("0-16=http://host:8080").unwrap();
-        assert!(shards[0].owns(0));
-        assert!(shards[0].owns(16));
-        assert!(!shards[0].owns(17));
-    }
 }

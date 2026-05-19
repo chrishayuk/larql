@@ -1,0 +1,32 @@
+# Dependabot — keep GitHub Actions versions current.
+#
+# Cargo and pip are intentionally not tracked here:
+#   - cargo: workspace deps move via PRs that update Cargo.lock directly;
+#     Dependabot's per-crate Cargo.toml proposals don't match how this
+#     repo bumps versions.
+#   - pip: Python bindings use uv (`crates/larql-python/uv.lock`), which
+#     Dependabot's pip ecosystem doesn't read.
+#
+# Actions are the one place Dependabot is well-supported and worth the noise.
+
+version: 2
+updates:
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+      time: "06:00"
+      timezone: "Etc/UTC"
+    # One grouped PR per week instead of one per action.
+    groups:
+      github-actions:
+        patterns:
+          - "*"
+    commit-message:
+      prefix: "ci"
+      include: "scope"
+    labels:
+      - "dependencies"
+      - "github-actions"
+    open-pull-requests-limit: 5

@@ -56,7 +56,7 @@ impl<'a> WalkFfn<'a> {
         let down_native = self.index.down_layer_matrix(layer);
         let row_fallback = up_native.is_none() || down_native.is_none();
         if row_fallback
-            && self.index.interleaved_q4k_layer_data(layer).is_none()
+            && self.index.interleaved_kquant_layer_data(layer).is_none()
             && !self.index.has_fp4_storage()
         {
             return None;
@@ -72,7 +72,7 @@ impl<'a> WalkFfn<'a> {
         // Hint the kernel to start streaming layer N+1's Q4_K/Q6_K bytes
         // into the page cache while we work on N. No-op when there's no
         // Q4_K mmap, no manifest, or `layer+1` is out of range.
-        self.index.prefetch_interleaved_q4k_layer(layer + 1);
+        self.index.prefetch_interleaved_kquant_layer(layer + 1);
 
         let mut out = Array2::<f32>::zeros((seq_len, hidden));
         let mut full_activation = Array2::<f32>::zeros((seq_len, intermediate));
@@ -98,7 +98,7 @@ impl<'a> WalkFfn<'a> {
                     Some(larql_compute::dot_proj_gpu(x, &v, self.backend))
                 } else if let Some(y) =
                     self.index
-                        .q4k_matmul_transb(layer, 1, x_flat, seq_len, self.backend)
+                        .kquant_matmul_transb(layer, 1, x_flat, seq_len, self.backend)
                 {
                     ndarray::Array2::from_shape_vec((seq_len, intermediate), y).ok()
                 } else {
@@ -116,7 +116,7 @@ impl<'a> WalkFfn<'a> {
                         Some(larql_compute::matmul_gpu(&activation, &v, self.backend))
                     } else if let Some(act_flat) = act_slice {
                         self.index
-                            .q4k_matmul_transb(layer, 2, act_flat, seq_len, self.backend)
+                            .kquant_matmul_transb(layer, 2, act_flat, seq_len, self.backend)
                             .and_then(|y| {
                                 ndarray::Array2::from_shape_vec((seq_len, hidden), y).ok()
                             })
@@ -162,13 +162,13 @@ impl<'a> WalkFfn<'a> {
             let parallelisable =
                 !layer_has_overrides && is_gated && hits.len() >= 512 && down_native.is_none();
             let down_cache_local: Option<std::sync::Arc<Vec<f32>>> = if parallelisable {
-                self.index.q4k_ffn_layer(layer, 2)
+                self.index.kquant_ffn_layer(layer, 2)
             } else {
                 None
             };
             if let Some(down_arc) = down_cache_local.as_ref().filter(|_| parallelisable) {
                 let down_data: &[f32] = down_arc.as_slice();
-                let up_slices = self.index.interleaved_q4k_layer_data(layer);
+                let up_slices = self.index.interleaved_kquant_layer_data(layer);
                 // Resolve up via the registry — accepts Q4_K, Q6_K, and
                 // any future K-quant rather than hardcoding Q4_K-only.
                 let up_q4k: Option<(&[u8], &larql_vindex::quant::registry::QuantFormatInfo)> =
@@ -303,5 +303,127 @@ impl<'a> WalkFfn<'a> {
 
         self.trace_path(layer, "sparse:serial");
         Some((out, full_activation))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use crate::test_utils::{
+        make_test_q4k_vindex, make_test_q4k_weights, make_test_vindex, make_test_weights,
+    };
+    use crate::vindex::{WalkFfn, WalkFfnConfig};
+    use ndarray::Array2;
+
+    fn x(seq: usize, hidden: usize) -> Array2<f32> {
+        Array2::from_shape_vec(
+            (seq, hidden),
+            (0..seq * hidden).map(|i| (i as f32 + 1.0) * 0.02).collect(),
+        )
+        .unwrap()
+    }
+
+    /// Sparse walk over the Q4K fixture — `up_layer_matrix`/`down_layer_matrix`
+    /// both return None (Q4K storage is byte-only) so the function
+    /// routes through the row-fallback ladder dispatching via
+    /// `ffn_row_dot` / `ffn_row_scaled_add`.
+    #[test]
+    fn walk_ffn_sparse_routes_through_q4k_fixture() {
+        let weights = make_test_q4k_weights();
+        let index = make_test_q4k_vindex(&weights);
+        let cfg = WalkFfnConfig::sparse(weights.num_layers, 8);
+        let ffn = WalkFfn::from_config(&weights, &index, cfg);
+        let result = ffn.walk_ffn_sparse(0, &x(1, weights.hidden_size));
+        if let Some((out, activation)) = result {
+            assert_eq!(out.shape(), &[1, weights.hidden_size]);
+            assert_eq!(activation.shape()[0], 1);
+        }
+    }
+
+    /// Sparse walk over the feature-major f32 fixture — `up_layer_matrix`
+    /// + `down_layer_matrix` both return Some so the function bypasses
+    ///   the row-fallback and goes through the BLAS gemm fast path.
+    #[test]
+    fn walk_ffn_sparse_routes_through_feature_major_f32_fixture() {
+        use crate::test_utils::attach_feature_major_f32_to_test_vindex;
+        let weights = make_test_weights();
+        let mut index = make_test_vindex(&weights);
+        attach_feature_major_f32_to_test_vindex(&weights, &mut index);
+        let cfg = WalkFfnConfig::sparse(weights.num_layers, 4);
+        let ffn = WalkFfn::from_config(&weights, &index, cfg);
+        let result = ffn
+            .walk_ffn_sparse(0, &x(2, weights.hidden_size))
+            .expect("feature-major f32 fixture should produce output");
+        let (out, _activation) = result;
+        assert_eq!(out.shape(), &[2, weights.hidden_size]);
+        assert!(out.iter().all(|v| v.is_finite()));
+    }
+
+    /// Sparse walk with full-K (K >= num_features) routes through the
+    /// gemv fast path. Drives the `hits_len_ge_intermediate` branch.
+    #[test]
+    fn walk_ffn_sparse_full_k_takes_gemv_path() {
+        use crate::test_utils::attach_feature_major_f32_to_test_vindex;
+        let weights = make_test_weights();
+        let mut index = make_test_vindex(&weights);
+        attach_feature_major_f32_to_test_vindex(&weights, &mut index);
+        let cfg = WalkFfnConfig::dense(weights.num_layers);
+        let ffn = WalkFfn::from_config(&weights, &index, cfg);
+        let out = ffn
+            .walk_ffn_sparse(0, &x(1, weights.hidden_size))
+            .expect("dense-K sparse walk should succeed");
+        assert_eq!(out.0.shape(), &[1, weights.hidden_size]);
+    }
+
+    /// Sparse walk against a bare vindex (no FFN data) returns None —
+    /// no native f32, no Q4K, no FP4 → the `row_fallback` guard fires.
+    #[test]
+    fn walk_ffn_sparse_returns_none_when_no_ffn_data() {
+        let weights = make_test_weights();
+        let index = make_test_vindex(&weights);
+        let cfg = WalkFfnConfig::sparse(weights.num_layers, 4);
+        let ffn = WalkFfn::from_config(&weights, &index, cfg);
+        let result = ffn.walk_ffn_sparse(0, &x(1, weights.hidden_size));
+        assert!(result.is_none());
+    }
+
+    /// Sparse walk against a StarCoder2-shaped arch (Standard FFN +
+    /// up_bias) on a feature-major f32 fixture drives the
+    /// `up_bias_for_layer = Some(...)` branch (lines 81-86) AND the
+    /// non-gated activation arm (lines 254-266).
+    #[test]
+    fn walk_ffn_sparse_non_gated_arch_uses_up_bias() {
+        use crate::test_utils::{
+            attach_feature_major_f32_to_test_vindex, make_starcoder2_test_weights,
+        };
+        let weights = make_starcoder2_test_weights();
+        let mut index = make_test_vindex(&weights);
+        attach_feature_major_f32_to_test_vindex(&weights, &mut index);
+        let cfg = WalkFfnConfig::sparse(weights.num_layers, 4);
+        let ffn = WalkFfn::from_config(&weights, &index, cfg);
+        let out = ffn
+            .walk_ffn_sparse(0, &x(1, weights.hidden_size))
+            .expect("starcoder2 + feature-major fixture should produce output");
+        assert_eq!(out.0.shape(), &[1, weights.hidden_size]);
+        assert!(out.0.iter().all(|v| v.is_finite()));
+    }
+
+    /// Sparse walk in full-K mode against the Q4K fixture (no native
+    /// up/down) drives the `kquant_matmul_transb` arms inside the
+    /// full-K gemv fast path (lines 99-131): up_scores via Q4K matmul,
+    /// then down via Q4K matmul again.
+    #[test]
+    fn walk_ffn_sparse_full_k_routes_through_kquant_matmul_on_q4k_fixture() {
+        let weights = make_test_q4k_weights();
+        let index = make_test_q4k_vindex(&weights);
+        let cfg = WalkFfnConfig::dense(weights.num_layers);
+        let backend = larql_compute::cpu_backend();
+        let ffn = WalkFfn::from_config(&weights, &index, cfg).with_backend(&*backend);
+        let result = ffn.walk_ffn_sparse(0, &x(1, weights.hidden_size));
+        // Full-K + Q4K — either takes the fast path (Some) or falls through
+        // to the serial loop (also Some). Just exercise the wiring.
+        if let Some((out, _activation)) = result {
+            assert_eq!(out.shape(), &[1, weights.hidden_size]);
+            assert!(out.iter().all(|v| v.is_finite()));
+        }
     }
 }

@@ -51,6 +51,31 @@ impl<'a, 'b> FfnBackend for BackendFfn<'a, 'b> {
     }
 }
 
+/// Stub FFN that returns the input unchanged. Used by callers that must
+/// satisfy the `KvEngine::{prefill,decode_step}` signature but know the
+/// engine they're calling doesn't consult an FFN router (e.g. engines
+/// that recompute FFN internally from `weights`). Cheap to construct;
+/// holds no references.
+pub struct NullFfn;
+
+impl FfnBackend for NullFfn {
+    fn forward(&self, _layer: usize, x: &Array2<f32>) -> Array2<f32> {
+        x.clone()
+    }
+
+    fn forward_with_activation(
+        &self,
+        _layer: usize,
+        x: &Array2<f32>,
+    ) -> (Array2<f32>, Array2<f32>) {
+        (x.clone(), x.clone())
+    }
+
+    fn name(&self) -> &str {
+        "null"
+    }
+}
+
 /// Architecture-correct dense FFN — CPU BLAS path.
 pub fn dense_ffn_forward(
     weights: &ModelWeights,

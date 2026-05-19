@@ -31,7 +31,7 @@ use larql_compute::{cpu_backend, default_backend, ComputeBackend};
 use larql_inference::encode_prompt;
 use larql_inference::layer_graph::{generate as gen, CachedLayerGraph};
 use larql_vindex::{
-    load_model_weights_q4k, load_vindex_tokenizer, QuantFormat, SilentLoadCallbacks, VectorIndex,
+    load_model_weights_kquant, load_vindex_tokenizer, QuantFormat, SilentLoadCallbacks, VectorIndex,
 };
 
 /// Which backend flavour to exercise. GPU uses the platform default (Metal
@@ -188,19 +188,19 @@ fn run_case(
         ));
     }
 
-    let mut weights = load_model_weights_q4k(vindex_path, &mut cb)
-        .map_err(|e| format!("load_model_weights_q4k: {e}"))?;
+    let mut weights = load_model_weights_kquant(vindex_path, &mut cb)
+        .map_err(|e| format!("load_model_weights_kquant: {e}"))?;
     let tokenizer =
         load_vindex_tokenizer(vindex_path).map_err(|e| format!("load_vindex_tokenizer: {e}"))?;
-    let mut q4_index = VectorIndex::load_vindex(vindex_path, &mut cb)
+    let mut index = VectorIndex::load_vindex(vindex_path, &mut cb)
         .map_err(|e| format!("VectorIndex::load_vindex: {e}"))?;
-    q4_index
-        .load_attn_q4k(vindex_path)
-        .map_err(|e| format!("load_attn_q4k: {e}"))?;
-    q4_index
-        .load_interleaved_q4k(vindex_path)
-        .map_err(|e| format!("load_interleaved_q4k: {e}"))?;
-    let _ = q4_index.load_lm_head_q4(vindex_path);
+    index
+        .load_attn_kquant(vindex_path)
+        .map_err(|e| format!("load_attn_kquant: {e}"))?;
+    index
+        .load_interleaved_kquant(vindex_path)
+        .map_err(|e| format!("load_interleaved_kquant: {e}"))?;
+    let _ = index.load_lm_head_kquant(vindex_path);
 
     // Instruct-tuned models answer trivia only inside their chat template.
     // Primary source is the HF-published template snapshotted into the
@@ -227,7 +227,7 @@ fn run_case(
         &tokenizer,
         &prompt_ids,
         max_tokens,
-        &q4_index,
+        &index,
         &*backend,
         &cached,
         0..num_layers,

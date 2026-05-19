@@ -1,0 +1,15 @@
+{
+  "policy_note": "Default policy is 90% line coverage per source file. Per-file entries below are debt baselines that must be raised toward 90 — never ratcheted down. New files must hit 90% on first commit. Total floor tracks the package baseline measured on 2026-05-15. The gap between per-file floor (90%) and package floor (~91%) is `src/main.rs`, which is excluded from per-file checks because it's the CLI binary entry point (clap parsing, admin subcommand dispatch, QUIC listener spawn). Pure helpers extracted from main.rs live in `admin.rs` and are unit-tested at 99%+. `grid/service.rs` debt entry tracks the streaming gRPC handler post-extraction from the old monolithic `grid.rs`; the join task's spawned-future branches (Refuse, post-stream cleanup, tx.send failures) are hard to drive from unit tests — integration tests in `tests/test_grid_service.rs` cover the main paths but a few branches remain uncovered.",
+  "include_globs": [
+    "crates/larql-router/src/*.rs",
+    "crates/larql-router/src/**/*.rs"
+  ],
+  "exclude_globs": [
+    "crates/larql-router/src/main.rs"
+  ],
+  "default_line_min_percent": 90.0,
+  "total_line_min_percent": 91.0,
+  "per_file_line_min_percent": {
+    "crates/larql-router/src/grid/service.rs": 88.0
+  }
+}

@@ -88,22 +88,22 @@ fn patched_gate_index_trait_forwards_empty_storage_capabilities() {
     assert!(gate.interleaved_q4_mmap_ref().is_none());
     gate.prefetch_interleaved_q4_layer(LAYER);
 
-    assert!(!gate.has_interleaved_q4k());
-    assert!(gate.interleaved_q4k_mmap_ref().is_none());
-    assert!(gate.interleaved_q4k_layer_data(LAYER).is_none());
-    gate.prefetch_interleaved_q4k_layer(LAYER);
+    assert!(!gate.has_interleaved_kquant());
+    assert!(gate.interleaved_kquant_mmap_ref().is_none());
+    assert!(gate.interleaved_kquant_layer_data(LAYER).is_none());
+    gate.prefetch_interleaved_kquant_layer(LAYER);
 
-    assert!(!gate.has_down_features_q4k());
-    assert!(!gate.q4k_down_feature_scaled_add(LAYER, FEATURE, 1.0, &mut [0.0; HIDDEN]));
-    assert!(gate.q4k_ffn_layer(LAYER, 0).is_none());
-    assert!(!gate.q4k_ffn_row_into(LAYER, 0, FEATURE, &mut [0.0; HIDDEN]));
+    assert!(!gate.has_down_features_kquant());
+    assert!(!gate.kquant_down_feature_scaled_add(LAYER, FEATURE, 1.0, &mut [0.0; HIDDEN]));
+    assert!(gate.kquant_ffn_layer(LAYER, 0).is_none());
+    assert!(!gate.kquant_ffn_row_into(LAYER, 0, FEATURE, &mut [0.0; HIDDEN]));
     assert!(gate
-        .q4k_ffn_row_dot(LAYER, 0, FEATURE, &[1.0, 0.0])
+        .kquant_ffn_row_dot(LAYER, 0, FEATURE, &[1.0, 0.0])
         .is_none());
-    assert!(!gate.q4k_ffn_row_scaled_add_via_cache(LAYER, 2, FEATURE, 1.0, &mut [0.0; HIDDEN]));
-    assert!(!gate.q4k_ffn_row_scaled_add(LAYER, 0, FEATURE, 1.0, &mut [0.0; HIDDEN]));
+    assert!(!gate.kquant_ffn_row_scaled_add_via_cache(LAYER, 2, FEATURE, 1.0, &mut [0.0; HIDDEN]));
+    assert!(!gate.kquant_ffn_row_scaled_add(LAYER, 0, FEATURE, 1.0, &mut [0.0; HIDDEN]));
     assert!(gate
-        .q4k_matmul_transb(LAYER, 0, &[1.0, 0.0], 1, None)
+        .kquant_matmul_transb(LAYER, 0, &[1.0, 0.0], 1, None)
         .is_none());
 
     assert!(!gate.has_fp4_storage());

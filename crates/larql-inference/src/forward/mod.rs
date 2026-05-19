@@ -26,7 +26,6 @@ pub mod embed;
 pub mod hooks;
 pub mod infer_patched;
 pub mod inference_weights;
-pub mod kv_generate;
 pub mod layer;
 mod layer_interventions;
 pub mod lens;
@@ -58,10 +57,6 @@ pub use infer_patched::{
     InferPatchedResult, KnnOverride, KNN_COSINE_THRESHOLD,
 };
 pub use inference_weights::InferenceWeights;
-pub use kv_generate::{
-    generate_cached, generate_cached_backend, generate_cached_constrained, generate_cached_hooked,
-    generate_cached_with_window,
-};
 pub use layer::{run_attention_public, run_ffn, run_layer_with_capture_hooked, run_layer_with_ffn};
 pub use layer_interventions::{
     run_layer_with_mapped_head_residual_delta, run_layer_with_mapped_pre_o_head,

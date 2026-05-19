@@ -1,0 +1,13 @@
+{
+  "policy_note": "Per-file 90% line coverage floor. Two transports live under `src/transport/` — the QUIC scaffolding (ADR-0010) and the HTTP/3 wrapper (ADR-0019). Generated proto code is re-exported through `lib.rs` and llvm-cov excludes it via the workspace `target/` filter. New files must hit 90% on first commit; the h3.rs debt baseline below covers async-shutdown error branches inside spawned tasks (peer-graceful-close, body-cap > 64 MiB, spawned-task tracing on connection error) that are genuinely hard to exercise without invasive test infrastructure. Raise toward 90 over time; do not ratchet down.",
+  "include_globs": [
+    "crates/larql-router-protocol/src/*.rs",
+    "crates/larql-router-protocol/src/**/*.rs"
+  ],
+  "exclude_globs": [],
+  "default_line_min_percent": 90.0,
+  "total_line_min_percent": 90.0,
+  "per_file_line_min_percent": {
+    "crates/larql-router-protocol/src/transport/h3.rs": 89.0
+  }
+}

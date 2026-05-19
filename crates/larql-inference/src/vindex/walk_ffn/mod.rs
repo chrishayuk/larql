@@ -8,12 +8,13 @@
 //! | 1 | `index.has_overrides_at(layer)`                      | `override:sparse`            |
 //! | 2 | `config.is_sparse(layer)`                            | `sparse:*`                   |
 //! | 3 | `index.has_fp4_storage()`                            | `fp4_storage:sparse`         |
-//! | 4 | `has_interleaved_q4()` + backend has Q4              | `interleaved_q4:*`           |
-//! | 5 | `has_interleaved()`                                  | `interleaved`                |
-//! | 6 | `has_full_mmap_ffn()`                                | `full_mmap`                  |
-//! | 7 | `has_interleaved_q4k()`                              | `interleaved_q4k:dequant`    |
-//! | 8 | `has_down_features()` + safetensors weights loaded   | `exact`                      |
-//! | 9 | Fallback: sparse matmul against safetensors weights  | `weights_fallback:*`         |
+//! | 4 | `has_interleaved_kquant()` + gated FFN               | `interleaved_kquant:native`  |
+//! | 5 | `has_interleaved_q4()` + backend has Q4              | `interleaved_q4:*`           |
+//! | 6 | `has_interleaved()`                                  | `interleaved`                |
+//! | 7 | `has_full_mmap_ffn()`                                | `full_mmap`                  |
+//! | 8 | `has_interleaved_kquant()`                           | `interleaved_kquant:dequant` |
+//! | 9 | `has_down_features()` + safetensors weights loaded   | `exact`                      |
+//! | 10| Fallback: sparse matmul against safetensors weights  | `weights_fallback:*`         |
 //!
 //! Priority rationale: overrides must bypass everything (whole-layer
 //! paths silently lose overridden features). FP4/FP8 is handled by the
@@ -24,13 +25,14 @@
 //!
 //! Each walk path lives in its own module under this directory:
 //!
-//! - `sparse.rs`          — per-feature walk, unified ffn_row_* dispatch
-//! - `interleaved.rs`     — f32 interleaved mmap, three BLAS gemms
-//! - `interleaved_q4.rs`  — Q4_0 interleaved, CPU kernel / Metal Q4
-//! - `interleaved_q4k.rs` — Q4K dequant, full f32 dense after decode
-//! - `full_mmap.rs`       — gate/up/down in three separate mmap files
-//! - `exact.rs`           — gate/up from safetensors, down from mmap
-//! - `helpers.rs`         — cross-path utilities + trace metadata
+//! - `sparse.rs`                  — per-feature walk, unified ffn_row_* dispatch
+//! - `interleaved.rs`             — f32 interleaved mmap, three BLAS gemms
+//! - `interleaved_q4.rs`            — Q4_0 interleaved, CPU kernel / Metal Q4
+//! - `interleaved_kquant_native.rs` — K-quant direct matvec, no dequant cache
+//! - `interleaved_kquant_dequant.rs`— K-quant dequant, full f32 dense after decode
+//! - `full_mmap.rs`               — gate/up/down in three separate mmap files
+//! - `exact.rs`                   — gate/up from safetensors, down from mmap
+//! - `helpers.rs`                 — cross-path utilities + trace metadata
 //!
 //! Adding a new storage format should almost never touch `mod.rs` — add
 //! a new module with a single walk function, one branch in the routing
@@ -51,8 +53,9 @@ mod exact;
 mod full_mmap;
 mod helpers;
 mod interleaved;
+mod interleaved_kquant_dequant;
+mod interleaved_kquant_native;
 mod interleaved_q4;
-mod interleaved_q4k;
 mod sparse;
 
 #[cfg(test)]
@@ -330,42 +333,57 @@ impl<'a> FfnBackend for WalkFfn<'a> {
                 }
             }
 
-            // 4. Q4_0 interleaved + GPU Q4 (Metal).
-            if self.index.has_interleaved_q4() && self.backend.is_some_and(|be| be.has_q4()) {
+            // 4. Q4K native — direct matvec via `kquant_matmul_transb`. Same
+            //    kernel `ffn_decode_step_native` uses. Goes ahead of Q4_0 /
+            //    f32 interleaved / full_mmap / dequant because for a vindex
+            //    that has both Q4K and one of those, this is the fast path.
+            if self.index.has_interleaved_kquant() {
+                if let Some(r) = self.walk_ffn_kquant_native(layer, x) {
+                    break 'routing r;
+                }
+            }
+
+            // 5. Q4_0 interleaved + GPU Q4 (Metal).
+            if self.index.has_interleaved_q4()
+                && self
+                    .backend
+                    .is_some_and(|be| be.supports_quant(::larql_compute::QuantFormat::Q4_K))
+            {
                 if let Some(r) = self.walk_ffn_q4_interleaved(layer, x) {
                     break 'routing r;
                 }
             }
 
-            // 5. f32 interleaved.
+            // 6. f32 interleaved.
             if self.index.has_interleaved() {
                 if let Some(r) = self.walk_ffn_interleaved(layer, x) {
                     break 'routing r;
                 }
             }
 
-            // 6. Full mmap — gate/up/down in separate files.
+            // 7. Full mmap — gate/up/down in separate files.
             if self.index.has_full_mmap_ffn() {
                 if let Some(r) = self.walk_ffn_full_mmap(layer, x) {
                     break 'routing r;
                 }
             }
 
-            // 7. Q4K interleaved dequant.
-            if self.index.has_interleaved_q4k() {
-                if let Some(r) = self.walk_ffn_q4k_dequant(layer, x) {
+            // 8. Q4K interleaved dequant — fallback for non-gated archs and
+            //    any case where `walk_ffn_kquant_native` returns `None`.
+            if self.index.has_interleaved_kquant() {
+                if let Some(r) = self.walk_ffn_kquant_dequant(layer, x) {
                     break 'routing r;
                 }
             }
 
-            // 8. Exact — down from mmap, gate/up from safetensors.
+            // 9. Exact — down from mmap, gate/up from safetensors.
             if self.index.has_down_features() {
                 break 'routing self.walk_ffn_exact(layer, x);
             }
 
-            // 9. Last resort: sparse matmul against safetensors weights.
-            //    Fires when the vindex has no FFN payload of its own
-            //    (extract_level = Browse without pinned weights).
+            // 10. Last resort: sparse matmul against safetensors weights.
+            //     Fires when the vindex has no FFN payload of its own
+            //     (extract_level = Browse without pinned weights).
             let top_k = self.top_k_for(layer);
             let features = self.index.gate_knn_batch(layer, x, top_k);
             let has_any_override = features.iter().any(|&f| {
@@ -708,5 +726,146 @@ mod dispatch_tests {
         let x = input(1, weights.hidden_size);
         let out = ffn.forward(0, &x);
         assert_eq!(out.shape(), &[1, weights.hidden_size]);
+    }
+
+    /// `WalkFfn::new` with `top_k = usize::MAX` routes through the dense
+    /// `WalkFfnConfig::dense` branch (line 178). The `new(_, _, k)`
+    /// constructor's other branch (sparse) is already exercised by
+    /// `walk_ffn_sparse_k`.
+    #[test]
+    fn walk_ffn_new_with_usize_max_takes_dense_branch() {
+        let weights = shared_weights();
+        let idx = mock_index(weights);
+        let ffn = WalkFfn::new(weights, &idx, usize::MAX);
+        let x = input(1, weights.hidden_size);
+        let out = ffn.forward(0, &x);
+        assert_eq!(out.shape(), &[1, weights.hidden_size]);
+    }
+
+    /// Variant of `MockGateIndex` that yields a `FeatureMeta` for every
+    /// `(layer, feature)` query. This is what `take_trace` needs to
+    /// promote a residual into a populated `WalkHit` — without it, the
+    /// `filter_map` collapses to empty (`feature_meta` returns `None`).
+    struct MockGateIndexWithMeta {
+        n_features: usize,
+    }
+
+    impl GateLookup for MockGateIndexWithMeta {
+        fn gate_knn(
+            &self,
+            _layer: usize,
+            _residual: &Array1<f32>,
+            top_k: usize,
+        ) -> Vec<(usize, f32)> {
+            (0..top_k.min(self.n_features))
+                .map(|i| (i, 1.0 / (i as f32 + 1.0)))
+                .collect()
+        }
+        fn feature_meta(&self, _layer: usize, feature: usize) -> Option<FeatureMeta> {
+            Some(FeatureMeta {
+                top_token: format!("tok{feature}"),
+                top_token_id: feature as u32,
+                c_score: 0.9,
+                top_k: Vec::new(),
+            })
+        }
+        fn num_features(&self, _layer: usize) -> usize {
+            self.n_features
+        }
+    }
+
+    impl PatchOverrides for MockGateIndexWithMeta {}
+    impl NativeFfnAccess for MockGateIndexWithMeta {}
+    impl QuantizedFfnAccess for MockGateIndexWithMeta {}
+    impl Fp4FfnAccess for MockGateIndexWithMeta {}
+
+    /// When `feature_meta` returns `Some`, `take_trace` builds a populated
+    /// `WalkHit` per (layer, feature) — covering the `Some(WalkHit { .. })`
+    /// arm of the `filter_map` (lines 235-238).
+    #[test]
+    fn walk_ffn_take_trace_populates_walk_hits_when_meta_present() {
+        let weights = shared_weights();
+        let idx = MockGateIndexWithMeta {
+            n_features: weights.intermediate_size,
+        };
+        let ffn = WalkFfn::new_with_trace(weights, &idx, 3);
+        let x = input(1, weights.hidden_size);
+        ffn.forward(0, &x);
+        let trace = ffn.take_trace();
+        assert_eq!(trace.layers.len(), 1);
+        let (layer, hits) = &trace.layers[0];
+        assert_eq!(*layer, 0);
+        assert!(
+            !hits.is_empty(),
+            "expected WalkHits when feature_meta returns Some"
+        );
+        for hit in hits {
+            assert_eq!(hit.layer, 0);
+            assert!(hit.gate_score.is_finite());
+            assert!(hit.meta.top_token.starts_with("tok"));
+        }
+    }
+
+    /// `walk_trace_env_enabled` caches the env-var lookup in a thread-local.
+    /// Spawn a fresh thread so the cell starts empty, set `LARQL_WALK_TRACE=1`
+    /// in that thread, then drive `forward` — `trace_path` reads the cache
+    /// (first call populates it as `Some(true)`) and emits to stderr
+    /// (line 145-147).
+    #[test]
+    fn walk_ffn_trace_path_honours_env_var_in_fresh_thread() {
+        let handle = std::thread::spawn(|| {
+            // SAFETY: thread-isolated env var. The whole point of running
+            // in a dedicated thread is that no other test sees this var
+            // mid-flight — and we wipe it before returning. Set + remove
+            // are bracketed within a single thread's lifetime.
+            unsafe {
+                std::env::set_var("LARQL_WALK_TRACE", "1");
+            }
+            let weights = make_test_weights();
+            let idx = MockGateIndex {
+                n_features: weights.intermediate_size,
+            };
+            let ffn = WalkFfn::new_unlimited(&weights, &idx);
+            let x = Array2::from_shape_vec(
+                (1, weights.hidden_size),
+                (0..weights.hidden_size)
+                    .map(|i| (i as f32 + 1.0) * 0.02)
+                    .collect(),
+            )
+            .unwrap();
+            // Drives trace_path, which checks walk_trace_env_enabled.
+            ffn.forward(0, &x);
+            unsafe {
+                std::env::remove_var("LARQL_WALK_TRACE");
+            }
+        });
+        handle.join().expect("env-var thread panicked");
+    }
+
+    /// Forward against the Q4K test fixture routes through the native
+    /// kquant path (priority 4 in the routing ladder, line 340-343),
+    /// which fires when the vindex has interleaved_kquant data AND the
+    /// `num_features` Q4_K fallback returns a non-zero width.
+    #[test]
+    fn walk_ffn_forward_routes_through_native_kquant_path() {
+        use crate::test_utils::{make_test_q4k_vindex, make_test_q4k_weights};
+        let weights = make_test_q4k_weights();
+        let index = make_test_q4k_vindex(&weights);
+        // Pre-flight: the Q4K manifest's gate component bytes should give
+        // a positive intermediate width via the `num_features` fallback.
+        // If this fails the test would silently route through
+        // `zero_features_dense` and the native kquant path stays uncov.
+        for layer in 0..weights.num_layers {
+            assert!(
+                index.num_features(layer) > 0,
+                "layer {layer}: num_features must be > 0 for Q4K routing — \
+                 the kquant_ffn_intermediate_width fallback returned 0"
+            );
+        }
+        let ffn = WalkFfn::new_unlimited(&weights, &index);
+        let x = input(1, weights.hidden_size);
+        let out = ffn.forward(0, &x);
+        assert_eq!(out.shape(), &[1, weights.hidden_size]);
+        assert!(out.iter().all(|v| v.is_finite()));
     }
 }

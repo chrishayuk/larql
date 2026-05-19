@@ -10,7 +10,7 @@
 //! ## What's covered
 //!
 //! - `prefill.rs`:  `prefill_with_kv` hidden state shape, finiteness, matches
-//!                  `predict_q4k_hidden` at the last position.
+//!                  `predict_kquant_hidden` at the last position.
 //! - `pipeline_layer.rs`: `build_pipeline_layers` produces the right number of
 //!                         layers, each with correct head_dim/norm weights.
 //! - `template.rs`: `TemplateUniverse::build` with real entities populates
@@ -41,10 +41,10 @@ use larql_inference::{
         TemplatePattern,
         TemplateUniverse,
     },
-    vindex::predict_q4k_hidden,
+    vindex::predict_kquant_hidden,
 };
 use larql_vindex::{
-    load_model_weights_q4k, load_vindex_config, load_vindex_tokenizer, SilentLoadCallbacks,
+    load_model_weights_kquant, load_vindex_config, load_vindex_tokenizer, SilentLoadCallbacks,
     VectorIndex,
 };
 
@@ -87,11 +87,11 @@ fn prefill_with_kv_shape_and_finiteness() {
     };
 
     let mut cb = SilentLoadCallbacks;
-    let mut weights = load_model_weights_q4k(&vindex_path, &mut cb).expect("load weights");
-    let mut q4_index = VectorIndex::load_vindex(&vindex_path, &mut cb).expect("load index");
-    q4_index.load_attn_q4k(&vindex_path).expect("load attn Q4K");
-    q4_index
-        .load_interleaved_q4k(&vindex_path)
+    let mut weights = load_model_weights_kquant(&vindex_path, &mut cb).expect("load weights");
+    let mut index = VectorIndex::load_vindex(&vindex_path, &mut cb).expect("load index");
+    index.load_attn_kquant(&vindex_path).expect("load attn Q4K");
+    index
+        .load_interleaved_kquant(&vindex_path)
         .expect("load FFN Q4K");
 
     let tokenizer = load_vindex_tokenizer(&vindex_path).expect("load tokenizer");
@@ -104,7 +104,7 @@ fn prefill_with_kv_shape_and_finiteness() {
     let h = prefill_with_kv(
         &weights,
         &prompt_ids,
-        &q4_index,
+        &index,
         &CpuBackend,
         0..weights.num_layers,
     );
@@ -134,11 +134,11 @@ fn prefill_with_kv_matches_predict_q4k_hidden() {
     };
 
     let mut cb = SilentLoadCallbacks;
-    let mut weights = load_model_weights_q4k(&vindex_path, &mut cb).expect("load weights");
-    let mut q4_index = VectorIndex::load_vindex(&vindex_path, &mut cb).expect("load index");
-    q4_index.load_attn_q4k(&vindex_path).expect("load attn Q4K");
-    q4_index
-        .load_interleaved_q4k(&vindex_path)
+    let mut weights = load_model_weights_kquant(&vindex_path, &mut cb).expect("load weights");
+    let mut index = VectorIndex::load_vindex(&vindex_path, &mut cb).expect("load index");
+    index.load_attn_kquant(&vindex_path).expect("load attn Q4K");
+    index
+        .load_interleaved_kquant(&vindex_path)
         .expect("load FFN Q4K");
 
     let tokenizer = load_vindex_tokenizer(&vindex_path).expect("load tokenizer");
@@ -152,13 +152,13 @@ fn prefill_with_kv_matches_predict_q4k_hidden() {
     let h_prefill = prefill_with_kv(
         &weights,
         &prompt_ids,
-        &q4_index,
+        &index,
         &CpuBackend,
         0..weights.num_layers,
     );
 
-    // predict_q4k_hidden dequantises layer-by-layer
-    let h_q4k = predict_q4k_hidden(&mut weights, &prompt_ids, &q4_index, None);
+    // predict_kquant_hidden dequantises layer-by-layer
+    let h_q4k = predict_kquant_hidden(&mut weights, &prompt_ids, &index, None);
 
     // The two paths use different FFN implementations — cosine similarity should
     // be > 0.95 at the last position (they differ mainly in FFN quantisation).
@@ -177,7 +177,7 @@ fn prefill_with_kv_matches_predict_q4k_hidden() {
     } else {
         0.0
     };
-    eprintln!("prefill_with_kv vs predict_q4k_hidden: cosine = {cos:.6}");
+    eprintln!("prefill_with_kv vs predict_kquant_hidden: cosine = {cos:.6}");
     assert!(
         cos > 0.90,
         "last-pos cosine {cos:.4} < 0.90 — paths diverged unexpectedly"
@@ -194,16 +194,16 @@ fn build_pipeline_layers_produces_all_layers() {
     };
 
     let mut cb = SilentLoadCallbacks;
-    let weights = load_model_weights_q4k(&vindex_path, &mut cb).expect("load weights");
-    let mut q4_index = VectorIndex::load_vindex(&vindex_path, &mut cb).expect("load index");
-    q4_index.load_attn_q4k(&vindex_path).expect("load attn Q4K");
-    q4_index
-        .load_interleaved_q4k(&vindex_path)
+    let weights = load_model_weights_kquant(&vindex_path, &mut cb).expect("load weights");
+    let mut index = VectorIndex::load_vindex(&vindex_path, &mut cb).expect("load index");
+    index.load_attn_kquant(&vindex_path).expect("load attn Q4K");
+    index
+        .load_interleaved_kquant(&vindex_path)
         .expect("load FFN Q4K");
 
-    let gate_index: &dyn larql_vindex::GateIndex = &q4_index;
+    let gate_index: &dyn larql_vindex::GateIndex = &index;
     let q4_ffn = gate_index
-        .interleaved_q4k_mmap_ref()
+        .interleaved_kquant_mmap_ref()
         .expect("Q4K FFN mmap required");
     let ffn_is_q4k = true;
     let hidden = weights.hidden_size;
@@ -212,7 +212,7 @@ fn build_pipeline_layers_produces_all_layers() {
 
     let layers = build_pipeline_layers(
         &weights,
-        &q4_index,
+        &index,
         0..weights.num_layers,
         q4_ffn,
         q4_ffn_per_matrix,
@@ -256,10 +256,10 @@ fn resolve_attn_weights_returns_some_with_q4k_loaded() {
     };
 
     let mut cb = SilentLoadCallbacks;
-    let mut q4_index = VectorIndex::load_vindex(&vindex_path, &mut cb).expect("load index");
-    q4_index.load_attn_q4k(&vindex_path).expect("load attn Q4K");
+    let mut index = VectorIndex::load_vindex(&vindex_path, &mut cb).expect("load index");
+    index.load_attn_kquant(&vindex_path).expect("load attn Q4K");
 
-    let result = resolve_attn_weights(&q4_index, 0);
+    let result = resolve_attn_weights(&index, 0);
     assert!(
         result.is_some(),
         "attn weights should be Some after loading Q4K attn"
@@ -286,12 +286,12 @@ fn template_universe_build_with_real_model() {
     };
 
     let mut cb = SilentLoadCallbacks;
-    let weights = load_model_weights_q4k(&vindex_path, &mut cb).expect("load weights");
+    let weights = load_model_weights_kquant(&vindex_path, &mut cb).expect("load weights");
     let tokenizer = load_vindex_tokenizer(&vindex_path).expect("load tokenizer");
-    let mut q4_index = VectorIndex::load_vindex(&vindex_path, &mut cb).expect("load index");
-    q4_index.load_attn_q4k(&vindex_path).expect("load attn Q4K");
-    q4_index
-        .load_interleaved_q4k(&vindex_path)
+    let mut index = VectorIndex::load_vindex(&vindex_path, &mut cb).expect("load index");
+    index.load_attn_kquant(&vindex_path).expect("load attn Q4K");
+    index
+        .load_interleaved_kquant(&vindex_path)
         .expect("load FFN Q4K");
 
     let ffn = larql_inference::ffn::WeightFfn { weights: &weights };
@@ -323,12 +323,12 @@ fn guided_walk_layer_graph_with_real_universe() {
     };
 
     let mut cb = SilentLoadCallbacks;
-    let weights = load_model_weights_q4k(&vindex_path, &mut cb).expect("load weights");
+    let weights = load_model_weights_kquant(&vindex_path, &mut cb).expect("load weights");
     let tokenizer = load_vindex_tokenizer(&vindex_path).expect("load tokenizer");
-    let mut q4_index = VectorIndex::load_vindex(&vindex_path, &mut cb).expect("load index");
-    q4_index.load_attn_q4k(&vindex_path).expect("load attn Q4K");
-    q4_index
-        .load_interleaved_q4k(&vindex_path)
+    let mut index = VectorIndex::load_vindex(&vindex_path, &mut cb).expect("load index");
+    index.load_attn_kquant(&vindex_path).expect("load attn Q4K");
+    index
+        .load_interleaved_kquant(&vindex_path)
         .expect("load FFN Q4K");
 
     let ffn = larql_inference::ffn::WeightFfn { weights: &weights };
@@ -354,7 +354,7 @@ fn guided_walk_layer_graph_with_real_universe() {
     let g = GuidedWalkLayerGraph {
         weights: &weights,
         universe: &universe,
-        index: &q4_index,
+        index: &index,
     };
     use larql_inference::layer_graph::LayerGraph;
     for layer in 0..weights.num_layers {

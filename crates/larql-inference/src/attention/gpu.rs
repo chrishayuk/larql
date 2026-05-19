@@ -283,7 +283,7 @@ pub fn q4_attention_proj(
     hidden: usize,
     backend: &dyn larql_compute::ComputeBackend,
 ) -> Option<Array2<f32>> {
-    if !backend.has_q4() {
+    if !backend.supports_quant(::larql_compute::QuantFormat::Q4_K) {
         return None;
     }
     let seq_len = h.shape()[0];

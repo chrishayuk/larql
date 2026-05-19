@@ -13,12 +13,67 @@ performance changes expected, none observed in the cross-check.
 
 | Engine | Decode (tok/s) | KV memory | Compression | Accuracy |
 |---|---|---|---|---|
+| `standard` (the production cache) | reference | full f16 K/V | 1× | exact (the reference) |
+| `no_cache` | O(N²); slowest at long context | only token IDs | n/a | exact (correctness fallback) |
 | `markov_residual` | ~95 | ~171 MB | ~287× | KL = 0.0 (exact) |
 | `unlimited_context` | ~94 | ~193 MB | ~254× | exact within window |
 | `turbo_quant` (4-bit) | ~95 | ~12.7 GB | ~4× | cos ≈ 0.991 |
 | `apollo` (boundaries) | ~8× faster | ~11 MB | ~4,414× | task-level |
 
-Reference: full f16 KV is ~49 GB on the same corpus.
+Reference for "compression" is full f16 KV at ~49 GB on the same corpus.
+
+## Engine-trait dispatch overhead (synthetic test_utils, M3 Max, CPU)
+
+Bench: `cargo bench -p larql-kv --bench engine_decode -- generate`. Times
+end-to-end generation (prefill + 8 decode steps) on the synthetic 2-layer
+test model. The engine-trait path constructs a `StandardEngine` and
+drives it through `generate_with_engine`; the legacy path calls
+`generate_cached_backend` directly. Both should be statistically
+indistinguishable.
+
+50-sample run (3s warm-up, 8s measurement):
+
+| Path | Time (median) | 95% CI |
+|---|---|---|
+| `legacy_generate_cached_backend` | 446.72 µs | 443.22 – 450.02 µs |
+| `engine_dispatch_standard` | 443.66 µs | 437.98 – 448.67 µs |
+
+CIs fully overlap; engine dispatch is ~1 % faster in this run, well
+within noise. The trait-vtable + engine construction overhead is
+negligible for the production cache wrapper. This is the empirical
+evidence supporting the "no regression on the default path" non-goal
+in the unification spec
+([§9](../larql-inference/docs/specs/kv-engine-unification.md)).
+
+A previous 10-sample run produced a wider engine-dispatch CI
+(380 – 715 µs) — that's a small-sample artifact, not a real overhead
+signal. With ≥50 samples and ≥8 s measurement the two paths are
+statistically inseparable.
+
+## Per-engine prefill / decode-step times (synthetic, CPU)
+
+Bench: `cargo bench -p larql-kv --bench engine_decode`. 2-layer
+synthetic model, 8-token prompt. Useful for catching dispatch
+regressions in PR review; not a proxy for real-model decode speed.
+
+10-sample run, 2 s warm-up + 4 s measurement:
+
+| Engine | Prefill (median) | Decode step (median) |
+|---|---|---|
+| `standard` | 14.9 µs | 12.0 µs |
+| `standard:window=4` | 15.2 µs | 7.1 µs (smaller K/V to attend over) |
+| `no-cache` | 14.9 µs | 34.8 µs (re-runs full forward each step) |
+| `markov-rs` | 15.0 µs | 27.1 µs (recomputes K/V from residuals) |
+| `unlimited-context` | 56.9 µs | 8.3 µs (window-checkpoint amortises decode) |
+| `turbo-quant` (4-bit) | 21.8 µs | 81.9 µs (codec dominates on tiny model) |
+| `apollo` | 45 ns (no boundary store loaded → early bail) | 2 ns (early bail) |
+
+`standard` and `no-cache` differ only at decode-step: `no-cache` re-runs
+the full prefill per step (3× the cost), while `standard` does
+incremental K/V append. As the prompt grows, the gap widens linearly.
+
+For real-model numbers (Gemma 3 4B, Metal Q4K, 370K-token corpus) see
+the table above.
 
 ## Per-engine notes
 
@@ -74,9 +129,12 @@ cargo run -p larql-cli --release -- bench gemma3:4b --engine turbo-quant:bits=4
 cargo run -p larql-cli --release -- bench gemma3:4b --engine apollo:layer=30
 ```
 
-The `kv-cache-benchmark` crate also runs all four under `cargo bench
--p kv-cache-benchmark --bench kv_strategies` against synthetic K/V tensors
-(real-model variant gated behind the `real-model` feature).
+The in-crate criterion bench at `crates/larql-kv/benches/engine_decode.rs`
+runs the dispatch helpers under `cargo bench -p larql-kv --bench engine_decode`,
+covering `StandardEngine` vs the legacy `generate_cached_backend` parity oracle
+plus the sync/async dispatch helpers. (Until 2026-05-16 this harness lived in
+the retired `kv-cache-benchmark` crate as `kv_strategies`; the production
+comparator is now this in-crate bench plus `larql bench --engine <spec>`.)
 
 ## See also
 

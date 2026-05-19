@@ -8,8 +8,19 @@
 //! |-------------------------------|-----------------------------------------------|
 //! | [`MatMul`]                    | f32 / f16 matmul, gemv, batch matmul          |
 //! | [`QuantMatVec`]               | unified `quant_matvec` + per-format helpers   |
-//! | [`DecodeBackend`]             | KV-cached decode + prefill + MoE hook         |
+//! | [`DecodeBackend`]             | KV-cached decode + prefill + MoE hook (Metal-shaped) |
 //! | (umbrella) `ComputeBackend`   | `name`, `device_info`, [`Capability`] probe   |
+//!
+//! The engine-facing intent surface (`KvDispatch`) is a *sibling* of
+//! `ComputeBackend`, not a sub-trait. It lives in `larql-inference`
+//! (sibling to `FfnBackend`) so its CPU and Metal impls can call into
+//! the inference-side forward-pass functions without inducing a dep
+//! cycle on `larql-compute`. New [`Capability`] flags
+//! (`FusedAttentionStep`, `WindowedAttentionStep`, `NativeKvCodec`,
+//! `PipelinedBoundaryUpload`, `FusedResidualNorm`, `KvHandleNative`)
+//! stay here — they describe what the *substrate* supports, regardless
+//! of where the dispatch trait lives. See
+//! `crates/larql-inference/docs/specs/compute-backend-redesign.md` §10.2.
 //!
 //! Most callers stay typed against `&dyn ComputeBackend`; the
 //! sub-trait split is mainly an implementation-side organising

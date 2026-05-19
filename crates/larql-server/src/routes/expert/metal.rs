@@ -14,7 +14,7 @@
 use std::sync::Arc;
 use std::time::Instant;
 
-use larql_compute::{MetalBackend, MoeScratch};
+use larql_compute_metal::{MetalBackend, MoeScratch};
 
 use crate::env_flags;
 use crate::error::ServerError;
@@ -112,8 +112,10 @@ pub fn run_experts_metal_batch(
 
     // Pre-stage per-expert weights as cache-backed Metal buffers.
     let t_buf_start = Instant::now();
-    let mut expert_bufs: Vec<(larql_compute::MetalBuffer, larql_compute::MetalBuffer)> =
-        Vec::with_capacity(expert_ids.len());
+    let mut expert_bufs: Vec<(
+        larql_compute_metal::MetalBuffer,
+        larql_compute_metal::MetalBuffer,
+    )> = Vec::with_capacity(expert_ids.len());
     let mut filtered_weights: Vec<f32> = Vec::with_capacity(expert_ids.len());
     for (i, &eid) in expert_ids.iter().enumerate() {
         if let Some((gu, dn)) = weights.get_layer_entry_bytes(layer, eid) {

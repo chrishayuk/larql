@@ -40,11 +40,11 @@ impl<'a> StreamingContext<'a> {
             }
             QuantFormat::Q4K => {
                 // Q4K doesn't write `up_weights.bin` / `down_weights.bin`
-                // at all — the FFN weights live in `interleaved_q4k.bin`.
+                // at all — the FFN weights live in `interleaved_kquant.bin`.
                 // `ffn_compact` is a no-op here by construction. Level
                 // gating for Q4K is a future refinement (today Q4K
                 // always writes the full set).
-                crate::format::weights::write_model_weights_q4k_with_opts(
+                crate::format::weights::write_model_weights_kquant_with_opts(
                     &streaming_source,
                     self.output_dir,
                     self.callbacks,

@@ -4,9 +4,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let vd = std::path::PathBuf::from("output/gemma3-4b-v2.vindex");
     let mut index =
         larql_vindex::VectorIndex::load_vindex(&vd, &mut larql_vindex::SilentLoadCallbacks)?;
-    let _ = index.load_attn_q4k(&vd);
+    let _ = index.load_attn_kquant(&vd);
 
-    if let Some([_q, _k, v, _o]) = index.attn_q4k_layer_data(0) {
+    if let Some([_q, _k, v, _o]) = index.attn_kquant_layer_data(0) {
         let data = v.0;
         println!("V data: {} bytes, format={}", data.len(), v.1);
 

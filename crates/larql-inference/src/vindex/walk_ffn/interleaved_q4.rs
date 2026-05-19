@@ -2,7 +2,7 @@
 //! kernel for down. Reads ~44 MB per layer (vs 315 MB for f32
 //! interleaved) — 7× less data to page in, same BLAS speed warm.
 //!
-//! Metal Q4 path (when `self.backend.has_q4()`): one GPU submission
+//! Metal Q4 path (when `self.backend.supports_quant(::larql_compute::QuantFormat::Q4_K)`): one GPU submission
 //! for gate+up across all seq positions, followed by one vecmat per
 //! position for down. C kernel path is the CPU fallback.
 
@@ -49,9 +49,13 @@ impl<'a> WalkFfn<'a> {
         let mut out = Array2::<f32>::zeros((seq_len, hidden));
         let mut full_activation = Array2::<f32>::zeros((seq_len, intermediate));
 
-        let metal_q4 = self
-            .backend
-            .and_then(|be| if be.has_q4() { Some(be) } else { None });
+        let metal_q4 = self.backend.and_then(|be| {
+            if be.supports_quant(::larql_compute::QuantFormat::Q4_K) {
+                Some(be)
+            } else {
+                None
+            }
+        });
 
         if let Some(be) = metal_q4 {
             // Metal: ONE GPU submission for all gate+up across ALL seq positions

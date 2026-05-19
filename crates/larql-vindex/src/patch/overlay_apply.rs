@@ -15,6 +15,11 @@ use super::overlay::PatchedVindex;
 impl PatchedVindex {
     /// Apply a patch. Operations are resolved into the override maps.
     pub fn apply_patch(&mut self, patch: VindexPatch) {
+        // Collect the layers whose `overrides_gate` we touch so we
+        // can invalidate exactly those cache entries at the end. A
+        // single patch usually touches one or a handful of layers;
+        // the HashSet bounds invalidation cost to O(touched_layers).
+        let mut touched_layers: std::collections::HashSet<usize> = std::collections::HashSet::new();
         for op in &patch.operations {
             match op {
                 PatchOp::InsertKnn {
@@ -80,6 +85,7 @@ impl PatchedVindex {
                     if let Some(b64) = gate_vector_b64 {
                         if let Ok(vec) = decode_gate_vector(b64) {
                             self.overrides_gate.insert(key, vec);
+                            touched_layers.insert(key.0);
                         }
                     }
                     if let Some(b64) = up_vector_b64 {
@@ -116,6 +122,7 @@ impl PatchedVindex {
                     if let Some(b64) = gate_vector_b64 {
                         if let Ok(vec) = decode_gate_vector(b64) {
                             self.overrides_gate.insert(key, vec);
+                            touched_layers.insert(key.0);
                         }
                     }
                     if let Some(b64) = up_vector_b64 {
@@ -132,12 +139,26 @@ impl PatchedVindex {
                 PatchOp::Delete { .. } => {
                     self.overrides_meta.insert(key, None);
                     self.deleted.insert(key);
-                    self.overrides_gate.remove(&key);
+                    // Always invalidate on Delete — even if the gate
+                    // entry was absent, the per-layer feature set
+                    // shrunk and any cached matrix is stale.
+                    let was_present = self.overrides_gate.remove(&key).is_some();
+                    if was_present {
+                        touched_layers.insert(key.0);
+                    }
                 }
                 PatchOp::InsertKnn { .. } | PatchOp::DeleteKnn { .. } => {
                     unreachable!("KNN ops handled above");
                 }
             }
+        }
+        // Per-layer invalidation: only drop cache entries for layers
+        // this patch actually mutated. Patches that touch one layer
+        // leave every other layer's cache hot, which matters for
+        // high-frequency single-layer patch streams (e.g. Exp 52
+        // compile loops, INSERT bursts at a single L26 cache).
+        for layer in touched_layers {
+            self.invalidate_gate_cache_layer(layer);
         }
         self.patches.push(patch);
     }
@@ -156,6 +177,7 @@ impl PatchedVindex {
         self.overrides_gate.clear();
         self.deleted.clear();
         self.knn_store = super::knn_store::KnnStore::default();
+        self.invalidate_gate_cache();
         let patches: Vec<VindexPatch> = self.patches.drain(..).collect();
         for patch in patches {
             self.apply_patch(patch);

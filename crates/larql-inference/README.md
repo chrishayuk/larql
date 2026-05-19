@@ -83,7 +83,9 @@ LM-head path resolution (which kernel fires per next-token):
 | `residual.rs` | RMS norm, layer norm |
 | `trace/` | Residual stream decomposition and tiered storage |
 | `vindex/` | `open_inference_vindex` (strict loader) + `WalkFfn` (mmap'd FFN) + `q4k_forward/` |
-| `engines/` | KV-cache engines: `MarkovResidualEngine`, `UnlimitedContextEngine`, `Apollo`, `TurboQuant` (behind the `KvEngine` trait) |
+| `kv_engine.rs` | `KvEngine` trait + `EngineInfo` + `DecodeStageSummary` — abstract dispatch surface shared with `larql-kv` (engine impls live there) |
+| `kv_dispatch/` (`mod.rs`, `cpu.rs`, `metal.rs`, `helpers.rs`; future: `vulkan.rs`, `cuda.rs`) | `KvDispatch` per-layer-intent trait (sync) + `EngineBackend: ComputeBackend + KvDispatch` umbrella; `CpuBackend` and `MetalBackend` impls; `helpers::kv_prefill_via_dispatch` / `kv_decode_step_via_dispatch` (sync) + `_async` variants drive the per-layer prefill/decode loop. Spec: [`compute-backend-redesign.md`](docs/specs/compute-backend-redesign.md). |
+| `async_compute_backend/` (`mod.rs`, `cpu.rs`, `metal.rs`; future: `vulkan.rs`, `cuda.rs`) | `AsyncComputeBackend: ComputeBackend + KvDispatch + Send` sibling trait — deferred-dispatch intent surface with `AttentionHandle` / `ResidualUploadHandle` for one-command-buffer-per-decode-step batching on GPU backends. CPU is a degenerate `Ready*` wrapper (parity reference). Backends live as submodules so adding Vulkan/CUDA is a single new file. Spec: [`async-compute-backend.md`](docs/specs/async-compute-backend.md). |
 | `experts/` | WASM expert dispatcher and registry |
 | `chat/` | Jinja-driven chat templates loaded from vindex |
 | `capture.rs` | Residual-stream vector capture for probing |

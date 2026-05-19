@@ -27,7 +27,7 @@ pub unsafe fn mmap_optimized(file: &std::fs::File) -> Result<memmap2::Mmap, std:
 
 /// Create an mmap with RANDOM hint — no prefaulting, demand-paged only.
 ///
-/// Use for large sparse files (gate_vectors.bin, interleaved_q4k.bin) where
+/// Use for large sparse files (gate_vectors.bin, interleaved_kquant.bin) where
 /// RSS should reflect only the pages actually touched during inference, not
 /// the full file size. Pages fault in on first access and are evictable under
 /// memory pressure without any explicit unmap.

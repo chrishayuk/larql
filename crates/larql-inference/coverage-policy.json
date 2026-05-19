@@ -1,0 +1,17 @@
+{
+  "policy_note": "Per-file LINE-coverage gates for the dispatch trait families (cargo-llvm-cov: `Lines Cover` column, not the `Regions` column). Established 2026-05-16 alongside the AsyncComputeBackend + KvDispatch directory reorganization. Every file in scope clears the 90% default. Scope is narrow — the trait families only — because larql-inference's overall baseline (~70%) reflects an older surface that's tracked separately. `included_total_line_min_percent` checks the sum across this scope. Trait files (mod.rs) cover the `unimplemented!()` defaults via a stub-backend test pattern that satisfies the supertraits with minimal surface (one panicking `MatMul` impl + everything else's defaults).",
+  "include_globs": [
+    "crates/larql-inference/src/async_compute_backend/mod.rs",
+    "crates/larql-inference/src/async_compute_backend/cpu.rs",
+    "crates/larql-inference/src/async_compute_backend/metal.rs",
+    "crates/larql-inference/src/kv_dispatch/mod.rs",
+    "crates/larql-inference/src/kv_dispatch/cpu.rs",
+    "crates/larql-inference/src/kv_dispatch/metal.rs",
+    "crates/larql-inference/src/kv_dispatch/helpers.rs"
+  ],
+  "exclude_globs": [],
+  "default_line_min_percent": 90.0,
+  "total_line_min_percent": 0.0,
+  "included_total_line_min_percent": 90.0,
+  "per_file_line_min_percent": {}
+}

@@ -6,8 +6,10 @@
 //! 1. **HuggingFace hub cache** — `~/.cache/huggingface/hub/`, populated
 //!    by `larql pull` (and by `hf-hub` transitively). Layout:
 //!    ```
-//!    datasets--<owner>--<name>/snapshots/<sha>/{index.json,…}
+//!    {models,datasets}--<owner>--<name>/snapshots/<sha>/{index.json,…}
 //!    ```
+//!    `larql publish` defaults to model repos; older vindexes and a few
+//!    docs examples live as dataset repos. The scan accepts either.
 //! 2. **LARQL local cache** — `~/.cache/larql/local/`, populated by
 //!    `larql link <path>`. Each entry is a symlink (or directory) named
 //!    `<name>.vindex/` containing the usual vindex files. Owner-less;
@@ -34,7 +36,7 @@ use std::path::{Path, PathBuf};
 /// Which cache an entry came from.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum CacheSource {
-    /// `~/.cache/huggingface/hub/datasets--<owner>--<name>/`
+    /// `~/.cache/huggingface/hub/{models,datasets}--<owner>--<name>/`
     HuggingFace,
     /// `~/.cache/larql/local/<name>.vindex/`
     Local,
@@ -112,6 +114,19 @@ pub fn scan_cached_vindexes_at_both(
     Ok(out)
 }
 
+/// Prefixes hf-hub uses for the per-repo cache dir. Order doesn't matter
+/// — the two prefixes are mutually exclusive on a single dir name.
+const HF_REPO_PREFIXES: &[&str] = &["models--", "datasets--"];
+
+/// Strip whichever HF repo prefix matches and return the remainder
+/// (`<owner>--<name>`), or `None` if `name` is something else under the
+/// hub root (e.g. `.locks`, `blobs`).
+fn strip_hf_repo_prefix(name: &str) -> Option<&str> {
+    HF_REPO_PREFIXES
+        .iter()
+        .find_map(|prefix| name.strip_prefix(*prefix))
+}
+
 /// Scan the HuggingFace hub cache only.
 pub fn scan_hf_hub_at(hub: &Path) -> Result<Vec<CachedVindex>, Box<dyn std::error::Error>> {
     if !hub.exists() {
@@ -121,10 +136,14 @@ pub fn scan_hf_hub_at(hub: &Path) -> Result<Vec<CachedVindex>, Box<dyn std::erro
     for entry in std::fs::read_dir(hub)? {
         let entry = entry?;
         let name = entry.file_name().to_string_lossy().to_string();
-        if !name.starts_with("datasets--") {
+        // `larql publish` defaults to model repos, so `models--` is the
+        // common case; `datasets--` covers older vindexes that pre-date
+        // the publish default flip. Either prefix is a valid HF cache
+        // dir, and `hf_hub` itself supports both.
+        let Some(rest) = strip_hf_repo_prefix(&name) else {
             continue;
-        }
-        let repo = name.trim_start_matches("datasets--").replacen("--", "/", 1);
+        };
+        let repo = rest.replacen("--", "/", 1);
         let snapshots = entry.path().join("snapshots");
         if !snapshots.is_dir() {
             continue;
@@ -349,11 +368,17 @@ mod tests {
     /// Build a fake HF hub layout under `root` with the given
     /// `owner/name` entries. Each entry gets one snapshot containing
     /// `index.json` plus a small `stub.bin` so size calculations have
-    /// something to report.
+    /// something to report. Uses the `models--` prefix to match the
+    /// `larql publish` default; for dataset-prefix coverage see
+    /// [`build_fake_hub_with_prefix`].
     fn build_fake_hub(root: &Path, repos: &[&str]) {
+        build_fake_hub_with_prefix(root, "models--", repos);
+    }
+
+    fn build_fake_hub_with_prefix(root: &Path, prefix: &str, repos: &[&str]) {
         for repo in repos {
             let (owner, name) = repo.split_once('/').expect("owner/name");
-            let dir = root.join(format!("datasets--{owner}--{name}/snapshots/abc123"));
+            let dir = root.join(format!("{prefix}{owner}--{name}/snapshots/abc123"));
             std::fs::create_dir_all(&dir).unwrap();
             std::fs::write(dir.join(INDEX_JSON), b"{}").unwrap();
             std::fs::write(dir.join("stub.bin"), vec![0u8; 1024]).unwrap();
@@ -393,7 +418,7 @@ mod tests {
     #[test]
     fn scan_skips_snapshots_without_index_json() {
         let tmp = tempfile::tempdir().unwrap();
-        let bare = tmp.path().join("datasets--foo--bar/snapshots/deadbeef");
+        let bare = tmp.path().join("models--foo--bar/snapshots/deadbeef");
         std::fs::create_dir_all(&bare).unwrap();
         std::fs::write(bare.join("not-a-vindex.txt"), b"hi").unwrap();
         let out = scan_hf_hub_at(tmp.path()).unwrap();
@@ -401,6 +426,33 @@ mod tests {
             out.is_empty(),
             "snapshot without index.json should be skipped"
         );
+    }
+
+    #[test]
+    fn scan_finds_both_models_and_datasets_prefixes() {
+        let tmp = tempfile::tempdir().unwrap();
+        build_fake_hub_with_prefix(tmp.path(), "models--", &["chrishayuk/gemma-3-4b-it-vindex"]);
+        build_fake_hub_with_prefix(tmp.path(), "datasets--", &["legacy/older-vindex"]);
+        let out = scan_hf_hub_at(tmp.path()).unwrap();
+        let repos: Vec<_> = out.iter().map(|c| c.repo.as_str()).collect();
+        assert_eq!(
+            repos,
+            vec!["chrishayuk/gemma-3-4b-it-vindex", "legacy/older-vindex"]
+        );
+        assert!(out.iter().all(|c| c.source == CacheSource::HuggingFace));
+    }
+
+    #[test]
+    fn scan_ignores_non_repo_hub_entries() {
+        // hf-hub also drops `.locks/`, `blobs/`, and `version.txt` into
+        // the hub root. None of these are repo dirs and must be skipped
+        // (they have no `--` and no `snapshots/`).
+        let tmp = tempfile::tempdir().unwrap();
+        std::fs::create_dir_all(tmp.path().join(".locks")).unwrap();
+        std::fs::create_dir_all(tmp.path().join("blobs")).unwrap();
+        std::fs::write(tmp.path().join("version.txt"), b"1\n").unwrap();
+        let out = scan_hf_hub_at(tmp.path()).unwrap();
+        assert!(out.is_empty());
     }
 
     #[test]

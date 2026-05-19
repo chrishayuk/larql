@@ -52,7 +52,7 @@ fn main() {
     {
         // The default_backend() already calibrated. Show the result.
         // We need to access the threshold — let's create a second backend to inspect.
-        if let Some(metal) = larql_compute::MetalBackend::new() {
+        if let Some(metal) = larql_compute_metal::MetalBackend::new() {
             metal.calibrate();
             let threshold = metal.flop_threshold();
             println!(

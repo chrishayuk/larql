@@ -2,7 +2,7 @@
 
 ## Overview
 
-`ModelArchitecture` is the core abstraction in `larql-models`. It has 83 methods that describe *what a model is* — tensor key patterns, norm behavior, activation functions, scaling, and config invariants — without any compute dependencies.
+`ModelArchitecture` is the core abstraction in `larql-models`. It has ~106 methods that describe *what a model is* — tensor key patterns, norm behavior, activation functions, RoPE scaling, MoE routing, and config invariants — without any compute dependencies.
 
 Every model family (Gemma, Llama, DeepSeek, ...) implements this trait. The rest of LARQL (inference, compute, vindex) only interacts with models through this trait.
 
@@ -96,13 +96,48 @@ Control how attention is computed at each layer:
 - MoE configs provide both expert count and experts-per-token, and top-k does not exceed total experts
 - Hybrid MoE configs include `moe_intermediate_size`
 
-### Normalization (~8 methods)
+### Normalization (~9 methods)
 
 - `norm_type()` — RMSNorm vs LayerNorm
 - `norm_weight_offset()` — 0.0 (Llama, Gemma 4) or 1.0 (Gemma 2/3: weight = 1 + learned)
 - `qk_norm_weight_offset()` — same for QK norms (Gemma 2/3: 1.0, Gemma 4: 0.0)
 - `has_post_norms()` — 4 norms per layer (Gemma 2/3/4) vs 2 (Llama)
 - `attn_q_norm_key(layer)`, `attn_k_norm_key(layer)` — QK norm weights (None if unused)
+- `has_v_norm()` — Gemma 4 only
+- `norm_eps()` — RMS / LayerNorm epsilon, parsed from `rms_norm_eps` /
+  `layer_norm_eps` / `layer_norm_epsilon` / `norm_epsilon` in
+  config.json. Falls back to [`crate::defaults::DEFAULT_NORM_EPS`] (1e-6)
+  only when the model omits all four. Most modern archs (Llama 3.x,
+  Mistral, Gemma 3, StarCoder2) ship 1e-5 — using the 1e-6 default
+  silently was bug 2 in
+  [`docs/diagnoses/shannon-cross-engine-divergence.md`](../../../docs/diagnoses/shannon-cross-engine-divergence.md).
+
+### RoPE (~5 methods)
+
+Rotary Position Embeddings vary in three orthogonal ways across model
+families: which `theta` (rope_base) to use, whether positions get
+divided by a scaling factor, and whether the frequency band is
+remapped per-channel (`llama3` wavelength-dependent scaling).
+
+- `rope_base_for_layer(layer)` — full vs local theta. Gemma 3/4 use
+  `rope_theta` on global layers and `rope_local_base_freq` on sliding
+  layers; everyone else returns `config.rope_base` for every layer.
+- `rotary_fraction_for_layer(layer)` — fraction of `head_dim` rotated.
+  Default 1.0 (full RoPE). DeepSeek MLA and partial-RoPE archs override.
+- `rope_position_divisor_for_layer(layer)` — divides the RoPE position
+  before phase computation (matches HF `rope_scaling = linear, factor`).
+  Default 1.0. Gemma 3 overrides to apply the factor *only on global
+  layers* — the structured `{full_attention: {rope_type: linear, factor},
+  sliding_attention: {rope_type: default}}` form in
+  `Gemma3TextConfig.rope_scaling`.
+- `llama3_rope_scaling()` — wavelength-dependent factor application for
+  `rope_scaling = {rope_type: llama3, ...}`. Returns
+  `Option<Llama3RopeScaling>` with the four band-edge parameters. Llama
+  3.x overrides; consumed by
+  `larql-inference::attention::rope::apply_rope_partial_at_full`.
+- `is_sliding_window_layer(layer)` / `sliding_window_size()` — which
+  layers use SWA and at what window. Used by the loader to set
+  `FullPipelineLayer.sliding_window` so the GPU mask path knows.
 
 ### Biases
 

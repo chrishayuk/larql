@@ -25,10 +25,16 @@ fn main() {
 
     println!("Default backend: {}", default.name());
     println!("  Device: {}", default.device_info());
-    println!("  Q4 support: {}", default.has_q4());
+    println!(
+        "  Q4 support: {}",
+        default.supports_quant(::larql_compute::QuantFormat::Q4_K)
+    );
     println!();
     println!("CPU backend: {}", cpu.name());
-    println!("  Q4 support: {}", cpu.has_q4());
+    println!(
+        "  Q4 support: {}",
+        cpu.supports_quant(::larql_compute::QuantFormat::Q4_K)
+    );
     println!();
 
     // f32 matmul

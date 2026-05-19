@@ -75,7 +75,7 @@ fn predict_hybrid_metal(
     // Check: Metal backend?
     let metal = backend
         .as_any()
-        .downcast_ref::<larql_compute::metal::MetalBackend>()?;
+        .downcast_ref::<larql_compute_metal::MetalBackend>()?;
 
     // Check: walk data available?
     let gate_index: &dyn larql_vindex::GateIndex = index;
@@ -84,7 +84,7 @@ fn predict_hybrid_metal(
     }
 
     // Check: attention weights available?
-    let has_attn = index.attn_q4k_layer_data(layer_range.start).is_some()
+    let has_attn = index.attn_kquant_layer_data(layer_range.start).is_some()
         || index.attn_q8_layer_data(layer_range.start).is_some();
     if !has_attn {
         return None;

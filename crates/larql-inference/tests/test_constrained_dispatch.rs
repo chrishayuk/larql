@@ -16,10 +16,8 @@ use std::collections::HashSet;
 use std::path::PathBuf;
 
 use larql_inference::experts::{parse_op_call, ExpertRegistry};
-use larql_inference::{
-    encode_prompt, forward::generate_cached_constrained, prompt::ChatTemplate, InferenceModel,
-    WeightFfn,
-};
+use larql_inference::{encode_prompt, prompt::ChatTemplate, InferenceModel, WeightFfn};
+use larql_kv::generation::generate_cached_constrained;
 use serde_json::{json, Value};
 
 // ── Infrastructure ────────────────────────────────────────────────────────────

@@ -109,7 +109,7 @@ impl QuantizedFfnAccess for MockIndex {
         None
     }
 
-    fn has_interleaved_q4k(&self) -> bool {
+    fn has_interleaved_kquant(&self) -> bool {
         self.has_q4k
     }
 }
@@ -189,6 +189,13 @@ fn predicate_priority_ordering() {
         if m.has_fp4 {
             return "fp4_storage:sparse";
         }
+        // Q4K native is the preferred path for gated FFNs (priority 4 in
+        // the routing ladder). When the native branch returns `None` the
+        // walker falls through to dequant (priority 8) — this predicate
+        // models the expected reachable path on success.
+        if m.has_q4k {
+            return "interleaved_kquant:native";
+        }
         if m.has_q4_interleaved && backend_has_q4 {
             return "interleaved_q4:*";
         }
@@ -197,9 +204,6 @@ fn predicate_priority_ordering() {
         }
         if m.has_full_mmap {
             return "full_mmap";
-        }
-        if m.has_q4k {
-            return "interleaved_q4k:dequant";
         }
         if m.has_down_features {
             return "exact";
@@ -231,7 +235,20 @@ fn predicate_priority_ordering() {
     m.has_full_mmap = true;
     assert_eq!(pick_path(&m, false, true), "fp4_storage:sparse");
 
-    // 4. Q4 interleaved fires only with GPU Q4.
+    // 4. Q4K native wins over Q4/interleaved/full_mmap. Same vindex
+    //    that previously routed to `interleaved_kquant:dequant` (the
+    //    100×-slower path) — this is the fix for the
+    //    LARQL_INSTRUMENT_MARKOV diagnosis where Gemma 3 4B Q4K's
+    //    FFN spent 97% of decode time in dense f32 matmul.
+    let mut m = MockIndex::new(hidden, intermediate);
+    m.has_q4k = true;
+    m.has_q4_interleaved = true;
+    m.has_interleaved = true;
+    m.has_full_mmap = true;
+    assert_eq!(pick_path(&m, false, true), "interleaved_kquant:native");
+
+    // 5. Q4 interleaved fires only with GPU Q4, and only when Q4K
+    //    isn't present.
     let mut m = MockIndex::new(hidden, intermediate);
     m.has_q4_interleaved = true;
     m.has_interleaved = true;
@@ -246,31 +263,29 @@ fn predicate_priority_ordering() {
         "GPU Q4 wins"
     );
 
-    // 5. interleaved wins over full_mmap / Q4K.
+    // 6. interleaved wins over full_mmap when no Q4K.
     let mut m = MockIndex::new(hidden, intermediate);
     m.has_interleaved = true;
     m.has_full_mmap = true;
-    m.has_q4k = true;
     assert_eq!(pick_path(&m, false, false), "interleaved");
 
-    // 6. full_mmap wins over Q4K.
+    // 7. full_mmap fires when no other quant/interleaved storage.
     let mut m = MockIndex::new(hidden, intermediate);
     m.has_full_mmap = true;
-    m.has_q4k = true;
     assert_eq!(pick_path(&m, false, false), "full_mmap");
 
-    // 7. Q4K wins over exact.
+    // 8. Q4K wins over exact (was: dequant; now: native).
     let mut m = MockIndex::new(hidden, intermediate);
     m.has_q4k = true;
     m.has_down_features = true;
-    assert_eq!(pick_path(&m, false, false), "interleaved_q4k:dequant");
+    assert_eq!(pick_path(&m, false, false), "interleaved_kquant:native");
 
-    // 8. exact wins over last-resort weights fallback.
+    // 9. exact wins over last-resort weights fallback.
     let mut m = MockIndex::new(hidden, intermediate);
     m.has_down_features = true;
     assert_eq!(pick_path(&m, false, false), "exact");
 
-    // 9. nothing available → weights fallback.
+    // 10. nothing available → weights fallback.
     let m = MockIndex::new(hidden, intermediate);
     assert_eq!(pick_path(&m, false, false), "weights_fallback:sparse");
 }
@@ -291,6 +306,9 @@ fn fp4_vindex_with_no_other_backends_picks_fp4_path() {
         if m.has_fp4 {
             return "fp4_storage:sparse";
         }
+        if m.has_q4k {
+            return "interleaved_kquant:native";
+        }
         if m.has_q4_interleaved {
             return "interleaved_q4:*";
         }
@@ -299,9 +317,6 @@ fn fp4_vindex_with_no_other_backends_picks_fp4_path() {
         }
         if m.has_full_mmap {
             return "full_mmap";
-        }
-        if m.has_q4k {
-            return "interleaved_q4k:dequant";
         }
         if m.has_down_features {
             return "exact";

@@ -46,7 +46,7 @@ pub struct VindexConfig {
     /// Quantisation format of the model weights written alongside this
     /// vindex. `None` means float storage controlled by `dtype`;
     /// `Q4K` means Q4_K/Q6_K blocks in `attn_weights_q4k.bin` +
-    /// `interleaved_q4k.bin`. Loaders dispatch on this field so they
+    /// `interleaved_kquant.bin`. Loaders dispatch on this field so they
     /// don't have to sniff filenames.
     #[serde(default)]
     pub quant: QuantFormat,
@@ -76,7 +76,7 @@ pub struct VindexConfig {
     /// live in `layers/layer_{L:02}.weights` — one file per layer, format
     /// declared in each file's header. Works for both dense
     /// (num_entries=1) and MoE (num_entries=num_experts). Absent → legacy
-    /// flat-file layout (`interleaved_q4k.bin` / `experts_packed.bin`).
+    /// flat-file layout (`interleaved_kquant.bin` / `experts_packed.bin`).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub ffn_layout: Option<FfnLayout>,
 }
@@ -88,18 +88,46 @@ pub enum FfnLayout {
 }
 
 /// Provenance: which model checkpoint this vindex was built from.
+///
+/// The pre-v1 nullables (`huggingface_repo`, `huggingface_revision`,
+/// `safetensors_sha256`) stay optional on the in-process struct so
+/// existing manifests deserialise unchanged. The v1 provenance
+/// hardening (`base_model_sha`, `extractor_sha`,
+/// `base_safetensors_sha256` as a per-shard map) lives in additional
+/// optional fields populated by new extracts and by the
+/// `backfill-provenance` step (TODO). Translation to the v1 spec
+/// (`format::spec::translate_source`) requires all three new fields
+/// present.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct VindexSource {
     #[serde(default)]
     pub huggingface_repo: Option<String>,
     #[serde(default)]
     pub huggingface_revision: Option<String>,
+    /// Legacy single-shard digest. Pre-v1 vindexes that captured a
+    /// single safetensors file used this. Superseded by
+    /// `base_safetensors_sha256` for multi-shard models.
     #[serde(default)]
     pub safetensors_sha256: Option<String>,
     /// ISO 8601 timestamp of extraction.
     pub extracted_at: String,
     /// Version of larql used for extraction.
     pub larql_version: String,
+
+    // ── v1 provenance fields (optional on disk, required by spec) ──
+    /// Upstream git commit SHA at extract time. Pins the exact bytes
+    /// the vindex was built from. Required for v1 publish.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub base_model_sha: Option<String>,
+    /// Git SHA of the larql repo at extract time. Combined with
+    /// `larql_version` this lets a validator reproduce the extraction.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub extractor_sha: Option<String>,
+    /// Per-shard SHA256 of every safetensors file in the upstream
+    /// repo, keyed by filename. Catches upstream force-pushes that
+    /// mutate bytes under a stable commit hash.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub base_safetensors_sha256: Option<std::collections::BTreeMap<String, String>>,
 }
 
 /// What components are included in the vindex. Strictly increasing —
@@ -304,6 +332,106 @@ mod fp4_schema_tests {
         assert_eq!(parsed.ffn_layout, Some(FfnLayout::PerLayer));
         let json = serde_json::to_string(&parsed).unwrap();
         assert!(json.contains("\"ffn_layout\":\"per_layer\""));
+    }
+
+    #[test]
+    fn extract_level_display_covers_all_variants() {
+        assert_eq!(ExtractLevel::Browse.to_string(), "browse");
+        assert_eq!(ExtractLevel::Attention.to_string(), "attention");
+        assert_eq!(ExtractLevel::Inference.to_string(), "inference");
+        assert_eq!(ExtractLevel::All.to_string(), "all");
+    }
+
+    #[test]
+    fn extract_level_writes_attn_matches_strict_ordering() {
+        assert!(!ExtractLevel::Browse.writes_attn());
+        assert!(ExtractLevel::Attention.writes_attn());
+        assert!(ExtractLevel::Inference.writes_attn());
+        assert!(ExtractLevel::All.writes_attn());
+    }
+
+    #[test]
+    fn extract_level_writes_ffn_only_at_inference_and_above() {
+        assert!(!ExtractLevel::Browse.writes_ffn());
+        assert!(!ExtractLevel::Attention.writes_ffn());
+        assert!(ExtractLevel::Inference.writes_ffn());
+        assert!(ExtractLevel::All.writes_ffn());
+    }
+
+    #[test]
+    fn extract_level_writes_lm_head_only_at_inference_and_above() {
+        assert!(!ExtractLevel::Browse.writes_lm_head());
+        assert!(!ExtractLevel::Attention.writes_lm_head());
+        assert!(ExtractLevel::Inference.writes_lm_head());
+        assert!(ExtractLevel::All.writes_lm_head());
+    }
+
+    #[test]
+    fn vindex_source_v1_provenance_fields_round_trip() {
+        let mut digests = std::collections::BTreeMap::new();
+        digests.insert("model-00001-of-00002.safetensors".into(), "a".repeat(64));
+        digests.insert("model-00002-of-00002.safetensors".into(), "b".repeat(64));
+        let src = VindexSource {
+            huggingface_repo: Some("google/gemma-3-4b-it".into()),
+            huggingface_revision: Some("main".into()),
+            safetensors_sha256: None,
+            extracted_at: "2026-05-17T12:00:00Z".into(),
+            larql_version: "0.2.0".into(),
+            base_model_sha: Some("1adbacd6b6dee75c".into()),
+            extractor_sha: Some("9f3a2c".into()),
+            base_safetensors_sha256: Some(digests),
+        };
+        let json = serde_json::to_string(&src).unwrap();
+        assert!(json.contains("\"base_model_sha\":\"1adbacd6b6dee75c\""));
+        assert!(json.contains("\"extractor_sha\":\"9f3a2c\""));
+        assert!(json.contains("\"base_safetensors_sha256\""));
+
+        let back: VindexSource = serde_json::from_str(&json).unwrap();
+        assert_eq!(back.base_model_sha.as_deref(), Some("1adbacd6b6dee75c"));
+        assert_eq!(back.extractor_sha.as_deref(), Some("9f3a2c"));
+        assert_eq!(
+            back.base_safetensors_sha256.as_ref().map(|m| m.len()),
+            Some(2)
+        );
+    }
+
+    #[test]
+    fn vindex_source_v1_fields_omitted_when_none() {
+        let src = VindexSource {
+            huggingface_repo: None,
+            huggingface_revision: None,
+            safetensors_sha256: None,
+            extracted_at: "2026-05-17T12:00:00Z".into(),
+            larql_version: "0.2.0".into(),
+            base_model_sha: None,
+            extractor_sha: None,
+            base_safetensors_sha256: None,
+        };
+        let json = serde_json::to_string(&src).unwrap();
+        assert!(
+            !json.contains("base_model_sha"),
+            "None v1 fields must be omitted (skip_serializing_if): {json}"
+        );
+        assert!(!json.contains("extractor_sha"), "{json}");
+        assert!(!json.contains("base_safetensors_sha256"), "{json}");
+    }
+
+    #[test]
+    fn pre_v1_source_json_deserialises_with_v1_fields_as_none() {
+        // Pre-v1 manifests on disk don't have base_model_sha /
+        // extractor_sha / base_safetensors_sha256. The struct must
+        // deserialise cleanly with them as None.
+        let pre_v1 = r#"{
+            "huggingface_repo": "google/gemma-3-4b-it",
+            "huggingface_revision": null,
+            "safetensors_sha256": null,
+            "extracted_at": "2026-05-17T12:00:00Z",
+            "larql_version": "0.1.0"
+        }"#;
+        let src: VindexSource = serde_json::from_str(pre_v1).unwrap();
+        assert!(src.base_model_sha.is_none());
+        assert!(src.extractor_sha.is_none());
+        assert!(src.base_safetensors_sha256.is_none());
     }
 
     #[test]

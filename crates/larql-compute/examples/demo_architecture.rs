@@ -34,7 +34,7 @@ fn main() {
     println!("   CPU:     {}", cpu.name());
     println!(
         "   Q4 support: {}, KV cache: {}\n",
-        backend.has_q4(),
+        backend.supports_quant(::larql_compute::QuantFormat::Q4_K),
         backend.has_kv_cache()
     );
 
@@ -96,7 +96,7 @@ fn main() {
     println!("   Callers get owned Vec<f32> data instead of borrowed raw slices.\n");
 
     // ── 7. Full Pipeline ──
-    if backend.has_q4() {
+    if backend.supports_quant(::larql_compute::QuantFormat::Q4_K) {
         println!("7. Full Pipeline");
         let norm = vec![1.0f32; 2560];
         let gate = quantize_q4_0(&vec![0.01f32; 10240 * 2560]);

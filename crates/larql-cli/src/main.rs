@@ -88,7 +88,11 @@ enum Commands {
     Rm(rm_cmd::RmArgs),
 
     /// Benchmark decode throughput on a real vindex (Metal / CPU / Ollama).
-    Bench(bench_cmd::BenchArgs),
+    Bench(bench::BenchArgs),
+
+    /// Split-axis accuracy suite — parametric vs in-context vs conflict,
+    /// scored with top-1 match and Shannon bits-per-token.
+    Accuracy(accuracy_cmd::AccuracyArgs),
 
     /// Shannon-style next-token bit measurements and demo compression.
     #[command(subcommand)]
@@ -298,6 +302,7 @@ impl From<ChatArgs> for run_cmd::RunArgs {
             top: 1,
             kv_cache: run_cmd::KvCacheKind::Standard,
             context_window: 0,
+            engine: None,
             ffn: c.ffn,
             ffn_timeout_secs: c.ffn_timeout_secs,
             metal: false,
@@ -534,7 +539,8 @@ fn real_main() -> i32 {
         // ── Primary ──
         Commands::Run(args) => run_cmd::run(args),
         Commands::Chat(args) => run_cmd::run(args.into()),
-        Commands::Bench(args) => bench_cmd::run(args),
+        Commands::Bench(args) => bench::run(args),
+        Commands::Accuracy(args) => accuracy_cmd::run(args),
         Commands::Shannon(cmd) => shannon_cmd::run(cmd),
         Commands::Pull(args) => pull_cmd::run(args),
         Commands::Model(args) => model_cmd::run(args),

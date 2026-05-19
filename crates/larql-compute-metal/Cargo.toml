@@ -1,0 +1,59 @@
+[package]
+name = "larql-compute-metal"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+description = "Metal GPU backend for LARQL. Implements `larql_compute::ComputeBackend` on Apple Silicon via `metal-rs` + custom MSL shaders. Decoupled from larql-compute so non-Mac hosts skip the build entirely."
+keywords = ["metal", "gpu", "apple-silicon", "matmul", "quantization"]
+categories = ["science"]
+
+# Apple-only crate.  Building on non-macOS hosts compiles an empty
+# `lib.rs` (see `#[cfg(target_os = "macos")]` gating inside it) — this
+# keeps Linux / Windows `cargo check -p larql-compute-metal` green
+# without dragging the `metal-rs` crate into their dependency graph.
+
+[dependencies]
+larql-compute = { path = "../larql-compute" }
+# Pipeline-side types and constants (quant block sizes, etc.) used by
+# Metal weight-staging paths.
+larql-models = { path = "../larql-models" }
+ndarray = { version = "0.16", features = ["blas"] }
+# MoE expert combinator paths reuse rayon work-stealing.
+rayon = "1.10"
+
+[target.'cfg(target_os = "macos")'.dependencies]
+metal = "0.29"
+# Direct objc msg_send! for Metal API not exposed by metal-rs 0.29 —
+# specifically `MTLCommandBuffer.GPUStartTime/GPUEndTime` for
+# production decode timing diagnostics. Same major version metal-rs
+# uses internally.
+objc = "0.2"
+blas-src = { version = "0.10", features = ["accelerate"] }
+
+[target.'cfg(unix)'.dependencies]
+libc = "0.2"
+
+[dev-dependencies]
+memmap2 = "0.9"
+serde_json = { workspace = true }
+criterion = "0.5"
+
+[[bench]]
+name = "matmul"
+harness = false
+
+[[bench]]
+name = "quant_matvec"
+harness = false
+
+# `objc 0.2.x` (an abandoned-but-still-required transitive dep through
+# `metal`) uses `cfg(cargo-clippy)` inside its `msg_send!` / `sel_impl!`
+# macros.  From rustc 1.95 onwards, `cargo-clippy` isn't a recognised
+# cfg name, so every macro expansion in our crate emits an
+# `unexpected_cfgs` warning that promotes to error under
+# `clippy -- -D warnings`.  Function- and module-level `#[allow]` don't
+# reach into the macro expansion.  Suppress crate-wide via the Cargo
+# `[lints]` table — the only place that reliably wires through.
+[lints.rust]
+unexpected_cfgs = { level = "allow", check-cfg = [] }

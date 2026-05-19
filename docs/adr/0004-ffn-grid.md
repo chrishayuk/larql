@@ -1,6 +1,6 @@
 # ADR-0004 — Self-Assembling Distributed FFN Grid
 
-**Status:** Accepted — Phase 1 (Mode A: announce, auth, multi-router) implemented  
+**Status:** Accepted — All five phases shipped. Phase 1 (Mode A announce + auth + multi-router) shipped 2026-04-19; Phase 2 (Mode B available pool + AssignMsg + ReadyMsg) shipped 2026-05-13 per ADR-0011; Phase 3 stale-heartbeat eviction shipped 2026-05-15; Phase 4 replication + hot-shard load-rate elevation shipped 2026-05-13/15; Phase 5 admin CLI (`status` / `gaps` / `drain` / `assign`) shipped 2026-05-15. Active-probe RTT routing shipped 2026-05-16 (was P2). See `crates/larql-router/ROADMAP.md` for the per-feature shipping notes.  
 **Supersedes:** ADR-0003 §3 (static --shards configuration)  
 **Depends on:** ADR-0003 (larql-router base)
 
@@ -533,7 +533,7 @@ $ larql-server \
 - `crates/larql-router-protocol` — shared proto + tonic codegen (`grid.proto`,
   `GridService`, all message types). Separate crate so neither server nor router
   depends on the other.
-- `crates/larql-router/src/grid.rs` — `GridState`, `GridServiceImpl`
+- `crates/larql-router/src/grid/` — `GridState` (mod.rs), `GridServiceImpl` (service.rs), routing (routing.rs), replication (replication.rs), hot-shard (hot_shard.rs), status surface (status.rs)
 - `crates/larql-server/src/announce.rs` — background announce task
 
 **What is implemented:**

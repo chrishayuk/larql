@@ -27,7 +27,7 @@ fn model_functional_with_labels(id: &str) -> Arc<LoadedModel> {
         id: id.to_string(),
         path: PathBuf::from("/nonexistent"),
         config: test_config(),
-        patched: tokio::sync::RwLock::new(PatchedVindex::new(test_index())),
+        patched: std::sync::Arc::new(tokio::sync::RwLock::new(PatchedVindex::new(test_index()))),
         embeddings: {
             let mut e = Array2::<f32>::zeros((8, 4));
             e[[0, 0]] = 1.0;
@@ -50,6 +50,7 @@ fn model_functional_with_labels(id: &str) -> Arc<LoadedModel> {
             larql_server::metrics::LayerLatencyTracker::new(),
         ),
         requests_in_flight: std::sync::Arc::new(std::sync::atomic::AtomicU32::new(0)),
+        requests_total: std::sync::Arc::new(std::sync::atomic::AtomicU64::new(0)),
         expert_filter: None,
         unit_filter: None,
         moe_remote: None,

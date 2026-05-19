@@ -27,6 +27,60 @@ Vindex: `gemma3-4b-q4k-v2` (Q4_K attn/gate/up, Q6_K V/down — Ollama convention
 
 ---
 
+## CPU kernels (2026-05-15)
+
+Per `crates/larql-compute/src/cpu/ops/`. NEON-accelerated on aarch64
+(always available on Apple Silicon); scalar fallback elsewhere. All
+NEON kernels have parity tests against the scalar reference.
+
+### Production CPU matvecs
+
+| Kernel | File | Purpose | NEON inner | Parity |
+|---|---|---|---|---|
+| `q4k_matvec_into` | `ops/q4_common.rs::535` | Q4_K weights × f32 vec | `q4_dual_dot_32_neon` — 16-byte chunk, 8 f32x4 accumulators (4 lo + 4 hi), tree reduce | `q4k_matvec_matches_dequant_then_matmul` |
+| `q4k_dual_matvec_into` | `ops/q4_common.rs` | Two Q4_K matrices × one shared x; gate+up and K+V both use it | Inner shares `q4_dual_dot_32` with above | `q4k_dual_matvec_into_matches_two_sequential_calls` (bit-exact) |
+| `q6k_matvec::dispatch` | `ops/q6k_matvec.rs::42` | Q6_K weights × f32 vec (FFN down) | `q6_subblock_dot_16_neon` — 16-element sub-block, `vqtbl1q_u8` broadcast + per-lane `vshlq_u8` for hi2 bits, 4 mul + tree reduce | `q6_subblock_matches_scalar_full_6bit_range` |
+| `parallel_lm_head_logits` + `f32_dot_neon` | (in `larql-inference`) | f32 sgemv over 262K-vocab lm_head, row-parallel | `f32_dot_neon` — 4 independent f32x4 accumulators, 16 f32/iter | `f32_dot_matches_scalar_on_aligned_length` |
+
+### Why a single 4-way accumulator matters
+
+M3's NEON FMA is 4-cycle latency, 1-per-cycle throughput. A single
+accumulator chain (`acc = vfmaq(acc, ...)` four times) serialises on
+the destination register at one FMA every 4 cycles = 25% of peak. Four
+independent accumulators let the FMAs pipeline at 1/cycle = 100% of
+peak.
+
+Empirically the 4-way restructure (2026-05-15) bought a modest 4% on
+end-to-end decode — well short of the theoretical 4×, because the
+inner loop is now bandwidth-limited on Q4_K reads (~30 GB/s per
+thread × 11 threads, well below LPDDR5 peak but ~3× below llama.cpp's
+effective rate on the same hardware).
+
+### Why fusion didn't help as predicted
+
+Both `q4k_dual_matvec` callers (gate+up in the FFN, K+V in attention)
+operate on a `[1, hidden] = 10 KB` input vector. The hypothesis was
+that fusing two matvecs would keep `x` hot in L1 across the two weight
+decodes, saving ~80 MB of re-stream per layer. **The saving wasn't
+real**: `x` is 10 KB, L1 on M3 is 128 KB, and a single matvec doesn't
+evict it. Two sequential matvecs already hit L1 on the x reads. The
+fused version still gives correctness-equivalent output via a single
+shared `sum_x` precompute + one fewer rayon launch, but the
+end-to-end Δ is within bench variance.
+
+Documented because the inverse error (assuming a bandwidth win where
+there isn't one) is the kind of thing a future maintainer might want
+to re-test rather than re-derive.
+
+### What's still scalar
+
+`q4k_matvec::dispatch` (separate from `q4k_matvec_into`) and the
+correctness-oracle paths under `#[cfg(test)]` remain scalar — they're
+references the NEON kernels are validated against. Production callers
+hit `q4k_matvec_into` via `CpuBackend::q4k_matvec`.
+
+---
+
 ## Current state (2026-05-09, post QKV defuse)
 
 ```

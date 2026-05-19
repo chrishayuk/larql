@@ -32,7 +32,7 @@
 
 use std::path::PathBuf;
 
-use larql_vindex::{load_model_weights_q4k, load_vindex_config, SilentLoadCallbacks};
+use larql_vindex::{load_model_weights_kquant, load_vindex_config, SilentLoadCallbacks};
 
 fn find_gemma4_dense_vindex() -> Option<PathBuf> {
     if let Ok(p) = std::env::var("LARQL_VINDEX_GEMMA4_31B_Q4K") {
@@ -115,7 +115,7 @@ fn vindex_stores_v_as_q6k_for_gemma4_global_layers() {
     );
 }
 
-/// Numerical invariant: when `predict_q4k_hidden` loads L5's weights,
+/// Numerical invariant: when `predict_kquant_hidden` loads L5's weights,
 /// the resulting `w_k` and `w_v` tensors must differ element-wise —
 /// proving the Q6_K V dequant path returns a distinct approximation of
 /// the same underlying data. Equivalent tensors would silently re-open
@@ -138,27 +138,27 @@ fn cpu_q4k_load_produces_distinct_w_k_and_w_v_for_gemma4_global() {
     );
 
     let mut cb = SilentLoadCallbacks;
-    let weights = load_model_weights_q4k(&vindex, &mut cb).expect("load weights");
+    let weights = load_model_weights_kquant(&vindex, &mut cb).expect("load weights");
     let arch = &*weights.arch;
 
-    // Exercise the predict_q4k_hidden tensor-load path directly. It
+    // Exercise the predict_kquant_hidden tensor-load path directly. It
     // dequantises attn weights per layer and inserts them into
     // `weights.tensors`. We only need the shapes and a sample of
     // values — run the loader enough to populate L5's Q/K/V, then
     // compare W_k vs W_v directly.
     //
-    // `predict_q4k_hidden` is not public, but its per-layer tensor
+    // `predict_kquant_hidden` is not public, but its per-layer tensor
     // insertion is what drives CPU attention. We replicate the
     // equivalent load here — dequantise L5's Q/K/V/O into
     // `weights.tensors` the same way the forward pass does.
     use larql_vindex::VectorIndex;
     let mut cb2 = SilentLoadCallbacks;
     let mut index = VectorIndex::load_vindex(&vindex, &mut cb2).expect("load vindex");
-    index.load_attn_q4k(&vindex).expect("load_attn_q4k");
+    index.load_attn_kquant(&vindex).expect("load_attn_kquant");
 
     let layer: usize = 5;
     let attn = index
-        .attn_q4k_layer_data(layer)
+        .attn_kquant_layer_data(layer)
         .expect("L5 attn slices present");
     // attn is [q, k, v, o] — verify shapes match the expected global
     // dims before we dequant (head_dim=512, num_q=32, num_kv=4, hidden=5376).

@@ -12,7 +12,12 @@ categories = ["science"]
 larql-core = { path = "../larql-core", default-features = false }
 larql-models = { path = "../larql-models" }
 larql-compute = { path = "../larql-compute" }
+larql-vindex-spec = { path = "../larql-vindex-spec" }
 serde = { workspace = true }
+# Apple-only sibling backend.  Made `optional = true` so the
+# (target-gated) cfg path on non-macOS doesn't need to fake it out;
+# enabling the `metal` feature pulls it in.
+larql-compute-metal = { path = "../larql-compute-metal", optional = true }
 serde_json = { workspace = true }
 thiserror = { workspace = true }
 
@@ -54,7 +59,9 @@ libc = "0.2"
 
 [features]
 default = []
-metal = ["larql-compute/metal"]
+# Activating `metal` pulls in the `larql-compute-metal` sibling crate
+# (target-gated to macOS, optional so non-Mac builds skip it entirely).
+metal = ["dep:larql-compute-metal"]
 
 [dev-dependencies]
 criterion = "0.5"

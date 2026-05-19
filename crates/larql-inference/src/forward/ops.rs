@@ -1,7 +1,7 @@
 //! Small math utilities shared by `forward/` and `attention/`.
 
 use crate::model::ModelWeights;
-use crate::residual::rms_norm;
+use crate::residual::{layer_norm_for_arch, rms_norm_for_arch};
 use larql_models::NormType;
 use ndarray::Array2;
 
@@ -15,13 +15,19 @@ pub fn apply_norm(
     match weights.arch.norm_type() {
         NormType::LayerNorm => {
             let bias_key = weight_key.replace(".weight", ".bias");
-            crate::residual::layer_norm(
+            layer_norm_for_arch(
                 x,
                 weights.vectors.get(weight_key),
                 weights.vectors.get(&bias_key),
+                &*weights.arch,
             )
         }
-        _ => rms_norm(x, weights.vectors.get(weight_key), norm_offset),
+        _ => rms_norm_for_arch(
+            x,
+            weights.vectors.get(weight_key),
+            norm_offset,
+            &*weights.arch,
+        ),
     }
 }
 

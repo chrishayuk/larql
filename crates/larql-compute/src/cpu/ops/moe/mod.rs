@@ -44,7 +44,7 @@ pub(crate) fn q4k_direct_disabled() -> bool {
     *CACHE.get_or_init(|| crate::options::env_flag(crate::options::ENV_DISABLE_Q4K_DIRECT))
 }
 
-pub(crate) fn moe_expert_input(
+pub fn moe_expert_input(
     h: &[f32],
     moe: &MoeLayerWeights<'_>,
     norm_offset: f32,
@@ -56,7 +56,7 @@ pub(crate) fn moe_expert_input(
     }
 }
 
-pub(crate) fn moe_router_input(
+pub fn moe_router_input(
     h: &[f32],
     expert_input: &[f32],
     moe: &MoeLayerWeights<'_>,
@@ -106,7 +106,7 @@ pub(crate) fn moe_router_input(
     router_in
 }
 
-pub(crate) fn moe_route_from_router_input(
+pub fn moe_route_from_router_input(
     router_in: &[f32],
     moe: &MoeLayerWeights<'_>,
 ) -> (Vec<usize>, Vec<f32>) {
@@ -140,7 +140,7 @@ pub(crate) fn moe_route_from_router_input(
     (indices, weights)
 }
 
-pub(crate) fn moe_post_expert_output(
+pub fn moe_post_expert_output(
     expert_out: &[f32],
     moe: &MoeLayerWeights<'_>,
     norm_offset: f32,

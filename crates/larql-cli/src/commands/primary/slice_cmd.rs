@@ -114,7 +114,7 @@ impl Part {
 pub fn preset_parts(preset: &str) -> Result<BTreeSet<Part>, String> {
     use Part::*;
     // Note: `embed` + `norms` appear in the server preset because
-    // `load_model_weights_q4k` unconditionally opens `embeddings.bin` at
+    // `load_model_weights_kquant` unconditionally opens `embeddings.bin` at
     // load time and pulls norms from `weight_manifest.json`. The server
     // doesn't run attention, but it still needs embed + norms to
     // instantiate a ModelWeights struct for the walk-ffn handler.
@@ -141,7 +141,7 @@ pub fn preset_parts(preset: &str) -> Result<BTreeSet<Part>, String> {
         "expert-server" | "expert_server" | "moe-server" => {
             // Embed + Norms + Ffn required: load_single_vindex opens embeddings.bin
             // and norms.bin unconditionally; get_or_load_weights (called by the expert
-            // endpoint) needs interleaved_q4k.bin for architecture params + dense FFN.
+            // endpoint) needs interleaved_kquant.bin for architecture params + dense FFN.
             &[Embed, Norms, Ffn, ExpertLayers, Tokenizer, Manifest]
         }
         "all" => &[
@@ -523,15 +523,18 @@ mod tests {
     fn attn_matches_quant_variants() {
         assert!(Part::Attn.matches(ATTN_WEIGHTS_BIN));
         assert!(Part::Attn.matches(ATTN_WEIGHTS_Q4_BIN));
-        assert!(Part::Attn.matches(ATTN_WEIGHTS_Q4K_BIN));
-        assert!(Part::Attn.matches(ATTN_WEIGHTS_Q4K_MANIFEST_JSON));
+        assert!(Part::Attn.matches(ATTN_WEIGHTS_KQUANT_BIN));
+        assert!(Part::Attn.matches(ATTN_WEIGHTS_KQUANT_MANIFEST_JSON));
+        assert!(Part::Attn.matches(LEGACY_ATTN_WEIGHTS_Q4K_BIN));
+        assert!(Part::Attn.matches(LEGACY_ATTN_WEIGHTS_Q4K_MANIFEST_JSON));
         assert!(!Part::Attn.matches(GATE_VECTORS_BIN));
     }
 
     #[test]
     fn ffn_matches_interleaved_and_hidden_major() {
         assert!(Part::Ffn.matches(INTERLEAVED_BIN));
-        assert!(Part::Ffn.matches(INTERLEAVED_Q4K_BIN));
+        assert!(Part::Ffn.matches(INTERLEAVED_KQUANT_BIN));
+        assert!(Part::Ffn.matches(LEGACY_INTERLEAVED_Q4K_BIN));
         assert!(Part::Ffn.matches("up_weights.bin"));
         assert!(Part::Ffn.matches(DOWN_FEATURES_BIN));
         // Gate vectors are their own part even though they share the FFN role.
@@ -557,7 +560,7 @@ mod tests {
         assert!(parts.contains(&Part::DownMeta));
         // FFN-service server runs no attention → skip attn weights.
         assert!(!parts.contains(&Part::Attn));
-        // …but it still needs embed + norms: `load_model_weights_q4k`
+        // …but it still needs embed + norms: `load_model_weights_kquant`
         // unconditionally reads embeddings.bin and pulls norms from the
         // weight manifest. Omitting them crashes the server on startup
         // with "No such file or directory".

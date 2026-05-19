@@ -35,7 +35,7 @@ pub(super) struct StreamingContext<'a> {
     pub(super) dtype: StorageDtype,
     pub(super) quant: QuantFormat,
     pub(super) weight_opts: crate::format::weights::WriteWeightsOptions,
-    pub(super) q4k_opts: crate::format::weights::Q4kWriteOptions,
+    pub(super) q4k_opts: crate::format::weights::KquantWriteOptions,
     pub(super) drop_gate_vectors: bool,
     pub(super) extract_level: crate::ExtractLevel,
     pub(super) down_top_k: usize,
@@ -81,7 +81,7 @@ impl<'a> StreamingContext<'a> {
         dtype: StorageDtype,
         quant: QuantFormat,
         weight_opts: crate::format::weights::WriteWeightsOptions,
-        q4k_opts: crate::format::weights::Q4kWriteOptions,
+        q4k_opts: crate::format::weights::KquantWriteOptions,
         drop_gate_vectors: bool,
         callbacks: &'a mut dyn IndexBuildCallbacks,
     ) -> Result<Self, VindexError> {

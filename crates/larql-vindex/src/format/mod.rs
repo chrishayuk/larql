@@ -8,6 +8,7 @@ pub mod fp4_codec;
 pub mod huggingface;
 pub mod load;
 pub mod quant;
+pub mod spec;
 pub mod weights;
 
 // Back-compat alias — `format::fp4_storage` was renamed to `fp4_codec`

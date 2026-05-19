@@ -136,7 +136,9 @@ larql-vindex/src/
 │
 ├── config/                     Configuration types
 │   ├── index.rs                VindexConfig, VindexLayerInfo, ExtractLevel,
-│   │                           LayerBands, source/checksums
+│   │                           LayerBands, VindexSource (v1 provenance:
+│   │                           base_model_sha, extractor_sha,
+│   │                           base_safetensors_sha256), checksums
 │   ├── quantization.rs         QuantFormat, Fp4Config, Precision, Projections
 │   ├── model.rs                VindexModelConfig, MoeConfig
 │   ├── compliance.rs           ComplianceGate
@@ -232,6 +234,11 @@ larql-vindex/src/
 │   ├── checksums.rs            SHA256 computation + verification
 │   ├── fp4_codec.rs            FP4 / FP8 codec (extraction-side)
 │   ├── huggingface/            HuggingFace Hub download/publish
+│   ├── spec.rs                 Translation: VindexConfig → public v1
+│   │                           manifest (`larql-vindex-spec::VindexManifest`).
+│   │                           TryFrom impl, surfaces missing provenance
+│   │                           (base_model_sha / extractor_sha /
+│   │                           safetensors-digests map) as typed errors.
 │   └── quant/mod.rs            Re-exports from larql_models::quant
 │
 ├── extract/                    Build pipeline (model → vindex)

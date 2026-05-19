@@ -179,7 +179,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     checkpoint("after VectorIndex::load_vindex", started, baseline);
 
     let q4 = index.load_interleaved_q4(&args.vindex).is_ok();
-    let q4k = index.load_interleaved_q4k(&args.vindex).is_ok();
+    let q4k = index.load_interleaved_kquant(&args.vindex).is_ok();
     let iv = index.load_interleaved(&args.vindex).is_ok();
     println!(
         "\n  Vindex: {} vectors, q4_interleaved={}, q4k_interleaved={}, f32_interleaved={}\n",
@@ -222,7 +222,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let backend = default_backend();
     println!(
         "  Compute backend: {}\n",
-        if backend.has_q4() {
+        if backend.supports_quant(::larql_compute::QuantFormat::Q4_K) {
             "Metal (or CPU w/ Q4)"
         } else {
             "CPU (BLAS)"

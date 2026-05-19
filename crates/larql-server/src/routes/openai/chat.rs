@@ -460,7 +460,7 @@ fn stream_chat_completion(
             }
         };
         let weights: &mut larql_inference::ModelWeights = &mut weights_guard;
-        let template = pick_template(&model);
+        let template = pick_template(&model, Some(weights));
         let prompt = render(template, &messages);
         let encoding = match model.tokenizer.encode(prompt.as_str(), true) {
             Ok(e) => e,
@@ -705,7 +705,7 @@ fn run_chat_completion(
         .map_err(ServerError::InferenceUnavailable)?;
     let weights: &mut larql_inference::ModelWeights = &mut weights_guard;
 
-    let template = pick_template(model);
+    let template = pick_template(model, Some(weights));
     let prompt = render(template, messages);
 
     let encoding = model
@@ -826,12 +826,26 @@ fn trim_tokens_to_text(tokens: &[(String, f64)], truncated_text: &str) -> Vec<(S
 // `larql_inference::prompt::ChatTemplate::render_messages`. This handler
 // only needs to pick the right template variant for the loaded model.
 
-fn pick_template(model: &LoadedModel) -> larql_inference::prompt::ChatTemplate {
+fn pick_template(
+    model: &LoadedModel,
+    held_weights: Option<&larql_inference::ModelWeights>,
+) -> larql_inference::prompt::ChatTemplate {
     use larql_inference::prompt::ChatTemplate;
-    // Prefer the architecture's family signal when weights are loaded;
-    // fall back to id heuristics when weights haven't been touched yet.
+    // Prefer the architecture's family signal when the caller already
+    // holds a weights guard — using it directly avoids re-entering the
+    // `model.weights` RwLock. The earlier `cell.read()` call here
+    // deadlocked the chat handler because `run_chat_completion` is
+    // already holding the write lock from `lock_weights_for_gen()`,
+    // and `std::sync::RwLock` blocks the same thread on a read after
+    // a write (POSIX `pthread_rwlock_rdlock` semantics on macOS).
+    if let Some(weights) = held_weights {
+        return ChatTemplate::for_family(weights.arch.family());
+    }
+    // No guard in hand. Try a non-blocking read so a concurrent
+    // write-holder doesn't hang us — fall back to the id heuristic if
+    // contended or weights aren't loaded yet.
     if let Some(cell) = model.weights.get() {
-        if let Ok(weights) = cell.read() {
+        if let Ok(weights) = cell.try_read() {
             return ChatTemplate::for_family(weights.arch.family());
         }
     }

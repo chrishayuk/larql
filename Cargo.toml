@@ -4,8 +4,10 @@ members = [
     # larql-specific
     "crates/larql-models",
     "crates/larql-compute",
+    "crates/larql-compute-metal",
     "crates/larql-core",
     "crates/larql-vindex",
+    "crates/larql-vindex-spec",
     "crates/larql-inference",
     "crates/larql-kv",
     "crates/larql-lql",
@@ -14,7 +16,6 @@ members = [
     "crates/larql-router",
     "crates/larql-router-protocol",
     "crates/larql-python",
-    "crates/kv-cache-benchmark",
     # boundary codec (Phase 1-3 of BOUNDARY_REF_PROTOCOL)
     "crates/larql-boundary",
     # portable (extract to sibling repos later, names stable)
@@ -23,8 +24,10 @@ members = [
 default-members = [
     "crates/larql-models",
     "crates/larql-compute",
+    "crates/larql-compute-metal",
     "crates/larql-core",
     "crates/larql-vindex",
+    "crates/larql-vindex-spec",
     "crates/larql-inference",
     "crates/larql-kv",
     "crates/larql-lql",
@@ -33,7 +36,6 @@ default-members = [
     "crates/larql-router",
     "crates/larql-router-protocol",
     "crates/larql-boundary",
-    "crates/kv-cache-benchmark",
     "crates/model-compute",
 ]
 

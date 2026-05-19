@@ -1,8 +1,8 @@
 # MarkovResidualEngine — Specification
 
-**Status:** Draft, pre-migration.
+**Status:** ✅ Shipped (2026-05-09 extraction, 2026-05-16 Q4K hot-path migration).
 **Audience:** LARQL contributors.
-**Scope:** Contract for a KV-cache-free decode engine in `larql-inference`,
+**Scope:** Contract for a KV-cache-free decode engine in `larql-kv`,
 currently validated on Gemma 3 4B, designed to admit other architectures
 behind explicit preconditions.
 
@@ -16,10 +16,13 @@ implementer's call, subject to the contracts below.
 
 `MarkovResidualEngine` is an alternative decode path for transformer LMs
 that replaces the per-token K/V cache with the residual stream itself as
-the persistent inference state. The current reference implementation lives
-in `kv-cache-benchmark::real_model::markov_layer` (`rs_prefill`,
-`rs_decode_step`). This spec is the precondition for lifting that code
-into `larql-inference` as a first-class engine.
+the persistent inference state. The production implementation lives in
+[`larql_kv::engines::markov_residual`](../../../larql-kv/src/engines/markov_residual/)
+(`rs_prefill`, `rs_decode_step`, plus the Q4K hot-path routing through
+`attention_decode_step_native` + `ffn_decode_step_native`). It originated
+as a research prototype in the retired `kv-cache-benchmark` crate
+(2026-05-09 extraction) and was promoted to a first-class engine in
+`larql-kv`.
 
 The engine is not a compression scheme layered over a KV cache. It is a
 different answer to the question "what state must persist between decode
@@ -53,11 +56,15 @@ not promise bit-identity across quantisation tiers — that would require
 a quantisation-invariant residual representation, which is not part of
 this contract and is not measured by the experiments backing it.
 
-The contract is established by the `#[ignore]`'d real-model test suite in
-`kv-cache-benchmark::tests::test_real_model`. Any implementation claiming
+The contract is established by the engine's parity tests in
+`crates/larql-kv/src/engines/markov_residual/` (`#[ignore]`'d real-model
+fixtures) and the dispatch parity gate in
+`crates/larql-kv/tests/dispatch_parity.rs`. Any implementation claiming
 to satisfy this spec must pass an equivalent suite. New quantisation
 tiers join the supported set by adding a same-tier comparison fixture;
-they do not inherit support from FP16 validation alone.
+they do not inherit support from FP16 validation alone. (The original
+`kv-cache-benchmark::tests::test_real_model` test set was retired in
+2026-05-16 along with the crate.)
 
 ### 2.2 State-sufficiency contract
 
@@ -330,26 +337,23 @@ Implementations must distinguish at least:
   error. Panic in debug builds; in release, the implementation's choice,
   but it must not silently produce non-bit-perfect output.
 
-## 9. Migration plan (informative, not contractual)
+## 9. Migration history (informative)
 
-Out of scope for the contract, but worth recording here because the
-migration is the reason the spec exists:
+The migration is complete; this section records what happened:
 
-1. Lift `kv-cache-benchmark::real_model::markov_layer` into
-   `larql-inference::engines::markov_residual` (or wherever the engine
-   module convention lands).
-2. Keep the `KvStrategy` trait impl in `kv-cache-benchmark`, but have it
-   wrap `larql-inference::MarkovResidualEngine` rather than own the
-   implementation. The benchmark crate becomes a consumer, not a host.
-3. The `#[ignore]`'d real-model test suite moves with the implementation;
-   the benchmark crate keeps an integration test that exercises the
-   `KvStrategy` adapter.
-4. Drop the "Tier 1 / variant iv-dense" naming. In `larql-inference`,
-   the engine is `MarkovResidualEngine`. The tier/variant names were
-   research-arc scaffolding; they do not need to survive.
-5. Document §4 preconditions against each model architecture supported
-   by `larql-inference` as part of the migration PR. New architectures
-   added later must include a precondition-validation record.
+1. ✅ Lifted `kv-cache-benchmark::real_model::markov_layer` into
+   `larql_kv::engines::markov_residual` (2026-05-09 extraction).
+2. ✅ `KvStrategy` trait impl was dropped together with the
+   `kv-cache-benchmark` crate (2026-05-16). The production trait is
+   `larql_kv::KvEngine` (re-exported from `larql_inference::KvEngine`),
+   driven by `larql_kv::generation::generate_with_engine`. The
+   research-era `KvStrategy` synthetic-encoder trait is gone.
+3. ✅ The `#[ignore]`'d real-model test suite lives next to the engine
+   at `crates/larql-kv/src/engines/markov_residual/`.
+4. ✅ Dropped "Tier 1 / variant iv-dense" naming. The engine is
+   `larql_kv::engines::markov_residual::MarkovResidualEngine`.
+5. ✅ §4 preconditions documented per architecture in the engine module.
+   New architectures must include a precondition-validation record.
 
 ## 10. Open questions
 
@@ -379,9 +383,9 @@ Not blocking the migration, but worth tracking:
 
 ---
 
-## Appendix: relationship to the kv-cache-benchmark ladder
+## Appendix: relationship to the (retired) kv-cache-benchmark ladder
 
-This engine is **Row 3** of the benchmark's correctness ladder
+This engine was **Row 3** of the historical benchmark's correctness ladder
 (`Markov RS (W=512)`). The other rows are out of scope:
 
 - Row 1 (Standard KV): the reference path the correctness contract is

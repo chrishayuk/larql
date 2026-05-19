@@ -1,0 +1,97 @@
+{
+  "schema": "larql.cpu_probe.v1",
+  "recorded_at": "2026-05-15",
+  "status": "quant_matched_baseline_recorded",
+  "caveat": "LARQL row uses Gemma 3 4B Q4K vindex; llama.cpp row uses a Q4_K_M GGUF quantized locally from the BF16 GGUF with llama-quantize. CPU fallback timing now separates full-prefix CPU forward from lm_head/top-k prediction.",
+  "larql": {
+    "command": "target/release/larql bench /Users/christopherhay/chris-source/larql/output/gemma3-4b-q4k-v2.vindex --cpu --tokens 5 --warmup 1 --profile --output json --output-file /private/tmp/larql-c10-gemma3-4b-cpu-timed.json",
+    "model": "/Users/christopherhay/chris-source/larql/output/gemma3-4b-q4k-v2.vindex",
+    "quant": "Q4K",
+    "prompt": "The capital of France is",
+    "tokens_requested": 5,
+    "warmup": 1,
+    "result": {
+      "backend": "larql-cpu",
+      "prefill_ms": 2880.896916,
+      "ms_per_tok": {
+        "mean": 2776.6884065,
+        "p50": 2793.260167,
+        "p99": 2830.965209
+      },
+      "tok_per_s": 0.36014123790738706,
+      "stages": {
+        "embed_ms": 0.0,
+        "gpu_fwd_ms": 0.0,
+        "cpu_fwd_ms": 2547.3338418,
+        "gate_up_ms": 0.0,
+        "down_ms": 0.0,
+        "final_norm_ms": 0.0,
+        "lm_head_ms": 233.09710820000004,
+        "detok_ms": 0.0
+      },
+      "n_steps": 4,
+      "note": "early stop @4/5 (EOS or GPU fallback); cpu q4k fallback (no KV cache)"
+    }
+  },
+  "llama_cpp": {
+    "quantize_command": "llama-quantize output/larql-gemma-3-4b-it.gguf /private/tmp/larql-gemma-3-4b-it-Q4_K_M.gguf Q4_K_M",
+    "command": "llama-bench -m /private/tmp/larql-gemma-3-4b-it-Q4_K_M.gguf -dev BLAS -ngl 0 -p 16 -n 5 -r 1 -o json",
+    "model": "/private/tmp/larql-gemma-3-4b-it-Q4_K_M.gguf",
+    "quant": "Q4_K_M",
+    "build_commit": "6cd0cf72c",
+    "build_number": 7060,
+    "cpu_info": "Accelerate, Apple M3 Max",
+    "devices": "BLAS",
+    "n_gpu_layers": 0,
+    "n_threads": 12,
+    "prompt_eval": {
+      "n_prompt": 16,
+      "n_gen": 0,
+      "avg_ns": 168493000,
+      "avg_ts": 94.959435
+    },
+    "decode": {
+      "n_prompt": 0,
+      "n_gen": 5,
+      "avg_ns": 122184042,
+      "avg_ts": 40.921874
+    }
+  },
+  "diagnosis_probe": {
+    "command": "target/release/larql bench output/gemma3-4b-q4k-v2.vindex --cpu --tokens 5 --warmup 1 --profile --output json --output-file /private/tmp/larql-c10-gemma3-4b-cpu-profile.json",
+    "result": {
+      "backend": "larql-cpu",
+      "prefill_ms": 5823.33475,
+      "ms_per_tok": {
+        "mean": 2878.4195,
+        "p50": 2913.023791,
+        "p99": 2954.658417
+      },
+      "tok_per_s": 0.3474128771014788,
+      "n_steps": 4,
+      "stage_note": "Superseded by the timed run above; before this change all measured CPU fallback decode time was reported as gpu_ms_total."
+    }
+  },
+  "gap": {
+    "larql_tok_per_s": 0.36014123790738706,
+    "llama_cpp_q4_k_m_tok_per_s": 40.921874,
+    "llama_cpp_speedup_over_larql": 113.627293
+  },
+  "additional_larql_probe": {
+    "model": "/Users/christopherhay/.cache/larql/local/llama2-7b-q4k.vindex",
+    "quant": "Q4K",
+    "command": "target/release/larql bench /Users/christopherhay/.cache/larql/local/llama2-7b-q4k.vindex --cpu --tokens 5 --warmup 1 --output json --output-file /private/tmp/larql-c10-llama2-7b-cpu.json",
+    "result": {
+      "backend": "larql-cpu",
+      "prefill_ms": 9486.489625,
+      "ms_per_tok": {
+        "mean": 4631.613823,
+        "p50": 4666.744542,
+        "p99": 4720.572167
+      },
+      "tok_per_s": 0.21590746513323894,
+      "n_steps": 4,
+      "note": "early stop @4/5 (EOS or GPU fallback)"
+    }
+  }
+}

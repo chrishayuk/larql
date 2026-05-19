@@ -1,0 +1,79 @@
+# larql-compute-metal CI (Apple Silicon).
+#
+# Metal GPU backend for larql-compute.  Extracted from `larql-compute`
+# per ADR-019 so non-Mac CI hosts (Linux, Windows) don't have to build
+# or check Metal-specific code.  All jobs run on macos-14 (the latest
+# Apple-silicon GitHub-hosted runner with Metal available).
+
+name: larql-compute-metal
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'crates/larql-compute-metal/**'
+      - 'crates/larql-compute/**'
+      - 'crates/larql-models/**'
+      - 'Cargo.toml'
+      - 'Cargo.lock'
+      - 'Makefile'
+      - '.github/workflows/larql-compute-metal.yml'
+  pull_request:
+    branches: [main]
+    paths:
+      - 'crates/larql-compute-metal/**'
+      - 'crates/larql-compute/**'
+      - 'crates/larql-models/**'
+      - 'Cargo.toml'
+      - 'Cargo.lock'
+      - 'Makefile'
+      - '.github/workflows/larql-compute-metal.yml'
+  workflow_dispatch: {}
+
+jobs:
+  test:
+    name: test · macos-14
+    runs-on: macos-14
+    timeout-minutes: 45
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install stable Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy, rustfmt
+
+      - name: Cache cargo registry + build artefacts
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: macOS-cargo-compute-metal-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: |
+            macOS-cargo-compute-metal-
+
+      - name: Format check
+        run: cargo fmt -p larql-compute-metal -- --check
+
+      - name: Check default
+        run: cargo check -p larql-compute-metal --all-targets
+
+      - name: Clippy (no-deps)
+        # `--no-deps` so warnings in sibling crates' in-flight work do
+        # not promote to errors here; the matching `make` target uses
+        # the same flag for the same reason.
+        run: cargo clippy -p larql-compute-metal --all-targets --no-deps -- -D warnings
+
+      - name: Unit tests
+        run: cargo test -p larql-compute-metal --lib
+
+      - name: Integration tests
+        run: cargo test -p larql-compute-metal --tests
+
+      - name: Coverage policy gate
+        run: |
+          cargo install --locked cargo-llvm-cov
+          make larql-compute-metal-coverage-summary

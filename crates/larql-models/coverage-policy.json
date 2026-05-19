@@ -1,0 +1,14 @@
+{
+  "policy_note": "Default policy is 90% line coverage per source file. The per-file entries below are debt baselines locked at floor(current measured %) - 1 so any regression fails the check and any test addition immediately ratchets the floor up. Goal: every file at >=90%, no debt baselines. Session 1 close (2026-05-16): TOTAL 94.04%, 32/34 files at >=90%, 2 debt baselines. Cleared: detect/config_io.rs, architectures/gemma3.rs, architectures/gemma4.rs, quant/ggml/q4_k.rs, quant/mxfp4.rs. Lifted-but-still-shy: loading/gguf.rs 80% -> 89% via direct unit tests on every read_value/read_array_element dispatch arm + GgufValue accessors + read_tokenizer_vocab_size. loading/safetensors.rs 89.72% -> 89.88% via hf_hub_cache env-priority tests. Both files need MXFP4 / packed-BF16 fixture tests to clear the final ~1pp.",
+  "include_globs": [
+    "crates/larql-models/src/*.rs",
+    "crates/larql-models/src/**/*.rs"
+  ],
+  "exclude_globs": [],
+  "default_line_min_percent": 90.0,
+  "total_line_min_percent": 94.0,
+  "per_file_line_min_percent": {
+    "crates/larql-models/src/loading/gguf.rs": 89.0,
+    "crates/larql-models/src/loading/safetensors.rs": 89.0
+  }
+}

@@ -31,11 +31,12 @@ use ndarray::Array1;
 
 use larql_inference::ffn::WeightFfn;
 use larql_inference::forward::{
-    capture_donor_state, embedding_neighbors, embedding_row, generate_cached,
-    generate_cached_hooked, logit_lens_topk, patch_and_trace, project_through_unembed,
-    trace_forward, trace_forward_full_hooked, RecordHook, SteerHook, ZeroAblateHook,
+    capture_donor_state, embedding_neighbors, embedding_row, logit_lens_topk, patch_and_trace,
+    project_through_unembed, trace_forward, trace_forward_full_hooked, RecordHook, SteerHook,
+    ZeroAblateHook,
 };
 use larql_inference::test_utils::{make_test_tokenizer, make_test_weights};
+use larql_kv::generation::{generate_cached, generate_cached_hooked};
 
 fn cosine(a: &[f32], b: &[f32]) -> f32 {
     let dot: f32 = a.iter().zip(b).map(|(x, y)| x * y).sum();

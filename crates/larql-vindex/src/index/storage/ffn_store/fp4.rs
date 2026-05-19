@@ -73,7 +73,7 @@ impl VectorIndex {
     }
 
     /// Dequantise one FFN feature into the caller's buffer (FP4/FP8 path).
-    /// Counterpart of `q4k_ffn_row_into`.
+    /// Counterpart of `kquant_ffn_row_into`.
     #[inline]
     pub fn fp4_ffn_row_into(
         &self,

@@ -113,7 +113,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let model_name: String = model_override.unwrap_or(config.model.clone());
 
     let mut cb = larql_vindex::SilentLoadCallbacks;
-    let mut weights = larql_vindex::load_model_weights_q4k(&vindex_path, &mut cb)?;
+    let mut weights = larql_vindex::load_model_weights_kquant(&vindex_path, &mut cb)?;
     let tokenizer = larql_vindex::load_vindex_tokenizer(&vindex_path)?;
     let num_layers = weights.num_layers;
 

@@ -29,7 +29,7 @@
 //! For each available Q4K vindex, for `k ∈ {1, 2, 4}` decode steps:
 //!
 //!   metal_decode = prefill(prompt_ids) + decode(t1) + decode(t2) + …
-//!   cpu_ref      = predict_q4k_hidden(prompt_ids ++ [t1, t2, …])
+//!   cpu_ref      = predict_kquant_hidden(prompt_ids ++ [t1, t2, …])
 //!
 //! Each decode step's per-layer hidden (1 position) must match
 //! `cpu_ref`'s last-position slice at that layer with cos ≥ 0.99995
@@ -46,7 +46,7 @@ use std::path::PathBuf;
 use larql_inference::residual_diff::{compare_captures, ParityThreshold, ResidualCapture};
 use larql_inference::wrap_chat_prompt;
 use larql_vindex::{
-    load_model_weights_q4k, load_vindex_config, load_vindex_tokenizer, QuantFormat,
+    load_model_weights_kquant, load_vindex_config, load_vindex_tokenizer, QuantFormat,
     SilentLoadCallbacks, VectorIndex,
 };
 
@@ -137,19 +137,19 @@ fn check_n_steps(case: &ConsistencyCase, n_steps: usize) -> Result<(), String> {
     }
     let tokenizer =
         load_vindex_tokenizer(&vindex_path).map_err(|e| format!("load_vindex_tokenizer: {e}"))?;
-    let mut q4_index =
+    let mut index =
         VectorIndex::load_vindex(&vindex_path, &mut cb).map_err(|e| format!("load vindex: {e}"))?;
-    q4_index
-        .load_attn_q4k(&vindex_path)
-        .map_err(|e| format!("load_attn_q4k: {e}"))?;
-    q4_index
-        .load_interleaved_q4k(&vindex_path)
-        .map_err(|e| format!("load_interleaved_q4k: {e}"))?;
-    let _ = q4_index.load_lm_head_q4(&vindex_path);
+    index
+        .load_attn_kquant(&vindex_path)
+        .map_err(|e| format!("load_attn_kquant: {e}"))?;
+    index
+        .load_interleaved_kquant(&vindex_path)
+        .map_err(|e| format!("load_interleaved_kquant: {e}"))?;
+    let _ = index.load_lm_head_kquant(&vindex_path);
 
-    let mut w_metal = load_model_weights_q4k(&vindex_path, &mut cb)
+    let mut w_metal = load_model_weights_kquant(&vindex_path, &mut cb)
         .map_err(|e| format!("load weights (metal): {e}"))?;
-    let mut w_cpu = load_model_weights_q4k(&vindex_path, &mut cb)
+    let mut w_cpu = load_model_weights_kquant(&vindex_path, &mut cb)
         .map_err(|e| format!("load weights (cpu): {e}"))?;
 
     let prompt = "The capital of France is";
@@ -158,7 +158,7 @@ fn check_n_steps(case: &ConsistencyCase, n_steps: usize) -> Result<(), String> {
         .map_err(|e| format!("encode_prompt: {e}"))?;
 
     let metal_backend =
-        larql_compute::metal::MetalBackend::new().ok_or("Metal backend unavailable")?;
+        larql_compute_metal::MetalBackend::new().ok_or("Metal backend unavailable")?;
 
     // Drive Metal `generate(n_steps)` once to capture the deterministic
     // greedy token chain. Re-encode prompt + that chain to recover
@@ -171,7 +171,7 @@ fn check_n_steps(case: &ConsistencyCase, n_steps: usize) -> Result<(), String> {
         &tokenizer,
         &prompt_ids,
         n_steps,
-        &q4_index,
+        &index,
         &metal_backend,
         &cached,
         0..metal_num_layers,
@@ -207,10 +207,10 @@ fn check_n_steps(case: &ConsistencyCase, n_steps: usize) -> Result<(), String> {
         &mut w_metal,
         &prompt_ids,
         &new_ids,
-        &q4_index,
+        &index,
         &metal_backend,
     )?;
-    let cpu_ref_full = ResidualCapture::cpu_prefill(&mut w_cpu, &appended_ids, &q4_index)?;
+    let cpu_ref_full = ResidualCapture::cpu_prefill(&mut w_cpu, &appended_ids, &index)?;
     let cpu_ref = cpu_ref_full.project_to_last_position();
 
     let report = compare_captures(&cpu_ref, &metal_decode, ParityThreshold::tight());
@@ -252,19 +252,19 @@ fn check_one_step(case: &ConsistencyCase) -> Result<(), String> {
     }
     let tokenizer =
         load_vindex_tokenizer(&vindex_path).map_err(|e| format!("load_vindex_tokenizer: {e}"))?;
-    let mut q4_index =
+    let mut index =
         VectorIndex::load_vindex(&vindex_path, &mut cb).map_err(|e| format!("load vindex: {e}"))?;
-    q4_index
-        .load_attn_q4k(&vindex_path)
-        .map_err(|e| format!("load_attn_q4k: {e}"))?;
-    q4_index
-        .load_interleaved_q4k(&vindex_path)
-        .map_err(|e| format!("load_interleaved_q4k: {e}"))?;
-    let _ = q4_index.load_lm_head_q4(&vindex_path);
+    index
+        .load_attn_kquant(&vindex_path)
+        .map_err(|e| format!("load_attn_kquant: {e}"))?;
+    index
+        .load_interleaved_kquant(&vindex_path)
+        .map_err(|e| format!("load_interleaved_kquant: {e}"))?;
+    let _ = index.load_lm_head_kquant(&vindex_path);
 
-    let mut w_metal = load_model_weights_q4k(&vindex_path, &mut cb)
+    let mut w_metal = load_model_weights_kquant(&vindex_path, &mut cb)
         .map_err(|e| format!("load weights (metal): {e}"))?;
-    let mut w_cpu = load_model_weights_q4k(&vindex_path, &mut cb)
+    let mut w_cpu = load_model_weights_kquant(&vindex_path, &mut cb)
         .map_err(|e| format!("load weights (cpu): {e}"))?;
 
     let prompt = "The capital of France is";
@@ -273,7 +273,7 @@ fn check_one_step(case: &ConsistencyCase) -> Result<(), String> {
         .map_err(|e| format!("encode_prompt: {e}"))?;
 
     let metal_backend =
-        larql_compute::metal::MetalBackend::new().ok_or("Metal backend unavailable")?;
+        larql_compute_metal::MetalBackend::new().ok_or("Metal backend unavailable")?;
 
     // Step 0: drive Metal through `generate(max_tokens=1)` to pick a
     // realistic next token. Using a deterministic argmax (which is
@@ -286,7 +286,7 @@ fn check_one_step(case: &ConsistencyCase) -> Result<(), String> {
         &tokenizer,
         &prompt_ids,
         1,
-        &q4_index,
+        &index,
         &metal_backend,
         &cached,
         0..metal_num_layers,
@@ -319,10 +319,10 @@ fn check_one_step(case: &ConsistencyCase) -> Result<(), String> {
         &mut w_metal,
         &prompt_ids,
         token_0_id,
-        &q4_index,
+        &index,
         &metal_backend,
     )?;
-    let cpu_ref_full = ResidualCapture::cpu_prefill(&mut w_cpu, &appended_ids, &q4_index)?;
+    let cpu_ref_full = ResidualCapture::cpu_prefill(&mut w_cpu, &appended_ids, &index)?;
     // CPU is `[seq=N+1, hidden]` per layer; decode is `[1, hidden]`.
     // Slice CPU's last-position row to align shapes.
     let cpu_ref = cpu_ref_full.project_to_last_position();

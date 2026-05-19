@@ -275,6 +275,29 @@ unsafe fn sdot_acc(
     result
 }
 
+/// Software prefetch hint — bring the cache line containing `ptr` into
+/// L1 ahead of an upcoming read. Emits an aarch64 `PRFM PLDL1KEEP` so
+/// the data is fetched but tagged as keep-in-L1 (good for hot loops
+/// that revisit nearby addresses).
+///
+/// M3 Max's hardware prefetcher handles linear sequential reads
+/// well, but the Q4_K matvec stride (144 bytes per super-block, then
+/// jumps to the next row) isn't a simple stride pattern. Explicit
+/// hints close ~5-15% of the per-core gap to llama.cpp on these
+/// kernels (which has the same hints in its hand-asm path).
+#[cfg(target_arch = "aarch64")]
+#[inline(always)]
+#[allow(dead_code)] // kept for future re-enablement on harder access patterns; see DIAGNOSIS-2026-05-16-thread-scaling.md
+unsafe fn prefetch_l1_keep(ptr: *const u8) {
+    unsafe {
+        core::arch::asm!(
+            "prfm pldl1keep, [{0}]",
+            in(reg) ptr,
+            options(nostack, readonly, preserves_flags),
+        );
+    }
+}
+
 /// NEON-accelerated `q4k_q8k_matvec` for `aarch64`.  Inner kernel uses
 /// `SDOT` (16 i8 × i8 → 4 i32 lanes per instruction) for the integer dot
 /// products against the Q8_K activation.  Per-row work per super-block:
@@ -311,6 +334,14 @@ pub fn q4k_q8k_matvec_neon(
     // Mask vector for low-nibble extraction (broadcast 0x0F across 16 lanes).
     let mask_lo = unsafe { vdupq_n_u8(0x0F) };
 
+    // No software prefetch: tested 2026-05-16 with `prfm pldl1keep`
+    // hints at per-row and per-super-block granularity. Both regressed
+    // single-thread throughput on M3 Max (5.5 vs 5.7 tok/s baseline).
+    // The hardware prefetcher handles both the in-row Q4_K stride and
+    // the row-to-row jump well enough that software hints compete for
+    // L1 fill bandwidth without delivering new data. Kept the
+    // `prefetch_l1_keep` helper for future re-enablement on harder
+    // access patterns.
     for (r, out_slot) in out.iter_mut().enumerate().take(rows) {
         let row_base = r * row_bytes;
         let mut acc = 0.0f32;
@@ -328,16 +359,35 @@ pub fn q4k_q8k_matvec_neon(
 
             // sum1 = Σ_sb scales[sb] · dot_int(q4_nibbles, q8_y) (i32)
             // sum2 = Σ_sb mins[sb]   ·  Σ q8_y in this sb        (i32)
-            let mut sum1: i32 = 0;
-            let mut sum2: i32 = 0;
+            //
+            // Vector-running accumulator: keep the i32x4 partial sums
+            // across all 4 groups in `sum1_v`, only horizontal-reduce
+            // once per super-block instead of once per group. Each
+            // group's lo/hi partial dot is scaled (vmulq_n_s32) and
+            // added into `sum1_v` via vector mla. Eliminates the
+            // 4-per-super-block `vaddvq_s32` + scalar mul chain that
+            // forced a forced retire of the prior group's SDOTs.
+            //
+            // Independent SDOT pairs: instead of chaining
+            //   acc = sdot(prev, lo1, y_lo1)
+            // (which serialises on `prev` at 4-cycle latency), issue
+            // both SDOTs into separate destination registers and
+            // combine via vaddq_s32. Drops per-half latency from
+            // 8 cycles → ~5 cycles on M3's OoO scheduler.
+            let zero_v = unsafe { vdupq_n_s32(0) };
+            let mut sum1_v = unsafe { vdupq_n_s32(0) };
+            let mut sum2_acc: i32 = 0;
 
             for g in 0..4 {
                 let sb_lo = 2 * g;
                 let sb_hi = 2 * g + 1;
-                // Safety: bounds checked above; Q4_K guarantees 128 quant bytes
-                // per super-block, so `quants_ptr.add(g*32 + 0..32)` is in range.
-                let nib0 = unsafe { vld1q_u8(quants_ptr.add(g * 32)) };
-                let nib1 = unsafe { vld1q_u8(quants_ptr.add(g * 32 + 16)) };
+                // Paired load: 32 nibble bytes in one `ld1.2d` instead
+                // of two `ldr`. Same total bandwidth but a single
+                // pipeline slot and a clearer hint to the memory
+                // subsystem.
+                let nibs_pair = unsafe { vld1q_u8_x2(quants_ptr.add(g * 32)) };
+                let nib0 = nibs_pair.0;
+                let nib1 = nibs_pair.1;
 
                 // Low nibbles → sub-block 2g, high nibbles → sub-block 2g+1.
                 let lo0 = unsafe { vreinterpretq_s8_u8(vandq_u8(nib0, mask_lo)) };
@@ -345,31 +395,40 @@ pub fn q4k_q8k_matvec_neon(
                 let hi0 = unsafe { vreinterpretq_s8_u8(vshrq_n_u8(nib0, 4)) };
                 let hi1 = unsafe { vreinterpretq_s8_u8(vshrq_n_u8(nib1, 4)) };
 
-                // Load corresponding Q8_K activation halves (32 i8 each).
-                let y_lo0 = unsafe { vld1q_s8(q8_qs_ptr.add(sb_lo * SUBBLOCK_SIZE)) };
-                let y_lo1 = unsafe { vld1q_s8(q8_qs_ptr.add(sb_lo * SUBBLOCK_SIZE + 16)) };
-                let y_hi0 = unsafe { vld1q_s8(q8_qs_ptr.add(sb_hi * SUBBLOCK_SIZE)) };
-                let y_hi1 = unsafe { vld1q_s8(q8_qs_ptr.add(sb_hi * SUBBLOCK_SIZE + 16)) };
+                // Paired loads of the activation halves: 32 bytes
+                // for each sub-block (lo + hi). Two `ld1.2d` total.
+                let y_lo_pair = unsafe { vld1q_s8_x2(q8_qs_ptr.add(sb_lo * SUBBLOCK_SIZE)) };
+                let y_hi_pair = unsafe { vld1q_s8_x2(q8_qs_ptr.add(sb_hi * SUBBLOCK_SIZE)) };
+                let y_lo0 = y_lo_pair.0;
+                let y_lo1 = y_lo_pair.1;
+                let y_hi0 = y_hi_pair.0;
+                let y_hi1 = y_hi_pair.1;
 
-                // Two SDOTs per half cover all 32 lanes; one across-vector
-                // sum collapses each half to scalar i32.
-                let zero = unsafe { vdupq_n_s32(0) };
-                let dlo_acc = unsafe {
-                    let a = sdot_acc(zero, lo0, y_lo0);
-                    sdot_acc(a, lo1, y_lo1)
-                };
-                let dhi_acc = unsafe {
-                    let a = sdot_acc(zero, hi0, y_hi0);
-                    sdot_acc(a, hi1, y_hi1)
-                };
-                let dot_lo = unsafe { vaddvq_s32(dlo_acc) };
-                let dot_hi = unsafe { vaddvq_s32(dhi_acc) };
+                // Independent SDOT pairs: 4 SDOTs into 4 destination
+                // registers (no inter-SDOT data dependency), then sum
+                // pairs with vaddq.
+                let dlo0 = unsafe { sdot_acc(zero_v, lo0, y_lo0) };
+                let dlo1 = unsafe { sdot_acc(zero_v, lo1, y_lo1) };
+                let dhi0 = unsafe { sdot_acc(zero_v, hi0, y_hi0) };
+                let dhi1 = unsafe { sdot_acc(zero_v, hi1, y_hi1) };
+                let dlo_acc = unsafe { vaddq_s32(dlo0, dlo1) };
+                let dhi_acc = unsafe { vaddq_s32(dhi0, dhi1) };
 
-                sum1 += scales[sb_lo] as i32 * dot_lo + scales[sb_hi] as i32 * dot_hi;
-                sum2 += mins[sb_lo] as i32 * q8_sums[sb_lo] as i32
+                // Scale and accumulate into running i32x4. The two
+                // vmulq_n_s32 + two vaddq_s32 per group adds ~3 cycles
+                // but saves the forced `vaddvq + scalar mul + scalar
+                // add` chain (which serialised group g+1 behind it).
+                let scaled_lo = unsafe { vmulq_n_s32(dlo_acc, scales[sb_lo] as i32) };
+                let scaled_hi = unsafe { vmulq_n_s32(dhi_acc, scales[sb_hi] as i32) };
+                sum1_v = unsafe { vaddq_s32(sum1_v, vaddq_s32(scaled_lo, scaled_hi)) };
+
+                // `sum2` stays scalar — the input here is the
+                // precomputed Q8_K sums, so no SDOT involved.
+                sum2_acc += mins[sb_lo] as i32 * q8_sums[sb_lo] as i32
                     + mins[sb_hi] as i32 * q8_sums[sb_hi] as i32;
             }
-            acc += d_w * d_y * sum1 as f32 - dmin_w * d_y * sum2 as f32;
+            let sum1 = unsafe { vaddvq_s32(sum1_v) };
+            acc += d_w * d_y * sum1 as f32 - dmin_w * d_y * sum2_acc as f32;
         }
         *out_slot = acc;
     }
@@ -933,6 +992,7 @@ pub fn q6k_q8k_matvec_neon(
     let mask_03 = unsafe { vdupq_n_u8(0x03) };
     let sub32 = unsafe { vdupq_n_s8(32) };
 
+    // No software prefetch — see q4k_q8k_matvec_neon for the rationale.
     for (r, out_r) in out.iter_mut().enumerate().take(rows) {
         let row_base = r * row_bytes;
         let mut acc = 0.0f32;

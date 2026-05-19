@@ -17,11 +17,11 @@
 //! Each capture corresponds to a real forward path the production code
 //! takes. Tests can compare any pair to assert backend parity.
 //!
-//! - [`ResidualCapture::cpu_prefill`] — `predict_q4k_hidden` per-layer
+//! - [`ResidualCapture::cpu_prefill`] — `predict_kquant_hidden` per-layer
 //!   output. Reference path.
-//! - [`ResidualCapture::metal_prefill`] — `prefill_q4` per-layer output.
+//! - [`ResidualCapture::metal_prefill`] — `prefill_kquant` per-layer output.
 //!   Should match CPU prefill bit-exactly modulo float noise.
-//! - [`ResidualCapture::metal_decode`] — `prefill_q4` followed by
+//! - [`ResidualCapture::metal_decode`] — `prefill_kquant` followed by
 //!   `decode_token`, capturing the decode call's per-layer output.
 //!   Should match a CPU prefill of the same total sequence length at
 //!   the new position.
@@ -43,7 +43,7 @@
 //! ## Internals
 //!
 //! Capture is implemented over the existing env-var-driven dump hooks
-//! in `vindex/q4k_forward.rs`, `metal/ops/full_pipeline.rs`, and
+//! in `vindex/kquant_forward.rs`, `metal/ops/full_pipeline.rs`, and
 //! `metal/decode/mod.rs`. We allocate a private `tempfile::TempDir`,
 //! set the env vars on the current process for the duration of one
 //! forward, then read the resulting `.f32` blobs back into a `Vec<f32>`

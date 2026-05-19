@@ -26,7 +26,7 @@ pub struct LoadedModel {
     /// Vindex config (index.json).
     pub config: VindexConfig,
     /// Base index with patch overlay (starts with no patches).
-    pub patched: RwLock<PatchedVindex>,
+    pub patched: Arc<RwLock<PatchedVindex>>,
     /// Embeddings matrix + scale factor, loaded once.
     pub embeddings: Array2<f32>,
     pub embed_scale: f32,
@@ -77,6 +77,11 @@ pub struct LoadedModel {
     /// decremented on return. Used by GT6 drain to know when it is safe
     /// to send DroppingMsg(reason="reassigned").
     pub requests_in_flight: std::sync::Arc<std::sync::atomic::AtomicU32>,
+    /// Monotonically-increasing total count of walk-ffn requests seen by
+    /// this shard. Read by the grid announce loop to compute
+    /// `HeartbeatMsg.req_per_sec` (delta over the heartbeat interval) so
+    /// the router's hot-shard rebalancer can detect saturation.
+    pub requests_total: std::sync::Arc<std::sync::atomic::AtomicU64>,
     /// Expert ID range this server owns (from `--experts START-END`).
     /// `None` = serve all experts. Used by the expert endpoint to reject
     /// requests for experts this shard doesn't hold.
@@ -97,14 +102,14 @@ pub struct LoadedModel {
     /// initialised, Metal not available; `None` = not yet initialised.
     /// Only present under `--features metal-experts`.
     #[cfg(all(feature = "metal-experts", target_os = "macos"))]
-    pub metal_backend: std::sync::OnceLock<Option<larql_compute::MetalBackend>>,
+    pub metal_backend: std::sync::OnceLock<Option<larql_compute_metal::MetalBackend>>,
     /// Cached MoE scratch per `(top_k, hidden, inter)` shape — one entry
     /// per architecture in practice.  `MoeScratch` contains mutable Metal
     /// staging buffers, so Metal expert dispatch holds this mutex while
     /// using a scratch entry.
     #[cfg(all(feature = "metal-experts", target_os = "macos"))]
     pub moe_scratches: std::sync::Mutex<
-        std::collections::HashMap<(usize, usize, usize), Arc<larql_compute::MoeScratch>>,
+        std::collections::HashMap<(usize, usize, usize), Arc<larql_compute_metal::MoeScratch>>,
     >,
     /// Per-layer pre-loaded Q4K weight buffers for Metal dense FFN dispatch.
     /// `[gate_buf, up_buf, down_buf]` for each layer. Lazily populated on first
@@ -112,7 +117,7 @@ pub struct LoadedModel {
     /// `new_buffer_with_bytes_no_copy` for page-aligned mmap data).
     /// Only populated when the server has interleaved Q4K data loaded.
     #[cfg(all(feature = "metal-experts", target_os = "macos"))]
-    pub metal_ffn_layer_bufs: std::sync::OnceLock<Vec<[larql_compute::MetalBuffer; 3]>>,
+    pub metal_ffn_layer_bufs: std::sync::OnceLock<Vec<[larql_compute_metal::MetalBuffer; 3]>>,
 }
 
 impl LoadedModel {
@@ -161,10 +166,10 @@ impl LoadedModel {
             if self.ffn_only {
                 tracing::info!(
                     "ffn-only (q4k): loading norms + lm_head + embed only; \
-                     FFN dequantises per layer from interleaved_q4k.bin on request"
+                     FFN dequantises per layer from interleaved_kquant.bin on request"
                 );
             }
-            larql_vindex::load_model_weights_q4k_shard(&self.path, &mut cb, self.expert_filter)
+            larql_vindex::load_model_weights_kquant_shard(&self.path, &mut cb, self.expert_filter)
                 .map_err(|e| format!("failed to load q4k model weights: {e}"))?
         } else {
             let opts = if self.embed_only {
@@ -314,7 +319,7 @@ mod loaded_model_tests {
     //! The q4k / f32 branch in `get_or_load_weights` keys off
     //! `config.quant == QuantFormat::Q4K`, and `run_full_output` in
     //! `routes/walk_ffn.rs` keys off the same check to decide between
-    //! `WalkFfn::new_unlimited` and `q4k_ffn_forward_layer`. Running
+    //! `WalkFfn::new_unlimited` and `kquant_ffn_forward_layer`. Running
     //! either branch end-to-end needs a real on-disk vindex (GBs of
     //! weights), so we cover just the flag plumbing and the selector
     //! expression here; the end-to-end walk is validated by the
@@ -375,7 +380,7 @@ mod loaded_model_tests {
             id: "test".into(),
             path: PathBuf::from("/nonexistent"),
             config: tiny_config(quant),
-            patched: tokio::sync::RwLock::new(patched),
+            patched: std::sync::Arc::new(tokio::sync::RwLock::new(patched)),
             embeddings: Array2::<f32>::zeros((4, hidden)),
             embed_scale: 1.0,
             tokenizer,
@@ -389,6 +394,7 @@ mod loaded_model_tests {
             ffn_l2_cache: crate::ffn_l2_cache::FfnL2Cache::new(1),
             layer_latency_tracker: std::sync::Arc::new(crate::metrics::LayerLatencyTracker::new()),
             requests_in_flight: std::sync::Arc::new(std::sync::atomic::AtomicU32::new(0)),
+            requests_total: std::sync::Arc::new(std::sync::atomic::AtomicU64::new(0)),
             expert_filter: None,
             unit_filter: None,
             moe_remote: None,
@@ -426,7 +432,7 @@ mod loaded_model_tests {
 
         assert!(
             q4k_model.config.quant == QuantFormat::Q4K,
-            "Q4K config → q4k branch (load_model_weights_q4k + q4k_ffn_forward_layer)"
+            "Q4K config → q4k branch (load_model_weights_kquant + kquant_ffn_forward_layer)"
         );
         assert!(
             f32_model.config.quant != QuantFormat::Q4K,

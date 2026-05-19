@@ -4,13 +4,13 @@ version.workspace = true
 edition.workspace = true
 authors.workspace = true
 license.workspace = true
-description = "Compute backends for LARQL — CPU (BLAS), Metal (GPU), CUDA (planned). Owns matmul dispatch, Q4 kernels, buffer management."
-keywords = ["matmul", "metal", "gpu", "quantization", "blas"]
+description = "Compute backend trait + CPU implementation for LARQL. GPU backends ship as sibling crates (larql-compute-metal, future larql-compute-vulkan / larql-compute-cuda)."
+keywords = ["matmul", "cpu", "blas", "quantization", "trait"]
 categories = ["science"]
 
 [dependencies]
-# Matrix types
-ndarray = { version = "0.16", features = ["blas"] }
+# Matrix types — blas feature added per-platform below where a backend exists
+ndarray = "0.16"
 # MoE expert parallelism: top-k experts run independently per token.
 rayon = "1.10"
 # Wire-format constants (Q4_K_BLOCK_ELEMS, etc.) for padding decisions.
@@ -18,34 +18,28 @@ rayon = "1.10"
 larql-models = { path = "../larql-models" }
 
 [target.'cfg(any(target_os = "linux", target_os = "freebsd"))'.dependencies]
+ndarray = { version = "0.16", features = ["blas"] }
 blas-src = { version = "0.10", features = ["openblas"], default-features = false }
 openblas-src = { version = "0.10", features = ["system"] }
 
-# Metal GPU (macOS only, optional)
 [target.'cfg(target_os = "macos")'.dependencies]
-metal = { version = "0.29", optional = true }
-# Direct objc msg_send! for Metal API not exposed by metal-rs 0.29 —
-# specifically `MTLCommandBuffer.GPUStartTime/GPUEndTime` for production
-# decode timing diagnostics. Same major version metal-rs uses internally.
-objc = { version = "0.2", optional = true }
+# `metal` + `objc` moved to `larql-compute-metal` per ADR-019. This crate
+# is CPU-only; Metal GPU dependencies live in the sibling crate.
+ndarray = { version = "0.16", features = ["blas"] }
 blas-src = { version = "0.10", features = ["accelerate"] }
 
 [target.'cfg(target_os = "windows")'.dependencies]
+ndarray = { version = "0.16", features = ["blas"] }
 blas-src = { version = "0.10", features = ["openblas"], default-features = false }
 openblas-src = { version = "0.10", features = ["system"] }
 
 
 [features]
 default = []
-metal = ["dep:metal", "dep:objc"]
-# Opt-in gate for the slow non-Metal integration suites. Plain
+# Opt-in gate for the slow integration suites. Plain
 # `cargo test -p larql-compute` skips them so the dev loop stays under
-# ~10 s; CI / release runs flip this on (and `metal` separately) to get
-# coverage. Metal kernel tests stay on the `metal` feature so a Metal
-# devloop (`cargo test -p larql-compute --features metal`) still runs
-# them — the two axes are independent on purpose.
+# ~10 s; CI / release runs flip this on to get coverage.
 heavy_tests = []
-# cuda = []  # Future: CUDA backend
 
 [build-dependencies]
 cc = "1.0"
@@ -59,24 +53,9 @@ serde_json = "1"
 memmap2 = "0.9"
 
 [[bench]]
-name = "matmul"
-harness = false
-
-[[bench]]
 name = "linalg"
 harness = false
 
-[[bench]]
-name = "quant_matvec"
-harness = false
-
-# `objc 0.2.x` (an abandoned-but-still-required transitive dep through
-# `metal`) uses `cfg(cargo-clippy)` inside its `msg_send!` / `sel_impl!`
-# macros. From rustc 1.95 onwards, `cargo-clippy` isn't a recognised
-# cfg name, so every macro expansion in our crate emits an
-# `unexpected_cfgs` warning that promotes to error under
-# `clippy -- -D warnings`. Function- and module-level `#[allow]` don't
-# reach into the macro expansion. Suppress crate-wide via the Cargo
-# `[lints]` table — the only place that reliably wires through.
-[lints.rust]
-unexpected_cfgs = { level = "allow", check-cfg = [] }
+# No external `cfg(cargo-clippy)` macros reach this crate after the
+# `metal-rs` / `objc` deps moved to larql-compute-metal, so no
+# crate-wide cfg-allowlist is needed.

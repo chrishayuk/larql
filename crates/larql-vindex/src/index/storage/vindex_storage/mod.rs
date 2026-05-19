@@ -171,16 +171,16 @@ pub trait VindexStorage: sealed::Sealed + Send + Sync {
     /// `"Q6_K"`) routed through `quant::registry`. Each view borrows
     /// from the substore's whole-file buffer; call `as_slice()` for
     /// the hot-path zero-atomic read.
-    fn interleaved_q4k_layer_data(
+    fn interleaved_kquant_layer_data(
         &self,
         layer: usize,
     ) -> Option<[(BytesView<'_>, &str); FFN_COMPONENTS_PER_LAYER]>;
 
     /// Whole-file Q4_K interleaved FFN buffer. Used by Metal
-    /// `q4k_matmul_transb` for full-K decode without per-layer
+    /// `kquant_matmul_transb` for full-K decode without per-layer
     /// gathering. Returns `Bytes` (refcounted handle) because this is
     /// fetched once at load time, not per-layer-per-token.
-    fn interleaved_q4k_whole_buffer(&self) -> Option<Bytes>;
+    fn interleaved_kquant_whole_buffer(&self) -> Option<Bytes>;
 
     /// Whole-file Q4_0 interleaved FFN buffer. The Q4_0 path doesn't
     /// have a per-layer manifest; consumers compute layer offsets
@@ -201,7 +201,7 @@ pub trait VindexStorage: sealed::Sealed + Send + Sync {
     /// Q4_K / Q6_K attention projections for one layer:
     /// `[(Q, fmt), (K, fmt), (V, fmt), (O, fmt)]`. `None` when no Q4_K
     /// attention manifest is loaded or the layer is out of range.
-    fn attn_q4k_layer_data(
+    fn attn_kquant_layer_data(
         &self,
         layer: usize,
     ) -> Option<[(BytesView<'_>, &str); ATTN_TENSORS_PER_LAYER]>;

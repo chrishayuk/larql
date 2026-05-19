@@ -1,5 +1,6 @@
 pub mod architectures;
 pub mod config;
+pub mod defaults;
 pub mod detect;
 pub mod loading;
 pub mod quant;
@@ -8,7 +9,8 @@ pub mod vectors;
 pub mod weights;
 
 pub use config::{
-    Activation, ExpertFormat, FfnType, ModelArchitecture, ModelConfig, NormType, RopeScaling,
+    Activation, ExpertFormat, FfnType, Llama3RopeScaling, ModelArchitecture, ModelConfig, NormType,
+    RopeScaling,
 };
 pub use detect::{
     detect_architecture, detect_architecture_validated, detect_from_json,

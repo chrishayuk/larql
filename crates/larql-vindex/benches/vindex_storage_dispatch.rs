@@ -3,10 +3,10 @@
 //! Compares three shapes of FFN Q4_K layer-bytes access on the same
 //! synthetic vindex:
 //!
-//! 1. **Direct**: today's `VectorIndex::interleaved_q4k_layer_data`
+//! 1. **Direct**: today's `VectorIndex::interleaved_kquant_layer_data`
 //!    (returns `Option<[(&[u8], &str); 3]>`). Borrows directly from
 //!    the `Arc<Mmap>` held on `FfnStore`.
-//! 2. **MmapStorage concrete**: `MmapStorage::interleaved_q4k_layer_data`
+//! 2. **MmapStorage concrete**: `MmapStorage::interleaved_kquant_layer_data`
 //!    (returns `Option<[(Bytes, &str); 3]>`). Same byte ranges; the
 //!    `Bytes::slice` is O(1) refcounted but adds three atomic
 //!    increments per call (one per component).
@@ -86,7 +86,7 @@ fn build_fixture(
 
     // Construct an inert `VectorIndex` then install the synthetic
     // FFN bytes through the `MmapStorage` setter — same path the
-    // production loader uses (`ffn_store/interleaved_q4k.rs::load_interleaved_q4k`)
+    // production loader uses (`ffn_store/interleaved_kquant.rs::load_interleaved_kquant`)
     // minus the on-disk read.
     let mut index = larql_vindex::index::VectorIndex::new(
         vec![None; num_layers],
@@ -94,7 +94,7 @@ fn build_fixture(
         num_layers,
         hidden,
     );
-    Arc::make_mut(&mut index.storage).set_interleaved_q4k(Arc::new(mmap), Some(manifest));
+    Arc::make_mut(&mut index.storage).set_interleaved_kquant(Arc::new(mmap), Some(manifest));
 
     // Take a snapshot of `index.storage` for the concrete-shape
     // benchmark group (the trait-dispatch group rewraps it as
@@ -120,13 +120,13 @@ fn bench_layer_data_dispatch(c: &mut Criterion) {
     let (index, storage_concrete) = build_fixture(num_layers, intermediate, hidden);
     let storage_dyn: Arc<dyn VindexStorage> = Arc::new(storage_concrete.clone());
 
-    let mut group = c.benchmark_group("interleaved_q4k_layer_data");
+    let mut group = c.benchmark_group("interleaved_kquant_layer_data");
     group.bench_function(BenchmarkId::new("direct", num_layers), |b| {
         b.iter(|| {
             let mut sink = 0usize;
             for layer in 0..num_layers {
                 let arr = index
-                    .interleaved_q4k_layer_data(layer)
+                    .interleaved_kquant_layer_data(layer)
                     .expect("layer present");
                 for (bytes, fmt) in arr.iter() {
                     sink ^= bytes.len() ^ fmt.len();
@@ -141,7 +141,7 @@ fn bench_layer_data_dispatch(c: &mut Criterion) {
             let mut sink = 0usize;
             for layer in 0..num_layers {
                 let arr = storage_concrete
-                    .interleaved_q4k_layer_data(layer)
+                    .interleaved_kquant_layer_data(layer)
                     .expect("layer present");
                 for (view, fmt) in arr.iter() {
                     sink ^= view.len() ^ fmt.len();
@@ -156,7 +156,7 @@ fn bench_layer_data_dispatch(c: &mut Criterion) {
             let mut sink = 0usize;
             for layer in 0..num_layers {
                 let arr = storage_dyn
-                    .interleaved_q4k_layer_data(layer)
+                    .interleaved_kquant_layer_data(layer)
                     .expect("layer present");
                 for (view, fmt) in arr.iter() {
                     sink ^= view.len() ^ fmt.len();
@@ -188,7 +188,7 @@ fn bench_per_row_amortisation(c: &mut Criterion) {
             let mut sink = 0usize;
             for layer in 0..num_layers {
                 let arr = index
-                    .interleaved_q4k_layer_data(layer)
+                    .interleaved_kquant_layer_data(layer)
                     .expect("layer present");
                 let (gate, _) = arr[0];
                 // Inner row loop — what the actual decode kernel
@@ -206,7 +206,7 @@ fn bench_per_row_amortisation(c: &mut Criterion) {
             let mut sink = 0usize;
             for layer in 0..num_layers {
                 let arr = storage_dyn
-                    .interleaved_q4k_layer_data(layer)
+                    .interleaved_kquant_layer_data(layer)
                     .expect("layer present");
                 let gate: BytesView<'_> = arr[0].0;
                 let gate_slice = gate.as_slice();

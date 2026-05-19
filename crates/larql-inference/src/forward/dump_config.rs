@@ -8,9 +8,10 @@
 //! was active. They also drift if the env changes mid-process, which the
 //! dump consumers don't actually want.
 //!
-//! [`DumpConfig::get`] reads the three CPU-side vars once via `OnceLock`,
-//! returns a cheap borrow, and exposes `stage_dir(layer)` / `layer_dir()`
-//! helpers that match the prior inline logic verbatim. The two
+//! [`DumpConfig::current`] reads the three CPU-side vars on every call and
+//! returns an owned `DumpConfig`. Env-var reads are nanoseconds; the
+//! once-cached design (`get() -> &'static Self`) broke cross-test
+//! correctness when fixtures rotated tempdirs between calls. The two
 //! Metal/decode-side vars (read by `larql-compute`) appear here only as
 //! string consts — `larql-compute` reads them itself, but `residual_diff`
 //! sets them via the names exported from this module so producer and
@@ -45,8 +46,6 @@
 //! [`cpu_stage_prefix`] therefore only finds files when `layer == 0`. Any
 //! future fix should change both sides together.
 
-use std::sync::OnceLock;
-
 // ── Env var names ──────────────────────────────────────────────────────────
 
 /// `LARQL_CPU_DUMP_LAYERS=<dir>` — read by [`DumpConfig`].
@@ -70,7 +69,7 @@ pub const ENV_METAL_DUMP_LAYERS: &str = "LARQL_METAL_DUMP_LAYERS";
 // ── Filename templates (producer and consumer share these) ──────────────────
 
 /// `{dir}/cpu_layer_NN.f32` — end-of-layer CPU residual (from
-/// `vindex/q4k_forward/hidden.rs`).
+/// `vindex/kquant_forward/hidden.rs`).
 pub fn cpu_layer_path(dir: &str, layer: usize) -> String {
     format!("{dir}/cpu_layer_{layer:02}.f32")
 }
@@ -150,11 +149,23 @@ impl DumpConfig {
         }
     }
 
-    /// Process-wide singleton. First caller pays the env-read cost; every
-    /// subsequent caller borrows.
-    pub fn get() -> &'static Self {
-        static CFG: OnceLock<DumpConfig> = OnceLock::new();
-        CFG.get_or_init(Self::from_env)
+    /// Read env vars freshly and build a config. Aliased by [`Self::get`]
+    /// for back-compat; new callers should prefer this name.
+    pub fn current() -> Self {
+        Self::from_env()
+    }
+
+    /// Read env vars freshly. Previously cached via `OnceLock`, which
+    /// silently broke test fixtures that rotated `LARQL_*_DUMP_LAYERS`
+    /// tempdirs between calls — the second call would still hand out
+    /// the path of the first (now-deleted) tempdir, and writes failed
+    /// with `No such file or directory`. Env-var reads on macOS are
+    /// ~150 ns; at ~170 reads per token (34 layers × 5 stage gates),
+    /// the cost is ~25 µs per token vs ~35 ms of forward work — 0.07%.
+    /// Caller binds the result to a local before using `.layer_dir()` /
+    /// `.stage_dir(l)` so the `&str` doesn't borrow from a temporary.
+    pub fn get() -> Self {
+        Self::current()
     }
 
     /// `Some(dir)` only when stage dumps are enabled AND the active layer
@@ -210,11 +221,24 @@ mod tests {
     }
 
     #[test]
-    fn singleton_is_stable() {
-        // Two calls return the same backing struct — `OnceLock` semantics.
-        let a = DumpConfig::get() as *const _;
-        let b = DumpConfig::get() as *const _;
-        assert_eq!(a, b);
+    fn get_reads_env_freshly_each_call() {
+        // The OnceLock-cached design used to break test fixtures that
+        // rotated dump-dir tempdirs between calls — the cache handed
+        // out a stale path. `get()` now returns a freshly-built
+        // `DumpConfig` per call so flipping the env var actually
+        // takes effect.
+        // Save + restore to keep the process env clean for other tests.
+        let prev = std::env::var(ENV_CPU_DUMP_LAYERS).ok();
+        std::env::set_var(ENV_CPU_DUMP_LAYERS, "/tmp/dump-a");
+        let a_dir = DumpConfig::get().layer_dump_dir;
+        std::env::set_var(ENV_CPU_DUMP_LAYERS, "/tmp/dump-b");
+        let b_dir = DumpConfig::get().layer_dump_dir;
+        match prev {
+            Some(v) => std::env::set_var(ENV_CPU_DUMP_LAYERS, v),
+            None => std::env::remove_var(ENV_CPU_DUMP_LAYERS),
+        }
+        assert_eq!(a_dir, Some("/tmp/dump-a".to_string()));
+        assert_eq!(b_dir, Some("/tmp/dump-b".to_string()));
     }
 
     #[test]

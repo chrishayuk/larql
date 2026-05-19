@@ -30,9 +30,42 @@ tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 thiserror = { workspace = true }
 futures = "0.3"
 futures-core = "0.3"
+# ADR-0017 — Prometheus /metrics endpoint. Pulled in unconditionally
+# (no feature flag) because metrics are a default-on operability
+# surface, not an opt-in transport.
+prometheus = { version = "0.13", default-features = false }
+
+# ADR-0021 follow-up — parking_lot::RwLock<GridState> replaced
+# tokio::sync::RwLock for the routing snapshot. The concurrent-route
+# bench surfaced lock-contention plateau past ~4 concurrent readers on
+# tokio's async-aware RwLock; parking_lot's synchronous primitive is
+# the right tool because every grid critical section is short and sync
+# (no await held while locked).
+parking_lot = "0.12"
+
+# rustls is only used when the `quic` feature is on. Pulled in here so the
+# `spawn_quic_listener` helper can call `rustls::crypto::ring::default_provider()`
+# without re-declaring the dep upstream every time.
+rustls = { version = "0.23", optional = true, default-features = false, features = ["ring", "std"] }
 
 [dev-dependencies]
 criterion = { version = "0.5", features = ["html_reports"] }
+tempfile = "3"
+# `tower::ServiceExt::oneshot` for axum-router unit testing in
+# tests/test_http_handlers.rs. Only needed for the HTTP-handler test
+# harness; not pulled into the binary.
+tower = { version = "0.5", features = ["util"] }
+
+[features]
+default = []
+# ADR-0010 QUIC transport. Forwards to larql-router-protocol so the same
+# feature flag governs both the wire-format crate and the binary that
+# uses it. With this off, the router has no UDP socket or TLS code paths.
+quic = ["larql-router-protocol/quic", "dep:rustls"]
+# ADR-0019: real HTTP/3 shard transport. Routes MoE expert fan-out
+# (ADR-0018) through h3 instead of reqwest's HTTP/2-over-TCP. Opt-in
+# via the `--http3-shards` CLI flag at runtime.
+http3 = ["quic", "larql-router-protocol/http3"]
 
 [[bench]]
 name = "routing"

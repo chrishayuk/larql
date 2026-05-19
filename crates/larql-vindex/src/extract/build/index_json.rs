@@ -73,6 +73,10 @@ impl<'a> BuildContext<'a> {
                     rope_local_base: cfg.rope_local_base,
                     query_pre_attn_scalar: cfg.query_pre_attn_scalar,
                     final_logit_softcapping: cfg.final_logit_softcapping,
+                    attention_multiplier: cfg.attention_multiplier,
+                    residual_multiplier: cfg.residual_multiplier,
+                    logits_scaling: cfg.logits_scaling,
+                    norm_eps: cfg.norm_eps,
                 })
             },
             fp4: None,
@@ -100,6 +104,11 @@ impl<'a> BuildContext<'a> {
             safetensors_sha256: None,
             extracted_at: chrono_now(),
             larql_version: env!("CARGO_PKG_VERSION").to_string(),
+            // v1 provenance — populated once the extractor learns to
+            // fetch the upstream commit hash + safetensors digests.
+            base_model_sha: None,
+            extractor_sha: None,
+            base_safetensors_sha256: None,
         });
         config.checksums = crate::format::checksums::compute_checksums(self.output_dir).ok();
 

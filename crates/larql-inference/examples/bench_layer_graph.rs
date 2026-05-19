@@ -71,14 +71,14 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     index.load_up_features(&vindex_path)?;
     eprint!("lm_head... ");
     index.load_lm_head(&vindex_path)?;
-    if let Ok(()) = index.load_lm_head_q4(&vindex_path) {
+    if let Ok(()) = index.load_lm_head_kquant(&vindex_path) {
         print!("lm_head_q4 ")
     }
     if let Ok(()) = index.load_attn_q4(&vindex_path) {
         print!("attn_q4 ")
     }
-    if let Ok(()) = index.load_attn_q4k(&vindex_path) {
-        print!("attn_q4k ")
+    if let Ok(()) = index.load_attn_kquant(&vindex_path) {
+        print!("attn_kquant ")
     }
     if let Ok(()) = index.load_attn_q8(&vindex_path) {
         print!("attn_q8 ")
@@ -89,7 +89,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     if let Ok(()) = index.load_interleaved_q4(&vindex_path) {
         print!("Q4 ")
     }
-    if let Ok(()) = index.load_interleaved_q4k(&vindex_path) {
+    if let Ok(()) = index.load_interleaved_kquant(&vindex_path) {
         print!("Q4K_FFN ")
     }
     println!("lm_head (vocab={})\n", index.vocab_size);

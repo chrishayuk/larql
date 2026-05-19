@@ -17,10 +17,12 @@
 
 use clap::Args;
 use larql_vindex::format::filenames::{
-    ATTN_WEIGHTS_Q4K_BIN, ATTN_WEIGHTS_Q4K_MANIFEST_JSON, ATTN_WEIGHTS_Q4_BIN, ATTN_WEIGHTS_Q8_BIN,
-    EMBEDDINGS_BIN, GENERATION_CONFIG_JSON, INDEX_JSON, INTERLEAVED_Q4K_BIN,
-    INTERLEAVED_Q4K_MANIFEST_JSON, INTERLEAVED_Q4_BIN, LM_HEAD_BIN, LM_HEAD_Q4_BIN, NORMS_BIN,
-    TOKENIZER_CONFIG_JSON, TOKENIZER_JSON, WEIGHT_MANIFEST_JSON,
+    ATTN_WEIGHTS_KQUANT_BIN, ATTN_WEIGHTS_KQUANT_MANIFEST_JSON, ATTN_WEIGHTS_Q4_BIN,
+    ATTN_WEIGHTS_Q8_BIN, EMBEDDINGS_BIN, GENERATION_CONFIG_JSON, INDEX_JSON,
+    INTERLEAVED_KQUANT_BIN, INTERLEAVED_KQUANT_MANIFEST_JSON, INTERLEAVED_Q4_BIN,
+    LEGACY_ATTN_WEIGHTS_Q4K_BIN, LEGACY_ATTN_WEIGHTS_Q4K_MANIFEST_JSON, LEGACY_INTERLEAVED_Q4K_BIN,
+    LEGACY_INTERLEAVED_Q4K_MANIFEST_JSON, LEGACY_LM_HEAD_Q4_BIN, LM_HEAD_BIN, LM_HEAD_KQUANT_BIN,
+    NORMS_BIN, TOKENIZER_CONFIG_JSON, TOKENIZER_JSON, WEIGHT_MANIFEST_JSON,
 };
 
 use crate::commands::primary::cache;
@@ -68,15 +70,20 @@ pub fn run(args: DiagArgs) -> Result<(), Box<dyn std::error::Error>> {
         TOKENIZER_JSON,
         TOKENIZER_CONFIG_JSON,
         EMBEDDINGS_BIN,
-        ATTN_WEIGHTS_Q4K_BIN,
-        ATTN_WEIGHTS_Q4K_MANIFEST_JSON,
+        ATTN_WEIGHTS_KQUANT_BIN,
+        ATTN_WEIGHTS_KQUANT_MANIFEST_JSON,
+        LEGACY_ATTN_WEIGHTS_Q4K_BIN,
+        LEGACY_ATTN_WEIGHTS_Q4K_MANIFEST_JSON,
         ATTN_WEIGHTS_Q4_BIN,
         ATTN_WEIGHTS_Q8_BIN,
-        INTERLEAVED_Q4K_BIN,
-        INTERLEAVED_Q4K_MANIFEST_JSON,
+        INTERLEAVED_KQUANT_BIN,
+        INTERLEAVED_KQUANT_MANIFEST_JSON,
+        LEGACY_INTERLEAVED_Q4K_BIN,
+        LEGACY_INTERLEAVED_Q4K_MANIFEST_JSON,
         INTERLEAVED_Q4_BIN,
         LM_HEAD_BIN,
-        LM_HEAD_Q4_BIN,
+        LM_HEAD_KQUANT_BIN,
+        LEGACY_LM_HEAD_Q4_BIN,
         NORMS_BIN,
         WEIGHT_MANIFEST_JSON,
         GENERATION_CONFIG_JSON,
@@ -123,7 +130,10 @@ pub fn run(args: DiagArgs) -> Result<(), Box<dyn std::error::Error>> {
     // ── LM head path resolution ──
     let backend = larql_compute::default_backend();
     println!("\nBackend: {}", backend.name());
-    println!("  has_q4 (Q4 matvec available) : {}", backend.has_q4());
+    println!(
+        "  supports_quant(Q4_K)  : {}",
+        backend.supports_quant(::larql_compute::QuantFormat::Q4_K)
+    );
 
     println!("\nLM-head path resolution (which kernel fires per next-token):");
     let path_table = resolve_lm_head_path(&index, backend.as_ref());
@@ -153,13 +163,17 @@ pub fn run(args: DiagArgs) -> Result<(), Box<dyn std::error::Error>> {
     Ok(())
 }
 
-/// Walk every Q4_K manifest in the vindex, compare each entry's recorded
-/// `length` to `format.expected_bytes(&shape)`. Returns a single line
-/// summary; on mismatch, the kernel reads off-stride and produces NaN.
+/// Walk every k-quant manifest in the vindex, compare each entry's
+/// recorded `length` to `format.expected_bytes(&shape)`. Returns a single
+/// line summary; on mismatch, the kernel reads off-stride and produces NaN.
+/// Checks both the new kquant-named manifests and their legacy q4k
+/// counterparts so existing vindexes still get validated.
 fn validate_strides(dir: &std::path::Path) -> Result<String, Box<dyn std::error::Error>> {
     let manifests = [
-        ATTN_WEIGHTS_Q4K_MANIFEST_JSON,
-        INTERLEAVED_Q4K_MANIFEST_JSON,
+        ATTN_WEIGHTS_KQUANT_MANIFEST_JSON,
+        INTERLEAVED_KQUANT_MANIFEST_JSON,
+        LEGACY_ATTN_WEIGHTS_Q4K_MANIFEST_JSON,
+        LEGACY_INTERLEAVED_Q4K_MANIFEST_JSON,
     ];
     let mut total_clean = 0usize;
     let mut total_bad = 0usize;
@@ -237,8 +251,10 @@ fn resolve_lm_head_path(
     index: &larql_vindex::VectorIndex,
     backend: &dyn larql_compute::ComputeBackend,
 ) -> Vec<PathDecision> {
-    let has_q4_data = index.has_lm_head_q4();
-    let q4_ready = backend.has_q4() && has_q4_data && index.vocab_size > 0;
+    let has_q4_data = index.has_lm_head_kquant();
+    let q4_ready = backend.supports_quant(::larql_compute::QuantFormat::Q4_K)
+        && has_q4_data
+        && index.vocab_size > 0;
     let f16_ready = index.has_lm_head_f16() && index.vocab_size > 0;
     let is_non_cpu_backend =
         backend.as_any().type_id() != std::any::TypeId::of::<larql_compute::CpuBackend>();
@@ -274,9 +290,9 @@ fn resolve_lm_head_path(
             label: "Q4 matvec (fast, default)",
             will_fire: q4_will_fire,
             note: format!(
-                "lm_head_q4 mmap/synth = {}, backend.has_q4 = {}, skip_q4k override = {}  → default Metal lm_head path post 2026-05-02 dispatch fix",
+                "lm_head_q4 mmap/synth = {}, backend.supports_quant(Q4_K) = {}, skip_q4k override = {}  → default Metal lm_head path post 2026-05-02 dispatch fix",
                 has_q4_data,
-                backend.has_q4(),
+                backend.supports_quant(::larql_compute::QuantFormat::Q4_K),
                 skip_q4k,
             ),
         },
@@ -320,11 +336,11 @@ fn probe_run(
     use larql_inference::{default_backend, generate, CachedLayerGraph};
 
     let mut cb = larql_vindex::SilentLoadCallbacks;
-    let mut q4_index = larql_vindex::VectorIndex::load_vindex(vindex_path, &mut cb)?;
-    q4_index.load_attn_q4k(vindex_path)?;
-    q4_index.load_interleaved_q4k(vindex_path)?;
-    let _ = q4_index.load_lm_head_q4(vindex_path);
-    let mut weights = larql_vindex::load_model_weights_q4k(vindex_path, &mut cb)?;
+    let mut index = larql_vindex::VectorIndex::load_vindex(vindex_path, &mut cb)?;
+    index.load_attn_kquant(vindex_path)?;
+    index.load_interleaved_kquant(vindex_path)?;
+    let _ = index.load_lm_head_kquant(vindex_path);
+    let mut weights = larql_vindex::load_model_weights_kquant(vindex_path, &mut cb)?;
     let tokenizer = larql_vindex::load_vindex_tokenizer(vindex_path)?;
 
     let prompt = "The capital of France is";
@@ -341,7 +357,7 @@ fn probe_run(
         &tokenizer,
         &token_ids,
         3,
-        &q4_index,
+        &index,
         &*backend,
         &cache,
         0..num_layers,
@@ -351,7 +367,7 @@ fn probe_run(
         &tokenizer,
         &token_ids,
         tokens,
-        &q4_index,
+        &index,
         &*backend,
         &cache,
         0..num_layers,

@@ -50,15 +50,20 @@ pub(crate) fn vindex_core_files() -> Vec<&'static str> {
 
 pub(crate) const VINDEX_WEIGHT_FILES: &[&str] = &[
     ATTN_WEIGHTS_BIN,
-    ATTN_WEIGHTS_Q4K_BIN,
-    ATTN_WEIGHTS_Q4K_MANIFEST_JSON,
-    INTERLEAVED_Q4K_BIN,
-    INTERLEAVED_Q4K_MANIFEST_JSON,
+    ATTN_WEIGHTS_KQUANT_BIN,
+    ATTN_WEIGHTS_KQUANT_MANIFEST_JSON,
+    LEGACY_ATTN_WEIGHTS_Q4K_BIN,
+    LEGACY_ATTN_WEIGHTS_Q4K_MANIFEST_JSON,
+    INTERLEAVED_KQUANT_BIN,
+    INTERLEAVED_KQUANT_MANIFEST_JSON,
+    LEGACY_INTERLEAVED_Q4K_BIN,
+    LEGACY_INTERLEAVED_Q4K_MANIFEST_JSON,
     NORMS_BIN,
     UP_WEIGHTS_BIN,
     DOWN_WEIGHTS_BIN,
     LM_HEAD_BIN,
-    LM_HEAD_Q4_BIN,
+    LM_HEAD_KQUANT_BIN,
+    LEGACY_LM_HEAD_Q4_BIN,
     WEIGHT_MANIFEST_JSON,
 ];
 
@@ -171,16 +176,22 @@ mod tests {
     }
 
     #[test]
-    fn vindex_weight_files_includes_q4k_artifacts() {
-        // The PR-#60 Q4K addition: pull-time vindex weights now include
-        // both the legacy f32 names and the Q4K-quantised companions.
+    fn vindex_weight_files_includes_kquant_artifacts() {
+        // Pull-time vindex weights include the f32 names plus both the
+        // new kquant-named and legacy q4k-named k-quant companions, so
+        // both pre- and post-rename vindexes round-trip through HF.
         assert!(VINDEX_WEIGHT_FILES.contains(&ATTN_WEIGHTS_BIN));
-        assert!(VINDEX_WEIGHT_FILES.contains(&ATTN_WEIGHTS_Q4K_BIN));
-        assert!(VINDEX_WEIGHT_FILES.contains(&ATTN_WEIGHTS_Q4K_MANIFEST_JSON));
-        assert!(VINDEX_WEIGHT_FILES.contains(&INTERLEAVED_Q4K_BIN));
-        assert!(VINDEX_WEIGHT_FILES.contains(&INTERLEAVED_Q4K_MANIFEST_JSON));
+        assert!(VINDEX_WEIGHT_FILES.contains(&ATTN_WEIGHTS_KQUANT_BIN));
+        assert!(VINDEX_WEIGHT_FILES.contains(&ATTN_WEIGHTS_KQUANT_MANIFEST_JSON));
+        assert!(VINDEX_WEIGHT_FILES.contains(&LEGACY_ATTN_WEIGHTS_Q4K_BIN));
+        assert!(VINDEX_WEIGHT_FILES.contains(&LEGACY_ATTN_WEIGHTS_Q4K_MANIFEST_JSON));
+        assert!(VINDEX_WEIGHT_FILES.contains(&INTERLEAVED_KQUANT_BIN));
+        assert!(VINDEX_WEIGHT_FILES.contains(&INTERLEAVED_KQUANT_MANIFEST_JSON));
+        assert!(VINDEX_WEIGHT_FILES.contains(&LEGACY_INTERLEAVED_Q4K_BIN));
+        assert!(VINDEX_WEIGHT_FILES.contains(&LEGACY_INTERLEAVED_Q4K_MANIFEST_JSON));
         assert!(VINDEX_WEIGHT_FILES.contains(&LM_HEAD_BIN));
-        assert!(VINDEX_WEIGHT_FILES.contains(&LM_HEAD_Q4_BIN));
+        assert!(VINDEX_WEIGHT_FILES.contains(&LM_HEAD_KQUANT_BIN));
+        assert!(VINDEX_WEIGHT_FILES.contains(&LEGACY_LM_HEAD_Q4_BIN));
         assert!(VINDEX_WEIGHT_FILES.contains(&WEIGHT_MANIFEST_JSON));
     }
 }

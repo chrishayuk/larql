@@ -322,4 +322,23 @@ mod tests {
             );
         }
     }
+
+    #[test]
+    fn encode_decode_e4m3_slice_round_trip() {
+        // Exercise the encode_e4m3 / decode_e4m3 convenience wrappers
+        // (file lines 156-158 / 161-163) which the scalar tests above
+        // bypass — they call the per-value helpers directly.
+        let data = vec![0.0f32, 1.0, -1.0, 2.5, -100.0, 0.125];
+        let bytes = encode_e4m3(&data);
+        assert_eq!(bytes.len(), data.len(), "one byte per value");
+        let decoded = decode_e4m3(&bytes);
+        assert_eq!(decoded.len(), data.len());
+        for (orig, dec) in data.iter().zip(decoded.iter()) {
+            let bound = orig.abs().max(1.0 / 512.0) * 0.125;
+            assert!(
+                (orig - dec).abs() <= bound,
+                "round-trip {orig} → {dec} exceeded E4M3 precision bound {bound}",
+            );
+        }
+    }
 }

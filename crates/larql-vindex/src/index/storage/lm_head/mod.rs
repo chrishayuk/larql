@@ -52,7 +52,7 @@ const _: () = assert!(
 /// if the manifest exists and contains an entry for that key. Returns `None`
 /// when the manifest is absent (older vindexes) or doesn't list lm_head.
 ///
-/// Used by `load_lm_head_q4` to assert the on-disk file matches the format
+/// Used by `load_lm_head_kquant` to assert the on-disk file matches the format
 /// the reader is about to dispatch. The Q4_K-vs-Q4_0 byte-rate collision
 /// (0.5625 B/elem in both formats) made silent format mismatches invisible
 /// to file-size validation; checking the manifest's `kind` discriminator
@@ -164,10 +164,10 @@ mod tests {
         assert_eq!(tokens.len(), 3, "no duplicate token ids in top-k output");
     }
 
-    /// `synthesize_lm_head_q4` converts f16 embeddings to Q4_0 in RAM.
+    /// `synthesize_lm_head_kquant` converts f16 embeddings to Q4_0 in RAM.
     ///
     /// Invariants:
-    ///   - `has_lm_head_q4` false before synthesis, true after.
+    ///   - `has_lm_head_kquant` false before synthesis, true after.
     ///   - Output byte length = vocab × (hidden/32 × 18).
     ///   - Re-quantizing a row via CPU path gives dot-product scores that rank
     ///     the matching row first (round-trip correctness).
@@ -208,18 +208,18 @@ mod tests {
         index.set_lm_head_f16_mmap(mmap);
 
         assert!(
-            !index.has_lm_head_q4(),
+            !index.has_lm_head_kquant(),
             "should not have Q4 before synthesis"
         );
-        index.synthesize_lm_head_q4();
-        assert!(index.has_lm_head_q4(), "should have Q4 after synthesis");
+        index.synthesize_lm_head_kquant();
+        assert!(index.has_lm_head_kquant(), "should have Q4 after synthesis");
 
         // Byte length check uses canonical Q4_K block geometry from
         // `larql-models::quant::ggml` so the test fails immediately if the
         // writer ever switches blocks under us.
         let synth = index
             .storage
-            .lm_head_q4_view()
+            .lm_head_kquant_view()
             .expect("synth must populate lm_head_q4");
         let super_blocks = (vocab * hidden) / Q4_K_BLOCK_ELEMS;
         assert_eq!(
@@ -236,10 +236,10 @@ mod tests {
 
         // Calling again should be a no-op (idempotent).
         let ptr_before = synth.as_ptr();
-        index.synthesize_lm_head_q4();
+        index.synthesize_lm_head_kquant();
         let ptr_after = index
             .storage
-            .lm_head_q4_view()
+            .lm_head_kquant_view()
             .expect("synth must remain populated")
             .as_ptr();
         assert_eq!(ptr_before, ptr_after, "second call should not reallocate");
@@ -250,7 +250,7 @@ mod tests {
     /// `vocab_size = 0`. The Q4 lm_head fast path then silently bailed
     /// (`if vocab > 0`), forcing a 4× slower fallback through the f32
     /// BLAS gemv on `weights.lm_head`. This test pins the fix:
-    /// `load_lm_head_q4` must populate `vocab_size` from the file size
+    /// `load_lm_head_kquant` must populate `vocab_size` from the file size
     /// when no other source has set it.
     #[test]
     fn load_lm_head_q4_sets_vocab_size_from_file_size() {
@@ -263,47 +263,49 @@ mod tests {
         let payload = vec![0u8; bytes];
 
         let tmp = tempfile::tempdir().unwrap();
-        std::fs::write(tmp.path().join(LM_HEAD_Q4_BIN), &payload).unwrap();
+        std::fs::write(tmp.path().join(LM_HEAD_KQUANT_BIN), &payload).unwrap();
 
         // Build a minimal index — vocab_size starts at 0.
         let mut index = VectorIndex::empty(1, hidden);
         assert_eq!(index.vocab_size, 0);
 
-        index.load_lm_head_q4(tmp.path()).expect("load lm_head_q4");
+        index
+            .load_lm_head_kquant(tmp.path())
+            .expect("load lm_head_q4");
 
         assert_eq!(
             index.vocab_size, vocab,
-            "load_lm_head_q4 must derive vocab_size from file size when it's 0"
+            "load_lm_head_kquant must derive vocab_size from file size when it's 0"
         );
     }
 
     /// Companion: when `vocab_size` is *already* set (by index.json or
-    /// `load_lm_head`), `load_lm_head_q4` must not clobber it.
+    /// `load_lm_head`), `load_lm_head_kquant` must not clobber it.
     #[test]
     fn load_lm_head_q4_does_not_overwrite_existing_vocab_size() {
         let hidden = 128usize;
         let bytes = 256 * hidden * Q4_BYTES_PER_ELEM_NUM / Q4_BYTES_PER_ELEM_DEN;
         let payload = vec![0u8; bytes];
         let tmp = tempfile::tempdir().unwrap();
-        std::fs::write(tmp.path().join(LM_HEAD_Q4_BIN), &payload).unwrap();
+        std::fs::write(tmp.path().join(LM_HEAD_KQUANT_BIN), &payload).unwrap();
 
         let mut index = VectorIndex::empty(1, hidden);
         index.vocab_size = 999; // pretend index.json already set this
-        index.load_lm_head_q4(tmp.path()).unwrap();
+        index.load_lm_head_kquant(tmp.path()).unwrap();
 
         assert_eq!(index.vocab_size, 999, "must not clobber preset vocab_size");
     }
 
-    /// Companion: `load_lm_head_q4` is a no-op for vocab_size when the
+    /// Companion: `load_lm_head_kquant` is a no-op for vocab_size when the
     /// hidden_size is 0 (avoid div-by-zero / nonsense vocab).
     #[test]
     fn load_lm_head_q4_skips_vocab_inference_when_hidden_size_zero() {
         let payload = vec![0u8; 100];
         let tmp = tempfile::tempdir().unwrap();
-        std::fs::write(tmp.path().join(LM_HEAD_Q4_BIN), &payload).unwrap();
+        std::fs::write(tmp.path().join(LM_HEAD_KQUANT_BIN), &payload).unwrap();
 
         let mut index = VectorIndex::empty(1, 0);
-        index.load_lm_head_q4(tmp.path()).unwrap();
+        index.load_lm_head_kquant(tmp.path()).unwrap();
         assert_eq!(
             index.vocab_size, 0,
             "no inference possible without hidden_size"
@@ -311,7 +313,7 @@ mod tests {
     }
 
     /// Regression test for the gemma3-4b-v2 garbage-output bug (2026-04-27):
-    /// `format/weights/write_q4k::write_model_weights_q4k` writes
+    /// `format/weights/write_kquant::write_model_weights_kquant` writes
     /// `lm_head_q4.bin` as **Q4_K** (144 B / 256 elems with sub-block
     /// scales/mins). `lm_head_knn_backend` previously dispatched
     /// `backend.q4_matvec` which is **Q4_0** (18 B / 32 elems with one f16
@@ -355,7 +357,7 @@ mod tests {
         // Inject into a synthetic VectorIndex via the synth path.
         let mut index = VectorIndex::empty(1, hidden);
         index.vocab_size = vocab;
-        Arc::make_mut(&mut index.storage).set_lm_head_q4_synth(Arc::new(q4k_bytes));
+        Arc::make_mut(&mut index.storage).set_lm_head_kquant_synth(Arc::new(q4k_bytes));
 
         // Pick a query that points at a known peak — token 42's row peaks
         // at column 42, so the dot product is highest at row 42.
@@ -410,7 +412,7 @@ mod tests {
         );
     }
 
-    /// Companion: the synth path (`synthesize_lm_head_q4`) must produce
+    /// Companion: the synth path (`synthesize_lm_head_kquant`) must produce
     /// the same Q4_K format as the on-disk writer. Earlier the synth path
     /// emitted Q4_0 while the writer emitted Q4_K — both ended up routed
     /// through `q4k_matvec` after the dispatch fix, so a Q4_0 synth would
@@ -437,11 +439,11 @@ mod tests {
         let mut index = VectorIndex::empty(1, hidden);
         index.vocab_size = vocab;
         index.set_lm_head_f16_mmap(Arc::new(memmap_from_bytes(&f16_buf)));
-        index.synthesize_lm_head_q4();
+        index.synthesize_lm_head_kquant();
 
         let synth = index
             .storage
-            .lm_head_q4_view()
+            .lm_head_kquant_view()
             .expect("synth must populate lm_head_q4");
         // Q4_K size invariant: Q4_K_BLOCK_BYTES per Q4_K_BLOCK_ELEMS-element super-block.
         assert_eq!(
@@ -479,7 +481,7 @@ mod tests {
     }
 
     /// Architectural regression test: when `weight_manifest.json` lists
-    /// `lm_head.weight` with `kind != tensor_q4k`, `load_lm_head_q4` must
+    /// `lm_head.weight` with `kind != tensor_q4k`, `load_lm_head_kquant` must
     /// refuse to load. This is the bug class that produced silent garbage
     /// logits in gemma3-4b-v2.vindex (writer Q4_K, reader Q4_0 dispatch).
     #[test]
@@ -489,7 +491,7 @@ mod tests {
         let bytes = vocab * hidden * Q4_BYTES_PER_ELEM_NUM / Q4_BYTES_PER_ELEM_DEN;
 
         let tmp = tempfile::tempdir().unwrap();
-        std::fs::write(tmp.path().join(LM_HEAD_Q4_BIN), vec![0u8; bytes]).unwrap();
+        std::fs::write(tmp.path().join(LM_HEAD_KQUANT_BIN), vec![0u8; bytes]).unwrap();
 
         // Manifest claims lm_head is f16 — incompatible with Q4_K dispatch.
         let manifest = serde_json::json!([{
@@ -507,10 +509,10 @@ mod tests {
         .unwrap();
 
         let mut index = VectorIndex::empty(1, hidden);
-        let result = index.load_lm_head_q4(tmp.path());
+        let result = index.load_lm_head_kquant(tmp.path());
         assert!(
             result.is_err(),
-            "load_lm_head_q4 must reject when manifest kind disagrees with TENSOR_Q4K"
+            "load_lm_head_kquant must reject when manifest kind disagrees with TENSOR_Q4K"
         );
         let err_msg = format!("{}", result.unwrap_err());
         assert!(
@@ -528,7 +530,7 @@ mod tests {
         let bytes = vocab * hidden * Q4_BYTES_PER_ELEM_NUM / Q4_BYTES_PER_ELEM_DEN;
 
         let tmp = tempfile::tempdir().unwrap();
-        std::fs::write(tmp.path().join(LM_HEAD_Q4_BIN), vec![0u8; bytes]).unwrap();
+        std::fs::write(tmp.path().join(LM_HEAD_KQUANT_BIN), vec![0u8; bytes]).unwrap();
 
         let manifest = serde_json::json!([{
             "key": "lm_head.weight",
@@ -546,7 +548,7 @@ mod tests {
 
         let mut index = VectorIndex::empty(1, hidden);
         index
-            .load_lm_head_q4(tmp.path())
+            .load_lm_head_kquant(tmp.path())
             .expect("matching manifest kind should load");
         assert_eq!(index.vocab_size, vocab);
     }

@@ -4,7 +4,7 @@ use std::time::Instant;
 use clap::Args;
 use larql_inference::encode_prompt;
 use larql_vindex::{
-    load_model_weights_q4k, load_vindex_tokenizer, SilentLoadCallbacks, VectorIndex,
+    load_model_weights_kquant, load_vindex_tokenizer, SilentLoadCallbacks, VectorIndex,
 };
 use std::collections::HashMap;
 
@@ -507,9 +507,9 @@ pub(super) fn run_oracle_pq(args: OraclePqArgs) -> Result<(), Box<dyn std::error
     let start = Instant::now();
     let mut cb = SilentLoadCallbacks;
     let mut index = VectorIndex::load_vindex(&args.index, &mut cb)?;
-    index.load_attn_q4k(&args.index)?;
-    index.load_interleaved_q4k(&args.index)?;
-    let mut weights = load_model_weights_q4k(&args.index, &mut cb)?;
+    index.load_attn_kquant(&args.index)?;
+    index.load_interleaved_kquant(&args.index)?;
+    let mut weights = load_model_weights_kquant(&args.index, &mut cb)?;
     let tokenizer = load_vindex_tokenizer(&args.index)?;
     if weights.arch.is_hybrid_moe() {
         return Err("ov-rd oracle-pq currently supports dense FFN vindexes only".into());
@@ -1715,7 +1715,7 @@ pub(super) fn run_oracle_pq(args: OraclePqArgs) -> Result<(), Box<dyn std::error
         let stratum = record.stratum.as_deref().unwrap_or("unknown");
 
         let baseline_hidden =
-            larql_inference::vindex::predict_q4k_hidden(&mut weights, &token_ids, &index, None);
+            larql_inference::vindex::predict_kquant_hidden(&mut weights, &token_ids, &index, None);
         let baseline_logits = final_logits(&weights, &baseline_hidden);
         let baseline_logp = log_softmax(&baseline_logits);
         let baseline_top1 = argmax(&baseline_logits);

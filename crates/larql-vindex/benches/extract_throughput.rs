@@ -156,7 +156,7 @@ fn bench_extract_throughput(c: &mut Criterion) {
                     StorageDtype::F32,
                     q,
                     larql_vindex::WriteWeightsOptions::default(),
-                    larql_vindex::Q4kWriteOptions::default(),
+                    larql_vindex::KquantWriteOptions::default(),
                     false,
                     &mut cb,
                 )
@@ -183,7 +183,7 @@ fn bench_extract_throughput(c: &mut Criterion) {
             StorageDtype::F32,
             QuantFormat::Q4K,
             larql_vindex::WriteWeightsOptions::default(),
-            larql_vindex::Q4kWriteOptions::default(),
+            larql_vindex::KquantWriteOptions::default(),
             false,
             &mut cb,
         )
@@ -229,7 +229,7 @@ fn bench_extract_throughput(c: &mut Criterion) {
                 StorageDtype::F32,
                 QuantFormat::Q4K,
                 larql_vindex::WriteWeightsOptions::default(),
-                larql_vindex::Q4kWriteOptions::default(),
+                larql_vindex::KquantWriteOptions::default(),
                 false,
                 &mut cb,
             )

@@ -59,7 +59,7 @@ fn first_token_matches_expected_surface() {
     let index = open_inference_vindex(path).expect("failed to open vindex for inference");
     let mut cb = larql_vindex::SilentLoadCallbacks;
     let mut weights =
-        larql_vindex::load_model_weights_q4k(path, &mut cb).expect("failed to load weights");
+        larql_vindex::load_model_weights_kquant(path, &mut cb).expect("failed to load weights");
     let tokenizer = larql_vindex::load_vindex_tokenizer(path).expect("tokenizer load");
 
     let token_ids = larql_inference::encode_prompt(&tokenizer, &*weights.arch, &prompt)

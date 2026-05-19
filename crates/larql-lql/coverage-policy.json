@@ -1,0 +1,39 @@
+{
+  "policy_note": "Default policy is 90% line coverage per source file. Files listed below carry inherited debt baselines from 2026-05-17 — they MUST only ratchet upward toward 90%, never down. Run `make larql-lql-coverage-summary` to refresh; numbers are floored from the measured value to leave noise headroom.",
+  "include_globs": [
+    "crates/larql-lql/src/*.rs",
+    "crates/larql-lql/src/**/*.rs"
+  ],
+  "exclude_globs": [],
+  "default_line_min_percent": 90.0,
+  "total_line_min_percent": 88.0,
+  "per_file_line_min_percent": {
+    "crates/larql-lql/src/executor/lifecycle/extract.rs": 52.0,
+    "crates/larql-lql/src/executor/introspection.rs": 65.0,
+    "crates/larql-lql/src/executor/mod.rs": 67.0,
+    "crates/larql-lql/src/executor/query/describe/exec.rs": 71.0,
+    "crates/larql-lql/src/executor/lifecycle/use_cmd.rs": 72.0,
+    "crates/larql-lql/src/executor/lifecycle/compile/into_model.rs": 77.0,
+    "crates/larql-lql/src/parser/helpers.rs": 78.0,
+    "crates/larql-lql/src/repl.rs": 79.0,
+    "crates/larql-lql/src/executor/query/infer.rs": 79.0,
+    "crates/larql-lql/src/executor/backend.rs": 79.0,
+    "crates/larql-lql/src/executor/remote/query.rs": 80.0,
+    "crates/larql-lql/src/executor/compact.rs": 82.0,
+    "crates/larql-lql/src/executor/mutation/merge.rs": 83.0,
+    "crates/larql-lql/src/executor/trace.rs": 83.0,
+    "crates/larql-lql/src/executor/mutation/insert/plan.rs": 83.0,
+    "crates/larql-lql/src/executor/query/select/entities.rs": 83.0,
+    "crates/larql-lql/src/lexer.rs": 84.0,
+    "crates/larql-lql/src/executor/query/explain.rs": 86.0,
+    "crates/larql-lql/src/executor/query/walk.rs": 85.0,
+    "crates/larql-lql/src/executor/mutation/insert/capture.rs": 85.0,
+    "crates/larql-lql/src/executor/mutation/update.rs": 85.0,
+    "crates/larql-lql/src/executor/mutation/rebalance.rs": 86.0,
+    "crates/larql-lql/src/executor/lifecycle/compile/into_vindex.rs": 87.0,
+    "crates/larql-lql/src/parser/lifecycle.rs": 88.0,
+    "crates/larql-lql/src/executor/mutation/insert/mod.rs": 89.0,
+    "crates/larql-lql/src/executor/mutation/insert/knn.rs": 89.0,
+    "crates/larql-lql/src/executor/mutation/insert/balance.rs": 89.0
+  }
+}

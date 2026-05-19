@@ -323,4 +323,196 @@ mod integration_tests {
         assert_eq!(w.prompt, "JINJA:hi");
         assert!(w.note.contains("chat_template.jinja"), "note={}", w.note);
     }
+
+    // ── helpers (no env-var mutation — tests run in parallel) ─────────────
+
+    #[test]
+    fn passthrough_returns_input_unchanged() {
+        assert_eq!(passthrough("hi there"), "hi there");
+    }
+
+    #[test]
+    fn wrap_prompt_raw_renders_template_with_user_content() {
+        let cfg = Value::Object(Default::default());
+        let result =
+            wrap_prompt_raw("PROMPT:{{ messages[0].content }}", &cfg, "hello world").unwrap();
+        assert_eq!(result, "PROMPT:hello world");
+    }
+
+    #[test]
+    fn wrap_prompt_raw_returns_error_on_malformed_template() {
+        // Unterminated jinja block — render fails.
+        let cfg = Value::Object(Default::default());
+        let err = wrap_prompt_raw("{{ unclosed", &cfg, "hi").unwrap_err();
+        assert!(!err.is_empty(), "error string must be non-empty");
+    }
+
+    #[test]
+    fn default_system_prompt_for_family_returns_gemma4_text() {
+        assert!(default_system_prompt_for_family("gemma4").is_some());
+        assert_eq!(default_system_prompt_for_family("tinymodel"), None);
+        assert_eq!(default_system_prompt_for_family("llama"), None);
+    }
+
+    #[test]
+    fn family_default_template_returns_gemma4_template() {
+        let t = family_default_template("gemma4").expect("gemma4 has fallback");
+        assert!(t.contains("turn"), "gemma4 template uses turn markers");
+        assert_eq!(family_default_template("tinymodel"), None);
+    }
+
+    #[test]
+    fn read_chat_template_prefers_jinja_file() {
+        let tmp = tempfile::tempdir().unwrap();
+        std::fs::write(tmp.path().join("chat_template.jinja"), "FROM_JINJA").unwrap();
+        std::fs::write(
+            tmp.path().join(TOKENIZER_CONFIG_JSON),
+            r#"{"chat_template":"FROM_CFG"}"#,
+        )
+        .unwrap();
+        assert_eq!(
+            read_chat_template(tmp.path()).as_deref(),
+            Some("FROM_JINJA")
+        );
+    }
+
+    #[test]
+    fn read_chat_template_falls_back_to_tokenizer_config() {
+        let tmp = tempfile::tempdir().unwrap();
+        std::fs::write(
+            tmp.path().join(TOKENIZER_CONFIG_JSON),
+            r#"{"chat_template":"FROM_CFG"}"#,
+        )
+        .unwrap();
+        assert_eq!(read_chat_template(tmp.path()).as_deref(), Some("FROM_CFG"));
+    }
+
+    #[test]
+    fn read_chat_template_returns_none_when_both_absent() {
+        let tmp = tempfile::tempdir().unwrap();
+        assert!(read_chat_template(tmp.path()).is_none());
+    }
+
+    #[test]
+    fn read_chat_template_returns_none_when_cfg_has_no_chat_template_field() {
+        let tmp = tempfile::tempdir().unwrap();
+        std::fs::write(tmp.path().join(TOKENIZER_CONFIG_JSON), r#"{"other":"x"}"#).unwrap();
+        assert!(read_chat_template(tmp.path()).is_none());
+    }
+
+    // ── render_user_prompt — serialised via mutex because the function
+    //    reads process-global env vars that other tests would race on. ────
+    use std::sync::{Mutex, OnceLock};
+
+    fn env_lock() -> &'static Mutex<()> {
+        static LOCK: OnceLock<Mutex<()>> = OnceLock::new();
+        LOCK.get_or_init(|| Mutex::new(()))
+    }
+
+    /// Helper: clear all prompt-affecting env vars while holding the
+    /// global lock. Returns the lock guard so the caller's mutations
+    /// stay isolated for the rest of the test.
+    fn lock_and_clear_env() -> std::sync::MutexGuard<'static, ()> {
+        // Recover from a poisoned lock (a panicking earlier test) — we
+        // just want serialisation, not panic propagation.
+        let guard = env_lock().lock().unwrap_or_else(|p| p.into_inner());
+        for k in [
+            ENV_RAW_PROMPT,
+            ENV_THINKING,
+            ENV_SYSTEM,
+            ENV_NO_DEFAULT_SYSTEM,
+        ] {
+            unsafe { std::env::remove_var(k) };
+        }
+        guard
+    }
+
+    #[test]
+    fn render_user_prompt_passes_through_when_raw_env_set() {
+        let _g = lock_and_clear_env();
+        unsafe { std::env::set_var(ENV_RAW_PROMPT, "1") };
+        let tmp = tempfile::tempdir().unwrap();
+        let result = render_user_prompt(tmp.path(), "tinymodel", "hello").unwrap();
+        unsafe { std::env::remove_var(ENV_RAW_PROMPT) };
+        assert_eq!(result, "hello");
+    }
+
+    #[test]
+    fn render_user_prompt_uses_vindex_template_when_no_system() {
+        let _g = lock_and_clear_env();
+        unsafe { std::env::set_var(ENV_NO_DEFAULT_SYSTEM, "1") };
+        let tmp = tempfile::tempdir().unwrap();
+        std::fs::write(
+            tmp.path().join("chat_template.jinja"),
+            "WRAP:{{ messages[0].content }}",
+        )
+        .unwrap();
+        let result = render_user_prompt(tmp.path(), "tinymodel", "hi");
+        unsafe { std::env::remove_var(ENV_NO_DEFAULT_SYSTEM) };
+        assert_eq!(result.unwrap(), "WRAP:hi");
+    }
+
+    #[test]
+    fn render_user_prompt_errors_when_no_template_and_system_requested() {
+        let _g = lock_and_clear_env();
+        unsafe { std::env::set_var(ENV_SYSTEM, "you are helpful") };
+        let tmp = tempfile::tempdir().unwrap();
+        let err = render_user_prompt(tmp.path(), "unknown-family", "hi");
+        unsafe { std::env::remove_var(ENV_SYSTEM) };
+        let msg = err.unwrap_err();
+        assert!(
+            msg.contains("no chat template"),
+            "expected no-template error — got {msg}"
+        );
+    }
+
+    #[test]
+    fn render_user_prompt_renders_with_explicit_system_message() {
+        let _g = lock_and_clear_env();
+        unsafe { std::env::set_var(ENV_SYSTEM, "you are helpful") };
+        let tmp = tempfile::tempdir().unwrap();
+        std::fs::write(
+            tmp.path().join("chat_template.jinja"),
+            "{% for m in messages %}<{{ m.role }}>{{ m.content }}{% endfor %}",
+        )
+        .unwrap();
+        let result = render_user_prompt(tmp.path(), "tinymodel", "hi");
+        unsafe { std::env::remove_var(ENV_SYSTEM) };
+        let s = result.unwrap();
+        assert!(s.contains("<system>you are helpful"));
+        assert!(s.contains("<user>hi"));
+    }
+
+    #[test]
+    fn render_user_prompt_uses_family_default_when_thinking_set() {
+        let _g = lock_and_clear_env();
+        unsafe { std::env::set_var(ENV_THINKING, "1") };
+        let tmp = tempfile::tempdir().unwrap();
+        std::fs::write(
+            tmp.path().join("chat_template.jinja"),
+            "{% for m in messages %}<{{ m.role }}>{{ m.content }}{% endfor %}",
+        )
+        .unwrap();
+        let result = render_user_prompt(tmp.path(), "gemma4", "hi");
+        unsafe { std::env::remove_var(ENV_THINKING) };
+        let s = result.unwrap();
+        assert!(s.contains("<system>"));
+        assert!(s.contains("<user>hi"));
+    }
+
+    #[test]
+    fn render_user_prompt_default_path_uses_wrap_chat_prompt() {
+        // No env vars, no system → default path: wrap_chat_prompt(). With
+        // a chat_template.jinja in the vindex dir, wrap returns
+        // applied=true and the templated output.
+        let _g = lock_and_clear_env();
+        let tmp = tempfile::tempdir().unwrap();
+        std::fs::write(
+            tmp.path().join("chat_template.jinja"),
+            "WRAP:{{ messages[0].content }}",
+        )
+        .unwrap();
+        let result = render_user_prompt(tmp.path(), "tinymodel", "hi").unwrap();
+        assert_eq!(result, "WRAP:hi");
+    }
 }

@@ -119,17 +119,17 @@ impl NativeFfnAccess for Mock {
 }
 
 impl QuantizedFfnAccess for Mock {
-    fn has_interleaved_q4k(&self) -> bool {
+    fn has_interleaved_kquant(&self) -> bool {
         self.q4k_on
     }
-    fn q4k_ffn_row_dot(&self, _layer: usize, _c: usize, _f: usize, _x: &[f32]) -> Option<f32> {
+    fn kquant_ffn_row_dot(&self, _layer: usize, _c: usize, _f: usize, _x: &[f32]) -> Option<f32> {
         if !self.q4k_on {
             return None;
         }
         self.mark("q4k");
         self.q4k_dot_return
     }
-    fn q4k_ffn_row_scaled_add_via_cache(
+    fn kquant_ffn_row_scaled_add_via_cache(
         &self,
         _layer: usize,
         _c: usize,
@@ -146,7 +146,7 @@ impl QuantizedFfnAccess for Mock {
         }
         true
     }
-    fn q4k_ffn_row_scaled_add(
+    fn kquant_ffn_row_scaled_add(
         &self,
         _layer: usize,
         _c: usize,
@@ -163,7 +163,7 @@ impl QuantizedFfnAccess for Mock {
         }
         true
     }
-    fn q4k_ffn_row_into(&self, _layer: usize, _c: usize, _f: usize, out: &mut [f32]) -> bool {
+    fn kquant_ffn_row_into(&self, _layer: usize, _c: usize, _f: usize, out: &mut [f32]) -> bool {
         if !self.q4k_on {
             return false;
         }

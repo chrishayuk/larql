@@ -6,8 +6,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let vd = std::path::PathBuf::from("output/gemma3-4b-v2.vindex");
     let mut index =
         larql_vindex::VectorIndex::load_vindex(&vd, &mut larql_vindex::SilentLoadCallbacks)?;
-    let _ = index.load_attn_q4k(&vd);
-    let _ = index.load_interleaved_q4k(&vd);
+    let _ = index.load_attn_kquant(&vd);
+    let _ = index.load_interleaved_kquant(&vd);
     let _ = index.load_interleaved_q4(&vd);
     let _ = index.load_lm_head(&vd);
     let _ = index.load_down_features(&vd);
@@ -16,13 +16,17 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let gate_index: &dyn larql_vindex::GateIndex = &index;
 
     println!("=== Debug Generate Pipeline ===\n");
-    println!("Backend: {} (has_q4={})", backend.name(), backend.has_q4());
+    println!(
+        "Backend: {} (supports Q4_K = {})",
+        backend.name(),
+        backend.supports_quant(::larql_compute::QuantFormat::Q4_K)
+    );
     println!(
         "has_q4k attn L0: {}",
-        index.attn_q4k_layer_data(0).is_some()
+        index.attn_kquant_layer_data(0).is_some()
     );
     println!("has_q8 attn L0: {}", index.attn_q8_layer_data(0).is_some());
-    println!("interleaved Q4K: {}", gate_index.has_interleaved_q4k());
+    println!("interleaved Q4K: {}", gate_index.has_interleaved_kquant());
     println!(
         "interleaved Q4: {}",
         gate_index.interleaved_q4_mmap_ref().is_some()
@@ -31,7 +35,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     println!("down_features: {}", gate_index.has_down_features());
 
     // Check what predict_honest does
-    let (q4_ffn, ffn_is_q4k) = if let Some(mmap) = gate_index.interleaved_q4k_mmap_ref() {
+    let (q4_ffn, ffn_is_q4k) = if let Some(mmap) = gate_index.interleaved_kquant_mmap_ref() {
         (Some(mmap), true)
     } else {
         (gate_index.interleaved_q4_mmap_ref(), false)
@@ -41,7 +45,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         q4_ffn.is_some()
     );
 
-    let has_q4k_attn = index.attn_q4k_layer_data(0).is_some();
+    let has_q4k_attn = index.attn_kquant_layer_data(0).is_some();
     let has_q8_attn = index.attn_q8_layer_data(0).is_some();
     println!("Attn data: q4k={has_q4k_attn}, q8={has_q8_attn}");
 
@@ -133,14 +137,14 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
         // Try prefill
         println!(
-            "\nTrying prefill_q4 with all layers, seq={}...",
+            "\nTrying prefill_kquant with all layers, seq={}...",
             token_ids.len()
         );
         backend.reset_kv_cache();
         let x_all: Vec<f32> = h.as_slice().unwrap_or(&[]).to_vec();
         let softcap = weights.arch.attn_logit_softcapping().unwrap_or(0.0);
         let qk_norm = weights.arch.attn_q_norm_key(0).is_some();
-        let prefill_result = backend.prefill_q4(
+        let prefill_result = backend.prefill_kquant(
             &all_layers,
             &x_all,
             hidden,
@@ -150,7 +154,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             softcap,
         );
         println!(
-            "prefill_q4 result: {}",
+            "prefill_kquant result: {}",
             if prefill_result.is_some() {
                 "Some"
             } else {

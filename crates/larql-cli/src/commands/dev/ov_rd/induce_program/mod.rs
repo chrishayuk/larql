@@ -8,7 +8,7 @@ mod proposal;
 
 pub(super) use args::InduceProgramArgs;
 
-use larql_vindex::{load_model_weights_q4k, load_vindex_tokenizer, SilentLoadCallbacks};
+use larql_vindex::{load_model_weights_kquant, load_vindex_tokenizer, SilentLoadCallbacks};
 
 use super::input::{parse_head_spec, parse_pq_configs};
 use super::program::{
@@ -44,9 +44,9 @@ pub(super) fn run_induce_program(
 
     let mut cb = SilentLoadCallbacks;
     let mut index = larql_vindex::VectorIndex::load_vindex(&args.index, &mut cb)?;
-    index.load_attn_q4k(&args.index)?;
-    index.load_interleaved_q4k(&args.index)?;
-    let mut weights = load_model_weights_q4k(&args.index, &mut cb)?;
+    index.load_attn_kquant(&args.index)?;
+    index.load_interleaved_kquant(&args.index)?;
+    let mut weights = load_model_weights_kquant(&args.index, &mut cb)?;
     let tokenizer = load_vindex_tokenizer(&args.index)?;
 
     // Step 1: fit codebook + capture oracle codes, attention, baselines once.

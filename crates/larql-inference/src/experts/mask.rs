@@ -288,4 +288,128 @@ mod tests {
         let names: Vec<String> = specs.iter().map(|s| s.name.clone()).collect();
         assert_eq!(names, vec!["gcd".to_string(), "is_prime".into()]);
     }
+
+    // ── OpNameMask::apply + op_tokens (need a tokenizer) ──────────────────
+
+    /// Build a character-level tokenizer where each id N decodes to a
+    /// single ASCII byte (or `[UNK]`). Covers the chars used in `gcd`,
+    /// `is_prime`, plus the `"` quote terminator.
+    fn char_tokenizer() -> tokenizers::Tokenizer {
+        let mut vocab = serde_json::Map::new();
+        // Reserve the chars we need; ids are sequential, decode == key.
+        let chars: &[&str] = &[
+            "g", "c", "d", "i", "s", "_", "p", "r", "m", "e", "\"", "{", ":", " ", "a", "n", "o",
+            "x", "y", "z", "u", "t", "h",
+        ];
+        for (i, ch) in chars.iter().enumerate() {
+            vocab.insert((*ch).into(), serde_json::Value::Number((i as u64).into()));
+        }
+        vocab.insert(
+            "[UNK]".into(),
+            serde_json::Value::Number((chars.len() as u64).into()),
+        );
+        let json = serde_json::json!({
+            "version": "1.0",
+            "truncation": null,
+            "padding": null,
+            "added_tokens": [],
+            "normalizer": null,
+            "pre_tokenizer": null,
+            "post_processor": null,
+            "decoder": null,
+            "model": { "type": "WordLevel", "vocab": vocab, "unk_token": "[UNK]" },
+        });
+        let bytes = serde_json::to_vec(&json).unwrap();
+        tokenizers::Tokenizer::from_bytes(&bytes).unwrap()
+    }
+
+    fn id(tok: &tokenizers::Tokenizer, s: &str) -> u32 {
+        tok.token_to_id(s)
+            .unwrap_or_else(|| panic!("missing id for {s:?}"))
+    }
+
+    #[test]
+    fn apply_does_nothing_when_state_is_free() {
+        // Before `{"op":"` appears, the mask is a no-op. Logits should be
+        // returned unmodified.
+        let tok = char_tokenizer();
+        let mut mask = OpNameMask::new(vec!["gcd".into()], &tok);
+        let mut logits = vec![1.0f32; 32];
+        let before = logits.clone();
+        mask.apply(&[], &mut logits);
+        assert_eq!(logits, before, "Free state must not mutate logits");
+    }
+
+    #[test]
+    fn apply_masks_to_op_name_continuations_with_seed() {
+        // Inject `{"op":"` as seed; the mask is now in OpName{so_far=""}.
+        // Valid next tokens are first characters of valid op names plus
+        // any token decodable as a prefix.
+        let tok = char_tokenizer();
+        let mut mask = OpNameMask::new(vec!["gcd".into()], &tok);
+        mask.set_seed_text("{\"op\":\"");
+        let vocab_size = tok.get_vocab_size(false);
+        let mut logits = vec![1.0f32; vocab_size + 1];
+        mask.apply(&[], &mut logits);
+
+        let g_id = id(&tok, "g") as usize;
+        let x_id = id(&tok, "{") as usize; // not a valid prefix for "gcd"
+        assert!(logits[g_id].is_finite(), "'g' is a valid first char of gcd");
+        assert!(
+            logits[x_id].is_infinite() && logits[x_id] < 0.0,
+            "'{{' is not a valid op-name continuation — must be masked to -inf"
+        );
+    }
+
+    #[test]
+    fn apply_allows_closing_quote_at_complete_op_name() {
+        // so_far = "gcd" — closing quote `"` is allowed; continuation
+        // chars are not (no valid op starts with "gcd*").
+        let tok = char_tokenizer();
+        let mut mask = OpNameMask::new(vec!["gcd".into()], &tok);
+        mask.set_seed_text("{\"op\":\"gcd");
+        let vocab_size = tok.get_vocab_size(false);
+        let mut logits = vec![1.0f32; vocab_size + 1];
+        mask.apply(&[], &mut logits);
+        let quote_id = id(&tok, "\"") as usize;
+        assert!(
+            logits[quote_id].is_finite(),
+            "closing quote must remain after complete op name"
+        );
+    }
+
+    #[test]
+    fn apply_falls_back_when_no_valid_next() {
+        // so_far doesn't match any op's prefix — empty valid_next →
+        // mask must return unchanged logits (the "lookalike substring"
+        // fallback at lines 192-194).
+        let tok = char_tokenizer();
+        let mut mask = OpNameMask::new(vec!["gcd".into()], &tok);
+        mask.set_seed_text("{\"op\":\"xyzunmatched");
+        let vocab_size = tok.get_vocab_size(false);
+        let mut logits = vec![1.0f32; vocab_size + 1];
+        let before = logits.clone();
+        mask.apply(&[], &mut logits);
+        assert_eq!(logits, before, "empty valid_next must be a no-op");
+    }
+
+    #[test]
+    fn apply_uses_generated_ids_when_no_seed() {
+        // No seed — the mask decodes generated_ids to derive state.
+        let tok = char_tokenizer();
+        let mut mask = OpNameMask::new(vec!["gcd".into()], &tok);
+        // Generate tokens for `{"op":"g` — state should become
+        // OpName{so_far="g"}.
+        let prefix_text = "{\"op\":\"g";
+        let prefix_ids: Vec<u32> = prefix_text
+            .chars()
+            .map(|c| id(&tok, &c.to_string()))
+            .collect();
+        let vocab_size = tok.get_vocab_size(false);
+        let mut logits = vec![1.0f32; vocab_size + 1];
+        mask.apply(&prefix_ids, &mut logits);
+        // 'c' continues "g" toward "gcd" — must stay finite.
+        let c_id = id(&tok, "c") as usize;
+        assert!(logits[c_id].is_finite(), "'c' continues 'g' toward 'gcd'");
+    }
 }

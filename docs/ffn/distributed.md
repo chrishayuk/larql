@@ -30,16 +30,17 @@ larql-router
 
 Each shard server only loads the layers it owns. The savings come from two places:
 
-**Anon mmap (Q4K synthesised gate):** `synthesize_gate_from_q4k` allocates an
-anonymous mmap and dequantizes gate weights into it. With `--layers 0-16` on a
-34-layer model, the allocation is `17/34 = 50%` of the full size. Only owned
+**Anon mmap (k-quant synthesised gate):** `synthesize_gate_from_q4k` allocates
+an anonymous mmap and dequantizes gate weights into it. With `--layers 0-16` on
+a 34-layer model, the allocation is `17/34 = 50%` of the full size. Only owned
 layers are decoded; out-of-range layers leave a zero `GateLayerSlice` and are
 never touched.
 
-**Demand-paged files (gate_vectors.bin, interleaved_q4k.bin, etc.):** These are
-mmap'd as a whole — the virtual address range covers the full file — but the OS
-only faults in pages that are read. Because `is_layer_owned(layer)` guards every
-accessor before any byte is read, out-of-range pages never enter physical RAM.
+**Demand-paged files (gate_vectors.bin, interleaved_kquant.bin / legacy
+interleaved_q4k.bin, etc.):** These are mmap'd as a whole — the virtual address
+range covers the full file — but the OS only faults in pages that are read.
+Because `is_layer_owned(layer)` guards every accessor before any byte is read,
+out-of-range pages never enter physical RAM.
 
 **Result:** shard RSS ≈ `(owned_layers / total_layers) × full_vindex_RSS`.
 

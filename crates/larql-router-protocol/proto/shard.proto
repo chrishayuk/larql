@@ -1,0 +1,51 @@
+syntax = "proto3";
+package larql.shard.v1;
+
+// ── Sharded vindex KNN service (Exp 53) ──────────────────────────────────────
+//
+// Serves remote KNN lookups on a pre-compiled (input, output) cache at a
+// specific layer. Clients running their own forward pass replace one
+// FFN layer's compute with a call to `Query` — if the gate vector hits an
+// indexed entry (cosine ≥ tau), the server returns the matching MLP output
+// vector; otherwise the client falls back to local FFN compute.
+//
+// The Python prototype this is ported from runs over TCP with a fixed
+// binary frame; this version reuses the workspace's tonic + gRPC stack so
+// shard traffic can ride the same QUIC connection as `GridService.Join`
+// when the operator enables `--features quic`.
+//
+// Wire format for `query_vec` / `mlp_out`: raw IEEE-754 float32
+// little-endian bytes, length = hidden_size × 4. Using `bytes` avoids
+// proto varint overhead for hidden-sized float arrays (same convention
+// as `ExpertService`).
+
+service ShardService {
+  rpc Query(ShardQuery) returns (ShardResult);
+}
+
+message ShardQuery {
+  // Which precompiled layer to query. Multiple layers may be hosted by
+  // the same server (the cache groups entries by layer).
+  uint32 layer_id = 1;
+  // Top-k aggregation factor. `k = 1` returns the single best output;
+  // `k > 1` returns the cosine-weighted average of the top k outputs.
+  uint32 k = 2;
+  // Query vector — raw f32 little-endian bytes, length = hidden × 4.
+  bytes query_vec = 3;
+  // Optional per-call tau override. `0.0` (the default) means "use the
+  // server-configured tau". Allows quick A/B from the client side
+  // without restarting the server.
+  float tau_override = 4;
+}
+
+message ShardResult {
+  // True when `best_sim >= tau`. On a hit, `mlp_out` carries the
+  // aggregated output vector; on a miss it is empty and the client
+  // should fall back to local compute.
+  bool hit = 1;
+  // f32 LE bytes, length = hidden × 4. Empty when `hit = false`.
+  bytes mlp_out = 2;
+  // Best cosine similarity observed. Useful for telemetry / threshold
+  // tuning without a separate audit RPC. Reported on hit *and* miss.
+  float best_sim = 3;
+}

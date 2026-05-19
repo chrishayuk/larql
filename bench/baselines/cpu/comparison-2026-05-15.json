@@ -1,0 +1,68 @@
+{
+  "schema": "larql.cpu_comparison.v1",
+  "recorded_at": "2026-05-15",
+  "hardware": "Apple M3 Max",
+  "threads": 12,
+  "model_family": "gemma3-4b",
+  "quant_format": "Q4_K",
+  "prompt": "The capital of France is",
+  "prompt_tokens": 5,
+  "decode_tokens": 16,
+  "thermal_caveat": "All numbers are first-run-cold-machine. M3 Max throttles to ~3x slower after a few seconds of sustained load; rerun on a cool machine for clean readings (see feedback_thermal_perf_artifacts.md).",
+  "larql": {
+    "vindex": "output/gemma3-4b-q4k-v2.vindex",
+    "command": "target/release/larql bench output/gemma3-4b-q4k-v2.vindex --cpu --tokens 16 --warmup 1 --profile",
+    "decode": {
+      "tok_per_s": 13.1,
+      "ms_per_token_p50": 76.6,
+      "ms_per_token_mean": 76.2,
+      "n_steps": 15,
+      "stages_ms": {
+        "cpu_fwd": 67.6,
+        "lm_head": 8.7,
+        "total": 76.3
+      },
+      "stage_share_pct": {
+        "cpu_fwd": 88.6,
+        "lm_head": 11.4
+      }
+    },
+    "prefill": {
+      "tokens": 5,
+      "total_ms": 2593,
+      "ms_per_prompt_token": 518.6,
+      "tok_per_s": 1.93,
+      "path": "predict_q4k_prefill (legacy per-layer dequant + dense f32 sgemv)"
+    }
+  },
+  "llama_cpp": {
+    "gguf": "/private/tmp/larql-gemma-3-4b-it-Q4_K_M.gguf",
+    "quantize_source": "output/larql-gemma-3-4b-it.gguf",
+    "quantize_command": "llama-quantize output/larql-gemma-3-4b-it.gguf /private/tmp/larql-gemma-3-4b-it-Q4_K_M.gguf Q4_K_M",
+    "command": "llama-bench -m /private/tmp/larql-gemma-3-4b-it-Q4_K_M.gguf -dev BLAS -ngl 0 -p 5 -n 16 -r 3 -t 12",
+    "build": "6cd0cf72c (7060)",
+    "decode": {
+      "test": "tg16",
+      "tok_per_s": 41.37,
+      "stddev_tok_per_s": 3.09,
+      "ms_per_token": 24.2
+    },
+    "prefill": {
+      "test": "pp5",
+      "tok_per_s": 105.7,
+      "ms_per_token": 9.46,
+      "total_ms_5tok": 47.3
+    }
+  },
+  "ratios": {
+    "decode_llama_over_larql": 3.16,
+    "prefill_llama_over_larql": 55.0,
+    "decode_gap_at_baseline_before_branch": 114.0,
+    "decode_gap_now": 3.16,
+    "improvement_factor_on_baseline": 36.4
+  },
+  "interpretation": {
+    "decode_gap_is_kernel_work": "Effective Q4_K weight bandwidth on M3 Max: larql ~30 GB/s, llama.cpp ~95 GB/s. Both are well below LPDDR5 peak (~400 GB/s). Closing the rest is hand-written NEON with multi-superblock interleaving, prefetch, and removing per-matvec rayon launches.",
+    "prefill_gap_is_path_choice": "larql's prefill goes through the legacy dequantise-then-sgemv path. ~75 ms/layer × 33 layers ≈ 2.5 s of dequant. llama.cpp uses batched q4k_matmul that reads each weight once and amortises across seq_len positions. Routing larql's prefill through a CPU q4k_matmul (which the backend trait already declares but doesn't implement) is the next big-bang win — comparable in size to the entire decode-optimisation arc on this branch."
+  }
+}

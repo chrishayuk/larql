@@ -9,7 +9,7 @@ use larql_inference::forward::ple::precompute_per_layer_inputs;
 use larql_inference::forward::{embed_tokens_pub, run_layer_with_ffn};
 use larql_inference::{encode_prompt, WeightFfn};
 use larql_vindex::{
-    load_model_weights_q4k, load_vindex_tokenizer, SilentLoadCallbacks, VectorIndex,
+    load_model_weights_kquant, load_vindex_tokenizer, SilentLoadCallbacks, VectorIndex,
 };
 use ndarray::{s, Array2};
 use serde::Serialize;
@@ -330,9 +330,9 @@ pub(super) fn run_probe_program_class(
 
     let mut cb = SilentLoadCallbacks;
     let mut index = VectorIndex::load_vindex(&args.index, &mut cb)?;
-    index.load_attn_q4k(&args.index)?;
-    index.load_interleaved_q4k(&args.index)?;
-    let mut weights = load_model_weights_q4k(&args.index, &mut cb)?;
+    index.load_attn_kquant(&args.index)?;
+    index.load_interleaved_kquant(&args.index)?;
+    let mut weights = load_model_weights_kquant(&args.index, &mut cb)?;
     if weights.arch.is_hybrid_moe() {
         return Err("ov-rd probe-program-class currently supports dense FFN vindexes only".into());
     }
@@ -552,7 +552,7 @@ fn capture_probe_prompts(
         let stratum = record.stratum.as_deref().unwrap_or("unknown");
 
         let baseline_h =
-            larql_inference::vindex::predict_q4k_hidden(weights, &token_ids, index, None);
+            larql_inference::vindex::predict_kquant_hidden(weights, &token_ids, index, None);
         let baseline_logits = final_logits(weights, &baseline_h);
         let baseline_logp = log_softmax(&baseline_logits);
         let baseline_top1 = argmax(&baseline_logits);

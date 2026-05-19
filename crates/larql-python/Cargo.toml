@@ -13,6 +13,7 @@ crate-type = ["cdylib"]
 [dependencies]
 larql-core = { path = "../larql-core" }
 larql-inference = { path = "../larql-inference" }
+larql-kv = { path = "../larql-kv" }
 larql-models = { path = "../larql-models" }
 larql-vindex = { path = "../larql-vindex" }
 larql-lql = { path = "../larql-lql" }

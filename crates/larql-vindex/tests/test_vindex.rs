@@ -754,6 +754,9 @@ fn v2_config_full_round_trip() {
             safetensors_sha256: None,
             extracted_at: "2026-04-01T12:00:00Z".into(),
             larql_version: "0.1.0".into(),
+            base_model_sha: None,
+            extractor_sha: None,
+            base_safetensors_sha256: None,
         }),
         checksums,
         num_layers: 34,
@@ -791,6 +794,10 @@ fn v2_config_full_round_trip() {
             rope_local_base: None,
             query_pre_attn_scalar: None,
             final_logit_softcapping: None,
+            attention_multiplier: None,
+            residual_multiplier: None,
+            logits_scaling: None,
+            norm_eps: None,
         }),
         fp4: None,
         ffn_layout: None,
@@ -881,6 +888,10 @@ fn v2_config_with_moe() {
             rope_local_base: None,
             query_pre_attn_scalar: None,
             final_logit_softcapping: None,
+            attention_multiplier: None,
+            residual_multiplier: None,
+            logits_scaling: None,
+            norm_eps: None,
         }),
         fp4: None,
         ffn_layout: None,
@@ -1013,6 +1024,10 @@ fn moe_layer_info_round_trip() {
             rope_local_base: None,
             query_pre_attn_scalar: None,
             final_logit_softcapping: None,
+            attention_multiplier: None,
+            residual_multiplier: None,
+            logits_scaling: None,
+            norm_eps: None,
         }),
         fp4: None,
         ffn_layout: None,
@@ -1208,6 +1223,9 @@ fn source_provenance_round_trip() {
             safetensors_sha256: Some("deadbeef".into()),
             extracted_at: "2026-04-01T12:00:00Z".into(),
             larql_version: "0.1.0".into(),
+            base_model_sha: None,
+            extractor_sha: None,
+            base_safetensors_sha256: None,
         }),
         checksums: None,
         num_layers: 2,
@@ -2583,7 +2601,7 @@ fn streaming_extract_from_safetensors() {
         larql_vindex::StorageDtype::F32,
         larql_vindex::QuantFormat::None,
         larql_vindex::WriteWeightsOptions::default(),
-        larql_vindex::Q4kWriteOptions::default(),
+        larql_vindex::KquantWriteOptions::default(),
         false,
         &mut cb,
     )
@@ -2616,7 +2634,7 @@ fn streaming_extract_from_safetensors() {
 
 // ─── streaming_extract with QuantFormat::Q4K ────────────────────
 //
-// End-to-end coverage for `write_model_weights_q4k`:
+// End-to-end coverage for `write_model_weights_kquant`:
 //   - Manifest shape: attn has 4 entries per layer, FFN has 3;
 //     V and down carry Q6_K, everything else Q4_K.
 //   - Offsets tile start-to-end with no gaps.
@@ -2787,25 +2805,38 @@ fn streaming_extract_q4k_from_safetensors() {
         larql_vindex::StorageDtype::F32,
         QuantFormat::Q4K,
         larql_vindex::WriteWeightsOptions::default(),
-        larql_vindex::Q4kWriteOptions::default(),
+        larql_vindex::KquantWriteOptions::default(),
         false,
         &mut cb,
     )
     .unwrap();
 
     // ── File layout ──
-    assert!(output_dir.join("attn_weights_q4k.bin").exists());
-    assert!(output_dir.join("attn_weights_q4k_manifest.json").exists());
-    assert!(output_dir.join("interleaved_q4k.bin").exists());
-    assert!(output_dir.join("interleaved_q4k_manifest.json").exists());
+    //
+    // Writers emit the new kquant-canonical filenames. Legacy q4k-named
+    // files must NOT be written (they're read-only back-compat fallbacks).
+    assert!(output_dir.join("attn_weights_kquant.bin").exists());
+    assert!(output_dir
+        .join("attn_weights_kquant_manifest.json")
+        .exists());
+    assert!(output_dir.join("interleaved_kquant.bin").exists());
+    assert!(output_dir.join("interleaved_kquant_manifest.json").exists());
     assert!(output_dir.join("norms.bin").exists());
     assert!(output_dir.join("weight_manifest.json").exists());
     assert!(output_dir.join("index.json").exists());
+    assert!(
+        !output_dir.join("attn_weights_q4k.bin").exists(),
+        "writer must NOT emit the legacy q4k filename"
+    );
+    assert!(
+        !output_dir.join("interleaved_q4k.bin").exists(),
+        "writer must NOT emit the legacy q4k filename"
+    );
 
-    // Q4K path writes its own filenames; the non-Q4 names should be absent.
+    // k-quant path writes its own filenames; the non-quantised names should be absent.
     assert!(
         !output_dir.join("attn_weights.bin").exists(),
-        "Q4 path should not emit attn_weights.bin"
+        "k-quant path should not emit attn_weights.bin"
     );
 
     // ── Config schema ──
@@ -2819,7 +2850,7 @@ fn streaming_extract_q4k_from_safetensors() {
 
     // ── attn manifest ──
     let attn_manifest_json =
-        std::fs::read_to_string(output_dir.join("attn_weights_q4k_manifest.json")).unwrap();
+        std::fs::read_to_string(output_dir.join("attn_weights_kquant_manifest.json")).unwrap();
     let attn_entries: Vec<serde_json::Value> = serde_json::from_str(&attn_manifest_json).unwrap();
 
     // 4 tensors (Q, K, V, O) × num_layers
@@ -2849,7 +2880,7 @@ fn streaming_extract_q4k_from_safetensors() {
 
     // ── interleaved (FFN) manifest ──
     let ff_manifest_json =
-        std::fs::read_to_string(output_dir.join("interleaved_q4k_manifest.json")).unwrap();
+        std::fs::read_to_string(output_dir.join("interleaved_kquant_manifest.json")).unwrap();
     let ff_entries: Vec<serde_json::Value> = serde_json::from_str(&ff_manifest_json).unwrap();
 
     // 3 tensors (gate, up, down) × num_layers
@@ -2878,7 +2909,7 @@ fn streaming_extract_q4k_from_safetensors() {
     }
 
     // ── manifest byte counts match file sizes ──
-    let attn_bytes = std::fs::metadata(output_dir.join("attn_weights_q4k.bin"))
+    let attn_bytes = std::fs::metadata(output_dir.join("attn_weights_kquant.bin"))
         .unwrap()
         .len();
     let attn_manifest_total: u64 = attn_entries
@@ -2887,10 +2918,10 @@ fn streaming_extract_q4k_from_safetensors() {
         .sum();
     assert_eq!(
         attn_bytes, attn_manifest_total,
-        "attn_weights_q4k.bin size must equal sum of manifest lengths"
+        "attn_weights_kquant.bin size must equal sum of manifest lengths"
     );
 
-    let ff_bytes = std::fs::metadata(output_dir.join("interleaved_q4k.bin"))
+    let ff_bytes = std::fs::metadata(output_dir.join("interleaved_kquant.bin"))
         .unwrap()
         .len();
     let ff_manifest_total: u64 = ff_entries
@@ -2899,36 +2930,36 @@ fn streaming_extract_q4k_from_safetensors() {
         .sum();
     assert_eq!(
         ff_bytes, ff_manifest_total,
-        "interleaved_q4k.bin size must equal sum of manifest lengths"
+        "interleaved_kquant.bin size must equal sum of manifest lengths"
     );
 
     // ── load_model_weights on a Q4K vindex must surface a clear error ──
     // The float-weight loader can't reconstruct a ModelWeights struct
     // from Q4_K/Q6_K blocks; callers must go through
-    // `VectorIndex::load_attn_q4k` / `load_interleaved_q4k` instead.
+    // `VectorIndex::load_attn_kquant` / `load_interleaved_kquant` instead.
     let mut lcb = larql_vindex::SilentLoadCallbacks;
     match larql_vindex::load_model_weights(&output_dir, &mut lcb) {
         Ok(_) => panic!("load_model_weights on a Q4K vindex must error"),
         Err(e) => {
             let msg = e.to_string();
             assert!(
-                msg.contains("quantised") && msg.contains("load_attn_q4k"),
+                msg.contains("quantised") && msg.contains("load_attn_kquant"),
                 "expected quant-dispatch error, got: {msg}"
             );
         }
     }
 
-    // ── VectorIndex::load_attn_q4k + load_interleaved_q4k must read
+    // ── VectorIndex::load_attn_kquant + load_interleaved_kquant must read
     //     back what the writer emitted ──
     let mut index = larql_vindex::VectorIndex::load_vindex(&output_dir, &mut lcb).unwrap();
-    index.load_attn_q4k(&output_dir).unwrap();
-    index.load_interleaved_q4k(&output_dir).unwrap();
+    index.load_attn_kquant(&output_dir).unwrap();
+    index.load_interleaved_kquant(&output_dir).unwrap();
     assert!(
-        index.has_interleaved_q4k(),
+        index.has_interleaved_kquant(),
         "interleaved Q4K should be loaded"
     );
     // Layer 0 attn slices: [Q/Q4_K, K/Q4_K, V/Q6_K, O/Q4_K]
-    let slices = index.attn_q4k_layer_data(0).expect("layer 0 attn data");
+    let slices = index.attn_kquant_layer_data(0).expect("layer 0 attn data");
     assert_eq!(slices[0].1, "Q4_K", "Q slot format");
     assert_eq!(slices[1].1, "Q4_K", "K slot format");
     assert_eq!(slices[2].1, "Q6_K", "V slot format");
@@ -3004,7 +3035,7 @@ fn quant_block_format_serde_roundtrip() {
     // expect the literal "Q4_K" and "Q6_K" on the wire. The enum uses
     // #[serde(rename)] to keep those strings; a future refactor must
     // not drift to e.g. "Q4K" without also updating every reader.
-    use larql_vindex::format::weights::write_q4k::QuantBlockFormat;
+    use larql_vindex::format::weights::write_kquant::QuantBlockFormat;
     let q4 = serde_json::to_string(&QuantBlockFormat::Q4K).unwrap();
     let q6 = serde_json::to_string(&QuantBlockFormat::Q6K).unwrap();
     assert_eq!(q4, "\"Q4_K\"");
@@ -3555,7 +3586,7 @@ fn write_gemma4_ple_fixture(
             "hidden_size_per_layer_input": ple_dim,
             "vocab_size": vocab,
             // Gemma 4 ships with a final-logit tanh softcap of 30.0. This
-            // must survive extract → load; without it predict_q4k peaks
+            // must survive extract → load; without it predict_kquant peaks
             // on the wrong token on E2B.
             "final_logit_softcapping": 30.0,
         }
@@ -3751,7 +3782,7 @@ fn write_gemma4_ple_fixture(
 // writes `ple_weights.bin` (Q4_K-packed tensors) plus the two small
 // PLE norms into norms.bin. This test builds a Gemma 4-shaped
 // synthetic safetensors, runs the real extract pipeline, loads via
-// `load_model_weights_q4k`, and asserts every PLE tensor is back in
+// `load_model_weights_kquant`, and asserts every PLE tensor is back in
 // `weights.tensors` / `weights.vectors` with the right shape.
 #[test]
 fn streaming_extract_q4k_carries_ple_tensors() {
@@ -3788,7 +3819,7 @@ fn streaming_extract_q4k_carries_ple_tensors() {
         larql_vindex::StorageDtype::F32,
         QuantFormat::Q4K,
         larql_vindex::WriteWeightsOptions::default(),
-        larql_vindex::Q4kWriteOptions::default(),
+        larql_vindex::KquantWriteOptions::default(),
         false,
         &mut cb,
     )
@@ -3854,7 +3885,7 @@ fn streaming_extract_q4k_carries_ple_tensors() {
     // ── Load back and verify the dequantised PLE tensors surface in
     //     weights.tensors with the expected shapes. ──
     let mut lcb = larql_vindex::SilentLoadCallbacks;
-    let weights = larql_vindex::load_model_weights_q4k(&output_dir, &mut lcb).unwrap();
+    let weights = larql_vindex::load_model_weights_kquant(&output_dir, &mut lcb).unwrap();
 
     let proj = weights
         .tensors
@@ -3905,7 +3936,7 @@ fn streaming_extract_q4k_carries_ple_tensors() {
     }
 
     // final_logit_softcapping must survive the round-trip. Missing it
-    // lets predict_q4k peak the softmax on the wrong token.
+    // lets predict_kquant peak the softmax on the wrong token.
     let cfg = larql_vindex::load_vindex_config(&output_dir).unwrap();
     assert_eq!(
         cfg.model_config
@@ -3968,7 +3999,7 @@ fn streaming_extract_noquant_carries_ple_tensors() {
         larql_vindex::StorageDtype::F32,
         QuantFormat::None,
         larql_vindex::WriteWeightsOptions::default(),
-        larql_vindex::Q4kWriteOptions::default(),
+        larql_vindex::KquantWriteOptions::default(),
         false,
         &mut cb,
     )
@@ -4138,7 +4169,7 @@ fn load_model_weights_rejects_ple_arch_with_missing_sidecars() {
         larql_vindex::StorageDtype::F32,
         QuantFormat::None,
         larql_vindex::WriteWeightsOptions::default(),
-        larql_vindex::Q4kWriteOptions::default(),
+        larql_vindex::KquantWriteOptions::default(),
         false,
         &mut cb,
     )
@@ -4188,7 +4219,7 @@ fn load_model_weights_rejects_ple_arch_with_missing_sidecars() {
 // ─── Variable per-layer intermediate size (Gemma 4 E2B double-wide MLP) ──
 //
 // E2B's `use_double_wide_mlp=True` gives half the layers a 2× intermediate
-// dimension (6144 → 12288 on the real model). `predict_q4k` previously
+// dimension (6144 → 12288 on the real model). `predict_kquant` previously
 // hardcoded `weights.intermediate_size` for every layer's FFN dequant,
 // so the wide layers' weights were read at half-size and the forward
 // pass computed garbage. Fix: read per-layer feature count from the
@@ -4351,7 +4382,7 @@ fn streaming_extract_preserves_per_layer_intermediate_for_variable_ffn() {
         larql_vindex::StorageDtype::F32,
         QuantFormat::Q4K,
         larql_vindex::WriteWeightsOptions::default(),
-        larql_vindex::Q4kWriteOptions::default(),
+        larql_vindex::KquantWriteOptions::default(),
         false,
         &mut cb,
     )
@@ -4367,7 +4398,7 @@ fn streaming_extract_preserves_per_layer_intermediate_for_variable_ffn() {
         );
     }
 
-    // ── VectorIndex::num_features(layer) — the accessor predict_q4k calls ──
+    // ── VectorIndex::num_features(layer) — the accessor predict_kquant calls ──
     let mut lcb = larql_vindex::SilentLoadCallbacks;
     let index = larql_vindex::VectorIndex::load_vindex(&output_dir, &mut lcb).unwrap();
     for (layer, &inter) in intermediates.iter().enumerate().take(num_layers) {
@@ -4379,11 +4410,11 @@ fn streaming_extract_preserves_per_layer_intermediate_for_variable_ffn() {
     }
 
     // ── FFN manifest shape — the raw Q4K bytes must match the per-layer
-    //     intermediate, NOT the model-wide max. Earlier predict_q4k bug:
+    //     intermediate, NOT the model-wide max. Earlier predict_kquant bug:
     //     dequantising with the wrong width silently produced half-width
     //     weights on wide layers, so this assertion is the invariant. ──
     let ff_manifest_json =
-        std::fs::read_to_string(output_dir.join("interleaved_q4k_manifest.json")).unwrap();
+        std::fs::read_to_string(output_dir.join("interleaved_kquant_manifest.json")).unwrap();
     let ff_entries: Vec<serde_json::Value> = serde_json::from_str(&ff_manifest_json).unwrap();
     for (layer, &inter) in intermediates.iter().enumerate() {
         let base = layer * 3; // gate, up, down per layer

@@ -14,9 +14,8 @@
 use std::path::PathBuf;
 
 use larql_inference::experts::{parse_op_call, ExpertRegistry};
-use larql_inference::{
-    encode_prompt, forward::generate_cached, prompt::ChatTemplate, InferenceModel, WeightFfn,
-};
+use larql_inference::{encode_prompt, prompt::ChatTemplate, InferenceModel, WeightFfn};
+use larql_kv::generation::generate_cached;
 use serde_json::{json, Value};
 
 // ── Infrastructure ────────────────────────────────────────────────────────────

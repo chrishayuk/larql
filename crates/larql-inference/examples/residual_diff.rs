@@ -1,4 +1,4 @@
-//! Per-layer residual diff between CPU (`predict_q4k_hidden`) and Metal
+//! Per-layer residual diff between CPU (`predict_kquant_hidden`) and Metal
 //! (`dispatch_full_pipeline`) forward passes.
 //!
 //! Invariant under test: for the same input prompt, both backends should
@@ -98,14 +98,14 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     // ── Load vindex ────────────────────────────────────────────────────
     let mut cb = larql_vindex::SilentLoadCallbacks;
     let cfg = larql_vindex::load_vindex_config(&vindex_path)?;
-    let mut q4_index = larql_vindex::VectorIndex::load_vindex(&vindex_path, &mut cb)?;
-    q4_index.load_attn_q4k(&vindex_path)?;
-    q4_index.load_interleaved_q4k(&vindex_path)?;
-    let _ = q4_index.load_lm_head_q4(&vindex_path);
+    let mut index = larql_vindex::VectorIndex::load_vindex(&vindex_path, &mut cb)?;
+    index.load_attn_kquant(&vindex_path)?;
+    index.load_interleaved_kquant(&vindex_path)?;
+    let _ = index.load_lm_head_kquant(&vindex_path);
     let tokenizer = larql_vindex::load_vindex_tokenizer(&vindex_path)?;
 
-    let mut w_metal = larql_vindex::load_model_weights_q4k(&vindex_path, &mut cb)?;
-    let mut w_cpu = larql_vindex::load_model_weights_q4k(&vindex_path, &mut cb)?;
+    let mut w_metal = larql_vindex::load_model_weights_kquant(&vindex_path, &mut cb)?;
+    let mut w_cpu = larql_vindex::load_model_weights_kquant(&vindex_path, &mut cb)?;
 
     let wrap = wrap_chat_prompt(&vindex_path, Some(cfg.model.as_str()), &prompt);
     let token_ids = larql_inference::encode_prompt(&tokenizer, &*w_metal.arch, &wrap.prompt)?;
@@ -128,7 +128,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     // ── Drive both backends (max_tokens=1 → just prefill once each) ─────
     let metal_backend =
-        larql_compute::metal::MetalBackend::new().ok_or("Metal backend unavailable")?;
+        larql_compute_metal::MetalBackend::new().ok_or("Metal backend unavailable")?;
     let metal_cached = CachedLayerGraph::from_residuals(Vec::new());
     println!(
         "Running Metal prefill (dumps → {})",
@@ -139,7 +139,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         &tokenizer,
         &token_ids,
         1,
-        &q4_index,
+        &index,
         &metal_backend,
         &metal_cached,
         0..num_layers,
@@ -156,7 +156,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         &tokenizer,
         &token_ids,
         1,
-        &q4_index,
+        &index,
         &cpu_backend,
         &cpu_cached,
         0..num_layers,

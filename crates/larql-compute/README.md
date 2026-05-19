@@ -258,31 +258,17 @@ src/
 
 ## Tests
 
-**Coverage (2026-05-09)**: 424 `#[test]` markers, **64.81% line coverage**
-on the Metal-feature build (`cargo llvm-cov --package larql-compute
---features metal`). Up from **56.03%** at session start (+8.78 pp; 2,575
-newly-covered lines, 22.2% reduction in uncovered LoC). Three rounds of work:
+**Coverage (2026-05-16)**: this crate is CPU-side only after the
+ADR-019 Metal split — the trait, the CPU backend, pipeline types, and
+env-option helpers. **`coverage-policy.json` enforces 95%-total / 90%-
+per-file with no debt baselines.**
 
-1. **Deleted 591 LoC of dead code** in `metal/prefill.rs` (verified
-   orphan: `dispatch_prefill` was `#[allow(dead_code)]` with zero callers,
-   production prefill routes through `prefill_q4` → `dispatch_full_pipeline`).
-2. **Targeted tests on small helpers**: `tg_width` math (`stages/qk_norm.rs`
-   0% → 23%), `scale_vector` dispatch (`stages/layer_scalar.rs` 12% → 97%),
-   `residual_norm_store` shader parity (D-RMS-FUSE).
-3. **Synthetic end-to-end decode tests** (`tests/test_metal_decode_synthetic.rs`):
-   Llama-style + Gemma-3-style + D-RMS-FUSE off-vs-on parity. Lifted
-   `metal/decode/mod.rs` 7% → 61%, `encode_attn.rs` 0% → 46%, `encode_post_ffn.rs`
-   0% → 83%, `encode_qkv.rs` 0% → 30%, `encode_ffn.rs` 0% → 23%.
-
-**Coverage policy** (`coverage-policy.json`) sets a 90%-per-file / 93.5%-
-total target. Current state is well below — the policy is documentation-
-as-aspiration, not a CI gate today. Largest remaining gaps:
-- `metal/trait_impl/decode.rs` (627 LoC at 21%) — MoE / split-profile
-  trait method wrappers; 5-6 more focused tests would close this.
-- `metal/decode/encode_ffn.rs` (1008 LoC at 23%) — Q4_KF format paths,
-  fused-down opt-ins, MoE branches not exercised.
-- `metal/diag/*.rs` (~3000 LoC at 0%) — diagnostic / dev-only profiling
-  code; not load-bearing.
+The Metal backend lives in `larql-compute-metal` and has its own
+coverage policy (97.28%-total / 90%-per-file / 0 debt baselines as of
+2026-05-16 — see [`crates/larql-compute-metal/coverage-policy.json`](../larql-compute-metal/coverage-policy.json)).
+Make targets: `make larql-compute-metal-coverage` (full report +
+policy gate) and `make larql-compute-metal-coverage-summary` (fast
+summary; reuses the last profile).
 
 ```bash
 # Fast inner loop: library/unit tests only, no integration-binary crawl.
@@ -291,12 +277,12 @@ make larql-compute-test-fast
 # Heavy integration sweep: every test binary under crates/larql-compute/tests.
 make larql-compute-test-integration
 
-# CPU + Metal on macOS (full kernel + cross-backend coverage)
-cargo test -p larql-compute --features metal
-
 # Cross-platform compile checks used before CI handoff.
 cargo check -p larql-compute --all-targets
-cargo check -p larql-compute --all-targets --features metal  # macOS only
+
+# Metal backend lives in a sibling crate (post-ADR-019).
+make larql-compute-metal-test  # lib tests
+make larql-compute-metal-coverage  # coverage + policy gate (macOS only)
 
 # Multi-arch perf regression gate (run on a cool machine first to save baselines)
 make bench-cross-arch                       # report current numbers
@@ -304,34 +290,19 @@ make bench-cross-arch ARGS=--save-baseline  # save current as baseline
 make bench-cross-arch ARGS=--compare        # diff vs saved baseline
 ```
 
-`cargo test -p larql-compute` remains valid, but it still compiles and walks
-every integration test binary, including Metal-gated harnesses with zero
-runnable tests on default-feature builds. Prefer
-`make larql-compute-test-fast` while iterating on CPU MoE, backend traits,
-and quant dispatch.
+`cargo test -p larql-compute` remains valid; this crate is CPU-only
+post-ADR-019, so the test set is small (`test_correctness.rs`,
+`test_q4_x86_correctness.rs`, `test_q4k_parity.rs`,
+`test_backend_matmul_quant.rs`). Per-shader kernel parity tests live
+in `crates/larql-compute-metal/tests/` and run via
+`make larql-compute-metal-test`.
 
 **Cross-model parity coverage**: integration tests in
 `crates/larql-inference/tests/test_logits_goldens.rs` cover Gemma 3 4B,
-Gemma 4 31B dense, Llama 2 7B, Mistral 7B end-to-end. Per-shader tests in
-`crates/larql-compute/tests/` are still mostly Gemma-3-4B-only — extending
-them to multiple model families is **D-CROSS-PARITY Phase 2** on the
-ROADMAP.
-
-The integration suite currently has 28 test binaries plus a shared helper
-module under `tests/common`. With `--features metal`, it covers:
-
-- `test_metal_shaders.rs` — compilation, Q4/Q6 matvec, fused attention smoke, LayerNorm, qk_norm, q4kf projection
-- `test_kernel_fused_ops_norms.rs` — rms_norm, residual ops, cooperative SIMD reduction, quantize_q8
-- `test_kernel_fused_attention.rs` — fused RoPE+GQA+softcap attention at production geometries
-- `test_kernel_new_fused_kernels.rs` — `residual_norm_store` and `q4k_q6k_qkv_proj_normed` parity tests
-- `test_kernel_vindex_integration.rs` — stage routing, qkv_proj, vindex regression, real Q4_K bytes
-- `test_kernel_qk_norm.rs` — includes `qk_norm_qk` (fused Q+K) parity vs two separate calls
-- `test_kernel_rope.rs` — includes `rope_at_pos_batched_qk` (fused Q+K) parity vs CPU reference
-- `test_kernel_{kv_attention,kv_cache_append,lm_head_gemv,q4k_ffn_gate_up,q4k/q6k_geglu_down,v_norm,rope_at_pos}` — per-kernel suites at Llama 2 / Gemma 3 4B / Gemma 4 31B geometries
-- `test_correctness.rs`, `test_q4_x86_correctness.rs` — CPU-only round-trips
-- `test_kernel_handle_contract.rs` — every `TiledKernel` marker verified to compile and dispatch correctly
-
-Every production-dispatched kernel has a dedicated parity test.
+Gemma 4 31B dense, Llama 2 7B, Mistral 7B end-to-end. Per-shader tests
+in `crates/larql-compute-metal/tests/` are still mostly Gemma-3-4B-only
+— extending them to multiple model families is **D-CROSS-PARITY
+Phase 2** on the ROADMAP.
 
 The cross-backend / cross-stage parity layer lives in `larql-inference`:
 

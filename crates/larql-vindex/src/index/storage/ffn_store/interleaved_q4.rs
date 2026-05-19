@@ -1,7 +1,7 @@
 //! Q4_0 interleaved FFN data (`interleaved_q4.bin`).
 //!
 //! Loaders + per-component dequant. Q4_K/Q6_K (the Ollama-compatible
-//! variant) lives in the sibling `interleaved_q4k.rs`; this file is
+//! variant) lives in the sibling `interleaved_kquant.rs`; this file is
 //! the predecessor format used before the K-quant rollout.
 
 use std::sync::Arc;

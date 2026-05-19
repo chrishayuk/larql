@@ -94,7 +94,9 @@ pub fn predict_split_pass(
 
     // Try batched Q4 FFN via multi_layer_q4_ffn
     let gate_index: &dyn larql_vindex::GateIndex = index;
-    let ffn_outputs = if gate_index.has_interleaved_q4() && backend.has_q4() {
+    let ffn_outputs = if gate_index.has_interleaved_q4()
+        && backend.supports_quant(::larql_compute::QuantFormat::Q4_K)
+    {
         if let Some(q4_mmap) = gate_index.interleaved_q4_mmap_ref() {
             let intermediate = gate_index.num_features(layer_range.start);
             if intermediate > 0 {

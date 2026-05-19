@@ -1,0 +1,134 @@
+# Shannon cross-engine correctness gate.
+#
+# Runs `larql shannon verify` against HF/PyTorch on a small ungated model
+# (SmolLM2-135M, ~262 scored tokens, ~7s wall) for every PR + push to main.
+# Fails the workflow if LARQL Rust's bits/char on a fixed Frankenstein
+# corpus drifts more than 0.5% from HF F32 — the same regime in which
+# HF and MLX agree with each other (float-accumulation noise).
+#
+# This is the regression net for the three config-loading bugs documented
+# in docs/diagnoses/shannon-cross-engine-divergence.md (rms_norm_eps,
+# llama3 rope_scaling, Gemma 3 per-layer-type rope_scaling). Future
+# inference-path changes that re-break any of them on a config-driven
+# code path will trip this gate before merge.
+#
+# Linux runner only — MLX requires Apple Silicon, so this exercises the
+# HF reference leg. The richer four-architecture matrix (Llama 3.2 /
+# Mistral / Gemma 3) needs HF auth for the gated models and is run from
+# a dev machine via `scripts/diagnose_models.py`.
+
+name: shannon-verify
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'crates/larql-cli/**'
+      - 'crates/larql-inference/**'
+      - 'crates/larql-models/**'
+      - 'scripts/shannon_score_*.py'
+      - 'scripts/diagnose_models.py'
+      - 'tests/fixtures/shannon_frankenstein_2k.txt'
+      - '.github/workflows/shannon-verify.yml'
+      - 'Cargo.toml'
+      - 'Cargo.lock'
+  pull_request:
+    branches: [main]
+    paths:
+      - 'crates/larql-cli/**'
+      - 'crates/larql-inference/**'
+      - 'crates/larql-models/**'
+      - 'scripts/shannon_score_*.py'
+      - 'scripts/diagnose_models.py'
+      - 'tests/fixtures/shannon_frankenstein_2k.txt'
+      - '.github/workflows/shannon-verify.yml'
+      - 'Cargo.toml'
+      - 'Cargo.lock'
+  workflow_dispatch: {}
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    env:
+      # SmolLM2-135M is ungated and exercises the loader without needing
+      # an HF token. The corpus is the same Frankenstein header carved
+      # to 1KB used elsewhere in the diagnostic.
+      LARQL_VERIFY_MODEL: HuggingFaceTB/SmolLM2-135M
+      LARQL_VERIFY_BYTES: '1024'
+      LARQL_VERIFY_THRESHOLD: '0.5'
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Cache cargo deps
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: ${{ runner.os }}-cargo-shannon-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-cargo-shannon-
+
+      - name: Cache HF model snapshot
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/huggingface/hub
+          key: ${{ runner.os }}-hf-smollm2-135m
+          restore-keys: |
+            ${{ runner.os }}-hf-smollm2-
+
+      - name: Install BLAS (CPU forward path uses OpenBLAS)
+        run: sudo apt-get update && sudo apt-get install -y libopenblas-dev
+
+      - name: Build larql-cli (release)
+        run: cargo build --release -p larql-cli
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install HF reference scorer deps
+        run: |
+          python -m venv .venv
+          .venv/bin/pip install --upgrade pip
+          # CPU-only torch — about 200 MB, ~30 s. Skips CUDA libs.
+          .venv/bin/pip install --index-url https://download.pytorch.org/whl/cpu torch
+          .venv/bin/pip install transformers
+
+      - name: Pre-download HF model snapshot
+        # `larql shannon verify` calls `InferenceModel::load(model_id)` which
+        # resolves the ID via `resolve_model_path` — that only looks at an
+        # already-populated HF cache and never triggers a download. Without
+        # this step the CLI fails with "not a directory" on a clean runner.
+        # Using `huggingface_hub.snapshot_download` populates the cache layout
+        # that `resolve_model_path` expects (snapshots/<rev>/...).
+        run: |
+          .venv/bin/python -c "from huggingface_hub import snapshot_download; snapshot_download('$LARQL_VERIFY_MODEL')"
+
+      - name: Prep corpus (truncate to 1 KB)
+        # The committed fixture is already BOM/CR stripped, so we just
+        # truncate to `LARQL_VERIFY_BYTES` here.
+        run: |
+          mkdir -p target/ci
+          head -c "$LARQL_VERIFY_BYTES" tests/fixtures/shannon_frankenstein_2k.txt > target/ci/corpus.txt
+          wc -c target/ci/corpus.txt
+
+      - name: Run shannon verify (LARQL Rust vs HF F32)
+        # MLX isn't available on Linux runners, so we only run the HF
+        # reference leg. That's still the canonical reference and the
+        # one we trust for correctness — MLX agrees with HF, so dropping
+        # it here doesn't lose information.
+        run: |
+          ./target/release/larql shannon verify "$LARQL_VERIFY_MODEL" \
+            --corpus target/ci/corpus.txt \
+            --context 512 --stride 256 \
+            --engines hf \
+            --threshold "$LARQL_VERIFY_THRESHOLD" \
+            --python .venv/bin/python \
+            --hf-script scripts/shannon_score_hf.py \
+            --hf-device cpu

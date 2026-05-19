@@ -42,7 +42,7 @@ impl VectorIndex {
     ) -> Vec<(u32, f32)> {
         // 1. Q4_K path — ~1 ms on Metal (mmap file or synthesized from f16 embeddings).
         //
-        // The on-disk `lm_head_q4.bin` is written by `format/weights/write_q4k`
+        // The on-disk `lm_head_q4.bin` is written by `format/weights/write_kquant`
         // as **Q4_K** (144 bytes per 256 elements with sub-block scales/mins).
         // Earlier code dispatched `q4_matvec` (which is Q4_0 — 18 bytes per 32
         // elements with one f16 scale): the byte-rate happens to match
@@ -52,8 +52,8 @@ impl VectorIndex {
         // vindex with a fresh `lm_head_q4.bin` (e.g. gemma3-4b-v2 extracted
         // 2026-04-27). Routing through `q4k_matvec` (which takes raw f32 x,
         // no Q8 step) restores the format match.
-        if backend.has_q4() {
-            let q4_bytes: Option<&[u8]> = self.storage.lm_head_q4_view().map(|b| b.as_ref());
+        if backend.supports_quant(::larql_compute::QuantFormat::Q4_K) {
+            let q4_bytes: Option<&[u8]> = self.storage.lm_head_kquant_view().map(|b| b.as_ref());
             if let Some(q4_data) = q4_bytes {
                 let vocab = self.vocab_size;
                 let hidden = self.hidden_size;
@@ -176,10 +176,10 @@ impl VectorIndex {
         top_k: usize,
         backend: &dyn larql_compute::ComputeBackend,
     ) -> Option<Vec<(u32, f32)>> {
-        if !backend.has_q4() {
+        if !backend.supports_quant(::larql_compute::QuantFormat::Q4_K) {
             return None;
         }
-        let q4_data: &[u8] = self.storage.lm_head_q4_view().map(|b| b.as_ref())?;
+        let q4_data: &[u8] = self.storage.lm_head_kquant_view().map(|b| b.as_ref())?;
         let vocab = self.vocab_size;
         let hidden = self.hidden_size;
         if vocab == 0 {
@@ -332,7 +332,7 @@ mod tests {
     //! Coverage for the f32 BLAS fallback path (`lm_head_knn`) plus the
     //! `Stride32Mode` env-var dispatch and the early-return guards on
     //! the f16 / Q4_K backend paths. The Q4_K matvec happy path needs
-    //! a real ComputeBackend with `has_q4()`; that's covered by the
+    //! a real ComputeBackend with `supports_quant(Q4_K)`; that's covered by the
     //! Metal integration tests, not here.
     use ndarray::Array1;
 
@@ -510,7 +510,7 @@ mod tests {
     //
     // These tests exercise the `lm_head_knn_backend` /
     // `lm_head_knn_backend_skip_q4k` paths on a `CpuBackend`. The
-    // Cpu backend has Q4 support (`has_q4()` true), so the Q4
+    // Cpu backend has Q4 support (`supports_quant(Q4_K)` is true), so the Q4
     // stride-32 / matvec branches fire when Q4 bytes are present.
     // f32 fallback fires when neither Q4 nor f16 is loaded.
 

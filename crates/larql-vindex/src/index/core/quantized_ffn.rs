@@ -3,7 +3,7 @@
 //! Delegation shim for the Q4-family FFN paths: legacy interleaved Q4,
 //! interleaved Q4_K, the dequant cache, and the per-row matmul / dot /
 //! scaled-add helpers. Two methods (`interleaved_q4_mmap_ref`,
-//! `interleaved_q4k_mmap_ref`) are real implementations because they
+//! `interleaved_kquant_mmap_ref`) are real implementations because they
 //! reach directly into the `FfnStore` mmap handles.
 
 use super::VectorIndex;
@@ -36,49 +36,49 @@ impl QuantizedFfnAccess for VectorIndex {
             .map(|b| b.as_ref())
     }
 
-    fn has_interleaved_q4k(&self) -> bool {
-        self.has_interleaved_q4k()
+    fn has_interleaved_kquant(&self) -> bool {
+        self.has_interleaved_kquant()
     }
 
-    fn interleaved_q4k_mmap_ref(&self) -> Option<&[u8]> {
+    fn interleaved_kquant_mmap_ref(&self) -> Option<&[u8]> {
         self.storage
-            .interleaved_q4k_whole_buffer_view()
+            .interleaved_kquant_whole_buffer_view()
             .map(|b| b.as_ref())
     }
 
-    fn prefetch_interleaved_q4k_layer(&self, layer: usize) {
-        self.prefetch_interleaved_q4k_layer(layer)
+    fn prefetch_interleaved_kquant_layer(&self, layer: usize) {
+        self.prefetch_interleaved_kquant_layer(layer)
     }
 
-    fn interleaved_q4k_layer_data(&self, layer: usize) -> Option<[(&[u8], &str); 3]> {
-        VectorIndex::interleaved_q4k_layer_data(self, layer)
+    fn interleaved_kquant_layer_data(&self, layer: usize) -> Option<[(&[u8], &str); 3]> {
+        VectorIndex::interleaved_kquant_layer_data(self, layer)
     }
 
-    fn q4k_ffn_layer(&self, layer: usize, component: usize) -> Option<std::sync::Arc<Vec<f32>>> {
-        VectorIndex::q4k_ffn_layer(self, layer, component)
+    fn kquant_ffn_layer(&self, layer: usize, component: usize) -> Option<std::sync::Arc<Vec<f32>>> {
+        VectorIndex::kquant_ffn_layer(self, layer, component)
     }
 
-    fn q4k_ffn_row_into(
+    fn kquant_ffn_row_into(
         &self,
         layer: usize,
         component: usize,
         feat: usize,
         out: &mut [f32],
     ) -> bool {
-        VectorIndex::q4k_ffn_row_into(self, layer, component, feat, out)
+        VectorIndex::kquant_ffn_row_into(self, layer, component, feat, out)
     }
 
-    fn q4k_ffn_row_dot(
+    fn kquant_ffn_row_dot(
         &self,
         layer: usize,
         component: usize,
         feat: usize,
         x: &[f32],
     ) -> Option<f32> {
-        VectorIndex::q4k_ffn_row_dot(self, layer, component, feat, x)
+        VectorIndex::kquant_ffn_row_dot(self, layer, component, feat, x)
     }
 
-    fn q4k_ffn_row_scaled_add_via_cache(
+    fn kquant_ffn_row_scaled_add_via_cache(
         &self,
         layer: usize,
         component: usize,
@@ -86,24 +86,24 @@ impl QuantizedFfnAccess for VectorIndex {
         alpha: f32,
         out: &mut [f32],
     ) -> bool {
-        VectorIndex::q4k_ffn_row_scaled_add_via_cache(self, layer, component, feat, alpha, out)
+        VectorIndex::kquant_ffn_row_scaled_add_via_cache(self, layer, component, feat, alpha, out)
     }
 
-    fn has_down_features_q4k(&self) -> bool {
-        VectorIndex::has_down_features_q4k(self)
+    fn has_down_features_kquant(&self) -> bool {
+        VectorIndex::has_down_features_kquant(self)
     }
 
-    fn q4k_down_feature_scaled_add(
+    fn kquant_down_feature_scaled_add(
         &self,
         layer: usize,
         feat: usize,
         alpha: f32,
         out: &mut [f32],
     ) -> bool {
-        VectorIndex::q4k_down_feature_scaled_add(self, layer, feat, alpha, out)
+        VectorIndex::kquant_down_feature_scaled_add(self, layer, feat, alpha, out)
     }
 
-    fn q4k_ffn_row_scaled_add(
+    fn kquant_ffn_row_scaled_add(
         &self,
         layer: usize,
         component: usize,
@@ -111,10 +111,10 @@ impl QuantizedFfnAccess for VectorIndex {
         alpha: f32,
         out: &mut [f32],
     ) -> bool {
-        VectorIndex::q4k_ffn_row_scaled_add(self, layer, component, feat, alpha, out)
+        VectorIndex::kquant_ffn_row_scaled_add(self, layer, component, feat, alpha, out)
     }
 
-    fn q4k_matmul_transb(
+    fn kquant_matmul_transb(
         &self,
         layer: usize,
         component: usize,
@@ -122,7 +122,7 @@ impl QuantizedFfnAccess for VectorIndex {
         x_rows: usize,
         backend: Option<&dyn larql_compute::ComputeBackend>,
     ) -> Option<Vec<f32>> {
-        VectorIndex::q4k_matmul_transb(self, layer, component, x, x_rows, backend)
+        VectorIndex::kquant_matmul_transb(self, layer, component, x, x_rows, backend)
     }
 }
 
@@ -142,12 +142,8 @@ mod tests {
     fn flag_methods_false_on_empty() {
         let v = fresh();
         assert!(!<VectorIndex as QuantizedFfnAccess>::has_interleaved_q4(&v));
-        assert!(!<VectorIndex as QuantizedFfnAccess>::has_interleaved_q4k(
-            &v
-        ));
-        assert!(!<VectorIndex as QuantizedFfnAccess>::has_down_features_q4k(
-            &v
-        ));
+        assert!(!<VectorIndex as QuantizedFfnAccess>::has_interleaved_kquant(&v));
+        assert!(!<VectorIndex as QuantizedFfnAccess>::has_down_features_kquant(&v));
     }
 
     #[test]
@@ -162,14 +158,16 @@ mod tests {
     fn mmap_refs_none_on_empty() {
         let v = fresh();
         assert!(<VectorIndex as QuantizedFfnAccess>::interleaved_q4_mmap_ref(&v).is_none());
-        assert!(<VectorIndex as QuantizedFfnAccess>::interleaved_q4k_mmap_ref(&v).is_none());
-        assert!(<VectorIndex as QuantizedFfnAccess>::interleaved_q4k_layer_data(&v, 0).is_none());
+        assert!(<VectorIndex as QuantizedFfnAccess>::interleaved_kquant_mmap_ref(&v).is_none());
+        assert!(
+            <VectorIndex as QuantizedFfnAccess>::interleaved_kquant_layer_data(&v, 0).is_none()
+        );
     }
 
     #[test]
     fn q4k_ffn_layer_none_on_empty() {
         let v = fresh();
-        assert!(<VectorIndex as QuantizedFfnAccess>::q4k_ffn_layer(&v, 0, 0).is_none());
+        assert!(<VectorIndex as QuantizedFfnAccess>::kquant_ffn_layer(&v, 0, 0).is_none());
     }
 
     #[test]
@@ -177,22 +175,22 @@ mod tests {
         let v = fresh();
         let x = [1.0_f32; 8];
         let mut out = [0.0_f32; 8];
-        assert!(<VectorIndex as QuantizedFfnAccess>::q4k_ffn_row_dot(&v, 0, 0, 0, &x).is_none());
-        assert!(!<VectorIndex as QuantizedFfnAccess>::q4k_ffn_row_into(
+        assert!(<VectorIndex as QuantizedFfnAccess>::kquant_ffn_row_dot(&v, 0, 0, 0, &x).is_none());
+        assert!(!<VectorIndex as QuantizedFfnAccess>::kquant_ffn_row_into(
             &v, 0, 0, 0, &mut out
         ));
         assert!(
-            !<VectorIndex as QuantizedFfnAccess>::q4k_ffn_row_scaled_add_via_cache(
+            !<VectorIndex as QuantizedFfnAccess>::kquant_ffn_row_scaled_add_via_cache(
                 &v, 0, 0, 0, 1.0, &mut out
             )
         );
         assert!(
-            !<VectorIndex as QuantizedFfnAccess>::q4k_ffn_row_scaled_add(
+            !<VectorIndex as QuantizedFfnAccess>::kquant_ffn_row_scaled_add(
                 &v, 0, 0, 0, 1.0, &mut out
             )
         );
         assert!(
-            !<VectorIndex as QuantizedFfnAccess>::q4k_down_feature_scaled_add(
+            !<VectorIndex as QuantizedFfnAccess>::kquant_down_feature_scaled_add(
                 &v, 0, 0, 1.0, &mut out
             )
         );
@@ -203,7 +201,7 @@ mod tests {
         let v = fresh();
         let x = [1.0_f32; 8];
         let backend = larql_compute::CpuBackend;
-        assert!(<VectorIndex as QuantizedFfnAccess>::q4k_matmul_transb(
+        assert!(<VectorIndex as QuantizedFfnAccess>::kquant_matmul_transb(
             &v,
             0,
             0,
@@ -214,7 +212,8 @@ mod tests {
         .is_none());
         // Backend=None path also covered.
         assert!(
-            <VectorIndex as QuantizedFfnAccess>::q4k_matmul_transb(&v, 0, 0, &x, 1, None).is_none()
+            <VectorIndex as QuantizedFfnAccess>::kquant_matmul_transb(&v, 0, 0, &x, 1, None)
+                .is_none()
         );
     }
 
@@ -222,6 +221,6 @@ mod tests {
     fn prefetch_methods_safe_on_empty() {
         let v = fresh();
         <VectorIndex as QuantizedFfnAccess>::prefetch_interleaved_q4_layer(&v, 0);
-        <VectorIndex as QuantizedFfnAccess>::prefetch_interleaved_q4k_layer(&v, 0);
+        <VectorIndex as QuantizedFfnAccess>::prefetch_interleaved_kquant_layer(&v, 0);
     }
 }

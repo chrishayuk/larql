@@ -73,6 +73,45 @@ pub(super) fn build_arch_json(
         obj.insert("final_logit_softcapping".into(), v.into());
     }
 
+    // Granite-family scaling multipliers. Re-emit the same field names
+    // the safetensors detect path reads (`detect/parser.rs`) so
+    // `detect_from_json` rebuilds an arch with the right
+    // `embedding_multiplier`, `attention_multiplier`,
+    // `residual_multiplier`, and `logits_scaling` — all four are
+    // consumed in the forward path (`attention/{gpu,decode,block}.rs`,
+    // `vindex/kquant_forward/*`, `predict/*`, `forward/{embed,layer,
+    // vocab_proj}.rs`). Without these the reconstructed arch defaults
+    // them to 1.0 and the model emits gibberish — symptom from
+    // `larql run` on a Granite vindex before the fields were added here.
+    //
+    // `embedding_multiplier` is also stored at the top level of
+    // `VindexConfig.embed_scale` (legacy capture site that predates the
+    // model_cfg surface). The top-level value is the source of truth at
+    // build time; we forward it back through the safetensors-style field
+    // name `embedding_multiplier` so `detect_from_json` populates
+    // `ModelConfig.embedding_multiplier`, and through it
+    // `arch.embed_scale()`. Only emit when non-1.0 so non-Granite
+    // vindexes don't suddenly start declaring a multiplier they never
+    // had.
+    if (config.embed_scale - 1.0).abs() > f32::EPSILON {
+        obj.insert(
+            "embedding_multiplier".into(),
+            (config.embed_scale as f64).into(),
+        );
+    }
+    if let Some(v) = model_cfg.attention_multiplier {
+        obj.insert("attention_multiplier".into(), v.into());
+    }
+    if let Some(v) = model_cfg.residual_multiplier {
+        obj.insert("residual_multiplier".into(), v.into());
+    }
+    if let Some(v) = model_cfg.logits_scaling {
+        obj.insert("logits_scaling".into(), v.into());
+    }
+    if let Some(v) = model_cfg.norm_eps {
+        obj.insert("rms_norm_eps".into(), v.into());
+    }
+
     // MoE — Mixtral, Gemma 4 26B A4B, DeepSeek-V*, etc.
     if let Some(ref moe) = model_cfg.moe {
         obj.insert("num_experts".into(), moe.num_experts.into());
@@ -113,6 +152,10 @@ mod tests {
             rope_local_base: None,
             query_pre_attn_scalar: None,
             final_logit_softcapping: None,
+            attention_multiplier: None,
+            residual_multiplier: None,
+            logits_scaling: None,
+            norm_eps: None,
         }
     }
 
@@ -268,6 +311,73 @@ mod tests {
         assert!(!obj.contains_key("top_k_experts"));
         assert!(!obj.contains_key("moe_intermediate_size"));
         assert!(!obj.contains_key("enable_moe_block"));
+    }
+
+    #[test]
+    fn build_arch_json_round_trips_granite_scalars() {
+        // Regression pin: Granite 4.1 3B vindexes built before the
+        // multiplier fields were added round-trip with `attention_multiplier`
+        // / `residual_multiplier` / `logits_scaling` defaulted to 1.0 in
+        // the reconstructed arch, and the model emits garbage. Hand the
+        // helper a Granite-shaped model_cfg, run it through
+        // `detect_from_json`, and assert the trait getters see the
+        // training-time values.
+        let mut model_cfg = minimal_model_cfg();
+        model_cfg.model_type = "granite".into();
+        model_cfg.head_dim = 64;
+        model_cfg.num_q_heads = 40;
+        model_cfg.num_kv_heads = 8;
+        model_cfg.attention_multiplier = Some(0.015625);
+        model_cfg.residual_multiplier = Some(0.22);
+        model_cfg.logits_scaling = Some(10.0);
+        model_cfg.norm_eps = Some(1e-05);
+        let mut config = minimal_config(model_cfg.clone());
+        config.hidden_size = 2560;
+        config.num_layers = 40;
+        config.intermediate_size = 8192;
+        config.vocab_size = 100_352;
+        config.embed_scale = 12.0;
+
+        let v = build_arch_json(&config, &model_cfg);
+        // Re-emitted with the field names `detect/parser.rs` reads.
+        assert_eq!(v["attention_multiplier"].as_f64().unwrap(), 0.015625);
+        assert_eq!(v["residual_multiplier"].as_f64().unwrap(), 0.22);
+        assert_eq!(v["logits_scaling"].as_f64().unwrap(), 10.0);
+        assert_eq!(v["rms_norm_eps"].as_f64().unwrap(), 1e-05);
+        // `embed_scale` is captured at the top level of `VindexConfig`
+        // but the reconstructed arch reads `embedding_multiplier` (the
+        // safetensors-style key). Forwarding 12.0 here gives the Metal
+        // forward path the right ×12 scaling at embedding lookup.
+        assert_eq!(v["embedding_multiplier"].as_f64().unwrap(), 12.0);
+
+        // Round-trip through detect_from_json: the trait getters must
+        // see the same values, since the forward path reads through
+        // those getters (see `attention/gpu.rs`, `vocab_proj.rs`,
+        // `vindex/kquant_forward/cached.rs`).
+        let arch = larql_models::detect_from_json(&v);
+        assert_eq!(arch.family(), "granite");
+        assert_eq!(arch.embed_scale(), 12.0);
+        assert_eq!(arch.attention_multiplier(), 0.015625);
+        assert_eq!(arch.residual_multiplier(), 0.22);
+        assert_eq!(arch.logits_scaling(), 10.0);
+        assert_eq!(arch.norm_eps(), 1e-05);
+    }
+
+    #[test]
+    fn build_arch_json_omits_granite_scalars_when_absent() {
+        // Legacy vindex / non-Granite arch: no scalar fields recorded.
+        // The reconstructed arch's trait getters must return the
+        // default 1.0 / default norm_eps, and the JSON must not carry
+        // the field names (forward-compat: an older vindex shouldn't
+        // suddenly start declaring a multiplier of 0).
+        let model_cfg = minimal_model_cfg(); // all None
+        let config = minimal_config(model_cfg.clone());
+        let v = build_arch_json(&config, &model_cfg);
+        let obj = v.as_object().unwrap();
+        assert!(!obj.contains_key("attention_multiplier"));
+        assert!(!obj.contains_key("residual_multiplier"));
+        assert!(!obj.contains_key("logits_scaling"));
+        assert!(!obj.contains_key("rms_norm_eps"));
     }
 
     #[test]

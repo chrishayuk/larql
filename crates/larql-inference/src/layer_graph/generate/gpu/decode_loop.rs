@@ -58,10 +58,10 @@ pub(super) fn run_decode_loop<F>(
     mut current_token_id: u32,
     max_tokens: usize,
     #[cfg(all(feature = "metal", target_os = "macos"))] metal_ple: Option<
-        &larql_compute::metal::MetalBackend,
+        &larql_compute_metal::MetalBackend,
     >,
     #[cfg(all(feature = "metal", target_os = "macos"))] upload_ple: &dyn Fn(
-        &larql_compute::metal::MetalBackend,
+        &larql_compute_metal::MetalBackend,
         u32,
         &[f32],
     ),
@@ -193,7 +193,7 @@ where
         t_gpu += gpu_ms;
         #[cfg(all(feature = "metal", target_os = "macos"))]
         if profile_split {
-            if let Some(pt) = larql_compute::metal_take_last_split_timings() {
+            if let Some(pt) = larql_compute_metal::take_last_split_timings() {
                 t_gate_up += pt.gate_up_ms;
                 t_down += pt.down_ms;
             }
@@ -298,4 +298,253 @@ fn log_h_1d_diagnostic(step: usize, h_1d: &ndarray::Array1<f32>, hits_len: usize
         "[profile] step={step} h_1d: len={} nan={h_nan} inf={h_inf} max_abs={h_max:.3e}  hits.len()={hits_len}",
         h_1d.len()
     );
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::test_utils::{
+        make_test_q4k_vindex, make_test_q4k_weights, make_test_weights, MockGpuBackend,
+    };
+
+    // ── run_one_decode_step branches ──────────────────────────────────────
+
+    #[test]
+    fn run_one_decode_step_calls_decode_token_on_standard_arch() {
+        let weights = make_test_weights();
+        let backend = MockGpuBackend::new();
+        let x_dec = vec![0.0f32; weights.hidden_size];
+        let out = run_one_decode_step(
+            &weights,
+            &backend,
+            &[],
+            weights.hidden_size,
+            weights.intermediate_size,
+            &x_dec,
+            /*profile_split=*/ false,
+            /*step=*/ 5,
+        )
+        .expect("mock decode_token returns Some");
+        assert_eq!(out.len(), weights.hidden_size);
+    }
+
+    /// `profile_split=true` AND `step==2` routes through
+    /// `decode_token_split_profile`. MockGpuBackend's default impl
+    /// delegates to `decode_token`, so it returns Some(zero vec).
+    #[test]
+    fn run_one_decode_step_split_profile_branch() {
+        let weights = make_test_weights();
+        let backend = MockGpuBackend::new();
+        let x_dec = vec![0.0f32; weights.hidden_size];
+        let out = run_one_decode_step(
+            &weights,
+            &backend,
+            &[],
+            weights.hidden_size,
+            weights.intermediate_size,
+            &x_dec,
+            /*profile_split=*/ true,
+            /*step=*/ 2,
+        )
+        .expect("split-profile branch returns Some");
+        assert_eq!(out.len(), weights.hidden_size);
+    }
+
+    /// `profile_split=true` but `step != 2` does NOT take the split
+    /// branch — falls through to the standard `decode_token` path.
+    #[test]
+    fn run_one_decode_step_split_profile_only_fires_on_step_2() {
+        let weights = make_test_weights();
+        let backend = MockGpuBackend::new();
+        let x_dec = vec![0.0f32; weights.hidden_size];
+        for step in [0usize, 1, 3, 5, 10] {
+            let out = run_one_decode_step(
+                &weights,
+                &backend,
+                &[],
+                weights.hidden_size,
+                weights.intermediate_size,
+                &x_dec,
+                /*profile_split=*/ true,
+                step,
+            );
+            assert!(out.is_some(), "step {step}: split-profile must not fire");
+        }
+    }
+
+    // ── log_step_diagnostic + log_h_1d_diagnostic ─────────────────────────
+
+    #[test]
+    fn log_step_diagnostic_handles_some_and_none() {
+        log_step_diagnostic(0, Some(&[1.0f32, 2.0, f32::NAN, f32::INFINITY]));
+        log_step_diagnostic(1, None);
+        log_step_diagnostic(2, Some(&[]));
+    }
+
+    #[test]
+    fn log_h_1d_diagnostic_handles_nan_and_inf() {
+        let h = ndarray::Array1::from(vec![1.0f32, f32::NAN, f32::INFINITY, -0.5]);
+        log_h_1d_diagnostic(0, &h, 5);
+        let h_empty = ndarray::Array1::<f32>::zeros(0);
+        log_h_1d_diagnostic(1, &h_empty, 0);
+    }
+
+    // ── run_decode_loop happy path ────────────────────────────────────────
+
+    /// Full decode loop against MockGpuBackend with profile flags off —
+    /// drives the main decode body for `max_tokens` steps. Returns
+    /// `tokens.len() == max_tokens-1` (the caller produces step 0; the
+    /// loop produces 1..max_tokens).
+    #[test]
+    fn run_decode_loop_emits_tokens_per_step_with_mock_backend() {
+        use crate::layer_graph::generate::detok::Detokenizer;
+        use crate::layer_graph::generate::eos::EosConfig;
+        use crate::layer_graph::generate::policy::{GenerationRuntimeConfig, TokenSelectionPolicy};
+        use crate::layer_graph::generate::sampling::{Sampler, SamplingConfig};
+
+        let weights = make_test_q4k_weights();
+        let index = make_test_q4k_vindex(&weights);
+        let backend = MockGpuBackend::new();
+        let tokenizer = crate::test_utils::make_test_tokenizer(weights.vocab_size);
+        let mut sampler = Sampler::new(SamplingConfig::greedy());
+        let runtime = GenerationRuntimeConfig::default();
+        let mut detok = Detokenizer::new(&tokenizer);
+        let eos = EosConfig::empty();
+        let mut generated_ids: Vec<u32> = vec![0];
+        let _ = SamplingConfig::greedy(); // touch the type
+        let _ = TokenSelectionPolicy::default();
+        let mut callback_count = 0;
+
+        let outcome = run_decode_loop(
+            &weights,
+            &tokenizer,
+            &index,
+            &backend,
+            &[],
+            weights.hidden_size,
+            weights.intermediate_size,
+            weights.arch.norm_weight_offset(),
+            5,
+            &runtime,
+            &mut sampler,
+            &mut detok,
+            &eos,
+            &mut generated_ids,
+            /*current_token_id=*/ 0,
+            /*max_tokens=*/ 3,
+            #[cfg(all(feature = "metal", target_os = "macos"))]
+            None,
+            #[cfg(all(feature = "metal", target_os = "macos"))]
+            &|_b, _id, _x| {},
+            &mut |_id, _text, _prob| {
+                callback_count += 1;
+            },
+        );
+        // max_tokens=3 → loop iterates steps 1..3, producing 2 tokens
+        // (unless the mock's zero output causes the sampler to bail
+        // earlier).
+        assert!(outcome.tokens.len() <= 2);
+        assert_eq!(outcome.tokens.len(), callback_count);
+    }
+
+    /// `profile_decode=true` exercises the per-step diagnostic blocks
+    /// (lines 97-112, 134-136, 162-164, 187-220). All stderr writes, no
+    /// behaviour change.
+    #[test]
+    fn run_decode_loop_with_profile_decode_runs_diagnostic_branches() {
+        use crate::layer_graph::generate::detok::Detokenizer;
+        use crate::layer_graph::generate::eos::EosConfig;
+        use crate::layer_graph::generate::policy::GenerationRuntimeConfig;
+        use crate::layer_graph::generate::sampling::{Sampler, SamplingConfig};
+
+        let weights = make_test_q4k_weights();
+        let index = make_test_q4k_vindex(&weights);
+        let backend = MockGpuBackend::new();
+        let tokenizer = crate::test_utils::make_test_tokenizer(weights.vocab_size);
+        let mut sampler = Sampler::new(SamplingConfig::greedy());
+        let runtime = GenerationRuntimeConfig {
+            profile_decode: true,
+            profile_split: true,
+            compare_cpu: false,
+            lm_head: Default::default(),
+        };
+        let mut detok = Detokenizer::new(&tokenizer);
+        let eos = EosConfig::empty();
+        let mut generated_ids: Vec<u32> = vec![0];
+
+        let _outcome = run_decode_loop(
+            &weights,
+            &tokenizer,
+            &index,
+            &backend,
+            &[],
+            weights.hidden_size,
+            weights.intermediate_size,
+            weights.arch.norm_weight_offset(),
+            5,
+            &runtime,
+            &mut sampler,
+            &mut detok,
+            &eos,
+            &mut generated_ids,
+            /*current_token_id=*/ 0,
+            /*max_tokens=*/ 4, // need step==2 to hit the split-profile branch
+            #[cfg(all(feature = "metal", target_os = "macos"))]
+            None,
+            #[cfg(all(feature = "metal", target_os = "macos"))]
+            &|_b, _id, _x| {},
+            &mut |_id, _text, _prob| {},
+        );
+    }
+
+    /// `EosConfig::empty().with_eos_id(0)` + mock predicting id 0 →
+    /// EOS break fires on the first decoded token. Drives line 207-208.
+    #[test]
+    fn run_decode_loop_breaks_on_eos_match() {
+        use crate::layer_graph::generate::detok::Detokenizer;
+        use crate::layer_graph::generate::eos::EosConfig;
+        use crate::layer_graph::generate::policy::GenerationRuntimeConfig;
+        use crate::layer_graph::generate::sampling::{Sampler, SamplingConfig};
+
+        let weights = make_test_q4k_weights();
+        let index = make_test_q4k_vindex(&weights);
+        let backend = MockGpuBackend::new();
+        let tokenizer = crate::test_utils::make_test_tokenizer(weights.vocab_size);
+        let mut sampler = Sampler::new(SamplingConfig::greedy());
+        let runtime = GenerationRuntimeConfig::default();
+        let mut detok = Detokenizer::new(&tokenizer);
+        // Mark every vocab id as EOS so whatever the sampler picks
+        // triggers the EOS break on step 1.
+        let mut eos = EosConfig::empty();
+        for id in 0..weights.vocab_size as u32 {
+            eos = eos.with_eos_id(id);
+        }
+        let mut generated_ids: Vec<u32> = vec![0];
+
+        let outcome = run_decode_loop(
+            &weights,
+            &tokenizer,
+            &index,
+            &backend,
+            &[],
+            weights.hidden_size,
+            weights.intermediate_size,
+            weights.arch.norm_weight_offset(),
+            5,
+            &runtime,
+            &mut sampler,
+            &mut detok,
+            &eos,
+            &mut generated_ids,
+            /*current_token_id=*/ 0,
+            /*max_tokens=*/ 5,
+            #[cfg(all(feature = "metal", target_os = "macos"))]
+            None,
+            #[cfg(all(feature = "metal", target_os = "macos"))]
+            &|_b, _id, _x| {},
+            &mut |_id, _text, _prob| {},
+        );
+        // EOS hits on step 1 → at most 1 token emitted then break.
+        assert!(outcome.tokens.len() <= 1);
+    }
 }

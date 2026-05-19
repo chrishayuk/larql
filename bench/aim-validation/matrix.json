@@ -1,0 +1,85 @@
+{
+  "version": 1,
+  "default_prompt_set": "baseline_fact_prompts",
+  "prompt_sets": {
+    "baseline_fact_prompts": [
+      "The capital of France is",
+      "The largest planet in the solar system is",
+      "The author of Pride and Prejudice was",
+      "The chemical symbol for gold is"
+    ]
+  },
+  "models": [
+    {
+      "id": "gemma3-4b-q4k-v2",
+      "family": "gemma3",
+      "role": "canonical_dense_small",
+      "cache_hint": "~/.cache/larql/local/gemma3-4b-q4k-v2.vindex"
+    },
+    {
+      "id": "gemma4-31b-q4k",
+      "family": "gemma4",
+      "role": "substrate_primary_dense",
+      "cache_hint": "~/.cache/larql/local/gemma4-31b-q4k.vindex"
+    },
+    {
+      "id": "gemma4-26b-a4b",
+      "family": "gemma4",
+      "role": "moe_single_machine",
+      "cache_hint": "~/.cache/larql/local/gemma4-26b-a4b.vindex"
+    },
+    {
+      "id": "llama2-7b-q4k",
+      "family": "llama",
+      "role": "cross_arch_dense",
+      "cache_hint": "~/.cache/larql/local/llama2-7b-q4k.vindex"
+    },
+    {
+      "id": "mistral-7b-v0.1-q4k",
+      "family": "mistral",
+      "role": "cross_arch_dense",
+      "cache_hint": "~/.cache/larql/local/mistral-7b-v0.1-q4k.vindex"
+    }
+  ],
+  "tests": {
+    "V1": {
+      "name": "hash routing across all layers",
+      "required_metrics": [
+        "topk",
+        "kl_divergence",
+        "perplexity_delta_pct",
+        "tok_per_s",
+        "bytes_touched_per_token"
+      ]
+    },
+    "V2": {
+      "name": "FP4 generality",
+      "required_metrics": [
+        "fp4_friendly_fraction",
+        "worst_layer",
+        "quality_delta",
+        "bytes_per_weight"
+      ]
+    },
+    "V3": {
+      "name": "mmap sparse disk-residency",
+      "required_metrics": [
+        "major_faults_per_token",
+        "minor_faults_per_token",
+        "disk_read_p50_ms",
+        "disk_read_p99_ms",
+        "tok_per_s"
+      ]
+    },
+    "V4": {
+      "name": "compound sparse stack",
+      "required_metrics": [
+        "predicted_speedup",
+        "measured_speedup",
+        "perplexity_delta_pct",
+        "tok_per_s"
+      ]
+    }
+  }
+}
+

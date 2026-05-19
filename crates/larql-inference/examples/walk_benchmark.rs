@@ -254,7 +254,11 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     // Compute backend (Metal on Apple Silicon, CPU otherwise).
     let backend: Box<dyn ComputeBackend> = default_backend();
-    let backend_name = if backend.has_q4() { "Metal/Q4" } else { "CPU" };
+    let backend_name = if backend.supports_quant(::larql_compute::QuantFormat::Q4_K) {
+        "Metal/Q4"
+    } else {
+        "CPU"
+    };
     println!("Compute backend: {backend_name}\n");
 
     let walk_full_graph = WalkFfn::from_config(
