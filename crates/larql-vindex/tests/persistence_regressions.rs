@@ -3,6 +3,7 @@
 //! These tests are synthetic and architecture-agnostic: they exercise storage
 //! contracts without downloading models or assuming a model family.
 
+#![cfg(not(target_arch = "wasm32"))]
 use larql_vindex::format::filenames::{
     DOWN_META_BIN, EMBEDDINGS_BIN, GATE_VECTORS_BIN, TOKENIZER_JSON, WEIGHT_MANIFEST_JSON,
 };

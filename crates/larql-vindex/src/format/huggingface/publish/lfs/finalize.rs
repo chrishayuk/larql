@@ -95,7 +95,7 @@ pub(super) fn commit_lfs_file(
     Ok(())
 }
 
-#[cfg(test)]
+#[cfg(all(test, not(target_arch = "wasm32")))]
 mod tests {
     use super::super::test_support::EnvBaseGuard;
     use super::*;

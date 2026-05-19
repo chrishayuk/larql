@@ -84,7 +84,7 @@ impl VectorIndex {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, not(target_arch = "wasm32")))]
 mod tests {
     //! Round-trip coverage of the feature-major down loader. Each test
     //! writes a small `down_features.bin` to a tempdir, mmaps it through

@@ -264,7 +264,7 @@ fn base64_decode(input: &str) -> Result<Vec<u8>, VindexError> {
     Ok(result)
 }
 
-#[cfg(test)]
+#[cfg(all(test, not(target_arch = "wasm32")))]
 mod tests {
     use super::*;
     use tempfile::TempDir;

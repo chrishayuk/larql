@@ -68,7 +68,7 @@ pub(super) fn read_lm_head_manifest_kind(dir: &std::path::Path) -> Option<String
         .map(|e| e.kind)
 }
 
-#[cfg(test)]
+#[cfg(all(test, not(target_arch = "wasm32")))]
 mod tests {
     use super::*;
     use crate::index::core::VectorIndex;

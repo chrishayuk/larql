@@ -11,6 +11,7 @@
 //! locally after `cargo run --release -p larql-vindex --example
 //! fp4_convert ...`.
 
+#![cfg(not(target_arch = "wasm32"))]
 use std::path::PathBuf;
 
 use larql_vindex::{SilentLoadCallbacks, VectorIndex};

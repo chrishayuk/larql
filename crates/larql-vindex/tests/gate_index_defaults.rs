@@ -1,5 +1,11 @@
 //! Coverage for the default `FfnRowAccess` / `GateLookup` dispatch contract.
 
+
+#[cfg(target_arch = "wasm32")]
+use wasm_bindgen_test::wasm_bindgen_test;
+#[cfg(target_arch = "wasm32")]
+wasm_bindgen_test::wasm_bindgen_test_configure!(run_in_node_experimental);
+
 use larql_models::TopKEntry;
 use larql_vindex::{
     FeatureMeta, FfnRowAccess, Fp4FfnAccess, GateLookup, NativeFfnAccess, PatchOverrides,
@@ -229,7 +235,8 @@ impl Fp4FfnAccess for DummyGateIndex {
     }
 }
 
-#[test]
+#[cfg_attr(not(target_arch = "wasm32"), test)]
+#[cfg_attr(target_arch = "wasm32", wasm_bindgen_test)]
 fn default_gate_knn_batch_unions_per_row_hits() {
     let idx = DummyGateIndex::default();
     assert_eq!(
@@ -239,7 +246,8 @@ fn default_gate_knn_batch_unions_per_row_hits() {
     assert!(idx.gate_knn_batch(LAYER, &array![[1.0, 0.0]], 0).is_empty());
 }
 
-#[test]
+#[cfg_attr(not(target_arch = "wasm32"), test)]
+#[cfg_attr(target_arch = "wasm32", wasm_bindgen_test)]
 fn native_default_row_dispatch_covers_dot_scaled_add_and_into() {
     let idx = DummyGateIndex::native();
     let x = [1.0, 2.0];
@@ -280,7 +288,8 @@ fn native_default_row_dispatch_covers_dot_scaled_add_and_into() {
     assert!(!idx.ffn_row_into(LAYER, BAD_COMPONENT, FEATURE, &mut row));
 }
 
-#[test]
+#[cfg_attr(not(target_arch = "wasm32"), test)]
+#[cfg_attr(target_arch = "wasm32", wasm_bindgen_test)]
 fn q4k_default_fallback_covers_row_operations() {
     let idx = DummyGateIndex::q4k();
     let x = [1.0, 2.0];
@@ -303,7 +312,8 @@ fn q4k_default_fallback_covers_row_operations() {
     assert_eq!(down, [12.5, 13.0]);
 }
 
-#[test]
+#[cfg_attr(not(target_arch = "wasm32"), test)]
+#[cfg_attr(target_arch = "wasm32", wasm_bindgen_test)]
 fn fp4_default_dispatch_has_priority_over_native_storage() {
     let idx = DummyGateIndex::fp4_with_native();
     let x = [1.0, 2.0];
@@ -322,7 +332,8 @@ fn fp4_default_dispatch_has_priority_over_native_storage() {
     assert_eq!(row, [4.0, 5.0]);
 }
 
-#[test]
+#[cfg_attr(not(target_arch = "wasm32"), test)]
+#[cfg_attr(target_arch = "wasm32", wasm_bindgen_test)]
 fn primary_storage_bucket_follows_dispatch_priority() {
     assert_eq!(
         DummyGateIndex::default().primary_storage_bucket(),

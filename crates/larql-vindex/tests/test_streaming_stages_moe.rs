@@ -18,6 +18,7 @@
 //! Single Mixtral-shaped happy path is enough to flip all four files
 //! into "MoE arm exercised" territory.
 
+#![cfg(not(target_arch = "wasm32"))]
 use std::collections::HashMap;
 use std::path::Path;
 

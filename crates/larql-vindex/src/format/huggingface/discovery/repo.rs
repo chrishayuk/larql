@@ -41,7 +41,7 @@ pub fn repo_exists(repo_id: &str, repo_type: &str) -> Result<bool, VindexError> 
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, not(target_arch = "wasm32")))]
 mod tests {
     use super::super::test_support::TestEnvGuard;
     use super::*;

@@ -240,7 +240,7 @@ fn discover_safetensors(model_dir: &Path) -> Result<Vec<PathBuf>, VindexError> {
     Ok(st_files)
 }
 
-#[cfg(test)]
+#[cfg(all(test, not(target_arch = "wasm32")))]
 mod tests {
     use super::*;
 

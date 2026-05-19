@@ -5,6 +5,7 @@
 //! mock model is a Gemma3-style 2-layer/hidden=8 fixture built by
 //! `larql_vindex::walker::test_fixture::create_mock_model`.
 
+#![cfg(not(target_arch = "wasm32"))]
 use larql_vindex::walker::test_fixture::create_mock_model;
 
 // ── Weight Walker ────────────────────────────────────────────────────────

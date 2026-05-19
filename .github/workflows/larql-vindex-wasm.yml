@@ -1,0 +1,114 @@
+# larql-vindex WASM CI
+#
+# Tests the pure-computation subset of larql-vindex on wasm32-unknown-unknown.
+#
+# 31 tests across 5 integration test files run under Node.js:
+#   gate_index_defaults (5), patched_gate_trait_forwarding (2),
+#   quant_roundtrip (7), test_hnsw (8), test_walker_utils (9).
+#
+# The remaining 14 integration test files use std::fs fixtures and are
+# excluded via #![cfg(not(target_arch = "wasm32"))] at their file tops.
+# Inline src/ test modules that use tempfile/serial_test are similarly
+# gated with #[cfg(all(test, not(target_arch = "wasm32")))].
+#
+# The `remote` feature (reqwest + hf-hub) is not enabled — it is
+# intentionally kept out of the wasm32 dep graph.
+
+name: larql-vindex-wasm
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'crates/larql-vindex/**'
+      - 'crates/larql-compute/**'
+      - 'crates/larql-models/**'
+      - 'Cargo.toml'
+      - 'Cargo.lock'
+      - '.github/workflows/larql-vindex-wasm.yml'
+  pull_request:
+    types: [opened, synchronize, reopened, ready_for_review]
+    branches: [main]
+    paths:
+      - 'crates/larql-vindex/**'
+      - 'crates/larql-compute/**'
+      - 'crates/larql-models/**'
+      - 'Cargo.toml'
+      - 'Cargo.lock'
+      - '.github/workflows/larql-vindex-wasm.yml'
+  workflow_dispatch: {}
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name != 'workflow_dispatch' }}
+
+jobs:
+  test:
+    name: wasm · ${{ matrix.mode.name }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 35
+    permissions:
+      contents: read
+
+    strategy:
+      fail-fast: false
+      matrix:
+        mode:
+          - name: serial
+            toolchain: stable
+            rustflags: ''
+          - name: parallel
+            toolchain: nightly
+            rustflags: '-C target-feature=+atomics,+bulk-memory,+mutable-globals'
+
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Install Rust (${{ matrix.mode.toolchain }}) + wasm32 target
+        uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: ${{ matrix.mode.toolchain }}
+          targets: wasm32-unknown-unknown
+          components: clippy, rustfmt
+
+      - name: Install wasm-pack
+        uses: taiki-e/install-action@v2
+        with:
+          tool: wasm-pack
+
+      - name: Install Firefox
+        uses: browser-actions/setup-firefox@v1
+
+      - name: Cache cargo registry + build artefacts
+        uses: actions/cache@v5
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: ${{ runner.os }}-wasm32-cargo-vindex-${{ matrix.mode.name }}-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-wasm32-cargo-vindex-${{ matrix.mode.name }}-
+
+      - name: Format check
+        run: cargo fmt -p larql-vindex -- --check
+
+      - name: Check
+        env:
+          RUSTFLAGS: ${{ matrix.mode.rustflags }}
+        run: cargo check -p larql-vindex --target wasm32-unknown-unknown --no-default-features
+
+      - name: Clippy
+        env:
+          RUSTFLAGS: ${{ matrix.mode.rustflags }}
+        run: cargo clippy -p larql-vindex --target wasm32-unknown-unknown --no-default-features -- -D warnings
+
+      - name: wasm-pack test · node
+        env:
+          RUSTFLAGS: ${{ matrix.mode.rustflags }}
+        run: wasm-pack test --node crates/larql-vindex
+
+      - name: wasm-pack test · firefox
+        env:
+          RUSTFLAGS: ${{ matrix.mode.rustflags }}
+        run: wasm-pack test --firefox --headless crates/larql-vindex --features browser-tests

@@ -188,7 +188,7 @@ pub fn fetch_collection_items(slug_or_url: &str) -> Result<Vec<(String, String)>
     Ok(out)
 }
 
-#[cfg(test)]
+#[cfg(all(test, not(target_arch = "wasm32")))]
 mod tests {
     use super::super::test_support::TestEnvGuard;
     use super::*;

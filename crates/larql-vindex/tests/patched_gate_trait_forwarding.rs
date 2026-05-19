@@ -1,5 +1,11 @@
 //! Coverage for `impl GateIndex for PatchedVindex`.
 
+
+#[cfg(target_arch = "wasm32")]
+use wasm_bindgen_test::wasm_bindgen_test;
+#[cfg(target_arch = "wasm32")]
+wasm_bindgen_test::wasm_bindgen_test_configure!(run_in_node_experimental);
+
 use larql_models::TopKEntry;
 use larql_vindex::{FeatureMeta, GateIndex, PatchedVindex, StorageBucket, VectorIndex};
 use ndarray::array;
@@ -36,7 +42,8 @@ fn patched_index() -> PatchedVindex {
     patched
 }
 
-#[test]
+#[cfg_attr(not(target_arch = "wasm32"), test)]
+#[cfg_attr(target_arch = "wasm32", wasm_bindgen_test)]
 fn patched_gate_index_trait_surfaces_overlay_and_base_overrides() {
     let patched = patched_index();
     let gate: &dyn GateIndex = &patched;
@@ -59,7 +66,8 @@ fn patched_gate_index_trait_surfaces_overlay_and_base_overrides() {
     );
 }
 
-#[test]
+#[cfg_attr(not(target_arch = "wasm32"), test)]
+#[cfg_attr(target_arch = "wasm32", wasm_bindgen_test)]
 fn patched_gate_index_trait_forwards_empty_storage_capabilities() {
     let patched = patched_index();
     let gate: &dyn GateIndex = &patched;

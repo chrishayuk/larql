@@ -65,7 +65,7 @@ pub(super) fn hf_cache_repo_dir(kind: RepoKind, repo_id: &str) -> Option<PathBuf
     Some(hub_root.join(format!("{}{safe}", kind.cache_prefix())))
 }
 
-#[cfg(test)]
+#[cfg(all(test, not(target_arch = "wasm32")))]
 mod tests {
     use super::*;
     use serial_test::serial;

@@ -9,6 +9,7 @@
 //!      `vindex_to_q4k`, then verify the output layout, manifest,
 //!      and weight round-trip on a sampled Q4_K block.
 
+#![cfg(not(target_arch = "wasm32"))]
 use larql_vindex::format::filenames::*;
 use std::path::PathBuf;
 

@@ -22,6 +22,7 @@
 //!   5. Assert every reference SHA matches the resumed dir's SHA, and
 //!      that the checkpoint file is gone (extract clears it on success).
 
+#![cfg(not(target_arch = "wasm32"))]
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 

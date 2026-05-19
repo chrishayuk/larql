@@ -1,5 +1,11 @@
 //! Tests for HNSW index — correctness, recall, and edge cases.
 
+
+#[cfg(target_arch = "wasm32")]
+use wasm_bindgen_test::wasm_bindgen_test;
+#[cfg(target_arch = "wasm32")]
+wasm_bindgen_test::wasm_bindgen_test_configure!(run_in_node_experimental);
+
 use larql_vindex::index::hnsw::HnswLayer;
 use larql_vindex::VectorIndex;
 use ndarray::{Array1, Array2};
@@ -31,7 +37,8 @@ fn brute_force_topk(vectors: &Array2<f32>, query: &Array1<f32>, top_k: usize) ->
     scores
 }
 
-#[test]
+#[cfg_attr(not(target_arch = "wasm32"), test)]
+#[cfg_attr(target_arch = "wasm32", wasm_bindgen_test)]
 fn build_and_search_small() {
     let vectors = synth_vectors(100, 16, 42);
     let view = vectors.view();
@@ -45,7 +52,8 @@ fn build_and_search_small() {
     assert_eq!(results[0].0, 0);
 }
 
-#[test]
+#[cfg_attr(not(target_arch = "wasm32"), test)]
+#[cfg_attr(target_arch = "wasm32", wasm_bindgen_test)]
 fn recall_at_10() {
     // Build with 1000 vectors, check that HNSW finds at least 8/10 of brute-force top-10
     let vectors = synth_vectors(1000, 32, 123);
@@ -68,7 +76,8 @@ fn recall_at_10() {
     );
 }
 
-#[test]
+#[cfg_attr(not(target_arch = "wasm32"), test)]
+#[cfg_attr(target_arch = "wasm32", wasm_bindgen_test)]
 fn recall_at_100_large() {
     // 10,240 vectors (Gemma gate count), dim=64 (scaled down).
     // HNSW is experimental — brute-force gemm is the production path.
@@ -93,7 +102,8 @@ fn recall_at_100_large() {
     );
 }
 
-#[test]
+#[cfg_attr(not(target_arch = "wasm32"), test)]
+#[cfg_attr(target_arch = "wasm32", wasm_bindgen_test)]
 fn empty_index() {
     let vectors = Array2::<f32>::zeros((0, 16));
     let view = vectors.view();
@@ -104,7 +114,8 @@ fn empty_index() {
     assert!(results.is_empty());
 }
 
-#[test]
+#[cfg_attr(not(target_arch = "wasm32"), test)]
+#[cfg_attr(target_arch = "wasm32", wasm_bindgen_test)]
 fn single_vector() {
     let vectors = synth_vectors(1, 16, 42);
     let view = vectors.view();
@@ -117,7 +128,8 @@ fn single_vector() {
     assert_eq!(results[0].0, 0);
 }
 
-#[test]
+#[cfg_attr(not(target_arch = "wasm32"), test)]
+#[cfg_attr(target_arch = "wasm32", wasm_bindgen_test)]
 fn scores_are_dot_products() {
     let vectors = synth_vectors(50, 8, 42);
     let view = vectors.view();
@@ -140,7 +152,8 @@ fn scores_are_dot_products() {
     }
 }
 
-#[test]
+#[cfg_attr(not(target_arch = "wasm32"), test)]
+#[cfg_attr(target_arch = "wasm32", wasm_bindgen_test)]
 fn results_sorted_descending() {
     let vectors = synth_vectors(200, 16, 42);
     let view = vectors.view();
@@ -169,7 +182,8 @@ fn results_sorted_descending() {
 /// asserts ≥ 4/10 on similar data). Production decode lives at higher
 /// dims where recall is far better; this test catches "completely
 /// broken" not "imperfect".
-#[test]
+#[cfg_attr(not(target_arch = "wasm32"), test)]
+#[cfg_attr(target_arch = "wasm32", wasm_bindgen_test)]
 fn gate_knn_hnsw_smoke() {
     let num_features = 1024usize;
     let hidden = 64usize;

@@ -327,7 +327,7 @@ impl VectorIndex {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, not(target_arch = "wasm32")))]
 mod tests {
     //! Coverage for the f32 BLAS fallback path (`lm_head_knn`) plus the
     //! `Stride32Mode` env-var dispatch and the early-return guards on

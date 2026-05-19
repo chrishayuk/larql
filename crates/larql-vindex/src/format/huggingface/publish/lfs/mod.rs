@@ -13,7 +13,7 @@
 mod batch;
 mod finalize;
 mod stream;
-#[cfg(test)]
+#[cfg(all(test, not(target_arch = "wasm32")))]
 mod test_support;
 
 use std::collections::HashMap;
@@ -89,7 +89,7 @@ pub(super) fn upload_lfs(
     commit_lfs_file(repo_id, token, remote_filename, sha256, size, repo_type)
 }
 
-#[cfg(test)]
+#[cfg(all(test, not(target_arch = "wasm32")))]
 mod tests {
     use super::test_support::{write_temp_bytes, CapturingCallbacks, EnvBaseGuard};
     use super::*;

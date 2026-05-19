@@ -56,7 +56,7 @@ impl VectorIndex {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, not(target_arch = "wasm32")))]
 mod tests {
     //! Round-trip coverage of the feature-major up loader. Mirrors the
     //! test pattern in `down.rs`.

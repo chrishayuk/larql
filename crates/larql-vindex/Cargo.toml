@@ -69,8 +69,13 @@ metal = ["larql-compute/metal"]
 # consumers (larql-kv, larql-lql) do not, keeping their wasm32 dep
 # graph free of browser-fetch bindings.
 remote = ["dep:reqwest", "dep:hf-hub"]
+# Opt-in gate for the Firefox browser-based wasm_bindgen_test runner.
+browser-tests = []
 
 [dev-dependencies]
+wasm-bindgen-test = "0.3"
+
+[target.'cfg(not(target_arch = "wasm32"))'.dev-dependencies]
 criterion = "0.5"
 tempfile = "3"
 # HTTP mocking for the publish trio (lfs / remote / upload).
@@ -79,6 +84,10 @@ tempfile = "3"
 # parallel runs would race.
 mockito = "1.7"
 serial_test = "3.2"
+
+[[example]]
+name = "demo_features"
+required-features = ["remote"]
 
 [[bench]]
 name = "vindex_ops"

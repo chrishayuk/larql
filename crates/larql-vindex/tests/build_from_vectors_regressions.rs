@@ -1,5 +1,6 @@
 //! Regression coverage for building vindexes from pre-extracted NDJSON vectors.
 
+#![cfg(not(target_arch = "wasm32"))]
 use std::io::Write;
 use std::path::Path;
 

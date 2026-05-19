@@ -446,7 +446,7 @@ pub fn load_feature_labels(path: &Path) -> Result<HashMap<(usize, usize), String
     Ok(labels)
 }
 
-#[cfg(test)]
+#[cfg(all(test, not(target_arch = "wasm32")))]
 mod tests {
     use super::*;
     use tempfile::TempDir;

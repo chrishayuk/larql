@@ -10,6 +10,7 @@
 //!  - Atomic-rename: `<out>.tmp/` is cleaned up.
 //!  - `force` flag behaves (refuses by default, overwrites when set).
 
+#![cfg(not(target_arch = "wasm32"))]
 use larql_vindex::format::filenames::*;
 use std::path::{Path, PathBuf};
 

@@ -23,6 +23,7 @@
 //! 4. Enable HNSW after reload — top-K still overlaps with brute by
 //!    ≥ 4/10 (the codec hasn't degraded recall further).
 
+#![cfg(not(target_arch = "wasm32"))]
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicU64, Ordering};
 

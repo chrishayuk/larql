@@ -241,7 +241,7 @@ pub(in crate::format::huggingface) fn get_hf_token() -> Result<String, VindexErr
     ))
 }
 
-#[cfg(test)]
+#[cfg(all(test, not(target_arch = "wasm32")))]
 mod tests {
     use super::*;
     use serial_test::serial;

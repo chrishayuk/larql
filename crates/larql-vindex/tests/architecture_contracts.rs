@@ -1,5 +1,6 @@
 //! Architecture capability contract tests for weight writers.
 
+#![cfg(not(target_arch = "wasm32"))]
 use larql_vindex::format::filenames::{
     ATTN_WEIGHTS_BIN, ATTN_WEIGHTS_Q4K_BIN, INDEX_JSON, INTERLEAVED_Q4K_BIN, WEIGHT_MANIFEST_JSON,
 };

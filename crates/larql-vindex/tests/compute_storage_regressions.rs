@@ -1,5 +1,6 @@
 //! Focused coverage for compute/storage modules with synthetic fixtures.
 
+#![cfg(not(target_arch = "wasm32"))]
 use std::io::Write;
 
 use larql_compute::{ComputeBackend, DecodeBackend, MatMul, QuantMatVec};

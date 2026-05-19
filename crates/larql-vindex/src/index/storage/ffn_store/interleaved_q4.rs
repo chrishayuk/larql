@@ -97,7 +97,7 @@ impl VectorIndex {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, not(target_arch = "wasm32")))]
 mod tests {
     //! Round-trip coverage of the Q4_0 interleaved [gate|up|down]
     //! reader. Uses real `quantize_q4_0` so the dequant chain runs

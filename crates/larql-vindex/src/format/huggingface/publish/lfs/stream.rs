@@ -84,7 +84,7 @@ pub(super) fn stream_put_with_progress(
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, not(target_arch = "wasm32")))]
 mod tests {
     use super::super::test_support::{write_temp_bytes, CapturingCallbacks, EnvBaseGuard};
     use super::*;

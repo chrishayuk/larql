@@ -22,6 +22,7 @@
 //! The vector-extractor file output is still hashed byte-for-byte — it
 //! doesn't go through the top-k path and is genuinely cross-platform.
 
+#![cfg(not(target_arch = "wasm32"))]
 use std::path::Path;
 
 use sha2::{Digest, Sha256};

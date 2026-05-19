@@ -131,7 +131,7 @@ pub(crate) fn run_clustering_pipeline(
     Ok(())
 }
 
-#[cfg(test)]
+#[cfg(all(test, not(target_arch = "wasm32")))]
 mod tests {
     use super::super::test_support::{vocab_tokenizer, weights_with_embed};
     use super::*;

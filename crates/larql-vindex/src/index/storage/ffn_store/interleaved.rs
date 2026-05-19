@@ -127,7 +127,7 @@ impl VectorIndex {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, not(target_arch = "wasm32")))]
 mod tests {
     //! Round-trip coverage of the interleaved [gate|up|down] layer
     //! reader. Mirrors the test pattern in `down.rs`/`up.rs`.
