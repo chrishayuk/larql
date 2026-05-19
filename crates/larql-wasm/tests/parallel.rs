@@ -1,22 +1,20 @@
 //! Parallel (multi-threaded) integration tests.
 //!
 //! Only compiled when the `parallel` feature is active.
-//! Runs under Node.js 20+ (SharedArrayBuffer supported without flags).
+//! Runs in a headless Firefox browser — wasm-bindgen-rayon spawns Web Workers
+//! which require the browser `self` global; Node.js does not expose it.
 //!
-//! `wasm-pack test crates/larql-wasm --node --features parallel`
+//! `wasm-pack test crates/larql-wasm --firefox --headless --features parallel`
 
 #![cfg(feature = "parallel")]
 
 use wasm_bindgen_test::*;
 
-wasm_bindgen_test_configure!(run_in_node_experimental);
-
 use larql_wasm::GraphSession;
 
-/// Node.js tests cannot call async JS to init the thread pool, so parallel
-/// tests use a single-thread rayon fallback (rayon detects no workers and
-/// falls back to serial execution).  The important thing tested here is that
-/// the `parallel` feature compiles and the exported symbols are callable.
+/// The thread pool is initialised by the browser runner before each test.
+/// Tests verify that the `parallel` feature compiles and the exported symbols
+/// are callable under a real multi-threaded wasm environment.
 #[wasm_bindgen_test]
 fn parallel_session_new_and_edge_count() {
     let s = GraphSession::new();

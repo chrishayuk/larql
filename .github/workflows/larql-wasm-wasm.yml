@@ -1,12 +1,15 @@
 # larql-wasm WASM CI
 #
 # larql-wasm IS the browser/Node.js WASM binding crate. All tests are tagged
-# #[wasm_bindgen_test] and configured for Node.js via
-# wasm_bindgen_test_configure!(run_in_node_experimental).
+# #[wasm_bindgen_test].
 #
-# Serial tests run under stable Rust.
-# Parallel tests require nightly + atomics target features (SharedArrayBuffer).
-# No Firefox step: both test suites use run_in_node_experimental.
+# Serial tests (tests/serial.rs) configure run_in_node_experimental and run
+# under Node.js with stable Rust.
+#
+# Parallel tests (tests/parallel.rs) require a real browser environment:
+# wasm-bindgen-rayon spawns Web Workers and references the browser `self`
+# global, which Node.js does not expose.  They run under headless Firefox with
+# nightly + atomics target features (SharedArrayBuffer).
 
 name: larql-wasm-wasm
 
@@ -50,10 +53,12 @@ jobs:
             toolchain: stable
             rustflags: ''
             features: ''
+            runner: '--node'
           - name: parallel
             toolchain: nightly
             rustflags: '-C target-feature=+atomics,+bulk-memory,+mutable-globals'
             features: '--features parallel'
+            runner: '--firefox --headless'
 
     steps:
       - uses: actions/checkout@v6
@@ -69,6 +74,9 @@ jobs:
         uses: taiki-e/install-action@v2
         with:
           tool: wasm-pack
+
+      - name: Install Firefox
+        uses: browser-actions/setup-firefox@v1
 
       - name: Cache cargo registry + build artefacts
         uses: actions/cache@v5
@@ -94,7 +102,7 @@ jobs:
           RUSTFLAGS: ${{ matrix.mode.rustflags }}
         run: cargo clippy -p larql-wasm --target wasm32-unknown-unknown ${{ matrix.mode.features }} -- -D warnings
 
-      - name: wasm-pack test · node
+      - name: wasm-pack test
         env:
           RUSTFLAGS: ${{ matrix.mode.rustflags }}
-        run: wasm-pack test --node crates/larql-wasm ${{ matrix.mode.features }}
+        run: wasm-pack test ${{ matrix.mode.runner }} crates/larql-wasm ${{ matrix.mode.features }}
