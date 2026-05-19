@@ -35,7 +35,7 @@ pub use lm_head::lm_head_topk;
 pub use sampling::{Sampler, SamplingConfig};
 pub use types::{GenerateError, GenerateResult, StageTimings};
 
-#[cfg(test)]
+#[cfg(all(test, not(target_arch = "wasm32")))]
 mod tests {
     use super::*;
     use crate::layer_graph::CachedLayerGraph;

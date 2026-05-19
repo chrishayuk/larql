@@ -392,7 +392,7 @@ fn validate_chain(nodes: &[TraceNode], hidden: usize) -> io::Result<()> {
 // Need Seek for TraceWriter
 use std::io::Seek;
 
-#[cfg(test)]
+#[cfg(all(test, not(target_arch = "wasm32")))]
 mod tests {
     use super::super::types::{ResidualTrace, TraceNode};
     use super::*;

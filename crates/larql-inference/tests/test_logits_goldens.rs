@@ -1,3 +1,5 @@
+#![cfg(not(target_arch = "wasm32"))]
+
 //! End-to-end logits goldens — the missing 5% of regression coverage.
 //!
 //! ## Why this file

@@ -1,3 +1,5 @@
+#![cfg(not(target_arch = "wasm32"))]
+
 //! CPU V-projection correctness on `attention_k_eq_v` architectures
 //! (Gemma 4 global layers).
 //!

@@ -64,7 +64,7 @@ fn is_instruct_hint(hint_lc: &str) -> bool {
         || hint_lc.contains("-it")
 }
 
-#[cfg(test)]
+#[cfg(all(test, not(target_arch = "wasm32")))]
 mod tests {
     use super::*;
 

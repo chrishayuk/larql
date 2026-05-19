@@ -52,7 +52,7 @@ pub(super) fn prefill_kv_cache_cpu(
     let _ = prefill_with_kv(weights, token_ids, index, backend, layer_range.clone());
 }
 
-#[cfg(test)]
+#[cfg(all(test, not(target_arch = "wasm32")))]
 mod tests {
     use super::*;
     use crate::forward::hidden_to_raw_logits;

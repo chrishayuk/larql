@@ -448,7 +448,7 @@ fn write_f32_slice(file: &mut File, data: &[f32]) -> io::Result<()> {
     file.write_all(bytes)
 }
 
-#[cfg(test)]
+#[cfg(all(test, not(target_arch = "wasm32")))]
 mod tests {
     use super::*;
 

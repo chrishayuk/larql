@@ -46,7 +46,7 @@ pub struct GridGenerateResult {
     pub ffn_rtt_ms: Vec<f64>,
 }
 
-#[cfg(test)]
+#[cfg(all(test, not(target_arch = "wasm32")))]
 mod tests {
     use super::*;
     use crate::ffn::moe_remote::{RemoteMoeBackend, RemoteMoeError};

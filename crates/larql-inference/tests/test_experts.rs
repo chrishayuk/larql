@@ -1,3 +1,5 @@
+#![cfg(not(target_arch = "wasm32"))]
+
 /// Integration tests for the WASM expert registry.
 ///
 /// Requires the larql-experts workspace to be pre-built:

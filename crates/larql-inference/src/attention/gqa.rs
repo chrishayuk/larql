@@ -254,7 +254,7 @@ fn gqa_attention_capture(
     (out, weights, all_weights)
 }
 
-#[cfg(test)]
+#[cfg(all(test, not(target_arch = "wasm32")))]
 mod tests {
     use super::*;
     use ndarray::Array2;

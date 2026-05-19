@@ -238,7 +238,7 @@ fn render_plain(messages: &[(String, String)]) -> String {
     out
 }
 
-#[cfg(test)]
+#[cfg(all(test, not(target_arch = "wasm32")))]
 mod render_messages_tests {
     use super::*;
 
@@ -302,7 +302,7 @@ mod render_messages_tests {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, not(target_arch = "wasm32")))]
 mod tests {
     use super::*;
 

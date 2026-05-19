@@ -429,7 +429,7 @@ pub fn run_attention_block_decode_step_backend(
     Some((h_post_attn, (k_concat, v_concat)))
 }
 
-#[cfg(test)]
+#[cfg(all(test, not(target_arch = "wasm32")))]
 mod tests {
     use super::*;
     use crate::test_utils::make_test_weights;

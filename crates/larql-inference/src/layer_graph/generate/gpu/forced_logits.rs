@@ -194,7 +194,7 @@ fn full_logits_from_vindex(
     Ok(logits)
 }
 
-#[cfg(test)]
+#[cfg(all(test, not(target_arch = "wasm32")))]
 mod tests {
     //! Synthetic-fixture tests for the forced-logits primitive.
     //!

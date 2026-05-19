@@ -162,7 +162,7 @@ pub fn predict_with_strategy(
     logits_to_predictions(weights, &h, tokenizer, top_k, 1.0)
 }
 
-#[cfg(test)]
+#[cfg(all(test, not(target_arch = "wasm32")))]
 mod tests {
     use super::*;
     use crate::ffn::{LayerFfnRouter, WeightFfn};

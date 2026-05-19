@@ -1,3 +1,5 @@
+#![cfg(not(target_arch = "wasm32"))]
+
 //! Integration tests for the trace module: TraceStore, BoundaryStore, ContextStore.
 //!
 //! These are format/IO tests using synthetic data — no real model needed.

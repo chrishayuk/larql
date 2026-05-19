@@ -34,7 +34,7 @@ pub use ffn::{
 
 // ── Tests ────────────────────────────────────────────────────────────────────
 
-#[cfg(test)]
+#[cfg(all(test, not(target_arch = "wasm32")))]
 mod tests {
     use super::dense::cmp_desc_nan_last;
 

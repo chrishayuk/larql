@@ -242,7 +242,7 @@ fn forward_layer_range(
 
 // ─── Tests ────────────────────────────────────────────────────────────────────
 
-#[cfg(test)]
+#[cfg(all(test, not(target_arch = "wasm32")))]
 mod forward_from_layer_tests {
     use super::*;
     use crate::test_utils::make_test_weights;

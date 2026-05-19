@@ -1,3 +1,5 @@
+#![cfg(not(target_arch = "wasm32"))]
+
 /// Option 3 integration test: cascade trie → expert dispatch pipeline
 ///
 /// Each case documents what the cascade would commit to (route label) and the

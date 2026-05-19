@@ -24,7 +24,7 @@ pub fn embed_tokens_pub(weights: &ModelWeights, token_ids: &[u32]) -> Array2<f32
     h
 }
 
-#[cfg(test)]
+#[cfg(all(test, not(target_arch = "wasm32")))]
 mod tests {
     use super::*;
     use crate::test_utils::make_test_weights;

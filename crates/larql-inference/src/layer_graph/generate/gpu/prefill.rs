@@ -144,7 +144,7 @@ fn prefill_q4k_moe(
     Ok(out)
 }
 
-#[cfg(test)]
+#[cfg(all(test, not(target_arch = "wasm32")))]
 mod tests {
     //! Unit-test the early-return guards. The full prefill paths (PLE,
     //! Q4_K MoE, standard fused) need both a Q4-supporting backend AND a

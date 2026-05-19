@@ -1,3 +1,5 @@
+#![cfg(not(target_arch = "wasm32"))]
+
 //! Architecture regression guard: one "golden-token" case per architecture.
 //!
 //! The goal is to catch regressions when we change a cross-cutting path (MoE,

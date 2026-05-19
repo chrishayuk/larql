@@ -56,7 +56,7 @@ mod shard;
 mod stream;
 mod wire;
 
-#[cfg(test)]
+#[cfg(all(test, not(target_arch = "wasm32")))]
 mod tests;
 
 // ── Public re-exports (preserve the pre-split crate-public API) ──────────────

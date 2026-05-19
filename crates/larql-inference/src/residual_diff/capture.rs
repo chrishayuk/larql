@@ -425,7 +425,7 @@ fn build_dummy_tokenizer() -> tokenizers::Tokenizer {
     tokenizers::Tokenizer::new(model)
 }
 
-#[cfg(test)]
+#[cfg(all(test, not(target_arch = "wasm32")))]
 mod tests {
     use super::*;
     use std::path::PathBuf;

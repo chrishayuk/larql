@@ -101,6 +101,8 @@ metal = ["larql-compute/metal"]
 # wasmi remains the active backend regardless; this feature only gates the
 # preserved loader_jit/caller_jit modules for REUSE compliance.
 expert-jit = ["dep:wasmtime", "dep:wasmtime-wasi"]
+# Opt-in gate for the Firefox browser-based wasm_bindgen_test runner.
+browser-tests = []
 
 [[example]]
 name = "cpu_gpu_diag"
@@ -121,8 +123,11 @@ required-features = ["metal"]
 [dev-dependencies]
 assert_approx_eq = "1"
 tempfile = "3"
-criterion = { version = "0.5", features = ["html_reports"] }
 larql-kv = { path = "../larql-kv" }
+wasm-bindgen-test = "0.3"
+
+[target.'cfg(not(target_arch = "wasm32"))'.dev-dependencies]
+criterion = { version = "0.5", features = ["html_reports"] }
 
 [[bench]]
 name = "wire_codec"

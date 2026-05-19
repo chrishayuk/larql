@@ -32,7 +32,7 @@ pub fn load_expert(engine: &Engine, path: &Path) -> anyhow::Result<(Store<Expert
     instantiate(engine, &module)
 }
 
-#[cfg(test)]
+#[cfg(all(test, not(target_arch = "wasm32")))]
 mod tests {
 
     fn fresh_path(name: &str) -> std::path::PathBuf {

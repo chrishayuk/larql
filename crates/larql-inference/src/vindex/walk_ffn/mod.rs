@@ -55,7 +55,7 @@ mod interleaved_q4;
 mod interleaved_q4k;
 mod sparse;
 
-#[cfg(test)]
+#[cfg(all(test, not(target_arch = "wasm32")))]
 mod routing_tests;
 
 pub use helpers::DispatchEntry;
@@ -411,7 +411,7 @@ impl<'a> FfnBackend for WalkFfn<'a> {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, not(target_arch = "wasm32")))]
 mod dispatch_tests {
     use super::*;
     use crate::model::ModelWeights;

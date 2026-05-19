@@ -1,3 +1,5 @@
+#![cfg(not(target_arch = "wasm32"))]
+
 //! Integration tests for the four previously-untested `layer_graph/` files.
 //!
 //! Requires a real Q4_K vindex on disk. Tests are `#[ignore]` and skipped

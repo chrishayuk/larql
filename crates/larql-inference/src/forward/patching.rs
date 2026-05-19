@@ -185,7 +185,7 @@ pub fn patch_and_trace_with_ffn(
     )
 }
 
-#[cfg(test)]
+#[cfg(all(test, not(target_arch = "wasm32")))]
 mod tests {
     use super::*;
     use crate::forward::trace::trace_forward_full;

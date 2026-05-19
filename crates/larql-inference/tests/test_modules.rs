@@ -1,10 +1,14 @@
 //! Unit tests for inference modules: attention, ffn, residual.
 
+#[cfg(target_arch = "wasm32")]
+wasm_bindgen_test::wasm_bindgen_test_configure!(run_in_node_experimental);
+
 mod test_residual {
     use larql_inference::residual::{rms_norm, rms_norm_heads};
     use ndarray::Array2;
 
-    #[test]
+    #[cfg_attr(not(target_arch = "wasm32"), test)]
+    #[cfg_attr(target_arch = "wasm32", wasm_bindgen_test::wasm_bindgen_test)]
     fn rms_norm_identity_without_weight() {
         let x = Array2::from_shape_vec((1, 4), vec![1.0, 2.0, 3.0, 4.0]).unwrap();
         let out = rms_norm(&x, None, 1.0);
@@ -13,7 +17,8 @@ mod test_residual {
         assert!((rms - 1.0).abs() < 0.01);
     }
 
-    #[test]
+    #[cfg_attr(not(target_arch = "wasm32"), test)]
+    #[cfg_attr(target_arch = "wasm32", wasm_bindgen_test::wasm_bindgen_test)]
     fn rms_norm_with_weight_offset_zero() {
         // offset=0 means weight is applied directly (Llama style)
         let x = Array2::from_shape_vec((1, 3), vec![3.0, 4.0, 0.0]).unwrap();
@@ -24,7 +29,8 @@ mod test_residual {
         assert!(rms > 0.0);
     }
 
-    #[test]
+    #[cfg_attr(not(target_arch = "wasm32"), test)]
+    #[cfg_attr(target_arch = "wasm32", wasm_bindgen_test::wasm_bindgen_test)]
     fn rms_norm_with_weight_offset_one() {
         // offset=1 means weight = 1 + learned (Gemma style)
         let x = Array2::from_shape_vec((1, 3), vec![3.0, 4.0, 0.0]).unwrap();
@@ -37,7 +43,8 @@ mod test_residual {
         }
     }
 
-    #[test]
+    #[cfg_attr(not(target_arch = "wasm32"), test)]
+    #[cfg_attr(target_arch = "wasm32", wasm_bindgen_test::wasm_bindgen_test)]
     fn rms_norm_batch() {
         let x = Array2::from_shape_vec((2, 3), vec![1.0, 2.0, 3.0, 4.0, 5.0, 6.0]).unwrap();
         let out = rms_norm(&x, None, 1.0);
@@ -46,7 +53,8 @@ mod test_residual {
         assert_ne!(out[[0, 0]], out[[1, 0]]);
     }
 
-    #[test]
+    #[cfg_attr(not(target_arch = "wasm32"), test)]
+    #[cfg_attr(target_arch = "wasm32", wasm_bindgen_test::wasm_bindgen_test)]
     fn rms_norm_heads_two_heads() {
         // 1 sequence position, 2 heads, head_dim=2
         let x = Array2::from_shape_vec((1, 4), vec![1.0, 2.0, 3.0, 4.0]).unwrap();
@@ -91,7 +99,8 @@ mod test_ffn {
         (out, activation)
     }
 
-    #[test]
+    #[cfg_attr(not(target_arch = "wasm32"), test)]
+    #[cfg_attr(target_arch = "wasm32", wasm_bindgen_test::wasm_bindgen_test)]
     fn silu_gate_up_elementwise() {
         let gate = Array2::from_shape_vec((1, 3), vec![0.0, 1.0, -1.0]).unwrap();
         let up = Array2::from_shape_vec((1, 3), vec![1.0, 1.0, 1.0]).unwrap();
@@ -101,7 +110,8 @@ mod test_ffn {
         assert!((out[[0, 2]] - (-0.2689)).abs() < 0.01);
     }
 
-    #[test]
+    #[cfg_attr(not(target_arch = "wasm32"), test)]
+    #[cfg_attr(target_arch = "wasm32", wasm_bindgen_test::wasm_bindgen_test)]
     fn ffn_forward_shapes() {
         let x = Array2::ones((2, 4));
         let w_gate = Array2::ones((3, 4)) * 0.1;
@@ -111,7 +121,8 @@ mod test_ffn {
         assert_eq!(out.shape(), &[2, 4]);
     }
 
-    #[test]
+    #[cfg_attr(not(target_arch = "wasm32"), test)]
+    #[cfg_attr(target_arch = "wasm32", wasm_bindgen_test::wasm_bindgen_test)]
     fn ffn_forward_with_activation_returns_both() {
         let x = Array2::ones((1, 4));
         let w_gate = Array2::ones((3, 4)) * 0.1;
@@ -127,14 +138,16 @@ mod test_attention {
     use larql_inference::attention::{apply_rope, gqa_attention};
     use ndarray::Array2;
 
-    #[test]
+    #[cfg_attr(not(target_arch = "wasm32"), test)]
+    #[cfg_attr(target_arch = "wasm32", wasm_bindgen_test::wasm_bindgen_test)]
     fn apply_rope_preserves_shape() {
         let x = Array2::ones((3, 8)); // seq=3, 2 heads * head_dim=4
         let out = apply_rope(&x, 2, 4, 10000.0);
         assert_eq!(out.shape(), &[3, 8]);
     }
 
-    #[test]
+    #[cfg_attr(not(target_arch = "wasm32"), test)]
+    #[cfg_attr(target_arch = "wasm32", wasm_bindgen_test::wasm_bindgen_test)]
     fn apply_rope_position_zero_is_identity() {
         // At position 0, cos(0)=1, sin(0)=0, so RoPE is identity
         let x = Array2::from_shape_vec((1, 4), vec![1.0, 2.0, 3.0, 4.0]).unwrap();
@@ -149,7 +162,8 @@ mod test_attention {
         }
     }
 
-    #[test]
+    #[cfg_attr(not(target_arch = "wasm32"), test)]
+    #[cfg_attr(target_arch = "wasm32", wasm_bindgen_test::wasm_bindgen_test)]
     fn apply_rope_different_positions_differ() {
         let mut x = Array2::ones((2, 4));
         x[[0, 0]] = 1.0;
@@ -159,7 +173,8 @@ mod test_attention {
         assert_ne!(out[[0, 0]], out[[1, 0]]);
     }
 
-    #[test]
+    #[cfg_attr(not(target_arch = "wasm32"), test)]
+    #[cfg_attr(target_arch = "wasm32", wasm_bindgen_test::wasm_bindgen_test)]
     fn gqa_attention_causal_mask() {
         // 2 tokens, 1 head, head_dim=2
         let q = Array2::from_shape_vec((2, 2), vec![1.0, 0.0, 0.0, 1.0]).unwrap();
@@ -171,7 +186,8 @@ mod test_attention {
         // Token 1 attends to both
     }
 
-    #[test]
+    #[cfg_attr(not(target_arch = "wasm32"), test)]
+    #[cfg_attr(target_arch = "wasm32", wasm_bindgen_test::wasm_bindgen_test)]
     fn gqa_attention_single_token() {
         let q = Array2::from_shape_vec((1, 4), vec![1.0, 0.0, 0.0, 1.0]).unwrap();
         let k = q.clone();
@@ -184,16 +200,19 @@ mod test_attention {
     }
 }
 
+#[cfg(not(target_arch = "wasm32"))]
 mod test_model_config {
     use larql_inference::model::load_model_dir;
 
-    #[test]
+    #[cfg_attr(not(target_arch = "wasm32"), test)]
+    #[cfg_attr(target_arch = "wasm32", wasm_bindgen_test::wasm_bindgen_test)]
     fn load_model_dir_rejects_nonexistent() {
         let result = load_model_dir("/nonexistent/model/path");
         assert!(result.is_err());
     }
 
-    #[test]
+    #[cfg_attr(not(target_arch = "wasm32"), test)]
+    #[cfg_attr(target_arch = "wasm32", wasm_bindgen_test::wasm_bindgen_test)]
     fn resolve_model_path_rejects_nonexistent() {
         let result = larql_inference::model::resolve_model_path("nonexistent/model");
         assert!(result.is_err());

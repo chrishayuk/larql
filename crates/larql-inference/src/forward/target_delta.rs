@@ -570,7 +570,7 @@ fn softmax_1d(logits: &Array1<f32>) -> Array1<f32> {
     exps.map(|&v| v / sum)
 }
 
-#[cfg(test)]
+#[cfg(all(test, not(target_arch = "wasm32")))]
 mod tests {
     use super::*;
     use crate::test_utils::make_test_weights;

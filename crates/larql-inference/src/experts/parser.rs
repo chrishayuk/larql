@@ -109,7 +109,7 @@ fn normalise(text: &str) -> String {
         .replace(SENTINEL, ",\"args\":")
 }
 
-#[cfg(test)]
+#[cfg(all(test, not(target_arch = "wasm32")))]
 mod tests {
     use super::*;
     use serde_json::json;

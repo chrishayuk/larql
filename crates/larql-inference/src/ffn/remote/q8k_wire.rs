@@ -204,7 +204,7 @@ pub fn encode_q8k_batch_response(entries: &[(usize, &[f32])]) -> Vec<u8> {
 
 // ── Tests ─────────────────────────────────────────────────────────────────────
 
-#[cfg(test)]
+#[cfg(all(test, not(target_arch = "wasm32")))]
 mod tests {
     use super::*;
     use larql_compute::cpu::ops::q4k_q8k_dot::quantize_x_to_q8k;

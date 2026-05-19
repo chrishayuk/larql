@@ -1,3 +1,5 @@
+#![cfg(not(target_arch = "wasm32"))]
+
 //! Per-stage divergence bisector: locates the *first* sub-stage of L0
 //! where Metal decode disagrees with CPU prefill.
 //!

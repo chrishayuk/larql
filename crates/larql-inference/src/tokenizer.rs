@@ -75,7 +75,7 @@ pub fn decode_token_raw(tokenizer: &tokenizers::Tokenizer, id: u32) -> String {
     format!("[{id}]")
 }
 
-#[cfg(test)]
+#[cfg(all(test, not(target_arch = "wasm32")))]
 mod tests {
     use super::*;
 

@@ -367,7 +367,7 @@ pub(super) fn extract_response_latency_ms(body: &[u8]) -> f64 {
 
 // ── Tests ─────────────────────────────────────────────────────────────────────
 
-#[cfg(test)]
+#[cfg(all(test, not(target_arch = "wasm32")))]
 mod tests {
     use super::*;
 

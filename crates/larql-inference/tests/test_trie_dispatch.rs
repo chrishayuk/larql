@@ -1,3 +1,5 @@
+#![cfg(not(target_arch = "wasm32"))]
+
 /// Trie-routed constrained dispatch test.
 ///
 /// Pipeline:

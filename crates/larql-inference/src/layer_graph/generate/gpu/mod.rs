@@ -540,7 +540,7 @@ fn diag_compare_cpu_topk(
     eprintln!("[compare] (run `larql walk --predict` (no --metal) for CPU reference tokens)");
 }
 
-#[cfg(test)]
+#[cfg(all(test, not(target_arch = "wasm32")))]
 mod tests {
     //! Tests that exercise the early-return guards reachable with
     //! `CpuBackend`. The full GPU path needs a Q4-supporting backend

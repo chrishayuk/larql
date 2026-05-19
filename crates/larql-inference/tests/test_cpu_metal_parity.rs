@@ -1,3 +1,5 @@
+#![cfg(not(target_arch = "wasm32"))]
+
 //! Per-layer CPU↔Metal prefill parity regression guard.
 //!
 //! Companion to the architecture golden tests (`test_arch_golden`) —

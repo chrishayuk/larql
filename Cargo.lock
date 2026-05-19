@@ -2138,6 +2138,7 @@ dependencies = [
  "tokenizers",
  "tokio",
  "tonic",
+ "wasm-bindgen-test",
  "wasmi",
  "wasmtime",
  "wasmtime-wasi",

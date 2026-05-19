@@ -1,3 +1,5 @@
+#![cfg(not(target_arch = "wasm32"))]
+
 //! Gemma 3 4B regression smoke test — first-token sanity check.
 //!
 //! Loads a vindex, encodes a fixed prompt, runs greedy single-token

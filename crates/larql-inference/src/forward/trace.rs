@@ -423,7 +423,7 @@ pub fn calibrate_scalar_gains(weights: &ModelWeights, token_ids: &[u32]) -> Vec<
     gains
 }
 
-#[cfg(test)]
+#[cfg(all(test, not(target_arch = "wasm32")))]
 mod tests {
     use super::*;
     use crate::model::ModelWeights;

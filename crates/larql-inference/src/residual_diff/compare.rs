@@ -191,7 +191,7 @@ fn layer_stat(layer: usize, a: &[f32], b: &[f32]) -> LayerStat {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, not(target_arch = "wasm32")))]
 mod tests {
     use super::super::capture::ResidualCapture;
     use super::*;

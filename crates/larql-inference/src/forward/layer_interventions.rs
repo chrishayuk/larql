@@ -259,7 +259,7 @@ pub fn run_layer_with_replaced_head_residual_delta(
     Some((h_out, kv_out))
 }
 
-#[cfg(test)]
+#[cfg(all(test, not(target_arch = "wasm32")))]
 mod tests {
     use super::*;
     use crate::ffn::WeightFfn;

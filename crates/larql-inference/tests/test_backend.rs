@@ -3,6 +3,9 @@
 //! Tests the backend at transformer-realistic dimensions:
 //! attention projections, QK^T, FFN up/down, and final logits.
 
+#[cfg(target_arch = "wasm32")]
+wasm_bindgen_test::wasm_bindgen_test_configure!(run_in_node_experimental);
+
 use larql_compute::CpuBackend;
 use larql_compute::{default_backend, MatMul, MatMulOp};
 use ndarray::Array2;
@@ -33,7 +36,8 @@ fn max_diff(a: &Array2<f32>, b: &Array2<f32>) -> f32 {
 mod attention_projections {
     use super::*;
 
-    #[test]
+    #[cfg_attr(not(target_arch = "wasm32"), test)]
+    #[cfg_attr(target_arch = "wasm32", wasm_bindgen_test::wasm_bindgen_test)]
     fn qkv_projection() {
         // h_norm @ W_q.T: [seq, hidden] x [hidden, num_heads*head_dim] → [seq, num_heads*head_dim]
         let backend = CpuBackend;
@@ -46,7 +50,8 @@ mod attention_projections {
         assert!(norm > 0.1, "Q projection produced near-zero output");
     }
 
-    #[test]
+    #[cfg_attr(not(target_arch = "wasm32"), test)]
+    #[cfg_attr(target_arch = "wasm32", wasm_bindgen_test::wasm_bindgen_test)]
     fn qk_transpose() {
         // Q @ K^T: [seq, head_dim] x [seq, head_dim] → [seq, seq]
         let backend = CpuBackend;
@@ -58,7 +63,8 @@ mod attention_projections {
         // Not guaranteed with random data, but shape is correct
     }
 
-    #[test]
+    #[cfg_attr(not(target_arch = "wasm32"), test)]
+    #[cfg_attr(target_arch = "wasm32", wasm_bindgen_test::wasm_bindgen_test)]
     fn scores_times_v() {
         // softmax(scores) @ V: [seq, seq] x [seq, head_dim] → [seq, head_dim]
         let backend = CpuBackend;
@@ -74,7 +80,8 @@ mod attention_projections {
         assert_eq!(context.shape(), &[6, 64]);
     }
 
-    #[test]
+    #[cfg_attr(not(target_arch = "wasm32"), test)]
+    #[cfg_attr(target_arch = "wasm32", wasm_bindgen_test::wasm_bindgen_test)]
     fn output_projection() {
         // attn_out @ W_o.T: [seq, num_heads*head_dim] x [num_heads*head_dim, hidden]
         let backend = CpuBackend;
@@ -84,7 +91,8 @@ mod attention_projections {
         assert_eq!(out.shape(), &[6, 256]);
     }
 
-    #[test]
+    #[cfg_attr(not(target_arch = "wasm32"), test)]
+    #[cfg_attr(target_arch = "wasm32", wasm_bindgen_test::wasm_bindgen_test)]
     fn all_heads_batched() {
         // Batch Q@K^T for all heads in a single dispatch
         let backend = default_backend();
@@ -120,7 +128,8 @@ mod attention_projections {
 mod ffn {
     use super::*;
 
-    #[test]
+    #[cfg_attr(not(target_arch = "wasm32"), test)]
+    #[cfg_attr(target_arch = "wasm32", wasm_bindgen_test::wasm_bindgen_test)]
     fn gate_projection() {
         // x @ W_gate.T: [seq, hidden] x [hidden, intermediate]
         let backend = CpuBackend;
@@ -130,7 +139,8 @@ mod ffn {
         assert_eq!(gate.shape(), &[6, 512]);
     }
 
-    #[test]
+    #[cfg_attr(not(target_arch = "wasm32"), test)]
+    #[cfg_attr(target_arch = "wasm32", wasm_bindgen_test::wasm_bindgen_test)]
     fn up_projection() {
         let backend = CpuBackend;
         let x = synth_matrix(6, 256, 302);
@@ -139,7 +149,8 @@ mod ffn {
         assert_eq!(up.shape(), &[6, 512]);
     }
 
-    #[test]
+    #[cfg_attr(not(target_arch = "wasm32"), test)]
+    #[cfg_attr(target_arch = "wasm32", wasm_bindgen_test::wasm_bindgen_test)]
     fn down_projection() {
         // activation @ W_down.T: [seq, intermediate] x [intermediate, hidden]
         let backend = CpuBackend;
@@ -153,7 +164,8 @@ mod ffn {
 mod logits {
     use super::*;
 
-    #[test]
+    #[cfg_attr(not(target_arch = "wasm32"), test)]
+    #[cfg_attr(target_arch = "wasm32", wasm_bindgen_test::wasm_bindgen_test)]
     fn final_projection() {
         // last_hidden @ lm_head.T: [1, hidden] x [hidden, vocab]
         let backend = CpuBackend;
@@ -167,7 +179,8 @@ mod logits {
 mod factory {
     use super::*;
 
-    #[test]
+    #[cfg_attr(not(target_arch = "wasm32"), test)]
+    #[cfg_attr(target_arch = "wasm32", wasm_bindgen_test::wasm_bindgen_test)]
     fn default_backend_is_functional() {
         let backend = default_backend();
         let a = synth_matrix(4, 8, 500);
@@ -176,7 +189,8 @@ mod factory {
         assert_eq!(c.shape(), &[4, 6]);
     }
 
-    #[test]
+    #[cfg_attr(not(target_arch = "wasm32"), test)]
+    #[cfg_attr(target_arch = "wasm32", wasm_bindgen_test::wasm_bindgen_test)]
     fn default_backend_transb_is_functional() {
         let backend = default_backend();
         let a = synth_matrix(4, 8, 502);
@@ -185,7 +199,8 @@ mod factory {
         assert_eq!(c.shape(), &[4, 6]);
     }
 
-    #[test]
+    #[cfg_attr(not(target_arch = "wasm32"), test)]
+    #[cfg_attr(target_arch = "wasm32", wasm_bindgen_test::wasm_bindgen_test)]
     fn cpu_and_default_agree() {
         let cpu = CpuBackend;
         let def = default_backend();
@@ -201,7 +216,8 @@ mod factory {
         );
     }
 
-    #[test]
+    #[cfg_attr(not(target_arch = "wasm32"), test)]
+    #[cfg_attr(target_arch = "wasm32", wasm_bindgen_test::wasm_bindgen_test)]
     fn cpu_and_default_transb_agree() {
         let cpu = CpuBackend;
         let def = default_backend();
@@ -223,7 +239,8 @@ mod metal_tests {
     use super::*;
     use larql_compute::MetalBackend;
 
-    #[test]
+    #[cfg_attr(not(target_arch = "wasm32"), test)]
+    #[cfg_attr(target_arch = "wasm32", wasm_bindgen_test::wasm_bindgen_test)]
     fn metal_device_available() {
         let backend = MetalBackend::new();
         assert!(
@@ -232,7 +249,8 @@ mod metal_tests {
         );
     }
 
-    #[test]
+    #[cfg_attr(not(target_arch = "wasm32"), test)]
+    #[cfg_attr(target_arch = "wasm32", wasm_bindgen_test::wasm_bindgen_test)]
     fn metal_matmul_matches_cpu() {
         let metal = MetalBackend::new().expect("Metal unavailable");
         let cpu = CpuBackend;
@@ -249,7 +267,8 @@ mod metal_tests {
         );
     }
 
-    #[test]
+    #[cfg_attr(not(target_arch = "wasm32"), test)]
+    #[cfg_attr(target_arch = "wasm32", wasm_bindgen_test::wasm_bindgen_test)]
     fn metal_transb_matches_cpu() {
         let metal = MetalBackend::new().expect("Metal unavailable");
         let cpu = CpuBackend;
@@ -266,7 +285,8 @@ mod metal_tests {
         );
     }
 
-    #[test]
+    #[cfg_attr(not(target_arch = "wasm32"), test)]
+    #[cfg_attr(target_arch = "wasm32", wasm_bindgen_test::wasm_bindgen_test)]
     fn metal_batch_matches_serial() {
         let metal = MetalBackend::new().expect("Metal unavailable");
 
@@ -288,7 +308,8 @@ mod metal_tests {
         }
     }
 
-    #[test]
+    #[cfg_attr(not(target_arch = "wasm32"), test)]
+    #[cfg_attr(target_arch = "wasm32", wasm_bindgen_test::wasm_bindgen_test)]
     fn metal_small_matrix_fallback() {
         // Matrices below GPU_MIN_DIM should fall back to CPU and still be correct.
         let metal = MetalBackend::new().expect("Metal unavailable");
@@ -304,7 +325,8 @@ mod metal_tests {
         );
     }
 
-    #[test]
+    #[cfg_attr(not(target_arch = "wasm32"), test)]
+    #[cfg_attr(target_arch = "wasm32", wasm_bindgen_test::wasm_bindgen_test)]
     fn metal_large_attention_scale() {
         // Full attention-scale: 10 heads, seq=24, head_dim=256
         let metal = MetalBackend::new().expect("Metal unavailable");

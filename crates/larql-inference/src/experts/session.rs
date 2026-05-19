@@ -236,7 +236,7 @@ impl<D: Dispatcher> ExpertSession<D> {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, not(target_arch = "wasm32")))]
 mod tests {
     use super::*;
     use std::path::PathBuf;
@@ -408,7 +408,7 @@ mod tests {
 /// Mock-backed tests — exercise [`ExpertSession`] without WASM. These run
 /// unconditionally on every `cargo test` so the session contract is covered
 /// even on machines that haven't built the larql-experts WASM modules.
-#[cfg(test)]
+#[cfg(all(test, not(target_arch = "wasm32")))]
 mod mock_tests {
     use super::*;
 

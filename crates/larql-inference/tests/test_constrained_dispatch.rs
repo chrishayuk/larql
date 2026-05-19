@@ -1,3 +1,5 @@
+#![cfg(not(target_arch = "wasm32"))]
+
 /// Constrained generation → expert dispatch test (Option 1 path).
 ///
 /// Uses `generate_cached_constrained` with a JSON op-grammar mask closure.

@@ -1,3 +1,5 @@
+#![cfg(not(target_arch = "wasm32"))]
+
 //! Integration test for `larql_inference::vindex::generate_q4k_cpu`.
 //!
 //! Loads a real Q4_K vindex and runs CPU autoregressive decode for a handful

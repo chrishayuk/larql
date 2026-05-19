@@ -1,3 +1,5 @@
+#![cfg(not(target_arch = "wasm32"))]
+
 //! Inference-side tests: model loader, forward pass, decoy residual capture.
 //!
 //! Uses the shared mock-model fixture from `larql-vindex` so we don't have

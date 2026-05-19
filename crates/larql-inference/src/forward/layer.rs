@@ -276,7 +276,7 @@ pub fn run_layer_with_capture_hooked(
     Some((h_out, activation, attn_weights, kv_out))
 }
 
-#[cfg(test)]
+#[cfg(all(test, not(target_arch = "wasm32")))]
 mod tests {
     use super::*;
     use crate::ffn::WeightFfn;

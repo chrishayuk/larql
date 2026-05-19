@@ -1,3 +1,5 @@
+#![cfg(not(target_arch = "wasm32"))]
+
 //! Decode-vs-prefill consistency: per-layer hidden states from
 //! `Metal prefill(N) + decode(1, 2, 4 …)` must match a fresh CPU
 //! prefill at the same effective sequence length.

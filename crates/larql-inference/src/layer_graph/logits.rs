@@ -89,7 +89,7 @@ pub(super) fn softmax_prob(
     ((target - max_l) as f64).exp() / exp_sum
 }
 
-#[cfg(test)]
+#[cfg(all(test, not(target_arch = "wasm32")))]
 mod tests {
     use super::*;
     use crate::test_utils::{make_test_tokenizer, make_test_vindex, make_test_weights};

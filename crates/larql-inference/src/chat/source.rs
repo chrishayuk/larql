@@ -135,7 +135,7 @@ pub(super) fn extract_chat_template_field(cfg: &Value) -> Option<String> {
     None
 }
 
-#[cfg(test)]
+#[cfg(all(test, not(target_arch = "wasm32")))]
 mod tests {
     use super::*;
 

@@ -133,7 +133,7 @@ fn cfg_string_field(cfg: &Value, key: &str) -> Option<String> {
         .map(|s| s.to_string())
 }
 
-#[cfg(test)]
+#[cfg(all(test, not(target_arch = "wasm32")))]
 mod tests {
     use super::*;
 

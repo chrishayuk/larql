@@ -1,3 +1,5 @@
+#![cfg(not(target_arch = "wasm32"))]
+
 // Quick latency benchmark: forward_to_layer vs generate_cached timing.
 // Opt in with:
 //   LARQL_MODEL=<path-or-hf-id> cargo test --test bench_probe_latency --release -- --nocapture

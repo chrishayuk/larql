@@ -273,7 +273,7 @@ const GEMMA4_FALLBACK_TEMPLATE: &str = "{{- bos_token -}}\
 {%- if not (enable_thinking | default(false)) -%}{{- '<|channel>thought\n<channel|>' -}}{%- endif -%}\
 {%- endif -%}";
 
-#[cfg(test)]
+#[cfg(all(test, not(target_arch = "wasm32")))]
 mod integration_tests {
     //! High-level tests that exercise the full `wrap_chat_prompt` pipeline
     //! across its three fallback layers. Module-local logic (JSON shape

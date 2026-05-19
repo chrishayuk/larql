@@ -5,6 +5,9 @@
 //! attention weight capture. Also tests against a naive reference
 //! implementation to verify numerical equivalence.
 
+#[cfg(target_arch = "wasm32")]
+wasm_bindgen_test::wasm_bindgen_test_configure!(run_in_node_experimental);
+
 use larql_inference::attention::{gqa_attention, gqa_attention_with_weights};
 use ndarray::Array2;
 
@@ -93,7 +96,8 @@ fn max_diff(a: &Array2<f32>, b: &Array2<f32>) -> f32 {
 mod basic {
     use super::*;
 
-    #[test]
+    #[cfg_attr(not(target_arch = "wasm32"), test)]
+    #[cfg_attr(target_arch = "wasm32", wasm_bindgen_test::wasm_bindgen_test)]
     fn single_token() {
         // Single token: attention weight = 1.0, output = V
         let q = Array2::from_shape_vec((1, 4), vec![1.0, 0.0, 0.0, 1.0]).unwrap();
@@ -109,7 +113,8 @@ mod basic {
         }
     }
 
-    #[test]
+    #[cfg_attr(not(target_arch = "wasm32"), test)]
+    #[cfg_attr(target_arch = "wasm32", wasm_bindgen_test::wasm_bindgen_test)]
     fn causal_mask_two_tokens() {
         // Token 0 only sees itself, token 1 sees both
         let q = Array2::from_shape_vec((2, 2), vec![1.0, 0.0, 0.0, 1.0]).unwrap();
@@ -122,7 +127,8 @@ mod basic {
         assert!((out[[0, 1]] - 0.0).abs() < 1e-4);
     }
 
-    #[test]
+    #[cfg_attr(not(target_arch = "wasm32"), test)]
+    #[cfg_attr(target_arch = "wasm32", wasm_bindgen_test::wasm_bindgen_test)]
     fn output_shape() {
         let seq = 5;
         let head_dim = 8;
@@ -143,7 +149,8 @@ mod basic {
         assert_eq!(out.shape(), &[seq, num_heads * head_dim]);
     }
 
-    #[test]
+    #[cfg_attr(not(target_arch = "wasm32"), test)]
+    #[cfg_attr(target_arch = "wasm32", wasm_bindgen_test::wasm_bindgen_test)]
     fn uniform_attention_averages_v() {
         // When all Q·K scores are equal, attention averages V rows
         let seq = 3;
@@ -174,7 +181,8 @@ mod basic {
 mod reference_agreement {
     use super::*;
 
-    #[test]
+    #[cfg_attr(not(target_arch = "wasm32"), test)]
+    #[cfg_attr(target_arch = "wasm32", wasm_bindgen_test::wasm_bindgen_test)]
     fn single_head_small() {
         let seq = 4;
         let head_dim = 8;
@@ -190,7 +198,8 @@ mod reference_agreement {
         assert!(diff < 1e-5, "single head diff = {diff}");
     }
 
-    #[test]
+    #[cfg_attr(not(target_arch = "wasm32"), test)]
+    #[cfg_attr(target_arch = "wasm32", wasm_bindgen_test::wasm_bindgen_test)]
     fn multi_head() {
         let seq = 6;
         let head_dim = 16;
@@ -207,7 +216,8 @@ mod reference_agreement {
         assert!(diff < 1e-4, "multi-head diff = {diff}");
     }
 
-    #[test]
+    #[cfg_attr(not(target_arch = "wasm32"), test)]
+    #[cfg_attr(target_arch = "wasm32", wasm_bindgen_test::wasm_bindgen_test)]
     fn gqa_2x_ratio() {
         // 4 Q heads sharing 2 KV heads (reps=2)
         let seq = 6;
@@ -227,7 +237,8 @@ mod reference_agreement {
         assert!(diff < 1e-4, "GQA 2x diff = {diff}");
     }
 
-    #[test]
+    #[cfg_attr(not(target_arch = "wasm32"), test)]
+    #[cfg_attr(target_arch = "wasm32", wasm_bindgen_test::wasm_bindgen_test)]
     fn gqa_gemma3_dimensions() {
         // Gemma-3 4B: 10 Q heads, 2 KV heads, head_dim=256, reps=5
         let seq = 6;
@@ -247,7 +258,8 @@ mod reference_agreement {
         assert!(diff < 1e-4, "Gemma3-like GQA diff = {diff}");
     }
 
-    #[test]
+    #[cfg_attr(not(target_arch = "wasm32"), test)]
+    #[cfg_attr(target_arch = "wasm32", wasm_bindgen_test::wasm_bindgen_test)]
     fn with_softcap() {
         let seq = 4;
         let head_dim = 8;
@@ -265,7 +277,8 @@ mod reference_agreement {
         assert!(diff < 1e-5, "softcap diff = {diff}");
     }
 
-    #[test]
+    #[cfg_attr(not(target_arch = "wasm32"), test)]
+    #[cfg_attr(target_arch = "wasm32", wasm_bindgen_test::wasm_bindgen_test)]
     fn longer_sequence() {
         let seq = 24;
         let head_dim = 16;
@@ -288,7 +301,8 @@ mod reference_agreement {
 mod capture {
     use super::*;
 
-    #[test]
+    #[cfg_attr(not(target_arch = "wasm32"), test)]
+    #[cfg_attr(target_arch = "wasm32", wasm_bindgen_test::wasm_bindgen_test)]
     fn capture_returns_weights() {
         let seq = 4;
         let head_dim = 8;
@@ -308,7 +322,8 @@ mod capture {
         }
     }
 
-    #[test]
+    #[cfg_attr(not(target_arch = "wasm32"), test)]
+    #[cfg_attr(target_arch = "wasm32", wasm_bindgen_test::wasm_bindgen_test)]
     fn captured_weights_sum_to_one() {
         let seq = 6;
         let head_dim = 8;
@@ -328,7 +343,8 @@ mod capture {
         );
     }
 
-    #[test]
+    #[cfg_attr(not(target_arch = "wasm32"), test)]
+    #[cfg_attr(target_arch = "wasm32", wasm_bindgen_test::wasm_bindgen_test)]
     fn captured_weights_causal() {
         // Last token's weights: positions > last_pos should be 0
         let seq = 4;
@@ -347,7 +363,8 @@ mod capture {
         }
     }
 
-    #[test]
+    #[cfg_attr(not(target_arch = "wasm32"), test)]
+    #[cfg_attr(target_arch = "wasm32", wasm_bindgen_test::wasm_bindgen_test)]
     fn no_capture_returns_none() {
         let q = synth_matrix(3, 4, 100);
         let k = synth_matrix(3, 4, 101);
@@ -357,7 +374,8 @@ mod capture {
         assert!(weights.is_none());
     }
 
-    #[test]
+    #[cfg_attr(not(target_arch = "wasm32"), test)]
+    #[cfg_attr(target_arch = "wasm32", wasm_bindgen_test::wasm_bindgen_test)]
     fn capture_does_not_change_output() {
         let seq = 4;
         let head_dim = 8;
@@ -381,7 +399,8 @@ mod capture {
 mod edge_cases {
     use super::*;
 
-    #[test]
+    #[cfg_attr(not(target_arch = "wasm32"), test)]
+    #[cfg_attr(target_arch = "wasm32", wasm_bindgen_test::wasm_bindgen_test)]
     fn single_token_single_dim() {
         let q = Array2::from_shape_vec((1, 1), vec![1.0]).unwrap();
         let k = Array2::from_shape_vec((1, 1), vec![1.0]).unwrap();
@@ -390,7 +409,8 @@ mod edge_cases {
         assert!((out[[0, 0]] - 3.0).abs() < 1e-5);
     }
 
-    #[test]
+    #[cfg_attr(not(target_arch = "wasm32"), test)]
+    #[cfg_attr(target_arch = "wasm32", wasm_bindgen_test::wasm_bindgen_test)]
     fn large_head_dim() {
         let seq = 3;
         let head_dim = 256; // Gemma-3 head_dim
@@ -406,7 +426,8 @@ mod edge_cases {
         assert!(diff < 1e-4, "large head_dim diff = {diff}");
     }
 
-    #[test]
+    #[cfg_attr(not(target_arch = "wasm32"), test)]
+    #[cfg_attr(target_arch = "wasm32", wasm_bindgen_test::wasm_bindgen_test)]
     fn custom_scale() {
         // Granite-style: custom attention_multiplier instead of 1/sqrt(head_dim)
         let seq = 3;
@@ -423,7 +444,8 @@ mod edge_cases {
         assert!(diff < 1e-5, "custom scale diff = {diff}");
     }
 
-    #[test]
+    #[cfg_attr(not(target_arch = "wasm32"), test)]
+    #[cfg_attr(target_arch = "wasm32", wasm_bindgen_test::wasm_bindgen_test)]
     fn large_head_dim_512() {
         // Gemma 4 global attention: head_dim=512
         let seq = 3;
@@ -447,7 +469,8 @@ mod rope_tests {
     use larql_inference::attention::{apply_rope, apply_rope_partial};
     use ndarray::Array2;
 
-    #[test]
+    #[cfg_attr(not(target_arch = "wasm32"), test)]
+    #[cfg_attr(target_arch = "wasm32", wasm_bindgen_test::wasm_bindgen_test)]
     fn partial_rope_fraction_1_matches_full() {
         // apply_rope_partial with fraction=1.0 should match apply_rope exactly
         let seq = 4;
@@ -473,7 +496,8 @@ mod rope_tests {
         }
     }
 
-    #[test]
+    #[cfg_attr(not(target_arch = "wasm32"), test)]
+    #[cfg_attr(target_arch = "wasm32", wasm_bindgen_test::wasm_bindgen_test)]
     fn partial_rope_preserves_non_rotated_dims() {
         // With fraction=0.25 (Gemma 4 style), dims beyond rotary_dim should be unchanged
         let seq = 4;
@@ -502,7 +526,8 @@ mod rope_tests {
         }
     }
 
-    #[test]
+    #[cfg_attr(not(target_arch = "wasm32"), test)]
+    #[cfg_attr(target_arch = "wasm32", wasm_bindgen_test::wasm_bindgen_test)]
     fn partial_rope_rotates_correct_dims() {
         // Rotated dims should differ from input (at pos > 0)
         let seq = 4;
@@ -534,7 +559,8 @@ mod rope_tests {
         assert!(any_changed, "no dims were rotated at pos=1");
     }
 
-    #[test]
+    #[cfg_attr(not(target_arch = "wasm32"), test)]
+    #[cfg_attr(target_arch = "wasm32", wasm_bindgen_test::wasm_bindgen_test)]
     fn partial_rope_multi_head() {
         // Verify per-head rotation works correctly with partial RoPE
         let seq = 2;

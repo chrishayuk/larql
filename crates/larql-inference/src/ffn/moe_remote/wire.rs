@@ -381,7 +381,7 @@ pub struct ExpertResultItem {
     pub output: Vec<f32>,
 }
 
-#[cfg(test)]
+#[cfg(all(test, not(target_arch = "wasm32")))]
 mod tests {
     use super::*;
 
