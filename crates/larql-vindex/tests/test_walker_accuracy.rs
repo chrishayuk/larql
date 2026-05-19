@@ -90,12 +90,11 @@ fn canonicalise_edges(graph: &Graph, layer_field: &str, feature_field: &str) -> 
 //     test_walker_accuracy -- --nocapture
 // then paste the printed hex string below.
 //
-// Regenerated 2026-05-10: the canonicalisation strips the `_header`
-// record so the wall-clock `extraction_date` field doesn't make the
-// golden drift every day.
+// Regenerated 2026-05-18: hash updated after remote-feature gating changed
+// the canonicalised JSONL output for ffn_down layer 0.
 #[cfg(not(windows))]
 const GOLDEN_VECTOR_EXTRACTOR_FFN_DOWN_LAYER0: &str =
-    "8b5e221b150147ed40b0cfa67fdfc264e0628ab6cd6c59c2f9419e9350589b83";
+    "335834421944ae287be29d8034ffb5cd8c57a5a79c1c79b2fe753afaa90bf37e";
 
 #[cfg(not(windows))]
 fn check_or_print(label: &str, actual: &str, golden: &str) {

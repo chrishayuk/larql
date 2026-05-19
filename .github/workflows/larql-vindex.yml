@@ -216,5 +216,5 @@ jobs:
       - name: Coverage policy
         run: |
           mkdir -p coverage/larql-vindex
-          cargo llvm-cov report --package larql-vindex --features remote --json --summary-only --output-path coverage/larql-vindex/summary.json
+          cargo llvm-cov report --package larql-vindex --json --summary-only --output-path coverage/larql-vindex/summary.json
           python3 scripts/check_coverage_policy.py coverage/larql-vindex/summary.json crates/larql-vindex/coverage-policy.json
