@@ -14,7 +14,6 @@
 //! quantisation noise but tight enough that a real codec break trips
 //! the assertion.
 
-
 #[cfg(target_arch = "wasm32")]
 use wasm_bindgen_test::wasm_bindgen_test;
 #[cfg(target_arch = "wasm32")]

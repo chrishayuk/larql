@@ -652,7 +652,7 @@ mod tests {
     // ── Basic tokenisation ──
 
     #[cfg_attr(not(target_arch = "wasm32"), test)]
-#[cfg_attr(target_arch = "wasm32", wasm_bindgen_test)]
+    #[cfg_attr(target_arch = "wasm32", wasm_bindgen_test)]
     fn walk_simple() {
         let mut lex = Lexer::new(r#"WALK "The capital of France is" TOP 5;"#);
         let tokens = lex.tokenise().unwrap();
@@ -664,7 +664,7 @@ mod tests {
     }
 
     #[cfg_attr(not(target_arch = "wasm32"), test)]
-#[cfg_attr(target_arch = "wasm32", wasm_bindgen_test)]
+    #[cfg_attr(target_arch = "wasm32", wasm_bindgen_test)]
     fn use_vindex() {
         let mut lex = Lexer::new(r#"USE "gemma3-4b.vindex";"#);
         let tokens = lex.tokenise().unwrap();
@@ -673,7 +673,7 @@ mod tests {
     }
 
     #[cfg_attr(not(target_arch = "wasm32"), test)]
-#[cfg_attr(target_arch = "wasm32", wasm_bindgen_test)]
+    #[cfg_attr(target_arch = "wasm32", wasm_bindgen_test)]
     fn select_with_conditions() {
         let mut lex =
             Lexer::new(r#"SELECT entity, relation FROM EDGES WHERE entity = "France" LIMIT 10;"#);
@@ -687,7 +687,7 @@ mod tests {
     // ── Comments ──
 
     #[cfg_attr(not(target_arch = "wasm32"), test)]
-#[cfg_attr(target_arch = "wasm32", wasm_bindgen_test)]
+    #[cfg_attr(target_arch = "wasm32", wasm_bindgen_test)]
     fn comment_skipping() {
         let mut lex = Lexer::new("-- this is a comment\nSTATS;");
         let tokens = lex.tokenise().unwrap();
@@ -695,7 +695,7 @@ mod tests {
     }
 
     #[cfg_attr(not(target_arch = "wasm32"), test)]
-#[cfg_attr(target_arch = "wasm32", wasm_bindgen_test)]
+    #[cfg_attr(target_arch = "wasm32", wasm_bindgen_test)]
     fn multiple_comments() {
         let input = "-- first comment\n-- second comment\nSTATS;\n-- trailing";
         let mut lex = Lexer::new(input);
@@ -706,7 +706,7 @@ mod tests {
     }
 
     #[cfg_attr(not(target_arch = "wasm32"), test)]
-#[cfg_attr(target_arch = "wasm32", wasm_bindgen_test)]
+    #[cfg_attr(target_arch = "wasm32", wasm_bindgen_test)]
     fn inline_comment_after_statement() {
         let mut lex = Lexer::new("STATS; -- inline comment");
         let tokens = lex.tokenise().unwrap();
@@ -716,7 +716,7 @@ mod tests {
     // ── Numbers ──
 
     #[cfg_attr(not(target_arch = "wasm32"), test)]
-#[cfg_attr(target_arch = "wasm32", wasm_bindgen_test)]
+    #[cfg_attr(target_arch = "wasm32", wasm_bindgen_test)]
     fn integer_literal() {
         let mut lex = Lexer::new("42");
         let tokens = lex.tokenise().unwrap();
@@ -724,7 +724,7 @@ mod tests {
     }
 
     #[cfg_attr(not(target_arch = "wasm32"), test)]
-#[cfg_attr(target_arch = "wasm32", wasm_bindgen_test)]
+    #[cfg_attr(target_arch = "wasm32", wasm_bindgen_test)]
     fn float_literal() {
         let mut lex = Lexer::new("0.89");
         let tokens = lex.tokenise().unwrap();
@@ -732,7 +732,7 @@ mod tests {
     }
 
     #[cfg_attr(not(target_arch = "wasm32"), test)]
-#[cfg_attr(target_arch = "wasm32", wasm_bindgen_test)]
+    #[cfg_attr(target_arch = "wasm32", wasm_bindgen_test)]
     fn negative_number_is_dash_plus_int() {
         let mut lex = Lexer::new("-5");
         let tokens = lex.tokenise().unwrap();
@@ -741,7 +741,7 @@ mod tests {
     }
 
     #[cfg_attr(not(target_arch = "wasm32"), test)]
-#[cfg_attr(target_arch = "wasm32", wasm_bindgen_test)]
+    #[cfg_attr(target_arch = "wasm32", wasm_bindgen_test)]
     fn range_with_dash() {
         let mut lex = Lexer::new("0-33");
         let tokens = lex.tokenise().unwrap();
@@ -753,7 +753,7 @@ mod tests {
     // ── Strings ──
 
     #[cfg_attr(not(target_arch = "wasm32"), test)]
-#[cfg_attr(target_arch = "wasm32", wasm_bindgen_test)]
+    #[cfg_attr(target_arch = "wasm32", wasm_bindgen_test)]
     fn double_quoted_string() {
         let mut lex = Lexer::new(r#""hello world""#);
         let tokens = lex.tokenise().unwrap();
@@ -761,7 +761,7 @@ mod tests {
     }
 
     #[cfg_attr(not(target_arch = "wasm32"), test)]
-#[cfg_attr(target_arch = "wasm32", wasm_bindgen_test)]
+    #[cfg_attr(target_arch = "wasm32", wasm_bindgen_test)]
     fn single_quoted_string() {
         let mut lex = Lexer::new("'hello world'");
         let tokens = lex.tokenise().unwrap();
@@ -769,7 +769,7 @@ mod tests {
     }
 
     #[cfg_attr(not(target_arch = "wasm32"), test)]
-#[cfg_attr(target_arch = "wasm32", wasm_bindgen_test)]
+    #[cfg_attr(target_arch = "wasm32", wasm_bindgen_test)]
     fn string_with_escaped_quote_decodes() {
         let mut lex = Lexer::new(r#""hello \"world\"""#);
         let tokens = lex.tokenise().unwrap();
@@ -777,7 +777,7 @@ mod tests {
     }
 
     #[cfg_attr(not(target_arch = "wasm32"), test)]
-#[cfg_attr(target_arch = "wasm32", wasm_bindgen_test)]
+    #[cfg_attr(target_arch = "wasm32", wasm_bindgen_test)]
     fn string_with_escaped_backslash_decodes() {
         let mut lex = Lexer::new(r#""C:\\path""#);
         let tokens = lex.tokenise().unwrap();
@@ -785,7 +785,7 @@ mod tests {
     }
 
     #[cfg_attr(not(target_arch = "wasm32"), test)]
-#[cfg_attr(target_arch = "wasm32", wasm_bindgen_test)]
+    #[cfg_attr(target_arch = "wasm32", wasm_bindgen_test)]
     fn string_with_control_escapes_decodes() {
         let mut lex = Lexer::new(r#""a\nb\tc\rd\0e""#);
         let tokens = lex.tokenise().unwrap();
@@ -793,7 +793,7 @@ mod tests {
     }
 
     #[cfg_attr(not(target_arch = "wasm32"), test)]
-#[cfg_attr(target_arch = "wasm32", wasm_bindgen_test)]
+    #[cfg_attr(target_arch = "wasm32", wasm_bindgen_test)]
     fn single_quoted_string_with_escape() {
         let mut lex = Lexer::new(r"'it\'s'");
         let tokens = lex.tokenise().unwrap();
@@ -801,7 +801,7 @@ mod tests {
     }
 
     #[cfg_attr(not(target_arch = "wasm32"), test)]
-#[cfg_attr(target_arch = "wasm32", wasm_bindgen_test)]
+    #[cfg_attr(target_arch = "wasm32", wasm_bindgen_test)]
     fn unknown_escape_passes_through() {
         let mut lex = Lexer::new(r#""\x""#);
         let tokens = lex.tokenise().unwrap();
@@ -809,14 +809,14 @@ mod tests {
     }
 
     #[cfg_attr(not(target_arch = "wasm32"), test)]
-#[cfg_attr(target_arch = "wasm32", wasm_bindgen_test)]
+    #[cfg_attr(target_arch = "wasm32", wasm_bindgen_test)]
     fn unterminated_string_after_backslash() {
         let mut lex = Lexer::new(r#""abc\"#);
         assert!(lex.tokenise().is_err());
     }
 
     #[cfg_attr(not(target_arch = "wasm32"), test)]
-#[cfg_attr(target_arch = "wasm32", wasm_bindgen_test)]
+    #[cfg_attr(target_arch = "wasm32", wasm_bindgen_test)]
     fn keyword_as_field_name_covers_compact_and_status() {
         // Regression: prior implementation routed Compact / Status through an
         // `unreachable!()` and panicked when they appeared as identifiers in
@@ -826,14 +826,14 @@ mod tests {
     }
 
     #[cfg_attr(not(target_arch = "wasm32"), test)]
-#[cfg_attr(target_arch = "wasm32", wasm_bindgen_test)]
+    #[cfg_attr(target_arch = "wasm32", wasm_bindgen_test)]
     fn unterminated_string_error() {
         let mut lex = Lexer::new(r#""unterminated"#);
         assert!(lex.tokenise().is_err());
     }
 
     #[cfg_attr(not(target_arch = "wasm32"), test)]
-#[cfg_attr(target_arch = "wasm32", wasm_bindgen_test)]
+    #[cfg_attr(target_arch = "wasm32", wasm_bindgen_test)]
     fn empty_string() {
         let mut lex = Lexer::new(r#""""#);
         let tokens = lex.tokenise().unwrap();
@@ -843,7 +843,7 @@ mod tests {
     // ── Operators ──
 
     #[cfg_attr(not(target_arch = "wasm32"), test)]
-#[cfg_attr(target_arch = "wasm32", wasm_bindgen_test)]
+    #[cfg_attr(target_arch = "wasm32", wasm_bindgen_test)]
     fn comparison_operators() {
         let mut lex = Lexer::new("= != > < >= <=");
         let tokens = lex.tokenise().unwrap();
@@ -856,7 +856,7 @@ mod tests {
     }
 
     #[cfg_attr(not(target_arch = "wasm32"), test)]
-#[cfg_attr(target_arch = "wasm32", wasm_bindgen_test)]
+    #[cfg_attr(target_arch = "wasm32", wasm_bindgen_test)]
     fn pipe_operator() {
         let mut lex = Lexer::new("|>");
         let tokens = lex.tokenise().unwrap();
@@ -864,7 +864,7 @@ mod tests {
     }
 
     #[cfg_attr(not(target_arch = "wasm32"), test)]
-#[cfg_attr(target_arch = "wasm32", wasm_bindgen_test)]
+    #[cfg_attr(target_arch = "wasm32", wasm_bindgen_test)]
     fn all_punctuation() {
         let mut lex = Lexer::new("* , ; ( ) .");
         let tokens = lex.tokenise().unwrap();
@@ -879,7 +879,7 @@ mod tests {
     // ── Keywords ──
 
     #[cfg_attr(not(target_arch = "wasm32"), test)]
-#[cfg_attr(target_arch = "wasm32", wasm_bindgen_test)]
+    #[cfg_attr(target_arch = "wasm32", wasm_bindgen_test)]
     fn case_insensitive_keywords() {
         let mut lex = Lexer::new("walk WALK Walk wAlK");
         let tokens = lex.tokenise().unwrap();
@@ -892,7 +892,7 @@ mod tests {
     }
 
     #[cfg_attr(not(target_arch = "wasm32"), test)]
-#[cfg_attr(target_arch = "wasm32", wasm_bindgen_test)]
+    #[cfg_attr(target_arch = "wasm32", wasm_bindgen_test)]
     fn all_lifecycle_keywords() {
         let mut lex = Lexer::new("EXTRACT COMPILE DIFF USE");
         let tokens = lex.tokenise().unwrap();
@@ -903,7 +903,7 @@ mod tests {
     }
 
     #[cfg_attr(not(target_arch = "wasm32"), test)]
-#[cfg_attr(target_arch = "wasm32", wasm_bindgen_test)]
+    #[cfg_attr(target_arch = "wasm32", wasm_bindgen_test)]
     fn all_query_keywords() {
         let mut lex = Lexer::new("WALK SELECT DESCRIBE EXPLAIN");
         let tokens = lex.tokenise().unwrap();
@@ -914,7 +914,7 @@ mod tests {
     }
 
     #[cfg_attr(not(target_arch = "wasm32"), test)]
-#[cfg_attr(target_arch = "wasm32", wasm_bindgen_test)]
+    #[cfg_attr(target_arch = "wasm32", wasm_bindgen_test)]
     fn all_mutation_keywords() {
         let mut lex = Lexer::new("INSERT DELETE UPDATE MERGE");
         let tokens = lex.tokenise().unwrap();
@@ -925,7 +925,7 @@ mod tests {
     }
 
     #[cfg_attr(not(target_arch = "wasm32"), test)]
-#[cfg_attr(target_arch = "wasm32", wasm_bindgen_test)]
+    #[cfg_attr(target_arch = "wasm32", wasm_bindgen_test)]
     fn component_keywords() {
         let mut lex = Lexer::new("FFN_GATE FFN_DOWN FFN_UP EMBEDDINGS ATTN_OV ATTN_QK");
         let tokens = lex.tokenise().unwrap();
@@ -938,7 +938,7 @@ mod tests {
     }
 
     #[cfg_attr(not(target_arch = "wasm32"), test)]
-#[cfg_attr(target_arch = "wasm32", wasm_bindgen_test)]
+    #[cfg_attr(target_arch = "wasm32", wasm_bindgen_test)]
     fn mode_keywords() {
         let mut lex = Lexer::new("HYBRID PURE DENSE");
         let tokens = lex.tokenise().unwrap();
@@ -948,7 +948,7 @@ mod tests {
     }
 
     #[cfg_attr(not(target_arch = "wasm32"), test)]
-#[cfg_attr(target_arch = "wasm32", wasm_bindgen_test)]
+    #[cfg_attr(target_arch = "wasm32", wasm_bindgen_test)]
     fn conflict_strategy_keywords() {
         let mut lex = Lexer::new("KEEP_SOURCE KEEP_TARGET HIGHEST_CONFIDENCE");
         let tokens = lex.tokenise().unwrap();
@@ -961,7 +961,7 @@ mod tests {
     }
 
     #[cfg_attr(not(target_arch = "wasm32"), test)]
-#[cfg_attr(target_arch = "wasm32", wasm_bindgen_test)]
+    #[cfg_attr(target_arch = "wasm32", wasm_bindgen_test)]
     fn format_keywords() {
         let mut lex = Lexer::new("SAFETENSORS GGUF");
         let tokens = lex.tokenise().unwrap();
@@ -972,7 +972,7 @@ mod tests {
     // ── Identifiers ──
 
     #[cfg_attr(not(target_arch = "wasm32"), test)]
-#[cfg_attr(target_arch = "wasm32", wasm_bindgen_test)]
+    #[cfg_attr(target_arch = "wasm32", wasm_bindgen_test)]
     fn unknown_word_is_ident() {
         let mut lex = Lexer::new("my_column foobar");
         let tokens = lex.tokenise().unwrap();
@@ -983,21 +983,21 @@ mod tests {
     // ── Error cases ──
 
     #[cfg_attr(not(target_arch = "wasm32"), test)]
-#[cfg_attr(target_arch = "wasm32", wasm_bindgen_test)]
+    #[cfg_attr(target_arch = "wasm32", wasm_bindgen_test)]
     fn unexpected_character_error() {
         let mut lex = Lexer::new("@");
         assert!(lex.tokenise().is_err());
     }
 
     #[cfg_attr(not(target_arch = "wasm32"), test)]
-#[cfg_attr(target_arch = "wasm32", wasm_bindgen_test)]
+    #[cfg_attr(target_arch = "wasm32", wasm_bindgen_test)]
     fn incomplete_pipe_error() {
         let mut lex = Lexer::new("|x");
         assert!(lex.tokenise().is_err());
     }
 
     #[cfg_attr(not(target_arch = "wasm32"), test)]
-#[cfg_attr(target_arch = "wasm32", wasm_bindgen_test)]
+    #[cfg_attr(target_arch = "wasm32", wasm_bindgen_test)]
     fn incomplete_bang_error() {
         let mut lex = Lexer::new("!x");
         assert!(lex.tokenise().is_err());
@@ -1006,7 +1006,7 @@ mod tests {
     // ── Empty / whitespace ──
 
     #[cfg_attr(not(target_arch = "wasm32"), test)]
-#[cfg_attr(target_arch = "wasm32", wasm_bindgen_test)]
+    #[cfg_attr(target_arch = "wasm32", wasm_bindgen_test)]
     fn empty_input() {
         let mut lex = Lexer::new("");
         let tokens = lex.tokenise().unwrap();
@@ -1015,7 +1015,7 @@ mod tests {
     }
 
     #[cfg_attr(not(target_arch = "wasm32"), test)]
-#[cfg_attr(target_arch = "wasm32", wasm_bindgen_test)]
+    #[cfg_attr(target_arch = "wasm32", wasm_bindgen_test)]
     fn whitespace_only() {
         let mut lex = Lexer::new("   \n\t  \n  ");
         let tokens = lex.tokenise().unwrap();
@@ -1026,7 +1026,7 @@ mod tests {
     // ── Full statement tokenisation ──
 
     #[cfg_attr(not(target_arch = "wasm32"), test)]
-#[cfg_attr(target_arch = "wasm32", wasm_bindgen_test)]
+    #[cfg_attr(target_arch = "wasm32", wasm_bindgen_test)]
     fn extract_statement_tokens() {
         let input = r#"EXTRACT MODEL "google/gemma-3-4b-it" INTO "out.vindex" COMPONENTS FFN_GATE, FFN_DOWN LAYERS 0-33;"#;
         let mut lex = Lexer::new(input);
@@ -1037,7 +1037,7 @@ mod tests {
     }
 
     #[cfg_attr(not(target_arch = "wasm32"), test)]
-#[cfg_attr(target_arch = "wasm32", wasm_bindgen_test)]
+    #[cfg_attr(target_arch = "wasm32", wasm_bindgen_test)]
     fn insert_statement_tokens() {
         let input = r#"INSERT INTO EDGES (entity, relation, target) VALUES ("John", "lives-in", "London");"#;
         let mut lex = Lexer::new(input);
@@ -1049,7 +1049,7 @@ mod tests {
     }
 
     #[cfg_attr(not(target_arch = "wasm32"), test)]
-#[cfg_attr(target_arch = "wasm32", wasm_bindgen_test)]
+    #[cfg_attr(target_arch = "wasm32", wasm_bindgen_test)]
     fn multiline_statement_tokens() {
         let input = "SELECT *\n  FROM EDGES\n  WHERE layer = 26\n  LIMIT 5;";
         let mut lex = Lexer::new(input);
