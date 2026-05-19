@@ -139,6 +139,14 @@ required-features = ["metal"]
 name = "test_q4_accuracy"
 required-features = ["metal"]
 
+[[example]]
+name = "remote_walk_parity"
+required-features = ["metal"]
+
+[[example]]
+name = "q4k_remote_parity"
+required-features = ["metal"]
+
 [dev-dependencies]
 assert_approx_eq = "1"
 tempfile = "3"
