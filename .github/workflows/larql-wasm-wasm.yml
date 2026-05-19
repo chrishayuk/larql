@@ -1,0 +1,100 @@
+# larql-wasm WASM CI
+#
+# larql-wasm IS the browser/Node.js WASM binding crate. All tests are tagged
+# #[wasm_bindgen_test] and configured for Node.js via
+# wasm_bindgen_test_configure!(run_in_node_experimental).
+#
+# Serial tests run under stable Rust.
+# Parallel tests require nightly + atomics target features (SharedArrayBuffer).
+# No Firefox step: both test suites use run_in_node_experimental.
+
+name: larql-wasm-wasm
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'crates/larql-wasm/**'
+      - 'crates/larql-core/**'
+      - 'Cargo.toml'
+      - 'Cargo.lock'
+      - '.github/workflows/larql-wasm-wasm.yml'
+  pull_request:
+    types: [opened, synchronize, reopened, ready_for_review]
+    branches: [main]
+    paths:
+      - 'crates/larql-wasm/**'
+      - 'crates/larql-core/**'
+      - 'Cargo.toml'
+      - 'Cargo.lock'
+      - '.github/workflows/larql-wasm-wasm.yml'
+  workflow_dispatch: {}
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name != 'workflow_dispatch' }}
+
+jobs:
+  test:
+    name: wasm · ${{ matrix.mode.name }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    permissions:
+      contents: read
+
+    strategy:
+      fail-fast: false
+      matrix:
+        mode:
+          - name: serial
+            toolchain: stable
+            rustflags: ''
+            features: ''
+          - name: parallel
+            toolchain: nightly
+            rustflags: '-C target-feature=+atomics,+bulk-memory,+mutable-globals'
+            features: '--features parallel'
+
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Install Rust (${{ matrix.mode.toolchain }}) + wasm32 target
+        uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: ${{ matrix.mode.toolchain }}
+          targets: wasm32-unknown-unknown
+          components: clippy, rustfmt
+
+      - name: Install wasm-pack
+        uses: taiki-e/install-action@v2
+        with:
+          tool: wasm-pack
+
+      - name: Cache cargo registry + build artefacts
+        uses: actions/cache@v5
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: ${{ runner.os }}-wasm32-cargo-larql-wasm-${{ matrix.mode.name }}-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-wasm32-cargo-larql-wasm-${{ matrix.mode.name }}-
+
+      - name: Format check
+        run: cargo fmt -p larql-wasm -- --check
+
+      - name: Check
+        env:
+          RUSTFLAGS: ${{ matrix.mode.rustflags }}
+        run: cargo check -p larql-wasm --target wasm32-unknown-unknown ${{ matrix.mode.features }}
+
+      - name: Clippy
+        env:
+          RUSTFLAGS: ${{ matrix.mode.rustflags }}
+        run: cargo clippy -p larql-wasm --target wasm32-unknown-unknown ${{ matrix.mode.features }} -- -D warnings
+
+      - name: wasm-pack test · node
+        env:
+          RUSTFLAGS: ${{ matrix.mode.rustflags }}
+        run: wasm-pack test --node crates/larql-wasm ${{ matrix.mode.features }}
