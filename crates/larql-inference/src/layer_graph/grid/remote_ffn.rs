@@ -54,9 +54,11 @@ pub fn generate_with_remote_ffn(
         let x_tok: Vec<f32> = tok_embed.as_slice().unwrap_or(&[]).to_vec();
 
         let mut moe_fn = |layer: usize, h_post_attn: &[f32]| -> Vec<f32> {
-            let x = ndarray::Array2::from_shape_vec((1, hidden), h_post_attn.to_vec())
+            let h_normed = apply_norm_for_ffn(weights, h_post_attn, layer);
+            let x = ndarray::Array2::from_shape_vec((1, hidden), h_normed)
                 .expect("shape must match hidden");
-            remote.forward(layer, &x).row(0).to_vec()
+            let raw_out = remote.forward(layer, &x).row(0).to_vec();
+            apply_post_ffn_norm(weights, &raw_out, layer)
         };
 
         let h = backend.decode_token_with_moe(&layers, &x_tok, hidden, intermediate, &mut moe_fn);
@@ -64,7 +66,6 @@ pub fn generate_with_remote_ffn(
             RemoteMoeError::BadResponse("decode_token_with_moe returned None during prefill".into())
         })?;
     }
-
     let mut tokens = Vec::new();
     let mut decode_ms = Vec::new();
     let mut ffn_rtt_ms = Vec::new();
@@ -102,25 +103,27 @@ pub fn generate_with_remote_ffn(
         let tok_embed = crate::forward::embed_tokens_pub(weights, &[next_input_id]);
         let x_tok: Vec<f32> = tok_embed.as_slice().unwrap_or(&[]).to_vec();
 
+
+
+
+
         let step_ffn_cell = std::cell::Cell::new(0.0f64);
         let mut moe_fn = |layer: usize, h_post_attn: &[f32]| -> Vec<f32> {
             let t_ffn = std::time::Instant::now();
-            let result = if hidden % crate::ffn::Q4K_Q8K_SUPERBLOCK_ELEMS == 0 {
-                let h_ffn = apply_norm_for_ffn(weights, h_post_attn, layer);
-                let q8k = quantize_x_to_q8k(&h_ffn);
-                remote.forward_single_q8k(layer, &q8k).unwrap_or_else(|| {
-                    let x = ndarray::Array2::from_shape_vec((1, hidden), h_post_attn.to_vec())
-                        .expect("shape must match hidden");
-                    remote.forward(layer, &x).row(0).to_vec()
-                })
-            } else {
-                let x = ndarray::Array2::from_shape_vec((1, hidden), h_post_attn.to_vec())
-                    .expect("shape must match hidden");
-                remote.forward(layer, &x).row(0).to_vec()
-            };
+            let x = ndarray::Array2::from_shape_vec((1, hidden), h_post_attn.to_vec())
+                .expect("shape must match hidden");
+            let result = remote.forward(layer, &x).row(0).to_vec();
             step_ffn_cell.set(step_ffn_cell.get() + t_ffn.elapsed().as_secs_f64() * 1000.0);
             result
         };
+
+
+
+
+
+
+
+
 
         let h_vec = backend
             .decode_token_with_moe(&layers, &x_tok, hidden, intermediate, &mut moe_fn)
@@ -128,8 +131,14 @@ pub fn generate_with_remote_ffn(
                 RemoteMoeError::BadResponse("decode_token_with_moe returned None".into())
             })?;
 
+
         last_hidden_vec = h_vec;
+        let kv_after = backend.kv_cache_len();
+        eprintln!("[debug] after decode step: kv_len={kv_after}");
+        break;
         ffn_rtt_ms.push(step_ffn_cell.get());
+
+
 
         let h_arr = ndarray::Array2::from_shape_vec((1, hidden), last_hidden_vec.clone())
             .map_err(|e| RemoteMoeError::BadResponse(e.to_string()))?;
@@ -137,6 +146,7 @@ pub fn generate_with_remote_ffn(
         let last_hidden = h_normed.row(0).to_owned();
 
         let next_id = pick_next_filtered_with_policy(
+
             index,
             weights,
             &last_hidden,
@@ -181,6 +191,25 @@ fn apply_norm_for_ffn(weights: &ModelWeights, h_post_attn: &[f32], layer: usize)
     let normed = match pre_ffn_key {
         Some(ref key) => apply_norm(weights, &h, key, norm_offset),
         None => rms_norm(&h, None, norm_offset),
+    };
+    normed.row(0).to_vec()
+}
+
+fn apply_post_ffn_norm(weights: &ModelWeights, ffn_out: &[f32], layer: usize) -> Vec<f32> {
+    let arch = &*weights.arch;
+    let norm_offset = arch.norm_weight_offset();
+    let key = arch.post_feedforward_layernorm_key(layer);
+    let h = ndarray::Array2::from_shape_vec((1, ffn_out.len()), ffn_out.to_vec())
+        .expect("apply_post_ffn_norm: shape error");
+    let normed = match key {
+        Some(ref k) => apply_norm(weights, &h, k, norm_offset),
+        None => {
+            if arch.has_post_norms() {
+                rms_norm(&h, None, norm_offset)
+            } else {
+                return ffn_out.to_vec();
+            }
+        }
     };
     normed.row(0).to_vec()
 }
@@ -327,9 +356,16 @@ pub fn generate_with_remote_ffn_batch(
     }
 
     let mut ffn_rtt_ms: Vec<f64> = Vec::new();
+
+
+
+    let kv_before = backend.kv_cache_len();
+    eprintln!("[debug] decode start: kv_len={kv_before}");
     for _step in 0..max_tokens.saturating_sub(1) {
         let t0 = std::time::Instant::now();
         let next_input_id = *current_ids.last().unwrap();
+
+
         let tok_embed = crate::forward::embed_tokens_pub(weights, &[next_input_id]);
         let x_tok: Vec<f32> = tok_embed.as_slice().unwrap_or(&[]).to_vec();
         let kv_len = backend.kv_cache_len();

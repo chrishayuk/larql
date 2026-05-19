@@ -281,6 +281,7 @@ pub fn run(args: RunArgs) -> Result<(), Box<dyn std::error::Error>> {
             args.max_tokens,
             &args.ffn_dispatch,
             args.ffn_predispatch_iters,
+            args.metal,
         );
     }
 
@@ -457,7 +458,7 @@ fn run_with_moe_shards(
 
     let num_shards = configs.len();
     // Initialise compute backend early so we can report it in the topology banner.
-    let backend = larql_compute::default_backend();
+    let backend: Box<dyn larql_compute::ComputeBackend> = larql_compute::default_backend();
     eprintln!("Connecting to {} MoE shard(s)…", num_shards);
     let remote = RemoteMoeBackend::connect(configs)
         .map_err(|e| format!("failed to connect to MoE shards: {e}"))?;
@@ -528,13 +529,14 @@ fn run_with_moe_shards(
         )
     }
     .map_err(|e| format!("grid generate failed ({dispatch}): {e}"))?;
-
     for tok in &result.tokens {
         print!("{tok}");
     }
     if !result.tokens.is_empty() {
         println!();
     }
+    let _ = std::io::Write::flush(&mut std::io::stdout());
+
     let n = result.decode_ms.len();
     if n > 0 {
         let avg = result.decode_ms.iter().sum::<f64>() / n as f64;
@@ -583,6 +585,7 @@ fn run_with_remote_ffn(
     max_tokens: usize,
     dispatch: &str,
     predispatch_iters: usize,
+    metal: bool,
 ) -> Result<(), Box<dyn std::error::Error>> {
     use larql_inference::{
         generate_with_remote_ffn, generate_with_remote_ffn_batch, LayerShardedBackend,
@@ -590,7 +593,15 @@ fn run_with_remote_ffn(
     use std::time::Duration;
 
     let timeout = Duration::from_secs(ffn_timeout_secs);
-    let backend = larql_compute::default_backend();
+
+    let backend: Box<dyn larql_compute::ComputeBackend> = if metal {
+        larql_compute_metal::metal_backend()
+            .map(|m| Box::new(m) as Box<dyn larql_compute::ComputeBackend>)
+            .unwrap_or_else(|| larql_compute::cpu_backend())
+    } else {
+        larql_compute::cpu_backend()
+    };
+
     eprintln!("Connecting to remote FFN at {ffn_url}…");
     let remote = LayerShardedBackend::connect(ffn_url, timeout)
         .map_err(|e| format!("failed to connect to remote FFN server: {e}"))?;
@@ -637,13 +648,14 @@ fn run_with_remote_ffn(
         )
     }
     .map_err(|e| format!("remote-ffn generate failed ({dispatch}): {e}"))?;
-
     for tok in &result.tokens {
         print!("{tok}");
     }
     if !result.tokens.is_empty() {
         println!();
     }
+    let _ = std::io::Write::flush(&mut std::io::stdout());
+
     let n = result.decode_ms.len();
     if n > 0 {
         let avg = result.decode_ms.iter().sum::<f64>() / n as f64;

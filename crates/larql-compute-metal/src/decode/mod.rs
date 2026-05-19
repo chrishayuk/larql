@@ -303,6 +303,7 @@ impl MetalBackend {
             // shaders (uniform / mixed Q4K+Q6K-V / per-projection
             // fallback); Q4_0 routes through fused norm+Q8 then
             // Q8 QKV. Implementation lives in `encode_qkv.rs`.
+
             self.encode_input_norm_and_qkv(
                 &enc,
                 layer,

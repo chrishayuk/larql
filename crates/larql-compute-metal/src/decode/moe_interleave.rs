@@ -153,6 +153,7 @@ impl MetalBackend {
                 .gpu_time
                 .record_stage(state.cmd, gpu_timing::DecodeStage::DenseFfn);
             result
+
         } else if let Some(ref mut f) = moe_fn {
             f(ctx.layer_idx, attn_slice)
         } else {
@@ -185,6 +186,7 @@ impl MetalBackend {
                     *h_ptr.add(i) = *attn_ptr.add(i) + v;
                 }
             }
+
         } else {
             // Hybrid MoE: new_h already holds (h_post_attn + dense_ffn),
             // add the expert contribution.
