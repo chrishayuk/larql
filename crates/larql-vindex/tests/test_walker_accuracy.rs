@@ -37,7 +37,7 @@ use larql_vindex::walker::{
 // test, which is gated off on Windows (BLAS f32 round-tripping drifts
 // the JSONL hash). Keep the imports under the same gate so a Windows
 // build doesn't flag them as unused.
-#[cfg(not(windows))]
+#[cfg(not(any(windows, target_arch = "arm")))]
 use larql_vindex::walker::vector_extractor::{
     ExtractConfig, SilentExtractCallbacks, VectorExtractor,
 };
@@ -97,7 +97,7 @@ fn canonicalise_edges(graph: &Graph, layer_field: &str, feature_field: &str) -> 
 const GOLDEN_VECTOR_EXTRACTOR_FFN_DOWN_LAYER0: &str =
     "8b5e221b150147ed40b0cfa67fdfc264e0628ab6cd6c59c2f9419e9350589b83";
 
-#[cfg(not(windows))]
+#[cfg(not(any(windows, target_arch = "arm")))]
 fn check_or_print(label: &str, actual: &str, golden: &str) {
     if std::env::var("LARQL_PRINT_GOLDEN").is_ok() {
         eprintln!("{label} = {actual:?}");
