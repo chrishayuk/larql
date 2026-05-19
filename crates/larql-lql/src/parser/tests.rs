@@ -1,13 +1,19 @@
 use super::parse;
 use crate::ast::*;
 
+#[cfg(target_arch = "wasm32")]
+use wasm_bindgen_test::wasm_bindgen_test;
+#[cfg(target_arch = "wasm32")]
+wasm_bindgen_test::wasm_bindgen_test_configure!(run_in_node_experimental);
+
 // ══════════════════════════════════════════════════════════════
 // LIFECYCLE STATEMENTS
 // ══════════════════════════════════════════════════════════════
 
 // ── EXTRACT ──
 
-#[test]
+#[cfg_attr(not(target_arch = "wasm32"), test)]
+#[cfg_attr(target_arch = "wasm32", wasm_bindgen_test)]
 fn parse_extract_minimal() {
     let stmt = parse(r#"EXTRACT MODEL "google/gemma-3-4b-it" INTO "gemma3-4b.vindex";"#).unwrap();
     match stmt {
@@ -28,7 +34,8 @@ fn parse_extract_minimal() {
     }
 }
 
-#[test]
+#[cfg_attr(not(target_arch = "wasm32"), test)]
+#[cfg_attr(target_arch = "wasm32", wasm_bindgen_test)]
 fn parse_extract_with_components_and_layers() {
     let stmt = parse(
         r#"EXTRACT MODEL "google/gemma-3-4b-it" INTO "out.vindex" COMPONENTS FFN_GATE, FFN_DOWN, FFN_UP, EMBEDDINGS LAYERS 0-33;"#,
@@ -56,7 +63,8 @@ fn parse_extract_with_components_and_layers() {
     }
 }
 
-#[test]
+#[cfg_attr(not(target_arch = "wasm32"), test)]
+#[cfg_attr(target_arch = "wasm32", wasm_bindgen_test)]
 fn parse_extract_attn_components() {
     let stmt = parse(r#"EXTRACT MODEL "m" INTO "o" COMPONENTS ATTN_OV, ATTN_QK;"#).unwrap();
     match stmt {
@@ -70,7 +78,8 @@ fn parse_extract_attn_components() {
     }
 }
 
-#[test]
+#[cfg_attr(not(target_arch = "wasm32"), test)]
+#[cfg_attr(target_arch = "wasm32", wasm_bindgen_test)]
 fn parse_extract_with_inference() {
     let stmt =
         parse(r#"EXTRACT MODEL "google/gemma-3-4b-it" INTO "gemma3-4b.vindex" WITH INFERENCE;"#)
@@ -83,7 +92,8 @@ fn parse_extract_with_inference() {
     }
 }
 
-#[test]
+#[cfg_attr(not(target_arch = "wasm32"), test)]
+#[cfg_attr(target_arch = "wasm32", wasm_bindgen_test)]
 fn parse_extract_with_all() {
     let stmt = parse(r#"EXTRACT MODEL "m" INTO "o" WITH ALL;"#).unwrap();
     match stmt {
@@ -94,7 +104,8 @@ fn parse_extract_with_all() {
     }
 }
 
-#[test]
+#[cfg_attr(not(target_arch = "wasm32"), test)]
+#[cfg_attr(target_arch = "wasm32", wasm_bindgen_test)]
 fn parse_extract_with_weights_legacy() {
     // WITH WEIGHTS is legacy syntax, maps to Inference
     let stmt = parse(r#"EXTRACT MODEL "m" INTO "o" WITH WEIGHTS;"#).unwrap();
@@ -106,7 +117,8 @@ fn parse_extract_with_weights_legacy() {
     }
 }
 
-#[test]
+#[cfg_attr(not(target_arch = "wasm32"), test)]
+#[cfg_attr(target_arch = "wasm32", wasm_bindgen_test)]
 fn parse_extract_with_all_and_components() {
     let stmt = parse(r#"EXTRACT MODEL "m" INTO "o" COMPONENTS FFN_GATE WITH ALL;"#).unwrap();
     match stmt {
@@ -124,7 +136,8 @@ fn parse_extract_with_all_and_components() {
 
 // ── COMPILE ──
 
-#[test]
+#[cfg_attr(not(target_arch = "wasm32"), test)]
+#[cfg_attr(target_arch = "wasm32", wasm_bindgen_test)]
 fn parse_compile_current_safetensors() {
     let stmt = parse(r#"COMPILE CURRENT INTO MODEL "edited/" FORMAT safetensors;"#).unwrap();
     match stmt {
@@ -142,7 +155,8 @@ fn parse_compile_current_safetensors() {
     }
 }
 
-#[test]
+#[cfg_attr(not(target_arch = "wasm32"), test)]
+#[cfg_attr(target_arch = "wasm32", wasm_bindgen_test)]
 fn parse_compile_path_gguf() {
     let stmt = parse(r#"COMPILE "gemma3.vindex" INTO MODEL "out/" FORMAT gguf;"#).unwrap();
     match stmt {
@@ -160,7 +174,8 @@ fn parse_compile_path_gguf() {
     }
 }
 
-#[test]
+#[cfg_attr(not(target_arch = "wasm32"), test)]
+#[cfg_attr(target_arch = "wasm32", wasm_bindgen_test)]
 fn parse_compile_no_format() {
     let stmt = parse(r#"COMPILE CURRENT INTO MODEL "out/";"#).unwrap();
     match stmt {
@@ -171,7 +186,8 @@ fn parse_compile_no_format() {
 
 // ── DIFF ──
 
-#[test]
+#[cfg_attr(not(target_arch = "wasm32"), test)]
+#[cfg_attr(target_arch = "wasm32", wasm_bindgen_test)]
 fn parse_diff_two_paths() {
     let stmt = parse(r#"DIFF "a.vindex" "b.vindex";"#).unwrap();
     match stmt {
@@ -183,7 +199,8 @@ fn parse_diff_two_paths() {
     }
 }
 
-#[test]
+#[cfg_attr(not(target_arch = "wasm32"), test)]
+#[cfg_attr(target_arch = "wasm32", wasm_bindgen_test)]
 fn parse_diff_with_current() {
     let stmt = parse(r#"DIFF "gemma3-4b.vindex" CURRENT;"#).unwrap();
     match stmt {
@@ -196,7 +213,8 @@ fn parse_diff_with_current() {
     }
 }
 
-#[test]
+#[cfg_attr(not(target_arch = "wasm32"), test)]
+#[cfg_attr(target_arch = "wasm32", wasm_bindgen_test)]
 fn parse_diff_with_limit() {
     let stmt = parse(r#"DIFF "a.vindex" "b.vindex" LIMIT 20;"#).unwrap();
     match stmt {
@@ -205,7 +223,8 @@ fn parse_diff_with_limit() {
     }
 }
 
-#[test]
+#[cfg_attr(not(target_arch = "wasm32"), test)]
+#[cfg_attr(target_arch = "wasm32", wasm_bindgen_test)]
 fn parse_diff_with_layer() {
     let stmt = parse(r#"DIFF "a.vindex" "b.vindex" LAYER 26;"#).unwrap();
     match stmt {
@@ -214,7 +233,8 @@ fn parse_diff_with_layer() {
     }
 }
 
-#[test]
+#[cfg_attr(not(target_arch = "wasm32"), test)]
+#[cfg_attr(target_arch = "wasm32", wasm_bindgen_test)]
 fn parse_diff_with_relation_singular() {
     let stmt = parse(r#"DIFF "a.vindex" "b.vindex" RELATION "lives-in";"#).unwrap();
     match stmt {
@@ -223,7 +243,8 @@ fn parse_diff_with_relation_singular() {
     }
 }
 
-#[test]
+#[cfg_attr(not(target_arch = "wasm32"), test)]
+#[cfg_attr(target_arch = "wasm32", wasm_bindgen_test)]
 fn parse_diff_with_relations_plural() {
     let stmt = parse(r#"DIFF "a.vindex" "b.vindex" RELATIONS "capital-of";"#).unwrap();
     match stmt {
@@ -232,7 +253,8 @@ fn parse_diff_with_relations_plural() {
     }
 }
 
-#[test]
+#[cfg_attr(not(target_arch = "wasm32"), test)]
+#[cfg_attr(target_arch = "wasm32", wasm_bindgen_test)]
 fn parse_diff_with_relation_and_limit() {
     let stmt =
         parse(r#"DIFF "gemma3-4b.vindex" "gemma3-4b-edited.vindex" RELATION "capital" LIMIT 20;"#)
@@ -250,7 +272,8 @@ fn parse_diff_with_relation_and_limit() {
 
 // ── USE ──
 
-#[test]
+#[cfg_attr(not(target_arch = "wasm32"), test)]
+#[cfg_attr(target_arch = "wasm32", wasm_bindgen_test)]
 fn parse_use_vindex() {
     let stmt = parse(r#"USE "gemma3-4b.vindex";"#).unwrap();
     match stmt {
@@ -261,7 +284,8 @@ fn parse_use_vindex() {
     }
 }
 
-#[test]
+#[cfg_attr(not(target_arch = "wasm32"), test)]
+#[cfg_attr(target_arch = "wasm32", wasm_bindgen_test)]
 fn parse_use_model() {
     let stmt = parse(r#"USE MODEL "google/gemma-3-4b-it";"#).unwrap();
     match stmt {
@@ -275,7 +299,8 @@ fn parse_use_model() {
     }
 }
 
-#[test]
+#[cfg_attr(not(target_arch = "wasm32"), test)]
+#[cfg_attr(target_arch = "wasm32", wasm_bindgen_test)]
 fn parse_use_model_auto_extract() {
     let stmt = parse(r#"USE MODEL "google/gemma-3-4b-it" AUTO_EXTRACT;"#).unwrap();
     match stmt {
@@ -292,7 +317,8 @@ fn parse_use_model_auto_extract() {
 
 // ── WALK ──
 
-#[test]
+#[cfg_attr(not(target_arch = "wasm32"), test)]
+#[cfg_attr(target_arch = "wasm32", wasm_bindgen_test)]
 fn parse_walk_minimal() {
     let stmt = parse(r#"WALK "The capital of France is";"#).unwrap();
     match stmt {
@@ -313,7 +339,8 @@ fn parse_walk_minimal() {
     }
 }
 
-#[test]
+#[cfg_attr(not(target_arch = "wasm32"), test)]
+#[cfg_attr(target_arch = "wasm32", wasm_bindgen_test)]
 fn parse_walk_with_top() {
     let stmt = parse(r#"WALK "The capital of France is" TOP 5;"#).unwrap();
     match stmt {
@@ -322,7 +349,8 @@ fn parse_walk_with_top() {
     }
 }
 
-#[test]
+#[cfg_attr(not(target_arch = "wasm32"), test)]
+#[cfg_attr(target_arch = "wasm32", wasm_bindgen_test)]
 fn parse_walk_full_options() {
     let stmt = parse(r#"WALK "prompt" TOP 5 LAYERS 25-33 MODE hybrid COMPARE;"#).unwrap();
     match stmt {
@@ -344,7 +372,8 @@ fn parse_walk_full_options() {
     }
 }
 
-#[test]
+#[cfg_attr(not(target_arch = "wasm32"), test)]
+#[cfg_attr(target_arch = "wasm32", wasm_bindgen_test)]
 fn parse_walk_mode_pure() {
     let stmt = parse(r#"WALK "x" MODE pure;"#).unwrap();
     match stmt {
@@ -353,7 +382,8 @@ fn parse_walk_mode_pure() {
     }
 }
 
-#[test]
+#[cfg_attr(not(target_arch = "wasm32"), test)]
+#[cfg_attr(target_arch = "wasm32", wasm_bindgen_test)]
 fn parse_walk_mode_dense() {
     let stmt = parse(r#"WALK "x" MODE dense;"#).unwrap();
     match stmt {
@@ -362,7 +392,8 @@ fn parse_walk_mode_dense() {
     }
 }
 
-#[test]
+#[cfg_attr(not(target_arch = "wasm32"), test)]
+#[cfg_attr(target_arch = "wasm32", wasm_bindgen_test)]
 fn parse_walk_layers_all() {
     let stmt = parse(r#"WALK "x" LAYERS ALL;"#).unwrap();
     match stmt {
@@ -373,7 +404,8 @@ fn parse_walk_layers_all() {
 
 // ── SELECT ──
 
-#[test]
+#[cfg_attr(not(target_arch = "wasm32"), test)]
+#[cfg_attr(target_arch = "wasm32", wasm_bindgen_test)]
 fn parse_select_star() {
     let stmt = parse("SELECT * FROM EDGES;").unwrap();
     match stmt {
@@ -385,7 +417,8 @@ fn parse_select_star() {
     }
 }
 
-#[test]
+#[cfg_attr(not(target_arch = "wasm32"), test)]
+#[cfg_attr(target_arch = "wasm32", wasm_bindgen_test)]
 fn parse_select_named_fields() {
     let stmt = parse(
         r#"SELECT entity, relation, target, confidence FROM EDGES WHERE entity = "France" ORDER BY confidence DESC LIMIT 10;"#,
@@ -408,7 +441,8 @@ fn parse_select_named_fields() {
     }
 }
 
-#[test]
+#[cfg_attr(not(target_arch = "wasm32"), test)]
+#[cfg_attr(target_arch = "wasm32", wasm_bindgen_test)]
 fn parse_select_multiple_conditions() {
     let stmt = parse(r#"SELECT * FROM EDGES WHERE relation = "capital-of" AND confidence > 0.5;"#)
         .unwrap();
@@ -422,7 +456,8 @@ fn parse_select_multiple_conditions() {
     }
 }
 
-#[test]
+#[cfg_attr(not(target_arch = "wasm32"), test)]
+#[cfg_attr(target_arch = "wasm32", wasm_bindgen_test)]
 fn parse_select_by_layer_and_feature() {
     let stmt = parse("SELECT * FROM EDGES WHERE layer = 26 AND feature = 9515;").unwrap();
     match stmt {
@@ -435,7 +470,8 @@ fn parse_select_by_layer_and_feature() {
     }
 }
 
-#[test]
+#[cfg_attr(not(target_arch = "wasm32"), test)]
+#[cfg_attr(target_arch = "wasm32", wasm_bindgen_test)]
 fn parse_select_nearest() {
     let stmt = parse(
         r#"SELECT entity, target, distance FROM EDGES NEAREST TO "Mozart" AT LAYER 26 LIMIT 20;"#,
@@ -452,7 +488,8 @@ fn parse_select_nearest() {
     }
 }
 
-#[test]
+#[cfg_attr(not(target_arch = "wasm32"), test)]
+#[cfg_attr(target_arch = "wasm32", wasm_bindgen_test)]
 fn parse_select_no_where() {
     let stmt = parse("SELECT * FROM EDGES LIMIT 5;").unwrap();
     match stmt {
@@ -466,7 +503,8 @@ fn parse_select_no_where() {
     }
 }
 
-#[test]
+#[cfg_attr(not(target_arch = "wasm32"), test)]
+#[cfg_attr(target_arch = "wasm32", wasm_bindgen_test)]
 fn parse_select_order_asc() {
     let stmt = parse("SELECT * FROM EDGES ORDER BY layer ASC;").unwrap();
     match stmt {
@@ -475,7 +513,8 @@ fn parse_select_order_asc() {
     }
 }
 
-#[test]
+#[cfg_attr(not(target_arch = "wasm32"), test)]
+#[cfg_attr(target_arch = "wasm32", wasm_bindgen_test)]
 fn parse_select_order_default_asc() {
     let stmt = parse("SELECT * FROM EDGES ORDER BY layer;").unwrap();
     match stmt {
@@ -486,7 +525,8 @@ fn parse_select_order_default_asc() {
 
 // ── DESCRIBE ──
 
-#[test]
+#[cfg_attr(not(target_arch = "wasm32"), test)]
+#[cfg_attr(target_arch = "wasm32", wasm_bindgen_test)]
 fn parse_describe_minimal() {
     let stmt = parse(r#"DESCRIBE "France";"#).unwrap();
     match stmt {
@@ -507,7 +547,8 @@ fn parse_describe_minimal() {
     }
 }
 
-#[test]
+#[cfg_attr(not(target_arch = "wasm32"), test)]
+#[cfg_attr(target_arch = "wasm32", wasm_bindgen_test)]
 fn parse_describe_at_layer() {
     let stmt = parse(r#"DESCRIBE "Mozart" AT LAYER 26;"#).unwrap();
     match stmt {
@@ -525,7 +566,8 @@ fn parse_describe_at_layer() {
     }
 }
 
-#[test]
+#[cfg_attr(not(target_arch = "wasm32"), test)]
+#[cfg_attr(target_arch = "wasm32", wasm_bindgen_test)]
 fn parse_describe_relations_only() {
     let stmt = parse(r#"DESCRIBE "France" RELATIONS ONLY;"#).unwrap();
     match stmt {
@@ -534,7 +576,8 @@ fn parse_describe_relations_only() {
     }
 }
 
-#[test]
+#[cfg_attr(not(target_arch = "wasm32"), test)]
+#[cfg_attr(target_arch = "wasm32", wasm_bindgen_test)]
 fn parse_describe_layer_and_relations_only() {
     let stmt = parse(r#"DESCRIBE "France" AT LAYER 26 RELATIONS ONLY;"#).unwrap();
     match stmt {
@@ -550,7 +593,8 @@ fn parse_describe_layer_and_relations_only() {
     }
 }
 
-#[test]
+#[cfg_attr(not(target_arch = "wasm32"), test)]
+#[cfg_attr(target_arch = "wasm32", wasm_bindgen_test)]
 fn parse_describe_syntax() {
     let stmt = parse(r#"DESCRIBE "def" SYNTAX;"#).unwrap();
     match stmt {
@@ -562,7 +606,8 @@ fn parse_describe_syntax() {
     }
 }
 
-#[test]
+#[cfg_attr(not(target_arch = "wasm32"), test)]
+#[cfg_attr(target_arch = "wasm32", wasm_bindgen_test)]
 fn parse_describe_knowledge() {
     let stmt = parse(r#"DESCRIBE "France" KNOWLEDGE;"#).unwrap();
     match stmt {
@@ -573,7 +618,8 @@ fn parse_describe_knowledge() {
     }
 }
 
-#[test]
+#[cfg_attr(not(target_arch = "wasm32"), test)]
+#[cfg_attr(target_arch = "wasm32", wasm_bindgen_test)]
 fn parse_describe_output() {
     let stmt = parse(r#"DESCRIBE "France" OUTPUT;"#).unwrap();
     match stmt {
@@ -584,7 +630,8 @@ fn parse_describe_output() {
     }
 }
 
-#[test]
+#[cfg_attr(not(target_arch = "wasm32"), test)]
+#[cfg_attr(target_arch = "wasm32", wasm_bindgen_test)]
 fn parse_describe_all_layers() {
     let stmt = parse(r#"DESCRIBE "France" ALL LAYERS;"#).unwrap();
     match stmt {
@@ -595,7 +642,8 @@ fn parse_describe_all_layers() {
     }
 }
 
-#[test]
+#[cfg_attr(not(target_arch = "wasm32"), test)]
+#[cfg_attr(target_arch = "wasm32", wasm_bindgen_test)]
 fn parse_describe_band_with_relations_only() {
     let stmt = parse(r#"DESCRIBE "France" KNOWLEDGE RELATIONS ONLY;"#).unwrap();
     match stmt {
@@ -611,7 +659,8 @@ fn parse_describe_band_with_relations_only() {
     }
 }
 
-#[test]
+#[cfg_attr(not(target_arch = "wasm32"), test)]
+#[cfg_attr(target_arch = "wasm32", wasm_bindgen_test)]
 fn parse_describe_verbose() {
     let stmt = parse(r#"DESCRIBE "France" VERBOSE;"#).unwrap();
     match stmt {
@@ -620,7 +669,8 @@ fn parse_describe_verbose() {
     }
 }
 
-#[test]
+#[cfg_attr(not(target_arch = "wasm32"), test)]
+#[cfg_attr(target_arch = "wasm32", wasm_bindgen_test)]
 fn parse_describe_brief() {
     let stmt = parse(r#"DESCRIBE "France" BRIEF;"#).unwrap();
     match stmt {
@@ -629,7 +679,8 @@ fn parse_describe_brief() {
     }
 }
 
-#[test]
+#[cfg_attr(not(target_arch = "wasm32"), test)]
+#[cfg_attr(target_arch = "wasm32", wasm_bindgen_test)]
 fn parse_describe_raw() {
     let stmt = parse(r#"DESCRIBE "France" RAW;"#).unwrap();
     match stmt {
@@ -638,7 +689,8 @@ fn parse_describe_raw() {
     }
 }
 
-#[test]
+#[cfg_attr(not(target_arch = "wasm32"), test)]
+#[cfg_attr(target_arch = "wasm32", wasm_bindgen_test)]
 fn parse_describe_band_verbose() {
     let stmt = parse(r#"DESCRIBE "France" ALL LAYERS VERBOSE;"#).unwrap();
     match stmt {
@@ -652,7 +704,8 @@ fn parse_describe_band_verbose() {
 
 // ── EXPLAIN ──
 
-#[test]
+#[cfg_attr(not(target_arch = "wasm32"), test)]
+#[cfg_attr(target_arch = "wasm32", wasm_bindgen_test)]
 fn parse_explain_walk_minimal() {
     let stmt = parse(r#"EXPLAIN WALK "The capital of France is";"#).unwrap();
     match stmt {
@@ -672,7 +725,8 @@ fn parse_explain_walk_minimal() {
     }
 }
 
-#[test]
+#[cfg_attr(not(target_arch = "wasm32"), test)]
+#[cfg_attr(target_arch = "wasm32", wasm_bindgen_test)]
 fn parse_explain_walk_with_layers_and_verbose() {
     let stmt = parse(r#"EXPLAIN WALK "prompt" LAYERS 24-33 VERBOSE;"#).unwrap();
     match stmt {
@@ -688,7 +742,8 @@ fn parse_explain_walk_with_layers_and_verbose() {
     }
 }
 
-#[test]
+#[cfg_attr(not(target_arch = "wasm32"), test)]
+#[cfg_attr(target_arch = "wasm32", wasm_bindgen_test)]
 fn parse_explain_infer_minimal() {
     let stmt = parse(r#"EXPLAIN INFER "The capital of France is";"#).unwrap();
     match stmt {
@@ -715,7 +770,8 @@ fn parse_explain_infer_minimal() {
     }
 }
 
-#[test]
+#[cfg_attr(not(target_arch = "wasm32"), test)]
+#[cfg_attr(target_arch = "wasm32", wasm_bindgen_test)]
 fn parse_explain_infer_with_options() {
     let stmt = parse(r#"EXPLAIN INFER "test prompt" LAYERS 20-30 VERBOSE TOP 10;"#).unwrap();
     match stmt {
@@ -737,7 +793,8 @@ fn parse_explain_infer_with_options() {
     }
 }
 
-#[test]
+#[cfg_attr(not(target_arch = "wasm32"), test)]
+#[cfg_attr(target_arch = "wasm32", wasm_bindgen_test)]
 fn parse_explain_walk_with_top() {
     let stmt = parse(r#"EXPLAIN WALK "test" TOP 5;"#).unwrap();
     match stmt {
@@ -749,7 +806,8 @@ fn parse_explain_walk_with_top() {
     }
 }
 
-#[test]
+#[cfg_attr(not(target_arch = "wasm32"), test)]
+#[cfg_attr(target_arch = "wasm32", wasm_bindgen_test)]
 fn parse_explain_infer_with_band() {
     let stmt = parse(r#"EXPLAIN INFER "test" KNOWLEDGE;"#).unwrap();
     match stmt {
@@ -761,7 +819,8 @@ fn parse_explain_infer_with_band() {
     }
 }
 
-#[test]
+#[cfg_attr(not(target_arch = "wasm32"), test)]
+#[cfg_attr(target_arch = "wasm32", wasm_bindgen_test)]
 fn parse_explain_infer_relations_only() {
     let stmt = parse(r#"EXPLAIN INFER "test" RELATIONS ONLY;"#).unwrap();
     match stmt {
@@ -777,7 +836,8 @@ fn parse_explain_infer_relations_only() {
     }
 }
 
-#[test]
+#[cfg_attr(not(target_arch = "wasm32"), test)]
+#[cfg_attr(target_arch = "wasm32", wasm_bindgen_test)]
 fn parse_explain_infer_with_attention() {
     let stmt = parse(r#"EXPLAIN INFER "test" WITH ATTENTION;"#).unwrap();
     match stmt {
@@ -793,7 +853,8 @@ fn parse_explain_infer_with_attention() {
     }
 }
 
-#[test]
+#[cfg_attr(not(target_arch = "wasm32"), test)]
+#[cfg_attr(target_arch = "wasm32", wasm_bindgen_test)]
 fn parse_explain_infer_all_options() {
     let stmt =
         parse(r#"EXPLAIN INFER "test" KNOWLEDGE TOP 1 RELATIONS ONLY WITH ATTENTION;"#).unwrap();
@@ -822,7 +883,8 @@ fn parse_explain_infer_all_options() {
 
 // ── INSERT ──
 
-#[test]
+#[cfg_attr(not(target_arch = "wasm32"), test)]
+#[cfg_attr(target_arch = "wasm32", wasm_bindgen_test)]
 fn parse_insert_minimal() {
     let stmt = parse(
         r#"INSERT INTO EDGES (entity, relation, target) VALUES ("John Coyle", "lives-in", "Colchester");"#,
@@ -849,7 +911,8 @@ fn parse_insert_minimal() {
     }
 }
 
-#[test]
+#[cfg_attr(not(target_arch = "wasm32"), test)]
+#[cfg_attr(target_arch = "wasm32", wasm_bindgen_test)]
 fn parse_insert_with_layer_and_confidence() {
     let stmt = parse(
         r#"INSERT INTO EDGES (entity, relation, target) VALUES ("John", "occupation", "engineer") AT LAYER 26 CONFIDENCE 0.8;"#,
@@ -869,7 +932,8 @@ fn parse_insert_with_layer_and_confidence() {
     }
 }
 
-#[test]
+#[cfg_attr(not(target_arch = "wasm32"), test)]
+#[cfg_attr(target_arch = "wasm32", wasm_bindgen_test)]
 fn parse_insert_with_alpha() {
     let stmt = parse(
         r#"INSERT INTO EDGES (entity, relation, target) VALUES ("Atlantis", "capital-of", "Poseidon") ALPHA 0.5;"#,
@@ -889,7 +953,8 @@ fn parse_insert_with_alpha() {
     }
 }
 
-#[test]
+#[cfg_attr(not(target_arch = "wasm32"), test)]
+#[cfg_attr(target_arch = "wasm32", wasm_bindgen_test)]
 fn parse_insert_with_layer_confidence_alpha() {
     // All three optional clauses can coexist in any order encountered.
     let stmt = parse(
@@ -912,7 +977,8 @@ fn parse_insert_with_layer_confidence_alpha() {
 
 // ── DELETE ──
 
-#[test]
+#[cfg_attr(not(target_arch = "wasm32"), test)]
+#[cfg_attr(target_arch = "wasm32", wasm_bindgen_test)]
 fn parse_delete_single_condition() {
     let stmt = parse(r#"DELETE FROM EDGES WHERE entity = "outdated_fact";"#).unwrap();
     match stmt {
@@ -924,7 +990,8 @@ fn parse_delete_single_condition() {
     }
 }
 
-#[test]
+#[cfg_attr(not(target_arch = "wasm32"), test)]
+#[cfg_attr(target_arch = "wasm32", wasm_bindgen_test)]
 fn parse_delete_multiple_conditions() {
     let stmt = parse(r#"DELETE FROM EDGES WHERE entity = "John Coyle" AND relation = "lives-in";"#)
         .unwrap();
@@ -934,7 +1001,8 @@ fn parse_delete_multiple_conditions() {
     }
 }
 
-#[test]
+#[cfg_attr(not(target_arch = "wasm32"), test)]
+#[cfg_attr(target_arch = "wasm32", wasm_bindgen_test)]
 fn parse_delete_by_layer() {
     let stmt = parse(r#"DELETE FROM EDGES WHERE entity = "outdated" AND layer = 26;"#).unwrap();
     match stmt {
@@ -948,7 +1016,8 @@ fn parse_delete_by_layer() {
 
 // ── UPDATE ──
 
-#[test]
+#[cfg_attr(not(target_arch = "wasm32"), test)]
+#[cfg_attr(target_arch = "wasm32", wasm_bindgen_test)]
 fn parse_update_single_set() {
     let stmt = parse(
         r#"UPDATE EDGES SET target = "London" WHERE entity = "John Coyle" AND relation = "lives-in";"#,
@@ -963,7 +1032,8 @@ fn parse_update_single_set() {
     }
 }
 
-#[test]
+#[cfg_attr(not(target_arch = "wasm32"), test)]
+#[cfg_attr(target_arch = "wasm32", wasm_bindgen_test)]
 fn parse_update_multiple_assignments() {
     let stmt = parse(
         r#"UPDATE EDGES SET target = "London", confidence = 0.9 WHERE entity = "John Coyle";"#,
@@ -980,7 +1050,8 @@ fn parse_update_multiple_assignments() {
 
 // ── MERGE ──
 
-#[test]
+#[cfg_attr(not(target_arch = "wasm32"), test)]
+#[cfg_attr(target_arch = "wasm32", wasm_bindgen_test)]
 fn parse_merge_minimal() {
     let stmt = parse(r#"MERGE "source.vindex";"#).unwrap();
     match stmt {
@@ -997,7 +1068,8 @@ fn parse_merge_minimal() {
     }
 }
 
-#[test]
+#[cfg_attr(not(target_arch = "wasm32"), test)]
+#[cfg_attr(target_arch = "wasm32", wasm_bindgen_test)]
 fn parse_merge_into_no_conflict() {
     let stmt = parse(r#"MERGE "source.vindex" INTO "target.vindex";"#).unwrap();
     match stmt {
@@ -1014,7 +1086,8 @@ fn parse_merge_into_no_conflict() {
     }
 }
 
-#[test]
+#[cfg_attr(not(target_arch = "wasm32"), test)]
+#[cfg_attr(target_arch = "wasm32", wasm_bindgen_test)]
 fn parse_merge_into_with_conflict() {
     let stmt =
         parse(r#"MERGE "medical.vindex" INTO "gemma3.vindex" ON CONFLICT HIGHEST_CONFIDENCE;"#)
@@ -1033,7 +1106,8 @@ fn parse_merge_into_with_conflict() {
     }
 }
 
-#[test]
+#[cfg_attr(not(target_arch = "wasm32"), test)]
+#[cfg_attr(target_arch = "wasm32", wasm_bindgen_test)]
 fn parse_merge_keep_source() {
     let stmt = parse(r#"MERGE "a.vindex" INTO "b.vindex" ON CONFLICT KEEP_SOURCE;"#).unwrap();
     match stmt {
@@ -1044,7 +1118,8 @@ fn parse_merge_keep_source() {
     }
 }
 
-#[test]
+#[cfg_attr(not(target_arch = "wasm32"), test)]
+#[cfg_attr(target_arch = "wasm32", wasm_bindgen_test)]
 fn parse_merge_keep_target() {
     let stmt = parse(r#"MERGE "a.vindex" INTO "b.vindex" ON CONFLICT KEEP_TARGET;"#).unwrap();
     match stmt {
@@ -1059,7 +1134,8 @@ fn parse_merge_keep_target() {
 // INTROSPECTION STATEMENTS
 // ══════════════════════════════════════════════════════════════
 
-#[test]
+#[cfg_attr(not(target_arch = "wasm32"), test)]
+#[cfg_attr(target_arch = "wasm32", wasm_bindgen_test)]
 fn parse_show_relations_minimal() {
     let stmt = parse("SHOW RELATIONS;").unwrap();
     match stmt {
@@ -1076,7 +1152,8 @@ fn parse_show_relations_minimal() {
     }
 }
 
-#[test]
+#[cfg_attr(not(target_arch = "wasm32"), test)]
+#[cfg_attr(target_arch = "wasm32", wasm_bindgen_test)]
 fn parse_show_relations_with_examples() {
     let stmt = parse("SHOW RELATIONS WITH EXAMPLES;").unwrap();
     match stmt {
@@ -1085,7 +1162,8 @@ fn parse_show_relations_with_examples() {
     }
 }
 
-#[test]
+#[cfg_attr(not(target_arch = "wasm32"), test)]
+#[cfg_attr(target_arch = "wasm32", wasm_bindgen_test)]
 fn parse_show_relations_at_layer() {
     let stmt = parse("SHOW RELATIONS AT LAYER 26;").unwrap();
     match stmt {
@@ -1094,7 +1172,8 @@ fn parse_show_relations_at_layer() {
     }
 }
 
-#[test]
+#[cfg_attr(not(target_arch = "wasm32"), test)]
+#[cfg_attr(target_arch = "wasm32", wasm_bindgen_test)]
 fn parse_show_relations_verbose() {
     let stmt = parse("SHOW RELATIONS VERBOSE;").unwrap();
     match stmt {
@@ -1103,7 +1182,8 @@ fn parse_show_relations_verbose() {
     }
 }
 
-#[test]
+#[cfg_attr(not(target_arch = "wasm32"), test)]
+#[cfg_attr(target_arch = "wasm32", wasm_bindgen_test)]
 fn parse_show_relations_raw() {
     let stmt = parse("SHOW RELATIONS RAW;").unwrap();
     match stmt {
@@ -1112,7 +1192,8 @@ fn parse_show_relations_raw() {
     }
 }
 
-#[test]
+#[cfg_attr(not(target_arch = "wasm32"), test)]
+#[cfg_attr(target_arch = "wasm32", wasm_bindgen_test)]
 fn parse_show_relations_verbose_with_examples() {
     let stmt = parse("SHOW RELATIONS VERBOSE WITH EXAMPLES;").unwrap();
     match stmt {
@@ -1128,7 +1209,8 @@ fn parse_show_relations_verbose_with_examples() {
     }
 }
 
-#[test]
+#[cfg_attr(not(target_arch = "wasm32"), test)]
+#[cfg_attr(target_arch = "wasm32", wasm_bindgen_test)]
 fn parse_show_layers_minimal() {
     let stmt = parse("SHOW LAYERS;").unwrap();
     match stmt {
@@ -1137,7 +1219,8 @@ fn parse_show_layers_minimal() {
     }
 }
 
-#[test]
+#[cfg_attr(not(target_arch = "wasm32"), test)]
+#[cfg_attr(target_arch = "wasm32", wasm_bindgen_test)]
 fn parse_show_layers_with_range() {
     let stmt = parse("SHOW LAYERS RANGE 0-10;").unwrap();
     match stmt {
@@ -1150,7 +1233,8 @@ fn parse_show_layers_with_range() {
     }
 }
 
-#[test]
+#[cfg_attr(not(target_arch = "wasm32"), test)]
+#[cfg_attr(target_arch = "wasm32", wasm_bindgen_test)]
 fn parse_show_layers_bare_range() {
     let stmt = parse("SHOW LAYERS 0-10;").unwrap();
     match stmt {
@@ -1163,7 +1247,8 @@ fn parse_show_layers_bare_range() {
     }
 }
 
-#[test]
+#[cfg_attr(not(target_arch = "wasm32"), test)]
+#[cfg_attr(target_arch = "wasm32", wasm_bindgen_test)]
 fn parse_show_features_minimal() {
     let stmt = parse("SHOW FEATURES 26;").unwrap();
     match stmt {
@@ -1180,7 +1265,8 @@ fn parse_show_features_minimal() {
     }
 }
 
-#[test]
+#[cfg_attr(not(target_arch = "wasm32"), test)]
+#[cfg_attr(target_arch = "wasm32", wasm_bindgen_test)]
 fn parse_show_features_with_where_and_limit() {
     let stmt = parse(r#"SHOW FEATURES 26 WHERE relation = "capital-of" LIMIT 5;"#).unwrap();
     match stmt {
@@ -1197,7 +1283,8 @@ fn parse_show_features_with_where_and_limit() {
     }
 }
 
-#[test]
+#[cfg_attr(not(target_arch = "wasm32"), test)]
+#[cfg_attr(target_arch = "wasm32", wasm_bindgen_test)]
 fn parse_show_models() {
     let stmt = parse("SHOW MODELS;").unwrap();
     assert!(matches!(stmt, Statement::ShowModels));
@@ -1205,7 +1292,8 @@ fn parse_show_models() {
 
 // ── SHOW ENTITIES ──
 
-#[test]
+#[cfg_attr(not(target_arch = "wasm32"), test)]
+#[cfg_attr(target_arch = "wasm32", wasm_bindgen_test)]
 fn parse_show_entities_minimal() {
     let stmt = parse("SHOW ENTITIES;").unwrap();
     match stmt {
@@ -1217,7 +1305,8 @@ fn parse_show_entities_minimal() {
     }
 }
 
-#[test]
+#[cfg_attr(not(target_arch = "wasm32"), test)]
+#[cfg_attr(target_arch = "wasm32", wasm_bindgen_test)]
 fn parse_show_entities_bare_layer() {
     let stmt = parse("SHOW ENTITIES 26;").unwrap();
     match stmt {
@@ -1229,7 +1318,8 @@ fn parse_show_entities_bare_layer() {
     }
 }
 
-#[test]
+#[cfg_attr(not(target_arch = "wasm32"), test)]
+#[cfg_attr(target_arch = "wasm32", wasm_bindgen_test)]
 fn parse_show_entities_at_layer_with_limit() {
     let stmt = parse("SHOW ENTITIES AT LAYER 26 LIMIT 50;").unwrap();
     match stmt {
@@ -1241,7 +1331,8 @@ fn parse_show_entities_at_layer_with_limit() {
     }
 }
 
-#[test]
+#[cfg_attr(not(target_arch = "wasm32"), test)]
+#[cfg_attr(target_arch = "wasm32", wasm_bindgen_test)]
 fn parse_show_entities_limit_only() {
     let stmt = parse("SHOW ENTITIES LIMIT 100;").unwrap();
     match stmt {
@@ -1255,7 +1346,8 @@ fn parse_show_entities_limit_only() {
 
 // ── REBALANCE ──
 
-#[test]
+#[cfg_attr(not(target_arch = "wasm32"), test)]
+#[cfg_attr(target_arch = "wasm32", wasm_bindgen_test)]
 fn parse_rebalance_minimal() {
     let stmt = parse("REBALANCE;").unwrap();
     match stmt {
@@ -1272,13 +1364,15 @@ fn parse_rebalance_minimal() {
     }
 }
 
-#[test]
+#[cfg_attr(not(target_arch = "wasm32"), test)]
+#[cfg_attr(target_arch = "wasm32", wasm_bindgen_test)]
 fn parse_rebalance_until_converged() {
     let stmt = parse("REBALANCE UNTIL CONVERGED;").unwrap();
     assert!(matches!(stmt, Statement::Rebalance { .. }));
 }
 
-#[test]
+#[cfg_attr(not(target_arch = "wasm32"), test)]
+#[cfg_attr(target_arch = "wasm32", wasm_bindgen_test)]
 fn parse_rebalance_max_iters() {
     let stmt = parse("REBALANCE MAX 32;").unwrap();
     match stmt {
@@ -1287,7 +1381,8 @@ fn parse_rebalance_max_iters() {
     }
 }
 
-#[test]
+#[cfg_attr(not(target_arch = "wasm32"), test)]
+#[cfg_attr(target_arch = "wasm32", wasm_bindgen_test)]
 fn parse_rebalance_floor_ceiling() {
     let stmt = parse("REBALANCE FLOOR 0.3 CEILING 0.9;").unwrap();
     match stmt {
@@ -1299,7 +1394,8 @@ fn parse_rebalance_floor_ceiling() {
     }
 }
 
-#[test]
+#[cfg_attr(not(target_arch = "wasm32"), test)]
+#[cfg_attr(target_arch = "wasm32", wasm_bindgen_test)]
 fn parse_rebalance_all_clauses() {
     let stmt = parse("REBALANCE UNTIL CONVERGED MAX 16 FLOOR = 0.25 CEILING = 0.95;").unwrap();
     match stmt {
@@ -1318,13 +1414,15 @@ fn parse_rebalance_all_clauses() {
 
 // ── SHOW COMPACT STATUS ──
 
-#[test]
+#[cfg_attr(not(target_arch = "wasm32"), test)]
+#[cfg_attr(target_arch = "wasm32", wasm_bindgen_test)]
 fn parse_show_compact_status() {
     let stmt = parse("SHOW COMPACT STATUS;").unwrap();
     assert!(matches!(stmt, Statement::ShowCompactStatus));
 }
 
-#[test]
+#[cfg_attr(not(target_arch = "wasm32"), test)]
+#[cfg_attr(target_arch = "wasm32", wasm_bindgen_test)]
 fn parse_show_compact_status_no_semicolon() {
     let stmt = parse("SHOW COMPACT STATUS").unwrap();
     assert!(matches!(stmt, Statement::ShowCompactStatus));
@@ -1332,13 +1430,15 @@ fn parse_show_compact_status_no_semicolon() {
 
 // ── COMPACT ──
 
-#[test]
+#[cfg_attr(not(target_arch = "wasm32"), test)]
+#[cfg_attr(target_arch = "wasm32", wasm_bindgen_test)]
 fn parse_compact_minor() {
     let stmt = parse("COMPACT MINOR;").unwrap();
     assert!(matches!(stmt, Statement::CompactMinor));
 }
 
-#[test]
+#[cfg_attr(not(target_arch = "wasm32"), test)]
+#[cfg_attr(target_arch = "wasm32", wasm_bindgen_test)]
 fn parse_compact_major() {
     let stmt = parse("COMPACT MAJOR;").unwrap();
     assert!(matches!(
@@ -1350,7 +1450,8 @@ fn parse_compact_major() {
     ));
 }
 
-#[test]
+#[cfg_attr(not(target_arch = "wasm32"), test)]
+#[cfg_attr(target_arch = "wasm32", wasm_bindgen_test)]
 fn parse_compact_major_full() {
     let stmt = parse("COMPACT MAJOR FULL;").unwrap();
     assert!(matches!(
@@ -1362,7 +1463,8 @@ fn parse_compact_major_full() {
     ));
 }
 
-#[test]
+#[cfg_attr(not(target_arch = "wasm32"), test)]
+#[cfg_attr(target_arch = "wasm32", wasm_bindgen_test)]
 fn parse_compact_major_with_lambda() {
     let stmt = parse("COMPACT MAJOR WITH LAMBDA = 0.001;").unwrap();
     match stmt {
@@ -1376,13 +1478,15 @@ fn parse_compact_major_with_lambda() {
 
 // ── STATS ──
 
-#[test]
+#[cfg_attr(not(target_arch = "wasm32"), test)]
+#[cfg_attr(target_arch = "wasm32", wasm_bindgen_test)]
 fn parse_stats_no_path() {
     let stmt = parse("STATS;").unwrap();
     assert!(matches!(stmt, Statement::Stats { vindex: None }));
 }
 
-#[test]
+#[cfg_attr(not(target_arch = "wasm32"), test)]
+#[cfg_attr(target_arch = "wasm32", wasm_bindgen_test)]
 fn parse_stats_with_path() {
     let stmt = parse(r#"STATS "gemma3.vindex";"#).unwrap();
     match stmt {
@@ -1391,7 +1495,8 @@ fn parse_stats_with_path() {
     }
 }
 
-#[test]
+#[cfg_attr(not(target_arch = "wasm32"), test)]
+#[cfg_attr(target_arch = "wasm32", wasm_bindgen_test)]
 fn parse_stats_no_semicolon() {
     let stmt = parse("STATS").unwrap();
     assert!(matches!(stmt, Statement::Stats { vindex: None }));
@@ -1401,7 +1506,8 @@ fn parse_stats_no_semicolon() {
 // PIPE OPERATOR
 // ══════════════════════════════════════════════════════════════
 
-#[test]
+#[cfg_attr(not(target_arch = "wasm32"), test)]
+#[cfg_attr(target_arch = "wasm32", wasm_bindgen_test)]
 fn parse_pipe_walk_to_explain() {
     let stmt = parse(
         r#"WALK "The capital of France is" TOP 5 |> EXPLAIN WALK "The capital of France is";"#,
@@ -1420,7 +1526,8 @@ fn parse_pipe_walk_to_explain() {
 // COMPARISON OPERATORS
 // ══════════════════════════════════════════════════════════════
 
-#[test]
+#[cfg_attr(not(target_arch = "wasm32"), test)]
+#[cfg_attr(target_arch = "wasm32", wasm_bindgen_test)]
 fn parse_select_neq() {
     let stmt = parse(r#"SELECT * FROM EDGES WHERE relation != "morphological";"#).unwrap();
     match stmt {
@@ -1429,7 +1536,8 @@ fn parse_select_neq() {
     }
 }
 
-#[test]
+#[cfg_attr(not(target_arch = "wasm32"), test)]
+#[cfg_attr(target_arch = "wasm32", wasm_bindgen_test)]
 fn parse_select_gte_lte() {
     let stmt = parse("SELECT * FROM EDGES WHERE layer >= 20 AND layer <= 30;").unwrap();
     match stmt {
@@ -1441,7 +1549,8 @@ fn parse_select_gte_lte() {
     }
 }
 
-#[test]
+#[cfg_attr(not(target_arch = "wasm32"), test)]
+#[cfg_attr(target_arch = "wasm32", wasm_bindgen_test)]
 fn parse_select_like() {
     let stmt = parse(r#"SELECT * FROM EDGES WHERE entity LIKE "Fran%";"#).unwrap();
     match stmt {
@@ -1452,7 +1561,8 @@ fn parse_select_like() {
     }
 }
 
-#[test]
+#[cfg_attr(not(target_arch = "wasm32"), test)]
+#[cfg_attr(target_arch = "wasm32", wasm_bindgen_test)]
 fn parse_select_in() {
     let stmt = parse(r#"SELECT * FROM EDGES WHERE entity IN ("France", "Germany");"#).unwrap();
     match stmt {
@@ -1472,19 +1582,22 @@ fn parse_select_in() {
 // COMMENTS AND WHITESPACE
 // ══════════════════════════════════════════════════════════════
 
-#[test]
+#[cfg_attr(not(target_arch = "wasm32"), test)]
+#[cfg_attr(target_arch = "wasm32", wasm_bindgen_test)]
 fn parse_with_leading_comment() {
     let stmt = parse("-- This is a comment\nSTATS;").unwrap();
     assert!(matches!(stmt, Statement::Stats { .. }));
 }
 
-#[test]
+#[cfg_attr(not(target_arch = "wasm32"), test)]
+#[cfg_attr(target_arch = "wasm32", wasm_bindgen_test)]
 fn parse_with_trailing_comment() {
     let stmt = parse("STATS; -- trailing comment").unwrap();
     assert!(matches!(stmt, Statement::Stats { .. }));
 }
 
-#[test]
+#[cfg_attr(not(target_arch = "wasm32"), test)]
+#[cfg_attr(target_arch = "wasm32", wasm_bindgen_test)]
 fn parse_multiline_statement() {
     let stmt = parse("SELECT *\n  FROM EDGES\n  WHERE layer = 26\n  LIMIT 5;").unwrap();
     match stmt {
@@ -1502,37 +1615,44 @@ fn parse_multiline_statement() {
 // ERROR CASES
 // ══════════════════════════════════════════════════════════════
 
-#[test]
+#[cfg_attr(not(target_arch = "wasm32"), test)]
+#[cfg_attr(target_arch = "wasm32", wasm_bindgen_test)]
 fn parse_error_unknown_statement() {
     assert!(parse("FOOBAR;").is_err());
 }
 
-#[test]
+#[cfg_attr(not(target_arch = "wasm32"), test)]
+#[cfg_attr(target_arch = "wasm32", wasm_bindgen_test)]
 fn parse_error_walk_missing_prompt() {
     assert!(parse("WALK TOP 5;").is_err());
 }
 
-#[test]
+#[cfg_attr(not(target_arch = "wasm32"), test)]
+#[cfg_attr(target_arch = "wasm32", wasm_bindgen_test)]
 fn parse_error_select_missing_from() {
     assert!(parse(r#"SELECT * WHERE entity = "x";"#).is_err());
 }
 
-#[test]
+#[cfg_attr(not(target_arch = "wasm32"), test)]
+#[cfg_attr(target_arch = "wasm32", wasm_bindgen_test)]
 fn parse_error_insert_missing_values() {
     assert!(parse("INSERT INTO EDGES (entity, relation, target);").is_err());
 }
 
-#[test]
+#[cfg_attr(not(target_arch = "wasm32"), test)]
+#[cfg_attr(target_arch = "wasm32", wasm_bindgen_test)]
 fn parse_error_show_invalid_noun() {
     assert!(parse("SHOW FOOBAR;").is_err());
 }
 
-#[test]
+#[cfg_attr(not(target_arch = "wasm32"), test)]
+#[cfg_attr(target_arch = "wasm32", wasm_bindgen_test)]
 fn parse_error_empty_input() {
     assert!(parse("").is_err());
 }
 
-#[test]
+#[cfg_attr(not(target_arch = "wasm32"), test)]
+#[cfg_attr(target_arch = "wasm32", wasm_bindgen_test)]
 fn parse_error_comment_only() {
     assert!(parse("-- just a comment").is_err());
 }
@@ -1541,14 +1661,16 @@ fn parse_error_comment_only() {
 // FULL DEMO SCRIPT FROM SPEC v0.3 — every statement parses
 // ══════════════════════════════════════════════════════════════
 
-#[test]
+#[cfg_attr(not(target_arch = "wasm32"), test)]
+#[cfg_attr(target_arch = "wasm32", wasm_bindgen_test)]
 fn parse_demo_script_act1() {
     parse(r#"EXTRACT MODEL "google/gemma-3-4b-it" INTO "gemma3-4b.vindex" WITH ALL;"#).unwrap();
     parse(r#"USE "gemma3-4b.vindex";"#).unwrap();
     parse("STATS;").unwrap();
 }
 
-#[test]
+#[cfg_attr(not(target_arch = "wasm32"), test)]
+#[cfg_attr(target_arch = "wasm32", wasm_bindgen_test)]
 fn parse_demo_script_act2() {
     parse("SHOW RELATIONS WITH EXAMPLES;").unwrap();
     parse(r#"DESCRIBE "France";"#).unwrap();
@@ -1556,14 +1678,16 @@ fn parse_demo_script_act2() {
     parse(r#"DESCRIBE "def" SYNTAX;"#).unwrap();
 }
 
-#[test]
+#[cfg_attr(not(target_arch = "wasm32"), test)]
+#[cfg_attr(target_arch = "wasm32", wasm_bindgen_test)]
 fn parse_demo_script_act3() {
     parse(r#"WALK "France" TOP 10;"#).unwrap();
     parse(r#"EXPLAIN WALK "The capital of France is";"#).unwrap();
     parse(r#"INFER "The capital of France is" TOP 5 COMPARE;"#).unwrap();
 }
 
-#[test]
+#[cfg_attr(not(target_arch = "wasm32"), test)]
+#[cfg_attr(target_arch = "wasm32", wasm_bindgen_test)]
 fn parse_demo_script_act4() {
     parse(r#"DESCRIBE "John Coyle";"#).unwrap();
     parse(
@@ -1572,7 +1696,8 @@ fn parse_demo_script_act4() {
     parse(r#"DESCRIBE "John Coyle";"#).unwrap();
 }
 
-#[test]
+#[cfg_attr(not(target_arch = "wasm32"), test)]
+#[cfg_attr(target_arch = "wasm32", wasm_bindgen_test)]
 fn parse_demo_script_act5() {
     parse(r#"DIFF "gemma3-4b.vindex" CURRENT;"#).unwrap();
     parse(r#"COMPILE CURRENT INTO MODEL "gemma3-4b-edited/" FORMAT safetensors;"#).unwrap();
@@ -1582,7 +1707,8 @@ fn parse_demo_script_act5() {
 // INFER STATEMENT
 // ══════════════════════════════════════════════════════════════
 
-#[test]
+#[cfg_attr(not(target_arch = "wasm32"), test)]
+#[cfg_attr(target_arch = "wasm32", wasm_bindgen_test)]
 fn parse_infer_minimal() {
     let stmt = parse(r#"INFER "The capital of France is" TOP 5;"#).unwrap();
     match stmt {
@@ -1599,7 +1725,8 @@ fn parse_infer_minimal() {
     }
 }
 
-#[test]
+#[cfg_attr(not(target_arch = "wasm32"), test)]
+#[cfg_attr(target_arch = "wasm32", wasm_bindgen_test)]
 fn parse_infer_with_compare() {
     let stmt = parse(r#"INFER "test prompt" TOP 3 COMPARE;"#).unwrap();
     match stmt {
@@ -1616,7 +1743,8 @@ fn parse_infer_with_compare() {
     }
 }
 
-#[test]
+#[cfg_attr(not(target_arch = "wasm32"), test)]
+#[cfg_attr(target_arch = "wasm32", wasm_bindgen_test)]
 fn parse_infer_no_top() {
     let stmt = parse(r#"INFER "test";"#).unwrap();
     match stmt {
@@ -1629,7 +1757,8 @@ fn parse_infer_no_top() {
 // PATCH STATEMENTS
 // ══════════════════════════════════════════════════════════════
 
-#[test]
+#[cfg_attr(not(target_arch = "wasm32"), test)]
+#[cfg_attr(target_arch = "wasm32", wasm_bindgen_test)]
 fn parse_begin_patch() {
     let stmt = parse(r#"BEGIN PATCH "medical-knowledge.vlp";"#).unwrap();
     match stmt {
@@ -1638,13 +1767,15 @@ fn parse_begin_patch() {
     }
 }
 
-#[test]
+#[cfg_attr(not(target_arch = "wasm32"), test)]
+#[cfg_attr(target_arch = "wasm32", wasm_bindgen_test)]
 fn parse_save_patch() {
     let stmt = parse("SAVE PATCH;").unwrap();
     assert!(matches!(stmt, Statement::SavePatch));
 }
 
-#[test]
+#[cfg_attr(not(target_arch = "wasm32"), test)]
+#[cfg_attr(target_arch = "wasm32", wasm_bindgen_test)]
 fn parse_apply_patch() {
     let stmt = parse(r#"APPLY PATCH "medical-knowledge.vlp";"#).unwrap();
     match stmt {
@@ -1653,13 +1784,15 @@ fn parse_apply_patch() {
     }
 }
 
-#[test]
+#[cfg_attr(not(target_arch = "wasm32"), test)]
+#[cfg_attr(target_arch = "wasm32", wasm_bindgen_test)]
 fn parse_show_patches() {
     let stmt = parse("SHOW PATCHES;").unwrap();
     assert!(matches!(stmt, Statement::ShowPatches));
 }
 
-#[test]
+#[cfg_attr(not(target_arch = "wasm32"), test)]
+#[cfg_attr(target_arch = "wasm32", wasm_bindgen_test)]
 fn parse_remove_patch() {
     let stmt = parse(r#"REMOVE PATCH "fix-hallucinations.vlp";"#).unwrap();
     match stmt {
@@ -1668,7 +1801,8 @@ fn parse_remove_patch() {
     }
 }
 
-#[test]
+#[cfg_attr(not(target_arch = "wasm32"), test)]
+#[cfg_attr(target_arch = "wasm32", wasm_bindgen_test)]
 fn parse_patch_workflow() {
     // Full patch workflow from spec
     parse(r#"BEGIN PATCH "medical-knowledge.vlp";"#).unwrap();
@@ -1679,7 +1813,8 @@ fn parse_patch_workflow() {
     parse(r#"REMOVE PATCH "medical-knowledge.vlp";"#).unwrap();
 }
 
-#[test]
+#[cfg_attr(not(target_arch = "wasm32"), test)]
+#[cfg_attr(target_arch = "wasm32", wasm_bindgen_test)]
 fn parse_diff_into_patch() {
     let stmt = parse(
         r#"DIFF "gemma3-4b.vindex" "gemma3-4b-medical.vindex" INTO PATCH "medical-changes.vlp";"#,
@@ -1697,7 +1832,8 @@ fn parse_diff_into_patch() {
     }
 }
 
-#[test]
+#[cfg_attr(not(target_arch = "wasm32"), test)]
+#[cfg_attr(target_arch = "wasm32", wasm_bindgen_test)]
 fn parse_diff_without_into_patch() {
     let stmt = parse(r#"DIFF "a.vindex" "b.vindex" LIMIT 10;"#).unwrap();
     match stmt {
@@ -1711,7 +1847,8 @@ fn parse_diff_without_into_patch() {
     }
 }
 
-#[test]
+#[cfg_attr(not(target_arch = "wasm32"), test)]
+#[cfg_attr(target_arch = "wasm32", wasm_bindgen_test)]
 fn parse_compile_into_vindex() {
     let stmt = parse(r#"COMPILE CURRENT INTO VINDEX "output.vindex";"#).unwrap();
     match stmt {
@@ -1723,7 +1860,8 @@ fn parse_compile_into_vindex() {
     }
 }
 
-#[test]
+#[cfg_attr(not(target_arch = "wasm32"), test)]
+#[cfg_attr(target_arch = "wasm32", wasm_bindgen_test)]
 fn parse_compile_into_vindex_on_conflict_last_wins() {
     let stmt = parse(r#"COMPILE CURRENT INTO VINDEX "out.vindex" ON CONFLICT LAST_WINS;"#).unwrap();
     match stmt {
@@ -1739,7 +1877,8 @@ fn parse_compile_into_vindex_on_conflict_last_wins() {
     }
 }
 
-#[test]
+#[cfg_attr(not(target_arch = "wasm32"), test)]
+#[cfg_attr(target_arch = "wasm32", wasm_bindgen_test)]
 fn parse_compile_into_vindex_on_conflict_highest_confidence() {
     let stmt = parse(r#"COMPILE CURRENT INTO VINDEX "out.vindex" ON CONFLICT HIGHEST_CONFIDENCE;"#)
         .unwrap();
@@ -1751,7 +1890,8 @@ fn parse_compile_into_vindex_on_conflict_highest_confidence() {
     }
 }
 
-#[test]
+#[cfg_attr(not(target_arch = "wasm32"), test)]
+#[cfg_attr(target_arch = "wasm32", wasm_bindgen_test)]
 fn parse_compile_into_vindex_on_conflict_fail() {
     let stmt = parse(r#"COMPILE CURRENT INTO VINDEX "out.vindex" ON CONFLICT FAIL;"#).unwrap();
     match stmt {
@@ -1762,7 +1902,8 @@ fn parse_compile_into_vindex_on_conflict_fail() {
     }
 }
 
-#[test]
+#[cfg_attr(not(target_arch = "wasm32"), test)]
+#[cfg_attr(target_arch = "wasm32", wasm_bindgen_test)]
 fn parse_compile_into_model_with_on_conflict_errors() {
     let result = parse(r#"COMPILE CURRENT INTO MODEL "out/" FORMAT safetensors ON CONFLICT FAIL;"#);
     assert!(
@@ -1771,7 +1912,8 @@ fn parse_compile_into_model_with_on_conflict_errors() {
     );
 }
 
-#[test]
+#[cfg_attr(not(target_arch = "wasm32"), test)]
+#[cfg_attr(target_arch = "wasm32", wasm_bindgen_test)]
 fn parse_compile_into_model_explicit() {
     let stmt = parse(r#"COMPILE CURRENT INTO MODEL "out/" FORMAT safetensors;"#).unwrap();
     match stmt {
@@ -1786,7 +1928,8 @@ fn parse_compile_into_model_explicit() {
 // TRACE STATEMENTS
 // ══════════════════════════════════════════════════════════════
 
-#[test]
+#[cfg_attr(not(target_arch = "wasm32"), test)]
+#[cfg_attr(target_arch = "wasm32", wasm_bindgen_test)]
 fn parse_trace_minimal() {
     let stmt = parse(r#"TRACE "The capital of France is";"#).unwrap();
     match stmt {
@@ -1809,7 +1952,8 @@ fn parse_trace_minimal() {
     }
 }
 
-#[test]
+#[cfg_attr(not(target_arch = "wasm32"), test)]
+#[cfg_attr(target_arch = "wasm32", wasm_bindgen_test)]
 fn parse_trace_with_for_token() {
     let stmt = parse(r#"TRACE "The capital of France is" FOR "Paris";"#).unwrap();
     match stmt {
@@ -1821,7 +1965,8 @@ fn parse_trace_with_for_token() {
     }
 }
 
-#[test]
+#[cfg_attr(not(target_arch = "wasm32"), test)]
+#[cfg_attr(target_arch = "wasm32", wasm_bindgen_test)]
 fn parse_trace_decompose_with_layers() {
     let stmt = parse(r#"TRACE "The capital of France is" DECOMPOSE LAYERS 22-27;"#).unwrap();
     match stmt {
@@ -1837,7 +1982,8 @@ fn parse_trace_decompose_with_layers() {
     }
 }
 
-#[test]
+#[cfg_attr(not(target_arch = "wasm32"), test)]
+#[cfg_attr(target_arch = "wasm32", wasm_bindgen_test)]
 fn parse_trace_save() {
     let stmt = parse(r#"TRACE "The capital of France is" SAVE "france.trace";"#).unwrap();
     match stmt {
@@ -1848,7 +1994,8 @@ fn parse_trace_save() {
     }
 }
 
-#[test]
+#[cfg_attr(not(target_arch = "wasm32"), test)]
+#[cfg_attr(target_arch = "wasm32", wasm_bindgen_test)]
 fn parse_trace_positions_all() {
     let stmt = parse(r#"TRACE "The capital of France is" POSITIONS ALL;"#).unwrap();
     match stmt {
@@ -1859,7 +2006,8 @@ fn parse_trace_positions_all() {
     }
 }
 
-#[test]
+#[cfg_attr(not(target_arch = "wasm32"), test)]
+#[cfg_attr(target_arch = "wasm32", wasm_bindgen_test)]
 fn parse_trace_positions_last() {
     let stmt = parse(r#"TRACE "The capital of France is" POSITIONS LAST;"#).unwrap();
     match stmt {
@@ -1870,7 +2018,8 @@ fn parse_trace_positions_last() {
     }
 }
 
-#[test]
+#[cfg_attr(not(target_arch = "wasm32"), test)]
+#[cfg_attr(target_arch = "wasm32", wasm_bindgen_test)]
 fn parse_trace_full() {
     let stmt = parse(
         r#"TRACE "The capital of France is" FOR "Paris" DECOMPOSE LAYERS 22-27 SAVE "out.trace";"#,
@@ -1899,13 +2048,15 @@ fn parse_trace_full() {
 // Range validation
 // ══════════════════════════════════════════════════════════════
 
-#[test]
+#[cfg_attr(not(target_arch = "wasm32"), test)]
+#[cfg_attr(target_arch = "wasm32", wasm_bindgen_test)]
 fn range_invalid_start_greater_than_end() {
     let result = parse("SHOW LAYERS 10-5;");
     assert!(result.is_err(), "range 10-5 should fail");
 }
 
-#[test]
+#[cfg_attr(not(target_arch = "wasm32"), test)]
+#[cfg_attr(target_arch = "wasm32", wasm_bindgen_test)]
 fn range_valid_same_start_end() {
     let stmt = parse("SHOW LAYERS 5-5;").unwrap();
     match stmt {
@@ -1922,7 +2073,8 @@ fn range_valid_same_start_end() {
 // Keyword field name mapping
 // ══════════════════════════════════════════════════════════════
 
-#[test]
+#[cfg_attr(not(target_arch = "wasm32"), test)]
+#[cfg_attr(target_arch = "wasm32", wasm_bindgen_test)]
 fn keyword_field_names_consistent() {
     use crate::lexer::Keyword;
     // Key field-name keywords that must map correctly
@@ -1935,13 +2087,15 @@ fn keyword_field_names_consistent() {
     assert_eq!(Keyword::AutoExtract.as_field_name(), "auto_extract");
 }
 
-#[test]
+#[cfg_attr(not(target_arch = "wasm32"), test)]
+#[cfg_attr(target_arch = "wasm32", wasm_bindgen_test)]
 fn parser_rejects_trailing_tokens_after_semicolon() {
     let result = parse(r#"STATS; SELECT * FROM EDGES;"#);
     assert!(result.is_err(), "single-statement parser must reject tails");
 }
 
-#[test]
+#[cfg_attr(not(target_arch = "wasm32"), test)]
+#[cfg_attr(target_arch = "wasm32", wasm_bindgen_test)]
 fn parser_rejects_trailing_identifier_without_semicolon() {
     let result = parse(r#"STATS unexpected"#);
     assert!(result.is_err(), "single-statement parser must consume EOF");

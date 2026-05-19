@@ -23,8 +23,13 @@ default = []
 # Mirrors the features in those crates so workspace tests can be built
 # with `--features metal` from this package.
 metal = ["larql-compute/metal", "larql-inference/metal", "larql-vindex/metal"]
+# Opt-in gate for the Firefox browser-based wasm_bindgen_test runner.
+browser-tests = []
 
 [dev-dependencies]
+wasm-bindgen-test = "0.3"
+
+[target.'cfg(not(target_arch = "wasm32"))'.dev-dependencies]
 criterion = "0.5"
 # Mocked HTTP server for testing the Remote backend's forwarders
 # without spinning up a real `larql-server`. Each test wires a

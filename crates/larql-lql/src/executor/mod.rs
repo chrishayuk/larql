@@ -507,6 +507,7 @@ impl Session {
     }
 
     #[cfg(target_arch = "wasm32")]
+    #[allow(dead_code)]
     pub(crate) fn is_remote(&self) -> bool {
         false
     }
