@@ -3,9 +3,11 @@
 //! For each crate:
 //!   NATIVE check — crate-type detection (no lib target → host OS/IO layer)
 //!   Level 1  — `cargo check --target wasm32-unknown-unknown`
-//!   Build    — `cargo test --no-run --target wasm32-unknown-unknown --lib`
-//!              produces the wasm binary we analyze
+//!   Build    — `cargo rustc --crate-type cdylib --target wasm32-unknown-unknown`
+//!              produces the PRODUCTION wasm binary (no dev-dependencies)
 //!   Closure  — wasmparser + ascent Datalog rules → partition label
+//!              (analyzed against production binary, not the test binary, so
+//!              dev-only dispatch from wasm-bindgen-test is excluded)
 //!   Level 2  — `wasm-pack test --node -- --lib` (runtime confirmation)
 //!   Level 4  — cfg-gated test collector (boundary map, informational)
 //!   Level 5/6 — `cargo mutants` on wasm32-accessible sources
@@ -155,8 +157,8 @@ fn certify_crate(
     }
     println!("  Level 1: PASS (compile-consistent)");
 
-    // ── Build wasm test binary ────────────────────────────────────────────────
-    let wasm_bin = build_wasm_test_binary(crate_name, crate_root)?;
+    // ── Build wasm production binary (no dev-deps) ───────────────────────────
+    let wasm_bin = build_wasm_production_binary(crate_name, crate_root)?;
 
     // ── Call-graph closure analysis ──────────────────────────────────────────
     if let Some(ref path) = wasm_bin {
@@ -291,13 +293,16 @@ fn run_level1(crate_name: &str) -> Result<Vec<String>> {
     Ok(errors)
 }
 
-/// Build the wasm test binary via `cargo test --no-run`.
+/// Build the production wasm binary via `cargo rustc --crate-type cdylib`.
+///
+/// Using cdylib excludes dev-dependencies (wasm-bindgen-test, etc.) so the
+/// call-graph analysis sees only production code dispatch, not test harness.
+/// For cdylib artifacts the path is in `filenames`, not `executable`.
 /// Returns the path to the `.wasm` artifact, or None if the build fails.
-fn build_wasm_test_binary(crate_name: &str, crate_root: &Path) -> Result<Option<PathBuf>> {
+fn build_wasm_production_binary(crate_name: &str, crate_root: &Path) -> Result<Option<PathBuf>> {
     let output = Command::new("cargo")
         .args([
-            "test",
-            "--no-run",
+            "rustc",
             "--target",
             "wasm32-unknown-unknown",
             "--message-format",
@@ -305,20 +310,26 @@ fn build_wasm_test_binary(crate_name: &str, crate_root: &Path) -> Result<Option<
             "-p",
             crate_name,
             "--lib",
+            "--crate-type",
+            "cdylib",
         ])
         .current_dir(crate_root)
         .stdout(Stdio::piped())
         .stderr(Stdio::null())
         .output()
-        .context("cargo test --no-run")?;
+        .context("cargo rustc --crate-type cdylib")?;
 
-    // Parse JSON output for the compiler-artifact with a .wasm executable.
+    // cdylib artifacts appear in `filenames`, not `executable`.
     for line in String::from_utf8_lossy(&output.stdout).lines() {
         if let Ok(msg) = serde_json::from_str::<serde_json::Value>(line) {
             if msg["reason"] == "compiler-artifact" {
-                if let Some(exec) = msg["executable"].as_str() {
-                    if exec.ends_with(".wasm") {
-                        return Ok(Some(PathBuf::from(exec)));
+                if let Some(filenames) = msg["filenames"].as_array() {
+                    for f in filenames {
+                        if let Some(s) = f.as_str() {
+                            if s.ends_with(".wasm") {
+                                return Ok(Some(PathBuf::from(s)));
+                            }
+                        }
                     }
                 }
             }
