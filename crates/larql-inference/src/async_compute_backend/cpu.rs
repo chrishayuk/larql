@@ -205,22 +205,11 @@ mod tests {
             "attention_step_async hidden vs sync KvDispatch::attention_step",
         );
 
-        // Handle mutations must also match. K/V parity is gated off on
-        // Windows for the same OpenBLAS reason documented in the sibling
-        // `attention_prefill_async_matches_sync` test below: successive
-        // matmuls occasionally hand back a partially-stale buffer with one
-        // row of f32 K values diverging by ~0.9 (well past
-        // `ATTN_MAX_DIFF`), accompanied by a `BLAS : Bad memory
-        // unallocation!` warning. The hidden-state check above already
-        // covers the math; gating K/V on `not(windows)` keeps the
-        // property where the BLAS layer is sane.
-        #[cfg(not(windows))]
-        {
-            let (k_sync, v_sync) = backend.read_kv_to_host(&handle_sync).unwrap();
-            let (k_async, v_async) = backend.read_kv_to_host(&handle_async).unwrap();
-            assert_array_close(&k_sync, &k_async, "post-step K");
-            assert_array_close(&v_sync, &v_async, "post-step V");
-        }
+        // Handle mutations must also match (same tolerance).
+        let (k_sync, v_sync) = backend.read_kv_to_host(&handle_sync).unwrap();
+        let (k_async, v_async) = backend.read_kv_to_host(&handle_async).unwrap();
+        assert_array_close(&k_sync, &k_async, "post-step K");
+        assert_array_close(&v_sync, &v_async, "post-step V");
     }
 
     #[test]
