@@ -31,3 +31,8 @@ criterion = "0.5"
 [[bench]]
 name = "models"
 harness = false
+
+[package.metadata.wasm-cert]
+claimed-level = 1
+diagonalization-gate = "manual-review"
+notes = "fs traps in detect/loading modules; compile-consistent only"

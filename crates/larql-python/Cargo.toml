@@ -25,3 +25,8 @@ serde_json = { workspace = true }
 
 [target.'cfg(target_arch = "wasm32")'.dependencies]
 getrandom = { workspace = true }
+
+[package.metadata.wasm-cert]
+claimed-level = 0
+diagonalization-gate = "uncertified"
+notes = "no wasm32 boundary decision made yet"

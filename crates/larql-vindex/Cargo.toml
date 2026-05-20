@@ -142,3 +142,8 @@ tokenizers = { version = "0.21", default-features = false, features = ["unstable
 # (browser-only consumers). Pure-compute consumers (larql-kv) must not
 # enable `remote` so their wasm-pack --node tests pass.
 reqwest = { version = "0.12", default-features = false, features = ["json"], optional = true }
+
+[package.metadata.wasm-cert]
+claimed-level = 1
+diagonalization-gate = "manual-review"
+notes = "80+ files with fs/mmap traps ungated; zero wasm runtime tests"

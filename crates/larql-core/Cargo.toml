@@ -54,3 +54,8 @@ name = "graph_demo"
 
 [[example]]
 name = "serialization_demo"
+
+[package.metadata.wasm-cert]
+claimed-level = 0
+diagonalization-gate = "uncertified"
+notes = "no wasm32 boundary decision made yet"

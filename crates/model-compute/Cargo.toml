@@ -44,3 +44,8 @@ criterion = "0.5"
 name = "wasm_dispatch"
 harness = false
 required-features = ["wasm"]
+
+[package.metadata.wasm-cert]
+claimed-level = 0
+diagonalization-gate = "uncertified"
+notes = "no wasm32 boundary decision made yet"

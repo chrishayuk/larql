@@ -135,3 +135,8 @@ unexpected_cfgs = { level = "allow", check-cfg = [] }
 
 [target.'cfg(target_arch = "wasm32")'.dependencies]
 getrandom = { workspace = true }
+
+[package.metadata.wasm-cert]
+claimed-level = 2
+diagonalization-gate = "manual-review"
+notes = "pure computation; 156 wasm runtime tests; no OS/IO deps"

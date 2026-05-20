@@ -49,3 +49,8 @@ tokenizers = "0.21"
 [target.'cfg(target_arch = "wasm32")'.dependencies]
 getrandom = { workspace = true }
 tokenizers = { version = "0.21", default-features = false, features = ["unstable_wasm"] }
+
+[package.metadata.wasm-cert]
+claimed-level = 0
+diagonalization-gate = "uncertified"
+notes = "no wasm32 boundary decision made yet"

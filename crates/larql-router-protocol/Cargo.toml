@@ -28,3 +28,8 @@ tokio-stream = "0.1"
 
 [target.'cfg(target_arch = "wasm32")'.dependencies]
 getrandom = { workspace = true }
+
+[package.metadata.wasm-cert]
+claimed-level = 2
+diagonalization-gate = "passed"
+notes = "all pub mod declarations cfg-gated behind not(wasm32); zero wasm32-accessible code"

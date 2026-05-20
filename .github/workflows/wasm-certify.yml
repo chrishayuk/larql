@@ -1,0 +1,117 @@
+# wasm-certify.yml — reusable wasm32 certification cascade
+#
+# Single workflow covering ALL workspace members, current and future.
+# No per-crate duplication: a crate added to Cargo.toml is automatically
+# certified on the next run without any workflow file changes.
+#
+# Certification criterion (static):
+#   The entire call graph of the wasm32 artifact must be statically
+#   resolvable, fully monomorphized, and closed under the sandbox boundary.
+#   Undecidability (unresolved dynamic dispatch) IS the refutation condition.
+#
+# Pipeline per crate:
+#   Level 1    — cargo check (compile-consistent precondition)
+#   Closure    — wasmparser + ascent Datalog rules → CERTIFIED / REFUTED
+#   Level 2    — wasm-pack test --lib (runtime confirmation)
+#   Level 4    — cfg-gated test collector (native-only boundary map)
+#   Level 5/6  — cargo mutants on wasm32-accessible modules
+#
+# All levels run for all crates; results are reported regardless of pass/fail.
+# Exit code is non-zero only when a crate regresses below its claimed-level.
+#
+# fail-fast: false — all crate results must remain visible.
+
+name: wasm-certify
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'crates/**'
+      - 'Cargo.toml'
+      - 'Cargo.lock'
+      - '.github/workflows/wasm-certify.yml'
+  pull_request:
+    types: [opened, synchronize, reopened, ready_for_review]
+    paths:
+      - 'crates/**'
+      - 'Cargo.toml'
+      - 'Cargo.lock'
+      - '.github/workflows/wasm-certify.yml'
+  workflow_dispatch: {}
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name != 'workflow_dispatch' }}
+
+jobs:
+  certify:
+    name: wasm-certify · ${{ matrix.mode.name }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 120
+
+    permissions:
+      # Read the source tree and Cargo.lock.
+      contents: read
+      # Post per-crate Check Annotations (certification conclusions).
+      # Scoped to this workflow's check runs only — no write to other checks.
+      checks: write
+      # Read PR file list for new-crate detection (no write needed).
+      pull-requests: read
+
+    strategy:
+      fail-fast: false
+      matrix:
+        mode:
+          - name: serial
+            toolchain: stable
+            rustflags: ''
+          - name: parallel
+            toolchain: nightly
+            rustflags: '-C target-feature=+atomics,+bulk-memory,+mutable-globals'
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust (${{ matrix.mode.toolchain }}) + wasm32 target
+        uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: ${{ matrix.mode.toolchain }}
+          targets: wasm32-unknown-unknown
+
+      - name: Install wasm-pack + cargo-mutants
+        uses: taiki-e/install-action@v2
+        with:
+          tool: wasm-pack,cargo-mutants
+
+      - name: Install Firefox
+        uses: browser-actions/setup-firefox@v1
+
+      - name: Cache cargo registry + build artefacts
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: ${{ runner.os }}-wasm-certify-${{ matrix.mode.name }}-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-wasm-certify-${{ matrix.mode.name }}-
+
+      # ── Certification cascade (all workspace members) ─────────────────────
+      # Exits non-zero only on claimed-level regression.
+      # Uncertified crates (level 0) are audited and reported, not failed.
+
+      - name: wasm-certify (all workspace members, all levels)
+        env:
+          RUSTFLAGS: ${{ matrix.mode.rustflags }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: cargo xtask wasm-certify
+
+      # ── Certification table → job summary ────────────────────────────────
+      # Runs even when the certify step fails so regressions are visible
+      # alongside the full workspace table.
+
+      - name: wasm-status → job summary
+        if: always()
+        run: cargo xtask wasm-status >> $GITHUB_STEP_SUMMARY

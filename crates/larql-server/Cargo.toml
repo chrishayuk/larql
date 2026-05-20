@@ -80,3 +80,8 @@ getrandom = { workspace = true }
 
 [dev-dependencies]
 wasm-bindgen-test = "0.3"
+
+[package.metadata.wasm-cert]
+claimed-level = 2
+diagonalization-gate = "manual-review"
+notes = "wasm32 subset: env_flags, etag, ffn_l2_cache, http"

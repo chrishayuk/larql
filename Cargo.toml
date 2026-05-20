@@ -23,6 +23,8 @@ members = [
     "crates/larql-wasm",
     # Browser CLI — LQL session and inference surface compiled to WASM
     "crates/larql-browser-cli",
+    # Build and certification automation (not in default-members)
+    "crates/xtask",
 ]
 default-members = [
     "crates/larql-models",
