@@ -34,6 +34,6 @@ name = "gate_decision"
 name = "accuracy"
 
 [package.metadata.wasm-cert]
-claimed-level = 2
-diagonalization-gate = "dynamic-partition"
-notes = "call_indirect present; L2 PASS; DYNAMIC partition"
+claimed-level = 3
+diagonalization-gate = "static-partition"
+notes = "production binary STATIC; no call_indirect, no non-intrinsic imports; L2 PASS"

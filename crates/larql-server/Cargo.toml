@@ -82,6 +82,6 @@ getrandom = { workspace = true }
 wasm-bindgen-test = "0.3"
 
 [package.metadata.wasm-cert]
-claimed-level = 2
-diagonalization-gate = "dynamic-partition"
-notes = "DYNAMIC: test binary includes wasm-bindgen-test async/closure dispatch; production modules are static"
+claimed-level = 3
+diagonalization-gate = "static-partition"
+notes = "production binary STATIC; no call_indirect, no non-intrinsic imports; L2 PASS"

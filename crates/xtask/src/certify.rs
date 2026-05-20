@@ -225,10 +225,12 @@ fn certify_crate(
     let audit = crate::audit::audit_crate(crate_name, crate_root)?;
     result.level4_unit_cws = audit.unit_counterwits.len();
     result.level4_integ_cws = audit.integ_counterwits.len();
-    println!(
-        "  Level 4: {}u + {}i counterwit­nesses (native-only boundary)",
-        result.level4_unit_cws, result.level4_integ_cws
-    );
+    if result.level4_unit_cws > 0 || result.level4_integ_cws > 0 {
+        println!(
+            "  Level 4: {}u + {}i counterwit­nesses (native-only boundary)",
+            result.level4_unit_cws, result.level4_integ_cws
+        );
+    }
 
     // ── Level 5/6: mutation testing ──────────────────────────────────────────
     let accessible_files = accessible_source_files(crate_root, &audit.accessible);

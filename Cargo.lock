@@ -5980,6 +5980,7 @@ dependencies = [
  "ascent",
  "cargo_metadata",
  "clap",
+ "rustc-demangle",
  "serde",
  "serde_json",
  "wasmparser 0.248.0",

@@ -11,6 +11,10 @@ use anyhow::Result;
 use std::collections::HashMap;
 use wasmparser::{BinaryReaderError, Operator, Parser, Payload};
 
+fn demangle(name: &str) -> String {
+    rustc_demangle::demangle(name).to_string()
+}
+
 /// All Datalog facts extracted from a single wasm binary.
 #[derive(Default, Debug)]
 pub struct WasmFacts {
@@ -155,7 +159,7 @@ pub fn extract(wasm_bytes: &[u8]) -> Result<WasmFacts> {
 /// Build a human-readable label for a function index.
 pub fn label(facts: &WasmFacts, idx: u32) -> String {
     if let Some(name) = facts.names.get(&idx) {
-        return name.clone();
+        return demangle(name);
     }
     if idx < facts.num_imports {
         // Find import by index
