@@ -12,21 +12,21 @@ permissions:
   contents: read
 
 on:
-  push:
-    branches: [main]
-    paths:
-      - 'crates/larql-boundary/**'
-      - 'Cargo.toml'
-      - 'Cargo.lock'
-      - '.github/workflows/larql-boundary.yml'
-  pull_request:
-    types: [opened, synchronize, reopened, ready_for_review]
-    branches: [main]
-    paths:
-      - 'crates/larql-boundary/**'
-      - 'Cargo.toml'
-      - 'Cargo.lock'
-      - '.github/workflows/larql-boundary.yml'
+#  push:
+#    branches: [main]
+#    paths:
+#      - 'crates/larql-boundary/**'
+#      - 'Cargo.toml'
+#      - 'Cargo.lock'
+#      - '.github/workflows/larql-boundary.yml'
+#  pull_request:
+#    types: [opened, synchronize, reopened, ready_for_review]
+#    branches: [main]
+#    paths:
+#      - 'crates/larql-boundary/**'
+#      - 'Cargo.toml'
+#      - 'Cargo.lock'
+#      - '.github/workflows/larql-boundary.yml'
   workflow_dispatch: {}
 
 concurrency:

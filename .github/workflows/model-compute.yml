@@ -8,23 +8,23 @@
 name: model-compute
 
 on:
-  push:
-    branches: [main]
-    paths:
-      - 'crates/model-compute/**'
-      - 'Cargo.toml'
-      - 'Cargo.lock'
-      - 'Makefile'
-      - '.github/workflows/model-compute.yml'
-  pull_request:
-    types: [opened, synchronize, reopened, ready_for_review]
-    branches: [main]
-    paths:
-      - 'crates/model-compute/**'
-      - 'Cargo.toml'
-      - 'Cargo.lock'
-      - 'Makefile'
-      - '.github/workflows/model-compute.yml'
+#  push:
+#    branches: [main]
+#    paths:
+#      - 'crates/model-compute/**'
+#      - 'Cargo.toml'
+#      - 'Cargo.lock'
+#      - 'Makefile'
+#      - '.github/workflows/model-compute.yml'
+#  pull_request:
+#    types: [opened, synchronize, reopened, ready_for_review]
+#    branches: [main]
+#    paths:
+#      - 'crates/model-compute/**'
+#      - 'Cargo.toml'
+#      - 'Cargo.lock'
+#      - 'Makefile'
+#      - '.github/workflows/model-compute.yml'
   workflow_dispatch: {}
 
 concurrency:

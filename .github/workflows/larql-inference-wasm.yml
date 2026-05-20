@@ -17,29 +17,29 @@
 name: larql-inference-wasm
 
 on:
-  push:
-    branches: [main]
-    paths:
-      - 'crates/larql-inference/**'
-      - 'crates/larql-compute/**'
-      - 'crates/larql-models/**'
-      - 'crates/larql-vindex/**'
-      - 'crates/larql-core/**'
-      - 'Cargo.toml'
-      - 'Cargo.lock'
-      - '.github/workflows/larql-inference-wasm.yml'
-  pull_request:
-    types: [opened, synchronize, reopened, ready_for_review]
-    branches: [main]
-    paths:
-      - 'crates/larql-inference/**'
-      - 'crates/larql-compute/**'
-      - 'crates/larql-models/**'
-      - 'crates/larql-vindex/**'
-      - 'crates/larql-core/**'
-      - 'Cargo.toml'
-      - 'Cargo.lock'
-      - '.github/workflows/larql-inference-wasm.yml'
+#  push:
+#    branches: [main]
+#    paths:
+#      - 'crates/larql-inference/**'
+#      - 'crates/larql-compute/**'
+#      - 'crates/larql-models/**'
+#      - 'crates/larql-vindex/**'
+#      - 'crates/larql-core/**'
+#      - 'Cargo.toml'
+#      - 'Cargo.lock'
+#      - '.github/workflows/larql-inference-wasm.yml'
+#  pull_request:
+#    types: [opened, synchronize, reopened, ready_for_review]
+#    branches: [main]
+#    paths:
+#      - 'crates/larql-inference/**'
+#      - 'crates/larql-compute/**'
+#      - 'crates/larql-models/**'
+#      - 'crates/larql-vindex/**'
+#      - 'crates/larql-core/**'
+#      - 'Cargo.toml'
+#      - 'Cargo.lock'
+#      - '.github/workflows/larql-inference-wasm.yml'
   workflow_dispatch: {}
 
 concurrency:

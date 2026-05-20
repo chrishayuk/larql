@@ -8,27 +8,27 @@
 name: larql-kv-wasm
 
 on:
-  push:
-    branches: [main]
-    paths:
-      - 'crates/larql-kv/**'
-      - 'crates/larql-inference/**'
-      - 'crates/larql-compute/**'
-      - 'crates/larql-vindex/**'
-      - 'Cargo.toml'
-      - 'Cargo.lock'
-      - '.github/workflows/larql-kv-wasm.yml'
-  pull_request:
-    types: [opened, synchronize, reopened, ready_for_review]
-    branches: [main]
-    paths:
-      - 'crates/larql-kv/**'
-      - 'crates/larql-inference/**'
-      - 'crates/larql-compute/**'
-      - 'crates/larql-vindex/**'
-      - 'Cargo.toml'
-      - 'Cargo.lock'
-      - '.github/workflows/larql-kv-wasm.yml'
+#  push:
+#    branches: [main]
+#    paths:
+#      - 'crates/larql-kv/**'
+#      - 'crates/larql-inference/**'
+#      - 'crates/larql-compute/**'
+#      - 'crates/larql-vindex/**'
+#      - 'Cargo.toml'
+#      - 'Cargo.lock'
+#      - '.github/workflows/larql-kv-wasm.yml'
+#  pull_request:
+#    types: [opened, synchronize, reopened, ready_for_review]
+#    branches: [main]
+#    paths:
+#      - 'crates/larql-kv/**'
+#      - 'crates/larql-inference/**'
+#      - 'crates/larql-compute/**'
+#      - 'crates/larql-vindex/**'
+#      - 'Cargo.toml'
+#      - 'Cargo.lock'
+#      - '.github/workflows/larql-kv-wasm.yml'
   workflow_dispatch: {}
 
 concurrency:

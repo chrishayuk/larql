@@ -9,39 +9,39 @@
 name: larql-kv
 
 on:
-  push:
-    branches: [main]
-    paths:
-      - 'crates/larql-kv/**'
-      - 'crates/larql-inference/src/test_utils.rs'
-      - 'crates/larql-inference/src/forward/**'
-      - 'crates/larql-inference/src/attention/**'
-      - 'crates/larql-inference/src/ffn/**'
-      - 'crates/larql-inference/src/residual.rs'
-      - 'crates/larql-inference/src/vindex/**'
-      - 'crates/larql-inference/src/model.rs'
-      - 'crates/larql-inference/src/layer_graph/pipeline_layer.rs'
-      - 'Cargo.toml'
-      - 'Cargo.lock'
-      - 'Makefile'
-      - '.github/workflows/larql-kv.yml'
-  pull_request:
-    types: [opened, synchronize, reopened, ready_for_review]
-    branches: [main]
-    paths:
-      - 'crates/larql-kv/**'
-      - 'crates/larql-inference/src/test_utils.rs'
-      - 'crates/larql-inference/src/forward/**'
-      - 'crates/larql-inference/src/attention/**'
-      - 'crates/larql-inference/src/ffn/**'
-      - 'crates/larql-inference/src/residual.rs'
-      - 'crates/larql-inference/src/vindex/**'
-      - 'crates/larql-inference/src/model.rs'
-      - 'crates/larql-inference/src/layer_graph/pipeline_layer.rs'
-      - 'Cargo.toml'
-      - 'Cargo.lock'
-      - 'Makefile'
-      - '.github/workflows/larql-kv.yml'
+#  push:
+#    branches: [main]
+#    paths:
+#      - 'crates/larql-kv/**'
+#      - 'crates/larql-inference/src/test_utils.rs'
+#      - 'crates/larql-inference/src/forward/**'
+#      - 'crates/larql-inference/src/attention/**'
+#      - 'crates/larql-inference/src/ffn/**'
+#      - 'crates/larql-inference/src/residual.rs'
+#      - 'crates/larql-inference/src/vindex/**'
+#      - 'crates/larql-inference/src/model.rs'
+#      - 'crates/larql-inference/src/layer_graph/pipeline_layer.rs'
+#      - 'Cargo.toml'
+#      - 'Cargo.lock'
+#      - 'Makefile'
+#      - '.github/workflows/larql-kv.yml'
+#  pull_request:
+#    types: [opened, synchronize, reopened, ready_for_review]
+#    branches: [main]
+#    paths:
+#      - 'crates/larql-kv/**'
+#      - 'crates/larql-inference/src/test_utils.rs'
+#      - 'crates/larql-inference/src/forward/**'
+#      - 'crates/larql-inference/src/attention/**'
+#      - 'crates/larql-inference/src/ffn/**'
+#      - 'crates/larql-inference/src/residual.rs'
+#      - 'crates/larql-inference/src/vindex/**'
+#      - 'crates/larql-inference/src/model.rs'
+#      - 'crates/larql-inference/src/layer_graph/pipeline_layer.rs'
+#      - 'Cargo.toml'
+#      - 'Cargo.lock'
+#      - 'Makefile'
+#      - '.github/workflows/larql-kv.yml'
   workflow_dispatch: {}
 
 concurrency:

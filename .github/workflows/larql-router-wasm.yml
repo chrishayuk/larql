@@ -8,21 +8,21 @@
 name: larql-router-wasm
 
 on:
-  push:
-    branches: [main]
-    paths:
-      - 'crates/larql-router/**'
-      - 'Cargo.toml'
-      - 'Cargo.lock'
-      - '.github/workflows/larql-router-wasm.yml'
-  pull_request:
-    types: [opened, synchronize, reopened, ready_for_review]
-    branches: [main]
-    paths:
-      - 'crates/larql-router/**'
-      - 'Cargo.toml'
-      - 'Cargo.lock'
-      - '.github/workflows/larql-router-wasm.yml'
+#  push:
+#    branches: [main]
+#    paths:
+#      - 'crates/larql-router/**'
+#      - 'Cargo.toml'
+#      - 'Cargo.lock'
+#      - '.github/workflows/larql-router-wasm.yml'
+#  pull_request:
+#    types: [opened, synchronize, reopened, ready_for_review]
+#    branches: [main]
+#    paths:
+#      - 'crates/larql-router/**'
+#      - 'Cargo.toml'
+#      - 'Cargo.lock'
+#      - '.github/workflows/larql-router-wasm.yml'
   workflow_dispatch: {}
 
 concurrency:

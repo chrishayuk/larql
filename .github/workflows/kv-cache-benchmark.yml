@@ -7,25 +7,25 @@
 name: kv-cache-benchmark
 
 on:
-  push:
-    branches: [main]
-    paths:
-      - 'crates/kv-cache-benchmark/**'
-      - 'crates/larql-inference/**'
-      - 'Cargo.toml'
-      - 'Cargo.lock'
-      - 'Makefile'
-      - '.github/workflows/kv-cache-benchmark.yml'
-  pull_request:
-    types: [opened, synchronize, reopened, ready_for_review]
-    branches: [main]
-    paths:
-      - 'crates/kv-cache-benchmark/**'
-      - 'crates/larql-inference/**'
-      - 'Cargo.toml'
-      - 'Cargo.lock'
-      - 'Makefile'
-      - '.github/workflows/kv-cache-benchmark.yml'
+#  push:
+#    branches: [main]
+#    paths:
+#      - 'crates/kv-cache-benchmark/**'
+#      - 'crates/larql-inference/**'
+#      - 'Cargo.toml'
+#      - 'Cargo.lock'
+#      - 'Makefile'
+#      - '.github/workflows/kv-cache-benchmark.yml'
+#  pull_request:
+#    types: [opened, synchronize, reopened, ready_for_review]
+#    branches: [main]
+#    paths:
+#      - 'crates/kv-cache-benchmark/**'
+#      - 'crates/larql-inference/**'
+#      - 'Cargo.toml'
+#      - 'Cargo.lock'
+#      - 'Makefile'
+#      - '.github/workflows/kv-cache-benchmark.yml'
   workflow_dispatch: {}
 
 concurrency:

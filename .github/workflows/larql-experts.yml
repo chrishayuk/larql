@@ -8,23 +8,23 @@
 name: larql-experts
 
 on:
-  push:
-    branches: [main]
-    paths:
-      - 'crates/larql-experts/**'
-      - 'Cargo.toml'
-      - 'Cargo.lock'
-      - 'Makefile'
-      - '.github/workflows/larql-experts.yml'
-  pull_request:
-    types: [opened, synchronize, reopened, ready_for_review]
-    branches: [main]
-    paths:
-      - 'crates/larql-experts/**'
-      - 'Cargo.toml'
-      - 'Cargo.lock'
-      - 'Makefile'
-      - '.github/workflows/larql-experts.yml'
+#  push:
+#    branches: [main]
+#    paths:
+#      - 'crates/larql-experts/**'
+#      - 'Cargo.toml'
+#      - 'Cargo.lock'
+#      - 'Makefile'
+#      - '.github/workflows/larql-experts.yml'
+#  pull_request:
+#    types: [opened, synchronize, reopened, ready_for_review]
+#    branches: [main]
+#    paths:
+#      - 'crates/larql-experts/**'
+#      - 'Cargo.toml'
+#      - 'Cargo.lock'
+#      - 'Makefile'
+#      - '.github/workflows/larql-experts.yml'
   workflow_dispatch: {}
 
 concurrency:

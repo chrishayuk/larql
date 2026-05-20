@@ -12,21 +12,21 @@ permissions:
   contents: read
 
 on:
-  push:
-    branches: [main]
-    paths:
-      - 'crates/larql-models/**'
-      - 'Cargo.toml'
-      - 'Cargo.lock'
-      - '.github/workflows/larql-models.yml'
-  pull_request:
-    types: [opened, synchronize, reopened, ready_for_review]
-    branches: [main]
-    paths:
-      - 'crates/larql-models/**'
-      - 'Cargo.toml'
-      - 'Cargo.lock'
-      - '.github/workflows/larql-models.yml'
+#  push:
+#    branches: [main]
+#    paths:
+#      - 'crates/larql-models/**'
+#      - 'Cargo.toml'
+#      - 'Cargo.lock'
+#      - '.github/workflows/larql-models.yml'
+#  pull_request:
+#    types: [opened, synchronize, reopened, ready_for_review]
+#    branches: [main]
+#    paths:
+#      - 'crates/larql-models/**'
+#      - 'Cargo.toml'
+#      - 'Cargo.lock'
+#      - '.github/workflows/larql-models.yml'
   workflow_dispatch: {}
 
 concurrency:

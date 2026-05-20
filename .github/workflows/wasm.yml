@@ -18,20 +18,20 @@
 name: wasm
 
 on:
-  push:
-    branches: [main]
-    paths:
-      - 'crates/**'
-      - 'Cargo.toml'
-      - 'Cargo.lock'
-      - '.github/workflows/wasm.yml'
-  pull_request:
-    types: [opened, synchronize, reopened, ready_for_review, converted_to_draft]
-    paths:
-      - 'crates/**'
-      - 'Cargo.toml'
-      - 'Cargo.lock'
-      - '.github/workflows/wasm.yml'
+#  push:
+#    branches: [main]
+#    paths:
+#      - 'crates/**'
+#      - 'Cargo.toml'
+#      - 'Cargo.lock'
+#      - '.github/workflows/wasm.yml'
+#  pull_request:
+#    types: [opened, synchronize, reopened, ready_for_review, converted_to_draft]
+#    paths:
+#      - 'crates/**'
+#      - 'Cargo.toml'
+#      - 'Cargo.lock'
+#      - '.github/workflows/wasm.yml'
   workflow_dispatch: {}
 
 concurrency:

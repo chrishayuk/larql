@@ -10,27 +10,27 @@
 name: larql-browser-cli-wasm
 
 on:
-  push:
-    branches: [main]
-    paths:
-      - 'crates/larql-browser-cli/**'
-      - 'crates/larql-lql/**'
-      - 'crates/larql-inference/**'
-      - 'crates/larql-core/**'
-      - 'Cargo.toml'
-      - 'Cargo.lock'
-      - '.github/workflows/larql-browser-cli-wasm.yml'
-  pull_request:
-    types: [opened, synchronize, reopened, ready_for_review]
-    branches: [main]
-    paths:
-      - 'crates/larql-browser-cli/**'
-      - 'crates/larql-lql/**'
-      - 'crates/larql-inference/**'
-      - 'crates/larql-core/**'
-      - 'Cargo.toml'
-      - 'Cargo.lock'
-      - '.github/workflows/larql-browser-cli-wasm.yml'
+#  push:
+#    branches: [main]
+#    paths:
+#      - 'crates/larql-browser-cli/**'
+#      - 'crates/larql-lql/**'
+#      - 'crates/larql-inference/**'
+#      - 'crates/larql-core/**'
+#      - 'Cargo.toml'
+#      - 'Cargo.lock'
+#      - '.github/workflows/larql-browser-cli-wasm.yml'
+#  pull_request:
+#    types: [opened, synchronize, reopened, ready_for_review]
+#    branches: [main]
+#    paths:
+#      - 'crates/larql-browser-cli/**'
+#      - 'crates/larql-lql/**'
+#      - 'crates/larql-inference/**'
+#      - 'crates/larql-core/**'
+#      - 'Cargo.toml'
+#      - 'Cargo.lock'
+#      - '.github/workflows/larql-browser-cli-wasm.yml'
   workflow_dispatch: {}
 
 concurrency:

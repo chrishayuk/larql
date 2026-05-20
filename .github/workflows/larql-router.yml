@@ -7,25 +7,25 @@
 name: larql-router
 
 on:
-  push:
-    branches: [main]
-    paths:
-      - 'crates/larql-router/**'
-      - 'crates/larql-router-protocol/**'
-      - 'Cargo.toml'
-      - 'Cargo.lock'
-      - 'Makefile'
-      - '.github/workflows/larql-router.yml'
-  pull_request:
-    types: [opened, synchronize, reopened, ready_for_review]
-    branches: [main]
-    paths:
-      - 'crates/larql-router/**'
-      - 'crates/larql-router-protocol/**'
-      - 'Cargo.toml'
-      - 'Cargo.lock'
-      - 'Makefile'
-      - '.github/workflows/larql-router.yml'
+#  push:
+#    branches: [main]
+#    paths:
+#      - 'crates/larql-router/**'
+#      - 'crates/larql-router-protocol/**'
+#      - 'Cargo.toml'
+#      - 'Cargo.lock'
+#      - 'Makefile'
+#      - '.github/workflows/larql-router.yml'
+#  pull_request:
+#    types: [opened, synchronize, reopened, ready_for_review]
+#    branches: [main]
+#    paths:
+#      - 'crates/larql-router/**'
+#      - 'crates/larql-router-protocol/**'
+#      - 'Cargo.toml'
+#      - 'Cargo.lock'
+#      - 'Makefile'
+#      - '.github/workflows/larql-router.yml'
   workflow_dispatch: {}
 
 concurrency:

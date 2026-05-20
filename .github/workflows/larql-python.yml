@@ -9,27 +9,27 @@
 name: larql-python
 
 on:
-  push:
-    branches: [main]
-    paths:
-      - 'crates/larql-python/**'
-      - 'crates/larql-core/**'
-      - 'crates/larql-inference/**'
-      - 'Cargo.toml'
-      - 'Cargo.lock'
-      - 'Makefile'
-      - '.github/workflows/larql-python.yml'
-  pull_request:
-    types: [opened, synchronize, reopened, ready_for_review]
-    branches: [main]
-    paths:
-      - 'crates/larql-python/**'
-      - 'crates/larql-core/**'
-      - 'crates/larql-inference/**'
-      - 'Cargo.toml'
-      - 'Cargo.lock'
-      - 'Makefile'
-      - '.github/workflows/larql-python.yml'
+#  push:
+#    branches: [main]
+#    paths:
+#      - 'crates/larql-python/**'
+#      - 'crates/larql-core/**'
+#      - 'crates/larql-inference/**'
+#      - 'Cargo.toml'
+#      - 'Cargo.lock'
+#      - 'Makefile'
+#      - '.github/workflows/larql-python.yml'
+#  pull_request:
+#    types: [opened, synchronize, reopened, ready_for_review]
+#    branches: [main]
+#    paths:
+#      - 'crates/larql-python/**'
+#      - 'crates/larql-core/**'
+#      - 'crates/larql-inference/**'
+#      - 'Cargo.toml'
+#      - 'Cargo.lock'
+#      - 'Makefile'
+#      - '.github/workflows/larql-python.yml'
   workflow_dispatch: {}
 
 concurrency:

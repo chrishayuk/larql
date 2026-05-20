@@ -16,23 +16,23 @@
 name: bench-regress
 
 on:
-  push:
-    branches: [main]
-    paths-ignore:
-      - '**.md'
-      - 'docs/**'
-      - '.reuse/**'
-      - 'CHANGELOG*'
-      - 'LICENSE*'
-  pull_request:
-    types: [opened, synchronize, reopened, ready_for_review]
-    branches: [main]
-    paths-ignore:
-      - '**.md'
-      - 'docs/**'
-      - '.reuse/**'
-      - 'CHANGELOG*'
-      - 'LICENSE*'
+#  push:
+#    branches: [main]
+#    paths-ignore:
+#      - '**.md'
+#      - 'docs/**'
+#      - '.reuse/**'
+#      - 'CHANGELOG*'
+#      - 'LICENSE*'
+#  pull_request:
+#    types: [opened, synchronize, reopened, ready_for_review]
+#    branches: [main]
+#    paths-ignore:
+#      - '**.md'
+#      - 'docs/**'
+#      - '.reuse/**'
+#      - 'CHANGELOG*'
+#      - 'LICENSE*'
   # Manual trigger so a maintainer can re-baseline after intentional
   # perf changes without waiting for the next merge to main.
   workflow_dispatch: {}

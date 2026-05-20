@@ -15,33 +15,33 @@ permissions:
   contents: read
 
 on:
-  push:
-    branches: [main]
-    paths:
-      - 'crates/larql-cli/**'
-      - 'crates/larql-lql/**'
-      - 'crates/larql-kv/**'
-      - 'crates/larql-vindex/**'
-      - 'crates/larql-models/**'
-      - 'crates/larql-inference/src/**'
-      - 'Cargo.toml'
-      - 'Cargo.lock'
-      - 'Makefile'
-      - '.github/workflows/larql-cli.yml'
-  pull_request:
-    types: [opened, synchronize, reopened, ready_for_review]
-    branches: [main]
-    paths:
-      - 'crates/larql-cli/**'
-      - 'crates/larql-lql/**'
-      - 'crates/larql-kv/**'
-      - 'crates/larql-vindex/**'
-      - 'crates/larql-models/**'
-      - 'crates/larql-inference/src/**'
-      - 'Cargo.toml'
-      - 'Cargo.lock'
-      - 'Makefile'
-      - '.github/workflows/larql-cli.yml'
+#  push:
+#    branches: [main]
+#    paths:
+#      - 'crates/larql-cli/**'
+#      - 'crates/larql-lql/**'
+#      - 'crates/larql-kv/**'
+#      - 'crates/larql-vindex/**'
+#      - 'crates/larql-models/**'
+#      - 'crates/larql-inference/src/**'
+#      - 'Cargo.toml'
+#      - 'Cargo.lock'
+#      - 'Makefile'
+#      - '.github/workflows/larql-cli.yml'
+#  pull_request:
+#    types: [opened, synchronize, reopened, ready_for_review]
+#    branches: [main]
+#    paths:
+#      - 'crates/larql-cli/**'
+#      - 'crates/larql-lql/**'
+#      - 'crates/larql-kv/**'
+#      - 'crates/larql-vindex/**'
+#      - 'crates/larql-models/**'
+#      - 'crates/larql-inference/src/**'
+#      - 'Cargo.toml'
+#      - 'Cargo.lock'
+#      - 'Makefile'
+#      - '.github/workflows/larql-cli.yml'
   workflow_dispatch: {}
 
 concurrency:

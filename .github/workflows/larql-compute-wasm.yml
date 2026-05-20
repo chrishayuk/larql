@@ -10,23 +10,23 @@
 name: larql-compute-wasm
 
 on:
-  push:
-    branches: [main]
-    paths:
-      - 'crates/larql-compute/**'
-      - 'crates/larql-models/**'
-      - 'Cargo.toml'
-      - 'Cargo.lock'
-      - '.github/workflows/larql-compute-wasm.yml'
-  pull_request:
-    types: [opened, synchronize, reopened, ready_for_review]
-    branches: [main]
-    paths:
-      - 'crates/larql-compute/**'
-      - 'crates/larql-models/**'
-      - 'Cargo.toml'
-      - 'Cargo.lock'
-      - '.github/workflows/larql-compute-wasm.yml'
+#  push:
+#    branches: [main]
+#    paths:
+#      - 'crates/larql-compute/**'
+#      - 'crates/larql-models/**'
+#      - 'Cargo.toml'
+#      - 'Cargo.lock'
+#      - '.github/workflows/larql-compute-wasm.yml'
+#  pull_request:
+#    types: [opened, synchronize, reopened, ready_for_review]
+#    branches: [main]
+#    paths:
+#      - 'crates/larql-compute/**'
+#      - 'crates/larql-models/**'
+#      - 'Cargo.toml'
+#      - 'Cargo.lock'
+#      - '.github/workflows/larql-compute-wasm.yml'
   workflow_dispatch: {}
 
 concurrency:

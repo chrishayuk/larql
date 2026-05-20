@@ -5,6 +5,9 @@
 # `jobs = 0` as a no-op placeholder, but Cargo rejects 0 (`error: jobs
 # may not be 0`) and the line silently broke every cargo invocation in CI.
 
+[alias]
+xtask = "run --package xtask --"
+
 # Android cross-compilation configuration.
 # NDK r23+ removed unversioned wrapper scripts; use the API-21 versioned
 # clang and LLVM archiver that NDK r27 (used in CI) actually ships.

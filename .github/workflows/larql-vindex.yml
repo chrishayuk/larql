@@ -11,27 +11,27 @@ permissions:
   contents: read
 
 on:
-  push:
-    branches: [main]
-    paths:
-      - 'crates/larql-vindex/**'
-      - 'crates/larql-lql/src/executor/lifecycle/compile/into_vindex.rs'
-      - 'crates/larql-compute/src/cpu/ops/q4k_q8k_dot.rs'
-      - 'Cargo.toml'
-      - 'Cargo.lock'
-      - 'Makefile'
-      - '.github/workflows/larql-vindex.yml'
-  pull_request:
-    types: [opened, synchronize, reopened, ready_for_review]
-    branches: [main]
-    paths:
-      - 'crates/larql-vindex/**'
-      - 'crates/larql-lql/src/executor/lifecycle/compile/into_vindex.rs'
-      - 'crates/larql-compute/src/cpu/ops/q4k_q8k_dot.rs'
-      - 'Cargo.toml'
-      - 'Cargo.lock'
-      - 'Makefile'
-      - '.github/workflows/larql-vindex.yml'
+#  push:
+#    branches: [main]
+#    paths:
+#      - 'crates/larql-vindex/**'
+#      - 'crates/larql-lql/src/executor/lifecycle/compile/into_vindex.rs'
+#      - 'crates/larql-compute/src/cpu/ops/q4k_q8k_dot.rs'
+#      - 'Cargo.toml'
+#      - 'Cargo.lock'
+#      - 'Makefile'
+#      - '.github/workflows/larql-vindex.yml'
+#  pull_request:
+#    types: [opened, synchronize, reopened, ready_for_review]
+#    branches: [main]
+#    paths:
+#      - 'crates/larql-vindex/**'
+#      - 'crates/larql-lql/src/executor/lifecycle/compile/into_vindex.rs'
+#      - 'crates/larql-compute/src/cpu/ops/q4k_q8k_dot.rs'
+#      - 'Cargo.toml'
+#      - 'Cargo.lock'
+#      - 'Makefile'
+#      - '.github/workflows/larql-vindex.yml'
   workflow_dispatch: {}
 
 concurrency:
