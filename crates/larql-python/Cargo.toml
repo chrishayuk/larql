@@ -28,5 +28,5 @@ getrandom = { workspace = true }
 
 [package.metadata.wasm-cert]
 claimed-level = 0
-diagonalization-gate = "uncertified"
-notes = "no wasm32 boundary decision made yet"
+diagonalization-gate = "native-host"
+notes = "cdylib (PyO3 FFI); host OS/IO layer; NATIVE"

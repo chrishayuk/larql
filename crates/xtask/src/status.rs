@@ -83,18 +83,25 @@ pub fn run(json: bool) -> Result<()> {
 fn render_markdown(rows: &[(String, WasmCert)]) -> String {
     let mut out = String::new();
     out.push_str("## wasm32 Certification Status\n\n");
-    out.push_str("| Crate | Claimed level | Diag gate | Notes |\n");
-    out.push_str("|-------|--------------|-----------|-------|\n");
+    out.push_str("| Crate | Claimed level | Partition | Diag gate | Notes |\n");
+    out.push_str("|-------|--------------|-----------|-----------|-------|\n");
     for (name, cert) in rows {
         let level_str = if cert.claimed_level == 0 {
             "0 ⚠ uncertified".to_owned()
         } else {
             cert.claimed_level.to_string()
         };
+        let partition_str = match cert.claimed_level {
+            0 => "—",
+            1 | 2 => "DYNAMIC",
+            3 => "STATIC",
+            _ => "STATIC",
+        };
         out.push_str(&format!(
-            "| {} | {} | {} | {} |\n",
+            "| {} | {} | {} | {} | {} |\n",
             name,
             level_str,
+            partition_str,
             cert.diagonalization_gate,
             cert.notes,
         ));
@@ -106,9 +113,15 @@ fn render_json(rows: &[(String, WasmCert)]) -> String {
     let arr: Vec<serde_json::Value> = rows
         .iter()
         .map(|(name, cert)| {
+            let partition = match cert.claimed_level {
+                0 => "uncertified",
+                1 | 2 => "DYNAMIC",
+                _ => "STATIC",
+            };
             serde_json::json!({
                 "crate": name,
                 "claimed_level": cert.claimed_level,
+                "partition": partition,
                 "diagonalization_gate": cert.diagonalization_gate,
                 "notes": cert.notes,
             })

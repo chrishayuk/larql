@@ -52,5 +52,5 @@ tokenizers = { version = "0.21", default-features = false, features = ["unstable
 
 [package.metadata.wasm-cert]
 claimed-level = 0
-diagonalization-gate = "uncertified"
-notes = "no wasm32 boundary decision made yet"
+diagonalization-gate = "native-host"
+notes = "binary crate; host OS/IO layer; NATIVE"

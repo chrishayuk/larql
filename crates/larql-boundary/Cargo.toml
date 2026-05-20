@@ -34,6 +34,6 @@ name = "gate_decision"
 name = "accuracy"
 
 [package.metadata.wasm-cert]
-claimed-level = 0
-diagonalization-gate = "uncertified"
-notes = "no wasm32 boundary decision made yet"
+claimed-level = 2
+diagonalization-gate = "dynamic-partition"
+notes = "call_indirect present; L2 PASS; DYNAMIC partition"

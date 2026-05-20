@@ -33,6 +33,6 @@ name = "models"
 harness = false
 
 [package.metadata.wasm-cert]
-claimed-level = 1
+claimed-level = 2
 diagonalization-gate = "manual-review"
 notes = "fs traps in detect/loading modules; compile-consistent only"

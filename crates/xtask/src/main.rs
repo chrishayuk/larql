@@ -1,6 +1,7 @@
 mod audit;
 mod certify;
 mod github;
+mod mir_facts;
 mod new_crate_detector;
 mod rules;
 mod status;

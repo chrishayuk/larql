@@ -1,13 +1,19 @@
 //! wasm32 certification cascade.
 //!
 //! For each crate:
+//!   NATIVE check — crate-type detection (no lib target → host OS/IO layer)
 //!   Level 1  — `cargo check --target wasm32-unknown-unknown`
 //!   Build    — `cargo test --no-run --target wasm32-unknown-unknown --lib`
 //!              produces the wasm binary we analyze
-//!   Closure  — wasmparser + ascent Datalog rules → CERTIFIED / REFUTED
+//!   Closure  — wasmparser + ascent Datalog rules → partition label
 //!   Level 2  — `wasm-pack test --node -- --lib` (runtime confirmation)
 //!   Level 4  — cfg-gated test collector (boundary map, informational)
 //!   Level 5/6 — `cargo mutants` on wasm32-accessible sources
+//!
+//! Partition labels (stable path):
+//!   STATIC  — call graph closed, no call_indirect, no non-intrinsic imports
+//!   DYNAMIC — call_indirect present (dispatch unclassified without MIR)
+//!   NATIVE  — non-intrinsic imports OR no lib target
 //!
 //! Exit code is non-zero only when a crate regresses below its claimed-level.
 
@@ -15,13 +21,19 @@ use anyhow::{Context, Result};
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 
+use crate::rules::WasmPartition;
+
 /// Per-crate certification outcome.
 #[derive(Debug)]
 pub struct CertResult {
     pub crate_name: String,
-    /// true = call graph CERTIFIED (refuted set empty)
-    pub call_graph_certified: Option<bool>,
-    pub refuted_witnesses: Vec<String>,
+    pub partition: Option<WasmPartition>,
+    /// Reason for NATIVE classification (crate-type or containment violation).
+    pub native_reason: String,
+    /// Functions that breach the sandbox boundary (non-intrinsic imports).
+    pub containment_witnesses: Vec<String>,
+    /// Functions with unresolved dynamic dispatch.
+    pub dispatch_witnesses: Vec<String>,
     pub level1_pass: bool,
     pub level2_pass: Option<bool>,
     pub level4_unit_cws: usize,
@@ -58,7 +70,7 @@ pub fn run(crate_name: Option<&str>) -> Result<()> {
             .and_then(|v| v.as_u64())
             .unwrap_or(0) as u8;
 
-        let result = certify_crate(&pkg.name, &crate_root, claimed_level)?;
+        let result = certify_crate(&pkg.name, &crate_root, claimed_level, &pkg.targets)?;
         print_result(&result);
 
         if result.regression {
@@ -73,11 +85,12 @@ pub fn run(crate_name: Option<&str>) -> Result<()> {
         } else {
             "success"
         };
-        let annotations = result
-            .refuted_witnesses
+        let annotations: Vec<_> = result
+            .containment_witnesses
             .iter()
+            .chain(result.dispatch_witnesses.iter())
             .map(|w| (format!("crates/{}", pkg.name), 1u32, w.clone()))
-            .collect::<Vec<_>>();
+            .collect();
         crate::github::post_check(&pkg.name, conclusion, &annotations)?;
     }
 
@@ -87,13 +100,20 @@ pub fn run(crate_name: Option<&str>) -> Result<()> {
     Ok(())
 }
 
-fn certify_crate(crate_name: &str, crate_root: &Path, claimed_level: u8) -> Result<CertResult> {
+fn certify_crate(
+    crate_name: &str,
+    crate_root: &Path,
+    claimed_level: u8,
+    targets: &[cargo_metadata::Target],
+) -> Result<CertResult> {
     println!("\n──── {crate_name} (claimed-level {claimed_level}) ────");
 
     let mut result = CertResult {
         crate_name: crate_name.to_owned(),
-        call_graph_certified: None,
-        refuted_witnesses: vec![],
+        partition: None,
+        native_reason: String::new(),
+        containment_witnesses: vec![],
+        dispatch_witnesses: vec![],
         level1_pass: false,
         level2_pass: None,
         level4_unit_cws: 0,
@@ -102,12 +122,30 @@ fn certify_crate(crate_name: &str, crate_root: &Path, claimed_level: u8) -> Resu
         regression: false,
     };
 
+    // ── NATIVE: crate-type detection ──────────────────────────────────────────
+    // Binary, cdylib, and bench crates belong in the host OS/IO layer — they
+    // have no lib target and cannot be compiled as wasm32 library code.
+    let has_lib = targets.iter().any(|t| t.is_lib() || t.is_rlib());
+    if !has_lib {
+        let kinds: Vec<String> = targets
+            .iter()
+            .flat_map(|t| t.kind.iter().map(|k| format!("{k:?}")))
+            .collect();
+        result.native_reason = format!("no lib target (kinds: {})", kinds.join(", "));
+        result.partition = Some(WasmPartition::Native);
+        println!("  Partition: NATIVE ({})", result.native_reason);
+        if claimed_level >= 2 {
+            result.regression = true;
+        }
+        return Ok(result);
+    }
+
     // ── Level 1: compile check ────────────────────────────────────────────────
-    let level1 = run_level1(crate_name)?;
-    result.level1_pass = level1.is_empty();
+    let level1_errors = run_level1(crate_name)?;
+    result.level1_pass = level1_errors.is_empty();
     if !result.level1_pass {
         println!("  LEVEL-1 FAIL (compile errors):");
-        for w in &level1 {
+        for w in &level1_errors {
             println!("    {w}");
         }
         if claimed_level >= 1 {
@@ -123,20 +161,44 @@ fn certify_crate(crate_name: &str, crate_root: &Path, claimed_level: u8) -> Resu
     // ── Call-graph closure analysis ──────────────────────────────────────────
     if let Some(ref path) = wasm_bin {
         match analyze_call_graph(crate_name, path) {
-            Ok((certified, witnesses)) => {
-                result.call_graph_certified = Some(certified);
-                result.refuted_witnesses = witnesses;
-                if certified {
-                    println!("  Call graph: CERTIFIED (closed under sandbox boundary)");
-                } else {
-                    println!("  Call graph: REFUTED ({} witness(es)):", result.refuted_witnesses.len());
-                    for w in &result.refuted_witnesses {
-                        println!("    REFUTED  {w}");
+            Ok((partition, containment_ws, dispatch_ws)) => {
+                result.partition = Some(partition);
+                result.containment_witnesses = containment_ws;
+                result.dispatch_witnesses = dispatch_ws;
+
+                println!("  Partition: {partition}");
+
+                if !result.containment_witnesses.is_empty() {
+                    println!("  Containment violations ({}):", result.containment_witnesses.len());
+                    for w in &result.containment_witnesses {
+                        println!("    CONTAINMENT  {w}");
                     }
-                    // Call graph refutation is a regression for level ≥ 3.
-                    if claimed_level >= 3 && !result.refuted_witnesses.is_empty() {
-                        result.regression = true;
+                }
+                if !result.dispatch_witnesses.is_empty() {
+                    println!("  Dispatch witnesses ({}):", result.dispatch_witnesses.len());
+                    for w in &result.dispatch_witnesses {
+                        println!("    DISPATCH  {w}");
                     }
+                }
+
+                // Regression thresholds:
+                //   claimed ≥ 2: NATIVE → regression
+                //   claimed ≥ 3: DYNAMIC (any variant) → regression
+                match partition {
+                    WasmPartition::Native => {
+                        result.native_reason = "non-intrinsic host imports reachable from exports".to_owned();
+                        if claimed_level >= 2 {
+                            result.regression = true;
+                        }
+                    }
+                    WasmPartition::Dynamic
+                    | WasmPartition::DynamicDecidable
+                    | WasmPartition::DynamicUndecidable => {
+                        if claimed_level >= 3 {
+                            result.regression = true;
+                        }
+                    }
+                    WasmPartition::Static => {}
                 }
             }
             Err(e) => {
@@ -265,39 +327,42 @@ fn build_wasm_test_binary(crate_name: &str, crate_root: &Path) -> Result<Option<
     Ok(None)
 }
 
-/// Analyze the call graph of the wasm binary and run Datalog rules.
-/// Returns `(certified, witnesses)`.
+/// Analyze the call graph of the wasm binary via Datalog rules.
+/// Returns `(partition, containment_witnesses, dispatch_witnesses)`.
 fn analyze_call_graph(
     _crate_name: &str,
     wasm_path: &Path,
-) -> Result<(bool, Vec<String>)> {
+) -> Result<(WasmPartition, Vec<String>, Vec<String>)> {
     let bytes = std::fs::read(wasm_path).context("read wasm binary")?;
     let mut facts = crate::wasm_facts::extract(&bytes)?;
 
     let non_intrinsic_indices: Vec<u32> = facts.non_intrinsic_imports.iter().map(|(_, _, idx)| *idx).collect();
     let roots: Vec<u32> = facts.roots.iter().map(|(_, idx)| *idx).collect();
-    // take() extracts ownership without partial-moving the struct; facts stays
-    // alive for label() below.
     let calls = std::mem::take(&mut facts.calls);
     let indirect_calls = std::mem::take(&mut facts.indirect_calls);
-    let indirect_set: std::collections::HashSet<u32> = indirect_calls.iter().copied().collect();
     let result = crate::rules::analyze(calls, non_intrinsic_indices, indirect_calls, roots);
 
-    let witnesses: Vec<String> = result
-        .refuted_indices()
+    let partition = result.partition_stable();
+
+    let containment_witnesses: Vec<String> = result
+        .containment_violation_indices()
         .iter()
         .map(|idx| {
             let label = crate::wasm_facts::label(&facts, *idx);
-            let reason = if indirect_set.contains(idx) {
-                "indirect-call (unresolved dispatch)"
-            } else {
-                "non-intrinsic-import (containment violation)"
-            };
-            format!("fn {label}  [{reason}]")
+            format!("fn {label}  [non-intrinsic-import (sandbox boundary breach)]")
         })
         .collect();
 
-    Ok((result.is_certified(), witnesses))
+    let dispatch_witnesses: Vec<String> = result
+        .dispatch_witness_indices()
+        .iter()
+        .map(|idx| {
+            let label = crate::wasm_facts::label(&facts, *idx);
+            format!("fn {label}  [call_indirect (unresolved dynamic dispatch)]")
+        })
+        .collect();
+
+    Ok((partition, containment_witnesses, dispatch_witnesses))
 }
 
 fn run_level2(crate_root: &Path) -> Result<bool> {

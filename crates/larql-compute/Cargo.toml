@@ -138,5 +138,5 @@ getrandom = { workspace = true }
 
 [package.metadata.wasm-cert]
 claimed-level = 2
-diagonalization-gate = "manual-review"
+diagonalization-gate = "dynamic-partition"
 notes = "pure computation; 156 wasm runtime tests; no OS/IO deps"

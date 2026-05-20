@@ -66,9 +66,11 @@ jobs:
           - name: serial
             toolchain: stable
             rustflags: ''
+            xtask_features: ''
           - name: parallel
             toolchain: nightly
             rustflags: '-C target-feature=+atomics,+bulk-memory,+mutable-globals'
+            xtask_features: '--features mir-analysis'
 
     steps:
       - uses: actions/checkout@v4
@@ -106,7 +108,7 @@ jobs:
         env:
           RUSTFLAGS: ${{ matrix.mode.rustflags }}
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: cargo xtask wasm-certify
+        run: cargo xtask ${{ matrix.mode.xtask_features }} wasm-certify
 
       # ── Certification table → job summary ────────────────────────────────
       # Runs even when the certify step fails so regressions are visible

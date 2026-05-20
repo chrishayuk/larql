@@ -46,6 +46,6 @@ harness = false
 required-features = ["wasm"]
 
 [package.metadata.wasm-cert]
-claimed-level = 0
-diagonalization-gate = "uncertified"
-notes = "no wasm32 boundary decision made yet"
+claimed-level = 3
+diagonalization-gate = "static-partition"
+notes = "pure compute; no call_indirect, no non-intrinsic imports; STATIC"

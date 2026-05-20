@@ -30,6 +30,6 @@ tokio-stream = "0.1"
 getrandom = { workspace = true }
 
 [package.metadata.wasm-cert]
-claimed-level = 2
-diagonalization-gate = "passed"
+claimed-level = 3
+diagonalization-gate = "static-partition"
 notes = "all pub mod declarations cfg-gated behind not(wasm32); zero wasm32-accessible code"

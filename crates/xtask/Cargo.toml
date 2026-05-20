@@ -9,6 +9,12 @@ description = "Build/certification automation tasks"
 name = "xtask"
 path = "src/main.rs"
 
+[features]
+# Nightly-only: MIR-level RTA to classify dyn Trait vs fn-ptr dispatch.
+# Subdivides DYNAMIC → DYNAMIC.DECIDABLE / DYNAMIC.UNDECIDABLE.
+# Enable with: cargo xtask --features mir-analysis wasm-certify
+mir-analysis = []
+
 [dependencies]
 anyhow = "1"
 clap = { version = "4", features = ["derive"] }

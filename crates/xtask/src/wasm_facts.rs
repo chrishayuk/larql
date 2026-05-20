@@ -134,8 +134,17 @@ pub fn extract(wasm_bytes: &[u8]) -> Result<WasmFacts> {
                     }
                 }
             }
-            // Name section is optional and its API varies across wasmparser
-            // versions — skip it; we fall back to func#N labels.
+            Payload::CustomSection(cs) => {
+                if let wasmparser::KnownCustom::Name(reader) = cs.as_known() {
+                    for sub in reader.into_iter().flatten() {
+                        if let wasmparser::Name::Function(name_map) = sub {
+                            for naming in name_map.into_iter().flatten() {
+                                facts.names.insert(naming.index, naming.name.to_owned());
+                            }
+                        }
+                    }
+                }
+            }
             _ => {}
         }
     }
