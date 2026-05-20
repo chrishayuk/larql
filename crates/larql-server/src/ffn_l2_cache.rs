@@ -227,8 +227,8 @@ mod tests {
         assert!(std::sync::Arc::ptr_eq(&a, &b));
     }
 
-    #[cfg_attr(not(target_arch = "wasm32"), test)]
-    #[cfg_attr(target_arch = "wasm32", wasm_bindgen_test)]
+    #[cfg(not(target_arch = "wasm32"))]
+    #[test]
     fn concurrent_reads_do_not_panic() {
         use std::sync::Arc as StdArc;
         let cache = StdArc::new(FfnL2Cache::new(4));

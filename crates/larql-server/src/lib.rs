@@ -12,6 +12,7 @@ pub mod auth;
 pub mod band_utils;
 #[cfg(not(target_arch = "wasm32"))]
 pub mod bootstrap;
+#[cfg(not(target_arch = "wasm32"))]
 pub mod cache;
 #[cfg(not(target_arch = "wasm32"))]
 pub mod embed_store;
