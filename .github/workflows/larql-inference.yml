@@ -101,6 +101,30 @@ jobs:
       - name: Clippy
         run: cargo clippy -p larql-inference --lib --tests --benches --no-deps -- -D warnings
 
+      # On Windows OpenBLAS' matmul intermittently emits
+      # `BLAS : Bad memory unallocation!` and returns a
+      # partially-stale buffer, causing sync-vs-async (and
+      # sync-vs-legacy) parity tests to randomly diverge.
+      # `OPENBLAS_NUM_THREADS=1` + `OMP_NUM_THREADS=1` disable
+      # OpenBLAS' internal threading, and `RUST_TEST_THREADS=1`
+      # serialises the cargo test runner so multiple Rust threads
+      # can't race on OpenBLAS' global buffer pool. The combination
+      # eliminates the warning on Windows. Linux + macOS keep
+      # multi-threaded execution. The inference test set finishes
+      # in ~3 s, so single-threaded on Windows is negligible.
+      #
+      # These env vars MUST be unset (not empty) on non-Windows:
+      # `RUST_TEST_THREADS=''` panics the test runner. We use a
+      # gated GITHUB_ENV write rather than a step-level `env:` map,
+      # because the latter materialises empty strings on non-Windows.
+      - name: Force single-threaded BLAS + test runner (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          "OPENBLAS_NUM_THREADS=1" | Out-File -FilePath $env:GITHUB_ENV -Append
+          "OMP_NUM_THREADS=1" | Out-File -FilePath $env:GITHUB_ENV -Append
+          "RUST_TEST_THREADS=1" | Out-File -FilePath $env:GITHUB_ENV -Append
+
       # `cargo test` runs lib tests + integration tests; #[ignore]
       # markers on weight-dependent goldens keep them out of the
       # default set. Bench targets compile-check via `--benches` above.
