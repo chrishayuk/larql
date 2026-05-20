@@ -146,7 +146,7 @@ fn certify_crate(crate_name: &str, crate_root: &Path, claimed_level: u8) -> Resu
     }
 
     // ── Level 2: runtime confirmation ────────────────────────────────────────
-    let level2 = run_level2(crate_name, crate_root)?;
+    let level2 = run_level2(crate_root)?;
     result.level2_pass = Some(level2);
     if level2 {
         println!("  Level 2: PASS (runtime-consistent, Node.js)");
@@ -158,7 +158,7 @@ fn certify_crate(crate_name: &str, crate_root: &Path, claimed_level: u8) -> Resu
     }
 
     // ── Level 4: boundary map ────────────────────────────────────────────────
-    let audit = crate::audit::audit_crate_pub(crate_name, crate_root)?;
+    let audit = crate::audit::audit_crate(crate_name, crate_root)?;
     result.level4_unit_cws = audit.unit_counterwits.len();
     result.level4_integ_cws = audit.integ_counterwits.len();
     println!(
@@ -169,7 +169,7 @@ fn certify_crate(crate_name: &str, crate_root: &Path, claimed_level: u8) -> Resu
     // ── Level 5/6: mutation testing ──────────────────────────────────────────
     let accessible_files = accessible_source_files(crate_root, &audit.accessible);
     if !accessible_files.is_empty() {
-        match run_mutants(crate_name, crate_root, &accessible_files) {
+        match run_mutants(crate_root, &accessible_files) {
             Ok(survivors) => {
                 result.mutant_survivors = Some(survivors);
                 if survivors == 0 {
@@ -272,22 +272,23 @@ fn analyze_call_graph(
     wasm_path: &Path,
 ) -> Result<(bool, Vec<String>)> {
     let bytes = std::fs::read(wasm_path).context("read wasm binary")?;
-    let facts = crate::wasm_facts::extract(&bytes)?;
+    let mut facts = crate::wasm_facts::extract(&bytes)?;
 
-    let result = crate::rules::analyze(
-        facts.calls.clone(),
-        facts.non_intrinsic_imports.iter().map(|(_, _, idx)| *idx).collect(),
-        facts.indirect_calls.clone(),
-        facts.roots.iter().map(|(_, idx)| *idx).collect(),
-    );
+    let non_intrinsic_indices: Vec<u32> = facts.non_intrinsic_imports.iter().map(|(_, _, idx)| *idx).collect();
+    let roots: Vec<u32> = facts.roots.iter().map(|(_, idx)| *idx).collect();
+    // take() extracts ownership without partial-moving the struct; facts stays
+    // alive for label() below.
+    let calls = std::mem::take(&mut facts.calls);
+    let indirect_calls = std::mem::take(&mut facts.indirect_calls);
+    let indirect_set: std::collections::HashSet<u32> = indirect_calls.iter().copied().collect();
+    let result = crate::rules::analyze(calls, non_intrinsic_indices, indirect_calls, roots);
 
     let witnesses: Vec<String> = result
         .refuted_indices()
         .iter()
         .map(|idx| {
             let label = crate::wasm_facts::label(&facts, *idx);
-            // Determine reason
-            let reason = if facts.indirect_calls.contains(idx) {
+            let reason = if indirect_set.contains(idx) {
                 "indirect-call (unresolved dispatch)"
             } else {
                 "non-intrinsic-import (containment violation)"
@@ -299,10 +300,7 @@ fn analyze_call_graph(
     Ok((result.is_certified(), witnesses))
 }
 
-/// Run `wasm-pack test --node -- --lib`.
-/// Returns true on exit code 0.
-fn run_level2(crate_name: &str, crate_root: &Path) -> Result<bool> {
-    let _ = crate_name;
+fn run_level2(crate_root: &Path) -> Result<bool> {
     let status = Command::new("wasm-pack")
         .args(["test", "--node", "--", "--lib"])
         .current_dir(crate_root)
@@ -311,10 +309,7 @@ fn run_level2(crate_name: &str, crate_root: &Path) -> Result<bool> {
     Ok(status.success())
 }
 
-/// Run mutation testing on wasm32-accessible source files.
-/// Returns the number of surviving mutants.
 fn run_mutants(
-    _crate_name: &str,
     crate_root: &Path,
     accessible_files: &[PathBuf],
 ) -> Result<usize> {
@@ -348,34 +343,12 @@ fn run_mutants(
     Ok(survivors)
 }
 
-/// Collect the source files for wasm32-accessible modules.
 fn accessible_source_files(crate_root: &Path, accessible: &[String]) -> Vec<PathBuf> {
     let src_dir = crate_root.join("src");
-    let mut files = vec![];
-    for mod_name in accessible {
-        let file = src_dir.join(format!("{mod_name}.rs"));
-        if file.exists() {
-            files.push(file);
-        }
-        let dir = src_dir.join(mod_name);
-        if dir.is_dir() {
-            collect_rs_files_pub(&dir, &mut files);
-        }
-    }
-    files
-}
-
-fn collect_rs_files_pub(dir: &Path, out: &mut Vec<PathBuf>) {
-    if let Ok(entries) = std::fs::read_dir(dir) {
-        for entry in entries.flatten() {
-            let path = entry.path();
-            if path.is_dir() {
-                collect_rs_files_pub(&path, out);
-            } else if path.extension().and_then(|e| e.to_str()) == Some("rs") {
-                out.push(path);
-            }
-        }
-    }
+    accessible
+        .iter()
+        .flat_map(|m| crate::audit::module_paths(&src_dir, m))
+        .collect()
 }
 
 fn print_result(r: &CertResult) {

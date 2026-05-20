@@ -37,30 +37,31 @@ pub struct WasmFacts {
 /// Module/name patterns that are part of the wasm-bindgen + getrandom intrinsic
 /// set.  Anything outside this list is a containment-violation witness.
 fn is_intrinsic(module: &str, name: &str) -> bool {
-    // wasm-bindgen generated glue
-    if module == "__wbindgen_placeholder__" {
-        return true;
+    matches!(
+        module,
+        "__wbindgen_placeholder__" | "__wbindgen_externref_xform__" | "wbg"
+    ) || name.starts_with("__wbg_")
+        || name.starts_with("__wbindgen_")
+        || module == "__wbg_getrandomvalues"
+}
+
+/// Record one function import, bumping the count and noting non-intrinsics.
+fn register_import(
+    facts: &mut WasmFacts,
+    count: &mut u32,
+    module: &str,
+    name: &str,
+    ty: wasmparser::TypeRef,
+) {
+    if let wasmparser::TypeRef::Func(_) = ty {
+        let idx = *count;
+        *count += 1;
+        if !is_intrinsic(module, name) {
+            facts
+                .non_intrinsic_imports
+                .push((module.to_owned(), name.to_owned(), idx));
+        }
     }
-    if module == "__wbindgen_externref_xform__" {
-        return true;
-    }
-    // wasm-bindgen-rayon thread shims
-    if module == "wbg" {
-        return true;
-    }
-    // getrandom js feature
-    if module == "__wbg_getrandomvalues" || name.starts_with("__wbg_") {
-        return true;
-    }
-    // Standard wasm-bindgen glue lives under module "" with __wbindgen_ prefix
-    if name.starts_with("__wbindgen_") {
-        return true;
-    }
-    // wasm-bindgen uses a module named "." or "" in some versions
-    if (module.is_empty() || module == ".") && name.starts_with("__wbg_") {
-        return true;
-    }
-    false
 }
 
 pub fn extract(wasm_bytes: &[u8]) -> Result<WasmFacts> {
@@ -79,51 +80,18 @@ pub fn extract(wasm_bytes: &[u8]) -> Result<WasmFacts> {
                     let item = item.map_err(|e: BinaryReaderError| anyhow::anyhow!("{e}"))?;
                     match item {
                         wasmparser::Imports::Single(_offset, import) => {
-                            if let wasmparser::TypeRef::Func(_) = import.ty {
-                                let func_idx = import_func_count;
-                                import_func_count += 1;
-                                if !is_intrinsic(import.module, import.name) {
-                                    facts.non_intrinsic_imports.push((
-                                        import.module.to_owned(),
-                                        import.name.to_owned(),
-                                        func_idx,
-                                    ));
-                                }
-                            }
+                            register_import(&mut facts, &mut import_func_count, import.module, import.name, import.ty);
                         }
                         wasmparser::Imports::Compact1 { module, items } => {
                             for compact_item in items {
-                                let compact_item = compact_item
-                                    .map_err(|e: BinaryReaderError| anyhow::anyhow!("{e}"))?;
-                                if let wasmparser::TypeRef::Func(_) = compact_item.ty {
-                                    let func_idx = import_func_count;
-                                    import_func_count += 1;
-                                    if !is_intrinsic(module, compact_item.name) {
-                                        facts.non_intrinsic_imports.push((
-                                            module.to_owned(),
-                                            compact_item.name.to_owned(),
-                                            func_idx,
-                                        ));
-                                    }
-                                }
+                                let ci = compact_item.map_err(|e: BinaryReaderError| anyhow::anyhow!("{e}"))?;
+                                register_import(&mut facts, &mut import_func_count, module, ci.name, ci.ty);
                             }
                         }
                         wasmparser::Imports::Compact2 { module, ty, names } => {
-                            if let wasmparser::TypeRef::Func(_) = ty {
-                                for name in names {
-                                    let name = name.map_err(|e: BinaryReaderError| {
-                                        anyhow::anyhow!("{e}")
-                                    })?;
-                                    let func_idx = import_func_count;
-                                    import_func_count += 1;
-                                    if !is_intrinsic(module, name) {
-                                        facts.non_intrinsic_imports.push((
-                                            module.to_owned(),
-                                            name.to_owned(),
-                                            func_idx,
-                                        ));
-                                    }
-                                }
+                            for name in names {
+                                let name = name.map_err(|e: BinaryReaderError| anyhow::anyhow!("{e}"))?;
+                                register_import(&mut facts, &mut import_func_count, module, name, ty);
                             }
                         }
                     }

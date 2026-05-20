@@ -24,11 +24,6 @@ pub struct AuditResult {
     pub integ_counterwits: Vec<String>,
 }
 
-/// Public entry point for `certify.rs` — returns the audit result for a crate.
-pub fn audit_crate_pub(crate_name: &str, crate_root: &Path) -> Result<AuditResult> {
-    audit_crate(crate_name, crate_root)
-}
-
 pub fn run(crate_name: Option<&str>) -> Result<()> {
     let meta = crate::status::workspace_meta()?;
     for pkg in &meta.packages {
@@ -50,7 +45,7 @@ pub fn run(crate_name: Option<&str>) -> Result<()> {
     Ok(())
 }
 
-fn audit_crate(crate_name: &str, crate_root: &Path) -> Result<AuditResult> {
+pub(crate) fn audit_crate(crate_name: &str, crate_root: &Path) -> Result<AuditResult> {
     let mut result = AuditResult {
         crate_name: crate_name.to_owned(),
         ..Default::default()
@@ -66,6 +61,13 @@ fn audit_crate(crate_name: &str, crate_root: &Path) -> Result<AuditResult> {
 
     let src_dir = crate_root.join("src");
 
+    // Compute paths once; reused for trap scanning and counterwit collection.
+    let accessible_paths: Vec<Vec<std::path::PathBuf>> = result
+        .accessible
+        .iter()
+        .map(|m| module_paths(&src_dir, m))
+        .collect();
+
     // ── Runtime-trap candidates in wasm32-accessible modules ──────────────────
     let trap_patterns = [
         "std::time::Instant",
@@ -74,9 +76,8 @@ fn audit_crate(crate_name: &str, crate_root: &Path) -> Result<AuditResult> {
         "std::net::",
         "std::process::",
     ];
-    for mod_name in &result.accessible {
-        let mod_paths = module_paths(&src_dir, mod_name);
-        for path in &mod_paths {
+    for mod_paths in &accessible_paths {
+        for path in mod_paths {
             if let Ok(content) = std::fs::read_to_string(path) {
                 for (line_no, line) in content.lines().enumerate() {
                     for pat in &trap_patterns {
@@ -94,7 +95,7 @@ fn audit_crate(crate_name: &str, crate_root: &Path) -> Result<AuditResult> {
     }
 
     // ── Level-4: unit counterwit­nesses (cfg-gated test fns in src/) ──────────
-    collect_unit_counterwits(&src_dir, &result.accessible, &mut result.unit_counterwits)?;
+    collect_unit_counterwits(&accessible_paths, &mut result.unit_counterwits)?;
 
     // ── Level-4: integration test counterwit­nesses (tests/ top-level cfg) ────
     let tests_dir = crate_root.join("tests");
@@ -132,7 +133,7 @@ fn classify_modules(src: &str, result: &mut AuditResult) {
 }
 
 /// Return file paths that could contain module `name` (file or directory).
-fn module_paths(src_dir: &Path, name: &str) -> Vec<std::path::PathBuf> {
+pub(crate) fn module_paths(src_dir: &Path, name: &str) -> Vec<std::path::PathBuf> {
     let mut paths = vec![];
     let file = src_dir.join(format!("{name}.rs"));
     if file.exists() {
@@ -146,7 +147,7 @@ fn module_paths(src_dir: &Path, name: &str) -> Vec<std::path::PathBuf> {
     paths
 }
 
-fn collect_rs_files(dir: &Path, out: &mut Vec<std::path::PathBuf>) {
+pub(crate) fn collect_rs_files(dir: &Path, out: &mut Vec<std::path::PathBuf>) {
     if let Ok(entries) = std::fs::read_dir(dir) {
         for entry in entries.flatten() {
             let path = entry.path();
@@ -162,13 +163,11 @@ fn collect_rs_files(dir: &Path, out: &mut Vec<std::path::PathBuf>) {
 /// Collect unit-test counterwit­nesses: `#[cfg(not(target_arch = "wasm32"))]`
 /// immediately followed by `#[test]` or `fn ...` inside accessible modules.
 fn collect_unit_counterwits(
-    src_dir: &Path,
-    accessible: &[String],
+    accessible_paths: &[Vec<std::path::PathBuf>],
     out: &mut Vec<(String, usize, String)>,
 ) -> Result<()> {
-    for mod_name in accessible {
-        let paths = module_paths(src_dir, mod_name);
-        for path in &paths {
+    for paths in accessible_paths {
+        for path in paths {
             if let Ok(content) = std::fs::read_to_string(path) {
                 let lines: Vec<&str> = content.lines().collect();
                 for (i, line) in lines.iter().enumerate() {

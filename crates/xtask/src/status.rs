@@ -16,7 +16,7 @@ pub struct WasmCert {
 }
 
 impl WasmCert {
-    fn from_metadata(meta: &serde_json::Value) -> Option<Self> {
+    fn from_metadata(meta: &serde_json::Map<String, serde_json::Value>) -> Option<Self> {
         let cert = meta.get("wasm-cert")?;
         Some(WasmCert {
             claimed_level: cert
@@ -52,7 +52,7 @@ pub fn run(json: bool) -> Result<()> {
         let cert = pkg
             .metadata
             .as_object()
-            .and_then(|m| WasmCert::from_metadata(&serde_json::Value::Object(m.clone())))
+            .and_then(|m| WasmCert::from_metadata(m))
             .unwrap_or_default();
         rows.push((pkg.name.clone(), cert));
     }

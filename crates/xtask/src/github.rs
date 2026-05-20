@@ -106,11 +106,9 @@ pub fn post_check(
         .spawn()
         .and_then(|mut child| {
             use std::io::Write;
-            child
-                .stdin
-                .as_mut()
-                .unwrap()
-                .write_all(body_str.as_bytes())?;
+            if let Some(mut stdin) = child.stdin.take() {
+                stdin.write_all(body_str.as_bytes())?;
+            }
             child.wait()
         })
         .context("gh api check-runs")?;

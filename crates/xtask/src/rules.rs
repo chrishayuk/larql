@@ -97,7 +97,7 @@ pub fn analyze(
     roots: Vec<u32>,
 ) -> AnalysisResult {
     let mut prog = AscentProgram::default();
-    prog.calls = calls.into_iter().map(|(a, b)| (a, b)).collect();
+    prog.calls = calls;
     prog.is_non_intrinsic_import = non_intrinsic_imports.into_iter().map(|x| (x,)).collect();
     prog.has_indirect_call = indirect_calls.into_iter().map(|x| (x,)).collect();
     prog.is_root = roots.into_iter().map(|x| (x,)).collect();
