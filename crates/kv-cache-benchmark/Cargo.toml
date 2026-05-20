@@ -44,5 +44,5 @@ getrandom = { workspace = true }
 
 [package.metadata.wasm-cert]
 claimed-level = 0
-diagonalization-gate = "native-host"
-notes = "bench binary; host OS/IO layer; NATIVE"
+diagonalization-gate = "dynamic-partition"
+notes = "has lib.rs; DYNAMIC via transitive wasm-bindgen (larql-inference); no wasm-pack tests yet"

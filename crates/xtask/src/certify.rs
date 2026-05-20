@@ -53,6 +53,7 @@ pub fn run(crate_name: Option<&str>) -> Result<()> {
 
     let meta = crate::status::workspace_meta()?;
     let mut any_regression = false;
+    let mut all_results: Vec<(String, u8, CertResult)> = vec![];
 
     for pkg in &meta.packages {
         if !meta.workspace_members.contains(&pkg.id) {
@@ -94,12 +95,49 @@ pub fn run(crate_name: Option<&str>) -> Result<()> {
             .map(|w| (format!("crates/{}", pkg.name), 1u32, w.clone()))
             .collect();
         crate::github::post_check(&pkg.name, conclusion, &annotations)?;
+        all_results.push((pkg.name.clone(), claimed_level, result));
     }
+
+    print_summary_table(&all_results);
 
     if any_regression {
         anyhow::bail!("one or more crates regressed below their claimed certification level");
     }
     Ok(())
+}
+
+fn print_summary_table(results: &[(String, u8, CertResult)]) {
+    if results.is_empty() {
+        return;
+    }
+    let name_width = results.iter().map(|(n, _, _)| n.len()).max().unwrap_or(4).max(4);
+    println!("\n{:═<width$}", "", width = name_width + 42);
+    println!(
+        "  {:<name_width$}  {:>5}  {:<9}  {:>3}  {:>3}  {:>8}",
+        "Crate", "Level", "Partition", "L1", "L2", "Witnesses",
+        name_width = name_width,
+    );
+    println!("{:─<width$}", "", width = name_width + 42);
+    for (name, claimed, r) in results {
+        let partition = match &r.partition {
+            Some(p) => format!("{p}"),
+            None => "—".to_owned(),
+        };
+        let l1 = if r.level1_pass { "✓" } else { "✗" };
+        let l2 = match r.level2_pass {
+            Some(true) => "✓",
+            Some(false) => "✗",
+            None => "—",
+        };
+        let witnesses = r.containment_witnesses.len() + r.dispatch_witnesses.len();
+        let reg_flag = if r.regression { " !" } else { "  " };
+        println!(
+            "{reg_flag}{:<name_width$}  {:>5}  {:<9}  {:>3}  {:>3}  {:>8}",
+            name, claimed, partition, l1, l2, witnesses,
+            name_width = name_width,
+        );
+    }
+    println!("{:═<width$}", "", width = name_width + 42);
 }
 
 fn certify_crate(
@@ -171,15 +209,15 @@ fn certify_crate(
                 println!("  Partition: {partition}");
 
                 if !result.containment_witnesses.is_empty() {
-                    println!("  Containment violations ({}):", result.containment_witnesses.len());
+                    println!("  Containment violations ({}) — non-intrinsic imports, sandbox boundary breach:", result.containment_witnesses.len());
                     for w in &result.containment_witnesses {
-                        println!("    CONTAINMENT  {w}");
+                        println!("    {w}");
                     }
                 }
                 if !result.dispatch_witnesses.is_empty() {
-                    println!("  Dispatch witnesses ({}):", result.dispatch_witnesses.len());
+                    println!("  Dispatch witnesses ({}) — call_indirect, unresolved dynamic dispatch:", result.dispatch_witnesses.len());
                     for w in &result.dispatch_witnesses {
-                        println!("    DISPATCH  {w}");
+                        println!("    {w}");
                     }
                 }
 
@@ -360,19 +398,13 @@ fn analyze_call_graph(
     let containment_witnesses: Vec<String> = result
         .containment_violation_indices()
         .iter()
-        .map(|idx| {
-            let label = crate::wasm_facts::label(&facts, *idx);
-            format!("fn {label}  [non-intrinsic-import (sandbox boundary breach)]")
-        })
+        .map(|idx| crate::wasm_facts::label(&facts, *idx))
         .collect();
 
     let dispatch_witnesses: Vec<String> = result
         .dispatch_witness_indices()
         .iter()
-        .map(|idx| {
-            let label = crate::wasm_facts::label(&facts, *idx);
-            format!("fn {label}  [call_indirect (unresolved dynamic dispatch)]")
-        })
+        .map(|idx| crate::wasm_facts::label(&facts, *idx))
         .collect();
 
     Ok((partition, containment_witnesses, dispatch_witnesses))
