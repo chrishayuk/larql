@@ -1,3 +1,4 @@
+#![cfg(not(target_arch = "wasm32"))]
 //! HTTP integration tests: warmup, walk, infer, explain-infer, insert (all variants).
 
 mod common;

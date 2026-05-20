@@ -1,3 +1,4 @@
+#![cfg(not(target_arch = "wasm32"))]
 //! HTTP integration tests: SessionManager tests.
 
 mod common;

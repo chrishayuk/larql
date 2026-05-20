@@ -1,3 +1,4 @@
+#![cfg(not(target_arch = "wasm32"))]
 //! End-to-end parity test for `POST /v1/expert/batch`.
 //!
 //! Spins up the real `larql-server` router (same axum app that ships in

@@ -1,3 +1,4 @@
+#![cfg(not(target_arch = "wasm32"))]
 //! HTTP integration tests: select (all variants), relations (single + multi),
 //! session-scoped describe/walk/select.
 

@@ -1,3 +1,4 @@
+#![cfg(not(target_arch = "wasm32"))]
 //! Tests for the gRPC service handlers.
 //!
 //! The handlers are called directly as async trait methods — no network

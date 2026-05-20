@@ -1,3 +1,4 @@
+#![cfg(not(target_arch = "wasm32"))]
 //! Pure unit tests: walk-ffn binary protocol, stream format, gRPC shapes,
 //! embed binary, logits binary, token decode parsing, select ordering tests.
 

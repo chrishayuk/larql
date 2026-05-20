@@ -1,3 +1,4 @@
+#![cfg(not(target_arch = "wasm32"))]
 //! HTTP integration tests: embed, logits, token encode/decode (single + multi).
 
 mod common;

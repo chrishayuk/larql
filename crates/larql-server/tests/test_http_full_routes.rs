@@ -1,3 +1,4 @@
+#![cfg(not(target_arch = "wasm32"))]
 //! HTTP integration tests using the functional tokenizer.
 //!
 //! These tests cover routes that need real tokenization to return

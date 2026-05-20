@@ -1,3 +1,4 @@
+#![cfg(not(target_arch = "wasm32"))]
 //! HTTP integration tests: describe endpoint (all band variants, verbose,
 //! cache, ETag, multi-model).
 

@@ -1,3 +1,4 @@
+#![cfg(not(target_arch = "wasm32"))]
 //! HTTP integration tests: patches apply/list/delete (global + session-scoped).
 
 mod common;

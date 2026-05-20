@@ -1,3 +1,4 @@
+#![cfg(not(target_arch = "wasm32"))]
 //! Pure unit tests: gate_knn, walk, describe entity, patches, relations, stats
 //! (core vindex operation tests).
 

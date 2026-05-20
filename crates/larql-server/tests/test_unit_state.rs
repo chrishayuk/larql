@@ -1,3 +1,4 @@
+#![cfg(not(target_arch = "wasm32"))]
 //! Pure unit tests: AppState, model ID, multi-model lookup, infer mode parsing,
 //! auth, rate limit, cache, ETag, session, announce hash, warmup_model,
 //! probe labels, content token, server error mapping, infer disabled logic.

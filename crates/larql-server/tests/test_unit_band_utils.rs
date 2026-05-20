@@ -1,3 +1,4 @@
+#![cfg(not(target_arch = "wasm32"))]
 //! Pure unit tests for `larql_server::band_utils`.
 //!
 //! No HTTP server is needed — all tests call the functions directly.

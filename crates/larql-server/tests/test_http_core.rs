@@ -1,3 +1,4 @@
+#![cfg(not(target_arch = "wasm32"))]
 //! HTTP integration tests: health, models, stats, auth, error responses,
 //! request counter, probe labels.
 
