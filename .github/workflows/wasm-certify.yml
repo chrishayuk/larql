@@ -108,7 +108,7 @@ jobs:
         env:
           RUSTFLAGS: ${{ matrix.mode.rustflags }}
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: cargo xtask ${{ matrix.mode.xtask_features }} wasm-certify
+        run: cargo run --package xtask ${{ matrix.mode.xtask_features }} -- wasm-certify
 
       # ── Certification table → job summary ────────────────────────────────
       # Runs even when the certify step fails so regressions are visible
