@@ -86,15 +86,6 @@ mod tests {
 
     /// `Some(CpuBackend)` → goes through trait, must equal the `None`
     /// fallback (both are CPU paths, just routed differently).
-    ///
-    /// Skipped on Windows: OpenBLAS on the Windows runner corrupts the
-    /// f32 sgemm output of the second back-to-back call (entire columns
-    /// drift by ~0.6, accompanied by `BLAS : Bad memory unallocation!`
-    /// on stderr — see PR 104 CI 2026-05-17). The trait correctness
-    /// contract is covered by the other backends in the same suite;
-    /// this test exists to pin "Some(CpuBackend) ≡ None fallback" and
-    /// there's nothing we can do at this layer about the OpenBLAS bug.
-    #[cfg(not(windows))]
     #[test]
     fn dot_proj_gpu_some_backend_matches_fallback() {
         let a = synth(4, 8, 1);
