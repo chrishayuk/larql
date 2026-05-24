@@ -38,6 +38,11 @@ const GGUF_GENERAL_ARCHITECTURE: &str = "general.architecture";
 const GGUF_EMBEDDING_LENGTH: &str = "embedding_length";
 const GGUF_BLOCK_COUNT: &str = "block_count";
 const GGUF_FEED_FORWARD_LENGTH: &str = "feed_forward_length";
+// MoE-only architectures (DeepSeek-V4, etc.) omit the global
+// `feed_forward_length` and emit only the per-expert size. We fall back
+// to it so config validation doesn't reject the model with
+// `intermediate_size: must be greater than 0`.
+const GGUF_EXPERT_FEED_FORWARD_LENGTH: &str = "expert_feed_forward_length";
 const GGUF_ATTENTION_HEAD_COUNT: &str = "attention.head_count";
 const GGUF_ATTENTION_HEAD_COUNT_KV: &str = "attention.head_count_kv";
 const GGUF_ATTENTION_KEY_LENGTH: &str = "attention.key_length";
@@ -395,11 +400,25 @@ impl GgufFile {
             num_heads
         };
 
+        // intermediate_size: prefer the global `feed_forward_length`. For
+        // MoE-only models (DeepSeek-V4 family) the global key is omitted,
+        // so we fall back to the per-expert size. The HF config exposes
+        // `intermediate_size` as a single number even on MoE archs because
+        // it represents the FFN inner dim — per-expert and per-layer FFNs
+        // share that dim in every llama.cpp-supported architecture.
+        let intermediate_size = {
+            let global = get_arch_u32(GGUF_FEED_FORWARD_LENGTH);
+            if global > 0 {
+                global
+            } else {
+                get_arch_u32(GGUF_EXPERT_FEED_FORWARD_LENGTH)
+            }
+        };
         let mut config = serde_json::json!({
             HF_MODEL_TYPE: model_type,
             HF_HIDDEN_SIZE: hidden_size,
             HF_NUM_HIDDEN_LAYERS: get_arch_u32(GGUF_BLOCK_COUNT),
-            HF_INTERMEDIATE_SIZE: get_arch_u32(GGUF_FEED_FORWARD_LENGTH),
+            HF_INTERMEDIATE_SIZE: intermediate_size,
             HF_NUM_ATTENTION_HEADS: num_heads,
             HF_NUM_KEY_VALUE_HEADS: num_kv_heads,
             HF_HEAD_DIM: head_dim,
@@ -1356,6 +1375,103 @@ mod tests {
         assert!(cfg.get(HF_ROPE_THETA).is_none());
         let arch = crate::detect_from_json_validated(&cfg).unwrap();
         assert_eq!(arch.config().rope_base, 10_000.0);
+    }
+
+    #[test]
+    fn test_gguf_to_config_json_falls_back_to_expert_feed_forward_length_on_moe() {
+        // DeepSeek-V4 family (and other MoE-only GGUFs) omit the global
+        // `feed_forward_length` and only emit the per-expert size. The
+        // HF config exposes `intermediate_size` as a single number, so
+        // the loader must surface the per-expert key into that field —
+        // otherwise downstream config validation rejects with
+        // `intermediate_size: must be greater than 0`.
+        let mut metadata = HashMap::new();
+        metadata.insert(
+            "general.architecture".to_string(),
+            GgufValue::String("deepseek2".to_string()),
+        );
+        metadata.insert(
+            "deepseek2.embedding_length".to_string(),
+            GgufValue::U32(4096),
+        );
+        metadata.insert("deepseek2.block_count".to_string(), GgufValue::U32(43));
+        metadata.insert(
+            "deepseek2.attention.head_count".to_string(),
+            GgufValue::U32(64),
+        );
+        metadata.insert(
+            "deepseek2.attention.head_count_kv".to_string(),
+            GgufValue::U32(1),
+        );
+        metadata.insert(
+            "deepseek2.attention.key_length".to_string(),
+            GgufValue::U32(128),
+        );
+        // No `deepseek2.feed_forward_length` — MoE-only family.
+        metadata.insert(
+            "deepseek2.expert_feed_forward_length".to_string(),
+            GgufValue::U32(2048),
+        );
+        metadata.insert("deepseek2.vocab_size".to_string(), GgufValue::U32(129280));
+
+        let gguf = GgufFile {
+            metadata,
+            tensor_infos: Vec::new(),
+            data_offset: 0,
+            path: std::path::PathBuf::from("<no-file>"),
+        };
+        let cfg = gguf.to_config_json();
+        assert_eq!(cfg["intermediate_size"], 2048);
+        // And: this must now pass the validated detection path that
+        // previously rejected the model.
+        crate::detect_from_json_validated(&cfg)
+            .expect("MoE-only GGUF config should pass validation after fallback");
+    }
+
+    #[test]
+    fn test_gguf_to_config_json_prefers_global_feed_forward_length_when_both_present() {
+        // Some non-MoE / hybrid configs emit BOTH. We must keep using the
+        // global key in that case — the per-expert size is meaningful
+        // only when there are routed experts.
+        let mut metadata = HashMap::new();
+        metadata.insert(
+            "general.architecture".to_string(),
+            GgufValue::String("deepseek2".to_string()),
+        );
+        metadata.insert(
+            "deepseek2.embedding_length".to_string(),
+            GgufValue::U32(2048),
+        );
+        metadata.insert("deepseek2.block_count".to_string(), GgufValue::U32(27));
+        metadata.insert(
+            "deepseek2.attention.head_count".to_string(),
+            GgufValue::U32(16),
+        );
+        metadata.insert(
+            "deepseek2.attention.head_count_kv".to_string(),
+            GgufValue::U32(16),
+        );
+        metadata.insert(
+            "deepseek2.attention.key_length".to_string(),
+            GgufValue::U32(192),
+        );
+        metadata.insert(
+            "deepseek2.feed_forward_length".to_string(),
+            GgufValue::U32(10944),
+        );
+        metadata.insert(
+            "deepseek2.expert_feed_forward_length".to_string(),
+            GgufValue::U32(1408),
+        );
+
+        let gguf = GgufFile {
+            metadata,
+            tensor_infos: Vec::new(),
+            data_offset: 0,
+            path: std::path::PathBuf::from("<no-file>"),
+        };
+        let cfg = gguf.to_config_json();
+        assert_eq!(cfg["intermediate_size"], 10944);
     }
 
     /// Build a minimal GGUF file with one 2-D F32 tensor, but truncate the
