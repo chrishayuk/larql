@@ -18,10 +18,30 @@ impl<'a> StreamingContext<'a> {
         if !needs_weights {
             return Ok(());
         }
-        let shard_refs: Vec<&[u8]> = self.shard_mmaps.iter().map(|s| s.mmap.as_ref()).collect();
+        // `StreamingWeights` is a safetensors-only writer subsystem
+        // (Q4_K + f32 weight writers walk safetensors crate views
+        // directly). GGUF input is supported at browse level (where
+        // `needs_weights == false`) and below only; inference / Q4K
+        // levels for GGUF need a separate writer pass that streams
+        // per-tensor through `larql_models::quant::ggml::dequantize` —
+        // tracked as a follow-on PR.
+        let (shard_mmaps, tensor_index) = match (
+            self.tensor_source.safetensors_mmap_refs(),
+            self.tensor_source.safetensors_index(),
+        ) {
+            (Some(m), Some(i)) => (m, i),
+            _ => {
+                return Err(VindexError::Parse(
+                    "GGUF input + extract-level requiring attention/FFN weights is not yet \
+                     implemented (browse-level GGUF works; inference/Q4K GGUF requires \
+                     per-tensor streaming through ggml::dequantize)"
+                        .to_string(),
+                ));
+            }
+        };
         let streaming_source = crate::format::weights::StreamingWeights {
-            shard_mmaps: &shard_refs,
-            tensor_index: &self.tensor_index,
+            shard_mmaps: &shard_mmaps,
+            tensor_index,
             arch: &*self.arch,
             num_layers: self.num_layers,
         };

@@ -375,16 +375,25 @@ pub fn run(args: ExtractIndexArgs) -> Result<(), Box<dyn std::error::Error>> {
             );
         }
 
-        if is_gguf_source {
-            // GGUF path: the streaming pipeline mmaps safetensors-only, so we
-            // fall back to the in-memory loader. `load_model_dir_validated`
-            // already auto-detects GGUF (single file or directory containing
-            // a `.gguf`) and dequantises tensors to f32, producing the same
-            // `ModelWeights` shape the in-memory build path expects.
+        // Dispatch:
+        //
+        //  - Safetensors (always) and GGUF at browse level go through the
+        //    streaming pipeline — no full model in RAM.
+        //  - GGUF at inference / attention / all levels (or any level
+        //    with `--quant q4k`) still hits the in-memory loader: the
+        //    `StreamingWeights` writer subsystem is safetensors-only,
+        //    and porting it to GGUF is a follow-on PR.
+        let route_gguf_through_streaming = is_gguf_source
+            && matches!(level, larql_vindex::ExtractLevel::Browse)
+            && args.quant == larql_vindex::QuantFormat::None;
+
+        if is_gguf_source && !route_gguf_through_streaming {
+            // GGUF + attention/inference/all (or any level with q4k) →
+            // in-memory loader. `load_model_dir_validated` auto-detects
+            // GGUF (single file or directory containing one) and
+            // dequantises tensors to f32, producing the `ModelWeights`
+            // shape the in-memory build path expects.
             let load_target: std::path::PathBuf = if let Some(gguf) = gguf_dir {
-                // Directory with a single GGUF (possibly multi-shard): point
-                // the loader at shard-1 if a `*-00001-of-*.gguf` naming is
-                // present, otherwise at the largest GGUF in the dir.
                 gguf
             } else {
                 model_path.clone()
@@ -404,10 +413,6 @@ pub fn run(args: ExtractIndexArgs) -> Result<(), Box<dyn std::error::Error>> {
                 &mut callbacks,
             )?;
 
-            // FFN / attention / norms — only needed at inference or all levels.
-            // Matches what `build_vindex_streaming` does internally for the
-            // safetensors path and what `--from-vectors --level inference`
-            // does for the externally-built path.
             if matches!(
                 level,
                 larql_vindex::ExtractLevel::Attention
@@ -434,9 +439,17 @@ pub fn run(args: ExtractIndexArgs) -> Result<(), Box<dyn std::error::Error>> {
                 }
             }
         } else {
-            // Safetensors path: streaming mmap, no full model load.
+            // Safetensors path (any level) OR GGUF at browse level —
+            // streaming mmap, no full model load. For GGUF, point the
+            // pipeline at the shard-1 file (or the directory; the
+            // pipeline picks the right shard internally).
+            let streaming_entry: std::path::PathBuf = if let Some(gguf) = gguf_dir.as_ref() {
+                gguf.clone()
+            } else {
+                model_path.clone()
+            };
             larql_vindex::build_vindex_streaming(
-                &model_path,
+                &streaming_entry,
                 &tokenizer,
                 model_name,
                 output,

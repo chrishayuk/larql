@@ -5,7 +5,7 @@ use std::io::{BufWriter, Write};
 use crate::error::VindexError;
 use crate::extract::stage_labels::*;
 use crate::extract::streaming::context::StreamingContext;
-use crate::extract::streaming::tensor_io::{get_tensor_f32, normalize_key};
+use crate::extract::streaming::tensor_io::normalize_key;
 use crate::format::filenames::*;
 
 impl<'a> StreamingContext<'a> {
@@ -28,9 +28,7 @@ impl<'a> StreamingContext<'a> {
                 .map(|k| normalize_key(&k, &prefixes))
                 .unwrap_or_default();
 
-            if let Some(tensor) =
-                get_tensor_f32(&self.shard_mmaps, &self.tensor_index, &router_key)?
-            {
+            if let Some(tensor) = self.tensor_source.get_tensor_f32(&router_key)? {
                 let data = tensor.as_slice().unwrap();
                 let bytes = crate::config::dtype::encode_floats(data, self.dtype);
                 router_file.write_all(&bytes)?;
@@ -38,8 +36,7 @@ impl<'a> StreamingContext<'a> {
 
             // Also try router bias
             let bias_key = router_key.replace(".weight", ".bias");
-            if let Some(tensor) = get_tensor_f32(&self.shard_mmaps, &self.tensor_index, &bias_key)?
-            {
+            if let Some(tensor) = self.tensor_source.get_tensor_f32(&bias_key)? {
                 let data = tensor.as_slice().unwrap();
                 let bytes = crate::config::dtype::encode_floats(data, self.dtype);
                 // Write bias after weight for each layer

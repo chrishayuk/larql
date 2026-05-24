@@ -21,7 +21,7 @@ use crate::extract::callbacks::IndexBuildCallbacks;
 use crate::extract::stage_labels::*;
 use crate::format::filenames::*;
 
-use super::tensor_io::{normalize_key, MmapShard};
+use super::tensor_io::{normalize_key, GgufTensorSource, MmapShard, TensorSource};
 
 /// Holds the inputs + accumulators for the streaming-extract pipeline.
 pub(super) struct StreamingContext<'a> {
@@ -51,9 +51,11 @@ pub(super) struct StreamingContext<'a> {
     pub(super) n_experts: usize,
     pub(super) expert_format: larql_models::ExpertFormat,
 
-    // Mmap state (owned, set in `new`)
-    pub(super) shard_mmaps: Vec<MmapShard>,
-    pub(super) tensor_index: HashMap<String, (usize, String)>,
+    // Mmap state (owned, set in `new`) — either safetensors-backed or
+    // GGUF-backed. Stages call `tensor_source.get_tensor_f32(key)`; the
+    // MXFP4 raw-pair fast path is safetensors-only and goes through
+    // `tensor_source.safetensors_view()`.
+    pub(super) tensor_source: TensorSource,
 
     // Mutable state across stages
     pub(super) checkpoint: crate::extract::checkpoint::Checkpoint,
@@ -99,14 +101,63 @@ impl<'a> StreamingContext<'a> {
             .map(|s| s.to_string())
             .collect();
 
-        // Mmap all safetensors files (model_dir, with `weights/` fallback).
-        let st_files = discover_safetensors(model_dir)?;
-
+        // Build a tensor source — either a safetensors mmap set (HF
+        // canonical) or a GGUF mmap set. GGUF detection: either the
+        // caller pointed at a single `.gguf` file directly, or the
+        // directory contains at least one `.gguf` file (we take the
+        // first one matching `*-00001-of-*.gguf`, or the largest if no
+        // multi-shard naming is present, and let `GgufFile::open`
+        // discover the rest of the split via `split.count` metadata).
         callbacks.on_stage(STAGE_LOADING);
-        eprintln!(
-            "  Streaming mode: {} safetensors shards (mmap'd, not loaded)",
-            st_files.len()
-        );
+        let tensor_source = if let Some(gguf_path) = detect_gguf_entry(model_dir)? {
+            eprintln!(
+                "  Streaming mode: GGUF input at {} (shards discovered, mmap'd, not loaded)",
+                gguf_path.display(),
+            );
+            let gguf = larql_models::loading::gguf::GgufFile::open(&gguf_path)
+                .map_err(|e| VindexError::Parse(format!("open GGUF: {e}")))?;
+            eprintln!(
+                "  GGUF: {} tensors across {} shard(s)",
+                gguf.tensor_infos.len(),
+                gguf.shards.len(),
+            );
+            TensorSource::Gguf(GgufTensorSource::from_gguf(
+                gguf,
+                hidden_size,
+                intermediate_size,
+            )?)
+        } else {
+            let st_files = discover_safetensors(model_dir)?;
+            eprintln!(
+                "  Streaming mode: {} safetensors shards (mmap'd, not loaded)",
+                st_files.len(),
+            );
+            // SAFETY: We need to hold both the mmap and the SafeTensors that borrows from it.
+            // The mmaps are kept alive in `shard_mmaps` for the lifetime of the context.
+            let shard_mmaps: Vec<MmapShard> = st_files
+                .iter()
+                .map(|path| {
+                    let file = std::fs::File::open(path).unwrap();
+                    let mmap = unsafe { memmap2::Mmap::map(&file).unwrap() };
+                    MmapShard { _file: file, mmap }
+                })
+                .collect();
+
+            let prefix_refs: Vec<&str> = prefixes.iter().map(|s| s.as_str()).collect();
+            let mut tensor_index: HashMap<String, (usize, String)> = HashMap::new();
+            for (shard_idx, shard) in shard_mmaps.iter().enumerate() {
+                let st = safetensors::SafeTensors::deserialize(&shard.mmap)
+                    .map_err(|e| VindexError::Parse(e.to_string()))?;
+                for name in st.names() {
+                    let key = normalize_key(name, &prefix_refs);
+                    tensor_index.insert(key.clone(), (shard_idx, name.to_string()));
+                }
+            }
+            TensorSource::Safetensors {
+                shards: shard_mmaps,
+                index: tensor_index,
+            }
+        };
 
         // Checkpoint setup with auto-resume. A compatible checkpoint
         // from a previous interrupted run is reused; phases it marked
@@ -137,30 +188,6 @@ impl<'a> StreamingContext<'a> {
             }
         };
 
-        // SAFETY: We need to hold both the mmap and the SafeTensors that borrows from it.
-        // We use a two-phase approach: first mmap all files, then deserialize.
-        // The mmaps are kept alive in `shard_mmaps` for the lifetime of the context.
-        let shard_mmaps: Vec<MmapShard> = st_files
-            .iter()
-            .map(|path| {
-                let file = std::fs::File::open(path).unwrap();
-                let mmap = unsafe { memmap2::Mmap::map(&file).unwrap() };
-                MmapShard { _file: file, mmap }
-            })
-            .collect();
-
-        // Build a tensor index: key → (shard_idx, tensor_name).
-        let prefix_refs: Vec<&str> = prefixes.iter().map(|s| s.as_str()).collect();
-        let mut tensor_index: HashMap<String, (usize, String)> = HashMap::new();
-        for (shard_idx, shard) in shard_mmaps.iter().enumerate() {
-            let st = safetensors::SafeTensors::deserialize(&shard.mmap)
-                .map_err(|e| VindexError::Parse(e.to_string()))?;
-            for name in st.names() {
-                let key = normalize_key(name, &prefix_refs);
-                tensor_index.insert(key.clone(), (shard_idx, name.to_string()));
-            }
-        }
-
         callbacks.on_stage_done(STAGE_LOADING, 0.0);
 
         Ok(Self {
@@ -184,8 +211,7 @@ impl<'a> StreamingContext<'a> {
             is_moe,
             n_experts,
             expert_format,
-            shard_mmaps,
-            tensor_index,
+            tensor_source,
             checkpoint,
             layer_infos: Vec::new(),
             vocab_size: 0,
@@ -209,6 +235,52 @@ impl<'a> StreamingContext<'a> {
         crate::extract::checkpoint::Checkpoint::clear(self.output_dir)?;
         Ok(())
     }
+}
+
+/// Detect a GGUF entry point from `model_dir`. Accepts:
+///  - a single `.gguf` file (returned as-is),
+///  - a directory containing one or more `.gguf` files (returns the
+///    shard-1 file if multi-shard naming is present, otherwise the
+///    largest `.gguf`).
+///
+/// Returns `Ok(None)` when no GGUF is present — caller falls back to
+/// the safetensors discovery path.
+fn detect_gguf_entry(model_dir: &Path) -> Result<Option<PathBuf>, VindexError> {
+    if model_dir.is_file()
+        && model_dir.extension().is_some_and(|e| e == "gguf")
+    {
+        return Ok(Some(model_dir.to_path_buf()));
+    }
+    if !model_dir.is_dir() {
+        return Ok(None);
+    }
+    let mut gguf_files: Vec<PathBuf> = std::fs::read_dir(model_dir)?
+        .filter_map(|e| e.ok())
+        .map(|e| e.path())
+        .filter(|p| p.extension().is_some_and(|e| e == "gguf"))
+        .collect();
+    if gguf_files.is_empty() {
+        return Ok(None);
+    }
+    // Prefer shard-1 when canonical multi-shard naming is present.
+    gguf_files.sort();
+    if let Some(shard1) = gguf_files.iter().find(|p| {
+        p.file_name()
+            .and_then(|n| n.to_str())
+            .map(|n| n.contains("-00001-of-"))
+            .unwrap_or(false)
+    }) {
+        return Ok(Some(shard1.clone()));
+    }
+    // Fallback: pick the largest file (single-shard or anomalous naming).
+    let mut largest: Option<(u64, PathBuf)> = None;
+    for p in gguf_files {
+        let size = std::fs::metadata(&p).map(|m| m.len()).unwrap_or(0);
+        if largest.as_ref().map_or(true, |(s, _)| size > *s) {
+            largest = Some((size, p));
+        }
+    }
+    Ok(largest.map(|(_, p)| p))
 }
 
 /// Find every `*.safetensors` shard for a model. Looks in `model_dir`

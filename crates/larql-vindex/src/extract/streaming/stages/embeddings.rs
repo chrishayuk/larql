@@ -3,7 +3,7 @@
 use crate::error::VindexError;
 use crate::extract::stage_labels::*;
 use crate::extract::streaming::context::StreamingContext;
-use crate::extract::streaming::tensor_io::{get_tensor_f32, normalize_key};
+use crate::extract::streaming::tensor_io::normalize_key;
 use crate::format::filenames::*;
 
 impl<'a> StreamingContext<'a> {
@@ -12,7 +12,9 @@ impl<'a> StreamingContext<'a> {
         self.callbacks.on_stage(STAGE_EMBEDDINGS);
         let prefixes: Vec<&str> = self.prefixes.iter().map(|s| s.as_str()).collect();
         let embed_key = normalize_key(self.arch.embed_key(), &prefixes);
-        let embed = get_tensor_f32(&self.shard_mmaps, &self.tensor_index, &embed_key)?
+        let embed = self
+            .tensor_source
+            .get_tensor_f32(&embed_key)?
             .ok_or_else(|| VindexError::MissingTensor(embed_key.clone()))?;
         self.vocab_size = embed.shape()[0];
         let embed_data = embed.as_slice().unwrap();

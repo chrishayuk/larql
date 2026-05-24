@@ -7,7 +7,7 @@ use crate::config::VindexLayerInfo;
 use crate::error::VindexError;
 use crate::extract::stage_labels::*;
 use crate::extract::streaming::context::StreamingContext;
-use crate::extract::streaming::tensor_io::{get_tensor_f32, normalize_key, GateSink};
+use crate::extract::streaming::tensor_io::{normalize_key, GateSink};
 use crate::format::filenames::*;
 
 impl<'a> StreamingContext<'a> {
@@ -64,7 +64,25 @@ impl<'a> StreamingContext<'a> {
             if self.expert_format == larql_models::ExpertFormat::PackedMxfp4 {
                 // MXFP4 packed experts: dequantize gate_up_proj_blocks per layer
                 // The fused tensor is [num_experts, 2*intermediate, groups, 16]
-                // First half of output features = gate, second half = up
+                // First half of output features = gate, second half = up.
+                //
+                // GGUF has no equivalent packed-MXFP4 format, so this branch
+                // is safetensors-only — the `safetensors_view()` accessor
+                // returns `None` for GGUF and we silently skip the layer
+                // (the dispatcher won't route GGUF input here in practice
+                // because GGUF DeepSeek-V4 weights use standard blockwise
+                // quants, not the MXFP4 packing format).
+                let (shard_mmaps, tensor_index) = match self.tensor_source.safetensors_view() {
+                    Some(v) => v,
+                    None => {
+                        self.callbacks.on_layer_done(
+                            COMP_GATE,
+                            layer,
+                            start.elapsed().as_secs_f64() * 1000.0,
+                        );
+                        continue;
+                    }
+                };
                 let blocks_key = self
                     .arch
                     .packed_gate_up_blocks_key(layer)
@@ -75,15 +93,15 @@ impl<'a> StreamingContext<'a> {
                     .unwrap_or_default();
 
                 if let (Some(blocks_info), Some(scales_info)) = (
-                    self.tensor_index.get(&blocks_key),
-                    self.tensor_index.get(&scales_key),
+                    tensor_index.get(&blocks_key),
+                    tensor_index.get(&scales_key),
                 ) {
                     let blocks_st = safetensors::SafeTensors::deserialize(
-                        &self.shard_mmaps[blocks_info.0].mmap,
+                        &shard_mmaps[blocks_info.0].mmap,
                     )
                     .map_err(|e| VindexError::Parse(e.to_string()))?;
                     let scales_st = safetensors::SafeTensors::deserialize(
-                        &self.shard_mmaps[scales_info.0].mmap,
+                        &shard_mmaps[scales_info.0].mmap,
                     )
                     .map_err(|e| VindexError::Parse(e.to_string()))?;
 
@@ -135,9 +153,7 @@ impl<'a> StreamingContext<'a> {
                 // Hybrid MoE (Gemma 4 26B A4B): packed experts stored separately.
                 // gate_vectors.bin uses the dense FFN gate for KNN walk routing.
                 let gate_key = normalize_key(&self.arch.ffn_gate_key(layer), &prefixes);
-                if let Some(tensor) =
-                    get_tensor_f32(&self.shard_mmaps, &self.tensor_index, &gate_key)?
-                {
+                if let Some(tensor) = self.tensor_source.get_tensor_f32(&gate_key)? {
                     let num_features = tensor.shape()[0];
                     let data = tensor.as_slice().unwrap();
                     let length = write_floats(&mut gate_file, data, self.dtype)?;
@@ -179,9 +195,7 @@ impl<'a> StreamingContext<'a> {
                         None => continue,
                     };
 
-                    if let Some(tensor) =
-                        get_tensor_f32(&self.shard_mmaps, &self.tensor_index, &gate_key)?
-                    {
+                    if let Some(tensor) = self.tensor_source.get_tensor_f32(&gate_key)? {
                         let data: Vec<f32>;
                         let n_feat: usize;
                         if summary_k > 0 && tensor.shape()[0] > summary_k {
@@ -222,9 +236,7 @@ impl<'a> StreamingContext<'a> {
             } else {
                 // Dense: single gate matrix per layer
                 let gate_key = normalize_key(&self.arch.ffn_gate_key(layer), &prefixes);
-                if let Some(tensor) =
-                    get_tensor_f32(&self.shard_mmaps, &self.tensor_index, &gate_key)?
-                {
+                if let Some(tensor) = self.tensor_source.get_tensor_f32(&gate_key)? {
                     let num_features = tensor.shape()[0];
                     let data = tensor.as_slice().unwrap();
                     let length = write_floats(&mut gate_file, data, self.dtype)?;

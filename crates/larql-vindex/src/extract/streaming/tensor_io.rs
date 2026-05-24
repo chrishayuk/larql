@@ -1,14 +1,21 @@
-//! Safetensors-mmap helpers for the streaming extraction pipeline.
+//! Mmap-based tensor source for the streaming extraction pipeline.
 //!
 //! Named `tensor_io` rather than `safetensors` to avoid shadowing the
 //! external `safetensors` crate inside the parent module.
 //!
-//! - `MmapShard` keeps the file handle + mmap alive for the lifetime of
-//!   one extraction.
-//! - `GateSink` is the gate-vector writer abstraction (real file or
-//!   `/dev/null` when `--drop-gate-vectors` is set).
-//! - `get_tensor_f32` reads a 2D tensor by key and dequantises to f32.
-//! - `normalize_key` strips a fixed prefix list from a tensor key.
+//! Two backing formats:
+//!  - **safetensors**: HF-canonical layout, key already in HF form after
+//!    `normalize_key` strips the architecture-specific prefix.
+//!  - **GGUF**: llama.cpp blockwise quants (Q4_K, Q4_0, BF16, F32, …),
+//!    keyed by GGUF tensor name (`blk.L.attn_q.weight`) and mapped back
+//!    to HF form via [`larql_models::loading::gguf::normalize_gguf_key`].
+//!
+//! Types:
+//!  - [`MmapShard`] keeps a safetensors file handle + mmap alive.
+//!  - [`TensorSource`] dispatches `get_tensor_f32` over either backend.
+//!  - [`GateSink`] is the gate-vector writer abstraction (real file or
+//!    `/dev/null` when `--drop-gate-vectors` is set).
+//!  - `normalize_key` strips a fixed prefix list from a safetensors key.
 
 use std::collections::HashMap;
 use std::io::{BufWriter, Write};
@@ -21,6 +28,261 @@ use crate::error::VindexError;
 pub(super) struct MmapShard {
     pub(super) _file: std::fs::File,
     pub(super) mmap: memmap2::Mmap,
+}
+
+/// Tensor source for the streaming pipeline. Dispatches `get_tensor_f32`
+/// between mmap'd safetensors and mmap'd GGUF blockwise-quantised tensors.
+///
+/// The MXFP4 raw-pair path (packed expert gate_up/down in DeepSeek-V4)
+/// is safetensors-only — GGUF stores the same expert tensors as standard
+/// blockwise quants (Q4_0/Q4_K/…) handled by `get_tensor_f32` directly.
+pub(super) enum TensorSource {
+    Safetensors {
+        shards: Vec<MmapShard>,
+        /// hf_key → (shard_idx, safetensors-internal name)
+        index: HashMap<String, (usize, String)>,
+    },
+    Gguf(GgufTensorSource),
+}
+
+/// GGUF backend for [`TensorSource`]. Owns the parsed `GgufFile` (multi-
+/// shard aware) plus one mmap per shard. Eager mmap is cheap (virtual
+/// address space, not RAM) so the OS only pages in tensors we touch.
+///
+/// Holds the architecture config so `get_tensor_f32` can apply the same
+/// canonical orientation the in-memory loader runs via `orient_in_place`
+/// (GGUF stores ffn tensors in PyTorch shape which may be the transpose
+/// of the HF Linear convention — without correction, `tensor.shape()[0]`
+/// is `hidden_size` instead of `intermediate_size` and downstream
+/// matmul produces NaN).
+pub(super) struct GgufTensorSource {
+    pub(super) gguf: larql_models::loading::gguf::GgufFile,
+    pub(super) shard_mmaps: Vec<memmap2::Mmap>,
+    /// hf_key (after `normalize_gguf_key`) → index into `gguf.tensor_infos`.
+    pub(super) index: HashMap<String, usize>,
+    /// Canonical hidden_size — used to orient ffn tensors to HF Linear shape.
+    hidden_size: usize,
+    /// Canonical intermediate_size (dense FFN). Some MoE architectures
+    /// have a separate `moe_intermediate_size` — that's handled at the
+    /// call site since the streaming pipeline matches the in-memory
+    /// loader's behavior of skipping 3D-packed expert tensors anyway.
+    intermediate_size: usize,
+}
+
+impl TensorSource {
+    /// Read a 2D tensor by HF-canonical key, dequantising to f32. Returns
+    /// `Ok(None)` if the key is absent, the tensor is not 2D, or the
+    /// dtype is unsupported by this code path (matching the safetensors
+    /// historical contract).
+    pub(super) fn get_tensor_f32(&self, key: &str) -> Result<Option<Array2<f32>>, VindexError> {
+        match self {
+            TensorSource::Safetensors { shards, index } => get_tensor_f32(shards, index, key),
+            TensorSource::Gguf(g) => g.get_tensor_f32(key),
+        }
+    }
+
+    /// Borrow the safetensors backing data for raw-pair access (MXFP4
+    /// expert gate_up/down). Returns `None` for the GGUF variant — GGUF
+    /// has no MXFP4-packed format.
+    pub(super) fn safetensors_view(
+        &self,
+    ) -> Option<(&[MmapShard], &HashMap<String, (usize, String)>)> {
+        match self {
+            TensorSource::Safetensors { shards, index } => Some((shards, index)),
+            TensorSource::Gguf(_) => None,
+        }
+    }
+
+    /// Borrow the safetensors shards as `&[u8]` slices, for callers that
+    /// need to hand the raw mmap to a separate writer subsystem
+    /// (`StreamingWeights`). Returns `None` for the GGUF variant.
+    pub(super) fn safetensors_mmap_refs(&self) -> Option<Vec<&[u8]>> {
+        match self {
+            TensorSource::Safetensors { shards, .. } => {
+                Some(shards.iter().map(|s| s.mmap.as_ref()).collect())
+            }
+            TensorSource::Gguf(_) => None,
+        }
+    }
+
+    /// Borrow the safetensors tensor index. Returns `None` for the GGUF
+    /// variant.
+    pub(super) fn safetensors_index(&self) -> Option<&HashMap<String, (usize, String)>> {
+        match self {
+            TensorSource::Safetensors { index, .. } => Some(index),
+            TensorSource::Gguf(_) => None,
+        }
+    }
+
+}
+
+impl GgufTensorSource {
+    /// Build a `GgufTensorSource` from an already-opened `GgufFile`. The
+    /// caller is responsible for parsing the header (`GgufFile::open`);
+    /// this just mmaps each shard and builds the hf_key → tensor_info
+    /// index.
+    ///
+    /// `hidden_size` and `intermediate_size` come from the detected
+    /// architecture and drive the canonical FFN orientation applied
+    /// inside `get_tensor_f32` (mirrors `orient_in_place` in the
+    /// in-memory loader).
+    pub(super) fn from_gguf(
+        gguf: larql_models::loading::gguf::GgufFile,
+        hidden_size: usize,
+        intermediate_size: usize,
+    ) -> Result<Self, VindexError> {
+        let mut shard_mmaps: Vec<memmap2::Mmap> = Vec::with_capacity(gguf.shards.len());
+        for shard in &gguf.shards {
+            let file = std::fs::File::open(&shard.path)
+                .map_err(|e| VindexError::Parse(format!("open {}: {e}", shard.path.display())))?;
+            // SAFETY: shard files are owned, immutable input.
+            let mmap = unsafe { memmap2::Mmap::map(&file) }
+                .map_err(|e| VindexError::Parse(format!("mmap {}: {e}", shard.path.display())))?;
+            shard_mmaps.push(mmap);
+        }
+
+        let mut index: HashMap<String, usize> = HashMap::with_capacity(gguf.tensor_infos.len());
+        for (i, info) in gguf.tensor_infos.iter().enumerate() {
+            let hf_key = larql_models::loading::gguf::normalize_gguf_key(info.name());
+            // First-write wins: if the same hf_key normalises twice (it
+            // shouldn't, but defensively), keep the earlier one rather
+            // than silently flipping shard_idx on the caller.
+            index.entry(hf_key).or_insert(i);
+        }
+
+        Ok(Self {
+            gguf,
+            shard_mmaps,
+            index,
+            hidden_size,
+            intermediate_size,
+        })
+    }
+
+    /// Inspect a normalised HF key and return the canonical `(rows, cols)`
+    /// shape expected by downstream stages — or `None` for keys that are
+    /// already shape-correct as stored in GGUF (embed, lm_head, norms).
+    ///
+    /// The pattern matching mirrors `load_gguf`'s `orient_in_place` calls
+    /// for ffn_gate / ffn_up / ffn_down (+ MoE per-expert variants the
+    /// streaming path would reach if GGUF stored experts 2D — currently
+    /// they're 3D-packed and skipped here as in the in-memory loader).
+    fn expected_shape(&self, key: &str) -> Option<(usize, usize)> {
+        let h = self.hidden_size;
+        let m = self.intermediate_size;
+        if h == 0 || m == 0 {
+            return None;
+        }
+        // Order matters: check the more specific `down_proj` before
+        // generic `proj` to avoid the gate/up branches catching down.
+        if key.ends_with("down_proj.weight") || key.contains(".down_proj.") {
+            return Some((h, m));
+        }
+        if key.ends_with("gate_proj.weight")
+            || key.contains(".gate_proj.")
+            || key.ends_with("up_proj.weight")
+            || key.contains(".up_proj.")
+        {
+            return Some((m, h));
+        }
+        None
+    }
+
+    /// Transpose if the current shape is `(cols, rows)` instead of the
+    /// expected `(rows, cols)`. Mirror of `load_gguf::orient_in_place`.
+    fn orient(&self, arr: Array2<f32>, expected: (usize, usize)) -> Array2<f32> {
+        let (er, ec) = expected;
+        if er == ec {
+            return arr;
+        }
+        let s = arr.shape();
+        if s[0] == er && s[1] == ec {
+            return arr;
+        }
+        if s[0] == ec && s[1] == er {
+            let mut out = Array2::<f32>::zeros((er, ec));
+            out.assign(&arr.t());
+            return out;
+        }
+        // Shape doesn't match either orientation — return as-is and let
+        // the caller's shape check surface the mismatch.
+        arr
+    }
+
+    fn get_tensor_f32(&self, key: &str) -> Result<Option<Array2<f32>>, VindexError> {
+        let info_idx = match self.index.get(key) {
+            Some(&i) => i,
+            None => return Ok(None),
+        };
+        let info = &self.gguf.tensor_infos[info_idx];
+        if info.n_dims() != 2 {
+            return Ok(None);
+        }
+
+        let shard_idx = info.shard_idx();
+        let mmap = &self.shard_mmaps[shard_idx];
+        let data_offset = self.gguf.shards[shard_idx].data_offset;
+        let abs_offset = data_offset
+            .checked_add(info.offset())
+            .ok_or_else(|| VindexError::Parse(format!(
+                "gguf tensor {}: data_offset {data_offset} + offset {} overflows",
+                info.name(),
+                info.offset(),
+            )))?;
+
+        let dims = info.dims();
+        let n_elements: u64 = dims.iter().product();
+        let n_elements_usize = usize::try_from(n_elements).map_err(|_| {
+            VindexError::Parse(format!(
+                "gguf tensor {}: n_elements {n_elements} exceeds usize",
+                info.name(),
+            ))
+        })?;
+
+        let data_size =
+            larql_models::quant::ggml::tensor_data_size(info.tensor_type(), n_elements_usize)
+                .map_err(|e| VindexError::Parse(e.to_string()))?;
+        let abs_offset_usize = usize::try_from(abs_offset).map_err(|_| {
+            VindexError::Parse(format!(
+                "gguf tensor {}: abs_offset {abs_offset} exceeds usize",
+                info.name(),
+            ))
+        })?;
+        let end = abs_offset_usize
+            .checked_add(data_size)
+            .ok_or_else(|| VindexError::Parse(format!(
+                "gguf tensor {}: offset+size overflows",
+                info.name(),
+            )))?;
+        if end > mmap.len() {
+            return Err(VindexError::Parse(format!(
+                "gguf tensor {} out of bounds: end {end} > shard len {}",
+                info.name(),
+                mmap.len(),
+            )));
+        }
+
+        let raw = &mmap[abs_offset_usize..end];
+        let floats = larql_models::quant::ggml::dequantize(raw, info.tensor_type(), n_elements_usize)
+            .map_err(|e| VindexError::Parse(e.to_string()))?;
+
+        // GGUF dim ordering: dims[0] = columns (innermost/fastest),
+        // dims[1] = rows (outermost). Raw bytes are contiguous along
+        // dims[0], so reshaping to (rows, cols) = (dims[1], dims[0])
+        // gives ndarray's row-major layout matching the HF convention.
+        let ne0 = dims[0] as usize;
+        let ne1 = dims[1] as usize;
+        let arr = Array2::from_shape_vec((ne1, ne0), floats)
+            .map_err(|e| VindexError::Parse(format!("gguf tensor {}: {e}", info.name())))?;
+
+        // Apply canonical orientation when the key is a known FFN
+        // tensor — matches `orient_in_place` in the in-memory loader.
+        let arr = match self.expected_shape(key) {
+            Some(expected) => self.orient(arr, expected),
+            None => arr,
+        };
+        Ok(Some(arr))
+    }
 }
 
 /// Sink for gate-vector bytes. With `--drop-gate-vectors` the writer
