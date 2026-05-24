@@ -47,8 +47,12 @@ impl<'a> StreamingContext<'a> {
 
         let prefixes: Vec<&str> = self.prefixes.iter().map(|s| s.as_str()).collect();
         let down_layer_count = if resumed_down { 0 } else { self.num_layers };
-        for (layer, layer_down_meta) in all_down_meta.iter_mut().enumerate().take(down_layer_count)
-        {
+        // Index-based loop (rather than `iter_mut().enumerate()`) so the
+        // mutable borrow on `all_down_meta[layer]` is released between
+        // iterations — letting the per-layer incremental flush below take
+        // an immutable borrow of the whole accumulator.
+        for layer in 0..down_layer_count {
+            let layer_down_meta = &mut all_down_meta[layer];
             self.callbacks
                 .on_layer_start(COMP_DOWN, layer, self.num_layers);
             let start = std::time::Instant::now();
@@ -241,9 +245,23 @@ impl<'a> StreamingContext<'a> {
 
             self.callbacks
                 .on_layer_done(COMP_DOWN, layer, start.elapsed().as_secs_f64() * 1000.0);
+
+            // Incremental flush: after each layer's projection finishes,
+            // snapshot the accumulator to `down_meta.bin` so an interrupted
+            // run preserves completed layers. `write_binary` already uses
+            // a tempfile + atomic rename so the on-disk file is never in
+            // a partial state. Cost is one ~1.5 MB write per layer — well
+            // under the per-layer matmul time even on dense models.
+            crate::format::down_meta::write_binary(
+                self.output_dir,
+                &all_down_meta,
+                self.down_top_k,
+            )?;
         }
 
         if !resumed_down {
+            // Final write (idempotent — same content as the last
+            // per-layer snapshot above when the loop ran to completion).
             crate::format::down_meta::write_binary(
                 self.output_dir,
                 &all_down_meta,
