@@ -144,6 +144,34 @@ pub struct GgufTensorInfo {
     shard_idx: usize,
 }
 
+impl GgufTensorInfo {
+    /// Raw GGUF tensor name (e.g. `blk.0.attn_q.weight`). The HF-equivalent
+    /// key (`layers.0.self_attn.q_proj.weight`) is obtained via
+    /// [`normalize_gguf_key`].
+    pub fn name(&self) -> &str {
+        &self.name
+    }
+    pub fn n_dims(&self) -> u32 {
+        self.n_dims
+    }
+    pub fn dims(&self) -> &[u64] {
+        &self.dims
+    }
+    /// GGML tensor-type id (Q4_0, Q8_0, F16, …). See `quant::ggml` constants.
+    pub fn tensor_type(&self) -> u32 {
+        self.tensor_type
+    }
+    /// Tensor data offset *within* its shard's data section. Add
+    /// `ShardInfo::data_offset` to get the absolute file offset.
+    pub fn offset(&self) -> u64 {
+        self.offset
+    }
+    /// Index into [`GgufFile::shards`] selecting which file owns this tensor.
+    pub fn shard_idx(&self) -> usize {
+        self.shard_idx
+    }
+}
+
 /// One file in a (possibly multi-shard) GGUF split.
 #[derive(Debug, Clone)]
 pub struct ShardInfo {
