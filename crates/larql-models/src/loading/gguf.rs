@@ -38,6 +38,11 @@ const GGUF_GENERAL_ARCHITECTURE: &str = "general.architecture";
 const GGUF_EMBEDDING_LENGTH: &str = "embedding_length";
 const GGUF_BLOCK_COUNT: &str = "block_count";
 const GGUF_FEED_FORWARD_LENGTH: &str = "feed_forward_length";
+// MoE-only architectures (DeepSeek-V4 family) omit the global
+// `feed_forward_length` and emit only the per-expert size — fall back
+// to it so config validation doesn't reject the model with
+// `intermediate_size: must be greater than 0`.
+const GGUF_EXPERT_FEED_FORWARD_LENGTH: &str = "expert_feed_forward_length";
 const GGUF_ATTENTION_HEAD_COUNT: &str = "attention.head_count";
 const GGUF_ATTENTION_HEAD_COUNT_KV: &str = "attention.head_count_kv";
 const GGUF_ATTENTION_KEY_LENGTH: &str = "attention.key_length";
@@ -674,11 +679,25 @@ impl GgufFile {
             num_heads
         };
 
+        // intermediate_size: prefer the global `feed_forward_length`. For
+        // MoE-only models (DeepSeek-V4 family) the global key is omitted,
+        // so we fall back to the per-expert size. The HF config exposes
+        // `intermediate_size` as a single number even on MoE archs because
+        // per-expert and per-layer FFNs share that dim in every
+        // llama.cpp-supported architecture.
+        let intermediate_size = {
+            let global = get_arch_u32(GGUF_FEED_FORWARD_LENGTH);
+            if global > 0 {
+                global
+            } else {
+                get_arch_u32(GGUF_EXPERT_FEED_FORWARD_LENGTH)
+            }
+        };
         let mut config = serde_json::json!({
             HF_MODEL_TYPE: model_type,
             HF_HIDDEN_SIZE: hidden_size,
             HF_NUM_HIDDEN_LAYERS: get_arch_u32(GGUF_BLOCK_COUNT),
-            HF_INTERMEDIATE_SIZE: get_arch_u32(GGUF_FEED_FORWARD_LENGTH),
+            HF_INTERMEDIATE_SIZE: intermediate_size,
             HF_NUM_ATTENTION_HEADS: num_heads,
             HF_NUM_KEY_VALUE_HEADS: num_kv_heads,
             HF_HEAD_DIM: head_dim,
