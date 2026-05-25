@@ -6,6 +6,10 @@ authors.workspace = true
 license.workspace = true
 description = "Outbound LLM clients (OpenAI-compatible, AWS Bedrock) for larql-server proxy mode"
 
+[[bin]]
+name = "larql-cloud-proxy"
+path = "src/bin/proxy.rs"
+
 [features]
 default = ["openai", "bedrock"]
 openai = []
@@ -17,7 +21,7 @@ serde_json = { workspace = true }
 thiserror = { workspace = true }
 async-trait = "0.1"
 reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls", "http2"] }
-tokio = { version = "1", default-features = false, features = ["rt", "sync", "time", "macros"] }
+tokio = { version = "1", default-features = false, features = ["rt", "sync", "time", "macros", "rt-multi-thread", "net", "signal"] }
 tracing = "0.1"
 url = "2"
 chrono = { version = "0.4", default-features = false, features = ["std", "clock"] }
@@ -25,12 +29,18 @@ hmac = { version = "0.12", optional = true }
 sha2 = { version = "0.10", optional = true }
 hex = { version = "0.4", optional = true }
 
+# Proxy binary deps.
+axum = { version = "0.8", default-features = false, features = ["json", "http1", "http2", "tokio", "query"] }
+clap = { version = "4", features = ["derive", "env"] }
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+
 [dev-dependencies]
 tokio = { version = "1", features = ["full"] }
 hyper = { version = "1", default-features = false, features = ["client", "http1", "server"] }
 hyper-util = { version = "0.1", default-features = false, features = ["client", "client-legacy", "tokio", "http1"] }
 http-body-util = "0.1"
 bytes = "1"
+reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls"] }
 
 [lints.clippy]
 unwrap_used = "deny"

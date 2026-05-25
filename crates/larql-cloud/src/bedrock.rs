@@ -553,6 +553,7 @@ mod tests {
 
     #[test]
     fn auth_from_env_prefers_bearer() {
+        let _g = env_lock();
         std::env::set_var("AWS_BEARER_TOKEN_BEDROCK", "abc");
         let auth = BedrockAuth::from_env().unwrap();
         match auth {
@@ -564,6 +565,7 @@ mod tests {
 
     #[test]
     fn auth_falls_back_to_sigv4() {
+        let _g = env_lock();
         std::env::remove_var("AWS_BEARER_TOKEN_BEDROCK");
         std::env::set_var("AWS_ACCESS_KEY_ID", "AKIA");
         std::env::set_var("AWS_SECRET_ACCESS_KEY", "secret");
@@ -576,11 +578,24 @@ mod tests {
 
     #[test]
     fn auth_errors_with_no_creds() {
+        let _g = env_lock();
         std::env::remove_var("AWS_BEARER_TOKEN_BEDROCK");
         std::env::remove_var("AWS_ACCESS_KEY_ID");
         std::env::remove_var("AWS_SECRET_ACCESS_KEY");
         let r = BedrockAuth::from_env();
         assert!(matches!(r, Err(ProviderError::MissingEnv(_))));
+    }
+
+    /// Serialize env-touching tests so they don't race when run with
+    /// `--test-threads > 1`.  std::env access is process-global, so
+    /// otherwise concurrent tests can flip each other's variables
+    /// underneath them.
+    fn env_lock() -> std::sync::MutexGuard<'static, ()> {
+        use std::sync::{Mutex, OnceLock};
+        static M: OnceLock<Mutex<()>> = OnceLock::new();
+        M.get_or_init(|| Mutex::new(()))
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
     }
 
     #[test]
