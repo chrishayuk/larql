@@ -117,7 +117,16 @@ impl BedrockClient {
     }
 
     fn is_anthropic(&self) -> bool {
+        // Bedrock model ids come in two shapes:
+        //   1. Foundation model id:           anthropic.claude-...
+        //   2. Cross-region inference profile: us.anthropic.claude-...,
+        //      eu.anthropic.claude-..., apac.anthropic.claude-...,
+        //      us-gov.anthropic.claude-...
+        // Match either by looking for the `.anthropic.` substring or
+        // a leading `anthropic.`.  Substring is sufficient because no
+        // non-Anthropic model id contains that token.
         self.model_id.starts_with("anthropic.")
+            || self.model_id.contains(".anthropic.")
     }
 
     fn is_titan_embed(&self) -> bool {
@@ -661,5 +670,29 @@ mod tests {
             })
             .await;
         assert!(matches!(r, Err(ProviderError::Unsupported { .. })));
+    }
+
+    /// Cross-region inference profile ids (`us.anthropic.*`,
+    /// `eu.anthropic.*`, `apac.anthropic.*`) are recognised as
+    /// Anthropic models so the chat path doesn't 501 on them.
+    /// Regression guard for the `.anthropic.` substring detection.
+    #[test]
+    fn is_anthropic_matches_cross_region_inference_profiles() {
+        let mk = |model: &str| {
+            BedrockClient::new(
+                "us-east-1",
+                model,
+                BedrockAuth::BearerToken("x".into()),
+                Duration::from_secs(5),
+            )
+            .unwrap()
+        };
+        assert!(mk("anthropic.claude-3-haiku-20240307-v1:0").is_anthropic());
+        assert!(mk("us.anthropic.claude-haiku-4-5-20251001-v1:0").is_anthropic());
+        assert!(mk("eu.anthropic.claude-3-5-sonnet-20241022-v2:0").is_anthropic());
+        assert!(mk("apac.anthropic.claude-3-5-sonnet-20241022-v2:0").is_anthropic());
+        assert!(mk("us-gov.anthropic.claude-3-5-sonnet-20241022-v2:0").is_anthropic());
+        assert!(!mk("amazon.titan-text-express-v1").is_anthropic());
+        assert!(!mk("meta.llama3-70b-instruct-v1:0").is_anthropic());
     }
 }
