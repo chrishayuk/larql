@@ -21,7 +21,7 @@ evalexpr = { version = "11", optional = true }
 chrono = { version = "0.4", optional = true, default-features = false, features = ["std", "clock"] }
 
 # Feature: wasm host
-wasmtime = { version = "29", optional = true, default-features = false, features = ["cranelift", "runtime", "std"] }
+wasmtime = { version = ">=36.0.7", optional = true, default-features = false, features = ["cranelift", "runtime", "std"] }
 
 [dev-dependencies]
 wat = "1"
