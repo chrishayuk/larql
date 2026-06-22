@@ -60,7 +60,7 @@ jobs:
       LARQL_VERIFY_THRESHOLD: '0.5'
 
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
 
       - name: Cache cargo deps
         uses: actions/cache@v5

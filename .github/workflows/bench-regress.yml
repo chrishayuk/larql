@@ -33,7 +33,7 @@ jobs:
     timeout-minutes: 90
 
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
 
       # Cargo deps are big and stable across PRs — separate cache.
       - name: Cache cargo deps
