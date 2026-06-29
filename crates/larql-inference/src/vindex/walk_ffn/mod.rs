@@ -212,7 +212,9 @@ fn walk_trace_env_enabled() -> bool {
 
 impl<'a> WalkFfn<'a> {
     fn top_k_for(&self, layer: usize) -> usize {
-        self.config.k_for(layer).unwrap_or(usize::MAX)
+        self.config
+            .k_for(layer)
+            .unwrap_or_else(|| self.index.num_features(layer))
     }
 
     // ── Legacy constructors (stable public API) ──
@@ -784,6 +786,15 @@ mod dispatch_tests {
         let x = input(1, weights.hidden_size);
         let out = ffn.forward(0, &x);
         assert_eq!(out.shape(), &[1, weights.hidden_size]);
+    }
+
+    #[test]
+    fn dense_top_k_for_clamps_to_layer_feature_count() {
+        let weights = shared_weights();
+        let idx = mock_index(weights);
+        let ffn = WalkFfn::new_unlimited(weights, &idx);
+
+        assert_eq!(ffn.top_k_for(0), weights.intermediate_size);
     }
 
     /// Variant of `MockGateIndex` that yields a `FeatureMeta` for every
