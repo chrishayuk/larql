@@ -12,6 +12,8 @@ use crate::quant::half::f16_to_f32;
 
 /// Q4_0: block = f16 scale (2B) + 16 bytes of 4-bit quants. 32 elements per block.
 /// Each 4-bit value is unsigned [0,15], offset by -8 to give signed [-8, 7].
+/// ggml planar nibble layout (`dequantize_row_q4_0`): the low nibbles of
+/// qs[0..16] are elements 0..16 and the high nibbles are elements 16..32.
 pub fn dequantize_q4_0(data: &[u8], n_elements: usize) -> Result<Vec<f32>, ModelError> {
     let block_size = 18;
     let n_blocks = check_block_input("Q4_0", data, n_elements, 32, block_size)?;
@@ -24,8 +26,10 @@ pub fn dequantize_q4_0(data: &[u8], n_elements: usize) -> Result<Vec<f32>, Model
 
         for byte in &quants[..16] {
             let lo = (byte & 0x0F) as i8 - 8;
-            let hi = ((byte >> 4) & 0x0F) as i8 - 8;
             out.push(lo as f32 * scale);
+        }
+        for byte in &quants[..16] {
+            let hi = ((byte >> 4) & 0x0F) as i8 - 8;
             out.push(hi as f32 * scale);
         }
     }
@@ -34,6 +38,7 @@ pub fn dequantize_q4_0(data: &[u8], n_elements: usize) -> Result<Vec<f32>, Model
 
 /// Q4_1: block = f16 scale + f16 min + 16 bytes of 4-bit quants.
 /// value = quant * scale + min
+/// Same planar nibble layout as Q4_0 (`dequantize_row_q4_1`).
 pub(super) fn dequantize_q4_1(data: &[u8], n_elements: usize) -> Result<Vec<f32>, ModelError> {
     let block_size = 20;
     let n_blocks = check_block_input("Q4_1", data, n_elements, 32, block_size)?;
@@ -47,8 +52,10 @@ pub(super) fn dequantize_q4_1(data: &[u8], n_elements: usize) -> Result<Vec<f32>
 
         for byte in &quants[..16] {
             let lo = (byte & 0x0F) as f32;
-            let hi = ((byte >> 4) & 0x0F) as f32;
             out.push(lo * scale + min);
+        }
+        for byte in &quants[..16] {
+            let hi = ((byte >> 4) & 0x0F) as f32;
             out.push(hi * scale + min);
         }
     }
@@ -86,18 +93,18 @@ pub fn dequantize_q5_0(data: &[u8], n_elements: usize) -> Result<Vec<f32>, Model
         let high_bits = u32::from_le_bytes([block[2], block[3], block[4], block[5]]);
         let quants = &block[6..];
 
+        // ggml planar layout (`dequantize_row_q5_0`): element j is the low
+        // nibble of qs[j] with high bit qh>>j; element j+16 is the high
+        // nibble of qs[j] with high bit qh>>(j+16).
         for (j, &byte) in quants[..16].iter().enumerate() {
-            let lo_lo4 = byte & 0x0F;
-            let hi_lo4 = (byte >> 4) & 0x0F;
-
-            let lo_hi1 = ((high_bits >> (j * 2)) & 1) as u8;
-            let hi_hi1 = ((high_bits >> (j * 2 + 1)) & 1) as u8;
-
-            let lo_combined = lo_lo4 | (lo_hi1 << 4);
-            let hi_combined = hi_lo4 | (hi_hi1 << 4);
-
-            out.push((lo_combined as i32 - 16) as f32 * scale);
-            out.push((hi_combined as i32 - 16) as f32 * scale);
+            let lo4 = byte & 0x0F;
+            let hi1 = ((high_bits >> j) & 1) as u8;
+            out.push(((lo4 | (hi1 << 4)) as i32 - 16) as f32 * scale);
+        }
+        for (j, &byte) in quants[..16].iter().enumerate() {
+            let lo4 = (byte >> 4) & 0x0F;
+            let hi1 = ((high_bits >> (j + 16)) & 1) as u8;
+            out.push(((lo4 | (hi1 << 4)) as i32 - 16) as f32 * scale);
         }
     }
     Ok(out)
@@ -117,18 +124,16 @@ pub fn dequantize_q5_1(data: &[u8], n_elements: usize) -> Result<Vec<f32>, Model
         let high_bits = u32::from_le_bytes([block[4], block[5], block[6], block[7]]);
         let quants = &block[8..];
 
+        // Same planar layout as Q5_0 (`dequantize_row_q5_1`).
         for (j, &byte) in quants[..16].iter().enumerate() {
-            let lo_lo4 = byte & 0x0F;
-            let hi_lo4 = (byte >> 4) & 0x0F;
-
-            let lo_hi1 = ((high_bits >> (j * 2)) & 1) as u8;
-            let hi_hi1 = ((high_bits >> (j * 2 + 1)) & 1) as u8;
-
-            let lo_combined = lo_lo4 | (lo_hi1 << 4);
-            let hi_combined = hi_lo4 | (hi_hi1 << 4);
-
-            out.push(lo_combined as f32 * scale + min);
-            out.push(hi_combined as f32 * scale + min);
+            let lo4 = byte & 0x0F;
+            let hi1 = ((high_bits >> j) & 1) as u8;
+            out.push((lo4 | (hi1 << 4)) as f32 * scale + min);
+        }
+        for (j, &byte) in quants[..16].iter().enumerate() {
+            let lo4 = (byte >> 4) & 0x0F;
+            let hi1 = ((high_bits >> (j + 16)) & 1) as u8;
+            out.push((lo4 | (hi1 << 4)) as f32 * scale + min);
         }
     }
     Ok(out)

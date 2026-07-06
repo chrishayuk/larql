@@ -70,13 +70,12 @@ float q4_q8_dot_neon_c(
         // Load 16 bytes of packed Q4 nibbles
         uint8x16_t raw = vld1q_u8(quants);
 
-        // Split into low/high nibbles, subtract 8 for signed range
-        int8x16_t lo = vsubq_s8(vreinterpretq_s8_u8(vandq_u8(raw, mask_lo)), offset);
-        int8x16_t hi = vsubq_s8(vreinterpretq_s8_u8(vshrq_n_u8(raw, 4)), offset);
-
-        // Interleave: [lo0,hi0,lo1,hi1,...] to match sequential Q8 layout
-        int8x16_t q4_0 = vzip1q_s8(lo, hi);  // first 16 interleaved values
-        int8x16_t q4_1 = vzip2q_s8(lo, hi);  // next 16 interleaved values
+        // Split into low/high nibbles, subtract 8 for signed range.
+        // ggml planar Q4_0 layout (quantize_row_q4_0_ref): low nibbles are
+        // elements 0..16, high nibbles are elements 16..32 — they pair with
+        // the sequential Q8 input directly, no interleave needed.
+        int8x16_t q4_0 = vsubq_s8(vreinterpretq_s8_u8(vandq_u8(raw, mask_lo)), offset);
+        int8x16_t q4_1 = vsubq_s8(vreinterpretq_s8_u8(vshrq_n_u8(raw, 4)), offset);
 
         // Load Q8 values
         int8x16_t q8_0 = vld1q_s8(q8_ptr);
@@ -157,8 +156,9 @@ void q4_0_vecmat_c(
                 uint8_t byte = quants[j];
                 int lo_v = (byte & 0x0F) - 8;
                 int hi_v = ((byte >> 4) & 0x0F) - 8;
-                o[j * 2] += (float)lo_v * scale;
-                o[j * 2 + 1] += (float)hi_v * scale;
+                // ggml planar layout: lo → element j, hi → element j+16.
+                o[j]      += (float)lo_v * scale;
+                o[j + 16] += (float)hi_v * scale;
             }
         }
     }
@@ -191,8 +191,9 @@ void q4_0_matvec_c(
                 uint8_t byte = quants[j];
                 int lo_v = (byte & 0x0F) - 8;
                 int hi_v = ((byte >> 4) & 0x0F) - 8;
-                acc += (float)lo_v * (float)q8_ptr[j * 2]     * combined_scale;
-                acc += (float)hi_v * (float)q8_ptr[j * 2 + 1] * combined_scale;
+                // ggml planar layout: lo → element j, hi → element j+16.
+                acc += (float)lo_v * (float)q8_ptr[j]      * combined_scale;
+                acc += (float)hi_v * (float)q8_ptr[j + 16] * combined_scale;
             }
         }
         scores[row] = acc;
@@ -225,8 +226,9 @@ void q4_0_vecmat_c(
                 uint8_t byte = quants[j];
                 int lo_v = (byte & 0x0F) - 8;
                 int hi_v = ((byte >> 4) & 0x0F) - 8;
-                o[j * 2]     += (float)lo_v * scale;
-                o[j * 2 + 1] += (float)hi_v * scale;
+                // ggml planar layout: lo → element j, hi → element j+16.
+                o[j]      += (float)lo_v * scale;
+                o[j + 16] += (float)hi_v * scale;
             }
         }
     }

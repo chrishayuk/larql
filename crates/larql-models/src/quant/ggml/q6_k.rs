@@ -7,6 +7,38 @@ use crate::ModelError;
 use super::check_block_input;
 use crate::quant::half::f16_to_f32;
 
+/// Decode the 16 signed 6-bit values of scale sub-block `j` (0..16) from
+/// one 210-byte Q6_K super-block, following ggml's planar layout
+/// (`dequantize_row_q6_K` in llama.cpp): within each 128-element half,
+/// the low nibbles of ql[0..32] / ql[32..64] hold elements 0..31 / 32..63
+/// and the high nibbles hold elements 64..95 / 96..127; qh[l] carries the
+/// two high bits for elements l, l+32, l+64, l+96 at shifts 0/2/4/6.
+/// Scale sub-block j covers elements j*16 .. j*16+16, which always lie in
+/// a single nibble plane, so the 16 source bytes are contiguous.
+#[inline]
+pub fn q6k_subblock_vals(block: &[u8], j: usize) -> [i8; 16] {
+    let ql = &block[0..128];
+    let qh = &block[128..192];
+    let half = j / 8; // which 128-element half
+    let g = j % 8; // scale group within the half
+    let plane = g / 2; // q1/q2/q3/q4 in ggml's naming
+    let lbase = (g % 2) * 16; // byte offset within the 32-byte plane row
+    let ql_off = half * 64 + (plane & 1) * 32 + lbase;
+    let qh_off = half * 32 + lbase;
+    let shift = (plane as u32) * 2;
+    let mut out = [0i8; 16];
+    for (i, o) in out.iter_mut().enumerate() {
+        let lo4 = if plane < 2 {
+            ql[ql_off + i] & 0x0F
+        } else {
+            ql[ql_off + i] >> 4
+        };
+        let hi2 = (qh[qh_off + i] >> shift) & 0x03;
+        *o = ((lo4 as i32 | ((hi2 as i32) << 4)) - 32) as i8;
+    }
+    out
+}
+
 pub fn q6k_row_dot(data: &[u8], x: &[f32]) -> Result<f32, ModelError> {
     const BLOCK: usize = 210;
     const SUPER: usize = 256;
@@ -40,23 +72,13 @@ pub(super) fn q6k_row_dot_scalar(data: &[u8], x: &[f32], n_blocks: usize) -> f32
     let mut acc = 0.0f32;
     for sb in 0..n_blocks {
         let block = &data[sb * 210..(sb + 1) * 210];
-        let ql = &block[0..128];
-        let qh = &block[128..192];
         let scales = &block[192..208];
         let d = f16_to_f32(u16::from_le_bytes([block[208], block[209]]));
         for (j, &sc_byte) in scales[..16].iter().enumerate() {
             let sc = d * (sc_byte as i8) as f32;
-            for i in 0..16 {
-                let idx = j * 16 + i;
-                let lo4 = if idx % 2 == 0 {
-                    ql[idx / 2] & 0x0F
-                } else {
-                    (ql[idx / 2] >> 4) & 0x0F
-                };
-                let hi2_byte = qh[idx / 4];
-                let hi2 = (hi2_byte >> ((idx % 4) * 2)) & 0x03;
-                let val = ((lo4 as i32) | ((hi2 as i32) << 4)) - 32;
-                acc += sc * (val as f32) * x[sb * 256 + j * 16 + i];
+            let vals = q6k_subblock_vals(block, j);
+            for (i, &v) in vals.iter().enumerate() {
+                acc += sc * (v as f32) * x[sb * 256 + j * 16 + i];
             }
         }
     }
@@ -78,36 +100,16 @@ unsafe fn q6k_row_dot_neon(data: &[u8], x: &[f32], n_blocks: usize) -> f32 {
     let x_ptr = x.as_ptr();
     for sb in 0..n_blocks {
         let block = data.as_ptr().add(sb * BLOCK);
-        let ql = block;
-        let qh = block.add(128);
         let scales = block.add(192);
         let d = f16_to_f32(u16::from_le_bytes([*block.add(208), *block.add(209)]));
         let sb_base = x_ptr.add(sb * 256);
-        // 16 scale subblocks × 16 elements = 256 super-block elements.
-        // Each subblock j covers ql[j*8..(j+1)*8] (8 bytes → 16 nibbles) and
-        // qh[j*4..(j+1)*4] (4 bytes → 16 two-bit pairs).
+        // 16 scale subblocks × 16 elements = 256 super-block elements,
+        // decoded through the shared planar-layout helper (ggml's
+        // `dequantize_row_q6_K` ordering), then widened and FMA'd.
+        let block_slice = std::slice::from_raw_parts(block, 210);
         for j in 0..16 {
             let sc = d * (*(scales.add(j) as *const i8)) as f32;
-            let ql_j = ql.add(j * 8);
-            let qh_j = qh.add(j * 4);
-            // Decode 16 signed 6-bit vals via scalar extract → i8 stack array.
-            // Widening i8 → i32 → f32 then SIMDs.
-            let mut vals = [0i8; 16];
-            for chunk in 0..4 {
-                let ql_b0 = *ql_j.add(chunk * 2);
-                let ql_b1 = *ql_j.add(chunk * 2 + 1);
-                let qh_b = *qh_j.add(chunk);
-                let base = chunk * 4;
-                // Even idx: low nibble; odd idx: high nibble. hi2 = (qh >> (k*2)) & 3.
-                let lo0 = (ql_b0 & 0x0F) as u16 | (((qh_b & 0x03) as u16) << 4);
-                let lo1 = ((ql_b0 >> 4) & 0x0F) as u16 | ((((qh_b >> 2) & 0x03) as u16) << 4);
-                let lo2 = (ql_b1 & 0x0F) as u16 | ((((qh_b >> 4) & 0x03) as u16) << 4);
-                let lo3 = ((ql_b1 >> 4) & 0x0F) as u16 | ((((qh_b >> 6) & 0x03) as u16) << 4);
-                vals[base] = (lo0 as i16 - 32) as i8;
-                vals[base + 1] = (lo1 as i16 - 32) as i8;
-                vals[base + 2] = (lo2 as i16 - 32) as i8;
-                vals[base + 3] = (lo3 as i16 - 32) as i8;
-            }
+            let vals = q6k_subblock_vals(block_slice, j);
             // Widen i8×16 → i16×8 × 2 → i32×4 × 4 → f32×4 × 4.
             let vals_i8 = vld1q_s8(vals.as_ptr());
             let lo_i16 = vmovl_s8(vget_low_s8(vals_i8));
@@ -155,23 +157,13 @@ pub fn q6k_row_scaled_add(data: &[u8], alpha: f32, out: &mut [f32]) -> Result<()
     }
     for sb in 0..n_blocks {
         let block = &data[sb * block_size..(sb + 1) * block_size];
-        let ql = &block[0..128];
-        let qh = &block[128..192];
         let scales = &block[192..208];
         let d = f16_to_f32(u16::from_le_bytes([block[208], block[209]]));
         for (j, &sc_byte) in scales[..16].iter().enumerate() {
             let sc = d * (sc_byte as i8) as f32;
-            for i in 0..16 {
-                let idx = j * 16 + i;
-                let lo4 = if idx % 2 == 0 {
-                    ql[idx / 2] & 0x0F
-                } else {
-                    (ql[idx / 2] >> 4) & 0x0F
-                };
-                let hi2_byte = qh[idx / 4];
-                let hi2 = (hi2_byte >> ((idx % 4) * 2)) & 0x03;
-                let val = ((lo4 as i32) | ((hi2 as i32) << 4)) - 32;
-                out[sb * 256 + j * 16 + i] += alpha * sc * (val as f32);
+            let vals = q6k_subblock_vals(block, j);
+            for (i, &v) in vals.iter().enumerate() {
+                out[sb * 256 + j * 16 + i] += alpha * sc * (v as f32);
             }
         }
     }
@@ -188,24 +180,14 @@ pub fn dequantize_q6_k(data: &[u8], n_elements: usize) -> Result<Vec<f32>, Model
 
     for sb in 0..n_blocks {
         let block = &data[sb * block_size..(sb + 1) * block_size];
-        let ql = &block[0..128]; // lower 4 bits
-        let qh = &block[128..192]; // upper 2 bits
         let scales = &block[192..208]; // 16 int8 scales
         let d = f16_to_f32(u16::from_le_bytes([block[208], block[209]]));
 
         for (j, &sc_byte) in scales[..16].iter().enumerate() {
             let sc = d * (sc_byte as i8) as f32;
-            for i in 0..16 {
-                let idx = j * 16 + i;
-                let lo4 = if idx % 2 == 0 {
-                    ql[idx / 2] & 0x0F
-                } else {
-                    (ql[idx / 2] >> 4) & 0x0F
-                };
-                let hi2_byte = qh[idx / 4];
-                let hi2 = (hi2_byte >> ((idx % 4) * 2)) & 0x03;
-                let val = ((lo4 as i32) | ((hi2 as i32) << 4)) - 32;
-                out.push(sc * val as f32);
+            let vals = q6k_subblock_vals(block, j);
+            for &v in vals.iter() {
+                out.push(sc * v as f32);
             }
         }
     }

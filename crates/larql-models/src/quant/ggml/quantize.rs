@@ -30,10 +30,12 @@ pub fn quantize_q4_0(data: &[f32]) -> Vec<u8> {
         let scale_f16 = crate::quant::half::f32_to_f16(scale);
         out.extend_from_slice(&scale_f16.to_le_bytes());
 
-        // Quantize: each value → round(val/scale) + 8, clamp to [0, 15]
+        // Quantize: each value → round(val/scale) + 8, clamp to [0, 15].
+        // ggml planar nibble layout (`quantize_row_q4_0_ref`): byte j packs
+        // element j in its low nibble and element j+16 in its high nibble.
         for j in 0..16 {
-            let lo_val = block[j * 2];
-            let hi_val = block[j * 2 + 1];
+            let lo_val = block[j];
+            let hi_val = block[j + 16];
             let lo = ((lo_val * inv_scale).round() as i32 + 8).clamp(0, 15) as u8;
             let hi = ((hi_val * inv_scale).round() as i32 + 8).clamp(0, 15) as u8;
             out.push(lo | (hi << 4));

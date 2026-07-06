@@ -1746,7 +1746,10 @@ pub fn q4k_q8k_gate_up_asm(
 //   [192..208]  16 bytes: scales — one int8 per 16 elements
 //   [208..210]   2 bytes: d — f16 super-block scale
 //
-// Element i: raw6 = (ql[i/2] >> 4*(i&1)) & 0xF | (((qh[i/4] >> 2*(i%4)) & 3) << 4)
+// Element placement follows ggml's planar layout (see
+// `larql_models::quant::ggml::q6_k::q6k_subblock_vals`): within each
+// 128-element half, ql low nibbles hold elements 0..63 and high nibbles
+// 64..127; qh[l] packs the hi2 bits of elements l/l+32/l+64/l+96.
 //            w[i] = d * scales[i/16] * (raw6 - 32)
 //
 // Dot product with Q8_K activation `q8k`:
@@ -1782,8 +1785,6 @@ pub fn q6k_q8k_matvec_scalar(
         let mut acc = 0.0f32;
         for sb in 0..n_blocks {
             let block = &w[row_base + sb * Q6K_BLOCK_BYTES..];
-            let ql = &block[0..128];
-            let qh = &block[128..192];
             let sc = &block[192..208]; // 16 × int8
             let d_w = f16_to_f32(u16::from_le_bytes([block[208], block[209]]));
             let d_y = q8k_x.d[sb];
@@ -1792,20 +1793,16 @@ pub fn q6k_q8k_matvec_scalar(
 
             let mut sum1: i32 = 0;
             for (g, scale_byte) in sc.iter().enumerate().take(16usize) {
-                // 16-element group g, using scale sc[g].
+                // 16-element group g, using scale sc[g]. Weights decode
+                // through the shared ggml planar-layout helper.
                 let scale = *scale_byte as i8 as i32;
+                let vals = larql_models::quant::ggml::q6_k::q6k_subblock_vals(
+                    &block[..Q6K_BLOCK_BYTES],
+                    g,
+                );
                 let mut dot_g: i32 = 0;
-                for k in 0..16usize {
-                    let i = g * 16 + k;
-                    let lo4 = if i & 1 == 0 {
-                        (ql[i / 2] & 0x0F) as i32
-                    } else {
-                        ((ql[i / 2] >> 4) & 0x0F) as i32
-                    };
-                    let hi2 = ((qh[i / 4] >> (2 * (i % 4))) & 0x03) as i32;
-                    let raw6 = lo4 | (hi2 << 4);
-                    let w_i = raw6 - 32;
-                    dot_g += w_i * q8_qs[i] as i32;
+                for (k, &v) in vals.iter().enumerate() {
+                    dot_g += (v as i32) * q8_qs[g * 16 + k] as i32;
                 }
                 sum1 += scale * dot_g;
             }
@@ -1825,6 +1822,11 @@ pub fn q6k_q8k_matvec_scalar(
 /// 3. scale * dot_g accumulated into sum1.
 ///
 /// Final: acc += d_w * d_y * sum1.
+///
+/// TODO(q6k-planar): still decodes the pre-fix interleaved layout —
+/// unreachable from the dispatcher until reworked for ggml's planar
+/// layout and re-verified on ARM.
+#[allow(dead_code)]
 #[cfg(all(target_arch = "aarch64", target_feature = "neon"))]
 pub fn q6k_q8k_matvec_neon(
     out: &mut [f32],
@@ -2048,6 +2050,11 @@ unsafe fn q6k_sb_sum1_asm(ql: *const u8, qh: *const u8, act: *const i8, scales: 
 /// epilogue (`acc += d_w·d_y·sum1`, no mins term) is the same Rust code, so
 /// it is bit-exact with the scalar reference
 /// (`q6k_matvec_asm_matches_scalar_bit_exact`).
+///
+/// TODO(q6k-planar): still decodes the pre-fix interleaved layout —
+/// unreachable from the dispatcher until reworked for ggml's planar
+/// layout and re-verified on ARM.
+#[allow(dead_code)]
 #[cfg(all(target_arch = "aarch64", target_feature = "neon"))]
 pub fn q6k_q8k_matvec_asm(
     out: &mut [f32],
@@ -2105,18 +2112,10 @@ pub fn q6k_q8k_matvec_into(
     rows: usize,
     cols: usize,
 ) {
-    #[cfg(all(target_arch = "aarch64", target_feature = "neon"))]
-    {
-        // C12: same opt-in as the Q4_K kernels — `LARQL_Q4K_ASM=1` routes
-        // through the hand-asm form. Bit-exact; default off.
-        if use_asm_kernel() {
-            q6k_q8k_matvec_asm(out, q8k_x, w, rows, cols);
-        } else {
-            q6k_q8k_matvec_neon(out, q8k_x, w, rows, cols);
-        }
-        return;
-    }
-    #[allow(unreachable_code)]
+    // TODO(q6k-planar): the NEON and hand-asm forms still decode the
+    // pre-fix interleaved nibble layout; they need the same ggml-planar
+    // rework as the scalar path (and verification on ARM hardware) before
+    // they can be re-enabled. Until then every arch takes the scalar path.
     q6k_q8k_matvec_scalar(out, q8k_x, w, rows, cols);
 }
 
