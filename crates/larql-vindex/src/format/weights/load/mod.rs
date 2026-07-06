@@ -159,6 +159,23 @@ pub fn load_model_weights_kquant_shard(
     q4k::load_model_weights_kquant_shard(dir, callbacks, expert_filter)
 }
 
+/// Reconstruct the model architecture from a vindex's recorded config,
+/// without loading any weights. Same `build_arch_json` →
+/// `detect_from_json` path the weight loaders use, exposed for callers
+/// that need arch-level facts before (or instead of) a full weight
+/// load — e.g. prompt tokenization, where Gemma 4's BOS token must be
+/// prepended manually because the shipped tokenizer.json's
+/// post-processor doesn't add it. Returns `None` for legacy vindexes
+/// that predate `model_config`.
+pub fn arch_from_vindex_config(
+    config: &crate::VindexConfig,
+) -> Option<Box<dyn larql_models::ModelArchitecture>> {
+    let model_cfg = config.model_config.as_ref()?;
+    Some(larql_models::detect_from_json(&arch::build_arch_json(
+        config, model_cfg,
+    )))
+}
+
 /// Find the tokenizer path near a model or vindex directory.
 pub fn find_tokenizer_path(dir: &Path) -> Option<std::path::PathBuf> {
     let p = dir.join(TOKENIZER_JSON);

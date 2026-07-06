@@ -27,7 +27,7 @@ pub mod write_layers;
 pub(crate) use capabilities::ensure_extract_level_supported;
 
 pub use load::{
-    find_tokenizer_path, load_model_weights, load_model_weights_kquant,
+    arch_from_vindex_config, find_tokenizer_path, load_model_weights, load_model_weights_kquant,
     load_model_weights_kquant_shard, load_model_weights_with_opts, LoadWeightsOptions,
 };
 pub use manifest::Q4kManifestEntry;

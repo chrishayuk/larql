@@ -13,7 +13,7 @@ impl Session {
         mode: Option<WalkMode>,
         compare: bool,
     ) -> Result<Vec<String>, LqlError> {
-        let (path, _config, patched) = self.require_vindex()?;
+        let (path, config, patched) = self.require_vindex()?;
         let top_k = top.unwrap_or(10) as usize;
 
         let (embed, embed_scale) = larql_vindex::load_vindex_embeddings(path)
@@ -21,10 +21,7 @@ impl Session {
         let tokenizer = larql_vindex::load_vindex_tokenizer(path)
             .map_err(|e| LqlError::exec("failed to load tokenizer", e))?;
 
-        let encoding = tokenizer
-            .encode(prompt, true)
-            .map_err(|e| LqlError::exec("tokenize error", e))?;
-        let token_ids: Vec<u32> = encoding.get_ids().to_vec();
+        let token_ids = super::encode_vindex_prompt(config, &tokenizer, prompt)?;
 
         if token_ids.is_empty() {
             return Err(LqlError::Execution("empty prompt".into()));
