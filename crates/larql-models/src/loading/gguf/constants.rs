@@ -79,4 +79,20 @@ pub(super) const GGUF_TO_HF_KEY_REPLACEMENTS: &[(&str, &str)] = &[
     ("output.", "lm_head."),
 ];
 
+/// Gemma 2/3/4 layers carry four norms plus QK-norms; the generic table
+/// above maps `ffn_norm.` to `post_attention_layernorm.` (correct for the
+/// llama two-norm layout, wrong here — gemma's `ffn_norm` is the pre-FFN
+/// norm and `post_attention_norm` is the real post-attention one) and has
+/// no entries for the rest. Applied BEFORE the generic table so `ffn_norm.`
+/// is consumed by the gemma rule first. Gemma 1 keeps the generic path.
+pub(super) const GGUF_TO_HF_KEY_REPLACEMENTS_GEMMA: &[(&str, &str)] = &[
+    ("attn_q_norm.", "self_attn.q_norm."),
+    ("attn_k_norm.", "self_attn.k_norm."),
+    ("post_attention_norm.", "post_attention_layernorm."),
+    ("ffn_norm.", "pre_feedforward_layernorm."),
+    ("post_ffw_norm.", "post_feedforward_layernorm."),
+    // Gemma 4 per-layer output scalar; larql's key has no `.weight` suffix.
+    ("layer_output_scale.weight", "layer_scalar"),
+];
+
 // Tensor type constants moved to format::quant::ggml

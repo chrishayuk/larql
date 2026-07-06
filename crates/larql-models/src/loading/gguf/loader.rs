@@ -93,8 +93,15 @@ impl GgufFile {
         let mut vectors = HashMap::new();
         let mut raw_bytes: HashMap<String, Vec<u8>> = HashMap::new();
 
+        let arch = self
+            .metadata
+            .get(GGUF_GENERAL_ARCHITECTURE)
+            .and_then(|v| v.as_str())
+            .unwrap_or("")
+            .to_string();
+
         for info in &self.tensor_infos {
-            let key = normalize_gguf_key(&info.name);
+            let key = normalize_gguf_key_for_arch(&info.name, &arch);
             if skip_key(&key) {
                 continue;
             }
@@ -571,6 +578,28 @@ pub fn normalize_gguf_key(name: &str) -> String {
         .fold(name.to_string(), |acc, (from, to)| acc.replace(from, to))
 }
 
+/// As [`normalize_gguf_key`], but arch-aware: gemma 2/3/4 GGUFs use a
+/// four-norm layer layout (attn_norm / post_attention_norm / ffn_norm /
+/// post_ffw_norm) plus QK-norms and, on Gemma 4, a per-layer output
+/// scalar. The generic table maps `ffn_norm.` to the llama-style
+/// post-attention slot — actively wrong for gemma — and drops the rest
+/// on the floor, so gemma-specific replacements run first. Gemma 1 has
+/// the llama two-norm layout and stays on the generic path.
+pub fn normalize_gguf_key_for_arch(name: &str, arch: &str) -> String {
+    let gemma_layout =
+        matches!(arch, "gemma2" | "gemma3") || arch.starts_with("gemma4");
+    let name = if gemma_layout {
+        GGUF_TO_HF_KEY_REPLACEMENTS_GEMMA
+            .iter()
+            .fold(name.to_string(), |acc, (from, to)| acc.replace(from, to))
+    } else {
+        name.to_string()
+    };
+    GGUF_TO_HF_KEY_REPLACEMENTS
+        .iter()
+        .fold(name, |acc, (from, to)| acc.replace(from, to))
+}
+
 #[cfg(test)]
 mod tests {
     use super::super::constants::*;
@@ -592,6 +621,50 @@ mod tests {
             "embed_tokens.weight"
         );
         assert_eq!(normalize_gguf_key("output.weight"), "lm_head.weight");
+    }
+
+    #[test]
+    fn test_normalize_gguf_key_gemma_layout() {
+        assert_eq!(
+            normalize_gguf_key_for_arch("blk.0.attn_q_norm.weight", "gemma4"),
+            "layers.0.self_attn.q_norm.weight"
+        );
+        assert_eq!(
+            normalize_gguf_key_for_arch("blk.0.attn_k_norm.weight", "gemma4_unified"),
+            "layers.0.self_attn.k_norm.weight"
+        );
+        assert_eq!(
+            normalize_gguf_key_for_arch("blk.0.post_attention_norm.weight", "gemma2"),
+            "layers.0.post_attention_layernorm.weight"
+        );
+        // gemma's ffn_norm is the PRE-feedforward norm...
+        assert_eq!(
+            normalize_gguf_key_for_arch("blk.3.ffn_norm.weight", "gemma3"),
+            "layers.3.pre_feedforward_layernorm.weight"
+        );
+        // ...while llama's ffn_norm keeps the generic post-attention mapping.
+        assert_eq!(
+            normalize_gguf_key_for_arch("blk.3.ffn_norm.weight", "llama"),
+            "layers.3.post_attention_layernorm.weight"
+        );
+        // Gemma 1 is llama-layout too.
+        assert_eq!(
+            normalize_gguf_key_for_arch("blk.3.ffn_norm.weight", "gemma"),
+            "layers.3.post_attention_layernorm.weight"
+        );
+        assert_eq!(
+            normalize_gguf_key_for_arch("blk.47.post_ffw_norm.weight", "gemma4"),
+            "layers.47.post_feedforward_layernorm.weight"
+        );
+        assert_eq!(
+            normalize_gguf_key_for_arch("blk.5.layer_output_scale.weight", "gemma4"),
+            "layers.5.layer_scalar"
+        );
+        // Mapped projections are untouched by the gemma pre-pass.
+        assert_eq!(
+            normalize_gguf_key_for_arch("blk.0.attn_q.weight", "gemma4"),
+            "layers.0.self_attn.q_proj.weight"
+        );
     }
 
     #[test]
