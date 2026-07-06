@@ -359,6 +359,19 @@ impl GgufFile {
             if n_blocks > 0 && n_v > 0 && n_v < n_blocks {
                 config["attention_k_eq_v"] = serde_json::json!(true);
             }
+            // Final-logit softcap: logits = cap * tanh(logits / cap).
+            // Monotonic (never changes the argmax) but shapes the softmax
+            // distribution, so probabilities drift without it.
+            if let Some(cap) = get_arch_f64("final_logit_softcapping") {
+                config["final_logit_softcapping"] = serde_json::json!(cap);
+            }
+        }
+
+        // RMSNorm epsilon — llama.cpp emits it for every RMSNorm family
+        // under the arch prefix. Absent → detect_from_json falls back to
+        // its default.
+        if let Some(eps) = get_arch_f64("attention.layer_norm_rms_epsilon") {
+            config["rms_norm_eps"] = serde_json::json!(eps);
         }
 
         // ── MLA fields (DeepSeek-V2/V3 family, e.g. Kimi K2) ─────────────────
