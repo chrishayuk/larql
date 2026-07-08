@@ -24,6 +24,8 @@ use ndarray::Array2;
 use super::{EngineBackend, KvHandle};
 use crate::async_compute_backend::AsyncComputeBackend;
 use crate::ffn::FfnBackend;
+use crate::forward::layer::apply_layer_scalar;
+use crate::forward::ple::{apply_per_layer_embedding, precompute_per_layer_inputs};
 use crate::forward::{embed_tokens_pub, run_ffn};
 
 /// Per-layer FFN dispatch for the KV-cached engine path, MoE-aware.
@@ -70,7 +72,10 @@ pub fn kv_prefill_via_dispatch(
         return None;
     }
     let h = embed_tokens_pub(&weights, prompt_ids);
-    kv_prefill_from_hidden_via_dispatch(backend, weights, ffn, &h, window, index)
+    // Per-Layer Embedding inputs for Gemma-4 archs (empty Vec — and a
+    // per-layer no-op — for everything else). Matches `kv_prefill_run`.
+    let ple_inputs = precompute_per_layer_inputs(&weights, &h, prompt_ids);
+    prefill_from_hidden_inner(backend, weights, ffn, &h, window, index, &ple_inputs)
 }
 
 /// Multi-modal-aware peer of [`kv_prefill_via_dispatch`]. Takes
@@ -84,6 +89,12 @@ pub fn kv_prefill_via_dispatch(
 /// produce bit-identical output by construction — the former is a
 /// two-line wrapper around the latter. Pinned by tests at the bottom
 /// of this module.
+/// PLE caveat: this entry point has no token ids, so Gemma-4 Per-Layer
+/// Embeddings cannot be computed here — it passes an empty PLE slab
+/// (per-layer no-op). Gemma-4 callers must use the token-id entry
+/// point; MM (Gemma-3-only today) is unaffected because Gemma 3 has no
+/// PLE. `layer_scalar` IS still applied (weights-driven, no token ids
+/// needed).
 pub fn kv_prefill_from_hidden_via_dispatch(
     backend: &dyn EngineBackend,
     weights: larql_models::WeightsView,
@@ -91,6 +102,23 @@ pub fn kv_prefill_from_hidden_via_dispatch(
     initial_hidden: &Array2<f32>,
     window: Option<usize>,
     index: Option<&larql_vindex::VectorIndex>,
+) -> Option<(Array2<f32>, Vec<KvHandle>)> {
+    prefill_from_hidden_inner(backend, weights, ffn, initial_hidden, window, index, &[])
+}
+
+/// Shared prefill body. Runs, per layer: attention → FFN →
+/// per-layer embedding → layer_scalar — all four steps are required
+/// for Gemma-4 correctness (see `larql-compute::forward::layer`), and
+/// the last two are no-ops on every other arch. Mirrors
+/// `kv_prefill_run` in `larql-kv/src/generation.rs`.
+fn prefill_from_hidden_inner(
+    backend: &dyn EngineBackend,
+    weights: larql_models::WeightsView,
+    ffn: &dyn FfnBackend,
+    initial_hidden: &Array2<f32>,
+    window: Option<usize>,
+    index: Option<&larql_vindex::VectorIndex>,
+    ple_inputs: &[Array2<f32>],
 ) -> Option<(Array2<f32>, Vec<KvHandle>)> {
     if initial_hidden.nrows() == 0 {
         return None;
@@ -114,7 +142,10 @@ pub fn kv_prefill_from_hidden_via_dispatch(
         }
         handles.push(handle);
 
-        h = ffn_or_moe_layer(weights, &h_post_attn, layer, ffn);
+        let h_ffn = ffn_or_moe_layer(weights, &h_post_attn, layer, ffn);
+        let mut h_out = apply_per_layer_embedding(&weights, &h_ffn, layer, ple_inputs.get(layer));
+        apply_layer_scalar(&weights, &mut h_out, layer);
+        h = h_out;
     }
 
     Some((last_row_as_2d(&h), handles))
@@ -148,6 +179,10 @@ pub fn kv_decode_step_via_dispatch(
         "kv_decode_step_via_dispatch: handles.len() must equal weights.num_layers"
     );
     let h_new = embed_tokens_pub(&weights, &[token_id]);
+    // PLE inputs are per-token — recompute for this single-token step.
+    // Empty (and a no-op below) on non-Gemma-4 archs. Matches
+    // `kv_decode_step_run`.
+    let ple_inputs = precompute_per_layer_inputs(&weights, &h_new, &[token_id]);
     let mut h_step = h_new;
 
     for (layer, handle) in handles.iter_mut().enumerate().take(num_layers) {
@@ -164,7 +199,10 @@ pub fn kv_decode_step_via_dispatch(
         if let Some(w) = window {
             backend.clip_kv(handle, w);
         }
-        h_step = ffn_or_moe_layer(weights, &h_post_attn, layer, ffn);
+        let h_ffn = ffn_or_moe_layer(weights, &h_post_attn, layer, ffn);
+        let mut h_out = apply_per_layer_embedding(&weights, &h_ffn, layer, ple_inputs.get(layer));
+        apply_layer_scalar(&weights, &mut h_out, layer);
+        h_step = h_out;
     }
 
     Some(h_step)
@@ -200,7 +238,9 @@ pub fn kv_prefill_via_dispatch_async(
         return None;
     }
     let h = embed_tokens_pub(&weights, prompt_ids);
-    kv_prefill_from_hidden_via_dispatch_async(backend, weights, ffn, &h, window, index)
+    // Gemma-4 PLE inputs — same recipe as the sync path.
+    let ple_inputs = precompute_per_layer_inputs(&weights, &h, prompt_ids);
+    prefill_from_hidden_inner_async(backend, weights, ffn, &h, window, index, &ple_inputs)
 }
 
 /// Async multi-modal-aware peer of [`kv_prefill_via_dispatch_async`].
@@ -211,6 +251,9 @@ pub fn kv_prefill_via_dispatch_async(
 /// Bit-identity contract: same as the sync peer. Pinned by the parity
 /// test at the bottom of this module — sync vs async must agree on
 /// CPU paths, MM vs text must agree when text is the input.
+/// PLE caveat: same as the sync from-hidden peer — no token ids here,
+/// so Gemma-4 PLE is skipped (empty slab, per-layer no-op);
+/// `layer_scalar` is still applied.
 pub fn kv_prefill_from_hidden_via_dispatch_async(
     backend: &dyn AsyncComputeBackend,
     weights: larql_models::WeightsView,
@@ -218,6 +261,20 @@ pub fn kv_prefill_from_hidden_via_dispatch_async(
     initial_hidden: &Array2<f32>,
     window: Option<usize>,
     index: Option<&larql_vindex::VectorIndex>,
+) -> Option<(Array2<f32>, Vec<KvHandle>)> {
+    prefill_from_hidden_inner_async(backend, weights, ffn, initial_hidden, window, index, &[])
+}
+
+/// Shared async prefill body — attention → FFN → per-layer embedding →
+/// layer_scalar per layer, mirroring [`prefill_from_hidden_inner`].
+fn prefill_from_hidden_inner_async(
+    backend: &dyn AsyncComputeBackend,
+    weights: larql_models::WeightsView,
+    ffn: &dyn FfnBackend,
+    initial_hidden: &Array2<f32>,
+    window: Option<usize>,
+    index: Option<&larql_vindex::VectorIndex>,
+    ple_inputs: &[Array2<f32>],
 ) -> Option<(Array2<f32>, Vec<KvHandle>)> {
     if initial_hidden.nrows() == 0 {
         return None;
@@ -242,7 +299,10 @@ pub fn kv_prefill_from_hidden_via_dispatch_async(
         handles.push(handle);
 
         let h_post_attn = backend.read_hidden(h_post_attn_handle);
-        h = ffn_or_moe_layer(weights, &h_post_attn, layer, ffn);
+        let h_ffn = ffn_or_moe_layer(weights, &h_post_attn, layer, ffn);
+        let mut h_out = apply_per_layer_embedding(&weights, &h_ffn, layer, ple_inputs.get(layer));
+        apply_layer_scalar(&weights, &mut h_out, layer);
+        h = h_out;
     }
 
     backend.flush().ok()?;
@@ -272,6 +332,8 @@ pub fn kv_decode_step_via_dispatch_async(
         "kv_decode_step_via_dispatch_async: handles.len() must equal weights.num_layers"
     );
     let h_new = embed_tokens_pub(&weights, &[token_id]);
+    // Per-token Gemma-4 PLE inputs — same recipe as the sync decode step.
+    let ple_inputs = precompute_per_layer_inputs(&weights, &h_new, &[token_id]);
     let mut h_step = h_new;
 
     for (layer, handle) in handles.iter_mut().enumerate().take(num_layers) {
@@ -287,7 +349,10 @@ pub fn kv_decode_step_via_dispatch_async(
             backend.clip_kv(handle, w);
         }
         let h_post_attn = backend.read_hidden(h_post_attn_handle);
-        h_step = ffn_or_moe_layer(weights, &h_post_attn, layer, ffn);
+        let h_ffn = ffn_or_moe_layer(weights, &h_post_attn, layer, ffn);
+        let mut h_out = apply_per_layer_embedding(&weights, &h_ffn, layer, ple_inputs.get(layer));
+        apply_layer_scalar(&weights, &mut h_out, layer);
+        h_step = h_out;
     }
 
     backend.flush().ok()?;
