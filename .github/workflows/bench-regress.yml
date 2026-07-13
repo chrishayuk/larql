@@ -33,11 +33,11 @@ jobs:
     timeout-minutes: 90
 
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
 
       # Cargo deps are big and stable across PRs — separate cache.
       - name: Cache cargo deps
-        uses: actions/cache@v5
+        uses: actions/cache@v6
         with:
           path: |
             ~/.cargo/registry
@@ -51,7 +51,7 @@ jobs:
       # Keyed by the run number so each main push refreshes the cache.
       - name: Cache criterion baseline (main only)
         if: github.ref == 'refs/heads/main'
-        uses: actions/cache@v5
+        uses: actions/cache@v6
         with:
           path: target/criterion
           key: ${{ runner.os }}-criterion-baseline-${{ github.run_number }}
@@ -60,7 +60,7 @@ jobs:
 
       - name: Restore criterion baseline (PRs only)
         if: github.event_name == 'pull_request'
-        uses: actions/cache/restore@v5
+        uses: actions/cache/restore@v6
         with:
           path: target/criterion
           key: ${{ runner.os }}-criterion-baseline-
