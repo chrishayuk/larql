@@ -82,8 +82,8 @@ pub use download::{
     resolve_hf_vindex_with_progress, DownloadProgress,
 };
 pub use publish::{
-    publish_vindex, publish_vindex_with_opts, PublishCallbacks, PublishOptions,
-    SilentPublishCallbacks,
+    publish_vindex, publish_vindex_with_opts, set_repo_visibility, PublishCallbacks,
+    PublishOptions, SilentPublishCallbacks,
 };
 
 /// Check if a path is an `hf://` reference. Lives here (not under

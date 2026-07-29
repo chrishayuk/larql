@@ -10,7 +10,7 @@
 
 mod body;
 mod frontmatter;
-mod naming;
+pub(crate) mod naming;
 mod revision_tag;
 mod types;
 

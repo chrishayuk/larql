@@ -23,7 +23,7 @@ use crate::error::VindexError;
 use crate::format::filenames::*;
 
 use protocol::{hf_base, repo_type_plural, REPO_TYPE_DATASET, REPO_TYPE_MODEL};
-use remote::{create_hf_repo, fetch_remote_lfs_oids};
+use remote::{create_hf_repo, fetch_remote_lfs_oids, update_repo_visibility};
 use upload::upload_file_to_hf;
 
 /// Options controlling [`publish_vindex_with_opts`]. Kept as a struct so
@@ -38,6 +38,13 @@ pub struct PublishOptions {
     pub skip_unchanged: bool,
     /// HuggingFace repo type: `"model"` (default) or `"dataset"`.
     pub repo_type: String,
+    /// Create the repo private. Vindex Factory (docs/vindex-factory.md
+    /// §7/§8.3) publishes private, verifies the published bytes, and
+    /// only then flips public via [`set_repo_visibility`] — "nothing
+    /// goes public unverified". Default `false` preserves every
+    /// existing caller's behaviour (`larql publish`/`larql hf publish`
+    /// have always created public repos).
+    pub private: bool,
 }
 
 impl Default for PublishOptions {
@@ -45,6 +52,7 @@ impl Default for PublishOptions {
         Self {
             skip_unchanged: false,
             repo_type: REPO_TYPE_MODEL.into(),
+            private: false,
         }
     }
 }
@@ -93,6 +101,24 @@ pub fn publish_vindex(
     publish_vindex_with_opts(vindex_dir, repo_id, &PublishOptions::default(), callbacks)
 }
 
+/// Flip an already-published repo's visibility. The RELEASE step of
+/// docs/vindex-factory.md §7: a build publishes PRIVATE
+/// ([`PublishOptions::private`]), verifies the published bytes
+/// (VERIFY-B, §8.2), and only then calls this to go public — "nothing
+/// goes public unverified" (§8).
+///
+/// `repo_type` is `"model"` or `"dataset"`, matching
+/// [`PublishOptions::repo_type`]. Requires `HF_TOKEN` or
+/// `~/.huggingface/token`, same as publishing.
+pub fn set_repo_visibility(
+    repo_id: &str,
+    repo_type: &str,
+    private: bool,
+) -> Result<(), VindexError> {
+    let token = get_hf_token()?;
+    update_repo_visibility(repo_id, &token, repo_type, private)
+}
+
 /// Upload a vindex directory with explicit options. See [`PublishOptions`].
 pub fn publish_vindex_with_opts(
     vindex_dir: &Path,
@@ -114,7 +140,7 @@ pub fn publish_vindex_with_opts(
     let token = get_hf_token()?;
     let repo_type = opts.repo_type.as_str();
     callbacks.on_start(repo_id);
-    create_hf_repo(repo_id, &token, repo_type)?;
+    create_hf_repo(repo_id, &token, repo_type, opts.private)?;
 
     // Pull remote LFS index so we can skip unchanged files. Non-fatal
     // if the tree API errors (brand-new repo returns 404 here) — we just

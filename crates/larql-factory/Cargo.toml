@@ -20,3 +20,4 @@ thiserror = { workspace = true }
 
 [dev-dependencies]
 larql-vindex-spec = { path = "../larql-vindex-spec", features = ["test-utils"] }
+tempfile = "3"

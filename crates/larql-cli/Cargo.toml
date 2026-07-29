@@ -39,6 +39,9 @@ rayon = "1.10"
 # Pruned features — we only need JPEG/PNG/WebP. Skipping TIFF/AVIF/HDR/etc
 # avoids dragging in libavif, libtiff, openexr, and a 2 MB binary tax.
 image = { version = "0.25", default-features = false, features = ["jpeg", "png", "webp"] }
+# Default scratch directory for `larql recipe build` when --scratch-dir
+# is omitted — not test-only, the CLI needs this at runtime.
+tempfile = "3"
 
 [features]
 default = ["gpu"]
@@ -50,7 +53,6 @@ gpu = [
 ]
 
 [dev-dependencies]
-tempfile = "3"
 # `test-utils` exposes `larql_models::test_fixtures::make_test_weights`,
 # used by run_cmd_image tests to borrow a real ModelConfig without
 # enumerating every field by hand. Production builds don't compile it.

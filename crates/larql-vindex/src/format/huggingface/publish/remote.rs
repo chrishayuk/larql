@@ -71,6 +71,7 @@ pub(super) fn create_hf_repo(
     repo_id: &str,
     token: &str,
     repo_type: &str,
+    private: bool,
 ) -> Result<(), VindexError> {
     let client = reqwest::blocking::Client::new();
     let url = format!("{}/api/repos/create", hf_base());
@@ -80,7 +81,7 @@ pub(super) fn create_hf_repo(
         .json(&serde_json::json!({
             "name": repo_id.split('/').next_back().unwrap_or(repo_id),
             "type": repo_type,
-            "private": false,
+            "private": private,
         }))
         .send()
         .map_err(|e| VindexError::Parse(format!("HF API error: {e}")))?;
@@ -93,6 +94,41 @@ pub(super) fn create_hf_repo(
         let body = resp.text().unwrap_or_default();
         Err(VindexError::Parse(format!(
             "HF repo create failed ({status}): {body}"
+        )))
+    }
+}
+
+/// Flip an already-created repo's visibility. Used at RELEASE
+/// (docs/vindex-factory.md §7/§8.3): a build publishes PRIVATE, verifies
+/// the published bytes, and only then flips PUBLIC — nothing goes live
+/// unverified. `PUT /api/{repo_type}s/{repo_id}/settings` with
+/// `{"private": bool}` (HF Hub API, confirmed against the OpenAPI spec
+/// at huggingface.co/.well-known/openapi.md — the modern `visibility`
+/// enum field also works, but `private` is the simpler two-state case
+/// this needs).
+pub(super) fn update_repo_visibility(
+    repo_id: &str,
+    token: &str,
+    repo_type: &str,
+    private: bool,
+) -> Result<(), VindexError> {
+    let plural = repo_type_plural(repo_type);
+    let url = format!("{}/api/{plural}/{repo_id}/settings", hf_base());
+    let client = reqwest::blocking::Client::new();
+    let resp = client
+        .put(&url)
+        .header("Authorization", format!("Bearer {token}"))
+        .json(&serde_json::json!({ "private": private }))
+        .send()
+        .map_err(|e| VindexError::Parse(format!("HF API error: {e}")))?;
+
+    if resp.status().is_success() {
+        Ok(())
+    } else {
+        let status = resp.status();
+        let body = resp.text().unwrap_or_default();
+        Err(VindexError::Parse(format!(
+            "HF repo visibility update failed ({status}): {body}"
         )))
     }
 }
@@ -303,7 +339,26 @@ mod tests {
             .with_body("{}")
             .create();
 
-        create_hf_repo("org/repo", "t", "model").unwrap();
+        create_hf_repo("org/repo", "t", "model", false).unwrap();
+        mock.assert();
+    }
+
+    #[test]
+    #[serial]
+    fn create_hf_repo_private_true_sets_the_field() {
+        let mut server = mockito::Server::new();
+        let _guard = EnvBaseGuard::new(&server.url());
+
+        let mock = server
+            .mock("POST", "/api/repos/create")
+            .match_body(mockito::Matcher::PartialJson(
+                serde_json::json!({"private": true}),
+            ))
+            .with_status(200)
+            .with_body("{}")
+            .create();
+
+        create_hf_repo("org/repo", "t", "model", true).unwrap();
         mock.assert();
     }
 
@@ -321,7 +376,7 @@ mod tests {
             .with_body("conflict")
             .create();
 
-        create_hf_repo("org/repo", "t", "model").unwrap();
+        create_hf_repo("org/repo", "t", "model", false).unwrap();
         mock.assert();
     }
 
@@ -337,7 +392,7 @@ mod tests {
             .with_body("boom")
             .create();
 
-        let err = create_hf_repo("org/repo", "t", "model").expect_err("500 must error");
+        let err = create_hf_repo("org/repo", "t", "model", false).expect_err("500 must error");
         mock.assert();
         let msg = err.to_string();
         assert!(msg.contains("500"), "{msg}");
@@ -360,7 +415,62 @@ mod tests {
             .with_status(200)
             .create();
 
-        create_hf_repo("loose-repo", "t", "model").unwrap();
+        create_hf_repo("loose-repo", "t", "model", false).unwrap();
         mock.assert();
+    }
+
+    #[test]
+    #[serial]
+    fn update_repo_visibility_success() {
+        let mut server = mockito::Server::new();
+        let _guard = EnvBaseGuard::new(&server.url());
+
+        let mock = server
+            .mock("PUT", "/api/models/org/repo/settings")
+            .match_header("authorization", "Bearer t")
+            .match_body(mockito::Matcher::PartialJson(
+                serde_json::json!({"private": false}),
+            ))
+            .with_status(200)
+            .with_body("{}")
+            .create();
+
+        update_repo_visibility("org/repo", "t", "model", false).unwrap();
+        mock.assert();
+    }
+
+    #[test]
+    #[serial]
+    fn update_repo_visibility_uses_dataset_plural() {
+        let mut server = mockito::Server::new();
+        let _guard = EnvBaseGuard::new(&server.url());
+
+        let mock = server
+            .mock("PUT", "/api/datasets/org/repo/settings")
+            .with_status(200)
+            .with_body("{}")
+            .create();
+
+        update_repo_visibility("org/repo", "t", "dataset", true).unwrap();
+        mock.assert();
+    }
+
+    #[test]
+    #[serial]
+    fn update_repo_visibility_error_propagates() {
+        let mut server = mockito::Server::new();
+        let _guard = EnvBaseGuard::new(&server.url());
+
+        let mock = server
+            .mock("PUT", "/api/models/org/repo/settings")
+            .with_status(403)
+            .with_body("forbidden")
+            .create();
+
+        let err =
+            update_repo_visibility("org/repo", "t", "model", false).expect_err("403 must error");
+        mock.assert();
+        let msg = err.to_string();
+        assert!(msg.contains("403"), "{msg}");
     }
 }

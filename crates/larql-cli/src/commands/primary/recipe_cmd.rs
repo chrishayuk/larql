@@ -28,6 +28,14 @@ pub enum RecipeCommand {
     /// `config.json` over the network — the first `larql recipe`
     /// subcommand that does.
     Estimate(RecipeArgs),
+
+    /// Run PREFLIGHT through RELEASE for a recipe (§7): fetch the
+    /// pinned revision, extract, slice each declared output, verify
+    /// checksums, publish private, then flip to public. Orchestrates
+    /// this same `larql` binary's other subcommands as subprocesses.
+    /// MIRROR and REGISTER are not run here — pipe the printed
+    /// `BuildRecord` JSON to whatever external harness owns those.
+    Build(BuildArgs),
 }
 
 #[derive(Args)]
@@ -36,11 +44,25 @@ pub struct RecipeArgs {
     pub recipe: PathBuf,
 }
 
+#[derive(Args)]
+pub struct BuildArgs {
+    /// Path to the recipe YAML file.
+    pub recipe: PathBuf,
+
+    /// Scratch working directory for the build (HF cache, extracted
+    /// and sliced outputs). Defaults to a fresh temporary directory,
+    /// removed once the build finishes — pass this to inspect the
+    /// intermediate output after a failure.
+    #[arg(long)]
+    pub scratch_dir: Option<PathBuf>,
+}
+
 pub fn run(cmd: RecipeCommand) -> Result<(), Box<dyn std::error::Error>> {
     match cmd {
         RecipeCommand::Validate(args) => run_validate(args),
         RecipeCommand::BuildId(args) => run_build_id(args),
         RecipeCommand::Estimate(args) => run_estimate(args),
+        RecipeCommand::Build(args) => run_build(args),
     }
 }
 
@@ -82,6 +104,27 @@ fn run_estimate(args: RecipeArgs) -> Result<(), Box<dyn std::error::Error>> {
     let recipe = load_recipe(&args.recipe)?;
     let estimate = larql_factory::estimate_size(&recipe)?;
     println!("{}", serde_json::to_string_pretty(&estimate)?);
+    Ok(())
+}
+
+fn run_build(args: BuildArgs) -> Result<(), Box<dyn std::error::Error>> {
+    let recipe = load_recipe(&args.recipe)?;
+    let runner = larql_factory::SubprocessRunner::current_exe()
+        .map_err(|e| format!("resolving the larql binary to self-invoke: {e}"))?;
+
+    let record = match &args.scratch_dir {
+        Some(dir) => larql_factory::run_build(&runner, &recipe, dir),
+        None => {
+            let tmp =
+                tempfile::tempdir().map_err(|e| format!("creating a scratch directory: {e}"))?;
+            larql_factory::run_build(&runner, &recipe, tmp.path())
+        }
+    };
+
+    println!("{}", serde_json::to_string_pretty(&record)?);
+    if !record.passed() {
+        std::process::exit(1);
+    }
     Ok(())
 }
 

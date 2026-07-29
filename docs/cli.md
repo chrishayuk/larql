@@ -45,13 +45,15 @@ a local directory path — see [Model resolution](#model-resolution) below.
 ## Factory
 
 Vindex Factory tooling ([docs/vindex-factory.md](vindex-factory.md)) —
-recipe validation, `build_id`, capability reporting, card generation.
+recipe validation, `build_id`, capability reporting, card generation,
+and the PREFLIGHT→RELEASE build driver.
 
 | Command | Description |
 |---|---|
 | `recipe validate <FILE>` | Structurally validate a recipe file; prints every problem found. |
 | `recipe build-id <FILE>` | Print a recipe's `build_id` (content hash over source+extractor+outputs). |
-| `recipe estimate <FILE>` | Upstream size, per-output size, executor recommendation, and a cost band. The only `recipe` subcommand that touches the network. |
+| `recipe estimate <FILE>` | Upstream size, per-output size, executor recommendation, and a cost band. Touches the network. |
+| `recipe build <FILE> [--scratch-dir DIR]` | Run PREFLIGHT→RELEASE: fetch the pinned revision, extract, slice, verify checksums, publish private, then flip public. Prints a `BuildRecord` as JSON; exits non-zero on a stage failure. |
 | `capabilities` | Print this release's capability manifest — recognised architectures and what each supports. |
 | `card render` | Render a Hub model card from a recipe, manifest, and verification report. |
 
@@ -1459,11 +1461,12 @@ larql parity gemma4-31b.vindex --component layer --prompt "The capital of France
 
 Vindex Factory tooling — [docs/vindex-factory.md](vindex-factory.md) is
 the full spec; [crates/larql-factory/README.md](../crates/larql-factory/README.md)
-is the crate reference. Everything here runs locally with one exception
-(`recipe estimate`, which fetches the upstream repo's file listing and
-`config.json` over HTTP) — the recipe repo's remaining PR checks
-(upstream existence, licence allowlist, Hub name collision) aren't
-built yet.
+is the crate reference. `recipe estimate` fetches the upstream repo's
+file listing and `config.json` over HTTP; `recipe build` goes further
+and actually runs the pipeline (network + Hub credentials + disk) —
+everything else here is local and read-only. The recipe repo's
+remaining PR checks (upstream existence, licence allowlist, Hub name
+collision) aren't built yet.
 
 ### `larql recipe validate`
 
@@ -1542,6 +1545,62 @@ larql recipe estimate gemma-3-4b-it.yaml
 #   "cost_estimate_usd": { "low_usd": 1.31, "high_usd": 2.60 },
 #   "declared_max_usd": 12.0,
 #   "budget_warning": null
+# }
+```
+
+### `larql recipe build`
+
+Run PREFLIGHT through RELEASE (§7): check the scratch directory is
+writable, fetch the recipe's pinned revision, `larql extract`, `larql
+slice` for each declared output, measure what came out, `larql verify`
+(checksum integrity — not the numeric reconstruction/logit-match
+checks §8.1 describes, which need per-architecture tensor knowledge
+this driver doesn't have), `larql hf publish --private` per output,
+then `larql hf visibility --public` once every output has verified
+(§8's "nothing goes public unverified"). Every step self-invokes this
+same `larql` binary as a subprocess.
+
+MIRROR (R2) and REGISTER (chuk-experiments-server) aren't run here —
+nothing in this codebase talks to either, and the spec's own text
+assumes both belong to the rig worker. Pipe the printed `BuildRecord`
+JSON to whatever external harness owns them, the way `dec0-loopback.sh`
+already wraps `dec-bench`'s own JSON output.
+
+```
+larql recipe build <FILE> [--scratch-dir <DIR>]
+```
+
+| Flag | Description | Default |
+|---|---|---|
+| `--scratch-dir <DIR>` | Working directory for the HF cache and extracted/sliced outputs | a fresh temp directory, removed when the build finishes |
+
+Always prints a `BuildRecord` as JSON, whether the build passed or
+failed — a stage failure is data (`"status": "failed"`, which stage,
+its error message), not a crash. Exits non-zero when `"status"` isn't
+`"passed"`.
+
+**Example:**
+
+```bash
+larql recipe build gemma-3-4b-it.yaml
+# {
+#   "build_id": "398f1b8e29adecf2ef3838748558ae6b82b292b96ed8ab412725886e4194e30a",
+#   "recipe_name": "gemma-3-4b-it",
+#   "outputs": [
+#     { "preset": "full", "size_bytes": 6198374400, "repo": "chrishayuk/gemma-3-4b-it-vindex", "released": true },
+#     { "preset": "client", "size_bytes": 1073741824, "repo": "chrishayuk/gemma-3-4b-it-vindex-client", "released": true }
+#   ],
+#   "status": "passed"
+# }
+
+# A stage failure keeps whatever earlier stages completed:
+# {
+#   "build_id": "...",
+#   "recipe_name": "gemma-3-4b-it",
+#   "outputs": [{ "preset": "full", "size_bytes": 6198374400, "repo": null, "released": false }],
+#   "status": "failed",
+#   "stage": "publish",
+#   "message": "larql hf publish failed for chrishayuk/gemma-3-4b-it-vindex: 401 unauthorized"
 # }
 ```
 

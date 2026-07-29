@@ -276,8 +276,9 @@ reviewable pipeline: a recipe file merged to `main` is a promise that a
 specific vindex exists on the Hub, built from a pinned upstream by a
 pinned `larql`, verified before it went public. Recipe schema,
 `build_id`, structural validation, capability manifest, card generation,
-and the size/cost estimate are built (`crates/larql-factory`); the
-build-stage driver that actually runs a recipe is not.
+the size/cost estimate, and the PREFLIGHT→RELEASE build driver are all
+built (`crates/larql-factory`); MIRROR and REGISTER stay external
+(§7 — a rig worker's job, not this binary's).
 
 ```bash
 # Structural validation — schema shape, thresholds, no network I/O
@@ -288,6 +289,9 @@ larql recipe build-id my-recipe.yaml
 
 # Upstream size, per-output size, executor recommendation, cost band
 larql recipe estimate my-recipe.yaml
+
+# Fetch, extract, slice, verify checksums, publish private, release public
+larql recipe build my-recipe.yaml
 
 # Which architectures this larql release recognises, and what each supports
 larql capabilities
@@ -404,7 +408,8 @@ larql-lql         LQL parser, executor, REPL, USE REMOTE client
     ↓
 larql-server      HTTP/gRPC server: serve vindexes over the network
 larql-cli         CLI commands (extract-index, build, serve, repl, convert, hf, verify)
-larql-factory     Vindex Factory driver: recipe schema, build_id, capabilities, card generator
+larql-factory     Vindex Factory driver: recipe schema, build_id, capabilities, card
+                  generator, build-stage driver (PREFLIGHT→RELEASE)
 
 # Portable (no LARQL deps; extract to sibling repo later)
 model-compute         bounded compute: native kernels (default) + wasmtime (opt-in)
@@ -844,7 +849,7 @@ The full surface is documented in `crates/larql-inference/ROADMAP.md` §
 | [docs/specs/vindex-ecosystem-spec.md](docs/specs/vindex-ecosystem-spec.md) | Distributed hosting, HuggingFace, Vindexfile (~85% implemented) |
 | [crates/larql-vindex-spec/SPEC.md](crates/larql-vindex-spec/SPEC.md) | Vindex v1 public contract — manifest schema, sharding rule, validation thresholds, model card tags |
 | [crates/larql-vindex-spec/schema/vindex-v1.schema.json](crates/larql-vindex-spec/schema/vindex-v1.schema.json) | JSON Schema 2020-12 mirror of the v1 manifest |
-| [docs/vindex-factory.md](docs/vindex-factory.md) | Vindex Factory — recipe-driven, verified, remote-executed vindex builds; `larql-factory` crate (recipe schema, `build_id`, validator, capability manifest, card generator) |
+| [docs/vindex-factory.md](docs/vindex-factory.md) | Vindex Factory — recipe-driven, verified, remote-executed vindex builds; `larql-factory` crate (recipe schema, `build_id`, validator, capability manifest, card generator, PREFLIGHT→RELEASE build driver) |
 | [crates/larql-factory/README.md](crates/larql-factory/README.md) | `larql-factory` crate reference — module layout, CLI usage, what's not built yet |
 | [docs/lql-guide.md](docs/lql-guide.md) | LQL quick start guide |
 | [docs/cli.md](docs/cli.md) | CLI reference |

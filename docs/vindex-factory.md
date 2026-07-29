@@ -99,11 +99,15 @@ The split is **code in `larql`, data in `chuk-vindex-recipes`**. Not code-vs-spe
 | Canonicaliser → `build_id` | `larql recipe build-id` |
 | Size/cost estimator | `larql recipe estimate` |
 | Capability manifest (§15.2) | `larql capabilities` |
-| Build-stage driver (§7) | `larql build` |
+| Build-stage driver (§7) | `larql recipe build`¹ |
 | Card generator | `larql card render` |
-| Verify-from-hub harness | `larql verify` |
+| Verify-from-hub harness | `larql verify`² |
 
 **`chuk-vindex-recipes` holds** recipes, `policy/`, `verify/` prompt sets, and the two workflows — which become thin, because they shell out to a released `larql` binary rather than reimplementing anything.
+
+¹ `larql build` already exists (a Vindexfile-based declarative build, unrelated to this spec) — the driver lives under the existing `larql recipe` subcommand group instead, alongside `validate`/`build-id`/`estimate`.
+
+² Implemented as checksum integrity only, reusing the existing `larql verify` command as-is — not a new reconstruction-fidelity/logit-match harness. Building §8.1's numeric checks needs per-architecture tensor-naming knowledge (mapping "layer N's down_proj" to the right safetensors key per model family) that isn't validatable without real model weights; neither `larql shannon verify` nor `larql dec-bench drift` do vindex-vs-upstream comparison despite an earlier assumption here that one of them did.
 
 Three reasons this line and not another:
 

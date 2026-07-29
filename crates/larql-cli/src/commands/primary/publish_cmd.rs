@@ -121,6 +121,14 @@ pub struct PublishArgs {
     /// HuggingFace repo type: `model` (default) or `dataset`.
     #[arg(long, default_value = "model")]
     pub repo_type: String,
+
+    /// Create every repo (full + slices) private. Pair with `larql hf
+    /// visibility --public` once verification passes — Vindex Factory's
+    /// two-phase publish (docs/vindex-factory.md §8: "nothing goes
+    /// public unverified"). Repos already on the Hub keep their
+    /// existing visibility; this only affects repo *creation*.
+    #[arg(long)]
+    pub private: bool,
 }
 
 pub fn run(args: PublishArgs) -> Result<(), Box<dyn std::error::Error>> {
@@ -212,7 +220,13 @@ pub fn run(args: PublishArgs) -> Result<(), Box<dyn std::error::Error>> {
     // 4. Execute each step.
     let mut results: Vec<StepOutcome> = Vec::new();
     for step in plan {
-        let url = execute_step(&src, &step, args.force_upload, &args.repo_type)?;
+        let url = execute_step(
+            &src,
+            &step,
+            args.force_upload,
+            &args.repo_type,
+            args.private,
+        )?;
         results.push(StepOutcome {
             label: step.label,
             repo: step.repo,
@@ -511,12 +525,13 @@ fn execute_step(
     step: &UploadStep,
     force_upload: bool,
     repo_type: &str,
+    private: bool,
 ) -> Result<String, Box<dyn std::error::Error>> {
     match (&step.preset, &step.staging) {
         // Full vindex — upload the source directory directly, no slicing.
         (None, _) => {
             println!("\n→ Uploading full vindex to {}", step.repo);
-            upload_dir(src, &step.repo, force_upload, repo_type)
+            upload_dir(src, &step.repo, force_upload, repo_type, private)
         }
         // Sliced upload — carve into staging, upload, clean up.
         (Some(preset), Some(staging)) => {
@@ -533,7 +548,7 @@ fn execute_step(
                 staging.display()
             );
             println!("→ Uploading slice `{preset}` to {}", step.repo);
-            let result = upload_dir(staging, &step.repo, force_upload, repo_type);
+            let result = upload_dir(staging, &step.repo, force_upload, repo_type, private);
             // Always try to clean up the staging dir, regardless of outcome.
             let _ = std::fs::remove_dir_all(staging);
             result
@@ -547,11 +562,13 @@ fn upload_dir(
     repo: &str,
     force_upload: bool,
     repo_type: &str,
+    private: bool,
 ) -> Result<String, Box<dyn std::error::Error>> {
     let mut callbacks = CliPublishCallbacks::new();
     let opts = larql_vindex::PublishOptions {
         skip_unchanged: !force_upload,
         repo_type: repo_type.to_string(),
+        private,
     };
     let url = larql_vindex::publish_vindex_with_opts(dir, repo, &opts, &mut callbacks)?;
     Ok(url)

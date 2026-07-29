@@ -4,13 +4,15 @@
 //! worker call (as `larql recipe validate` / `larql recipe build-id`),
 //! so there's nothing to keep in sync between them.
 //!
-//! Scope as of this crate's first cut: §4's recipe schema, §5's
-//! `build_id`, and the structural half of §6.1's PR-check gate. The
-//! build-stage driver (§7), card generator, and verify-from-hub harness
-//! are not yet implemented here.
+//! Scope: §4's recipe schema, §5's `build_id`, the structural half of
+//! §6.1's PR-check gate, §6.1 step 4's size/cost estimator, §9's card
+//! generator, and §7's PREFLIGHT→RELEASE build driver (`run_build`) —
+//! MIRROR and REGISTER are external-harness concerns, and VERIFY here
+//! is checksum integrity only; see `build`'s module doc for why.
 
 #![deny(missing_docs)]
 
+mod build;
 mod build_id;
 mod capabilities;
 mod card;
@@ -20,6 +22,10 @@ mod hex;
 mod recipe;
 mod validate;
 
+pub use build::{
+    run as run_build, BuildRecord, BuildStatus, CommandOutput, CommandRunner, OutputRecord, Stage,
+    SubprocessRunner,
+};
 pub use build_id::build_id;
 pub use capabilities::{
     manifest as capabilities_manifest, ArchitectureCapability, CapabilityManifest,
