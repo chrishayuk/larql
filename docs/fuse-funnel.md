@@ -5,17 +5,24 @@ reframed the objective; Gate 0 was inconclusive by construction; Gate 0b
 returned a coherent null — MOSS is strongly sensitive to non-spoken
 conversational history, but *broad* semantic contrast does not predict the
 direction or magnitude of acoustic decision changes once lexical distance
-is matched. Next is **Gate 1 — the arousal axis**, whose discriminator is
-cross-family directional agreement under leave-one-family-out, followed by
-a dose-response intervention against a norm-matched shuffled control. Not
-the FUSE-1A corpus, which stays held.
+is matched. **Gate 1 then closed that branch too.** Six lexical families expressing
+one arousal ordering produce no shared endpoint direction (mean pairwise
+cosine ≈ 0, 5 positive / 10 negative at H27) and the leave-one-family-out
+axis fails to identify which endpoint is alarm (2/6, chance 3/6). There is
+no portable additive control direction, so the pre-registered decision was
+taken: **the portable-latent-controls hypothesis is downgraded and FUSE-3
+is re-specified as a target-specific SpeechBinding conditioned on MOSS's
+current execution state.**
 
-The broad-semantics null also makes one cheap FUSE story look dead:
-`LLM semantic state → generic bridge → MOSS H27`. If pragmatic controls
-are what MOSS actually exposes, the interoperability problem gets
-*easier* — aligning a handful of causally meaningful control coordinates
-rather than two large hidden spaces globally. Gate 1 tests whether even
-that survives.
+Reconciling the whole ladder: a small displacement at the seam *is*
+sufficient to move acoustic decisions, but no fixed direction transfers.
+H27 behaves as a **sensitive boundary state rather than a clean control
+interface**. That makes the ABI "a declared target binding translating one
+model's state into a valid operand for another model's current execution
+state" — compatibility level 5, not level 3 — which is the more general
+claim anyway.
+
+FUSE-1A stays held.
 
 The earlier framing, still current:
 FUSE-2.5 failed its gate informatively — the 2048-d seam is specific to
@@ -63,6 +70,77 @@ voice ladder — `chris-experiments/voice/V0_PLAN.md`, outside this repo —
 owns identity portability, which FUSE-3/4 depend on.
 
 Gate log:
+
+- **Gate 1 — NEGATIVE. No portable additive arousal direction; the
+  pre-registered decision point is reached** (2026-08-10). Harness
+  `jarvis-voice/.engines/moss_fuse_gate1_arousal.py`, results
+  `renders/moss-realtime/fuse-gate1/`. Six lexical families × four rungs
+  (calm/concern/urgent/alarm) in one fixed carrier — *"The operator's
+  assessment is: `<rung>`."* — as a prior user turn, with the voice
+  splice, system prompt and turn position byte-identical throughout. The
+  spoken utterance is **identical for every family and every rung** (22
+  tokens, no affect or urgency words, no content words shared with any
+  family), so displacement cannot be contaminated by what is being said.
+  Every condition is teacher-forced against one common context-free
+  anchor, so all states sit at matched positions under identical acoustic
+  history. Directions are built from **endpoints only**
+  (`d = H(alarm) − H(calm)`), middle rungs held back for the ordering
+  test rather than used to construct the axis. **Floor exact:
+  0.000e+00.**
+
+  **Criterion 1 — endpoint-direction agreement across families
+  (15 pairwise cosines):**
+
+  | layer | mean | median | min | max | pos/neg | dir stability |
+  |---|---|---|---|---|---|---|
+  | L0 | +0.0035 | −0.0067 | −0.117 | +0.177 | 7/8 | 0.877 |
+  | L8 | +0.0087 | −0.0452 | −0.321 | +0.459 | 7/8 | 0.474 |
+  | L16 | −0.0043 | +0.0228 | −0.315 | +0.475 | 8/7 | 0.394 |
+  | L24 | −0.0191 | −0.0075 | −0.383 | +0.627 | 7/8 | 0.376 |
+  | H27 | −0.0305 | −0.0480 | −0.402 | +0.662 | **5/10** | 0.339 |
+
+  **Criterion 2 — leave-one-family-out ordering along `d_arousal`:**
+  monotone 0/6 and endpoint-correct 2/6 at H27 (chance: 1/24 and 3/6
+  respectively). Best layer is L8 at monotone 1/6, endpoint 4/6 — still
+  not distinguishable from chance. The held-out projections do not even
+  order by sign for four of six families.
+
+  **Verdict: there is no portable additive arousal direction at any
+  captured layer.** Mean pairwise cosine is ~0 with the sign split near
+  even, and the axis derived from five families fails to identify which
+  endpoint is alarm in the sixth.
+
+  One nuance that matters for what comes next: the cosine *spread* is far
+  wider than chance. Random 2048-d unit vectors agree to ±0.022; observed
+  pairs run −0.40 to +0.66, twenty-plus sigma out. So each family does
+  induce a strongly structured direction — they simply do not agree on a
+  shared arousal axis. Structure without portability.
+
+  **Two recurring results now have three independent confirmations.**
+  Direction stability falls with depth again (0.88 → 0.34), matching
+  Gate 0b's semantic residual. And the per-condition numbers show the
+  dominant effect is *presence* of context, not content: every rung of
+  every family sits at 46–49% argmax change and H27 rel-L2 ≈ 0.035
+  against the context-free anchor, a ~2-point spread across rungs riding
+  on a ~47-point common shift.
+
+  **What this implies about MOSS.** Not "pragmatic feature →
+  progressively purified direction → H27 control vector → speech", but
+  context history → distributed nonlinear interaction through the
+  backbone → family/token/position-specific terminal perturbation →
+  extremely sensitive acoustic decoder. **H27 looks like a sensitive
+  boundary state, not a clean control interface.** That reconciles the
+  whole ladder: small displacement sufficient (Gate 0 ✓), fixed portable
+  direction (Gate 1 ✗), context-*dependent* displacement still plausible
+  and untested.
+
+  **Decision taken, as pre-registered.** The portable-latent-controls
+  hypothesis is downgraded. FUSE does not respond to this by trying L24
+  instead, rank-64 instead, a different normalisation, another axis or
+  another carrier — those are researcher degrees of freedom that would
+  convert a clean negative into an unfalsifiable search. FUSE-3 is
+  re-specified below as an explicit **target-specific SpeechBinding**
+  conditioned on MOSS's current execution state.
 
 - **FUSE-1.5 Gate 0b — NULL for broad semantic modulation; the unit of
   analysis is wrong** (2026-08-10). Harness
@@ -689,10 +767,38 @@ against the cached `OpenMOSS-Team/MOSS-TTS-Realtime` config and the port,
   mid-band variant (`L0..Lk` → held representation → depth) that the
   residual-stream work predicts, since authority may become established
   well before layer 27.
-- **FUSE-3 — small bridge.** `H_llm → projection P → depth stage`,
-  acoustic conditioning preserved separately. The thesis test: how
-  little MOSS backbone computation is required once semantic state
-  already exists upstream?
+- **FUSE-3 — target-specific SpeechBinding** (re-specified 2026-08-10
+  after Gate 1). The original form — `H_llm → fixed projection P → depth`
+  — assumed a portable direction that Gate 1 falsified. What the ladder
+  actually established is narrower and still usable: a *small*
+  displacement at the seam is sufficient to move acoustic decisions
+  (Gate 0), but no *fixed* direction transfers across contexts (Gate 1).
+  The reconciliation is a displacement that is context-dependent rather
+  than universal:
+
+  ```text
+  B_moss( producer semantic state,
+          MOSS acoustic history,
+          voice state,
+          current speech position )   ──►   small ΔH / conditioning operand
+  ```
+
+  The load-bearing change is **conditioning on MOSS's current execution
+  state** instead of assuming one additive direction works everywhere.
+  This is not a retreat to a large second model — MOSS's terminal
+  manifold is hypersensitive, so the binding must predict the *right*
+  context-dependent displacement, not reproduce the backbone.
+
+  It is also the more general form of the FUSE claim, and a better fit
+  for the compatibility ladder at the top of this document: the ABI is
+  not "two hidden spaces happen to line up" but **a declared target
+  binding that translates one model's state into a valid operand for
+  another model's current execution state**. Level 5
+  (state-composable), not level 3 (hidden-state).
+
+  Open question this rung must answer before any training: what is the
+  smallest sufficient conditioning set — does the binding need voice
+  state and speech position, or does acoustic history alone suffice?
 - **FUSE-4 — acoustic residual injection.**
   `H_llm + A(previous audio tokens) → P → speech decoder`. If this
   works, MOSS's backbone has been decomposed into semantic and
