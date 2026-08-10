@@ -1,13 +1,26 @@
 # The FUSE funnel — model-to-model fusion as a runtime primitive
 
-Status: **FUSE-2.5 ran first and FAILED its gate — informatively.** The
-2048-d seam is specific to layer 27's output; the late backbone is not
-redundant with an upstream LLM. "Truncate and hope" is dead, FUSE-1.5 is
-promoted to the next rung to run, and FUSE-3's learned bridge becomes
-load-bearing. Opened 2026-08-09 as a `ROADMAP.md` section, given its own
-funnel doc 2026-08-10 once the ladder acquired per-rung gates. Speech is
-the first proving ground — the abstraction is model-to-model fusion, not
-"Qwen token sharing".
+Status: **two results in, and together they reframed the programme.**
+FUSE-2.5 failed its gate informatively — the 2048-d seam is specific to
+layer 27's output, so "truncate and hope" is dead. The weight diff then
+showed MOSS's backbone is Qwen3-*shaped* but independently trained
+(projection matrices orthogonal to precision), so there is no second
+general-purpose Qwen doing redundant language work inside the mouth.
+
+**The objective is therefore no longer "amputate Qwen".** It is:
+
+> Can Jarvis and its speech system share useful computation and state?
+
+Eliminating the 28-layer backbone is a possible outcome, not the success
+criterion — `Jarvis → small latent binding → MOSS speech-state backbone →
+depth` is a good result if the binding buys shared intent, prosody
+control or latency. Next to run is FUSE-1.5, reframed as additive latent
+injection (α-sweep from the native system) rather than substitution.
+
+Opened 2026-08-09 as a `ROADMAP.md` section, given its own funnel doc
+2026-08-10 once the ladder acquired per-rung gates. Speech is the first
+proving ground — the abstraction is model-to-model fusion, not "Qwen
+token sharing".
 
 Companion docs: [`tts-funnel.md`](tts-funnel.md) owns the MOSS port and
 supplies this programme's exact oracle (the step-4 138-frame dump). The
@@ -15,6 +28,69 @@ voice ladder — `chris-experiments/voice/V0_PLAN.md`, outside this repo —
 owns identity portability, which FUSE-3/4 depend on.
 
 Gate log:
+
+- **Weight diff — MOSS's backbone is Qwen3-*shaped*, not Qwen3**
+  (2026-08-10). Harness `jarvis-voice/.engines/moss_qwen_weight_diff.py`,
+  results `renders/moss-realtime/fuse-weightdiff/weight-diff.json`. MOSS's
+  `language_model.*` namespace is tensor-for-tensor the same 310 entries as
+  `Qwen/Qwen3-1.7B-Base`'s `model.*`, so every pair is directly comparable.
+  Whether OpenMOSS initialised from those weights is not stated publicly —
+  hence a measurement, not bookkeeping.
+
+  | tensor class | n | cos mean | max abs cos | rel-L2 mean |
+  |---|---|---|---|---|
+  | projection matrices (q/k/v/o, gate/up/down) | 196 | **0.000015** | 0.00168 | 1.798 |
+  | RMSNorm scale vectors | 112 | 0.871 | — | 0.803 |
+  | text embedding `[151936, 2048]` | 1 | **−0.000585** | — | 1.474 |
+
+  Zero tensors bit-identical. **The projection matrices are orthogonal to
+  numerical precision**: for a 2048² matrix chance cosine has σ ≈ 0.0005,
+  and the largest across all 196 is 0.0017 (~3σ). Independent draws, not
+  shared ancestry. The 0.87 on the norm vectors is an artefact and must not
+  be read as similarity — RMSNorm weights are all-positive and clustered
+  near 1.0, so any two are cosine-similar by construction; their rel-L2 of
+  0.80 says they genuinely differ. Quoting the naive per-layer mean (0.31)
+  would mislead: it is 4-of-11 norm tensors dragging the average up.
+  rel-L2 corroborates independently — 1.80 against the √2 = 1.414 expected
+  for orthogonal tensors of equal norm implies MOSS's matrices carry ~1.5×
+  Qwen's norm. Independently trained, at a different scale.
+
+  **Not run, deliberately: the singular-value analysis of ΔW.** "Is the
+  late-layer delta low-rank" presupposes shared ancestry; a delta between
+  unrelated matrices has no reading as an adaptation. It would have
+  produced an authoritative-looking table of nothing.
+
+  **Scope of the claim.** This excludes `Qwen3-1.7B-Base` specifically.
+  Another Qwen3-1.7B variant is not formally excluded, but fine-tuning does
+  not rotate layer-0 attention matrices to orthogonality, so no released
+  checkpoint of this architecture is a plausible ancestor. OpenMOSS adopted
+  the Qwen3 block design and the tokenizer vocabulary (151936), not the
+  weights.
+
+  **Consequence — the programme's objective changes.** "Amputate Qwen" was
+  the wrong frame. There is no second general-purpose Qwen doing redundant
+  language work inside the mouth; there is a 1.7 B **speech-state
+  transformer that happens to be implemented in the Qwen3 architecture**,
+  with no LM head. The provenance objection to keeping MOSS is discharged.
+  What survives is a narrower and better-posed question:
+
+  > Can Jarvis and its speech system share useful computation and state?
+
+  Eliminating the backbone is now a *possible outcome*, not the success
+  criterion. If the endpoint is `Jarvis → small latent binding → MOSS
+  speech-state backbone → depth`, and the binding buys shared intent,
+  prosody control or latency, that is already a strong result. It is also
+  a good position for the runtime: LARQL gets known attention/RoPE/FFN/KV
+  semantics, a known quantisation and Metal path, without inheriting
+  Qwen's learned weights.
+
+  **Read together with FUSE-2.5** the two results explain each other. Not
+  "stock language semantics → speech-specialised top layers → depth", but
+  "speech-specific multimodal state machine → precisely learned terminal
+  representation → depth". The whole 28-layer stack participates in
+  building speech state, which is why the terminal representation is so
+  narrow and why that stack carries voice conditioning, acoustic history,
+  turn history, timing, lexical content and EOS together.
 
 - **FUSE-2.5 FAIL — the seam is layer-27-specific** (2026-08-10). Harness
   `jarvis-voice/.engines/moss_fuse25_depth.py`, results
@@ -172,28 +248,73 @@ against the cached `OpenMOSS-Team/MOSS-TTS-Realtime` config and the port,
   and consumer domains happen to be compatible* — not "speech fusion
   requires a Qwen LLM". Mostly an engineering cleanup; the value is the
   primitive it installs: token-domain piping between models.
-- **FUSE-1 — residual comparison.** Same text prefix through a generic
-  Qwen LLM and the MOSS backbone; compare hiddens layer-by-layer.
-  Cosine is not enough (the voice ladder's lesson) — behavioural
-  probes and linear mappings too.
-- **FUSE-1.5 — semantic term substitution at the input seam.** Replace
-  *only* the text-channel embedding contribution in the 17-way sum with a
-  projected upstream semantic state; keep the native MOSS audio
-  embeddings, the full 28-layer backbone, its KV and the depth stack
-  untouched. This substitutes one term of an interface the checkpoint
-  already composes additively, rather than inventing an alien one, and it
-  isolates exactly one clause: *can an upstream model supply the semantic
-  half of the state while MOSS retains speech continuity — voice,
-  prosody, alignment, turn history?* Substitute on decode positions only
-  and leave prefill bit-exact; prefill is where the voice splice lives,
-  and perturbing it confounds identity with semantics. Two traps that are
-  part of the experiment, not afterthoughts: the **12-token text lead**
-  means the state substituted at audio position *t* corresponds to text
-  token *t+12*; and an LLM *final hidden* is not distributed like an
-  *embedding lookup*, so fitting scale/whitening to the MOSS
-  text-embedding distribution is a control, not a cheat. Gate:
-  intelligible speech with the reference voice preserved. Cheaper and
-  less destructive than FUSE-2 — run it first.
+- **FUSE-1 — representation study** (revised 2026-08-10 after the weight
+  diff). The original form — one text prefix through a generic Qwen LLM
+  and the MOSS backbone, hiddens compared layer-by-layer — is too weak
+  now that the two are known to be independently trained. There is no
+  "where Qwen becomes MOSS" curve to find, because it never was Qwen.
+  The question is not *are these the same space* (answered: no) but **is
+  there a low-complexity map between them**, which unrelated weights do
+  *not* settle either way: independently trained networks can converge on
+  related representational geometry.
+
+  So it needs paired data, not one utterance. Vary wording, semantic
+  content, token identity, position, voice, acoustic history,
+  sentence/turn boundaries and termination state; collect paired states
+  from the upstream model and from MOSS. **Split by utterance and
+  semantic content, with held-out sentences and eventually held-out
+  voices** — at 2048 dimensions a flexible linear map will look brilliant
+  by memorisation if train and test are correlated. That split is the
+  experiment's integrity, not a detail.
+
+  Measure linear CKA, SVCCA, and linear predictability; keep raw cosine
+  as a free sanity column but do **not** interpret it. Behaviour after
+  mapped substitution is the ultimate oracle — the gate is behavioural,
+  not a similarity score. The question in one line: *how much
+  MOSS-relevant information is recoverable from the upstream state by a
+  fixed low-complexity map, on held-out content?*
+- **FUSE-1.5 — latent injection at the additive input seam** (reframed
+  2026-08-10 from "semantic term substitution"). Do **not** replace the
+  native text embedding. Add to it:
+
+  ```text
+  E_moss(token_t)  +  α · B(H_upstream)  +  Σ E_moss_audio(codes_{t−1})
+                              ↓
+                   full 28-layer MOSS backbone
+                              ↓
+                            depth
+  ```
+
+  with α swept upward from 0. The reason to prefer this over replacement
+  is that **α = 0 is bit-exactly the native system**, so the experiment
+  carries its own control and can never silently drift away from a
+  working baseline. The native embedding keeps supplying the lexical
+  anchor the model was trained on; the mapped upstream state only *adds*
+  contextual/semantic information. The model's familiar input
+  distribution is never removed.
+
+  Note what this makes redundant: if the upstream model emits token ids
+  MOSS understands, the native text contribution is already obtainable as
+  `token_id → embed_tokens.0 → 2048-d`. That is FUSE-0, not FUSE-1.5.
+  Feeding a *stock Qwen3* embedding into this seam is now only a
+  deliberately bad null — the weight diff showed the two embedding tables
+  are orthogonal — worth running once because it is cheap and decisive,
+  not as the main line.
+
+  Sweep α and measure where added upstream semantics start to move:
+  backbone hidden, depth logits, RVQ trajectory, prosody, EOS, then
+  perceived delivery. Two traps that are part of the experiment: the
+  **12-token text lead** means the state injected at audio position *t*
+  corresponds to text token *t+12*; and an LLM final hidden is not
+  distributed like an embedding lookup, so fitting scale/whitening to the
+  MOSS text-embedding distribution is a control, not a cheat. Inject on
+  decode positions only and leave prefill bit-exact — prefill carries the
+  voice splice, and perturbing it confounds identity with semantics.
+
+  Gate: a non-trivial α band where the trajectory changes coherently and
+  speech stays intelligible with the reference voice intact. Landing that
+  is the first real **cross-model latent injection**, without having to
+  solve the full bridge problem — which is why it runs before FUSE-2.
 - **FUSE-2 — direct residual substitution.** Replace a MOSS final
   backbone hidden with a shape-compatible LLM residual; run the proven
   depth transformer. Ask only: plausible codebooks? terminates? how far
