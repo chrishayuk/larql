@@ -5,9 +5,17 @@ reframed the objective; Gate 0 was inconclusive by construction; Gate 0b
 returned a coherent null — MOSS is strongly sensitive to non-spoken
 conversational history, but *broad* semantic contrast does not predict the
 direction or magnitude of acoustic decision changes once lexical distance
-is matched. Next is **Gate 1, axis-specific** (a graded arousal ladder plus
-a causal `H + α·d_arousal` intervention), not the FUSE-1A corpus, which
-stays held.
+is matched. Next is **Gate 1 — the arousal axis**, whose discriminator is
+cross-family directional agreement under leave-one-family-out, followed by
+a dose-response intervention against a norm-matched shuffled control. Not
+the FUSE-1A corpus, which stays held.
+
+The broad-semantics null also makes one cheap FUSE story look dead:
+`LLM semantic state → generic bridge → MOSS H27`. If pragmatic controls
+are what MOSS actually exposes, the interoperability problem gets
+*easier* — aligning a handful of causally meaningful control coordinates
+rather than two large hidden spaces globally. Gate 1 tests whether even
+that survives.
 
 The earlier framing, still current:
 FUSE-2.5 failed its gate informatively — the 2048-d seam is specific to
@@ -119,14 +127,8 @@ Gate log:
   paraphrase baselines of 3.19–11.15. Each item shows a real effect whose
   *direction* semantic contrast fails to predict.
 
-  **Consequence for the ladder.** FUSE-1A stays held. Gate 1 becomes
-  axis-specific rather than a broad corpus: a graded arousal ladder
-  (calm → mild concern → urgent → alarm) over several independently
-  authored matched sets, testing whether unrelated prompts produce
-  approximately the *same* H27 displacement direction, then the causal
-  intervention `H(calm) + α·d_arousal → teacher-forced RVQ` to ask
-  whether acoustic behaviour moves toward alarm. Causal rank only becomes
-  meaningful after that.
+  **Consequence for the ladder.** FUSE-1A stays held. The next rung is
+  **Gate 1 — the arousal axis**, specified below in the ladder section.
 
   **Geometry follow-up** (`moss_fuse15_geometry.py`, states persisted on a
   deterministic rerun that reproduced every scalar). With A as anchor,
@@ -499,6 +501,71 @@ against the cached `OpenMOSS-Team/MOSS-TTS-Realtime` config and the port,
   speech-state manifold linearly recoverable from an independently
   trained language model, on held-out semantics?* Worth knowing
   regardless of what FUSE-1.5 does.
+- **Gate 1 — the arousal axis** (specified 2026-08-10 after Gate 0b).
+  Gate 0b killed "broad semantic contrast" as the unit of analysis. The
+  surviving hypothesis is narrower: MOSS may expose a *small* set of
+  speech-relevant pragmatic controls — arousal, certainty, stance,
+  urgency, affect, cadence — rather than converting arbitrary
+  propositional meaning into acoustic modulation. Arousal goes first
+  because it has an obvious acoustic realisation (rate, energy, pitch,
+  pause structure) where `funded ↔ overdrawn` has none.
+
+  **Do not try to lexically match a four-point graded ladder.** Keeping
+  calm → mild concern → urgent → alarm at matched lexical distance is
+  not achievable without artificial language, and attempting it would
+  re-import exactly the confound Gate 0b spent three runs removing.
+  Instead, make lexical diversity the *discriminator*: author 4–6
+  independent lexical families that each express the same arousal
+  ordering in unrelated words, controlling length and syntax within a
+  family but not across families.
+
+  ```text
+  SET A  everything is normal / something needs attention /
+         this is urgent / act immediately
+  SET B  the situation is stable / there may be a problem /
+         the problem is serious / this is an emergency
+  SET C  remain relaxed / stay attentive /
+         be ready to respond / respond now
+  SET D  no concern / some concern / high concern / alarm
+  ```
+
+  The question becomes: **does the same arousal ordering induce a shared
+  state-space direction across lexically unrelated families?** With
+  `d_X = H(alarm_X) − H(calm_X)`, unrelated directions kill the
+  hypothesis; consistently high `cos(d_A, d_B)`, `cos(d_A, d_C)` … despite
+  radically different words is precisely the evidence Gate 0b could never
+  produce, because its six items were six different axes with no
+  replication.
+
+  **Criterion 1, before any intervention — leave-one-family-out.**
+  Build `d_arousal` as the mean normalised displacement over all
+  families *except one*, then test whether projection onto it orders the
+  held-out family correctly (calm < concern < urgent < alarm). Rotate the
+  held-out family. A lexically-specific direction has a hard time
+  winning this, because the test vocabulary never entered the axis's
+  construction.
+
+  **Criterion 2, only if 1 passes — the causal intervention.** Inject
+  `H_calm + α·d_arousal` at the seam with acoustic history teacher-forced,
+  sweeping α ∈ {0, 0.25, 0.5, 0.75, 1}, and look for a *dose-response*
+  curve in high-margin RVQ changes and prosodic arousal. α = 0 is the
+  native system, so the sweep carries its own control.
+  **Negative control, required:** `H_calm + α·d_shuffled` where
+  `d_shuffled` has comparable norm and rank but comes from shuffled
+  arousal labels or an unrelated axis. `d_arousal` moving decisions
+  systematically while `d_shuffled` does not is far stronger than
+  observing that different histories produce different output — which
+  Gate 0 already established and which means little on its own.
+
+  Only after causal authority is demonstrated does **causal rank** become
+  meaningful: how much of the dose-response survives a rank-k
+  reconstruction of `d_arousal`. Geometric rank is not the same question
+  and does not substitute for it.
+
+  **If Gate 1 is also negative**, downgrade the idea that MOSS holds
+  portable latent pragmatic controls at H27, and move FUSE back toward an
+  explicit target-specific binding rather than continuing to hunt for
+  them. That is a real decision point, not a formality.
 - **FUSE-1B — behavioural substitution.** Take the best same-space `B_L`
   from 1A and actually run it: substitute `B_L(H_S0)` for MOSS's own
   layer-L hidden and measure the trajectory against the step-0 oracle
