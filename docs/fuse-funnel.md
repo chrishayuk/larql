@@ -1,10 +1,13 @@
 # The FUSE funnel — model-to-model fusion as a runtime primitive
 
-Status: **no rung green yet.** FUSE-0 is engineering rather than
-research; FUSE-1 is the first measurement. Opened 2026-08-09 as a
-`ROADMAP.md` section, given its own funnel doc 2026-08-10 once the ladder
-acquired per-rung gates. Speech is the first proving ground — the
-abstraction is model-to-model fusion, not "Qwen token sharing".
+Status: **FUSE-2.5 ran first and FAILED its gate — informatively.** The
+2048-d seam is specific to layer 27's output; the late backbone is not
+redundant with an upstream LLM. "Truncate and hope" is dead, FUSE-1.5 is
+promoted to the next rung to run, and FUSE-3's learned bridge becomes
+load-bearing. Opened 2026-08-09 as a `ROADMAP.md` section, given its own
+funnel doc 2026-08-10 once the ladder acquired per-rung gates. Speech is
+the first proving ground — the abstraction is model-to-model fusion, not
+"Qwen token sharing".
 
 Companion docs: [`tts-funnel.md`](tts-funnel.md) owns the MOSS port and
 supplies this programme's exact oracle (the step-4 138-frame dump). The
@@ -13,7 +16,87 @@ owns identity portability, which FUSE-3/4 depend on.
 
 Gate log:
 
-- *(empty — no rung has been run)*
+- **FUSE-2.5 FAIL — the seam is layer-27-specific** (2026-08-10). Harness
+  `jarvis-voice/.engines/moss_fuse25_depth.py`, results
+  `jarvis-voice/renders/moss-realtime/fuse25/results.json`. Conditions:
+  cpu / float32 / eager / greedy / repetition penalty disabled — identical
+  to the step-0 dump, because the comparison is against its arrays
+  (`parity-dump/run1.npz`, line long-23, aru-12 splice).
+
+  The intervention is one integer: `Qwen3Model.forward` iterates
+  `self.layers[: self.config.num_hidden_layers]` and then applies
+  `self.norm`, so setting that field during decode runs layers 0..L−1 and
+  still post-norms the truncated residual — the choice FUSE-2.5 specified.
+  Prefill always runs full depth, selected by a forward-pre-hook on
+  sequence length (prefill is the 343-row call, decode is 1 row). Hooks
+  and instance wrapping only; no reference control flow reimplemented.
+
+  **Controls pass.** L=28 reproduces the oracle bit-exactly in *both*
+  conditions — 138 frames, 0.00% argmax change, seam cos 1.0000, KL
+  0.0000. The truncation mechanism and the teacher-forcing wrapper are
+  each inert at full depth, so the rest of the table means something.
+
+  | cond | L | frames | EOS | argmax chg | seam cos min/mean | KL mean |
+  |---|---|---|---|---|---|---|
+  | teacher | 28 | 138 | 137 | 0.00% | 1.0000 / 1.0000 | 0.000 |
+  | teacher | 24 | 138 | 137 | 92.53% | 0.8501 / 0.9115 | 3.454 |
+  | teacher | 20 | 138 | 136 | 95.61% | 0.7562 / 0.8289 | 4.279 |
+  | teacher | 16 | 138 | 135 | 97.55% | 0.6003 / 0.6780 | 4.462 |
+  | teacher | 12 | 138 | 125 | 98.78% | 0.4280 / 0.5177 | 4.556 |
+  | teacher | 8 | 138 | 133 | 99.05% | 0.3912 / 0.4916 | 5.232 |
+  | free | 28 | 138 | 137 | 0.00% | 1.0000 / 1.0000 | 0.000 |
+  | free | 24 | 112 | 111 | 98.21% | 0.4466 / 0.6009 | 15.140 |
+  | free | 20 | 164 | 163 | 98.87% | 0.3924 / 0.5894 | 27.023 |
+  | free | 16 | **401** | none | 99.14% | 0.4227 / 0.5112 | 26.898 |
+  | free | 12 | **401** | none | 99.00% | 0.2132 / 0.3495 | 5.281 |
+  | free | 8 | **401** | none | 99.19% | 0.2498 / 0.3601 | 5.905 |
+
+  **The gate asked for a monotone frontier with an identified knee. There
+  is no knee — there is a cliff at the top of the stack.** Removing 4 of
+  28 layers changes 92.5% of RVQ argmaxes under teacher forcing, on the
+  first decode frame available. (Frame 0 can never diverge: its seam comes
+  from the always-full-depth prefill call — which is also why the seam
+  array is 137 rows against 138 frames.) Dropping a further 16 layers adds
+  only 6.5 points while seam cosine slides 0.85 → 0.39. The representation
+  degrades smoothly with depth removed; the depth transformer's *decision*
+  is destroyed as soon as any late layer goes.
+
+  **Free-running additionally loses termination.** L=24 stops early (112
+  frames vs 138), L=20 overruns (164), and L≤16 never emits audio EOS at
+  all — all three hit the 400-frame cap. Audio EOS is codebook-0 id 1026,
+  so *stopping* is a late-backbone function, not a depth-transformer one.
+  Free-running KL peaks at L=20 (27.0) and falls back by L=12 (5.3), which
+  is degenerate low-entropy babble rather than recovery — do not read the
+  drop as improvement.
+
+  **Reading.** The 2048-d seam is specific to layer 27's output, not to
+  "semantic state" in any depth-invariant sense. The late backbone is not
+  re-deriving semantics an upstream LLM already has — it is producing the
+  exact representation the depth transformer was trained against,
+  termination included. The cheap intermediate version of the amputation
+  plan — inject Jarvis semantics, keep only the last 4–8 layers — is dead
+  as stated.
+
+  **Consequences for the ladder.**
+  1. FUSE-2 is now predicted to fail hard rather than informatively: if
+     4 layers of the *same* model breaks the seam, a foreign LLM's
+     residual will not survive it. Run it for the record, expect nothing.
+  2. **FUSE-1.5 is promoted to the next rung to run.** It is the only rung
+     that never touches the seam — full 28-layer backbone, full KV, only
+     the text-channel term of the 17-way input sum replaced. This result
+     is a direct argument for that ordering. Blocked on a Qwen3-1.7B
+     download (not cached; the backbone's shape is 28L/2048/16-8).
+  3. FUSE-3 becomes load-bearing, with a concrete first target: does a
+     learned affine L→27 map recover the trajectory, and how little
+     machinery suffices?
+
+  **Controls not yet run**, cheap, worth having before FUSE-3: the
+  no-final-norm A/B, to confirm the cliff is not an artefact of
+  post-norming a mid-stack residual. The frontier is clean and monotone,
+  which argues against it, but it is minutes of compute. Also unrun: a
+  weight diff of MOSS's backbone against stock Qwen3-1.7B-Base — if the
+  backbone is a fine-tune of it, FUSE-1's binding may be near-identity,
+  which would reorder the ladder again.
 
 ---
 
