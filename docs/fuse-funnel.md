@@ -67,6 +67,43 @@ owns identity portability, which FUSE-3/4 depend on.
 
 Gate log:
 
+- **Gate 1.5a-0 PASS — differentiable depth is a bit-exact oracle; and a
+  capture trap that relabels every earlier logit measurement**
+  (2026-08-10). FUSE-1.5a is the first rung that replaces reference
+  control flow: the depth loop must become differentiable, so its
+  internal sampling is swapped for teacher-forced codes. The oracle had
+  to move with it, so before any optimisation was admitted the
+  reimplementation was compared against the reference on every microstep
+  of every frame: **1088 logit vectors, max |Δ| = 0.000e+00, all argmaxes
+  identical.** Bit-exact, not approximately faithful.
+
+  Getting there surfaced a trap this repo already documents.
+  `apply_repetition_penalty` **mutates the logit tensor in place through
+  a view** (`tts-funnel.md` §1.5, parity trap 2), and on CPU
+  `tensor.numpy()` *aliases* rather than copies. So a forward hook that
+  did `o.logits.detach().cpu().numpy()` without an explicit copy had its
+  captured values retroactively overwritten with post-penalty numbers.
+  The reimplementation computes pre-penalty logits; hence a 22.0 delta
+  that looked like a wrong computation and was a wrong capture.
+
+  **Scope of the correction — no earlier result is invalidated.** Gate 0,
+  Gate 0b, Gate 1, 3a and 3b all ran sampled with
+  `repetition_penalty=1.1` and all captured without copying, so they
+  measured **post-repetition-penalty (sampler-facing) distributions**.
+  Both arms of every comparison were captured identically, so those
+  comparisons were like-for-like; what changes is the label on the
+  measurement, and for behavioural questions the sampler-facing
+  distribution is arguably the better endpoint anyway. Recorded rather
+  than rerun.
+
+  **Deliberate choice for 1.5a**: pre- and post-penalty are
+  *complementary*, not a rescaling — the penalty is a coordinate-selective
+  nonlinear transform, so it changes which logit errors dominate and the
+  optimum δx can move. Pre-penalty asks whether δx recovered the model's
+  underlying depth distribution; post-penalty asks whether it recovered
+  the distribution actually exposed to sampling. The same tiny operand
+  performing well on both is stronger than either alone.
+
 - **FUSE-3b — FAIL. Authority does not concentrate; H27 is not a viable
   composition ABI** (2026-08-10). Harness
   `jarvis-voice/.engines/moss_fuse3b_causalrank.py`, results
@@ -716,6 +753,39 @@ against the cached `OpenMOSS-Team/MOSS-TTS-Realtime` config and the port,
   speech-state manifold linearly recoverable from an independently
   trained language model, on held-out semantics?* Worth knowing
   regardless of what FUSE-1.5 does.
+- **FUSE-1.5b — is the operand materialisable, or 68 fitted corrections?**
+  (specified 2026-08-10). Runs only if 1.5a passes. Staged so each step
+  answers one thing:
+
+  - **1.5b-1 neighbouring-frame portability — run this first.** It gives
+    the sharpest possible comparison with the H27 seam, where the
+    displacement collapsed at one frame (0.145) and went negative by four.
+    Mirror 3a exactly: learn `δx_t` at frame *t*, then inject it at
+    `x_t` (control), `x_{t−1}`, `x_{t+1}`, `x_{t+2}`, `x_{t+4}`, holding
+    the target frame's own text/audio operand and KV fixed, and report the
+    same recovery metrics. Outcomes are qualitatively distinct:
+    collapse at t+1 means the input operand is *also* trajectory-indexed
+    and 1.5a solved local compilation only; gradual degradation means a
+    locally portable input-side context operand, already far better than
+    H27; strength over several frames suggests a shared contextual
+    materialisation and sends us straight to causal rank.
+    Report `cos(δx_t, δx_{t+1})` and norm ratios as **secondary** — 3b
+    established that geometric similarity is not causal portability. The
+    transplant is the test.
+  - **1.5b-2 causal structure of the operand trajectory** — compact
+    causal rank of `D_input = [δx_1 … δx_T]`, by the 3b method
+    (rank-k reconstruction, injected, scored, against a norm- and
+    spectrum-matched random basis).
+  - **1.5b-3 transfer** across acoustic histories, utterances and voices.
+  - **1.5c** — only then, what can produce it.
+
+  **The asymmetry to watch for.** If `ΔH_t → H_{t+1}` is dead at the
+  output seam while `δx_t → x_{t+1}` remains authoritative at the input
+  seam, that is an experimental demonstration of *why* the upstream seam
+  is the better ABI: **the backbone converts a relatively reusable cause
+  into a highly trajectory-specific consequence.** That would tie the
+  whole ladder together.
+
 - **FUSE-1.5a — additive-seam solvability** (specified 2026-08-10 after
   3b closed H27). **Do not start with an LLM bridge.** Take the
   context-free MOSS run, keep its KV and context exactly as they are, and
