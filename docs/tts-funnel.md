@@ -481,7 +481,8 @@ engine); realtime axis (§5); the voice bank (`larql voice clone` —
 voices as first-class model-agnostic data; design in `ROADMAP.md`
 "Voice bank", gated on step 5, now open); codec-in-LARQL (§6); the
 FUSE ladder (LLM→speech via token piping, then latent composition —
-`ROADMAP.md` "Model-to-model fusion").
+[`fuse-funnel.md`](fuse-funnel.md), which consumes this funnel's step-4
+dump as its oracle).
 
 **The perf phase's next gate (set 2026-08-09, after step 5):** first-turn
 TTFA **below 500 ms** without regressing the ~1.6x realtime steady-state
