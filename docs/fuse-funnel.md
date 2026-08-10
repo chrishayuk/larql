@@ -86,6 +86,70 @@ owns identity portability, which FUSE-3/4 depend on.
 
 Gate log:
 
+- **FUSE-3b — FAIL. Authority does not concentrate; H27 is not a viable
+  composition ABI** (2026-08-10). Harness
+  `jarvis-voice/.engines/moss_fuse3b_causalrank.py`, results
+  `renders/moss-realtime/fuse3b/fuse3b.json`. The oracle displacement
+  trajectory `D` (69 × 2048, ‖D‖_F 19.44) reconstructed at rank
+  1/2/4/8/16/32, injected at the seam, scored by causal recovery. Control
+  at every rank: the same rank-k coefficients on a **random orthonormal
+  basis** — identical Frobenius norm, identical singular values,
+  arbitrary orientation.
+
+  | rank | geom energy | KL rec | dec rec | hi-margin | ctrl KL | ctrl dec |
+  |---|---|---|---|---|---|---|
+  | 1 | 0.322 | 0.296 | 28.97% | 25.09% | −0.107 | 4.98% |
+  | 2 | 0.425 | 0.293 | 30.44% | 25.46% | −0.110 | 5.72% |
+  | 4 | 0.561 | 0.344 | 38.01% | 29.52% | −0.235 | 4.06% |
+  | 8 | 0.693 | 0.309 | 42.44% | 39.11% | −0.212 | 4.61% |
+  | 16 | 0.816 | 0.466 | 46.86% | 42.80% | −0.220 | 4.98% |
+  | 32 | 0.925 | 0.563 | 62.73% | 57.93% | −0.111 | 9.78% |
+  | full | 1.000 | **1.000** | **100%** | **100%** | — | — |
+
+  **The control works, which is what makes the rest readable.** A
+  norm- and spectrum-matched random basis recovers −0.11 to −0.24 KL and
+  4–10% of decisions at every rank. So the oracle basis genuinely carries
+  the authority; a low-rank perturbation of matched magnitude does
+  nothing, and this seam's hypersensitivity is not producing spurious
+  "recovery".
+
+  **But authority lags geometric energy at every rank, and never
+  concentrates.** Rank 32 of a possible 69 — 46% of the available rank,
+  92% of the vector energy — recovers only 56% of the contextual effect.
+  The last 8% of energy carries 44% of the causal recovery. There is a
+  small genuine concentration at the very bottom (rank 1 alone gives
+  0.296) but it then plateaus almost completely from rank 1 to rank 8
+  (0.296 → 0.309) before climbing slowly. There is no rank at which a
+  compact operand buys most of the authority.
+
+  This is the magnitude-versus-authority dissociation again, now in the
+  *unfavourable* direction: the spectral tail matters far more than its
+  energy share suggests.
+
+  **Verdict, per the pre-registered fork: 3b FAIL.** The required operand
+  is trajectory-indexed (3a) *and* effectively full-rank (3b). Asking a
+  producer model to supply it means reconstructing a high-dimensional,
+  position-specific consequence of the MOSS backbone — which is not a
+  composition interface, it is re-deriving the backbone's output.
+
+  **Consequence: FUSE moves upstream to the additive input seam.** H27 is
+  a terminal *consequence* of the whole trajectory, not an interoperable
+  representation. The input seam is qualitatively different — it is where
+  MOSS itself combines independent operands (text embedding + 16
+  previous-audio-code embeddings, plain sum, no projection, no scaling),
+  i.e. a point the checkpoint was explicitly trained to accept additive
+  composition at. The question changes from
+
+  > can another model manufacture MOSS's H27 consequence?
+
+  to
+
+  > can another model supply an additional valid *input* operand that
+  > MOSS's own backbone converts into the appropriate trajectory?
+
+  That is FUSE-1.5's seam, which now becomes the live line of the
+  programme rather than a rung parked behind FUSE-1.
+
 - **FUSE-3a — the operand is TRAJECTORY-INDEXED, not state-conditioned**
   (2026-08-10). Harness
   `jarvis-voice/.engines/moss_fuse3a_transplant.py`, results
@@ -119,18 +183,27 @@ Gate log:
   since the splice lives in the system prompt and changing it changes
   prefill rows and the whole backbone KV.
 
-  **This kills the state-conditioned binding.**
-  `B_moss(producer_state, H_moss_current) → ΔH` required that
-  displacements transfer between nearby states; consecutive H27 states
-  are as near as neighbours get, and one step removes 85% of the
-  authority. So a small seam bridge is the wrong decomposition —
-  the harsh branch of 3a's pre-registered outcomes, not the hoped-for
-  simplification.
+  **What this kills, precisely** (corrected 2026-08-10 — an earlier
+  revision over-claimed here). It kills the cheap idea that **the operand
+  itself is locally portable**: a displacement cannot be reused around
+  the local H27 manifold, not even one frame away. It does **not** kill
+  `B_moss(producer_state, H_moss_current) → ΔH_current`; if anything it
+  strengthens the case that such conditioning is *necessary*. A
+  state-conditioned binding is entitled to emit wholly different operands
+  at *t* and *t+1* — the transplant failure demonstrates non-portability
+  of the operand, not impossibility of predicting the right one from the
+  new state. The recorded conclusion is therefore:
+
+  > **H27 displacements are trajectory-indexed and locally
+  > non-portable. A binding cannot emit a context-only or reusable seam
+  > operand; it must produce an operand specific to the target execution
+  > point.**
 
   One ordering worth noting: **acoustic-history mismatch (0.244) is less
-  damaging than a one-frame position shift (0.145)**. Position index
-  matters more than the audio history itself, which is not what a
-  "conditioned on acoustic state" story predicts.
+  damaging than a one-frame position shift (0.145)** — position is a
+  major determinant of the required intervention. This does not by itself
+  show that explicit position metadata must be supplied to a binding: a
+  sufficiently informative `H_t` may encode position implicitly.
 
   Decision recovery floors at 20–23% across all broken rows while KL
   recovery sits at or below zero — a wrong-position displacement restores
