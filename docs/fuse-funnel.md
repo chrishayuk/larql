@@ -86,6 +86,66 @@ owns identity portability, which FUSE-3/4 depend on.
 
 Gate log:
 
+- **FUSE-3a — the operand is TRAJECTORY-INDEXED, not state-conditioned**
+  (2026-08-10). Harness
+  `jarvis-voice/.engines/moss_fuse3a_transplant.py`, results
+  `renders/moss-realtime/fuse3a/fuse3a.json`. `ΔH_oracle(t) =
+  H27_context(t) − H27_nocontext(t)` taken from a real 69-frame run
+  (mean ‖ΔH‖ 2.19), transplanted into target states that break the
+  correspondence one factor at a time. Injection is a wrapper on
+  `generate_local_transformer` — the same seam FUSE-2.5 used. Scored by
+  recovery: `1 − KL(T,X)/KL(T,N)`, plus the fraction of *context-induced*
+  decisions returned to target, overall and for the subset where the
+  no-context model was confident.
+
+  | transplant | KL recovery | decision recovery | high-margin |
+  |---|---|---|---|
+  | **exact** (3a-0 control) | **1.000** | **100.00%** | **100.00%** |
+  | history (3a-2) | 0.244 | 32.26% | 28.93% |
+  | pos+1 (3a-1) | 0.145 | 31.00% | 27.68% |
+  | voice (3a-3, compound) | −0.001 | 23.06% | 20.66% |
+  | pos+4 (3a-1) | −0.050 | 22.51% | 17.71% |
+  | cross-utterance | −0.091 | 20.63% | 16.46% |
+
+  The control returns exactly 1.000 / 100% / 100%, so the collapse in
+  every other row is the phenomenon and not an injection bug. Context
+  moves ~49% of all decisions, so there is a large effect to recover.
+
+  **Shifting the displacement by a single frame destroys ~85% of it.**
+  By four frames it is worse than doing nothing. Cross-utterance
+  transplant is actively harmful (−0.091), which is a stronger statement
+  than "does not transfer". The voice row sits at −0.001 — precisely no
+  better than no transplant — and is reported as a *compound* change,
+  since the splice lives in the system prompt and changing it changes
+  prefill rows and the whole backbone KV.
+
+  **This kills the state-conditioned binding.**
+  `B_moss(producer_state, H_moss_current) → ΔH` required that
+  displacements transfer between nearby states; consecutive H27 states
+  are as near as neighbours get, and one step removes 85% of the
+  authority. So a small seam bridge is the wrong decomposition —
+  the harsh branch of 3a's pre-registered outcomes, not the hoped-for
+  simplification.
+
+  One ordering worth noting: **acoustic-history mismatch (0.244) is less
+  damaging than a one-frame position shift (0.145)**. Position index
+  matters more than the audio history itself, which is not what a
+  "conditioned on acoustic state" story predicts.
+
+  Decision recovery floors at 20–23% across all broken rows while KL
+  recovery sits at or below zero — a wrong-position displacement restores
+  a fifth of the induced decisions roughly by luck while leaving the
+  distribution no closer overall. Do not read those percentages as
+  partial success.
+
+  **Consequence.** 3b's low-rank *trajectory* compression is now the only
+  surviving form of the question: since every ΔH_t is position-specific,
+  the live issue is whether the sequence `D = [ΔH_1 … ΔH_T]` is
+  compressible along its own index — `ΔH_t = Σ a_k(t)·v_k` with few basis
+  vectors — so that a producer would only need to supply the
+  coefficients. If that fails too, the seam is not a viable binding site
+  at all and FUSE must bind somewhere other than H27.
+
 - **Gate 1 — NEGATIVE. No portable additive arousal direction; the
   pre-registered decision point is reached** (2026-08-10). Harness
   `jarvis-voice/.engines/moss_fuse_gate1_arousal.py`, results
