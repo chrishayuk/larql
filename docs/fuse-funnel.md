@@ -22,7 +22,22 @@ model's state into a valid operand for another model's current execution
 state" — compatibility level 5, not level 3 — which is the more general
 claim anyway.
 
-FUSE-1A stays held.
+FUSE-1A stays held. Next to run is **FUSE-3a**, still inference-only —
+"fixed universal ΔH is dead" does not entail "a bridge must be learned",
+and that inference was made once here and withdrawn.
+
+**Result ledger — the epistemic states differ and are not interchangeable:**
+
+| rung | outcome |
+|---|---|
+| FUSE-2.5 | **negative** — seam is layer-27-specific |
+| weight diff | **falsified a shortcut, reframed the objective** — MOSS is Qwen3-shaped, independently trained |
+| Gate 0 | **inconclusive by construction** — lexical distance uncontrolled |
+| Gate 0b | **coherent null** — broad semantic contrast doesn't predict acoustic decisions |
+| Gate 1 | **negative** — no portable additive control direction |
+
+Four different states. Collapsing them into "all negative" would discard
+exactly the distinction that made each one actionable.
 
 The earlier framing, still current:
 FUSE-2.5 failed its gate informatively — the 2048-d seam is specific to
@@ -767,14 +782,15 @@ against the cached `OpenMOSS-Team/MOSS-TTS-Realtime` config and the port,
   mid-band variant (`L0..Lk` → held representation → depth) that the
   residual-stream work predicts, since authority may become established
   well before layer 27.
-- **FUSE-3 — target-specific SpeechBinding** (re-specified 2026-08-10
-  after Gate 1). The original form — `H_llm → fixed projection P → depth`
-  — assumed a portable direction that Gate 1 falsified. What the ladder
-  actually established is narrower and still usable: a *small*
-  displacement at the seam is sufficient to move acoustic decisions
-  (Gate 0), but no *fixed* direction transfers across contexts (Gate 1).
-  The reconciliation is a displacement that is context-dependent rather
-  than universal:
+- **FUSE-3 — target-specific SpeechBinding**, in three gates
+  (re-specified 2026-08-10 after Gate 1; split into 3a/3b/3c the same day
+  after an unearned inference was caught). The original form —
+  `H_llm → fixed projection P → depth` — assumed a portable direction
+  that Gate 1 falsified. What the ladder established is narrower and
+  still usable: a *small* displacement at the seam is sufficient to move
+  acoustic decisions (Gate 0), but no *fixed* direction transfers
+  (Gate 1). The reconciliation is a displacement that is
+  context-dependent rather than universal:
 
   ```text
   B_moss( producer semantic state,
@@ -796,9 +812,54 @@ against the cached `OpenMOSS-Team/MOSS-TTS-Realtime` config and the port,
   another model's current execution state**. Level 5
   (state-composable), not level 3 (hidden-state).
 
-  Open question this rung must answer before any training: what is the
-  smallest sufficient conditioning set — does the binding need voice
-  state and speech position, or does acoustic history alone suffice?
+  **This rung must not silently become a training project.** "Fixed
+  universal ΔH is dead" does **not** entail "a parameterised bridge must
+  be learned" — that inference was made once here and withdrawn. Every
+  rung so far has been inference-only falsification, which is why the
+  ladder has been cheap; two more inference-only gates come before any
+  fitting.
+
+  - **FUSE-3a — oracle transplant, conditioning-factor ablation.** Take
+    the true displacement `ΔH_oracle = H27(with context) −
+    H27(context-free)` from a full run, then transplant it into target
+    states that differ along one factor at a time — acoustic history,
+    voice, speech position, context source — teacher-force all of them,
+    and measure how much of the original acoustic effect survives. The
+    question is not yet "can we predict ΔH" but **what does ΔH have to
+    be conditioned on to stay causally valid?** Output is a factorial
+    sufficiency table with no learned parameters:
+
+    | conditioning mismatch | authority survives? |
+    |---|---|
+    | none (oracle) | by construction |
+    | acoustic history | ? |
+    | voice | ? |
+    | speech position | ? |
+    | combinations | ? |
+
+    This can simplify the binding dramatically. If ΔH depends strongly on
+    acoustic history but barely on voice or absolute position, then
+    `B_moss(producer state, acoustic state) → ΔH` suffices. The harsh
+    outcome is also informative: if ΔH only works in the exact state
+    where it was observed, H27 is **trajectory-specific** rather than
+    merely context-dependent, and a small seam bridge is the wrong
+    architecture entirely — worth knowing before fitting anything.
+  - **FUSE-3b — local seam solvability.** At a fixed teacher-forced
+    state, ask whether a compact operand exists *at all*: find ΔH
+    minimising `KL(depth(H_context), depth(H_no_context + ΔH))` subject
+    to `‖ΔH‖` small. This is a per-state optimisation, not a learned
+    global mapping. If a small ΔH reproduces the target acoustic
+    decisions, the binding problem reduces to "predict this operand". If
+    none exists, then `SpeechBinding → small ΔH` is the wrong
+    decomposition regardless of how it is obtained.
+  - **FUSE-3c — only then**, how is that operand obtained from producer
+    state. This is where the question "is a fitted bridge necessary?"
+    gets confronted on evidence, rather than assumed now.
+
+  The LARQL-shaped question the first two gates answer: **what is the
+  smallest state-dependent operand MOSS actually requires, and can it be
+  demonstrated causally before worrying about how another model supplies
+  it?**
 - **FUSE-4 — acoustic residual injection.**
   `H_llm + A(previous audio tokens) → P → speech decoder`. If this
   works, MOSS's backbone has been decomposed into semantic and
