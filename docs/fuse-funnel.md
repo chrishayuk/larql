@@ -819,42 +819,102 @@ against the cached `OpenMOSS-Team/MOSS-TTS-Realtime` config and the port,
   ladder has been cheap; two more inference-only gates come before any
   fitting.
 
-  - **FUSE-3a — oracle transplant, conditioning-factor ablation.** Take
-    the true displacement `ΔH_oracle = H27(with context) −
-    H27(context-free)` from a full run, then transplant it into target
-    states that differ along one factor at a time — acoustic history,
-    voice, speech position, context source — teacher-force all of them,
-    and measure how much of the original acoustic effect survives. The
-    question is not yet "can we predict ΔH" but **what does ΔH have to
-    be conditioned on to stay causally valid?** Output is a factorial
-    sufficiency table with no learned parameters:
+  - **FUSE-3a — oracle transplant, conditioning-factor ablation.** Runs
+    first. Take `ΔH_oracle(t) = H27_context(t) − H27_nocontext(t)` from a
+    full run, transplant it into target states that break the
+    correspondence one factor at a time, teacher-force, and measure how
+    much acoustic authority survives. The question is not "can we predict
+    ΔH" but **what state correspondence must be preserved for ΔH to
+    retain acoustic authority?** No learned parameters.
 
-    | conditioning mismatch | authority survives? |
-    |---|---|
-    | none (oracle) | by construction |
-    | acoustic history | ? |
-    | voice | ? |
-    | speech position | ? |
-    | combinations | ? |
+    Conditions, in order:
 
-    This can simplify the binding dramatically. If ΔH depends strongly on
-    acoustic history but barely on voice or absolute position, then
-    `B_moss(producer state, acoustic state) → ΔH` suffices. The harsh
-    outcome is also informative: if ΔH only works in the exact state
-    where it was observed, H27 is **trajectory-specific** rather than
-    merely context-dependent, and a small seam bridge is the wrong
-    architecture entirely — worth knowing before fitting anything.
-  - **FUSE-3b — local seam solvability.** At a fixed teacher-forced
-    state, ask whether a compact operand exists *at all*: find ΔH
-    minimising `KL(depth(H_context), depth(H_no_context + ΔH))` subject
-    to `‖ΔH‖` small. This is a per-state optimisation, not a learned
-    global mapping. If a small ΔH reproduces the target acoustic
-    decisions, the binding problem reduces to "predict this operand". If
-    none exists, then `SpeechBinding → small ΔH` is the wrong
-    decomposition regardless of how it is obtained.
-  - **FUSE-3c — only then**, how is that operand obtained from producer
-    state. This is where the question "is a fitted bridge necessary?"
-    gets confronted on evidence, rather than assumed now.
+    - **3a-0 exact-state transplant.** `H0(t) + ΔH_oracle(t) → depth`
+      must reproduce `depth(H_ctx(t))`. Boring but essential: it
+      validates the intervention machinery independently of every
+      portability claim. It is also true by construction, which is
+      exactly why it is a control and not a result.
+    - **3a-1 position portability.** `ΔH(t) → H0(t+k)`, same utterance,
+      voice and context. This tests **within-utterance** position
+      portability only. Cross-utterance position portability is a
+      separate, stronger row and must be reported separately.
+    - **3a-2 acoustic-history portability.** Same spoken token, position,
+      voice and context intent, but a target `H0` built from a different
+      teacher-forced previous-audio history. Probably the most important
+      factor, since previous audio is part of the state that produced
+      H27 in the first place.
+    - **3a-3 voice-conditioned-state portability.** Does a displacement
+      observed under voice A remain valid in the state induced by voice
+      B? **Not labelled a clean "voice mismatch":** the splice lives in
+      the system prompt, so changing it changes prefill rows and
+      therefore the whole backbone KV. This is a compound change to the
+      voice-conditioned execution state, and the table must say so
+      rather than imply an orthogonal factorial manipulation.
+
+    **Scored by recovery, not by whether something changed.** With
+    `T = depth(H_ctx_target)`, `N = depth(H_nocontext_target)`,
+    `X = depth(H_nocontext_target + ΔH_source)`:
+
+    ```text
+    KL recovery = 1 − KL(T, X) / KL(T, N)
+        1.0  perfect recovery of the contextual effect
+        0.0  no better than no-context
+        <0   the transplant actively made it worse
+    ```
+
+    plus a discrete pair: of the *context-induced decisions* (positions ×
+    codebooks where `T` differs from `N`), what fraction does `X` return
+    to `T` — reported overall and for the high-margin subset.
+
+    | transplant | KL recovery | decision recovery | high-margin |
+    |---|---|---|---|
+    | exact state | ~1.0 | ~100% | ~100% |
+    | t → t+1 | ? | ? | ? |
+    | t → t+4 | ? | ? | ? |
+    | changed audio history | ? | ? | ? |
+    | changed voice-conditioned state | ? | ? | ? |
+    | cross-utterance | ? | ? | ? |
+
+    **The simplification this may expose.** The prospective binding is
+    written as taking producer state, acoustic history, voice state and
+    position separately — but `H_moss_current` was itself produced from
+    all of those. If oracle displacements transfer well between states
+    that are near each other in current MOSS state even when nominal
+    voice or position differ, the ABI needs **the target's current
+    state**, not a bag of explicit metadata:
+    `B_moss(producer_state, H_moss_current) → ΔH`. Conversely, if moving
+    a single frame destroys authority even though the two H27 states are
+    close, the operand is **trajectory-indexed** rather than
+    state-conditioned — a harsher and more important architectural
+    result, and one that would make a small seam bridge the wrong
+    decomposition entirely.
+  - **FUSE-3b — restricted-operand causal compression** (reformulated
+    2026-08-10; the first version was tautological and is withdrawn).
+    The original asked whether some per-state ΔH could reproduce the
+    contextual acoustic effect — but `H_nocontext + ΔH_oracle = H_ctx`
+    exactly, so an unconstrained 2048-d search has a known solution and
+    could only rediscover the oracle. **An experiment that cannot fail is
+    not a gate.**
+
+    The falsifiable version restricts the operand class. Collect the
+    oracle displacement *trajectory* `D = [ΔH_1 … ΔH_T]` (T × 2048),
+    reconstruct it at rank 1/2/4/8/16/…, inject the reconstructed `ΔH_t`,
+    and measure how much teacher-forced acoustic effect survives. That is
+    **causal rank**, and it is the question geometric rank does not
+    answer:
+
+    ```text
+    rank-4 explains 90% of geometric energy      mildly interesting
+    rank-4 preserves 90% of high-margin
+           acoustic decisions                     important
+    ```
+
+    Coordinate sparsity or a small fixed basis are alternative restricted
+    classes; low-rank trajectory reconstruction is the cleanest first one.
+  - **FUSE-3c — only then**, given the required conditioning (3a) and
+    operand class (3b), how can a producer model supply it. This is where
+    "is a fitted bridge necessary?" gets confronted on evidence rather
+    than assumed.
 
   The LARQL-shaped question the first two gates answer: **what is the
   smallest state-dependent operand MOSS actually requires, and can it be
