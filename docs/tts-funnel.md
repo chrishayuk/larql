@@ -411,6 +411,16 @@ fp32, repetition penalty off. Dump per-step summed embeddings, backbone
 hiddens, per-codebook logits, sampled frames to disk.
 *Gate: the dump is reproducible bit-for-bit across two runs.*
 
+> **Do not inherit this posture into a behavioural experiment**
+> (added 2026-08-10). Greedy is right for the oracle and wrong for
+> anything using novel text: `long-23` is one of the texts that happens
+> to terminate under greedy, while novel text runs to the frame cap
+> (the step-4 gating discovery above). FUSE-1.5 Gate 0 lost three runs
+> to exactly this, first misdiagnosed as an utterance-length effect.
+> Behavioural work uses the reference's real operating mode — sampled,
+> temperature 0.8 / top-p 0.6 / top-k 30 / repetition penalty 1.1 — with
+> a fixed seed for reproducibility.
+
 **Step 1 — weights load.** MOSS detection arm + config fields
 (`num_codebooks`, `audio_vocab_size`, depth dims); backbone through the
 existing Qwen3 path; embedding tables 0–16 + depth transformer + 16 heads

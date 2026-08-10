@@ -47,6 +47,66 @@ owns identity portability, which FUSE-3/4 depend on.
 
 Gate log:
 
+- **FUSE-1.5 Gate 0 — INCONCLUSIVE BY CONSTRUCTION; rerun with lexical
+  overlap controlled** (2026-08-10). Harness
+  `jarvis-voice/.engines/moss_fuse15_gate0.py`, results
+  `renders/moss-realtime/fuse15-gate0/gate0-turn.json`. Five authored
+  contrastive pairs, prior-turn route, one voice, aru-12 splice
+  byte-identical in every condition. **Sampled, not greedy** (see the
+  harness note below). A is the teacher; A_repeat / A_para / B are scored
+  teacher-forced against A's trajectory; B is additionally run free.
+
+  **Floor passes exactly** — A vs A repeat is cos 1.000000 / KL 0.0000 /
+  0.00% in all five pairs, so seed determinism holds under sampling and
+  the measurement mechanism is sound.
+
+  | pair | A_para relL2 | B relL2 | A_para KL | B KL | B_free frames (teacher) |
+  |---|---|---|---|---|---|
+  | urgent-benign | 0.0199 | 0.0105 | 0.391 | 0.287 | 49 (51) |
+  | certain-uncertain | 0.0079 | 0.0069 | 0.220 | 0.158 | 60 (59) |
+  | good-bad-news | 0.0107 | 0.0129 | 0.154 | 0.201 | 55 (53) |
+  | instruction-observation | 0.0058 | 0.0070 | 0.236 | 0.283 | 58 (51) |
+  | personal-impersonal | 0.0059 | 0.0061 | 0.263 | 0.242 | 51 (52) |
+
+  On its face this reads as the null: A_para ≈ B everywhere (ratio 0.53 –
+  1.20, mean ≈ 0.97), and in two pairs the paraphrase diverges *more*
+  than the semantic contrast — the signature of prior-token/KV
+  sensitivity rather than semantic modulation.
+
+  **But the fixture cannot support that conclusion, because lexical
+  distance was never controlled.** Jaccard overlap on prior-turn tokens:
+
+  | pair | lex(A,para) | lex(A,B) | B/para divergence |
+  |---|---|---|---|
+  | urgent-benign | 0.143 | 0.375 | 0.53 |
+  | certain-uncertain | 0.095 | 0.211 | 0.87 |
+  | good-bad-news | 0.312 | 0.467 | 1.20 |
+  | instruction-observation | 0.200 | 0.087 | 1.19 |
+  | personal-impersonal | 0.278 | 0.222 | 1.03 |
+
+  In **4 of 5 pairs the paraphrase is lexically further from A than the
+  semantic contrast is** — the opposite of what the design requires, and
+  in the direction that manufactures a null. Divergence tracks that
+  overlap in 4 of 5: where B is lexically closer, B diverges less; where
+  B is further, B diverges more. So the run is *consistent with*
+  token-history sensitivity and provides no clean evidence either way on
+  semantics. Recorded as inconclusive, not as a null.
+
+  **What is solid regardless.** Context reaches the output. At H27 the
+  effect is tiny — cos ≥ 0.9998 in every condition, relL2 0.006–0.020 —
+  yet teacher-forced RVQ argmax changes 10.7–22.1%, free-running
+  trajectories diverge 90.7–97.6%, and utterance duration moves by up to
+  14% (51 → 58 frames) with EOS shifting accordingly. A very small
+  perturbation of the seam produces a large discrete change downstream,
+  which is FUSE-2.5's hypersensitivity result seen from the other side.
+
+  **Gate 0b, before any corpus:** rebuild the fixture with lexical
+  overlap *matched or inverted* between the paraphrase and contrast
+  conditions (paraphrase should share ≥ as many prior-turn tokens with A
+  as the contrast does), widen beyond 5 pairs, and vary the seed. Only
+  then can A_para vs B separate meaning from tokens. Also still unrun:
+  the system-prompt route as a control.
+
 - **Weight diff — MOSS's backbone is Qwen3-*shaped*, not Qwen3**
   (2026-08-10). Harness `jarvis-voice/.engines/moss_qwen_weight_diff.py`,
   results `renders/moss-realtime/fuse-weightdiff/weight-diff.json`. MOSS's
