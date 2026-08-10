@@ -8,6 +8,14 @@ LARQL decompiles transformer model weights into a **vindex** — a directory of 
 
 Three extraction levels gate which LQL statements work: `browse` (DESCRIBE/WALK/SELECT), `inference` (+INFER), `all` (+COMPILE). Patches (`.vlp` JSON files) stack onto a readonly base vindex — INSERT/DELETE/UPDATE auto-start a patch; base files are never mutated.
 
+## The aim (load-bearing — everything else serves this)
+
+> **Serve the largest models at blazing speed on consumer hardware, with as little GPU as possible — ideally eventually none.**
+
+Frontier-scale models are physically incompatible with consumer hardware under naïve dense matmul: a 671B Q4 model touches ~336 GB per forward pass against ~50 GB/s consumer DDR5 — 6.7 s/token. **The bandwidth wall cannot be beaten by faster compute.** The only path through is touching *fewer weights per token*, which is what vindex, LQL, WalkFfn, the expert grid, quantisation and the KV codecs are all for. When a change makes the engine touch more bytes per token, it is going the wrong way regardless of what the benchmark says.
+
+Two co-equal permanent tracks, neither sacrificed to the other: the **GPU track** keeps a credible baseline against ollama / vLLM / llama.cpp (without it, no measurement on this engine clears the credibility bar), and the **CPU track** drives toward the aim. Full treatment — the per-invention table, the honest achievability assessment, and the baseline-credibility threshold — is in [ROADMAP.md](ROADMAP.md) "Engine purpose".
+
 ## Workspace layout
 
 Cargo workspace at repo root with a strict dependency chain — respect this when adding modules:
@@ -127,10 +135,22 @@ Or via the Makefile: `make python-setup | python-build | python-test | python-cl
 - **Diff the forward before you theorise about it.** `larql shannon layer-dump` + `scripts/dump_layers_hf.py` + `larql shannon layer-diff` give a per-layer f32 comparison against HF and name the *first* drifting capture; `shannon verify` only compares one scalar at the end, so it says *that* two engines disagree and never *where*. Reach for the layer diff first — it closed OLMoE and GPT-OSS in an afternoon each after weeks of scalar-level guessing. See [docs/k3-funnel.md](docs/k3-funnel.md) §4.8–4.9.
 - **A short fixture cannot test a long-range behaviour, and will pass.** GPT-OSS's sliding-attention layers use a 128-token window, so an 85-token layer diff computes the identical thing on sliding and full layers — it passed while half the model's attention was still wrong. Before quoting a gate result, ask which behaviours the fixture is *structurally capable* of distinguishing: this is the same failure as an `out_features = 2` split test and a `--bytes 384` corpus slice. Three instances, three subsystems — see [docs/k3-funnel.md](docs/k3-funnel.md) §4.9.1.
 - **A config fact belongs in the trait default, not in one architecture.** `norm_topk_prob`, `rope_type: yarn` and `layer_types` were each parsed into `ModelConfig` and then answered by a hardcoded `ModelArchitecture` default, so every family that didn't hand-write an override was silently served wrong. If `config.json` states the answer, read it in `config/architecture.rs`; return `None`/`false` only when the honest answer is "this family has none". Four instances so far — see [docs/k3-funnel.md](docs/k3-funnel.md) §4.7.8, §4.9.1.
+- **Plan a logical operator physically, never from tensor format alone.** The plan is a function of `(format, operation, shape, hardware, workspace lifetime)`. One logical operator has several correct physical plans selected by execution phase — decode wants packed Q4K×Q8K matvec (bandwidth-oriented), prefill wants dequant-once + GEMM with batched softmax (compute-oriented). The TTS funnel hit the same pathology three times in one day applying a decode-shaped primitive to a prefill-shaped workload, and the correct plans differed by 1.6–4x; the `workspace lifetime` term was earned separately when per-layer dequant buffers cost ~4 GB of page traffic per prefill that the warm-allocator bench never paid. Corollary for placement: not "a GPU model" but per-phase operator routing — CPU attention + Metal FFN GEMM is a legitimate plan. Measure with `LARQL_PHASE_TIMING=1` (`larql_compute::phase_timing`) before theorising. See [ROADMAP.md](ROADMAP.md) "Standing execution rule".
 - **Substrate-vs-engine split** (ADR-0022): all CPU forward-pass math + attention + KvDispatch/AsyncComputeBackend traits live in `larql-compute`, not `larql-inference`. When adding a new substrate primitive (a kernel, an attention variant, a new norm), put it in `larql-compute` and re-export from `larql-inference` for back-compat. When adding engine-shaped code (a new session type, an FFN routing impl, a layer-graph dispatcher), it stays in `larql-inference`. The rule of thumb: substrate consumes `&dyn larql_compute::KvIndex` + `ModelWeights`; engines consume sessions, tokenizers, gRPC clients, layer_graphs.
 - **VectorIndex is reached through `KvIndex` from substrate.** `larql-compute`'s `KvDispatch` + `AsyncComputeBackend` + `kquant_forward` take `Option<&dyn KvIndex>` parameters. `larql-vindex` impls `KvIndex for VectorIndex` in `kv_index_impl.rs`. Engine callers passing `&VectorIndex` to substrate traits coerce with `.map(|v| v as &dyn larql_compute::KvIndex)`. Don't reach for `larql_vindex::*` from inside `larql-compute` — that's the cycle the trait was created to avoid.
 
 ## Where to find things
+
+Planning documents, by what they hold — an item leaves the roadmap the moment it acquires a gate log:
+
+| Document | Holds |
+|---|---|
+| [ROADMAP.md](ROADMAP.md) | sequencing and priority — what happens next |
+| [CHANGELOG.md](CHANGELOG.md) | what happened |
+| [ROADMAP_STATUS.md](ROADMAP_STATUS.md) | live status board — active sequence, P0/P1 boundaries, drift checks |
+| [docs/hardening-backlog.md](docs/hardening-backlog.md) | open remediation items from code reviews (still contains unclosed P0s) |
+| `docs/*-funnel.md` | gates and evidence for one live programme — [tts](docs/tts-funnel.md), [k3](docs/k3-funnel.md), [dec](docs/dec-funnel.md), [fuse](docs/fuse-funnel.md) |
+| `docs/adr/` | decisions |
 
 - LQL language spec: [docs/specs/lql-spec.md](crates/larql-lql/docs/spec.md) (v0.3)
 - Vindex file format: [docs/specs/vindex-format-spec.md](crates/larql-vindex/docs/format-spec.md)

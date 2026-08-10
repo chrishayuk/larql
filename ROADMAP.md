@@ -7,6 +7,12 @@ This file tracks the demo narrative, the critical path, and cross-crate sequenci
 
 ## Engine purpose (load-bearing — read first)
 
+The short canonical statement — the aim, the bandwidth wall, and the two
+permanent tracks — is in [AGENTS.md](AGENTS.md) "The aim", which is the
+file actually read at the start of every session. This section keeps the
+full treatment: the per-invention table, the honest achievability
+assessment, and the baseline-credibility threshold.
+
 ### The ultimate aim
 
 > **Serve the largest models at blazing speed on consumer hardware, with as little GPU as possible — ideally eventually none.**
@@ -1990,6 +1996,9 @@ the EXP-V ladder experiments (and eventual `voice compare`) one-liners.
 > **A logical operator must be physically planned from
 > `(format, operation, shape, hardware, workspace lifetime)`, never
 > selected from tensor format alone.**
+
+The rule itself is carried in [AGENTS.md](AGENTS.md) "Key architectural
+invariants"; the evidence that earned it is below.
 
 Extracted after the TTS funnel's TTFA work found the same pathology
 three times in one day — a decode-shaped primitive applied repeatedly
