@@ -14,8 +14,26 @@ general-purpose Qwen doing redundant language work inside the mouth.
 Eliminating the 28-layer backbone is a possible outcome, not the success
 criterion — `Jarvis → small latent binding → MOSS speech-state backbone →
 depth` is a good result if the binding buys shared intent, prosody
-control or latency. Next to run is FUSE-1.5, reframed as additive latent
-injection (α-sweep from the native system) rather than substitution.
+control or latency.
+
+Sequence from here (revised 2026-08-10):
+
+```text
+done   FUSE-2.5 ──► weight diff
+        │
+next   FUSE-1A    paired-state corpus, one voice, Qwen3-1.7B surrogate S0,
+        │         CKA/SVCCA + ridge & low-rank B_L maps, held-out semantics
+        ▼
+       FUSE-1B    behavioural substitution using the best same-space B_L
+        ▼
+       FUSE-1.5   teacher/student additive injection; learn B_in through
+        │         the frozen backbone; α sweep. Gate 0 first: prove the
+        │         teacher signal exists before building the corpus.
+        ▼
+       FUSE-2     raw foreign residual null — record it, expect failure
+        ▼
+       FUSE-3     serious learned bridge
+```
 
 Opened 2026-08-09 as a `ROADMAP.md` section, given its own funnel doc
 2026-08-10 once the ladder acquired per-rung gates. Speech is the first
@@ -248,7 +266,7 @@ against the cached `OpenMOSS-Team/MOSS-TTS-Realtime` config and the port,
   and consumer domains happen to be compatible* — not "speech fusion
   requires a Qwen LLM". Mostly an engineering cleanup; the value is the
   primitive it installs: token-domain piping between models.
-- **FUSE-1 — representation study** (revised 2026-08-10 after the weight
+- **FUSE-1A — representation study** (revised 2026-08-10 after the weight
   diff). The original form — one text prefix through a generic Qwen LLM
   and the MOSS backbone, hiddens compared layer-by-layer — is too weak
   now that the two are known to be independently trained. There is no
@@ -258,21 +276,58 @@ against the cached `OpenMOSS-Team/MOSS-TTS-Realtime` config and the port,
   *not* settle either way: independently trained networks can converge on
   related representational geometry.
 
-  So it needs paired data, not one utterance. Vary wording, semantic
-  content, token identity, position, voice, acoustic history,
-  sentence/turn boundaries and termination state; collect paired states
-  from the upstream model and from MOSS. **Split by utterance and
-  semantic content, with held-out sentences and eventually held-out
-  voices** — at 2048 dimensions a flexible linear map will look brilliant
-  by memorisation if train and test are correlated. That split is the
-  experiment's integrity, not a detail.
+  Fit, per layer:
 
-  Measure linear CKA, SVCCA, and linear predictability; keep raw cosine
-  as a free sanity column but do **not** interpret it. Behaviour after
-  mapped substitution is the ultimate oracle — the gate is behavioural,
-  not a similarity score. The question in one line: *how much
-  MOSS-relevant information is recoverable from the upstream state by a
-  fixed low-complexity map, on held-out content?*
+  ```text
+  B_L : H_upstream → H_moss,L        for L = 0, 4, ..., 27
+  ```
+
+  **Name them `B_L`, never `B_in`.** A map onto a layer-L hidden is not a
+  map into `embed_tokens` space, and cannot be reused as one — the two
+  live in different spaces. FUSE-1.5 has to learn its own injector; this
+  rung does not hand it one.
+
+  Apparatus decisions, fixed 2026-08-10:
+  - **Upstream = `Qwen3-1.7B-Base`, labelled surrogate producer S0.** Not
+    a claim about Jarvis's brain. It earns the slot by having the same
+    2048 hidden width (no dimensionality confound), the same tokenizer
+    vocabulary (position/token alignment is trivial), being already
+    local, and — per the weight diff — being provably independent of
+    MOSS, so a positive result is genuinely cross-model. A negative
+    result falsifies *this pair*, not K3→MOSS.
+  - **One voice, fixed reference conditioning, greedy / teacher-forced.**
+    Voice is a nuisance variable until a mapping exists; held-out voices
+    come later, not now.
+  - **Corpus ~256–384 utterances × ~20–40 aligned positions ≈ 5k–15k
+    paired states.** Design matters more than size: statements,
+    questions, commands, numbers, names, short and long sentences,
+    negation, uncertainty, sentence beginnings and endings, the EOS
+    neighbourhood, and the same lexical token recurring in different
+    contexts.
+  - **Split whole semantic families 70/15/15 with no utterance or
+    template leakage.** At 2048 dimensions a flexible map looks brilliant
+    by memorisation if train and test correlate; a full 2048×2048 map is
+    >4 M coefficients and will produce convincing nonsense on correlated
+    token states. That split is the experiment's integrity, not a detail.
+  - **Ridge and low-rank first — rank 32 / 64 / 128 / 256 — before any
+    full linear map.** The deliverable is the curve *bridge complexity →
+    held-out predictability → behavioural recovery*, not maximum training
+    R².
+
+  Measure linear CKA, SVCCA and linear predictability. Keep raw cosine as
+  a free sanity column but do **not** interpret it: orthogonal weights do
+  not imply orthogonal activations, so a low reading proves nothing
+  either way. The question in one line: *is any part of the MOSS
+  speech-state manifold linearly recoverable from an independently
+  trained language model, on held-out semantics?* Worth knowing
+  regardless of what FUSE-1.5 does.
+- **FUSE-1B — behavioural substitution.** Take the best same-space `B_L`
+  from 1A and actually run it: substitute `B_L(H_S0)` for MOSS's own
+  layer-L hidden and measure the trajectory against the step-0 oracle
+  with FUSE-2.5's scoring. Similarity scores are diagnostics; **behaviour
+  is the oracle.** Expect the L27 variant to fail hard — FUSE-2.5 showed
+  the seam tolerates almost nothing — which is exactly why the earlier
+  layers are the interesting ones here.
 - **FUSE-1.5 — latent injection at the additive input seam** (reframed
   2026-08-10 from "semantic term substitution"). Do **not** replace the
   native text embedding. Add to it:
@@ -301,20 +356,59 @@ against the cached `OpenMOSS-Team/MOSS-TTS-Realtime` config and the port,
   are orthogonal — worth running once because it is cheap and decisive,
   not as the main line.
 
-  Sweep α and measure where added upstream semantics start to move:
-  backbone hidden, depth logits, RVQ trajectory, prosody, EOS, then
-  perceived delivery. Two traps that are part of the experiment: the
-  **12-token text lead** means the state injected at audio position *t*
-  corresponds to text token *t+12*; and an LLM final hidden is not
-  distributed like an embedding lookup, so fitting scale/whitening to the
-  MOSS text-embedding distribution is a control, not a cheat. Inject on
-  decode positions only and leave prefill bit-exact — prefill carries the
-  voice splice, and perturbing it confounds identity with semantics.
+  **`B_in` needs a behavioural target, and the input seam has no useful
+  native one.** Regressing `B_in(H_upstream) ≈ E_moss(token_t)` would
+  teach it to recover lexical identity — which FUSE-0 already supplies
+  exactly — while discarding the contextual information that is the only
+  reason to inject. So `B_in` is learned **teacher/student, through the
+  frozen MOSS backbone**, against pairs where the spoken tokens are
+  identical and the context differs:
 
-  Gate: a non-trivial α band where the trajectory changes coherently and
-  speech stays intelligible with the reference voice intact. Landing that
-  is the first real **cross-model latent injection**, without having to
-  solve the full bridge problem — which is why it runs before FUSE-2.
+  ```text
+  TEACHER   context (system prompt / prior turn, via KV continuation)
+            + utterance  →  native full MOSS  →  H27 / depth logits / RVQ
+
+  STUDENT   utterance only, no context, plus
+            E_moss(token) + α·B_in(H_upstream(context, utterance))
+                         + Σ E_audio(prev codes)
+            →  frozen MOSS backbone  →  H27 / depth logits / RVQ
+  ```
+
+  Train the smallest `B_in` that moves the student's speech state toward
+  the teacher's. Losses in escalating order: (1) H27 reconstruction,
+  (2) depth-logit KL, (3) teacher-forced RVQ agreement, (4) free-running
+  trajectory and EOS, (5) perceptual/prosody. If a rank-64 map reaches
+  anything interesting, that is the result. This tests the real
+  proposition — *can semantic/contextual information cross from another
+  model into MOSS without being serialised through the spoken text?* —
+  instead of merely asking whether added noise fails to destroy speech.
+
+  **Gate 0, run before building any corpus: does the teacher signal even
+  exist?** MOSS's text channel is what gets *spoken*, so context must
+  enter via the system prompt or a prior turn (§1.4 — multi-turn is KV
+  continuation, not re-prefill). Whether MOSS's speech state actually
+  moves with that context, for identical spoken tokens, is untested. Take
+  one utterance under two contrasting contexts and measure H27 delta,
+  depth-logit KL and RVQ divergence. **If the divergence is ~0 there is no
+  teacher signal, `B_in` has nothing to learn, and the whole rung is void
+  — so this check costs one afternoon and can save a corpus.**
+
+  Then sweep α from 0 and measure where injected semantics start to move
+  backbone hidden, depth logits, RVQ trajectory, prosody, EOS, delivery.
+  Two traps that are part of the experiment: the **12-token text lead**
+  means the state injected at audio position *t* corresponds to text
+  token *t+12*; and an LLM final hidden is not distributed like an
+  embedding lookup, so fitting scale/whitening to the MOSS
+  text-embedding distribution is a control, not a cheat. Inject on decode
+  positions only and leave prefill bit-exact — prefill carries the voice
+  splice, and perturbing it confounds identity with semantics.
+
+  Gate: the student's speech state moves measurably toward the teacher's
+  on held-out semantics, with speech intelligible and the reference voice
+  intact. That would be the first genuinely important FUSE result — same
+  spoken text, extra meaning arriving only through another model's latent
+  state, MOSS's behaviour changing accordingly — rather than another
+  representation-similarity number.
 - **FUSE-2 — direct residual substitution.** Replace a MOSS final
   backbone hidden with a shape-compatible LLM residual; run the proven
   depth transformer. Ask only: plausible codebooks? terminates? how far
