@@ -1,30 +1,23 @@
 # The FUSE funnel — model-to-model fusion as a runtime primitive
 
-Status: **four results in.** FUSE-2.5 failed informatively; the weight diff
-reframed the objective; Gate 0 was inconclusive by construction; Gate 0b
-returned a coherent null — MOSS is strongly sensitive to non-spoken
-conversational history, but *broad* semantic contrast does not predict the
-direction or magnitude of acoustic decision changes once lexical distance
-is matched. **Gate 1 then closed that branch too.** Six lexical families expressing
-one arousal ordering produce no shared endpoint direction (mean pairwise
-cosine ≈ 0, 5 positive / 10 negative at H27) and the leave-one-family-out
-axis fails to identify which endpoint is alarm (2/6, chance 3/6). There is
-no portable additive control direction, so the pre-registered decision was
-taken: **the portable-latent-controls hypothesis is downgraded and FUSE-3
-is re-specified as a target-specific SpeechBinding conditioned on MOSS's
-current execution state.**
+Status: **seven rungs run, all inference-only, and they have converged on
+where to bind.** H27 is closed as a composition target: the required seam
+operand is trajectory-indexed (3a — one frame of shift destroys ~85%) and
+has no useful compact causal rank (3b — rank 32 carries 92.5% of energy
+and recovers 56%). FUSE therefore moves **upstream to the additive input
+seam**, and the live question becomes:
 
-Reconciling the whole ladder: a small displacement at the seam *is*
-sufficient to move acoustic decisions, but no fixed direction transfers.
-H27 behaves as a **sensitive boundary state rather than a clean control
-interface**. That makes the ABI "a declared target binding translating one
-model's state into a valid operand for another model's current execution
-state" — compatibility level 5, not level 3 — which is the more general
-claim anyway.
+> Can conversational history be compiled into an extra operand at MOSS's
+> native additive input interface?
 
-FUSE-1A stays held. Next to run is **FUSE-3a**, still inference-only —
-"fixed universal ΔH is dead" does not entail "a bridge must be learned",
-and that inference was made once here and withdrawn.
+That reframes the FUSE thesis from "make two hidden spaces line up" to
+**"supply a valid operand for a known consumer operation"** — which is
+closer to query-plan substitution than to model bridging:
+
+```text
+original plan     context tokens → 28-layer processing → speech trajectory
+alternative plan  compiled context operand → native backbone → same trajectory
+```
 
 **Result ledger — the epistemic states differ and are not interchangeable:**
 
@@ -35,43 +28,31 @@ and that inference was made once here and withdrawn.
 | Gate 0 | **inconclusive by construction** — lexical distance uncontrolled |
 | Gate 0b | **coherent null** — broad semantic contrast doesn't predict acoustic decisions |
 | Gate 1 | **negative** — no portable additive control direction |
+| FUSE-3a | **negative** — operand is trajectory-indexed, locally non-portable |
+| FUSE-3b | **negative** — operand has no compact causal rank; H27 is not an ABI |
 
-Four different states. Collapsing them into "all negative" would discard
-exactly the distinction that made each one actionable.
+Collapsing these into "all negative" would discard exactly the distinction
+that made each one actionable.
 
-The earlier framing, still current:
-FUSE-2.5 failed its gate informatively — the 2048-d seam is specific to
-layer 27's output, so "truncate and hope" is dead. The weight diff then
-showed MOSS's backbone is Qwen3-*shaped* but independently trained
-(projection matrices orthogonal to precision), so there is no second
-general-purpose Qwen doing redundant language work inside the mouth.
-
-**The objective is therefore no longer "amputate Qwen".** It is:
+The objective, unchanged since the weight diff: **not "amputate Qwen"** —
+there is no second general-purpose Qwen inside the mouth — but
 
 > Can Jarvis and its speech system share useful computation and state?
-
-Eliminating the 28-layer backbone is a possible outcome, not the success
-criterion — `Jarvis → small latent binding → MOSS speech-state backbone →
-depth` is a good result if the binding buys shared intent, prosody
-control or latency.
 
 Sequence from here (revised 2026-08-10):
 
 ```text
-done   FUSE-2.5 ──► weight diff
+done   FUSE-2.5 ─► weight diff ─► Gate 0 ─► Gate 0b ─► Gate 1 ─► 3a ─► 3b
         │
-next   FUSE-1A    paired-state corpus, one voice, Qwen3-1.7B surrogate S0,
-        │         CKA/SVCCA + ridge & low-rank B_L maps, held-out semantics
+next   FUSE-1.5a  additive-seam solvability — optimise δx at the INPUT
+        │         seam to reproduce with-context decisions. No LLM yet.
         ▼
-       FUSE-1B    behavioural substitution using the best same-space B_L
+       FUSE-1.5b  if solvable: ‖δx‖, portability t→t+1, causal rank of
+        │         D_input, transfer across history / voice / utterance
         ▼
-       FUSE-1.5   teacher/student additive injection; learn B_in through
-        │         the frozen backbone; α sweep. Gate 0 first: prove the
-        │         teacher signal exists before building the corpus.
+       FUSE-1.5c  only then, which producer state supplies the operand
         ▼
-       FUSE-2     raw foreign residual null — record it, expect failure
-        ▼
-       FUSE-3     serious learned bridge
+       FUSE-1A/1B representation study, still held
 ```
 
 Opened 2026-08-09 as a `ROADMAP.md` section, given its own funnel doc
@@ -126,8 +107,13 @@ Gate log:
   *unfavourable* direction: the spectral tail matters far more than its
   energy share suggests.
 
-  **Verdict, per the pre-registered fork: 3b FAIL.** The required operand
-  is trajectory-indexed (3a) *and* effectively full-rank (3b). Asking a
+  **Verdict, per the pre-registered fork: 3b FAIL.** Stated precisely:
+  **H27 has no useful compact causal rank.** Ranks 48/64 were not measured,
+  so this is not a claim that all 69 dimensions are required — but rank 32
+  already carries 92.5% of geometric energy and still loses nearly half the
+  contextual effect, so there is no attractive low-rank ABI to find. The
+  required operand is trajectory-indexed (3a) and has no compact causal
+  rank (3b). Asking a
   producer model to supply it means reconstructing a high-dimensional,
   position-specific consequence of the MOSS backbone — which is not a
   composition interface, it is re-deriving the backbone's output.
@@ -136,9 +122,12 @@ Gate log:
   a terminal *consequence* of the whole trajectory, not an interoperable
   representation. The input seam is qualitatively different — it is where
   MOSS itself combines independent operands (text embedding + 16
-  previous-audio-code embeddings, plain sum, no projection, no scaling),
-  i.e. a point the checkpoint was explicitly trained to accept additive
-  composition at. The question changes from
+  previous-audio-code embeddings, plain sum, no projection, no scaling).
+  **Caveat to keep honest:** that proves the seam is an additive
+  *composition site*; it does not prove the checkpoint was trained to
+  accept an arbitrary 18th operand. An injected FUSE vector is still
+  out-of-distribution there, and that is precisely what the next gate
+  tests. The question changes from
 
   > can another model manufacture MOSS's H27 consequence?
 
@@ -727,6 +716,54 @@ against the cached `OpenMOSS-Team/MOSS-TTS-Realtime` config and the port,
   speech-state manifold linearly recoverable from an independently
   trained language model, on held-out semantics?* Worth knowing
   regardless of what FUSE-1.5 does.
+- **FUSE-1.5a — additive-seam solvability** (specified 2026-08-10 after
+  3b closed H27). **Do not start with an LLM bridge.** Take the
+  context-free MOSS run, keep its KV and context exactly as they are, and
+  at each frame perturb only the native input sum:
+
+  ```text
+  x_t  = E_text(t) + Σ E_audio_i(t−1)          native input operand
+  x'_t = x_t + δx_t                            the question
+  ```
+
+  Optimise `δx_t` so the resulting execution reproduces the *with-context*
+  teacher-forced acoustic decisions:
+
+  ```text
+  min over δx_t   KL( out_context(t), out_nocontext+δ(t) ) + λ‖δx_t‖
+  ```
+
+  **This is not the withdrawn H27 3b.** There is no tautological oracle
+  here: under teacher forcing the current text and audio operands are
+  already *identical* between the two runs. The entire difference lives in
+  the preceding contextual KV. So the question is genuinely deep —
+
+  > can the effect of conversational context, distributed through MOSS's
+  > KV history, be compiled into an additional operand at the model's own
+  > trained additive input seam?
+
+  **Outcomes are clean either way.** If it fails, contextual KV cannot be
+  substituted by a local additive input operand, and FUSE must bind
+  earlier — into context/prefix construction, or over KV itself. If it
+  succeeds, an entire prior conversational history has been replaced, for
+  downstream speech purposes, by a materialised input operand. Read
+  against Gate 1's finding that *having* context shifts ~47% of decisions
+  while its *content* moves ~2%, success would mean a large distributed
+  contextual computation compiles into an operand the native backbone
+  then executes — query-plan substitution rather than model bridging.
+
+  **Then reuse the doctrine 3a/3b taught.** Do not immediately ask where
+  δx comes from. Ask, in order: how small can ‖δx‖ be; is δx_t portable
+  t → t+1; does `D_input = [δx_1 … δx_T]` have compact *causal* rank; does
+  it transfer across acoustic histories, across voices, across utterances
+  expressing the same contextual intent? The interesting possibility is
+  that the answers invert relative to H27 — trajectory-conditioned but
+  low causal rank, with the backbone performing the amplification.
+
+  Only after that does FUSE-1.5c bring in a producer model, and it then
+  has a precisely defined target: **supply the additive operand already
+  proven sufficient at the consumer interface** — not "align hidden
+  spaces", not "predict H27", not necessarily even "transfer semantics".
 - **Gate 1 — the arousal axis** (specified 2026-08-10 after Gate 0b).
   Gate 0b killed "broad semantic contrast" as the unit of analysis. The
   surviving hypothesis is narrower: MOSS may expose a *small* set of
