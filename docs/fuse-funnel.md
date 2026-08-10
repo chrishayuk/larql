@@ -1,6 +1,15 @@
 # The FUSE funnel — model-to-model fusion as a runtime primitive
 
-Status: **two results in, and together they reframed the programme.**
+Status: **four results in.** FUSE-2.5 failed informatively; the weight diff
+reframed the objective; Gate 0 was inconclusive by construction; Gate 0b
+returned a coherent null — MOSS is strongly sensitive to non-spoken
+conversational history, but *broad* semantic contrast does not predict the
+direction or magnitude of acoustic decision changes once lexical distance
+is matched. Next is **Gate 1, axis-specific** (a graded arousal ladder plus
+a causal `H + α·d_arousal` intervention), not the FUSE-1A corpus, which
+stays held.
+
+The earlier framing, still current:
 FUSE-2.5 failed its gate informatively — the 2048-d seam is specific to
 layer 27's output, so "truncate and hope" is dead. The weight diff then
 showed MOSS's backbone is Qwen3-*shaped* but independently trained
@@ -46,6 +55,115 @@ voice ladder — `chris-experiments/voice/V0_PLAN.md`, outside this repo —
 owns identity portability, which FUSE-3/4 depend on.
 
 Gate log:
+
+- **FUSE-1.5 Gate 0b — NULL for broad semantic modulation; the unit of
+  analysis is wrong** (2026-08-10). Harness
+  `jarvis-voice/.engines/moss_fuse15_gate0b.py`, results
+  `renders/moss-realtime/fuse15-gate0b/gate0b.json`. Six items, each a
+  *minimal pair*: A, a same-meaning paraphrase P and an
+  opposite-meaning contrast B differing from A by a single content word,
+  selected by search to **match** lexical distance rather than satisfy an
+  inequality. Five lexical controls recorded (token-set Jaccard,
+  normalised edit distance, shared-prefix length, length delta,
+  position-wise token equality). Five of six items landed at Jaccard
+  imbalance ±0.000; `personal-impersonal` at +0.077 is excluded from the
+  sign test and flagged with its bias direction.
+
+  Matching, not inequality, is the point. Gate 0 accidentally put P
+  *further* from A than B, biasing toward a null; a hard
+  `jac(A,P) ≥ jac(A,B)` would have inverted that into a false-positive
+  generator. The headline statistic is paired within each anchor:
+  `Δsemantic = divergence(A,B) − divergence(A,P)`.
+
+  | item (balanced) | argmax% | KL | flip_hi% | H27 relL2 |
+  |---|---|---|---|---|
+  | intruder-delivery | −3.31 | −0.0719 | −2.21 | −0.00141 |
+  | certain-uncertain | +1.48 | +0.0743 | +1.06 | +0.00061 |
+  | funded-overdrawn | −1.42 | −0.0127 | −0.71 | +0.00189 |
+  | instruct-observe | +1.59 | +0.0109 | +0.98 | −0.00107 |
+  | calm-alarm | +3.19 | +0.0728 | +3.43 | +0.00002 |
+
+  **3/5 positive on every primary measure — exactly chance.** Means near
+  zero (+0.24 argmax%, +0.27 flip_hi%). Floor exact on all six items.
+
+  Three findings, in decreasing confidence.
+
+  1. **MOSS is strongly sensitive to non-spoken conversational history,
+     but broad semantic contrast does not predict the direction or
+     magnitude of acoustic decision changes once lexical distance is
+     matched.** Directly supported by the 3/2 split and near-zero means.
+  2. **State-space magnitude is insufficient: terminal displacement and
+     acoustic decision authority dissociate.** `funded-overdrawn`
+     displaces H27 most (B/para 1.84) while flipping *fewer* confident
+     decisions; `instruct-observe` does the reverse. Sign of H27 rel-L2
+     disagrees with sign of argmax% on 2 of 5. The naive model
+     "bigger semantic-state movement → bigger acoustic effect" is dead;
+     what matters is displacement *direction relative to decision
+     surfaces*. Same lesson as the residual-stream work: Euclidean
+     magnitude is a poor proxy for causal authority.
+  3. **Hypothesis, not result: speech-relevant pragmatic axes may be the
+     right unit of analysis rather than generic semantic difference.**
+     The five items are different pragmatic variables, not five draws of
+     one. `calm-alarm` is the strongest positive (+3.19 / +3.43) and
+     `intruder-delivery` its near mirror (−3.31 / −2.21). Arousal has an
+     obvious acoustic realisation (rate, energy, pitch, pause structure);
+     `funded ↔ overdrawn` has none unless the model elects to express
+     sentiment. MOSS may expose a *small* set of speech-relevant latent
+     controls — urgency, emotion, certainty, interpersonal stance,
+     instructional force, turn-taking — rather than converting arbitrary
+     propositional meaning into acoustic modulation. Suggestive only.
+
+  **Why the null is coherent rather than noisy:** the three primary
+  measures agree item-by-item (same sign per item) while disagreeing
+  across items, and per-item |Δsemantic| is 1.42–3.31 argmax% against
+  paraphrase baselines of 3.19–11.15. Each item shows a real effect whose
+  *direction* semantic contrast fails to predict.
+
+  **Consequence for the ladder.** FUSE-1A stays held. Gate 1 becomes
+  axis-specific rather than a broad corpus: a graded arousal ladder
+  (calm → mild concern → urgent → alarm) over several independently
+  authored matched sets, testing whether unrelated prompts produce
+  approximately the *same* H27 displacement direction, then the causal
+  intervention `H(calm) + α·d_arousal → teacher-forced RVQ` to ask
+  whether acoustic behaviour moves toward alarm. Causal rank only becomes
+  meaningful after that.
+
+  **Geometry follow-up** (`moss_fuse15_geometry.py`, states persisted on a
+  deterministic rerun that reproduced every scalar). With A as anchor,
+  `dP = H(P) − H(A)`, `dB = H(B) − H(A)`, `d_sem = H(B) − H(P)`:
+
+  | | L0 | L8 | L16 | L24 | H27 |
+  |---|---|---|---|---|---|
+  | cos(dP,dB) range | −0.06 … 0.70 | −0.04 … 0.43 | −0.04 … 0.50 | 0.05 … 0.47 | 0.07 … 0.48 |
+  | direction stability of `d_sem` | 0.92–0.95 | 0.51–0.55 | 0.40–0.53 | 0.34–0.40 | **0.30–0.37** |
+
+  Two things follow, and the second is the more useful.
+
+  - **Magnitude summaries were indeed hiding structure.** `‖dP‖ ≈ ‖dB‖`
+    with `cos(dP, dB)` between 0.07 and 0.48 at H27 — e.g. `calm-alarm`
+    0.0714 vs 0.0673 at cosine 0.39. The two displacements are comparable
+    in size and substantially different in direction, which no scalar in
+    the Gate 0b table could show. This does **not** rescue the semantic
+    claim: P and B differ in lexical identity even at matched lexical
+    distance, so that direction is equally consistent with a lexical one.
+  - **Direction stability *falls* with depth, from ~0.93 at L0 to
+    ~0.33 at H27.** If a coherent semantic direction were being
+    constructed through the stack — the semantic-to-acoustic
+    amplification path we hoped to find — stability should *rise* with
+    depth. It does the opposite, consistently across all six items. That
+    is evidence against the amplification story, independent of the
+    sign-test null.
+
+  `d_sem` is geometrically low-rank within an utterance (H27 stable rank
+  2.4–6.9 of 2048; top-16 directions carry 72–89% of the energy). Note
+  the scope: that spectrum is over decode *positions within one item*, so
+  it says the residual spans few directions during an utterance — not
+  that a direction is shared *across* items. The cross-item question is
+  the axis question, and these six items are six different axes with no
+  replication, which is exactly why Gate 1 must be axis-specific.
+
+  Geometric rank is also not causal rank. How much Δsemantic survives a
+  rank-k reconstruction needs a generation run, not this analysis.
 
 - **FUSE-1.5 Gate 0 — INCONCLUSIVE BY CONSTRUCTION; rerun with lexical
   overlap controlled** (2026-08-10). Harness
