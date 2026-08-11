@@ -822,6 +822,45 @@ against the cached `OpenMOSS-Team/MOSS-TTS-Realtime` config and the port,
   contextual computation compiles into an operand the native backbone
   then executes — query-plan substitution rather than model bridging.
 
+  **Units, and a distinction to hold onto.** ε is quoted against ‖x‖, the
+  17-way sum, which is not a scale anything was trained on. Measured over
+  68 decode steps: ‖x‖ = 9.85, ‖E_text‖ = 1.70 (17.3% of the sum),
+  mean ‖E_audio_i‖ = 1.74 (17.6%), ‖x_t − x_{t−1}‖ = 10.47 (106%). So a
+  perturbation worth 10% of the sum is **0.57 of one native constituent**
+  — smaller than any single one of the seventeen operands MOSS already
+  adds. (Note the 106% does *not* imply consecutive inputs are near
+  orthogonal; for equal norms it implies cos ≈ 0.44, and the measured
+  value is 0.429.)
+
+  **Amplitude is not cost.** This frontier measures an *amplitude ↔
+  authority* exchange rate, and nothing more. A δx of 0.6× an audio
+  embedding's **norm** does not cost 0.6 of an audio embedding to
+  produce, represent or transmit — a dense 2048-float vector per frame
+  could cost far more than the operand it is compared against. Three
+  quantities stay separate until later gates connect them:
+
+  | quantity | measured by |
+  |---|---|
+  | amplitude | this frontier |
+  | representation cost (dims, causal rank, bytes) | 1.5b-2 |
+  | persistent computation avoided | sequential |
+
+  Identical 0.6-native norms can mean architecturally unrelated things:
+  an arbitrary 2048-float vector per frame is a control interface; an
+  8-dimensional reusable basis needing 8 coefficients per frame is a
+  plausible ABI; a single write that seeds KV so later operands fall
+  toward zero is a context-materialisation mechanism. Only the last two —
+  ideally together — would justify the runtime-planner framing.
+
+  **Control strengthening before publication** (not worth re-running the
+  sweep for): at the native-scale operating point, compare the optimised
+  operand against **8–16** matched-norm random directions rather than
+  one, and report `random mean ± std` and `random max`. A single random
+  vector reading ~0 is good; the 1% row's control did land 1.21% decision
+  recovery, so random directions do occasionally cross a boundary. The
+  multi-sample version turns "beats my control" into a
+  direction-specific authority claim.
+
   **Then reuse the doctrine 3a/3b taught.** Do not immediately ask where
   δx comes from. Ask, in order: how small can ‖δx‖ be; is δx_t portable
   t → t+1; does `D_input = [δx_1 … δx_T]` have compact *causal* rank; does
