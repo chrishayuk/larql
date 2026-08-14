@@ -15,6 +15,7 @@ mod kernels;
 mod parity;
 mod seam;
 mod smoke;
+mod streaming;
 
 use std::io::Write;
 use std::path::Path;

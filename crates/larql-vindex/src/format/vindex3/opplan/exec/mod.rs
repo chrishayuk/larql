@@ -61,6 +61,41 @@ pub struct ExecutionTrace {
     pub logits: Option<Vec<f32>>,
 }
 
+/// A plane handed to the caller the moment it exists, so a long run can
+/// persist progress incrementally instead of holding 52 layers of hidden
+/// state until the end.
+#[derive(Debug)]
+pub enum PlaneEvent<'a> {
+    /// The residual entering layer 0 — plane 000. Not emitted when a
+    /// [`ResumePoint`] skips the embedding.
+    Embedded(&'a [Vec<f32>]),
+    /// One completed layer's taps, in layer order.
+    Layer { index: usize, trace: LayerTrace },
+}
+
+/// Where an interrupted execution restarts.
+///
+/// The residual leaving layer `next_layer - 1` (plane `next_layer`) is
+/// exactly the state entering `next_layer`, so a persisted plane resumes
+/// the run bit-identically — no separate checkpoint format exists, and
+/// none should: two formats could disagree.
+#[derive(Debug)]
+pub struct ResumePoint {
+    /// Index of the first layer still to execute.
+    pub next_layer: usize,
+    /// The residual entering that layer, one row per position.
+    pub hidden: Vec<Vec<f32>>,
+}
+
+/// What execution produces beyond the streamed planes.
+#[derive(Debug)]
+pub struct FinalOutput {
+    /// Final-normed hidden state of the last position.
+    pub final_hidden: Vec<f32>,
+    /// Logits of the last position, when the plan carries an output op.
+    pub logits: Option<Vec<f32>>,
+}
+
 /// Execute a text-component plan on the reference backend.
 ///
 /// The semantic anchor: naive f32, sharing no arithmetic with
@@ -84,38 +119,99 @@ pub fn execute_plan<B: PlanBackend + ?Sized>(
     tokens: &[u32],
     backend: &B,
 ) -> Result<ExecutionTrace, VindexError> {
+    let mut embedded = Vec::new();
+    let mut layers = Vec::with_capacity(plan.layers.len());
+    let out = execute_plan_streaming(plan, store, tokens, backend, None, &mut |event| {
+        match event {
+            PlaneEvent::Embedded(rows) => embedded = rows.to_vec(),
+            PlaneEvent::Layer { trace, .. } => layers.push(trace),
+        }
+        Ok(())
+    })?;
+    Ok(ExecutionTrace {
+        embedded,
+        layers,
+        final_hidden: out.final_hidden,
+        logits: out.logits,
+    })
+}
+
+/// Streaming form of [`execute_plan`]: one traversal, planes delivered
+/// through `sink` as they complete, with an optional [`ResumePoint`] to
+/// restart an interrupted run.
+///
+/// [`execute_plan`] is a wrapper over this function, so the two can
+/// never disagree about what the program means — there is exactly one
+/// traversal in this module.
+pub fn execute_plan_streaming<B: PlanBackend + ?Sized>(
+    plan: &ComponentOpPlan,
+    store: &OperandStore,
+    tokens: &[u32],
+    backend: &B,
+    resume: Option<ResumePoint>,
+    sink: &mut dyn FnMut(PlaneEvent) -> Result<(), VindexError>,
+) -> Result<FinalOutput, VindexError> {
     let embedding = plan.embedding.as_ref().ok_or_else(|| {
         VindexError::Parse(format!(
             "component `{}` has no embedding op — external hidden-state input is a later rung",
             plan.component
         ))
     })?;
-    let table = store.load(&embedding.table)?;
     let hidden = embedding.table.shape[1];
-    let mut h: Vec<Vec<f32>> = tokens
-        .iter()
-        .map(|&t| backend.embed(&table, hidden, t, embedding.scale))
-        .collect();
-    // The judged embedding normalisation, when the plan carries one. It
-    // is weightless — no operand, hence the empty weight slice — and it
-    // runs *after* any embedding scale, matching the upstream order in
-    // which the scale belongs to the table and the norm to the lookup.
-    if let Some(norm) = embedding.norm {
-        for row in h.iter_mut() {
-            *row = backend.norm(NormCall {
-                kind: norm.kind,
-                x: row,
-                weight: &[],
-                weight_offset: 0.0,
-                eps: norm.eps,
-            });
-        }
-    }
-    let embedded = h.clone();
 
-    let mut layers = Vec::with_capacity(plan.layers.len());
-    for layer in &plan.layers {
-        layers.push(execute_layer(layer, store, &mut h, hidden, backend)?);
+    let (start_layer, mut h) = match resume {
+        Some(point) => {
+            if point.next_layer > plan.layers.len() {
+                return Err(VindexError::Parse(format!(
+                    "resume point at layer {} is past the plan's {} layers",
+                    point.next_layer,
+                    plan.layers.len()
+                )));
+            }
+            if point.hidden.len() != tokens.len() {
+                return Err(VindexError::Parse(format!(
+                    "resume state carries {} positions but the fixture has {} tokens",
+                    point.hidden.len(),
+                    tokens.len()
+                )));
+            }
+            if point.hidden.iter().any(|row| row.len() != hidden) {
+                return Err(VindexError::Parse(format!(
+                    "resume state rows do not match the plan's hidden size {hidden}"
+                )));
+            }
+            (point.next_layer, point.hidden)
+        }
+        None => {
+            let table = store.load(&embedding.table)?;
+            let mut h: Vec<Vec<f32>> = tokens
+                .iter()
+                .map(|&t| backend.embed(&table, hidden, t, embedding.scale))
+                .collect();
+            // The judged embedding normalisation, when the plan carries
+            // one. It is weightless — no operand, hence the empty weight
+            // slice — and it runs *after* any embedding scale, matching
+            // the upstream order in which the scale belongs to the table
+            // and the norm to the lookup.
+            if let Some(norm) = embedding.norm {
+                for row in h.iter_mut() {
+                    *row = backend.norm(NormCall {
+                        kind: norm.kind,
+                        x: row,
+                        weight: &[],
+                        weight_offset: 0.0,
+                        eps: norm.eps,
+                    });
+                }
+            }
+            sink(PlaneEvent::Embedded(&h))?;
+            (0, h)
+        }
+    };
+
+    for (index, layer) in plan.layers.iter().enumerate().skip(start_layer) {
+        let trace = execute_layer(layer, store, &mut h, hidden, backend)?;
+        sink(PlaneEvent::Layer { index, trace })?;
     }
 
     let last = h.last().ok_or_else(|| {
@@ -140,9 +236,7 @@ pub fn execute_plan<B: PlanBackend + ?Sized>(
         }
         None => None,
     };
-    Ok(ExecutionTrace {
-        embedded,
-        layers,
+    Ok(FinalOutput {
         final_hidden,
         logits,
     })

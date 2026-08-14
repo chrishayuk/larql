@@ -69,8 +69,17 @@ pub struct ExecArgs {
     pub tokens: String,
 
     /// Write per-layer planes + manifest here instead of a summary.
+    /// Planes are written as each layer completes, so an interrupted
+    /// run leaves everything it finished.
     #[arg(long)]
     pub dump_layers: Option<PathBuf>,
+
+    /// Continue an interrupted `--dump-layers` run from its last
+    /// complete plane. The dump's recorded fixture (tokens, container,
+    /// engine) must match, or the resume refuses rather than splice
+    /// two different runs.
+    #[arg(long, requires = "dump_layers")]
+    pub resume: bool,
 
     /// Numerical realisation to run the plan on.
     #[arg(long, value_enum, default_value_t = ExecBackend::Reference)]

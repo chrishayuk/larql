@@ -16,15 +16,28 @@
 //! seam: `--backend reference` and `--backend production` execute one
 //! program through two numerical realisations, and their dumps are
 //! directly diffable against each other as well as against upstream.
+//!
+//! Dumped runs are resumable. Each plane is written the moment its layer
+//! completes, and plane `k` is exactly the residual entering layer `k`,
+//! so the dump directory *is* the checkpoint — `--resume` reloads the
+//! last complete plane and continues bit-identically. The manifest is
+//! written only at the end and therefore doubles as the completion
+//! marker; a directory without one is an interrupted run.
 
-use std::path::Path;
+use std::path::{Path, PathBuf};
+use std::time::Instant;
 
+use larql_vindex::error::VindexError;
 use larql_vindex::format::vindex3::inspect::inspect_container;
+use larql_vindex::format::vindex3::opplan::exec::backend::PlanBackend;
 use larql_vindex::format::vindex3::opplan::exec::operands::OperandStore;
 use larql_vindex::format::vindex3::opplan::exec::production::ProductionBackend;
 use larql_vindex::format::vindex3::opplan::exec::reference::ReferenceBackend;
-use larql_vindex::format::vindex3::opplan::exec::{execute_plan, ExecutionTrace};
+use larql_vindex::format::vindex3::opplan::exec::{
+    execute_plan, execute_plan_streaming, ExecutionTrace, PlaneEvent, ResumePoint,
+};
 use larql_vindex::format::vindex3::opplan::plan_component_ops;
+use larql_vindex::format::vindex3::opplan::ComponentOpPlan;
 use ndarray::Array2;
 
 use super::super::shannon_trace::dump::{
@@ -40,6 +53,23 @@ const LOGITS_PLANE: &str = "logits.f32";
 /// Engine tag prefix; the backend name completes it so a dump can never
 /// be mistaken for one produced by the other realisation.
 const ENGINE_PREFIX: &str = "vindex3";
+
+/// Sidecar recording what fixture an interrupted dump was running, so
+/// `--resume` can refuse to splice two different runs. Written at start;
+/// the manifest (written at completion) is deliberately a different file.
+pub(super) const RESUME_NAME: &str = "exec_resume.json";
+
+/// Raw plane files are little-endian f32, per `PLANE_DTYPE`.
+const BYTES_PER_VALUE: usize = std::mem::size_of::<f32>();
+
+/// Everything that must match for a resume to be the *same* run.
+#[derive(serde::Serialize, serde::Deserialize, PartialEq)]
+pub(super) struct ResumeSidecar {
+    pub(super) engine: String,
+    pub(super) container: String,
+    pub(super) component: String,
+    pub(super) token_ids: Vec<u32>,
+}
 
 pub fn run_exec(args: ExecArgs) -> Result<(), Box<dyn std::error::Error>> {
     let tokens = parse_tokens(&args.tokens)?;
@@ -61,39 +91,236 @@ pub fn run_exec(args: ExecArgs) -> Result<(), Box<dyn std::error::Error>> {
         .ok_or_else(|| format!("component `{}` produced no plan", args.component))?;
     let store = OperandStore::open(&args.container, &inspection)?;
 
-    let (engine, trace) = match args.backend {
-        ExecBackend::Reference => {
-            let backend = ReferenceBackend::new();
-            let name = format!("{ENGINE_PREFIX}-{}", backend_name(&backend));
-            (name, execute_plan(&plan, &store, &tokens, &backend)?)
+    match args.backend {
+        ExecBackend::Reference => run_on(&ReferenceBackend::new(), &args, &tokens, &plan, &store),
+        ExecBackend::Production => run_on(&ProductionBackend::new(), &args, &tokens, &plan, &store),
+    }
+}
+
+/// One monomorphised run: the backend is chosen exactly once, above.
+fn run_on<B: PlanBackend>(
+    backend: &B,
+    args: &ExecArgs,
+    tokens: &[u32],
+    plan: &ComponentOpPlan,
+    store: &OperandStore,
+) -> Result<(), Box<dyn std::error::Error>> {
+    let engine = format!("{ENGINE_PREFIX}-{}", backend.name());
+    match &args.dump_layers {
+        Some(dir) => run_dump(dir, &engine, args, tokens, plan, store, backend),
+        None => {
+            let trace = execute_plan(plan, store, tokens, backend)?;
+            summarise(&engine, &trace);
+            Ok(())
         }
-        ExecBackend::Production => {
-            let backend = ProductionBackend::new();
-            let name = format!("{ENGINE_PREFIX}-{}", backend_name(&backend));
-            (name, execute_plan(&plan, &store, &tokens, &backend)?)
-        }
+    }
+}
+
+/// The dumped (and resumable) execution path.
+#[allow(clippy::too_many_arguments)]
+fn run_dump<B: PlanBackend>(
+    dir: &PathBuf,
+    engine: &str,
+    args: &ExecArgs,
+    tokens: &[u32],
+    plan: &ComponentOpPlan,
+    store: &OperandStore,
+    backend: &B,
+) -> Result<(), Box<dyn std::error::Error>> {
+    std::fs::create_dir_all(dir)?;
+    let hidden = plan
+        .embedding
+        .as_ref()
+        .map(|e| e.table.shape[1])
+        .ok_or("plan carries no embedding op")?;
+    let seq = tokens.len();
+    let total_layers = plan.layers.len();
+    let sidecar = ResumeSidecar {
+        engine: engine.to_string(),
+        container: args.container.display().to_string(),
+        component: args.component.clone(),
+        token_ids: tokens.to_vec(),
     };
 
-    match &args.dump_layers {
-        Some(dir) => {
-            write_dump(dir, &engine, &args, &tokens, &trace)?;
-            eprintln!(
-                "wrote {} planes + final norm + logits to {}",
-                trace.layers.len() + 1,
-                dir.display()
-            );
+    let resume = if args.resume {
+        prepare_resume(dir, &sidecar, seq, hidden, total_layers)?
+    } else {
+        // A fresh dump must start from a clean slate: planes left by an
+        // earlier, longer run would otherwise be indistinguishable from
+        // this run's own progress the next time `--resume` scans.
+        clear_dump(dir, total_layers)?;
+        std::fs::write(
+            dir.join(RESUME_NAME),
+            serde_json::to_string_pretty(&sidecar)?,
+        )?;
+        None
+    };
+
+    let started = Instant::now();
+    let mut layer_started = Instant::now();
+    let out = execute_plan_streaming(plan, store, tokens, backend, resume, &mut |event| {
+        match event {
+            PlaneEvent::Embedded(rows) => {
+                write_rows(&dir.join(plane_name(0)), rows)?;
+                eprintln!(
+                    "plane 000 (embedding)  {:.1}s",
+                    started.elapsed().as_secs_f64()
+                );
+            }
+            PlaneEvent::Layer { index, trace } => {
+                write_rows(&dir.join(plane_name(index + 1)), &trace.post_layer)?;
+                eprintln!(
+                    "layer {:>3}/{}  {:.1}s  (elapsed {:.0}s)",
+                    index + 1,
+                    total_layers,
+                    layer_started.elapsed().as_secs_f64(),
+                    started.elapsed().as_secs_f64(),
+                );
+            }
         }
-        None => summarise(&engine, &trace),
+        layer_started = Instant::now();
+        Ok(())
+    })?;
+
+    write_rows(
+        &dir.join(FINAL_NORM_PLANE),
+        std::slice::from_ref(&out.final_hidden),
+    )?;
+    if let Some(logits) = &out.logits {
+        write_rows(&dir.join(LOGITS_PLANE), std::slice::from_ref(logits))?;
+    }
+
+    let manifest = LayerDumpManifest {
+        engine: engine.to_string(),
+        model: args.container.display().to_string(),
+        num_layers: total_layers,
+        seq_len: seq,
+        hidden_size: hidden,
+        token_ids: tokens.to_vec(),
+        planes: (0..=total_layers).map(plane_name).collect(),
+        dtype: PLANE_DTYPE.to_string(),
+    };
+    std::fs::write(
+        dir.join(MANIFEST_NAME),
+        serde_json::to_string_pretty(&manifest)?,
+    )?;
+    eprintln!(
+        "wrote {} planes + final norm + logits to {}",
+        total_layers + 1,
+        dir.display()
+    );
+    Ok(())
+}
+
+/// Validate a `--resume` request and build the interpreter's entry state.
+///
+/// Returns `None` (start from the embedding) when no complete plane
+/// survived — that is still a valid resume of a run killed before plane
+/// 000 landed.
+pub(super) fn prepare_resume(
+    dir: &Path,
+    sidecar: &ResumeSidecar,
+    seq: usize,
+    hidden: usize,
+    total_layers: usize,
+) -> Result<Option<ResumePoint>, Box<dyn std::error::Error>> {
+    if dir.join(MANIFEST_NAME).exists() {
+        return Err("dump is already complete (manifest present) — nothing to resume".into());
+    }
+    let recorded = std::fs::read_to_string(dir.join(RESUME_NAME))
+        .map_err(|_| "no resume record in the dump directory — was a dump ever started here?")?;
+    let recorded: ResumeSidecar = serde_json::from_str(&recorded)?;
+    if &recorded != sidecar {
+        return Err(
+            "resume record does not match this invocation (tokens, container, component, \
+             or backend differ) — refusing to splice two different runs"
+                .into(),
+        );
+    }
+    match last_complete_plane(dir, seq, hidden, total_layers) {
+        Some(plane) => {
+            let rows = read_plane(&dir.join(plane_name(plane)), seq, hidden)?;
+            eprintln!(
+                "resuming from plane {plane:03}: layers {}..{} still to run",
+                plane, total_layers
+            );
+            Ok(Some(ResumePoint {
+                next_layer: plane,
+                hidden: rows,
+            }))
+        }
+        None => Ok(None),
+    }
+}
+
+/// Highest plane index `p` such that planes `0..=p` all exist with the
+/// right byte length. A truncated file (killed mid-write) ends the scan
+/// *before* itself, so resume re-executes the layer that was cut off.
+pub(super) fn last_complete_plane(
+    dir: &Path,
+    seq: usize,
+    hidden: usize,
+    total_layers: usize,
+) -> Option<usize> {
+    let expected = (seq * hidden * BYTES_PER_VALUE) as u64;
+    let mut last = None;
+    for plane in 0..=total_layers {
+        match std::fs::metadata(dir.join(plane_name(plane))) {
+            Ok(meta) if meta.len() == expected => last = Some(plane),
+            _ => break,
+        }
+    }
+    last
+}
+
+/// Remove every file a previous dump could have left, so a fresh run's
+/// directory contains only its own progress.
+fn clear_dump(dir: &Path, total_layers: usize) -> std::io::Result<()> {
+    let mut names: Vec<String> = (0..=total_layers).map(plane_name).collect();
+    names.push(FINAL_NORM_PLANE.to_string());
+    names.push(LOGITS_PLANE.to_string());
+    names.push(MANIFEST_NAME.to_string());
+    names.push(RESUME_NAME.to_string());
+    for name in names {
+        match std::fs::remove_file(dir.join(name)) {
+            Ok(()) => {}
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => {}
+            Err(e) => return Err(e),
+        }
     }
     Ok(())
 }
 
-/// Read the backend's own name through the trait, so the engine tag
-/// cannot drift from the implementation that produced the numbers.
-fn backend_name<B: larql_vindex::format::vindex3::opplan::exec::backend::PlanBackend>(
-    backend: &B,
-) -> String {
-    backend.name().to_string()
+/// One raw little-endian f32 plane back into per-position rows.
+pub(super) fn read_plane(
+    path: &Path,
+    seq: usize,
+    hidden: usize,
+) -> Result<Vec<Vec<f32>>, Box<dyn std::error::Error>> {
+    let bytes = std::fs::read(path)?;
+    let expected = seq * hidden * BYTES_PER_VALUE;
+    if bytes.len() != expected {
+        return Err(format!(
+            "plane {} is {} bytes, expected {expected}",
+            path.display(),
+            bytes.len()
+        )
+        .into());
+    }
+    let values: Vec<f32> = bytes
+        .chunks_exact(BYTES_PER_VALUE)
+        .map(|c| f32::from_le_bytes(c.try_into().expect("chunks_exact yields 4-byte chunks")))
+        .collect();
+    Ok(values.chunks(hidden).map(<[f32]>::to_vec).collect())
+}
+
+/// Write rows as one plane, converting IO failure into the interpreter's
+/// error type so the sink can abort the run.
+fn write_rows(path: &Path, rows: &[Vec<f32>]) -> Result<(), VindexError> {
+    let plane = plane_of(rows)
+        .map_err(|e| VindexError::Parse(format!("plane shape for {}: {e}", path.display())))?;
+    write_plane(path, &plane)
+        .map_err(|e| VindexError::Parse(format!("writing {}: {e}", path.display())))
 }
 
 /// Parse a comma-separated token list.
@@ -117,61 +344,6 @@ fn plane_of(rows: &[Vec<f32>]) -> Result<Array2<f32>, Box<dyn std::error::Error>
     let hidden = rows.first().map(Vec::len).unwrap_or(0);
     let flat: Vec<f32> = rows.iter().flatten().copied().collect();
     Ok(Array2::from_shape_vec((seq, hidden), flat)?)
-}
-
-/// Write the dump directory: plane 000 is the residual entering layer 0,
-/// plane `i + 1` the residual leaving layer `i` — the same convention
-/// `forward_hidden_all_layers` and `dump_layers_hf.py` use.
-fn write_dump(
-    dir: &Path,
-    engine: &str,
-    args: &ExecArgs,
-    tokens: &[u32],
-    trace: &ExecutionTrace,
-) -> Result<(), Box<dyn std::error::Error>> {
-    std::fs::create_dir_all(dir)?;
-    let mut planes = Vec::with_capacity(trace.layers.len() + 1);
-
-    let entering = plane_of(&trace.embedded)?;
-    let (seq_len, hidden_size) = (entering.shape()[0], entering.shape()[1]);
-    let name = plane_name(0);
-    write_plane(&dir.join(&name), &entering)?;
-    planes.push(name);
-
-    for (index, layer) in trace.layers.iter().enumerate() {
-        let name = plane_name(index + 1);
-        write_plane(&dir.join(&name), &plane_of(&layer.post_layer)?)?;
-        planes.push(name);
-    }
-
-    // Extras beyond the layer table: the final norm and the head. Written
-    // as `[1, n]` because both are last-position only.
-    write_plane(
-        &dir.join(FINAL_NORM_PLANE),
-        &plane_of(std::slice::from_ref(&trace.final_hidden))?,
-    )?;
-    if let Some(logits) = &trace.logits {
-        write_plane(
-            &dir.join(LOGITS_PLANE),
-            &plane_of(std::slice::from_ref(logits))?,
-        )?;
-    }
-
-    let manifest = LayerDumpManifest {
-        engine: engine.to_string(),
-        model: args.container.display().to_string(),
-        num_layers: trace.layers.len(),
-        seq_len,
-        hidden_size,
-        token_ids: tokens.to_vec(),
-        planes,
-        dtype: PLANE_DTYPE.to_string(),
-    };
-    std::fs::write(
-        dir.join(MANIFEST_NAME),
-        serde_json::to_string_pretty(&manifest)?,
-    )?;
-    Ok(())
 }
 
 /// Without `--dump-layers`, print enough to see the forward ran.
