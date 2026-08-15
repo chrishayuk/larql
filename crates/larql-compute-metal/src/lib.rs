@@ -93,6 +93,7 @@ mod moe_dispatch;
 mod moe_gpu_route;
 #[cfg(target_os = "macos")]
 mod moe_zero_copy;
+mod movement;
 #[cfg(target_os = "macos")]
 mod pipeline;
 #[cfg(target_os = "macos")]

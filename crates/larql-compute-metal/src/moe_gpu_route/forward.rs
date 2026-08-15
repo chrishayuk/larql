@@ -7,6 +7,14 @@ use crate::MetalBackend;
 use larql_compute::MoeLayerWeights;
 use metal::Buffer;
 
+/// Layer index reported to the execution seam by the SINGLE-layer
+/// wrappers below. They encode one synthetic layer, so there is only one
+/// index to report; a policy under test addresses it as layer 0, and any
+/// other layer index is the negative control (the mask must not fire).
+/// The multi-layer chain in [`MetalBackend::moe_token_forward_descriptor`]
+/// reports its real chain position instead.
+const SYNTHETIC_LAYER: usize = 0;
+
 impl MetalBackend {
     /// Test-facing CONTROL arm: today's production CPU-routed layer,
     /// end to end — CPU route → `resolve_selected_experts` → legacy
@@ -39,7 +47,14 @@ impl MetalBackend {
         let cmd = self.queue.new_command_buffer();
         let enc = cmd.new_compute_command_encoder();
         self.encode_experts_and_combine_zero_copy(
-            enc, router_in, moe, &scratch, &resolved, &h_buf, &new_h,
+            enc,
+            router_in,
+            moe,
+            &scratch,
+            &resolved,
+            &h_buf,
+            &new_h,
+            SYNTHETIC_LAYER,
         );
         enc.end_encoding();
         cmd.commit();
@@ -150,6 +165,7 @@ impl MetalBackend {
             &weights_buf,
             &h_buf,
             &new_h,
+            SYNTHETIC_LAYER,
         );
         enc.end_encoding();
         cmd.commit();
@@ -232,7 +248,7 @@ impl MetalBackend {
             .collect();
 
         let encode_layer =
-            |enc: &metal::ComputeCommandEncoderRef, prev_h: &Buffer, out: &Buffer| {
+            |enc: &metal::ComputeCommandEncoderRef, prev_h: &Buffer, out: &Buffer, layer: usize| {
                 let logits = self.encode_moe_router_logits(
                     enc,
                     &w_buf,
@@ -259,6 +275,7 @@ impl MetalBackend {
                     &weights_buf,
                     prev_h,
                     out,
+                    layer,
                 );
             };
 
@@ -269,8 +286,8 @@ impl MetalBackend {
             let cmd = self.queue.new_command_buffer();
             let enc = cmd.new_compute_command_encoder();
             let mut prev = h0.clone();
-            for out in &new_hs {
-                encode_layer(enc, &prev, out);
+            for (layer, out) in new_hs.iter().enumerate() {
+                encode_layer(enc, &prev, out, layer);
                 prev = out.clone();
             }
             enc.end_encoding();
@@ -284,10 +301,10 @@ impl MetalBackend {
             cmd_bufs = 1;
         } else {
             let mut prev = h0.clone();
-            for out in &new_hs {
+            for (layer, out) in new_hs.iter().enumerate() {
                 let cmd = self.queue.new_command_buffer();
                 let enc = cmd.new_compute_command_encoder();
-                encode_layer(enc, &prev, out);
+                encode_layer(enc, &prev, out, layer);
                 enc.end_encoding();
                 cmd.commit();
                 cmd.wait_until_completed();

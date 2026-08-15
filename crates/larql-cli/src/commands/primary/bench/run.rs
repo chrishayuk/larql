@@ -19,6 +19,11 @@ use super::remote_moe_runtime::run_concurrent_moe;
 use super::row::{BenchJsonLatency, BenchJsonResult, BenchJsonRow, BenchJsonStages, BenchRow};
 
 pub fn run(mut args: BenchArgs) -> Result<(), Box<dyn std::error::Error>> {
+    // The steady-state A/B vehicle: arm the execution seam here and hold
+    // the guard for the whole bench, so the tok/s table and the BW10
+    // summary below describe the SAME policy. Inert unless
+    // LARQL_EXEC_POLICY is set; a malformed value stops the run.
+    let _exec_policy = larql_compute::exec_policy::spec::from_env()?;
     // Configure rayon's global thread pool up front. Auto-select picks
     // 8 on Apple silicon — empirically the sweet spot for Q4_K × Q8_K
     // matvec on M3 Max's LPDDR5 controllers (12-thread default
@@ -355,6 +360,13 @@ pub fn run(mut args: BenchArgs) -> Result<(), Box<dyn std::error::Error>> {
     }
 
     print_table(&rows);
+
+    // BW10 steady-state movement/causality summary — inert unless
+    // LARQL_MOVEMENT_LEDGER is set. Printed after the table so the tok/s
+    // figure and the movement attribution for the SAME run sit together;
+    // reading a throughput delta without the attribution is what put a
+    // scheduling win into the bandwidth column once already.
+    larql_compute::movement_ledger::session::flush();
 
     // JSON output (ADR-0012).
     let want_json = args

@@ -565,6 +565,7 @@ impl MetalBackend {
         resolved: &[ResolvedExpert],
         h_post_attn: &Buffer,
         new_h: &Buffer,
+        layer: usize,
     ) {
         debug_assert!(matches!(
             moe.routing_policy.post_expert_norm,
@@ -573,15 +574,37 @@ impl MetalBackend {
         let hidden = scratch.hidden;
         let valid_count = resolved.len();
 
-        self.encode_experts_zero_copy(enc, expert_input, moe, scratch, resolved);
+        // ── The execution seam ──────────────────────────────────────────
+        // Same authority the descriptor arm calls, at the same point in
+        // the layer: after routing (here the CPU has already resolved
+        // `resolved`), immediately before the expert kernels. Slot count
+        // is `resolved.len()` here and `top_k` there; they coincide on the
+        // production path, and the calibration gate asserts it rather than
+        // assuming it.
+        let strategy = crate::movement::experts::resolve_expert_layer(
+            &crate::movement::experts::ExpertLayerShape::from_scratch(
+                scratch,
+                valid_count,
+                moe.expert_scales.is_paired(),
+            ),
+            layer,
+        );
+        let skip = strategy == larql_compute::exec_policy::ExecutionStrategy::Skip;
+
+        if !skip {
+            self.encode_experts_zero_copy(enc, expert_input, moe, scratch, resolved);
+        }
 
         // Stage the selected experts' down-bias rows slot-aligned with
         // `expert_outs` (small — k × hidden f32 against ~22 MB/expert of
         // weight reads). All-or-nothing per layer: `expert_mlp` yields an
-        // empty bias exactly when the layer has none.
-        let has_bias = resolved
-            .first()
-            .is_some_and(|r| !moe.expert_mlp(r.expert_id).down_bias.is_empty());
+        // empty bias exactly when the layer has none. A skipped group
+        // stages nothing: the combine below runs at k = 0 and reads
+        // neither the staged bias nor `expert_outs`.
+        let has_bias = !skip
+            && resolved
+                .first()
+                .is_some_and(|r| !moe.expert_mlp(r.expert_id).down_bias.is_empty());
         if has_bias {
             crate::route_witness::bump(&crate::route_witness::BIAS_COPIES);
             for (slot, r) in resolved.iter().enumerate() {
@@ -600,9 +623,20 @@ impl MetalBackend {
             }
         }
 
-        let weights: Vec<f32> = resolved.iter().map(|r| r.weight).collect();
+        // The combine is the SAME kernel in both arms; only `k` differs.
+        // At k = 0 it seeds `acc = h_post_attn[tid]`, never enters its
+        // loop, and writes `new_h = h_post_attn` — the residual/identity
+        // pass-through, from the canonical kernel rather than a second
+        // path that could drift from it. `weights` still binds a non-empty
+        // slice because `set_bytes` with length 0 is not a valid binding;
+        // the kernel never reads it at k = 0.
+        let weights: Vec<f32> = if resolved.is_empty() {
+            vec![0.0]
+        } else {
+            resolved.iter().map(|r| r.weight).collect()
+        };
         let hidden_u = hidden as u32;
-        let k_u = valid_count as u32;
+        let k_u = if skip { 0 } else { valid_count as u32 };
         let has_bias_u: u32 = u32::from(has_bias);
         enc.set_compute_pipeline_state(&self.ffn.moe_weighted_combine_pipeline);
         enc.set_buffer(0, Some(&scratch.expert_outs), 0);

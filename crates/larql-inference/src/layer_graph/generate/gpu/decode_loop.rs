@@ -13,6 +13,7 @@ use crate::layer_graph::generate::lm_head::lm_head_topk_with_policy;
 use crate::layer_graph::generate::policy::GenerationRuntimeConfig;
 use crate::layer_graph::generate::sampling::Sampler;
 use crate::model::ModelWeights;
+use larql_compute::movement_ledger::{Phase, PhaseScope};
 use larql_compute::prelude::*;
 use larql_compute::FullPipelineLayer;
 
@@ -89,6 +90,11 @@ where
     let mut t_lmhead = 0.0f64;
     let mut t_detok = 0.0f64;
 
+    // BW10: the one driver loop that genuinely knows every iteration
+    // below is a real autoregressive step, not a prefill position. Held
+    // for the whole loop rather than reopened per step — one scope, one
+    // phase, for the duration real decode is running on this thread.
+    let _phase_scope = PhaseScope::new(Phase::Decode);
     for step in 1..max_tokens {
         let decode_start = std::time::Instant::now();
 

@@ -89,6 +89,29 @@ fn take_host_segments() -> HostSegments {
     HOST_SEGMENTS.with(|c| c.replace(HostSegments::default()))
 }
 
+/// Zero the segments at the start of a token.
+///
+/// Historically the only reader was `print_if_enabled`, which clears on
+/// read — but it returns early when neither timing flag is set, so with
+/// the flags off the segments accumulated across every token of the run.
+/// Any second consumer then read a running total and divided it by one
+/// token. Resetting at token start makes the segments per-token for
+/// everybody, and is a no-op for the take-on-read path.
+pub fn reset_host_segments() {
+    HOST_SEGMENTS.with(|c| c.set(HostSegments::default()));
+}
+
+/// Read the segments WITHOUT clearing them.
+///
+/// [`take_host_segments`] resets on read, so the first reader wins and
+/// every later one sees zeros. The BW10 ledger and `print_if_enabled`
+/// both want this token's `wait_ms`, so the ledger peeks and the printer
+/// keeps taking — call-order independent by construction rather than by
+/// convention.
+pub fn peek_host_segments() -> HostSegments {
+    HOST_SEGMENTS.with(|c| c.get())
+}
+
 /// Stage labels for fine-grained per-token GPU profiling.
 #[derive(Copy, Clone, Debug, PartialEq, Eq)]
 pub enum DecodeStage {

@@ -216,6 +216,7 @@ impl MetalBackend {
                                 bufs.h_post_attn,
                                 bufs.new_h,
                                 ictx.eps,
+                                ctx.layer_idx,
                             );
                             crate::route_witness::bump(&crate::route_witness::GPU_ROUTE_LAYERS);
                             gpu_timing::add_host_segment(
@@ -549,6 +550,7 @@ impl MetalBackend {
                     bufs.h_post_attn,
                     bufs.new_h,
                     ictx.eps,
+                    ctx.layer_idx,
                 );
                 *encoder_ended = false;
                 crate::route_witness::bump(&crate::route_witness::GPU_ROUTE_LAYERS);
@@ -602,6 +604,7 @@ impl MetalBackend {
             &resolved,
             bufs.h_post_attn,
             bufs.new_h,
+            ctx.layer_idx,
         );
         *encoder_ended = false;
         gpu_timing::add_host_segment(

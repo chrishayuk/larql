@@ -6,6 +6,7 @@ use super::transform::{router_input_transform, RouterInputTransform};
 use crate::moe_descriptor::MoeExpertDescriptorTable;
 use crate::moe_dispatch::MoeScratch;
 use crate::MetalBackend;
+use larql_compute::exec_policy::ExecutionStrategy;
 use larql_compute::MoeLayerWeights;
 use metal::{Buffer, MTLSize};
 use std::ffi::c_void;
@@ -26,6 +27,7 @@ impl MetalBackend {
         selected_weights: &Buffer,
         h_post_attn: &Buffer,
         new_h: &Buffer,
+        layer: usize,
     ) {
         // Route-INDEPENDENT x staging (same bytes whichever experts win).
         unsafe {
@@ -42,6 +44,7 @@ impl MetalBackend {
             selected_weights,
             h_post_attn,
             new_h,
+            layer,
         );
     }
 
@@ -62,6 +65,7 @@ impl MetalBackend {
         selected_weights: &Buffer,
         h_post_attn: &Buffer,
         new_h: &Buffer,
+        layer: usize,
     ) {
         assert!(
             x_buf.gpu_address() == scratch.x_buf.gpu_address()
@@ -102,6 +106,43 @@ impl MetalBackend {
             2 * gate_half_bytes,
             "descriptor table's expert size disagrees with the scratch dims"
         );
+
+        // ── The execution seam ──────────────────────────────────────────
+        // Everything below this point is the expensive part: the
+        // descriptor gather, both gate/up matvecs, the activation, and the
+        // down matvec — ~22 MB of expert weights per slot. The seam sits
+        // here, immediately before it, and nowhere earlier: the ROUTER has
+        // already run and still says which experts conceptually
+        // participate. What the policy decides is only how that semantic
+        // operation is physically satisfied.
+        //
+        // BW10's byte accounting rides the same call, computed from the
+        // shape rather than the bindings so this arm and the legacy arm
+        // agree byte-for-byte — the S2 calibration depends on that.
+        let strategy = crate::movement::experts::resolve_expert_layer(
+            &crate::movement::experts::ExpertLayerShape::from_scratch(
+                scratch,
+                n_slots,
+                table.gate_up_scale_base.is_some(),
+            ),
+            layer,
+        );
+        if strategy == ExecutionStrategy::Skip {
+            // `new_h = h_post_attn`, produced by the SAME combine kernel
+            // the canonical arm ends with rather than a second identity
+            // path that could drift from it. No gather, no matvec, no
+            // activation: nothing below is encoded at all.
+            self.encode_descriptor_combine(
+                enc,
+                scratch,
+                selected_weights,
+                h_post_attn,
+                new_h,
+                0,
+                false,
+            );
+            return;
+        }
 
         // The single runtime indirection: route → stored-expert bindings.
         let bindings = self.encode_descriptor_gather(
@@ -308,6 +349,39 @@ impl MetalBackend {
 
         // Combine — same kernel, routing weights from rung B's GPU buffer
         // (E2: the set_bytes → set_buffer flip, kernel signature unchanged).
+        self.encode_descriptor_combine(
+            enc,
+            scratch,
+            selected_weights,
+            h_post_attn,
+            new_h,
+            n_slots,
+            has_down_bias,
+        );
+    }
+
+    /// The weighted combine, shared by the executed and the skipped arms.
+    ///
+    /// `n_slots == 0` IS the skip encoding: the kernel seeds its
+    /// accumulator with `h_post_attn[tid]` and then loops `j < k` times,
+    /// so at `k = 0` it writes `new_h = h_post_attn` and reads neither
+    /// `expert_outs` nor `down_bias` — both of which the skipped arm
+    /// leaves unwritten. Reusing the canonical kernel rather than adding a
+    /// dedicated identity copy is deliberate: a second path could drift
+    /// from this one, and then "skip" would stop meaning "the same
+    /// arithmetic with one term absent".
+    #[allow(clippy::too_many_arguments)]
+    fn encode_descriptor_combine(
+        &self,
+        enc: &metal::ComputeCommandEncoderRef,
+        scratch: &MoeScratch,
+        selected_weights: &Buffer,
+        h_post_attn: &Buffer,
+        new_h: &Buffer,
+        n_slots: usize,
+        has_down_bias: bool,
+    ) {
+        let hidden = scratch.hidden;
         let hidden_u = hidden as u32;
         let k_u = n_slots as u32;
         let has_bias_u: u32 = u32::from(has_down_bias);
@@ -428,6 +502,7 @@ impl MetalBackend {
         h_post_attn: &Buffer,
         new_h: &Buffer,
         eps: f32,
+        layer: usize,
     ) {
         use larql_compute::{MoeExpertScalePolicy, MoeTopKWeightPolicy};
         let hidden = scratch.hidden;
@@ -500,6 +575,7 @@ impl MetalBackend {
             &weights_buf,
             h_post_attn,
             new_h,
+            layer,
         );
     }
 }

@@ -344,7 +344,25 @@ pub struct RunArgs {
     pub q4: bool,
 }
 
+/// `run` proper. Wrapped by [`run`] so the BW10 ledger flushes on EVERY
+/// exit — this function returns early for bitnet, `--routed-from`,
+/// `--ffn`, images and more, and a flush per `return` would drift out of
+/// sync the first time someone adds a serve mode.
 pub fn run(args: RunArgs) -> Result<(), Box<dyn std::error::Error>> {
+    // Arm the execution seam BEFORE any decoding, and hold the guard for
+    // the whole run so it uninstalls on every exit path this wrapper
+    // already exists to cover. Inert unless LARQL_EXEC_POLICY is set; a
+    // malformed value stops the run rather than degrading to canonical,
+    // because a silent degrade turns an A/B into canonical-vs-canonical
+    // and reports "no change".
+    let _exec_policy = larql_compute::exec_policy::spec::from_env()?;
+    let outcome = run_inner(args);
+    // Inert unless LARQL_MOVEMENT_LEDGER is set.
+    larql_compute::movement_ledger::session::flush();
+    outcome
+}
+
+fn run_inner(args: RunArgs) -> Result<(), Box<dyn std::error::Error>> {
     // Speech mode routes before vindex resolution: the speech model lives
     // in its safetensors directory until TTS funnel step 6.
     if args.speak {
@@ -1075,6 +1093,9 @@ fn run_with_routed_container(
             witness.weight_binds,
             witness.offset_binds,
         );
+        // The BW10 ledger flushes once at the end of `run()`, covering
+        // every serve path — a second flush here would report an empty
+        // accumulator and read as "nothing moved".
         // Normalise to the CPU arm's (token, id) shape; the id is unused
         // downstream, and the GPU result carries probabilities instead.
         result

@@ -145,6 +145,24 @@ pub const ENV_METAL_DUMP_LAYERS: &str = "LARQL_METAL_DUMP_LAYERS";
 pub const ENV_STAGE_DUMP_LAYER: &str = "LARQL_STAGE_DUMP_LAYER";
 /// Print GPU-side command-buffer timing.
 pub const ENV_GPU_TIMING: &str = "LARQL_GPU_TIMING";
+/// Print the BW10 per-token movement/causality ledger. `1` emits the
+/// steady-state summary at end of run; `token` additionally emits the
+/// compact per-token line.
+pub const ENV_MOVEMENT_LEDGER: &str = "LARQL_MOVEMENT_LEDGER";
+/// Declare which regime the ledger's measurement targets — one of
+/// `resident`, `capacity-constrained`, `cold-estate`. Without it the
+/// ledger prints raw counters but REFUSES the verdict line, because the
+/// same byte delta licenses opposite conclusions across regimes.
+pub const ENV_MOVEMENT_REGIME: &str = "LARQL_MOVEMENT_REGIME";
+/// Install an execution policy for the decode path — the one way to arm
+/// `larql_compute::exec_policy`'s seam from outside the process, so a
+/// bytes-and-latency A/B is a change of environment rather than a change
+/// of code. `skip-layers:<L>[,<L>...][:every-<n>|:token-<n>]` or
+/// `trace:<path>`; see that module's `spec` submodule. Unset means
+/// canonical execution; an UNPARSEABLE value is a hard error, never a
+/// silent fallback (a silent one turns an A/B into canonical-vs-canonical
+/// and reports "no change").
+pub const ENV_EXEC_POLICY: &str = "LARQL_EXEC_POLICY";
 /// Request paired commit/wait decode stage profiling.
 pub const ENV_PROFILE_SPLIT: &str = "LARQL_PROFILE_SPLIT";
 /// Debug-only outer norm bypass in Metal MoE combine.

@@ -18,6 +18,7 @@
 use crate::layer_graph::generate::gpu_setup::prefill_kquant_prompt;
 use crate::layer_graph::generate::types::GenerateError;
 use crate::model::ModelWeights;
+use larql_compute::movement_ledger::{Phase, PhaseScope};
 use larql_compute::prelude::*;
 use larql_compute::FullPipelineLayer;
 
@@ -41,6 +42,15 @@ pub(super) fn prefill_for_streaming(
     softcap_val: f32,
     upload_ple: Option<super::UploadPleFn>,
 ) -> Result<Vec<f32>, GenerateError> {
+    // BW10: every branch below walks the prompt through the GPU forward
+    // pass — for the per-layer Q4_K MoE branch, one position at a time
+    // through the SAME entry point real decode steps use. Without this
+    // scope those positions render indistinguishably from decode tokens;
+    // a live gate run against gpt-oss-20b caught exactly that (130
+    // tokens recorded from a window that requested zero decode-loop
+    // iterations). Held for the whole function so every `return` below
+    // — and any future branch — is covered by construction.
+    let _phase_scope = PhaseScope::new(Phase::Prefill);
     let seq_len = token_ids.len();
 
     // Branch 1: Per-Layer Embeddings (PLE-capable backend only).

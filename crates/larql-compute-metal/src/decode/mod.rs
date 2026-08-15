@@ -339,6 +339,22 @@ impl MetalBackend {
         let dump_h = !matches!(state_dump_mask, larql_compute::StateDumpMask::None);
         let _gpu_time_token_start = std::time::Instant::now();
         let mut gpu_time = gpu_timing::TokenGpuTime::default();
+        // BW10: byte counters run unconditionally at the bind sites; this
+        // scope just brackets one token's window so the delta is this
+        // token's traffic.
+        let movement_scope = larql_compute::movement_ledger::TokenScope::open();
+        // The execution seam addresses tokens by (phase, step). Advancing
+        // the index HERE, at the same boundary that opens the window
+        // above, is what makes "the policy skipped at step 7" and "token
+        // 7's ledger entry" the same token by construction rather than by
+        // two loops agreeing. It buckets by phase, so a prefill position
+        // never consumes a decode index — the defect the phase scope was
+        // added to fix.
+        larql_compute::exec_policy::step::advance();
+        // Host segments must be per-token for the ledger to divide them
+        // correctly; `print_if_enabled` clears on read but bails out early
+        // when its env flags are off, so without this they accumulate.
+        gpu_timing::reset_host_segments();
 
         // Residual dump (env-gated) for HF-reference diffs. Active only when
         // `LARQL_DUMP_RESIDUALS=<path>` is set.
@@ -1065,6 +1081,36 @@ impl MetalBackend {
         // gpu is the sum of MTLCommandBuffer.gpuStartTime/gpuEndTime
         // windows. Delta is CPU encoding + readback overhead.
         let wall_ms = _gpu_time_token_start.elapsed().as_secs_f64() * 1000.0;
+
+        // BW10: close this token's movement window and pair it with the
+        // time terms already measured above. Peeks the host segments —
+        // `print_if_enabled` below takes them, and whichever runs first
+        // must not blind the other.
+        {
+            let seg = gpu_timing::peek_host_segments();
+            // Every host-segment site lives on the MoE interleave path, and
+            // S2 deletes the per-layer wait outright — so `wait_ms == 0`
+            // there is a REAL zero, while a token that never touched the
+            // path has no sampler at all. Distinguish them by whether any
+            // segment moved, not by the wait alone.
+            let host_sampled = seg.wait_ms > 0.0
+                || seg.commit_ms > 0.0
+                || seg.encode_ms > 0.0
+                || seg.route_ms > 0.0;
+            let record = movement_scope.close(larql_compute::movement_ledger::TimeAttribution {
+                wall_ms,
+                gpu_busy_ms: gpu_time.total_gpu_ms,
+                gpu_bubble_ms: gpu_time.gpu_idle_between_ms,
+                // No storage sampler on this path yet; a resident run's
+                // real value IS zero, but only a sampler may say so.
+                io_wait_ms: 0.0,
+                io_wait_reported: false,
+                host_wait_ms: seg.wait_ms,
+                host_wait_reported: host_sampled,
+            });
+            larql_compute::movement_ledger::session::record_token(record);
+        }
+
         gpu_time.print_if_enabled(wall_ms);
 
         // When LARQL_PROFILE_SPLIT=1, store the per-stage breakdown for
