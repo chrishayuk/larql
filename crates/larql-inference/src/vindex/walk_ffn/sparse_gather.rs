@@ -10,6 +10,7 @@
 use rayon::prelude::*;
 
 use super::WalkFfn;
+use larql_vindex::GateIndex;
 
 /// Output of [`WalkFfn::gather_q4k_accumulate`]: one position's output
 /// row plus the per-feature values the fused kernels computed, all
@@ -25,6 +26,165 @@ pub(super) struct GatherAccumulate {
     pub gate_scores: Vec<f32>,
     /// Up row-dot per route feature.
     pub up_scores: Vec<f32>,
+}
+
+/// Contiguous Q4K bytes for a fixed feature set's gate/up/down rows —
+/// the output of one gather, independent of when it runs.
+///
+/// [`gather_kquant_rows`] is the ONLY place this project selects and
+/// copies these bytes. [`WalkFfn::gather_q4k_accumulate`] (BW-A/R4's
+/// kernel — gathers fresh on every call) and
+/// [`super::compact_dense::CompactDenseLayer`] (BW-B — gathers once,
+/// offline) both build a `GatheredRows` through this same function, so
+/// any measured difference between the two arms is the "when", never a
+/// hidden difference in "what" gets gathered.
+pub(super) struct GatheredRows {
+    pub gate: Vec<u8>,
+    pub up: Vec<u8>,
+    pub down: Vec<u8>,
+    pub gate_format: String,
+    pub up_format: String,
+    pub down_format: String,
+    pub gate_bytes_per_row: usize,
+    pub up_bytes_per_row: usize,
+    pub down_bytes_per_row: usize,
+    /// Number of rows gathered — `feats.len()` at gather time.
+    pub k: usize,
+}
+
+/// Gather `feats`' gate/up/down Q4K rows into fresh contiguous buffers.
+/// `None` under the same conditions the caller must fall back on: no
+/// Q4K bytes for this layer, no feature-major down sidecar (the
+/// interleaved down is stored transposed — a feature's down vector is a
+/// strided column there, not a gatherable row, see the module doc), an
+/// out-of-range feature index, or an empty route.
+pub(super) fn gather_kquant_rows(
+    index: &dyn GateIndex,
+    layer: usize,
+    feats: &[usize],
+    hidden: usize,
+) -> Option<GatheredRows> {
+    let slices = index.interleaved_kquant_layer_data(layer)?;
+    let gate_info = larql_vindex::quant::registry::lookup(slices[0].1)?;
+    let up_info = larql_vindex::quant::registry::lookup(slices[1].1)?;
+    let gbpr = gate_info.bytes_per_row(hidden)?;
+    let ubpr = up_info.bytes_per_row(hidden)?;
+    let gate_b = slices[0].0;
+    let up_b = slices[1].0;
+    // Down from the feature-major sidecar (gatherable rows).
+    let (down_b, down_fmt, padded_width) = index.down_features_q4k_layer_data(layer)?;
+    let down_info = larql_vindex::quant::registry::lookup(down_fmt)?;
+    let dbpr = down_info.bytes_per_row(padded_width)?;
+    let k = feats.len();
+    if k == 0 {
+        return None;
+    }
+
+    let mut gg = vec![0u8; k * gbpr];
+    let mut gu = vec![0u8; k * ubpr];
+    let mut gd = vec![0u8; k * dbpr];
+    for (i, &feat) in feats.iter().enumerate() {
+        let (gs, ge) = (feat * gbpr, feat * gbpr + gbpr);
+        let (us, ue) = (feat * ubpr, feat * ubpr + ubpr);
+        let (ds, de) = (feat * dbpr, feat * dbpr + dbpr);
+        if ge > gate_b.len() || ue > up_b.len() || de > down_b.len() {
+            return None; // out-of-range feature — bail to the safe path
+        }
+        gg[i * gbpr..(i + 1) * gbpr].copy_from_slice(&gate_b[gs..ge]);
+        gu[i * ubpr..(i + 1) * ubpr].copy_from_slice(&up_b[us..ue]);
+        gd[i * dbpr..(i + 1) * dbpr].copy_from_slice(&down_b[ds..de]);
+    }
+
+    Some(GatheredRows {
+        gate: gg,
+        up: gu,
+        down: gd,
+        gate_format: slices[0].1.to_string(),
+        up_format: slices[1].1.to_string(),
+        down_format: down_fmt.to_string(),
+        gate_bytes_per_row: gbpr,
+        up_bytes_per_row: ubpr,
+        down_bytes_per_row: dbpr,
+        k,
+    })
+}
+
+/// Score gate/up and accumulate down over already-gathered rows — the
+/// fused-kernel half of the gather path, shared by
+/// [`WalkFfn::gather_q4k_accumulate`] (rows gathered THIS call) and
+/// [`super::compact_dense::CompactDenseLayer`]'s forward (rows gathered
+/// LONG before this call). Neither the kernel calls nor their cost
+/// depend on which; only the caller's timing does.
+pub(super) fn score_and_accumulate(
+    rows: &GatheredRows,
+    x_slice: &[f32],
+    use_gelu: bool,
+    hidden: usize,
+    activation_floor: f32,
+) -> Option<GatherAccumulate> {
+    let gate_rd = larql_vindex::quant::registry::lookup(&rows.gate_format)?.row_dot?;
+    let up_rd = larql_vindex::quant::registry::lookup(&rows.up_format)?.row_dot?;
+    let down_sa = larql_vindex::quant::registry::lookup(&rows.down_format)?.row_scaled_add?;
+    let (gbpr, ubpr, dbpr) = (
+        rows.gate_bytes_per_row,
+        rows.up_bytes_per_row,
+        rows.down_bytes_per_row,
+    );
+    let k = rows.k;
+    if k == 0 {
+        return None;
+    }
+
+    // gate + up scores: fused row-dot over contiguous rows, parallel.
+    let gate_s: Vec<f32> = (0..k)
+        .into_par_iter()
+        .map(|i| gate_rd(&rows.gate[i * gbpr..(i + 1) * gbpr], x_slice).unwrap_or(0.0))
+        .collect();
+    let up_s: Vec<f32> = (0..k)
+        .into_par_iter()
+        .map(|i| up_rd(&rows.up[i * ubpr..(i + 1) * ubpr], x_slice).unwrap_or(0.0))
+        .collect();
+    let acts: Vec<f32> = gate_s
+        .iter()
+        .zip(&up_s)
+        .map(|(&g, &u)| {
+            let ag = if use_gelu {
+                crate::ffn::gelu_tanh(g)
+            } else {
+                g * crate::ffn::sigmoid(g)
+            };
+            ag * u
+        })
+        .collect();
+
+    // down accumulate: fused scaled-add over contiguous rows, chunked.
+    let n_threads = rayon::current_num_threads().max(1);
+    let chunk = k.div_ceil(n_threads).max(1);
+    let partials: Vec<Vec<f32>> = (0..k)
+        .collect::<Vec<_>>()
+        .par_chunks(chunk)
+        .map(|ch| {
+            let mut part = vec![0.0f32; hidden];
+            for &i in ch {
+                if acts[i].abs() > activation_floor {
+                    let _ = down_sa(&rows.down[i * dbpr..(i + 1) * dbpr], acts[i], &mut part);
+                }
+            }
+            part
+        })
+        .collect();
+    let mut out = vec![0.0f32; hidden];
+    for p in &partials {
+        for (o, v) in out.iter_mut().zip(p) {
+            *o += v;
+        }
+    }
+    Some(GatherAccumulate {
+        out,
+        acts,
+        gate_scores: gate_s,
+        up_scores: up_s,
+    })
 }
 
 impl<'a> WalkFfn<'a> {
@@ -91,93 +251,18 @@ impl<'a> WalkFfn<'a> {
         use_gelu: bool,
         hidden: usize,
     ) -> Option<GatherAccumulate> {
-        let slices = self.index.interleaved_kquant_layer_data(layer)?;
-        let gate_info = larql_vindex::quant::registry::lookup(slices[0].1)?;
-        let up_info = larql_vindex::quant::registry::lookup(slices[1].1)?;
-        let gate_rd = gate_info.row_dot?;
-        let up_rd = up_info.row_dot?;
-        let gbpr = gate_info.bytes_per_row(hidden)?;
-        let ubpr = up_info.bytes_per_row(hidden)?;
-        let gate_b = slices[0].0;
-        let up_b = slices[1].0;
-        // Down from the feature-major sidecar (gatherable rows).
-        let (down_b, down_fmt, padded_width) = self.index.down_features_q4k_layer_data(layer)?;
-        let down_info = larql_vindex::quant::registry::lookup(down_fmt)?;
-        let down_sa = down_info.row_scaled_add?;
-        let dbpr = down_info.bytes_per_row(padded_width)?;
-        let k = feats.len();
-        if k == 0 {
-            return None;
-        }
-
         // Gather gate + up + down bytes for the route's rows into contiguous
         // buffers (sequential layout = cache-friendly fused kernel passes).
-        let mut gg = vec![0u8; k * gbpr];
-        let mut gu = vec![0u8; k * ubpr];
-        let mut gd = vec![0u8; k * dbpr];
-        for (i, &feat) in feats.iter().enumerate() {
-            let (gs, ge) = (feat * gbpr, feat * gbpr + gbpr);
-            let (us, ue) = (feat * ubpr, feat * ubpr + ubpr);
-            let (ds, de) = (feat * dbpr, feat * dbpr + dbpr);
-            if ge > gate_b.len() || ue > up_b.len() || de > down_b.len() {
-                return None; // out-of-range feature — bail to the safe path
-            }
-            gg[i * gbpr..(i + 1) * gbpr].copy_from_slice(&gate_b[gs..ge]);
-            gu[i * ubpr..(i + 1) * ubpr].copy_from_slice(&up_b[us..ue]);
-            gd[i * dbpr..(i + 1) * dbpr].copy_from_slice(&down_b[ds..de]);
-        }
-
-        // gate + up scores: fused row-dot over contiguous rows, parallel.
-        let gate_s: Vec<f32> = (0..k)
-            .into_par_iter()
-            .map(|i| gate_rd(&gg[i * gbpr..(i + 1) * gbpr], x_slice).unwrap_or(0.0))
-            .collect();
-        let up_s: Vec<f32> = (0..k)
-            .into_par_iter()
-            .map(|i| up_rd(&gu[i * ubpr..(i + 1) * ubpr], x_slice).unwrap_or(0.0))
-            .collect();
-        let acts: Vec<f32> = gate_s
-            .iter()
-            .zip(&up_s)
-            .map(|(&g, &u)| {
-                let ag = if use_gelu {
-                    crate::ffn::gelu_tanh(g)
-                } else {
-                    g * crate::ffn::sigmoid(g)
-                };
-                ag * u
-            })
-            .collect();
-
-        // down accumulate: fused scaled-add over contiguous rows, chunked.
-        let activation_floor = self.config.effective_activation_floor();
-        let n_threads = rayon::current_num_threads().max(1);
-        let chunk = k.div_ceil(n_threads).max(1);
-        let partials: Vec<Vec<f32>> = (0..k)
-            .collect::<Vec<_>>()
-            .par_chunks(chunk)
-            .map(|ch| {
-                let mut part = vec![0.0f32; hidden];
-                for &i in ch {
-                    if acts[i].abs() > activation_floor {
-                        let _ = down_sa(&gd[i * dbpr..(i + 1) * dbpr], acts[i], &mut part);
-                    }
-                }
-                part
-            })
-            .collect();
-        let mut out = vec![0.0f32; hidden];
-        for p in &partials {
-            for (o, v) in out.iter_mut().zip(p) {
-                *o += v;
-            }
-        }
-        Some(GatherAccumulate {
-            out,
-            acts,
-            gate_scores: gate_s,
-            up_scores: up_s,
-        })
+        // Paid on EVERY call — this is the cost BW-A/R4 measured; see
+        // `compact_dense.rs` for the arm that pays it once instead.
+        let rows = gather_kquant_rows(self.index, layer, feats, hidden)?;
+        score_and_accumulate(
+            &rows,
+            x_slice,
+            use_gelu,
+            hidden,
+            self.config.effective_activation_floor(),
+        )
     }
 }
 

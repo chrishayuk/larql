@@ -95,6 +95,7 @@ use larql_vindex::GateIndex;
 
 mod base_delta;
 mod builders;
+mod compact_dense;
 mod exact;
 mod full_mmap;
 mod helpers;
@@ -129,6 +130,7 @@ mod shortlist_tests;
 #[cfg(test)]
 mod trace_tests;
 
+pub use compact_dense::CompactDenseLayer;
 pub use helpers::DispatchEntry;
 pub use plan::{FfnPlan, PlanReason, PlanRung, SkippedRung, ThresholdCheck};
 pub use timings::PhaseTimingsHandle;

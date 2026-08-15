@@ -13,6 +13,7 @@
 
 mod cache;
 mod expert;
+pub mod expert_override;
 mod forward;
 pub mod latent_mask;
 pub mod math;

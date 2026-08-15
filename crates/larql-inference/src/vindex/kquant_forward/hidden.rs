@@ -344,8 +344,25 @@ pub fn moe_ffn_block_cpu_with_index(
             // installed via `larql_compute::cpu::ops::moe::set_routing`; layers
             // run sequentially so one store covers the per-position loop.
             larql_compute::cpu::ops::moe::set_current_layer(layer);
+            // BW-C whole-expert-skip oracle: same tag, same reason —
+            // `add_expert` runs on rayon worker threads, so this needs
+            // its own cross-thread atomic rather than the thread-local
+            // `moe_route_observe::LayerScope` above. No-op unless armed
+            // or observing.
+            larql_compute::cpu::ops::moe::expert_override::set_current_layer(layer);
             for pos in 0..seq_len {
                 let row: Vec<f32> = h_post_attn.row(pos).to_vec();
+                // BW-C1 contribution/residual-norm covariate: the
+                // incoming residual's L2 norm, set once per POSITION
+                // (unlike the per-layer `set_current_layer` calls above
+                // — this varies every position within a layer's loop).
+                // No-op cost when not observing (one extra sqrt(sum(v*v))
+                // per position); read back inside `expert_override::
+                // observe` via `current_residual_norm`, not threaded as
+                // a parameter.
+                larql_compute::cpu::ops::moe::expert_override::set_current_residual_norm(
+                    (row.iter().map(|v| v * v).sum::<f32>()).sqrt(),
+                );
                 let moe_out =
                     larql_compute::cpu::ops::moe::cpu_moe_forward(&row, moe, norm_offset, eps);
                 for (dst, src) in h2.row_mut(pos).iter_mut().zip(moe_out.iter()) {

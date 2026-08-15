@@ -180,6 +180,21 @@ pub fn cpu_moe_forward(
     // into `dst`. Shared by the rayon fold and the spin-pool path so both
     // compute the identical arithmetic; only the parallel *schedule* differs.
     let add_expert = |ei: usize, w: f32, dst: &mut [f32]| {
+        // BW-C: oracle single-expert-invocation substitution (research
+        // instrument, no-op unless armed/observing — see
+        // `expert_override`'s module doc for the zero == residual-
+        // identity argument and the one-shot "exactly one invocation"
+        // contract). `should_skip` performs the substitution by
+        // skipping `dst`'s accumulation entirely — GPT-OSS's combine
+        // has no post-expert norm, so a skipped expert's contribution
+        // is architecturally the same as it never having run. Gates
+        // HERE, before any compute, so an armed ablation actually
+        // saves the work; `observe` (BW-C1's covariate capture,
+        // including the raw output norm) fires further down, once that
+        // output exists — see the two call sites below.
+        if super::expert_override::should_skip(ei) {
+            return;
+        }
         let Some(&gate_up_bytes) = moe.experts_gate_up.get(ei) else {
             return;
         };
@@ -212,6 +227,11 @@ pub fn cpu_moe_forward(
                     inter,
                     format,
                     mlp,
+                );
+                super::expert_override::observe(
+                    ei,
+                    w,
+                    (h2.iter().map(|v| v * v).sum::<f32>()).sqrt(),
                 );
                 for (a, &v) in dst.iter_mut().zip(h2.iter()) {
                     *a += w * v;
@@ -253,6 +273,11 @@ pub fn cpu_moe_forward(
             }
             let mut expert_contribution = matmul_vec(&scratch.act, &down_w, hidden, inter_padded);
             mlp.add_down_bias(&mut expert_contribution);
+            super::expert_override::observe(
+                ei,
+                w,
+                (expert_contribution.iter().map(|v| v * v).sum::<f32>()).sqrt(),
+            );
             for (a, &v) in dst.iter_mut().zip(expert_contribution.iter()) {
                 *a += w * v;
             }
@@ -286,6 +311,19 @@ pub fn cpu_moe_forward(
             let mut acc = vec![0.0f32; hidden];
             let mut scratch = ExpertScratch::new(hidden, inter, inter_padded);
             for &(ei, w) in &active {
+                // BW-C hook, second copy: this row-parallel branch has its
+                // own per-expert loop, independent of `add_expert` above —
+                // GPT-OSS's top-4-of-N routing on an 8-thread pool always
+                // lands here (`4 * EXPERT_PARALLEL_MIN_FILL <= 8`), so the
+                // `add_expert`-only hook silently observed zero calls on
+                // every real decode until this copy was added. See
+                // `expert_override`'s module doc. `should_skip` gates
+                // before the compute (as in `add_expert`); `observe`
+                // fires after `h2` exists, once BW-C1's output-norm
+                // covariate is available.
+                if super::expert_override::should_skip(ei) {
+                    continue;
+                }
                 let (Some(&gate_up_bytes), Some(&down_bytes)) =
                     (moe.experts_gate_up.get(ei), moe.experts_down.get(ei))
                 else {
@@ -300,6 +338,11 @@ pub fn cpu_moe_forward(
                     inter,
                     format,
                     mlp,
+                );
+                super::expert_override::observe(
+                    ei,
+                    w,
+                    (h2.iter().map(|v| v * v).sum::<f32>()).sqrt(),
                 );
                 for (a, &v) in acc.iter_mut().zip(h2.iter()) {
                     *a += w * v;
