@@ -1829,6 +1829,15 @@ A-9.4  MoE + sinks + biases + YaRN amplitude in the Metal lowering — moe_zero_
        served path's machinery and is not plan-reachable; make it so.
 A-9.5  the parity chain: ops closure → exec reference → production → lowered, byte-identical
        to the banked oracle; then the bracketed ladder.
+       INTERPRETER HALF CLOSED 2026-08-17: `shannon layer-dump --tokens` (new; given ids) over
+       the HF checkpoint = the served CPU forward on the exact BF16+MXFP4 bytes, vs `vindex3
+       exec --dump-layers` on the container, same 81 oracle ids → `layer-diff`: cos
+       1.000000000, rel_rms 1e-6 (layers 0–16) to 3e-6 (17–23), max_abs ≤ 0.08, "no capture
+       drifts". SAME weights, SAME semantics, two engines, f32-reassociation agreement through
+       all 24 layers. Corollary: the 14/16 vs the Q4_K-spine oracle is the spine's
+       representation (final residual within 3e-6 rel-RMS ⇒ logits within ~1e-3 ≪ the 0.12/
+       0.47 miss margins). Remaining: the lowered arm (A-9.4) against the same dumps, and a
+       BF16-spine served id oracle if a byte-identical id claim is wanted.
 ```
 
 

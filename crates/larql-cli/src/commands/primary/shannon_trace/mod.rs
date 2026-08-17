@@ -59,8 +59,20 @@ pub struct LayerDumpArgs {
     pub model: String,
 
     /// UTF-8 corpus file supplying the token window.
-    #[arg(long, value_name = "FILE")]
-    pub corpus: PathBuf,
+    #[arg(
+        long,
+        value_name = "FILE",
+        required_unless_present = "tokens",
+        conflicts_with = "tokens"
+    )]
+    pub corpus: Option<PathBuf>,
+
+    /// Comma-separated token ids to run instead of tokenising a corpus —
+    /// given, never tokenised here, so this dump can be diffed against a
+    /// `vindex3 exec --dump-layers` run of the *same* ids: the two engines
+    /// then cannot silently score different token sequences.
+    #[arg(long, value_name = "IDS", conflicts_with = "corpus")]
+    pub tokens: Option<String>,
 
     /// Limit input to the first N bytes, truncated on a UTF-8 boundary.
     #[arg(long)]

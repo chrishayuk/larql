@@ -106,20 +106,29 @@ pub fn read_manifest(dir: &Path) -> Result<LayerDumpManifest, Box<dyn std::error
 }
 
 pub fn run_layer_dump(args: LayerDumpArgs) -> Result<(), Box<dyn std::error::Error>> {
-    let text = shannon_cmd::read_text(&args.corpus, args.bytes)?;
     let model = shannon_cmd::load_model(&args.model)?;
-    let mut ids = larql_inference::encode_prompt(model.tokenizer(), &*model.weights().arch, &text)?;
+    let mut ids = match (&args.tokens, &args.corpus) {
+        (Some(tokens), _) => tokens
+            .split(',')
+            .map(|t| t.trim().parse::<u32>())
+            .collect::<Result<Vec<u32>, _>>()
+            .map_err(|e| format!("--tokens: {e}"))?,
+        (None, Some(corpus)) => {
+            let text = shannon_cmd::read_text(corpus, args.bytes)?;
+            larql_inference::encode_prompt(model.tokenizer(), &*model.weights().arch, &text)?
+        }
+        (None, None) => return Err("one of --corpus or --tokens is required".into()),
+    };
     if ids.is_empty() {
-        return Err("corpus tokenized to nothing".into());
+        return Err("token window is empty".into());
     }
     ids.truncate(args.context);
 
     let weights = model.weights();
     eprintln!(
-        "dumping {} layers over {} tokens ({} bytes)...",
+        "dumping {} layers over {} tokens...",
         weights.num_layers,
         ids.len(),
-        text.len(),
     );
     let captures = shannon_cmd::forward_hidden_all_layers(weights, &ids)?;
 
