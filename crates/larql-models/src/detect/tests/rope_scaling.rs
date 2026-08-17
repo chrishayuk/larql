@@ -228,3 +228,67 @@ fn flat_rope_parameters_beat_the_legacy_top_level_field() {
     }));
     assert_eq!(arch.config().rope_base, 500_000.0);
 }
+
+#[test]
+fn transformers5_rope_parameters_yarn_block_is_read_as_scaling() {
+    // The 5.x block carries theta AND scaling. Before this was read, a
+    // checkpoint declaring YaRN here had its theta honoured and its scaling
+    // dropped at parse — served at the unscaled frequencies and the wrong
+    // amplitude — which the VINDEX3 carriage gate caught on a
+    // Glimmer-shaped fixture. Every leaf must land, not just the type.
+    let arch = detect_from_json(&serde_json::json!({
+        "model_type": "some_transformers5_model",
+        "hidden_size": 1024,
+        "num_hidden_layers": 4,
+        "num_attention_heads": 8,
+        "num_key_value_heads": 2,
+        "intermediate_size": 4096,
+        "rope_parameters": {
+            "rope_theta": 150000.0,
+            "rope_type": "yarn",
+            "factor": 32.0,
+            "beta_fast": 32.0,
+            "beta_slow": 1.0,
+            "truncate": false,
+            "original_max_position_embeddings": 4096
+        }
+    }));
+    assert_eq!(arch.config().rope_base, 150_000.0);
+    let yarn = arch
+        .yarn_rope_scaling()
+        .expect("a complete yarn block under rope_parameters is scaling");
+    assert_eq!(yarn.factor, 32.0);
+    assert_eq!(yarn.beta_fast, 32.0);
+    assert_eq!(yarn.beta_slow, 1.0);
+    assert!(!yarn.truncate);
+    assert_eq!(yarn.original_max_position_embeddings, 4096.0);
+    assert!(matches!(
+        arch.position_policy_for_layer(0),
+        crate::config::PositionPolicy::Yarn { theta, .. } if theta == 150_000.0
+    ));
+}
+
+#[test]
+fn unscaled_rope_parameters_leave_legacy_rope_scaling_reachable() {
+    // A 5.x block that declares no scaling (`default`, no `factor`) is not
+    // an answer of "no scaling" that silences the legacy key — the two are
+    // consulted in specificity order, and a legacy block still parses.
+    let arch = detect_from_json(&serde_json::json!({
+        "model_type": "some_transformers5_model",
+        "hidden_size": 1024,
+        "num_hidden_layers": 4,
+        "num_attention_heads": 8,
+        "num_key_value_heads": 2,
+        "intermediate_size": 4096,
+        "rope_parameters": { "rope_theta": 500000.0, "rope_type": "default" },
+        "rope_scaling": {
+            "rope_type": "yarn",
+            "factor": 4.0,
+            "original_max_position_embeddings": 8192
+        }
+    }));
+    assert_eq!(arch.config().rope_base, 500_000.0);
+    let yarn = arch.yarn_rope_scaling().expect("legacy block still read");
+    assert_eq!(yarn.factor, 4.0);
+    assert_eq!(yarn.original_max_position_embeddings, 8192.0);
+}

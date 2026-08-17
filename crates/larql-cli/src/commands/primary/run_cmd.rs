@@ -1014,6 +1014,7 @@ fn generate_routed_metal(
     _max_tokens: usize,
     _index: &larql_vindex::VectorIndex,
     _routed: &larql_inference::ffn::ContainerRoutedBackend,
+    _emit_ids: bool,
 ) -> Result<Vec<(String, u32)>, Box<dyn std::error::Error>> {
     Err(
         "--routed-from --metal serves expert banks on the GPU, so it needs a macOS host with \

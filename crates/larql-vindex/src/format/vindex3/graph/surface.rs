@@ -92,6 +92,14 @@ pub struct FfnSurface {
     pub intermediate_size: usize,
     pub activation: Activation,
     pub ffn_type: FfnType,
+    /// How the gate combines with the up branch: plain `activation(gate) *
+    /// up`, or GPT-OSS's clamped GLU (`swiglu_limit`, `alpha`). A distinct
+    /// policy rather than an `Activation` variant, because the clamp and
+    /// the `+1` change the model, not the nonlinearity — carried so the
+    /// declared `swiglu_limit` has a container site to be judged against
+    /// (A-9.0). Defaults for containers written before it existed.
+    #[serde(default)]
+    pub gate_policy: larql_models::ExpertGatePolicy,
 }
 
 /// What the norm op reads.
@@ -205,6 +213,7 @@ pub fn surface_from_resolved(
             intermediate_size: resolved.intermediate_size,
             activation: execution.activation,
             ffn_type: execution.ffn_type,
+            gate_policy: execution.gate_policy,
         },
         norm: NormSurface {
             pre: execution.norm_pre,
@@ -361,6 +370,9 @@ pub fn surface_from_nested(
             } else {
                 FfnType::Standard
             },
+            // Nested towers declare no gate policy; plain gating is the
+            // fact, not a fallback.
+            gate_policy: larql_models::ExpertGatePolicy::Gated,
         },
         norm: NormSurface {
             pre: NormSpec {

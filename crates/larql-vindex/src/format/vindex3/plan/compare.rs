@@ -183,7 +183,13 @@ fn layer_rope_theta_findings(inventory: &ArchitectureInventory) -> Option<Findin
             declared_array
                 .get(l.layer)
                 .and_then(Value::as_f64)
-                .is_some_and(|declared| PositionPolicy::from_declared_theta(declared) != l.position)
+                // Compare what the array declares — the base, or the NoPE
+                // sentinel — not the whole variant: a YaRN block on top of
+                // the same theta is a separate fact with its own carriage.
+                .is_some_and(|declared| {
+                    PositionPolicy::from_declared_theta(declared).rope_theta()
+                        != l.position.rope_theta()
+                })
         })
         .map(|l| l.layer)
         .collect();

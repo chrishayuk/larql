@@ -224,6 +224,35 @@ impl<'a> LoweredSession<'a> {
         max_positions: usize,
         keep: &mut Vec<LoadedWeight>,
     ) -> Result<Self, VindexError> {
+        // Represented, not yet lowered: a YaRN layer is scaled frequencies
+        // AND an attention amplitude, and `LoweredPosition` speaks plain
+        // rope or none. Refuse the whole session rather than let the layer
+        // fall through to `None` below and serve a different model (A-9.4).
+        if let Some(l) = plan
+            .layers
+            .iter()
+            .find(|l| l.attention.position.yarn().is_some())
+        {
+            return Err(VindexError::Parse(format!(
+                "layer {} carries PositionPolicy::Yarn, which the Metal lowering does not \
+                 execute yet (A-9.4); refusing rather than lowering it as unscaled rope",
+                l.layer
+            )));
+        }
+        // Likewise a clamped-GLU FFN (GPT-OSS's `swiglu_limit`): the
+        // lowering encodes plain gated FFNs only, and running the clamped
+        // policy as plain gating would be a different model (A-9.4).
+        if let Some(l) = plan
+            .layers
+            .iter()
+            .find(|l| !matches!(l.ffn.gate_policy, larql_models::ExpertGatePolicy::Gated))
+        {
+            return Err(VindexError::Parse(format!(
+                "layer {} carries {:?}, which the Metal lowering does not execute yet (A-9.4); \
+                 refusing rather than lowering it as plain gating",
+                l.layer, l.ffn.gate_policy
+            )));
+        }
         let embedding = plan
             .embedding
             .as_ref()
@@ -558,6 +587,10 @@ impl<'a> LoweredSession<'a> {
                     PositionPolicy::Rope { theta } if !self.ablate.no_rope => {
                         LoweredPosition::Rope { theta }
                     }
+                    // Refused in `new`; a Yarn layer never reaches a step.
+                    PositionPolicy::Yarn { .. } => {
+                        unreachable!("PositionPolicy::Yarn is refused by LoweredSession::new")
+                    }
                     _ => LoweredPosition::None,
                 },
                 // A window applies only to a sliding span; a full layer
@@ -647,6 +680,15 @@ pub(super) fn run_lowered(
     if let Some((rows, cols)) = session.head_geometry() {
         eprintln!("head geometry: [{rows}, {cols}]");
     }
+    eprintln!(
+        "plan: {} rope base(s), final norm {}",
+        session.rope_bases(),
+        if session.has_final_norm() {
+            "present"
+        } else {
+            "absent"
+        }
+    );
 
     let prompt_started = std::time::Instant::now();
     let mut logits: Option<Vec<f32>> = None;

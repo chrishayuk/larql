@@ -21,29 +21,12 @@ use larql_models::YarnRopeScaling;
 /// Amplitude applied to `cos`/`sin` when no scaling asks for one.
 pub const UNIT_AMPLITUDE: f64 = 1.0;
 
-/// HF's `get_mscale`: the amplitude a scale factor implies.
-///
-/// Returns 1.0 for `scale <= 1`, matching HF exactly — a factor of 1 is "no
-/// extension", and `0.1·ln(1) + 1` would coincidentally also be 1.0 but the
-/// guard is what makes `factor < 1` safe.
-fn get_mscale(scale: f64, mscale: f64) -> f64 {
-    if scale <= 1.0 {
-        return 1.0;
-    }
-    0.1 * mscale * scale.ln() + 1.0
-}
-
-/// The attention amplitude for a YaRN block.
-///
-/// Two forms, and picking the wrong one is a silent 35 % error:
-/// * both `mscale` and `mscale_all_dim` present (DeepSeek) → their **ratio**,
-///   which for the usual `mscale == mscale_all_dim` collapses to exactly 1.0;
-/// * otherwise (GPT-OSS) → the single-argument `get_mscale(factor)`.
+/// The attention amplitude for a YaRN block — delegates to the config
+/// crate's [`YarnRopeScaling::attention_amplitude`], the single authority
+/// (the VINDEX3 container carries the block and is judged against the
+/// same number).
 pub fn attention_amplitude(s: &YarnRopeScaling) -> f64 {
-    match (s.mscale, s.mscale_all_dim) {
-        (Some(m), Some(m_all)) => get_mscale(s.factor, m) / get_mscale(s.factor, m_all),
-        _ => get_mscale(s.factor, 1.0),
-    }
+    s.attention_amplitude()
 }
 
 /// HF's `find_correction_dim` — the dimension index at which the rotary

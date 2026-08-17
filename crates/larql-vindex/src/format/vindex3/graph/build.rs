@@ -446,9 +446,43 @@ fn merge_binding(
     });
 }
 
+/// The MXFP4 pair suffixes HF writes for a block-quantised tensor: the
+/// packed e2m1 nibbles and the e8m0 scales, both stored as `U8`.
+const MXFP4_BLOCKS_SUFFIX: &str = "_blocks";
+const MXFP4_SCALES_SUFFIX: &str = "_scales";
+/// The encoding name a declared MXFP4 tensor is placed under, in the same
+/// vocabulary as the region formats a container writes.
+const MXFP4_ENCODING: &str = "MXFP4";
+
+/// The encoding one tensor is placed under: its shard dtype, unless the
+/// checkpoint's declared stored representation says those bytes are
+/// something else. A `U8` `*_blocks` / `*_scales` tensor under an `mxfp4`
+/// declaration, outside `modules_to_not_convert`, is MXFP4 — placing it as
+/// raw bytes would drop the one fact that gives the bytes meaning.
+fn tensor_encoding<'a>(
+    inventory: &'a ArchitectureInventory,
+    name: &str,
+    dtype: &'a str,
+) -> &'a str {
+    let Some(rep) = inventory.stored_representation.as_ref() else {
+        return dtype;
+    };
+    let declared_mxfp4 = rep
+        .method
+        .eq_ignore_ascii_case(larql_models::inventory::representation::QUANT_METHOD_MXFP4);
+    let mxfp4_pair = name.ends_with(MXFP4_BLOCKS_SUFFIX) || name.ends_with(MXFP4_SCALES_SUFFIX);
+    if declared_mxfp4 && mxfp4_pair && dtype == "U8" && !rep.excludes(name) {
+        MXFP4_ENCODING
+    } else {
+        dtype
+    }
+}
+
 /// The canonical representation for an object: encodings actually observed
-/// in the shard headers under this prefix, falling back to the checkpoint's
-/// declared dtype when the per-tensor list was stripped. Never invented.
+/// in the shard headers under this prefix — read through the checkpoint's
+/// declared stored representation, see [`tensor_encoding`] — falling back
+/// to the checkpoint's declared dtype when the per-tensor list was
+/// stripped. Never invented.
 fn canonical_representation(
     inventory: &ArchitectureInventory,
     prefix: &str,
@@ -458,7 +492,7 @@ fn canonical_representation(
         .tensors
         .iter()
         .filter(|t| t.name.starts_with(prefix))
-        .map(|t| t.dtype.as_str())
+        .map(|t| tensor_encoding(inventory, &t.name, t.dtype.as_str()))
         .collect();
     encodings.sort_unstable();
     encodings.dedup();

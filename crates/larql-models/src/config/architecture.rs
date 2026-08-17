@@ -405,16 +405,30 @@ pub trait ModelArchitecture: Send + Sync {
     /// The forward path for a family that declares NoPE layers must consume
     /// this policy, not a raw theta — a zero base is degenerate
     /// (`1/0^(i/d)`), never a parameter value.
+    ///
+    /// A checkpoint that declares `rope_scaling.rope_type = "yarn"` states a
+    /// second execution fact — scaled frequencies and an attention amplitude
+    /// — for every rotating layer, and the policy carries it
+    /// ([`PositionPolicy::Yarn`]) rather than letting it be read once by the
+    /// forward path and dropped by everything else ([`Self::yarn_rope_scaling`]
+    /// is the config read; this is where it becomes per-layer policy).
     fn position_policy_for_layer(&self, layer: usize) -> PositionPolicy {
+        let yarn = self.yarn_rope_scaling();
         match self
             .config()
             .layer_rope_theta
             .as_ref()
             .and_then(|thetas| thetas.get(layer))
         {
-            Some(&declared) => PositionPolicy::from_declared_theta(declared),
-            None => PositionPolicy::Rope {
-                theta: self.rope_base_for_layer(layer),
+            Some(&declared) => PositionPolicy::from_declared_theta_with_yarn(declared, yarn),
+            None => match yarn {
+                Some(scaling) => PositionPolicy::Yarn {
+                    theta: self.rope_base_for_layer(layer),
+                    scaling,
+                },
+                None => PositionPolicy::Rope {
+                    theta: self.rope_base_for_layer(layer),
+                },
             },
         }
     }

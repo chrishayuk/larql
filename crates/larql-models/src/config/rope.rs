@@ -150,7 +150,13 @@ pub struct Llama3RopeScaling {
 /// range", it is running attention at the wrong temperature everywhere. For
 /// `openai/gpt-oss-20b` (`factor: 32`) the amplitude is **1.3466**, so
 /// unscaled cos/sin are 34.7 % too small and `q·k` is off by 1.81×.
-#[derive(Debug, Clone, Copy)]
+///
+/// Serialisable and comparable because [`PositionPolicy::Yarn`] carries it
+/// into the VINDEX3 container: the block is a judged execution fact, not a
+/// parse-time convenience.
+///
+/// [`PositionPolicy::Yarn`]: super::position::PositionPolicy::Yarn
+#[derive(Debug, Clone, Copy, PartialEq, serde::Serialize, serde::Deserialize)]
 pub struct YarnRopeScaling {
     pub factor: f64,
     pub beta_fast: f64,
@@ -165,6 +171,41 @@ pub struct YarnRopeScaling {
     pub mscale: Option<f64>,
     /// DeepSeek's `mscale_all_dim`. See [`Self::mscale`].
     pub mscale_all_dim: Option<f64>,
+}
+
+impl YarnRopeScaling {
+    /// HF's `get_mscale`: the amplitude a scale factor implies.
+    ///
+    /// Returns 1.0 for `scale <= 1`, matching HF exactly — a factor of 1 is
+    /// "no extension", and `0.1·ln(1) + 1` would coincidentally also be 1.0
+    /// but the guard is what makes `factor < 1` safe.
+    fn get_mscale(scale: f64, mscale: f64) -> f64 {
+        if scale <= 1.0 {
+            return 1.0;
+        }
+        0.1 * mscale * scale.ln() + 1.0
+    }
+
+    /// The attention amplitude this block applies to `cos`/`sin` — the
+    /// part of YaRN that moves every logit, at every position.
+    ///
+    /// Two forms, and picking the wrong one is a silent 35 % error:
+    /// * both `mscale` and `mscale_all_dim` present (DeepSeek) → their
+    ///   **ratio**, which for the usual `mscale == mscale_all_dim`
+    ///   collapses to exactly 1.0;
+    /// * otherwise (GPT-OSS) → the single-argument `get_mscale(factor)`.
+    ///
+    /// This is the single authority; `larql-compute`'s rope module
+    /// delegates here, and the VINDEX3 carriage of `rope_scaling` is
+    /// judged against it.
+    pub fn attention_amplitude(&self) -> f64 {
+        match (self.mscale, self.mscale_all_dim) {
+            (Some(m), Some(m_all)) => {
+                Self::get_mscale(self.factor, m) / Self::get_mscale(self.factor, m_all)
+            }
+            _ => Self::get_mscale(self.factor, 1.0),
+        }
+    }
 }
 
 #[cfg(test)]

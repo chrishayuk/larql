@@ -127,6 +127,7 @@ pub fn resolve(config: &Value, identity: &Identity) -> (Detection, ResolvedTopol
         attention_output_gate: arch.attention_output_gate(),
         activation: arch.activation(),
         ffn_type: arch.ffn_type(),
+        gate_policy: arch.expert_gate_policy(),
         norm_pre: arch.pre_norm_spec(),
         norm_post: arch.post_norm_spec(),
         norm_final: arch.final_norm_spec(),

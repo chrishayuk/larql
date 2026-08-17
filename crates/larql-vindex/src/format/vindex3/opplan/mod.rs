@@ -116,6 +116,9 @@ pub struct AttentionOp {
 pub struct FfnOp {
     pub intermediate_size: usize,
     pub activation: Activation,
+    /// How the gate combines with the up branch (plain gated, or GPT-OSS's
+    /// clamped GLU). Transcribed from `FfnSurface.gate_policy`.
+    pub gate_policy: larql_models::ExpertGatePolicy,
     /// Present iff the surface says the FFN is gated.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub gate: Option<OperandRef>,

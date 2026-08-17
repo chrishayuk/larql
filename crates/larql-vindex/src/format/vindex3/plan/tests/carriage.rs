@@ -32,17 +32,16 @@ fn finding_for<'a>(findings: &'a [Finding], suffix: &str) -> &'a Finding {
         .unwrap_or_else(|| panic!("no finding for `{suffix}`"))
 }
 
-/// **The positive control.** GPT-OSS declares `rope_scaling = {rope_type:
-/// "yarn", factor: 32}` for a 131k context. Every leaf of that block is
-/// `consumed` — the parser genuinely reads it — but `PositionPolicy` is
-/// `Rope { theta } | None` and carries no scaling, so the model would
-/// execute as plain rope and the old gate said nothing at all.
-///
-/// The carriage probe answers what the schema can actually express
-/// (`default`), the comparison against the declaration fails, and the
-/// plan refuses.
+/// **The positive control.** A `yarn` block that is *incomplete* — GPT-OSS
+/// declares `factor: 32` but this checkpoint omits
+/// `original_max_position_embeddings`, which YaRN's correction bounds are
+/// defined against — resolves to no scaling at all (`yarn_rope_scaling`
+/// refuses a malformed block), so the position policy carries plain rope.
+/// The carriage probe answers `default`, the comparison against the
+/// declaration fails, and the plan refuses: a `yarn` the container cannot
+/// honour is a dropped fact, whatever the reason.
 #[test]
-fn declared_yarn_scaling_blocks_because_the_schema_cannot_express_it() {
+fn an_incomplete_yarn_block_resolves_to_plain_rope_and_blocks() {
     let findings = plan_with(|config| {
         config["text_config"]["rope_parameters"]["rope_type"] = serde_json::json!("yarn");
         config["text_config"]["rope_parameters"]["factor"] = serde_json::json!(32.0);
@@ -59,6 +58,47 @@ fn declared_yarn_scaling_blocks_because_the_schema_cannot_express_it() {
         "a dropped fact reaches the parser and no further"
     );
     assert!(finding.blocks(), "a dropped execution semantic must block");
+}
+
+/// **The positive arm of A-9.0.** A complete `yarn` block — GPT-OSS's, with
+/// its `original_max_position_embeddings` — becomes `PositionPolicy::Yarn`
+/// on every rotating layer, and the probe reads `yarn` back out of the
+/// built table. Every leaf of the block is judged against what the policy
+/// carries, not merely credited for having been parsed.
+#[test]
+fn a_complete_yarn_block_is_carried_as_position_policy_yarn() {
+    let findings = plan_with(|config| {
+        let rp = &mut config["text_config"]["rope_parameters"];
+        rp["rope_type"] = serde_json::json!("yarn");
+        rp["factor"] = serde_json::json!(32.0);
+        rp["beta_fast"] = serde_json::json!(32.0);
+        rp["beta_slow"] = serde_json::json!(1.0);
+        rp["truncate"] = serde_json::json!(false);
+        rp["original_max_position_embeddings"] = serde_json::json!(4096);
+    });
+    let rope_type = finding_for(&findings, "rope_parameters.rope_type");
+    assert_eq!(
+        rope_type.category,
+        FindingCategory::Representable,
+        "{rope_type:?}"
+    );
+    assert_eq!(rope_type.resolved, Some(serde_json::json!("yarn")));
+    assert_eq!(rope_type.carriage, Some(Carriage::Represented));
+    assert!(!rope_type.blocks());
+
+    for (leaf, declared) in [
+        ("factor", serde_json::json!(32.0)),
+        ("beta_fast", serde_json::json!(32.0)),
+        ("beta_slow", serde_json::json!(1.0)),
+        ("truncate", serde_json::json!(false)),
+        ("original_max_position_embeddings", serde_json::json!(4096)),
+    ] {
+        let f = finding_for(&findings, &format!("rope_parameters.{leaf}"));
+        assert_eq!(f.category, FindingCategory::Representable, "{leaf}: {f:?}");
+        assert_eq!(f.declared, Some(declared), "{leaf}");
+        assert_eq!(f.carriage, Some(Carriage::Represented), "{leaf}");
+        assert!(!f.blocks(), "{leaf}");
+    }
 }
 
 /// **The negative control, on the same key.** Muse-Glimmer declares
@@ -83,15 +123,16 @@ fn declared_default_rope_type_is_carried_not_blocked() {
 /// keep a key out of the report entirely, so a fact nobody had checked
 /// looked identical to one that was carried.
 ///
-/// GPT-OSS's `swiglu_limit` (a ±7 clamp on the fused gate/up halves
-/// before the GLU) is the live occupant — `FfnSurface` has no field for
-/// it, and MOE1 is where it gets one.
+/// `partial_rotary_factor` is the live occupant: consumed by the parser,
+/// execution-semantic (it changes which dimensions rotate), and judged by
+/// no rule yet. (`swiglu_limit` held this slot until A-9.0 gave it a gate
+/// policy — see the two tests below.)
 #[test]
 fn an_execution_semantic_key_with_no_carriage_rule_blocks() {
     let findings = plan_with(|config| {
-        config["text_config"]["swiglu_limit"] = serde_json::json!(7.0);
+        config["text_config"]["partial_rotary_factor"] = serde_json::json!(0.5);
     });
-    let finding = finding_for(&findings, "swiglu_limit");
+    let finding = finding_for(&findings, "partial_rotary_factor");
 
     assert_eq!(finding.category, FindingCategory::Unrepresented);
     assert_eq!(finding.class, SemanticClass::ExecutionSemantic);
@@ -102,6 +143,44 @@ fn an_execution_semantic_key_with_no_carriage_rule_blocks() {
         finding.detail
     );
     assert!(finding.blocks());
+}
+
+/// `swiglu_limit` on an architecture whose FFN gate is plain gating: the
+/// surface carries `ExpertGatePolicy::Gated`, so there is no limit to
+/// answer with, and the declared clamp is reported as unrepresented —
+/// which is the truth about this fixture, and blocks.
+#[test]
+fn swiglu_limit_on_a_plain_gated_ffn_is_unrepresented_and_blocks() {
+    let findings = plan_with(|config| {
+        config["text_config"]["swiglu_limit"] = serde_json::json!(7.0);
+    });
+    let finding = finding_for(&findings, "swiglu_limit");
+
+    assert_eq!(
+        finding.category,
+        FindingCategory::Unrepresented,
+        "{finding:?}"
+    );
+    assert_eq!(finding.class, SemanticClass::ExecutionSemantic);
+    assert!(
+        finding.detail.contains("no built component answered"),
+        "{}",
+        finding.detail
+    );
+    assert!(finding.blocks());
+}
+
+/// The rule itself is on the books, reaching `Represented` at the gate
+/// policy — so a GPT-OSS-shaped surface, whose architecture resolves
+/// `ExpertGatePolicy::ClampedGlu { limit: swiglu_limit, .. }`, answers the
+/// probe with the limit and the fact is judged carried. (An end-to-end
+/// GPT-OSS fixture is A-9.2's; here the rule and its probe are pinned.)
+#[test]
+fn swiglu_limit_has_a_carriage_rule_at_the_gate_policy() {
+    let rule = rule_for("swiglu_limit").expect("swiglu_limit is judged");
+    assert_eq!(rule.reaches, Carriage::Represented);
+    assert!(rule.site.contains("gate_policy"), "{}", rule.site);
+    assert!(rule.probe.is_some());
 }
 
 /// A fact that honestly stops at the parser is *reported*, not hidden.

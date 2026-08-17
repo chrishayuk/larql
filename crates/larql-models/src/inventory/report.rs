@@ -56,6 +56,14 @@ pub struct ArchitectureInventory {
     /// single-component checkpoints.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub nested_components: Vec<crate::inventory::components::ComponentTopology>,
+    /// The checkpoint's declared stored representation
+    /// (`quantization_config`), read by
+    /// [`super::representation::read_stored_representation`]. `None` for
+    /// an unquantised checkpoint. Decides what raw-byte tensors *mean* —
+    /// GPT-OSS's `U8` expert blocks and scales are MXFP4 by this
+    /// declaration alone.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub stored_representation: Option<crate::inventory::representation::StoredRepresentation>,
     /// Every leaf in `config.json`, flattened to a dot path, classified.
     pub config_keys: Vec<ConfigKeyFact>,
     /// Declared cross-component interfaces (see
@@ -153,6 +161,12 @@ pub struct ResolvedExecution {
     pub attention_output_gate: Option<crate::config::AttentionGateSpec>,
     pub activation: crate::config::Activation,
     pub ffn_type: crate::config::FfnType,
+    /// How the FFN's gate combines with its up branch. `Gated` is the
+    /// plain `activation(gate) * up`; GPT-OSS's clamped GLU is a distinct
+    /// policy, not an activation variant — see `ExpertGatePolicy`.
+    /// Defaults for inventories written before it was recorded.
+    #[serde(default)]
+    pub gate_policy: crate::config::ExpertGatePolicy,
     /// Complete norm spec for the pre-attention / pre-FFN sites.
     pub norm_pre: crate::config::NormSpec,
     /// Complete norm spec for the post-attention / post-FFN sites.

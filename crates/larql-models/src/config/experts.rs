@@ -101,7 +101,8 @@ impl GateUpLayout {
 /// adds one to the up branch. Modelling that as "SiLU with extra steps" is how
 /// a forward pass ends up plausibly wrong — hence an explicit policy rather
 /// than an [`Activation`] variant.
-#[derive(Debug, Clone, Copy, PartialEq)]
+#[derive(Debug, Clone, Copy, PartialEq, serde::Serialize, serde::Deserialize)]
+#[serde(tag = "kind", rename_all = "snake_case")]
 pub enum ExpertGatePolicy {
     /// `activation(gate) * up` — Mixtral, Gemma 4, OLMoE, GraniteMoE.
     Gated,
@@ -119,6 +120,15 @@ pub enum ExpertGatePolicy {
         /// Multiplier on the sigmoid argument (1.702 in the reference).
         alpha: f32,
     },
+}
+
+impl Default for ExpertGatePolicy {
+    /// The plain gated form — what every architecture that does not
+    /// override `expert_gate_policy` computes, and what an inventory or
+    /// container written before the policy was carried meant.
+    fn default() -> Self {
+        Self::Gated
+    }
 }
 
 /// How a router's top-k weights are normalised.

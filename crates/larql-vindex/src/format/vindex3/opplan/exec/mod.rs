@@ -317,6 +317,7 @@ fn execute_layer<B: PlanBackend + ?Sized>(
             up: up.slice(),
             down: down.slice(),
             activation: layer.ffn.activation,
+            gate_policy: layer.ffn.gate_policy,
         })?;
         let ffn_out = match &layer.post_ffn_norm {
             Some(op) => apply_norm_op(op, store, &ffn_out, backend)?,

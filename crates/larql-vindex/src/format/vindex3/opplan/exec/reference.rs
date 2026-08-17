@@ -107,13 +107,27 @@ impl ReferenceBackend {
                 *value *= query_scale as f32;
             }
         }
-        if let PositionPolicy::Rope { theta } = call.position {
-            for head in q.chunks_exact_mut(head_dim) {
-                rope_rotate(head, position, theta);
+        match call.position {
+            PositionPolicy::Rope { theta } => {
+                for head in q.chunks_exact_mut(head_dim) {
+                    rope_rotate(head, position, theta);
+                }
+                for head in k.chunks_exact_mut(head_dim) {
+                    rope_rotate(head, position, theta);
+                }
             }
-            for head in k.chunks_exact_mut(head_dim) {
-                rope_rotate(head, position, theta);
+            // Represented, not yet executed here: YaRN is scaled frequencies
+            // AND an attention amplitude, and rotating at the bare theta would
+            // silently serve the wrong model. Refuse until A-9.3 lands it.
+            PositionPolicy::Yarn { .. } => {
+                return Err(VindexError::Parse(
+                    "PositionPolicy::Yarn is carried by the container but this backend does not \
+                     execute YaRN rotary scaling yet (A-9.3); refusing rather than rotating at the \
+                     unscaled theta"
+                        .to_string(),
+                ));
             }
+            PositionPolicy::None => {}
         }
         Ok((q, k, v))
     }
@@ -286,6 +300,7 @@ impl PlanBackend for ReferenceBackend {
     }
 
     fn ffn(&self, call: FfnCall<'_>) -> Result<Vec<f32>, VindexError> {
+        super::production::require_plain_gate("reference", call.gate_policy)?;
         let up = matvec(call.up.as_f32()?, call.intermediate, call.hidden, call.x);
         let inner: Vec<f32> = match call.gate {
             Some(gate_weight) => {

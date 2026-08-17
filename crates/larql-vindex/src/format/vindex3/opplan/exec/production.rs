@@ -63,6 +63,26 @@ pub(super) fn unsupported_activation(shape: &str, activation: Activation) -> Vin
     ))
 }
 
+/// The gate policy every backend here honours today. A `ClampedGlu` plan
+/// (GPT-OSS's `swiglu_limit`) is carried by the container and refused
+/// until A-9.3 executes it — computing `activation(gate) * up` for it
+/// would run a different model without saying so.
+pub(super) fn require_plain_gate(
+    backend: &str,
+    policy: larql_models::ExpertGatePolicy,
+) -> Result<(), VindexError> {
+    match policy {
+        larql_models::ExpertGatePolicy::Gated => Ok(()),
+        larql_models::ExpertGatePolicy::ClampedGlu { limit, alpha } => {
+            Err(VindexError::Parse(format!(
+                "the {backend} backend does not execute ExpertGatePolicy::ClampedGlu {{ limit: \
+             {limit}, alpha: {alpha} }} yet (A-9.3); refusing rather than applying plain \
+             gating to a clamped-GLU FFN"
+            )))
+        }
+    }
+}
+
 /// Wrap one vector as a `[1, n]` matrix for the row-wise norm kernels.
 pub(super) fn as_row(x: &[f32]) -> Array2<f32> {
     Array2::from_shape_vec((1, x.len()), x.to_vec()).expect("row shape matches length")
@@ -105,7 +125,7 @@ pub(super) fn condition_qk_in_place(
     position: usize,
     q: &mut [f32],
     k: &mut [f32],
-) {
+) -> Result<(), VindexError> {
     let head_dim = call.head_dim;
     let qk_weight = call.qk_norm.as_ref().map(
         |QkNormCall {
@@ -143,14 +163,29 @@ pub(super) fn condition_qk_in_place(
             *value *= query_scale as f32;
         }
     }
-    if let PositionPolicy::Rope { theta } = call.position {
-        for head in q.chunks_exact_mut(head_dim) {
-            rope_rotate(head, position, theta);
+    match call.position {
+        PositionPolicy::Rope { theta } => {
+            for head in q.chunks_exact_mut(head_dim) {
+                rope_rotate(head, position, theta);
+            }
+            for head in k.chunks_exact_mut(head_dim) {
+                rope_rotate(head, position, theta);
+            }
         }
-        for head in k.chunks_exact_mut(head_dim) {
-            rope_rotate(head, position, theta);
+        // Represented, not yet executed here: YaRN is scaled frequencies
+        // AND an attention amplitude, and rotating at the bare theta would
+        // silently serve the wrong model. Refuse until A-9.3 lands it.
+        PositionPolicy::Yarn { .. } => {
+            return Err(VindexError::Parse(
+                "PositionPolicy::Yarn is carried by the container but this backend does not \
+                 execute YaRN rotary scaling yet (A-9.3); refusing rather than rotating at the \
+                 unscaled theta"
+                    .to_string(),
+            ));
         }
+        PositionPolicy::None => {}
     }
+    Ok(())
 }
 
 /// One query position's scores, softmax and weighted-V aggregation —
@@ -224,7 +259,7 @@ impl ProductionBackend {
         let mut q = matmul_vec(pre, call.w_q.as_f32()?, q_rows, call.hidden);
         let mut k = matmul_vec(pre, call.w_k.as_f32()?, kv_rows, call.hidden);
         let v = matmul_vec(pre, call.w_v.as_f32()?, kv_rows, call.hidden);
-        condition_qk_in_place(call, position, &mut q, &mut k);
+        condition_qk_in_place(call, position, &mut q, &mut k)?;
         Ok((q, k, v))
     }
 
@@ -365,6 +400,7 @@ impl PlanBackend for ProductionBackend {
     }
 
     fn ffn(&self, call: FfnCall<'_>) -> Result<Vec<f32>, VindexError> {
+        require_plain_gate("production", call.gate_policy)?;
         let up = matmul_vec(call.x, call.up.as_f32()?, call.intermediate, call.hidden);
         let inner: Vec<f32> = match call.gate {
             Some(gate_weight) => {

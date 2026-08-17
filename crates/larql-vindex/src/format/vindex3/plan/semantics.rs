@@ -33,6 +33,20 @@ pub const EXECUTION_SEMANTIC_KEYS: &[&str] = &[
     "final_logit_softcapping",
     "attn_logit_softcapping",
     "partial_rotary_factor",
+    // The YaRN block's leaves. Each changes what attention computes —
+    // `factor` sets the frequency blend AND the amplitude on every logit,
+    // the betas and `truncate` set the correction band, and
+    // `original_max_position_embeddings` is the window those bounds are
+    // defined against — so each is judged against `PositionPolicy::Yarn`
+    // by its own carriage rule, not credited for being parsed. Under a
+    // non-YaRN `rope_type` (llama3, linear) the probes answer `None` and
+    // the leaves report unrepresented, which is the truth until those
+    // classes have a variant.
+    "factor",
+    "beta_fast",
+    "beta_slow",
+    "truncate",
+    "original_max_position_embeddings",
     // GPT-OSS clamps both halves of the fused gate/up projection at
     // ±this value before the GLU. It changes what the FFN computes, so
     // it is execution-semantic wherever it is declared.
@@ -57,6 +71,15 @@ pub const TENSOR_SEMANTIC_KEYS: &[&str] = &[
     "patch_temporal",
     "pos_emb_height",
     "pos_emb_width",
+    // The stored representation: what the checkpoint's raw-byte tensors
+    // *are*. `quantization_config.quant_method` (`mxfp4` on GPT-OSS) and
+    // its `modules_to_not_convert` exclusion list decide the encoding a
+    // `U8` blocks/scales pair is placed under. Read by the inventory's
+    // representation reader; proven carried by the placed object's
+    // `representations[].encoding` (which names MXFP4, not U8), the same
+    // way every other tensor semantic is proven by placement.
+    "quant_method",
+    "modules_to_not_convert",
 ];
 
 /// Keys that declare a cross-component contract: hidden-state taps, block

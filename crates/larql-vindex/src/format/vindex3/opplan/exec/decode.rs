@@ -264,6 +264,7 @@ impl<'a, B: PlanBackend> DecodeSession<'a, B> {
                 up: state.ffn_up.slice(),
                 down: state.ffn_down.slice(),
                 activation: layer.ffn.activation,
+                gate_policy: layer.ffn.gate_policy,
             })?;
             let ffn_out = match &state.post_ffn {
                 Some(norm) => norm.apply(self.backend, &ffn_out),

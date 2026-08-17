@@ -337,7 +337,7 @@ container ladder
 [x] c5  structural verify with {layer, entry, role} defects; CLI dual-generation
 [ ] c6  fixtures B–D (GPT-OSS, Inkling, Mini-K3) — proves nothing is hard-coded
 [ ] c7  WALK/DESCRIBE parity over in-place bank regions
-[ ] c8  a real Gemma MoE layer written as a VINDEX3 container
+[x] c8  a real Gemma MoE layer written as a VINDEX3 container (CLOSED 2026-08-04, below)
 [ ] c9  every Gemma layer — the first real model that *is* a VINDEX3 container
 ```
 
@@ -1735,7 +1735,18 @@ is dense on that path, and the two container shapes, `system_graph.json` vs
 `index.moe_manifest = None`):
 
 ```text
-A-9.0  plan admissibility as REPRESENTATION, not suppression:
+A-9.0  DONE 2026-08-17 (branch feat/vindex3-gpt-oss-rung0): `larql vindex3 plan` on the HF
+       checkpoint is admissible — 50 representable / 0 mismatched / 4 unrepresented (all
+       alias or training_only) / 0 blocking; PositionPolicy::Yarn{theta 150000, factor 32,
+       β 32/1, orig 4096} carried, amplitude derived by ONE authority
+       (YarnRopeScaling::attention_amplitude); ffn.gate_policy = ClampedGlu{7, 1.702};
+       decoder_stack encodings BF16+MXFP4. Executors and the lowering REFUSE Yarn and
+       ClampedGlu (typed, before any bytes) rather than serve the wrong model. Two finds
+       the gate forced: the parser read theta from transformers-5 `rope_parameters` but
+       SCALING only from legacy `rope_scaling` (a 5.x YaRN block was dropped at parse —
+       §4.7.8 again; fixed, pinned); and the YaRN leaves had carriage rules but were not
+       classified execution-semantic, so the rules were never reached. As mapped:
+       plan admissibility as REPRESENTATION, not suppression:
        PositionPolicy gains a YaRN variant carrying {theta, factor, beta_fast, beta_slow,
        truncate, original_max_position_embeddings, amplitude} — amplitude is the part that
        moves every logit and lowering/mod.rs:397 fakes 1.0 today; probe_rope_type reads it
@@ -1768,6 +1779,175 @@ geometry-dependent.** VINDEX3 carries semantic geometry; the Metal planner
 owns the execution choice; the KV engines belong under the same planner.
 Individual techniques (kernel selection, seqpar) are not novel; the claim is
 integration from semantics down to execution.
+
+### VINDEX3 stabilisation — freeze gauntlet, positioning, standard-grade backlog (2026-08-17)
+
+**Judgement: the architecture is converged; the ABI has one adversarial pass
+left, and that pass is A-9.** Distinguish *architectural stability* from
+*freezing schema 3*. The question is no longer "is the VINDEX3 abstraction
+right?" but "have we discovered every semantic noun and relationship the
+frozen ABI must carry?" — and gpt-oss is the last high-value attack on it,
+because every A-9 blocker is a **schema-vocabulary** fact (YaRN incl.
+amplitude, clamped-GLU policy, representation-level quantisation policy,
+sinks, Q/K/V/O biases, expert-bank objects, router/expert/bias roles, MoE
+FFN op, over-selected normalisation), not a kernel. Freeze before A-9.0–A-9.3
+close and schema 3.0 immediately fails to describe a production architecture.
+
+| Layer | Assessment |
+|---|---|
+| Core VINDEX3 idea (state the working set before execution) | ~95 % settled — 200 predicted / 200 resident / 0 overshoot |
+| Object / region / addressability model | ~90 % settled |
+| Plan / execution architecture (reference → production → lowered) | ~90 % settled |
+| Dense / Glimmer execution model | proven (real-model parity, GPU-resident multi-layer, KV through the plan) |
+| Routed-bank serving | proven in production machinery (native MXFP4, GPU routing, one CB/token) |
+| Generic MoE graph semantics | **still moving** (A-9.2/A-9.3) |
+| Representation / profile machinery | conceptually settled, plumbing incomplete (selection does not yet steer bytes) |
+| V3 extraction / default lifecycle | not ready to freeze |
+| On-disk ABI / schema 3 | one serious architecture pass from freeze |
+
+The pattern that says the centre is stable: *new architecture → missing
+semantic fact exposed → added to graph/plan → the existing lowerer can reason
+about it.* The 2026-08-16 representation algebra is the milestone —
+attention policy stopped being a model-name decision and became
+`(head_dim, q_heads, kv_heads, span) → execution geometry`, unmeasured cases
+falling back rather than guessing. VINDEX3 knows *what the operation means,
+what representations exist, what semantic geometry exists*; the backend
+planner knows *how this hardware executes it*. **Protect that boundary.** The
+Metal work strengthened it rather than distorting it: VINDEX3 segments are
+mmap'd and registered straight into Metal buffers, expert selection stays
+GPU-side, host resolution/binding witnesses stay zero, output byte-identical
+— the bytes remain authoritative, so **bind, never reconstruct** graduates
+from standing method to a design principle of the format.
+
+**One smell to resolve before freeze:** `system_graph.json` and
+`moe_manifest.json` are mutually exclusive container shapes. The frozen
+answer must be *MoE is another operation/object arrangement inside a VINDEX3
+system*, not a different container type — `moe_manifest.json` may survive as
+a physical/indexing artefact, but MoE must not live outside the graph
+universe. A-9.2 is that closure.
+
+```text
+VINDEX3
+   ├── objects          tensor · expert_bank · embedding · norm · …
+   ├── representations  F16 · Q4_K · MXFP4+E8M0 · NVFP4 · …
+   ├── operations       attention · dense_ffn · routed_ffn · norm · vocab_projection · …
+   └── plans / profiles
+```
+
+**Freeze gauntlet — seven gates, all required before "schema 3.0 is frozen":**
+
+```text
+F1  ontology closure      A-9.0/1/2/3 close without a NEW CATEGORY of semantic fact
+F2  cross-family witness  Glimmer (dense, local/global) · gpt-oss (pure routed MoE +
+                          biases/sinks/YaRN) · Gemma 4 (hybrid MoE); recurrent/KDA later,
+                          non-blocking if unsupported ops fail loudly
+F3  representation witness ONE container genuinely carries ≥2 representations of the same
+                          semantic role; profile choice changes the BOUND bytes; a tamper
+                          control proves it cannot silently hit the other
+F4  independent execution reference → production → lowered parity (the discipline in hand)
+F5  database parity       WALK/DESCRIBE run against V3 authority, not a V2 shadow — the
+                          exact expert-bank bytes execution binds ARE the addressable
+                          objects; no second KNN index unless declared a derived repr
+F6  E0                    VINDEX2 untouched: full golden matrix + legacy CLI dispatch
+F7  mutation test         corrupt every load-bearing relationship (wrong role, dims,
+                          representation, missing partner scale, impossible profile,
+                          illegal programme, wrong bank ownership, overlapping ranges,
+                          unsupported policy) → typed refusal, every one
+```
+
+After F1–F7: *"VINDEX3 schema 3.0 is frozen. Additive extensions preserve the
+3.x compatibility rules; semantic breaking changes require VINDEX4."*
+Extraction default is a **later, separate** ladder — semantic freeze → schema
+freeze → conformance fixtures → `--format vindex3` opt-in → soak → default →
+VINDEX2 readable indefinitely. Not on the same day.
+
+Housekeeping the freeze implies: this file has stopped being the right
+authority for schema status (c8 was `[ ]` in the ladder above and CLOSED in
+the prose below it). At freeze the status moves to one canonical
+requirement × status × test × fixture × since matrix in the spec, and the
+roadmap points at it.
+
+**Where VINDEX3 sits.** Safetensors stores tensors; GGUF packages an
+inference model; ONNX describes a computation; ExecuTorch/MLC/TensorRT
+describe or compile an execution. VINDEX3 describes the model, its physical
+representations, and how those may be *selectively bound* into execution
+while the model stays addressable as data. Ticks below are *what the format
+represents*, not maturity — GGUF's ecosystem, stability, tooling and
+architecture coverage, ONNX's independent normative standard, and
+TensorRT/TVM's compiler depth all beat VINDEX3 today, and none of those is the
+battle.
+
+| Format | Semantic graph | Quantised layout | mmap/segmented | Exec planning | Multi-repr / placement | Queryable model data | HW-neutral |
+|---|---|---|---|---|---|---|---|
+| Safetensors | ✗ | limited | ✓ | ✗ | ✗ | tensor-level | ✓ |
+| GGUF | metadata/naming | ✓✓ | ✓✓ | ✗ | limited | tensor-level | mostly |
+| ONNX | ✓✓ | some | external data | ✗ | limited | graph-level | ✓✓ |
+| OpenVINO IR / Core ML | ✓ | some/✓ | separate/package | runtime/✓ | some | limited | mostly / Apple |
+| ExecuTorch PTE | ✓ | ✓ | ✓ segmented | ✓✓ | delegates/mem plan | limited | ✓-ish |
+| MLC/TVM | ✓ | ✓✓ | ✓ | ✓✓✓ | target compile | ✗ | source-portable |
+| TensorRT engine | compiled | ✓✓✓ | internal | ✓✓✓ | HW-selected | ✗ | ✗ |
+| **VINDEX3** | ✓ | ✓✓ | ✓✓✓ | ✓✓ | **✓✓✓** | **✓✓✓** | designed to be |
+
+Safetensors is a *source* format for VINDEX3, not a competitor. GGUF's unit
+of authority is the tensor at an offset; VINDEX3's is the semantic object
+with representations and regions — the moat is that *operation → working set*
+is part of the format contract, not a clever runtime's external policy.
+ONNX is the closest to the semantic graph but deliberately declines to
+prescribe physical representation; VINDEX3 keeps meaning + representations +
+locations + bindability together, and encodes a higher-level neural algebra
+(attention, routed_ffn, norm, …) rather than an SSA op graph, so one semantic
+op can lower differently by length, residency, representation, hardware,
+selected experts, prefill vs decode. ExecuTorch is the closest cousin
+(graph + data + lowering + memory plan) but its output is a *prepared
+program*; VINDEX3 is a *datastore from which an execution is constructed at
+serve time*. TensorRT is the far extreme VINDEX3 must not become — an opaque
+compiled artefact cannot answer "where are expert 37's up-projection bytes"
+or "which pages will this op touch". Combined: GGUF's physical storage +
+ONNX's versioned semantic contracts + OCI's content-addressed packaging +
+Arrow/Parquet's random-access engineering + a database's addressability +
+LARQL's representation-aware planning, under **one authority model whose
+bottom does not sever from its top**. "Format" undersells it — it is a
+neural-database storage-engine format.
+
+**Standard-grade backlog** — optimise against the format we would design from
+scratch if models were large, queryable, heterogeneous databases, not against
+GGUF:
+
+| Pri | Improvement | Why |
+|---|---|---|
+| P0 | **Separate container / semantic-IR / opset / representation-set versioning** (ONNX's model: `container 3`, `semantic_ir 1`, `org.larql.core:1`, `org.larql.moe:2`, `org.larql.attn:3`, `org.larql.quant:4`) | KDA arrives as `org.larql.kda:1`, not VINDEX4; a reader says "cannot execute ops 46–91" instead of branching on architecture name |
+| P0 | **Content-address every physical segment** (OCI descriptor: media type + digest + size + locations; manifests as Merkle DAGs) | dedup across fine-tunes, one-segment publishes, local/remote indistinguishable, per-region verification, model identity = hash of the semantic manifest |
+| P0 | **Finish genuine multi-representation objects** — representation as an independently describable entity (encoding, layout, scale encoding, block geometry, alignment, companion streams, accuracy contract, source repr, transformation, HW compat); profiles select a *physical representation* | the signature VINDEX3 capability; F3 above |
+| P0 | **Formal unknown-field semantics** — every extension is `annotation` (ignore) · `execution_metadata` · `semantic_required` (refuse) · `representation_required` (fine if another admissible repr exists) · `interface_required` | criticality work already invented the answer; put it in the spec, avoid GGUF's accumulate-conventions-forever fate |
+| P0 | **Conformance suite + tiny independent reader** (`vindex-spec/`: spec, schema, test-vectors, reference-{c,rust,python}; open/validate/list objects+ops/resolve reprs/map segments/verify hashes, no LARQL dependency) | if only `larql-vindex` can read it, it is a good LARQL format; if a compatible reader is a weekend, it can be a standard |
+| P1 | Transformation/provenance DAG per representation (tool, version, args, input/output digest, calibration corpus digest) | reproducible builds; "where did these 64 bytes come from" has an answer |
+| P1 | First-class overlays/deltas/adapters (`parent: sha256:… ; replace object 391 MXFP4 → sha256:… ; add adapter`) | LoRA, patches, expert replacement, LARQL INSERTs, spec heads as composable artefacts — no 30 GB duplicate, no base mutation |
+| P1 | Remote/range-addressable segments — objects refer to segment *identity*, a resolver yields RAM/mmap/NVMe/HTTP-range/S3/peer/GPU | model-as-database at its logical conclusion |
+| P1 | Compact binary navigation index alongside (or canonical under) `index.json` (`index.vxb`; Arrow footer / Parquet metadata model) | opening K3 must not mean parsing 300 MB of JSON |
+| P1 | Compatibility/capability query — `vindex compat model --runtime metal-m3-max` → per-opset ✓/✗, executable layers, no model data touched | complete-or-refuse, before touching weights |
+| P2 | Per-region measured quality contracts (reference, max_abs, rel_rms, cosine, shannon_delta, fixture digest) | representation choice becomes a correctness decision — the Shannon work meets the representation algebra |
+| P2 | Optional signatures / encryption / access policy | distributed commercial models |
+| P2 | Standard packaging profile (HF, OCI registries, S3, local disk) | natural homes |
+
+Never embed executable code (no Python/dylib/CUDA/wasm-with-host-access to
+*load* a model): operators are declarative contracts, unknown ones fail
+closed, backend code belongs to runtimes — downloading a VINDEX stays closer
+to downloading data than a program.
+
+If only three land before 1.0: **independent IR/opset/representation
+versioning, content-addressed immutable segments, conformance suite + tiny
+reader.** Target end state:
+
+```text
+vindex describe model      → operators, representations by count, local/remote/hot-set bytes,
+                             per-runtime FULL/PARTIAL, derivation digests
+vindex plan model --hardware this-machine --memory 12GB
+                           → a valid physical plan WITHOUT loading the weights
+```
+
+Then K3/Kimi stop being about discovering VINDEX3 and become the stronger
+test: *can the frozen algebra express exotic architectures without changing
+its ontology?*
 
 ---
 

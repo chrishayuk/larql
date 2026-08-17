@@ -220,6 +220,10 @@ pub struct FfnCall<'a> {
     pub up: WeightSlice<'a>,
     pub down: WeightSlice<'a>,
     pub activation: Activation,
+    /// How `gate` combines with `up`. Every backend must honour it or
+    /// refuse: computing `activation(gate) * up` for a `ClampedGlu` plan
+    /// runs a different model.
+    pub gate_policy: larql_models::ExpertGatePolicy,
 }
 
 /// One position's attention against interpreter-owned K/V state — the

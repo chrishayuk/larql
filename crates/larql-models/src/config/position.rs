@@ -13,6 +13,7 @@
 //! [`PositionPolicy::from_declared_theta`]; everything downstream matches on
 //! the variant.
 
+use super::rope::YarnRopeScaling;
 use serde::{Deserialize, Serialize};
 
 /// The HF `layer_rope_theta` sentinel for "no positional encoding on this
@@ -25,6 +26,18 @@ const NOPE_THETA_SENTINEL: f64 = 0.0;
 pub enum PositionPolicy {
     /// Rotary position embedding at the given base frequency.
     Rope { theta: f64 },
+    /// Rotary position embedding at `theta`, with YaRN scaling: a
+    /// per-dimension blend of extrapolated and interpolated frequencies
+    /// **and** an amplitude on `cos`/`sin` that rescales every logit at
+    /// every position (`YarnRopeScaling::attention_amplitude`). Carried as
+    /// its own variant because a consumer that only knows `Rope { theta }`
+    /// would serve the model at the wrong attention temperature everywhere
+    /// — the fact this variant exists to keep from being dropped at the
+    /// container boundary (VINDEX3 A-9.0).
+    Yarn {
+        theta: f64,
+        scaling: YarnRopeScaling,
+    },
     /// No positional encoding — the layer attends position-agnostically.
     None,
 }
@@ -40,13 +53,38 @@ impl PositionPolicy {
         }
     }
 
-    /// The rope base when the policy is rotary; `None` for a NoPE layer.
-    /// Callers that need a theta must handle absence — there is no default.
+    /// Interpret a declared per-layer theta under a checkpoint-wide YaRN
+    /// block: the NoPE sentinel still means none; a rotating layer carries
+    /// the scaling.
+    pub fn from_declared_theta_with_yarn(theta: f64, scaling: Option<YarnRopeScaling>) -> Self {
+        match (Self::from_declared_theta(theta), scaling) {
+            (Self::Rope { theta }, Some(scaling)) => Self::Yarn { theta, scaling },
+            (policy, _) => policy,
+        }
+    }
+
+    /// The rope base when the policy is rotary (scaled or not); `None` for a
+    /// NoPE layer. Callers that need a theta must handle absence — there is
+    /// no default.
     pub fn rope_theta(self) -> Option<f64> {
         match self {
-            Self::Rope { theta } => Some(theta),
+            Self::Rope { theta } | Self::Yarn { theta, .. } => Some(theta),
             Self::None => None,
         }
+    }
+
+    /// The YaRN block when the policy is scaled rotary; `None` for plain
+    /// rotary and NoPE alike.
+    pub fn yarn(self) -> Option<YarnRopeScaling> {
+        match self {
+            Self::Yarn { scaling, .. } => Some(scaling),
+            Self::Rope { .. } | Self::None => None,
+        }
+    }
+
+    /// Whether the layer rotates at all (plain or scaled).
+    pub fn is_rotary(self) -> bool {
+        !matches!(self, Self::None)
     }
 }
 

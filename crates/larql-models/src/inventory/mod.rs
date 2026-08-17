@@ -20,6 +20,7 @@
 pub mod components;
 pub mod config_keys;
 pub mod report;
+pub mod representation;
 pub mod resolved;
 pub mod tensors;
 
@@ -60,12 +61,20 @@ pub fn build_inventory(model_dir: &Path) -> Result<ArchitectureInventory, ModelE
     let (detection, topology) = resolved::resolve(&config, &identity);
     // Nested components first: their recorded reads feed classification.
     let component_readings = components::read_components(&config);
-    let component_consumed: std::collections::BTreeSet<String> = component_readings
+    let mut recorded_reads: std::collections::BTreeSet<String> = component_readings
         .iter()
         .flat_map(|r| r.consumed_paths.iter().cloned())
         .collect();
     let nested_components = component_readings.into_iter().map(|r| r.topology).collect();
-    let config_facts = config_keys::classify_config(&config, &component_consumed);
+    // The stored-representation reader is the second recorded reader:
+    // `quantization_config` is credited only because something read it and
+    // stored what it read.
+    let representation_reading = representation::read_stored_representation(&config);
+    let stored_representation = representation_reading.map(|r| {
+        recorded_reads.extend(r.consumed_paths);
+        r.representation
+    });
+    let config_facts = config_keys::classify_config(&config, &recorded_reads);
     let interfaces = config_keys::find_interfaces(&config_facts);
     let tensor_inventory = tensors::scan_tensors(model_dir)?;
 
@@ -76,6 +85,7 @@ pub fn build_inventory(model_dir: &Path) -> Result<ArchitectureInventory, ModelE
         detection,
         resolved: topology,
         nested_components,
+        stored_representation,
         config_keys: config_facts,
         interfaces,
         tensors: tensor_inventory,

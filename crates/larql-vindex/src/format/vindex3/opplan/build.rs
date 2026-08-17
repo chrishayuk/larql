@@ -336,6 +336,7 @@ pub fn plan_component_ops(
             ffn: FfnOp {
                 intermediate_size: inter,
                 activation: surface.ffn.activation,
+                gate_policy: surface.ffn.gate_policy,
                 gate: gated_ffn.then(|| operand(&stack_id, get(OperandRole::FfnGate))),
                 up: operand(&stack_id, get(OperandRole::FfnUp)),
                 down: operand(&stack_id, get(OperandRole::FfnDown)),

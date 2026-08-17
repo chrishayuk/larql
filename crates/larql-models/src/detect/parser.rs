@@ -214,7 +214,17 @@ pub(super) fn parse_model_config(config: &serde_json::Value) -> ModelConfig {
     //    scaling — sliding layers use plain RoPE — so we lift its `rope_type`
     //    + `factor` and mark `gemma3_global_only = true`.
     // 4. Missing entirely (older Llama, Mistral) → `None`.
-    let rope_scaling = text_config.get("rope_scaling").and_then(|rs| {
+    //
+    // And two *homes* for any of those shapes: the legacy `rope_scaling`
+    // key, and transformers-5.x's `rope_parameters`, which carries theta AND
+    // scaling in one block (`{rope_theta, rope_type: "yarn", factor, …}`).
+    // The theta read above already prefers `rope_parameters`; the scaling
+    // read must too, or a 5.x checkpoint's YaRN block is dropped at parse
+    // while its theta is honoured — the §4.7.8 shape again, caught by the
+    // VINDEX3 carriage test on a Glimmer-shaped fixture. A `rope_parameters`
+    // block that declares no scaling (`rope_type: "default"`, no `factor`)
+    // parses to `None` and the legacy key is consulted.
+    let parse_rope_scaling = |rs: &serde_json::Value| -> Option<RopeScaling> {
         // Gemma 3 per-layer-type form.
         if let Some(full) = rs.get("full_attention") {
             let scaling_type = full
@@ -278,7 +288,10 @@ pub(super) fn parse_model_config(config: &serde_json::Value) -> ModelConfig {
             yarn_mscale_all_dim,
             gemma3_global_only: false,
         })
-    });
+    };
+    let rope_scaling = rope_params
+        .and_then(parse_rope_scaling)
+        .or_else(|| text_config.get("rope_scaling").and_then(parse_rope_scaling));
 
     // RMS-norm / LayerNorm epsilon. Field-name aliases across families:
     //  - `rms_norm_eps`           — Llama, Mistral, Gemma

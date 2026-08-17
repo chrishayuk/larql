@@ -302,7 +302,7 @@ impl<M: MatMul + Send> DevicePlanBackend<M> {
         let v = qkv.pop().expect("three matrices in, three vectors out");
         let mut k = qkv.pop().expect("three matrices in, three vectors out");
         let mut q = qkv.pop().expect("three matrices in, three vectors out");
-        condition_qk_in_place(call, position, &mut q, &mut k);
+        condition_qk_in_place(call, position, &mut q, &mut k)?;
         Ok((q, k, v))
     }
 }
@@ -443,7 +443,7 @@ impl<M: MatMul + Send> PlanBackend for DevicePlanBackend<M> {
         let v = projected.pop().expect("QKV in, three vectors out");
         let mut k = projected.pop().expect("QKV in, three vectors out");
         let mut q = projected.pop().expect("QKV in, three vectors out");
-        condition_qk_in_place(call, step.position, &mut q, &mut k);
+        condition_qk_in_place(call, step.position, &mut q, &mut k)?;
 
         let mut concat = aggregate_heads(
             call,
@@ -486,6 +486,7 @@ impl<M: MatMul + Send> PlanBackend for DevicePlanBackend<M> {
     }
 
     fn ffn(&self, call: FfnCall<'_>) -> Result<Vec<f32>, VindexError> {
+        super::production::require_plain_gate("device", call.gate_policy)?;
         let inner = match call.gate {
             Some(gate_weight) => {
                 // Up and gate read the same input: one submission.
