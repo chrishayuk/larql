@@ -1825,7 +1825,24 @@ A-9.3  DONE 2026-08-17 (branch feat/vindex3-gpt-oss-rung0): the interpreter exec
        As mapped: MoE execution in the interpreter (exec/mod.rs, reference.rs, production.rs) with
        gpt-oss routing (top-k then softmax over the selected — MoeRouterKind::TopKThenSoftmax,
        ExpertRoutingPolicy::NormalisedOverSelected) and ClampedGlu (pipeline/moe.rs:43).
-A-9.4  ATTENTION HALF DONE 2026-08-17 (branch feat/vindex3-gpt-oss-rung0): sinks, Q/K/V/O
+A-9.4  DONE 2026-08-18 (branch feat/vindex3-gpt-oss-rung0): the real gpt-oss-20b container
+       lowers END-TO-END through the generic Metal path — routed MXFP4 MoE + YaRN + sinks +
+       biases, no family-name branching. Routed FFN: LayerFfnLowering::{Dense,Routed} in the
+       stack encoder; lowered.rs registers the container's expert-bank segments as zero-copy
+       regions (AlignedBytes page-aligned == PAGE_SIZE 16384) and builds a MoeLayerWeights
+       (router from decoder_stack, experts from expert_bank, top_k_then_softmax, Interleaved,
+       Paired MXFP4 scales, ClampedGlu via MoeGateRule) → the SERVED descriptor MoE encode
+       (encode_moe_layer_gpu_route) — ClampedGlu executes through the existing clamped_glu_bias
+       kernel, so no new gate. `vindex3 exec --backend metal-lowered` on the 65-id oracle
+       prompt: argmax 200005 = oracle id 1; `--generate 16` = 15/16 IDENTICAL to the production
+       interpreter's own trajectory (one flip at position 6, NVFP4 attention vs f32, re-syncs
+       immediately), 18.5 tok/s. Fragment gate: tests/test_lowering_attention_extras.rs (YaRN+
+       sinks+biases <1e-4 + 4 controls); routed FFN reuses the tested served MoE encode. 821
+       Metal tests green. REMAINING for a per-layer congruent gate: wire lowered `--dump-layers`
+       (encode_stack Checkpoints, per-position [seq,hidden] planes) so `shannon layer-diff` can
+       localise the lowered vs interpreter/served dumps to a first-differing layer (whole-model
+       argmax+trajectory already agree within NVFP4-attention noise). Was:
+       ATTENTION HALF DONE 2026-08-17 (branch feat/vindex3-gpt-oss-rung0): sinks, Q/K/V/O
        biases and YaRN (scaled inv_freq + amplitude) lowered in lowering/attention.rs +
        mod.rs, reusing the existing bias_add / sinks-slot(10,11) / rope-amplitude(slot 6)
        kernels; lowered.rs feeds them from the plan and lifts the three refusals (LoweredMatrix

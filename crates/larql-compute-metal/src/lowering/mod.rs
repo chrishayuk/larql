@@ -282,6 +282,40 @@ impl MetalBackend {
         self.bufs.get_bytes(bytes)
     }
 
+    /// Register a page-aligned, session-lived byte region so a routed
+    /// FFN's expert operands can be bound zero-copy (the same
+    /// `register_region` the served `--routed-from` path uses). Returns
+    /// `false` if `bytes` is not page-aligned — a lowering that copied
+    /// 10 GB of experts into owned buffers would defeat the point.
+    pub fn lowering_register_region(&self, bytes: &[u8]) -> bool {
+        self.bufs.register_region(bytes)
+    }
+
+    /// Build (or fetch) a routed layer's expert descriptor table from a
+    /// `MoeLayerWeights` whose expert slices lie in registered regions.
+    /// `None` = an operand missed its region or the geometry disagrees —
+    /// the caller must refuse, never fall back.
+    pub fn lowering_moe_descriptor(
+        &self,
+        layer_idx: usize,
+        moe: &larql_compute::MoeLayerWeights<'_>,
+        inter: usize,
+        hidden: usize,
+    ) -> Option<std::sync::Arc<crate::moe_descriptor::MoeExpertDescriptorTable>> {
+        self.descriptor_table_for_layer(layer_idx, moe, inter, hidden)
+    }
+
+    /// Whether the descriptor MoE path can serve this layer — checked
+    /// before encode so a refusal is typed, not a mid-command-buffer
+    /// failure.
+    pub fn lowering_moe_supported(
+        &self,
+        moe: &larql_compute::MoeLayerWeights<'_>,
+        scratch: &crate::MoeScratch,
+    ) -> bool {
+        self.gpu_route_supported(moe, scratch)
+    }
+
     /// A command buffer for a lowered unit of work. Owned by the caller,
     /// which decides how much to encode into it before committing —
     /// the decision this whole rung exists to hand over.

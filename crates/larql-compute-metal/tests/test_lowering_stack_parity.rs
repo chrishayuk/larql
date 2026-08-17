@@ -429,35 +429,37 @@ fn fifty_two_layers_lower_into_one_scheduling_domain() {
                     position_index: POS,
                     kv_len: T,
                 },
-                ffn: FfnWeights {
-                    gate: LoweredMatrix::Nvfp4 {
-                        packed: &keep[i[5].0],
-                        scales: &keep[i[5].1],
-                        tensor_scale: w.fg.tensor_scale,
+                ffn: larql_compute_metal::lowering::stack::LayerFfnLowering::Dense {
+                    weights: FfnWeights {
+                        gate: LoweredMatrix::Nvfp4 {
+                            packed: &keep[i[5].0],
+                            scales: &keep[i[5].1],
+                            tensor_scale: w.fg.tensor_scale,
+                        },
+                        up: LoweredMatrix::Nvfp4 {
+                            packed: &keep[i[6].0],
+                            scales: &keep[i[6].1],
+                            tensor_scale: w.fu.tensor_scale,
+                        },
+                        down: LoweredMatrix::Nvfp4 {
+                            packed: &keep[i[7].0],
+                            scales: &keep[i[7].1],
+                            tensor_scale: w.fd.tensor_scale,
+                        },
+                        norm_weight: &norms[l][2],
+                        post_norm: Some(PostNorm {
+                            weight: &norms[l][3],
+                            eps: POST_EPS,
+                            weight_offset: OFFSET,
+                            scratch: &post_f,
+                        }),
                     },
-                    up: LoweredMatrix::Nvfp4 {
-                        packed: &keep[i[6].0],
-                        scales: &keep[i[6].1],
-                        tensor_scale: w.fu.tensor_scale,
+                    shape: FfnShape {
+                        hidden: HIDDEN,
+                        intermediate: INTER,
+                        norm_eps: EPS,
+                        norm_weight_offset: OFFSET,
                     },
-                    down: LoweredMatrix::Nvfp4 {
-                        packed: &keep[i[7].0],
-                        scales: &keep[i[7].1],
-                        tensor_scale: w.fd.tensor_scale,
-                    },
-                    norm_weight: &norms[l][2],
-                    post_norm: Some(PostNorm {
-                        weight: &norms[l][3],
-                        eps: POST_EPS,
-                        weight_offset: OFFSET,
-                        scratch: &post_f,
-                    }),
-                },
-                ffn_shape: FfnShape {
-                    hidden: HIDDEN,
-                    intermediate: INTER,
-                    norm_eps: EPS,
-                    norm_weight_offset: OFFSET,
                 },
                 k_cache: &kv[l].0,
                 v_cache: &kv[l].1,

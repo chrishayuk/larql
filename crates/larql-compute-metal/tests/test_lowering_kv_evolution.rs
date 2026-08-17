@@ -417,35 +417,37 @@ fn step(d: &Device<'_>, ws: &[LayerW], h0: &[f32], t: usize, share: bool) -> Vec
                     position_index: t,
                     kv_len: t + 1,
                 },
-                ffn: FfnWeights {
-                    gate: LoweredMatrix::Nvfp4 {
-                        packed: &d.keep[b + 10],
-                        scales: &d.keep[b + 11],
-                        tensor_scale: w.fg.tensor_scale,
+                ffn: larql_compute_metal::lowering::stack::LayerFfnLowering::Dense {
+                    weights: FfnWeights {
+                        gate: LoweredMatrix::Nvfp4 {
+                            packed: &d.keep[b + 10],
+                            scales: &d.keep[b + 11],
+                            tensor_scale: w.fg.tensor_scale,
+                        },
+                        up: LoweredMatrix::Nvfp4 {
+                            packed: &d.keep[b + 12],
+                            scales: &d.keep[b + 13],
+                            tensor_scale: w.fu.tensor_scale,
+                        },
+                        down: LoweredMatrix::Nvfp4 {
+                            packed: &d.keep[b + 14],
+                            scales: &d.keep[b + 15],
+                            tensor_scale: w.fd.tensor_scale,
+                        },
+                        norm_weight: &d.norms[l][2],
+                        post_norm: Some(PostNorm {
+                            weight: &d.norms[l][3],
+                            eps: POST_EPS,
+                            weight_offset: OFFSET,
+                            scratch: &d.post_f,
+                        }),
                     },
-                    up: LoweredMatrix::Nvfp4 {
-                        packed: &d.keep[b + 12],
-                        scales: &d.keep[b + 13],
-                        tensor_scale: w.fu.tensor_scale,
+                    shape: FfnShape {
+                        hidden: HIDDEN,
+                        intermediate: INTER,
+                        norm_eps: EPS,
+                        norm_weight_offset: OFFSET,
                     },
-                    down: LoweredMatrix::Nvfp4 {
-                        packed: &d.keep[b + 14],
-                        scales: &d.keep[b + 15],
-                        tensor_scale: w.fd.tensor_scale,
-                    },
-                    norm_weight: &d.norms[l][2],
-                    post_norm: Some(PostNorm {
-                        weight: &d.norms[l][3],
-                        eps: POST_EPS,
-                        weight_offset: OFFSET,
-                        scratch: &d.post_f,
-                    }),
-                },
-                ffn_shape: FfnShape {
-                    hidden: HIDDEN,
-                    intermediate: INTER,
-                    norm_eps: EPS,
-                    norm_weight_offset: OFFSET,
                 },
                 k_cache: &d.kv[ci].0,
                 v_cache: &d.kv[ci].1,
