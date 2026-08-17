@@ -15,9 +15,24 @@ fn classification_is_exact_not_fuzzy() {
         classify_stack_tensor("0.pre_feedforward_layernorm.weight"),
         Some((0, OperandRole::PreFfnNorm))
     );
+    // A-9.1: the projection biases and sinks are judged roles.
+    assert_eq!(
+        classify_stack_tensor("0.self_attn.q_proj.bias"),
+        Some((0, OperandRole::AttnQBias))
+    );
+    assert_eq!(
+        classify_stack_tensor("7.self_attn.o_proj.bias"),
+        Some((7, OperandRole::AttnOBias))
+    );
+    assert_eq!(
+        classify_stack_tensor("2.self_attn.sinks"),
+        Some((2, OperandRole::AttnSinks))
+    );
     // A new upstream spelling classifies as nothing — it must block, not
-    // fuzzy-match into the wrong op.
-    assert_eq!(classify_stack_tensor("0.self_attn.q_proj.bias"), None);
+    // fuzzy-match into the wrong op: a bias on a projection no row names,
+    // a sink tensor under another spelling.
+    assert_eq!(classify_stack_tensor("0.self_attn.gate_proj.bias"), None);
+    assert_eq!(classify_stack_tensor("0.self_attn.sink.weight"), None);
     assert_eq!(
         classify_stack_tensor("0.self_attn.q_projection.weight"),
         None

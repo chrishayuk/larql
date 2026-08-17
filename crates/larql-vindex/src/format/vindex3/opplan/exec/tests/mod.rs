@@ -16,6 +16,7 @@ mod golden;
 mod kernels;
 mod parity;
 mod seam;
+mod sinks_bias;
 mod smoke;
 mod streaming;
 

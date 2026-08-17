@@ -33,8 +33,8 @@ mod tests;
 use super::{AttentionOp, ComponentOpPlan, LayerPlan, NormOp};
 use crate::error::VindexError;
 use backend::{
-    AttentionCall, FfnCall, GateCall, MatrixClass, NormCall, PlanBackend, ProjectCall, QkNormCall,
-    WeightFormat,
+    AttentionCall, BiasCall, FfnCall, GateCall, MatrixClass, NormCall, PlanBackend, ProjectCall,
+    QkNormCall, SinkCall, WeightFormat,
 };
 use operands::OperandStore;
 use rayon::prelude::*;
@@ -343,6 +343,10 @@ pub(super) struct AttentionOperands {
     w_o: LoadedWeight,
     qk_weights: Option<(Vec<f32>, Vec<f32>)>,
     gate: Option<LoadedWeight>,
+    /// Q/K/V/O biases, f32 (elementwise glue, not matrix traffic).
+    biases: Option<[Vec<f32>; 4]>,
+    /// Sink logits, f32.
+    sinks: Option<Vec<f32>>,
 }
 
 impl AttentionOperands {
@@ -364,6 +368,28 @@ impl AttentionOperands {
             },
             gate: match &op.output_gate {
                 Some(gate) => Some(load_weight(store, &gate.projection, format)?),
+                None => None,
+            },
+            biases: match (&op.q_bias, &op.k_bias, &op.v_bias, &op.o_bias) {
+                (Some(q), Some(k), Some(v), Some(o)) => Some([
+                    store.load(q)?,
+                    store.load(k)?,
+                    store.load(v)?,
+                    store.load(o)?,
+                ]),
+                (None, None, None, None) => None,
+                // Closure emits all four or none; a partial set is a
+                // plan the closure never produced.
+                _ => {
+                    return Err(VindexError::Parse(
+                        "attention op carries a partial Q/K/V/O bias set; operand closure \
+                         emits all four or none"
+                            .to_string(),
+                    ))
+                }
+            },
+            sinks: match &op.sinks {
+                Some(sinks) => Some(store.load(&sinks.logits)?),
                 None => None,
             },
         })
@@ -411,6 +437,19 @@ impl AttentionOperands {
             }),
             _ => None,
         };
+        let bias = self.biases.as_ref().map(|[q, k, v, o]| BiasCall {
+            q: q.as_slice(),
+            k: k.as_slice(),
+            v: v.as_slice(),
+            o: o.as_slice(),
+        });
+        let sinks = match (&op.sinks, &self.sinks) {
+            (Some(op_sinks), Some(logits)) => Some(SinkCall {
+                spec: op_sinks.spec,
+                logits: logits.as_slice(),
+            }),
+            _ => None,
+        };
         AttentionCall {
             inputs,
             hidden,
@@ -431,6 +470,8 @@ impl AttentionOperands {
             span: op.span,
             window: op.window,
             gate,
+            bias,
+            sinks,
         }
     }
 }

@@ -27,6 +27,16 @@ pub enum OperandRole {
     /// Elementwise gate on attention output — the primitive the
     /// `self_attn.gate_proj` operand implies.
     AttnOutputGate,
+    /// Additive bias on the Q/K/V/O projections — present iff the surface
+    /// declares `attention_bias`, all four together (GPT-OSS).
+    AttnQBias,
+    AttnKBias,
+    AttnVBias,
+    AttnOBias,
+    /// Per-query-head attention-sink logits — the operand the judged
+    /// [`AttentionSinkSpec`](larql_models::config::AttentionSinkSpec)
+    /// consumes.
+    AttnSinks,
     AttnQNorm,
     AttnKNorm,
     /// `input_layernorm` — normalises the stream before attention.
@@ -61,6 +71,11 @@ const ROLE_TABLE: &[(&str, OperandRole)] = &[
     ("self_attn.v_proj.weight", OperandRole::AttnV),
     ("self_attn.o_proj.weight", OperandRole::AttnO),
     ("self_attn.gate_proj.weight", OperandRole::AttnOutputGate),
+    ("self_attn.q_proj.bias", OperandRole::AttnQBias),
+    ("self_attn.k_proj.bias", OperandRole::AttnKBias),
+    ("self_attn.v_proj.bias", OperandRole::AttnVBias),
+    ("self_attn.o_proj.bias", OperandRole::AttnOBias),
+    ("self_attn.sinks", OperandRole::AttnSinks),
     ("self_attn.q_norm.weight", OperandRole::AttnQNorm),
     ("self_attn.k_norm.weight", OperandRole::AttnKNorm),
     ("input_layernorm.weight", OperandRole::PreAttentionNorm),

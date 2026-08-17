@@ -20,8 +20,8 @@
 //! not a branch at run time.
 
 use larql_models::config::{
-    Activation, AttentionGateSpec, EmbeddingNorm, FfnType, NormSpec, NormType, ParameterFreeQkNorm,
-    QkNormScope,
+    Activation, AttentionGateSpec, AttentionSinkSpec, EmbeddingNorm, FfnType, NormSpec, NormType,
+    ParameterFreeQkNorm, QkNormScope,
 };
 use larql_models::inventory::components::ComponentTopology;
 use larql_models::inventory::ArchitectureInventory;
@@ -84,6 +84,23 @@ pub struct AttentionSurface {
     /// and closure refuses rather than guessing an activation.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub output_gate: Option<AttentionGateSpec>,
+    /// Judged attention-sink semantics; `None` = no judgment exists —
+    /// **never "no sinks"**. A stack shipping an
+    /// [`OperandRole::AttnSinks`](super::roles::OperandRole) operand while
+    /// this is `None` fails operand closure; a surface stating a spec
+    /// while the operand is absent fails it too. Absent from the
+    /// serialised surface when `None`, so every pre-A-9.1 container reads
+    /// back unchanged.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub sinks: Option<AttentionSinkSpec>,
+    /// Whether the Q/K/V/O projections carry additive biases, as the
+    /// checkpoint declares (`attention_bias`). `None` = undeclared, which
+    /// is not "no bias": bias operands under `None`/`Some(false)` fail
+    /// operand closure, and `Some(true)` requires all four operands. The
+    /// executor adds each bias after its projection, before QK-norm /
+    /// rope (Q, K), before caching (V) and after the output projection (O).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub attention_bias: Option<bool>,
 }
 
 /// What the FFN op reads.
@@ -208,6 +225,8 @@ pub fn surface_from_resolved(
             parameter_free_qk_norm: execution.parameter_free_qk_norm,
             // Judged per model; never inferred from operand presence.
             output_gate: execution.attention_output_gate,
+            sinks: execution.attention_sinks,
+            attention_bias: execution.attention_bias,
         },
         ffn: FfnSurface {
             intermediate_size: resolved.intermediate_size,
@@ -361,6 +380,8 @@ pub fn surface_from_nested(
             qk_norm_weight_offset: 0.0,
             parameter_free_qk_norm: ParameterFreeQkNorm::default(),
             output_gate: None,
+            sinks: None,
+            attention_bias: None,
         },
         ffn: FfnSurface {
             intermediate_size,

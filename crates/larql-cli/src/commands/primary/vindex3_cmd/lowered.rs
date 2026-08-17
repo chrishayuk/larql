@@ -239,6 +239,23 @@ impl<'a> LoweredSession<'a> {
                 l.layer
             )));
         }
+        // Likewise attention sinks and Q/K/V/O biases: represented on the
+        // surface and executed by the interpreter backends, but the
+        // lowering binds `has_sinks = 0` and no bias buffers, so it would
+        // serve the model without them (A-9.4).
+        if let Some(l) = plan.layers.iter().find(|l| {
+            l.attention.sinks.is_some()
+                || l.attention.q_bias.is_some()
+                || l.attention.k_bias.is_some()
+                || l.attention.v_bias.is_some()
+                || l.attention.o_bias.is_some()
+        }) {
+            return Err(VindexError::Parse(format!(
+                "layer {} carries attention sinks and/or projection biases, which the Metal \
+                 lowering does not execute yet (A-9.4); refusing rather than dropping them",
+                l.layer
+            )));
+        }
         // Likewise a clamped-GLU FFN (GPT-OSS's `swiglu_limit`): the
         // lowering encodes plain gated FFNs only, and running the clamped
         // policy as plain gating would be a different model (A-9.4).

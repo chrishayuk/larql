@@ -25,7 +25,7 @@ use super::super::graph::{LogicalObject, NormPlacement, ObjectKind, OperandRole}
 use super::super::inspect::SystemInspection;
 use super::{
     AttentionOp, ClosureDefect, ComponentOpPlan, EmbeddingOp, FfnOp, GateOp, LayerPlan, NormOp,
-    OpPlanOutcome, OperandRef, OutputOp, QkNormOp,
+    OpPlanOutcome, OperandRef, OutputOp, QkNormOp, SinkOp,
 };
 use crate::error::VindexError;
 
@@ -125,6 +125,15 @@ pub fn plan_component_ops(
     let kv_rows = attn.num_kv_heads * attn.head_dim;
     let inter = surface.ffn.intermediate_size;
     let gated_ffn = surface.ffn.ffn_type == FfnType::Gated;
+    let geometry = StackGeometry {
+        hidden,
+        q_rows,
+        kv_rows,
+        intermediate: inter,
+        head_dim: attn.head_dim,
+        num_q_heads: attn.num_q_heads,
+        qk_scope: attn.qk_norm_scope,
+    };
 
     let mut by_layer: BTreeMap<usize, BTreeMap<OperandRole, SegmentTensor>> = BTreeMap::new();
     if let Some((stack, tensors)) = tables.get(&ObjectKind::DecoderStack) {
@@ -145,7 +154,13 @@ pub fn plan_component_ops(
 
         for layer in 0..component.num_layers {
             let present = by_layer.get(&layer);
-            for role in required_roles(placement, gated_ffn, attn.output_gate.is_some()) {
+            for role in required_roles(
+                placement,
+                gated_ffn,
+                attn.output_gate.is_some(),
+                attn.attention_bias == Some(true),
+                attn.sinks.is_some(),
+            ) {
                 if present.is_none_or(|slot| !slot.contains_key(&role)) {
                     defects.push(ClosureDefect::MissingOperand { layer, role });
                 }
@@ -168,9 +183,14 @@ pub fn plan_component_ops(
             }
             for (role, tensor) in slot {
                 // An operand whose op the surface does not carry.
-                if let Some(primitive) =
-                    absent_op(*role, placement, gated_ffn, attn.output_gate.is_some())
-                {
+                if let Some(primitive) = absent_op(
+                    *role,
+                    placement,
+                    gated_ffn,
+                    attn.output_gate.is_some(),
+                    attn.attention_bias == Some(true),
+                    attn.sinks.is_some(),
+                ) {
                     defects.push(ClosureDefect::OperandImpliesAbsentOp {
                         object: stack.id.clone(),
                         tensor: tensor.name.clone(),
@@ -178,15 +198,7 @@ pub fn plan_component_ops(
                     });
                     continue;
                 }
-                if let Some(expected) = expected_shape(
-                    *role,
-                    hidden,
-                    q_rows,
-                    kv_rows,
-                    inter,
-                    attn.head_dim,
-                    attn.qk_norm_scope,
-                ) {
+                if let Some(expected) = expected_shape(*role, &geometry) {
                     if tensor.shape != expected {
                         defects.push(ClosureDefect::GeometryMismatch {
                             tensor: format!("{}/{}", stack.id, tensor.name),
@@ -276,6 +288,9 @@ pub fn plan_component_ops(
         let slot = &by_layer[&layer];
         let get = |role: OperandRole| &slot[&role];
         let policy = &attention_table[layer];
+        let bias = |role: OperandRole| {
+            (attn.attention_bias == Some(true)).then(|| operand(&stack_id, get(role)))
+        };
         let qk_norm = slot
             .contains_key(&OperandRole::AttnQNorm)
             .then(|| QkNormOp {
@@ -329,6 +344,16 @@ pub fn plan_component_ops(
                 output_gate: attn.output_gate.map(|spec| GateOp {
                     spec,
                     projection: operand(&stack_id, get(OperandRole::AttnOutputGate)),
+                }),
+                // Closure held, so `Some(true)` means all four are here
+                // and anything else means none is.
+                q_bias: bias(OperandRole::AttnQBias),
+                k_bias: bias(OperandRole::AttnKBias),
+                v_bias: bias(OperandRole::AttnVBias),
+                o_bias: bias(OperandRole::AttnOBias),
+                sinks: attn.sinks.map(|spec| SinkOp {
+                    spec,
+                    logits: operand(&stack_id, get(OperandRole::AttnSinks)),
                 }),
             },
             post_attention_norm,
@@ -401,6 +426,8 @@ fn required_roles(
     placement: NormPlacement,
     gated_ffn: bool,
     output_gate: bool,
+    attention_bias: bool,
+    sinks: bool,
 ) -> Vec<OperandRole> {
     let mut roles = vec![
         OperandRole::PreAttentionNorm,
@@ -422,6 +449,17 @@ fn required_roles(
     if output_gate {
         roles.push(OperandRole::AttnOutputGate);
     }
+    if attention_bias {
+        roles.extend([
+            OperandRole::AttnQBias,
+            OperandRole::AttnKBias,
+            OperandRole::AttnVBias,
+            OperandRole::AttnOBias,
+        ]);
+    }
+    if sinks {
+        roles.push(OperandRole::AttnSinks);
+    }
     roles
 }
 
@@ -432,11 +470,22 @@ fn absent_op(
     placement: NormPlacement,
     gated_ffn: bool,
     output_gate: bool,
+    attention_bias: bool,
+    sinks: bool,
 ) -> Option<&'static str> {
     match role {
         OperandRole::AttnOutputGate if !output_gate => {
             Some("attention output gate (judged semantics)")
         }
+        OperandRole::AttnQBias
+        | OperandRole::AttnKBias
+        | OperandRole::AttnVBias
+        | OperandRole::AttnOBias
+            if !attention_bias =>
+        {
+            Some("attention projection bias (declared `attention_bias`)")
+        }
+        OperandRole::AttnSinks if !sinks => Some("attention sinks (judged semantics)"),
         OperandRole::FfnGate if !gated_ffn => Some("gated FFN"),
         OperandRole::PreFfnNorm | OperandRole::PostFfnNorm
             if placement == NormPlacement::PreOnly =>
@@ -447,18 +496,30 @@ fn absent_op(
     }
 }
 
-/// Expected stored shape per role, from the surface's geometry. `None`
-/// for roles whose shape contract is not yet pinned.
-fn expected_shape(
-    role: OperandRole,
+/// The surface geometry every stack operand's shape is checked against.
+struct StackGeometry {
     hidden: usize,
     q_rows: usize,
     kv_rows: usize,
     intermediate: usize,
     head_dim: usize,
+    num_q_heads: usize,
     qk_scope: larql_models::config::QkNormScope,
-) -> Option<Vec<usize>> {
+}
+
+/// Expected stored shape per role, from the surface's geometry. `None`
+/// for roles whose shape contract is not yet pinned.
+fn expected_shape(role: OperandRole, g: &StackGeometry) -> Option<Vec<usize>> {
     use larql_models::config::QkNormScope;
+    let StackGeometry {
+        hidden,
+        q_rows,
+        kv_rows,
+        intermediate,
+        head_dim,
+        num_q_heads,
+        qk_scope,
+    } = *g;
     match role {
         OperandRole::AttnQ => Some(vec![q_rows, hidden]),
         OperandRole::AttnK | OperandRole::AttnV => Some(vec![kv_rows, hidden]),
@@ -477,5 +538,11 @@ fn expected_shape(
         OperandRole::FfnDown => Some(vec![hidden, intermediate]),
         // Linear(hidden -> q_heads*head_dim), per the judged spec.
         OperandRole::AttnOutputGate => Some(vec![q_rows, hidden]),
+        // A bias is one value per output row of its projection.
+        OperandRole::AttnQBias => Some(vec![q_rows]),
+        OperandRole::AttnKBias | OperandRole::AttnVBias => Some(vec![kv_rows]),
+        OperandRole::AttnOBias => Some(vec![hidden]),
+        // One logit per query head, per the judged spec.
+        OperandRole::AttnSinks => Some(vec![num_q_heads]),
     }
 }

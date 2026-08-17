@@ -22,7 +22,8 @@
 //! only ever be told what to compute.
 
 use larql_models::config::{
-    Activation, AttentionGateSpec, NormType, ParameterFreeQkNorm, PositionPolicy, QkNormScope,
+    Activation, AttentionGateSpec, AttentionSinkSpec, NormType, ParameterFreeQkNorm,
+    PositionPolicy, QkNormScope,
 };
 
 use super::super::super::graph::policy::AttentionSpan;
@@ -177,6 +178,24 @@ pub struct GateCall<'a> {
     pub weight: WeightSlice<'a>,
 }
 
+/// The judged attention-sink semantics plus the per-query-head logits,
+/// f32 like every other elementwise operand.
+pub struct SinkCall<'a> {
+    pub spec: AttentionSinkSpec,
+    /// `num_q_heads` logits.
+    pub logits: &'a [f32],
+}
+
+/// The additive projection biases, all four present or none — closure
+/// guarantees the pairing with the surface's `attention_bias`. Each is
+/// one value per output row of its projection.
+pub struct BiasCall<'a> {
+    pub q: &'a [f32],
+    pub k: &'a [f32],
+    pub v: &'a [f32],
+    pub o: &'a [f32],
+}
+
 /// One attention operation over a whole sequence, fully resolved.
 ///
 /// `inputs` are the attention *inputs* — already normalised by the
@@ -206,6 +225,12 @@ pub struct AttentionCall<'a> {
     pub span: AttentionSpan,
     pub window: Option<usize>,
     pub gate: Option<GateCall<'a>>,
+    /// Q/K/V/O biases: Q and K added right after projection (before
+    /// QK-norm and rope), V before caching, O after the output
+    /// projection. `None` = the op has no biases.
+    pub bias: Option<BiasCall<'a>>,
+    /// Attention sinks; `None` = ordinary softmax.
+    pub sinks: Option<SinkCall<'a>>,
 }
 
 /// One feed-forward operation over one vector, fully resolved.

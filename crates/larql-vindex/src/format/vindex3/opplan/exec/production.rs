@@ -18,11 +18,12 @@
 //! sharing code, which is exactly the agreement that proves nothing.
 
 use larql_models::config::{
-    Activation, GateActivation, GateCombine, GatePlacement, GateSource, NormType, PositionPolicy,
+    Activation, AttentionSinkSpec, GateActivation, GateCombine, GatePlacement, GateSource,
+    NormType, PositionPolicy,
 };
 use ndarray::Array2;
 
-use larql_compute::attention::softmax::softmax_in_place_f32;
+use larql_compute::attention::softmax::{softmax_in_place, softmax_in_place_f32};
 use larql_compute::cpu::ops::geglu::{geglu_silu_alloc, silu};
 use larql_compute::cpu::ops::moe::math::matmul_vec;
 use larql_compute::residual::{
@@ -188,6 +189,42 @@ pub(super) fn condition_qk_in_place(
     Ok(())
 }
 
+/// The Q/K/V projection biases, added right after projection — before
+/// [`condition_qk_in_place`] reads Q/K and before V is cached. Shared
+/// glue, so the production and device backends place them identically.
+pub(super) fn add_projection_biases(
+    call: &AttentionCall<'_>,
+    q: &mut [f32],
+    k: &mut [f32],
+    v: &mut [f32],
+) {
+    if let Some(bias) = &call.bias {
+        add_bias_in_place(q, bias.q);
+        add_bias_in_place(k, bias.k);
+        add_bias_in_place(v, bias.v);
+    }
+}
+
+/// The output-projection bias, added after `w_o`.
+pub(super) fn add_output_bias(call: &AttentionCall<'_>, out: &mut [f32]) {
+    if let Some(bias) = &call.bias {
+        add_bias_in_place(out, bias.o);
+    }
+}
+
+/// `x[i] += b[i]`; a length mismatch is a geometry bug closure refuses,
+/// so it panics rather than pads.
+fn add_bias_in_place(x: &mut [f32], b: &[f32]) {
+    assert_eq!(
+        x.len(),
+        b.len(),
+        "bias length must equal the projection's rows"
+    );
+    for (x, b) in x.iter_mut().zip(b) {
+        *x += b;
+    }
+}
+
 /// One query position's scores, softmax and weighted-V aggregation —
 /// the production softmax kernel over whatever K/V storage the caller
 /// abstracts through `key_of`/`value_of`. Shared by the production and
@@ -232,7 +269,16 @@ pub(super) fn aggregate_heads<'k>(
                 }
             })
             .collect();
-        softmax_in_place_f32(&mut scores);
+        match &call.sinks {
+            // The served path's own sink softmax; exhaustive on the judged
+            // semantics so a new variant must be implemented before it
+            // can execute here.
+            Some(sinks) => {
+                let AttentionSinkSpec::SoftmaxDenominator = sinks.spec;
+                softmax_in_place(&mut scores, Some(sinks.logits[q_head]));
+            }
+            None => softmax_in_place_f32(&mut scores),
+        }
         let head_out = &mut concat[q_head * head_dim..(q_head + 1) * head_dim];
         for (offset, key_position) in (start..=position).enumerate() {
             let v_slice = &value_of(key_position)[kv_head * head_dim..(kv_head + 1) * head_dim];
@@ -258,7 +304,8 @@ impl ProductionBackend {
         let kv_rows = call.num_kv_heads * head_dim;
         let mut q = matmul_vec(pre, call.w_q.as_f32()?, q_rows, call.hidden);
         let mut k = matmul_vec(pre, call.w_k.as_f32()?, kv_rows, call.hidden);
-        let v = matmul_vec(pre, call.w_v.as_f32()?, kv_rows, call.hidden);
+        let mut v = matmul_vec(pre, call.w_v.as_f32()?, kv_rows, call.hidden);
+        add_projection_biases(call, &mut q, &mut k, &mut v);
         condition_qk_in_place(call, position, &mut q, &mut k)?;
         Ok((q, k, v))
     }
@@ -289,7 +336,9 @@ impl ProductionBackend {
             }
         }
 
-        Ok(matmul_vec(&concat, call.w_o.as_f32()?, call.hidden, q_rows))
+        let mut out = matmul_vec(&concat, call.w_o.as_f32()?, call.hidden, q_rows);
+        add_output_bias(call, &mut out);
+        Ok(out)
     }
 }
 

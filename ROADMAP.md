@@ -1756,14 +1756,40 @@ A-9.0  DONE 2026-08-17 (branch feat/vindex3-gpt-oss-rung0): `larql vindex3 plan`
        at plan/tests/carriage.rs:86 already says "MOE1 is where it gets one").
        quantization_config.{quant_method, modules_to_not_convert} classified (semantics.rs
        registries / config_keys.rs:116) as the representation fact they are.
-A-9.1  attention sinks + q/k/v/o biases in AttentionSurface / AttentionCall and every
-       backend — the reference interpreter has neither (reference.rs:165 softmax without the
-       sink, :92 projection without bias); the lowering binds has_sinks=0 with a placeholder
-       (lowering/attention.rs:344) although the kernels support sinks.
+A-9.1  DONE 2026-08-17 (branch feat/vindex3-gpt-oss-rung0): judged AttentionSinkSpec::
+       SoftmaxDenominator (models crate, derived from attn_sinks_key so the schema fact and
+       the served kernel cannot disagree) + `attention_bias` on AttentionSurface; roles
+       Attn{Q,K,V,O}Bias/AttnSinks; closure paired both ways (declared ⇒ all four operands,
+       operand ⇒ declaration; sink operand ⇒ judgment, judgment ⇒ operand; shapes pinned);
+       AttentionOp.{q,k,v,o}_bias/sinks → BiasCall/SinkCall → reference (append-and-drop
+       softmax), production + device (served `softmax_in_place(scores, sink)`), lowering
+       REFUSES until A-9.4. Gates: golden parity (denominator form, third transcription),
+       3-backend parity, 5 causal controls (each operand moves layer-0 attention 1e-2…6e-1,
+       propagates to logits), absence (bias-free plan serialises byte-identically; four
+       fail-closed refusals). gpt-oss `vindex3 ops`: 384 → 264 defects, ZERO attention
+       defects, every survivor MoE (A-9.2). As mapped: attention sinks + q/k/v/o biases in
+       AttentionSurface / AttentionCall and every backend — the reference interpreter had
+       neither (reference.rs:165 softmax without the sink, :92 projection without bias); the
+       lowering still binds has_sinks=0 with a placeholder (lowering/attention.rs:344).
 A-9.2  MoE in the generic system graph: an expert-bank ObjectKind (graph/object.rs:11),
        router/expert/bias OperandRoles (graph/roles.rs:22,58), an MoE FfnOp; encode writes
        banks into the system container (or exec composes system + routed containers the way
        `run --routed-from` composes VINDEX2 + banks).
+       SUCCESS CRITERION (2026-08-17, stronger than "zero MoE defects"): an MoE is
+       expressible ENTIRELY inside the object/operand/op-plan universe dense attention and
+       FFN use — no second container semantics, no side-loaded expert manifest execution
+       must reinterpret; `moe_manifest.json` disappears or shrinks to physical layout.
+       Shape: DecoderLayer → FfnOp::Moe { RouterWeight, RouterBias, ExpertBank(ObjectKind)
+       { gate/up repr, down repr, biases, quant auxiliaries } }. The judged MoE vocabulary
+       already exists in format/moe_manifest (Router{activation, selection, post}, Reduction,
+       Combine, Programme, BankRef{experts, expert_dims}) — A-9.2 lifts it into the graph,
+       it does not re-judge it. Gates mirror A-9.1: bidirectional closure (declared MoE ⇒
+       every operand; stray MoE operand ⇒ the op), shape/count closure (router [E,H], E,
+       top-k, packed geometry gate_up [E,2I,K/32,16]+[E,2I,K/32] scales, down [E,H,I/32,16]),
+       causal controls (perturb router weight, one expert gate/up, one down, one bias →
+       output moves), absence (dense FFN plan byte-identical), container universality (no
+       executor reaches outside the generic graph to find a bank), real gpt-oss closure
+       264 → ~0 (only genuinely later-rung semantics may survive).
 A-9.3  MoE execution in the interpreter (exec/mod.rs, reference.rs, production.rs) with
        gpt-oss routing (top-k then softmax over the selected — MoeRouterKind::TopKThenSoftmax,
        ExpertRoutingPolicy::NormalisedOverSelected) and ClampedGlu (pipeline/moe.rs:43).

@@ -258,16 +258,14 @@ pub const CARRIAGE_RULES: &[CarriageRule] = &[
     // ── Facts that stop at the parser, reviewed ─────────────────────
     CarriageRule {
         leaf: "attention_bias",
-        reaches: Carriage::Parsed,
-        // VINDEX3 has no `attention_bias` field; what it has instead is
-        // operand closure, which refuses any bias tensor it cannot
-        // classify into a declared op. For a model that declares `false`
-        // the two agree trivially. For one that declares `true` the bias
-        // operands themselves block at G5b — a stronger check than a
-        // boolean, and the reason this is judged rather than a hole.
-        // MOE1 gives the projections explicit bias operands.
-        site: "no schema field — carried instead as operand evidence, gated by G5b closure",
-        probe: None,
+        reaches: Carriage::Represented,
+        // A-9.1: the surface states it, and operand closure enforces it
+        // both ways — `true` requires all four bias operands, anything
+        // else refuses any bias operand it finds — so the boolean and the
+        // operand evidence cannot drift apart. The executors add the four
+        // biases; the Metal lowering refuses them until A-9.4.
+        site: "ExecutionSurface.attention.attention_bias → AttentionOp.{q,k,v,o}_bias (closure-paired)",
+        probe: Some(probe_attention_bias),
     },
     CarriageRule {
         leaf: "max_position_embeddings",
@@ -401,6 +399,12 @@ fn probe_swiglu_limit(component: &Component) -> Option<Value> {
         larql_models::ExpertGatePolicy::ClampedGlu { limit, .. } => Some(json!(limit)),
         larql_models::ExpertGatePolicy::Gated => None,
     }
+}
+
+fn probe_attention_bias(component: &Component) -> Option<Value> {
+    Some(json!(
+        component.execution.as_ref()?.attention.attention_bias?
+    ))
 }
 
 fn probe_query_scale(component: &Component) -> Option<Value> {

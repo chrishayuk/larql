@@ -159,6 +159,18 @@ pub struct ResolvedExecution {
     /// exists (a shipped gate operand then fails operand closure).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub attention_output_gate: Option<crate::config::AttentionGateSpec>,
+    /// Judged attention-sink semantics; `None` = no judgment exists (a
+    /// shipped `self_attn.sinks` operand then fails operand closure).
+    /// Defaults for inventories written before it was recorded.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub attention_sinks: Option<crate::config::AttentionSinkSpec>,
+    /// Whether the Q/K/V/O projections carry additive biases, as the
+    /// checkpoint declares (`attention_bias`). `None` = undeclared, which
+    /// is not "no bias": bias operands shipped under `None` fail operand
+    /// closure; `Some(true)` requires all four. Defaults for inventories
+    /// written before it was recorded.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub attention_bias: Option<bool>,
     pub activation: crate::config::Activation,
     pub ffn_type: crate::config::FfnType,
     /// How the FFN's gate combines with its up branch. `Gated` is the

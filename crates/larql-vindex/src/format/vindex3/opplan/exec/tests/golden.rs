@@ -39,11 +39,38 @@ pub(super) const G_LAYERS: usize = 2;
 pub(super) const G_WINDOW: usize = 3;
 pub(super) const G_TOKENS: [u32; 5] = [3, 17, 28, 0, 11];
 
+/// Optional attention operands the miniature can carry (A-9.1): Q/K/V/O
+/// projection biases (with `attention_bias: true` declared) and
+/// per-query-head sink logits. `perturb` names one of those tensors by
+/// suffix; the writer scales it by [`PERTURB_GAIN`], so a test can ask
+/// whether that single operand is load-bearing.
+#[derive(Default, Clone, Copy)]
+pub(super) struct MiniatureExtras {
+    pub attention_bias: bool,
+    pub sinks: bool,
+    pub perturb: Option<&'static str>,
+}
+
+/// Multiplier applied to a perturbed extra operand.
+pub(super) const PERTURB_GAIN: f32 = 3.0;
+
+/// The five extra attention operands, by layer-relative suffix.
+pub(super) const BIAS_SUFFIXES: [&str; 4] = [
+    "self_attn.q_proj.bias",
+    "self_attn.k_proj.bias",
+    "self_attn.v_proj.bias",
+    "self_attn.o_proj.bias",
+];
+pub(super) const SINKS_SUFFIX: &str = "self_attn.sinks";
+
 /// The two-layer miniature Glimmer checkpoint (F32, judged family).
 pub(super) fn miniature_glimmer(dir: &Path) {
-    std::fs::write(
-        dir.join("config.json"),
-        serde_json::json!({
+    miniature_glimmer_with(dir, MiniatureExtras::default());
+}
+
+/// The miniature with the A-9.1 extras.
+pub(super) fn miniature_glimmer_with(dir: &Path, extras: MiniatureExtras) {
+    let mut config = serde_json::json!({
             "architectures": ["MuseGlimmerForConditionalGeneration"],
             "torch_dtype": "float32",
             "model_type": "muse_glimmer_text",
@@ -64,10 +91,11 @@ pub(super) fn miniature_glimmer(dir: &Path) {
             "post_norm_eps": 1e-8,
             "attn_logit_softcapping": 50.0,
             "final_logit_softcapping": 20.0
-        })
-        .to_string(),
-    )
-    .unwrap();
+    });
+    if extras.attention_bias {
+        config["attention_bias"] = serde_json::json!(true);
+    }
+    std::fs::write(dir.join("config.json"), config.to_string()).unwrap();
 
     let q_rows = G_Q_HEADS * G_HEAD_DIM;
     let kv_rows = G_KV_HEADS * G_HEAD_DIM;
@@ -150,6 +178,26 @@ pub(super) fn miniature_glimmer(dir: &Path) {
         ] {
             shard.push(&format!("{prefix}.{suffix}"), &shape, &values);
         }
+        // Extras: values well away from zero so an unapplied bias or sink
+        // is a visible absence, not a rounding-level one.
+        let mut extra = |suffix: &str, len: usize, seed: u64| {
+            let mut values: Vec<f32> = lcg_values(len, seed).into_iter().map(|v| v * 4.0).collect();
+            if extras.perturb == Some(suffix) {
+                for v in &mut values {
+                    *v *= PERTURB_GAIN;
+                }
+            }
+            shard.push(&format!("{prefix}.{suffix}"), &[len], &values);
+        };
+        if extras.attention_bias {
+            extra(BIAS_SUFFIXES[0], q_rows, seed + 12);
+            extra(BIAS_SUFFIXES[1], kv_rows, seed + 13);
+            extra(BIAS_SUFFIXES[2], kv_rows, seed + 14);
+            extra(BIAS_SUFFIXES[3], G_HIDDEN, seed + 15);
+        }
+        if extras.sinks {
+            extra(SINKS_SUFFIX, G_Q_HEADS, seed + 16);
+        }
     }
     shard.write(dir);
 }
@@ -192,6 +240,22 @@ impl RawWeights {
 
     fn get(&self, name: &str) -> &[f32] {
         &self.tensors[name]
+    }
+
+    /// An operand the checkpoint may or may not carry (the A-9.1 extras).
+    fn maybe(&self, name: &str) -> Option<&[f32]> {
+        self.tensors.get(name).map(Vec::as_slice)
+    }
+}
+
+/// `x[i] += b[i]` when the operand exists — the golden statement of "a
+/// projection bias is added to the projection's output".
+fn add_if_present(x: &mut [f32], b: Option<&[f32]>) {
+    if let Some(b) = b {
+        assert_eq!(x.len(), b.len());
+        for (x, b) in x.iter_mut().zip(b) {
+            *x += b;
+        }
     }
 }
 
@@ -289,12 +353,16 @@ pub(super) fn golden_forward(dir: &Path) -> GoldenTrace {
                 G_HIDDEN,
                 &pre,
             );
-            let v = mv(
+            let mut v = mv(
                 w.get(&name("self_attn.v_proj.weight")),
                 kv_rows,
                 G_HIDDEN,
                 &pre,
             );
+            // A-9.1: projection biases, before anything reads Q/K/V.
+            add_if_present(&mut q, w.maybe(&name("self_attn.q_proj.bias")));
+            add_if_present(&mut k, w.maybe(&name("self_attn.k_proj.bias")));
+            add_if_present(&mut v, w.maybe(&name("self_attn.v_proj.bias")));
 
             // Parameter-free QK norm: RMS per head, no weights.
             for head in q.chunks_exact_mut(G_HEAD_DIM) {
@@ -363,11 +431,22 @@ pub(super) fn golden_forward(dir: &Path) -> GoldenTrace {
                         50.0 * (scaled / 50.0).tanh()
                     })
                     .collect();
-                let max = scores.iter().copied().fold(f32::NEG_INFINITY, f32::max);
+                // A-9.1: a sink is one more logit per query head that
+                // takes softmax mass and has no value row — stated here
+                // in the denominator form (the reference executor uses
+                // the append-and-drop form; two transcriptions).
+                let sink = w.maybe(&name("self_attn.sinks")).map(|s| s[q_head]);
+                let mut max = scores.iter().copied().fold(f32::NEG_INFINITY, f32::max);
+                if let Some(sink) = sink {
+                    max = max.max(sink);
+                }
                 let mut sum = 0.0;
                 for s in scores.iter_mut() {
                     *s = (*s - max).exp();
                     sum += *s;
+                }
+                if let Some(sink) = sink {
+                    sum += (sink - max).exp();
                 }
                 for s in scores.iter_mut() {
                     *s /= sum;
@@ -398,12 +477,14 @@ pub(super) fn golden_forward(dir: &Path) -> GoldenTrace {
             if position == h.len() - 1 {
                 trace.attention_after_gate = concat.clone();
             }
-            attn_out.push(mv(
+            let mut projected = mv(
                 w.get(&name("self_attn.o_proj.weight")),
                 G_HIDDEN,
                 q_rows,
                 &concat,
-            ));
+            );
+            add_if_present(&mut projected, w.maybe(&name("self_attn.o_proj.bias")));
+            attn_out.push(projected);
         }
 
         // Four-norm placement: post-attention norm (eps 1e-8) on the

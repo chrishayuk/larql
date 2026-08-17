@@ -125,6 +125,8 @@ pub fn resolve(config: &Value, identity: &Identity) -> (Detection, ResolvedTopol
         qk_norm_weight_offset: arch.qk_norm_weight_offset(),
         parameter_free_qk_norm: arch.parameter_free_qk_norm(),
         attention_output_gate: arch.attention_output_gate(),
+        attention_sinks: arch.attention_sinks(),
+        attention_bias: arch.attention_bias(),
         activation: arch.activation(),
         ffn_type: arch.ffn_type(),
         gate_policy: arch.expert_gate_policy(),

@@ -30,7 +30,8 @@ pub mod exec;
 mod tests;
 
 use larql_models::config::{
-    Activation, AttentionGateSpec, NormType, ParameterFreeQkNorm, PositionPolicy, QkNormScope,
+    Activation, AttentionGateSpec, AttentionSinkSpec, NormType, ParameterFreeQkNorm,
+    PositionPolicy, QkNormScope,
 };
 use serde::Serialize;
 
@@ -76,6 +77,14 @@ pub struct GateOp {
     pub projection: OperandRef,
 }
 
+/// The optional attention sinks: the judged semantics plus the operand
+/// holding the per-query-head logits.
+#[derive(Debug, Clone, PartialEq, Serialize)]
+pub struct SinkOp {
+    pub spec: AttentionSinkSpec,
+    pub logits: OperandRef,
+}
+
 /// One layer's attention op: geometry and scaling from the surface,
 /// span/window/position from the per-layer policy table — never from an
 /// index pattern.
@@ -109,6 +118,20 @@ pub struct AttentionOp {
     pub o: OperandRef,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub output_gate: Option<GateOp>,
+    /// Additive projection biases; all four present iff the surface
+    /// declares `attention_bias`. Absent from the serialised op otherwise,
+    /// so a bias-free plan serialises exactly as before.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub q_bias: Option<OperandRef>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub k_bias: Option<OperandRef>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub v_bias: Option<OperandRef>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub o_bias: Option<OperandRef>,
+    /// Attention sinks, present iff the surface carries the judgment.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub sinks: Option<SinkOp>,
 }
 
 /// One layer's FFN op.

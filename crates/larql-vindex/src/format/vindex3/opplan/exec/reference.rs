@@ -11,14 +11,18 @@
 //! is a bug in the production backend or a hole in the seam, never a
 //! licence to change what the plan means.
 
-use larql_models::config::{GateActivation, GateCombine, GatePlacement, GateSource, QkNormScope};
+use larql_models::config::{
+    AttentionSinkSpec, GateActivation, GateCombine, GatePlacement, GateSource, QkNormScope,
+};
 
 use super::super::super::graph::policy::AttentionSpan;
 use super::backend::{
     AttentionCall, AttentionStepCall, AttentionStepOut, FfnCall, GateCall, NormCall, PlanBackend,
     ProjectCall, ProjectedQkv, QkNormCall,
 };
-use super::kernels::{activate, matvec, norm, rope_rotate, sigmoid, softcap, softmax};
+use super::kernels::{
+    activate, matvec, norm, rope_rotate, sigmoid, softcap, softmax, softmax_with_sink,
+};
 use crate::error::VindexError;
 use larql_models::config::NormType;
 use larql_models::config::PositionPolicy;
@@ -99,7 +103,14 @@ impl ReferenceBackend {
         let kv_rows = call.num_kv_heads * head_dim;
         let mut q = matvec(call.w_q.as_f32()?, q_rows, call.hidden, pre);
         let mut k = matvec(call.w_k.as_f32()?, kv_rows, call.hidden, pre);
-        let v = matvec(call.w_v.as_f32()?, kv_rows, call.hidden, pre);
+        let mut v = matvec(call.w_v.as_f32()?, kv_rows, call.hidden, pre);
+        // Biases belong to the projections: added before anything reads
+        // the projected values (QK-norm, rope, the cache).
+        if let Some(bias) = &call.bias {
+            add_in_place(&mut q, bias.q);
+            add_in_place(&mut k, bias.k);
+            add_in_place(&mut v, bias.v);
+        }
 
         Self::apply_qk_norm(call, &mut q, &mut k)?;
         if let Some(query_scale) = call.query_scale {
@@ -176,7 +187,15 @@ impl ReferenceBackend {
                     score
                 })
                 .collect();
-            softmax(&mut scores);
+            match &call.sinks {
+                // Exhaustive on the judged semantics: a new variant must
+                // be implemented here before it can execute.
+                Some(sinks) => {
+                    let AttentionSinkSpec::SoftmaxDenominator = sinks.spec;
+                    softmax_with_sink(&mut scores, sinks.logits[q_head]);
+                }
+                None => softmax(&mut scores),
+            }
             let head_out = &mut concat[q_head * head_dim..(q_head + 1) * head_dim];
             for (offset, key_position) in (start..=position).enumerate() {
                 let v_slice = &value_of(key_position)[kv_head * head_dim..(kv_head + 1) * head_dim];
@@ -200,7 +219,24 @@ impl ReferenceBackend {
             }
         }
 
-        Ok(matvec(call.w_o.as_f32()?, call.hidden, q_rows, &concat))
+        let mut out = matvec(call.w_o.as_f32()?, call.hidden, q_rows, &concat);
+        if let Some(bias) = &call.bias {
+            add_in_place(&mut out, bias.o);
+        }
+        Ok(out)
+    }
+}
+
+/// `x[i] += b[i]`; a bias of the wrong length is a geometry bug closure
+/// should have refused, so it panics rather than pads.
+fn add_in_place(x: &mut [f32], b: &[f32]) {
+    assert_eq!(
+        x.len(),
+        b.len(),
+        "bias length must equal the projection's rows"
+    );
+    for (x, b) in x.iter_mut().zip(b) {
+        *x += b;
     }
 }
 

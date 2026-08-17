@@ -51,7 +51,10 @@ use super::backend::{
     MatrixClass, NormCall, PlanBackend, ProjectCall, ProjectedQkv, WeightFormat, WeightFormats,
     WeightSlice,
 };
-use super::production::{aggregate_heads, condition_qk_in_place, ProductionBackend};
+use super::production::{
+    add_output_bias, add_projection_biases, aggregate_heads, condition_qk_in_place,
+    ProductionBackend,
+};
 use crate::error::VindexError;
 use larql_compute::cpu::ops::geglu::{geglu_silu_alloc, silu};
 use ndarray::ArrayView2;
@@ -299,9 +302,10 @@ impl<M: MatMul + Send> DevicePlanBackend<M> {
             ],
             pre,
         )?;
-        let v = qkv.pop().expect("three matrices in, three vectors out");
+        let mut v = qkv.pop().expect("three matrices in, three vectors out");
         let mut k = qkv.pop().expect("three matrices in, three vectors out");
         let mut q = qkv.pop().expect("three matrices in, three vectors out");
+        add_projection_biases(call, &mut q, &mut k, &mut v);
         condition_qk_in_place(call, position, &mut q, &mut k)?;
         Ok((q, k, v))
     }
@@ -408,12 +412,14 @@ impl<M: MatMul + Send> PlanBackend for DevicePlanBackend<M> {
                     *c *= 1.0 / (1.0 + (-g).exp());
                 }
             }
-            out.push(self.gemv(
+            let mut projected = self.gemv(
                 call.w_o,
                 call.hidden,
                 call.num_q_heads * call.head_dim,
                 &concat,
-            )?);
+            )?;
+            add_output_bias(&call, &mut projected);
+            out.push(projected);
         }
         Ok(out)
     }
@@ -440,9 +446,10 @@ impl<M: MatMul + Send> PlanBackend for DevicePlanBackend<M> {
             .gate
             .as_ref()
             .map(|_| projected.pop().expect("gate matrix in, gate vector out"));
-        let v = projected.pop().expect("QKV in, three vectors out");
+        let mut v = projected.pop().expect("QKV in, three vectors out");
         let mut k = projected.pop().expect("QKV in, three vectors out");
         let mut q = projected.pop().expect("QKV in, three vectors out");
+        add_projection_biases(call, &mut q, &mut k, &mut v);
         condition_qk_in_place(call, step.position, &mut q, &mut k)?;
 
         let mut concat = aggregate_heads(
@@ -477,7 +484,8 @@ impl<M: MatMul + Send> PlanBackend for DevicePlanBackend<M> {
                 *c *= 1.0 / (1.0 + (-g).exp());
             }
         }
-        let output = self.gemv(call.w_o, call.hidden, q_rows, &concat)?;
+        let mut output = self.gemv(call.w_o, call.hidden, q_rows, &concat)?;
+        add_output_bias(call, &mut output);
         Ok(AttentionStepOut {
             key: k,
             value: v,

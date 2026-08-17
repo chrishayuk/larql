@@ -292,6 +292,19 @@ pub trait ModelArchitecture: Send + Sync {
         None
     }
 
+    /// Judged semantics of this family's attention sinks, when it carries
+    /// them. Derived from [`Self::attn_sinks_key`] rather than declared a
+    /// second time: a family that names a sink tensor is served through
+    /// `softmax_in_place(scores, sink)`, and this is that behaviour stated
+    /// as a schema fact — the two cannot disagree. `None` means *no
+    /// judgment exists*, never "no sinks": a stack shipping a
+    /// `self_attn.sinks` operand while this is `None` fails operand
+    /// closure downstream rather than run an ordinary softmax.
+    fn attention_sinks(&self) -> Option<crate::config::AttentionSinkSpec> {
+        self.attn_sinks_key(0)
+            .map(|_| crate::config::AttentionSinkSpec::SoftmaxDenominator)
+    }
+
     /// Parameter-free QK normalisation (RMS over Q/K with no learned
     /// weights). Default: none — families that normalise without weights
     /// declare it, because no tensor evidence can reveal a weightless op.

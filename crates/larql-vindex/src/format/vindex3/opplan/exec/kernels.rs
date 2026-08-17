@@ -127,6 +127,20 @@ pub fn softmax(scores: &mut [f32]) {
     }
 }
 
+/// Softmax against an attention sink, in the literal form of the judged
+/// semantics: the sink logit is appended to the row, the row is
+/// softmaxed whole, and the sink's column is dropped — so the surviving
+/// weights sum to `1 − p_sink`. Deliberately not the served path's
+/// denominator-only shortcut, so the two are independent transcriptions
+/// of one definition.
+pub fn softmax_with_sink(scores: &mut [f32], sink: f32) {
+    let mut row = Vec::with_capacity(scores.len() + 1);
+    row.extend_from_slice(scores);
+    row.push(sink);
+    softmax(&mut row);
+    scores.copy_from_slice(&row[..scores.len()]);
+}
+
 /// Rotate-half RoPE on one head slice at one position, matching the
 /// production convention: pair `i` with `i + head_dim/2`,
 /// `inv_freq[i] = theta^(-2i/head_dim)`.

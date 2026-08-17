@@ -22,6 +22,7 @@
 pub mod activation;
 pub mod architecture;
 pub mod attention_gate;
+pub mod attention_sinks;
 pub mod experts;
 pub mod layer_types;
 pub mod model_config;
@@ -36,6 +37,7 @@ pub use architecture::ModelArchitecture;
 pub use attention_gate::{
     AttentionGateSpec, GateActivation, GateCombine, GatePlacement, GateSource,
 };
+pub use attention_sinks::AttentionSinkSpec;
 pub use experts::{
     ExpertFormat, ExpertGatePolicy, ExpertRoutingPolicy, GateUpBranch, GateUpLayout,
 };
