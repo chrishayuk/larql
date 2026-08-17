@@ -72,6 +72,11 @@ struct LayerResident {
     k: DeviceMatrix,
     v: DeviceMatrix,
     o: DeviceMatrix,
+    q_bias: Option<DeviceBuffer>,
+    k_bias: Option<DeviceBuffer>,
+    v_bias: Option<DeviceBuffer>,
+    o_bias: Option<DeviceBuffer>,
+    sinks: Option<DeviceBuffer>,
     gate: Option<DeviceMatrix>,
     ffn_gate: DeviceMatrix,
     ffn_up: DeviceMatrix,
@@ -200,6 +205,71 @@ fn resident_matrix(
     Ok(m)
 }
 
+/// Upload an optional f32 vector operand (a bias or the sink logits) to
+/// the device, or `None` when the plan carries none.
+fn resident_vector(
+    gpu: &MetalBackend,
+    store: &OperandStore,
+    operand: Option<&OperandRef>,
+) -> Result<Option<DeviceBuffer>, VindexError> {
+    match operand {
+        Some(op) => {
+            let v = store.load(op)?;
+            let buf = gpu
+                .lowering_upload(&v)
+                .ok_or_else(|| VindexError::Parse("vector operand upload failed".into()))?;
+            Ok(Some(buf))
+        }
+        None => Ok(None),
+    }
+}
+
+/// The `inv_freq` map key for a rotary policy — distinct per (theta,
+/// scaled-or-plain) so YaRN and plain rope at the same base never share a
+/// table; `None` for NoPE.
+fn rope_table_key(position: &PositionPolicy) -> Option<u64> {
+    match position {
+        PositionPolicy::Rope { theta } => Some(theta.to_bits()),
+        // Fold the yarn block into the key so two different blocks (or a
+        // block vs plain rope) at one theta get their own tables. The
+        // block's f64 fields hash deterministically.
+        PositionPolicy::Yarn { theta, scaling } => {
+            let mut h = std::collections::hash_map::DefaultHasher::new();
+            use std::hash::{Hash, Hasher};
+            theta.to_bits().hash(&mut h);
+            scaling.factor.to_bits().hash(&mut h);
+            scaling.beta_fast.to_bits().hash(&mut h);
+            scaling.beta_slow.to_bits().hash(&mut h);
+            scaling
+                .original_max_position_embeddings
+                .to_bits()
+                .hash(&mut h);
+            scaling.truncate.hash(&mut h);
+            Some(h.finish() | 1)
+        }
+        PositionPolicy::None => None,
+    }
+}
+
+/// The inverse-frequency table for a rotary policy, matching the
+/// interpreter kernel exactly: plain `theta^(-2i/d)` for rope, the YaRN
+/// ramp for a scaled layer.
+fn rope_inv_freq_table(position: &PositionPolicy, head_dim: usize) -> Vec<f32> {
+    match position {
+        PositionPolicy::Rope { theta } => (0..head_dim / 2)
+            .map(|i| theta.powf(-2.0 * i as f64 / head_dim as f64) as f32)
+            .collect(),
+        PositionPolicy::Yarn { theta, scaling } => {
+            let (inv_freq, _amplitude) =
+                larql_vindex::format::vindex3::opplan::exec::kernels::yarn_frequencies(
+                    scaling, head_dim, *theta,
+                );
+            inv_freq.iter().map(|f| *f as f32).collect()
+        }
+        PositionPolicy::None => Vec::new(),
+    }
+}
+
 fn resident_norm(
     gpu: &MetalBackend,
     store: &OperandStore,
@@ -226,39 +296,10 @@ impl<'a> LoweredSession<'a> {
         max_positions: usize,
         keep: &mut Vec<LoadedWeight>,
     ) -> Result<Self, VindexError> {
-        // Represented, not yet lowered: a YaRN layer is scaled frequencies
-        // AND an attention amplitude, and `LoweredPosition` speaks plain
-        // rope or none. Refuse the whole session rather than let the layer
-        // fall through to `None` below and serve a different model (A-9.4).
-        if let Some(l) = plan
-            .layers
-            .iter()
-            .find(|l| l.attention.position.yarn().is_some())
-        {
-            return Err(VindexError::Parse(format!(
-                "layer {} carries PositionPolicy::Yarn, which the Metal lowering does not \
-                 execute yet (A-9.4); refusing rather than lowering it as unscaled rope",
-                l.layer
-            )));
-        }
-        // Likewise attention sinks and Q/K/V/O biases: represented on the
-        // surface and executed by the interpreter backends, but the
-        // lowering binds `has_sinks = 0` and no bias buffers, so it would
-        // serve the model without them (A-9.4).
-        if let Some(l) = plan.layers.iter().find(|l| {
-            l.attention.sinks.is_some()
-                || l.attention.q_bias.is_some()
-                || l.attention.k_bias.is_some()
-                || l.attention.v_bias.is_some()
-                || l.attention.o_bias.is_some()
-        }) {
-            return Err(VindexError::Parse(format!(
-                "layer {} carries attention sinks and/or projection biases, which the Metal \
-                 lowering does not execute yet (A-9.4); refusing rather than dropping them",
-                l.layer
-            )));
-        }
-        // A routed FFN: represented and executed by the interpreter, but
+        // YaRN, sinks and Q/K/V/O biases are lowered (A-9.4): the
+        // amplitude rides slot 6 of the rope kernel, the sinks slot 10/11
+        // of the attention kernel, the biases the `bias_add` kernel after
+        // each projection. A routed FFN: represented and executed by the interpreter, but
         // the lowering binds dense gate/up/down matrices only; the served
         // MoE machinery (moe_zero_copy) is not plan-reachable yet (A-9.4).
         if let Some(l) = plan.layers.iter().find(|l| l.ffn.routed().is_some()) {
@@ -300,6 +341,11 @@ impl<'a> LoweredSession<'a> {
                 k: resident_matrix(gpu, store, &a.k, formats.attention, keep)?,
                 v: resident_matrix(gpu, store, &a.v, formats.attention, keep)?,
                 o: resident_matrix(gpu, store, &a.o, formats.attention, keep)?,
+                q_bias: resident_vector(gpu, store, a.q_bias.as_ref())?,
+                k_bias: resident_vector(gpu, store, a.k_bias.as_ref())?,
+                v_bias: resident_vector(gpu, store, a.v_bias.as_ref())?,
+                o_bias: resident_vector(gpu, store, a.o_bias.as_ref())?,
+                sinks: resident_vector(gpu, store, a.sinks.as_ref().map(|s| &s.logits))?,
                 gate: match &a.output_gate {
                     Some(g) => Some(resident_matrix(
                         gpu,
@@ -399,15 +445,18 @@ impl<'a> LoweredSession<'a> {
         ];
         let scratch = sizes.iter().map(|n| gpu.lowering_scratch(*n)).collect();
 
-        // One inverse-frequency table per distinct rope base in the plan.
-        let mut inv_freq = HashMap::new();
+        // One inverse-frequency table per distinct rotary policy in the
+        // plan — keyed on (theta, yarn-or-plain), so a YaRN layer's ramped
+        // frequencies and a plain layer's `theta^(-2i/d)` never collide on
+        // theta alone. The table matches the interpreter's exactly: plain
+        // rope from `rope_rotate`, YaRN from `kernels::yarn_frequencies`.
+        let mut inv_freq: HashMap<u64, DeviceBuffer> = HashMap::new();
         for layer in &plan.layers {
-            if let PositionPolicy::Rope { theta } = layer.attention.position {
-                let hd = layer.attention.head_dim;
-                inv_freq.entry(theta.to_bits()).or_insert_with(|| {
-                    let table: Vec<f32> = (0..hd / 2)
-                        .map(|i| theta.powf(-2.0 * i as f64 / hd as f64) as f32)
-                        .collect();
+            let a = &layer.attention;
+            let key = rope_table_key(&a.position);
+            if let Some(key) = key {
+                inv_freq.entry(key).or_insert_with(|| {
+                    let table = rope_inv_freq_table(&a.position, a.head_dim);
                     gpu.lowering_upload(&table).expect("inv_freq upload")
                 });
             }
@@ -445,6 +494,13 @@ impl<'a> LoweredSession<'a> {
             wiring.elapsed().as_secs_f64()
         );
 
+        if inv_freq.len() > 1 {
+            return Err(VindexError::Parse(format!(
+                "plan carries {} distinct rotary tables; the lowered stack binds one shared \
+                 inv_freq per token and cannot yet select per layer",
+                inv_freq.len()
+            )));
+        }
         Ok(Self {
             gpu,
             plan,
@@ -514,10 +570,9 @@ impl<'a> LoweredSession<'a> {
             ffn_act: &s[11],
             ffn_down: &s[13],
             ffn_post: &s[14],
-            // Every rotary layer in this plan shares one base; a plan
-            // with several would need per-layer selection, which the
-            // stack encoder does not yet express. Refuse rather than
-            // silently rotate at the wrong frequency.
+            // Every rotary layer in this plan shares one table (checked
+            // in `new`); a plan with several would need per-layer
+            // selection, which the stack encoder does not yet express.
             inv_freq: self.inv_freq.values().next().unwrap_or(&self.scratch[0]),
         };
 
@@ -592,6 +647,11 @@ impl<'a> LoweredSession<'a> {
                     .as_ref()
                     .filter(|_| !self.ablate.no_gate)
                     .map(DeviceMatrix::as_lowered),
+                q_bias: r.q_bias.as_ref(),
+                k_bias: r.k_bias.as_ref(),
+                v_bias: r.v_bias.as_ref(),
+                o_bias: r.o_bias.as_ref(),
+                sinks: r.sinks.as_ref(),
                 norm_weight: &r.pre_attn_norm,
                 post_norm: post(&r.post_attn_norm, &self.scratch[7])
                     .filter(|_| !self.ablate.no_post_norms),
@@ -614,14 +674,20 @@ impl<'a> LoweredSession<'a> {
                     .filter(|_| !self.ablate.no_query_scale),
                 score_scale: a.score_scale as f32,
                 position: match a.position {
-                    PositionPolicy::Rope { theta } if !self.ablate.no_rope => {
-                        LoweredPosition::Rope { theta }
+                    _ if self.ablate.no_rope => LoweredPosition::None,
+                    PositionPolicy::Rope { theta } => LoweredPosition::Rope { theta },
+                    // YaRN's ramped `inv_freq` rides the shared table
+                    // (built for this layer's policy in `new`); the
+                    // amplitude rides slot 6 of the rope kernel.
+                    PositionPolicy::Yarn { theta, scaling } => {
+                        let amplitude =
+                            larql_vindex::format::vindex3::opplan::exec::kernels::yarn_frequencies(
+                                &scaling, a.head_dim, theta,
+                            )
+                            .1;
+                        LoweredPosition::Scaled { theta, amplitude }
                     }
-                    // Refused in `new`; a Yarn layer never reaches a step.
-                    PositionPolicy::Yarn { .. } => {
-                        unreachable!("PositionPolicy::Yarn is refused by LoweredSession::new")
-                    }
-                    _ => LoweredPosition::None,
+                    PositionPolicy::None => LoweredPosition::None,
                 },
                 // A window applies only to a sliding span; a full layer
                 // attends the whole prefix whatever the plan records.

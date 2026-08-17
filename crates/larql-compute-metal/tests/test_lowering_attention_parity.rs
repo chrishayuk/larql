@@ -329,6 +329,11 @@ fn run_lowered(
         v: proj(&f.v),
         o: proj(&f.o),
         gate: with_gate.then(|| proj(&f.g)),
+        q_bias: None,
+        k_bias: None,
+        v_bias: None,
+        o_bias: None,
+        sinks: None,
         norm_weight: &norm_buf,
         post_norm: post_buf
             .as_ref()

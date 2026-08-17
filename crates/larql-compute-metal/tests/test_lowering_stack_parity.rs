@@ -394,6 +394,11 @@ fn fifty_two_layers_lower_into_one_scheduling_domain() {
                     v: pr(i[2], w.v.tensor_scale),
                     o: pr(i[3], w.o.tensor_scale),
                     gate: Some(pr(i[4], w.g.tensor_scale)),
+                    q_bias: None,
+                    k_bias: None,
+                    v_bias: None,
+                    o_bias: None,
+                    sinks: None,
                     norm_weight: &norms[l][0],
                     post_norm: Some(PostNorm {
                         weight: &norms[l][1],

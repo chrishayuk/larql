@@ -39,10 +39,26 @@ use crate::MetalBackend;
 /// model-wide default.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub enum LoweredPosition {
-    /// Rotary at this base.
+    /// Rotary at this base, unit amplitude.
     Rope { theta: f64 },
+    /// Rotary at frequencies the caller's `inv_freq` table already
+    /// carries (YaRN's ramped blend), with this amplitude on `cos`/`sin`
+    /// — the part of YaRN that rescales every logit at every position.
+    Scaled { theta: f64, amplitude: f32 },
     /// The layer attends position-agnostically (NoPE).
     None,
+}
+
+impl LoweredPosition {
+    /// The `cos`/`sin` scalar this policy applies; `None` for a layer
+    /// that does not rotate.
+    fn amplitude(self) -> Option<f32> {
+        match self {
+            Self::Rope { .. } => Some(1.0),
+            Self::Scaled { amplitude, .. } => Some(amplitude),
+            Self::None => None,
+        }
+    }
 }
 
 /// Everything attention reads.
@@ -54,6 +70,17 @@ pub struct AttnWeights<'a> {
     /// The judged attention output gate. `None` = no gate op — which is
     /// a different claim from a gate that happens to be near 1.
     pub gate: Option<LoweredMatrix<'a>>,
+    /// Q/K/V/O projection biases (f32), from the plan's operands: added
+    /// right after each projection — before QK-norm/RoPE for Q and K,
+    /// before the cache holds V, after `o` before the residual. `None`
+    /// = the plan carries no bias for that projection.
+    pub q_bias: Option<&'a Buffer>,
+    pub k_bias: Option<&'a Buffer>,
+    pub v_bias: Option<&'a Buffer>,
+    pub o_bias: Option<&'a Buffer>,
+    /// Per-query-head attention-sink logits (f32), when the plan's
+    /// judged sink semantics apply; `None` = ordinary softmax.
+    pub sinks: Option<&'a Buffer>,
     /// Pre-attention norm weight (f32).
     pub norm_weight: &'a Buffer,
     /// The post-attention norm, under four-norm placement. `None` =
@@ -151,11 +178,13 @@ impl MetalBackend {
             shape.norm_eps,
             shape.norm_weight_offset,
         );
-        // 2. projections. K and V land in their cache slots directly.
-        for (p, out, off, n) in [
-            (&w.q, s.q, 0u64, q_rows),
-            (&w.k, s.k_cache, slot, kv_rows),
-            (&w.v, s.v_cache, slot, kv_rows),
+        // 2. projections. K and V land in their cache slots directly;
+        //    a projection's bias joins its output there, before anything
+        //    downstream reads it.
+        for (p, bias, out, off, n) in [
+            (&w.q, w.q_bias, s.q, 0u64, q_rows),
+            (&w.k, w.k_bias, s.k_cache, slot, kv_rows),
+            (&w.v, w.v_bias, s.v_cache, slot, kv_rows),
         ] {
             self.encode_matvec(
                 enc,
@@ -168,6 +197,9 @@ impl MetalBackend {
                     k: shape.hidden,
                 },
             );
+            if let Some(bias) = bias {
+                self.encode_bias_add(enc, out, off, bias, n);
+            }
         }
         if let Some(g) = &w.gate {
             // The gate reads the *attention input* — the same normalised
@@ -213,7 +245,7 @@ impl MetalBackend {
         //    the op is absent and nothing is encoded — not rotation by
         //    a zero angle, which would also be a no-op here but would
         //    be the wrong reason.
-        if let LoweredPosition::Rope { .. } = shape.position {
+        if let Some(amplitude) = shape.position.amplitude() {
             self.encode_rope(
                 enc,
                 s.q,
@@ -222,6 +254,7 @@ impl MetalBackend {
                 shape.head_dim,
                 s.inv_freq,
                 shape.position_index,
+                amplitude,
             );
             self.encode_rope(
                 enc,
@@ -231,10 +264,11 @@ impl MetalBackend {
                 shape.head_dim,
                 s.inv_freq,
                 shape.position_index,
+                amplitude,
             );
         }
         // 6. attention over the cache.
-        self.encode_kv_attention(enc, s, shape);
+        self.encode_kv_attention(enc, s, shape, w.sinks);
         // 7. the judged gate, then the output projection.
         let aggregated = match &w.gate {
             Some(_) => {
@@ -254,6 +288,9 @@ impl MetalBackend {
                 k: q_rows,
             },
         );
+        if let Some(bias) = w.o_bias {
+            self.encode_bias_add(enc, s.attn_out, 0, bias, shape.hidden);
+        }
         // 8. post-attention norm (four-norm placement only), then the
         //    residual — branch output normalised *before* the add.
         self.encode_branch_norm_then_residual(
@@ -291,6 +328,7 @@ impl MetalBackend {
         enc: &ComputeCommandEncoderRef,
         s: &AttnScratch<'_>,
         shape: &AttnShape,
+        sinks: Option<&Buffer>,
     ) {
         use crate::ops::kv_cache::{attention_span, LONG_ATTENTION_SPAN, SHORT_ATTENTION_SPAN};
 
@@ -342,12 +380,21 @@ impl MetalBackend {
         super::set_u32(enc, 7, shape.num_kv_heads as u32);
         super::set_f32(enc, 8, shape.score_scale);
         super::set_u32(enc, 9, window);
-        // No sink logits in this plan. The kernels read slot 10 only when
-        // `has_sinks` is non-zero, but Metal still requires the binding to
-        // exist, so a one-float placeholder goes in — `inv_freq` is a
-        // live buffer of the right kind and is not read by this kernel.
-        enc.set_buffer(10, Some(s.inv_freq), 0);
-        super::set_u32(enc, 11, 0);
+        // Sinks: the plan's per-head logits when the layer carries the
+        // judged semantics. The kernels read slot 10 only when `has_sinks`
+        // is non-zero, but Metal still requires the binding to exist, so
+        // a sink-free layer binds a one-float placeholder — `inv_freq` is
+        // a live buffer of the right kind and is not read by this kernel.
+        match sinks {
+            Some(sinks) => {
+                enc.set_buffer(10, Some(sinks), 0);
+                super::set_u32(enc, 11, 1);
+            }
+            None => {
+                enc.set_buffer(10, Some(s.inv_freq), 0);
+                super::set_u32(enc, 11, 0);
+            }
+        }
         super::set_f32(enc, 12, shape.softcap.unwrap_or(0.0));
         enc.dispatch_thread_groups(
             metal::MTLSize::new(shape.num_q_heads as u64, 1, 1),

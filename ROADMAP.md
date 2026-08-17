@@ -1825,8 +1825,22 @@ A-9.3  DONE 2026-08-17 (branch feat/vindex3-gpt-oss-rung0): the interpreter exec
        As mapped: MoE execution in the interpreter (exec/mod.rs, reference.rs, production.rs) with
        gpt-oss routing (top-k then softmax over the selected — MoeRouterKind::TopKThenSoftmax,
        ExpertRoutingPolicy::NormalisedOverSelected) and ClampedGlu (pipeline/moe.rs:43).
-A-9.4  MoE + sinks + biases + YaRN amplitude in the Metal lowering — moe_zero_copy.rs is the
-       served path's machinery and is not plan-reachable; make it so.
+A-9.4  ATTENTION HALF DONE 2026-08-17 (branch feat/vindex3-gpt-oss-rung0): sinks, Q/K/V/O
+       biases and YaRN (scaled inv_freq + amplitude) lowered in lowering/attention.rs +
+       mod.rs, reusing the existing bias_add / sinks-slot(10,11) / rope-amplitude(slot 6)
+       kernels; lowered.rs feeds them from the plan and lifts the three refusals (LoweredMatrix
+       gains Scaled{theta, amplitude}; per-(theta,yarn) inv_freq table; resident bias/sink
+       vectors). Gate: tests/test_lowering_attention_extras.rs — lowered ≡ reference (biases +
+       YaRN + sink) < 1e-4, with four controls (drop sink / drop Q bias / amplitude→1 / ramp→
+       plain rope) each moving output ≥20× the parity residual; all 421+ Metal lowering tests
+       green. REMAINING (routed FFN): the lowered stack still refuses a routed layer, so
+       gpt-oss does not yet lower e2e. moe_zero_copy.rs / moe_gpu_route encode the served MoE
+       into one CB but resolve experts through registered mmap REGIONS (BufferCache::
+       register_region → resolve_region); the lowering loads operands as owned bytes, so the
+       routed rung must register the container's expert-bank segment as a region and thread a
+       MoeLayerWeights-shaped call (router in stack, experts in bank) through encode_stack —
+       then layer-diff the lowered dump against the served/interpreter dumps from A-9.5.
+       As mapped: moe_zero_copy.rs is the served path's machinery and is not plan-reachable.
 A-9.5  the parity chain: ops closure → exec reference → production → lowered, byte-identical
        to the banked oracle; then the bracketed ladder.
        INTERPRETER HALF CLOSED 2026-08-17: `shannon layer-dump --tokens` (new; given ids) over

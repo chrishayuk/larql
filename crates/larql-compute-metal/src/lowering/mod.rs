@@ -383,6 +383,7 @@ impl MetalBackend {
         head_dim: usize,
         inv_freq: &Buffer,
         position: usize,
+        amplitude: f32,
     ) {
         let pipeline = &self.attention.rope_at_pos_batched_pipeline;
         enc.set_compute_pipeline_state(pipeline);
@@ -393,14 +394,34 @@ impl MetalBackend {
         // rotary_dim 0 = rotate the whole head, matching `rope_rotate`.
         set_u32(enc, 4, 0);
         set_u32(enc, 5, num_heads as u32);
-        // Amplitude 1.0: a YaRN cos/sin scalar is a judged fact VINDEX3
-        // does not yet carry (see the MOE0 carriage gate), and inventing
-        // one here would be exactly the silent-default shape that gate
-        // exists to catch.
-        set_f32(enc, 6, 1.0);
+        // The cos/sin amplitude — 1.0 for plain rope, YaRN's
+        // `attention_amplitude` for a scaled layer — comes from the plan's
+        // position policy, never invented here (A-9.4).
+        set_f32(enc, 6, amplitude);
         enc.dispatch_thread_groups(
             metal::MTLSize::new((head_dim / 2) as u64, num_heads as u64, 1),
             metal::MTLSize::new(1, 1, 1),
+        );
+    }
+
+    /// Encode `x[off..][i] += bias[i]` over `len` elements — a projection
+    /// bias joining its output in place (the same `bias_add` kernel the
+    /// decode path uses).
+    pub fn encode_bias_add(
+        &self,
+        enc: &ComputeCommandEncoderRef,
+        x: &Buffer,
+        x_offset: u64,
+        bias: &Buffer,
+        len: usize,
+    ) {
+        crate::stages::bias_add::encode(
+            enc,
+            &self.attention.bias_add_pipeline,
+            x,
+            x_offset,
+            bias,
+            len,
         );
     }
 

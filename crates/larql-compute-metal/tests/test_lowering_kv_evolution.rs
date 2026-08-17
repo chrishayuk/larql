@@ -382,6 +382,11 @@ fn step(d: &Device<'_>, ws: &[LayerW], h0: &[f32], t: usize, share: bool) -> Vec
                     v: pr(4, w.v.tensor_scale),
                     o: pr(6, w.o.tensor_scale),
                     gate: Some(pr(8, w.g.tensor_scale)),
+                    q_bias: None,
+                    k_bias: None,
+                    v_bias: None,
+                    o_bias: None,
+                    sinks: None,
                     norm_weight: &d.norms[l][0],
                     post_norm: Some(PostNorm {
                         weight: &d.norms[l][1],

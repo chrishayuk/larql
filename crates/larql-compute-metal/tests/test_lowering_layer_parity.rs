@@ -420,6 +420,11 @@ fn run_lowered(
         v: proj(&f.v),
         o: proj(&f.o),
         gate: Some(proj(&f.g)),
+        q_bias: None,
+        k_bias: None,
+        v_bias: None,
+        o_bias: None,
+        sinks: None,
         norm_weight: &attn_norm_buf,
         post_norm: Some(larql_compute_metal::lowering::PostNorm {
             weight: &attn_post_buf,
