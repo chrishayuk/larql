@@ -1860,6 +1860,19 @@ A-9.4  DONE 2026-08-18 (branch feat/vindex3-gpt-oss-rung0): the real gpt-oss-20b
        As mapped: moe_zero_copy.rs is the served path's machinery and is not plan-reachable.
 A-9.5  the parity chain: ops closure → exec reference → production → lowered, byte-identical
        to the banked oracle; then the bracketed ladder.
+       CLOSED 2026-08-18: the three-way chain holds on the real gpt-oss-20b. `vindex3 exec
+       --dump-layers` now works on the Metal-lowered path (encode_stack Checkpoints capture
+       every layer per position into [seq,hidden] planes, byte-compatible with the interpreter
+       dump). Over the same 81 ids, `shannon layer-diff` metal-lowered-ffn (f16 attention/head,
+       native MXFP4 experts) vs the production interpreter: cos 1.000000000 and rel_rms ≤ 1e-6
+       through ALL 24 layers, "no capture drifts" — the same congruence as served-vs-interpreter.
+       This MEASURES the earlier generated-token flip: with all-NVFP4 attention the layer-0
+       rel_rms is 0.058 (cos still 0.998, direction preserved), and swapping attention to f16
+       collapses it to 0.000000 — the drift was the NVFP4 attention weight representation, not a
+       semantic defect (both paths read the SAME MXFP4 expert codes, so experts contribute no
+       divergence). CPU interpreter and Metal now execute the represented GPT-OSS semantics —
+       YaRN, sinks, biases, routed MXFP4 MoE, ClampedGlu — numerically identically to f32 noise.
+       Remaining: the bracketed performance ladder. Earlier note kept:
        INTERPRETER HALF CLOSED 2026-08-17: `shannon layer-dump --tokens` (new; given ids) over
        the HF checkpoint = the served CPU forward on the exact BF16+MXFP4 bytes, vs `vindex3
        exec --dump-layers` on the container, same 81 oracle ids → `layer-diff`: cos

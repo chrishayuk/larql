@@ -598,6 +598,27 @@ impl<'a> LoweredSession<'a> {
     /// Step one token: embed on the host, then the entire stack and
     /// head in one command buffer with a single wait.
     pub fn step(&mut self, token: u32) -> Result<Option<Vec<f32>>, VindexError> {
+        self.step_impl(token, None)
+    }
+
+    /// One step, capturing the embedding row and every layer's output for
+    /// this position — the per-layer planes a `shannon layer-diff` reads.
+    /// `layers_out[i]` is layer `i`'s post-FFN-residual hidden state.
+    pub fn step_capturing(
+        &mut self,
+        token: u32,
+    ) -> Result<(Option<Vec<f32>>, Vec<f32>, Vec<Vec<f32>>), VindexError> {
+        let mut embedding = Vec::new();
+        let mut layers_out = Vec::new();
+        let logits = self.step_impl(token, Some((&mut embedding, &mut layers_out)))?;
+        Ok((logits, embedding, layers_out))
+    }
+
+    fn step_impl(
+        &mut self,
+        token: u32,
+        capture: Option<(&mut Vec<f32>, &mut Vec<Vec<f32>>)>,
+    ) -> Result<Option<Vec<f32>>, VindexError> {
         let t = self.position;
         let row = &self.embed_table[token as usize * self.hidden..][..self.hidden];
         let embedding = self
@@ -622,6 +643,17 @@ impl<'a> LoweredSession<'a> {
             let inv = 1.0 / (ms + norm.eps).sqrt();
             h0.iter_mut().for_each(|v| *v = (*v as f64 * inv) as f32);
         }
+        let capturing = capture.is_some();
+        // Per-layer capture buffers (hidden-sized), read back after the
+        // command buffer completes — a copy inside the stream, never a
+        // mid-stream readback.
+        let captures: Vec<DeviceBuffer> = if capturing {
+            (0..self.plan.layers.len())
+                .map(|_| self.gpu.lowering_scratch(self.hidden))
+                .collect()
+        } else {
+            Vec::new()
+        };
         let h_in = self
             .gpu
             .lowering_upload(&h0)
@@ -658,9 +690,21 @@ impl<'a> LoweredSession<'a> {
             .map(|(plan_layer, r)| self.layer_lowering(plan_layer, r, t))
             .collect();
 
+        let checkpoints: Vec<larql_compute_metal::lowering::stack::Checkpoint> = captures
+            .iter()
+            .enumerate()
+            .map(
+                |(i, buf)| larql_compute_metal::lowering::stack::Checkpoint {
+                    after_layer: i,
+                    into: buf,
+                },
+            )
+            .collect();
         let cmd = self.gpu.new_lowering_command_buffer();
         let enc = cmd.new_compute_command_encoder();
-        let h_final = self.gpu.encode_stack(enc, &h_in, &layers, &scratch, &[]);
+        let h_final = self
+            .gpu
+            .encode_stack(enc, &h_in, &layers, &scratch, &checkpoints);
 
         let logits_buf = match (&self.final_norm, &self.head) {
             (Some((nw, eps, off)), Some(head)) => {
@@ -690,6 +734,19 @@ impl<'a> LoweredSession<'a> {
         cmd.wait_until_completed();
 
         let out = logits_buf.and_then(|b| self.gpu.lowering_readback(b, self.vocab));
+        if let Some((embedding, layers_out)) = capture {
+            *embedding = h0;
+            for buf in &captures {
+                layers_out.push(
+                    self.gpu
+                        .lowering_readback(buf, self.hidden)
+                        .ok_or_else(|| VindexError::Parse("capture readback failed".into()))?,
+                );
+            }
+        }
+        for buf in captures {
+            self.gpu.recycle_lowering_scratch(buf);
+        }
         self.gpu.recycle_lowering_scratch(h_in);
         self.position += 1;
         Ok(out)
@@ -1044,6 +1101,67 @@ fn argmax_of(logits: &[f32]) -> u32 {
         .0 as u32
 }
 
+/// Teacher-force `tokens` through the lowering, capturing every layer's
+/// output per position, and write the planes + manifest a `shannon
+/// layer-diff` consumes — byte-compatible with `vindex3 exec --dump-layers`
+/// on the interpreter backends, so the two can be diffed directly.
+fn dump_lowered(
+    session: &mut LoweredSession<'_>,
+    tokens: &[u32],
+    plan: &ComponentOpPlan,
+    container: &std::path::Path,
+    label: &str,
+    dir: &std::path::Path,
+) -> Result<(), Box<dyn std::error::Error>> {
+    use super::super::shannon_trace::dump::{
+        plane_name, LayerDumpManifest, MANIFEST_NAME, PLANE_DTYPE,
+    };
+    let hidden = session.hidden;
+    let num_layers = plan.layers.len();
+    let seq = tokens.len();
+    std::fs::create_dir_all(dir)?;
+    // Row-major [seq, hidden] planes: plane 0 = embeddings, plane i+1 =
+    // layer i's post-FFN-residual hidden.
+    let mut planes: Vec<Vec<f32>> = vec![Vec::with_capacity(seq * hidden); num_layers + 1];
+    for (pos, &token) in tokens.iter().enumerate() {
+        let (_logits, embedding, layers_out) = session.step_capturing(token)?;
+        planes[0].extend_from_slice(&embedding);
+        for (i, row) in layers_out.into_iter().enumerate() {
+            planes[i + 1].extend_from_slice(&row);
+        }
+        eprintln!("captured position {}/{seq}", pos + 1);
+    }
+    let plane_names: Vec<String> = (0..=num_layers).map(plane_name).collect();
+    for (name, data) in plane_names.iter().zip(&planes) {
+        use std::io::Write;
+        let mut f = std::io::BufWriter::new(std::fs::File::create(dir.join(name))?);
+        for v in data {
+            f.write_all(&v.to_le_bytes())?;
+        }
+        f.flush()?;
+    }
+    let manifest = LayerDumpManifest {
+        engine: format!("vindex3-metal-lowered-{label}"),
+        model: container.display().to_string(),
+        num_layers,
+        seq_len: seq,
+        hidden_size: hidden,
+        token_ids: tokens.to_vec(),
+        planes: plane_names,
+        dtype: PLANE_DTYPE.to_string(),
+    };
+    std::fs::write(
+        dir.join(MANIFEST_NAME),
+        serde_json::to_string_pretty(&manifest)?,
+    )?;
+    eprintln!(
+        "wrote {} planes + manifest to {}",
+        num_layers + 1,
+        dir.display()
+    );
+    Ok(())
+}
+
 /// Run the plan through the lowering and report the final position's
 /// logits, in the same shape `run_exec`'s other arms do.
 pub(super) fn run_lowered(
@@ -1073,6 +1191,13 @@ pub(super) fn run_lowered(
             "absent"
         }
     );
+
+    // ── per-layer dump: teacher-force the given tokens, capturing every
+    //    layer's output per position into [seq, hidden] planes a
+    //    `shannon layer-diff` reads (the lowered arm of the A-9.5 chain).
+    if let Some(dir) = &args.dump_layers {
+        return dump_lowered(&mut session, tokens, plan, &args.container, label, dir);
+    }
 
     let prompt_started = std::time::Instant::now();
     let mut logits: Option<Vec<f32>> = None;
