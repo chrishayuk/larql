@@ -20,7 +20,8 @@
 //! not a branch at run time.
 
 use larql_models::config::{
-    Activation, AttentionGateSpec, AttentionSinkSpec, EmbeddingNorm, FfnType, NormSpec, NormType,
+    Activation, AttentionGateSpec, AttentionSinkSpec, EmbeddingNorm, ExpertFormat,
+    ExpertRoutingPolicy, FfnType, GateUpLayout, MoeRouterKind, NormSpec, NormType,
     ParameterFreeQkNorm, QkNormScope,
 };
 use larql_models::inventory::components::ComponentTopology;
@@ -117,6 +118,47 @@ pub struct FfnSurface {
     /// (A-9.0). Defaults for containers written before it existed.
     #[serde(default)]
     pub gate_policy: larql_models::ExpertGatePolicy,
+    /// The routed-FFN judgment, when the component's FFN is a mixture of
+    /// experts. `None` = dense — and, as everywhere on the surface, a stack
+    /// shipping router or expert-bank operands under `None` fails operand
+    /// closure rather than running them as something else. Absent from the
+    /// serialised surface when `None`, so every dense container reads back
+    /// unchanged. Which layers are routed is operand evidence: a layer with
+    /// an expert bank is routed, one with dense FFN operands is dense, and
+    /// the two may interleave.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub moe: Option<MoeSurface>,
+}
+
+/// The routed-FFN (mixture-of-experts) semantics of a component, lifted
+/// from the family's judgment. Every field is something the executor
+/// reads; none is re-derived from operand names.
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+pub struct MoeSurface {
+    /// Routed experts per layer.
+    pub experts: usize,
+    /// Experts selected per token.
+    pub top_k: usize,
+    /// Per-expert intermediate width (the down projection's input).
+    pub expert_intermediate_size: usize,
+    /// How router logits become selected experts and weights.
+    pub router_kind: MoeRouterKind,
+    /// Whether the selected weights are normalised to sum to one.
+    pub routing_policy: ExpertRoutingPolicy,
+    /// Whether the router carries an additive bias on its logits — the
+    /// `MoeRouterBias` operand is required iff this is set.
+    pub router_bias: bool,
+    /// How the experts are stored; decides which expert-bank operand roles
+    /// closure requires (packed MXFP4: blocks + scales + bias per
+    /// projection).
+    pub expert_format: ExpertFormat,
+    /// How a fused `gate_up` operand's rows split into gate and up.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub gate_up_layout: Option<GateUpLayout>,
+    /// Always-active experts alongside the routed ones.
+    pub shared_experts: usize,
+    /// A dense MLP summed with the expert block every layer.
+    pub hybrid: bool,
 }
 
 /// What the norm op reads.
@@ -233,6 +275,18 @@ pub fn surface_from_resolved(
             activation: execution.activation,
             ffn_type: execution.ffn_type,
             gate_policy: execution.gate_policy,
+            moe: execution.moe.map(|m| MoeSurface {
+                experts: m.experts,
+                top_k: m.top_k,
+                expert_intermediate_size: m.expert_intermediate_size,
+                router_kind: m.router_kind,
+                routing_policy: m.routing_policy,
+                router_bias: m.router_bias,
+                expert_format: m.expert_format,
+                gate_up_layout: m.gate_up_layout,
+                shared_experts: m.shared_experts,
+                hybrid: m.hybrid,
+            }),
         },
         norm: NormSurface {
             pre: execution.norm_pre,
@@ -394,6 +448,7 @@ pub fn surface_from_nested(
             // Nested towers declare no gate policy; plain gating is the
             // fact, not a fallback.
             gate_policy: larql_models::ExpertGatePolicy::Gated,
+            moe: None,
         },
         norm: NormSurface {
             pre: NormSpec {

@@ -78,6 +78,16 @@ impl AlignedBytes {
         }
     }
 
+    /// A page-aligned copy of `bytes` — how a natively stored quantised
+    /// operand (an MXFP4 expert's blocks or scales) is bound without a
+    /// numeric transform: the bytes are the checkpoint's, only the
+    /// alignment is ours.
+    pub fn from_bytes(bytes: &[u8]) -> Self {
+        let mut aligned = Self::zeroed(bytes.len());
+        aligned.as_mut_slice()[..bytes.len()].copy_from_slice(bytes);
+        aligned
+    }
+
     /// The full padded allocation — page-aligned pointer, page-multiple
     /// length, zero beyond `logical_len`.
     pub fn as_slice(&self) -> &[u8] {

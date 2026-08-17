@@ -23,7 +23,7 @@ use crate::format::vindex3::encode::encode_system;
 use crate::format::vindex3::inspect::inspect_container;
 use crate::format::vindex3::opplan::exec::backend::{
     AttentionCall, AttentionStepCall, AttentionStepOut, FfnCall, NormCall, PlanBackend,
-    ProjectCall, WeightSlice,
+    ProjectCall, RoutedFfnCall, WeightSlice,
 };
 use crate::format::vindex3::opplan::exec::operands::OperandStore;
 use crate::format::vindex3::opplan::exec::production::ProductionBackend;
@@ -90,6 +90,11 @@ impl PlanBackend for RecordingBackend {
         self.inner.ffn(call)
     }
 
+    fn routed_ffn(&self, call: RoutedFfnCall<'_>) -> Result<Vec<f32>, VindexError> {
+        self.record("routed_ffn");
+        self.inner.routed_ffn(call)
+    }
+
     fn output_head(
         &self,
         projection: WeightSlice<'_>,
@@ -146,6 +151,10 @@ impl PlanBackend for PerturbedBackend {
 
     fn ffn(&self, call: FfnCall<'_>) -> Result<Vec<f32>, VindexError> {
         self.0.ffn(call)
+    }
+
+    fn routed_ffn(&self, call: RoutedFfnCall<'_>) -> Result<Vec<f32>, VindexError> {
+        self.0.routed_ffn(call)
     }
 
     fn output_head(

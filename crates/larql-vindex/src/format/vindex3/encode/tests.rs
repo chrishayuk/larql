@@ -319,7 +319,7 @@ fn an_object_matching_no_source_tensors_refuses() {
         representations: Vec::<Representation>::new(),
     };
 
-    let err = match plan_object_tensors(&object, &inventories) {
+    let err = match plan_object_tensors(&object, &inventories, std::slice::from_ref(&object)) {
         Err(e) => e.to_string(),
         Ok(planned) => panic!(
             "planned {} tensors from a prefix nothing matches",

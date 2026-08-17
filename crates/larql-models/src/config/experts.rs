@@ -2,7 +2,8 @@
 //! how an expert block computes: its gate shape and its router normalisation.
 
 /// How expert weights are stored in a MoE model.
-#[derive(Debug, Clone, Copy, PartialEq)]
+#[derive(Debug, Clone, Copy, PartialEq, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "snake_case")]
 pub enum ExpertFormat {
     /// Per-expert separate tensors (Mixtral, DeepSeek).
     /// Keys: `experts.{id}.w1.weight`, `experts.{id}.w2.weight`, etc.
@@ -59,7 +60,8 @@ impl ExpertFormat {
 /// (e.g. K3's MXFP4→Q6_K transcode) may canonicalise it on the way to an
 /// execution operand; when that happens the transform owns the invariant,
 /// not this declaration.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "snake_case")]
 pub enum GateUpLayout {
     /// `[all gate rows | all up rows]` — the first half is gate.
     ContiguousHalves,
@@ -136,7 +138,8 @@ impl Default for ExpertGatePolicy {
 /// There are only two observable behaviours, and the difference is whether the
 /// selected weights sum to 1. Getting it wrong rescales the entire expert
 /// branch, which is a large error that still produces coherent-looking output.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "snake_case")]
 pub enum ExpertRoutingPolicy {
     /// Softmax over **all** experts, then keep the top-k probabilities as they
     /// are. They sum to *less* than 1 — by whatever mass the unselected

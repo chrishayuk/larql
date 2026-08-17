@@ -22,8 +22,8 @@
 //! only ever be told what to compute.
 
 use larql_models::config::{
-    Activation, AttentionGateSpec, AttentionSinkSpec, NormType, ParameterFreeQkNorm,
-    PositionPolicy, QkNormScope,
+    Activation, AttentionGateSpec, AttentionSinkSpec, ExpertRoutingPolicy, GateUpLayout,
+    MoeRouterKind, NormType, ParameterFreeQkNorm, PositionPolicy, QkNormScope,
 };
 
 use super::super::super::graph::policy::AttentionSpan;
@@ -251,6 +251,39 @@ pub struct FfnCall<'a> {
     pub gate_policy: larql_models::ExpertGatePolicy,
 }
 
+/// One routed feed-forward operation over one vector, fully resolved:
+/// the router in f32 (glue-sized), every expert's projections in the
+/// backend's declared FFN format, and every judged semantic as an
+/// argument. The backend routes, runs the selected experts and combines
+/// — nothing here is re-derived from the plan.
+pub struct RoutedFfnCall<'a> {
+    pub x: &'a [f32],
+    pub hidden: usize,
+    /// Per-expert intermediate width.
+    pub intermediate: usize,
+    pub experts: usize,
+    pub top_k: usize,
+    pub router_kind: MoeRouterKind,
+    pub routing_policy: ExpertRoutingPolicy,
+    pub activation: Activation,
+    pub gate_policy: larql_models::ExpertGatePolicy,
+    /// How each expert's fused `gate_up` rows split into gate and up.
+    pub gate_up_layout: GateUpLayout,
+    /// Router logits matrix `[experts, hidden]`, row-major.
+    pub router: &'a [f32],
+    /// Additive router bias `[experts]`.
+    pub router_bias: Option<&'a [f32]>,
+    /// One `[2·intermediate, hidden]` matrix per expert.
+    pub gate_up: &'a [WeightSlice<'a>],
+    /// Fused gate/up bias, `[experts · 2·intermediate]` flat, in the
+    /// operand's own row layout.
+    pub gate_up_bias: Option<&'a [f32]>,
+    /// One `[hidden, intermediate]` matrix per expert.
+    pub down: &'a [WeightSlice<'a>],
+    /// Down bias, `[experts · hidden]` flat.
+    pub down_bias: Option<&'a [f32]>,
+}
+
 /// One position's attention against interpreter-owned K/V state — the
 /// decode step.
 ///
@@ -366,6 +399,11 @@ pub trait PlanBackend: Sync {
     /// with no kernel for a judged variant must say so, not borrow
     /// another backend's arithmetic to fill the gap.
     fn ffn(&self, call: FfnCall<'_>) -> Result<Vec<f32>, VindexError>;
+
+    /// The routed FFN — a mixture of experts. Required of every backend
+    /// for the same reason as [`Self::ffn`]: a backend without the
+    /// arithmetic must refuse, never borrow it.
+    fn routed_ffn(&self, call: RoutedFfnCall<'_>) -> Result<Vec<f32>, VindexError>;
 
     /// Vocabulary projection plus the head's optional multiplier and
     /// softcap, in that order.

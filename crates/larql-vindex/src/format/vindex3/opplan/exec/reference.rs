@@ -12,13 +12,14 @@
 //! licence to change what the plan means.
 
 use larql_models::config::{
-    AttentionSinkSpec, GateActivation, GateCombine, GatePlacement, GateSource, QkNormScope,
+    AttentionSinkSpec, ExpertRoutingPolicy, GateActivation, GateCombine, GatePlacement, GateSource,
+    GateUpBranch, MoeRouterKind, QkNormScope,
 };
 
 use super::super::super::graph::policy::AttentionSpan;
 use super::backend::{
     AttentionCall, AttentionStepCall, AttentionStepOut, FfnCall, GateCall, NormCall, PlanBackend,
-    ProjectCall, ProjectedQkv, QkNormCall,
+    ProjectCall, ProjectedQkv, QkNormCall, RoutedFfnCall,
 };
 use super::kernels::{
     activate, matvec, norm, rope_rotate, sigmoid, softcap, softmax, softmax_with_sink,
@@ -227,6 +228,71 @@ impl ReferenceBackend {
     }
 }
 
+/// Gate and up: the two branches sharing one fused operand.
+const FUSED_BRANCHES: usize = larql_models::quant::mxfp4::FUSED_HALVES;
+
+/// The judged expert selection, in the literal form: rank the logits
+/// (ties to the lower index, as `torch.topk`), keep `top_k`, and weight
+/// them by a softmax whose denominator the routing policy chooses — every
+/// expert (`SoftmaxThenSelect`) or the selected ones only
+/// (`NormalisedOverSelected`; GPT-OSS's top-k-then-softmax is that same
+/// number). Exhaustive on the router kind: a rule with its own arithmetic
+/// (Gemma 4's per-expert scale) must be implemented before it executes.
+fn select_experts_reference(call: &RoutedFfnCall<'_>) -> Result<Vec<(usize, f32)>, VindexError> {
+    match call.router_kind {
+        MoeRouterKind::TopKSoftmax | MoeRouterKind::TopKThenSoftmax => {}
+        MoeRouterKind::Gemma4Hybrid => {
+            return Err(VindexError::Parse(
+                "MoeRouterKind::Gemma4Hybrid carries a per-expert scale this backend does not \
+                 execute; refusing rather than routing with the plain rule"
+                    .to_string(),
+            ))
+        }
+    }
+    let mut logits = matvec(call.router, call.experts, call.hidden, call.x);
+    if let Some(bias) = call.router_bias {
+        for (l, b) in logits.iter_mut().zip(bias) {
+            *l += b;
+        }
+    }
+    let mut ranked: Vec<(usize, f32)> = logits.iter().copied().enumerate().collect();
+    // Stable, so equal logits keep index order.
+    ranked.sort_by(|a, b| b.1.total_cmp(&a.1));
+    let k = call.top_k.min(ranked.len());
+    let max = ranked.first().map_or(0.0, |r| r.1);
+    let denominator: f32 = match call.routing_policy {
+        ExpertRoutingPolicy::SoftmaxThenSelect => ranked.iter().map(|r| (r.1 - max).exp()).sum(),
+        ExpertRoutingPolicy::NormalisedOverSelected => {
+            ranked.iter().take(k).map(|r| (r.1 - max).exp()).sum()
+        }
+    };
+    Ok(ranked
+        .into_iter()
+        .take(k)
+        .map(|(e, l)| (e, (l - max).exp() / denominator))
+        .collect())
+}
+
+/// One expert's gate/up combine under the judged policy, transcribed from
+/// the family definitions: plain gating is `activation(gate) · up`;
+/// GPT-OSS's clamped GLU clamps gate above and up both ways at `limit`,
+/// scales the sigmoid argument by `alpha` and adds one to up.
+fn combine_gate_up_reference(
+    policy: larql_models::ExpertGatePolicy,
+    activation: larql_models::config::Activation,
+    g: f32,
+    u: f32,
+) -> f32 {
+    match policy {
+        larql_models::ExpertGatePolicy::Gated => activate(activation, g) * u,
+        larql_models::ExpertGatePolicy::ClampedGlu { limit, alpha } => {
+            let g = g.min(limit);
+            let u = u.clamp(-limit, limit);
+            (u + 1.0) * (g * sigmoid(alpha * g))
+        }
+    }
+}
+
 /// `x[i] += b[i]`; a bias of the wrong length is a geometry bug closure
 /// should have refused, so it panics rather than pads.
 fn add_in_place(x: &mut [f32], b: &[f32]) {
@@ -359,6 +425,63 @@ impl PlanBackend for ReferenceBackend {
             call.intermediate,
             &inner,
         ))
+    }
+
+    /// The routed FFN, stated literally: router logits, the judged
+    /// selection rule, each selected expert's fused gate/up read through
+    /// the declared row layout, the judged gate policy, its down
+    /// projection, and the weighted sum. Shares nothing with the served
+    /// MoE path — plain loops over widened f32 operands.
+    fn routed_ffn(&self, call: RoutedFfnCall<'_>) -> Result<Vec<f32>, VindexError> {
+        let selected = select_experts_reference(&call)?;
+        let two_inter = FUSED_BRANCHES * call.intermediate;
+        let mut out = vec![0.0f32; call.hidden];
+        for (expert, weight) in selected {
+            let mut fused = matvec(
+                call.gate_up[expert].as_f32()?,
+                two_inter,
+                call.hidden,
+                call.x,
+            );
+            if let Some(bias) = call.gate_up_bias {
+                for (f, b) in fused
+                    .iter_mut()
+                    .zip(&bias[expert * two_inter..(expert + 1) * two_inter])
+                {
+                    *f += b;
+                }
+            }
+            let inner: Vec<f32> = (0..call.intermediate)
+                .map(|i| {
+                    let g =
+                        fused[call
+                            .gate_up_layout
+                            .row(GateUpBranch::Gate, i, call.intermediate)];
+                    let u = fused[call
+                        .gate_up_layout
+                        .row(GateUpBranch::Up, i, call.intermediate)];
+                    combine_gate_up_reference(call.gate_policy, call.activation, g, u)
+                })
+                .collect();
+            let mut expert_out = matvec(
+                call.down[expert].as_f32()?,
+                call.hidden,
+                call.intermediate,
+                &inner,
+            );
+            if let Some(bias) = call.down_bias {
+                for (o, b) in expert_out
+                    .iter_mut()
+                    .zip(&bias[expert * call.hidden..(expert + 1) * call.hidden])
+                {
+                    *o += b;
+                }
+            }
+            for (acc, v) in out.iter_mut().zip(&expert_out) {
+                *acc += weight * v;
+            }
+        }
+        Ok(out)
     }
 
     fn output_head(

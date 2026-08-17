@@ -99,7 +99,7 @@ fn drafter_plan_uses_two_norm_placement_and_qk_norms() {
     assert!(plan.output.is_none());
     assert!(plan.final_norm.is_some());
     assert_eq!(layer0.attention.num_kv_heads, 4);
-    assert_eq!(layer0.ffn.activation, Activation::Silu);
+    assert_eq!(layer0.ffn.dense().unwrap().activation, Activation::Silu);
 
     // 11 operands: 4 attn + 2 qk norms + 2 norms + 3 mlp.
     assert_eq!(layer0.operands_accounted, 11);

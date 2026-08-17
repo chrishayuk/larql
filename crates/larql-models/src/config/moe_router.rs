@@ -22,15 +22,22 @@ pub const ROUTER_WIRE_GEMMA4_TOP_K_SOFTMAX: &str = "gemma4_top_k_softmax";
 pub const ROUTER_WIRE_GPT_OSS_TOPK_THEN_SOFTMAX: &str = "gpt_oss_topk_then_softmax";
 
 /// The routing rule an architecture's MoE block uses.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+///
+/// Serialises to the same wire values as [`MoeRouterKind::as_str`] — one
+/// spelling per fact, whether it travels in a VINDEX2 `MoeConfig` or a
+/// VINDEX3 execution surface.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, serde::Serialize, serde::Deserialize)]
 pub enum MoeRouterKind {
     /// Softmax over all experts, then take the top-k weights as they are.
     #[default]
+    #[serde(rename = "top_k_softmax")]
     TopKSoftmax,
     /// Gemma 4's hybrid: normalised softmax plus a per-expert scale.
+    #[serde(rename = "gemma4_top_k_softmax")]
     Gemma4Hybrid,
     /// Select the top-k logits *first*, then softmax over just those — the
     /// selected weights sum to 1. GPT-OSS.
+    #[serde(rename = "gpt_oss_topk_then_softmax")]
     TopKThenSoftmax,
 }
 

@@ -83,7 +83,7 @@ pub fn verify_payloads(
             continue;
         };
 
-        let mut planned = match plan_object_tensors(object, &inventories) {
+        let mut planned = match plan_object_tensors(object, &inventories, &graph.objects) {
             Ok(planned) => planned,
             Err(e) => {
                 payloads.push(failed_check(id, format!("source no longer plans: {e}")));

@@ -33,7 +33,7 @@ use std::path::{Path, PathBuf};
 
 use larql_models::inventory::ArchitectureInventory;
 
-use super::graph::{ComponentRole, LogicalObject, SystemGraph};
+use super::graph::{most_specific_owner, ComponentRole, LogicalObject, SystemGraph};
 use super::index::{RepresentationEntry, Vindex3Index};
 use super::plan::plan_system;
 use crate::error::VindexError;
@@ -74,7 +74,17 @@ pub fn encode_system(
             plan.summary.blocking
         )));
     }
-    let graph = plan.graph;
+    encode_graph(&plan.graph, named, out)
+}
+
+/// Encode an already-built system graph. `encode_system` is this after
+/// the plan gate; a caller holding a graph it built (or edited) itself
+/// comes in here and gets the same validation and the same bytes.
+pub fn encode_graph(
+    graph: &SystemGraph,
+    named: &[(String, ArchitectureInventory)],
+    out: &Path,
+) -> Result<EncodeOutcome, VindexError> {
     let defects = graph.validate();
     if !defects.is_empty() {
         return Err(VindexError::Parse(format!(
@@ -111,7 +121,7 @@ pub fn encode_system(
         );
         let segment_key = format!("{SEGMENTS_DIR}/{}", object.id);
         let segment_rel = format!("{segment_key}.{SEGMENT_BIN_EXT}");
-        let planned = plan_object_tensors(object, &inventories)?;
+        let planned = plan_object_tensors(object, &inventories, &graph.objects)?;
 
         let written = segment::write_segment(
             &out.join(&segment_rel),
@@ -148,11 +158,11 @@ pub fn encode_system(
 
     // Graph manifest, then the index last — a crash midway leaves a
     // directory that is not yet a container rather than one that lies.
-    let graph_json = serde_json::to_string_pretty(&graph)
+    let graph_json = serde_json::to_string_pretty(graph)
         .map_err(|e| VindexError::Parse(format!("serialise system graph: {e}")))?;
     std::fs::write(out.join(SYSTEM_GRAPH_JSON), graph_json)?;
 
-    let index = system_index(&graph, named, directory, segment_keys)?;
+    let index = system_index(graph, named, directory, segment_keys)?;
     let index_json = serde_json::to_string_pretty(&index)
         .map_err(|e| VindexError::Parse(format!("serialise index.json: {e}")))?;
     std::fs::write(out.join(INDEX_JSON), index_json)?;
@@ -171,21 +181,18 @@ pub(crate) fn binding_owner<'a>(object: &'a LogicalObject, source_name: &str) ->
     object
         .source_bindings
         .iter()
-        .find(|b| {
-            source_name == b.tensor_prefix
-                || source_name
-                    .strip_prefix(&b.tensor_prefix)
-                    .is_some_and(|rest| rest.starts_with('.'))
-        })
+        .find(|b| b.covers(source_name))
         .map(|b| b.artifact.as_str())
 }
 
 /// Plan the tensor table for one object: every source tensor under its
-/// bindings, named relative to the bindings' common segment-prefix so no
-/// artifact-global name survives into the container.
+/// bindings **that no other object owns more specifically** (see
+/// [`most_specific_owner`]), named relative to the bindings' common
+/// segment-prefix so no artifact-global name survives into the container.
 pub(crate) fn plan_object_tensors(
     object: &LogicalObject,
     inventories: &BTreeMap<&str, &ArchitectureInventory>,
+    all_objects: &[LogicalObject],
 ) -> Result<Vec<PlannedTensor>, VindexError> {
     let strip = common_segment_prefix(
         &object
@@ -203,10 +210,8 @@ pub(crate) fn plan_object_tensors(
             ))
         })?;
         for tensor in inventory.tensors.tensors.iter().filter(|t| {
-            t.name == binding.tensor_prefix
-                || t.name
-                    .strip_prefix(&binding.tensor_prefix)
-                    .is_some_and(|rest| rest.starts_with('.'))
+            binding.covers(&t.name)
+                && most_specific_owner(all_objects, &t.name).is_none_or(|o| o.id == object.id)
         }) {
             let relative_name = tensor
                 .name

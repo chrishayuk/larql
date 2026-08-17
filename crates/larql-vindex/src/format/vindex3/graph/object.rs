@@ -24,6 +24,13 @@ pub enum ObjectKind {
     /// The fusion/projection implementing the consumer side of a
     /// hidden-state interface (e.g. a drafter's tap-fusion projector).
     FeatureProjector,
+    /// The routed experts of a decoder stack — every layer's expert bank
+    /// as one logical object, bound per layer (`model.layers.{L}.mlp.
+    /// experts`), carved out of the stack by binding specificity (see
+    /// [`most_specific_owner`]). Its own object because it is the unit
+    /// residency, representation choice and remote placement address; the
+    /// stack keeps the router, which is dense.
+    ExpertBank,
 }
 
 impl ObjectKind {
@@ -37,6 +44,7 @@ impl ObjectKind {
             Self::PerceptionTower => "perception_tower",
             Self::PerceptionAdapter => "perception_adapter",
             Self::FeatureProjector => "feature_projector",
+            Self::ExpertBank => "expert_bank",
         }
     }
 }
@@ -88,4 +96,41 @@ pub enum Fidelity {
     Canonical,
     /// A lossy re-encoding selected by a profile.
     Approximate,
+}
+
+impl SourceBinding {
+    /// Whether `source_name` is this binding's prefix itself or lies under
+    /// it at a segment boundary (`model.layers` owns `model.layers.0.x`,
+    /// not `model.layers_extra.0`).
+    pub fn covers(&self, source_name: &str) -> bool {
+        source_name == self.tensor_prefix
+            || source_name
+                .strip_prefix(&self.tensor_prefix)
+                .is_some_and(|rest| rest.starts_with('.'))
+    }
+}
+
+/// The object owning `source_name`: among every binding of every object
+/// that covers the name, the one with the **longest** prefix wins. This is
+/// the single membership rule of the graph — it lets an expert bank bound
+/// at `model.layers.3.mlp.experts` carve its tensors out of a stack bound
+/// at `model.layers` with no exclusion lists, and it is what encode, verify
+/// and the operand tables all consult so none can disagree.
+pub fn most_specific_owner<'a>(
+    objects: impl IntoIterator<Item = &'a LogicalObject>,
+    source_name: &str,
+) -> Option<&'a LogicalObject> {
+    objects
+        .into_iter()
+        .filter_map(|object| {
+            object
+                .source_bindings
+                .iter()
+                .filter(|b| b.covers(source_name))
+                .map(|b| b.tensor_prefix.len())
+                .max()
+                .map(|depth| (depth, object))
+        })
+        .max_by_key(|(depth, _)| *depth)
+        .map(|(_, object)| object)
 }

@@ -130,13 +130,31 @@ fn print_layer(component: &str, layer: &LayerPlan) {
         norm(op, "post_attention");
     }
     norm(&layer.pre_ffn_norm, "pre_ffn");
-    let ffn = &layer.ffn;
-    println!(
-        "  {}FFN({:?}, {})",
-        if ffn.gate.is_some() { "Gated" } else { "" },
-        ffn.activation,
-        ffn.intermediate_size
-    );
+    match &layer.ffn {
+        larql_vindex::format::vindex3::opplan::LayerFfn::Dense(ffn) => println!(
+            "  {}FFN({:?}, {})",
+            if ffn.gate.is_some() { "Gated" } else { "" },
+            ffn.activation,
+            ffn.intermediate_size
+        ),
+        larql_vindex::format::vindex3::opplan::LayerFfn::Routed(ffn) => println!(
+            "  RoutedFFN({} experts, top-{}, {:?}, {:?}, {}, {:?}{}) router={}/{}, bank={}",
+            ffn.experts,
+            ffn.top_k,
+            ffn.routing_policy,
+            ffn.gate_policy,
+            ffn.expert_intermediate_size,
+            ffn.expert_format,
+            if ffn.router_bias.is_some() {
+                ", router bias"
+            } else {
+                ""
+            },
+            ffn.router.object,
+            ffn.router.tensor,
+            ffn.gate_up.weights.object,
+        ),
+    }
     if let Some(op) = &layer.post_ffn_norm {
         norm(op, "post_ffn");
     }

@@ -48,12 +48,12 @@ use larql_models::config::{Activation, GateActivation, GateCombine, GatePlacemen
 
 use super::backend::{
     AttentionCall, AttentionStepCall, AttentionStepOut, DispatchStats, FfnCall, GateCall,
-    MatrixClass, NormCall, PlanBackend, ProjectCall, ProjectedQkv, WeightFormat, WeightFormats,
-    WeightSlice,
+    MatrixClass, NormCall, PlanBackend, ProjectCall, ProjectedQkv, RoutedFfnCall, WeightFormat,
+    WeightFormats, WeightSlice,
 };
 use super::production::{
-    add_output_bias, add_projection_biases, aggregate_heads, condition_qk_in_place,
-    ProductionBackend,
+    add_expert_bias, add_output_bias, add_projection_biases, aggregate_heads,
+    condition_qk_in_place, expert_inner, select_experts, ProductionBackend, FUSED_BRANCHES,
 };
 use crate::error::VindexError;
 use larql_compute::cpu::ops::geglu::{geglu_silu_alloc, silu};
@@ -491,6 +491,36 @@ impl<M: MatMul + Send> PlanBackend for DevicePlanBackend<M> {
             value: v,
             output,
         })
+    }
+
+    /// The routed FFN on the device: router, then each selected expert's
+    /// fused gate/up and down through the same `gemv` seam as every other
+    /// matrix — in whatever representation the bank was loaded (native
+    /// MXFP4 when this backend declared it). Selection and the gate rule
+    /// are the production glue, so a divergence is device matmul
+    /// arithmetic alone.
+    fn routed_ffn(&self, call: RoutedFfnCall<'_>) -> Result<Vec<f32>, VindexError> {
+        let mut logits = self.gemv(
+            WeightSlice::F32(call.router),
+            call.experts,
+            call.hidden,
+            call.x,
+        )?;
+        let selected = select_experts(&call, &mut logits)?;
+        let two_inter = FUSED_BRANCHES * call.intermediate;
+        let mut out = vec![0.0f32; call.hidden];
+        for (expert, weight) in selected {
+            let mut fused = self.gemv(call.gate_up[expert], two_inter, call.hidden, call.x)?;
+            add_expert_bias(&mut fused, call.gate_up_bias, expert);
+            let inner = expert_inner(&call, &fused);
+            let mut expert_out =
+                self.gemv(call.down[expert], call.hidden, call.intermediate, &inner)?;
+            add_expert_bias(&mut expert_out, call.down_bias, expert);
+            for (acc, v) in out.iter_mut().zip(&expert_out) {
+                *acc += weight * v;
+            }
+        }
+        Ok(out)
     }
 
     fn ffn(&self, call: FfnCall<'_>) -> Result<Vec<f32>, VindexError> {

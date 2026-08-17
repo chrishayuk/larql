@@ -77,6 +77,12 @@ pub fn build_inventory(model_dir: &Path) -> Result<ArchitectureInventory, ModelE
     let config_facts = config_keys::classify_config(&config, &recorded_reads);
     let interfaces = config_keys::find_interfaces(&config_facts);
     let tensor_inventory = tensors::scan_tensors(model_dir)?;
+    // The architecture names its expert banks in its own key namespace
+    // (post-strip: `layers.3.mlp.experts`); the graph binds source names.
+    // Resolve each bank prefix against the tensors actually present, so
+    // the recorded prefix is the one the checkpoint spells.
+    let mut topology = topology;
+    resolved::bind_expert_banks(&mut topology, &tensor_inventory.tensors);
 
     Ok(ArchitectureInventory {
         schema: INVENTORY_SCHEMA,

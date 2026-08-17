@@ -19,21 +19,23 @@
 
 use larql_models::config::{
     Activation, AttentionSinkSpec, GateActivation, GateCombine, GatePlacement, GateSource,
-    NormType, PositionPolicy,
+    GateUpBranch, MoeRouterKind, NormType, PositionPolicy,
 };
 use ndarray::Array2;
 
 use larql_compute::attention::softmax::{softmax_in_place, softmax_in_place_f32};
 use larql_compute::cpu::ops::geglu::{geglu_silu_alloc, silu};
 use larql_compute::cpu::ops::moe::math::matmul_vec;
+use larql_compute::ffn::expert_weight::router;
 use larql_compute::residual::{
     layer_norm_eps, rms_norm_eps, rms_norm_heads_no_weight_eps, rms_norm_qk_eps,
 };
+use larql_compute::MoeGateRule;
 
 use super::super::super::graph::policy::AttentionSpan;
 use super::backend::{
     AttentionCall, AttentionStepCall, AttentionStepOut, FfnCall, GateCall, NormCall, PlanBackend,
-    ProjectCall, ProjectedQkv, QkNormCall,
+    ProjectCall, ProjectedQkv, QkNormCall, RoutedFfnCall,
 };
 use super::kernels::rope_rotate;
 use crate::error::VindexError;
@@ -222,6 +224,63 @@ fn add_bias_in_place(x: &mut [f32], b: &[f32]) {
     );
     for (x, b) in x.iter_mut().zip(b) {
         *x += b;
+    }
+}
+
+/// Gate and up: the two branches sharing one fused operand.
+pub(super) const FUSED_BRANCHES: usize = larql_models::quant::mxfp4::FUSED_HALVES;
+
+/// Route one token through the served selection rule
+/// (`larql-compute`'s `router::select`) over the router logits — shared
+/// glue, so the production and device backends select identically and
+/// exactly as the served path does. Exhaustive on the router kind: Gemma
+/// 4's per-expert scale has its own arithmetic and must be implemented
+/// before it can execute here.
+pub(super) fn select_experts(
+    call: &RoutedFfnCall<'_>,
+    logits: &mut [f32],
+) -> Result<Vec<(usize, f32)>, VindexError> {
+    match call.router_kind {
+        MoeRouterKind::TopKSoftmax | MoeRouterKind::TopKThenSoftmax => {}
+        MoeRouterKind::Gemma4Hybrid => {
+            return Err(VindexError::Parse(
+                "MoeRouterKind::Gemma4Hybrid carries a per-expert scale this backend does not \
+                 execute; refusing rather than routing with the plain rule"
+                    .to_string(),
+            ))
+        }
+    }
+    if let Some(bias) = call.router_bias {
+        for (l, b) in logits.iter_mut().zip(bias) {
+            *l += b;
+        }
+    }
+    Ok(router::select(logits, call.top_k, call.routing_policy))
+}
+
+/// One selected expert's inner activation from its fused gate/up output
+/// (bias already added): rows read through the declared layout, combined
+/// by the served gate rule.
+pub(super) fn expert_inner(call: &RoutedFfnCall<'_>, fused: &[f32]) -> Vec<f32> {
+    let rule = MoeGateRule::from_arch(call.gate_policy, call.activation);
+    (0..call.intermediate)
+        .map(|i| {
+            let g = fused[call
+                .gate_up_layout
+                .row(GateUpBranch::Gate, i, call.intermediate)];
+            let u = fused[call
+                .gate_up_layout
+                .row(GateUpBranch::Up, i, call.intermediate)];
+            rule.combine(g, u)
+        })
+        .collect()
+}
+
+/// `x[i] += bias[expert-th row]` for a per-expert bias stored flat.
+pub(super) fn add_expert_bias(x: &mut [f32], bias: Option<&[f32]>, expert: usize) {
+    if let Some(bias) = bias {
+        let rows = x.len();
+        add_bias_in_place(x, &bias[expert * rows..(expert + 1) * rows]);
     }
 }
 
@@ -475,6 +534,34 @@ impl PlanBackend for ProductionBackend {
             call.hidden,
             call.intermediate,
         ))
+    }
+
+    fn routed_ffn(&self, call: RoutedFfnCall<'_>) -> Result<Vec<f32>, VindexError> {
+        let mut logits = matmul_vec(call.x, call.router, call.experts, call.hidden);
+        let selected = select_experts(&call, &mut logits)?;
+        let two_inter = FUSED_BRANCHES * call.intermediate;
+        let mut out = vec![0.0f32; call.hidden];
+        for (expert, weight) in selected {
+            let mut fused = matmul_vec(
+                call.x,
+                call.gate_up[expert].as_f32()?,
+                two_inter,
+                call.hidden,
+            );
+            add_expert_bias(&mut fused, call.gate_up_bias, expert);
+            let inner = expert_inner(&call, &fused);
+            let mut expert_out = matmul_vec(
+                &inner,
+                call.down[expert].as_f32()?,
+                call.hidden,
+                call.intermediate,
+            );
+            add_expert_bias(&mut expert_out, call.down_bias, expert);
+            for (acc, v) in out.iter_mut().zip(&expert_out) {
+                *acc += weight * v;
+            }
+        }
+        Ok(out)
     }
 
     fn output_head(

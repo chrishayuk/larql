@@ -21,7 +21,7 @@
 //! [`step`]: DecodeSession::step
 //! [`attention_step`]: super::backend::PlanBackend::attention_step
 
-use super::backend::{AttentionStepCall, FfnCall, MatrixClass, NormCall, PlanBackend};
+use super::backend::{AttentionStepCall, MatrixClass, NormCall, PlanBackend};
 use super::operands::OperandStore;
 use super::weights::{load_weight, LoadedWeight};
 use super::AttentionOperands;
@@ -60,9 +60,7 @@ struct LayerState {
     attention: AttentionOperands,
     post_attention: Option<LoadedNorm>,
     pre_ffn: LoadedNorm,
-    ffn_gate: Option<LoadedWeight>,
-    ffn_up: LoadedWeight,
-    ffn_down: LoadedWeight,
+    ffn: super::experts::FfnOperands,
     post_ffn: Option<LoadedNorm>,
     keys: Vec<Vec<f32>>,
     values: Vec<Vec<f32>>,
@@ -120,26 +118,9 @@ impl<'a, B: PlanBackend> DecodeSession<'a, B> {
                     .map(|op| LoadedNorm::load(op, store))
                     .transpose()?,
                 pre_ffn: LoadedNorm::load(&layer.pre_ffn_norm, store)?,
-                ffn_gate: layer
-                    .ffn
-                    .gate
-                    .as_ref()
-                    .map(|gate| {
-                        load_weight(
-                            store,
-                            gate,
-                            backend.weight_format(MatrixClass::FfnProjection),
-                        )
-                    })
-                    .transpose()?,
-                ffn_up: load_weight(
+                ffn: super::experts::FfnOperands::load(
+                    &layer.ffn,
                     store,
-                    &layer.ffn.up,
-                    backend.weight_format(MatrixClass::FfnProjection),
-                )?,
-                ffn_down: load_weight(
-                    store,
-                    &layer.ffn.down,
                     backend.weight_format(MatrixClass::FfnProjection),
                 )?,
                 post_ffn: layer
@@ -184,11 +165,7 @@ impl<'a, B: PlanBackend> DecodeSession<'a, B> {
         let mut weights: Vec<super::backend::WeightSlice<'_>> = Vec::new();
         for state in &session.layers {
             weights.extend(state.attention.weight_slices());
-            if let Some(gate) = &state.ffn_gate {
-                weights.push(gate.slice());
-            }
-            weights.push(state.ffn_up.slice());
-            weights.push(state.ffn_down.slice());
+            weights.extend(state.ffn.weight_slices());
         }
         if let Some((_, projection)) = &session.output {
             weights.push(projection.slice());
@@ -256,16 +233,9 @@ impl<'a, B: PlanBackend> DecodeSession<'a, B> {
             self.backend.residual_add(&mut h, &attn_out);
 
             let normed = state.pre_ffn.apply(self.backend, &h);
-            let ffn_out = self.backend.ffn(FfnCall {
-                x: &normed,
-                hidden: self.hidden,
-                intermediate: layer.ffn.intermediate_size,
-                gate: state.ffn_gate.as_ref().map(LoadedWeight::slice),
-                up: state.ffn_up.slice(),
-                down: state.ffn_down.slice(),
-                activation: layer.ffn.activation,
-                gate_policy: layer.ffn.gate_policy,
-            })?;
+            let ffn_out = state
+                .ffn
+                .apply(&layer.ffn, self.backend, &normed, self.hidden)?;
             let ffn_out = match &state.post_ffn {
                 Some(norm) => norm.apply(self.backend, &ffn_out),
                 None => ffn_out,

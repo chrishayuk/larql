@@ -171,6 +171,11 @@ pub struct ResolvedExecution {
     /// written before it was recorded.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub attention_bias: Option<bool>,
+    /// The routed-FFN facts when the family declares experts; `None` = a
+    /// dense-FFN model. Defaults for inventories written before it was
+    /// recorded.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub moe: Option<MoeExecution>,
     pub activation: crate::config::Activation,
     pub ffn_type: crate::config::FfnType,
     /// How the FFN's gate combines with its up branch. `Gated` is the
@@ -229,6 +234,43 @@ pub struct LayerPolicy {
     pub position: crate::config::PositionPolicy,
     pub head_dim: usize,
     pub num_kv_heads: usize,
+    /// Source-name prefix of this layer's packed expert bank (the parent of
+    /// its `gate_up`/`down` operands), when the layer's FFN is routed —
+    /// `model.layers.3.mlp.experts`. `None` = a dense-FFN layer. Per layer,
+    /// so an arbitrary dense/routed schedule needs no dedicated field.
+    /// Defaults for inventories written before it was recorded.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub expert_bank: Option<String>,
+}
+
+/// The routed-FFN (mixture-of-experts) execution facts, resolved once
+/// from the architecture. Every field is a judged semantic the executor
+/// reads — none is re-derived from operand names downstream.
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+pub struct MoeExecution {
+    /// Routed experts per layer.
+    pub experts: usize,
+    /// Experts selected per token.
+    pub top_k: usize,
+    /// Per-expert intermediate width.
+    pub expert_intermediate_size: usize,
+    /// How router logits become selected experts and weights.
+    pub router_kind: crate::config::MoeRouterKind,
+    /// Whether the selected weights are normalised to sum to one.
+    pub routing_policy: crate::config::ExpertRoutingPolicy,
+    /// Whether the router carries an additive bias on its logits.
+    pub router_bias: bool,
+    /// How the experts are stored (per-expert tensors, packed MXFP4, packed
+    /// BF16).
+    pub expert_format: crate::config::ExpertFormat,
+    /// How a fused `gate_up` operand splits into its branches; `None` when
+    /// no fused operand exists.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub gate_up_layout: Option<crate::config::GateUpLayout>,
+    /// Always-active experts alongside the routed ones.
+    pub shared_experts: usize,
+    /// A dense MLP summed with the expert block every layer (Gemma 4 A4B).
+    pub hybrid: bool,
 }
 
 /// One flattened `config.json` leaf.

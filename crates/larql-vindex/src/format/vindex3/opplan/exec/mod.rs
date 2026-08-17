@@ -21,6 +21,7 @@
 pub mod backend;
 pub mod decode;
 pub mod device;
+mod experts;
 pub mod kernels;
 pub mod operands;
 pub mod production;
@@ -33,8 +34,8 @@ mod tests;
 use super::{AttentionOp, ComponentOpPlan, LayerPlan, NormOp};
 use crate::error::VindexError;
 use backend::{
-    AttentionCall, BiasCall, FfnCall, GateCall, MatrixClass, NormCall, PlanBackend, ProjectCall,
-    QkNormCall, SinkCall, WeightFormat,
+    AttentionCall, BiasCall, GateCall, MatrixClass, NormCall, PlanBackend, ProjectCall, QkNormCall,
+    SinkCall, WeightFormat,
 };
 use operands::OperandStore;
 use rayon::prelude::*;
@@ -301,24 +302,10 @@ fn execute_layer<B: PlanBackend + ?Sized>(
     // token would dominate the run on a real model without changing a
     // single number.
     let format = backend.weight_format(MatrixClass::FfnProjection);
-    let up = load_weight(store, &layer.ffn.up, format)?;
-    let down = load_weight(store, &layer.ffn.down, format)?;
-    let gate = match &layer.ffn.gate {
-        Some(gate_ref) => Some(load_weight(store, gate_ref, format)?),
-        None => None,
-    };
+    let ffn = experts::FfnOperands::load(&layer.ffn, store, format)?;
     h.par_iter_mut().try_for_each(|row| {
         let normed = apply_norm_op(&layer.pre_ffn_norm, store, row, backend)?;
-        let ffn_out = backend.ffn(FfnCall {
-            x: &normed,
-            hidden,
-            intermediate: layer.ffn.intermediate_size,
-            gate: gate.as_ref().map(LoadedWeight::slice),
-            up: up.slice(),
-            down: down.slice(),
-            activation: layer.ffn.activation,
-            gate_policy: layer.ffn.gate_policy,
-        })?;
+        let ffn_out = ffn.apply(&layer.ffn, backend, &normed, hidden)?;
         let ffn_out = match &layer.post_ffn_norm {
             Some(op) => apply_norm_op(op, store, &ffn_out, backend)?,
             None => ffn_out,

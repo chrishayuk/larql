@@ -1771,7 +1771,26 @@ A-9.1  DONE 2026-08-17 (branch feat/vindex3-gpt-oss-rung0): judged AttentionSink
        AttentionSurface / AttentionCall and every backend — the reference interpreter had
        neither (reference.rs:165 softmax without the sink, :92 projection without bias); the
        lowering still binds has_sinks=0 with a placeholder (lowering/attention.rs:344).
-A-9.2  MoE in the generic system graph: an expert-bank ObjectKind (graph/object.rs:11),
+A-9.2  DONE 2026-08-17 (branch feat/vindex3-gpt-oss-rung0): ObjectKind::ExpertBank, carved out
+       of the stack by binding SPECIFICITY (`most_specific_owner`: longest binding prefix owns
+       a tensor — the graph's one membership rule, consulted by encode/verify/closure; no
+       exclusion lists, no manifest); FfnSurface.moe (MoeSurface lifted from the family
+       judgment: experts, top_k, router_kind, routing_policy, router_bias, expert_format,
+       gate_up_layout, …); roles MoeRouter{Weight,Bias} (stack) + Expert{GateUp,Down}
+       {,Scales,Bias} (bank); LayerFfn::{Dense,Routed} untagged so dense plans serialise
+       byte-identically; RoutedFfnOp → RoutedFfnCall → reference (literal transcription),
+       production (served router::select + MoeGateRule), device (per-expert gemv, NATIVE
+       MXFP4 bytes bound when declared); lowering refuses (A-9.4). Gates on a miniature
+       gpt_oss-FAMILY fixture (packed MXFP4 + biases + sinks + router bias + clamped GLU):
+       served CPU forward ≡ reference ≡ production ≡ device(mxfp4) at 2e-5; four causal
+       controls (router / gate_up / down / bias → 3e-2…5e-1); closure fail-closed both ways
+       (no judgment ⇒ 8 stray operands/layer; wrong expert count ⇒ 8 geometry/layer; expert
+       operand in the stack ⇒ misplaced). REAL gpt-oss: `vindex3 ops` 264 → 0, "plan closed:
+       24 layer(s), every executable operand accounted"; container = decoder_stack@BF16 1.28 GB
+       + expert_bank@BF16+MXFP4 10.17 GB (24 bindings) + embedding/final_norm/output_head, NO
+       moe_manifest.json, `inspect` coherent; `vindex3 exec` now runs to the executor and
+       refuses at YaRN — the last unexecuted semantic (A-9.3). As mapped:
+       MoE in the generic system graph: an expert-bank ObjectKind (graph/object.rs:11),
        router/expert/bias OperandRoles (graph/roles.rs:22,58), an MoE FfnOp; encode writes
        banks into the system container (or exec composes system + routed containers the way
        `run --routed-from` composes VINDEX2 + banks).

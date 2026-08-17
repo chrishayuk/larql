@@ -21,7 +21,9 @@
 //! `docs/k3-funnel.md` §4.7.
 
 pub(crate) mod gate;
-pub(crate) mod router;
+/// Expert selection — public because the VINDEX3 production backend runs
+/// the served selection rule rather than a second transcription of it.
+pub mod router;
 // Public for the `tests/test_moe_route_trace_*.rs` end-to-end exercises:
 // the env-resolved sink is process-global (`OnceLock`), so each scenario
 // needs its own test binary, and those binaries can only reach a `pub` path.

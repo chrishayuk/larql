@@ -30,13 +30,13 @@ pub mod exec;
 mod tests;
 
 use larql_models::config::{
-    Activation, AttentionGateSpec, AttentionSinkSpec, NormType, ParameterFreeQkNorm,
-    PositionPolicy, QkNormScope,
+    Activation, AttentionGateSpec, AttentionSinkSpec, ExpertFormat, ExpertRoutingPolicy,
+    GateUpLayout, MoeRouterKind, NormType, ParameterFreeQkNorm, PositionPolicy, QkNormScope,
 };
 use serde::Serialize;
 
 use super::graph::policy::AttentionSpan;
-use super::graph::OperandRole;
+use super::graph::{ObjectKind, OperandRole};
 
 pub use build::plan_component_ops;
 
@@ -149,6 +149,79 @@ pub struct FfnOp {
     pub down: OperandRef,
 }
 
+/// One packed expert projection: the bytes for every expert in one
+/// operand (`[experts, rows, …]`), plus the companion streams its
+/// representation needs. `scales` is present iff the expert format keeps
+/// its dequantisation scales in a separate stream (MXFP4); `bias` iff the
+/// checkpoint carries per-expert biases.
+#[derive(Debug, Clone, PartialEq, Serialize)]
+pub struct PackedProjection {
+    pub weights: OperandRef,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub scales: Option<OperandRef>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub bias: Option<OperandRef>,
+}
+
+/// One layer's routed FFN op — a mixture of experts, entirely inside the
+/// generic graph: the router operands live in the decoder stack, the
+/// expert operands in the component's expert-bank object, and every
+/// semantic the executor needs is transcribed here from `FfnSurface.moe`.
+#[derive(Debug, Clone, PartialEq, Serialize)]
+pub struct RoutedFfnOp {
+    pub experts: usize,
+    pub top_k: usize,
+    pub expert_intermediate_size: usize,
+    pub router_kind: MoeRouterKind,
+    pub routing_policy: ExpertRoutingPolicy,
+    pub activation: Activation,
+    /// How each expert's gate combines with its up branch.
+    pub gate_policy: larql_models::ExpertGatePolicy,
+    pub expert_format: ExpertFormat,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub gate_up_layout: Option<GateUpLayout>,
+    /// Router logits: `[experts, hidden]`.
+    pub router: OperandRef,
+    /// Additive router bias `[experts]`, iff the surface declares one.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub router_bias: Option<OperandRef>,
+    /// Fused gate+up per expert: `[experts, 2·inter, hidden]` in the
+    /// declared layout (packed as the format dictates).
+    pub gate_up: PackedProjection,
+    /// Down per expert: `[experts, hidden, inter]`.
+    pub down: PackedProjection,
+}
+
+/// One layer's FFN: dense or routed. Untagged, so a dense layer serialises
+/// exactly as its [`FfnOp`] always has — a dense plan is byte-identical
+/// before and after routed FFNs existed.
+#[derive(Debug, Clone, PartialEq, Serialize)]
+#[serde(untagged)]
+pub enum LayerFfn {
+    /// Both boxed: the two ops differ several-fold in size and a plan
+    /// holds one per layer; the untagged serialisation is unaffected.
+    Dense(Box<FfnOp>),
+    Routed(Box<RoutedFfnOp>),
+}
+
+impl LayerFfn {
+    /// The dense op, when this layer's FFN is dense.
+    pub fn dense(&self) -> Option<&FfnOp> {
+        match self {
+            Self::Dense(op) => Some(op.as_ref()),
+            Self::Routed(_) => None,
+        }
+    }
+
+    /// The routed op, when this layer's FFN is a mixture of experts.
+    pub fn routed(&self) -> Option<&RoutedFfnOp> {
+        match self {
+            Self::Routed(op) => Some(op.as_ref()),
+            Self::Dense(_) => None,
+        }
+    }
+}
+
 /// The generic program of one decoder layer. Norm placement is explicit
 /// op positions, not a count: under two-norm placement the
 /// `post_attention_layernorm` operand *is* [`Self::pre_ffn_norm`] and the
@@ -164,7 +237,7 @@ pub struct LayerPlan {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub post_attention_norm: Option<NormOp>,
     pub pre_ffn_norm: NormOp,
-    pub ffn: FfnOp,
+    pub ffn: LayerFfn,
     /// Normalises FFN output before its residual add (four-norm only).
     #[serde(skip_serializing_if = "Option::is_none")]
     pub post_ffn_norm: Option<NormOp>,
@@ -221,6 +294,13 @@ pub enum ClosureDefect {
     MissingAttentionTable { component: String },
     /// A stack tensor no operand role classifies.
     UnclassifiedOperand { object: String, tensor: String },
+    /// An operand classified into a role that lives in another object
+    /// kind — an expert operand in the stack, a router in the bank.
+    MisplacedOperand {
+        object: String,
+        tensor: String,
+        belongs_in: ObjectKind,
+    },
     /// An operand exists whose op the surface does not carry — the
     /// container physically requires a primitive its semantics lack.
     OperandImpliesAbsentOp {
@@ -268,6 +348,15 @@ impl std::fmt::Display for ClosureDefect {
             Self::UnclassifiedOperand { object, tensor } => {
                 write!(f, "unclassified executable operand: {object}/{tensor}")
             }
+            Self::MisplacedOperand {
+                object,
+                tensor,
+                belongs_in,
+            } => write!(
+                f,
+                "misplaced operand: {object}/{tensor} belongs in the {} object",
+                belongs_in.name()
+            ),
             Self::OperandImpliesAbsentOp {
                 object,
                 tensor,

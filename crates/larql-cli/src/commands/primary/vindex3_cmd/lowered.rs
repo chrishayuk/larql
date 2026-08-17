@@ -30,7 +30,9 @@ use larql_vindex::format::vindex3::graph::policy::AttentionSpan;
 use larql_vindex::format::vindex3::opplan::exec::backend::{WeightFormat, WeightFormats};
 use larql_vindex::format::vindex3::opplan::exec::operands::OperandStore;
 use larql_vindex::format::vindex3::opplan::exec::weights::{load_weight, LoadedWeight};
-use larql_vindex::format::vindex3::opplan::{ComponentOpPlan, LayerPlan, NormOp, OperandRef};
+use larql_vindex::format::vindex3::opplan::{
+    ComponentOpPlan, FfnOp, LayerPlan, NormOp, OperandRef,
+};
 
 /// One matrix operand, resident on the device.
 struct DeviceMatrix {
@@ -256,18 +258,29 @@ impl<'a> LoweredSession<'a> {
                 l.layer
             )));
         }
+        // A routed FFN: represented and executed by the interpreter, but
+        // the lowering binds dense gate/up/down matrices only; the served
+        // MoE machinery (moe_zero_copy) is not plan-reachable yet (A-9.4).
+        if let Some(l) = plan.layers.iter().find(|l| l.ffn.routed().is_some()) {
+            return Err(VindexError::Parse(format!(
+                "layer {} carries a routed FFN (mixture of experts), which the Metal lowering \
+                 does not execute yet (A-9.4); refusing rather than dropping the experts",
+                l.layer
+            )));
+        }
         // Likewise a clamped-GLU FFN (GPT-OSS's `swiglu_limit`): the
         // lowering encodes plain gated FFNs only, and running the clamped
         // policy as plain gating would be a different model (A-9.4).
-        if let Some(l) = plan
-            .layers
-            .iter()
-            .find(|l| !matches!(l.ffn.gate_policy, larql_models::ExpertGatePolicy::Gated))
-        {
+        if let Some(l) = plan.layers.iter().find(|l| {
+            l.ffn
+                .dense()
+                .is_some_and(|f| !matches!(f.gate_policy, larql_models::ExpertGatePolicy::Gated))
+        }) {
             return Err(VindexError::Parse(format!(
                 "layer {} carries {:?}, which the Metal lowering does not execute yet (A-9.4); \
                  refusing rather than lowering it as plain gating",
-                l.layer, l.ffn.gate_policy
+                l.layer,
+                l.ffn.dense().map(|f| f.gate_policy)
             )));
         }
         let embedding = plan
@@ -300,14 +313,14 @@ impl<'a> LoweredSession<'a> {
                 ffn_gate: resident_matrix(
                     gpu,
                     store,
-                    layer.ffn.gate.as_ref().ok_or_else(|| {
+                    dense_ffn(layer)?.gate.as_ref().ok_or_else(|| {
                         VindexError::Parse("lowering requires a gated FFN".into())
                     })?,
                     formats.ffn,
                     keep,
                 )?,
-                ffn_up: resident_matrix(gpu, store, &layer.ffn.up, formats.ffn, keep)?,
-                ffn_down: resident_matrix(gpu, store, &layer.ffn.down, formats.ffn, keep)?,
+                ffn_up: resident_matrix(gpu, store, &dense_ffn(layer)?.up, formats.ffn, keep)?,
+                ffn_down: resident_matrix(gpu, store, &dense_ffn(layer)?.down, formats.ffn, keep)?,
                 pre_attn_norm: resident_norm(gpu, store, &layer.pre_attention_norm)?.0,
                 post_attn_norm: match &layer.post_attention_norm {
                     Some(op) => Some(resident_norm(gpu, store, op)?),
@@ -355,7 +368,7 @@ impl<'a> LoweredSession<'a> {
         let max_inter = plan
             .layers
             .iter()
-            .map(|l| l.ffn.intermediate_size)
+            .filter_map(|l| l.ffn.dense().map(|f| f.intermediate_size))
             .max()
             .unwrap_or(hidden);
         // Slots 16 and 17 are both vocabulary-sized: the head writes raw
@@ -630,7 +643,10 @@ impl<'a> LoweredSession<'a> {
             },
             ffn_shape: FfnShape {
                 hidden: self.hidden,
-                intermediate: plan_layer.ffn.intermediate_size,
+                intermediate: plan_layer
+                    .ffn
+                    .dense()
+                    .map_or(self.hidden, |f| f.intermediate_size),
                 norm_eps: plan_layer.pre_ffn_norm.eps as f32,
                 norm_weight_offset: plan_layer.pre_ffn_norm.weight_offset,
             },
@@ -658,6 +674,18 @@ impl<'a> LoweredSession<'a> {
     pub fn rope_bases(&self) -> usize {
         self.inv_freq.len()
     }
+}
+
+/// The dense FFN op of a layer the lowering has already admitted (routed
+/// layers are refused in `new`, so this only fails on a plan that changed
+/// under us).
+fn dense_ffn(layer: &LayerPlan) -> Result<&FfnOp, VindexError> {
+    layer.ffn.dense().ok_or_else(|| {
+        VindexError::Parse(format!(
+            "layer {} carries a routed FFN the lowering does not execute (A-9.4)",
+            layer.layer
+        ))
+    })
 }
 
 fn argmax_of(logits: &[f32]) -> u32 {
