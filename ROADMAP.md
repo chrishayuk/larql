@@ -1809,7 +1809,20 @@ A-9.2  DONE 2026-08-17 (branch feat/vindex3-gpt-oss-rung0): ObjectKind::ExpertBa
        output moves), absence (dense FFN plan byte-identical), container universality (no
        executor reaches outside the generic graph to find a bank), real gpt-oss closure
        264 → ~0 (only genuinely later-rung semantics may survive).
-A-9.3  MoE execution in the interpreter (exec/mod.rs, reference.rs, production.rs) with
+A-9.3  DONE 2026-08-17 (branch feat/vindex3-gpt-oss-rung0): the interpreter executes YaRN —
+       kernels::rope_rotate_scaled + kernels::yarn_frequencies (reference transcription) and
+       the served rope_freq_plan(Yarn) on production/device; MoE execution landed with A-9.2.
+       Gates: fixture with GPT-OSS's YaRN block, served ≡ reference ≡ production ≡ device at
+       2e-5; persisted `factor` 32→4 moves position 0 (amplitude) and layer 0. REAL gpt-oss:
+       `vindex3 exec` runs end-to-end (24 layers, 65-id prompt: 20.8 s single forward, 148
+       ms/token prefill, 7.5 tok/s CPU decode); argmax = oracle's first id; `--generate 16`
+       matches a 3-id prefix then diverges at step 4 and re-syncs; TEACHER-FORCED over the
+       oracle's 81 ids: 14/16 per-position argmax agreement, both misses at the two lowest
+       margins (+0.47, +0.12 logits; oracle id ranked #2). CONGRUENCE: the banked oracle is a
+       Q4_K-SPINE served run; the container is BF16 attention + native MXFP4 — so this is
+       "same semantics, different representation", NOT the A-9.5 byte-identical claim, which
+       needs a same-representation oracle (served path over the same BF16 spine bytes).
+       As mapped: MoE execution in the interpreter (exec/mod.rs, reference.rs, production.rs) with
        gpt-oss routing (top-k then softmax over the selected — MoeRouterKind::TopKThenSoftmax,
        ExpertRoutingPolicy::NormalisedOverSelected) and ClampedGlu (pipeline/moe.rs:43).
 A-9.4  MoE + sinks + biases + YaRN amplitude in the Metal lowering — moe_zero_copy.rs is the

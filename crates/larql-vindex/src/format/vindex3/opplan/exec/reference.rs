@@ -22,7 +22,8 @@ use super::backend::{
     ProjectCall, ProjectedQkv, QkNormCall, RoutedFfnCall,
 };
 use super::kernels::{
-    activate, matvec, norm, rope_rotate, sigmoid, softcap, softmax, softmax_with_sink,
+    activate, matvec, norm, rope_rotate, rope_rotate_scaled, sigmoid, softcap, softmax,
+    softmax_with_sink, yarn_frequencies,
 };
 use crate::error::VindexError;
 use larql_models::config::NormType;
@@ -128,16 +129,17 @@ impl ReferenceBackend {
                     rope_rotate(head, position, theta);
                 }
             }
-            // Represented, not yet executed here: YaRN is scaled frequencies
-            // AND an attention amplitude, and rotating at the bare theta would
-            // silently serve the wrong model. Refuse until A-9.3 lands it.
-            PositionPolicy::Yarn { .. } => {
-                return Err(VindexError::Parse(
-                    "PositionPolicy::Yarn is carried by the container but this backend does not \
-                     execute YaRN rotary scaling yet (A-9.3); refusing rather than rotating at the \
-                     unscaled theta"
-                        .to_string(),
-                ));
+            // YaRN: the ramped frequency blend AND the amplitude on
+            // cos/sin, from the reference transcription of the block the
+            // container carries.
+            PositionPolicy::Yarn { theta, scaling } => {
+                let (inv_freq, amplitude) = yarn_frequencies(&scaling, head_dim, theta);
+                for head in q.chunks_exact_mut(head_dim) {
+                    rope_rotate_scaled(head, position, &inv_freq, amplitude);
+                }
+                for head in k.chunks_exact_mut(head_dim) {
+                    rope_rotate_scaled(head, position, &inv_freq, amplitude);
+                }
             }
             PositionPolicy::None => {}
         }

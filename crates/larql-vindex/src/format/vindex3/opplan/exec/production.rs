@@ -37,7 +37,14 @@ use super::backend::{
     AttentionCall, AttentionStepCall, AttentionStepOut, FfnCall, GateCall, NormCall, PlanBackend,
     ProjectCall, ProjectedQkv, QkNormCall, RoutedFfnCall,
 };
-use super::kernels::rope_rotate;
+use super::kernels::{rope_rotate, rope_rotate_scaled};
+use larql_compute::attention::rope::{rope_freq_plan, RopeFreqScaling};
+
+/// The whole head rotates: `PositionPolicy` carries no partial-rotary
+/// fraction (no family through this path declares one).
+const FULL_ROTARY: f64 = 1.0;
+/// No position divisor (`rope_freq_plan` treats 0 as 1).
+const NO_POSITION_DIVISOR: f64 = 1.0;
 use crate::error::VindexError;
 use rayon::prelude::*;
 
@@ -175,16 +182,24 @@ pub(super) fn condition_qk_in_place(
                 rope_rotate(head, position, theta);
             }
         }
-        // Represented, not yet executed here: YaRN is scaled frequencies
-        // AND an attention amplitude, and rotating at the bare theta would
-        // silently serve the wrong model. Refuse until A-9.3 lands it.
-        PositionPolicy::Yarn { .. } => {
-            return Err(VindexError::Parse(
-                "PositionPolicy::Yarn is carried by the container but this backend does not \
-                 execute YaRN rotary scaling yet (A-9.3); refusing rather than rotating at the \
-                 unscaled theta"
-                    .to_string(),
-            ));
+        // YaRN through the served rope planner: the same ramp and
+        // amplitude the production forward applies (full rotary width, no
+        // position divisor — what `PositionPolicy::Yarn` carries).
+        PositionPolicy::Yarn { theta, scaling } => {
+            let plan = rope_freq_plan(
+                head_dim,
+                FULL_ROTARY,
+                theta,
+                NO_POSITION_DIVISOR,
+                RopeFreqScaling::Yarn(scaling),
+            );
+            let amplitude = plan.amplitude as f32;
+            for head in q.chunks_exact_mut(head_dim) {
+                rope_rotate_scaled(head, position, &plan.inv_freq, amplitude);
+            }
+            for head in k.chunks_exact_mut(head_dim) {
+                rope_rotate_scaled(head, position, &plan.inv_freq, amplitude);
+            }
         }
         PositionPolicy::None => {}
     }

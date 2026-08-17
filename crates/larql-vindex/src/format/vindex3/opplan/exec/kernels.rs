@@ -157,6 +157,67 @@ pub fn rope_rotate(head: &mut [f32], position: usize, theta: f64) {
     }
 }
 
+/// Rotate-half RoPE on one head slice at one position with **given**
+/// per-pair inverse frequencies and an amplitude on `cos`/`sin` — the form
+/// every rotary scaling reduces to (`angle = pos · inv_freq[i]`,
+/// `cos·amplitude`, `sin·amplitude`). Plain rope is `theta^(-2i/d)` with
+/// amplitude 1; YaRN supplies a ramped blend and an amplitude that is not.
+pub fn rope_rotate_scaled(head: &mut [f32], position: usize, inv_freq: &[f64], amplitude: f32) {
+    let half = head.len() / 2;
+    debug_assert_eq!(inv_freq.len(), half);
+    for i in 0..half {
+        let angle = position as f64 * inv_freq[i];
+        let sin_t = angle.sin() as f32 * amplitude;
+        let cos_t = angle.cos() as f32 * amplitude;
+        let x0 = head[i];
+        let x1 = head[half + i];
+        head[i] = x0 * cos_t - x1 * sin_t;
+        head[half + i] = x0 * sin_t + x1 * cos_t;
+    }
+}
+
+/// YaRN's per-pair inverse frequencies and attention amplitude for one
+/// head of `head_dim` at base `theta` — the reference transcription of
+/// HF's `_compute_yarn_parameters`, sharing nothing with the served
+/// `larql-compute` rope module:
+///
+/// ```text
+/// dim(rot)      = d · ln(L / (rot · 2π)) / (2 · ln θ)        find_correction_dim
+/// low, high     = dim(β_fast), dim(β_slow)  [floor/ceil if truncate], clamped to [0, d−1]
+/// ramp[i]       = clamp((i − low) / (high − low), 0, 1)     (high nudged +0.001 if == low)
+/// inv_freq[i]   = extrap[i]/factor · ramp[i] + extrap[i] · (1 − ramp[i])
+/// amplitude     = YarnRopeScaling::attention_amplitude (the one authority)
+/// ```
+pub fn yarn_frequencies(
+    scaling: &larql_models::YarnRopeScaling,
+    head_dim: usize,
+    theta: f64,
+) -> (Vec<f64>, f32) {
+    let half = head_dim / 2;
+    let d = head_dim as f64;
+    let correction_dim = |rotations: f64| {
+        (d * (scaling.original_max_position_embeddings / (rotations * std::f64::consts::TAU)).ln())
+            / (2.0 * theta.ln())
+    };
+    let mut low = correction_dim(scaling.beta_fast);
+    let mut high = correction_dim(scaling.beta_slow);
+    if scaling.truncate {
+        low = low.floor();
+        high = high.ceil();
+    }
+    let low = low.max(0.0);
+    let high = high.min(d - 1.0);
+    let high = if high == low { high + 0.001 } else { high };
+    let inv_freq = (0..half)
+        .map(|i| {
+            let extrapolation = theta.powf(-2.0 * i as f64 / d);
+            let ramp = ((i as f64 - low) / (high - low)).clamp(0.0, 1.0);
+            extrapolation / scaling.factor * ramp + extrapolation * (1.0 - ramp)
+        })
+        .collect();
+    (inv_freq, scaling.attention_amplitude() as f32)
+}
+
 /// Tanh softcap: `cap * tanh(x / cap)`.
 pub fn softcap(x: f32, cap: f32) -> f32 {
     cap * (x / cap).tanh()

@@ -11,6 +11,9 @@
 //! (`load_model_dir` + `ExpertWeightFfn`), sharing no code with the plan
 //! executor.
 //!
+//! It also carries GPT-OSS's YaRN block, so A-9.3 (scaled frequencies +
+//! attention amplitude in the interpreter) is gated by the same oracle.
+//!
 //! ```text
 //! parity      served forward ≡ reference ≡ production ≡ device (native MXFP4 experts)
 //! causal      perturb router weight / one expert's gate_up / down / bias → output moves
@@ -58,6 +61,9 @@ const TOLERANCE: f32 = 2e-5;
 /// A perturbed operand must move the layer that consumes it well above
 /// that; measured deltas sit around 1e-2..1e0.
 const CAUSAL_FLOOR: f32 = 1e-3;
+/// YaRN's control moves less on this fixture (see the test); ten times the
+/// parity tolerance still separates "executed" from "noise" cleanly.
+const YARN_CAUSAL_FLOOR: f32 = 10.0 * TOLERANCE;
 
 /// Which extra operand to perturb (scale by [`PERTURB_GAIN`]) in the
 /// checkpoint, by layer-relative suffix.
@@ -86,6 +92,17 @@ fn miniature_gpt_oss(dir: &Path, perturb: Option<&str>) {
         "sliding_window": WINDOW,
         "layer_types": ["sliding_attention", "full_attention"],
         "rope_theta": 10000.0,
+        // GPT-OSS's published YaRN block: the ramp AND the 1.3466 amplitude
+        // (A-9.3) — every layer rotates at scaled frequencies and every
+        // logit is rescaled.
+        "rope_scaling": {
+            "rope_type": "yarn",
+            "factor": 32.0,
+            "beta_fast": 32.0,
+            "beta_slow": 1.0,
+            "original_max_position_embeddings": 4096,
+            "truncate": false
+        },
         "rms_norm_eps": 1e-5,
         "attention_bias": true,
         "swiglu_limit": SWIGLU_LIMIT,
@@ -565,4 +582,63 @@ fn an_expert_operand_left_in_the_stack_is_misplaced() {
         })
         .count();
     assert_eq!(misplaced, 6 * LAYERS, "{:?}", outcome.defects);
+}
+
+// ── A-9.3: the carried YaRN block is executed, not merely carried ──
+
+#[test]
+fn the_plan_executes_yarn_and_its_factor_is_load_bearing() {
+    let dir = tempfile::tempdir().unwrap();
+    miniature_gpt_oss(dir.path(), None);
+    let container = encoded(dir.path());
+    let inspection = inspect_container(container.path(), false).unwrap();
+    let plan = closure(container.path()).plan.unwrap();
+    assert!(plan.layers.iter().all(|l| l
+        .attention
+        .position
+        .yarn()
+        .is_some_and(|y| y.factor == 32.0)));
+    let store = OperandStore::open(container.path(), &inspection).unwrap();
+    let base = execute_plan(&plan, &store, &TOKENS, &ReferenceBackend::new()).unwrap();
+
+    // Mutate only the persisted graph: a different factor is a different
+    // frequency ramp AND a different amplitude — position 0 moves too.
+    mutate_graph(container.path(), |graph| {
+        let target = graph["components"]
+            .as_array_mut()
+            .unwrap()
+            .iter_mut()
+            .find(|c| c["id"] == "target")
+            .unwrap();
+        for layer in target["attention"].as_array_mut().unwrap() {
+            layer["position"]["scaling"]["factor"] = serde_json::json!(4.0);
+        }
+    });
+    let inspection = inspect_container(container.path(), false).unwrap();
+    let plan = closure(container.path()).plan.unwrap();
+    let store = OperandStore::open(container.path(), &inspection).unwrap();
+    let moved = execute_plan(&plan, &store, &TOKENS, &ReferenceBackend::new()).unwrap();
+    // Position 0 has no rotation, only the amplitude: if it moves, the
+    // amplitude is executed, not just the ramp.
+    let position0 = (base.layers[0].post_attention[0].iter())
+        .zip(&moved.layers[0].post_attention[0])
+        .map(|(a, b)| (a - b).abs())
+        .fold(0.0f32, f32::max);
+    let layer0 = max_abs(
+        &base.layers[0].post_attention,
+        &moved.layers[0].post_attention,
+    );
+    eprintln!("yarn factor 32→4: layer0 post_attention {layer0:e}, position 0 {position0:e}");
+    // The effect is bounded by the fixture's attention temperature: on
+    // 32-wide random weights the logits are near-uniform, so a 1.18×
+    // amplitude change moves post-attention by ~4e-4 — an order of
+    // magnitude above parity noise, which is the causal claim.
+    assert!(
+        layer0 > YARN_CAUSAL_FLOOR,
+        "YaRN factor carried but not executed: {layer0:e}"
+    );
+    assert!(
+        position0 > YARN_CAUSAL_FLOOR,
+        "YaRN amplitude not executed at position 0: {position0:e}"
+    );
 }
