@@ -98,3 +98,75 @@ fn non_directory_is_an_error() {
     std::fs::write(&file, "x").unwrap();
     assert!(build_inventory(&file).is_err());
 }
+
+/// Minimal gpt-oss-shaped checkpoint: a routed family with a
+/// `quantization_config` block and one packed expert tensor.
+fn write_routed_fixture(dir: &std::path::Path) {
+    let config = serde_json::json!({
+        "architectures": ["GptOssForCausalLM"],
+        "model_type": "gpt_oss",
+        "hidden_size": 64,
+        "intermediate_size": 64,
+        "num_hidden_layers": 2,
+        "num_attention_heads": 8,
+        "num_key_value_heads": 2,
+        "head_dim": 8,
+        "num_local_experts": 4,
+        "experts_per_token": 2,
+        "vocab_size": 128,
+        "rope_theta": 150000.0,
+        "swiglu_limit": 7.0,
+        "layer_types": ["sliding_attention", "full_attention"],
+        "sliding_window": 16,
+        "quantization_config": {
+            "quant_method": "mxfp4",
+            "modules_to_not_convert": ["model.layers.*.self_attn", "lm_head"]
+        }
+    });
+    std::fs::write(
+        dir.join("config.json"),
+        serde_json::to_string_pretty(&config).unwrap(),
+    )
+    .unwrap();
+
+    let header = serde_json::json!({
+        "model.layers.0.mlp.experts.gate_up_proj_blocks": {
+            "dtype": "U8", "shape": [4, 128, 2, 16], "data_offsets": [0, 16384]
+        }
+    });
+    let header_bytes = serde_json::to_vec(&header).unwrap();
+    let mut file = std::fs::File::create(dir.join("model.safetensors")).unwrap();
+    file.write_all(&(header_bytes.len() as u64).to_le_bytes())
+        .unwrap();
+    file.write_all(&header_bytes).unwrap();
+}
+
+/// A routed checkpoint's inventory records the stored representation it
+/// read (crediting the keys as consumed) and binds the one expert bank the
+/// shard actually spells; the layer with no spelled bank stays unbound.
+#[test]
+fn routed_inventory_records_representation_and_binds_spelled_banks() {
+    let dir = tempfile::tempdir().unwrap();
+    write_routed_fixture(dir.path());
+
+    let inv = build_inventory(dir.path()).unwrap();
+    assert_eq!(inv.detection.family, "gpt_oss");
+    let representation = inv
+        .stored_representation
+        .expect("quantization_config was read");
+    assert_eq!(representation.method, "mxfp4");
+    assert_eq!(representation.excluded_modules.len(), 2);
+    for path in [
+        "quantization_config.quant_method",
+        "quantization_config.modules_to_not_convert",
+    ] {
+        let fact = inv.config_keys.iter().find(|f| f.path == path).unwrap();
+        assert_eq!(fact.status, KeyStatus::Consumed, "{path}");
+    }
+    assert_eq!(
+        inv.resolved.layers[0].expert_bank.as_deref(),
+        Some("model.layers.0.mlp.experts")
+    );
+    assert_eq!(inv.resolved.layers[1].expert_bank, None);
+    assert!(inv.resolved.execution.unwrap().moe.is_some());
+}

@@ -180,3 +180,117 @@ fn validation_errors_are_data() {
     assert_eq!(topology.num_layers, 0);
     assert!(topology.layers.is_empty());
 }
+
+/// A gpt-oss-shaped config: routed MoE with router bias, attention sinks and
+/// projection biases, clamped GLU, YaRN — every A-9 semantic in one family.
+fn gpt_oss_shaped() -> serde_json::Value {
+    json!({
+        "architectures": ["GptOssForCausalLM"],
+        "model_type": "gpt_oss",
+        "hidden_size": 2880,
+        "intermediate_size": 2880,
+        "num_hidden_layers": 2,
+        "num_attention_heads": 64,
+        "num_key_value_heads": 8,
+        "head_dim": 64,
+        "attention_bias": true,
+        "num_local_experts": 32,
+        "experts_per_token": 4,
+        "vocab_size": 201088,
+        "rope_theta": 150000.0,
+        "swiglu_limit": 7.0,
+        "layer_types": ["sliding_attention", "full_attention"],
+        "sliding_window": 128
+    })
+}
+
+/// A routed family resolves its MoE facts and names each layer's expert
+/// bank in the architecture's own namespace — before any tensor is seen.
+#[test]
+fn routed_family_resolves_moe_and_names_its_banks_arch_relative() {
+    let config = gpt_oss_shaped();
+    let identity = read_identity(&config);
+    let (detection, topology) = resolve(&config, &identity);
+    assert!(!detection.generic_fallback);
+    let execution = topology.execution.expect("judged execution");
+    let moe = execution.moe.expect("gpt-oss is routed");
+    assert_eq!(moe.experts, 32);
+    assert_eq!(moe.top_k, 4);
+    assert!(moe.router_bias);
+    assert!(execution.attention_sinks.is_some());
+    assert_eq!(execution.attention_bias, Some(true));
+    assert!(matches!(
+        execution.gate_policy,
+        crate::config::ExpertGatePolicy::ClampedGlu { .. }
+    ));
+    let banks: Vec<Option<String>> = topology
+        .layers
+        .iter()
+        .map(|l| l.expert_bank.clone())
+        .collect();
+    assert_eq!(
+        banks,
+        vec![
+            Some("layers.0.mlp.experts".to_string()),
+            Some("layers.1.mlp.experts".to_string())
+        ]
+    );
+}
+
+/// A dense family names no bank on any layer.
+#[test]
+fn dense_family_names_no_expert_bank() {
+    let config = glimmer_shaped();
+    let identity = read_identity(&config);
+    let (_, topology) = resolve(&config, &identity);
+    assert!(topology.layers.iter().all(|l| l.expert_bank.is_none()));
+    assert!(topology.execution.unwrap().moe.is_none());
+}
+
+fn tensor(name: &str) -> crate::inventory::TensorFact {
+    crate::inventory::TensorFact {
+        name: name.to_string(),
+        dtype: "U8".to_string(),
+        shape: vec![32, 5760, 90, 16],
+        bytes: 0,
+        file: "model.safetensors".to_string(),
+    }
+}
+
+/// Binding resolves the arch-relative prefix to the spelling the checkpoint
+/// uses, at a segment boundary; a bank no tensor spells resolves to `None`.
+#[test]
+fn expert_banks_bind_to_the_source_spelling_or_to_nothing() {
+    use crate::inventory::resolved::bind_expert_banks;
+    let config = gpt_oss_shaped();
+    let identity = read_identity(&config);
+    let (_, mut topology) = resolve(&config, &identity);
+    let tensors = vec![
+        // Layer 0 is spelled by the checkpoint under `model.`.
+        tensor("model.layers.0.mlp.experts.gate_up_proj_blocks"),
+        // A near-miss for layer 1: `xlayers.1…` is not a segment boundary.
+        tensor("model.xlayers.1.mlp.experts.gate_up_proj_blocks"),
+    ];
+    bind_expert_banks(&mut topology, &tensors);
+    assert_eq!(
+        topology.layers[0].expert_bank.as_deref(),
+        Some("model.layers.0.mlp.experts")
+    );
+    assert_eq!(topology.layers[1].expert_bank, None);
+}
+
+/// A bank spelled with no source prefix at all binds at offset zero.
+#[test]
+fn expert_bank_at_the_start_of_the_name_binds_too() {
+    use crate::inventory::resolved::bind_expert_banks;
+    let config = gpt_oss_shaped();
+    let identity = read_identity(&config);
+    let (_, mut topology) = resolve(&config, &identity);
+    let tensors = vec![tensor("layers.1.mlp.experts.down_proj_blocks")];
+    bind_expert_banks(&mut topology, &tensors);
+    assert_eq!(topology.layers[0].expert_bank, None);
+    assert_eq!(
+        topology.layers[1].expert_bank.as_deref(),
+        Some("layers.1.mlp.experts")
+    );
+}

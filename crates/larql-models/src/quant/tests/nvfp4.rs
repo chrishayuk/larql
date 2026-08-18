@@ -194,3 +194,38 @@ fn stored_size_is_four_and_a_half_bits_per_weight() {
         "expected 4.5 bpw, got {bits_per_weight}"
     );
 }
+
+/// Decoding refuses the same geometry quantising refuses, and the errors
+/// say what was wrong in the units the caller reasons in.
+#[test]
+fn decoding_refuses_bad_geometry_and_the_errors_name_it() {
+    let matrix = quantize(&[0.5; 16], 1, 16).unwrap();
+    let mut short = vec![0.0f32; 8];
+    assert_eq!(
+        dequantize_into(&matrix, 1, 16, &mut short).unwrap_err(),
+        Nvfp4Error::ShapeMismatch {
+            values: 8,
+            rows: 1,
+            k: 16
+        }
+    );
+    let mut out = vec![0.0f32; 20];
+    assert_eq!(
+        dequantize_into(&matrix, 1, 20, &mut out).unwrap_err(),
+        Nvfp4Error::UnalignedK { k: 20 }
+    );
+
+    let unaligned = Nvfp4Error::UnalignedK { k: 20 }.to_string();
+    assert!(unaligned.contains("k=20"), "{unaligned}");
+    assert!(unaligned.contains("16-element group"), "{unaligned}");
+    let mismatch = Nvfp4Error::ShapeMismatch {
+        values: 8,
+        rows: 1,
+        k: 16,
+    }
+    .to_string();
+    assert_eq!(mismatch, "8 values do not fill [1, 16]");
+    // It is a real `Error`, so it composes with `?` and `Box<dyn Error>`.
+    let boxed: Box<dyn std::error::Error> = Box::new(Nvfp4Error::UnalignedK { k: 20 });
+    assert!(boxed.to_string().starts_with("k=20"));
+}

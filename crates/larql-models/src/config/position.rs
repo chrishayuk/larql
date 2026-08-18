@@ -127,10 +127,75 @@ mod tests {
 
     #[test]
     fn round_trips() {
-        for policy in [PositionPolicy::None, PositionPolicy::Rope { theta: 1e6 }] {
+        for policy in [
+            PositionPolicy::None,
+            PositionPolicy::Rope { theta: 1e6 },
+            PositionPolicy::Yarn {
+                theta: 150000.0,
+                scaling: gpt_oss_yarn(),
+            },
+        ] {
             let json = serde_json::to_string(&policy).unwrap();
             let back: PositionPolicy = serde_json::from_str(&json).unwrap();
             assert_eq!(back, policy);
         }
+    }
+
+    fn gpt_oss_yarn() -> YarnRopeScaling {
+        YarnRopeScaling {
+            factor: 32.0,
+            beta_fast: 32.0,
+            beta_slow: 1.0,
+            original_max_position_embeddings: 4096.0,
+            truncate: false,
+            mscale: None,
+            mscale_all_dim: None,
+        }
+    }
+
+    #[test]
+    fn a_yarn_block_attaches_only_to_a_rotating_layer() {
+        let scaling = gpt_oss_yarn();
+        assert_eq!(
+            PositionPolicy::from_declared_theta_with_yarn(150000.0, Some(scaling)),
+            PositionPolicy::Yarn {
+                theta: 150000.0,
+                scaling
+            }
+        );
+        // The NoPE sentinel wins over a checkpoint-wide YaRN block.
+        assert_eq!(
+            PositionPolicy::from_declared_theta_with_yarn(0.0, Some(scaling)),
+            PositionPolicy::None
+        );
+        // No block: plain rotary, exactly as `from_declared_theta`.
+        assert_eq!(
+            PositionPolicy::from_declared_theta_with_yarn(150000.0, None),
+            PositionPolicy::Rope { theta: 150000.0 }
+        );
+    }
+
+    #[test]
+    fn scaled_rotary_still_offers_its_theta_and_only_it_offers_yarn() {
+        let scaling = gpt_oss_yarn();
+        let yarn = PositionPolicy::Yarn {
+            theta: 150000.0,
+            scaling,
+        };
+        assert_eq!(yarn.rope_theta(), Some(150000.0));
+        assert_eq!(yarn.yarn(), Some(scaling));
+        assert_eq!(PositionPolicy::Rope { theta: 1e4 }.yarn(), None);
+        assert_eq!(PositionPolicy::None.yarn(), None);
+    }
+
+    #[test]
+    fn rotary_means_plain_or_scaled_but_not_nope() {
+        assert!(PositionPolicy::Rope { theta: 1e4 }.is_rotary());
+        assert!(PositionPolicy::Yarn {
+            theta: 1e4,
+            scaling: gpt_oss_yarn()
+        }
+        .is_rotary());
+        assert!(!PositionPolicy::None.is_rotary());
     }
 }
