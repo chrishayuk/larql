@@ -1935,6 +1935,88 @@ representation sets, placement, quality contracts. Engine work (A-1…A-10)
 continues throughout but is **not permitted to move schema** — a schema
 change is a V3-F0/V3.0 event, argued as such.
 
+**V3-F0 witness 3 — Gemma 4 26B-A4B (hybrid MoE), mapped 2026-08-18.**
+Rung 0 measured: `larql vindex3 plan` on `google/gemma-4-26B-A4B-it` (HF
+snapshot, BF16, 2 shards) is **inadmissible: 68 representable / 3 mismatched
+/ 39 unrepresented → 42 blocking** (gpt-oss started at 4). Objects already
+place: `decoder_stack` 3.3 GB, `embedding` 1.5 GB, `expert_bank` 45.7 GB
+(the A-9.2 bank machinery recognises the 128-expert packed BF16 banks
+unaided), `final_norm`, `perception_tower` 1.1 GB. The 42 sort into one root
+cause, four semantic families, and classification debt:
+
+```text
+ROOT CAUSE  per-layer attention geometry. graph/surface.rs:238 requires ONE head geometry per
+            component ("a per-layer variation is a schema gap to surface, not to average away") and
+            Gemma 4 has head_dim 256 / kv 8 on 25 sliding layers, global_head_dim 512 / kv 2 on the
+            5 full layers → target.execution_surface incomplete → the text component never builds →
+            every probe that reads a BUILT component reports "no built component answered":
+            rms_norm_eps, hidden_activation, attention_bias, final_logit_softcapping, both rope_thetas.
+            These clear together once geometry is per-layer.
+FAMILY 1    position. rope_parameters.{full,sliding}_attention is per LAYER TYPE (transformers-5
+            shape, the same trap A-9.0 hit): full theta 1e6 resolved as 10000 (mismatched — a
+            resolution bug, not a schema gap); rope_type "proportional" (mismatched vs default) with
+            partial_rotary_factor 0.25 (unrepresented): rotate the first 0.25·head_dim dims, inverse
+            frequencies over the FULL head_dim (global_head_dim on full layers), zero frequency on the
+            rest — HF _compute_proportional_rope_parameters. Needs a PositionPolicy variant.
+FAMILY 2    K ≡ V. attention_k_eq_v=true: v_proj is ABSENT on the 5 full layers (present on the 25
+            sliding) — the V operand is the K object. Parsed but unclassified today.
+FAMILY 3    hybrid FFN. EVERY layer has dense mlp.{gate,up,down} (inter 2112) AND experts.{gate_up,
+            down}_proj (128 × inter 704, top-8) with router.{proj,scale,per_expert_scale} and FIVE
+            FFN norms. HF Gemma4TextDecoderLayer: h = pre_ffn_norm(r); d = post_ffn_norm_1(mlp(h));
+            router over the RESIDUAL r (norm WITHOUT scale, × scale × H^-0.5, softmax, top-k,
+            renormalise, × per_expert_scale[idx]); m = post_ffn_norm_2(experts(pre_ffn_norm_2(r)));
+            out = r + post_ffn_norm(d + m); then × layer_scalar. enable_moe_block / num_experts /
+            top_k_experts / moe_intermediate_size are parsed but unclassified.
+FAMILY 4    output. final_logit_softcapping 30 (OutputOp.softcapping EXISTS — opplan/mod.rs:271,
+            surface.rs:211 — will answer once the component builds); tie_word_embeddings (no
+            output_head object placed — the head must bind the embedding object; verify).
+CLASSIFY    num_kv_shared_layers 0 (rule missing; 0 = none — but >0 on E2B/E4B is attention
+            reading ANOTHER LAYER's KV state, a cross-op state dependency: THE F0 question this
+            family poses to the ontology; refuse until represented), hidden_size_per_layer_input 0
+            and vocab_size_per_layer_input (PLE; 0 = absent), use_double_wide_mlp, global_head_dim,
+            num_global_key_value_heads, use_bidirectional_attention "vision"; root: audio_config
+            null, {audio,boa,boi,eoa,eoi,image,video}_token_id, vision_soft_tokens_per_image
+            (interface_semantic); vision_config: hidden_activation gelu_pytorch_tanh vs gelu_tanh
+            is an ALIAS mismatch (plan/compare.rs must compare through Activation), attention_bias /
+            rope_theta 100 / rope_type / global_head_dim 72 / pooling_kernel_size /
+            position_embedding_size / default_output_length / standardize / use_clipped_linears are
+            tower execution facts to carry on perception_tower (not executed by the text plan);
+            id2label / label2id / problem_type / return_dict / output_* / is_encoder_decoder /
+            chunk_size_feed_forward / _name_or_path are metadata_only.
+```
+
+Rungs, mirroring A-9 (each closes with its gate; served-side authority for
+every fact is `architectures/gemma4.rs`, which already judges all of it):
+
+```text
+G4.0  admissibility as REPRESENTATION: AttentionLayerPolicy (graph/policy.rs:74) gains per-layer
+      {head_dim, num_kv_heads}; surface_from_resolved stops requiring uniformity and AttentionOp reads
+      the layer's geometry (KV allocation follows); PositionPolicy::Proportional{theta, rotary_fraction}
+      (config/position.rs) + carriage rules for partial_rotary_factor and rope_type=proportional
+      (plan/carriage.rs; the leaves are already in plan/semantics.rs:35) + the per-layer-type
+      rope_parameters resolution fix pinned; AttentionLayerPolicy.v_from_k (closure: v_from_k ⇒ no V
+      operand, else required); the CLASSIFY list judged (config_keys.rs / semantics.rs registries);
+      vision alias compare. Executors REFUSE Proportional / v_from_k / hybrid until they execute them.
+      Gate: plan admissible, 0 blocking; every dropped fact pinned by a test that re-drops it.
+G4.1  hybrid FFN in the generic graph: LayerFfn::Hybrid{dense, routed, combine} (opplan/mod.rs:200) —
+      or Dense+Routed as two ops in the layer program with an explicit combine — plus roles for
+      router.scale, per_expert_scale, layer_scalar, pre_ffn_norm_2, post_ffn_norm_1/_2 (graph/roles.rs),
+      MoeRouterKind::SoftmaxThenTopK + NormalisedOverSelected + per-expert scale, the scale-less router
+      norm, ExpertFormat packed BF16 [E,2I,H]/[E,H,I]. Closure both ways on a miniature gemma4-family
+      fixture; `vindex3 ops` on the real container: N → 0 defects.
+G4.2  interpreter executes it (reference / production / device): per-layer geometry, proportional rope,
+      K≡V, hybrid FFN + router scales + layer_scalar, softcapped tied head. Gate: served CPU forward
+      (`shannon layer-dump --tokens` on the HF checkpoint) ≡ `vindex3 exec --dump-layers`, all 30
+      layers, plus causal controls per new operand.
+G4.3  Metal lowering: per-layer KV geometry (a (512, 16, 2, span) planner row — serial where
+      unmeasured), proportional rope table, K bound as V, hybrid encode = gated-ffn + descriptor MoE +
+      norms + sum + layer_scalar in one CB, softcap head. Gate: layer-diff lowered vs interpreter
+      ≤ 1e-6 (the A-9.5 instrument, no new plumbing).
+G4.4  banked id oracle (`larql run --emit-ids` on the served path) + bracketed ladder; then the F0
+      verdict: did Gemma 4 add vocabulary only? (Expected yes for 26B; num_kv_shared_layers>0 on
+      E2B/E4B is the open relationship question and is scored separately.)
+```
+
 **Immediate queue this implies:** (1) the third hostile architecture through
 the generic chain; (2) multi-representation binding, WALK/DESCRIBE on V3
 authority, the opset/version model, refusal semantics in the spec (the
