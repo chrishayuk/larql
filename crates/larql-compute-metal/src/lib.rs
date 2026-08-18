@@ -51,6 +51,7 @@
 // individually cfg-gated rather than nested inside a single `mod
 // platform` block so error messages point at the actual file paths.
 
+#[cfg(target_os = "macos")]
 pub mod async_compute_backend_impl;
 #[cfg(target_os = "macos")]
 pub mod backend;
@@ -60,6 +61,7 @@ pub mod buffers;
 pub mod calibration;
 
 /// Command-buffer completion status (#229 instrumentation).
+#[cfg(target_os = "macos")]
 pub mod cb_status;
 
 #[cfg(target_os = "macos")]
@@ -79,6 +81,7 @@ pub mod ops;
 #[cfg(target_os = "macos")]
 pub mod options;
 /// Router-id bounds guard for the descriptor gather (#229).
+#[cfg(target_os = "macos")]
 pub mod route_guard;
 #[cfg(target_os = "macos")]
 pub mod shaders;
