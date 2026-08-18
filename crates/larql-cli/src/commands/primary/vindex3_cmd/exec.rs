@@ -91,7 +91,7 @@ pub fn run_exec(args: ExecArgs) -> Result<(), Box<dyn std::error::Error>> {
         .ok_or_else(|| format!("component `{}` produced no plan", args.component))?;
     let store = OperandStore::open(&args.container, &inspection)?;
 
-    #[cfg(feature = "gpu")]
+    #[cfg(all(feature = "gpu", target_os = "macos"))]
     {
         use larql_vindex::format::vindex3::opplan::exec::backend::{WeightFormat, WeightFormats};
         // The lowered path's per-class policy. Same scheduling for every
@@ -130,7 +130,7 @@ pub fn run_exec(args: ExecArgs) -> Result<(), Box<dyn std::error::Error>> {
     match args.backend {
         ExecBackend::Reference => run_on(&ReferenceBackend::new(), &args, &tokens, &plan, &store),
         ExecBackend::Production => run_on(&ProductionBackend::new(), &args, &tokens, &plan, &store),
-        #[cfg(feature = "gpu")]
+        #[cfg(all(feature = "gpu", target_os = "macos"))]
         ExecBackend::MetalMxfp4 => {
             let gpu = larql_compute_metal::MetalBackend::new()
                 .ok_or("no Metal device available for --backend metal-mxfp4")?;
@@ -156,12 +156,12 @@ pub fn run_exec(args: ExecArgs) -> Result<(), Box<dyn std::error::Error>> {
                 );
             run_on(&backend, &args, &tokens, &plan, &store)
         }
-        #[cfg(feature = "gpu")]
+        #[cfg(all(feature = "gpu", target_os = "macos"))]
         ExecBackend::MetalLowered
         | ExecBackend::MetalLoweredFfn
         | ExecBackend::MetalLoweredNoHead
         | ExecBackend::MetalLoweredMxfp4 => unreachable!("handled above"),
-        #[cfg(feature = "gpu")]
+        #[cfg(all(feature = "gpu", target_os = "macos"))]
         ExecBackend::MetalMxfp4All => {
             let gpu = larql_compute_metal::MetalBackend::new()
                 .ok_or("no Metal device available for --backend metal-mxfp4-all")?;
@@ -179,7 +179,7 @@ pub fn run_exec(args: ExecArgs) -> Result<(), Box<dyn std::error::Error>> {
                 );
             run_on(&backend, &args, &tokens, &plan, &store)
         }
-        #[cfg(feature = "gpu")]
+        #[cfg(all(feature = "gpu", target_os = "macos"))]
         ExecBackend::MetalNvfp4 | ExecBackend::MetalNvfp4Ffn | ExecBackend::MetalNvfp4NoHead => {
             let gpu = larql_compute_metal::MetalBackend::new()
                 .ok_or("no Metal device available for the nvfp4 backends")?;
@@ -228,7 +228,7 @@ pub fn run_exec(args: ExecArgs) -> Result<(), Box<dyn std::error::Error>> {
                 );
             run_on(&backend, &args, &tokens, &plan, &store)
         }
-        #[cfg(feature = "gpu")]
+        #[cfg(all(feature = "gpu", target_os = "macos"))]
         ExecBackend::Metal => {
             // vindex never links Metal: the CLI injects the concrete
             // device through larql-compute's MatMul seam. f16 weights so
