@@ -1726,7 +1726,8 @@ query was verified as `{64,64,8,1025} → 16 slices` and pinned by test instead.
 | A-6 | **(layer, role) → representation policy** from the Meta recipes + quality matrix. | Bytes down without the coarse FFN-only cost. | open |
 | A-7 | **Speculative decoding last**, entering at ~22–24 tok/s native. | — | open |
 | A-8 | **B2 (sequence tiles across threadgroups)** once B1's intra-TG width is spent — at head_dim 128 that is 8 slices. | Planner rung. | after A-2 |
-| A-9 | **gpt-oss through the same lowerer** — the proof it is an engine architecture, not a Glimmer implementation. Mapped 2026-08-17: `larql vindex3 plan` on the HF checkpoint is inadmissible on four facts, and that is only rung 0 of six (below). Oracle banked: `bench/prompts/gpt-oss/vindex3-oracle-2026-08-17.txt` (65 chat-wrapped prompt ids → 16 generated ids, via `larql run --emit-ids`, #268). | Same oracle discipline on gpt-oss: byte-identical greedy ids to the served path through `vindex3 exec --backend metal-lowered`. | after A-3 |
+| A-9 | **gpt-oss through the same lowerer** — the proof it is an engine architecture, not a Glimmer implementation. Mapped 2026-08-17: `larql vindex3 plan` on the HF checkpoint is inadmissible on four facts, and that is only rung 0 of six (below). Oracle banked: `bench/prompts/gpt-oss/vindex3-oracle-2026-08-17.txt` (65 chat-wrapped prompt ids → 16 generated ids, via `larql run --emit-ids`, #268). | Same oracle discipline on gpt-oss: byte-identical greedy ids to the served path through `vindex3 exec --backend metal-lowered`. | **closed 2026-08-18** (parity chain, rungs A-9.0–A-9.5 below); the bracketed ladder is A-10 |
+| A-10 | **Cost of abstraction — gpt-oss bracketed perf ladder** through the generic plan. Arms: served routed Metal path (`larql run --routed-from`) · `vindex3 exec --backend metal-lowered` f16-attention · the same with NVFP4 attention; contexts short / ~512 / ~1K / ~2K / ~4K; baseline/candidate/baseline brackets, full decode budget, route/plan witness on every row, same trajectory fingerprint, rests between arms (the KV-B1 hygiene). The question is the delta between the generic lowering and the mature served path — single-digit % says the execution architecture generalised without discarding the optimised backend; larger says there is a clean, correctness-free profiling problem. | A rested bracketed table with witnesses; a stated delta per context. | open, next |
 
 A-9's rungs, each with its file coordinates (from the 2026-08-17 map; the
 generic system-graph path is **dense-only today** — Glimmer encodes because it
@@ -1869,8 +1870,10 @@ A-9.5  the parity chain: ops closure → exec reference → production → lower
        This MEASURES the earlier generated-token flip: with all-NVFP4 attention the layer-0
        rel_rms is 0.058 (cos still 0.998, direction preserved), and swapping attention to f16
        collapses it to 0.000000 — the drift was the NVFP4 attention weight representation, not a
-       semantic defect (both paths read the SAME MXFP4 expert codes, so experts contribute no
-       divergence). CPU interpreter and Metal now execute the represented GPT-OSS semantics —
+       semantic defect. Stated at the strength the measurement licenses: any divergence
+       attributable to the common MXFP4 expert path is BELOW the ~1e-6 residual of the
+       congruent f16-attention run — the end-to-end measurement bounds it, not only the fact
+       that both paths read the same expert codes). CPU interpreter and Metal now execute the represented GPT-OSS semantics —
        YaRN, sinks, biases, routed MXFP4 MoE, ClampedGlu — numerically identically to f32 noise.
        Remaining: the bracketed performance ladder. Earlier note kept:
        INTERPRETER HALF CLOSED 2026-08-17: `shannon layer-dump --tokens` (new; given ids) over
@@ -1893,8 +1896,12 @@ integration from semantics down to execution.
 
 ### VINDEX3 stabilisation — freeze gauntlet, positioning, standard-grade backlog (2026-08-17)
 
-**Judgement: the architecture is converged; the ABI has one adversarial pass
-left, and that pass is A-9.** Distinguish *architectural stability* from
+**Judgement: the architecture is converged; the ABI had one adversarial pass
+left, and that pass was A-9 — closed 2026-08-18 (below): gpt-oss went through
+the same graph → plan → CPU interpreter / Metal lowering as Glimmer, no
+family branch, interpreter ≡ Metal at rel_rms ≤ 1e-6 across all 24 layers, and
+every A-9 rung added vocabulary to existing categories rather than a new
+category (F1 held).** Distinguish *architectural stability* from
 *freezing schema 3*. The question is no longer "is the VINDEX3 abstraction
 right?" but "have we discovered every semantic noun and relationship the
 frozen ABI must carry?" — and gpt-oss is the last high-value attack on it,
@@ -1911,7 +1918,7 @@ close and schema 3.0 immediately fails to describe a production architecture.
 | Plan / execution architecture (reference → production → lowered) | ~90 % settled |
 | Dense / Glimmer execution model | proven (real-model parity, GPU-resident multi-layer, KV through the plan) |
 | Routed-bank serving | proven in production machinery (native MXFP4, GPU routing, one CB/token) |
-| Generic MoE graph semantics | **still moving** (A-9.2/A-9.3) |
+| Generic MoE graph semantics | settled 2026-08-18 — A-9.2/A-9.3 closed; MoE is an object/operand/op arrangement inside the graph, `moe_manifest.json` absent from the gpt-oss container |
 | Representation / profile machinery | conceptually settled, plumbing incomplete (selection does not yet steer bytes) |
 | V3 extraction / default lifecycle | not ready to freeze |
 | On-disk ABI / schema 3 | one serious architecture pass from freeze |
@@ -1949,13 +1956,17 @@ VINDEX3
 
 ```text
 F1  ontology closure      A-9.0/1/2/3 close without a NEW CATEGORY of semantic fact
+                          → HELD 2026-08-18 (YaRN, ClampedGlu, sinks, biases, expert bank,
+                          MoE roles/op all landed as vocabulary in existing categories)
 F2  cross-family witness  Glimmer (dense, local/global) · gpt-oss (pure routed MoE +
                           biases/sinks/YaRN) · Gemma 4 (hybrid MoE); recurrent/KDA later,
                           non-blocking if unsupported ops fail loudly
+                          → Glimmer + gpt-oss WITNESSED 2026-08-18; Gemma 4 open
 F3  representation witness ONE container genuinely carries ≥2 representations of the same
                           semantic role; profile choice changes the BOUND bytes; a tamper
                           control proves it cannot silently hit the other
 F4  independent execution reference → production → lowered parity (the discipline in hand)
+                          → exercised on gpt-oss 2026-08-18: served HF ≡ interpreter ≡ lowered
 F5  database parity       WALK/DESCRIBE run against V3 authority, not a V2 shadow — the
                           exact expert-bank bytes execution binds ARE the addressable
                           objects; no second KNN index unless declared a derived repr
