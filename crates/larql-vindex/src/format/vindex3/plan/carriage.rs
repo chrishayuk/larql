@@ -38,6 +38,7 @@
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 
+use super::super::graph::policy::AttentionSpan;
 use super::super::graph::Component;
 
 /// How far a declared fact travels from `config.json` into execution.
@@ -93,7 +94,37 @@ pub struct CarriageRule {
     /// Required for [`Carriage::Represented`] and deeper, and unused for
     /// [`Carriage::Parsed`] — a rule that stops at the parser has nothing
     /// to read back.
-    pub probe: Option<fn(&Component) -> Option<Value>>,
+    pub probe: Option<fn(&Component, &ProbeContext<'_>) -> Option<Value>>,
+}
+
+/// What a probe may know about the fact it is answering for, beyond the
+/// component: the attention span the fact's path names, when a family
+/// declares a fact per layer TYPE (`rope_parameters.full_attention.*` vs
+/// `rope_parameters.sliding_attention.*` — Gemma 3/4), and the declared
+/// value, so a probe can answer in the checkpoint's own spelling when
+/// several spellings name one judged variant (`gelu_pytorch_tanh` and
+/// `gelu_new` are both `Activation::GeluTanh`). A probe never lets the
+/// declared value *choose* what it reports — it only resolves aliases of
+/// what the schema already holds.
+pub struct ProbeContext<'a> {
+    pub span: Option<AttentionSpan>,
+    pub declared: &'a Value,
+}
+
+impl ProbeContext<'_> {
+    /// The per-layer-type scope a flattened config path names, if any.
+    pub fn span_of(path: &str) -> Option<AttentionSpan> {
+        [
+            AttentionSpan::Full,
+            AttentionSpan::Sliding,
+            AttentionSpan::Windowed,
+        ]
+        .into_iter()
+        .find(|span| {
+            path.split('.')
+                .any(|segment| segment == span.declared_name())
+        })
+    }
 }
 
 /// The rules. Every leaf classified
@@ -109,6 +140,12 @@ pub const CARRIAGE_RULES: &[CarriageRule] = &[
         reaches: Carriage::Lowered,
         site: "Component.attention[].position (PositionPolicy::Rope) → AttentionOp.position",
         probe: Some(probe_rope_theta),
+    },
+    CarriageRule {
+        leaf: "partial_rotary_factor",
+        reaches: Carriage::Lowered,
+        site: "Component.attention[].position (PositionPolicy::PartialRope.rotary_fraction) → AttentionOp.position",
+        probe: Some(probe_partial_rotary_factor),
     },
     CarriageRule {
         leaf: "layer_rope_theta",
@@ -268,6 +305,77 @@ pub const CARRIAGE_RULES: &[CarriageRule] = &[
         probe: Some(probe_attention_bias),
     },
     CarriageRule {
+        leaf: "num_kv_shared_layers",
+        reaches: Carriage::Represented,
+        // Gemma 4 E2B/E4B: the last N layers read the KV state of the last
+        // non-shared layer of their type instead of projecting their own —
+        // attention reading ANOTHER op's state, a cross-layer dependency
+        // the graph does not represent (V3-F0's open ontology question,
+        // scored by that witness). The table represents "no layer shares"
+        // and nothing else, so `0` agrees and any other count is dropped
+        // at the boundary and blocks — refused, never mis-served as
+        // per-layer projections.
+        site: "Component.attention[] — no KV-sharing relationship exists; only 0 is representable",
+        probe: Some(probe_kv_shared_layers),
+    },
+    // ── Gemma 4 (V3-F0 witness 3) ──────────────────────────────────
+    CarriageRule {
+        leaf: "attention_k_eq_v",
+        reaches: Carriage::Represented,
+        site: "Component.attention[].v_from_k → AttentionOp.v_from_k (closure-paired: no V operand on such a layer)",
+        probe: Some(probe_k_eq_v),
+    },
+    CarriageRule {
+        leaf: "enable_moe_block",
+        reaches: Carriage::Represented,
+        site: "ExecutionSurface.ffn.moe (Some = a routed block is judged) → LayerFfn::Routed / hybrid",
+        probe: Some(probe_moe_enabled),
+    },
+    CarriageRule {
+        leaf: "top_k_experts",
+        reaches: Carriage::Lowered,
+        site: "ExecutionSurface.ffn.moe.top_k → RoutedFfnOp routing",
+        probe: Some(probe_moe_top_k),
+    },
+    CarriageRule {
+        leaf: "global_head_dim",
+        reaches: Carriage::Lowered,
+        site: "Component.attention[].geometry.head_dim on the full layers → AttentionOp.head_dim",
+        probe: Some(probe_full_layer_head_dim),
+    },
+    CarriageRule {
+        leaf: "num_global_key_value_heads",
+        reaches: Carriage::Lowered,
+        site: "Component.attention[].geometry.num_kv_heads on the full layers → AttentionOp.num_kv_heads",
+        probe: Some(probe_full_layer_kv_heads),
+    },
+    CarriageRule {
+        leaf: "hidden_size_per_layer_input",
+        reaches: Carriage::Represented,
+        // Per-layer-input embeddings (Gemma 3n/4 E2B): a second embedding
+        // table gated into every layer. No object or op exists for it; the
+        // graph represents its ABSENCE only, so `0` agrees and any width
+        // is dropped at the boundary and blocks.
+        site: "no schema field — the graph represents PLE as absent; only 0 is representable",
+        probe: Some(probe_zero),
+    },
+    CarriageRule {
+        leaf: "use_double_wide_mlp",
+        reaches: Carriage::Represented,
+        // Doubles the MLP width on KV-shared layers; no KV-shared layer is
+        // representable (see `num_kv_shared_layers`), so only `false` is.
+        site: "no schema field — only `false` is representable",
+        probe: Some(probe_false),
+    },
+    CarriageRule {
+        leaf: "use_clipped_linears",
+        reaches: Carriage::Represented,
+        // A tower option that clips projection outputs; no op carries a
+        // clip, so only `false` is representable.
+        site: "no schema field on the tower surface — only `false` is representable",
+        probe: Some(probe_false),
+    },
+    CarriageRule {
         leaf: "max_position_embeddings",
         reaches: Carriage::Parsed,
         // A serving/KV-allocation bound, not a forward-pass semantic: no
@@ -290,19 +398,36 @@ pub fn rule_for(leaf: &str) -> Option<&'static CarriageRule> {
 // against the schema rather than believed. They return `None` when the
 // component has no surface or table to answer from.
 
-/// The uniform rope base across the attention table, when there is one.
+/// The layers a per-layer-type fact speaks for: those of the span the
+/// fact's path names, or every layer for a checkpoint-wide fact.
+fn layers_in_scope<'a>(
+    component: &'a Component,
+    ctx: &ProbeContext<'_>,
+) -> Option<impl Iterator<Item = &'a super::super::graph::AttentionLayerPolicy>> {
+    let table = component.attention.as_ref()?;
+    let span = ctx.span;
+    Some(
+        table
+            .iter()
+            .filter(move |l| span.is_none_or(|s| l.span == s)),
+    )
+}
+
+/// The uniform rope base across the layers in scope, when there is one:
+/// the whole table for `rope_theta`, one layer type for
+/// `rope_parameters.full_attention.rope_theta` (Gemma 4 declares 1e6 on
+/// its full layers and 1e4 on its sliding ones — two facts, two probes).
 /// A per-layer split (Muse-Glimmer's `layer_rope_theta`) answers `None`
 /// here and is checked by [`probe_layer_rope_theta`] instead.
-fn probe_rope_theta(component: &Component) -> Option<Value> {
-    let table = component.attention.as_ref()?;
-    let mut thetas = table.iter().filter_map(|l| l.position.rope_theta());
+fn probe_rope_theta(component: &Component, ctx: &ProbeContext<'_>) -> Option<Value> {
+    let mut thetas = layers_in_scope(component, ctx)?.filter_map(|l| l.position.rope_theta());
     let first = thetas.next()?;
     thetas.all(|t| t == first).then(|| json!(first))
 }
 
 /// Every layer's rope base in layer order, with NoPE layers as `0` —
 /// the same sentinel spelling the checkpoints use.
-fn probe_layer_rope_theta(component: &Component) -> Option<Value> {
+fn probe_layer_rope_theta(component: &Component, _ctx: &ProbeContext<'_>) -> Option<Value> {
     let table = component.attention.as_ref()?;
     Some(Value::Array(
         table
@@ -312,14 +437,94 @@ fn probe_layer_rope_theta(component: &Component) -> Option<Value> {
     ))
 }
 
-/// The rope *class* the table actually carries, in the checkpoint's own
-/// spelling: `yarn` when any rotating layer holds a YaRN block, else
-/// `default`. A table can not mix the two — the block is a checkpoint-wide
-/// fact — so the first rotating layer answers for all.
-fn probe_rope_type(component: &Component) -> Option<Value> {
+/// The rope *class* the layers in scope carry, in the checkpoint's own
+/// spelling: `yarn` when any rotating layer holds a YaRN block,
+/// `proportional` when any holds a head-width-basis partial rotary
+/// (Gemma 4's full layers), else `default`. Within one scope the class
+/// is uniform, so the first classed layer answers for all.
+fn probe_rope_type(component: &Component, ctx: &ProbeContext<'_>) -> Option<Value> {
+    let mut layers = layers_in_scope(component, ctx)?;
+    let class = layers
+        .find_map(|l| l.position.declared_rope_type())
+        .unwrap_or(larql_models::config::ROPE_TYPE_DEFAULT);
+    Some(json!(class))
+}
+
+/// The KV-sharing count the table represents: none. Every layer in the
+/// graph projects its own K/V, so the only declaration the schema agrees
+/// with is `0`.
+fn probe_kv_shared_layers(component: &Component, _ctx: &ProbeContext<'_>) -> Option<Value> {
+    component.attention.as_ref()?;
+    Some(json!(0))
+}
+
+/// Whether any layer takes V from its K projection.
+fn probe_k_eq_v(component: &Component, _ctx: &ProbeContext<'_>) -> Option<Value> {
     let table = component.attention.as_ref()?;
-    let scaled = table.iter().any(|l| l.position.yarn().is_some());
-    Some(json!(if scaled { "yarn" } else { "default" }))
+    Some(json!(table.iter().any(|l| l.v_from_k)))
+}
+
+fn probe_moe_enabled(component: &Component, _ctx: &ProbeContext<'_>) -> Option<Value> {
+    Some(json!(component.execution.as_ref()?.ffn.moe.is_some()))
+}
+
+fn probe_moe_top_k(component: &Component, _ctx: &ProbeContext<'_>) -> Option<Value> {
+    Some(json!(component.execution.as_ref()?.ffn.moe?.top_k))
+}
+
+/// The head width the full-attention layers carry — the fact
+/// `global_head_dim` declares — when every full layer agrees. A layer
+/// without its own geometry has the surface's (that is what the absence
+/// means), so a uniform tower answers with its surface head width.
+fn probe_full_layer_head_dim(component: &Component, _ctx: &ProbeContext<'_>) -> Option<Value> {
+    let table = component.attention.as_ref()?;
+    let surface = component.execution.as_ref()?;
+    let mut dims = table
+        .iter()
+        .filter(|l| l.span == AttentionSpan::Full)
+        .map(|l| {
+            l.geometry
+                .map_or(surface.attention.head_dim, |g| g.head_dim)
+        });
+    let first = dims.next()?;
+    dims.all(|d| d == first).then(|| json!(first))
+}
+
+/// The KV-head count the full-attention layers carry.
+fn probe_full_layer_kv_heads(component: &Component, _ctx: &ProbeContext<'_>) -> Option<Value> {
+    let table = component.attention.as_ref()?;
+    let surface = component.execution.as_ref()?;
+    let mut heads = table
+        .iter()
+        .filter(|l| l.span == AttentionSpan::Full)
+        .map(|l| {
+            l.geometry
+                .map_or(surface.attention.num_kv_heads, |g| g.num_kv_heads)
+        });
+    let first = heads.next()?;
+    heads.all(|h| h == first).then(|| json!(first))
+}
+
+/// A fact the schema represents only as absent: the built component
+/// answers `0`, so a declared `0` agrees and anything else blocks.
+fn probe_zero(component: &Component, _ctx: &ProbeContext<'_>) -> Option<Value> {
+    component.execution.as_ref()?;
+    Some(json!(0))
+}
+
+/// A switch the schema represents only as off.
+fn probe_false(component: &Component, _ctx: &ProbeContext<'_>) -> Option<Value> {
+    component.execution.as_ref()?;
+    Some(json!(false))
+}
+
+/// The rotary fraction the layers in scope carry — `partial_rotary_factor`
+/// is a per-layer-type leaf on Gemma 4 (`full_attention` only).
+fn probe_partial_rotary_factor(component: &Component, ctx: &ProbeContext<'_>) -> Option<Value> {
+    let mut fractions =
+        layers_in_scope(component, ctx)?.filter_map(|l| l.position.rotary_fraction());
+    let first = fractions.next()?;
+    fractions.all(|f| f == first).then(|| json!(first))
 }
 
 /// The YaRN block the table carries, when it carries one. `None` when the
@@ -334,23 +539,23 @@ fn yarn_block(component: &Component) -> Option<larql_models::YarnRopeScaling> {
         .find_map(|l| l.position.yarn())
 }
 
-fn probe_yarn_factor(component: &Component) -> Option<Value> {
+fn probe_yarn_factor(component: &Component, _ctx: &ProbeContext<'_>) -> Option<Value> {
     Some(json!(yarn_block(component)?.factor))
 }
 
-fn probe_yarn_beta_fast(component: &Component) -> Option<Value> {
+fn probe_yarn_beta_fast(component: &Component, _ctx: &ProbeContext<'_>) -> Option<Value> {
     Some(json!(yarn_block(component)?.beta_fast))
 }
 
-fn probe_yarn_beta_slow(component: &Component) -> Option<Value> {
+fn probe_yarn_beta_slow(component: &Component, _ctx: &ProbeContext<'_>) -> Option<Value> {
     Some(json!(yarn_block(component)?.beta_slow))
 }
 
-fn probe_yarn_truncate(component: &Component) -> Option<Value> {
+fn probe_yarn_truncate(component: &Component, _ctx: &ProbeContext<'_>) -> Option<Value> {
     Some(json!(yarn_block(component)?.truncate))
 }
 
-fn probe_yarn_original_max(component: &Component) -> Option<Value> {
+fn probe_yarn_original_max(component: &Component, _ctx: &ProbeContext<'_>) -> Option<Value> {
     Some(json!(
         yarn_block(component)?.original_max_position_embeddings
     ))
@@ -359,7 +564,7 @@ fn probe_yarn_original_max(component: &Component) -> Option<Value> {
 /// Per-layer span kinds in the checkpoint's own vocabulary, so the
 /// comparison is against the declared spelling rather than a rendering
 /// this probe invents.
-fn probe_layer_types(component: &Component) -> Option<Value> {
+fn probe_layer_types(component: &Component, _ctx: &ProbeContext<'_>) -> Option<Value> {
     let table = component.attention.as_ref()?;
     Some(Value::Array(
         table
@@ -370,23 +575,32 @@ fn probe_layer_types(component: &Component) -> Option<Value> {
 }
 
 /// The uniform sliding window across sliding layers, when there is one.
-fn probe_sliding_window(component: &Component) -> Option<Value> {
+fn probe_sliding_window(component: &Component, _ctx: &ProbeContext<'_>) -> Option<Value> {
     let table = component.attention.as_ref()?;
     let mut windows = table.iter().filter_map(|l| l.window);
     let first = windows.next()?;
     windows.all(|w| w == first).then(|| json!(first))
 }
 
-fn probe_pre_norm_eps(component: &Component) -> Option<Value> {
+fn probe_pre_norm_eps(component: &Component, _ctx: &ProbeContext<'_>) -> Option<Value> {
     Some(json!(component.execution.as_ref()?.norm.pre.eps))
 }
 
-fn probe_post_norm_eps(component: &Component) -> Option<Value> {
+fn probe_post_norm_eps(component: &Component, _ctx: &ProbeContext<'_>) -> Option<Value> {
     Some(json!(component.execution.as_ref()?.norm.post?.eps))
 }
 
-fn probe_activation(component: &Component) -> Option<Value> {
+/// The judged activation, in the checkpoint's own spelling when that
+/// spelling is an alias of the judged variant (`gelu_pytorch_tanh` →
+/// `GeluTanh`); the schema's spelling otherwise, so a genuine
+/// disagreement still reads as one.
+fn probe_activation(component: &Component, ctx: &ProbeContext<'_>) -> Option<Value> {
     let activation = component.execution.as_ref()?.ffn.activation;
+    if let Some(declared) = ctx.declared.as_str() {
+        if larql_models::config::Activation::from_hf_name(declared) == Some(activation) {
+            return Some(json!(declared));
+        }
+    }
     serde_json::to_value(activation).ok()
 }
 
@@ -394,34 +608,34 @@ fn probe_activation(component: &Component) -> Option<Value> {
 /// clamped GLU. A plain-gated surface has no limit to answer with — a
 /// checkpoint declaring `swiglu_limit` that resolved to plain gating is
 /// then reported as unrepresented, which is the truth.
-fn probe_swiglu_limit(component: &Component) -> Option<Value> {
+fn probe_swiglu_limit(component: &Component, _ctx: &ProbeContext<'_>) -> Option<Value> {
     match component.execution.as_ref()?.ffn.gate_policy {
         larql_models::ExpertGatePolicy::ClampedGlu { limit, .. } => Some(json!(limit)),
         larql_models::ExpertGatePolicy::Gated => None,
     }
 }
 
-fn probe_attention_bias(component: &Component) -> Option<Value> {
+fn probe_attention_bias(component: &Component, _ctx: &ProbeContext<'_>) -> Option<Value> {
     Some(json!(
         component.execution.as_ref()?.attention.attention_bias?
     ))
 }
 
-fn probe_query_scale(component: &Component) -> Option<Value> {
+fn probe_query_scale(component: &Component, _ctx: &ProbeContext<'_>) -> Option<Value> {
     Some(json!(component.execution.as_ref()?.attention.query_scale?))
 }
 
-fn probe_score_scale(component: &Component) -> Option<Value> {
+fn probe_score_scale(component: &Component, _ctx: &ProbeContext<'_>) -> Option<Value> {
     Some(json!(component.execution.as_ref()?.attention.score_scale))
 }
 
-fn probe_attn_softcap(component: &Component) -> Option<Value> {
+fn probe_attn_softcap(component: &Component, _ctx: &ProbeContext<'_>) -> Option<Value> {
     Some(json!(
         component.execution.as_ref()?.attention.logit_softcapping?
     ))
 }
 
-fn probe_final_softcap(component: &Component) -> Option<Value> {
+fn probe_final_softcap(component: &Component, _ctx: &ProbeContext<'_>) -> Option<Value> {
     Some(json!(
         component
             .execution
@@ -432,7 +646,7 @@ fn probe_final_softcap(component: &Component) -> Option<Value> {
     ))
 }
 
-fn probe_output_multiplier(component: &Component) -> Option<Value> {
+fn probe_output_multiplier(component: &Component, _ctx: &ProbeContext<'_>) -> Option<Value> {
     Some(json!(
         component
             .execution

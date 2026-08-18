@@ -131,18 +131,28 @@ pub fn plan_component_ops(
     // ── Stack closure ──
     let hidden = component.hidden_size;
     let attn = &surface.attention;
-    let q_rows = attn.num_q_heads * attn.head_dim;
-    let kv_rows = attn.num_kv_heads * attn.head_dim;
     let inter = surface.ffn.intermediate_size;
     let gated_ffn = surface.ffn.ffn_type == FfnType::Gated;
-    let geometry = StackGeometry {
-        hidden,
-        q_rows,
-        kv_rows,
-        intermediate: inter,
-        head_dim: attn.head_dim,
-        num_q_heads: attn.num_q_heads,
-        qk_scope: attn.qk_norm_scope,
+    // Head geometry is a per-layer fact when the family varies it
+    // (Gemma 4's global layers); the layer's policy is the authority and
+    // the surface is what a pre-geometry container meant by "every
+    // layer".
+    let layer_geometry = |layer: usize| {
+        let (head_dim, num_kv_heads) = attention_table[layer]
+            .geometry
+            .map_or((attn.head_dim, attn.num_kv_heads), |g| {
+                (g.head_dim, g.num_kv_heads)
+            });
+        StackGeometry {
+            hidden,
+            q_rows: attn.num_q_heads * head_dim,
+            kv_rows: num_kv_heads * head_dim,
+            intermediate: inter,
+            head_dim,
+            num_q_heads: attn.num_q_heads,
+            num_kv_heads,
+            qk_scope: attn.qk_norm_scope,
+        }
     };
 
     // Judged routed-FFN semantics the plan can express today: pure routed
@@ -213,7 +223,8 @@ pub fn plan_component_ops(
             .get(&ObjectKind::ExpertBank)
             .map(|(o, _)| o.id.clone())
             .unwrap_or_default();
-        for layer in 0..component.num_layers {
+        for (layer, policy) in attention_table.iter().enumerate() {
+            let geometry = layer_geometry(layer);
             let present = by_layer.get(&layer);
             let bank = bank_by_layer.get(&layer);
             // A layer is routed by operand evidence — it has an expert
@@ -231,6 +242,7 @@ pub fn plan_component_ops(
                 sinks: attn.sinks.is_some(),
                 routed,
                 moe: surface.ffn.moe,
+                v_from_k: policy.v_from_k,
             };
             for role in required_roles(&ops) {
                 let holder = if role.is_expert_bank() { bank } else { present };
@@ -360,6 +372,7 @@ pub fn plan_component_ops(
         let slot = &by_layer[&layer];
         let get = |role: OperandRole| &slot[&role];
         let policy = &attention_table[layer];
+        let geometry = layer_geometry(layer);
         let bias = |role: OperandRole| {
             (attn.attention_bias == Some(true)).then(|| operand(&stack_id, get(role)))
         };
@@ -442,9 +455,9 @@ pub fn plan_component_ops(
                 get(OperandRole::PreAttentionNorm),
             ),
             attention: AttentionOp {
-                num_q_heads: attn.num_q_heads,
-                num_kv_heads: attn.num_kv_heads,
-                head_dim: attn.head_dim,
+                num_q_heads: geometry.num_q_heads,
+                num_kv_heads: geometry.num_kv_heads,
+                head_dim: geometry.head_dim,
                 query_scale: attn.query_scale,
                 score_scale: attn.score_scale,
                 logit_softcapping: attn.logit_softcapping,
@@ -455,7 +468,17 @@ pub fn plan_component_ops(
                 parameter_free_qk_norm: attn.parameter_free_qk_norm,
                 q: operand(&stack_id, get(OperandRole::AttnQ)),
                 k: operand(&stack_id, get(OperandRole::AttnK)),
-                v: operand(&stack_id, get(OperandRole::AttnV)),
+                // On a K≡V layer the value operand IS the key operand:
+                // the op reads one matrix twice, and says so.
+                v: operand(
+                    &stack_id,
+                    get(if policy.v_from_k {
+                        OperandRole::AttnK
+                    } else {
+                        OperandRole::AttnV
+                    }),
+                ),
+                v_from_k: policy.v_from_k,
                 o: operand(&stack_id, get(OperandRole::AttnO)),
                 output_gate: attn.output_gate.map(|spec| GateOp {
                     spec,
@@ -542,6 +565,9 @@ struct LayerOps {
     /// judgment); dense otherwise.
     routed: bool,
     moe: Option<MoeSurface>,
+    /// V is the K projection on this layer: no V operand is required, and
+    /// one present is a stray.
+    v_from_k: bool,
 }
 
 /// Roles every layer must supply, given the surface's ops.
@@ -551,9 +577,11 @@ fn required_roles(ops: &LayerOps) -> Vec<OperandRole> {
         OperandRole::PostAttentionNorm,
         OperandRole::AttnQ,
         OperandRole::AttnK,
-        OperandRole::AttnV,
         OperandRole::AttnO,
     ];
+    if !ops.v_from_k {
+        roles.push(OperandRole::AttnV);
+    }
     if ops.placement == NormPlacement::PrePost {
         roles.push(OperandRole::PreFfnNorm);
         roles.push(OperandRole::PostFfnNorm);
@@ -614,6 +642,9 @@ fn absent_op(role: OperandRole, ops: &LayerOps) -> Option<&'static str> {
             Some("attention projection bias (declared `attention_bias`)")
         }
         OperandRole::AttnSinks if !ops.sinks => Some("attention sinks (judged semantics)"),
+        OperandRole::AttnV if ops.v_from_k => {
+            Some("value projection (this layer's V is its K projection — `attention_k_eq_v`)")
+        }
         OperandRole::FfnGate if !ops.routed && !ops.gated_ffn => Some("gated FFN"),
         OperandRole::FfnGate | OperandRole::FfnUp | OperandRole::FfnDown if ops.routed => {
             Some("dense FFN (this layer is routed)")
@@ -649,7 +680,8 @@ fn absent_op(role: OperandRole, ops: &LayerOps) -> Option<&'static str> {
     }
 }
 
-/// The surface geometry every stack operand's shape is checked against.
+/// The geometry one layer's stack operands are checked against — the
+/// layer's own head geometry under the component's query-head count.
 struct StackGeometry {
     hidden: usize,
     q_rows: usize,
@@ -657,6 +689,7 @@ struct StackGeometry {
     intermediate: usize,
     head_dim: usize,
     num_q_heads: usize,
+    num_kv_heads: usize,
     qk_scope: larql_models::config::QkNormScope,
 }
 
@@ -675,6 +708,7 @@ fn expected_shape(
         intermediate,
         head_dim,
         num_q_heads,
+        num_kv_heads: _,
         qk_scope,
     } = *g;
     match role {

@@ -16,7 +16,8 @@
 //! 3. Default pattern of 6 (every 6th layer is full)
 
 use crate::config::{
-    Activation, ExpertFormat, GateUpLayout, ModelArchitecture, ModelConfig, PostNormEps,
+    Activation, ExpertFormat, GateUpLayout, ModelArchitecture, ModelConfig, PositionPolicy,
+    PostNormEps, RotaryFrequencyBasis,
 };
 use crate::tensor_keys::qk_norm;
 
@@ -225,6 +226,29 @@ impl ModelArchitecture for Gemma4Arch {
 
     fn is_sliding_window_layer(&self, layer: usize) -> bool {
         !self.is_global_layer(layer)
+    }
+
+    /// Global layers rotate only `partial_rotary_factor` of each
+    /// `global_head_dim`-wide head, with the inverse frequencies taken over
+    /// the FULL head width — HF's `proportional` rope class, which
+    /// `Gemma4RotaryEmbedding` selects for `full_attention` and computes
+    /// with `head_dim_key = "global_head_dim"`. Sliding layers are plain
+    /// rotary at the local base. The class is the architecture's judgement
+    /// (no Gemma 4 checkpoint declares plain partial rotary); the VINDEX3
+    /// carriage gate compares it against the declared `rope_type`, so a
+    /// checkpoint saying otherwise blocks rather than being mis-served.
+    fn position_policy_for_layer(&self, layer: usize) -> PositionPolicy {
+        let theta = self.rope_base_for_layer(layer);
+        match self.config.partial_rotary_factor {
+            Some(rotary_fraction) if self.is_global_layer(layer) && rotary_fraction < 1.0 => {
+                PositionPolicy::PartialRope {
+                    theta,
+                    rotary_fraction,
+                    basis: RotaryFrequencyBasis::HeadWidth,
+                }
+            }
+            _ => PositionPolicy::Rope { theta },
+        }
     }
 
     fn rope_base_for_layer(&self, layer: usize) -> f64 {

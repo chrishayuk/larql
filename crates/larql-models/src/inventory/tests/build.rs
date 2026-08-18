@@ -170,3 +170,50 @@ fn routed_inventory_records_representation_and_binds_spelled_banks() {
     assert_eq!(inv.resolved.layers[1].expert_bank, None);
     assert!(inv.resolved.execution.unwrap().moe.is_some());
 }
+
+/// A multimodal checkpoint's root interface facts and its declared-absent
+/// text features are read by the inventory's recorded readers, stored,
+/// and credited as consumed — nothing at the root is "read by nothing".
+#[test]
+fn interface_and_text_feature_readers_store_and_credit_what_they_read() {
+    let dir = tempfile::tempdir().unwrap();
+    write_fixture(dir.path());
+    // Extend the Glimmer-shaped fixture's config with the Gemma-4-style
+    // root interface and text knobs.
+    let path = dir.path().join("config.json");
+    let mut config: serde_json::Value =
+        serde_json::from_str(&std::fs::read_to_string(&path).unwrap()).unwrap();
+    config["audio_config"] = serde_json::Value::Null;
+    config["boi_token_id"] = serde_json::json!(255999);
+    config["vision_soft_tokens_per_image"] = serde_json::json!(280);
+    config["text_config"]["use_bidirectional_attention"] = serde_json::json!("vision");
+    config["text_config"]["use_double_wide_mlp"] = serde_json::json!(false);
+    config["text_config"]["vocab_size_per_layer_input"] = serde_json::json!(128);
+    std::fs::write(&path, serde_json::to_string_pretty(&config).unwrap()).unwrap();
+
+    let inv = build_inventory(dir.path()).unwrap();
+    let interface = inv.multimodal_interface.expect("interface read");
+    assert_eq!(
+        interface.absent_components,
+        vec!["audio_config".to_string()]
+    );
+    assert_eq!(interface.soft_tokens_per_image, Some(280));
+    assert_eq!(interface.bidirectional_attention.as_deref(), Some("vision"));
+    assert!(interface
+        .token_roles
+        .contains(&("boi_token_id".to_string(), 255999)));
+    let features = inv.text_features.expect("text features read");
+    assert_eq!(features.double_wide_mlp, Some(false));
+    assert_eq!(features.per_layer_input_vocab, Some(128));
+    for path in [
+        "audio_config",
+        "boi_token_id",
+        "vision_soft_tokens_per_image",
+        "text_config.use_bidirectional_attention",
+        "text_config.use_double_wide_mlp",
+        "text_config.vocab_size_per_layer_input",
+    ] {
+        let fact = inv.config_keys.iter().find(|f| f.path == path).unwrap();
+        assert_eq!(fact.status, KeyStatus::Consumed, "{path}");
+    }
+}

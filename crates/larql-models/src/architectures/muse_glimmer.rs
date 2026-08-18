@@ -63,7 +63,11 @@ impl ModelArchitecture for MuseGlimmerArch {
     }
 
     fn parameter_free_qk_norm(&self) -> ParameterFreeQkNorm {
-        ParameterFreeQkNorm { q: true, k: true }
+        ParameterFreeQkNorm {
+            q: true,
+            k: true,
+            v: false,
+        }
     }
 
     /// Layer norms are *centred*: `RMSNorm(x) * (1.0 + weight)`.

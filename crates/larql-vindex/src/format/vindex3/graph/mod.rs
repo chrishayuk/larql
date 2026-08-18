@@ -50,7 +50,7 @@ pub use complete::{execution_completeness, CompletenessDefect};
 pub use component::{Component, ComponentRole};
 pub use edge::HiddenStateEdge;
 pub use object::{most_specific_owner, LogicalObject, ObjectKind, Representation, SourceBinding};
-pub use policy::AttentionLayerPolicy;
+pub use policy::{AttentionLayerPolicy, HeadGeometry};
 pub use roles::{NormPlacement, OperandRole};
 pub use surface::ExecutionSurface;
 

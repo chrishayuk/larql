@@ -38,8 +38,32 @@ pub enum PositionPolicy {
         theta: f64,
         scaling: YarnRopeScaling,
     },
+    /// Rotary on the first `rotary_fraction` of each head only, the rest of
+    /// the head unrotated. `basis` says which width the inverse frequencies
+    /// are taken over: the rotary width (the plain partial rotary of
+    /// Phi/GPT-NeoX — HF `default` + `partial_rotary_factor`) or the full
+    /// head width (HF `proportional`, Gemma 4's full-attention layers over
+    /// `global_head_dim`). The two rotate the same dims at DIFFERENT angles
+    /// — `base^(2i/128)` vs `base^(2i/512)` on Gemma 4 — so the basis is
+    /// part of the policy, not a detail a consumer may pick.
+    PartialRope {
+        theta: f64,
+        rotary_fraction: f64,
+        basis: RotaryFrequencyBasis,
+    },
     /// No positional encoding — the layer attends position-agnostically.
     None,
+}
+
+/// The width the inverse-frequency series of a partial rotary is taken
+/// over. See [`PositionPolicy::PartialRope`].
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum RotaryFrequencyBasis {
+    /// `base^(2i / rotary_width)` — the plain partial rotary.
+    RotaryWidth,
+    /// `base^(2i / head_dim)` — HF `proportional`.
+    HeadWidth,
 }
 
 impl PositionPolicy {
@@ -68,8 +92,42 @@ impl PositionPolicy {
     /// no default.
     pub fn rope_theta(self) -> Option<f64> {
         match self {
-            Self::Rope { theta } | Self::Yarn { theta, .. } => Some(theta),
+            Self::Rope { theta } | Self::Yarn { theta, .. } | Self::PartialRope { theta, .. } => {
+                Some(theta)
+            }
             Self::None => None,
+        }
+    }
+
+    /// The rotated fraction of each head when the policy is a partial
+    /// rotary; `None` for a full rotary, YaRN and NoPE — "no partial rotary
+    /// declared", which is not the same claim as a fraction of 1.0.
+    pub fn rotary_fraction(self) -> Option<f64> {
+        match self {
+            Self::PartialRope {
+                rotary_fraction, ..
+            } => Some(rotary_fraction),
+            Self::Rope { .. } | Self::Yarn { .. } | Self::None => None,
+        }
+    }
+
+    /// The HF `rope_type` spelling this policy answers to when it is not
+    /// the default class: `yarn`, or `proportional` for a head-width-basis
+    /// partial rotary. `None` for the default class (plain rotary, plain
+    /// partial rotary) and for NoPE.
+    pub fn declared_rope_type(self) -> Option<&'static str> {
+        match self {
+            Self::Yarn { .. } => Some(super::rope_types::ROPE_TYPE_YARN),
+            Self::PartialRope {
+                basis: RotaryFrequencyBasis::HeadWidth,
+                ..
+            } => Some(super::rope_types::ROPE_TYPE_PROPORTIONAL),
+            Self::PartialRope {
+                basis: RotaryFrequencyBasis::RotaryWidth,
+                ..
+            }
+            | Self::Rope { .. }
+            | Self::None => None,
         }
     }
 
@@ -78,7 +136,7 @@ impl PositionPolicy {
     pub fn yarn(self) -> Option<YarnRopeScaling> {
         match self {
             Self::Yarn { scaling, .. } => Some(scaling),
-            Self::Rope { .. } | Self::None => None,
+            Self::Rope { .. } | Self::PartialRope { .. } | Self::None => None,
         }
     }
 
@@ -186,6 +244,58 @@ mod tests {
         assert_eq!(yarn.yarn(), Some(scaling));
         assert_eq!(PositionPolicy::Rope { theta: 1e4 }.yarn(), None);
         assert_eq!(PositionPolicy::None.yarn(), None);
+    }
+
+    fn gemma4_partial() -> PositionPolicy {
+        PositionPolicy::PartialRope {
+            theta: 1_000_000.0,
+            rotary_fraction: 0.25,
+            basis: RotaryFrequencyBasis::HeadWidth,
+        }
+    }
+
+    /// A partial rotary offers its theta and its fraction, answers to
+    /// HF's `proportional` spelling only on the head-width basis, and
+    /// carries no YaRN block; the plain-partial basis is the default class.
+    #[test]
+    fn a_partial_rotary_answers_for_its_fraction_and_class() {
+        let proportional = gemma4_partial();
+        assert_eq!(proportional.rope_theta(), Some(1_000_000.0));
+        assert_eq!(proportional.rotary_fraction(), Some(0.25));
+        assert_eq!(proportional.declared_rope_type(), Some("proportional"));
+        assert_eq!(proportional.yarn(), None);
+        assert!(proportional.is_rotary());
+        let plain_partial = PositionPolicy::PartialRope {
+            theta: 10_000.0,
+            rotary_fraction: 0.5,
+            basis: RotaryFrequencyBasis::RotaryWidth,
+        };
+        assert_eq!(plain_partial.declared_rope_type(), None);
+        assert_eq!(plain_partial.rotary_fraction(), Some(0.5));
+        // Full rotary, YaRN and NoPE declare no fraction; YaRN answers `yarn`.
+        assert_eq!(PositionPolicy::Rope { theta: 1e4 }.rotary_fraction(), None);
+        assert_eq!(PositionPolicy::None.rotary_fraction(), None);
+        assert_eq!(
+            PositionPolicy::Rope { theta: 1e4 }.declared_rope_type(),
+            None
+        );
+        assert_eq!(PositionPolicy::None.declared_rope_type(), None);
+        let yarn = PositionPolicy::Yarn {
+            theta: 150000.0,
+            scaling: gpt_oss_yarn(),
+        };
+        assert_eq!(yarn.declared_rope_type(), Some("yarn"));
+        assert_eq!(yarn.rotary_fraction(), None);
+    }
+
+    /// The partial rotary round-trips with its basis tagged.
+    #[test]
+    fn a_partial_rotary_round_trips_with_its_basis() {
+        let json = serde_json::to_string(&gemma4_partial()).unwrap();
+        assert!(json.contains("\"kind\":\"partial_rope\""), "{json}");
+        assert!(json.contains("\"basis\":\"head_width\""), "{json}");
+        let back: PositionPolicy = serde_json::from_str(&json).unwrap();
+        assert_eq!(back, gemma4_partial());
     }
 
     #[test]

@@ -151,6 +151,10 @@ pub(super) fn rope_table_key(position: &PositionPolicy) -> Option<u64> {
             Some(h.finish() | 1)
         }
         PositionPolicy::None => None,
+        // Refused in `LoweredSession::new`; never reaches the table.
+        PositionPolicy::PartialRope { .. } => {
+            unreachable!("PartialRope is refused before the session is built")
+        }
     }
 }
 
@@ -170,6 +174,9 @@ pub(super) fn rope_inv_freq_table(position: &PositionPolicy, head_dim: usize) ->
             inv_freq.iter().map(|f| *f as f32).collect()
         }
         PositionPolicy::None => Vec::new(),
+        PositionPolicy::PartialRope { .. } => {
+            unreachable!("PartialRope is refused before the session is built")
+        }
     }
 }
 

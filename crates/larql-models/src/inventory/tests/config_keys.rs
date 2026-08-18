@@ -220,3 +220,34 @@ fn a_non_object_root_is_one_unconsumed_fact() {
     assert_eq!(facts[0].status, KeyStatus::Unconsumed);
     assert_eq!(facts[0].value, json!("not an object"));
 }
+
+/// A label-map container (`id2label`, `label2id`) is metadata to its
+/// leaves, however they are named — a numbered leaf cannot be named in
+/// the leaf registry, and nothing under a label map moves a forward pass.
+/// A nested map inside one is flattened the same way.
+#[test]
+fn label_map_containers_are_metadata_to_every_leaf() {
+    let config = json!({
+        "vision_config": {
+            "id2label": { "0": "LABEL_0", "1": "LABEL_1", "nested": { "2": "LABEL_2" } },
+            "label2id": { "LABEL_0": 0 },
+            "problem_type": null,
+            "chunk_size_feed_forward": 0
+        }
+    });
+    let facts = classify_config(&config, &Default::default());
+    for path in [
+        "vision_config.id2label.0",
+        "vision_config.id2label.1",
+        "vision_config.id2label.nested.2",
+        "vision_config.label2id.LABEL_0",
+        "vision_config.problem_type",
+        "vision_config.chunk_size_feed_forward",
+    ] {
+        let fact = facts
+            .iter()
+            .find(|f| f.path == path)
+            .unwrap_or_else(|| panic!("{path}"));
+        assert_eq!(fact.status, KeyStatus::Metadata, "{path}");
+    }
+}

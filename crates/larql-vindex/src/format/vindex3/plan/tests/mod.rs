@@ -2,6 +2,7 @@
 
 mod carriage;
 mod compare;
+mod gemma4;
 mod semantics;
 mod system;
 

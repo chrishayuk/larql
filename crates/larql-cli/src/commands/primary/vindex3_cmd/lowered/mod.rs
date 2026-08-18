@@ -151,6 +151,33 @@ impl<'a> LoweredSession<'a> {
                 l.ffn.dense().map(|f| f.gate_policy)
             )));
         }
+        // K≡V layers and the parameter-free V norm (Gemma 4): carried by
+        // the plan, not lowered until G4.3.
+        if let Some(l) = plan
+            .layers
+            .iter()
+            .find(|l| l.attention.v_from_k || l.attention.parameter_free_qk_norm.v)
+        {
+            return Err(VindexError::Parse(format!(
+                "layer {} carries v_from_k={} / parameter-free v_norm={}, which the Metal \
+                 lowering does not execute yet (G4.3); refusing",
+                l.layer, l.attention.v_from_k, l.attention.parameter_free_qk_norm.v
+            )));
+        }
+        // A partial rotary (Gemma 4's proportional rope on its global
+        // layers): carried by the plan, not lowered until G4.3 — the rope
+        // kernel rotates the whole head at plain frequencies.
+        if let Some(l) = plan
+            .layers
+            .iter()
+            .find(|l| matches!(l.attention.position, PositionPolicy::PartialRope { .. }))
+        {
+            return Err(VindexError::Parse(format!(
+                "layer {} carries {:?}, which the Metal lowering does not execute yet (G4.3); \
+                 refusing rather than rotating the whole head",
+                l.layer, l.attention.position
+            )));
+        }
         let embedding = plan
             .embedding
             .as_ref()
@@ -562,6 +589,10 @@ impl<'a> LoweredSession<'a> {
                         LoweredPosition::Scaled { theta, amplitude }
                     }
                     PositionPolicy::None => LoweredPosition::None,
+                    // Refused in `new`; a plan carrying it never gets here.
+                    PositionPolicy::PartialRope { .. } => {
+                        unreachable!("PartialRope is refused before the session is built")
+                    }
                 },
                 // A window applies only to a sliding span; a full layer
                 // attends the whole prefix whatever the plan records.

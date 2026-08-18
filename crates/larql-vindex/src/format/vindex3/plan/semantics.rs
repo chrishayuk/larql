@@ -51,6 +51,23 @@ pub const EXECUTION_SEMANTIC_KEYS: &[&str] = &[
     // ±this value before the GLU. It changes what the FFN computes, so
     // it is execution-semantic wherever it is declared.
     "swiglu_limit",
+    // Gemma 4 (V3-F0 witness 3). Each changes what a layer computes:
+    // V taken from the K projection on the layers a family says so;
+    // whether a routed expert block runs beside the dense MLP and how
+    // many experts each token routes to; the head geometry the full
+    // layers use instead of the component's (`global_head_dim`,
+    // `num_global_key_value_heads`); the per-layer-input (PLE) width and
+    // the double-wide MLP on shared-KV layers, both of which the graph
+    // represents only as ABSENT (`0` / `false`), so any other declaration
+    // blocks; and the tower's clipped-linears flag, likewise `false` only.
+    "attention_k_eq_v",
+    "enable_moe_block",
+    "top_k_experts",
+    "global_head_dim",
+    "num_global_key_value_heads",
+    "hidden_size_per_layer_input",
+    "use_double_wide_mlp",
+    "use_clipped_linears",
 ];
 
 /// Keys that describe stored operands: widths, depths, head geometry,
@@ -80,6 +97,26 @@ pub const TENSOR_SEMANTIC_KEYS: &[&str] = &[
     // way every other tensor semantic is proven by placement.
     "quant_method",
     "modules_to_not_convert",
+    // Routed-expert bank geometry: proven carried by the placed
+    // `expert_bank` object and the operand closure over its shapes
+    // (`[E, 2I, H]` / `[E, H, I]`), the same way every other tensor
+    // semantic is proven by placement.
+    "num_experts",
+    "num_local_experts",
+    "n_routed_experts",
+    "moe_intermediate_size",
+    // Gemma 4's per-layer-input vocabulary: the width of a table that is
+    // absent when `hidden_size_per_layer_input` is 0 (that leaf's rule
+    // holds the gate); a non-zero PLE width would place the table.
+    "vocab_size_per_layer_input",
+    // Perception-tower stored geometry: the output projector's pooling
+    // kernel, its position-embedding table size, and its declared global
+    // head width (equal to `head_dim` on Gemma 4 vision).
+    "pooling_kernel_size",
+    "position_embedding_size",
+    // Input standardisation: its parameters are the placed `std_scale` /
+    // `std_bias` tensors; the flag says they apply.
+    "standardize",
 ];
 
 /// Keys that declare a cross-component contract: hidden-state taps, block
@@ -90,6 +127,21 @@ pub const INTERFACE_SEMANTIC_KEYS: &[&str] = &[
     "mask_token_id",
     "image_token_id",
     "video_token_id",
+    // The rest of a multimodal join (Gemma 4): the tokens that open,
+    // close or stand in for an audio / image span, how many soft tokens
+    // an image expands to (declared twice — root and tower), the span
+    // kind the text model attends bidirectionally over, and a tower the
+    // checkpoint declares it does NOT have (`audio_config: null`).
+    "audio_token_id",
+    "boi_token_id",
+    "eoi_token_id",
+    "boa_token_id",
+    "eoa_token_id",
+    "eoa_token_index",
+    "vision_soft_tokens_per_image",
+    "default_output_length",
+    "use_bidirectional_attention",
+    "audio_config",
 ];
 
 /// Identity facts inert for a forward pass wherever they appear.

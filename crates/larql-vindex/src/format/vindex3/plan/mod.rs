@@ -244,8 +244,12 @@ fn carriage_finding(
             detail: format!("stops at the parser by judgement — {}", rule.site),
         };
     }
+    let ctx = carriage::ProbeContext {
+        span: carriage::ProbeContext::span_of(&fact.path),
+        declared: &fact.value,
+    };
     let carried = component_for_key(built, &component_name)
-        .and_then(|component| rule.probe.and_then(|probe| probe(component)));
+        .and_then(|component| rule.probe.and_then(|probe| probe(component, &ctx)));
     match carried {
         // The schema holds a value: compare it to the declaration. This
         // is where a dropped fact dies — GPT-OSS declares `yarn` and the

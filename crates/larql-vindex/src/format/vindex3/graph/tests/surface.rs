@@ -135,19 +135,49 @@ fn missing_resolution_is_an_incomplete_surface_not_a_default() {
     ));
 }
 
-/// Per-layer head-geometry variation is a schema gap the surface refuses
-/// to average away.
+/// Per-layer head-geometry variation (Gemma 4's global layers) is
+/// carried on the layer's policy, not averaged into the surface and not
+/// refused: the surface builds with the component's declared geometry
+/// and the varying layer's policy states its own.
 #[test]
-fn non_uniform_head_geometry_refuses_a_surface() {
+fn non_uniform_head_geometry_is_carried_per_layer() {
     let (_a, _b, mut named) = glimmer_pair();
-    named[0].1.resolved.layers[0].head_dim = 16;
+    let varied_head_dim = 16;
+    let varied_kv_heads = 1;
+    let uniform_head_dim = named[0].1.resolved.layers[1].head_dim;
+    let uniform_kv_heads = named[0].1.resolved.layers[1].num_kv_heads;
+    named[0].1.resolved.layers[0].head_dim = varied_head_dim;
+    named[0].1.resolved.layers[0].num_kv_heads = varied_kv_heads;
     let built = build_from_inventories(&named);
-    let incomplete = built
-        .incomplete_surfaces
+    assert!(
+        !built
+            .incomplete_surfaces
+            .iter()
+            .any(|s| s.component == "target"),
+        "per-layer geometry must not refuse the surface: {:?}",
+        built.incomplete_surfaces
+    );
+    let target = built
+        .graph
+        .components
         .iter()
-        .find(|s| s.component == "target")
-        .expect("non-uniform geometry must refuse");
-    assert!(incomplete.missing[0].contains("uniform head geometry"));
+        .find(|c| c.id == "target")
+        .unwrap();
+    let table = target.attention.as_ref().expect("policy table");
+    let g0 = table[0].geometry.expect("layer 0 geometry recorded");
+    let g1 = table[1].geometry.expect("layer 1 geometry recorded");
+    assert_eq!(
+        (g0.head_dim, g0.num_kv_heads),
+        (varied_head_dim, varied_kv_heads)
+    );
+    assert_eq!(
+        (g1.head_dim, g1.num_kv_heads),
+        (uniform_head_dim, uniform_kv_heads)
+    );
+    // The surface still states the component's declared geometry.
+    let surface = target.execution.as_ref().expect("surface built");
+    assert_eq!(surface.attention.head_dim, uniform_head_dim);
+    assert_eq!(surface.attention.num_kv_heads, uniform_kv_heads);
 }
 
 /// Every nested-derivation refusal names its missing fact — a bare
@@ -173,6 +203,7 @@ fn nested_refusals_name_every_missing_fact() {
         rope_type: None,
         max_position_embeddings: None,
         patch: Default::default(),
+        tower: Default::default(),
     };
     let missing = surface_from_nested(&bare, false).unwrap_err();
     for fact in [

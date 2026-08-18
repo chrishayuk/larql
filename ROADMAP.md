@@ -1989,7 +1989,39 @@ Rungs, mirroring A-9 (each closes with its gate; served-side authority for
 every fact is `architectures/gemma4.rs`, which already judges all of it):
 
 ```text
-G4.0  admissibility as REPRESENTATION: AttentionLayerPolicy (graph/policy.rs:74) gains per-layer
+G4.0  DONE 2026-08-19 (branch feat/vindex3-gemma4): `larql vindex3 plan` on the real 26B-A4B is
+      ADMISSIBLE — 111 representable / 0 mismatched / 0 unrepresented / 0 blocking (from 42). What
+      landed, all as vocabulary in existing categories (F1 still holding): AttentionLayerPolicy
+      gains per-layer HeadGeometry{head_dim, num_kv_heads} and v_from_k; the surface no longer
+      requires uniform geometry and the op plan judges each layer's shapes against ITS geometry
+      (kv_rows 24 ≠ 16 in the fixture — a coincident product hid the K/V check once);
+      PositionPolicy::PartialRope{theta, rotary_fraction, basis: RotaryWidth|HeadWidth} with
+      ROPE_TYPE_PROPORTIONAL, judged by the gemma4 arch on its full layers; carriage probes now
+      take a ProbeContext (the attention span the fact's PATH names + the declared value for alias
+      resolution) so per-layer-TYPE facts are judged against their own layers, and the resolution
+      comparator does the same; ParameterFreeQkNorm.v (Gemma 4's scale-less v_norm) and
+      AttentionOp.v_from_k (V = the K operand, closure-paired: no V operand on such a layer, a
+      stray one refused); rules for attention_k_eq_v, enable_moe_block, top_k_experts,
+      global_head_dim, num_global_key_value_heads, num_kv_shared_layers / hidden_size_per_layer_input
+      / use_double_wide_mlp / use_clipped_linears (represented as ABSENT only — 0/false agree,
+      anything else blocks); two new recorded readers (inventory/interfaces.rs for the root
+      multimodal join incl. audio_config:null and use_bidirectional_attention; text_features.rs for
+      the PLE-vocab / double-wide knobs — a stopgap until they become ModelConfig fields, avoided
+      now because the parallel Granite landing touches every ModelConfig constructor); label-map
+      containers (id2label/label2id) and HF return/chunk plumbing classified metadata; a nested
+      tower with no layer_types gets a Full × N table so its rope facts are judged; the tower's
+      attention_bias reaches its surface. Executors (reference/production/device, the Metal
+      lowering) REFUSE PartialRope, v_from_k and the V norm, typed, naming G4.2/G4.3. Pinned by
+      plan/tests/gemma4.rs (9, each re-dropping its fact), opplan/tests/gemma4_closure.rs (K≡V both
+      ways), exec/tests/gemma4_refusals.rs, and the invariant that every execution-semantic leaf
+      has a carriage rule. TWO FINDS the gate forced: (1) the comparator treated
+      rope_parameters.full_attention.rope_theta as the checkpoint-wide base and compared it to
+      every layer — a false mismatch on any per-layer-type checkpoint; (2) HF `proportional`
+      takes inverse frequencies over the FULL head width (base^(2i/512) on the global layers)
+      while the served path's partial rotary takes them over the rotary width (base^(2i/128)) —
+      different angles on the 5 global layers; the served gemma4 forward has NOT been certified
+      against HF at attention level, and G4.2's layer-dump parity gate will arbitrate it.
+      As mapped: admissibility as REPRESENTATION: AttentionLayerPolicy (graph/policy.rs:74) gains per-layer
       {head_dim, num_kv_heads}; surface_from_resolved stops requiring uniformity and AttentionOp reads
       the layer's geometry (KV allocation follows); PositionPolicy::Proportional{theta, rotary_fraction}
       (config/position.rs) + carriage rules for partial_rotary_factor and rope_type=proportional

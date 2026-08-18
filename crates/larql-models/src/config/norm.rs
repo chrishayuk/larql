@@ -107,15 +107,21 @@ impl PostNormEps {
     }
 }
 
-/// Parameter-free QK normalisation: RMS-normalise Q and/or K with no
-/// learned weight tensors. Distinct from weighted QK-norm (whose weights
-/// exist in the stack and carry [`QkNormScope`]) — a judged semantic
-/// fact, evidenced by an implementation that normalises while the
-/// operand estate ships no `q_norm`/`k_norm` weights.
+/// Parameter-free projection normalisation: RMS-normalise Q, K and/or V
+/// per head with no learned weight tensors. Distinct from weighted QK-norm
+/// (whose weights exist in the stack and carry [`QkNormScope`]) — a judged
+/// semantic fact, evidenced by an implementation that normalises while the
+/// operand estate ships no weights for it. `v` is Gemma 4's `v_norm`
+/// (`Gemma4RMSNorm(with_scale=False)` on the value states, every layer,
+/// alongside WEIGHTED q/k norms) — a family can mix the two, so V is its
+/// own flag rather than a "qk" pair. Defaults for inventories written
+/// before V was recorded.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct ParameterFreeQkNorm {
     pub q: bool,
     pub k: bool,
+    #[serde(default)]
+    pub v: bool,
 }
 
 /// The vector over which a QK-norm's RMS statistic is reduced.

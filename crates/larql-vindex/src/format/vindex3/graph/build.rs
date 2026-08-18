@@ -15,7 +15,7 @@ use larql_models::inventory::{ArchitectureInventory, TensorGroup};
 use super::component::{Component, ComponentRole};
 use super::edge::HiddenStateEdge;
 use super::object::{Fidelity, LogicalObject, ObjectKind, Representation, SourceBinding};
-use super::policy::{AttentionLayerPolicy, AttentionSpan};
+use super::policy::{AttentionLayerPolicy, AttentionSpan, HeadGeometry};
 use super::surface::{
     attach_stack_evidence, gate_evidence, head_from_resolved, surface_from_nested,
     surface_from_resolved,
@@ -379,6 +379,11 @@ fn attention_table(inventory: &ArchitectureInventory) -> Vec<AttentionLayerPolic
             },
             window: layer.window,
             position: layer.position,
+            geometry: Some(HeadGeometry {
+                head_dim: layer.head_dim,
+                num_kv_heads: layer.num_kv_heads,
+            }),
+            v_from_k: layer.v_from_k,
         })
         .collect()
 }
@@ -393,14 +398,27 @@ fn attention_table(inventory: &ArchitectureInventory) -> Vec<AttentionLayerPolic
 /// parsed into [`ComponentTopology`] and then dropped before the graph,
 /// with nothing reporting the loss.
 ///
-/// `None` when the component declares no `layer_types` (there is no
-/// interleave to record) or when it names a span the vocabulary does not
-/// contain — refusing rather than resolving an unknown spelling to a
-/// default, which is the failure this vocabulary exists to prevent.
+/// A component that declares a layer count but no `layer_types` attends
+/// fully on every layer — that is what the absence of an interleave means
+/// in the HF configs that omit it (Gemma 4's vision tower: 27 layers, one
+/// rope base, no `layer_types`), and recording it lets the tower's rope
+/// facts be judged against a table instead of vanishing. `None` when the
+/// component declares neither a count nor an interleave, or when it names
+/// a span the vocabulary does not contain — refusing rather than
+/// resolving an unknown spelling to a default, which is the failure this
+/// vocabulary exists to prevent.
 fn nested_attention_table(
     topology: &larql_models::inventory::components::ComponentTopology,
 ) -> Option<Vec<AttentionLayerPolicy>> {
-    let layer_types = topology.layer_types.as_ref()?;
+    let uniform_full;
+    let layer_types: &Vec<String> = match (&topology.layer_types, topology.num_layers) {
+        (Some(declared), _) => declared,
+        (None, Some(n)) => {
+            uniform_full = vec![AttentionSpan::Full.declared_name().to_string(); n];
+            &uniform_full
+        }
+        (None, None) => return None,
+    };
     // A rope base the component declares for itself; absent means the
     // component states no position policy, which is a fact, not a zero.
     let position = match topology.rope_theta {
@@ -416,6 +434,10 @@ fn nested_attention_table(
                 // a spatial window's extent is not a position count.
                 window: None,
                 position,
+                // A nested topology states one head geometry for the
+                // whole tower; the surface carries it.
+                geometry: None,
+                v_from_k: false,
             })
         })
         .collect()

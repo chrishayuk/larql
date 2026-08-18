@@ -79,4 +79,30 @@ pub struct AttentionLayerPolicy {
     pub window: Option<usize>,
     /// How the layer encodes position — including intentional absence.
     pub position: PositionPolicy,
+    /// This layer's head geometry when the family varies it by layer
+    /// (Gemma 4: `head_dim` 256 / 8 KV heads on sliding layers,
+    /// `global_head_dim` 512 / 2 KV heads on full layers). `None` = the
+    /// container predates per-layer geometry and every layer has the
+    /// component surface's geometry — an absence with one meaning, not
+    /// a default: the graph builder always records `Some` today, so a
+    /// `None` on a fresh encode is a bug, not a fallback.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub geometry: Option<HeadGeometry>,
+    /// The value projection IS the key projection on this layer (Gemma 4
+    /// `attention_k_eq_v`, full layers only): no V operand exists and V is
+    /// the raw K projection, before the key's norm and rotation. Closure
+    /// pairs it both ways — a V operand on such a layer is a stray, a
+    /// missing V on any other layer is missing. Defaults for containers
+    /// written before it was recorded.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub v_from_k: bool,
+}
+
+/// One layer's attention head geometry. Query-head count is a component
+/// fact (no judged family varies it by layer); the KV side and the head
+/// width are what Gemma 4 varies, so those are the per-layer facts.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub struct HeadGeometry {
+    pub head_dim: usize,
+    pub num_kv_heads: usize,
 }

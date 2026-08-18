@@ -73,6 +73,17 @@ pub(super) fn unsupported_activation(shape: &str, activation: Activation) -> Vin
     ))
 }
 
+/// Refuse a position policy no backend here executes yet. A
+/// `PartialRope` plan (Gemma 4's proportional rotary on its global layers)
+/// is carried by the container and refused until G4.2 executes it —
+/// rotating the whole head at the plain frequencies would run a different
+/// model without saying so.
+pub(super) fn unsupported_position(policy: PositionPolicy) -> VindexError {
+    VindexError::Parse(format!(
+        "no executor for position policy {policy:?} — carried by the container, refused          until the interpreter executes it (V3-F0 witness 3, G4.2)"
+    ))
+}
+
 /// The gate policy every backend here honours today. A `ClampedGlu` plan
 /// (GPT-OSS's `swiglu_limit`) is carried by the container and refused
 /// until A-9.3 executes it — computing `activation(gate) * up` for it
@@ -202,6 +213,7 @@ pub(super) fn condition_qk_in_place(
             }
         }
         PositionPolicy::None => {}
+        policy @ PositionPolicy::PartialRope { .. } => return Err(unsupported_position(policy)),
     }
     Ok(())
 }

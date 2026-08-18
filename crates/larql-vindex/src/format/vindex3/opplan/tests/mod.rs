@@ -3,6 +3,7 @@
 
 mod closure;
 mod coverage_opplan;
+mod gemma4_closure;
 mod plan;
 mod unjudged;
 

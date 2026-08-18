@@ -21,3 +21,12 @@ pub const ROPE_TYPE_LLAMA3: &str = "llama3";
 /// Ramped interpolation/extrapolation frequency blend **plus** an amplitude on
 /// `cos`/`sin`. GPT-OSS and DeepSeek.
 pub const ROPE_TYPE_YARN: &str = "yarn";
+
+/// Partial rotary whose inverse frequencies are taken over the FULL head
+/// width (`base^(2i/head_dim)`, first `partial_rotary_factor · head_dim`
+/// dims rotated, the rest at zero frequency) — HF
+/// `_compute_proportional_rope_parameters`. Gemma 4 declares it on its
+/// full-attention layers, over `global_head_dim`. Distinct from the plain
+/// partial rotary (`default` + `partial_rotary_factor`), whose frequencies
+/// are taken over the rotary width: same rotated dims, different angles.
+pub const ROPE_TYPE_PROPORTIONAL: &str = "proportional";

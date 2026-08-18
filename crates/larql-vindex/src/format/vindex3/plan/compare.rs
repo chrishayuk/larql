@@ -17,6 +17,7 @@ use super::semantics::component_of;
 
 /// Sliding layer label used in the inventory's per-layer table.
 const ATTENTION_SLIDING: &str = "sliding";
+const ATTENTION_FULL: &str = "full";
 
 /// Extractor of the resolved counterpart for one declared scalar.
 type ResolvedScalar = fn(&ArchitectureInventory) -> Option<u64>;
@@ -59,23 +60,57 @@ fn declared(facts: &[ConfigKeyFact], leaf: &str) -> Option<(String, Value)> {
         .map(|f| (f.path.clone(), f.value.clone()))
 }
 
-/// Declared RoPE base, in the parser's own specificity order. Returns the
-/// path that supplied it so a mismatch names its source.
-fn declared_rope_theta(facts: &[ConfigKeyFact]) -> Option<(String, f64)> {
-    const CANDIDATES: &[&str] = &[
-        "text_config.rope_parameters.full_attention.rope_theta",
-        "rope_parameters.full_attention.rope_theta",
+/// The declared RoPE bases, each with the layers it speaks for: the
+/// checkpoint-wide base (flat `rope_theta`, transformers-5's flat
+/// `rope_parameters.rope_theta`) speaks for every layer; the per-layer-type
+/// bases (`rope_parameters.full_attention.rope_theta` /
+/// `…sliding_attention.rope_theta` — Gemma 3/4) each speak for their span
+/// only. Returns `(path, theta, span-or-None)` per declaration so a
+/// mismatch names its source and is judged against the right layers —
+/// Gemma 4 declares 1e6 on full layers and 1e4 on sliding ones, and
+/// comparing either against the whole table is a false mismatch.
+fn declared_rope_thetas(facts: &[ConfigKeyFact]) -> Vec<(String, f64, Option<&'static str>)> {
+    const PER_SPAN: &[(&str, &str)] = &[
+        (
+            "text_config.rope_parameters.full_attention.rope_theta",
+            ATTENTION_FULL,
+        ),
+        ("rope_parameters.full_attention.rope_theta", ATTENTION_FULL),
+        (
+            "text_config.rope_parameters.sliding_attention.rope_theta",
+            ATTENTION_SLIDING,
+        ),
+        (
+            "rope_parameters.sliding_attention.rope_theta",
+            ATTENTION_SLIDING,
+        ),
+    ];
+    const WHOLE_TABLE: &[&str] = &[
         "text_config.rope_parameters.rope_theta",
         "rope_parameters.rope_theta",
         "text_config.rope_theta",
         "rope_theta",
     ];
-    CANDIDATES.iter().find_map(|path| {
-        facts
-            .iter()
-            .find(|f| f.path == *path)
-            .and_then(|f| f.value.as_f64().map(|v| (f.path.clone(), v)))
-    })
+    let mut out: Vec<(String, f64, Option<&'static str>)> = PER_SPAN
+        .iter()
+        .filter_map(|(path, span)| {
+            facts
+                .iter()
+                .find(|f| f.path == *path)
+                .and_then(|f| f.value.as_f64().map(|v| (f.path.clone(), v, Some(*span))))
+        })
+        .collect();
+    // A whole-table base only speaks when no per-span base was declared —
+    // the per-span form is the more specific spelling of the same fact.
+    if out.is_empty() {
+        out.extend(WHOLE_TABLE.iter().find_map(|path| {
+            facts
+                .iter()
+                .find(|f| f.path == *path)
+                .and_then(|f| f.value.as_f64().map(|v| (f.path.clone(), v, None)))
+        }));
+    }
+    out
 }
 
 /// Run every comparator over one inventory.
@@ -101,7 +136,7 @@ pub fn compare(inventory: &ArchitectureInventory) -> Vec<Finding> {
         ));
     }
 
-    findings.extend(rope_theta_finding(inventory));
+    findings.extend(rope_theta_findings(inventory));
     findings.extend(layer_rope_theta_findings(inventory));
     findings.extend(layer_types_finding(inventory));
     findings
@@ -134,12 +169,11 @@ fn value_finding(
     }
 }
 
-/// Uniform declared θ vs the resolved policy of every layer.
-fn rope_theta_finding(inventory: &ArchitectureInventory) -> Option<Finding> {
-    let (path, declared_theta) = declared_rope_theta(&inventory.config_keys)?;
+/// Each declared θ vs the resolved policy of the layers it speaks for.
+fn rope_theta_findings(inventory: &ArchitectureInventory) -> Vec<Finding> {
     let layers = &inventory.resolved.layers;
     if layers.is_empty() {
-        return None;
+        return Vec::new();
     }
     // A per-layer declaration overrides the uniform one; that comparator
     // owns the answer then.
@@ -148,19 +182,29 @@ fn rope_theta_finding(inventory: &ArchitectureInventory) -> Option<Finding> {
         .iter()
         .any(|f| f.path.ends_with("layer_rope_theta"))
     {
-        return None;
+        return Vec::new();
     }
-    let disagreeing = layers
-        .iter()
-        .filter(|l| l.position.rope_theta() != Some(declared_theta))
-        .count();
-    Some(value_finding(
-        &path,
-        disagreeing == 0,
-        SemanticClass::ExecutionSemantic,
-        declared_theta.into(),
-        serde_json::to_value(layers[0].position).ok(),
-    ))
+    declared_rope_thetas(&inventory.config_keys)
+        .into_iter()
+        .filter_map(|(path, declared_theta, span)| {
+            let in_scope: Vec<_> = layers
+                .iter()
+                .filter(|l| span.is_none_or(|s| l.attention == s))
+                .collect();
+            let first = in_scope.first()?;
+            let disagreeing = in_scope
+                .iter()
+                .filter(|l| l.position.rope_theta() != Some(declared_theta))
+                .count();
+            Some(value_finding(
+                &path,
+                disagreeing == 0,
+                SemanticClass::ExecutionSemantic,
+                declared_theta.into(),
+                serde_json::to_value(first.position).ok(),
+            ))
+        })
+        .collect()
 }
 
 /// Per-layer declared θ array vs the resolved per-layer position policy.

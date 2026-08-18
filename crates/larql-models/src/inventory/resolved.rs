@@ -104,6 +104,7 @@ pub fn resolve(config: &Value, identity: &Identity) -> (Detection, ResolvedTopol
                 position: arch.position_policy_for_layer(layer),
                 head_dim: arch.head_dim_for_layer(layer),
                 num_kv_heads: arch.num_kv_heads_for_layer(layer),
+                v_from_k: arch.v_shares_k(layer),
                 expert_bank: expert_bank_prefix(arch.as_ref(), layer),
             }
         })
@@ -126,7 +127,11 @@ pub fn resolve(config: &Value, identity: &Identity) -> (Detection, ResolvedTopol
         attn_logit_softcapping: arch.attn_logit_softcapping(),
         qk_norm_scope: arch.qk_norm_scope(),
         qk_norm_weight_offset: arch.qk_norm_weight_offset(),
-        parameter_free_qk_norm: arch.parameter_free_qk_norm(),
+        parameter_free_qk_norm: {
+            let mut norms = arch.parameter_free_qk_norm();
+            norms.v = arch.has_v_norm();
+            norms
+        },
         attention_output_gate: arch.attention_output_gate(),
         attention_sinks: arch.attention_sinks(),
         attention_bias: arch.attention_bias(),

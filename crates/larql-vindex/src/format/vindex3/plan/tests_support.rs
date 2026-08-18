@@ -243,6 +243,223 @@ pub fn glimmer_shaped_target_with(
     inventory_from(dir, &config, &serde_json::Value::Object(header))
 }
 
+/// Gemma 4 26B-A4B in miniature — the V3-F0 witness-3 family, one
+/// declared fact per hostile semantic: per-layer head geometry
+/// (`head_dim` 8 / 2 KV heads on sliding layers, `global_head_dim` 24 /
+/// 1 KV head on the full layer — 24 not 16, so kv_rows 24 ≠ 16 and no
+/// product collides), per-layer-type rope (`proportional` + partial
+/// rotary on full, plain on sliding), K≡V on the full layer (no `v_proj`
+/// there), a hybrid dense+routed FFN with router scales, five FFN norms
+/// and `layer_scalar`, tied softcapped head, the PLE/double-wide/KV-shared
+/// knobs declared OFF, the multimodal interface at the root, and a vision
+/// tower without `layer_types`. Tensor names and shapes follow the real
+/// checkpoint's `model.language_model.…` spelling.
+pub const GEMMA4_FIXTURE_LAYERS: usize = 4;
+pub const GEMMA4_FULL_LAYER: usize = 3;
+pub const GEMMA4_HIDDEN: usize = 64;
+pub const GEMMA4_Q_HEADS: usize = 8;
+pub const GEMMA4_HEAD_DIM: usize = 8;
+pub const GEMMA4_KV_HEADS: usize = 2;
+pub const GEMMA4_GLOBAL_HEAD_DIM: usize = 24;
+pub const GEMMA4_GLOBAL_KV_HEADS: usize = 1;
+pub const GEMMA4_INTER: usize = 128;
+pub const GEMMA4_EXPERTS: usize = 4;
+pub const GEMMA4_TOP_K: usize = 2;
+pub const GEMMA4_MOE_INTER: usize = 32;
+pub const GEMMA4_VOCAB: usize = 128;
+pub const GEMMA4_FULL_THETA: f64 = 1_000_000.0;
+pub const GEMMA4_SLIDING_THETA: f64 = 10_000.0;
+pub const GEMMA4_PARTIAL_ROTARY: f64 = 0.25;
+
+pub fn gemma4_shaped_target(dir: &Path) -> ArchitectureInventory {
+    gemma4_shaped_target_with(dir, |_| {}, |_| {})
+}
+
+/// The same fixture with `mutate_config` applied to its config and
+/// `mutate_tensors` to its `(name, shape)` list before writing.
+pub fn gemma4_shaped_target_with(
+    dir: &Path,
+    mutate_config: impl FnOnce(&mut serde_json::Value),
+    mutate_tensors: impl FnOnce(&mut Vec<(String, Vec<usize>)>),
+) -> ArchitectureInventory {
+    let layer_types: Vec<&str> = (0..GEMMA4_FIXTURE_LAYERS)
+        .map(|i| {
+            if i == GEMMA4_FULL_LAYER {
+                "full_attention"
+            } else {
+                "sliding_attention"
+            }
+        })
+        .collect();
+    // Built in three pieces: one `json!` of this depth trips the macro's
+    // recursion limit.
+    let text_config = serde_json::json!({
+        "model_type": "gemma4_text",
+        "hidden_size": GEMMA4_HIDDEN,
+            "num_hidden_layers": GEMMA4_FIXTURE_LAYERS,
+            "intermediate_size": GEMMA4_INTER,
+            "num_attention_heads": GEMMA4_Q_HEADS,
+            "num_key_value_heads": GEMMA4_KV_HEADS,
+            "head_dim": GEMMA4_HEAD_DIM,
+            "global_head_dim": GEMMA4_GLOBAL_HEAD_DIM,
+            "num_global_key_value_heads": GEMMA4_GLOBAL_KV_HEADS,
+            "attention_k_eq_v": true,
+            "attention_bias": false,
+            "enable_moe_block": true,
+            "num_experts": GEMMA4_EXPERTS,
+            "top_k_experts": GEMMA4_TOP_K,
+            "moe_intermediate_size": GEMMA4_MOE_INTER,
+            "hidden_activation": "gelu_pytorch_tanh",
+            "final_logit_softcapping": 30.0,
+            "hidden_size_per_layer_input": 0,
+            "vocab_size_per_layer_input": GEMMA4_VOCAB,
+            "use_double_wide_mlp": false,
+            "num_kv_shared_layers": 0,
+            "use_bidirectional_attention": "vision",
+            "vocab_size": GEMMA4_VOCAB,
+            "sliding_window": 16,
+            "rms_norm_eps": 1e-6,
+            "rope_parameters": {
+                "full_attention": {
+                    "partial_rotary_factor": GEMMA4_PARTIAL_ROTARY,
+                    "rope_theta": GEMMA4_FULL_THETA,
+                    "rope_type": "proportional"
+                },
+                "sliding_attention": { "rope_theta": GEMMA4_SLIDING_THETA, "rope_type": "default" }
+            },
+        "layer_types": layer_types,
+        "tie_word_embeddings": true
+    });
+    let vision_config = serde_json::json!({
+        "model_type": "gemma4_vision",
+            "hidden_size": 32,
+            "num_hidden_layers": 2,
+            "num_attention_heads": 4,
+            "num_key_value_heads": 4,
+            "head_dim": 8,
+            "global_head_dim": 8,
+            "intermediate_size": 64,
+            "hidden_activation": "gelu_pytorch_tanh",
+            "rms_norm_eps": 1e-6,
+            "rope_parameters": { "rope_theta": 100.0, "rope_type": "default" },
+            "attention_bias": false,
+            "patch_size": 16,
+            "pooling_kernel_size": 3,
+            "position_embedding_size": 64,
+            "default_output_length": 4,
+            "standardize": true,
+            "use_clipped_linears": false,
+            "id2label": { "0": "LABEL_0" },
+            "label2id": { "LABEL_0": 0 },
+            "problem_type": null,
+            "return_dict": true,
+            "output_attentions": false,
+            "output_hidden_states": false,
+        "is_encoder_decoder": false,
+        "chunk_size_feed_forward": 0
+    });
+    let mut config = serde_json::json!({
+        "architectures": ["Gemma4ForConditionalGeneration"],
+        "dtype": "bfloat16",
+        "model_type": "gemma4",
+        "audio_config": null,
+        "audio_token_id": 258881,
+        "boa_token_id": 256000,
+        "boi_token_id": 255999,
+        "eoa_token_id": 258883,
+        "eoa_token_index": 258883,
+        "eoi_token_id": 258882,
+        "image_token_id": 258880,
+        "video_token_id": 258884,
+        "vision_soft_tokens_per_image": 4,
+        "tie_word_embeddings": true,
+        "text_config": text_config,
+        "vision_config": vision_config
+    });
+    mutate_config(&mut config);
+
+    let h = GEMMA4_HIDDEN;
+    let mut tensors: Vec<(String, Vec<usize>)> = vec![
+        (
+            "model.language_model.embed_tokens.weight".into(),
+            vec![GEMMA4_VOCAB, h],
+        ),
+        ("model.language_model.norm.weight".into(), vec![h]),
+        (
+            "model.embed_vision.embedding_projection.weight".into(),
+            vec![h, 32],
+        ),
+        (
+            "model.vision_tower.encoder.layers.0.self_attn.q_proj.linear.weight".into(),
+            vec![32, 32],
+        ),
+    ];
+    for layer in 0..GEMMA4_FIXTURE_LAYERS {
+        let stack = format!("model.language_model.layers.{layer}");
+        let full = layer == GEMMA4_FULL_LAYER;
+        let (head_dim, kv_heads) = if full {
+            (GEMMA4_GLOBAL_HEAD_DIM, GEMMA4_GLOBAL_KV_HEADS)
+        } else {
+            (GEMMA4_HEAD_DIM, GEMMA4_KV_HEADS)
+        };
+        let q_rows = GEMMA4_Q_HEADS * head_dim;
+        let kv_rows = kv_heads * head_dim;
+        tensors.push((format!("{stack}.self_attn.q_proj.weight"), vec![q_rows, h]));
+        tensors.push((format!("{stack}.self_attn.k_proj.weight"), vec![kv_rows, h]));
+        if !full {
+            tensors.push((format!("{stack}.self_attn.v_proj.weight"), vec![kv_rows, h]));
+        }
+        tensors.push((format!("{stack}.self_attn.o_proj.weight"), vec![h, q_rows]));
+        tensors.push((format!("{stack}.self_attn.q_norm.weight"), vec![head_dim]));
+        tensors.push((format!("{stack}.self_attn.k_norm.weight"), vec![head_dim]));
+        for norm in [
+            "input_layernorm",
+            "post_attention_layernorm",
+            "pre_feedforward_layernorm",
+            "post_feedforward_layernorm",
+            "pre_feedforward_layernorm_2",
+            "post_feedforward_layernorm_1",
+            "post_feedforward_layernorm_2",
+        ] {
+            tensors.push((format!("{stack}.{norm}.weight"), vec![h]));
+        }
+        tensors.push((format!("{stack}.layer_scalar"), vec![1]));
+        tensors.push((
+            format!("{stack}.mlp.gate_proj.weight"),
+            vec![GEMMA4_INTER, h],
+        ));
+        tensors.push((format!("{stack}.mlp.up_proj.weight"), vec![GEMMA4_INTER, h]));
+        tensors.push((
+            format!("{stack}.mlp.down_proj.weight"),
+            vec![h, GEMMA4_INTER],
+        ));
+        tensors.push((
+            format!("{stack}.router.proj.weight"),
+            vec![GEMMA4_EXPERTS, h],
+        ));
+        tensors.push((format!("{stack}.router.scale"), vec![h]));
+        tensors.push((
+            format!("{stack}.router.per_expert_scale"),
+            vec![GEMMA4_EXPERTS],
+        ));
+        tensors.push((
+            format!("{stack}.experts.gate_up_proj"),
+            vec![GEMMA4_EXPERTS, 2 * GEMMA4_MOE_INTER, h],
+        ));
+        tensors.push((
+            format!("{stack}.experts.down_proj"),
+            vec![GEMMA4_EXPERTS, h, GEMMA4_MOE_INTER],
+        ));
+    }
+    mutate_tensors(&mut tensors);
+    let mut header = serde_json::Map::new();
+    let mut offset = 0u64;
+    for (name, shape) in &tensors {
+        push_tensor(&mut header, &mut offset, name, shape);
+    }
+    inventory_from(dir, &config, &serde_json::Value::Object(header))
+}
+
 /// A drafter-shaped artifact declaring `target_layer_ids` taps into a
 /// deeper producer.
 pub fn drafter_shaped(dir: &Path) -> ArchitectureInventory {

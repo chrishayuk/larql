@@ -142,6 +142,9 @@ impl ReferenceBackend {
                 }
             }
             PositionPolicy::None => {}
+            policy @ PositionPolicy::PartialRope { .. } => {
+                return Err(super::production::unsupported_position(policy));
+            }
         }
         Ok((q, k, v))
     }

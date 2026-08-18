@@ -118,30 +118,42 @@ fn declared_default_rope_type_is_carried_not_blocked() {
     assert!(!finding.blocks());
 }
 
-/// An execution-semantic key with no carriage rule blocks. This is the
-/// state the module exists to abolish: "parsed" was previously enough to
-/// keep a key out of the report entirely, so a fact nobody had checked
-/// looked identical to one that was carried.
-///
-/// `partial_rotary_factor` is the live occupant: consumed by the parser,
-/// execution-semantic (it changes which dimensions rotate), and judged by
-/// no rule yet. (`swiglu_limit` held this slot until A-9.0 gave it a gate
-/// policy — see the two tests below.)
+/// Every execution-semantic leaf the registry knows has a carriage rule.
+/// The plan blocks an unruled execution-semantic leaf ("parser
+/// consumption is not representation authority" — the safety net stays
+/// in `carriage_finding`), and this pins that the net catches nothing
+/// today: `partial_rotary_factor` was the last live occupant until G4.0
+/// judged it against `PositionPolicy::PartialRope`, and
+/// `num_kv_shared_layers` until G4.0 gave it a rule; a leaf added to the
+/// registry without a rule fails here before it fails on a checkpoint.
 #[test]
-fn an_execution_semantic_key_with_no_carriage_rule_blocks() {
+fn every_execution_semantic_leaf_has_a_carriage_rule() {
+    use crate::format::vindex3::plan::semantics::EXECUTION_SEMANTIC_KEYS;
+    let unruled: Vec<&str> = EXECUTION_SEMANTIC_KEYS
+        .iter()
+        .copied()
+        .filter(|leaf| rule_for(leaf).is_none())
+        .collect();
+    assert!(
+        unruled.is_empty(),
+        "execution-semantic leaves with no carriage rule: {unruled:?}"
+    );
+}
+
+/// A judged partial rotary is carried, per layer type: Gemma 4 declares
+/// `partial_rotary_factor` under `rope_parameters.full_attention` and the
+/// probe answers from the full layers' policy alone.
+#[test]
+fn a_partial_rotary_factor_is_judged_against_the_full_layers() {
     let findings = plan_with(|config| {
         config["text_config"]["partial_rotary_factor"] = serde_json::json!(0.5);
     });
     let finding = finding_for(&findings, "partial_rotary_factor");
-
-    assert_eq!(finding.category, FindingCategory::Unrepresented);
+    // Glimmer's resolver knows no partial rotary, so the fact is declared
+    // and dropped — the honest verdict, and it blocks.
     assert_eq!(finding.class, SemanticClass::ExecutionSemantic);
-    assert_eq!(finding.carriage, Some(Carriage::Parsed));
-    assert!(
-        finding.detail.contains("no carriage rule"),
-        "the refusal must name the missing judgement: {}",
-        finding.detail
-    );
+    assert_eq!(finding.category, FindingCategory::Unrepresented);
+    assert!(finding.detail.contains("PartialRope"), "{}", finding.detail);
     assert!(finding.blocks());
 }
 

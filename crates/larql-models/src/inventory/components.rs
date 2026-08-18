@@ -54,6 +54,42 @@ pub struct ComponentTopology {
     /// Patch/positional geometry for perception towers.
     #[serde(skip_serializing_if = "PatchGeometry::is_empty")]
     pub patch: PatchGeometry,
+    /// The tower's own execution facts beyond the shared surface —
+    /// read and recorded so a checkpoint's declaration has a home, even
+    /// while no plan executes the tower. Defaults for inventories written
+    /// before they were recorded.
+    #[serde(default, skip_serializing_if = "TowerExecution::is_empty")]
+    pub tower: TowerExecution,
+}
+
+/// A perception tower's declared execution facts that the shared
+/// [`ComponentTopology`] surface does not carry (Gemma 4 vision: whether
+/// projections carry biases, the pooling kernel of its output projector,
+/// the size of its position-embedding table, how many soft tokens an image
+/// yields, input standardisation, clipped linears, and a global head width
+/// that may differ from `head_dim`).
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+pub struct TowerExecution {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub attention_bias: Option<bool>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub pooling_kernel_size: Option<usize>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub position_embedding_size: Option<usize>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub default_output_length: Option<usize>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub standardize: Option<bool>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub use_clipped_linears: Option<bool>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub global_head_dim: Option<usize>,
+}
+
+impl TowerExecution {
+    pub fn is_empty(&self) -> bool {
+        *self == Self::default()
+    }
 }
 
 /// Perception-tower patch geometry. All optional; absent fields are absent
@@ -177,6 +213,10 @@ impl<'a> Cursor<'a> {
     fn string_at(&mut self, rel_path: &str) -> Option<String> {
         self.get(rel_path)?.as_str().map(str::to_string)
     }
+
+    fn bool_at(&mut self, rel_path: &str) -> Option<bool> {
+        self.get(rel_path)?.as_bool()
+    }
 }
 
 fn read_component(root_key: &str, object: &Value) -> ComponentReading {
@@ -231,6 +271,15 @@ fn read_component(root_key: &str, object: &Value) -> ComponentReading {
             pos_emb_width: cursor.usize_at("pos_emb_width"),
             image_size: cursor.usize_at("image_size"),
             num_channels: cursor.usize_at("num_channels"),
+        },
+        tower: TowerExecution {
+            attention_bias: cursor.bool_at("attention_bias"),
+            pooling_kernel_size: cursor.usize_at("pooling_kernel_size"),
+            position_embedding_size: cursor.usize_at("position_embedding_size"),
+            default_output_length: cursor.usize_at("default_output_length"),
+            standardize: cursor.bool_at("standardize"),
+            use_clipped_linears: cursor.bool_at("use_clipped_linears"),
+            global_head_dim: cursor.usize_at("global_head_dim"),
         },
     };
     ComponentReading {

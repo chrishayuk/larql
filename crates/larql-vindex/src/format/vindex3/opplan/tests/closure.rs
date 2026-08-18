@@ -149,6 +149,57 @@ fn a_geometry_mismatch_blocks() {
     )));
 }
 
+/// Closure judges each layer against ITS OWN head geometry: a layer whose
+/// policy declares a different `head_dim` / KV-head count expects the
+/// matching projection shapes, and the mismatch names that layer's
+/// tensors with the per-layer expectation — the component surface's
+/// geometry is not what closure reads.
+#[test]
+fn closure_checks_shapes_against_the_layers_own_geometry() {
+    let dir = tempfile::tempdir().unwrap();
+    let tensors = dense_tensors();
+    let borrowed: Vec<(&str, &[usize])> = tensors
+        .iter()
+        .map(|(name, shape)| (*name, shape.as_slice()))
+        .collect();
+    let mut inventory = custom_artifact(dir.path(), &dense_config(), &borrowed);
+    // The config says head_dim 8 / 2 KV heads; declare layer 0 at four
+    // times the head width and one KV head, as a Gemma-4-style global
+    // layer would, without touching the stored tensors. (Not 16 / 1: that
+    // gives kv_rows 16 = 2 × 8, and a coincident product would hide the
+    // K/V check.)
+    let varied_head_dim = 32;
+    let varied_kv_heads = 1;
+    inventory.resolved.layers[0].head_dim = varied_head_dim;
+    inventory.resolved.layers[0].num_kv_heads = varied_kv_heads;
+    let named = vec![("dense-artifact".to_string(), inventory)];
+    let out = tempfile::tempdir().unwrap();
+    encode_system(&named, out.path()).unwrap();
+    let inspection = inspect_container(out.path(), false).unwrap();
+    let outcome = plan_component_ops(&inspection, out.path(), "target").unwrap();
+    assert!(outcome.plan.is_none());
+    let hidden = 64;
+    let q_heads = 8;
+    // q/o expect q_heads × 32 rows; k/v expect 1 × 32 rows.
+    let expect_q = vec![q_heads * varied_head_dim, hidden];
+    let expect_kv = vec![varied_kv_heads * varied_head_dim, hidden];
+    for (needle, expected) in [
+        ("q_proj", &expect_q),
+        ("k_proj", &expect_kv),
+        ("v_proj", &expect_kv),
+    ] {
+        assert!(
+            outcome.defects.iter().any(|d| matches!(
+                d,
+                ClosureDefect::GeometryMismatch { tensor, expected: e, actual: _ }
+                    if tensor.contains(needle) && e == expected
+            )),
+            "{needle} must be judged against the layer's geometry: {:?}",
+            outcome.defects
+        );
+    }
+}
+
 /// A single-sided QK-norm pair blocks with the missing half named.
 #[test]
 fn a_single_sided_qk_norm_blocks() {

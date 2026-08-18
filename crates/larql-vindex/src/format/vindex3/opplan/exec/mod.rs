@@ -344,6 +344,17 @@ impl AttentionOperands {
         store: &OperandStore,
         format: WeightFormat,
     ) -> Result<Self, VindexError> {
+        // Carried by the container, not executed yet (V3-F0 witness 3,
+        // G4.2): a K≡V layer and the parameter-free V norm. Loading `v`
+        // as the K matrix and running the plain path would silently skip
+        // the V norm — refuse, typed, before any bytes move.
+        if op.v_from_k || op.parameter_free_qk_norm.v {
+            return Err(VindexError::Parse(format!(
+                "attention op carries v_from_k={} / parameter-free v_norm={}, which no \
+                 executor runs yet (G4.2) — refusing rather than executing a different model",
+                op.v_from_k, op.parameter_free_qk_norm.v
+            )));
+        }
         Ok(Self {
             w_q: load_weight(store, &op.q, format)?,
             w_k: load_weight(store, &op.k, format)?,

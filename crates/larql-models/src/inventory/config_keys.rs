@@ -142,7 +142,24 @@ pub const METADATA_LEAF_KEYS: &[&str] = &[
     "initializer_range",
     "use_cache",
     "attention_dropout",
+    // HF `PretrainedConfig` plumbing that changes what a call RETURNS or
+    // how a training/eval loop chunks work, never what a forward computes:
+    // classification-head labels on a config that has no head, output
+    // switches, the encoder-decoder flag, and the feed-forward chunk size
+    // (identical numbers at any chunking; Gemma 4's vision tower ships 0).
+    "problem_type",
+    "return_dict",
+    "output_attentions",
+    "output_hidden_states",
+    "is_encoder_decoder",
+    "chunk_size_feed_forward",
 ];
+
+/// Containers whose every leaf is metadata: HF label maps
+/// (`id2label.0 = "LABEL_0"`), whose leaves are numbered and so cannot be
+/// named in [`METADATA_LEAF_KEYS`]. Only listed as a whole because nothing
+/// under them can move a forward pass.
+pub const METADATA_CONTAINER_KEYS: &[&str] = &["id2label", "label2id"];
 
 /// Config fields that declare a cross-component interface. The one known
 /// occupant is the DFlash-style drafter contract: `target_layer_ids` names
@@ -180,6 +197,22 @@ pub fn find_interfaces(facts: &[ConfigKeyFact]) -> Vec<InterfaceFact> {
         .collect()
 }
 
+/// Every leaf under a [`METADATA_CONTAINER_KEYS`] container, as metadata.
+fn flatten_metadata_into(value: &Value, prefix: String, out: &mut Vec<ConfigKeyFact>) {
+    match value {
+        Value::Object(map) => {
+            for (key, child) in map {
+                flatten_metadata_into(child, format!("{prefix}.{key}"), out);
+            }
+        }
+        leaf => out.push(ConfigKeyFact {
+            status: KeyStatus::Metadata,
+            path: prefix,
+            value: leaf.clone(),
+        }),
+    }
+}
+
 /// Last dot-separated segment of a flattened path.
 fn leaf_name(path: &str) -> &str {
     path.rsplit('.').next().unwrap_or(path)
@@ -203,7 +236,10 @@ fn flatten_into(
                 } else {
                     format!("{prefix}.{key}")
                 };
-                if child.is_object() {
+                if child.is_object() && METADATA_CONTAINER_KEYS.contains(&key.as_str()) {
+                    // A label map: every leaf metadata, whatever it is named.
+                    flatten_metadata_into(child, path, out);
+                } else if child.is_object() {
                     // Recurse always — every leaf must surface individually —
                     // but consumed-credit survives only through containers the
                     // parser itself recurses into. Presence-only containers

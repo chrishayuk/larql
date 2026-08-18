@@ -47,9 +47,11 @@ pub use layer_types::{
 pub use model_config::ModelConfig;
 pub use moe_router::MoeRouterKind;
 pub use norm::{EmbeddingNorm, NormSpec, NormType, ParameterFreeQkNorm, PostNormEps, QkNormScope};
-pub use position::PositionPolicy;
+pub use position::{PositionPolicy, RotaryFrequencyBasis};
 pub use rope::{Llama3RopeScaling, RopeScaling, YarnRopeScaling};
-pub use rope_types::{ROPE_TYPE_DEFAULT, ROPE_TYPE_LINEAR, ROPE_TYPE_LLAMA3, ROPE_TYPE_YARN};
+pub use rope_types::{
+    ROPE_TYPE_DEFAULT, ROPE_TYPE_LINEAR, ROPE_TYPE_LLAMA3, ROPE_TYPE_PROPORTIONAL, ROPE_TYPE_YARN,
+};
 
 #[cfg(test)]
 mod tests;

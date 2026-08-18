@@ -64,6 +64,15 @@ pub struct ArchitectureInventory {
     /// declaration alone.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub stored_representation: Option<crate::inventory::representation::StoredRepresentation>,
+    /// The joins between components — special-token roles, soft-token
+    /// counts, declared-absent towers, bidirectional masking — as the
+    /// interface reader recorded them. `None` on a text-only checkpoint.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub multimodal_interface: Option<crate::inventory::interfaces::MultimodalInterface>,
+    /// Text-decoder features the graph represents only as absent, read
+    /// verbatim so a checkpoint turning them on blocks on the value.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub text_features: Option<crate::inventory::text_features::TextFeatures>,
     /// Every leaf in `config.json`, flattened to a dot path, classified.
     pub config_keys: Vec<ConfigKeyFact>,
     /// Declared cross-component interfaces (see
@@ -234,6 +243,14 @@ pub struct LayerPolicy {
     pub position: crate::config::PositionPolicy,
     pub head_dim: usize,
     pub num_kv_heads: usize,
+    /// The value projection IS the key projection on this layer: no
+    /// `v_proj` tensor exists and V is the raw K projection (before the
+    /// key's norm and rotation) — Gemma 4 `attention_k_eq_v` on its full
+    /// layers. Per layer, because the same checkpoint keeps `v_proj` on
+    /// its sliding layers. Defaults for inventories written before it was
+    /// recorded.
+    #[serde(default)]
+    pub v_from_k: bool,
     /// Source-name prefix of this layer's packed expert bank (the parent of
     /// its `gate_up`/`down` operands), when the layer's FFN is routed —
     /// `model.layers.3.mlp.experts`. `None` = a dense-FFN layer. Per layer,

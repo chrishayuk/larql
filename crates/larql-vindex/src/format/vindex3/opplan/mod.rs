@@ -114,7 +114,14 @@ pub struct AttentionOp {
     pub parameter_free_qk_norm: ParameterFreeQkNorm,
     pub q: OperandRef,
     pub k: OperandRef,
+    /// The value projection; the SAME operand as `k` when `v_from_k`.
     pub v: OperandRef,
+    /// V is the raw K projection (Gemma 4 `attention_k_eq_v` on full
+    /// layers): `v` names the K operand, and the executor must take V from
+    /// that projection BEFORE the key's norm and rotation. Untagged
+    /// default so plans without it serialise byte-identically.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub v_from_k: bool,
     pub o: OperandRef,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub output_gate: Option<GateOp>,

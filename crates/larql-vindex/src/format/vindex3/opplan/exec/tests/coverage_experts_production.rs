@@ -344,7 +344,11 @@ fn plain_attention<'a>(inputs: &'a [Vec<f32>], w: &'a [f32]) -> AttentionCall<'a
         w_v: WeightSlice::F32(w),
         w_o: WeightSlice::F32(w),
         qk_norm: None,
-        parameter_free_qk_norm: ParameterFreeQkNorm { q: false, k: false },
+        parameter_free_qk_norm: ParameterFreeQkNorm {
+            q: false,
+            k: false,
+            v: false,
+        },
         qk_norm_eps: EPS,
         query_scale: None,
         score_scale: 1.0 / (HEAD_DIM as f64).sqrt(),

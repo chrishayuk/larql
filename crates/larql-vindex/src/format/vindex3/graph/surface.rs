@@ -235,25 +235,10 @@ pub fn surface_from_resolved(
             "resolved.execution (pre-v3 inventory — re-run inspect-hf)".to_string(),
         ]);
     };
-    // The surface carries one head geometry for the whole component; a
-    // per-layer variation is a schema gap to surface, not to average away.
-    let mut missing = Vec::new();
-    for layer in &resolved.layers {
-        if layer.head_dim != resolved.head_dim || layer.num_kv_heads != resolved.num_kv_heads {
-            missing.push(format!(
-                "uniform head geometry (layer {} has head_dim {} / kv {}, component says {} / {})",
-                layer.layer,
-                layer.head_dim,
-                layer.num_kv_heads,
-                resolved.head_dim,
-                resolved.num_kv_heads
-            ));
-            break;
-        }
-    }
-    if !missing.is_empty() {
-        return Err(missing);
-    }
+    // The surface carries the component's declared head geometry; a
+    // family that varies it by layer (Gemma 4's global layers) records
+    // each layer's geometry on its `AttentionLayerPolicy`, and the op
+    // plan reads the layer's, so nothing here is averaged away.
     Ok(ExecutionSurface {
         attention: AttentionSurface {
             num_q_heads: resolved.num_q_heads,
@@ -435,7 +420,10 @@ pub fn surface_from_nested(
             parameter_free_qk_norm: ParameterFreeQkNorm::default(),
             output_gate: None,
             sinks: None,
-            attention_bias: None,
+            // What the tower declares about its projection biases, when
+            // it declares anything (Gemma 4 vision: `false`); the loader's
+            // tensor-presence check answers otherwise, as for text.
+            attention_bias: nested.tower.attention_bias,
         },
         ffn: FfnSurface {
             intermediate_size,
