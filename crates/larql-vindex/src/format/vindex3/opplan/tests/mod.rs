@@ -2,6 +2,7 @@
 //! explicit, and closure blocks on every shortfall.
 
 mod closure;
+mod coverage_opplan;
 mod plan;
 mod unjudged;
 

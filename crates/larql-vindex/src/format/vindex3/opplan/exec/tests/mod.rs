@@ -10,6 +10,9 @@
 //! placement, RoPE convention, residual order — not shared arithmetic.
 
 mod controls;
+mod coverage_backend_decode;
+mod coverage_device;
+mod coverage_experts_production;
 mod decode;
 mod device;
 mod golden;
