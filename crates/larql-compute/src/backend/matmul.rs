@@ -217,3 +217,184 @@ pub trait MatMul {
             .collect()
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use ndarray::array;
+
+    /// A backend that supplies only the two required matmuls, so every
+    /// default body of the trait runs as written. Trait defaults are only
+    /// exercised by an implementor that declines to override them, and
+    /// every real backend overrides what it supports — the contract they
+    /// encode ("no kernel ⇒ `None`, never a wrong answer") is what a *new*
+    /// backend relies on.
+    struct NaiveBackend;
+
+    impl MatMul for NaiveBackend {
+        fn matmul(&self, a: ArrayView2<f32>, b: ArrayView2<f32>) -> Array2<f32> {
+            a.dot(&b)
+        }
+
+        fn matmul_transb(&self, a: ArrayView2<f32>, b: ArrayView2<f32>) -> Array2<f32> {
+            a.dot(&b.t())
+        }
+    }
+
+    /// A backend with the single-matrix gemvs but no batched submission:
+    /// the `_multi` defaults must be the sequential calls, and the result
+    /// arrives per matrix in call order.
+    struct SingleGemvBackend;
+
+    /// Marker value each fake gemv writes so the caller can tell which
+    /// arm produced a row.
+    const F16_MARK: f32 = 16.0;
+    const MXFP4_MARK: f32 = 4.0;
+    const NVFP4_MARK: f32 = 44.0;
+
+    impl MatMul for SingleGemvBackend {
+        fn matmul(&self, a: ArrayView2<f32>, b: ArrayView2<f32>) -> Array2<f32> {
+            a.dot(&b)
+        }
+
+        fn matmul_transb(&self, a: ArrayView2<f32>, b: ArrayView2<f32>) -> Array2<f32> {
+            a.dot(&b.t())
+        }
+
+        fn f16_gemv(&self, _w: &[u8], _x: &[f32], n: usize, _k: usize) -> Option<Vec<f32>> {
+            Some(vec![F16_MARK; n])
+        }
+
+        fn mxfp4_gemv(
+            &self,
+            _packed: &[u8],
+            _scales: &[u8],
+            _x: &[f32],
+            n: usize,
+            _k: usize,
+        ) -> Option<Vec<f32>> {
+            Some(vec![MXFP4_MARK; n])
+        }
+
+        fn nvfp4_gemv(
+            &self,
+            _packed: &[u8],
+            _scales: &[u8],
+            tensor_scale: f32,
+            _x: &[f32],
+            n: usize,
+            _k: usize,
+        ) -> Option<Vec<f32>> {
+            Some(vec![NVFP4_MARK * tensor_scale; n])
+        }
+    }
+
+    const K: usize = 4;
+    const N: usize = 3;
+
+    /// The batched default dispatches each op to the matmul its
+    /// `transpose_b` flag names, in order.
+    #[test]
+    fn batch_default_dispatches_each_op_by_its_transpose_flag() {
+        let b = NaiveBackend;
+        let a = array![[1.0f32, 2.0], [3.0, 4.0]];
+        let m = array![[5.0f32, 6.0], [7.0, 8.0]];
+        let out = b.matmul_batch(&[
+            MatMulOp {
+                a: a.clone(),
+                b: m.clone(),
+                transpose_b: false,
+            },
+            MatMulOp {
+                a: a.clone(),
+                b: m.clone(),
+                transpose_b: true,
+            },
+        ]);
+        assert_eq!(out.len(), 2);
+        assert_eq!(out[0], b.matmul(a.view(), m.view()));
+        assert_eq!(out[1], b.matmul_transb(a.view(), m.view()));
+        assert_ne!(out[0], out[1], "the flag must select a different product");
+    }
+
+    /// Every specialised gemv defaults to "no kernel here" — `None`, so a
+    /// caller falls back rather than trusting a fabricated vector.
+    #[test]
+    fn gemv_defaults_refuse_rather_than_guess() {
+        let b = NaiveBackend;
+        let w = Array2::<f32>::zeros((N, K));
+        let x = vec![0.5f32; K];
+        let bytes = vec![0u8; N * K * 2];
+
+        assert!(b.f32_gemv(w.view(), &x).is_none());
+        assert!(b.f32_gemv_force(w.view(), &x).is_none());
+        assert!(b.f32_gemv_topk1(w.view(), &x).is_none());
+        assert!(b.f16_gemv(&bytes, &x, N, K).is_none());
+        assert!(b.f16_gemv_force(&bytes, &x, N, K).is_none());
+        assert!(b.f16_gemv_topk1(&bytes, &x, N, K).is_none());
+        assert!(b.f16_gemv_topk(&bytes, &x, N, K, 2).is_none());
+        assert!(b.mxfp4_gemv(&bytes, &bytes, &x, N, K).is_none());
+        assert!(b.nvfp4_gemv(&bytes, &bytes, 1.0, &x, N, K).is_none());
+        // A residency hint on a backend with no notion of residency is a
+        // no-op, not an error.
+        b.wire_resident(&[&bytes]);
+    }
+
+    /// With no single-matrix kernel the multi defaults are `None` as a
+    /// whole — one unsupported matrix refuses the submission, so a caller
+    /// cannot receive a partially fabricated batch.
+    #[test]
+    fn multi_defaults_refuse_when_the_single_gemv_refuses() {
+        let b = NaiveBackend;
+        let x = vec![0.5f32; K];
+        let bytes = vec![0u8; N * K * 2];
+        assert!(b.f16_gemv_multi(&[(&bytes, N, K)], &x).is_none());
+        assert!(b.mxfp4_gemv_multi(&[(&bytes, &bytes, N, K)], &x).is_none());
+        assert!(b
+            .nvfp4_gemv_multi(&[(&bytes, &bytes, 1.0, N, K)], &x)
+            .is_none());
+    }
+
+    /// With single-matrix kernels present, the multi defaults are exactly
+    /// the sequential calls: one output per matrix, in order, each the
+    /// row its own kernel produced (the NVFP4 tensor scale reaches the
+    /// per-matrix call).
+    #[test]
+    fn multi_defaults_are_the_sequential_single_gemvs_in_order() {
+        let b = SingleGemvBackend;
+        let x = vec![0.5f32; K];
+        let bytes = vec![0u8; N * K * 2];
+        let second_n = N + 1;
+
+        let f16 = b
+            .f16_gemv_multi(&[(&bytes, N, K), (&bytes, second_n, K)], &x)
+            .unwrap();
+        assert_eq!(f16, vec![vec![F16_MARK; N], vec![F16_MARK; second_n]]);
+
+        let mx = b
+            .mxfp4_gemv_multi(&[(&bytes, &bytes, N, K), (&bytes, &bytes, second_n, K)], &x)
+            .unwrap();
+        assert_eq!(mx, vec![vec![MXFP4_MARK; N], vec![MXFP4_MARK; second_n]]);
+
+        let scale_a = 2.0f32;
+        let scale_b = 0.5f32;
+        let nv = b
+            .nvfp4_gemv_multi(
+                &[
+                    (&bytes, &bytes, scale_a, N, K),
+                    (&bytes, &bytes, scale_b, second_n, K),
+                ],
+                &x,
+            )
+            .unwrap();
+        assert_eq!(
+            nv,
+            vec![
+                vec![NVFP4_MARK * scale_a; N],
+                vec![NVFP4_MARK * scale_b; second_n]
+            ]
+        );
+        // And the `_force` variants route to the same single kernels.
+        assert_eq!(b.f16_gemv_force(&bytes, &x, N, K), Some(vec![F16_MARK; N]));
+    }
+}
