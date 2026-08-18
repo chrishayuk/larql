@@ -1894,6 +1894,52 @@ owns the execution choice; the KV engines belong under the same planner.
 Individual techniques (kernel selection, seqpar) are not novel; the claim is
 integration from semantics down to execution.
 
+### VINDEX3 evolution — versioned by capability, not by model architecture (2026-08-18)
+
+The organising rule, adopted 2026-08-18: **freeze the VINDEX3 ontology soon;
+everything after that evolves through opsets, representation sets, profiles
+and packaging — not schema redesign.** Stages are defined by the capability
+they add, each with an exit criterion; what may land in each stage is
+disciplined. The gauntlet (F1–F7) and standard-grade backlog (P0–P2) below
+are the *detail* of the first two stages and are tagged with their stage.
+
+| Stage | Goal | Defining capability | Status 2026-08-18 |
+|---|---|---|---|
+| **V3-F0 — Saturation** | prove the ontology | awkward architectures fit without changing a foundational relationship | **2 of 3 witnesses**: Glimmer (dense) and gpt-oss (routed MoE + sinks + biases + YaRN + clamped GLU, A-9) both went graph → plan → interpreter → Metal with new *vocabulary* only (F1 held). Third not started through the generic chain: Gemma 4 hybrid MoE exists only via the V2→V3 *import* path (c8), Kimi Linear/KDA/MLA only via the K3 adapter, multimodal only served. |
+| **V3.0 — Stable Core** | freeze the model-database ABI | Model · Object · Representation · Segment/Region · Operation · Operand · Graph · Profile · Reference, and their relationships; separate versioning (container 3 / semantic IR 1 / opsets / representation sets); formal unknown-field rules; canonical serialisation + deterministic ids; corruption fixtures; independent reference reader | **~half**: generic MoE graph done (A-9.2, no `moe_manifest.json`); multi-representation *binding* not done (refusal real, selection does not yet steer bytes — F3); WALK/DESCRIBE against V3 authority not done (V2-1/c7 — F5); opset versioning not started (one integer today); criticality classes exist in code but not in the spec; F7 mutation sweep unwritten; canonical serialisation only as "dense plans serialise byte-identically under absence"; reference reader/conformance not started. |
+| **V3.1 — Immutable Distribution** | composable, distributable models | content-addressed segments (OCI descriptor: type + digest + size + locations, manifests as Merkle DAGs), overlays/deltas/adapters (`parent: sha256:…; replace object 391 MXFP4 → sha256:…; add adapter`), provenance DAG per representation (tool, version, args, input/output/calibration digests) | not designed; Hub publish/slice contract (larql-factory, ADR-0026) is the packaging start |
+| **V3.2 — Adaptive Representation** | runtime-selectable physical model | one semantic object with several *legitimate* representations; declarative profiles (`prefer: MXFP4`, `allow_remote`) that carry no kernel names; quality as metadata per representation (reference, rel_rms, cosine, kl_delta, shannon_delta, calibration digest) so a profile can say `max_shannon_loss: 0.01` and the planner chooses | the representation algebra exists in the lowering (F16/Q4_K/MXFP4/NVFP4 priced under identical scheduling) and Shannon scoring exists; nothing is *carried* as representation metadata yet |
+| **V3.3 — Location Independence** | model bigger than machine | `segment == local file` removed: segment identity → resolver (GPU-resident / RAM / mmap / NVMe / HTTP-range / S3 / remote expert node); `PLAN operation|layer|token|prompt` returns inputs, selected experts, representations, required regions, expected bytes, residency, missing bytes — before execution | groundwork only: segments are page-aligned, mmapped and registered straight into Metal buffers ("bind, never reconstruct"); the working-set instrument (200 predicted / 200 resident / 0 overshoot) is `PLAN operation` before it has a name |
+| **V3.4 — Ecosystem Standard** | no dependency on LARQL | `vindex-spec/` + `vindex-conformance/` + `vindex-reference/` (tiny C reader, Rust reader with no engine, Python reader); conformance corpus (dense, GQA, MoE, multi-rep, overlay, remote segment, unknown optional/mandatory extension, corruption); `vindex pull/inspect/verify/diff/compat`; registries (HF, OCI, S3, HTTP, LAN peer) equivalent | not started |
+| **V4** | only if the ontology fails | a foundational relationship must change (e.g. object identity genuinely dynamic/context-dependent in a way operations/state/relations cannot express) | — VINDEX4 means "our ontology was wrong", not "there is a new model" (no FP3, no KDA2, no video) |
+
+**Exit criterion for V3-F0 (the freeze trigger):** *three consecutive
+structurally different architectures require new operators or
+representation types, but no new foundational relationship.* Not "N tests
+pass", not "all models work" — ontology saturation. Candidates for the
+third witness, in the order they attack different parts of the ontology:
+hybrid MoE (dense + routed/shared experts in one layer — cheapest, the
+vocabulary already exists), Kimi Linear (recurrent/KDA state + MLA — the
+most informative, because *state as an object* is where the V4 trigger
+would show if it exists), another MLA model (attention/KV independently),
+one multimodal architecture (towers/projectors/decoder graph); later, a
+Mamba/Jamba/RWKV-type model to test "neural model" versus "transformer".
+
+**Discipline per stage.** V3-F0: attack the ontology, add no ecosystem
+feature. V3.0: freeze, publish the spec, ship the reference reader and
+conformance suite, add no architectural idea; remote execution, cost models
+and Shannon *selection* stay out of the frozen core. After ~V3.2, resist
+3.5/3.6/…: the semantic IR stays at 1, and innovation happens in
+`vindex.moe:3`, `vindex.kda:2`, `vindex.ssm:1`, `vindex.audio:2`, quant
+representation sets, placement, quality contracts. Engine work (A-1…A-10)
+continues throughout but is **not permitted to move schema** — a schema
+change is a V3-F0/V3.0 event, argued as such.
+
+**Immediate queue this implies:** (1) the third hostile architecture through
+the generic chain; (2) multi-representation binding, WALK/DESCRIBE on V3
+authority, the opset/version model, refusal semantics in the spec (the
+V3.0 pre-freeze list); (3) freeze. A-10 runs alongside as engine work.
+
 ### VINDEX3 stabilisation — freeze gauntlet, positioning, standard-grade backlog (2026-08-17)
 
 **Judgement: the architecture is converged; the ABI had one adversarial pass
@@ -2035,21 +2081,21 @@ neural-database storage-engine format.
 scratch if models were large, queryable, heterogeneous databases, not against
 GGUF:
 
-| Pri | Improvement | Why |
+| Pri · stage | Improvement | Why |
 |---|---|---|
-| P0 | **Separate container / semantic-IR / opset / representation-set versioning** (ONNX's model: `container 3`, `semantic_ir 1`, `org.larql.core:1`, `org.larql.moe:2`, `org.larql.attn:3`, `org.larql.quant:4`) | KDA arrives as `org.larql.kda:1`, not VINDEX4; a reader says "cannot execute ops 46–91" instead of branching on architecture name |
-| P0 | **Content-address every physical segment** (OCI descriptor: media type + digest + size + locations; manifests as Merkle DAGs) | dedup across fine-tunes, one-segment publishes, local/remote indistinguishable, per-region verification, model identity = hash of the semantic manifest |
-| P0 | **Finish genuine multi-representation objects** — representation as an independently describable entity (encoding, layout, scale encoding, block geometry, alignment, companion streams, accuracy contract, source repr, transformation, HW compat); profiles select a *physical representation* | the signature VINDEX3 capability; F3 above |
-| P0 | **Formal unknown-field semantics** — every extension is `annotation` (ignore) · `execution_metadata` · `semantic_required` (refuse) · `representation_required` (fine if another admissible repr exists) · `interface_required` | criticality work already invented the answer; put it in the spec, avoid GGUF's accumulate-conventions-forever fate |
-| P0 | **Conformance suite + tiny independent reader** (`vindex-spec/`: spec, schema, test-vectors, reference-{c,rust,python}; open/validate/list objects+ops/resolve reprs/map segments/verify hashes, no LARQL dependency) | if only `larql-vindex` can read it, it is a good LARQL format; if a compatible reader is a weekend, it can be a standard |
-| P1 | Transformation/provenance DAG per representation (tool, version, args, input/output digest, calibration corpus digest) | reproducible builds; "where did these 64 bytes come from" has an answer |
-| P1 | First-class overlays/deltas/adapters (`parent: sha256:… ; replace object 391 MXFP4 → sha256:… ; add adapter`) | LoRA, patches, expert replacement, LARQL INSERTs, spec heads as composable artefacts — no 30 GB duplicate, no base mutation |
-| P1 | Remote/range-addressable segments — objects refer to segment *identity*, a resolver yields RAM/mmap/NVMe/HTTP-range/S3/peer/GPU | model-as-database at its logical conclusion |
-| P1 | Compact binary navigation index alongside (or canonical under) `index.json` (`index.vxb`; Arrow footer / Parquet metadata model) | opening K3 must not mean parsing 300 MB of JSON |
-| P1 | Compatibility/capability query — `vindex compat model --runtime metal-m3-max` → per-opset ✓/✗, executable layers, no model data touched | complete-or-refuse, before touching weights |
-| P2 | Per-region measured quality contracts (reference, max_abs, rel_rms, cosine, shannon_delta, fixture digest) | representation choice becomes a correctness decision — the Shannon work meets the representation algebra |
-| P2 | Optional signatures / encryption / access policy | distributed commercial models |
-| P2 | Standard packaging profile (HF, OCI registries, S3, local disk) | natural homes |
+| P0 · V3.0 | **Separate container / semantic-IR / opset / representation-set versioning** (ONNX's model: `container 3`, `semantic_ir 1`, `org.larql.core:1`, `org.larql.moe:2`, `org.larql.attn:3`, `org.larql.quant:4`) | KDA arrives as `org.larql.kda:1`, not VINDEX4; a reader says "cannot execute ops 46–91" instead of branching on architecture name |
+| P0 · V3.1 | **Content-address every physical segment** (OCI descriptor: media type + digest + size + locations; manifests as Merkle DAGs) | dedup across fine-tunes, one-segment publishes, local/remote indistinguishable, per-region verification, model identity = hash of the semantic manifest |
+| P0 · V3.0 (binding) / V3.2 (algebra) | **Finish genuine multi-representation objects** — representation as an independently describable entity (encoding, layout, scale encoding, block geometry, alignment, companion streams, accuracy contract, source repr, transformation, HW compat); profiles select a *physical representation* | the signature VINDEX3 capability; F3 above |
+| P0 · V3.0 | **Formal unknown-field semantics** — every extension is `annotation` (ignore) · `execution_metadata` · `semantic_required` (refuse) · `representation_required` (fine if another admissible repr exists) · `interface_required` | criticality work already invented the answer; put it in the spec, avoid GGUF's accumulate-conventions-forever fate |
+| P0 · V3.0 (reader) / V3.4 (ecosystem) | **Conformance suite + tiny independent reader** (`vindex-spec/`: spec, schema, test-vectors, reference-{c,rust,python}; open/validate/list objects+ops/resolve reprs/map segments/verify hashes, no LARQL dependency) | if only `larql-vindex` can read it, it is a good LARQL format; if a compatible reader is a weekend, it can be a standard |
+| P1 · V3.1 | Transformation/provenance DAG per representation (tool, version, args, input/output digest, calibration corpus digest) | reproducible builds; "where did these 64 bytes come from" has an answer |
+| P1 · V3.1 | First-class overlays/deltas/adapters (`parent: sha256:… ; replace object 391 MXFP4 → sha256:… ; add adapter`) | LoRA, patches, expert replacement, LARQL INSERTs, spec heads as composable artefacts — no 30 GB duplicate, no base mutation |
+| P1 · V3.3 | Remote/range-addressable segments — objects refer to segment *identity*, a resolver yields RAM/mmap/NVMe/HTTP-range/S3/peer/GPU | model-as-database at its logical conclusion |
+| P1 · V3.1 | Compact binary navigation index alongside (or canonical under) `index.json` (`index.vxb`; Arrow footer / Parquet metadata model) | opening K3 must not mean parsing 300 MB of JSON |
+| P1 · V3.3 | Compatibility/capability query — `vindex compat model --runtime metal-m3-max` → per-opset ✓/✗, executable layers, no model data touched | complete-or-refuse, before touching weights |
+| P2 · V3.2 | Per-region measured quality contracts (reference, max_abs, rel_rms, cosine, shannon_delta, fixture digest) | representation choice becomes a correctness decision — the Shannon work meets the representation algebra |
+| P2 · V3.1 | Optional signatures / encryption / access policy | distributed commercial models |
+| P2 · V3.4 | Standard packaging profile (HF, OCI registries, S3, local disk) | natural homes |
 
 Never embed executable code (no Python/dylib/CUDA/wasm-with-host-access to
 *load* a model): operators are declarative contracts, unknown ones fail
