@@ -619,9 +619,9 @@ fn a_declared_residual_multiplier_is_carried_to_the_residual_scale() {
 #[test]
 fn query_pre_attn_scalar_is_compared_in_score_scale_space() {
     use crate::format::vindex3::plan::carriage::canonical_declared;
-    let scalar = 256.0;
+    let scalar: f64 = 256.0;
     let canonical = canonical_declared("query_pre_attn_scalar", &serde_json::json!(scalar));
-    let expected = (scalar as f64).powf(-0.5);
+    let expected = scalar.powf(-0.5);
     assert!((canonical.as_f64().unwrap() - expected).abs() < 1e-12);
     // A non-numeric declaration passes through untouched.
     assert_eq!(
