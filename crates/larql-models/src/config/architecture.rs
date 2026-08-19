@@ -29,6 +29,21 @@ use super::{
 /// constant standing in for an unread config fact.
 const IDENTITY_SCALE: f32 = 1.0;
 
+/// Attention score scale from a declared `query_pre_attn_scalar` (or any
+/// other scalar the score is `1/sqrt` of, e.g. `head_dim`).
+///
+/// The one definition of this derivation — [`ModelArchitecture::attention_scale`]
+/// and [`ModelArchitecture::attention_scale_for_layer`] both call it, and so
+/// does the VINDEX3 plan's carriage check (`larql-vindex`'s
+/// `plan::carriage::canonical_declared`), which needs to know that a
+/// declared `256` and a carried `0.0625` are the same fact seen on either
+/// side of this formula, not a dropped one. A second copy anywhere would be
+/// exactly the kind of formula duplication `Activation::uses_gelu_tanh_gate_up`
+/// warns about.
+pub fn score_scale_from_query_pre_attn_scalar(scalar: f64) -> f64 {
+    scalar.powf(-0.5)
+}
+
 /// Architecture-specific behavior. Describes how a model is structured
 /// without performing any computation.
 pub trait ModelArchitecture: Send + Sync {
@@ -78,6 +93,26 @@ pub trait ModelArchitecture: Send + Sync {
     /// (`docs/tts-funnel.md` §3 step 4).
     fn has_lm_head(&self) -> bool {
         true
+    }
+
+    /// Whether a *missing* standalone output-head tensor should be read as
+    /// tied to the embedding matrix, rather than a lost one.
+    ///
+    /// `true` when this architecture has no independent head at all
+    /// ([`Self::has_lm_head`] false — the embedding is a
+    /// never-sampled placeholder) or when the checkpoint does not declare
+    /// `tie_word_embeddings: false`. `false` only when a checkpoint
+    /// explicitly declares `tie_word_embeddings: false` and still has no
+    /// separate head tensor — the one case that must surface as a loud
+    /// missing-tensor error rather than silently serving the wrong
+    /// projection (GPT-OSS, OLMoE both declare `false`).
+    ///
+    /// The one statement of this rule: the safetensors loader's
+    /// `cfg_declares_untied` (`loading/safetensors/mod.rs`) checks the
+    /// identical `tie_word_embeddings == Some(false)` fact to decide the
+    /// same question for the VINDEX2 load path.
+    fn output_head_reuses_embedding(&self) -> bool {
+        !self.has_lm_head() || self.config().tie_word_embeddings != Some(false)
     }
 
     /// Learned positional-embedding tensor key, when the architecture uses
@@ -496,22 +531,36 @@ pub trait ModelArchitecture: Send + Sync {
         None
     }
 
-    /// Attention scale: 1/sqrt(query_pre_attn_scalar) or 1/sqrt(head_dim).
+    /// Attention scale: `attention_multiplier` when declared (Granite —
+    /// replaces the standard formula outright, confirmed by every
+    /// `arch.attention_multiplier()` call site on the legacy path; Granite
+    /// 4.1's declared value is `1/head_dim`, not `1/sqrt(head_dim)`, so
+    /// composing the two would be wrong by a factor of `sqrt(head_dim)`),
+    /// else 1/sqrt(query_pre_attn_scalar) or 1/sqrt(head_dim).
     fn attention_scale(&self) -> f64 {
+        if let Some(multiplier) = self.config().attention_multiplier {
+            return multiplier;
+        }
         let scalar = self
             .config()
             .query_pre_attn_scalar
             .unwrap_or(self.config().head_dim as f64);
-        scalar.powf(-0.5)
+        score_scale_from_query_pre_attn_scalar(scalar)
     }
 
     /// Attention scale for a specific layer. Accounts for per-layer head_dim
-    /// when query_pre_attn_scalar is not set.
+    /// when query_pre_attn_scalar is not set. Same `attention_multiplier`
+    /// replacement as [`attention_scale`](Self::attention_scale) — no
+    /// family in this registry varies `attention_multiplier` per layer, but
+    /// the two must agree when it is set uniformly.
     fn attention_scale_for_layer(&self, layer: usize) -> f64 {
+        if let Some(multiplier) = self.config().attention_multiplier {
+            return multiplier;
+        }
         if let Some(scalar) = self.config().query_pre_attn_scalar {
-            scalar.powf(-0.5)
+            score_scale_from_query_pre_attn_scalar(scalar)
         } else {
-            (self.head_dim_for_layer(layer) as f64).powf(-0.5)
+            score_scale_from_query_pre_attn_scalar(self.head_dim_for_layer(layer) as f64)
         }
     }
 
@@ -606,20 +655,46 @@ pub trait ModelArchitecture: Send + Sync {
         self.config().attn_logit_softcapping.map(|v| v as f32)
     }
 
-    /// Extra multiplier on attention scores on top of `1/sqrt(head_dim)`
-    /// (`qk_scale_factor`). Distinct from
-    /// [`query_pre_attn_scalar`](Self::query_pre_attn_scalar), which
-    /// replaces the denominator instead. `None` = no extra scale.
+    /// Extra multiplier on attention scores on top of `1/sqrt(head_dim)`.
+    /// Distinct from [`query_pre_attn_scalar`](Self::query_pre_attn_scalar),
+    /// which replaces the denominator instead. `None` = no extra scale.
+    ///
+    /// Granite's `attention_multiplier` is **not** this operation despite
+    /// the matching doc wording on [`ModelConfig`](super::ModelConfig) —
+    /// every consumer of `arch.attention_multiplier()` on the legacy path
+    /// (`larql-compute`'s attention kernels) uses it to *replace* the
+    /// standard `1/sqrt(head_dim)` scale, not multiply on top of it
+    /// (confirmed numerically: Granite 4.1's declared value is `1/head_dim`,
+    /// not `1/sqrt(head_dim)`). [`attention_scale`](Self::attention_scale)
+    /// is where that belongs.
     fn qk_scale_factor(&self) -> Option<f64> {
         self.config().qk_scale_factor
     }
 
     /// Multiplier on the final hidden state before the vocabulary
-    /// projection (`output_multiplier`). `None` = the model declares no
-    /// output-multiplier operation, which is a different claim from
-    /// `Some(1.0)`.
+    /// projection. `None` = the model declares no output-multiplier
+    /// operation, which is a different claim from `Some(1.0)`.
+    ///
+    /// Canonical name, same reasoning as [`qk_scale_factor`](Self::qk_scale_factor):
+    /// `output_multiplier` (applied to the hidden state) and Granite's
+    /// `logits_scaling` (applied to the resulting logits) are the same
+    /// operation under two spellings — scaling commutes through the
+    /// linear head, so multiplying before or after that one matrix
+    /// multiply produces identical logits.
     fn output_multiplier(&self) -> Option<f64> {
-        self.config().output_multiplier
+        self.config()
+            .output_multiplier
+            .or(self.config().logits_scaling)
+    }
+
+    /// Residual-stream scaling: the sublayer's own output (attention or
+    /// FFN) is multiplied by this before being added into the residual
+    /// stream, at both sites, with the same value (Granite's
+    /// `residual_multiplier`). `None` = no such operation, distinct from
+    /// `Some(1.0)`. No other family in this registry scales the residual
+    /// stream, so there is no second spelling to resolve here yet.
+    fn residual_scale(&self) -> Option<f32> {
+        self.config().residual_multiplier.map(|v| v as f32)
     }
 
     /// The complete normalisation applied at the *pre* sites — before

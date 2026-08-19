@@ -77,6 +77,47 @@ fn a_closed_estate_plans() {
     assert!(plan.layers[0].post_attention_norm.is_none()); // two-norm
 }
 
+/// A checkpoint with no standalone `lm_head.weight` and no declared
+/// `tie_word_embeddings` — the near-universal tied-embeddings shape, and
+/// exactly Gemma 2's — still gets an output head, synthesised from the
+/// embedding object rather than left absent.
+#[test]
+fn a_missing_lm_head_falls_back_to_the_embedding_object_when_tied() {
+    let outcome = plan_variant(|tensors| {
+        tensors.retain(|(name, _)| *name != "lm_head.weight");
+    });
+    assert!(outcome.closed(), "{:?}", outcome.defects);
+    let plan = outcome.plan.unwrap();
+    let output = plan.output.expect("tied embeddings must synthesise a head");
+    assert_eq!(output.projection.object, "target.embedding");
+}
+
+/// The same missing tensor, but `tie_word_embeddings: false` — the
+/// GPT-OSS/OLMoE shape. The fallback must NOT fire: reusing the embedding
+/// here would silently serve the wrong projection for a checkpoint that
+/// lost its real one, so the plan stays head-less rather than guessing.
+#[test]
+fn a_missing_lm_head_stays_absent_when_explicitly_untied() {
+    let dir = tempfile::tempdir().unwrap();
+    let mut config = dense_config();
+    config["tie_word_embeddings"] = serde_json::json!(false);
+    let mut tensors = dense_tensors();
+    tensors.retain(|(name, _)| *name != "lm_head.weight");
+    let borrowed: Vec<(&str, &[usize])> = tensors
+        .iter()
+        .map(|(name, shape)| (*name, shape.as_slice()))
+        .collect();
+    let inventory = custom_artifact(dir.path(), &config, &borrowed);
+    let named = vec![("dense-artifact".to_string(), inventory)];
+    let out = tempfile::tempdir().unwrap();
+    encode_system(&named, out.path()).unwrap();
+    let inspection = inspect_container(out.path(), false).unwrap();
+    let outcome = plan_component_ops(&inspection, out.path(), "target").unwrap();
+    assert!(outcome.closed(), "{:?}", outcome.defects);
+    let plan = outcome.plan.unwrap();
+    assert!(plan.output.is_none());
+}
+
 /// THE discovery gate: an attention-gate operand whose judged semantics
 /// the surface does not carry refuses with the primitive named — the
 /// exact refusal the real Glimmer container must produce.

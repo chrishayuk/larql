@@ -233,10 +233,11 @@ impl<'a, B: PlanBackend> DecodeSession<'a, B> {
             })?;
             state.keys.push(out.key);
             state.values.push(out.value);
-            let attn_out = match &state.post_attention {
+            let mut attn_out = match &state.post_attention {
                 Some(norm) => norm.apply(self.backend, &out.output),
                 None => out.output,
             };
+            super::scale_residual_delta(layer.residual_scale, &mut attn_out);
             self.backend.residual_add(&mut h, &attn_out);
 
             let normed = state.pre_ffn.apply(self.backend, &h);
@@ -247,10 +248,11 @@ impl<'a, B: PlanBackend> DecodeSession<'a, B> {
                 &normed,
                 self.hidden,
             )?;
-            let ffn_out = match &state.post_ffn {
+            let mut ffn_out = match &state.post_ffn {
                 Some(norm) => norm.apply(self.backend, &ffn_out),
                 None => ffn_out,
             };
+            super::scale_residual_delta(layer.residual_scale, &mut ffn_out);
             self.backend.residual_add(&mut h, &ffn_out);
             if let Some(scale) = state.layer_scale {
                 self.backend.scale_row(&mut h, scale);

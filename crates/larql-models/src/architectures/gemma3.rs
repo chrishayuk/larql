@@ -247,6 +247,7 @@ mod tests {
             output_multiplier: None,
             post_norm_eps: None,
             attention_bias: None,
+            mlp_bias: None,
             hidden_act: None,
             max_position_embeddings: None,
             image_token_id: None,

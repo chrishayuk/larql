@@ -332,6 +332,13 @@ mod tests {
             "target_layer_ids",
             "draft_block_size",
             "mask_token_id",
+            // FFN/MLP bias terms. Same status as `attention_bias` had
+            // before it got a real field, except this legacy path's
+            // Q4K writer has no bias-tensor handling for the FFN
+            // projections at all yet — every checkpoint on hand (Granite
+            // 4.1 3B/8B/30B included) declares `false`, so no vindex-served
+            // model needs this today.
+            "mlp_bias",
         ];
 
         let src = include_str!("../../../larql-models/src/config/model_config.rs");

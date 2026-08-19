@@ -92,6 +92,61 @@ fn mxfp4_device_decode_matches_its_own_batch_traversal_bit_for_bit() {
     assert_eq!(batch.logits.as_deref(), Some(stepped.as_slice()));
 }
 
+/// A residual-scale operation must agree between the two traversals too —
+/// not just be present in the plan. The miniature fixture declares no
+/// `residual_multiplier` (Glimmer doesn't scale the residual stream), so
+/// the parity tests above pass regardless of whether either traversal
+/// applies `LayerPlan::residual_scale` at all: `None` is a no-op on both
+/// sides. This test forces the question by setting a non-identity value
+/// on the fixture's own plan (no source-checkpoint or container change —
+/// `ComponentOpPlan`/`LayerPlan` are plain owned data), so a traversal
+/// that silently skips the op diverges from one that doesn't.
+///
+/// The regression this pins: `opplan/exec/mod.rs`'s batch path applied
+/// `residual_scale` before every residual add; `opplan/exec/decode.rs`'s
+/// single-token step path did not, despite reading the identical
+/// `LayerPlan`. Cross-backend agreement (reference == production == metal)
+/// proved nothing — every backend shares the same batch driver, so all
+/// three were consistently missing the same op the same way, and only
+/// disagreed with the *other* traversal of the very same plan.
+#[test]
+fn residual_scale_agrees_between_decode_and_batch_traversals() {
+    let (_c, mut plan, store) = fixture();
+    for layer in &mut plan.layers {
+        layer.residual_scale = Some(2.0);
+    }
+    let backend = ReferenceBackend::new();
+    let batch = execute_plan(&plan, &store, &G_TOKENS, &backend).unwrap();
+    let stepped = decode_logits(&plan, &store, &backend);
+    assert_eq!(
+        batch.logits.as_deref(),
+        Some(stepped.as_slice()),
+        "decode-session logits differ from the batch traversal once \
+         residual_scale is non-identity"
+    );
+}
+
+/// …and the value must actually change the output, or the test above
+/// would pass vacuously (both traversals silently skipping the op agrees
+/// with itself just as well as both applying it does).
+#[test]
+fn residual_scale_is_not_a_no_op() {
+    let (_c, plan, store) = fixture();
+    let backend = ReferenceBackend::new();
+    let identity = execute_plan(&plan, &store, &G_TOKENS, &backend).unwrap();
+
+    let mut scaled_plan = plan.clone();
+    for layer in &mut scaled_plan.layers {
+        layer.residual_scale = Some(2.0);
+    }
+    let scaled = execute_plan(&scaled_plan, &store, &G_TOKENS, &backend).unwrap();
+
+    assert_ne!(
+        identity.logits, scaled.logits,
+        "residual_scale must change the computed logits"
+    );
+}
+
 #[test]
 fn f16_device_decode_matches_its_own_batch_traversal_bit_for_bit() {
     // Same loop device the seam tests use; the point here is that the

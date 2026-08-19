@@ -123,6 +123,12 @@ pub struct ModelConfig {
     /// Whether attention projections carry bias terms (`attention_bias`).
     /// `None` = the config is silent and the family default answers.
     pub attention_bias: Option<bool>,
+    /// Whether FFN/MLP projections carry bias terms (`mlp_bias`). Same
+    /// contract as [`attention_bias`](Self::attention_bias): the boolean
+    /// itself has no schema field downstream — operand closure over the
+    /// checkpoint's actual bias tensors is the real gate, this is here so
+    /// `mlp_bias` is `consumed` rather than silently unread.
+    pub mlp_bias: Option<bool>,
     /// FFN activation name, verbatim (`hidden_act` / `hidden_activation`).
     /// Mapped to [`Activation`](super::Activation) by
     /// `ModelArchitecture::activation`; an unrecognised spelling must fail

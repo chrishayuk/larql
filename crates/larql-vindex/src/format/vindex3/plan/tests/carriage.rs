@@ -216,6 +216,27 @@ fn a_fact_that_stops_at_the_parser_is_reported_with_its_reason() {
     assert!(!finding.blocks());
 }
 
+/// `mlp_bias` gets the same treatment as `attention_bias`: no schema field,
+/// judged inert at the parser because operand closure over the checkpoint's
+/// actual FFN bias tensors is the real gate (G5b), not this boolean. Granite
+/// 4.1 3B/8B/30B all declare `false`.
+#[test]
+fn mlp_bias_is_reported_and_does_not_block() {
+    let findings = plan_with(|config| {
+        config["text_config"]["mlp_bias"] = serde_json::json!(false);
+    });
+    let finding = finding_for(&findings, "mlp_bias");
+
+    assert_eq!(finding.category, FindingCategory::Representable);
+    assert_eq!(finding.carriage, Some(Carriage::Parsed));
+    assert!(
+        finding.detail.contains("stops at the parser by judgement"),
+        "{}",
+        finding.detail
+    );
+    assert!(!finding.blocks());
+}
+
 /// f32 narrowing is not a dropped fact. GPT-OSS declares `rms_norm_eps:
 /// 1e-5` and the surface carries `9.999999747378752e-6` — the same value
 /// through f32, bit for bit. Reporting that would be the gate misreading

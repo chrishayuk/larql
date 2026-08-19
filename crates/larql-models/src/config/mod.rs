@@ -33,7 +33,7 @@ pub mod rope;
 pub mod rope_types;
 
 pub use activation::{Activation, FfnType};
-pub use architecture::ModelArchitecture;
+pub use architecture::{score_scale_from_query_pre_attn_scalar, ModelArchitecture};
 pub use attention_gate::{
     AttentionGateSpec, GateActivation, GateCombine, GatePlacement, GateSource,
 };

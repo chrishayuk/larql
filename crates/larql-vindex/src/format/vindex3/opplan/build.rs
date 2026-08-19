@@ -39,9 +39,6 @@ const POST_NORM_EPS_FACT: &str = "post-norm epsilon";
 const FOUR_NORM_PLACEMENT: &str = "four-norm placement";
 /// The routed-FFN op, as the requirer of its judged facts.
 const ROUTED_FFN_OP: &str = "routed FFN op";
-const OUTPUT_OP: &str = "output op";
-const TIED_HEAD_BESIDE_STORED_HEAD_FACT: &str =
-    "tie_word_embeddings declared alongside a stored output-head object";
 /// Judged elsewhere, not yet expressible as an op here.
 const MOE_SHARED_OR_HYBRID_FACT: &str =
     "shared experts / hybrid dense+expert block (no routed-FFN op variant expresses them yet)";
@@ -336,34 +333,34 @@ pub fn plan_component_ops(
         &mut defects,
     );
     let final_norm_tensor = single(ObjectKind::FinalNorm, Some(vec![hidden]), &mut defects);
+    // No standalone `OutputHead` object is placed for a checkpoint that
+    // ships no separate `lm_head`-named tensor group at all — the near-
+    // universal tied-embeddings convention, not a missing object. Reusing
+    // the embedding object's own tensor reference is judged here, from
+    // `surface.head_reuses_embedding` alone (see [`ModelArchitecture::
+    // output_head_reuses_embedding`](larql_models::config::ModelArchitecture::output_head_reuses_embedding)):
+    // the container never gets a second copy of the matrix, and a
+    // checkpoint that explicitly declared `tie_word_embeddings: false`
+    // and still has no head tensor stays `None` here — a lost tensor, not
+    // a tied one, so it must not silently reuse the embedding.
     let head_tensor = single(
         ObjectKind::OutputHead,
         vocab.map(|v| vec![v, hidden]),
         &mut defects,
-    );
+    )
+    .or_else(|| {
+        surface
+            .head
+            .as_ref()
+            .is_some_and(|h| h.head_reuses_embedding)
+            .then(|| embedding_tensor.clone())
+            .flatten()
+    });
     if (embedding_tensor.is_some() || head_tensor.is_some()) && surface.head.is_none() {
         defects.push(ClosureDefect::MissingSurface {
             component: component.id.clone(),
         });
     }
-    // The projection the output op reads: a head object, or — when the
-    // surface says the head is tied — the embedding table itself. Both at
-    // once is a stored head beside a tie judgment, which no family has
-    // shown yet: refused rather than silently preferring one.
-    let tied = surface.head.as_ref().is_some_and(|h| h.tied_to_embedding);
-    let output_projection = match (tied, &head_tensor, &embedding_tensor) {
-        (true, Some(_), _) => {
-            defects.push(ClosureDefect::UnjudgedSemantic {
-                component: component.id.clone(),
-                fact: TIED_HEAD_BESIDE_STORED_HEAD_FACT.to_string(),
-                required_by: OUTPUT_OP.to_string(),
-            });
-            None
-        }
-        (true, None, Some(embedding)) => Some(embedding.clone()),
-        (true, None, None) => None,
-        (false, head, _) => head.clone(),
-    };
 
     if !defects.is_empty() {
         return Ok(OpPlanOutcome {
@@ -562,6 +559,7 @@ pub fn plan_component_ops(
             ffn,
             post_ffn_norm,
             layer_scale,
+            residual_scale: surface.residual_scale,
             operands_accounted: consumed,
             operands_present: consumed,
         });
@@ -578,7 +576,7 @@ pub fn plan_component_ops(
         layers,
         final_norm: final_norm_tensor
             .map(|(object, tensor)| norm_op(surface.norm.final_norm, &object, &tensor)),
-        output: output_projection.map(|(object, tensor)| OutputOp {
+        output: head_tensor.map(|(object, tensor)| OutputOp {
             projection: operand(&object, &tensor),
             multiplier: surface.head.as_ref().and_then(|h| h.output_multiplier),
             softcapping: surface

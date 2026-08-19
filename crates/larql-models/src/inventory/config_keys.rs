@@ -95,6 +95,16 @@ pub const CONSUMED_LEAF_KEYS: &[&str] = &[
     "output_multiplier",
     "post_norm_eps",
     "attention_bias",
+    "mlp_bias",
+    // `rope_scaling` itself, distinct from the leaves inside it: the parser
+    // calls `text_config.get("rope_scaling")` unconditionally (below,
+    // `rope_type` etc.), so a checkpoint that declares the key `null` — no
+    // scaling block, not an omission — is genuinely read, not silently
+    // skipped. Declaring it here (as well as in `CONSUMED_CONTAINER_KEYS`,
+    // which governs the object case) covers the scalar case too, since a
+    // non-object value never recurses and would otherwise flatten to an
+    // `Unconsumed` leaf despite the read actually happening.
+    "rope_scaling",
     "hidden_act",
     "hidden_activation",
     "max_position_embeddings",
@@ -144,6 +154,10 @@ pub const METADATA_LEAF_KEYS: &[&str] = &[
     "initializer_range",
     "use_cache",
     "attention_dropout",
+    // Weight-init scheme (Granite 4.1 30B: `"mup"`) — describes how the
+    // checkpoint's weights were initialised before training, same class as
+    // `initializer_range` right above; inert once training is over.
+    "init_method",
     // HF `PretrainedConfig` plumbing that changes what a call RETURNS or
     // how a training/eval loop chunks work, never what a forward computes:
     // classification-head labels on a config that has no head, output

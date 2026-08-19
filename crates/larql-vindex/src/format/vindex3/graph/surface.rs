@@ -206,16 +206,16 @@ pub struct HeadSurface {
     /// projection. `None` = the op is absent, distinct from `Some(1.0)`.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub output_multiplier: Option<f64>,
-    /// The vocabulary projection IS the embedding table
-    /// (`tie_word_embeddings`): the output op binds the embedding operand
-    /// and no head object exists. A judged fact, not an inference from a
-    /// missing head — a component with neither a head object nor this
-    /// flag has no output op, which is a different claim.
-    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
-    pub tied_to_embedding: bool,
     /// Final-logit softcap; `None` = the op is absent.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub final_logit_softcapping: Option<f32>,
+    /// Whether a missing standalone output-head *object* means "reuse the
+    /// embedding object" rather than "this component cannot generate".
+    /// From [`ResolvedExecution::head_reuses_embedding`](larql_models::inventory::ResolvedExecution::head_reuses_embedding) —
+    /// carried here so `opplan::build` can answer the question from the
+    /// surface alone, with no re-interpretation of the source checkpoint.
+    #[serde(default)]
+    pub head_reuses_embedding: bool,
 }
 
 /// The complete per-component execution surface.
@@ -227,6 +227,13 @@ pub struct ExecutionSurface {
     /// Present iff the component owns embedding/output-head objects.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub head: Option<HeadSurface>,
+    /// Residual-stream scaling: the attention/FFN sublayer's own output is
+    /// multiplied by this before its residual add, at both sites with the
+    /// same value (Granite's `residual_multiplier`). `None` = the op is
+    /// absent, distinct from `Some(1.0)`. Component-wide like every other
+    /// field here, applied at every layer.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub residual_scale: Option<f32>,
 }
 
 /// Build the surface for a text-path component (target/drafter) from its
@@ -290,6 +297,7 @@ pub fn surface_from_resolved(
         },
         // Attached by the builder once it knows the component's objects.
         head: None,
+        residual_scale: execution.residual_scale,
     })
 }
 
@@ -343,7 +351,7 @@ pub fn head_from_resolved(inventory: &ArchitectureInventory) -> Result<HeadSurfa
         embed_scale: execution.embed_scale,
         output_multiplier: execution.output_multiplier,
         final_logit_softcapping: execution.final_logit_softcapping,
-        tied_to_embedding: execution.tied_output_head == Some(true),
+        head_reuses_embedding: execution.head_reuses_embedding,
     })
 }
 
@@ -468,5 +476,7 @@ pub fn surface_from_nested(
             placement: None,
         },
         head: None,
+        // No perception tower has declared a residual-scale operation.
+        residual_scale: None,
     })
 }

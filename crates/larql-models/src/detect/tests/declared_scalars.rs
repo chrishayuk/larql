@@ -61,6 +61,102 @@ fn absent_scalars_stay_none_not_defaulted() {
     assert_eq!(arch.target_layer_ids(), None);
 }
 
+/// Granite's `logits_scaling` and `residual_multiplier` resolve through the
+/// canonical VINDEX3-facing names, so downstream never needs to know a
+/// second spelling exists. `attention_multiplier` is *not* a second
+/// spelling of `qk_scale_factor` — see the dedicated test below for why —
+/// so it resolves through `attention_scale()` instead, and leaves
+/// `qk_scale_factor()` at `None`.
+#[test]
+fn granite_spellings_resolve_through_the_canonical_names() {
+    let arch = detect_from_json(&serde_json::json!({
+        "model_type": "granite",
+        "hidden_size": 64,
+        "num_hidden_layers": 2,
+        "intermediate_size": 256,
+        "num_attention_heads": 8,
+        "num_key_value_heads": 8,
+        "head_dim": 64,
+        "attention_multiplier": 0.015625,
+        "logits_scaling": 10.0,
+        "residual_multiplier": 0.22
+    }));
+    assert_eq!(arch.output_multiplier(), Some(10.0));
+    assert_eq!(arch.residual_scale(), Some(0.22));
+    assert_eq!(
+        arch.qk_scale_factor(),
+        None,
+        "attention_multiplier is not an extra on-top-of multiply"
+    );
+    assert_eq!(
+        arch.attention_scale(),
+        0.015625,
+        "attention_multiplier replaces 1/sqrt(head_dim) outright"
+    );
+}
+
+/// The witness for why `attention_multiplier` cannot be folded into
+/// `qk_scale_factor`: composing them (an *extra* multiply on top of the
+/// standard score scale, `qk_scale_factor`'s actual contract) gives
+/// `0.015625 * 0.125 = 0.001953125` — 64x too small. Granite 4.1's real
+/// convention *replaces* `1/sqrt(head_dim)` (`0.125` for head_dim 64)
+/// outright; every `arch.attention_multiplier()` call site on the legacy
+/// path already treats it that way.
+#[test]
+fn attention_multiplier_replaces_the_standard_scale_not_composes_with_it() {
+    let arch = detect_from_json(&serde_json::json!({
+        "model_type": "granite",
+        "hidden_size": 64,
+        "num_hidden_layers": 2,
+        "intermediate_size": 256,
+        "num_attention_heads": 8,
+        "num_key_value_heads": 8,
+        "head_dim": 64,
+        "attention_multiplier": 0.015625
+    }));
+    let standard = (64f64).powf(-0.5);
+    assert_eq!(standard, 0.125);
+    assert_eq!(arch.attention_scale(), 0.015625);
+    assert_ne!(
+        arch.attention_scale(),
+        0.015625 * standard,
+        "must not compose with the standard 1/sqrt(head_dim) scale"
+    );
+}
+
+/// The canonical name is not a silent override: when a checkpoint declares
+/// both spellings (should not happen in practice, but the resolution order
+/// must be pinned rather than accidental), the canonical name wins.
+#[test]
+fn the_canonical_spelling_wins_when_both_are_declared() {
+    let arch = detect_from_json(&serde_json::json!({
+        "model_type": "granite",
+        "hidden_size": 64,
+        "num_hidden_layers": 2,
+        "intermediate_size": 256,
+        "num_attention_heads": 8,
+        "num_key_value_heads": 8,
+        "output_multiplier": 2.0,
+        "logits_scaling": 10.0
+    }));
+    assert_eq!(arch.output_multiplier(), Some(2.0));
+}
+
+/// No spelling of either operation declared: absence stays absence, not an
+/// identity default.
+#[test]
+fn residual_scale_absent_stays_none_not_defaulted() {
+    let arch = detect_from_json(&serde_json::json!({
+        "model_type": "llama",
+        "hidden_size": 64,
+        "num_hidden_layers": 2,
+        "intermediate_size": 256,
+        "num_attention_heads": 8,
+        "num_key_value_heads": 8
+    }));
+    assert_eq!(arch.residual_scale(), None);
+}
+
 #[test]
 fn declared_activation_reaches_the_default_trait_answer() {
     // `hidden_activation` (Glimmer spelling) → SiLU.

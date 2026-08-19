@@ -1887,6 +1887,103 @@ A-9.5  the parity chain: ops closure → exec reference → production → lower
        BF16-spine served id oracle if a byte-identical id claim is wanted.
 ```
 
+| A-11 | **Granite 4.1 (3B done, 8B/30B next) through the same lowerer** — a second independent architecture on the A-9 discipline. GPT-OSS stressed structural semantics (YaRN, sinks, biases, routed MoE, MXFP4); Granite stressed *scalar execution semantics and naming authority* — a nastier class, because a dropped or misrouted scalar still runs and still looks plausible. Mapped 2026-08-18, **A-11.0 through A-11.5 CLOSED on Granite 4.1 3B the same day** (below) — plan admissible, encode succeeds, and `vindex3 exec` on all three backends (reference/production/metal) is **byte-identical to a real HF/PyTorch forward pass**, not just to each other. Two real bugs found and fixed en route (below); oracle banked at `bench/prompts/granite/vindex3-oracle-2026-08-19.txt`. 8B/30B not yet run. | Same oracle discipline on Granite 8B and 30B: byte-identical greedy ids across reference/production/metal, matching HF/PyTorch. | after A-3 |
+
+A-11's rungs (from the 2026-08-18 map, revised same day after A-11.1):
+
+```text
+A-11.0 CLOSED 2026-08-18. plan admissibility: three facts had no registered parser and no
+       semantic judgement — `mlp_bias` (mirrors `attention_bias`'s existing treatment exactly:
+       no schema field, operand evidence gated at G5b, carriage.rs "mlp_bias" rule),
+       `rope_scaling` declared bare `null` on every Granite 4.1 config (the parser already
+       reads it unconditionally, `detect/parser.rs:217`, but the static inventory flattener
+       only credits the object case; added to `CONSUMED_LEAF_KEYS`,
+       `inventory/config_keys.rs`), and 30B-only `init_method: "mup"` (a weight-init scheme,
+       same class as `initializer_range`; `inventory/config_keys.rs::METADATA_LEAF_KEYS`).
+A-11.1 CLOSED 2026-08-18. The deeper finding: of Granite's four scaling multipliers, only
+       `embedding_multiplier` reached VINDEX3 execution (`GraniteArch::embed_scale()` →
+       `HeadSurface.embed_scale`, `inventory/resolved.rs:135`). `attention_multiplier` and
+       `logits_scaling` were consumed into `ModelConfig` but `resolved.rs` read the
+       *differently-named* generic fields `qk_scale_factor` / `output_multiplier` instead
+       (`config/architecture.rs:586,594`) — fields Granite's parser never populates.
+       `residual_multiplier` had no field anywhere in `ExecutionSurface`. `plan` reported
+       all three `representable`/`unknown` regardless — `carriage_finding` (`plan/mod.rs`)
+       treated *any* non-`ExecutionSemantic` class, `Unknown` included, as an automatic
+       pass, so a key nobody had classified graded identically to one genuinely proven
+       benign. Root cause, not Granite-specific: auditing every leaf a real parser reads
+       (`CONSUMED_LEAF_KEYS`, 80 keys) against the classification registry found 41 in
+       that state — GPT-OSS's other YaRN leaves (`factor`, `beta_fast`, `mscale`, …),
+       MoE/MLA operand counts, four GPT-2 shape aliases, a fourth norm-eps spelling,
+       alongside Granite's four. Fix: bucket all 41 (`plan/semantics.rs`); make
+       `carriage_finding` refuse `Unknown` exactly as the unconsumed path already did
+       (`plan/mod.rs`); a census test pins the registry complete going forward
+       (`plan/tests/semantics.rs::every_consumed_leaf_key_is_judged`, over the *real*
+       consumed-key list, not a hand-picked sample). Consequence, working as intended:
+       `embedding_multiplier` now carries a real `CarriageRule` (proven, not assumed —
+       `probe_embed_scale`) and passes; gpt-oss's already-known 4 blocking facts are
+       unaffected; Granite correctly *reopens* to 3 blocking facts (down from a silent 0),
+       which is the honest number A-11.2 onward closes.
+A-11.2 CLOSED 2026-08-19. Canonical semantic naming — but not the naming A-11.1 guessed.
+       `attention_multiplier` is **not** a second spelling of `qk_scale_factor`, despite
+       matching "on top of `1/sqrt(head_dim)`" doc wording on both
+       (`config/model_config.rs`, `config/architecture.rs`): `qk_scale_factor`/`query_scale`
+       is a genuine *extra* multiply on the query, composed with the standard score scale;
+       Granite's `attention_multiplier` *replaces* the standard scale outright, confirmed
+       two ways — every legacy-path caller of `arch.attention_multiplier()` across
+       `larql-compute` uses `if declared { use it } else { standard }`, never a product, and
+       Granite 4.1's declared value is exactly `1/head_dim` (`0.015625` at head_dim 64), not
+       `1/sqrt(head_dim)` (`0.125`). Bridging it into `query_scale` composed the two and gave
+       a total attention scale 64x too small. Fixed by moving the bridge into
+       `attention_scale()`/`attention_scale_for_layer()` (`config/architecture.rs`), which
+       already had the "replace, don't compose" contract for `query_pre_attn_scalar`;
+       `qk_scale_factor()` no longer touches `attention_multiplier` at all. `logits_scaling`
+       → `output_multiplier` was already correct (commutes through the linear head, so
+       "before the projection" and "on the logits" are the same number) and needed no
+       change. Pinned by
+       `detect/tests/declared_scalars.rs::attention_multiplier_replaces_the_standard_scale_not_composes_with_it`,
+       which asserts the composed (wrong) value explicitly, not just the correct one.
+A-11.3 CLOSED 2026-08-19. `residual_multiplier` given a home at the operation it scales: a
+       `residual_scale: Option<f32>` field on `ExecutionSurface` and `LayerPlan`
+       (`graph/surface.rs`, `opplan/mod.rs`), a new canonical `residual_scale()` trait method
+       (`config/architecture.rs`, mirroring `embed_scale()`'s `None`-vs-`Some(1.0)`
+       discipline), applied to the attention/FFN sublayer's own output immediately before
+       each residual add (`scale_residual_delta`, `opplan/exec/mod.rs`) — matches the legacy
+       path's own formula (`forward/layer.rs`: `residual + branch_output * multiplier`)
+       exactly. **Second real bug, found by actually running inference, not by inspection**:
+       the fix above only touched the *batch* driver (`execute_layer` in
+       `opplan/exec/mod.rs`) — `--generate` and `--logit-dump` both route through a
+       *different*, stateful single-token driver (`DecodeSession::step`,
+       `opplan/exec/decode.rs`) that has its own `residual_add` call sites and was never
+       touched, so 40 layers of Granite's FFN/attention output landed in the residual stream
+       at full, undamped strength. Symptom: logits in the 1000s (HF's true range: tens),
+       and — the part that would fool a same-family cross-check — reference, production and
+       metal **agreed with each other** throughout, because all three share the one batch
+       driver that already had the fix; only `DecodeSession` didn't. Fixed by exporting
+       `scale_residual_delta` (`pub(super)`) and calling it at both of `decode.rs`'s own
+       residual-add sites. Pinned by two new tests in
+       `opplan/exec/tests/decode.rs` — `residual_scale_agrees_between_decode_and_batch_traversals`
+       (fails without the fix: confirmed by reverting it and re-running) and
+       `residual_scale_is_not_a_no_op` (so the first test can't pass vacuously by both
+       traversals silently skipping the op).
+A-11.4/.5 CLOSED 2026-08-19, together — interpreter parity and lowering parity turned out to
+       be one verification, not two rungs: reference, production and metal-backend
+       `vindex3 exec --generate 8` on Granite 4.1 3B, prompt "What is the capital of France?"
+       (chat-wrapped, 15 tokens), are **byte-identical to each other and to a real
+       transformers/torch (CPU, fp32, greedy) forward from the local HF cache** — ids
+       `[791, 6864, 315, 9822, 374, 12366, 13, 100257]`, "The capital of France is Paris."
+       This is a stronger oracle than gpt-oss's (`larql run --emit-ids` compares against
+       larql's *own* served path — an internal check; this compares against an independent
+       implementation with zero larql code on either side of tokenisation or the forward
+       pass). Cross-backend agreement alone was proven insufficient during this same rung —
+       see A-11.3's second bug — so the external comparison is load-bearing, not decorative.
+       Banked at `bench/prompts/granite/vindex3-oracle-2026-08-19.txt`.
+A-11.6 cross-size certification: 8B and 30B (30B is the first VINDEX3 model past 8B, and
+       `init_method: "mup"` only shows up there, so a multiplier-combination difference the
+       8B run can't surface is a live risk, not a formality). Same recipe as A-11.4/.5 —
+       encode, `vindex3 plan` admissible, three backends agree with each other and with an
+       HF/PyTorch oracle. Not yet run.
+```
+
 
 The framing to keep: **mechanism is portable; optimal schedule is
 geometry-dependent.** VINDEX3 carries semantic geometry; the Metal planner
@@ -4282,3 +4379,4 @@ dropped. Re-open only if a specific *experiment* needs concurrent decode
 | Cross-vindex dedup (tokenizer, down_meta) | larql-vindex | Low priority, ~200 MB duplicated at 7 vindexes |
 | `BaseVindex` trait + `PatchedVindex` composition (ADR-worthy) | larql-vindex | `patch/{overlay.rs, overlay_apply.rs, format.rs, knn_store.rs}` ≈ 2.6k LOC mirrors `format/load.rs` (~640 LOC). Introduce a `BaseVindex` trait so the read-only loader and the overlay path share dtype/quant decode; today both reimplement it. Targets ~1k LOC reduction in `patch/` and one source of truth for weight decode. |
 | Codebase-review hardening (2026-05-28) | workspace | ~7 verified high/medium items from the whole-codebase review — see §"Codebase hardening (review 2026-05-28)" above and [`docs/audits/codebase-review-2026-05-28.md`](docs/audits/codebase-review-2026-05-28.md). |
+| VINDEX3 reference-backend numerical parity vs. HF (opened 2026-08-19) | larql-vindex | Gemma 2 2B closed vindex3 plan (5→0 blocking, `is_sliding_window_layer` alternation) and gained a synthesized tied output head, so it's the first model to run real `exec --generate` end to end. Teacher-forced logit-dump against HF `transformers` (identical 14-token sequence, greedy) shows 13/14 positions argmax-match exactly; the one divergence (position 7, "…a city ⟨that\|of⟩…") is a genuine near-tie — HF picks `that` at +0.00107 over `of`, larql's reference backend picks `of` at +0.00013 the other way, both computed from near-identical top-5 logit sets (max abs diff ~0.02–0.06 across all positions, consistent with ordinary float32 cross-implementation noise: different matmul/softmax/RMSNorm summation order between PyTorch and larql's naive f32 reference kernels). Once flipped, autoregressive decoding cascades into a different but still fluent continuation. Not yet root-caused to a specific operation (RMSNorm epsilon handling, softcap application order, and attention softmax numerics are the candidates); no evidence yet that it's a bug rather than expected float32 divergence. Investigate by narrowing which op first introduces the drift — a per-layer hidden-state diff (`shannon layer-dump` / `layer-diff`, already used for CPU-vs-Metal parity) against an HF forward-pass trace on the same prompt — before ruling FP32 noise the final answer. |

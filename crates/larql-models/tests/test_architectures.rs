@@ -347,6 +347,56 @@ fn generic_architecture_exercises_default_trait_contract() {
 }
 
 // ═══════════════════════════════════════════════════════════════
+// `output_head_reuses_embedding` — tied-embedding synthesis
+// ═══════════════════════════════════════════════════════════════
+
+fn text_lm_arch_with_tie(tie_word_embeddings: Option<bool>) -> Box<dyn ModelArchitecture> {
+    let mut config = serde_json::json!({
+        "model_type": "unknown_model",
+        "hidden_size": 16, "num_hidden_layers": 2, "intermediate_size": 32,
+        "num_attention_heads": 4, "num_key_value_heads": 2,
+    });
+    if let Some(tie) = tie_word_embeddings {
+        config["tie_word_embeddings"] = serde_json::json!(tie);
+    }
+    detect_from_json(&config)
+}
+
+#[test]
+fn output_head_reuses_embedding_when_tie_word_embeddings_absent() {
+    // H5a's own rule: absence is not a claim either way, and every
+    // existing tied-embedding checkpoint (Gemma 2/3 included) relies on
+    // exactly this — they never bother re-declaring the HF class default.
+    let arch = text_lm_arch_with_tie(None);
+    assert!(arch.output_head_reuses_embedding());
+}
+
+#[test]
+fn output_head_reuses_embedding_when_tie_word_embeddings_true() {
+    let arch = text_lm_arch_with_tie(Some(true));
+    assert!(arch.output_head_reuses_embedding());
+}
+
+#[test]
+fn output_head_does_not_reuse_embedding_when_explicitly_untied() {
+    // GPT-OSS/OLMoE shape: `tie_word_embeddings: false` must block the
+    // reuse fallback, so a checkpoint that lost its `lm_head` tensor fails
+    // loudly instead of silently serving the embedding as the projection.
+    let arch = text_lm_arch_with_tie(Some(false));
+    assert!(!arch.output_head_reuses_embedding());
+}
+
+#[test]
+fn gemma2_output_head_reuses_embedding_by_default() {
+    // Gemma 2 checkpoints ship no `lm_head.weight` and never declare
+    // `tie_word_embeddings` — the trait default must resolve this to
+    // "tied", not "unjudged".
+    let arch = gemma2_arch();
+    assert!(arch.has_lm_head());
+    assert!(arch.output_head_reuses_embedding());
+}
+
+// ═══════════════════════════════════════════════════════════════
 // Config validation
 // ═══════════════════════════════════════════════════════════════
 
@@ -1119,9 +1169,22 @@ fn gemma2_gemma_family_traits() {
     assert_eq!(arch.activation(), larql_models::Activation::GeluTanh);
     assert!(arch.has_post_norms());
     assert_eq!(arch.embed_scale(), Some((2304.0f32).sqrt()));
-    // No sliding window on Gemma 2
-    assert!(!arch.is_sliding_window_layer(0));
-    assert!(!arch.is_sliding_window_layer(5));
+}
+
+#[test]
+fn gemma2_sliding_window_alternates_every_other_layer() {
+    // HF `Gemma2DecoderLayer.is_sliding = not bool(layer_idx % 2)`: even
+    // layers slide, odd layers see full attention — a fixed period-2
+    // pattern, not a declared `layer_types` interleave.
+    let arch = gemma2_arch();
+    for layer in 0..26 {
+        assert_eq!(
+            arch.is_sliding_window_layer(layer),
+            layer.is_multiple_of(2),
+            "layer {layer} sliding-window mismatch"
+        );
+    }
+    assert_eq!(arch.sliding_window_size(), None); // no `sliding_window` in gemma2_arch()'s fixture
 }
 
 // ═══════════════════════════════════════════════════════════════

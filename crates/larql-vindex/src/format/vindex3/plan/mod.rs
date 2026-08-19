@@ -199,11 +199,19 @@ fn carriage_finding(
     built: &BuiltGraph,
 ) -> Finding {
     let class = semantics::classify_key(leaf);
-    // Only execution semantics are gated on carriage here. Tensor
-    // semantics are proven carried by the placed-object findings (the
-    // graph holds the operands themselves), and interface semantics by
-    // the resolved edges.
-    if class != SemanticClass::ExecutionSemantic {
+    // Tensor semantics are proven carried by the placed-object findings
+    // (the graph holds the operands themselves), and interface semantics
+    // by the resolved edges — both classes are demonstrated *elsewhere* in
+    // the plan, so passing them through here is not a hole. `Unknown` has
+    // no such elsewhere: nothing proves it, so — same as an unconsumed key
+    // — it must not take this exit. Before this arm named it, a key the
+    // parser read but this registry had never classified graded
+    // `representable` here regardless, which is exactly the "consumed but
+    // unjudged" shape the module exists to refuse (A-11 census, 2026-08-18:
+    // Granite's four multipliers and 37 other keys were silently passing
+    // this way — `plan/tests/semantics.rs::every_consumed_leaf_key_is_judged`
+    // now keeps the registry complete enough that this arm cannot fire).
+    if class != SemanticClass::ExecutionSemantic && class != SemanticClass::Unknown {
         return Finding {
             category: FindingCategory::Representable,
             class,
@@ -213,6 +221,21 @@ fn carriage_finding(
             resolved: None,
             carriage: Some(carriage::Carriage::Parsed),
             detail: "read by a registered parser".to_string(),
+        };
+    }
+    if class == SemanticClass::Unknown {
+        return Finding {
+            category: FindingCategory::Unrepresented,
+            class: SemanticClass::Unknown,
+            component: component_name,
+            subject: fact.path.clone(),
+            declared: Some(fact.value.clone()),
+            resolved: None,
+            carriage: Some(carriage::Carriage::Parsed),
+            detail: "consumed by a registered parser, but the semantics registry has never \
+                     classified this key — parser consumption is not representation \
+                     authority, so an unjudged key blocks whether or not a parser reads it"
+                .to_string(),
         };
     }
     let Some(rule) = carriage::rule_for(leaf) else {
@@ -250,20 +273,42 @@ fn carriage_finding(
     };
     let carried = component_for_key(built, &component_name)
         .and_then(|component| rule.probe.and_then(|probe| probe(component, &ctx)));
+    // Compared against a *canonicalised* declared value: for leaves where
+    // VINDEX3 legitimately stores a renamed or derived form of the same
+    // fact (see [`carriage::canonical_declared`]), this is the raw
+    // declaration re-expressed the same way the parser/runtime already
+    // does — not a loosened comparison. Findings still report the raw
+    // `fact.value` so the checkpoint's own spelling stays on the record.
+    let comparable_declared = carriage::canonical_declared(leaf, &fact.value);
     match carried {
         // The schema holds a value: compare it to the declaration. This
         // is where a dropped fact dies — GPT-OSS declares `yarn` and the
         // position policy can only answer `default`.
-        Some(carried) if values_agree(&carried, &fact.value) => Finding {
-            category: FindingCategory::Representable,
-            class: SemanticClass::ExecutionSemantic,
-            component: component_name,
-            subject: fact.path.clone(),
-            declared: Some(fact.value.clone()),
-            resolved: Some(carried),
-            carriage: Some(rule.reaches),
-            detail: format!("carried to `{}` at {}", rule.reaches.name(), rule.site),
-        },
+        Some(carried) if values_agree(&carried, &comparable_declared) => {
+            let detail = if comparable_declared == fact.value {
+                format!("carried to `{}` at {}", rule.reaches.name(), rule.site)
+            } else {
+                format!(
+                    "carried to `{}` at {} — declared `{}` and stored `{}` are the same fact \
+                     under the canonical conversion VINDEX3 already applies at runtime, not \
+                     compared as raw JSON",
+                    rule.reaches.name(),
+                    rule.site,
+                    fact.value,
+                    carried
+                )
+            };
+            Finding {
+                category: FindingCategory::Representable,
+                class: SemanticClass::ExecutionSemantic,
+                component: component_name,
+                subject: fact.path.clone(),
+                declared: Some(fact.value.clone()),
+                resolved: Some(carried),
+                carriage: Some(rule.reaches),
+                detail,
+            }
+        }
         Some(carried) => Finding {
             category: FindingCategory::Mismatched,
             class: SemanticClass::ExecutionSemantic,

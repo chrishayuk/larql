@@ -3,8 +3,13 @@
 //! Key differences from Gemma 3:
 //! - attn_logit_softcapping (typically 50.0)
 //! - final_logit_softcapping (typically 30.0)
-//! - No sliding window (uses full attention on all layers)
-//! - No local RoPE base (single rope_theta for all layers)
+//! - Sliding window on every *even* layer (0, 2, 4, …), full attention on
+//!   every odd layer — a fixed period-2 alternation, not a declared
+//!   `layer_types` interleave and not Gemma 3's stride-N pattern. Matches
+//!   HF `Gemma2DecoderLayer.is_sliding = not bool(layer_idx % 2)`.
+//! - No local RoPE base — sliding and full layers share the one
+//!   `rope_theta` (unlike Gemma 3, which lowers the RoPE base on sliding
+//!   layers)
 //! - query_pre_attn_scalar may differ from head_dim
 
 use crate::config::{Activation, ModelArchitecture, ModelConfig, PostNormEps};
@@ -67,5 +72,18 @@ impl ModelArchitecture for Gemma2Arch {
         Some(PostNormEps::Shared)
     }
 
-    // No sliding window — all layers use full attention with the same rope_theta
+    /// Fixed period-2 alternation: even layers (0-indexed) slide at
+    /// `sliding_window`, odd layers see full attention. Unlike Gemma 3's
+    /// stride-N pattern this is not configurable and the checkpoint never
+    /// declares it via `layer_types` — it is a property of the
+    /// architecture itself, so it is judged here rather than left to the
+    /// `layer_types`-or-`false` trait default (which would silently grade
+    /// every layer full attention for a checkpoint that, like every real
+    /// Gemma 2 release, declares no `layer_types` at all).
+    fn is_sliding_window_layer(&self, layer: usize) -> bool {
+        layer.is_multiple_of(2)
+    }
+
+    // rope_base_for_layer: no override — sliding and full layers share the
+    // one `rope_theta` the trait default already returns.
 }

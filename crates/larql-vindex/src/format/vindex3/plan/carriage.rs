@@ -38,6 +38,8 @@
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 
+use larql_models::config::score_scale_from_query_pre_attn_scalar;
+
 use super::super::graph::policy::AttentionSpan;
 use super::super::graph::Component;
 
@@ -199,6 +201,45 @@ pub const CARRIAGE_RULES: &[CarriageRule] = &[
         site: "Component.attention[].position (PositionPolicy::Yarn.scaling.original_max_position_embeddings)",
         probe: Some(probe_yarn_original_max),
     },
+    CarriageRule {
+        leaf: "type",
+        reaches: Carriage::Represented,
+        // The older HF spelling of `rope_type` (same discriminator, same
+        // block) — same claim, same probe: `PositionPolicy` can only
+        // express the unscaled class under this name too.
+        site: "Component.attention[].position — PositionPolicy expresses unscaled rope only",
+        probe: Some(probe_rope_type),
+    },
+    CarriageRule {
+        leaf: "low_freq_factor",
+        reaches: Carriage::Represented,
+        // Llama-3-style rope scaling — a different scaling convention from
+        // the YaRN one `factor`/`beta_fast`/etc. above represent.
+        // `PositionPolicy::Yarn` has no field for it; always refuses.
+        site: "no schema field — Llama-3 rope scaling is not represented yet",
+        probe: Some(probe_unrepresented),
+    },
+    CarriageRule {
+        leaf: "high_freq_factor",
+        reaches: Carriage::Represented,
+        site: "no schema field — Llama-3 rope scaling is not represented yet",
+        probe: Some(probe_unrepresented),
+    },
+    CarriageRule {
+        leaf: "mscale",
+        reaches: Carriage::Represented,
+        // DeepSeek-style YaRN mscale extension — a different scaling
+        // convention from HF's generic YaRN block above. No field exists;
+        // always refuses.
+        site: "no schema field — DeepSeek's mscale extension is not represented yet",
+        probe: Some(probe_unrepresented),
+    },
+    CarriageRule {
+        leaf: "mscale_all_dim",
+        reaches: Carriage::Represented,
+        site: "no schema field — DeepSeek's mscale extension is not represented yet",
+        probe: Some(probe_unrepresented),
+    },
     // ── Span policy ─────────────────────────────────────────────────
     CarriageRule {
         leaf: "layer_types",
@@ -211,6 +252,27 @@ pub const CARRIAGE_RULES: &[CarriageRule] = &[
         reaches: Carriage::Lowered,
         site: "Component.attention[].window → AttentionOp.window",
         probe: Some(probe_sliding_window),
+    },
+    CarriageRule {
+        leaf: "sliding_window_pattern",
+        reaches: Carriage::Represented,
+        // A period integer (e.g. Gemma 2's "every Nth layer is full") is a
+        // different representation from the per-layer `layer_types` array
+        // the graph actually carries; no derivation from one to the other
+        // exists yet, so this always refuses rather than assuming a
+        // pattern it hasn't checked.
+        site: "no schema field — not derived from the per-layer span table yet",
+        probe: Some(probe_unrepresented),
+    },
+    CarriageRule {
+        leaf: "rope_local_base_freq",
+        reaches: Carriage::Represented,
+        // A second rope base for local/sliding layers, alongside
+        // `rope_theta`. `layer_rope_theta` carries a per-layer table when a
+        // family declares one explicitly; this is a distinct declaration
+        // shape with no derivation into that table yet.
+        site: "no schema field — not derived into the per-layer rope table yet",
+        probe: Some(probe_unrepresented),
     },
     // ── Norms ───────────────────────────────────────────────────────
     CarriageRule {
@@ -228,6 +290,14 @@ pub const CARRIAGE_RULES: &[CarriageRule] = &[
     CarriageRule {
         leaf: "norm_epsilon",
         reaches: Carriage::Lowered,
+        site: "ExecutionSurface.norm.pre.eps → NormOp.eps",
+        probe: Some(probe_pre_norm_eps),
+    },
+    CarriageRule {
+        leaf: "layer_norm_epsilon",
+        reaches: Carriage::Lowered,
+        // GPT-2's spelling; `detect/parser.rs:292` folds it into the same
+        // `norm_eps` read as its three siblings above.
         site: "ExecutionSurface.norm.pre.eps → NormOp.eps",
         probe: Some(probe_pre_norm_eps),
     },
@@ -292,6 +362,79 @@ pub const CARRIAGE_RULES: &[CarriageRule] = &[
         site: "ExecutionSurface.head.output_multiplier → OutputOp.multiplier",
         probe: Some(probe_output_multiplier),
     },
+    CarriageRule {
+        leaf: "embedding_multiplier",
+        reaches: Carriage::Lowered,
+        // Granite's embedding-scale operation, wired through
+        // `GraniteArch::embed_scale()` (`config/architecture.rs`) into
+        // `HeadSurface.embed_scale` and on into `EmbeddingOp.scale`
+        // (`opplan/build.rs`).
+        site: "ExecutionSurface.head.embed_scale → EmbeddingOp.scale",
+        probe: Some(probe_embed_scale),
+    },
+    CarriageRule {
+        leaf: "attention_multiplier",
+        reaches: Carriage::Lowered,
+        // NOT `qk_scale_factor`/`query_scale` — Granite's attention_multiplier
+        // *replaces* the standard 1/sqrt(head_dim) score scale rather than
+        // multiplying on top of it (every legacy-path call site treats it
+        // that way, and the declared value — 1/head_dim — confirms it
+        // numerically). `ModelArchitecture::attention_scale`'s default
+        // resolves it into `score_scale` accordingly.
+        site: "ExecutionSurface.attention.score_scale → AttentionOp.score_scale",
+        probe: Some(probe_score_scale),
+    },
+    CarriageRule {
+        leaf: "logits_scaling",
+        reaches: Carriage::Lowered,
+        // Granite's spelling of `output_multiplier` — algebraically the
+        // same operation (scaling commutes through the linear head, so
+        // "before the vocab projection" and "on the logits" are the same
+        // number), resolved by `ModelArchitecture::output_multiplier`'s
+        // default the same way `attention_multiplier` resolves above.
+        site: "ExecutionSurface.head.output_multiplier → OutputOp.multiplier",
+        probe: Some(probe_output_multiplier),
+    },
+    CarriageRule {
+        leaf: "residual_multiplier",
+        reaches: Carriage::Lowered,
+        // Granite's residual-stream scale: the sublayer's own output
+        // (attention or FFN) is multiplied by this before its residual
+        // add, at both sites — no other family in this registry scales
+        // the residual stream, so this is new schema (A-11.3), not a
+        // second spelling of an existing field.
+        site: "ExecutionSurface.residual_scale → LayerPlan.residual_scale",
+        probe: Some(probe_residual_scale),
+    },
+    CarriageRule {
+        leaf: "norm_topk_prob",
+        reaches: Carriage::Represented,
+        // Whether router weights are renormalised after top-k selection —
+        // `RoutedFfnOp.routing_policy` judges the routing math itself
+        // (`MoeRouterKind`/`ExpertRoutingPolicy`), but no field states this
+        // flag directly; always refuses rather than assuming it agrees
+        // with whatever the judged policy happens to imply.
+        site: "no schema field — not yet cross-checked against routing_policy",
+        probe: Some(probe_unrepresented),
+    },
+    CarriageRule {
+        leaf: "num_experts_per_tok",
+        reaches: Carriage::Lowered,
+        // The canonical HF spelling of routing width — same underlying
+        // resolved value as `top_k_experts`: `ModelArchitecture::num_experts_per_token()`
+        // already bridges both spellings per family (GPT-OSS reads
+        // `num_experts_per_token` directly; Gemma 4 tries `top_k_experts`
+        // first, falling back to `num_experts_per_token` — confirmed by
+        // reading both overrides), so the same probe answers both.
+        site: "ExecutionSurface.ffn.moe.top_k → RoutedFfnOp routing",
+        probe: Some(probe_moe_top_k),
+    },
+    CarriageRule {
+        leaf: "num_experts_per_token",
+        reaches: Carriage::Lowered,
+        site: "ExecutionSurface.ffn.moe.top_k → RoutedFfnOp routing",
+        probe: Some(probe_moe_top_k),
+    },
     // ── Facts that stop at the parser, reviewed ─────────────────────
     CarriageRule {
         leaf: "attention_bias",
@@ -319,12 +462,6 @@ pub const CARRIAGE_RULES: &[CarriageRule] = &[
         probe: Some(probe_kv_shared_layers),
     },
     // ── Gemma 4 (V3-F0 witness 3) ──────────────────────────────────
-    CarriageRule {
-        leaf: "tie_word_embeddings",
-        reaches: Carriage::Lowered,
-        site: "ExecutionSurface.head.tied_to_embedding → OutputOp.projection (the embedding operand)",
-        probe: Some(probe_tied_head),
-    },
     CarriageRule {
         leaf: "attention_k_eq_v",
         reaches: Carriage::Represented,
@@ -382,6 +519,18 @@ pub const CARRIAGE_RULES: &[CarriageRule] = &[
         probe: Some(probe_false),
     },
     CarriageRule {
+        leaf: "mlp_bias",
+        reaches: Carriage::Parsed,
+        // Same argument as `attention_bias` immediately above: VINDEX3 has
+        // no `mlp_bias` field, and operand closure over the FFN's actual
+        // bias tensors (or their absence) is the real gate. Granite 4.1
+        // declares `false` on 3B/8B/30B, which agrees trivially; a
+        // checkpoint declaring `true` blocks at G5b if the projections
+        // don't carry bias operands, not here.
+        site: "no schema field — carried instead as operand evidence, gated by G5b closure",
+        probe: None,
+    },
+    CarriageRule {
         leaf: "max_position_embeddings",
         reaches: Carriage::Parsed,
         // A serving/KV-allocation bound, not a forward-pass semantic: no
@@ -396,6 +545,42 @@ pub const CARRIAGE_RULES: &[CarriageRule] = &[
 /// The rule governing a config leaf, if any.
 pub fn rule_for(leaf: &str) -> Option<&'static CarriageRule> {
     CARRIAGE_RULES.iter().find(|rule| rule.leaf == leaf)
+}
+
+/// Canonicalises a declared config value into the vocabulary a probe's
+/// carried value uses, for leaves where VINDEX3 legitimately stores a
+/// *derived* form of the same fact rather than the checkpoint's own
+/// spelling.
+///
+/// This is not a tolerance knob: the one arm here reuses the identical
+/// formula the runtime already applies
+/// ([`score_scale_from_query_pre_attn_scalar`]), so agreement means the
+/// same fact was recognised twice by the same rule, not that comparison
+/// was loosened. A leaf with no arm here falls through unchanged, so
+/// [`super::values_agree`] still requires byte-for-byte (or f32-precision)
+/// identity — this function only ever narrows a `mismatched` finding to
+/// `representable`, never the reverse, and callers still show the raw
+/// declared value in the finding regardless of what this returns.
+///
+/// `hidden_act`/`hidden_activation` used to have an arm here too, but
+/// [`probe_activation`] now resolves that alias itself (via
+/// [`ProbeContext::declared`], returning the checkpoint's own spelling on
+/// a match) — canonicalising *both* sides at once made them disagree in
+/// opposite directions (`"gelu_pytorch_tanh"` vs `"gelu_tanh"`) rather
+/// than agree. One rule owns each fact's normalisation, never two.
+pub fn canonical_declared(leaf: &str, declared: &Value) -> Value {
+    match leaf {
+        // The checkpoint declares the raw scalar; VINDEX3's execution
+        // surface stores the score scale execution actually reads —
+        // `scalar.powf(-0.5)`, the identical formula
+        // `ModelArchitecture::attention_scale` applies at runtime, called
+        // through the one shared function rather than re-derived here.
+        "query_pre_attn_scalar" => declared
+            .as_f64()
+            .map(|scalar| json!(score_scale_from_query_pre_attn_scalar(scalar)))
+            .unwrap_or_else(|| declared.clone()),
+        _ => declared.clone(),
+    }
 }
 
 // ── Probes ──────────────────────────────────────────────────────────
@@ -417,6 +602,15 @@ fn layers_in_scope<'a>(
             .iter()
             .filter(move |l| span.is_none_or(|s| l.span == s)),
     )
+}
+
+/// Shared by every rule for a fact VINDEX3 has no schema field for yet:
+/// always refuses, so the fact honestly blocks (`Unrepresented`, with the
+/// rule's own `site` text naming why) rather than falling through the
+/// generic no-rule message. Never returns `Some` — a rule using this probe
+/// makes no claim this function could get wrong.
+fn probe_unrepresented(_component: &Component, _ctx: &ProbeContext<'_>) -> Option<Value> {
+    None
 }
 
 /// The uniform rope base across the layers in scope, when there is one:
@@ -462,17 +656,6 @@ fn probe_rope_type(component: &Component, ctx: &ProbeContext<'_>) -> Option<Valu
 fn probe_kv_shared_layers(component: &Component, _ctx: &ProbeContext<'_>) -> Option<Value> {
     component.attention.as_ref()?;
     Some(json!(0))
-}
-
-fn probe_tied_head(component: &Component, _ctx: &ProbeContext<'_>) -> Option<Value> {
-    Some(json!(
-        component
-            .execution
-            .as_ref()?
-            .head
-            .as_ref()?
-            .tied_to_embedding
-    ))
 }
 
 /// Whether any layer takes V from its K projection.
@@ -672,4 +855,14 @@ fn probe_output_multiplier(component: &Component, _ctx: &ProbeContext<'_>) -> Op
             .as_ref()?
             .output_multiplier?
     ))
+}
+
+fn probe_embed_scale(component: &Component, _ctx: &ProbeContext<'_>) -> Option<Value> {
+    Some(json!(
+        component.execution.as_ref()?.head.as_ref()?.embed_scale?
+    ))
+}
+
+fn probe_residual_scale(component: &Component, _ctx: &ProbeContext<'_>) -> Option<Value> {
+    Some(json!(component.execution.as_ref()?.residual_scale?))
 }
