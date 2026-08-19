@@ -269,6 +269,30 @@ fn f32_agreement_still_separates_genuinely_different_epsilons() {
     assert!(!pre.blocks() && !post.blocks());
 }
 
+/// `query_pre_attn_scalar` is the derived-value counterpart to
+/// `rms_norm_eps`'s f32-narrowing case above: the checkpoint declares the
+/// raw scalar (256), VINDEX3's execution surface stores the score scale
+/// execution actually reads (`256^-0.5`) — a different JSON value, carried
+/// through `canonical_declared` rather than compared as raw JSON. The
+/// finding stays representable, and says so explicitly rather than
+/// silently matching.
+#[test]
+fn query_pre_attn_scalar_agrees_via_the_canonical_score_scale_derivation() {
+    let findings = plan_with(|config| {
+        config["text_config"]["query_pre_attn_scalar"] = serde_json::json!(256.0);
+    });
+    let finding = finding_for(&findings, "query_pre_attn_scalar");
+
+    assert_eq!(finding.category, FindingCategory::Representable);
+    assert_eq!(finding.declared, Some(serde_json::json!(256.0)));
+    assert!(!finding.blocks());
+    assert!(
+        finding.detail.contains("canonical conversion"),
+        "{}",
+        finding.detail
+    );
+}
+
 /// An alias is benign only while the canonical spelling it defers to is
 /// genuinely declared and consumed. GPT-OSS ships both
 /// `experts_per_token` and `num_experts_per_tok`; the parser reads the
@@ -348,6 +372,16 @@ fn carriage_stages_are_ordered() {
     assert!(Carriage::Parsed < Carriage::Represented);
     assert!(Carriage::Represented < Carriage::Lowered);
     assert!(Carriage::Lowered < Carriage::Executed);
+}
+
+/// The stage name every finding's `detail` prints — all four, not just
+/// the ones a rule happens to reach in the fixtures above.
+#[test]
+fn carriage_stage_names_print_as_the_report_shows_them() {
+    assert_eq!(Carriage::Parsed.name(), "parsed");
+    assert_eq!(Carriage::Represented.name(), "represented");
+    assert_eq!(Carriage::Lowered.name(), "lowered");
+    assert_eq!(Carriage::Executed.name(), "executed");
 }
 
 /// Every rule claiming carriage past the parser must ship a probe: the

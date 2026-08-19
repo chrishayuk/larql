@@ -146,6 +146,38 @@ fn an_unjudged_key_still_blocks() {
         .any(|f| f.class == SemanticClass::Unknown && f.blocks()));
 }
 
+/// The sibling case: a key some future parser reads (`Consumed`, not
+/// `Unconsumed`) but the semantics registry has never classified. Parser
+/// consumption is not representation authority, so this blocks exactly
+/// like the unread case above — a key the parser happened to notice must
+/// not silently outrank a key it never saw.
+#[test]
+fn a_consumed_but_unclassified_key_still_blocks() {
+    let dir = tempfile::tempdir().unwrap();
+    let mut inventory = known_dense(dir.path());
+    inventory
+        .config_keys
+        .push(larql_models::inventory::ConfigKeyFact {
+            path: "some_future_field_a_parser_reads_but_nobody_classified".to_string(),
+            value: serde_json::json!(42),
+            status: larql_models::inventory::KeyStatus::Consumed,
+        });
+    let named = vec![("llama-artifact".to_string(), inventory)];
+    let plan = plan_system(&named);
+    assert!(!plan.admissible);
+    let finding = plan.artifacts[0]
+        .findings
+        .iter()
+        .find(|f| f.subject == "some_future_field_a_parser_reads_but_nobody_classified")
+        .expect("finding for the unjudged consumed key");
+    assert_eq!(finding.category, FindingCategory::Unrepresented);
+    assert_eq!(finding.class, SemanticClass::Unknown);
+    assert!(finding.blocks());
+    assert!(finding
+        .detail
+        .contains("parser consumption is not representation"));
+}
+
 /// Attention policy reports as representable per component, with the NoPE
 /// count visible.
 #[test]

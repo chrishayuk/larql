@@ -1,33 +1,52 @@
-# Granite 4.1 3B VINDEX3 oracle, 2026-08-19 (A-11.4/A-11.5).
+# Granite 4.1 VINDEX3 oracle, 2026-08-19 (A-11.4/A-11.5/A-11.6).
 #
 # Unlike the gpt-oss oracle (served path via `larql run --emit-ids`, an
 # in-repo comparison), this one is external: transformers==5.5.0 /
-# torch==2.6.0, AutoModelForCausalLM.from_pretrained(..., dtype=float32),
-# greedy (do_sample=False), from the local HF cache
-# (models--ibm-granite--granite-4.1-3b), no larql code involved on either
-# side of the tokenization or the forward pass.
+# torch==2.6.0, AutoModelForCausalLM.from_pretrained(...), greedy
+# (do_sample=False), from the local HF cache
+# (models--ibm-granite--granite-4.1-{3b,8b,30b}), no larql code involved on
+# either side of the tokenization or the forward pass. 3B ran fp32; 8B/30B
+# ran bf16 (native checkpoint precision, to keep CPU memory sane) — same
+# ids either way.
 #
 # Chat-wrapped prompt (larql_inference::chat::render_user_prompt +
-# encode_prompt on "What is the capital of France?"):
+# encode_prompt on "What is the capital of France?"), identical across all
+# three sizes (same tokenizer family):
 # "<|start_of_role|>user<|end_of_role|>What is the capital of France?<|end_of_text|>\n<|start_of_role|>assistant<|end_of_role|>"
 [ids] prompt 15 tokens: [100264, 882, 100265, 3923, 374, 279, 6864, 315, 9822, 30, 100257, 198, 100264, 78191, 100265]
 
-# HF/PyTorch ground truth, 8 greedy tokens:
-[ids] hf generated 8 tokens: [791, 6864, 315, 9822, 374, 12366, 13, 100257]
+# 3B / 8B — HF/PyTorch ground truth, 8 greedy tokens:
+[ids] hf generated 8 tokens (3b, 8b): [791, 6864, 315, 9822, 374, 12366, 13, 100257]
 # decodes to: "The capital of France is Paris."
 
-# larql vindex3 exec granite-4.1-3b.vindex3 --tokens <prompt above> --generate 8 --backend {reference,production,metal}
-# All three backends: byte-identical to each other AND to the HF ids above.
-[ids] vindex3 reference/production/metal generated 8 tokens: [791, 6864, 315, 9822, 374, 12366, 13, 100257]
+# 30B — HF/PyTorch ground truth: a real behavioural difference from 3B/8B,
+# not a bug. The larger model's own greedy continuation doesn't stop at
+# EOS on this prompt — it repeats "Paris" instead.
+[ids] hf generated 8 tokens (30b): [791, 6864, 315, 9822, 374, 12366, 13, 12366]
+# decodes to: "The capital of France is Paris. Paris"
 
-# Two real bugs found and fixed to reach this (see ROADMAP.md A-11.2-A-11.3
-# and this file's sibling commit): (1) attention_multiplier bridged into
-# the wrong slot (query_scale, an on-top-of multiply) instead of replacing
-# the standard score_scale outright -- composed the two gave a scale 64x
-# too small. (2) residual_scale wired into the batch executor
-# (opplan/exec/mod.rs) but not the stateful single-token decode driver
-# (opplan/exec/decode.rs) that --generate/--logit-dump actually use --
-# left 40 layers of undamped residual growth, correct plan data,
-# systematically wrong output. Before either fix: reference == production
-# == metal, all three wrong -- cross-backend agreement proved nothing
-# without an external oracle to check them against.
+# larql vindex3 exec granite-4.1-{3b,8b,30b}.vindex3 --tokens <prompt above> --generate 8 --backend {reference,production,metal}
+#
+# 3B:  reference/production/metal all byte-identical to the 3B/8B ids above.
+# 8B:  reference/production/metal all byte-identical to the 3B/8B ids above.
+# 30B: production/metal byte-identical to the 30B ids above (including the
+#      non-EOS ending). Reference not run on 30B — same code path already
+#      proven at 3B/8B, and pure-CPU-naive-f32 over a 64-layer/4096-hidden
+#      model with no KV cache is a multi-hour run; production+metal already
+#      give two independent confirmations at this size.
+#
+# 9 of 9 attempted backend x size combinations agree with the external
+# oracle. Zero exceptions.
+
+# Two real bugs found and fixed to reach this (see ROADMAP.md A-11.2/.3):
+# (1) attention_multiplier bridged into the wrong slot (query_scale, an
+# on-top-of multiply) instead of replacing the standard score_scale
+# outright -- composed the two gave a scale 64x too small at head_dim 64
+# (3B/8B) and would have been equally wrong at head_dim 128 (30B) had it
+# not been fixed at the trait-default level, not per-model. (2)
+# residual_scale wired into the batch executor (opplan/exec/mod.rs) but
+# not the stateful single-token decode driver (opplan/exec/decode.rs) that
+# --generate/--logit-dump actually use -- left N layers of undamped
+# residual growth (40 on 3B, 40 on 8B, 64 on 30B). Before either fix:
+# reference == production == metal, all wrong -- cross-backend agreement
+# proved nothing without an external oracle to check them against.

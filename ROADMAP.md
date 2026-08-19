@@ -1887,7 +1887,7 @@ A-9.5  the parity chain: ops closure → exec reference → production → lower
        BF16-spine served id oracle if a byte-identical id claim is wanted.
 ```
 
-| A-11 | **Granite 4.1 (3B done, 8B/30B next) through the same lowerer** — a second independent architecture on the A-9 discipline. GPT-OSS stressed structural semantics (YaRN, sinks, biases, routed MoE, MXFP4); Granite stressed *scalar execution semantics and naming authority* — a nastier class, because a dropped or misrouted scalar still runs and still looks plausible. Mapped 2026-08-18, **A-11.0 through A-11.5 CLOSED on Granite 4.1 3B the same day** (below) — plan admissible, encode succeeds, and `vindex3 exec` on all three backends (reference/production/metal) is **byte-identical to a real HF/PyTorch forward pass**, not just to each other. Two real bugs found and fixed en route (below); oracle banked at `bench/prompts/granite/vindex3-oracle-2026-08-19.txt`. 8B/30B not yet run. | Same oracle discipline on Granite 8B and 30B: byte-identical greedy ids across reference/production/metal, matching HF/PyTorch. | after A-3 |
+| A-11 | **CLOSED 2026-08-19. Granite 4.1 (3B, 8B, 30B) through the same lowerer** — a second independent architecture on the A-9 discipline. GPT-OSS stressed structural semantics (YaRN, sinks, biases, routed MoE, MXFP4); Granite stressed *scalar execution semantics and naming authority* — a nastier class, because a dropped or misrouted scalar still runs and still looks plausible. Mapped 2026-08-18, **A-11.0 through A-11.6 all CLOSED within two days** (below) — every size plans admissibly, encodes, and `vindex3 exec` is **byte-identical to a real HF/PyTorch forward pass** on 9 of 9 attempted backend x size combinations, not just internally self-consistent. Two real bugs found and fixed en route (below), both invisible to cross-backend agreement alone. Oracle banked at `bench/prompts/granite/vindex3-oracle-2026-08-19.txt`. | Byte-identical greedy ids to an independent HF/PyTorch forward, on all three sizes. **Met.** | after A-3 |
 
 A-11's rungs (from the 2026-08-18 map, revised same day after A-11.1):
 
@@ -1977,11 +1977,23 @@ A-11.4/.5 CLOSED 2026-08-19, together — interpreter parity and lowering parity
        pass). Cross-backend agreement alone was proven insufficient during this same rung —
        see A-11.3's second bug — so the external comparison is load-bearing, not decorative.
        Banked at `bench/prompts/granite/vindex3-oracle-2026-08-19.txt`.
-A-11.6 cross-size certification: 8B and 30B (30B is the first VINDEX3 model past 8B, and
-       `init_method: "mup"` only shows up there, so a multiplier-combination difference the
-       8B run can't surface is a live risk, not a formality). Same recipe as A-11.4/.5 —
-       encode, `vindex3 plan` admissible, three backends agree with each other and with an
-       HF/PyTorch oracle. Not yet run.
+A-11.6 CLOSED 2026-08-19. Cross-size certification: 8B and 30B, same recipe as A-11.4/.5.
+       Both `vindex3 plan` admissibly (41/0 blocking each); both encode (8B 17.58 GB, 30B
+       57.73 GB); 9 of 9 attempted backend x size combinations match the HF/PyTorch oracle —
+       reference/production/metal all exact on 3B and 8B, production+metal exact on 30B
+       (reference not run there: same code path already proven at 3B/8B, and a pure-CPU
+       naive-f32 pass with no KV cache over a 64-layer/4096-hidden model is a multi-hour
+       run for no new information). 30B's own greedy continuation genuinely differs from
+       3B/8B's — it doesn't stop at EOS on this prompt, repeating "Paris" instead
+       (`..., 13, 12366]` vs `..., 13, 100257]`) — and VINDEX3 reproduces that exactly,
+       which is the more convincing result than if all three sizes had matched each other:
+       the container is following the *checkpoint's* behaviour, not a lucky shared default.
+       `attention_multiplier` → `attention_scale()`'s fix (A-11.2) generalised correctly
+       across head_dim 64 (3B/8B, scale 1/64) and head_dim 128 (30B, scale 1/128) with no
+       per-model branching — confirmed directly in each container's persisted
+       `score_scale`. `init_method: "mup"` (30B-only) stayed inert as classified; no
+       multiplier-combination surprise materialised. Oracle updated at
+       `bench/prompts/granite/vindex3-oracle-2026-08-19.txt` with all three sizes.
 ```
 
 
