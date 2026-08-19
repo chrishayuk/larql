@@ -531,3 +531,38 @@ fn test_detect_gemma4_moe_uses_gemma4_top_k_softmax_router_type() {
         Some("layers.0.post_feedforward_layernorm.weight".to_string())
     );
 }
+
+/// The PLE-family knobs are read verbatim into the config: a checkpoint
+/// declaring the double-wide MLP on or a per-layer-input vocabulary keeps
+/// those values, and one declaring neither reads `None` — not a default.
+#[test]
+fn ple_family_knobs_are_read_verbatim() {
+    let mut config = serde_json::json!({
+        "model_type": "gemma4",
+        "text_config": {
+            "hidden_size": 64,
+            "num_hidden_layers": 2,
+            "intermediate_size": 128,
+            "num_attention_heads": 8,
+            "num_key_value_heads": 2,
+            "head_dim": 8,
+            "vocab_size": 128,
+            "use_double_wide_mlp": true,
+            "vocab_size_per_layer_input": 262144
+        }
+    });
+    let parsed = crate::detect::detect_from_json(&config).config().clone();
+    assert_eq!(parsed.use_double_wide_mlp, Some(true));
+    assert_eq!(parsed.vocab_size_per_layer_input, Some(262144));
+    config["text_config"]
+        .as_object_mut()
+        .unwrap()
+        .remove("use_double_wide_mlp");
+    config["text_config"]
+        .as_object_mut()
+        .unwrap()
+        .remove("vocab_size_per_layer_input");
+    let parsed = crate::detect::detect_from_json(&config).config().clone();
+    assert_eq!(parsed.use_double_wide_mlp, None);
+    assert_eq!(parsed.vocab_size_per_layer_input, None);
+}

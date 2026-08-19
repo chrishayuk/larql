@@ -69,10 +69,6 @@ pub struct ArchitectureInventory {
     /// interface reader recorded them. `None` on a text-only checkpoint.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub multimodal_interface: Option<crate::inventory::interfaces::MultimodalInterface>,
-    /// Text-decoder features the graph represents only as absent, read
-    /// verbatim so a checkpoint turning them on blocks on the value.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub text_features: Option<crate::inventory::text_features::TextFeatures>,
     /// Every leaf in `config.json`, flattened to a dot path, classified.
     pub config_keys: Vec<ConfigKeyFact>,
     /// Declared cross-component interfaces (see

@@ -325,6 +325,8 @@ fn synth_gpt2_config(
         target_layer_ids: None,
         draft_block_size: None,
         mask_token_id: None,
+        use_double_wide_mlp: None,
+        vocab_size_per_layer_input: None,
     }
 }
 
@@ -553,6 +555,8 @@ mod tests {
             target_layer_ids: None,
             draft_block_size: None,
             mask_token_id: None,
+            use_double_wide_mlp: None,
+            vocab_size_per_layer_input: None,
         };
         let arch = crate::architectures::gpt2::Gpt2Arch::from_config(cfg);
 

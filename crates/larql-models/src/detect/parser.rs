@@ -353,6 +353,10 @@ pub(super) fn parse_model_config(config: &serde_json::Value) -> ModelConfig {
         .map(|v| v as usize)
         .filter(|&v| v > 0);
 
+    // The rest of the PLE family, verbatim (see `ModelConfig`).
+    let use_double_wide_mlp = text_config["use_double_wide_mlp"].as_bool();
+    let vocab_size_per_layer_input = text_config["vocab_size_per_layer_input"].as_u64();
+
     let has_vision_config = config.get("vision_config").is_some();
 
     // Attention/output scaling + norm shape. Declared per checkpoint;
@@ -454,5 +458,7 @@ pub(super) fn parse_model_config(config: &serde_json::Value) -> ModelConfig {
         target_layer_ids,
         draft_block_size,
         mask_token_id,
+        use_double_wide_mlp,
+        vocab_size_per_layer_input,
     }
 }

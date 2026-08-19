@@ -116,6 +116,8 @@ impl TestMoeArch {
                 target_layer_ids: None,
                 draft_block_size: None,
                 mask_token_id: None,
+                use_double_wide_mlp: None,
+                vocab_size_per_layer_input: None,
             },
         }
     }

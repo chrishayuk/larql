@@ -24,7 +24,6 @@ pub mod report;
 pub mod representation;
 pub mod resolved;
 pub mod tensors;
-pub mod text_features;
 
 #[cfg(test)]
 mod tests;
@@ -84,12 +83,6 @@ pub fn build_inventory(model_dir: &Path) -> Result<ArchitectureInventory, ModelE
         recorded_reads.extend(r.consumed_paths);
         r.interface
     });
-    // The declared-absent text features are the fourth reader (see the
-    // module doc for why they are not `ModelConfig` fields yet).
-    let text_features = text_features::read_text_features(&config).map(|r| {
-        recorded_reads.extend(r.consumed_paths);
-        r.features
-    });
     let config_facts = config_keys::classify_config(&config, &recorded_reads);
     let interfaces = config_keys::find_interfaces(&config_facts);
     let tensor_inventory = tensors::scan_tensors(model_dir)?;
@@ -109,7 +102,6 @@ pub fn build_inventory(model_dir: &Path) -> Result<ArchitectureInventory, ModelE
         nested_components,
         stored_representation,
         multimodal_interface,
-        text_features,
         config_keys: config_facts,
         interfaces,
         tensors: tensor_inventory,

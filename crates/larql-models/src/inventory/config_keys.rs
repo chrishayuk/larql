@@ -57,6 +57,8 @@ pub const CONSUMED_LEAF_KEYS: &[&str] = &[
     "vocab_size",
     "tie_word_embeddings",
     "hidden_size_per_layer_input",
+    "use_double_wide_mlp",
+    "vocab_size_per_layer_input",
     // MoE
     "n_routed_experts",
     "num_local_experts",

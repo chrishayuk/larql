@@ -2005,9 +2005,9 @@ G4.0  DONE 2026-08-19 (branch feat/vindex3-gemma4): `larql vindex3 plan` on the 
       global_head_dim, num_global_key_value_heads, num_kv_shared_layers / hidden_size_per_layer_input
       / use_double_wide_mlp / use_clipped_linears (represented as ABSENT only — 0/false agree,
       anything else blocks); two new recorded readers (inventory/interfaces.rs for the root
-      multimodal join incl. audio_config:null and use_bidirectional_attention; text_features.rs for
-      the PLE-vocab / double-wide knobs — a stopgap until they become ModelConfig fields, avoided
-      now because the parallel Granite landing touches every ModelConfig constructor); label-map
+      multimodal join incl. audio_config:null and use_bidirectional_attention; the PLE-vocab /
+      double-wide knobs are ModelConfig fields read by the main parser — landed as a stopgap
+      reader in #271, moved to ModelConfig the same day); label-map
       containers (id2label/label2id) and HF return/chunk plumbing classified metadata; a nested
       tower with no layer_types gets a Full × N table so its rope facts are judged; the tower's
       attention_bias reaches its surface. Executors (reference/production/device, the Metal

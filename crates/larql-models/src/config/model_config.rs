@@ -155,4 +155,14 @@ pub struct ModelConfig {
     pub draft_block_size: Option<usize>,
     /// Mask token the block-diffusion drafter fills (`mask_token_id`).
     pub mask_token_id: Option<u64>,
+
+    // ── Gemma 3n/4-E per-layer-input family knobs ──
+    /// Doubles the MLP width on the KV-shared layers (`use_double_wide_mlp`).
+    /// Read verbatim: no executor represents it, so a checkpoint declaring
+    /// `true` must block on the value rather than lose it.
+    pub use_double_wide_mlp: Option<bool>,
+    /// The per-layer-input embedding vocabulary (`vocab_size_per_layer_input`)
+    /// — the width of a table that exists only when `per_layer_embed_dim`
+    /// is set. Read verbatim, judged against that width.
+    pub vocab_size_per_layer_input: Option<u64>,
 }

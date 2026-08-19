@@ -171,11 +171,12 @@ fn routed_inventory_records_representation_and_binds_spelled_banks() {
     assert!(inv.resolved.execution.unwrap().moe.is_some());
 }
 
-/// A multimodal checkpoint's root interface facts and its declared-absent
-/// text features are read by the inventory's recorded readers, stored,
-/// and credited as consumed — nothing at the root is "read by nothing".
+/// A multimodal checkpoint's root interface facts are read by the
+/// interface reader and credited as consumed, and the PLE-family knobs
+/// are read by the main parser into `ModelConfig` — nothing at the root
+/// or in `text_config` is "read by nothing".
 #[test]
-fn interface_and_text_feature_readers_store_and_credit_what_they_read() {
+fn interface_reader_and_parser_credit_the_gemma4_root_and_ple_knobs() {
     let dir = tempfile::tempdir().unwrap();
     write_fixture(dir.path());
     // Extend the Glimmer-shaped fixture's config with the Gemma-4-style
@@ -202,9 +203,6 @@ fn interface_and_text_feature_readers_store_and_credit_what_they_read() {
     assert!(interface
         .token_roles
         .contains(&("boi_token_id".to_string(), 255999)));
-    let features = inv.text_features.expect("text features read");
-    assert_eq!(features.double_wide_mlp, Some(false));
-    assert_eq!(features.per_layer_input_vocab, Some(128));
     for path in [
         "audio_config",
         "boi_token_id",
