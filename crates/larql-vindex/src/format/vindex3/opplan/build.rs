@@ -16,7 +16,7 @@
 use std::collections::BTreeMap;
 use std::path::Path;
 
-use larql_models::config::FfnType;
+use larql_models::config::{FfnType, MoeRouterKind};
 
 use super::super::encode::segment::{read_segment_header, SegmentTensor};
 use super::super::encode::REPRESENTATION_ID_SEP;
@@ -25,8 +25,9 @@ use super::super::graph::surface::MoeSurface;
 use super::super::graph::{LogicalObject, NormPlacement, ObjectKind, OperandRole};
 use super::super::inspect::SystemInspection;
 use super::{
-    AttentionOp, ClosureDefect, ComponentOpPlan, EmbeddingOp, FfnOp, GateOp, LayerFfn, LayerPlan,
-    NormOp, OpPlanOutcome, OperandRef, OutputOp, PackedProjection, QkNormOp, RoutedFfnOp, SinkOp,
+    AttentionOp, ClosureDefect, ComponentOpPlan, EmbeddingOp, FfnOp, GateOp, HybridFfnOp, LayerFfn,
+    LayerPlan, NormOp, OpPlanOutcome, OperandRef, OutputOp, PackedProjection, QkNormOp,
+    RoutedFfnOp, SinkOp,
 };
 use crate::error::VindexError;
 use larql_models::config::ExpertFormat;
@@ -38,6 +39,9 @@ const POST_NORM_EPS_FACT: &str = "post-norm epsilon";
 const FOUR_NORM_PLACEMENT: &str = "four-norm placement";
 /// The routed-FFN op, as the requirer of its judged facts.
 const ROUTED_FFN_OP: &str = "routed FFN op";
+const OUTPUT_OP: &str = "output op";
+const TIED_HEAD_BESIDE_STORED_HEAD_FACT: &str =
+    "tie_word_embeddings declared alongside a stored output-head object";
 /// Judged elsewhere, not yet expressible as an op here.
 const MOE_SHARED_OR_HYBRID_FACT: &str =
     "shared experts / hybrid dense+expert block (no routed-FFN op variant expresses them yet)";
@@ -156,11 +160,11 @@ pub fn plan_component_ops(
     };
 
     // Judged routed-FFN semantics the plan can express today: pure routed
-    // experts with a declared fused-operand layout. Shared experts and a
-    // hybrid dense+expert block are judged for other families but have no
-    // op here yet — refuse, never drop.
+    // experts, or Gemma 4's hybrid dense+routed block, with a declared
+    // fused-operand layout. Shared experts are judged for other families
+    // but have no op here yet — refuse, never drop.
     if let Some(moe) = &surface.ffn.moe {
-        if moe.hybrid || moe.shared_experts > 0 {
+        if moe.shared_experts > 0 {
             defects.push(ClosureDefect::UnjudgedSemantic {
                 component: component.id.clone(),
                 fact: MOE_SHARED_OR_HYBRID_FACT.to_string(),
@@ -234,6 +238,9 @@ pub fn plan_component_ops(
             let routed = surface.ffn.moe.is_some()
                 && (bank.is_some()
                     || present.is_some_and(|s| s.contains_key(&OperandRole::MoeRouterWeight)));
+            // A hybrid layer is routed AND dense: the judgment says the
+            // family runs both, and the evidence is the routed evidence.
+            let hybrid = routed && surface.ffn.moe.is_some_and(|m| m.hybrid);
             let ops = LayerOps {
                 placement,
                 gated_ffn,
@@ -241,6 +248,7 @@ pub fn plan_component_ops(
                 attention_bias: attn.attention_bias == Some(true),
                 sinks: attn.sinks.is_some(),
                 routed,
+                hybrid,
                 moe: surface.ffn.moe,
                 v_from_k: policy.v_from_k,
             };
@@ -338,6 +346,24 @@ pub fn plan_component_ops(
             component: component.id.clone(),
         });
     }
+    // The projection the output op reads: a head object, or — when the
+    // surface says the head is tied — the embedding table itself. Both at
+    // once is a stored head beside a tie judgment, which no family has
+    // shown yet: refused rather than silently preferring one.
+    let tied = surface.head.as_ref().is_some_and(|h| h.tied_to_embedding);
+    let output_projection = match (tied, &head_tensor, &embedding_tensor) {
+        (true, Some(_), _) => {
+            defects.push(ClosureDefect::UnjudgedSemantic {
+                component: component.id.clone(),
+                fact: TIED_HEAD_BESIDE_STORED_HEAD_FACT.to_string(),
+                required_by: OUTPUT_OP.to_string(),
+            });
+            None
+        }
+        (true, None, Some(embedding)) => Some(embedding.clone()),
+        (true, None, None) => None,
+        (false, head, _) => head.clone(),
+    };
 
     if !defects.is_empty() {
         return Ok(OpPlanOutcome {
@@ -407,11 +433,20 @@ pub fn plan_component_ops(
             .get(&ObjectKind::ExpertBank)
             .map(|(o, _)| o.id.clone())
             .unwrap_or_default();
+        let dense_op = || FfnOp {
+            intermediate_size: inter,
+            activation: surface.ffn.activation,
+            gate_policy: surface.ffn.gate_policy,
+            gate: gated_ffn.then(|| operand(&stack_id, get(OperandRole::FfnGate))),
+            up: operand(&stack_id, get(OperandRole::FfnUp)),
+            down: operand(&stack_id, get(OperandRole::FfnDown)),
+        };
         let ffn = match (surface.ffn.moe, bank_slot) {
             (Some(moe), Some(bank)) => {
                 let bank_operand = |role: OperandRole| operand(&bank_id, &bank[&role]);
                 let optional = |role: OperandRole| bank.get(&role).map(|t| operand(&bank_id, t));
-                LayerFfn::Routed(Box::new(RoutedFfnOp {
+                let gemma4_router = moe.router_kind == MoeRouterKind::Gemma4Hybrid;
+                let routed = RoutedFfnOp {
                     experts: moe.experts,
                     top_k: moe.top_k,
                     expert_intermediate_size: moe.expert_intermediate_size,
@@ -435,17 +470,44 @@ pub fn plan_component_ops(
                         scales: optional(OperandRole::ExpertDownScales),
                         bias: optional(OperandRole::ExpertDownBias),
                     },
-                }))
+                    router_scale: gemma4_router
+                        .then(|| operand(&stack_id, get(OperandRole::MoeRouterScale))),
+                    router_per_expert_scale: gemma4_router
+                        .then(|| operand(&stack_id, get(OperandRole::MoeRouterPerExpertScale))),
+                    // The router's scale-less norm uses the layer's norm
+                    // epsilon (HF: `Gemma4RMSNorm(eps=config.rms_norm_eps,
+                    // with_scale=False)`).
+                    router_norm_eps: gemma4_router.then_some(surface.norm.pre.eps),
+                };
+                if moe.hybrid {
+                    LayerFfn::Hybrid(Box::new(HybridFfnOp {
+                        dense: dense_op(),
+                        routed,
+                        pre_experts_norm: norm_op(
+                            surface.norm.pre,
+                            &stack_id,
+                            get(OperandRole::PreExpertsNorm),
+                        ),
+                        post_dense_norm: norm_op(
+                            surface.norm.pre,
+                            &stack_id,
+                            get(OperandRole::PostDenseFfnNorm),
+                        ),
+                        post_experts_norm: norm_op(
+                            surface.norm.pre,
+                            &stack_id,
+                            get(OperandRole::PostExpertsNorm),
+                        ),
+                    }))
+                } else {
+                    LayerFfn::Routed(Box::new(routed))
+                }
             }
-            _ => LayerFfn::Dense(Box::new(FfnOp {
-                intermediate_size: inter,
-                activation: surface.ffn.activation,
-                gate_policy: surface.ffn.gate_policy,
-                gate: gated_ffn.then(|| operand(&stack_id, get(OperandRole::FfnGate))),
-                up: operand(&stack_id, get(OperandRole::FfnUp)),
-                down: operand(&stack_id, get(OperandRole::FfnDown)),
-            })),
+            _ => LayerFfn::Dense(Box::new(dense_op())),
         };
+        let layer_scale = slot
+            .get(&OperandRole::LayerScalar)
+            .map(|t| operand(&stack_id, t));
         let consumed = slot.len() + bank_slot.map_or(0, |b| b.len());
         layers.push(LayerPlan {
             layer,
@@ -499,6 +561,7 @@ pub fn plan_component_ops(
             pre_ffn_norm: norm_op(surface.norm.pre, &stack_id, get(pre_ffn_role)),
             ffn,
             post_ffn_norm,
+            layer_scale,
             operands_accounted: consumed,
             operands_present: consumed,
         });
@@ -515,7 +578,7 @@ pub fn plan_component_ops(
         layers,
         final_norm: final_norm_tensor
             .map(|(object, tensor)| norm_op(surface.norm.final_norm, &object, &tensor)),
-        output: head_tensor.map(|(object, tensor)| OutputOp {
+        output: output_projection.map(|(object, tensor)| OutputOp {
             projection: operand(&object, &tensor),
             multiplier: surface.head.as_ref().and_then(|h| h.output_multiplier),
             softcapping: surface
@@ -564,6 +627,9 @@ struct LayerOps {
     /// This layer's FFN is routed (bank/router evidence under a MoE
     /// judgment); dense otherwise.
     routed: bool,
+    /// Routed AND dense in one layer (Gemma 4): the dense roles are
+    /// required alongside the routed ones, plus the branch norms.
+    hybrid: bool,
     moe: Option<MoeSurface>,
     /// V is the K projection on this layer: no V operand is required, and
     /// one present is a stray.
@@ -600,8 +666,8 @@ fn required_roles(ops: &LayerOps) -> Vec<OperandRole> {
     if ops.sinks {
         roles.push(OperandRole::AttnSinks);
     }
-    match (ops.routed, ops.moe) {
-        (true, Some(moe)) => {
+    if ops.routed {
+        if let Some(moe) = ops.moe {
             roles.extend([
                 OperandRole::MoeRouterWeight,
                 OperandRole::ExpertGateUp,
@@ -614,14 +680,27 @@ fn required_roles(ops: &LayerOps) -> Vec<OperandRole> {
                 roles.push(OperandRole::ExpertGateUpScales);
                 roles.push(OperandRole::ExpertDownScales);
             }
-        }
-        _ => {
-            roles.push(OperandRole::FfnUp);
-            roles.push(OperandRole::FfnDown);
-            if ops.gated_ffn {
-                roles.push(OperandRole::FfnGate);
+            // Gemma 4's router conditions its input and its selected
+            // weights with two learned scales; the kind implies both.
+            if moe.router_kind == MoeRouterKind::Gemma4Hybrid {
+                roles.push(OperandRole::MoeRouterScale);
+                roles.push(OperandRole::MoeRouterPerExpertScale);
             }
         }
+    }
+    if !ops.routed || ops.hybrid {
+        roles.push(OperandRole::FfnUp);
+        roles.push(OperandRole::FfnDown);
+        if ops.gated_ffn {
+            roles.push(OperandRole::FfnGate);
+        }
+    }
+    if ops.hybrid {
+        roles.extend([
+            OperandRole::PreExpertsNorm,
+            OperandRole::PostDenseFfnNorm,
+            OperandRole::PostExpertsNorm,
+        ]);
     }
     roles
 }
@@ -646,11 +725,29 @@ fn absent_op(role: OperandRole, ops: &LayerOps) -> Option<&'static str> {
             Some("value projection (this layer's V is its K projection — `attention_k_eq_v`)")
         }
         OperandRole::FfnGate if !ops.routed && !ops.gated_ffn => Some("gated FFN"),
-        OperandRole::FfnGate | OperandRole::FfnUp | OperandRole::FfnDown if ops.routed => {
+        OperandRole::FfnGate | OperandRole::FfnUp | OperandRole::FfnDown
+            if ops.routed && !ops.hybrid =>
+        {
             Some("dense FFN (this layer is routed)")
+        }
+        OperandRole::MoeRouterScale | OperandRole::MoeRouterPerExpertScale
+            if !ops
+                .moe
+                .is_some_and(|m| m.router_kind == MoeRouterKind::Gemma4Hybrid) =>
+        {
+            Some("Gemma 4 router conditioning (router kind gemma4_top_k_softmax)")
+        }
+        OperandRole::PreExpertsNorm
+        | OperandRole::PostDenseFfnNorm
+        | OperandRole::PostExpertsNorm
+            if !ops.hybrid =>
+        {
+            Some("hybrid dense+routed FFN (judged semantics)")
         }
         OperandRole::MoeRouterWeight
         | OperandRole::MoeRouterBias
+        | OperandRole::MoeRouterScale
+        | OperandRole::MoeRouterPerExpertScale
         | OperandRole::ExpertGateUp
         | OperandRole::ExpertGateUpScales
         | OperandRole::ExpertGateUpBias
@@ -718,7 +815,13 @@ fn expected_shape(
         OperandRole::PreAttentionNorm
         | OperandRole::PostAttentionNorm
         | OperandRole::PreFfnNorm
-        | OperandRole::PostFfnNorm => Some(vec![hidden]),
+        | OperandRole::PostFfnNorm
+        | OperandRole::PreExpertsNorm
+        | OperandRole::PostDenseFfnNorm
+        | OperandRole::PostExpertsNorm
+        | OperandRole::MoeRouterScale => Some(vec![hidden]),
+        OperandRole::MoeRouterPerExpertScale => Some(vec![moe?.experts]),
+        OperandRole::LayerScalar => Some(vec![1]),
         OperandRole::AttnQNorm | OperandRole::AttnKNorm => match qk_scope {
             QkNormScope::PerHead => Some(vec![head_dim]),
             // Full-projection shape contract unpinned until a real

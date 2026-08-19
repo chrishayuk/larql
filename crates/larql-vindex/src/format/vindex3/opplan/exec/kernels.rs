@@ -176,6 +176,41 @@ pub fn rope_rotate_scaled(head: &mut [f32], position: usize, inv_freq: &[f64], a
     }
 }
 
+/// A partial rotary's per-pair inverse frequencies over the whole head,
+/// in the rotate-half layout [`rope_rotate_scaled`] applies (pair `i` is
+/// dims `i` and `i + head_dim/2`), transcribed from HF:
+///
+/// * `HeadWidth` (`_compute_proportional_rope_parameters`): the first
+///   `rotary_fraction · head_dim / 2` pairs at `theta^(-2i/head_dim)`, the
+///   rest at zero frequency (an identity rotation) — the encoding is
+///   always head-sized, so the rotated dims are the low pairs of the
+///   FULL head, not a contiguous prefix.
+/// * `RotaryWidth` (the plain partial rotary): the first
+///   `rotary_fraction · head_dim` DIMS form their own rotate-half block
+///   with pairs `(i, i + rotary_dim/2)` at `theta^(-2i/rotary_dim)`; that
+///   pairing is not the full-head one, so it is applied by
+///   [`rope_rotate`] over the prefix slice rather than through this table
+///   (`partial_rotary_slice`).
+pub fn partial_rotary_frequencies(head_dim: usize, rotary_fraction: f64, theta: f64) -> Vec<f64> {
+    let half = head_dim / 2;
+    let rotated_pairs = ((rotary_fraction * head_dim as f64) as usize) / 2;
+    (0..half)
+        .map(|i| {
+            if i < rotated_pairs {
+                theta.powf(-2.0 * i as f64 / head_dim as f64)
+            } else {
+                0.0
+            }
+        })
+        .collect()
+}
+
+/// The prefix width a `RotaryWidth` partial rotary rotates as its own
+/// rotate-half block — HF's `int(head_dim * partial_rotary_factor)`.
+pub fn partial_rotary_slice(head_dim: usize, rotary_fraction: f64) -> usize {
+    (head_dim as f64 * rotary_fraction) as usize
+}
+
 /// YaRN's per-pair inverse frequencies and attention amplitude for one
 /// head of `head_dim` at base `theta` — the reference transcription of
 /// HF's `_compute_yarn_parameters`, sharing nothing with the served

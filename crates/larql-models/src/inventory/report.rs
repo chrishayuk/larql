@@ -218,6 +218,13 @@ pub struct ResolvedExecution {
     /// Final-logit softcap; `None` = the op is absent.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub final_logit_softcapping: Option<f32>,
+    /// The output projection IS the embedding table (`tie_word_embeddings`
+    /// — Gemma, Gemma 4): no separate head operand exists and the head
+    /// projects with the embedding's rows. `None` = the checkpoint is
+    /// silent (the head operand's presence answers). Defaults for
+    /// inventories written before it was recorded.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub tied_output_head: Option<bool>,
 }
 
 /// Counts over [`ResolvedTopology::layers`].

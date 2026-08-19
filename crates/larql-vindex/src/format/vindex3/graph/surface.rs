@@ -206,6 +206,13 @@ pub struct HeadSurface {
     /// projection. `None` = the op is absent, distinct from `Some(1.0)`.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub output_multiplier: Option<f64>,
+    /// The vocabulary projection IS the embedding table
+    /// (`tie_word_embeddings`): the output op binds the embedding operand
+    /// and no head object exists. A judged fact, not an inference from a
+    /// missing head — a component with neither a head object nor this
+    /// flag has no output op, which is a different claim.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub tied_to_embedding: bool,
     /// Final-logit softcap; `None` = the op is absent.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub final_logit_softcapping: Option<f32>,
@@ -336,6 +343,7 @@ pub fn head_from_resolved(inventory: &ArchitectureInventory) -> Result<HeadSurfa
         embed_scale: execution.embed_scale,
         output_multiplier: execution.output_multiplier,
         final_logit_softcapping: execution.final_logit_softcapping,
+        tied_to_embedding: execution.tied_output_head == Some(true),
     })
 }
 

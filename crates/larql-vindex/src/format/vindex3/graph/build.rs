@@ -84,6 +84,12 @@ const GROUP_PATTERNS: &[(GroupClass, &[&str])] = &[
             "vision_projection",
             "mm_projector",
             "multi_modal_projector",
+            // Gemma 4's `Gemma4MultimodalEmbedder` (`model.embed_vision.
+            // embedding_projection`): soft tokens → language hidden. Listed
+            // before the embedding fragments, which `embedding_projection`
+            // would otherwise match — and it is the projector, not the
+            // text embedding table.
+            "embed_vision",
         ],
     ),
     (

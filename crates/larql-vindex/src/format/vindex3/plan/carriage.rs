@@ -320,6 +320,12 @@ pub const CARRIAGE_RULES: &[CarriageRule] = &[
     },
     // ── Gemma 4 (V3-F0 witness 3) ──────────────────────────────────
     CarriageRule {
+        leaf: "tie_word_embeddings",
+        reaches: Carriage::Lowered,
+        site: "ExecutionSurface.head.tied_to_embedding → OutputOp.projection (the embedding operand)",
+        probe: Some(probe_tied_head),
+    },
+    CarriageRule {
         leaf: "attention_k_eq_v",
         reaches: Carriage::Represented,
         site: "Component.attention[].v_from_k → AttentionOp.v_from_k (closure-paired: no V operand on such a layer)",
@@ -456,6 +462,17 @@ fn probe_rope_type(component: &Component, ctx: &ProbeContext<'_>) -> Option<Valu
 fn probe_kv_shared_layers(component: &Component, _ctx: &ProbeContext<'_>) -> Option<Value> {
     component.attention.as_ref()?;
     Some(json!(0))
+}
+
+fn probe_tied_head(component: &Component, _ctx: &ProbeContext<'_>) -> Option<Value> {
+    Some(json!(
+        component
+            .execution
+            .as_ref()?
+            .head
+            .as_ref()?
+            .tied_to_embedding
+    ))
 }
 
 /// Whether any layer takes V from its K projection.

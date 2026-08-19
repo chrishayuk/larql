@@ -53,7 +53,8 @@ use super::backend::{
 };
 use super::production::{
     add_expert_bias, add_output_bias, add_projection_biases, aggregate_heads,
-    condition_qk_in_place, expert_inner, select_experts, ProductionBackend, FUSED_BRANCHES,
+    condition_qk_in_place, condition_v_in_place, expert_inner, router_input, select_experts,
+    ProductionBackend, FUSED_BRANCHES,
 };
 use crate::error::VindexError;
 use larql_compute::cpu::ops::geglu::{geglu_silu_alloc, silu};
@@ -61,6 +62,7 @@ use ndarray::ArrayView2;
 use rayon::prelude::*;
 
 use super::production::unsupported_activation;
+use larql_compute::ffn::gelu_tanh;
 
 /// One MXFP4 matrix as the device trait consumes it:
 /// `(packed, scales, n, k)`.
@@ -306,6 +308,7 @@ impl<M: MatMul + Send> DevicePlanBackend<M> {
         let mut k = qkv.pop().expect("three matrices in, three vectors out");
         let mut q = qkv.pop().expect("three matrices in, three vectors out");
         add_projection_biases(call, &mut q, &mut k, &mut v);
+        condition_v_in_place(call, &mut v);
         condition_qk_in_place(call, position, &mut q, &mut k)?;
         Ok((q, k, v))
     }
@@ -500,11 +503,12 @@ impl<M: MatMul + Send> PlanBackend for DevicePlanBackend<M> {
     /// are the production glue, so a divergence is device matmul
     /// arithmetic alone.
     fn routed_ffn(&self, call: RoutedFfnCall<'_>) -> Result<Vec<f32>, VindexError> {
+        let routed_input = router_input(&call)?;
         let mut logits = self.gemv(
             WeightSlice::F32(call.router),
             call.experts,
             call.hidden,
-            call.x,
+            &routed_input,
         )?;
         let selected = select_experts(&call, &mut logits)?;
         let two_inter = FUSED_BRANCHES * call.intermediate;
@@ -539,6 +543,11 @@ impl<M: MatMul + Send> PlanBackend for DevicePlanBackend<M> {
                 let up = pair.pop().expect("two matrices in, two vectors out");
                 match call.activation {
                     Activation::Silu => geglu_silu_alloc(&gate, &up),
+                    Activation::GeluTanh => gate
+                        .iter()
+                        .zip(&up)
+                        .map(|(g, u)| gelu_tanh(*g) * u)
+                        .collect(),
                     other => return Err(unsupported_activation("gated", other)),
                 }
             }
@@ -546,6 +555,7 @@ impl<M: MatMul + Send> PlanBackend for DevicePlanBackend<M> {
                 let up = self.gemv(call.up, call.intermediate, call.hidden, call.x)?;
                 match call.activation {
                     Activation::Silu => up.iter().map(|u| silu(*u)).collect(),
+                    Activation::GeluTanh => up.iter().map(|u| gelu_tanh(*u)).collect(),
                     other => return Err(unsupported_activation("ungated", other)),
                 }
             }

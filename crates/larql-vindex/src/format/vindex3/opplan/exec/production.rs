@@ -18,8 +18,8 @@
 //! sharing code, which is exactly the agreement that proves nothing.
 
 use larql_models::config::{
-    Activation, AttentionSinkSpec, GateActivation, GateCombine, GatePlacement, GateSource,
-    GateUpBranch, MoeRouterKind, NormType, PositionPolicy,
+    Activation, AttentionSinkSpec, ExpertRoutingPolicy, GateActivation, GateCombine, GatePlacement,
+    GateSource, GateUpBranch, MoeRouterKind, NormType, PositionPolicy, RotaryFrequencyBasis,
 };
 use ndarray::Array2;
 
@@ -27,6 +27,7 @@ use larql_compute::attention::softmax::{softmax_in_place, softmax_in_place_f32};
 use larql_compute::cpu::ops::geglu::{geglu_silu_alloc, silu};
 use larql_compute::cpu::ops::moe::math::matmul_vec;
 use larql_compute::ffn::expert_weight::router;
+use larql_compute::ffn::gelu_tanh;
 use larql_compute::residual::{
     layer_norm_eps, rms_norm_eps, rms_norm_heads_no_weight_eps, rms_norm_qk_eps,
 };
@@ -38,7 +39,9 @@ use super::backend::{
     ProjectCall, ProjectedQkv, QkNormCall, RoutedFfnCall,
 };
 use super::kernels::{rope_rotate, rope_rotate_scaled};
-use larql_compute::attention::rope::{rope_freq_plan, RopeFreqScaling};
+use larql_compute::attention::rope::{
+    rope_freq_plan, rope_freq_plan_proportional, RopeFreqScaling,
+};
 
 /// The whole head rotates: `PositionPolicy` carries no partial-rotary
 /// fraction (no family through this path declares one).
@@ -70,17 +73,6 @@ pub(super) fn unsupported_activation(shape: &str, activation: Activation) -> Vin
     VindexError::Parse(format!(
         "no production {shape}-FFN kernel for activation {activation:?} — refusing rather \
          than borrowing the reference backend's arithmetic"
-    ))
-}
-
-/// Refuse a position policy no backend here executes yet. A
-/// `PartialRope` plan (Gemma 4's proportional rotary on its global layers)
-/// is carried by the container and refused until G4.2 executes it —
-/// rotating the whole head at the plain frequencies would run a different
-/// model without saying so.
-pub(super) fn unsupported_position(policy: PositionPolicy) -> VindexError {
-    VindexError::Parse(format!(
-        "no executor for position policy {policy:?} — carried by the container, refused          until the interpreter executes it (V3-F0 witness 3, G4.2)"
     ))
 }
 
@@ -213,9 +205,59 @@ pub(super) fn condition_qk_in_place(
             }
         }
         PositionPolicy::None => {}
-        policy @ PositionPolicy::PartialRope { .. } => return Err(unsupported_position(policy)),
+        // Partial rotary through the served planners: the proportional
+        // (head-width) plan is head-sized with zero pairs above the
+        // fraction, applied over the whole head; the plain (rotary-width)
+        // plan is prefix-sized and applied to the prefix as its own block.
+        PositionPolicy::PartialRope {
+            theta,
+            rotary_fraction,
+            basis,
+        } => match basis {
+            RotaryFrequencyBasis::HeadWidth => {
+                let plan = rope_freq_plan_proportional(head_dim, rotary_fraction, theta);
+                for head in q.chunks_exact_mut(head_dim) {
+                    rope_rotate_scaled(head, position, &plan.inv_freq, plan.amplitude as f32);
+                }
+                for head in k.chunks_exact_mut(head_dim) {
+                    rope_rotate_scaled(head, position, &plan.inv_freq, plan.amplitude as f32);
+                }
+            }
+            RotaryFrequencyBasis::RotaryWidth => {
+                let plan = rope_freq_plan(
+                    head_dim,
+                    rotary_fraction,
+                    theta,
+                    NO_POSITION_DIVISOR,
+                    RopeFreqScaling::None,
+                );
+                let width = plan.inv_freq.len() * 2;
+                for head in q.chunks_exact_mut(head_dim) {
+                    rope_rotate_scaled(&mut head[..width], position, &plan.inv_freq, 1.0);
+                }
+                for head in k.chunks_exact_mut(head_dim) {
+                    rope_rotate_scaled(&mut head[..width], position, &plan.inv_freq, 1.0);
+                }
+            }
+        },
     }
     Ok(())
+}
+
+/// The parameter-free V norm (Gemma 4 `v_norm`) on one position's raw
+/// value projection, per head, through the served kernel — shared glue
+/// for the production and device backends, applied right after the
+/// projection biases and before V is cached.
+pub(super) fn condition_v_in_place(call: &AttentionCall<'_>, v: &mut [f32]) {
+    if call.parameter_free_qk_norm.v {
+        let normed = rms_norm_heads_no_weight_eps(
+            &as_row(v),
+            call.num_kv_heads,
+            call.head_dim,
+            call.qk_norm_eps,
+        );
+        v.copy_from_slice(&from_row(normed));
+    }
 }
 
 /// The Q/K/V projection biases, added right after projection — before
@@ -257,25 +299,62 @@ fn add_bias_in_place(x: &mut [f32], b: &[f32]) {
 /// Gate and up: the two branches sharing one fused operand.
 pub(super) const FUSED_BRANCHES: usize = larql_models::quant::mxfp4::FUSED_HALVES;
 
+/// The vector the router projects: `x` for every family but Gemma 4,
+/// whose router reads the raw residual conditioned by a scale-less RMS
+/// norm (served `rms_norm_no_weight`), the learned `router.scale` and
+/// `hidden^-0.5` — the served `moe_router_input` arithmetic under HF's
+/// input choice. Every conditioning operand must be present.
+pub(super) fn router_input(call: &RoutedFfnCall<'_>) -> Result<Vec<f32>, VindexError> {
+    if call.router_kind != MoeRouterKind::Gemma4Hybrid {
+        return Ok(call.x.to_vec());
+    }
+    let missing = |what: &str| {
+        VindexError::Parse(format!(
+            "Gemma4Hybrid router without its {what}; the plan must carry it"
+        ))
+    };
+    let router_scale = call.router_scale.ok_or_else(|| missing("router scale"))?;
+    let eps = call
+        .router_norm_eps
+        .ok_or_else(|| missing("router norm eps"))?;
+    let residual = call.router_input.unwrap_or(call.x);
+    // The served scale-less RMS norm, the whole vector as one "head".
+    let normed = rms_norm_heads_no_weight_eps(&as_row(residual), 1, call.hidden, eps);
+    let mut conditioned: Vec<f32> = normed.iter().copied().collect();
+    let root_hidden_inv = (call.hidden as f32).powf(-0.5);
+    for (v, s) in conditioned.iter_mut().zip(router_scale) {
+        *v *= s * root_hidden_inv;
+    }
+    Ok(conditioned)
+}
+
 /// Route one token through the served selection rule
 /// (`larql-compute`'s `router::select`) over the router logits — shared
 /// glue, so the production and device backends select identically and
-/// exactly as the served path does. Exhaustive on the router kind: Gemma
-/// 4's per-expert scale has its own arithmetic and must be implemented
-/// before it can execute here.
+/// exactly as the served path does. Gemma 4 selects with the served
+/// renormalised-softmax rule and then applies its per-expert scale to the
+/// selected weights (served `moe_route_from_router_input`'s
+/// `RenormalizedSoftmax` + `PerExpert` arms).
 pub(super) fn select_experts(
     call: &RoutedFfnCall<'_>,
     logits: &mut [f32],
 ) -> Result<Vec<(usize, f32)>, VindexError> {
-    match call.router_kind {
-        MoeRouterKind::TopKSoftmax | MoeRouterKind::TopKThenSoftmax => {}
-        MoeRouterKind::Gemma4Hybrid => {
-            return Err(VindexError::Parse(
-                "MoeRouterKind::Gemma4Hybrid carries a per-expert scale this backend does not \
-                 execute; refusing rather than routing with the plain rule"
+    if call.router_kind == MoeRouterKind::Gemma4Hybrid {
+        let per_expert = call.router_per_expert_scale.ok_or_else(|| {
+            VindexError::Parse(
+                "Gemma4Hybrid router without its per-expert scale; the plan must carry it"
                     .to_string(),
-            ))
+            )
+        })?;
+        let mut selected = router::select(
+            logits,
+            call.top_k,
+            ExpertRoutingPolicy::NormalisedOverSelected,
+        );
+        for (e, w) in &mut selected {
+            *w *= per_expert[*e];
         }
+        return Ok(selected);
     }
     if let Some(bias) = call.router_bias {
         for (l, b) in logits.iter_mut().zip(bias) {
@@ -392,6 +471,7 @@ impl ProductionBackend {
         let mut k = matmul_vec(pre, call.w_k.as_f32()?, kv_rows, call.hidden);
         let mut v = matmul_vec(pre, call.w_v.as_f32()?, kv_rows, call.hidden);
         add_projection_biases(call, &mut q, &mut k, &mut v);
+        condition_v_in_place(call, &mut v);
         condition_qk_in_place(call, position, &mut q, &mut k)?;
         Ok((q, k, v))
     }
@@ -547,11 +627,19 @@ impl PlanBackend for ProductionBackend {
                 );
                 match call.activation {
                     Activation::Silu => geglu_silu_alloc(&gate, &up),
+                    // The served Gemma gate/up kernel (tanh-approximated
+                    // GELU on the gate, times up).
+                    Activation::GeluTanh => gate
+                        .iter()
+                        .zip(&up)
+                        .map(|(g, u)| gelu_tanh(*g) * u)
+                        .collect(),
                     other => return Err(unsupported_activation("gated", other)),
                 }
             }
             None => match call.activation {
                 Activation::Silu => up.iter().map(|u| silu(*u)).collect(),
+                Activation::GeluTanh => up.iter().map(|u| gelu_tanh(*u)).collect(),
                 other => return Err(unsupported_activation("ungated", other)),
             },
         };
@@ -564,7 +652,8 @@ impl PlanBackend for ProductionBackend {
     }
 
     fn routed_ffn(&self, call: RoutedFfnCall<'_>) -> Result<Vec<f32>, VindexError> {
-        let mut logits = matmul_vec(call.x, call.router, call.experts, call.hidden);
+        let routed_input = router_input(&call)?;
+        let mut logits = matmul_vec(&routed_input, call.router, call.experts, call.hidden);
         let selected = select_experts(&call, &mut logits)?;
         let two_inter = FUSED_BRANCHES * call.intermediate;
         let mut out = vec![0.0f32; call.hidden];

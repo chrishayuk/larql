@@ -15,6 +15,7 @@ mod coverage_device;
 mod coverage_experts_production;
 mod decode;
 mod device;
+mod gemma4;
 mod gemma4_refusals;
 mod golden;
 mod kernels;

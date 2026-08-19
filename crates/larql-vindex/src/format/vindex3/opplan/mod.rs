@@ -192,6 +192,19 @@ pub struct RoutedFfnOp {
     /// Additive router bias `[experts]`, iff the surface declares one.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub router_bias: Option<OperandRef>,
+    /// Gemma 4 (`MoeRouterKind::Gemma4Hybrid`) router conditioning: the
+    /// residual is RMS-normalised WITHOUT a weight (eps
+    /// `router_norm_eps`), multiplied by `router_scale` `[hidden]` and by
+    /// `hidden^-0.5`, then projected; the renormalised top-k weights are
+    /// multiplied by `router_per_expert_scale[selected]`. Present iff the
+    /// router kind is `Gemma4Hybrid` (closure-paired). Absent from every
+    /// other plan, so those serialise byte-identically.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub router_scale: Option<OperandRef>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub router_per_expert_scale: Option<OperandRef>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub router_norm_eps: Option<f64>,
     /// Fused gate+up per expert: `[experts, 2·inter, hidden]` in the
     /// declared layout (packed as the format dictates).
     pub gate_up: PackedProjection,
@@ -199,32 +212,69 @@ pub struct RoutedFfnOp {
     pub down: PackedProjection,
 }
 
-/// One layer's FFN: dense or routed. Untagged, so a dense layer serialises
-/// exactly as its [`FfnOp`] always has — a dense plan is byte-identical
-/// before and after routed FFNs existed.
+/// Gemma 4's hybrid FFN: a dense MLP and a routed expert block in ONE
+/// layer, both fed from the post-attention residual `r`, outputs summed
+/// before the layer's post-FFN norm. Transcribed from
+/// `Gemma4TextDecoderLayer`:
+///
+/// ```text
+/// h  = pre_ffn_norm(r)                     (the layer's PreFfnNorm)
+/// d  = post_dense_norm(mlp(h))             (post_feedforward_layernorm_1)
+/// e  = post_experts_norm(experts(pre_experts_norm(r)))
+///                                          (…_2 pre, …_2 post; router reads r)
+/// out = r + post_ffn_norm(d + e)           (the layer's PostFfnNorm)
+/// ```
+///
+/// The router's own conditioning rides on [`RoutedFfnOp`]. Neither branch
+/// is a fallback for the other: closure requires every operand of both.
+#[derive(Debug, Clone, PartialEq, Serialize)]
+pub struct HybridFfnOp {
+    pub dense: FfnOp,
+    pub routed: RoutedFfnOp,
+    pub pre_experts_norm: NormOp,
+    pub post_dense_norm: NormOp,
+    pub post_experts_norm: NormOp,
+}
+
+/// One layer's FFN: dense, routed, or both. Untagged, so a dense layer
+/// serialises exactly as its [`FfnOp`] always has — a dense plan is
+/// byte-identical before and after routed and hybrid FFNs existed.
 #[derive(Debug, Clone, PartialEq, Serialize)]
 #[serde(untagged)]
 pub enum LayerFfn {
-    /// Both boxed: the two ops differ several-fold in size and a plan
-    /// holds one per layer; the untagged serialisation is unaffected.
+    /// All boxed: the ops differ several-fold in size and a plan holds one
+    /// per layer; the untagged serialisation is unaffected.
     Dense(Box<FfnOp>),
     Routed(Box<RoutedFfnOp>),
+    Hybrid(Box<HybridFfnOp>),
 }
 
 impl LayerFfn {
-    /// The dense op, when this layer's FFN is dense.
+    /// The dense op, when this layer's FFN is dense ONLY. A hybrid layer's
+    /// dense half is reached through [`Self::hybrid`] — an executor that
+    /// ran only the dense half of a hybrid layer would run a different
+    /// model, so this does not hand it out.
     pub fn dense(&self) -> Option<&FfnOp> {
         match self {
             Self::Dense(op) => Some(op.as_ref()),
-            Self::Routed(_) => None,
+            Self::Routed(_) | Self::Hybrid(_) => None,
         }
     }
 
-    /// The routed op, when this layer's FFN is a mixture of experts.
+    /// The routed op, when this layer's FFN is a mixture of experts ONLY
+    /// (same reasoning as [`Self::dense`]).
     pub fn routed(&self) -> Option<&RoutedFfnOp> {
         match self {
             Self::Routed(op) => Some(op.as_ref()),
-            Self::Dense(_) => None,
+            Self::Dense(_) | Self::Hybrid(_) => None,
+        }
+    }
+
+    /// The hybrid op, when this layer runs both branches.
+    pub fn hybrid(&self) -> Option<&HybridFfnOp> {
+        match self {
+            Self::Hybrid(op) => Some(op.as_ref()),
+            Self::Dense(_) | Self::Routed(_) => None,
         }
     }
 }
@@ -248,6 +298,12 @@ pub struct LayerPlan {
     /// Normalises FFN output before its residual add (four-norm only).
     #[serde(skip_serializing_if = "Option::is_none")]
     pub post_ffn_norm: Option<NormOp>,
+    /// A learned scalar `[1]` the whole layer output is multiplied by,
+    /// after the FFN residual add (Gemma 4 `layer_scalar`). Present iff
+    /// the layer ships the operand — an absent scalar is no multiply, not
+    /// a multiply by one that a reader may assume.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub layer_scale: Option<OperandRef>,
     /// Operand accounting: consumed by the ops above / present in the
     /// segment for this layer. Closure requires equality.
     pub operands_accounted: usize,

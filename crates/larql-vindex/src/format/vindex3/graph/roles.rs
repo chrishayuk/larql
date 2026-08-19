@@ -64,6 +64,24 @@ pub enum OperandRole {
     ExpertDown,
     ExpertDownScales,
     ExpertDownBias,
+    /// Gemma 4's hybrid block (a dense MLP AND a routed expert block in
+    /// one layer, outputs summed). The router's learned input scale
+    /// `[hidden]` (applied after a scale-less RMS norm of the residual)
+    /// and its per-expert scale `[experts]` (applied to the renormalised
+    /// top-k weights) live in the decoder stack.
+    MoeRouterScale,
+    MoeRouterPerExpertScale,
+    /// The three FFN-branch norms beyond the pre/post pair: the expert
+    /// branch's own pre-norm over the residual, and the post-norms on
+    /// each branch's output before they are summed
+    /// (`pre_feedforward_layernorm_2`, `post_feedforward_layernorm_1`,
+    /// `post_feedforward_layernorm_2`).
+    PreExpertsNorm,
+    PostDenseFfnNorm,
+    PostExpertsNorm,
+    /// A per-layer scalar `[1]` the whole layer output is multiplied by
+    /// (Gemma 4 `layer_scalar`).
+    LayerScalar,
 }
 
 impl OperandRole {
@@ -140,9 +158,35 @@ const ROLE_TABLE: &[(&str, OperandRole)] = &[
         OperandRole::ExpertDownScales,
     ),
     ("mlp.experts.down_proj_bias", OperandRole::ExpertDownBias),
-    // Packed BF16 (Gemma 4 A4B): one unquantised operand per projection.
+    // Packed BF16 (Gemma 4 A4B): one unquantised operand per projection,
+    // in both spellings seen — the checkpoint's own (`experts.…`, no
+    // `mlp.` — the experts sit beside the dense `mlp`, not inside it) and
+    // the `mlp.experts.…` form.
     ("mlp.experts.gate_up_proj", OperandRole::ExpertGateUp),
     ("mlp.experts.down_proj", OperandRole::ExpertDown),
+    ("experts.gate_up_proj", OperandRole::ExpertGateUp),
+    ("experts.down_proj", OperandRole::ExpertDown),
+    // Gemma 4 hybrid block: router beside the dense mlp, its two scales,
+    // the three extra branch norms, and the layer scalar.
+    ("router.proj.weight", OperandRole::MoeRouterWeight),
+    ("router.scale", OperandRole::MoeRouterScale),
+    (
+        "router.per_expert_scale",
+        OperandRole::MoeRouterPerExpertScale,
+    ),
+    (
+        "pre_feedforward_layernorm_2.weight",
+        OperandRole::PreExpertsNorm,
+    ),
+    (
+        "post_feedforward_layernorm_1.weight",
+        OperandRole::PostDenseFfnNorm,
+    ),
+    (
+        "post_feedforward_layernorm_2.weight",
+        OperandRole::PostExpertsNorm,
+    ),
+    ("layer_scalar", OperandRole::LayerScalar),
 ];
 
 /// Classify one stack tensor by its object-relative name

@@ -60,6 +60,11 @@ pub const EXECUTION_SEMANTIC_KEYS: &[&str] = &[
     // the double-wide MLP on shared-KV layers, both of which the graph
     // represents only as ABSENT (`0` / `false`), so any other declaration
     // blocks; and the tower's clipped-linears flag, likewise `false` only.
+    // Whether the vocabulary projection IS the embedding table — it
+    // decides what the output op binds, so it is execution-semantic
+    // (it was listed as metadata until Gemma 4, whose head has no
+    // operand of its own, made the drop visible).
+    "tie_word_embeddings",
     "attention_k_eq_v",
     "enable_moe_block",
     "top_k_experts",
@@ -145,7 +150,7 @@ pub const INTERFACE_SEMANTIC_KEYS: &[&str] = &[
 ];
 
 /// Identity facts inert for a forward pass wherever they appear.
-pub const METADATA_KEYS: &[&str] = &["model_type", "tie_word_embeddings"];
+pub const METADATA_KEYS: &[&str] = &["model_type"];
 
 /// Keys that parameterise *training* and are inert at inference. Each
 /// entry must name the training-time path it belongs to, because "we

@@ -66,6 +66,9 @@ fn routed_layer() -> LayerFfn {
             scales: None,
             bias: None,
         },
+        router_scale: None,
+        router_per_expert_scale: None,
+        router_norm_eps: None,
         down: PackedProjection {
             weights: operand(
                 BANK_OBJECT,

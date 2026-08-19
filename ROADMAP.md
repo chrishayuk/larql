@@ -2030,7 +2030,50 @@ G4.0  DONE 2026-08-19 (branch feat/vindex3-gemma4): `larql vindex3 plan` on the 
       operand, else required); the CLASSIFY list judged (config_keys.rs / semantics.rs registries);
       vision alias compare. Executors REFUSE Proportional / v_from_k / hybrid until they execute them.
       Gate: plan admissible, 0 blocking; every dropped fact pinned by a test that re-drops it.
-G4.1  hybrid FFN in the generic graph: LayerFfn::Hybrid{dense, routed, combine} (opplan/mod.rs:200) —
+G4.1+G4.2  DONE 2026-08-19 (branch feat/vindex3-gemma4-exec) — GEMMA 4 RUNS THROUGH VINDEX3, HF-IDENTICAL.
+      Graph: LayerFfn::Hybrid{dense, routed, pre_experts_norm, post_dense_norm, post_experts_norm}
+      (the HF Gemma4TextDecoderLayer program, one place); RoutedFfnOp gains Gemma 4's router
+      conditioning (router_scale, router_per_expert_scale, router_norm_eps — paired with
+      MoeRouterKind::Gemma4Hybrid); LayerPlan.layer_scale (`layer_scalar`, by evidence); roles
+      MoeRouterScale / MoeRouterPerExpertScale / PreExpertsNorm / PostDenseFfnNorm /
+      PostExpertsNorm / LayerScalar and the checkpoint's spellings (`experts.*`, `router.proj.
+      weight`, `router.scale`, `router.per_expert_scale`, `layer_scalar`, `*_layernorm_{1,2}`);
+      HeadSurface.tied_to_embedding → OutputOp binds the EMBEDDING operand (tie_word_embeddings
+      re-classified execution-semantic with a rule — it was "metadata" until a family with no
+      head operand made the drop visible); `embed_vision` is a PerceptionAdapter (its `embedding`
+      fragment had landed the vision→text projector in the text embedding object). Closure both
+      ways on the miniature; on the REAL container `vindex3 ops`: 30 layers, every operand
+      accounted (22 sliding / 21 K≡V full), output tied to target.embedding, softcap 30.
+      Execution (reference / production / device): PositionPolicy::PartialRope both bases
+      (reference: kernels::partial_rotary_frequencies — HF proportional = rotate-half pairs over
+      the FULL head with the top frequencies zero, NOT a contiguous prefix; production: the new
+      served planner larql_compute::attention::rope::rope_freq_plan_proportional, so the served
+      gemma4 path can adopt it); V from the K operand + the parameter-free V norm
+      (condition_v_in_place, shared production/device glue); the hybrid block via
+      FfnOperands::apply_from_residual (router reads the RAW residual, experts read
+      pre_experts_norm(residual), dense reads pre_ffn_norm(residual); post-norms; sum; post_ffn_norm;
+      residual; × layer_scalar) used by BOTH the batch driver and the decode session;
+      Gemma4Hybrid routing (softmax → top-k → renormalise → × per_expert_scale) literal in the
+      reference, served primitives in production; GeluTanh gated FFN on production/device via the
+      served gelu_tanh. Gates: miniature closes + reference ≡ production ≡ device ≤ 2e-5 + four
+      causal operands + decode ≡ batch (exec/tests/gemma4.rs; note: a UNIFORM gain on K is a null
+      perturbation under k_norm/v_norm — the fixture perturbs with a different matrix);
+      partial-rotary bases at parity and pairwise distinct (exec/tests/gemma4_refusals.rs).
+      REAL 26B-A4B: `vindex3 encode` 52.75 GB in 4m19s; HF transformers f32 (scripts/
+      dump_layers_hf.py, 6 ids) ≡ `vindex3 exec --backend production --dump-layers` layer-diff
+      cos 1.000000000 / rel_rms 1e-6…8e-6 ALL 30 layers incl. the five proportional-rope K≡V
+      global layers, "no capture drifts"; chat-templated "What is the capital of France?" →
+      greedy ids 818,5279,529,7001,563,5213,50429,84750,106 = HF's greedy BYTE-IDENTICAL
+      ("The capital of France is **Paris**.<turn|>"). CPU interpreter 2.7 s/token decode
+      (full re-forward per step; no KV cache on `--generate` yet) — a correctness instrument,
+      not a serving number. F0 verdict so far: vocabulary only, again — no new foundational
+      relationship for the 26B (num_kv_shared_layers = 0 remains the open question for E2B/E4B).
+      FIND #3 for the served path: the served MoeRoutingPolicy::gemma4_hybrid routes on
+      pre_experts_norm(residual) through a scale-less norm, where HF routes on the RAW residual
+      through that norm (rms(w⊙rms(r)) ≠ rms(r)); together with the proportional-rope find, the
+      served gemma4 forward is now KNOWN to differ from HF at two points — VINDEX3 is the
+      certified path; served re-certification is its own item.
+      As mapped: hybrid FFN in the generic graph: LayerFfn::Hybrid{dense, routed, combine} (opplan/mod.rs:200) —
       or Dense+Routed as two ops in the layer program with an explicit combine — plus roles for
       router.scale, per_expert_scale, layer_scalar, pre_ffn_norm_2, post_ffn_norm_1/_2 (graph/roles.rs),
       MoeRouterKind::SoftmaxThenTopK + NormalisedOverSelected + per-expert scale, the scale-less router

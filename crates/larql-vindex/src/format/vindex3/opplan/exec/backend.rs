@@ -282,6 +282,18 @@ pub struct RoutedFfnCall<'a> {
     pub down: &'a [WeightSlice<'a>],
     /// Down bias, `[experts · hidden]` flat.
     pub down_bias: Option<&'a [f32]>,
+    /// What the router reads. Every family but Gemma 4 routes on the same
+    /// vector the experts consume (`x`); Gemma 4's router reads the RAW
+    /// post-attention residual and conditions it itself. `None` = `x`.
+    pub router_input: Option<&'a [f32]>,
+    /// `MoeRouterKind::Gemma4Hybrid` conditioning, present iff the plan
+    /// carries it: `router_input` is RMS-normalised without a weight
+    /// (`router_norm_eps`), multiplied by `router_scale` `[hidden]` and by
+    /// `hidden^-0.5` before the projection; the renormalised top-k weights
+    /// are multiplied by `router_per_expert_scale[selected]`.
+    pub router_scale: Option<&'a [f32]>,
+    pub router_per_expert_scale: Option<&'a [f32]>,
+    pub router_norm_eps: Option<f64>,
 }
 
 /// One position's attention against interpreter-owned K/V state — the
@@ -403,6 +415,16 @@ pub trait PlanBackend: Sync {
     /// The routed FFN — a mixture of experts. Required of every backend
     /// for the same reason as [`Self::ffn`]: a backend without the
     /// arithmetic must refuse, never borrow it.
+    /// Multiply one hidden row by a scalar in place — Gemma 4's
+    /// `layer_scalar` on the whole layer output. Elementwise glue like
+    /// [`Self::residual_add`]; a backend overrides only to keep the row on
+    /// its device.
+    fn scale_row(&self, row: &mut [f32], scale: f32) {
+        for value in row {
+            *value *= scale;
+        }
+    }
+
     fn routed_ffn(&self, call: RoutedFfnCall<'_>) -> Result<Vec<f32>, VindexError>;
 
     /// Vocabulary projection plus the head's optional multiplier and

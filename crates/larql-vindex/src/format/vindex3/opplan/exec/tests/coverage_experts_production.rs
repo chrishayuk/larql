@@ -473,6 +473,10 @@ fn routed_call<'a>(x: &'a [f32], router: &'a [f32], bias: Option<&'a [f32]>) -> 
         gate_up_bias: None,
         down: &[],
         down_bias: None,
+        router_input: None,
+        router_scale: None,
+        router_per_expert_scale: None,
+        router_norm_eps: None,
     }
 }
 

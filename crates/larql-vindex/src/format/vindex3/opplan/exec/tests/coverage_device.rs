@@ -541,6 +541,10 @@ fn a_routed_ffn_whose_router_dispatch_is_refused_fails_closed() {
             gate_up_bias: None,
             down: &down,
             down_bias: None,
+            router_input: None,
+            router_scale: None,
+            router_per_expert_scale: None,
+            router_norm_eps: None,
         })
         .unwrap_err();
     let message = err.to_string();

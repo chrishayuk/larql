@@ -293,3 +293,42 @@ fn an_unclassifiable_group_is_reported_unplaced_with_its_own_reason() {
     );
     assert_eq!(unplaced.artifact, "only-artifact");
 }
+
+/// Gemma 4's vision→text projector (`model.embed_vision.embedding_projection`)
+/// is a perception adapter, not a second tensor in the text embedding
+/// object — which is where its `embedding` fragment would otherwise land
+/// it, leaving an embedding object with two tensors and no head.
+#[test]
+fn the_gemma4_multimodal_embedder_is_a_perception_adapter() {
+    use crate::format::vindex3::plan::tests_support::gemma4_shaped_target;
+    let dir = tempfile::tempdir().unwrap();
+    let inventory = gemma4_shaped_target(dir.path());
+    let built = build_from_inventories(&[("gemma4".to_string(), inventory)]);
+    let embedding = built
+        .graph
+        .objects
+        .iter()
+        .find(|o| o.component == "target" && o.kind == ObjectKind::Embedding)
+        .expect("text embedding object");
+    let embedding_prefixes: Vec<&str> = embedding
+        .source_bindings
+        .iter()
+        .map(|b| b.tensor_prefix.as_str())
+        .collect();
+    assert!(
+        embedding_prefixes
+            .iter()
+            .all(|p| p.contains("embed_tokens")),
+        "{embedding_prefixes:?}"
+    );
+    let adapter = built
+        .graph
+        .objects
+        .iter()
+        .find(|o| o.kind == ObjectKind::PerceptionAdapter)
+        .expect("the projector is a perception adapter");
+    assert!(adapter
+        .source_bindings
+        .iter()
+        .any(|b| b.tensor_prefix.contains("embed_vision")));
+}

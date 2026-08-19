@@ -293,3 +293,36 @@ fn llama3_leaves_position_zero_unchanged() {
         );
     }
 }
+
+/// HF `proportional`: head-sized plan, the first `fraction·d/2` pairs at
+/// `base^(-2i/d)` over the FULL head width, the rest at zero — and it
+/// differs from the plain partial rotary at the same fraction in both
+/// length and angle, so the two cannot be confused for one another.
+#[test]
+fn proportional_plan_takes_frequencies_over_the_full_head_and_zeroes_the_rest() {
+    let head_dim = 512;
+    let fraction = 0.25;
+    let base = 1_000_000.0;
+    let plan = rope_freq_plan_proportional(head_dim, fraction, base);
+    assert_eq!(plan.inv_freq.len(), head_dim / 2);
+    let rotated_pairs = 64;
+    for (i, f) in plan.inv_freq.iter().enumerate() {
+        if i < rotated_pairs {
+            let expected = 1.0 / base.powf(2.0 * i as f64 / head_dim as f64);
+            assert!((f - expected).abs() < 1e-15, "pair {i}: {f} vs {expected}");
+        } else {
+            assert_eq!(*f, 0.0, "pair {i} must be unrotated");
+        }
+    }
+    assert_eq!(plan.amplitude, UNIT_AMPLITUDE);
+    // The plain partial rotary at the same fraction: 64 pairs over a
+    // 128-wide block, so pair 32 sits at base^(-64/128) not base^(-64/512).
+    let plain = rope_freq_plan(head_dim, fraction, base, 1.0, RopeFreqScaling::None);
+    assert_eq!(plain.inv_freq.len(), rotated_pairs);
+    let pair = 32;
+    assert!((plain.inv_freq[pair] - 1.0 / base.powf(64.0 / 128.0)).abs() < 1e-15);
+    assert!(
+        plan.inv_freq[pair] > plain.inv_freq[pair] * 10.0,
+        "different angles, not a relabelling"
+    );
+}

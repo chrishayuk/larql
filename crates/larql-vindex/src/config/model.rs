@@ -69,6 +69,12 @@ pub struct VindexModelConfig {
     /// Per-layer embedding dimension (PLE). 0 or None = no PLE.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub per_layer_embed_dim: Option<usize>,
+    /// Gemma 3n/4-E: double-wide MLP on the KV-shared layers, verbatim.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub use_double_wide_mlp: Option<bool>,
+    /// Gemma 3n/4-E: the per-layer-input embedding vocabulary, verbatim.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub vocab_size_per_layer_input: Option<u64>,
     /// RoPE base for local/sliding window layers.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub rope_local_base: Option<f64>,
@@ -235,6 +241,8 @@ impl VindexModelConfig {
             attention_k_eq_v: cfg.attention_k_eq_v,
             num_kv_shared_layers: cfg.num_kv_shared_layers,
             per_layer_embed_dim: cfg.per_layer_embed_dim,
+            use_double_wide_mlp: cfg.use_double_wide_mlp,
+            vocab_size_per_layer_input: cfg.vocab_size_per_layer_input,
             rope_local_base: cfg.rope_local_base,
             layer_rope_theta: cfg.layer_rope_theta.clone(),
             query_pre_attn_scalar: cfg.query_pre_attn_scalar,
@@ -404,6 +412,8 @@ mod tests {
             attention_k_eq_v: false,
             num_kv_shared_layers: None,
             per_layer_embed_dim: None,
+            use_double_wide_mlp: None,
+            vocab_size_per_layer_input: None,
             layer_rope_theta: None,
             rope_local_base: None,
             query_pre_attn_scalar: None,
@@ -634,6 +644,8 @@ mod tests {
         cfg.layer_types = Some(vec!["sliding_attention".into(), "full_attention".into()]);
         cfg.num_kv_shared_layers = Some(2);
         cfg.per_layer_embed_dim = Some(256);
+        cfg.use_double_wide_mlp = Some(true);
+        cfg.vocab_size_per_layer_input = Some(262144);
         cfg.rope_local_base = Some(10_000.0);
         cfg.query_pre_attn_scalar = Some(1.0);
         cfg.final_logit_softcapping = Some(30.0);
@@ -651,6 +663,8 @@ mod tests {
         assert_eq!(back.layer_types.as_ref().map(|v| v.len()), Some(2));
         assert_eq!(back.num_kv_shared_layers, Some(2));
         assert_eq!(back.per_layer_embed_dim, Some(256));
+        assert_eq!(back.use_double_wide_mlp, Some(true));
+        assert_eq!(back.vocab_size_per_layer_input, Some(262144));
         assert_eq!(back.rope_local_base, Some(10_000.0));
         assert_eq!(back.query_pre_attn_scalar, Some(1.0));
         assert_eq!(back.final_logit_softcapping, Some(30.0));

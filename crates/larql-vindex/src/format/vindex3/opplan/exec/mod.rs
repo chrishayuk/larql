@@ -303,14 +303,22 @@ fn execute_layer<B: PlanBackend + ?Sized>(
     // single number.
     let format = backend.weight_format(MatrixClass::FfnProjection);
     let ffn = experts::FfnOperands::load(&layer.ffn, store, format)?;
+    let layer_scale = layer
+        .layer_scale
+        .as_ref()
+        .map(|op| store.load(op))
+        .transpose()?;
     h.par_iter_mut().try_for_each(|row| {
         let normed = apply_norm_op(&layer.pre_ffn_norm, store, row, backend)?;
-        let ffn_out = ffn.apply(&layer.ffn, backend, &normed, hidden)?;
+        let ffn_out = ffn.apply_from_residual(&layer.ffn, backend, row, &normed, hidden)?;
         let ffn_out = match &layer.post_ffn_norm {
             Some(op) => apply_norm_op(op, store, &ffn_out, backend)?,
             None => ffn_out,
         };
         backend.residual_add(row, &ffn_out);
+        if let Some(scale) = &layer_scale {
+            backend.scale_row(row, layer_scalar_of(scale)?);
+        }
         Ok::<(), VindexError>(())
     })?;
     Ok(LayerTrace {
@@ -344,17 +352,11 @@ impl AttentionOperands {
         store: &OperandStore,
         format: WeightFormat,
     ) -> Result<Self, VindexError> {
-        // Carried by the container, not executed yet (V3-F0 witness 3,
-        // G4.2): a K≡V layer and the parameter-free V norm. Loading `v`
-        // as the K matrix and running the plain path would silently skip
-        // the V norm — refuse, typed, before any bytes move.
-        if op.v_from_k || op.parameter_free_qk_norm.v {
-            return Err(VindexError::Parse(format!(
-                "attention op carries v_from_k={} / parameter-free v_norm={}, which no \
-                 executor runs yet (G4.2) — refusing rather than executing a different model",
-                op.v_from_k, op.parameter_free_qk_norm.v
-            )));
-        }
+        // A K≡V layer names the K operand as `v`: the value projection is
+        // the raw K projection (before the key's norm and rotation), which
+        // is exactly what projecting `w_v` = W_k yields — the backends take
+        // V before conditioning Q/K, and apply the parameter-free V norm
+        // to it when the op carries one.
         Ok(Self {
             w_q: load_weight(store, &op.q, format)?,
             w_k: load_weight(store, &op.k, format)?,
@@ -507,6 +509,19 @@ fn apply_norm_op<B: PlanBackend + ?Sized>(
         weight_offset: op.weight_offset,
         eps: op.eps,
     }))
+}
+
+/// The one value of a `[1]` layer-scale operand — refused if the operand
+/// is not exactly one value, since a silently-broadcast vector would be a
+/// different op.
+pub(super) fn layer_scalar_of(values: &[f32]) -> Result<f32, VindexError> {
+    match values {
+        [scale] => Ok(*scale),
+        other => Err(VindexError::Parse(format!(
+            "layer scale operand holds {} values; the op is one scalar",
+            other.len()
+        ))),
+    }
 }
 
 /// Project one vector through an `[out, in]` weight.

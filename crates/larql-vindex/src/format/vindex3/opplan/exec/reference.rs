@@ -22,12 +22,12 @@ use super::backend::{
     ProjectCall, ProjectedQkv, QkNormCall, RoutedFfnCall,
 };
 use super::kernels::{
-    activate, matvec, norm, rope_rotate, rope_rotate_scaled, sigmoid, softcap, softmax,
-    softmax_with_sink, yarn_frequencies,
+    activate, matvec, norm, partial_rotary_frequencies, partial_rotary_slice, rope_rotate,
+    rope_rotate_scaled, sigmoid, softcap, softmax, softmax_with_sink, yarn_frequencies,
 };
 use crate::error::VindexError;
 use larql_models::config::NormType;
-use larql_models::config::PositionPolicy;
+use larql_models::config::{PositionPolicy, RotaryFrequencyBasis};
 use rayon::prelude::*;
 
 /// Name reported by [`PlanBackend::name`].
@@ -115,6 +115,16 @@ impl ReferenceBackend {
         }
 
         Self::apply_qk_norm(call, &mut q, &mut k)?;
+        // The parameter-free V norm (Gemma 4 `v_norm`): per head, no
+        // weight, the same epsilon — applied to the raw value projection
+        // (on a K≡V layer that is the raw K projection, before its norm
+        // and rotation, which is why V is taken before either).
+        if call.parameter_free_qk_norm.v {
+            for head in v.chunks_exact_mut(head_dim) {
+                let normed = norm(NormType::RmsNorm, head, &[], 0.0, call.qk_norm_eps);
+                head.copy_from_slice(&normed);
+            }
+        }
         if let Some(query_scale) = call.query_scale {
             for value in &mut q {
                 *value *= query_scale as f32;
@@ -142,9 +152,33 @@ impl ReferenceBackend {
                 }
             }
             PositionPolicy::None => {}
-            policy @ PositionPolicy::PartialRope { .. } => {
-                return Err(super::production::unsupported_position(policy));
-            }
+            // Partial rotary, transcribed: head-width basis is the full
+            // rotate-half table with the top frequencies zero; rotary-width
+            // basis rotates the prefix as its own block.
+            PositionPolicy::PartialRope {
+                theta,
+                rotary_fraction,
+                basis,
+            } => match basis {
+                RotaryFrequencyBasis::HeadWidth => {
+                    let inv_freq = partial_rotary_frequencies(head_dim, rotary_fraction, theta);
+                    for head in q.chunks_exact_mut(head_dim) {
+                        rope_rotate_scaled(head, position, &inv_freq, 1.0);
+                    }
+                    for head in k.chunks_exact_mut(head_dim) {
+                        rope_rotate_scaled(head, position, &inv_freq, 1.0);
+                    }
+                }
+                RotaryFrequencyBasis::RotaryWidth => {
+                    let width = partial_rotary_slice(head_dim, rotary_fraction);
+                    for head in q.chunks_exact_mut(head_dim) {
+                        rope_rotate(&mut head[..width], position, theta);
+                    }
+                    for head in k.chunks_exact_mut(head_dim) {
+                        rope_rotate(&mut head[..width], position, theta);
+                    }
+                }
+            },
         }
         Ok((q, k, v))
     }
@@ -241,18 +275,14 @@ const FUSED_BRANCHES: usize = larql_models::quant::mxfp4::FUSED_HALVES;
 /// them by a softmax whose denominator the routing policy chooses — every
 /// expert (`SoftmaxThenSelect`) or the selected ones only
 /// (`NormalisedOverSelected`; GPT-OSS's top-k-then-softmax is that same
-/// number). Exhaustive on the router kind: a rule with its own arithmetic
-/// (Gemma 4's per-expert scale) must be implemented before it executes.
+/// number). Gemma 4 (`Gemma4Hybrid`) is its own rule, transcribed from
+/// `Gemma4TextRouter.forward`: the router input is the raw residual,
+/// RMS-normalised without a weight, times `scale`, times `hidden^-0.5`;
+/// softmax over every expert; top-k; the selected weights renormalised to
+/// sum to one; then each multiplied by `per_expert_scale[expert]`.
 fn select_experts_reference(call: &RoutedFfnCall<'_>) -> Result<Vec<(usize, f32)>, VindexError> {
-    match call.router_kind {
-        MoeRouterKind::TopKSoftmax | MoeRouterKind::TopKThenSoftmax => {}
-        MoeRouterKind::Gemma4Hybrid => {
-            return Err(VindexError::Parse(
-                "MoeRouterKind::Gemma4Hybrid carries a per-expert scale this backend does not \
-                 execute; refusing rather than routing with the plain rule"
-                    .to_string(),
-            ))
-        }
+    if call.router_kind == MoeRouterKind::Gemma4Hybrid {
+        return select_experts_gemma4_reference(call);
     }
     let mut logits = matvec(call.router, call.experts, call.hidden, call.x);
     if let Some(bias) = call.router_bias {
@@ -275,6 +305,52 @@ fn select_experts_reference(call: &RoutedFfnCall<'_>) -> Result<Vec<(usize, f32)
         .into_iter()
         .take(k)
         .map(|(e, l)| (e, (l - max).exp() / denominator))
+        .collect())
+}
+
+/// Gemma 4's router, literal (see [`select_experts_reference`]). Every
+/// conditioning operand must be present — the plan pairs them with the
+/// kind, and a missing one here is a broken plan, refused.
+fn select_experts_gemma4_reference(
+    call: &RoutedFfnCall<'_>,
+) -> Result<Vec<(usize, f32)>, VindexError> {
+    let missing = |what: &str| {
+        VindexError::Parse(format!(
+            "Gemma4Hybrid router without its {what}; the plan must carry it"
+        ))
+    };
+    let router_scale = call.router_scale.ok_or_else(|| missing("router scale"))?;
+    let per_expert = call
+        .router_per_expert_scale
+        .ok_or_else(|| missing("per-expert scale"))?;
+    let eps = call
+        .router_norm_eps
+        .ok_or_else(|| missing("router norm eps"))?;
+    let residual = call.router_input.unwrap_or(call.x);
+    // Scale-less RMS norm: x / sqrt(mean(x²) + eps), in f32 as HF does.
+    let mean_sq = residual.iter().map(|v| v * v).sum::<f32>() / residual.len() as f32;
+    let inv_rms = 1.0 / (mean_sq + eps as f32).sqrt();
+    let root_hidden = (call.hidden as f32).sqrt();
+    let conditioned: Vec<f32> = residual
+        .iter()
+        .zip(router_scale)
+        .map(|(v, s)| v * inv_rms * s / root_hidden)
+        .collect();
+    let logits = matvec(call.router, call.experts, call.hidden, &conditioned);
+    let mut ranked: Vec<(usize, f32)> = logits.iter().copied().enumerate().collect();
+    ranked.sort_by(|a, b| b.1.total_cmp(&a.1));
+    let k = call.top_k.min(ranked.len());
+    let max = ranked.first().map_or(0.0, |r| r.1);
+    let all: f32 = ranked.iter().map(|r| (r.1 - max).exp()).sum();
+    let selected: Vec<(usize, f32)> = ranked
+        .into_iter()
+        .take(k)
+        .map(|(e, l)| (e, (l - max).exp() / all))
+        .collect();
+    let selected_sum: f32 = selected.iter().map(|(_, w)| w).sum();
+    Ok(selected
+        .into_iter()
+        .map(|(e, w)| (e, w / selected_sum * per_expert[e]))
         .collect())
 }
 

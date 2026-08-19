@@ -104,6 +104,41 @@ impl RopeFreqPlan {
     }
 }
 
+/// HF's `proportional` partial rotary (`_compute_proportional_rope_parameters`):
+/// a head-sized plan whose first `rotary_fraction · head_dim / 2` pairs
+/// carry `1 / base^(2i/head_dim)` — the inverse frequencies are taken over
+/// the FULL head width — and whose remaining pairs are at zero frequency,
+/// an identity rotation. Unit amplitude. Gemma 4 declares it on its
+/// full-attention layers over `global_head_dim`.
+///
+/// Distinct from [`rope_freq_plan`] at the same fraction, which is the
+/// plain partial rotary: a `rotary_dim`-sized plan whose pairs are
+/// `1 / base^(2i/rotary_dim)` and which is applied to the head's prefix
+/// as its own rotate-half block. Same rotated dims count; different
+/// pairing and different angles (`base^(2i/512)` vs `base^(2i/128)` on
+/// Gemma 4's global layers) — so a family must be served with the one it
+/// declares, never the other.
+pub fn rope_freq_plan_proportional(
+    head_dim: usize,
+    rotary_fraction: f64,
+    base: f64,
+) -> RopeFreqPlan {
+    let half = head_dim / 2;
+    let rotated_pairs = ((rotary_fraction * head_dim as f64) as usize) / 2;
+    RopeFreqPlan {
+        inv_freq: (0..half)
+            .map(|i| {
+                if i < rotated_pairs {
+                    1.0 / base.powf(2.0 * i as f64 / head_dim as f64)
+                } else {
+                    0.0
+                }
+            })
+            .collect(),
+        amplitude: UNIT_AMPLITUDE,
+    }
+}
+
 /// Rotary width actually used for a head, matching
 /// [`apply_rope_partial_at_full`]'s own rounding. One definition, because a
 /// host and a kernel disagreeing by one dimension is invisible until it is a

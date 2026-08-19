@@ -62,6 +62,8 @@ struct LayerState {
     pre_ffn: LoadedNorm,
     ffn: super::experts::FfnOperands,
     post_ffn: Option<LoadedNorm>,
+    /// The layer's output scalar, when the plan carries one.
+    layer_scale: Option<f32>,
     keys: Vec<Vec<f32>>,
     values: Vec<Vec<f32>>,
 }
@@ -127,6 +129,11 @@ impl<'a, B: PlanBackend> DecodeSession<'a, B> {
                     .post_ffn_norm
                     .as_ref()
                     .map(|op| LoadedNorm::load(op, store))
+                    .transpose()?,
+                layer_scale: layer
+                    .layer_scale
+                    .as_ref()
+                    .map(|op| store.load(op).and_then(|v| super::layer_scalar_of(&v)))
                     .transpose()?,
                 keys: Vec::new(),
                 values: Vec::new(),
@@ -233,14 +240,21 @@ impl<'a, B: PlanBackend> DecodeSession<'a, B> {
             self.backend.residual_add(&mut h, &attn_out);
 
             let normed = state.pre_ffn.apply(self.backend, &h);
-            let ffn_out = state
-                .ffn
-                .apply(&layer.ffn, self.backend, &normed, self.hidden)?;
+            let ffn_out = state.ffn.apply_from_residual(
+                &layer.ffn,
+                self.backend,
+                &h,
+                &normed,
+                self.hidden,
+            )?;
             let ffn_out = match &state.post_ffn {
                 Some(norm) => norm.apply(self.backend, &ffn_out),
                 None => ffn_out,
             };
             self.backend.residual_add(&mut h, &ffn_out);
+            if let Some(scale) = state.layer_scale {
+                self.backend.scale_row(&mut h, scale);
+            }
         }
 
         let final_hidden = match &self.final_norm {

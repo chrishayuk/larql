@@ -154,9 +154,40 @@ fn print_layer(component: &str, layer: &LayerPlan) {
             ffn.router.tensor,
             ffn.gate_up.weights.object,
         ),
+        larql_vindex::format::vindex3::opplan::LayerFfn::Hybrid(ffn) => {
+            println!(
+                "  HybridFFN: dense {}FFN({:?}, {}) → post_dense_norm  +  routed({} experts, \
+                 top-{}, {:?}, {:?}, {}, {:?}{}) over pre_experts_norm(residual) → \
+                 post_experts_norm; router={}/{}, bank={}",
+                if ffn.dense.gate.is_some() {
+                    "Gated"
+                } else {
+                    ""
+                },
+                ffn.dense.activation,
+                ffn.dense.intermediate_size,
+                ffn.routed.experts,
+                ffn.routed.top_k,
+                ffn.routed.router_kind,
+                ffn.routed.gate_policy,
+                ffn.routed.expert_intermediate_size,
+                ffn.routed.expert_format,
+                if ffn.routed.router_scale.is_some() {
+                    ", router scale + per-expert scale"
+                } else {
+                    ""
+                },
+                ffn.routed.router.object,
+                ffn.routed.router.tensor,
+                ffn.routed.gate_up.weights.object,
+            );
+        }
     }
     if let Some(op) = &layer.post_ffn_norm {
         norm(op, "post_ffn");
     }
     println!("  residual");
+    if let Some(scale) = &layer.layer_scale {
+        println!("  × layer_scale {}/{}", scale.object, scale.tensor);
+    }
 }

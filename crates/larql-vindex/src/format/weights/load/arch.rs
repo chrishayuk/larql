@@ -63,6 +63,12 @@ pub(super) fn build_arch_json(
     if let Some(v) = model_cfg.per_layer_embed_dim {
         obj.insert("hidden_size_per_layer_input".into(), v.into());
     }
+    if let Some(v) = model_cfg.use_double_wide_mlp {
+        obj.insert("use_double_wide_mlp".into(), v.into());
+    }
+    if let Some(v) = model_cfg.vocab_size_per_layer_input {
+        obj.insert("vocab_size_per_layer_input".into(), v.into());
+    }
     if let Some(v) = model_cfg.rope_local_base {
         obj.insert("rope_local_base_freq".into(), v.into());
     }

@@ -13,14 +13,14 @@
 use larql_models::config::ExpertFormat;
 use larql_models::quant::mxfp4::{dequantize_expert, MXFP4_GROUP_BYTES, MXFP4_GROUP_ELEMS};
 
-use super::backend::{FfnCall, RoutedFfnCall, WeightFormat, WeightSlice};
+use super::backend::{FfnCall, NormCall, RoutedFfnCall, WeightFormat, WeightSlice};
 use super::operands::{widen, OperandStore};
 use super::weights::{
     bf16_bytes_to_f16, f32_bytes_to_f16, load_weight, quantize_mxfp4, quantize_nvfp4, AlignedBytes,
     LoadedWeight,
 };
 use crate::error::VindexError;
-use crate::format::vindex3::opplan::{LayerFfn, PackedProjection, RoutedFfnOp};
+use crate::format::vindex3::opplan::{FfnOp, LayerFfn, NormOp, PackedProjection, RoutedFfnOp};
 
 /// Stored dtype of MXFP4 block and scale streams.
 const DTYPE_U8: &str = "U8";
@@ -31,18 +31,63 @@ const FUSED_BRANCHES: usize = larql_models::quant::mxfp4::FUSED_HALVES;
 
 /// A layer's FFN operands, loaded once in the backend's declared format.
 pub(super) enum FfnOperands {
-    Dense {
-        gate: Option<LoadedWeight>,
-        up: LoadedWeight,
-        down: LoadedWeight,
-    },
+    Dense(DenseOperands),
     Routed(RoutedOperands),
+    /// Gemma 4: both, plus the three branch norms (f32 glue) — see
+    /// [`super::HybridFfnOp`] for the program. Boxed: it is the sum of
+    /// the other two plus three norms, several-fold the dense variant.
+    Hybrid(Box<HybridOperands>),
 }
 
-/// A routed layer's operands: router (f32 glue) and per-expert matrices.
+/// A hybrid layer's operands: both branches and their norms.
+pub(super) struct HybridOperands {
+    dense: DenseOperands,
+    routed: RoutedOperands,
+    pre_experts_norm: LoadedNormWeight,
+    post_dense_norm: LoadedNormWeight,
+    post_experts_norm: LoadedNormWeight,
+}
+
+/// A dense layer's three (or two) matrices.
+pub(super) struct DenseOperands {
+    gate: Option<LoadedWeight>,
+    up: LoadedWeight,
+    down: LoadedWeight,
+}
+
+/// A norm's weight, loaded once beside the op that names it.
+pub(super) struct LoadedNormWeight {
+    op: NormOp,
+    weight: Vec<f32>,
+}
+
+impl LoadedNormWeight {
+    fn load(op: &NormOp, store: &OperandStore) -> Result<Self, VindexError> {
+        Ok(Self {
+            op: op.clone(),
+            weight: store.load(&op.weight)?,
+        })
+    }
+
+    fn apply<B: super::backend::PlanBackend + ?Sized>(&self, backend: &B, x: &[f32]) -> Vec<f32> {
+        backend.norm(NormCall {
+            kind: self.op.kind,
+            x,
+            weight: &self.weight,
+            weight_offset: self.op.weight_offset,
+            eps: self.op.eps,
+        })
+    }
+}
+
+/// A routed layer's operands: router (f32 glue) and per-expert matrices,
+/// plus Gemma 4's router conditioning when the op carries it.
 pub(super) struct RoutedOperands {
     router: Vec<f32>,
     router_bias: Option<Vec<f32>>,
+    router_scale: Option<Vec<f32>>,
+    router_per_expert_scale: Option<Vec<f32>>,
+    router_norm_eps: Option<f64>,
     gate_up: Vec<LoadedWeight>,
     gate_up_bias: Option<Vec<f32>>,
     down: Vec<LoadedWeight>,
@@ -56,38 +101,33 @@ impl FfnOperands {
         format: WeightFormat,
     ) -> Result<Self, VindexError> {
         match ffn {
-            LayerFfn::Dense(op) => Ok(Self::Dense {
-                gate: match &op.gate {
-                    Some(gate) => Some(load_weight(store, gate, format)?),
-                    None => None,
-                },
-                up: load_weight(store, &op.up, format)?,
-                down: load_weight(store, &op.down, format)?,
-            }),
+            LayerFfn::Dense(op) => Ok(Self::Dense(DenseOperands::load(op, store, format)?)),
             LayerFfn::Routed(op) => Ok(Self::Routed(RoutedOperands::load(op, store, format)?)),
+            LayerFfn::Hybrid(op) => Ok(Self::Hybrid(Box::new(HybridOperands {
+                dense: DenseOperands::load(&op.dense, store, format)?,
+                routed: RoutedOperands::load(&op.routed, store, format)?,
+                pre_experts_norm: LoadedNormWeight::load(&op.pre_experts_norm, store)?,
+                post_dense_norm: LoadedNormWeight::load(&op.post_dense_norm, store)?,
+                post_experts_norm: LoadedNormWeight::load(&op.post_experts_norm, store)?,
+            }))),
         }
     }
 
     /// Every matrix operand, for residency preparation.
     pub(super) fn weight_slices(&self) -> Vec<WeightSlice<'_>> {
         match self {
-            Self::Dense { gate, up, down } => {
-                let mut slices = vec![up.slice(), down.slice()];
-                if let Some(gate) = gate {
-                    slices.push(gate.slice());
-                }
+            Self::Dense(dense) => dense.weight_slices(),
+            Self::Routed(routed) => routed.weight_slices(),
+            Self::Hybrid(hybrid) => {
+                let mut slices = hybrid.dense.weight_slices();
+                slices.extend(hybrid.routed.weight_slices());
                 slices
             }
-            Self::Routed(routed) => routed
-                .gate_up
-                .iter()
-                .chain(&routed.down)
-                .map(LoadedWeight::slice)
-                .collect(),
         }
     }
 
-    /// Run this layer's FFN over one normalised vector on `backend`.
+    /// Run this layer's FFN over one normalised vector on `backend` — the
+    /// dense-only and routed-only shapes, which read one input.
     pub(super) fn apply<B: super::backend::PlanBackend + ?Sized>(
         &self,
         ffn: &LayerFfn,
@@ -96,54 +136,152 @@ impl FfnOperands {
         hidden: usize,
     ) -> Result<Vec<f32>, VindexError> {
         match (self, ffn) {
-            (Self::Dense { gate, up, down }, LayerFfn::Dense(op)) => backend.ffn(FfnCall {
-                x,
-                hidden,
-                intermediate: op.intermediate_size,
-                gate: gate.as_ref().map(LoadedWeight::slice),
-                up: up.slice(),
-                down: down.slice(),
-                activation: op.activation,
-                gate_policy: op.gate_policy,
-            }),
-            (Self::Routed(routed), LayerFfn::Routed(op)) => {
-                let gate_up: Vec<WeightSlice<'_>> =
-                    routed.gate_up.iter().map(LoadedWeight::slice).collect();
-                let down: Vec<WeightSlice<'_>> =
-                    routed.down.iter().map(LoadedWeight::slice).collect();
-                backend.routed_ffn(RoutedFfnCall {
-                    x,
-                    hidden,
-                    intermediate: op.expert_intermediate_size,
-                    experts: op.experts,
-                    top_k: op.top_k,
-                    router_kind: op.router_kind,
-                    routing_policy: op.routing_policy,
-                    activation: op.activation,
-                    gate_policy: op.gate_policy,
-                    gate_up_layout: op.gate_up_layout.ok_or_else(|| {
-                        VindexError::Parse(
-                            "routed FFN op carries no gate_up layout; closure requires one"
-                                .to_string(),
-                        )
-                    })?,
-                    router: &routed.router,
-                    router_bias: routed.router_bias.as_deref(),
-                    gate_up: &gate_up,
-                    gate_up_bias: routed.gate_up_bias.as_deref(),
-                    down: &down,
-                    down_bias: routed.down_bias.as_deref(),
-                })
-            }
+            (Self::Dense(dense), LayerFfn::Dense(op)) => dense.apply(op, backend, x, hidden),
+            (Self::Routed(routed), LayerFfn::Routed(op)) => routed.apply(op, backend, x, x, hidden),
             _ => Err(VindexError::Parse(
                 "FFN operands were loaded for a different op kind than the plan carries"
                     .to_string(),
             )),
         }
     }
+
+    /// The whole FFN block from the post-attention residual up to — not
+    /// including — the layer's post-FFN norm and residual add. Both
+    /// drivers (batch and decode) call this, so the hybrid program lives
+    /// in exactly one place:
+    ///
+    /// ```text
+    /// dense/routed:  ffn(pre_ffn_normed)
+    /// hybrid:        post_dense_norm(dense(pre_ffn_normed))
+    ///              + post_experts_norm(routed(pre_experts_norm(residual), router ← residual))
+    /// ```
+    ///
+    /// `pre_ffn_normed` is the layer's pre-FFN norm of `residual`, produced
+    /// by the caller (it is also what the judged gate reads).
+    pub(super) fn apply_from_residual<B: super::backend::PlanBackend + ?Sized>(
+        &self,
+        ffn: &LayerFfn,
+        backend: &B,
+        residual: &[f32],
+        pre_ffn_normed: &[f32],
+        hidden: usize,
+    ) -> Result<Vec<f32>, VindexError> {
+        match (self, ffn) {
+            (Self::Hybrid(hybrid), LayerFfn::Hybrid(op)) => {
+                let dense_out = hybrid
+                    .dense
+                    .apply(&op.dense, backend, pre_ffn_normed, hidden)?;
+                let dense_out = hybrid.post_dense_norm.apply(backend, &dense_out);
+                let expert_input = hybrid.pre_experts_norm.apply(backend, residual);
+                let experts_out =
+                    hybrid
+                        .routed
+                        .apply(&op.routed, backend, &expert_input, residual, hidden)?;
+                let experts_out = hybrid.post_experts_norm.apply(backend, &experts_out);
+                Ok(dense_out
+                    .iter()
+                    .zip(&experts_out)
+                    .map(|(d, e)| d + e)
+                    .collect())
+            }
+            (Self::Hybrid(_), _) | (_, LayerFfn::Hybrid(_)) => Err(VindexError::Parse(
+                "FFN operands were loaded for a different op kind than the plan carries"
+                    .to_string(),
+            )),
+            _ => self.apply(ffn, backend, pre_ffn_normed, hidden),
+        }
+    }
+}
+
+impl DenseOperands {
+    fn load(op: &FfnOp, store: &OperandStore, format: WeightFormat) -> Result<Self, VindexError> {
+        Ok(Self {
+            gate: match &op.gate {
+                Some(gate) => Some(load_weight(store, gate, format)?),
+                None => None,
+            },
+            up: load_weight(store, &op.up, format)?,
+            down: load_weight(store, &op.down, format)?,
+        })
+    }
+
+    fn weight_slices(&self) -> Vec<WeightSlice<'_>> {
+        let mut slices = vec![self.up.slice(), self.down.slice()];
+        if let Some(gate) = &self.gate {
+            slices.push(gate.slice());
+        }
+        slices
+    }
+
+    fn apply<B: super::backend::PlanBackend + ?Sized>(
+        &self,
+        op: &FfnOp,
+        backend: &B,
+        x: &[f32],
+        hidden: usize,
+    ) -> Result<Vec<f32>, VindexError> {
+        backend.ffn(FfnCall {
+            x,
+            hidden,
+            intermediate: op.intermediate_size,
+            gate: self.gate.as_ref().map(LoadedWeight::slice),
+            up: self.up.slice(),
+            down: self.down.slice(),
+            activation: op.activation,
+            gate_policy: op.gate_policy,
+        })
+    }
 }
 
 impl RoutedOperands {
+    fn weight_slices(&self) -> Vec<WeightSlice<'_>> {
+        self.gate_up
+            .iter()
+            .chain(&self.down)
+            .map(LoadedWeight::slice)
+            .collect()
+    }
+
+    /// The routed FFN over `x` (what the experts consume), routing on
+    /// `router_input` (the same vector for every family but Gemma 4).
+    fn apply<B: super::backend::PlanBackend + ?Sized>(
+        &self,
+        op: &RoutedFfnOp,
+        backend: &B,
+        x: &[f32],
+        router_input: &[f32],
+        hidden: usize,
+    ) -> Result<Vec<f32>, VindexError> {
+        let gate_up: Vec<WeightSlice<'_>> = self.gate_up.iter().map(LoadedWeight::slice).collect();
+        let down: Vec<WeightSlice<'_>> = self.down.iter().map(LoadedWeight::slice).collect();
+        backend.routed_ffn(RoutedFfnCall {
+            x,
+            hidden,
+            intermediate: op.expert_intermediate_size,
+            experts: op.experts,
+            top_k: op.top_k,
+            router_kind: op.router_kind,
+            routing_policy: op.routing_policy,
+            activation: op.activation,
+            gate_policy: op.gate_policy,
+            gate_up_layout: op.gate_up_layout.ok_or_else(|| {
+                VindexError::Parse(
+                    "routed FFN op carries no gate_up layout; closure requires one".to_string(),
+                )
+            })?,
+            router: &self.router,
+            router_bias: self.router_bias.as_deref(),
+            gate_up: &gate_up,
+            gate_up_bias: self.gate_up_bias.as_deref(),
+            down: &down,
+            down_bias: self.down_bias.as_deref(),
+            router_input: (!std::ptr::eq(router_input, x)).then_some(router_input),
+            router_scale: self.router_scale.as_deref(),
+            router_per_expert_scale: self.router_per_expert_scale.as_deref(),
+            router_norm_eps: self.router_norm_eps,
+        })
+    }
+
     fn load(
         op: &RoutedFfnOp,
         store: &OperandStore,
@@ -154,6 +292,17 @@ impl RoutedOperands {
         Ok(Self {
             router: store.load(&op.router)?,
             router_bias: op.router_bias.as_ref().map(|b| store.load(b)).transpose()?,
+            router_scale: op
+                .router_scale
+                .as_ref()
+                .map(|s| store.load(s))
+                .transpose()?,
+            router_per_expert_scale: op
+                .router_per_expert_scale
+                .as_ref()
+                .map(|s| store.load(s))
+                .transpose()?,
+            router_norm_eps: op.router_norm_eps,
             gate_up: load_packed(
                 store,
                 &op.gate_up,
