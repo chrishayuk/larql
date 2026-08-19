@@ -25,7 +25,7 @@
 #![cfg(target_os = "macos")]
 
 use larql_compute_metal::lowering::attention::{AttnShape, AttnWeights, LoweredPosition};
-use larql_compute_metal::lowering::ffn::{FfnShape, FfnWeights};
+use larql_compute_metal::lowering::ffn::{FfnActivation, FfnShape, FfnWeights};
 use larql_compute_metal::lowering::stack::{Checkpoint, LayerLowering, StackScratch};
 use larql_compute_metal::lowering::{LoweredMatrix, PostNorm};
 use larql_models::quant::nvfp4;
@@ -327,7 +327,7 @@ fn fifty_two_layers_lower_into_one_scheduling_domain() {
         ffn_act: &sc[11],
         ffn_down: &sc[13],
         ffn_post: &sc[2],
-        inv_freq: &inv_freq_buf,
+        hybrid: None,
     };
     let cap_bufs: Vec<metal::Buffer> = CHECKPOINTS
         .iter()
@@ -399,6 +399,7 @@ fn fifty_two_layers_lower_into_one_scheduling_domain() {
                     v_bias: None,
                     o_bias: None,
                     sinks: None,
+                    qk_norm: None,
                     norm_weight: &norms[l][0],
                     post_norm: Some(PostNorm {
                         weight: &norms[l][1],
@@ -417,6 +418,7 @@ fn fifty_two_layers_lower_into_one_scheduling_domain() {
                     qk_norm_eps: QK_EPS,
                     parameter_free_q: true,
                     parameter_free_k: true,
+                    parameter_free_v: false,
                     query_scale: Some(QSCALE),
                     score_scale: 1.0 / (HEAD_DIM as f32).sqrt(),
                     position: if p.rope {
@@ -459,10 +461,12 @@ fn fifty_two_layers_lower_into_one_scheduling_domain() {
                         intermediate: INTER,
                         norm_eps: EPS,
                         norm_weight_offset: OFFSET,
+                        activation: FfnActivation::Silu,
                     },
                 },
                 k_cache: &kv[l].0,
                 v_cache: &kv[l].1,
+                inv_freq: &inv_freq_buf,
             }
         })
         .collect();

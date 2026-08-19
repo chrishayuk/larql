@@ -514,7 +514,7 @@ fn apply_norm_op<B: PlanBackend + ?Sized>(
 /// The one value of a `[1]` layer-scale operand — refused if the operand
 /// is not exactly one value, since a silently-broadcast vector would be a
 /// different op.
-pub(super) fn layer_scalar_of(values: &[f32]) -> Result<f32, VindexError> {
+pub fn layer_scalar_of(values: &[f32]) -> Result<f32, VindexError> {
     match values {
         [scale] => Ok(*scale),
         other => Err(VindexError::Parse(format!(

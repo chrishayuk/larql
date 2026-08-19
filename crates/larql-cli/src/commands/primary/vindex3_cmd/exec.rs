@@ -121,6 +121,17 @@ pub fn run_exec(args: ExecArgs) -> Result<(), Box<dyn std::error::Error>> {
             ExecBackend::MetalLoweredMxfp4 => {
                 Some((WeightFormats::uniform(WeightFormat::Mxfp4), "mxfp4-all"))
             }
+            ExecBackend::MetalLoweredF16 => {
+                Some((WeightFormats::uniform(WeightFormat::F16), "f16-all"))
+            }
+            ExecBackend::MetalLoweredMxfp4Ffn => Some((
+                WeightFormats {
+                    attention: WeightFormat::F16,
+                    ffn: WeightFormat::Mxfp4,
+                    head: WeightFormat::F16,
+                },
+                "mxfp4-ffn",
+            )),
             _ => None,
         };
         if let Some((formats, label)) = lowered {
@@ -160,7 +171,9 @@ pub fn run_exec(args: ExecArgs) -> Result<(), Box<dyn std::error::Error>> {
         ExecBackend::MetalLowered
         | ExecBackend::MetalLoweredFfn
         | ExecBackend::MetalLoweredNoHead
-        | ExecBackend::MetalLoweredMxfp4 => unreachable!("handled above"),
+        | ExecBackend::MetalLoweredMxfp4
+        | ExecBackend::MetalLoweredMxfp4Ffn
+        | ExecBackend::MetalLoweredF16 => unreachable!("handled above"),
         #[cfg(all(feature = "gpu", target_os = "macos"))]
         ExecBackend::MetalMxfp4All => {
             let gpu = larql_compute_metal::MetalBackend::new()

@@ -469,6 +469,7 @@ fn attn_shape() -> AttnShape {
         qk_norm_eps: EPS,
         parameter_free_q: false,
         parameter_free_k: false,
+        parameter_free_v: false,
         query_scale: None,
         score_scale: 1.0 / (HEAD_DIM as f32).sqrt(),
         position: LoweredPosition::None,
@@ -514,7 +515,7 @@ fn gpu_stack(gpu: &MetalBackend, h0: &[f32], fx: &[LayerFixture]) -> Vec<Vec<f32
         ffn_act: &sc[10],
         ffn_down: &sc[12],
         ffn_post: &sc[1],
-        inv_freq: &inv_freq,
+        hybrid: None,
     };
     let caps: Vec<metal::Buffer> = (0..LAYERS).map(|_| gpu.lowering_scratch(HIDDEN)).collect();
     let cps: Vec<Checkpoint> = caps
@@ -549,6 +550,7 @@ fn gpu_stack(gpu: &MetalBackend, h0: &[f32], fx: &[LayerFixture]) -> Vec<Vec<f32
                 v_bias: None,
                 o_bias: None,
                 sinks: None,
+                qk_norm: None,
                 norm_weight: &d.attn_norm,
                 post_norm: None,
             },
@@ -561,6 +563,7 @@ fn gpu_stack(gpu: &MetalBackend, h0: &[f32], fx: &[LayerFixture]) -> Vec<Vec<f32
             })),
             k_cache: &d.k_cache,
             v_cache: &d.v_cache,
+            inv_freq: &inv_freq,
         })
         .collect();
 

@@ -66,6 +66,16 @@ pub struct FfnShape {
     pub norm_eps: f32,
     /// Centred-norm convention (`1 + w`); a plan fact, never assumed.
     pub norm_weight_offset: f32,
+    /// The gate activation, from the plan's `FfnOp`: SiLU or tanh-GELU,
+    /// each its own served kernel.
+    pub activation: FfnActivation,
+}
+
+/// The gate nonlinearity the lowering has a kernel for.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum FfnActivation {
+    Silu,
+    GeluTanh,
 }
 
 impl MetalBackend {
@@ -79,6 +89,33 @@ impl MetalBackend {
         enc: &ComputeCommandEncoderRef,
         h_in: &Buffer,
         h_out: &Buffer,
+        w: &FfnWeights<'_>,
+        s: &FfnScratch<'_>,
+        shape: &FfnShape,
+    ) {
+        self.encode_gated_ffn_branch(enc, h_in, w, s, shape);
+        // 5. post-FFN norm (four-norm placement only), then the
+        //    residual. `b_scale` is 1.0: a residual multiplier is a
+        //    judged plan fact and Glimmer's FFN residual has none, so
+        //    passing anything else here would invent semantics.
+        self.encode_branch_norm_then_residual(
+            enc,
+            h_in,
+            s.down,
+            h_out,
+            w.post_norm.as_ref(),
+            shape.hidden,
+        );
+    }
+
+    /// The FFN branch alone — `s.down = down(act(gate(norm(h))) *
+    /// up(norm(h)))`, no post-norm, no residual — so a hybrid layer can
+    /// normalise and sum it with the expert branch before the layer's own
+    /// post-FFN norm.
+    pub fn encode_gated_ffn_branch(
+        &self,
+        enc: &ComputeCommandEncoderRef,
+        h_in: &Buffer,
         w: &FfnWeights<'_>,
         s: &FfnScratch<'_>,
         shape: &FfnShape,
@@ -121,13 +158,12 @@ impl MetalBackend {
                 k: shape.hidden,
             },
         );
-        // 3. SiLU-GLU.
-        encode_elementwise(
-            enc,
-            &self.ffn.geglu_pipeline,
-            &[s.gate, s.up, s.act],
-            shape.intermediate,
-        );
+        // 3. the gated nonlinearity, by the plan's activation.
+        let geglu = match shape.activation {
+            FfnActivation::Silu => &self.ffn.geglu_pipeline,
+            FfnActivation::GeluTanh => &self.ffn.geglu_gelu_tanh_pipeline,
+        };
+        encode_elementwise(enc, geglu, &[s.gate, s.up, s.act], shape.intermediate);
         // 4. down projection.
         self.encode_matvec(
             enc,
@@ -139,18 +175,6 @@ impl MetalBackend {
                 n: shape.hidden,
                 k: shape.intermediate,
             },
-        );
-        // 5. post-FFN norm (four-norm placement only), then the
-        //    residual. `b_scale` is 1.0: a residual multiplier is a
-        //    judged plan fact and Glimmer's FFN residual has none, so
-        //    passing anything else here would invent semantics.
-        self.encode_branch_norm_then_residual(
-            enc,
-            h_in,
-            s.down,
-            h_out,
-            w.post_norm.as_ref(),
-            shape.hidden,
         );
     }
 }

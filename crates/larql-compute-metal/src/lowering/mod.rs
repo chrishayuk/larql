@@ -357,6 +357,41 @@ impl MetalBackend {
         );
     }
 
+    /// Encode a WEIGHTED per-head RMS norm in place — Gemma's `q_norm` /
+    /// `k_norm` (`[head_dim]` weight, `1 + w` when `weight_offset` is 1),
+    /// through the served `qk_norm` kernel, one threadgroup per head.
+    #[allow(clippy::too_many_arguments)]
+    pub fn encode_weighted_qk_norm(
+        &self,
+        enc: &ComputeCommandEncoderRef,
+        x: &Buffer,
+        x_offset: u64,
+        weight: &Buffer,
+        num_heads: usize,
+        head_dim: usize,
+        eps: f32,
+        weight_offset: f32,
+    ) {
+        let pipeline = &self.norms.qk_norm_pipeline;
+        enc.set_compute_pipeline_state(pipeline);
+        enc.set_buffer(0, Some(x), x_offset);
+        enc.set_buffer(1, Some(x), x_offset);
+        enc.set_buffer(2, Some(weight), 0);
+        set_u32(enc, 3, head_dim as u32);
+        set_u32(enc, 4, num_heads as u32);
+        set_f32(enc, 5, eps);
+        set_f32(enc, 6, weight_offset);
+        // The served stage's geometry: one threadgroup per head, threads a
+        // power of two up to 512 covering `head_dim`.
+        let threads = (head_dim as u64)
+            .next_power_of_two()
+            .clamp(1, crate::stages::qk_norm::MAX_TG_WIDTH);
+        enc.dispatch_thread_groups(
+            metal::MTLSize::new(num_heads as u64, 1, 1),
+            metal::MTLSize::new(threads, 1, 1),
+        );
+    }
+
     /// Encode `out = a * sigmoid(g)` — the judged attention output gate.
     pub fn encode_sigmoid_gate(
         &self,

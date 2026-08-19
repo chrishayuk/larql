@@ -309,6 +309,7 @@ fn run_lowered(
         v_bias: Some(&vb),
         o_bias: Some(&ob),
         sinks: with_sink.then_some(&sinks),
+        qk_norm: None,
         norm_weight: &norm_buf,
         post_norm: None,
     };
@@ -333,6 +334,7 @@ fn run_lowered(
         qk_norm_eps: EPS,
         parameter_free_q: false,
         parameter_free_k: false,
+        parameter_free_v: false,
         query_scale: None,
         score_scale: SCORE_SCALE,
         position: LoweredPosition::Scaled {

@@ -13,9 +13,12 @@ use std::ffi::c_void;
 
 /// Compute the threadgroup width for a `head_dim`-long cooperative reduction.
 /// Rounds up to a power of two, capped at 512 (shader limit).
+/// The widest threadgroup the qk-norm kernels dispatch with.
+pub(crate) const MAX_TG_WIDTH: u64 = 512;
+
 fn tg_width(head_dim: usize) -> u64 {
     let mut tg: u64 = 1;
-    while (tg as usize) < head_dim && tg < 512 {
+    while (tg as usize) < head_dim && tg < MAX_TG_WIDTH {
         tg <<= 1;
     }
     tg

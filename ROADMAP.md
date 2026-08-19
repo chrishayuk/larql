@@ -2083,7 +2083,36 @@ G4.2  interpreter executes it (reference / production / device): per-layer geome
       K≡V, hybrid FFN + router scales + layer_scalar, softcapped tied head. Gate: served CPU forward
       (`shannon layer-dump --tokens` on the HF checkpoint) ≡ `vindex3 exec --dump-layers`, all 30
       layers, plus causal controls per new operand.
-G4.3  Metal lowering: per-layer KV geometry (a (512, 16, 2, span) planner row — serial where
+G4.3  DONE 2026-08-19 (branch feat/vindex3-gemma4-exec) — GEMMA 4 RUNS ON METAL THROUGH THE
+      GENERIC LOWERING, CERTIFIED, HF-IDENTICAL IDS, 10 tok/s. Lowering crate: weighted per-head
+      Q/K norm (encode_weighted_qk_norm — the served qk_norm kernel; the lowering had NO weighted
+      path and did not refuse one, a latent hole Glimmer/gpt-oss never exercised), parameter-free
+      V norm on the raw projection in its cache slot (AttnShape.parameter_free_v), K≡V by binding
+      the K matrix as V, per-LAYER rope tables (LayerLowering.inv_freq; the stack had shared one
+      table and refused plans with two — Gemma 4 has plain θ=1e4 over 256-wide heads and
+      proportional over 512-wide), FfnShape.activation (SiLU | GeluTanh kernels),
+      encode_gated_ffn_branch (branch without post-norm/residual) and LayerFfnLowering::Hybrid —
+      dense branch + router (rms_no_weight(r)·scale·H^-0.5 folded into ONE weighted rms_norm
+      dispatch with weight router.scale·H^-0.5, served router logits/select with renormalise +
+      per-expert scale on-GPU) + descriptor experts over pre_experts_norm(r) combined onto a ZERO
+      residual (bare expert sum) + post_experts_norm + branch sum + post_ffn_norm + residual +
+      layer_scale, all in the one command buffer. CLI session: expert banks declared packed BF16
+      are QUANTISED TO MXFP4 AT LOAD with the interpreter's own quantiser (the descriptor kernels
+      serve Q6_K and MXFP4 only; Q6_K needs the padded-row machinery since down's K=704 ∤ 256 —
+      next representation rung), router conditioning / branch norms resident, hybrid scratch
+      (slots 18..24), new arms `metal-lowered-mxfp4-ffn` (= the interpreter's `metal-mxfp4`
+      representation) and `metal-lowered-f16` (f16 attention/dense/head, experts MXFP4 only).
+      CERTIFICATION on the real 26B-A4B: lowered(mxfp4-ffn) vs interpreter(metal-mxfp4), SAME
+      representation: cos 1.000000000 / rel_rms ≤ 1e-6 ALL 30 layers, "no capture drifts" — the
+      A-9.5 instrument, no new plumbing. Greedy ids on the chat prompt = HF's (…**Paris**.) on
+      BOTH arms: 98 ms/token (10.2 tok/s) mxfp4-ffn, 107 ms/token f16; weights resident in 86 s
+      incl. quantising 45.7 GB of bf16 experts; route witness serial 870 / seqpar 0 (no planner
+      row for (256,16,8)/(512,16,2) yet → serial, correctly). REPRESENTATION COST vs HF f32
+      (priced, not argued): mxfp4-ffn rel_rms 0.084 (L0) → 0.476 (L29, cos 0.897); f16 with
+      experts-only MXFP4 0.045 → 0.247 (cos 0.970) — the expert bank is about half the loss, the
+      dense MLP the other half; the argmax trajectory survived 9 tokens on this prompt but this
+      is the lossy end of the Q2 frontier and a Q6_K bank arm is the next representation rung.
+      Pinned: tests/test_lowering_gemma4_arms.rs (see PR). As mapped: Metal lowering: per-layer KV geometry (a (512, 16, 2, span) planner row — serial where
       unmeasured), proportional rope table, K bound as V, hybrid encode = gated-ffn + descriptor MoE +
       norms + sum + layer_scalar in one CB, softcap head. Gate: layer-diff lowered vs interpreter
       ≤ 1e-6 (the A-9.5 instrument, no new plumbing).

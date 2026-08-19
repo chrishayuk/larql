@@ -81,6 +81,10 @@ pub struct AttnWeights<'a> {
     /// Per-query-head attention-sink logits (f32), when the plan's
     /// judged sink semantics apply; `None` = ordinary softmax.
     pub sinks: Option<&'a Buffer>,
+    /// Weighted per-head Q/K norms (Gemma `q_norm` / `k_norm`), applied
+    /// after the projections and before the query scale and rotation,
+    /// with the plan's weight offset. `None` = the op is absent.
+    pub qk_norm: Option<QkNormWeights<'a>>,
     /// Pre-attention norm weight (f32).
     pub norm_weight: &'a Buffer,
     /// The post-attention norm, under four-norm placement. `None` =
@@ -108,6 +112,14 @@ pub struct AttnScratch<'a> {
     pub inv_freq: &'a Buffer,
 }
 
+/// The weighted QK-norm operands: one `[head_dim]` vector each.
+pub struct QkNormWeights<'a> {
+    pub q: &'a Buffer,
+    pub k: &'a Buffer,
+    /// Centred-norm convention (`1 + w`); a plan fact.
+    pub weight_offset: f32,
+}
+
 /// Geometry and judged semantics, straight off the plan.
 pub struct AttnShape {
     pub hidden: usize,
@@ -119,6 +131,11 @@ pub struct AttnShape {
     pub qk_norm_eps: f32,
     pub parameter_free_q: bool,
     pub parameter_free_k: bool,
+    /// Parameter-free per-head RMS norm on V (Gemma 4 `v_norm`), applied
+    /// to the raw value projection in its cache slot — before anything
+    /// reads it, and on a K≡V layer before the key's own norm/rotation
+    /// touch the separately-projected K.
+    pub parameter_free_v: bool,
     /// `None` = the op is absent, not a multiply by one.
     pub query_scale: Option<f32>,
     /// The canonical score-time multiply, kept separate from
@@ -216,7 +233,42 @@ impl MetalBackend {
                 },
             );
         }
-        // 3. parameter-free QK norm — Q and K independently, per head.
+        // 3. norms on the projections. V first: its norm reads the raw
+        //    projection (on a K≡V layer V was projected from the K matrix
+        //    into its own slot, so the key's norm below does not touch it).
+        if shape.parameter_free_v {
+            self.encode_parameter_free_qk_norm(
+                enc,
+                s.v_cache,
+                slot,
+                shape.num_kv_heads,
+                shape.head_dim,
+                shape.qk_norm_eps,
+            );
+        }
+        if let Some(qk) = &w.qk_norm {
+            self.encode_weighted_qk_norm(
+                enc,
+                s.q,
+                0,
+                qk.q,
+                shape.num_q_heads,
+                shape.head_dim,
+                shape.qk_norm_eps,
+                qk.weight_offset,
+            );
+            self.encode_weighted_qk_norm(
+                enc,
+                s.k_cache,
+                slot,
+                qk.k,
+                shape.num_kv_heads,
+                shape.head_dim,
+                shape.qk_norm_eps,
+                qk.weight_offset,
+            );
+        }
+        //    Parameter-free QK norm — Q and K independently, per head.
         if shape.parameter_free_q {
             self.encode_parameter_free_qk_norm(
                 enc,

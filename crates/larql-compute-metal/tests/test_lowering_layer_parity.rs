@@ -61,7 +61,7 @@
 use larql_compute_metal::lowering::attention::{
     AttnScratch, AttnShape, AttnWeights, LoweredPosition,
 };
-use larql_compute_metal::lowering::ffn::{FfnScratch, FfnShape, FfnWeights};
+use larql_compute_metal::lowering::ffn::{FfnActivation, FfnScratch, FfnShape, FfnWeights};
 use larql_compute_metal::lowering::LoweredMatrix;
 use larql_models::quant::nvfp4;
 
@@ -425,6 +425,7 @@ fn run_lowered(
         v_bias: None,
         o_bias: None,
         sinks: None,
+        qk_norm: None,
         norm_weight: &attn_norm_buf,
         post_norm: Some(larql_compute_metal::lowering::PostNorm {
             weight: &attn_post_buf,
@@ -454,6 +455,7 @@ fn run_lowered(
         qk_norm_eps: QK_EPS,
         parameter_free_q: true,
         parameter_free_k: true,
+        parameter_free_v: false,
         query_scale: Some(QUERY_SCALE),
         score_scale: SCORE_SCALE,
         position: LoweredPosition::Rope { theta: THETA },
@@ -505,6 +507,7 @@ fn run_lowered(
         intermediate: INTER,
         norm_eps: EPS,
         norm_weight_offset: NORM_OFFSET,
+        activation: FfnActivation::Silu,
     };
 
     match schedule {

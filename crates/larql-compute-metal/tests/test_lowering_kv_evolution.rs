@@ -34,7 +34,7 @@
 #![cfg(target_os = "macos")]
 
 use larql_compute_metal::lowering::attention::{AttnShape, AttnWeights, LoweredPosition};
-use larql_compute_metal::lowering::ffn::{FfnShape, FfnWeights};
+use larql_compute_metal::lowering::ffn::{FfnActivation, FfnShape, FfnWeights};
 use larql_compute_metal::lowering::stack::{LayerLowering, StackScratch};
 use larql_compute_metal::lowering::{LoweredMatrix, PostNorm};
 use larql_models::quant::nvfp4;
@@ -362,7 +362,7 @@ fn step(d: &Device<'_>, ws: &[LayerW], h0: &[f32], t: usize, share: bool) -> Vec
         ffn_act: &d.sc[11],
         ffn_down: &d.sc[13],
         ffn_post: &d.sc[2],
-        inv_freq: &d.inv_freq,
+        hybrid: None,
     };
     let layers: Vec<LayerLowering> = (0..ws.len())
         .map(|l| {
@@ -387,6 +387,7 @@ fn step(d: &Device<'_>, ws: &[LayerW], h0: &[f32], t: usize, share: bool) -> Vec
                     v_bias: None,
                     o_bias: None,
                     sinks: None,
+                    qk_norm: None,
                     norm_weight: &d.norms[l][0],
                     post_norm: Some(PostNorm {
                         weight: &d.norms[l][1],
@@ -405,6 +406,7 @@ fn step(d: &Device<'_>, ws: &[LayerW], h0: &[f32], t: usize, share: bool) -> Vec
                     qk_norm_eps: QK_EPS,
                     parameter_free_q: true,
                     parameter_free_k: true,
+                    parameter_free_v: false,
                     query_scale: Some(QSCALE),
                     score_scale: 1.0 / (HEAD_DIM as f32).sqrt(),
                     position: if use_rope {
@@ -447,10 +449,12 @@ fn step(d: &Device<'_>, ws: &[LayerW], h0: &[f32], t: usize, share: bool) -> Vec
                         intermediate: INTER,
                         norm_eps: EPS,
                         norm_weight_offset: OFFSET,
+                        activation: FfnActivation::Silu,
                     },
                 },
                 k_cache: &d.kv[ci].0,
                 v_cache: &d.kv[ci].1,
+                inv_freq: &d.inv_freq,
             }
         })
         .collect();

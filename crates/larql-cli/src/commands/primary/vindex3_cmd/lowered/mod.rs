@@ -18,11 +18,14 @@
 use std::collections::HashMap;
 
 use larql_compute::backend::MatMul;
-use larql_compute_metal::lowering::attention::{AttnShape, AttnWeights, LoweredPosition};
-use larql_compute_metal::lowering::ffn::{FfnShape, FfnWeights};
+use larql_compute_metal::lowering::attention::{
+    AttnShape, AttnWeights, LoweredPosition, QkNormWeights,
+};
+use larql_compute_metal::lowering::ffn::{FfnActivation, FfnShape, FfnWeights};
 use larql_compute_metal::lowering::head::{HeadScratch, HeadShape, HeadWeights};
 use larql_compute_metal::lowering::stack::{
-    LayerFfnLowering, LayerLowering, RoutedFfnLowering, StackScratch,
+    HybridFfnLowering, HybridScratch, LayerFfnLowering, LayerLowering, RoutedFfnLowering,
+    StackScratch,
 };
 use larql_compute_metal::lowering::{DeviceBuffer, LoweredMatrix, PostNorm};
 use larql_compute_metal::MetalBackend;
@@ -95,6 +98,14 @@ struct LayerResident {
     post_ffn_norm: Option<(DeviceBuffer, f32, f32)>,
     k_cache: DeviceBuffer,
     v_cache: DeviceBuffer,
+    /// Weighted per-head Q/K norm weights and their offset, when the plan
+    /// carries the op.
+    qk_norm: Option<(DeviceBuffer, DeviceBuffer, f32)>,
+    /// This layer's rotary table key (into `LoweredSession::inv_freq`);
+    /// `None` on a NoPE layer.
+    rope_key: Option<u64>,
+    /// The layer's output scalar, when the plan carries one.
+    layer_scale: Option<f32>,
 }
 
 /// A plan lowered onto the device, ready to step positions.
@@ -151,32 +162,51 @@ impl<'a> LoweredSession<'a> {
                 l.ffn.dense().map(|f| f.gate_policy)
             )));
         }
-        // K≡V layers and the parameter-free V norm (Gemma 4): carried by
-        // the plan, not lowered until G4.3.
-        if let Some(l) = plan
-            .layers
-            .iter()
-            .find(|l| l.attention.v_from_k || l.attention.parameter_free_qk_norm.v)
-        {
+        // Gemma 4's semantics are lowered (G4.3): K≡V binds the K matrix
+        // as V, the V norm and the weighted Q/K norms ride the served
+        // norm kernels, the proportional partial rotary rides a per-layer
+        // table, the hybrid FFN is composed in `encode_stack`. What the
+        // lowering still has no kernel for is refused, typed, here: a
+        // rotary-width partial rotary (a prefix rotated as its own block)
+        // and a gate activation other than SiLU / tanh-GELU.
+        if let Some(l) = plan.layers.iter().find(|l| {
+            matches!(
+                l.attention.position,
+                PositionPolicy::PartialRope {
+                    basis: larql_models::config::RotaryFrequencyBasis::RotaryWidth,
+                    ..
+                }
+            )
+        }) {
             return Err(VindexError::Parse(format!(
-                "layer {} carries v_from_k={} / parameter-free v_norm={}, which the Metal \
-                 lowering does not execute yet (G4.3); refusing",
-                l.layer, l.attention.v_from_k, l.attention.parameter_free_qk_norm.v
-            )));
-        }
-        // A partial rotary (Gemma 4's proportional rope on its global
-        // layers): carried by the plan, not lowered until G4.3 — the rope
-        // kernel rotates the whole head at plain frequencies.
-        if let Some(l) = plan
-            .layers
-            .iter()
-            .find(|l| matches!(l.attention.position, PositionPolicy::PartialRope { .. }))
-        {
-            return Err(VindexError::Parse(format!(
-                "layer {} carries {:?}, which the Metal lowering does not execute yet (G4.3); \
-                 refusing rather than rotating the whole head",
+                "layer {} carries {:?}, whose prefix-block rotation the rope kernel does not \
+                 express; refusing rather than rotating the whole head",
                 l.layer, l.attention.position
             )));
+        }
+        if let Some(l) = plan
+            .layers
+            .iter()
+            .find(|l| l.layer_scale.is_some() && l.ffn.hybrid().is_none())
+        {
+            return Err(VindexError::Parse(format!(
+                "layer {} carries a layer scalar on a non-hybrid FFN, which the stack encoder \
+                 applies only on the hybrid arm today; refusing",
+                l.layer
+            )));
+        }
+        for l in &plan.layers {
+            let activation = match &l.ffn {
+                larql_vindex::format::vindex3::opplan::LayerFfn::Dense(op) => Some(op.activation),
+                larql_vindex::format::vindex3::opplan::LayerFfn::Hybrid(op) => {
+                    Some(op.dense.activation)
+                }
+                larql_vindex::format::vindex3::opplan::LayerFfn::Routed(_) => None,
+            };
+            if let Some(activation) = activation {
+                ffn_activation(activation)
+                    .map_err(|e| VindexError::Parse(format!("layer {}: {e}", l.layer)))?;
+            }
         }
         let embedding = plan
             .embedding
@@ -190,11 +220,30 @@ impl<'a> LoweredSession<'a> {
             let a = &layer.attention;
             let kv_rows = a.num_kv_heads * a.head_dim;
             let zeros = vec![0.0f32; max_positions * kv_rows];
+            // On a K≡V layer the plan's `v` IS the K operand: the same
+            // bytes load through the same cache, so the V projection
+            // binds the K matrix — the raw K projection lands in the V
+            // slot before the key's own norm and rotation.
             layers.push(LayerResident {
                 q: resident_matrix(gpu, store, &a.q, formats.attention, keep)?,
                 k: resident_matrix(gpu, store, &a.k, formats.attention, keep)?,
                 v: resident_matrix(gpu, store, &a.v, formats.attention, keep)?,
                 o: resident_matrix(gpu, store, &a.o, formats.attention, keep)?,
+                qk_norm: match &a.qk_norm {
+                    Some(qk) => {
+                        let q = resident_vector(gpu, store, Some(&qk.q))?.expect("q norm weight");
+                        let k = resident_vector(gpu, store, Some(&qk.k))?.expect("k norm weight");
+                        Some((q, k, qk.weight_offset))
+                    }
+                    None => None,
+                },
+                rope_key: rope_table_key(&a.position, a.head_dim),
+                layer_scale: match &layer.layer_scale {
+                    Some(op) => Some(store.load(op).and_then(|v| {
+                        larql_vindex::format::vindex3::opplan::exec::layer_scalar_of(&v)
+                    })?),
+                    None => None,
+                },
                 q_bias: resident_vector(gpu, store, a.q_bias.as_ref())?,
                 k_bias: resident_vector(gpu, store, a.k_bias.as_ref())?,
                 v_bias: resident_vector(gpu, store, a.v_bias.as_ref())?,
@@ -258,7 +307,12 @@ impl<'a> LoweredSession<'a> {
         let max_inter = plan
             .layers
             .iter()
-            .filter_map(|l| l.ffn.dense().map(|f| f.intermediate_size))
+            .filter_map(|l| {
+                l.ffn
+                    .dense()
+                    .map(|f| f.intermediate_size)
+                    .or_else(|| l.ffn.hybrid().map(|h| h.dense.intermediate_size))
+            })
             .max()
             .unwrap_or(hidden);
         // Slots 16 and 17 are both vocabulary-sized: the head writes raw
@@ -287,7 +341,21 @@ impl<'a> LoweredSession<'a> {
             vocab.max(1),
             vocab.max(1),
         ];
-        let scratch = sizes.iter().map(|n| gpu.lowering_scratch(*n)).collect();
+        let mut scratch: Vec<DeviceBuffer> =
+            sizes.iter().map(|n| gpu.lowering_scratch(*n)).collect();
+        // A hybrid layer's own intermediates (slots 18..24), and a zero
+        // buffer for the expert combine's residual input.
+        let has_hybrid = plan.layers.iter().any(|l| l.ffn.hybrid().is_some());
+        if has_hybrid {
+            for _ in 0..larql_compute_metal::lowering::stack::StackScratch::HYBRID_BUFFERS {
+                scratch.push(gpu.lowering_scratch(hidden));
+            }
+            let zero = vec![0.0f32; hidden];
+            scratch.push(
+                gpu.lowering_upload(&zero)
+                    .ok_or_else(|| VindexError::Parse("zero buffer upload failed".into()))?,
+            );
+        }
 
         // One inverse-frequency table per distinct rotary policy in the
         // plan — keyed on (theta, yarn-or-plain), so a YaRN layer's ramped
@@ -297,7 +365,7 @@ impl<'a> LoweredSession<'a> {
         let mut inv_freq: HashMap<u64, DeviceBuffer> = HashMap::new();
         for layer in &plan.layers {
             let a = &layer.attention;
-            let key = rope_table_key(&a.position);
+            let key = rope_table_key(&a.position, a.head_dim);
             if let Some(key) = key {
                 inv_freq.entry(key).or_insert_with(|| {
                     let table = rope_inv_freq_table(&a.position, a.head_dim);
@@ -338,13 +406,6 @@ impl<'a> LoweredSession<'a> {
             wiring.elapsed().as_secs_f64()
         );
 
-        if inv_freq.len() > 1 {
-            return Err(VindexError::Parse(format!(
-                "plan carries {} distinct rotary tables; the lowered stack binds one shared \
-                 inv_freq per token and cannot yet select per layer",
-                inv_freq.len()
-            )));
-        }
         Ok(Self {
             gpu,
             plan,
@@ -446,10 +507,14 @@ impl<'a> LoweredSession<'a> {
             ffn_act: &s[11],
             ffn_down: &s[13],
             ffn_post: &s[14],
-            // Every rotary layer in this plan shares one table (checked
-            // in `new`); a plan with several would need per-layer
-            // selection, which the stack encoder does not yet express.
-            inv_freq: self.inv_freq.values().next().unwrap_or(&self.scratch[0]),
+            hybrid: (s.len() > HYBRID_SCRATCH_BASE).then(|| HybridScratch {
+                dense_out: &s[HYBRID_SCRATCH_BASE],
+                router_in: &s[HYBRID_SCRATCH_BASE + 1],
+                expert_sum: &s[HYBRID_SCRATCH_BASE + 2],
+                experts_out: &s[HYBRID_SCRATCH_BASE + 3],
+                branch_sum: &s[HYBRID_SCRATCH_BASE + 4],
+                zero: &s[HYBRID_SCRATCH_BASE + 6],
+            }),
         };
 
         let layers: Vec<LayerLowering> = self
@@ -553,6 +618,13 @@ impl<'a> LoweredSession<'a> {
                 v_bias: r.v_bias.as_ref(),
                 o_bias: r.o_bias.as_ref(),
                 sinks: r.sinks.as_ref(),
+                qk_norm: r.qk_norm.as_ref().filter(|_| !self.ablate.no_qk_norm).map(
+                    |(q, k, offset)| QkNormWeights {
+                        q,
+                        k,
+                        weight_offset: *offset,
+                    },
+                ),
                 norm_weight: &r.pre_attn_norm,
                 post_norm: post(&r.post_attn_norm, &self.scratch[7])
                     .filter(|_| !self.ablate.no_post_norms),
@@ -569,6 +641,7 @@ impl<'a> LoweredSession<'a> {
                 qk_norm_eps: plan_layer.pre_attention_norm.eps as f32,
                 parameter_free_q: a.parameter_free_qk_norm.q && !self.ablate.no_qk_norm,
                 parameter_free_k: a.parameter_free_qk_norm.k && !self.ablate.no_qk_norm,
+                parameter_free_v: a.parameter_free_qk_norm.v && !self.ablate.no_qk_norm,
                 query_scale: a
                     .query_scale
                     .map(|s| s as f32)
@@ -589,10 +662,13 @@ impl<'a> LoweredSession<'a> {
                         LoweredPosition::Scaled { theta, amplitude }
                     }
                     PositionPolicy::None => LoweredPosition::None,
-                    // Refused in `new`; a plan carrying it never gets here.
-                    PositionPolicy::PartialRope { .. } => {
-                        unreachable!("PartialRope is refused before the session is built")
-                    }
+                    // The proportional table (zeros above the fraction)
+                    // rides this layer's own inv_freq at unit amplitude;
+                    // the rotary-width basis was refused in `new`.
+                    PositionPolicy::PartialRope { theta, .. } => LoweredPosition::Scaled {
+                        theta,
+                        amplitude: 1.0,
+                    },
                 },
                 // A window applies only to a sliding span; a full layer
                 // attends the whole prefix whatever the plan records.
@@ -622,6 +698,9 @@ impl<'a> LoweredSession<'a> {
                             .map_or(self.hidden, |f| f.intermediate_size),
                         norm_eps: plan_layer.pre_ffn_norm.eps as f32,
                         norm_weight_offset: plan_layer.pre_ffn_norm.weight_offset,
+                        activation: plan_layer.ffn.dense().map_or(FfnActivation::Silu, |f| {
+                            ffn_activation(f.activation).expect("checked in `new`")
+                        }),
                     },
                 },
                 FfnResident::Routed(routed) => {
@@ -632,9 +711,51 @@ impl<'a> LoweredSession<'a> {
                         eps: routed.eps,
                     }))
                 }
+                FfnResident::Hybrid(h) => {
+                    let op = plan_layer.ffn.hybrid().expect("resident matches the plan");
+                    LayerFfnLowering::Hybrid(Box::new(HybridFfnLowering {
+                        dense: FfnWeights {
+                            gate: h.gate.as_lowered(),
+                            up: h.up.as_lowered(),
+                            down: h.down.as_lowered(),
+                            norm_weight: &r.pre_ffn_norm,
+                            // The hybrid applies the layer's post-FFN norm
+                            // itself, after summing the branches.
+                            post_norm: None,
+                        },
+                        dense_shape: FfnShape {
+                            hidden: self.hidden,
+                            intermediate: op.dense.intermediate_size,
+                            norm_eps: plan_layer.pre_ffn_norm.eps as f32,
+                            norm_weight_offset: plan_layer.pre_ffn_norm.weight_offset,
+                            activation: ffn_activation(op.dense.activation)
+                                .expect("checked in `new`"),
+                        },
+                        routed: RoutedFfnLowering {
+                            moe: h.routed.moe(),
+                            scratch: &h.routed.scratch,
+                            table: &h.routed.table,
+                            eps: h.routed.eps,
+                        },
+                        router_conditioning: &h.router_conditioning,
+                        per_expert_scale: &h.per_expert_scale,
+                        pre_experts_norm: &h.pre_experts_norm,
+                        post_dense_norm: &h.post_dense_norm,
+                        post_experts_norm: &h.post_experts_norm,
+                        branch_norm_eps: h.branch_norm_eps,
+                        branch_norm_weight_offset: h.branch_norm_weight_offset,
+                        post_ffn_norm: post(&r.post_ffn_norm, &self.scratch[14])
+                            .filter(|_| !self.ablate.no_post_norms),
+                        layer_scale: r.layer_scale,
+                    }))
+                }
             },
             k_cache: &r.k_cache,
             v_cache: &r.v_cache,
+            inv_freq: r
+                .rope_key
+                .and_then(|k| self.inv_freq.get(&k))
+                .unwrap_or(&self.scratch[0]),
         }
     }
 
@@ -656,6 +777,24 @@ impl<'a> LoweredSession<'a> {
     /// Distinct rope bases the plan declares.
     pub fn rope_bases(&self) -> usize {
         self.inv_freq.len()
+    }
+}
+
+/// First hybrid scratch slot: the 18 stack slots precede it (slots 16/17
+/// are the head's vocabulary-sized pair).
+const HYBRID_SCRATCH_BASE: usize = 18;
+
+/// The lowering's gate activation for the plan's, or why there is none.
+fn ffn_activation(
+    activation: larql_models::config::Activation,
+) -> Result<FfnActivation, VindexError> {
+    use larql_models::config::Activation;
+    match activation {
+        Activation::Silu => Ok(FfnActivation::Silu),
+        Activation::GeluTanh => Ok(FfnActivation::GeluTanh),
+        other => Err(VindexError::Parse(format!(
+            "the lowering has no gate/up kernel for activation {other:?}; refusing"
+        ))),
     }
 }
 

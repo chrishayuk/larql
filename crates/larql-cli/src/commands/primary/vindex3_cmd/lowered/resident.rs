@@ -4,7 +4,7 @@
 
 use larql_compute_metal::lowering::DeviceBuffer;
 use larql_compute_metal::MetalBackend;
-use larql_models::config::PositionPolicy;
+use larql_models::config::{PositionPolicy, RotaryFrequencyBasis};
 use larql_vindex::error::VindexError;
 use larql_vindex::format::vindex3::opplan::exec::backend::WeightFormat;
 use larql_vindex::format::vindex3::opplan::exec::operands::OperandStore;
@@ -130,16 +130,41 @@ pub(super) fn resident_vector(
 /// The `inv_freq` map key for a rotary policy — distinct per (theta,
 /// scaled-or-plain) so YaRN and plain rope at the same base never share a
 /// table; `None` for NoPE.
-pub(super) fn rope_table_key(position: &PositionPolicy) -> Option<u64> {
+pub(super) fn rope_table_key(position: &PositionPolicy, head_dim: usize) -> Option<u64> {
+    use std::hash::{Hash, Hasher};
+    // The table is `head_dim/2` entries of `theta^(-2i/head_dim)`: two
+    // layers at one theta but different head widths (Gemma 4's 256 vs
+    // 512) need different tables, so the width is part of every key.
+    let with_width = |discriminant: u64| {
+        let mut h = std::collections::hash_map::DefaultHasher::new();
+        discriminant.hash(&mut h);
+        head_dim.hash(&mut h);
+        h.finish() | 1
+    };
     match position {
-        PositionPolicy::Rope { theta } => Some(theta.to_bits()),
+        PositionPolicy::Rope { theta } => Some(with_width(theta.to_bits())),
+        // The partial rotary's table is the full-head rotate-half table
+        // with the top frequencies zero (head-width basis); fraction and
+        // basis join the key.
+        PositionPolicy::PartialRope {
+            theta,
+            rotary_fraction,
+            basis,
+        } => {
+            let mut h = std::collections::hash_map::DefaultHasher::new();
+            theta.to_bits().hash(&mut h);
+            rotary_fraction.to_bits().hash(&mut h);
+            (*basis == RotaryFrequencyBasis::HeadWidth).hash(&mut h);
+            head_dim.hash(&mut h);
+            Some(h.finish() | 1)
+        }
         // Fold the yarn block into the key so two different blocks (or a
         // block vs plain rope) at one theta get their own tables. The
         // block's f64 fields hash deterministically.
         PositionPolicy::Yarn { theta, scaling } => {
             let mut h = std::collections::hash_map::DefaultHasher::new();
-            use std::hash::{Hash, Hasher};
             theta.to_bits().hash(&mut h);
+            head_dim.hash(&mut h);
             scaling.factor.to_bits().hash(&mut h);
             scaling.beta_fast.to_bits().hash(&mut h);
             scaling.beta_slow.to_bits().hash(&mut h);
@@ -151,10 +176,6 @@ pub(super) fn rope_table_key(position: &PositionPolicy) -> Option<u64> {
             Some(h.finish() | 1)
         }
         PositionPolicy::None => None,
-        // Refused in `LoweredSession::new`; never reaches the table.
-        PositionPolicy::PartialRope { .. } => {
-            unreachable!("PartialRope is refused before the session is built")
-        }
     }
 }
 
@@ -174,9 +195,26 @@ pub(super) fn rope_inv_freq_table(position: &PositionPolicy, head_dim: usize) ->
             inv_freq.iter().map(|f| *f as f32).collect()
         }
         PositionPolicy::None => Vec::new(),
-        PositionPolicy::PartialRope { .. } => {
-            unreachable!("PartialRope is refused before the session is built")
-        }
+        // Head-width basis: the interpreter's own table (zeros above the
+        // fraction → identity rotation on those pairs). The rotary-width
+        // basis rotates a prefix as its own block, which the rope kernel
+        // does not express — refused in `LoweredSession::new`.
+        PositionPolicy::PartialRope {
+            theta,
+            rotary_fraction,
+            basis: RotaryFrequencyBasis::HeadWidth,
+        } => larql_vindex::format::vindex3::opplan::exec::kernels::partial_rotary_frequencies(
+            head_dim,
+            *rotary_fraction,
+            *theta,
+        )
+        .iter()
+        .map(|f| *f as f32)
+        .collect(),
+        PositionPolicy::PartialRope {
+            basis: RotaryFrequencyBasis::RotaryWidth,
+            ..
+        } => unreachable!("RotaryWidth partial rotary is refused before the session is built"),
     }
 }
 

@@ -34,7 +34,7 @@
 
 #![cfg(target_os = "macos")]
 
-use larql_compute_metal::lowering::ffn::{FfnScratch, FfnShape, FfnWeights};
+use larql_compute_metal::lowering::ffn::{FfnActivation, FfnScratch, FfnShape, FfnWeights};
 use larql_compute_metal::lowering::LoweredMatrix;
 use larql_models::quant::nvfp4;
 
@@ -250,6 +250,7 @@ fn run_lowered(
         intermediate: INTER,
         norm_eps: EPS,
         norm_weight_offset: offset,
+        activation: FfnActivation::Silu,
     };
 
     let cmd = gpu.new_lowering_command_buffer();

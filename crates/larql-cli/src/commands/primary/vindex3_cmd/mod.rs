@@ -94,6 +94,17 @@ pub enum ExecBackend {
     /// representations are priced under one schedule.
     #[cfg(all(feature = "gpu", target_os = "macos"))]
     MetalLoweredMxfp4,
+    /// Lowered execution, MXFP4 FFN (dense AND expert banks) with f16
+    /// attention and head — the same representation as the interpreter's
+    /// `metal-mxfp4` arm, so the two certify each other at f32 noise.
+    #[cfg(all(feature = "gpu", target_os = "macos"))]
+    MetalLoweredMxfp4Ffn,
+    /// Lowered execution, f16 everywhere the lowering can hold f16 —
+    /// attention, dense FFN, head. Expert banks go through the descriptor
+    /// MoE path, which serves Q6_K and MXFP4 only, so a bf16 bank is
+    /// MXFP4 here: this arm isolates the expert representation's cost.
+    #[cfg(all(feature = "gpu", target_os = "macos"))]
+    MetalLoweredF16,
 }
 
 #[derive(Args)]

@@ -334,6 +334,7 @@ fn run_lowered(
         v_bias: None,
         o_bias: None,
         sinks: None,
+        qk_norm: None,
         norm_weight: &norm_buf,
         post_norm: post_buf
             .as_ref()
@@ -365,6 +366,7 @@ fn run_lowered(
         qk_norm_eps: QK_EPS,
         parameter_free_q: true,
         parameter_free_k: true,
+        parameter_free_v: false,
         query_scale: Some(QUERY_SCALE),
         score_scale,
         position,
