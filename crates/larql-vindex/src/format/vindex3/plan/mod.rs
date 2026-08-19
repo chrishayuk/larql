@@ -273,20 +273,42 @@ fn carriage_finding(
     };
     let carried = component_for_key(built, &component_name)
         .and_then(|component| rule.probe.and_then(|probe| probe(component, &ctx)));
+    // Compared against a *canonicalised* declared value: for leaves where
+    // VINDEX3 legitimately stores a renamed or derived form of the same
+    // fact (see [`carriage::canonical_declared`]), this is the raw
+    // declaration re-expressed the same way the parser/runtime already
+    // does — not a loosened comparison. Findings still report the raw
+    // `fact.value` so the checkpoint's own spelling stays on the record.
+    let comparable_declared = carriage::canonical_declared(leaf, &fact.value);
     match carried {
         // The schema holds a value: compare it to the declaration. This
         // is where a dropped fact dies — GPT-OSS declares `yarn` and the
         // position policy can only answer `default`.
-        Some(carried) if values_agree(&carried, &fact.value) => Finding {
-            category: FindingCategory::Representable,
-            class: SemanticClass::ExecutionSemantic,
-            component: component_name,
-            subject: fact.path.clone(),
-            declared: Some(fact.value.clone()),
-            resolved: Some(carried),
-            carriage: Some(rule.reaches),
-            detail: format!("carried to `{}` at {}", rule.reaches.name(), rule.site),
-        },
+        Some(carried) if values_agree(&carried, &comparable_declared) => {
+            let detail = if comparable_declared == fact.value {
+                format!("carried to `{}` at {}", rule.reaches.name(), rule.site)
+            } else {
+                format!(
+                    "carried to `{}` at {} — declared `{}` and stored `{}` are the same fact \
+                     under the canonical conversion VINDEX3 already applies at runtime, not \
+                     compared as raw JSON",
+                    rule.reaches.name(),
+                    rule.site,
+                    fact.value,
+                    carried
+                )
+            };
+            Finding {
+                category: FindingCategory::Representable,
+                class: SemanticClass::ExecutionSemantic,
+                component: component_name,
+                subject: fact.path.clone(),
+                declared: Some(fact.value.clone()),
+                resolved: Some(carried),
+                carriage: Some(rule.reaches),
+                detail,
+            }
+        }
         Some(carried) => Finding {
             category: FindingCategory::Mismatched,
             class: SemanticClass::ExecutionSemantic,

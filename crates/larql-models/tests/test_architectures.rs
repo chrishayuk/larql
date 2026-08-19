@@ -1180,7 +1180,7 @@ fn gemma2_sliding_window_alternates_every_other_layer() {
     for layer in 0..26 {
         assert_eq!(
             arch.is_sliding_window_layer(layer),
-            layer % 2 == 0,
+            layer.is_multiple_of(2),
             "layer {layer} sliding-window mismatch"
         );
     }

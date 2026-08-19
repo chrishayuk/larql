@@ -81,7 +81,7 @@ impl ModelArchitecture for Gemma2Arch {
     /// every layer full attention for a checkpoint that, like every real
     /// Gemma 2 release, declares no `layer_types` at all).
     fn is_sliding_window_layer(&self, layer: usize) -> bool {
-        layer % 2 == 0
+        layer.is_multiple_of(2)
     }
 
     // rope_base_for_layer: no override — sliding and full layers share the

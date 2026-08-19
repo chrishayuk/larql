@@ -38,6 +38,8 @@
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 
+use larql_models::config::score_scale_from_query_pre_attn_scalar;
+
 use super::super::graph::policy::AttentionSpan;
 use super::super::graph::Component;
 
@@ -543,6 +545,42 @@ pub const CARRIAGE_RULES: &[CarriageRule] = &[
 /// The rule governing a config leaf, if any.
 pub fn rule_for(leaf: &str) -> Option<&'static CarriageRule> {
     CARRIAGE_RULES.iter().find(|rule| rule.leaf == leaf)
+}
+
+/// Canonicalises a declared config value into the vocabulary a probe's
+/// carried value uses, for leaves where VINDEX3 legitimately stores a
+/// *derived* form of the same fact rather than the checkpoint's own
+/// spelling.
+///
+/// This is not a tolerance knob: the one arm here reuses the identical
+/// formula the runtime already applies
+/// ([`score_scale_from_query_pre_attn_scalar`]), so agreement means the
+/// same fact was recognised twice by the same rule, not that comparison
+/// was loosened. A leaf with no arm here falls through unchanged, so
+/// [`super::values_agree`] still requires byte-for-byte (or f32-precision)
+/// identity — this function only ever narrows a `mismatched` finding to
+/// `representable`, never the reverse, and callers still show the raw
+/// declared value in the finding regardless of what this returns.
+///
+/// `hidden_act`/`hidden_activation` used to have an arm here too, but
+/// [`probe_activation`] now resolves that alias itself (via
+/// [`ProbeContext::declared`], returning the checkpoint's own spelling on
+/// a match) — canonicalising *both* sides at once made them disagree in
+/// opposite directions (`"gelu_pytorch_tanh"` vs `"gelu_tanh"`) rather
+/// than agree. One rule owns each fact's normalisation, never two.
+pub fn canonical_declared(leaf: &str, declared: &Value) -> Value {
+    match leaf {
+        // The checkpoint declares the raw scalar; VINDEX3's execution
+        // surface stores the score scale execution actually reads —
+        // `scalar.powf(-0.5)`, the identical formula
+        // `ModelArchitecture::attention_scale` applies at runtime, called
+        // through the one shared function rather than re-derived here.
+        "query_pre_attn_scalar" => declared
+            .as_f64()
+            .map(|scalar| json!(score_scale_from_query_pre_attn_scalar(scalar)))
+            .unwrap_or_else(|| declared.clone()),
+        _ => declared.clone(),
+    }
 }
 
 // ── Probes ──────────────────────────────────────────────────────────
