@@ -569,3 +569,145 @@ fn span_names_round_trip() {
         );
     }
 }
+
+/// A rule whose probe never answers (`probe_unrepresented`) reports the
+/// declared fact as dropped at the boundary, naming its site — the honest
+/// verdict for a leaf the schema has no field for (`norm_topk_prob`), and
+/// it blocks.
+#[test]
+fn a_no_schema_field_rule_reports_the_fact_unrepresented_and_blocks() {
+    let findings = plan_with(|config| {
+        config["text_config"]["norm_topk_prob"] = serde_json::json!(true);
+    });
+    let finding = finding_for(&findings, "norm_topk_prob");
+    assert_eq!(finding.class, SemanticClass::ExecutionSemantic);
+    assert_eq!(finding.category, FindingCategory::Unrepresented);
+    assert!(
+        finding.detail.contains("no schema field"),
+        "{}",
+        finding.detail
+    );
+    assert!(finding.blocks());
+}
+
+/// Granite's `residual_multiplier` is read by the generic resolution into
+/// the surface's residual scale and judged there: a declaration is carried
+/// to the lowered op and the probe answers with the stored value.
+#[test]
+fn a_declared_residual_multiplier_is_carried_to_the_residual_scale() {
+    let declared = 0.22;
+    let findings = plan_with(|config| {
+        config["text_config"]["residual_multiplier"] = serde_json::json!(declared);
+    });
+    let finding = finding_for(&findings, "residual_multiplier");
+    assert_eq!(finding.class, SemanticClass::ExecutionSemantic);
+    assert_eq!(
+        finding.category,
+        FindingCategory::Representable,
+        "{}",
+        finding.detail
+    );
+    assert_eq!(finding.carriage, Some(Carriage::Lowered));
+    let resolved = finding.resolved.as_ref().and_then(|v| v.as_f64()).unwrap();
+    assert!((resolved - declared).abs() < 1e-6);
+}
+
+/// `query_pre_attn_scalar` is judged in the SCORE-SCALE space: the
+/// declared scalar is canonicalised to `scalar^-0.5` before comparing with
+/// the surface's score scale, so a family that resolves its score scale
+/// from head_dim disagrees (and says so) rather than comparing 256 to 0.35.
+#[test]
+fn query_pre_attn_scalar_is_compared_in_score_scale_space() {
+    use crate::format::vindex3::plan::carriage::canonical_declared;
+    let scalar = 256.0;
+    let canonical = canonical_declared("query_pre_attn_scalar", &serde_json::json!(scalar));
+    let expected = (scalar as f64).powf(-0.5);
+    assert!((canonical.as_f64().unwrap() - expected).abs() < 1e-12);
+    // A non-numeric declaration passes through untouched.
+    assert_eq!(
+        canonical_declared("query_pre_attn_scalar", &serde_json::json!("x")),
+        serde_json::json!("x")
+    );
+    // Any other leaf is untouched.
+    assert_eq!(
+        canonical_declared("rope_theta", &serde_json::json!(scalar)),
+        serde_json::json!(scalar)
+    );
+    let findings = plan_with(|config| {
+        config["text_config"]["query_pre_attn_scalar"] = serde_json::json!(scalar);
+    });
+    let finding = finding_for(&findings, "query_pre_attn_scalar");
+    // The resolution reads the scalar into the surface's score scale
+    // (256 → 0.0625), and the comparison agrees in that space — not by
+    // comparing 256 with 0.0625 as raw JSON.
+    assert_eq!(
+        finding.category,
+        FindingCategory::Representable,
+        "{}",
+        finding.detail
+    );
+    assert_eq!(finding.resolved, Some(serde_json::json!(expected as f32)));
+}
+
+/// A tensor group the graph cannot place — an unknown prefix with no
+/// object kind — surfaces as an unrepresented finding that names the
+/// prefix and the builder's reason, and it blocks.
+#[test]
+fn an_unplaceable_tensor_group_is_reported_and_blocks() {
+    use crate::format::vindex3::plan::tests_support::custom_artifact;
+    let dir = tempfile::tempdir().unwrap();
+    let config = serde_json::json!({
+        "architectures": ["LlamaForCausalLM"],
+        "model_type": "llama",
+        "hidden_size": 64,
+        "num_hidden_layers": 1,
+        "intermediate_size": 256,
+        "num_attention_heads": 8,
+        "num_key_value_heads": 2,
+        "head_dim": 8,
+        "vocab_size": 128,
+        "rms_norm_eps": 1e-5,
+        "rope_theta": 10000.0
+    });
+    let mystery: [usize; 2] = [4, 4];
+    let inventory = custom_artifact(
+        dir.path(),
+        &config,
+        &[
+            ("model.embed_tokens.weight", &[128usize, 64]),
+            ("mystery_block.weight", &mystery),
+        ],
+    );
+    let plan = plan_system(&[("odd-artifact".to_string(), inventory)]);
+    let finding = plan
+        .artifacts
+        .iter()
+        .flat_map(|a| a.findings.iter())
+        .find(|f| f.subject.starts_with("mystery_block"))
+        .expect("the unplaced group is reported");
+    assert_eq!(finding.category, FindingCategory::Unrepresented);
+    assert_eq!(finding.class, SemanticClass::Unknown);
+    assert!(finding.blocks());
+    assert!(!plan.admissible);
+}
+
+/// A nested component whose execution surface cannot be completed
+/// (vision tower missing its head count) surfaces as an
+/// `execution_surface` finding naming the missing fact, and it blocks.
+#[test]
+fn an_incomplete_nested_surface_is_reported_and_blocks() {
+    let findings = plan_with(|config| {
+        config["vision_config"]
+            .as_object_mut()
+            .unwrap()
+            .remove("num_attention_heads");
+    });
+    let finding = finding_for(&findings, "vision.execution_surface");
+    assert_eq!(finding.category, FindingCategory::Unrepresented);
+    assert!(
+        finding.detail.contains("num_attention_heads"),
+        "{}",
+        finding.detail
+    );
+    assert!(finding.blocks());
+}
