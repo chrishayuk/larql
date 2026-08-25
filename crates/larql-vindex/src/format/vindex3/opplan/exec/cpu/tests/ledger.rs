@@ -12,12 +12,18 @@ use super::super::physical::PhysicalProjectionPlan;
 /// Every plan the ledger has a slot for. Adding a plan without adding it
 /// here would leave the new slot untested, so `all_enumerates_every_plan`
 /// checks the two agree in length as well as in content.
-const PLANS: [PhysicalProjectionPlan; 5] = [
+const PLANS: [PhysicalProjectionPlan; 8] = [
     PhysicalProjectionPlan::ScalarF32,
     PhysicalProjectionPlan::BlasF32,
     PhysicalProjectionPlan::FusedBf16,
     PhysicalProjectionPlan::FusedQ8,
     PhysicalProjectionPlan::FusedQ4,
+    // The integer arms. Each has its OWN slot on purpose: an arm folded
+    // into another's counter would let a byte census agree with itself
+    // while describing a mixture of two arithmetics.
+    PhysicalProjectionPlan::Q8xQ8,
+    PhysicalProjectionPlan::Q4xQ8,
+    PhysicalProjectionPlan::Bf16xQ8,
 ];
 
 #[test]

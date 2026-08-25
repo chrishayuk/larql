@@ -19,10 +19,12 @@
 //! the observation, and a projection helper that sat somewhere else would
 //! be one refactor away from choosing its own kernel again.
 
+use super::arithmetic::{AccumulatorRep, ActivationRep, Arithmetic, WeightRep};
+use super::integer::{activation_scaling, Bf16xQ8, Q4xQ8, Q8xQ8};
 use super::kernels::{BlasF32, FusedBf16, FusedQ4, FusedQ8, ScalarF32};
 use super::projector::{DenseProjector, WeightRows};
 use crate::error::VindexError;
-use crate::format::vindex3::opplan::exec::backend::{WeightFormat, WeightSlice};
+use crate::format::vindex3::opplan::exec::backend::{MatrixClass, WeightFormat, WeightSlice};
 
 /// Default performance-cluster L2, used where the machine does not
 /// report one. The value this rung measured against (Apple M3 Max).
@@ -64,6 +66,139 @@ pub enum PhysicalProjectionPlan {
     /// Halves the bytes a decoded token streams AND halves what the
     /// model occupies, because they are the same bytes.
     FusedBf16,
+    /// Q8 resident, **int8 activation, i32 accumulator**, rescaled once
+    /// per row. 224.75 ms/token at 118.0 GB/s.
+    Q8xQ8,
+    /// Q4 resident, int8 activation, i32 accumulator. 135.10 ms/token at
+    /// 106.6 GB/s — the CPU-4Y frontier.
+    Q4xQ8,
+    /// bf16 resident and EXACT, int8 activation, f32 dot. The control
+    /// arm: it isolates activation quantisation from weight
+    /// quantisation, and is never chosen for speed.
+    Bf16xQ8,
+}
+
+/// **Which arithmetic the projections run in**, for the whole process.
+///
+/// A weight representation does NOT determine this. Q8 bytes can be
+/// consumed by a widening f32 kernel or by `SDOT`, and the two are the
+/// same residency with different numerics — which is exactly why
+/// [`PhysicalProjectionPlan::for_resident`] cannot answer from the bytes
+/// alone any more and has to consult the same policy the loader did.
+///
+/// Process-wide and read ONCE, because it is the arm of an experiment:
+/// a bank run is one process per arm, and a value that could change
+/// mid-decode would make the resulting distribution describe no single
+/// representation.
+#[derive(Clone, Copy, PartialEq, Eq, Debug, Default)]
+pub enum ArithmeticArm {
+    /// Compact weights against an f32 activation — what ships today.
+    #[default]
+    FloatActivation,
+    /// Exact bf16 weights against an int8 activation. CPU-5 arm A1.
+    Bf16TimesQ8,
+    /// Q8 weights against an int8 activation. CPU-5 arm A3.
+    Q8TimesQ8,
+    /// Q4 weights against an int8 activation. CPU-5 arm A4.
+    Q4TimesQ8,
+}
+
+/// **Which matrix classes a Q4 arm is permitted to reach.**
+///
+/// Blanket Q4 is a hypothesis, not a plan. If it fails, the question
+/// becomes the smallest set of operands that must be RESTORED to a
+/// higher precision to recover quality — and the only axis today's seam
+/// can express is the matrix class, because
+/// [`super::super::prepared`] deliberately refuses to hand the policy an
+/// `OperandRef`: resolving operands by name is the one thing the seam
+/// forbids, and a name-based exception set would be a per-model recipe
+/// rather than a policy.
+///
+/// Class is therefore a FIRST CUT, not the final axis. It cannot say
+/// "the last five layers' FFN", which is where a 4-bit knee has already
+/// been found once on another model. Saying so is a scope limit, not a
+/// result.
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub struct Q4Classes {
+    pub attention: bool,
+    pub ffn: bool,
+    pub head: bool,
+}
+
+impl Q4Classes {
+    /// Blanket Q4 — every eligible operand, which is arm R0.
+    pub const ALL: Self = Self {
+        attention: true,
+        ffn: true,
+        head: true,
+    };
+
+    /// Whether this class may go to Q4. A class that may not falls back
+    /// to Q8 **in the same arithmetic domain**, never to an f32
+    /// activation: a rescue that also changed the activation treatment
+    /// would move two things at once, which is the mistake CPU-4A made.
+    pub fn admits(self, class: MatrixClass) -> bool {
+        match class {
+            MatrixClass::AttentionProjection => self.attention,
+            MatrixClass::FfnProjection => self.ffn,
+            MatrixClass::OutputHead => self.head,
+            // The bank is widened to f32 on the way in; no compact bytes
+            // remain by the time a format could apply.
+            MatrixClass::RoutedExpertBank => false,
+        }
+    }
+}
+
+/// Names which classes a Q4 arm reaches: a comma-separated subset of
+/// `attn`, `ffn`, `head`, or `all`.
+pub const Q4_CLASSES_ENV: &str = "LARQL_CPU_Q4_CLASSES";
+
+/// The Q4 class set, resolved once per process.
+///
+/// Unset means [`Q4Classes::ALL`] — the blanket arm — so an arm run
+/// without this variable is the hypothesis rather than a silent
+/// exception set.
+pub fn q4_classes() -> Q4Classes {
+    static CLASSES: std::sync::OnceLock<Q4Classes> = std::sync::OnceLock::new();
+    *CLASSES.get_or_init(|| match std::env::var(Q4_CLASSES_ENV).ok() {
+        None => Q4Classes::ALL,
+        Some(v) if v.trim().is_empty() || v.trim() == "all" => Q4Classes::ALL,
+        Some(v) => {
+            let named = |k: &str| v.split(',').any(|t| t.trim() == k);
+            Q4Classes {
+                attention: named("attn"),
+                ffn: named("ffn"),
+                head: named("head"),
+            }
+        }
+    })
+}
+
+/// Names the arithmetic arm. See [`ArithmeticArm`].
+pub const ARITHMETIC_ARM_ENV: &str = "LARQL_CPU_ARITHMETIC";
+
+/// The arm, resolved once per process.
+///
+/// An unrecognised value is the DEFAULT rather than an error, matching
+/// [`MAX_FORMAT_ENV`]: a typo must not silently invent a fourth
+/// numerical regime that then gets reported as a measurement.
+pub fn arithmetic_arm() -> ArithmeticArm {
+    static ARM: std::sync::OnceLock<ArithmeticArm> = std::sync::OnceLock::new();
+    *ARM.get_or_init(|| {
+        match std::env::var(ARITHMETIC_ARM_ENV)
+            .ok()
+            .as_deref()
+            .map(str::trim)
+        {
+            // The `b` suffix selects a per-BLOCK activation scale; the
+            // arm itself is the same arithmetic either way, which is why
+            // the scale geometry is a separate value and not a fourth arm.
+            Some("bf16xq8") | Some("bf16xq8b") => ArithmeticArm::Bf16TimesQ8,
+            Some("q8xq8") | Some("q8xq8b") => ArithmeticArm::Q8TimesQ8,
+            Some("q4xq8") | Some("q4xq8b") => ArithmeticArm::Q4TimesQ8,
+            _ => ArithmeticArm::FloatActivation,
+        }
+    })
 }
 
 impl PhysicalProjectionPlan {
@@ -71,11 +206,70 @@ impl PhysicalProjectionPlan {
     pub fn format(self) -> WeightFormat {
         match self {
             Self::ScalarF32 | Self::BlasF32 => WeightFormat::F32,
-            Self::FusedBf16 => WeightFormat::Bf16,
-            Self::FusedQ8 => WeightFormat::Q8,
-            // No `WeightFormat` names Q4; see the variant's note.
-            Self::FusedQ4 => WeightFormat::Q8,
+            Self::FusedBf16 | Self::Bf16xQ8 => WeightFormat::Bf16,
+            Self::FusedQ8 | Self::Q8xQ8 => WeightFormat::Q8,
+            Self::FusedQ4 | Self::Q4xQ8 => WeightFormat::Q4,
         }
+    }
+
+    /// **What this plan actually computes**, as a value.
+    ///
+    /// The weight half is a property of the variant. The activation half
+    /// is a property of the PROCESS — one arm per run — which is why it
+    /// is read through [`activation_scaling`] rather than stored per
+    /// operand. When blocking becomes per-operand (a hardware or
+    /// architecture choice rather than an experiment's arm) this is the
+    /// accessor that has to start taking the operand.
+    pub fn arithmetic(self) -> Arithmetic {
+        let q8_block = crate::format::vindex3::opplan::exec::quantise::Q8_BLOCK;
+        let q4_block = crate::format::vindex3::opplan::exec::quantise::Q4_BLOCK;
+        let int8_act = ActivationRep::Q8 {
+            span: activation_scaling(),
+        };
+        match self {
+            Self::ScalarF32 | Self::BlasF32 => Arithmetic {
+                weight: WeightRep::F32,
+                activation: ActivationRep::F32,
+                accumulator: AccumulatorRep::F32,
+            },
+            Self::FusedBf16 => Arithmetic {
+                weight: WeightRep::Bf16,
+                activation: ActivationRep::F32,
+                accumulator: AccumulatorRep::F32,
+            },
+            Self::FusedQ8 => Arithmetic {
+                weight: WeightRep::Q8 { block: q8_block },
+                activation: ActivationRep::F32,
+                accumulator: AccumulatorRep::F32,
+            },
+            Self::FusedQ4 => Arithmetic {
+                weight: WeightRep::Q4 { block: q4_block },
+                activation: ActivationRep::F32,
+                accumulator: AccumulatorRep::F32,
+            },
+            // The control holds EXACT weights and an f32 dot; only the
+            // activation is quantised, which is the whole of its job.
+            Self::Bf16xQ8 => Arithmetic {
+                weight: WeightRep::Bf16,
+                activation: int8_act,
+                accumulator: AccumulatorRep::F32,
+            },
+            Self::Q8xQ8 => Arithmetic {
+                weight: WeightRep::Q8 { block: q8_block },
+                activation: int8_act,
+                accumulator: AccumulatorRep::I32,
+            },
+            Self::Q4xQ8 => Arithmetic {
+                weight: WeightRep::Q4 { block: q4_block },
+                activation: int8_act,
+                accumulator: AccumulatorRep::I32,
+            },
+        }
+    }
+
+    /// The weight representation this plan is resident as.
+    pub fn weight_rep(self) -> WeightRep {
+        self.arithmetic().weight
     }
 
     /// The kernel that consumes it, which in turn declares its threading.
@@ -86,6 +280,9 @@ impl PhysicalProjectionPlan {
             Self::FusedBf16 => &FusedBf16,
             Self::FusedQ8 => &FusedQ8,
             Self::FusedQ4 => &FusedQ4,
+            Self::Q8xQ8 => &Q8xQ8,
+            Self::Q4xQ8 => &Q4xQ8,
+            Self::Bf16xQ8 => &Bf16xQ8,
         }
     }
 
@@ -103,6 +300,17 @@ impl PhysicalProjectionPlan {
     /// stored bytes are the resident bytes, and a policy that quietly
     /// quantised to hit its own threshold would make that a lie.
     pub fn choose(elements: usize, stored_bf16: bool) -> Self {
+        // Class-agnostic: every class admitted, which is what a caller
+        // asking without one means.
+        Self::choose_for(None, elements, stored_bf16)
+    }
+
+    /// The same policy, told which class the operand belongs to.
+    ///
+    /// The class changes nothing except whether a Q4 arm may reach this
+    /// operand — the cache thresholds are physical and identical for
+    /// every class.
+    pub fn choose_for(class: Option<MatrixClass>, elements: usize, stored_bf16: bool) -> Self {
         if !stored_bf16 || elements * F32_BYTES < compact_threshold_bytes() {
             return Self::BlasF32;
         }
@@ -116,7 +324,25 @@ impl PhysicalProjectionPlan {
         // wins 1.16x. Every measured shape falls on the side this
         // predicts.
         if elements * BF16_BYTES >= compact_threshold_bytes() && q8_permitted() {
-            Self::FusedQ8
+            // **The arm applies to exactly this population** — the
+            // streaming operands, and no others. The tiny f32 ones and
+            // the cache-resident bf16 ones are identical across every
+            // arm, so a comparison between arms is a comparison of one
+            // representation over one operand set rather than of two
+            // differently-composed models.
+            match arithmetic_arm() {
+                ArithmeticArm::FloatActivation => Self::FusedQ8,
+                ArithmeticArm::Bf16TimesQ8 => Self::Bf16xQ8,
+                ArithmeticArm::Q8TimesQ8 => Self::Q8xQ8,
+                // A class the exception set has RESTORED falls back to Q8
+                // in the same integer domain — same activation, same
+                // accumulator, only the weight bits change. That is what
+                // makes a rescue rung a one-variable experiment.
+                ArithmeticArm::Q4TimesQ8 => match class {
+                    Some(c) if !q4_classes().admits(c) => Self::Q8xQ8,
+                    _ => Self::Q4xQ8,
+                },
+            }
         } else {
             Self::FusedBf16
         }
@@ -130,12 +356,46 @@ impl PhysicalProjectionPlan {
     /// something else, a threshold read on a machine reporting a
     /// different cache — and would then run the wrong kernel over the
     /// right bytes. Reading the representation cannot be wrong about it.
-    pub fn for_resident(rows: WeightRows<'_>) -> Self {
+    pub fn for_resident(rows: WeightRows<'_>, in_dim: usize) -> Self {
+        // The bytes still decide the FORMAT — that half is an observation
+        // and cannot be wrong. They no longer decide the ARITHMETIC,
+        // because Q8 bytes are consumable by a widening f32 kernel and by
+        // `SDOT` alike, so the arm is read from the same policy the
+        // loader read. Two readers of one value, not two derivations.
+        let arm = arithmetic_arm();
         match rows {
             WeightRows::F32(_) => Self::BlasF32,
-            WeightRows::Bf16(_) => Self::FusedBf16,
-            WeightRows::Q8 { .. } => Self::FusedQ8,
-            WeightRows::Q4 { .. } => Self::FusedQ4,
+            // **The control has to cover the SAME operands the arms do.**
+            //
+            // bf16 bytes are ambiguous in a way Q8 and Q4 bytes are not:
+            // an operand is resident as bf16 either because its image
+            // fits L2 and the policy kept it exact, or because the A1
+            // control swapped a streaming Q8 operand back to exact
+            // weights. The bytes cannot tell those apart, so the size
+            // rule is re-applied here — the same rule, off the same
+            // geometry, not a second policy.
+            //
+            // Measured cost of getting this wrong: A1 quantised the
+            // activation on the cache-resident operands as well, which
+            // made the control a LARGER perturbation than the arm it
+            // exists to explain, and it read worse than Q8 x Q8 despite
+            // holding exact weights.
+            WeightRows::Bf16(_) => match arm {
+                ArithmeticArm::Bf16TimesQ8 if streams(rows, in_dim) => Self::Bf16xQ8,
+                _ => Self::FusedBf16,
+            },
+            // Under EITHER integer arm, Q8 bytes are consumed by SDOT.
+            // Under the Q4 arm they exist only because an exception set
+            // restored them, and restoring precision must not also drop
+            // the operand back to an f32 activation.
+            WeightRows::Q8 { .. } => match arm {
+                ArithmeticArm::Q8TimesQ8 | ArithmeticArm::Q4TimesQ8 => Self::Q8xQ8,
+                _ => Self::FusedQ8,
+            },
+            WeightRows::Q4 { .. } => match arm {
+                ArithmeticArm::Q4TimesQ8 => Self::Q4xQ8,
+                _ => Self::FusedQ4,
+            },
         }
     }
 }
@@ -159,7 +419,7 @@ pub fn project_rows(
     x: &[f32],
     out_dim: usize,
 ) -> Result<Vec<f32>, VindexError> {
-    let plan = PhysicalProjectionPlan::for_resident(weight);
+    let plan = PhysicalProjectionPlan::for_resident(weight, x.len());
     Ok(super::shared()?.project(plan.kernel(), weight, x, out_dim))
 }
 
@@ -207,11 +467,21 @@ fn q8_permitted() -> bool {
     )
 }
 
+/// Whether this operand is one the policy would have made Q8 —
+/// i.e. one whose BF16 image does not fit L2 and therefore STREAMS.
+///
+/// The same predicate [`PhysicalProjectionPlan::choose`] applies, read
+/// off the slab's own geometry so the two cannot describe different
+/// populations.
+fn streams(rows: WeightRows<'_>, in_dim: usize) -> bool {
+    in_dim > 0 && rows.rows(in_dim) * in_dim * BF16_BYTES >= compact_threshold_bytes()
+}
+
 /// f32 bytes per element — what the BLAS alternative must read.
-pub(super) const F32_BYTES: usize = 4;
+pub(crate) const F32_BYTES: usize = 4;
 
 /// bf16 bytes per element — what the Q8 alternative must read.
-pub(super) const BF16_BYTES: usize = 2;
+pub(crate) const BF16_BYTES: usize = 2;
 
 /// The f32 footprint at or above which compact-to-registers wins.
 ///
@@ -234,7 +504,7 @@ pub(super) const BF16_BYTES: usize = 2;
 /// so this model would decode identically under any threshold inside
 /// that bracket. A future model with a matrix in the gap is what the
 /// boundary is for.
-pub(super) fn compact_threshold_bytes() -> usize {
+pub(crate) fn compact_threshold_bytes() -> usize {
     #[cfg(target_os = "macos")]
     {
         if let Some(bytes) = super::executor::sysctl_usize("hw.perflevel0.l2cachesize") {

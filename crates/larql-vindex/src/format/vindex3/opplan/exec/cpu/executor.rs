@@ -121,7 +121,7 @@ impl CpuExecutor {
         };
         if workers <= 1 || out_dim < workers {
             ledger().record(
-                PhysicalProjectionPlan::for_resident(weight),
+                PhysicalProjectionPlan::for_resident(weight, in_dim),
                 weight.bytes(),
                 1,
             );
@@ -132,7 +132,7 @@ impl CpuExecutor {
         // slab of weight, which is what the memory system wants.
         let rows = out_dim.div_ceil(workers);
         ledger().record(
-            PhysicalProjectionPlan::for_resident(weight),
+            PhysicalProjectionPlan::for_resident(weight, in_dim),
             weight.bytes(),
             out_dim.div_ceil(rows),
         );

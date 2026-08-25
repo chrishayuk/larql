@@ -137,14 +137,17 @@ impl<M: MatMul + Send> DevicePlanBackend<M> {
         let device = self.device.lock().expect("device dispatch lock");
         // No device kernel consumes stored bf16 yet; refusing names the
         // gap rather than silently widening 50 GB on the host.
-        if matches!(weight, WeightSlice::Bf16(_) | WeightSlice::Q8 { .. }) {
+        if matches!(
+            weight,
+            WeightSlice::Bf16(_) | WeightSlice::Q8 { .. } | WeightSlice::Q4 { .. }
+        ) {
             return Err(VindexError::Parse(format!(
                 "the device backend has no {} kernel; declare F16 or F32 for it",
                 weight.representation()
             )));
         }
         let result = match weight {
-            WeightSlice::Bf16(_) | WeightSlice::Q8 { .. } => {
+            WeightSlice::Bf16(_) | WeightSlice::Q8 { .. } | WeightSlice::Q4 { .. } => {
                 return Err(VindexError::Parse(format!(
                     "the device backend has no {} kernel; declare F16 or F32 for it",
                     weight.representation()
@@ -362,7 +365,7 @@ impl<M: MatMul + Send> PlanBackend for DevicePlanBackend<M> {
                 // A residency hint computes nothing and must change no
                 // number, so an unplaceable format is skipped here; the
                 // refusal that matters fires where it would be USED.
-                WeightSlice::Bf16(_) | WeightSlice::Q8 { .. } => continue,
+                WeightSlice::Bf16(_) | WeightSlice::Q8 { .. } | WeightSlice::Q4 { .. } => continue,
                 WeightSlice::F16(bytes) => streams.push(bytes),
                 WeightSlice::Mxfp4 { packed, scales }
                 | WeightSlice::Nvfp4 { packed, scales, .. } => {

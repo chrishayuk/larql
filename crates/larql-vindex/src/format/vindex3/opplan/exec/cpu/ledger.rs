@@ -68,6 +68,13 @@ pub struct ProjectionLedger {
     fused: Tally,
     fused_q8: Tally,
     fused_q4: Tally,
+    // One tally PER ARM, never a shared "integer" bucket. The ledger is
+    // the consumption half of the residency instrument, and an arm that
+    // folded into another's counter would make the byte census agree with
+    // itself while describing a mixture.
+    q8_x_q8: Tally,
+    q4_x_q8: Tally,
+    bf16_x_q8: Tally,
 }
 
 impl ProjectionLedger {
@@ -78,6 +85,9 @@ impl ProjectionLedger {
             PhysicalProjectionPlan::FusedBf16 => &self.fused,
             PhysicalProjectionPlan::FusedQ8 => &self.fused_q8,
             PhysicalProjectionPlan::FusedQ4 => &self.fused_q4,
+            PhysicalProjectionPlan::Q8xQ8 => &self.q8_x_q8,
+            PhysicalProjectionPlan::Q4xQ8 => &self.q4_x_q8,
+            PhysicalProjectionPlan::Bf16xQ8 => &self.bf16_x_q8,
         }
     }
 
@@ -96,13 +106,16 @@ impl ProjectionLedger {
     /// Every plan, so a reader enumerates rather than remembers. A caller
     /// that listed the plans itself would stop covering a new one on the
     /// day it was added.
-    pub fn all(&self) -> [(PhysicalProjectionPlan, PlanTally); 5] {
+    pub fn all(&self) -> [(PhysicalProjectionPlan, PlanTally); 8] {
         [
             PhysicalProjectionPlan::ScalarF32,
             PhysicalProjectionPlan::BlasF32,
             PhysicalProjectionPlan::FusedBf16,
             PhysicalProjectionPlan::FusedQ8,
             PhysicalProjectionPlan::FusedQ4,
+            PhysicalProjectionPlan::Q8xQ8,
+            PhysicalProjectionPlan::Q4xQ8,
+            PhysicalProjectionPlan::Bf16xQ8,
         ]
         .map(|p| (p, self.get(p)))
     }
@@ -122,6 +135,9 @@ impl ProjectionLedger {
         self.fused.reset();
         self.fused_q8.reset();
         self.fused_q4.reset();
+        self.q8_x_q8.reset();
+        self.q4_x_q8.reset();
+        self.bf16_x_q8.reset();
     }
 }
 
@@ -141,6 +157,9 @@ impl ProjectionLedger {
             fused: ZERO,
             fused_q8: ZERO,
             fused_q4: ZERO,
+            q8_x_q8: ZERO,
+            q4_x_q8: ZERO,
+            bf16_x_q8: ZERO,
         }
     }
 }

@@ -8,7 +8,7 @@ use super::super::physical::{
 use super::super::projector::WeightRows;
 use crate::format::vindex3::opplan::exec::backend::{WeightFormat, WeightSlice};
 use crate::format::vindex3::opplan::exec::gated_delta::DenseProjections;
-use crate::format::vindex3::opplan::exec::quantise::{quantise_for_test, Q8_BLOCK};
+use crate::format::vindex3::opplan::exec::quantise::{quantise_q8_for_test, Q8_BLOCK};
 use crate::format::vindex3::opplan::exec::weights::LoadedWeight;
 
 /// Every matrix Qwen3.8-27B decodes through, from the container's own
@@ -79,6 +79,7 @@ fn rows<'a>(plan: PhysicalProjectionPlan, s: &'a Slab) -> WeightRows<'a> {
         WeightFormat::Q8 => WeightRows::Q8 {
             codes: &s.codes,
             scales: &s.scales,
+            sums: &[],
             block: Q8_BLOCK,
         },
         other => panic!("no CPU plan declares {other:?}"),
@@ -100,7 +101,7 @@ fn the_observation_lands_on_the_decision() {
         // allocating 1.3 G elements to prove it would measure the
         // allocator.
         let s = slab(chosen, 8, 8);
-        let observed = PhysicalProjectionPlan::for_resident(rows(chosen, &s));
+        let observed = PhysicalProjectionPlan::for_resident(rows(chosen, &s), 8);
         assert_eq!(
             observed, chosen,
             "`{name}`: the executor observed {observed:?} where the loader chose {chosen:?} — \
@@ -144,7 +145,7 @@ fn every_plan_runs_its_own_format() {
 fn the_oracle_is_not_reachable_by_observation() {
     let f = vec![0.5f32; 8];
     assert_eq!(
-        PhysicalProjectionPlan::for_resident(WeightRows::F32(&f)),
+        PhysicalProjectionPlan::for_resident(WeightRows::F32(&f), 8),
         PhysicalProjectionPlan::BlasF32
     );
     let at = compact_threshold_bytes() / F32_BYTES;
@@ -288,13 +289,14 @@ fn every_representation_projects_to_its_own_accuracy() {
     };
     assert!(rel(&compact, &widened) < 1e-5, "bf16 widens exactly");
 
-    let LoadedWeight::Q8 { codes, scales } = quantise_for_test(&f, IN) else {
+    let LoadedWeight::Q8 { codes, scales, .. } = quantise_q8_for_test(&f, IN) else {
         panic!("the quantiser returns q8");
     };
     let q8 = project_matrix(
         &WeightSlice::Q8 {
             codes: &codes,
             scales: &scales,
+            sums: &[],
             block: Q8_BLOCK,
         },
         &x,

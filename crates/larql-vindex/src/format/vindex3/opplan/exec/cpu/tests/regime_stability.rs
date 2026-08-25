@@ -141,6 +141,7 @@ fn read_all(exec: &CpuExecutor, w: &Fixtures, rounds: usize) -> [f64; 3] {
                 WeightRows::Q8 {
                     codes: &w.codes,
                     scales: &w.scales,
+                    sums: &[],
                     block: BLOCK,
                 },
                 &w.x,

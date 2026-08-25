@@ -444,6 +444,14 @@ fn from_f32(
             let bytes: Vec<u8> = values.iter().flat_map(|v| v.to_le_bytes()).collect();
             Ok(LoadedWeight::F16(f32_bytes_to_f16(&bytes, name)?))
         }
+        // A packed expert bank arrives already widened to f32, so the
+        // CPU compact formats have no stored bytes to keep here — the
+        // same reason `Bf16` is refused below. Naming them explicitly
+        // rather than falling through keeps the refusal a decision.
+        WeightFormat::Q4 => Err(VindexError::Parse(format!(
+            "expert bank `{name}` cannot be made q4-resident: the bank is widened to f32 on \
+             the way in, so there is nothing compact left to keep"
+        ))),
         WeightFormat::Mxfp4 => quantize_mxfp4(&values, rows, k, name),
         WeightFormat::Nvfp4 => quantize_nvfp4(&values, rows, k, name),
         // This path has already widened to f32 (packed expert banks
