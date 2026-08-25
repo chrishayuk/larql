@@ -1,0 +1,1244 @@
+{
+ "bank": "quality-bank-3b",
+ "frozen": "2026-08-25",
+ "purpose": "CPU-6 validation bank B. Frozen simultaneously with 3A, before either ran. Authoring was blind to candidate-specific results per CPU6-VALIDATION.md.",
+ "note": "Editing invalidates every comparison against it.",
+ "authorship": {
+  "process": "hand-authored, single agent",
+  "limitation": "3A and 3B share a human-generation prior; they bound execution-side variation, not authorship bias"
+ },
+ "prompts": [
+  {
+   "id": "b3b-factual-000",
+   "category": "factual",
+   "text": "Saturn's rings are composed largely of water ice with traces of rock.",
+   "provenance": "hand-authored"
+  },
+  {
+   "id": "b3b-factual-001",
+   "category": "factual",
+   "text": "The Magna Carta was sealed at Runnymede in the thirteenth century.",
+   "provenance": "hand-authored"
+  },
+  {
+   "id": "b3b-factual-002",
+   "category": "factual",
+   "text": "Copper is widely used in wiring because of its low electrical resistance.",
+   "provenance": "hand-authored"
+  },
+  {
+   "id": "b3b-factual-003",
+   "category": "factual",
+   "text": "Madagascar separated from the African mainland tens of millions of years ago.",
+   "provenance": "hand-authored"
+  },
+  {
+   "id": "b3b-factual-004",
+   "category": "factual",
+   "text": "The pancreas produces both digestive enzymes and hormones such as insulin.",
+   "provenance": "hand-authored"
+  },
+  {
+   "id": "b3b-factual-005",
+   "category": "factual",
+   "text": "Esperanto was devised in the late nineteenth century as an auxiliary language.",
+   "provenance": "hand-authored"
+  },
+  {
+   "id": "b3b-factual-006",
+   "category": "factual",
+   "text": "The Beaufort scale describes wind force by its observable effects.",
+   "provenance": "hand-authored"
+  },
+  {
+   "id": "b3b-factual-007",
+   "category": "factual",
+   "text": "Lightning heats the surrounding air to several times the sun's surface temperature.",
+   "provenance": "hand-authored"
+  },
+  {
+   "id": "b3b-factual-008",
+   "category": "factual",
+   "text": "The Netherlands has reclaimed substantial land from the sea using polders.",
+   "provenance": "hand-authored"
+  },
+  {
+   "id": "b3b-factual-009",
+   "category": "factual",
+   "text": "Photographic film records images through light-sensitive silver halide crystals.",
+   "provenance": "hand-authored"
+  },
+  {
+   "id": "b3b-factual-010",
+   "category": "factual",
+   "text": "Quinine, used against malaria, was originally derived from cinchona bark.",
+   "provenance": "hand-authored"
+  },
+  {
+   "id": "b3b-factual-011",
+   "category": "factual",
+   "text": "The Baltic Sea has notably low salinity compared with most seas.",
+   "provenance": "hand-authored"
+  },
+  {
+   "id": "b3b-factual-012",
+   "category": "factual",
+   "text": "Beethoven continued composing after losing much of his hearing.",
+   "provenance": "hand-authored"
+  },
+  {
+   "id": "b3b-factual-013",
+   "category": "factual",
+   "text": "Titanium is valued for combining high strength with low density.",
+   "provenance": "hand-authored"
+  },
+  {
+   "id": "b3b-factual-014",
+   "category": "factual",
+   "text": "The Aral Sea shrank dramatically following the diversion of its feeder rivers.",
+   "provenance": "hand-authored"
+  },
+  {
+   "id": "b3b-factual-015",
+   "category": "factual",
+   "text": "Morse code represents letters as sequences of short and long signals.",
+   "provenance": "hand-authored"
+  },
+  {
+   "id": "b3b-factual-016",
+   "category": "factual",
+   "text": "Coral reefs are built by colonies of tiny animals called polyps.",
+   "provenance": "hand-authored"
+  },
+  {
+   "id": "b3b-factual-017",
+   "category": "factual",
+   "text": "The Julian calendar was replaced by the Gregorian to correct calendar drift.",
+   "provenance": "hand-authored"
+  },
+  {
+   "id": "b3b-factual-018",
+   "category": "factual",
+   "text": "Argon is the most abundant noble gas in the Earth's atmosphere.",
+   "provenance": "hand-authored"
+  },
+  {
+   "id": "b3b-factual-019",
+   "category": "factual",
+   "text": "The Amazon rainforest spans territory belonging to nine countries.",
+   "provenance": "hand-authored"
+  },
+  {
+   "id": "b3b-factual-020",
+   "category": "factual",
+   "text": "Sundials must be aligned with the Earth's axis to keep consistent time.",
+   "provenance": "hand-authored"
+  },
+  {
+   "id": "b3b-factual-021",
+   "category": "factual",
+   "text": "Insulin was first isolated and used therapeutically in the nineteen-twenties.",
+   "provenance": "hand-authored"
+  },
+  {
+   "id": "b3b-factual-022",
+   "category": "factual",
+   "text": "The Bay of Fundy experiences some of the largest tidal ranges on Earth.",
+   "provenance": "hand-authored"
+  },
+  {
+   "id": "b3b-factual-023",
+   "category": "factual",
+   "text": "Paper was manufactured in China well before it reached Europe.",
+   "provenance": "hand-authored"
+  },
+  {
+   "id": "b3b-factual-024",
+   "category": "factual",
+   "text": "Neon signs glow through electrical discharge in a low-pressure gas.",
+   "provenance": "hand-authored"
+  },
+  {
+   "id": "b3b-factual-025",
+   "category": "factual",
+   "text": "The cheetah is the fastest land animal over short distances.",
+   "provenance": "hand-authored"
+  },
+  {
+   "id": "b3b-factual-026",
+   "category": "factual",
+   "text": "Basalt forms from rapidly cooling lava and often develops columnar joints.",
+   "provenance": "hand-authored"
+  },
+  {
+   "id": "b3b-factual-027",
+   "category": "factual",
+   "text": "The Hubble Space Telescope operates above most of the Earth's atmosphere.",
+   "provenance": "hand-authored"
+  },
+  {
+   "id": "b3b-factual-028",
+   "category": "factual",
+   "text": "Vinegar is produced by the bacterial fermentation of ethanol.",
+   "provenance": "hand-authored"
+  },
+  {
+   "id": "b3b-factual-029",
+   "category": "factual",
+   "text": "The Ottoman Empire lasted from the late medieval period into the twentieth century.",
+   "provenance": "hand-authored"
+  },
+  {
+   "id": "b3b-factual-030",
+   "category": "factual",
+   "text": "Zinc coatings protect steel from corrosion by sacrificial oxidation.",
+   "provenance": "hand-authored"
+  },
+  {
+   "id": "b3b-factual-031",
+   "category": "factual",
+   "text": "The kiwi is a flightless bird native to New Zealand.",
+   "provenance": "hand-authored"
+  },
+  {
+   "id": "b3b-factual-032",
+   "category": "factual",
+   "text": "Stonehenge was constructed in several distinct phases over many centuries.",
+   "provenance": "hand-authored"
+  },
+  {
+   "id": "b3b-factual-033",
+   "category": "factual",
+   "text": "Sodium reacts vigorously with water and is stored under oil.",
+   "provenance": "hand-authored"
+  },
+  {
+   "id": "b3b-factual-034",
+   "category": "factual",
+   "text": "The Mediterranean was once nearly dry during the Messinian salinity crisis.",
+   "provenance": "hand-authored"
+  },
+  {
+   "id": "b3b-factual-035",
+   "category": "factual",
+   "text": "Chess clocks were introduced to prevent players from taking unlimited time.",
+   "provenance": "hand-authored"
+  },
+  {
+   "id": "b3b-factual-036",
+   "category": "factual",
+   "text": "Mangroves stabilise coastlines by trapping sediment among their roots.",
+   "provenance": "hand-authored"
+  },
+  {
+   "id": "b3b-factual-037",
+   "category": "factual",
+   "text": "The Wright brothers achieved powered flight at Kitty Hawk.",
+   "provenance": "hand-authored"
+  },
+  {
+   "id": "b3b-factual-038",
+   "category": "factual",
+   "text": "Pearls form when a mollusc coats an irritant with layers of nacre.",
+   "provenance": "hand-authored"
+  },
+  {
+   "id": "b3b-factual-039",
+   "category": "factual",
+   "text": "The Richter scale is logarithmic, so each step represents a tenfold increase.",
+   "provenance": "hand-authored"
+  },
+  {
+   "id": "b3b-factual-040",
+   "category": "factual",
+   "text": "Saffron is harvested from the stigmas of a particular species of crocus.",
+   "provenance": "hand-authored"
+  },
+  {
+   "id": "b3b-factual-041",
+   "category": "factual",
+   "text": "The Berlin Wall stood for close to three decades before it was opened.",
+   "provenance": "hand-authored"
+  },
+  {
+   "id": "b3b-factual-042",
+   "category": "factual",
+   "text": "Owls have asymmetrically placed ears that help them locate prey by sound.",
+   "provenance": "hand-authored"
+  },
+  {
+   "id": "b3b-factual-043",
+   "category": "factual",
+   "text": "Aluminium was once more valuable than gold because it was hard to refine.",
+   "provenance": "hand-authored"
+  },
+  {
+   "id": "b3b-prose-000",
+   "category": "prose",
+   "text": "The ferry was late again, and the queue had arranged itself into the",
+   "provenance": "hand-authored"
+  },
+  {
+   "id": "b3b-prose-001",
+   "category": "prose",
+   "text": "He had promised himself he would not look back at the house, and did",
+   "provenance": "hand-authored"
+  },
+  {
+   "id": "b3b-prose-002",
+   "category": "prose",
+   "text": "There was a smell of cut grass and diesel, which meant the season had",
+   "provenance": "hand-authored"
+  },
+  {
+   "id": "b3b-prose-003",
+   "category": "prose",
+   "text": "She found the receipt in a coat pocket eleven months later, and it",
+   "provenance": "hand-authored"
+  },
+  {
+   "id": "b3b-prose-004",
+   "category": "prose",
+   "text": "The corridor lights came on section by section as he walked, which",
+   "provenance": "hand-authored"
+  },
+  {
+   "id": "b3b-prose-005",
+   "category": "prose",
+   "text": "Nobody used the front room except at Christmas, and it kept the",
+   "provenance": "hand-authored"
+  },
+  {
+   "id": "b3b-prose-006",
+   "category": "prose",
+   "text": "The river was low enough that summer to show the shopping trolleys and",
+   "provenance": "hand-authored"
+  },
+  {
+   "id": "b3b-prose-007",
+   "category": "prose",
+   "text": "He had been told the interview would be informal, which turned out to",
+   "provenance": "hand-authored"
+  },
+  {
+   "id": "b3b-prose-008",
+   "category": "prose",
+   "text": "Her mother had planted the hedge as a boundary and it had become a",
+   "provenance": "hand-authored"
+  },
+  {
+   "id": "b3b-prose-009",
+   "category": "prose",
+   "text": "The last train had a particular emptiness that the earlier ones lacked,",
+   "provenance": "hand-authored"
+  },
+  {
+   "id": "b3b-prose-010",
+   "category": "prose",
+   "text": "They had painted the shutters twice and both times chosen the wrong",
+   "provenance": "hand-authored"
+  },
+  {
+   "id": "b3b-prose-011",
+   "category": "prose",
+   "text": "The cat arrived in October and by December had rearranged the household",
+   "provenance": "hand-authored"
+  },
+  {
+   "id": "b3b-prose-012",
+   "category": "prose",
+   "text": "It took him three attempts to say it and by the third the meaning had",
+   "provenance": "hand-authored"
+  },
+  {
+   "id": "b3b-prose-013",
+   "category": "prose",
+   "text": "The field behind the school flooded most winters, and every year the",
+   "provenance": "hand-authored"
+  },
+  {
+   "id": "b3b-prose-014",
+   "category": "prose",
+   "text": "She had kept the key long after the lock had been changed, which was",
+   "provenance": "hand-authored"
+  },
+  {
+   "id": "b3b-prose-015",
+   "category": "prose",
+   "text": "The bakery opened at four and the queue at half past six was already",
+   "provenance": "hand-authored"
+  },
+  {
+   "id": "b3b-prose-016",
+   "category": "prose",
+   "text": "There was an argument going on upstairs conducted entirely in whispers,",
+   "provenance": "hand-authored"
+  },
+  {
+   "id": "b3b-prose-017",
+   "category": "prose",
+   "text": "He recognised the handwriting before he recognised the name, and stood",
+   "provenance": "hand-authored"
+  },
+  {
+   "id": "b3b-prose-018",
+   "category": "prose",
+   "text": "The clock in the hall ran four minutes fast and the whole family had",
+   "provenance": "hand-authored"
+  },
+  {
+   "id": "b3b-prose-019",
+   "category": "prose",
+   "text": "Rain came through the skylight in exactly one place, and they had put",
+   "provenance": "hand-authored"
+  },
+  {
+   "id": "b3b-prose-020",
+   "category": "prose",
+   "text": "She had never told anyone about the summer in Cork, mostly because the",
+   "provenance": "hand-authored"
+  },
+  {
+   "id": "b3b-prose-021",
+   "category": "prose",
+   "text": "The road narrowed to a single track and then, without warning, to a",
+   "provenance": "hand-authored"
+  },
+  {
+   "id": "b3b-prose-022",
+   "category": "prose",
+   "text": "He counted the boats out and counted them back, a habit inherited from",
+   "provenance": "hand-authored"
+  },
+  {
+   "id": "b3b-prose-023",
+   "category": "prose",
+   "text": "The photograph on the desk had been there so long that nobody in the",
+   "provenance": "hand-authored"
+  },
+  {
+   "id": "b3b-prose-024",
+   "category": "prose",
+   "text": "There was a way of holding the gate so it did not scrape, and the",
+   "provenance": "hand-authored"
+  },
+  {
+   "id": "b3b-prose-025",
+   "category": "prose",
+   "text": "The lecture theatre emptied in under a minute, which said something",
+   "provenance": "hand-authored"
+  },
+  {
+   "id": "b3b-prose-026",
+   "category": "prose",
+   "text": "She had learned to sleep through the foghorn and could no longer sleep",
+   "provenance": "hand-authored"
+  },
+  {
+   "id": "b3b-prose-027",
+   "category": "prose",
+   "text": "The wallpaper came away in one enormous sheet, revealing a doorway",
+   "provenance": "hand-authored"
+  },
+  {
+   "id": "b3b-prose-028",
+   "category": "prose",
+   "text": "He waited until the shop was empty before asking, which was itself",
+   "provenance": "hand-authored"
+  },
+  {
+   "id": "b3b-code-000",
+   "category": "code",
+   "text": "def group_by(items, key):\n    out = {}\n    for it in items:\n        out.setdefault(key(it), []).append(it)",
+   "provenance": "hand-authored"
+  },
+  {
+   "id": "b3b-code-001",
+   "category": "code",
+   "text": "impl Default for Settings {\n    fn default() -> Self {\n        Self { retries: 3, timeout: Duration::from_secs(30),",
+   "provenance": "hand-authored"
+  },
+  {
+   "id": "b3b-code-002",
+   "category": "code",
+   "text": "UPDATE inventory\n   SET quantity = quantity - $1\n WHERE sku = $2\n   AND quantity >=",
+   "provenance": "hand-authored"
+  },
+  {
+   "id": "b3b-code-003",
+   "category": "code",
+   "text": "const throttle = (fn, ms) => {\n  let last = 0;\n  return (...args) => {\n    const now = Date.now();",
+   "provenance": "hand-authored"
+  },
+  {
+   "id": "b3b-code-004",
+   "category": "code",
+   "text": "class Matrix:\n    def __matmul__(self, other):\n        if self.cols != other.rows:\n            raise ValueError(",
+   "provenance": "hand-authored"
+  },
+  {
+   "id": "b3b-code-005",
+   "category": "code",
+   "text": "func Walk(root string, fn func(string) error) error {\n\treturn filepath.WalkDir(root, func(p string, d fs.DirEntry,",
+   "provenance": "hand-authored"
+  },
+  {
+   "id": "b3b-code-006",
+   "category": "code",
+   "text": "std::optional<Config> load(std::string_view path) {\n    std::ifstream in{std::string(path)};\n    if (!in) {",
+   "provenance": "hand-authored"
+  },
+  {
+   "id": "b3b-code-007",
+   "category": "code",
+   "text": "export const useDebounced = (value, delay) => {\n  const [v, setV] = useState(value);\n  useEffect(() => {",
+   "provenance": "hand-authored"
+  },
+  {
+   "id": "b3b-code-008",
+   "category": "code",
+   "text": "WITH ranked AS (\n  SELECT *, ROW_NUMBER() OVER (PARTITION BY dept ORDER BY salary DESC) AS rn\n  FROM staff\n)",
+   "provenance": "hand-authored"
+  },
+  {
+   "id": "b3b-code-009",
+   "category": "code",
+   "text": "let rec merge cmp a b = match a, b with\n  | [], ys -> ys\n  | xs, [] -> xs\n  | x :: xs, y :: ys ->",
+   "provenance": "hand-authored"
+  },
+  {
+   "id": "b3b-code-010",
+   "category": "code",
+   "text": "class LRU:\n    def __init__(self, cap):\n        self.cap = cap\n        self.data = OrderedDict()\n\n    def get(self, k):",
+   "provenance": "hand-authored"
+  },
+  {
+   "id": "b3b-code-011",
+   "category": "code",
+   "text": "pub struct Builder {\n    parts: Vec<String>,\n}\n\nimpl Builder {\n    pub fn push(mut self, s: &str) -> Self {",
+   "provenance": "hand-authored"
+  },
+  {
+   "id": "b3b-code-012",
+   "category": "code",
+   "text": "void insertion_sort(double *a, size_t n) {\n    for (size_t i = 1; i < n; i++) {\n        double key = a[i];",
+   "provenance": "hand-authored"
+  },
+  {
+   "id": "b3b-code-013",
+   "category": "code",
+   "text": "enum Token {\n    Ident(String),\n    Number(f64),\n    Punct(char),\n}\n\nfn lex(src: &str) -> Vec<Token> {",
+   "provenance": "hand-authored"
+  },
+  {
+   "id": "b3b-code-014",
+   "category": "code",
+   "text": "@contextmanager\ndef timed(label):\n    start = time.perf_counter()\n    try:\n        yield",
+   "provenance": "hand-authored"
+  },
+  {
+   "id": "b3b-code-015",
+   "category": "code",
+   "text": "case class Money(cents: Long, currency: String) {\n  require(cents >= 0, \"negative amount\")\n  def +(o: Money)",
+   "provenance": "hand-authored"
+  },
+  {
+   "id": "b3b-code-016",
+   "category": "code",
+   "text": "public sealed interface Shape permits Circle, Square {\n    double area();\n}\n\nrecord Circle(double r)",
+   "provenance": "hand-authored"
+  },
+  {
+   "id": "b3b-code-017",
+   "category": "code",
+   "text": "static inline uint32_t rotl(uint32_t x, int k) {\n    return (x << k) | (x >> (32 - k));\n}",
+   "provenance": "hand-authored"
+  },
+  {
+   "id": "b3b-code-018",
+   "category": "code",
+   "text": "always_comb begin\n  case (state)\n    IDLE: next = start ? RUN : IDLE;\n    RUN:  next = done ?",
+   "provenance": "hand-authored"
+  },
+  {
+   "id": "b3b-code-019",
+   "category": "code",
+   "text": "fn parse_args() -> Result<Config, String> {\n    let mut it = std::env::args().skip(1);\n    let mut cfg = Config::default();",
+   "provenance": "hand-authored"
+  },
+  {
+   "id": "b3b-code-020",
+   "category": "code",
+   "text": "class Graph {\n  constructor() { this.adj = new Map(); }\n  addEdge(a, b) {\n    if (!this.adj.has(a))",
+   "provenance": "hand-authored"
+  },
+  {
+   "id": "b3b-code-021",
+   "category": "code",
+   "text": "def binary_gcd(a, b):\n    if a == 0:\n        return b\n    shift = 0\n    while ((a | b) & 1) == 0:",
+   "provenance": "hand-authored"
+  },
+  {
+   "id": "b3b-code-022",
+   "category": "code",
+   "text": "DELETE FROM sessions\n WHERE last_seen < NOW() - INTERVAL '30 days'\n   AND user_id NOT IN (SELECT",
+   "provenance": "hand-authored"
+  },
+  {
+   "id": "b3b-code-023",
+   "category": "code",
+   "text": "abstract class Handler {\n    private Handler next;\n\n    final void handle(Request r) {\n        if (canHandle(r))",
+   "provenance": "hand-authored"
+  },
+  {
+   "id": "b3b-code-024",
+   "category": "code",
+   "text": "for line in sys.stdin:\n    parts = line.rstrip('\\n').split('\\t')\n    if len(parts) != 3:\n        continue",
+   "provenance": "hand-authored"
+  },
+  {
+   "id": "b3b-code-025",
+   "category": "code",
+   "text": "const pipe = (...fns) => x => fns.reduce((acc, f) => f(acc), x);\n\nconst slugify = pipe(",
+   "provenance": "hand-authored"
+  },
+  {
+   "id": "b3b-code-026",
+   "category": "code",
+   "text": "impl From<io::Error> for AppError {\n    fn from(e: io::Error) -> Self {\n        AppError::Io(e.to_string())",
+   "provenance": "hand-authored"
+  },
+  {
+   "id": "b3b-code-027",
+   "category": "code",
+   "text": "func TestRoundTrip(t *testing.T) {\n\tfor _, tc := range cases {\n\t\tgot, err := Decode(Encode(tc.in))\n\t\tif err != nil {",
+   "provenance": "hand-authored"
+  },
+  {
+   "id": "b3b-code-028",
+   "category": "code",
+   "text": "CREATE MATERIALIZED VIEW daily_totals AS\n  SELECT day, SUM(value)\n    FROM readings\n   GROUP BY day\n  WITH",
+   "provenance": "hand-authored"
+  },
+  {
+   "id": "b3b-arithmetic-000",
+   "category": "arithmetic",
+   "text": "A room 5 metres long and 4 metres wide has a floor area of twenty square metres.",
+   "provenance": "hand-authored"
+  },
+  {
+   "id": "b3b-arithmetic-001",
+   "category": "arithmetic",
+   "text": "Thirteen multiplied by fourteen is one hundred and eighty-two.",
+   "provenance": "hand-authored"
+  },
+  {
+   "id": "b3b-arithmetic-002",
+   "category": "arithmetic",
+   "text": "If a train leaves at 14:35 and arrives at 17:10, the journey lasts",
+   "provenance": "hand-authored"
+  },
+  {
+   "id": "b3b-arithmetic-003",
+   "category": "arithmetic",
+   "text": "One fifth of three hundred and sixty is seventy-two.",
+   "provenance": "hand-authored"
+  },
+  {
+   "id": "b3b-arithmetic-004",
+   "category": "arithmetic",
+   "text": "A ladder reaching 12 metres up a wall from 5 metres out is thirteen metres long.",
+   "provenance": "hand-authored"
+  },
+  {
+   "id": "b3b-arithmetic-005",
+   "category": "arithmetic",
+   "text": "Adding 3/8 and 1/4 gives five-eighths.",
+   "provenance": "hand-authored"
+  },
+  {
+   "id": "b3b-arithmetic-006",
+   "category": "arithmetic",
+   "text": "A worker paid 18 pounds an hour for 37 hours earns six hundred and sixty-six.",
+   "provenance": "hand-authored"
+  },
+  {
+   "id": "b3b-arithmetic-007",
+   "category": "arithmetic",
+   "text": "The sum of the interior angles of a hexagon is seven hundred and twenty degrees.",
+   "provenance": "hand-authored"
+  },
+  {
+   "id": "b3b-arithmetic-008",
+   "category": "arithmetic",
+   "text": "If a population doubles every 20 years, after 60 years it has multiplied by",
+   "provenance": "hand-authored"
+  },
+  {
+   "id": "b3b-arithmetic-009",
+   "category": "arithmetic",
+   "text": "Five percent of eight hundred and forty is forty-two.",
+   "provenance": "hand-authored"
+  },
+  {
+   "id": "b3b-arithmetic-010",
+   "category": "arithmetic",
+   "text": "A rope 45 metres long cut into pieces of 3.75 metres yields twelve pieces.",
+   "provenance": "hand-authored"
+  },
+  {
+   "id": "b3b-arithmetic-011",
+   "category": "arithmetic",
+   "text": "Two hundred and fifty-six divided by sixteen is sixteen.",
+   "provenance": "hand-authored"
+  },
+  {
+   "id": "b3b-arithmetic-012",
+   "category": "arithmetic",
+   "text": "A recipe scaled by two-thirds turns 900 grams of sugar into six hundred.",
+   "provenance": "hand-authored"
+  },
+  {
+   "id": "b3b-arithmetic-013",
+   "category": "arithmetic",
+   "text": "The perimeter of a square of area 81 square centimetres is thirty-six.",
+   "provenance": "hand-authored"
+  },
+  {
+   "id": "b3b-arithmetic-014",
+   "category": "arithmetic",
+   "text": "If petrol costs 1.45 a litre, filling 40 litres costs fifty-eight pounds.",
+   "provenance": "hand-authored"
+  },
+  {
+   "id": "b3b-arithmetic-015",
+   "category": "arithmetic",
+   "text": "Three-quarters of an hour before midday is quarter past eleven.",
+   "provenance": "hand-authored"
+  },
+  {
+   "id": "b3b-arithmetic-016",
+   "category": "arithmetic",
+   "text": "The number 1001 factorises into seven, eleven and thirteen.",
+   "provenance": "hand-authored"
+  },
+  {
+   "id": "b3b-arithmetic-017",
+   "category": "arithmetic",
+   "text": "A discount of 30 percent followed by 10 percent is not the same as forty percent.",
+   "provenance": "hand-authored"
+  },
+  {
+   "id": "b3b-arithmetic-018",
+   "category": "arithmetic",
+   "text": "Twelve people sharing 216 sweets equally receive eighteen each.",
+   "provenance": "hand-authored"
+  },
+  {
+   "id": "b3b-arithmetic-019",
+   "category": "arithmetic",
+   "text": "A cylinder of radius 3 and height 10 has a volume of ninety pi.",
+   "provenance": "hand-authored"
+  },
+  {
+   "id": "b3b-arithmetic-020",
+   "category": "arithmetic",
+   "text": "Counting by sevens from zero, the tenth term is seventy.",
+   "provenance": "hand-authored"
+  },
+  {
+   "id": "b3b-arithmetic-021",
+   "category": "arithmetic",
+   "text": "The mean of the first ten odd numbers is ten.",
+   "provenance": "hand-authored"
+  },
+  {
+   "id": "b3b-arithmetic-022",
+   "category": "arithmetic",
+   "text": "If a clock loses 2 minutes a day, after a fortnight it is behind by",
+   "provenance": "hand-authored"
+  },
+  {
+   "id": "b3b-arithmetic-023",
+   "category": "arithmetic",
+   "text": "Four hundred and eighty-six minus one hundred and ninety-seven is",
+   "provenance": "hand-authored"
+  },
+  {
+   "id": "b3b-arithmetic-024",
+   "category": "arithmetic",
+   "text": "A 2 percent monthly rise compounded over twelve months exceeds twenty-six percent.",
+   "provenance": "hand-authored"
+  },
+  {
+   "id": "b3b-arithmetic-025",
+   "category": "arithmetic",
+   "text": "The hypotenuse of a right triangle with legs 9 and 12 measures fifteen.",
+   "provenance": "hand-authored"
+  },
+  {
+   "id": "b3b-arithmetic-026",
+   "category": "arithmetic",
+   "text": "Half a million divided by two thousand five hundred is two hundred.",
+   "provenance": "hand-authored"
+  },
+  {
+   "id": "b3b-arithmetic-027",
+   "category": "arithmetic",
+   "text": "A tap filling a bath in 12 minutes and another in 6 together take",
+   "provenance": "hand-authored"
+  },
+  {
+   "id": "b3b-arithmetic-028",
+   "category": "arithmetic",
+   "text": "The highest common factor of 84 and 126 is forty-two.",
+   "provenance": "hand-authored"
+  },
+  {
+   "id": "b3b-uncertain-000",
+   "category": "uncertain",
+   "text": "The thing I find hardest to admit about my own work is",
+   "provenance": "hand-authored"
+  },
+  {
+   "id": "b3b-uncertain-001",
+   "category": "uncertain",
+   "text": "If somebody gave me a year with no obligations I would probably",
+   "provenance": "hand-authored"
+  },
+  {
+   "id": "b3b-uncertain-002",
+   "category": "uncertain",
+   "text": "What changed my mind about living in a city was",
+   "provenance": "hand-authored"
+  },
+  {
+   "id": "b3b-uncertain-003",
+   "category": "uncertain",
+   "text": "I have never understood the appeal of",
+   "provenance": "hand-authored"
+  },
+  {
+   "id": "b3b-uncertain-004",
+   "category": "uncertain",
+   "text": "The mistake I keep repeating despite knowing better is",
+   "provenance": "hand-authored"
+  },
+  {
+   "id": "b3b-uncertain-005",
+   "category": "uncertain",
+   "text": "Something I was certain about at twenty and doubt now is",
+   "provenance": "hand-authored"
+  },
+  {
+   "id": "b3b-uncertain-006",
+   "category": "uncertain",
+   "text": "The best thing about having neighbours you barely know is",
+   "provenance": "hand-authored"
+  },
+  {
+   "id": "b3b-uncertain-007",
+   "category": "uncertain",
+   "text": "If I had to teach one thing to a room of strangers it would be",
+   "provenance": "hand-authored"
+  },
+  {
+   "id": "b3b-uncertain-008",
+   "category": "uncertain",
+   "text": "What I would rescue first from a burning house is embarrassingly",
+   "provenance": "hand-authored"
+  },
+  {
+   "id": "b3b-uncertain-009",
+   "category": "uncertain",
+   "text": "The season I actually prefer, as opposed to claim to prefer, is",
+   "provenance": "hand-authored"
+  },
+  {
+   "id": "b3b-uncertain-010",
+   "category": "uncertain",
+   "text": "I would find it much harder than expected to give up",
+   "provenance": "hand-authored"
+  },
+  {
+   "id": "b3b-uncertain-011",
+   "category": "uncertain",
+   "text": "The reason I stopped playing regularly was probably",
+   "provenance": "hand-authored"
+  },
+  {
+   "id": "b3b-uncertain-012",
+   "category": "uncertain",
+   "text": "What makes a good long walk is less about scenery than",
+   "provenance": "hand-authored"
+  },
+  {
+   "id": "b3b-uncertain-013",
+   "category": "uncertain",
+   "text": "If I could sit in on any meeting I have been excluded from",
+   "provenance": "hand-authored"
+  },
+  {
+   "id": "b3b-uncertain-014",
+   "category": "uncertain",
+   "text": "The thing people assume about my job that is completely wrong is",
+   "provenance": "hand-authored"
+  },
+  {
+   "id": "b3b-uncertain-015",
+   "category": "uncertain",
+   "text": "I have a strong and indefensible opinion about how to",
+   "provenance": "hand-authored"
+  },
+  {
+   "id": "b3b-uncertain-016",
+   "category": "uncertain",
+   "text": "The moment I realised I had become an adult involved",
+   "provenance": "hand-authored"
+  },
+  {
+   "id": "b3b-uncertain-017",
+   "category": "uncertain",
+   "text": "What I would do differently if I moved house again is",
+   "provenance": "hand-authored"
+  },
+  {
+   "id": "b3b-uncertain-018",
+   "category": "uncertain",
+   "text": "The kind of weather that makes me want to stay indoors is",
+   "provenance": "hand-authored"
+  },
+  {
+   "id": "b3b-uncertain-019",
+   "category": "uncertain",
+   "text": "I keep a list of things I intend to do and mostly it",
+   "provenance": "hand-authored"
+  },
+  {
+   "id": "b3b-uncertain-020",
+   "category": "uncertain",
+   "text": "The most useful thing anybody ever taught me by example was",
+   "provenance": "hand-authored"
+  },
+  {
+   "id": "b3b-uncertain-021",
+   "category": "uncertain",
+   "text": "If I could remove one small daily annoyance it would be",
+   "provenance": "hand-authored"
+  },
+  {
+   "id": "b3b-uncertain-022",
+   "category": "uncertain",
+   "text": "What I miss about a place is almost never the thing I",
+   "provenance": "hand-authored"
+  },
+  {
+   "id": "b3b-uncertain-023",
+   "category": "uncertain",
+   "text": "The argument I have lost most often is about whether",
+   "provenance": "hand-authored"
+  },
+  {
+   "id": "b3b-uncertain-024",
+   "category": "uncertain",
+   "text": "I would describe my sense of direction as generously",
+   "provenance": "hand-authored"
+  },
+  {
+   "id": "b3b-uncertain-025",
+   "category": "uncertain",
+   "text": "The nicest thing about arriving somewhere late at night is",
+   "provenance": "hand-authored"
+  },
+  {
+   "id": "b3b-uncertain-026",
+   "category": "uncertain",
+   "text": "What I underestimated about looking after something living was",
+   "provenance": "hand-authored"
+  },
+  {
+   "id": "b3b-uncertain-027",
+   "category": "uncertain",
+   "text": "If the choice were mine I would spend far more time",
+   "provenance": "hand-authored"
+  },
+  {
+   "id": "b3b-uncertain-028",
+   "category": "uncertain",
+   "text": "The habit I picked up from someone else and kept was",
+   "provenance": "hand-authored"
+  },
+  {
+   "id": "b3b-structured-000",
+   "category": "structured",
+   "text": "{\"job\": \"reindex\", \"started\": \"2026-07-02T22:14:00Z\", \"shards\": [{\"id\": 0, \"docs\":",
+   "provenance": "hand-authored"
+  },
+  {
+   "id": "b3b-structured-001",
+   "category": "structured",
+   "text": "apiVersion: batch/v1\nkind: CronJob\nmetadata:\n  name: tide-sync\nspec:\n  schedule: \"*/15 * * * *\"\n  jobTemplate:",
+   "provenance": "hand-authored"
+  },
+  {
+   "id": "b3b-structured-002",
+   "category": "structured",
+   "text": "timestamp,station,height_m,quality\n1751500800,NEW-04,3.412,good\n1751501100,NEW-04,",
+   "provenance": "hand-authored"
+  },
+  {
+   "id": "b3b-structured-003",
+   "category": "structured",
+   "text": "[tool.ruff]\nline-length = 100\ntarget-version = \"py312\"\n\n[tool.ruff.lint]\nselect = [\"E\", \"F\",",
+   "provenance": "hand-authored"
+  },
+  {
+   "id": "b3b-structured-004",
+   "category": "structured",
+   "text": "<svg viewBox=\"0 0 120 40\" xmlns=\"http://www.w3.org/2000/svg\">\n  <path d=\"M2 38 L30 12 L58",
+   "provenance": "hand-authored"
+  },
+  {
+   "id": "b3b-structured-005",
+   "category": "structured",
+   "text": "BEGIN:VTODO\nDUE:20260930T170000Z\nSUMMARY:Renew mooring licence\nPRIORITY:",
+   "provenance": "hand-authored"
+  },
+  {
+   "id": "b3b-structured-006",
+   "category": "structured",
+   "text": "{\"aggs\": {\"per_day\": {\"date_histogram\": {\"field\": \"ts\", \"calendar_interval\": \"day\"}, \"aggs\":",
+   "provenance": "hand-authored"
+  },
+  {
+   "id": "b3b-structured-007",
+   "category": "structured",
+   "text": "## Release notes 2.4.0\n\n### Fixed\n- gauge drift after clock resync\n- duplicate rows on\n\n### Added",
+   "provenance": "hand-authored"
+  },
+  {
+   "id": "b3b-structured-008",
+   "category": "structured",
+   "text": "2026-06-30 11:42:18.331 ERROR [ingest-7] parse failed: unexpected token at offset 4181",
+   "provenance": "hand-authored"
+  },
+  {
+   "id": "b3b-structured-009",
+   "category": "structured",
+   "text": "sequenceDiagram\n  client->>gateway: POST /reading\n  gateway->>queue: enqueue\n  queue-->>worker:",
+   "provenance": "hand-authored"
+  },
+  {
+   "id": "b3b-structured-010",
+   "category": "structured",
+   "text": "| depth_m | temp_c | salinity |\n|---------|--------|----------|\n| 0       | 14.2   | 34.1     |\n| 25      |",
+   "provenance": "hand-authored"
+  },
+  {
+   "id": "b3b-structured-011",
+   "category": "structured",
+   "text": "flowchart TD\n  A[raw] -->|validate| B{ok?}\n  B -->|yes| C[store]\n  B -->|no| D[",
+   "provenance": "hand-authored"
+  },
+  {
+   "id": "b3b-structured-012",
+   "category": "structured",
+   "text": "upstream tide_api {\n    least_conn;\n    server 10.0.2.11:8080 max_fails=3;\n    server 10.0.2.12:8080",
+   "provenance": "hand-authored"
+  },
+  {
+   "id": "b3b-structured-013",
+   "category": "structured",
+   "text": "{\"openrpc\": \"1.2.6\", \"methods\": [{\"name\": \"station.list\", \"params\": [], \"result\": {\"name\":",
+   "provenance": "hand-authored"
+  },
+  {
+   "id": "b3b-structured-014",
+   "category": "structured",
+   "text": "target/\n*.rs.bk\nCargo.lock\n.vscode/\n!.vscode/extensions.json",
+   "provenance": "hand-authored"
+  },
+  {
+   "id": "b3b-structured-015",
+   "category": "structured",
+   "text": "Received: from relay02.harbour.example (10.0.0.12)\n  by mx1.harbour.example with ESMTPS id",
+   "provenance": "hand-authored"
+  },
+  {
+   "id": "b3b-structured-016",
+   "category": "structured",
+   "text": "@reboot sleep 30 && /opt/tide/bin/warm-cache --stations all",
+   "provenance": "hand-authored"
+  },
+  {
+   "id": "b3b-structured-017",
+   "category": "structured",
+   "text": "swagger: \"2.0\"\nbasePath: /v1\ndefinitions:\n  Reading:\n    type: object\n    properties:\n      height:",
+   "provenance": "hand-authored"
+  },
+  {
+   "id": "b3b-structured-018",
+   "category": "structured",
+   "text": "{\"type\": \"Feature\", \"properties\": {\"name\": \"North Pier\", \"berths\": 6}, \"geometry\": {\"type\": \"LineString\",",
+   "provenance": "hand-authored"
+  },
+  {
+   "id": "b3b-structured-019",
+   "category": "structured",
+   "text": "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIK9mQ2vTn8bJ7xW1cQhU4pRs",
+   "provenance": "hand-authored"
+  },
+  {
+   "id": "b3b-structured-020",
+   "category": "structured",
+   "text": "quarter,region,units,returns\nQ1,west,1204,38\nQ1,east,",
+   "provenance": "hand-authored"
+  },
+  {
+   "id": "b3b-structured-021",
+   "category": "structured",
+   "text": "[Install]\nWantedBy=multi-user.target\n\n[Timer]\nOnCalendar=hourly\nPersistent=",
+   "provenance": "hand-authored"
+  },
+  {
+   "id": "b3b-structured-022",
+   "category": "structured",
+   "text": "{%- if readings|length > 0 %}\n  latest: {{ readings[-1].height }} m at {{ readings[-1].taken",
+   "provenance": "hand-authored"
+  },
+  {
+   "id": "b3b-longform-000",
+   "category": "longform",
+   "text": "Salvage law developed differently from ordinary property law because the circumstances were different: a ship in distress cannot negotiate, and a rescuer who bargains hard is close to extortion. The compromise that emerged rewards successful salvage generously and unsuccessful attempts not at all, which aligns the incentive with the outcome anybody actually wants. It is one of the few areas where an obviously artificial rule survives because the natural one produces worse behaviour.",
+   "provenance": "hand-authored"
+  },
+  {
+   "id": "b3b-longform-001",
+   "category": "longform",
+   "text": "Typefaces designed for road signs are optimised for a reading situation almost nobody else faces: a glance, at distance, at speed, often in poor light, by someone who must then act. The resulting letterforms look clumsy on a page and are highly legible on a gantry. It is a good illustration of how a design brief that specifies the reading conditions produces something quite unlike a design brief that specifies beauty.",
+   "provenance": "hand-authored"
+  },
+  {
+   "id": "b3b-longform-002",
+   "category": "longform",
+   "text": "The domestication of the horse changed the effective size of political units, because the distance a message could travel in a day set the limit on how much territory could be governed as one thing. Empires expanded to roughly the radius that their communications allowed and then became unstable beyond it. The pattern recurs with every subsequent change in transmission speed, and the boundaries move without the underlying constraint being noticed.",
+   "provenance": "hand-authored"
+  },
+  {
+   "id": "b3b-longform-003",
+   "category": "longform",
+   "text": "Tide prediction was one of the earliest problems attacked with mechanical computation, because the answer is a sum of periodic components whose frequencies are known and whose amplitudes vary by location. Machines built from pulleys and cams could add those components far faster than a clerk, and the results were accurate enough to publish. The method preceded any complete theory of the tides, which mattered less than it might because the components could be measured directly.",
+   "provenance": "hand-authored"
+  },
+  {
+   "id": "b3b-longform-004",
+   "category": "longform",
+   "text": "Assaying exists because metal cannot be trusted by appearance, and the history of coinage is largely a history of attempts to make debasement detectable. Milled edges, standardised weights and hallmarks are all answers to the same problem: how to let a stranger verify a claim cheaply. Each answer worked until forgery caught up with it, at which point the verification moved to a property that was harder to imitate than to check.",
+   "provenance": "hand-authored"
+  },
+  {
+   "id": "b3b-longform-005",
+   "category": "longform",
+   "text": "Grafting is an old technique that produces something genetically peculiar: a single plant with two distinct sets of tissue, roots chosen for hardiness and a crown chosen for fruit. Most orchard varieties cannot be grown true from seed, so every tree of a named apple is in some sense a cutting of one original. The practice preserves individuals rather than lineages, which is an unusual thing for agriculture to do.",
+   "provenance": "hand-authored"
+  },
+  {
+   "id": "b3b-longform-006",
+   "category": "longform",
+   "text": "Weather forecasting became reliable not when the physics was understood but when the observations became dense and fast enough to initialise it. The equations had been written down long before there was any way to know the current state of the atmosphere at sufficient resolution, and a perfect model of a poorly known present is not much use. Forecast skill improved with telegraphy, then with radiosondes, then with satellites, each time for the same reason.",
+   "provenance": "hand-authored"
+  },
+  {
+   "id": "b3b-longform-007",
+   "category": "longform",
+   "text": "The idea of a fire break is that the cheapest way to stop a spreading process is to remove what it feeds on, ahead of it, rather than to fight it where it is. The same logic reappears in epidemiology, in firewalls, and in the design of ship compartments. What makes it hard in practice is that the break must be made before the threat arrives, in a place that may turn out not to have needed it.",
+   "provenance": "hand-authored"
+  },
+  {
+   "id": "b3b-longform-008",
+   "category": "longform",
+   "text": "Standardised shipping containers are usually credited with reducing freight cost, which they did, but the larger effect was on the ports. Break-bulk cargo required large workforces near the water; containers required cranes and land. Ports therefore moved out of cities to places with space, and the districts they left behind spent decades finding another use. The technology changed the map more than the price list.",
+   "provenance": "hand-authored"
+  },
+  {
+   "id": "b3b-longform-009",
+   "category": "longform",
+   "text": "Latitude could be found from the sun with modest instruments; longitude required knowing the time somewhere else, and that turned a problem of astronomy into a problem of engineering. Clocks that kept time on land failed at sea, defeated by motion, temperature and humidity. The eventual solution was mechanical rather than celestial, which disappointed a scientific establishment that had expected the answer to come from the sky.",
+   "provenance": "hand-authored"
+  },
+  {
+   "id": "b3b-longform-010",
+   "category": "longform",
+   "text": "Beekeeping is unusual among animal husbandries in that the animals are not confined and could leave at any time. Management consists largely of arranging conditions the colony prefers to those available elsewhere, and of removing surplus without provoking abandonment. The relationship is closer to tenancy than ownership, and the vocabulary of the craft reflects an old awareness of that.",
+   "provenance": "hand-authored"
+  },
+  {
+   "id": "b3b-longform-011",
+   "category": "longform",
+   "text": "Public clocks preceded personal watches by centuries, and for most of that time the correct time was a civic fact rather than a private one. A town had a time, announced by a bell, and disagreement with it was simply error. Portable timepieces made time something individuals could hold and therefore something they could disagree about, which is why synchronisation became a subject at all.",
+   "provenance": "hand-authored"
+  },
+  {
+   "id": "b3b-longform-012",
+   "category": "longform",
+   "text": "Waterproofing fabric is a compromise, because a coating that excludes liquid water usually also traps vapour, and a wearer generating heat will end up wet from the inside. The interesting materials are the ones that discriminate by molecule size or by pressure gradient rather than simply sealing. Every solution trades durability against breathability, and the marketing is generally about whichever side the product wins.",
+   "provenance": "hand-authored"
+  },
+  {
+   "id": "b3b-longform-013",
+   "category": "longform",
+   "text": "Anonymous manuscripts are dated by evidence their authors never intended to leave: the ruling of the page, the abbreviation habits of the scribe, the chemistry of the ink, the provenance of the parchment. None of it is the content, and all of it is more reliable than the content, which can be copied from an older exemplar. The method is a reminder that a document has a physical history distinct from its text.",
+   "provenance": "hand-authored"
+  },
+  {
+   "id": "b3b-longform-014",
+   "category": "longform",
+   "text": "Dry stone walls hold together by friction and geometry rather than mortar, which makes them repairable by anyone who understands the principle and unrepairable by anyone who does not. They also drain and flex, so they survive ground movement that would crack a rigid wall. The technique persists in upland farming not from conservatism but because the alternative performs worse in that particular setting.",
+   "provenance": "hand-authored"
+  },
+  {
+   "id": "b3b-longform-015",
+   "category": "longform",
+   "text": "The transition from oral to written law changed what law was, because a written rule can be consulted by people who were not present when it was made and cannot be adjusted quietly in the telling. Codification therefore tends to accompany expansions of the governed population, and it reliably produces a new profession whose expertise is in what the text says as against what everyone assumed it said.",
+   "provenance": "hand-authored"
+  },
+  {
+   "id": "b3b-longform-016",
+   "category": "longform",
+   "text": "Lens grinding limited astronomy for a long period, because the useful aperture was bounded by what could be made without sagging or chromatic error. Mirrors sidestepped part of the problem and introduced others, notably the difficulty of a stable figure and a reflective coating that did not tarnish. Each advance in optics opened a band of objects that had been present all along and unobservable in practice.",
+   "provenance": "hand-authored"
+  }
+ ],
+ "text_digest": {
+  "algorithm": "sha256",
+  "value": "bcb409327afe56385c60b965d16720756b3af0842a042d78833c040c49af756b"
+ },
+ "token_digest": {
+  "algorithm": "sha256",
+  "value": "e3913dab3e536e83aa062c5c1d1c20cb1da556817cea49bb97201094759c1354",
+  "limit": 128,
+  "positions": 4912,
+  "tokenizer": {
+   "sha256": "0997f410c57a1f4e53b09e4be8f4a172d90edd9564368fb0847030937229b9f3"
+  }
+ },
+ "disjointness": {
+  "verified_against": [
+   "quality-bank-1",
+   "quality-bank-2",
+   "sensitivity-1b-calibration",
+   "the other CPU-6 bank"
+  ],
+  "method": "exact id, whitespace/case-normalised text, 40-character prefix near-duplicate scan"
+ },
+ "category_targets": {
+  "factual": 44,
+  "prose": 29,
+  "code": 29,
+  "arithmetic": 29,
+  "uncertain": 29,
+  "structured": 23,
+  "longform": 17
+ },
+ "count": 200
+}
