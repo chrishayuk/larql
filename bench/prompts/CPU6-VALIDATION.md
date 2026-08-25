@@ -227,3 +227,52 @@ governs.
 rescue the candidate, but it remains replication evidence about the
 representation and about this protocol; stopping early would discard it
 to save an afternoon.
+
+---
+
+# STATUS: PARKED, NOT ABANDONED — 2026-08-25
+
+```
+protocol     frozen   a87f441d
+candidate    frozen   df36ca9f   crates/ unchanged
+bank 3A      frozen   200 prompts, 4859 positions, token cbdaa46111a475ef
+bank 3B      frozen   200 prompts, 4912 positions, token e3913dab3e536e83
+adjudicator  frozen   selftest PASS
+verdict      NOT RUN / NOT KNOWN
+```
+
+The six-arm run was started and deliberately cancelled about twenty
+minutes in, to free the machine for CPU-7. **No partial arm was
+retained and nothing was computed from one.** Both output directories
+were deleted so that a future run cannot silently mix a stale arm with a
+fresh one.
+
+Measured rate on a quiet machine: **0.65 s/position**, so the full six
+arms are ~4.6 h, not the ~15 h first estimated. That first estimate was
+extrapolated from Bank-2 throughput which was contaminated by a
+duplicate process — the same discipline that applies to a performance
+number applies to a plan built from one.
+
+## To resume
+
+Nothing is re-authored and nothing is re-frozen. Check out this state and
+run exactly what is already specified:
+
+```
+git checkout a87f441d          # or any HEAD with crates/ == df36ca9f
+python3 bench/prompts/cpu6_freeze.py verify <container>
+python3 bench/prompts/cpu6_run.py <container> <out3a> --bank 3a --sha df36ca9f...
+python3 bench/prompts/cpu6_run.py <container> <out3b> --bank 3b --sha df36ca9f...
+python3 bench/prompts/cpu6_adjudicate.py <out3a> --bank 3a
+python3 bench/prompts/cpu6_adjudicate.py <out3b> --bank 3b
+```
+
+Run all six together. A completed provenance-verified arm could in
+principle be kept across sessions, but the arms of one bank are meant to
+sit close together in time, and the cost of redoing an hour is smaller
+than the cost of reasoning about whether a months-old arm is comparable.
+
+**Parking does not weaken the experiment.** Every degree of freedom —
+prompts, protocol, gate, seed, adjudicator — was frozen before any
+CPU-6 number existed, so the verdict is exactly as trustworthy whenever
+it is finally computed.
