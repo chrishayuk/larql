@@ -1000,3 +1000,76 @@ persistent representation traffic
 That is the second time this rung has caught the same class of error —
 the first was the cost model being indexed on representation without
 kernel geometry, and wrong by 3.2x.
+
+---
+
+# CPU-5 CLOSES: FAIL
+
+```
+BANK 2, candidate, scored ONCE, 1946 positions / 69 prompts
+
+  KL mean   0.000407   vs G1 0.000316   FAIL, exceeded by 28.6%
+  KL p99    0.002634   vs G2 0.009666   ok
+  top-1     99.1778%   vs G3 99.00%     ok
+  flips at BF16 margin >= 0.10:   0     ok    worst flip margin 0.01241
+```
+
+Provenance stamped: freeze SHA `df36ca9f`, `crates/` identical, bank
+digests re-derived, arithmetic `q8xq8b / block 16 / asymmetric`, no
+overrides.
+
+**The candidate is rejected under the protocol as frozen, and Bank 2 is
+spent.** It is not re-run, not re-scored against a tuned variant, and its
+missing shipped anchor is NOT measured now — the candidate's number has
+been seen, so measuring the denominator afterwards would be choosing a
+denominator that produces the answer one prefers.
+
+## What actually failed — and it was the gate, not the sample size
+
+My first diagnosis ("the margin was smaller than the between-bank
+variation, so Bank 1 was underpowered") was WRONG, and the paired
+statistic says so:
+
+```
+bank-1 paired D = candidate_p - 2 * shipped_p, per prompt
+  mean -3.146e-05   sd 6.131e-05   SE(n=69) 7.38e-06
+  upper 95% bound  -1.93e-05   clears 0 comfortably
+  prompts actually needed at that effect size: 10 @95%, 21 @99%
+  pairing cuts variance 12x versus unpaired
+```
+
+Bank 1 had roughly **7x more prompts than the paired test required**. The
+defect was in what G1 compared:
+
+```
+intended     candidate degradation <= 2 x shipped degradation
+implemented  candidate KL on bank N <= 2 x shipped KL measured on BANK 1
+```
+
+Those are not the same statement. The gate was never a ratio in
+practice: it carried an absolute number across prompt sets. Whether the
+candidate is relatively worse on Bank 2 is **unknowable and stays
+unknowable**.
+
+Also corrected: the 44% shift between banks is **prompt-set sampling
+variation**, not instrument noise — execution is deterministic. And
+near-identical reference entropy and margin (2.722/0.491 vs 2.704/0.490)
+show the banks are similar in DIFFICULTY; they do not establish equal
+sensitivity to quantisation, which is a different property.
+
+## What survives
+
+The performance result is untouched: **264 ms/token, 3.79 tok/s, 1.32x
+shipped, at 81% of attainable CPU bandwidth**, with K5's mechanism
+verified and bit-identity proven at every rung. Every negative result
+rests on Bank 1 evidence that was never at risk: Q4 rejected, the
+step-squared law, uniform int4 unrescuable on any class axis, K1 and K4
+falsified.
+
+**The representation is not rejected — it is UNVALIDATED.** Its Bank-2
+signature is a borderline acceptance problem (p99, top-1 and the
+margin-conditioned flip gate all pass, zero confident flips), not the
+signature of arithmetic that wrecks the model, which is what Q4 produced
+(KL ~0.05, top-1 91%, 38 confident flips).
+
+Successor: `bench/prompts/CPU6-VALIDATION.md`.
