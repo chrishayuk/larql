@@ -34,7 +34,9 @@ TARGETS = {"factual": 44, "prose": 29, "code": 29, "arithmetic": 29,
 CANDIDATE_ARITHMETIC = {"LARQL_CPU_ARITHMETIC": "q8xq8b",
                         "LARQL_CPU_ACT_BLOCK": "16",
                         "LARQL_CPU_ACT_CODE": "asymmetric"}
-FREEZE_SHA = "df36ca9fc6553b7e636416886ccc51e09a2142d3"
+# The CANDIDATE IMPLEMENTATION freeze. Distinct from the protocol SHA
+# and from whatever clean HEAD executes the arms.
+CANDIDATE_SOURCE_SHA = "df36ca9fc6553b7e636416886ccc51e09a2142d3"
 
 
 def refuse(why):
@@ -83,10 +85,13 @@ def check_arms(ship, cand, bank):
     prov = cand.get("provenance", {})
     if prov.get("arithmetic") != CANDIDATE_ARITHMETIC:
         refuse(f"candidate arithmetic {prov.get('arithmetic')} != {CANDIDATE_ARITHMETIC}")
-    if not prov.get("source", {}).get("crates_identical_to_freeze"):
-        refuse("candidate provenance does not certify crates/ identical to the freeze")
-    if prov.get("source", {}).get("freeze_sha") != FREEZE_SHA:
-        refuse(f"candidate freeze SHA {prov.get('source', {}).get('freeze_sha')} != {FREEZE_SHA}")
+    src = prov.get("source", {})
+    if not src.get("crates_identical_to_candidate_source"):
+        refuse("candidate provenance does not certify crates/ identical to the "
+               "candidate source freeze")
+    if src.get("candidate_source_sha") != CANDIDATE_SOURCE_SHA:
+        refuse(f"candidate source SHA {src.get('candidate_source_sha')} != "
+               f"{CANDIDATE_SOURCE_SHA}")
     sprov = ship.get("provenance", {})
     # THE anchor must be the shipped path, with no CPU-6 arithmetic on it.
     if sprov.get("arithmetic"):
@@ -148,7 +153,11 @@ def adjudicate(outdir, bank):
              "flips at margin >= 0.10 == 0": hg["flips_hi"] == 0}
 
     print(f"=== CPU-6 bank {bank} — adjudicated ALONE ===")
+    src = cand.get("provenance", {}).get("source", {})
     print(f"prompts {len(ids)}   seed {CPU6_BOOTSTRAP_SEED}   resamples {RESAMPLES}")
+    print(f"  candidate source {src.get('candidate_source_sha','?')[:12]}   "
+          f"protocol {src.get('protocol_sha','?')[:12]}   "
+          f"executed at {src.get('execution_head','?')[:12]}")
     print(f"  mean shipped KL      {S.mean():.9f}")
     print(f"  mean candidate KL    {C.mean():.9f}")
     print(f"  ratio of means       {C.mean()/S.mean():.3f}x   "

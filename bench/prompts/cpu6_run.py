@@ -58,8 +58,17 @@ def main():
     drift = git("diff", "--name-only", sha, "HEAD", "--", "crates/")
     if drift:
         refuse(f"candidate source changed since {sha[:12]}:\n  " + "\n  ".join(drift.splitlines()))
-    source = {"freeze_sha": sha, "head": git("rev-parse", "HEAD"),
-              "crates_identical_to_freeze": True}
+    # THREE distinct identities. Bank 3 is not validating "the code at
+    # HEAD" in the abstract: it validates the CPU-5 candidate whose
+    # IMPLEMENTATION was frozen at df36ca9f, under a PROTOCOL frozen
+    # separately. A single `freeze_sha` would conflate them.
+    source = {
+        "candidate_source_sha": sha,
+        "protocol_sha": git("log", "-1", "--format=%H", "--",
+                            "bench/prompts/CPU6-VALIDATION.md"),
+        "execution_head": git("rev-parse", "HEAD"),
+        "crates_identical_to_candidate_source": True,
+    }
 
     tok = os.path.join(container, "tokenizer.json")
     ref = os.path.join(outdir, "reference.json")
