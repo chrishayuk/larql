@@ -648,9 +648,12 @@ impl PlanBackend for ProductionBackend {
             MatrixClass::RoutedExpertBank => WeightFormat::F32,
             MatrixClass::AttentionProjection
             | MatrixClass::FfnProjection
-            | MatrixClass::OutputHead => {
-                PhysicalProjectionPlan::choose(operand.elements, operand.stored_bf16).format()
-            }
+            | MatrixClass::OutputHead => PhysicalProjectionPlan::choose_for(
+                Some(operand.class),
+                operand.elements,
+                operand.stored_bf16,
+            )
+            .format(),
         }
     }
 

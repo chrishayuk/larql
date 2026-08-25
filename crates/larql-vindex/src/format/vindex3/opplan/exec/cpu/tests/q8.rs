@@ -71,6 +71,7 @@ fn the_q8_kernel_computes_what_the_format_denotes() {
             WeightRows::Q8 {
                 codes: &codes,
                 scales: &scales,
+                sums: &[],
                 block: BLOCK,
             },
             &x,
@@ -139,6 +140,7 @@ fn the_portable_and_neon_block_dots_agree() {
             WeightRows::Q8 {
                 codes: &codes,
                 scales: &[1.0],
+                sums: &[],
                 block: len.max(1),
             },
             &x,
@@ -172,6 +174,7 @@ fn slicing_rows_cuts_the_scales_too() {
     let rows = WeightRows::Q8 {
         codes: &codes,
         scales: &scales,
+        sums: &[],
         block: BLOCK,
     };
     let x = lcg_values(in_dim, 13);
@@ -338,6 +341,7 @@ fn bf16_against_q8_against_q4_on_the_real_shapes() {
             WeightRows::Q8 {
                 codes: &codes,
                 scales: &q8_scales,
+                sums: &[],
                 block: BLOCK,
             },
             WeightRows::Q4 {
@@ -351,7 +355,7 @@ fn bf16_against_q8_against_q4_on_the_real_shapes() {
         let mut sink = 0.0f32;
         let mut each = [0.0f64; 3];
         for (i, rows) in arms.iter().copied().enumerate() {
-            let plan = PhysicalProjectionPlan::for_resident(rows);
+            let plan = PhysicalProjectionPlan::for_resident(rows, in_dim);
             let mut run = || sink += exec.project(plan.kernel(), rows, &x, out_dim)[0];
             run();
             let t = Instant::now();

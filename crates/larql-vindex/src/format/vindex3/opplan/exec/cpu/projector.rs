@@ -66,6 +66,9 @@ pub enum WeightRows<'a> {
     Q8 {
         codes: &'a [i8],
         scales: &'a [f32],
+        /// Per-`SUM_BLOCK` code sums — the asymmetric path's execution
+        /// index. Empty where no arm consumes it.
+        sums: &'a [i16],
         block: usize,
     },
     /// Symmetric int4, two codes per byte, one f32 scale per `block`
@@ -111,12 +114,23 @@ impl WeightRows<'_> {
             Self::Q8 {
                 codes,
                 scales,
+                sums,
                 block,
             } => {
                 let per_row = in_dim.div_ceil(*block);
+                // The index is cut ALONGSIDE the codes, for the same
+                // reason the scales are: a partition that moved one and
+                // not the other would hand a worker another row's sums.
+                let per_sum =
+                    in_dim.div_ceil(crate::format::vindex3::opplan::exec::quantise::SUM_BLOCK);
                 Self::Q8 {
                     codes: &codes[a..b],
                     scales: &scales[start * per_row..(start + count) * per_row],
+                    sums: if sums.is_empty() {
+                        sums
+                    } else {
+                        &sums[start * per_sum..(start + count) * per_sum]
+                    },
                     block: *block,
                 }
             }
@@ -144,7 +158,12 @@ impl WeightRows<'_> {
             // Scales counted, because they are read too. A Q8 rate that
             // ignored its own metadata would flatter the format by the
             // exact amount the metadata costs.
-            Self::Q8 { codes, scales, .. } => codes.len() + scales.len() * 4,
+            Self::Q8 {
+                codes,
+                scales,
+                sums,
+                ..
+            } => codes.len() + scales.len() * 4 + sums.len() * 2,
             Self::Q4 { packed, scales, .. } => packed.len() + scales.len() * 4,
         }
     }

@@ -305,11 +305,56 @@ fn report_projections(seconds: f64, tallies: &[(PhysicalProjectionPlan, PlanTall
             continue;
         }
         println!(
-            "  {:<12} {:>8.2} GB over {:>4} calls, {:>5} worker slabs",
+            "  {:<12} {:>8.2} GB over {:>4} calls, {:>5} worker slabs   {}",
             format!("{plan:?}"),
             t.bytes as f64 / 1e9,
             t.calls,
             t.slabs,
+            plan.arithmetic(),
+        );
+    }
+    report_budget(tallies);
+}
+
+/// **The bridge from a byte census to a decode claim.**
+///
+/// The measured time above is what THIS run did. This is what the same
+/// plan is PREDICTED to cost from its bytes alone, at the rates CPU-4Y
+/// measured — which is the only way an exception-set search is
+/// affordable, since a recipe that had to be benchmarked end to end
+/// would cost about an hour per candidate.
+///
+/// Printed beside the measurement on purpose: a predicted number next to
+/// the measurement it is meant to reproduce is auditable, and one
+/// printed alone is a claim.
+fn report_budget(tallies: &[(PhysicalProjectionPlan, PlanTally)]) {
+    let budget = cpu::budget(tallies);
+    if budget.rows.is_empty() {
+        return;
+    }
+    println!(
+        "predicted from bytes: {:.1} ms synthetic, {:.1} ms real (x{:.3}, measured CPU-PERF-3B)",
+        budget.synthetic_ms,
+        budget.predicted_ms,
+        cpu::SYNTHETIC_TO_REAL,
+    );
+    for row in &budget.rows {
+        println!(
+            "  {:<12} {:>8.2} GB at {:>6.2} GB/s = {:>7.1} ms",
+            format!("{:?}", row.plan),
+            row.bytes as f64 / 1e9,
+            row.rate_gbps,
+            row.synthetic_ms,
+        );
+    }
+    // The floor is the term quantisation does not touch, so a decode
+    // prediction that omitted it would improve without limit as the
+    // weights shrank.
+    for floor in NON_PROJECTION_FLOOR_MS {
+        println!(
+            "  + {floor:>4.0} ms non-projection floor -> {:>6.1} ms/token, {:.2} tok/s",
+            budget.predicted_ms + floor,
+            cpu::predicted_tokens_per_second(&budget, floor),
         );
     }
 }
@@ -376,6 +421,17 @@ fn report_leaves(seconds: f64) {
 /// Above this share of the token, the ledger is reporting its own gaps
 /// rather than the model's costs.
 const UNATTRIBUTED_LIMIT: f64 = 5.0;
+
+/// The measured non-projection cost of one token on this build, as a
+/// RANGE rather than a point.
+///
+/// Everything that is not a dense projection: the Gated DeltaNet
+/// recurrence (13.3 ms after CPU-2D1), the convolution, the norms, the
+/// attention core and the glue. Quantisation does not touch any of it —
+/// at Q8 the projections halve and this does not move — so a decode
+/// prediction that omitted it would improve without bound as the weights
+/// shrank.
+const NON_PROJECTION_FLOOR_MS: [f64; 2] = [17.0, 24.0];
 
 /// Snapshot every plan's tally.
 fn read_ledger() -> Vec<(PhysicalProjectionPlan, PlanTally)> {

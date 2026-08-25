@@ -255,6 +255,7 @@ fn the_integer_path_agrees_to_what_int8_activations_cost() {
         WeightRows::Q8 {
             codes: &codes,
             scales: &scales,
+            sums: &[],
             block: BLOCK,
         },
         &x,
@@ -403,6 +404,7 @@ fn q8_float_against_q8_integer() {
         let rows = WeightRows::Q8 {
             codes: &codes,
             scales: &scales,
+            sums: &[],
             block: BLOCK,
         };
         let iters = (3_000_000_000.0 / (out_dim * in_dim) as f64).clamp(3.0, 100.0) as usize;

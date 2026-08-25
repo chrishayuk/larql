@@ -60,6 +60,11 @@ pub struct Captured {
     primary: (usize, usize),
     /// Scales, where the format has them.
     secondary: (usize, usize),
+    /// The asymmetric path's code-sum index, where an arm built one.
+    /// Captured rather than dropped: a replay that reconstructed the
+    /// operand WITHOUT its index would silently take the symmetric code
+    /// path and price a kernel the decode never ran.
+    tertiary: (usize, usize),
     block: usize,
     out_dim: usize,
     /// The activation the decode actually projected. Kept by value
@@ -84,6 +89,10 @@ impl Captured {
             Kind::Q8 => WeightRows::Q8 {
                 codes: std::slice::from_raw_parts(p as *const i8, n),
                 scales: std::slice::from_raw_parts(s as *const f32, m),
+                sums: match self.tertiary {
+                    (0, _) | (_, 0) => &[],
+                    (a, k) => std::slice::from_raw_parts(a as *const i16, k),
+                },
                 block: self.block,
             },
             Kind::Q4 => WeightRows::Q4 {
@@ -132,17 +141,25 @@ pub(super) fn record(weight: WeightRows<'_>, x: &[f32], out_dim: usize) {
     let Some(log) = slot.as_mut() else {
         return;
     };
-    let (kind, primary, secondary, block) = match weight {
-        WeightRows::F32(w) => (Kind::F32, (w.as_ptr() as usize, w.len()), (0, 0), 0),
-        WeightRows::Bf16(w) => (Kind::Bf16, (w.as_ptr() as usize, w.len()), (0, 0), 0),
+    let (kind, primary, secondary, tertiary, block) = match weight {
+        WeightRows::F32(w) => (Kind::F32, (w.as_ptr() as usize, w.len()), (0, 0), (0, 0), 0),
+        WeightRows::Bf16(w) => (
+            Kind::Bf16,
+            (w.as_ptr() as usize, w.len()),
+            (0, 0),
+            (0, 0),
+            0,
+        ),
         WeightRows::Q8 {
             codes,
             scales,
+            sums,
             block,
         } => (
             Kind::Q8,
             (codes.as_ptr() as usize, codes.len()),
             (scales.as_ptr() as usize, scales.len()),
+            (sums.as_ptr() as usize, sums.len()),
             block,
         ),
         WeightRows::Q4 {
@@ -153,6 +170,7 @@ pub(super) fn record(weight: WeightRows<'_>, x: &[f32], out_dim: usize) {
             Kind::Q4,
             (packed.as_ptr() as usize, packed.len()),
             (scales.as_ptr() as usize, scales.len()),
+            (0, 0),
             block,
         ),
     };
@@ -160,6 +178,7 @@ pub(super) fn record(weight: WeightRows<'_>, x: &[f32], out_dim: usize) {
         kind,
         primary,
         secondary,
+        tertiary,
         block,
         out_dim,
         x: x.to_vec(),
@@ -218,7 +237,7 @@ pub unsafe fn replay(exec: &CpuExecutor, calls: &[Captured], order: ReplayOrder)
     for i in indices {
         let call = &calls[i];
         let rows = call.rows();
-        let plan = PhysicalProjectionPlan::for_resident(rows);
+        let plan = PhysicalProjectionPlan::for_resident(rows, call.x.len());
         std::hint::black_box(exec.project(plan.kernel(), rows, &call.x, call.out_dim)[0]);
     }
     started.elapsed().as_secs_f64()
