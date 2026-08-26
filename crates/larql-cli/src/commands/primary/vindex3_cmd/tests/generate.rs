@@ -61,6 +61,7 @@ fn greedy_decode_runs_end_to_end_on_the_encoded_fixture() {
         logit_dump: None,
         bank: None,
         dump_dir: None,
+        draft_depth: None,
         profile: false,
     }))
     .expect("greedy decode over the fixture must complete");

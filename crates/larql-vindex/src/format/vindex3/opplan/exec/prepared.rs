@@ -69,6 +69,27 @@ pub enum ExecutionSlice {
     /// embedding, no final norm, no head. Hidden states in, hidden
     /// states out — the shape a layer-range shard executes.
     LayerRange { start: usize, end: usize },
+    /// Embedding, layers `[0, end)`, then the component's **own** final
+    /// norm and output head — a reduced-depth model that still speaks
+    /// the target's token vocabulary.
+    ///
+    /// Not a [`Self::LayerRange`] with the ends bolted on. A shard is a
+    /// hidden-state transform and composes with other shards; this is a
+    /// complete model that happens to be shallower, and it owns both
+    /// ends precisely so its logits are comparable to the target's. The
+    /// distinction is the whole point: a drafter is a different semantic
+    /// object, not a slice with options.
+    ///
+    /// `Draft { end: plan.layers.len() }` must be observationally
+    /// identical to [`Self::Full`] — that equivalence is the gate the
+    /// variant has to pass before any reduced depth is believed.
+    ///
+    /// Prefix-only by construction. Selecting a *scattered* subset of a
+    /// hybrid stack is not merely a coarser approximation: omitted
+    /// recurrent layers own state transitions that later layers consume,
+    /// so `{0, 8, 16, ...}` is not yet a defined program. That is a
+    /// separate rung, and this variant deliberately cannot express it.
+    Draft { end: usize },
 }
 
 impl ExecutionSlice {
@@ -77,13 +98,14 @@ impl ExecutionSlice {
         match self {
             Self::Full => 0..plan.layers.len(),
             Self::LayerRange { start, end } => *start..*end,
+            Self::Draft { end } => 0..*end,
         }
     }
 
     /// Whether the slice carries the stack's ends — embedding on the
     /// way in, final norm and output head on the way out.
     pub fn is_whole_stack(&self) -> bool {
-        matches!(self, Self::Full)
+        matches!(self, Self::Full | Self::Draft { .. })
     }
 
     /// Refuse a slice the plan cannot satisfy. A shard asked for layers
@@ -91,6 +113,23 @@ impl ExecutionSlice {
     /// "as much as exists" would serve a silently wrong submodel — the
     /// same failure the V3 load options used to have.
     fn validate(&self, plan: &ComponentOpPlan) -> Result<(), VindexError> {
+        if let Self::Draft { end } = self {
+            if *end == 0 {
+                return Err(VindexError::Parse(
+                    "a draft slice must execute at least one layer — `Draft { end: 0 }` is the \
+                     embedding and head with nothing between them"
+                        .to_string(),
+                ));
+            }
+            if *end > plan.layers.len() {
+                return Err(VindexError::Parse(format!(
+                    "draft slice of depth {end} is deeper than component `{}`, which has {} layers",
+                    plan.component,
+                    plan.layers.len()
+                )));
+            }
+            return Ok(());
+        }
         let Self::LayerRange { start, end } = self else {
             return Ok(());
         };
@@ -614,6 +653,17 @@ impl PreparedOperands {
 
     pub(super) fn first_layer(&self) -> usize {
         self.first_layer
+    }
+
+    /// The plan-layer indices this prepared set will execute, as a
+    /// half-open range.
+    ///
+    /// Public because the identity of the work is part of a run's
+    /// provenance: a caller banking logits has to be able to record —
+    /// and a comparison to assert — which layers actually ran, and
+    /// neither can be inferred from a layer count.
+    pub fn executed_layers(&self) -> std::ops::Range<usize> {
+        self.first_layer..self.first_layer + self.layers.len()
     }
 
     pub(super) fn layers(&self) -> &[PreparedLayer] {
