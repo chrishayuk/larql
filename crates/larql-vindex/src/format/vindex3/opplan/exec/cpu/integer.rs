@@ -64,8 +64,12 @@ const ACT_MAX: f32 = 127.0;
 /// Gated: off aarch64 the portable definitions run and nothing consumes
 /// this, which `-D warnings` treats as an error on the CI targets — the
 /// exact way cfg-gated code has broken this build before.
-#[cfg(target_arch = "aarch64")]
-const SDOT_LANES: usize = 16;
+///
+/// NOT `cfg`-gated, despite naming an `aarch64` instruction: it is a plain
+/// integer, and `Q8xQ8::project_rows` compares against it on every target
+/// before narrowing to the NEON path. Gating it made this crate fail to
+/// build on x86 — the same failure the note above warns about.
+pub(super) const SDOT_LANES: usize = 16;
 
 /// The int4 bias that makes a signed code an unsigned nibble.
 const Q4_BIAS: i32 = 8;
@@ -932,7 +936,7 @@ unsafe fn q8_row_b16_register_sdot(
 
 /// Activation blocks inside one weight block at `ablock` 16, `block` 64.
 /// The value that makes the weight scale a constant within a group.
-const PER_WEIGHT_B16: usize = 4;
+pub(super) const PER_WEIGHT_B16: usize = 4;
 
 /// The K5 row, reachable from a test whatever the process arm.
 #[cfg(test)]
@@ -1054,7 +1058,7 @@ pub fn activation_scaling() -> ScaleSpan {
 /// portable definition is a real fallback and not dead code.
 #[cfg(target_arch = "aarch64")]
 #[inline]
-fn has_dotprod() -> bool {
+pub(super) fn has_dotprod() -> bool {
     std::arch::is_aarch64_feature_detected!("dotprod")
 }
 
@@ -1326,6 +1330,26 @@ pub struct Q8xQ8;
 impl DenseProjector for Q8xQ8 {
     fn parallelism(&self) -> CpuParallelism {
         CpuParallelism::ExternalPool
+    }
+
+    fn is_weight_stationary(&self, weight: WeightRows<'_>, in_dim: usize, n: usize) -> bool {
+        super::stationary::supports(weight, in_dim, n)
+    }
+
+    /// CPU-7C. One weight traversal, `n` positions — see
+    /// [`super::stationary`] for the invariant and what would break it.
+    fn project_rows_many(
+        &self,
+        weight_rows: WeightRows<'_>,
+        xs: &[&[f32]],
+        out: &mut [f32],
+        n: usize,
+    ) {
+        if super::stationary::supports(weight_rows, xs[0].len(), n) {
+            super::stationary::project_rows_many(weight_rows, xs, out, n);
+        } else {
+            super::projector::project_rows_looped(self, weight_rows, xs, out, n);
+        }
     }
 
     fn project_rows(&self, weight_rows: WeightRows<'_>, x: &[f32], out: &mut [f32]) {

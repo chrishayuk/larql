@@ -24,7 +24,7 @@ use crate::format::vindex3::opplan::exec::reference::ReferenceBackend;
 use crate::format::vindex3::opplan::{plan_component_ops, ComponentOpPlan, LayerAttention};
 
 /// The encoded hybrid fixture, planned and ready to execute.
-fn hybrid() -> (tempfile::TempDir, ComponentOpPlan, OperandStore) {
+pub(super) fn hybrid() -> (tempfile::TempDir, ComponentOpPlan, OperandStore) {
     let src = tempfile::tempdir().unwrap();
     hybrid_lllf_f32_model(src.path());
     let inventory = larql_models::inventory::build_inventory(src.path()).unwrap();

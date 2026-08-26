@@ -434,6 +434,16 @@ pub fn project_matrix(
     project_rows(weight.rows(out_dim, in_dim)?, x, out_dim)
 }
 
+/// The same, for several activations against one weight traversal.
+pub fn project_matrix_many(
+    weight: &WeightSlice<'_>,
+    xs: &[&[f32]],
+    out_dim: usize,
+    in_dim: usize,
+) -> Result<Vec<Vec<f32>>, VindexError> {
+    project_rows_many(weight.rows(out_dim, in_dim)?, xs, out_dim)
+}
+
 /// Gated DeltaNet's five dense projections, through the same executor
 /// and the same observation as every other production matrix.
 pub struct ExecutorProjections;
@@ -443,6 +453,31 @@ impl crate::format::vindex3::opplan::exec::gated_delta::DenseProjections for Exe
         project_rows(weight, x, out_dim)
             .expect("the CPU executor pool is unavailable, so no projection can run")
     }
+
+    fn project_many(&self, weight: WeightRows<'_>, xs: &[&[f32]], out_dim: usize) -> Vec<Vec<f32>> {
+        project_rows_many(weight, xs, out_dim)
+            .expect("the CPU executor pool is unavailable, so no projection can run")
+    }
+
+    fn is_weight_stationary(&self, weight: WeightRows<'_>, in_dim: usize, n: usize) -> bool {
+        PhysicalProjectionPlan::for_resident(weight, in_dim)
+            .kernel()
+            .is_weight_stationary(weight, in_dim, n)
+    }
+}
+
+/// The same observation as [`project_rows`], for `n` positions at once.
+///
+/// The kernel is still OBSERVED and not chosen again: one plan, read off
+/// the resident bytes, and whether that plan's kernel has a stationary
+/// path is the kernel's own answer rather than a second policy here.
+pub fn project_rows_many(
+    weight: WeightRows<'_>,
+    xs: &[&[f32]],
+    out_dim: usize,
+) -> Result<Vec<Vec<f32>>, VindexError> {
+    let plan = PhysicalProjectionPlan::for_resident(weight, xs[0].len());
+    Ok(super::shared()?.project_many(plan.kernel(), weight, xs, out_dim))
 }
 
 /// Caps the policy at a representation, for A/B'ing FORMATS in one

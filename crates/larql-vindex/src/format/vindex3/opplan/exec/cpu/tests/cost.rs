@@ -25,6 +25,12 @@ fn tally(bytes: u64, calls: u64) -> PlanTally {
         calls,
         bytes,
         slabs: calls,
+        // The cost model is built from single-position decode, where every
+        // call serves exactly one position.
+        grouped: 0,
+        positions: calls,
+        nanos: 0,
+        nanos_many: 0,
     }
 }
 

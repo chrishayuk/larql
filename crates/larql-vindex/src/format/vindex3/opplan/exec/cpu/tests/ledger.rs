@@ -29,9 +29,9 @@ const PLANS: [PhysicalProjectionPlan; 8] = [
 #[test]
 fn each_plan_is_counted_separately() {
     let l = ProjectionLedger::default();
-    l.record(PhysicalProjectionPlan::FusedBf16, 1_000, 12);
-    l.record(PhysicalProjectionPlan::FusedBf16, 2_000, 12);
-    l.record(PhysicalProjectionPlan::BlasF32, 40, 1);
+    l.record(PhysicalProjectionPlan::FusedBf16, 1_000, 12, 0);
+    l.record(PhysicalProjectionPlan::FusedBf16, 2_000, 12, 0);
+    l.record(PhysicalProjectionPlan::BlasF32, 40, 1, 0);
 
     let fused = l.get(PhysicalProjectionPlan::FusedBf16);
     assert_eq!(fused.calls, 2);
@@ -50,7 +50,7 @@ fn each_plan_is_counted_separately() {
 fn all_enumerates_every_plan() {
     let l = ProjectionLedger::default();
     for (i, plan) in PLANS.iter().enumerate() {
-        l.record(*plan, i + 1, 1);
+        l.record(*plan, i + 1, 1, 0);
     }
     let seen: Vec<_> = l.all().iter().map(|(p, t)| (*p, t.bytes)).collect();
     let want: Vec<_> = PLANS
@@ -74,7 +74,7 @@ fn all_enumerates_every_plan() {
 fn reset_clears_every_plan() {
     let l = ProjectionLedger::default();
     for plan in PLANS {
-        l.record(plan, 7, 3);
+        l.record(plan, 7, 3, 0);
     }
     assert_eq!(l.total_bytes(), 7 * PLANS.len() as u64);
     l.reset();
@@ -107,13 +107,18 @@ fn a_slot_works_before_the_policy_can_reach_it() {
     // constructor the shipped ledger actually uses unexercised.
     let l = ProjectionLedger::new();
     assert_eq!(l.total_bytes(), 0, "a fresh ledger has counted nothing");
-    l.record(PhysicalProjectionPlan::FusedQ8, 4_096, 6);
+    l.record(PhysicalProjectionPlan::FusedQ8, 4_096, 6, 0);
     assert_eq!(
         l.get(PhysicalProjectionPlan::FusedQ8),
         crate::format::vindex3::opplan::exec::cpu::PlanTally {
             calls: 1,
             bytes: 4_096,
             slabs: 6,
+            // A single-position `record` is one position and not grouped.
+            grouped: 0,
+            positions: 1,
+            nanos: 0,
+            nanos_many: 0,
         }
     );
     for other in PLANS

@@ -60,3 +60,10 @@ pub(super) use crate::format::vindex3::fixtures::{
     DENSE_HIDDEN as HIDDEN, DENSE_INTERMEDIATE as INTERMEDIATE, DENSE_LAYERS as LAYERS,
     DENSE_Q_HEADS as Q_HEADS, DENSE_VOCAB as VOCAB,
 };
+mod step_many;
+
+/// `step_many`'s gates run on the same encoded hybrid stack the
+/// traversal gates use — one fixture, so the two cannot drift.
+mod hybrid_traversal_fixture {
+    pub(super) use super::hybrid_traversal::hybrid;
+}

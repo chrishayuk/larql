@@ -486,6 +486,26 @@ pub struct FfnCall<'a> {
     pub gate_policy: larql_models::ExpertGatePolicy,
 }
 
+/// The same dense feed-forward operation over SEVERAL positions.
+///
+/// One weight traversal per projection where the backend has a kernel for
+/// it, rather than one per position. Deliberately a separate call rather
+/// than `FfnCall` with a slice of inputs: a backend that has no
+/// multi-position kernel should keep consuming `FfnCall` unchanged, and
+/// the default [`PlanBackend::ffn_many`] gives it exactly that.
+///
+/// The activation stays PER POSITION. Only the projections group.
+pub struct FfnManyCall<'a> {
+    pub xs: &'a [&'a [f32]],
+    pub hidden: usize,
+    pub intermediate: usize,
+    pub gate: Option<WeightSlice<'a>>,
+    pub up: WeightSlice<'a>,
+    pub down: WeightSlice<'a>,
+    pub activation: Activation,
+    pub gate_policy: larql_models::ExpertGatePolicy,
+}
+
 /// One routed feed-forward operation over one vector, fully resolved:
 /// the router in f32 (glue-sized), every expert's projections in the
 /// backend's declared FFN format, and every judged semantic as an
@@ -668,6 +688,31 @@ pub trait PlanBackend: Sync {
     /// with no kernel for a judged variant must say so, not borrow
     /// another backend's arithmetic to fill the gap.
     fn ffn(&self, call: FfnCall<'_>) -> Result<Vec<f32>, VindexError>;
+
+    /// The dense FFN over several positions at once.
+    ///
+    /// Default is the loop it replaces, so every backend keeps working
+    /// untouched. Overriding it is a claim about SCHEDULE only: each
+    /// position keeps its own activation and its own arithmetic, and the
+    /// results must be indistinguishable from calling [`Self::ffn`] once
+    /// per position.
+    fn ffn_many(&self, call: FfnManyCall<'_>) -> Result<Vec<Vec<f32>>, VindexError> {
+        call.xs
+            .iter()
+            .map(|x| {
+                self.ffn(FfnCall {
+                    x,
+                    hidden: call.hidden,
+                    intermediate: call.intermediate,
+                    gate: call.gate,
+                    up: call.up,
+                    down: call.down,
+                    activation: call.activation,
+                    gate_policy: call.gate_policy,
+                })
+            })
+            .collect()
+    }
 
     /// The routed FFN — a mixture of experts. Required of every backend
     /// for the same reason as [`Self::ffn`]: a backend without the

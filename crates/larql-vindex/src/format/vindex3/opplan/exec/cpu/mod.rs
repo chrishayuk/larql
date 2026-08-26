@@ -29,6 +29,7 @@ pub mod ledger;
 pub mod physical;
 pub mod projector;
 pub mod replay;
+pub mod stationary;
 
 pub use arithmetic::{AccumulatorRep, ActivationRep, Arithmetic, ScaleSpan, WeightRep};
 pub use cost::{budget, predicted_tokens_per_second, ProjectionBudget, SYNTHETIC_TO_REAL};

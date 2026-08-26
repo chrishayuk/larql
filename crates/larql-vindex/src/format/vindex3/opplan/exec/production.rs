@@ -36,11 +36,11 @@ use larql_compute::MoeGateRule;
 
 use super::super::super::graph::policy::AttentionSpan;
 use super::backend::{
-    AttentionCall, AttentionOut, AttentionStepCall, AttentionStepOut, FfnCall, GateCall,
-    MatrixClass, MatrixOperand, NormCall, PlanBackend, ProjectCall, ProjectedQkv, QkNormCall,
-    RoutedFfnCall, WeightFormat,
+    AttentionCall, AttentionOut, AttentionStepCall, AttentionStepOut, FfnCall, FfnManyCall,
+    GateCall, MatrixClass, MatrixOperand, NormCall, PlanBackend, ProjectCall, ProjectedQkv,
+    QkNormCall, RoutedFfnCall, WeightFormat,
 };
-use super::cpu::physical::{project_matrix, ExecutorProjections};
+use super::cpu::physical::{project_matrix, project_matrix_many, ExecutorProjections};
 use super::cpu::PhysicalProjectionPlan;
 use super::kernels::{
     gather_fused_half, mrope_rotate_scaled, rope_rotate, rope_rotate_scaled, FusedHalf,
@@ -68,6 +68,38 @@ pub struct ProductionBackend;
 impl ProductionBackend {
     pub fn new() -> Self {
         Self
+    }
+}
+
+/// The FFN's elementwise middle, shared by the one-position and
+/// many-position arms so the two cannot drift into different arithmetic.
+///
+/// The activation ONLY. The three projections around it are timed by the
+/// executor, and a timer that spanned them would make this class the
+/// whole FFN.
+fn ffn_activation(
+    gate: Option<&[f32]>,
+    up: &[f32],
+    activation: Activation,
+) -> Result<Vec<f32>, VindexError> {
+    let _t = timed(OpClass::FfnActivation);
+    match gate {
+        Some(gate) => match activation {
+            Activation::Silu => Ok(geglu_silu_alloc(gate, up)),
+            // The served Gemma gate/up kernel (tanh-approximated GELU on
+            // the gate, times up).
+            Activation::GeluTanh => Ok(gate
+                .iter()
+                .zip(up)
+                .map(|(g, u)| gelu_tanh(*g) * u)
+                .collect()),
+            other => Err(unsupported_activation("gated", other)),
+        },
+        None => match activation {
+            Activation::Silu => Ok(up.iter().map(|u| silu(*u)).collect()),
+            Activation::GeluTanh => Ok(up.iter().map(|u| gelu_tanh(*u)).collect()),
+            other => Err(unsupported_activation("ungated", other)),
+        },
     }
 }
 
@@ -785,32 +817,46 @@ impl PlanBackend for ProductionBackend {
             Some(w) => Some(project_matrix(&w, call.x, call.intermediate, call.hidden)?),
             None => None,
         };
-        // The activation ONLY. The three projections around it are timed
-        // by the executor, and a timer that spanned them would make this
-        // class the whole FFN.
-        let activation = timed(OpClass::FfnActivation);
-        let inner: Vec<f32> = match &gate {
-            Some(gate) => {
-                match call.activation {
-                    Activation::Silu => geglu_silu_alloc(gate, &up),
-                    // The served Gemma gate/up kernel (tanh-approximated
-                    // GELU on the gate, times up).
-                    Activation::GeluTanh => gate
-                        .iter()
-                        .zip(&up)
-                        .map(|(g, u)| gelu_tanh(*g) * u)
-                        .collect(),
-                    other => return Err(unsupported_activation("gated", other)),
-                }
-            }
-            None => match call.activation {
-                Activation::Silu => up.iter().map(|u| silu(*u)).collect(),
-                Activation::GeluTanh => up.iter().map(|u| gelu_tanh(*u)).collect(),
-                other => return Err(unsupported_activation("ungated", other)),
-            },
-        };
-        drop(activation);
+        let inner = ffn_activation(gate.as_deref(), &up, call.activation)?;
         project_matrix(&call.down, &inner, call.hidden, call.intermediate)
+    }
+
+    /// **CPU-7C2.** The dense FFN over several positions, with each
+    /// projection taken as ONE weight traversal.
+    ///
+    /// The activation stays per position — it is elementwise, it is small
+    /// against the projections, and grouping it would be a change to the
+    /// arithmetic rather than to the schedule.
+    ///
+    /// Note what is NOT here: no `par_iter` over positions. Rows own the
+    /// machine and positions live inside the row traversal. The previous
+    /// shape ran positions in parallel and each of them re-entered the
+    /// executor, where `caller_owns_the_machine` collapsed every
+    /// projection to a single worker — CPU-7C1 measured that as
+    /// `slabs/call` 5.03 -> 2.81 and a 42% loss against serial decode.
+    fn ffn_many(&self, call: FfnManyCall<'_>) -> Result<Vec<Vec<f32>>, VindexError> {
+        require_plain_gate("production", call.gate_policy)?;
+        let ups = project_matrix_many(&call.up, call.xs, call.intermediate, call.hidden)?;
+        let gates = match &call.gate {
+            Some(w) => Some(project_matrix_many(
+                w,
+                call.xs,
+                call.intermediate,
+                call.hidden,
+            )?),
+            None => None,
+        };
+        let inners: Vec<Vec<f32>> = (0..call.xs.len())
+            .map(|p| {
+                ffn_activation(
+                    gates.as_ref().map(|g| g[p].as_slice()),
+                    &ups[p],
+                    call.activation,
+                )
+            })
+            .collect::<Result<_, _>>()?;
+        let refs: Vec<&[f32]> = inners.iter().map(Vec::as_slice).collect();
+        project_matrix_many(&call.down, &refs, call.hidden, call.intermediate)
     }
 
     fn routed_ffn(&self, call: RoutedFfnCall<'_>) -> Result<Vec<f32>, VindexError> {

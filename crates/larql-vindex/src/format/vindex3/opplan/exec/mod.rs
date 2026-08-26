@@ -535,16 +535,19 @@ fn execute_layer<B: PlanBackend + ?Sized, K: KvState + ?Sized>(
                     }
                     out.outputs
                 }
-                Some((kv, layer_index)) => attention_into_kv(
-                    attention_op,
-                    ops,
-                    &inputs,
-                    layer.pre_attention_norm.eps,
-                    hidden,
-                    backend,
-                    kv,
-                    layer_index,
-                )?,
+                Some((kv, layer_index)) => {
+                    let _site = cpu::ledger::in_site(cpu::ledger::Site::Attention);
+                    attention_into_kv(
+                        attention_op,
+                        ops,
+                        &inputs,
+                        layer.pre_attention_norm.eps,
+                        hidden,
+                        backend,
+                        kv,
+                        layer_index,
+                    )?
+                }
                 None => {
                     backend
                         .attention(ops.call(
@@ -582,26 +585,107 @@ fn execute_layer<B: PlanBackend + ?Sized, K: KvState + ?Sized>(
         .par_iter()
         .map(|row| prepared.pre_ffn.apply(backend, row))
         .collect();
-    h.par_iter_mut()
-        .zip(&ffn_inputs)
-        .try_for_each(|(row, normed)| {
-            let ffn_out = ffn.apply_from_residual(&layer.ffn, backend, row, normed, hidden)?;
-            let mut ffn_out = match &prepared.post_ffn {
-                Some(norm) => norm.apply(backend, &ffn_out),
-                None => ffn_out,
-            };
-            scale_residual_delta(layer.residual_scale, &mut ffn_out);
-            backend.residual_add(row, &ffn_out);
-            if let Some(scale) = prepared.layer_scale {
-                backend.scale_row(row, scale);
-            }
-            Ok::<(), VindexError>(())
-        })?;
+    // The tail every arm shares: post-FFN norm, residual scaling, the
+    // residual add and the layer scale. Factored so the two FFN shapes
+    // below cannot drift into doing different things after the FFN.
+    let finish = |row: &mut Vec<f32>, ffn_out: Vec<f32>| -> Result<(), VindexError> {
+        let mut ffn_out = match &prepared.post_ffn {
+            Some(norm) => norm.apply(backend, &ffn_out),
+            None => ffn_out,
+        };
+        scale_residual_delta(layer.residual_scale, &mut ffn_out);
+        backend.residual_add(row, &ffn_out);
+        if let Some(scale) = prepared.layer_scale {
+            backend.scale_row(row, scale);
+        }
+        Ok(())
+    };
+
+    if multi_position_ffn() {
+        // **CPU-7C2.** One call for every position, rather than a parallel
+        // loop over positions each re-entering the executor.
+        //
+        // The previous shape ran positions through `par_iter_mut`, so
+        // every projection inside saw `caller_owns_the_machine` and
+        // collapsed to a single worker. CPU-7C1 measured that as
+        // `slabs/call` 5.03 -> 2.81 and a 42% loss against serial decode.
+        // Here the executor partitions ROWS across its workers and the
+        // positions live inside that traversal, which is the ownership
+        // rule this module already states.
+        let ffn_outs = {
+            let _site = cpu::ledger::in_site(cpu::ledger::Site::Ffn);
+            let residuals: Vec<&[f32]> = h.iter().map(Vec::as_slice).collect();
+            let normed: Vec<&[f32]> = ffn_inputs.iter().map(Vec::as_slice).collect();
+            ffn.apply_from_residual_many(&layer.ffn, backend, &residuals, &normed, hidden)?
+        };
+        // The glue AFTER it stays position-parallel: norms, scaling and
+        // the residual add are elementwise and issue no projections, so
+        // there is no ownership to collapse.
+        h.par_iter_mut()
+            .zip(ffn_outs)
+            .try_for_each(|(row, ffn_out)| finish(row, ffn_out))?;
+    } else {
+        // **Arm B.** The pre-CPU-7C2 shape, kept in the SAME binary so the
+        // regression it exhibits is measured beside its fix rather than
+        // carried in from another run — the anchor defect CPU-5's G1 was.
+        h.par_iter_mut()
+            .zip(&ffn_inputs)
+            .try_for_each(|(row, normed)| {
+                // Inside the closure on purpose: this body runs on a
+                // rayon worker with its own thread-local, so a guard
+                // taken by the caller would attribute none of it.
+                let _site = cpu::ledger::in_site(cpu::ledger::Site::Ffn);
+                let ffn_out = ffn.apply_from_residual(&layer.ffn, backend, row, normed, hidden)?;
+                finish(row, ffn_out)
+            })?;
+    }
     Ok(LayerTrace {
         post_attention,
         ffn_input: ffn_inputs,
         post_layer: h.to_vec(),
     })
+}
+
+/// Whether the FFN runs as ONE multi-position call (CPU-7C2) or as the
+/// pre-C2 parallel loop over positions.
+///
+/// A CPU-7C2 arm switch, and it exists so arm B and arms C/E/D live in one
+/// binary. The alternative — comparing against CPU-7C1's banked
+/// `B/(2A) = 1.422` — would anchor a gate on a number measured in another
+/// run, on another build, which is exactly the defect that cost CPU-5 its
+/// Bank 2.
+///
+/// Default ON: the multi-position shape is the one that respects this
+/// module's own ownership rule, and a default that did not would make
+/// every other measurement in the repo a measurement of the defect.
+/// Only `0` and `off` select the legacy shape.
+pub const MULTI_POSITION_FFN_ENV: &str = "LARQL_FFN_MULTI_POSITION";
+
+static FFN_SHAPE: std::sync::atomic::AtomicU8 = std::sync::atomic::AtomicU8::new(0);
+
+pub fn multi_position_ffn() -> bool {
+    match FFN_SHAPE.load(std::sync::atomic::Ordering::Relaxed) {
+        1 => false,
+        2 => true,
+        _ => {
+            let on = !matches!(
+                std::env::var(MULTI_POSITION_FFN_ENV)
+                    .ok()
+                    .as_deref()
+                    .map(str::trim),
+                Some("0") | Some("off")
+            );
+            FFN_SHAPE.store(if on { 2 } else { 1 }, std::sync::atomic::Ordering::Relaxed);
+            on
+        }
+    }
+}
+
+/// Select the FFN shape explicitly, for a harness running both arms in one
+/// process. Not for production code, for the reason [`multi_position_ffn`]
+/// gives.
+pub fn set_multi_position_ffn(on: bool) {
+    FFN_SHAPE.store(if on { 2 } else { 1 }, std::sync::atomic::Ordering::Relaxed);
 }
 
 /// One layer's attention operands, loaded once in the backend's

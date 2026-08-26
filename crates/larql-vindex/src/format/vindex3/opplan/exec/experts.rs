@@ -203,6 +203,35 @@ impl FfnOperands {
             _ => self.apply(ffn, backend, pre_ffn_normed, hidden),
         }
     }
+
+    /// [`Self::apply_from_residual`] over several positions at once.
+    ///
+    /// Only the DENSE arm groups. A routed or hybrid FFN selects experts
+    /// per position, so its weight traversal is not shared between them
+    /// and grouping it is a different rung with its own question — those
+    /// arms keep the per-position program, which is the same arithmetic
+    /// they ran before.
+    pub(super) fn apply_from_residual_many<B: super::backend::PlanBackend + ?Sized>(
+        &self,
+        ffn: &LayerFfn,
+        backend: &B,
+        residuals: &[&[f32]],
+        pre_ffn_normed: &[&[f32]],
+        hidden: usize,
+    ) -> Result<Vec<Vec<f32>>, VindexError> {
+        match (self, ffn) {
+            (Self::Dense(dense), LayerFfn::Dense(op)) => {
+                dense.apply_many(op, backend, pre_ffn_normed, hidden)
+            }
+            _ => residuals
+                .iter()
+                .zip(pre_ffn_normed)
+                .map(|(residual, normed)| {
+                    self.apply_from_residual(ffn, backend, residual, normed, hidden)
+                })
+                .collect(),
+        }
+    }
 }
 
 impl DenseOperands {
@@ -246,6 +275,25 @@ impl DenseOperands {
     ) -> Result<Vec<f32>, VindexError> {
         backend.ffn(FfnCall {
             x,
+            hidden,
+            intermediate: op.intermediate_size,
+            gate: self.gate.as_ref().map(LoadedWeight::slice),
+            up: self.up.slice(),
+            down: self.down.slice(),
+            activation: op.activation,
+            gate_policy: op.gate_policy,
+        })
+    }
+
+    fn apply_many<B: super::backend::PlanBackend + ?Sized>(
+        &self,
+        op: &FfnOp,
+        backend: &B,
+        xs: &[&[f32]],
+        hidden: usize,
+    ) -> Result<Vec<Vec<f32>>, VindexError> {
+        backend.ffn_many(super::backend::FfnManyCall {
+            xs,
             hidden,
             intermediate: op.intermediate_size,
             gate: self.gate.as_ref().map(LoadedWeight::slice),
