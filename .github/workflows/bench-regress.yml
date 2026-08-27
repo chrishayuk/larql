@@ -1,6 +1,6 @@
-# Bench regression detector — runs `make bench-check` on every PR
-# against a baseline saved on `main`. Fails the workflow if any cell
-# in the criterion bench suite regresses past Criterion's noise
+# Bench regression detector — runs `scripts/bench-regress.sh check` on
+# every PR against a baseline saved on `main`. Fails the workflow if any
+# cell in the criterion bench suite regresses past Criterion's noise
 # threshold.
 #
 # Surface covered (`make bench-save` / `make bench-check`):
@@ -74,11 +74,19 @@ jobs:
       - name: Check vs baseline (PRs + manual)
         if: github.event_name == 'pull_request' || github.event_name == 'workflow_dispatch'
         run: |
-          # Cold cache → bench-check prints "no baseline found" and
-          # exits 2. Treat as neutral: the first PR after CI is stood
-          # up shouldn't fail just because there's no baseline yet.
+          # Call the script DIRECTLY, never through `make`. GNU make exits
+          # 2 for any failed recipe (1 is reserved for `-q`), so going via
+          # `make bench-check` aliases the script's exit 1 (regression
+          # detected) onto its exit 2 (no baseline) — and the cold-start
+          # branch below then soft-passes a real regression as green. The
+          # 0 = clean / 1 = regression / 2 = no baseline contract only
+          # survives an unwrapped call.
+          #
+          # Cold cache → the script prints "no baseline found" and exits 2.
+          # Treat that as neutral: the first PR after CI is stood up
+          # shouldn't fail just because there's no baseline yet.
           set +e
-          make bench-check
+          bash scripts/bench-regress.sh check
           rc=$?
           set -e
           if [ "$rc" -eq 2 ]; then
