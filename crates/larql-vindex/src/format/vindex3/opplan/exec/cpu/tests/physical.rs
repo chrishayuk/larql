@@ -2,8 +2,8 @@
 //! executor's observation must land on the loader's decision.
 
 use super::super::physical::{
-    compact_threshold_bytes, project_matrix, ExecutorProjections, PhysicalProjectionPlan,
-    BF16_BYTES, F32_BYTES,
+    compact_threshold_bytes, project_matrix, project_rows_many, ExecutorProjections,
+    PhysicalProjectionPlan, BF16_BYTES, F32_BYTES,
 };
 use super::super::projector::WeightRows;
 use crate::format::vindex3::opplan::exec::backend::{WeightFormat, WeightSlice};
@@ -335,5 +335,35 @@ fn the_threshold_is_a_plausible_cache_size() {
         (1 << 20..=1 << 30).contains(&bytes),
         "{bytes} is not a plausible L2 size — a threshold this far out would put every matrix \
          on one side"
+    );
+}
+
+/// CPU-7 regression: zero positions must not reach a kernel.
+///
+/// An empty prompt reaches prefill with no rows, and every kernel below
+/// reads the input width off `xs[0]` — the executor, the stationary
+/// sweep and the integer kernel alike. Before the guard this panicked
+/// with `index out of bounds: the len is 0 but the index is 0`, inside
+/// a prefill whose contract is to report "produced no logits" as an
+/// ordinary error. A panic there is not a worse error message; it takes
+/// the server process with it.
+///
+/// The guard returns before the executor pool is touched, so this holds
+/// even where no pool has been stood up.
+#[test]
+fn projecting_zero_positions_yields_no_rows_instead_of_panicking() {
+    let codes = [0i8; 64];
+    let scales = [1.0f32];
+    let rows = WeightRows::Q8 {
+        codes: &codes,
+        scales: &scales,
+        sums: &[],
+        block: 64,
+    };
+    let out = project_rows_many(rows, &[], 4).expect("zero positions is not an error");
+    assert!(
+        out.is_empty(),
+        "zero positions must produce zero rows, got {}",
+        out.len()
     );
 }

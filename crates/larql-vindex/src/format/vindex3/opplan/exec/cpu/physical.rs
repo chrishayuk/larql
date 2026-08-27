@@ -476,6 +476,16 @@ pub fn project_rows_many(
     xs: &[&[f32]],
     out_dim: usize,
 ) -> Result<Vec<Vec<f32>>, VindexError> {
+    // Zero positions is a legitimate input, not a caller bug: an empty
+    // prompt reaches prefill and arrives here with no rows. Projecting
+    // nothing yields nothing, and deciding that HERE keeps every kernel
+    // below free of the case — `xs[0]` on the next line, and the same
+    // read of the input width in the executor, the stationary path and
+    // the integer kernel, would each panic on an empty slice before
+    // prefill could raise its own "produced no logits" error.
+    if xs.is_empty() {
+        return Ok(Vec::new());
+    }
     let plan = PhysicalProjectionPlan::for_resident(weight, xs[0].len());
     Ok(super::shared()?.project_many(plan.kernel(), weight, xs, out_dim))
 }

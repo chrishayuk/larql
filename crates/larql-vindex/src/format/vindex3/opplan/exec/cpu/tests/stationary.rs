@@ -9,9 +9,9 @@
 //! selectors are `OnceLock`-cached, so a test that set one would fix it
 //! for every test that ran after it in the same process.
 
-use super::super::projector::WeightRows;
 use super::super::integer::{q8_row_k3_register, quantise_activation_blocked};
 use super::super::ledger::Site;
+use super::super::projector::WeightRows;
 use super::super::stationary::{
     class_enabled_for, enable_all_classes, enabled, geometry, project_rows_many_with, set_enabled,
     set_enabled_for, supports, supports_with, Geometry,
