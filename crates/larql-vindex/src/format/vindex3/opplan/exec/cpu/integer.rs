@@ -938,8 +938,11 @@ unsafe fn q8_row_b16_register_sdot(
 /// The value that makes the weight scale a constant within a group.
 pub(super) const PER_WEIGHT_B16: usize = 4;
 
-/// The K5 row, reachable from a test whatever the process arm.
-#[cfg(test)]
+/// The K5 row. Its only arm is the NEON one — the fallback below is an
+/// `unimplemented!()`, so every caller is an aarch64-gated test and the
+/// function is gated to match rather than sitting unused (and `-D
+/// warnings`-fatal) on every other target.
+#[cfg(all(test, target_arch = "aarch64"))]
 pub(super) fn q8_row_k3_register(
     codes: &[i8],
     wscales: &[f32],
@@ -956,8 +959,9 @@ pub(super) fn q8_row_k3_register(
     unimplemented!("K5 has no portable arm; the gate runs on aarch64")
 }
 
-/// The K3 SYMMETRIC row, reachable from a test whatever the process arm.
-#[cfg(test)]
+/// The K3 SYMMETRIC row. Gated with its caller: the K5-vs-K3 parity is
+/// the only consumer and that comparison exists only where SDOT does.
+#[cfg(all(test, target_arch = "aarch64"))]
 pub(super) fn q8_row_k3_sym(codes: &[i8], fold_scale: &[f32], qx: &[i8], in_dim: usize) -> f32 {
     #[cfg(target_arch = "aarch64")]
     if has_dotprod() {

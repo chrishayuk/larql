@@ -9,13 +9,22 @@
 //! selectors are `OnceLock`-cached, so a test that set one would fix it
 //! for every test that ran after it in the same process.
 
-use super::super::integer::{q8_row_k3_register, quantise_activation_blocked};
 use super::super::ledger::Site;
 use super::super::projector::WeightRows;
 use super::super::stationary::{
-    class_enabled_for, enable_all_classes, enabled, geometry, project_rows_many_with, set_enabled,
-    set_enabled_for, supports, supports_with, Geometry,
+    class_enabled_for, enable_all_classes, enabled, geometry, set_enabled, set_enabled_for,
+    supports, supports_with, Geometry,
 };
+
+// The sweep itself, and the frozen row it is compared against, exist
+// only on aarch64: `project_rows_many_with` is an `unreachable!()` stub
+// elsewhere because `supports_with` answers `false` there, so production
+// never reaches it. Importing them unconditionally would leave three
+// unused imports on x86, which `-D warnings` rejects.
+#[cfg(target_arch = "aarch64")]
+use super::super::integer::{q8_row_k3_register, quantise_activation_blocked};
+#[cfg(target_arch = "aarch64")]
+use super::super::stationary::project_rows_many_with;
 
 /// Five weight blocks of 64. Not a round power of two on purpose: an
 /// awkward shape has already exposed three bugs a tidy one hid.
@@ -44,6 +53,7 @@ fn weights() -> (Vec<i8>, Vec<f32>) {
     (codes, scales)
 }
 
+#[cfg(target_arch = "aarch64")]
 /// Heavy-tailed, because a residual stream at depth is: one large element
 /// per block is what makes the asymmetric midpoint carry real signal.
 fn activation(seed: usize) -> Vec<f32> {
@@ -68,6 +78,7 @@ fn rows_of<'a>(codes: &'a [i8], scales: &'a [f32]) -> WeightRows<'a> {
     }
 }
 
+#[cfg(target_arch = "aarch64")]
 /// One position at a time, through the frozen row.
 fn reference(codes: &[i8], scales: &[f32], x: &[f32]) -> Vec<f32> {
     let (qx, ascales, amids) = super::super::integer::quantise_activation_asymmetric(x, ACT_BLOCK);
@@ -86,6 +97,7 @@ fn reference(codes: &[i8], scales: &[f32], x: &[f32]) -> Vec<f32> {
         .collect()
 }
 
+#[cfg(target_arch = "aarch64")]
 fn sweep(codes: &[i8], scales: &[f32], xs: &[&[f32]]) -> Vec<Vec<f32>> {
     let n = xs.len();
     let mut flat = vec![0.0f32; ROWS * n];
@@ -97,6 +109,7 @@ fn sweep(codes: &[i8], scales: &[f32], xs: &[&[f32]]) -> Vec<Vec<f32>> {
 
 /// Without this every other test in the file could pass on the looping
 /// default, which is correct arithmetic and the wrong experiment.
+#[cfg(target_arch = "aarch64")]
 #[test]
 fn the_geometry_admits_a_stationary_sweep() {
     let (codes, scales) = weights();
@@ -120,6 +133,7 @@ fn the_geometry_admits_a_stationary_sweep() {
     ));
 }
 
+#[cfg(target_arch = "aarch64")]
 #[test]
 fn every_position_is_bit_identical_to_the_frozen_row() {
     let (codes, scales) = weights();
@@ -145,6 +159,7 @@ fn every_position_is_bit_identical_to_the_frozen_row() {
 
 /// The planted violation. Without it, the test above only shows that a
 /// comparison CAN pass, not that it can fail.
+#[cfg(target_arch = "aarch64")]
 #[test]
 fn perturbing_one_position_moves_that_position_and_no_other() {
     let (codes, scales) = weights();
@@ -179,6 +194,7 @@ fn perturbing_one_position_moves_that_position_and_no_other() {
 /// the `n` vectors would be a different representation wearing a
 /// schedule's name, so it is checked directly: appending a position with
 /// a wildly different dynamic range must not disturb the others.
+#[cfg(target_arch = "aarch64")]
 #[test]
 fn a_loud_neighbour_does_not_change_its_neighbours_quantisation() {
     let (codes, scales) = weights();
@@ -205,6 +221,7 @@ fn a_loud_neighbour_does_not_change_its_neighbours_quantisation() {
 /// Checked against the frozen K5 row with `amids = None` — the same row,
 /// told there is no midpoint term — so this shows the sweep consumes the
 /// symmetric representation faithfully rather than merely consistently.
+#[cfg(target_arch = "aarch64")]
 #[test]
 fn symmetric_coding_is_bit_identical_to_the_frozen_row() {
     const SYM: Geometry = Geometry {

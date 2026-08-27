@@ -960,6 +960,11 @@ fn the_symmetric_path_carries_no_index() {
 /// The frozen quality gates are re-established on the full bank
 /// regardless of what this says. A tolerance passed here licenses
 /// nothing about the model.
+// K3/K5 are the register-folded SDOT rows; off aarch64 the portable
+// definitions run instead and `q8_row_k3_register` is a `todo!()`
+// stub ("K5 has no portable arm; the gate runs on aarch64"). The
+// arithmetic these pin does not exist on this target.
+#[cfg(target_arch = "aarch64")]
 #[test]
 fn k3_moves_the_row_only_at_the_rounding_level() {
     use super::super::integer::{
@@ -1083,6 +1088,11 @@ fn k4_is_bit_identical_to_k3() {
 ///
 /// Asserted for the ASYMMETRIC arm (the candidate) and the SYMMETRIC one
 /// (the control), because K5 changes both.
+// K3/K5 are the register-folded SDOT rows; off aarch64 the portable
+// definitions run instead and `q8_row_k3_register` is a `todo!()`
+// stub ("K5 has no portable arm; the gate runs on aarch64"). The
+// arithmetic these pin does not exist on this target.
+#[cfg(target_arch = "aarch64")]
 #[test]
 fn k5_is_bit_identical_to_k3_on_both_arms() {
     use super::super::integer::{
