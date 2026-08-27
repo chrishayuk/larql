@@ -133,3 +133,200 @@ fn a_slot_works_before_the_policy_can_reach_it() {
         );
     }
 }
+
+/// The realised group width is what turns a disappointing CPU-7C clock
+/// into a diagnosis. At 1.0 the eligible projections never grouped and
+/// the timing is measuring something else entirely, so the number has to
+/// be right in both directions — and it must not divide by zero on a
+/// plan that never ran.
+#[test]
+fn the_group_width_is_positions_per_call_and_zero_when_nothing_ran() {
+    use super::super::ledger::Call;
+
+    let l = ProjectionLedger::default();
+    assert_eq!(
+        l.get(PhysicalProjectionPlan::Q8xQ8).group_width(),
+        0.0,
+        "a plan with no calls must report 0.0, not divide by zero"
+    );
+
+    // Two calls, four positions each: width 4.
+    for _ in 0..2 {
+        l.record_many(
+            PhysicalProjectionPlan::Q8xQ8,
+            Call {
+                bytes: 100,
+                slabs: 1,
+                positions: 4,
+                grouped: true,
+                nanos: 10,
+                nanos_many: 10,
+            },
+        );
+    }
+    assert_eq!(l.get(PhysicalProjectionPlan::Q8xQ8).group_width(), 4.0);
+
+    // One more call serving a single position drags the mean down — the
+    // realised width is an average over calls, not a maximum.
+    l.record_many(
+        PhysicalProjectionPlan::Q8xQ8,
+        Call {
+            bytes: 100,
+            slabs: 1,
+            positions: 1,
+            grouped: false,
+            nanos: 10,
+            nanos_many: 10,
+        },
+    );
+    let t = l.get(PhysicalProjectionPlan::Q8xQ8);
+    assert_eq!(t.calls, 3);
+    assert_eq!(t.positions, 9);
+    assert_eq!(t.group_width(), 3.0);
+}
+
+/// `grouped` is the KERNEL's own answer, never inferred from
+/// `positions > 1` — the looping default also serves several positions
+/// per call, and counting that as grouped would make the ledger agree
+/// with the hope rather than with the machine.
+#[test]
+fn grouped_counts_the_kernels_answer_not_the_position_count() {
+    use super::super::ledger::Call;
+
+    let l = ProjectionLedger::default();
+    // Four positions, but the kernel says it looped.
+    l.record_many(
+        PhysicalProjectionPlan::Q8xQ8,
+        Call {
+            bytes: 10,
+            slabs: 1,
+            positions: 4,
+            grouped: false,
+            nanos: 1,
+            nanos_many: 1,
+        },
+    );
+    assert_eq!(
+        l.get(PhysicalProjectionPlan::Q8xQ8).grouped,
+        0,
+        "positions > 1 must not imply grouped"
+    );
+
+    l.record_many(
+        PhysicalProjectionPlan::Q8xQ8,
+        Call {
+            bytes: 10,
+            slabs: 1,
+            positions: 4,
+            grouped: true,
+            nanos: 1,
+            nanos_many: 1,
+        },
+    );
+    assert_eq!(l.get(PhysicalProjectionPlan::Q8xQ8).grouped, 1);
+}
+
+/// Projection nanoseconds are the NUMERATOR of `g`; the denominator is
+/// the step's wall time, which the ledger cannot see. Summing across
+/// plans is all it may do, and the multi-position share travels beside
+/// the total rather than replacing it.
+#[test]
+fn projection_nanos_sums_across_plans_and_keeps_the_many_share_apart() {
+    use super::super::ledger::Call;
+
+    let l = ProjectionLedger::default();
+    l.record_many(
+        PhysicalProjectionPlan::Q8xQ8,
+        Call {
+            bytes: 1,
+            slabs: 1,
+            positions: 2,
+            grouped: true,
+            nanos: 500,
+            nanos_many: 500,
+        },
+    );
+    l.record_many(
+        PhysicalProjectionPlan::FusedBf16,
+        Call {
+            bytes: 1,
+            slabs: 1,
+            positions: 1,
+            grouped: false,
+            nanos: 300,
+            nanos_many: 0,
+        },
+    );
+
+    let (nanos, nanos_many) = l.projection_nanos();
+    assert_eq!(nanos, 800, "every plan's time must sum");
+    assert_eq!(
+        nanos_many, 500,
+        "only the multi-position entry contributes to the many share"
+    );
+    assert!(
+        nanos_many < nanos,
+        "the share must stay a share, never the whole"
+    );
+}
+
+/// Time is attributed to the class the ISSUING thread was inside. The
+/// guard restores the enclosing class on drop, so nesting cannot leak a
+/// class into its parent's total.
+#[test]
+fn time_lands_in_the_site_the_issuing_thread_declared() {
+    use super::super::ledger::{current_site, in_site, Call, Site};
+
+    let l = ProjectionLedger::default();
+    let call = |nanos| Call {
+        bytes: 1,
+        slabs: 1,
+        positions: 1,
+        grouped: false,
+        nanos,
+        nanos_many: nanos,
+    };
+
+    {
+        let _g = in_site(Site::Ffn);
+        assert_eq!(current_site(), Site::Ffn);
+        l.record_many(PhysicalProjectionPlan::Q8xQ8, call(700));
+        {
+            let _inner = in_site(Site::Attention);
+            l.record_many(PhysicalProjectionPlan::Q8xQ8, call(200));
+        }
+        // The inner guard dropped: the enclosing class must be restored,
+        // or every later call in this scope is misattributed.
+        assert_eq!(current_site(), Site::Ffn, "nesting leaked a class");
+    }
+    assert_eq!(current_site(), Site::Unclassified);
+
+    assert_eq!(l.site(Site::Ffn).nanos, 700);
+    assert_eq!(l.site(Site::Attention).nanos, 200);
+    assert_eq!(
+        l.site(Site::Recurrent),
+        Default::default(),
+        "a class nothing ran in must stay empty"
+    );
+}
+
+/// Each class names itself, and the names are distinct — the name is
+/// what a `g` breakdown is read from, and two classes sharing one would
+/// merge their shares under a single row.
+#[test]
+fn every_site_has_a_distinct_name() {
+    use super::super::ledger::Site;
+
+    let mut names: Vec<&str> = Site::ALL.iter().map(|s| s.name()).collect();
+    assert_eq!(names.len(), 4);
+    names.sort_unstable();
+    names.dedup();
+    assert_eq!(names.len(), 4, "two classes share a name");
+
+    // Distinct bits too: the mask is how a class-selective arm is
+    // expressed, and a collision would switch two classes at once.
+    let mut bits: Vec<u8> = Site::ALL.iter().map(|s| s.bit()).collect();
+    bits.sort_unstable();
+    bits.dedup();
+    assert_eq!(bits.len(), 4, "two classes share a mask bit");
+}

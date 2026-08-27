@@ -10,6 +10,7 @@
 //! placement, RoPE convention, residual order — not shared arithmetic.
 
 mod attention_kv_parity;
+mod backend_rows;
 mod bf16_gemv_bench;
 mod bf16_residency;
 mod compact_consumption;

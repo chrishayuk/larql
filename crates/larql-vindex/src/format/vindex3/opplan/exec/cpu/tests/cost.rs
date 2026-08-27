@@ -112,3 +112,99 @@ fn the_predicted_decode_includes_the_correction_and_the_floor() {
         "predicted decode {slow:.2}-{fast:.2} tok/s, outside CPU-4Y's 6.0-6.3"
     );
 }
+
+/// Every plan the ledger can tally must be priced. The four arms below
+/// are the ones no measured rung exercises — the oracle, the cached
+/// BLAS path, Q4-against-f32, and the bf16 control — and an unpriced
+/// arm would either not compile or, worse, return some neighbour's
+/// rate and make a plan look cheaper than it is.
+#[test]
+fn every_arithmetic_carries_a_rate() {
+    let all = [
+        PhysicalProjectionPlan::ScalarF32,
+        PhysicalProjectionPlan::BlasF32,
+        PhysicalProjectionPlan::FusedBf16,
+        PhysicalProjectionPlan::FusedQ8,
+        PhysicalProjectionPlan::FusedQ4,
+        PhysicalProjectionPlan::Q8xQ8,
+        PhysicalProjectionPlan::Q4xQ8,
+        PhysicalProjectionPlan::Bf16xQ8,
+    ];
+    for p in all {
+        let r = measured_rate_gbps(p);
+        assert!(r > 0.0, "{p:?} has no positive streaming rate");
+    }
+    // The oracle is the slow literal transcription and the cached BLAS
+    // path the fastest; pinning the ordering catches an arm that was
+    // given a neighbour's number.
+    assert!(
+        measured_rate_gbps(PhysicalProjectionPlan::ScalarF32)
+            < measured_rate_gbps(PhysicalProjectionPlan::FusedQ4),
+        "the scalar oracle must be the slowest arm"
+    );
+    assert!(
+        measured_rate_gbps(PhysicalProjectionPlan::BlasF32)
+            > measured_rate_gbps(PhysicalProjectionPlan::Q8xQ8),
+        "cache-resident sgemv must out-rate the streaming integer kernel"
+    );
+    // CPU-4A's finding, and the one rate that surprises: Q4 against an
+    // f32 activation is SLOWER than Q8, because the kernel was already
+    // conversion-bound and the nibble split adds to it.
+    assert!(
+        measured_rate_gbps(PhysicalProjectionPlan::FusedQ4)
+            < measured_rate_gbps(PhysicalProjectionPlan::FusedQ8),
+        "CPU-4A: Q4 x F32 is slower than Q8 x F32, not faster"
+    );
+    // The control streams bf16 bytes, so it must be priced at the bf16
+    // rate exactly — a control priced differently would not be one.
+    assert_eq!(
+        measured_rate_gbps(PhysicalProjectionPlan::Bf16xQ8),
+        measured_rate_gbps(PhysicalProjectionPlan::FusedBf16),
+        "the A1 control runs the bf16 kernel and must carry its rate"
+    );
+}
+
+/// An arithmetic the token never ran carries no bytes. Zero rather than
+/// a panic or a skipped row, because an exception-set search subtracts
+/// `bytes_for` against plans that may legitimately be absent.
+#[test]
+fn bytes_for_an_absent_arithmetic_is_zero() {
+    let b = budget(&[(PhysicalProjectionPlan::Q8xQ8, tally(1_000_000, 4))]);
+    assert_eq!(b.bytes_for(PhysicalProjectionPlan::Q8xQ8), 1_000_000);
+    assert_eq!(
+        b.bytes_for(PhysicalProjectionPlan::FusedQ4),
+        0,
+        "a plan with no calls must price as zero bytes, not panic"
+    );
+}
+
+/// A plan that ran nothing is dropped rather than reported at zero: a
+/// table of eight arithmetics where six are empty invites reading the
+/// empty ones as measurements.
+#[test]
+fn a_plan_with_no_calls_is_not_a_row() {
+    let b = budget(&[
+        (PhysicalProjectionPlan::Q8xQ8, tally(1_000_000, 2)),
+        (PhysicalProjectionPlan::FusedQ4, tally(0, 0)),
+    ]);
+    assert_eq!(b.rows.len(), 1, "the zero-call plan must not appear");
+    assert_eq!(b.rows[0].plan, PhysicalProjectionPlan::Q8xQ8);
+}
+
+/// The floor guards division. A non-positive token time would otherwise
+/// divide to infinity and render as a throughput headline.
+#[test]
+fn a_non_positive_token_time_predicts_zero_not_infinity() {
+    let empty = budget(&[]);
+    assert_eq!(empty.predicted_ms, 0.0);
+    assert_eq!(
+        predicted_tokens_per_second(&empty, 0.0),
+        0.0,
+        "must floor at zero rather than divide by zero"
+    );
+    assert_eq!(
+        predicted_tokens_per_second(&empty, -5.0),
+        0.0,
+        "a negative floor is nonsense input and must not produce a rate"
+    );
+}
