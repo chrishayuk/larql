@@ -34,6 +34,7 @@ pub mod prepared;
 pub mod production;
 pub mod quantise;
 pub mod reference;
+pub mod representation;
 pub mod timing;
 pub mod weights;
 

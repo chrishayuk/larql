@@ -40,6 +40,7 @@ mod observe;
 mod overrides;
 mod parity;
 mod recurrence_shape;
+mod representation;
 mod residency;
 mod residency_census;
 mod routed;
