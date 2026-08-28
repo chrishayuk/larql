@@ -148,6 +148,26 @@ pub trait ContinuationProvider {
         Ok(())
     }
 
+    /// Past position spans this state has RETIRED: no later position's
+    /// attention may read their rows, at any layer.
+    ///
+    /// This is the policy seam the module contract reserved — "the span
+    /// logic, not the store, excludes positions": a provider still holds
+    /// every appended row (indices stay position-aligned), and declares
+    /// here which of those positions the continuation semantically no
+    /// longer contains. The driving traversal forwards the declaration
+    /// into every [`AttentionStepCall`](super::backend::AttentionStepCall)
+    /// after validating that each span lies wholly behind the position
+    /// being computed.
+    ///
+    /// Defaulted to `None` — "nothing retired" — so every existing
+    /// provider keeps today's semantics unchanged. Spans must be
+    /// non-empty; overlap and ordering are the provider's business,
+    /// since exclusion is a set-membership question.
+    fn retired_spans(&self) -> Option<&[std::ops::Range<usize>]> {
+        None
+    }
+
     /// This layer's durable recurrent buffers.
     ///
     /// **Required, and returns a Result rather than an Option.** A
@@ -202,6 +222,42 @@ impl From<ContinuationError> for crate::error::VindexError {
     }
 }
 
+/// The interpreter's check on a provider's retirement declaration,
+/// made before every attention step that will carry it.
+///
+/// `position` is the position about to be computed. Every retired span
+/// must lie wholly behind it — the current row always participates, so
+/// a step's softmax is never empty — and be non-empty, because a
+/// degenerate span is a caller arithmetic bug this should name, not
+/// normalise away. The check belongs to the interpreter, not the
+/// backend: a backend "may not decline work on semantic grounds", so
+/// the judgment that the declaration is coherent has to be made before
+/// the call.
+pub fn validate_retired(
+    retired: Option<&[std::ops::Range<usize>]>,
+    position: usize,
+) -> Result<(), crate::error::VindexError> {
+    let Some(spans) = retired else {
+        return Ok(());
+    };
+    for span in spans {
+        if span.start >= span.end {
+            return Err(crate::error::VindexError::Parse(format!(
+                "retired span {}..{} is empty; a provider must not declare degenerate spans",
+                span.start, span.end
+            )));
+        }
+        if span.end > position {
+            return Err(crate::error::VindexError::Parse(format!(
+                "retired span {}..{} reaches position {position}, which is not yet behind \
+                 this step; retirement applies only to the already-consumed past",
+                span.start, span.end
+            )));
+        }
+    }
+    Ok(())
+}
+
 /// The seam's previous name.
 ///
 /// `KvState` described the runtime model when every layer kept rows. It no
@@ -216,7 +272,7 @@ pub use ContinuationProvider as KvState;
 /// state [`DecodeSession`](super::decode::DecodeSession) used to own
 /// privately, now behind the seam. The decode-vs-batch parity gates
 /// pin that this indirection changed nothing.
-#[derive(Default)]
+#[derive(Clone, Default)]
 pub struct RowKvState {
     layers: Vec<LayerRows>,
     /// Durable recurrent buffers, one slot per layer, `None` on layers
@@ -229,7 +285,7 @@ pub struct RowKvState {
     position: usize,
 }
 
-#[derive(Default)]
+#[derive(Clone, Default)]
 struct LayerRows {
     keys: Vec<Vec<f32>>,
     values: Vec<Vec<f32>>,

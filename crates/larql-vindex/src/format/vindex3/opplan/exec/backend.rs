@@ -492,6 +492,22 @@ pub struct AttentionStepCall<'a> {
     pub keys: &'a [Vec<f32>],
     /// Cached V rows for positions `0..position`.
     pub values: &'a [Vec<f32>],
+    /// Past position spans this step's attention must NOT read —
+    /// continuation-state retirement, declared by the caller's provider
+    /// (see [`ContinuationProvider::retired_spans`]) and validated by
+    /// the interpreter before the call: every span lies wholly before
+    /// `position`, so the current row always participates.
+    ///
+    /// The rows are still physically present in `keys`/`values` at
+    /// their original indices — retirement is a *semantic* exclusion,
+    /// exactly like a sliding window's span, not a storage compaction.
+    /// `None` means nothing is retired. A backend that cannot honour a
+    /// `Some` must refuse the step rather than attend over the full
+    /// prefix — silently reading a retired position would answer a
+    /// different continuation than the one the provider declared.
+    ///
+    /// [`ContinuationProvider::retired_spans`]: super::kv::ContinuationProvider::retired_spans
+    pub retired: Option<&'a [std::ops::Range<usize>]>,
 }
 
 /// One position's projected, conditioned (Q, K, V) — the intermediate

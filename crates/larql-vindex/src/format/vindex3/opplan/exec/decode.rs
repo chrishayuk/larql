@@ -292,11 +292,14 @@ impl<'a, B: PlanBackend> DecodeSession<'a, B> {
                         layer.pre_attention_norm.eps,
                         hidden,
                     );
+                    let retired = self.kv.state().retired_spans();
+                    super::kv::validate_retired(retired, position)?;
                     let out = self.backend.attention_step(AttentionStepCall {
                         op: call,
                         position,
                         keys: self.kv.state().keys(index),
                         values: self.kv.state().values(index),
+                        retired,
                     })?;
                     self.kv.state_mut().append(index, out.key, out.value);
                     out.output

@@ -741,6 +741,16 @@ impl PlanBackend for ProductionBackend {
     }
 
     fn attention_step(&self, step: AttentionStepCall<'_>) -> Result<AttentionStepOut, VindexError> {
+        if step.retired.is_some() {
+            // Attending over the full prefix would answer a different
+            // continuation than the provider declared; the reference
+            // backend is the one that honours retirement today.
+            return Err(VindexError::Parse(
+                "the production backend does not honour retired continuation spans; \
+                 use the reference backend for a retiring session"
+                    .to_string(),
+            ));
+        }
         let call = &step.op;
         let pre = &call.inputs[0];
         let ProjectedAttention {

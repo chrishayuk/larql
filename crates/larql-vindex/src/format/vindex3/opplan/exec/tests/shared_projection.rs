@@ -125,6 +125,7 @@ fn step(call: AttentionCall<'_>) -> Vec<f32> {
             position: 0,
             keys: &[],
             values: &[],
+            retired: None,
         })
         .expect("the tiny fixture attends")
         .output

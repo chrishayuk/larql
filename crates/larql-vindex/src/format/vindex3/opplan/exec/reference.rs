@@ -267,6 +267,7 @@ impl ReferenceBackend {
         key_of: impl Fn(usize) -> &'k [f32],
         value_of: impl Fn(usize) -> &'k [f32],
         gate_input: &[f32],
+        retired: Option<&[std::ops::Range<usize>]>,
     ) -> Result<Vec<f32>, VindexError> {
         Self::attend_position_inner(
             call,
@@ -275,6 +276,7 @@ impl ReferenceBackend {
             key_of,
             value_of,
             gate_input,
+            retired,
             GateMutation::None,
         )
     }
@@ -289,6 +291,7 @@ impl ReferenceBackend {
         key_of: impl Fn(usize) -> &'k [f32],
         value_of: impl Fn(usize) -> &'k [f32],
         gate_input: &[f32],
+        retired: Option<&[std::ops::Range<usize>]>,
         gate_mutation: GateMutation,
     ) -> Result<Vec<f32>, VindexError> {
         let head_dim = call.head_dim;
@@ -304,12 +307,25 @@ impl ReferenceBackend {
             // generic op lowers a perception component today.
             (AttentionSpan::Windowed, _) => 0,
         };
+        // Retirement composes with the span as set intersection: a
+        // position the window already excludes stays excluded, and a
+        // retired position inside the window drops out the same way.
+        // With nothing retired this is the full `start..=position` range
+        // in the same order, so the arithmetic — and therefore the
+        // bits — of the unretired path are unchanged.
+        let participating: Vec<usize> = (start..=position)
+            .filter(|p| match retired {
+                Some(spans) => !spans.iter().any(|span| span.contains(p)),
+                None => true,
+            })
+            .collect();
         let mut concat = vec![0.0f32; q_rows];
         for q_head in 0..call.num_q_heads {
             let kv_head = q_head / group;
             let q_slice = &query[q_head * head_dim..(q_head + 1) * head_dim];
-            let mut scores: Vec<f32> = (start..=position)
-                .map(|key_position| {
+            let mut scores: Vec<f32> = participating
+                .iter()
+                .map(|&key_position| {
                     let k_slice =
                         &key_of(key_position)[kv_head * head_dim..(kv_head + 1) * head_dim];
                     let mut dot = 0.0f32;
@@ -333,7 +349,7 @@ impl ReferenceBackend {
                 None => softmax(&mut scores),
             }
             let head_out = &mut concat[q_head * head_dim..(q_head + 1) * head_dim];
-            for (offset, key_position) in (start..=position).enumerate() {
+            for (offset, &key_position) in participating.iter().enumerate() {
                 let v_slice = &value_of(key_position)[kv_head * head_dim..(kv_head + 1) * head_dim];
                 let weight = scores[offset];
                 for (acc, v) in head_out.iter_mut().zip(v_slice) {
@@ -603,6 +619,7 @@ impl PlanBackend for ReferenceBackend {
                 }
             },
             pre,
+            step.retired,
         )?;
         Ok(AttentionStepOut {
             key: k,
@@ -768,6 +785,10 @@ impl ReferenceBackend {
                     |p| keys[p].as_slice(),
                     |p| values[p].as_slice(),
                     &call.inputs[position],
+                    // The batch entry point carries no continuation
+                    // state, so there is nothing to have retired; the
+                    // retiring traversals both drive `attention_step`.
+                    None,
                     gate_mutation,
                 )
             })

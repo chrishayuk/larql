@@ -43,6 +43,7 @@ mod recurrence_shape;
 mod representation;
 mod residency;
 mod residency_census;
+mod retire;
 mod routed;
 mod seam;
 mod shared_projection;

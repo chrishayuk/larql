@@ -531,6 +531,7 @@ fn a_decode_step_fails_closed_on_a_non_f32_output_projection() {
             position: 0,
             keys: &[],
             values: &[],
+            retired: None,
         })
         .err()
         .expect("a non-f32 output projection must refuse")

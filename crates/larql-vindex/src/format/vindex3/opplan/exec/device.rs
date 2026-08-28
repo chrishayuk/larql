@@ -468,6 +468,17 @@ impl<M: MatMul + Send> PlanBackend for DevicePlanBackend<M> {
     }
 
     fn attention_step(&self, step: AttentionStepCall<'_>) -> Result<AttentionStepOut, VindexError> {
+        if step.retired.is_some() {
+            // Same refusal, same reason as the production backend: the
+            // device aggregation reads the whole span, and a backend
+            // must not silently answer a different continuation than
+            // the provider declared.
+            return Err(VindexError::Parse(
+                "the device backend does not honour retired continuation spans; \
+                 use the reference backend for a retiring session"
+                    .to_string(),
+            ));
+        }
         let call = &step.op;
         let pre = &call.inputs[0];
         let q_rows = call.num_q_heads * call.head_dim;

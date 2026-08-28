@@ -35,6 +35,7 @@ pub mod production;
 pub mod quantise;
 pub mod reference;
 pub mod representation;
+pub mod retire;
 pub mod timing;
 pub mod weights;
 
@@ -819,11 +820,19 @@ fn attention_into_kv<B: PlanBackend + ?Sized, K: KvState + ?Sized>(
     let mut outputs = Vec::with_capacity(inputs.len());
     for offset in 0..inputs.len() {
         let call = operands.call(op, &inputs[offset..=offset], qk_norm_eps, hidden);
+        // The provider's retirement declaration rides along here just as
+        // it does on the decode step: a prefill over a state that has
+        // already retired part of its past computes the new positions
+        // UNDER that retirement, which is what makes the two traversals
+        // answer the same continuation.
+        let retired = kv.retired_spans();
+        kv::validate_retired(retired, base + offset)?;
         let out = backend.attention_step(AttentionStepCall {
             op: call,
             position: base + offset,
             keys: kv.keys(layer_index),
             values: kv.values(layer_index),
+            retired,
         })?;
         kv.append(layer_index, out.key, out.value);
         outputs.push(out.output);

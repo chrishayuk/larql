@@ -188,6 +188,7 @@ fn both_realisations<B: PlanBackend>(
                 position: offset,
                 keys: kv.keys(layer_index),
                 values: kv.values(layer_index),
+                retired: None,
             })
             .unwrap();
         stepped.keys.push(out.key.clone());
@@ -279,6 +280,7 @@ fn stepping_the_same_position_twice_yields_identical_rows() {
                 position,
                 keys: &[],
                 values: &[],
+                retired: None,
             })
             .unwrap()
     };
