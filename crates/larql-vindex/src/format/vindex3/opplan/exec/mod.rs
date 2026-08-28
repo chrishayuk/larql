@@ -38,6 +38,7 @@ pub mod representation;
 pub mod retire;
 pub mod timing;
 pub mod weights;
+pub mod window;
 
 #[cfg(test)]
 mod tests;

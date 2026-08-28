@@ -73,9 +73,21 @@ show retiring them is **bit-for-bit free** (`exec/tests/retire.rs`:
 stack that means: sliding layers only ever need the live window; only the
 global layers retain full history.
 
-**STATE-3 — window-shadow retirement, exact.** Gate: canonical full KV vs
-window-bounded KV → bit-identical logits, while the resident payload
-measurably becomes `O(window)` on sliding layers against `O(context)` on
-global layers, over a context long enough that the curves visibly
-separate. Then integrate the policy into the continuation plan, and
-benchmark real long-context Gemma/Glimmer serving.
+**STATE-3 — window-shadow retirement, exact: BUILT.**
+`exec/window.rs` (`WindowKvState`) physically frees every row in a
+sliding layer's window shadow as it appends, keeping the store
+position-aligned (freed rows become empty husks, so a wrong read is a
+loud panic and the executor contract is untouched — every backend
+qualifies unchanged). Gates (`exec/tests/window.rs`): 61 decode steps
+bit-identical to the full store on the reference AND production
+backends; residency as arithmetic — the sliding layer holds exactly its
+window, the full layer exactly the context, payload bytes agree to the
+byte at two well-separated lengths; the batch prefill frees shadows as
+it goes; the KV-only refusal names the provider. What is bounded is the
+payload (`4·kv_dim` B/row vs ~24 B of husk metadata); a flat
+representation that also bounds the metadata is a later storage rung.
+
+Next: integrate the policy into the continuation plan (the geometry
+should carry the span so the provider stops trusting `window` alone),
+then the real-model long-context residency/throughput bench — Gemma 3
+4B via capability-scoped encode (29 sliding + 5 global) or Glimmer.

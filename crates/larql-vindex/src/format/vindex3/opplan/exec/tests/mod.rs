@@ -51,6 +51,7 @@ mod sinks_bias;
 mod smoke;
 mod streaming;
 mod timing;
+mod window;
 
 // The fixture writers and geometry moved to the public
 // `format::vindex3::fixtures` module (so sibling crates' integration
