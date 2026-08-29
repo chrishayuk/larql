@@ -10,6 +10,19 @@ pub enum LqlError {
 
     #[error("Mutation requires a vindex. Run EXTRACT first.")]
     MutationRequiresVindex,
+
+    /// A capability profile declined the statement after parsing,
+    /// before execution. Distinct from `Execution` so an embedding
+    /// surface can map it faithfully (a server answers 403, not 500):
+    /// nothing failed — the session's profile does not serve this.
+    #[error(
+        "{statement} is not available under the {profile} profile. This profile serves: {served}."
+    )]
+    Refused {
+        profile: String,
+        statement: String,
+        served: String,
+    },
 }
 
 impl LqlError {

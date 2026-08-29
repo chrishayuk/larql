@@ -17,6 +17,7 @@ pub mod ffn_l2_cache;
 pub mod grpc;
 pub mod grpc_expert;
 pub mod http;
+pub mod lql_bridge;
 pub mod maintenance;
 pub mod memcheck;
 pub mod metrics;

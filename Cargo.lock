@@ -2470,6 +2470,7 @@ dependencies = [
  "larql-compute-metal",
  "larql-inference",
  "larql-kv",
+ "larql-lql",
  "larql-models",
  "larql-router",
  "larql-router-protocol",
