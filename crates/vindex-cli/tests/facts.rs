@@ -70,7 +70,7 @@ fn describe_refuses_an_unknown_address_by_naming_the_holdings() {
 fn precision_is_derived_from_bytes_over_elements_never_asserted() {
     let dir = container();
     let v = precision_facts(dir.path()).unwrap();
-    let eff = v["effective_bits_per_weight"].as_f64().unwrap();
+    let eff = v["stored_bits_per_weight_slot"].as_f64().unwrap();
     // The miniature encodes F32 source tensors: 32 bits per weight.
     assert!(
         (eff - 32.0).abs() < 0.5,

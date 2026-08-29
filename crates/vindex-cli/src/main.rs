@@ -101,8 +101,8 @@ fn render_inspect(v: &Value) {
             "{:<22} {:<16} {:>7} {:>8}",
             c["id"].as_str().unwrap_or("?"),
             c["role"].as_str().unwrap_or("?"),
-            c["num_layers"],
-            c["hidden_size"]
+            c["num_layers"].as_u64().unwrap_or(0),
+            c["hidden_size"].as_u64().unwrap_or(0)
         );
     }
     println!();
@@ -132,8 +132,8 @@ fn render_representations(v: &Value) {
             e["id"].as_str().unwrap_or("?"),
             e["encoding"].as_str().unwrap_or("?"),
             e["fidelity"].as_str().unwrap_or("—"),
-            e["tensor_count"],
-            e["payload_bytes"]
+            e["tensor_count"].as_u64().unwrap_or(0),
+            e["payload_bytes"].as_u64().unwrap_or(0)
         );
     }
 }
@@ -185,18 +185,21 @@ fn render_precision(v: &Value) {
             "{:<34} {:<10} {:>16} {:>14} {:>10.4}",
             e["id"].as_str().unwrap_or("?"),
             e["encoding"].as_str().unwrap_or("?"),
-            e["weights"],
-            e["payload_bytes"],
+            e["weights"].as_u64().unwrap_or(0),
+            e["payload_bytes"].as_u64().unwrap_or(0),
             e["bits_per_weight"].as_f64().unwrap_or(0.0)
         );
     }
     println!();
-    kv("weights", &v["total_weights"]);
     kv(
-        "effective",
+        "weight slots",
+        v["total_weight_slots"].as_u64().unwrap_or(0),
+    );
+    kv(
+        "stored",
         format!(
-            "{:.4} bits / weight",
-            v["effective_bits_per_weight"].as_f64().unwrap_or(0.0)
+            "{:.4} bits / weight slot, across every representation carried — an archival container counts each representation of an object; the execution-relevant figure is the BITS/W of the representation a profile selects",
+            v["stored_bits_per_weight_slot"].as_f64().unwrap_or(0.0)
         ),
     );
     if !v["precision_map"].is_null() {
