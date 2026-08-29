@@ -194,6 +194,47 @@ async fn mutating_routes_are_not_mounted() {
     }
 }
 
+/// The typed container facts — the protocol's read nouns — answer
+/// with structure a client can render, from the container alone.
+#[tokio::test]
+async fn container_facts_answer_typed() {
+    let container = v3_container();
+    let app = public_app(container.path());
+
+    let get = |uri: &'static str| {
+        let app = app.clone();
+        async move {
+            let req = Request::builder().uri(uri).body(Body::empty()).unwrap();
+            let response = app.oneshot(req).await.unwrap();
+            assert_eq!(response.status(), StatusCode::OK, "{uri}");
+            let bytes = axum::body::to_bytes(response.into_body(), usize::MAX)
+                .await
+                .unwrap();
+            serde_json::from_slice::<serde_json::Value>(&bytes).unwrap()
+        }
+    };
+
+    let components = get("/v1/components").await;
+    assert_eq!(components["components"][0]["id"], "target", "{components}");
+    assert!(components["coherent"].as_bool().unwrap(), "{components}");
+
+    let reps = get("/v1/representations").await;
+    assert!(!reps["entries"].as_array().unwrap().is_empty(), "{reps}");
+
+    let prov = get("/v1/provenance").await;
+    let first = &prov["entries"][0];
+    assert!(
+        first["payload_sha256"].as_str().unwrap().len() >= 32,
+        "{prov}"
+    );
+
+    let auth = get("/v1/authority").await;
+    assert!(
+        auth["authority"] == "canonical" || auth["authority"] == "derived",
+        "{auth}"
+    );
+}
+
 /// The read-only REST routes stay available beside /v1/query — the
 /// protocol has two dialects (REST nouns and LQL statements) over one
 /// state.

@@ -1,5 +1,6 @@
 //! Router setup — maps URL paths to handlers.
 
+pub mod container_facts;
 pub mod describe;
 pub mod embed;
 pub mod expert;
@@ -74,6 +75,10 @@ const TOKEN_DECODE: &str = "/v1/token/decode";
 // freshly-assigned spare server can mirror the shard locally.
 const SHARD: &str = "/v1/shard/{model_id}/{range}";
 const QUERY: &str = "/v1/query";
+const COMPONENTS: &str = "/v1/components";
+const REPRESENTATIONS: &str = "/v1/representations";
+const PROVENANCE: &str = "/v1/provenance";
+const AUTHORITY: &str = "/v1/authority";
 
 const OPENAI_EMBEDDINGS: &str = "/v1/embeddings";
 const OPENAI_COMPLETIONS: &str = "/v1/completions";
@@ -116,6 +121,13 @@ pub fn public_explorer_router(
         .route(WALK, get(walk::handle_walk))
         .route(RELATIONS, get(relations::handle_relations))
         .route(STATS, get(stats::handle_stats))
+        .route(COMPONENTS, get(container_facts::handle_components))
+        .route(
+            REPRESENTATIONS,
+            get(container_facts::handle_representations),
+        )
+        .route(PROVENANCE, get(container_facts::handle_provenance))
+        .route(AUTHORITY, get(container_facts::handle_authority))
         .with_state(state)
         .merge(
             Router::new()
