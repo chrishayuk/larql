@@ -4,7 +4,10 @@
 //! resolution — and must not take unrelated per-layer facts (rope theta)
 //! down with it.
 
-use super::support::{glimmer_shaped_target_with, FIXTURE_LAYERS};
+use super::support::{
+    declare_gated_delta_geometry, declare_hybrid_cadence, glimmer_shaped_target_with,
+    FIXTURE_LAYERS,
+};
 use crate::format::vindex3::plan::{plan_system, Finding, FindingCategory, SemanticClass};
 
 /// The Glimmer-shaped fixture with its `layer_types` swapped for a
@@ -15,23 +18,8 @@ use crate::format::vindex3::plan::{plan_system, Finding, FindingCategory, Semant
 fn hybrid_findings() -> Vec<Finding> {
     let dir = tempfile::tempdir().unwrap();
     let inventory = glimmer_shaped_target_with(dir.path(), |config| {
-        let layer_types: Vec<&str> = (0..FIXTURE_LAYERS)
-            .map(|i| {
-                if i % 4 == 3 {
-                    "full_attention"
-                } else {
-                    "linear_attention"
-                }
-            })
-            .collect();
-        config["text_config"]["layer_types"] = serde_json::json!(layer_types);
-        config["text_config"]["full_attention_interval"] = serde_json::json!(4);
-        config["text_config"]["linear_conv_kernel_dim"] = serde_json::json!(4);
-        config["text_config"]["linear_key_head_dim"] = serde_json::json!(16);
-        config["text_config"]["linear_value_head_dim"] = serde_json::json!(16);
-        config["text_config"]["linear_num_key_heads"] = serde_json::json!(2);
-        config["text_config"]["linear_num_value_heads"] = serde_json::json!(4);
-        config["text_config"]["mamba_ssm_dtype"] = serde_json::json!("float32");
+        declare_hybrid_cadence(config);
+        declare_gated_delta_geometry(config);
         config["text_config"]["attn_output_gate"] = serde_json::json!(true);
         config["text_config"]["output_gate_type"] = serde_json::json!("swish");
         config["text_config"]["mtp_num_hidden_layers"] = serde_json::json!(1);
@@ -185,17 +173,11 @@ fn the_declared_cadence_is_carried_into_the_graph_layer_by_layer() {
 
     let dir = tempfile::tempdir().unwrap();
     let inventory = glimmer_shaped_target_with(dir.path(), |config| {
-        let layer_types: Vec<&str> = (0..FIXTURE_LAYERS)
-            .map(|i| {
-                if i % 4 == 3 {
-                    "full_attention"
-                } else {
-                    "linear_attention"
-                }
-            })
-            .collect();
-        config["text_config"]["layer_types"] = serde_json::json!(layer_types);
-        config["text_config"]["full_attention_interval"] = serde_json::json!(4);
+        declare_hybrid_cadence(config);
+        // Required for the layers to grade `GatedDelta` at all — without
+        // it they are an *unidentified* recurrence, which is what
+        // `an_unidentified_recurrence_is_never_graded_gated_delta` pins.
+        declare_gated_delta_geometry(config);
     });
     let built = build_from_inventories(&[("target-artifact".to_string(), inventory)]);
     let table = built

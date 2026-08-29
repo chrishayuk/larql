@@ -21,6 +21,7 @@ use crate::architectures::generic::GenericArch;
 use crate::architectures::gpt2::Gpt2Arch;
 use crate::architectures::gpt_oss::GptOssArch;
 use crate::architectures::granite::GraniteArch;
+use crate::architectures::kimi::KimiLinearArch;
 use crate::architectures::llama::LlamaArch;
 use crate::architectures::mistral::MistralArch;
 use crate::architectures::mixtral::MixtralArch;
@@ -160,6 +161,11 @@ pub fn detect_from_json(config: &serde_json::Value) -> Box<dyn ModelArchitecture
         "deepseek_v4" => Box::new(DeepSeekV4Arch::from_config(model_config)),
         // DeepSeek V2/V3 family (MoE + MLA, model.* prefixed keys)
         t if t.starts_with("deepseek") => Box::new(DeepSeekArch::from_config(model_config)),
+        // Kimi Linear (hybrid KDA/MLA + sigmoid-routed MoE, bias-corrected
+        // selection, shared expert) — `block_sparse_moe.*` keys distinct
+        // from both the DeepSeek lineage and Mixtral's routing/shared-
+        // expert semantics, though it reuses Mixtral's `w1/w2/w3` spelling.
+        "kimi_linear" => Box::new(KimiLinearArch::from_config(model_config)),
         // StarCoder 2
         "starcoder2" => Box::new(StarCoder2Arch::from_config(model_config)),
         // Granite family (dense and MoE share same base keys)

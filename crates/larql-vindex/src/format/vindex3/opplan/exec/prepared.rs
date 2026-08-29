@@ -409,6 +409,29 @@ impl PreparedOperands {
                     LayerAttention::Softmax(op) => PreparedAttention::Softmax(Box::new(
                         AttentionOperands::load(op, store, &attention_format)?,
                     )),
+                    // No executor exists for this operator yet. The
+                    // operands are bound and the geometry is stated, but
+                    // binding is not running: preparing a KDA layer as
+                    // anything else would execute the wrong recurrence on
+                    // correctly-bound tensors, which is the failure the
+                    // separate variant exists to make impossible.
+                    LayerAttention::Kda(_) => {
+                        return Err(VindexError::Parse(
+                            "KDA (Kimi Delta Attention) layers are represented but not \
+                             executable: no executor exists for this operator"
+                                .to_string(),
+                        ))
+                    }
+                    // Same posture as KDA above: represented, not
+                    // executable. MLA's operands are bound and its
+                    // geometry is stated, but no executor consumes them.
+                    LayerAttention::Mla(_) => {
+                        return Err(VindexError::Parse(
+                            "MLA (Multi-Latent Attention) layers are represented but not \
+                             executable: no executor exists for this operator"
+                                .to_string(),
+                        ))
+                    }
                     LayerAttention::GatedDelta(op) => {
                         PreparedAttention::GatedDelta(Box::new(GatedDeltaOperands::load(
                             op,

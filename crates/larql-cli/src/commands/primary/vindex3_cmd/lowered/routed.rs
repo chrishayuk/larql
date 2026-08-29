@@ -98,6 +98,14 @@ fn routing_policy(kind: larql_models::MoeRouterKind) -> larql_compute::MoeRoutin
         larql_models::MoeRouterKind::TopKSoftmax => MoeRoutingPolicy::top_k_softmax(),
         larql_models::MoeRouterKind::TopKThenSoftmax => MoeRoutingPolicy::top_k_then_softmax(),
         larql_models::MoeRouterKind::Gemma4Hybrid => MoeRoutingPolicy::gemma4_hybrid(),
+        // Represented, not executable — see
+        // `larql_compute::pipeline_layer::moe_build::moe_routing_policy`.
+        // Every policy here normalises across experts in a way sigmoid
+        // does not, so substituting one produces plausible, wrong
+        // expert weights.
+        larql_models::MoeRouterKind::Sigmoid => {
+            unimplemented!("sigmoid expert routing is represented but not executable")
+        }
     }
 }
 
@@ -322,6 +330,21 @@ fn build_routed(
             layer.layer, op.expert_format
         ))
     })?;
+    // The `expert_qformat` refusal above already rejects
+    // `ExpertFormat::PerExpert`, so this is a packed bank whenever it is
+    // reached — stated again here rather than trusted, the same posture
+    // `packed_bank`'s own exhaustive match takes.
+    let larql_vindex::format::vindex3::opplan::ExpertBank::Packed {
+        gate_up: gate_up_projection,
+        down: down_projection,
+    } = &op.bank
+    else {
+        return Err(VindexError::Parse(format!(
+            "layer {}: routed FFN op carries a per-expert (unfused) bank; the descriptor MoE \
+             path has no lowering arm for it",
+            layer.layer
+        )));
+    };
     let fused_row_layout = fused_row_layout(op.gate_up_layout.ok_or_else(|| {
         VindexError::Parse(format!(
             "layer {}: routed FFN carries no gate_up layout",
@@ -352,7 +375,7 @@ fn build_routed(
     const FUSED: usize = larql_models::quant::mxfp4::FUSED_HALVES;
     let (gate_up_blocks, gate_up_scales) = packed_bank(
         store,
-        &op.gate_up,
+        gate_up_projection,
         op.expert_format,
         experts,
         FUSED * inter,
@@ -362,7 +385,7 @@ fn build_routed(
     )?;
     let (down_blocks, down_scales) = packed_bank(
         store,
-        &op.down,
+        down_projection,
         op.expert_format,
         experts,
         hidden,
@@ -397,8 +420,8 @@ fn build_routed(
         };
     let router_proj = store.load(&op.router)?;
     let router_bias = f32_or_empty(op.router_bias.as_ref())?;
-    let gate_up_bias = f32_or_empty(op.gate_up.bias.as_ref())?;
-    let down_bias = f32_or_empty(op.down.bias.as_ref())?;
+    let gate_up_bias = f32_or_empty(gate_up_projection.bias.as_ref())?;
+    let down_bias = f32_or_empty(down_projection.bias.as_ref())?;
     let pre_ffn_norm = store.load(&layer.pre_ffn_norm.weight)?;
     let gate_rule = larql_compute::MoeGateRule::from_arch(op.gate_policy, op.activation);
 

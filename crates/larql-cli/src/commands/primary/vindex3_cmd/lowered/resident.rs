@@ -364,7 +364,11 @@ pub(super) fn rope_table_key(position: &PositionPolicy, head_dim: usize) -> Opti
         // is never asked for. `None` rather than a hash keeps a
         // half-built session from sharing a table with plain rope.
         PositionPolicy::MRope { .. } => None,
-        PositionPolicy::None => None,
+        // A relative scheme has no rotary table to key, and no lowering
+        // consumes it. `None` here means "no table", which is the truthful
+        // answer for a policy that does not rotate; execution refuses
+        // separately rather than running unpositioned.
+        PositionPolicy::Relative { .. } | PositionPolicy::None => None,
     }
 }
 
@@ -383,7 +387,7 @@ pub(super) fn rope_inv_freq_table(position: &PositionPolicy, head_dim: usize) ->
                 );
             inv_freq.iter().map(|f| *f as f32).collect()
         }
-        PositionPolicy::None => Vec::new(),
+        PositionPolicy::Relative { .. } | PositionPolicy::None => Vec::new(),
         // Head-width basis: the interpreter's own table (zeros above the
         // fraction → identity rotation on those pairs). The rotary-width
         // basis rotates a prefix as its own block, which the rope kernel

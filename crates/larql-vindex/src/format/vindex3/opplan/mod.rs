@@ -26,6 +26,8 @@
 pub mod build;
 pub mod exec;
 pub mod gated_delta;
+pub mod kda;
+pub mod mla;
 
 #[cfg(test)]
 mod tests;
@@ -41,6 +43,8 @@ use super::graph::{ObjectKind, OperandRole};
 
 pub use build::plan_component_ops;
 pub use gated_delta::GatedDeltaOp;
+pub use kda::KdaOp;
+pub use mla::MlaOp;
 
 /// One kernel argument: a logical object plus its segment-relative tensor.
 #[derive(Debug, Clone, PartialEq, Serialize)]
@@ -172,6 +176,62 @@ pub struct PackedProjection {
     pub bias: Option<OperandRef>,
 }
 
+/// How one layer's expert weights are bound.
+///
+/// `Packed` when the checkpoint already fuses every expert's gate+up into
+/// one operand (and down into another) — MXFP4 blocks or unquantised BF16.
+/// `PerExpert` when it ships three wholly separate tensors PER expert
+/// (`ExpertFormat::PerExpert` — Kimi Linear, Mixtral, DeepSeek): there is
+/// no fused gate+up operand to name, so the variant carries gate, up and
+/// down as three independent lists rather than reusing [`PackedProjection`]
+/// with a placeholder — `PackedProjection::weights` is not optional, and a
+/// per-expert layer inventing one to fill it is exactly the
+/// silently-wrong shape this crate refuses everywhere else.
+///
+/// `PerExpert`'s lists are ordered by expert index (`gate[i]` is expert
+/// `i`'s gate projection). No executor reads this arm yet; [`super::exec`]
+/// refuses it explicitly rather than misinterpret it as a packed bank of
+/// one expert.
+#[derive(Debug, Clone, PartialEq, Serialize)]
+#[serde(tag = "storage", rename_all = "snake_case")]
+pub enum ExpertBank {
+    // Boxed: `PerExpert`'s three empty `Vec`s are 24 bytes each, and an
+    // unboxed pair of `PackedProjection`s (each an `OperandRef` — a
+    // `String` shape/tensor/dtype plus two `Option<OperandRef>`s — nearly
+    // 300 bytes) would size every `PerExpert` value at the packed
+    // variant's width for no reason.
+    Packed {
+        gate_up: Box<PackedProjection>,
+        down: Box<PackedProjection>,
+    },
+    PerExpert {
+        gate: Vec<OperandRef>,
+        up: Vec<OperandRef>,
+        down: Vec<OperandRef>,
+    },
+}
+
+/// The always-active shared expert(s) beside the routed selection —
+/// DeepSeek-lineage and Kimi Linear's `shared_experts`. Every token reads
+/// this branch; the router's top-k never gates it. Distinct from Gemma 4's
+/// hybrid dense MLP ([`HybridFfnOp::dense`]): that branch is summed with
+/// its OWN norm pair, this one is summed with the routed branch unscaled
+/// (`routed_scaling_factor` multiplies only the routed weights — Kimi's
+/// `KimiSparseMoeBlock.forward`: `y = moe(...); y = y +
+/// shared_experts(identity)`).
+#[derive(Debug, Clone, PartialEq, Serialize)]
+pub struct SharedExpertOp {
+    /// `moe_intermediate_size * shared_experts` — the checkpoint sizes one
+    /// wider FFN rather than `shared_experts` separate ones (`KimiMLP`'s
+    /// `intermediate_size` in `KimiSparseMoeBlock.__init__`).
+    pub intermediate_size: usize,
+    pub activation: Activation,
+    pub gate_policy: larql_models::ExpertGatePolicy,
+    pub gate: OperandRef,
+    pub up: OperandRef,
+    pub down: OperandRef,
+}
+
 /// One layer's routed FFN op — a mixture of experts, entirely inside the
 /// generic graph: the router operands live in the decoder stack, the
 /// expert operands in the component's expert-bank object, and every
@@ -207,11 +267,15 @@ pub struct RoutedFfnOp {
     pub router_per_expert_scale: Option<OperandRef>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub router_norm_eps: Option<f64>,
-    /// Fused gate+up per expert: `[experts, 2·inter, hidden]` in the
-    /// declared layout (packed as the format dictates).
-    pub gate_up: PackedProjection,
-    /// Down per expert: `[experts, hidden, inter]`.
-    pub down: PackedProjection,
+    /// Every expert's gate/up/down projections, packed or per-expert per
+    /// [`Self::expert_format`].
+    pub bank: ExpertBank,
+    /// The always-active shared expert(s), when the judgment declares any.
+    /// `None` and `shared_experts == 0` in [`FfnSurface::moe`]'s judgment
+    /// agree by construction — see [`build::plan_component_ops`]'s closure
+    /// pass, which requires the operand set iff this would be `Some`.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub shared: Option<SharedExpertOp>,
 }
 
 /// Gemma 4's hybrid FFN: a dense MLP and a routed expert block in ONE
@@ -252,17 +316,25 @@ pub struct HybridFfnOp {
 pub enum LayerAttention {
     Softmax(Box<AttentionOp>),
     GatedDelta(Box<GatedDeltaOp>),
+    /// Kimi Delta Attention — its own variant, not a `GatedDelta` with
+    /// different numbers. See [`kda`] for why the two cannot share one.
+    Kda(Box<KdaOp>),
+    /// Multi-Latent Attention — its own variant, not a `Softmax` with
+    /// different operand names. See [`mla`] for why the two cannot share
+    /// one: the compressed-KV operands have no softmax counterpart, and
+    /// the shared `q_proj`/`o_proj` SUFFIXES are a different WIDTH.
+    Mla(Box<MlaOp>),
 }
 
 impl LayerAttention {
     /// The softmax op, when this layer attends by softmax. `None` on a
-    /// DeltaNet layer — which is the point: a consumer that needs a span,
-    /// a KV shape or a head geometry must handle the absence rather than
-    /// receive a fabricated one.
+    /// DeltaNet or MLA layer — which is the point: a consumer that needs
+    /// a span, a KV shape or a head geometry must handle the absence
+    /// rather than receive a fabricated one.
     pub fn softmax(&self) -> Option<&AttentionOp> {
         match self {
             Self::Softmax(op) => Some(op.as_ref()),
-            Self::GatedDelta(_) => None,
+            Self::GatedDelta(_) | Self::Kda(_) | Self::Mla(_) => None,
         }
     }
 
@@ -270,15 +342,52 @@ impl LayerAttention {
     pub fn softmax_mut(&mut self) -> Option<&mut AttentionOp> {
         match self {
             Self::Softmax(op) => Some(op.as_mut()),
-            Self::GatedDelta(_) => None,
+            Self::GatedDelta(_) | Self::Kda(_) | Self::Mla(_) => None,
         }
     }
 
-    /// The Gated DeltaNet op, when this layer is a linear-attention layer.
+    /// The Gated DeltaNet op, when this layer runs that recurrence.
+    ///
+    /// `None` on a KDA layer — the two are different operators, and a
+    /// consumer that wants "whichever recurrence this is" must ask for
+    /// each rather than receive one standing in for the other.
     pub fn gated_delta(&self) -> Option<&GatedDeltaOp> {
         match self {
             Self::GatedDelta(op) => Some(op.as_ref()),
-            Self::Softmax(_) => None,
+            Self::Softmax(_) | Self::Kda(_) | Self::Mla(_) => None,
+        }
+    }
+
+    /// The KDA op, when this layer runs Kimi Delta Attention.
+    pub fn kda(&self) -> Option<&KdaOp> {
+        match self {
+            Self::Kda(op) => Some(op.as_ref()),
+            Self::Softmax(_) | Self::GatedDelta(_) | Self::Mla(_) => None,
+        }
+    }
+
+    /// The MLA op, when this layer runs Multi-Latent Attention.
+    pub fn mla(&self) -> Option<&MlaOp> {
+        match self {
+            Self::Mla(op) => Some(op.as_ref()),
+            Self::Softmax(_) | Self::GatedDelta(_) | Self::Kda(_) => None,
+        }
+    }
+
+    /// Elements of recurrent state this layer retains, or `None` when it
+    /// keeps a per-position cache instead — a softmax OR an MLA layer:
+    /// MLA compresses the cache, it does not remove it, so it answers
+    /// `None` here exactly as plain softmax does, not a state-elements
+    /// count.
+    ///
+    /// The question a KV planner asks once a stack may hold either
+    /// recurrence: both answer in state elements, and neither answers in
+    /// positions.
+    pub fn recurrent_state_elements(&self) -> Option<usize> {
+        match self {
+            Self::Softmax(_) | Self::Mla(_) => None,
+            Self::GatedDelta(op) => Some(op.state_elements()),
+            Self::Kda(op) => Some(op.state_elements()),
         }
     }
 
@@ -288,7 +397,11 @@ impl LayerAttention {
     pub fn declared_name(&self) -> &'static str {
         match self {
             Self::Softmax(op) => op.span.declared_name(),
-            Self::GatedDelta(_) => larql_models::config::LAYER_TYPE_LINEAR_ATTENTION,
+            Self::GatedDelta(_) | Self::Kda(_) => larql_models::config::LAYER_TYPE_LINEAR_ATTENTION,
+            // MLA has no `layer_types` spelling of its own — see
+            // `graph::policy::AttentionLayerPolicy::declared_name`'s
+            // identical judgment.
+            Self::Mla(_) => AttentionSpan::Full.declared_name(),
         }
     }
 }

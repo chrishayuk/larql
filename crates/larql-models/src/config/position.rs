@@ -95,6 +95,23 @@ pub enum PositionPolicy {
         /// contiguous blocks (`TTT…HHH…WWW…`).
         interleaved: bool,
     },
+    /// A **relative** position scheme: position enters through a learned
+    /// relative term of width `d_rel` over a bounded `extent`, not through
+    /// any rotation of Q/K.
+    ///
+    /// Its own variant for the reason [`Self::Yarn`] and [`Self::MRope`]
+    /// are: a consumer that only knows rotary would otherwise be handed a
+    /// `theta` this checkpoint never declared and rotate a model that does
+    /// not rotate. Inkling-Small is the case — `d_rel: 16`,
+    /// `rel_extent: 1024`, and no rope key anywhere — and before this
+    /// variant it resolved to `Rope { theta }` at the parser's default
+    /// base, on all 42 layers.
+    ///
+    /// **Declared, not executable.** No backend consumes this yet; the
+    /// variant exists so the graph can say what the checkpoint said
+    /// instead of inventing a rotation, and so execution refuses
+    /// explicitly rather than running the wrong operator.
+    Relative { d_rel: usize, extent: usize },
     /// No positional encoding — the layer attends position-agnostically.
     None,
 }
@@ -178,7 +195,8 @@ impl PositionPolicy {
             | Self::Yarn { theta, .. }
             | Self::PartialRope { theta, .. }
             | Self::MRope { theta, .. } => Some(theta),
-            Self::None => None,
+            // A relative scheme has no base: it does not rotate.
+            Self::Relative { .. } | Self::None => None,
         }
     }
 
@@ -193,7 +211,7 @@ impl PositionPolicy {
             | Self::MRope {
                 rotary_fraction, ..
             } => Some(rotary_fraction),
-            Self::Rope { .. } | Self::Yarn { .. } | Self::None => None,
+            Self::Rope { .. } | Self::Yarn { .. } | Self::Relative { .. } | Self::None => None,
         }
     }
 
@@ -224,6 +242,7 @@ impl PositionPolicy {
                 ..
             }
             | Self::Rope { .. }
+            | Self::Relative { .. }
             | Self::None => None,
         }
     }
@@ -233,7 +252,11 @@ impl PositionPolicy {
     pub fn yarn(self) -> Option<YarnRopeScaling> {
         match self {
             Self::Yarn { scaling, .. } => Some(scaling),
-            Self::Rope { .. } | Self::PartialRope { .. } | Self::MRope { .. } | Self::None => None,
+            Self::Rope { .. }
+            | Self::PartialRope { .. }
+            | Self::MRope { .. }
+            | Self::Relative { .. }
+            | Self::None => None,
         }
     }
 
@@ -247,7 +270,11 @@ impl PositionPolicy {
                 interleaved,
                 ..
             } => Some((section, interleaved)),
-            Self::Rope { .. } | Self::Yarn { .. } | Self::PartialRope { .. } | Self::None => None,
+            Self::Rope { .. }
+            | Self::Yarn { .. }
+            | Self::PartialRope { .. }
+            | Self::Relative { .. }
+            | Self::None => None,
         }
     }
 

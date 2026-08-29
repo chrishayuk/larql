@@ -29,6 +29,7 @@
 //! The verdict is fail-closed and the exit gate is mechanical:
 //! `blocking == 0` before a single weight byte is converted.
 
+mod attention_policy;
 pub mod capability;
 pub mod carriage;
 pub mod compare;
@@ -523,70 +524,20 @@ fn attention_policy_findings(artifact: &str, built: &BuiltGraph) -> Vec<Finding>
         .filter(|c| c.source_artifact == artifact && c.role != ComponentRole::Perception)
         .filter_map(|component| {
             let table = component.attention.as_ref()?;
-            // Buckets are disjoint by construction: an unfaithful layer
-            // is counted only as `unexpressed`, and a recurrence is
-            // counted only as `recurrent`, so no layer contributes twice
-            // and `full` stays a real remainder.
-            let unexpressed = table.iter().filter(|l| !l.matches_declaration()).count();
-            let recurrent = table
-                .iter()
-                .filter(|l| l.operator == super::graph::LayerOperator::GatedDelta)
-                .count();
-            let sliding = table
-                .iter()
-                .filter(|l| {
-                    l.matches_declaration()
-                        && l.span == Some(super::graph::policy::AttentionSpan::Sliding)
-                })
-                .count();
-            let nope = table
-                .iter()
-                .filter(|l| l.position == larql_models::config::PositionPolicy::None)
-                .count();
-            // A layer whose own declared spelling this schema still has
-            // no way to express. Before QW-3.5A every `linear_attention`
-            // layer landed here and was reported as "defaulted to full";
-            // they are now `recurrent` and counted as themselves, so what
-            // remains here is a genuinely unknown spelling.
-            let full = table.len() - sliding - recurrent - unexpressed;
+            let census = attention_policy::AttentionCensus::of(table);
             Some(Finding {
-                category: FindingCategory::Representable,
+                category: if census.blocks() {
+                    FindingCategory::Unrepresented
+                } else {
+                    FindingCategory::Representable
+                },
                 class: SemanticClass::ExecutionSemantic,
                 component: component.id.clone(),
                 subject: "attention_policy".to_string(),
                 declared: None,
                 resolved: None,
                 carriage: None,
-                // Each clause appears only when it describes a non-zero
-                // count. A clause that is always present states nothing
-                // when its count is zero, and a gate asserting on such a
-                // clause passes without testing anything — which is what
-                // the fixed "declared span(s) …" wording did as soon as
-                // `linear_attention` stopped landing there.
-                detail: if unexpressed > 0 || recurrent > 0 {
-                    let mut detail = format!(
-                        "per-layer policy recorded on component `{}`: {sliding} sliding / \
-                         {full} full",
-                        component.id,
-                    );
-                    if recurrent > 0 {
-                        detail.push_str(&format!(" / {recurrent} gated-delta recurrent"));
-                    }
-                    if unexpressed > 0 {
-                        detail.push_str(&format!(
-                            " / {unexpressed} declared span(s) this schema has no execution \
-                             vocabulary for (see text_config.layer_types)"
-                        ));
-                    }
-                    detail.push_str(&format!(", {nope} NoPE layer(s)"));
-                    detail
-                } else {
-                    format!(
-                        "per-layer policy recorded on component `{}`: {sliding} sliding / \
-                         {full} full, {nope} NoPE layer(s)",
-                        component.id,
-                    )
-                },
+                detail: census.describe(&component.id),
             })
         })
         .collect()

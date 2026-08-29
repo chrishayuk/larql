@@ -157,6 +157,15 @@ pub struct MoeSurface {
     pub gate_up_layout: Option<GateUpLayout>,
     /// Always-active experts alongside the routed ones.
     pub shared_experts: usize,
+    /// Multiplier on the routed-expert branch (`routed_scaling_factor`).
+    /// `None` when undeclared — not 1.0, which is a different claim, and
+    /// a wrong one would rescale the whole branch.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub branch_scale: Option<f64>,
+    /// Leading layers running a dense MLP instead of the routed block
+    /// (`first_k_dense_replace`): 1 on Kimi Linear, 3 on GLM-5.3-Flash.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub dense_prefix_layers: Option<usize>,
     /// A dense MLP summed with the expert block every layer.
     pub hybrid: bool,
 }
@@ -241,6 +250,28 @@ pub struct ExecutionSurface {
     /// the subset an operator reads, not a second copy of `ModelConfig`.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub linear_attention: Option<LinearAttentionSurface>,
+    /// Geometry the KDA operator consumes, on a component whose layers
+    /// include Kimi Delta Attention. `None` otherwise.
+    ///
+    /// Beside [`Self::linear_attention`] rather than sharing it: the two
+    /// operators' geometries are not interchangeable, and a single field
+    /// would force every reader to ask which one it holds.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub kda: Option<larql_models::config::KdaGeometry>,
+    /// Lower bound clamped onto KDA's decay gate (`gate_lower_bound`).
+    /// Carried beside the geometry because it changes what the operator
+    /// computes, and `None` must mean "the checkpoint declared none",
+    /// never a silently-chosen default.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub kda_gate_lower_bound: Option<f32>,
+    /// Geometry the Multi-Latent Attention operator consumes, on a
+    /// component whose full-attention layers run it. `None` otherwise —
+    /// including a family that DECLARES `uses_mla` but whose geometry did
+    /// not fully resolve, which stays `None` here while the layer still
+    /// classifies as [`super::policy::LayerOperator::Mla`] (see
+    /// [`larql_models::inventory::report::MlaExecution`]'s docs).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub mla: Option<MlaSurface>,
 }
 
 /// What the Gated DeltaNet operator reads.
@@ -283,6 +314,38 @@ impl LinearAttentionSurface {
     }
 }
 
+/// What the Multi-Latent Attention operator reads.
+///
+/// Mirrors [`MlaExecution`](larql_models::inventory::report::MlaExecution)
+/// rather than reusing it, for the same reason [`LinearAttentionSurface`]
+/// does not reuse `LinearAttentionTopology`: the surface is the executor's
+/// contract, and may diverge from the architectural record. It does not,
+/// today.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub struct MlaSurface {
+    /// Query/output head count — the decompressed K/V side always
+    /// produces this many heads' worth of output.
+    pub num_heads: usize,
+    /// Compressed KV latent width.
+    pub kv_lora_rank: usize,
+    /// Non-RoPE portion of the query/key head width.
+    pub qk_nope_head_dim: usize,
+    /// RoPE portion of the query/key head width, one SHARED projection
+    /// (MQA-style) across every head.
+    pub qk_rope_head_dim: usize,
+    /// Value head width — independent of the query/key head width.
+    pub v_head_dim: usize,
+}
+
+impl MlaSurface {
+    /// `qk_nope_head_dim + qk_rope_head_dim` — one query/key head's full
+    /// width, and the row width `self_attn.q_proj.weight` is fused at
+    /// (`num_heads · q_head_dim`).
+    pub fn q_head_dim(self) -> usize {
+        self.qk_nope_head_dim + self.qk_rope_head_dim
+    }
+}
+
 /// Build the surface for a text-path component (target/drafter) from its
 /// inventory's resolution. Returns the missing source facts when the
 /// surface cannot be completed — the caller turns those into blocking
@@ -312,6 +375,15 @@ pub fn surface_from_resolved(
             conv_kernel: t.conv_kernel,
             state_dtype: t.state_dtype,
         }),
+        kda: resolved.kda,
+        kda_gate_lower_bound: resolved.kda_gate_lower_bound,
+        mla: execution.mla.map(|m| MlaSurface {
+            num_heads: m.num_heads,
+            kv_lora_rank: m.kv_lora_rank,
+            qk_nope_head_dim: m.qk_nope_head_dim,
+            qk_rope_head_dim: m.qk_rope_head_dim,
+            v_head_dim: m.v_head_dim,
+        }),
         attention: AttentionSurface {
             num_q_heads: resolved.num_q_heads,
             num_kv_heads: resolved.num_kv_heads,
@@ -333,6 +405,8 @@ pub fn surface_from_resolved(
             ffn_type: execution.ffn_type,
             gate_policy: execution.gate_policy,
             moe: execution.moe.map(|m| MoeSurface {
+                branch_scale: m.branch_scale,
+                dense_prefix_layers: m.dense_prefix_layers,
                 experts: m.experts,
                 top_k: m.top_k,
                 expert_intermediate_size: m.expert_intermediate_size,
@@ -487,8 +561,12 @@ pub fn surface_from_nested(
         return Err(missing);
     }
     Ok(ExecutionSurface {
-        // No judged perception tower declares a linear-attention recurrence.
+        // No judged perception tower declares a linear-attention recurrence
+        // or Multi-Latent Attention.
         linear_attention: None,
+        kda: None,
+        kda_gate_lower_bound: None,
+        mla: None,
         attention: AttentionSurface {
             num_q_heads: heads,
             num_kv_heads: nested.num_key_value_heads.unwrap_or(heads),

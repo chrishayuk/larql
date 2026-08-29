@@ -247,5 +247,18 @@ pub(crate) fn moe_routing_policy(kind: larql_models::MoeRouterKind) -> MoeRoutin
         // Selected-then-normalised: the weights sum to 1 over the chosen
         // experts. Distinct from `top_k_softmax`, which does not.
         larql_models::MoeRouterKind::TopKThenSoftmax => MoeRoutingPolicy::top_k_then_softmax(),
+        // Per-expert sigmoid gating. No policy here computes it, and every
+        // policy that does exist normalises across experts in a way
+        // sigmoid does not — so any of them would produce plausible,
+        // wrong expert weights, which is the exact failure this match was
+        // made exhaustive to prevent.
+        //
+        // Refusing loudly is the considered answer, not an oversight: the
+        // families that declare it (Kimi Linear, GLM-5.3-Flash,
+        // Inkling-Small) are not servable by this path at all yet.
+        larql_models::MoeRouterKind::Sigmoid => unimplemented!(
+            "sigmoid expert routing is represented but not executable: no routing policy \
+             implements per-expert sigmoid gating"
+        ),
     }
 }

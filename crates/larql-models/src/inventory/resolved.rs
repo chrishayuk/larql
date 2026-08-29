@@ -13,8 +13,8 @@ use serde_json::Value;
 use crate::detect::{detect_from_json, find_architecture};
 
 use super::report::{
-    AttentionSummary, Detection, Identity, LayerPolicy, MoeExecution, ResolvedExecution,
-    ResolvedTopology,
+    AttentionSummary, Detection, Identity, LayerPolicy, MlaExecution, MoeExecution,
+    ResolvedExecution, ResolvedTopology,
 };
 use crate::config::ModelArchitecture;
 
@@ -85,6 +85,35 @@ pub fn resolve(config: &Value, identity: &Identity) -> (Detection, ResolvedTopol
     };
 
     let cfg = arch.config();
+    // The checkpoint's per-layer declaration in ONE vocabulary, whichever
+    // spelling it used. `layer_types` wins when present — it is the direct
+    // form, and GLM-5.3-Flash writes both — otherwise the index-set form
+    // (`linear_attn_config`) answers, which is the only form Kimi Linear
+    // writes. Without this fallback Kimi declares nothing per layer and
+    // every one of its 20 recurrent layers falls to the resolved boolean's
+    // default: a 27-layer full-attention tower for a hybrid model
+    // (`docs/glm5-flash-funnel.md` §4.5).
+    // The declared per-layer topology, canonicalised. One resolution
+    // covers every spelling (`layer_types`, the two-set `linear_attn_config`
+    // form, Inkling's `local_layer_ids` with an implied complement), so no
+    // consumer below needs to know which one the checkpoint used.
+    //
+    // An UNRESOLVED declaration is not an absent one: every layer is
+    // marked with a spelling outside the executable vocabulary, so the
+    // plan blocks instead of letting the resolved boolean answer for a
+    // topology the checkpoint actually stated.
+    let declared_kinds: Option<Vec<crate::config::LayerKind>> = cfg
+        .linear_attn_interleave
+        .resolved()
+        .map(|r| r.layers.clone());
+    let declared_spans: Option<Vec<String>> = declared_kinds
+        .as_ref()
+        .map(|kinds| kinds.iter().map(layer_kind_spelling).collect())
+        .or_else(|| {
+            cfg.linear_attn_interleave.error().map(|_| {
+                vec![crate::config::LAYER_TYPE_UNRESOLVED_INTERLEAVE.to_string(); cfg.num_layers]
+            })
+        });
     let layers: Vec<LayerPolicy> = (0..cfg.num_layers)
         .map(|layer| {
             let sliding = arch.is_sliding_window_layer(layer);
@@ -96,11 +125,11 @@ pub fn resolve(config: &Value, identity: &Identity) -> (Detection, ResolvedTopol
                     ATTENTION_FULL
                 }
                 .to_string(),
-                declared_span: cfg
-                    .layer_types
+                declared_span: declared_spans
                     .as_ref()
                     .and_then(|types| types.get(layer))
                     .cloned(),
+                declared_kind: declared_kinds.as_ref().and_then(|k| k.get(layer)).cloned(),
                 window: if sliding {
                     arch.sliding_window_size()
                 } else {
@@ -141,6 +170,8 @@ pub fn resolve(config: &Value, identity: &Identity) -> (Detection, ResolvedTopol
         attention_sinks: arch.attention_sinks(),
         attention_bias: arch.attention_bias(),
         moe: arch.is_moe().then(|| MoeExecution {
+            branch_scale: cfg.routed_scaling_factor,
+            dense_prefix_layers: cfg.first_k_dense_replace,
             experts: arch.num_experts(),
             top_k: arch.num_experts_per_token(),
             expert_intermediate_size: arch.moe_intermediate_size(),
@@ -151,6 +182,27 @@ pub fn resolve(config: &Value, identity: &Identity) -> (Detection, ResolvedTopol
             gate_up_layout: arch.gate_up_layout(),
             shared_experts: arch.num_shared_experts(),
             hybrid: arch.is_hybrid_moe(),
+        }),
+        // `uses_mla()` alone decides the LAYER'S OPERATOR (every
+        // `LayerKind::Full` layer, in `graph::build::operator_and_span`);
+        // this field answers a SEPARATE question — whether the geometry
+        // to check its operands against fully resolved. A family that
+        // declares MLA but omits one of the four dimensions gets `None`
+        // here while its layers still classify as MLA, the same "declared
+        // ≠ geometry resolved" split KDA's `Option<KdaGeometry>` already
+        // makes — never a defaulted dimension standing in for a fact the
+        // checkpoint never stated.
+        mla: arch.uses_mla().then_some(()).and_then(|()| {
+            let qk_nope_head_dim = arch.mla_qk_nope_head_dim()?;
+            let qk_rope_head_dim = arch.mla_qk_rope_head_dim()?;
+            let v_head_dim = arch.mla_v_head_dim()?;
+            Some(MlaExecution {
+                num_heads: cfg.num_q_heads,
+                kv_lora_rank: arch.kv_lora_rank(),
+                qk_nope_head_dim,
+                qk_rope_head_dim,
+                v_head_dim,
+            })
         }),
         activation: arch.activation(),
         ffn_type: arch.ffn_type(),
@@ -185,6 +237,8 @@ pub fn resolve(config: &Value, identity: &Identity) -> (Detection, ResolvedTopol
         // A partial declaration resolves to `None` rather than being
         // completed with defaults — see `LinearAttentionTopology::from_config`.
         linear_attention: crate::inventory::report::LinearAttentionTopology::from_config(cfg),
+        kda: cfg.kda_geometry,
+        kda_gate_lower_bound: cfg.kda_gate_lower_bound,
     };
     (detection, topology)
 }
@@ -195,10 +249,42 @@ pub fn resolve(config: &Value, identity: &Identity) -> (Detection, ResolvedTopol
 /// [`bind_expert_banks`] resolves it to the source spelling once the
 /// tensor names are known.
 fn expert_bank_prefix(arch: &dyn ModelArchitecture, layer: usize) -> Option<String> {
-    let key = arch
+    if let Some(key) = arch
         .packed_gate_up_blocks_key(layer)
-        .or_else(|| arch.packed_experts_gate_up_key(layer))?;
-    key.rsplit_once('.').map(|(parent, _)| parent.to_string())
+        .or_else(|| arch.packed_experts_gate_up_key(layer))
+    {
+        return key.rsplit_once('.').map(|(parent, _)| parent.to_string());
+    }
+    per_expert_bank_prefix(arch, layer)
+}
+
+/// The common ancestor of every expert's own gate/up/down tensors, for a
+/// checkpoint that ships them as `experts` wholly separate tensors rather
+/// than one packed bank (`ExpertFormat::PerExpert` — Kimi Linear, Mixtral,
+/// DeepSeek). Without this, [`bind_expert_banks`] never carves a
+/// per-expert layer's bytes out of the decoder stack — they are real
+/// bytes sitting in the wrong object, not a missing fact.
+///
+/// Derived from evidence, never a fixed count of path segments to strip:
+/// the architecture's own key for expert 0 and expert 1 diverge at
+/// exactly the expert-index segment (`"…experts.0.w1.weight"` vs
+/// `"…experts.1.w1.weight"`), so their longest common BYTE prefix, proven
+/// to end at a `.` boundary, is the parent every expert's operands
+/// share — a substring collision (`experts.1` inside `experts.10`) cannot
+/// produce a false match here because the two probe keys are fixed at
+/// indices 0 and 1, which can never be one a prefix of the other.
+fn per_expert_bank_prefix(arch: &dyn ModelArchitecture, layer: usize) -> Option<String> {
+    if arch.expert_format() != crate::config::ExpertFormat::PerExpert || arch.num_experts() < 2 {
+        return None;
+    }
+    let first = arch.expert_ffn_gate_key(layer, 0)?;
+    let second = arch.expert_ffn_gate_key(layer, 1)?;
+    let common = first
+        .bytes()
+        .zip(second.bytes())
+        .take_while(|(a, b)| a == b)
+        .count();
+    (common > 0 && first.as_bytes()[common - 1] == b'.').then(|| first[..common - 1].to_string())
 }
 
 /// Resolve each layer's arch-relative expert-bank prefix to the source
@@ -225,4 +311,23 @@ pub fn bind_expert_banks(topology: &mut ResolvedTopology, tensors: &[super::repo
             })
             .next();
     }
+}
+
+/// The `layer_types` spelling one canonical kind corresponds to.
+///
+/// The bridge between the canonical vocabulary and the one every existing
+/// consumer already speaks, so a new spelling reaches them without each
+/// growing a second code path.
+fn layer_kind_spelling(kind: &crate::config::LayerKind) -> String {
+    use crate::config::LayerKind;
+    match kind {
+        LayerKind::Full => crate::config::LAYER_TYPE_FULL_ATTENTION,
+        LayerKind::Sliding { .. } => crate::config::LAYER_TYPE_SLIDING_ATTENTION,
+        LayerKind::Recurrent(_) => crate::config::LAYER_TYPE_LINEAR_ATTENTION,
+        // Carried verbatim, so the report shows what the checkpoint
+        // actually said and the layer fails to round-trip to anything
+        // executable — which is what makes it block.
+        LayerKind::Unexpressed { declared } => return declared.clone(),
+    }
+    .to_string()
 }

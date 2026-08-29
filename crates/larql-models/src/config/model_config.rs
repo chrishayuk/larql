@@ -198,6 +198,62 @@ pub struct ModelConfig {
     /// Number of value heads in the linear-attention block
     /// (`linear_num_value_heads`).
     pub linear_num_value_heads: Option<usize>,
+    /// The recurrent/full interleave when the checkpoint declares it as
+    /// layer-index sets (`linear_attn_config.{kda_layers,
+    /// full_attn_layers}`) rather than as a `layer_types` array — Kimi
+    /// Linear's spelling, and GLM-5.3-Flash's second one.
+    ///
+    /// An outcome, not an `Option`: "declared nothing" and "declared
+    /// something this build could not read" must stay distinguishable, or
+    /// an unreadable declaration silently becomes the caller's default.
+    /// See [`DeclaredInterleave`](super::DeclaredInterleave).
+    pub linear_attn_interleave: super::DeclaredInterleave,
+    /// The MTP sub-stack's own declared interleave. Its own field because
+    /// it indexes its own layer space — Inkling-Small declares
+    /// `local_layer_ids` for the decoder and again for its 8-layer MTP
+    /// stack, and one resolution cannot speak for both.
+    pub mtp_interleave: super::DeclaredInterleave,
+    /// The KDA block's declared geometry (`linear_attn_config.{num_heads,
+    /// head_dim, short_conv_kernel_size}`). `None` when the checkpoint
+    /// declares no KDA block, or declares it partially — which is refused
+    /// rather than defaulted. See [`KdaGeometry`](super::KdaGeometry).
+    pub kda_geometry: Option<super::KdaGeometry>,
+    /// KDA's decay-gate lower bound (`linear_attn_config.gate_lower_bound`,
+    /// -5.0 on both observed checkpoints). `None` = undeclared; a clamp is
+    /// never invented, because a wrong one changes the decay envelope
+    /// without changing any shape.
+    pub kda_gate_lower_bound: Option<f32>,
+    /// Width of the learned relative-position term (`d_rel`), and the
+    /// bounded distance it spans (`rel_extent`). Declared together or not
+    /// at all; a checkpoint declaring them uses a relative scheme and no
+    /// rotation. See [`PositionPolicy::Relative`](super::PositionPolicy).
+    /// Router scoring function, verbatim (`scoring_func` /
+    /// `moe_router_activation_func`). Carried rather than judged: the
+    /// typed [`MoeRouterKind`](super::MoeRouterKind) is what dispatch
+    /// reads, and a spelling this build has not judged must not silently
+    /// take the default softmax rule.
+    pub router_activation: Option<String>,
+    /// Multiplier applied to the routed-expert branch
+    /// (`routed_scaling_factor`). A real rescale of the whole branch, so an
+    /// absence is not 1.0 — it is "undeclared", and a consumer must say
+    /// which it means.
+    pub routed_scaling_factor: Option<f64>,
+    /// Expert grouping: how many groups the router partitions experts into
+    /// (`n_group` / `num_expert_group`) and how many it selects from
+    /// (`topk_group`), plus the flag that turns grouping on.
+    pub expert_groups: Option<usize>,
+    pub topk_group: Option<usize>,
+    pub use_grouped_topk: Option<bool>,
+    /// Period of the MoE cadence after the dense prefix (`moe_layer_freq`),
+    /// and the number of leading dense layers (`first_k_dense_replace`).
+    pub moe_layer_freq: Option<usize>,
+    pub first_k_dense_replace: Option<usize>,
+    /// Whether the MLA block omits rotary entirely (`mla_use_nope`).
+    pub mla_use_nope: Option<bool>,
+    /// Kimi Linear's spelling of the serving context bound.
+    pub model_max_length: Option<usize>,
+    pub d_rel: Option<usize>,
+    pub rel_extent: Option<usize>,
     /// Dtype the linear-attention block's SSM/recurrent state is computed
     /// in (`mamba_ssm_dtype`), verbatim.
     pub mamba_ssm_dtype: Option<String>,

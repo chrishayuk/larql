@@ -20,15 +20,18 @@ use larql_models::config::{FfnType, MoeRouterKind};
 
 use super::super::encode::segment::{read_segment_header, SegmentTensor};
 use super::super::encode::REPRESENTATION_ID_SEP;
-use super::super::graph::roles::classify_stack_tensor;
+use super::super::graph::policy::LayerOperator;
+use super::super::graph::roles::classify_stack_tensor_on;
 use super::super::graph::surface::LinearAttentionSurface;
+use super::super::graph::surface::MlaSurface;
 use super::super::graph::surface::MoeSurface;
 use super::super::graph::{LogicalObject, NormPlacement, ObjectKind, OperandRole};
 use super::super::inspect::SystemInspection;
 use super::{
-    AttentionOp, ClosureDefect, ComponentOpPlan, EmbeddingOp, FfnOp, GateOp, GatedDeltaOp,
-    HybridFfnOp, LayerAttention, LayerFfn, LayerPlan, NormOp, OpPlanOutcome, OperandRef, OutputOp,
-    PackedProjection, QkNormOp, RoutedFfnOp, SinkOp,
+    AttentionOp, ClosureDefect, ComponentOpPlan, EmbeddingOp, ExpertBank, FfnOp, GateOp,
+    GatedDeltaOp, HybridFfnOp, KdaOp, LayerAttention, LayerFfn, LayerPlan, MlaOp, NormOp,
+    OpPlanOutcome, OperandRef, OutputOp, PackedProjection, QkNormOp, RoutedFfnOp, SharedExpertOp,
+    SinkOp,
 };
 use crate::error::VindexError;
 use larql_models::config::ExpertFormat;
@@ -40,9 +43,6 @@ const POST_NORM_EPS_FACT: &str = "post-norm epsilon";
 const FOUR_NORM_PLACEMENT: &str = "four-norm placement";
 /// The routed-FFN op, as the requirer of its judged facts.
 const ROUTED_FFN_OP: &str = "routed FFN op";
-/// Judged elsewhere, not yet expressible as an op here.
-const MOE_SHARED_OR_HYBRID_FACT: &str =
-    "shared experts / hybrid dense+expert block (no routed-FFN op variant expresses them yet)";
 /// A packed fused operand with no declared branch layout cannot be read.
 const GATE_UP_LAYOUT_FACT: &str = "gate_up branch layout";
 
@@ -170,22 +170,20 @@ pub fn plan_component_ops(
             num_kv_heads,
             qk_scope: attn.qk_norm_scope,
             linear: surface.linear_attention,
+            kda: surface.kda,
+            mla: surface.mla,
         }
     };
 
     // Judged routed-FFN semantics the plan can express today: pure routed
-    // experts, or Gemma 4's hybrid dense+routed block, with a declared
-    // fused-operand layout. Shared experts are judged for other families
-    // but have no op here yet — refuse, never drop.
+    // experts, Gemma 4's hybrid dense+routed block, or a shared-expert
+    // branch beside the routed one (`SharedExpertOp`) — with a declared
+    // fused-operand layout wherever the format actually fuses one.
+    // `ExpertFormat::PerExpert` never fuses gate and up into one operand
+    // (each expert's `w1`/`w3` are already separate tensors), so no layout
+    // exists to declare and none is required.
     if let Some(moe) = &surface.ffn.moe {
-        if moe.shared_experts > 0 {
-            defects.push(ClosureDefect::UnjudgedSemantic {
-                component: component.id.clone(),
-                fact: MOE_SHARED_OR_HYBRID_FACT.to_string(),
-                required_by: ROUTED_FFN_OP.to_string(),
-            });
-        }
-        if moe.gate_up_layout.is_none() {
+        if moe.gate_up_layout.is_none() && moe.expert_format != ExpertFormat::PerExpert {
             defects.push(ClosureDefect::UnjudgedSemantic {
                 component: component.id.clone(),
                 fact: GATE_UP_LAYOUT_FACT.to_string(),
@@ -203,7 +201,24 @@ pub fn plan_component_ops(
             continue;
         };
         for tensor in tensors {
-            match classify_stack_tensor(&tensor.name) {
+            // Layer-aware, and it must be: on a hybrid checkpoint the
+            // suffix `self_attn.o_proj.weight` names the recurrence's
+            // output projection on one layer and the softmax one on the
+            // next, at the same shape (Kimi Linear, `[2304, 4096]` on
+            // both). The graph's per-layer operator is the only authority
+            // that separates them.
+            //
+            // A tensor whose layer index is not in the table cannot be
+            // classified against an operator at all; it falls to the
+            // layer-blind table and, if that fails, is reported
+            // unclassified — never quietly assigned.
+            let operator = tensor
+                .name
+                .split_once('.')
+                .and_then(|(index, _)| index.parse::<usize>().ok())
+                .and_then(|layer| attention_table.get(layer))
+                .map_or(LayerOperator::Softmax, |policy| policy.operator);
+            match classify_stack_tensor_on(&tensor.name, operator) {
                 None => defects.push(ClosureDefect::UnclassifiedOperand {
                     object: object.id.clone(),
                     tensor: tensor.name.clone(),
@@ -279,8 +294,15 @@ pub fn plan_component_ops(
                 // the missing roles named. That cross-check was recorded
                 // as owed at the first real encode in QW-3.5A, and this
                 // is where it lands.
-                recurrent: policy.operator
-                    == crate::format::vindex3::graph::LayerOperator::GatedDelta,
+                //
+                // `LayerOperator::Recurrent` — a declared recurrence with
+                // no identified operator — answers `false` here and would
+                // therefore be asked for softmax operands. It cannot
+                // reach this point: `attention_policy` blocks such a
+                // stack, and encode refuses an inadmissible plan. If that
+                // ever changes, this is the site that needs a third arm
+                // rather than a boolean.
+                operator: policy.operator,
             };
             for role in required_roles(&ops) {
                 let holder = if role.is_expert_bank() { bank } else { present };
@@ -321,7 +343,7 @@ pub fn plan_component_ops(
                     continue;
                 }
                 if let Some(expected) = expected_shape(*role, &geometry, surface.ffn.moe.as_ref()) {
-                    if tensor.shape != expected {
+                    if !shape_satisfies(&tensor.shape, &expected) {
                         defects.push(ClosureDefect::GeometryMismatch {
                             tensor: format!("{object_id}/{}", tensor.name),
                             expected,
@@ -476,6 +498,49 @@ pub fn plan_component_ops(
                 let bank_operand = |role: OperandRole| operand(&bank_id, &bank[&role]);
                 let optional = |role: OperandRole| bank.get(&role).map(|t| operand(&bank_id, t));
                 let gemma4_router = moe.router_kind == MoeRouterKind::Gemma4Hybrid;
+                // `ExpertFormat::PerExpert`: no fused operand exists, so the
+                // bank is `experts` independent gate/up/down triples rather
+                // than one `PackedProjection` per branch — see
+                // `ExpertBank`'s docs for why this cannot reuse the packed
+                // shape with a placeholder.
+                let bank = if moe.expert_format == ExpertFormat::PerExpert {
+                    let per_expert = |ctor: fn(u16) -> OperandRole| -> Vec<OperandRef> {
+                        (0..moe.experts as u16)
+                            .map(|e| bank_operand(ctor(e)))
+                            .collect()
+                    };
+                    ExpertBank::PerExpert {
+                        gate: per_expert(OperandRole::PerExpertGate),
+                        up: per_expert(OperandRole::PerExpertUp),
+                        down: per_expert(OperandRole::PerExpertDown),
+                    }
+                } else {
+                    ExpertBank::Packed {
+                        gate_up: Box::new(PackedProjection {
+                            weights: bank_operand(OperandRole::ExpertGateUp),
+                            scales: optional(OperandRole::ExpertGateUpScales),
+                            bias: optional(OperandRole::ExpertGateUpBias),
+                        }),
+                        down: Box::new(PackedProjection {
+                            weights: bank_operand(OperandRole::ExpertDown),
+                            scales: optional(OperandRole::ExpertDownScales),
+                            bias: optional(OperandRole::ExpertDownBias),
+                        }),
+                    }
+                };
+                // Always-active, unscaled — Kimi's `KimiSparseMoeBlock.
+                // forward`: `y = moe(...); y = y + shared_experts(identity)`.
+                // `required_roles`/`absent_op` paired `Some` here with
+                // `moe.shared_experts > 0` exactly, so this cannot desync
+                // from the closure pass that admitted the layer.
+                let shared = (moe.shared_experts > 0).then(|| SharedExpertOp {
+                    intermediate_size: moe.expert_intermediate_size * moe.shared_experts,
+                    activation: surface.ffn.activation,
+                    gate_policy: surface.ffn.gate_policy,
+                    gate: operand(&stack_id, get(OperandRole::SharedExpertGate)),
+                    up: operand(&stack_id, get(OperandRole::SharedExpertUp)),
+                    down: operand(&stack_id, get(OperandRole::SharedExpertDown)),
+                });
                 let routed = RoutedFfnOp {
                     experts: moe.experts,
                     top_k: moe.top_k,
@@ -490,16 +555,8 @@ pub fn plan_component_ops(
                     router_bias: moe
                         .router_bias
                         .then(|| operand(&stack_id, get(OperandRole::MoeRouterBias))),
-                    gate_up: PackedProjection {
-                        weights: bank_operand(OperandRole::ExpertGateUp),
-                        scales: optional(OperandRole::ExpertGateUpScales),
-                        bias: optional(OperandRole::ExpertGateUpBias),
-                    },
-                    down: PackedProjection {
-                        weights: bank_operand(OperandRole::ExpertDown),
-                        scales: optional(OperandRole::ExpertDownScales),
-                        bias: optional(OperandRole::ExpertDownBias),
-                    },
+                    bank,
+                    shared,
                     router_scale: gemma4_router
                         .then(|| operand(&stack_id, get(OperandRole::MoeRouterScale))),
                     router_per_expert_scale: gemma4_router
@@ -551,7 +608,53 @@ pub fn plan_component_ops(
             // of a recurrence is a DeltaNet layer, whatever else is
             // declared. Roles arrive only through exact ROLE_TABLE
             // suffixes, so nothing reaches here by lexical fallback.
-            attention: if slot.contains_key(&OperandRole::LinearAttnInProjQkv) {
+            attention: if slot.contains_key(&OperandRole::KdaDtBias) {
+                // KDA, on operand evidence. `dt_bias` is the discriminator
+                // and not by accident: Gated DeltaNet carries one too, at
+                // `[Hv]` against KDA's `[Hv·Dv]`, so the two are separated
+                // by the operand whose GEOMETRY differs rather than by a
+                // name either could have used. The role only reached this
+                // slot because the layer's operator said KDA, so this is a
+                // second, independent agreement rather than a restatement.
+                let k = surface.kda.unwrap_or_else(|| {
+                    panic!(
+                        "layer {layer} ships a KDA operand while the component declares no KDA \
+                         geometry; closure should have refused this before the plan was built"
+                    )
+                });
+                // The rank the config never declares, resolved ONCE from
+                // the operand that carries it and then stated on the op.
+                // `f_a_proj` is `[rank, hidden]`; taking the row count is
+                // the only place this is read, so no consumer has to
+                // recover it from a shape later.
+                let gate_rank = get(OperandRole::KdaFAProj)
+                    .shape
+                    .first()
+                    .copied()
+                    .unwrap_or(0);
+                LayerAttention::Kda(Box::new(KdaOp {
+                    num_heads: k.num_heads,
+                    head_dim: k.head_dim,
+                    conv_kernel: k.conv_kernel,
+                    gate_rank,
+                    gate_lower_bound: surface.kda_gate_lower_bound,
+                    q_proj: operand(&stack_id, get(OperandRole::KdaQProj)),
+                    k_proj: operand(&stack_id, get(OperandRole::KdaKProj)),
+                    v_proj: operand(&stack_id, get(OperandRole::KdaVProj)),
+                    q_conv1d: operand(&stack_id, get(OperandRole::KdaQConv1d)),
+                    k_conv1d: operand(&stack_id, get(OperandRole::KdaKConv1d)),
+                    v_conv1d: operand(&stack_id, get(OperandRole::KdaVConv1d)),
+                    f_a_proj: operand(&stack_id, get(OperandRole::KdaFAProj)),
+                    f_b_proj: operand(&stack_id, get(OperandRole::KdaFBProj)),
+                    g_a_proj: operand(&stack_id, get(OperandRole::KdaGAProj)),
+                    g_b_proj: operand(&stack_id, get(OperandRole::KdaGBProj)),
+                    b_proj: operand(&stack_id, get(OperandRole::KdaBProj)),
+                    a_log: operand(&stack_id, get(OperandRole::KdaALog)),
+                    dt_bias: operand(&stack_id, get(OperandRole::KdaDtBias)),
+                    o_norm: operand(&stack_id, get(OperandRole::KdaONorm)),
+                    out_proj: operand(&stack_id, get(OperandRole::KdaOutProj)),
+                }))
+            } else if slot.contains_key(&OperandRole::LinearAttnInProjQkv) {
                 let l = surface.linear_attention.unwrap_or_else(|| {
                     panic!(
                         "layer {layer} ships a Gated DeltaNet operand while the component \
@@ -575,6 +678,32 @@ pub fn plan_component_ops(
                     dt_bias: operand(&stack_id, get(OperandRole::LinearAttnDtBias)),
                     norm: operand(&stack_id, get(OperandRole::LinearAttnNorm)),
                     out_proj: operand(&stack_id, get(OperandRole::LinearAttnOutProj)),
+                }))
+            } else if slot.contains_key(&OperandRole::MlaKvAProj) {
+                // MLA, on operand evidence. `kv_a_proj_with_mqa` is the
+                // discriminator: no other operator's role table can put it
+                // in `slot`, so its presence alone proves the layer's
+                // operator said MLA — the same "role only reached here
+                // because the graph already decided" reasoning KDA's
+                // branch states above.
+                let m = surface.mla.unwrap_or_else(|| {
+                    panic!(
+                        "layer {layer} ships an MLA operand while the component declares no \
+                         MLA geometry; closure should have refused this before the plan was \
+                         built"
+                    )
+                });
+                LayerAttention::Mla(Box::new(MlaOp {
+                    num_heads: m.num_heads,
+                    kv_lora_rank: m.kv_lora_rank,
+                    qk_nope_head_dim: m.qk_nope_head_dim,
+                    qk_rope_head_dim: m.qk_rope_head_dim,
+                    v_head_dim: m.v_head_dim,
+                    q_proj: operand(&stack_id, get(OperandRole::MlaQProj)),
+                    kv_a_proj: operand(&stack_id, get(OperandRole::MlaKvAProj)),
+                    kv_b_proj: operand(&stack_id, get(OperandRole::MlaKvBProj)),
+                    kv_a_norm: operand(&stack_id, get(OperandRole::MlaKvANorm)),
+                    out_proj: operand(&stack_id, get(OperandRole::MlaOutProj)),
                 }))
             } else {
                 LayerAttention::Softmax(Box::new(AttentionOp {
@@ -725,10 +854,14 @@ struct LayerOps {
     /// V is the K projection on this layer: no V operand is required, and
     /// one present is a stray.
     v_from_k: bool,
-    /// This layer runs a Gated DeltaNet recurrence rather than softmax
-    /// attention, so it supplies the nine `LinearAttn*` operands and none
-    /// of the softmax ones.
-    recurrent: bool,
+    /// Which attention-class operator this layer runs.
+    ///
+    /// The operator itself rather than an `is_recurrent` flag: the two
+    /// recurrences require *different* operand sets, so a boolean would
+    /// have to be paired with a second one the moment a second recurrence
+    /// existed — which is the shape that let one operator stand in for
+    /// another in the first place.
+    operator: LayerOperator,
 }
 
 /// Roles every layer must supply, given the surface's ops.
@@ -737,7 +870,29 @@ fn required_roles(ops: &LayerOps) -> Vec<OperandRole> {
         OperandRole::PreAttentionNorm,
         OperandRole::PostAttentionNorm,
     ];
-    if ops.recurrent {
+    if ops.operator.is_kda() {
+        // Fifteen operands, and all fifteen are required: a KDA layer
+        // missing one is not a partially-specified attention layer, it is
+        // an operator that cannot run. None of the softmax roles apply —
+        // the recurrence retains no per-position key or value.
+        roles.extend([
+            OperandRole::KdaQProj,
+            OperandRole::KdaKProj,
+            OperandRole::KdaVProj,
+            OperandRole::KdaQConv1d,
+            OperandRole::KdaKConv1d,
+            OperandRole::KdaVConv1d,
+            OperandRole::KdaFAProj,
+            OperandRole::KdaFBProj,
+            OperandRole::KdaGAProj,
+            OperandRole::KdaGBProj,
+            OperandRole::KdaBProj,
+            OperandRole::KdaALog,
+            OperandRole::KdaDtBias,
+            OperandRole::KdaONorm,
+            OperandRole::KdaOutProj,
+        ]);
+    } else if ops.operator.is_gated_delta() {
         // A recurrence has no query, key, value or output projection —
         // demanding them made all 48 of Qwen3.8's linear layers report
         // four missing operands each for tensors that correctly do not
@@ -753,6 +908,19 @@ fn required_roles(ops: &LayerOps) -> Vec<OperandRole> {
             OperandRole::LinearAttnDtBias,
             OperandRole::LinearAttnNorm,
             OperandRole::LinearAttnOutProj,
+        ]);
+    } else if ops.operator.is_mla() {
+        // No K/V projection exists to require — the compressed latent and
+        // its decompression are the only KV path, so demanding AttnK/AttnV
+        // would report two missing operands per layer for tensors the
+        // checkpoint never shipped, the same shape GatedDelta's roles fix
+        // for its own operands above.
+        roles.extend([
+            OperandRole::MlaQProj,
+            OperandRole::MlaKvAProj,
+            OperandRole::MlaKvBProj,
+            OperandRole::MlaKvANorm,
+            OperandRole::MlaOutProj,
         ]);
     } else {
         roles.extend([OperandRole::AttnQ, OperandRole::AttnK, OperandRole::AttnO]);
@@ -780,11 +948,25 @@ fn required_roles(ops: &LayerOps) -> Vec<OperandRole> {
     }
     if ops.routed {
         if let Some(moe) = ops.moe {
-            roles.extend([
-                OperandRole::MoeRouterWeight,
-                OperandRole::ExpertGateUp,
-                OperandRole::ExpertDown,
-            ]);
+            roles.push(OperandRole::MoeRouterWeight);
+            if moe.expert_format == ExpertFormat::PerExpert {
+                // No fused bank tensor exists to bind — the checkpoint
+                // ships one gate/up/down triple PER EXPERT, so closure
+                // requires the complete indexed set, not one flat role.
+                // `absent_op` is what turns a stray expert beyond
+                // `moe.experts` into a defect; this only states what MUST
+                // be present.
+                roles.extend((0..moe.experts as u16).flat_map(|expert| {
+                    [
+                        OperandRole::PerExpertGate(expert),
+                        OperandRole::PerExpertUp(expert),
+                        OperandRole::PerExpertDown(expert),
+                    ]
+                }));
+            } else {
+                roles.push(OperandRole::ExpertGateUp);
+                roles.push(OperandRole::ExpertDown);
+            }
             if moe.router_bias {
                 roles.push(OperandRole::MoeRouterBias);
             }
@@ -797,6 +979,17 @@ fn required_roles(ops: &LayerOps) -> Vec<OperandRole> {
             if moe.router_kind == MoeRouterKind::Gemma4Hybrid {
                 roles.push(OperandRole::MoeRouterScale);
                 roles.push(OperandRole::MoeRouterPerExpertScale);
+            }
+            // Always-active alongside the routed selection — required
+            // whenever the judgment declares one, on every routed layer
+            // (Kimi/DeepSeek run it beside the routed block, never as a
+            // Gemma-4-style hybrid dense branch).
+            if moe.shared_experts > 0 {
+                roles.extend([
+                    OperandRole::SharedExpertGate,
+                    OperandRole::SharedExpertUp,
+                    OperandRole::SharedExpertDown,
+                ]);
             }
         }
     }
@@ -836,6 +1029,19 @@ fn absent_op(role: OperandRole, ops: &LayerOps) -> Option<&'static str> {
         OperandRole::AttnV if ops.v_from_k => {
             Some("value projection (this layer's V is its K projection — `attention_k_eq_v`)")
         }
+        // MLA has no plain query/key/value/output projection to bind: its
+        // `q_proj`/`o_proj` SUFFIXES are intercepted by `MLA_ROLE_TABLE`
+        // before they ever reach these roles, and it never ships
+        // `k_proj`/`v_proj` at all (K/V arrive only through the
+        // compressed path). Without this guard a stray `k_proj` on an
+        // MLA layer classified as plain `AttnK` and was checked against
+        // the SOFTMAX contract (`num_kv_heads · head_dim`) — the wrong
+        // question, not the right refusal.
+        OperandRole::AttnQ | OperandRole::AttnK | OperandRole::AttnV | OperandRole::AttnO
+            if ops.operator.is_mla() =>
+        {
+            Some("MLA (Multi-Latent Attention) — no plain query/key/value/output projection")
+        }
         OperandRole::FfnGate if !ops.routed && !ops.gated_ffn => Some("gated FFN"),
         OperandRole::FfnGate | OperandRole::FfnUp | OperandRole::FfnDown
             if ops.routed && !ops.hybrid =>
@@ -866,12 +1072,36 @@ fn absent_op(role: OperandRole, ops: &LayerOps) -> Option<&'static str> {
         | OperandRole::ExpertDown
         | OperandRole::ExpertDownScales
         | OperandRole::ExpertDownBias
+        | OperandRole::PerExpertGate(_)
+        | OperandRole::PerExpertUp(_)
+        | OperandRole::PerExpertDown(_)
+        | OperandRole::SharedExpertGate
+        | OperandRole::SharedExpertUp
+        | OperandRole::SharedExpertDown
             if !ops.routed =>
         {
             Some("routed FFN (judged semantics)")
         }
         OperandRole::MoeRouterBias if ops.moe.is_some_and(|m| !m.router_bias) => {
             Some("router bias (declared by the routed-FFN judgment)")
+        }
+        // A `PerExpert` operand whose index the routed-FFN judgment does
+        // not declare — the set-closure half of expert-bank carving: an
+        // index beyond `moe.experts` is as much a defect as one missing
+        // from `0..experts` ([`required_roles`] states the other half).
+        OperandRole::PerExpertGate(expert)
+        | OperandRole::PerExpertUp(expert)
+        | OperandRole::PerExpertDown(expert)
+            if ops.moe.is_some_and(|m| expert as usize >= m.experts) =>
+        {
+            Some("an expert index the routed-FFN judgment does not declare")
+        }
+        OperandRole::SharedExpertGate
+        | OperandRole::SharedExpertUp
+        | OperandRole::SharedExpertDown
+            if ops.moe.is_some_and(|m| m.shared_experts == 0) =>
+        {
+            Some("a shared expert (the routed-FFN judgment declares none)")
         }
         OperandRole::ExpertGateUpScales | OperandRole::ExpertDownScales
             if ops
@@ -917,6 +1147,37 @@ struct StackGeometry {
     /// value sides carry different head counts, so `num_q_heads`/`head_dim`
     /// cannot describe this operator.
     linear: Option<LinearAttentionSurface>,
+    /// The KDA block's geometry, on a component that declares one.
+    /// Disjoint from [`Self::linear`]: the two describe different
+    /// operators, and a stack carrying KDA operands against a Gated
+    /// DeltaNet geometry would validate the wrong contracts.
+    kda: Option<larql_models::config::KdaGeometry>,
+    /// The MLA operator's geometry, on a component whose full-attention
+    /// layers run it. Disjoint from every field above it — MLA is neither
+    /// the softmax fields' uniform per-head width nor a recurrence.
+    mla: Option<MlaSurface>,
+}
+
+/// Whether a stored shape satisfies a contract.
+///
+/// Exact equality, **plus one narrow equivalence**: a contract for a
+/// *vector* is satisfied by the same values carrying broadcast singleton
+/// dimensions. Kimi Linear stores its per-head decay as
+/// `A_log: [1, 1, 32, 1]` — the shape its reference broadcasts against
+/// `[B, T, H, D]` — where the contract says `[32]`. Those are the same 32
+/// numbers in the same order.
+///
+/// Deliberately **not** a general squeeze. The equivalence applies only
+/// when the contract is one-dimensional, so it can never quietly accept a
+/// re-laid-out matrix: `[2, 16]` still fails `[32]`, and a `[4096, 128]`
+/// contract is unaffected by anything here. A blanket "drop all ones"
+/// would accept a genuine relayout as readily as a broadcast form, and the
+/// point of a shape contract is to refuse exactly that.
+pub(super) fn shape_satisfies(actual: &[usize], expected: &[usize]) -> bool {
+    if actual == expected {
+        return true;
+    }
+    expected.len() == 1 && actual.iter().filter(|d| **d != 1).eq(expected.iter())
 }
 
 /// Expected stored shape per role, from the surface's geometry. `None`
@@ -938,6 +1199,8 @@ fn expected_shape(
         num_kv_heads: _,
         qk_scope,
         linear,
+        kda,
+        mla,
     } = *g;
     match role {
         OperandRole::AttnQ => Some(vec![q_proj_rows, hidden]),
@@ -986,6 +1249,60 @@ fn expected_shape(
         // side — the norm is applied per head.
         OperandRole::LinearAttnNorm => Some(vec![linear?.value_head_dim]),
         OperandRole::LinearAttnOutProj => Some(vec![hidden, linear?.value_width()]),
+        // Kimi Delta Attention. Every contract below follows from the KDA
+        // block's own geometry; none from the softmax fields, which on a
+        // hybrid checkpoint describe the OTHER layers of the same stack.
+        //
+        // `kda` absent while a KDA operand exists is a refusal for the
+        // same reason `linear` is: an operand whose contract the component
+        // never declared cannot be checked, and accepting it unchecked is
+        // how a wrong binding survives.
+        OperandRole::KdaQProj | OperandRole::KdaKProj | OperandRole::KdaVProj => {
+            Some(vec![kda?.value_width(), hidden])
+        }
+        // Depthwise, one kernel per channel — three independent convs, not
+        // one over fused channels. This is a structural difference from
+        // Gated DeltaNet, not a parameterisation of it.
+        OperandRole::KdaQConv1d | OperandRole::KdaKConv1d | OperandRole::KdaVConv1d => {
+            let k = kda?;
+            Some(vec![k.value_width(), 1, k.conv_kernel])
+        }
+        OperandRole::KdaBProj => Some(vec![kda?.num_heads, hidden]),
+        OperandRole::KdaALog => Some(vec![kda?.num_heads]),
+        // The discriminator: per CHANNEL, where Gated DeltaNet's is per
+        // head. A checkpoint whose `dt_bias` is `[Hv]` is not a KDA block,
+        // and this is the contract that says so.
+        OperandRole::KdaDtBias => Some(vec![kda?.value_width()]),
+        OperandRole::KdaONorm => Some(vec![kda?.head_dim]),
+        OperandRole::KdaOutProj => Some(vec![hidden, kda?.value_width()]),
+        // The f and g gates are low-rank and the config declares no rank,
+        // so no per-operand contract can be stated from geometry alone.
+        // Their agreement is a CLOSURE fact between the pair — `f_a` is
+        // `[rank, hidden]` and `f_b` is `[Hv·Dv, rank]` for one rank — and
+        // is checked there rather than invented here. `None` is the same
+        // "contract not pinned" answer `QkNormScope::FullProjection` gives.
+        OperandRole::KdaFAProj
+        | OperandRole::KdaFBProj
+        | OperandRole::KdaGAProj
+        | OperandRole::KdaGBProj => None,
+        // Multi-Latent Attention. Every contract below follows from the
+        // MLA block's own geometry — none from the softmax fields, which
+        // on a hybrid checkpoint describe the KDA layers of the same
+        // stack. `mla` absent while an MLA operand exists is a refusal
+        // for the same reason `kda`/`linear` are: an operand whose
+        // contract the component never declared cannot be checked.
+        OperandRole::MlaQProj => Some(vec![mla?.num_heads * mla?.q_head_dim(), hidden]),
+        OperandRole::MlaKvAProj => Some(vec![mla?.kv_lora_rank + mla?.qk_rope_head_dim, hidden]),
+        // Fused per-head nope-K + V, decompressed from the latent.
+        OperandRole::MlaKvBProj => {
+            let m = mla?;
+            Some(vec![
+                m.num_heads * (m.qk_nope_head_dim + m.v_head_dim),
+                m.kv_lora_rank,
+            ])
+        }
+        OperandRole::MlaKvANorm => Some(vec![mla?.kv_lora_rank]),
+        OperandRole::MlaOutProj => Some(vec![hidden, mla?.num_heads * mla?.v_head_dim]),
         OperandRole::FfnGate | OperandRole::FfnUp => Some(vec![intermediate, hidden]),
         OperandRole::FfnDown => Some(vec![hidden, intermediate]),
         // Linear(hidden -> q_heads*head_dim), per the judged spec.
@@ -1030,6 +1347,26 @@ fn expected_shape(
             Some(scales_shape(m, hidden, m.expert_intermediate_size))
         }
         OperandRole::ExpertDownBias => Some(vec![moe?.experts, hidden]),
+        // `ExpertFormat::PerExpert`: one `[inter, hidden]` gate/up and one
+        // `[hidden, inter]` down PER EXPERT — the index carried on the role
+        // picks which expert's operand this is, not which shape.
+        OperandRole::PerExpertGate(_) | OperandRole::PerExpertUp(_) => {
+            Some(vec![moe?.expert_intermediate_size, hidden])
+        }
+        OperandRole::PerExpertDown(_) => Some(vec![hidden, moe?.expert_intermediate_size]),
+        // Always-active shared expert(s): the same gated-FFN shape as a
+        // routed expert, widened by `shared_experts` — Kimi's
+        // `KimiSparseMoeBlock.__init__` sizes `KimiMLP` at
+        // `moe_intermediate_size * num_shared_experts`, one wider FFN
+        // rather than `shared_experts` separate ones.
+        OperandRole::SharedExpertGate | OperandRole::SharedExpertUp => {
+            let m = moe?;
+            Some(vec![m.expert_intermediate_size * m.shared_experts, hidden])
+        }
+        OperandRole::SharedExpertDown => {
+            let m = moe?;
+            Some(vec![hidden, m.expert_intermediate_size * m.shared_experts])
+        }
     }
 }
 
@@ -1088,7 +1425,7 @@ mod tests {
             // Softmax by default: these fixtures predate the hybrid
             // ladder, and a recurrent default would silently retarget
             // every one of them at the operator they were not written for.
-            recurrent: false,
+            operator: LayerOperator::Softmax,
         }
     }
 
@@ -1098,6 +1435,8 @@ mod tests {
         expert_format: ExpertFormat,
     ) -> MoeSurface {
         MoeSurface {
+            branch_scale: None,
+            dense_prefix_layers: None,
             experts: 8,
             top_k: 2,
             expert_intermediate_size: 64,
@@ -1260,6 +1599,8 @@ mod tests {
 
     fn base_geometry(linear: Option<LinearAttentionSurface>) -> StackGeometry {
         StackGeometry {
+            kda: None,
+            mla: None,
             hidden: 64,
             q_rows: 32,
             kv_rows: 16,

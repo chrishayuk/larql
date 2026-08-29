@@ -216,11 +216,8 @@ pub fn inspect_container(
                         .filter(|l| l.span == Some(AttentionSpan::Full))
                         .count()
                 }),
-                recurrent_layers: table.map(|t| {
-                    t.iter()
-                        .filter(|l| l.operator == super::graph::LayerOperator::GatedDelta)
-                        .count()
-                }),
+                recurrent_layers: table
+                    .map(|t| t.iter().filter(|l| l.operator.is_gated_delta()).count()),
                 nope_layers: table.map(|t| {
                     t.iter()
                         .filter(|l| l.position == PositionPolicy::None)

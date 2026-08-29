@@ -13,8 +13,8 @@ use larql_models::ExpertGatePolicy;
 use super::encoded_fixture;
 use crate::format::vindex3::graph::ObjectKind;
 use crate::format::vindex3::opplan::{
-    plan_component_ops, ClosureDefect, FfnOp, GatedDeltaOp, HybridFfnOp, LayerAttention, LayerFfn,
-    NormOp, OperandRef, PackedProjection, RoutedFfnOp,
+    plan_component_ops, ClosureDefect, ExpertBank, FfnOp, GatedDeltaOp, HybridFfnOp,
+    LayerAttention, LayerFfn, NormOp, OperandRef, PackedProjection, RoutedFfnOp,
 };
 
 /// Geometry of the hand-built routed op — small, but every dimension is
@@ -39,8 +39,12 @@ fn operand(object: &str, tensor: &str, shape: Vec<usize>) -> OperandRef {
     }
 }
 
-/// A routed FFN op exactly as the builder would emit it for a per-expert
-/// (unpacked, unbiased) mixture — the shape the accessors are asked about.
+/// A routed FFN op exactly as the builder would emit it for a packed
+/// (unbiased) mixture — the shape the accessors are asked about. Packed
+/// rather than `ExpertFormat::PerExpert`: the tensor names below are one
+/// fused `gate_up_proj`/`down_proj` per bank, which is what a packed
+/// format ships — `ExpertBank::PerExpert`'s own construction is covered in
+/// `moe_spellings.rs`/the real Kimi-shaped fixtures, not here.
 fn routed_layer() -> LayerFfn {
     LayerFfn::Routed(Box::new(RoutedFfnOp {
         experts: ROUTED_EXPERTS,
@@ -50,7 +54,7 @@ fn routed_layer() -> LayerFfn {
         routing_policy: ExpertRoutingPolicy::SoftmaxThenSelect,
         activation: Activation::Silu,
         gate_policy: ExpertGatePolicy::Gated,
-        expert_format: ExpertFormat::PerExpert,
+        expert_format: ExpertFormat::PackedBF16,
         gate_up_layout: Some(GateUpLayout::ContiguousHalves),
         router: operand(
             STACK_OBJECT,
@@ -58,27 +62,30 @@ fn routed_layer() -> LayerFfn {
             vec![ROUTED_EXPERTS, ROUTED_HIDDEN],
         ),
         router_bias: None,
-        gate_up: PackedProjection {
-            weights: operand(
-                BANK_OBJECT,
-                GATE_UP_TENSOR,
-                vec![ROUTED_EXPERTS, 2 * ROUTED_INTER, ROUTED_HIDDEN],
-            ),
-            scales: None,
-            bias: None,
+        bank: ExpertBank::Packed {
+            gate_up: Box::new(PackedProjection {
+                weights: operand(
+                    BANK_OBJECT,
+                    GATE_UP_TENSOR,
+                    vec![ROUTED_EXPERTS, 2 * ROUTED_INTER, ROUTED_HIDDEN],
+                ),
+                scales: None,
+                bias: None,
+            }),
+            down: Box::new(PackedProjection {
+                weights: operand(
+                    BANK_OBJECT,
+                    DOWN_TENSOR,
+                    vec![ROUTED_EXPERTS, ROUTED_HIDDEN, ROUTED_INTER],
+                ),
+                scales: None,
+                bias: None,
+            }),
         },
+        shared: None,
         router_scale: None,
         router_per_expert_scale: None,
         router_norm_eps: None,
-        down: PackedProjection {
-            weights: operand(
-                BANK_OBJECT,
-                DOWN_TENSOR,
-                vec![ROUTED_EXPERTS, ROUTED_HIDDEN, ROUTED_INTER],
-            ),
-            scales: None,
-            bias: None,
-        },
     }))
 }
 
@@ -93,7 +100,10 @@ fn a_routed_layer_exposes_its_routed_op_and_no_dense_op() {
     assert_eq!(routed.top_k, ROUTED_TOP_K);
     assert_eq!(routed.expert_intermediate_size, ROUTED_INTER);
     assert_eq!(routed.router.tensor, ROUTER_TENSOR);
-    assert_eq!(routed.gate_up.weights.object, BANK_OBJECT);
+    let ExpertBank::Packed { gate_up, .. } = &routed.bank else {
+        panic!("routed_layer() always builds a packed bank");
+    };
+    assert_eq!(gate_up.weights.object, BANK_OBJECT);
     assert!(
         layer.dense().is_none(),
         "a routed layer must not present a dense op"

@@ -52,6 +52,25 @@ const NUM_EXPERTS_KEYS: &[&str] = &["n_routed_experts", "num_local_experts", "nu
 /// Experts activated per token: llama.cpp / HF spelling variants.
 const NUM_EXPERTS_PER_TOK_KEYS: &[&str] = &["num_experts_per_tok", "num_experts_per_token"];
 
+/// Shared-expert count. DeepSeek-lineage checkpoints write
+/// `n_shared_experts`; Kimi Linear writes `num_shared_experts`. One fact,
+/// and reading only the first spelling silently drops the always-on branch.
+const NUM_SHARED_EXPERTS_KEYS: &[&str] = &["n_shared_experts", "num_shared_experts"];
+
+/// Whether the router renormalises its selected top-k probabilities.
+/// `norm_topk_prob` in the DeepSeek lineage, `moe_renormalize` on Kimi
+/// Linear. The two settings differ by a rescale of the whole expert
+/// branch, so a default here is a quiet numerical change.
+const NORM_TOPK_PROB_KEYS: &[&str] = &["norm_topk_prob", "moe_renormalize"];
+
+/// Router scoring function: `scoring_func` (DeepSeek, GLM-5.3-Flash) or
+/// `moe_router_activation_func` (Kimi Linear).
+const ROUTER_ACTIVATION_KEYS: &[&str] = &["scoring_func", "moe_router_activation_func"];
+
+/// Expert-group count: `n_group` (DeepSeek, GLM-5.3-Flash) or
+/// `num_expert_group` (Kimi Linear).
+const EXPERT_GROUP_KEYS: &[&str] = &["n_group", "num_expert_group"];
+
 /// Return the first `u64` found under any of `keys` in `config`.
 fn field_u64(config: &serde_json::Value, keys: &[&str]) -> Option<u64> {
     keys.iter().find_map(|k| config[k].as_u64())
@@ -180,7 +199,7 @@ pub(super) fn parse_model_config(config: &serde_json::Value) -> ModelConfig {
     let num_experts = field_u64(text_config, NUM_EXPERTS_KEYS).map(|v| v as usize);
     let num_experts_per_token =
         field_u64(text_config, NUM_EXPERTS_PER_TOK_KEYS).map(|v| v as usize);
-    let num_shared_experts = text_config["n_shared_experts"].as_u64().map(|v| v as usize);
+    let num_shared_experts = field_u64(text_config, NUM_SHARED_EXPERTS_KEYS).map(|v| v as usize);
     // Gemma 4 A4B hybrid MoE fields
     let enable_moe_block = text_config["enable_moe_block"].as_bool().unwrap_or(false);
     let top_k_experts = text_config["top_k_experts"].as_u64().map(|v| v as usize);
@@ -194,7 +213,27 @@ pub(super) fn parse_model_config(config: &serde_json::Value) -> ModelConfig {
     // Whether the router renormalises its selected top-k probabilities.
     // Read rather than assumed: the same architecture ships both settings, and
     // the two differ by a rescale of the whole expert branch.
-    let norm_topk_prob = text_config["norm_topk_prob"].as_bool();
+    let norm_topk_prob = NORM_TOPK_PROB_KEYS
+        .iter()
+        .find_map(|key| text_config[*key].as_bool());
+    let router_activation = ROUTER_ACTIVATION_KEYS
+        .iter()
+        .find_map(|key| text_config[*key].as_str().map(str::to_string));
+    // Declared MoE facts carried verbatim so the plan can judge them.
+    // Reading them is not endorsing them: a key nothing reads grades
+    // "read by nothing in any registered parser" and blocks with no
+    // account of WHY, where a key that is read faces its carriage rule and
+    // blocks — or clears — for a stated reason.
+    let routed_scaling_factor = text_config["routed_scaling_factor"].as_f64();
+    let expert_groups = field_u64(text_config, EXPERT_GROUP_KEYS).map(|v| v as usize);
+    let topk_group = text_config["topk_group"].as_u64().map(|v| v as usize);
+    let use_grouped_topk = text_config["use_grouped_topk"].as_bool();
+    let moe_layer_freq = text_config["moe_layer_freq"].as_u64().map(|v| v as usize);
+    let first_k_dense_replace = text_config["first_k_dense_replace"]
+        .as_u64()
+        .map(|v| v as usize);
+    let mla_use_nope = text_config["mla_use_nope"].as_bool();
+    let model_max_length = text_config["model_max_length"].as_u64().map(|v| v as usize);
 
     // MLA fields
     let kv_lora_rank = text_config["kv_lora_rank"].as_u64().map(|v| v as usize);
@@ -417,6 +456,56 @@ pub(super) fn parse_model_config(config: &serde_json::Value) -> ModelConfig {
     let linear_num_value_heads = text_config["linear_num_value_heads"]
         .as_u64()
         .map(|v| v as usize);
+    // The same fact `layer_types` states, in the index-set spelling.
+    // `text_config` falls back to the root config, so one read covers
+    // GLM-5.3-Flash (nested) and Kimi Linear (flat) alike.
+    // The declared interleave, in whichever spelling this checkpoint uses.
+    // `text_config` falls back to the root config, so one read covers a
+    // nested layout (GLM-5.3-Flash) and a flat one (Kimi Linear, Inkling)
+    // alike. The window travels with it: a sliding kind whose size was
+    // never declared must not acquire one downstream.
+    // Inkling-Small spells the window `sliding_window_size`; the
+    // families before it spell it `sliding_window`. Both are the same
+    // fact, and reading only one leaves a sliding layer with no size —
+    // which is the number a KV planner needs most.
+    let declared_window = sliding_window.or_else(|| {
+        text_config["sliding_window_size"]
+            .as_u64()
+            .map(|v| v as usize)
+    });
+    let linear_attn_interleave = crate::config::read_declared_interleave(
+        text_config,
+        crate::config::InterleaveScope::DecoderStack,
+        num_layers,
+        declared_window,
+    );
+    // The MTP sub-stack indexes its own layer space — Inkling-Small
+    // declares `local_layer_ids` for both, and resolving the second
+    // against the first's layer count would be wrong.
+    let mtp_layers = text_config["mtp_config"]["num_nextn_predict_layers"]
+        .as_u64()
+        .or_else(|| config["mtp_config"]["num_nextn_predict_layers"].as_u64())
+        .unwrap_or(0) as usize;
+    let mtp_interleave = if mtp_layers > 0 {
+        crate::config::read_declared_interleave(
+            if text_config.get("mtp_config").is_some() {
+                text_config
+            } else {
+                config
+            },
+            crate::config::InterleaveScope::MtpStack,
+            mtp_layers,
+            declared_window,
+        )
+    } else {
+        crate::config::DeclaredInterleave::Absent
+    };
+    let kda_geometry = crate::config::KdaGeometry::read(&text_config["linear_attn_config"]);
+    let kda_gate_lower_bound = text_config["linear_attn_config"]["gate_lower_bound"]
+        .as_f64()
+        .map(|v| v as f32);
+    let d_rel = text_config["d_rel"].as_u64().map(|v| v as usize);
+    let rel_extent = text_config["rel_extent"].as_u64().map(|v| v as usize);
     let mamba_ssm_dtype = text_config["mamba_ssm_dtype"].as_str().map(str::to_string);
     let attn_output_gate = text_config["attn_output_gate"].as_bool();
     let output_gate_type = text_config["output_gate_type"].as_str().map(str::to_string);
@@ -479,6 +568,15 @@ pub(super) fn parse_model_config(config: &serde_json::Value) -> ModelConfig {
         moe_intermediate_size,
         swiglu_limit,
         norm_topk_prob,
+        router_activation,
+        routed_scaling_factor,
+        expert_groups,
+        topk_group,
+        use_grouped_topk,
+        moe_layer_freq,
+        first_k_dense_replace,
+        mla_use_nope,
+        model_max_length,
         has_vision_config,
         tie_word_embeddings,
         qk_scale_factor,
@@ -503,6 +601,12 @@ pub(super) fn parse_model_config(config: &serde_json::Value) -> ModelConfig {
         linear_value_head_dim,
         linear_num_key_heads,
         linear_num_value_heads,
+        linear_attn_interleave,
+        mtp_interleave,
+        kda_geometry,
+        kda_gate_lower_bound,
+        d_rel,
+        rel_extent,
         mamba_ssm_dtype,
         attn_output_gate,
         output_gate_type,

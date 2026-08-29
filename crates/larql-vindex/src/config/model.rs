@@ -349,6 +349,45 @@ mod tests {
             // `format::vindex3::plan::semantics::EXECUTION_SEMANTIC_KEYS`)
             // rather than answering for it, which is what this list
             // exists to force a decision about.
+            // The interleave itself, in the index-set spelling. Same
+            // status as the geometry beside it — VINDEX1/2 cannot execute
+            // a recurrent layer, so a container that dropped it could not
+            // mis-serve one. It reaches VINDEX3 through the resolved
+            // per-layer table (`LayerPolicy::declared_span`), not through
+            // this legacy round-trip.
+            "linear_attn_interleave",
+            // The MTP sub-stack's interleave. VINDEX1/2 has no MTP object
+            // at all, so a container dropping it could not mis-serve one.
+            "mtp_interleave",
+            // The relative-position scheme. VINDEX1/2's forward rotates or
+            // does not; it has no relative term, so a container dropping
+            // these could not serve one wrongly — it could not serve one
+            // at all. VINDEX3 carries it on the per-layer position policy.
+            // Router scoring function, carried verbatim beside the typed
+            // kind. VINDEX1/2 dispatches on the typed kind.
+            "router_activation",
+            // Declared MoE facts VINDEX1/2 has no field for. Its MoE
+            // config carries expert count, top-k and the router type; a
+            // branch scale, expert grouping, a dense prefix or a cadence
+            // period would each change the forward and none has a home
+            // here. Read so the plan can judge them, not so this path can
+            // serve them.
+            "routed_scaling_factor",
+            "expert_groups",
+            "topk_group",
+            "use_grouped_topk",
+            "moe_layer_freq",
+            "first_k_dense_replace",
+            "mla_use_nope",
+            "model_max_length",
+            "d_rel",
+            "rel_extent",
+            // KDA's geometry and decay clamp. Same status: VINDEX1/2
+            // cannot execute a recurrence, so a container dropping these
+            // could not mis-serve one. They reach VINDEX3 through the
+            // execution surface, not through this legacy round-trip.
+            "kda_geometry",
+            "kda_gate_lower_bound",
             "linear_conv_kernel_dim",
             "linear_key_head_dim",
             "linear_value_head_dim",
