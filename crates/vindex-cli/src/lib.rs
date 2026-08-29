@@ -161,8 +161,8 @@ pub fn precision_facts(root: &Path) -> Facts {
     Ok(json!({
         "container": root.display().to_string(),
         "entries": per_entry,
-        "total_weights": total_weights as u64,
-        "effective_bits_per_weight": if total_weights > 0 { (total_bits as f64) / (total_weights as f64) } else { 0.0 },
+        "total_weight_slots": total_weights as u64,
+        "stored_bits_per_weight_slot": if total_weights > 0 { (total_bits as f64) / (total_weights as f64) } else { 0.0 },
         "precision_map": index.precision_map,
     }))
 }
@@ -415,11 +415,13 @@ pub fn diff_facts(
             "rms_error": rms,
             "max_error": t_max,
         }));
+        // A suffix only matches at a path boundary: `0.mlp.down` must not
+        // match `30.mlp.down`. The first matching tensor wins.
         let wanted = match tensor_filter {
-            Some(f) => name == f || name.ends_with(f),
+            Some(f) => head.is_none() && (name == f || name.ends_with(&format!(".{f}"))),
             None => rms > worst,
         };
-        if wanted && (tensor_filter.is_some() || rms > worst) {
+        if wanted {
             worst = rms;
             head = Some(json!({
                 "tensor": name,
