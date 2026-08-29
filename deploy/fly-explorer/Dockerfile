@@ -6,6 +6,9 @@ WORKDIR /build
 
 COPY Cargo.toml Cargo.lock rust-toolchain.toml ./
 COPY crates/ crates/
+# larql-vindex embeds registry model records via include_str! at compile
+# time — the build context must carry them.
+COPY registry/ registry/
 
 RUN apt-get update && apt-get install -y pkg-config libssl-dev protobuf-compiler cmake g++ libopenblas-dev && \
     cargo build --release -p larql-server --bin larql-server --bin vindex3-demo && \
