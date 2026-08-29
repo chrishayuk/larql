@@ -1,0 +1,27 @@
+app = "vindex3-explorer"
+primary_region = "lhr"
+
+[build]
+  dockerfile = "Dockerfile"
+
+[env]
+  PORT = "8080"
+  DEMO_DIR = "/data/vindex3-demo"
+  RATE_LIMIT = "120/min"
+  MAX_CONCURRENT = "4"
+
+[http_service]
+  internal_port = 8080
+  force_https = true
+  auto_stop_machines = "stop"
+  auto_start_machines = true
+  min_machines_running = 0
+
+  [http_service.concurrency]
+    type = "connections"
+    hard_limit = 50
+    soft_limit = 40
+
+[[vm]]
+  size = "shared-cpu-1x"
+  memory = "512mb"
