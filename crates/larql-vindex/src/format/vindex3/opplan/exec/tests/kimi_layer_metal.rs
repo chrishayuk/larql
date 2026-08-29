@@ -36,8 +36,8 @@ use larql_compute_metal::trait_impl::grouped_experts::ExpertOffset;
 use larql_compute_metal::trait_impl::grouped_experts::GroupedError;
 use larql_compute_metal::trait_impl::kda::{KdaDeviceState, KdaDeviceWeights, KdaShape};
 use larql_compute_metal::trait_impl::kimi_layer::{
-    AttentionSpec, ExpertAddressing, ExpertEncoding, FfnSpec, KimiLayerWeights, KimiMoeWeights,
-    ProjectionBank,
+    AttentionSpec, EncodedRegion, ExpertAddressing, ExpertEncoding, FfnSpec, KimiLayerWeights,
+    KimiMoeWeights, ProjectionBank,
 };
 use larql_compute_metal::MetalBackend;
 use larql_models::config::KdaGeometry;
@@ -79,6 +79,22 @@ fn codes(bytes: &[u8]) -> Vec<u16> {
         .collect()
 }
 
+/// One projection's routed bank, its table, and the shared branch's own
+/// region — everything bf16, as the checkpoint stores it.
+fn projection<'a>(routed: &'a [u8], table: &'a [u32], shared: &'a [u8]) -> ProjectionBank<'a> {
+    ProjectionBank {
+        routed: EncodedRegion {
+            bytes: routed,
+            encoding: ExpertEncoding::Bf16,
+        },
+        addressing: ExpertAddressing::Table(table),
+        shared: Some(EncodedRegion {
+            bytes: shared,
+            encoding: ExpertEncoding::Bf16,
+        }),
+    }
+}
+
 /// One layer's weights, owned, plus the resident expert bank the device
 /// path binds.
 ///
@@ -117,12 +133,16 @@ struct Fixture {
     v: Vec<u16>,
     o: Vec<u16>,
 
-    // MoE: gate/up/down banks over the resident experts, shared last.
+    // MoE: gate/up/down banks over the resident experts. The shared
+    // branch lives in its OWN allocations — semantic identity, never
+    // co-location.
     bank_gate: Vec<u8>,
     bank_up: Vec<u8>,
     bank_down: Vec<u8>,
     residency: Vec<u32>,
-    shared_offset: u32,
+    shared_gate: Vec<u8>,
+    shared_up: Vec<u8>,
+    shared_down: Vec<u8>,
     /// Widened codes, for the CPU arm.
     cpu_experts: Vec<(Vec<u16>, Vec<u16>, Vec<u16>)>,
     cpu_shared: (Vec<u16>, Vec<u16>, Vec<u16>),
@@ -199,24 +219,9 @@ impl Fixture {
             ffn: FfnSpec::Moe(KimiMoeWeights {
                 router_weight: &self.router_weight,
                 router_bias: &self.router_bias,
-                gate: ProjectionBank {
-                    bytes: &self.bank_gate,
-                    addressing: ExpertAddressing::Table(&self.residency),
-                    shared_offset: self.shared_offset,
-                    encoding: ExpertEncoding::Bf16,
-                },
-                up: ProjectionBank {
-                    bytes: &self.bank_up,
-                    addressing: ExpertAddressing::Table(&self.residency),
-                    shared_offset: self.shared_offset,
-                    encoding: ExpertEncoding::Bf16,
-                },
-                down: ProjectionBank {
-                    bytes: &self.bank_down,
-                    addressing: ExpertAddressing::Table(&self.residency),
-                    shared_offset: self.shared_offset,
-                    encoding: ExpertEncoding::Bf16,
-                },
+                gate: projection(&self.bank_gate, &self.residency, &self.shared_gate),
+                up: projection(&self.bank_up, &self.residency, &self.shared_up),
+                down: projection(&self.bank_down, &self.residency, &self.shared_down),
                 inter: self.inter,
                 top_k: self.top_k,
                 renormalize: self.renormalize,
@@ -306,16 +311,12 @@ fn load(dir: &Path) -> Fixture {
         bank_up.extend_from_slice(&g3);
         bank_down.extend_from_slice(&g2);
     }
-    let shared_offset = bank_gate.len() as u32;
     let (s1, s3, s2) = (
         read_bf16_bytes(dir, "shared_w1"),
         read_bf16_bytes(dir, "shared_w3"),
         read_bf16_bytes(dir, "shared_w2"),
     );
     let cpu_shared = (codes(&s1), codes(&s3), codes(&s2));
-    bank_gate.extend_from_slice(&s1);
-    bank_up.extend_from_slice(&s3);
-    bank_down.extend_from_slice(&s2);
 
     Fixture {
         hidden,
@@ -361,7 +362,9 @@ fn load(dir: &Path) -> Fixture {
         bank_up,
         bank_down,
         residency,
-        shared_offset,
+        shared_gate: s1,
+        shared_up: s3,
+        shared_down: s2,
         cpu_experts,
         cpu_shared,
     }
@@ -510,7 +513,6 @@ fn the_whole_layer_on_device_matches_link_by_link() {
     let want_offsets: Vec<u32> = want_ids
         .iter()
         .map(|&id| fx.residency[id as usize])
-        .chain(std::iter::once(fx.shared_offset))
         .collect();
     assert_eq!(
         got.expert_offsets, want_offsets,
@@ -697,25 +699,39 @@ fn report_whole_layer_cost() {
     // host-built offsets — so "everything else" can be split into the
     // experts and the rest rather than left as a residual.
     let cpu = cpu_layer(&fx);
+    // The block path binds ONE bank per projection, so this probe
+    // chooses the co-located layout: routed bytes with the shared
+    // payload appended. A layout an arm MAY choose — the layer under
+    // test binds the shared regions independently.
+    let cat = |routed: &[u8], shared: &[u8]| {
+        let mut v = routed.to_vec();
+        v.extend_from_slice(shared);
+        v
+    };
+    let (cat_gate, cat_up, cat_down) = (
+        cat(&fx.bank_gate, &fx.shared_gate),
+        cat(&fx.bank_up, &fx.shared_up),
+        cat(&fx.bank_down, &fx.shared_down),
+    );
     let offsets: Vec<ExpertOffset> = cpu
         .moe
         .router
         .selected_ids
         .iter()
         .map(|&id| ExpertOffset(fx.residency[id]))
-        .chain(std::iter::once(ExpertOffset(fx.shared_offset)))
+        .chain(std::iter::once(ExpertOffset(fx.bank_gate.len() as u32)))
         .collect();
     let banks = MoeFfnBanks {
         gate: ExpertBankRef {
-            weights: &fx.bank_gate,
+            weights: &cat_gate,
             offsets: &offsets,
         },
         up: ExpertBankRef {
-            weights: &fx.bank_up,
+            weights: &cat_up,
             offsets: &offsets,
         },
         down: ExpertBankRef {
-            weights: &fx.bank_down,
+            weights: &cat_down,
             offsets: &offsets,
         },
         hidden: fx.hidden,
@@ -891,9 +907,14 @@ fn location_and_representation_vary_independently_for_one_semantic_expert() {
         .kimi_decoder_layer(f.layer(&state_ref), &f.x)
         .expect("reference layer runs");
 
-    // gate/up become Q6_K; down stays BF16. Each is permuted differently.
+    // gate/up become Q6_K; down stays BF16. Each is permuted
+    // differently. The SHARED branch follows each projection's encoding
+    // from its own regions — it has no location in the routed banks to
+    // permute, which is the whole point of it being a separate region.
     let (q_gate_src, q_per) = to_q6k_blocks(&f.bank_gate, per, f.inter, f.hidden);
     let (q_up_src, _) = to_q6k_blocks(&f.bank_up, per, f.inter, f.hidden);
+    let (q_shared_gate, _) = to_q6k_blocks(&f.shared_gate, per, f.inter, f.hidden);
+    let (q_shared_up, _) = to_q6k_blocks(&f.shared_up, per, f.inter, f.hidden);
     let gate = permute(&q_gate_src, q_per, &pg);
     let up = permute(&q_up_src, q_per, &pu);
     let down = permute(&f.bank_down, per, &pd);
@@ -902,28 +923,41 @@ fn location_and_representation_vary_independently_for_one_semantic_expert() {
         table(&f.residency, per, q_per, &pu),
         table(&f.residency, per, per, &pd),
     );
-    let shared = f.shared_offset as usize / per;
-
     let state = KdaDeviceState::zeros(&b, f.shape());
     let mut w = f.layer(&state);
     if let FfnSpec::Moe(m) = &mut w.ffn {
         m.gate = ProjectionBank {
-            bytes: &gate,
+            routed: EncodedRegion {
+                bytes: &gate,
+                encoding: ExpertEncoding::Q6K,
+            },
             addressing: ExpertAddressing::Table(&tg),
-            shared_offset: (pg[shared] * q_per) as u32,
-            encoding: ExpertEncoding::Q6K,
+            shared: Some(EncodedRegion {
+                bytes: &q_shared_gate,
+                encoding: ExpertEncoding::Q6K,
+            }),
         };
         m.up = ProjectionBank {
-            bytes: &up,
+            routed: EncodedRegion {
+                bytes: &up,
+                encoding: ExpertEncoding::Q6K,
+            },
             addressing: ExpertAddressing::Table(&tu),
-            shared_offset: (pu[shared] * q_per) as u32,
-            encoding: ExpertEncoding::Q6K,
+            shared: Some(EncodedRegion {
+                bytes: &q_shared_up,
+                encoding: ExpertEncoding::Q6K,
+            }),
         };
         m.down = ProjectionBank {
-            bytes: &down,
+            routed: EncodedRegion {
+                bytes: &down,
+                encoding: ExpertEncoding::Bf16,
+            },
             addressing: ExpertAddressing::Table(&td),
-            shared_offset: (pd[shared] * per) as u32,
-            encoding: ExpertEncoding::Bf16,
+            shared: Some(EncodedRegion {
+                bytes: &f.shared_down,
+                encoding: ExpertEncoding::Bf16,
+            }),
         };
     }
     let (got, _) = b
@@ -959,17 +993,31 @@ fn location_and_representation_vary_independently_for_one_semantic_expert() {
         let mut w2 = f.layer(&st);
         if let FfnSpec::Moe(m) = &mut w2.ffn {
             m.gate = ProjectionBank {
-                bytes: &g,
+                routed: EncodedRegion {
+                    bytes: &g,
+                    encoding: ExpertEncoding::Q6K,
+                },
                 addressing: ExpertAddressing::Table(&tgi),
-                shared_offset: (shared * q_per) as u32,
-                encoding: ExpertEncoding::Q6K,
+                shared: Some(EncodedRegion {
+                    bytes: &q_shared_gate,
+                    encoding: ExpertEncoding::Q6K,
+                }),
             };
             m.up = ProjectionBank {
-                bytes: &u,
+                routed: EncodedRegion {
+                    bytes: &u,
+                    encoding: ExpertEncoding::Q6K,
+                },
                 addressing: ExpertAddressing::Table(&tui),
-                shared_offset: (shared * q_per) as u32,
-                encoding: ExpertEncoding::Q6K,
+                shared: Some(EncodedRegion {
+                    bytes: &q_shared_up,
+                    encoding: ExpertEncoding::Q6K,
+                }),
             };
+            m.down.shared = Some(EncodedRegion {
+                bytes: &f.shared_down,
+                encoding: ExpertEncoding::Bf16,
+            });
         }
         b.kimi_decoder_layer(w2, &f.x)
             .expect("unpermuted mixed runs")
@@ -1001,22 +1049,37 @@ fn location_and_representation_vary_independently_for_one_semantic_expert() {
     let mut bad = f.layer(&state_bad);
     if let FfnSpec::Moe(m) = &mut bad.ffn {
         m.gate = ProjectionBank {
-            bytes: &gate,
+            routed: EncodedRegion {
+                bytes: &gate,
+                encoding: ExpertEncoding::Q6K,
+            },
             addressing: ExpertAddressing::Table(&tu),
-            shared_offset: (pg[shared] * q_per) as u32,
-            encoding: ExpertEncoding::Q6K,
+            shared: Some(EncodedRegion {
+                bytes: &q_shared_gate,
+                encoding: ExpertEncoding::Q6K,
+            }),
         };
         m.up = ProjectionBank {
-            bytes: &up,
+            routed: EncodedRegion {
+                bytes: &up,
+                encoding: ExpertEncoding::Q6K,
+            },
             addressing: ExpertAddressing::Table(&tu),
-            shared_offset: (pu[shared] * q_per) as u32,
-            encoding: ExpertEncoding::Q6K,
+            shared: Some(EncodedRegion {
+                bytes: &q_shared_up,
+                encoding: ExpertEncoding::Q6K,
+            }),
         };
         m.down = ProjectionBank {
-            bytes: &down,
+            routed: EncodedRegion {
+                bytes: &down,
+                encoding: ExpertEncoding::Bf16,
+            },
             addressing: ExpertAddressing::Table(&td),
-            shared_offset: (pd[shared] * per) as u32,
-            encoding: ExpertEncoding::Bf16,
+            shared: Some(EncodedRegion {
+                bytes: &f.shared_down,
+                encoding: ExpertEncoding::Bf16,
+            }),
         };
     }
     let (wrong, _) = b.kimi_decoder_layer(bad, &f.x).expect("runs");
@@ -1059,10 +1122,15 @@ fn a_projection_declaring_the_wrong_encoding_is_refused_before_execution() {
         // Real Q6_K bytes, with the offsets they need — but claiming to
         // be BF16, which needs 2.4x the room.
         m.gate = ProjectionBank {
-            bytes: &q_gate,
+            routed: EncodedRegion {
+                bytes: &q_gate,
+                encoding: ExpertEncoding::Bf16,
+            },
             addressing: ExpertAddressing::Table(&t),
-            shared_offset: (f.shared_offset as usize / per * q_per) as u32,
-            encoding: ExpertEncoding::Bf16,
+            shared: Some(EncodedRegion {
+                bytes: &f.shared_gate,
+                encoding: ExpertEncoding::Bf16,
+            }),
         };
     }
     let err = b

@@ -2,23 +2,27 @@
 //!
 //! The invariant under test: a logical expert's identity does not imply
 //! a shared physical coordinate. Each projection resolves its own.
+//!
+//! Only the ROUTED bank has coordinates to permute now — the shared
+//! branch is its own per-projection region and never resolves through
+//! an address table at all.
 
 use super::*;
 
-/// Three permutations of the six bank blocks (five resident experts plus
-/// the shared branch) that differ at EVERY index.
+/// Three permutations of the five routed bank blocks that differ at
+/// EVERY index.
 ///
-/// Not rotations of one another: a rotation would still let a single
-/// hidden coordinate plus a constant reproduce all three, and the whole
-/// point is that no such coordinate exists. Checked, not asserted by
-/// eye — `they_differ_everywhere` below.
-const PERM_GATE: [usize; RESIDENT + 1] = [3, 0, 5, 1, 4, 2];
-const PERM_UP: [usize; RESIDENT + 1] = [1, 4, 2, 5, 0, 3];
-const PERM_DOWN: [usize; RESIDENT + 1] = [5, 2, 0, 4, 3, 1];
+/// Not value-shifts of one another: a constant offset would still let a
+/// single hidden coordinate plus a constant reproduce all three, and the
+/// whole point is that no such coordinate exists. Checked, not asserted
+/// by eye — `they_differ_everywhere` below.
+const PERM_GATE: [usize; RESIDENT] = [3, 0, 4, 1, 2];
+const PERM_UP: [usize; RESIDENT] = [1, 4, 2, 0, 3];
+const PERM_DOWN: [usize; RESIDENT] = [2, 3, 0, 4, 1];
 
 #[test]
 fn the_three_permutations_differ_everywhere() {
-    for i in 0..RESIDENT + 1 {
+    for i in 0..RESIDENT {
         let (g, u, d) = (PERM_GATE[i], PERM_UP[i], PERM_DOWN[i]);
         assert!(
             g != u && u != d && g != d,
@@ -28,11 +32,7 @@ fn the_three_permutations_differ_everywhere() {
     for p in [PERM_GATE, PERM_UP, PERM_DOWN] {
         let mut seen = p.to_vec();
         seen.sort_unstable();
-        assert_eq!(
-            seen,
-            (0..RESIDENT + 1).collect::<Vec<_>>(),
-            "not a permutation"
-        );
+        assert_eq!(seen, (0..RESIDENT).collect::<Vec<_>>(), "not a permutation");
     }
 }
 
@@ -100,7 +100,6 @@ fn one_logical_expert_at_three_different_physical_slots_gives_the_same_answer() 
         permuted_table(&f.residency, per, &PERM_UP),
         permuted_table(&f.residency, per, &PERM_DOWN),
     );
-    let shared_slot = f.shared_offset as usize / per;
 
     let state = KdaDeviceState::zeros(&b, shape());
     let mut w = f.layer(&state);
@@ -108,24 +107,9 @@ fn one_logical_expert_at_three_different_physical_slots_gives_the_same_answer() 
         FfnSpec::Moe(m) => m,
         FfnSpec::Dense(_) => panic!("the fixture layer is routed"),
     };
-    moe.gate = ProjectionBank {
-        bytes: &gate,
-        addressing: ExpertAddressing::Table(&tg),
-        shared_offset: (PERM_GATE[shared_slot] * per) as u32,
-        encoding: ExpertEncoding::Bf16,
-    };
-    moe.up = ProjectionBank {
-        bytes: &up,
-        addressing: ExpertAddressing::Table(&tu),
-        shared_offset: (PERM_UP[shared_slot] * per) as u32,
-        encoding: ExpertEncoding::Bf16,
-    };
-    moe.down = ProjectionBank {
-        bytes: &down,
-        addressing: ExpertAddressing::Table(&td),
-        shared_offset: (PERM_DOWN[shared_slot] * per) as u32,
-        encoding: ExpertEncoding::Bf16,
-    };
+    moe.gate = projection(&gate, &tg, &f.shared_gate);
+    moe.up = projection(&up, &tu, &f.shared_up);
+    moe.down = projection(&down, &td, &f.shared_down);
 
     let mut trace = ExecutionTrace::default();
     let (got, _) = b
@@ -156,24 +140,9 @@ fn one_logical_expert_at_three_different_physical_slots_gives_the_same_answer() 
     let state_bad = KdaDeviceState::zeros(&b, shape());
     let mut bad = f.layer(&state_bad);
     if let FfnSpec::Moe(m) = &mut bad.ffn {
-        m.gate = ProjectionBank {
-            bytes: &gate,
-            addressing: ExpertAddressing::Table(&f.residency),
-            shared_offset: f.shared_offset,
-            encoding: ExpertEncoding::Bf16,
-        };
-        m.up = ProjectionBank {
-            bytes: &up,
-            addressing: ExpertAddressing::Table(&tu),
-            shared_offset: (PERM_UP[shared_slot] * per) as u32,
-            encoding: ExpertEncoding::Bf16,
-        };
-        m.down = ProjectionBank {
-            bytes: &down,
-            addressing: ExpertAddressing::Table(&td),
-            shared_offset: (PERM_DOWN[shared_slot] * per) as u32,
-            encoding: ExpertEncoding::Bf16,
-        };
+        m.gate = projection(&gate, &f.residency, &f.shared_gate);
+        m.up = projection(&up, &tu, &f.shared_up);
+        m.down = projection(&down, &td, &f.shared_down);
     }
     let (wrong, _) = b
         .kimi_decoder_layers(&[KimiLayerCall { weights: bad }], &f.x, None)

@@ -111,7 +111,12 @@ pub fn source_expert_bank(
             // Three windows onto the whole segment: surplus bytes are
             // the rest of the model, not a mislabelled encoding.
             extent: ExtentPolicy::ContainingView,
-            shared_branch: false,
+            // This function addresses the ROUTED bank inside the
+            // expert-bank segment. Kimi's shared expert lives in the
+            // decoder stack — a different store — so its binding is
+            // attached by the caller that holds that store; a layer
+            // executed with it still `None` is refused downstream.
+            shared: None,
         },
         bases,
     })

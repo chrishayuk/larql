@@ -29,7 +29,9 @@ pub struct KimiLayerPlanes {
     /// What the MoE actually multiplied by: `top_k` routed weights, then
     /// the shared branch's unscaled `1.0`.
     pub combine_weights: Vec<f32>,
-    /// The offset table the router wrote and the expert kernel read.
+    /// The ROUTED offset table the router wrote and the expert kernel
+    /// read — `top_k` entries. The shared branch has no address here:
+    /// its region is bound directly, not resolved through a table.
     pub expert_offsets: Vec<u32>,
     /// `[top_k + 1, hidden]` unweighted per-slot expert outputs.
     pub expert_outputs: Vec<f32>,
@@ -106,7 +108,7 @@ impl MetalBackend {
             combine_weights: f(&s.weights, slots),
             // The GATE projection's addresses. The three may differ, and a
             // traced view that showed one number would imply they cannot.
-            expert_offsets: read_u32(&s.gate_offsets, slots),
+            expert_offsets: read_u32(&s.gate_offsets, top_k),
             expert_outputs: f(&s.expert_out, slots * hidden),
             output: f(&s.out, hidden),
             gpu_ms,

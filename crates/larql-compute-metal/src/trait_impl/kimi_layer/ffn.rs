@@ -13,10 +13,15 @@
 
 use metal::{Buffer, ComputeCommandEncoderRef};
 
-use super::super::bf16_grouped::{encode_grouped, GroupedBinding, GroupedShape};
+use super::super::bf16_grouped::{
+    encode_grouped, encode_grouped_windowed, GroupedBinding, GroupedShape, SlotWindow,
+};
 use super::super::grouped_experts::{ExpertOffset, GroupedError, InputLayout};
-use super::{bytemuck_u32, KimiMoeWeights, LayerScratch};
+use super::{bytemuck_u32, EncodedRegion, KimiMoeWeights, LayerScratch};
 use crate::MetalBackend;
+
+/// Bytes per f32 in the activation planes the slot windows index.
+const F32_BYTES: usize = 4;
 
 /// A plain gated MLP: `down(silu(gate(x)) * up(x))`.
 #[derive(Clone, Copy)]
@@ -31,6 +36,13 @@ pub struct KimiDenseFfn<'a> {
 }
 
 /// The feed-forward half of a layer.
+///
+/// `Moe` is much larger than `Dense` — three projections each carrying
+/// a routed region, addressing and an optional shared region — but the
+/// whole spec is a borrowed, `Copy` descriptor rebuilt per layer call
+/// on the decode hot path, so boxing the variant would trade a few
+/// stack bytes for a per-layer heap allocation every token.
+#[allow(clippy::large_enum_variant)]
 #[derive(Clone, Copy)]
 pub enum FfnSpec<'a> {
     Moe(KimiMoeWeights<'a>),
@@ -48,10 +60,15 @@ impl<'a> FfnSpec<'a> {
     }
 
     /// How many expert slots the FFN evaluates: `top_k` routed plus the
-    /// shared branch, or exactly one for a dense MLP.
+    /// shared branch when the layer carries one, or exactly one for a
+    /// dense MLP.
+    ///
+    /// Read from `gate`; validation refuses a layer whose projections
+    /// disagree about the branch's existence before this number is used
+    /// for anything.
     pub fn slots(&self) -> usize {
         match self {
-            Self::Moe(m) => m.top_k + 1,
+            Self::Moe(m) => m.top_k + usize::from(m.gate.shared.is_some()),
             Self::Dense(_) => 1,
         }
     }
@@ -120,7 +137,9 @@ impl MetalBackend {
     ) -> Vec<Buffer> {
         let f32b = |v: &[f32]| self.bufs().get_f32(v);
         let (rw, router_bias) = (f32b(m.router_weight), f32b(m.router_bias));
-        let (experts, slots, inter) = (m.router_bias.len(), m.top_k + 1, m.inter);
+        let (experts, inter) = (m.router_bias.len(), m.inter);
+        let has_shared = m.gate.shared.is_some();
+        let slots = m.top_k + usize::from(has_shared);
         // `uncached_bytes`, NOT `get_bytes`, and the difference is not a
         // style choice.
         //
@@ -140,8 +159,11 @@ impl MetalBackend {
         // Resolved into their registered regions, so the buffer the
         // encoder binds IS the one the residency set holds.
         let wts = |v: &[u8]| self.bufs().weights(v);
-        let (bank_gate, bank_up, bank_down) =
-            (wts(m.gate.bytes), wts(m.up.bytes), wts(m.down.bytes));
+        let (bank_gate, bank_up, bank_down) = (
+            wts(m.gate.routed.bytes),
+            wts(m.up.routed.bytes),
+            wts(m.down.routed.bytes),
+        );
 
         // Router: logits, then the decision. It writes WHICH expert and
         // nothing about where any bytes are.
@@ -149,15 +171,17 @@ impl MetalBackend {
         self.encode_router_select(enc, m, &router_bias, s, experts);
 
         // Then each projection resolves its OWN address for that logical
-        // expert. Three dispatches of `top_k + 1` threads: the price of
-        // having no shared coordinate anywhere in the model.
-        let mut tables = Vec::with_capacity(3);
+        // expert. Three dispatches of `top_k` threads: the price of
+        // having no shared coordinate anywhere in the model. The shared
+        // branch is absent here by construction — it is not routed, so
+        // it owns no entry in any address table.
+        let mut held = vec![rw, router_bias];
         for (bank, offsets) in [
             (&m.gate, &s.gate_offsets),
             (&m.up, &s.up_offsets),
             (&m.down, &s.down_offsets),
         ] {
-            tables.push(self.encode_expert_addresses(enc, bank, s, offsets, experts, m.top_k));
+            held.push(self.encode_expert_addresses(enc, bank, s, offsets, experts, m.top_k));
         }
 
         let projection = GroupedShape {
@@ -174,7 +198,7 @@ impl MetalBackend {
                 // Each projection picks its OWN kernel from its OWN
                 // declared encoding. Nothing here consults "the bank's"
                 // format, because there is no such thing.
-                self.grouped_handle_for(spec.encoding),
+                self.grouped_handle_for(spec.routed.encoding),
                 GroupedBinding {
                     w: &bank.0,
                     w_offset: bank.1,
@@ -182,14 +206,44 @@ impl MetalBackend {
                     x: &s.post_normed,
                     out,
                 },
-                slots,
+                m.top_k,
                 projection,
             );
         }
+        // The shared branch: its own region, its own single-slot
+        // dispatch, landing in slot `top_k` of the same activation
+        // planes. Sharing the routed dispatch would require the bytes to
+        // be co-located with the routed bank, and the real container
+        // disproves that assumption — co-dispatch is a layout
+        // optimisation an artifact may earn, never an invariant.
+        let shared_table = has_shared.then(|| self.stable_offset_table(&DENSE_SLOT));
+        if let Some(table) = &shared_table {
+            let out_row = (m.top_k * inter * F32_BYTES) as u64;
+            for (region, out) in [(&m.gate.shared, &s.gate_out), (&m.up.shared, &s.up_out)] {
+                let region = region.as_ref().expect("validated consistent");
+                held.push(self.encode_shared_projection(
+                    enc,
+                    region,
+                    table,
+                    &s.post_normed,
+                    out,
+                    projection,
+                    SlotWindow {
+                        x_bytes: 0,
+                        out_bytes: out_row,
+                    },
+                ));
+            }
+        }
         self.encode_geglu_silu(enc, &s.gate_out, &s.up_out, &s.h, (slots * inter) as u32);
+        let down_shape = GroupedShape {
+            n: hidden,
+            k: inter,
+            layout: InputLayout::PerSlot,
+        };
         encode_grouped(
             enc,
-            self.grouped_handle_for(m.down.encoding),
+            self.grouped_handle_for(m.down.routed.encoding),
             GroupedBinding {
                 w: &bank_down.0,
                 w_offset: bank_down.1,
@@ -197,17 +251,63 @@ impl MetalBackend {
                 x: &s.h,
                 out: &s.expert_out,
             },
-            slots,
-            GroupedShape {
-                n: hidden,
-                k: inter,
-                layout: InputLayout::PerSlot,
-            },
+            m.top_k,
+            down_shape,
         );
+        if let Some(table) = &shared_table {
+            let region = m.down.shared.as_ref().expect("validated consistent");
+            held.push(self.encode_shared_projection(
+                enc,
+                region,
+                table,
+                &s.h,
+                &s.expert_out,
+                down_shape,
+                SlotWindow {
+                    x_bytes: (m.top_k * inter * F32_BYTES) as u64,
+                    out_bytes: (m.top_k * hidden * F32_BYTES) as u64,
+                },
+            ));
+        }
         self.encode_moe_combine(enc, s, &s.weights, hidden, slots);
-        let mut held = vec![rw, router_bias, bank_gate.0, bank_up.0, bank_down.0];
-        held.extend(tables);
+        held.extend([bank_gate.0, bank_up.0, bank_down.0]);
+        held.extend(shared_table);
         held
+    }
+
+    /// One projection's shared-branch dispatch: one slot, weights from
+    /// the branch's OWN region under its own encoding, output windowed
+    /// into slot `top_k` of the caller's plane.
+    ///
+    /// Returns the bank buffer it bound, which the caller holds until
+    /// the wait.
+    #[allow(clippy::too_many_arguments)]
+    fn encode_shared_projection(
+        &self,
+        enc: &ComputeCommandEncoderRef,
+        region: &EncodedRegion<'_>,
+        offsets: &Buffer,
+        x: &Buffer,
+        out: &Buffer,
+        shape: GroupedShape,
+        window: SlotWindow,
+    ) -> Buffer {
+        let bank = self.bufs().weights(region.bytes);
+        encode_grouped_windowed(
+            enc,
+            self.grouped_handle_for(region.encoding),
+            GroupedBinding {
+                w: &bank.0,
+                w_offset: bank.1,
+                offsets,
+                x,
+                out,
+            },
+            1,
+            shape,
+            window,
+        );
+        bank.0
     }
 
     /// The grouped kernel that reads this encoding.
@@ -223,7 +323,11 @@ impl MetalBackend {
     }
 
     /// Resolve every selected logical expert to a byte address IN ONE
-    /// PROJECTION's bank.
+    /// PROJECTION's routed bank.
+    ///
+    /// Routed slots only: the shared branch is not routed, so it has no
+    /// logical id to resolve and no entry here — its region is bound
+    /// directly by its own dispatch.
     ///
     /// Returns the offset table it bound, which the caller holds until
     /// the wait. A bank that addresses by identity tabulates nothing,
@@ -243,7 +347,7 @@ impl MetalBackend {
             super::ExpertAddressing::Identity { .. } => self.bufs().uncached_bytes(&[0u8; 4]),
         };
         let (k, stride) = (top_k as u32, bank.addressing.identity_stride());
-        let (shared, e) = (bank.shared_offset, experts as u32);
+        let e = experts as u32;
         enc.set_compute_pipeline_state(&self.kimi.expert_addresses);
         enc.set_buffer(0, Some(&s.chosen), 0);
         enc.set_buffer(1, Some(&table), 0);
@@ -251,9 +355,8 @@ impl MetalBackend {
         enc.set_buffer(3, Some(&s.refusals), 0);
         enc.set_bytes(4, 4, &k as *const u32 as *const std::ffi::c_void);
         enc.set_bytes(5, 4, &stride as *const u32 as *const std::ffi::c_void);
-        enc.set_bytes(6, 4, &shared as *const u32 as *const std::ffi::c_void);
-        enc.set_bytes(7, 4, &e as *const u32 as *const std::ffi::c_void);
-        crate::lowering::dispatch_linear(enc, &self.kimi.expert_addresses, top_k + 1);
+        enc.set_bytes(6, 4, &e as *const u32 as *const std::ffi::c_void);
+        crate::lowering::dispatch_linear(enc, &self.kimi.expert_addresses, top_k);
         table
     }
 

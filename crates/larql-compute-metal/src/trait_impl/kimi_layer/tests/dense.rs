@@ -7,18 +7,11 @@
 use super::*;
 
 impl Fixture {
-    /// The shared expert's own slice of each bank — one gated MLP.
-    ///
-    /// `residency` uses ONE offset for all three projections, which is
-    /// only sound because `INTER * HIDDEN == HIDDEN * INTER`; the same
-    /// fact the routed path already relies on.
+    /// The shared expert's own regions — one gated MLP. Already three
+    /// standalone allocations, because the shared branch never lived in
+    /// the routed banks to begin with.
     fn dense_banks(&self) -> (&[u8], &[u8], &[u8]) {
-        let (o, per) = (self.shared_offset as usize, INTER * HIDDEN * 2);
-        (
-            &self.bank_gate[o..o + per],
-            &self.bank_up[o..o + per],
-            &self.bank_down[o..o + per],
-        )
+        (&self.shared_gate, &self.shared_up, &self.shared_down)
     }
 
     fn dense_layer<'a>(&'a self, state: &'a KdaDeviceState) -> KimiLayerWeights<'a> {

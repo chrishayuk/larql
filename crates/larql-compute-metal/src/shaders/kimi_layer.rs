@@ -166,8 +166,12 @@ kernel void kimi_router_select(
     }}
     // The shared branch: computed like any expert, summed UNSCALED.
     // `routed_scaling_factor` is already folded into the routed weights
-    // above and the reference adds the shared output plain. Its ADDRESS
-    // is a per-projection fact and is resolved by kimi_expert_addresses.
+    // above and the reference adds the shared output plain. Its BYTES
+    // are a per-projection physical region the host binds directly —
+    // the shared branch is not routed and owns no slot in the routed
+    // bank's address space. Written unconditionally: the weights
+    // scratch always has `top_k + 1` entries, and a layer without a
+    // shared branch simply never reads this one.
     weights[top_k] = 1.0f;
 }}
 
@@ -194,7 +198,8 @@ kernel void kimi_moe_combine(
     out[j] = residual[j] + acc;
 }}
 
-// **Logical expert identity -> byte address, for ONE projection.**
+// **Logical expert identity -> byte address, for ONE projection's
+// ROUTED bank.**
 //
 // The router says WHICH expert. This says where that expert's bytes are
 // FOR THIS PROJECTION, and nothing else does. Dispatched once per
@@ -202,6 +207,11 @@ kernel void kimi_moe_combine(
 // logical expert may sit at a different physical slot, under a
 // different encoding, in each of the three banks, and no shared
 // coordinate survives anywhere in the model.
+//
+// The shared branch does not appear here at all. It is not routed, has
+// no logical id, and — `Shared` vs `Routed` being semantic identity,
+// never co-location — its bytes need not live in the routed bank this
+// table addresses. The host binds its region directly.
 //
 // `stride != 0` addresses by identity (`slot == logical id`), the shape
 // a compiled execution-ordered bank has. `stride == 0` consults the
@@ -211,21 +221,14 @@ kernel void kimi_moe_combine(
 kernel void kimi_expert_addresses(
     device const uint*  chosen        [[buffer(0)]],  // [top_k] logical ids
     device const uint*  table         [[buffer(1)]],  // [experts]; unread when stride != 0
-    device uint*        offsets       [[buffer(2)]],  // [top_k + 1] byte offsets
+    device uint*        offsets       [[buffer(2)]],  // [top_k] byte offsets
     device atomic_uint* refusals      [[buffer(3)]],
     constant uint&      top_k         [[buffer(4)]],
     constant uint&      stride        [[buffer(5)]],
-    constant uint&      shared_offset [[buffer(6)]],
-    constant uint&      experts       [[buffer(7)]],
+    constant uint&      experts       [[buffer(6)]],
     uint slot [[thread_position_in_grid]])
 {{
-    if (slot > top_k) return;
-    if (slot == top_k) {{
-        // The shared branch is not routed and has no logical id; its
-        // address is a property of this projection's bank.
-        offsets[slot] = shared_offset;
-        return;
-    }}
+    if (slot >= top_k) return;
     const uint id = chosen[slot];
     if (id >= experts) {{
         atomic_fetch_add_explicit(refusals, 1u, memory_order_relaxed);

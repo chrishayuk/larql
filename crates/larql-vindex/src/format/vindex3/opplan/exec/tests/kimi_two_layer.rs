@@ -42,8 +42,8 @@ use larql_compute_metal::shaders::kimi_layer::NOT_RESIDENT;
 use larql_compute_metal::trait_impl::grouped_experts::ExpertOffset;
 use larql_compute_metal::trait_impl::kda::{KdaDeviceState, KdaDeviceWeights, KdaShape};
 use larql_compute_metal::trait_impl::kimi_layer::{
-    AttentionSpec, ExpertAddressing, ExpertEncoding, FfnSpec, KimiLayerCall, KimiLayerWeights,
-    KimiMoeWeights, ProjectionBank,
+    AttentionSpec, EncodedRegion, ExpertAddressing, ExpertEncoding, FfnSpec, KimiLayerCall,
+    KimiLayerWeights, KimiMoeWeights, ProjectionBank,
 };
 use larql_compute_metal::trait_impl::mla::{MlaDeviceState, MlaDeviceWeights, MlaShape};
 use larql_compute_metal::MetalBackend;
@@ -58,6 +58,22 @@ const ITERS: usize = 10;
 
 fn fixture_dir() -> Option<PathBuf> {
     std::env::var_os(FIXTURE_ENV).map(PathBuf::from)
+}
+
+/// One projection's routed bank, its table, and the shared branch's own
+/// region — everything bf16, as the checkpoint stores it.
+fn projection<'a>(routed: &'a [u8], table: &'a [u32], shared: &'a [u8]) -> ProjectionBank<'a> {
+    ProjectionBank {
+        routed: EncodedRegion {
+            bytes: routed,
+            encoding: ExpertEncoding::Bf16,
+        },
+        addressing: ExpertAddressing::Table(table),
+        shared: Some(EncodedRegion {
+            bytes: shared,
+            encoding: ExpertEncoding::Bf16,
+        }),
+    }
 }
 
 fn read_f32(dir: &Path, name: &str) -> Vec<f32> {
@@ -120,10 +136,14 @@ struct Layer {
     router_weight: Vec<f32>,
     router_bias: Vec<f32>,
     residency: Vec<u32>,
-    shared_offset: u32,
     bank_gate: Vec<u8>,
     bank_up: Vec<u8>,
     bank_down: Vec<u8>,
+    /// The shared expert's own allocations — never part of the routed
+    /// banks, because `Shared` is semantic identity, not co-location.
+    shared_gate: Vec<u8>,
+    shared_up: Vec<u8>,
+    shared_down: Vec<u8>,
     attn: LayerAttn,
     ids: Vec<usize>,
     /// The reference boundaries for this layer.
@@ -202,24 +222,9 @@ impl Layer {
             ffn: FfnSpec::Moe(KimiMoeWeights {
                 router_weight: &self.router_weight,
                 router_bias: &self.router_bias,
-                gate: ProjectionBank {
-                    bytes: &self.bank_gate,
-                    addressing: ExpertAddressing::Table(&self.residency),
-                    shared_offset: self.shared_offset,
-                    encoding: ExpertEncoding::Bf16,
-                },
-                up: ProjectionBank {
-                    bytes: &self.bank_up,
-                    addressing: ExpertAddressing::Table(&self.residency),
-                    shared_offset: self.shared_offset,
-                    encoding: ExpertEncoding::Bf16,
-                },
-                down: ProjectionBank {
-                    bytes: &self.bank_down,
-                    addressing: ExpertAddressing::Table(&self.residency),
-                    shared_offset: self.shared_offset,
-                    encoding: ExpertEncoding::Bf16,
-                },
+                gate: projection(&self.bank_gate, &self.residency, &self.shared_gate),
+                up: projection(&self.bank_up, &self.residency, &self.shared_up),
+                down: projection(&self.bank_down, &self.residency, &self.shared_down),
                 inter: fx.inter,
                 top_k: fx.top_k,
                 renormalize: fx.renormalize,
@@ -345,10 +350,9 @@ fn load_layer(dir: &Path, pos: usize, ids: Vec<usize>, experts: usize, kind: &st
         bank_up.extend_from_slice(&read_bf16_bytes(dir, &format!("{p}expert{id}_w3")));
         bank_down.extend_from_slice(&read_bf16_bytes(dir, &format!("{p}expert{id}_w2")));
     }
-    let shared_offset = bank_gate.len() as u32;
-    bank_gate.extend_from_slice(&read_bf16_bytes(dir, &format!("{p}shared_w1")));
-    bank_up.extend_from_slice(&read_bf16_bytes(dir, &format!("{p}shared_w3")));
-    bank_down.extend_from_slice(&read_bf16_bytes(dir, &format!("{p}shared_w2")));
+    let shared_gate = read_bf16_bytes(dir, &format!("{p}shared_w1"));
+    let shared_up = read_bf16_bytes(dir, &format!("{p}shared_w3"));
+    let shared_down = read_bf16_bytes(dir, &format!("{p}shared_w2"));
 
     Layer {
         input_norm: read_f32(dir, &format!("{p}input_norm_weight")),
@@ -356,10 +360,12 @@ fn load_layer(dir: &Path, pos: usize, ids: Vec<usize>, experts: usize, kind: &st
         router_weight: read_f32(dir, &format!("{p}router_weight")),
         router_bias: read_f32(dir, &format!("{p}router_bias")),
         residency,
-        shared_offset,
         bank_gate,
         bank_up,
         bank_down,
+        shared_gate,
+        shared_up,
+        shared_down,
         attn,
         ids,
         oracle_input_normed: read_f32(dir, &format!("{p}out_input_normed")),
@@ -545,11 +551,7 @@ fn two_dynamic_layers_in_one_command_buffer_match_the_oracle() {
         // And each slot's offset is the one the residency map names for
         // the expert THAT slot holds — the seam, checked against the
         // device's own ordering rather than a presumed one.
-        let want_offsets: Vec<u32> = device_ids
-            .iter()
-            .map(|&id| l.residency[id])
-            .chain(std::iter::once(l.shared_offset))
-            .collect();
+        let want_offsets: Vec<u32> = device_ids.iter().map(|&id| l.residency[id]).collect();
         assert_eq!(
             p.expert_offsets, want_offsets,
             "layer {i}: the GPU-written offset table does not match the residency map"

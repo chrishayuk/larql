@@ -35,8 +35,9 @@ use crate::format::vindex3::represent::physical::{
 use larql_compute_metal::trait_impl::grouped_experts::{ExpertOffset, GroupedError};
 use larql_compute_metal::trait_impl::kda::{KdaDeviceState, KdaDeviceWeights, KdaShape};
 use larql_compute_metal::trait_impl::kimi_layer::{
-    AttentionSpec, ExecutionTrace, ExpertAddressing, ExpertEncoding, FfnSpec, KimiDenseFfn,
-    KimiHead, KimiLayerCall, KimiLayerWeights, KimiMoeWeights, ProjectionBank,
+    AttentionSpec, EncodedRegion as DeviceRegion, ExecutionTrace, ExpertAddressing, ExpertEncoding,
+    FfnSpec, KimiDenseFfn, KimiHead, KimiLayerCall, KimiLayerWeights, KimiMoeWeights,
+    ProjectionBank,
 };
 use larql_compute_metal::trait_impl::mla::{MlaDeviceState, MlaDeviceWeights, MlaShape};
 use larql_compute_metal::MetalBackend;
@@ -114,7 +115,6 @@ pub struct DeviceLayer {
     /// Bytes one expert occupies in a gate/up bank — what `Identity`
     /// multiplies by.
     pub expert_stride: u32,
-    pub shared_offset: u32,
     pub input_norm: Vec<f32>,
     pub post_norm: Vec<f32>,
     pub router_weight: Vec<f32>,
@@ -223,14 +223,29 @@ impl DeviceLayer {
     /// valid bf16 bytes and produce plausible output from the wrong
     /// representation, which is the worst failure available here.
     pub fn validate_banks(&self, hidden: usize) -> Result<(), VindexError> {
+        // Every routed Kimi layer declares one shared expert. A binding
+        // without one is a loading defect — the decoder-stack operands
+        // were not attached — and executing it would silently serve a
+        // smaller model.
+        if !self.dense && self.bank.shared.is_none() {
+            return Err(VindexError::Parse(
+                "a routed Kimi layer declares a shared expert, but the bank binding \
+                 carries no shared regions — refusing to execute without the branch"
+                    .to_string(),
+            ));
+        }
         self.bank.validate(hidden, self.inter)
     }
 
-    /// One projection's bank paired with how a logical expert is
-    /// located in it.
-    fn projection<'a>(&'a self, r: &'a EncodedRegion) -> ProjectionBank<'a> {
+    /// One projection's routed bank paired with how a logical expert is
+    /// located in it, plus the shared branch's own region.
+    fn projection<'a>(
+        &'a self,
+        r: &'a EncodedRegion,
+        shared: Option<&'a EncodedRegion>,
+    ) -> ProjectionBank<'a> {
         ProjectionBank {
-            bytes: r.region.bytes(),
+            routed: device_region(r),
             addressing: match &self.bank.layout {
                 ExpertLayout::Identity { experts } => ExpertAddressing::Identity {
                     experts: *experts as usize,
@@ -238,14 +253,7 @@ impl DeviceLayer {
                 },
                 ExpertLayout::Mapped { .. } => ExpertAddressing::Table(&self.offsets),
             },
-            shared_offset: self.shared_offset,
-            // The REGION knows what its bytes are; the layer never
-            // declares it, so a declaration cannot drift from the bytes.
-            encoding: match r.encoding {
-                PhysEncoding::Bf16 => ExpertEncoding::Bf16,
-                PhysEncoding::Q6K => ExpertEncoding::Q6K,
-                PhysEncoding::Q4K => ExpertEncoding::Q4K,
-            },
+            shared: shared.map(device_region),
         }
     }
 
@@ -267,6 +275,7 @@ impl DeviceLayer {
                     inter: self.inter,
                 })
             } else {
+                let shared = self.bank.shared.as_ref();
                 FfnSpec::Moe(KimiMoeWeights {
                     router_weight: &self.router_weight,
                     router_bias: &self.router_bias,
@@ -275,9 +284,9 @@ impl DeviceLayer {
                     // this bank rather than something the types assume:
                     // a compiled overlay may give one logical expert a
                     // different physical slot in each.
-                    gate: self.projection(&self.bank.gate),
-                    up: self.projection(&self.bank.up),
-                    down: self.projection(&self.bank.down),
+                    gate: self.projection(&self.bank.gate, shared.map(|s| &s.gate)),
+                    up: self.projection(&self.bank.up, shared.map(|s| &s.up)),
+                    down: self.projection(&self.bank.down, shared.map(|s| &s.down)),
                     inter: self.inter,
                     top_k: self.top_k,
                     renormalize: self.renormalize,
@@ -286,6 +295,20 @@ impl DeviceLayer {
             },
             norm_eps: self.norm_eps,
         }
+    }
+}
+
+/// A resolved region in the device vocabulary. The REGION knows what
+/// its bytes are; the layer never declares it, so a declaration cannot
+/// drift from the bytes.
+fn device_region(r: &EncodedRegion) -> DeviceRegion<'_> {
+    DeviceRegion {
+        bytes: r.region.bytes(),
+        encoding: match r.encoding {
+            PhysEncoding::Bf16 => ExpertEncoding::Bf16,
+            PhysEncoding::Q6K => ExpertEncoding::Q6K,
+            PhysEncoding::Q4K => ExpertEncoding::Q4K,
+        },
     }
 }
 

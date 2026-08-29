@@ -59,9 +59,11 @@ fn bf16_bytes(n: usize, k: usize, seed: f32) -> Vec<u8> {
         .collect()
 }
 
-/// A layer's weights, owned. The resident bank holds `RESIDENT`
-/// experts plus the shared branch; the router scores all `EXPERTS`, so
-/// the residency table is what decides whether a route is servable.
+/// A layer's weights, owned. The resident bank holds `RESIDENT` routed
+/// experts; the shared branch lives in its OWN allocations, one per
+/// projection — semantic identity, not co-location. The router scores
+/// all `EXPERTS`, so the residency table is what decides whether a
+/// route is servable.
 struct Fixture {
     x: Vec<f32>,
     input_norm: Vec<f32>,
@@ -69,14 +71,32 @@ struct Fixture {
     router_weight: Vec<f32>,
     router_bias: Vec<f32>,
     residency: Vec<u32>,
-    shared_offset: u32,
     bank_gate: Vec<u8>,
     bank_up: Vec<u8>,
     bank_down: Vec<u8>,
+    shared_gate: Vec<u8>,
+    shared_up: Vec<u8>,
+    shared_down: Vec<u8>,
     qkv_bank: Vec<u8>,
     qkv_offsets: [ExpertOffset; 3],
     o_proj: Vec<u8>,
     kda_f32: Vec<Vec<f32>>,
+}
+
+/// One projection's bank: a routed region, a table, and the shared
+/// branch's own region.
+fn projection<'a>(routed: &'a [u8], table: &'a [u32], shared: &'a [u8]) -> ProjectionBank<'a> {
+    ProjectionBank {
+        routed: EncodedRegion {
+            bytes: routed,
+            encoding: ExpertEncoding::Bf16,
+        },
+        addressing: ExpertAddressing::Table(table),
+        shared: Some(EncodedRegion {
+            bytes: shared,
+            encoding: ExpertEncoding::Bf16,
+        }),
+    }
 }
 
 fn fixture() -> Fixture {
@@ -100,11 +120,7 @@ fn fixture() -> Fixture {
         bank_up.extend_from_slice(&bf16_bytes(INTER, HIDDEN, 9.0 + slot as f32));
         bank_down.extend_from_slice(&bf16_bytes(HIDDEN, INTER, 15.0 + slot as f32));
     }
-    let shared_offset = (RESIDENT * gate_per) as u32;
-    bank_gate.extend_from_slice(&bf16_bytes(INTER, HIDDEN, 21.0));
-    bank_up.extend_from_slice(&bf16_bytes(INTER, HIDDEN, 22.0));
-    bank_down.extend_from_slice(&bf16_bytes(HIDDEN, INTER, 23.0));
-    debug_assert_eq!(bank_down.len(), (RESIDENT + 1) * down_per);
+    debug_assert_eq!(bank_down.len(), RESIDENT * down_per);
 
     // A correction bias that puts the resident experts on top — the
     // point of the fixture is the seam, not a route that cannot be served.
@@ -119,10 +135,12 @@ fn fixture() -> Fixture {
         router_weight: synth(EXPERTS * HIDDEN, 4.4),
         router_bias,
         residency,
-        shared_offset,
         bank_gate,
         bank_up,
         bank_down,
+        shared_gate: bf16_bytes(INTER, HIDDEN, 21.0),
+        shared_up: bf16_bytes(INTER, HIDDEN, 22.0),
+        shared_down: bf16_bytes(HIDDEN, INTER, 23.0),
         qkv_bank,
         qkv_offsets: [
             ExpertOffset(0),
@@ -180,24 +198,9 @@ impl Fixture {
             ffn: FfnSpec::Moe(KimiMoeWeights {
                 router_weight: &self.router_weight,
                 router_bias: &self.router_bias,
-                gate: ProjectionBank {
-                    bytes: &self.bank_gate,
-                    addressing: ExpertAddressing::Table(&self.residency),
-                    shared_offset: self.shared_offset,
-                    encoding: ExpertEncoding::Bf16,
-                },
-                up: ProjectionBank {
-                    bytes: &self.bank_up,
-                    addressing: ExpertAddressing::Table(&self.residency),
-                    shared_offset: self.shared_offset,
-                    encoding: ExpertEncoding::Bf16,
-                },
-                down: ProjectionBank {
-                    bytes: &self.bank_down,
-                    addressing: ExpertAddressing::Table(&self.residency),
-                    shared_offset: self.shared_offset,
-                    encoding: ExpertEncoding::Bf16,
-                },
+                gate: projection(&self.bank_gate, &self.residency, &self.shared_gate),
+                up: projection(&self.bank_up, &self.residency, &self.shared_up),
+                down: projection(&self.bank_down, &self.residency, &self.shared_down),
                 inter: INTER,
                 top_k: TOP_K,
                 renormalize: true,
@@ -310,19 +313,14 @@ fn the_layer_matches_a_reference_composed_of_its_gated_parts() {
     );
     assert_eq!(
         got.expert_offsets,
-        ids.iter()
-            .map(|&i| f.residency[i])
-            .chain(std::iter::once(f.shared_offset))
-            .collect::<Vec<_>>(),
-        "the GPU-written offset table"
+        ids.iter().map(|&i| f.residency[i]).collect::<Vec<_>>(),
+        "the GPU-written ROUTED offset table"
     );
 
-    // The experts, through the already-gated block path.
-    let offsets: Vec<ExpertOffset> = ids
-        .iter()
-        .map(|&i| ExpertOffset(f.residency[i]))
-        .chain(std::iter::once(ExpertOffset(f.shared_offset)))
-        .collect();
+    // The routed experts, through the already-gated block path — routed
+    // slots only, because the shared branch no longer lives in the
+    // routed bank.
+    let offsets: Vec<ExpertOffset> = ids.iter().map(|&i| ExpertOffset(f.residency[i])).collect();
     let (outs, _) = m
         .bf16_moe_ffn_blocks(
             &[MoeBlockCall {
@@ -338,15 +336,34 @@ fn the_layer_matches_a_reference_composed_of_its_gated_parts() {
             BlockLowering::Separate,
         )
         .expect("experts");
+    // The shared branch: the same gated block path over its own
+    // regions, one slot at offset zero.
+    let zero = [ExpertOffset(0)];
+    let (shared_outs, _) = m
+        .bf16_moe_ffn_blocks(
+            &[MoeBlockCall {
+                banks: MoeFfnBanks {
+                    gate: bank(&f.shared_gate, &zero),
+                    up: bank(&f.shared_up, &zero),
+                    down: bank(&f.shared_down, &zero),
+                    hidden: HIDDEN,
+                    inter: INTER,
+                },
+                x: &post,
+            }],
+            BlockLowering::Separate,
+        )
+        .expect("shared expert");
+    let all_outs: Vec<f32> = outs[0].iter().chain(&shared_outs[0]).copied().collect();
     assert!(
-        max_abs(&got.expert_outputs, &outs[0]) < TOLERANCE,
+        max_abs(&got.expert_outputs, &all_outs) < TOLERANCE,
         "per-slot expert outputs"
     );
 
     let mut want = after.clone();
     for (slot, w) in got.combine_weights.iter().enumerate() {
         for (j, o) in want.iter_mut().enumerate() {
-            *o += w * outs[0][slot * HIDDEN + j];
+            *o += w * all_outs[slot * HIDDEN + j];
         }
     }
     assert!(max_abs(&got.output, &want) < TOLERANCE, "layer output");
@@ -410,7 +427,7 @@ fn shape_faults_are_refused() {
 
     let mut truncated = f.layer(&state);
     let half = &f.bank_down[..f.bank_down.len() / 2];
-    moe_mut(&mut truncated).down.bytes = half;
+    moe_mut(&mut truncated).down.routed.bytes = half;
     assert!(matches!(
         m.kimi_decoder_layer(truncated, &f.x),
         Err(GroupedError::OffsetOutOfRange { .. })
@@ -453,7 +470,8 @@ fn the_traced_layer_agrees_with_the_plain_one() {
     assert_eq!(traced.router_selection_scores.len(), EXPERTS);
     assert_eq!(traced.selected_ids.len(), TOP_K);
     assert_eq!(traced.combine_weights.len(), TOP_K + 1);
-    assert_eq!(traced.expert_offsets.len(), TOP_K + 1);
+    // Routed offsets only: the shared branch resolves no address.
+    assert_eq!(traced.expert_offsets.len(), TOP_K);
     assert_eq!(traced.expert_outputs.len(), (TOP_K + 1) * HIDDEN);
     assert_eq!(traced.input_normed.len(), HIDDEN);
     assert_eq!(traced.attention.len(), HIDDEN);
@@ -541,24 +559,9 @@ fn an_mla_decoder_layer_matches_a_reference_composed_of_its_parts() {
             ffn: FfnSpec::Moe(KimiMoeWeights {
                 router_weight: &f.router_weight,
                 router_bias: &f.router_bias,
-                gate: ProjectionBank {
-                    bytes: &f.bank_gate,
-                    addressing: ExpertAddressing::Table(&f.residency),
-                    shared_offset: f.shared_offset,
-                    encoding: ExpertEncoding::Bf16,
-                },
-                up: ProjectionBank {
-                    bytes: &f.bank_up,
-                    addressing: ExpertAddressing::Table(&f.residency),
-                    shared_offset: f.shared_offset,
-                    encoding: ExpertEncoding::Bf16,
-                },
-                down: ProjectionBank {
-                    bytes: &f.bank_down,
-                    addressing: ExpertAddressing::Table(&f.residency),
-                    shared_offset: f.shared_offset,
-                    encoding: ExpertEncoding::Bf16,
-                },
+                gate: projection(&f.bank_gate, &f.residency, &f.shared_gate),
+                up: projection(&f.bank_up, &f.residency, &f.shared_up),
+                down: projection(&f.bank_down, &f.residency, &f.shared_down),
                 inter: INTER,
                 top_k: TOP_K,
                 renormalize: true,
@@ -613,11 +616,8 @@ fn an_mla_decoder_layer_matches_a_reference_composed_of_its_parts() {
             "pos {pos} routed weights"
         );
 
-        let offsets: Vec<ExpertOffset> = ids
-            .iter()
-            .map(|&i| ExpertOffset(f.residency[i]))
-            .chain(std::iter::once(ExpertOffset(f.shared_offset)))
-            .collect();
+        let offsets: Vec<ExpertOffset> =
+            ids.iter().map(|&i| ExpertOffset(f.residency[i])).collect();
         let (outs, _) = m
             .bf16_moe_ffn_blocks(
                 &[MoeBlockCall {
@@ -633,10 +633,27 @@ fn an_mla_decoder_layer_matches_a_reference_composed_of_its_parts() {
                 BlockLowering::Separate,
             )
             .expect("experts");
+        let zero = [ExpertOffset(0)];
+        let (shared_outs, _) = m
+            .bf16_moe_ffn_blocks(
+                &[MoeBlockCall {
+                    banks: MoeFfnBanks {
+                        gate: bank(&f.shared_gate, &zero),
+                        up: bank(&f.shared_up, &zero),
+                        down: bank(&f.shared_down, &zero),
+                        hidden: HIDDEN,
+                        inter: INTER,
+                    },
+                    x: &post,
+                }],
+                BlockLowering::Separate,
+            )
+            .expect("shared expert");
+        let all_outs: Vec<f32> = outs[0].iter().chain(&shared_outs[0]).copied().collect();
         let mut want = after.clone();
         for (slot, w) in got.combine_weights.iter().enumerate() {
             for (j, o) in want.iter_mut().enumerate() {
-                *o += w * outs[0][slot * HIDDEN + j];
+                *o += w * all_outs[slot * HIDDEN + j];
             }
         }
         assert!(
@@ -693,6 +710,7 @@ fn a_kda_layer_and_an_mla_layer_share_one_command_buffer() {
 mod addressing;
 mod dense;
 mod head;
+mod shared;
 
 /// **The route trace reports what the router actually decided.**
 ///
@@ -791,27 +809,31 @@ fn identity_addressing_equals_a_table_that_spells_out_the_same_offsets() {
     let run = |addressing: ExpertAddressing<'_>| {
         let state = KdaDeviceState::zeros(&b, shape());
         let mut w = f.layer(&state);
-        // The shared branch sits past the experts in both arms.
+        // The shared branch is its own region in both arms — identical,
+        // so any difference is routed addressing.
+        fn region(bytes: &[u8]) -> EncodedRegion<'_> {
+            EncodedRegion {
+                bytes,
+                encoding: ExpertEncoding::Bf16,
+            }
+        }
         let m = KimiMoeWeights {
             router_weight: &f.router_weight,
             router_bias: &f.router_bias,
             gate: ProjectionBank {
-                bytes: &full_gate,
+                routed: region(&full_gate),
                 addressing,
-                shared_offset: 0,
-                encoding: ExpertEncoding::Bf16,
+                shared: Some(region(&f.shared_gate)),
             },
             up: ProjectionBank {
-                bytes: &full_up,
+                routed: region(&full_up),
                 addressing,
-                shared_offset: 0,
-                encoding: ExpertEncoding::Bf16,
+                shared: Some(region(&f.shared_up)),
             },
             down: ProjectionBank {
-                bytes: &full_down,
+                routed: region(&full_down),
                 addressing,
-                shared_offset: 0,
-                encoding: ExpertEncoding::Bf16,
+                shared: Some(region(&f.shared_down)),
             },
             inter: INTER,
             top_k: TOP_K,

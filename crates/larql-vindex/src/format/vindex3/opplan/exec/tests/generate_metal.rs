@@ -37,6 +37,7 @@ use std::time::Instant;
 
 use crate::format::vindex3::represent::physical::{
     EncodedRegion, ExpertBankBinding, ExpertEncoding, ExpertLayout, ExtentPolicy, PhysicalStore,
+    SharedExpertBinding,
 };
 use larql_compute::backend::ComputeBackend;
 use larql_compute_metal::shaders::kimi_layer::NOT_RESIDENT;
@@ -134,11 +135,10 @@ fn device_layer(
                 read_bf16_bytes(dir, &format!("layer{i}_dense_w3")),
                 read_bf16_bytes(dir, &format!("layer{i}_dense_w2")),
                 ExpertLayout::Mapped { ids: vec![0] },
-                false,
+                None,
             ),
             offsets: Vec::new(),
             expert_stride: 0,
-            shared_offset: 0,
             input_norm: read_f32(dir, &format!("layer{i}_input_norm_weight")),
             post_norm: read_f32(dir, &format!("layer{i}_post_norm_weight")),
             router_weight: Vec::new(),
@@ -171,17 +171,22 @@ fn device_layer(
         bank_up.extend_from_slice(&read_bf16_bytes(dir, &format!("layer{i}_expert{id}_w3")));
         bank_down.extend_from_slice(&read_bf16_bytes(dir, &format!("layer{i}_expert{id}_w2")));
     }
-    let shared_offset = bank_gate.len() as u32;
-    bank_gate.extend_from_slice(&read_bf16_bytes(dir, &format!("layer{i}_shared_w1")));
-    bank_up.extend_from_slice(&read_bf16_bytes(dir, &format!("layer{i}_shared_w3")));
-    bank_down.extend_from_slice(&read_bf16_bytes(dir, &format!("layer{i}_shared_w2")));
+    // The shared expert: its OWN regions, in their own store — the
+    // layout the real container has, where the shared branch lives in
+    // the decoder stack and not in the expert bank. Nothing appends it
+    // to the routed banks any more.
+    let shared = owned_shared(
+        read_bf16_bytes(dir, &format!("layer{i}_shared_w1")),
+        read_bf16_bytes(dir, &format!("layer{i}_shared_w3")),
+        read_bf16_bytes(dir, &format!("layer{i}_shared_w2")),
+    );
 
     let (attn, state) = attention_for(metal, dir, i, manifest, shape, mla_shape);
 
     DeviceLayer {
         attn,
         state,
-        expert_stride: (bank_gate.len() / (union.len() + 1)) as u32,
+        expert_stride: (bank_gate.len() / union.len()) as u32,
         bank: owned_bank(
             bank_gate,
             bank_up,
@@ -193,10 +198,9 @@ fn device_layer(
             ExpertLayout::Mapped {
                 ids: union.iter().map(|e| *e as u32).collect(),
             },
-            true,
+            Some(shared),
         ),
         offsets: residency,
-        shared_offset,
         input_norm: read_f32(dir, &format!("layer{i}_input_norm_weight")),
         post_norm: read_f32(dir, &format!("layer{i}_post_norm_weight")),
         router_weight: read_f32(dir, &format!("layer{i}_router_weight")),
@@ -287,6 +291,21 @@ fn attention_for(
     (attn, state)
 }
 
+/// Wrap owned bytes as one physical region in its own store.
+fn owned_region(id: &str, bytes: Vec<u8>) -> EncodedRegion {
+    let len = bytes.len() as u64;
+    let store = std::sync::Arc::new(PhysicalStore::owned(
+        id,
+        bytes,
+        std::collections::BTreeMap::from([("bank".to_string(), (0, len))]),
+    ));
+    EncodedRegion {
+        region: PhysicalStore::whole(&store, "bank").expect("the bank is its own only tensor"),
+        // The fixture stores the checkpoint's own bf16.
+        encoding: ExpertEncoding::Bf16,
+    }
+}
+
 /// Wrap owned bytes as three physical regions.
 ///
 /// The fixture path keeps its packed banks exactly as they were; only
@@ -297,29 +316,27 @@ fn owned_bank(
     up: Vec<u8>,
     down: Vec<u8>,
     layout: ExpertLayout,
-    shared_branch: bool,
+    shared: Option<SharedExpertBinding>,
 ) -> ExpertBankBinding {
-    let region = |id: &str, bytes: Vec<u8>| {
-        let len = bytes.len() as u64;
-        let store = std::sync::Arc::new(PhysicalStore::owned(
-            id,
-            bytes,
-            std::collections::BTreeMap::from([("bank".to_string(), (0, len))]),
-        ));
-        EncodedRegion {
-            region: PhysicalStore::whole(&store, "bank").expect("the bank is its own only tensor"),
-            // The fixture stores the checkpoint's own bf16.
-            encoding: ExpertEncoding::Bf16,
-        }
-    };
     ExpertBankBinding {
-        gate: region("fixture", gate),
-        up: region("fixture", up),
-        down: region("fixture", down),
+        gate: owned_region("fixture", gate),
+        up: owned_region("fixture", up),
+        down: owned_region("fixture", down),
         layout,
         // The fixture's packed banks ARE the bank.
         extent: ExtentPolicy::Exact,
-        shared_branch,
+        shared,
+    }
+}
+
+/// The shared expert's three regions, each in its own store — a
+/// DIFFERENT physical store from the routed banks, which is exactly the
+/// relationship the real container has.
+fn owned_shared(gate: Vec<u8>, up: Vec<u8>, down: Vec<u8>) -> SharedExpertBinding {
+    SharedExpertBinding {
+        gate: owned_region("fixture-shared", gate),
+        up: owned_region("fixture-shared", up),
+        down: owned_region("fixture-shared", down),
     }
 }
 
@@ -503,6 +520,19 @@ fn sixteen_greedy_tokens_through_the_mixed_metal_stack() {
         ] {
             metal.register_weight_region(bank);
             registered += 1;
+        }
+        // The shared expert's own regions: separate allocations now, so
+        // they must be declared resident like any other weight or every
+        // command buffer re-establishes them implicitly.
+        if let Some(sh) = &d.bank.shared {
+            for bank in [
+                sh.gate.region.bytes(),
+                sh.up.region.bytes(),
+                sh.down.region.bytes(),
+            ] {
+                metal.register_weight_region(bank);
+                registered += 1;
+            }
         }
         for bank in d.attention_banks() {
             metal.register_weight_region(bank);

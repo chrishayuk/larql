@@ -283,7 +283,7 @@ fn semantic_id_physical_slot_and_backing_store_all_agree() {
         down: region("1.block_sparse_moe.experts.181.w2.weight"),
         layout: ExpertLayout::Identity { experts: 256 },
         extent: ExtentPolicy::Exact,
-        shared_branch: false,
+        shared: None,
     };
     assert_eq!(scoped.layout.slot_of(181), Some(181), "identity layout");
     assert_eq!(scoped.store_id(), "candidate", "backing object");
@@ -301,7 +301,7 @@ fn semantic_id_physical_slot_and_backing_store_all_agree() {
         down: region("4.block_sparse_moe.experts.181.w2.weight"),
         layout: ExpertLayout::Mapped { ids: vec![181] },
         extent: ExtentPolicy::Exact,
-        shared_branch: false,
+        shared: None,
     };
     assert_eq!(untouched.store_id(), "source");
     assert_eq!(untouched.gate.encoding, ExpertEncoding::Bf16);
@@ -336,7 +336,7 @@ fn offsets_follow_the_layout_not_the_expert_id() {
         down: region(),
         layout: ExpertLayout::Identity { experts: 256 },
         extent: ExtentPolicy::Exact,
-        shared_branch: false,
+        shared: None,
     };
     assert_eq!(identity.gate_up_offset(181, 1000), Some(181_000));
 
@@ -346,7 +346,7 @@ fn offsets_follow_the_layout_not_the_expert_id() {
         down: region(),
         layout: ExpertLayout::Mapped { ids: vec![73, 181] },
         extent: ExtentPolicy::Exact,
-        shared_branch: false,
+        shared: None,
     };
     assert_eq!(packed.gate_up_offset(181, 1000), Some(1000), "slot 1");
     assert_eq!(packed.gate_up_offset(99, 1000), None, "not in this bank");
@@ -386,7 +386,7 @@ fn a_bank_whose_bytes_are_not_its_declared_encoding_is_refused() {
             down: r(),
             layout: ExpertLayout::Identity { experts: EXPERTS },
             extent,
-            shared_branch: false,
+            shared: None,
         }
     };
 

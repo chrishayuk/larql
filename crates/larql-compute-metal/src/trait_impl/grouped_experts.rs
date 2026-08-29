@@ -86,6 +86,12 @@ pub enum GroupedError {
         hidden: usize,
         have_bytes: usize,
     },
+    /// The three projections of one MoE layer disagree about whether a
+    /// shared expert exists. `Some` for gate but `None` for down would
+    /// run a three-projection MLP with one projection's contribution
+    /// missing — plausible numbers from half an expert, which is worse
+    /// than any refusal.
+    SharedBranchInconsistent,
 }
 
 impl std::fmt::Display for GroupedError {
@@ -118,6 +124,11 @@ impl std::fmt::Display for GroupedError {
                 f,
                 "grouped experts: every projection of a block must select the same \
                  slots; expected {expected}, found {found}"
+            ),
+            Self::SharedBranchInconsistent => write!(
+                f,
+                "grouped experts: gate/up/down disagree about whether a shared expert \
+                 exists; the branch is declared per projection but is one semantic fact"
             ),
         }
     }

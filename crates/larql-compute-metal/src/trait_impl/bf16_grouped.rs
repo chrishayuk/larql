@@ -281,6 +281,34 @@ pub(crate) fn encode_grouped(
     slots: usize,
     shape: GroupedShape,
 ) {
+    encode_grouped_windowed(enc, handle, b, slots, shape, SlotWindow::default());
+}
+
+/// Byte offsets into a dispatch's `x` and `out` bindings.
+///
+/// The kernel indexes both by its grid-y slot, so a dispatch that
+/// computes ONE slot of a larger `[slots, n]` output — the shared
+/// expert's own dispatch, whose weights live in their own region rather
+/// than the routed bank — lands its row by binding `out` (and, for the
+/// per-slot input regime, `x`) at that slot's byte base. Zero for every
+/// dispatch that computes its whole output.
+#[derive(Debug, Clone, Copy, Default)]
+pub(crate) struct SlotWindow {
+    pub x_bytes: u64,
+    pub out_bytes: u64,
+}
+
+/// [`encode_grouped`], with the `x`/`out` bindings windowed to a slot
+/// base. Kept as one body so a windowed dispatch cannot drift from the
+/// plain one in anything but the two offsets.
+pub(crate) fn encode_grouped_windowed(
+    enc: &ComputeCommandEncoderRef,
+    handle: &KernelHandle,
+    b: GroupedBinding<'_>,
+    slots: usize,
+    shape: GroupedShape,
+    window: SlotWindow,
+) {
     let n_u32 = shape.n as u32;
     let k_u32 = shape.k as u32;
     let x_stride: u32 = match shape.layout {
@@ -292,8 +320,8 @@ pub(crate) fn encode_grouped(
     enc.set_compute_pipeline_state(&handle.state);
     enc.set_buffer(0, Some(b.w), b.w_offset);
     enc.set_buffer(1, Some(b.offsets), 0);
-    enc.set_buffer(2, Some(b.x), 0);
-    enc.set_buffer(3, Some(b.out), 0);
+    enc.set_buffer(2, Some(b.x), window.x_bytes);
+    enc.set_buffer(3, Some(b.out), window.out_bytes);
     enc.set_bytes(4, 4, &n_u32 as *const u32 as *const std::ffi::c_void);
     enc.set_bytes(5, 4, &k_u32 as *const u32 as *const std::ffi::c_void);
     enc.set_bytes(6, 4, &x_stride as *const u32 as *const std::ffi::c_void);

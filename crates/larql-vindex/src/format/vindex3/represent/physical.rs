@@ -477,8 +477,26 @@ impl EncodedRegion {
     }
 }
 
-/// One layer's expert bank: three regions and the layout that addresses
-/// them.
+/// The shared expert's three projections, each its own region under its
+/// own encoding.
+///
+/// A separate binding from the routed bank because `Shared` vs `Routed`
+/// is SEMANTIC identity and must not imply physical co-location: a
+/// source container keeps the shared expert in the decoder stack while
+/// the routed experts live in an expert bank, and a candidate overlay
+/// may compile the routed bank to Q6_K while the shared branch stays
+/// source BF16. Placing the shared bytes next to the routed ones is a
+/// layout an artifact MAY choose — the regions can be subranges of one
+/// store — never something execution may assume.
+#[derive(Clone)]
+pub struct SharedExpertBinding {
+    pub gate: EncodedRegion,
+    pub up: EncodedRegion,
+    pub down: EncodedRegion,
+}
+
+/// One layer's expert bank: three routed regions, the layout that
+/// addresses them, and — independently — the shared expert's binding.
 ///
 /// Deliberately one level above `DeviceLayer`, so execution never infers
 /// a layout from the fact that it happens to hold regions. The same
@@ -492,14 +510,11 @@ pub struct ExpertBankBinding {
     pub down: EncodedRegion,
     pub layout: ExpertLayout,
     pub extent: ExtentPolicy,
-    /// Whether the banks also hold a shared-branch payload past the
-    /// routed ones.
-    ///
-    /// Needed for an exact-extent check and for nothing else: the
-    /// routed layout alone under-counts a Kimi bank by exactly one
-    /// block, which reads as "the bytes are not this encoding" when the
-    /// bytes are fine.
-    pub shared_branch: bool,
+    /// The shared expert, when the architecture declares one. `None` is
+    /// a claim that the model HAS no shared branch, not that its bytes
+    /// were not found — a loader that cannot find a declared shared
+    /// expert must refuse, never construct a `None`.
+    pub shared: Option<SharedExpertBinding>,
 }
 
 /// Why a region may be larger than the bank it addresses.
@@ -550,9 +565,9 @@ impl ExpertBankBinding {
         // through `slot_of` was wrong for `Mapped`, whose entries are
         // arbitrary expert IDS rather than indices: it found only the
         // ids that happened to be small and under-counted the bank.
-        // Blocks the regions hold: the routed slots, plus the shared
-        // branch when one is present.
-        let blocks = (self.layout.slots() + usize::from(self.shared_branch)).max(1);
+        // Routed slots only: the shared expert is its own binding with
+        // its own regions, never a block appended past the routed ones.
+        let blocks = self.layout.slots().max(1);
         let top = (blocks - 1) as u32;
         for (enc, n, k) in [
             (&self.gate, inter, hidden),
@@ -572,6 +587,19 @@ impl ExpertBankBinding {
                         enc.region.len()
                     )));
                 }
+            }
+        }
+        // The shared expert's regions, each under its own encoding.
+        // Room-checked only: a shared region is typically a whole named
+        // tensor or a window into a store whose extent semantics belong
+        // to that store, so surplus bytes say nothing here.
+        if let Some(shared) = &self.shared {
+            for (enc, n, k) in [
+                (&shared.gate, inter, hidden),
+                (&shared.up, inter, hidden),
+                (&shared.down, hidden, inter),
+            ] {
+                enc.check_room(0, n, k)?;
             }
         }
         Ok(())

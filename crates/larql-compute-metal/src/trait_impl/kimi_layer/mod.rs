@@ -60,8 +60,9 @@ pub struct KimiMoeWeights<'a> {
     /// weighs; the weights come from the unbiased sigmoid scores.
     pub router_bias: &'a [f32],
     /// The three projection banks. Each carries its OWN addressing and
-    /// its own shared-branch address, because a logical expert may sit
-    /// at a different physical slot in each of them.
+    /// its own shared-branch region, because a logical expert may sit
+    /// at a different physical slot in each of them — and the shared
+    /// branch may live in a different allocation entirely.
     pub gate: ProjectionBank<'a>,
     pub up: ProjectionBank<'a>,
     pub down: ProjectionBank<'a>,
@@ -72,22 +73,43 @@ pub struct KimiMoeWeights<'a> {
     pub branch_scale: f32,
 }
 
-/// One projection's bank, and how a logical expert is located in it.
+/// One physical region a grouped kernel can read: bytes, and what they
+/// ARE.
+///
+/// Per projection, so `gate/up` at Q6_K with `down` at BF16 is
+/// expressible — the precision map can already say it, so the physical
+/// vocabulary must be able to carry it.
+#[derive(Clone, Copy)]
+pub struct EncodedRegion<'a> {
+    pub bytes: &'a [u8],
+    pub encoding: ExpertEncoding,
+}
+
+/// One projection's routed bank, how a logical expert is located in it,
+/// and — separately — the shared branch's own region.
 ///
 /// Bank and addressing travel together because they are one physical
 /// fact. Splitting them let a caller pair a bank with another
 /// projection's coordinates, which is the shared-coordinate bug this
 /// whole change exists to make unrepresentable.
+///
+/// The shared branch is its OWN region, not an offset into the routed
+/// bank: `Shared` vs `Routed` is semantic identity and must not imply
+/// physical co-location. A source container keeps the shared expert in
+/// the decoder stack and the routed experts in an expert bank; a
+/// candidate overlay may compile the routed experts to Q6_K while the
+/// shared branch stays source BF16. Co-locating the two is a layout an
+/// artifact MAY choose (the region can be a subrange of the same
+/// allocation), never an invariant execution relies on.
 #[derive(Clone, Copy)]
 pub struct ProjectionBank<'a> {
-    pub bytes: &'a [u8],
+    pub routed: EncodedRegion<'a>,
     pub addressing: ExpertAddressing<'a>,
-    /// The shared branch's address IN THIS BANK.
-    pub shared_offset: u32,
-    /// What these bytes ARE. Per projection, so `gate/up` at Q6_K with
-    /// `down` at BF16 is expressible — the precision map can already say
-    /// it, so the physical vocabulary must be able to carry it.
-    pub encoding: ExpertEncoding,
+    /// The shared branch's `[n, k]` matrix for this projection, when
+    /// the architecture has one. All three projections must agree on
+    /// whether it exists — that is one semantic fact — and each binds
+    /// its own bytes under its own encoding.
+    pub shared: Option<EncodedRegion<'a>>,
 }
 
 /// A representation a grouped kernel can execute.
@@ -623,10 +645,15 @@ impl MetalBackend {
             scores: f(experts),
             sel_scores: f(experts),
             chosen: f(top_k),
-            gate_offsets: f(slots),
-            up_offsets: f(slots),
-            down_offsets: f(slots),
-            weights: f(slots),
+            // Routed slots only: the shared branch owns no entry in the
+            // address tables — its region is bound directly.
+            gate_offsets: f(top_k),
+            up_offsets: f(top_k),
+            down_offsets: f(top_k),
+            // Always `top_k + 1`: the router writes the shared branch's
+            // constant 1.0 unconditionally, and a layer without a shared
+            // branch simply never reads it.
+            weights: f(top_k + 1),
             refusals,
             gate_out: f(slots * inter),
             up_out: f(slots * inter),
@@ -760,7 +787,7 @@ fn validate_layer(
         ffn::FfnSpec::Moe(m) => m,
         ffn::FfnSpec::Dense(d) => return ffn::FfnSpec::validate_dense(d, hidden),
     };
-    if experts == 0 || moe.top_k == 0 || moe.top_k >= slots {
+    if experts == 0 || moe.top_k == 0 {
         return Err(GroupedError::NoExpertsSelected);
     }
     if experts > layer_shader::MAX_EXPERTS || slots > layer_shader::MAX_SLOTS {
@@ -768,6 +795,15 @@ fn validate_layer(
             expected: layer_shader::MAX_EXPERTS.min(layer_shader::MAX_SLOTS),
             found: experts.max(slots),
         });
+    }
+    // Whether a shared expert exists is ONE semantic fact; the three
+    // projections declaring it differently would silently drop one
+    // projection's shared contribution.
+    let has_shared = moe.gate.shared.is_some();
+    for bank in [&moe.up, &moe.down] {
+        if bank.shared.is_some() != has_shared {
+            return Err(GroupedError::SharedBranchInconsistent);
+        }
     }
     for bank in [&moe.gate, &moe.up, &moe.down] {
         if bank.addressing.experts() != experts {
@@ -794,23 +830,37 @@ fn validate_layer(
         // bank's exact extent is known, since a shifted view over a
         // whole segment legitimately has room to spare.
         let per = bank
+            .routed
             .encoding
             .matrix_bytes(n, k)
             .ok_or(GroupedError::KNotSuperblockAligned { k })?;
-        // Every ADDRESSABLE expert, plus the shared branch, must lie
-        // inside the bank. For an identity bank that is every expert; for
-        // a packed one only those the table names.
-        for off in (0..experts)
-            .filter_map(|e| bank.addressing.offset_of(e))
-            .chain(std::iter::once(bank.shared_offset))
-        {
+        // Every ADDRESSABLE expert must lie inside the routed bank. For
+        // an identity bank that is every expert; for a packed one only
+        // those the table names.
+        for off in (0..experts).filter_map(|e| bank.addressing.offset_of(e)) {
             let need = off as usize + per;
-            if need > bank.bytes.len() {
+            if need > bank.routed.bytes.len() {
                 return Err(GroupedError::OffsetOutOfRange {
                     slot: name,
                     offset: off,
                     need,
-                    have: bank.bytes.len(),
+                    have: bank.routed.bytes.len(),
+                });
+            }
+        }
+        // The shared branch's own region, under its OWN encoding —
+        // which need not be the routed bank's.
+        if let Some(shared) = &bank.shared {
+            let need = shared
+                .encoding
+                .matrix_bytes(n, k)
+                .ok_or(GroupedError::KNotSuperblockAligned { k })?;
+            if need > shared.bytes.len() {
+                return Err(GroupedError::OffsetOutOfRange {
+                    slot: name,
+                    offset: 0,
+                    need,
+                    have: shared.bytes.len(),
                 });
             }
         }
