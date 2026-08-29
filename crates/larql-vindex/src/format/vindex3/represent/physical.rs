@@ -491,6 +491,33 @@ pub struct ExpertBankBinding {
     pub up: EncodedRegion,
     pub down: EncodedRegion,
     pub layout: ExpertLayout,
+    pub extent: ExtentPolicy,
+    /// Whether the banks also hold a shared-branch payload past the
+    /// routed ones.
+    ///
+    /// Needed for an exact-extent check and for nothing else: the
+    /// routed layout alone under-counts a Kimi bank by exactly one
+    /// block, which reads as "the bytes are not this encoding" when the
+    /// bytes are fine.
+    pub shared_branch: bool,
+}
+
+/// Why a region may be larger than the bank it addresses.
+///
+/// Two very different facts would otherwise be indistinguishable:
+/// *these regions ARE the bank* (a compiled overlay), and *these regions
+/// are windows onto a much larger segment* (a source container view).
+/// Only the first can conclude that surplus bytes mean the declared
+/// encoding is wrong — and that conclusion is the only thing that
+/// catches BF16 bytes mislabelled Q6_K, since those are LARGER than the
+/// claim and every room check passes them.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ExtentPolicy {
+    /// The regions are exactly this bank. Surplus bytes are a defect.
+    Exact,
+    /// The regions are windows onto a larger backing. Surplus bytes are
+    /// expected and say nothing about the encoding.
+    ContainingView,
 }
 
 impl ExpertBankBinding {
@@ -513,20 +540,20 @@ impl ExpertBankBinding {
     /// Every projection has room for every addressable expert at the
     /// encoding it claims.
     ///
-    /// `exact_bank` says the regions are this bank and nothing else — a
-    /// compiled overlay — so a region LARGER than the encoding implies
-    /// is also refused. A shifted view over a whole source segment
-    /// cannot make that claim, so it checks room only.
-    pub fn validate(
-        &self,
-        hidden: usize,
-        inter: usize,
-        exact_bank: bool,
-    ) -> Result<(), VindexError> {
-        let top = (0..self.layout.slots())
-            .filter_map(|e| self.layout.slot_of(e as u32))
-            .max()
-            .unwrap_or(0);
+    /// [`ExtentPolicy::Exact`] additionally refuses a region LARGER than
+    /// the encoding implies; a [`ExtentPolicy::ContainingView`] cannot
+    /// make that claim and checks room only.
+    pub fn validate(&self, hidden: usize, inter: usize) -> Result<(), VindexError> {
+        let exact_bank = self.extent == ExtentPolicy::Exact;
+        // The highest PHYSICAL slot, which is one less than the slot
+        // count for both layouts. Deriving it by mapping `0..slots()`
+        // through `slot_of` was wrong for `Mapped`, whose entries are
+        // arbitrary expert IDS rather than indices: it found only the
+        // ids that happened to be small and under-counted the bank.
+        // Blocks the regions hold: the routed slots, plus the shared
+        // branch when one is present.
+        let blocks = (self.layout.slots() + usize::from(self.shared_branch)).max(1);
+        let top = (blocks - 1) as u32;
         for (enc, n, k) in [
             (&self.gate, inter, hidden),
             (&self.up, inter, hidden),

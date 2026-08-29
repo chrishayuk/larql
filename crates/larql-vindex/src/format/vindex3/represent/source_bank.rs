@@ -28,7 +28,7 @@ use std::collections::BTreeMap;
 use std::sync::Arc;
 
 use super::physical::{
-    EncodedRegion, ExpertBankBinding, ExpertEncoding, ExpertLayout, PhysicalStore,
+    EncodedRegion, ExpertBankBinding, ExpertEncoding, ExpertLayout, ExtentPolicy, PhysicalStore,
 };
 use crate::error::VindexError;
 
@@ -108,6 +108,10 @@ pub fn source_expert_bank(
             layout: ExpertLayout::Mapped {
                 ids: (0..experts).collect(),
             },
+            // Three windows onto the whole segment: surplus bytes are
+            // the rest of the model, not a mislabelled encoding.
+            extent: ExtentPolicy::ContainingView,
+            shared_branch: false,
         },
         bases,
     })

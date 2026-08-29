@@ -53,6 +53,8 @@ pub struct KimiLayerKernels {
     /// Sigmoid + correction bias + deterministic top-k + renorm + scale,
     /// writing the expert offset table the grouped kernel then reads.
     pub router_select: ComputePipelineState,
+    /// Logical expert id -> byte address, one dispatch per projection.
+    pub expert_addresses: ComputePipelineState,
     /// `residual + Σ w·expert`, with the weights read from a DEVICE
     /// buffer rather than pushed from the host.
     pub moe_combine: ComputePipelineState,
@@ -65,6 +67,7 @@ impl KimiLayerKernels {
         use crate::kernels::compile_required as r;
         Self {
             router_select: r::<shaders::kimi_layer::RouterSelectKernel>(device, library),
+            expert_addresses: r::<shaders::kimi_layer::ExpertAddressesKernel>(device, library),
             moe_combine: r::<shaders::kimi_layer::MoeCombineKernel>(device, library),
         }
     }

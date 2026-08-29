@@ -26,8 +26,14 @@
 //! ## Residency is a separate problem, and this refuses rather than
 //! guessing
 //!
-//! The offsets a router writes have to come from somewhere, and there
-//! are two ways a bank can answer:
+//! **The router answers WHICH expert, and nothing else.** Where that
+//! expert's bytes live is resolved per projection by
+//! `kimi_expert_addresses`, because a logical expert may sit at a
+//! different physical slot in each of gate/up/down. A single address
+//! emitted here would be a shared coordinate across the three, which is
+//! exactly the invariant that must not exist.
+//!
+//! An address, once asked for, can be answered two ways:
 //!
 //! * **A full execution-shaped bank** holds every expert at its own
 //!   index, so the address IS the identity: `offset = expert * stride`.
@@ -91,19 +97,14 @@ constant uint KIMI_NOT_RESIDENT = {not_resident}u;
 kernel void kimi_router_select(
     device const float* logits      [[buffer(0)]],  // [experts]
     device const float* bias        [[buffer(1)]],  // [experts], SELECTS ONLY
-    device const uint*  expert_offsets [[buffer(2)]], // [experts] byte offset or NOT_RESIDENT; unread when identity_stride != 0
-    device float*       scores      [[buffer(3)]],  // [experts] sigmoid(logits), UNBIASED
-    device float*       sel_scores  [[buffer(4)]],  // [experts] scores + bias
-    device uint*        chosen      [[buffer(5)]],  // [top_k] selected expert ids
-    device uint*        offsets     [[buffer(6)]],  // [top_k + 1] bank byte offsets
-    device float*       weights     [[buffer(7)]],  // [top_k + 1] combine weights
-    device atomic_uint* refusals    [[buffer(8)]],  // non-resident selections
-    constant uint&      experts     [[buffer(9)]],
-    constant uint&      top_k       [[buffer(10)]],
-    constant uint&      renormalize [[buffer(11)]],
-    constant float&     branch_scale [[buffer(12)]],
-    constant uint&      shared_offset [[buffer(13)]],
-    constant uint&      identity_stride [[buffer(14)]],
+    device float*       scores      [[buffer(2)]],  // [experts] sigmoid(logits), UNBIASED
+    device float*       sel_scores  [[buffer(3)]],  // [experts] scores + bias
+    device uint*        chosen      [[buffer(4)]],  // [top_k] selected expert ids
+    device float*       weights     [[buffer(5)]],  // [top_k + 1] combine weights
+    constant uint&      experts     [[buffer(6)]],
+    constant uint&      top_k       [[buffer(7)]],
+    constant uint&      renormalize [[buffer(8)]],
+    constant float&     branch_scale [[buffer(9)]],
     uint tid    [[thread_position_in_threadgroup]],
     uint tcount [[threads_per_threadgroup]])
 {{
@@ -151,21 +152,6 @@ kernel void kimi_router_select(
             // from the biased ones is the most plausible wrong
             // transcription and changes every routed contribution.
             ts_gathered[slot] = scores[best];
-
-            // A full bank addresses by identity and cannot refuse; a
-            // packed one consults its table and can.
-            const uint off = identity_stride != 0u
-                ? best * identity_stride
-                : expert_offsets[best];
-            if (off == KIMI_NOT_RESIDENT) {{
-                // No address for this expert. Count it and bind slot 0
-                // so the dispatch stays in bounds; the host reads the
-                // counter after the wait and refuses the step.
-                atomic_fetch_add_explicit(refusals, 1u, memory_order_relaxed);
-                offsets[slot] = 0u;
-            }} else {{
-                offsets[slot] = off;
-            }}
         }}
         threadgroup_barrier(mem_flags::mem_threadgroup);
     }}
@@ -180,8 +166,8 @@ kernel void kimi_router_select(
     }}
     // The shared branch: computed like any expert, summed UNSCALED.
     // `routed_scaling_factor` is already folded into the routed weights
-    // above and the reference adds the shared output plain.
-    offsets[top_k] = shared_offset;
+    // above and the reference adds the shared output plain. Its ADDRESS
+    // is a per-projection fact and is resolved by kimi_expert_addresses.
     weights[top_k] = 1.0f;
 }}
 
@@ -207,6 +193,57 @@ kernel void kimi_moe_combine(
     }}
     out[j] = residual[j] + acc;
 }}
+
+// **Logical expert identity -> byte address, for ONE projection.**
+//
+// The router says WHICH expert. This says where that expert's bytes are
+// FOR THIS PROJECTION, and nothing else does. Dispatched once per
+// projection, so gate/up/down each resolve their own coordinate: a
+// logical expert may sit at a different physical slot, under a
+// different encoding, in each of the three banks, and no shared
+// coordinate survives anywhere in the model.
+//
+// `stride != 0` addresses by identity (`slot == logical id`), the shape
+// a compiled execution-ordered bank has. `stride == 0` consults the
+// table, which is what an arbitrarily-ordered source bank needs. A
+// selection the table has no address for is counted here — addressing
+// is where that fact lives, not routing.
+kernel void kimi_expert_addresses(
+    device const uint*  chosen        [[buffer(0)]],  // [top_k] logical ids
+    device const uint*  table         [[buffer(1)]],  // [experts]; unread when stride != 0
+    device uint*        offsets       [[buffer(2)]],  // [top_k + 1] byte offsets
+    device atomic_uint* refusals      [[buffer(3)]],
+    constant uint&      top_k         [[buffer(4)]],
+    constant uint&      stride        [[buffer(5)]],
+    constant uint&      shared_offset [[buffer(6)]],
+    constant uint&      experts       [[buffer(7)]],
+    uint slot [[thread_position_in_grid]])
+{{
+    if (slot > top_k) return;
+    if (slot == top_k) {{
+        // The shared branch is not routed and has no logical id; its
+        // address is a property of this projection's bank.
+        offsets[slot] = shared_offset;
+        return;
+    }}
+    const uint id = chosen[slot];
+    if (id >= experts) {{
+        atomic_fetch_add_explicit(refusals, 1u, memory_order_relaxed);
+        offsets[slot] = 0u;
+        return;
+    }}
+    const uint off = stride != 0u ? id * stride : table[id];
+    if (off == KIMI_NOT_RESIDENT) {{
+        // No address for this expert in THIS projection. Reading anyway
+        // would be a plausible wrong answer from another expert's
+        // weights; bind slot 0 to stay in bounds and let the host refuse
+        // after the wait.
+        atomic_fetch_add_explicit(refusals, 1u, memory_order_relaxed);
+        offsets[slot] = 0u;
+    }} else {{
+        offsets[slot] = off;
+    }}
+}}
 "#,
         max_experts = MAX_EXPERTS,
         max_slots = MAX_SLOTS,
@@ -217,6 +254,11 @@ kernel void kimi_moe_combine(
 pub struct RouterSelectKernel;
 impl crate::kernels::ShaderKernel for RouterSelectKernel {
     const KERNEL_NAME: &'static str = "kimi_router_select";
+}
+
+pub struct ExpertAddressesKernel;
+impl crate::kernels::ShaderKernel for ExpertAddressesKernel {
+    const KERNEL_NAME: &'static str = "kimi_expert_addresses";
 }
 
 pub struct MoeCombineKernel;

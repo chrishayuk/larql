@@ -282,6 +282,8 @@ fn semantic_id_physical_slot_and_backing_store_all_agree() {
         up: region("1.block_sparse_moe.experts.181.w3.weight"),
         down: region("1.block_sparse_moe.experts.181.w2.weight"),
         layout: ExpertLayout::Identity { experts: 256 },
+        extent: ExtentPolicy::Exact,
+        shared_branch: false,
     };
     assert_eq!(scoped.layout.slot_of(181), Some(181), "identity layout");
     assert_eq!(scoped.store_id(), "candidate", "backing object");
@@ -298,6 +300,8 @@ fn semantic_id_physical_slot_and_backing_store_all_agree() {
         up: region("4.block_sparse_moe.experts.181.w3.weight"),
         down: region("4.block_sparse_moe.experts.181.w2.weight"),
         layout: ExpertLayout::Mapped { ids: vec![181] },
+        extent: ExtentPolicy::Exact,
+        shared_branch: false,
     };
     assert_eq!(untouched.store_id(), "source");
     assert_eq!(untouched.gate.encoding, ExpertEncoding::Bf16);
@@ -331,6 +335,8 @@ fn offsets_follow_the_layout_not_the_expert_id() {
         up: region(),
         down: region(),
         layout: ExpertLayout::Identity { experts: 256 },
+        extent: ExtentPolicy::Exact,
+        shared_branch: false,
     };
     assert_eq!(identity.gate_up_offset(181, 1000), Some(181_000));
 
@@ -339,6 +345,8 @@ fn offsets_follow_the_layout_not_the_expert_id() {
         up: region(),
         down: region(),
         layout: ExpertLayout::Mapped { ids: vec![73, 181] },
+        extent: ExtentPolicy::Exact,
+        shared_branch: false,
     };
     assert_eq!(packed.gate_up_offset(181, 1000), Some(1000), "slot 1");
     assert_eq!(packed.gate_up_offset(99, 1000), None, "not in this bank");
@@ -366,7 +374,7 @@ fn a_bank_whose_bytes_are_not_its_declared_encoding_is_refused() {
         "the two sizes must differ to test anything"
     );
 
-    let bank = |bytes: usize, encoding: ExpertEncoding| {
+    let bank = |bytes: usize, encoding: ExpertEncoding, extent: ExtentPolicy| {
         let s = store("s", &[("bank", &vec![0u8; bytes])]);
         let r = || EncodedRegion {
             region: PhysicalStore::whole(&s, "bank").expect("whole"),
@@ -377,20 +385,22 @@ fn a_bank_whose_bytes_are_not_its_declared_encoding_is_refused() {
             up: r(),
             down: r(),
             layout: ExpertLayout::Identity { experts: EXPERTS },
+            extent,
+            shared_branch: false,
         }
     };
 
     // Honest banks pass.
-    bank(bf16_bank, ExpertEncoding::Bf16)
-        .validate(HIDDEN, INTER, true)
+    bank(bf16_bank, ExpertEncoding::Bf16, ExtentPolicy::Exact)
+        .validate(HIDDEN, INTER)
         .expect("bf16 bytes as BF16");
-    bank(q6_bank, ExpertEncoding::Q6K)
-        .validate(HIDDEN, INTER, true)
+    bank(q6_bank, ExpertEncoding::Q6K, ExtentPolicy::Exact)
+        .validate(HIDDEN, INTER)
         .expect("q6 bytes as Q6_K");
 
     // Q6_K bytes claimed as BF16: too small, caught by room alone.
-    let err = bank(q6_bank, ExpertEncoding::Bf16)
-        .validate(HIDDEN, INTER, false)
+    let err = bank(q6_bank, ExpertEncoding::Bf16, ExtentPolicy::ContainingView)
+        .validate(HIDDEN, INTER)
         .expect_err("must refuse");
     assert!(
         format!("{err}").contains("not what this encoding claims"),
@@ -400,13 +410,13 @@ fn a_bank_whose_bytes_are_not_its_declared_encoding_is_refused() {
     // BF16 bytes claimed as Q6_K: LARGER than the claim, so room alone
     // would wave it through — the exact-extent check is what catches it.
     assert!(
-        bank(bf16_bank, ExpertEncoding::Q6K)
-            .validate(HIDDEN, INTER, false)
+        bank(bf16_bank, ExpertEncoding::Q6K, ExtentPolicy::ContainingView)
+            .validate(HIDDEN, INTER)
             .is_ok(),
         "room alone cannot catch an oversized bank — that is why exact_bank exists"
     );
-    let err = bank(bf16_bank, ExpertEncoding::Q6K)
-        .validate(HIDDEN, INTER, true)
+    let err = bank(bf16_bank, ExpertEncoding::Q6K, ExtentPolicy::Exact)
+        .validate(HIDDEN, INTER)
         .expect_err("must refuse");
     assert!(format!("{err}").contains("not this encoding"), "{err}");
 }

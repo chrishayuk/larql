@@ -104,7 +104,9 @@ impl MetalBackend {
             router_selection_scores: f(&s.sel_scores, experts),
             selected_ids: read_u32(&s.chosen, top_k),
             combine_weights: f(&s.weights, slots),
-            expert_offsets: read_u32(&s.offsets, slots),
+            // The GATE projection's addresses. The three may differ, and a
+            // traced view that showed one number would imply they cannot.
+            expert_offsets: read_u32(&s.gate_offsets, slots),
             expert_outputs: f(&s.expert_out, slots * hidden),
             output: f(&s.out, hidden),
             gpu_ms,

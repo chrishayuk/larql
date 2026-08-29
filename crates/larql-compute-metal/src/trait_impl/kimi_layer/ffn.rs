@@ -137,36 +137,48 @@ impl MetalBackend {
         // Caching it was measured at ~0.7 ms a token out of 84 — noise
         // against a hazard that produces a plausible refusal, or worse a
         // plausible answer, from another layer's map.
-        // A full bank tabulates nothing — the kernel multiplies by a
-        // stride instead — but Metal still needs a bound buffer, so a
-        // one-element placeholder stands in. It is never read.
-        let offsets_table = match m.addressing {
-            super::ExpertAddressing::Table(t) => self.bufs().uncached_bytes(bytemuck_u32(t)),
-            super::ExpertAddressing::Identity { .. } => self.bufs().uncached_bytes(&[0u8; 4]),
-        };
         // Resolved into their registered regions, so the buffer the
         // encoder binds IS the one the residency set holds.
         let wts = |v: &[u8]| self.bufs().weights(v);
-        let (bank_gate, bank_up, bank_down) = (wts(m.gate), wts(m.up), wts(m.down));
+        let (bank_gate, bank_up, bank_down) =
+            (wts(m.gate.bytes), wts(m.up.bytes), wts(m.down.bytes));
 
-        // Router: logits, then the whole decision in one dispatch that
-        // writes the offset table the expert kernel will read.
+        // Router: logits, then the decision. It writes WHICH expert and
+        // nothing about where any bytes are.
         self.encode_f32_gemv_into(enc, &rw, &s.post_normed, &s.logits, experts, hidden);
-        self.encode_router_select(enc, m, &router_bias, &offsets_table, s, experts);
+        self.encode_router_select(enc, m, &router_bias, s, experts);
+
+        // Then each projection resolves its OWN address for that logical
+        // expert. Three dispatches of `top_k + 1` threads: the price of
+        // having no shared coordinate anywhere in the model.
+        let mut tables = Vec::with_capacity(3);
+        for (bank, offsets) in [
+            (&m.gate, &s.gate_offsets),
+            (&m.up, &s.up_offsets),
+            (&m.down, &s.down_offsets),
+        ] {
+            tables.push(self.encode_expert_addresses(enc, bank, s, offsets, experts, m.top_k));
+        }
 
         let projection = GroupedShape {
             n: inter,
             k: hidden,
             layout: InputLayout::Shared,
         };
-        for (bank, out) in [(&bank_gate, &s.gate_out), (&bank_up, &s.up_out)] {
+        for (bank, spec, offsets, out) in [
+            (&bank_gate, &m.gate, &s.gate_offsets, &s.gate_out),
+            (&bank_up, &m.up, &s.up_offsets, &s.up_out),
+        ] {
             encode_grouped(
                 enc,
-                self.default_grouped_handle(),
+                // Each projection picks its OWN kernel from its OWN
+                // declared encoding. Nothing here consults "the bank's"
+                // format, because there is no such thing.
+                self.grouped_handle_for(spec.encoding),
                 GroupedBinding {
                     w: &bank.0,
                     w_offset: bank.1,
-                    offsets: &s.offsets,
+                    offsets,
                     x: &s.post_normed,
                     out,
                 },
@@ -177,11 +189,11 @@ impl MetalBackend {
         self.encode_geglu_silu(enc, &s.gate_out, &s.up_out, &s.h, (slots * inter) as u32);
         encode_grouped(
             enc,
-            self.default_grouped_handle(),
+            self.grouped_handle_for(m.down.encoding),
             GroupedBinding {
                 w: &bank_down.0,
                 w_offset: bank_down.1,
-                offsets: &s.offsets,
+                offsets: &s.down_offsets,
                 x: &s.h,
                 out: &s.expert_out,
             },
@@ -193,14 +205,56 @@ impl MetalBackend {
             },
         );
         self.encode_moe_combine(enc, s, &s.weights, hidden, slots);
-        vec![
-            rw,
-            router_bias,
-            offsets_table,
-            bank_gate.0,
-            bank_up.0,
-            bank_down.0,
-        ]
+        let mut held = vec![rw, router_bias, bank_gate.0, bank_up.0, bank_down.0];
+        held.extend(tables);
+        held
+    }
+
+    /// The grouped kernel that reads this encoding.
+    ///
+    /// All three share one binding ABI, so this is a handle swap and
+    /// never a different lowering.
+    fn grouped_handle_for(&self, encoding: super::ExpertEncoding) -> &crate::kernels::KernelHandle {
+        match encoding {
+            super::ExpertEncoding::Bf16 => self.default_grouped_handle(),
+            super::ExpertEncoding::Q6K => &self.quant.q6k_grouped_experts_pipeline,
+            super::ExpertEncoding::Q4K => &self.quant.q4k_grouped_experts_pipeline,
+        }
+    }
+
+    /// Resolve every selected logical expert to a byte address IN ONE
+    /// PROJECTION's bank.
+    ///
+    /// Returns the offset table it bound, which the caller holds until
+    /// the wait. A bank that addresses by identity tabulates nothing,
+    /// but Metal still needs a bound buffer, so a one-element
+    /// placeholder stands in and is never read.
+    fn encode_expert_addresses(
+        &self,
+        enc: &ComputeCommandEncoderRef,
+        bank: &super::ProjectionBank<'_>,
+        s: &LayerScratch,
+        offsets: &Buffer,
+        experts: usize,
+        top_k: usize,
+    ) -> Buffer {
+        let table = match bank.addressing {
+            super::ExpertAddressing::Table(t) => self.bufs().uncached_bytes(bytemuck_u32(t)),
+            super::ExpertAddressing::Identity { .. } => self.bufs().uncached_bytes(&[0u8; 4]),
+        };
+        let (k, stride) = (top_k as u32, bank.addressing.identity_stride());
+        let (shared, e) = (bank.shared_offset, experts as u32);
+        enc.set_compute_pipeline_state(&self.kimi.expert_addresses);
+        enc.set_buffer(0, Some(&s.chosen), 0);
+        enc.set_buffer(1, Some(&table), 0);
+        enc.set_buffer(2, Some(offsets), 0);
+        enc.set_buffer(3, Some(&s.refusals), 0);
+        enc.set_bytes(4, 4, &k as *const u32 as *const std::ffi::c_void);
+        enc.set_bytes(5, 4, &stride as *const u32 as *const std::ffi::c_void);
+        enc.set_bytes(6, 4, &shared as *const u32 as *const std::ffi::c_void);
+        enc.set_bytes(7, 4, &e as *const u32 as *const std::ffi::c_void);
+        crate::lowering::dispatch_linear(enc, &self.kimi.expert_addresses, top_k + 1);
+        table
     }
 
     /// The dense half: the SAME grouped kernel, GEGLU and combine, with

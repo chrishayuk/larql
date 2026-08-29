@@ -36,7 +36,7 @@ use std::path::Path;
 use std::time::Instant;
 
 use crate::format::vindex3::represent::physical::{
-    EncodedRegion, ExpertBankBinding, ExpertEncoding, ExpertLayout, PhysicalStore,
+    EncodedRegion, ExpertBankBinding, ExpertEncoding, ExpertLayout, ExtentPolicy, PhysicalStore,
 };
 use larql_compute::backend::ComputeBackend;
 use larql_compute_metal::shaders::kimi_layer::NOT_RESIDENT;
@@ -134,6 +134,7 @@ fn device_layer(
                 read_bf16_bytes(dir, &format!("layer{i}_dense_w3")),
                 read_bf16_bytes(dir, &format!("layer{i}_dense_w2")),
                 ExpertLayout::Mapped { ids: vec![0] },
+                false,
             ),
             offsets: Vec::new(),
             expert_stride: 0,
@@ -192,6 +193,7 @@ fn device_layer(
             ExpertLayout::Mapped {
                 ids: union.iter().map(|e| *e as u32).collect(),
             },
+            true,
         ),
         offsets: residency,
         shared_offset,
@@ -295,6 +297,7 @@ fn owned_bank(
     up: Vec<u8>,
     down: Vec<u8>,
     layout: ExpertLayout,
+    shared_branch: bool,
 ) -> ExpertBankBinding {
     let region = |id: &str, bytes: Vec<u8>| {
         let len = bytes.len() as u64;
@@ -314,6 +317,9 @@ fn owned_bank(
         up: region("fixture", up),
         down: region("fixture", down),
         layout,
+        // The fixture's packed banks ARE the bank.
+        extent: ExtentPolicy::Exact,
+        shared_branch,
     }
 }
 
@@ -508,6 +514,14 @@ fn sixteen_greedy_tokens_through_the_mixed_metal_stack() {
     metal.seal_weight_regions();
     eprintln!("[traj] {registered} weight regions registered and sealed");
 
+    // Every device layer's banks checked before a single dispatch: the
+    // declared encoding must match the bytes actually bound.
+    for (i, d) in device.iter().enumerate() {
+        if let Some(d) = d {
+            d.validate_banks(hidden)
+                .unwrap_or_else(|e| panic!("layer {i}'s banks are not what they claim: {e}"));
+        }
+    }
     let mut stack = HybridStack::new(device, host);
     assert!(
         stack.attach_head(HybridHead {

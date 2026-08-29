@@ -29,12 +29,15 @@
 use std::path::{Path, PathBuf};
 use std::time::Instant;
 
+use larql_compute::cpu::ops::q4_common::quantize_q6_k;
 use larql_compute_metal::shaders::kimi_layer::NOT_RESIDENT;
 use larql_compute_metal::trait_impl::bf16_moe_block::{ExpertBankRef, MoeBlockCall, MoeFfnBanks};
 use larql_compute_metal::trait_impl::grouped_experts::ExpertOffset;
+use larql_compute_metal::trait_impl::grouped_experts::GroupedError;
 use larql_compute_metal::trait_impl::kda::{KdaDeviceState, KdaDeviceWeights, KdaShape};
 use larql_compute_metal::trait_impl::kimi_layer::{
-    AttentionSpec, ExpertAddressing, FfnSpec, KimiLayerWeights, KimiMoeWeights,
+    AttentionSpec, ExpertAddressing, ExpertEncoding, FfnSpec, KimiLayerWeights, KimiMoeWeights,
+    ProjectionBank,
 };
 use larql_compute_metal::MetalBackend;
 use larql_models::config::KdaGeometry;
@@ -196,11 +199,24 @@ impl Fixture {
             ffn: FfnSpec::Moe(KimiMoeWeights {
                 router_weight: &self.router_weight,
                 router_bias: &self.router_bias,
-                addressing: ExpertAddressing::Table(&self.residency),
-                shared_offset: self.shared_offset,
-                gate: &self.bank_gate,
-                up: &self.bank_up,
-                down: &self.bank_down,
+                gate: ProjectionBank {
+                    bytes: &self.bank_gate,
+                    addressing: ExpertAddressing::Table(&self.residency),
+                    shared_offset: self.shared_offset,
+                    encoding: ExpertEncoding::Bf16,
+                },
+                up: ProjectionBank {
+                    bytes: &self.bank_up,
+                    addressing: ExpertAddressing::Table(&self.residency),
+                    shared_offset: self.shared_offset,
+                    encoding: ExpertEncoding::Bf16,
+                },
+                down: ProjectionBank {
+                    bytes: &self.bank_down,
+                    addressing: ExpertAddressing::Table(&self.residency),
+                    shared_offset: self.shared_offset,
+                    encoding: ExpertEncoding::Bf16,
+                },
                 inter: self.inter,
                 top_k: self.top_k,
                 renormalize: self.renormalize,
@@ -533,7 +549,13 @@ fn selecting_a_non_resident_expert_is_refused() {
     let cpu = cpu_layer(&fx);
     broken[cpu.moe.router.selected_ids[0]] = NOT_RESIDENT;
     let mut w = fx.layer(&state);
-    moe_mut(&mut w).addressing = ExpertAddressing::Table(&broken);
+    {
+        let m = moe_mut(&mut w);
+        let a = ExpertAddressing::Table(&broken);
+        m.gate.addressing = a;
+        m.up.addressing = a;
+        m.down.addressing = a;
+    }
 
     let refused = metal.kimi_decoder_layer(w, &fx.x);
     assert!(
@@ -743,4 +765,311 @@ fn moe_mut<'a, 'b>(
         FfnSpec::Moe(m) => m,
         FfnSpec::Dense(_) => panic!("this control corrupts a routed layer"),
     }
+}
+
+// **C rung 4 — projection identity, location, backing and encoding are
+// independent.**
+//
+// Runs on the REAL layer fixture because the claim needs superblock-
+// aligned shapes: at hidden 2304 / inter 1024 both projections are
+// whole multiples of 256, while a toy fixture's 48-element projections
+// cannot encode Q6_K at all — a test there would prove nothing about
+// mixed representation.
+//
+// The four properties are varied AT ONCE, which is the point. Mixed
+// encoding over identity addresses would leave open that some shared
+// physical coordinate still exists; independent permutations under one
+// encoding would leave open that representation is still a property of
+// "the bank". Together they close both.
+/// Three permutations of the bank's blocks that differ at every index.
+fn perms(blocks: usize) -> (Vec<usize>, Vec<usize>, Vec<usize>) {
+    // Three PAIRWISE DISCORDANT permutations: no index maps to the same
+    // place in any two of them.
+    //
+    // Affine maps `a*i + b` will not do. Two of them differ everywhere
+    // only when their multipliers are equal, which makes them rotations
+    // of one another — and a rotation is exactly what one hidden
+    // coordinate plus a constant could still reproduce. So: seeded
+    // shuffles, searched deterministically until a discordant triple
+    // falls out.
+    let shuffled = |seed: u64| {
+        let mut v: Vec<usize> = (0..blocks).collect();
+        let mut st = seed.wrapping_mul(6_364_136_223_846_793_005).wrapping_add(1);
+        for i in (1..blocks).rev() {
+            st = st
+                .wrapping_mul(6_364_136_223_846_793_005)
+                .wrapping_add(1_442_695_040_888_963_407);
+            v.swap(i, (st >> 33) as usize % (i + 1));
+        }
+        v
+    };
+    let discordant = |a: &[usize], b: &[usize]| a.iter().zip(b).all(|(x, y)| x != y);
+    for s in 0..4096u64 {
+        let g = shuffled(s);
+        for t in s + 1..s + 64 {
+            let u = shuffled(t);
+            if !discordant(&g, &u) {
+                continue;
+            }
+            for w in t + 1..t + 64 {
+                let d = shuffled(w);
+                if discordant(&g, &d) && discordant(&u, &d) {
+                    return (g, u, d);
+                }
+            }
+        }
+    }
+    panic!("no discordant triple found for {blocks} blocks");
+}
+
+fn permute(src: &[u8], per: usize, perm: &[usize]) -> Vec<u8> {
+    let mut out = vec![0u8; src.len()];
+    for (i, &p) in perm.iter().enumerate() {
+        out[p * per..(p + 1) * per].copy_from_slice(&src[i * per..(i + 1) * per]);
+    }
+    out
+}
+
+fn widen(bf16: &[u8]) -> Vec<f32> {
+    bf16.as_chunks::<2>()
+        .0
+        .iter()
+        .map(|c| f32::from_bits((u16::from_le_bytes(*c) as u32) << 16))
+        .collect()
+}
+
+/// Re-encode each block of a bf16 bank to Q6_K, block by block, so the
+/// result is a bank of the same block count at a smaller stride.
+fn to_q6k_blocks(src: &[u8], per: usize, n: usize, k: usize) -> (Vec<u8>, usize) {
+    assert!(k.is_multiple_of(256), "k={k} cannot be Q6_K");
+    let q_per = n * k / 256 * 210;
+    let mut out = Vec::with_capacity(src.len() / per * q_per);
+    for block in src.chunks_exact(per) {
+        let q = quantize_q6_k(&widen(block));
+        assert_eq!(q.len(), q_per);
+        out.extend_from_slice(&q);
+    }
+    (out, q_per)
+}
+
+fn table(residency: &[u32], src_per: usize, dst_per: usize, perm: &[usize]) -> Vec<u32> {
+    residency
+        .iter()
+        .map(|off| {
+            if *off == larql_compute_metal::shaders::kimi_layer::NOT_RESIDENT {
+                *off
+            } else {
+                (perm[*off as usize / src_per] * dst_per) as u32
+            }
+        })
+        .collect()
+}
+
+/// **The signature: one logical expert, three physical slots, two
+/// encodings, correct output.**
+#[test]
+fn location_and_representation_vary_independently_for_one_semantic_expert() {
+    let Some((b, f)) = setup() else {
+        return;
+    };
+    let per = f.inter * f.hidden * 2;
+    let blocks = f.bank_gate.len() / per;
+    let (pg, pu, pd) = perms(blocks);
+    for i in 0..blocks {
+        assert!(
+            pg[i] != pu[i] && pu[i] != pd[i] && pg[i] != pd[i],
+            "block {i} maps to {}/{}/{} — a shared coordinate would survive",
+            pg[i],
+            pu[i],
+            pd[i]
+        );
+    }
+
+    // The all-BF16 reference, unpermuted.
+    let state_ref = KdaDeviceState::zeros(&b, f.shape());
+    let (want, _) = b
+        .kimi_decoder_layer(f.layer(&state_ref), &f.x)
+        .expect("reference layer runs");
+
+    // gate/up become Q6_K; down stays BF16. Each is permuted differently.
+    let (q_gate_src, q_per) = to_q6k_blocks(&f.bank_gate, per, f.inter, f.hidden);
+    let (q_up_src, _) = to_q6k_blocks(&f.bank_up, per, f.inter, f.hidden);
+    let gate = permute(&q_gate_src, q_per, &pg);
+    let up = permute(&q_up_src, q_per, &pu);
+    let down = permute(&f.bank_down, per, &pd);
+    let (tg, tu, td) = (
+        table(&f.residency, per, q_per, &pg),
+        table(&f.residency, per, q_per, &pu),
+        table(&f.residency, per, per, &pd),
+    );
+    let shared = f.shared_offset as usize / per;
+
+    let state = KdaDeviceState::zeros(&b, f.shape());
+    let mut w = f.layer(&state);
+    if let FfnSpec::Moe(m) = &mut w.ffn {
+        m.gate = ProjectionBank {
+            bytes: &gate,
+            addressing: ExpertAddressing::Table(&tg),
+            shared_offset: (pg[shared] * q_per) as u32,
+            encoding: ExpertEncoding::Q6K,
+        };
+        m.up = ProjectionBank {
+            bytes: &up,
+            addressing: ExpertAddressing::Table(&tu),
+            shared_offset: (pu[shared] * q_per) as u32,
+            encoding: ExpertEncoding::Q6K,
+        };
+        m.down = ProjectionBank {
+            bytes: &down,
+            addressing: ExpertAddressing::Table(&td),
+            shared_offset: (pd[shared] * per) as u32,
+            encoding: ExpertEncoding::Bf16,
+        };
+    }
+    let (got, _) = b
+        .kimi_decoder_layer(w, &f.x)
+        .expect("the mixed layer must execute");
+
+    // Every selected expert really does sit at three distinct slots.
+    let ids: Vec<usize> = f.ids_order.clone();
+    for &e in ids.iter().take(f.top_k) {
+        let (a, c, d) = (
+            tg[e] as usize / q_per,
+            tu[e] as usize / q_per,
+            td[e] as usize / per,
+        );
+        assert!(
+            a != c && c != d && a != d,
+            "expert {e} resolves to slots {a}/{c}/{d} — not three distinct places"
+        );
+    }
+
+    // The tolerance is Q6's own, taken from this very layer: quantise
+    // gate/up WITHOUT permuting and measure. Anything the permutation
+    // adds beyond that is an addressing fault, not representation.
+    let unpermuted = {
+        let identity: Vec<usize> = (0..blocks).collect();
+        let g = permute(&q_gate_src, q_per, &identity);
+        let u = permute(&q_up_src, q_per, &identity);
+        let (tgi, tui) = (
+            table(&f.residency, per, q_per, &identity),
+            table(&f.residency, per, q_per, &identity),
+        );
+        let st = KdaDeviceState::zeros(&b, f.shape());
+        let mut w2 = f.layer(&st);
+        if let FfnSpec::Moe(m) = &mut w2.ffn {
+            m.gate = ProjectionBank {
+                bytes: &g,
+                addressing: ExpertAddressing::Table(&tgi),
+                shared_offset: (shared * q_per) as u32,
+                encoding: ExpertEncoding::Q6K,
+            };
+            m.up = ProjectionBank {
+                bytes: &u,
+                addressing: ExpertAddressing::Table(&tui),
+                shared_offset: (shared * q_per) as u32,
+                encoding: ExpertEncoding::Q6K,
+            };
+        }
+        b.kimi_decoder_layer(w2, &f.x)
+            .expect("unpermuted mixed runs")
+            .0
+    };
+    let rel = |a: &[f32], c: &[f32]| {
+        let se: f64 = a.iter().zip(c).map(|(x, y)| ((x - y) as f64).powi(2)).sum();
+        let ss: f64 = c.iter().map(|y| (*y as f64).powi(2)).sum();
+        (se / ss).sqrt()
+    };
+    let envelope = rel(&unpermuted, &want);
+    let mixed = rel(&got, &want);
+    eprintln!(
+        "[c4] Q6_K gate/up + BF16 down, three independent permutations: \
+         rel_rms vs BF16 {mixed:.3e}; the same encodings UNPERMUTED give {envelope:.3e}"
+    );
+    assert!(
+        envelope > 0.0,
+        "quantising gate/up must move the answer, or this proves nothing"
+    );
+    assert!(
+        mixed <= envelope * 1.05,
+        "permuting the three projections independently must cost nothing beyond Q6's own \
+         error: {mixed:.3e} against an envelope of {envelope:.3e}"
+    );
+
+    // The control: mismatch ONE projection's table and the answer must move.
+    let state_bad = KdaDeviceState::zeros(&b, f.shape());
+    let mut bad = f.layer(&state_bad);
+    if let FfnSpec::Moe(m) = &mut bad.ffn {
+        m.gate = ProjectionBank {
+            bytes: &gate,
+            addressing: ExpertAddressing::Table(&tu),
+            shared_offset: (pg[shared] * q_per) as u32,
+            encoding: ExpertEncoding::Q6K,
+        };
+        m.up = ProjectionBank {
+            bytes: &up,
+            addressing: ExpertAddressing::Table(&tu),
+            shared_offset: (pu[shared] * q_per) as u32,
+            encoding: ExpertEncoding::Q6K,
+        };
+        m.down = ProjectionBank {
+            bytes: &down,
+            addressing: ExpertAddressing::Table(&td),
+            shared_offset: (pd[shared] * per) as u32,
+            encoding: ExpertEncoding::Bf16,
+        };
+    }
+    let (wrong, _) = b.kimi_decoder_layer(bad, &f.x).expect("runs");
+    assert!(
+        rel(&wrong, &want) > envelope * 2.0,
+        "giving gate another projection's table must break the answer, or the three \
+         mappings are not really independent"
+    );
+}
+
+/// **A projection whose bytes are not its declared encoding is refused
+/// BEFORE any kernel runs.**
+///
+/// Q6_K bytes dispatched as BF16 would be read as roughly 2.4x more
+/// data than exists — the layer must refuse rather than launch and let
+/// a kernel interpret whatever follows.
+///
+/// This is the too-small direction, which a room check catches. The
+/// opposite (BF16 bytes declared Q6_K, which are LARGER than the claim
+/// and pass every room check) needs the bank's exact extent and is
+/// covered by `represent::physical`'s
+/// `a_bank_whose_bytes_are_not_its_declared_encoding_is_refused`.
+#[test]
+fn a_projection_declaring_the_wrong_encoding_is_refused_before_execution() {
+    let Some((b, f)) = setup() else {
+        return;
+    };
+    let per = f.inter * f.hidden * 2;
+    let (q_gate, q_per) = to_q6k_blocks(&f.bank_gate, per, f.inter, f.hidden);
+    assert!(
+        q_per < per,
+        "Q6_K must be smaller than bf16 for this to bite"
+    );
+
+    let ids: Vec<usize> = (0..f.bank_gate.len() / per).collect();
+    let t = table(&f.residency, per, q_per, &ids);
+    let state = KdaDeviceState::zeros(&b, f.shape());
+    let mut w = f.layer(&state);
+    if let FfnSpec::Moe(m) = &mut w.ffn {
+        // Real Q6_K bytes, with the offsets they need — but claiming to
+        // be BF16, which needs 2.4x the room.
+        m.gate = ProjectionBank {
+            bytes: &q_gate,
+            addressing: ExpertAddressing::Table(&t),
+            shared_offset: (f.shared_offset as usize / per * q_per) as u32,
+            encoding: ExpertEncoding::Bf16,
+        };
+    }
+    let err = b
+        .kimi_decoder_layer(w, &f.x)
+        .expect_err("bytes that are not the declared encoding must be refused");
+    assert!(
+        matches!(err, GroupedError::OffsetOutOfRange { slot: 0, .. }),
+        "expected the gate projection to be named, got {err:?}"
+    );
 }

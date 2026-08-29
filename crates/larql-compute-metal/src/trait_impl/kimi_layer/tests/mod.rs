@@ -180,11 +180,24 @@ impl Fixture {
             ffn: FfnSpec::Moe(KimiMoeWeights {
                 router_weight: &self.router_weight,
                 router_bias: &self.router_bias,
-                addressing: ExpertAddressing::Table(&self.residency),
-                shared_offset: self.shared_offset,
-                gate: &self.bank_gate,
-                up: &self.bank_up,
-                down: &self.bank_down,
+                gate: ProjectionBank {
+                    bytes: &self.bank_gate,
+                    addressing: ExpertAddressing::Table(&self.residency),
+                    shared_offset: self.shared_offset,
+                    encoding: ExpertEncoding::Bf16,
+                },
+                up: ProjectionBank {
+                    bytes: &self.bank_up,
+                    addressing: ExpertAddressing::Table(&self.residency),
+                    shared_offset: self.shared_offset,
+                    encoding: ExpertEncoding::Bf16,
+                },
+                down: ProjectionBank {
+                    bytes: &self.bank_down,
+                    addressing: ExpertAddressing::Table(&self.residency),
+                    shared_offset: self.shared_offset,
+                    encoding: ExpertEncoding::Bf16,
+                },
                 inter: INTER,
                 top_k: TOP_K,
                 renormalize: true,
@@ -352,7 +365,13 @@ fn a_non_resident_selection_is_refused() {
         *slot = layer_shader::NOT_RESIDENT;
     }
     let mut w = f.layer(&state);
-    moe_mut(&mut w).addressing = ExpertAddressing::Table(&evicted);
+    {
+        let m = moe_mut(&mut w);
+        let a = ExpertAddressing::Table(&evicted);
+        m.gate.addressing = a;
+        m.up.addressing = a;
+        m.down.addressing = a;
+    }
     assert!(matches!(
         m.kimi_decoder_layer(w, &f.x),
         Err(GroupedError::LayerRouteNotResident { layer: 0, .. })
@@ -377,7 +396,13 @@ fn shape_faults_are_refused() {
 
     let short = vec![0u32; EXPERTS - 1];
     let mut bad_residency = f.layer(&state);
-    moe_mut(&mut bad_residency).addressing = ExpertAddressing::Table(&short);
+    {
+        let m = moe_mut(&mut bad_residency);
+        let a = ExpertAddressing::Table(&short);
+        m.gate.addressing = a;
+        m.up.addressing = a;
+        m.down.addressing = a;
+    }
     assert!(matches!(
         m.kimi_decoder_layer(bad_residency, &f.x),
         Err(GroupedError::SlotCountMismatch { .. })
@@ -385,7 +410,7 @@ fn shape_faults_are_refused() {
 
     let mut truncated = f.layer(&state);
     let half = &f.bank_down[..f.bank_down.len() / 2];
-    moe_mut(&mut truncated).down = half;
+    moe_mut(&mut truncated).down.bytes = half;
     assert!(matches!(
         m.kimi_decoder_layer(truncated, &f.x),
         Err(GroupedError::OffsetOutOfRange { .. })
@@ -395,7 +420,13 @@ fn shape_faults_are_refused() {
     let wide = vec![0u32; layer_shader::MAX_EXPERTS + 1];
     let wide_w = vec![0.0f32; (layer_shader::MAX_EXPERTS + 1) * HIDDEN];
     let wide_b = vec![0.0f32; layer_shader::MAX_EXPERTS + 1];
-    moe_mut(&mut too_many).addressing = ExpertAddressing::Table(&wide);
+    {
+        let m = moe_mut(&mut too_many);
+        let a = ExpertAddressing::Table(&wide);
+        m.gate.addressing = a;
+        m.up.addressing = a;
+        m.down.addressing = a;
+    }
     moe_mut(&mut too_many).router_weight = &wide_w;
     moe_mut(&mut too_many).router_bias = &wide_b;
     assert!(matches!(
@@ -510,11 +541,24 @@ fn an_mla_decoder_layer_matches_a_reference_composed_of_its_parts() {
             ffn: FfnSpec::Moe(KimiMoeWeights {
                 router_weight: &f.router_weight,
                 router_bias: &f.router_bias,
-                addressing: ExpertAddressing::Table(&f.residency),
-                shared_offset: f.shared_offset,
-                gate: &f.bank_gate,
-                up: &f.bank_up,
-                down: &f.bank_down,
+                gate: ProjectionBank {
+                    bytes: &f.bank_gate,
+                    addressing: ExpertAddressing::Table(&f.residency),
+                    shared_offset: f.shared_offset,
+                    encoding: ExpertEncoding::Bf16,
+                },
+                up: ProjectionBank {
+                    bytes: &f.bank_up,
+                    addressing: ExpertAddressing::Table(&f.residency),
+                    shared_offset: f.shared_offset,
+                    encoding: ExpertEncoding::Bf16,
+                },
+                down: ProjectionBank {
+                    bytes: &f.bank_down,
+                    addressing: ExpertAddressing::Table(&f.residency),
+                    shared_offset: f.shared_offset,
+                    encoding: ExpertEncoding::Bf16,
+                },
                 inter: INTER,
                 top_k: TOP_K,
                 renormalize: true,
@@ -646,6 +690,7 @@ fn a_kda_layer_and_an_mla_layer_share_one_command_buffer() {
     );
 }
 
+mod addressing;
 mod dense;
 mod head;
 
@@ -750,11 +795,24 @@ fn identity_addressing_equals_a_table_that_spells_out_the_same_offsets() {
         let m = KimiMoeWeights {
             router_weight: &f.router_weight,
             router_bias: &f.router_bias,
-            addressing,
-            shared_offset: 0,
-            gate: &full_gate,
-            up: &full_up,
-            down: &full_down,
+            gate: ProjectionBank {
+                bytes: &full_gate,
+                addressing,
+                shared_offset: 0,
+                encoding: ExpertEncoding::Bf16,
+            },
+            up: ProjectionBank {
+                bytes: &full_up,
+                addressing,
+                shared_offset: 0,
+                encoding: ExpertEncoding::Bf16,
+            },
+            down: ProjectionBank {
+                bytes: &full_down,
+                addressing,
+                shared_offset: 0,
+                encoding: ExpertEncoding::Bf16,
+            },
             inter: INTER,
             top_k: TOP_K,
             renormalize: true,

@@ -42,7 +42,8 @@ use larql_compute_metal::shaders::kimi_layer::NOT_RESIDENT;
 use larql_compute_metal::trait_impl::grouped_experts::ExpertOffset;
 use larql_compute_metal::trait_impl::kda::{KdaDeviceState, KdaDeviceWeights, KdaShape};
 use larql_compute_metal::trait_impl::kimi_layer::{
-    AttentionSpec, ExpertAddressing, FfnSpec, KimiLayerCall, KimiLayerWeights, KimiMoeWeights,
+    AttentionSpec, ExpertAddressing, ExpertEncoding, FfnSpec, KimiLayerCall, KimiLayerWeights,
+    KimiMoeWeights, ProjectionBank,
 };
 use larql_compute_metal::trait_impl::mla::{MlaDeviceState, MlaDeviceWeights, MlaShape};
 use larql_compute_metal::MetalBackend;
@@ -201,11 +202,24 @@ impl Layer {
             ffn: FfnSpec::Moe(KimiMoeWeights {
                 router_weight: &self.router_weight,
                 router_bias: &self.router_bias,
-                addressing: ExpertAddressing::Table(&self.residency),
-                shared_offset: self.shared_offset,
-                gate: &self.bank_gate,
-                up: &self.bank_up,
-                down: &self.bank_down,
+                gate: ProjectionBank {
+                    bytes: &self.bank_gate,
+                    addressing: ExpertAddressing::Table(&self.residency),
+                    shared_offset: self.shared_offset,
+                    encoding: ExpertEncoding::Bf16,
+                },
+                up: ProjectionBank {
+                    bytes: &self.bank_up,
+                    addressing: ExpertAddressing::Table(&self.residency),
+                    shared_offset: self.shared_offset,
+                    encoding: ExpertEncoding::Bf16,
+                },
+                down: ProjectionBank {
+                    bytes: &self.bank_down,
+                    addressing: ExpertAddressing::Table(&self.residency),
+                    shared_offset: self.shared_offset,
+                    encoding: ExpertEncoding::Bf16,
+                },
                 inter: fx.inter,
                 top_k: fx.top_k,
                 renormalize: fx.renormalize,
@@ -653,7 +667,13 @@ fn perturbing_a_layers_output_moves_a_later_layers_route() {
             s.reset();
         }
         let mut calls = fx.calls(&states);
-        moe_mut(&mut calls[mutated].weights).addressing = ExpertAddressing::Table(&swapped);
+        {
+            let m = moe_mut(&mut calls[mutated].weights);
+            let a = ExpertAddressing::Table(&swapped);
+            m.gate.addressing = a;
+            m.up.addressing = a;
+            m.down.addressing = a;
+        }
         let got = metal.kimi_decoder_layers_traced(&calls, &fx.x);
 
         match got {

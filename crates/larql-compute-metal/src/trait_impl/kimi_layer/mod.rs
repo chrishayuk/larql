@@ -59,19 +59,74 @@ pub struct KimiMoeWeights<'a> {
     /// `[experts]` f32 — the correction bias. It SELECTS and never
     /// weighs; the weights come from the unbiased sigmoid scores.
     pub router_bias: &'a [f32],
-    /// How a selected expert id becomes a byte offset into the banks.
-    pub addressing: ExpertAddressing<'a>,
-    /// Byte offset of the shared expert within the same banks.
-    pub shared_offset: u32,
-    /// The resident experts' payloads, one buffer per projection.
-    pub gate: &'a [u8],
-    pub up: &'a [u8],
-    pub down: &'a [u8],
+    /// The three projection banks. Each carries its OWN addressing and
+    /// its own shared-branch address, because a logical expert may sit
+    /// at a different physical slot in each of them.
+    pub gate: ProjectionBank<'a>,
+    pub up: ProjectionBank<'a>,
+    pub down: ProjectionBank<'a>,
     pub inter: usize,
     pub top_k: usize,
     pub renormalize: bool,
     /// `routed_scaling_factor`, folded into the routed weights.
     pub branch_scale: f32,
+}
+
+/// One projection's bank, and how a logical expert is located in it.
+///
+/// Bank and addressing travel together because they are one physical
+/// fact. Splitting them let a caller pair a bank with another
+/// projection's coordinates, which is the shared-coordinate bug this
+/// whole change exists to make unrepresentable.
+#[derive(Clone, Copy)]
+pub struct ProjectionBank<'a> {
+    pub bytes: &'a [u8],
+    pub addressing: ExpertAddressing<'a>,
+    /// The shared branch's address IN THIS BANK.
+    pub shared_offset: u32,
+    /// What these bytes ARE. Per projection, so `gate/up` at Q6_K with
+    /// `down` at BF16 is expressible — the precision map can already say
+    /// it, so the physical vocabulary must be able to carry it.
+    pub encoding: ExpertEncoding,
+}
+
+/// A representation a grouped kernel can execute.
+///
+/// The backend answers whether it CAN run one; choosing it belongs to a
+/// precision map. All three share one binding ABI — weights, byte
+/// offsets, X, output, N/K, stride — so this selects a kernel and
+/// nothing else.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ExpertEncoding {
+    Bf16,
+    Q6K,
+    Q4K,
+}
+
+impl ExpertEncoding {
+    pub fn name(self) -> &'static str {
+        match self {
+            ExpertEncoding::Bf16 => "BF16",
+            ExpertEncoding::Q6K => "Q6_K",
+            ExpertEncoding::Q4K => "Q4_K",
+        }
+    }
+
+    /// Bytes one `[n, k]` matrix occupies. `None` when the shape cannot
+    /// be encoded this way at all.
+    pub fn matrix_bytes(self, n: usize, k: usize) -> Option<usize> {
+        match self {
+            ExpertEncoding::Bf16 => Some(n * k * 2),
+            ExpertEncoding::Q6K | ExpertEncoding::Q4K => k.is_multiple_of(256).then(|| {
+                let per = if self == ExpertEncoding::Q6K {
+                    210
+                } else {
+                    144
+                };
+                n * k / 256 * per
+            }),
+        }
+    }
 }
 
 /// How the kernel turns a selected expert id into a bank byte offset.
@@ -241,7 +296,9 @@ pub(crate) struct LayerScratch {
     scores: Buffer,
     sel_scores: Buffer,
     chosen: Buffer,
-    offsets: Buffer,
+    gate_offsets: Buffer,
+    up_offsets: Buffer,
+    down_offsets: Buffer,
     weights: Buffer,
     refusals: Buffer,
     gate_out: Buffer,
@@ -566,7 +623,9 @@ impl MetalBackend {
             scores: f(experts),
             sel_scores: f(experts),
             chosen: f(top_k),
-            offsets: f(slots),
+            gate_offsets: f(slots),
+            up_offsets: f(slots),
+            down_offsets: f(slots),
             weights: f(slots),
             refusals,
             gate_out: f(slots * inter),
@@ -586,7 +645,9 @@ impl MetalBackend {
             s.scores,
             s.sel_scores,
             s.chosen,
-            s.offsets,
+            s.gate_offsets,
+            s.up_offsets,
+            s.down_offsets,
             s.weights,
             s.refusals,
             s.gate_out,
@@ -627,46 +688,30 @@ impl MetalBackend {
         );
     }
 
-    #[allow(clippy::too_many_arguments)]
     fn encode_router_select(
         &self,
         enc: &ComputeCommandEncoderRef,
         moe: &KimiMoeWeights<'_>,
         router_bias: &Buffer,
-        offsets_table: &Buffer,
         s: &LayerScratch,
         experts: usize,
     ) {
         let (e, k) = (experts as u32, moe.top_k as u32);
-        let identity_stride = moe.addressing.identity_stride();
         let renorm: u32 = u32::from(moe.renormalize);
         enc.set_compute_pipeline_state(&self.kimi.router_select);
         enc.set_buffer(0, Some(&s.logits), 0);
         enc.set_buffer(1, Some(router_bias), 0);
-        enc.set_buffer(2, Some(offsets_table), 0);
-        enc.set_buffer(3, Some(&s.scores), 0);
-        enc.set_buffer(4, Some(&s.sel_scores), 0);
-        enc.set_buffer(5, Some(&s.chosen), 0);
-        enc.set_buffer(6, Some(&s.offsets), 0);
-        enc.set_buffer(7, Some(&s.weights), 0);
-        enc.set_buffer(8, Some(&s.refusals), 0);
-        enc.set_bytes(9, 4, &e as *const u32 as *const std::ffi::c_void);
-        enc.set_bytes(10, 4, &k as *const u32 as *const std::ffi::c_void);
-        enc.set_bytes(11, 4, &renorm as *const u32 as *const std::ffi::c_void);
+        enc.set_buffer(2, Some(&s.scores), 0);
+        enc.set_buffer(3, Some(&s.sel_scores), 0);
+        enc.set_buffer(4, Some(&s.chosen), 0);
+        enc.set_buffer(5, Some(&s.weights), 0);
+        enc.set_bytes(6, 4, &e as *const u32 as *const std::ffi::c_void);
+        enc.set_bytes(7, 4, &k as *const u32 as *const std::ffi::c_void);
+        enc.set_bytes(8, 4, &renorm as *const u32 as *const std::ffi::c_void);
         enc.set_bytes(
-            12,
+            9,
             4,
             &moe.branch_scale as *const f32 as *const std::ffi::c_void,
-        );
-        enc.set_bytes(
-            13,
-            4,
-            &moe.shared_offset as *const u32 as *const std::ffi::c_void,
-        );
-        enc.set_bytes(
-            14,
-            4,
-            &identity_stride as *const u32 as *const std::ffi::c_void,
         );
         // One threadgroup: the selection is serial by design.
         enc.dispatch_thread_groups(
@@ -724,33 +769,48 @@ fn validate_layer(
             found: experts.max(slots),
         });
     }
-    if moe.addressing.experts() != experts || moe.router_weight.len() != experts * hidden {
+    for bank in [&moe.gate, &moe.up, &moe.down] {
+        if bank.addressing.experts() != experts {
+            return Err(GroupedError::SlotCountMismatch {
+                expected: experts,
+                found: bank.addressing.experts(),
+            });
+        }
+    }
+    if moe.router_weight.len() != experts * hidden {
         return Err(GroupedError::SlotCountMismatch {
-            expected: experts,
-            found: moe.addressing.experts(),
+            expected: experts * hidden,
+            found: moe.router_weight.len(),
         });
     }
-    let per_projection = moe.inter * hidden * 2;
-    let down_per = hidden * moe.inter * 2;
-    for (name, bank, per) in [
-        (0usize, moe.gate, per_projection),
-        (1, moe.up, per_projection),
-        (2, moe.down, down_per),
+    for (name, bank, n, k) in [
+        (0usize, moe.gate, moe.inter, hidden),
+        (1, moe.up, moe.inter, hidden),
+        (2, moe.down, hidden, moe.inter),
     ] {
+        // Sized at what the bank CLAIMS to be, not at bf16. Bytes that
+        // are Q6_K dispatched as BF16 need more room than they have and
+        // are refused here; the opposite direction is caught where the
+        // bank's exact extent is known, since a shifted view over a
+        // whole segment legitimately has room to spare.
+        let per = bank
+            .encoding
+            .matrix_bytes(n, k)
+            .ok_or(GroupedError::KNotSuperblockAligned { k })?;
         // Every ADDRESSABLE expert, plus the shared branch, must lie
         // inside the bank. For an identity bank that is every expert; for
         // a packed one only those the table names.
         for off in (0..experts)
-            .filter_map(|e| moe.addressing.offset_of(e))
-            .chain(std::iter::once(moe.shared_offset))
+            .filter_map(|e| bank.addressing.offset_of(e))
+            .chain(std::iter::once(bank.shared_offset))
         {
             let need = off as usize + per;
-            if need > bank.len() {
+            if need > bank.bytes.len() {
                 return Err(GroupedError::OffsetOutOfRange {
                     slot: name,
                     offset: off,
                     need,
-                    have: bank.len(),
+                    have: bank.bytes.len(),
                 });
             }
         }

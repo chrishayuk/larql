@@ -28,12 +28,15 @@
 //! Neither is copied into the other, because a state that round-trips is
 //! a crossing this module exists to avoid.
 
-use crate::format::vindex3::represent::physical::{ExpertBankBinding, ExpertLayout};
+use crate::error::VindexError;
+use crate::format::vindex3::represent::physical::{
+    EncodedRegion, ExpertBankBinding, ExpertEncoding as PhysEncoding, ExpertLayout,
+};
 use larql_compute_metal::trait_impl::grouped_experts::{ExpertOffset, GroupedError};
 use larql_compute_metal::trait_impl::kda::{KdaDeviceState, KdaDeviceWeights, KdaShape};
 use larql_compute_metal::trait_impl::kimi_layer::{
-    AttentionSpec, ExecutionTrace, ExpertAddressing, FfnSpec, KimiDenseFfn, KimiHead,
-    KimiLayerCall, KimiLayerWeights, KimiMoeWeights,
+    AttentionSpec, ExecutionTrace, ExpertAddressing, ExpertEncoding, FfnSpec, KimiDenseFfn,
+    KimiHead, KimiLayerCall, KimiLayerWeights, KimiMoeWeights, ProjectionBank,
 };
 use larql_compute_metal::trait_impl::mla::{MlaDeviceState, MlaDeviceWeights, MlaShape};
 use larql_compute_metal::MetalBackend;
@@ -210,6 +213,42 @@ impl DeviceLayer {
         }
     }
 
+    /// Refuse a layer whose banks are not what they claim to be.
+    ///
+    /// Called at CONSTRUCTION, which is the last point where region
+    /// extent, declared encoding and projection shape are all known
+    /// together — after this the three travel separately and no one can
+    /// compare them again. A bank whose bytes are BF16 while its
+    /// encoding says Q6_K would otherwise dispatch the Q6 kernel over
+    /// valid bf16 bytes and produce plausible output from the wrong
+    /// representation, which is the worst failure available here.
+    pub fn validate_banks(&self, hidden: usize) -> Result<(), VindexError> {
+        self.bank.validate(hidden, self.inter)
+    }
+
+    /// One projection's bank paired with how a logical expert is
+    /// located in it.
+    fn projection<'a>(&'a self, r: &'a EncodedRegion) -> ProjectionBank<'a> {
+        ProjectionBank {
+            bytes: r.region.bytes(),
+            addressing: match &self.bank.layout {
+                ExpertLayout::Identity { experts } => ExpertAddressing::Identity {
+                    experts: *experts as usize,
+                    stride: self.expert_stride,
+                },
+                ExpertLayout::Mapped { .. } => ExpertAddressing::Table(&self.offsets),
+            },
+            shared_offset: self.shared_offset,
+            // The REGION knows what its bytes are; the layer never
+            // declares it, so a declaration cannot drift from the bytes.
+            encoding: match r.encoding {
+                PhysEncoding::Bf16 => ExpertEncoding::Bf16,
+                PhysEncoding::Q6K => ExpertEncoding::Q6K,
+                PhysEncoding::Q4K => ExpertEncoding::Q4K,
+            },
+        }
+    }
+
     fn weights(&self) -> KimiLayerWeights<'_> {
         KimiLayerWeights {
             input_norm: &self.input_norm,
@@ -231,20 +270,14 @@ impl DeviceLayer {
                 FfnSpec::Moe(KimiMoeWeights {
                     router_weight: &self.router_weight,
                     router_bias: &self.router_bias,
-                    // Addressing follows the BINDING's layout, so a
-                    // packed fixture and a compiled full bank are one
-                    // code path with two layouts.
-                    addressing: match &self.bank.layout {
-                        ExpertLayout::Identity { experts } => ExpertAddressing::Identity {
-                            experts: *experts as usize,
-                            stride: self.expert_stride,
-                        },
-                        ExpertLayout::Mapped { .. } => ExpertAddressing::Table(&self.offsets),
-                    },
-                    shared_offset: self.shared_offset,
-                    gate: self.bank.gate.region.bytes(),
-                    up: self.bank.up.region.bytes(),
-                    down: self.bank.down.region.bytes(),
+                    // Each projection carries its own addressing. Today
+                    // the three share a layout, which is a fact about
+                    // this bank rather than something the types assume:
+                    // a compiled overlay may give one logical expert a
+                    // different physical slot in each.
+                    gate: self.projection(&self.bank.gate),
+                    up: self.projection(&self.bank.up),
+                    down: self.projection(&self.bank.down),
                     inter: self.inter,
                     top_k: self.top_k,
                     renormalize: self.renormalize,
