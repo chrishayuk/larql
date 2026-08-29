@@ -26,6 +26,7 @@ path = "src/main.rs"
 
 [dependencies]
 larql-vindex = { path = "../larql-vindex" }
+larql-models = { path = "../larql-models" }
 clap = { version = "4.5", features = ["derive"] }
 serde_json.workspace = true
 sha2 = "0.10"

@@ -5181,6 +5181,7 @@ name = "vindex-cli"
 version = "0.2.0"
 dependencies = [
  "clap",
+ "larql-models",
  "larql-vindex",
  "serde_json",
  "sha2",
