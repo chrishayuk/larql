@@ -45,10 +45,19 @@
 //! [`super::variants`] already states, and the reason a compiler is needed
 //! at all: a profile cannot turn one encoding's bytes into another's.
 
+pub mod arena;
+pub mod bank;
+pub mod compile;
+pub mod compiler;
+pub mod experiment;
 pub mod gptq;
 pub mod map;
 pub mod nvfp4_pack;
+pub mod physical;
 pub mod policy;
+pub mod quality;
+pub mod selection;
+pub mod source_bank;
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::io::{Read, Seek, SeekFrom};
@@ -574,6 +583,14 @@ pub fn compile_representation(
 
     Ok(report)
 }
+
+#[cfg(test)]
+#[path = "compile_real_tests.rs"]
+mod compile_real_tests;
+
+#[cfg(test)]
+#[path = "compat_tests.rs"]
+mod compat_tests;
 
 #[cfg(test)]
 #[path = "tests.rs"]

@@ -28,9 +28,21 @@
 //! because it happened to be 2-D is how a policy acquires behaviour its
 //! author never chose.
 
+use serde::{Deserialize, Serialize};
 use std::fmt;
 
 /// What a tensor does, as far as representation eligibility is concerned.
+///
+/// The serialised form is exactly what [`Role::name`] returns, because
+/// `Serialize`/`Deserialize` are written in terms of `name`/`parse`
+/// rather than derived.
+///
+/// Deriving `rename_all = "kebab-case"` would work today and is wrong in
+/// principle: it makes the VARIANT NAME a second, independent definition
+/// of the wire form. The two agree now, so a rename of either would keep
+/// compiling and silently split the vocabulary — a precision map on disk
+/// still deserialising while `--include-role` no longer accepted the
+/// same word. One definition, pinned by `compat_tests`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 pub enum Role {
     /// Attention and dense-FFN projections — the bulk of a dense model.
@@ -96,6 +108,23 @@ impl Role {
     /// Whether the conservative default compiles this role.
     pub fn in_default_policy(self) -> bool {
         matches!(self, Role::DecoderLinear | Role::ExpertWeight)
+    }
+}
+
+impl Serialize for Role {
+    fn serialize<S: serde::Serializer>(&self, s: S) -> Result<S::Ok, S::Error> {
+        s.serialize_str(self.name())
+    }
+}
+
+impl<'de> Deserialize<'de> for Role {
+    fn deserialize<D: serde::Deserializer<'de>>(d: D) -> Result<Self, D::Error> {
+        let s = <&str as Deserialize>::deserialize(d)?;
+        Role::parse(s).ok_or_else(|| {
+            serde::de::Error::custom(format!(
+                "`{s}` is not a role; a precision map naming it cannot be resolved"
+            ))
+        })
     }
 }
 
