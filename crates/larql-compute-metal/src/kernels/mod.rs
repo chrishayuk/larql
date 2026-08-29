@@ -37,12 +37,14 @@ pub mod traits;
 // `pub` fields — it holds four `pub` registries instead.
 pub mod attention;
 pub mod ffn;
+pub mod kda;
 pub mod norm;
 pub mod quant;
 
 pub use attention::AttentionKernels;
 pub use ffn::FfnKernels;
 pub use handle::KernelHandle;
+pub use kda::{KdaKernels, KimiLayerKernels, MlaKernels};
 pub use norm::NormKernels;
 pub use quant::QuantKernels;
 pub use traits::{get_shader_pipeline, ShaderKernel, TiledKernel};

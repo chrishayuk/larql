@@ -25,8 +25,16 @@ pub mod decode;
 pub mod device;
 mod experts;
 pub mod gated_delta;
+pub mod kda;
+#[cfg(feature = "gpu")]
+pub mod kda_metal;
 pub mod kernels;
+pub mod kimi_kda_layer;
+pub mod kimi_mla_layer;
+pub mod kimi_moe_block;
+pub mod kimi_router;
 pub mod kv;
+pub mod mla;
 pub mod narrow;
 pub mod observe;
 pub mod operands;
@@ -34,7 +42,11 @@ pub mod prepared;
 pub mod production;
 pub mod quantise;
 pub mod reference;
+pub mod stack;
+#[cfg(feature = "gpu")]
+pub mod stack_metal;
 pub mod timing;
+pub mod token;
 pub mod weights;
 
 #[cfg(test)]

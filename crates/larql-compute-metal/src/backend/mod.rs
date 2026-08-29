@@ -148,6 +148,47 @@ pub struct MetalBackend {
     /// weight matrix. Halves bandwidth for tied-embedding models whose
     /// lm_head would otherwise live as a 5.6 GB f32 clone on 31B.
     pub f16_gemv_pipeline: KernelHandle,
+    /// Same layout as [`Self::f16_gemv_pipeline`], but the weight
+    /// matrix holds **bf16** codes — the top 16 bits of each f32, which
+    /// is what Kimi Linear's checkpoint stores for every tensor. A
+    /// separate pipeline rather than a flag on the f16 one because the
+    /// two decodes share a width and nothing else.
+    pub bf16_gemv_pipeline: KernelHandle,
+    /// Every selected expert's bf16 matvec in one 2-D launch, addressed
+    /// by a byte-offset table. Same reduction body as
+    /// [`Self::bf16_gemv_pipeline`], so it is bit-exact against N
+    /// separate dispatches — the difference is only how much
+    /// independent work one launch supplies.
+    pub bf16_grouped_experts_pipeline: KernelHandle,
+    /// The same kernel at every emitted row tiling, in
+    /// `shaders::bf16_grouped_experts::ROWS_PER_TG_VARIANTS` order.
+    ///
+    /// Not a diagnostic luxury: the cold measurement behind this kernel
+    /// found 171 GB/s at 1152 threadgroups against 339 at 2592, same
+    /// bytes and same body, so how finely rows are tiled is worth twice
+    /// the memory system on a skinny expert projection. The right tiling
+    /// depends on `N`, which is a property of the checkpoint, so the
+    /// choice belongs to the caller rather than to a constant.
+    pub bf16_grouped_variants: Vec<KernelHandle>,
+    /// KDA's non-projection stages — convolution, q/k norm, decay, beta,
+    /// the delta rule and the gated norm. Present so a KDA layer's
+    /// attention can be encoded end to end in one command buffer.
+    pub kda: crate::kernels::KdaKernels,
+    /// The router→expert-binding seam and the device-weighted combine —
+    /// what closes a decoder layer, so the host never learns which
+    /// experts ran.
+    pub kimi: crate::kernels::KimiLayerKernels,
+    /// MLA's per-position latent norm and its attention over the
+    /// resident compressed cache.
+    pub mla: crate::kernels::MlaKernels,
+    /// Fused gate+up in one dispatch, writing both projections — prices
+    /// the shared input traversal against two separate dispatches.
+    /// Indexed by `shaders::bf16_grouped_gate_up::ROWS_PER_TG_VARIANTS`.
+    pub bf16_gate_up_variants: Vec<KernelHandle>,
+    /// Fused gate+up+`silu(gate)*up` in one dispatch, writing only the
+    /// product — additionally removes the standalone activation dispatch
+    /// and two intermediate streams. Same indexing.
+    pub bf16_gate_up_silu_variants: Vec<KernelHandle>,
     /// MoE router projection (`logits = W·x + bias`), rung A of the
     /// GPU-dataflow routing ladder. Parity-gated against the CPU oracle
     /// `larql_compute::cpu::ops::moe::moe_router_logits`.
@@ -328,6 +369,47 @@ impl MetalBackend {
             get_shader_pipeline::<shaders::f32_gemv::TopKKernel>(&device, &library)?;
         let f16_gemv_pipeline =
             KernelHandle::from_kernel::<shaders::f16_gemv::Kernel>(&device, &library)?;
+        let bf16_gemv_pipeline =
+            KernelHandle::from_kernel::<shaders::bf16_gemv::Kernel>(&device, &library)?;
+        let bf16_grouped_experts_pipeline =
+            KernelHandle::from_kernel::<shaders::bf16_grouped_experts::Kernel>(&device, &library)?;
+        // Order matches `ROWS_PER_TG_VARIANTS`, pinned by
+        // `marker_names_match_the_generator` in the shader module.
+        // Order matches `bf16_grouped_gate_up::ROWS_PER_TG_VARIANTS`,
+        // pinned by `marker_names_match_the_generators`.
+        let bf16_gate_up_variants = vec![
+            KernelHandle::from_kernel::<shaders::bf16_grouped_gate_up::GateUpKernelR8>(
+                &device, &library,
+            )?,
+            KernelHandle::from_kernel::<shaders::bf16_grouped_gate_up::GateUpKernelR4>(
+                &device, &library,
+            )?,
+        ];
+        let bf16_gate_up_silu_variants = vec![
+            KernelHandle::from_kernel::<shaders::bf16_grouped_gate_up::GateUpSiluKernelR8>(
+                &device, &library,
+            )?,
+            KernelHandle::from_kernel::<shaders::bf16_grouped_gate_up::GateUpSiluKernelR4>(
+                &device, &library,
+            )?,
+        ];
+        let kda = crate::kernels::KdaKernels::build(&device, &library);
+        let kimi = crate::kernels::KimiLayerKernels::build(&device, &library);
+        let mla = crate::kernels::MlaKernels::build(&device, &library);
+        let bf16_grouped_variants = vec![
+            KernelHandle::from_kernel::<shaders::bf16_grouped_experts::KernelR8>(
+                &device, &library,
+            )?,
+            KernelHandle::from_kernel::<shaders::bf16_grouped_experts::KernelR4>(
+                &device, &library,
+            )?,
+            KernelHandle::from_kernel::<shaders::bf16_grouped_experts::KernelR2>(
+                &device, &library,
+            )?,
+            KernelHandle::from_kernel::<shaders::bf16_grouped_experts::KernelR1>(
+                &device, &library,
+            )?,
+        ];
         let moe_router_pipeline =
             KernelHandle::from_kernel::<shaders::moe_router::Kernel>(&device, &library)?;
         let moe_router_select_pipeline =
@@ -363,6 +445,14 @@ impl MetalBackend {
             f32_argmax_partial_pipeline,
             f32_topk_partial_pipeline,
             f16_gemv_pipeline,
+            bf16_gemv_pipeline,
+            bf16_grouped_experts_pipeline,
+            bf16_grouped_variants,
+            kda,
+            kimi,
+            mla,
+            bf16_gate_up_variants,
+            bf16_gate_up_silu_variants,
             moe_router_pipeline,
             moe_router_select_pipeline,
             moe_descriptor_gather_pipeline,

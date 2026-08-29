@@ -20,6 +20,22 @@ static inline float decode_f16_metal(ushort bits) {
     return float(as_type<half>(bits));
 }
 
+// Decode a bf16 bit-pattern to f32.
+//
+// bf16 IS the top 16 bits of the f32 it denotes, so the widen is exact:
+// no rounding, no table, no subnormal special case (a bf16 subnormal's
+// widened form is the f32 subnormal with the same value). This is the
+// same identity `exec::cpu::kernels::FusedBf16` relies on host-side.
+//
+// NOT interchangeable with `decode_f16_metal`. bf16 and IEEE-754
+// binary16 share a width and nothing else — 8 exponent bits against 5,
+// 7 mantissa bits against 10 — so reading bf16 codes through the half
+// path (or the reverse) is silent, catastrophic garbage, not a rounding
+// difference.
+static inline float decode_bf16_metal(ushort bits) {
+    return as_type<float>(uint(bits) << 16);
+}
+
 // Q4_K super-block: 256 values in 144 bytes — **GGUF / llama.cpp layout**.
 //
 // Scales AND mins packed together into 12 bytes (6 bits each) and decoded

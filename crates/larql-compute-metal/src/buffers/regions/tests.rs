@@ -4,6 +4,7 @@
 //! the repo's per-file size budget.
 
 use super::super::BufferCache;
+use metal::foreign_types::ForeignType;
 use metal::Device;
 
 fn dev() -> Device {
@@ -156,4 +157,52 @@ fn sealing_with_no_regions_returns_early() {
     let queue = dev().new_command_queue();
     with_residency_env(Some("2"), || cache.seal_residency(&queue));
     assert_eq!(cache.region_count(), 0);
+}
+
+/// `weights` must hand back the REGISTERED REGION's buffer, not a
+/// private one over the same pages.
+///
+/// This is the whole point of the method, and the assertion that would
+/// have caught the original defect is the object-identity one: a
+/// `get_bytes` buffer aliases the same bytes and passes every value
+/// check, while being a different `MTLBuffer` that the residency set
+/// does not cover. On the 27 GB trajectory that distinction was worth
+/// 29.9 ms a token.
+#[test]
+fn weights_binds_the_region_buffer_itself_not_an_alias() {
+    let cache = BufferCache::new(&dev());
+    let region = anon_region(4 * super::PAGE_SIZE);
+    assert!(cache.register_region(&region[..]));
+
+    let sub = &region[super::PAGE_SIZE..super::PAGE_SIZE + 1024];
+    let (w_buf, w_off) = cache.weights(sub);
+    let (r_buf, r_off) = cache.resolve_region(sub).expect("registered");
+    assert_eq!(w_off, super::PAGE_SIZE as u64);
+    assert_eq!(w_off, r_off);
+    assert_eq!(
+        w_buf.as_ptr(),
+        r_buf.as_ptr(),
+        "weights must return the region's own buffer object"
+    );
+    // The defect that motivated this: an aliasing buffer is a DIFFERENT
+    // object, so the residency set never covers what the encoder binds.
+    assert_ne!(
+        w_buf.as_ptr(),
+        cache.get_bytes(sub).as_ptr(),
+        "get_bytes must be a distinct object — that is the hazard"
+    );
+}
+
+/// Nothing registered → `weights` falls back to a whole-buffer bind at
+/// offset zero, which is the pre-existing behaviour, not an error.
+#[test]
+fn weights_falls_back_to_a_zero_offset_buffer_when_unregistered() {
+    let cache = BufferCache::new(&dev());
+    let region = anon_region(2 * super::PAGE_SIZE);
+    let sub = &region[64..64 + 256];
+
+    let (buf, off) = cache.weights(sub);
+    assert_eq!(off, 0, "the fallback buffer starts at the slice itself");
+    let seen = unsafe { std::slice::from_raw_parts(buf.contents() as *const u8, sub.len()) };
+    assert_eq!(seen, sub);
 }

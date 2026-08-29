@@ -271,6 +271,43 @@ impl BufferCache {
             .new_buffer(bytes, MTLResourceOptions::StorageModeShared)
     }
 
+    /// A weight allocation as `(buffer, byte offset)`, preferring the
+    /// REGISTERED REGION it lies in.
+    ///
+    /// `get_bytes` would return a buffer of its own over the same pages
+    /// — correct, and a different `MTLBuffer` from the one
+    /// `seal_residency` put in the residency set. Metal then re-declares
+    /// residency for the bound object on every command buffer, which the
+    /// residency set was supposed to remove: measured at 86 ms a token
+    /// against 29.5 with the set, over a ~24 GiB working set, for the
+    /// SAME dispatches. Resolving into the region makes the bound buffer
+    /// the resident one.
+    ///
+    /// Falls back to `get_bytes` at offset 0 when nothing was
+    /// registered, so a caller that never declared its weights still
+    /// works — just slower, which is the pre-existing behaviour.
+    pub fn weights(&self, data: &[u8]) -> (Buffer, u64) {
+        match None::<(Buffer, u64)>
+            .or_else(|| self.resolve_region(data))
+            .filter(|_| std::env::var("LARQL_RESOLVE_REGION").as_deref() != Ok("0"))
+        {
+            Some(pair) => pair,
+            None => (self.get_bytes(data), 0),
+        }
+    }
+
+    /// A fresh zeroed buffer, never pooled.
+    ///
+    /// NOT `output`: that recycles, and a recycled buffer carries its
+    /// previous tenant's bytes. Persistent state — a recurrent matrix, a
+    /// convolution window — must start at zero and must not be handed
+    /// back to the pool while a sequence is still using it.
+    pub fn zeroed(&self, bytes: u64) -> Buffer {
+        // Metal guarantees a freshly created buffer arrives zeroed.
+        self.device
+            .new_buffer(bytes, MTLResourceOptions::StorageModeShared)
+    }
+
     /// Return a scratch buffer to the pool after it is no longer needed.
     /// Must be called after `cmd.wait_until_completed()` — the GPU must
     /// have finished writing before the buffer is recycled.

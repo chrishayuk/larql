@@ -27,8 +27,14 @@ pub enum InputLayout {
     PerSlot,
 }
 
-/// Where one selected expert's Q6_K payload begins, in bytes.
+/// Where one selected expert's payload begins, in bytes.
+///
+/// `repr(transparent)` so a `&[ExpertOffset]` can be handed to the
+/// device as bytes without a copy — a table that is CONSTANT for a layer
+/// (the q|k|v bases, a single-slot o_proj) should be uploaded once and
+/// cached, not rebuilt every step.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[repr(transparent)]
 pub struct ExpertOffset(pub u32);
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -45,6 +51,41 @@ pub enum GroupedError {
         have: usize,
     },
     NoExpertsSelected,
+    /// A bf16 slot offset is odd. The table is in bytes for every codec
+    /// in this family, but bf16 payloads bind as `ushort`, so an odd
+    /// offset would read misaligned codes — silent garbage rather than a
+    /// fault. Refused instead.
+    OffsetNotCodeAligned {
+        slot: usize,
+        offset: u32,
+    },
+    /// A multi-projection block was handed offset tables of different
+    /// lengths. Not a fault at dispatch time — the shorter projections
+    /// would compute fewer slots and the block would return a mix of
+    /// this token's experts and whatever the pooled output last held.
+    SlotCountMismatch {
+        expected: usize,
+        found: usize,
+    },
+    /// A layer in a chain routed to an expert its bank does not hold.
+    ///
+    /// Its OWN variant, not an `OffsetOutOfRange` with `slot` reused as a
+    /// layer index: `slot` already means the projection a host-side
+    /// bounds check failed on, and a caller that read one as the other
+    /// would blame the wrong thing. A control did exactly that.
+    LayerRouteNotResident {
+        layer: usize,
+        refusals: u32,
+    },
+    /// The model head's shapes disagree with the stack it is attached
+    /// to. Its own variant for the same reason as the one above: the
+    /// head is not a slot, and reporting it as one would send a reader
+    /// looking at the expert tables.
+    HeadShapeMismatch {
+        vocab: usize,
+        hidden: usize,
+        have_bytes: usize,
+    },
 }
 
 impl std::fmt::Display for GroupedError {
@@ -58,6 +99,26 @@ impl std::fmt::Display for GroupedError {
                 "grouped experts: slot {slot} at offset {offset} needs {need} bytes, buffer has {have}"
             ),
             Self::NoExpertsSelected => write!(f, "grouped experts: empty selection"),
+            Self::OffsetNotCodeAligned { slot, offset } => write!(
+                f,
+                "grouped experts: slot {slot} byte offset {offset} is odd; bf16 payloads \
+                 must start on a 2-byte boundary"
+            ),
+            Self::HeadShapeMismatch { vocab, hidden, have_bytes } => write!(
+                f,
+                "model head: a {vocab}x{hidden} bf16 projection needs {} bytes, got {have_bytes}",
+                vocab * hidden * 2
+            ),
+            Self::LayerRouteNotResident { layer, refusals } => write!(
+                f,
+                "grouped experts: layer {layer} routed to {refusals} expert(s) its bank \
+                 does not hold"
+            ),
+            Self::SlotCountMismatch { expected, found } => write!(
+                f,
+                "grouped experts: every projection of a block must select the same \
+                 slots; expected {expected}, found {found}"
+            ),
         }
     }
 }
@@ -67,6 +128,7 @@ impl std::error::Error for GroupedError {}
 /// Q6_K super-block, in weights and in bytes.
 pub const Q6K_SUPERBLOCK_ELEMS: usize = 256;
 pub const Q6K_SUPERBLOCK_BYTES: usize = 210;
+pub const Q4K_SUPERBLOCK_BYTES: usize = 144;
 
 impl MetalBackend {
     /// Run every selected expert's `[n, k]` matvec against a shared input, in
@@ -90,13 +152,97 @@ impl MetalBackend {
         k: usize,
         layout: InputLayout,
     ) -> Result<Vec<f32>, GroupedError> {
+        self.q6k_grouped_experts_profiled(weights, offsets, x, n, k, layout)
+            .map(|(out, _)| out)
+    }
+
+    /// Q6_K grouped experts, with the GPU window.
+    pub fn q6k_grouped_experts_profiled(
+        &self,
+        weights: &[u8],
+        offsets: &[ExpertOffset],
+        x: &[f32],
+        n: usize,
+        k: usize,
+        layout: InputLayout,
+    ) -> Result<(Vec<f32>, f64), GroupedError> {
+        self.kquant_grouped_experts(
+            &self.quant.q6k_grouped_experts_pipeline,
+            Q6K_SUPERBLOCK_BYTES,
+            weights,
+            offsets,
+            x,
+            n,
+            k,
+            layout,
+        )
+    }
+
+    /// Q4_K sibling of [`Self::q6k_grouped_experts`] — what the engine's MoE
+    /// down projection needs, since that path stores experts in Q4_K.
+    ///
+    /// Same contract: bit-exact against stacking per-expert `q4k_matvec` calls,
+    /// offset table rather than a concatenated artifact, explicit input layout.
+    pub fn q4k_grouped_experts(
+        &self,
+        weights: &[u8],
+        offsets: &[ExpertOffset],
+        x: &[f32],
+        n: usize,
+        k: usize,
+        layout: InputLayout,
+    ) -> Result<Vec<f32>, GroupedError> {
+        self.q4k_grouped_experts_profiled(weights, offsets, x, n, k, layout)
+            .map(|(out, _)| out)
+    }
+
+    /// Q4_K grouped experts, with the GPU window.
+    pub fn q4k_grouped_experts_profiled(
+        &self,
+        weights: &[u8],
+        offsets: &[ExpertOffset],
+        x: &[f32],
+        n: usize,
+        k: usize,
+        layout: InputLayout,
+    ) -> Result<(Vec<f32>, f64), GroupedError> {
+        self.kquant_grouped_experts(
+            &self.quant.q4k_grouped_experts_pipeline,
+            Q4K_SUPERBLOCK_BYTES,
+            weights,
+            offsets,
+            x,
+            n,
+            k,
+            layout,
+        )
+    }
+
+    /// The body both k-quant grouped entries share.
+    ///
+    /// One function rather than two near-copies: the formats differ only
+    /// in their pipeline and their superblock size, and the pair had
+    /// already drifted apart once — a `get_bytes` aliasing fix applied to
+    /// one would have left the other silently wrong.
+    #[allow(clippy::too_many_arguments)]
+    fn kquant_grouped_experts(
+        &self,
+        handle: &crate::kernels::KernelHandle,
+        superblock_bytes: usize,
+        weights: &[u8],
+        offsets: &[ExpertOffset],
+        x: &[f32],
+        n: usize,
+        k: usize,
+        layout: InputLayout,
+    ) -> Result<(Vec<f32>, f64), GroupedError> {
         if offsets.is_empty() {
             return Err(GroupedError::NoExpertsSelected);
         }
         if !k.is_multiple_of(Q6K_SUPERBLOCK_ELEMS) {
             return Err(GroupedError::KNotSuperblockAligned { k });
         }
-        let per_expert = n * (k / Q6K_SUPERBLOCK_ELEMS) * Q6K_SUPERBLOCK_BYTES;
+        let per_expert = n * (k / Q6K_SUPERBLOCK_ELEMS) * superblock_bytes;
         for (slot, off) in offsets.iter().enumerate() {
             let need = off.0 as usize + per_expert;
             if need > weights.len() {
@@ -108,7 +254,6 @@ impl MetalBackend {
                 });
             }
         }
-
         let x_needed = match layout {
             InputLayout::Shared => k,
             InputLayout::PerSlot => k * offsets.len(),
@@ -128,13 +273,18 @@ impl MetalBackend {
 
         let raw: Vec<u32> = offsets.iter().map(|o| o.0).collect();
         let buf_w = self.bufs.get_bytes(weights);
-        let buf_o = self.bufs.get_bytes(bytemuck_cast(&raw));
+        // `uncached_bytes`, NOT `get_bytes`: `raw` is a temporary rebuilt
+        // on every call, and the cache keys on `(ptr, len)`. Two calls
+        // with different tables of the same length — a Q6_K bank's
+        // offsets and a Q4_K bank's, say — reliably land at the same
+        // address, and the second silently dispatches against the
+        // first's table. The `debug_assert` that catches it is compiled
+        // out in release, so this failed intermittently in 2 runs of 5
+        // with no error, just a wrong answer.
+        let buf_o = self.bufs.uncached_bytes(bytemuck_cast(&raw));
         let buf_x = self.bufs.transient_from_f32(&x[..x_needed]);
         let buf_out = self.bufs.output((offsets.len() * n * 4) as u64);
-        let n_u32 = n as u32;
-        let k_u32 = k as u32;
-
-        let handle = &self.quant.q6k_grouped_experts_pipeline;
+        let (n_u32, k_u32) = (n as u32, k as u32);
         let row_tiles = (n as u64).div_ceil(handle.rows_per_tg);
 
         let cmd = self.queue.new_command_buffer();
@@ -157,95 +307,13 @@ impl MetalBackend {
         cmd.commit();
         let _ = crate::cb_status::wait_checked(
             cmd,
-            "crates/larql-compute-metal/src/trait_impl/grouped_experts.rs:158",
+            "crates/larql-compute-metal/src/trait_impl/grouped_experts.rs:kquant_grouped",
         );
-
-        Ok(crate::buffers::read_buffer_f32(&buf_out, offsets.len() * n))
-    }
-
-    /// Q4_K sibling of [`Self::q6k_grouped_experts`] — what the engine's MoE
-    /// down projection needs, since that path stores experts in Q4_K.
-    ///
-    /// Same contract: bit-exact against stacking per-expert `q4k_matvec` calls,
-    /// offset table rather than a concatenated artifact, explicit input layout.
-    pub fn q4k_grouped_experts(
-        &self,
-        weights: &[u8],
-        offsets: &[ExpertOffset],
-        x: &[f32],
-        n: usize,
-        k: usize,
-        layout: InputLayout,
-    ) -> Result<Vec<f32>, GroupedError> {
-        if offsets.is_empty() {
-            return Err(GroupedError::NoExpertsSelected);
-        }
-        if !k.is_multiple_of(Q6K_SUPERBLOCK_ELEMS) {
-            return Err(GroupedError::KNotSuperblockAligned { k });
-        }
-        const Q4K_BLOCK_BYTES: usize = 144;
-        let per_expert = n * (k / Q6K_SUPERBLOCK_ELEMS) * Q4K_BLOCK_BYTES;
-        for (slot, off) in offsets.iter().enumerate() {
-            let need = off.0 as usize + per_expert;
-            if need > weights.len() {
-                return Err(GroupedError::OffsetOutOfRange {
-                    slot,
-                    offset: off.0,
-                    need,
-                    have: weights.len(),
-                });
-            }
-        }
-        let x_needed = match layout {
-            InputLayout::Shared => k,
-            InputLayout::PerSlot => k * offsets.len(),
-        };
-        if x.len() < x_needed {
-            return Err(GroupedError::OffsetOutOfRange {
-                slot: 0,
-                offset: 0,
-                need: x_needed,
-                have: x.len(),
-            });
-        }
-        let x_stride: u32 = match layout {
-            InputLayout::Shared => 0,
-            InputLayout::PerSlot => k as u32,
-        };
-
-        let raw: Vec<u32> = offsets.iter().map(|o| o.0).collect();
-        let buf_w = self.bufs.get_bytes(weights);
-        let buf_o = self.bufs.get_bytes(bytemuck_cast(&raw));
-        let buf_x = self.bufs.transient_from_f32(&x[..x_needed]);
-        let buf_out = self.bufs.output((offsets.len() * n * 4) as u64);
-        let n_u32 = n as u32;
-        let k_u32 = k as u32;
-
-        let handle = &self.quant.q4k_grouped_experts_pipeline;
-        let row_tiles = (n as u64).div_ceil(handle.rows_per_tg);
-
-        let cmd = self.queue.new_command_buffer();
-        let enc = cmd.new_compute_command_encoder();
-        enc.set_compute_pipeline_state(&handle.state);
-        enc.set_buffer(0, Some(&buf_w), 0);
-        enc.set_buffer(1, Some(&buf_o), 0);
-        enc.set_buffer(2, Some(&buf_x), 0);
-        enc.set_buffer(3, Some(&buf_out), 0);
-        enc.set_bytes(4, 4, &n_u32 as *const u32 as *const std::ffi::c_void);
-        enc.set_bytes(5, 4, &k_u32 as *const u32 as *const std::ffi::c_void);
-        enc.set_bytes(6, 4, &x_stride as *const u32 as *const std::ffi::c_void);
-        enc.dispatch_thread_groups(
-            metal::MTLSize::new(row_tiles, offsets.len() as u64, 1),
-            metal::MTLSize::new(handle.threads_per_tg, 1, 1),
-        );
-        enc.end_encoding();
-        cmd.commit();
-        let _ = crate::cb_status::wait_checked(
-            cmd,
-            "crates/larql-compute-metal/src/trait_impl/grouped_experts.rs:240",
-        );
-
-        Ok(crate::buffers::read_buffer_f32(&buf_out, offsets.len() * n))
+        let gpu_ms = crate::decode::gpu_timing::gpu_elapsed_ms(cmd);
+        Ok((
+            crate::buffers::read_buffer_f32(&buf_out, offsets.len() * n),
+            gpu_ms,
+        ))
     }
 
     /// Threadgroups this dispatch launches, against what one expert would.
@@ -556,6 +624,24 @@ mod tests {
         assert!(GroupedError::NoExpertsSelected
             .to_string()
             .contains("empty selection"));
+
+        let route = GroupedError::LayerRouteNotResident {
+            layer: 9,
+            refusals: 2,
+        }
+        .to_string();
+        for expected in ["9", "2", "does not hold"] {
+            assert!(route.contains(expected), "{route} missing {expected}");
+        }
+
+        let odd = GroupedError::OffsetNotCodeAligned {
+            slot: 5,
+            offset: 4097,
+        }
+        .to_string();
+        for expected in ["5", "4097", "2-byte"] {
+            assert!(odd.contains(expected), "{odd} missing {expected}");
+        }
 
         let boxed: Box<dyn std::error::Error> =
             Box::new(GroupedError::KNotSuperblockAligned { k: 7 });

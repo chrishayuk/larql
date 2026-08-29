@@ -112,6 +112,45 @@ pub trait MatMul {
         self.f16_gemv(w_f16, x, n, k)
     }
 
+    /// Same shape as [`Self::f16_gemv`] but the weight matrix holds
+    /// **bf16** codes, packed little-endian, `n * k * 2` bytes long.
+    ///
+    /// bf16 is not f16: it is the top 16 bits of the f32 it denotes, so
+    /// widening is exact and a backend must decode it as such. The two
+    /// share a width and nothing else, which is why this is a separate
+    /// method rather than a format flag on the f16 one — a caller that
+    /// picked the wrong one would get unrelated numbers, not a rounding
+    /// difference. Backends without a specialised kernel return `None`.
+    fn bf16_gemv(&self, _w_bf16: &[u8], _x: &[f32], _n: usize, _k: usize) -> Option<Vec<f32>> {
+        None
+    }
+
+    /// Like [`Self::bf16_gemv`] but skips the internal flop threshold.
+    fn bf16_gemv_force(&self, w_bf16: &[u8], x: &[f32], n: usize, k: usize) -> Option<Vec<f32>> {
+        self.bf16_gemv(w_bf16, x, n, k)
+    }
+
+    /// Several bf16 matrices applied to **one** input vector, as one
+    /// device submission where the backend supports it — the bf16
+    /// sibling of [`Self::f16_gemv_multi`], and for the same reason: a
+    /// gated FFN's gate and up projections read the same activation, so
+    /// submitting them together amortises the synchronisation that
+    /// dominates a gemv-per-matmul decode.
+    ///
+    /// The default is the sequential force gemvs — bit-identical
+    /// results, no batching — so a backend only overrides this for the
+    /// submission win, never for different arithmetic.
+    fn bf16_gemv_multi(
+        &self,
+        weights: &[(&[u8], usize, usize)],
+        x: &[f32],
+    ) -> Option<Vec<Vec<f32>>> {
+        weights
+            .iter()
+            .map(|&(w, n, k)| self.bf16_gemv_force(w, x, n, k))
+            .collect()
+    }
+
     /// Several f16 matrices applied to **one** input vector, as one
     /// device submission where the backend supports it.
     ///

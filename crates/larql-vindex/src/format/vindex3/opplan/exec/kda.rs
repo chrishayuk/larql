@@ -1,0 +1,608 @@
+//! Kimi Delta Attention, executed.
+//!
+//! The recurrent path only, for `T ≤ 64` — the range where the reference
+//! itself uses `fused_recurrent_kda` rather than its chunked kernel. The
+//! chunk path is a separate rung: it is a different *implementation* of
+//! the same recurrence, and proving the recurrence first is what makes a
+//! later chunked version checkable against something.
+//!
+//! **The specification is the reference forward, not the config.** That
+//! distinction is load-bearing here and not a slogan:
+//! [`KdaOp::gate_lower_bound`](super::super::kda::KdaOp) is declared by
+//! both observed checkpoints and applied by neither, and applying it moves
+//! this layer's output by a relative 1.75 with every shape still closing.
+//! [`Mutation::ApplyGateLowerBound`] exists so that stays a measurement.
+//!
+//! ## Fault localisation, established before this code was written
+//!
+//! Ablating the two L2 normalisations against the oracle gives an
+//! asymmetry worth keeping in mind while debugging:
+//!
+//! | ablation | output moves | recurrent state moves |
+//! |---|---|---|
+//! | omit **q** normalisation | yes | **no — exactly zero** |
+//! | omit **k** normalisation | yes | yes |
+//!
+//! `q` never touches the state; it appears only in the readout. So a
+//! disagreement that moves the STATE cannot be in the q path, and one that
+//! moves only the OUTPUT is most likely q, the gated norm, or `o_proj`.
+
+use larql_models::config::KdaGeometry;
+
+use super::cpu::executor;
+use super::cpu::projector::{DenseProjector, WeightRows};
+use super::timing::{timed, OpClass};
+
+/// One layer's fifteen operands.
+///
+/// `q_proj`/`k_proj`/`v_proj`/`o_proj` are BF16 (P4c-4) — the checkpoint's
+/// own representation for KDA's four largest projections, ~26 ms/token of
+/// the pre-fusion 44.97 ms KDA bucket, routed through the executor's
+/// ROW-parallel path rather than a single call (see [`matvec_bf16`]).
+/// Everything else stays plain `f32`: the convolution, gate and recurrence
+/// arithmetic is KDA-specific and small enough that compacting it is its
+/// own later decision (banked, not bundled into this one — see this
+/// module's own doc history for why bundling representation changes with
+/// execution-strategy changes made the earlier expert rung hard to read).
+#[derive(Clone, Copy)]
+pub struct KdaWeights<'a> {
+    pub q_proj: &'a [u16],
+    pub k_proj: &'a [u16],
+    pub v_proj: &'a [u16],
+    pub q_conv1d: &'a [f32],
+    pub k_conv1d: &'a [f32],
+    pub v_conv1d: &'a [f32],
+    pub f_a_proj: &'a [f32],
+    pub f_b_proj: &'a [f32],
+    pub g_a_proj: &'a [f32],
+    pub g_b_proj: &'a [f32],
+    pub b_proj: &'a [f32],
+    pub a_log: &'a [f32],
+    pub dt_bias: &'a [f32],
+    pub o_norm: &'a [f32],
+    pub o_proj: &'a [u16],
+    pub norm_eps: f32,
+}
+
+/// The recurrent and convolution state a KDA layer carries between calls.
+///
+/// Nothing here is indexed by position: the recurrent part is one
+/// `D × D` matrix per head whatever the sequence length, and the
+/// convolution part is the last `kernel - 1` inputs of each stream. That
+/// is the whole reason a KV planner is told state elements and never a
+/// span.
+#[derive(Debug, Clone, PartialEq)]
+pub struct KdaState {
+    /// `[H][D][D]` flattened — head-major, then key dim, then value dim.
+    pub recurrent: Vec<f32>,
+    /// Three `[H*D][kernel-1]` windows, for q, k and v.
+    pub conv: [Vec<f32>; 3],
+}
+
+impl KdaState {
+    /// The zero state a sequence starts from.
+    pub fn zeros(g: KdaGeometry) -> Self {
+        let width = g.value_width();
+        let tail = g.conv_kernel.saturating_sub(1);
+        Self {
+            recurrent: vec![0.0; g.state_elements()],
+            conv: [
+                vec![0.0; width * tail],
+                vec![0.0; width * tail],
+                vec![0.0; width * tail],
+            ],
+        }
+    }
+}
+
+/// Every boundary the operator crosses, kept so a disagreement names its
+/// own stage rather than being debugged backwards from the layer output.
+///
+/// The names and order match `BOUNDARIES` in `scripts/kda_reference.py`,
+/// so a fixture and a report cannot drift on what a stage means.
+#[derive(Debug, Default, Clone, PartialEq)]
+pub struct KdaPlanes {
+    pub q_proj: Vec<f32>,
+    pub k_proj: Vec<f32>,
+    pub v_proj: Vec<f32>,
+    pub q_conv: Vec<f32>,
+    pub k_conv: Vec<f32>,
+    pub v_conv: Vec<f32>,
+    pub q_norm: Vec<f32>,
+    pub k_norm: Vec<f32>,
+    pub f_lowrank: Vec<f32>,
+    pub g_decay: Vec<f32>,
+    pub beta: Vec<f32>,
+    pub recurrent_out: Vec<f32>,
+    pub o_gate: Vec<f32>,
+    pub o_norm: Vec<f32>,
+    pub output: Vec<f32>,
+}
+
+/// Deliberate defects, for the negative controls.
+///
+/// These perturb the REAL function rather than a copy of it: a control
+/// that mutates a duplicate proves only that the duplicate is detectable.
+/// Same posture as Gated DeltaNet's `Mutation`, and the same reason.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub enum Mutation {
+    None,
+    /// Apply the declared decay clamp — the form the reference does *not*
+    /// use. Pins `gate_lower_bound` as provenance by measurement.
+    ApplyGateLowerBound(f32),
+    /// Skip the query L2 normalisation. Must move the output and leave the
+    /// state untouched.
+    NoQNorm,
+    /// Skip the key L2 normalisation. Must move both.
+    NoKNorm,
+    /// Round the recurrent state to bf16 precision each step, so an
+    /// "optimisation" that drops the f32 promotion is caught.
+    Bf16Recurrence,
+    /// Read the state with q BEFORE the rank-1 write, so the current
+    /// position cannot see its own contribution.
+    ReadBeforeWrite,
+    /// Skip the decay entirely.
+    NoDecay,
+    /// Drop beta from the delta rule.
+    NoBeta,
+    /// Write `v` instead of the prediction error `v - kᵀS` — the single
+    /// most plausible wrong transcription of a delta rule, and one that
+    /// agrees at `T = 1` from a zero state.
+    WriteValueNotError,
+}
+
+/// `y = W x` with `W` row-major `[out, inp]`.
+///
+/// Routed to the crate's existing BLAS projector rather than written out
+/// here, and the split is deliberate: the **projections are ordinary
+/// linear algebra** that infrastructure already does well, while the
+/// convolution, gates, recurrence and gated norm are KDA-specific and stay
+/// a plain f32 transcription.
+///
+/// A scalar loop here cost 57 s on the full-width fixture, which is not a
+/// performance problem so much as a debugging one — every later
+/// integration rung would have paid it. Swapping only this function leaves
+/// the recurrence byte-for-byte the same code, so the full-width parity
+/// gate re-run is a real check that acceleration changed no semantics.
+fn matvec(w: &[f32], x: &[f32], out: usize) -> Vec<f32> {
+    let mut y = vec![0.0f32; out];
+    super::cpu::kernels::BlasF32.project_rows(WeightRows::F32(w), x, &mut y);
+    y
+}
+
+/// `y = W x` for a BF16-compact `W`, through the executor's ROW-PARALLEL
+/// path — `executor::shared().project_as(class, ...)`, not a single
+/// `project_rows` call, and NOT `project()`: that would nest the
+/// executor's own `OpClass::Projection` timer inside the caller-supplied
+/// `class` (both fire, both accumulate — `timing.rs`'s "nothing nests"
+/// contract violated, caught by its own `nested()` counter the first
+/// real-weight run made). `project_as` times under `class` alone.
+///
+/// `FusedBf16` is `CpuParallelism::ExternalPool` (`cpu/kernels.rs`): it
+/// needs EXTERNAL row-splitting across workers to reach its real
+/// throughput, measured directly at P4a — called the single-shot way
+/// `BlasF32` is called, it LOSES to `BlasF32`'s own Accelerate-internal
+/// threading despite moving half the bytes. P4b-1 already applied that
+/// lesson with TASK-level fan-out over the eight independent experts;
+/// there is only ONE q/k/v/o_proj per layer, so the equivalent fan-out
+/// here is ROW-level, which `executor::project` already implements — no
+/// new mechanism, the existing one aimed at what it was built for.
+///
+/// **Sequential by construction, one call at a time** (P4c-4): P4c-2a
+/// measured what happens when several already-threaded projections run
+/// CONCURRENTLY on this machine — each one's own time roughly TRIPLED
+/// from core contention, for a wall-clock win of only ~12%. Every call
+/// site of this function runs on the caller's own thread, never nested
+/// inside another parallel dispatch, so the executor's own "at most one
+/// layer of parallelism owns the machine" rule gives this the whole pool
+/// deliberately, rather than sharing it the way that rung found out costs
+/// more than it saves.
+/// How the four wide BF16 projections are executed.
+///
+/// **A seam that can BATCH, which is the whole reason it exists.** The
+/// crate's `DenseProjector` takes one matrix at a time, which is right
+/// for a CPU kernel and cannot express the shape a device wants: q, k
+/// and v read the SAME input, so a backend that submits work in batches
+/// should send all three together. Rung 5a priced one CPU↔GPU
+/// command-buffer boundary at ~0.23 ms, so four separate crossings a
+/// layer is ~0.9 ms of pure orchestration before any arithmetic — which
+/// is more than the projections themselves are likely to cost.
+///
+/// So this trait is shaped by the dependency structure, not by the
+/// matrix: `qkv` together because they share an input, `o` alone because
+/// it consumes the recurrence's output and cannot be known earlier.
+///
+/// Everything else about KDA stays exactly where it is. The convolution,
+/// norms, gates and recurrence remain the proven CPU path, and an
+/// implementation of this trait changes only WHERE four matvecs run.
+pub trait KdaProjections: Sync {
+    /// `q_proj(x)`, `k_proj(x)`, `v_proj(x)` — all `[width, hidden]`
+    /// against the same normalised hidden state.
+    fn qkv(&self, w: KdaWeights<'_>, x: &[f32], width: usize) -> [Vec<f32>; 3];
+
+    /// `o_proj(x)` — `[hidden, width]` against the gated, normed value
+    /// stream, which does not exist until the recurrence has run.
+    fn o(&self, w: &[u16], x: &[f32], out: usize) -> Vec<f32>;
+}
+
+/// The proven CPU path: three row-parallel projections, one at a time.
+///
+/// Sequential by construction (P4c-4): P4c-2a measured concurrent
+/// already-threaded projections at roughly TRIPLE each one's own time
+/// from core contention, for a wall-clock win of only ~12%.
+pub struct CpuKdaProjections;
+
+impl KdaProjections for CpuKdaProjections {
+    fn qkv(&self, w: KdaWeights<'_>, x: &[f32], width: usize) -> [Vec<f32>; 3] {
+        [
+            matvec_bf16(OpClass::KdaQProj, w.q_proj, x, width),
+            matvec_bf16(OpClass::KdaKProj, w.k_proj, x, width),
+            matvec_bf16(OpClass::KdaVProj, w.v_proj, x, width),
+        ]
+    }
+
+    fn o(&self, w: &[u16], x: &[f32], out: usize) -> Vec<f32> {
+        matvec_bf16(OpClass::KdaOProj, w, x, out)
+    }
+}
+
+fn matvec_bf16(class: OpClass, w: &[u16], x: &[f32], out: usize) -> Vec<f32> {
+    executor::shared()
+        .expect("the CPU executor pool is unavailable")
+        .project_as(
+            class,
+            &super::cpu::kernels::FusedBf16,
+            WeightRows::Bf16(w),
+            x,
+            out,
+        )
+}
+
+fn silu(v: f32) -> f32 {
+    v / (1.0 + (-v).exp())
+}
+
+fn softplus(v: f32) -> f32 {
+    // `ln(1+e^v)`, in the numerically stable form: for large `v` the naive
+    // expression overflows to `inf` and then to a `NaN` gate.
+    if v > 20.0 {
+        v
+    } else {
+        v.exp().ln_1p()
+    }
+}
+
+/// Depthwise causal convolution over one stream, then SiLU.
+///
+/// Causal because the window is the `kernel-1` PREVIOUS inputs plus the
+/// current one; a symmetric padding would let position `t` read `t+1`.
+/// `window` carries those previous inputs across calls, so a continuation
+/// produces exactly what one pass over the concatenation would.
+fn short_conv(
+    x: &[f32],
+    weight: &[f32],
+    window: &mut [f32],
+    width: usize,
+    kernel: usize,
+) -> Vec<f32> {
+    let tail = kernel - 1;
+    let mut out = vec![0.0f32; width];
+    for c in 0..width {
+        let w = &weight[c * kernel..(c + 1) * kernel];
+        let hist = &window[c * tail..(c + 1) * tail];
+        // Oldest first: history then the current sample.
+        let mut acc = 0.0f32;
+        for (i, weight_i) in w.iter().enumerate().take(tail) {
+            acc += weight_i * hist[i];
+        }
+        acc += w[tail] * x[c];
+        out[c] = silu(acc);
+    }
+    // Slide every window one position, dropping the oldest.
+    for c in 0..width {
+        let hist = &mut window[c * tail..(c + 1) * tail];
+        for i in 0..tail.saturating_sub(1) {
+            hist[i] = hist[i + 1];
+        }
+        if tail > 0 {
+            hist[tail - 1] = x[c];
+        }
+    }
+    out
+}
+
+/// L2-normalise each head's slice in place.
+///
+/// Applied to q and k inside the reference's kernel
+/// (`use_qk_l2norm_in_kernel=True`), which is why it appears nowhere in
+/// the checkpoint's modeling file — and why it is the easiest operation in
+/// the whole block to omit by accident.
+fn l2_normalise_heads(v: &mut [f32], heads: usize, dim: usize) {
+    for h in 0..heads {
+        let head = &mut v[h * dim..(h + 1) * dim];
+        let norm = head.iter().map(|x| x * x).sum::<f32>().sqrt();
+        // Matches `F.normalize`'s clamp: a zero head stays zero rather
+        // than becoming NaN.
+        let inv = 1.0 / norm.max(1e-12);
+        for x in head.iter_mut() {
+            *x *= inv;
+        }
+    }
+}
+
+fn bf16_round(v: f32) -> f32 {
+    f32::from_bits(v.to_bits() & 0xFFFF_0000)
+}
+
+/// One position through the block, advancing `state`.
+///
+/// Returns the layer output for this position and appends every boundary
+/// to `planes`.
+#[allow(clippy::too_many_arguments)]
+pub fn step(
+    x: &[f32],
+    w: KdaWeights<'_>,
+    g: KdaGeometry,
+    state: &mut KdaState,
+    planes: &mut KdaPlanes,
+    mutation: Mutation,
+) -> Vec<f32> {
+    step_with(&CpuKdaProjections, x, w, g, state, planes, mutation)
+}
+
+/// [`step`] with the projections executed somewhere the caller chooses.
+#[allow(clippy::too_many_arguments)]
+pub fn step_with(
+    projections: &dyn KdaProjections,
+    x: &[f32],
+    w: KdaWeights<'_>,
+    g: KdaGeometry,
+    state: &mut KdaState,
+    planes: &mut KdaPlanes,
+    mutation: Mutation,
+) -> Vec<f32> {
+    let (heads, dim) = (g.num_heads, g.head_dim);
+    let width = g.value_width();
+
+    // q/k/v/o_proj are BF16, executed ONE AT A TIME through the executor's
+    // row-parallel path (P4c-4 — see `matvec_bf16`'s own doc comment for
+    // why sequential, not concurrent). The gate arithmetic stays plain f32
+    // via the single-call `matvec`, unchanged from before P4c-2a — this
+    // rung deliberately narrows to the four wide projections only.
+    // All three at once. They are mutually independent — each feeds its
+    // own convolution window and its own norm — so hoisting them above
+    // the convolutions reorders nothing observable, and it is what lets a
+    // batching backend see them together.
+    let [q_p, k_p, v_p] = projections.qkv(w, x, width);
+    let mut q = {
+        let _t = timed(OpClass::KdaConv);
+        short_conv(&q_p, w.q_conv1d, &mut state.conv[0], width, g.conv_kernel)
+    };
+    planes.q_conv.extend_from_slice(&q);
+    {
+        let _t = timed(OpClass::KdaQkNorm);
+        if mutation != Mutation::NoQNorm {
+            l2_normalise_heads(&mut q, heads, dim);
+        }
+    }
+    planes.q_norm.extend_from_slice(&q);
+
+    let mut k = {
+        let _t = timed(OpClass::KdaConv);
+        short_conv(&k_p, w.k_conv1d, &mut state.conv[1], width, g.conv_kernel)
+    };
+    planes.k_conv.extend_from_slice(&k);
+    {
+        let _t = timed(OpClass::KdaQkNorm);
+        if mutation != Mutation::NoKNorm {
+            l2_normalise_heads(&mut k, heads, dim);
+        }
+    }
+    planes.k_norm.extend_from_slice(&k);
+
+    let v = {
+        let _t = timed(OpClass::KdaConv);
+        short_conv(&v_p, w.v_conv1d, &mut state.conv[2], width, g.conv_kernel)
+    };
+    planes.v_conv.extend_from_slice(&v);
+
+    // The decay gate. Everything from here is f32 by construction: the
+    // gate is an exponential of a softplus, and the recurrence multiplies
+    // by it every step, so a narrower accumulator compounds.
+    let decay = {
+        let _t = timed(OpClass::KdaDecayGate);
+        let f_low = matvec(w.f_b_proj, &matvec(w.f_a_proj, x, dim), width);
+        planes.f_lowrank.extend_from_slice(&f_low);
+        let mut decay = vec![0.0f32; width];
+        for h in 0..heads {
+            let a = w.a_log[h].exp();
+            for d in 0..dim {
+                let i = h * dim + d;
+                let pre = f_low[i] + w.dt_bias[i];
+                decay[i] = match mutation {
+                    // `lower_bound * sigmoid(exp(A_log) * pre)` — the form
+                    // the same upstream gate also offers and the
+                    // checkpoint does not select.
+                    Mutation::ApplyGateLowerBound(bound) => {
+                        bound * (1.0 / (1.0 + (-(a * pre)).exp()))
+                    }
+                    _ => -a * softplus(pre),
+                };
+            }
+        }
+        planes.g_decay.extend_from_slice(&decay);
+        decay
+    };
+
+    let gate = {
+        let _t = timed(OpClass::KdaOutputGate);
+        let gate = matvec(w.g_b_proj, &matvec(w.g_a_proj, x, dim), width);
+        planes.o_gate.extend_from_slice(&gate);
+        gate
+    };
+
+    let beta: Vec<f32> = {
+        let _t = timed(OpClass::KdaBProj);
+        let beta: Vec<f32> = matvec(w.b_proj, x, heads)
+            .iter()
+            .map(|v| 1.0 / (1.0 + (-v).exp()))
+            .collect();
+        planes.beta.extend_from_slice(&beta);
+        beta
+    };
+
+    // The delta rule, per head. `q` is scaled by `D^-1/2` at the readout.
+    //
+    // FUSED, P4c-3: the reference is four full `D×D` state traversals —
+    // decay-write, predict-read, update-write, readout-read — but two of
+    // those pairs are FUSABLE without changing a single summed value.
+    //
+    // (1) decay + predict: `pred[vv] = Σ_kk kh[kk] * (decay[kk]*s_old[kk,vv])`.
+    // Decaying row `kk` is entirely local to that row, so decaying it and
+    // immediately folding its contribution into every `pred[vv]` — before
+    // moving to row `kk+1` — reads EXACTLY the values a separate later
+    // predict pass would have read, and accumulates them in the SAME
+    // kk-ascending order the original `.sum()` did. Not an approximation:
+    // the identical sequence of additions in the identical order is
+    // bit-identical under IEEE-754.
+    //
+    // (2) write + readout: `out[vv] = Σ_kk qh[kk]*scale*s_new[kk,vv]` where
+    // `s_new[kk,vv]` is written earlier in the SAME kk iteration — same
+    // argument, same conclusion.
+    //
+    // `Mutation::ReadBeforeWrite` is the one case that CANNOT take fusion
+    // (2): its entire point is that the readout must see the PRE-write
+    // state, so write and readout stay two passes there, exactly as
+    // before — falling back to the unfused form for one control is not a
+    // performance regression on the decode path, since production
+    // decoding never uses this mutation.
+    let out = {
+        let _t = timed(OpClass::KdaRecurrence);
+        let scale = (dim as f32).powf(-0.5);
+        let mut out = vec![0.0f32; width];
+        for h in 0..heads {
+            let s = &mut state.recurrent[h * dim * dim..(h + 1) * dim * dim];
+            let (qh, kh, vh) = (&q[h * dim..], &k[h * dim..], &v[h * dim..]);
+
+            let mut pred = vec![0.0f32; dim];
+            for kk in 0..dim {
+                if mutation != Mutation::NoDecay {
+                    let d = decay[h * dim + kk].exp();
+                    for vv in 0..dim {
+                        s[kk * dim + vv] *= d;
+                    }
+                }
+                let kv = kh[kk];
+                for vv in 0..dim {
+                    pred[vv] += kv * s[kk * dim + vv];
+                }
+            }
+            // The prediction error `v - kᵀS`, which is what the delta
+            // rule writes against. Writing `v` instead agrees at T=1
+            // from a zero state — see `Mutation::WriteValueNotError`.
+            let mut err = vec![0.0f32; dim];
+            for vv in 0..dim {
+                err[vv] = match mutation {
+                    Mutation::WriteValueNotError => vh[vv],
+                    _ => vh[vv] - pred[vv],
+                };
+            }
+            let b = if mutation == Mutation::NoBeta {
+                1.0
+            } else {
+                beta[h]
+            };
+
+            if mutation == Mutation::ReadBeforeWrite {
+                for vv in 0..dim {
+                    out[h * dim + vv] = (0..dim).map(|kk| qh[kk] * scale * s[kk * dim + vv]).sum();
+                }
+                for kk in 0..dim {
+                    let write = b * kh[kk];
+                    for vv in 0..dim {
+                        let cell = &mut s[kk * dim + vv];
+                        *cell += write * err[vv];
+                        if mutation == Mutation::Bf16Recurrence {
+                            *cell = bf16_round(*cell);
+                        }
+                    }
+                }
+            } else {
+                for kk in 0..dim {
+                    let write = b * kh[kk];
+                    let qv = qh[kk] * scale;
+                    for vv in 0..dim {
+                        let cell = &mut s[kk * dim + vv];
+                        *cell += write * err[vv];
+                        if mutation == Mutation::Bf16Recurrence {
+                            *cell = bf16_round(*cell);
+                        }
+                        out[h * dim + vv] += qv * *cell;
+                    }
+                }
+            }
+        }
+        planes.recurrent_out.extend_from_slice(&out);
+        out
+    };
+
+    // `gate` was already computed above — it depends only on `x`, never
+    // on `out`.
+
+    // Gated RMSNorm: normalise over ONE head's width, scale by the
+    // weight, then gate by `sigmoid(gate)`.
+    let normed = {
+        let _t = timed(OpClass::KdaGatedNorm);
+        let mut normed = vec![0.0f32; width];
+        for h in 0..heads {
+            let slice = &out[h * dim..(h + 1) * dim];
+            let ms = slice.iter().map(|v| v * v).sum::<f32>() / dim as f32;
+            let inv = (ms + w.norm_eps).sqrt().recip();
+            for (d, (sv, nv)) in slice.iter().zip(w.o_norm).enumerate() {
+                let i = h * dim + d;
+                normed[i] = sv * inv * nv / (1.0 + (-gate[i]).exp());
+            }
+        }
+        planes.o_norm.extend_from_slice(&normed);
+        normed
+    };
+
+    planes.q_proj.extend_from_slice(&q_p);
+    planes.k_proj.extend_from_slice(&k_p);
+    planes.v_proj.extend_from_slice(&v_p);
+
+    let y = projections.o(w.o_proj, &normed, w.o_proj.len() / width);
+    planes.output.extend_from_slice(&y);
+    y
+}
+
+/// A whole sequence through the block, from `state`.
+pub fn layer_forward(
+    x: &[f32],
+    hidden: usize,
+    w: KdaWeights<'_>,
+    g: KdaGeometry,
+    state: &mut KdaState,
+    mutation: Mutation,
+) -> KdaPlanes {
+    layer_forward_with(&CpuKdaProjections, x, hidden, w, g, state, mutation)
+}
+
+/// [`layer_forward`] with the projections executed somewhere the caller
+/// chooses. Everything but those four matvecs is unchanged.
+#[allow(clippy::too_many_arguments)]
+pub fn layer_forward_with(
+    projections: &dyn KdaProjections,
+    x: &[f32],
+    hidden: usize,
+    w: KdaWeights<'_>,
+    g: KdaGeometry,
+    state: &mut KdaState,
+    mutation: Mutation,
+) -> KdaPlanes {
+    let mut planes = KdaPlanes::default();
+    for pos in x.chunks_exact(hidden) {
+        step_with(projections, pos, w, g, state, &mut planes, mutation);
+    }
+    planes
+}
