@@ -15,7 +15,7 @@ use serde_json::Value;
 #[derive(Parser)]
 #[command(
     name = "vindex",
-    about = "The format-native VINDEX3 tool: inspect, describe, representations, precision, verify.",
+    about = "The format-native VINDEX3 tool: inspect, describe, representations, diff, represent, precision, verify.",
     version
 )]
 struct Cli {
@@ -41,6 +41,34 @@ enum Command {
     },
     /// The physical directory: what exists as bytes, with recorded fidelity.
     Representations { container: PathBuf },
+    /// One object under two of the container's representations, decoded and
+    /// compared value by value — the error derived, never asserted.
+    Diff {
+        container: PathBuf,
+        /// First encoding (e.g. F32, BF16).
+        a: String,
+        /// Second encoding (e.g. NVFP4).
+        b: String,
+        /// A logical object id, or an unambiguous suffix of one.
+        address: String,
+        /// How many per-value rows to show.
+        #[arg(long, default_value_t = 8)]
+        values: usize,
+        /// Show values from this tensor (name or suffix) instead of the
+        /// tensor with the largest error.
+        #[arg(long)]
+        tensor: Option<String>,
+    },
+    /// Compile a representation through the reference compiler into a new
+    /// container beside the original. Nothing is destroyed.
+    Represent {
+        container: PathBuf,
+        /// Where to write the new container.
+        out: PathBuf,
+        /// Target encoding.
+        #[arg(long, default_value = "NVFP4")]
+        encoding: String,
+    },
     /// Bits per weight — derived from stored bytes over tensor elements, never asserted.
     Precision { container: PathBuf },
     /// The container against its own recorded hashes, re-derived from the artifact alone.
@@ -179,6 +207,108 @@ fn render_precision(v: &Value) {
     }
 }
 
+fn render_diff(v: &Value) {
+    kv("object", v["object"].as_str().unwrap_or("?"));
+    kv(
+        "comparing",
+        format!(
+            "{} against {}",
+            v["a"].as_str().unwrap_or("?"),
+            v["b"].as_str().unwrap_or("?")
+        ),
+    );
+    println!();
+    println!(
+        "{:<38} {:>10} {:>10} {:>13} {:>13}",
+        "TENSOR", "WEIGHTS", "CHANGED", "RMS", "MAX"
+    );
+    for t in v["tensors"].as_array().into_iter().flatten() {
+        if let Some(note) = t["note"].as_str() {
+            println!("{:<38} {note}", t["tensor"].as_str().unwrap_or("?"));
+            continue;
+        }
+        println!(
+            "{:<38} {:>10} {:>10} {:>13.6} {:>13.6}",
+            t["tensor"].as_str().unwrap_or("?"),
+            t["weights"].as_u64().unwrap_or(0),
+            t["changed"].as_u64().unwrap_or(0),
+            t["rms_error"].as_f64().unwrap_or(0.0),
+            t["max_error"].as_f64().unwrap_or(0.0)
+        );
+    }
+    if let Some(head) = v["values"].as_object() {
+        println!();
+        println!("{} — first values", head["tensor"].as_str().unwrap_or("?"));
+        println!("{:>13} {:>13} {:>13}", "A", "B", "ERROR");
+        for r in head["rows"].as_array().into_iter().flatten() {
+            println!(
+                "{:>13.6} {:>13.6} {:>13.6}",
+                r["a"].as_f64().unwrap_or(0.0),
+                r["b"].as_f64().unwrap_or(0.0),
+                r["error"].as_f64().unwrap_or(0.0)
+            );
+        }
+    }
+    println!();
+    if v["identical"].as_bool().unwrap_or(false) {
+        kv("result", "identical — every decoded value agrees");
+    } else {
+        kv(
+            "result",
+            format!(
+                "{} of {} values differ · rms {:.6} · max {:.6}",
+                v["changed_values"],
+                v["total_weights"],
+                v["rms_error"].as_f64().unwrap_or(0.0),
+                v["max_error"].as_f64().unwrap_or(0.0)
+            ),
+        );
+    }
+}
+
+fn render_represent(v: &Value) {
+    kv("encoding", v["encoding"].as_str().unwrap_or("?"));
+    kv("map", v["map"].as_str().unwrap_or("?"));
+    kv("out", v["out"].as_str().unwrap_or("?"));
+    for c in v["compiled"].as_array().into_iter().flatten() {
+        println!();
+        kv("compiled", c["object"].as_str().unwrap_or("?"));
+        kv(
+            "tensors",
+            format!(
+                "{} re-encoded · {} carried verbatim",
+                c["compiled_tensors"], c["carried_tensors"]
+            ),
+        );
+        kv(
+            "bytes",
+            format!(
+                "{} → {} ({:.2}× smaller)",
+                c["source_bytes"],
+                c["compiled_bytes"],
+                c["compression"].as_f64().unwrap_or(0.0)
+            ),
+        );
+    }
+    for p in v["preserved"].as_array().into_iter().flatten() {
+        println!();
+        kv(
+            "preserved",
+            format!(
+                "{} — wholly at {} ({} bytes)",
+                p["object"].as_str().unwrap_or("?"),
+                p["encoding"].as_str().unwrap_or("?"),
+                p["bytes"]
+            ),
+        );
+    }
+    println!();
+    kv(
+        "linked",
+        format!("{} segment(s) untouched", v["linked_segments"]),
+    );
+}
+
 fn render_verify(v: &Value) {
     for e in v["entries"].as_array().into_iter().flatten() {
         let ok = e["segment_ok"].as_bool().unwrap_or(false)
@@ -211,6 +341,19 @@ fn main() -> ExitCode {
             values,
         } => vindex_cli::describe_facts(container, address, *values),
         Command::Representations { container } => vindex_cli::representations_facts(container),
+        Command::Diff {
+            container,
+            a,
+            b,
+            address,
+            values,
+            tensor,
+        } => vindex_cli::diff_facts(container, a, b, address, *values, tensor.as_deref()),
+        Command::Represent {
+            container,
+            out,
+            encoding,
+        } => vindex_cli::represent_facts(container, out, encoding),
         Command::Precision { container } => vindex_cli::precision_facts(container),
         Command::Verify { container } => vindex_cli::verify_facts(container),
     };
@@ -223,6 +366,8 @@ fn main() -> ExitCode {
                     Command::Inspect { .. } => render_inspect(&v),
                     Command::Describe { .. } => render_describe(&v),
                     Command::Representations { .. } => render_representations(&v),
+                    Command::Diff { .. } => render_diff(&v),
+                    Command::Represent { .. } => render_represent(&v),
                     Command::Precision { .. } => render_precision(&v),
                     Command::Verify { .. } => render_verify(&v),
                 }
