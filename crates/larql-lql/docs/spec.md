@@ -713,6 +713,31 @@ SHOW ENTITIES
 
 SHOW MODELS;
 
+SHOW COMPONENTS;
+
+-- VINDEX3: the system graph's components — id, role, layer count,
+-- hidden size, and the per-operator attention census — reconstructed
+-- purely from the container. Nothing is inferred from tensor names.
+
+SHOW REPRESENTATIONS ["<object>"];
+
+-- VINDEX3: the physically present representation directory, optionally
+-- filtered to entries whose logical object (or entry id) contains the
+-- given substring. Presence is physical: a variant listed here exists
+-- as bytes; selecting one not listed fails closed (§9.1 of the ABI).
+
+SHOW PROVENANCE ["<object>"];
+
+-- VINDEX3: hashes and lineage per directory entry — payload and
+-- segment SHA-256 (printed whole), what an entry was compiled from,
+-- and what model the container derives from.
+
+SHOW AUTHORITY;
+
+-- VINDEX3: the container's own authority declaration — canonical
+-- (source bytes present; derived representations recompilable) or
+-- derived (executable; not re-compilable) — and its declared profiles.
+
 SHOW PATCHES;
 
 SHOW COMPACT STATUS;
@@ -874,6 +899,10 @@ family metadata.
 | SHOW LAYERS | ✅ From metadata | ✅ Computed from weights | ✅ Per-layer plan facts |
 | SHOW FEATURES | ✅ Index lookup | ✅ Dense scan per layer | ✅ via semantic roles |
 | STATS | ✅ Instant | ✅ Computed | ✅ Container's own authority |
+| SHOW COMPONENTS | ❌ V3 concept | ❌ V3 concept | ✅ from the system graph |
+| SHOW REPRESENTATIONS | ❌ V3 concept | ❌ V3 concept | ✅ the physical directory |
+| SHOW PROVENANCE | ❌ V3 concept | ❌ V3 concept | ✅ digests + lineage |
+| SHOW AUTHORITY | ❌ V3 concept | ❌ V3 concept | ✅ the index's declaration |
 | INSERT (MODE KNN, default) | ✅ | ❌ Error: "requires vindex" | ✅ key from plan taps (§4.4) |
 | INSERT MODE COMPOSE | ✅ | ❌ Error: "requires vindex" | ✅ via the operand-source seam¹ |
 | DELETE | ✅ | ❌ Error: "requires vindex" | ✅ overlay tombstones |

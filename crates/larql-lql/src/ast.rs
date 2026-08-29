@@ -158,6 +158,24 @@ pub enum Statement {
         limit: Option<u32>,
     },
     ShowModels,
+    /// `SHOW COMPONENTS` (VINDEX3): the system graph's components, as
+    /// the container declares them — never reconstructed from names.
+    ShowComponents,
+    /// `SHOW REPRESENTATIONS ["object"]` (VINDEX3): the physically
+    /// present representation directory, optionally filtered to entries
+    /// whose logical object matches the given substring.
+    ShowRepresentations {
+        object: Option<String>,
+    },
+    /// `SHOW PROVENANCE ["object"]` (VINDEX3): hashes and lineage per
+    /// directory entry — payload and segment digests, what an entry was
+    /// compiled from, what model the container derives from.
+    ShowProvenance {
+        object: Option<String>,
+    },
+    /// `SHOW AUTHORITY` (VINDEX3): the container's own authority
+    /// declaration and the profiles it declares by name.
+    ShowAuthority,
     Stats {
         vindex: Option<String>,
     },

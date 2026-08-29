@@ -43,7 +43,11 @@ impl Parser {
                     }
                 }
                 self.eat_semicolon();
-                Ok(Statement::ShowRelations { layer, with_examples, mode })
+                Ok(Statement::ShowRelations {
+                    layer,
+                    with_examples,
+                    mode,
+                })
             }
             Token::Keyword(Keyword::Layers) => {
                 self.advance();
@@ -77,7 +81,11 @@ impl Parser {
                 };
 
                 self.eat_semicolon();
-                Ok(Statement::ShowFeatures { layer, conditions, limit })
+                Ok(Statement::ShowFeatures {
+                    layer,
+                    conditions,
+                    limit,
+                })
             }
             Token::Keyword(Keyword::Entities) => {
                 self.advance();
@@ -115,10 +123,44 @@ impl Parser {
                 self.eat_semicolon();
                 Ok(Statement::ShowCompactStatus)
             }
+            Token::Keyword(Keyword::Components) => {
+                self.advance();
+                self.eat_semicolon();
+                Ok(Statement::ShowComponents)
+            }
+            Token::Keyword(Keyword::Representations) => {
+                self.advance();
+                let object = self.maybe_object_filter()?;
+                self.eat_semicolon();
+                Ok(Statement::ShowRepresentations { object })
+            }
+            Token::Keyword(Keyword::Provenance) => {
+                self.advance();
+                let object = self.maybe_object_filter()?;
+                self.eat_semicolon();
+                Ok(Statement::ShowProvenance { object })
+            }
+            Token::Keyword(Keyword::Authority) => {
+                self.advance();
+                self.eat_semicolon();
+                Ok(Statement::ShowAuthority)
+            }
             _ => Err(ParseError(format!(
-                "expected RELATIONS, LAYERS, FEATURES, ENTITIES, MODELS, PATCHES, or COMPACT after SHOW, got {:?}",
+                "expected RELATIONS, LAYERS, FEATURES, ENTITIES, MODELS, PATCHES, COMPACT, \
+                 COMPONENTS, REPRESENTATIONS, PROVENANCE, or AUTHORITY after SHOW, got {:?}",
                 self.peek()
             ))),
+        }
+    }
+
+    /// An optional object filter after SHOW REPRESENTATIONS / SHOW
+    /// PROVENANCE — a quoted string, since logical object ids carry
+    /// dots and digits the identifier lexer would split.
+    fn maybe_object_filter(&mut self) -> Result<Option<String>, ParseError> {
+        if let Token::StringLit(_) = self.peek() {
+            Ok(Some(self.expect_string()?))
+        } else {
+            Ok(None)
         }
     }
 

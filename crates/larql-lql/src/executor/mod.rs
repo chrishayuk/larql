@@ -184,6 +184,12 @@ impl Session {
             } => self.exec_show_features(*layer, conditions, *limit),
             Statement::ShowEntities { layer, limit } => self.exec_show_entities(*layer, *limit),
             Statement::ShowModels => self.exec_show_models(),
+            Statement::ShowComponents => self.exec_show_components(),
+            Statement::ShowRepresentations { object } => {
+                self.exec_show_representations(object.as_deref())
+            }
+            Statement::ShowProvenance { object } => self.exec_show_provenance(object.as_deref()),
+            Statement::ShowAuthority => self.exec_show_authority(),
             Statement::ShowCompactStatus => self.exec_show_compact_status(),
             Statement::CompactInto { output } => self.exec_compact_into(output),
             Statement::CompactMinor => self.exec_compact_minor(),
