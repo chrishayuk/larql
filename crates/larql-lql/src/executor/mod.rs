@@ -24,6 +24,7 @@ mod tests;
 use std::path::PathBuf;
 
 use crate::ast::*;
+use crate::capability::CapabilityProfile;
 use crate::error::LqlError;
 
 pub(crate) use backend::{Backend, InstalledEdge, PatchRecording};
@@ -31,6 +32,9 @@ pub(crate) use backend::{Backend, InstalledEdge, PatchRecording};
 /// Session state for the REPL / batch executor.
 pub struct Session {
     pub(crate) backend: Backend,
+    /// The capability gate this session executes under. `Full` unless
+    /// the embedding surface tightened it — see `crate::capability`.
+    profile: CapabilityProfile,
     /// Active patch recording session (between BEGIN PATCH and SAVE PATCH).
     /// If None and a mutation happens, an anonymous patch is auto-started.
     pub(crate) patch_recording: Option<PatchRecording>,
@@ -88,6 +92,7 @@ impl Session {
     pub fn new() -> Self {
         Self {
             backend: Backend::None,
+            profile: CapabilityProfile::default(),
             patch_recording: None,
             auto_patch: false,
             decoy_residual_cache: std::collections::HashMap::new(),
@@ -114,7 +119,25 @@ impl Session {
         vec!["Auto-patch started (use SAVE PATCH \"file.vlp\" to persist, or edits are lost on exit)".into()]
     }
 
+    /// Constrain every subsequent `execute` to `profile`. Judged at
+    /// the head of `execute`, so it also governs the remote transport
+    /// and both legs of a pipe.
+    pub fn set_profile(&mut self, profile: CapabilityProfile) {
+        self.profile = profile;
+    }
+
+    /// The capability profile this session executes under.
+    pub fn profile(&self) -> CapabilityProfile {
+        self.profile
+    }
+
     pub fn execute(&mut self, stmt: &Statement) -> Result<Vec<String>, LqlError> {
+        // The capability gate: after parsing, before any execution —
+        // including the remote fork, so no transport bypasses it. A
+        // pipe is judged whole here; a refused leg refuses the
+        // statement before the other leg runs.
+        self.profile.check(stmt)?;
+
         // Remote backend: forward supported queries via HTTP.
         if self.is_remote() {
             return self.execute_remote(stmt);

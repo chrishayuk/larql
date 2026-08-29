@@ -1036,6 +1036,50 @@ the seed of a future `ModelCapabilities` surface, deliberately left
 as plain declared facts until `WALK`/`PATCH`-class pressure shapes
 the type.
 
+### 4.5 Capability Profiles
+
+A **capability profile** constrains what a session may execute. It is
+orthogonal to §4.2's backend capabilities: the backend matrix says what
+a binding *can* serve, the profile says what this session is *allowed*
+to ask of it. Both produce capability statements, never apologies.
+
+```
+Session::set_profile(CapabilityProfile::PublicExplorer)
+```
+
+The judgement runs at the head of `Session::execute` — after parsing,
+before any execution, ahead of the remote-transport fork, over the
+whole pipe tree. A statement a profile refuses returns
+`LqlError::Refused` (an embedding server maps it to 403: nothing
+failed; the profile does not serve this) and never begins: no
+auto-patch starts, no backend is consulted, no bytes are read.
+
+Two profiles exist:
+
+- **`FULL`** (default) — the whole language. The REPL's profile.
+- **`PUBLIC_EXPLORER`** — the public read surface, designed for a
+  hardened endpoint serving an immutable container:
+
+  | Permitted | Refused |
+  |---|---|
+  | `SHOW COMPONENTS / REPRESENTATIONS / PROVENANCE / AUTHORITY` | `INSERT / DELETE / UPDATE / MERGE / REBALANCE` |
+  | `SHOW RELATIONS / LAYERS / FEATURES / ENTITIES / MODELS` | `USE / EXTRACT / COMPILE / DIFF` (filesystem paths) |
+  | `DESCRIBE / WALK / SELECT / EXPLAIN / STATS` | `BEGIN / SAVE / APPLY / REMOVE PATCH`, `SHOW PATCHES` |
+  | `INFER [TOP n]`, `INFER GENERATE ≤ 32` | `COMPACT` family, `SHOW COMPACT STATUS`, `TRACE` |
+
+  The binding sequence is the embedding surface's: bind the published
+  container under `FULL` (USE is a lifecycle statement the public
+  profile refuses precisely because it names filesystem paths), then
+  tighten to `PUBLIC_EXPLORER` before the first foreign statement.
+  Note `SHOW MODELS` lists the process working directory — a public
+  deployment's working directory *is* its published catalogue.
+
+The `PUBLIC_EXPLORER` arm is an exhaustive `match` over `Statement`,
+mirroring the plan-capability module's fail-closed rule: a new
+statement does not compile until someone decides whether the public
+surface serves it. An unlisted statement defaulting to *allowed* is
+the one wrong default for a public endpoint.
+
 ---
 
 ## 5. Label Architecture
