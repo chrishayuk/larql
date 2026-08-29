@@ -1,0 +1,37 @@
+[package]
+name = "vindex-cli"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+rust-version.workspace = true
+description = "vindex — the format-native VINDEX3 tool: inspect, describe, representations, precision, verify. Reads what the container declares; no inference runtime."
+
+# The doctrine: VINDEX3 is defined by its documents, not by any tool,
+# and an artifact should not require an engine to be understood. This
+# binary is the canonical *reader*: every command answers from
+# index.json, the system graph, and the segment headers — the same
+# authorities an independent implementation would read — and every
+# command speaks --json, because the same result powers terminal text,
+# a designed web rendering, and scripts. What is deliberately not
+# here: execution, inference, mutation, benchmarking, representation
+# compilation — those are engine concerns and live in larql. The one
+# impurity, recorded honestly: larql-vindex is not yet a
+# dependency-light core, so this V1 carries its tree; carving
+# `vindex-core` out is the named next step, not a surprise.
+
+[[bin]]
+name = "vindex"
+path = "src/main.rs"
+
+[dependencies]
+larql-vindex = { path = "../larql-vindex" }
+clap = { version = "4.5", features = ["derive"] }
+serde_json.workspace = true
+sha2 = "0.10"
+
+[dev-dependencies]
+tempfile = "3"
+
+[lints]
+workspace = true
