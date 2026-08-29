@@ -381,7 +381,27 @@ pub async fn serve(cli: Cli) -> Result<(), BoxError> {
     // recount — `state.is_multi_model()` would (once mutation exists)
     // answer a different question than "which router did we build".
     let is_multi = state.router_topology == crate::state::RouterTopology::MultiModel;
-    let mut app = if is_multi {
+    let mut app = if cli.public_explorer {
+        // The public surface serves exactly one VINDEX3 container: the
+        // LQL bridge binds it as its whole universe, and a multi-model
+        // catalogue would make /v1/query and the REST routes disagree
+        // about what "the model" is.
+        if is_multi || !models.is_empty() || v3_models.len() != 1 {
+            return Err(
+                "--public-explorer requires exactly one VINDEX3 container (no V2, no multi-model)"
+                    .into(),
+            );
+        }
+        let bridge = Arc::new(crate::lql_bridge::spawn(
+            &v3_models[0].path,
+            std::time::Duration::from_secs(cli.infer_timeout_secs),
+        )?);
+        info!(
+            "PUBLIC_EXPLORER mode: read routes + /v1/query only ({})",
+            v3_models[0].id
+        );
+        routes::public_explorer_router(Arc::clone(&state), bridge)
+    } else if is_multi {
         info!("Multi-model mode ({} models)", boot_models.len());
         for m in &boot_models {
             info!("  /v1/{}/...", m.id);
