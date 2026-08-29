@@ -10,7 +10,9 @@ COPY crates/ crates/
 # time — the build context must carry them.
 COPY registry/ registry/
 
-RUN apt-get update && apt-get install -y pkg-config libssl-dev protobuf-compiler cmake g++ libopenblas-dev && \
+# curl + ca-certificates: utoipa-swagger-ui's build script downloads
+# the Swagger UI bundle at compile time.
+RUN apt-get update && apt-get install -y pkg-config libssl-dev protobuf-compiler cmake g++ libopenblas-dev curl ca-certificates && \
     cargo build --release -p larql-server --bin larql-server --bin vindex3-demo && \
     strip target/release/larql-server target/release/vindex3-demo
 
