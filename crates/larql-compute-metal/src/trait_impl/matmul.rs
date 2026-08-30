@@ -66,6 +66,43 @@ impl MatMul for MetalBackend {
         self.encode_f16_gemv(w_f16, x, n, k)
     }
 
+    /// bf16 weights (the top 16 bits of each f32), threshold-gated.
+    /// Encoder body and shape rule live in [`super::bf16_gemv`].
+    fn bf16_gemv(&self, w_bf16: &[u8], x: &[f32], n: usize, k: usize) -> Option<Vec<f32>> {
+        if !Self::bf16_gemv_shape_ok(w_bf16, x, n, k) {
+            return None;
+        }
+        if 2 * n * k < self.flop_threshold.load(Ordering::Relaxed) {
+            return None;
+        }
+        self.encode_bf16_gemv(w_bf16, x, n, k)
+    }
+
+    fn bf16_gemv_force(&self, w_bf16: &[u8], x: &[f32], n: usize, k: usize) -> Option<Vec<f32>> {
+        if !Self::bf16_gemv_shape_ok(w_bf16, x, n, k) {
+            return None;
+        }
+        self.encode_bf16_gemv(w_bf16, x, n, k)
+    }
+
+    /// N bf16 gemvs over one shared input as one submission. Bit-identical
+    /// to N sequential `bf16_gemv_force` calls; see [`super::bf16_gemv`].
+    fn bf16_gemv_multi(
+        &self,
+        weights: &[(&[u8], usize, usize)],
+        x: &[f32],
+    ) -> Option<Vec<Vec<f32>>> {
+        for &(w, n, k) in weights {
+            if !Self::bf16_gemv_shape_ok(w, x, n, k) {
+                return None;
+            }
+        }
+        if weights.is_empty() {
+            return Some(Vec::new());
+        }
+        self.encode_bf16_gemv_multi(weights, x)
+    }
+
     /// One command buffer, one encoder, one input upload, N dispatches,
     /// one wait — same kernel and same per-dispatch arguments as the
     /// sequential path, so the results are bit-identical to N separate

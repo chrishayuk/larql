@@ -653,6 +653,11 @@ impl<'a> LoweredSession<'a> {
                             .1;
                         LoweredPosition::Scaled { theta, amplitude }
                     }
+                    // No lowering exists for a relative scheme. It
+                    // lowers to `None` — no rotation — and the executor
+                    // refuses rather than running it unpositioned, so the
+                    // absence is never mistaken for NoPE downstream.
+                    PositionPolicy::Relative { .. } => LoweredPosition::None,
                     PositionPolicy::None => LoweredPosition::None,
                     // The proportional table (zeros above the fraction)
                     // rides this layer's own inv_freq at unit amplitude;

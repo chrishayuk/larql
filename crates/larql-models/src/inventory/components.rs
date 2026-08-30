@@ -25,6 +25,34 @@ const COMPONENT_CONFIG_SUFFIX: &str = "_config";
 /// Components owned by the main `ModelConfig` parser, not this reader.
 const MAIN_PARSER_COMPONENTS: &[&str] = &["text_config", "language_config"];
 
+/// `*_config` sections that parameterise an **operator of the main stack**
+/// rather than describing a component of their own.
+///
+/// The `_config` suffix is a naming convention, not a declaration of
+/// component-hood, and `linear_attn_config` is the case that shows the
+/// difference: it carries a `num_heads` and a `head_dim`, so it satisfies
+/// [`ComponentTopology::declares_topology`] and was read as a sibling
+/// sub-model. Kimi Linear then grew a phantom `linear_attn` component
+/// whose execution surface was reported *incomplete* — for a component
+/// that does not exist, and which has no embedding, no layers and no
+/// tensors of its own.
+///
+/// The cost was not only the noise. Its keys were credited to that
+/// component's `consumed_paths`, so `linear_attn_config.head_dim` graded
+/// **representable** on Kimi and `unrepresented` on GLM-5.3-Flash — the
+/// same key, the same meaning, two verdicts, decided by whether the
+/// section happened to sit at the config root.
+const OPERATOR_CONFIG_SECTIONS: &[&str] = &["linear_attn_config"];
+
+/// Whether a `*_config` key names an operator section rather than a
+/// component. Public because the plan's own path→component mapping must
+/// agree: a section that builds no component must not be named as one, or
+/// every carriage probe for its keys looks for a component that does not
+/// exist and reports facts as uncarried that are carried perfectly well.
+pub fn is_operator_config_section(key: &str) -> bool {
+    OPERATOR_CONFIG_SECTIONS.contains(&key)
+}
+
 /// One nested component's declared topology.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ComponentTopology {
@@ -167,6 +195,7 @@ pub fn read_components(config: &Value) -> Vec<ComponentReading> {
             value.is_object()
                 && key.ends_with(COMPONENT_CONFIG_SUFFIX)
                 && !MAIN_PARSER_COMPONENTS.contains(&key.as_str())
+                && !OPERATOR_CONFIG_SECTIONS.contains(&key.as_str())
         })
         .map(|(key, value)| read_component(key, value))
         // A `*_config` object that declares no topology is not a component

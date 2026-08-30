@@ -1281,3 +1281,24 @@ fn a_pack_that_disagrees_with_the_declared_program_is_refused() {
         "the refusal names the program: {err}"
     );
 }
+
+/// The serialised name and [`Role::name`] are one vocabulary.
+///
+/// A record persisted by an evidence gate and a role named on a CLI flag
+/// have to resolve to the same authority key; two spellings of one role
+/// would let a precision map silently fail to govern the tensors an
+/// experiment measured.
+#[test]
+fn the_serde_form_is_the_role_name() {
+    for r in super::policy::Role::ALL {
+        let json = serde_json::to_string(r).expect("role serialises");
+        assert_eq!(
+            json,
+            format!("\"{}\"", r.name()),
+            "{r} serialises differently from its name"
+        );
+        let back: super::policy::Role = serde_json::from_str(&json).expect("round trips");
+        assert_eq!(back, *r);
+        assert_eq!(super::policy::Role::parse(r.name()), Some(*r));
+    }
+}

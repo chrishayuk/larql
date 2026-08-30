@@ -21,6 +21,10 @@ use super::{Authority, EquivalenceCheck};
 use crate::format::vindex3::graph::{Component, ComponentRole, SystemGraph};
 use crate::format::vindex3::plan::{FindingCategory, SystemPlan};
 
+/// Span spellings the inventory's resolved table uses.
+const ATTENTION_SLIDING: &str = "sliding";
+const ATTENTION_FULL: &str = "full";
+
 /// Link 1: the plan's declared-vs-resolved value comparison, as check rows.
 pub fn declared_vs_resolved(plan: &SystemPlan) -> Vec<EquivalenceCheck> {
     let mut checks = vec![EquivalenceCheck {
@@ -235,8 +239,33 @@ fn attention_policy(component: &Component, inventory: &ArchitectureInventory) ->
         .layers
         .iter()
         .map(|layer| {
+            // The checkpoint's own declared kind is the authority when it
+            // states one. `layer.attention` is the parser's sliding/full
+            // boolean, and a boolean **cannot express a recurrence** — so
+            // comparing the graph against it would demand the graph
+            // re-adopt the collapse that reported Kimi Linear's 20 KDA
+            // layers, and Inkling-Small's 35 sliding ones, as full
+            // attention.
+            //
+            // This stays a real check rather than becoming a tautology:
+            // `LayerPolicy::declared_kind` and the graph's
+            // `AttentionLayerPolicy` are two separately stored
+            // resolutions, written at different times by different code,
+            // and either can drift from the other. What changed is which
+            // fact is compared, not whether one is.
+            let span = match &layer.declared_kind {
+                // A recurrence has no span, and saying so is the point.
+                Some(larql_models::config::LayerKind::Recurrent(_)) => Value::Null,
+                Some(larql_models::config::LayerKind::Sliding { .. }) => json!(ATTENTION_SLIDING),
+                Some(larql_models::config::LayerKind::Full) => json!(ATTENTION_FULL),
+                // A spelling with no kind, or no declaration at all: the
+                // boolean is the only source of truth there is.
+                Some(larql_models::config::LayerKind::Unexpressed { .. }) | None => {
+                    json!(layer.attention)
+                }
+            };
             json!({
-                "span": layer.attention,
+                "span": span,
                 "window": layer.window,
                 "position": layer.position,
             })

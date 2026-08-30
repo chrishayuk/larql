@@ -24,6 +24,30 @@ use crate::error::VindexError;
 /// Current segment header schema. Bump on any breaking change.
 pub const SEGMENT_HEADER_SCHEMA: u32 = 1;
 
+/// **Canonical output alignment**: what this encoder writes payloads
+/// on. NOT the conformance requirement for reading one.
+///
+/// Two different numbers, deliberately:
+///
+/// * `SEGMENT_PAYLOAD_ALIGN` (16) — the encoder's own policy. Sixteen
+///   covers every element type a segment carries and every SIMD load a
+///   kernel might make over one, and costs at most fifteen bytes of
+///   header padding, so there is no reason to write less.
+/// * the *execution* minimum — 4 bytes, MEASURED against the real
+///   kernel (`larql_compute_metal::buffers::WEIGHT_BINDING_ALIGN`).
+///   That is the widest element a weight buffer is bound as, and a
+///   region satisfying it binds zero-copy correctly.
+///
+/// A segment aligned to only the execution minimum is therefore
+/// **conforming and directly bindable**, merely not what this encoder
+/// would write today. That distinction is load-bearing rather than
+/// pedantic: the Kimi container's 94 GB expert segment starts at
+/// 2,438,284 — a multiple of four and not of sixteen — and is retained
+/// and executed as-is. Raising the execution requirement to sixteen
+/// would declare it non-conforming and force a 94 GB rewrite that
+/// changes not one byte of model content.
+pub const SEGMENT_PAYLOAD_ALIGN: usize = 16;
+
 /// The segment header, as serialised into the file.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SegmentHeader {
@@ -106,8 +130,32 @@ pub fn write_segment(
         representation: representation.to_string(),
         tensors: table,
     };
-    let header_bytes = serde_json::to_vec(&header)
+    let mut header_bytes = serde_json::to_vec(&header)
         .map_err(|e| VindexError::Parse(format!("serialise segment header: {e}")))?;
+    // **Pad so the payload starts on the canonical boundary.**
+    //
+    // `payload_start = 8 + header_len`, and a JSON header is whatever
+    // length the tensor table happens to serialise to — odd as often as
+    // not. A misaligned payload makes every tensor in the segment
+    // misaligned too, and a compute backend that binds an mmap'd region
+    // zero-copy then hands its kernel a misaligned pointer: on Metal a
+    // `device const ushort*` at an odd address reads garbage with no
+    // error at all.
+    //
+    // Padding to `SEGMENT_PAYLOAD_ALIGN` rather than to the execution
+    // minimum because this is the writer, and the writer has no reason
+    // to emit the least conforming thing it can.
+    //
+    // Measured on the real Kimi container, whose `decoder_stack`
+    // payload started at 56,925: every dense/shared expert dispatch
+    // returned NaN while the command buffer reported success.
+    //
+    // The padding is trailing whitespace, which JSON ignores, so a
+    // reader that predates this still parses the header — and the
+    // payload bytes and their hash are untouched.
+    let pad = (SEGMENT_PAYLOAD_ALIGN - (8 + header_bytes.len()) % SEGMENT_PAYLOAD_ALIGN)
+        % SEGMENT_PAYLOAD_ALIGN;
+    header_bytes.extend(std::iter::repeat_n(b' ', pad));
 
     if let Some(parent) = path.parent() {
         std::fs::create_dir_all(parent)?;
@@ -147,6 +195,53 @@ pub fn write_segment(
 }
 
 /// Read a segment's header (framing only; no payload I/O).
+/// **Rewrite a segment so its payload starts on
+/// [`SEGMENT_PAYLOAD_ALIGN`], copying the payload bytes verbatim.**
+///
+/// For containers encoded before the encoder padded its header. The
+/// tensor table, the payload bytes and therefore the payload hash
+/// recorded in the container's index are all unchanged — only the
+/// header grows by up to fifteen spaces — so a candidate overlay
+/// compiled against the container still verifies against it.
+///
+/// Returns `(payload_start_before, payload_start_after)`. A segment
+/// that is already aligned is left untouched and reports the same value
+/// twice.
+pub fn realign_segment(path: &Path, out: &Path) -> Result<(u64, u64), VindexError> {
+    use std::io::{Read, Seek, SeekFrom};
+    let (_, payload_start) = read_segment_header(path)?;
+    let mut file = std::fs::File::open(path)?;
+    let mut len_bytes = [0u8; 8];
+    file.read_exact(&mut len_bytes)?;
+    let header_len = u64::from_le_bytes(len_bytes);
+    let mut header_bytes = vec![0u8; header_len as usize];
+    file.read_exact(&mut header_bytes)?;
+    let pad = (SEGMENT_PAYLOAD_ALIGN - (payload_start as usize) % SEGMENT_PAYLOAD_ALIGN)
+        % SEGMENT_PAYLOAD_ALIGN;
+    if pad == 0 && path == out {
+        return Ok((payload_start, payload_start));
+    }
+    header_bytes.extend(std::iter::repeat_n(b' ', pad));
+
+    if let Some(parent) = out.parent() {
+        std::fs::create_dir_all(parent)?;
+    }
+    let mut writer = std::io::BufWriter::new(std::fs::File::create(out)?);
+    writer.write_all(&(header_bytes.len() as u64).to_le_bytes())?;
+    writer.write_all(&header_bytes)?;
+    file.seek(SeekFrom::Start(payload_start))?;
+    let copied = std::io::copy(&mut file, &mut writer)?;
+    writer.flush()?;
+    let after = 8 + header_bytes.len() as u64;
+    if !after.is_multiple_of(SEGMENT_PAYLOAD_ALIGN as u64) {
+        return Err(VindexError::Parse(format!(
+            "realigned payload still starts at {after}"
+        )));
+    }
+    let _ = copied;
+    Ok((payload_start, after))
+}
+
 pub fn read_segment_header(path: &Path) -> Result<(SegmentHeader, u64), VindexError> {
     use std::io::Read;
     /// Bound mirrors the writer's practical header sizes.

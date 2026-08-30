@@ -24,6 +24,10 @@ use crate::format::vindex3::opplan::exec::reference::ReferenceBackend;
 use crate::format::vindex3::opplan::{plan_component_ops, ComponentOpPlan, LayerAttention};
 
 /// The encoded hybrid fixture, planned and ready to execute.
+pub(super) fn hybrid_plan_for_tests() -> (tempfile::TempDir, ComponentOpPlan, OperandStore) {
+    hybrid()
+}
+
 fn hybrid() -> (tempfile::TempDir, ComponentOpPlan, OperandStore) {
     let src = tempfile::tempdir().unwrap();
     hybrid_lllf_f32_model(src.path());
@@ -65,7 +69,10 @@ fn an_lllf_stack_dispatches_three_recurrences_then_one_softmax() {
         .iter()
         .map(|l| match &l.attention {
             LayerAttention::GatedDelta(_) => "L",
+            LayerAttention::Kda(_) => "K",
             LayerAttention::Softmax(_) => "F",
+            // Never reached — this fixture builds no MLA layer.
+            LayerAttention::Mla(_) => "M",
         })
         .collect();
     assert_eq!(
@@ -173,6 +180,11 @@ fn each_layer_updates_its_own_kind_of_state_and_no_other() {
 
     for (index, layer) in plan.layers.iter().enumerate() {
         match &layer.attention {
+            // This fixture is a Gated DeltaNet stack; a KDA layer reaching
+            // here would mean the fixture changed operator, which the
+            // assertion should say rather than silently skip.
+            LayerAttention::Kda(_) => panic!("layer {index}: fixture is Gated DeltaNet, not KDA"),
+            LayerAttention::Mla(_) => panic!("layer {index}: fixture is Gated DeltaNet, not MLA"),
             LayerAttention::GatedDelta(_) => {
                 let state = provider.recurrent_state(index).expect("a recurrent layer");
                 let matrix = state.buffer(0).cells().to_vec();

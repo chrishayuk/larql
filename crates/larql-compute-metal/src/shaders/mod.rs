@@ -16,6 +16,9 @@ pub mod sgemm_transb;
 // it by *path*, not by hand-typed string.
 pub mod activation;
 pub mod attn_fused;
+pub mod bf16_gemv;
+pub mod bf16_grouped_experts;
+pub mod bf16_grouped_gate_up;
 pub mod bias_add;
 pub mod causal_attention;
 pub mod f16_gemv;
@@ -24,9 +27,12 @@ pub mod fused_attention;
 pub mod fused_ops;
 pub mod geglu;
 pub mod graph_walk_knn;
+pub mod kda;
+pub mod kimi_layer;
 pub mod kv_append_attend_fused;
 pub mod kv_attention;
 pub mod layer_norm;
+pub mod mla;
 pub mod moe_descriptor;
 pub mod moe_router;
 pub mod moe_router_select;
@@ -87,6 +93,12 @@ pub fn all_shaders() -> String {
     src.push_str(&f32_gemv::argmax_shader_source());
     src.push_str(&f32_gemv::topk_shader_source());
     src.push_str(f16_gemv::SHADER);
+    src.push_str(bf16_gemv::SHADER);
+    src.push_str(&bf16_grouped_experts::shader());
+    src.push_str(&bf16_grouped_gate_up::shader());
+    src.push_str(kda::SHADER);
+    src.push_str(&kimi_layer::shader());
+    src.push_str(&mla::shader());
     // MoE GPU router (rungs A+B+C of the GPU-dataflow routing ladder)
     src.push_str(moe_router::SHADER);
     src.push_str(moe_router_select::SHADER);

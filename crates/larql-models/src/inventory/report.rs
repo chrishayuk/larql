@@ -142,6 +142,15 @@ pub struct ResolvedTopology {
     /// any. `None` on a model whose every layer attends by softmax.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub linear_attention: Option<LinearAttentionTopology>,
+    /// The KDA block's declared geometry, when the checkpoint declares one
+    /// (`linear_attn_config`). Disjoint from [`Self::linear_attention`] in
+    /// every observed checkpoint: the two describe different operators, so
+    /// carrying them in one field would force a reader to guess which.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub kda: Option<crate::config::KdaGeometry>,
+    /// KDA's decay-gate lower bound (`linear_attn_config.gate_lower_bound`).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub kda_gate_lower_bound: Option<f32>,
 }
 
 /// The precision a recurrent state is kept at.
@@ -284,6 +293,15 @@ pub struct ResolvedExecution {
     /// recorded.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub moe: Option<MoeExecution>,
+    /// Multi-Latent Attention geometry when the family declares one
+    /// (`ModelArchitecture::uses_mla`); `None` = ordinary per-position K/V
+    /// attention. Applies to every [`LayerPolicy`] whose declared kind is
+    /// [`crate::config::LayerKind::Full`] — MLA compresses the KV cache,
+    /// not the FFN, so it is orthogonal to `moe`'s dense-prefix layers and
+    /// uniform across a family's non-recurrent layers, the same way KDA's
+    /// geometry is uniform across its recurrent ones.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub mla: Option<MlaExecution>,
     pub activation: crate::config::Activation,
     pub ffn_type: crate::config::FfnType,
     /// How the FFN's gate combines with its up branch. `Gated` is the
@@ -353,10 +371,18 @@ pub struct LayerPolicy {
     /// [`Self::declared_span`] is the finer-grained fact when the
     /// checkpoint states one.
     pub attention: String,
-    /// The checkpoint's own `layer_types` entry for this layer, verbatim,
-    /// when it declares one. `None` when the config states no per-layer
-    /// array (an implicit stride, or a plain single-attention-type model)
-    /// — [`Self::attention`] is then the only source of truth.
+    /// The checkpoint's own per-layer declaration for this layer, in
+    /// `layer_types` vocabulary.
+    ///
+    /// Verbatim from `layer_types` when the checkpoint writes that array.
+    /// When it does not, the equivalent declaration in the index-set
+    /// spelling (`linear_attn_config.{kda_layers, full_attn_layers}`)
+    /// answers instead, normalised into the same vocabulary — the fact is
+    /// the same one, and carrying two spellings downstream would grow a
+    /// second code path in every consumer. `None` only when the checkpoint
+    /// states no per-layer split at all (an implicit stride, or a plain
+    /// single-attention-type model) — [`Self::attention`] is then the only
+    /// source of truth.
     ///
     /// Carries a vocabulary [`Self::attention`] cannot: a hybrid
     /// linear-attention interleave (`"linear_attention"`) is neither
@@ -365,6 +391,12 @@ pub struct LayerPolicy {
     /// §4.7.8.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub declared_span: Option<String>,
+    /// The same declaration in the canonical vocabulary, carrying what the
+    /// `layer_types` spelling cannot: which recurrence family, and a
+    /// sliding layer's window. `None` when the checkpoint declares no
+    /// per-layer topology, or declared one this build could not resolve.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub declared_kind: Option<crate::config::LayerKind>,
     /// Window size when sliding, `None` on full-attention layers.
     pub window: Option<usize>,
     /// How this layer encodes position — rotary at a base, or not at all.
@@ -393,6 +425,15 @@ pub struct LayerPolicy {
 /// reads — none is re-derived from operand names downstream.
 #[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
 pub struct MoeExecution {
+    /// Multiplier on the routed-expert branch (`routed_scaling_factor`).
+    /// `None` when undeclared — never 1.0, which is a different claim.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub branch_scale: Option<f64>,
+    /// Leading layers that run a dense MLP instead of the routed block
+    /// (`first_k_dense_replace`). `None` when the checkpoint declares no
+    /// prefix; `Some(0)` is a declared absence of one.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub dense_prefix_layers: Option<usize>,
     /// Routed experts per layer.
     pub experts: usize,
     /// Experts selected per token.
@@ -416,6 +457,36 @@ pub struct MoeExecution {
     pub shared_experts: usize,
     /// A dense MLP summed with the expert block every layer (Gemma 4 A4B).
     pub hybrid: bool,
+}
+
+/// Multi-Latent Attention geometry, resolved once from the architecture.
+/// `None` on [`ResolvedExecution::mla`] means the family runs ordinary
+/// per-position K/V, not "MLA with defaulted dimensions" — every field
+/// here is load-bearing for the compressed-KV operand shapes, and a
+/// wrong-but-plausible default would silently accept a mis-shaped tensor.
+///
+/// Kimi Linear ships no `q_lora_rank` (`assert self.q_lora_rank is None`
+/// in the checkpoint's own `modeling_kimi.py` — Q is one dense
+/// projection, only K/V are low-rank compressed), so this carries no
+/// `q_lora_rank` field; a family that DOES compress Q needs its own
+/// extension here, not a guess from this one.
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+pub struct MlaExecution {
+    /// Query/output head count (`num_attention_heads`) — the decompressed
+    /// K/V side always produces this many heads' worth of output, not
+    /// `num_key_value_heads`: MLA's compression is the efficiency
+    /// mechanism, not a GQA-style head reduction after decompression.
+    pub num_heads: usize,
+    /// Compressed KV latent width (`kv_lora_rank`).
+    pub kv_lora_rank: usize,
+    /// Non-RoPE portion of the query/key head width.
+    pub qk_nope_head_dim: usize,
+    /// RoPE portion of the query/key head width, shared (MQA-style)
+    /// across every head from the SAME compressed projection.
+    pub qk_rope_head_dim: usize,
+    /// Value head width — independent of the query/key head width; MLA's
+    /// asymmetry is structural, not an approximation.
+    pub v_head_dim: usize,
 }
 
 /// One flattened `config.json` leaf.
@@ -492,6 +563,75 @@ pub struct TensorFact {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// **The recurrent state dtype round-trips, and refuses what it
+    /// does not represent.**
+    ///
+    /// `None` means undeclared or spelled in a way this build cannot
+    /// represent — never "float32 by default". Qwen3.8 declares
+    /// `float32` against a bf16 model, so a defaulted answer would put
+    /// the recurrence at the model's precision and quietly change the
+    /// operator.
+    #[test]
+    fn the_recurrent_state_dtype_round_trips_and_refuses_the_unrepresented() {
+        for spelling in ["float32", "f32"] {
+            assert_eq!(
+                RecurrentStateDtype::from_declared(spelling),
+                Some(RecurrentStateDtype::Float32),
+                "`{spelling}` is a spelling of the same dtype"
+            );
+        }
+        assert_eq!(
+            RecurrentStateDtype::Float32.declared_name(),
+            "float32",
+            "the canonical spelling is what a container records"
+        );
+        assert_eq!(
+            RecurrentStateDtype::from_declared(RecurrentStateDtype::Float32.declared_name()),
+            Some(RecurrentStateDtype::Float32),
+            "the canonical spelling must parse back"
+        );
+        for unknown in ["bfloat16", "float16", "fp32", "", "FLOAT32"] {
+            assert_eq!(
+                RecurrentStateDtype::from_declared(unknown),
+                None,
+                "`{unknown}` is not represented, so it must be refused rather than \
+                 approximated by the one variant that exists"
+            );
+        }
+    }
+
+    /// **The linear-attention widths are DERIVED, so they cannot drift
+    /// from the head counts they come from.**
+    ///
+    /// Checked at Qwen3.8's real geometry, where the key and value sides
+    /// genuinely differ: `2·16·128 + 48·128 = 10240`, the observed
+    /// `in_proj_qkv` row count. A build that folded the two sides into
+    /// one head count would have to pick one, and either choice misses.
+    #[test]
+    fn the_linear_attention_widths_are_derived_from_both_sides() {
+        let qwen38 = LinearAttentionTopology {
+            key_heads: 16,
+            key_head_dim: 128,
+            value_heads: 48,
+            value_head_dim: 128,
+            conv_kernel: 4,
+            state_dtype: Some(RecurrentStateDtype::Float32),
+        };
+        assert_eq!(
+            qwen38.qkv_channels(),
+            10240,
+            "q and k at the KEY geometry, v at the value's"
+        );
+        assert_eq!(qwen38.value_width(), 6144);
+        // Folding the sides would give a different number either way,
+        // which is why they stay separate.
+        assert_ne!(
+            qwen38.qkv_channels(),
+            3 * qwen38.key_heads * qwen38.key_head_dim
+        );
+        assert_ne!(qwen38.qkv_channels(), 3 * qwen38.value_width());
+    }
 
     #[test]
     fn key_status_serialises_lowercase() {

@@ -15,7 +15,9 @@ use crate::format::vindex3::opplan::exec::device::DevicePlanBackend;
 use crate::format::vindex3::opplan::exec::experts::FfnOperands;
 use crate::format::vindex3::opplan::exec::operands::OperandStore;
 use crate::format::vindex3::opplan::exec::weights::{quantize_mxfp4, LoadedWeight};
-use crate::format::vindex3::opplan::{plan_component_ops, ComponentOpPlan, LayerFfn, RoutedFfnOp};
+use crate::format::vindex3::opplan::{
+    plan_component_ops, ComponentOpPlan, ExpertBank, LayerFfn, RoutedFfnOp,
+};
 
 // ── Routed miniature geometry: MXFP4 needs k ≡ 0 (mod 32) on both projections ──
 pub(super) const HIDDEN: usize = 32;
@@ -326,7 +328,10 @@ pub(super) fn bf16_carrier_store() -> (tempfile::TempDir, tempfile::TempDir, Ope
 pub(super) fn bf16_op(op: &RoutedFfnOp) -> RoutedFfnOp {
     let mut op = op.clone();
     op.expert_format = ExpertFormat::PackedBF16;
-    for projection in [&mut op.gate_up, &mut op.down] {
+    let ExpertBank::Packed { gate_up, down } = &mut op.bank else {
+        panic!("fixture builds a packed bank");
+    };
+    for projection in [gate_up, down] {
         projection.weights.tensor = projection
             .weights
             .tensor

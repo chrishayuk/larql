@@ -14,7 +14,8 @@
 //! the test cannot demand registry entries for non-keys.
 
 use crate::inventory::config_keys::{
-    CONSUMED_CONTAINER_KEYS, CONSUMED_LEAF_KEYS, PRESENCE_ONLY_CONTAINER_KEYS,
+    CONSUMED_CONTAINER_KEYS, CONSUMED_LEAF_KEYS, PATH_READ_CONTAINER_KEYS, PATH_READ_LEAF_KEYS,
+    PRESENCE_ONLY_CONTAINER_KEYS,
 };
 
 /// The parser source this registry mirrors.
@@ -63,6 +64,8 @@ fn every_parser_key_access_is_in_the_registry() {
             let known = CONSUMED_LEAF_KEYS.contains(&key.as_str())
                 || CONSUMED_CONTAINER_KEYS.contains(&key.as_str())
                 || PRESENCE_ONLY_CONTAINER_KEYS.contains(&key.as_str())
+                || PATH_READ_CONTAINER_KEYS.contains(&key.as_str())
+                || PATH_READ_LEAF_KEYS.contains(&key.as_str())
                 || SCAN_ALLOWLIST.contains(&key.as_str());
             if !known {
                 missing.push(key);

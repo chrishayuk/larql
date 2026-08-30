@@ -16,6 +16,12 @@
 
 /// Wire value for [`MoeRouterKind::TopKSoftmax`].
 pub const ROUTER_WIRE_TOP_K_SOFTMAX: &str = "top_k_softmax";
+/// Wire value for per-expert sigmoid gating.
+const ROUTER_WIRE_SIGMOID: &str = "sigmoid";
+
+/// The `scoring_func` / `moe_router_activation_func` spelling that selects
+/// [`MoeRouterKind::Sigmoid`].
+pub const ROUTER_ACTIVATION_SIGMOID: &str = "sigmoid";
 /// Wire value for [`MoeRouterKind::Gemma4Hybrid`].
 pub const ROUTER_WIRE_GEMMA4_TOP_K_SOFTMAX: &str = "gemma4_top_k_softmax";
 /// Wire value for [`MoeRouterKind::TopKThenSoftmax`].
@@ -39,6 +45,19 @@ pub enum MoeRouterKind {
     /// selected weights sum to 1. GPT-OSS.
     #[serde(rename = "gpt_oss_topk_then_softmax")]
     TopKThenSoftmax,
+    /// Per-expert **sigmoid** gating: each expert's score is independent,
+    /// so the selected weights do not sum to 1 and a renormalisation step
+    /// is a separate declared fact rather than implied.
+    ///
+    /// Its own variant because the rule differs from every softmax variant
+    /// above at the first operation, not in the ordering around it. Kimi
+    /// Linear, GLM-5.3-Flash and Inkling-Small all declare it; before this,
+    /// each resolved to the softmax default and the surface stated a
+    /// routing rule none of them uses.
+    ///
+    /// **Represented, not executable** — no backend implements it yet.
+    #[serde(rename = "sigmoid")]
+    Sigmoid,
 }
 
 impl MoeRouterKind {
@@ -49,6 +68,7 @@ impl MoeRouterKind {
             Self::TopKSoftmax => ROUTER_WIRE_TOP_K_SOFTMAX,
             Self::Gemma4Hybrid => ROUTER_WIRE_GEMMA4_TOP_K_SOFTMAX,
             Self::TopKThenSoftmax => ROUTER_WIRE_GPT_OSS_TOPK_THEN_SOFTMAX,
+            Self::Sigmoid => ROUTER_WIRE_SIGMOID,
         }
     }
 
@@ -57,6 +77,7 @@ impl MoeRouterKind {
     /// that silently computes a different rule.
     pub fn from_wire(s: &str) -> Option<Self> {
         match s {
+            ROUTER_WIRE_SIGMOID => Some(Self::Sigmoid),
             ROUTER_WIRE_TOP_K_SOFTMAX => Some(Self::TopKSoftmax),
             ROUTER_WIRE_GEMMA4_TOP_K_SOFTMAX => Some(Self::Gemma4Hybrid),
             ROUTER_WIRE_GPT_OSS_TOPK_THEN_SOFTMAX => Some(Self::TopKThenSoftmax),

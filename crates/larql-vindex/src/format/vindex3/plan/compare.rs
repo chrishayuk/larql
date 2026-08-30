@@ -12,7 +12,31 @@ use larql_models::config::PositionPolicy;
 use larql_models::inventory::{ArchitectureInventory, ConfigKeyFact};
 use serde_json::Value;
 
-use super::super::graph::policy::{resolve_layer_kind, AttentionSpan, LayerOperator};
+use super::super::graph::policy::{
+    resolve_layer_kind, AttentionSpan, LayerOperator, RecurrenceKind,
+};
+
+/// Mirror of the graph builder's rule, so the comparator grades against
+/// the same operator the graph recorded. See `graph::build::recurrence_kind`.
+fn recurrence_kind(inventory: &ArchitectureInventory) -> Option<RecurrenceKind> {
+    if inventory.resolved.kda.is_some() {
+        return Some(RecurrenceKind::Kda);
+    }
+    inventory
+        .resolved
+        .linear_attention
+        .is_some()
+        .then_some(RecurrenceKind::GatedDelta)
+}
+
+/// Mirror of the graph builder's rule. See `graph::build::uses_mla`.
+fn uses_mla(inventory: &ArchitectureInventory) -> bool {
+    inventory
+        .resolved
+        .execution
+        .as_ref()
+        .is_some_and(|e| e.mla.is_some())
+}
 use super::report::{Finding, FindingCategory, SemanticClass};
 use super::semantics::component_of;
 
@@ -194,6 +218,33 @@ fn rope_theta_findings(inventory: &ArchitectureInventory) -> Vec<Finding> {
                 .filter(|l| span.is_none_or(|s| l.attention == s))
                 .collect();
             let first = in_scope.first()?;
+            // A rope base declared on a stack that applies **no rotation**
+            // is inert, not a disagreement. Kimi Linear ships
+            // `rope_theta: 10000.0` beside `mla_use_nope: true`, and its
+            // own reference implementation contains no rotary code at all
+            // — the field is a leftover its forward never reads.
+            //
+            // Conditional on EVERY in-scope layer being NoPE, so a rotary
+            // stack whose theta resolves wrong still fails here. That is
+            // the failure this comparator was written for (rope theta
+            // resolving 50× smaller than declared), and it must stay
+            // reachable.
+            if in_scope
+                .iter()
+                .all(|l| l.position == PositionPolicy::None)
+            {
+                return Some(Finding {
+                    category: FindingCategory::Representable,
+                    class: SemanticClass::ExecutionSemantic,
+                    component: component_of(&path),
+                    subject: path.clone(),
+                    declared: Some(declared_theta.into()),
+                    resolved: None,
+                    carriage: None,
+                    detail: "declared, and provably not applied: no layer in scope encodes                              position by rotation"
+                        .to_string(),
+                });
+            }
             let disagreeing = in_scope
                 .iter()
                 .filter(|l| l.position.rope_theta() != Some(declared_theta))
@@ -288,8 +339,12 @@ fn layer_types_finding(inventory: &ArchitectureInventory) -> Option<Finding> {
             let Some(declared) = declared_array.get(l.layer).and_then(Value::as_str) else {
                 return true;
             };
-            let (operator, span) =
-                resolve_layer_kind(Some(declared), l.attention == ATTENTION_SLIDING);
+            let (operator, span) = resolve_layer_kind(
+                Some(declared),
+                l.attention == ATTENTION_SLIDING,
+                recurrence_kind(inventory),
+                uses_mla(inventory),
+            );
             match operator {
                 // A recurrence round-trips by construction, so this arm
                 // proves only that the graph records what was declared —
@@ -306,11 +361,20 @@ fn layer_types_finding(inventory: &ArchitectureInventory) -> Option<Finding> {
                 // `GatedDeltaOp` + 16 `Softmax`), and this arm is a
                 // recorded declaration until then. Said plainly here so
                 // the arm is not read as a check it is not.
-                LayerOperator::GatedDelta => false,
+                LayerOperator::GatedDelta | LayerOperator::Kda => false,
+                // A recurrence this build cannot identify does not
+                // round-trip: the checkpoint declared an operator and the
+                // graph carries no executable one. That is a genuine
+                // disagreement, and grading it as agreement is what let
+                // GLM-5.3-Flash's 34 KDA layers read as solved.
+                LayerOperator::Recurrent => true,
                 // The genuine comparison: the declared spelling against a
                 // span the *parser's* boolean produced, not against
-                // itself.
-                LayerOperator::Softmax => span
+                // itself. MLA shares this arm — the checkpoint's
+                // `layer_types` vocabulary has no separate spelling for
+                // it, so the ONLY declared fact to compare is the span
+                // (`full_attention`), identical to a plain softmax layer.
+                LayerOperator::Softmax | LayerOperator::Mla => span
                     .map(AttentionSpan::declared_name)
                     .is_none_or(|carried| !declared.eq_ignore_ascii_case(carried)),
             }
@@ -334,14 +398,20 @@ fn layer_types_finding(inventory: &ArchitectureInventory) -> Option<Finding> {
                     .filter_map(Value::as_str)
                     .filter(|d| {
                         matches!(
-                            resolve_layer_kind(Some(d), false).0,
-                            LayerOperator::GatedDelta
+                            resolve_layer_kind(
+                                Some(d),
+                                false,
+                                recurrence_kind(inventory),
+                                uses_mla(inventory)
+                            )
+                            .0,
+                            LayerOperator::GatedDelta | LayerOperator::Kda
                         )
                     })
                     .count();
                 if recurrent > 0 {
                     format!(
-                        "declared interleave honoured ({recurrent} gated-delta recurrent / {} \
+                        "declared interleave honoured ({recurrent} recurrent / {} \
                          softmax, of {} layers)",
                         layers.len() - recurrent,
                         layers.len()

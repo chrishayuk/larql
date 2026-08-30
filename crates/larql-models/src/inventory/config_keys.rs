@@ -120,6 +120,30 @@ pub const CONSUMED_LEAF_KEYS: &[&str] = &[
     "mask_token_id",
     // hybrid linear-attention + multi-token-prediction (declared,
     // R2/Kimi-Linear-rung prep — see `docs/k3-funnel.md`)
+    // The declared interleave and its window, in the flat spellings.
+    // `local_layer_ids` is Inkling-Small's; `sliding_window_size` is the
+    // same fact `sliding_window` states for every family before it.
+    "local_layer_ids",
+    "sliding_window_size",
+    // MoE facts in the spellings Kimi Linear uses, each read into the same
+    // canonical field its DeepSeek-lineage twin fills.
+    "num_shared_experts",
+    "moe_renormalize",
+    "routed_scaling_factor",
+    "n_group",
+    "num_expert_group",
+    "topk_group",
+    "use_grouped_topk",
+    "moe_layer_freq",
+    "first_k_dense_replace",
+    "mla_use_nope",
+    "model_max_length",
+    "moe_router_activation_func",
+    "scoring_func",
+    // The relative-position scheme's two parameters, declared together.
+    "d_rel",
+    "rel_extent",
+    "num_nextn_predict_layers",
     "linear_conv_kernel_dim",
     "linear_key_head_dim",
     "linear_value_head_dim",
@@ -147,6 +171,64 @@ pub const CONSUMED_CONTAINER_KEYS: &[&str] = &[
     "full_attention",
     "sliding_attention",
 ];
+
+/// Leaf names the parser reads out of a [`PATH_READ_CONTAINER_KEYS`]
+/// container, credited by **full path** rather than by name.
+pub const PATH_READ_LEAF_KEYS: &[&str] = &[
+    // The interleave, in each spelling that lives inside a container.
+    "kda_layers",
+    "full_attn_layers",
+    // Inkling-Small's MTP sub-stack states its own interleave and its own
+    // layer count inside `mtp_config`.
+    "local_layer_ids",
+    "num_nextn_predict_layers",
+    // The KDA block's geometry and gate clamp. `head_dim` and `num_heads`
+    // are the reason this list is by-path: both are consumed leaf NAMES
+    // elsewhere, so crediting them here by name would also credit them on
+    // every container that happens to spell them.
+    "num_heads",
+    "head_dim",
+    "short_conv_kernel_size",
+    "gate_lower_bound",
+];
+
+/// Containers the parser reads specific leaves of, by path, without
+/// recursing with name credit.
+///
+/// Deliberately *not* in [`CONSUMED_CONTAINER_KEYS`]. `linear_attn_config`
+/// holds a `head_dim` and a `num_heads`, and `head_dim` is a consumed leaf
+/// name — so crediting this container by name would mark
+/// `linear_attn_config.head_dim` consumed when the parser reads
+/// `linear_key_head_dim` instead and has never looked at it. That is the
+/// `vision_config.hidden_size` failure described above, and it under-reports
+/// in the direction this instrument exists to prevent.
+pub const PATH_READ_CONTAINER_KEYS: &[&str] = &["linear_attn_config", "mtp_config"];
+
+/// Full paths of the [`PATH_READ_LEAF_KEYS`] this config actually declares,
+/// for the recorded-read credit in `build_inventory`.
+///
+/// Both nestings are checked because the two observed checkpoints differ:
+/// GLM-5.3-Flash nests the section under `text_config`, Kimi Linear writes
+/// it flat.
+pub fn path_read_leaves(config: &serde_json::Value) -> Vec<String> {
+    const NESTINGS: &[&str] = &["", "text_config."];
+    let mut paths = Vec::new();
+    for nesting in NESTINGS {
+        for container in PATH_READ_CONTAINER_KEYS {
+            for leaf in PATH_READ_LEAF_KEYS {
+                let path = format!("{nesting}{container}.{leaf}");
+                if path
+                    .split('.')
+                    .try_fold(config, |node, seg| node.get(seg))
+                    .is_some()
+                {
+                    paths.push(path);
+                }
+            }
+        }
+    }
+    paths
+}
 
 /// Containers whose *presence* is the only thing the parser reads.
 /// `vision_config` sets `has_vision_config`; everything inside it is

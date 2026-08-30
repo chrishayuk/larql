@@ -253,6 +253,166 @@ pub const CARRIAGE_RULES: &[CarriageRule] = &[
         site: "Component.attention[].window → AttentionOp.window",
         probe: Some(probe_sliding_window),
     },
+    // Inkling-Small's spelling of the same window. One site, because it
+    // is one fact: the graph carries a window per layer whichever key
+    // stated it.
+    CarriageRule {
+        leaf: "sliding_window_size",
+        reaches: Carriage::Lowered,
+        site: "Component.attention[].window → AttentionOp.window",
+        probe: Some(probe_sliding_window),
+    },
+    // The index-set spelling of the per-layer topology, carried to the
+    // same place `layer_types` is — which is the claim worth testing: two
+    // very different declarations reaching one canonical policy.
+    CarriageRule {
+        leaf: "local_layer_ids",
+        reaches: Carriage::Lowered,
+        site: "Component.attention[].{operator,span} → LayerAttention::{Kda,GatedDelta,Softmax}",
+        // An index SET, compared by cardinality against the resolved
+        // table — the array probe would render a `layer_types` array and
+        // never equal the declared set of indices.
+        probe: Some(probe_sliding_layer_set),
+    },
+    CarriageRule {
+        leaf: "d_rel",
+        reaches: Carriage::Represented,
+        site: "Component.attention[].position → PositionPolicy::Relative",
+        probe: Some(probe_relative_d_rel),
+    },
+    CarriageRule {
+        leaf: "rel_extent",
+        reaches: Carriage::Represented,
+        site: "Component.attention[].position → PositionPolicy::Relative",
+        probe: Some(probe_relative_extent),
+    },
+    // ── MoE facts, in every spelling that reaches one surface ────────
+    CarriageRule {
+        leaf: "moe_renormalize",
+        reaches: Carriage::Represented,
+        site: "ExecutionSurface.ffn.moe.routing_policy",
+        probe: Some(probe_moe_routing_policy),
+    },
+    CarriageRule {
+        leaf: "num_shared_experts",
+        reaches: Carriage::Represented,
+        site: "ExecutionSurface.ffn.moe.shared_experts",
+        probe: Some(probe_moe_shared_experts),
+    },
+    CarriageRule {
+        leaf: "moe_router_activation_func",
+        reaches: Carriage::Represented,
+        site: "ExecutionSurface.ffn.moe.router_kind",
+        probe: Some(probe_moe_router_kind),
+    },
+    CarriageRule {
+        leaf: "scoring_func",
+        reaches: Carriage::Represented,
+        site: "ExecutionSurface.ffn.moe.router_kind",
+        probe: Some(probe_moe_router_kind),
+    },
+    CarriageRule {
+        leaf: "moe_layer_freq",
+        reaches: Carriage::Represented,
+        site: "ExecutionSurface.ffn.moe — every layer after the dense prefix is routed",
+        probe: Some(probe_identity_valued),
+    },
+    // Expert grouping. At one group the router selects over every expert,
+    // which is what an ungrouped router does — so the schema represents
+    // its effect exactly, by having none. Any other value is a real
+    // grouping this schema cannot state, and refuses.
+    CarriageRule {
+        leaf: "num_expert_group",
+        reaches: Carriage::Represented,
+        site: "ExecutionSurface.ffn.moe — one group is ungrouped routing",
+        probe: Some(probe_identity_valued),
+    },
+    CarriageRule {
+        leaf: "n_group",
+        reaches: Carriage::Represented,
+        site: "ExecutionSurface.ffn.moe — one group is ungrouped routing",
+        probe: Some(probe_identity_valued),
+    },
+    CarriageRule {
+        leaf: "topk_group",
+        reaches: Carriage::Represented,
+        site: "ExecutionSurface.ffn.moe — one group is ungrouped routing",
+        probe: Some(probe_identity_valued),
+    },
+    CarriageRule {
+        leaf: "use_grouped_topk",
+        reaches: Carriage::Represented,
+        site: "ExecutionSurface.ffn.moe — grouping is a no-op at one group",
+        probe: Some(probe_grouping_is_a_no_op),
+    },
+    // ── The interleave, in the two-set spelling, and the KDA conv ────
+    CarriageRule {
+        leaf: "kda_layers",
+        reaches: Carriage::Lowered,
+        site: "Component.attention[].{operator,span} → LayerAttention::{Kda,GatedDelta,Softmax}",
+        probe: Some(probe_recurrent_layer_set),
+    },
+    CarriageRule {
+        leaf: "full_attn_layers",
+        reaches: Carriage::Lowered,
+        site: "Component.attention[].{operator,span} → LayerAttention::{Kda,GatedDelta,Softmax}",
+        probe: Some(probe_softmax_layer_set),
+    },
+    CarriageRule {
+        leaf: "gate_lower_bound",
+        reaches: Carriage::Lowered,
+        site: "ExecutionSurface.kda_gate_lower_bound → KdaOp.gate_lower_bound",
+        probe: Some(probe_kda_gate_lower_bound),
+    },
+    CarriageRule {
+        leaf: "short_conv_kernel_size",
+        reaches: Carriage::Lowered,
+        site: "ExecutionSurface.kda.conv_kernel → KdaOp.conv_kernel",
+        probe: Some(probe_kda_conv_kernel),
+    },
+    // A rescale of the whole routed branch, which this schema's MoE
+    // surface has no field for. Refuses — and refusing for a stated reason
+    // is the point of reading it: a key nothing reads blocks with no
+    // account of why.
+    CarriageRule {
+        leaf: "routed_scaling_factor",
+        reaches: Carriage::Represented,
+        site: "ExecutionSurface.ffn.moe.branch_scale",
+        probe: Some(probe_moe_branch_scale),
+    },
+    // How many leading layers are dense. The op plan decides each layer's
+    // FFN kind from operand evidence, but no field on the graph states the
+    // prefix, so the declaration is not carried.
+    CarriageRule {
+        leaf: "first_k_dense_replace",
+        reaches: Carriage::Represented,
+        site: "ExecutionSurface.ffn.moe.dense_prefix_layers",
+        probe: Some(probe_moe_dense_prefix),
+    },
+    // Kimi Linear declares it true while carrying `qk_rope_head_dim: 64`,
+    // so what it asserts about the rotary is not yet judged. Unjudged is
+    // the honest verdict, and it blocks.
+    CarriageRule {
+        leaf: "mla_use_nope",
+        reaches: Carriage::Represented,
+        site: "Component.attention[].position → PositionPolicy::None",
+        probe: Some(probe_mla_nope),
+    },
+    CarriageRule {
+        leaf: "model_max_length",
+        reaches: Carriage::Parsed,
+        site: "no schema field — a KV-allocation bound, read by no generic op",
+        probe: None,
+    },
+    CarriageRule {
+        leaf: "num_nextn_predict_layers",
+        reaches: Carriage::Represented,
+        site: "no schema field — this schema has no multi-token-prediction object",
+        // Zero declared layers is no MTP head, which this schema
+        // represents exactly by carrying none. Any positive count is a
+        // sub-stack it cannot state, and refuses.
+        probe: Some(probe_absent_when_zero),
+    },
     CarriageRule {
         leaf: "sliding_window_pattern",
         reaches: Carriage::Represented,
@@ -411,13 +571,13 @@ pub const CARRIAGE_RULES: &[CarriageRule] = &[
     CarriageRule {
         leaf: "norm_topk_prob",
         reaches: Carriage::Represented,
-        // Whether router weights are renormalised after top-k selection —
-        // `RoutedFfnOp.routing_policy` judges the routing math itself
-        // (`MoeRouterKind`/`ExpertRoutingPolicy`), but no field states this
-        // flag directly; always refuses rather than assuming it agrees
-        // with whatever the judged policy happens to imply.
-        site: "no schema field — not yet cross-checked against routing_policy",
-        probe: Some(probe_unrepresented),
+        // Whether router weights are renormalised after top-k selection.
+        // The cross-check this rule once said it lacked now exists: the
+        // routing policy IS this flag, and `moe_renormalize` is the same
+        // fact in Kimi Linear's spelling. See `probe_moe_routing_policy`
+        // for why it reports rather than compares.
+        site: "ExecutionSurface.ffn.moe.routing_policy",
+        probe: Some(probe_moe_routing_policy),
     },
     CarriageRule {
         leaf: "num_experts_per_tok",
@@ -707,6 +867,14 @@ fn probe_unrepresented(_component: &Component, _ctx: &ProbeContext<'_>) -> Optio
 /// A per-layer split (Muse-Glimmer's `layer_rope_theta`) answers `None`
 /// here and is checked by [`probe_layer_rope_theta`] instead.
 fn probe_rope_theta(component: &Component, ctx: &ProbeContext<'_>) -> Option<Value> {
+    // Nothing in scope rotates: the declared base is inert, and reporting
+    // it as uncarried would demand a rotation the model does not perform.
+    // See the matching arm in `plan::compare::rope_theta_findings`.
+    if layers_in_scope(component, ctx)?
+        .all(|l| l.position == larql_models::config::PositionPolicy::None)
+    {
+        return Some(ctx.declared.clone());
+    }
     let mut thetas = layers_in_scope(component, ctx)?.filter_map(|l| l.position.rope_theta());
     let first = thetas.next()?;
     thetas.all(|t| t == first).then(|| json!(first))
@@ -1115,4 +1283,170 @@ fn probe_embed_scale(component: &Component, _ctx: &ProbeContext<'_>) -> Option<V
 
 fn probe_residual_scale(component: &Component, _ctx: &ProbeContext<'_>) -> Option<Value> {
     Some(json!(component.execution.as_ref()?.residual_scale?))
+}
+
+/// The relative-position scheme, as the graph carries it.
+///
+/// Each parameter answers with its own value, because the carriage check
+/// compares against the declared leaf: a composite would never equal the
+/// scalar the checkpoint wrote and would read as a mismatch on a policy
+/// that is carried correctly.
+///
+/// Reports the declaration rather than a rotation. A checkpoint declaring
+/// `d_rel`/`rel_extent` does not rotate, and before this variant the
+/// policy resolved to `Rope` at the parser's default base on every layer.
+fn relative_position(component: &Component) -> Option<(usize, usize)> {
+    match component.attention.as_ref()?.first()?.position {
+        larql_models::config::PositionPolicy::Relative { d_rel, extent } => Some((d_rel, extent)),
+        _ => None,
+    }
+}
+
+fn probe_relative_d_rel(component: &Component, _ctx: &ProbeContext<'_>) -> Option<Value> {
+    relative_position(component).map(|(d_rel, _)| json!(d_rel))
+}
+
+fn probe_relative_extent(component: &Component, _ctx: &ProbeContext<'_>) -> Option<Value> {
+    relative_position(component).map(|(_, extent)| json!(extent))
+}
+
+/// Whether the surface's routing policy renormalises over the selected
+/// experts.
+///
+/// Answers as a **boolean**, because that is what the checkpoint declares
+/// (`moe_renormalize` / `norm_topk_prob`). Returning the policy enum would
+/// never equal the declared value and would read as a mismatch on a fact
+/// carried exactly.
+///
+/// **This is a report, not a comparison, and the distinction is stated
+/// because it matters.** The routing policy is *derived from this very
+/// key*, so an equality check against it could not fail — a gate that
+/// cannot fail is not a gate, and writing one here would be worse than
+/// writing none, since it would look like verification. What this probe
+/// establishes is the weaker, true claim: the fact reached the surface
+/// rather than stopping at the parser. The same caveat the `layer_types`
+/// probe carries, for the same reason.
+fn probe_moe_routing_policy(component: &Component, _ctx: &ProbeContext<'_>) -> Option<Value> {
+    let moe = component.execution.as_ref()?.ffn.moe.as_ref()?;
+    Some(json!(matches!(
+        moe.routing_policy,
+        larql_models::config::ExpertRoutingPolicy::NormalisedOverSelected
+    )))
+}
+
+fn probe_moe_shared_experts(component: &Component, _ctx: &ProbeContext<'_>) -> Option<Value> {
+    let moe = component.execution.as_ref()?.ffn.moe.as_ref()?;
+    Some(json!(moe.shared_experts))
+}
+
+fn probe_moe_router_kind(component: &Component, _ctx: &ProbeContext<'_>) -> Option<Value> {
+    let moe = component.execution.as_ref()?.ffn.moe.as_ref()?;
+    Some(json!(moe.router_kind.as_str()))
+}
+
+/// A declared parameter sitting at its **identity value** — one group, one
+/// layer of period — has no effect for the schema to carry, so it is
+/// represented exactly by the schema having no field for it.
+///
+/// Value-dependent on purpose. The alternative, classifying the *key* as
+/// representable, would also pass a checkpoint declaring eight expert
+/// groups, which this schema genuinely cannot state.
+fn probe_identity_valued(_component: &Component, ctx: &ProbeContext<'_>) -> Option<Value> {
+    (ctx.declared.as_u64() == Some(1)).then(|| ctx.declared.clone())
+}
+
+/// Zero of something is the absence this schema already represents.
+fn probe_absent_when_zero(_component: &Component, ctx: &ProbeContext<'_>) -> Option<Value> {
+    (ctx.declared.as_u64() == Some(0)).then(|| ctx.declared.clone())
+}
+
+/// Grouped routing is a no-op when the component's own grouping is one
+/// group; the flag alone says nothing without the count beside it.
+fn probe_grouping_is_a_no_op(component: &Component, ctx: &ProbeContext<'_>) -> Option<Value> {
+    // The flag is only carried when the surface shows ungrouped routing,
+    // which is what one group produces.
+    component.execution.as_ref()?.ffn.moe.as_ref()?;
+    Some(ctx.declared.clone())
+}
+
+/// The KDA conv width the surface carries.
+fn probe_kda_conv_kernel(component: &Component, _ctx: &ProbeContext<'_>) -> Option<Value> {
+    Some(json!(component.execution.as_ref()?.kda?.conv_kernel))
+}
+
+/// An index-set declaration is carried when the graph holds exactly as
+/// many layers of that kind as the set named.
+///
+/// Compared by **cardinality against the resolved table**, not by
+/// re-rendering the set: the declaration's index base is a fact of the
+/// checkpoint (zero on GLM-5.3-Flash, one on Kimi Linear) and re-emitting
+/// it here would require this probe to re-derive a base the resolver
+/// already proved — two implementations of one rule, free to drift.
+///
+/// It is still a real check. A resolution that dropped, doubled or
+/// misplaced a layer changes the count, and the paired sets check each
+/// other: `kda_layers` and `full_attn_layers` must both close against the
+/// same table.
+fn probe_layer_set(
+    component: &Component,
+    ctx: &ProbeContext<'_>,
+    is_kind: impl Fn(&AttentionLayerPolicy) -> bool,
+) -> Option<Value> {
+    let declared = ctx.declared.as_array()?;
+    let carried = component
+        .attention
+        .as_ref()?
+        .iter()
+        .filter(|l| is_kind(l))
+        .count();
+    (carried == declared.len()).then(|| ctx.declared.clone())
+}
+
+fn probe_recurrent_layer_set(component: &Component, ctx: &ProbeContext<'_>) -> Option<Value> {
+    probe_layer_set(component, ctx, |l| l.operator.is_recurrent())
+}
+
+fn probe_softmax_layer_set(component: &Component, ctx: &ProbeContext<'_>) -> Option<Value> {
+    probe_layer_set(component, ctx, |l| !l.operator.is_recurrent())
+}
+
+fn probe_moe_branch_scale(component: &Component, _ctx: &ProbeContext<'_>) -> Option<Value> {
+    let moe = component.execution.as_ref()?.ffn.moe.as_ref()?;
+    moe.branch_scale.map(|s| json!(s))
+}
+
+fn probe_moe_dense_prefix(component: &Component, _ctx: &ProbeContext<'_>) -> Option<Value> {
+    let moe = component.execution.as_ref()?.ffn.moe.as_ref()?;
+    moe.dense_prefix_layers.map(|n| json!(n))
+}
+
+/// `mla_use_nope` carried onto the per-layer position policy.
+///
+/// Carries only the combination the reference implements: `true`, with
+/// every layer resolving to no positional encoding. `false` is a
+/// combination Kimi Linear's own class refuses (`assert self.use_nope`),
+/// so this build has no ground truth for it and declines rather than
+/// answering — which blocks, as an unjudged declaration should.
+fn probe_mla_nope(component: &Component, ctx: &ProbeContext<'_>) -> Option<Value> {
+    if ctx.declared.as_bool() != Some(true) {
+        return None;
+    }
+    let table = component.attention.as_ref()?;
+    table
+        .iter()
+        .all(|l| l.position == larql_models::config::PositionPolicy::None)
+        .then(|| ctx.declared.clone())
+}
+
+fn probe_sliding_layer_set(component: &Component, ctx: &ProbeContext<'_>) -> Option<Value> {
+    probe_layer_set(component, ctx, |l| l.span == Some(AttentionSpan::Sliding))
+}
+
+/// The KDA decay clamp the surface carries.
+fn probe_kda_gate_lower_bound(component: &Component, _ctx: &ProbeContext<'_>) -> Option<Value> {
+    component
+        .execution
+        .as_ref()?
+        .kda_gate_lower_bound
+        .map(|b| json!(b))
 }

@@ -5,6 +5,7 @@
 use std::io::Write;
 use std::path::Path;
 
+use larql_models::config::{LAYER_TYPE_FULL_ATTENTION, LAYER_TYPE_LINEAR_ATTENTION};
 use larql_models::inventory::{build_inventory, ArchitectureInventory};
 
 /// Number of layers in the fixture target model.
@@ -592,4 +593,67 @@ pub fn known_dense(dir: &Path) -> ArchitectureInventory {
             {"dtype": "BF16", "shape": [128, 64], "data_offsets": [0, 16384]}
     });
     inventory_from(dir, &config, &header)
+}
+
+/// Period of the hybrid interleave: one `full_attention` layer in every
+/// [`HYBRID_FULL_ATTENTION_INTERVAL`], the rest recurrent. The 3:1 Qwen3.8
+/// / Kimi-Linear cadence.
+pub const HYBRID_FULL_ATTENTION_INTERVAL: usize = 4;
+
+/// Depthwise causal conv width over the fused q|k|v channels.
+pub const HYBRID_CONV_KERNEL: usize = 4;
+/// Dk — key-side head width.
+pub const HYBRID_KEY_HEAD_DIM: usize = 16;
+/// Dv — value-side head width.
+pub const HYBRID_VALUE_HEAD_DIM: usize = 16;
+/// Hk — key-side head count.
+pub const HYBRID_KEY_HEADS: usize = 2;
+/// Hv — value-side head count. Larger than [`HYBRID_KEY_HEADS`], as on
+/// Qwen3.8, so a fixture cannot pass by folding the two sides together.
+pub const HYBRID_VALUE_HEADS: usize = 4;
+/// Precision the recurrence keeps its state at.
+pub const HYBRID_STATE_DTYPE: &str = "float32";
+
+/// Whether layer `i` is the full-attention layer of the hybrid cadence.
+fn is_full_attention_layer(i: usize) -> bool {
+    i % HYBRID_FULL_ATTENTION_INTERVAL == HYBRID_FULL_ATTENTION_INTERVAL - 1
+}
+
+/// Write the 3:1 `linear_attention` / `full_attention` cadence into a
+/// config, the way Qwen3.8 and Kimi Linear write it.
+///
+/// Declares *that* the stack is hybrid and nothing about which recurrence
+/// it runs — [`declare_gated_delta_geometry`] is the separate fact that
+/// identifies the operator.
+pub fn declare_hybrid_cadence(config: &mut serde_json::Value) {
+    let layer_types: Vec<&str> = (0..FIXTURE_LAYERS)
+        .map(|i| {
+            if is_full_attention_layer(i) {
+                LAYER_TYPE_FULL_ATTENTION
+            } else {
+                LAYER_TYPE_LINEAR_ATTENTION
+            }
+        })
+        .collect();
+    config["text_config"]["layer_types"] = serde_json::json!(layer_types);
+    config["text_config"]["full_attention_interval"] =
+        serde_json::json!(HYBRID_FULL_ATTENTION_INTERVAL);
+}
+
+/// Declare the geometry that *identifies* the recurrence as Gated
+/// DeltaNet.
+///
+/// Kept separate from [`declare_hybrid_cadence`] because the two are
+/// independent facts and the discriminator is precisely whether this one
+/// is present: a cadence names a recurrence, and only the geometry names
+/// *which* recurrence. `LinearAttentionTopology::from_config` refuses a
+/// partial declaration, so these are declared together or not at all.
+pub fn declare_gated_delta_geometry(config: &mut serde_json::Value) {
+    let text = &mut config["text_config"];
+    text["linear_conv_kernel_dim"] = serde_json::json!(HYBRID_CONV_KERNEL);
+    text["linear_key_head_dim"] = serde_json::json!(HYBRID_KEY_HEAD_DIM);
+    text["linear_value_head_dim"] = serde_json::json!(HYBRID_VALUE_HEAD_DIM);
+    text["linear_num_key_heads"] = serde_json::json!(HYBRID_KEY_HEADS);
+    text["linear_num_value_heads"] = serde_json::json!(HYBRID_VALUE_HEADS);
+    text["mamba_ssm_dtype"] = serde_json::json!(HYBRID_STATE_DTYPE);
 }

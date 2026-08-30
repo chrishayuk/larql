@@ -335,3 +335,63 @@ fn the_threshold_is_a_plausible_cache_size() {
          on one side"
     );
 }
+
+/// **The Q4 arm of the observation is real**, and it is deliberately
+/// the one representation whose kernel and whose `WeightFormat` do not
+/// carry the same name: no `WeightFormat` names Q4, so the format
+/// reports Q8 while the kernel is the Q4 one.
+///
+/// Pinned because the mismatch reads like a bug to anyone editing the
+/// table: the two answers are about different things — which
+/// dequantiser runs, and which format vocabulary the backend seam
+/// speaks — and collapsing them would run the wrong kernel over the
+/// right bytes.
+#[test]
+fn the_q4_observation_names_its_own_kernel_while_reporting_q8() {
+    let packed = vec![0x42u8; 64];
+    let scales = vec![0.125f32; 4];
+    let rows = WeightRows::Q4 {
+        packed: &packed,
+        scales: &scales,
+        block: 32,
+    };
+    let observed = PhysicalProjectionPlan::for_resident(rows);
+    assert_eq!(observed, PhysicalProjectionPlan::FusedQ4);
+    assert_eq!(
+        observed.format(),
+        WeightFormat::Q8,
+        "no WeightFormat names Q4 — the seam speaks Q8 for it"
+    );
+    // Q8 observes itself, and the two plans stay distinct even though
+    // they report the same `WeightFormat`.
+    //
+    // Compared as PLANS, not as kernel addresses: every kernel here is
+    // a unit struct, so `&'static dyn` references to them share one
+    // data pointer and an address comparison would pass for any pair,
+    // including a genuinely wrong one.
+    let codes_i8 = vec![7i8; 64];
+    let q8_rows = WeightRows::Q8 {
+        codes: &codes_i8,
+        scales: &scales,
+        block: 32,
+    };
+    let q8 = PhysicalProjectionPlan::for_resident(q8_rows);
+    assert_eq!(q8, PhysicalProjectionPlan::FusedQ8);
+    assert_ne!(observed, q8, "Q4 and Q8 are different plans");
+    assert_eq!(q8.format(), observed.format(), "both speak Q8 at the seam");
+    // Both resolve a usable kernel, which is what `kernel()` is for.
+    let _ = observed.kernel();
+    let _ = q8.kernel();
+
+    // And every other arm still observes itself.
+    let f32s = vec![0.5f32; 16];
+    assert_eq!(
+        PhysicalProjectionPlan::for_resident(WeightRows::F32(&f32s)),
+        PhysicalProjectionPlan::BlasF32
+    );
+    let codes = vec![0u16; 16];
+    assert_eq!(
+        PhysicalProjectionPlan::for_resident(WeightRows::Bf16(&codes)),
+        PhysicalProjectionPlan::FusedBf16
+    );
+}

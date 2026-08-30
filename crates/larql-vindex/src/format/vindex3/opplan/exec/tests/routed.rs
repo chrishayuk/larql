@@ -434,10 +434,16 @@ fn the_expert_bank_is_a_first_class_object_and_the_ffn_is_routed() {
         };
         assert_eq!(op.experts, EXPERTS);
         assert_eq!(op.top_k, TOP_K);
-        assert_eq!(op.gate_up.weights.object, bank.id);
-        assert_eq!(op.down.weights.object, bank.id);
-        assert!(op.gate_up.scales.is_some() && op.down.scales.is_some());
-        assert!(op.gate_up.bias.is_some() && op.down.bias.is_some());
+        let crate::format::vindex3::opplan::ExpertBank::Packed { gate_up, down } = &op.bank else {
+            panic!(
+                "layer {} planned a per-expert bank on a packed fixture",
+                layer.layer
+            )
+        };
+        assert_eq!(gate_up.weights.object, bank.id);
+        assert_eq!(down.weights.object, bank.id);
+        assert!(gate_up.scales.is_some() && down.scales.is_some());
+        assert!(gate_up.bias.is_some() && down.bias.is_some());
         assert_eq!(op.router.object, stack.id);
         assert!(op.router_bias.is_some());
         assert!(matches!(

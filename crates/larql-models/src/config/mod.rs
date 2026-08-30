@@ -24,7 +24,10 @@ pub mod architecture;
 pub mod attention_gate;
 pub mod attention_sinks;
 pub mod experts;
+pub mod interleave;
 pub mod layer_types;
+pub mod linear_attn;
+pub mod mla;
 pub mod model_config;
 pub mod moe_router;
 pub mod norm;
@@ -41,10 +44,17 @@ pub use attention_sinks::AttentionSinkSpec;
 pub use experts::{
     ExpertFormat, ExpertGatePolicy, ExpertRoutingPolicy, GateUpBranch, GateUpLayout,
 };
+pub use interleave::{
+    read_declared_interleave, DeclaredInterleave, InterleaveEncoding, InterleaveError,
+    InterleaveProvenance, InterleaveScope, LayerIndexBase, LayerKind, RecurrenceFamily,
+    ResolvedInterleave,
+};
 pub use layer_types::{
     LAYER_TYPE_FULL_ATTENTION, LAYER_TYPE_LINEAR_ATTENTION, LAYER_TYPE_SLIDING_ATTENTION,
     LAYER_TYPE_WINDOW_ATTENTION,
 };
+pub use linear_attn::{KdaGeometry, LAYER_TYPE_UNRESOLVED_INTERLEAVE};
+pub use mla::MlaGeometry;
 pub use model_config::ModelConfig;
 pub use moe_router::MoeRouterKind;
 pub use norm::{EmbeddingNorm, NormSpec, NormType, ParameterFreeQkNorm, PostNormEps, QkNormScope};
@@ -54,5 +64,9 @@ pub use rope_types::{
     ROPE_TYPE_DEFAULT, ROPE_TYPE_LINEAR, ROPE_TYPE_LLAMA3, ROPE_TYPE_PROPORTIONAL, ROPE_TYPE_YARN,
 };
 
+#[cfg(test)]
+mod kda_geometry_tests;
+#[cfg(test)]
+mod mla_geometry_tests;
 #[cfg(test)]
 mod tests;

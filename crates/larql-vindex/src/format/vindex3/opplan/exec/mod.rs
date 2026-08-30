@@ -25,8 +25,18 @@ pub mod decode;
 pub mod device;
 mod experts;
 pub mod gated_delta;
+pub mod kda;
+#[cfg(all(feature = "gpu", target_os = "macos"))]
+pub mod kda_metal;
 pub mod kernels;
+pub mod kimi_kda_layer;
+pub mod kimi_mla_layer;
+pub mod kimi_moe_block;
+pub mod kimi_router;
+#[cfg(all(feature = "gpu", target_os = "macos"))]
+pub mod kimi_source;
 pub mod kv;
+pub mod mla;
 pub mod narrow;
 pub mod observe;
 pub mod operands;
@@ -34,7 +44,11 @@ pub mod prepared;
 pub mod production;
 pub mod quantise;
 pub mod reference;
+pub mod stack;
+#[cfg(all(feature = "gpu", target_os = "macos"))]
+pub mod stack_metal;
 pub mod timing;
+pub mod token;
 pub mod weights;
 
 #[cfg(test)]
