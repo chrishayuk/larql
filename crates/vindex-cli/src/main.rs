@@ -38,6 +38,10 @@ enum Command {
         /// How many tensor-table rows to show per representation.
         #[arg(long, default_value_t = 8)]
         values: usize,
+        /// Decode and print the first values of this tensor (name or
+        /// suffix) — the numbers themselves, from the canonical bytes.
+        #[arg(long)]
+        peek: Option<String>,
     },
     /// The physical directory: what exists as bytes, with recorded fidelity.
     Representations { container: PathBuf },
@@ -138,6 +142,23 @@ fn render_representations(v: &Value) {
     }
 }
 
+fn render_peek(v: &Value) {
+    let Some(p) = v.get("peek").filter(|p| !p.is_null()) else {
+        return;
+    };
+    println!();
+    println!(
+        "{} {} {} — first values",
+        p["tensor"].as_str().unwrap_or("?"),
+        p["dtype"].as_str().unwrap_or("?"),
+        serde_json::to_string(&p["shape"]).unwrap_or_default()
+    );
+    for x in p["values"].as_array().into_iter().flatten() {
+        let x = x.as_f64().unwrap_or(0.0);
+        println!("  {}{:.6}", if x >= 0.0 { "+" } else { "" }, x);
+    }
+}
+
 fn render_describe(v: &Value) {
     let o = &v["object"];
     kv("object", o["id"].as_str().unwrap_or("?"));
@@ -153,6 +174,7 @@ fn render_describe(v: &Value) {
             ),
         );
     }
+    render_peek(v);
     for d in v["directory"].as_array().into_iter().flatten() {
         println!();
         kv(
@@ -342,7 +364,8 @@ fn main() -> ExitCode {
             container,
             address,
             values,
-        } => vindex_cli::describe_facts(container, address, *values),
+            peek,
+        } => vindex_cli::describe_facts(container, address, *values, peek.as_deref()),
         Command::Representations { container } => vindex_cli::representations_facts(container),
         Command::Diff {
             container,

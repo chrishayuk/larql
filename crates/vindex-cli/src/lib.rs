@@ -91,8 +91,10 @@ pub fn representations_facts(root: &Path) -> Facts {
 }
 
 /// `vindex describe <address>` — one logical object, in full: identity,
-/// bindings, representations, and the head of its tensor table.
-pub fn describe_facts(root: &Path, address: &str, values: usize) -> Facts {
+/// bindings, representations, and the head of its tensor table. With
+/// `peek`, the first `values` decoded weights of one named tensor —
+/// the numbers themselves, read from the canonical bytes.
+pub fn describe_facts(root: &Path, address: &str, values: usize, peek: Option<&str>) -> Facts {
     let inspection = inspect_container(root, false).map_err(|e| format!("inspect: {e}"))?;
     let object = find_object(&inspection, address)?;
     let directory: Vec<Value> = inspection
@@ -121,10 +123,56 @@ pub fn describe_facts(root: &Path, address: &str, values: usize) -> Facts {
             })
         })
         .collect();
+    let peeked = match peek {
+        None => Value::Null,
+        Some(tensor) => {
+            let store = OperandStore::open(root, &inspection).map_err(|e| format!("open: {e}"))?;
+            let entry = inspection
+                .index
+                .representations
+                .values()
+                .find(|e| e.object == object.id)
+                .ok_or_else(|| format!("`{}` has no directory entry", object.id))?;
+            let (header, _) = read_segment_header(&root.join(&entry.segment))
+                .map_err(|e| format!("segment {}: {e}", entry.segment))?;
+            let t = header
+                .tensors
+                .iter()
+                .find(|t| t.name == tensor || t.name.ends_with(&format!(".{tensor}")))
+                .ok_or_else(|| {
+                    format!(
+                        "no tensor of `{}` matches `{tensor}` — tensors: {}",
+                        object.id,
+                        header
+                            .tensors
+                            .iter()
+                            .map(|t| t.name.as_str())
+                            .collect::<Vec<_>>()
+                            .join(", ")
+                    )
+                })?;
+            let decoded = load_values(
+                &store,
+                &OperandRef {
+                    object: object.id.clone(),
+                    tensor: t.name.clone(),
+                    dtype: t.dtype.clone(),
+                    shape: t.shape.clone(),
+                },
+            )?;
+            json!({
+                "tensor": t.name,
+                "dtype": t.dtype,
+                "shape": t.shape,
+                "values": decoded.iter().take(values).collect::<Vec<_>>(),
+            })
+        }
+    };
     Ok(json!({
         "container": root.display().to_string(),
         "object": serde_json::to_value(object).map_err(|e| e.to_string())?,
         "directory": directory,
+        "peek": peeked,
     }))
 }
 
