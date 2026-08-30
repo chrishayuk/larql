@@ -31,7 +31,7 @@ pub mod mamba2;
 pub mod mla;
 
 #[cfg(test)]
-mod tests;
+pub(crate) mod tests;
 
 use larql_models::config::{
     Activation, AttentionGateSpec, AttentionSinkSpec, ExpertFormat, ExpertRoutingPolicy,
