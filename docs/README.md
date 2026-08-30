@@ -62,6 +62,7 @@ distributed).
 | [vindex-factory.md](vindex-factory.md) | Vindex Factory — recipe-driven, verified, remote-executed builds |
 | [model-publishing.md](model-publishing.md) | Republishing models — the 2026-08 manual recovery and the recipes it demands |
 | [k3-funnel.md](k3-funnel.md) | K3 adapter ladder — GPT-OSS-20B → Kimi Linear → K3 |
+| [glm5-flash-funnel.md](glm5-flash-funnel.md) | GLM-5.3-Flash funnel — admission, census and the two tracks (321 B, KDA + DSA + mHC) |
 | [dec-funnel.md](dec-funnel.md) | DEC funnel (v0.5, current) — decoupled attention/weights serving |
 | [dec-funnel-v0.4.md](dec-funnel-v0.4.md) | DEC funnel v0.4.1 — superseded by dec-funnel.md |
 | [dec-funnel-v0.2.md](dec-funnel-v0.2.md) | DEC funnel v0.2 — archived; control plane and gates inherited by reference |
