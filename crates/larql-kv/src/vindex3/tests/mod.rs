@@ -268,3 +268,94 @@ fn a_misfit_row_width_is_refused() {
     }]);
     canonical.append(0, vec![0.0; 3], vec![0.0; 3]);
 }
+
+// ═══════════════════════════════════════════════════════════════
+// Adoption-boundary and refusal contracts
+// ═══════════════════════════════════════════════════════════════
+
+#[test]
+fn default_is_the_empty_provider() {
+    let mut provider = CanonicalKvState::default();
+    provider.prepare(&[LayerKvGeometry {
+        kv_dim: 4,
+        window: None,
+    }]);
+    assert_eq!(provider.geometry().len(), 1);
+    assert_eq!(provider.position(), 0);
+}
+
+#[test]
+fn an_adopted_cache_with_unwritten_layers_prepares_cleanly() {
+    // with_layers(2) holds two None layers: LayerRows must default (no
+    // rows to serve) and prepare's width check must skip what was never
+    // written rather than refuse it.
+    let mut adopted = CanonicalKvState::from_cache(KvCache::with_layers(2));
+    adopted.prepare(&[
+        LayerKvGeometry {
+            kv_dim: 4,
+            window: None,
+        },
+        LayerKvGeometry {
+            kv_dim: 4,
+            window: None,
+        },
+    ]);
+    assert!(adopted.keys(0).is_empty());
+    assert!(adopted.values(1).is_empty());
+}
+
+#[test]
+#[should_panic(expected = "adopted cache holds")]
+fn an_adopted_cache_for_a_different_layer_count_is_refused() {
+    let mut adopted = CanonicalKvState::from_cache(KvCache::with_layers(2));
+    adopted.prepare(&[LayerKvGeometry {
+        kv_dim: 4,
+        window: None,
+    }]);
+}
+
+#[test]
+#[should_panic(expected = "the plan says")]
+fn an_adopted_cache_with_misfit_rows_is_refused() {
+    let mut cache = KvCache::with_layers(1);
+    cache.set_layer(
+        0,
+        (
+            ndarray::Array2::zeros((1, 3)),
+            ndarray::Array2::zeros((1, 3)),
+        ),
+    );
+    let mut adopted = CanonicalKvState::from_cache(cache);
+    adopted.prepare(&[LayerKvGeometry {
+        kv_dim: 4,
+        window: None,
+    }]);
+}
+
+#[test]
+#[should_panic(expected = "V row at layer")]
+fn a_misfit_value_row_is_refused_even_when_the_key_fits() {
+    let mut canonical = CanonicalKvState::new();
+    canonical.prepare(&[LayerKvGeometry {
+        kv_dim: 4,
+        window: None,
+    }]);
+    canonical.append(0, vec![0.0; 4], vec![0.0; 3]);
+}
+
+#[test]
+fn recurrent_state_is_explicitly_unsupported_not_absent() {
+    use larql_vindex::format::vindex3::opplan::exec::kv::ContinuationError;
+    let mut provider = CanonicalKvState::new();
+    provider.prepare(&[LayerKvGeometry {
+        kv_dim: 4,
+        window: None,
+    }]);
+    match provider.recurrent_state(7) {
+        Err(ContinuationError::RecurrentUnsupported { provider, layer }) => {
+            assert_eq!(provider, "CanonicalKvState");
+            assert_eq!(layer, 7);
+        }
+        other => panic!("must refuse with the provider and layer named: {other:?}"),
+    }
+}
