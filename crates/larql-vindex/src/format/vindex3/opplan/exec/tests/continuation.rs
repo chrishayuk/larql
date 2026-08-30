@@ -16,8 +16,8 @@ use super::super::continuation::{
     LayerContinuationState, RecurrentBufferGeometry, RecurrentGeometry, RecurrentState,
     StateInitialization,
 };
-use super::super::kv::LayerKvGeometry;
 use super::super::kv::try_plan_kv_geometry;
+use super::super::kv::LayerKvGeometry;
 use crate::format::vindex3::opplan::{ComponentOpPlan, GatedDeltaOp, LayerAttention};
 use larql_models::inventory::report::RecurrentStateDtype;
 
@@ -409,7 +409,11 @@ fn two_region_geometry() -> LayerContinuationGeometry {
 #[test]
 fn a_two_region_layer_grows_on_one_side_only() {
     let g = two_region_geometry();
-    assert_eq!(g.elements_at(0), 32, "the buffer exists before any position");
+    assert_eq!(
+        g.elements_at(0),
+        32,
+        "the buffer exists before any position"
+    );
     assert_eq!(g.elements_at(10), 10 * 4 * 2 + 32);
     // And the pure variants keep their own answers beside it.
     let kv = LayerContinuationGeometry::Kv(LayerKvGeometry {
@@ -425,10 +429,7 @@ fn a_two_region_layer_grows_on_one_side_only() {
     });
     assert_eq!(r.elements(), 32);
     assert_eq!(r.bytes(), 128, "f32 cells");
-    assert_eq!(
-        LayerContinuationGeometry::Recurrent(r).elements_at(10),
-        32
-    );
+    assert_eq!(LayerContinuationGeometry::Recurrent(r).elements_at(10), 32);
 }
 
 /// **`kv()` refuses the two-region layer; `kv_side()` serves it.** The
@@ -440,7 +441,10 @@ fn a_two_region_layer_grows_on_one_side_only() {
 #[test]
 fn the_kv_accessor_refuses_what_the_kv_side_accessor_serves() {
     let g = two_region_geometry();
-    assert!(g.kv().is_none(), "kv() must not hand out half a continuation");
+    assert!(
+        g.kv().is_none(),
+        "kv() must not hand out half a continuation"
+    );
     assert_eq!(g.kv_side().map(|kv| kv.kv_dim), Some(4));
     assert_eq!(
         g.recurrent().map(|r| r.elements()),
@@ -516,21 +520,19 @@ fn a_kv_only_provider_refuses_the_two_region_layer() {
 /// geometry promised.
 #[test]
 fn the_two_region_state_allocates_rows_and_buffer_together() {
-    let geometry = [
-        two_region_geometry(),
-        LayerContinuationGeometry::Stateless,
-    ];
+    let geometry = [two_region_geometry(), LayerContinuationGeometry::Stateless];
     let state = ContinuationState::prepare(&geometry);
-    let LayerContinuationState::Hybrid { rows, state: buffer } = state.layer(0) else {
+    let LayerContinuationState::Hybrid {
+        rows,
+        state: buffer,
+    } = state.layer(0)
+    else {
         panic!("layer 0 must hold both regions: {:?}", state.layer(0));
     };
     assert!(rows.keys().is_empty() && rows.values().is_empty());
     assert_eq!(buffer.buffer(0).cells().len(), 32);
     assert!(buffer.buffer(0).cells().iter().all(|c| *c == 0.0));
-    assert!(matches!(
-        state.layer(1),
-        LayerContinuationState::Stateless
-    ));
+    assert!(matches!(state.layer(1), LayerContinuationState::Stateless));
     // The runtime state's KV width is learned from appended rows (the
     // same convention the pure-KV arm holds), so a fresh state counts
     // only the buffer — the region that exists from step zero.
