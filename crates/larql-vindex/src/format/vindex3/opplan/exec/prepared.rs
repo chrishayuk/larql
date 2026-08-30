@@ -453,6 +453,7 @@ fn resolve<B: PlanBackend + ?Sized>(
         class,
         elements: op.shape.iter().product(),
         stored_bf16: store.is_stored_bf16(op),
+        stored_nvfp4: store.is_stored_nvfp4(op),
     })
 }
 
@@ -516,6 +517,10 @@ impl PreparedOperands {
             class: MatrixClass::RoutedExpertBank,
             elements: 0,
             stored_bf16: false,
+            // The bank is widened and sliced into per-expert matrices on
+            // the way in, so no stored form survives for a format to
+            // apply to — the same reason `elements` is 0 here.
+            stored_nvfp4: false,
         });
         let head_format = |op: &OperandRef| resolve(backend, store, MatrixClass::OutputHead, op);
 

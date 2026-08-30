@@ -687,6 +687,19 @@ impl<'a> OperandSource<'a> {
         self.base.stored_dtype(operand) == Some(DTYPE_BF16)
     }
 
+    /// Whether this operand is held as a compiled NVFP4 pack.
+    ///
+    /// Overlay edits are f32-space facts with no compact form, so an
+    /// overridden operand answers `false` and is served widened — the
+    /// same rule [`Self::is_stored_bf16`] follows, for the same reason.
+    pub fn is_stored_nvfp4(&self, operand: &OperandRef) -> bool {
+        if self.overrides.is_some_and(|o| o.is_overridden(operand)) {
+            return false;
+        }
+        self.base.stored_dtype(operand)
+            == Some(crate::format::vindex3::represent::nvfp4_pack::DTYPE_NVFP4)
+    }
+
     /// Load one operand's stored bytes unwidened. Overlay edits are
     /// f32-space facts and cannot be represented in raw stored bytes,
     /// so an overridden operand refuses here rather than serving stale

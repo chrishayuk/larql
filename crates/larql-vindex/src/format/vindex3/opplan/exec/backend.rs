@@ -150,6 +150,13 @@ pub struct MatrixOperand {
     /// preference: a backend that wants compact bytes where there are
     /// none would have to quantise to get them.
     pub stored_bf16: bool,
+    /// Whether the container holds this operand as a compiled NVFP4
+    /// pack. The same kind of fact as [`Self::stored_bf16`] — physical,
+    /// not a preference — and it outranks the size policy: a pack exists
+    /// because someone compiled it deliberately, so a backend asking for
+    /// anything else would widen bytes that are already in the shape a
+    /// kernel wants.
+    pub stored_nvfp4: bool,
 }
 
 /// A backend's declared format per matrix class.

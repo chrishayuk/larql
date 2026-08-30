@@ -689,6 +689,12 @@ impl PlanBackend for ProductionBackend {
             // into per-expert matrices; there are no stored bytes left to
             // keep by the time a format could apply.
             MatrixClass::RoutedExpertBank => WeightFormat::F32,
+            // A compiled pack outranks the size policy. `choose_for`
+            // decides what to MAKE an operand resident as, from its size;
+            // an operand that is already NVFP4 has had that decision made
+            // for it deliberately, and re-deciding here would widen 4-bit
+            // bytes to f32 to satisfy a policy about bf16.
+            _ if operand.stored_nvfp4 => WeightFormat::Nvfp4,
             MatrixClass::AttentionProjection
             | MatrixClass::FfnProjection
             | MatrixClass::OutputHead => PhysicalProjectionPlan::choose_for(
