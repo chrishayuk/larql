@@ -172,6 +172,14 @@ pub fn run_exec(args: ExecArgs) -> Result<(), Box<dyn std::error::Error>> {
     let outcome = match args.backend {
         ExecBackend::Reference => run_on(&ReferenceBackend::new(), &args, &tokens, &plan, &store),
         ExecBackend::Production => run_on(&ProductionBackend::new(), &args, &tokens, &plan, &store),
+        // Same kernels as `production`; the difference is upstream, in
+        // `wanted_representation`, which makes the store bind the
+        // compiled NVFP4 pack instead of the canonical bytes. The
+        // projector then dispatches `FusedNvfp4` off the resident
+        // representation, exactly as it dispatches every other arm.
+        ExecBackend::ProductionNvfp4 => {
+            run_on(&ProductionBackend::new(), &args, &tokens, &plan, &store)
+        }
         #[cfg(all(feature = "gpu", target_os = "macos"))]
         ExecBackend::MetalMxfp4 => {
             let gpu = larql_compute_metal::MetalBackend::new()
@@ -629,9 +637,24 @@ fn summarise(engine: &str, trace: &ExecutionTrace) {
 /// the canonical bytes return `None` and never look for a pack, so adding
 /// packs to a container cannot change what they execute.
 fn wanted_representation(backend: ExecBackend) -> Option<&'static str> {
-    #[cfg(all(feature = "gpu", target_os = "macos"))]
     use larql_vindex::format::vindex3::represent::nvfp4_pack::DTYPE_NVFP4;
+    // Exhaustive, with no wildcard arm, and that is the point: `_ =>
+    // None` stood here and a newly added NVFP4 backend silently
+    // inherited "wants nothing", bound the canonical bytes and produced
+    // logits bit-identical to BF16. A run that looks like perfect
+    // fidelity is the exact failure this file must not be able to
+    // express, so a new backend is now a compile error until someone
+    // states which representation it executes.
     match backend {
+        ExecBackend::Reference | ExecBackend::Production => None,
+        ExecBackend::ProductionNvfp4 => Some(DTYPE_NVFP4),
+        #[cfg(all(feature = "gpu", target_os = "macos"))]
+        ExecBackend::Metal
+        | ExecBackend::MetalMxfp4
+        | ExecBackend::MetalMxfp4All
+        | ExecBackend::MetalLoweredMxfp4
+        | ExecBackend::MetalLoweredMxfp4Ffn
+        | ExecBackend::MetalLoweredF16 => None,
         #[cfg(all(feature = "gpu", target_os = "macos"))]
         ExecBackend::MetalNvfp4
         | ExecBackend::MetalNvfp4Ffn
@@ -639,6 +662,5 @@ fn wanted_representation(backend: ExecBackend) -> Option<&'static str> {
         | ExecBackend::MetalLowered
         | ExecBackend::MetalLoweredFfn
         | ExecBackend::MetalLoweredNoHead => Some(DTYPE_NVFP4),
-        _ => None,
     }
 }

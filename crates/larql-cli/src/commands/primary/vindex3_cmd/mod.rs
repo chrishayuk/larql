@@ -69,6 +69,20 @@ pub enum ExecBackend {
     Reference,
     /// The `larql-compute` kernels.
     Production,
+    /// The `larql-compute` kernels, asking for a compiled NVFP4 pack.
+    ///
+    /// The CPU sibling of the `metal-nvfp4*` arms, and the only way to
+    /// execute an NVFP4 representation of a model the device cannot run.
+    /// Qwen3.8 is the case that forced it: 48 Gated DeltaNet layers with
+    /// no Metal kernel, so before this arm its NVFP4 pack could be
+    /// compiled and verified and then executed nowhere, and its
+    /// behavioural fidelity was unmeasurable in principle.
+    ///
+    /// Separate from [`Self::Production`] rather than a flag on it: the
+    /// backend is what declares which representation execution wants, and
+    /// silently changing that for every existing `production` run would
+    /// reinterpret every result already taken with it.
+    ProductionNvfp4,
     /// GPU matmuls via `larql-compute-metal` (rung 1: matrix work on
     /// the device, elementwise glue on the CPU).
     #[cfg(all(feature = "gpu", target_os = "macos"))]

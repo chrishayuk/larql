@@ -340,8 +340,23 @@ impl OperandStore {
     }
 
     /// Load one operand as f32 values.
+    ///
+    /// A compiled NVFP4 pack decodes here rather than in [`widen`],
+    /// because decoding it needs the operand's SHAPE — the group stream
+    /// is indexed per row — and `widen` sees only bytes and a dtype
+    /// label. Consumers that want the compact form for a kernel take
+    /// [`Self::load_raw`]; this is for the ones that need values, which
+    /// on a recurrence is most of them.
+    ///
+    /// The decode is lossy in exactly the way the pack is: these are the
+    /// 4-bit values, widened, not the checkpoint's originals. That is
+    /// the point — it is what makes an NVFP4 representation measurable
+    /// on a stack the device cannot run.
     pub fn load(&self, operand: &OperandRef) -> Result<Vec<f32>, VindexError> {
         let raw = self.load_raw(operand)?;
+        if raw.dtype == crate::format::vindex3::represent::nvfp4_pack::DTYPE_NVFP4 {
+            return decode_nvfp4_operand(&raw.bytes, &operand.shape, &operand.tensor);
+        }
         widen(&raw.dtype, &raw.bytes, &operand.tensor)
     }
 
@@ -402,6 +417,27 @@ impl OperandStore {
 pub struct RawOperand {
     pub dtype: String,
     pub bytes: Vec<u8>,
+}
+
+/// Decode a stored NVFP4 pack to f32, through the format's own layout
+/// and the reference decoder — no second opinion about the arithmetic.
+pub(crate) fn decode_nvfp4_operand(
+    bytes: &[u8],
+    shape: &[usize],
+    name: &str,
+) -> Result<Vec<f32>, VindexError> {
+    use crate::format::vindex3::represent::nvfp4_pack::{split, PackLayout};
+    let layout = PackLayout::derive(shape, name)?;
+    let (packed, scales, tensor_scale) = split(bytes, &layout, name)?;
+    let mut out = vec![0.0f32; layout.rows * layout.k];
+    let matrix = larql_models::quant::nvfp4::Nvfp4Matrix {
+        packed: packed.to_vec(),
+        scales: scales.to_vec(),
+        tensor_scale,
+    };
+    larql_models::quant::nvfp4::dequantize_into(&matrix, layout.rows, layout.k, &mut out)
+        .map_err(|e| VindexError::Parse(format!("tensor `{name}`: NVFP4 decode: {e}")))?;
+    Ok(out)
 }
 
 /// Widen stored bytes to f32 — judged dtypes only, fail-closed.

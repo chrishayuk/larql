@@ -46,6 +46,7 @@ enum Kind {
     Bf16,
     Q8,
     Q4,
+    Nvfp4,
 }
 
 /// One projection exactly as the decode issued it.
@@ -66,6 +67,12 @@ pub struct Captured {
     /// path and price a kernel the decode never ran.
     tertiary: (usize, usize),
     block: usize,
+    /// NVFP4's matrix-wide scale. By value because it is one f32 and not
+    /// a stream, and captured rather than defaulted: replaying the codes
+    /// against the wrong tensor scale would price the right kernel over
+    /// numerically different weights, which is exactly the substitution
+    /// this harness exists to rule out.
+    tensor_scale: f32,
     out_dim: usize,
     /// The activation the decode actually projected. Kept by value
     /// because it is tens of KB against tens of MB of weight, and
@@ -99,6 +106,11 @@ impl Captured {
                 packed: std::slice::from_raw_parts(p as *const u8, n),
                 scales: std::slice::from_raw_parts(s as *const f32, m),
                 block: self.block,
+            },
+            Kind::Nvfp4 => WeightRows::Nvfp4 {
+                packed: std::slice::from_raw_parts(p as *const u8, n),
+                scales: std::slice::from_raw_parts(s as *const u8, m),
+                tensor_scale: self.tensor_scale,
             },
         }
     }
@@ -141,6 +153,7 @@ pub(super) fn record(weight: WeightRows<'_>, x: &[f32], out_dim: usize) {
     let Some(log) = slot.as_mut() else {
         return;
     };
+    let mut tensor_scale = 0.0f32;
     let (kind, primary, secondary, tertiary, block) = match weight {
         WeightRows::F32(w) => (Kind::F32, (w.as_ptr() as usize, w.len()), (0, 0), (0, 0), 0),
         WeightRows::Bf16(w) => (
@@ -173,9 +186,26 @@ pub(super) fn record(weight: WeightRows<'_>, x: &[f32], out_dim: usize) {
             (0, 0),
             block,
         ),
+        WeightRows::Nvfp4 {
+            packed,
+            scales,
+            tensor_scale: ts,
+        } => {
+            tensor_scale = ts;
+            (
+                Kind::Nvfp4,
+                (packed.as_ptr() as usize, packed.len()),
+                (scales.as_ptr() as usize, scales.len()),
+                (0, 0),
+                // The group is 16 by the format's definition, not a
+                // policy's choice, so there is no block to carry.
+                0,
+            )
+        }
     };
     log.push(Captured {
         kind,
+        tensor_scale,
         primary,
         secondary,
         tertiary,

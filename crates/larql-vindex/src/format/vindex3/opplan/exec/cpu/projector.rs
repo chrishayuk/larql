@@ -142,6 +142,24 @@ pub enum WeightRows<'a> {
     /// f32 it denotes, so widening is `(bits as u32) << 16` — exact, no
     /// rounding, no table.
     Bf16(&'a [u16]),
+    /// NVFP4 straight from a compiled pack: e2m1 codes two to the byte
+    /// (lo nibble first), one E4M3 scale per sixteen elements along the
+    /// input axis, and the single f32 tensor scale both levels are
+    /// expressed relative to.
+    ///
+    /// Two scale levels rather than one because E4M3 cannot represent the
+    /// product — that is the format's whole reason for existing, and it
+    /// is why this cannot be folded into [`Self::Q8`]'s shape.
+    ///
+    /// Reaches the kernel compact, like every other variant here: the
+    /// CPU-1B finding that widening to a scratch matrix costs more than
+    /// the traffic it saves applies with more force to a 4-bit format,
+    /// not less.
+    Nvfp4 {
+        packed: &'a [u8],
+        scales: &'a [u8],
+        tensor_scale: f32,
+    },
 }
 
 impl WeightRows<'_> {
@@ -152,6 +170,7 @@ impl WeightRows<'_> {
             Self::Bf16(w) => w.len() / in_dim,
             Self::Q8 { codes, .. } => codes.len() / in_dim,
             Self::Q4 { packed, .. } => packed.len() * 2 / in_dim,
+            Self::Nvfp4 { packed, .. } => packed.len() * 2 / in_dim,
         }
     }
 
@@ -200,6 +219,22 @@ impl WeightRows<'_> {
                     block: *block,
                 }
             }
+            Self::Nvfp4 {
+                packed,
+                scales,
+                tensor_scale,
+            } => {
+                // Groups run along the input axis, so a row slab is a
+                // contiguous run of both streams. The tensor scale is
+                // matrix-wide and travels with every slab unchanged.
+                let groups = in_dim / larql_models::quant::nvfp4::NVFP4_GROUP_ELEMS;
+                let per_row = groups * larql_models::quant::nvfp4::NVFP4_GROUP_BYTES;
+                Self::Nvfp4 {
+                    packed: &packed[start * per_row..(start + count) * per_row],
+                    scales: &scales[start * groups..(start + count) * groups],
+                    tensor_scale: *tensor_scale,
+                }
+            }
         }
     }
 
@@ -219,6 +254,9 @@ impl WeightRows<'_> {
                 ..
             } => codes.len() + scales.len() * 4 + sums.len() * 2,
             Self::Q4 { packed, scales, .. } => packed.len() + scales.len() * 4,
+            // The tensor scale is one f32 for the whole matrix, not per
+            // row, so it is not counted in a row slab's footprint.
+            Self::Nvfp4 { packed, scales, .. } => packed.len() + scales.len(),
         }
     }
 }

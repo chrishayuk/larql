@@ -193,6 +193,48 @@ impl DenseProjector for FusedQ4 {
     }
 }
 
+/// NVFP4 resident, decoded in registers — the CPU's arm for a compiled
+/// NVFP4 pack.
+///
+/// Exists because a representation with no execution path is a
+/// representation that cannot be measured. Before it, every backend that
+/// requested NVFP4 was a device backend, so a model whose token mixer
+/// has no device kernel — Qwen3.8's 48 Gated DeltaNet layers — could
+/// have an NVFP4 pack compiled, verified, and then unrunnable anywhere.
+///
+/// The arithmetic is `larql_models::quant::nvfp4::dequantize_into`'s
+/// association, applied a group at a time: the shared CPU kernel this
+/// delegates to is held bit-exact against decode-then-multiply by its
+/// own tests, so this arm and the oracle are the same program.
+pub struct FusedNvfp4;
+
+impl DenseProjector for FusedNvfp4 {
+    fn parallelism(&self) -> CpuParallelism {
+        CpuParallelism::ExternalPool
+    }
+
+    fn project_rows(&self, weight_rows: WeightRows<'_>, x: &[f32], out: &mut [f32]) {
+        let WeightRows::Nvfp4 {
+            packed,
+            scales,
+            tensor_scale,
+        } = weight_rows
+        else {
+            panic!("the fused nvfp4 kernel consumes nvfp4 weights only");
+        };
+        let n = out.len();
+        let Some(values) =
+            larql_compute::cpu::nvfp4_gemv::nvfp4_gemv(packed, scales, tensor_scale, x, n, x.len())
+        else {
+            // The slab's geometry is settled before dispatch, so a
+            // refusal here means the two disagree — which is a bug in
+            // this file, not a runtime condition to absorb.
+            panic!("nvfp4 slab geometry does not describe [{n}, {}]", x.len());
+        };
+        out.copy_from_slice(&values);
+    }
+}
+
 /// One block's unscaled dot. `packed.len() * 2 == x.len()`.
 #[inline]
 fn q4_block_dot(packed: &[u8], x: &[f32]) -> f32 {

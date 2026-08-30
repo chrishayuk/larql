@@ -21,7 +21,7 @@
 
 use super::arithmetic::{AccumulatorRep, ActivationRep, Arithmetic, WeightRep};
 use super::integer::{activation_scaling, Bf16xQ8, Q4xQ8, Q8xQ8};
-use super::kernels::{BlasF32, FusedBf16, FusedQ4, FusedQ8, ScalarF32};
+use super::kernels::{BlasF32, FusedBf16, FusedNvfp4, FusedQ4, FusedQ8, ScalarF32};
 use super::projector::{DenseProjector, WeightRows};
 use crate::error::VindexError;
 use crate::format::vindex3::opplan::exec::backend::{MatrixClass, WeightFormat, WeightSlice};
@@ -56,6 +56,15 @@ pub enum PhysicalProjectionPlan {
     /// no `WeightFormat` names it, so a policy answering Q4 would refuse
     /// at load. Listed so `for_resident` stays total.
     FusedQ4,
+    /// NVFP4 resident, decoded in registers.
+    ///
+    /// Reached by OBSERVATION, like [`Self::FusedQ4`]: the residency
+    /// policy never chooses NVFP4: a pack is compiled deliberately by
+    /// `vindex represent` and the loader binds what the container holds.
+    /// This exists so that a compiled pack has somewhere to execute — a
+    /// representation with no execution path cannot be measured, and
+    /// before this arm every NVFP4 backend was a device backend.
+    FusedNvfp4,
     /// f32 resident, BLAS `sgemv`, threaded by the library.
     ///
     /// The right answer for a matrix whose widened image still fits
@@ -209,6 +218,7 @@ impl PhysicalProjectionPlan {
             Self::FusedBf16 | Self::Bf16xQ8 => WeightFormat::Bf16,
             Self::FusedQ8 | Self::Q8xQ8 => WeightFormat::Q8,
             Self::FusedQ4 | Self::Q4xQ8 => WeightFormat::Q4,
+            Self::FusedNvfp4 => WeightFormat::Nvfp4,
         }
     }
 
@@ -247,6 +257,11 @@ impl PhysicalProjectionPlan {
                 activation: ActivationRep::F32,
                 accumulator: AccumulatorRep::F32,
             },
+            Self::FusedNvfp4 => Arithmetic {
+                weight: WeightRep::Nvfp4,
+                activation: ActivationRep::F32,
+                accumulator: AccumulatorRep::F32,
+            },
             // The control holds EXACT weights and an f32 dot; only the
             // activation is quantised, which is the whole of its job.
             Self::Bf16xQ8 => Arithmetic {
@@ -280,6 +295,7 @@ impl PhysicalProjectionPlan {
             Self::FusedBf16 => &FusedBf16,
             Self::FusedQ8 => &FusedQ8,
             Self::FusedQ4 => &FusedQ4,
+            Self::FusedNvfp4 => &FusedNvfp4,
             Self::Q8xQ8 => &Q8xQ8,
             Self::Q4xQ8 => &Q4xQ8,
             Self::Bf16xQ8 => &Bf16xQ8,
@@ -396,6 +412,11 @@ impl PhysicalProjectionPlan {
                 ArithmeticArm::Q4TimesQ8 => Self::Q4xQ8,
                 _ => Self::FusedQ4,
             },
+            // No integer arm consumes NVFP4: its two scale levels are not
+            // expressible as the single per-block f32 the SDOT paths
+            // assume, so there is one kernel and the arm does not enter
+            // into it.
+            WeightRows::Nvfp4 { .. } => Self::FusedNvfp4,
         }
     }
 }
