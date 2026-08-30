@@ -8,7 +8,8 @@
 //! | -------------------- | ---------- | ------------ |
 //! | 1                    | VINDEX2    | LYRW `format_version` 1 |
 //! | 2                    | VINDEX2    | LYRW `format_version` 1 |
-//! | 3                    | VINDEX3    | LYRW `format_version` 2 |
+//! | 3                    | VINDEX3    | pre-`RegionLayout` legacy schema, still read |
+//! | 4                    | VINDEX3    | current ([`V3_CURRENT_SCHEMA`]); LYRW `format_version` 2 banks or tensor-table segments |
 //!
 //! The generation is named for its *current* `index.json.version`. An earlier
 //! draft called the shipped generation "VINDEX1" while its version was already

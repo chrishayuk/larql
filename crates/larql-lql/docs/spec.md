@@ -1,7 +1,7 @@
 # LQL — Lazarus Query Language Specification
 
 **Version:** 0.4  
-**Date:** 2026-04-11  
+**Date:** 2026-08-30 (0.4 first published 2026-04-11; §4's VINDEX3 backend content tracks the 3.0 Candidate spec)  
 **Status:** Draft  
 **Implementation target:** `larql-lql` crate (Rust)  
 **Companion:** `larql-knowledge` spec (data pipeline)
@@ -877,8 +877,8 @@ afterwards.
 ```
 
 `USE "path"` binds a VINDEX3 container when the container's own
-generation marker (`index.json` schema 3) says so — never by falling
-back from a failed V2 load. The bound runtime exposes declared facts
+generation marker (`index.json` schema, V3 spanning 3–4) says so — never
+by falling back from a failed V2 load. The bound runtime exposes declared facts
 (the executable plan) and capabilities; every V3 statement below
 consumes those, and nothing reconstructs architecture from weights or
 family metadata.

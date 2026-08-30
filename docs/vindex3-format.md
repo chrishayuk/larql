@@ -1,11 +1,17 @@
 # VINDEX3 — Model-System Container Format
 
-Status: **living spec**. §1–§7 describe what is implemented and gated as of
-2026-08-11 (branch `feat/vindex3-glimmer-g0-g2`); §8 pins the design for
-the rung currently being built (G5). The experimental programme,
-gates and run order live in `docs/vindex3-experiments.md`; the LYRW v2
-routed-layer physical layout lives in `docs/lyrw-v2.md` and is incorporated
-here by reference as one segment family.
+Status: **living spec** — the implementation-tracking companion to the
+[VINDEX3 3.0 Candidate Specification](../crates/larql-vindex/docs/vindex3-format-spec.md),
+which owns the normative container model and the contract stack. As of
+2026-08-30: §1–§7 are implemented and gated; §8's execution contract is
+implemented through 5b-3 (surface, operand closure, reference executor,
+golden parity, causal controls, `larql vindex3 exec`), and the runtime
+above it landed through VI3-SERVE-1 with chat/responses arms
+(`docs/vindex3-runtime.md`) — five model families encode, verify and
+execute end to end. The experimental programme, gates and run order live
+in `docs/vindex3-experiments.md`; the LYRW v2 routed-layer physical
+layout lives in `docs/lyrw-v2.md` and is incorporated by reference as one
+segment codec (candidate spec §5.6, §6).
 
 > Older `spec §N` citations in `format/vindex3/{index,lyrw2,…}` code
 > comments refer to the pre-G2 draft of this spec; where they conflict,
@@ -87,9 +93,9 @@ representable  ≠ "parser consumed the key"
 | G2 | Generalise the schema until reality fits | plan over the artifact set: `blocking = 0, mismatched = 0, unknown = 0` |
 | G3 | Materialise the graph | `encode` then `inspect` reconstructs the system **solely from the container** |
 | G4 | Prove source ≡ encoded | four-authority comparison + payload-hash equality |
-| G5 | Execute from the encoded description | forward pass with zero architecture branches |
-| G6 | Drafter parity | speculative execution discovered from the `HiddenStateEdge` |
-| G7 | Performance baseline | reference numbers on the target hardware class |
+| G5 | Execute from the encoded description | forward pass with zero architecture branches — §8; implemented through 5b-3 |
+| G6 | Drafter parity | speculative execution discovered from the `HiddenStateEdge` — G6d (GPU-lowered plan) landed |
+| G7 | Performance baseline | reference numbers on the target hardware class — recorded in `ROADMAP_STATUS.md` |
 | G8 | Alternate physical/execution plans | LARQL-specific layouts/prediction over the same logical system |
 
 G8 must not contaminate G0–G5: optimisation is an *alternate plan over the
@@ -272,6 +278,14 @@ distinct facts and are never merged.
 larql vindex3 encode <artifact>… --output <container>/
 ```
 
+Every mainline V3 producer funnels into this pipeline: `larql vindex3
+encode` directly, and `larql extract --generation v3`, LQL
+`EXTRACT … FORMAT VINDEX3` and the factory generation pin through
+`encode_checkpoint`, which wraps it and adds the capability snapshot
+(`tokenizer.json`, `tokenizer_config.json`, `special_tokens_map.json`,
+`generation_config.json`, chat template) that keeps the container
+servable (see `docs/vindex-generation-policy.md`).
+
 The encoder consumes **the built graph** (via the plan pipeline), never a
 private re-interpretation of the checkpoint, and refuses to encode an
 inadmissible plan. Two semantic authorities immediately after eliminating
@@ -308,7 +322,11 @@ them would be a regression.
   (SHA-256, computed while copying) and the encoded segment records its
   own hash. These are G4's byte-equivalence inputs.
 - `Vindex3Index.system_graph` is optional in the schema: absence means
-  "no graph recorded", never "single-component assumed".
+  "no graph recorded", never "single-component assumed". A container with
+  no graph but a `moe_manifest` is the other physical shape — the
+  transitional bank-import layout the candidate spec names and ranks
+  (§5.4 there). Absence of `moe_manifest` is likewise not evidence a
+  model is dense: a graph-encoded routed MoE carries none.
 
 ### 6.2 The G3 gate
 
@@ -381,7 +399,7 @@ includes a mutation test for exactly that case.
 
 ---
 
-## 8. G5 — execution contract (5a + 5b-1 sealed; 5b-2–5e pinned design)
+## 8. G5 — execution contract (5a, 5b-1, 5b-2 A–C and 5b-3 implemented)
 
 Execute the system **using only semantic information present in the
 container**. The executor owns *generic operations* — embedding, norms,
@@ -451,6 +469,30 @@ while shipping four norms per layer):
   gate behaviour is actually judged — a stack shipping the operand
   meanwhile fails operand closure with the primitive named.
 
+### 8.1 The G5 gate — five proofs
+
+1. **Text forward from graph semantics** — the target component executes
+   from the container, output-identical to the checkpoint-driven path.
+2. **Position/span behaviour exclusively from `AttentionLayerPolicy`** —
+   NoPE/global vs RoPE/sliding per layer is a table read; mutating one
+   row of the persisted table provably changes execution (the positive
+   control), and no other source of that fact exists to consult.
+3. **Perception from the component, not family wiring** — the vision
+   tower and adapter run because a `perception` component with its
+   objects is present, not because the runtime knows Glimmer has one.
+4. **Drafter capture exclusively from the `HiddenStateEdge`** — which
+   hidden states are tapped, and the block protocol, are edge reads;
+   editing the edge redirects the capture.
+5. **Lookup by logical object id only** — operand resolution goes
+   `object id → representation → segment`; no original HF tensor name
+   appears anywhere on the execution path (they were already stripped at
+   encode).
+
+When the five hold, an architecture is an **instance** the container
+describes, not an implementation the executor contains: an architecture
+is *supported* when its execution semantics can be expressed in the
+model-system IR — not when its name has been added to the runtime.
+
 ### 8.2 Operand closure and the operation plan (5b-1 — implemented)
 
 G4 proves *consistency* across the four authorities; it cannot prove
@@ -506,7 +548,7 @@ strict parity is next:
   ships no norm weights. It lives on the surface as
   `parameter_free_qk_norm`, distinct from weighted QK-norm.
 
-### 8.3 Next rungs (pinned; Stage A implemented)
+### 8.3 The staged proof (Stages A–C implemented)
 
 **5b-2 Stage A — implemented** (`opplan/exec/`): a reference executor
 that consumes a `ComponentOpPlan` and nothing else — naive f32 loops
@@ -558,9 +600,9 @@ execution correctness + causal mutation controls = semantic authority
 Closure proves the program is complete; parity proves the program is
 correct; the controls prove the IR is in charge.
 
-**Remaining (5b-3).** Parity
-(hidden-state and logit, not argmax) against the checkpoint-driven
-fixture path, then three positive controls proving three independent
+**5b-3 — implemented** (surfaced as `larql vindex3 exec`, rung G5b-3c).
+Parity (hidden-state and logit, not argmax) against the checkpoint-driven
+fixture path, and three positive controls proving three independent
 semantic pathways drive computation — a container fact must not merely
 survive serialization:
 
@@ -618,41 +660,24 @@ encode execution rules. Dispatch reads typed semantics only —
 fields — so a renamed id changes nothing and a new architecture whose
 graph carries the same kinds executes with zero runtime edits.
 
-### 8.1 The G5 gate — five proofs
-
-1. **Text forward from graph semantics** — the target component executes
-   from the container, output-identical to the checkpoint-driven path.
-2. **Position/span behaviour exclusively from `AttentionLayerPolicy`** —
-   NoPE/global vs RoPE/sliding per layer is a table read; mutating one
-   row of the persisted table provably changes execution (the positive
-   control), and no other source of that fact exists to consult.
-3. **Perception from the component, not family wiring** — the vision
-   tower and adapter run because a `perception` component with its
-   objects is present, not because the runtime knows Glimmer has one.
-4. **Drafter capture exclusively from the `HiddenStateEdge`** — which
-   hidden states are tapped, and the block protocol, are edge reads;
-   editing the edge redirects the capture.
-5. **Lookup by logical object id only** — operand resolution goes
-   `object id → representation → segment`; no original HF tensor name
-   appears anywhere on the execution path (they were already stripped at
-   encode).
-
-When the five hold, an architecture is an **instance** the container
-describes, not an implementation the executor contains: an architecture
-is *supported* when its execution semantics can be expressed in the
-model-system IR — not when its name has been added to the runtime.
-
 ---
 
 ## 9. Relationship to existing formats
 
-- **LYRW v2** (`docs/lyrw-v2.md`) remains the physical layout for routed
-  MoE expert banks; under this spec it is one segment family a
-  representation may use, selected by profiles/variants
-  (`index.json` §profiles). Its region roles (`gate/up/down/bias/scales/
-  latents`) are operand-level structure *inside* an FFN object, not a
-  substitute for logical objects.
+- **LYRW v2** (`docs/lyrw-v2.md`) is the expert-bank segment codec. The
+  candidate spec's convergence rule (§5.6 there) makes it one segment
+  family a representation may use; its region roles (`gate/up/down/bias/
+  scales/latents`) are operand-level structure *inside* an FFN object,
+  not a substitute for logical objects. Recorded honestly: today no
+  graph-encoded representation emits `.lyrw` segments — LYRW files are
+  written only by the bank-shape import path, whose containers carry a
+  `moe_manifest.json` and no graph. The two writers are disjoint;
+  unifying them is a named gate for 3.0 Final.
+- The **MoE manifest** (`moe_manifest.json`) describes routed programmes
+  on bank-shape containers. A graph-encoded container carries none —
+  routed or not (`encode` sets `moe_manifest: null` unconditionally);
+  its routing structure lives in the graph and the representations.
+  "The graph locates the manifest" is the convergence configuration,
+  produced by no writer today.
 - **VINDEX2** containers are a different generation; loaders refuse
   cross-generation directories with a precise error naming both versions.
-- The **MoE manifest** (`moe_manifest.json`) continues to describe routed
-  programmes; the system graph does not replace it, it locates it.
