@@ -89,8 +89,11 @@ fn component_error_alone_does_not_support_a_quality_claim() {
             positions_with_route_change: 0,
             layers_with_route_change: 0,
             first_layer_with_route_change: None,
+            route_margin: None,
+            route_weight_mass_moved: None,
         },
         min_covered_mass: None,
+        top10_margin: None,
     };
     // A bank too short for its own tail statistic proves nothing, and
     // the record must say so rather than accept a small-looking p99.
@@ -210,8 +213,11 @@ fn promotable_requires_the_ladder_quality_and_throughput_together() {
                 positions_with_route_change: 0,
                 layers_with_route_change: 0,
                 first_layer_with_route_change: None,
+                route_margin: None,
+                route_weight_mass_moved: None,
             },
             min_covered_mass: None,
+            top10_margin: None,
         },
     };
 

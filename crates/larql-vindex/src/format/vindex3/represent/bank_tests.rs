@@ -21,6 +21,8 @@ fn identical(seq: u32, pos: u32) -> PositionObservation {
         candidate_top10: vec![7, 3, 11],
         baseline_routes: vec![vec![4, 9], vec![1, 2]],
         candidate_routes: vec![vec![4, 9], vec![1, 2]],
+        route_changes: Vec::new(),
+        top10_margin: None,
     }
 }
 
@@ -192,6 +194,8 @@ fn the_first_layer_that_reroutes_is_recorded_not_just_the_count() {
             candidate_top10: vec![0],
             baseline_routes: baseline,
             candidate_routes: candidate,
+            route_changes: Vec::new(),
+            top10_margin: None,
         });
         b.finish().routing
     };
@@ -250,6 +254,8 @@ fn the_bank_carries_the_worst_covered_mass_it_saw() {
             candidate_top10: vec![0],
             baseline_routes: vec![],
             candidate_routes: vec![],
+            route_changes: Vec::new(),
+            top10_margin: None,
         });
     }
     let bank = b.finish();
@@ -258,4 +264,98 @@ fn the_bank_carries_the_worst_covered_mass_it_saw() {
         (worst - (-1.0f64).exp()).abs() < 1e-9,
         "the WORST position's mass, not the mean or the last: {worst}"
     );
+}
+
+/// **A routing change is WEIGHED, not counted**: how close the decision
+/// was, and how much mixture mass actually moved.
+///
+/// The two questions a flip count cannot answer, and they dissociate: a
+/// swap of the lowest-weighted expert for its near-equal neighbour and
+/// an overturned high-weight decision are both "one flip".
+#[test]
+fn a_route_change_carries_its_margin_and_the_mass_it_moved() {
+    // Layer 0's route changes; layer 1's does not. Scores are the
+    // BIASED selection scores the router ranked by.
+    let scores = vec![vec![0.90, 0.80, 0.7999, 0.10], vec![0.90, 0.80, 0.10, 0.05]];
+    let base_routes = vec![vec![0u32, 1], vec![0, 1]];
+    let cand_routes = vec![vec![0u32, 2], vec![0, 1]];
+    // Equal weights: the swap moves the smallest possible mass.
+    let base_w = vec![vec![0.5, 0.5, 1.0], vec![0.5, 0.5, 1.0]];
+    let cand_w = base_w.clone();
+
+    let changes = PositionObservation::weigh_route_changes(
+        &base_routes,
+        &cand_routes,
+        &scores,
+        &base_w,
+        &cand_w,
+    );
+    assert_eq!(changes.len(), 1, "only the layer that changed is reported");
+    assert_eq!(changes[0].layer, 0);
+    // Expert 1 (0.80) was the lowest SELECTED; expert 2 (0.7999) the
+    // best unselected — a near-tie, and the margin says so.
+    assert!(
+        (changes[0].boundary_margin - 0.0001).abs() < 1e-5,
+        "margin {} is not the near-tie gap",
+        changes[0].boundary_margin
+    );
+    // Half the L1 between two normalised mixtures that put equal mass
+    // on a different second expert: |0.5| moved out, |0.5| moved in.
+    assert!(
+        (changes[0].weight_mass_moved - 0.5).abs() < 1e-5,
+        "mass {} ",
+        changes[0].weight_mass_moved
+    );
+
+    // The SAME flip count with a confidently-held decision and an
+    // unequal mixture reports a large margin and less moved mass.
+    let confident = vec![vec![0.90, 0.80, 0.20, 0.10]];
+    let heavy = vec![vec![0.9, 0.1, 1.0]];
+    let changes = PositionObservation::weigh_route_changes(
+        &[vec![0, 1]],
+        &[vec![0, 2]],
+        &confident,
+        &heavy,
+        &heavy,
+    );
+    assert_eq!(changes.len(), 1);
+    assert!(
+        changes[0].boundary_margin > 0.5,
+        "an overturned confident decision has a LARGE margin, got {}",
+        changes[0].boundary_margin
+    );
+    assert!(
+        changes[0].weight_mass_moved < 0.2,
+        "swapping the light expert moves little mass, got {}",
+        changes[0].weight_mass_moved
+    );
+
+    // Without score evidence the severity is NaN and the builder drops
+    // it rather than folding a fabricated zero into the distribution.
+    let blind = PositionObservation::weigh_route_changes(&base_routes, &cand_routes, &[], &[], &[]);
+    assert_eq!(blind.len(), 1);
+    assert!(blind[0].boundary_margin.is_nan());
+    assert!(blind[0].weight_mass_moved.is_nan());
+}
+
+/// A distribution reports the SHAPE, and refuses to invent one from
+/// nothing.
+#[test]
+fn a_distribution_reports_shape_and_declines_when_empty() {
+    use crate::format::vindex3::represent::quality::Distribution;
+
+    assert_eq!(Distribution::of(&mut []), None, "no observations, no shape");
+    let mut one = [4.0];
+    let d = Distribution::of(&mut one).expect("one observation is a shape");
+    assert_eq!((d.count, d.min, d.p50, d.max), (1, 4.0, 4.0, 4.0));
+
+    let mut many: Vec<f64> = (1..=100).map(f64::from).collect();
+    let d = Distribution::of(&mut many).expect("shape");
+    assert_eq!(d.count, 100);
+    assert_eq!(d.min, 1.0);
+    assert_eq!(d.max, 100.0);
+    // Nearest-rank: every reported value is one an observation produced.
+    assert_eq!(d.p50, 50.0);
+    assert_eq!(d.p95, 95.0);
+    assert_eq!(d.p99, 99.0);
 }

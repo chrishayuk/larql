@@ -78,6 +78,28 @@ pub struct RoutingEvidence {
     /// Layers that ever routed differently, so a fix can be scoped by
     /// depth instead of applied to the whole role.
     pub layers_with_route_change: u64,
+    /// **How CLOSE the routing decisions that changed actually were.**
+    ///
+    /// The selection-score gap, in the BASELINE arm, between the last
+    /// selected expert and the best unselected one, at each layer whose
+    /// route changed — so a small value means the perturbation crossed
+    /// a near-tie and a large one means it overturned a decision the
+    /// router was confident about.
+    ///
+    /// Counting route changes cannot tell those apart, and they are not
+    /// the same behavioural event. `None` when nothing changed, or when
+    /// the bank was built without score evidence.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub route_margin: Option<Distribution>,
+    /// **How much MIXTURE MASS the changed routes moved**, as a
+    /// fraction of the layer's routed combine weight.
+    ///
+    /// A swap of the 8th expert for the 9th at nearly equal weight
+    /// moves almost nothing; replacing a heavily-weighted expert moves
+    /// a lot. The count is identical in both cases, which is why the
+    /// mass is carried separately.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub route_weight_mass_moved: Option<Distribution>,
     /// The SHALLOWEST layer that ever routed differently, if any.
     ///
     /// The diagnostic that separates two failure modes a count cannot:
@@ -89,6 +111,48 @@ pub struct RoutingEvidence {
     /// which is the second and needs a different response.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub first_layer_with_route_change: Option<u64>,
+}
+
+/// A measured quantity's shape, not just its extremes.
+///
+/// Carried whole because "the worst case was large" and "most cases
+/// were large" call for different responses, and a single number
+/// cannot distinguish them — the question these exist to answer is
+/// whether a criterion is failing on a few real events or on a mass of
+/// marginal ones.
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+pub struct Distribution {
+    pub count: u64,
+    pub min: f64,
+    pub p50: f64,
+    pub p95: f64,
+    pub p99: f64,
+    pub max: f64,
+}
+
+impl Distribution {
+    /// Nearest-rank percentiles over `values`, which this sorts.
+    ///
+    /// Nearest-rank for the same reason the KL percentiles are: a
+    /// reported value should be one some observation actually produced.
+    pub fn of(values: &mut [f64]) -> Option<Self> {
+        if values.is_empty() {
+            return None;
+        }
+        values.sort_by(f64::total_cmp);
+        let at = |p: f64| {
+            let rank = (p * values.len() as f64).ceil().max(1.0) as usize;
+            values[rank.min(values.len()) - 1]
+        };
+        Some(Self {
+            count: values.len() as u64,
+            min: values[0],
+            p50: at(0.50),
+            p95: at(0.95),
+            p99: at(0.99),
+            max: values[values.len() - 1],
+        })
+    }
 }
 
 /// One bank of measurements over a fixed token sequence.
@@ -111,6 +175,19 @@ pub struct QualityBank {
     /// by gates that ask for it — see [`kimi_logit_v2`].
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub min_covered_mass: Option<f64>,
+    /// **How close the top-10 orderings that changed actually were.**
+    ///
+    /// The baseline's rank-10-minus-rank-11 logit gap at each position
+    /// whose top-10 changed. The top-10 criterion counts any change
+    /// including a reordering, and a reordering of two near-tied
+    /// candidates is not the same event as a genuine preference
+    /// change — this is the evidence that tells them apart.
+    ///
+    /// EVIDENCE, not a criterion: no gate reads it yet, deliberately,
+    /// because a threshold set before the distribution is known is a
+    /// guess wearing a version number.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub top10_margin: Option<Distribution>,
 }
 
 /// Which criterion a bank failed.

@@ -842,7 +842,7 @@ pub fn verify_complete(
         .find(|e| e.encoding.is_some())
         .and_then(|e| e.projection.clone())
     {
-        if !projections.iter().any(|p| *p == scoped) {
+        if !projections.contains(&scoped) {
             return Err(VindexError::Parse(format!(
                 "the map scopes projection `{scoped}` but the ledger seals none of it"
             )));

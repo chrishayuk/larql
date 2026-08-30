@@ -123,14 +123,15 @@ fn top_k_ids(logits: &[f32], k: usize) -> Vec<usize> {
 }
 
 /// One position's paired measurement, from both arms' full logit
-/// vectors and traced routes.
+/// vectors, traced routes, and the router's own scores.
+#[allow(clippy::too_many_arguments)]
 fn observation(
     seq: usize,
     pos: usize,
     baseline: &[f32],
-    baseline_routes: Vec<Vec<u32>>,
+    base_trace: &ExecutionTrace,
     candidate: &[f32],
-    candidate_routes: Vec<Vec<u32>>,
+    cand_trace: &ExecutionTrace,
 ) -> PositionObservation {
     let top_ids = top_k_ids(baseline, TOP_N);
     PositionObservation {
@@ -145,8 +146,28 @@ fn observation(
         candidate_argmax: argmax(candidate) as u32,
         baseline_top10: top_k_ids(baseline, 10).iter().map(|&i| i as u32).collect(),
         candidate_top10: top_k_ids(candidate, 10).iter().map(|&i| i as u32).collect(),
-        baseline_routes,
-        candidate_routes,
+        // Every changed route WEIGHED — how close the decision was and
+        // how much mixture mass moved — from the router's own selection
+        // scores, so a near-tie swap and an overturned decision are
+        // distinguishable rather than both being "one flip".
+        route_changes: PositionObservation::weigh_route_changes(
+            &base_trace.routes,
+            &cand_trace.routes,
+            &base_trace.selection_scores,
+            &base_trace.combine_weights,
+            &cand_trace.combine_weights,
+        ),
+        // The baseline's rank-10 vs rank-11 gap, recorded only where
+        // the top-10 actually changed: a position that did not move
+        // says nothing about how close the ones that did were.
+        top10_margin: (top_k_ids(baseline, 10) != top_k_ids(candidate, 10))
+            .then(|| {
+                let ranked = top_k_ids(baseline, 11);
+                (ranked.len() == 11).then(|| baseline[ranked[9]] - baseline[ranked[10]])
+            })
+            .flatten(),
+        baseline_routes: base_trace.routes.clone(),
+        candidate_routes: cand_trace.routes.clone(),
     }
 }
 
@@ -200,23 +221,29 @@ fn build_stack<'a>(
 }
 
 /// Run `positions` teacher-forced steps of one sequence through one
-/// arm, returning each position's full logits and traced routes.
+/// arm, returning each position's full logits and its execution trace.
 fn run_sequence(
     metal: &MetalBackend,
     stack: &mut HybridStack<'_>,
     rows: &[Vec<f32>],
     hidden: usize,
-) -> Vec<(Vec<f32>, Vec<Vec<u32>>)> {
+) -> Vec<(Vec<f32>, ExecutionTrace)> {
     stack
         .reset_states()
         .expect("an all-device stack resets cleanly");
     let mut out = Vec::with_capacity(rows.len());
     for row in rows {
-        let mut trace = ExecutionTrace::default();
+        let mut trace = ExecutionTrace {
+            // The router's own selection scores and combine weights, so
+            // a routing change can be WEIGHED rather than counted.
+            // ~27 KB a token, read after the chain's single wait.
+            want_selection_scores: true,
+            ..ExecutionTrace::default()
+        };
         let (logits, _traces, _t) = stack
             .forward_traced(metal, row, hidden, Some(&mut trace))
             .expect("the teacher-forced step must not refuse");
-        out.push((logits, trace.routes));
+        out.push((logits, trace));
     }
     out
 }
@@ -422,8 +449,8 @@ fn q2a_teacher_forced_quality_bank_runs_and_the_gate_refuses_on_positions() {
             let rows = sequence_embeddings(&bank_dir, seq, positions_per_seq, g.hidden);
             let a = run_sequence(&metal, &mut baseline, &rows, g.hidden);
             let b = run_sequence(&metal, &mut null_partner, &rows, g.hidden);
-            for (pos, ((la, ra), (lb, rb))) in a.into_iter().zip(b).enumerate() {
-                builder.observe(&observation(seq, pos, &la, ra, &lb, rb));
+            for (pos, ((la, ta), (lb, tb))) in a.into_iter().zip(b).enumerate() {
+                builder.observe(&observation(seq, pos, &la, &ta, &lb, &tb));
             }
         }
         let null_bank = builder.finish();
@@ -460,10 +487,10 @@ fn q2a_teacher_forced_quality_bank_runs_and_the_gate_refuses_on_positions() {
         let rows = sequence_embeddings(&bank_dir, seq, positions_per_seq, g.hidden);
         let base = run_sequence(&metal, &mut baseline, &rows, g.hidden);
         let cand = run_sequence(&metal, &mut candidate, &rows, g.hidden);
-        for (pos, ((lb, rb), (lc, rc))) in base.into_iter().zip(cand).enumerate() {
-            baseline_l1_routed.extend(rb[overlay_layer].iter().copied());
-            candidate_l1_routed.extend(rc[overlay_layer].iter().copied());
-            builder.observe(&observation(seq, pos, &lb, rb, &lc, rc));
+        for (pos, ((lb, tb), (lc, tc))) in base.into_iter().zip(cand).enumerate() {
+            baseline_l1_routed.extend(tb.routes[overlay_layer].iter().copied());
+            candidate_l1_routed.extend(tc.routes[overlay_layer].iter().copied());
+            builder.observe(&observation(seq, pos, &lb, &tb, &lc, &tc));
         }
     }
     let min_covered = builder.min_covered_mass();
@@ -605,6 +632,29 @@ fn q2a_teacher_forced_quality_bank_runs_and_the_gate_refuses_on_positions() {
         candidate_l1_routed.len(),
         candidate_l1_routed.difference(&baseline_l1_routed).count(),
     );
+    // **Severity, not count.** Whether the changed routes were
+    // near-ties the perturbation nudged across, or decisions the router
+    // held with confidence — the difference the flip count cannot show.
+    if let Some(m) = &bank.routing.route_margin {
+        eprintln!(
+            "[q2a] route margins ({} changes): min {:.3e} p50 {:.3e} p95 {:.3e} max {:.3e}",
+            m.count, m.min, m.p50, m.p95, m.max
+        );
+    }
+    if let Some(m) = &bank.routing.route_weight_mass_moved {
+        eprintln!(
+            "[q2a] mixture mass moved: min {:.4} p50 {:.4} p95 {:.4} max {:.4} \
+             (1.0 = the routed mixture replaced outright)",
+            m.min, m.p50, m.p95, m.max
+        );
+    }
+    if let Some(m) = &bank.top10_margin {
+        eprintln!(
+            "[q2a] top-10 margins at the {} positions that changed: min {:.3e} p50 {:.3e} \
+             p95 {:.3e} max {:.3e}",
+            m.count, m.min, m.p50, m.p95, m.max
+        );
+    }
     // The attribution the shallowest-layer number exists for: a
     // perturbed layer that keeps its OWN routing while later ones move
     // is a cascade through the residual stream, not a different

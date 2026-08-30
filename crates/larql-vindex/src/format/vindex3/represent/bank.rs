@@ -33,7 +33,7 @@
 
 use serde::{Deserialize, Serialize};
 
-use super::quality::{LogitEvidence, QualityBank, RoutingEvidence};
+use super::quality::{Distribution, LogitEvidence, QualityBank, RoutingEvidence};
 
 /// One position, both arms, teacher-forced on the same prefix.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -60,6 +60,41 @@ pub struct PositionObservation {
     /// Selected expert ids per routed layer, in the router's own order.
     pub baseline_routes: Vec<Vec<u32>>,
     pub candidate_routes: Vec<Vec<u32>>,
+    /// **How severe each routing change was**, one entry per layer
+    /// whose selected SET differed. Empty when nothing changed, and
+    /// empty when the runner collected no score evidence.
+    ///
+    /// Counting changes cannot separate a near-tie swap from an
+    /// overturned decision, and those are not the same behavioural
+    /// event; this is what tells them apart.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub route_changes: Vec<RouteChange>,
+    /// The baseline's rank-10-minus-rank-11 logit gap, when this
+    /// position's top-10 changed. `None` when it did not, or when the
+    /// runner supplied no logit ranks beyond the top ten.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub top10_margin: Option<f32>,
+}
+
+/// One layer's routing change, weighed rather than counted.
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+pub struct RouteChange {
+    pub layer: u32,
+    /// Selection-score gap in the BASELINE arm between the last
+    /// selected expert and the best unselected one — the margin the
+    /// perturbation had to cross. Near zero means a near-tie.
+    ///
+    /// From the score the selection ACTUALLY used
+    /// (`sigmoid(logit) + correction_bias` on Kimi), never a raw
+    /// pre-policy logit: the bias selects and the unbiased score
+    /// weighs, so the pre-policy value is the wrong boundary.
+    pub boundary_margin: f32,
+    /// Fraction of this layer's routed combine mass that moved,
+    /// `0.5 * Σ|w_base(e) − w_cand(e)|` over the union of selected
+    /// experts with each arm's weights normalised to sum to one. Zero
+    /// means the swap was between equally-weighted experts; one means
+    /// the mixture was replaced outright.
+    pub weight_mass_moved: f32,
 }
 
 impl PositionObservation {
@@ -91,6 +126,113 @@ impl PositionObservation {
                 log_p.exp() * (log_p - log_q)
             })
             .sum()
+    }
+
+    /// Weigh every layer whose route changed, from the router's own
+    /// selection scores and combine weights.
+    ///
+    /// `scores[layer][expert]` is the biased selection score; `weights`
+    /// is the combine vector the MoE multiplied by, routed entries
+    /// first. Returns one entry per CHANGED layer, in depth order.
+    #[allow(clippy::too_many_arguments)]
+    pub fn weigh_route_changes(
+        baseline_routes: &[Vec<u32>],
+        candidate_routes: &[Vec<u32>],
+        baseline_scores: &[Vec<f32>],
+        baseline_weights: &[Vec<f32>],
+        candidate_weights: &[Vec<f32>],
+    ) -> Vec<RouteChange> {
+        let mut out = Vec::new();
+        for (layer, (b, c)) in baseline_routes.iter().zip(candidate_routes).enumerate() {
+            let (mut bs, mut cs) = (b.clone(), c.clone());
+            bs.sort_unstable();
+            cs.sort_unstable();
+            if bs == cs {
+                continue;
+            }
+            let scores = baseline_scores.get(layer);
+            // The margin: the LOWEST selected score against the highest
+            // score no selected expert holds. Both come from the
+            // baseline, which is the decision the candidate departed
+            // from.
+            let boundary_margin = scores
+                .map(|s| {
+                    let lowest_selected = b
+                        .iter()
+                        .filter_map(|e| s.get(*e as usize))
+                        .copied()
+                        .fold(f32::INFINITY, f32::min);
+                    let best_unselected = s
+                        .iter()
+                        .enumerate()
+                        .filter(|(e, _)| !b.contains(&(*e as u32)))
+                        .map(|(_, v)| *v)
+                        .fold(f32::NEG_INFINITY, f32::max);
+                    (lowest_selected - best_unselected).max(0.0)
+                })
+                .unwrap_or(f32::NAN);
+            out.push(RouteChange {
+                layer: layer as u32,
+                boundary_margin,
+                weight_mass_moved: Self::mass_moved(
+                    b,
+                    c,
+                    baseline_weights.get(layer),
+                    candidate_weights.get(layer),
+                ),
+            });
+        }
+        out
+    }
+
+    /// Half the L1 distance between the two arms' routed mixtures, each
+    /// normalised to sum to one — 0 when the same mass sits on
+    /// different experts to no effect, 1 when the mixture is replaced.
+    fn mass_moved(
+        b_ids: &[u32],
+        c_ids: &[u32],
+        b_w: Option<&Vec<f32>>,
+        c_w: Option<&Vec<f32>>,
+    ) -> f32 {
+        let (Some(b_w), Some(c_w)) = (b_w, c_w) else {
+            return f32::NAN;
+        };
+        // Routed entries only: the shared branch is not routed and its
+        // weight is a constant, so including it would dilute every
+        // number by the same factor and hide the routed movement.
+        let norm = |ids: &[u32], w: &[f32]| -> Vec<(u32, f32)> {
+            let take = ids.len().min(w.len());
+            let sum: f32 = w[..take].iter().sum();
+            if sum == 0.0 {
+                return Vec::new();
+            }
+            ids[..take]
+                .iter()
+                .zip(&w[..take])
+                .map(|(e, v)| (*e, v / sum))
+                .collect()
+        };
+        let (bn, cn) = (norm(b_ids, b_w), norm(c_ids, c_w));
+        if bn.is_empty() || cn.is_empty() {
+            return f32::NAN;
+        }
+        let weight_of = |v: &[(u32, f32)], e: u32| {
+            v.iter()
+                .find(|(id, _)| *id == e)
+                .map(|(_, w)| *w)
+                .unwrap_or(0.0)
+        };
+        let mut union: Vec<u32> = bn
+            .iter()
+            .map(|(e, _)| *e)
+            .chain(cn.iter().map(|(e, _)| *e))
+            .collect();
+        union.sort_unstable();
+        union.dedup();
+        0.5 * union
+            .iter()
+            .map(|e| (weight_of(&bn, *e) - weight_of(&cn, *e)).abs())
+            .sum::<f32>()
     }
 
     pub fn top1_flipped(&self) -> bool {
@@ -137,6 +279,11 @@ pub struct BankBuilder {
     positions_with_route_change: u64,
     layers_with_route_change: std::collections::BTreeSet<usize>,
     min_covered_mass: f64,
+    /// Every changed route's severity, kept per event rather than
+    /// reduced on arrival — the shape of these is the question.
+    route_margins: Vec<f64>,
+    route_masses: Vec<f64>,
+    top10_margins: Vec<f64>,
 }
 
 impl BankBuilder {
@@ -177,6 +324,20 @@ impl BankBuilder {
             }
         }
         self.min_covered_mass = self.min_covered_mass.min(o.covered_mass());
+        // Severity, where the runner supplied it. A NaN means the
+        // evidence was not collected for that event, and it is dropped
+        // rather than folded in as a number.
+        for change in &o.route_changes {
+            if change.boundary_margin.is_finite() {
+                self.route_margins.push(f64::from(change.boundary_margin));
+            }
+            if change.weight_mass_moved.is_finite() {
+                self.route_masses.push(f64::from(change.weight_mass_moved));
+            }
+        }
+        if let Some(m) = o.top10_margin.filter(|m| m.is_finite()) {
+            self.top10_margins.push(f64::from(m));
+        }
     }
 
     /// The smallest baseline mass any position's truncation covered.
@@ -223,8 +384,11 @@ impl BankBuilder {
                     .layers_with_route_change
                     .first()
                     .map(|i| *i as u64),
+                route_margin: Distribution::of(&mut self.route_margins),
+                route_weight_mass_moved: Distribution::of(&mut self.route_masses),
             },
             min_covered_mass: Some(self.min_covered_mass),
+            top10_margin: Distribution::of(&mut self.top10_margins),
         }
     }
 }

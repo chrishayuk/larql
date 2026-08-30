@@ -277,11 +277,35 @@ pub fn take_chain_timing_ms() -> (f64, f64) {
 ///
 /// Ids come back in ROUTER ORDER: the raw execution fact. Deciding that
 /// ordering is irrelevant belongs to the quality metric, not the engine.
-#[derive(Debug, Default, Clone, PartialEq, Eq)]
+#[derive(Debug, Default, Clone, PartialEq)]
 pub struct ExecutionTrace {
     /// One entry per layer in the chain, each `top_k` expert ids. Empty
     /// for a dense layer, which routes nothing.
     pub routes: Vec<Vec<u32>>,
+    /// Ask for the router's own SELECTION SCORES as well — set before
+    /// the call, read after it.
+    ///
+    /// Off by default because serving must not pay for it, but the cost
+    /// is small and worth naming: `experts` floats a layer, ~27 KB for
+    /// a whole Kimi token, read after the chain's single wait like the
+    /// routes are. That is nothing beside the twelve FULL-WIDTH planes
+    /// a layer the traced path reads, which cost 64 ms a token — the
+    /// expensive thing was always the width, never the reading.
+    pub want_selection_scores: bool,
+    /// Per layer, the biased score EVERY expert was ranked by —
+    /// `sigmoid(logit) + correction_bias`, which is the quantity the
+    /// selection actually used, not a raw pre-policy logit.
+    ///
+    /// With it a consumer can ask how CLOSE a routing decision was: the
+    /// gap between the last selected expert's score and the best
+    /// unselected one is the margin the perturbation had to cross.
+    /// Empty unless [`Self::want_selection_scores`] was set.
+    pub selection_scores: Vec<Vec<f32>>,
+    /// Per layer, the combine weights the MoE multiplied by: `top_k`
+    /// routed, then the shared branch's unscaled 1.0. Lets a consumer
+    /// weigh a routing change by how much MIXTURE MASS moved rather
+    /// than counting the change.
+    pub combine_weights: Vec<Vec<f32>>,
 }
 
 /// One layer in a chain. The state travels inside
@@ -879,6 +903,9 @@ fn collect_routes(
         return;
     };
     trace.routes.clear();
+    trace.selection_scores.clear();
+    trace.combine_weights.clear();
+    let want_scores = trace.want_selection_scores;
     for (call, s) in layers.iter().zip(scratch) {
         let top_k = call.weights.ffn.top_k();
         // A dense layer routes nothing, and its `chosen` buffer is the
@@ -889,6 +916,19 @@ fn collect_routes(
         } else {
             read_u32(&s.chosen, top_k)
         });
+        if want_scores {
+            let experts = call.weights.ffn.experts();
+            trace.selection_scores.push(if top_k == 0 {
+                Vec::new()
+            } else {
+                crate::buffers::read_buffer_f32(&s.sel_scores, experts)
+            });
+            trace.combine_weights.push(if top_k == 0 {
+                Vec::new()
+            } else {
+                crate::buffers::read_buffer_f32(&s.weights, call.weights.ffn.slots())
+            });
+        }
     }
 }
 

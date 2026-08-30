@@ -30,8 +30,11 @@ fn clean_bank() -> QualityBank {
             positions_with_route_change: 0,
             layers_with_route_change: 0,
             first_layer_with_route_change: None,
+            route_margin: None,
+            route_weight_mass_moved: None,
         },
         min_covered_mass: None,
+        top10_margin: None,
     }
 }
 
@@ -108,6 +111,8 @@ fn routing_movement_is_distinguishable_from_arithmetic_movement() {
         positions_with_route_change: 5,
         layers_with_route_change: 2,
         first_layer_with_route_change: None,
+        route_margin: None,
+        route_weight_mass_moved: None,
     };
     let rerouted = QualityEvidence {
         gate: gate(),
@@ -177,8 +182,11 @@ fn null_bank() -> QualityBank {
             positions_with_route_change: 0,
             layers_with_route_change: 0,
             first_layer_with_route_change: None,
+            route_margin: None,
+            route_weight_mass_moved: None,
         },
         min_covered_mass: None,
+        top10_margin: None,
     }
 }
 
@@ -248,8 +256,11 @@ fn v2_refuses_a_bank_whose_kl_is_blind_to_the_distribution() {
             positions_with_route_change: 0,
             layers_with_route_change: 0,
             first_layer_with_route_change: None,
+            route_margin: None,
+            route_weight_mass_moved: None,
         },
         min_covered_mass: Some(0.307),
+        top10_margin: None,
     };
     assert!(
         kimi_logit_v1().evaluate(&perfect).passed(),
@@ -265,6 +276,7 @@ fn v2_refuses_a_bank_whose_kl_is_blind_to_the_distribution() {
     // The measured wide truncation clears it.
     let wide = QualityBank {
         min_covered_mass: Some(0.729),
+        top10_margin: None,
         ..perfect.clone()
     };
     assert!(kimi_logit_v2().evaluate(&wide).passed());
@@ -274,6 +286,7 @@ fn v2_refuses_a_bank_whose_kl_is_blind_to_the_distribution() {
     // the unfalsifiable claim this module exists to prevent.
     let silent = QualityBank {
         min_covered_mass: None,
+        top10_margin: None,
         ..perfect
     };
     let verdict = kimi_logit_v2().evaluate(&silent);
