@@ -18,7 +18,7 @@ use larql_vindex::format::vindex3::encode::segment::read_segment_header;
 use larql_vindex::format::vindex3::index::{ContainerAuthority, Vindex3Index};
 use larql_vindex::format::vindex3::inspect::{inspect_container, SystemInspection};
 use larql_vindex::format::vindex3::opplan::exec::operands::{OperandStore, RepresentationSource};
-use larql_vindex::format::vindex3::opplan::OperandRef;
+use larql_vindex::format::vindex3::opplan::{plan_component_ops, LayerFfn, OperandRef};
 use larql_vindex::format::vindex3::represent::nvfp4_pack::{split, PackLayout, DTYPE_NVFP4};
 use larql_vindex::format::vindex3::represent::{compile_representation, RepresentSpec};
 
@@ -96,6 +96,40 @@ pub fn representations_facts(root: &Path) -> Facts {
 /// the numbers themselves, read from the canonical bytes.
 pub fn describe_facts(root: &Path, address: &str, values: usize, peek: Option<&str>) -> Facts {
     let inspection = inspect_container(root, false).map_err(|e| format!("inspect: {e}"))?;
+    if let Some(resolved) = resolve_semantic(root, &inspection, address) {
+        let (role, op) = resolved?;
+        let mut representations: Vec<Value> = Vec::new();
+        for entry in inspection
+            .index
+            .representations
+            .values()
+            .filter(|e| e.object == op.object)
+        {
+            let (header, _) = read_segment_header(&root.join(&entry.segment))
+                .map_err(|e| format!("segment {}: {e}", entry.segment))?;
+            if let Some(t) = header.tensors.iter().find(|t| t.name == op.tensor) {
+                let weights: u128 = t.shape.iter().product::<usize>() as u128;
+                representations.push(json!({
+                    "encoding": entry.encoding,
+                    "dtype": t.dtype,
+                    "bits_per_weight": if weights > 0 { (t.len as u128 * 8) as f64 / weights as f64 } else { 0.0 },
+                    "bytes": t.len,
+                }));
+            }
+        }
+        let store = OperandStore::open(root, &inspection).map_err(|e| format!("open: {e}"))?;
+        let decoded = load_values(&store, &op)?;
+        return Ok(json!({
+            "container": root.display().to_string(),
+            "semantic": address,
+            "role": role,
+            "object": op.object,
+            "tensor": op.tensor,
+            "shape": op.shape,
+            "representations": representations,
+            "values": decoded.iter().take(values).collect::<Vec<_>>(),
+        }));
+    }
     let object = find_object(&inspection, address)?;
     let directory: Vec<Value> = inspection
         .index
@@ -212,6 +246,120 @@ pub fn precision_facts(root: &Path) -> Facts {
         "total_weight_slots": total_weights as u64,
         "stored_bits_per_weight_slot": if total_weights > 0 { (total_bits as f64) / (total_weights as f64) } else { 0.0 },
         "precision_map": index.precision_map,
+    }))
+}
+
+/// `vindex precision --matrix` — bits per weight, per layer and per
+/// semantic role, read from the representation each object would
+/// execute (the compiled pack when one exists, the canonical bytes
+/// otherwise). The rows are the precision map, seen: which cells of
+/// the model carry how many bits.
+pub fn precision_matrix_facts(root: &Path) -> Facts {
+    let inspection = inspect_container(root, false).map_err(|e| format!("inspect: {e}"))?;
+    let component = inspection
+        .graph
+        .components
+        .first()
+        .ok_or("the graph holds no components")?
+        .id
+        .clone();
+    let outcome =
+        plan_component_ops(&inspection, root, &component).map_err(|e| format!("plan: {e}"))?;
+    let plan = outcome
+        .plan
+        .ok_or_else(|| format!("component `{component}` has no plan"))?;
+
+    // Per object: the representation execution would bind — a compiled
+    // pack over the canonical bytes — and its tensor table of
+    // (byte length, weight count) per tensor name.
+    type TensorSizes = std::collections::BTreeMap<String, (u64, u128)>;
+    let mut tables: std::collections::BTreeMap<String, (String, TensorSizes)> =
+        std::collections::BTreeMap::new();
+    for object in &inspection.graph.objects {
+        let canonical = object.representations.first().map(|r| r.encoding.clone());
+        let mut chosen: Option<(
+            &String,
+            &larql_vindex::format::vindex3::index::RepresentationEntry,
+        )> = None;
+        for (id, e) in &inspection.index.representations {
+            if e.object != object.id {
+                continue;
+            }
+            let is_pack = Some(&e.encoding) != canonical.as_ref();
+            match &chosen {
+                None => chosen = Some((id, e)),
+                Some((_, cur)) => {
+                    let cur_is_pack = Some(&cur.encoding) != canonical.as_ref();
+                    if is_pack && !cur_is_pack {
+                        chosen = Some((id, e));
+                    }
+                }
+            }
+        }
+        if let Some((_, entry)) = chosen {
+            let (header, _) = read_segment_header(&root.join(&entry.segment))
+                .map_err(|e| format!("segment {}: {e}", entry.segment))?;
+            let table = header
+                .tensors
+                .into_iter()
+                .map(|t| {
+                    let weights: u128 = t.shape.iter().product::<usize>() as u128;
+                    (t.name, (t.len, weights))
+                })
+                .collect();
+            tables.insert(object.id.clone(), (entry.encoding.clone(), table));
+        }
+    }
+    let bits_of = |op: &OperandRef| -> Option<f64> {
+        let (_, table) = tables.get(&op.object)?;
+        let (len, weights) = table.get(&op.tensor)?;
+        if *weights == 0 {
+            return None;
+        }
+        Some((*len as u128 * 8) as f64 / *weights as f64)
+    };
+
+    const ROLES: [&str; 7] = ["gate", "up", "down", "q", "k", "v", "o"];
+    let mut rows: Vec<Value> = Vec::new();
+    for layer in &plan.layers {
+        let mut cells = serde_json::Map::new();
+        if let Some(ffn) = layer.ffn.dense() {
+            if let Some(g) = &ffn.gate {
+                if let Some(b) = bits_of(g) {
+                    cells.insert("gate".into(), json!(b));
+                }
+            }
+            if let Some(b) = bits_of(&ffn.up) {
+                cells.insert("up".into(), json!(b));
+            }
+            if let Some(b) = bits_of(&ffn.down) {
+                cells.insert("down".into(), json!(b));
+            }
+        }
+        if let Some(attn) = layer.attention.softmax() {
+            for (name, op) in [
+                ("q", &attn.q),
+                ("k", &attn.k),
+                ("v", &attn.v),
+                ("o", &attn.o),
+            ] {
+                if let Some(b) = bits_of(op) {
+                    cells.insert(name.into(), json!(b));
+                }
+            }
+        }
+        rows.push(json!({ "layer": layer.layer, "bits": Value::Object(cells) }));
+    }
+    let sources: Vec<Value> = tables
+        .iter()
+        .map(|(object, (encoding, _))| json!({ "object": object, "representation": encoding }))
+        .collect();
+    Ok(json!({
+        "container": root.display().to_string(),
+        "component": component,
+        "roles": ROLES,
+        "rows": rows,
+        "sources": sources,
     }))
 }
 
@@ -348,6 +496,84 @@ fn open_side(
     Ok((store, tensors))
 }
 
+/// A semantic address, resolved through the container's own operation
+/// plan — the graph's judgement of what each tensor IS, never a
+/// filename convention. `layer.N.ffn.{gate|up|down}` (mlp accepted)
+/// and `layer.N.attention.{q|k|v|o}` (attn accepted). Returns the
+/// role label with the operand.
+fn resolve_semantic(
+    root: &Path,
+    inspection: &SystemInspection,
+    address: &str,
+) -> Option<Result<(String, OperandRef), String>> {
+    let parts: Vec<&str> = address.split('.').collect();
+    let [lit, layer, family, role] = parts.as_slice() else {
+        return None;
+    };
+    if *lit != "layer" {
+        return None;
+    }
+    let n: usize = layer.parse().ok()?;
+    let family = match *family {
+        "ffn" | "mlp" => "ffn",
+        "attention" | "attn" => "attention",
+        _ => return None,
+    };
+    let component = inspection.graph.components.first()?.id.clone();
+    let go = || -> Result<(String, OperandRef), String> {
+        let outcome =
+            plan_component_ops(inspection, root, &component).map_err(|e| format!("plan: {e}"))?;
+        let plan = outcome
+            .plan
+            .ok_or_else(|| format!("component `{component}` has no plan"))?;
+        let layer_plan = plan
+            .layers
+            .get(n)
+            .ok_or_else(|| format!("layer {n} — the plan holds layers 0..{}", plan.layers.len()))?;
+        match family {
+            "ffn" => {
+                let ffn = layer_plan.ffn.dense().ok_or_else(|| {
+                    let kind = match &layer_plan.ffn {
+                        LayerFfn::Routed(_) => "a routed (mixture-of-experts) FFN",
+                        LayerFfn::Hybrid(_) => "a hybrid FFN",
+                        LayerFfn::Dense(_) => unreachable!(),
+                    };
+                    format!(
+                        "layer {n} carries {kind} — per-expert addressing is not yet a CLI surface"
+                    )
+                })?;
+                let (label, op) = match *role {
+                    "gate" => (
+                        "FFN GATE PROJECTION",
+                        ffn.gate.as_ref().ok_or_else(|| {
+                            format!("layer {n}'s FFN is ungated — no gate operand")
+                        })?,
+                    ),
+                    "up" => ("FFN UP PROJECTION", &ffn.up),
+                    "down" => ("FFN DOWN PROJECTION", &ffn.down),
+                    other => return Err(format!("unknown ffn role `{other}` — gate, up, down")),
+                };
+                Ok((label.to_string(), op.clone()))
+            }
+            "attention" => {
+                let attn = layer_plan.attention.softmax().ok_or_else(|| {
+                    format!("layer {n} does not attend by softmax — its projections are the recurrence's, not q/k/v/o")
+                })?;
+                let (label, op) = match *role {
+                    "q" => ("ATTENTION QUERY PROJECTION", &attn.q),
+                    "k" => ("ATTENTION KEY PROJECTION", &attn.k),
+                    "v" => ("ATTENTION VALUE PROJECTION", &attn.v),
+                    "o" => ("ATTENTION OUTPUT PROJECTION", &attn.o),
+                    other => return Err(format!("unknown attention role `{other}` — q, k, v, o")),
+                };
+                Ok((label.to_string(), op.clone()))
+            }
+            _ => unreachable!(),
+        }
+    };
+    Some(go())
+}
+
 /// Decode one tensor to f32, whatever the container stored it as. The
 /// arithmetic for a packed encoding is the spec's — `tensor_scale ·
 /// e4m3(group scale) · e2m1(code)` — so what the diff compares is what
@@ -391,7 +617,15 @@ pub fn diff_facts(
     tensor_filter: Option<&str>,
 ) -> Facts {
     let inspection = inspect_container(root, false).map_err(|e| format!("inspect: {e}"))?;
-    let object = find_object(&inspection, address)?.id.clone();
+    let mut semantic_tensor: Option<String> = None;
+    let object = if let Some(resolved) = resolve_semantic(root, &inspection, address) {
+        let (_, op) = resolved?;
+        semantic_tensor = Some(op.tensor);
+        op.object
+    } else {
+        find_object(&inspection, address)?.id.clone()
+    };
+    let tensor_filter = semantic_tensor.as_deref().or(tensor_filter);
     let (encoding_a, encoding_b) = (encoding_a.to_uppercase(), encoding_b.to_uppercase());
     let (store_a, tensors_a) = open_side(root, &inspection, &object, &encoding_a)?;
     let (store_b, tensors_b) = open_side(root, &inspection, &object, &encoding_b)?;
@@ -400,6 +634,12 @@ pub fn diff_facts(
         .map(|(n, d, s)| (n.as_str(), (d.as_str(), s)))
         .collect();
 
+    // A semantic address names ONE tensor: the diff scopes to it, so
+    // the result is that tensor's answer rather than the object's.
+    let tensors_a: Vec<TensorEntry> = match &semantic_tensor {
+        Some(t) => tensors_a.into_iter().filter(|(n, _, _)| n == t).collect(),
+        None => tensors_a,
+    };
     let mut rows: Vec<Value> = Vec::new();
     let mut head: Option<Value> = None;
     let mut worst: f64 = -1.0;

@@ -10,8 +10,8 @@ use larql_vindex::format::vindex3::fixtures::{
     dense_f32_model, encode_fixture_container, miniature_glimmer,
 };
 use vindex_cli::{
-    describe_facts, diff_facts, inspect_facts, precision_facts, represent_facts,
-    representations_facts, verify_facts,
+    describe_facts, diff_facts, inspect_facts, precision_facts, precision_matrix_facts,
+    represent_facts, representations_facts, verify_facts,
 };
 
 fn container() -> tempfile::TempDir {
@@ -156,6 +156,45 @@ fn diff_refuses_an_encoding_the_container_does_not_hold() {
     let object = report["compiled"][0]["object"].as_str().unwrap();
     let err = diff_facts(out.path(), "F32", "INT8", object, 4, None).unwrap_err();
     assert!(err.contains("the container holds"), "{err}");
+}
+
+#[test]
+fn semantic_addresses_resolve_through_the_plan_not_filenames() {
+    let (out, _) = compiled_container();
+    let v = describe_facts(out.path(), "layer.0.ffn.down", 4, None).unwrap();
+    assert_eq!(v["role"], "FFN DOWN PROJECTION", "{v}");
+    assert_eq!(v["values"].as_array().unwrap().len(), 4, "{v}");
+    let encs: Vec<&str> = v["representations"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .filter_map(|r| r["encoding"].as_str())
+        .collect();
+    assert!(encs.contains(&"NVFP4"), "{v}");
+
+    let err = describe_facts(out.path(), "layer.99.ffn.down", 4, None).unwrap_err();
+    assert!(err.contains("the plan holds layers"), "{err}");
+}
+
+#[test]
+fn a_semantic_diff_scopes_to_its_one_tensor() {
+    let (out, _) = compiled_container();
+    let v = diff_facts(out.path(), "F32", "NVFP4", "layer.0.ffn.down", 4, None).unwrap();
+    assert_eq!(v["tensors"].as_array().unwrap().len(), 1, "{v}");
+    assert!(v["rms_error"].as_f64().unwrap() > 0.0, "{v}");
+}
+
+#[test]
+fn the_precision_matrix_reads_the_compiled_representation() {
+    let (out, _) = compiled_container();
+    let v = precision_matrix_facts(out.path()).unwrap();
+    let rows = v["rows"].as_array().unwrap();
+    assert!(!rows.is_empty(), "{v}");
+    let down = rows[0]["bits"]["down"].as_f64().unwrap();
+    assert!(
+        (down - 4.5).abs() < 0.1,
+        "compiled down at {down} — expected ~4.5\n{v}"
+    );
 }
 
 #[test]
