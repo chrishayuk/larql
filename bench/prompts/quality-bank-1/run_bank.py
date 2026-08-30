@@ -69,7 +69,11 @@ def read_execution_facts(stdout):
     to be recorded, because it is invisible in the numbers until they
     come out as an exact zero.
     """
-    facts = {"executed": None, "source": None, "objects_from_pack": None,
+    # `requested` is what the backend ASKED for; the evidence that it was
+    # actually consumed is `objects_from_pack` being non-zero with
+    # `runtime_compiled` at zero. Naming the first one "executed" would
+    # be the same conflation that produced the false null.
+    facts = {"requested": None, "source": None, "objects_from_pack": None,
              "objects_total": None, "runtime_compiled": 0}
     for line in stdout.splitlines():
         if line.startswith("runtime compile:"):
@@ -77,7 +81,7 @@ def read_execution_facts(stdout):
         elif line.startswith("representation:"):
             # representation: NVFP4  source: stored  objects from a compiled pack: 1/5
             body = line.split("representation:", 1)[1]
-            facts["executed"] = body.split()[0]
+            facts["requested"] = body.split()[0]
             if "source:" in body:
                 facts["source"] = body.split("source:", 1)[1].split()[0]
             if "pack:" in body:
@@ -107,7 +111,7 @@ def assert_candidate_executed_its_representation(container_id, facts, label):
     if not declared:
         return
     want = declared.get("encoding")
-    got = facts.get("executed")
+    got = facts.get("requested")
     if got != want:
         raise SystemExit(
             f"{label}: the candidate's precision map declares `{want}`, but the run "
@@ -118,7 +122,14 @@ def assert_candidate_executed_its_representation(container_id, facts, label):
         )
     if not facts.get("objects_from_pack"):
         raise SystemExit(
-            f"{label}: reported `{want}` but bound no object from a compiled pack."
+            f"{label}: requested `{want}` but bound no object from a compiled pack, so "
+            f"nothing of that representation was actually consumed."
+        )
+    if facts.get("source") == "stored" and facts.get("runtime_compiled"):
+        raise SystemExit(
+            f"{label}: {facts['runtime_compiled']} tensor(s) were quantised at load under "
+            f"`stored`. The arm measured a representation manufactured now, not the one "
+            f"the artifact carries."
         )
 
 
