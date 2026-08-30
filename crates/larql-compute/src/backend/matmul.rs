@@ -398,6 +398,70 @@ mod tests {
     /// the sequential calls: one output per matrix, in order, each the
     /// row its own kernel produced (the NVFP4 tensor scale reaches the
     /// per-matrix call).
+    /// **The bf16 trait defaults answer, and answer conservatively.**
+    ///
+    /// A backend with no bf16 kernel must say `None` rather than decode
+    /// the codes some other way: bf16 is the top 16 bits of an f32 and
+    /// f16 is not, so a caller handed the wrong decoder gets unrelated
+    /// numbers rather than a rounding difference. `bf16_gemv_force`
+    /// delegates to `bf16_gemv`, and `bf16_gemv_multi` is the
+    /// sequential force gemvs — so a backend overrides the multi only
+    /// for the submission win, never for different arithmetic.
+    #[test]
+    fn the_bf16_defaults_decline_rather_than_guess() {
+        let b = SingleGemvBackend;
+        let bytes = vec![0u8; N * K * 2];
+        let x = vec![1.0f32; K];
+        assert_eq!(
+            b.bf16_gemv(&bytes, &x, N, K),
+            None,
+            "no bf16 kernel means None, never an f16 decode of the same bytes"
+        );
+        assert_eq!(
+            b.bf16_gemv_force(&bytes, &x, N, K),
+            None,
+            "force delegates to the same answer"
+        );
+        assert_eq!(
+            b.bf16_gemv_multi(&[(&bytes[..], N, K), (&bytes[..], N, K)], &x),
+            None,
+            "a multi over declining gemvs declines as a whole, rather than \
+             returning a shorter list a caller would index blindly"
+        );
+    }
+
+    /// A backend that DOES implement `bf16_gemv` gets the multi default
+    /// for free, in argument order — the property that makes overriding
+    /// it a pure submission optimisation.
+    #[test]
+    fn the_bf16_multi_default_is_the_sequential_gemvs_in_order() {
+        const BF16_MARK: f32 = 116.0;
+        struct Bf16Backend;
+        impl MatMul for Bf16Backend {
+            fn matmul(&self, a: ArrayView2<f32>, b: ArrayView2<f32>) -> Array2<f32> {
+                a.dot(&b)
+            }
+            fn matmul_transb(&self, a: ArrayView2<f32>, b: ArrayView2<f32>) -> Array2<f32> {
+                a.dot(&b.t())
+            }
+            fn bf16_gemv(&self, _w: &[u8], _x: &[f32], n: usize, _k: usize) -> Option<Vec<f32>> {
+                Some(vec![BF16_MARK; n])
+            }
+        }
+        let b = Bf16Backend;
+        let bytes = vec![0u8; N * K * 2];
+        let x = vec![1.0f32; K];
+        let second_n = N + 3;
+        let got = b
+            .bf16_gemv_multi(&[(&bytes[..], N, K), (&bytes[..], second_n, K)], &x)
+            .expect("a backend with a kernel answers");
+        assert_eq!(
+            got,
+            vec![vec![BF16_MARK; N], vec![BF16_MARK; second_n]],
+            "results follow the ARGUMENT order and each keeps its own width"
+        );
+    }
+
     #[test]
     fn multi_defaults_are_the_sequential_single_gemvs_in_order() {
         let b = SingleGemvBackend;
