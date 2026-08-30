@@ -336,6 +336,42 @@ For the 3.0 release history, the drill's one-sentence result:
 > already-known abstractions; it found no missing abstraction required
 > to describe the four hostile architectures.**
 
+## The first live witness
+
+**2026-08-30, same day** — `AntonV/mamba2-780m-hf` (the HF-format
+conversion of `state-spaces/mamba2-780m`; the original repos ship
+`pytorch_model.bin` only), run header-only through
+`scripts/hf_metadata_checkpoint.py` → `inspect-hf` → `vindex3 plan`:
+
+- **Finding zero, before the ontology was even consulted:** the
+  transformers-written `config.json` carries a bare `Infinity`
+  (`time_step_limit`), which the RFC-strict reader refuses at parse. A
+  judged interpretation of non-finite bounds at exactly one boundary —
+  the NoPE zero-theta discipline — is part of the schema-6 bring-up.
+- **F1/F3 observed live, not just predicted:** the generic fallback
+  resolved the pure-SSM stack as 48 full-attention RoPE layers with
+  invented 8/4 head geometry (`generic_fallback: true` flagged; config
+  says `num_heads: 48`). The census failed open exactly as the drill
+  said.
+- **Admission still refused — the layered defence held:** `plan: 20
+  representable, 19 blocking — not admissible`. Eighteen unconsumed
+  Mamba2 keys (`state_size`, `num_heads`, `expand`, `chunk_size`,
+  `conv_kernel`, `n_groups`, `time_step_{floor,limit,max,min}`,
+  `time_step_rank`, `rms_norm`, `layer_norm_epsilon`,
+  `residual_in_fp32`, `rescale_prenorm_residual`, `use_bias`,
+  `use_conv_bias`, `hidden_act`) plus `target.execution_surface`
+  incomplete (norm placement underivable from `backbone.layers.N.norm`).
+  Those nineteen findings **are** the schema-6 worklist for the pure
+  case, itemised by the format itself. F3's sharpened statement: the
+  fail-open is real, but a checkpoint only reaches encode through it if
+  every declared key also grades consumed — Mamba2's do not.
+- The graph builder placed `target.decoder_stack` (432 tensors, 1.4 GB),
+  `target.embedding` and `target.final_norm` cleanly from the tensor
+  estate — the object ontology needed nothing new, as case 1 predicted.
+- Logistics for the A/B: `state-spaces/mamba2attn-2.7b` also ships
+  `pytorch_model.bin` only — the hybrid witness needs a
+  bin→safetensors conversion before admission.
+
 ## Closure log
 
 - **2026-08-30, same day:** F13 closed (flattened preservation map on
