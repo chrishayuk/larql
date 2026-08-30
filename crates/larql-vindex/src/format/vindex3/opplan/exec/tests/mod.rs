@@ -23,23 +23,23 @@ mod device;
 mod gated_delta_parity;
 mod gated_delta_tiny;
 mod hybrid_traversal;
-#[cfg(feature = "gpu")]
+#[cfg(all(feature = "gpu", target_os = "macos"))]
 mod kda_metal;
 mod kda_parity;
 mod kda_parity_real;
 mod kda_refusal;
 mod kimi_kda_layer_real;
-#[cfg(feature = "gpu")]
+#[cfg(all(feature = "gpu", target_os = "macos"))]
 mod kimi_layer_metal;
 mod kimi_mla_layer_real;
 mod kimi_moe_block;
-#[cfg(feature = "gpu")]
+#[cfg(all(feature = "gpu", target_os = "macos"))]
 mod kimi_moe_metal;
 mod kimi_moe_real;
 mod kimi_router;
-#[cfg(feature = "gpu")]
+#[cfg(all(feature = "gpu", target_os = "macos"))]
 mod kimi_two_layer;
-#[cfg(feature = "gpu")]
+#[cfg(all(feature = "gpu", target_os = "macos"))]
 mod mla_metal;
 mod mla_parity;
 mod mla_refusal;
@@ -47,7 +47,7 @@ mod mrope_parity;
 mod output_gate_fused;
 mod plan_fixtures;
 mod projection_bench;
-#[cfg(feature = "gpu")]
+#[cfg(all(feature = "gpu", target_os = "macos"))]
 mod q2a_teacher_forced;
 mod qw36c_layer0;
 mod stack_dispatch_refusal;
@@ -62,7 +62,7 @@ mod gated_delta_refusal;
 mod gemma4;
 mod gemma4_refusals;
 mod generate_baseline;
-#[cfg(feature = "gpu")]
+#[cfg(all(feature = "gpu", target_os = "macos"))]
 mod generate_metal;
 mod generate_real;
 mod golden;
