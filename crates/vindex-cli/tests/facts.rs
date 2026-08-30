@@ -10,8 +10,8 @@ use larql_vindex::format::vindex3::fixtures::{
     dense_f32_model, encode_fixture_container, hybrid_lllf_f32_model, miniature_glimmer,
 };
 use vindex_cli::{
-    describe_facts, diff_facts, inspect_facts, precision_facts, precision_matrix_facts,
-    represent_facts, representations_facts, verify_facts,
+    describe_facts, diff_facts, inspect_facts, layers_facts, precision_facts,
+    precision_matrix_facts, represent_facts, representations_facts, verify_facts,
 };
 
 fn container() -> tempfile::TempDir {
@@ -185,15 +185,20 @@ fn a_semantic_diff_scopes_to_its_one_tensor() {
 }
 
 #[test]
-fn the_precision_matrix_reads_the_compiled_representation() {
+fn the_precision_matrix_reads_the_compiled_representation_by_programme() {
     let (out, _) = compiled_container();
     let v = precision_matrix_facts(out.path()).unwrap();
-    let rows = v["rows"].as_array().unwrap();
-    assert!(!rows.is_empty(), "{v}");
+    let programmes = v["programmes"].as_array().unwrap();
+    assert!(!programmes.is_empty(), "{v}");
+    let rows = programmes[0]["rows"].as_array().unwrap();
     let down = rows[0]["bits"]["down"].as_f64().unwrap();
     assert!(
         (down - 4.5).abs() < 0.1,
         "compiled down at {down} — expected ~4.5\n{v}"
+    );
+    assert!(
+        !v["surfaces"].as_array().unwrap().is_empty(),
+        "embedding/head surfaces expected: {v}"
     );
 }
 
@@ -209,11 +214,51 @@ fn a_deltanet_layer_refuses_qkvo_and_a_full_attention_layer_answers() {
     );
     // LLLF cadence: layers 0–2 are GatedDelta recurrences, layer 3 attends.
     let err = describe_facts(dir.path(), "layer.0.attention.q", 2, None).unwrap_err();
-    assert!(err.contains("does not attend by softmax"), "{err}");
+    assert!(err.contains("token mixer is GATED DELTANET"), "{err}");
+    assert!(err.contains("layer.0.mixer"), "{err}");
 
     let v = describe_facts(dir.path(), "layer.3.attention.q", 2, None).unwrap();
     assert_eq!(v["role"], "ATTENTION QUERY PROJECTION", "{v}");
     assert_eq!(v["values"].as_array().unwrap().len(), 2, "{v}");
+}
+
+#[test]
+fn the_mixer_is_a_first_class_semantic_component() {
+    let checkpoint = tempfile::tempdir().unwrap();
+    let dir = tempfile::tempdir().unwrap();
+    encode_fixture_container(
+        hybrid_lllf_f32_model,
+        checkpoint.path(),
+        dir.path(),
+        "vindex-cli-hybrid",
+    );
+    let v = describe_facts(dir.path(), "layer.0.mixer", 2, None).unwrap();
+    assert_eq!(v["mixer"], "GATED DELTANET", "{v}");
+    let roles: Vec<&str> = v["operands"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .filter_map(|o| o["role"].as_str())
+        .collect();
+    assert!(roles.contains(&"fused recurrent q|k|v"), "{roles:?}");
+    assert!(roles.contains(&"decay projection"), "{roles:?}");
+
+    let v = describe_facts(dir.path(), "layer.3.mixer", 2, None).unwrap();
+    assert!(
+        v["mixer"] == "SOFTMAX ATTENTION" || v["mixer"] == "GATED ATTENTION",
+        "{v}"
+    );
+
+    let l = layers_facts(dir.path()).unwrap();
+    let mixers: Vec<&str> = l["layers"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .filter_map(|r| r["mixer"].as_str())
+        .collect();
+    assert_eq!(mixers.len(), 4, "{l}");
+    assert_eq!(mixers[0], "GATED DELTANET", "{l}");
+    assert_ne!(mixers[3], "GATED DELTANET", "{l}");
 }
 
 #[test]

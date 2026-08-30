@@ -18,7 +18,9 @@ use larql_vindex::format::vindex3::encode::segment::read_segment_header;
 use larql_vindex::format::vindex3::index::{ContainerAuthority, Vindex3Index};
 use larql_vindex::format::vindex3::inspect::{inspect_container, SystemInspection};
 use larql_vindex::format::vindex3::opplan::exec::operands::{OperandStore, RepresentationSource};
-use larql_vindex::format::vindex3::opplan::{plan_component_ops, LayerFfn, OperandRef};
+use larql_vindex::format::vindex3::opplan::{
+    plan_component_ops, ComponentOpPlan, LayerFfn, LayerPlan, OperandRef,
+};
 use larql_vindex::format::vindex3::represent::nvfp4_pack::{split, PackLayout, DTYPE_NVFP4};
 use larql_vindex::format::vindex3::represent::{compile_representation, RepresentSpec};
 
@@ -96,6 +98,33 @@ pub fn representations_facts(root: &Path) -> Facts {
 /// the numbers themselves, read from the canonical bytes.
 pub fn describe_facts(root: &Path, address: &str, values: usize, peek: Option<&str>) -> Facts {
     let inspection = inspect_container(root, false).map_err(|e| format!("inspect: {e}"))?;
+    // `layer.N.mixer` — the token mixer as a first-class semantic
+    // component: its programme, and every operand with the role the
+    // plan assigns it. Architecture-neutral by construction.
+    if let Some(n) = address
+        .strip_prefix("layer.")
+        .and_then(|r| r.strip_suffix(".mixer"))
+        .and_then(|n| n.parse::<usize>().ok())
+    {
+        let (_, plan) = primary_plan(root, &inspection)?;
+        let layer = plan
+            .layers
+            .get(n)
+            .ok_or_else(|| format!("layer {n} — the plan holds layers 0..{}", plan.layers.len()))?;
+        let operands: Vec<Value> = mixer_operands(layer)
+            .into_iter()
+            .map(|(role, op)| {
+                json!({ "role": role, "tensor": op.tensor, "shape": op.shape, "dtype": op.dtype })
+            })
+            .collect();
+        return Ok(json!({
+            "container": root.display().to_string(),
+            "semantic": address,
+            "mixer": mixer_label(layer),
+            "layer": n,
+            "operands": operands,
+        }));
+    }
     if let Some(resolved) = resolve_semantic(root, &inspection, address) {
         let (role, op) = resolved?;
         let mut representations: Vec<Value> = Vec::new();
@@ -249,25 +278,42 @@ pub fn precision_facts(root: &Path) -> Facts {
     }))
 }
 
+/// `vindex layers` — every layer's token-mixer programme, from the
+/// plan. Three seconds of terminal that says why a hybrid model is an
+/// interesting quantization subject.
+pub fn layers_facts(root: &Path) -> Facts {
+    let inspection = inspect_container(root, false).map_err(|e| format!("inspect: {e}"))?;
+    let (component, plan) = primary_plan(root, &inspection)?;
+    let rows: Vec<Value> = plan
+        .layers
+        .iter()
+        .map(|l| {
+            let ffn = match &l.ffn {
+                LayerFfn::Dense(_) => "dense",
+                LayerFfn::Routed(_) => "routed",
+                LayerFfn::Hybrid(_) => "hybrid",
+            };
+            json!({ "layer": l.layer, "mixer": mixer_label(l), "ffn": ffn })
+        })
+        .collect();
+    Ok(json!({
+        "container": root.display().to_string(),
+        "component": component,
+        "layers": rows,
+    }))
+}
+
 /// `vindex precision --matrix` — bits per weight, per layer and per
 /// semantic role, read from the representation each object would
 /// execute (the compiled pack when one exists, the canonical bytes
-/// otherwise). The rows are the precision map, seen: which cells of
-/// the model carry how many bits.
+/// otherwise). Programme-aware: layers are grouped by their token
+/// mixer, each group carrying the columns its programme actually has,
+/// and the model's other surfaces (embedding, head, towers) are
+/// listed with their own derived bits. No architecture is forced into
+/// another's schema.
 pub fn precision_matrix_facts(root: &Path) -> Facts {
     let inspection = inspect_container(root, false).map_err(|e| format!("inspect: {e}"))?;
-    let component = inspection
-        .graph
-        .components
-        .first()
-        .ok_or("the graph holds no components")?
-        .id
-        .clone();
-    let outcome =
-        plan_component_ops(&inspection, root, &component).map_err(|e| format!("plan: {e}"))?;
-    let plan = outcome
-        .plan
-        .ok_or_else(|| format!("component `{component}` has no plan"))?;
+    let (component, plan) = primary_plan(root, &inspection)?;
 
     // Per object: the representation execution would bind — a compiled
     // pack over the canonical bytes — and its tensor table of
@@ -319,10 +365,29 @@ pub fn precision_matrix_facts(root: &Path) -> Facts {
         Some((*len as u128 * 8) as f64 / *weights as f64)
     };
 
-    const ROLES: [&str; 7] = ["gate", "up", "down", "q", "k", "v", "o"];
-    let mut rows: Vec<Value> = Vec::new();
+    // Group layers by programme; each group's columns are what its
+    // programme actually computes with.
+    let short = |role: &str| -> &'static str {
+        match role {
+            "query" => "q",
+            "key" => "k",
+            "value" => "v",
+            "output" => "o",
+            "output gate" => "zgate",
+            "fused recurrent q|k|v" => "qkv",
+            "decay projection" => "decay",
+            "write-strength projection" => "write",
+            "output-gate projection" => "zgate",
+            "causal conv over q|k|v" => "conv",
+            "output projection" => "out",
+            _ => "",
+        }
+    };
+    let mut programmes: Vec<(String, Vec<String>, Vec<Value>)> = Vec::new();
     for layer in &plan.layers {
+        let label = mixer_label(layer).to_string();
         let mut cells = serde_json::Map::new();
+        let mut roles: Vec<String> = vec!["gate".into(), "up".into(), "down".into()];
         if let Some(ffn) = layer.ffn.dense() {
             if let Some(g) = &ffn.gate {
                 if let Some(b) = bits_of(g) {
@@ -336,30 +401,66 @@ pub fn precision_matrix_facts(root: &Path) -> Facts {
                 cells.insert("down".into(), json!(b));
             }
         }
-        if let Some(attn) = layer.attention.softmax() {
-            for (name, op) in [
-                ("q", &attn.q),
-                ("k", &attn.k),
-                ("v", &attn.v),
-                ("o", &attn.o),
-            ] {
-                if let Some(b) = bits_of(op) {
-                    cells.insert(name.into(), json!(b));
-                }
+        for (role, op) in mixer_operands(layer) {
+            let col = short(role);
+            if col.is_empty() {
+                continue;
+            }
+            roles.push(col.to_string());
+            if let Some(b) = bits_of(&op) {
+                cells.insert(col.to_string(), json!(b));
             }
         }
-        rows.push(json!({ "layer": layer.layer, "bits": Value::Object(cells) }));
+        let row = json!({ "layer": layer.layer, "bits": Value::Object(cells) });
+        match programmes.iter_mut().find(|(l, _, _)| *l == label) {
+            Some((_, _, rows)) => rows.push(row),
+            None => programmes.push((label, roles, vec![row])),
+        }
     }
-    let sources: Vec<Value> = tables
+    // The model's other surfaces: every object outside the layer plan,
+    // at the bits its bound representation derives to.
+    let planned: std::collections::BTreeSet<String> = plan
+        .layers
         .iter()
-        .map(|(object, (encoding, _))| json!({ "object": object, "representation": encoding }))
+        .flat_map(|l| {
+            let mut ops: Vec<String> = mixer_operands(l)
+                .into_iter()
+                .map(|(_, o)| o.object)
+                .collect();
+            if let Some(ffn) = l.ffn.dense() {
+                if let Some(g) = &ffn.gate {
+                    ops.push(g.object.clone());
+                }
+                ops.push(ffn.up.object.clone());
+                ops.push(ffn.down.object.clone());
+            }
+            ops
+        })
+        .collect();
+    let surfaces: Vec<Value> = tables
+        .iter()
+        .filter(|(object, _)| !planned.contains(*object))
+        .map(|(object, (encoding, table))| {
+            let (bits, weights) = table.values().fold((0u128, 0u128), |(b, w), (len, n)| {
+                (b + *len as u128 * 8, w + n)
+            });
+            json!({
+                "object": object,
+                "representation": encoding,
+                "bits_per_weight": if weights > 0 { bits as f64 / weights as f64 } else { 0.0 },
+            })
+        })
         .collect();
     Ok(json!({
         "container": root.display().to_string(),
         "component": component,
-        "roles": ROLES,
-        "rows": rows,
-        "sources": sources,
+        "programmes": programmes.into_iter().map(|(label, roles, rows)| json!({
+            "label": label,
+            "layers": rows.len(),
+            "roles": roles,
+            "rows": rows,
+        })).collect::<Vec<Value>>(),
+        "surfaces": surfaces,
     }))
 }
 
@@ -496,6 +597,74 @@ fn open_side(
     Ok((store, tensors))
 }
 
+fn primary_plan(
+    root: &Path,
+    inspection: &SystemInspection,
+) -> Result<(String, ComponentOpPlan), String> {
+    let component = inspection
+        .graph
+        .components
+        .first()
+        .ok_or("the graph holds no components")?
+        .id
+        .clone();
+    let outcome =
+        plan_component_ops(inspection, root, &component).map_err(|e| format!("plan: {e}"))?;
+    let plan = outcome
+        .plan
+        .ok_or_else(|| format!("component `{component}` has no plan"))?;
+    Ok((component, plan))
+}
+
+/// The token mixer's programme label, from the plan — never inferred
+/// from a name.
+fn mixer_label(layer: &LayerPlan) -> &'static str {
+    match layer.attention.softmax() {
+        Some(attn) => {
+            if attn.output_gate.is_some() {
+                "GATED ATTENTION"
+            } else {
+                "SOFTMAX ATTENTION"
+            }
+        }
+        None => "GATED DELTANET",
+    }
+}
+
+/// The mixer's operands, each with the semantic role the plan assigns.
+fn mixer_operands(layer: &LayerPlan) -> Vec<(&'static str, OperandRef)> {
+    match layer.attention.softmax() {
+        Some(attn) => {
+            let mut ops = vec![
+                ("query", attn.q.clone()),
+                ("key", attn.k.clone()),
+                ("value", attn.v.clone()),
+                ("output", attn.o.clone()),
+            ];
+            if let Some(g) = &attn.output_gate {
+                ops.push(("output gate", g.projection.clone()));
+            }
+            ops
+        }
+        None => {
+            let Some(gd) = layer.attention.gated_delta() else {
+                return Vec::new();
+            };
+            vec![
+                ("fused recurrent q|k|v", gd.in_proj_qkv.clone()),
+                ("decay projection", gd.in_proj_a.clone()),
+                ("write-strength projection", gd.in_proj_b.clone()),
+                ("output-gate projection", gd.in_proj_z.clone()),
+                ("causal conv over q|k|v", gd.conv1d.clone()),
+                ("log decay", gd.a_log.clone()),
+                ("timestep bias", gd.dt_bias.clone()),
+                ("gated norm", gd.norm.clone()),
+                ("output projection", gd.out_proj.clone()),
+            ]
+        }
+    }
+}
+
 /// A semantic address, resolved through the container's own operation
 /// plan — the graph's judgement of what each tensor IS, never a
 /// filename convention. `layer.N.ffn.{gate|up|down}` (mlp accepted)
@@ -557,7 +726,7 @@ fn resolve_semantic(
             }
             "attention" => {
                 let attn = layer_plan.attention.softmax().ok_or_else(|| {
-                    format!("layer {n} does not attend by softmax — its projections are the recurrence's, not q/k/v/o")
+                    format!("layer {n} has no softmax-attention component — its token mixer is GATED DELTANET; try `describe layer.{n}.mixer`")
                 })?;
                 let (label, op) = match *role {
                     "q" => ("ATTENTION QUERY PROJECTION", &attn.q),
