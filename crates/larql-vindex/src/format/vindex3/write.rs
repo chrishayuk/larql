@@ -10,7 +10,7 @@
 //!
 //! ```text
 //! <root>/
-//! ├── index.json           schema 3 — the root authority (§12)
+//! ├── index.json           schema 4 (V3 reads the 3–4 span) — the root authority (§12)
 //! ├── moe_manifest.json    which programme interprets the banks (§8)
 //! └── <segment key>.lyrw   LYRW v2 bank files (§6)
 //! ```

@@ -1,10 +1,13 @@
 # VINDEX3 Runtime — the VI3 inference stack
 
-Status: describes the runtime as landed through the VI3-INF-0..3, VI3-KV-1
-and VI3-SERVE-1 rungs. The container format itself is specified in
-`docs/vindex3-format.md` and `crates/larql-vindex/docs/vindex3-format-spec.md`;
-this document covers what happens *after* a container exists: how it is
-opened, executed, given continuation state, and served.
+Status: as of 2026-08-30 — describes the runtime as landed through the
+VI3-INF-0..3, VI3-KV-1 and VI3-SERVE-1 rungs, plus the OpenAI-surface
+completion of 2026-08-22 (`/v1/chat/completions` and `/v1/responses` V3
+arms). The container format itself is specified in
+`crates/larql-vindex/docs/vindex3-format-spec.md` (the 3.0 Candidate) and
+`docs/vindex3-format.md` (the living spec); this document is the **State
+and Serving contract**: what happens *after* a container exists — how it
+is opened, executed, given continuation state, and served.
 
 ---
 
@@ -164,7 +167,7 @@ declared.
 
 ---
 
-## 5. Serving — binding fork, `V3Model`, `/v1/completions`
+## 5. Serving — binding fork, `V3Model`, the OpenAI surfaces
 
 The V2/V3 distinction is decided **once**, at model binding.
 `bootstrap::load_artifact` (`crates/larql-server/src/bootstrap/`)
@@ -210,8 +213,21 @@ the SSE assembly, the response structs), so the two runtimes cannot
 drift apart in what a client sees; only the token source differs. The
 buffered path runs under the same 504-and-detach server-side timeout
 contract as V2, and streaming emits identical chunk shapes, stop
-handling, and `[DONE]` termination. (`/v1/chat/completions` has no V3
-arm yet — completions is the SERVE-1 vertical slice.)
+handling, and `[DONE]` termination.
+
+The other OpenAI surfaces have V3 arms through the same single decision
+point (`AppState::served`):
+
+- `/v1/chat/completions` — `routes/openai/chat/v3.rs`, dispatched from
+  `chat/handler.rs`. Tools and structured output (N0.6) run through the
+  **same** schema → FSM → logits-mask pipeline as V2.
+- `/v1/responses` — `routes/openai/responses/engine.rs`
+  (`ResponsesEngine::V3`), bound in `responses/handler.rs`.
+- `/v1/models` lists V3 containers with their generation
+  (`routes/models.rs`), and `/v1/runtime` / stats report them
+  (`routes/runtime.rs`, `routes/stats.rs`) — a served container never
+  silently disappears from a listing surface (the M3 consumer contract,
+  `docs/vindex-generation-policy.md`).
 
 Per-request cost note: every request opens a fresh session, which loads
 the plan's operands (`DecodeSession::new` keeps weights resident per
@@ -235,7 +251,11 @@ shared resident session/operand pool is later, perf-shaped work.
 - `larql serve` — the server. The positional container path (or every
   `.vindex` directory under `--dir`) passes through
   `bootstrap::load_artifact`; V3 containers register into the
-  `v3_models` registry and serve over `/v1/completions` as above.
-  The other `larql vindex3` verbs (`plan`, `encode`, `inspect`,
-  `verify`, `ops`) belong to the container build/gate pipeline — see
-  `docs/vindex3-format.md`.
+  `v3_models` registry and serve over `/v1/completions`,
+  `/v1/chat/completions` and `/v1/responses` as above.
+  The other `larql vindex3` verbs belong to the container build/gate
+  and representation pipelines — `plan`, `encode`, `inspect`, `verify`,
+  `ops` (see `docs/vindex3-format.md`) and `represent`, `sensitivity`,
+  `consequence` (representation compilation and its quality
+  instruments). The format-native read-only surface is the standalone
+  `vindex` binary (candidate spec §18.3).

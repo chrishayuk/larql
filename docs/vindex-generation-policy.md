@@ -49,6 +49,7 @@ surface that cannot produce the requested generation refuses by name.
 | CLI | `larql extract --generation {v2\|v3}` | `--generation v3` encodes; omitted = policy |
 | Factory | `extractor.options.generation: "v2"\|"v3"` → forwarded as `--generation` | absent = tool policy; a pin participates in `build_id` |
 | V3 producer | `larql vindex3 encode <hf-artifacts>` | the multi-artifact system encoder |
+| Bank import | `larql extract-index --expert-banks native --expert-banks-out DIR` | writes a V3 container in the **bank shape** (candidate spec §5.4): `moe_manifest.json` + LYRW segments, no system graph — the transitional import layout, not the graph shape the four surfaces above produce |
 
 ### What a V3 request produces
 
@@ -81,9 +82,9 @@ same `bind_v3_session` block `USE` uses — gated by an equality test, so
 `EXTRACT` cannot grow a second binding path that drifts.
 
 Binding needs no policy: `detect_generation` (`index.json` schema
-version, the sole discriminator — no filename or shape sniffing) already
-dispatches `USE`, the server bootstrap, and `DIFF` operands, and fails
-closed on unknown schemas.
+version, the sole discriminator — no filename or shape sniffing; V2 spans
+schemas 1–2, V3 spans 3–4) already dispatches `USE`, the server
+bootstrap, and `DIFF` operands, and fails closed on unknown schemas.
 
 ## Cross-generation contract: prompt encoding
 
@@ -158,6 +159,19 @@ previously went unadvertised — a binding that understates what it serves
 is the same class of problem as a listing that hides what exists.
 
 ## Rungs to the flip
+
+Three ladders touch VINDEX3 and measure different things — the crosswalk,
+so no reader mistakes one for another:
+
+- **M1–M4** (this document) — the *migration* ladder: when V3 becomes the
+  default generation.
+- **G0–G8** (`docs/vindex3-format.md` §2) — the *capability* ladder: what
+  the graph pipeline can prove, from inventory to alternate plans.
+- **V2-0..V2-4 / E-rows** (`docs/vindex3-experiments.md`) — the *bank-ABI*
+  ladder: the pre-registered gates that freeze the LYRW/manifest bytes.
+
+M4 does not wait on G8 or on the bank-ABI freeze; its evidence rows are
+named below.
 
 - **M1 — the seam. DONE** (PR #290): policy type, pinned default,
   explicit request spellings on every surface, refusals instead of
