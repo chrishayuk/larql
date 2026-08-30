@@ -692,12 +692,27 @@ fn debug_names_the_store_and_encoding() {
     assert_eq!(r.store_id(), "candidate");
     assert_eq!(ExpertEncoding::Q4K.name(), "Q4_K");
     assert_eq!(ExpertEncoding::Q6K.name(), "Q6_K");
+    assert_eq!(ExpertEncoding::Q80.name(), "Q8_0");
     assert_eq!(ExpertEncoding::Bf16.name(), "BF16");
     // Q-format geometry refuses a k that is not whole superblocks.
     assert!(ExpertEncoding::Q6K.matrix_bytes(4, 255).is_err());
     assert_eq!(ExpertEncoding::Q6K.matrix_bytes(4, 256).unwrap(), 4 * 210);
     assert_eq!(ExpertEncoding::Q4K.matrix_bytes(4, 256).unwrap(), 4 * 144);
+    // Q8_0's block is 32 elements, so a k Q6_K refuses can still encode —
+    // and a k that is not whole 32-blocks refuses too.
+    assert!(ExpertEncoding::Q80.matrix_bytes(4, 33).is_err());
+    assert_eq!(ExpertEncoding::Q80.matrix_bytes(4, 96).unwrap(), 4 * 3 * 34);
     assert_eq!(ExpertEncoding::Bf16.matrix_bytes(4, 8).unwrap(), 64);
+    // The name round-trips through parse for every encoding a grouped
+    // kernel reads.
+    for enc in [
+        ExpertEncoding::Bf16,
+        ExpertEncoding::Q80,
+        ExpertEncoding::Q6K,
+        ExpertEncoding::Q4K,
+    ] {
+        assert_eq!(ExpertEncoding::parse(enc.name()), Some(enc));
+    }
 }
 
 /// **Each projection answers about ITS OWN addressing**, including the

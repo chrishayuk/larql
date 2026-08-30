@@ -121,6 +121,9 @@ pub struct ProjectionBank<'a> {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ExpertEncoding {
     Bf16,
+    /// Canonical ggml Q8_0: 34-byte blocks of 32 (f16 scale + 32 int8),
+    /// 8.5 bpw — the precision ladder's rung between BF16 and Q6_K.
+    Q80,
     Q6K,
     Q4K,
 }
@@ -129,6 +132,7 @@ impl ExpertEncoding {
     pub fn name(self) -> &'static str {
         match self {
             ExpertEncoding::Bf16 => "BF16",
+            ExpertEncoding::Q80 => "Q8_0",
             ExpertEncoding::Q6K => "Q6_K",
             ExpertEncoding::Q4K => "Q4_K",
         }
@@ -139,6 +143,7 @@ impl ExpertEncoding {
     pub fn matrix_bytes(self, n: usize, k: usize) -> Option<usize> {
         match self {
             ExpertEncoding::Bf16 => Some(n * k * 2),
+            ExpertEncoding::Q80 => k.is_multiple_of(32).then(|| n * k / 32 * 34),
             ExpertEncoding::Q6K | ExpertEncoding::Q4K => k.is_multiple_of(256).then(|| {
                 let per = if self == ExpertEncoding::Q6K {
                     210

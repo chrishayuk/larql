@@ -68,6 +68,9 @@ pub struct QuantKernels {
     pub q6k_grouped_experts_pipeline: KernelHandle,
     /// Q4_K sibling — what the engine's MoE down projection needs.
     pub q4k_grouped_experts_pipeline: KernelHandle,
+    /// Q8_0 sibling — the precision ladder's middle rung (8.5 bpw),
+    /// canonical ggml 34-byte blocks. Same grouped ABI as the other two.
+    pub q8_0_grouped_experts_pipeline: KernelHandle,
 
     /// K2 layout/decode tournament: four MXFP4 grouped-expert arms that read
     /// the same weights through different scale layouts and decode strategies.
@@ -209,6 +212,8 @@ impl QuantKernels {
             h::<shaders::q6k_grouped_experts::Kernel>(device, library);
         let q4k_grouped_experts_pipeline =
             h::<shaders::q4k_grouped_experts::Kernel>(device, library);
+        let q8_0_grouped_experts_pipeline =
+            h::<shaders::q8_0_grouped_experts::Kernel>(device, library);
 
         let mxfp4g_split_lut16_pipeline =
             h::<shaders::mxfp4_grouped_experts::KernelSplitLut16>(device, library);
@@ -285,6 +290,7 @@ impl QuantKernels {
             nvfp4_matvec_x2m_pipeline,
             q6k_grouped_experts_pipeline,
             q4k_grouped_experts_pipeline,
+            q8_0_grouped_experts_pipeline,
             mxfp4g_split_lut16_pipeline,
             mxfp4g_split_lut16_vec_pipeline,
             mxfp4g_inter_lut16_pipeline,

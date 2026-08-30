@@ -310,6 +310,86 @@ impl MetalBackend {
         bank.0
     }
 
+    /// One grouped dispatch under a NAMED encoding, end to end.
+    ///
+    /// The encoding-aware sibling of `bf16_grouped_experts`: bounds are
+    /// checked against the encoding's OWN per-expert stride (a Q8_0 bank
+    /// is smaller than the BF16 arithmetic it stands in for, so the BF16
+    /// validator would demand bytes that rightly do not exist), and the
+    /// handle comes from `grouped_handle_for`, so this cannot pair bytes
+    /// with another encoding's kernel. This is the direct gate for a
+    /// grouped kernel's decode: quantise a bank, dispatch, compare with
+    /// the CPU dequantised reference.
+    pub fn grouped_experts_encoded(
+        &self,
+        encoding: super::ExpertEncoding,
+        weights: &[u8],
+        offsets: &[ExpertOffset],
+        x: &[f32],
+        shape: GroupedShape,
+    ) -> Result<Vec<f32>, GroupedError> {
+        if offsets.is_empty() {
+            return Err(GroupedError::NoExpertsSelected);
+        }
+        let per_expert = encoding
+            .matrix_bytes(shape.n, shape.k)
+            .ok_or(GroupedError::KNotSuperblockAligned { k: shape.k })?;
+        for (slot, off) in offsets.iter().enumerate() {
+            let need = off.0 as usize + per_expert;
+            if need > weights.len() {
+                return Err(GroupedError::OffsetOutOfRange {
+                    slot,
+                    offset: off.0,
+                    need,
+                    have: weights.len(),
+                });
+            }
+        }
+        let x_needed = match shape.layout {
+            InputLayout::Shared => shape.k,
+            InputLayout::PerSlot => shape.k * offsets.len(),
+        };
+        if x.len() < x_needed {
+            return Err(GroupedError::OffsetOutOfRange {
+                slot: 0,
+                offset: 0,
+                need: x_needed,
+                have: x.len(),
+            });
+        }
+
+        let (buf_w, w_offset) = self.bufs().weights(weights);
+        let buf_o = self.offset_table(offsets);
+        let buf_x = self.bufs().transient_from_f32(&x[..x_needed]);
+        let buf_out = self.bufs().output((offsets.len() * shape.n * 4) as u64);
+
+        let cmd = self.queue().new_command_buffer();
+        let enc = cmd.new_compute_command_encoder();
+        encode_grouped(
+            enc,
+            self.grouped_handle_for(encoding),
+            GroupedBinding {
+                w: &buf_w,
+                w_offset,
+                offsets: &buf_o,
+                x: &buf_x,
+                out: &buf_out,
+            },
+            offsets.len(),
+            shape,
+        );
+        enc.end_encoding();
+        cmd.commit();
+        let _ = crate::cb_status::wait_checked(
+            cmd,
+            "crates/larql-compute-metal/src/trait_impl/kimi_layer/ffn.rs:encoded",
+        );
+        Ok(crate::buffers::read_buffer_f32(
+            &buf_out,
+            offsets.len() * shape.n,
+        ))
+    }
+
     /// The grouped kernel that reads this encoding.
     ///
     /// All three share one binding ABI, so this is a handle swap and
@@ -317,6 +397,7 @@ impl MetalBackend {
     fn grouped_handle_for(&self, encoding: super::ExpertEncoding) -> &crate::kernels::KernelHandle {
         match encoding {
             super::ExpertEncoding::Bf16 => self.default_grouped_handle(),
+            super::ExpertEncoding::Q80 => &self.quant.q8_0_grouped_experts_pipeline,
             super::ExpertEncoding::Q6K => &self.quant.q6k_grouped_experts_pipeline,
             super::ExpertEncoding::Q4K => &self.quant.q4k_grouped_experts_pipeline,
         }

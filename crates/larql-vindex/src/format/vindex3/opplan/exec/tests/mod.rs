@@ -48,6 +48,7 @@ mod output_gate_fused;
 mod plan_fixtures;
 mod projection_bench;
 #[cfg(all(feature = "gpu", target_os = "macos"))]
+mod q2a_decode_bench;
 mod q2a_teacher_forced;
 mod qw36c_layer0;
 mod stack_dispatch_refusal;

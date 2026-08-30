@@ -1,29 +1,32 @@
-//! **Q2a — the teacher-forced quality runner, 1024 positions.**
-//!
-//! Two arms through the real mixed Metal stack, loaded from the source
-//! VINDEX3 container itself:
+//! **The teacher-forced quality runner** — two arms through the real
+//! mixed Metal stack, loaded from the source VINDEX3 container itself:
 //!
 //! ```text
-//! baseline    every routed layer  -> source expert_bank   (BF16, Table)
-//! candidate   layer 1 routed      -> compiled Q6_K bank   (Identity)
-//!             everything else     -> the SAME source stores
+//! baseline    every routed layer   -> source expert_bank   (BF16, Table)
+//! candidate   the overlay's layers -> compiled banks       (Identity,
+//!             each at its map's encoding — Q8_0, Q6_K, or a composed
+//!             map holding several layers at different encodings)
+//!             everything else      -> the SAME source stores
 //! ```
 //!
-//! The single changed variable is layer 1's routed ExpertWeight
-//! representation: BF16 source bytes vs the exact persistent Q6_K bytes
-//! the compiler sealed. Router, norms, attention, shared experts, state
-//! initialisation and the teacher-forced token prefix are identical by
-//! construction — and asserted, not assumed.
+//! The changed variable is exactly the candidate's compiled scope:
+//! source BF16 bytes vs the persistent bytes the compiler sealed.
+//! Router, norms, attention, shared experts, state initialisation and
+//! the teacher-forced token prefix are identical by construction — and
+//! asserted, not assumed, per compiled layer.
 //!
-//! **This run is NON-PROMOTABLE by design**: 1024 positions is under
-//! `kimi-logit-v1`'s `positions_min` of 4096, so the gate must refuse
-//! however flattering the metrics are. Its product is the machinery and
-//! the closure report, not a verdict; Q2b runs the full 8192.
+//! **The verdict semantics follow scale.** Below `positions_min` (4096)
+//! this is a DIAGNOSTIC: the gate must refuse on positions however
+//! flattering the numbers, and the harness asserts that refusal. At
+//! 8192 (`LARQL_Q2A_SEQUENCES=256`) the verdict IS the product — frozen
+//! `kimi-logit-v3` decides, the report is written BEFORE any verdict
+//! assertion, and a FAIL is a result, not a harness failure.
 //!
 //! ```text
-//! LARQL_KIMI_VINDEX3=~/chris-models/Kimi-Linear-48B-A3B-Instruct.vindex3 \
-//! LARQL_KIMI_Q6_CANDIDATE=/tmp/kimi-q6-candidate.vindex3 \
+//! LARQL_KIMI_VINDEX3=~/chris-models/Kimi-Linear-48B-A3B-Instruct.aligned.vindex3 \
+//! LARQL_KIMI_Q6_CANDIDATE=/tmp/kimi-q80-l25.vindex3 \
 //! LARQL_KIMI_QUALITY_BANK=/tmp/kimi_quality_bank \
+//! LARQL_Q2A_SEQUENCES=8 LARQL_Q2A_LABEL=q80-l25 \
 //!   cargo test -p larql-vindex --features gpu --release --lib q2a_teacher_forced -- --nocapture
 //! ```
 
@@ -48,9 +51,9 @@ use crate::format::vindex3::represent::quality::{
     kimi_logit_v1, kimi_logit_v2, kimi_logit_v3, Criterion, QualityEvidence,
 };
 
-const SOURCE_ENV: &str = "LARQL_KIMI_VINDEX3";
-const CANDIDATE_ENV: &str = "LARQL_KIMI_Q6_CANDIDATE";
-const BANK_ENV: &str = "LARQL_KIMI_QUALITY_BANK";
+pub(super) const SOURCE_ENV: &str = "LARQL_KIMI_VINDEX3";
+pub(super) const CANDIDATE_ENV: &str = "LARQL_KIMI_Q6_CANDIDATE";
+pub(super) const BANK_ENV: &str = "LARQL_KIMI_QUALITY_BANK";
 
 /// Q2a's slice of the exported bank: 32 of the 256 sequences.
 ///
@@ -95,7 +98,7 @@ fn report_path(label: &str) -> String {
     format!("/tmp/kimi_{label}_report.json")
 }
 
-fn env_dir(var: &str) -> Option<PathBuf> {
+pub(super) fn env_dir(var: &str) -> Option<PathBuf> {
     std::env::var_os(var).map(PathBuf::from)
 }
 
@@ -277,7 +280,12 @@ fn weigh_top_1(baseline: &[f32], candidate: &[f32]) -> Option<Top1Change> {
 }
 
 /// Per-sequence embedding rows from the exported bank.
-fn sequence_embeddings(dir: &Path, seq: usize, positions: usize, hidden: usize) -> Vec<Vec<f32>> {
+pub(super) fn sequence_embeddings(
+    dir: &Path,
+    seq: usize,
+    positions: usize,
+    hidden: usize,
+) -> Vec<Vec<f32>> {
     let bytes = std::fs::read(dir.join(format!("seq_{seq}.f32")))
         .unwrap_or_else(|e| panic!("seq_{seq}.f32: {e}"));
     assert_eq!(
@@ -297,7 +305,7 @@ fn sequence_embeddings(dir: &Path, seq: usize, positions: usize, hidden: usize) 
 
 /// Build one arm: every layer on device, the head riding the last
 /// epoch. `overlay` present = the candidate arm.
-fn build_stack<'a>(
+pub(super) fn build_stack<'a>(
     metal: &MetalBackend,
     model: &KimiSourceModel,
     overlay: Option<&CandidateOverlay>,
@@ -397,7 +405,17 @@ fn q2a_teacher_forced_quality_bank_runs_and_the_gate_refuses_on_positions() {
         t0.elapsed().as_secs_f64(),
         overlay.compiled_layers()
     );
+    // The EARLIEST compiled layer (verify_complete sorts): the one
+    // layer whose router input is untouched in BOTH arms, so its own
+    // routing must be identical — the cascade/local discriminator. A
+    // composed map's later compiled layers see moved hidden states and
+    // may legitimately route differently.
     let overlay_layer = overlay.compiled_layers()[0] as usize;
+    let compiled_set: Vec<usize> = overlay
+        .compiled_layers()
+        .iter()
+        .map(|&l| l as usize)
+        .collect();
 
     // ── Load both arms; the loader refuses on any missing operand. ──
     let t1 = Instant::now();
@@ -417,13 +435,15 @@ fn q2a_teacher_forced_quality_bank_runs_and_the_gate_refuses_on_positions() {
         t1.elapsed().as_secs_f64()
     );
 
-    // ── Physical attribution: the intended stores are the bound ones. ──
-    {
+    // ── Physical attribution: the intended stores are the bound ones,
+    //    at EVERY compiled layer — a composed map earns the check per
+    //    layer, at that layer's own encoding. ──
+    for &probe_layer in &compiled_set {
         let probe_b = model
-            .device_layer(&metal, overlay_layer, None)
+            .device_layer(&metal, probe_layer, None)
             .expect("baseline probe layer");
         let probe_c = model
-            .device_layer(&metal, overlay_layer, Some(&overlay))
+            .device_layer(&metal, probe_layer, Some(&overlay))
             .expect("candidate probe layer");
         // The BASELINE arm is entirely source-backed, whatever the
         // candidate's scope.
@@ -455,7 +475,12 @@ fn q2a_teacher_forced_quality_bank_runs_and_the_gate_refuses_on_positions() {
         ] {
             let want_candidate = compiled.contains(&spelling);
             let (store, enc) = if want_candidate {
-                ("kimi-q6-candidate", ExpertEncoding::Q6K)
+                (
+                    "kimi-candidate-bank",
+                    overlay
+                        .encoding_of(probe_layer as u32)
+                        .expect("the probed layer is compiled"),
+                )
             } else {
                 ("kimi-source-expert-bank", ExpertEncoding::Bf16)
             };
@@ -487,7 +512,7 @@ fn q2a_teacher_forced_quality_bank_runs_and_the_gate_refuses_on_positions() {
             // table-addressed over the source, and that asymmetry
             // inside one layer is the thing this binding exists to
             // express.
-            let is_candidate = proj.store_id() == "kimi-q6-candidate";
+            let is_candidate = proj.store_id() == "kimi-candidate-bank";
             match (&proj.addressing, is_candidate) {
                 (ProjectionAddressing::Identity { experts, .. }, true) => assert_eq!(
                     *experts, g.experts,
@@ -507,21 +532,12 @@ fn q2a_teacher_forced_quality_bank_runs_and_the_gate_refuses_on_positions() {
         assert_eq!(shared.gate.encoding, ExpertEncoding::Bf16);
         // A layer the overlay does NOT compile is the same physical
         // bytes in both arms — pointer-identical, not merely same-named.
-        // A layer the overlay does NOT compile. The one after,
-        // normally — but the deepest layer has none after it, and the
-        // probe's claim is about a source-precision NEIGHBOUR, not
-        // about direction.
-        let neighbour = if overlay_layer + 1 < g.num_layers {
-            overlay_layer + 1
-        } else {
-            overlay_layer - 1
-        };
-        assert!(
-            neighbour < g.num_layers
-                && neighbour >= g.dense_prefix_layers
-                && !overlay.compiled_layers().contains(&(neighbour as u32)),
-            "the neighbour probe needs a routed source-precision layer"
-        );
+        // A layer the overlay does NOT compile — the first routed one
+        // outside the compiled set. A composed map may compile a whole
+        // band, so "the one after" is not necessarily source-backed.
+        let neighbour = (g.dense_prefix_layers..g.num_layers)
+            .find(|l| !compiled_set.contains(l))
+            .expect("the neighbour probe needs a routed source-precision layer");
         let nb = model.device_layer(&metal, neighbour, None).expect("nb");
         let nc = model
             .device_layer(&metal, neighbour, Some(&overlay))
@@ -533,15 +549,19 @@ fn q2a_teacher_forced_quality_bank_runs_and_the_gate_refuses_on_positions() {
             "layer {neighbour} must be the SAME mapped bytes in both arms"
         );
         let checked = overlay
-            .verify_reads_match_seals(overlay_layer as u32, 16)
+            .verify_reads_match_seals(probe_layer as u32, 16)
             .expect("the bytes the loader reads must be the bytes the compiler sealed");
         eprintln!(
-            "[q2a] attribution: {} — compiled projections {:?} from q6-candidate/Q6_K, the \
-             rest source/BF16 and pointer-identical to the baseline; shared from decoder \
+            "[q2a] attribution: {} — compiled projections {:?} from kimi-candidate-bank/{}, \
+             the rest source/BF16 and pointer-identical to the baseline; shared from decoder \
              stack in both; layer {neighbour} pointer-identical; {checked} compiled operands \
              hash-match their seals",
             overlay.scope(),
             compiled,
+            overlay
+                .encoding_of(probe_layer as u32)
+                .expect("the probed layer is compiled")
+                .name(),
         );
     }
 
@@ -650,7 +670,13 @@ fn q2a_teacher_forced_quality_bank_runs_and_the_gate_refuses_on_positions() {
         "min_covered_mass": min_covered,
         "stores": {
             "baseline_layer1_routed": "kimi-source-expert-bank (BF16, Table)",
-            "candidate_layer1_routed": "kimi-q6-candidate (Q6_K, Identity)",
+            "candidate_layer1_routed": format!(
+                "kimi-candidate-bank ({}, Identity)",
+                overlay
+                    .encoding_of(overlay_layer as u32)
+                    .expect("the probed layer is compiled")
+                    .name()
+            ),
             "shared_experts": "kimi-source-decoder-stack (BF16, both arms)",
         },
         "layer1_routed_experts": {

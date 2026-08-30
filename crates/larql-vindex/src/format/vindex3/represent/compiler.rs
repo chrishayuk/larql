@@ -28,7 +28,9 @@ use std::path::Path;
 use serde::{Deserialize, Serialize};
 
 use super::arena::{RepresentationArena, SourceOperands};
-use super::compile::{hash_bytes, CompilationLedger, LayerBankLayout, OperandSeal, Pending};
+use super::compile::{
+    hash_bytes, CandidatePlacement, CompilationLedger, LayerBankLayout, OperandSeal, Pending,
+};
 use super::map::{Precision, PrecisionMap};
 use super::policy::{layer_of, projection_of, Role};
 use super::selection::Promotion;
@@ -203,14 +205,24 @@ impl CandidateIndex {
         object: impl Into<String>,
         map: PrecisionMap,
     ) -> Self {
-        let encoding = map.encoding.clone();
+        // Every encoding the map can put bytes in: the default plus
+        // each exception's. A composed map (Q8_0 band + a Q6_K layer)
+        // states both, so a promotion can select either honestly.
+        let mut can_represent_as = vec![map.encoding.clone()];
+        for e in &map.exceptions {
+            if let Some(enc) = &e.encoding {
+                if !can_represent_as.contains(enc) {
+                    can_represent_as.push(enc.clone());
+                }
+            }
+        }
         Self {
             model: model.into(),
             source,
             object: object.into(),
             ledger: CompilationLedger::new(map.name.clone()),
             map,
-            can_represent_as: vec![encoding],
+            can_represent_as,
             // Compiled bytes are not authority. Nothing but a promotion
             // moves this.
             selected_representation: "source".into(),
@@ -291,6 +303,58 @@ pub fn compile_expert_bank(
         .open(out)?;
     let mut outcome = CompileOutcome::default();
 
+    // The compiled layer set decides each layer's base in the segment,
+    // so it is derived ONCE, from the whole scope this run was handed —
+    // a per-tensor derivation would let two runs over different subsets
+    // of one map write the same layer at two bases.
+    let mut compiled_layers: Vec<u32> = Vec::new();
+    let mut geometry: Option<(usize, usize)> = None;
+    for t in tensors {
+        // Geometry is a property of the family, not of the scope: a
+        // w2-only map still needs the gate/up shape to place banks.
+        if let Some(proj) = projection_of(&t.name) {
+            if matches!(proj, "w1" | "w3" | "gate_proj" | "up_proj") {
+                let [rows, cols] = t.shape[..] else {
+                    // Refuse the malformed tensor BY NAME here rather
+                    // than skipping it — a skip would surface later as
+                    // "no gate/up tensor", a message that denies this
+                    // tensor exists.
+                    return Err(VindexError::Parse(format!(
+                        "tensor `{}` is not a matrix: {:?}",
+                        t.name, t.shape
+                    )));
+                };
+                geometry = Some((cols, rows)); // (hidden, inter)
+            }
+        }
+        if matches!(index.map.resolve(role, &t.name), Precision::Source) {
+            continue;
+        }
+        if let Some(layer) = layer_of(&t.name) {
+            compiled_layers.push(layer);
+        }
+    }
+    compiled_layers.sort_unstable();
+    compiled_layers.dedup();
+    let placement = match (&compiled_layers[..], geometry) {
+        ([], _) => None,
+        (_, Some((hidden, inter))) => Some(CandidatePlacement::resolve(
+            &index.map,
+            role,
+            &compiled_layers,
+            experts,
+            hidden,
+            inter,
+        )?),
+        (_, None) => {
+            return Err(VindexError::Parse(
+                "the scope compiles operands but holds no gate/up tensor to take the \
+                 bank geometry from"
+                    .into(),
+            ))
+        }
+    };
+
     for t in tensors {
         let encoding = match index.map.resolve(role, &t.name) {
             Precision::Source => {
@@ -315,9 +379,22 @@ pub fn compile_expert_bank(
                 t.name, t.shape
             )));
         };
+        let placement = placement
+            .as_ref()
+            .expect("a compiled tensor implies a placement");
         // Strides come from the projection SHAPES, so gate/up and down
-        // are distinguished by geometry rather than by trusting a name.
+        // are distinguished by geometry rather than by trusting a name —
+        // and they must agree with the placement's own derivation, or
+        // this tensor is not the shape its layer's bank was placed for.
         let layout = LayerBankLayout::new(layer, &encoding, experts, cols, rows)?;
+        let placed = placement.layout(layer)?;
+        if *placed != layout {
+            return Err(VindexError::Parse(format!(
+                "tensor `{}`: shape/encoding disagree with the placement's layout for \
+                 layer {layer} ({placed:?} vs {layout:?})",
+                t.name
+            )));
+        }
         let slot = layout.slot(projection, expert)?;
 
         let operand = OperandRef {
@@ -328,9 +405,23 @@ pub fn compile_expert_bank(
         };
         let stored = source.load_stored(&operand)?;
         let source_hash = hash_bytes(&stored.bytes);
-        // Per-projection bank base, so w1/w2/w3 do not overlap.
-        let base = bank_base(&layout, projection)?;
-        let offset = base + slot.offset;
+        // Layer base first (composed maps hold several layers), then
+        // the per-projection bank base so w1/w2/w3 do not overlap.
+        let offset = placement.layer_base(layer)? + bank_base(&layout, projection)? + slot.offset;
+
+        // A seal written under a DIFFERENT placement — a rerun handed a
+        // subset of the map's layers would recompute every base — must
+        // refuse, not silently overwrite another layer's bytes.
+        if let Some(seal) = index.ledger.get(object, &t.name) {
+            if seal.target_offset != offset {
+                return Err(VindexError::Parse(format!(
+                    "tensor `{}` is sealed at offset {} but this run's placement puts it \
+                     at {offset} — the scope differs from the one the ledger was written \
+                     under; pass the map's full layer scope or start a fresh candidate",
+                    t.name, seal.target_offset
+                )));
+            }
+        }
 
         match index
             .ledger

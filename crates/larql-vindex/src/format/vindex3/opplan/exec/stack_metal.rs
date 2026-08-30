@@ -312,6 +312,7 @@ fn device_region(r: &EncodedRegion) -> DeviceRegion<'_> {
         bytes: r.region.bytes(),
         encoding: match r.encoding {
             PhysEncoding::Bf16 => ExpertEncoding::Bf16,
+            PhysEncoding::Q80 => ExpertEncoding::Q80,
             PhysEncoding::Q6K => ExpertEncoding::Q6K,
             PhysEncoding::Q4K => ExpertEncoding::Q4K,
         },

@@ -709,6 +709,7 @@ fn a_kda_layer_and_an_mla_layer_share_one_command_buffer() {
 
 mod addressing;
 mod dense;
+mod encoding;
 mod head;
 mod shared;
 

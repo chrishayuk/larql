@@ -261,6 +261,79 @@ fn a_shape_that_would_straddle_superblocks_is_refused() {
     assert!(format!("{err}").contains("superblock"), "{err}");
 }
 
+/// Q8_0 is encoded through the canonical ggml codec — byte-identical to
+/// `quantize_q8_0` over the same widened values, and the round trip is
+/// bounded by the format's own quantisation step. This is the arm the
+/// precision ladder's middle rung compiles candidates with, so the
+/// bytes must be exactly what the grouped kernel's decode gate proved.
+#[test]
+fn q8_0_is_encoded_canonically_and_round_trips_within_its_scale() {
+    use larql_compute::cpu::ops::q4_common::{dequantize_q8_0, quantize_q8_0};
+
+    let c = FakeContainer::new().with("3.mlp.experts.7.down_proj.weight", 0.3);
+    let arena = RepresentationArena::new(PrecisionMap {
+        encoding: "Q8_0".into(),
+        ..scoped_map(None)
+    });
+    let op = operand("3.mlp.experts.7.down_proj.weight");
+    let got = arena
+        .resolve(&c, Role::ExpertWeight, &op)
+        .expect("resolves");
+    assert_eq!(got.encoding, "Q8_0");
+    // 34 bytes per 32-element block.
+    assert_eq!(got.bytes.len(), K / 32 * 34);
+
+    // The values the arena encoded are the widened stored bytes, so the
+    // canonical codec over the same values must agree byte for byte.
+    let stored = c.load_stored(&op).expect("stored");
+    let widened: Vec<f32> = stored
+        .bytes
+        .chunks_exact(2)
+        .map(|p| f32::from_bits((u16::from_le_bytes([p[0], p[1]]) as u32) << 16))
+        .collect();
+    assert_eq!(*got.bytes, quantize_q8_0(&widened));
+
+    // Round trip bounded per block: half a step (amax/254) plus the f16
+    // scale's own rounding (2^-11 relative).
+    let decoded = dequantize_q8_0(&got.bytes, K).expect("decodes");
+    for (b, (vals, deqs)) in widened.chunks(32).zip(decoded.chunks(32)).enumerate() {
+        let amax = vals.iter().map(|v| v.abs()).fold(0.0f32, f32::max);
+        let bound = amax * (1.0 / 254.0 + 1.0 / 1024.0);
+        for (v, d) in vals.iter().zip(deqs) {
+            assert!(
+                (v - d).abs() <= bound,
+                "block {b}: |{v} - {d}| exceeds the format's own step {bound}"
+            );
+        }
+    }
+}
+
+/// Q8_0's block is 32 elements: a tensor that is not a whole number of
+/// them is refused, for the same shared-scale reason as the K-quants.
+#[test]
+fn q8_0_refuses_a_shape_that_straddles_its_blocks() {
+    let mut c = FakeContainer::new();
+    c.tensors.insert(
+        (
+            "target.expert_bank".into(),
+            "3.mlp.experts.7.down_proj.weight".into(),
+        ),
+        vec![0.5f32; K + 16],
+    );
+    let arena = RepresentationArena::new(PrecisionMap {
+        encoding: "Q8_0".into(),
+        ..scoped_map(None)
+    });
+    let err = arena
+        .resolve(
+            &c,
+            Role::ExpertWeight,
+            &operand("3.mlp.experts.7.down_proj.weight"),
+        )
+        .expect_err("must refuse");
+    assert!(format!("{err}").contains("32-element"), "{err}");
+}
+
 /// The arena reports the map it executes and how many operands it has
 /// materialised — the per-ARM accounting two arms are compared by.
 #[test]
