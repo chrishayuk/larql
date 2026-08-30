@@ -28,7 +28,8 @@ use std::collections::BTreeMap;
 use std::sync::Arc;
 
 use super::physical::{
-    EncodedRegion, ExpertBankBinding, ExpertEncoding, ExpertLayout, ExtentPolicy, PhysicalStore,
+    EncodedRegion, ExpertBankBinding, ExpertEncoding, ExtentPolicy, PhysicalStore,
+    ProjectionAddressing, RoutedProjection,
 };
 use crate::error::VindexError;
 
@@ -39,6 +40,12 @@ pub struct SourceExpertBank {
     /// start. One table serves all three projections because the three
     /// are contiguous within an expert.
     pub bases: Vec<u32>,
+    /// Payload offset where this layer's expert block begins — the base
+    /// every table entry is relative to. Exposed so a caller can
+    /// register the layer's span with a compute backend.
+    pub layer_base: u64,
+    /// Bytes from `layer_base` to the end of the layer's last expert.
+    pub layer_len: u64,
 }
 
 /// Build the addressing for one layer from the segment's own tensor
@@ -53,8 +60,19 @@ pub fn source_expert_bank(
     experts: u32,
     per_projection_bytes: u64,
 ) -> Result<SourceExpertBank, VindexError> {
+    if experts == 0 {
+        return Err(VindexError::Parse(format!(
+            "layer {layer}: a source expert bank over zero experts addresses nothing"
+        )));
+    }
     let name = |e: u32, proj: &str| format!("{layer}.block_sparse_moe.experts.{e}.{proj}.weight");
-    let mut bases = Vec::with_capacity(experts as usize);
+    // Absolute payload offset of each expert's block. Collected first,
+    // because the table entries are RELATIVE to the layer's own base:
+    // the kernel's offset table is 32-bit, and while one layer's experts
+    // span ~3.6 GB, the segment holding all 26 layers is ~94 GB — an
+    // absolute offset stops fitting after the second layer the encoder
+    // happened to place.
+    let mut absolute = Vec::with_capacity(experts as usize);
     for e in 0..experts {
         let w1 = *offsets.get(&name(e, "w1")).ok_or_else(|| {
             VindexError::Parse(format!("source segment has no `{}`", name(e, "w1")))
@@ -77,40 +95,65 @@ pub fn source_expert_bank(
                 )));
             }
         }
-        bases.push(u32::try_from(w1).map_err(|_| {
+        absolute.push(w1);
+    }
+    let layer_base = *absolute.iter().min().expect("experts > 0 was checked");
+    let layer_end = absolute
+        .iter()
+        .map(|w1| w1 + 3 * per_projection_bytes)
+        .max()
+        .expect("experts > 0 was checked");
+    let layer_len = layer_end - layer_base;
+    let mut bases = Vec::with_capacity(experts as usize);
+    for (e, w1) in absolute.iter().enumerate() {
+        bases.push(u32::try_from(w1 - layer_base).map_err(|_| {
             VindexError::Parse(format!(
-                "layer {layer} expert {e} sits at byte {w1}, past what a 32-bit offset table \
-                 can address"
+                "layer {layer} expert {e} sits {} bytes past the layer's own base — beyond \
+                 what a 32-bit offset table can address, so this layer's experts are not \
+                 the contiguous block the rebasing assumes",
+                w1 - layer_base
             ))
         })?);
     }
 
-    // Three views of ONE mapping, each starting at its own projection.
-    // A source container's experts are stored as the checkpoint had
-    // them, which for Kimi is BF16.
-    let view = |shift: u64| -> Result<EncodedRegion, VindexError> {
-        Ok(EncodedRegion {
-            region: store
-                .span(shift, store.payload_len() - shift)
-                .ok_or_else(|| {
-                    VindexError::Parse(format!("segment is too short for a +{shift} view"))
-                })?,
-            encoding: ExpertEncoding::Bf16,
+    // Three views of ONE mapping, each starting at its own projection
+    // WITHIN THIS LAYER's block. A source container's experts are stored
+    // as the checkpoint had them, which for Kimi is BF16.
+    //
+    // Each view carries its own addressing and extent rather than
+    // inheriting a bank-wide pair. The VALUES coincide here — all three
+    // are source windows over the same layer block, addressed by the
+    // same rebased table — and that is the point: a source bank is the
+    // symmetric case, so it should be expressible without the type
+    // forcing symmetry on the asymmetric ones.
+    //
+    // `bases[e]` is the expert's offset from the layer base, and each
+    // view is itself rebased to `layer_base + shift`, so one table
+    // addresses all three.
+    let projection = |shift: u64| -> Result<RoutedProjection, VindexError> {
+        Ok(RoutedProjection {
+            region: EncodedRegion {
+                region: store
+                    .span(layer_base + shift, layer_len - shift)
+                    .ok_or_else(|| {
+                        VindexError::Parse(format!(
+                            "segment is too short for layer {layer}'s +{shift} view"
+                        ))
+                    })?,
+                encoding: ExpertEncoding::Bf16,
+            },
+            addressing: ProjectionAddressing::Table(bases.clone()),
+            // A window onto the layer's block of a larger segment:
+            // surplus bytes are other experts of the same layer, not a
+            // mislabelled encoding.
+            extent: ExtentPolicy::ContainingView,
         })
     };
     Ok(SourceExpertBank {
         binding: ExpertBankBinding {
-            gate: view(0)?,
-            down: view(per_projection_bytes)?,
-            up: view(2 * per_projection_bytes)?,
-            // Arbitrary order: the table is the only thing that knows
-            // where an expert lives.
-            layout: ExpertLayout::Mapped {
-                ids: (0..experts).collect(),
-            },
-            // Three windows onto the whole segment: surplus bytes are
-            // the rest of the model, not a mislabelled encoding.
-            extent: ExtentPolicy::ContainingView,
+            gate: projection(0)?,
+            down: projection(per_projection_bytes)?,
+            up: projection(2 * per_projection_bytes)?,
             // This function addresses the ROUTED bank inside the
             // expert-bank segment. Kimi's shared expert lives in the
             // decoder stack — a different store — so its binding is
@@ -119,6 +162,8 @@ pub fn source_expert_bank(
             shared: None,
         },
         bases,
+        layer_base,
+        layer_len,
     })
 }
 

@@ -217,7 +217,14 @@ impl BankBuilder {
                 route_flips: self.route_flips,
                 positions_with_route_change: self.positions_with_route_change,
                 layers_with_route_change: self.layers_with_route_change.len() as u64,
+                // The set is ordered, so its first element IS the
+                // shallowest layer that ever moved.
+                first_layer_with_route_change: self
+                    .layers_with_route_change
+                    .first()
+                    .map(|i| *i as u64),
             },
+            min_covered_mass: Some(self.min_covered_mass),
         }
     }
 }

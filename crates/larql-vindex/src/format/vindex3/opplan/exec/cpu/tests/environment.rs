@@ -135,3 +135,146 @@ fn only_this_process_is_excused() {
     assert!((total - 535.9).abs() < 0.01, "{total}");
     assert_eq!(busiest, Some(("larql".into(), 380.0)));
 }
+
+/// **Every disqualifier says which machine fact refused the run**, with
+/// the observation AND the limit it crossed — a reason a reader can
+/// check, not a bare "ineligible".
+#[test]
+fn each_disqualifier_names_its_observation_and_its_limit() {
+    let cases = [
+        (
+            Environment {
+                on_ac: Some(false),
+                ..Environment::default()
+            },
+            vec!["battery"],
+        ),
+        (
+            Environment {
+                load: Some(9.75),
+                ..Environment::default()
+            },
+            vec!["load average 9.75", "2.5"],
+        ),
+        (
+            Environment {
+                background_cpu: Some(88.0),
+                ..Environment::default()
+            },
+            vec!["background CPU 88%", "40%"],
+        ),
+        (
+            Environment {
+                busiest: Some(("Xcode".into(), 91.0)),
+                ..Environment::default()
+            },
+            vec!["`Xcode`", "91%", "12%"],
+        ),
+    ];
+    for (env, fragments) in cases {
+        let found = env.disqualifiers(Phase::BeforeWork);
+        assert_eq!(found.len(), 1, "one fact, one disqualifier: {env:?}");
+        let text = found[0].to_string();
+        for want in fragments {
+            assert!(text.contains(want), "`{text}` must mention `{want}`");
+        }
+    }
+
+    // All four at once, and the Display of each is distinct.
+    let bad = Environment {
+        on_ac: Some(false),
+        load: Some(9.75),
+        background_cpu: Some(88.0),
+        busiest: Some(("Xcode".into(), 91.0)),
+    };
+    let all = bad.disqualifiers(Phase::BeforeWork);
+    assert_eq!(all.len(), 4);
+    let rendered: Vec<String> = all.iter().map(ToString::to_string).collect();
+    let mut unique = rendered.clone();
+    unique.sort();
+    unique.dedup();
+    assert_eq!(
+        unique.len(),
+        4,
+        "each reason reads differently: {rendered:?}"
+    );
+}
+
+/// **An unknown is not a violation.** A platform that reports nothing
+/// disqualifies nothing, and `describe` says which checks could not
+/// run rather than implying the machine was quiet.
+#[test]
+fn unreported_facts_neither_disqualify_nor_claim_the_machine_was_quiet() {
+    let unknown = Environment::default();
+    assert!(unknown.disqualifiers(Phase::BeforeWork).is_empty());
+    assert!(unknown.disqualifiers(Phase::AfterWork).is_empty());
+    let text = unknown.describe();
+    for label in ["power", "load", "background", "busiest"] {
+        assert!(
+            text.contains(&format!("{label} unknown")),
+            "`{text}` must report `{label}` as unknown"
+        );
+    }
+
+    // And a fully reported quiet machine describes every value.
+    let quiet = Environment {
+        on_ac: Some(true),
+        load: Some(0.42),
+        background_cpu: Some(3.0),
+        busiest: Some(("kernel_task".into(), 2.0)),
+    };
+    assert!(quiet.disqualifiers(Phase::BeforeWork).is_empty());
+    let text = quiet.describe();
+    for want in ["power AC", "load 0.42", "background 3%", "kernel_task 2%"] {
+        assert!(text.contains(want), "`{text}` must contain `{want}`");
+    }
+    assert!(!text.contains("unknown"));
+
+    // On battery, the description says so.
+    let battery = Environment {
+        on_ac: Some(false),
+        ..Environment::default()
+    };
+    assert!(battery.describe().contains("power BATTERY"));
+}
+
+/// **Load is a BEFORE-work check only.** Afterwards the run's own
+/// threads are in the average, so refusing on it would refuse the
+/// machine for the work just measured.
+#[test]
+fn load_disqualifies_before_the_work_and_not_after_it() {
+    let busy = Environment {
+        load: Some(9.75),
+        ..Environment::default()
+    };
+    assert!(matches!(
+        busy.disqualifiers(Phase::BeforeWork).as_slice(),
+        [Disqualifier::Load { .. }]
+    ));
+    assert!(
+        busy.disqualifiers(Phase::AfterWork).is_empty(),
+        "the run's own load must not disqualify it retrospectively"
+    );
+
+    // Every OTHER check still applies after the work.
+    let contended = Environment {
+        on_ac: Some(false),
+        background_cpu: Some(88.0),
+        busiest: Some(("Xcode".into(), 91.0)),
+        load: Some(9.75),
+    };
+    assert_eq!(contended.disqualifiers(Phase::AfterWork).len(), 3);
+}
+
+/// Reading the real machine answers without panicking, whatever this
+/// host reports — the platform shells are allowed to know nothing.
+#[test]
+fn reading_the_machine_is_total() {
+    let env = Environment::read();
+    let text = env.describe();
+    assert!(text.contains("power") && text.contains("load"));
+    // Whatever it found, the two phases agree except on load.
+    let before = env.disqualifiers(Phase::BeforeWork).len();
+    let after = env.disqualifiers(Phase::AfterWork).len();
+    assert!(after <= before);
+}

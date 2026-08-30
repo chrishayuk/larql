@@ -260,3 +260,77 @@ fn a_shape_that_would_straddle_superblocks_is_refused() {
         .expect_err("must refuse");
     assert!(format!("{err}").contains("superblock"), "{err}");
 }
+
+/// The arena reports the map it executes and how many operands it has
+/// materialised — the per-ARM accounting two arms are compared by.
+#[test]
+fn the_arena_reports_its_map_and_what_it_has_materialised() {
+    let mut c = FakeContainer::new();
+    c.tensors.insert(
+        (
+            "target.expert_bank".into(),
+            "1.mlp.experts.0.down_proj.weight".into(),
+        ),
+        vec![0.25f32; K],
+    );
+    let arena = RepresentationArena::new(scoped_map(None));
+    assert_eq!(arena.map().name, scoped_map(None).name);
+    assert_eq!(arena.materialised(), 0, "nothing resolved yet");
+    let first = arena
+        .resolve(
+            &c,
+            Role::ExpertWeight,
+            &operand("1.mlp.experts.0.down_proj.weight"),
+        )
+        .expect("resolves");
+    assert_eq!(arena.materialised(), 1);
+    // The cache is keyed on SEMANTIC identity, so a second resolve of
+    // the same operand adds nothing and returns the same bytes.
+    let again = arena
+        .resolve(
+            &c,
+            Role::ExpertWeight,
+            &operand("1.mlp.experts.0.down_proj.weight"),
+        )
+        .expect("resolves again");
+    assert_eq!(arena.materialised(), 1, "a cache hit materialises nothing");
+    assert_eq!(first.bytes, again.bytes);
+    assert_eq!(first.encoding, again.encoding);
+}
+
+/// BF16 is a real encoder here, not a pass-through: the arena narrows
+/// f32 values to the checkpoint's own codes.
+#[test]
+fn bf16_is_encoded_from_values_not_passed_through() {
+    let mut c = FakeContainer::new();
+    let values: Vec<f32> = (0..K).map(|i| (i as f32) * 0.001 - 0.1).collect();
+    c.tensors.insert(
+        (
+            "target.expert_bank".into(),
+            "9.mlp.experts.3.down_proj.weight".into(),
+        ),
+        values.clone(),
+    );
+    let arena = RepresentationArena::new(PrecisionMap {
+        encoding: "BF16".into(),
+        exceptions: vec![Exception {
+            projection: None,
+            layers: None,
+            encoding: Some("BF16".into()),
+        }],
+        ..scoped_map(None)
+    });
+    let got = arena
+        .resolve(
+            &c,
+            Role::ExpertWeight,
+            &operand("9.mlp.experts.3.down_proj.weight"),
+        )
+        .expect("resolves");
+    assert_eq!(got.encoding, "BF16");
+    let want: Vec<u8> = values
+        .iter()
+        .flat_map(|v| ((v.to_bits() >> 16) as u16).to_le_bytes())
+        .collect();
+    assert_eq!(got.bytes.as_slice(), want.as_slice());
+}

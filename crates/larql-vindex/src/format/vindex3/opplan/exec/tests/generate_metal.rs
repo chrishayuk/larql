@@ -36,8 +36,8 @@ use std::path::Path;
 use std::time::Instant;
 
 use crate::format::vindex3::represent::physical::{
-    EncodedRegion, ExpertBankBinding, ExpertEncoding, ExpertLayout, ExtentPolicy, PhysicalStore,
-    SharedExpertBinding,
+    EncodedRegion, ExpertBankBinding, ExpertEncoding, ExtentPolicy, PhysicalStore,
+    ProjectionAddressing, RoutedProjection, SharedExpertBinding,
 };
 use larql_compute::backend::ComputeBackend;
 use larql_compute_metal::shaders::kimi_layer::NOT_RESIDENT;
@@ -134,11 +134,11 @@ fn device_layer(
                 read_bf16_bytes(dir, &format!("layer{i}_dense_w1")),
                 read_bf16_bytes(dir, &format!("layer{i}_dense_w3")),
                 read_bf16_bytes(dir, &format!("layer{i}_dense_w2")),
-                ExpertLayout::Mapped { ids: vec![0] },
+                // One "expert" at offset zero: a dense MLP is the
+                // routed path with the router deleted.
+                ProjectionAddressing::Table(vec![0]),
                 None,
             ),
-            offsets: Vec::new(),
-            expert_stride: 0,
             input_norm: read_f32(dir, &format!("layer{i}_input_norm_weight")),
             post_norm: read_f32(dir, &format!("layer{i}_post_norm_weight")),
             router_weight: Vec::new(),
@@ -186,21 +186,17 @@ fn device_layer(
     DeviceLayer {
         attn,
         state,
-        expert_stride: (bank_gate.len() / union.len()) as u32,
         bank: owned_bank(
             bank_gate,
             bank_up,
             bank_down,
-            // The fixture's packed union: physical slot != expert id, so
-            // this stays a `Mapped` view and the existing offset table
-            // is what addresses it. Deliberately NOT migrated to the
-            // compiled full-bank layout — one changed variable at a time.
-            ExpertLayout::Mapped {
-                ids: union.iter().map(|e| *e as u32).collect(),
-            },
+            // The fixture's packed union: physical slot != expert id,
+            // so this stays TABLE-addressed and the residency map is
+            // what finds an expert. Deliberately NOT migrated to the
+            // compiled full-bank form — one changed variable at a time.
+            ProjectionAddressing::Table(residency.clone()),
             Some(shared),
         ),
-        offsets: residency,
         input_norm: read_f32(dir, &format!("layer{i}_input_norm_weight")),
         post_norm: read_f32(dir, &format!("layer{i}_post_norm_weight")),
         router_weight: read_f32(dir, &format!("layer{i}_router_weight")),
@@ -315,16 +311,22 @@ fn owned_bank(
     gate: Vec<u8>,
     up: Vec<u8>,
     down: Vec<u8>,
-    layout: ExpertLayout,
+    addressing: ProjectionAddressing,
     shared: Option<SharedExpertBinding>,
 ) -> ExpertBankBinding {
-    ExpertBankBinding {
-        gate: owned_region("fixture", gate),
-        up: owned_region("fixture", up),
-        down: owned_region("fixture", down),
-        layout,
+    // The three projections share an addressing here because this
+    // fixture's banks were built together — a fact about THIS fixture,
+    // stated once per projection rather than assumed bank-wide.
+    let projection = |bytes: Vec<u8>| RoutedProjection {
+        region: owned_region("fixture", bytes),
+        addressing: addressing.clone(),
         // The fixture's packed banks ARE the bank.
         extent: ExtentPolicy::Exact,
+    };
+    ExpertBankBinding {
+        gate: projection(gate),
+        up: projection(up),
+        down: projection(down),
         shared,
     }
 }
@@ -514,9 +516,9 @@ fn sixteen_greedy_tokens_through_the_mixed_metal_stack() {
     let mut registered = 0usize;
     for d in device.iter().flatten() {
         for bank in [
-            d.bank.gate.region.bytes(),
-            d.bank.up.region.bytes(),
-            d.bank.down.region.bytes(),
+            d.bank.gate.region.region.bytes(),
+            d.bank.up.region.region.bytes(),
+            d.bank.down.region.region.bytes(),
         ] {
             metal.register_weight_region(bank);
             registered += 1;

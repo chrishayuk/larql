@@ -33,6 +33,8 @@ pub mod kimi_kda_layer;
 pub mod kimi_mla_layer;
 pub mod kimi_moe_block;
 pub mod kimi_router;
+#[cfg(feature = "gpu")]
+pub mod kimi_source;
 pub mod kv;
 pub mod mla;
 pub mod narrow;

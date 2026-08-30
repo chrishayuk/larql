@@ -268,12 +268,19 @@ pub struct CompileOptions<'a> {
 ///
 /// Idempotent and interruptible: a second call with the same ledger
 /// re-does only what is unsealed or whose source moved.
+/// `progress` is `&mut dyn` rather than `impl FnMut` deliberately.
+/// This body is large, and a generic callback makes one full copy of it
+/// per closure type at the call sites — which llvm-cov counts
+/// separately, so every new caller with a different closure lowers the
+/// file's measured coverage while covering strictly more of it. The
+/// indirect call costs one dispatch per sealed operand, against
+/// encoding and hashing a multi-megabyte block.
 pub fn compile_expert_bank(
     source: &dyn SourceOperands,
     tensors: &[SourceTensor],
     opts: &CompileOptions<'_>,
     index: &mut CandidateIndex,
-    mut progress: impl FnMut(&CompileOutcome),
+    progress: &mut dyn FnMut(&CompileOutcome),
 ) -> Result<CompileOutcome, VindexError> {
     let (object, role, experts, out) = (opts.object, opts.role, opts.experts, opts.out);
     let arena = RepresentationArena::new(index.map.clone());
@@ -391,7 +398,11 @@ pub fn write_index_atomically(index: &CandidateIndex, path: &Path) -> Result<(),
 }
 
 /// Where a projection's bank starts, so the three do not overlap.
-fn bank_base(layout: &LayerBankLayout, projection: &str) -> Result<u64, VindexError> {
+///
+/// `pub(crate)` because a LOADER of the compiled bank must place its
+/// views at exactly the offsets the compiler wrote to — one definition,
+/// or the two drift.
+pub(crate) fn bank_base(layout: &LayerBankLayout, projection: &str) -> Result<u64, VindexError> {
     let gate_up = layout.bank_bytes("w1")?;
     Ok(match projection {
         "w1" | "gate_proj" => 0,

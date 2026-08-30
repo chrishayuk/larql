@@ -47,12 +47,15 @@ mod mrope_parity;
 mod output_gate_fused;
 mod plan_fixtures;
 mod projection_bench;
+#[cfg(feature = "gpu")]
+mod q2a_teacher_forced;
 mod qw36c_layer0;
 mod stack_dispatch_refusal;
 mod stack_parity;
 mod stack_real;
 mod token2_real;
 mod token_real;
+mod token_tiny;
 #[rustfmt::skip]
 mod qw2_tiny_fixture;
 mod gated_delta_refusal;

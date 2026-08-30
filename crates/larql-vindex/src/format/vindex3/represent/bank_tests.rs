@@ -166,3 +166,96 @@ fn an_empty_bank_reports_zero_positions() {
     assert_eq!(bank.positions, 0);
     assert_eq!(bank.logits.kl_p99, 0.0);
 }
+
+/// **The shallowest layer that moved is recorded**, because a count of
+/// affected layers cannot separate the two failure modes.
+///
+/// A perturbed layer changing its OWN routing means its experts were
+/// selected differently; a perturbed layer leaving its own routing
+/// intact while LATER ones move is a cascade through the residual
+/// stream, and the response to each is different.
+#[test]
+fn the_first_layer_that_reroutes_is_recorded_not_just_the_count() {
+    let observe = |baseline: Vec<Vec<u32>>, candidate: Vec<Vec<u32>>| {
+        let mut b = BankBuilder::new();
+        b.observe(&PositionObservation {
+            sequence: 0,
+            position: 0,
+            top_ids: vec![0],
+            baseline_logits: vec![1.0],
+            baseline_logsumexp: 1.0,
+            candidate_logits: vec![1.0],
+            candidate_logsumexp: 1.0,
+            baseline_argmax: 0,
+            candidate_argmax: 0,
+            baseline_top10: vec![0],
+            candidate_top10: vec![0],
+            baseline_routes: baseline,
+            candidate_routes: candidate,
+        });
+        b.finish().routing
+    };
+
+    // A CASCADE: the perturbed layer 0 keeps its own experts, later
+    // layers move. This is Kimi layer 1 at Q6_K.
+    let cascade = observe(
+        vec![vec![1, 2], vec![3, 4], vec![5, 6]],
+        vec![vec![2, 1], vec![3, 9], vec![7, 6]],
+    );
+    assert_eq!(cascade.first_layer_with_route_change, Some(1));
+    assert_eq!(cascade.layers_with_route_change, 2);
+
+    // LOCAL: the perturbed layer itself reroutes.
+    let local = observe(vec![vec![1, 2], vec![3, 4]], vec![vec![1, 8], vec![3, 4]]);
+    assert_eq!(local.first_layer_with_route_change, Some(0));
+    assert_eq!(local.layers_with_route_change, 1);
+
+    // The two are indistinguishable by count alone, which is why the
+    // shallowest layer is carried.
+    let same_count = observe(vec![vec![1, 2], vec![3, 4]], vec![vec![1, 2], vec![3, 9]]);
+    assert_eq!(
+        same_count.layers_with_route_change,
+        local.layers_with_route_change
+    );
+    assert_ne!(
+        same_count.first_layer_with_route_change,
+        local.first_layer_with_route_change
+    );
+
+    // Nothing moved: no layer to name.
+    let stable = observe(vec![vec![1, 2]], vec![vec![2, 1]]);
+    assert_eq!(stable.first_layer_with_route_change, None);
+    assert_eq!(stable.route_flips, 0, "reordering is not a reroute");
+}
+
+/// The bank carries the worst position's covered mass, so a gate can
+/// judge whether its KL saw enough of the distribution.
+#[test]
+fn the_bank_carries_the_worst_covered_mass_it_saw() {
+    let mut b = BankBuilder::new();
+    // Two positions: one sharp, one flat. `logsumexp` is set so the
+    // covered mass is computable and different for each.
+    for (logit, lse) in [(0.0f32, 0.0f32), (0.0, 1.0)] {
+        b.observe(&PositionObservation {
+            sequence: 0,
+            position: 0,
+            top_ids: vec![0],
+            baseline_logits: vec![logit],
+            baseline_logsumexp: lse,
+            candidate_logits: vec![logit],
+            candidate_logsumexp: lse,
+            baseline_argmax: 0,
+            candidate_argmax: 0,
+            baseline_top10: vec![0],
+            candidate_top10: vec![0],
+            baseline_routes: vec![],
+            candidate_routes: vec![],
+        });
+    }
+    let bank = b.finish();
+    let worst = bank.min_covered_mass.expect("the builder records coverage");
+    assert!(
+        (worst - (-1.0f64).exp()).abs() < 1e-9,
+        "the WORST position's mass, not the mean or the last: {worst}"
+    );
+}

@@ -10,6 +10,7 @@ fn gate() -> QualityGate {
         top1_flip_max: 0,
         top10_change_max: 8,
         route_flip_max: 0,
+        covered_mass_min: None,
     }
 }
 
@@ -28,7 +29,9 @@ fn clean_bank() -> QualityBank {
             route_flips: 0,
             positions_with_route_change: 0,
             layers_with_route_change: 0,
+            first_layer_with_route_change: None,
         },
+        min_covered_mass: None,
     }
 }
 
@@ -104,6 +107,7 @@ fn routing_movement_is_distinguishable_from_arithmetic_movement() {
         route_flips: 6,
         positions_with_route_change: 5,
         layers_with_route_change: 2,
+        first_layer_with_route_change: None,
     };
     let rerouted = QualityEvidence {
         gate: gate(),
@@ -172,7 +176,9 @@ fn null_bank() -> QualityBank {
             route_flips: 0,
             positions_with_route_change: 0,
             layers_with_route_change: 0,
+            first_layer_with_route_change: None,
         },
+        min_covered_mass: None,
     }
 }
 
@@ -202,4 +208,79 @@ fn kimi_logit_v1_refuses_a_full_size_bank_that_moved() {
     moved.logits.kl_p99 = 1e-3;
     moved.logits.top1_flips = 8;
     assert!(kimi_logit_v1().evaluate(&moved).passed());
+}
+
+/// **v2 is v1 plus a bank-validity criterion, and NOTHING else.**
+///
+/// Pinned field by field: a future edit that also re-tuned a threshold
+/// while adding coverage would make "passed v2" mean two changes at
+/// once, and no reader could tell which one a candidate cleared.
+#[test]
+fn v2_changes_only_the_coverage_criterion() {
+    let (v1, v2) = (kimi_logit_v1(), kimi_logit_v2());
+    assert_eq!(v2.id, "kimi-logit-v2");
+    assert_ne!(v1.id, v2.id, "a new criterion needs a new id");
+    assert_eq!(v2.positions_min, v1.positions_min);
+    assert_eq!(v2.kl_p99_max, v1.kl_p99_max);
+    assert_eq!(v2.top1_flip_max, v1.top1_flip_max);
+    assert_eq!(v2.top10_change_max, v1.top10_change_max);
+    assert_eq!(v2.route_flip_max, v1.route_flip_max);
+    assert_eq!(v1.covered_mass_min, None, "v1 does not ask");
+    assert_eq!(v2.covered_mass_min, Some(0.60));
+}
+
+/// A bank whose truncation was too narrow fails v2 and passes v1 — the
+/// whole point of the new id.
+#[test]
+fn v2_refuses_a_bank_whose_kl_is_blind_to_the_distribution() {
+    let perfect = QualityBank {
+        positions: 8192,
+        logits: LogitEvidence {
+            kl_p50: 0.0,
+            kl_p95: 0.0,
+            kl_p99: 0.0,
+            max_logit_delta: 0.0,
+            top1_flips: 0,
+            top10_changes: 0,
+        },
+        routing: RoutingEvidence {
+            route_flips: 0,
+            positions_with_route_change: 0,
+            layers_with_route_change: 0,
+            first_layer_with_route_change: None,
+        },
+        min_covered_mass: Some(0.307),
+    };
+    assert!(
+        kimi_logit_v1().evaluate(&perfect).passed(),
+        "v1 asks nothing about coverage, so a narrow bank still passes it"
+    );
+    let verdict = kimi_logit_v2().evaluate(&perfect);
+    assert!(!verdict.passed());
+    assert!(verdict
+        .failures
+        .iter()
+        .any(|(c, d)| *c == Criterion::CoveredMass && d.contains("0.3070")));
+
+    // The measured wide truncation clears it.
+    let wide = QualityBank {
+        min_covered_mass: Some(0.729),
+        ..perfect.clone()
+    };
+    assert!(kimi_logit_v2().evaluate(&wide).passed());
+
+    // A bank that did not RECORD its coverage fails: unknown coverage
+    // is not evidence, and defaulting it to "wide enough" is exactly
+    // the unfalsifiable claim this module exists to prevent.
+    let silent = QualityBank {
+        min_covered_mass: None,
+        ..perfect
+    };
+    let verdict = kimi_logit_v2().evaluate(&silent);
+    assert!(!verdict.passed());
+    assert!(verdict
+        .failures
+        .iter()
+        .any(|(c, d)| *c == Criterion::CoveredMass && d.contains("not recorded")));
+    assert!(kimi_logit_v1().evaluate(&silent).passed());
 }

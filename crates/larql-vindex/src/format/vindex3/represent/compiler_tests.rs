@@ -124,7 +124,7 @@ fn only_the_scoped_layer_is_compiled() {
         &tensors,
         &opts("target.expert_bank", EXPERTS, &out),
         &mut idx,
-        |_| {},
+        &mut |_| {},
     )
     .expect("compiles");
 
@@ -170,7 +170,7 @@ fn a_second_pass_resumes_instead_of_recompiling() {
         &tensors,
         &opts("target.expert_bank", EXPERTS, &out),
         &mut idx,
-        |_| {},
+        &mut |_| {},
     )
     .expect("first pass");
     assert_eq!(first.sealed, (EXPERTS * 3) as usize);
@@ -181,7 +181,7 @@ fn a_second_pass_resumes_instead_of_recompiling() {
         &tensors,
         &opts("target.expert_bank", EXPERTS, &out),
         &mut idx,
-        |_| {},
+        &mut |_| {},
     )
     .expect("second pass");
     assert_eq!(second.sealed, 0, "nothing may be recompiled");
@@ -205,7 +205,7 @@ fn an_interrupted_compile_finishes_only_the_remainder() {
         &tensors[..half],
         &opts("target.expert_bank", EXPERTS, &out),
         &mut idx,
-        |_| {},
+        &mut |_| {},
     )
     .expect("interrupted pass");
     assert_eq!(first.sealed, half);
@@ -215,7 +215,7 @@ fn an_interrupted_compile_finishes_only_the_remainder() {
         &tensors,
         &opts("target.expert_bank", EXPERTS, &out),
         &mut idx,
-        |_| {},
+        &mut |_| {},
     )
     .expect("resumed pass");
     assert_eq!(rest.resumed, half, "the sealed prefix is skipped");
@@ -238,7 +238,7 @@ fn a_moved_source_is_recompiled_on_resume() {
         &tensors,
         &opts("target.expert_bank", EXPERTS, &out),
         &mut idx,
-        |_| {},
+        &mut |_| {},
     )
     .expect("first");
 
@@ -250,7 +250,7 @@ fn a_moved_source_is_recompiled_on_resume() {
         &tensors,
         &opts("target.expert_bank", EXPERTS, &out),
         &mut idx,
-        |_| {},
+        &mut |_| {},
     )
     .expect("second");
     assert_eq!(again.sealed, 1, "exactly the moved operand is redone");
@@ -320,7 +320,7 @@ fn the_three_projection_banks_do_not_overlap() {
         &tensors,
         &opts("target.expert_bank", EXPERTS, &out),
         &mut idx,
-        |_| {},
+        &mut |_| {},
     )
     .expect("compiles");
     assert!(idx.ledger.overlaps().is_empty());
@@ -402,4 +402,251 @@ fn a_moved_source_container_still_verifies() {
     idx.source
         .verify(&identity)
         .expect("moving the container must not invalidate the overlay");
+}
+
+/// **A container's identity is read from its own metadata**, at all
+/// three levels, and a container that differs at any level produces a
+/// different identity.
+#[test]
+fn identity_is_read_from_the_containers_own_metadata() {
+    let dir = std::env::temp_dir().join(format!("larql-identity-{}", std::process::id()));
+    let write = |root: &std::path::Path, index: &str, graph: &str| {
+        std::fs::create_dir_all(root).expect("dir");
+        std::fs::write(root.join("index.json"), index).expect("index");
+        std::fs::write(root.join("system_graph.json"), graph).expect("graph");
+    };
+    let index_json = r#"{"system_graph":"system_graph.json","representations":{
+        "target.expert_bank@BF16":{"segment":"target.expert_bank","payload_sha256":"aaaa"},
+        "target.decoder_stack@BF16":{"segment":"target.decoder_stack","payload_sha256":"bbbb"}}}"#;
+    let a = dir.join("a");
+    write(&a, index_json, r#"{"components":[]}"#);
+    let id = read_source_identity(&a).expect("identity");
+    assert_eq!(id.segments.len(), 2, "one entry per representation");
+    assert_eq!(id.segments["target.expert_bank"], "aaaa");
+    assert!(!id.manifest_hash.is_empty() && !id.graph_hash.is_empty());
+
+    // Re-reading the same container gives the same identity.
+    assert_eq!(read_source_identity(&a).expect("again"), id);
+
+    // A different GRAPH under byte-identical payload hashes is a
+    // different model, and the identity says so.
+    let b = dir.join("b");
+    write(&b, index_json, r#"{"components":[{"id":"target"}]}"#);
+    let other = read_source_identity(&b).expect("identity");
+    assert_eq!(other.segments, id.segments, "same payload hashes");
+    assert_eq!(other.manifest_hash, id.manifest_hash, "same index");
+    assert_ne!(other.graph_hash, id.graph_hash, "different graph");
+
+    // An index naming a non-default graph file is followed.
+    let c = dir.join("c");
+    std::fs::create_dir_all(&c).expect("dir");
+    std::fs::write(c.join("index.json"), r#"{"system_graph":"other.json"}"#).expect("index");
+    std::fs::write(c.join("other.json"), "{}").expect("graph");
+    read_source_identity(&c).expect("a named graph file is followed");
+
+    // A container with no index at all is refused, not defaulted.
+    assert!(read_source_identity(&dir.join("absent")).is_err());
+    std::fs::remove_dir_all(&dir).ok();
+}
+
+/// The index is persisted atomically: a reader never sees a partial
+/// file, and the temporary is not left behind.
+#[test]
+fn the_index_is_written_atomically() {
+    let dir = tempfile::tempdir().expect("tmp");
+    let path = dir.path().join("index.json");
+    let idx = index(map_for(vec![]));
+    write_index_atomically(&idx, &path).expect("write");
+    let read: CandidateIndex =
+        serde_json::from_slice(&std::fs::read(&path).expect("read")).expect("parses");
+    assert_eq!(read.model, idx.model);
+    assert!(
+        !path.with_extension("json.partial").exists(),
+        "the temporary must be renamed away, not left beside the index"
+    );
+    // Overwriting an existing index is the resume path and must work.
+    write_index_atomically(&idx, &path).expect("overwrite");
+}
+
+/// A tensor the compiler cannot place is refused by name — each of the
+/// three ways a name or shape can fail to carry a bank position.
+#[test]
+fn a_tensor_that_cannot_be_placed_is_refused_by_name() {
+    let dir = tempfile::tempdir().expect("tmp");
+    let out = dir.path().join("bank.bin");
+    let (fake, _) = Fake::kimi_layer(1, 0.5);
+    let mut idx = index(map_for(vec![Exception {
+        projection: None,
+        layers: Some((1, 1)),
+        encoding: Some("Q6_K".into()),
+    }]));
+
+    // No layer/projection in the name at all.
+    let err = compile_expert_bank(
+        &fake,
+        &[SourceTensor {
+            name: "not_a_layer_tensor".into(),
+            shape: vec![INTER, HIDDEN],
+        }],
+        &opts("target.expert_bank", EXPERTS, &out),
+        &mut idx,
+        &mut |_| {},
+    )
+    .expect_err("an unplaceable tensor must be refused");
+    assert!(format!("{err}").contains("no place"), "{err}");
+
+    // A layer/projection but no expert index.
+    let err = compile_expert_bank(
+        &fake,
+        &[SourceTensor {
+            name: "1.block_sparse_moe.shared_experts.w1.weight".into(),
+            shape: vec![INTER, HIDDEN],
+        }],
+        &opts("target.expert_bank", EXPERTS, &out),
+        &mut idx,
+        &mut |_| {},
+    )
+    .expect_err("a tensor naming no expert must be refused");
+    assert!(format!("{err}").contains("no expert index"), "{err}");
+
+    // A shape that is not a matrix.
+    let err = compile_expert_bank(
+        &fake,
+        &[SourceTensor {
+            name: "1.block_sparse_moe.experts.0.w1.weight".into(),
+            shape: vec![INTER],
+        }],
+        &opts("target.expert_bank", EXPERTS, &out),
+        &mut idx,
+        &mut |_| {},
+    )
+    .expect_err("a non-matrix must be refused");
+    assert!(format!("{err}").contains("not a matrix"), "{err}");
+
+    // An expert beyond the declared population has no slot.
+    let err = compile_expert_bank(
+        &fake,
+        &[SourceTensor {
+            name: format!("1.block_sparse_moe.experts.{EXPERTS}.w1.weight"),
+            shape: vec![INTER, HIDDEN],
+        }],
+        &opts("target.expert_bank", EXPERTS, &out),
+        &mut idx,
+        &mut |_| {},
+    )
+    .expect_err("an out-of-range expert must be refused");
+    assert!(format!("{err}").contains("outside"), "{err}");
+}
+
+/// `bank_base` places the three projections disjointly and refuses a
+/// name that is not an expert projection at all.
+#[test]
+fn bank_base_covers_both_spellings_and_refuses_anything_else() {
+    let layout = LayerBankLayout::new(1, "Q6_K", EXPERTS, HIDDEN, INTER).expect("layout");
+    let gate_up = layout.bank_bytes("w1").expect("w1 bank");
+    for (canonical, checkpoint) in [("gate_proj", "w1"), ("up_proj", "w3"), ("down_proj", "w2")] {
+        assert_eq!(
+            bank_base(&layout, canonical).expect("canonical"),
+            bank_base(&layout, checkpoint).expect("checkpoint"),
+            "`{canonical}` and `{checkpoint}` are the same bank"
+        );
+    }
+    assert_eq!(bank_base(&layout, "w1").expect("w1"), 0);
+    assert_eq!(bank_base(&layout, "w3").expect("w3"), gate_up);
+    assert_eq!(bank_base(&layout, "w2").expect("w2"), 2 * gate_up);
+    assert!(bank_base(&layout, "k_proj").is_err());
+}
+
+/// **The ledger reaches disk MID-RUN**, which is the whole of what
+/// makes a long compilation resumable: an index written only at the end
+/// gives a run killed at 60 % nothing to resume from.
+#[test]
+fn the_ledger_is_checkpointed_during_the_run_not_only_at_the_end() {
+    let dir = tempfile::tempdir().expect("tmp");
+    let out = dir.path().join("bank.bin");
+    let index_path = dir.path().join("index.json");
+    let (fake, tensors) = Fake::kimi_layer(1, 0.5);
+    let mut idx = index(map_for(vec![Exception {
+        projection: None,
+        layers: Some((1, 1)),
+        encoding: Some("Q6_K".into()),
+    }]));
+
+    // Checkpoint every second seal, and read the index back DURING the
+    // run — the observation only a mid-run write can satisfy.
+    let mut seen_mid_run = 0usize;
+    let opts = CompileOptions {
+        checkpoint: Some((&index_path, 2)),
+        ..opts("target.expert_bank", EXPERTS, &out)
+    };
+    let outcome = compile_expert_bank(&fake, &tensors, &opts, &mut idx, &mut |o| {
+        if o.sealed > 0 && o.sealed < tensors.len() && index_path.exists() {
+            let partial: CandidateIndex =
+                serde_json::from_slice(&std::fs::read(&index_path).expect("read"))
+                    .expect("a checkpointed index is always parseable");
+            seen_mid_run = seen_mid_run.max(partial.ledger.sealed.len());
+        }
+    })
+    .expect("compiles");
+    assert_eq!(outcome.sealed, tensors.len());
+    assert!(
+        seen_mid_run > 0 && seen_mid_run < tensors.len(),
+        "the index must be readable mid-run with a PARTIAL ledger, saw {seen_mid_run} of {}",
+        tensors.len()
+    );
+
+    // And the final write leaves the complete ledger behind.
+    let final_index: CandidateIndex =
+        serde_json::from_slice(&std::fs::read(&index_path).expect("read")).expect("parses");
+    assert_eq!(final_index.ledger.sealed.len(), tensors.len());
+    assert!(final_index.ledger.overlaps().is_empty());
+}
+
+/// An encoder whose output does not fill the slot the layout reserved
+/// is refused — the bytes would land inside a neighbouring expert.
+#[test]
+fn an_encoding_that_does_not_fill_its_slot_is_refused() {
+    let dir = tempfile::tempdir().expect("tmp");
+    let out = dir.path().join("bank.bin");
+    let (mut fake, tensors) = Fake::kimi_layer(1, 0.5);
+    // The SOURCE holds fewer values than the tensor's declared shape,
+    // so the encoder produces a short block while the layout still
+    // reserves a full one.
+    let short = tensors[0].name.clone();
+    fake.bytes.insert(short.clone(), vec![0u8; 512]);
+    let mut idx = index(map_for(vec![Exception {
+        projection: None,
+        layers: Some((1, 1)),
+        encoding: Some("Q6_K".into()),
+    }]));
+    let err = compile_expert_bank(
+        &fake,
+        &tensors[..1],
+        &opts("target.expert_bank", EXPERTS, &out),
+        &mut idx,
+        &mut |_| {},
+    )
+    .expect_err("a short encoding must be refused");
+    let text = format!("{err}");
+    assert!(
+        text.contains(&short) && text.contains("layout reserved"),
+        "{text}"
+    );
+}
+
+/// An index that cannot be written is reported rather than swallowed —
+/// a compilation that believes it checkpointed and did not would resume
+/// from nothing.
+#[test]
+fn an_unwritable_index_path_is_reported() {
+    let dir = tempfile::tempdir().expect("tmp");
+    // A directory where the index file should be: the write fails, and
+    // the failure must surface.
+    let path = dir.path().join("index.json");
+    std::fs::create_dir(&path).expect("occupy the path with a directory");
+    let idx = index(map_for(vec![]));
+    assert!(
+        write_index_atomically(&idx, &path).is_err(),
+        "a failed index write must be reported"
+    );
 }

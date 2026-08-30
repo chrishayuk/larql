@@ -42,6 +42,15 @@ pub struct QualityGate {
     pub top1_flip_max: u64,
     pub top10_change_max: u64,
     pub route_flip_max: u64,
+    /// Least baseline mass the bank's truncation must have covered at
+    /// its WORST position, for the KL above to be judged at all.
+    ///
+    /// `None` — v1's shape — means the gate does not ask, and a bank
+    /// with no coverage record is judged on its other criteria.
+    /// Introducing this on an existing gate id would silently re-date
+    /// every claim that ever cited it, so it arrives with a new id.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub covered_mass_min: Option<f64>,
 }
 
 /// What the bank measured about the output distribution.
@@ -69,6 +78,17 @@ pub struct RoutingEvidence {
     /// Layers that ever routed differently, so a fix can be scoped by
     /// depth instead of applied to the whole role.
     pub layers_with_route_change: u64,
+    /// The SHALLOWEST layer that ever routed differently, if any.
+    ///
+    /// The diagnostic that separates two failure modes a count cannot:
+    /// a perturbed layer changing its OWN routing (the candidate's
+    /// experts were selected differently) versus a perturbed layer
+    /// leaving its own routing intact and moving a LATER router's input
+    /// — a cascade. Measured on Kimi layer 1 at Q6_K, the layer-1
+    /// expert union was identical while twenty-five later layers moved,
+    /// which is the second and needs a different response.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub first_layer_with_route_change: Option<u64>,
 }
 
 /// One bank of measurements over a fixed token sequence.
@@ -77,6 +97,20 @@ pub struct QualityBank {
     pub positions: u64,
     pub logits: LogitEvidence,
     pub routing: RoutingEvidence,
+    /// Smallest baseline probability mass any position's truncation
+    /// covered — how much of the distribution the KL above can SEE.
+    ///
+    /// Recorded because a KL over a truncation that covered a third of
+    /// the mass is a different measurement from one that covered all of
+    /// it, and nothing else in the bank distinguishes them. Measured on
+    /// the real bank: a teacher-forced sequence's FIRST position has no
+    /// context and is near-flat over 163,840 ids, so a short truncation
+    /// sees almost none of it — top-128 covered 0.307, top-2048 0.729.
+    ///
+    /// `None` for a bank whose builder did not record it. Judged only
+    /// by gates that ask for it — see [`kimi_logit_v2`].
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub min_covered_mass: Option<f64>,
 }
 
 /// Which criterion a bank failed.
@@ -87,6 +121,11 @@ pub enum Criterion {
     Top1Flips,
     Top10Changes,
     RouteFlips,
+    /// The bank's KL was blind to too much of the distribution, or did
+    /// not record how much it saw. A gate that asks for coverage and
+    /// gets `None` must fail rather than assume the truncation was
+    /// wide enough.
+    CoveredMass,
 }
 
 impl Criterion {
@@ -97,6 +136,7 @@ impl Criterion {
             Criterion::Top1Flips => "top1_flips",
             Criterion::Top10Changes => "top10_changes",
             Criterion::RouteFlips => "route_flips",
+            Criterion::CoveredMass => "min_covered_mass",
         }
     }
 }
@@ -164,6 +204,21 @@ impl QualityGate {
                 format!("{} > {}", bank.routing.route_flips, self.route_flip_max),
             ));
         }
+        if let Some(required) = self.covered_mass_min {
+            match bank.min_covered_mass {
+                Some(got) if got >= required => {}
+                Some(got) => failures.push((
+                    Criterion::CoveredMass,
+                    format!("{got:.4} < {required:.4} required"),
+                )),
+                None => failures.push((
+                    Criterion::CoveredMass,
+                    format!(
+                        "not recorded, and this gate requires at least {required:.4} — a KL                          of unknown coverage is not evidence"
+                    ),
+                )),
+            }
+        }
         QualityVerdict {
             gate_id: self.id.clone(),
             failures,
@@ -230,6 +285,38 @@ pub fn kimi_logit_v1() -> QualityGate {
         top1_flip_max: 8,
         top10_change_max: 82,
         route_flip_max: 82,
+        // v1 does not ask about coverage. See `kimi_logit_v2`.
+        covered_mass_min: None,
+    }
+}
+
+/// **`kimi-logit-v2` — v1 plus a bank-validity criterion.**
+///
+/// Same five thresholds, unchanged and deliberately so: this is not a
+/// re-tuning, and a candidate's numbers mean exactly what they meant
+/// under v1. What changes is that the KL must be a KL *of something* —
+/// the bank has to say how much of the baseline distribution its
+/// truncation covered, and that has to be most of it.
+///
+/// A new id rather than a field added to v1, because a criterion
+/// changes what "passed this gate" MEANS. Every claim that ever cited
+/// v1 was judged without a coverage requirement, and editing v1 in
+/// place would silently re-date all of them as though they had met one.
+///
+/// `covered_mass_min` is **0.60**, and it is a floor on the WORST
+/// position rather than the mean. Its justification is the measurement
+/// that motivated it: on Kimi's teacher-forced bank the minimum is
+/// driven by each sequence's FIRST position, which has no context and
+/// is near-flat over 163,840 ids — top-128 covered 0.307 there and
+/// top-2048 covered 0.729, while the p99 barely moved (8.425e-2 →
+/// 7.984e-2). So 0.60 rejects the truncation that was demonstrably too
+/// narrow, admits the one that was demonstrably wide enough, and does
+/// not pretend a context-free position can be made sharp.
+pub fn kimi_logit_v2() -> QualityGate {
+    QualityGate {
+        id: "kimi-logit-v2".into(),
+        covered_mass_min: Some(0.60),
+        ..kimi_logit_v1()
     }
 }
 

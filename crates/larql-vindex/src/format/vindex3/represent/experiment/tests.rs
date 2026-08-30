@@ -72,6 +72,7 @@ fn component_error_alone_does_not_support_a_quality_claim() {
         top1_flip_max: 0,
         top10_change_max: 8,
         route_flip_max: 0,
+        covered_mass_min: None,
     };
     let bank = QualityBank {
         positions: 19,
@@ -87,7 +88,9 @@ fn component_error_alone_does_not_support_a_quality_claim() {
             route_flips: 0,
             positions_with_route_change: 0,
             layers_with_route_change: 0,
+            first_layer_with_route_change: None,
         },
+        min_covered_mass: None,
     };
     // A bank too short for its own tail statistic proves nothing, and
     // the record must say so rather than accept a small-looking p99.
@@ -175,4 +178,76 @@ fn a_backend_kernel_existing_does_not_make_a_representation_promotable() {
         ..RepresentationStatus::default()
     };
     assert!(!capability_only.ladder_complete());
+}
+
+/// **Promotion needs all three independent facts**, and each one alone
+/// withholds it: the ladder complete, a quality claim resting on a
+/// named gate, and a throughput claim from the target's own kernel.
+///
+/// Checked by removing one at a time from a record that otherwise
+/// promotes, so a future change that quietly drops a conjunct fails
+/// here rather than promoting on weaker evidence.
+#[test]
+fn promotable_requires_the_ladder_quality_and_throughput_together() {
+    use crate::format::vindex3::represent::quality::{
+        kimi_logit_v1, LogitEvidence, QualityBank, QualityEvidence, RoutingEvidence,
+    };
+
+    let passing = QualityEvidence {
+        gate: kimi_logit_v1(),
+        bank: QualityBank {
+            positions: 8192,
+            logits: LogitEvidence {
+                kl_p50: 1e-6,
+                kl_p95: 1e-5,
+                kl_p99: 1e-4,
+                max_logit_delta: 1e-3,
+                top1_flips: 0,
+                top10_changes: 0,
+            },
+            routing: RoutingEvidence {
+                route_flips: 0,
+                positions_with_route_change: 0,
+                layers_with_route_change: 0,
+                first_layer_with_route_change: None,
+            },
+            min_covered_mass: None,
+        },
+    };
+
+    let mut r = record();
+    r.quality = Some(passing.clone());
+    assert!(r.promotable(), "everything present must promote");
+    assert_eq!(r.quality_proven_by(), Some("kimi-logit-v1"));
+    assert!(r.supports_quality_claim() && r.supports_throughput_claim());
+
+    // No quality evidence at all.
+    let mut no_quality = r.clone();
+    no_quality.quality = None;
+    assert!(!no_quality.promotable());
+
+    // Evidence that FAILS its gate proves nothing — the verdict is
+    // derived, so a failing bank cannot carry a passing claim.
+    let mut failing = passing.clone();
+    failing.bank.positions = 1024;
+    let mut unproven = r.clone();
+    unproven.quality = Some(failing);
+    assert!(!unproven.promotable());
+    assert_eq!(unproven.quality_proven_by(), None);
+
+    // A simulated carrier may hold quality numbers but never throughput.
+    let mut simulated = r.clone();
+    simulated.provenance.native_kernel = false;
+    assert!(!simulated.supports_throughput_claim());
+    assert!(!simulated.promotable());
+
+    // Untimed on its own kernel.
+    let mut untimed = r.clone();
+    untimed.target_gpu_ms = None;
+    assert!(!untimed.promotable());
+
+    // Ladder incomplete.
+    let mut unmeasured = r.clone();
+    unmeasured.status.measured = false;
+    assert!(!unmeasured.promotable());
 }

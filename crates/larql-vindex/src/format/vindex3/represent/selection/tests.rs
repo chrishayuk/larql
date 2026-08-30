@@ -54,6 +54,7 @@ fn with_quality_bank(mut c: RepresentationExperiment) -> RepresentationExperimen
             top1_flip_max: 0,
             top10_change_max: 8,
             route_flip_max: 0,
+            covered_mass_min: None,
         },
         bank: QualityBank {
             positions: 512,
@@ -69,7 +70,9 @@ fn with_quality_bank(mut c: RepresentationExperiment) -> RepresentationExperimen
                 route_flips: 0,
                 positions_with_route_change: 0,
                 layers_with_route_change: 0,
+                first_layer_with_route_change: None,
             },
+            min_covered_mass: None,
         },
     });
     c
@@ -252,6 +255,7 @@ fn a_failed_gate_is_reported_differently_from_an_absent_one() {
             route_flips: 37,
             positions_with_route_change: 21,
             layers_with_route_change: 4,
+            first_layer_with_route_change: None,
         };
     }
     let p = promote("m", "BF16", &[refused.clone()]);

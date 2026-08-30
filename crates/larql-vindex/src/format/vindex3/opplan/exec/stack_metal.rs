@@ -30,7 +30,8 @@
 
 use crate::error::VindexError;
 use crate::format::vindex3::represent::physical::{
-    EncodedRegion, ExpertBankBinding, ExpertEncoding as PhysEncoding, ExpertLayout,
+    EncodedRegion, ExpertBankBinding, ExpertEncoding as PhysEncoding, ProjectionAddressing,
+    RoutedProjection,
 };
 use larql_compute_metal::trait_impl::grouped_experts::{ExpertOffset, GroupedError};
 use larql_compute_metal::trait_impl::kda::{KdaDeviceState, KdaDeviceWeights, KdaShape};
@@ -108,13 +109,12 @@ pub struct DeviceLayer {
     /// bytes, an mmap'd source segment, a compiled candidate overlay or
     /// a future hot cache — that is the point of the binding sitting one
     /// level above it.
+    /// Every physical fact about the routed experts, PER PROJECTION —
+    /// bytes, encoding, addressing and extent. Nothing bank-wide is
+    /// left here: a candidate that compiled only `gate` binds it by
+    /// identity over its own store while `up` and `down` stay
+    /// table-addressed over the source, and the layer does not notice.
     pub bank: ExpertBankBinding,
-    /// Byte offsets per expert for a `Mapped` bank. Empty for
-    /// `Identity`, which tabulates nothing.
-    pub offsets: Vec<u32>,
-    /// Bytes one expert occupies in a gate/up bank — what `Identity`
-    /// multiplies by.
-    pub expert_stride: u32,
     pub input_norm: Vec<f32>,
     pub post_norm: Vec<f32>,
     pub router_weight: Vec<f32>,
@@ -238,20 +238,26 @@ impl DeviceLayer {
     }
 
     /// One projection's routed bank paired with how a logical expert is
-    /// located in it, plus the shared branch's own region.
+    /// located IN IT, plus the shared branch's own region.
+    ///
+    /// Every field comes from the projection itself. Nothing is read
+    /// from a sibling or from a bank-wide default, which is what makes
+    /// a mixed binding — one projection from a compiled candidate, two
+    /// from the source segment — a matter of construction rather than
+    /// of a new execution path.
     fn projection<'a>(
         &'a self,
-        r: &'a EncodedRegion,
+        p: &'a RoutedProjection,
         shared: Option<&'a EncodedRegion>,
     ) -> ProjectionBank<'a> {
         ProjectionBank {
-            routed: device_region(r),
-            addressing: match &self.bank.layout {
-                ExpertLayout::Identity { experts } => ExpertAddressing::Identity {
+            routed: device_region(&p.region),
+            addressing: match &p.addressing {
+                ProjectionAddressing::Identity { experts, stride } => ExpertAddressing::Identity {
                     experts: *experts as usize,
-                    stride: self.expert_stride,
+                    stride: *stride,
                 },
-                ExpertLayout::Mapped { .. } => ExpertAddressing::Table(&self.offsets),
+                ProjectionAddressing::Table(t) => ExpertAddressing::Table(t),
             },
             shared: shared.map(device_region),
         }
@@ -269,9 +275,9 @@ impl DeviceLayer {
                      the flag and the weights disagree"
                 );
                 FfnSpec::Dense(KimiDenseFfn {
-                    gate: self.bank.gate.region.bytes(),
-                    up: self.bank.up.region.bytes(),
-                    down: self.bank.down.region.bytes(),
+                    gate: self.bank.gate.region.region.bytes(),
+                    up: self.bank.up.region.region.bytes(),
+                    down: self.bank.down.region.region.bytes(),
                     inter: self.inter,
                 })
             } else {
@@ -396,6 +402,26 @@ impl<'a> HybridStack<'a> {
     /// state.
     pub fn has_head(&self) -> bool {
         self.head.is_some()
+    }
+
+    /// Start a new sequence: reset every DEVICE layer's recurrent and
+    /// cache state.
+    ///
+    /// Refuses a stack with host layers rather than resetting half of
+    /// it — a half-reset would silently carry one arm's history into
+    /// the next teacher-forced sequence, which is exactly the
+    /// contamination a per-sequence reset exists to prevent.
+    pub fn reset_states(&self) -> Result<(), VindexError> {
+        if self.host.iter().any(Option::is_some) {
+            return Err(VindexError::Parse(
+                "reset_states reaches only device-resident state, and this stack has host                  layers whose state it would silently skip"
+                    .to_string(),
+            ));
+        }
+        for d in self.device.iter().flatten() {
+            d.state.reset();
+        }
+        Ok(())
     }
 
     /// Maximal runs of consecutive device layers — one command buffer
