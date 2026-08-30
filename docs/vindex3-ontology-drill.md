@@ -394,3 +394,23 @@ conversion of `state-spaces/mamba2-780m`; the original repos ship
   witnesses: `mamba2-780m` (pure SSM), `mamba2attn-2.7b` (the
   surfaces-follow-program A/B), `Falcon3-Mamba-7B-Instruct`
   (product-scale), Kimi-Linear (three-state hybrid).
+
+- **2026-08-30, schema 6 landed — the witness admits.** Lift 1
+  implemented in one intentional break (`GRAPH_SCHEMA` 5 → 6):
+  `ExecutionSurface.attention` **and `.ffn`** optional, present iff the
+  program runs them (the FFN turned out to be F1's twin — a mixer-only
+  layer has no FFN either); explicit per-layer `operator` (F7); the
+  census fails closed on generic-plus-silence — no registered family, no
+  per-layer declaration, no declared attention shape (F3, scoped so a
+  declared `num_attention_heads` still counts as the program declaration
+  it is); operand closure enforced at encode, a failing encode removed
+  (F4); `NormPlacement::PreMixer` and the nine Mamba2 operand roles,
+  operator-gated. The F8 panic sites are retired (LQL `STATS` and
+  `EXPLAIN` read the layers, never `plan_kv_geometry`). Witness result:
+  `mamba2-780m-hf` plans **0 blocking** (was 19), encodes with 434
+  operands closing, and opens through ordinary LQL with the source
+  checkpoint deleted — `48 Mamba2 recurrent`, no attention surface, no
+  FFN surface, `INFER` refusing by name until the executor lands. Lift
+  2's state-schema facts (F5, F6) remain open, additive within the v6
+  span; the Mamba2 continuation arm refuses state precision exactly as
+  KDA's does, for the same reason.
