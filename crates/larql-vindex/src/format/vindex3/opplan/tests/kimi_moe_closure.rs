@@ -162,7 +162,7 @@ fn a_per_expert_kimi_shaped_estate_closes() {
     assert!(outcome.closed(), "{:?}", outcome.defects);
     let plan = outcome.plan.unwrap();
     for layer in &plan.layers {
-        let LayerFfn::Routed(op) = &layer.ffn else {
+        let Some(LayerFfn::Routed(op)) = &layer.ffn else {
             panic!("layer {}: planned non-routed", layer.layer);
         };
         assert_eq!(op.experts, EXPERTS);
@@ -191,7 +191,7 @@ fn the_per_expert_bank_carves_out_of_the_decoder_stack() {
     let outcome = plan_variant(|_| {});
     assert!(outcome.closed(), "{:?}", outcome.defects);
     let plan = outcome.plan.unwrap();
-    let LayerFfn::Routed(op) = &plan.layers[0].ffn else {
+    let Some(LayerFfn::Routed(op)) = &plan.layers[0].ffn else {
         panic!("planned non-routed");
     };
     let ExpertBank::PerExpert { gate, .. } = &op.bank else {

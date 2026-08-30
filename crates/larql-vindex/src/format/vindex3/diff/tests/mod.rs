@@ -32,7 +32,7 @@ fn pristine() -> tempfile::TempDir {
 /// A compose-shaped overlay: gate row + up row + down column at layer
 /// 1 feature 3, plus one knowledge edge.
 fn overlay_state(side: &DiffSide) -> (OperandOverrides, KnnStore) {
-    let LayerFfn::Dense(ffn) = &side.plan.layers[1].ffn else {
+    let Some(LayerFfn::Dense(ffn)) = &side.plan.layers[1].ffn else {
         panic!("miniature layer 1 is dense");
     };
     let mut overrides = OperandOverrides::new();

@@ -54,7 +54,9 @@ use super::weights::{load_weight, LoadedWeight};
 use super::AttentionOperands;
 use crate::error::VindexError;
 
-use super::super::{ComponentOpPlan, GatedDeltaOp, LayerAttention, NormOp, OperandRef, OutputOp};
+use super::super::{
+    ComponentOpPlan, GatedDeltaOp, LayerAttention, Mamba2Op, NormOp, OperandRef, OutputOp,
+};
 
 /// Which part of a component's program to prepare.
 ///
@@ -179,8 +181,10 @@ pub(super) struct PreparedLayer {
     pub(super) pre_attention: PreparedNorm,
     pub(super) attention: PreparedAttention,
     pub(super) post_attention: Option<PreparedNorm>,
-    pub(super) pre_ffn: PreparedNorm,
-    pub(super) ffn: FfnOperands,
+    /// Absent on a mixer-only (Mamba2) layer — the plan carries no FFN
+    /// program there, so there is nothing to prepare and nothing to run.
+    pub(super) pre_ffn: Option<PreparedNorm>,
+    pub(super) ffn: Option<FfnOperands>,
     pub(super) post_ffn: Option<PreparedNorm>,
     /// The layer's output scalar, when the plan carries one.
     pub(super) layer_scale: Option<f32>,
@@ -192,7 +196,7 @@ impl PreparedLayer {
     fn glue_bytes(&self) -> usize {
         let norm = |n: &PreparedNorm| std::mem::size_of_val(&n.weight[..]);
         norm(&self.pre_attention)
-            + norm(&self.pre_ffn)
+            + self.pre_ffn.as_ref().map_or(0, norm)
             + self.post_attention.as_ref().map_or(0, norm)
             + self.post_ffn.as_ref().map_or(0, norm)
     }
@@ -212,6 +216,7 @@ impl PreparedLayer {
 pub(super) enum PreparedAttention {
     Softmax(Box<AttentionOperands>),
     GatedDelta(Box<GatedDeltaOperands>),
+    Mamba2(Box<Mamba2Operands>),
 }
 
 impl PreparedAttention {
@@ -224,7 +229,7 @@ impl PreparedAttention {
     fn weight_slices(&self) -> Vec<WeightSlice<'_>> {
         match self {
             Self::Softmax(ops) => ops.weight_slices(),
-            Self::GatedDelta(_) => Vec::new(),
+            Self::GatedDelta(_) | Self::Mamba2(_) => Vec::new(),
         }
     }
 }
@@ -311,6 +316,85 @@ impl GatedDeltaOperands {
             a_log: &self.a_log,
             dt_bias: &self.dt_bias,
             norm: &self.norm,
+            norm_eps: self.norm_eps,
+        })
+    }
+}
+
+/// The nine operands a Mamba2 layer reads, loaded once.
+///
+/// The two projections carry a `LoadedWeight`; the seven glue operands
+/// are f32 — the same matrix/glue split the delta operands draw, at this
+/// family's shapes (a 6448×1536 fused projection against kilobytes of
+/// conv taps and per-head scalars).
+pub(super) struct Mamba2Operands {
+    pub(super) op: Mamba2Op,
+    in_proj: LoadedWeight,
+    out_proj: LoadedWeight,
+    conv1d: Vec<f32>,
+    conv1d_bias: Option<Vec<f32>>,
+    a_log: Vec<f32>,
+    d: Vec<f32>,
+    dt_bias: Vec<f32>,
+    norm: Option<Vec<f32>>,
+    norm_eps: f32,
+}
+
+impl Mamba2Operands {
+    fn load(
+        op: &Mamba2Op,
+        store: OperandSource<'_>,
+        format: FormatFor<'_>,
+    ) -> Result<Self, VindexError> {
+        let matrix = |r: &OperandRef| load_weight(store, r, format(r));
+        let glue = |r: &OperandRef| store.load(r);
+        Ok(Self {
+            op: op.clone(),
+            in_proj: matrix(&op.in_proj)?,
+            out_proj: matrix(&op.out_proj)?,
+            conv1d: glue(&op.conv1d)?,
+            conv1d_bias: op.conv1d_bias.as_ref().map(glue).transpose()?,
+            a_log: glue(&op.a_log)?,
+            d: glue(&op.d)?,
+            dt_bias: glue(&op.dt_bias)?,
+            norm: op
+                .gated_norm
+                .as_ref()
+                .map(|n| glue(&n.weight))
+                .transpose()?,
+            // The epsilon travels with the gated norm's own NormOp; a
+            // mixer with `rms_norm: false` has no norm and the value is
+            // never read.
+            norm_eps: op.gated_norm.as_ref().map_or(0.0, |n| n.eps as f32),
+        })
+    }
+
+    /// The two matrices, for residency accounting.
+    pub(super) fn loaded_matrices(&self) -> [&LoadedWeight; 2] {
+        [&self.in_proj, &self.out_proj]
+    }
+
+    /// The f32 operands that are not matrix traffic.
+    pub(super) fn glue_bytes(&self) -> usize {
+        let opt = |v: &Option<Vec<f32>>| v.as_ref().map_or(0, |v| std::mem::size_of_val(&v[..]));
+        [&self.conv1d, &self.a_log, &self.d, &self.dt_bias]
+            .iter()
+            .map(|v| std::mem::size_of_val(&v[..]))
+            .sum::<usize>()
+            + opt(&self.conv1d_bias)
+            + opt(&self.norm)
+    }
+
+    pub(super) fn weights(&self) -> Result<super::mamba2::Mamba2Weights<'_>, VindexError> {
+        Ok(super::mamba2::Mamba2Weights {
+            in_proj: matrix_rows(&self.in_proj, &self.op.in_proj)?,
+            out_proj: matrix_rows(&self.out_proj, &self.op.out_proj)?,
+            conv1d: &self.conv1d,
+            conv1d_bias: self.conv1d_bias.as_deref(),
+            a_log: &self.a_log,
+            d: &self.d,
+            dt_bias: &self.dt_bias,
+            norm: self.norm.as_deref(),
             norm_eps: self.norm_eps,
         })
     }
@@ -471,6 +555,9 @@ impl PreparedOperands {
                                 .to_string(),
                         ))
                     }
+                    LayerAttention::Mamba2(op) => PreparedAttention::Mamba2(Box::new(
+                        Mamba2Operands::load(op, store, &attention_format)?,
+                    )),
                     LayerAttention::GatedDelta(op) => {
                         PreparedAttention::GatedDelta(Box::new(GatedDeltaOperands::load(
                             op,
@@ -485,8 +572,19 @@ impl PreparedOperands {
                     .as_ref()
                     .map(|op| PreparedNorm::load(op, store))
                     .transpose()?,
-                pre_ffn: PreparedNorm::load(&layer.pre_ffn_norm, store)?,
-                ffn: FfnOperands::load(&layer.ffn, store, &ffn_format, bank_format)?,
+                // Absent on a mixer-only layer: the plan carries no FFN
+                // program there, and preparing one would fabricate work
+                // the executor must then skip.
+                pre_ffn: layer
+                    .pre_ffn_norm
+                    .as_ref()
+                    .map(|op| PreparedNorm::load(op, store))
+                    .transpose()?,
+                ffn: layer
+                    .ffn
+                    .as_ref()
+                    .map(|ffn| FfnOperands::load(ffn, store, &ffn_format, bank_format))
+                    .transpose()?,
                 post_ffn: layer
                     .post_ffn_norm
                     .as_ref()
@@ -542,7 +640,9 @@ impl PreparedOperands {
         let mut weights: Vec<WeightSlice<'_>> = Vec::new();
         for layer in &self.layers {
             weights.extend(layer.attention.weight_slices());
-            weights.extend(layer.ffn.weight_slices());
+            if let Some(ffn) = &layer.ffn {
+                weights.extend(ffn.weight_slices());
+            }
         }
         if let Some((_, projection)) = &self.output {
             weights.push(projection.slice());
@@ -579,9 +679,17 @@ impl PreparedOperands {
                     }
                     census.glue.widened_f32 += ops.glue_bytes();
                 }
+                PreparedAttention::Mamba2(ops) => {
+                    for w in ops.loaded_matrices() {
+                        census.delta.add(w);
+                    }
+                    census.glue.widened_f32 += ops.glue_bytes();
+                }
             }
-            for w in layer.ffn.loaded_matrices() {
-                census.ffn.add(w);
+            if let Some(ffn) = &layer.ffn {
+                for w in ffn.loaded_matrices() {
+                    census.ffn.add(w);
+                }
             }
             census.glue.widened_f32 += layer.glue_bytes();
         }
@@ -610,8 +718,11 @@ impl PreparedOperands {
                 PreparedAttention::GatedDelta(ops) => {
                     ops.loaded_matrices().iter().for_each(|w| add(w))
                 }
+                PreparedAttention::Mamba2(ops) => ops.loaded_matrices().iter().for_each(|w| add(w)),
             }
-            layer.ffn.loaded_matrices().iter().for_each(|w| add(w));
+            if let Some(ffn) = &layer.ffn {
+                ffn.loaded_matrices().iter().for_each(|w| add(w));
+            }
         }
         if let Some((_, projection)) = &self.output {
             add(projection);

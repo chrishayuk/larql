@@ -18,8 +18,9 @@ use crate::validation::ConfigValidationResult;
 
 use super::{
     layer_types, rope_types, Activation, EmbeddingNorm, ExpertFormat, ExpertGatePolicy,
-    ExpertRoutingPolicy, FfnType, GateUpLayout, Llama3RopeScaling, ModelConfig, NormSpec, NormType,
-    PositionPolicy, PostNormEps, QkNormScope, RotaryFrequencyBasis, YarnRopeScaling,
+    ExpertRoutingPolicy, FfnType, GateUpLayout, LayerKind, Llama3RopeScaling, ModelConfig,
+    NormSpec, NormType, PositionPolicy, PostNormEps, QkNormScope, RotaryFrequencyBasis,
+    YarnRopeScaling,
 };
 
 /// The multiplier that leaves a value unchanged.
@@ -430,6 +431,22 @@ pub trait ModelArchitecture: Send + Sync {
     /// Sliding window size (None = full attention).
     fn sliding_window_size(&self) -> Option<usize> {
         self.config().sliding_window
+    }
+
+    /// The per-layer kind this family declares for EVERY layer of its
+    /// stack, when the declaration is the `model_type` itself rather than
+    /// an interleave key. A pure-SSM checkpoint (mamba2) writes no
+    /// `layer_types` — there is no interleave to state — and its
+    /// `model_type` is the whole-stack declaration that every layer runs
+    /// the family's mixer.
+    ///
+    /// `None` (the default) means the family makes no such uniform claim
+    /// and the declared interleave, or its absence, answers as before.
+    /// This is a *declaration*, not an operator identification: which
+    /// recurrence actually runs is still resolved from the declared
+    /// geometry downstream, exactly as for an interleaved hybrid.
+    fn declared_uniform_layer_kind(&self) -> Option<LayerKind> {
+        None
     }
 
     /// RoPE base frequency for a given layer.

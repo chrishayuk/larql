@@ -72,6 +72,17 @@ pub(super) fn run_ops(args: OpsArgs) -> Result<(), Box<dyn std::error::Error>> {
                             layer_plan.operands_accounted,
                             layer_plan.operands_present,
                         ),
+                        LayerAttention::Mamba2(op) => println!(
+                            "layer {:3}: Mamba2({} heads x {}x{}) state {} elems  \
+                             {}/{} operands accounted",
+                            layer_plan.layer,
+                            op.geometry.num_heads,
+                            op.geometry.head_dim,
+                            op.geometry.state_size,
+                            op.state_elements(),
+                            layer_plan.operands_accounted,
+                            layer_plan.operands_present,
+                        ),
                     }
                 }
             }
@@ -133,20 +144,23 @@ fn print_layer(component: &str, layer: &LayerPlan) {
         LayerAttention::GatedDelta(op) => print_gated_delta(op),
         LayerAttention::Kda(op) => print_kda(op),
         LayerAttention::Mla(op) => print_mla(op),
+        LayerAttention::Mamba2(op) => print_mamba2(op),
     }
     println!("  residual");
     if let Some(op) = &layer.post_attention_norm {
         norm(op, "post_attention");
     }
-    norm(&layer.pre_ffn_norm, "pre_ffn");
+    if let Some(op) = &layer.pre_ffn_norm {
+        norm(op, "pre_ffn");
+    }
     match &layer.ffn {
-        larql_vindex::format::vindex3::opplan::LayerFfn::Dense(ffn) => println!(
+        Some(larql_vindex::format::vindex3::opplan::LayerFfn::Dense(ffn)) => println!(
             "  {}FFN({:?}, {})",
             if ffn.gate.is_some() { "Gated" } else { "" },
             ffn.activation,
             ffn.intermediate_size
         ),
-        larql_vindex::format::vindex3::opplan::LayerFfn::Routed(ffn) => println!(
+        Some(larql_vindex::format::vindex3::opplan::LayerFfn::Routed(ffn)) => println!(
             "  RoutedFFN({} experts, top-{}, {:?}, {:?}, {}, {:?}{}) router={}/{}, bank={}",
             ffn.experts,
             ffn.top_k,
@@ -163,7 +177,10 @@ fn print_layer(component: &str, layer: &LayerPlan) {
             ffn.router.tensor,
             bank_object(&ffn.bank),
         ),
-        larql_vindex::format::vindex3::opplan::LayerFfn::Hybrid(ffn) => {
+        // A mixer-only (Mamba2) layer: no FFN exists — saying so is the
+        // honest print, not an omission.
+        None => println!("  (no FFN — mixer-only layer)"),
+        Some(larql_vindex::format::vindex3::opplan::LayerFfn::Hybrid(ffn)) => {
             println!(
                 "  HybridFFN: dense {}FFN({:?}, {}) → post_dense_norm  +  routed({} experts, \
                  top-{}, {:?}, {:?}, {}, {:?}{}) over pre_experts_norm(residual) → \
@@ -195,7 +212,10 @@ fn print_layer(component: &str, layer: &LayerPlan) {
     if let Some(op) = &layer.post_ffn_norm {
         norm(op, "post_ffn");
     }
-    println!("  residual");
+    // A mixer-only layer has one residual add, printed after its mixer.
+    if layer.ffn.is_some() {
+        println!("  residual");
+    }
     if let Some(scale) = &layer.layer_scale {
         println!("  × layer_scale {}/{}", scale.object, scale.tensor);
     }
@@ -358,5 +378,38 @@ fn print_gated_delta(op: &GatedDeltaOp) {
             "    {name} = {}/{} {:?}",
             operand.object, operand.tensor, operand.shape
         );
+    }
+}
+
+fn print_mamba2(op: &larql_vindex::format::vindex3::opplan::Mamba2Op) {
+    println!("  Mamba2 (SSD mixer)");
+    println!(
+        "    geometry: {} heads x {}, state {}, conv {}, groups {}, chunk {}, d_inner {}x hidden",
+        op.geometry.num_heads,
+        op.geometry.head_dim,
+        op.geometry.state_size,
+        op.geometry.conv_kernel,
+        op.geometry.n_groups,
+        op.geometry.chunk_size,
+        op.geometry.expand,
+    );
+    println!(
+        "    recurrent state: {} elements (constant in sequence length)",
+        op.state_elements()
+    );
+    let mut operands: Vec<(&str, &larql_vindex::format::vindex3::opplan::OperandRef)> =
+        vec![("in_proj", &op.in_proj), ("conv1d", &op.conv1d)];
+    if let Some(bias) = &op.conv1d_bias {
+        operands.push(("conv1d_bias", bias));
+    }
+    operands.push(("a_log", &op.a_log));
+    operands.push(("d", &op.d));
+    operands.push(("dt_bias", &op.dt_bias));
+    if let Some(norm) = &op.gated_norm {
+        operands.push(("gated_norm", &norm.weight));
+    }
+    operands.push(("out_proj", &op.out_proj));
+    for (name, operand) in operands {
+        println!("    {name}: {} {:?}", operand.tensor, operand.shape);
     }
 }

@@ -140,6 +140,8 @@ impl TestMoeArch {
                 d_rel: None,
                 rel_extent: None,
                 mamba_ssm_dtype: None,
+                mamba2_geometry: None,
+                residual_in_fp32: None,
                 attn_output_gate: None,
                 output_gate_type: None,
                 mtp_num_hidden_layers: None,

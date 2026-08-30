@@ -52,19 +52,20 @@ fn builder_fills_every_component_surface() {
         .find(|c| c.id == "target")
         .unwrap();
     let surface = target.execution.as_ref().unwrap();
+    // An attention-class program carries its groups (schema 6: presence
+    // means the program runs them).
+    let attention = surface.attention.as_ref().expect("the program attends");
+    let ffn = surface.ffn.as_ref().expect("the program runs an FFN");
     // Scales stay separate: declared query factor, canonical score scale.
-    let query_scale = surface
-        .attention
-        .query_scale
-        .expect("declared qk_scale_factor");
+    let query_scale = attention.query_scale.expect("declared qk_scale_factor");
     assert!((query_scale - 3.87).abs() < 1e-12);
-    assert!((surface.attention.score_scale - (8f64).powf(-0.5)).abs() < 1e-12);
+    assert!((attention.score_scale - (8f64).powf(-0.5)).abs() < 1e-12);
     // Judged semantics from the registered family.
-    assert!(surface.attention.output_gate.is_some());
-    assert!(surface.attention.parameter_free_qk_norm.q);
-    assert_eq!(surface.attention.num_q_heads, 8);
-    assert_eq!(surface.attention.num_kv_heads, 2);
-    assert_eq!(surface.ffn.intermediate_size, 256);
+    assert!(attention.output_gate.is_some());
+    assert!(attention.parameter_free_qk_norm.q);
+    assert_eq!(attention.num_q_heads, 8);
+    assert_eq!(attention.num_kv_heads, 2);
+    assert_eq!(ffn.intermediate_size, 256);
     // Each norm site carries a complete spec. The declared post_norm_eps
     // reaches the post sites as a distinct value, and Glimmer's centred
     // layer norms reach every site that needs them — while the final norm
@@ -108,10 +109,12 @@ fn perception_surface_derives_from_nested_evidence() {
         .find(|c| c.id == "vision")
         .unwrap();
     let surface = vision.execution.as_ref().unwrap();
-    assert_eq!(surface.attention.num_q_heads, 4);
-    assert_eq!(surface.attention.head_dim, 8); // 32 / 4, derived
-    assert_eq!(surface.ffn.activation, Activation::Gelu);
-    assert_eq!(surface.ffn.ffn_type, FfnType::Standard);
+    let attention = surface.attention.as_ref().expect("the tower attends");
+    let ffn = surface.ffn.as_ref().expect("the tower runs an FFN");
+    assert_eq!(attention.num_q_heads, 4);
+    assert_eq!(attention.head_dim, 8); // 32 / 4, derived
+    assert_eq!(ffn.activation, Activation::Gelu);
+    assert_eq!(ffn.ffn_type, FfnType::Standard);
     assert_eq!(surface.norm.pre.kind, NormType::LayerNorm); // layer_norm_eps spelling
     assert!(surface.head.is_none());
 }
@@ -176,8 +179,9 @@ fn non_uniform_head_geometry_is_carried_per_layer() {
     );
     // The surface still states the component's declared geometry.
     let surface = target.execution.as_ref().expect("surface built");
-    assert_eq!(surface.attention.head_dim, uniform_head_dim);
-    assert_eq!(surface.attention.num_kv_heads, uniform_kv_heads);
+    let attention = surface.attention.as_ref().expect("the program attends");
+    assert_eq!(attention.head_dim, uniform_head_dim);
+    assert_eq!(attention.num_kv_heads, uniform_kv_heads);
 }
 
 /// Every nested-derivation refusal names its missing fact — a bare

@@ -23,6 +23,7 @@ use crate::architectures::gpt_oss::GptOssArch;
 use crate::architectures::granite::GraniteArch;
 use crate::architectures::kimi::KimiLinearArch;
 use crate::architectures::llama::LlamaArch;
+use crate::architectures::mamba2::{Mamba2Arch, MAMBA2_MODEL_TYPE};
 use crate::architectures::mistral::MistralArch;
 use crate::architectures::mixtral::MixtralArch;
 use crate::architectures::moss_tts_realtime::{MossTtsRealtimeArch, MOSS_TTS_REALTIME_MODEL_TYPE};
@@ -127,6 +128,9 @@ pub fn detect_from_json(config: &serde_json::Value) -> Box<dyn ModelArchitecture
         t if t.starts_with("llama") => Box::new(LlamaArch::from_config(model_config)),
         // Mistral (dense)
         "mistral" => Box::new(MistralArch::from_config(model_config)),
+        // Mamba2 — pure SSM, no attention anywhere. Exact match: `mamba`
+        // (v1) is a different operator and stays generic until judged.
+        t if t == MAMBA2_MODEL_TYPE => Box::new(Mamba2Arch::from_config(model_config)),
         // Muse-Glimmer target: config-driven defaults plus the judged
         // gate/QK-norm semantics. The assistant is deliberately excluded
         // (weighted QK norms, no gate, unjudged) and stays generic.

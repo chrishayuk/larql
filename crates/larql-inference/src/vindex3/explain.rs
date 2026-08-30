@@ -139,11 +139,17 @@ impl ExplainPlan {
             .embedding
             .as_ref()
             .expect("a decode-servable component carries an embedding op");
-        let continuation = super::plan_kv_geometry(plan)
-            .into_iter()
-            .map(|g| ExplainKvGeometry {
-                kv_dim: g.kv_dim,
-                window: g.window,
+        // Per layer, from the op itself — `plan_kv_geometry` refuses
+        // (formerly: panicked, drill F8) on recurrent continuation, and a
+        // recurrence genuinely has no KV row to explain: the per-layer
+        // sections below carry its state story instead.
+        let continuation = plan
+            .layers
+            .iter()
+            .filter_map(|layer| layer.attention.softmax())
+            .map(|op| ExplainKvGeometry {
+                kv_dim: op.num_kv_heads * op.head_dim,
+                window: op.window,
             })
             .collect();
         Self {
@@ -179,17 +185,37 @@ fn explain_layer(
     index: usize,
     layer: &larql_vindex::format::vindex3::opplan::LayerPlan,
 ) -> ExplainLayer {
-    let mut ops = vec!["pre_attention_norm".to_string(), "attention".to_string()];
+    // The pre-block norm is `input_layernorm` on an attention-class
+    // layer and the single pre-mixer norm on a mixer-only one — one
+    // program position, named for what the layer runs.
+    let mixer_only = layer.ffn.is_none();
+    let mut ops = vec![
+        if mixer_only {
+            "pre_mixer_norm".to_string()
+        } else {
+            "pre_attention_norm".to_string()
+        },
+        if mixer_only {
+            "mamba2_mixer".to_string()
+        } else {
+            "attention".to_string()
+        },
+    ];
     if layer.post_attention_norm.is_some() {
         ops.push("post_attention_norm".into());
     }
     ops.push("residual_add".into());
-    ops.push("pre_ffn_norm".into());
-    ops.push("ffn".into());
-    if layer.post_ffn_norm.is_some() {
-        ops.push("post_ffn_norm".into());
+    // A mixer-only layer's program ends at its one residual add: no FFN
+    // exists, and listing absent ops would be the presentation-side twin
+    // of the fabrication schema 6 removed.
+    if !mixer_only {
+        ops.push("pre_ffn_norm".into());
+        ops.push("ffn".into());
+        if layer.post_ffn_norm.is_some() {
+            ops.push("post_ffn_norm".into());
+        }
+        ops.push("residual_add".into());
     }
-    ops.push("residual_add".into());
     if layer.layer_scale.is_some() {
         ops.push("layer_scale".into());
     }
@@ -282,6 +308,39 @@ fn explain_layer(
                 operand("out_proj", &op.out_proj),
             ],
         },
+        LayerAttention::Mamba2(op) => ExplainAttention {
+            // Named specifically, not the canonical `linear_attention`
+            // spelling: EXPLAIN is where a reader asks what a layer
+            // actually runs, and this one runs the SSD mixer.
+            mode: "mamba2".into(),
+            window: None,
+            q_heads: None,
+            kv_heads: None,
+            head_dim: Some(op.geometry.head_dim),
+            state_elements: Some(op.state_elements()),
+            // The z half of the fused projection gates the output.
+            gated: true,
+            qk_norm: false,
+            sinks: false,
+            biased: false,
+            operands: {
+                let mut operands = vec![
+                    operand("in_proj", &op.in_proj),
+                    operand("conv1d", &op.conv1d),
+                ];
+                if let Some(bias) = &op.conv1d_bias {
+                    operands.push(operand("conv1d_bias", bias));
+                }
+                operands.push(operand("a_log", &op.a_log));
+                operands.push(operand("d", &op.d));
+                operands.push(operand("dt_bias", &op.dt_bias));
+                if let Some(norm) = &op.gated_norm {
+                    operands.push(operand("gated_norm", &norm.weight));
+                }
+                operands.push(operand("out_proj", &op.out_proj));
+                operands
+            },
+        },
         LayerAttention::Mla(op) => ExplainAttention {
             mode: layer.attention.declared_name().into(),
             window: None,
@@ -311,8 +370,12 @@ fn explain_layer(
         },
     };
 
-    let (kind, experts, ffn_operands) = match &layer.ffn {
-        LayerFfn::Dense(op) => {
+    let (kind, experts, ffn_operands) = match layer.ffn.as_ref() {
+        // A mixer-only (Mamba2) layer has no FFN — the mixer is the whole
+        // block, and reporting an absent op as anything else would be the
+        // presentation-side twin of the fabrication schema 6 removed.
+        None => ("absent", None, Vec::new()),
+        Some(LayerFfn::Dense(op)) => {
             let mut operands = Vec::new();
             if let Some(gate) = &op.gate {
                 operands.push(operand("gate", gate));
@@ -321,12 +384,12 @@ fn explain_layer(
             operands.push(operand("down", &op.down));
             ("dense", None, operands)
         }
-        LayerFfn::Routed(op) => (
+        Some(LayerFfn::Routed(op)) => (
             "routed",
             Some((op.experts, op.top_k)),
             vec![operand("router", &op.router)],
         ),
-        LayerFfn::Hybrid(_) => ("hybrid", None, Vec::new()),
+        Some(LayerFfn::Hybrid(_)) => ("hybrid", None, Vec::new()),
     };
 
     ExplainLayer {

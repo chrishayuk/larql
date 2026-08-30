@@ -222,7 +222,7 @@ fn a_session_fails_closed_on_an_unresolvable_operand_at_every_site() {
         .q
         .tensor = UNRESOLVABLE_TENSOR.to_string();
     let mut ffn_broken = plan.clone();
-    let LayerFfn::Dense(op) = &mut ffn_broken.layers[0].ffn else {
+    let Some(LayerFfn::Dense(op)) = &mut ffn_broken.layers[0].ffn else {
         panic!("dense fixture");
     };
     op.up.tensor = UNRESOLVABLE_TENSOR.to_string();

@@ -28,6 +28,8 @@ pub(super) struct AttentionCensus {
     pub gated_delta: usize,
     /// Kimi Delta Attention recurrences.
     pub kda: usize,
+    /// Mamba2/SSD recurrences.
+    pub mamba2: usize,
     /// Recurrences it cannot identify.
     pub unidentified_recurrence: usize,
     /// Declared spellings outside every vocabulary.
@@ -45,6 +47,7 @@ impl AttentionCensus {
     pub fn of(table: &[AttentionLayerPolicy]) -> Self {
         let gated_delta = table.iter().filter(|l| l.operator.is_gated_delta()).count();
         let kda = table.iter().filter(|l| l.operator.is_kda()).count();
+        let mamba2 = table.iter().filter(|l| l.operator.is_mamba2()).count();
         let unidentified_recurrence = table
             .iter()
             .filter(|l| l.operator.is_unidentified_recurrence())
@@ -62,9 +65,16 @@ impl AttentionCensus {
             .count();
         Self {
             sliding,
-            full: table.len() - sliding - gated_delta - kda - unidentified_recurrence - unexpressed,
+            full: table.len()
+                - sliding
+                - gated_delta
+                - kda
+                - mamba2
+                - unidentified_recurrence
+                - unexpressed,
             gated_delta,
             kda,
+            mamba2,
             unidentified_recurrence,
             unexpressed,
             nope: table
@@ -105,6 +115,7 @@ impl AttentionCensus {
             full,
             gated_delta,
             kda,
+            mamba2,
             unidentified_recurrence,
             unexpressed,
             nope,
@@ -118,6 +129,9 @@ impl AttentionCensus {
         }
         if kda > 0 {
             detail.push_str(&format!(" / {kda} KDA recurrent"));
+        }
+        if mamba2 > 0 {
+            detail.push_str(&format!(" / {mamba2} Mamba2 recurrent"));
         }
         if unidentified_recurrence > 0 {
             detail.push_str(&format!(

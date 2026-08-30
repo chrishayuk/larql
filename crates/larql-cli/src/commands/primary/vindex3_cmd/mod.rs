@@ -729,30 +729,55 @@ fn run_inspect(args: InspectArgs) -> Result<(), Box<dyn std::error::Error>> {
             println!("execution surfaces:");
             for component in &inspection.graph.components {
                 match &component.execution {
-                    Some(surface) => println!(
-                        "  {:8} attention {}q/{}kv head {} q-scale {:.4} s-scale {:.4}{}, \
-                         ffn {:?} {:?} {}, norm {:?} eps {:e}{}",
-                        component.id,
-                        surface.attention.num_q_heads,
-                        surface.attention.num_kv_heads,
-                        surface.attention.head_dim,
-                        optional_op::scalar(surface.attention.query_scale),
-                        surface.attention.score_scale,
-                        if surface.attention.output_gate.is_some() {
-                            " gated"
-                        } else {
-                            ""
-                        },
-                        surface.ffn.activation,
-                        surface.ffn.ffn_type,
-                        surface.ffn.intermediate_size,
-                        surface.norm.pre.kind,
-                        surface.norm.pre.eps,
-                        match &surface.head {
-                            Some(head) => format!(", head vocab {}", head.vocab_size),
+                    Some(surface) => {
+                        // Presence follows the program (schema 6): each
+                        // group prints only when the component runs it,
+                        // and absence is said in words — a pure-SSM
+                        // component has no attention/FFN to describe.
+                        let attention = match &surface.attention {
+                            Some(a) => format!(
+                                "attention {}q/{}kv head {} q-scale {:.4} s-scale {:.4}{}",
+                                a.num_q_heads,
+                                a.num_kv_heads,
+                                a.head_dim,
+                                optional_op::scalar(a.query_scale),
+                                a.score_scale,
+                                if a.output_gate.is_some() {
+                                    " gated"
+                                } else {
+                                    ""
+                                },
+                            ),
+                            None => "attention absent".to_string(),
+                        };
+                        let ffn = match &surface.ffn {
+                            Some(f) => format!(
+                                "ffn {:?} {:?} {}",
+                                f.activation, f.ffn_type, f.intermediate_size
+                            ),
+                            None => "ffn absent".to_string(),
+                        };
+                        let mixer = match &surface.mamba2 {
+                            Some(m) => format!(
+                                ", mamba2 mixer {}h×{}×{} conv {}",
+                                m.geometry.num_heads,
+                                m.geometry.head_dim,
+                                m.geometry.state_size,
+                                m.geometry.conv_kernel
+                            ),
                             None => String::new(),
-                        },
-                    ),
+                        };
+                        println!(
+                            "  {:8} {attention}, {ffn}{mixer}, norm {:?} eps {:e}{}",
+                            component.id,
+                            surface.norm.pre.kind,
+                            surface.norm.pre.eps,
+                            match &surface.head {
+                                Some(head) => format!(", head vocab {}", head.vocab_size),
+                                None => String::new(),
+                            },
+                        )
+                    }
                     None => println!("  {:8} (no execution surface)", component.id),
                 }
             }

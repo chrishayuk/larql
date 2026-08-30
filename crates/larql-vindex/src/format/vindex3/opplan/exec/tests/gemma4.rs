@@ -367,7 +367,7 @@ fn a_hybrid_gemma4_plan_closes_and_executes_at_parity_on_every_backend() {
     let plan = outcome.plan.as_ref().unwrap();
     for layer in &plan.layers {
         let hybrid = match &layer.ffn {
-            LayerFfn::Hybrid(op) => op,
+            Some(LayerFfn::Hybrid(op)) => op,
             other => panic!("layer {} is not hybrid: {other:?}", layer.layer),
         };
         assert!(hybrid.routed.router_scale.is_some());

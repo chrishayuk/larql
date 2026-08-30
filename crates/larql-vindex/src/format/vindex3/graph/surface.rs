@@ -228,10 +228,24 @@ pub struct HeadSurface {
 }
 
 /// The complete per-component execution surface.
+///
+/// Since GRAPH_SCHEMA 6, `attention` and `ffn` are present **iff the
+/// component's program runs those operations** — presence means semantic
+/// presence, never "the file was written". A pure-SSM stack (mamba2)
+/// carries neither: fabricating an attention surface for it is the
+/// ontology drill's F1 finding, and its FFN twin is the same defect one
+/// op over (the mixer is the whole block; no `intermediate_size` exists).
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct ExecutionSurface {
-    pub attention: AttentionSurface,
-    pub ffn: FfnSurface,
+    /// What the attention op reads — present iff any layer of the
+    /// component's program attends (softmax or MLA).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub attention: Option<AttentionSurface>,
+    /// What the FFN op reads — present iff the component's program runs
+    /// an FFN (every attention-class family today; a mixer-only stack
+    /// does not).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub ffn: Option<FfnSurface>,
     pub norm: NormSurface,
     /// Present iff the component owns embedding/output-head objects.
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -272,6 +286,15 @@ pub struct ExecutionSurface {
     /// [`larql_models::inventory::report::MlaExecution`]'s docs).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub mla: Option<MlaSurface>,
+    /// What the Mamba2/SSD mixer reads, on a component whose layers run
+    /// it. `None` otherwise.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub mamba2: Option<Mamba2Surface>,
+    /// Whether the residual stream is kept at fp32 against a
+    /// lower-precision model (`residual_in_fp32`) — declared, never
+    /// chosen by an executor. `None` = the checkpoint declares nothing.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub residual_in_fp32: Option<bool>,
 }
 
 /// What the Gated DeltaNet operator reads.
@@ -346,6 +369,24 @@ impl MlaSurface {
     }
 }
 
+/// What the Mamba2/SSD mixer reads.
+///
+/// The geometry is reused from the architectural record directly (the
+/// same way [`ExecutionSurface::kda`] reuses
+/// [`KdaGeometry`](larql_models::config::KdaGeometry)) — every field is
+/// something the operator reads, and the struct already refuses partial
+/// declarations at the parse boundary. The activation sits beside it
+/// because a mixer-only component has no FFN surface to carry
+/// `hidden_act`, and the mixer genuinely consumes it (the conv branch and
+/// the output gate both apply it).
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+pub struct Mamba2Surface {
+    pub geometry: larql_models::config::Mamba2Geometry,
+    /// The mixer's nonlinearity (`hidden_act`, SiLU on every judged
+    /// checkpoint — read, never assumed).
+    pub activation: Activation,
+}
+
 /// Build the surface for a text-path component (target/drafter) from its
 /// inventory's resolution. Returns the missing source facts when the
 /// surface cannot be completed — the caller turns those into blocking
@@ -359,6 +400,21 @@ pub fn surface_from_resolved(
             "resolved.execution (pre-v3 inventory — re-run inspect-hf)".to_string(),
         ]);
     };
+    // Presence follows the program (schema 6). A layer that declares no
+    // per-layer kind is an attention-class layer — that is what absence
+    // means on every judged transformer config — so the surface is
+    // present unless EVERY layer declares a recurrence. The FFN follows
+    // the declared width: a family with no `intermediate_size` has no
+    // FFN op to describe (the mixer-only case), and writing one anyway
+    // is the F1 fabrication one op over.
+    let attends = resolved.layers.is_empty()
+        || resolved.layers.iter().any(|l| {
+            !matches!(
+                l.declared_kind,
+                Some(larql_models::config::LayerKind::Recurrent(_))
+            )
+        });
+    let has_ffn = resolved.intermediate_size > 0;
     // The surface carries the component's declared head geometry; a
     // family that varies it by layer (Gemma 4's global layers) records
     // each layer's geometry on its `AttentionLayerPolicy`, and the op
@@ -377,6 +433,11 @@ pub fn surface_from_resolved(
         }),
         kda: resolved.kda,
         kda_gate_lower_bound: resolved.kda_gate_lower_bound,
+        mamba2: resolved.mamba2.map(|geometry| Mamba2Surface {
+            geometry,
+            activation: execution.activation,
+        }),
+        residual_in_fp32: execution.residual_in_fp32,
         mla: execution.mla.map(|m| MlaSurface {
             num_heads: m.num_heads,
             kv_lora_rank: m.kv_lora_rank,
@@ -384,7 +445,7 @@ pub fn surface_from_resolved(
             qk_rope_head_dim: m.qk_rope_head_dim,
             v_head_dim: m.v_head_dim,
         }),
-        attention: AttentionSurface {
+        attention: attends.then_some(AttentionSurface {
             num_q_heads: resolved.num_q_heads,
             num_kv_heads: resolved.num_kv_heads,
             head_dim: resolved.head_dim,
@@ -398,8 +459,8 @@ pub fn surface_from_resolved(
             output_gate: execution.attention_output_gate,
             sinks: execution.attention_sinks,
             attention_bias: execution.attention_bias,
-        },
-        ffn: FfnSurface {
+        }),
+        ffn: has_ffn.then(|| FfnSurface {
             intermediate_size: resolved.intermediate_size,
             activation: execution.activation,
             ffn_type: execution.ffn_type,
@@ -418,7 +479,7 @@ pub fn surface_from_resolved(
                 shared_experts: m.shared_experts,
                 hybrid: m.hybrid,
             }),
-        },
+        }),
         norm: NormSurface {
             pre: execution.norm_pre,
             post: execution.norm_post,
@@ -454,7 +515,26 @@ pub fn attach_stack_evidence(
                 .map(|rest| rest.trim_start_matches('.').to_string())
         })
         .collect();
-    match super::roles::norm_placement_evidence(relative.iter().map(String::as_str)) {
+    // A mixer-only program (every layer declared a Mamba2 recurrence)
+    // reads its own placement evidence: one pre-mixer norm per layer, no
+    // attention/FFN wrap norms. The choice is made from the DECLARED
+    // program, so a transformer stack that lost its norms still fails the
+    // transformer evidence rather than sliding into the mixer's.
+    let mixer_only = !inventory.resolved.layers.is_empty()
+        && inventory.resolved.layers.iter().all(|l| {
+            matches!(
+                l.declared_kind,
+                Some(larql_models::config::LayerKind::Recurrent(
+                    larql_models::config::RecurrenceFamily::Mamba2
+                ))
+            )
+        });
+    let evidence = if mixer_only {
+        super::roles::mixer_norm_placement_evidence(relative.iter().map(String::as_str))
+    } else {
+        super::roles::norm_placement_evidence(relative.iter().map(String::as_str))
+    };
+    match evidence {
         Ok(placement) => {
             surface.norm.placement = Some(placement);
             Ok(())
@@ -561,13 +641,15 @@ pub fn surface_from_nested(
         return Err(missing);
     }
     Ok(ExecutionSurface {
-        // No judged perception tower declares a linear-attention recurrence
-        // or Multi-Latent Attention.
+        // No judged perception tower declares a linear-attention
+        // recurrence, Multi-Latent Attention, or an SSM mixer.
         linear_attention: None,
         kda: None,
         kda_gate_lower_bound: None,
         mla: None,
-        attention: AttentionSurface {
+        mamba2: None,
+        residual_in_fp32: None,
+        attention: Some(AttentionSurface {
             num_q_heads: heads,
             num_kv_heads: nested.num_key_value_heads.unwrap_or(heads),
             head_dim,
@@ -586,8 +668,8 @@ pub fn surface_from_nested(
             // it declares anything (Gemma 4 vision: `false`); the loader's
             // tensor-presence check answers otherwise, as for text.
             attention_bias: nested.tower.attention_bias,
-        },
-        ffn: FfnSurface {
+        }),
+        ffn: Some(FfnSurface {
             intermediate_size,
             activation,
             ffn_type: if has_gate_tensors {
@@ -599,7 +681,7 @@ pub fn surface_from_nested(
             // fact, not a fallback.
             gate_policy: larql_models::ExpertGatePolicy::Gated,
             moe: None,
-        },
+        }),
         norm: NormSurface {
             pre: NormSpec {
                 kind,

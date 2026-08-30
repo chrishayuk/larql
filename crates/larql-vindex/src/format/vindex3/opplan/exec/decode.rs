@@ -353,6 +353,18 @@ impl<'a, B: PlanBackend> DecodeSession<'a, B> {
                     );
                     planes.output.remove(0)
                 }
+                super::prepared::PreparedAttention::Mamba2(mixer) => {
+                    let recurrent = self.kv.state_mut().recurrent_state(index)?;
+                    let projector = self.backend.dense_projector();
+                    let mut planes = super::mamba2::layer_forward_with(
+                        &mixer.op,
+                        &mixer.weights()?,
+                        &inputs,
+                        recurrent,
+                        projector,
+                    );
+                    planes.output.remove(0)
+                }
                 super::prepared::PreparedAttention::Softmax(sops) => {
                     let call = sops.call(
                         layer
@@ -382,26 +394,31 @@ impl<'a, B: PlanBackend> DecodeSession<'a, B> {
             self.backend.residual_add(&mut h, &attn_out);
             observer.event(StepEvent::AttentionDone { layer: index });
 
-            let normed = state.pre_ffn.apply(self.backend, &h);
-            observer.operand_input(index, super::observe::InputSite::Ffn, normed.as_slice());
-            let _site = super::cpu::ledger::in_site(super::cpu::ledger::Site::Ffn);
-            let ffn_out =
-                state
-                    .ffn
-                    .apply_from_residual(&layer.ffn, self.backend, &h, &normed, hidden)?;
-            observer.operand_input(
-                index,
-                super::observe::InputSite::FfnOutput,
-                ffn_out.as_slice(),
-            );
-            let mut ffn_out = match &state.post_ffn {
-                Some(norm) => norm.apply(self.backend, &ffn_out),
-                None => ffn_out,
-            };
-            super::scale_residual_delta(layer.residual_scale, &mut ffn_out);
-            self.backend.residual_add(&mut h, &ffn_out);
-            if let Some(scale) = state.layer_scale {
-                self.backend.scale_row(&mut h, scale);
+            // A mixer-only (Mamba2) layer carries no FFN program: its one
+            // residual add happened above, and running a fabricated FFN
+            // stage here would be the schema-6 fabrication re-enacted at
+            // execution time. Presence follows the program here too.
+            if let (Some(pre_ffn), Some(ffn), Some(ffn_op)) =
+                (&state.pre_ffn, &state.ffn, &layer.ffn)
+            {
+                let normed = pre_ffn.apply(self.backend, &h);
+                observer.operand_input(index, super::observe::InputSite::Ffn, normed.as_slice());
+                let _site = super::cpu::ledger::in_site(super::cpu::ledger::Site::Ffn);
+                let ffn_out = ffn.apply_from_residual(ffn_op, self.backend, &h, &normed, hidden)?;
+                observer.operand_input(
+                    index,
+                    super::observe::InputSite::FfnOutput,
+                    ffn_out.as_slice(),
+                );
+                let mut ffn_out = match &state.post_ffn {
+                    Some(norm) => norm.apply(self.backend, &ffn_out),
+                    None => ffn_out,
+                };
+                super::scale_residual_delta(layer.residual_scale, &mut ffn_out);
+                self.backend.residual_add(&mut h, &ffn_out);
+                if let Some(scale) = state.layer_scale {
+                    self.backend.scale_row(&mut h, scale);
+                }
             }
             observer.event(StepEvent::FfnDone { layer: index });
         }

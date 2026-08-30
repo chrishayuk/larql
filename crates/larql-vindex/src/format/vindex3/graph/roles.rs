@@ -131,6 +131,39 @@ pub enum OperandRole {
     MlaKvANorm,
     /// Output projection, `[hidden, Hq·v_head_dim]`.
     MlaOutProj,
+    /// Mamba2/SSD mixer operands. Nine, sharing nothing with any set
+    /// above: one fused five-way input projection where DeltaNet splits
+    /// qkv|a|b|z and KDA splits q|k|v entirely; a conv that runs over the
+    /// x|B|C channels ONLY (the gate channels are deliberately excluded,
+    /// where DeltaNet convolves its full fused projection); per-**head**
+    /// scalar decay/skip/timestep against KDA's per-channel `dt_bias`.
+    ///
+    /// Fused input projection z|x|B|C|dt,
+    /// `[2·d_inner + 2·groups·state + heads, hidden]`.
+    Mamba2InProj,
+    /// Depthwise causal conv over x|B|C, `[conv_dim, 1, kernel]`.
+    Mamba2Conv1d,
+    /// Conv bias `[conv_dim]` — required iff `use_conv_bias`.
+    Mamba2Conv1dBias,
+    /// Per-head log decay, `[heads]`.
+    Mamba2ALog,
+    /// Per-head skip weight, `[heads]`.
+    Mamba2D,
+    /// Per-head timestep bias, `[heads]` — the geometry that separates
+    /// this family from KDA's per-channel `[Hv·Dv]`.
+    Mamba2DtBias,
+    /// Gated RMSNorm over the full inner width between state read-out and
+    /// the output projection, `[d_inner]` — present iff `rms_norm`.
+    Mamba2GatedNorm,
+    /// Output projection, `[hidden, d_inner]`.
+    Mamba2OutProj,
+    /// The single pre-mixer norm of a mixer-only layer
+    /// (`backbone.layers.N.norm.weight`), `[hidden]`. Its own role rather
+    /// than [`Self::PreAttentionNorm`]: a mixer-only stack has ONE norm
+    /// per layer, and folding it into the attention vocabulary would let
+    /// a transformer stack missing its FFN norms read as a valid
+    /// mixer placement.
+    Mamba2PreMixerNorm,
     /// `input_layernorm` — normalises the stream before attention.
     PreAttentionNorm,
     /// `post_attention_layernorm` — before-FFN in a two-norm layer,
@@ -233,6 +266,11 @@ pub enum NormPlacement {
     PreOnly,
     /// Four norms: attention and FFN each wrapped pre + post.
     PrePost,
+    /// One norm: the pre-mixer norm of a mixer-only (pure-SSM) layer.
+    /// There is no FFN and no attention to wrap, so neither existing
+    /// placement describes it — and reading a one-norm layer as a broken
+    /// two-norm one is exactly the misreading its own variant prevents.
+    PreMixer,
 }
 
 /// Suffix → role. Exact matches on the layer-relative suffix (after
@@ -476,6 +514,23 @@ const MLA_ROLE_TABLE: &[(&str, OperandRole)] = &[
     ("self_attn.kv_a_layernorm.weight", OperandRole::MlaKvANorm),
 ];
 
+/// Suffix → role **on a Mamba2 layer**, consulted before [`ROLE_TABLE`]
+/// for the same reason [`KDA_ROLE_TABLE`] is: the roles are
+/// operator-gated, so an unknown stack shipping a bare `norm.weight`
+/// still classifies as *nothing* and blocks rather than acquiring the
+/// mixer's placement vocabulary.
+const MAMBA2_ROLE_TABLE: &[(&str, OperandRole)] = &[
+    ("mixer.in_proj.weight", OperandRole::Mamba2InProj),
+    ("mixer.conv1d.weight", OperandRole::Mamba2Conv1d),
+    ("mixer.conv1d.bias", OperandRole::Mamba2Conv1dBias),
+    ("mixer.A_log", OperandRole::Mamba2ALog),
+    ("mixer.D", OperandRole::Mamba2D),
+    ("mixer.dt_bias", OperandRole::Mamba2DtBias),
+    ("mixer.norm.weight", OperandRole::Mamba2GatedNorm),
+    ("mixer.out_proj.weight", OperandRole::Mamba2OutProj),
+    ("norm.weight", OperandRole::Mamba2PreMixerNorm),
+];
+
 /// Classify one stack tensor, given the operator its layer runs.
 ///
 /// The operator is required, not optional, because a name alone cannot
@@ -500,6 +555,11 @@ pub fn classify_stack_tensor_on(
     }
     if operator.is_mla() {
         if let Some((_, role)) = MLA_ROLE_TABLE.iter().find(|(name, _)| *name == suffix) {
+            return Some((layer, *role));
+        }
+    }
+    if operator.is_mamba2() {
+        if let Some((_, role)) = MAMBA2_ROLE_TABLE.iter().find(|(name, _)| *name == suffix) {
             return Some((layer, *role));
         }
     }
@@ -555,5 +615,44 @@ pub fn norm_placement_evidence<'a>(
              (pre_attn {pre_attention}, post_attn {post_attention}, \
              pre_ffn {pre_ffn}, post_ffn {post_ffn})"
         )),
+    }
+}
+
+/// Norm placement for a **mixer-only** (pure-SSM) stack, from its own
+/// evidence: the single pre-mixer norm per layer, and no transformer
+/// wrap norms beside it.
+///
+/// A separate function rather than a fourth tuple arm in
+/// [`norm_placement_evidence`]: that function is operator-blind and would
+/// have to read `(pre_attn, ..)` from a vocabulary the mixer's estate
+/// never uses — a transformer stack that lost its FFN norms must keep
+/// reading as the defect it is, never as a valid mixer placement. The
+/// caller chooses this path only when the component's declared program is
+/// mixer-only.
+pub fn mixer_norm_placement_evidence<'a>(
+    relative_names: impl Iterator<Item = &'a str>,
+) -> Result<NormPlacement, String> {
+    let mut pre_mixer = false;
+    let mut transformer_norms = false;
+    for name in relative_names {
+        match classify_stack_tensor_on(name, LayerOperator::Mamba2).map(|(_, role)| role) {
+            Some(OperandRole::Mamba2PreMixerNorm) => pre_mixer = true,
+            Some(
+                OperandRole::PreAttentionNorm
+                | OperandRole::PostAttentionNorm
+                | OperandRole::PreFfnNorm
+                | OperandRole::PostFfnNorm,
+            ) => transformer_norms = true,
+            _ => {}
+        }
+    }
+    match (pre_mixer, transformer_norms) {
+        (true, false) => Ok(NormPlacement::PreMixer),
+        (true, true) => Err(
+            "stack carries a pre-mixer norm AND attention/FFN wrap norms — \
+             not a mixer-only placement"
+                .to_string(),
+        ),
+        (false, _) => Err("mixer-only stack carries no per-layer norm operands".to_string()),
     }
 }

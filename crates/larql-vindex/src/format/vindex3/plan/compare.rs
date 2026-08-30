@@ -361,7 +361,7 @@ fn layer_types_finding(inventory: &ArchitectureInventory) -> Option<Finding> {
                 // `GatedDeltaOp` + 16 `Softmax`), and this arm is a
                 // recorded declaration until then. Said plainly here so
                 // the arm is not read as a check it is not.
-                LayerOperator::GatedDelta | LayerOperator::Kda => false,
+                LayerOperator::GatedDelta | LayerOperator::Kda | LayerOperator::Mamba2 => false,
                 // A recurrence this build cannot identify does not
                 // round-trip: the checkpoint declared an operator and the
                 // graph carries no executable one. That is a genuine

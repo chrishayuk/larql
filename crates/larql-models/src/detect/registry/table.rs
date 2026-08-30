@@ -3,7 +3,9 @@
 //! supports.
 
 use super::attention::AttentionKind;
-use super::entry::{ArchitectureEntry, MLA_QUANT_FORMATS, STANDARD_QUANT_FORMATS};
+use super::entry::{
+    ArchitectureEntry, MLA_QUANT_FORMATS, SSM_QUANT_FORMATS, STANDARD_QUANT_FORMATS,
+};
 use super::pattern::ModelTypeMatch;
 
 /// Every architecture `detect_from_json` recognises, in the same
@@ -42,6 +44,16 @@ pub static ARCHITECTURE_REGISTRY: &[ArchitectureEntry] = &[
         patterns: &[ModelTypeMatch::Exact("mistral")],
         attention_kind: AttentionKind::Standard,
         quant_formats: STANDARD_QUANT_FORMATS,
+    },
+    // Pure SSM — exact on purpose: `mamba` (v1) is a different operator
+    // and stays on the generic path until its semantics are judged. No
+    // extractor path has ever quantised an SSM estate, so no quant
+    // format is claimed.
+    ArchitectureEntry {
+        model_type: "mamba2",
+        patterns: &[ModelTypeMatch::Exact("mamba2")],
+        attention_kind: AttentionKind::Recurrent,
+        quant_formats: SSM_QUANT_FORMATS,
     },
     // The assistant model_type is deliberately absent: it stays on the
     // generic path until its semantics are judged.

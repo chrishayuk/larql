@@ -120,6 +120,7 @@ fn plan_artifact(
     built: &BuiltGraph,
 ) -> ArtifactPlan {
     let mut findings = compare::compare(inventory);
+    findings.extend(undeclared_family_findings(inventory));
     findings.extend(config_key_findings(inventory, built));
     findings.extend(placed_object_findings(name, built));
     findings.extend(unplaced_group_findings(name, built));
@@ -131,6 +132,54 @@ fn plan_artifact(
         model_type: inventory.identity.model_type.clone(),
         findings,
     }
+}
+
+/// The fail-closed layer census (schema 6, drill F3): a checkpoint whose
+/// family no registry recognises AND that declares no per-layer topology
+/// has stated NOTHING about what its layers run. Before this finding,
+/// every such layer resolved to `(Softmax, Full)` and the census failed
+/// open — the mamba2 witness was reported as a 48-layer softmax tower
+/// with invented head geometry, saved only by its unconsumed keys. A
+/// registered family IS a judgment (the match arm is the declaration);
+/// a declared interleave or uniform kind is one; generic-plus-silence is
+/// neither, and resolving it to softmax is a fabrication.
+fn undeclared_family_findings(inventory: &ArchitectureInventory) -> Vec<Finding> {
+    let declares_layers = inventory
+        .resolved
+        .layers
+        .iter()
+        .any(|l| l.declared_kind.is_some() || l.declared_span.is_some());
+    // A declared attention-head geometry IS a program declaration: the
+    // checkpoint states softmax-shaped attention in its own words, and
+    // resolving its layers to softmax reads that declaration rather than
+    // inventing one. What fails closed is generic-plus-SILENCE — no
+    // family, no per-layer topology, no attention shape (the pure-SSM
+    // case, where the old path invented 8/4 heads).
+    let declares_attention_shape = inventory.config_keys.iter().any(|fact| {
+        matches!(
+            semantics::leaf_of(&fact.path),
+            "num_attention_heads" | "n_head"
+        )
+    });
+    if !inventory.detection.generic_fallback || declares_layers || declares_attention_shape {
+        return Vec::new();
+    }
+    vec![Finding {
+        category: FindingCategory::Unrepresented,
+        class: SemanticClass::ExecutionSemantic,
+        component: String::new(),
+        subject: "layer_census".to_string(),
+        declared: None,
+        resolved: None,
+        carriage: None,
+        detail: format!(
+            "no registered family and no declared per-layer topology: {} layer(s) would \
+             resolve to softmax/full by default, which is a fabrication, not a resolution — \
+             the census fails closed until the family is judged or the checkpoint declares \
+             its layers",
+            inventory.resolved.num_layers
+        ),
+    }]
 }
 
 /// Every declared config key, graded by the semantics registry and — for
@@ -551,26 +600,35 @@ fn execution_surface_findings(artifact: &str, built: &BuiltGraph) -> Vec<Finding
         .components
         .iter()
         .filter(|c| c.source_artifact == artifact && c.execution.is_some())
-        .map(|component| Finding {
-            category: FindingCategory::Representable,
-            class: SemanticClass::ExecutionSemantic,
-            component: component.id.clone(),
-            subject: format!("{}.execution_surface", component.id),
-            declared: None,
-            resolved: None,
-            carriage: None,
-            detail: format!(
-                "execution surface complete (attention, ffn, norm{})",
-                if component
-                    .execution
-                    .as_ref()
-                    .is_some_and(|s| s.head.is_some())
-                {
-                    ", head"
-                } else {
-                    ""
-                }
-            ),
+        .map(|component| {
+            // Name the groups that are actually present — presence follows
+            // the program (schema 6), so the sentence must too. Listing
+            // absent groups as complete was the fabrication, restated.
+            let surface = component.execution.as_ref().expect("filtered above");
+            let mut groups: Vec<&str> = Vec::new();
+            if surface.attention.is_some() {
+                groups.push("attention");
+            }
+            if surface.mamba2.is_some() {
+                groups.push("mamba2 mixer");
+            }
+            if surface.ffn.is_some() {
+                groups.push("ffn");
+            }
+            groups.push("norm");
+            if surface.head.is_some() {
+                groups.push("head");
+            }
+            Finding {
+                category: FindingCategory::Representable,
+                class: SemanticClass::ExecutionSemantic,
+                component: component.id.clone(),
+                subject: format!("{}.execution_surface", component.id),
+                declared: None,
+                resolved: None,
+                carriage: None,
+                detail: format!("execution surface complete ({})", groups.join(", ")),
+            }
         })
         .collect();
     findings.extend(

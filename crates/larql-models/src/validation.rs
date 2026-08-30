@@ -181,6 +181,43 @@ pub(crate) fn validate_architecture<A: ModelArchitecture + ?Sized>(
     }
 }
 
+/// Field identifier for a missing/inconsistent Mamba2 mixer geometry.
+pub const FIELD_MAMBA2_GEOMETRY: &str = "mamba2_geometry";
+
+/// Validation for a pure-SSM (Mamba2) architecture.
+///
+/// Deliberately NOT [`validate_architecture`]: that path requires
+/// attention-head geometry and an `intermediate_size`, which are
+/// attention/FFN facts this family does not have — requiring them is the
+/// fabrication the drill's F1 finding names. What a Mamba2 stack must
+/// state instead: positive topology, a complete mixer geometry, and that
+/// geometry closing over the declared hidden size.
+pub(crate) fn validate_mamba2(cfg: &ModelConfig) -> ConfigValidationResult {
+    let mut errors = Vec::new();
+    validate_positive_usize(&mut errors, FIELD_NUM_LAYERS, cfg.num_layers);
+    validate_positive_usize(&mut errors, FIELD_HIDDEN_SIZE, cfg.hidden_size);
+    validate_optional_positive_usize(&mut errors, FIELD_VOCAB_SIZE, cfg.vocab_size);
+    match cfg.mamba2_geometry {
+        None => errors.push(ConfigValidationError::new(
+            FIELD_MAMBA2_GEOMETRY,
+            "a mamba2 stack must declare its complete mixer geometry \
+             (state_size, num_heads, head_dim, expand, conv_kernel, n_groups, \
+             chunk_size, time_step_limit, rms_norm, use_bias, use_conv_bias); \
+             a partial declaration is refused rather than defaulted",
+        )),
+        Some(geometry) => {
+            for defect in geometry.geometry_defects(cfg.hidden_size) {
+                errors.push(ConfigValidationError::new(FIELD_MAMBA2_GEOMETRY, defect));
+            }
+        }
+    }
+    if errors.is_empty() {
+        Ok(())
+    } else {
+        Err(errors)
+    }
+}
+
 fn validate_positive_usize(
     errors: &mut Vec<ConfigValidationError>,
     field: &'static str,

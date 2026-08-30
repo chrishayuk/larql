@@ -108,7 +108,13 @@ pub(super) fn require_config_fields(
     // `4 * n_embd` at the model boundary. Skip the intermediate_size check
     // for that model_type — the parser performs the same derivation when
     // `intermediate_size` and `n_inner` are both absent.
-    let skip_intermediate = model_type == "gpt2";
+    //
+    // Mamba2 has no FFN at all — the mixer is the whole block — so an
+    // `intermediate_size` genuinely does not exist to require; the
+    // family's own validation judges the SSM geometry instead
+    // (`validation::validate_mamba2`).
+    let skip_intermediate =
+        model_type == "gpt2" || model_type == crate::architectures::mamba2::MAMBA2_MODEL_TYPE;
     let missing: Vec<&'static str> = REQUIRED_CONFIG_FIELDS
         .iter()
         .filter_map(|aliases| {

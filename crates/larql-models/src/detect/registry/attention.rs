@@ -17,6 +17,10 @@ pub enum AttentionKind {
     Standard,
     /// Multi-head Latent Attention (compressed KV).
     Mla,
+    /// A recurrence in place of attention (pure SSM): no KV cache exists
+    /// at all, which changes the serving story more than MLA's
+    /// compression does.
+    Recurrent,
 }
 
 #[cfg(test)]

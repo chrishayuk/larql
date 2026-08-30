@@ -150,6 +150,22 @@ pub const CONSUMED_LEAF_KEYS: &[&str] = &[
     "linear_num_key_heads",
     "linear_num_value_heads",
     "mamba_ssm_dtype",
+    // The Mamba2 mixer geometry (`config::Mamba2Geometry::read`, all
+    // fields or none) plus the residual-precision fact. `num_heads` and
+    // `head_dim` are genuinely read at the top level by that same
+    // geometry read; `head_dim` was already consumed as an attention key,
+    // and on a Mamba2 declaration the one value is the mixer's.
+    "state_size",
+    "num_heads",
+    "expand",
+    "conv_kernel",
+    "n_groups",
+    "chunk_size",
+    "time_step_limit",
+    "rms_norm",
+    "use_bias",
+    "use_conv_bias",
+    "residual_in_fp32",
     "attn_output_gate",
     "output_gate_type",
     "mtp_num_hidden_layers",

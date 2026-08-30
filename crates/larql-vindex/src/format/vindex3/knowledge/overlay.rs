@@ -252,7 +252,7 @@ impl KnowledgeOverlay {
             let layer_plan = plan.layers.get(layer).ok_or_else(|| {
                 VindexError::Parse(format!("overlay addresses layer {layer} beyond the plan"))
             })?;
-            let LayerFfn::Dense(ffn) = &layer_plan.ffn else {
+            let Some(LayerFfn::Dense(ffn)) = &layer_plan.ffn else {
                 return Err(VindexError::Parse(format!(
                     "layer {layer} is routed — compose installs on MoE layers are a later                      role rung"
                 )));

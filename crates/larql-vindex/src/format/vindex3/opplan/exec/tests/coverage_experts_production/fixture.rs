@@ -301,6 +301,8 @@ pub(super) fn routed_fixture() -> RoutedFixture {
     let (plan, store) = closed_plan(container.path());
     let op = plan.layers[0]
         .ffn
+        .as_ref()
+        .expect("layer 0 has an FFN")
         .routed()
         .expect("layer 0 is routed")
         .clone();

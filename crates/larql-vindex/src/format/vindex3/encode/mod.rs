@@ -324,16 +324,17 @@ fn system_index(
     representations: BTreeMap<String, RepresentationEntry>,
     segments: BTreeMap<String, u32>,
 ) -> Result<Vindex3Index, VindexError> {
-    let primary = match graph.primary_text_component() {
-        Ok(component) => component,
-        // A graph with no primary_text (a lone drafter, say) falls back to
-        // its only component; ambiguity never falls back (drill F10).
-        Err(crate::format::vindex3::graph::PrimaryTextLookup::Absent) => graph
-            .components
-            .first()
-            .ok_or_else(|| VindexError::Parse("graph has no components".into()))?,
-        Err(ambiguous) => return Err(VindexError::Parse(ambiguous.to_string())),
-    };
+    let primary =
+        match graph.primary_text_component() {
+            Ok(component) => component,
+            // A graph with no primary_text (a lone drafter, say) falls back to
+            // its only component; ambiguity never falls back (drill F10).
+            Err(crate::format::vindex3::graph::PrimaryTextLookup::Absent) => graph
+                .components
+                .first()
+                .ok_or_else(|| VindexError::Parse("graph has no components".into()))?,
+            Err(ambiguous) => return Err(VindexError::Parse(ambiguous.to_string())),
+        };
     let family = named
         .iter()
         .find(|(name, _)| *name == primary.source_artifact)

@@ -436,7 +436,7 @@ fn compose_state_derives_operand_edits_from_the_plan() {
     // Operand derivation: gate/up rows and the down column, addressed
     // by the plan's own FFN operands.
     let derived = overlay.operand_overrides(&plan).unwrap();
-    let crate::format::vindex3::opplan::LayerFfn::Dense(ffn) = &plan.layers[0].ffn else {
+    let Some(crate::format::vindex3::opplan::LayerFfn::Dense(ffn)) = &plan.layers[0].ffn else {
         panic!("miniature layer 0 is dense");
     };
     assert!(derived.is_overridden(ffn.gate.as_ref().unwrap()));

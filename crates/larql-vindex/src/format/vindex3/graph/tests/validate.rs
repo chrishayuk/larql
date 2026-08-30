@@ -201,7 +201,9 @@ fn primary_text_resolution_is_unique_or_refused() {
     );
     let message = err.to_string();
     assert!(
-        message.contains("exactly one") && message.contains("target") && message.contains("second_text"),
+        message.contains("exactly one")
+            && message.contains("target")
+            && message.contains("second_text"),
         "the refusal names the candidates: {message}"
     );
 }

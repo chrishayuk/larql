@@ -102,10 +102,18 @@ pub fn resolve(config: &Value, identity: &Identity) -> (Detection, ResolvedTopol
     // marked with a spelling outside the executable vocabulary, so the
     // plan blocks instead of letting the resolved boolean answer for a
     // topology the checkpoint actually stated.
+    // A family whose `model_type` is itself the whole-stack declaration
+    // (pure SSM — no interleave exists to state) answers when no
+    // interleave was declared. The interleave stays authoritative when
+    // both exist: an explicit per-layer statement outranks a uniform one.
     let declared_kinds: Option<Vec<crate::config::LayerKind>> = cfg
         .linear_attn_interleave
         .resolved()
-        .map(|r| r.layers.clone());
+        .map(|r| r.layers.clone())
+        .or_else(|| {
+            arch.declared_uniform_layer_kind()
+                .map(|kind| vec![kind; cfg.num_layers])
+        });
     let declared_spans: Option<Vec<String>> = declared_kinds
         .as_ref()
         .map(|kinds| kinds.iter().map(layer_kind_spelling).collect())
@@ -216,6 +224,7 @@ pub fn resolve(config: &Value, identity: &Identity) -> (Detection, ResolvedTopol
         output_multiplier: arch.logit_scale(),
         final_logit_softcapping: arch.final_logit_softcapping(),
         residual_scale: arch.residual_scale(),
+        residual_in_fp32: cfg.residual_in_fp32,
         head_reuses_embedding: arch.output_head_reuses_embedding(),
     };
     let topology = ResolvedTopology {
@@ -239,6 +248,7 @@ pub fn resolve(config: &Value, identity: &Identity) -> (Detection, ResolvedTopol
         linear_attention: crate::inventory::report::LinearAttentionTopology::from_config(cfg),
         kda: cfg.kda_geometry,
         kda_gate_lower_bound: cfg.kda_gate_lower_bound,
+        mamba2: cfg.mamba2_geometry,
     };
     (detection, topology)
 }

@@ -809,7 +809,7 @@ The version surfaces, precisely:
 | `index.json` `version` | 2 | **3–4** — the container-generation discriminator; 4 is current (the `RegionLayout` claim of §6.4's former reserved u16 — wire size unchanged, which is precisely why the bump is needed) |
 | `vindex_spec_version` | 1 | **2** (programme manifest + profiles enter the validated public contract) |
 | MoE manifest schema | — | **1** |
-| SystemGraph schema | — | **2** (v2 added the execution surface) |
+| SystemGraph schema | — | **6** (v6: presence means semantic presence — attention/FFN surfaces present iff the program runs them, explicit per-layer operator; v2 first added the execution surface) |
 
 **On the numbering.** The container generation *is named for* `index.json.version` — VINDEX2 writes `version: 2`, VINDEX3 currently writes `version: 4` within the 3-generation's schema span. The generation is a **schema span, not a single number**: additive-but-load-bearing changes (like `RegionLayout`) bump the schema within the generation; readers accept the span. The FP4 additive-extension precedent is retained: new region formats, roles and programme ids are enum additions, not schema bumps — a schema bump is reserved for a reinterpretation of existing bytes or fields.
 
@@ -1007,12 +1007,22 @@ plan-declared discipline. Sessions, batch prefill, resume and the
 serving stack are specified in the runtime document; their contract
 point here is single: **state geometry is a container fact.**
 
-### 17.4 Pinned generalisations — design for Final, not yet normative
+### 17.4 Pinned generalisations — lift 1 landed at schema 6
 
-Two abstraction lifts are pinned for 3.0 Final. They are recorded here
-so the freeze does not fossilise the one Transformer-shaped remnant of
-the execution ontology; neither is implemented as stated below, and
-this subsection is design, not description.
+Two abstraction lifts are pinned for 3.0 Final, recorded here so the
+freeze does not fossilise the one Transformer-shaped remnant of the
+execution ontology. **Lift 1 is implemented** (2026-08-30): SystemGraph
+schema 6 carries the one intentional reinterpretation — presence means
+semantic presence (`attention` and `ffn` surface groups present iff the
+component's program runs those operations, the per-layer `operator`
+explicit with no absent-means-softmax default), the layer census fails
+closed on an undeclared family, and operand closure runs at encode (an
+encoder may not leave behind a container whose operands do not close;
+a failing closure removes the output). Lift 2's remaining schema facts
+— KDA state precision, MLA latent-KV geometry, the per-op norm-epsilon
+override (drill F5/F6) — are **additive within the v6 span** (optional
+fields, not reinterpretations of existing bytes), consistent with §12's
+numbering rule, and stay open gates below.
 
 - **The operation program replaces kind-implied completeness.** Today
   the completeness contract derives required surfaces from object kinds
@@ -1097,7 +1107,17 @@ closed operand estate all reconcile. The Final invariant this buys:
 Validation witnesses (real checkpoints, in order):
 `state-spaces/mamba2-780m` — 48 Mamba2 layers, `attn_layer_idx: []`,
 zero attention: the pure case that must encode with no attention surface
-anywhere; `state-spaces/mamba2attn-2.7b` — six attention layers at
+anywhere — **passed live 2026-08-30** (the `AntonV/mamba2-780m-hf`
+conversion): the 19-blocking refusal fell to `0 blocking` for semantic
+reasons (a registered Mamba2 operator judgment consuming the SSM keys;
+the five init-only `time_step_*`/`rescale_prenorm_residual` keys graded
+declaration-only), the container encoded with all 434 operands closing
+at encode, carries 48 `mamba2` operators with **no attention and no FFN
+surface anywhere**, and opens through ordinary LQL with the source
+checkpoint deleted — `STATS` reports `0 sliding / 0 full / 48
+recurrent`, continuation as recurrent state only, and `INFER` refuses by
+name (`represented but not executable`) until the generic executor
+lands; `state-spaces/mamba2attn-2.7b` — six attention layers at
 declared indices among Mamba2 blocks: the A/B proving surfaces exist
 only where the declared program uses them, and that KV and SSM state
 coexist per-operation; then `tiiuae/Falcon3-Mamba-7B-Instruct` as the
@@ -1212,7 +1232,7 @@ gate, none of them drift:
 | 4 | **E8 held-out architecture** (§16 criterion 7) | not yet run |
 | 5 | **The M4 flip**: `DEFAULT_EXTRACTION_GENERATION = V3` per the generation policy | M1–M3 done, M4 open |
 | 6 | **Bank-ABI pre-freeze rows**: the remaining V2-0..V2-4 experiment gates (profile-authority derivation, variant-selection refusal, fixtures B–D, WALK/DESCRIBE parity) | open |
-| 7 | **The ontology lift** (§17.4): completeness from the declared operation program rather than object kinds, and ContinuationState generalising KV — accepted by the four-architecture paper drill | **drilled 2026-08-30** — confirmed and fully enumerated, findings F1–F16 in [`docs/vindex3-ontology-drill.md`](../../../docs/vindex3-ontology-drill.md) |
+| 7 | **The ontology lift** (§17.4): completeness from the declared operation program rather than object kinds, and ContinuationState generalising KV — accepted by the four-architecture paper drill | **lift 1 LANDED 2026-08-30** at SystemGraph schema 6, proven by the pure-SSM witness (mamba2-780m: encoded, zero fabricated surfaces, closure at encode, LQL-open under the deletion invariant); lift 2's state-schema facts (F5/F6) remain, additive within v6; drill findings F1–F16 in [`docs/vindex3-ontology-drill.md`](../../../docs/vindex3-ontology-drill.md) |
 
 Feature growth is not a gate: GENERATE, TRACE, overlays, logical DIFF,
 COMPILE and COMPACT are operations over V3 containers and do not add

@@ -429,7 +429,7 @@ fn the_expert_bank_is_a_first_class_object_and_the_ffn_is_routed() {
     assert!(outcome.closed(), "{:?}", outcome.defects);
     let plan = outcome.plan.unwrap();
     for layer in &plan.layers {
-        let LayerFfn::Routed(op) = &layer.ffn else {
+        let Some(LayerFfn::Routed(op)) = &layer.ffn else {
             panic!("layer {} planned dense", layer.layer)
         };
         assert_eq!(op.experts, EXPERTS);
