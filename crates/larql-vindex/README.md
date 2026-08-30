@@ -4,7 +4,7 @@ The queryable model format. Decompile, browse, edit, and recompile neural networ
 
 ## What is a Vindex?
 
-A vindex (vector index) is a directory containing a transformer model's weights reorganised for queryability. The model IS the database — each weight matrix is stored once in its optimal format.
+A vindex (vector index) is a directory containing a model's weights reorganised for queryability. The model IS the database — each weight matrix is stored once in its optimal format. A VINDEX3 container (3.0 Candidate, graph schema 6) describes a model system by its declared operator program — softmax attention, MLA, KDA, Gated DeltaNet, Mamba2 — and its surfaces follow that program: a pure-SSM model carries no attention surface at all, because it has none.
 
 ```rust
 use larql_vindex::*;

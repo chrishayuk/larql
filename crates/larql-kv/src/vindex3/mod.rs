@@ -34,7 +34,12 @@
 //! write, never alongside them, so the served bits are the stored
 //! bits by construction.
 
-use larql_vindex::format::vindex3::opplan::exec::kv::{KvState, LayerKvGeometry};
+use larql_vindex::format::vindex3::opplan::exec::continuation::{
+    LayerContinuationGeometry, RecurrentState,
+};
+use larql_vindex::format::vindex3::opplan::exec::kv::{
+    ContinuationError, KvState, LayerKvGeometry,
+};
 use ndarray::Array2;
 
 use crate::cache::KvCache;
@@ -71,8 +76,18 @@ impl LayerRows {
 /// conversation state crossing the `larql-kv` boundary intact.
 pub struct CanonicalKvState {
     cache: KvCache,
-    geometry: Vec<LayerKvGeometry>,
+    /// Per layer, ABSOLUTE index: `Some` where the plan declares KV rows,
+    /// `None` on a recurrent layer (whose state lives in
+    /// [`Self::recurrent`] instead). Absolute indexing is load-bearing —
+    /// filtering to a KV subset is exactly how a hybrid stack's layer 7
+    /// would read layer 3's rows.
+    geometry: Vec<Option<LayerKvGeometry>>,
     rows: Vec<LayerRows>,
+    /// SERVE-HYBRID: the recurrent layers' durable buffers, absolute
+    /// index, allocated from the plan's declared geometry at
+    /// [`prepare_continuation`](KvState::prepare_continuation). A
+    /// KV-only program allocates none and behaves exactly as before.
+    recurrent: Vec<Option<RecurrentState>>,
 }
 
 impl Default for CanonicalKvState {
@@ -88,6 +103,7 @@ impl CanonicalKvState {
             cache: KvCache::with_layers(0),
             geometry: Vec::new(),
             rows: Vec::new(),
+            recurrent: Vec::new(),
         }
     }
 
@@ -111,6 +127,7 @@ impl CanonicalKvState {
             cache,
             geometry: Vec::new(),
             rows,
+            recurrent: Vec::new(),
         }
     }
 
@@ -128,13 +145,14 @@ impl CanonicalKvState {
     /// The plan-declared geometry this provider was prepared with —
     /// row width and sliding/full window per layer, read from the
     /// executable program, never from `ModelArchitecture`.
-    pub fn geometry(&self) -> &[LayerKvGeometry] {
-        &self.geometry
+    pub fn geometry(&self) -> Vec<LayerKvGeometry> {
+        self.geometry.iter().flatten().cloned().collect()
     }
 }
 
 impl KvState for CanonicalKvState {
     fn prepare(&mut self, layers: &[LayerKvGeometry]) {
+        let layers_opt: Vec<Option<LayerKvGeometry>> = layers.iter().cloned().map(Some).collect();
         if self.geometry.is_empty() {
             if self.cache.layers.is_empty() {
                 self.cache = KvCache::with_layers(layers.len());
@@ -161,18 +179,73 @@ impl KvState for CanonicalKvState {
                     }
                 }
             }
-            self.geometry = layers.to_vec();
+            self.geometry = layers_opt;
         } else {
             // A resumed provider: same program, same geometry.
             assert_eq!(
-                self.geometry, layers,
+                self.geometry, layers_opt,
                 "resumed KV state was prepared for a different program geometry"
             );
         }
     }
 
+    /// The FULL geometry, KV and recurrent alike (SERVE-HYBRID).
+    ///
+    /// Overrides the KV-only default, which filters to the KV subset and
+    /// therefore breaks absolute layer indexing the moment any layer is
+    /// recurrent. A KV-only program delegates to [`KvState::prepare`],
+    /// which already handles fresh, adopted and resumed caches alike; a
+    /// program with recurrence keeps every layer in its absolute slot —
+    /// KV layers size the cache, recurrent layers allocate their
+    /// declared buffers beside it, and a resumed provider keeps both,
+    /// because that persistence IS the continuation.
+    fn prepare_continuation(
+        &mut self,
+        layers: &[LayerContinuationGeometry],
+    ) -> Result<(), ContinuationError> {
+        if self.recurrent.is_empty() {
+            self.recurrent = layers
+                .iter()
+                .map(|g| g.recurrent().map(RecurrentState::zeros))
+                .collect();
+        } else {
+            assert_eq!(
+                self.recurrent.len(),
+                layers.len(),
+                "resumed state holds {} layers but the plan declares {}",
+                self.recurrent.len(),
+                layers.len()
+            );
+        }
+        let all_kv: Option<Vec<LayerKvGeometry>> = layers.iter().map(|g| g.kv().cloned()).collect();
+        if let Some(kv) = all_kv {
+            self.prepare(&kv);
+            return Ok(());
+        }
+        let kv_opt: Vec<Option<LayerKvGeometry>> = layers.iter().map(|g| g.kv().cloned()).collect();
+        if self.geometry.is_empty() {
+            assert!(
+                self.cache.layers.is_empty(),
+                "an adopted canonical cache carries KV-only history; preparing it for a \
+                 program with recurrent layers would claim state the cache never held"
+            );
+            self.cache = KvCache::with_layers(layers.len());
+            self.rows = vec![LayerRows::default(); layers.len()];
+            self.geometry = kv_opt;
+        } else {
+            assert_eq!(
+                self.geometry, kv_opt,
+                "resumed KV state was prepared for a different program geometry"
+            );
+        }
+        Ok(())
+    }
+
     fn append(&mut self, layer: usize, key: Vec<f32>, value: Vec<f32>) {
-        let kv_dim = self.geometry[layer].kv_dim;
+        let kv_dim = self.geometry[layer]
+            .as_ref()
+            .unwrap_or_else(|| panic!("layer {layer} is recurrent; it appends no KV row"))
+            .kv_dim;
         assert_eq!(
             key.len(),
             kv_dim,
@@ -232,29 +305,25 @@ impl KvState for CanonicalKvState {
         self.cache.next_position = position;
     }
 
-    /// **Explicitly unsupported, not absent.**
+    /// The layer's durable recurrent buffers (SERVE-HYBRID) — allocated
+    /// at `prepare_continuation` from the plan's declared geometry, kept
+    /// across prefills and steps.
     ///
-    /// The canonical cache holds per-position K/V rows and nothing else,
-    /// so a hybrid stack reaching the serving path fails closed here and
-    /// names which side is missing. Returning `None` would make this
-    /// indistinguishable from "this layer needs no state" and let a
-    /// 48-recurrent-layer model serve from zeroed buffers — a different
-    /// model, reported as this one.
-    ///
-    /// SERVE-HYBRID replaces this with real buffers and re-establishes
-    /// serving parity; until then the refusal is the correct answer.
-    fn recurrent_state(
-        &mut self,
-        layer: usize,
-    ) -> Result<
-        &mut larql_vindex::format::vindex3::opplan::exec::continuation::RecurrentState,
-        larql_vindex::format::vindex3::opplan::exec::kv::ContinuationError,
-    > {
-        Err(
-            larql_vindex::format::vindex3::opplan::exec::kv::ContinuationError::RecurrentUnsupported {
+    /// Still fail-closed in both remaining directions: a provider that
+    /// was never announced the full geometry refuses rather than
+    /// conjuring buffers, and a KV layer asked for recurrent state is a
+    /// dispatch defect named as such — never "empty state".
+    fn recurrent_state(&mut self, layer: usize) -> Result<&mut RecurrentState, ContinuationError> {
+        match self.recurrent.get_mut(layer) {
+            Some(Some(state)) => Ok(state),
+            Some(None) => Err(ContinuationError::NotRecurrent {
                 provider: "CanonicalKvState",
                 layer,
-            },
-        )
+            }),
+            None => Err(ContinuationError::RecurrentUnsupported {
+                provider: "CanonicalKvState",
+                layer,
+            }),
+        }
     }
 }

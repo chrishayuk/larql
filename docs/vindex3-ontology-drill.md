@@ -414,3 +414,23 @@ conversion of `state-spaces/mamba2-780m`; the original repos ship
   2's state-schema facts (F5, F6) remain open, additive within the v6
   span; the Mamba2 continuation arm refuses state precision exactly as
   KDA's does, for the same reason.
+
+- **2026-08-30, later the same day — the witness generates.** The
+  generic Mamba2 executor (`exec/mamba2.rs`, transcribed stage-by-stage
+  from the reference's `torch_forward`, fp32 state as a judgment
+  transcribed from the reference's own `.float()` casts) runs the mixer
+  through the ordinary prepared-operands / prefill / decode /
+  continuation path — no family loader anywhere. Rung-4 parity against
+  the banked fp32 oracle: short 5+32 max|Δ| 6.9e-4 · medium 29+32
+  5.2e-4 · long 300+32 7.6e-4, argmax exact at all 430 positions,
+  all three 32-token greedy trajectories token-for-token — the bound
+  being pure fp32 reassociation over the oracle's own 2.1e-4
+  step-vs-scan floor. The canonical KV provider grew its SERVE-HYBRID
+  half (recurrent buffers beside the cache, allocated from the plan's
+  declared geometry, refusing by name in both remaining directions), and
+  ordinary LQL then generated the reference's greedy continuation
+  word-for-word from the container alone, source checkpoint deleted:
+  the deletion invariant, visible. In-tree gates: the miniature witness
+  executes (bitwise determinism, prefix equivalence across the
+  batch↔decode seam), the hand-computed recurrence, dt-clamp bounds,
+  conv causality by impulse, and the mixed KV+recurrent provider test.

@@ -418,30 +418,36 @@ gemma3-4b.vindex/
 ```
 
 **Container generations.** `index.json`'s `version` is the sole discriminator —
-schemas 1–2 are **VINDEX2** (what `extract` writes, and what every published
-vindex is today), schema 3 is **VINDEX3**, the successor container for sparse
-models. One binary reads both; `larql show` and `larql verify` dispatch on the
-version and describe each generation in its own terms rather than flattening
-one into the other.
+schemas 1–2 are **VINDEX2** (what `extract` writes by default, and what every
+published vindex is today), schemas 3–4 are **VINDEX3**, the 3.0 Candidate
+container for model systems. One binary reads both; `larql show` and
+`larql verify` dispatch on the version and describe each generation in its own
+terms rather than flattening one into the other.
 
-**VINDEX3 is executable and servable; `extract` still writes VINDEX2.**
-The `larql vindex3` command family (`plan`, `encode`, `inspect`, `verify`,
-`ops`, `exec` — `larql-cli` `commands/primary/vindex3_cmd/`) plans a model
-system from HF checkpoints, encodes it into a self-contained container,
-proves source ≡ encoded, and executes the container's own program with no
-architecture registry. Whole production models — gpt-oss-20b, Gemma 4
-26B-A4B, Granite 4.1 3B/8B/30B — encode and execute byte-identically to
-their HF sources, and `larql serve` serves a V3 container over
-`/v1/completions` via the V3 runtime (see
-[`docs/vindex3-runtime.md`](docs/vindex3-runtime.md)). What has *not*
-changed: `larql extract` has no VINDEX3 path — `index.json.version` is
-still hardcoded to 2, so everything the extract pipeline below writes, and
-every published vindex today, is VINDEX2. New extractions default to
-VINDEX3 only once the ABI freezes **and** the E0 preservation matrix
-passes (§12.1). See
+**VINDEX3 is a 3.0 Candidate Specification — executable, servable, and
+reachable from every extraction surface; the *default* extraction is still
+VINDEX2.** The `larql vindex3` command family (`plan`, `encode`, `inspect`,
+`verify`, `ops`, `exec` — `larql-cli` `commands/primary/vindex3_cmd/`) plans
+a model system from HF checkpoints, encodes it into a self-contained
+container, proves source ≡ encoded, and executes the container's own
+declared operator program with no architecture registry. Since graph
+schema 6, **surfaces follow the program**: a component's attention and FFN
+surface groups exist iff its declared per-layer operators run those
+operations — proven live by a pure-SSM witness (mamba2-780m: 48 declared
+Mamba2 operators, zero attention surfaces, generating through ordinary LQL
+with the source checkpoint deleted). Whole production models — gpt-oss-20b,
+Gemma 4 26B-A4B, Granite 4.1 3B/8B/30B — encode and execute
+byte-identically to their HF sources, and `larql serve` serves a V3
+container over `/v1/completions` via the V3 runtime (see
+[`docs/vindex3-runtime.md`](docs/vindex3-runtime.md)). VINDEX3 extraction
+is available on request (`larql extract --generation v3`, LQL
+`EXTRACT ... FORMAT VINDEX3`); the *default* remains VINDEX2 until the M4
+flip — a named decision, made in one place, not yet made (see
+[`docs/vindex-generation-policy.md`](docs/vindex-generation-policy.md)).
+See
 [`crates/larql-vindex/docs/vindex3-format-spec.md`](crates/larql-vindex/docs/vindex3-format-spec.md)
-(container ABI) and [`docs/vindex3-format.md`](docs/vindex3-format.md)
-(model-system container spec).
+(the 3.0 Candidate ABI) and [`docs/vindex3-format.md`](docs/vindex3-format.md)
+(the living spec).
 
 Three extraction levels:
 

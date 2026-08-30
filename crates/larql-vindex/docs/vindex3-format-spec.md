@@ -1115,9 +1115,14 @@ declaration-only), the container encoded with all 434 operands closing
 at encode, carries 48 `mamba2` operators with **no attention and no FFN
 surface anywhere**, and opens through ordinary LQL with the source
 checkpoint deleted — `STATS` reports `0 sliding / 0 full / 48
-recurrent`, continuation as recurrent state only, and `INFER` refuses by
-name (`represented but not executable`) until the generic executor
-lands; `state-spaces/mamba2attn-2.7b` — six attention layers at
+recurrent`, continuation as recurrent state only. **The generic executor
+landed the same day and paritied**: teacher-forced against the banked
+fp32 reference on three prompt lengths (one crossing the SSD chunk
+boundary), all 430 scored positions agree within 7.6e-4 max-abs — ~3.6×
+the reference's own step-vs-scan fp bound — with argmax exact at every
+position and all three 32-token greedy trajectories reproduced
+token-for-token; ordinary `INFER … GENERATE` then reproduces the
+reference continuation word-for-word with the source checkpoint hidden; `state-spaces/mamba2attn-2.7b` — six attention layers at
 declared indices among Mamba2 blocks: the A/B proving surfaces exist
 only where the declared program uses them, and that KV and SSM state
 coexist per-operation; then `tiiuae/Falcon3-Mamba-7B-Instruct` as the
