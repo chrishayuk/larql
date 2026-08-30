@@ -169,6 +169,27 @@ pub const EXECUTION_SEMANTIC_KEYS: &[&str] = &[
     // is computed in — an execution-relevant fact distinct from the
     // checkpoint's overall storage `dtype`.
     "mamba_ssm_dtype",
+    // The Mamba2/SSD mixer's declared geometry and forward-pass switches
+    // (`Mamba2Geometry`, all-or-nothing at the parse boundary). Each
+    // changes what a layer computes: the state and conv widths, the head
+    // axis the scalar decay runs over, the SSD chunking (an fp
+    // accumulation-order fact, not a tuning knob), the forward-time dt
+    // clamp, the gated RMSNorm's presence, and the bias estate. The
+    // spellings unique to the family live here; `num_heads`/`head_dim`
+    // stay tensor-semantic — they describe stored operand shapes under
+    // every family that declares them.
+    "state_size",
+    "expand",
+    "conv_kernel",
+    "n_groups",
+    "chunk_size",
+    "time_step_limit",
+    "rms_norm",
+    "use_bias",
+    "use_conv_bias",
+    // Residual-stream precision, declared against a lower-precision
+    // model. Execution-semantic wherever it appears.
+    "residual_in_fp32",
     // Attention output gate: whether one exists, and its nonlinearity.
     // Distinct from the judged `AttentionGateSpec` a family may one day
     // return from `attention_output_gate()` — these are the checkpoint's
@@ -331,6 +352,23 @@ pub const TRAINING_ONLY_KEYS: &[&str] = &[
     // a training/analysis output switch. It changes what is returned, not
     // what is computed, and generic execution returns logits only.
     "output_router_logits",
+    // Mamba2 `dt_bias` initialisation bounds (`Mamba2Mixer.__init__`
+    // samples dt in [time_step_min, time_step_max], floors it at
+    // time_step_floor, and stores softplus⁻¹ of it as the initial
+    // `dt_bias`). Once the checkpoint ships a trained `dt_bias` tensor,
+    // these parameterise nothing a forward pass reads — the forward-time
+    // clamp is `time_step_limit`, which is execution-semantic above.
+    "time_step_floor",
+    "time_step_min",
+    "time_step_max",
+    // Mamba1's dt-projection rank. Mamba2's dt is a per-head scalar from
+    // the fused `in_proj`; transformers carries the field on
+    // `Mamba2Config` for lineage and its `__init__` alone reads it.
+    "time_step_rank",
+    // Weight-init scaling for the residual projections
+    // (`_init_weights` divides by √(2·n_layer) when set) — same class as
+    // `initializer_range`, inert once training is over.
+    "rescale_prenorm_residual",
 ];
 
 /// Redundant spellings: `alias → canonical`. An entry claims the same

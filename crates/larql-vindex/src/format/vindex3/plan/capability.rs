@@ -254,7 +254,11 @@ fn outside_closure(capability: Capability, finding: &Finding, graph: &SystemGrap
         // the key blocks as before.
         "output_gate_type" => text_component(graph)
             .and_then(|c| c.execution.as_ref())
-            .is_some_and(|e| e.attention.output_gate.is_some()),
+            .is_some_and(|e| {
+                e.attention
+                    .as_ref()
+                    .is_some_and(|a| a.output_gate.is_some())
+            }),
         // A packaging statement, not an operator one — and unlike the
         // gate key it is not even an HF key: zero references across all
         // of transformers. What makes it excludable is that the graph

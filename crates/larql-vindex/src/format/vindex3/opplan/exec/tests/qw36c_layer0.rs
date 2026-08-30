@@ -236,7 +236,8 @@ fn every_stage_of_the_first_layer_matches_hf() {
     );
     let a = report("pre_attention norm", &mine_ln_in, ln_in.last().unwrap());
 
-    let w_ffn = store.load(&layer.pre_ffn_norm.weight).unwrap();
+    let pre_ffn_norm = layer.pre_ffn_norm.as_ref().unwrap();
+    let w_ffn = store.load(&pre_ffn_norm.weight).unwrap();
     // HF's residual after attention, so the norm is on trial and not the
     // recurrence that feeds it.
     let hf_attn = grab("attn");
@@ -247,12 +248,7 @@ fn every_stage_of_the_first_layer_matches_hf() {
         .zip(hf_attn.last().unwrap())
         .map(|(p, a)| p + a)
         .collect();
-    let mine_ln_post = rms(
-        &resid,
-        &w_ffn,
-        layer.pre_ffn_norm.weight_offset,
-        layer.pre_ffn_norm.eps,
-    );
+    let mine_ln_post = rms(&resid, &w_ffn, pre_ffn_norm.weight_offset, pre_ffn_norm.eps);
     let b = report("pre_ffn norm", &mine_ln_post, ln_post.last().unwrap());
 
     println!(

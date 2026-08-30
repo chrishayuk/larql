@@ -88,7 +88,19 @@ pub use surface::ExecutionSurface;
 /// (0.0 vs 1.0, centred layers vs an ordinary final norm). A v4 graph
 /// records one offset for every site, which is simply wrong for any
 /// such family and unrecoverable from the graph alone.
-pub const GRAPH_SCHEMA: u32 = 5;
+///
+/// v6: **presence means semantic presence** (§17.4's schema-6 delta, both
+/// lifts in one intentional break). `ExecutionSurface.attention` and
+/// `.ffn` are optional and present iff the component's program runs those
+/// operations — a pure-SSM stack (mamba2) carries neither, where v5
+/// *required* an attention surface and so fabricated one for a model
+/// that never attends (ontology drill F1). The per-layer `operator` is
+/// explicit — no absent-means-softmax serde default (F7). A v5 graph is
+/// unrecoverable by reinterpretation: every v5 surface carries an
+/// attention group whether or not the model attends, so its presence is
+/// ambiguous between "this model attends" and "the file was written" —
+/// exactly the ambiguity v6 removes. Refuse and re-encode.
+pub const GRAPH_SCHEMA: u32 = 6;
 
 /// The complete executable-system description.
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -154,10 +166,9 @@ impl SystemGraph {
     /// used `find(role == PrimaryText)` got first-match semantics, which
     /// is quiet wrongness the day a second text-shaped component exists.
     pub fn primary_text_component(&self) -> Result<&Component, PrimaryTextLookup> {
-        let mut primaries = self
-            .components
-            .iter()
-            .filter(|c| c.role == crate::format::vindex3::graph::component::ComponentRole::PrimaryText);
+        let mut primaries = self.components.iter().filter(|c| {
+            c.role == crate::format::vindex3::graph::component::ComponentRole::PrimaryText
+        });
         match (primaries.next(), primaries.next()) {
             (Some(only), None) => Ok(only),
             (None, _) => Err(PrimaryTextLookup::Absent),

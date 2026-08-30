@@ -27,6 +27,7 @@ pub mod build;
 pub mod exec;
 pub mod gated_delta;
 pub mod kda;
+pub mod mamba2;
 pub mod mla;
 
 #[cfg(test)]
@@ -44,6 +45,7 @@ use super::graph::{ObjectKind, OperandRole};
 pub use build::plan_component_ops;
 pub use gated_delta::GatedDeltaOp;
 pub use kda::KdaOp;
+pub use mamba2::Mamba2Op;
 pub use mla::MlaOp;
 
 /// One kernel argument: a logical object plus its segment-relative tensor.
@@ -316,6 +318,9 @@ pub struct HybridFfnOp {
 pub enum LayerAttention {
     Softmax(Box<AttentionOp>),
     GatedDelta(Box<GatedDeltaOp>),
+    /// Mamba2/SSD — its own variant, a third recurrence family. See
+    /// [`mamba2`] for why it shares nothing with the other two.
+    Mamba2(Box<Mamba2Op>),
     /// Kimi Delta Attention — its own variant, not a `GatedDelta` with
     /// different numbers. See [`kda`] for why the two cannot share one.
     Kda(Box<KdaOp>),
@@ -334,7 +339,7 @@ impl LayerAttention {
     pub fn softmax(&self) -> Option<&AttentionOp> {
         match self {
             Self::Softmax(op) => Some(op.as_ref()),
-            Self::GatedDelta(_) | Self::Kda(_) | Self::Mla(_) => None,
+            Self::GatedDelta(_) | Self::Kda(_) | Self::Mla(_) | Self::Mamba2(_) => None,
         }
     }
 
@@ -342,7 +347,7 @@ impl LayerAttention {
     pub fn softmax_mut(&mut self) -> Option<&mut AttentionOp> {
         match self {
             Self::Softmax(op) => Some(op.as_mut()),
-            Self::GatedDelta(_) | Self::Kda(_) | Self::Mla(_) => None,
+            Self::GatedDelta(_) | Self::Kda(_) | Self::Mla(_) | Self::Mamba2(_) => None,
         }
     }
 
@@ -354,7 +359,7 @@ impl LayerAttention {
     pub fn gated_delta(&self) -> Option<&GatedDeltaOp> {
         match self {
             Self::GatedDelta(op) => Some(op.as_ref()),
-            Self::Softmax(_) | Self::Kda(_) | Self::Mla(_) => None,
+            Self::Softmax(_) | Self::Kda(_) | Self::Mla(_) | Self::Mamba2(_) => None,
         }
     }
 
@@ -362,7 +367,7 @@ impl LayerAttention {
     pub fn kda(&self) -> Option<&KdaOp> {
         match self {
             Self::Kda(op) => Some(op.as_ref()),
-            Self::Softmax(_) | Self::GatedDelta(_) | Self::Mla(_) => None,
+            Self::Softmax(_) | Self::GatedDelta(_) | Self::Mla(_) | Self::Mamba2(_) => None,
         }
     }
 
@@ -370,7 +375,15 @@ impl LayerAttention {
     pub fn mla(&self) -> Option<&MlaOp> {
         match self {
             Self::Mla(op) => Some(op.as_ref()),
-            Self::Softmax(_) | Self::GatedDelta(_) | Self::Kda(_) => None,
+            Self::Softmax(_) | Self::GatedDelta(_) | Self::Kda(_) | Self::Mamba2(_) => None,
+        }
+    }
+
+    /// The Mamba2 op, when this layer runs the SSD mixer.
+    pub fn mamba2(&self) -> Option<&Mamba2Op> {
+        match self {
+            Self::Mamba2(op) => Some(op.as_ref()),
+            Self::Softmax(_) | Self::GatedDelta(_) | Self::Kda(_) | Self::Mla(_) => None,
         }
     }
 
@@ -388,6 +401,7 @@ impl LayerAttention {
             Self::Softmax(_) | Self::Mla(_) => None,
             Self::GatedDelta(op) => Some(op.state_elements()),
             Self::Kda(op) => Some(op.state_elements()),
+            Self::Mamba2(op) => Some(op.state_elements()),
         }
     }
 
@@ -397,7 +411,9 @@ impl LayerAttention {
     pub fn declared_name(&self) -> &'static str {
         match self {
             Self::Softmax(op) => op.span.declared_name(),
-            Self::GatedDelta(_) | Self::Kda(_) => larql_models::config::LAYER_TYPE_LINEAR_ATTENTION,
+            Self::GatedDelta(_) | Self::Kda(_) | Self::Mamba2(_) => {
+                larql_models::config::LAYER_TYPE_LINEAR_ATTENTION
+            }
             // MLA has no `layer_types` spelling of its own — see
             // `graph::policy::AttentionLayerPolicy::declared_name`'s
             // identical judgment.
@@ -457,6 +473,9 @@ impl LayerFfn {
 #[derive(Debug, Clone, PartialEq, Serialize)]
 pub struct LayerPlan {
     pub layer: usize,
+    /// The pre-block norm. On an attention-class layer this is
+    /// `input_layernorm`; on a mixer-only layer it is the layer's single
+    /// pre-mixer norm — same position in the program, one field.
     pub pre_attention_norm: NormOp,
     /// This layer's attention-class operator. Not every layer attends by
     /// softmax: a hybrid checkpoint interleaves DeltaNet recurrences with
@@ -466,8 +485,14 @@ pub struct LayerPlan {
     /// placement only).
     #[serde(skip_serializing_if = "Option::is_none")]
     pub post_attention_norm: Option<NormOp>,
-    pub pre_ffn_norm: NormOp,
-    pub ffn: LayerFfn,
+    /// Absent on a mixer-only (Mamba2) layer, which has no FFN to
+    /// normalise into — schema 6's presence-means-presence, in the plan.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub pre_ffn_norm: Option<NormOp>,
+    /// This layer's FFN, absent on a mixer-only layer (the mixer is the
+    /// whole block; no `intermediate_size` exists in the checkpoint).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub ffn: Option<LayerFfn>,
     /// Normalises FFN output before its residual add (four-norm only).
     #[serde(skip_serializing_if = "Option::is_none")]
     pub post_ffn_norm: Option<NormOp>,

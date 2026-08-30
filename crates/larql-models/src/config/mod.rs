@@ -27,6 +27,7 @@ pub mod experts;
 pub mod interleave;
 pub mod layer_types;
 pub mod linear_attn;
+pub mod mamba2;
 pub mod mla;
 pub mod model_config;
 pub mod moe_router;
@@ -55,6 +56,7 @@ pub use layer_types::{
     LAYER_TYPE_WINDOW_ATTENTION,
 };
 pub use linear_attn::{KdaGeometry, LAYER_TYPE_UNRESOLVED_INTERLEAVE};
+pub use mamba2::{DtBound, Mamba2Geometry};
 pub use mla::MlaGeometry;
 pub use model_config::ModelConfig;
 pub use moe_router::MoeRouterKind;
@@ -67,6 +69,8 @@ pub use rope_types::{
 
 #[cfg(test)]
 mod kda_geometry_tests;
+#[cfg(test)]
+mod mamba2_tests;
 #[cfg(test)]
 mod mla_geometry_tests;
 #[cfg(test)]

@@ -71,8 +71,9 @@ fn an_lllf_stack_dispatches_three_recurrences_then_one_softmax() {
             LayerAttention::GatedDelta(_) => "L",
             LayerAttention::Kda(_) => "K",
             LayerAttention::Softmax(_) => "F",
-            // Never reached — this fixture builds no MLA layer.
+            // Never reached — this fixture builds no MLA/Mamba2 layer.
             LayerAttention::Mla(_) => "M",
+            LayerAttention::Mamba2(_) => "S",
         })
         .collect();
     assert_eq!(
@@ -185,6 +186,9 @@ fn each_layer_updates_its_own_kind_of_state_and_no_other() {
             // assertion should say rather than silently skip.
             LayerAttention::Kda(_) => panic!("layer {index}: fixture is Gated DeltaNet, not KDA"),
             LayerAttention::Mla(_) => panic!("layer {index}: fixture is Gated DeltaNet, not MLA"),
+            LayerAttention::Mamba2(_) => {
+                panic!("layer {index}: fixture is Gated DeltaNet, not Mamba2")
+            }
             LayerAttention::GatedDelta(_) => {
                 let state = provider.recurrent_state(index).expect("a recurrent layer");
                 let matrix = state.buffer(0).cells().to_vec();

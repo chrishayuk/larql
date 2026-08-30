@@ -276,7 +276,7 @@ pub(super) fn build_ffn(
     formats: WeightFormats,
     keep: &mut Vec<LoadedWeight>,
 ) -> Result<FfnResident, VindexError> {
-    if let Some(op) = layer.ffn.routed() {
+    if let Some(op) = layer.ffn.as_ref().and_then(|f| f.routed()) {
         if op.router_kind == larql_models::MoeRouterKind::Gemma4Hybrid {
             return Err(VindexError::Parse(format!(
                 "layer {}: a pure routed FFN with the Gemma 4 router kind has no lowering arm \
@@ -288,7 +288,7 @@ pub(super) fn build_ffn(
             gpu, store, layer, op,
         )?)));
     }
-    if let Some(op) = layer.ffn.hybrid() {
+    if let Some(op) = layer.ffn.as_ref().and_then(|f| f.hybrid()) {
         return Ok(FfnResident::Hybrid(Box::new(build_hybrid(
             gpu, store, layer, op, formats, keep,
         )?)));
@@ -422,7 +422,10 @@ fn build_routed(
     let router_bias = f32_or_empty(op.router_bias.as_ref())?;
     let gate_up_bias = f32_or_empty(gate_up_projection.bias.as_ref())?;
     let down_bias = f32_or_empty(down_projection.bias.as_ref())?;
-    let pre_ffn_norm = store.load(&layer.pre_ffn_norm.weight)?;
+    let pre_ffn_op = layer.pre_ffn_norm.as_ref().ok_or_else(|| {
+        VindexError::Parse("layer carries no pre-FFN norm (mixer-only)".to_string())
+    })?;
+    let pre_ffn_norm = store.load(&pre_ffn_op.weight)?;
     let gate_rule = larql_compute::MoeGateRule::from_arch(op.gate_policy, op.activation);
 
     let scratch = larql_compute_metal::MoeScratch::new_public_with_format(
@@ -504,7 +507,7 @@ fn build_routed(
         expert_qformat,
         table,
         scratch,
-        eps: layer.pre_ffn_norm.eps as f32,
+        eps: pre_ffn_op.eps as f32,
     })
 }
 
@@ -579,7 +582,7 @@ fn build_hybrid(
 /// layers are refused in `new`, so this only fails on a plan that changed
 /// under us).
 fn dense_ffn(layer: &LayerPlan) -> Result<&FfnOp, VindexError> {
-    layer.ffn.dense().ok_or_else(|| {
+    layer.ffn.as_ref().and_then(|f| f.dense()).ok_or_else(|| {
         VindexError::Parse(format!(
             "layer {} carries a routed FFN the lowering does not execute (A-9.4)",
             layer.layer

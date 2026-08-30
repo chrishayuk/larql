@@ -19,6 +19,8 @@ pub enum RecurrenceKind {
     GatedDelta,
     /// `linear_attn_config`'s KDA geometry.
     Kda,
+    /// The Mamba2/SSD geometry (`state_size`, `num_heads`, `expand`, …).
+    Mamba2,
 }
 
 /// Which attention-class operator a layer runs.
@@ -60,6 +62,19 @@ pub enum LayerOperator {
     /// bind the wrong tensors to the wrong roles with plausible shapes.
     /// Observed on Kimi Linear (20 layers) and GLM-5.3-Flash (34).
     Kda,
+    /// Mamba2 / SSD: one fused `in_proj` emitting z|x|B|C|dt, one
+    /// depthwise causal conv over the x|B|C channels only, per-**head**
+    /// scalar decay (`A_log`), skip (`D`) and timestep bias, a gated
+    /// RMSNorm between state read-out and `out_proj`, and one
+    /// `head_dim × state_size` state per head.
+    ///
+    /// A third sibling, never a mode of [`Self::GatedDelta`] or
+    /// [`Self::Kda`]: the operand contracts differ structurally — one
+    /// fused five-way projection vs DeltaNet's qkv|a|b|z split or KDA's
+    /// three separate convs, a per-head scalar decay vs full/low-rank
+    /// gates, and a conv that deliberately excludes the gate channels.
+    /// Observed on mamba2-780m (48 layers, zero attention anywhere).
+    Mamba2,
     /// A declared recurrence whose operator family this build could not
     /// identify — the checkpoint says `linear_attention`, and nothing
     /// resolved the geometry that would say *which* recurrence.
@@ -96,12 +111,6 @@ pub enum LayerOperator {
 }
 
 impl LayerOperator {
-    /// Whether this is the default operator — used to keep containers
-    /// that predate the field serialising byte-identically.
-    fn is_softmax(&self) -> bool {
-        matches!(self, Self::Softmax)
-    }
-
     /// Whether this layer runs the one recurrence this build implements.
     ///
     /// Deliberately **not** "is it recurrent": [`Self::Recurrent`] is also
@@ -126,12 +135,17 @@ impl LayerOperator {
     /// arrow, and it is the one a plan cannot infer from the checkpoint.
     pub fn has_executor(&self) -> bool {
         match self {
-            Self::Softmax | Self::GatedDelta => true,
+            Self::Softmax | Self::GatedDelta | Self::Mamba2 => true,
             // Represented, not executable — the operand contract is
             // complete and no executor consumes it yet.
             Self::Kda | Self::Mla => false,
             Self::Recurrent => false,
         }
+    }
+
+    /// Whether this layer runs the Mamba2/SSD mixer.
+    pub fn is_mamba2(&self) -> bool {
+        matches!(self, Self::Mamba2)
     }
 
     /// Whether this layer runs Kimi Delta Attention.
@@ -148,7 +162,10 @@ impl LayerOperator {
     /// question a KV planner asks, because none of these retain a
     /// per-position prefix.
     pub fn is_recurrent(&self) -> bool {
-        matches!(self, Self::GatedDelta | Self::Kda | Self::Recurrent)
+        matches!(
+            self,
+            Self::GatedDelta | Self::Kda | Self::Mamba2 | Self::Recurrent
+        )
     }
 
     /// Whether this layer is a recurrence whose operator family this build
@@ -229,10 +246,12 @@ impl AttentionSpan {
 pub struct AttentionLayerPolicy {
     /// Which attention-class operator this layer runs.
     ///
-    /// Defaulted to [`LayerOperator::Softmax`] on deserialisation and
-    /// skipped on serialisation when it is, so every container written
-    /// before hybrid stacks existed reads and re-writes byte-identically.
-    #[serde(default, skip_serializing_if = "LayerOperator::is_softmax")]
+    /// Explicit since GRAPH_SCHEMA 6 (drill F7): the field is always
+    /// written and required on read. The previous serde default let an
+    /// absent field silently mean softmax — a reinterpretation, not a
+    /// fact — and schema 6's rule is that presence means semantic
+    /// presence. Pre-v6 graphs are refused by the schema check before
+    /// deserialisation, so no compatibility default is needed here.
     pub operator: LayerOperator,
     /// How far back this layer's softmax attends.
     ///
@@ -297,7 +316,13 @@ impl AttentionLayerPolicy {
     /// own array must refuse rather than invent a spelling.
     pub fn declared_name(&self) -> Option<&'static str> {
         match self.operator {
-            LayerOperator::GatedDelta | LayerOperator::Kda => Some(LAYER_TYPE_LINEAR_ATTENTION),
+            // Mamba2 rides the same canonical spelling: the resolved
+            // inventory canonicalises every identified recurrence —
+            // whatever key declared it — to `linear_attention`
+            // (`layer_kind_spelling`), and this is its inverse.
+            LayerOperator::GatedDelta | LayerOperator::Kda | LayerOperator::Mamba2 => {
+                Some(LAYER_TYPE_LINEAR_ATTENTION)
+            }
             // An unidentified recurrence has no executable spelling to
             // round-trip to. Answering `linear_attention` here would make
             // `matches_declaration` true and hide the layer inside the
@@ -363,6 +388,7 @@ pub fn resolve_layer_kind(
             match recurrence {
                 Some(RecurrenceKind::GatedDelta) => LayerOperator::GatedDelta,
                 Some(RecurrenceKind::Kda) => LayerOperator::Kda,
+                Some(RecurrenceKind::Mamba2) => LayerOperator::Mamba2,
                 None => LayerOperator::Recurrent,
             },
             None,

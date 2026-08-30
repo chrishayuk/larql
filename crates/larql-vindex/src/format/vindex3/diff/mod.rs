@@ -152,7 +152,7 @@ enum FfnRole {
 fn ffn_roles(plan: &ComponentOpPlan) -> BTreeMap<(String, String), FfnRole> {
     let mut roles = BTreeMap::new();
     for (layer_index, layer) in plan.layers.iter().enumerate() {
-        if let LayerFfn::Dense(ffn) = &layer.ffn {
+        if let Some(LayerFfn::Dense(ffn)) = &layer.ffn {
             let gate = ffn.gate.as_ref().unwrap_or(&ffn.up);
             roles.insert(
                 (gate.object.clone(), gate.tensor.clone()),

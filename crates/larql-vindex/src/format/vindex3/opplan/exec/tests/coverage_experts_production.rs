@@ -278,7 +278,13 @@ fn a_gate_less_dense_op_binds_two_operands_and_runs_ungated() {
     dense_f32_model(dir.path());
     let container = encoded(dir.path(), "dense");
     let (plan, store) = closed_plan(container.path());
-    let mut op = plan.layers[0].ffn.dense().expect("dense layer").clone();
+    let mut op = plan.layers[0]
+        .ffn
+        .as_ref()
+        .unwrap()
+        .dense()
+        .expect("dense layer")
+        .clone();
     op.gate = None;
     let ffn = LayerFfn::Dense(Box::new(op));
     let operands = FfnOperands::load(

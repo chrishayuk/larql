@@ -23,13 +23,14 @@ use super::super::encode::REPRESENTATION_ID_SEP;
 use super::super::graph::policy::LayerOperator;
 use super::super::graph::roles::classify_stack_tensor_on;
 use super::super::graph::surface::LinearAttentionSurface;
+use super::super::graph::surface::Mamba2Surface;
 use super::super::graph::surface::MlaSurface;
 use super::super::graph::surface::MoeSurface;
 use super::super::graph::{LogicalObject, NormPlacement, ObjectKind, OperandRole};
 use super::super::inspect::SystemInspection;
 use super::{
     AttentionOp, ClosureDefect, ComponentOpPlan, EmbeddingOp, ExpertBank, FfnOp, GateOp,
-    GatedDeltaOp, HybridFfnOp, KdaOp, LayerAttention, LayerFfn, LayerPlan, MlaOp, NormOp,
+    GatedDeltaOp, HybridFfnOp, KdaOp, LayerAttention, LayerFfn, LayerPlan, Mamba2Op, MlaOp, NormOp,
     OpPlanOutcome, OperandRef, OutputOp, PackedProjection, QkNormOp, RoutedFfnOp, SharedExpertOp,
     SinkOp,
 };
@@ -80,7 +81,7 @@ pub fn plan_component_ops(
     // executable-but-unfounded program this refuses. Returning no plan
     // means no unjudged epsilon is ever written into one.
     let post_norm: Option<larql_models::config::NormSpec> = match placement {
-        NormPlacement::PreOnly => None,
+        NormPlacement::PreOnly | NormPlacement::PreMixer => None,
         NormPlacement::PrePost => match surface.norm.post {
             Some(judged) => Some(judged),
             None => {
@@ -132,31 +133,60 @@ pub fn plan_component_ops(
 
     // ── Stack closure ──
     let hidden = component.hidden_size;
-    let attn = &surface.attention;
-    let inter = surface.ffn.intermediate_size;
-    let gated_ffn = surface.ffn.ffn_type == FfnType::Gated;
+    // Schema 6: the operation surfaces follow the program, so each is
+    // optional and each family that runs must find its group present.
+    // The cross-check lives here as well as in `execution_completeness`
+    // because closure is the proof boundary encode gates on.
+    let attn = surface.attention.as_ref();
+    let ffn_surface = surface.ffn.as_ref();
+    let attends = attention_table
+        .iter()
+        .any(|l| matches!(l.operator, LayerOperator::Softmax | LayerOperator::Mla));
+    let has_non_mixer = attention_table.iter().any(|l| !l.operator.is_mamba2());
+    let runs_mamba2 = attention_table.iter().any(|l| l.operator.is_mamba2());
+    for (runs, present, fact) in [
+        (attends, attn.is_some(), "attention surface"),
+        (has_non_mixer, ffn_surface.is_some(), "ffn surface"),
+        (
+            runs_mamba2,
+            surface.mamba2.is_some(),
+            "mamba2 mixer surface",
+        ),
+    ] {
+        if runs && !present {
+            defects.push(ClosureDefect::UnjudgedSemantic {
+                component: component.id.clone(),
+                fact: fact.to_string(),
+                required_by: "the declared operation program".to_string(),
+            });
+        }
+    }
+    let inter = ffn_surface.map_or(0, |f| f.intermediate_size);
+    let gated_ffn = ffn_surface.is_some_and(|f| f.ffn_type == FfnType::Gated);
+    let ffn_moe = ffn_surface.and_then(|f| f.moe);
     // Head geometry is a per-layer fact when the family varies it
     // (Gemma 4's global layers); the layer's policy is the authority and
     // the surface is what a pre-geometry container meant by "every
-    // layer".
+    // layer". Zeros when the component does not attend: only attention
+    // roles consult these, and none is required on a mixer-only stack.
     let layer_geometry = |layer: usize| {
-        let (head_dim, num_kv_heads) = attention_table[layer]
-            .geometry
-            .map_or((attn.head_dim, attn.num_kv_heads), |g| {
-                (g.head_dim, g.num_kv_heads)
-            });
+        let (head_dim, num_kv_heads) = attention_table[layer].geometry.map_or_else(
+            || attn.map_or((0, 0), |a| (a.head_dim, a.num_kv_heads)),
+            |g| (g.head_dim, g.num_kv_heads),
+        );
+        let num_q_heads = attn.map_or(0, |a| a.num_q_heads);
         StackGeometry {
             hidden,
-            q_rows: attn.num_q_heads * head_dim,
+            q_rows: num_q_heads * head_dim,
             // The independent witness for the gate. The config says
             // `attn_output_gate: true`; the stored projection says
             // `2 · 24 · 256 = 12288` against an ungated 6144, and this
             // contract is what makes the two cross-examine each other
             // instead of the config being believed on its own.
-            q_proj_rows: attn.num_q_heads
+            q_proj_rows: num_q_heads
                 * head_dim
                 * if matches!(
-                    attn.output_gate.map(|g| g.source),
+                    attn.and_then(|a| a.output_gate).map(|g| g.source),
                     Some(larql_models::config::GateSource::FusedQueryProjection)
                 ) {
                     2
@@ -166,12 +196,15 @@ pub fn plan_component_ops(
             kv_rows: num_kv_heads * head_dim,
             intermediate: inter,
             head_dim,
-            num_q_heads: attn.num_q_heads,
+            num_q_heads,
             num_kv_heads,
-            qk_scope: attn.qk_norm_scope,
+            qk_scope: attn.map_or(larql_models::config::QkNormScope::PerHead, |a| {
+                a.qk_norm_scope
+            }),
             linear: surface.linear_attention,
             kda: surface.kda,
             mla: surface.mla,
+            mamba2: surface.mamba2,
         }
     };
 
@@ -182,7 +215,7 @@ pub fn plan_component_ops(
     // `ExpertFormat::PerExpert` never fuses gate and up into one operand
     // (each expert's `w1`/`w3` are already separate tensors), so no layout
     // exists to declare and none is required.
-    if let Some(moe) = &surface.ffn.moe {
+    if let Some(moe) = &ffn_moe {
         if moe.gate_up_layout.is_none() && moe.expert_format != ExpertFormat::PerExpert {
             defects.push(ClosureDefect::UnjudgedSemantic {
                 component: component.id.clone(),
@@ -264,12 +297,12 @@ pub fn plan_component_ops(
             // bank or a router — under the surface's judgment; the
             // judgment alone routes nothing, the evidence alone is a
             // stray operand (`absent_op` names it).
-            let routed = surface.ffn.moe.is_some()
+            let routed = ffn_moe.is_some()
                 && (bank.is_some()
                     || present.is_some_and(|s| s.contains_key(&OperandRole::MoeRouterWeight)));
             // A hybrid layer is routed AND dense: the judgment says the
             // family runs both, and the evidence is the routed evidence.
-            let hybrid = routed && surface.ffn.moe.is_some_and(|m| m.hybrid);
+            let hybrid = routed && ffn_moe.is_some_and(|m| m.hybrid);
             let ops = LayerOps {
                 placement,
                 gated_ffn,
@@ -277,14 +310,15 @@ pub fn plan_component_ops(
                 // one would make every Qwen3.8 layer a closure defect for
                 // a tensor that correctly does not exist.
                 output_gate: matches!(
-                    attn.output_gate.map(|g| g.source),
+                    attn.and_then(|a| a.output_gate).map(|g| g.source),
                     Some(larql_models::config::GateSource::AttentionInput)
                 ),
-                attention_bias: attn.attention_bias == Some(true),
-                sinks: attn.sinks.is_some(),
+                attention_bias: attn.and_then(|a| a.attention_bias) == Some(true),
+                sinks: attn.is_some_and(|a| a.sinks.is_some()),
                 routed,
                 hybrid,
-                moe: surface.ffn.moe,
+                moe: ffn_moe,
+                mamba2: surface.mamba2,
                 v_from_k: policy.v_from_k,
                 // Which operand family this layer must supply, taken from
                 // the GRAPH's operator. The op below picks its operator
@@ -342,7 +376,7 @@ pub fn plan_component_ops(
                     });
                     continue;
                 }
-                if let Some(expected) = expected_shape(*role, &geometry, surface.ffn.moe.as_ref()) {
+                if let Some(expected) = expected_shape(*role, &geometry, ffn_moe.as_ref()) {
                     if !shape_satisfies(&tensor.shape, &expected) {
                         defects.push(ClosureDefect::GeometryMismatch {
                             tensor: format!("{object_id}/{}", tensor.name),
@@ -451,17 +485,76 @@ pub fn plan_component_ops(
         let get = |role: OperandRole| &slot[&role];
         let policy = &attention_table[layer];
         let geometry = layer_geometry(layer);
+        // A mixer-only layer, on operand evidence: the fused five-way
+        // `in_proj` is the discriminator (no other operator's role table
+        // can put it in `slot`). Its whole program is the mixer — one
+        // pre-block norm, no attention wrap, no FFN — so it is built
+        // here and the transformer shape below is never consulted.
+        if slot.contains_key(&OperandRole::Mamba2InProj) {
+            let mixer = surface.mamba2.unwrap_or_else(|| {
+                panic!(
+                    "layer {layer} ships a Mamba2 operand while the component declares no \
+                     mixer surface; closure should have refused this before the plan was built"
+                )
+            });
+            let consumed = slot.len();
+            layers.push(LayerPlan {
+                layer,
+                pre_attention_norm: norm_op(
+                    surface.norm.pre,
+                    &stack_id,
+                    get(OperandRole::Mamba2PreMixerNorm),
+                ),
+                attention: LayerAttention::Mamba2(Box::new(Mamba2Op {
+                    geometry: mixer.geometry,
+                    activation: mixer.activation,
+                    residual_in_fp32: surface.residual_in_fp32,
+                    in_proj: operand(&stack_id, get(OperandRole::Mamba2InProj)),
+                    conv1d: operand(&stack_id, get(OperandRole::Mamba2Conv1d)),
+                    conv1d_bias: slot
+                        .get(&OperandRole::Mamba2Conv1dBias)
+                        .map(|t| operand(&stack_id, t)),
+                    a_log: operand(&stack_id, get(OperandRole::Mamba2ALog)),
+                    d: operand(&stack_id, get(OperandRole::Mamba2D)),
+                    dt_bias: operand(&stack_id, get(OperandRole::Mamba2DtBias)),
+                    gated_norm: slot
+                        .get(&OperandRole::Mamba2GatedNorm)
+                        .map(|t| norm_op(surface.norm.pre, &stack_id, t)),
+                    out_proj: operand(&stack_id, get(OperandRole::Mamba2OutProj)),
+                })),
+                post_attention_norm: None,
+                pre_ffn_norm: None,
+                ffn: None,
+                post_ffn_norm: None,
+                layer_scale: None,
+                residual_scale: surface.residual_scale,
+                operands_accounted: consumed,
+                operands_present: consumed,
+            });
+            continue;
+        }
+        // Every non-mixer layer's program includes attention wrap norms
+        // and an FFN, so their surface groups are present when closure
+        // held — the panics state the invariant, mirroring KDA's below.
+        let ffn_s = ffn_surface.unwrap_or_else(|| {
+            panic!(
+                "layer {layer} requires an FFN op while the surface carries no ffn group; \
+                 closure should have refused this before the plan was built"
+            )
+        });
         let bias = |role: OperandRole| {
-            (attn.attention_bias == Some(true)).then(|| operand(&stack_id, get(role)))
+            (attn.and_then(|a| a.attention_bias) == Some(true))
+                .then(|| operand(&stack_id, get(role)))
         };
-        let qk_norm = slot
-            .contains_key(&OperandRole::AttnQNorm)
-            .then(|| QkNormOp {
-                scope: attn.qk_norm_scope,
-                weight_offset: attn.qk_norm_weight_offset,
+        let qk_norm = match (attn, slot.contains_key(&OperandRole::AttnQNorm)) {
+            (Some(a), true) => Some(QkNormOp {
+                scope: a.qk_norm_scope,
+                weight_offset: a.qk_norm_weight_offset,
                 q: operand(&stack_id, get(OperandRole::AttnQNorm)),
                 k: operand(&stack_id, get(OperandRole::AttnKNorm)),
-            });
+            }),
+            _ => None,
+        };
         // Placement decides which operand feeds the pre-FFN norm: the
         // dedicated one under four-norm, the overloaded
         // `post_attention_layernorm` under two-norm.
@@ -479,6 +572,10 @@ pub fn plan_component_ops(
                 )
             }
             NormPlacement::PreOnly => (None, OperandRole::PostAttentionNorm, None),
+            NormPlacement::PreMixer => panic!(
+                "layer {layer} carries transformer operands under a mixer-only norm \
+                 placement; closure should have refused this before the plan was built"
+            ),
         };
         let bank_slot = bank_by_layer.get(&layer);
         let bank_id = tables
@@ -487,13 +584,13 @@ pub fn plan_component_ops(
             .unwrap_or_default();
         let dense_op = || FfnOp {
             intermediate_size: inter,
-            activation: surface.ffn.activation,
-            gate_policy: surface.ffn.gate_policy,
+            activation: ffn_s.activation,
+            gate_policy: ffn_s.gate_policy,
             gate: gated_ffn.then(|| operand(&stack_id, get(OperandRole::FfnGate))),
             up: operand(&stack_id, get(OperandRole::FfnUp)),
             down: operand(&stack_id, get(OperandRole::FfnDown)),
         };
-        let ffn = match (surface.ffn.moe, bank_slot) {
+        let ffn = match (ffn_moe, bank_slot) {
             (Some(moe), Some(bank)) => {
                 let bank_operand = |role: OperandRole| operand(&bank_id, &bank[&role]);
                 let optional = |role: OperandRole| bank.get(&role).map(|t| operand(&bank_id, t));
@@ -535,8 +632,8 @@ pub fn plan_component_ops(
                 // from the closure pass that admitted the layer.
                 let shared = (moe.shared_experts > 0).then(|| SharedExpertOp {
                     intermediate_size: moe.expert_intermediate_size * moe.shared_experts,
-                    activation: surface.ffn.activation,
-                    gate_policy: surface.ffn.gate_policy,
+                    activation: ffn_s.activation,
+                    gate_policy: ffn_s.gate_policy,
                     gate: operand(&stack_id, get(OperandRole::SharedExpertGate)),
                     up: operand(&stack_id, get(OperandRole::SharedExpertUp)),
                     down: operand(&stack_id, get(OperandRole::SharedExpertDown)),
@@ -547,8 +644,8 @@ pub fn plan_component_ops(
                     expert_intermediate_size: moe.expert_intermediate_size,
                     router_kind: moe.router_kind,
                     routing_policy: moe.routing_policy,
-                    activation: surface.ffn.activation,
-                    gate_policy: surface.ffn.gate_policy,
+                    activation: ffn_s.activation,
+                    gate_policy: ffn_s.gate_policy,
                     expert_format: moe.expert_format,
                     gate_up_layout: moe.gate_up_layout,
                     router: operand(&stack_id, get(OperandRole::MoeRouterWeight)),
@@ -706,13 +803,20 @@ pub fn plan_component_ops(
                     out_proj: operand(&stack_id, get(OperandRole::MlaOutProj)),
                 }))
             } else {
+                let a = attn.unwrap_or_else(|| {
+                    panic!(
+                        "layer {layer} ships softmax attention operands while the surface \
+                         carries no attention group; closure should have refused this before \
+                         the plan was built"
+                    )
+                });
                 LayerAttention::Softmax(Box::new(AttentionOp {
                     num_q_heads: geometry.num_q_heads,
                     num_kv_heads: geometry.num_kv_heads,
                     head_dim: geometry.head_dim,
-                    query_scale: attn.query_scale,
-                    score_scale: attn.score_scale,
-                    logit_softcapping: attn.logit_softcapping,
+                    query_scale: a.query_scale,
+                    score_scale: a.score_scale,
+                    logit_softcapping: a.logit_softcapping,
                     // The graph carries no span exactly when it recorded
                     // a recurrence for this layer. Reaching here means the
                     // layer ships softmax operands anyway — the checkpoint
@@ -730,7 +834,7 @@ pub fn plan_component_ops(
                     window: policy.window,
                     position: policy.position,
                     qk_norm,
-                    parameter_free_qk_norm: attn.parameter_free_qk_norm,
+                    parameter_free_qk_norm: a.parameter_free_qk_norm,
                     q: operand(&stack_id, get(OperandRole::AttnQ)),
                     k: operand(&stack_id, get(OperandRole::AttnK)),
                     // On a K≡V layer the value operand IS the key operand:
@@ -750,7 +854,7 @@ pub fn plan_component_ops(
                     // projection, so the op names `q_proj` and reads one
                     // matrix for both roles — the same "one matrix, two
                     // roles" statement `v_from_k` makes for K≡V layers.
-                    output_gate: attn.output_gate.map(|spec| GateOp {
+                    output_gate: a.output_gate.map(|spec| GateOp {
                         spec,
                         projection: operand(
                             &stack_id,
@@ -770,15 +874,15 @@ pub fn plan_component_ops(
                     k_bias: bias(OperandRole::AttnKBias),
                     v_bias: bias(OperandRole::AttnVBias),
                     o_bias: bias(OperandRole::AttnOBias),
-                    sinks: attn.sinks.map(|spec| SinkOp {
+                    sinks: a.sinks.map(|spec| SinkOp {
                         spec,
                         logits: operand(&stack_id, get(OperandRole::AttnSinks)),
                     }),
                 }))
             },
             post_attention_norm,
-            pre_ffn_norm: norm_op(surface.norm.pre, &stack_id, get(pre_ffn_role)),
-            ffn,
+            pre_ffn_norm: Some(norm_op(surface.norm.pre, &stack_id, get(pre_ffn_role))),
+            ffn: Some(ffn),
             post_ffn_norm,
             layer_scale,
             residual_scale: surface.residual_scale,
@@ -851,6 +955,10 @@ struct LayerOps {
     /// required alongside the routed ones, plus the branch norms.
     hybrid: bool,
     moe: Option<MoeSurface>,
+    /// The Mamba2 mixer surface, on a component that declares one — what
+    /// decides the conv-bias and gated-norm operand requirements on a
+    /// mixer layer.
+    mamba2: Option<Mamba2Surface>,
     /// V is the K projection on this layer: no V operand is required, and
     /// one present is a stray.
     v_from_k: bool,
@@ -866,6 +974,30 @@ struct LayerOps {
 
 /// Roles every layer must supply, given the surface's ops.
 fn required_roles(ops: &LayerOps) -> Vec<OperandRole> {
+    // A mixer-only layer's program shares nothing with the transformer
+    // shape below — one pre-mixer norm, no attention wrap, no FFN — so
+    // it returns its own complete set rather than threading exemptions
+    // through every clause that follows.
+    if ops.operator.is_mamba2() {
+        let mut roles = vec![
+            OperandRole::Mamba2PreMixerNorm,
+            OperandRole::Mamba2InProj,
+            OperandRole::Mamba2Conv1d,
+            OperandRole::Mamba2ALog,
+            OperandRole::Mamba2D,
+            OperandRole::Mamba2DtBias,
+            OperandRole::Mamba2OutProj,
+        ];
+        if let Some(mixer) = ops.mamba2 {
+            if mixer.geometry.use_conv_bias {
+                roles.push(OperandRole::Mamba2Conv1dBias);
+            }
+            if mixer.geometry.rms_norm {
+                roles.push(OperandRole::Mamba2GatedNorm);
+            }
+        }
+        return roles;
+    }
     let mut roles = vec![
         OperandRole::PreAttentionNorm,
         OperandRole::PostAttentionNorm,
@@ -1014,6 +1146,29 @@ fn required_roles(ops: &LayerOps) -> Vec<OperandRole> {
 /// its op. `None` when the operand is consumed by a declared op.
 fn absent_op(role: OperandRole, ops: &LayerOps) -> Option<&'static str> {
     match role {
+        // A mixer-only layer runs neither attention nor an FFN; any
+        // transformer-shaped operand on it is a stray, whatever its name.
+        OperandRole::AttnQ
+        | OperandRole::AttnK
+        | OperandRole::AttnV
+        | OperandRole::AttnO
+        | OperandRole::FfnGate
+        | OperandRole::FfnUp
+        | OperandRole::FfnDown
+        | OperandRole::PreAttentionNorm
+        | OperandRole::PostAttentionNorm
+        | OperandRole::PreFfnNorm
+        | OperandRole::PostFfnNorm
+            if ops.operator.is_mamba2() =>
+        {
+            Some("a mixer-only Mamba2 layer (no attention, no FFN)")
+        }
+        OperandRole::Mamba2Conv1dBias if !ops.mamba2.is_some_and(|m| m.geometry.use_conv_bias) => {
+            Some("a conv bias (`use_conv_bias` declares none)")
+        }
+        OperandRole::Mamba2GatedNorm if !ops.mamba2.is_some_and(|m| m.geometry.rms_norm) => {
+            Some("the mixer's gated RMSNorm (`rms_norm` declares none)")
+        }
         OperandRole::AttnOutputGate if !ops.output_gate => {
             Some("attention output gate (judged semantics)")
         }
@@ -1156,6 +1311,10 @@ struct StackGeometry {
     /// layers run it. Disjoint from every field above it — MLA is neither
     /// the softmax fields' uniform per-head width nor a recurrence.
     mla: Option<MlaSurface>,
+    /// The Mamba2 mixer's surface, on a component whose layers run it.
+    /// Disjoint from every field above for the same reason each of them
+    /// is from the others.
+    mamba2: Option<Mamba2Surface>,
 }
 
 /// Whether a stored shape satisfies a contract.
@@ -1201,8 +1360,29 @@ fn expected_shape(
         linear,
         kda,
         mla,
+        mamba2,
     } = *g;
     match role {
+        // Mamba2/SSD. Every contract follows from the mixer's own
+        // declared geometry closing over the component width; none from
+        // the softmax fields, which are zero on a mixer-only stack.
+        // `mamba2` absent while such an operand exists is a refusal, for
+        // the same reason `linear`/`kda`/`mla` absences are.
+        OperandRole::Mamba2InProj => Some(vec![mamba2?.geometry.in_proj_rows(hidden), hidden]),
+        OperandRole::Mamba2Conv1d => {
+            let g = mamba2?.geometry;
+            Some(vec![g.conv_dim(hidden), 1, g.conv_kernel])
+        }
+        OperandRole::Mamba2Conv1dBias => Some(vec![mamba2?.geometry.conv_dim(hidden)]),
+        // Per-head scalars — the axis that separates this family from
+        // KDA's per-channel `dt_bias`.
+        OperandRole::Mamba2ALog | OperandRole::Mamba2D | OperandRole::Mamba2DtBias => {
+            Some(vec![mamba2?.geometry.num_heads])
+        }
+        // Over the FULL inner width — unlike DeltaNet's per-head norm.
+        OperandRole::Mamba2GatedNorm => Some(vec![mamba2?.geometry.d_inner(hidden)]),
+        OperandRole::Mamba2OutProj => Some(vec![hidden, mamba2?.geometry.d_inner(hidden)]),
+        OperandRole::Mamba2PreMixerNorm => Some(vec![hidden]),
         OperandRole::AttnQ => Some(vec![q_proj_rows, hidden]),
         OperandRole::AttnK | OperandRole::AttnV => Some(vec![kv_rows, hidden]),
         OperandRole::AttnO => Some(vec![hidden, q_rows]),
@@ -1415,6 +1595,7 @@ mod tests {
         LayerOps {
             placement: NormPlacement::PrePost,
             gated_ffn: true,
+            mamba2: None,
             output_gate: false,
             attention_bias: false,
             sinks: false,
@@ -1601,6 +1782,7 @@ mod tests {
         StackGeometry {
             kda: None,
             mla: None,
+            mamba2: None,
             hidden: 64,
             q_rows: 32,
             kv_rows: 16,

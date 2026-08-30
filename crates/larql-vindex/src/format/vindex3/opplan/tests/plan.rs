@@ -47,6 +47,8 @@ fn target_plan_reads_span_and_position_from_the_table() {
     assert!(layer0.post_ffn_norm.is_some());
     assert!(layer0
         .pre_ffn_norm
+        .as_ref()
+        .unwrap()
         .weight
         .tensor
         .contains("pre_feedforward_layernorm"));
@@ -103,6 +105,8 @@ fn drafter_plan_uses_two_norm_placement_and_qk_norms() {
     assert!(layer0.post_ffn_norm.is_none());
     assert!(layer0
         .pre_ffn_norm
+        .as_ref()
+        .unwrap()
         .weight
         .tensor
         .contains("post_attention_layernorm"));
@@ -122,7 +126,10 @@ fn drafter_plan_uses_two_norm_placement_and_qk_norms() {
     assert!(plan.output.is_none());
     assert!(plan.final_norm.is_some());
     assert_eq!(layer0.attention.softmax().unwrap().num_kv_heads, 4);
-    assert_eq!(layer0.ffn.dense().unwrap().activation, Activation::Silu);
+    assert_eq!(
+        layer0.ffn.as_ref().unwrap().dense().unwrap().activation,
+        Activation::Silu
+    );
 
     // 11 operands: 4 attn + 2 qk norms + 2 norms + 3 mlp.
     assert_eq!(layer0.operands_accounted, 11);

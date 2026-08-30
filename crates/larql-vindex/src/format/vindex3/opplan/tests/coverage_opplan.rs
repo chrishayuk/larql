@@ -122,11 +122,15 @@ fn a_planned_dense_layer_exposes_no_routed_op() {
     assert!(!plan.layers.is_empty());
     for layer in &plan.layers {
         assert!(
-            layer.ffn.routed().is_none(),
+            layer.ffn.as_ref().unwrap().routed().is_none(),
             "layer {}: dense plan presented a routed op",
             layer.layer
         );
-        assert!(layer.ffn.dense().is_some(), "layer {}", layer.layer);
+        assert!(
+            layer.ffn.as_ref().unwrap().dense().is_some(),
+            "layer {}",
+            layer.layer
+        );
     }
 }
 

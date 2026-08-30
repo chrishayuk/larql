@@ -750,6 +750,75 @@ pub const CARRIAGE_RULES: &[CarriageRule] = &[
         site: "ExecutionSurface.linear_attention.state_dtype → GatedDeltaState precision",
         probe: Some(probe_linear_state_dtype),
     },
+    // ── Mamba2/SSD mixer geometry and switches (schema 6). Represented,
+    //    not Lowered: the surface holds every fact and no executor
+    //    consumes it yet — claiming Lowered would assert an operator that
+    //    does not exist (the same honesty `mamba_ssm_dtype` held to until
+    //    QW-2's reference operator landed). ──
+    CarriageRule {
+        leaf: "state_size",
+        reaches: Carriage::Represented,
+        site: "ExecutionSurface.mamba2.geometry.state_size",
+        probe: Some(probe_mamba2_state_size),
+    },
+    CarriageRule {
+        leaf: "expand",
+        reaches: Carriage::Represented,
+        site: "ExecutionSurface.mamba2.geometry.expand",
+        probe: Some(probe_mamba2_expand),
+    },
+    CarriageRule {
+        leaf: "conv_kernel",
+        reaches: Carriage::Represented,
+        site: "ExecutionSurface.mamba2.geometry.conv_kernel",
+        probe: Some(probe_mamba2_conv_kernel),
+    },
+    CarriageRule {
+        leaf: "n_groups",
+        reaches: Carriage::Represented,
+        site: "ExecutionSurface.mamba2.geometry.n_groups",
+        probe: Some(probe_mamba2_n_groups),
+    },
+    CarriageRule {
+        leaf: "chunk_size",
+        reaches: Carriage::Represented,
+        site: "ExecutionSurface.mamba2.geometry.chunk_size",
+        probe: Some(probe_mamba2_chunk_size),
+    },
+    CarriageRule {
+        leaf: "time_step_limit",
+        reaches: Carriage::Represented,
+        site: "ExecutionSurface.mamba2.geometry.dt_limit_{min,max} — the judged \
+               non-finite boundary: a bare `Infinity` is carried as a declared \
+               unbounded side, never a fabricated float",
+        probe: Some(probe_mamba2_time_step_limit),
+    },
+    CarriageRule {
+        leaf: "rms_norm",
+        reaches: Carriage::Represented,
+        site: "ExecutionSurface.mamba2.geometry.rms_norm — the mixer's gated RMSNorm",
+        probe: Some(probe_mamba2_rms_norm),
+    },
+    CarriageRule {
+        leaf: "use_bias",
+        reaches: Carriage::Represented,
+        site: "ExecutionSurface.mamba2.geometry.use_bias (closure-paired with the \
+               in/out projection bias operands)",
+        probe: Some(probe_mamba2_use_bias),
+    },
+    CarriageRule {
+        leaf: "use_conv_bias",
+        reaches: Carriage::Represented,
+        site: "ExecutionSurface.mamba2.geometry.use_conv_bias (closure-paired with \
+               the conv bias operand)",
+        probe: Some(probe_mamba2_use_conv_bias),
+    },
+    CarriageRule {
+        leaf: "residual_in_fp32",
+        reaches: Carriage::Represented,
+        site: "ExecutionSurface.residual_in_fp32 — residual-stream precision, declared",
+        probe: Some(probe_residual_in_fp32),
+    },
     CarriageRule {
         leaf: "attn_output_gate",
         reaches: Carriage::Lowered,
@@ -920,11 +989,19 @@ fn probe_k_eq_v(component: &Component, _ctx: &ProbeContext<'_>) -> Option<Value>
 }
 
 fn probe_moe_enabled(component: &Component, _ctx: &ProbeContext<'_>) -> Option<Value> {
-    Some(json!(component.execution.as_ref()?.ffn.moe.is_some()))
+    Some(json!(component
+        .execution
+        .as_ref()?
+        .ffn
+        .as_ref()?
+        .moe
+        .is_some()))
 }
 
 fn probe_moe_top_k(component: &Component, _ctx: &ProbeContext<'_>) -> Option<Value> {
-    Some(json!(component.execution.as_ref()?.ffn.moe?.top_k))
+    Some(json!(
+        component.execution.as_ref()?.ffn.as_ref()?.moe?.top_k
+    ))
 }
 
 /// The head width the full-attention layers carry — the fact
@@ -939,10 +1016,12 @@ fn probe_full_layer_head_dim(component: &Component, _ctx: &ProbeContext<'_>) -> 
         .filter(|l| l.span == Some(AttentionSpan::Full))
         .map(|l| {
             l.geometry
-                .map_or(surface.attention.head_dim, |g| g.head_dim)
+                .map_or(surface.attention.as_ref().map(|a| a.head_dim), |g| {
+                    Some(g.head_dim)
+                })
         });
-    let first = dims.next()?;
-    dims.all(|d| d == first).then(|| json!(first))
+    let first = dims.next()??;
+    dims.all(|d| d == Some(first)).then(|| json!(first))
 }
 
 /// The KV-head count the full-attention layers carry.
@@ -954,10 +1033,12 @@ fn probe_full_layer_kv_heads(component: &Component, _ctx: &ProbeContext<'_>) -> 
         .filter(|l| l.span == Some(AttentionSpan::Full))
         .map(|l| {
             l.geometry
-                .map_or(surface.attention.num_kv_heads, |g| g.num_kv_heads)
+                .map_or(surface.attention.as_ref().map(|a| a.num_kv_heads), |g| {
+                    Some(g.num_kv_heads)
+                })
         });
-    let first = heads.next()?;
-    heads.all(|h| h == first).then(|| json!(first))
+    let first = heads.next()??;
+    heads.all(|h| h == Some(first)).then(|| json!(first))
 }
 
 /// A fact the schema represents only as absent: the built component
@@ -1001,6 +1082,7 @@ fn probe_attn_output_gate(component: &Component, _ctx: &ProbeContext<'_>) -> Opt
         .execution
         .as_ref()?
         .attention
+        .as_ref()?
         .output_gate
         .is_some()))
 }
@@ -1021,7 +1103,7 @@ fn probe_attn_output_gate(component: &Component, _ctx: &ProbeContext<'_>) -> Opt
 /// close instead, which is why the identity is asserted against the
 /// component's own resolved `head_dim` rather than any nearby 128.
 fn mrope_of(component: &Component, ctx: &ProbeContext<'_>) -> Option<([usize; 3], bool)> {
-    let head_dim = component.execution.as_ref()?.attention.head_dim;
+    let head_dim = component.execution.as_ref()?.attention.as_ref()?.head_dim;
     let mut policies = layers_in_scope(component, ctx)?.filter_map(|l| {
         l.position
             .mrope()
@@ -1154,6 +1236,65 @@ fn probe_linear_conv_kernel(component: &Component, _ctx: &ProbeContext<'_>) -> O
     ))
 }
 
+/// The Mamba2 surface's geometry, when the component carries one.
+fn mamba2_geometry(component: &Component) -> Option<larql_models::config::Mamba2Geometry> {
+    Some(component.execution.as_ref()?.mamba2?.geometry)
+}
+
+fn probe_mamba2_state_size(component: &Component, _ctx: &ProbeContext<'_>) -> Option<Value> {
+    Some(json!(mamba2_geometry(component)?.state_size))
+}
+
+fn probe_mamba2_expand(component: &Component, _ctx: &ProbeContext<'_>) -> Option<Value> {
+    Some(json!(mamba2_geometry(component)?.expand))
+}
+
+fn probe_mamba2_conv_kernel(component: &Component, _ctx: &ProbeContext<'_>) -> Option<Value> {
+    Some(json!(mamba2_geometry(component)?.conv_kernel))
+}
+
+fn probe_mamba2_n_groups(component: &Component, _ctx: &ProbeContext<'_>) -> Option<Value> {
+    Some(json!(mamba2_geometry(component)?.n_groups))
+}
+
+fn probe_mamba2_chunk_size(component: &Component, _ctx: &ProbeContext<'_>) -> Option<Value> {
+    Some(json!(mamba2_geometry(component)?.chunk_size))
+}
+
+/// Echoes the clamp in the checkpoint's own spelling: a finite side as
+/// its number, an unbounded side as the non-finite literal the judged
+/// boundary quoted (`-Infinity` below, `Infinity` above) — the inverse of
+/// [`DtBound::from_declared`](larql_models::config::DtBound::from_declared),
+/// positional because unboundedness below and above are different signs.
+fn probe_mamba2_time_step_limit(component: &Component, _ctx: &ProbeContext<'_>) -> Option<Value> {
+    use larql_models::config::DtBound;
+    let geometry = mamba2_geometry(component)?;
+    let side = |bound: DtBound, unbounded: &str| match bound {
+        DtBound::Finite(v) => json!(v),
+        DtBound::Unbounded => json!(unbounded),
+    };
+    Some(json!([
+        side(geometry.dt_limit_min, "-Infinity"),
+        side(geometry.dt_limit_max, "Infinity"),
+    ]))
+}
+
+fn probe_mamba2_rms_norm(component: &Component, _ctx: &ProbeContext<'_>) -> Option<Value> {
+    Some(json!(mamba2_geometry(component)?.rms_norm))
+}
+
+fn probe_mamba2_use_bias(component: &Component, _ctx: &ProbeContext<'_>) -> Option<Value> {
+    Some(json!(mamba2_geometry(component)?.use_bias))
+}
+
+fn probe_mamba2_use_conv_bias(component: &Component, _ctx: &ProbeContext<'_>) -> Option<Value> {
+    Some(json!(mamba2_geometry(component)?.use_conv_bias))
+}
+
+fn probe_residual_in_fp32(component: &Component, _ctx: &ProbeContext<'_>) -> Option<Value> {
+    Some(json!(component.execution.as_ref()?.residual_in_fp32?))
+}
+
 /// The recurrence's state precision, echoed in the checkpoint's own
 /// spelling.
 ///
@@ -1192,7 +1333,15 @@ fn probe_post_norm_eps(component: &Component, _ctx: &ProbeContext<'_>) -> Option
 /// `GeluTanh`); the schema's spelling otherwise, so a genuine
 /// disagreement still reads as one.
 fn probe_activation(component: &Component, ctx: &ProbeContext<'_>) -> Option<Value> {
-    let activation = component.execution.as_ref()?.ffn.activation;
+    // The FFN's activation on an FFN-bearing component; the MIXER's on a
+    // mixer-only one — `hidden_act` is one declared fact, and whichever
+    // op consumes it answers for it.
+    let surface = component.execution.as_ref()?;
+    let activation = match (&surface.ffn, &surface.mamba2) {
+        (Some(ffn), _) => ffn.activation,
+        (None, Some(mixer)) => mixer.activation,
+        (None, None) => return None,
+    };
     if let Some(declared) = ctx.declared.as_str() {
         if larql_models::config::Activation::from_hf_name(declared) == Some(activation) {
             return Some(json!(declared));
@@ -1206,7 +1355,7 @@ fn probe_activation(component: &Component, ctx: &ProbeContext<'_>) -> Option<Val
 /// checkpoint declaring `swiglu_limit` that resolved to plain gating is
 /// then reported as unrepresented, which is the truth.
 fn probe_swiglu_limit(component: &Component, _ctx: &ProbeContext<'_>) -> Option<Value> {
-    match component.execution.as_ref()?.ffn.gate_policy {
+    match component.execution.as_ref()?.ffn.as_ref()?.gate_policy {
         larql_models::ExpertGatePolicy::ClampedGlu { limit, .. } => Some(json!(limit)),
         larql_models::ExpertGatePolicy::Gated => None,
     }
@@ -1214,21 +1363,45 @@ fn probe_swiglu_limit(component: &Component, _ctx: &ProbeContext<'_>) -> Option<
 
 fn probe_attention_bias(component: &Component, _ctx: &ProbeContext<'_>) -> Option<Value> {
     Some(json!(
-        component.execution.as_ref()?.attention.attention_bias?
+        component
+            .execution
+            .as_ref()?
+            .attention
+            .as_ref()?
+            .attention_bias?
     ))
 }
 
 fn probe_query_scale(component: &Component, _ctx: &ProbeContext<'_>) -> Option<Value> {
-    Some(json!(component.execution.as_ref()?.attention.query_scale?))
+    Some(json!(
+        component
+            .execution
+            .as_ref()?
+            .attention
+            .as_ref()?
+            .query_scale?
+    ))
 }
 
 fn probe_score_scale(component: &Component, _ctx: &ProbeContext<'_>) -> Option<Value> {
-    Some(json!(component.execution.as_ref()?.attention.score_scale))
+    Some(json!(
+        component
+            .execution
+            .as_ref()?
+            .attention
+            .as_ref()?
+            .score_scale
+    ))
 }
 
 fn probe_attn_softcap(component: &Component, _ctx: &ProbeContext<'_>) -> Option<Value> {
     Some(json!(
-        component.execution.as_ref()?.attention.logit_softcapping?
+        component
+            .execution
+            .as_ref()?
+            .attention
+            .as_ref()?
+            .logit_softcapping?
     ))
 }
 
@@ -1327,7 +1500,7 @@ fn probe_relative_extent(component: &Component, _ctx: &ProbeContext<'_>) -> Opti
 /// rather than stopping at the parser. The same caveat the `layer_types`
 /// probe carries, for the same reason.
 fn probe_moe_routing_policy(component: &Component, _ctx: &ProbeContext<'_>) -> Option<Value> {
-    let moe = component.execution.as_ref()?.ffn.moe.as_ref()?;
+    let moe = component.execution.as_ref()?.ffn.as_ref()?.moe.as_ref()?;
     Some(json!(matches!(
         moe.routing_policy,
         larql_models::config::ExpertRoutingPolicy::NormalisedOverSelected
@@ -1335,12 +1508,12 @@ fn probe_moe_routing_policy(component: &Component, _ctx: &ProbeContext<'_>) -> O
 }
 
 fn probe_moe_shared_experts(component: &Component, _ctx: &ProbeContext<'_>) -> Option<Value> {
-    let moe = component.execution.as_ref()?.ffn.moe.as_ref()?;
+    let moe = component.execution.as_ref()?.ffn.as_ref()?.moe.as_ref()?;
     Some(json!(moe.shared_experts))
 }
 
 fn probe_moe_router_kind(component: &Component, _ctx: &ProbeContext<'_>) -> Option<Value> {
-    let moe = component.execution.as_ref()?.ffn.moe.as_ref()?;
+    let moe = component.execution.as_ref()?.ffn.as_ref()?.moe.as_ref()?;
     Some(json!(moe.router_kind.as_str()))
 }
 
@@ -1365,7 +1538,7 @@ fn probe_absent_when_zero(_component: &Component, ctx: &ProbeContext<'_>) -> Opt
 fn probe_grouping_is_a_no_op(component: &Component, ctx: &ProbeContext<'_>) -> Option<Value> {
     // The flag is only carried when the surface shows ungrouped routing,
     // which is what one group produces.
-    component.execution.as_ref()?.ffn.moe.as_ref()?;
+    component.execution.as_ref()?.ffn.as_ref()?.moe.as_ref()?;
     Some(ctx.declared.clone())
 }
 
@@ -1411,12 +1584,12 @@ fn probe_softmax_layer_set(component: &Component, ctx: &ProbeContext<'_>) -> Opt
 }
 
 fn probe_moe_branch_scale(component: &Component, _ctx: &ProbeContext<'_>) -> Option<Value> {
-    let moe = component.execution.as_ref()?.ffn.moe.as_ref()?;
+    let moe = component.execution.as_ref()?.ffn.as_ref()?.moe.as_ref()?;
     moe.branch_scale.map(|s| json!(s))
 }
 
 fn probe_moe_dense_prefix(component: &Component, _ctx: &ProbeContext<'_>) -> Option<Value> {
-    let moe = component.execution.as_ref()?.ffn.moe.as_ref()?;
+    let moe = component.execution.as_ref()?.ffn.as_ref()?.moe.as_ref()?;
     moe.dense_prefix_layers.map(|n| json!(n))
 }
 

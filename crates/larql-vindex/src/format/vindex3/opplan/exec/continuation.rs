@@ -204,6 +204,15 @@ pub fn plan_continuation_geometry(
                  planning has no geometry for it yet — refusing to invent one",
                 op.compressed_kv_width()
             )),
+            // Mamba2's geometry is fully declared, and the execution rung
+            // brought the precision judgment with it: the reference's own
+            // naive path computes the scan in fp32 (explicit `.float()`
+            // casts), so the state is held at the precision the reference
+            // computes at — a transcription, not a planner's pick. The
+            // judgment lives once, in `exec::mamba2::state_geometry`.
+            LayerAttention::Mamba2(op) => Ok(LayerContinuationGeometry::Recurrent(
+                super::mamba2::state_geometry(op),
+            )),
             LayerAttention::GatedDelta(op) => {
                 // A recurrence must be held at SOME precision, and the
                 // planner does not get to pick one. An undeclared state

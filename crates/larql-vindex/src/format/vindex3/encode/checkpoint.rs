@@ -114,10 +114,48 @@ pub fn encode_checkpoint(checkpoint: &Path, out: &Path) -> Result<CheckpointEnco
     }
 
     let outcome = encode_system(&named, out)?;
+    // Closure at encode (schema 6, drill F4): encoding is the proof
+    // boundary, so an encoder may not leave behind a container whose
+    // operands do not close. The written container is read back through
+    // the same closure the runtime uses — one authority, not a
+    // re-implementation — and a defect removes the output and refuses
+    // with every defect itemised. Before this gate, operand closure ran
+    // only at read time, so an architecture that slipped the census was
+    // written to disk before its operands were ever classified.
+    enforce_closure_at_encode(out)?;
     let capabilities = snapshot_checkpoint_capabilities(checkpoint, out)?;
     Ok(CheckpointEncode {
         outcome,
         artifact,
         capabilities,
     })
+}
+
+/// Run operand closure over every component of the just-written
+/// container; on any defect, remove the container and refuse.
+fn enforce_closure_at_encode(out: &Path) -> Result<(), VindexError> {
+    let inspection = super::super::inspect::inspect_container(out, false)?;
+    let component_ids: Vec<String> = inspection
+        .graph
+        .components
+        .iter()
+        .filter(|c| c.execution.is_some())
+        .map(|c| c.id.clone())
+        .collect();
+    for id in component_ids {
+        let outcome = super::super::opplan::build::plan_component_ops(&inspection, out, &id)?;
+        if !outcome.defects.is_empty() {
+            let defects: Vec<String> = outcome.defects.iter().map(|d| format!("{d:?}")).collect();
+            // The output is this function's own product; a container
+            // closure refuses must not survive to be read later.
+            std::fs::remove_dir_all(out).map_err(VindexError::Io)?;
+            return Err(VindexError::Parse(format!(
+                "refusing to keep an encode whose operands do not close \
+                 (component `{id}`, {} defect(s)):\n  {}",
+                defects.len(),
+                defects.join("\n  ")
+            )));
+        }
+    }
+    Ok(())
 }

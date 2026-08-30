@@ -549,9 +549,9 @@ fn ffn_activation(
     use larql_vindex::format::vindex3::opplan::LayerFfn;
     for layer in &plan.layers {
         match &layer.ffn {
-            LayerFfn::Dense(f) => return Ok(f.activation),
-            LayerFfn::Routed(r) => return Ok(r.activation),
-            LayerFfn::Hybrid(_) => continue,
+            Some(LayerFfn::Dense(f)) => return Ok(f.activation),
+            Some(LayerFfn::Routed(r)) => return Ok(r.activation),
+            Some(LayerFfn::Hybrid(_)) | None => continue,
         }
     }
     Err("plan carries no FFN op to read an activation from".into())

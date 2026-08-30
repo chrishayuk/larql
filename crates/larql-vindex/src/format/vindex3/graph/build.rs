@@ -574,6 +574,9 @@ fn recurrence_kind(inventory: &ArchitectureInventory) -> Option<RecurrenceKind> 
     if inventory.resolved.kda.is_some() {
         return Some(RecurrenceKind::Kda);
     }
+    if inventory.resolved.mamba2.is_some() {
+        return Some(RecurrenceKind::Mamba2);
+    }
     inventory
         .resolved
         .linear_attention
@@ -615,6 +618,7 @@ fn operator_and_span(
             match recurrence {
                 Some(RecurrenceKind::Kda) => LayerOperator::Kda,
                 Some(RecurrenceKind::GatedDelta) => LayerOperator::GatedDelta,
+                Some(RecurrenceKind::Mamba2) => LayerOperator::Mamba2,
                 None => LayerOperator::Recurrent,
             },
             None,

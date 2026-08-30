@@ -78,7 +78,7 @@ fn layer_median_norms(
     runtime: &Vindex3Runtime<ProductionBackend>,
     layer: usize,
 ) -> Result<(f32, f32, f32), LqlError> {
-    let LayerFfn::Dense(ffn) = &runtime.plan().layers[layer].ffn else {
+    let Some(LayerFfn::Dense(ffn)) = &runtime.plan().layers[layer].ffn else {
         return Err(LqlError::Execution(format!(
             "layer {layer} is routed — compose installs on MoE layers are a later role rung"
         )));

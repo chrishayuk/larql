@@ -151,6 +151,12 @@ pub struct ResolvedTopology {
     /// KDA's decay-gate lower bound (`linear_attn_config.gate_lower_bound`).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub kda_gate_lower_bound: Option<f32>,
+    /// The Mamba2 mixer's declared geometry, when the checkpoint declares
+    /// one. Disjoint from [`Self::linear_attention`] and [`Self::kda`] in
+    /// every observed checkpoint — a third recurrence family, and the
+    /// geometries are not interchangeable.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub mamba2: Option<crate::config::Mamba2Geometry>,
 }
 
 /// The precision a recurrent state is kept at.
@@ -345,6 +351,12 @@ pub struct ResolvedExecution {
     /// declares no such operation, distinct from `Some(1.0)`.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub residual_scale: Option<f32>,
+    /// Whether the residual stream is kept at fp32 against a
+    /// lower-precision model (`residual_in_fp32`), verbatim. `None` = the
+    /// checkpoint declares nothing, which is not `false` — an executor
+    /// must not choose a residual precision the checkpoint never stated.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub residual_in_fp32: Option<bool>,
     /// Whether a missing standalone output-head tensor means "tied to the
     /// embedding matrix" rather than "lost". See
     /// [`ModelArchitecture::output_head_reuses_embedding`](crate::config::ModelArchitecture::output_head_reuses_embedding).

@@ -36,6 +36,7 @@ pub mod kimi_router;
 #[cfg(all(feature = "gpu", target_os = "macos"))]
 pub mod kimi_source;
 pub mod kv;
+pub mod mamba2;
 pub mod mla;
 pub mod narrow;
 pub mod observe;
@@ -58,6 +59,7 @@ use larql_models::config::GateSource;
 
 use super::{AttentionOp, ComponentOpPlan, LayerPlan};
 use crate::error::VindexError;
+
 use backend::{
     AttentionCall, AttentionStepCall, BiasCall, GateCall, NormCall, PlanBackend, ProjectCall,
     QkNormCall, SinkCall,
@@ -567,6 +569,24 @@ fn execute_layer<B: PlanBackend + ?Sized, K: KvState + ?Sized>(
             )
             .output
         }
+        PreparedAttention::Mamba2(ops) => {
+            let Some((provider, layer_index)) = kv else {
+                return Err(VindexError::Parse(format!(
+                    "layer {} runs a recurrence, which needs durable continuation state, \
+                     and this traversal was given no provider to hold it",
+                    layer.layer
+                )));
+            };
+            let state = provider.recurrent_state(layer_index)?;
+            mamba2::layer_forward_with(
+                &ops.op,
+                &ops.weights()?,
+                &inputs,
+                state,
+                backend.dense_projector(),
+            )
+            .output
+        }
         PreparedAttention::Softmax(ops) => {
             let attention_op = layer
                 .attention
@@ -624,16 +644,23 @@ fn execute_layer<B: PlanBackend + ?Sized, K: KvState + ?Sized>(
         })?;
     let post_attention = h.to_vec();
 
-    // FFN operands are resident on the prepared image — the bulk of a
-    // decoder layer's weight, lowered once for the model rather than
-    // once per layer per traversal.
-    let ffn = &prepared.ffn;
+    // A mixer-only (Mamba2) layer carries no FFN program: its one
+    // residual add happened above, and the layer is complete. Presence
+    // follows the program at execution time too.
+    let (Some(pre_ffn), Some(ffn), Some(ffn_op)) = (&prepared.pre_ffn, &prepared.ffn, &layer.ffn)
+    else {
+        return Ok(LayerTrace {
+            post_attention,
+            ffn_input: Vec::new(),
+            post_layer: h.to_vec(),
+        });
+    };
     // The normed FFN inputs are computed once here (same values the
     // in-loop computation produced — one deterministic norm per row)
     // so the trace can carry the tap without a second norm pass.
     let ffn_inputs: Vec<Vec<f32>> = h
         .par_iter()
-        .map(|row| prepared.pre_ffn.apply(backend, row))
+        .map(|row| pre_ffn.apply(backend, row))
         .collect();
     // The tail every arm shares: post-FFN norm, residual scaling, the
     // residual add and the layer scale. Factored so the two FFN shapes
@@ -666,7 +693,7 @@ fn execute_layer<B: PlanBackend + ?Sized, K: KvState + ?Sized>(
             let _site = cpu::ledger::in_site(cpu::ledger::Site::Ffn);
             let residuals: Vec<&[f32]> = h.iter().map(Vec::as_slice).collect();
             let normed: Vec<&[f32]> = ffn_inputs.iter().map(Vec::as_slice).collect();
-            ffn.apply_from_residual_many(&layer.ffn, backend, &residuals, &normed, hidden)?
+            ffn.apply_from_residual_many(ffn_op, backend, &residuals, &normed, hidden)?
         };
         // The glue AFTER it stays position-parallel: norms, scaling and
         // the residual add are elementwise and issue no projections, so
@@ -685,7 +712,7 @@ fn execute_layer<B: PlanBackend + ?Sized, K: KvState + ?Sized>(
                 // rayon worker with its own thread-local, so a guard
                 // taken by the caller would attribute none of it.
                 let _site = cpu::ledger::in_site(cpu::ledger::Site::Ffn);
-                let ffn_out = ffn.apply_from_residual(&layer.ffn, backend, row, normed, hidden)?;
+                let ffn_out = ffn.apply_from_residual(ffn_op, backend, row, normed, hidden)?;
                 finish(row, ffn_out)
             })?;
     }

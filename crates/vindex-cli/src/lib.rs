@@ -289,9 +289,12 @@ pub fn layers_facts(root: &Path) -> Facts {
         .iter()
         .map(|l| {
             let ffn = match &l.ffn {
-                LayerFfn::Dense(_) => "dense",
-                LayerFfn::Routed(_) => "routed",
-                LayerFfn::Hybrid(_) => "hybrid",
+                Some(LayerFfn::Dense(_)) => "dense",
+                Some(LayerFfn::Routed(_)) => "routed",
+                Some(LayerFfn::Hybrid(_)) => "hybrid",
+                // A mixer-only (Mamba2) layer: the mixer is the whole
+                // block and no FFN exists to report.
+                None => "absent",
             };
             json!({ "layer": l.layer, "mixer": mixer_label(l), "ffn": ffn })
         })
@@ -388,7 +391,7 @@ pub fn precision_matrix_facts(root: &Path) -> Facts {
         let label = mixer_label(layer).to_string();
         let mut cells = serde_json::Map::new();
         let mut roles: Vec<String> = vec!["gate".into(), "up".into(), "down".into()];
-        if let Some(ffn) = layer.ffn.dense() {
+        if let Some(ffn) = layer.ffn.as_ref().and_then(|f| f.dense()) {
             if let Some(g) = &ffn.gate {
                 if let Some(b) = bits_of(g) {
                     cells.insert("gate".into(), json!(b));
@@ -427,7 +430,7 @@ pub fn precision_matrix_facts(root: &Path) -> Facts {
                 .into_iter()
                 .map(|(_, o)| o.object)
                 .collect();
-            if let Some(ffn) = l.ffn.dense() {
+            if let Some(ffn) = l.ffn.as_ref().and_then(|f| f.dense()) {
                 if let Some(g) = &ffn.gate {
                     ops.push(g.object.clone());
                 }
@@ -701,16 +704,21 @@ fn resolve_semantic(
             .ok_or_else(|| format!("layer {n} — the plan holds layers 0..{}", plan.layers.len()))?;
         match family {
             "ffn" => {
-                let ffn = layer_plan.ffn.dense().ok_or_else(|| {
-                    let kind = match &layer_plan.ffn {
-                        LayerFfn::Routed(_) => "a routed (mixture-of-experts) FFN",
-                        LayerFfn::Hybrid(_) => "a hybrid FFN",
-                        LayerFfn::Dense(_) => unreachable!(),
-                    };
-                    format!(
+                let ffn = layer_plan
+                    .ffn
+                    .as_ref()
+                    .and_then(|f| f.dense())
+                    .ok_or_else(|| {
+                        let kind = match &layer_plan.ffn {
+                            Some(LayerFfn::Routed(_)) => "a routed (mixture-of-experts) FFN",
+                            Some(LayerFfn::Hybrid(_)) => "a hybrid FFN",
+                            None => "no FFN at all (a mixer-only layer)",
+                            Some(LayerFfn::Dense(_)) => unreachable!(),
+                        };
+                        format!(
                         "layer {n} carries {kind} — per-expert addressing is not yet a CLI surface"
                     )
-                })?;
+                    })?;
                 let (label, op) = match *role {
                     "gate" => (
                         "FFN GATE PROJECTION",

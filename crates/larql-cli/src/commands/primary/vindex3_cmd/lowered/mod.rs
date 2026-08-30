@@ -221,14 +221,18 @@ impl<'a> LoweredSession<'a> {
         // policy as plain gating would be a different model (A-9.4).
         if let Some(l) = plan.layers.iter().find(|l| {
             l.ffn
-                .dense()
+                .as_ref()
+                .and_then(|f| f.dense())
                 .is_some_and(|f| !matches!(f.gate_policy, larql_models::ExpertGatePolicy::Gated))
         }) {
             return Err(VindexError::Parse(format!(
                 "layer {} carries {:?}, which the Metal lowering does not execute yet (A-9.4); \
                  refusing rather than lowering it as plain gating",
                 l.layer,
-                l.ffn.dense().map(|f| f.gate_policy)
+                l.ffn
+                    .as_ref()
+                    .and_then(|f| f.dense())
+                    .map(|f| f.gate_policy)
             )));
         }
         // Gemma 4's semantics are lowered (G4.3): K≡V binds the K matrix
@@ -273,7 +277,7 @@ impl<'a> LoweredSession<'a> {
         if let Some(l) = plan
             .layers
             .iter()
-            .find(|l| l.layer_scale.is_some() && l.ffn.hybrid().is_none())
+            .find(|l| l.layer_scale.is_some() && l.ffn.as_ref().and_then(|f| f.hybrid()).is_none())
         {
             return Err(VindexError::Parse(format!(
                 "layer {} carries a layer scalar on a non-hybrid FFN, which the stack encoder \
@@ -283,11 +287,13 @@ impl<'a> LoweredSession<'a> {
         }
         for l in &plan.layers {
             let activation = match &l.ffn {
-                larql_vindex::format::vindex3::opplan::LayerFfn::Dense(op) => Some(op.activation),
-                larql_vindex::format::vindex3::opplan::LayerFfn::Hybrid(op) => {
+                Some(larql_vindex::format::vindex3::opplan::LayerFfn::Dense(op)) => {
+                    Some(op.activation)
+                }
+                Some(larql_vindex::format::vindex3::opplan::LayerFfn::Hybrid(op)) => {
                     Some(op.dense.activation)
                 }
-                larql_vindex::format::vindex3::opplan::LayerFfn::Routed(_) => None,
+                Some(larql_vindex::format::vindex3::opplan::LayerFfn::Routed(_)) | None => None,
             };
             if let Some(activation) = activation {
                 ffn_activation(activation)
@@ -366,7 +372,18 @@ impl<'a> LoweredSession<'a> {
                     Some(op) => Some(resident_norm(gpu, store, op)?),
                     None => None,
                 },
-                pre_ffn_norm: resident_norm(gpu, store, &layer.pre_ffn_norm)?.0,
+                pre_ffn_norm: resident_norm(
+                    gpu,
+                    store,
+                    layer.pre_ffn_norm.as_ref().ok_or_else(|| {
+                        VindexError::Parse(format!(
+                            "layer {} carries no pre-FFN norm (mixer-only); the Metal \
+                             lowering has no arm for it",
+                            layer.layer
+                        ))
+                    })?,
+                )?
+                .0,
                 post_ffn_norm: match &layer.post_ffn_norm {
                     Some(op) => Some(resident_norm(gpu, store, op)?),
                     None => None,
@@ -410,10 +427,10 @@ impl<'a> LoweredSession<'a> {
             .layers
             .iter()
             .filter_map(|l| {
-                l.ffn
-                    .dense()
+                let ffn = l.ffn.as_ref()?;
+                ffn.dense()
                     .map(|f| f.intermediate_size)
-                    .or_else(|| l.ffn.hybrid().map(|h| h.dense.intermediate_size))
+                    .or_else(|| ffn.hybrid().map(|h| h.dense.intermediate_size))
             })
             .max()
             .unwrap_or(hidden);
@@ -447,7 +464,10 @@ impl<'a> LoweredSession<'a> {
             sizes.iter().map(|n| gpu.lowering_scratch(*n)).collect();
         // A hybrid layer's own intermediates (slots 18..24), and a zero
         // buffer for the expert combine's residual input.
-        let has_hybrid = plan.layers.iter().any(|l| l.ffn.hybrid().is_some());
+        let has_hybrid = plan
+            .layers
+            .iter()
+            .any(|l| l.ffn.as_ref().and_then(|f| f.hybrid()).is_some());
         if has_hybrid {
             for _ in 0..larql_compute_metal::lowering::stack::StackScratch::HYBRID_BUFFERS {
                 scratch.push(gpu.lowering_scratch(hidden));
@@ -691,13 +711,26 @@ impl<'a> LoweredSession<'a> {
                         hidden: self.hidden,
                         intermediate: plan_layer
                             .ffn
-                            .dense()
+                            .as_ref()
+                            .and_then(|f| f.dense())
                             .map_or(self.hidden, |f| f.intermediate_size),
-                        norm_eps: plan_layer.pre_ffn_norm.eps as f32,
-                        norm_weight_offset: plan_layer.pre_ffn_norm.weight_offset,
-                        activation: plan_layer.ffn.dense().map_or(FfnActivation::Silu, |f| {
-                            ffn_activation(f.activation).expect("checked in `new`")
-                        }),
+                        norm_eps: plan_layer
+                            .pre_ffn_norm
+                            .as_ref()
+                            .expect("dense resident implies a pre-FFN norm")
+                            .eps as f32,
+                        norm_weight_offset: plan_layer
+                            .pre_ffn_norm
+                            .as_ref()
+                            .expect("dense resident implies a pre-FFN norm")
+                            .weight_offset,
+                        activation: plan_layer
+                            .ffn
+                            .as_ref()
+                            .and_then(|f| f.dense())
+                            .map_or(FfnActivation::Silu, |f| {
+                                ffn_activation(f.activation).expect("checked in `new`")
+                            }),
                     },
                 },
                 FfnResident::Routed(routed) => {
@@ -709,7 +742,11 @@ impl<'a> LoweredSession<'a> {
                     }))
                 }
                 FfnResident::Hybrid(h) => {
-                    let op = plan_layer.ffn.hybrid().expect("resident matches the plan");
+                    let op = plan_layer
+                        .ffn
+                        .as_ref()
+                        .and_then(|f| f.hybrid())
+                        .expect("resident matches the plan");
                     LayerFfnLowering::Hybrid(Box::new(HybridFfnLowering {
                         dense: FfnWeights {
                             gate: h.gate.as_lowered(),
@@ -723,8 +760,16 @@ impl<'a> LoweredSession<'a> {
                         dense_shape: FfnShape {
                             hidden: self.hidden,
                             intermediate: op.dense.intermediate_size,
-                            norm_eps: plan_layer.pre_ffn_norm.eps as f32,
-                            norm_weight_offset: plan_layer.pre_ffn_norm.weight_offset,
+                            norm_eps: plan_layer
+                                .pre_ffn_norm
+                                .as_ref()
+                                .expect("hybrid resident implies a pre-FFN norm")
+                                .eps as f32,
+                            norm_weight_offset: plan_layer
+                                .pre_ffn_norm
+                                .as_ref()
+                                .expect("hybrid resident implies a pre-FFN norm")
+                                .weight_offset,
                             activation: ffn_activation(op.dense.activation)
                                 .expect("checked in `new`"),
                         },

@@ -20,6 +20,7 @@ use crate::error::VindexError;
 /// Safetensors dtype labels this reference executor can widen to f32.
 const DTYPE_F32: &str = "F32";
 const DTYPE_BF16: &str = "BF16";
+const DTYPE_F16: &str = "F16";
 
 /// One object's segment: file path, payload origin, and tensor table.
 struct SegmentMap {
@@ -382,6 +383,12 @@ pub(crate) fn widen(dtype: &str, bytes: &[u8], name: &str) -> Result<Vec<f32>, V
             .chunks_exact(2)
             .map(|c| f32::from_bits(u32::from(u16::from_le_bytes([c[0], c[1]])) << 16))
             .collect()),
+        // IEEE half. Exact — every f16 value is representable in f32 —
+        // through the one half-precision decoder the workspace already
+        // judges, not a second bit-twiddling copy. First shipped estate:
+        // mamba2-780m (the checkpoint is F16 throughout, where the prior
+        // corpus was BF16).
+        DTYPE_F16 => Ok(larql_models::quant::half::decode_f16(bytes)),
         other => Err(VindexError::Parse(format!(
             "tensor `{name}`: no judged f32 widening for dtype `{other}`"
         ))),

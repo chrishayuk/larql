@@ -31,7 +31,7 @@ fn fixture() -> (tempfile::TempDir, ComponentOpPlan, OperandStore) {
 fn gate_edit(
     plan: &ComponentOpPlan,
 ) -> (OperandOverrides, crate::format::vindex3::opplan::OperandRef) {
-    let LayerFfn::Dense(ffn) = &plan.layers[0].ffn else {
+    let Some(LayerFfn::Dense(ffn)) = &plan.layers[0].ffn else {
         panic!("miniature layer 0 is dense");
     };
     let gate = ffn.gate.as_ref().unwrap().clone();
@@ -86,7 +86,7 @@ fn bake_writes_effective_bytes_with_truthful_hashes() {
 #[test]
 fn bake_refuses_misfit_edits() {
     let (container, plan, _store) = fixture();
-    let LayerFfn::Dense(ffn) = &plan.layers[0].ffn else {
+    let Some(LayerFfn::Dense(ffn)) = &plan.layers[0].ffn else {
         panic!("miniature layer 0 is dense");
     };
     let gate = ffn.gate.as_ref().unwrap().clone();
@@ -165,10 +165,9 @@ fn bake_preserves_unknown_index_fields() {
     let out = tempfile::tempdir().unwrap();
     bake_container(container.path(), &overrides, out.path()).unwrap();
 
-    let baked: serde_json::Value = serde_json::from_str(
-        &std::fs::read_to_string(out.path().join(INDEX_JSON)).unwrap(),
-    )
-    .unwrap();
+    let baked: serde_json::Value =
+        serde_json::from_str(&std::fs::read_to_string(out.path().join(INDEX_JSON)).unwrap())
+            .unwrap();
     assert_eq!(
         baked["residency_contract"]["access_class"],
         serde_json::json!("demand_driven"),

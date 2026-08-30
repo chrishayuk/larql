@@ -15,6 +15,11 @@ pub(super) const STANDARD_QUANT_FORMATS: &[QuantFormat] = &[QuantFormat::None, Q
 /// (`larql-vindex`'s `write_model_weights_kquant_with_opts`).
 pub(super) const MLA_QUANT_FORMATS: &[QuantFormat] = &[QuantFormat::None];
 
+/// Quant formats a pure-SSM architecture's extractor path supports today:
+/// unquantised only — no writer has ever quantised an SSM operand estate,
+/// and claiming a format here would assert an untested path.
+pub(super) const SSM_QUANT_FORMATS: &[QuantFormat] = &[QuantFormat::None];
+
 /// One recognised architecture family: how its `model_type` is matched,
 /// and what it supports.
 #[derive(Clone, Copy, Debug)]

@@ -257,6 +257,14 @@ pub struct ModelConfig {
     /// Dtype the linear-attention block's SSM/recurrent state is computed
     /// in (`mamba_ssm_dtype`), verbatim.
     pub mamba_ssm_dtype: Option<String>,
+    /// The Mamba2 mixer's declared geometry (`state_size`, `num_heads`,
+    /// `expand`, …). `None` when the checkpoint declares no Mamba2 mixer,
+    /// or declares it partially — which is refused rather than defaulted.
+    /// See [`Mamba2Geometry`](super::Mamba2Geometry).
+    pub mamba2_geometry: Option<super::Mamba2Geometry>,
+    /// Whether the residual stream is kept at fp32 against a lower-precision
+    /// model (`residual_in_fp32`) — an execution-precision fact, verbatim.
+    pub residual_in_fp32: Option<bool>,
     /// Whether attention output is gated before `o_proj` (`attn_output_gate`).
     /// Distinct from the judged [`AttentionGateSpec`](super::AttentionGateSpec)
     /// an architecture returns from `attention_output_gate()` — this is the

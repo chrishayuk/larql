@@ -18,6 +18,7 @@
 use serde::Serialize;
 
 use super::object::ObjectKind;
+use super::policy::LayerOperator;
 use super::SystemGraph;
 
 /// A component that cannot be executed from the graph alone.
@@ -31,6 +32,15 @@ pub enum CompletenessDefect {
     /// count is not semantics, placement is, and a plan cannot be built
     /// without it.
     MissingNormPlacement { component: String },
+    /// The component's program runs an operation family whose surface
+    /// group is absent (schema 6: layers attend but no attention group,
+    /// non-mixer layers exist but no FFN group, Mamba2 layers but no
+    /// mixer group). Presence follows the program, and so does
+    /// requirement.
+    MissingOperationSurface {
+        component: String,
+        operation: &'static str,
+    },
 }
 
 impl std::fmt::Display for CompletenessDefect {
@@ -47,6 +57,14 @@ impl std::fmt::Display for CompletenessDefect {
             Self::MissingNormPlacement { component } => write!(
                 f,
                 "component `{component}` owns a decoder stack but its surface records no norm placement"
+            ),
+            Self::MissingOperationSurface {
+                component,
+                operation,
+            } => write!(
+                f,
+                "component `{component}`'s program runs {operation} but its surface carries no \
+                 {operation} group"
             ),
         }
     }
@@ -91,6 +109,36 @@ pub fn execution_completeness(graph: &SystemGraph) -> Vec<CompletenessDefect> {
                     defects.push(CompletenessDefect::MissingNormPlacement {
                         component: component.id.clone(),
                     });
+                }
+                // Schema 6: the operation surfaces follow the program.
+                // The per-layer table names which families run; each
+                // family that runs must find its group present. A stack
+                // whose table is absent has nothing to derive from and
+                // is caught by the op plan's MissingAttentionTable.
+                if needs_stack {
+                    if let Some(table) = &component.attention {
+                        let attends = table.iter().any(|l| {
+                            matches!(l.operator, LayerOperator::Softmax | LayerOperator::Mla)
+                        });
+                        // Every attention-class family today carries an
+                        // FFN; a mixer-only layer is the one judged
+                        // exception. Shipped FFN operands under an absent
+                        // group are still caught by operand closure.
+                        let has_non_mixer = table.iter().any(|l| !l.operator.is_mamba2());
+                        let runs_mamba2 = table.iter().any(|l| l.operator.is_mamba2());
+                        for (runs, present, operation) in [
+                            (attends, surface.attention.is_some(), "attention"),
+                            (has_non_mixer, surface.ffn.is_some(), "ffn"),
+                            (runs_mamba2, surface.mamba2.is_some(), "the mamba2 mixer"),
+                        ] {
+                            if runs && !present {
+                                defects.push(CompletenessDefect::MissingOperationSurface {
+                                    component: component.id.clone(),
+                                    operation,
+                                });
+                            }
+                        }
+                    }
                 }
             }
             _ => {}

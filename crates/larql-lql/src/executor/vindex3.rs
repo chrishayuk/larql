@@ -10,10 +10,11 @@
 //! entry point joins the equality chain the SERVE-1 gates established.
 
 use larql_inference::layer_graph::generate::detok::Detokenizer;
-use larql_inference::vindex3::{continue_session, plan_kv_geometry, Vindex3Runtime};
+use larql_inference::vindex3::{continue_session, Vindex3Runtime};
 use larql_inference::{EosConfig, SamplingConfig};
 use larql_kv::CanonicalKvState;
 use larql_vindex::format::vindex3::opplan::exec::production::ProductionBackend;
+use larql_vindex::format::vindex3::opplan::LayerAttention;
 use larql_vindex::tokenizers::Tokenizer;
 
 use crate::error::LqlError;
@@ -253,12 +254,57 @@ impl Session {
             unreachable!("caller matched the backend");
         };
         let plan = runtime.plan();
-        let geometry = plan_kv_geometry(plan);
-        let sliding = geometry.iter().filter(|g| g.window.is_some()).count();
-        let full = geometry.len() - sliding;
-        let kv_dims: std::collections::BTreeSet<usize> =
-            geometry.iter().map(|g| g.kv_dim).collect();
+        // Read the layers themselves, not `plan_kv_geometry` — that
+        // adapter refuses (formerly: panicked, drill F8) on any model
+        // carrying recurrent continuation, and a pure-SSM binding is
+        // exactly such a model. A recurrence has no KV row to report;
+        // the honest line counts it as what it is.
+        let mut sliding = 0usize;
+        let mut full = 0usize;
+        let mut recurrent = 0usize;
+        let mut kv_dims: std::collections::BTreeSet<usize> = Default::default();
+        let mut state_elements = 0usize;
+        for layer in &plan.layers {
+            match layer.attention.softmax() {
+                Some(op) => {
+                    if op.window.is_some() {
+                        sliding += 1;
+                    } else {
+                        full += 1;
+                    }
+                    kv_dims.insert(op.num_kv_heads * op.head_dim);
+                }
+                None => {
+                    recurrent += 1;
+                    state_elements += layer.attention.recurrent_state_elements().unwrap_or(0);
+                }
+            }
+        }
         let kv_dims: Vec<String> = kv_dims.iter().map(usize::to_string).collect();
+        let attention_line = if recurrent > 0 {
+            format!(
+                "Attention:       {sliding} sliding / {full} full / {recurrent} recurrent \
+                 (windows from the plan)"
+            )
+        } else {
+            format!("Attention:       {sliding} sliding / {full} full (windows from the plan)")
+        };
+        let continuation_line = if kv_dims.is_empty() {
+            format!(
+                "Continuation:    recurrent state only; {state_elements} elements across \
+                 {recurrent} layer(s), constant in sequence length"
+            )
+        } else if recurrent > 0 {
+            format!(
+                "Continuation:    KV (kv_dim {}) + recurrent state ({state_elements} elements)",
+                kv_dims.join(", ")
+            )
+        } else {
+            format!(
+                "KV geometry:     plan-derived; kv_dim {}",
+                kv_dims.join(", ")
+            )
+        };
 
         Ok(vec![
             format!("Model:           {} (VINDEX3)", runtime.model_name()),
@@ -267,11 +313,8 @@ impl Session {
             format!("Component:       {V3_COMPONENT}"),
             "Execution:       closed (operand-verified executable plan)".into(),
             format!("Layers:          {}", plan.layers.len()),
-            format!("Attention:       {sliding} sliding / {full} full (windows from the plan)"),
-            format!(
-                "KV geometry:     plan-derived; kv_dim {}",
-                kv_dims.join(", ")
-            ),
+            attention_line,
+            continuation_line,
             format!(
                 "Output head:     {}",
                 if plan.output.is_some() {
@@ -325,8 +368,18 @@ impl Session {
                     op.num_kv_heads.to_string(),
                     op.head_dim.to_string(),
                 ),
+                // Name the operator, not the coarse family: "linear"
+                // said only what the layer is NOT. The columns still read
+                // `-` — a recurrence's head counts describe a fixed-size
+                // state, not retained positions.
                 None => (
-                    "linear",
+                    match &layer.attention {
+                        LayerAttention::GatedDelta(_) => "gated-delta",
+                        LayerAttention::Kda(_) => "kda",
+                        LayerAttention::Mamba2(_) => "mamba2",
+                        LayerAttention::Mla(_) => "mla",
+                        LayerAttention::Softmax(_) => unreachable!("softmax handled above"),
+                    },
                     dash.clone(),
                     dash.clone(),
                     dash.clone(),

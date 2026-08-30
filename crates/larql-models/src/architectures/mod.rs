@@ -16,6 +16,7 @@ pub mod gpt_oss;
 pub mod granite;
 pub mod kimi;
 pub mod llama;
+pub mod mamba2;
 pub mod mistral;
 pub mod mixtral;
 pub mod moss_tts_realtime;

@@ -706,7 +706,10 @@ fn explain_operand_coordinates_resolve_to_the_executed_bytes() {
         .unwrap();
     for (quoted, executed) in [
         (q, &plan.layers[0].attention.softmax().unwrap().q),
-        (ffn_up, &plan.layers[0].ffn.dense().unwrap().up),
+        (
+            ffn_up,
+            &plan.layers[0].ffn.as_ref().unwrap().dense().unwrap().up,
+        ),
     ] {
         let rebuilt = OperandRef {
             object: quoted.object.clone(),
@@ -870,7 +873,7 @@ fn overlaid_entry_points_are_bit_identical_when_empty_and_observe_edits() {
     assert_eq!(resumed, resumed_plain);
 
     // A real edit is observed.
-    let LayerFfn::Dense(ffn) = &runtime.plan().layers[0].ffn else {
+    let Some(LayerFfn::Dense(ffn)) = &runtime.plan().layers[0].ffn else {
         panic!("miniature layer 0 is dense");
     };
     let gate = ffn.gate.as_ref().unwrap().clone();

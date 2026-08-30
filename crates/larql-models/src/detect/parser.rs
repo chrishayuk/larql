@@ -130,18 +130,39 @@ pub(super) fn parse_model_config(config: &serde_json::Value) -> ModelConfig {
     if intermediate_size == 0 && model_type == "gpt2" && hidden_size > 0 {
         intermediate_size = 4 * hidden_size;
     }
+    // The Mamba2 mixer's declared geometry, all fields or none. Read
+    // before the attention-shape fields because it changes what their
+    // absence means (below).
+    let mamba2_geometry = crate::config::Mamba2Geometry::read(text_config);
     // Gemma HF configs commonly omit num_attention_heads, head_dim, and
     // num_key_value_heads — they're architecture-class defaults from
     // transformers. See the `DEFAULT_*` constants for the values used.
+    //
+    // The defaults are attention-class facts, so they apply only to a
+    // config that is attention-shaped. A checkpoint declaring a complete
+    // Mamba2 mixer geometry and no attention-head key has NO attention
+    // heads — transformers' own Mamba2Config carries no
+    // `num_attention_heads` at all — and fabricating 8/4 here is how a
+    // pure-SSM stack was once reported as a 48-layer softmax tower with
+    // invented head geometry (ontology drill F1, observed live on
+    // mamba2-780m). Zero is the parser's ordinary "absent" sentinel, and
+    // the architecture's own validation judges what absence means.
+    let attention_free_ssm = mamba2_geometry.is_some();
     let default_head_dim: usize = if is_gemma { DEFAULT_HEAD_DIM_GEMMA } else { 0 };
     let num_q_heads = super::config_io::read_aliased_u64(
         config,
         text_config,
         CONFIG_KEY_NUM_ATTENTION_HEADS_ALIASES,
     )
-    .unwrap_or(DEFAULT_NUM_ATTENTION_HEADS) as usize;
+    .unwrap_or(if attention_free_ssm {
+        0
+    } else {
+        DEFAULT_NUM_ATTENTION_HEADS
+    }) as usize;
     // head_dim: explicit config value, Gemma class default, or compute
-    // from hidden/heads (the conventional MHA invariant).
+    // from hidden/heads (the conventional MHA invariant). On a Mamba2
+    // declaration the explicit value is the MIXER head width — the same
+    // number `Mamba2Geometry` carries — not a softmax head's.
     let head_dim = text_config["head_dim"]
         .as_u64()
         .map(|v| v as usize)
@@ -150,9 +171,14 @@ pub(super) fn parse_model_config(config: &serde_json::Value) -> ModelConfig {
         } else {
             hidden_size.checked_div(num_q_heads).unwrap_or(0)
         });
-    let num_kv_heads = text_config["num_key_value_heads"]
-        .as_u64()
-        .unwrap_or(DEFAULT_NUM_KV_HEADS) as usize;
+    let num_kv_heads =
+        text_config["num_key_value_heads"]
+            .as_u64()
+            .unwrap_or(if attention_free_ssm {
+                0
+            } else {
+                DEFAULT_NUM_KV_HEADS
+            }) as usize;
     // RoPE base, in declaration-specificity order:
     //  1. rope_parameters.full_attention.rope_theta — Gemma 4's structured
     //     per-layer-type form;
@@ -507,6 +533,7 @@ pub(super) fn parse_model_config(config: &serde_json::Value) -> ModelConfig {
     let d_rel = text_config["d_rel"].as_u64().map(|v| v as usize);
     let rel_extent = text_config["rel_extent"].as_u64().map(|v| v as usize);
     let mamba_ssm_dtype = text_config["mamba_ssm_dtype"].as_str().map(str::to_string);
+    let residual_in_fp32 = text_config["residual_in_fp32"].as_bool();
     let attn_output_gate = text_config["attn_output_gate"].as_bool();
     let output_gate_type = text_config["output_gate_type"].as_str().map(str::to_string);
     let mtp_num_hidden_layers = text_config["mtp_num_hidden_layers"]
@@ -608,6 +635,8 @@ pub(super) fn parse_model_config(config: &serde_json::Value) -> ModelConfig {
         d_rel,
         rel_extent,
         mamba_ssm_dtype,
+        mamba2_geometry,
+        residual_in_fp32,
         attn_output_gate,
         output_gate_type,
         mtp_num_hidden_layers,

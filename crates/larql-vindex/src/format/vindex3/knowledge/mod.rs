@@ -115,7 +115,7 @@ impl KnowledgeView {
         let mut layers = Vec::with_capacity(plan.layers.len());
         let mut max_features = 0;
         for layer in &plan.layers {
-            let LayerFfn::Dense(ffn) = &layer.ffn else {
+            let Some(LayerFfn::Dense(ffn)) = &layer.ffn else {
                 // Routed/hybrid feature spaces are a later role rung.
                 layers.push(None);
                 continue;
