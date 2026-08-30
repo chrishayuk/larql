@@ -45,7 +45,7 @@ use crate::format::vindex3::represent::bank::{
 };
 use crate::format::vindex3::represent::physical::{ExpertEncoding, ProjectionAddressing};
 use crate::format::vindex3::represent::quality::{
-    kimi_logit_v1, kimi_logit_v2, Criterion, QualityEvidence,
+    kimi_logit_v1, kimi_logit_v2, kimi_logit_v3, Criterion, QualityEvidence,
 };
 
 const SOURCE_ENV: &str = "LARQL_KIMI_VINDEX3";
@@ -603,43 +603,102 @@ fn q2a_teacher_forced_quality_bank_runs_and_the_gate_refuses_on_positions() {
     let run_s = t3.elapsed().as_secs_f64();
     assert_eq!(bank.positions, (sequences() * positions_per_seq) as u64);
 
-    // ── The gate refuses on positions, whatever the numbers say. ──
-    //
-    // Judged by v2, which additionally requires the bank's KL to have
-    // SEEN most of the distribution. Both are reported, because v1 is
-    // what every earlier claim in this programme cited and a reader
-    // needs to compare like with like.
+    // ── The verdicts. v3 is the frozen authority; v1 and v2 are
+    // reported because every earlier claim in this programme cited
+    // them and a reader needs to compare like with like. ──
     let evidence = QualityEvidence {
-        gate: kimi_logit_v2(),
+        gate: kimi_logit_v3(),
         bank: bank.clone(),
     };
     let verdict = evidence.verdict();
     let v1_verdict = kimi_logit_v1().evaluate(&bank);
-    assert!(
-        !verdict.passed(),
-        "a sub-4096-position bank can never pass kimi-logit-v2"
-    );
-    assert!(
-        verdict
-            .failures
-            .iter()
-            .any(|(c, d)| *c == Criterion::Positions && d.contains("< 4096")),
-        "the refusal must name the positions criterion: {verdict:?}"
-    );
-    assert!(
-        evidence.proven_by().is_none(),
-        "nothing may cite this run as quality proof"
-    );
-    // The coverage criterion is satisfied here, so the refusal is
-    // about sample count and the candidate's own numbers — not about
-    // an instrument that could not see.
-    assert!(
-        !verdict
-            .failures
-            .iter()
-            .any(|(c, _)| *c == Criterion::CoveredMass),
-        "this bank's truncation must be wide enough to judge: {verdict:?}"
-    );
+    let v2_verdict = kimi_logit_v2().evaluate(&bank);
+
+    // ── The closure report — written BEFORE any verdict assertion, so
+    // a refused run still leaves its evidence on disk. An 8192-position
+    // measurement that panics after the numbers exist and before the
+    // write has destroyed twenty minutes of instrument time; that
+    // happened once and must not happen again. ──
+    //
+    // The bank's identity travels with the report: /tmp has proven
+    // ephemeral, and a verdict whose evidence names no bank cannot be
+    // distinguished from a verdict on a different one.
+    let bank_manifest_sha256 = {
+        use sha2::{Digest, Sha256};
+        let bytes = std::fs::read(bank_dir.join("manifest.json")).expect("bank manifest reads");
+        format!("{:x}", Sha256::digest(&bytes))
+    };
+    let label = run_label();
+    let report = serde_json::json!({
+        "run": label,
+        "gate": evidence.gate,
+        "authority_report": evidence.report(),
+        "verdict_passed": verdict.passed(),
+        "verdict_failures": verdict.failures.iter()
+            .map(|(c, d)| format!("{}: {d}", c.name())).collect::<Vec<_>>(),
+        "verdict_failures_v2": v2_verdict.failures.iter()
+            .map(|(c, d)| format!("{}: {d}", c.name())).collect::<Vec<_>>(),
+        "verdict_failures_v1": v1_verdict.failures.iter()
+            .map(|(c, d)| format!("{}: {d}", c.name())).collect::<Vec<_>>(),
+        "candidate_map": overlay.index.map.name,
+        "candidate_layers": overlay.compiled_layers(),
+        "bank_manifest_sha256": bank_manifest_sha256,
+        "bank": bank,
+        "positions": bank.positions,
+        "sequences": sequences(),
+        "top_n": TOP_N,
+        "min_covered_mass": min_covered,
+        "stores": {
+            "baseline_layer1_routed": "kimi-source-expert-bank (BF16, Table)",
+            "candidate_layer1_routed": "kimi-q6-candidate (Q6_K, Identity)",
+            "shared_experts": "kimi-source-decoder-stack (BF16, both arms)",
+        },
+        "layer1_routed_experts": {
+            "baseline_distinct": baseline_l1_routed.len(),
+            "candidate_distinct": candidate_l1_routed.len(),
+            "candidate_only": candidate_l1_routed.difference(&baseline_l1_routed).count(),
+        },
+        "wall_seconds": run_s,
+    });
+    let path = report_path(&label);
+    std::fs::write(
+        &path,
+        serde_json::to_vec_pretty(&report).expect("serialises"),
+    )
+    .expect("report writes");
+
+    if bank.positions < 4096 {
+        // ── The Q2a design run is NON-PROMOTABLE: the gate must refuse
+        // on sample count, whatever the numbers say. ──
+        assert!(
+            !verdict.passed(),
+            "a sub-4096-position bank can never pass kimi-logit-v3"
+        );
+        assert!(
+            verdict
+                .failures
+                .iter()
+                .any(|(c, d)| *c == Criterion::Positions && d.contains("< 4096")),
+            "the refusal must name the positions criterion: {verdict:?}"
+        );
+        assert!(
+            evidence.proven_by().is_none(),
+            "nothing may cite this run as quality proof"
+        );
+        // The coverage criterion is satisfied here, so the refusal is
+        // about sample count and the candidate's own numbers — not
+        // about an instrument that could not see.
+        assert!(
+            !verdict
+                .failures
+                .iter()
+                .any(|(c, _)| *c == Criterion::CoveredMass),
+            "this bank's truncation must be wide enough to judge: {verdict:?}"
+        );
+    }
+    // At promotable scale the verdict IS the product: frozen v3
+    // decides, the report already holds the evidence either way, and a
+    // FAIL is a result — not a harness failure. Nothing is asserted.
 
     // ── Adversarial no-fallback control: remove ONE compiled operand a
     //    candidate route actually consumed; the overlay must refuse. ──
@@ -674,41 +733,6 @@ fn q2a_teacher_forced_quality_bank_runs_and_the_gate_refuses_on_positions() {
         "the refusal must name the missing operand: {refusal}"
     );
     verify_complete(&overlay.index, &g).expect("control: the untouched ledger verifies");
-
-    // ── The closure report. ──
-    let label = run_label();
-    let report = serde_json::json!({
-        "run": label,
-        "gate": evidence.gate,
-        "verdict_failures": verdict.failures.iter()
-            .map(|(c, d)| format!("{}: {d}", c.name())).collect::<Vec<_>>(),
-        "verdict_failures_v1": v1_verdict.failures.iter()
-            .map(|(c, d)| format!("{}: {d}", c.name())).collect::<Vec<_>>(),
-        "candidate_map": overlay.index.map.name,
-        "candidate_layers": overlay.compiled_layers(),
-        "bank": bank,
-        "positions": bank.positions,
-        "sequences": sequences(),
-        "top_n": TOP_N,
-        "min_covered_mass": min_covered,
-        "stores": {
-            "baseline_layer1_routed": "kimi-source-expert-bank (BF16, Table)",
-            "candidate_layer1_routed": "kimi-q6-candidate (Q6_K, Identity)",
-            "shared_experts": "kimi-source-decoder-stack (BF16, both arms)",
-        },
-        "layer1_routed_experts": {
-            "baseline_distinct": baseline_l1_routed.len(),
-            "candidate_distinct": candidate_l1_routed.len(),
-            "candidate_only": candidate_l1_routed.difference(&baseline_l1_routed).count(),
-        },
-        "wall_seconds": run_s,
-    });
-    let path = report_path(&label);
-    std::fs::write(
-        &path,
-        serde_json::to_vec_pretty(&report).expect("serialises"),
-    )
-    .expect("report writes");
 
     eprintln!(
         "[q2a] {} positions in {run_s:.1}s ({:.1} ms/position/arm)",
@@ -796,8 +820,9 @@ fn q2a_teacher_forced_quality_bank_runs_and_the_gate_refuses_on_positions() {
     }
     eprintln!("\n{}", evidence.report());
     eprintln!(
-        "[q2a] verdict: {} (v1 would say: {}) — report at {path}",
+        "[q2a] verdict: {} (v2 would say: {}; v1: {}) — report at {path}",
         verdict.describe(),
+        v2_verdict.describe(),
         v1_verdict.describe()
     );
 }
