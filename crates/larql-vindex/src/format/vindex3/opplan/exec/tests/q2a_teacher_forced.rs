@@ -40,7 +40,7 @@ use crate::format::vindex3::opplan::exec::kimi_source::{
 };
 use crate::format::vindex3::opplan::exec::stack::{LayerSpec, LayerState};
 use crate::format::vindex3::opplan::exec::stack_metal::{DeviceLayer, HybridStack};
-use crate::format::vindex3::represent::bank::{BankBuilder, PositionObservation};
+use crate::format::vindex3::represent::bank::{BankBuilder, PositionObservation, TopKChange};
 use crate::format::vindex3::represent::physical::{ExpertEncoding, ProjectionAddressing};
 use crate::format::vindex3::represent::quality::{
     kimi_logit_v1, kimi_logit_v2, Criterion, QualityEvidence,
@@ -157,18 +157,93 @@ fn observation(
             &base_trace.combine_weights,
             &cand_trace.combine_weights,
         ),
-        // The baseline's rank-10 vs rank-11 gap, recorded only where
-        // the top-10 actually changed: a position that did not move
-        // says nothing about how close the ones that did were.
-        top10_margin: (top_k_ids(baseline, 10) != top_k_ids(candidate, 10))
-            .then(|| {
-                let ranked = top_k_ids(baseline, 11);
-                (ranked.len() == 11).then(|| baseline[ranked[9]] - baseline[ranked[10]])
-            })
-            .flatten(),
+        // The top-10 change WEIGHED, recorded only where the ordering
+        // actually moved: a position that did not move says nothing
+        // about how close the ones that did were.
+        top10_change: weigh_top_k(baseline, candidate, 10),
         baseline_routes: base_trace.routes.clone(),
         candidate_routes: cand_trace.routes.clone(),
     }
+}
+
+/// **What a top-k reordering actually was**, or `None` if the ordering
+/// did not change.
+///
+/// Four facts, because the count answers none of them: how close the
+/// boundary was, what the CANDIDATE did to that same pair, how much
+/// probability mass moved, and how far anything travelled in rank.
+fn weigh_top_k(baseline: &[f32], candidate: &[f32], k: usize) -> Option<TopKChange> {
+    let (b_top, c_top) = (top_k_ids(baseline, k), top_k_ids(candidate, k));
+    if b_top == c_top {
+        return None;
+    }
+    // The boundary the baseline drew, and what the candidate did to
+    // exactly those two ids. Comparing the two is the measurement a
+    // worst-case `max|dlogit|` over the whole vocabulary cannot give.
+    let ranked = top_k_ids(baseline, k + 1);
+    let (boundary_margin, candidate_margin_same_ids) = if ranked.len() == k + 1 {
+        let (lo, hi) = (ranked[k - 1], ranked[k]);
+        (baseline[lo] - baseline[hi], candidate[lo] - candidate[hi])
+    } else {
+        (f32::NAN, f32::NAN)
+    };
+
+    // Half the L1 between the arms' top-k mass, each normalised over
+    // its own k — the top-k analogue of the routed-mixture distance.
+    let softmax_over = |logits: &[f32], ids: &[usize]| -> Vec<(usize, f32)> {
+        let m = ids
+            .iter()
+            .map(|i| logits[*i])
+            .fold(f32::NEG_INFINITY, f32::max);
+        let exps: Vec<f32> = ids.iter().map(|i| (logits[*i] - m).exp()).collect();
+        let sum: f32 = exps.iter().sum();
+        ids.iter().zip(exps).map(|(i, e)| (*i, e / sum)).collect()
+    };
+    let (bp, cp) = (
+        softmax_over(baseline, &b_top),
+        softmax_over(candidate, &c_top),
+    );
+    let mass_of = |v: &[(usize, f32)], id: usize| {
+        v.iter()
+            .find(|(i, _)| *i == id)
+            .map(|(_, p)| *p)
+            .unwrap_or(0.0)
+    };
+    let mut union: Vec<usize> = b_top.iter().chain(&c_top).copied().collect();
+    union.sort_unstable();
+    union.dedup();
+    let mass_displaced = 0.5
+        * union
+            .iter()
+            .map(|id| (mass_of(&bp, *id) - mass_of(&cp, *id)).abs())
+            .sum::<f32>();
+
+    // How far anything travelled. An id present in one arm's top-k and
+    // absent from the other is located in the other's FULL ordering, so
+    // an outsider arriving from rank 400 is not scored as a 1-place
+    // move.
+    let rank_in = |ordering: &[usize], id: usize, full: &[f32]| -> usize {
+        ordering
+            .iter()
+            .position(|x| *x == id)
+            .unwrap_or_else(|| full.iter().filter(|v| **v > full[id]).count())
+    };
+    let max_rank_displacement = union
+        .iter()
+        .map(|id| {
+            let b = rank_in(&b_top, *id, baseline);
+            let c = rank_in(&c_top, *id, candidate);
+            b.abs_diff(c) as u32
+        })
+        .max()
+        .unwrap_or(0);
+
+    Some(TopKChange {
+        boundary_margin,
+        candidate_margin_same_ids,
+        mass_displaced,
+        max_rank_displacement,
+    })
 }
 
 /// Per-sequence embedding rows from the exported bank.
@@ -648,11 +723,18 @@ fn q2a_teacher_forced_quality_bank_runs_and_the_gate_refuses_on_positions() {
             m.min, m.p50, m.p95, m.max
         );
     }
-    if let Some(m) = &bank.top10_margin {
+    if let (Some(b), Some(c)) = (&bank.top10_margin, &bank.top10_candidate_margin) {
         eprintln!(
-            "[q2a] top-10 margins at the {} positions that changed: min {:.3e} p50 {:.3e} \
-             p95 {:.3e} max {:.3e}",
-            m.count, m.min, m.p50, m.p95, m.max
+            "[q2a] top-10 boundary at the {} changed positions: baseline gap p50 {:.3e} \
+             max {:.3e}; the CANDIDATE's gap at the same two ids p50 {:.3e} max {:.3e}",
+            b.count, b.p50, b.max, c.p50, c.max
+        );
+    }
+    if let (Some(m), Some(r)) = (&bank.top10_mass_displaced, &bank.top10_rank_displacement) {
+        eprintln!(
+            "[q2a] top-10 consequence: mass displaced p50 {:.4} p95 {:.4} max {:.4}; \
+             furthest rank move p50 {:.0} p95 {:.0} max {:.0}",
+            m.p50, m.p95, m.max, r.p50, r.p95, r.max
         );
     }
     // The attribution the shallowest-layer number exists for: a

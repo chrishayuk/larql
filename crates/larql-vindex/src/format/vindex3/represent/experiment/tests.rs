@@ -94,6 +94,9 @@ fn component_error_alone_does_not_support_a_quality_claim() {
         },
         min_covered_mass: None,
         top10_margin: None,
+        top10_candidate_margin: None,
+        top10_mass_displaced: None,
+        top10_rank_displacement: None,
     };
     // A bank too short for its own tail statistic proves nothing, and
     // the record must say so rather than accept a small-looking p99.
@@ -218,6 +221,9 @@ fn promotable_requires_the_ladder_quality_and_throughput_together() {
             },
             min_covered_mass: None,
             top10_margin: None,
+            top10_candidate_margin: None,
+            top10_mass_displaced: None,
+            top10_rank_displacement: None,
         },
     };
 

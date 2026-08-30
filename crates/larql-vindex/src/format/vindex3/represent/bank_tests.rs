@@ -22,7 +22,7 @@ fn identical(seq: u32, pos: u32) -> PositionObservation {
         baseline_routes: vec![vec![4, 9], vec![1, 2]],
         candidate_routes: vec![vec![4, 9], vec![1, 2]],
         route_changes: Vec::new(),
-        top10_margin: None,
+        top10_change: None,
     }
 }
 
@@ -195,7 +195,7 @@ fn the_first_layer_that_reroutes_is_recorded_not_just_the_count() {
             baseline_routes: baseline,
             candidate_routes: candidate,
             route_changes: Vec::new(),
-            top10_margin: None,
+            top10_change: None,
         });
         b.finish().routing
     };
@@ -255,7 +255,7 @@ fn the_bank_carries_the_worst_covered_mass_it_saw() {
             baseline_routes: vec![],
             candidate_routes: vec![],
             route_changes: Vec::new(),
-            top10_margin: None,
+            top10_change: None,
         });
     }
     let bank = b.finish();

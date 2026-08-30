@@ -188,6 +188,22 @@ pub struct QualityBank {
     /// guess wearing a version number.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub top10_margin: Option<Distribution>,
+    /// The CANDIDATE's gap at the same two ids. Read against
+    /// [`Self::top10_margin`]: if the boundary was near-tied and the
+    /// candidate's gap is comparably small, the ordering flipped
+    /// because the two were indistinguishable, not because the model's
+    /// preference changed.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub top10_candidate_margin: Option<Distribution>,
+    /// Probability mass displaced across the top-k, 0 = none, 1 =
+    /// disjoint. The top-k analogue of
+    /// [`RoutingEvidence::route_weight_mass_moved`].
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub top10_mass_displaced: Option<Distribution>,
+    /// Furthest rank move of any id. A swap of ranks 10 and 11 is 1; a
+    /// candidate arriving from rank 400 is 390.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub top10_rank_displacement: Option<Distribution>,
 }
 
 /// Which criterion a bank failed.

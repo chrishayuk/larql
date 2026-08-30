@@ -35,6 +35,9 @@ fn clean_bank() -> QualityBank {
         },
         min_covered_mass: None,
         top10_margin: None,
+        top10_candidate_margin: None,
+        top10_mass_displaced: None,
+        top10_rank_displacement: None,
     }
 }
 
@@ -187,6 +190,9 @@ fn null_bank() -> QualityBank {
         },
         min_covered_mass: None,
         top10_margin: None,
+        top10_candidate_margin: None,
+        top10_mass_displaced: None,
+        top10_rank_displacement: None,
     }
 }
 
@@ -261,6 +267,9 @@ fn v2_refuses_a_bank_whose_kl_is_blind_to_the_distribution() {
         },
         min_covered_mass: Some(0.307),
         top10_margin: None,
+        top10_candidate_margin: None,
+        top10_mass_displaced: None,
+        top10_rank_displacement: None,
     };
     assert!(
         kimi_logit_v1().evaluate(&perfect).passed(),
@@ -277,6 +286,9 @@ fn v2_refuses_a_bank_whose_kl_is_blind_to_the_distribution() {
     let wide = QualityBank {
         min_covered_mass: Some(0.729),
         top10_margin: None,
+        top10_candidate_margin: None,
+        top10_mass_displaced: None,
+        top10_rank_displacement: None,
         ..perfect.clone()
     };
     assert!(kimi_logit_v2().evaluate(&wide).passed());
@@ -287,6 +299,9 @@ fn v2_refuses_a_bank_whose_kl_is_blind_to_the_distribution() {
     let silent = QualityBank {
         min_covered_mass: None,
         top10_margin: None,
+        top10_candidate_margin: None,
+        top10_mass_displaced: None,
+        top10_rank_displacement: None,
         ..perfect
     };
     let verdict = kimi_logit_v2().evaluate(&silent);

@@ -69,11 +69,38 @@ pub struct PositionObservation {
     /// event; this is what tells them apart.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub route_changes: Vec<RouteChange>,
-    /// The baseline's rank-10-minus-rank-11 logit gap, when this
-    /// position's top-10 changed. `None` when it did not, or when the
-    /// runner supplied no logit ranks beyond the top ten.
+    /// **What the top-10 change actually was**, when this position's
+    /// top-10 changed. `None` when it did not.
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub top10_margin: Option<f32>,
+    pub top10_change: Option<TopKChange>,
+}
+
+/// One position's top-k reordering, weighed rather than counted.
+///
+/// The count alone cannot say whether `55 top-10 changes` means
+/// fifty-five rank-10-vs-11 near-tie swaps or genuine reshuffling, and
+/// those are not the same behavioural claim.
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+pub struct TopKChange {
+    /// The BASELINE's rank-k minus rank-(k+1) logit gap: how close the
+    /// ordering was to begin with.
+    pub boundary_margin: f32,
+    /// The CANDIDATE's gap at those SAME two ids — the displacement the
+    /// boundary pair actually experienced.
+    ///
+    /// This is the number the margin alone cannot supply. A worst-case
+    /// `max|Δlogit|` somewhere in a 163,840-wide vocabulary says
+    /// nothing about what happened to this pair; comparing the two
+    /// against each other is what shows whether the perturbation merely
+    /// crossed a near-tie.
+    pub candidate_margin_same_ids: f32,
+    /// Half the L1 between the two arms' top-k probability mass over
+    /// the UNION of their ids, each normalised over its own top-k.
+    /// 0 = the same mass on the same ids, 1 = disjoint.
+    pub mass_displaced: f32,
+    /// The furthest any id moved in rank, counting an id that left the
+    /// top-k as moving to its rank in the other arm's full ordering.
+    pub max_rank_displacement: u32,
 }
 
 /// One layer's routing change, weighed rather than counted.
@@ -284,6 +311,9 @@ pub struct BankBuilder {
     route_margins: Vec<f64>,
     route_masses: Vec<f64>,
     top10_margins: Vec<f64>,
+    top10_candidate_margins: Vec<f64>,
+    top10_masses: Vec<f64>,
+    top10_rank_moves: Vec<f64>,
 }
 
 impl BankBuilder {
@@ -335,8 +365,19 @@ impl BankBuilder {
                 self.route_masses.push(f64::from(change.weight_mass_moved));
             }
         }
-        if let Some(m) = o.top10_margin.filter(|m| m.is_finite()) {
-            self.top10_margins.push(f64::from(m));
+        if let Some(t) = &o.top10_change {
+            if t.boundary_margin.is_finite() {
+                self.top10_margins.push(f64::from(t.boundary_margin));
+            }
+            if t.candidate_margin_same_ids.is_finite() {
+                self.top10_candidate_margins
+                    .push(f64::from(t.candidate_margin_same_ids));
+            }
+            if t.mass_displaced.is_finite() {
+                self.top10_masses.push(f64::from(t.mass_displaced));
+            }
+            self.top10_rank_moves
+                .push(f64::from(t.max_rank_displacement));
         }
     }
 
@@ -389,6 +430,9 @@ impl BankBuilder {
             },
             min_covered_mass: Some(self.min_covered_mass),
             top10_margin: Distribution::of(&mut self.top10_margins),
+            top10_candidate_margin: Distribution::of(&mut self.top10_candidate_margins),
+            top10_mass_displaced: Distribution::of(&mut self.top10_masses),
+            top10_rank_displacement: Distribution::of(&mut self.top10_rank_moves),
         }
     }
 }
