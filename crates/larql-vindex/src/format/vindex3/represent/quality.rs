@@ -39,9 +39,36 @@ pub struct QualityGate {
     /// mean anything. A p99 over nineteen positions is not a p99.
     pub positions_min: u64,
     pub kl_p99_max: f64,
-    pub top1_flip_max: u64,
-    pub top10_change_max: u64,
-    pub route_flip_max: u64,
+    /// Raw discrete-change counts. `None` means **this gate does not
+    /// judge on counts** — not that it permits any number of them.
+    ///
+    /// v1 and v2 set all three. v3 sets none, because the counts were
+    /// measured and found unable to separate a coin flip from an
+    /// overturned decision: at layer 26, six argmax flips gave up a
+    /// median of 0.1 % of probability, and 232 top-10 changes moved a
+    /// median of 0.33 % of top-10 mass one rank. The counts remain in
+    /// the evidence as diagnostics; they stop being authority.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub top1_flip_max: Option<u64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub top10_change_max: Option<u64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub route_flip_max: Option<u64>,
+    /// **Consequence limits.** The most probability any single argmax
+    /// flip may give up, the top-k mass any position may displace at
+    /// p99, and how much of the routed mixture a layer may move.
+    ///
+    /// These are what make v3 stricter where it matters: one large
+    /// mixture replacement fails instantly, while a thousand
+    /// microscopic eighth-versus-ninth expert swaps pass.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub top1_mass_displaced_max: Option<f64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub top10_mass_displaced_p99_max: Option<f64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub route_mixture_mass_p99_max: Option<f64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub route_mixture_mass_max: Option<f64>,
     /// Least baseline mass the bank's truncation must have covered at
     /// its WORST position, for the KL above to be judged at all.
     ///
@@ -226,6 +253,13 @@ pub enum Criterion {
     Top1Flips,
     Top10Changes,
     RouteFlips,
+    /// An argmax flip gave up more probability than a near-tie would.
+    Top1Displacement,
+    /// A top-k reordering displaced more mass than a near-tie would.
+    TopKDisplacement,
+    /// A routing change moved more of the routed mixture than a
+    /// near-boundary swap would.
+    RouteDisplacement,
     /// The bank's KL was blind to too much of the distribution, or did
     /// not record how much it saw. A gate that asks for coverage and
     /// gets `None` must fail rather than assume the truncation was
@@ -241,6 +275,9 @@ impl Criterion {
             Criterion::Top1Flips => "top1_flips",
             Criterion::Top10Changes => "top10_changes",
             Criterion::RouteFlips => "route_flips",
+            Criterion::Top1Displacement => "top1_mass_displaced",
+            Criterion::TopKDisplacement => "top10_mass_displaced",
+            Criterion::RouteDisplacement => "route_mixture_mass",
             Criterion::CoveredMass => "min_covered_mass",
         }
     }
@@ -274,6 +311,21 @@ impl QualityVerdict {
 }
 
 impl QualityGate {
+    /// Whether the absence of a displacement distribution means
+    /// "nothing changed" rather than "nothing was measured".
+    ///
+    /// A bank with zero route flips legitimately has no routing
+    /// displacement to report, and must not fail for it. A bank that
+    /// changed things and recorded no severity is a different matter.
+    fn nothing_changed(bank: &QualityBank, criterion: Criterion) -> bool {
+        match criterion {
+            Criterion::Top1Displacement => bank.logits.top1_flips == 0,
+            Criterion::TopKDisplacement => bank.logits.top10_changes == 0,
+            Criterion::RouteDisplacement => bank.routing.route_flips == 0,
+            _ => false,
+        }
+    }
+
     /// Judge a bank. Every criterion is checked, not short-circuited, so
     /// a report says everything that is wrong rather than the first
     /// thing.
@@ -291,23 +343,70 @@ impl QualityGate {
                 format!("{:.3e} > {:.3e}", bank.logits.kl_p99, self.kl_p99_max),
             ));
         }
-        if bank.logits.top1_flips > self.top1_flip_max {
-            failures.push((
+        for (limit, got, criterion) in [
+            (
+                self.top1_flip_max,
+                bank.logits.top1_flips,
                 Criterion::Top1Flips,
-                format!("{} > {}", bank.logits.top1_flips, self.top1_flip_max),
-            ));
-        }
-        if bank.logits.top10_changes > self.top10_change_max {
-            failures.push((
+            ),
+            (
+                self.top10_change_max,
+                bank.logits.top10_changes,
                 Criterion::Top10Changes,
-                format!("{} > {}", bank.logits.top10_changes, self.top10_change_max),
-            ));
-        }
-        if bank.routing.route_flips > self.route_flip_max {
-            failures.push((
+            ),
+            (
+                self.route_flip_max,
+                bank.routing.route_flips,
                 Criterion::RouteFlips,
-                format!("{} > {}", bank.routing.route_flips, self.route_flip_max),
-            ));
+            ),
+        ] {
+            if let Some(limit) = limit {
+                if got > limit {
+                    failures.push((criterion, format!("{got} > {limit}")));
+                }
+            }
+        }
+        // Consequence. A criterion the gate asks for and the bank did
+        // not record FAILS: an unmeasured consequence is not a small
+        // one, and defaulting it to zero is the unfalsifiable claim
+        // this module exists to prevent.
+        for (limit, observed, criterion, what) in [
+            (
+                self.top1_mass_displaced_max,
+                bank.top1_mass_displaced.map(|d| d.max),
+                Criterion::Top1Displacement,
+                "top-1 probability given up",
+            ),
+            (
+                self.top10_mass_displaced_p99_max,
+                bank.top10_mass_displaced.map(|d| d.p99),
+                Criterion::TopKDisplacement,
+                "top-10 mass displaced at p99",
+            ),
+            (
+                self.route_mixture_mass_p99_max,
+                bank.routing.route_weight_mass_moved.map(|d| d.p99),
+                Criterion::RouteDisplacement,
+                "routed mixture moved at p99",
+            ),
+            (
+                self.route_mixture_mass_max,
+                bank.routing.route_weight_mass_moved.map(|d| d.max),
+                Criterion::RouteDisplacement,
+                "routed mixture moved at max",
+            ),
+        ] {
+            let Some(limit) = limit else { continue };
+            match observed {
+                // Nothing changed at all, so nothing was displaced.
+                None if Self::nothing_changed(bank, criterion) => {}
+                None => failures.push((
+                    criterion,
+                    format!("{what} was not recorded, and this gate requires <= {limit:.4}"),
+                )),
+                Some(got) if got <= limit => {}
+                Some(got) => failures.push((criterion, format!("{what} {got:.4} > {limit:.4}"))),
+            }
         }
         if let Some(required) = self.covered_mass_min {
             match bank.min_covered_mass {
@@ -387,11 +486,16 @@ pub fn kimi_logit_v1() -> QualityGate {
         id: "kimi-logit-v1".into(),
         positions_min: 4096,
         kl_p99_max: 1e-3,
-        top1_flip_max: 8,
-        top10_change_max: 82,
-        route_flip_max: 82,
+        top1_flip_max: Some(8),
+        top10_change_max: Some(82),
+        route_flip_max: Some(82),
         // v1 does not ask about coverage. See `kimi_logit_v2`.
         covered_mass_min: None,
+        // Nor about consequence. See `kimi_logit_v3`.
+        top1_mass_displaced_max: None,
+        top10_mass_displaced_p99_max: None,
+        route_mixture_mass_p99_max: None,
+        route_mixture_mass_max: None,
     }
 }
 
@@ -422,6 +526,57 @@ pub fn kimi_logit_v2() -> QualityGate {
         id: "kimi-logit-v2".into(),
         covered_mass_min: Some(0.60),
         ..kimi_logit_v1()
+    }
+}
+
+/// **`kimi-logit-v3` — judged by CONSEQUENCE, not by discrete-change
+/// counts.**
+///
+/// v1 and v2 asked whether a discrete boundary was crossed. Measurement
+/// showed that question cannot separate the two events it most needs
+/// to, at every level of the contract:
+///
+/// | count | what it actually was, measured at layer 26 |
+/// |---|---|
+/// | 6 argmax flips | median 0.1 % of probability given up, max 0.49 % |
+/// | 232 top-10 changes | median 0.33 % of top-10 mass, one rank |
+/// | 0 route flips | — |
+///
+/// while at layer 1 a single routing change could replace 36 % of the
+/// routed mixture. Counting scores those identically.
+///
+/// So v3 keeps the counts as DIAGNOSTICS and drops them as authority,
+/// and adds limits on how much actually moved. That is not a loosening:
+/// it fails instantly on one large mixture replacement that v1 would
+/// have accepted inside its 82-flip allowance, while no longer failing
+/// on a thousand microscopic eighth-versus-ninth expert swaps.
+///
+/// **The thresholds are read off the measured distributions**, which is
+/// the whole point of not writing this gate earlier:
+///
+/// | criterion | value | why that number |
+/// |---|---|---|
+/// | `kl_p99_max` | 1e-3 | unchanged from v1; layers 25-26 sit under it, 24 just over |
+/// | `covered_mass_min` | 0.60 | v2's, unchanged |
+/// | `top1_mass_displaced_max` | 0.05 | every late-band flip gave up <= 0.026; a flip surrendering a twentieth of the model's probability is a preference change, not a tie |
+/// | `top10_mass_displaced_p99_max` | 0.10 | observed p99 0.022-0.042 across the band; max seen 0.105 |
+/// | `route_mixture_mass_p99_max` | 0.15 | observed p99 0.094-0.105 in the late band |
+/// | `route_mixture_mass_max` | 0.25 | late band caps at 0.163; layer 1 reaches 0.361 |
+///
+/// A criterion this gate asks for and the bank did not record FAILS,
+/// unless nothing changed at all — an unmeasured consequence is not a
+/// small one.
+pub fn kimi_logit_v3() -> QualityGate {
+    QualityGate {
+        id: "kimi-logit-v3".into(),
+        top1_flip_max: None,
+        top10_change_max: None,
+        route_flip_max: None,
+        top1_mass_displaced_max: Some(0.05),
+        top10_mass_displaced_p99_max: Some(0.10),
+        route_mixture_mass_p99_max: Some(0.15),
+        route_mixture_mass_max: Some(0.25),
+        ..kimi_logit_v2()
     }
 }
 

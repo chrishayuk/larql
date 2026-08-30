@@ -69,10 +69,14 @@ fn component_error_alone_does_not_support_a_quality_claim() {
         id: "kimi-logit-v1".into(),
         positions_min: 512,
         kl_p99_max: 1e-3,
-        top1_flip_max: 0,
-        top10_change_max: 8,
-        route_flip_max: 0,
+        top1_flip_max: Some(0),
+        top10_change_max: Some(8),
+        route_flip_max: Some(0),
         covered_mass_min: None,
+        top1_mass_displaced_max: None,
+        top10_mass_displaced_p99_max: None,
+        route_mixture_mass_p99_max: None,
+        route_mixture_mass_max: None,
     };
     let bank = QualityBank {
         positions: 19,

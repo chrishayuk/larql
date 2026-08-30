@@ -362,3 +362,99 @@ fn a_distribution_reports_shape_and_declines_when_empty() {
     assert_eq!(d.p95, 95.0);
     assert_eq!(d.p99, 99.0);
 }
+
+/// **Severity reaches the bank as DISTRIBUTIONS**, and unmeasured
+/// severity is dropped rather than folded in as a number.
+#[test]
+fn severity_accumulates_into_distributions_and_drops_the_unmeasured() {
+    use crate::format::vindex3::represent::bank::{Top1Change, TopKChange};
+
+    let obs = |margin: f32, mass: f32, top1: f32, topk: f32| PositionObservation {
+        route_changes: vec![RouteChange {
+            layer: 3,
+            boundary_margin: margin,
+            weight_mass_moved: mass,
+        }],
+        top1_change: Some(Top1Change {
+            boundary_margin: 0.01,
+            candidate_margin_same_ids: 0.01,
+            mass_displaced: top1,
+        }),
+        top10_change: Some(TopKChange {
+            boundary_margin: 0.07,
+            candidate_margin_same_ids: 0.07,
+            mass_displaced: topk,
+            max_rank_displacement: 1,
+        }),
+        ..identical(0, 0)
+    };
+
+    let mut b = BankBuilder::new();
+    b.observe(&obs(1e-3, 0.05, 0.001, 0.002));
+    b.observe(&obs(2e-3, 0.09, 0.004, 0.006));
+    // A change whose severity was NOT measured: NaN, and it must not
+    // become a zero in any distribution.
+    b.observe(&obs(f32::NAN, f32::NAN, f32::NAN, f32::NAN));
+    let bank = b.finish();
+
+    let route = bank.routing.route_margin.expect("margins recorded");
+    assert_eq!(
+        route.count, 2,
+        "the unmeasured change is dropped, not zeroed"
+    );
+    // f32 severities widened to f64, so compare with tolerance.
+    assert!((route.min - 1e-3).abs() < 1e-9 && (route.max - 2e-3).abs() < 1e-9);
+    let mass = bank.routing.route_weight_mass_moved.expect("mass recorded");
+    assert_eq!(mass.count, 2);
+    assert!((mass.max - 0.09).abs() < 1e-6);
+
+    let t1 = bank.top1_mass_displaced.expect("top1 recorded");
+    assert_eq!(t1.count, 2);
+    assert!((t1.max - 0.004).abs() < 1e-6);
+    let tk = bank.top10_mass_displaced.expect("topk recorded");
+    assert_eq!(tk.count, 2);
+    assert!((tk.max - 0.006).abs() < 1e-6);
+    // The rank move is an integer count and is always recorded.
+    assert_eq!(
+        bank.top10_rank_displacement.expect("ranks recorded").count,
+        3
+    );
+
+    // And a bank with no severity at all reports none rather than zero.
+    let mut plain = BankBuilder::new();
+    plain.observe(&identical(0, 0));
+    let bank = plain.finish();
+    assert!(bank.routing.route_margin.is_none());
+    assert!(bank.top1_mass_displaced.is_none());
+}
+
+/// A projection whose two arms put ALL their weight on one expert each
+/// moves the whole mixture; one that cannot be normalised reports NaN
+/// rather than a fabricated zero.
+#[test]
+fn mixture_distance_spans_its_whole_range_and_declines_when_undefined() {
+    // Disjoint single-expert mixtures: everything moved.
+    let changes = PositionObservation::weigh_route_changes(
+        &[vec![0]],
+        &[vec![1]],
+        &[vec![0.9, 0.8]],
+        &[vec![1.0, 1.0]],
+        &[vec![1.0, 1.0]],
+    );
+    assert_eq!(changes.len(), 1);
+    assert!(
+        (changes[0].weight_mass_moved - 1.0).abs() < 1e-6,
+        "disjoint mixtures are a complete replacement, got {}",
+        changes[0].weight_mass_moved
+    );
+
+    // All-zero weights cannot be normalised into a mixture at all.
+    let changes = PositionObservation::weigh_route_changes(
+        &[vec![0]],
+        &[vec![1]],
+        &[vec![0.9, 0.8]],
+        &[vec![0.0, 0.0]],
+        &[vec![0.0, 0.0]],
+    );
+    assert!(changes[0].weight_mass_moved.is_nan());
+}

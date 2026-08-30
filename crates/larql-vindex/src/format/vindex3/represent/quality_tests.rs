@@ -7,10 +7,14 @@ fn gate() -> QualityGate {
         id: "kimi-logit-v1".into(),
         positions_min: 512,
         kl_p99_max: 1e-3,
-        top1_flip_max: 0,
-        top10_change_max: 8,
-        route_flip_max: 0,
+        top1_flip_max: Some(0),
+        top10_change_max: Some(8),
+        route_flip_max: Some(0),
         covered_mass_min: None,
+        top1_mass_displaced_max: None,
+        top10_mass_displaced_p99_max: None,
+        route_mixture_mass_p99_max: None,
+        route_mixture_mass_max: None,
     }
 }
 
@@ -65,7 +69,7 @@ fn the_same_bank_passes_one_gate_and_fails_a_tighter_one() {
     let tighter = QualityGate {
         id: "kimi-logit-v2".into(),
         kl_p99_max: 1e-4,
-        top10_change_max: 0,
+        top10_change_max: Some(0),
         ..gate()
     };
     let v = tighter.evaluate(&bank);
@@ -167,9 +171,9 @@ fn kimi_logit_v1_is_frozen() {
     assert_eq!(g.id, "kimi-logit-v1");
     assert_eq!(g.positions_min, 4096);
     assert_eq!(g.kl_p99_max, 1e-3);
-    assert_eq!(g.top1_flip_max, 8);
-    assert_eq!(g.top10_change_max, 82);
-    assert_eq!(g.route_flip_max, 82);
+    assert_eq!(g.top1_flip_max, Some(8));
+    assert_eq!(g.top10_change_max, Some(82));
+    assert_eq!(g.route_flip_max, Some(82));
 }
 
 fn null_bank() -> QualityBank {
@@ -326,4 +330,160 @@ fn v2_refuses_a_bank_whose_kl_is_blind_to_the_distribution() {
         .iter()
         .any(|(c, d)| *c == Criterion::CoveredMass && d.contains("not recorded")));
     assert!(kimi_logit_v1().evaluate(&silent).passed());
+}
+
+/// **v3 judges CONSEQUENCE and drops counts as authority** — and that
+/// is a tightening, not a loosening.
+///
+/// Built from the two banks the measurement actually produced: a
+/// late-layer candidate whose many discrete changes are all near-ties,
+/// and an early-layer one whose few-but-large mixture replacements v1
+/// would have waved through inside its 82-flip allowance.
+#[test]
+fn v3_passes_marginal_churn_and_fails_material_displacement() {
+    let dist = |min: f64, p99: f64, max: f64| Distribution {
+        count: 100,
+        min,
+        p50: min,
+        p95: p99,
+        p99,
+        max,
+    };
+    // Layer 26's real shape: 6 argmax flips giving up 0.1 % of
+    // probability, 232 top-10 changes moving 0.33 % one rank, no
+    // routing change at all.
+    let marginal = QualityBank {
+        positions: 8192,
+        logits: LogitEvidence {
+            kl_p50: 2.2e-5,
+            kl_p95: 2.7e-4,
+            kl_p99: 6.1e-4,
+            max_logit_delta: 0.218,
+            top1_flips: 48,
+            top10_changes: 1856,
+        },
+        routing: RoutingEvidence {
+            route_flips: 0,
+            positions_with_route_change: 0,
+            layers_with_route_change: 0,
+            first_layer_with_route_change: None,
+            route_margin: None,
+            route_weight_mass_moved: None,
+        },
+        min_covered_mass: Some(0.729),
+        top10_margin: None,
+        top10_candidate_margin: None,
+        top10_mass_displaced: Some(dist(0.0033, 0.030, 0.068)),
+        top10_rank_displacement: None,
+        top1_margin: None,
+        top1_candidate_margin: None,
+        top1_mass_displaced: Some(dist(0.0010, 0.0040, 0.0049)),
+    };
+    assert!(
+        kimi_logit_v3().evaluate(&marginal).passed(),
+        "thousands of near-tie reorderings that move almost no mass must pass: {:?}",
+        kimi_logit_v3().evaluate(&marginal).describe()
+    );
+    // v1 REJECTS the very same bank, on counts alone.
+    let v1 = kimi_logit_v1().evaluate(&marginal);
+    assert!(!v1.passed());
+    assert!(v1
+        .failures
+        .iter()
+        .all(|(c, _)| matches!(c, Criterion::Top1Flips | Criterion::Top10Changes)));
+
+    // The opposite bank: FEW discrete changes, but they replace a
+    // third of the routed mixture — layer 1's measured maximum.
+    let material = QualityBank {
+        logits: LogitEvidence {
+            top1_flips: 4,
+            top10_changes: 40,
+            ..marginal.logits
+        },
+        routing: RoutingEvidence {
+            route_flips: 40,
+            positions_with_route_change: 40,
+            layers_with_route_change: 25,
+            first_layer_with_route_change: Some(2),
+            route_margin: None,
+            route_weight_mass_moved: Some(dist(0.08, 0.30, 0.361)),
+        },
+        ..marginal.clone()
+    };
+    assert!(
+        kimi_logit_v1().evaluate(&material).passed(),
+        "v1 waves this through: every count is inside its allowance"
+    );
+    let v3 = kimi_logit_v3().evaluate(&material);
+    assert!(!v3.passed(), "v3 must refuse a large mixture replacement");
+    assert!(v3
+        .failures
+        .iter()
+        .any(|(c, _)| *c == Criterion::RouteDisplacement));
+}
+
+/// A consequence the gate asks for and the bank did not record FAILS —
+/// unless nothing changed, in which case there is genuinely nothing to
+/// displace.
+#[test]
+fn v3_refuses_unmeasured_consequence_but_not_an_absent_one() {
+    let base = QualityBank {
+        positions: 8192,
+        logits: LogitEvidence {
+            kl_p50: 0.0,
+            kl_p95: 0.0,
+            kl_p99: 0.0,
+            max_logit_delta: 0.0,
+            top1_flips: 0,
+            top10_changes: 0,
+        },
+        routing: RoutingEvidence {
+            route_flips: 0,
+            positions_with_route_change: 0,
+            layers_with_route_change: 0,
+            first_layer_with_route_change: None,
+            route_margin: None,
+            route_weight_mass_moved: None,
+        },
+        min_covered_mass: Some(0.9),
+        top10_margin: None,
+        top10_candidate_margin: None,
+        top10_mass_displaced: None,
+        top10_rank_displacement: None,
+        top1_margin: None,
+        top1_candidate_margin: None,
+        top1_mass_displaced: None,
+    };
+    assert!(
+        kimi_logit_v3().evaluate(&base).passed(),
+        "nothing changed, so nothing was displaced — that is not a missing measurement"
+    );
+
+    // Changes DID occur and no severity was recorded: refuse.
+    let silent = QualityBank {
+        logits: LogitEvidence {
+            top1_flips: 3,
+            top10_changes: 9,
+            ..base.logits
+        },
+        routing: RoutingEvidence {
+            route_flips: 5,
+            ..base.routing
+        },
+        ..base
+    };
+    let v = kimi_logit_v3().evaluate(&silent);
+    assert!(!v.passed());
+    for c in [
+        Criterion::Top1Displacement,
+        Criterion::TopKDisplacement,
+        Criterion::RouteDisplacement,
+    ] {
+        assert!(
+            v.failures
+                .iter()
+                .any(|(k, d)| *k == c && d.contains("not recorded")),
+            "{c:?} must refuse an unmeasured consequence: {v:?}"
+        );
+    }
 }
