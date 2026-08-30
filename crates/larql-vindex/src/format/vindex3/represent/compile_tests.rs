@@ -1,6 +1,8 @@
 //! `tests` for [`super`].
 
 use super::*;
+use crate::format::vindex3::represent::map::PrecisionMap;
+use crate::format::vindex3::represent::policy::Role;
 
 const HIDDEN: usize = 2304;
 const INTER: usize = 1024;
@@ -218,5 +220,67 @@ fn report_the_compiled_expert_population_size() {
         (38.0..40.0).contains(&(q6 as f64 / 1e9)),
         "{}",
         q6 as f64 / 1e9
+    );
+}
+
+/// **Every layout refusal names its own cause** — the arms the #346
+/// refactor added without witnesses: a Q8_0 width that would share a
+/// scale across rows, an encoding no layout exists for, a name that is
+/// not an expert projection, and the empty placement.
+#[test]
+fn the_layout_refusals_name_their_causes() {
+    // Q8_0 rows quantise in 32-element blocks; k=33 would share a scale
+    // across rows.
+    let err = LayerBankLayout::matrix_bytes("Q8_0", 4, 33).expect_err("k % 32 != 0");
+    assert!(format!("{err}").contains("32-element blocks"), "{err}");
+    // And the happy side of the same arm, at the block geometry.
+    assert_eq!(
+        LayerBankLayout::matrix_bytes("Q8_0", 4, 64).expect("4x64 Q8_0"),
+        (4 * 64 / 32) as u64 * 34
+    );
+
+    let err = LayerBankLayout::matrix_bytes("MXFP4", 4, 256).expect_err("unjudged encoding");
+    assert!(format!("{err}").contains("no compiled layout"), "{err}");
+
+    let l = layout("Q6_K");
+    let err = l.slot("router", 0).expect_err("not an expert projection");
+    assert!(
+        format!("{err}").contains("not an expert projection"),
+        "{err}"
+    );
+
+    let empty = PrecisionMap {
+        name: "one".into(),
+        encoding: "Q6_K".into(),
+        roles: vec!["expert-weight".into()],
+        exceptions: vec![],
+    };
+    let err = CandidatePlacement::resolve(&empty, Role::ExpertWeight, &[], EXPERTS, HIDDEN, INTER)
+        .expect_err("no layers places nothing");
+    assert!(format!("{err}").contains("places nothing"), "{err}");
+}
+
+/// The placement's own accessors: `layers()` reports ascending coverage,
+/// and asking for an unplaced layer's LAYOUT is refused by name (the
+/// sibling of the `layer_base` refusal the compiler tests pin).
+#[test]
+fn a_placement_reports_its_layers_and_refuses_the_absent_layout() {
+    let map = PrecisionMap {
+        name: "one".into(),
+        encoding: "Q6_K".into(),
+        roles: vec!["expert-weight".into()],
+        exceptions: vec![],
+    };
+    let p = CandidatePlacement::resolve(&map, Role::ExpertWeight, &[9, 7], EXPERTS, HIDDEN, INTER)
+        .expect("two layers place");
+    assert_eq!(
+        p.layers().collect::<Vec<_>>(),
+        vec![7, 9],
+        "ascending, deduped"
+    );
+    let err = p.layout(8).expect_err("unplaced layer");
+    assert!(
+        format!("{err}").contains("not in this candidate's placement"),
+        "{err}"
     );
 }

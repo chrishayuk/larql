@@ -308,6 +308,32 @@ fn explain_layer(
                 operand("out_proj", &op.out_proj),
             ],
         },
+        // Named specifically: this layer attends, but NOT by plain
+        // softmax — the conv over the fused QKV and the partial rotary
+        // are what a reader asking "what does this layer run" must see.
+        LayerAttention::ConvQkv(op) => ExplainAttention {
+            mode: "conv-qkv-attention".into(),
+            window: None,
+            q_heads: Some(op.geometry.num_heads),
+            kv_heads: Some(op.geometry.num_kv_heads),
+            head_dim: Some(op.geometry.head_dim),
+            state_elements: None,
+            gated: false,
+            qk_norm: false,
+            sinks: false,
+            biased: false,
+            operands: {
+                let mut operands = vec![
+                    operand("in_proj", &op.in_proj),
+                    operand("conv1d", &op.conv1d),
+                ];
+                if let Some(bias) = &op.conv1d_bias {
+                    operands.push(operand("conv1d_bias", bias));
+                }
+                operands.push(operand("out_proj", &op.out_proj));
+                operands
+            },
+        },
         LayerAttention::Mamba2(op) => ExplainAttention {
             // Named specifically, not the canonical `linear_attention`
             // spelling: EXPLAIN is where a reader asks what a layer

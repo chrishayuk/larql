@@ -108,6 +108,22 @@ pub enum LayerOperator {
     /// hidden]`), the same collision [`Self::Kda`]'s role table exists to
     /// resolve, one operator over.
     Mla,
+    /// Conv-QKV attention — the hybrid Mamba2Attn stack's attention
+    /// block (mamba_ssm's `MHA` with `d_conv > 0`): one fused QKV
+    /// projection, a depthwise causal conv over the FULL fused QKV
+    /// before the heads split (no activation — unlike the Mamba2
+    /// mixer's conv), partial rotary on the leading `rotary_dim` dims
+    /// of each head, then ordinary causal softmax and an output
+    /// projection.
+    ///
+    /// Not [`Self::Softmax`]: reading it as one would drop the conv (a
+    /// real mixing step with its own continuation state) and rotate the
+    /// whole head. Its operands collide with the MAMBA2 set in spelling
+    /// (`mixer.in_proj.weight` at a different row count), the same
+    /// collision the KDA/MLA tables exist to resolve. Its continuation
+    /// is a KV cache AND a conv history — the first operator to declare
+    /// both. Observed on OuteAI Mamba2Attn (4 of 32 layers).
+    ConvQkvAttention,
 }
 
 impl LayerOperator {
@@ -138,7 +154,7 @@ impl LayerOperator {
             Self::Softmax | Self::GatedDelta | Self::Mamba2 => true,
             // Represented, not executable — the operand contract is
             // complete and no executor consumes it yet.
-            Self::Kda | Self::Mla => false,
+            Self::Kda | Self::Mla | Self::ConvQkvAttention => false,
             Self::Recurrent => false,
         }
     }
@@ -156,6 +172,11 @@ impl LayerOperator {
     /// Whether this layer runs Multi-Latent Attention.
     pub fn is_mla(&self) -> bool {
         matches!(self, Self::Mla)
+    }
+
+    /// Whether this layer runs the hybrid conv-QKV attention block.
+    pub fn is_conv_qkv(&self) -> bool {
+        matches!(self, Self::ConvQkvAttention)
     }
 
     /// Whether this layer is a recurrence at all, identified or not — the
@@ -333,7 +354,11 @@ impl AttentionLayerPolicy {
             // checkpoint states its geometry through the MLA config keys,
             // not through a hybrid interleave entry — so it round-trips
             // through the same span vocabulary a softmax layer does.
-            LayerOperator::Softmax | LayerOperator::Mla => {
+            // Conv-QKV attention likewise: the checkpoint states it
+            // through an index set (`attention_layers_idx`) whose
+            // members are simply "the layers that attend" — the span
+            // vocabulary is its spelling.
+            LayerOperator::Softmax | LayerOperator::Mla | LayerOperator::ConvQkvAttention => {
                 self.span.map(AttentionSpan::declared_name)
             }
         }

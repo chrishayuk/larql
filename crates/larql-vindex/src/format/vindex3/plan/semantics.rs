@@ -187,6 +187,33 @@ pub const EXECUTION_SEMANTIC_KEYS: &[&str] = &[
     "rms_norm",
     "use_bias",
     "use_conv_bias",
+    // The mamba_ssm key dialect of the same mixer geometry (OuteAI
+    // Mamba2Attn), read into the SAME `Mamba2Geometry` fields by
+    // `Mamba2Geometry::read_mamba_ssm` — each probe answers from the
+    // same surface site its HF twin does.
+    "mamba2_num_heads",
+    "mamba2_head_dim",
+    "mamba2_conv_kernel",
+    "use_mamba2_bias",
+    // The hybrid's conv-QKV attention block (`ConvQkvAttnGeometry`):
+    // each changes what the four attention layers compute — the head
+    // and conv geometry, the partial-rotary width, and the bias estate.
+    "attention_head_dim",
+    "attention_conv_kernel",
+    "rope_emb_dim",
+    "use_attention_qkv_bias",
+    "use_attention_out_bias",
+    // The hybrid interleave's index-set spellings — WHICH layers attend
+    // is as execution-semantic as a `layer_types` array.
+    "attention_layers_idx",
+    "attn_layer_idx",
+    // The mamba_ssm lineage's MLP declaration: `mlp_intermediate_size: 0`
+    // declares NO MLP blocks anywhere — absence as a stated program
+    // fact; the padding multiple and bias flag parameterise that same
+    // (possibly absent) MLP.
+    "mlp_intermediate_size",
+    "mlp_padding_size",
+    "use_mlp_bias",
     // Residual-stream precision, declared against a lower-precision
     // model. Execution-semantic wherever it appears.
     "residual_in_fp32",
@@ -320,6 +347,9 @@ pub const METADATA_KEYS: &[&str] = &[
     "AutoModelForCausalLM",
     "model_type",
     "tie_word_embeddings",
+    // The mamba_ssm lineage spelling of the same fact, read by the same
+    // parser fallback chain.
+    "tie_embedding_weights",
     // `rope_scaling` as a bare leaf (not recursed into) means its value is
     // not an object — in every checkpoint on hand, `null`. A non-null
     // object never reaches this leaf; it flattens into `rope_type`/
@@ -369,6 +399,16 @@ pub const TRAINING_ONLY_KEYS: &[&str] = &[
     // (`_init_weights` divides by √(2·n_layer) when set) — same class as
     // `initializer_range`, inert once training is over.
     "rescale_prenorm_residual",
+    // The mamba_ssm lineage's per-tensor init bounds (OuteAI Mamba2Attn):
+    // A's log-uniform sampling range, and the conv/embedding init ranges
+    // — the same class as `initializer_range`, split per tensor. Inert
+    // once the trained tensors ship.
+    "A_initializer_range",
+    "conv_initializer_range",
+    "emb_initializer_range",
+    // Dropout on a classification head this causal-LM config does not
+    // have — and dropout is identity at inference regardless.
+    "classifier_dropout",
 ];
 
 /// Redundant spellings: `alias → canonical`. An entry claims the same

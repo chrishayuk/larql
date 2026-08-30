@@ -205,6 +205,7 @@ pub fn plan_component_ops(
             kda: surface.kda,
             mla: surface.mla,
             mamba2: surface.mamba2,
+            conv_qkv: surface.conv_qkv,
         }
     };
 
@@ -319,6 +320,7 @@ pub fn plan_component_ops(
                 hybrid,
                 moe: ffn_moe,
                 mamba2: surface.mamba2,
+                conv_qkv: surface.conv_qkv,
                 v_from_k: policy.v_from_k,
                 // Which operand family this layer must supply, taken from
                 // the GRAPH's operator. The op below picks its operator
@@ -521,6 +523,47 @@ pub fn plan_component_ops(
                         .get(&OperandRole::Mamba2GatedNorm)
                         .map(|t| norm_op(surface.norm.pre, &stack_id, t)),
                     out_proj: operand(&stack_id, get(OperandRole::Mamba2OutProj)),
+                })),
+                post_attention_norm: None,
+                pre_ffn_norm: None,
+                ffn: None,
+                post_ffn_norm: None,
+                layer_scale: None,
+                residual_scale: surface.residual_scale,
+                operands_accounted: consumed,
+                operands_present: consumed,
+            });
+            continue;
+        }
+        // A conv-QKV attention layer, on operand evidence: its fused QKV
+        // `in_proj` role is the discriminator (only the conv-QKV table
+        // can put it in `slot`). Its whole program is the block — one
+        // pre-block norm, no attention wrap, no FFN — the same shape as
+        // the mixer arm above.
+        if slot.contains_key(&OperandRole::ConvQkvInProj) {
+            let attn_geometry = surface.conv_qkv.unwrap_or_else(|| {
+                panic!(
+                    "layer {layer} ships a conv-QKV operand while the component declares no \
+                     conv-QKV surface; closure should have refused this before the plan was built"
+                )
+            });
+            let consumed = slot.len();
+            layers.push(LayerPlan {
+                layer,
+                pre_attention_norm: norm_op(
+                    surface.norm.pre,
+                    &stack_id,
+                    get(OperandRole::Mamba2PreMixerNorm),
+                ),
+                attention: LayerAttention::ConvQkv(Box::new(super::conv_qkv::ConvQkvOp {
+                    geometry: attn_geometry,
+                    residual_in_fp32: surface.residual_in_fp32,
+                    in_proj: operand(&stack_id, get(OperandRole::ConvQkvInProj)),
+                    conv1d: operand(&stack_id, get(OperandRole::ConvQkvConv1d)),
+                    conv1d_bias: slot
+                        .get(&OperandRole::ConvQkvConv1dBias)
+                        .map(|t| operand(&stack_id, t)),
+                    out_proj: operand(&stack_id, get(OperandRole::ConvQkvOutProj)),
                 })),
                 post_attention_norm: None,
                 pre_ffn_norm: None,
@@ -959,6 +1002,10 @@ struct LayerOps {
     /// decides the conv-bias and gated-norm operand requirements on a
     /// mixer layer.
     mamba2: Option<Mamba2Surface>,
+    /// The conv-QKV attention geometry, on a component that declares one
+    /// — what decides the conv-bias operand requirement on a hybrid
+    /// attention layer.
+    conv_qkv: Option<larql_models::config::ConvQkvAttnGeometry>,
     /// V is the K projection on this layer: no V operand is required, and
     /// one present is a stray.
     v_from_k: bool,
@@ -995,6 +1042,32 @@ fn required_roles(ops: &LayerOps) -> Vec<OperandRole> {
             if mixer.geometry.rms_norm {
                 roles.push(OperandRole::Mamba2GatedNorm);
             }
+        }
+        return roles;
+    }
+    // A conv-QKV attention layer likewise: the hybrid lineage wraps it
+    // in ONE pre-mixer norm (no attention wrap, no FFN), and its operand
+    // set is its own — fused QKV, the conv over it, the output
+    // projection. The declared bias flags decide the bias operands the
+    // same way the mixer's do; the observed checkpoint declares all
+    // three projections bias-free and the conv biased.
+    if ops.operator.is_conv_qkv() {
+        let mut roles = vec![
+            OperandRole::Mamba2PreMixerNorm,
+            OperandRole::ConvQkvInProj,
+            OperandRole::ConvQkvConv1d,
+            OperandRole::ConvQkvOutProj,
+        ];
+        if let Some(attn) = ops.conv_qkv {
+            // The conv-bias switch is the mixer's `use_conv_bias` — one
+            // flag governs both block kinds' convs in this lineage.
+            if ops.mamba2.is_some_and(|m| m.geometry.use_conv_bias) {
+                roles.push(OperandRole::ConvQkvConv1dBias);
+            }
+            // qkv_bias / out_bias operands have no roles yet: the
+            // observed checkpoint declares both false, and a role must
+            // be judged from a real instance, not invented ahead of one.
+            let _ = attn;
         }
         return roles;
     }
@@ -1315,6 +1388,9 @@ struct StackGeometry {
     /// Disjoint from every field above for the same reason each of them
     /// is from the others.
     mamba2: Option<Mamba2Surface>,
+    /// The hybrid's conv-QKV attention geometry, on a component whose
+    /// full layers run it.
+    conv_qkv: Option<larql_models::config::ConvQkvAttnGeometry>,
 }
 
 /// Whether a stored shape satisfies a contract.
@@ -1361,6 +1437,7 @@ fn expected_shape(
         kda,
         mla,
         mamba2,
+        conv_qkv,
     } = *g;
     match role {
         // Mamba2/SSD. Every contract follows from the mixer's own
@@ -1383,6 +1460,17 @@ fn expected_shape(
         OperandRole::Mamba2GatedNorm => Some(vec![mamba2?.geometry.d_inner(hidden)]),
         OperandRole::Mamba2OutProj => Some(vec![hidden, mamba2?.geometry.d_inner(hidden)]),
         OperandRole::Mamba2PreMixerNorm => Some(vec![hidden]),
+        // Conv-QKV attention. Every contract follows from the hybrid
+        // block's own declared geometry; `conv_qkv` absent while such an
+        // operand exists is a refusal, for the same reason the other
+        // family absences are.
+        OperandRole::ConvQkvInProj => Some(vec![conv_qkv?.qkv_rows(), hidden]),
+        OperandRole::ConvQkvConv1d => {
+            let a = conv_qkv?;
+            Some(vec![a.qkv_rows(), 1, a.conv_kernel])
+        }
+        OperandRole::ConvQkvConv1dBias => Some(vec![conv_qkv?.qkv_rows()]),
+        OperandRole::ConvQkvOutProj => Some(vec![hidden, conv_qkv?.attn_out_width()]),
         OperandRole::AttnQ => Some(vec![q_proj_rows, hidden]),
         OperandRole::AttnK | OperandRole::AttnV => Some(vec![kv_rows, hidden]),
         OperandRole::AttnO => Some(vec![hidden, q_rows]),
@@ -1596,6 +1684,7 @@ mod tests {
             placement: NormPlacement::PrePost,
             gated_ffn: true,
             mamba2: None,
+            conv_qkv: None,
             output_gate: false,
             attention_bias: false,
             sinks: false,
@@ -1783,6 +1872,7 @@ mod tests {
             kda: None,
             mla: None,
             mamba2: None,
+            conv_qkv: None,
             hidden: 64,
             q_rows: 32,
             kv_rows: 16,

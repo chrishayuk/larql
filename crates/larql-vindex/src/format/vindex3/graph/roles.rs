@@ -157,6 +157,21 @@ pub enum OperandRole {
     Mamba2GatedNorm,
     /// Output projection, `[hidden, d_inner]`.
     Mamba2OutProj,
+    /// Conv-QKV attention operands (the hybrid Mamba2Attn stack's
+    /// attention block). Four, colliding with the MAMBA2 set in
+    /// SPELLING at different shapes — `mixer.in_proj.weight` is
+    /// `[(Hq+2·Hkv)·Dh, hidden]` here against the mixer's five-way
+    /// fusion — so only the layer's operator can tell them apart.
+    ///
+    /// Fused QKV projection q|k|v, `[(Hq + 2·Hkv)·Dh, hidden]`.
+    ConvQkvInProj,
+    /// Depthwise causal conv over the FULL fused QKV (no activation),
+    /// `[(Hq + 2·Hkv)·Dh, 1, kernel]`.
+    ConvQkvConv1d,
+    /// Conv bias `[(Hq + 2·Hkv)·Dh]` — required iff `use_conv_bias`.
+    ConvQkvConv1dBias,
+    /// Output projection, `[hidden, Hq·Dh]`.
+    ConvQkvOutProj,
     /// The single pre-mixer norm of a mixer-only layer
     /// (`backbone.layers.N.norm.weight`), `[hidden]`. Its own role rather
     /// than [`Self::PreAttentionNorm`]: a mixer-only stack has ONE norm
@@ -531,6 +546,23 @@ const MAMBA2_ROLE_TABLE: &[(&str, OperandRole)] = &[
     ("norm.weight", OperandRole::Mamba2PreMixerNorm),
 ];
 
+/// Suffix → role **on a conv-QKV attention layer**, consulted before
+/// [`ROLE_TABLE`]. Every spelling here collides with
+/// [`MAMBA2_ROLE_TABLE`] at a different shape — the hybrid stack wraps
+/// both block kinds in the same `mixer.`/`norm.` estate — so the layer's
+/// operator is the only authority that can separate them, exactly the
+/// per-layer-table argument [`classify_stack_tensor_on`] documents.
+/// The pre-mixer norm role is shared deliberately: it is the SAME
+/// declaration (one bare `norm.weight` wrapping the block) on both
+/// layer kinds of this lineage.
+const CONV_QKV_ROLE_TABLE: &[(&str, OperandRole)] = &[
+    ("mixer.in_proj.weight", OperandRole::ConvQkvInProj),
+    ("mixer.conv1d.weight", OperandRole::ConvQkvConv1d),
+    ("mixer.conv1d.bias", OperandRole::ConvQkvConv1dBias),
+    ("mixer.out_proj.weight", OperandRole::ConvQkvOutProj),
+    ("norm.weight", OperandRole::Mamba2PreMixerNorm),
+];
+
 /// Classify one stack tensor, given the operator its layer runs.
 ///
 /// The operator is required, not optional, because a name alone cannot
@@ -560,6 +592,11 @@ pub fn classify_stack_tensor_on(
     }
     if operator.is_mamba2() {
         if let Some((_, role)) = MAMBA2_ROLE_TABLE.iter().find(|(name, _)| *name == suffix) {
+            return Some((layer, *role));
+        }
+    }
+    if operator.is_conv_qkv() {
+        if let Some((_, role)) = CONV_QKV_ROLE_TABLE.iter().find(|(name, _)| *name == suffix) {
             return Some((layer, *role));
         }
     }

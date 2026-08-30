@@ -262,6 +262,26 @@ pub struct ModelConfig {
     /// or declares it partially — which is refused rather than defaulted.
     /// See [`Mamba2Geometry`](super::Mamba2Geometry).
     pub mamba2_geometry: Option<super::Mamba2Geometry>,
+    /// How the Mamba2 geometry was read: which key dialect, and every
+    /// field that came from a recorded family default rather than the
+    /// checkpoint's declaration. Present exactly when `mamba2_geometry`
+    /// is. See [`Mamba2Provenance`](super::Mamba2Provenance).
+    pub mamba2_provenance: Option<super::Mamba2Provenance>,
+    /// The hybrid stack's conv-QKV attention geometry (`attention_*` /
+    /// `rope_emb_dim` keys). `None` when the checkpoint declares no such
+    /// block, or declares it partially — refused rather than defaulted.
+    /// See [`ConvQkvAttnGeometry`](super::ConvQkvAttnGeometry).
+    pub conv_qkv_attn: Option<super::ConvQkvAttnGeometry>,
+    /// The mamba_ssm lineage's declared MLP width (`mlp_intermediate_size`).
+    /// `Some(0)` is a declaration — no MLP blocks exist in the stack —
+    /// distinct from `None` (the key was never declared).
+    pub mlp_intermediate_size: Option<usize>,
+    /// Padding multiple the declared MLP width is rounded up to
+    /// (`mlp_padding_size`). Parameterises the same MLP, absent or not.
+    pub mlp_padding_size: Option<usize>,
+    /// Whether the declared MLP's projections carry biases
+    /// (`use_mlp_bias`).
+    pub use_mlp_bias: Option<bool>,
     /// Whether the residual stream is kept at fp32 against a lower-precision
     /// model (`residual_in_fp32`) — an execution-precision fact, verbatim.
     pub residual_in_fp32: Option<bool>,

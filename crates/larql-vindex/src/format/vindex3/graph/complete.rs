@@ -118,18 +118,34 @@ pub fn execution_completeness(graph: &SystemGraph) -> Vec<CompletenessDefect> {
                 if needs_stack {
                     if let Some(table) = &component.attention {
                         let attends = table.iter().any(|l| {
-                            matches!(l.operator, LayerOperator::Softmax | LayerOperator::Mla)
+                            matches!(
+                                l.operator,
+                                LayerOperator::Softmax
+                                    | LayerOperator::Mla
+                                    | LayerOperator::ConvQkvAttention
+                            )
                         });
                         // Every attention-class family today carries an
-                        // FFN; a mixer-only layer is the one judged
-                        // exception. Shipped FFN operands under an absent
-                        // group are still caught by operand closure.
-                        let has_non_mixer = table.iter().any(|l| !l.operator.is_mamba2());
+                        // FFN; the mixer and the hybrid's conv-QKV block
+                        // are the two judged exceptions — the mamba_ssm
+                        // lineage wraps each block bare, with no MLP in
+                        // the layer's program. Shipped FFN operands under
+                        // an absent group are still caught by operand
+                        // closure.
+                        let has_ffn_layer = table
+                            .iter()
+                            .any(|l| !l.operator.is_mamba2() && !l.operator.is_conv_qkv());
                         let runs_mamba2 = table.iter().any(|l| l.operator.is_mamba2());
+                        let runs_conv_qkv = table.iter().any(|l| l.operator.is_conv_qkv());
                         for (runs, present, operation) in [
                             (attends, surface.attention.is_some(), "attention"),
-                            (has_non_mixer, surface.ffn.is_some(), "ffn"),
+                            (has_ffn_layer, surface.ffn.is_some(), "ffn"),
                             (runs_mamba2, surface.mamba2.is_some(), "the mamba2 mixer"),
+                            (
+                                runs_conv_qkv,
+                                surface.conv_qkv.is_some(),
+                                "conv-qkv attention",
+                            ),
                         ] {
                             if runs && !present {
                                 defects.push(CompletenessDefect::MissingOperationSurface {

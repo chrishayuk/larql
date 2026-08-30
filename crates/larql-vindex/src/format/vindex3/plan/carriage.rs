@@ -813,6 +813,110 @@ pub const CARRIAGE_RULES: &[CarriageRule] = &[
                the conv bias operand)",
         probe: Some(probe_mamba2_use_conv_bias),
     },
+    // ── The mamba_ssm key dialect (OuteAI Mamba2Attn): three renamed
+    //    geometry keys and the projection-bias switch, read into the SAME
+    //    `Mamba2Geometry` fields their HF twins fill — so each probe
+    //    answers from the same surface site. ──
+    CarriageRule {
+        leaf: "mamba2_num_heads",
+        reaches: Carriage::Represented,
+        site: "ExecutionSurface.mamba2.geometry.num_heads",
+        probe: Some(probe_mamba2_num_heads),
+    },
+    CarriageRule {
+        leaf: "mamba2_head_dim",
+        reaches: Carriage::Represented,
+        site: "ExecutionSurface.mamba2.geometry.head_dim",
+        probe: Some(probe_mamba2_head_dim),
+    },
+    CarriageRule {
+        leaf: "mamba2_conv_kernel",
+        reaches: Carriage::Represented,
+        site: "ExecutionSurface.mamba2.geometry.conv_kernel",
+        probe: Some(probe_mamba2_conv_kernel),
+    },
+    CarriageRule {
+        leaf: "use_mamba2_bias",
+        reaches: Carriage::Represented,
+        site: "ExecutionSurface.mamba2.geometry.use_bias (closure-paired with the \
+               in/out projection bias operands)",
+        probe: Some(probe_mamba2_use_bias),
+    },
+    // ── The hybrid's conv-QKV attention block. Represented, not
+    //    Lowered: the surface holds every fact and no executor consumes
+    //    it yet — the same honesty the Mamba2 rules held to until the
+    //    reference operator landed. ──
+    CarriageRule {
+        leaf: "attention_head_dim",
+        reaches: Carriage::Represented,
+        site: "ExecutionSurface.conv_qkv.head_dim",
+        probe: Some(probe_conv_qkv_head_dim),
+    },
+    CarriageRule {
+        leaf: "attention_conv_kernel",
+        reaches: Carriage::Represented,
+        site: "ExecutionSurface.conv_qkv.conv_kernel",
+        probe: Some(probe_conv_qkv_conv_kernel),
+    },
+    CarriageRule {
+        leaf: "rope_emb_dim",
+        reaches: Carriage::Represented,
+        site: "ExecutionSurface.conv_qkv.rotary_dim — the partial-rotary width, also \
+               carried per layer as PositionPolicy::PartialRope",
+        probe: Some(probe_conv_qkv_rotary_dim),
+    },
+    CarriageRule {
+        leaf: "use_attention_qkv_bias",
+        reaches: Carriage::Represented,
+        site: "ExecutionSurface.conv_qkv.qkv_bias — a declared-FALSE is carried; a \
+               declared-TRUE has no judged bias role yet and must block",
+        probe: Some(probe_conv_qkv_qkv_bias),
+    },
+    CarriageRule {
+        leaf: "use_attention_out_bias",
+        reaches: Carriage::Represented,
+        site: "ExecutionSurface.conv_qkv.out_bias — same contract as the QKV bias \
+               switch",
+        probe: Some(probe_conv_qkv_out_bias),
+    },
+    CarriageRule {
+        leaf: "attention_layers_idx",
+        reaches: Carriage::Represented,
+        site: "Component.attention[] — the per-layer operator table; the declared set \
+               is echoed only when the table's conv-QKV layers correspond to it \
+               under a consistent index base",
+        probe: Some(probe_attention_layer_idx),
+    },
+    CarriageRule {
+        leaf: "attn_layer_idx",
+        reaches: Carriage::Represented,
+        site: "Component.attention[] — the state-spaces spelling of the same set",
+        probe: Some(probe_attention_layer_idx),
+    },
+    // ── The mamba_ssm lineage's MLP declaration. ──
+    CarriageRule {
+        leaf: "mlp_intermediate_size",
+        reaches: Carriage::Represented,
+        site: "ExecutionSurface.ffn presence per layer — 0 declares NO MLP blocks, \
+               carried as every layer's absent FFN op; a non-zero width has no \
+               judged lowering yet and must block",
+        probe: Some(probe_mlp_intermediate_size),
+    },
+    CarriageRule {
+        leaf: "mlp_padding_size",
+        reaches: Carriage::Represented,
+        site: "no schema field — pads an MLP width; inert exactly when \
+               mlp_intermediate_size declares 0 (no MLP exists to pad), blocking \
+               otherwise",
+        probe: Some(probe_mlp_padding_size),
+    },
+    CarriageRule {
+        leaf: "use_mlp_bias",
+        reaches: Carriage::Represented,
+        site: "no schema field — biases an MLP; inert exactly when \
+               mlp_intermediate_size declares 0, blocking otherwise",
+        probe: Some(probe_mlp_padding_size),
+    },
     CarriageRule {
         leaf: "residual_in_fp32",
         reaches: Carriage::Represented,
@@ -1289,6 +1393,107 @@ fn probe_mamba2_use_bias(component: &Component, _ctx: &ProbeContext<'_>) -> Opti
 
 fn probe_mamba2_use_conv_bias(component: &Component, _ctx: &ProbeContext<'_>) -> Option<Value> {
     Some(json!(mamba2_geometry(component)?.use_conv_bias))
+}
+
+fn probe_mamba2_num_heads(component: &Component, _ctx: &ProbeContext<'_>) -> Option<Value> {
+    Some(json!(mamba2_geometry(component)?.num_heads))
+}
+
+fn probe_mamba2_head_dim(component: &Component, _ctx: &ProbeContext<'_>) -> Option<Value> {
+    Some(json!(mamba2_geometry(component)?.head_dim))
+}
+
+fn conv_qkv_geometry(component: &Component) -> Option<larql_models::config::ConvQkvAttnGeometry> {
+    component.execution.as_ref()?.conv_qkv
+}
+
+fn probe_conv_qkv_head_dim(component: &Component, _ctx: &ProbeContext<'_>) -> Option<Value> {
+    Some(json!(conv_qkv_geometry(component)?.head_dim))
+}
+
+fn probe_conv_qkv_conv_kernel(component: &Component, _ctx: &ProbeContext<'_>) -> Option<Value> {
+    Some(json!(conv_qkv_geometry(component)?.conv_kernel))
+}
+
+fn probe_conv_qkv_rotary_dim(component: &Component, _ctx: &ProbeContext<'_>) -> Option<Value> {
+    Some(json!(conv_qkv_geometry(component)?.rotary_dim))
+}
+
+/// A declared-FALSE bias switch is genuinely carried — closure requires
+/// no bias operand, and none exists. A declared-TRUE one has no judged
+/// operand role yet, so the probe must NOT echo it: answering `None`
+/// blocks, which is the fail-closed direction for a bias the plan would
+/// silently drop.
+fn probe_conv_qkv_qkv_bias(component: &Component, _ctx: &ProbeContext<'_>) -> Option<Value> {
+    match conv_qkv_geometry(component)?.qkv_bias {
+        false => Some(json!(false)),
+        true => None,
+    }
+}
+
+fn probe_conv_qkv_out_bias(component: &Component, _ctx: &ProbeContext<'_>) -> Option<Value> {
+    match conv_qkv_geometry(component)?.out_bias {
+        false => Some(json!(false)),
+        true => None,
+    }
+}
+
+/// Echo the declared attention-layer index set only when the component's
+/// per-layer table corresponds to it under SOME consistent index base:
+/// the same conv-QKV layer count, and every declared index landing on a
+/// conv-QKV layer. The base itself was proven upstream from tensor
+/// evidence; this re-derivation keeps the carriage claim honest without
+/// re-running that proof.
+fn probe_attention_layer_idx(component: &Component, ctx: &ProbeContext<'_>) -> Option<Value> {
+    let declared: Vec<i64> = ctx
+        .declared
+        .as_array()?
+        .iter()
+        .filter_map(Value::as_i64)
+        .collect();
+    let table = component.attention.as_ref()?;
+    let conv_layers: Vec<usize> = table
+        .iter()
+        .enumerate()
+        .filter(|(_, l)| l.operator.is_conv_qkv())
+        .map(|(i, _)| i)
+        .collect();
+    if conv_layers.len() != declared.len() {
+        return None;
+    }
+    for offset in [0i64, 1] {
+        let mapped: Vec<i64> = conv_layers.iter().map(|l| *l as i64 + offset).collect();
+        if mapped == declared {
+            return Some(json!(declared));
+        }
+    }
+    None
+}
+
+/// `0` is the one judged declaration: no MLP blocks exist, carried as
+/// every layer's absent FFN op — verified against the per-layer table
+/// really holding only mixer and conv-QKV operators. A non-zero width
+/// has no judged lowering in this lineage yet and must block.
+fn probe_mlp_intermediate_size(component: &Component, _ctx: &ProbeContext<'_>) -> Option<Value> {
+    let table = component.attention.as_ref()?;
+    let mixer_lineage_only = !table.is_empty()
+        && table
+            .iter()
+            .all(|l| l.operator.is_mamba2() || l.operator.is_conv_qkv());
+    mixer_lineage_only.then(|| json!(0))
+}
+
+/// Inert exactly when the MLP itself is declared absent — the same
+/// evidence [`probe_mlp_intermediate_size`] answers from. The declared
+/// value is echoed because with no MLP anywhere, ANY padding/bias value
+/// parameterises nothing a forward pass reads.
+fn probe_mlp_padding_size(component: &Component, ctx: &ProbeContext<'_>) -> Option<Value> {
+    let table = component.attention.as_ref()?;
+    let mixer_lineage_only = !table.is_empty()
+        && table
+            .iter()
+            .all(|l| l.operator.is_mamba2() || l.operator.is_conv_qkv());
+    mixer_lineage_only.then(|| ctx.declared.clone())
 }
 
 fn probe_residual_in_fp32(component: &Component, _ctx: &ProbeContext<'_>) -> Option<Value> {

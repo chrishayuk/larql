@@ -24,6 +24,7 @@
 //! single matmul.
 
 pub mod build;
+pub mod conv_qkv;
 pub mod exec;
 pub mod gated_delta;
 pub mod kda;
@@ -321,6 +322,11 @@ pub enum LayerAttention {
     /// Mamba2/SSD — its own variant, a third recurrence family. See
     /// [`mamba2`] for why it shares nothing with the other two.
     Mamba2(Box<Mamba2Op>),
+    /// Conv-QKV attention — the hybrid Mamba2Attn stack's attention
+    /// block: its own variant, not a `Softmax` with a conv bolted on.
+    /// See [`conv_qkv`] for the transcribed forward and the two-region
+    /// continuation (KV cache AND conv history).
+    ConvQkv(Box<conv_qkv::ConvQkvOp>),
     /// Kimi Delta Attention — its own variant, not a `GatedDelta` with
     /// different numbers. See [`kda`] for why the two cannot share one.
     Kda(Box<KdaOp>),
@@ -339,7 +345,11 @@ impl LayerAttention {
     pub fn softmax(&self) -> Option<&AttentionOp> {
         match self {
             Self::Softmax(op) => Some(op.as_ref()),
-            Self::GatedDelta(_) | Self::Kda(_) | Self::Mla(_) | Self::Mamba2(_) => None,
+            Self::GatedDelta(_)
+            | Self::Kda(_)
+            | Self::Mla(_)
+            | Self::Mamba2(_)
+            | Self::ConvQkv(_) => None,
         }
     }
 
@@ -347,7 +357,11 @@ impl LayerAttention {
     pub fn softmax_mut(&mut self) -> Option<&mut AttentionOp> {
         match self {
             Self::Softmax(op) => Some(op.as_mut()),
-            Self::GatedDelta(_) | Self::Kda(_) | Self::Mla(_) | Self::Mamba2(_) => None,
+            Self::GatedDelta(_)
+            | Self::Kda(_)
+            | Self::Mla(_)
+            | Self::Mamba2(_)
+            | Self::ConvQkv(_) => None,
         }
     }
 
@@ -359,7 +373,9 @@ impl LayerAttention {
     pub fn gated_delta(&self) -> Option<&GatedDeltaOp> {
         match self {
             Self::GatedDelta(op) => Some(op.as_ref()),
-            Self::Softmax(_) | Self::Kda(_) | Self::Mla(_) | Self::Mamba2(_) => None,
+            Self::Softmax(_) | Self::Kda(_) | Self::Mla(_) | Self::Mamba2(_) | Self::ConvQkv(_) => {
+                None
+            }
         }
     }
 
@@ -367,7 +383,11 @@ impl LayerAttention {
     pub fn kda(&self) -> Option<&KdaOp> {
         match self {
             Self::Kda(op) => Some(op.as_ref()),
-            Self::Softmax(_) | Self::GatedDelta(_) | Self::Mla(_) | Self::Mamba2(_) => None,
+            Self::Softmax(_)
+            | Self::GatedDelta(_)
+            | Self::Mla(_)
+            | Self::Mamba2(_)
+            | Self::ConvQkv(_) => None,
         }
     }
 
@@ -375,7 +395,11 @@ impl LayerAttention {
     pub fn mla(&self) -> Option<&MlaOp> {
         match self {
             Self::Mla(op) => Some(op.as_ref()),
-            Self::Softmax(_) | Self::GatedDelta(_) | Self::Kda(_) | Self::Mamba2(_) => None,
+            Self::Softmax(_)
+            | Self::GatedDelta(_)
+            | Self::Kda(_)
+            | Self::Mamba2(_)
+            | Self::ConvQkv(_) => None,
         }
     }
 
@@ -383,7 +407,11 @@ impl LayerAttention {
     pub fn mamba2(&self) -> Option<&Mamba2Op> {
         match self {
             Self::Mamba2(op) => Some(op.as_ref()),
-            Self::Softmax(_) | Self::GatedDelta(_) | Self::Kda(_) | Self::Mla(_) => None,
+            Self::Softmax(_)
+            | Self::GatedDelta(_)
+            | Self::Kda(_)
+            | Self::Mla(_)
+            | Self::ConvQkv(_) => None,
         }
     }
 
@@ -398,7 +426,10 @@ impl LayerAttention {
     /// positions.
     pub fn recurrent_state_elements(&self) -> Option<usize> {
         match self {
-            Self::Softmax(_) | Self::Mla(_) => None,
+            // Conv-QKV attention keeps a per-position cache (its conv
+            // history is a fixed-size extra region, not a recurrence),
+            // so it answers as the cache-keeping operators do.
+            Self::Softmax(_) | Self::Mla(_) | Self::ConvQkv(_) => None,
             Self::GatedDelta(op) => Some(op.state_elements()),
             Self::Kda(op) => Some(op.state_elements()),
             Self::Mamba2(op) => Some(op.state_elements()),
@@ -414,6 +445,10 @@ impl LayerAttention {
             Self::GatedDelta(_) | Self::Kda(_) | Self::Mamba2(_) => {
                 larql_models::config::LAYER_TYPE_LINEAR_ATTENTION
             }
+            // The hybrid's index-set spelling names WHICH layers attend;
+            // the span vocabulary is its round-trip, as in the graph's
+            // identical judgment.
+            Self::ConvQkv(_) => AttentionSpan::Full.declared_name(),
             // MLA has no `layer_types` spelling of its own — see
             // `graph::policy::AttentionLayerPolicy::declared_name`'s
             // identical judgment.

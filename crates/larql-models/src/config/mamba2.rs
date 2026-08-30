@@ -49,6 +49,46 @@ impl DtBound {
     }
 }
 
+/// Which key dialect declared the Mamba2 geometry.
+///
+/// Two lineages spell the same operator: transformers' HF conversion
+/// (`num_heads`/`head_dim`/`conv_kernel`, e.g. `AntonV/mamba2-780m-hf`)
+/// and the `mamba_ssm`-package lineage (`mamba2_num_heads`/
+/// `mamba2_head_dim`/`mamba2_conv_kernel`, e.g. OuteAI's Mamba2Attn
+/// hybrids). Recording which one was read — rather than silently
+/// aliasing — is what lets a wrong dialect table be *found*.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum Mamba2Dialect {
+    /// transformers' key set.
+    Hf,
+    /// The `mamba_ssm`-package key set (`mamba2_*`-prefixed).
+    MambaSsm,
+}
+
+/// One geometry field the declaration does not carry, filled from the
+/// source family's own default — **recorded, never silent**. The value is
+/// still subject to the same cross-field closure as a declared one, so a
+/// wrong default is caught by the shapes it fails to close over.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct Mamba2FamilyDefault {
+    /// The canonical field name (`n_groups`, `rms_norm`).
+    pub key: String,
+    /// The default taken, rendered as the config would spell it.
+    pub value: String,
+    /// Where the default is defined (`mamba_ssm Mamba2.__init__`).
+    pub source: String,
+}
+
+/// How a [`Mamba2Geometry`] was read: the dialect, and every field that
+/// came from a family default rather than the checkpoint's declaration.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct Mamba2Provenance {
+    pub dialect: Mamba2Dialect,
+    /// Empty when every field was declared.
+    pub family_defaults: Vec<Mamba2FamilyDefault>,
+}
+
 /// The Mamba2 mixer's declared geometry and forward-pass switches.
 #[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
 pub struct Mamba2Geometry {
@@ -109,6 +149,85 @@ impl Mamba2Geometry {
             use_bias: flag("use_bias")?,
             use_conv_bias: flag("use_conv_bias")?,
         })
+    }
+
+    /// Read the geometry in whichever dialect this checkpoint declares,
+    /// with provenance. The HF spelling is tried first and admits no
+    /// defaults; the `mamba_ssm` spelling fills exactly two fields the
+    /// package never writes into configs (`n_groups`, `rms_norm`) from
+    /// its own `__init__` defaults — each one recorded. A declared value
+    /// always outranks the default.
+    pub fn read_with_provenance(config: &serde_json::Value) -> Option<(Self, Mamba2Provenance)> {
+        if let Some(geometry) = Self::read(config) {
+            return Some((
+                geometry,
+                Mamba2Provenance {
+                    dialect: Mamba2Dialect::Hf,
+                    family_defaults: Vec::new(),
+                },
+            ));
+        }
+        Self::read_mamba_ssm(config)
+    }
+
+    /// The `mamba_ssm`-package dialect (OuteAI Mamba2Attn): three renamed
+    /// geometry keys, `use_mamba2_bias` for the projection-bias switch,
+    /// and two fields the dialect leaves to package defaults. Still
+    /// all-or-nothing over the keys the dialect *does* spell.
+    fn read_mamba_ssm(config: &serde_json::Value) -> Option<(Self, Mamba2Provenance)> {
+        let dim = |key: &str| config[key].as_u64().map(|v| v as usize).filter(|v| *v > 0);
+        let flag = |key: &str| config[key].as_bool();
+        // The dialect is identified by its own spelling: without the
+        // renamed head keys there is nothing to read as this dialect.
+        let num_heads = dim("mamba2_num_heads")?;
+        let head_dim = dim("mamba2_head_dim")?;
+        let conv_kernel = dim("mamba2_conv_kernel")?;
+        let limit = config["time_step_limit"].as_array()?;
+        let [lo, hi] = limit.as_slice() else {
+            return None;
+        };
+        let mut family_defaults = Vec::new();
+        let mut defaulted = |key: &str, value: &str| {
+            family_defaults.push(Mamba2FamilyDefault {
+                key: key.to_string(),
+                value: value.to_string(),
+                source: "mamba_ssm Mamba2.__init__".to_string(),
+            });
+        };
+        let n_groups = match dim("n_groups") {
+            Some(declared) => declared,
+            None => {
+                defaulted("n_groups", "1");
+                1
+            }
+        };
+        let rms_norm = match flag("rms_norm") {
+            Some(declared) => declared,
+            None => {
+                defaulted("rms_norm", "true");
+                true
+            }
+        };
+        Some((
+            Self {
+                state_size: dim("state_size")?,
+                num_heads,
+                head_dim,
+                expand: dim("expand")?,
+                conv_kernel,
+                n_groups,
+                chunk_size: dim("chunk_size")?,
+                dt_limit_min: DtBound::from_declared(lo)?,
+                dt_limit_max: DtBound::from_declared(hi)?,
+                rms_norm,
+                use_bias: flag("use_mamba2_bias")?,
+                use_conv_bias: flag("use_conv_bias")?,
+            },
+            Mamba2Provenance {
+                dialect: Mamba2Dialect::MambaSsm,
+                family_defaults,
+            },
+        ))
     }
 
     /// D_inner — the mixer's inner width, `expand · hidden_size`.

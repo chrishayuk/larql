@@ -491,3 +491,145 @@ fn expert_bank_at_the_start_of_the_name_binds_too() {
         Some("layers.1.mlp.experts")
     );
 }
+
+// ── J5: settling a declared index-base ambiguity from the tensor
+//    estate (the OuteAI Mamba2Attn hybrid) ──
+
+/// The OuteAI-shaped hybrid config: mamba_ssm dialect geometry, the
+/// conv-QKV attention block, and an `attention_layers_idx` that fits
+/// both bases over 8 layers.
+fn hybrid_shaped() -> serde_json::Value {
+    json!({
+        "model_type": "mamba2",
+        "num_hidden_layers": 8,
+        "hidden_size": 1024,
+        "intermediate_size": 2048,
+        "vocab_size": 32768,
+        "state_size": 128,
+        "mamba2_num_heads": 32,
+        "mamba2_head_dim": 64,
+        "expand": 2,
+        "mamba2_conv_kernel": 4,
+        "chunk_size": 256,
+        "time_step_limit": [0.0, "Infinity"],
+        "use_mamba2_bias": false,
+        "use_conv_bias": true,
+        "num_attention_heads": 16,
+        "num_key_value_heads": 16,
+        "attention_head_dim": 128,
+        "attention_conv_kernel": 4,
+        "rope_emb_dim": 64,
+        "rope_theta": 10000.0,
+        "use_attention_qkv_bias": false,
+        "use_attention_out_bias": false,
+        "attention_layers_idx": [2, 5],
+        "layer_norm_epsilon": 1e-5,
+        "residual_in_fp32": true,
+        "tie_embedding_weights": true
+    })
+}
+
+/// One `mixer.in_proj.weight` fact per layer: attention rows (6144) on
+/// the layers in `attention`, mamba rows (4384) elsewhere.
+fn hybrid_in_proj_facts(layers: usize, attention: &[usize]) -> Vec<crate::inventory::TensorFact> {
+    (0..layers)
+        .map(|layer| {
+            let rows = if attention.contains(&layer) {
+                6144
+            } else {
+                4384
+            };
+            crate::inventory::TensorFact {
+                name: format!("backbone.layers.{layer}.mixer.in_proj.weight"),
+                dtype: "BF16".to_string(),
+                shape: vec![rows, 1024],
+                bytes: (rows * 1024 * 2) as u64,
+                file: "model.safetensors".to_string(),
+            }
+        })
+        .collect()
+}
+
+/// **The tensor estate settles the base the config leaves ambiguous.**
+/// `[2,5]` over 8 layers fits both readings; the observed `in_proj` rows
+/// fit exactly one. The settlement is recorded — sources name the tensor
+/// evidence — and the complement identifies as Mamba2, because the same
+/// shape check verified every complement layer against the DECLARED
+/// mixer geometry.
+#[test]
+fn tensor_evidence_settles_an_ambiguous_attention_set() {
+    use crate::config::{LayerIndexBase, LayerKind, RecurrenceFamily};
+    use crate::inventory::resolved::resolve_with_tensor_evidence;
+
+    let config = hybrid_shaped();
+    let identity = read_identity(&config);
+    // Config alone: unresolved, and the uniform fallback must NOT answer.
+    let (_, blind) = resolve(&config, &identity);
+    assert!(
+        blind.layers.iter().all(|l| l.declared_kind.is_none()),
+        "a declared-but-unresolved interleave must not take the uniform answer"
+    );
+    assert!(blind.layers.iter().all(|l| {
+        l.declared_span.as_deref() == Some(crate::config::LAYER_TYPE_UNRESOLVED_INTERLEAVE)
+    }));
+
+    // Zero-based evidence: attention mixers at layers 2 and 5.
+    let facts = hybrid_in_proj_facts(8, &[2, 5]);
+    let (_, topology) = resolve_with_tensor_evidence(&config, &identity, &facts);
+    for (layer, policy) in topology.layers.iter().enumerate() {
+        let expected = if [2usize, 5].contains(&layer) {
+            LayerKind::Full
+        } else {
+            LayerKind::Recurrent(RecurrenceFamily::Mamba2)
+        };
+        assert_eq!(
+            policy.declared_kind.as_ref(),
+            Some(&expected),
+            "layer {layer}"
+        );
+    }
+    // The attention layers rotate as declared: partial rotary, 64 of 128.
+    let rotating = &topology.layers[2].position;
+    assert_eq!(
+        *rotating,
+        crate::config::PositionPolicy::PartialRope {
+            theta: 10000.0,
+            rotary_fraction: 0.5,
+            basis: crate::config::RotaryFrequencyBasis::RotaryWidth,
+        }
+    );
+    assert_eq!(
+        topology.layers[0].position,
+        crate::config::PositionPolicy::None
+    );
+
+    // One-based evidence (attention mixers at 1 and 4) settles the OTHER
+    // reading from the SAME declaration.
+    let facts = hybrid_in_proj_facts(8, &[1, 4]);
+    let (_, topology) = resolve_with_tensor_evidence(&config, &identity, &facts);
+    assert_eq!(topology.layers[1].declared_kind, Some(LayerKind::Full));
+    assert_eq!(
+        topology.layers[2].declared_kind,
+        Some(LayerKind::Recurrent(RecurrenceFamily::Mamba2))
+    );
+    let _ = LayerIndexBase::Zero;
+}
+
+/// Evidence that fits NEITHER base — or layers whose shapes are missing —
+/// leaves the declaration unresolved: the pass settles ambiguity, it
+/// never invents an answer.
+#[test]
+fn inconsistent_tensor_evidence_settles_nothing() {
+    use crate::inventory::resolved::resolve_with_tensor_evidence;
+
+    let config = hybrid_shaped();
+    let identity = read_identity(&config);
+    // Attention-shaped rows at layer 3 — a set neither base predicts.
+    let facts = hybrid_in_proj_facts(8, &[3, 6]);
+    let (_, topology) = resolve_with_tensor_evidence(&config, &identity, &facts);
+    assert!(topology.layers.iter().all(|l| l.declared_kind.is_none()));
+
+    // No tensors at all: same refusal.
+    let (_, topology) = resolve_with_tensor_evidence(&config, &identity, &[]);
+    assert!(topology.layers.iter().all(|l| l.declared_kind.is_none()));
+}

@@ -356,6 +356,19 @@ mod tests {
             // per-layer table (`LayerPolicy::declared_span`), not through
             // this legacy round-trip.
             "linear_attn_interleave",
+            // The hybrid Mamba2Attn estate (OuteAI): the conv-QKV
+            // attention geometry and the mamba_ssm lineage's MLP
+            // declaration (`mlp_intermediate_size: 0` = no MLP blocks,
+            // plus its padding/bias parameters). Same status as the
+            // linear-attention geometry above — VINDEX1/2 cannot execute
+            // a hybrid layer, so a container dropping these could not
+            // mis-serve one. They reach VINDEX3 through
+            // `ExecutionSurface.conv_qkv` and the per-layer operator
+            // table.
+            "conv_qkv_attn",
+            "mlp_intermediate_size",
+            "mlp_padding_size",
+            "use_mlp_bias",
             // The MTP sub-stack's interleave. VINDEX1/2 has no MTP object
             // at all, so a container dropping it could not mis-serve one.
             "mtp_interleave",

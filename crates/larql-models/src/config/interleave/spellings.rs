@@ -87,7 +87,8 @@ pub fn read_declared_interleave(
 ) -> DeclaredInterleave {
     let outcome = read_layer_types(config, scope, layer_count, window)
         .or_else(|| read_linear_attn_sets(config, scope, layer_count))
-        .or_else(|| read_local_layer_ids(config, scope, layer_count, window));
+        .or_else(|| read_local_layer_ids(config, scope, layer_count, window))
+        .or_else(|| read_attention_layer_idx(config, scope, layer_count));
     match outcome {
         None => DeclaredInterleave::Absent,
         Some(Ok(resolved)) => DeclaredInterleave::Resolved(Box::new(resolved)),
@@ -188,6 +189,53 @@ fn read_local_layer_ids(
             // declaration here — Inkling states only one side.
             Declaration {
                 kind: LayerKind::Full,
+                membership: Membership::Complement,
+            },
+        ],
+        layer_count,
+    ))
+}
+
+/// The Mamba2Attn hybrids: one set of full-attention layers, the rest
+/// implied recurrent. OuteAI spells it `attention_layers_idx`; the
+/// state-spaces `mamba2attn` checkpoints spell it `attn_layer_idx`. The
+/// set names WHICH layers attend and nothing about the recurrence on the
+/// complement — that family is identified from the declared geometry,
+/// read elsewhere, exactly as a `layer_types` "linear_attention" entry
+/// is.
+///
+/// A stack whose set fits both index bases resolves to
+/// [`InterleaveError::AmbiguousBase`] here — the declaration genuinely
+/// does not determine its own reading (OuteAI's `[6,12,18,24]` over 32
+/// layers is the live case). Disambiguation is a *tensor-evidence*
+/// judgment made where shapes are known, never a family table here.
+fn read_attention_layer_idx(
+    config: &Value,
+    scope: InterleaveScope,
+    layer_count: usize,
+) -> SpellingOutcome {
+    let (path, value) = ["attention_layers_idx", "attn_layer_idx"]
+        .iter()
+        .map(|key| (format!("{}{key}", scope.prefix()), key))
+        .find_map(|(path, key)| {
+            path.split('.')
+                .try_fold(config, |node, seg| node.get(seg))
+                .map(|v| (format!("{}{key}", scope.prefix()), v))
+        })?;
+    let full = index_list(value);
+    if full.is_empty() {
+        return None;
+    }
+    Some(resolve_declarations(
+        scope.name(),
+        vec![path],
+        &[
+            Declaration {
+                kind: LayerKind::Full,
+                membership: Membership::ExplicitSet(full),
+            },
+            Declaration {
+                kind: LayerKind::Recurrent(RecurrenceFamily::Unidentified),
                 membership: Membership::Complement,
             },
         ],

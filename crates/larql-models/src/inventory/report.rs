@@ -157,6 +157,13 @@ pub struct ResolvedTopology {
     /// geometries are not interchangeable.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub mamba2: Option<crate::config::Mamba2Geometry>,
+    /// How the Mamba2 geometry was read: dialect and recorded family
+    /// defaults. Present exactly when [`Self::mamba2`] is.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub mamba2_provenance: Option<crate::config::Mamba2Provenance>,
+    /// The hybrid stack's conv-QKV attention geometry, when declared.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub conv_qkv_attn: Option<crate::config::ConvQkvAttnGeometry>,
 }
 
 /// The precision a recurrent state is kept at.

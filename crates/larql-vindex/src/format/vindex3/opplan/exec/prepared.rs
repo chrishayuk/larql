@@ -555,6 +555,18 @@ impl PreparedOperands {
                                 .to_string(),
                         ))
                     }
+                    // Same posture again: represented, not executable.
+                    // The conv-QKV operands are bound and the geometry is
+                    // stated; the executor (and the two-region
+                    // continuation it needs — KV cache AND conv history)
+                    // is the next rung.
+                    LayerAttention::ConvQkv(_) => {
+                        return Err(VindexError::Parse(
+                            "conv-QKV attention layers are represented but not \
+                             executable: no executor exists for this operator"
+                                .to_string(),
+                        ))
+                    }
                     LayerAttention::Mamba2(op) => PreparedAttention::Mamba2(Box::new(
                         Mamba2Operands::load(op, store, &attention_format)?,
                     )),
