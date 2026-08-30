@@ -130,7 +130,7 @@ fn top_k_ids(logits: &[f32], k: usize) -> Vec<usize> {
 /// One position's paired measurement, from both arms' full logit
 /// vectors, traced routes, and the router's own scores.
 #[allow(clippy::too_many_arguments)]
-fn observation(
+pub(super) fn observation(
     seq: usize,
     pos: usize,
     baseline: &[f32],
@@ -335,7 +335,7 @@ pub(super) fn build_stack<'a>(
 
 /// Run `positions` teacher-forced steps of one sequence through one
 /// arm, returning each position's full logits and its execution trace.
-fn run_sequence(
+pub(super) fn run_sequence(
     metal: &MetalBackend,
     stack: &mut HybridStack<'_>,
     rows: &[Vec<f32>],

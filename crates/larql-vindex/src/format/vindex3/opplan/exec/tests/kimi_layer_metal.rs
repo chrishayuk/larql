@@ -192,6 +192,7 @@ impl Fixture {
             qkv_bank: &self.qkv_bank,
             qkv_offsets: &self.qkv_offsets,
             o_proj: &self.o_proj,
+            projection_encoding: ExpertEncoding::Bf16,
             q_conv1d: &f.qc,
             k_conv1d: &f.kc,
             v_conv1d: &f.vc,

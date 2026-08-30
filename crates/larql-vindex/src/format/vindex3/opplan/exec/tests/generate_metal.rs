@@ -43,7 +43,7 @@ use larql_compute::backend::ComputeBackend;
 use larql_compute_metal::shaders::kimi_layer::NOT_RESIDENT;
 use larql_compute_metal::trait_impl::grouped_experts::ExpertOffset;
 use larql_compute_metal::trait_impl::kda::{KdaDeviceState, KdaShape};
-use larql_compute_metal::trait_impl::kimi_layer::KimiHead;
+use larql_compute_metal::trait_impl::kimi_layer::{ExpertEncoding as MetalEncoding, KimiHead};
 use larql_compute_metal::MetalBackend;
 use larql_models::config::{KdaGeometry, MlaGeometry, NormType};
 use serde_json::Value;
@@ -260,6 +260,7 @@ fn attention_for(
                     ExpertOffset((2 * per) as u32),
                 ],
                 o_proj: read_bf16_bytes(dir, &format!("layer{i}_kda_o_proj")),
+                encoding: MetalEncoding::Bf16,
                 f32s: f32_order
                     .iter()
                     .map(|f| read_f32(dir, &format!("layer{i}_kda_{f}")))

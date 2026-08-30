@@ -37,11 +37,10 @@ use metal::{Buffer, ComputeCommandEncoderRef, MTLSize};
 
 use super::bf16_grouped::{encode_grouped, GroupedBinding, GroupedShape};
 use super::grouped_experts::{ExpertOffset, GroupedError, InputLayout};
+use super::kimi_layer::ExpertEncoding;
 use crate::shaders::kda as kda_shader;
 use crate::MetalBackend;
 
-/// Bytes per bf16 code.
-const BF16_BYTES: usize = 2;
 /// `o_proj` is one slot at offset zero. A `static` so its address is
 /// stable and the device table can be cached rather than rebuilt.
 static O_PROJ_SINGLE_SLOT: [ExpertOffset; 1] = [ExpertOffset(0)];
@@ -80,8 +79,17 @@ pub struct KdaDeviceWeights<'a> {
     /// offset. One buffer because the grouped kernel binds one.
     pub qkv_bank: &'a [u8],
     pub qkv_offsets: &'a [ExpertOffset; CONV_STREAMS],
-    /// `[hidden, width]` bf16.
+    /// `[hidden, width]`, in the same encoding as `qkv_bank`.
     pub o_proj: &'a [u8],
+    /// Physical representation of `qkv_bank` and `o_proj` — the two
+    /// wide projections and NOTHING else. The convolutions, the low-rank
+    /// decay/output gates, `b_proj`, `A_log`, `dt_bias` and `o_norm`
+    /// stay f32 whatever this says: they are a few MB against ~75 MB a
+    /// layer, and they feed the numerically delicate recurrence, which
+    /// this rung deliberately does not touch. Dispatch selects the
+    /// grouped kernel by this value, so bytes can never pair with
+    /// another encoding's kernel.
+    pub projection_encoding: ExpertEncoding,
     /// `[width, conv_kernel]` each.
     pub q_conv1d: &'a [f32],
     pub k_conv1d: &'a [f32],
@@ -372,7 +380,13 @@ impl MetalBackend {
                 found: state.shape.width(),
             });
         }
-        let per_slot = width * hidden * BF16_BYTES;
+        // Bounds at the ENCODING's own stride — a bf16 validator run
+        // over a smaller quantised bank would over-demand and refuse
+        // valid banks; the reverse would under-demand and read past.
+        let per_slot = w
+            .projection_encoding
+            .matrix_bytes(width, hidden)
+            .ok_or(GroupedError::KNotSuperblockAligned { k: hidden })?;
         for (slot, off) in w.qkv_offsets.iter().enumerate() {
             if off.0 as usize + per_slot > w.qkv_bank.len() {
                 return Err(GroupedError::OffsetOutOfRange {
@@ -382,6 +396,20 @@ impl MetalBackend {
                     have: w.qkv_bank.len(),
                 });
             }
+        }
+        // o_proj transposes the reduction axis, so its stride is its
+        // own: `[hidden, width]` at k = width.
+        let o_bytes = w
+            .projection_encoding
+            .matrix_bytes(hidden, width)
+            .ok_or(GroupedError::KNotSuperblockAligned { k: width })?;
+        if w.o_proj.len() < o_bytes {
+            return Err(GroupedError::OffsetOutOfRange {
+                slot: 0,
+                offset: 0,
+                need: o_bytes,
+                have: w.o_proj.len(),
+            });
         }
 
         Ok(())
@@ -433,10 +461,13 @@ impl MetalBackend {
         let o_offsets = self.stable_offset_table(&O_PROJ_SINGLE_SLOT);
 
         // q|k|v — one grouped dispatch of three slots, all reading `x`.
+        // The handle follows the weights' encoding, same contract as
+        // `grouped_experts_encoded`: bytes can never pair with another
+        // encoding's kernel.
         let (qkv_w, qkv_w_off) = self.bufs().weights(w.qkv_bank);
         encode_grouped(
             enc,
-            self.default_grouped_handle(),
+            self.grouped_handle_for(w.projection_encoding),
             GroupedBinding {
                 w: &qkv_w,
                 w_offset: qkv_w_off,
@@ -522,7 +553,7 @@ impl MetalBackend {
         let (o_w, o_w_off) = self.bufs().weights(w.o_proj);
         encode_grouped(
             enc,
-            self.default_grouped_handle(),
+            self.grouped_handle_for(w.projection_encoding),
             GroupedBinding {
                 w: &o_w,
                 w_offset: o_w_off,

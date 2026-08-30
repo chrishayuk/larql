@@ -28,6 +28,7 @@ use std::sync::Arc;
 use larql_compute::backend::ComputeBackend;
 use larql_compute_metal::trait_impl::grouped_experts::ExpertOffset;
 use larql_compute_metal::trait_impl::kda::{KdaDeviceState, KdaShape};
+use larql_compute_metal::trait_impl::kimi_layer::ExpertEncoding as MetalEncoding;
 use larql_compute_metal::trait_impl::mla::{MlaDeviceState, MlaShape};
 use larql_compute_metal::MetalBackend;
 
@@ -363,6 +364,10 @@ impl KimiSourceModel {
                     ExpertOffset((2 * per) as u32),
                 ],
                 o_proj: self.decoder.bytes(&t("o_proj.weight"))?,
+                // The loader binds the container's own bf16 bytes; a
+                // compiled KDA-projection candidate is a later rung's
+                // overlay arm, not a silent default.
+                encoding: MetalEncoding::Bf16,
                 f32s,
             },
             DeviceState::Kda(KdaDeviceState::zeros(metal, g.kda)),

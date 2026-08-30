@@ -58,6 +58,11 @@ pub enum DeviceAttn {
         qkv_bank: Vec<u8>,
         qkv_offsets: [ExpertOffset; 3],
         o_proj: Vec<u8>,
+        /// Physical representation of `qkv_bank` and `o_proj` — carried
+        /// beside the bytes so the dispatch can never pair them with
+        /// another encoding's kernel. The f32 operands below are always
+        /// exactly what they say.
+        encoding: ExpertEncoding,
         /// conv1d x3, f_a, f_b, g_a, g_b, b_proj, a_log, dt_bias, o_norm
         /// — `KdaDeviceWeights`'s own field order.
         f32s: Vec<Vec<f32>>,
@@ -164,6 +169,7 @@ impl DeviceLayer {
                     qkv_bank,
                     qkv_offsets,
                     o_proj,
+                    encoding,
                     f32s: f,
                 },
                 DeviceState::Kda(state),
@@ -172,6 +178,7 @@ impl DeviceLayer {
                     qkv_bank,
                     qkv_offsets,
                     o_proj,
+                    projection_encoding: *encoding,
                     q_conv1d: &f[0],
                     k_conv1d: &f[1],
                     v_conv1d: &f[2],

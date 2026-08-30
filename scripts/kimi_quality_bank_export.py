@@ -65,6 +65,15 @@ def main() -> None:
     ap.add_argument("--sequences", type=int, default=256)
     ap.add_argument("--positions", type=int, default=32)
     ap.add_argument("--corpus", type=Path, default=DEFAULT_CORPUS)
+    ap.add_argument(
+        "--start",
+        type=int,
+        default=0,
+        help="token offset of sequence 0 — a HELD-OUT bank uses the same "
+        "stride with a start that lands every window in the gaps between "
+        "the selection bank's windows, so the two banks never share a "
+        "position while sampling the same corpus distribution",
+    )
     ap.add_argument("--stride", type=int, default=0,
                     help="tokens between sequence starts, so they come from genuinely "
                          "different passages rather than adjacent windows. 0 spreads "
@@ -97,8 +106,14 @@ def main() -> None:
     print(f"[bank] embedding table {tuple(embed.shape)}", flush=True)
 
     sequences = []
+    last_needed = args.start + (args.sequences - 1) * stride + args.positions
+    if last_needed > len(ids):
+        raise SystemExit(
+            f"--start {args.start} pushes the last window to {last_needed} tokens "
+            f"but the corpus holds {len(ids)}"
+        )
     for s in range(args.sequences):
-        start = s * stride
+        start = args.start + s * stride
         seq = ids[start : start + args.positions]
         sequences.append(seq)
         rows = embed[torch.tensor(seq, dtype=torch.long)].to(torch.float32)
@@ -112,6 +127,10 @@ def main() -> None:
         "hidden": hidden,
         "vocab_size": int(embed.shape[0]),
         "stride": stride,
+        # Only a held-out bank carries a start: the canonical bank's
+        # manifest bytes predate this knob, and its content-hash identity
+        # must not change under regeneration.
+        **({"start": args.start} if args.start else {}),
         "corpus": str(args.corpus),
         "token_ids": sequences,
         # Teacher forcing is a property of the BANK, not of a runner

@@ -27,6 +27,8 @@ mod hybrid_traversal;
 mod kda_metal;
 mod kda_parity;
 mod kda_parity_real;
+#[cfg(all(feature = "gpu", target_os = "macos"))]
+mod kda_q8_real;
 mod kda_refusal;
 mod kimi_kda_layer_real;
 #[cfg(all(feature = "gpu", target_os = "macos"))]
@@ -47,8 +49,12 @@ mod mrope_parity;
 mod output_gate_fused;
 mod plan_fixtures;
 mod projection_bench;
+// Each module carries its OWN cfg: inserting a bare `mod` line above a
+// gated one hands the attribute to the newcomer and silently un-gates
+// the original — that exact capture broke six CI jobs on PR #346.
 #[cfg(all(feature = "gpu", target_os = "macos"))]
 mod q2a_decode_bench;
+#[cfg(all(feature = "gpu", target_os = "macos"))]
 mod q2a_teacher_forced;
 mod qw36c_layer0;
 mod stack_dispatch_refusal;

@@ -394,7 +394,10 @@ impl MetalBackend {
     ///
     /// All three share one binding ABI, so this is a handle swap and
     /// never a different lowering.
-    fn grouped_handle_for(&self, encoding: super::ExpertEncoding) -> &crate::kernels::KernelHandle {
+    pub(crate) fn grouped_handle_for(
+        &self,
+        encoding: super::ExpertEncoding,
+    ) -> &crate::kernels::KernelHandle {
         match encoding {
             super::ExpertEncoding::Bf16 => self.default_grouped_handle(),
             super::ExpertEncoding::Q80 => &self.quant.q8_0_grouped_experts_pipeline,

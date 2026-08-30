@@ -138,6 +138,7 @@ impl Weights {
             qkv_bank: &self.qkv_bank,
             qkv_offsets: &self.qkv_offsets,
             o_proj: &self.o_bytes,
+            projection_encoding: ExpertEncoding::Bf16,
             q_conv1d: &self.conv[0],
             k_conv1d: &self.conv[1],
             v_conv1d: &self.conv[2],
@@ -413,4 +414,217 @@ fn the_state_starts_at_zero_and_the_shape_derives_its_widths() {
         assert_eq!(c.len(), WIDTH * (KERNEL - 1));
         assert!(c.iter().all(|v| *v == 0.0), "conv window must start zero");
     }
+}
+
+// ── Q8_0 projections ────────────────────────────────────────────────
+//
+// Its own geometry because Q8_0 blocks are 32 codes wide: the file's
+// HIDDEN = 6 cannot legally encode at all (that impossibility is itself
+// asserted below). WIDTH = 32 keeps o_proj's reduction axis aligned
+// too, so both dispatches run the real quantised kernel.
+
+const Q8_HEADS: usize = 2;
+const Q8_DIM: usize = 16;
+const Q8_HIDDEN: usize = 64;
+const Q8_WIDTH: usize = Q8_HEADS * Q8_DIM;
+
+fn q8_shape() -> KdaShape {
+    KdaShape {
+        hidden: Q8_HIDDEN,
+        num_heads: Q8_HEADS,
+        head_dim: Q8_DIM,
+        conv_kernel: KERNEL,
+    }
+}
+
+/// Both arms' banks from ONE set of values: the bf16 arm binds the
+/// narrowed codes, the Q8_0 arm binds `quantize_q8_0` of the exact
+/// widened values of those same codes. The only difference between the
+/// arms is therefore the Q8_0 roundtrip itself — not a second RNG draw.
+struct DualBanks {
+    bf16_qkv: Vec<u8>,
+    bf16_offsets: [ExpertOffset; 3],
+    bf16_o: Vec<u8>,
+    q8_qkv: Vec<u8>,
+    q8_offsets: [ExpertOffset; 3],
+    q8_o: Vec<u8>,
+    f32s: Weights,
+}
+
+fn dual_banks() -> DualBanks {
+    let per = Q8_WIDTH * Q8_HIDDEN;
+    let (qb, qe) = bf16_matrix(Q8_WIDTH, Q8_HIDDEN, 0.1);
+    let (kb, ke) = bf16_matrix(Q8_WIDTH, Q8_HIDDEN, 1.3);
+    let (vb, ve) = bf16_matrix(Q8_WIDTH, Q8_HIDDEN, 2.7);
+    let (ob, oe) = bf16_matrix(Q8_HIDDEN, Q8_WIDTH, 3.9);
+    let mut bf16_qkv = Vec::with_capacity(3 * per * 2);
+    for b in [&qb, &kb, &vb] {
+        bf16_qkv.extend_from_slice(b);
+    }
+    let q8: Vec<Vec<u8>> = [&qe, &ke, &ve]
+        .iter()
+        .map(|e| larql_compute::cpu::ops::q4_common::quantize_q8_0(e))
+        .collect();
+    let q8_per = q8[0].len();
+    let mut q8_qkv = Vec::with_capacity(3 * q8_per);
+    for b in &q8 {
+        assert_eq!(b.len(), q8_per);
+        q8_qkv.extend_from_slice(b);
+    }
+    DualBanks {
+        bf16_qkv,
+        bf16_offsets: [
+            ExpertOffset(0),
+            ExpertOffset((per * 2) as u32),
+            ExpertOffset((2 * per * 2) as u32),
+        ],
+        bf16_o: ob,
+        q8_qkv,
+        q8_offsets: [
+            ExpertOffset(0),
+            ExpertOffset(q8_per as u32),
+            ExpertOffset((2 * q8_per) as u32),
+        ],
+        q8_o: larql_compute::cpu::ops::q4_common::quantize_q8_0(&oe),
+        f32s: Weights {
+            qkv_bank: Vec::new(),
+            qkv_offsets: [ExpertOffset(0); 3],
+            qkv_exact: [qe, ke, ve],
+            o_bytes: Vec::new(),
+            o_exact: oe,
+            conv: [
+                synth(Q8_WIDTH * KERNEL, 0.5),
+                synth(Q8_WIDTH * KERNEL, 1.5),
+                synth(Q8_WIDTH * KERNEL, 2.5),
+            ],
+            fa: synth(Q8_DIM * Q8_HIDDEN, 4.1),
+            fb: synth(Q8_WIDTH * Q8_DIM, 5.2),
+            ga: synth(Q8_DIM * Q8_HIDDEN, 6.3),
+            gb: synth(Q8_WIDTH * Q8_DIM, 7.4),
+            bp: synth(Q8_HEADS * Q8_HIDDEN, 8.5),
+            a_log: synth(Q8_HEADS, 9.6),
+            dt: synth(Q8_WIDTH, 10.7),
+            o_norm: synth(Q8_DIM, 11.8).iter().map(|v| v + 1.0).collect(),
+            eps: 1e-5,
+        },
+    }
+}
+
+impl DualBanks {
+    fn device(&self, encoding: ExpertEncoding) -> KdaDeviceWeights<'_> {
+        let f = &self.f32s;
+        let (bank, offsets, o): (&[u8], _, &[u8]) = match encoding {
+            ExpertEncoding::Bf16 => (&self.bf16_qkv, &self.bf16_offsets, &self.bf16_o),
+            _ => (&self.q8_qkv, &self.q8_offsets, &self.q8_o),
+        };
+        KdaDeviceWeights {
+            qkv_bank: bank,
+            qkv_offsets: offsets,
+            o_proj: o,
+            projection_encoding: encoding,
+            q_conv1d: &f.conv[0],
+            k_conv1d: &f.conv[1],
+            v_conv1d: &f.conv[2],
+            f_a_proj: &f.fa,
+            f_b_proj: &f.fb,
+            g_a_proj: &f.ga,
+            g_b_proj: &f.gb,
+            b_proj: &f.bp,
+            a_log: &f.a_log,
+            dt_bias: &f.dt,
+            o_norm: &f.o_norm,
+            norm_eps: f.eps,
+        }
+    }
+}
+
+/// Q8_0 projections through the real quantised grouped kernel track the
+/// bf16 step across a multi-token run, and the delta is NOT vacuous —
+/// the roundtrip genuinely changed the weights, so an exactly-equal
+/// output would mean the Q8_0 arm silently ran the bf16 kernel.
+///
+/// Multi-token matters here for the same reason it did for the delta
+/// rule: the recurrence carries the perturbation forward, so a token-0
+/// agreement alone would not show the state stays coherent under a
+/// quantised projection feeding it.
+#[test]
+fn q8_projections_track_the_bf16_step_across_tokens() {
+    let m = backend();
+    let banks = dual_banks();
+    let shape = q8_shape();
+    let s_bf16 = KdaDeviceState::zeros(&m, shape);
+    let s_q8 = KdaDeviceState::zeros(&m, shape);
+    let mut max_rel = 0.0f32;
+    for t in 0..4 {
+        let x = synth(Q8_HIDDEN, 0.3 + t as f32);
+        let (out_b, _) = m
+            .kda_attention_step(banks.device(ExpertEncoding::Bf16), shape, &s_bf16, &x)
+            .expect("bf16 arm runs");
+        let (out_q, _) = m
+            .kda_attention_step(banks.device(ExpertEncoding::Q80), shape, &s_q8, &x)
+            .expect("q8 arm runs");
+        let rms: f32 = (out_b.iter().map(|v| v * v).sum::<f32>() / out_b.len() as f32).sqrt();
+        let d_rms: f32 = (out_b
+            .iter()
+            .zip(&out_q)
+            .map(|(a, b)| (a - b) * (a - b))
+            .sum::<f32>()
+            / out_b.len() as f32)
+            .sqrt();
+        let rel = d_rms / rms.max(f32::EPSILON);
+        max_rel = max_rel.max(rel);
+        assert!(
+            rel < 5e-2,
+            "token {t}: Q8_0 projections displaced the output by rel {rel} — that is \
+             quantisation of two projections, not a decode fault, and it should be \
+             orders under this bound"
+        );
+    }
+    assert!(
+        max_rel > 1e-6,
+        "the arms never separated: the Q8_0 dispatch is not actually reading \
+         quantised bytes"
+    );
+}
+
+/// Bounds are enforced at the ENCODING's own stride: a Q8_0 bank one
+/// byte short of three slots is refused by name, where the bf16
+/// validator's larger stride would have mis-blamed a healthy bank.
+#[test]
+fn q8_bank_bounds_are_checked_at_the_q8_stride() {
+    let m = backend();
+    let banks = dual_banks();
+    let shape = q8_shape();
+    let state = KdaDeviceState::zeros(&m, shape);
+    let mut w = banks.device(ExpertEncoding::Q80);
+    let truncated = &banks.q8_qkv[..banks.q8_qkv.len() - 1];
+    w.qkv_bank = truncated;
+    assert!(
+        matches!(
+            m.kda_attention_step(w, shape, &state, &synth(Q8_HIDDEN, 0.0)),
+            Err(GroupedError::OffsetOutOfRange { .. })
+        ),
+        "a truncated Q8_0 bank must be refused before the encoder opens"
+    );
+}
+
+/// A reduction axis that is not a whole number of Q8_0 blocks cannot be
+/// encoded, and the step says so rather than reading garbage: the
+/// file's own HIDDEN = 6 geometry is exactly such a shape.
+#[test]
+fn a_misaligned_reduction_axis_refuses_q8_by_name() {
+    let m = backend();
+    let w = weights();
+    let state = KdaDeviceState::zeros(&m, shape());
+    let device = KdaDeviceWeights {
+        projection_encoding: ExpertEncoding::Q80,
+        ..w.device()
+    };
+    assert!(
+        matches!(
+            m.kda_attention_step(device, shape(), &state, &synth(HIDDEN, 0.0)),
+            Err(GroupedError::KNotSuperblockAligned { k: HIDDEN })
+        ),
+        "k = {HIDDEN} is not a whole number of 32-wide blocks"
+    );
 }

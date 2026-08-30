@@ -173,6 +173,7 @@ impl Layer {
                     qkv_bank,
                     qkv_offsets,
                     o_proj,
+                    projection_encoding: ExpertEncoding::Bf16,
                     q_conv1d: &f[0],
                     k_conv1d: &f[1],
                     v_conv1d: &f[2],
