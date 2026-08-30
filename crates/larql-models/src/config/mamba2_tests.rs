@@ -216,3 +216,35 @@ fn the_conv_qkv_geometry_reads_whole_and_derives_its_widths() {
     assert_eq!(defects.len(), 1);
     assert!(defects[0].contains("exceeds"));
 }
+
+/// The other two cross-field defects, each named: a query-head count
+/// that no GQA grouping divides, and an odd rotary width (rotation
+/// pairs dims).
+#[test]
+fn the_conv_qkv_defects_name_grouping_and_odd_rotation() {
+    use super::ConvQkvAttnGeometry;
+    let base = json!({
+        "num_attention_heads": 16,
+        "num_key_value_heads": 16,
+        "attention_head_dim": 128,
+        "attention_conv_kernel": 4,
+        "rope_emb_dim": 64,
+        "rope_theta": 10000.0,
+        "use_attention_qkv_bias": false,
+        "use_attention_out_bias": false
+    });
+
+    let mut ungrouped = base.clone();
+    ungrouped["num_key_value_heads"] = json!(3);
+    let defects = ConvQkvAttnGeometry::read(&ungrouped)
+        .unwrap()
+        .geometry_defects();
+    assert_eq!(defects.len(), 1);
+    assert!(defects[0].contains("not a multiple"), "{defects:?}");
+
+    let mut odd = base;
+    odd["rope_emb_dim"] = json!(63);
+    let defects = ConvQkvAttnGeometry::read(&odd).unwrap().geometry_defects();
+    assert_eq!(defects.len(), 1);
+    assert!(defects[0].contains("odd"), "{defects:?}");
+}
