@@ -244,7 +244,10 @@ fn the_layout_refusals_name_their_causes() {
 
     let l = layout("Q6_K");
     let err = l.slot("router", 0).expect_err("not an expert projection");
-    assert!(format!("{err}").contains("not an expert projection"), "{err}");
+    assert!(
+        format!("{err}").contains("not an expert projection"),
+        "{err}"
+    );
 
     let empty = PrecisionMap {
         name: "one".into(),
@@ -252,15 +255,8 @@ fn the_layout_refusals_name_their_causes() {
         roles: vec!["expert-weight".into()],
         exceptions: vec![],
     };
-    let err = CandidatePlacement::resolve(
-        &empty,
-        Role::ExpertWeight,
-        &[],
-        EXPERTS,
-        HIDDEN,
-        INTER,
-    )
-    .expect_err("no layers places nothing");
+    let err = CandidatePlacement::resolve(&empty, Role::ExpertWeight, &[], EXPERTS, HIDDEN, INTER)
+        .expect_err("no layers places nothing");
     assert!(format!("{err}").contains("places nothing"), "{err}");
 }
 
@@ -275,16 +271,16 @@ fn a_placement_reports_its_layers_and_refuses_the_absent_layout() {
         roles: vec!["expert-weight".into()],
         exceptions: vec![],
     };
-    let p = CandidatePlacement::resolve(
-        &map,
-        Role::ExpertWeight,
-        &[9, 7],
-        EXPERTS,
-        HIDDEN,
-        INTER,
-    )
-    .expect("two layers place");
-    assert_eq!(p.layers().collect::<Vec<_>>(), vec![7, 9], "ascending, deduped");
+    let p = CandidatePlacement::resolve(&map, Role::ExpertWeight, &[9, 7], EXPERTS, HIDDEN, INTER)
+        .expect("two layers place");
+    assert_eq!(
+        p.layers().collect::<Vec<_>>(),
+        vec![7, 9],
+        "ascending, deduped"
+    );
     let err = p.layout(8).expect_err("unplaced layer");
-    assert!(format!("{err}").contains("not in this candidate's placement"), "{err}");
+    assert!(
+        format!("{err}").contains("not in this candidate's placement"),
+        "{err}"
+    );
 }
