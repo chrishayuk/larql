@@ -204,6 +204,18 @@ pub struct QualityBank {
     /// candidate arriving from rank 400 is 390.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub top10_rank_displacement: Option<Distribution>,
+    /// **How much margin the argmax flips actually crossed.** The
+    /// strictest criterion in the contract, and the last one to get
+    /// severity evidence: a coin-flip between near-equal candidates and
+    /// an overturned confident choice are both "one flip" without it.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub top1_margin: Option<Distribution>,
+    /// The candidate's gap over the same pair.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub top1_candidate_margin: Option<Distribution>,
+    /// Probability the baseline gave up by switching winner.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub top1_mass_displaced: Option<Distribution>,
 }
 
 /// Which criterion a bank failed.

@@ -73,6 +73,36 @@ pub struct PositionObservation {
     /// top-10 changed. `None` when it did not.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub top10_change: Option<TopKChange>,
+    /// **What the argmax flip actually was**, when the winner changed.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub top1_change: Option<Top1Change>,
+}
+
+/// One position's argmax flip, weighed rather than counted.
+///
+/// The strictest criterion in the contract, and until now the only one
+/// with no severity evidence at all — so these two could not be told
+/// apart:
+///
+/// ```text
+/// "cat" 0.20001 vs "dog" 0.20000   the winner changes
+/// "cat" 0.70    vs "dog" 0.12      the winner changes
+/// ```
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+pub struct Top1Change {
+    /// The BASELINE's logit gap between its own winner and the one the
+    /// candidate picked — the margin the baseline held its choice by,
+    /// and therefore the margin the perturbation had to cross.
+    pub boundary_margin: f32,
+    /// The CANDIDATE's gap over that same pair, positive by
+    /// construction. Read against `boundary_margin`: two small numbers
+    /// mean the pair was indistinguishable to both arms.
+    pub candidate_margin_same_ids: f32,
+    /// Probability the BASELINE gave up by switching:
+    /// `p_base(baseline winner) − p_base(candidate winner)`, over the
+    /// full vocabulary. Near zero for a coin-flip between near-equal
+    /// candidates; large when a confident choice was overturned.
+    pub mass_displaced: f32,
 }
 
 /// One position's top-k reordering, weighed rather than counted.
@@ -314,6 +344,9 @@ pub struct BankBuilder {
     top10_candidate_margins: Vec<f64>,
     top10_masses: Vec<f64>,
     top10_rank_moves: Vec<f64>,
+    top1_margins: Vec<f64>,
+    top1_candidate_margins: Vec<f64>,
+    top1_masses: Vec<f64>,
 }
 
 impl BankBuilder {
@@ -363,6 +396,18 @@ impl BankBuilder {
             }
             if change.weight_mass_moved.is_finite() {
                 self.route_masses.push(f64::from(change.weight_mass_moved));
+            }
+        }
+        if let Some(t) = &o.top1_change {
+            if t.boundary_margin.is_finite() {
+                self.top1_margins.push(f64::from(t.boundary_margin));
+            }
+            if t.candidate_margin_same_ids.is_finite() {
+                self.top1_candidate_margins
+                    .push(f64::from(t.candidate_margin_same_ids));
+            }
+            if t.mass_displaced.is_finite() {
+                self.top1_masses.push(f64::from(t.mass_displaced));
             }
         }
         if let Some(t) = &o.top10_change {
@@ -433,6 +478,9 @@ impl BankBuilder {
             top10_candidate_margin: Distribution::of(&mut self.top10_candidate_margins),
             top10_mass_displaced: Distribution::of(&mut self.top10_masses),
             top10_rank_displacement: Distribution::of(&mut self.top10_rank_moves),
+            top1_margin: Distribution::of(&mut self.top1_margins),
+            top1_candidate_margin: Distribution::of(&mut self.top1_candidate_margins),
+            top1_mass_displaced: Distribution::of(&mut self.top1_masses),
         }
     }
 }

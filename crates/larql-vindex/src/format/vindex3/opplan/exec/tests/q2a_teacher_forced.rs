@@ -40,7 +40,9 @@ use crate::format::vindex3::opplan::exec::kimi_source::{
 };
 use crate::format::vindex3::opplan::exec::stack::{LayerSpec, LayerState};
 use crate::format::vindex3::opplan::exec::stack_metal::{DeviceLayer, HybridStack};
-use crate::format::vindex3::represent::bank::{BankBuilder, PositionObservation, TopKChange};
+use crate::format::vindex3::represent::bank::{
+    BankBuilder, PositionObservation, Top1Change, TopKChange,
+};
 use crate::format::vindex3::represent::physical::{ExpertEncoding, ProjectionAddressing};
 use crate::format::vindex3::represent::quality::{
     kimi_logit_v1, kimi_logit_v2, Criterion, QualityEvidence,
@@ -161,6 +163,8 @@ fn observation(
         // actually moved: a position that did not move says nothing
         // about how close the ones that did were.
         top10_change: weigh_top_k(baseline, candidate, 10),
+        // The argmax flip weighed, when the winner changed.
+        top1_change: weigh_top_1(baseline, candidate),
         baseline_routes: base_trace.routes.clone(),
         candidate_routes: cand_trace.routes.clone(),
     }
@@ -243,6 +247,32 @@ fn weigh_top_k(baseline: &[f32], candidate: &[f32], k: usize) -> Option<TopKChan
         candidate_margin_same_ids,
         mass_displaced,
         max_rank_displacement,
+    })
+}
+
+/// **What an argmax flip actually was**, or `None` if the winner did
+/// not change.
+///
+/// Distinguishes a coin-flip between near-equal candidates from an
+/// overturned confident choice — two events the flip count scores
+/// identically, and the strictest criterion in the contract.
+fn weigh_top_1(baseline: &[f32], candidate: &[f32]) -> Option<Top1Change> {
+    let (b_win, c_win) = (argmax(baseline), argmax(candidate));
+    if b_win == c_win {
+        return None;
+    }
+    // Exact probabilities over the FULL vocabulary, so the mass is the
+    // model's own belief rather than a renormalised truncation.
+    let lse = logsumexp(baseline);
+    let p = |id: usize| (baseline[id] - lse).exp();
+    Some(Top1Change {
+        // What the baseline held its winner by, over the pair that
+        // actually swapped.
+        boundary_margin: baseline[b_win] - baseline[c_win],
+        // And what the candidate holds the reversed choice by.
+        candidate_margin_same_ids: candidate[c_win] - candidate[b_win],
+        // The probability the baseline gave up by switching.
+        mass_displaced: p(b_win) - p(c_win),
     })
 }
 
@@ -721,6 +751,18 @@ fn q2a_teacher_forced_quality_bank_runs_and_the_gate_refuses_on_positions() {
             "[q2a] mixture mass moved: min {:.4} p50 {:.4} p95 {:.4} max {:.4} \
              (1.0 = the routed mixture replaced outright)",
             m.min, m.p50, m.p95, m.max
+        );
+    }
+    if let (Some(b), Some(c), Some(m)) = (
+        &bank.top1_margin,
+        &bank.top1_candidate_margin,
+        &bank.top1_mass_displaced,
+    ) {
+        eprintln!(
+            "[q2a] top-1 flips ({}): the margin the BASELINE held its winner by, over the \
+             pair that swapped — p50 {:.3e} max {:.3e}; the candidate's own margin p50 \
+             {:.3e} max {:.3e}; probability given up p50 {:.4} p95 {:.4} max {:.4}",
+            b.count, b.p50, b.max, c.p50, c.max, m.p50, m.p95, m.max
         );
     }
     if let (Some(b), Some(c)) = (&bank.top10_margin, &bank.top10_candidate_margin) {

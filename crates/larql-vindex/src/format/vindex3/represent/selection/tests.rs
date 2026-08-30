@@ -79,6 +79,9 @@ fn with_quality_bank(mut c: RepresentationExperiment) -> RepresentationExperimen
             top10_candidate_margin: None,
             top10_mass_displaced: None,
             top10_rank_displacement: None,
+            top1_margin: None,
+            top1_candidate_margin: None,
+            top1_mass_displaced: None,
         },
     });
     c
