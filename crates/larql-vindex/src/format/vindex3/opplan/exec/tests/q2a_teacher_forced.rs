@@ -794,6 +794,7 @@ fn q2a_teacher_forced_quality_bank_runs_and_the_gate_refuses_on_positions() {
             }
         );
     }
+    eprintln!("\n{}", evidence.report());
     eprintln!(
         "[q2a] verdict: {} (v1 would say: {}) — report at {path}",
         verdict.describe(),

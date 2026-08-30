@@ -446,6 +446,72 @@ impl QualityEvidence {
         self.gate.evaluate(&self.bank)
     }
 
+    /// **The promotion report: what decided, and what merely happened.**
+    ///
+    /// The two are separated on purpose. A reader who sees "211 routing
+    /// decisions changed" with no context assumes the worst; a reader
+    /// who sees that number under DIAGNOSTICS, beside a measured
+    /// consequence under AUTHORITY, can tell the divergence was found,
+    /// weighed and judged. Hiding the counts would be worse than
+    /// either — they are reported in full, they simply do not decide.
+    pub fn report(&self) -> String {
+        let verdict = self.verdict();
+        let failed = |c: Criterion| verdict.failures.iter().any(|(k, _)| *k == c);
+        let mut out = format!("QUALITY_GATE: {}\n\nAUTHORITY:\n", self.gate.id);
+        let asked: [(&str, bool, Criterion); 7] = [
+            ("positions", true, Criterion::Positions),
+            ("kl_p99", true, Criterion::KlP99),
+            (
+                "covered_mass",
+                self.gate.covered_mass_min.is_some(),
+                Criterion::CoveredMass,
+            ),
+            (
+                "top1_mass_displaced",
+                self.gate.top1_mass_displaced_max.is_some(),
+                Criterion::Top1Displacement,
+            ),
+            (
+                "top10_mass_displaced",
+                self.gate.top10_mass_displaced_p99_max.is_some(),
+                Criterion::TopKDisplacement,
+            ),
+            (
+                "route_mass",
+                self.gate.route_mixture_mass_p99_max.is_some()
+                    || self.gate.route_mixture_mass_max.is_some(),
+                Criterion::RouteDisplacement,
+            ),
+            (
+                "discrete_counts",
+                self.gate.top1_flip_max.is_some(),
+                Criterion::Top1Flips,
+            ),
+        ];
+        for (name, asked_for, criterion) in asked {
+            if !asked_for {
+                continue;
+            }
+            out.push_str(&format!(
+                "  {name:<22} {}\n",
+                if failed(criterion) { "FAIL" } else { "PASS" }
+            ));
+        }
+        out.push_str(&format!(
+            "\nDIAGNOSTICS (recorded, not authoritative):\n  \
+             top1 flips             {}\n  top10 changes          {}\n  \
+             route flips            {}\n  positions              {}\n",
+            self.bank.logits.top1_flips,
+            self.bank.logits.top10_changes,
+            self.bank.routing.route_flips,
+            self.bank.positions,
+        ));
+        if let Some(l) = self.bank.routing.first_layer_with_route_change {
+            out.push_str(&format!("  first changed layer    {l}\n"));
+        }
+        out
+    }
+
     /// The gate id this evidence passed, if it passed.
     pub fn proven_by(&self) -> Option<&str> {
         self.verdict().passed().then_some(self.gate.id.as_str())

@@ -487,3 +487,96 @@ fn v3_refuses_unmeasured_consequence_but_not_an_absent_one() {
         );
     }
 }
+
+/// **The report separates what DECIDED from what merely happened.**
+///
+/// The counts are the numbers a reader will find alarming, so they are
+/// printed in full — under DIAGNOSTICS, beside the measured
+/// consequence that actually decided. Hiding them would be worse than
+/// either alternative.
+#[test]
+fn the_report_names_authority_and_diagnostics_separately() {
+    let dist = |v: f64| Distribution {
+        count: 10,
+        min: v,
+        p50: v,
+        p95: v,
+        p99: v,
+        max: v,
+    };
+    let evidence = QualityEvidence {
+        gate: kimi_logit_v3(),
+        bank: QualityBank {
+            positions: 8192,
+            logits: LogitEvidence {
+                kl_p50: 1e-5,
+                kl_p95: 1e-4,
+                kl_p99: 5e-4,
+                max_logit_delta: 0.2,
+                // Numbers that look alarming and decided nothing.
+                top1_flips: 47,
+                top10_changes: 1832,
+            },
+            routing: RoutingEvidence {
+                route_flips: 211,
+                positions_with_route_change: 180,
+                layers_with_route_change: 1,
+                first_layer_with_route_change: Some(26),
+                route_margin: Some(dist(1e-3)),
+                route_weight_mass_moved: Some(dist(0.08)),
+            },
+            min_covered_mass: Some(0.73),
+            top10_margin: None,
+            top10_candidate_margin: None,
+            top10_mass_displaced: Some(dist(0.003)),
+            top10_rank_displacement: None,
+            top1_margin: None,
+            top1_candidate_margin: None,
+            top1_mass_displaced: Some(dist(0.001)),
+        },
+    };
+    assert!(
+        evidence.verdict().passed(),
+        "the consequences are all tiny: {}",
+        evidence.verdict().describe()
+    );
+
+    let report = evidence.report();
+    assert!(report.contains("QUALITY_GATE: kimi-logit-v3"));
+    // Every criterion the gate ASKS FOR is named under authority.
+    for criterion in [
+        "kl_p99",
+        "covered_mass",
+        "top1_mass_displaced",
+        "top10_mass_displaced",
+        "route_mass",
+    ] {
+        assert!(
+            report.contains(criterion),
+            "authority must name {criterion}"
+        );
+    }
+    // v3 does not judge on counts, so they must NOT appear as authority.
+    let authority = report
+        .split("DIAGNOSTICS")
+        .next()
+        .expect("an authority section");
+    assert!(
+        !authority.contains("discrete_counts"),
+        "v3 judges no counts, so none may be reported as authority:\n{authority}"
+    );
+    // But the alarming raw numbers ARE reported.
+    for n in ["47", "1832", "211", "8192"] {
+        assert!(report.contains(n), "diagnostics must report {n}:\n{report}");
+    }
+    assert!(report.contains("not authoritative"));
+    assert!(report.contains("first changed layer    26"));
+
+    // Under v1, the counts DO decide, and the report says so.
+    let v1 = QualityEvidence {
+        gate: kimi_logit_v1(),
+        bank: evidence.bank.clone(),
+    };
+    assert!(v1.report().contains("discrete_counts"));
+    assert!(!v1.verdict().passed(), "v1 rejects this bank on counts");
+}
