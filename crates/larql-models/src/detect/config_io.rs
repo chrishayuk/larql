@@ -81,7 +81,9 @@ pub(super) fn read_config_json(config_path: &Path) -> Result<serde_json::Value, 
         return Err(ModelError::ConfigMissing(config_path.to_path_buf()));
     }
     let text = std::fs::read_to_string(config_path)?;
-    Ok(serde_json::from_str::<serde_json::Value>(&text)?)
+    // The judged non-finite boundary (config::nonfinite_json): bare
+    // Python `Infinity`/`NaN` literals parse as the strings they spell.
+    Ok(crate::config::nonfinite_json::parse_config_json(&text)?)
 }
 
 /// Fail loudly when a parsed config is missing any field whose silent
