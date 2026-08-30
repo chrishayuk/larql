@@ -113,3 +113,106 @@ fn the_geometry_round_trips_through_serde() {
     let back: Mamba2Geometry = serde_json::from_str(&text).unwrap();
     assert_eq!(back, g);
 }
+
+/// The OuteAI Mamba2Attn declaration, verbatim where it matters: three
+/// renamed geometry keys, `use_mamba2_bias`, and NO `n_groups`/`rms_norm`.
+fn oute_250m() -> serde_json::Value {
+    json!({
+        "state_size": 128,
+        "mamba2_num_heads": 32,
+        "mamba2_head_dim": 64,
+        "expand": 2,
+        "mamba2_conv_kernel": 4,
+        "chunk_size": 256,
+        "time_step_limit": [0.0, "Infinity"],
+        "use_mamba2_bias": false,
+        "use_conv_bias": true
+    })
+}
+
+/// **The mamba_ssm dialect reads into the same geometry, with its two
+/// package defaults RECORDED, never silent.** A wrong default is then
+/// findable: it is named in the provenance and still subject to the
+/// cross-field closure a declared value faces.
+#[test]
+fn the_mamba_ssm_dialect_records_its_family_defaults() {
+    let (g, provenance) = Mamba2Geometry::read_with_provenance(&oute_250m()).unwrap();
+    assert_eq!(provenance.dialect, super::mamba2::Mamba2Dialect::MambaSsm);
+    assert_eq!(g.num_heads, 32);
+    assert_eq!(g.head_dim, 64);
+    assert_eq!(g.conv_kernel, 4);
+    assert!(!g.use_bias);
+    // The two fields the dialect never spells, filled from mamba_ssm's
+    // own defaults — each one on the record.
+    assert_eq!(g.n_groups, 1);
+    assert!(g.rms_norm);
+    let defaulted: Vec<&str> = provenance
+        .family_defaults
+        .iter()
+        .map(|d| d.key.as_str())
+        .collect();
+    assert_eq!(defaulted, ["n_groups", "rms_norm"]);
+    // And the geometry closes over the real widths: conv_dim 2304,
+    // in_proj rows 4384 on hidden 1024.
+    assert_eq!(g.conv_dim(1024), 2304);
+    assert_eq!(g.in_proj_rows(1024), 4384);
+}
+
+/// A declared value outranks the family default and leaves no record —
+/// there is nothing defaulted to record.
+#[test]
+fn a_declared_value_outranks_the_family_default() {
+    let mut config = oute_250m();
+    config["n_groups"] = json!(2);
+    config["rms_norm"] = json!(false);
+    let (g, provenance) = Mamba2Geometry::read_with_provenance(&config).unwrap();
+    assert_eq!(g.n_groups, 2);
+    assert!(!g.rms_norm);
+    assert!(provenance.family_defaults.is_empty());
+}
+
+/// The HF spelling wins with an empty default record, and a partial
+/// mamba_ssm declaration is refused — dropping the bias switch must not
+/// let the dialect read complete with a third silent default.
+#[test]
+fn the_hf_spelling_reads_with_no_defaults_and_a_partial_dialect_refuses() {
+    let (_, provenance) = Mamba2Geometry::read_with_provenance(&mamba2_780m()).unwrap();
+    assert_eq!(provenance.dialect, super::mamba2::Mamba2Dialect::Hf);
+    assert!(provenance.family_defaults.is_empty());
+
+    let mut partial = oute_250m();
+    partial.as_object_mut().unwrap().remove("use_mamba2_bias");
+    assert!(Mamba2Geometry::read_with_provenance(&partial).is_none());
+}
+
+/// **The conv-QKV attention geometry: all fields or none**, with the
+/// derived widths that tell an attention mixer apart from a Mamba2 mixer
+/// in the tensor estate.
+#[test]
+fn the_conv_qkv_geometry_reads_whole_and_derives_its_widths() {
+    use super::ConvQkvAttnGeometry;
+    let config = json!({
+        "num_attention_heads": 16,
+        "num_key_value_heads": 16,
+        "attention_head_dim": 128,
+        "attention_conv_kernel": 4,
+        "rope_emb_dim": 64,
+        "rope_theta": 10000.0,
+        "use_attention_qkv_bias": false,
+        "use_attention_out_bias": false
+    });
+    let a = ConvQkvAttnGeometry::read(&config).unwrap();
+    assert_eq!(a.qkv_rows(), 6144);
+    assert_eq!(a.attn_out_width(), 2048);
+    assert!(a.geometry_defects().is_empty());
+
+    let mut partial = config.clone();
+    partial.as_object_mut().unwrap().remove("rope_emb_dim");
+    assert!(ConvQkvAttnGeometry::read(&partial).is_none());
+
+    let mut wide = config;
+    wide["rope_emb_dim"] = json!(256);
+    let defects = ConvQkvAttnGeometry::read(&wide).unwrap().geometry_defects();
+    assert_eq!(defects.len(), 1);
+    assert!(defects[0].contains("exceeds"));
+}

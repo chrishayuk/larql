@@ -65,6 +65,21 @@ pub fn read_identity(config: &Value) -> Identity {
 
 /// Run detection and describe what came back.
 pub fn resolve(config: &Value, identity: &Identity) -> (Detection, ResolvedTopology) {
+    resolve_with_tensor_evidence(config, identity, &[])
+}
+
+/// [`resolve`], with the tensor estate available as evidence for the one
+/// judgment a config alone cannot make: an `attention_layers_idx` set
+/// that fits both index bases (see
+/// [`disambiguate_attention_set_by_mixer_shape`]). Everything else is
+/// identical — tensor evidence never *overrides* a declaration, it only
+/// settles a declared ambiguity, and the settlement is recorded in the
+/// resolution's provenance.
+pub fn resolve_with_tensor_evidence(
+    config: &Value,
+    identity: &Identity,
+    tensors: &[super::report::TensorFact],
+) -> (Detection, ResolvedTopology) {
     let arch = detect_from_json(config);
     let registry_entry = find_architecture(&identity.model_type);
     let validation_errors = match arch.validate() {
@@ -85,6 +100,7 @@ pub fn resolve(config: &Value, identity: &Identity) -> (Detection, ResolvedTopol
     };
 
     let cfg = arch.config();
+    let disambiguated = disambiguate_attention_set_by_mixer_shape(config, cfg, tensors);
     // The checkpoint's per-layer declaration in ONE vocabulary, whichever
     // spelling it used. `layer_types` wins when present — it is the direct
     // form, and GLM-5.3-Flash writes both — otherwise the index-set form
@@ -106,13 +122,26 @@ pub fn resolve(config: &Value, identity: &Identity) -> (Detection, ResolvedTopol
     // (pure SSM — no interleave exists to state) answers when no
     // interleave was declared. The interleave stays authoritative when
     // both exist: an explicit per-layer statement outranks a uniform one.
+    // The uniform answer only speaks for a stack that declared NO
+    // interleave. A declared-but-unresolved one (OuteAI's ambiguous-base
+    // `attention_layers_idx` is the live case) must stay unresolved:
+    // letting the family's uniform kind answer for it would silently
+    // re-declare the very layers the interleave singles out.
     let declared_kinds: Option<Vec<crate::config::LayerKind>> = cfg
         .linear_attn_interleave
         .resolved()
+        .or(disambiguated.as_ref())
         .map(|r| r.layers.clone())
         .or_else(|| {
-            arch.declared_uniform_layer_kind()
-                .map(|kind| vec![kind; cfg.num_layers])
+            matches!(
+                cfg.linear_attn_interleave,
+                crate::config::DeclaredInterleave::Absent
+            )
+            .then(|| {
+                arch.declared_uniform_layer_kind()
+                    .map(|kind| vec![kind; cfg.num_layers])
+            })
+            .flatten()
         });
     let declared_spans: Option<Vec<String>> = declared_kinds
         .as_ref()
@@ -143,7 +172,25 @@ pub fn resolve(config: &Value, identity: &Identity) -> (Detection, ResolvedTopol
                 } else {
                     None
                 },
-                position: arch.position_policy_for_layer(layer),
+                // On a hybrid, a resolved Full layer rotates as the
+                // conv-QKV block declares — the leading `rope_emb_dim`
+                // dims of each head, frequencies over the rotary width
+                // (transcribed from the reference's GPTNeoX-style
+                // partial-rotary application). The family's per-layer
+                // answer (None — recurrence carries position) still
+                // speaks for every mixer layer.
+                position: match (cfg.conv_qkv_attn, declared_kinds.as_ref()) {
+                    (Some(attn), Some(kinds))
+                        if matches!(kinds.get(layer), Some(crate::config::LayerKind::Full)) =>
+                    {
+                        crate::config::PositionPolicy::PartialRope {
+                            theta: attn.rope_theta,
+                            rotary_fraction: attn.rotary_dim as f64 / attn.head_dim as f64,
+                            basis: crate::config::RotaryFrequencyBasis::RotaryWidth,
+                        }
+                    }
+                    _ => arch.position_policy_for_layer(layer),
+                },
                 head_dim: arch.head_dim_for_layer(layer),
                 num_kv_heads: arch.num_kv_heads_for_layer(layer),
                 v_from_k: arch.v_shares_k(layer),
@@ -249,6 +296,8 @@ pub fn resolve(config: &Value, identity: &Identity) -> (Detection, ResolvedTopol
         kda: cfg.kda_geometry,
         kda_gate_lower_bound: cfg.kda_gate_lower_bound,
         mamba2: cfg.mamba2_geometry,
+        mamba2_provenance: cfg.mamba2_provenance.clone(),
+        conv_qkv_attn: cfg.conv_qkv_attn,
     };
     (detection, topology)
 }
@@ -340,4 +389,125 @@ fn layer_kind_spelling(kind: &crate::config::LayerKind) -> String {
         LayerKind::Unexpressed { declared } => return declared.clone(),
     }
     .to_string()
+}
+
+/// J5 — settle a declared index-base ambiguity from the tensor estate.
+///
+/// OuteAI's `attention_layers_idx: [6,12,18,24]` over 32 layers places
+/// validly under BOTH index bases, so the interleave resolver honestly
+/// answers [`InterleaveError::AmbiguousBase`]
+/// (`crate::config::InterleaveError`) — the declaration does not
+/// determine its own reading. The tensor estate does: an attention
+/// mixer's fused-QKV `in_proj` row count
+/// ([`ConvQkvAttnGeometry::qkv_rows`](crate::config::ConvQkvAttnGeometry::qkv_rows))
+/// differs from a Mamba2 mixer's
+/// ([`Mamba2Geometry::in_proj_rows`](crate::config::Mamba2Geometry::in_proj_rows)),
+/// and every layer carries exactly one of the two.
+///
+/// Each base is attempted against every layer's observed `mixer.in_proj`
+/// rows; exactly one consistent base resolves, with the evidence recorded
+/// in the provenance's sources. Zero or two consistent bases (or absent
+/// geometry, or missing tensors) leave the declaration unresolved — this
+/// pass settles ambiguity, it never invents an answer.
+fn disambiguate_attention_set_by_mixer_shape(
+    config: &Value,
+    cfg: &crate::config::ModelConfig,
+    tensors: &[super::report::TensorFact],
+) -> Option<crate::config::ResolvedInterleave> {
+    use crate::config::{
+        InterleaveEncoding, InterleaveError, InterleaveProvenance, LayerIndexBase, LayerKind,
+        RecurrenceFamily,
+    };
+    if !matches!(
+        cfg.linear_attn_interleave.error(),
+        Some(InterleaveError::AmbiguousBase { .. })
+    ) {
+        return None;
+    }
+    let mamba2 = cfg.mamba2_geometry?;
+    let conv_qkv = cfg.conv_qkv_attn?;
+    let text_config = config.get("text_config").unwrap_or(config);
+    let (key, set) = ["attention_layers_idx", "attn_layer_idx"]
+        .into_iter()
+        .find_map(|key| {
+            let indices: Vec<i64> = text_config
+                .get(key)?
+                .as_array()?
+                .iter()
+                .filter_map(Value::as_i64)
+                .collect();
+            (!indices.is_empty()).then_some((key, indices))
+        })?;
+    // Observed `mixer.in_proj` rows per layer, matched on the exact
+    // dotted path so `layers.6` never matches `layers.16`.
+    let in_proj_rows = |layer: usize| -> Option<usize> {
+        let suffix = format!("layers.{layer}.mixer.in_proj.weight");
+        tensors
+            .iter()
+            .find(|t| {
+                t.name.ends_with(&suffix)
+                    && (t.name.len() == suffix.len()
+                        || t.name.as_bytes()[t.name.len() - suffix.len() - 1] == b'.')
+            })
+            .and_then(|t| t.shape.first().copied())
+    };
+    let attention_rows = conv_qkv.qkv_rows();
+    let mamba_rows = mamba2.in_proj_rows(cfg.hidden_size);
+    if attention_rows == mamba_rows {
+        // The two mixers are indistinguishable by this evidence.
+        return None;
+    }
+    let consistent = |base: LayerIndexBase| -> bool {
+        let full: Vec<usize> = set
+            .iter()
+            .filter_map(|declared| usize::try_from(declared - base.offset()).ok())
+            .collect();
+        if full.len() != set.len() || full.iter().any(|l| *l >= cfg.num_layers) {
+            return false;
+        }
+        (0..cfg.num_layers).all(|layer| {
+            let expected = if full.contains(&layer) {
+                attention_rows
+            } else {
+                mamba_rows
+            };
+            in_proj_rows(layer) == Some(expected)
+        })
+    };
+    let mut bases = LayerIndexBase::ALL.into_iter().filter(|b| consistent(*b));
+    let (base, none) = (bases.next()?, bases.next());
+    if none.is_some() {
+        return None;
+    }
+    let layers = (0..cfg.num_layers)
+        .map(|layer| {
+            let declared = layer as i64 + base.offset();
+            if set.contains(&declared) {
+                LayerKind::Full
+            } else {
+                // Identified, not inferred from the key name: the base
+                // proof above verified every complement layer's
+                // `mixer.in_proj` rows against the DECLARED Mamba2
+                // geometry — operand evidence of the mixer itself, the
+                // same evidence class the spelling reader lacks.
+                LayerKind::Recurrent(RecurrenceFamily::Mamba2)
+            }
+        })
+        .collect();
+    Some(crate::config::ResolvedInterleave {
+        layer_count: cfg.num_layers,
+        provenance: InterleaveProvenance {
+            sources: vec![
+                key.to_string(),
+                format!(
+                    "tensor-evidence: layers.N.mixer.in_proj rows \
+                     ({attention_rows} attention vs {mamba_rows} mamba2) prove the base"
+                ),
+            ],
+            encoding: InterleaveEncoding::ExplicitSetWithComplement,
+            resolved_base: Some(base),
+            scope: "target.decoder_stack".to_string(),
+        },
+        layers,
+    })
 }

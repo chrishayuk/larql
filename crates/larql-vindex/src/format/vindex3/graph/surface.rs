@@ -290,6 +290,14 @@ pub struct ExecutionSurface {
     /// it. `None` otherwise.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub mamba2: Option<Mamba2Surface>,
+    /// What the hybrid's conv-QKV attention block reads, on a component
+    /// whose full layers run it (`LayerOperator::ConvQkvAttention`).
+    /// `None` otherwise. Reused from the architectural record directly,
+    /// the way [`Self::kda`] reuses `KdaGeometry` — every field is
+    /// something the operator reads, and the struct already refuses
+    /// partial declarations at the parse boundary.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub conv_qkv: Option<larql_models::config::ConvQkvAttnGeometry>,
     /// Whether the residual stream is kept at fp32 against a
     /// lower-precision model (`residual_in_fp32`) — declared, never
     /// chosen by an executor. `None` = the checkpoint declares nothing.
@@ -437,6 +445,7 @@ pub fn surface_from_resolved(
             geometry,
             activation: execution.activation,
         }),
+        conv_qkv: resolved.conv_qkv_attn,
         residual_in_fp32: execution.residual_in_fp32,
         mla: execution.mla.map(|m| MlaSurface {
             num_heads: m.num_heads,
@@ -520,15 +529,25 @@ pub fn attach_stack_evidence(
     // attention/FFN wrap norms. The choice is made from the DECLARED
     // program, so a transformer stack that lost its norms still fails the
     // transformer evidence rather than sliding into the mixer's.
+    // A hybrid's attention layers carry the same single pre-mixer norm
+    // (the mamba_ssm lineage wraps EVERY block, mixer or attention, in
+    // one `norm.weight`), so a Full layer counts as mixer-normed exactly
+    // when the conv-QKV block is declared — a transformer's Full layer
+    // still reads the transformer evidence.
     let mixer_only = !inventory.resolved.layers.is_empty()
-        && inventory.resolved.layers.iter().all(|l| {
-            matches!(
-                l.declared_kind,
+        && inventory
+            .resolved
+            .layers
+            .iter()
+            .all(|l| match l.declared_kind {
                 Some(larql_models::config::LayerKind::Recurrent(
-                    larql_models::config::RecurrenceFamily::Mamba2
-                ))
-            )
-        });
+                    larql_models::config::RecurrenceFamily::Mamba2,
+                )) => true,
+                Some(larql_models::config::LayerKind::Full) => {
+                    inventory.resolved.conv_qkv_attn.is_some()
+                }
+                _ => false,
+            });
     let evidence = if mixer_only {
         super::roles::mixer_norm_placement_evidence(relative.iter().map(String::as_str))
     } else {
@@ -648,6 +667,7 @@ pub fn surface_from_nested(
         kda_gate_lower_bound: None,
         mla: None,
         mamba2: None,
+        conv_qkv: None,
         residual_in_fp32: None,
         attention: Some(AttentionSurface {
             num_q_heads: heads,

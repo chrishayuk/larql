@@ -608,10 +608,16 @@ fn operator_and_span(
     kind: &larql_models::config::LayerKind,
     recurrence: Option<RecurrenceKind>,
     mla: bool,
+    conv_qkv: bool,
 ) -> (LayerOperator, Option<AttentionSpan>) {
     use larql_models::config::LayerKind;
     match kind {
         LayerKind::Full if mla => (LayerOperator::Mla, Some(AttentionSpan::Full)),
+        // Same shape of decision as `mla`, one operator over: on a
+        // hybrid that declares the conv-QKV block, every full layer
+        // runs it — the lineage has no plain-softmax layer to confuse
+        // it with.
+        LayerKind::Full if conv_qkv => (LayerOperator::ConvQkvAttention, Some(AttentionSpan::Full)),
         LayerKind::Full => (LayerOperator::Softmax, Some(AttentionSpan::Full)),
         LayerKind::Sliding { .. } => (LayerOperator::Softmax, Some(AttentionSpan::Sliding)),
         LayerKind::Recurrent(_) => (
@@ -645,6 +651,7 @@ fn uses_mla(inventory: &ArchitectureInventory) -> bool {
 
 fn attention_table(inventory: &ArchitectureInventory) -> Vec<AttentionLayerPolicy> {
     let mla = uses_mla(inventory);
+    let conv_qkv = inventory.resolved.conv_qkv_attn.is_some();
     inventory
         .resolved
         .layers
@@ -677,7 +684,7 @@ fn attention_table(inventory: &ArchitectureInventory) -> Vec<AttentionLayerPolic
                         mla,
                     )
                 }
-                Some(kind) => operator_and_span(kind, recurrence_kind(inventory), mla),
+                Some(kind) => operator_and_span(kind, recurrence_kind(inventory), mla, conv_qkv),
             };
             // The architecture's resolved window stays authoritative — it
             // can apply per-family rules the raw config cannot state. The

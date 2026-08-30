@@ -74,6 +74,7 @@ fn an_lllf_stack_dispatches_three_recurrences_then_one_softmax() {
             // Never reached — this fixture builds no MLA/Mamba2 layer.
             LayerAttention::Mla(_) => "M",
             LayerAttention::Mamba2(_) => "S",
+            LayerAttention::ConvQkv(_) => "C",
         })
         .collect();
     assert_eq!(
@@ -188,6 +189,9 @@ fn each_layer_updates_its_own_kind_of_state_and_no_other() {
             LayerAttention::Mla(_) => panic!("layer {index}: fixture is Gated DeltaNet, not MLA"),
             LayerAttention::Mamba2(_) => {
                 panic!("layer {index}: fixture is Gated DeltaNet, not Mamba2")
+            }
+            LayerAttention::ConvQkv(_) => {
+                panic!("layer {index}: fixture is Gated DeltaNet, not conv-QKV attention")
             }
             LayerAttention::GatedDelta(_) => {
                 let state = provider.recurrent_state(index).expect("a recurrent layer");

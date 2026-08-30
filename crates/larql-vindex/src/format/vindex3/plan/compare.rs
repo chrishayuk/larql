@@ -245,8 +245,15 @@ fn rope_theta_findings(inventory: &ArchitectureInventory) -> Vec<Finding> {
                         .to_string(),
                 });
             }
+            // On a hybrid, the mixer layers are NoPE — position lives in
+            // the recurrence — and the declared base is inert on them
+            // per layer, by the same argument the all-NoPE arm above
+            // makes for the whole stack. Only a layer that ROTATES can
+            // disagree with the declared base; at least one such layer
+            // exists here, or the arm above answered.
             let disagreeing = in_scope
                 .iter()
+                .filter(|l| l.position != PositionPolicy::None)
                 .filter(|l| l.position.rope_theta() != Some(declared_theta))
                 .count();
             Some(value_finding(
@@ -362,6 +369,11 @@ fn layer_types_finding(inventory: &ArchitectureInventory) -> Option<Finding> {
                 // recorded declaration until then. Said plainly here so
                 // the arm is not read as a check it is not.
                 LayerOperator::GatedDelta | LayerOperator::Kda | LayerOperator::Mamba2 => false,
+                // The hybrid's attention layers have no `layer_types`
+                // array to disagree with (the index-set spelling is
+                // resolved upstream), so nothing here can contradict
+                // them.
+                LayerOperator::ConvQkvAttention => false,
                 // A recurrence this build cannot identify does not
                 // round-trip: the checkpoint declared an operator and the
                 // graph carries no executable one. That is a genuine

@@ -183,6 +183,21 @@ pub fn plan_continuation_geometry(
             // dtype, and KDA is in that position for every checkpoint
             // observed so far. Execution is out of scope for the rung that
             // introduced this operator; refusing is what keeps it out.
+            // Conv-QKV attention's continuation is TWO regions — a real
+            // per-position KV cache AND a fixed conv history over the
+            // pre-conv fused QKV — and this planner's vocabulary cannot
+            // state both on one layer yet. Refused rather than flattened
+            // to the KV half: a provider that allocated only the cache
+            // would silently run the conv with no history, which is a
+            // different operator.
+            LayerAttention::ConvQkv(op) => Err(format!(
+                "conv-QKV attention layer: a {}-wide KV cache AND a [{}, {}] conv history \
+                 persist per layer, and no continuation vocabulary states both yet — \
+                 refusing to flatten to the cache alone",
+                op.geometry.num_kv_heads * op.geometry.head_dim,
+                op.geometry.qkv_rows(),
+                op.geometry.conv_kernel,
+            )),
             LayerAttention::Kda(op) => Err(format!(
                 "KDA layer: {} state elements, but no state precision is declared for this \
                  operator — refusing to choose one",

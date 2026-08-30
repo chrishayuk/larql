@@ -83,6 +83,19 @@ pub(super) fn run_ops(args: OpsArgs) -> Result<(), Box<dyn std::error::Error>> {
                             layer_plan.operands_accounted,
                             layer_plan.operands_present,
                         ),
+                        LayerAttention::ConvQkv(op) => println!(
+                            "layer {:3}: ConvQkvAttention({}q/{}kv heads x {}, conv {}, \
+                             rotary {}/{})  {}/{} operands accounted",
+                            layer_plan.layer,
+                            op.geometry.num_heads,
+                            op.geometry.num_kv_heads,
+                            op.geometry.head_dim,
+                            op.geometry.conv_kernel,
+                            op.geometry.rotary_dim,
+                            op.geometry.head_dim,
+                            layer_plan.operands_accounted,
+                            layer_plan.operands_present,
+                        ),
                     }
                 }
             }
@@ -145,6 +158,7 @@ fn print_layer(component: &str, layer: &LayerPlan) {
         LayerAttention::Kda(op) => print_kda(op),
         LayerAttention::Mla(op) => print_mla(op),
         LayerAttention::Mamba2(op) => print_mamba2(op),
+        LayerAttention::ConvQkv(op) => print_conv_qkv(op),
     }
     println!("  residual");
     if let Some(op) = &layer.post_attention_norm {
@@ -379,6 +393,26 @@ fn print_gated_delta(op: &GatedDeltaOp) {
             operand.object, operand.tensor, operand.shape
         );
     }
+}
+
+fn print_conv_qkv(op: &larql_vindex::format::vindex3::opplan::conv_qkv::ConvQkvOp) {
+    println!("  ConvQkvAttention (conv over fused QKV, partial rotary)");
+    println!(
+        "    geometry: {}q/{}kv heads x {}, conv {} (no activation), rotary {}/{} theta {}",
+        op.geometry.num_heads,
+        op.geometry.num_kv_heads,
+        op.geometry.head_dim,
+        op.geometry.conv_kernel,
+        op.geometry.rotary_dim,
+        op.geometry.head_dim,
+        op.geometry.rope_theta,
+    );
+    println!(
+        "    in_proj [{} x hidden]  out_proj [hidden x {}]  conv bias: {}",
+        op.geometry.qkv_rows(),
+        op.geometry.attn_out_width(),
+        op.conv1d_bias.is_some(),
+    );
 }
 
 fn print_mamba2(op: &larql_vindex::format::vindex3::opplan::Mamba2Op) {

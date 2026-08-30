@@ -2,6 +2,7 @@
 //! explicit, and closure blocks on every shortfall.
 
 mod closure;
+mod conv_qkv;
 mod coverage_opplan;
 mod gemma4_closure;
 mod kda_op;

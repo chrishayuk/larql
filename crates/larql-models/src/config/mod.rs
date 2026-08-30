@@ -23,6 +23,7 @@ pub mod activation;
 pub mod architecture;
 pub mod attention_gate;
 pub mod attention_sinks;
+pub mod conv_qkv_attn;
 pub mod experts;
 pub mod interleave;
 pub mod layer_types;
@@ -43,6 +44,7 @@ pub use attention_gate::{
     AttentionGateSpec, GateActivation, GateCombine, GatePlacement, GateSource,
 };
 pub use attention_sinks::AttentionSinkSpec;
+pub use conv_qkv_attn::ConvQkvAttnGeometry;
 pub use experts::{
     ExpertFormat, ExpertGatePolicy, ExpertRoutingPolicy, GateUpBranch, GateUpLayout,
 };
@@ -56,7 +58,7 @@ pub use layer_types::{
     LAYER_TYPE_WINDOW_ATTENTION,
 };
 pub use linear_attn::{KdaGeometry, LAYER_TYPE_UNRESOLVED_INTERLEAVE};
-pub use mamba2::{DtBound, Mamba2Geometry};
+pub use mamba2::{DtBound, Mamba2Dialect, Mamba2FamilyDefault, Mamba2Geometry, Mamba2Provenance};
 pub use mla::MlaGeometry;
 pub use model_config::ModelConfig;
 pub use moe_router::MoeRouterKind;

@@ -133,7 +133,13 @@ pub(super) fn parse_model_config(config: &serde_json::Value) -> ModelConfig {
     // The Mamba2 mixer's declared geometry, all fields or none. Read
     // before the attention-shape fields because it changes what their
     // absence means (below).
-    let mamba2_geometry = crate::config::Mamba2Geometry::read(text_config);
+    let mamba2_read = crate::config::Mamba2Geometry::read_with_provenance(text_config);
+    let mamba2_geometry = mamba2_read.as_ref().map(|(g, _)| *g);
+    let mamba2_provenance = mamba2_read.map(|(_, p)| p);
+    // The hybrid stack's conv-QKV attention block, all fields or none.
+    // Its presence changes what "attention-shaped" means below: a hybrid
+    // declares real attention heads beside the mixer geometry.
+    let conv_qkv_attn = crate::config::ConvQkvAttnGeometry::read(text_config);
     // Gemma HF configs commonly omit num_attention_heads, head_dim, and
     // num_key_value_heads — they're architecture-class defaults from
     // transformers. See the `DEFAULT_*` constants for the values used.
@@ -147,7 +153,7 @@ pub(super) fn parse_model_config(config: &serde_json::Value) -> ModelConfig {
     // invented head geometry (ontology drill F1, observed live on
     // mamba2-780m). Zero is the parser's ordinary "absent" sentinel, and
     // the architecture's own validation judges what absence means.
-    let attention_free_ssm = mamba2_geometry.is_some();
+    let attention_free_ssm = mamba2_geometry.is_some() && conv_qkv_attn.is_none();
     let default_head_dim: usize = if is_gemma { DEFAULT_HEAD_DIM_GEMMA } else { 0 };
     let num_q_heads = super::config_io::read_aliased_u64(
         config,
@@ -163,9 +169,14 @@ pub(super) fn parse_model_config(config: &serde_json::Value) -> ModelConfig {
     // from hidden/heads (the conventional MHA invariant). On a Mamba2
     // declaration the explicit value is the MIXER head width — the same
     // number `Mamba2Geometry` carries — not a softmax head's.
+    // A hybrid declares its attention head width apart from the mixer's
+    // (`attention_head_dim`), and it is NOT `hidden_size / num_heads` —
+    // 16 · 128 = 2048 ≠ 1024 on OuteAI Mamba2Attn — so the derivation
+    // below must not answer for it.
     let head_dim = text_config["head_dim"]
         .as_u64()
         .map(|v| v as usize)
+        .or(conv_qkv_attn.map(|a| a.head_dim))
         .unwrap_or(if default_head_dim > 0 {
             default_head_dim
         } else {
@@ -216,9 +227,13 @@ pub(super) fn parse_model_config(config: &serde_json::Value) -> ModelConfig {
     let sliding_window = text_config["sliding_window"].as_u64().map(|v| v as usize);
     // Read from the *outer* config too: some families declare it at the top
     // level next to `architectures` rather than inside `text_config`.
+    // The mamba_ssm lineage (OuteAI Mamba2Attn) spells the same fact
+    // `tie_embedding_weights` and declares no canonical spelling beside
+    // it, so this is a read, not an alias-table entry.
     let tie_word_embeddings = text_config
         .get("tie_word_embeddings")
         .or_else(|| config.get("tie_word_embeddings"))
+        .or_else(|| text_config.get("tie_embedding_weights"))
         .and_then(|v| v.as_bool());
 
     // MoE fields
@@ -533,6 +548,16 @@ pub(super) fn parse_model_config(config: &serde_json::Value) -> ModelConfig {
     let d_rel = text_config["d_rel"].as_u64().map(|v| v as usize);
     let rel_extent = text_config["rel_extent"].as_u64().map(|v| v as usize);
     let mamba_ssm_dtype = text_config["mamba_ssm_dtype"].as_str().map(str::to_string);
+    // The mamba_ssm lineage declares its MLP estate apart from
+    // `intermediate_size`: `mlp_intermediate_size` is the gated MLP's
+    // width and ZERO is a declaration — no MLP blocks exist anywhere in
+    // the stack (OuteAI Mamba2Attn ships none). The padding multiple and
+    // bias flag parameterise that same (possibly absent) MLP.
+    let mlp_intermediate_size = text_config["mlp_intermediate_size"]
+        .as_u64()
+        .map(|v| v as usize);
+    let mlp_padding_size = text_config["mlp_padding_size"].as_u64().map(|v| v as usize);
+    let use_mlp_bias = text_config["use_mlp_bias"].as_bool();
     let residual_in_fp32 = text_config["residual_in_fp32"].as_bool();
     let attn_output_gate = text_config["attn_output_gate"].as_bool();
     let output_gate_type = text_config["output_gate_type"].as_str().map(str::to_string);
@@ -636,6 +661,11 @@ pub(super) fn parse_model_config(config: &serde_json::Value) -> ModelConfig {
         rel_extent,
         mamba_ssm_dtype,
         mamba2_geometry,
+        mamba2_provenance,
+        conv_qkv_attn,
+        mlp_intermediate_size,
+        mlp_padding_size,
+        use_mlp_bias,
         residual_in_fp32,
         attn_output_gate,
         output_gate_type,

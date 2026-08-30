@@ -355,3 +355,45 @@ fn every_resolution_carries_its_provenance() {
     assert_eq!(r.provenance.resolved_base, Some(LayerIndexBase::One));
     assert_eq!(r.provenance.scope, "target.decoder_stack");
 }
+
+// ── The Mamba2Attn index-set spelling (`attention_layers_idx` /
+//    `attn_layer_idx`) ──
+
+/// OuteAI's live declaration: `[6,12,18,24]` over 32 layers fits BOTH
+/// index bases, so the config alone does not determine its own reading —
+/// the honest answer is `AmbiguousBase`, and the settlement belongs to
+/// tensor evidence (`resolve_with_tensor_evidence`), never a family
+/// table here.
+#[test]
+fn an_attention_set_fitting_both_bases_is_ambiguous() {
+    let config = serde_json::json!({ "attention_layers_idx": [6, 12, 18, 24] });
+    assert_eq!(
+        error(&config, InterleaveScope::DecoderStack, 32),
+        InterleaveError::AmbiguousBase { layer_count: 32 }
+    );
+}
+
+/// A set containing 0 proves itself zero-based: the complement covers
+/// the rest as an unidentified recurrence (the key names WHICH layers
+/// attend, never which recurrence runs beside them), under the
+/// state-spaces spelling too.
+#[test]
+fn an_attention_set_containing_zero_resolves_zero_based() {
+    let config = serde_json::json!({ "attn_layer_idx": [0, 3] });
+    let r = resolved(&config, InterleaveScope::DecoderStack, 4, None);
+    assert_eq!(r.provenance.resolved_base, Some(LayerIndexBase::Zero));
+    assert_eq!(
+        r.provenance.encoding,
+        InterleaveEncoding::ExplicitSetWithComplement
+    );
+    assert_eq!(r.provenance.sources, vec!["attn_layer_idx".to_string()]);
+    assert_eq!(
+        r.layers,
+        vec![
+            LayerKind::Full,
+            LayerKind::Recurrent(RecurrenceFamily::Unidentified),
+            LayerKind::Recurrent(RecurrenceFamily::Unidentified),
+            LayerKind::Full,
+        ]
+    );
+}

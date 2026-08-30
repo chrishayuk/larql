@@ -165,6 +165,34 @@ pub const CONSUMED_LEAF_KEYS: &[&str] = &[
     "rms_norm",
     "use_bias",
     "use_conv_bias",
+    // The mamba_ssm key dialect of the same mixer geometry
+    // (`Mamba2Geometry::read_mamba_ssm` — OuteAI Mamba2Attn), and the
+    // hybrid's conv-QKV attention block
+    // (`config::ConvQkvAttnGeometry::read`, all fields or none).
+    // `rope_theta` and the attention head counts were already consumed
+    // as attention keys; on a hybrid declaration the one value is the
+    // conv-QKV block's.
+    "mamba2_num_heads",
+    "mamba2_head_dim",
+    "mamba2_conv_kernel",
+    "use_mamba2_bias",
+    "attention_head_dim",
+    "attention_conv_kernel",
+    "rope_emb_dim",
+    "use_attention_qkv_bias",
+    "use_attention_out_bias",
+    // The hybrid interleave's index-set spellings
+    // (`interleave::spellings::read_attention_layer_idx`).
+    "attention_layers_idx",
+    "attn_layer_idx",
+    // The mamba_ssm lineage spelling of `tie_word_embeddings`, read by
+    // the same parser fallback chain.
+    "tie_embedding_weights",
+    // The mamba_ssm lineage's MLP declaration: width (0 = no MLP blocks,
+    // a declaration), padding multiple, bias flag.
+    "mlp_intermediate_size",
+    "mlp_padding_size",
+    "use_mlp_bias",
     "residual_in_fp32",
     "attn_output_gate",
     "output_gate_type",
