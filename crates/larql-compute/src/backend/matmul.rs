@@ -449,7 +449,7 @@ mod tests {
             }
         }
         let b = Bf16Backend;
-        let bytes = vec![0u8; N * K * 2];
+        let bytes = [0u8; N * K * 2];
         let x = vec![1.0f32; K];
         let second_n = N + 3;
         let got = b
