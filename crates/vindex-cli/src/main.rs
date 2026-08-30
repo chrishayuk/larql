@@ -12,6 +12,8 @@ use std::process::ExitCode;
 use clap::{Parser, Subcommand};
 use serde_json::Value;
 
+mod update;
+
 #[derive(Parser)]
 #[command(
     name = "vindex",
@@ -77,6 +79,13 @@ enum Command {
     Precision { container: PathBuf },
     /// The container against its own recorded hashes, re-derived from the artifact alone.
     Verify { container: PathBuf },
+    /// Install the latest release of this tool. Only ever runs when you ask:
+    /// no verb checks for updates on its own, and nothing phones home.
+    Update {
+        /// Report whether a newer release exists, without installing.
+        #[arg(long)]
+        check: bool,
+    },
 }
 
 fn kv(label: &str, value: impl std::fmt::Display) {
@@ -358,6 +367,18 @@ fn render_verify(v: &Value) {
 
 fn main() -> ExitCode {
     let cli = Cli::parse();
+    if let Command::Update { check } = &cli.command {
+        return match update::run(*check) {
+            Ok(line) => {
+                println!("{line}");
+                ExitCode::SUCCESS
+            }
+            Err(e) => {
+                eprintln!("vindex: {e}");
+                ExitCode::from(2)
+            }
+        };
+    }
     let result = match &cli.command {
         Command::Inspect { container } => vindex_cli::inspect_facts(container),
         Command::Describe {
@@ -382,6 +403,7 @@ fn main() -> ExitCode {
         } => vindex_cli::represent_facts(container, out, encoding),
         Command::Precision { container } => vindex_cli::precision_facts(container),
         Command::Verify { container } => vindex_cli::verify_facts(container),
+        Command::Update { .. } => unreachable!("handled above"),
     };
     match result {
         Ok(v) => {
@@ -396,6 +418,7 @@ fn main() -> ExitCode {
                     Command::Represent { .. } => render_represent(&v),
                     Command::Precision { .. } => render_precision(&v),
                     Command::Verify { .. } => render_verify(&v),
+                    Command::Update { .. } => unreachable!("handled above"),
                 }
             }
             if let Some(false) = v["verified"].as_bool() {
