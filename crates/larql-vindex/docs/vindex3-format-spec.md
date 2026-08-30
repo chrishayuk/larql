@@ -1055,6 +1055,18 @@ changing the meaning of any existing field:
 A failure names the field whose meaning would have to change; that
 field is exactly what Final must fix.
 
+**The drill ran on 2026-08-30** —
+[`docs/vindex3-ontology-drill.md`](../../../docs/vindex3-ontology-drill.md)
+records the evidence and the sixteen findings. Summary: every schema gap
+found lands inside these two lifts (mandatory-and-fabricated attention
+surfaces, the fail-open census on undeclared families, the
+inexpressible KDA/MLA state, one judged fact the container cannot carry,
+one silent serde default), plus two preservation defects against §5.7
+and two scope decisions to state explicitly. Cases 3 and 4 passed —
+the component algebra holds as scoped, and the additive-evolution claim
+that carried residency out of these gates is real. The ontology
+question itself did not flinch.
+
 ---
 
 ## 18. Operations, observation, and the independent reader
@@ -1162,7 +1174,7 @@ gate, none of them drift:
 | 4 | **E8 held-out architecture** (§16 criterion 7) | not yet run |
 | 5 | **The M4 flip**: `DEFAULT_EXTRACTION_GENERATION = V3` per the generation policy | M1–M3 done, M4 open |
 | 6 | **Bank-ABI pre-freeze rows**: the remaining V2-0..V2-4 experiment gates (profile-authority derivation, variant-selection refusal, fixtures B–D, WALK/DESCRIBE parity) | open |
-| 7 | **The ontology lift** (§17.4): completeness from the declared operation program rather than object kinds, and ContinuationState generalising KV — accepted by the four-architecture paper drill | pinned design |
+| 7 | **The ontology lift** (§17.4): completeness from the declared operation program rather than object kinds, and ContinuationState generalising KV — accepted by the four-architecture paper drill | **drilled 2026-08-30** — confirmed and fully enumerated, findings F1–F16 in [`docs/vindex3-ontology-drill.md`](../../../docs/vindex3-ontology-drill.md) |
 
 Feature growth is not a gate: GENERATE, TRACE, overlays, logical DIFF,
 COMPILE and COMPACT are operations over V3 containers and do not add
