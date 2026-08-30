@@ -13,13 +13,17 @@ use std::path::Path;
 use serde_json::{json, Value};
 use sha2::{Digest, Sha256};
 
+pub mod mixer;
+use mixer::{layer_range, MixerOperands};
+
 use larql_vindex::format::filenames::INDEX_JSON;
 use larql_vindex::format::vindex3::encode::segment::read_segment_header;
+use larql_vindex::format::vindex3::graph::Component;
 use larql_vindex::format::vindex3::index::{ContainerAuthority, Vindex3Index};
 use larql_vindex::format::vindex3::inspect::{inspect_container, SystemInspection};
 use larql_vindex::format::vindex3::opplan::exec::operands::{OperandStore, RepresentationSource};
 use larql_vindex::format::vindex3::opplan::{
-    plan_component_ops, ComponentOpPlan, LayerFfn, LayerPlan, OperandRef,
+    plan_component_ops, ComponentOpPlan, LayerFfn, OperandRef,
 };
 use larql_vindex::format::vindex3::represent::nvfp4_pack::{split, PackLayout, DTYPE_NVFP4};
 use larql_vindex::format::vindex3::represent::{compile_representation, RepresentSpec};
@@ -106,23 +110,30 @@ pub fn describe_facts(root: &Path, address: &str, values: usize, peek: Option<&s
         .and_then(|r| r.strip_suffix(".mixer"))
         .and_then(|n| n.parse::<usize>().ok())
     {
-        let (_, plan) = primary_plan(root, &inspection)?;
+        let (component, plan) = primary_plan(root, &inspection)?;
+        let operator = mixer::declared_operator(component, n)?;
         let layer = plan
             .layers
             .get(n)
-            .ok_or_else(|| format!("layer {n} — the plan holds layers 0..{}", plan.layers.len()))?;
-        let operands: Vec<Value> = mixer_operands(layer)
-            .into_iter()
-            .map(|(role, op)| {
-                json!({ "role": role, "tensor": op.tensor, "shape": op.shape, "dtype": op.dtype })
-            })
-            .collect();
+            .ok_or_else(|| layer_range(&format!("layer {n}"), plan.layers.len()))?;
+        let (operands, undescribed) = match mixer::operands(operator, layer) {
+            MixerOperands::Named(ops) => (
+                ops.into_iter()
+                    .map(|(role, op)| {
+                        json!({ "role": role, "tensor": op.tensor, "shape": op.shape, "dtype": op.dtype })
+                    })
+                    .collect::<Vec<Value>>(),
+                None,
+            ),
+            MixerOperands::Undescribed(why) => (Vec::new(), Some(why)),
+        };
         return Ok(json!({
             "container": root.display().to_string(),
             "semantic": address,
-            "mixer": mixer_label(layer),
+            "mixer": mixer::label(operator, mixer::has_output_gate(layer)),
             "layer": n,
             "operands": operands,
+            "undescribed": undescribed,
         }));
     }
     if let Some(resolved) = resolve_semantic(root, &inspection, address) {
@@ -284,24 +295,26 @@ pub fn precision_facts(root: &Path) -> Facts {
 pub fn layers_facts(root: &Path) -> Facts {
     let inspection = inspect_container(root, false).map_err(|e| format!("inspect: {e}"))?;
     let (component, plan) = primary_plan(root, &inspection)?;
-    let rows: Vec<Value> = plan
-        .layers
-        .iter()
-        .map(|l| {
-            let ffn = match &l.ffn {
-                Some(LayerFfn::Dense(_)) => "dense",
-                Some(LayerFfn::Routed(_)) => "routed",
-                Some(LayerFfn::Hybrid(_)) => "hybrid",
-                // A mixer-only (Mamba2) layer: the mixer is the whole
-                // block and no FFN exists to report.
-                None => "absent",
-            };
-            json!({ "layer": l.layer, "mixer": mixer_label(l), "ffn": ffn })
-        })
-        .collect();
+    let mut rows: Vec<Value> = Vec::with_capacity(plan.layers.len());
+    for l in &plan.layers {
+        let ffn = match &l.ffn {
+            Some(LayerFfn::Dense(_)) => "dense",
+            Some(LayerFfn::Routed(_)) => "routed",
+            Some(LayerFfn::Hybrid(_)) => "hybrid",
+            // A mixer-only (Mamba2) layer: the mixer is the whole
+            // block and no FFN exists to report.
+            None => "absent",
+        };
+        let operator = mixer::declared_operator(component, l.layer)?;
+        rows.push(json!({
+            "layer": l.layer,
+            "mixer": mixer::label(operator, mixer::has_output_gate(l)),
+            "ffn": ffn,
+        }));
+    }
     Ok(json!({
         "container": root.display().to_string(),
-        "component": component,
+        "component": component.id,
         "layers": rows,
     }))
 }
@@ -370,25 +383,53 @@ pub fn precision_matrix_facts(root: &Path) -> Facts {
 
     // Group layers by programme; each group's columns are what its
     // programme actually computes with.
+    //
+    // The empty answer means "no column", and it is deliberate for
+    // every per-head or per-channel vector — log decay, timestep
+    // bias, norm weights, the Mamba2 skip. A bits-per-weight matrix
+    // over a `[Hv]` operand says nothing about a representation and
+    // would push a programme's row past readable width; the tensors
+    // are still reachable through `describe layer.N.mixer`.
     let short = |role: &str| -> &'static str {
         match role {
+            // softmax
             "query" => "q",
             "key" => "k",
             "value" => "v",
             "output" => "o",
             "output gate" => "zgate",
+            // gated deltanet
             "fused recurrent q|k|v" => "qkv",
             "decay projection" => "decay",
             "write-strength projection" => "write",
             "output-gate projection" => "zgate",
             "causal conv over q|k|v" => "conv",
+            // kda — split where gated deltanet fuses
+            "query projection" => "q",
+            "key projection" => "k",
+            "value projection" => "v",
+            "causal conv over q" => "qconv",
+            "causal conv over k" => "kconv",
+            "causal conv over v" => "vconv",
+            "decay gate down" => "fa",
+            "decay gate up" => "fb",
+            "output gate down" => "ga",
+            "output gate up" => "gb",
+            // mla — the compressed-kv set
+            "compressed kv projection" => "kv_a",
+            "kv decompression" => "kv_b",
+            // mamba2
+            "fused in-projection z|x|B|C|dt" => "in",
+            "causal conv over x|B|C" => "conv",
+            // shared
             "output projection" => "out",
             _ => "",
         }
     };
     let mut programmes: Vec<(String, Vec<String>, Vec<Value>)> = Vec::new();
     for layer in &plan.layers {
-        let label = mixer_label(layer).to_string();
+        let operator = mixer::declared_operator(component, layer.layer)?;
+        let label = mixer::label(operator, mixer::has_output_gate(layer)).to_string();
         let mut cells = serde_json::Map::new();
         let mut roles: Vec<String> = vec!["gate".into(), "up".into(), "down".into()];
         if let Some(ffn) = layer.ffn.as_ref().and_then(|f| f.dense()) {
@@ -404,14 +445,16 @@ pub fn precision_matrix_facts(root: &Path) -> Facts {
                 cells.insert("down".into(), json!(b));
             }
         }
-        for (role, op) in mixer_operands(layer) {
-            let col = short(role);
-            if col.is_empty() {
-                continue;
-            }
-            roles.push(col.to_string());
-            if let Some(b) = bits_of(&op) {
-                cells.insert(col.to_string(), json!(b));
+        if let MixerOperands::Named(ops) = mixer::operands(operator, layer) {
+            for (role, op) in ops {
+                let col = short(role);
+                if col.is_empty() {
+                    continue;
+                }
+                roles.push(col.to_string());
+                if let Some(b) = bits_of(&op) {
+                    cells.insert(col.to_string(), json!(b));
+                }
             }
         }
         let row = json!({ "layer": layer.layer, "bits": Value::Object(cells) });
@@ -426,10 +469,14 @@ pub fn precision_matrix_facts(root: &Path) -> Facts {
         .layers
         .iter()
         .flat_map(|l| {
-            let mut ops: Vec<String> = mixer_operands(l)
-                .into_iter()
-                .map(|(_, o)| o.object)
-                .collect();
+            let mut ops: Vec<String> = match mixer::declared_operator(component, l.layer)
+                .map(|op| mixer::operands(op, l))
+            {
+                Ok(MixerOperands::Named(named)) => {
+                    named.into_iter().map(|(_, o)| o.object).collect()
+                }
+                _ => Vec::new(),
+            };
             if let Some(ffn) = l.ffn.as_ref().and_then(|f| f.dense()) {
                 if let Some(g) = &ffn.gate {
                     ops.push(g.object.clone());
@@ -456,7 +503,7 @@ pub fn precision_matrix_facts(root: &Path) -> Facts {
         .collect();
     Ok(json!({
         "container": root.display().to_string(),
-        "component": component,
+        "component": component.id,
         "programmes": programmes.into_iter().map(|(label, roles, rows)| json!({
             "label": label,
             "layers": rows.len(),
@@ -600,72 +647,28 @@ fn open_side(
     Ok((store, tensors))
 }
 
-fn primary_plan(
+/// The primary component: the graph node that declares it, and the
+/// operation plan built over it.
+///
+/// Both, because the two answer different questions and neither
+/// substitutes for the other — the node declares what each layer's
+/// token mixer IS, the plan binds the operands that mixer computes
+/// with. See [`mixer`].
+fn primary_plan<'a>(
     root: &Path,
-    inspection: &SystemInspection,
-) -> Result<(String, ComponentOpPlan), String> {
+    inspection: &'a SystemInspection,
+) -> Result<(&'a Component, ComponentOpPlan), String> {
     let component = inspection
         .graph
         .components
         .first()
-        .ok_or("the graph holds no components")?
-        .id
-        .clone();
+        .ok_or("the graph holds no components")?;
     let outcome =
-        plan_component_ops(inspection, root, &component).map_err(|e| format!("plan: {e}"))?;
+        plan_component_ops(inspection, root, &component.id).map_err(|e| format!("plan: {e}"))?;
     let plan = outcome
         .plan
-        .ok_or_else(|| format!("component `{component}` has no plan"))?;
+        .ok_or_else(|| format!("component `{}` has no plan", component.id))?;
     Ok((component, plan))
-}
-
-/// The token mixer's programme label, from the plan — never inferred
-/// from a name.
-fn mixer_label(layer: &LayerPlan) -> &'static str {
-    match layer.attention.softmax() {
-        Some(attn) => {
-            if attn.output_gate.is_some() {
-                "GATED ATTENTION"
-            } else {
-                "SOFTMAX ATTENTION"
-            }
-        }
-        None => "GATED DELTANET",
-    }
-}
-
-/// The mixer's operands, each with the semantic role the plan assigns.
-fn mixer_operands(layer: &LayerPlan) -> Vec<(&'static str, OperandRef)> {
-    match layer.attention.softmax() {
-        Some(attn) => {
-            let mut ops = vec![
-                ("query", attn.q.clone()),
-                ("key", attn.k.clone()),
-                ("value", attn.v.clone()),
-                ("output", attn.o.clone()),
-            ];
-            if let Some(g) = &attn.output_gate {
-                ops.push(("output gate", g.projection.clone()));
-            }
-            ops
-        }
-        None => {
-            let Some(gd) = layer.attention.gated_delta() else {
-                return Vec::new();
-            };
-            vec![
-                ("fused recurrent q|k|v", gd.in_proj_qkv.clone()),
-                ("decay projection", gd.in_proj_a.clone()),
-                ("write-strength projection", gd.in_proj_b.clone()),
-                ("output-gate projection", gd.in_proj_z.clone()),
-                ("causal conv over q|k|v", gd.conv1d.clone()),
-                ("log decay", gd.a_log.clone()),
-                ("timestep bias", gd.dt_bias.clone()),
-                ("gated norm", gd.norm.clone()),
-                ("output projection", gd.out_proj.clone()),
-            ]
-        }
-    }
 }
 
 /// A semantic address, resolved through the container's own operation
@@ -701,7 +704,7 @@ fn resolve_semantic(
         let layer_plan = plan
             .layers
             .get(n)
-            .ok_or_else(|| format!("layer {n} — the plan holds layers 0..{}", plan.layers.len()))?;
+            .ok_or_else(|| layer_range(&format!("layer {n}"), plan.layers.len()))?;
         match family {
             "ffn" => {
                 let ffn = layer_plan
@@ -734,7 +737,18 @@ fn resolve_semantic(
             }
             "attention" => {
                 let attn = layer_plan.attention.softmax().ok_or_else(|| {
-                    format!("layer {n} has no softmax-attention component — its token mixer is GATED DELTANET; try `describe layer.{n}.mixer`")
+                    let mixer = inspection
+                        .graph
+                        .components
+                        .first()
+                        .and_then(|c| mixer::declared_operator(c, n).ok())
+                        .map(|op| mixer::label(op, false))
+                        .unwrap_or("a mixer this container does not name");
+                    format!(
+                        "layer {n} does not attend by softmax — its token mixer is {mixer}, \
+                         so its projections are that operator's, not q/k/v/o; \
+                         try `describe layer.{n}.mixer`"
+                    )
                 })?;
                 let (label, op) = match *role {
                     "q" => ("ATTENTION QUERY PROJECTION", &attn.q),
