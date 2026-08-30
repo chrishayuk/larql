@@ -132,6 +132,22 @@ fn f16_gemv_force_returns_none_on_cpu() {
     assert!(cpu.f16_gemv_force(&w_f16, &x, n, k).is_none());
 }
 
+/// The bf16 pair has no CPU kernel either — the CPU consumes bf16
+/// through `DenseProjector`/`FusedBf16` in `larql-vindex`, not through
+/// this trait. Both entry points must refuse rather than silently
+/// producing a wrong-typed answer, and `force` must refuse too (it
+/// delegates, so a `Some` here would mean the default was overridden).
+#[test]
+fn bf16_gemv_returns_none_on_cpu() {
+    let cpu = cpu_backend();
+    let n = 512usize;
+    let k = 256usize;
+    let w_bf16 = vec![0u8; n * k * 2];
+    let x = synth_vec(k, 13);
+    assert!(cpu.bf16_gemv(&w_bf16, &x, n, k).is_none());
+    assert!(cpu.bf16_gemv_force(&w_bf16, &x, n, k).is_none());
+}
+
 // ── QuantMatVec::quant_matvec for Q4_K and Q6_K ──────────────────────────────
 
 #[test]

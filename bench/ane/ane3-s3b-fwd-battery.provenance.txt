@@ -1,0 +1,36 @@
+session:      s3b-fwd-battery
+power regime: BATTERY (override; matches ANE-0b's regime)
+duration_ms:  4000 per condition
+order:        forward
+ramp_s:       1.5 both engines, every condition
+recorded:     2026-08-25T22:42:48Z
+git sha:      16bedaf22cf365702bfa320182da474175149fd4
+host:         Christophers-MacBook-Pro.local
+os:           macOS 15.7.4 (24G517)
+coremltools:  9.0
+
+--- power ---
+Now drawing from 'Battery Power'
+ -InternalBattery-0 (id=20643939)	71%; discharging; 5:28 remaining present: true
+
+--- thermal (before) ---
+Note: No thermal warning level has been recorded
+Note: No performance warning level has been recorded
+Note: No CPU power status has been recorded
+
+--- busiest processes (before) ---
+  746   5.6 /System/Library/PrivateFrameworks/XprotectFramework.framework/Versions/A/XPCServices/XprotectService.xpc/Contents/MacOS/XprotectService
+44467   4.5 claude
+22918   2.0 claude
+73966   1.5 bash
+  489   1.4 /usr/libexec/syspolicyd
+43778   1.3 claude
+  365   1.1 /usr/sbin/notifyd
+  386   0.7 /usr/libexec/trustd
+ 1851   0.6 /Applications/Hyper.app/Contents/Frameworks/Hyper Helper (Renderer).app/Contents/MacOS/Hyper Helper (Renderer)
+  385   0.4 /usr/libexec/lsd
+
+--- thermal (after) ---
+Note: No thermal warning level has been recorded
+Note: No performance warning level has been recorded
+Note: No CPU power status has been recorded

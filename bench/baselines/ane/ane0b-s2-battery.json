@@ -1,0 +1,25 @@
+{
+  "experiment": "ANE-0b",
+  "purpose": "frozen GPU-alone control for ANE-3; immutable once ANE-3 begins",
+  "session": "s2-battery",
+  "model": {"name":"Qwen3.8-27B","hidden_size":5120,"intermediate_size":17408},
+  "kernel": {"family":"f16_gemv","weights":"f16","activation":"f32","out":"f32","rows_per_tg":8},
+  "iters": {"warmup":64,"measured":1024},
+  "shapes": [
+    {"name":"ffn_gate_up","role":"control","is_control":true,"n":17408,"k":5120,
+     "weight_bytes":178257920,"total_bytes":178348032,"threadgroups":2176,
+     "ms":{"min":0.616583,"p50":0.684459,"p90":0.755208,"max":1.150000,"mean":0.693335,"stdev":0.051271},
+     "gbs_weight_min":289.106,"gbs_weight_p50":260.436,
+     "check":{"row":8704,"gpu":0.077413,"cpu":0.077413,"rel_err":1.012e-6}},
+    {"name":"ffn_down","role":"context","is_control":false,"n":5120,"k":17408,
+     "weight_bytes":178257920,"total_bytes":178348032,"threadgroups":640,
+     "ms":{"min":0.629292,"p50":0.715208,"p90":0.774166,"max":1.114792,"mean":0.716936,"stdev":0.050124},
+     "gbs_weight_min":283.267,"gbs_weight_p50":249.239,
+     "check":{"row":2560,"gpu":0.059958,"cpu":0.059958,"rel_err":1.558e-7}},
+    {"name":"dispatch_floor","role":"overhead","is_control":false,"n":8,"k":5120,
+     "weight_bytes":81920,"total_bytes":102432,"threadgroups":1,
+     "ms":{"min":0.119208,"p50":0.174041,"p90":0.192083,"max":0.507250,"mean":0.176627,"stdev":0.027186},
+     "gbs_weight_min":0.687,"gbs_weight_p50":0.471,
+     "check":{"row":4,"gpu":-0.043236,"cpu":-0.043236,"rel_err":1.313e-6}}
+  ]
+}

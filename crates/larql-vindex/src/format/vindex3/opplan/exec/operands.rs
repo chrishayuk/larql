@@ -372,7 +372,7 @@ pub struct RawOperand {
 }
 
 /// Widen stored bytes to f32 — judged dtypes only, fail-closed.
-pub(super) fn widen(dtype: &str, bytes: &[u8], name: &str) -> Result<Vec<f32>, VindexError> {
+pub(crate) fn widen(dtype: &str, bytes: &[u8], name: &str) -> Result<Vec<f32>, VindexError> {
     match dtype {
         DTYPE_F32 => Ok(bytes
             .chunks_exact(4)

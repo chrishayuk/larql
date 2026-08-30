@@ -1,0 +1,96 @@
+{
+  "experiment": "ANE-4 k-split",
+  "session": "s1-battery",
+  "down_k": 17408,
+  "n": 5120,
+  "rows": [
+    {
+      "arm": "full-req-ANE",
+      "piece_k": 17408,
+      "linear_devices": [
+        "CPU"
+      ],
+      "sum_devices": [],
+      "min_ms": 1.522874998045154,
+      "p50_ms": 1.5546670038020238,
+      "rel_rms": 0.003485719180329582
+    },
+    {
+      "arm": "CPU-full",
+      "piece_k": 17408,
+      "linear_devices": [
+        "CPU"
+      ],
+      "sum_devices": [],
+      "min_ms": 1.5237090119626373,
+      "p50_ms": 1.5588329988531768,
+      "rel_rms": 0.003485719180329582
+    },
+    {
+      "arm": "ANE-split-2",
+      "piece_k": 8704,
+      "linear_devices": [
+        "ANE",
+        "ANE"
+      ],
+      "sum_devices": [
+        "ANE"
+      ],
+      "min_ms": 1.602709002327174,
+      "p50_ms": 1.7259579908568412,
+      "rel_rms": 0.01516830094419091
+    },
+    {
+      "arm": "CPU-split-2",
+      "piece_k": 8704,
+      "linear_devices": [
+        "CPU",
+        "CPU"
+      ],
+      "sum_devices": [
+        "CPU"
+      ],
+      "min_ms": 2.7207079983782023,
+      "p50_ms": 2.7788329898612574,
+      "rel_rms": 0.0024509281557298862
+    },
+    {
+      "arm": "ANE-split-4",
+      "piece_k": 4352,
+      "linear_devices": [
+        "ANE",
+        "ANE",
+        "ANE",
+        "ANE"
+      ],
+      "sum_devices": [
+        "ANE",
+        "ANE",
+        "ANE"
+      ],
+      "min_ms": 1.648541001486592,
+      "p50_ms": 1.754124998115003,
+      "rel_rms": 0.01517908722174786
+    },
+    {
+      "arm": "CPU-split-4",
+      "piece_k": 4352,
+      "linear_devices": [
+        "CPU",
+        "CPU",
+        "CPU",
+        "CPU"
+      ],
+      "sum_devices": [
+        "CPU",
+        "CPU",
+        "CPU"
+      ],
+      "min_ms": 2.5492090062471107,
+      "p50_ms": 2.5918749888660386,
+      "rel_rms": 0.0013844727307744434
+    }
+  ],
+  "split_effect": 0.7031341393078446,
+  "device_effect": 6.188798683767942
+}

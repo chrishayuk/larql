@@ -250,6 +250,17 @@ pub(super) fn condition_qk_in_place(
                 rope_rotate_scaled(head, position, &plan.inv_freq, amplitude);
             }
         }
+        // Declared, and no backend rotates for it. Refusing is the only
+        // honest arm: doing nothing would run the model with no position
+        // information at all, which is a wrong answer that produces
+        // plausible text. The plan blocks such a stack, so this is
+        // unreachable through the supported path.
+        PositionPolicy::Relative { d_rel, extent } => {
+            return Err(VindexError::Parse(format!(
+                "relative position (d_rel {d_rel}, extent {extent}) is represented but not \
+                 executable: no backend implements it"
+            )))
+        }
         PositionPolicy::None => {}
         // Partial rotary through the served planners: the proportional
         // (head-width) plan is head-sized with zero pairs above the

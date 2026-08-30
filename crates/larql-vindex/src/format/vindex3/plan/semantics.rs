@@ -27,8 +27,55 @@ pub const EXECUTION_SEMANTIC_KEYS: &[&str] = &[
     "rope_theta",
     "rope_type",
     "layer_types",
+    // The same per-layer topology in the spellings that state it as index
+    // sets rather than as an array. Execution-semantic for exactly the
+    // reason `layer_types` is: they decide which operator each layer runs
+    // and, for a sliding layer, how far back it attends. Inkling-Small
+    // states 35 of its 42 layers sliding through `local_layer_ids` alone.
+    "local_layer_ids",
+    // The window itself, in Inkling-Small's spelling of it.
+    "sliding_window_size",
+    // How many multi-token-prediction layers the checkpoint carries. No
+    // MTP object exists in this schema, so it will grade unrepresented on
+    // carriage — which is the honest answer, and a different one from
+    // "nobody judged this key".
+    "num_nextn_predict_layers",
+    // The relative-position scheme. Execution-semantic in the strongest
+    // sense: a checkpoint declaring it does not rotate, and a build that
+    // ignored it would rotate anyway at a default base.
+    "d_rel",
+    "rel_extent",
+    // The MoE facts Kimi Linear spells its own way, each resolving into
+    // the same execution surface the DeepSeek-lineage spellings do.
+    "moe_renormalize",
+    "num_shared_experts",
+    "moe_router_activation_func",
+    "scoring_func",
+    // The two-set interleave and the KDA conv width.
+    "kda_layers",
+    "full_attn_layers",
+    "short_conv_kernel_size",
+    // The KDA decay clamp, which changes the decay envelope without
+    // changing any shape.
+    "gate_lower_bound",
+    // Expert grouping. Declared by Kimi Linear and GLM-5.3-Flash alike,
+    // and at one group it selects over every expert — the same thing an
+    // ungrouped router does.
+    "num_expert_group",
+    "n_group",
+    "topk_group",
+    "use_grouped_topk",
+    // The dense/sparse cadence after the dense prefix, and the prefix.
+    "moe_layer_freq",
+    "first_k_dense_replace",
+    // A real rescale of the whole routed branch.
+    "routed_scaling_factor",
+    // Whether the MLA block omits rotary entirely.
+    "mla_use_nope",
     "sliding_window",
     "max_position_embeddings",
+    // Kimi Linear's spelling of the same serving bound.
+    "model_max_length",
     "num_kv_shared_layers",
     "query_pre_attn_scalar",
     "final_logit_softcapping",
@@ -141,6 +188,9 @@ pub const EXECUTION_SEMANTIC_KEYS: &[&str] = &[
 /// Keys that describe stored operands: widths, depths, head geometry,
 /// patching — the shape of what a container would have to hold.
 pub const TENSOR_SEMANTIC_KEYS: &[&str] = &[
+    // The perception encoder's declared input geometry: it fixes the
+    // patch grid, and so the soft-token count the connector emits.
+    "image_size",
     "hidden_size",
     "intermediate_size",
     "num_hidden_layers",
@@ -240,6 +290,13 @@ pub const INTERFACE_SEMANTIC_KEYS: &[&str] = &[
 
 /// Identity facts inert for a forward pass wherever they appear.
 pub const METADATA_KEYS: &[&str] = &[
+    // HF's dynamic-import map: which Python class to load for this
+    // `model_type`. Loader plumbing for another runtime entirely — it
+    // names code, not a forward-pass fact, and two checkpoints differing
+    // only here compute identical logits.
+    "AutoConfig",
+    "AutoModel",
+    "AutoModelForCausalLM",
     "model_type",
     "tie_word_embeddings",
     // `rope_scaling` as a bare leaf (not recursed into) means its value is
@@ -340,7 +397,16 @@ pub fn component_of(path: &str) -> String {
     const CONFIG_SUFFIX: &str = "_config";
     const ROOT_COMPONENT: &str = "root";
     match path.split('.').next() {
-        Some(first) if first.ends_with(CONFIG_SUFFIX) => {
+        // A section that parameterises an operator of the main stack is
+        // not a component of its own, so its keys belong to the stack that
+        // runs that operator. Naming a component here that the graph never
+        // builds sends every probe looking for it and finding nothing —
+        // which reads as "not carried" for facts that are carried
+        // perfectly well. `linear_attn_config` is the case.
+        Some(first)
+            if first.ends_with(CONFIG_SUFFIX)
+                && !larql_models::inventory::is_operator_config_section(first) =>
+        {
             first[..first.len() - CONFIG_SUFFIX.len()].to_string()
         }
         _ => ROOT_COMPONENT.to_string(),

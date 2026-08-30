@@ -1,0 +1,253 @@
+{
+  "experiment": "ANE-4 step 1 (FFN block placement)",
+  "session": "s1-battery",
+  "coremltools": "9.0",
+  "variants": [
+    {
+      "tag": "A_qwen_17408",
+      "intermediate": 17408,
+      "note": "down_proj k INELIGIBLE (real Qwen)",
+      "ops": [
+        {
+          "op": "ios18.mul",
+          "name": null,
+          "preferred": "ANE",
+          "supported": [
+            "CPU",
+            "ANE"
+          ]
+        },
+        {
+          "op": "ios16.reduce_mean",
+          "name": null,
+          "preferred": "ANE",
+          "supported": [
+            "CPU",
+            "ANE"
+          ]
+        },
+        {
+          "op": "ios18.add",
+          "name": null,
+          "preferred": "ANE",
+          "supported": [
+            "CPU",
+            "ANE"
+          ]
+        },
+        {
+          "op": "ios18.rsqrt",
+          "name": null,
+          "preferred": "ANE",
+          "supported": [
+            "CPU",
+            "ANE"
+          ]
+        },
+        {
+          "op": "ios18.mul",
+          "name": null,
+          "preferred": "ANE",
+          "supported": [
+            "CPU",
+            "ANE"
+          ]
+        },
+        {
+          "op": "ios18.mul",
+          "name": null,
+          "preferred": "ANE",
+          "supported": [
+            "CPU",
+            "ANE"
+          ]
+        },
+        {
+          "op": "ios18.linear",
+          "name": null,
+          "preferred": "ANE",
+          "supported": [
+            "CPU",
+            "ANE"
+          ]
+        },
+        {
+          "op": "ios18.linear",
+          "name": null,
+          "preferred": "ANE",
+          "supported": [
+            "CPU",
+            "ANE"
+          ]
+        },
+        {
+          "op": "ios18.silu",
+          "name": null,
+          "preferred": "CPU",
+          "supported": [
+            "CPU"
+          ]
+        },
+        {
+          "op": "ios18.mul",
+          "name": null,
+          "preferred": "CPU",
+          "supported": [
+            "CPU",
+            "ANE"
+          ]
+        },
+        {
+          "op": "ios18.linear",
+          "name": null,
+          "preferred": "CPU",
+          "supported": [
+            "CPU"
+          ]
+        },
+        {
+          "op": "ios18.add",
+          "name": null,
+          "preferred": "CPU",
+          "supported": [
+            "CPU",
+            "ANE"
+          ]
+        }
+      ],
+      "ops_on_ane": 8,
+      "ops_total": 12,
+      "ms": {
+        "min": 4.6904159971745685,
+        "p50": 4.833915998460725
+      },
+      "projection_bytes": 534773760,
+      "equivalent_gbs_min": 114.01414295067627,
+      "rel_rms": 0.0012723630602892988
+    },
+    {
+      "tag": "B_eligible_16384",
+      "intermediate": 16384,
+      "note": "down_proj k eligible (control)",
+      "ops": [
+        {
+          "op": "ios18.mul",
+          "name": null,
+          "preferred": "ANE",
+          "supported": [
+            "CPU",
+            "ANE"
+          ]
+        },
+        {
+          "op": "ios16.reduce_mean",
+          "name": null,
+          "preferred": "ANE",
+          "supported": [
+            "CPU",
+            "ANE"
+          ]
+        },
+        {
+          "op": "ios18.add",
+          "name": null,
+          "preferred": "ANE",
+          "supported": [
+            "CPU",
+            "ANE"
+          ]
+        },
+        {
+          "op": "ios18.rsqrt",
+          "name": null,
+          "preferred": "ANE",
+          "supported": [
+            "CPU",
+            "ANE"
+          ]
+        },
+        {
+          "op": "ios18.mul",
+          "name": null,
+          "preferred": "ANE",
+          "supported": [
+            "CPU",
+            "ANE"
+          ]
+        },
+        {
+          "op": "ios18.mul",
+          "name": null,
+          "preferred": "ANE",
+          "supported": [
+            "CPU",
+            "ANE"
+          ]
+        },
+        {
+          "op": "ios18.linear",
+          "name": null,
+          "preferred": "ANE",
+          "supported": [
+            "CPU",
+            "ANE"
+          ]
+        },
+        {
+          "op": "ios18.linear",
+          "name": null,
+          "preferred": "ANE",
+          "supported": [
+            "CPU",
+            "ANE"
+          ]
+        },
+        {
+          "op": "ios18.silu",
+          "name": null,
+          "preferred": "ANE",
+          "supported": [
+            "CPU",
+            "ANE"
+          ]
+        },
+        {
+          "op": "ios18.mul",
+          "name": null,
+          "preferred": "ANE",
+          "supported": [
+            "CPU",
+            "ANE"
+          ]
+        },
+        {
+          "op": "ios18.linear",
+          "name": null,
+          "preferred": "ANE",
+          "supported": [
+            "CPU",
+            "ANE"
+          ]
+        },
+        {
+          "op": "ios18.add",
+          "name": null,
+          "preferred": "ANE",
+          "supported": [
+            "CPU",
+            "ANE"
+          ]
+        }
+      ],
+      "ops_on_ane": 12,
+      "ops_total": 12,
+      "ms": {
+        "min": 4.134583999984898,
+        "p50": 4.288916999939829
+      },
+      "projection_bytes": 503316480,
+      "equivalent_gbs_min": 121.73328199447356,
+      "rel_rms": 0.033023073533419864
+    }
+  ]
+}

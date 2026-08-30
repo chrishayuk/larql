@@ -249,6 +249,66 @@ fn explain_layer(
                 operand("out_proj", &op.out_proj),
             ],
         },
+        LayerAttention::Kda(op) => ExplainAttention {
+            mode: layer.attention.declared_name().into(),
+            window: None,
+            // One head count, unlike Gated DeltaNet's two — reported on
+            // both sides because KDA's key and value geometries coincide,
+            // rather than left absent as if unknown.
+            q_heads: Some(op.num_heads),
+            kv_heads: Some(op.num_heads),
+            head_dim: Some(op.head_dim),
+            state_elements: Some(op.state_elements()),
+            // The g gate is this operator's output gate.
+            gated: true,
+            qk_norm: false,
+            sinks: false,
+            biased: false,
+            operands: vec![
+                operand("q_proj", &op.q_proj),
+                operand("k_proj", &op.k_proj),
+                operand("v_proj", &op.v_proj),
+                operand("q_conv1d", &op.q_conv1d),
+                operand("k_conv1d", &op.k_conv1d),
+                operand("v_conv1d", &op.v_conv1d),
+                operand("f_a_proj", &op.f_a_proj),
+                operand("f_b_proj", &op.f_b_proj),
+                operand("g_a_proj", &op.g_a_proj),
+                operand("g_b_proj", &op.g_b_proj),
+                operand("b_proj", &op.b_proj),
+                operand("a_log", &op.a_log),
+                operand("dt_bias", &op.dt_bias),
+                operand("o_norm", &op.o_norm),
+                operand("out_proj", &op.out_proj),
+            ],
+        },
+        LayerAttention::Mla(op) => ExplainAttention {
+            mode: layer.attention.declared_name().into(),
+            window: None,
+            q_heads: Some(op.num_heads),
+            kv_heads: Some(op.num_heads),
+            // No single width honestly describes MLA: the query/key side
+            // is `q_head_dim()` (nope+rope), the output side is
+            // `v_head_dim` — reporting either alone as "head_dim" would
+            // tell a reader the wrong one is uniform. The operand list
+            // below carries both, with their real shapes.
+            head_dim: None,
+            // Retains a per-position cache, not a fixed recurrent state —
+            // the same `None` a softmax layer reports, for the same
+            // reason.
+            state_elements: None,
+            gated: false,
+            qk_norm: false,
+            sinks: false,
+            biased: false,
+            operands: vec![
+                operand("q_proj", &op.q_proj),
+                operand("kv_a_proj", &op.kv_a_proj),
+                operand("kv_a_norm", &op.kv_a_norm),
+                operand("kv_b_proj", &op.kv_b_proj),
+                operand("out_proj", &op.out_proj),
+            ],
+        },
     };
 
     let (kind, experts, ffn_operands) = match &layer.ffn {

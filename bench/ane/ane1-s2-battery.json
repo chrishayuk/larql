@@ -1,0 +1,68 @@
+{
+  "experiment": "ANE-1",
+  "session": "s2-battery",
+  "coremltools": "9.0",
+  "shape": {
+    "name": "ffn_gate_up",
+    "n": 17408,
+    "k": 5120,
+    "weight_bytes": 178257920
+  },
+  "iters": {
+    "warmup": 32,
+    "measured": 256
+  },
+  "compile_ms": 67.23437499022111,
+  "placement_cpu_and_ne": [
+    {
+      "op": "ios18.linear",
+      "preferred": "MLNeuralEngineComputeDevice",
+      "supported": [
+        "MLCPUComputeDevice",
+        "MLNeuralEngineComputeDevice"
+      ]
+    }
+  ],
+  "control_request_tracking": {
+    "requested": "CPU_ONLY",
+    "actual": "CPU",
+    "pass": true
+  },
+  "control_unsupported_op": {
+    "op": "ios16.cumsum",
+    "supported": [
+      "CPU"
+    ],
+    "pass": true
+  },
+  "numerical": {
+    "rel_rms_vs_f64_reference": 0.0005970124073528435,
+    "max_abs_err": 0.0001765889610396698,
+    "probe_row": 8704,
+    "ane_value": 0.0775146484375,
+    "ane0b_gpu_value": 0.077413,
+    "cross_instrument_rel": 0.0013130667652720383,
+    "pass": true
+  },
+  "latency_ms": {
+    "min": 1.5819580003153533,
+    "p50": 1.6946249961620197,
+    "p90": 1.7658750002738088,
+    "max": 2.032958989730105,
+    "mean": 1.6989683788324328,
+    "stdev": 0.061262989286985814
+  },
+  "predict_floor_ms": {
+    "min": 0.10641700646374375,
+    "p50": 0.13795800623483956,
+    "p90": 0.23183299344964325,
+    "max": 0.2809160068864003,
+    "mean": 0.1534947692221067,
+    "stdev": 0.04118299264747656
+  },
+  "equivalent_gbs": {
+    "min": 112.68182844580288,
+    "p50": 105.19018685769292
+  },
+  "verdict": "placed-on-ane"
+}

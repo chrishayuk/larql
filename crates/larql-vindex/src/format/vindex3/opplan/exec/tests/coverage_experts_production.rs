@@ -20,7 +20,7 @@
 
 mod fixture;
 
-use crate::format::vindex3::opplan::OperandRef;
+use crate::format::vindex3::opplan::{ExpertBank, OperandRef, PackedProjection};
 use larql_models::config::{
     Activation, ExpertFormat, MoeRouterKind, NormType, ParameterFreeQkNorm, PositionPolicy,
     QkNormScope,
@@ -100,10 +100,21 @@ fn operands_loaded_for_one_ffn_kind_refuse_the_other_at_apply() {
 fn an_mxfp4_projection_without_scales_refuses() {
     let fx = routed_fixture();
     let mut op = fx.op.clone();
-    op.gate_up.scales = None;
+    packed_mut(&mut op.bank).0.scales = None;
     let err = load_err(&op, &fx.store, WeightFormat::F32);
     assert!(err.contains("no scales operand"), "{err}");
     assert!(err.contains(GATE_UP_BLOCKS), "{err}");
+}
+
+/// `op.bank`'s two `PackedProjection`s, for tests that edit the fixture's
+/// packed bank directly rather than through a real container. Panics on
+/// `ExpertBank::PerExpert` — every fixture in this module builds a packed
+/// (GPT-OSS-shaped) bank.
+fn packed_mut(bank: &mut ExpertBank) -> (&mut PackedProjection, &mut PackedProjection) {
+    match bank {
+        ExpertBank::Packed { gate_up, down } => (gate_up, down),
+        ExpertBank::PerExpert { .. } => panic!("fixture builds a packed bank"),
+    }
 }
 
 /// An MXFP4 projection whose `k` is not a multiple of the 32-element
@@ -125,7 +136,8 @@ fn an_mxfp4_projection_with_an_unaligned_k_refuses() {
 fn a_scales_stream_of_the_wrong_length_refuses() {
     let fx = routed_fixture();
     let mut op = fx.op.clone();
-    op.gate_up.scales = op.down.scales.clone();
+    let (gate_up, down) = packed_mut(&mut op.bank);
+    gate_up.scales = down.scales.clone();
     let err = load_err(&op, &fx.store, WeightFormat::F32);
     assert!(err.contains("stored bytes, expected"), "{err}");
     assert!(
@@ -154,7 +166,8 @@ fn a_block_stream_disagreeing_with_the_declared_geometry_refuses() {
 fn a_stream_stored_in_the_wrong_dtype_refuses() {
     let fx = routed_fixture();
     let mut op = fx.op.clone();
-    op.gate_up.scales = op.gate_up.bias.clone();
+    let (gate_up, _) = packed_mut(&mut op.bank);
+    gate_up.scales = gate_up.bias.clone();
     let err = load_err(&op, &fx.store, WeightFormat::F32);
     assert!(err.contains("expected stored dtype U8, found F32"), "{err}");
 

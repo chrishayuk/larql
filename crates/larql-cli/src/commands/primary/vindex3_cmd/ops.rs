@@ -52,6 +52,26 @@ pub(super) fn run_ops(args: OpsArgs) -> Result<(), Box<dyn std::error::Error>> {
                             layer_plan.operands_accounted,
                             layer_plan.operands_present,
                         ),
+                        LayerAttention::Kda(op) => println!(
+                            "layer {:3}: KDA({} heads x {}) state {} elems  \
+                             {}/{} operands accounted",
+                            layer_plan.layer,
+                            op.num_heads,
+                            op.head_dim,
+                            op.state_elements(),
+                            layer_plan.operands_accounted,
+                            layer_plan.operands_present,
+                        ),
+                        LayerAttention::Mla(op) => println!(
+                            "layer {:3}: MLA({} heads, q {} / kv {} compressed) \
+                             {}/{} operands accounted",
+                            layer_plan.layer,
+                            op.num_heads,
+                            op.q_head_dim(),
+                            op.compressed_kv_width(),
+                            layer_plan.operands_accounted,
+                            layer_plan.operands_present,
+                        ),
                     }
                 }
             }
@@ -86,6 +106,22 @@ pub(super) fn run_ops(args: OpsArgs) -> Result<(), Box<dyn std::error::Error>> {
     }
 }
 
+/// The object one line of `bank=…` names: the fused bank's own object for
+/// `ExpertBank::Packed`, or the first of `experts` independent objects for
+/// `ExpertBank::PerExpert` — the summary line names ONE object either way,
+/// with the per-expert count so a reader does not mistake it for a fused
+/// bank of one.
+fn bank_object(bank: &larql_vindex::format::vindex3::opplan::ExpertBank) -> String {
+    use larql_vindex::format::vindex3::opplan::ExpertBank;
+    match bank {
+        ExpertBank::Packed { gate_up, .. } => gate_up.weights.object.clone(),
+        ExpertBank::PerExpert { gate, .. } => match gate.first() {
+            Some(first) => format!("{} (per-expert × {})", first.object, gate.len()),
+            None => "per-expert (0 experts)".to_string(),
+        },
+    }
+}
+
 fn print_layer(component: &str, layer: &LayerPlan) {
     println!("{component}.layer[{}]", layer.layer);
     let norm = |op: &NormOp, site: &str| {
@@ -95,6 +131,8 @@ fn print_layer(component: &str, layer: &LayerPlan) {
     match &layer.attention {
         LayerAttention::Softmax(op) => print_softmax(op),
         LayerAttention::GatedDelta(op) => print_gated_delta(op),
+        LayerAttention::Kda(op) => print_kda(op),
+        LayerAttention::Mla(op) => print_mla(op),
     }
     println!("  residual");
     if let Some(op) = &layer.post_attention_norm {
@@ -123,7 +161,7 @@ fn print_layer(component: &str, layer: &LayerPlan) {
             },
             ffn.router.object,
             ffn.router.tensor,
-            ffn.gate_up.weights.object,
+            bank_object(&ffn.bank),
         ),
         larql_vindex::format::vindex3::opplan::LayerFfn::Hybrid(ffn) => {
             println!(
@@ -150,7 +188,7 @@ fn print_layer(component: &str, layer: &LayerPlan) {
                 },
                 ffn.routed.router.object,
                 ffn.routed.router.tensor,
-                ffn.routed.gate_up.weights.object,
+                bank_object(&ffn.routed.bank),
             );
         }
     }
@@ -217,6 +255,76 @@ fn print_softmax(attention: &AttentionOp) {
 /// Deliberately does NOT reuse the softmax vocabulary: there is no span,
 /// no window and no KV head count to print, and the one number a reader
 /// most needs — the recurrent state's size — has no softmax counterpart.
+/// Kimi Delta Attention. Prints the geometry that separates it from Gated
+/// DeltaNet — one head count, a gate rank, and a per-channel `dt_bias` —
+/// rather than a shape a reader would have to compare by hand.
+fn print_kda(op: &larql_vindex::format::vindex3::opplan::KdaOp) {
+    println!("  KDA (Kimi Delta Attention)");
+    println!(
+        "    geometry: {} heads x {} (value width {}), conv kernel {}, gate rank {}",
+        op.num_heads,
+        op.head_dim,
+        op.value_width(),
+        op.conv_kernel,
+        op.gate_rank
+    );
+    println!(
+        "    decay clamp: {}",
+        op.gate_lower_bound
+            .map_or_else(|| "undeclared".to_string(), |b| format!("{b}"))
+    );
+    println!(
+        "    state: {} elements/layer — constant in sequence length",
+        op.state_elements()
+    );
+    for (name, operand) in [
+        ("q_proj", &op.q_proj),
+        ("k_proj", &op.k_proj),
+        ("v_proj", &op.v_proj),
+        ("q_conv1d", &op.q_conv1d),
+        ("k_conv1d", &op.k_conv1d),
+        ("v_conv1d", &op.v_conv1d),
+        ("f_a_proj", &op.f_a_proj),
+        ("f_b_proj", &op.f_b_proj),
+        ("g_a_proj", &op.g_a_proj),
+        ("g_b_proj", &op.g_b_proj),
+        ("b_proj", &op.b_proj),
+        ("a_log", &op.a_log),
+        ("dt_bias", &op.dt_bias),
+        ("o_norm", &op.o_norm),
+        ("out_proj", &op.out_proj),
+    ] {
+        println!("    {name}: {}/{}", operand.object, operand.tensor);
+    }
+}
+
+fn print_mla(op: &larql_vindex::format::vindex3::opplan::MlaOp) {
+    println!("  MLA (Multi-Latent Attention)");
+    println!(
+        "    geometry: {} heads, q/k {} (nope {} + rope {}), v {}, kv_lora_rank {}",
+        op.num_heads,
+        op.q_head_dim(),
+        op.qk_nope_head_dim,
+        op.qk_rope_head_dim,
+        op.v_head_dim,
+        op.kv_lora_rank
+    );
+    println!(
+        "    compressed KV cache: {} elements/position (vs {} decompressed)",
+        op.compressed_kv_width(),
+        op.num_heads * (op.qk_nope_head_dim + op.v_head_dim)
+    );
+    for (name, operand) in [
+        ("q_proj", &op.q_proj),
+        ("kv_a_proj", &op.kv_a_proj),
+        ("kv_a_norm", &op.kv_a_norm),
+        ("kv_b_proj", &op.kv_b_proj),
+        ("out_proj", &op.out_proj),
+    ] {
+        println!("    {name}: {}/{}", operand.object, operand.tensor);
+    }
+}
+
 fn print_gated_delta(op: &GatedDeltaOp) {
     println!("  GatedDeltaNet");
     println!(

@@ -1,0 +1,32 @@
+{
+  "experiment": "ANE-4 accuracy control",
+  "session": "s1-battery",
+  "rows": [
+    {
+      "tag": "ffn_16384",
+      "arms": {
+        "ANE": {
+          "requested": "ANE",
+          "linear_devices": [
+            "ANE"
+          ],
+          "rel_rms": 0.033023073533419864,
+          "min_ms": 4.1295840055681765,
+          "p50_ms": 4.184374993201345
+        },
+        "CPU": {
+          "requested": "CPU",
+          "linear_devices": [
+            "CPU"
+          ],
+          "rel_rms": 0.00029857678211619526,
+          "min_ms": 6.987957996898331,
+          "p50_ms": 7.105416996637359
+        }
+      },
+      "error_ratio_ane_over_cpu": 110.60161242064856,
+      "usable": true,
+      "intermediate": 16384
+    }
+  ]
+}

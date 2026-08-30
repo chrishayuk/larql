@@ -31,10 +31,11 @@ use larql_vindex::error::VindexError;
 use larql_vindex::format::vindex3::inspect::inspect_container;
 use larql_vindex::format::vindex3::opplan::exec::backend::PlanBackend;
 use larql_vindex::format::vindex3::opplan::exec::operands::{OperandStore, RepresentationSource};
+use larql_vindex::format::vindex3::opplan::exec::prepared::ExecutionSlice;
 use larql_vindex::format::vindex3::opplan::exec::production::ProductionBackend;
 use larql_vindex::format::vindex3::opplan::exec::reference::ReferenceBackend;
 use larql_vindex::format::vindex3::opplan::exec::{
-    execute_plan, execute_plan_streaming, ExecutionTrace, PlaneEvent, ResumePoint,
+    execute_plan_streaming, execute_slice, ExecutionTrace, PlaneEvent, ResumePoint,
 };
 use larql_vindex::format::vindex3::opplan::plan_component_ops;
 use larql_vindex::format::vindex3::opplan::ComponentOpPlan;
@@ -347,8 +348,17 @@ fn run_on<B: PlanBackend>(
             .collect::<Result<_, _>>()?;
         return super::bank::run_bank(backend, &engine, plan, store, &entries, &dump);
     }
+    // One flag, one meaning. A depth deeper than the model is refused by
+    // the slice itself rather than clamped: a run that silently served a
+    // different depth than it was asked for would poison a ladder.
+    let slice = match args.draft_depth {
+        Some(end) => ExecutionSlice::Draft { end },
+        None => ExecutionSlice::Full,
+    };
     if let Some(out) = &args.logit_dump {
-        return super::teacher_force::run_teacher_force(backend, &engine, tokens, plan, store, out);
+        return super::teacher_force::run_teacher_force(
+            backend, &engine, tokens, plan, store, out, slice,
+        );
     }
     match (&args.dump_layers, args.generate) {
         (Some(dir), _) => run_dump(dir, &engine, args, tokens, plan, store, backend),
@@ -356,7 +366,7 @@ fn run_on<B: PlanBackend>(
             super::generate::run_generate(backend, &engine, tokens, new_tokens, plan, store)
         }
         (None, None) => {
-            let trace = execute_plan(plan, store, tokens, backend)?;
+            let trace = execute_slice(plan, store, tokens, backend, slice)?;
             summarise(&engine, &trace);
             Ok(())
         }

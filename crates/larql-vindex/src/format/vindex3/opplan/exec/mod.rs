@@ -25,8 +25,18 @@ pub mod decode;
 pub mod device;
 mod experts;
 pub mod gated_delta;
+pub mod kda;
+#[cfg(all(feature = "gpu", target_os = "macos"))]
+pub mod kda_metal;
 pub mod kernels;
+pub mod kimi_kda_layer;
+pub mod kimi_mla_layer;
+pub mod kimi_moe_block;
+pub mod kimi_router;
+#[cfg(all(feature = "gpu", target_os = "macos"))]
+pub mod kimi_source;
 pub mod kv;
+pub mod mla;
 pub mod narrow;
 pub mod observe;
 pub mod operands;
@@ -34,7 +44,11 @@ pub mod prepared;
 pub mod production;
 pub mod quantise;
 pub mod reference;
+pub mod stack;
+#[cfg(all(feature = "gpu", target_os = "macos"))]
+pub mod stack_metal;
 pub mod timing;
+pub mod token;
 pub mod weights;
 
 #[cfg(test)]
@@ -83,6 +97,13 @@ pub struct ExecutionTrace {
     /// layer 0.
     pub embedded: Vec<Vec<f32>>,
     pub layers: Vec<LayerTrace>,
+    /// Plan indices of the layers that actually ran, in order.
+    ///
+    /// A reduced-depth run has to be able to prove it executed the
+    /// prefix it asked for rather than silently falling back to the
+    /// whole stack — and a full run has to be able to prove the reverse.
+    /// `layers` alone cannot say that: a count is not an identity.
+    pub executed_layers: Vec<usize>,
     /// Final-normed hidden state of the last position.
     pub final_hidden: Vec<f32>,
     /// Logits of the last position, when the plan carries an output op.
@@ -147,19 +168,39 @@ pub fn execute_plan<'s, B: PlanBackend + ?Sized>(
     tokens: &[u32],
     backend: &B,
 ) -> Result<ExecutionTrace, VindexError> {
+    execute_slice(plan, store, tokens, backend, ExecutionSlice::Full)
+}
+
+/// [`execute_plan`] over a chosen [`ExecutionSlice`].
+///
+/// `execute_plan` is this with [`ExecutionSlice::Full`], so the two can
+/// never disagree about what a whole model means.
+pub fn execute_slice<'s, B: PlanBackend + ?Sized>(
+    plan: &ComponentOpPlan,
+    store: impl Into<OperandSource<'s>>,
+    tokens: &[u32],
+    backend: &B,
+    slice: ExecutionSlice,
+) -> Result<ExecutionTrace, VindexError> {
     let store = store.into();
     let mut embedded = Vec::new();
     let mut layers = Vec::with_capacity(plan.layers.len());
-    let out = execute_plan_streaming(plan, store, tokens, backend, None, &mut |event| {
+    let mut executed_layers = Vec::with_capacity(plan.layers.len());
+    let ops = PreparedOperands::load(plan, store, backend, slice)?;
+    let out = execute_prepared_streaming(plan, &ops, tokens, backend, None, &mut |event| {
         match event {
             PlaneEvent::Embedded(rows) => embedded = rows.to_vec(),
-            PlaneEvent::Layer { trace, .. } => layers.push(trace),
+            PlaneEvent::Layer { index, trace } => {
+                layers.push(trace);
+                executed_layers.push(index);
+            }
         }
         Ok(())
     })?;
     Ok(ExecutionTrace {
         embedded,
         layers,
+        executed_layers,
         final_hidden: out.final_hidden,
         logits: out.logits,
     })
@@ -316,7 +357,16 @@ fn traverse<B: PlanBackend + ?Sized, K: KvState + ?Sized>(
     // QW-1 put this refusal up front for exactly that reason; the
     // question it asks has changed (from "can this run at all" to "can
     // this provider hold the state"), its position must not.
+    //
+    // Scoped to the layers this slice will actually execute. For `Full`
+    // that is every layer and the check is unchanged; a reduced-depth
+    // draft must not be refused — or charged state — for a recurrence in
+    // a layer it never runs.
+    let executed = ops.first_layer()..ops.first_layer() + ops.layers().len();
     for (offset, layer) in plan.layers.iter().enumerate() {
+        if !executed.contains(&offset) {
+            continue;
+        }
         if layer.attention.softmax().is_some() {
             continue;
         }

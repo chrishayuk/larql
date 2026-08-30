@@ -1,0 +1,391 @@
+//! Operand closure for `ExpertFormat::PerExpert` MoE (P3d-e): Kimi
+//! Linear's spellings — indexed per-expert `w1`/`w2`/`w3`, a bias-
+//! corrected router, and a shared expert — carved into the expert-bank
+//! object and bound with zero defects.
+//!
+//! Attention is deliberately plain softmax (`linear_attn_config` declares
+//! every layer full-attention, no KDA): this rung is MoE operand closure,
+//! and pulling KDA/MLA geometry into the fixture would test a different
+//! rung's machinery under this one's name. See `opplan/exec/tests/kda*`
+//! for KDA and `plan/tests/mla_nope.rs` for MLA.
+
+use crate::format::vindex3::encode::encode_system;
+use crate::format::vindex3::graph::{ObjectKind, OperandRole};
+use crate::format::vindex3::inspect::inspect_container;
+use crate::format::vindex3::opplan::{
+    plan_component_ops, ClosureDefect, ExpertBank, LayerFfn, OpPlanOutcome,
+};
+use crate::format::vindex3::plan::tests_support::custom_artifact;
+
+const HIDDEN: usize = 32;
+const Q_HEADS: usize = 4;
+const KV_HEADS: usize = 2;
+const HEAD_DIM: usize = 8;
+const EXPERTS: usize = 3;
+const TOP_K: usize = 2;
+const MOE_INTER: usize = 16;
+const SHARED_EXPERTS: usize = 1;
+const LAYERS: usize = 2;
+const VOCAB: usize = 64;
+
+fn kimi_config() -> serde_json::Value {
+    serde_json::json!({
+        "architectures": ["KimiLinearForCausalLM"],
+        "model_type": "kimi_linear",
+        "hidden_size": HIDDEN,
+        "intermediate_size": HIDDEN * 4,
+        "num_hidden_layers": LAYERS,
+        "num_attention_heads": Q_HEADS,
+        "num_key_value_heads": KV_HEADS,
+        "head_dim": HEAD_DIM,
+        "vocab_size": VOCAB,
+        "rope_theta": 10000.0,
+        "rms_norm_eps": 1e-5,
+        // Every layer is plain full attention — see module docs.
+        "linear_attn_config": {
+            "kda_layers": [],
+            "full_attn_layers": (1..=LAYERS).collect::<Vec<_>>()
+        },
+        // Routed on every layer: no dense prefix to keep the fixture
+        // small (closure routes by operand evidence, not this count).
+        "first_k_dense_replace": 0,
+        "num_experts": EXPERTS,
+        "num_experts_per_token": TOP_K,
+        "num_shared_experts": SHARED_EXPERTS,
+        "moe_intermediate_size": MOE_INTER,
+        "moe_router_activation_func": "sigmoid",
+        "moe_renormalize": true,
+        "routed_scaling_factor": 2.446,
+    })
+}
+
+/// One routed layer's tensors at the checkpoint's own naming — everything
+/// [`KimiLinearArch`](larql_models::architectures::kimi::KimiLinearArch)'s
+/// key methods would resolve, plus plain attention/norm operands.
+fn kimi_layer_tensors(layer: usize) -> Vec<(String, Vec<usize>)> {
+    let prefix = format!("model.layers.{layer}.");
+    let mut tensors = vec![
+        (
+            format!("{prefix}self_attn.q_proj.weight"),
+            vec![Q_HEADS * HEAD_DIM, HIDDEN],
+        ),
+        (
+            format!("{prefix}self_attn.k_proj.weight"),
+            vec![KV_HEADS * HEAD_DIM, HIDDEN],
+        ),
+        (
+            format!("{prefix}self_attn.v_proj.weight"),
+            vec![KV_HEADS * HEAD_DIM, HIDDEN],
+        ),
+        (
+            format!("{prefix}self_attn.o_proj.weight"),
+            vec![HIDDEN, Q_HEADS * HEAD_DIM],
+        ),
+        (format!("{prefix}input_layernorm.weight"), vec![HIDDEN]),
+        (
+            format!("{prefix}post_attention_layernorm.weight"),
+            vec![HIDDEN],
+        ),
+        (
+            format!("{prefix}block_sparse_moe.gate.weight"),
+            vec![EXPERTS, HIDDEN],
+        ),
+        (
+            format!("{prefix}block_sparse_moe.gate.e_score_correction_bias"),
+            vec![EXPERTS],
+        ),
+        (
+            format!("{prefix}block_sparse_moe.shared_experts.gate_proj.weight"),
+            vec![MOE_INTER * SHARED_EXPERTS, HIDDEN],
+        ),
+        (
+            format!("{prefix}block_sparse_moe.shared_experts.up_proj.weight"),
+            vec![MOE_INTER * SHARED_EXPERTS, HIDDEN],
+        ),
+        (
+            format!("{prefix}block_sparse_moe.shared_experts.down_proj.weight"),
+            vec![HIDDEN, MOE_INTER * SHARED_EXPERTS],
+        ),
+    ];
+    for expert in 0..EXPERTS {
+        tensors.push((
+            format!("{prefix}block_sparse_moe.experts.{expert}.w1.weight"),
+            vec![MOE_INTER, HIDDEN],
+        ));
+        tensors.push((
+            format!("{prefix}block_sparse_moe.experts.{expert}.w3.weight"),
+            vec![MOE_INTER, HIDDEN],
+        ));
+        tensors.push((
+            format!("{prefix}block_sparse_moe.experts.{expert}.w2.weight"),
+            vec![HIDDEN, MOE_INTER],
+        ));
+    }
+    tensors
+}
+
+fn kimi_tensors() -> Vec<(String, Vec<usize>)> {
+    let mut tensors = vec![
+        ("model.embed_tokens.weight".to_string(), vec![VOCAB, HIDDEN]),
+        ("model.norm.weight".to_string(), vec![HIDDEN]),
+        ("lm_head.weight".to_string(), vec![VOCAB, HIDDEN]),
+    ];
+    for layer in 0..LAYERS {
+        tensors.extend(kimi_layer_tensors(layer));
+    }
+    tensors
+}
+
+/// Encode a Kimi-shaped variant and plan its target component.
+fn plan_variant(mutate: impl FnOnce(&mut Vec<(String, Vec<usize>)>)) -> OpPlanOutcome {
+    let dir = tempfile::tempdir().unwrap();
+    let mut tensors = kimi_tensors();
+    mutate(&mut tensors);
+    let borrowed: Vec<(&str, &[usize])> = tensors
+        .iter()
+        .map(|(name, shape)| (name.as_str(), shape.as_slice()))
+        .collect();
+    let inventory = custom_artifact(dir.path(), &kimi_config(), &borrowed);
+    let named = vec![("kimi-artifact".to_string(), inventory)];
+    let out = tempfile::tempdir().unwrap();
+    encode_system(&named, out.path()).unwrap();
+    let inspection = inspect_container(out.path(), false).unwrap();
+    plan_component_ops(&inspection, out.path(), "target").unwrap()
+}
+
+/// The whole point of this rung: a `PerExpert` MoE bank — router,
+/// bias-corrected selection, shared expert, and every one of `EXPERTS`
+/// experts' `w1`/`w2`/`w3` on every layer — closes with zero defects.
+#[test]
+fn a_per_expert_kimi_shaped_estate_closes() {
+    let outcome = plan_variant(|_| {});
+    assert!(outcome.closed(), "{:?}", outcome.defects);
+    let plan = outcome.plan.unwrap();
+    for layer in &plan.layers {
+        let LayerFfn::Routed(op) = &layer.ffn else {
+            panic!("layer {}: planned non-routed", layer.layer);
+        };
+        assert_eq!(op.experts, EXPERTS);
+        assert_eq!(op.top_k, TOP_K);
+        let ExpertBank::PerExpert { gate, up, down } = &op.bank else {
+            panic!("layer {}: planned a packed bank", layer.layer);
+        };
+        assert_eq!(gate.len(), EXPERTS);
+        assert_eq!(up.len(), EXPERTS);
+        assert_eq!(down.len(), EXPERTS);
+        for operand in gate.iter().chain(up).chain(down) {
+            assert_eq!(operand.object, "target.expert_bank");
+        }
+        let shared = op.shared.as_ref().expect("kimi declares a shared expert");
+        assert_eq!(shared.intermediate_size, MOE_INTER * SHARED_EXPERTS);
+        assert_eq!(shared.gate.object, "target.decoder_stack");
+    }
+}
+
+/// Every expert's bank operand physically carves into the component's
+/// `ExpertBank` object — not left sitting in the decoder stack, which was
+/// the P3d-d defect: `expert_bank_prefix` answered `None` for every
+/// `PerExpert` layer, so no tensor ever moved.
+#[test]
+fn the_per_expert_bank_carves_out_of_the_decoder_stack() {
+    let outcome = plan_variant(|_| {});
+    assert!(outcome.closed(), "{:?}", outcome.defects);
+    let plan = outcome.plan.unwrap();
+    let LayerFfn::Routed(op) = &plan.layers[0].ffn else {
+        panic!("planned non-routed");
+    };
+    let ExpertBank::PerExpert { gate, .. } = &op.bank else {
+        panic!("planned a packed bank");
+    };
+    assert_eq!(gate[0].object, "target.expert_bank");
+    assert_ne!(gate[0].object, "target.decoder_stack");
+}
+
+/// Removing one expert's `w1` — the 256-tensor set closure the carving
+/// rung exists to prove — is a `MissingOperand` for that exact expert
+/// index, not a silent gap.
+#[test]
+fn a_missing_expert_tensor_names_its_exact_index() {
+    const MISSING_EXPERT: u16 = 1;
+    let outcome = plan_variant(|tensors| {
+        tensors.retain(|(name, _)| {
+            name != &format!("model.layers.0.block_sparse_moe.experts.{MISSING_EXPERT}.w1.weight")
+        });
+    });
+    assert!(
+        outcome.defects.iter().any(|d| matches!(
+            d,
+            ClosureDefect::MissingOperand { layer: 0, role: OperandRole::PerExpertGate(e) }
+                if *e == MISSING_EXPERT
+        )),
+        "{:?}",
+        outcome.defects
+    );
+}
+
+/// A stray tensor for an expert index beyond the declared count is a
+/// defect naming the routed-FFN judgment as the reason, not a silent
+/// extra expert — on all three per-expert roles: the guard binds the
+/// expert id once across `w1`/`w3`/`w2`'s three OR-pattern alternatives,
+/// and only exercising `w1` would leave the other two unproven.
+#[test]
+fn an_expert_index_beyond_the_declared_count_is_a_stray() {
+    for (leaf, shape) in [
+        ("w1", vec![MOE_INTER, HIDDEN]),
+        ("w3", vec![MOE_INTER, HIDDEN]),
+        ("w2", vec![HIDDEN, MOE_INTER]),
+    ] {
+        let outcome = plan_variant(|tensors| {
+            tensors.push((
+                format!("model.layers.0.block_sparse_moe.experts.{EXPERTS}.{leaf}.weight"),
+                shape,
+            ));
+        });
+        assert!(
+            outcome.defects.iter().any(|d| matches!(
+                d,
+                ClosureDefect::OperandImpliesAbsentOp { tensor, required_primitive, .. }
+                    if tensor.contains(&format!("experts.{EXPERTS}.{leaf}"))
+                        && required_primitive.contains("does not declare")
+            )),
+            "{leaf}: {:?}",
+            outcome.defects
+        );
+    }
+}
+
+/// A shared-expert tensor on a layer whose judgment declares no shared
+/// expert (`shared_experts: 0`) is a stray, naming the routed-FFN
+/// judgment — the same "declares none" guard the expert-index check
+/// above uses, on the always-active branch instead of the routed one.
+#[test]
+fn a_shared_expert_operand_with_none_declared_is_a_stray() {
+    let dir = tempfile::tempdir().unwrap();
+    let mut config = kimi_config();
+    config["num_shared_experts"] = serde_json::json!(0);
+    let mut tensors = kimi_tensors();
+    tensors.push((
+        "model.layers.0.block_sparse_moe.shared_experts.gate_proj.weight".to_string(),
+        vec![MOE_INTER, HIDDEN],
+    ));
+    let borrowed: Vec<(&str, &[usize])> = tensors
+        .iter()
+        .map(|(name, shape)| (name.as_str(), shape.as_slice()))
+        .collect();
+    let inventory = custom_artifact(dir.path(), &config, &borrowed);
+    let named = vec![("kimi-artifact".to_string(), inventory)];
+    let out = tempfile::tempdir().unwrap();
+    encode_system(&named, out.path()).unwrap();
+    let inspection = inspect_container(out.path(), false).unwrap();
+    let outcome = plan_component_ops(&inspection, out.path(), "target").unwrap();
+    assert!(
+        outcome.defects.iter().any(|d| matches!(
+            d,
+            ClosureDefect::OperandImpliesAbsentOp { tensor, required_primitive, .. }
+                if tensor.contains("shared_experts.gate_proj")
+                    && required_primitive.contains("declares none")
+        )),
+        "{:?}",
+        outcome.defects
+    );
+}
+
+/// Dropping the shared expert's down projection is `MissingOperand` for
+/// `SharedExpertDown` — the always-active branch closes exactly like the
+/// routed one, operand for operand.
+#[test]
+fn a_missing_shared_expert_operand_is_named() {
+    let outcome = plan_variant(|tensors| {
+        tensors.retain(|(name, _)| {
+            name != "model.layers.0.block_sparse_moe.shared_experts.down_proj.weight"
+        });
+    });
+    assert!(
+        outcome.defects.iter().any(|d| matches!(
+            d,
+            ClosureDefect::MissingOperand {
+                layer: 0,
+                role: OperandRole::SharedExpertDown
+            }
+        )),
+        "{:?}",
+        outcome.defects
+    );
+}
+
+/// The router's bias-correction tensor is a first-class role, distinct
+/// from the router weight — dropping only the bias reports only the
+/// bias missing.
+#[test]
+fn the_router_bias_and_weight_are_independently_required() {
+    let outcome = plan_variant(|tensors| {
+        tensors.retain(|(name, _)| {
+            name != "model.layers.0.block_sparse_moe.gate.e_score_correction_bias"
+        });
+    });
+    assert!(
+        outcome.defects.iter().any(|d| matches!(
+            d,
+            ClosureDefect::MissingOperand {
+                layer: 0,
+                role: OperandRole::MoeRouterBias
+            }
+        )),
+        "{:?}",
+        outcome.defects
+    );
+    assert!(
+        !outcome.defects.iter().any(|d| matches!(
+            d,
+            ClosureDefect::MissingOperand {
+                layer: 0,
+                role: OperandRole::MoeRouterWeight
+            }
+        )),
+        "{:?}",
+        outcome.defects
+    );
+}
+
+/// Every carved expert-bank tensor lands in `ObjectKind::ExpertBank`, and
+/// every dense/router/shared operand stays in the decoder stack — the
+/// placement half of closure, checked directly against the encoded
+/// container's own objects rather than through the plan.
+#[test]
+fn carving_places_every_expert_tensor_in_the_bank_object_and_nothing_else() {
+    let dir = tempfile::tempdir().unwrap();
+    let inventory = custom_artifact(
+        dir.path(),
+        &kimi_config(),
+        &kimi_tensors()
+            .iter()
+            .map(|(n, s)| (n.as_str(), s.as_slice()))
+            .collect::<Vec<_>>(),
+    );
+    let named = vec![("kimi-artifact".to_string(), inventory)];
+    let out = tempfile::tempdir().unwrap();
+    encode_system(&named, out.path()).unwrap();
+    let inspection = inspect_container(out.path(), false).unwrap();
+    let bank = inspection
+        .graph
+        .objects
+        .iter()
+        .find(|o| o.kind == ObjectKind::ExpertBank)
+        .expect("a PerExpert layer must carve a bank object");
+    let bank_tensors: usize = bank.source_bindings.iter().map(|b| b.tensors).sum();
+    // 3 tensors/expert * EXPERTS experts * LAYERS routed layers.
+    assert_eq!(bank_tensors, 3 * EXPERTS * LAYERS);
+    let stack = inspection
+        .graph
+        .objects
+        .iter()
+        .find(|o| o.kind == ObjectKind::DecoderStack)
+        .expect("the stack object still exists");
+    for binding in &stack.source_bindings {
+        assert!(
+            !binding.tensor_prefix.contains(".experts."),
+            "an expert tensor was left in the stack: {}",
+            binding.tensor_prefix
+        );
+    }
+}

@@ -26,7 +26,8 @@ use crate::executor::{Backend, Session};
 /// binding is understating what it serves. EXTRACT does execute (the
 /// dispatch does not gate on the backend) and now says so.
 pub(crate) const SUPPORTED: &str = "SELECT, DESCRIBE, WALK, EXPLAIN WALK, \
-     SHOW RELATIONS/LAYERS/FEATURES/ENTITIES/PATCHES/MODELS, INFER [TOP n] [GENERATE n], \
+     SHOW RELATIONS/LAYERS/FEATURES/ENTITIES/PATCHES/MODELS, \
+     SHOW COMPONENTS/REPRESENTATIONS/PROVENANCE/AUTHORITY, INFER [TOP n] [GENERATE n], \
      EXPLAIN INFER, TRACE, STATS, USE, EXTRACT [FORMAT VINDEX2|VINDEX3], \
      INSERT [MODE KNN|COMPOSE], DELETE, UPDATE, MERGE, \
      BEGIN/SAVE/APPLY/REMOVE PATCH, COMPILE [CURRENT] INTO VINDEX, DIFF [PHYSICAL], COMPACT INTO VINDEX";
@@ -509,6 +510,214 @@ impl Session {
             .ok_or_else(|| LqlError::Execution("no next token from the logits".into()))?;
         let text = tokenizer.decode(&[next], false).unwrap_or_default();
         out.push(format!("next token {next} {text:?} (greedy)"));
+        Ok(out)
+    }
+}
+
+impl Session {
+    /// The bound container root for the directory statements (`SHOW
+    /// COMPONENTS/REPRESENTATIONS/PROVENANCE/AUTHORITY`), or the
+    /// refusal. These statements read the container's own declarations
+    /// — system graph, representation directory, authority record —
+    /// which only a VINDEX3 container carries.
+    fn v3_container_root(&self, what: &str) -> Result<&std::path::Path, LqlError> {
+        match &self.backend {
+            Backend::Vindex3 { path, .. } => Ok(path),
+            Backend::None => Err(LqlError::NoBackend),
+            _ => Err(LqlError::Execution(format!(
+                "{what} reads a container's own declarations (system graph, \
+                 representation directory, authority record) — VINDEX3 concepts. \
+                 This binding is not a VINDEX3 container."
+            ))),
+        }
+    }
+
+    /// The container's index, read fresh from disk. The directory
+    /// statements answer from the container's declarations, not from
+    /// any runtime state — the same source `larql show` reads.
+    fn v3_index(
+        &self,
+        what: &str,
+    ) -> Result<larql_vindex::format::vindex3::index::Vindex3Index, LqlError> {
+        let root = self.v3_container_root(what)?;
+        let text = std::fs::read_to_string(root.join(larql_vindex::format::filenames::INDEX_JSON))
+            .map_err(|e| LqlError::exec("read container index", e))?;
+        serde_json::from_str(&text).map_err(|e| LqlError::exec("parse container index", e))
+    }
+
+    /// `SHOW COMPONENTS`: the system graph's components, reconstructed
+    /// purely from the container — id, role, and geometry as declared.
+    pub(crate) fn exec_show_components(&self) -> Result<Vec<String>, LqlError> {
+        let root = self.v3_container_root("SHOW COMPONENTS")?;
+        let inspection = larql_vindex::format::vindex3::inspect::inspect_container(root, false)
+            .map_err(|e| LqlError::exec("inspect container", e))?;
+
+        let mut out = Vec::new();
+        out.push(format!(
+            "{:<20} {:<16} {:>8} {:>8}  {}",
+            "Component", "Role", "Layers", "Hidden", "Attention"
+        ));
+        out.push("-".repeat(70));
+        for c in &inspection.components {
+            let mut attention = Vec::new();
+            if let Some(n) = c.full_layers.filter(|n| *n > 0) {
+                attention.push(format!("{n} full"));
+            }
+            if let Some(n) = c.sliding_layers.filter(|n| *n > 0) {
+                match c.window {
+                    Some(w) => attention.push(format!("{n} sliding (window {w})")),
+                    None => attention.push(format!("{n} sliding")),
+                }
+            }
+            if let Some(n) = c.recurrent_layers.filter(|n| *n > 0) {
+                attention.push(format!("{n} recurrent"));
+            }
+            let attention = if attention.is_empty() {
+                "-".to_string()
+            } else {
+                attention.join(" / ")
+            };
+            out.push(format!(
+                "{:<20} {:<16} {:>8} {:>8}  {}",
+                c.id, c.role, c.num_layers, c.hidden_size, attention
+            ));
+        }
+        out.push(format!(
+            "{} object(s), {} hidden-state edge(s) — every fact above is graph data, \
+             not a name convention",
+            inspection.graph.objects.len(),
+            inspection.graph.edges.len(),
+        ));
+        if !inspection.is_coherent() {
+            out.push(format!(
+                "warning: {} coherence defect(s) — run `larql vindex3 inspect` for the report",
+                inspection.defects.len(),
+            ));
+        }
+        Ok(out)
+    }
+
+    /// `SHOW REPRESENTATIONS ["object"]`: the physically present
+    /// representation directory, optionally filtered by object id
+    /// substring. Presence is physical: a variant listed here exists as
+    /// bytes; selecting one not listed fails closed before a byte is
+    /// read (§9.1).
+    pub(crate) fn exec_show_representations(
+        &self,
+        object: Option<&str>,
+    ) -> Result<Vec<String>, LqlError> {
+        let index = self.v3_index("SHOW REPRESENTATIONS")?;
+        let mut out = Vec::new();
+        out.push(format!(
+            "{:<32} {:<24} {:<14} {:>8} {:>12}",
+            "Representation", "Object", "Encoding", "Tensors", "Bytes"
+        ));
+        out.push("-".repeat(94));
+        let mut shown = 0usize;
+        for (id, entry) in &index.representations {
+            if let Some(filter) = object {
+                if !entry.object.contains(filter) && !id.contains(filter) {
+                    continue;
+                }
+            }
+            let compiled = if entry.compiled_from.is_some() {
+                " (compiled)"
+            } else {
+                ""
+            };
+            out.push(format!(
+                "{:<32} {:<24} {:<14} {:>8} {:>12}{}",
+                id, entry.object, entry.encoding, entry.tensor_count, entry.payload_bytes, compiled,
+            ));
+            shown += 1;
+        }
+        if shown == 0 {
+            out.push(match object {
+                Some(filter) => format!("  (no representations match \"{filter}\")"),
+                None => "  (the directory is empty)".into(),
+            });
+        }
+        Ok(out)
+    }
+
+    /// `SHOW PROVENANCE ["object"]`: hashes and lineage per directory
+    /// entry. The digests are printed whole — provenance abbreviated is
+    /// provenance lost.
+    pub(crate) fn exec_show_provenance(
+        &self,
+        object: Option<&str>,
+    ) -> Result<Vec<String>, LqlError> {
+        let index = self.v3_index("SHOW PROVENANCE")?;
+        let mut out = Vec::new();
+        if let Some(model) = index.derived_from_model.as_deref() {
+            out.push(format!("Container derives from: {model}"));
+            out.push(String::new());
+        }
+        let mut shown = 0usize;
+        for (id, entry) in &index.representations {
+            if let Some(filter) = object {
+                if !entry.object.contains(filter) && !id.contains(filter) {
+                    continue;
+                }
+            }
+            out.push(id.clone());
+            out.push(format!("  object:          {}", entry.object));
+            out.push(format!("  segment:         {}", entry.segment));
+            out.push(format!("  payload_sha256:  {}", entry.payload_sha256));
+            out.push(format!("  segment_sha256:  {}", entry.segment_sha256));
+            match entry.compiled_from.as_deref() {
+                Some(source) => out.push(format!("  compiled_from:   {source}")),
+                None => out.push(
+                    "  compiled_from:   (source checkpoint — no earlier container-side authority)"
+                        .into(),
+                ),
+            }
+            if let Some(digest) = entry.source_representation_digest.as_deref() {
+                out.push(format!("  source_digest:   {digest}"));
+            }
+            shown += 1;
+        }
+        if shown == 0 {
+            out.push(match object {
+                Some(filter) => format!("  (no entries match \"{filter}\")"),
+                None => "  (the directory is empty)".into(),
+            });
+        }
+        Ok(out)
+    }
+
+    /// `SHOW AUTHORITY`: the container's own authority declaration —
+    /// canonical (bit-authority present, derived representations
+    /// recompilable) or derived (executable; not re-compilable) — and
+    /// the profiles it declares by name.
+    pub(crate) fn exec_show_authority(&self) -> Result<Vec<String>, LqlError> {
+        use larql_vindex::format::vindex3::index::ContainerAuthority;
+        let index = self.v3_index("SHOW AUTHORITY")?;
+        let mut out = Vec::new();
+        match index.authority {
+            ContainerAuthority::Canonical => {
+                out.push("Authority:   canonical".into());
+                out.push(
+                    "             source bytes present; derived representations can be recompiled"
+                        .into(),
+                );
+            }
+            ContainerAuthority::Derived => {
+                out.push("Authority:   derived  (executable; not re-compilable)".into());
+                if let Some(model) = index.derived_from_model.as_deref() {
+                    out.push(format!("Source:      {model}"));
+                }
+            }
+        }
+        let profiles: Vec<&str> = index.profiles.iter().map(|p| p.name.as_str()).collect();
+        if !profiles.is_empty() {
+            out.push(format!("Profiles:    {}", profiles.join(", ")));
+            out.push(
+                "             a profile selects among physically present variants; \
+                 selecting an absent one fails closed"
+                    .into(),
+            );
+        }
         Ok(out)
     }
 }

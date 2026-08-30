@@ -20,6 +20,7 @@ use super::edge::HiddenStateEdge;
 use super::object::{Fidelity, LogicalObject, ObjectKind, Representation, SourceBinding};
 use super::policy::{
     resolve_layer_kind, AttentionLayerPolicy, AttentionSpan, HeadGeometry, LayerOperator,
+    RecurrenceKind,
 };
 use super::surface::{
     attach_stack_evidence, gate_evidence, head_from_resolved, surface_from_nested,
@@ -80,7 +81,14 @@ pub struct BuiltGraph {
 const GROUP_PATTERNS: &[(GroupClass, &[&str])] = &[
     (
         GroupClass::PerceptionTower,
-        &["vision_tower", "vision_model", "visual", "audio_tower"],
+        &[
+            "vision_tower",
+            "vision_model",
+            "visual",
+            "audio_tower",
+            // Inkling-Small names its audio encoder `model.audio.encoder`.
+            "audio.encoder",
+        ],
     ),
     (
         GroupClass::PerceptionAdapter,
@@ -117,9 +125,24 @@ const GROUP_PATTERNS: &[(GroupClass, &[&str])] = &[
     ),
     (
         GroupClass::Embedding,
-        &["embed_tokens", "wte", "wpe", "token_embd", "embedding"],
+        &[
+            "embed_tokens",
+            "wte",
+            "wpe",
+            "token_embd",
+            "embedding",
+            // Inkling-Small: `model.llm.embed` / `model.llm.unembed`.
+            // Qualified with the namespace rather than matching a bare
+            // "embed", which would also swallow `unembed` — Embedding is
+            // scanned before Head, so the head would file as an embedding
+            // table and the two 1.53 GiB objects would merge.
+            "llm.embed",
+        ],
     ),
-    (GroupClass::Head, &["lm_head", "output.weight"]),
+    (
+        GroupClass::Head,
+        &["lm_head", "output.weight", "llm.unembed"],
+    ),
     (GroupClass::Norm, &["norm", "ln_", "layernorm"]),
     (GroupClass::Stack, &["layers", "blocks"]),
 ];
@@ -540,7 +563,84 @@ fn unique_id(base: &str, components: &[Component]) -> String {
     }
 }
 
+/// Which recurrence this checkpoint's declared geometry identifies.
+///
+/// KDA is checked first because the two declarations are disjoint in
+/// practice and `linear_attn_config` is the more specific evidence: a
+/// checkpoint declaring it has named the KDA block's own geometry, while
+/// the `linear_*` keys describe Gated DeltaNet. `None` when neither
+/// resolved — a declared recurrence this build cannot name.
+fn recurrence_kind(inventory: &ArchitectureInventory) -> Option<RecurrenceKind> {
+    if inventory.resolved.kda.is_some() {
+        return Some(RecurrenceKind::Kda);
+    }
+    inventory
+        .resolved
+        .linear_attention
+        .is_some()
+        .then_some(RecurrenceKind::GatedDelta)
+}
+
+/// Operator and span for one canonical declared kind.
+///
+/// A recurrence gets no span — nothing it retains is indexed by position,
+/// so there is no prefix to bound.
+///
+/// **Which** recurrence comes from `recurrence`, resolved from the
+/// checkpoint's declared *geometry*, and never from the declaration's own
+/// family. That family is inferred from a key name — Kimi Linear's set is
+/// called `kda_layers` — and a key name is not evidence of an operator.
+/// Trusting it here would reintroduce exactly the defect the
+/// unidentified-recurrence variant exists to prevent, one layer up from
+/// where it was fixed.
+///
+/// `mla` is the same shape of decision one level up: `LayerKind::Full`
+/// means "not a recurrence", not "ordinary softmax" — a family that
+/// declares Multi-Latent Attention runs it on EVERY non-recurrent layer
+/// (MLA compresses the KV cache, orthogonal to which layers are dense vs.
+/// routed FFN), so `ModelArchitecture::uses_mla` decides it exactly once
+/// per model rather than needing a per-layer flag `layer_types` never
+/// carries.
+fn operator_and_span(
+    kind: &larql_models::config::LayerKind,
+    recurrence: Option<RecurrenceKind>,
+    mla: bool,
+) -> (LayerOperator, Option<AttentionSpan>) {
+    use larql_models::config::LayerKind;
+    match kind {
+        LayerKind::Full if mla => (LayerOperator::Mla, Some(AttentionSpan::Full)),
+        LayerKind::Full => (LayerOperator::Softmax, Some(AttentionSpan::Full)),
+        LayerKind::Sliding { .. } => (LayerOperator::Softmax, Some(AttentionSpan::Sliding)),
+        LayerKind::Recurrent(_) => (
+            match recurrence {
+                Some(RecurrenceKind::Kda) => LayerOperator::Kda,
+                Some(RecurrenceKind::GatedDelta) => LayerOperator::GatedDelta,
+                None => LayerOperator::Recurrent,
+            },
+            None,
+        ),
+        // Handled by the caller, which keeps the layer-blind path so the
+        // layer lands in the unexpressed bucket rather than acquiring an
+        // operator this build invented for it.
+        LayerKind::Unexpressed { .. } => (LayerOperator::Softmax, Some(AttentionSpan::Full)),
+    }
+}
+
+/// Whether this inventory's resolved execution declares Multi-Latent
+/// Attention — `false` for every family before MLA closure existed and
+/// for any family that never overrides `ModelArchitecture::uses_mla`, so
+/// a container written before this field existed still resolves every
+/// `Full` layer to plain softmax exactly as it always did.
+fn uses_mla(inventory: &ArchitectureInventory) -> bool {
+    inventory
+        .resolved
+        .execution
+        .as_ref()
+        .is_some_and(|e| e.mla.is_some())
+}
+
 fn attention_table(inventory: &ArchitectureInventory) -> Vec<AttentionLayerPolicy> {
+    let mla = uses_mla(inventory);
     inventory
         .resolved
         .layers
@@ -549,14 +649,47 @@ fn attention_table(inventory: &ArchitectureInventory) -> Vec<AttentionLayerPolic
             // Operator and span decided together, in the one place that
             // rule lives — a recurrence gets no span rather than a
             // defaulted `Full`.
-            let (operator, span) = resolve_layer_kind(
-                layer.declared_span.as_deref(),
-                layer.attention == RESOLVED_ATTENTION_SLIDING,
-            );
+            // The checkpoint's own canonical declaration is authoritative
+            // when it made one. The resolved boolean is a *derivation* —
+            // it answers sliding-or-full from whichever key the parser
+            // happened to read — and on a family whose interleave it
+            // cannot read it answers "full" for every layer. That is how
+            // Inkling-Small's 35 sliding layers (window 512, against a
+            // 1,048,576-token context) were reported as retaining an
+            // unbounded prefix.
+            //
+            // `plan::compare` keeps grading the declared array against the
+            // boolean, so the comparison it makes stays a real one: the
+            // authority moves here, not there.
+            let (operator, span) = match layer.declared_kind.as_ref() {
+                // A spelling with no kind keeps the layer-blind path: the
+                // graph records a softmax layer whose declaration it
+                // cannot round-trip to, which is exactly `unexpressed`.
+                Some(larql_models::config::LayerKind::Unexpressed { .. }) | None => {
+                    resolve_layer_kind(
+                        layer.declared_span.as_deref(),
+                        layer.attention == RESOLVED_ATTENTION_SLIDING,
+                        recurrence_kind(inventory),
+                        mla,
+                    )
+                }
+                Some(kind) => operator_and_span(kind, recurrence_kind(inventory), mla),
+            };
+            // The architecture's resolved window stays authoritative — it
+            // can apply per-family rules the raw config cannot state. The
+            // declared window is the FALLBACK, for a family whose window
+            // spelling the parser does not know (Inkling-Small writes
+            // `sliding_window_size`, not `sliding_window`), where the
+            // architecture yields nothing and a sliding layer would
+            // otherwise carry no size at all.
+            let declared_window = match layer.declared_kind.as_ref() {
+                Some(larql_models::config::LayerKind::Sliding { window }) => *window,
+                _ => None,
+            };
             AttentionLayerPolicy {
                 operator,
                 span,
-                window: layer.window,
+                window: layer.window.or(declared_window),
                 position: layer.position,
                 geometry: Some(HeadGeometry {
                     head_dim: layer.head_dim,
@@ -624,7 +757,11 @@ fn nested_attention_table(
             // the alternative is for it to refuse a spelling the schema
             // now has a home for.
             let (operator, span) = if entry.eq_ignore_ascii_case(LAYER_TYPE_LINEAR_ATTENTION) {
-                (LayerOperator::GatedDelta, None)
+                // A nested component has no linear-attention geometry to
+                // resolve — the recurrence keys are text-stack keys — so
+                // a tower declaring one is recorded as an unidentified
+                // recurrence, never as Gated DeltaNet.
+                (LayerOperator::Recurrent, None)
             } else {
                 (
                     LayerOperator::Softmax,

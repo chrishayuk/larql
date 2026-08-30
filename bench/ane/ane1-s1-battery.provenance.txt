@@ -1,0 +1,38 @@
+session:      s1-battery
+power regime: BATTERY (ANE1_ALLOW_BATTERY=1 override)
+recorded:     2026-08-25T22:09:40Z
+git sha:      16bedaf22cf365702bfa320182da474175149fd4
+git branch:   worktree-ane-execution
+git dirty:    4 file(s)
+host:         Christophers-MacBook-Pro.local
+hw model:     Mac15,8
+os:           macOS 15.7.4 (24G517)
+python:       Python 3.12.2
+coremltools:  9.0
+venv:         /private/tmp/claude-501/-Users-christopherhay-chris-source-larql/4b9cc0e2-638b-4ca2-9531-00831352d5eb/scratchpad/ane1-venv
+
+--- power ---
+Now drawing from 'Battery Power'
+ -InternalBattery-0 (id=20643939)	83%; discharging; 7:56 remaining present: true
+
+--- thermal (before) ---
+Note: No thermal warning level has been recorded
+Note: No performance warning level has been recorded
+Note: No CPU power status has been recorded
+
+--- busiest processes (before) ---
+  746   9.9 /System/Library/PrivateFrameworks/XprotectFramework.framework/Versions/A/XPCServices/XprotectService.xpc/Contents/MacOS/XprotectService
+44467   7.4 claude
+22918   3.1 claude
+  372   2.5 /System/Library/PrivateFrameworks/SkyLight.framework/Resources/WindowServer
+ 1851   1.9 /Applications/Hyper.app/Contents/Frameworks/Hyper Helper (Renderer).app/Contents/MacOS/Hyper Helper (Renderer)
+  489   1.4 /usr/libexec/syspolicyd
+67896   1.3 bash
+    1   1.0 /sbin/launchd
+  386   0.9 /usr/libexec/trustd
+ 1848   0.7 /Applications/Hyper.app/Contents/Frameworks/Hyper Helper (GPU).app/Contents/MacOS/Hyper Helper (GPU)
+
+--- thermal (after) ---
+Note: No thermal warning level has been recorded
+Note: No performance warning level has been recorded
+Note: No CPU power status has been recorded

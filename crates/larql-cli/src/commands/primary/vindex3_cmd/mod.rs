@@ -203,6 +203,19 @@ pub struct ExecArgs {
     #[arg(long, conflicts_with_all = ["dump_layers", "resume", "generate"])]
     pub logit_dump: Option<PathBuf>,
 
+    /// Execute only the first N layers, then the component's own final
+    /// norm and output head — a reduced-depth *model*, not a shard.
+    ///
+    /// One semantic effect: `ExecutionSlice::Draft { end: N }`. Nothing
+    /// else about the run changes, which is the point — a draft measured
+    /// through a different code path than its target would confound
+    /// depth with harness.
+    ///
+    /// Omitted, or equal to the layer count, is the whole stack and is
+    /// bit-identical to leaving the flag off.
+    #[arg(long)]
+    pub draft_depth: Option<usize>,
+
     /// Lowered backends only: attribute each decode token's GPU time to
     /// its stage classes (stage-boundary timestamp counters) and print
     /// the ledger against the bytes each class reads. Sampling drains the

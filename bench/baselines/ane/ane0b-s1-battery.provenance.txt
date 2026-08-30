@@ -1,0 +1,41 @@
+session:      s1-battery
+power regime: BATTERY (ANE0B_ALLOW_BATTERY=1 override)
+recorded:     2026-08-25T21:58:56Z
+git sha:      16bedaf22cf365702bfa320182da474175149fd4
+git branch:   worktree-ane-execution
+git dirty:    3 file(s)
+host:         Christophers-MacBook-Pro.local
+hw model:     Mac15,8
+cpu:          Apple M3 Max
+memory:       128 GB
+os:           macOS 15.7.4 (24G517)
+
+--- power ---
+Now drawing from 'Battery Power'
+ -InternalBattery-0 (id=20643939)	89%; discharging; 10:06 remaining present: true
+
+--- thermal (before) ---
+Note: No thermal warning level has been recorded
+Note: No performance warning level has been recorded
+Note: No CPU power status has been recorded
+
+--- busiest processes (before) ---
+  746  22.4 /System/Library/PrivateFrameworks/XprotectFramework.framework/Versions/A/XPCServices/XprotectService.xpc/Contents/MacOS/XprotectService
+44467   9.9 claude
+  372   5.1 /System/Library/PrivateFrameworks/SkyLight.framework/Resources/WindowServer
+22918   4.5 claude
+  489   4.0 /usr/libexec/syspolicyd
+ 1851   3.9 /Applications/Hyper.app/Contents/Frameworks/Hyper Helper (Renderer).app/Contents/MacOS/Hyper Helper (Renderer)
+66977   2.9 bash
+  386   2.7 /usr/libexec/trustd
+ 1848   1.8 /Applications/Hyper.app/Contents/Frameworks/Hyper Helper (GPU).app/Contents/MacOS/Hyper Helper (GPU)
+66975   1.5 /bin/zsh
+
+--- thermal (after) ---
+Note: No thermal warning level has been recorded
+Note: No performance warning level has been recorded
+Note: No CPU power status has been recorded
+
+--- power (after) ---
+Now drawing from 'Battery Power'
+ -InternalBattery-0 (id=20643939)	89%; discharging; 10:06 remaining present: true

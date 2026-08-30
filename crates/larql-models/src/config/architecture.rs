@@ -461,6 +461,42 @@ pub trait ModelArchitecture: Send + Sync {
     /// forward path and dropped by everything else ([`Self::yarn_rope_scaling`]
     /// is the config read; this is where it becomes per-layer policy).
     fn position_policy_for_layer(&self, layer: usize) -> PositionPolicy {
+        // A declared relative scheme decides the policy outright. Checked
+        // before every rotary branch because `rope_base` carries a
+        // DEFAULT: without this, a checkpoint that declares no rope key at
+        // all still resolves to `Rope { theta: 10000 }`, which is a
+        // rotation the author never asked for on every layer.
+        if let (Some(d_rel), Some(extent)) = (self.config().d_rel, self.config().rel_extent) {
+            return PositionPolicy::Relative { d_rel, extent };
+        }
+        // `mla_use_nope` means what it says: the MLA block applies no
+        // positional rotation at all.
+        //
+        // Judged from Kimi Linear's own `modeling_kimi.py`, not from the
+        // flag's name, because the config looks self-contradictory — it
+        // declares `mla_use_nope: true` *and* `qk_rope_head_dim: 64`. The
+        // reference settles it two ways:
+        //
+        //   1. the file contains **no rotary code whatsoever** — `q_rot`
+        //      and `k_rot` are split out and concatenated straight back,
+        //      unrotated;
+        //   2. `self.use_nope` is read exactly once, as `assert
+        //      self.use_nope` — the flag is a *precondition*, not a
+        //      switch, and the class refuses to run without it.
+        //
+        // So `qk_rope_head_dim` is a **structural width**, not a rotary
+        // subspace: it splits `q_head_dim = 128 + 64 = 192` (q_proj rows
+        // 32·192 = 6144, as stored) and gives `kv_a_proj_with_mqa` its
+        // extra 64 outputs, broadcast across heads as a shared unrotated K
+        // component. The key name is actively misleading and only the
+        // reference could settle it.
+        //
+        // Deliberately keyed on `Some(true)`. `false` is a combination the
+        // reference does not implement — its assert fires — so this build
+        // has no ground truth for it and must not answer.
+        if self.config().mla_use_nope == Some(true) {
+            return PositionPolicy::None;
+        }
         let yarn = self.yarn_rope_scaling();
         match self
             .config()
@@ -913,23 +949,34 @@ pub trait ModelArchitecture: Send + Sync {
     }
 
     /// Whether this model uses Mixture of Experts.
+    ///
+    /// Answered from the **declaration**, not from a family list: a
+    /// checkpoint that states a routed-expert count is an MoE whether or
+    /// not this build has a registry entry for it. The previous `false`
+    /// default meant an unregistered MoE resolved as dense — Kimi Linear,
+    /// with 256 experts per layer and top-8 routing, produced an execution
+    /// surface saying `ffn: dense, intermediate_size 9216`, which is the
+    /// dense-layer width of one layer out of twenty-seven.
+    ///
+    /// Losing an MoE this way is not a gap in a report. It is a container
+    /// that would describe the wrong model.
     fn is_moe(&self) -> bool {
-        false
+        self.config().num_experts.is_some_and(|experts| experts > 0)
     }
 
     /// Number of routed experts per layer.
     fn num_experts(&self) -> usize {
-        0
+        self.config().num_experts.unwrap_or(0)
     }
 
     /// Number of experts activated per token.
     fn num_experts_per_token(&self) -> usize {
-        0
+        self.config().num_experts_per_token.unwrap_or(0)
     }
 
     /// Number of shared (always-active) experts.
     fn num_shared_experts(&self) -> usize {
-        0
+        self.config().num_shared_experts.unwrap_or(0)
     }
 
     /// Router weight key for expert selection.
@@ -944,7 +991,19 @@ pub trait ModelArchitecture: Send + Sync {
     /// layer `match` exhaustively instead of comparing strings and falling
     /// back silently on any value it has not heard of.
     fn moe_router_kind(&self) -> super::MoeRouterKind {
-        super::MoeRouterKind::default()
+        // The declared scoring function decides the rule. Answering the
+        // softmax default for a checkpoint that declares `sigmoid` states
+        // a routing rule the model does not use — and it is not a small
+        // difference: sigmoid scores are independent, so the selected
+        // weights do not sum to 1.
+        //
+        // An unrecognised spelling keeps the default here and is caught by
+        // the plan's declared-vs-resolved comparison instead, which can
+        // refuse where this signature cannot.
+        match self.config().router_activation.as_deref() {
+            Some(super::moe_router::ROUTER_ACTIVATION_SIGMOID) => super::MoeRouterKind::Sigmoid,
+            _ => super::MoeRouterKind::default(),
+        }
     }
 
     /// Router algorithm identifier written into `MoeConfig.router_type` in a
@@ -1018,6 +1077,21 @@ pub trait ModelArchitecture: Send + Sync {
     /// projection's input. Defaults to the plain gated FFN every other
     /// MoE architecture in the support table uses.
     fn expert_gate_policy(&self) -> ExpertGatePolicy {
+        // Deliberately NOT derived from `swiglu_limit`.
+        //
+        // A declared clamp says a bound exists; it does not say the layer
+        // computes [`ExpertGatePolicy::ClampedGlu`], which is a specific
+        // formula — `glu = g·sigmoid(alpha·g)`, `out = (u+1)·glu`, with
+        // `alpha = 1.702` — transcribed from GPT-OSS's reference. GLM-5.3-
+        // Flash and Inkling-Small both declare a `swiglu_limit` too, and
+        // nothing on hand says they share that activation.
+        //
+        // Resolving the policy from the bound alone would claim they do,
+        // on the strength of one shared field name. That is the same
+        // inference `layer_types` → Gated DeltaNet made, and it is wrong
+        // for the same reason: a declared parameter is not evidence of the
+        // operator that consumes it. An architecture that has been judged
+        // against its own reference overrides this.
         ExpertGatePolicy::Gated
     }
 
@@ -1072,7 +1146,11 @@ pub trait ModelArchitecture: Send + Sync {
 
     /// Per-expert intermediate (hidden) dimension. 0 for non-MoE models.
     fn moe_intermediate_size(&self) -> usize {
-        0
+        // The declared expert width. `0` was the old default and it is not
+        // a width — an MoE surface carrying it states that each expert
+        // projects to nothing, which no closure check can satisfy and no
+        // reader can act on.
+        self.config().moe_intermediate_size.unwrap_or(0)
     }
 
     /// Packed stacked gate+up projection key (Gemma 4 PackedBF16 format).

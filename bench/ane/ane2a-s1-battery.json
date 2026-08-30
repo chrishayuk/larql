@@ -1,0 +1,333 @@
+{
+  "experiment": "ANE-2A",
+  "session": "s1-battery",
+  "coremltools": "9.0",
+  "iters": {
+    "warmup": 32,
+    "measured": 256
+  },
+  "weights": "periodic i%977 (same generator as ANE-0b/ANE-1)",
+  "rows": [
+    {
+      "n": 512,
+      "k": 5120,
+      "weight_bytes": 5242880,
+      "weight_mb": 5.24288,
+      "preferred": "ANE",
+      "supported": [
+        "CPU",
+        "ANE"
+      ],
+      "compile_ms": 33.544625010108575,
+      "ms": {
+        "min": 0.14150000060908496,
+        "p50": 0.1811660040402785,
+        "p90": 0.26149999757763,
+        "max": 0.3412089863559231,
+        "mean": 0.19783530495942614,
+        "stdev": 0.039182718365251085
+      },
+      "equivalent_gbs_min": 37.05215531754127,
+      "equivalent_gbs_p50": 28.93964586664038,
+      "orientation": "widen_output"
+    },
+    {
+      "n": 1024,
+      "k": 5120,
+      "weight_bytes": 10485760,
+      "weight_mb": 10.48576,
+      "preferred": "ANE",
+      "supported": [
+        "CPU",
+        "ANE"
+      ],
+      "compile_ms": 21.11358400725294,
+      "ms": {
+        "min": 0.18375000217929482,
+        "p50": 0.23374999000225216,
+        "p90": 0.2989590138895437,
+        "max": 0.36358399665914476,
+        "mean": 0.2426888987656639,
+        "stdev": 0.035660177567247195
+      },
+      "equivalent_gbs_min": 57.06535986741636,
+      "equivalent_gbs_p50": 44.85886822882418,
+      "orientation": "widen_output"
+    },
+    {
+      "n": 2048,
+      "k": 5120,
+      "weight_bytes": 20971520,
+      "weight_mb": 20.97152,
+      "preferred": "ANE",
+      "supported": [
+        "CPU",
+        "ANE"
+      ],
+      "compile_ms": 22.984750001342036,
+      "ms": {
+        "min": 0.2996669936692342,
+        "p50": 0.3737920051207766,
+        "p90": 0.38745799975004047,
+        "max": 0.5184579931665212,
+        "mean": 0.36457447669135945,
+        "stdev": 0.026234568498936565
+      },
+      "equivalent_gbs_min": 69.98274899486562,
+      "equivalent_gbs_p50": 56.10478478057297,
+      "orientation": "widen_output"
+    },
+    {
+      "n": 4096,
+      "k": 5120,
+      "weight_bytes": 41943040,
+      "weight_mb": 41.94304,
+      "preferred": "ANE",
+      "supported": [
+        "CPU",
+        "ANE"
+      ],
+      "compile_ms": 27.747958010877483,
+      "ms": {
+        "min": 0.497499990160577,
+        "p50": 0.5503749998752028,
+        "p90": 0.604875007411465,
+        "max": 0.7840420003049076,
+        "mean": 0.5549913869344891,
+        "stdev": 0.0476760874431015
+      },
+      "equivalent_gbs_min": 84.307619757866,
+      "equivalent_gbs_p50": 76.20811266774574,
+      "orientation": "widen_output"
+    },
+    {
+      "n": 8192,
+      "k": 5120,
+      "weight_bytes": 83886080,
+      "weight_mb": 83.88608,
+      "preferred": "ANE",
+      "supported": [
+        "CPU",
+        "ANE"
+      ],
+      "compile_ms": 34.50054200948216,
+      "ms": {
+        "min": 0.8427499997196719,
+        "p50": 0.9778329986147583,
+        "p90": 1.0729159985203296,
+        "max": 1.3767079944955185,
+        "mean": 0.9879089608944014,
+        "stdev": 0.07734621105145867
+      },
+      "equivalent_gbs_min": 99.53851086075757,
+      "equivalent_gbs_p50": 85.78773688230686,
+      "orientation": "widen_output"
+    },
+    {
+      "n": 12288,
+      "k": 5120,
+      "weight_bytes": 125829120,
+      "weight_mb": 125.82912,
+      "preferred": "ANE",
+      "supported": [
+        "CPU",
+        "ANE"
+      ],
+      "compile_ms": 41.93549999035895,
+      "ms": {
+        "min": 1.1637089919531718,
+        "p50": 1.2702079984592274,
+        "p90": 1.3373750116443262,
+        "max": 1.7225000046892092,
+        "mean": 1.2797478915445026,
+        "stdev": 0.06598581865056426
+      },
+      "equivalent_gbs_min": 108.12765121700068,
+      "equivalent_gbs_p50": 99.06182306569612,
+      "orientation": "widen_output"
+    },
+    {
+      "n": 17408,
+      "k": 5120,
+      "weight_bytes": 178257920,
+      "weight_mb": 178.25792,
+      "preferred": "ANE",
+      "supported": [
+        "CPU",
+        "ANE"
+      ],
+      "compile_ms": 74.67379199806601,
+      "ms": {
+        "min": 1.5799160028109327,
+        "p50": 1.7174999957205728,
+        "p90": 1.7926669970620424,
+        "max": 2.13520901161246,
+        "mean": 1.7140530349593064,
+        "stdev": 0.06616168943603169
+      },
+      "equivalent_gbs_min": 112.82746657597592,
+      "equivalent_gbs_p50": 103.78918220911689,
+      "orientation": "widen_output"
+    },
+    {
+      "n": 5120,
+      "k": 512,
+      "weight_bytes": 5242880,
+      "weight_mb": 5.24288,
+      "preferred": "CPU",
+      "supported": [
+        "CPU",
+        "ANE"
+      ],
+      "compile_ms": 20.48625001043547,
+      "ms": {
+        "min": 0.04687499313149601,
+        "p50": 0.0551249977434054,
+        "p90": 0.05800000508315861,
+        "max": 0.06329199823085219,
+        "mean": 0.05496854674902352,
+        "stdev": 0.00246957328182722
+      },
+      "equivalent_gbs_min": 111.84812305555795,
+      "equivalent_gbs_p50": 95.10893813373816,
+      "orientation": "widen_input"
+    },
+    {
+      "n": 5120,
+      "k": 1024,
+      "weight_bytes": 10485760,
+      "weight_mb": 10.48576,
+      "preferred": "CPU",
+      "supported": [
+        "CPU",
+        "ANE"
+      ],
+      "compile_ms": 20.667249991674908,
+      "ms": {
+        "min": 0.08266700024250895,
+        "p50": 0.1637499954085797,
+        "p90": 0.2436659997329116,
+        "max": 0.3403750015422702,
+        "mean": 0.16675111777431084,
+        "stdev": 0.056920033555384476
+      },
+      "equivalent_gbs_min": 126.84335913047953,
+      "equivalent_gbs_p50": 64.03517736801473,
+      "orientation": "widen_input"
+    },
+    {
+      "n": 5120,
+      "k": 2048,
+      "weight_bytes": 20971520,
+      "weight_mb": 20.97152,
+      "preferred": "CPU",
+      "supported": [
+        "CPU",
+        "ANE"
+      ],
+      "compile_ms": 23.689958994509652,
+      "ms": {
+        "min": 0.11737500608433038,
+        "p50": 0.16691599739715457,
+        "p90": 0.497333996463567,
+        "max": 0.5544590094359592,
+        "mean": 0.23658041033058907,
+        "stdev": 0.13855431606122837
+      },
+      "equivalent_gbs_min": 178.671087649892,
+      "equivalent_gbs_p50": 125.64116278262436,
+      "orientation": "widen_input"
+    },
+    {
+      "n": 5120,
+      "k": 4096,
+      "weight_bytes": 41943040,
+      "weight_mb": 41.94304,
+      "preferred": "CPU",
+      "supported": [
+        "CPU",
+        "ANE"
+      ],
+      "compile_ms": 28.012915994622745,
+      "ms": {
+        "min": 0.5343339871615171,
+        "p50": 0.5748330004280433,
+        "p90": 0.6211250001797453,
+        "max": 0.8667920046718791,
+        "mean": 0.5873475546991358,
+        "stdev": 0.036483446062899556
+      },
+      "equivalent_gbs_min": 78.49592391232558,
+      "equivalent_gbs_p50": 72.96560908780039,
+      "orientation": "widen_input"
+    },
+    {
+      "n": 5120,
+      "k": 8192,
+      "weight_bytes": 83886080,
+      "weight_mb": 83.88608,
+      "preferred": "ANE",
+      "supported": [
+        "CPU",
+        "ANE"
+      ],
+      "compile_ms": 45.3515410044929,
+      "ms": {
+        "min": 0.8303749928018078,
+        "p50": 0.9618329931981862,
+        "p90": 1.0420000035082921,
+        "max": 1.1276659934083,
+        "mean": 0.95845357810731,
+        "stdev": 0.05858844099867835
+      },
+      "equivalent_gbs_min": 101.02192470531413,
+      "equivalent_gbs_p50": 87.21480817690689,
+      "orientation": "widen_input"
+    },
+    {
+      "n": 5120,
+      "k": 12288,
+      "weight_bytes": 125829120,
+      "weight_mb": 125.82912,
+      "preferred": "ANE",
+      "supported": [
+        "CPU",
+        "ANE"
+      ],
+      "compile_ms": 2411.1525830085156,
+      "ms": {
+        "min": 1.1707910016411915,
+        "p50": 1.2814999936381355,
+        "p90": 1.4388749987119809,
+        "max": 1.7043330008164048,
+        "mean": 1.3139273435172072,
+        "stdev": 0.10625143873100612
+      },
+      "equivalent_gbs_min": 107.4735967594688,
+      "equivalent_gbs_p50": 98.18893532943012,
+      "orientation": "widen_input"
+    },
+    {
+      "n": 5120,
+      "k": 17408,
+      "weight_bytes": 178257920,
+      "weight_mb": 178.25792,
+      "preferred": "CPU",
+      "supported": [
+        "CPU"
+      ],
+      "compile_ms": 59.007541989558376,
+      "ms": {
+        "min": 1.521750004030764,
+        "p50": 1.5499160072067752,
+        "p90": 1.6179579979507253,
+        "max": 2.065334003418684,
+        "mean": 1.5671915789425839,
+        "stdev": 0.05762242028736503
+      },
+      "equivalent_gbs_min": 117.14008183199341,
+      "equivalent_gbs_p50": 115.01134201539897,
+      "orientation": "widen_input"
+    }
+  ]
+}

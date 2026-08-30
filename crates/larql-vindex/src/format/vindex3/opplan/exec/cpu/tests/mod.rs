@@ -3,6 +3,7 @@
 
 mod arithmetic;
 mod cost;
+mod executor;
 mod integer;
 mod kernels;
 mod ledger;

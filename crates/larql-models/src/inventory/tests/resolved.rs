@@ -394,6 +394,88 @@ fn expert_banks_bind_to_the_source_spelling_or_to_nothing() {
     assert_eq!(topology.layers[1].expert_bank, None);
 }
 
+/// A Kimi-Linear-shaped config: `ExpertFormat::PerExpert` (no packed key at
+/// all), sigmoid router, one shared expert.
+fn kimi_shaped() -> serde_json::Value {
+    json!({
+        "architectures": ["KimiLinearForCausalLM"],
+        "model_type": "kimi_linear",
+        "hidden_size": 2304,
+        "intermediate_size": 9216,
+        "num_hidden_layers": 3,
+        "num_attention_heads": 32,
+        "num_key_value_heads": 32,
+        "head_dim": 128,
+        "vocab_size": 163840,
+        "num_experts": 256,
+        "num_experts_per_token": 8,
+        "num_shared_experts": 1,
+        "moe_intermediate_size": 1024,
+        "moe_router_activation_func": "sigmoid",
+        "first_k_dense_replace": 1,
+    })
+}
+
+/// A `PerExpert`-format family (no single packed tensor exists) names each
+/// routed layer's bank at the common ancestor of its per-expert operands —
+/// derived from the architecture's own key methods, not a packed key.
+#[test]
+fn per_expert_family_names_its_bank_from_evidence_not_a_packed_key() {
+    let config = kimi_shaped();
+    let identity = read_identity(&config);
+    let (detection, topology) = resolve(&config, &identity);
+    assert!(!detection.generic_fallback);
+    assert_eq!(detection.family, "kimi_linear");
+    let moe = topology
+        .execution
+        .expect("judged execution")
+        .moe
+        .expect("kimi is routed");
+    assert_eq!(moe.expert_format, crate::config::ExpertFormat::PerExpert);
+    assert_eq!(
+        topology.layers[0].expert_bank.as_deref(),
+        Some("layers.0.block_sparse_moe.experts")
+    );
+    assert_eq!(
+        topology.layers[2].expert_bank.as_deref(),
+        Some("layers.2.block_sparse_moe.experts")
+    );
+}
+
+/// The per-expert derivation requires the format AND at least two experts
+/// — a single-expert declaration cannot prove the divergence is the
+/// expert-index segment, so it must not guess.
+#[test]
+fn a_single_declared_expert_names_no_bank() {
+    let mut config = kimi_shaped();
+    config["num_experts"] = json!(1);
+    let identity = read_identity(&config);
+    let (_, topology) = resolve(&config, &identity);
+    assert!(topology.layers.iter().all(|l| l.expert_bank.is_none()));
+}
+
+/// The Kimi-shaped bank binds to the checkpoint's own `model.`-prefixed
+/// per-expert tensors exactly as the packed case does — same mechanism,
+/// evidenced on real per-expert tensor names this time.
+#[test]
+fn a_per_expert_bank_binds_to_the_source_spelling() {
+    use crate::inventory::resolved::bind_expert_banks;
+    let config = kimi_shaped();
+    let identity = read_identity(&config);
+    let (_, mut topology) = resolve(&config, &identity);
+    let tensors = vec![
+        tensor("model.layers.1.block_sparse_moe.experts.0.w1.weight"),
+        tensor("model.layers.1.block_sparse_moe.experts.255.w3.weight"),
+        // Layer 2's bank is unspelled by any tensor — stays `None`.
+    ];
+    bind_expert_banks(&mut topology, &tensors);
+    assert_eq!(
+        topology.layers[1].expert_bank.as_deref(),
+        Some("model.layers.1.block_sparse_moe.experts")
+    );
+    assert_eq!(topology.layers[2].expert_bank, None);
+}
+
 /// A bank spelled with no source prefix at all binds at offset zero.
 #[test]
 fn expert_bank_at_the_start_of_the_name_binds_too() {

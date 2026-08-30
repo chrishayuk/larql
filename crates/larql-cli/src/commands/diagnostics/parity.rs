@@ -430,6 +430,14 @@ fn run_moe_block(
             larql_models::MoeRouterKind::TopKSoftmax => MoeRoutingPolicy::top_k_softmax(),
             larql_models::MoeRouterKind::TopKThenSoftmax => MoeRoutingPolicy::top_k_then_softmax(),
             larql_models::MoeRouterKind::Gemma4Hybrid => MoeRoutingPolicy::gemma4_hybrid(),
+            // Represented, not executable — see
+            // `larql_compute::pipeline_layer::moe_build::moe_routing_policy`.
+            // Every policy here normalises across experts in a way sigmoid
+            // does not, so substituting one produces plausible, wrong
+            // expert weights.
+            larql_models::MoeRouterKind::Sigmoid => {
+                unimplemented!("sigmoid expert routing is represented but not executable")
+            }
         },
         weight_layout: MoeWeightLayout::default(),
         expert_data_format: QuantFormat::Q4_K,

@@ -1,0 +1,114 @@
+{
+  "experiment": "ANE-4 accuracy ladder",
+  "session": "s1-battery",
+  "rows": [
+    {
+      "tag": "k=5120",
+      "arms": {
+        "ANE": {
+          "requested": "ANE",
+          "linear_devices": [
+            "ANE"
+          ],
+          "rel_rms": 0.015504335001023993,
+          "min_ms": 0.6078340084059164,
+          "p50_ms": 0.636500000837259
+        },
+        "CPU": {
+          "requested": "CPU",
+          "linear_devices": [
+            "CPU"
+          ],
+          "rel_rms": 0.0014407958622883763,
+          "min_ms": 0.7212499913293868,
+          "p50_ms": 0.7579170051030815
+        }
+      },
+      "error_ratio_ane_over_cpu": 10.760951920280286,
+      "usable": true,
+      "k": 5120,
+      "n": 5120
+    },
+    {
+      "tag": "k=8192",
+      "arms": {
+        "ANE": {
+          "requested": "ANE",
+          "linear_devices": [
+            "ANE"
+          ],
+          "rel_rms": 0.015140182510962035,
+          "min_ms": 0.8578749984735623,
+          "p50_ms": 1.0626669973134995
+        },
+        "CPU": {
+          "requested": "CPU",
+          "linear_devices": [
+            "CPU"
+          ],
+          "rel_rms": 0.0023623512896438405,
+          "min_ms": 1.3213339989306405,
+          "p50_ms": 1.3666659942828119
+        }
+      },
+      "error_ratio_ane_over_cpu": 6.408946280485085,
+      "usable": true,
+      "k": 8192,
+      "n": 5120
+    },
+    {
+      "tag": "k=12288",
+      "arms": {
+        "ANE": {
+          "requested": "ANE",
+          "linear_devices": [
+            "ANE"
+          ],
+          "rel_rms": 0.015224762235811568,
+          "min_ms": 1.160250001703389,
+          "p50_ms": 1.208082991070114
+        },
+        "CPU": {
+          "requested": "CPU",
+          "linear_devices": [
+            "CPU"
+          ],
+          "rel_rms": 0.0028678199582870896,
+          "min_ms": 2.0287920051487163,
+          "p50_ms": 2.059165999526158
+        }
+      },
+      "error_ratio_ane_over_cpu": 5.308827770661417,
+      "usable": true,
+      "k": 12288,
+      "n": 5120
+    },
+    {
+      "tag": "k=16384",
+      "arms": {
+        "ANE": {
+          "requested": "ANE",
+          "linear_devices": [
+            "ANE"
+          ],
+          "rel_rms": 0.01500124299476393,
+          "min_ms": 1.475874989409931,
+          "p50_ms": 1.527667001937516
+        },
+        "CPU": {
+          "requested": "CPU",
+          "linear_devices": [
+            "CPU"
+          ],
+          "rel_rms": 0.003329974744494794,
+          "min_ms": 1.5168329991865903,
+          "p50_ms": 1.5734579937998205
+        }
+      },
+      "error_ratio_ane_over_cpu": 4.504911942519804,
+      "usable": true,
+      "k": 16384,
+      "n": 5120
+    }
+  ]
+}

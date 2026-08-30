@@ -1,0 +1,36 @@
+session:      s3b-rev-battery
+power regime: BATTERY (override; matches ANE-0b's regime)
+duration_ms:  4000 per condition
+order:        reverse
+ramp_s:       1.5 both engines, every condition
+recorded:     2026-08-25T22:43:27Z
+git sha:      16bedaf22cf365702bfa320182da474175149fd4
+host:         Christophers-MacBook-Pro.local
+os:           macOS 15.7.4 (24G517)
+coremltools:  9.0
+
+--- power ---
+Now drawing from 'Battery Power'
+ -InternalBattery-0 (id=20643939)	70%; discharging; 5:18 remaining present: true
+
+--- thermal (before) ---
+Note: No thermal warning level has been recorded
+Note: No performance warning level has been recorded
+Note: No CPU power status has been recorded
+
+--- busiest processes (before) ---
+  387  38.3 /usr/libexec/airportd
+  668  18.6 /System/Library/CoreServices/WiFiAgent.app/Contents/MacOS/WiFiAgent
+44467   8.0 claude
+  372   4.2 /System/Library/PrivateFrameworks/SkyLight.framework/Resources/WindowServer
+  367   2.7 /usr/libexec/corebrightnessd
+  640   2.3 /System/Library/CoreServices/ControlCenter.app/Contents/MacOS/ControlCenter
+74238   1.5 /bin/zsh
+ 1851   1.1 /Applications/Hyper.app/Contents/Frameworks/Hyper Helper (Renderer).app/Contents/MacOS/Hyper Helper (Renderer)
+22918   0.7 claude
+ 2655   0.7 /Applications/Brave Browser.app/Contents/Frameworks/Brave Browser Framework.framework/Versions/151.1.93.129/Helpers/Brave Browser Helper.app/Contents/MacOS/Brave Browser Helper
+
+--- thermal (after) ---
+Note: No thermal warning level has been recorded
+Note: No performance warning level has been recorded
+Note: No CPU power status has been recorded

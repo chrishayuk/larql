@@ -18,7 +18,9 @@ use super::narrow::{bf16_bytes_to_f16, f32_bytes_to_f16};
 use super::operands::{widen, OperandSource};
 use super::weights::{load_weight, quantize_mxfp4, quantize_nvfp4, AlignedBytes, LoadedWeight};
 use crate::error::VindexError;
-use crate::format::vindex3::opplan::{FfnOp, LayerFfn, NormOp, PackedProjection, RoutedFfnOp};
+use crate::format::vindex3::opplan::{
+    ExpertBank, FfnOp, LayerFfn, NormOp, PackedProjection, RoutedFfnOp,
+};
 
 /// Stored dtype of MXFP4 block and scale streams.
 const DTYPE_U8: &str = "U8";
@@ -365,6 +367,17 @@ impl RoutedOperands {
         store: OperandSource<'_>,
         format: WeightFormat,
     ) -> Result<Self, VindexError> {
+        // `ExpertBank::PerExpert` (Kimi Linear, Mixtral, DeepSeek): closure
+        // plans the operand set (`opplan::build`), but no executor
+        // consumes it yet — refuse loudly rather than misread `experts`
+        // separate tensors as one packed bank of one.
+        let ExpertBank::Packed { gate_up, down } = &op.bank else {
+            return Err(VindexError::Parse(
+                "routed FFN op carries a per-expert (unfused) bank; execution for \
+                 `ExpertFormat::PerExpert` is not built yet"
+                    .to_string(),
+            ));
+        };
         let hidden = op.router.shape.get(1).copied().unwrap_or(0);
         let inter = op.expert_intermediate_size;
         Ok(Self {
@@ -381,22 +394,10 @@ impl RoutedOperands {
                 .map(|s| store.load(s))
                 .transpose()?,
             router_norm_eps: op.router_norm_eps,
-            gate_up: load_packed(
-                store,
-                &op.gate_up,
-                op,
-                FUSED_BRANCHES * inter,
-                hidden,
-                format,
-            )?,
-            gate_up_bias: op
-                .gate_up
-                .bias
-                .as_ref()
-                .map(|b| store.load(b))
-                .transpose()?,
-            down: load_packed(store, &op.down, op, hidden, inter, format)?,
-            down_bias: op.down.bias.as_ref().map(|b| store.load(b)).transpose()?,
+            gate_up: load_packed(store, gate_up, op, FUSED_BRANCHES * inter, hidden, format)?,
+            gate_up_bias: gate_up.bias.as_ref().map(|b| store.load(b)).transpose()?,
+            down: load_packed(store, down, op, hidden, inter, format)?,
+            down_bias: down.bias.as_ref().map(|b| store.load(b)).transpose()?,
         })
     }
 }
@@ -472,8 +473,11 @@ fn load_packed(
                 })
                 .collect()
         }
+        // Unreachable via `RoutedOperands::load` (it refuses `ExpertBank::
+        // PerExpert` before this is called), kept as the function's own
+        // invariant rather than trusting the one caller never to drift.
         ExpertFormat::PerExpert => Err(VindexError::Parse(format!(
-            "`{name}`: per-expert tensors are not a packed projection; closure never plans one"
+            "`{name}`: per-expert tensors are not a packed projection"
         ))),
     }
 }

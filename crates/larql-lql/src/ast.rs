@@ -158,6 +158,24 @@ pub enum Statement {
         limit: Option<u32>,
     },
     ShowModels,
+    /// `SHOW COMPONENTS` (VINDEX3): the system graph's components, as
+    /// the container declares them — never reconstructed from names.
+    ShowComponents,
+    /// `SHOW REPRESENTATIONS ["object"]` (VINDEX3): the physically
+    /// present representation directory, optionally filtered to entries
+    /// whose logical object matches the given substring.
+    ShowRepresentations {
+        object: Option<String>,
+    },
+    /// `SHOW PROVENANCE ["object"]` (VINDEX3): hashes and lineage per
+    /// directory entry — payload and segment digests, what an entry was
+    /// compiled from, what model the container derives from.
+    ShowProvenance {
+        object: Option<String>,
+    },
+    /// `SHOW AUTHORITY` (VINDEX3): the container's own authority
+    /// declaration and the profiles it declares by name.
+    ShowAuthority,
     Stats {
         vindex: Option<String>,
     },
@@ -205,6 +223,50 @@ pub enum Statement {
         left: Box<Statement>,
         right: Box<Statement>,
     },
+}
+
+impl Statement {
+    /// The statement's verb, as a user typed it — what a capability
+    /// refusal names. Exhaustive so a new variant cannot ship nameless.
+    pub fn verb(&self) -> &'static str {
+        match self {
+            Statement::Extract { .. } => "EXTRACT",
+            Statement::Compile { .. } => "COMPILE",
+            Statement::Diff { .. } => "DIFF",
+            Statement::Use { .. } => "USE",
+            Statement::Walk { .. } => "WALK",
+            Statement::Infer { .. } => "INFER",
+            Statement::Select { .. } => "SELECT",
+            Statement::Describe { .. } => "DESCRIBE",
+            Statement::Explain { .. } => "EXPLAIN",
+            Statement::Insert { .. } => "INSERT",
+            Statement::Delete { .. } => "DELETE",
+            Statement::Update { .. } => "UPDATE",
+            Statement::Merge { .. } => "MERGE",
+            Statement::Rebalance { .. } => "REBALANCE",
+            Statement::ShowRelations { .. } => "SHOW RELATIONS",
+            Statement::ShowLayers { .. } => "SHOW LAYERS",
+            Statement::ShowFeatures { .. } => "SHOW FEATURES",
+            Statement::ShowEntities { .. } => "SHOW ENTITIES",
+            Statement::ShowModels => "SHOW MODELS",
+            Statement::ShowComponents => "SHOW COMPONENTS",
+            Statement::ShowRepresentations { .. } => "SHOW REPRESENTATIONS",
+            Statement::ShowProvenance { .. } => "SHOW PROVENANCE",
+            Statement::ShowAuthority => "SHOW AUTHORITY",
+            Statement::Stats { .. } => "STATS",
+            Statement::ShowCompactStatus => "SHOW COMPACT STATUS",
+            Statement::CompactInto { .. } => "COMPACT INTO VINDEX",
+            Statement::CompactMinor => "COMPACT MINOR",
+            Statement::CompactMajor { .. } => "COMPACT MAJOR",
+            Statement::BeginPatch { .. } => "BEGIN PATCH",
+            Statement::SavePatch => "SAVE PATCH",
+            Statement::ApplyPatch { .. } => "APPLY PATCH",
+            Statement::ShowPatches => "SHOW PATCHES",
+            Statement::RemovePatch { .. } => "REMOVE PATCH",
+            Statement::Trace { .. } => "TRACE",
+            Statement::Pipe { .. } => "|> (pipe)",
+        }
+    }
 }
 
 #[derive(Debug, Clone)]

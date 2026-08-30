@@ -635,14 +635,22 @@ fn span_names_round_trip() {
 
 /// A rule whose probe never answers (`probe_unrepresented`) reports the
 /// declared fact as dropped at the boundary, naming its site — the honest
-/// verdict for a leaf the schema has no field for (`norm_topk_prob`), and
+/// verdict for a leaf the schema has no field for (`mscale_all_dim`), and
 /// it blocks.
+///
+/// The example used to be `norm_topk_prob`, which has since gained a real
+/// destination (`ExecutionSurface.ffn.moe.routing_policy`). The idiom is
+/// what this test pins, so it moved to a leaf that still has no field
+/// rather than being deleted with the rule it happened to name.
 #[test]
 fn a_no_schema_field_rule_reports_the_fact_unrepresented_and_blocks() {
     let findings = plan_with(|config| {
-        config["text_config"]["norm_topk_prob"] = serde_json::json!(true);
+        config["text_config"]["rope_scaling"] = serde_json::json!({
+            "rope_type": "yarn",
+            "mscale_all_dim": 1.0,
+        });
     });
-    let finding = finding_for(&findings, "norm_topk_prob");
+    let finding = finding_for(&findings, "mscale_all_dim");
     assert_eq!(finding.class, SemanticClass::ExecutionSemantic);
     assert_eq!(finding.category, FindingCategory::Unrepresented);
     assert!(

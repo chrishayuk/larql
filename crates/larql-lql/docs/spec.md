@@ -713,6 +713,31 @@ SHOW ENTITIES
 
 SHOW MODELS;
 
+SHOW COMPONENTS;
+
+-- VINDEX3: the system graph's components — id, role, layer count,
+-- hidden size, and the per-operator attention census — reconstructed
+-- purely from the container. Nothing is inferred from tensor names.
+
+SHOW REPRESENTATIONS ["<object>"];
+
+-- VINDEX3: the physically present representation directory, optionally
+-- filtered to entries whose logical object (or entry id) contains the
+-- given substring. Presence is physical: a variant listed here exists
+-- as bytes; selecting one not listed fails closed (§9.1 of the ABI).
+
+SHOW PROVENANCE ["<object>"];
+
+-- VINDEX3: hashes and lineage per directory entry — payload and
+-- segment SHA-256 (printed whole), what an entry was compiled from,
+-- and what model the container derives from.
+
+SHOW AUTHORITY;
+
+-- VINDEX3: the container's own authority declaration — canonical
+-- (source bytes present; derived representations recompilable) or
+-- derived (executable; not re-compilable) — and its declared profiles.
+
 SHOW PATCHES;
 
 SHOW COMPACT STATUS;
@@ -874,6 +899,10 @@ family metadata.
 | SHOW LAYERS | ✅ From metadata | ✅ Computed from weights | ✅ Per-layer plan facts |
 | SHOW FEATURES | ✅ Index lookup | ✅ Dense scan per layer | ✅ via semantic roles |
 | STATS | ✅ Instant | ✅ Computed | ✅ Container's own authority |
+| SHOW COMPONENTS | ❌ V3 concept | ❌ V3 concept | ✅ from the system graph |
+| SHOW REPRESENTATIONS | ❌ V3 concept | ❌ V3 concept | ✅ the physical directory |
+| SHOW PROVENANCE | ❌ V3 concept | ❌ V3 concept | ✅ digests + lineage |
+| SHOW AUTHORITY | ❌ V3 concept | ❌ V3 concept | ✅ the index's declaration |
 | INSERT (MODE KNN, default) | ✅ | ❌ Error: "requires vindex" | ✅ key from plan taps (§4.4) |
 | INSERT MODE COMPOSE | ✅ | ❌ Error: "requires vindex" | ✅ via the operand-source seam¹ |
 | DELETE | ✅ | ❌ Error: "requires vindex" | ✅ overlay tombstones |
@@ -1006,6 +1035,50 @@ Everything else refuses with the capability list. The refusals are
 the seed of a future `ModelCapabilities` surface, deliberately left
 as plain declared facts until `WALK`/`PATCH`-class pressure shapes
 the type.
+
+### 4.5 Capability Profiles
+
+A **capability profile** constrains what a session may execute. It is
+orthogonal to §4.2's backend capabilities: the backend matrix says what
+a binding *can* serve, the profile says what this session is *allowed*
+to ask of it. Both produce capability statements, never apologies.
+
+```
+Session::set_profile(CapabilityProfile::PublicExplorer)
+```
+
+The judgement runs at the head of `Session::execute` — after parsing,
+before any execution, ahead of the remote-transport fork, over the
+whole pipe tree. A statement a profile refuses returns
+`LqlError::Refused` (an embedding server maps it to 403: nothing
+failed; the profile does not serve this) and never begins: no
+auto-patch starts, no backend is consulted, no bytes are read.
+
+Two profiles exist:
+
+- **`FULL`** (default) — the whole language. The REPL's profile.
+- **`PUBLIC_EXPLORER`** — the public read surface, designed for a
+  hardened endpoint serving an immutable container:
+
+  | Permitted | Refused |
+  |---|---|
+  | `SHOW COMPONENTS / REPRESENTATIONS / PROVENANCE / AUTHORITY` | `INSERT / DELETE / UPDATE / MERGE / REBALANCE` |
+  | `SHOW RELATIONS / LAYERS / FEATURES / ENTITIES / MODELS` | `USE / EXTRACT / COMPILE / DIFF` (filesystem paths) |
+  | `DESCRIBE / WALK / SELECT / EXPLAIN / STATS` | `BEGIN / SAVE / APPLY / REMOVE PATCH`, `SHOW PATCHES` |
+  | `INFER [TOP n]`, `INFER GENERATE ≤ 32` | `COMPACT` family, `SHOW COMPACT STATUS`, `TRACE` |
+
+  The binding sequence is the embedding surface's: bind the published
+  container under `FULL` (USE is a lifecycle statement the public
+  profile refuses precisely because it names filesystem paths), then
+  tighten to `PUBLIC_EXPLORER` before the first foreign statement.
+  Note `SHOW MODELS` lists the process working directory — a public
+  deployment's working directory *is* its published catalogue.
+
+The `PUBLIC_EXPLORER` arm is an exhaustive `match` over `Statement`,
+mirroring the plan-capability module's fail-closed rule: a new
+statement does not compile until someone decides whether the public
+surface serves it. An unlisted statement defaulting to *allowed* is
+the one wrong default for a public endpoint.
 
 ---
 

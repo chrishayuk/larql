@@ -1,5 +1,6 @@
 //! Router setup — maps URL paths to handlers.
 
+pub mod container_facts;
 pub mod describe;
 pub mod embed;
 pub mod expert;
@@ -10,6 +11,7 @@ pub mod insert;
 pub mod models;
 pub mod openai;
 pub mod patches;
+pub mod query;
 pub mod relations;
 pub mod runtime;
 pub mod runtime_lifecycle;
@@ -72,6 +74,11 @@ const TOKEN_DECODE: &str = "/v1/token/decode";
 // Mode B shard handoff: donor streams its on-disk vindex as a tar so a
 // freshly-assigned spare server can mirror the shard locally.
 const SHARD: &str = "/v1/shard/{model_id}/{range}";
+const QUERY: &str = "/v1/query";
+const COMPONENTS: &str = "/v1/components";
+const REPRESENTATIONS: &str = "/v1/representations";
+const PROVENANCE: &str = "/v1/provenance";
+const AUTHORITY: &str = "/v1/authority";
 
 const OPENAI_EMBEDDINGS: &str = "/v1/embeddings";
 const OPENAI_COMPLETIONS: &str = "/v1/completions";
@@ -96,6 +103,38 @@ const M_EMBED_TOKEN: &str = "/v1/{model_id}/embed/{token_id}";
 const M_LOGITS: &str = "/v1/{model_id}/logits";
 const M_TOKEN_ENCODE: &str = "/v1/{model_id}/token/encode";
 const M_TOKEN_DECODE: &str = "/v1/{model_id}/token/decode";
+
+/// Build the router for the PUBLIC_EXPLORER profile: the read routes
+/// plus `POST /v1/query`. Mutating and lifecycle routes are not
+/// mounted — absent, not gated: a route that does not exist cannot be
+/// mis-gated, and the statement surface's own gate lives inside the
+/// LQL session (`CapabilityProfile::PublicExplorer`), not here.
+pub fn public_explorer_router(
+    state: Arc<AppState>,
+    bridge: Arc<crate::lql_bridge::LqlBridge>,
+) -> Router {
+    Router::new()
+        .route(HEALTH, get(health::handle_health))
+        .route(MODELS, get(models::handle_models))
+        .route(MODEL_BY_ID, get(models::handle_model_retrieve))
+        .route(DESCRIBE, get(describe::handle_describe))
+        .route(WALK, get(walk::handle_walk))
+        .route(RELATIONS, get(relations::handle_relations))
+        .route(STATS, get(stats::handle_stats))
+        .route(COMPONENTS, get(container_facts::handle_components))
+        .route(
+            REPRESENTATIONS,
+            get(container_facts::handle_representations),
+        )
+        .route(PROVENANCE, get(container_facts::handle_provenance))
+        .route(AUTHORITY, get(container_facts::handle_authority))
+        .with_state(state)
+        .merge(
+            Router::new()
+                .route(QUERY, post(query::handle_query))
+                .with_state(bridge),
+        )
+}
 
 /// Build the router for single-model serving.
 pub fn single_model_router(state: Arc<AppState>) -> Router {

@@ -102,6 +102,15 @@ pub struct Cli {
     #[arg(long)]
     pub no_infer: bool,
 
+    /// Serve the PUBLIC_EXPLORER surface: the read-only route set plus
+    /// `POST /v1/query`, which executes LQL under
+    /// `CapabilityProfile::PublicExplorer` (mutation and lifecycle
+    /// statements refuse after parsing, before execution). Requires
+    /// exactly one VINDEX3 container. Pair with `--rate-limit` and
+    /// `--max-concurrent` on anything internet-facing.
+    #[arg(long)]
+    pub public_explorer: bool,
+
     /// Defer model-weight loading until the first `/v1/infer` (or
     /// other inference) request, instead of loading at startup.
     ///

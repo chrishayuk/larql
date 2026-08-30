@@ -73,10 +73,29 @@ fn run(
     };
     let packed = gpu.lowering_weight(f.packed);
     let scales = gpu.lowering_weight(f.scales);
-    let offs_b: Vec<u8> = f.offs.iter().flat_map(|v| v.to_le_bytes()).collect();
-    let soffs_b: Vec<u8> = f.soffs.iter().flat_map(|v| v.to_le_bytes()).collect();
-    let offs = gpu.lowering_weight(&offs_b);
-    let soffs = gpu.lowering_weight(&soffs_b);
+    // LEAKED, like `packed` and `scales` above, and for the same reason:
+    // `lowering_weight` caches on `(ptr, len)`, which is only sound for
+    // allocations that live for the process. Built into a temporary
+    // `Vec` these two tables have the same length on every call, so the
+    // allocator hands back the same address and a LATER iteration with a
+    // different slot count silently reuses the FIRST one's buffer. The
+    // debug assertion in `BufferCache::get_bytes` catches it; in a
+    // release run it would simply compare two arms that both read the
+    // wrong table.
+    let offs = gpu.lowering_weight(Box::leak(
+        f.offs
+            .iter()
+            .flat_map(|v| v.to_le_bytes())
+            .collect::<Vec<u8>>()
+            .into_boxed_slice(),
+    ));
+    let soffs = gpu.lowering_weight(Box::leak(
+        f.soffs
+            .iter()
+            .flat_map(|v| v.to_le_bytes())
+            .collect::<Vec<u8>>()
+            .into_boxed_slice(),
+    ));
     let xb = gpu.lowering_upload(&f.x).expect("x");
     let out = gpu.lowering_scratch(slots * n);
     let cmd = gpu.new_lowering_command_buffer();

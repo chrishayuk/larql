@@ -32,6 +32,7 @@ use std::path::Path;
 
 use crate::detect::ModelError;
 
+pub use components::is_operator_config_section;
 pub use report::{
     ArchitectureInventory, AttentionSummary, ConfigKeyFact, Detection, Identity, InterfaceFact,
     KeyStatus, LayerPolicy, ResolvedExecution, ResolvedTopology, TensorFact, TensorGroup,
@@ -70,6 +71,10 @@ pub fn build_inventory(model_dir: &Path) -> Result<ArchitectureInventory, ModelE
     // The stored-representation reader is the second recorded reader:
     // `quantization_config` is credited only because something read it and
     // stored what it read.
+    // The parser reads two leaves of `linear_attn_config` by path; credit
+    // exactly those, never the container, so its unread siblings stay
+    // honestly unconsumed.
+    recorded_reads.extend(config_keys::path_read_leaves(&config));
     let representation_reading = representation::read_stored_representation(&config);
     let stored_representation = representation_reading.map(|r| {
         recorded_reads.extend(r.consumed_paths);

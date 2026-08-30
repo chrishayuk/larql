@@ -103,6 +103,20 @@ jobs:
       - name: Check examples
         run: cargo check -p larql-vindex --examples
 
+      # The `gpu` feature pulls in larql-compute-metal, so this can only
+      # build on macOS. It is a TYPE-CHECK, not a test run: the gate it
+      # guards (`opplan::exec::tests::kimi_moe_metal`) needs a ~245 MiB
+      # fixture that only exists on a developer machine, and skips
+      # everywhere else.
+      #
+      # Why it earns a CI step anyway: Kimi execution now depends on the
+      # bf16 Metal API, and nothing else in CI compiles this module. A
+      # rename or signature change in larql-compute-metal would break it
+      # silently and stay broken until someone next ran it by hand.
+      - name: Check gpu feature (macOS only)
+        if: runner.os == 'macOS'
+        run: cargo check -p larql-vindex --features gpu --all-targets
+
       - name: Clippy
         run: cargo clippy -p larql-vindex --all-targets -- -D warnings
 

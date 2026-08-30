@@ -523,9 +523,9 @@ checksum = "613afe47fcd5fac7ccf1db93babcb082c5994d996f20b8b159f2ad1658eb5724"
 
 [[package]]
 name = "chacha20"
-version = "0.10.1"
+version = "0.10.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "d524456ba66e72eb8b115ff89e01e497f8e6d11d78b70b1aa13c0fbd97540a81"
+checksum = "65c35e4b699c7e15ccbe7ee35c005e4fc0a278d22238a2857e6ce2dadeda1b06"
 dependencies = [
  "cfg-if",
  "cpufeatures 0.3.0",
@@ -2470,6 +2470,7 @@ dependencies = [
  "larql-compute-metal",
  "larql-inference",
  "larql-kv",
+ "larql-lql",
  "larql-models",
  "larql-router",
  "larql-router-protocol",
@@ -5174,6 +5175,18 @@ name = "version_check"
 version = "0.9.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "0b928f33d975fc6ad9f86c8f283853ad26bdd5b10b7f1542aa2fa15e2289105a"
+
+[[package]]
+name = "vindex-cli"
+version = "0.5.0"
+dependencies = [
+ "clap",
+ "larql-models",
+ "larql-vindex",
+ "serde_json",
+ "sha2",
+ "tempfile",
+]
 
 [[package]]
 name = "walkdir"

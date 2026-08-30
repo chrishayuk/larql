@@ -107,6 +107,17 @@ pub static ARCHITECTURE_REGISTRY: &[ArchitectureEntry] = &[
         attention_kind: AttentionKind::Mla,
         quant_formats: MLA_QUANT_FORMATS,
     },
+    // Hybrid KDA/MLA attention — no dedicated `AttentionKind` variant
+    // exists yet for the recurrence, so this reports the MORE restrictive
+    // of the two (`Mla`, `MLA_QUANT_FORMATS`): it genuinely has MLA layers
+    // and the Q4K writer hard-rejects MLA regardless. A `Hybrid`/`Kda`
+    // kind is future work, not a claim this entry makes today.
+    ArchitectureEntry {
+        model_type: "kimi_linear",
+        patterns: &[ModelTypeMatch::Exact("kimi_linear")],
+        attention_kind: AttentionKind::Mla,
+        quant_formats: MLA_QUANT_FORMATS,
+    },
     ArchitectureEntry {
         model_type: "starcoder2",
         patterns: &[ModelTypeMatch::Exact("starcoder2")],

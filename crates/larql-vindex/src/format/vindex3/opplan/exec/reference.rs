@@ -190,6 +190,15 @@ impl ReferenceBackend {
                     rope_rotate_scaled(head, position, &inv_freq, amplitude);
                 }
             }
+            // See `production.rs`: no backend rotates for a relative
+            // scheme, and silently skipping position is a wrong answer
+            // that still produces fluent output.
+            PositionPolicy::Relative { d_rel, extent } => {
+                return Err(VindexError::Parse(format!(
+                    "relative position (d_rel {d_rel}, extent {extent}) is represented but not \
+                     executable: no backend implements it"
+                )))
+            }
             PositionPolicy::None => {}
             // Partial rotary, transcribed: head-width basis is the full
             // rotate-half table with the top frequencies zero; rotary-width

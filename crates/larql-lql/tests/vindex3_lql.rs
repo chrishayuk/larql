@@ -373,6 +373,51 @@ fn trace_with_options_refuses_on_v3() {
     );
 }
 
+/// The directory statements answer from the container's own
+/// declarations — components from the system graph, representations
+/// and provenance from the directory, authority from the index record.
+/// Nothing here is reconstructed from tensor names or family metadata.
+#[test]
+fn directory_statements_read_the_containers_own_declarations() {
+    let container = v3_container();
+    let mut session = bound_session(container.path());
+
+    let components = run(&mut session, "SHOW COMPONENTS;");
+    assert!(
+        components.iter().any(|l| l.contains("target")),
+        "SHOW COMPONENTS must list the graph's component: {components:?}"
+    );
+
+    let reps = run(&mut session, "SHOW REPRESENTATIONS;");
+    assert!(
+        reps.len() > 2,
+        "SHOW REPRESENTATIONS must list the directory: {reps:?}"
+    );
+
+    let prov = run(&mut session, "SHOW PROVENANCE;");
+    assert!(
+        prov.iter().any(|l| l.contains("payload_sha256")),
+        "SHOW PROVENANCE must carry the payload digest: {prov:?}"
+    );
+
+    let auth = run(&mut session, "SHOW AUTHORITY;");
+    assert!(
+        auth.iter()
+            .any(|l| l.contains("canonical") || l.contains("derived")),
+        "SHOW AUTHORITY must state the container's declaration: {auth:?}"
+    );
+
+    // The object filter narrows honestly: a filter matching nothing
+    // says so rather than returning the unfiltered listing.
+    let filtered = run(&mut session, r#"SHOW REPRESENTATIONS "no-such-object";"#);
+    assert!(
+        filtered
+            .iter()
+            .any(|l| l.contains("no representations match")),
+        "{filtered:?}"
+    );
+}
+
 /// The whole-language sweep: every LQL statement, executed against a
 /// V3 binding, must do something sensible — execute, or refuse with a
 /// message that names what the binding supports. Never a panic, and
@@ -426,6 +471,11 @@ fn every_statement_is_sensible_on_a_v3_binding() {
         (r#"SHOW RELATIONS;"#.to_string(), Ok),
         (r#"SHOW FEATURES 0;"#.to_string(), Ok),
         (r#"SHOW ENTITIES;"#.to_string(), Ok),
+        // ── Directory statements: the container's own declarations ──
+        (r#"SHOW COMPONENTS;"#.to_string(), Ok),
+        (r#"SHOW REPRESENTATIONS;"#.to_string(), Ok),
+        (r#"SHOW PROVENANCE;"#.to_string(), Ok),
+        (r#"SHOW AUTHORITY;"#.to_string(), Ok),
         // ── Mutation (V3-LQL-3B): the default KNN insert executes;
         // the compose install refuses until the operand-source seam ──
         (

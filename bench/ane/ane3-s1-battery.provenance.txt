@@ -1,0 +1,34 @@
+session:      s1-battery
+power regime: BATTERY (override; matches ANE-0b's regime)
+duration_ms:  4000 per condition
+recorded:     2026-08-25T22:37:11Z
+git sha:      16bedaf22cf365702bfa320182da474175149fd4
+host:         Christophers-MacBook-Pro.local
+os:           macOS 15.7.4 (24G517)
+coremltools:  9.0
+
+--- power ---
+Now drawing from 'Battery Power'
+ -InternalBattery-0 (id=20643939)	74%; discharging; 5:51 remaining present: true
+
+--- thermal (before) ---
+Note: No thermal warning level has been recorded
+Note: No performance warning level has been recorded
+Note: No CPU power status has been recorded
+
+--- busiest processes (before) ---
+73124 299.0 /Users/christopherhay/.rustup/toolchains/1.98.0-aarch64-apple-darwin/bin/rustc
+  534  98.2 /System/Library/Frameworks/CoreServices.framework/Frameworks/Metadata.framework/Versions/A/Support/mds_stores
+  746  12.9 /System/Library/PrivateFrameworks/XprotectFramework.framework/Versions/A/XPCServices/XprotectService.xpc/Contents/MacOS/XprotectService
+43778   8.5 claude
+44467   8.2 claude
+  372   5.3 /System/Library/PrivateFrameworks/SkyLight.framework/Resources/WindowServer
+ 1851   2.8 /Applications/Hyper.app/Contents/Frameworks/Hyper Helper (Renderer).app/Contents/MacOS/Hyper Helper (Renderer)
+22918   1.8 claude
+ 1848   1.2 /Applications/Hyper.app/Contents/Frameworks/Hyper Helper (GPU).app/Contents/MacOS/Hyper Helper (GPU)
+  365   1.0 /usr/sbin/notifyd
+
+--- thermal (after) ---
+Note: No thermal warning level has been recorded
+Note: No performance warning level has been recorded
+Note: No CPU power status has been recorded

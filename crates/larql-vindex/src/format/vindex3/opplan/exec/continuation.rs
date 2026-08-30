@@ -175,6 +175,35 @@ pub fn plan_continuation_geometry(
                 kv_dim: op.num_kv_heads * op.head_dim,
                 window: op.window,
             })),
+            // KDA's state geometry is known — one `Dk × Dv` matrix per
+            // head — but the precision to hold it at is not: KDA declares
+            // no `mamba_ssm_dtype`, and picking one here would run the
+            // recurrence at a precision its author never chose. That is
+            // the refusal `GatedDelta` makes below for an undeclared
+            // dtype, and KDA is in that position for every checkpoint
+            // observed so far. Execution is out of scope for the rung that
+            // introduced this operator; refusing is what keeps it out.
+            LayerAttention::Kda(op) => Err(format!(
+                "KDA layer: {} state elements, but no state precision is declared for this \
+                 operator — refusing to choose one",
+                op.state_elements()
+            )),
+            // MLA retains a real per-position cache (compressed, not
+            // absent — see `MlaOp::compressed_kv_width`), so sizing it is
+            // a real question with a real answer, unlike KDA's above. It
+            // is refused anyway: the operand-closure rung that introduced
+            // this operator deliberately does not reach execution, and
+            // answering `LayerContinuationGeometry::Kv` here would need a
+            // KV shape this planner's `LayerKvGeometry` cannot state
+            // (`compressed_kv_width` per position, not `num_kv_heads ×
+            // head_dim`) — inventing one now is exactly the kind of
+            // plausible-but-unbuilt executor KDA's own refusal exists to
+            // avoid becoming.
+            LayerAttention::Mla(op) => Err(format!(
+                "MLA layer: {}-element compressed KV cache per position, but continuation \
+                 planning has no geometry for it yet — refusing to invent one",
+                op.compressed_kv_width()
+            )),
             LayerAttention::GatedDelta(op) => {
                 // A recurrence must be held at SOME precision, and the
                 // planner does not get to pick one. An undeclared state
