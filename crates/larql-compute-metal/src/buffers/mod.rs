@@ -17,7 +17,7 @@ pub mod residency;
 type CacheKey = (usize, usize);
 
 /// Apple Silicon page size (16KB).
-const PAGE_SIZE: usize = 16384;
+pub const PAGE_SIZE: usize = 16384;
 
 /// Buffer cache for Metal GPU buffers.
 /// Weight matrices from mmap'd files have stable addresses — their GPU buffers

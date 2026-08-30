@@ -16,6 +16,24 @@ use metal::{Buffer, MTLResourceOptions};
 
 use super::{BufferCache, PAGE_SIZE};
 
+/// Byte alignment a weight binding's offset must satisfy.
+///
+/// **Measured, not taken from a feature table** — see
+/// `the_binding_alignment_requirement_is_measured_not_assumed`, which
+/// dispatches the real grouped kernel through a registered file mapping
+/// at each residue: only an ODD offset misreads; 2, 4, 8 and 12 all
+/// agree with the staged-copy arm bit for bit.
+///
+/// Four rather than that measured two, because two is bf16's own
+/// element size and a weight buffer is also bound as `float` elsewhere
+/// in this crate. Four covers every element type a weight binding uses
+/// (bf16's `ushort`, a quantised format's `uchar`, `float`) without
+/// demanding an alignment a real container may not have: at sixteen,
+/// the Kimi container's 94 GB expert segment — whose payload starts at
+/// 2,438,284, divisible by four and not by sixteen — would have had to
+/// be rewritten to change nothing.
+pub const WEIGHT_BINDING_ALIGN: usize = 4;
+
 /// One registered region: `[start, start + len)` in host memory, plus the
 /// no-copy Metal buffer that aliases it.
 pub(super) struct Region {
@@ -110,6 +128,14 @@ impl BufferCache {
 
     /// Resolve `sub` to `(buffer, byte_offset)` if it lies wholly inside a
     /// registered region. `None` → the caller stages a copy instead.
+    ///
+    /// **A misaligned offset MISSES rather than resolving.** A kernel
+    /// binding `device const ushort*` at an odd byte offset reads
+    /// garbage on Metal with no error and a successful command buffer —
+    /// the exact silent-wrong-answer shape this codebase keeps paying
+    /// for. Missing costs a staged copy, which is slow and correct; the
+    /// caller that cares about the cost is told why by whoever knows the
+    /// alignment's cause, which is the container, not this cache.
     pub fn resolve_region(&self, sub: &[u8]) -> Option<(Buffer, u64)> {
         if sub.is_empty() {
             return None;
@@ -118,7 +144,11 @@ impl BufferCache {
         let regions = self.regions.lock().unwrap();
         for r in regions.iter() {
             if p >= r.start && p + sub.len() <= r.start + r.len {
-                return Some((r.buf.clone(), (p - r.start) as u64));
+                let offset = p - r.start;
+                if !offset.is_multiple_of(WEIGHT_BINDING_ALIGN) {
+                    return None;
+                }
+                return Some((r.buf.clone(), offset as u64));
             }
         }
         None

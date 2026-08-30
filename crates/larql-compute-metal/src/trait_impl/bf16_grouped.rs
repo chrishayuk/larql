@@ -148,6 +148,53 @@ impl MetalBackend {
         )
     }
 
+    /// The same dispatch, binding an ALREADY-RESOLVED buffer at a raw
+    /// byte offset.
+    ///
+    /// Exists to calibrate the binding-alignment requirement: it is the
+    /// only way to ask the GPU what it does with an offset the
+    /// alignment filter would otherwise refuse to produce. Not a
+    /// production path — every real caller goes through
+    /// `BufferCache::weights`, which never yields a misaligned offset.
+    #[allow(clippy::too_many_arguments)]
+    pub fn bf16_grouped_experts_at(
+        &self,
+        w: &Buffer,
+        w_offset: u64,
+        offsets: &[ExpertOffset],
+        x: &[f32],
+        n: usize,
+        k: usize,
+        layout: InputLayout,
+    ) -> Result<Vec<f32>, GroupedError> {
+        let shape = GroupedShape { n, k, layout };
+        let buf_o = self.offset_table(offsets);
+        let buf_x = self.bufs.transient_from_f32(x);
+        let buf_out = self.bufs.output((offsets.len() * n * 4) as u64);
+        let cmd = self.queue.new_command_buffer();
+        let enc = cmd.new_compute_command_encoder();
+        encode_grouped(
+            enc,
+            self.default_grouped_handle(),
+            GroupedBinding {
+                w,
+                w_offset,
+                offsets: &buf_o,
+                x: &buf_x,
+                out: &buf_out,
+            },
+            offsets.len(),
+            shape,
+        );
+        enc.end_encoding();
+        cmd.commit();
+        let _ = crate::cb_status::wait_checked(
+            cmd,
+            "crates/larql-compute-metal/src/trait_impl/bf16_grouped.rs:at",
+        );
+        Ok(crate::buffers::read_buffer_f32(&buf_out, offsets.len() * n))
+    }
+
     /// The same dispatch at a caller-chosen row tiling.
     ///
     /// `handle` comes from [`Self::bf16_grouped_variants`], so an
