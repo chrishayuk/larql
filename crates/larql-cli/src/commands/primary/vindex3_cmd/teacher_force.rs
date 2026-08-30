@@ -25,7 +25,9 @@ use std::time::Instant;
 
 use larql_vindex::format::vindex3::opplan::exec::backend::PlanBackend;
 use larql_vindex::format::vindex3::opplan::exec::decode::DecodeSession;
+use larql_vindex::format::vindex3::opplan::exec::kv::RowKvState;
 use larql_vindex::format::vindex3::opplan::exec::operands::OperandStore;
+use larql_vindex::format::vindex3::opplan::exec::prepared::{ExecutionSlice, PreparedOperands};
 use larql_vindex::format::vindex3::opplan::ComponentOpPlan;
 
 /// Step `tokens` through the plan one position at a time, writing every
@@ -42,12 +44,23 @@ pub(super) fn run_teacher_force<B: PlanBackend>(
     plan: &ComponentOpPlan,
     store: &OperandStore,
     out: &Path,
+    slice: ExecutionSlice,
 ) -> Result<(), Box<dyn std::error::Error>> {
     let loading = Instant::now();
-    let mut session = DecodeSession::new(plan, store, backend)?;
+    // Prepared explicitly rather than through `DecodeSession::new`, so
+    // the slice reaches the operand loader. A `Draft` prepares only its
+    // own layers — measured at 4 + ~13.4 reads per layer on the 27B
+    // container — which is what makes a shallow draft affordable at all.
+    let ops = PreparedOperands::load(plan, store, backend, slice.clone())?;
+    let mut kv = RowKvState::default();
+    let mut session = DecodeSession::over_prepared(plan, &ops, backend, &mut kv)?;
+    let prepare_s = loading.elapsed().as_secs_f64();
+    let executed = ops.executed_layers();
     eprintln!(
-        "weights resident in {:.1} s",
-        loading.elapsed().as_secs_f64()
+        "weights resident in {prepare_s:.1} s — layers {}..{} of {}",
+        executed.start,
+        executed.end,
+        plan.layers.len()
     );
 
     let started = Instant::now();
@@ -90,5 +103,33 @@ pub(super) fn run_teacher_force<B: PlanBackend>(
         started.elapsed().as_secs_f64() * 1000.0 / tokens.len() as f64,
     );
     println!("wrote [{}, {vocab}] f32 to {}", tokens.len(), out.display());
+
+    // A sidecar beside the plane, so a comparison can ASSERT the run's
+    // identity instead of trusting a filename. A depth result is only a
+    // depth result if the arms agree on backend, format policy and
+    // container; this project has manufactured a "depth effect" that was
+    // a backend effect before, and a bare .f32 carries no way to catch it.
+    let steps_s = started.elapsed().as_secs_f64();
+    let meta = format!(
+        "{{\n  \"engine\": \"{engine}\",\n  \"draft_depth\": {},\n  \
+         \"executed_layers\": [{}, {}],\n  \"model_layers\": {},\n  \
+         \"positions\": {},\n  \"vocab\": {vocab},\n  \
+         \"prepare_s\": {prepare_s:.3},\n  \"steps_s\": {steps_s:.3},\n  \
+         \"ms_per_position\": {:.1},\n  \
+         \"max_format_env\": \"{}\"\n}}\n",
+        match &slice {
+            ExecutionSlice::Draft { end } => end.to_string(),
+            _ => "null".to_string(),
+        },
+        executed.start,
+        executed.end,
+        plan.layers.len(),
+        tokens.len(),
+        steps_s * 1000.0 / tokens.len() as f64,
+        std::env::var("LARQL_CPU_MAX_FORMAT").unwrap_or_default(),
+    );
+    let meta_path = out.with_extension("meta.json");
+    std::fs::write(&meta_path, meta)?;
+    println!("wrote provenance to {}", meta_path.display());
     Ok(())
 }

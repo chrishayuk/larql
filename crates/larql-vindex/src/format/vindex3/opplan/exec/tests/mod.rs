@@ -20,6 +20,7 @@ mod coverage_device;
 mod coverage_experts_production;
 mod decode;
 mod device;
+mod draft_slice;
 mod gated_delta_parity;
 mod gated_delta_tiny;
 mod hybrid_traversal;
