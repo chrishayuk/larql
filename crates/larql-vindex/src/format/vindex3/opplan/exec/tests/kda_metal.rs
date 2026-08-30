@@ -36,6 +36,7 @@ use std::time::Instant;
 
 use larql_compute_metal::trait_impl::grouped_experts::ExpertOffset;
 use larql_compute_metal::trait_impl::kda::{KdaDeviceState, KdaDeviceWeights, KdaShape};
+use larql_compute_metal::trait_impl::kimi_layer::ExpertEncoding;
 use larql_compute_metal::MetalBackend;
 use larql_models::config::{KdaGeometry, NormType};
 use serde_json::Value;
@@ -502,6 +503,7 @@ impl DeviceWeights {
             qkv_bank: &self.qkv_bank,
             qkv_offsets: &self.qkv_offsets,
             o_proj: &self.o_proj,
+            projection_encoding: ExpertEncoding::Bf16,
             q_conv1d: &fx.qc,
             k_conv1d: &fx.kc,
             v_conv1d: &fx.vc,

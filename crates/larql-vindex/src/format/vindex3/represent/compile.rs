@@ -92,6 +92,15 @@ impl LayerBankLayout {
                 let per_sb = if encoding == "Q6_K" { 210 } else { 144 };
                 Ok((elems / 256) as u64 * per_sb)
             }
+            "Q8_0" => {
+                if !k.is_multiple_of(32) {
+                    return Err(VindexError::Parse(format!(
+                        "k={k} is not a whole number of 32-element blocks, so rows \
+                         would share a scale in Q8_0"
+                    )));
+                }
+                Ok((elems / 32) as u64 * 34)
+            }
             other => Err(VindexError::Parse(format!(
                 "no compiled layout for encoding `{other}`"
             ))),
@@ -152,6 +161,125 @@ impl LayerBankLayout {
     pub fn bank_bytes(&self, projection: &str) -> Result<u64, VindexError> {
         let last = self.slot(projection, self.experts - 1)?;
         Ok(last.offset + last.len)
+    }
+
+    /// Total bytes of this layer's THREE projection banks — the
+    /// layer's whole extent in a candidate segment.
+    pub fn layer_bytes(&self) -> Result<u64, VindexError> {
+        Ok(2 * self.bank_bytes("w1")? + self.bank_bytes("w2")?)
+    }
+}
+
+/// Where each compiled layer's bank begins in a candidate segment that
+/// holds SEVERAL layers — the composed-map extension of `bank_base`.
+///
+/// Layers are placed ascending by index; each layer's extent is its
+/// OWN encoding's three projection banks, so one candidate can hold
+/// L20..=25 at Q8_0 beside L26 at Q6_K. A single-layer placement puts
+/// its layer at base 0, byte-identical to the layout every existing
+/// candidate was compiled with — this is an extension, never a
+/// migration.
+///
+/// ONE definition, used by the compiler, the completeness verifier and
+/// the loader, for the same reason `bank_base` is `pub(crate)` in one
+/// place: two derivations of the same offset WILL drift.
+#[derive(Debug, Clone)]
+pub struct CandidatePlacement {
+    /// `(layout, base)` per layer, ascending by layer index.
+    placed: Vec<(LayerBankLayout, u64)>,
+}
+
+impl CandidatePlacement {
+    /// Resolve placement for `layers` under `map`.
+    ///
+    /// Each layer's encoding is the map's OWN answer for that layer's
+    /// operands (`PrecisionMap::resolve` over the three projections).
+    /// A layer whose compiled projections resolve to DIFFERENT
+    /// encodings is refused by name — per-projection precision within
+    /// one layer's identity-addressed bank is not placeable, because
+    /// identity addressing carries one stride. A layer the map does
+    /// not compile at all is refused too: placing it would reserve
+    /// bytes no seal will ever cover.
+    pub fn resolve(
+        map: &super::map::PrecisionMap,
+        role: super::policy::Role,
+        layers: &[u32],
+        experts: u32,
+        hidden: usize,
+        inter: usize,
+    ) -> Result<Self, VindexError> {
+        let mut sorted: Vec<u32> = layers.to_vec();
+        sorted.sort_unstable();
+        sorted.dedup();
+        if sorted.is_empty() {
+            return Err(VindexError::Parse(
+                "a candidate placement over no layers places nothing".into(),
+            ));
+        }
+        let mut placed = Vec::with_capacity(sorted.len());
+        let mut base = 0u64;
+        for layer in sorted {
+            let mut encodings: Vec<(&str, String)> = Vec::new();
+            for proj in ["w1", "w3", "w2"] {
+                let tensor = format!("{layer}.block_sparse_moe.experts.0.{proj}.weight");
+                if let super::map::Precision::Compiled(enc) = map.resolve(role, &tensor) {
+                    encodings.push((proj, enc.to_string()));
+                }
+            }
+            let Some((_, encoding)) = encodings.first() else {
+                return Err(VindexError::Parse(format!(
+                    "layer {layer} is in the placement but the map `{}` compiles none of \
+                     its projections",
+                    map.name
+                )));
+            };
+            if let Some((proj, other)) = encodings.iter().find(|(_, e)| e != encoding) {
+                return Err(VindexError::Parse(format!(
+                    "layer {layer}: `{}` resolves to {encoding} but `{proj}` to {other} — \
+                     an identity-addressed layer bank carries ONE encoding; per-projection \
+                     precision within a layer is not placeable",
+                    encodings[0].0
+                )));
+            }
+            let layout = LayerBankLayout::new(layer, encoding, experts, hidden, inter)?;
+            let extent = layout.layer_bytes()?;
+            placed.push((layout, base));
+            base = base
+                .checked_add(extent)
+                .ok_or_else(|| VindexError::Parse("candidate placement overflows u64".into()))?;
+        }
+        Ok(Self { placed })
+    }
+
+    /// The layers this placement covers, ascending.
+    pub fn layers(&self) -> impl Iterator<Item = u32> + '_ {
+        self.placed.iter().map(|(l, _)| l.layer)
+    }
+
+    /// This layer's layout, or a refusal naming the layer.
+    pub fn layout(&self, layer: u32) -> Result<&LayerBankLayout, VindexError> {
+        self.placed
+            .iter()
+            .find(|(l, _)| l.layer == layer)
+            .map(|(l, _)| l)
+            .ok_or_else(|| {
+                VindexError::Parse(format!(
+                    "layer {layer} is not in this candidate's placement"
+                ))
+            })
+    }
+
+    /// Where this layer's bank begins in the segment.
+    pub fn layer_base(&self, layer: u32) -> Result<u64, VindexError> {
+        self.placed
+            .iter()
+            .find(|(l, _)| l.layer == layer)
+            .map(|(_, b)| *b)
+            .ok_or_else(|| {
+                VindexError::Parse(format!(
+                    "layer {layer} is not in this candidate's placement"
+                ))
+            })
     }
 }
 

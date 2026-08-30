@@ -38,12 +38,124 @@ const LAYER_ENV: &str = "LARQL_Q6_LAYER";
 /// Which projection, in the checkpoint's own spelling (`w1` gate, `w3`
 /// up, `w2` down). Unset compiles all three.
 const PROJECTION_ENV: &str = "LARQL_Q6_PROJECTION";
+/// Which encoding to compile the scoped operands into. Unset is Q6_K —
+/// the driver's historical default. The precision ladder sets `Q8_0`:
+/// the depth sweep answered "how deep can Q6_K go" (only layer 26), so
+/// the live question is what an ~8-bit representation admits, and that
+/// is a different candidate under the SAME driver, not a new one.
+const ENCODING_ENV: &str = "LARQL_Q6_ENCODING";
 
 fn scope_layer() -> u32 {
     std::env::var(LAYER_ENV)
         .ok()
         .and_then(|v| v.parse().ok())
         .unwrap_or(1)
+}
+
+/// Refuses an encoding no grouped kernel reads, loudly, before any
+/// bytes are written — a candidate that compiles but cannot execute
+/// would burn a bank run to discover a typo.
+fn scope_encoding() -> String {
+    let enc = std::env::var(ENCODING_ENV)
+        .ok()
+        .filter(|v| !v.is_empty())
+        .unwrap_or_else(|| "Q6_K".into());
+    assert!(
+        super::physical::ExpertEncoding::parse(&enc).is_some(),
+        "{ENCODING_ENV}={enc} names no encoding a grouped kernel reads"
+    );
+    enc
+}
+
+/// A COMPOSED map: `"20-25:Q8_0,26:Q6_K"` — inclusive layer bands, each
+/// at its own encoding, one candidate. When set it overrides the
+/// single-layer/encoding envs, because a composed map IS the scope.
+const MAP_ENV: &str = "LARQL_Q6_MAP";
+
+fn scope_composed() -> Option<Vec<((u32, u32), String)>> {
+    let spec = std::env::var(MAP_ENV).ok().filter(|v| !v.is_empty())?;
+    let bands = spec
+        .split(',')
+        .map(|band| {
+            let (range, enc) = band
+                .split_once(':')
+                .unwrap_or_else(|| panic!("{MAP_ENV}: `{band}` is not `LAYERS:ENCODING`"));
+            let (lo, hi) = match range.split_once('-') {
+                Some((a, b)) => (
+                    a.trim().parse().expect("band start"),
+                    b.trim().parse().expect("band end"),
+                ),
+                None => {
+                    let l = range.trim().parse().expect("band layer");
+                    (l, l)
+                }
+            };
+            assert!(lo <= hi, "{MAP_ENV}: band `{band}` is inverted");
+            assert!(
+                super::physical::ExpertEncoding::parse(enc.trim()).is_some(),
+                "{MAP_ENV}: `{enc}` names no encoding a grouped kernel reads"
+            );
+            ((lo, hi), enc.trim().to_string())
+        })
+        .collect::<Vec<_>>();
+    // Bands must not overlap — one layer, one encoding.
+    for (i, ((lo_a, hi_a), _)) in bands.iter().enumerate() {
+        for ((lo_b, hi_b), _) in bands.iter().skip(i + 1) {
+            assert!(
+                hi_a < lo_b || hi_b < lo_a,
+                "{MAP_ENV}: bands overlap at layers {}..={} vs {}..={}",
+                lo_a,
+                hi_a,
+                lo_b,
+                hi_b
+            );
+        }
+    }
+    Some(bands)
+}
+
+/// Every layer a composed spec names, ascending.
+fn composed_layers(bands: &[((u32, u32), String)]) -> Vec<u32> {
+    let mut layers: Vec<u32> = bands.iter().flat_map(|((lo, hi), _)| *lo..=*hi).collect();
+    layers.sort_unstable();
+    layers
+}
+
+/// The composed precision map: one exception per band, catch-all source.
+fn composed_map(bands: &[((u32, u32), String)]) -> PrecisionMap {
+    let name = format!(
+        "kimi-map-{}",
+        bands
+            .iter()
+            .map(|((lo, hi), enc)| {
+                let tag = enc.to_lowercase().replace('_', "");
+                if lo == hi {
+                    format!("l{lo}{tag}")
+                } else {
+                    format!("l{lo}-{hi}{tag}")
+                }
+            })
+            .collect::<Vec<_>>()
+            .join("-")
+    );
+    PrecisionMap {
+        name,
+        encoding: bands[0].1.clone(),
+        roles: vec!["expert-weight".into()],
+        exceptions: bands
+            .iter()
+            .map(|((lo, hi), enc)| Exception {
+                projection: None,
+                layers: Some((*lo, *hi)),
+                encoding: Some(enc.clone()),
+            })
+            .chain([Exception {
+                projection: None,
+                layers: None,
+                encoding: None,
+            }])
+            .collect(),
+    }
 }
 
 /// One or more projections, comma-separated. Empty compiles all three.
@@ -69,7 +181,7 @@ struct SegmentSource {
 impl SegmentSource {
     fn open(
         container: &std::path::Path,
-        layer: u32,
+        layers: &[u32],
     ) -> Result<(Self, Vec<SourceTensor>), VindexError> {
         let path = container.join("segments").join(format!("{OBJECT}.bin"));
         let (header, payload_start) =
@@ -77,7 +189,9 @@ impl SegmentSource {
         let mut offsets = std::collections::BTreeMap::new();
         let mut tensors = Vec::new();
         for t in header.tensors {
-            if crate::format::vindex3::represent::policy::layer_of(&t.name) == Some(layer) {
+            if crate::format::vindex3::represent::policy::layer_of(&t.name)
+                .is_some_and(|l| layers.contains(&l))
+            {
                 tensors.push(SourceTensor {
                     name: t.name.clone(),
                     shape: t.shape.to_vec(),
@@ -122,12 +236,15 @@ impl SourceOperands for SegmentSource {
 /// "which part of this layer's FFN is the sensitive one": gate and up
 /// feed the nonlinear activation, down writes back to the residual
 /// stream, and they need not be equally safe to quantise.
-fn layer_q6(layer: u32, projections: &[String]) -> PrecisionMap {
+fn layer_q6(layer: u32, projections: &[String], encoding: &str) -> PrecisionMap {
+    // "Q6_K" -> "q6k", "Q8_0" -> "q80": the map's name carries its
+    // encoding, so two candidates for one layer never collide.
+    let tag = encoding.to_lowercase().replace('_', "");
     let name = if projections.is_empty() {
-        format!("kimi-expertweight-layer{layer}-q6k")
+        format!("kimi-expertweight-layer{layer}-{tag}")
     } else {
         format!(
-            "kimi-expertweight-layer{layer}-{}-q6k",
+            "kimi-expertweight-layer{layer}-{}-{tag}",
             projections.join("+")
         )
     };
@@ -136,7 +253,7 @@ fn layer_q6(layer: u32, projections: &[String]) -> PrecisionMap {
         vec![Exception {
             projection: None,
             layers: Some((layer, layer)),
-            encoding: Some("Q6_K".into()),
+            encoding: Some(encoding.into()),
         }]
     } else {
         projections
@@ -144,13 +261,13 @@ fn layer_q6(layer: u32, projections: &[String]) -> PrecisionMap {
             .map(|p| Exception {
                 projection: Some(p.clone()),
                 layers: Some((layer, layer)),
-                encoding: Some("Q6_K".into()),
+                encoding: Some(encoding.into()),
             })
             .collect()
     };
     PrecisionMap {
         name,
-        encoding: "Q6_K".into(),
+        encoding: encoding.into(),
         roles: vec!["expert-weight".into()],
         exceptions: scoped
             .into_iter()
@@ -182,16 +299,32 @@ fn compile_the_layer_one_q6_candidate() {
         eprintln!("skipped: set {CONTAINER_ENV} to the source .vindex3");
         return;
     };
-    let (layer, projections) = (scope_layer(), scope_projections());
+    let projections = scope_projections();
+    // A composed spec is one candidate over several layer bands; the
+    // single-layer envs are the degenerate one-band form of the same
+    // thing. The map NAME differs (layer_q6's spelling is what existing
+    // candidates resume under), so composition is opt-in via the env,
+    // never a silent rename.
+    let composed = scope_composed();
+    let bands = composed
+        .clone()
+        .unwrap_or_else(|| vec![((scope_layer(), scope_layer()), scope_encoding())]);
+    let layers = composed_layers(&bands);
+    if composed.is_some() {
+        assert!(
+            projections.is_empty(),
+            "a composed map compiles whole layers; {PROJECTION_ENV} does not apply"
+        );
+    }
     let out_dir = std::env::var_os(OUT_ENV)
         .map(PathBuf::from)
         .unwrap_or_else(|| std::env::temp_dir().join("kimi-q6-candidate.vindex3"));
     std::fs::create_dir_all(out_dir.join("segments")).expect("out dir");
     let bank = out_dir.join("segments").join(format!("{OBJECT}.bin"));
 
-    let (source, tensors) = SegmentSource::open(&container, layer).expect("source segment");
+    let (source, tensors) = SegmentSource::open(&container, &layers).expect("source segment");
     eprintln!(
-        "[compile] layer {layer}{}: {} source tensors from {}",
+        "[compile] layers {layers:?}{}: {} source tensors from {}",
         if projections.is_empty() {
             String::new()
         } else {
@@ -202,12 +335,16 @@ fn compile_the_layer_one_q6_candidate() {
     );
     assert_eq!(
         tensors.len(),
-        (EXPERTS * 3) as usize,
-        "layer {layer} must hold 3 projections for each of {EXPERTS} experts"
+        layers.len() * (EXPERTS * 3) as usize,
+        "each of layers {layers:?} must hold 3 projections for each of {EXPERTS} experts"
     );
 
     let index_path = out_dir.join("index.json");
-    let map = layer_q6(layer, &projections);
+    let map = match &composed {
+        Some(bands) => composed_map(bands),
+        None => layer_q6(layers[0], &projections, &bands[0].1),
+    };
+    let map_name = map.name.clone();
     let mut index = std::fs::read(&index_path)
         .ok()
         .and_then(|b| serde_json::from_slice::<CandidateIndex>(&b).ok())
@@ -253,8 +390,9 @@ fn compile_the_layer_one_q6_candidate() {
 
     let on_disk = std::fs::metadata(&bank).expect("stat").len();
     eprintln!(
-        "[compile] layer {layer} Q6_K: {} sealed, {} resumed, {} left at source; \
+        "[compile] {}: {} sealed, {} resumed, {} left at source; \
          {:.2} GB in {secs:.1}s ({:.0} MB/s); bank file {:.2} GB",
+        map_name,
         outcome.sealed,
         outcome.resumed,
         outcome.source_precision,
@@ -290,19 +428,20 @@ fn compile_the_layer_one_q6_candidate() {
     // Every operand the scope covers is sealed; the rest were left at
     // source and never written. A projection-scoped map compiles a
     // THIRD of the layer, which is the point of scoping it.
-    let in_scope = if projections.is_empty() {
+    let per_layer_in_scope = if projections.is_empty() {
         (EXPERTS * 3) as usize
     } else {
         EXPERTS as usize * projections.len()
     };
+    let in_scope = per_layer_in_scope * layers.len();
     assert_eq!(
         outcome.sealed + outcome.resumed,
         in_scope,
-        "every in-scope layer-{layer} operand must be sealed or already sealed"
+        "every in-scope operand of layers {layers:?} must be sealed or already sealed"
     );
     assert_eq!(
         outcome.source_precision,
-        (EXPERTS * 3) as usize - in_scope,
+        layers.len() * (EXPERTS * 3) as usize - in_scope,
         "everything outside the scope stays at source precision, unwritten"
     );
     assert!(index.ledger.overlaps().is_empty(), "banks must not collide");
@@ -310,21 +449,33 @@ fn compile_the_layer_one_q6_candidate() {
         !index.is_authoritative(),
         "no quality bank has run, so these bytes must NOT be selected"
     );
-    // The compiled population, against the format's own geometry.
-    // 256 experts x [1024, 2304] at Q6_K is 210 bytes per 256-element
-    // superblock — ~0.50 GB a projection, ~1.49 GB for all three.
+    // The compiled population, against the format's own geometry: every
+    // projection of this layer is 1024 x 2304 elements (gate/up
+    // [inter, hidden], down [hidden, inter] — same product), so the
+    // ledger's byte count is EXACTLY the encoding's per-matrix size
+    // times the in-scope operand count. Derived from the same
+    // `matrix_bytes` the layout uses, so a drift here is a compiler
+    // fault, never a stale constant.
     let expected = index.ledger.compiled_bytes();
-    let per_projection = 0.496e9;
-    let want = per_projection * in_scope as f64 / EXPERTS as f64;
-    assert!(
-        (expected as f64 - want).abs() < 0.1e9,
-        "layer {layer}{} at Q6_K should be ~{:.2} GB, got {:.2} GB",
+    let want: u64 = bands
+        .iter()
+        .map(|((lo, hi), enc)| {
+            let per_matrix = super::compile::LayerBankLayout::matrix_bytes(enc, 1024, 2304)
+                .expect("the driver's geometry is encodable");
+            per_matrix * per_layer_in_scope as u64 * u64::from(hi - lo + 1)
+        })
+        .sum();
+    assert_eq!(
+        expected,
+        want,
+        "`{}`{} should be exactly {:.3} GB, got {:.3} GB",
+        map_name,
         if projections.is_empty() {
             String::new()
         } else {
             format!(" / {}", projections.join("+"))
         },
-        want / 1e9,
+        want as f64 / 1e9,
         expected as f64 / 1e9
     );
 }

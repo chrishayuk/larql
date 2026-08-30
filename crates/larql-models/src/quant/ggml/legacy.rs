@@ -2,8 +2,10 @@
 //! 32 elements per super-block; one f16 (or two for Q4_1/Q5_1) scale
 //! per block. K-quants (Q4_K, Q6_K) live in their own modules.
 //!
-//! `dequantize_q4_1` and `dequantize_q8_0` stay `pub(super)` because
-//! they're only reached through `super::dequantize` dispatch.
+//! `dequantize_q4_1` stays `pub(super)` because it's only reached
+//! through `super::dequantize` dispatch. `dequantize_q8_0` is public:
+//! the vindex REPRESENT pipeline and the Metal grouped-kernel tests
+//! use it directly as the decode reference for Q8_0 expert banks.
 
 use crate::ModelError;
 
@@ -63,7 +65,7 @@ pub(super) fn dequantize_q4_1(data: &[u8], n_elements: usize) -> Result<Vec<f32>
 }
 
 /// Q8_0: block = f16 scale (2B) + 32 signed int8 quants.
-pub(super) fn dequantize_q8_0(data: &[u8], n_elements: usize) -> Result<Vec<f32>, ModelError> {
+pub fn dequantize_q8_0(data: &[u8], n_elements: usize) -> Result<Vec<f32>, ModelError> {
     let block_size = 34;
     let n_blocks = check_block_input("Q8_0", data, n_elements, 32, block_size)?;
     let mut out = Vec::with_capacity(n_elements);

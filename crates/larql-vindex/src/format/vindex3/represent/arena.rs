@@ -171,7 +171,7 @@ impl RepresentationArena {
 /// claims Q6_K would make the whole evidence chain a lie, and the
 /// failure would look like "quantisation is free".
 fn encode(encoding: &str, values: &[f32], name: &str) -> Result<Vec<u8>, VindexError> {
-    use larql_compute::cpu::ops::q4_common::{quantize_q4_k, quantize_q6_k};
+    use larql_compute::cpu::ops::q4_common::{quantize_q4_k, quantize_q6_k, quantize_q8_0};
     match encoding {
         "Q6_K" | "Q4_K" => {
             if !values.len().is_multiple_of(256) {
@@ -186,6 +186,16 @@ fn encode(encoding: &str, values: &[f32], name: &str) -> Result<Vec<u8>, VindexE
             } else {
                 quantize_q4_k(values)
             })
+        }
+        "Q8_0" => {
+            if !values.len().is_multiple_of(32) {
+                return Err(VindexError::Parse(format!(
+                    "tensor `{name}`: {} values is not a whole number of 32-element \
+                     blocks, so Q8_0 rows would share a scale",
+                    values.len()
+                )));
+            }
+            Ok(quantize_q8_0(values))
         }
         "BF16" => Ok(values
             .iter()

@@ -28,13 +28,14 @@ use std::sync::Arc;
 use larql_compute::backend::ComputeBackend;
 use larql_compute_metal::trait_impl::grouped_experts::ExpertOffset;
 use larql_compute_metal::trait_impl::kda::{KdaDeviceState, KdaShape};
+use larql_compute_metal::trait_impl::kimi_layer::ExpertEncoding as MetalEncoding;
 use larql_compute_metal::trait_impl::mla::{MlaDeviceState, MlaShape};
 use larql_compute_metal::MetalBackend;
 
 use super::stack_metal::{DeviceAttn, DeviceLayer, DeviceState, HybridHead};
 use crate::error::VindexError;
 use crate::format::vindex3::encode::segment::read_segment_header;
-use crate::format::vindex3::represent::compile::LayerBankLayout;
+use crate::format::vindex3::represent::compile::CandidatePlacement;
 use crate::format::vindex3::represent::compiler::{
     bank_base, read_source_identity, CandidateIndex,
 };
@@ -42,7 +43,7 @@ use crate::format::vindex3::represent::physical::{
     EncodedRegion, ExpertBankBinding, ExpertEncoding, ExtentPolicy, PhysicalStore,
     ProjectionAddressing, RoutedProjection, SharedExpertBinding, WeightRegion,
 };
-use crate::format::vindex3::represent::policy::{layer_of, projection_of};
+use crate::format::vindex3::represent::policy::{layer_of, projection_of, Role};
 use crate::format::vindex3::represent::source_bank::source_expert_bank;
 
 /// `kv_a_layernorm`'s epsilon is the reference class's DEFAULT, not the
@@ -363,6 +364,10 @@ impl KimiSourceModel {
                     ExpertOffset((2 * per) as u32),
                 ],
                 o_proj: self.decoder.bytes(&t("o_proj.weight"))?,
+                // The loader binds the container's own bf16 bytes; a
+                // compiled KDA-projection candidate is a later rung's
+                // overlay arm, not a silent default.
+                encoding: MetalEncoding::Bf16,
                 f32s,
             },
             DeviceState::Kda(KdaDeviceState::zeros(metal, g.kda)),
@@ -556,11 +561,14 @@ pub struct CandidateOverlay {
     /// projection-scoped candidate, and the rest stay source-backed.
     /// Derived from the SEALS, for the same reason as `layers`.
     projections: Vec<String>,
-    encoding: ExpertEncoding,
-    /// The geometry the completeness proof ran against — reused to
-    /// place the read views exactly where the compiler wrote.
-    hidden: usize,
-    inter: usize,
+    /// Physical representation per compiled LAYER — a composed map's
+    /// layers need not share one (Q8_0 band beside a Q6_K layer).
+    encodings: std::collections::BTreeMap<u32, ExpertEncoding>,
+    /// Where each layer's bank sits in the segment — the same
+    /// definition the compiler wrote and `verify_complete` proved.
+    /// Geometry lives in the placement's layouts; the overlay keeps
+    /// only the expert count, which the layouts do not carry.
+    placement: CandidatePlacement,
     experts: u32,
 }
 
@@ -582,16 +590,26 @@ impl CandidateOverlay {
         let index: CandidateIndex = serde_json::from_slice(&std::fs::read(dir.join("index.json"))?)
             .map_err(|e| VindexError::Parse(format!("candidate index: {e}")))?;
         index.source.verify(&read_source_identity(source_dir)?)?;
-        let (layers, projections) = verify_complete(&index, geometry)?;
-        let encoding = ExpertEncoding::parse(&index.map.encoding).ok_or_else(|| {
-            VindexError::Parse(format!(
-                "candidate encodes `{}`, which no grouped kernel reads",
-                index.map.encoding
-            ))
-        })?;
+        let (layers, projections, placement) = verify_complete(&index, geometry)?;
+        // Per LAYER, from the placement the completeness proof ran on —
+        // a composed map's layers need not share one encoding.
+        let mut encodings = std::collections::BTreeMap::new();
+        for &layer in &layers {
+            let name = &placement.layout(layer)?.encoding;
+            let enc = ExpertEncoding::parse(name).ok_or_else(|| {
+                VindexError::Parse(format!(
+                    "candidate encodes layer {layer} as `{name}`, which no grouped \
+                     kernel reads"
+                ))
+            })?;
+            encodings.insert(layer, enc);
+        }
         let segment = dir.join("segments").join(format!("{}.bin", index.object));
         let store = Arc::new(PhysicalStore::map_compiled(
-            "kimi-q6-candidate",
+            // Encoding-agnostic on purpose: the id lands in evidence
+            // attributions, and a Q8_0 candidate labelled "q6" would
+            // misstate the representation under test.
+            "kimi-candidate-bank",
             &segment,
             &index.ledger,
         )?);
@@ -600,9 +618,8 @@ impl CandidateOverlay {
             store,
             layers,
             projections,
-            encoding,
-            hidden: geometry.hidden,
-            inter: geometry.moe_intermediate,
+            encodings,
+            placement,
             experts: geometry.experts,
         })
     }
@@ -613,6 +630,14 @@ impl CandidateOverlay {
 
     /// Which projections this candidate compiled. Fewer than three
     /// means the rest execute from the source.
+    /// The physical representation this LAYER's sealed operands carry —
+    /// from the map the compiler executed, verified parseable at open.
+    pub fn encoding_of(&self, layer: u32) -> Result<ExpertEncoding, VindexError> {
+        self.encodings.get(&layer).copied().ok_or_else(|| {
+            VindexError::Parse(format!("layer {layer} is not compiled in this candidate"))
+        })
+    }
+
     pub fn compiled_projections(&self) -> &[String] {
         &self.projections
     }
@@ -627,7 +652,14 @@ impl CandidateOverlay {
             } else {
                 self.projections.join("+")
             },
-            self.index.map.encoding
+            self.layers
+                .iter()
+                .map(|l| {
+                    let enc = self.encodings.get(l).map(|e| e.name()).unwrap_or("?");
+                    format!("L{l}:{enc}")
+                })
+                .collect::<Vec<_>>()
+                .join(" ")
         )
     }
 
@@ -738,15 +770,10 @@ impl CandidateOverlay {
     }
 
     fn binding_inner(&self, layer: u32, projection: &str) -> Result<RoutedProjection, VindexError> {
-        // The SAME layout derivation `verify_complete` proved every seal
+        // The SAME placement `verify_complete` proved every seal
         // against — one definition of where an expert's bytes are.
-        let layout = LayerBankLayout::new(
-            layer,
-            &self.index.map.encoding,
-            self.experts,
-            self.hidden,
-            self.inter,
-        )?;
+        let layout = self.placement.layout(layer)?.clone();
+        let layer_base = self.placement.layer_base(layer)?;
         if layout.gate_up_stride != layout.down_stride {
             return Err(VindexError::Parse(format!(
                 "layer {layer}: gate/up stride {} != down stride {} — identity addressing \
@@ -758,15 +785,16 @@ impl CandidateOverlay {
             VindexError::Parse("a compiled expert stride does not fit 32 bits".to_string())
         })?;
         let bank_bytes = layout.bank_bytes("w1")?;
+        let encoding = self.encoding_of(layer)?;
         let region = |proj: &str| -> Result<EncodedRegion, VindexError> {
-            let base = bank_base(&layout, proj)?;
+            let base = layer_base + bank_base(&layout, proj)?;
             Ok(EncodedRegion {
                 region: self.store.span(base, bank_bytes).ok_or_else(|| {
                     VindexError::Parse(format!(
                         "candidate segment is too short for the {proj} bank at {base}"
                     ))
                 })?,
-                encoding: self.encoding,
+                encoding,
             })
         };
         // Every compiled projection is a full execution-shaped bank:
@@ -800,7 +828,7 @@ impl CandidateOverlay {
 pub fn verify_complete(
     index: &CandidateIndex,
     geometry: &KimiGeometry,
-) -> Result<(Vec<u32>, Vec<String>), VindexError> {
+) -> Result<(Vec<u32>, Vec<String>, CandidatePlacement), VindexError> {
     let overlaps = index.ledger.overlaps();
     if !overlaps.is_empty() {
         return Err(VindexError::Parse(format!(
@@ -848,14 +876,21 @@ pub fn verify_complete(
             )));
         }
     }
+    // ONE placement, the same definition the compiler wrote under: each
+    // layer's base is the sum of the preceding compiled layers' extents,
+    // each at its OWN encoding — which is what lets a composed map hold
+    // a Q8_0 band beside a Q6_K layer in one candidate.
+    let placement = CandidatePlacement::resolve(
+        &index.map,
+        Role::ExpertWeight,
+        &layers,
+        geometry.experts,
+        geometry.hidden,
+        geometry.moe_intermediate,
+    )?;
     for &layer in &layers {
-        let layout = LayerBankLayout::new(
-            layer,
-            &index.map.encoding,
-            geometry.experts,
-            geometry.hidden,
-            geometry.moe_intermediate,
-        )?;
+        let layout = placement.layout(layer)?;
+        let layer_base = placement.layer_base(layer)?;
         for expert in 0..geometry.experts {
             for proj in projections.iter().map(String::as_str) {
                 let tensor = format!("{layer}.block_sparse_moe.experts.{expert}.{proj}.weight");
@@ -867,7 +902,7 @@ pub fn verify_complete(
                     ))
                 })?;
                 let slot = layout.slot(proj, expert)?;
-                let want_offset = bank_base(&layout, proj)? + slot.offset;
+                let want_offset = layer_base + bank_base(layout, proj)? + slot.offset;
                 if seal.target_offset != want_offset || seal.target_len != slot.len {
                     return Err(VindexError::Parse(format!(
                         "`{tensor}` is sealed at {}+{} but the layout places it at \
@@ -875,14 +910,15 @@ pub fn verify_complete(
                         seal.target_offset, seal.target_len, slot.len
                     )));
                 }
-                if seal.encoding != index.map.encoding {
+                if seal.encoding != layout.encoding {
                     return Err(VindexError::Parse(format!(
-                        "`{tensor}` is sealed as {} but the map says {}",
-                        seal.encoding, index.map.encoding
+                        "`{tensor}` is sealed as {} but the map resolves layer {layer} \
+                         to {}",
+                        seal.encoding, layout.encoding
                     )));
                 }
             }
         }
     }
-    Ok((layers, projections))
+    Ok((layers, projections, placement))
 }

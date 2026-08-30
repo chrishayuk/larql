@@ -171,6 +171,7 @@ impl Fixture {
             qkv_bank: &self.qkv_bank,
             qkv_offsets: &self.qkv_offsets,
             o_proj: &self.o_proj,
+            projection_encoding: ExpertEncoding::Bf16,
             q_conv1d: &f[0],
             k_conv1d: &f[1],
             v_conv1d: &f[2],
@@ -709,6 +710,7 @@ fn a_kda_layer_and_an_mla_layer_share_one_command_buffer() {
 
 mod addressing;
 mod dense;
+mod encoding;
 mod head;
 mod shared;
 

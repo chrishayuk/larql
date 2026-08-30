@@ -45,3 +45,8 @@ pub use matvec_f32::q4k_matvec_into;
 pub use quantize::{
     q4k_to_q4kf, quantize_q4_0, quantize_q4_k, quantize_q4_kf, quantize_q6_k, quantize_to_q8,
 };
+// Canonical ggml Q8_0 codec (34-byte blocks). Re-exported rather than
+// re-implemented: larql-models owns the checkpoint-side block formats,
+// and a second encoder here could drift from the one GGUF ingestion
+// already trusts.
+pub use larql_models::quant::ggml::{dequantize_q8_0, quantize_q8_0};
