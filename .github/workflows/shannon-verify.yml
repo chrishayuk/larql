@@ -24,6 +24,7 @@ on:
     branches: [main]
     paths:
       - 'crates/larql-cli/**'
+      - 'crates/larql-compute/**'
       - 'crates/larql-inference/**'
       - 'crates/larql-models/**'
       - 'scripts/shannon_score_*.py'
@@ -36,6 +37,7 @@ on:
     branches: [main]
     paths:
       - 'crates/larql-cli/**'
+      - 'crates/larql-compute/**'
       - 'crates/larql-inference/**'
       - 'crates/larql-models/**'
       - 'scripts/shannon_score_*.py'
