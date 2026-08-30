@@ -248,3 +248,56 @@ async fn the_rest_read_routes_are_mounted() {
         assert_eq!(response.status(), StatusCode::OK, "{uri}");
     }
 }
+
+// ═══════════════════════════════════════════════════════════════
+// The bridge's failure surface
+// ═══════════════════════════════════════════════════════════════
+
+/// A container that does not bind fails the boot, not the first
+/// request: `spawn` returns the bind error and no bridge exists.
+#[test]
+fn a_container_that_does_not_bind_fails_spawn() {
+    let result = larql_server::lql_bridge::spawn(
+        std::path::Path::new("/nonexistent/container.vindex3"),
+        std::time::Duration::from_secs(1),
+    );
+    let Err(err) = result else {
+        panic!("binding a missing container must fail the boot");
+    };
+    assert!(!err.to_string().is_empty());
+}
+
+/// A statement that parses and is permitted but fails at execution is
+/// 422 — the profile refused nothing, the session tried and failed.
+#[tokio::test]
+async fn an_execution_failure_is_422_not_500() {
+    let container = v3_container();
+    let app = public_app(container.path());
+    // A layer the fixture does not have: the statement parses, passes
+    // the profile, and fails inside the executor.
+    let (status, body) = query(&app, "SHOW FEATURES 99;").await;
+    assert_eq!(status, StatusCode::UNPROCESSABLE_ENTITY, "{body}");
+    assert!(
+        body["error"].as_str().unwrap().contains("no features"),
+        "{body}"
+    );
+}
+
+/// An already-elapsed deadline reports the timeout, with the budget
+/// named. The statement must be genuinely slow: a trivial one can win
+/// the race against the first poll of the zero-duration timeout (the
+/// session thread runs in parallel), so the job is a full generation.
+#[tokio::test]
+async fn an_exhausted_deadline_is_a_bridge_timeout() {
+    let container = v3_container();
+    let bridge =
+        larql_server::lql_bridge::spawn(container.path(), std::time::Duration::ZERO).unwrap();
+    // A full 32-token generation cannot finish inside the synchronous
+    // gap between enqueueing the job and polling the elapsed deadline.
+    match bridge.query("INFER \"[3]\" GENERATE 32;".into()).await {
+        Err(larql_server::lql_bridge::QueryFailure::Bridge(msg)) => {
+            assert!(msg.contains("timed out"), "{msg}");
+        }
+        other => panic!("a zero deadline must time out, got {other:?}"),
+    }
+}
