@@ -289,11 +289,11 @@ amend §5.7 to "discard only with report".
 | F7 | `AttentionLayerPolicy.operator` `serde(default)` = Softmax — absence silently reinterprets | **schema gap** (silent default) | explicit operator at schema 6 |
 | F8 | `plan_kv_geometry` panics on recurrent layers; two production callers (LQL STATS, EXPLAIN) | defect | migrate callers to `plan_continuation_geometry` |
 | F9 | KDA/MLA execution is a family-shaped, test-only loader bypassing plan/roles; plan path refuses honestly | implementation gap | plan-driven KDA/MLA executor; not a freeze blocker |
-| F10 | Six `find(PrimaryText)` first-match sites — quiet wrongness when two text components exist | defect | uniqueness assertions now; role algebra post-3.0 |
+| F10 | `find(PrimaryText)` first-match sites — quiet wrongness when two text components exist (three of the six reported sites were already plural-safe `filter`s) | defect — **closed** | `SystemGraph::primary_text_component`: unique or refused naming the candidates; encode errors on ambiguity, capability/alias resolution yields none rather than first |
 | F11 | One edge species; producer must be PrimaryText; consumer hard-coded FeatureProjector; two producers refuses | scope decision | declare the 3.0 component algebra; typed edge kinds post-3.0 |
 | F12 | Closed graph enums + exact-schema refusal: every vocabulary addition is wire-breaking + re-encode | posture decision | spec must state the graph's strict-versioning posture explicitly |
-| F13 | COMPILE drops unknown `index.json` fields (struct round-trip); COMPACT preserves them | defect vs §5.7 | preserve-on-rewrite in COMPILE |
-| F14 | COMPACT collects unregistered sidecar files (reported, not silent) | defect vs §5.7 wording | reconcile: extend preservation or amend §5.7 |
+| F13 | COMPILE drops unknown `index.json` fields (struct round-trip); COMPACT preserves them | defect vs §5.7 — **closed** | flattened preservation map on `Vindex3Index`; every struct round-trip now carries unknown fields; gated by `bake_preserves_unknown_index_fields` |
+| F14 | COMPACT collects unregistered sidecar files (reported, not silent) | defect vs §5.7 wording — **closed** | §5.7 amended: reported discard of unreferenced files is sanctioned; silent discard forbidden |
 | F15 | Per-expert permutation has no serialisable home; `ProjectionAddressing` deliberately runtime-only | additive-safe (missing vocab) | optional permutation field, 3.x |
 | F16 | `OperandRole` append-only, exact-suffix, fail-closed; codec fallthroughs all named refusals; COMPACT byte-blind | held | the healthy core the freeze protects |
 
@@ -329,3 +329,22 @@ enumerated**. The freeze checklist after this drill:
 
 Nothing on that list is a discovery about *what VINDEX3 is*. That
 question did not flinch.
+
+For the 3.0 release history, the drill's one-sentence result:
+
+> **The ontology drill found defects in how VINDEX3 expressed two
+> already-known abstractions; it found no missing abstraction required
+> to describe the four hostile architectures.**
+
+## Closure log
+
+- **2026-08-30, same day:** F13 closed (flattened preservation map on
+  `Vindex3Index`, gated by `bake_preserves_unknown_index_fields`); F14
+  closed (§5.7 amended to reported-discard); F10 closed
+  (`SystemGraph::primary_text_component` — unique or refused naming the
+  candidates; three of the six reported sites were already plural-safe
+  `filter`s). The schema-6 delta was defined once, in §17.4 of the
+  candidate, with the severe acceptance rule and real validation
+  witnesses: `mamba2-780m` (pure SSM), `mamba2attn-2.7b` (the
+  surfaces-follow-program A/B), `Falcon3-Mamba-7B-Instruct`
+  (product-scale), Kimi-Linear (three-state hybrid).

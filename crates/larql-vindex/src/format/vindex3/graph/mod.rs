@@ -121,7 +121,54 @@ pub enum GraphDefect {
     ObjectUnbound(String),
 }
 
+/// Why [`SystemGraph::primary_text_component`] could not answer.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum PrimaryTextLookup {
+    /// No component carries the role.
+    Absent,
+    /// More than one does. First-match selection is exactly how two
+    /// text-shaped components go quietly wrong (ontology drill F10), so
+    /// ambiguity names the candidates and refuses — it is never resolved
+    /// by position.
+    Ambiguous(Vec<String>),
+}
+
+impl std::fmt::Display for PrimaryTextLookup {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Absent => write!(f, "graph has no primary_text component"),
+            Self::Ambiguous(ids) => write!(
+                f,
+                "expected exactly one primary_text component; found {}: {} — refusing to pick the first",
+                ids.len(),
+                ids.join(", ")
+            ),
+        }
+    }
+}
+
 impl SystemGraph {
+    /// The unique primary-text component.
+    ///
+    /// The only sanctioned way to answer "the text model": callers that
+    /// used `find(role == PrimaryText)` got first-match semantics, which
+    /// is quiet wrongness the day a second text-shaped component exists.
+    pub fn primary_text_component(&self) -> Result<&Component, PrimaryTextLookup> {
+        let mut primaries = self
+            .components
+            .iter()
+            .filter(|c| c.role == crate::format::vindex3::graph::component::ComponentRole::PrimaryText);
+        match (primaries.next(), primaries.next()) {
+            (Some(only), None) => Ok(only),
+            (None, _) => Err(PrimaryTextLookup::Absent),
+            (Some(first), Some(second)) => {
+                let mut ids = vec![first.id.clone(), second.id.clone()];
+                ids.extend(primaries.map(|c| c.id.clone()));
+                Err(PrimaryTextLookup::Ambiguous(ids))
+            }
+        }
+    }
+
     /// Structural validation: ids unique, every reference resolvable,
     /// every object physically bound.
     pub fn validate(&self) -> Vec<GraphDefect> {

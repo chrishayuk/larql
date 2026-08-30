@@ -410,7 +410,7 @@ preserved — decided by these rules:
 | unknown `index.json` schema (`version` ∉ its supported set) | MUST refuse by name, stating the version found and the versions supported — before reading any byte |
 | unknown fields inside a supported `index.json` schema | MUST ignore for interpretation (additive evolution within a schema number) and MUST NOT drop them when rewriting the index |
 | unknown LYRW role / format / packing / layout tags | MUST preserve at read time; refusal belongs at capability-check time (§6.5, §11): a browse-only reader must not choke on a `down` region in a codec it never touches |
-| unknown files in the container directory | MUST ignore for interpretation; maintenance operations (COMPACT, §20) MUST NOT silently discard them |
+| unknown files in the container directory | MUST ignore for interpretation; maintenance operations (COMPACT, §20) MAY discard files nothing references — but only as named entries in their report, never silently. Registered capability files and every index-referenced segment are always carried |
 | a required operand absent for a requested operation | MUST refuse naming the operand, object, layer and segment — never best-effort execute (§11, §17) |
 | a cross-generation container (V2 directory to a V3 verb or vice versa) | MUST refuse naming both generations (§12.1) — no cross-loading, no silent conversion |
 
@@ -1067,6 +1067,43 @@ the component algebra holds as scoped, and the additive-evolution claim
 that carried residency out of these gates is real. The ontology
 question itself did not flinch.
 
+**The schema-6 delta, defined once.** Both lifts land in a single
+intentional semantic break — `GRAPH_SCHEMA` 5 → 6, one re-encode of the
+corpus — never as two migrations discovering each other halfway:
+
+```text
+operation-program-derived surfaces   completeness from the declared
+                                     program; object kinds imply nothing
+attention absent when absent         presence means semantic presence,
+                                     not successful serialization
+ContinuationState declaration        per-operation state schema
+KDA state precision                  declared, never chosen by the executor
+MLA latent-KV geometry               declared, never invented
+per-op norm-epsilon override         the MLA kv_a_layernorm fact (F6)
+explicit per-layer operator          no absent-means-softmax default (F7)
+fail-closed layer census             undeclared families block (F3)
+closure at encode                    encoding is the proof boundary (F4)
+```
+
+The schema-6 acceptance test is severe by design: an encoder may not
+emit a v6 graph unless declared operations ↔ required surfaces ↔
+complete semantic parameters ↔ required continuation-state schema ↔
+closed operand estate all reconcile. The Final invariant this buys:
+
+> **The encoded operation programme is the completeness authority, and
+> an encoder may not emit a programme whose required semantics or
+> operands do not close.**
+
+Validation witnesses (real checkpoints, in order):
+`state-spaces/mamba2-780m` — 48 Mamba2 layers, `attn_layer_idx: []`,
+zero attention: the pure case that must encode with no attention surface
+anywhere; `state-spaces/mamba2attn-2.7b` — six attention layers at
+declared indices among Mamba2 blocks: the A/B proving surfaces exist
+only where the declared program uses them, and that KV and SSM state
+coexist per-operation; then `tiiuae/Falcon3-Mamba-7B-Instruct` as the
+product-scale witness. Kimi-Linear remains the three-state hybrid
+witness for the ContinuationState half.
+
 ---
 
 ## 18. Operations, observation, and the independent reader
@@ -1154,8 +1191,9 @@ The guarantees that make transformations provable rather than asserted:
   is stamped `derived`, never `canonical`.
 - **COMPACT identity.** `COMPACT` reorganises physical storage and MUST
   preserve semantic identity — same graph, same effective values, same
-  answers; it MUST NOT discard container contents it does not understand
-  (§5.7).
+  answers. It carries byte-identically what it cannot decode, and it
+  discards unreferenced files only as named entries in its report —
+  silent discard is forbidden (§5.7).
 
 ---
 

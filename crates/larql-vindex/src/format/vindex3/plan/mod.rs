@@ -416,14 +416,11 @@ fn component_for_key<'a>(built: &'a BuiltGraph, component_name: &str) -> Option<
         .iter()
         .find(|c| c.id == component_name)
         .or_else(|| {
+            // The aliases resolve only when the primary is unique —
+            // ambiguity yields no component rather than the first one
+            // (drill F10).
             (component_name == ROOT || component_name == TEXT)
-                .then(|| {
-                    built
-                        .graph
-                        .components
-                        .iter()
-                        .find(|c| c.role == ComponentRole::PrimaryText)
-                })
+                .then(|| built.graph.primary_text_component().ok())
                 .flatten()
         })
 }

@@ -142,3 +142,36 @@ fn bake_refuses_non_f32_edited_tensors() {
     assert!(err.to_string().contains("BF16"), "{err}");
     assert!(err.to_string().contains("representation-policy"), "{err}");
 }
+
+/// Drill finding F13: a field this build does not understand must
+/// survive the bake (candidate spec §5.7 — a rewriter MUST NOT drop
+/// what it cannot interpret). COMPACT preserves by carrying the file
+/// byte-identically; the bake rewrites the index, so preservation must
+/// be structural.
+#[test]
+fn bake_preserves_unknown_index_fields() {
+    use crate::format::filenames::INDEX_JSON;
+
+    let (container, plan, _store) = fixture();
+    let (overrides, _gate) = gate_edit(&plan);
+
+    // A future 3.x writer added vocabulary this build has never seen.
+    let index_path = container.path().join(INDEX_JSON);
+    let mut raw: serde_json::Value =
+        serde_json::from_str(&std::fs::read_to_string(&index_path).unwrap()).unwrap();
+    raw["residency_contract"] = serde_json::json!({ "access_class": "demand_driven" });
+    std::fs::write(&index_path, serde_json::to_string_pretty(&raw).unwrap()).unwrap();
+
+    let out = tempfile::tempdir().unwrap();
+    bake_container(container.path(), &overrides, out.path()).unwrap();
+
+    let baked: serde_json::Value = serde_json::from_str(
+        &std::fs::read_to_string(out.path().join(INDEX_JSON)).unwrap(),
+    )
+    .unwrap();
+    assert_eq!(
+        baked["residency_contract"]["access_class"],
+        serde_json::json!("demand_driven"),
+        "an unknown index field must survive the bake, not be dropped by the struct round-trip"
+    );
+}
