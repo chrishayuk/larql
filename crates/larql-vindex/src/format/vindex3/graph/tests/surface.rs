@@ -260,6 +260,65 @@ fn completeness_defects_display_the_component() {
     };
     assert!(head.to_string().contains("`draft`"));
     assert!(head.to_string().contains("head group"));
+    let norm = CompletenessDefect::MissingNormPlacement {
+        component: "target".to_string(),
+    };
+    assert!(norm.to_string().contains("norm placement"));
+    let operation = CompletenessDefect::MissingOperationSurface {
+        component: "target".to_string(),
+        operation: "attention",
+    };
+    assert!(operation.to_string().contains("`target`"));
+    assert!(operation.to_string().contains("attention group"));
+}
+
+/// **Schema 6: the operation surfaces follow the program — each family
+/// that runs must find its group present.** Stripping a group whose
+/// operators are in the table is a completeness defect naming the
+/// operation; a mixer-only program legitimately carries neither
+/// attention nor FFN and is complete without them.
+#[test]
+fn a_program_that_runs_a_family_requires_its_surface_group() {
+    let (_a, _b, named) = glimmer_pair();
+    let mut built = build_from_inventories(&named);
+    assert!(execution_completeness(&built.graph).is_empty());
+    let strip = |built: &mut crate::format::vindex3::graph::BuiltGraph,
+                 f: &dyn Fn(&mut crate::format::vindex3::graph::ExecutionSurface)| {
+        let target = built
+            .graph
+            .components
+            .iter_mut()
+            .find(|c| c.id == "target")
+            .unwrap();
+        f(target.execution.as_mut().unwrap());
+    };
+    // The target attends and runs an FFN; each group is load-bearing.
+    strip(&mut built, &|s| s.attention = None);
+    let defects = execution_completeness(&built.graph);
+    assert!(
+        defects.iter().any(|d| matches!(
+            d,
+            CompletenessDefect::MissingOperationSurface {
+                operation: "attention",
+                ..
+            }
+        )),
+        "{defects:?}"
+    );
+    let (_a, _b, named) = glimmer_pair();
+    let mut built = build_from_inventories(&named);
+    strip(&mut built, &|s| s.ffn = None);
+    let defects = execution_completeness(&built.graph);
+    assert!(
+        defects.iter().any(|d| matches!(
+            d,
+            CompletenessDefect::MissingOperationSurface {
+                operation: "ffn",
+                ..
+            }
+        )),
+        "{defects:?}"
+    );
 }
 
 /// A component owning a head object whose surface lost its head group is
