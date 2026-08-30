@@ -28,6 +28,7 @@ use larql_models::config::{
 
 use super::super::super::graph::policy::AttentionSpan;
 use super::cpu::WeightRows;
+use super::quantise::SUM_BLOCK;
 use crate::error::VindexError;
 
 /// The numerical representation a backend wants matrix operands in.
@@ -70,6 +71,23 @@ pub enum WeightFormat {
     /// measured, `1024 x 5120` runs 0.81x through Q8 because at 10.5 MB
     /// it is already L2-resident and the extra unpacking is pure cost.
     Q8,
+    /// Symmetric int4, two codes per byte, one f32 scale per
+    /// [`Q4_BLOCK`](crate::format::vindex3::opplan::exec::quantise::Q4_BLOCK)
+    /// elements along the input axis. 4.5 bits/weight.
+    ///
+    /// **The second lossy residency format, and by far the larger
+    /// perturbation.** Its step is `peak / 7` against Q8's `peak / 127` —
+    /// 18.1x coarser at the same block — so it is not "Q8 with fewer
+    /// bytes", it is a different numerical proposition that has to earn
+    /// its place on logits, KL, a trajectory and recurrent-state drift.
+    ///
+    /// Worth declaring only where the arithmetic can consume it. CPU-4A
+    /// measured Q4 against f32 activations at 1.08x — SLOWER than Q8 —
+    /// because the kernel was already conversion-bound and Q4 adds a
+    /// nibble split on top; CPU-4Y measured the same bytes against an
+    /// int8 activation at 3.12x. The format is only ever as good as the
+    /// domain it is multiplied in.
+    Q4,
     /// IEEE 754 half, little-endian. Exactly representable from stored
     /// bf16 for all normal-range values (bf16's 7 mantissa bits fit in
     /// f16's 10); conversion fails closed on overflow. A device backend
@@ -177,6 +195,15 @@ pub enum WeightSlice<'a> {
     Q8 {
         codes: &'a [i8],
         scales: &'a [f32],
+        /// Per-`SUM_BLOCK` code sums; empty where no arm consumes them.
+        sums: &'a [i16],
+        block: usize,
+    },
+    /// Symmetric int4 codes packed two per byte, and their per-block f32
+    /// scales. Byte `j` of a block holds elements `j` and `j + block/2`.
+    Q4 {
+        packed: &'a [u8],
+        scales: &'a [f32],
         block: usize,
     },
     /// Little-endian IEEE f16 bytes.
@@ -252,16 +279,45 @@ impl<'a> WeightSlice<'a> {
             WeightSlice::Q8 {
                 codes,
                 scales,
+                sums,
                 block,
             } => {
                 let per_row = in_dim.div_ceil(*block);
-                match (codes.get(..want), scales.get(..out_dim * per_row)) {
-                    (Some(codes), Some(scales)) => Ok(WeightRows::Q8 {
+                // The index is cut to the same geometry as the codes, or
+                // stays empty. A partially-sliced index would pair a row
+                // with another row's sums and still return finite numbers.
+                let per_sum = in_dim.div_ceil(SUM_BLOCK);
+                let cut = if sums.is_empty() {
+                    Some(&sums[..0])
+                } else {
+                    sums.get(..out_dim * per_sum)
+                };
+                match (codes.get(..want), scales.get(..out_dim * per_row), cut) {
+                    (Some(codes), Some(scales), Some(sums)) => Ok(WeightRows::Q8 {
                         codes,
                         scales,
+                        sums,
                         block: *block,
                     }),
                     _ => Err(short(codes.len())),
+                }
+            }
+            WeightSlice::Q4 {
+                packed,
+                scales,
+                block,
+            } => {
+                let per_row = in_dim.div_ceil(*block);
+                // Two codes to the byte, so the code stream is HALF the
+                // element count. Asking for `want` bytes here would demand
+                // twice the matrix and reject every legitimate operand.
+                match (packed.get(..want / 2), scales.get(..out_dim * per_row)) {
+                    (Some(packed), Some(scales)) => Ok(WeightRows::Q4 {
+                        packed,
+                        scales,
+                        block: *block,
+                    }),
+                    _ => Err(short(packed.len() * 2)),
                 }
             }
             other => Err(VindexError::Parse(format!(
@@ -281,6 +337,7 @@ impl<'a> WeightSlice<'a> {
             WeightSlice::F32(_) => "f32",
             WeightSlice::Bf16(_) => "bf16",
             WeightSlice::Q8 { .. } => "q8",
+            WeightSlice::Q4 { .. } => "q4",
             WeightSlice::F16(_) => "f16",
             WeightSlice::Mxfp4 { .. } => "mxfp4",
             WeightSlice::Nvfp4 { .. } => "nvfp4",
@@ -292,6 +349,7 @@ impl<'a> WeightSlice<'a> {
             WeightSlice::F32(w) => Ok(w),
             WeightSlice::Bf16(_)
             | WeightSlice::Q8 { .. }
+            | WeightSlice::Q4 { .. }
             | WeightSlice::F16(_)
             | WeightSlice::Mxfp4 { .. }
             | WeightSlice::Nvfp4 { .. } => Err(VindexError::Parse(
@@ -425,6 +483,26 @@ pub struct FfnCall<'a> {
     /// How `gate` combines with `up`. Every backend must honour it or
     /// refuse: computing `activation(gate) * up` for a `ClampedGlu` plan
     /// runs a different model.
+    pub gate_policy: larql_models::ExpertGatePolicy,
+}
+
+/// The same dense feed-forward operation over SEVERAL positions.
+///
+/// One weight traversal per projection where the backend has a kernel for
+/// it, rather than one per position. Deliberately a separate call rather
+/// than `FfnCall` with a slice of inputs: a backend that has no
+/// multi-position kernel should keep consuming `FfnCall` unchanged, and
+/// the default [`PlanBackend::ffn_many`] gives it exactly that.
+///
+/// The activation stays PER POSITION. Only the projections group.
+pub struct FfnManyCall<'a> {
+    pub xs: &'a [&'a [f32]],
+    pub hidden: usize,
+    pub intermediate: usize,
+    pub gate: Option<WeightSlice<'a>>,
+    pub up: WeightSlice<'a>,
+    pub down: WeightSlice<'a>,
+    pub activation: Activation,
     pub gate_policy: larql_models::ExpertGatePolicy,
 }
 
@@ -610,6 +688,31 @@ pub trait PlanBackend: Sync {
     /// with no kernel for a judged variant must say so, not borrow
     /// another backend's arithmetic to fill the gap.
     fn ffn(&self, call: FfnCall<'_>) -> Result<Vec<f32>, VindexError>;
+
+    /// The dense FFN over several positions at once.
+    ///
+    /// Default is the loop it replaces, so every backend keeps working
+    /// untouched. Overriding it is a claim about SCHEDULE only: each
+    /// position keeps its own activation and its own arithmetic, and the
+    /// results must be indistinguishable from calling [`Self::ffn`] once
+    /// per position.
+    fn ffn_many(&self, call: FfnManyCall<'_>) -> Result<Vec<Vec<f32>>, VindexError> {
+        call.xs
+            .iter()
+            .map(|x| {
+                self.ffn(FfnCall {
+                    x,
+                    hidden: call.hidden,
+                    intermediate: call.intermediate,
+                    gate: call.gate,
+                    up: call.up,
+                    down: call.down,
+                    activation: call.activation,
+                    gate_policy: call.gate_policy,
+                })
+            })
+            .collect()
+    }
 
     /// The routed FFN — a mixture of experts. Required of every backend
     /// for the same reason as [`Self::ffn`]: a backend without the

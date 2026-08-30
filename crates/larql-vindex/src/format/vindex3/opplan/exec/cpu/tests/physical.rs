@@ -2,13 +2,13 @@
 //! executor's observation must land on the loader's decision.
 
 use super::super::physical::{
-    compact_threshold_bytes, project_matrix, ExecutorProjections, PhysicalProjectionPlan,
-    BF16_BYTES, F32_BYTES,
+    compact_threshold_bytes, project_matrix, project_rows, project_rows_many, ExecutorProjections,
+    PhysicalProjectionPlan, BF16_BYTES, F32_BYTES,
 };
 use super::super::projector::WeightRows;
 use crate::format::vindex3::opplan::exec::backend::{WeightFormat, WeightSlice};
 use crate::format::vindex3::opplan::exec::gated_delta::DenseProjections;
-use crate::format::vindex3::opplan::exec::quantise::{quantise_for_test, Q8_BLOCK};
+use crate::format::vindex3::opplan::exec::quantise::{quantise_q8_for_test, Q8_BLOCK};
 use crate::format::vindex3::opplan::exec::weights::LoadedWeight;
 
 /// Every matrix Qwen3.8-27B decodes through, from the container's own
@@ -79,6 +79,7 @@ fn rows<'a>(plan: PhysicalProjectionPlan, s: &'a Slab) -> WeightRows<'a> {
         WeightFormat::Q8 => WeightRows::Q8 {
             codes: &s.codes,
             scales: &s.scales,
+            sums: &[],
             block: Q8_BLOCK,
         },
         other => panic!("no CPU plan declares {other:?}"),
@@ -100,7 +101,7 @@ fn the_observation_lands_on_the_decision() {
         // allocating 1.3 G elements to prove it would measure the
         // allocator.
         let s = slab(chosen, 8, 8);
-        let observed = PhysicalProjectionPlan::for_resident(rows(chosen, &s));
+        let observed = PhysicalProjectionPlan::for_resident(rows(chosen, &s), 8);
         assert_eq!(
             observed, chosen,
             "`{name}`: the executor observed {observed:?} where the loader chose {chosen:?} — \
@@ -144,7 +145,7 @@ fn every_plan_runs_its_own_format() {
 fn the_oracle_is_not_reachable_by_observation() {
     let f = vec![0.5f32; 8];
     assert_eq!(
-        PhysicalProjectionPlan::for_resident(WeightRows::F32(&f)),
+        PhysicalProjectionPlan::for_resident(WeightRows::F32(&f), 8),
         PhysicalProjectionPlan::BlasF32
     );
     let at = compact_threshold_bytes() / F32_BYTES;
@@ -288,13 +289,14 @@ fn every_representation_projects_to_its_own_accuracy() {
     };
     assert!(rel(&compact, &widened) < 1e-5, "bf16 widens exactly");
 
-    let LoadedWeight::Q8 { codes, scales } = quantise_for_test(&f, IN) else {
+    let LoadedWeight::Q8 { codes, scales, .. } = quantise_q8_for_test(&f, IN) else {
         panic!("the quantiser returns q8");
     };
     let q8 = project_matrix(
         &WeightSlice::Q8 {
             codes: &codes,
             scales: &scales,
+            sums: &[],
             block: Q8_BLOCK,
         },
         &x,
@@ -336,18 +338,252 @@ fn the_threshold_is_a_plausible_cache_size() {
     );
 }
 
-/// **The Q4 arm of the observation is real**, and it is deliberately
-/// the one representation whose kernel and whose `WeightFormat` do not
-/// carry the same name: no `WeightFormat` names Q4, so the format
-/// reports Q8 while the kernel is the Q4 one.
+/// CPU-7 regression: zero positions must not reach a kernel.
 ///
-/// Pinned because the mismatch reads like a bug to anyone editing the
-/// table: the two answers are about different things — which
-/// dequantiser runs, and which format vocabulary the backend seam
-/// speaks — and collapsing them would run the wrong kernel over the
-/// right bytes.
+/// An empty prompt reaches prefill with no rows, and every kernel below
+/// reads the input width off `xs[0]` — the executor, the stationary
+/// sweep and the integer kernel alike. Before the guard this panicked
+/// with `index out of bounds: the len is 0 but the index is 0`, inside
+/// a prefill whose contract is to report "produced no logits" as an
+/// ordinary error. A panic there is not a worse error message; it takes
+/// the server process with it.
+///
+/// The guard returns before the executor pool is touched, so this holds
+/// even where no pool has been stood up.
 #[test]
-fn the_q4_observation_names_its_own_kernel_while_reporting_q8() {
+fn projecting_zero_positions_yields_no_rows_instead_of_panicking() {
+    let codes = [0i8; 64];
+    let scales = [1.0f32];
+    let rows = WeightRows::Q8 {
+        codes: &codes,
+        scales: &scales,
+        sums: &[],
+        block: 64,
+    };
+    let out = project_rows_many(rows, &[], 4).expect("zero positions is not an error");
+    assert!(
+        out.is_empty(),
+        "zero positions must produce zero rows, got {}",
+        out.len()
+    );
+}
+
+/// Every plan states the triple it realises. This is the table a CPU
+/// claim is quoted from, and the terms are not cosmetic: the accumulator
+/// separates exact integer accumulation from float rounding at every
+/// add, and the activation separates the candidate from its own control.
+#[test]
+fn every_plan_states_the_arithmetic_it_realises() {
+    use crate::format::vindex3::opplan::exec::cpu::arithmetic::{
+        AccumulatorRep, ActivationRep, WeightRep,
+    };
+
+    let all = [
+        PhysicalProjectionPlan::ScalarF32,
+        PhysicalProjectionPlan::BlasF32,
+        PhysicalProjectionPlan::FusedBf16,
+        PhysicalProjectionPlan::FusedQ8,
+        PhysicalProjectionPlan::FusedQ4,
+        PhysicalProjectionPlan::Q8xQ8,
+        PhysicalProjectionPlan::Q4xQ8,
+        PhysicalProjectionPlan::Bf16xQ8,
+    ];
+    for p in all {
+        // Renders without panicking, and names every term.
+        let s = p.arithmetic().to_string();
+        assert!(s.contains(" x "), "{p:?} rendered as {s:?}");
+        assert!(s.ends_with("-> F32"), "{p:?} must return f32: {s:?}");
+    }
+
+    // The float arms read the activation unquantised.
+    for p in [
+        PhysicalProjectionPlan::ScalarF32,
+        PhysicalProjectionPlan::BlasF32,
+        PhysicalProjectionPlan::FusedBf16,
+        PhysicalProjectionPlan::FusedQ8,
+        PhysicalProjectionPlan::FusedQ4,
+    ] {
+        assert_eq!(
+            p.arithmetic().activation,
+            ActivationRep::F32,
+            "{p:?} must not quantise the activation"
+        );
+        assert_eq!(p.arithmetic().accumulator, AccumulatorRep::F32);
+    }
+
+    // Both oracles hold f32 weights; only the BLAS one is selectable.
+    assert_eq!(
+        PhysicalProjectionPlan::ScalarF32.arithmetic().weight,
+        WeightRep::F32
+    );
+    assert_eq!(
+        PhysicalProjectionPlan::BlasF32.arithmetic().weight,
+        WeightRep::F32
+    );
+
+    // The integer arms accumulate exactly.
+    for p in [PhysicalProjectionPlan::Q8xQ8, PhysicalProjectionPlan::Q4xQ8] {
+        assert_eq!(
+            p.arithmetic().accumulator,
+            AccumulatorRep::I32,
+            "{p:?} is an integer kernel and must accumulate in i32"
+        );
+    }
+
+    // The A1 control is the one arm that keeps EXACT weights while
+    // quantising the activation — that separation is its whole job, and
+    // an arm that also quantised the weight would stop being a control.
+    let ctrl = PhysicalProjectionPlan::Bf16xQ8.arithmetic();
+    assert_eq!(ctrl.weight, WeightRep::Bf16);
+    assert_eq!(ctrl.accumulator, AccumulatorRep::F32);
+    assert!(
+        matches!(ctrl.activation, ActivationRep::Q8 { .. }),
+        "the control must quantise the activation and nothing else"
+    );
+}
+
+/// Gated DeltaNet's five projections go through the SAME executor as
+/// every other matrix. The seam exists so they cannot quietly acquire
+/// their own kernel, so it is asserted against the free functions rather
+/// than against a recomputed expectation.
+#[test]
+fn the_delta_projection_seam_runs_the_same_executor() {
+    const OUT: usize = 6;
+    const IN: usize = 96;
+    let w: Vec<f32> = (0..OUT * IN)
+        .map(|i| (i % 17) as f32 * 0.03 - 0.2)
+        .collect();
+    let bits: Vec<u16> = w.iter().map(|v| (v.to_bits() >> 16) as u16).collect();
+    let x: Vec<f32> = (0..IN).map(|i| (i % 11) as f32 * 0.07 - 0.3).collect();
+    let y: Vec<f32> = (0..IN).map(|i| (i % 5) as f32 * 0.11 - 0.2).collect();
+
+    let one = ExecutorProjections.project(WeightRows::Bf16(&bits), &x, OUT);
+    let direct = project_rows(WeightRows::Bf16(&bits), &x, OUT).unwrap();
+    assert_eq!(one, direct, "the seam must not be a second kernel");
+
+    let xs: Vec<&[f32]> = vec![&x, &y];
+    let many = ExecutorProjections.project_many(WeightRows::Bf16(&bits), &xs, OUT);
+    assert_eq!(many.len(), 2);
+    assert_eq!(
+        many[0], one,
+        "position 0 of a group must equal the single-position answer"
+    );
+    let direct_many = project_rows_many(WeightRows::Bf16(&bits), &xs, OUT).unwrap();
+    assert_eq!(many, direct_many);
+
+    // bf16 has no stationary row, so the seam must say so rather than
+    // claiming a schedule it cannot run.
+    assert!(!ExecutorProjections.is_weight_stationary(WeightRows::Bf16(&bits), IN, 2));
+}
+
+/// An operand past the split threshold is partitioned across workers,
+/// and the partition must not change the answer. Rows are deliberately
+/// not a multiple of the worker count, so the last chunk is short — the
+/// shape that catches a partition computing `len / in_dim` rows instead
+/// of its own slice's.
+#[test]
+fn a_large_operand_splits_across_workers_without_changing_the_answer() {
+    // Past MIN_SPLIT_BYTES (4 MiB) so the pooled path is taken.
+    const OUT: usize = 2049;
+    const IN: usize = 2048;
+    let w: Vec<f32> = (0..OUT * IN)
+        .map(|i| ((i * 31 % 251) as f32 - 125.0) / 400.0)
+        .collect();
+    let lw = quantise_q8_for_test(&w, IN);
+    let rows = lw.slice().rows(OUT, IN).unwrap();
+
+    let x: Vec<f32> = (0..IN)
+        .map(|i| ((i * 7 % 97) as f32 - 48.0) / 90.0)
+        .collect();
+    let y: Vec<f32> = (0..IN)
+        .map(|i| ((i * 13 % 89) as f32 - 44.0) / 80.0)
+        .collect();
+
+    let single = project_rows(rows, &x, OUT).unwrap();
+    assert_eq!(single.len(), OUT);
+
+    let xs: Vec<&[f32]> = vec![&x, &y];
+    let many = project_rows_many(rows, &xs, OUT).unwrap();
+    assert_eq!(many.len(), 2);
+    assert_eq!(many[0].len(), OUT);
+    assert_eq!(
+        many[0], single,
+        "splitting an operand across workers changed position 0's answer"
+    );
+
+    let single_y = project_rows(rows, &y, OUT).unwrap();
+    assert_eq!(
+        many[1], single_y,
+        "splitting an operand across workers changed position 1's answer"
+    );
+}
+
+/// A plan names the representation the loader must make resident, the
+/// representation it is resident AS, and the kernel that consumes it.
+/// The three have to agree: a plan whose `format` and `weight_rep`
+/// disagreed would have the loader prepare bytes its own kernel cannot
+/// read, and the failure would surface as a decode error far from here.
+#[test]
+fn a_plan_agrees_with_itself_about_format_kernel_and_residency() {
+    use crate::format::vindex3::opplan::exec::cpu::arithmetic::WeightRep;
+
+    let cases = [
+        (PhysicalProjectionPlan::ScalarF32, WeightFormat::F32),
+        (PhysicalProjectionPlan::BlasF32, WeightFormat::F32),
+        (PhysicalProjectionPlan::FusedBf16, WeightFormat::Bf16),
+        (PhysicalProjectionPlan::Bf16xQ8, WeightFormat::Bf16),
+        (PhysicalProjectionPlan::FusedQ8, WeightFormat::Q8),
+        (PhysicalProjectionPlan::Q8xQ8, WeightFormat::Q8),
+        (PhysicalProjectionPlan::FusedQ4, WeightFormat::Q4),
+        (PhysicalProjectionPlan::Q4xQ8, WeightFormat::Q4),
+    ];
+
+    for (plan, want) in cases {
+        assert_eq!(plan.format(), want, "{plan:?} asks for the wrong residency");
+
+        // `weight_rep` is the arithmetic's own answer; it must describe
+        // the same bytes `format` asked the loader for.
+        let rep = plan.weight_rep();
+        let consistent = matches!(
+            (want, rep),
+            (WeightFormat::F32, WeightRep::F32)
+                | (WeightFormat::Bf16, WeightRep::Bf16)
+                | (WeightFormat::Q8, WeightRep::Q8 { .. })
+                | (WeightFormat::Q4, WeightRep::Q4 { .. })
+        );
+        assert!(
+            consistent,
+            "{plan:?} loads {want:?} but computes over {rep} — the loader would \
+             prepare bytes the kernel cannot read"
+        );
+
+        // Every plan has a kernel, and it declares its own threading.
+        let k = plan.kernel();
+        let _ = k.parallelism();
+    }
+
+    // The two f32 plans share a residency but differ in everything else.
+    // Not asserted by comparing kernel addresses: both kernels are
+    // zero-sized, and references to ZSTs may legitimately share one — a
+    // pointer comparison here would be testing the allocator, not the
+    // dispatch. That the oracle is unreachable by observation is pinned
+    // by `the_oracle_is_not_reachable_by_observation`; what belongs here
+    // is that they are priced as different arithmetic.
+    assert_ne!(
+        super::super::cost::measured_rate_gbps(PhysicalProjectionPlan::ScalarF32),
+        super::super::cost::measured_rate_gbps(PhysicalProjectionPlan::BlasF32),
+        "the oracle and the BLAS path must not be priced alike"
+    );
+}
+
+/// **The Q4 arm of the observation is real, and it names itself.**
+/// CPU-7 gave Q4 its own `WeightFormat`, so the observed plan and the
+/// format vocabulary the backend seam speaks now agree — the mismatch
+/// this test originally pinned (Q4 kernel reporting Q8 at the seam)
+/// was resolved, and what stays pinned is that every arm observes its
+/// own bytes and the plans stay distinct.
+#[test]
+fn the_q4_observation_names_its_own_kernel_and_format() {
     let packed = vec![0x42u8; 64];
     let scales = vec![0.125f32; 4];
     let rows = WeightRows::Q4 {
@@ -355,12 +591,12 @@ fn the_q4_observation_names_its_own_kernel_while_reporting_q8() {
         scales: &scales,
         block: 32,
     };
-    let observed = PhysicalProjectionPlan::for_resident(rows);
+    let observed = PhysicalProjectionPlan::for_resident(rows, 32);
     assert_eq!(observed, PhysicalProjectionPlan::FusedQ4);
     assert_eq!(
         observed.format(),
-        WeightFormat::Q8,
-        "no WeightFormat names Q4 — the seam speaks Q8 for it"
+        WeightFormat::Q4,
+        "the seam names Q4 as itself since CPU-7"
     );
     // Q8 observes itself, and the two plans stay distinct even though
     // they report the same `WeightFormat`.
@@ -373,12 +609,13 @@ fn the_q4_observation_names_its_own_kernel_while_reporting_q8() {
     let q8_rows = WeightRows::Q8 {
         codes: &codes_i8,
         scales: &scales,
+        sums: &[],
         block: 32,
     };
-    let q8 = PhysicalProjectionPlan::for_resident(q8_rows);
+    let q8 = PhysicalProjectionPlan::for_resident(q8_rows, 32);
     assert_eq!(q8, PhysicalProjectionPlan::FusedQ8);
     assert_ne!(observed, q8, "Q4 and Q8 are different plans");
-    assert_eq!(q8.format(), observed.format(), "both speak Q8 at the seam");
+    assert_ne!(q8.format(), observed.format(), "and different formats too");
     // Both resolve a usable kernel, which is what `kernel()` is for.
     let _ = observed.kernel();
     let _ = q8.kernel();
@@ -386,12 +623,12 @@ fn the_q4_observation_names_its_own_kernel_while_reporting_q8() {
     // And every other arm still observes itself.
     let f32s = vec![0.5f32; 16];
     assert_eq!(
-        PhysicalProjectionPlan::for_resident(WeightRows::F32(&f32s)),
+        PhysicalProjectionPlan::for_resident(WeightRows::F32(&f32s), 16),
         PhysicalProjectionPlan::BlasF32
     );
     let codes = vec![0u16; 16];
     assert_eq!(
-        PhysicalProjectionPlan::for_resident(WeightRows::Bf16(&codes)),
+        PhysicalProjectionPlan::for_resident(WeightRows::Bf16(&codes), 16),
         PhysicalProjectionPlan::FusedBf16
     );
 }

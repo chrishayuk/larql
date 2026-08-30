@@ -2,7 +2,7 @@
 """Q-BANK-1 runner: characterise a compiled representation against BF16.
 
     python3 run_bank.py reference <container> <tokenizer.json> <out-dir> [--backend metal]
-    python3 run_bank.py compare   <container> <out-dir> [--backend ... --source stored]
+    python3 run_bank.py compare   <container> <out-dir> [--backend ... --source stored] [--keep]
     python3 run_bank.py report    <out-dir>
 
 `reference` runs the BF16 arm once and banks its logits with the model
@@ -17,8 +17,25 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 LARQL = os.environ.get("LARQL", "./target/release/larql")
 
 
+# Which bank's prompts to run. Defaults to this directory's own, so
+# existing invocations are unchanged.
+#
+# **This existed as a silent hazard.** `reference` writes wherever it is
+# told but READ its prompts from HERE, so pointing the output at a
+# quality-bank-2 directory produced a bank-2-shaped run containing
+# BANK-1 prompts — destroying exactly the independence the second bank
+# exists to provide, without any error. The bank a run scores is now
+# stated rather than implied.
+BANK_DIR = os.environ.get("QBANK_DIR", HERE)
+
+
 def load_bank():
-    return json.load(open(os.path.join(HERE, "prompts.json")))
+    path = os.path.join(BANK_DIR, "prompts.json")
+    bank = json.load(open(path))
+    # Say which bank ran. A result that cannot name its own prompt set is
+    # not evidence about anything.
+    print(f"bank: {bank.get('bank', '?')}  ({len(bank['prompts'])} prompts, {path})")
+    return bank
 
 
 def tokenize(tokenizer_path, prompts, limit):
@@ -94,9 +111,10 @@ def softmax_rows(x):
 
 def cmd_reference(container, tokenizer, outdir, backend, limit):
     os.makedirs(outdir, exist_ok=True)
-    entries = tokenize(tokenizer, load_bank()["prompts"], limit)
+    bank = load_bank()
+    entries = tokenize(tokenizer, bank["prompts"], limit)
     meta = {"arm": "reference", "backend": backend, "container": container_identity(container),
-            "bank": load_bank()["bank"], "entries": []}
+            "bank": bank["bank"], "bank_dir": BANK_DIR, "entries": []}
     refdir = os.path.join(outdir, "ref")
     run_bank_arm(container, entries, backend, None, refdir)
     for e in entries:
@@ -107,18 +125,34 @@ def cmd_reference(container, tokenizer, outdir, backend, limit):
     print(f"banked {len(entries)} references -> {outdir}")
 
 
-def cmd_compare(container, outdir, backend, source, label):
+def cmd_compare(container, outdir, backend, source, label, keep=False):
     meta = json.load(open(os.path.join(outdir, "reference.json")))
     rows = []
     canddir = os.path.join(outdir, f"_cand-{label}")
     compiled_total = run_bank_arm(container, meta["entries"], backend, source, canddir)
     for i, e in enumerate(meta["entries"]):
-        ref = np.fromfile(os.path.join(outdir, e["dump"]), dtype=np.float32)
+        refpath = os.path.join(outdir, e["dump"])
+        candpath = os.path.join(canddir, f"{e['id']}.f32")
+        # **A truncated dump must never reach a KL number.** A run that
+        # was interrupted, or that raced a second writer, leaves a short
+        # file; reshaping it raises somewhere far from the cause, and a
+        # dump that happened to be a whole number of positions short
+        # would not raise at all — it would silently score fewer
+        # positions and report a mean over them.
+        for path, what in ((refpath, "reference"), (candpath, "candidate")):
+            if not os.path.exists(path):
+                raise SystemExit(f"REFUSED: {what} dump missing for `{e['id']}`: {path}")
+        want, got = os.path.getsize(refpath), os.path.getsize(candpath)
+        if want != got:
+            raise SystemExit(
+                f"REFUSED: candidate dump for `{e['id']}` is {got} bytes against the "
+                f"reference's {want}. The run was interrupted or two writers shared the "
+                f"dump directory; regenerate this entry rather than scoring it.")
+        ref = np.fromfile(refpath, dtype=np.float32)
         n = len(e["ids"])
         vocab = ref.size // n
         ref = ref.reshape(n, vocab).astype(np.float64)
-        cand = np.fromfile(os.path.join(canddir, f"{e['id']}.f32"),
-                           dtype=np.float32).reshape(n, vocab).astype(np.float64)
+        cand = np.fromfile(candpath, dtype=np.float32).reshape(n, vocab).astype(np.float64)
 
         P, Q = softmax_rows(ref), softmax_rows(cand)
         eps = 1e-12
@@ -143,8 +177,14 @@ def cmd_compare(container, outdir, backend, source, label):
                 "dmean": float(np.abs(ref[j] - cand[j]).mean()),
                 "dnll": float(dnll[j]) if j < m else None,
             })
-    import shutil
-    shutil.rmtree(canddir, ignore_errors=True)
+    # Dumps are removed by default: a sweep that kept every arm's logits
+    # would hold gigabytes per arm. `--keep` retains them for analyses
+    # that need the ERROR VECTORS rather than the summary statistics —
+    # notably testing whether two perturbations interact, which a
+    # per-position KL cannot answer.
+    if not keep:
+        import shutil
+        shutil.rmtree(canddir, ignore_errors=True)
     ref_bytes = meta["container"].get("payload_bytes", 0)
     cand_bytes = container_identity(container).get("payload_bytes", 0)
     out = {"label": label, "backend": backend, "source": source,
@@ -219,7 +259,7 @@ if __name__ == "__main__":
         backend = a[a.index("--backend") + 1] if "--backend" in a else "metal-nvfp4-no-head"
         source = a[a.index("--source") + 1] if "--source" in a else "stored"
         label = a[a.index("--label") + 1] if "--label" in a else "candidate"
-        cmd_compare(a[1], a[2], backend, source, label)
+        cmd_compare(a[1], a[2], backend, source, label, keep="--keep" in a)
     elif a[0] == "report":
         label = a[a.index("--label") + 1] if "--label" in a else "candidate"
         cmd_report(a[1], label)

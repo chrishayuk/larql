@@ -132,6 +132,7 @@ impl DenseProjector for FusedQ8 {
             codes,
             scales,
             block,
+            ..
         } = weight_rows
         else {
             panic!("the fused q8 kernel consumes q8 weights only");

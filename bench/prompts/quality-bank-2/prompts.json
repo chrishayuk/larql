@@ -1,0 +1,386 @@
+{
+ "bank": "quality-bank-2",
+ "frozen": "2026-08-25",
+ "purpose": "CPU-5 VALIDATION ONLY. Frozen before any exception set was searched. Quality Bank 1 is the discovery bank: it is where sensitivity is measured and where a candidate mixed-precision plan is derived. This bank is scored exactly once, on the final candidate, and a result from it is the only acceptance number. Using it to choose between candidates would make the acceptance number a training number.",
+ "note": "Editing this file invalidates every comparison against it. Add quality-bank-3 instead.",
+ "prompts": [
+  {
+   "id": "b2-factual-000",
+   "category": "factual",
+   "text": "The longest river in South America is the Amazon, which drains into the Atlantic."
+  },
+  {
+   "id": "b2-factual-001",
+   "category": "factual",
+   "text": "Iron has the chemical symbol Fe and an atomic number of twenty-six."
+  },
+  {
+   "id": "b2-factual-002",
+   "category": "factual",
+   "text": "The Second World War in Europe ended in May of nineteen forty-five."
+  },
+  {
+   "id": "b2-factual-003",
+   "category": "factual",
+   "text": "Mount Kilimanjaro is the highest free-standing mountain in the world."
+  },
+  {
+   "id": "b2-factual-004",
+   "category": "factual",
+   "text": "A standard piano keyboard has eighty-eight keys, fifty-two of them white."
+  },
+  {
+   "id": "b2-factual-005",
+   "category": "factual",
+   "text": "Helium is the second most abundant element in the observable universe."
+  },
+  {
+   "id": "b2-factual-006",
+   "category": "factual",
+   "text": "Portugal shares its only land border with Spain, along its eastern edge."
+  },
+  {
+   "id": "b2-factual-007",
+   "category": "factual",
+   "text": "Photosynthesis converts carbon dioxide and water into glucose and oxygen."
+  },
+  {
+   "id": "b2-factual-008",
+   "category": "factual",
+   "text": "The currency of Switzerland is the Swiss franc, abbreviated CHF."
+  },
+  {
+   "id": "b2-factual-009",
+   "category": "factual",
+   "text": "Jupiter is the largest planet in the solar system and has a faint ring system."
+  },
+  {
+   "id": "b2-factual-010",
+   "category": "factual",
+   "text": "The human skeleton of an adult contains two hundred and six bones."
+  },
+  {
+   "id": "b2-factual-011",
+   "category": "factual",
+   "text": "Antarctica is classified as a desert because of its very low precipitation."
+  },
+  {
+   "id": "b2-factual-012",
+   "category": "factual",
+   "text": "The printing press with movable type was introduced to Europe by Gutenberg."
+  },
+  {
+   "id": "b2-factual-013",
+   "category": "factual",
+   "text": "Sound travels faster through water than it does through air."
+  },
+  {
+   "id": "b2-factual-014",
+   "category": "factual",
+   "text": "The Pacific Ocean is bordered by the Ring of Fire, a zone of frequent earthquakes."
+  },
+  {
+   "id": "b2-prose-000",
+   "category": "prose",
+   "text": "The harbour was quiet at that hour, and the boats sat low against the"
+  },
+  {
+   "id": "b2-prose-001",
+   "category": "prose",
+   "text": "He had rehearsed the conversation a dozen times, but standing at the door"
+  },
+  {
+   "id": "b2-prose-002",
+   "category": "prose",
+   "text": "Nobody in the village remembered when the mill had last turned, though the"
+  },
+  {
+   "id": "b2-prose-003",
+   "category": "prose",
+   "text": "The train pulled away before she could reach the platform, and for a moment"
+  },
+  {
+   "id": "b2-prose-004",
+   "category": "prose",
+   "text": "There was a particular smell to the library in winter, of damp wool and"
+  },
+  {
+   "id": "b2-prose-005",
+   "category": "prose",
+   "text": "By the time the letter arrived the argument had long since cooled, and what"
+  },
+  {
+   "id": "b2-prose-006",
+   "category": "prose",
+   "text": "The dog waited at the gate every afternoon, whatever the weather, and the"
+  },
+  {
+   "id": "b2-prose-007",
+   "category": "prose",
+   "text": "She had never liked the house, but she had loved the garden behind it, where"
+  },
+  {
+   "id": "b2-prose-008",
+   "category": "prose",
+   "text": "The lamps came on one by one along the bridge, and the water beneath them"
+  },
+  {
+   "id": "b2-prose-009",
+   "category": "prose",
+   "text": "It was the sort of question that seemed simple until you tried to answer it,"
+  },
+  {
+   "id": "b2-code-000",
+   "category": "code",
+   "text": "def quicksort(xs):\n    if len(xs) <= 1:\n        return xs\n    pivot = xs[len(xs) // 2]\n    left = [x for x in xs if x < pivot]"
+  },
+  {
+   "id": "b2-code-001",
+   "category": "code",
+   "text": "struct Matrix {\n    rows: usize,\n    cols: usize,\n    data: Vec<f64>,\n}\n\nimpl Matrix {\n    fn new(rows: usize, cols: usize) -> Self {"
+  },
+  {
+   "id": "b2-code-002",
+   "category": "code",
+   "text": "SELECT customer_id, COUNT(*) AS orders\nFROM orders\nWHERE created_at >= '2025-01-01'\nGROUP BY customer_id\nHAVING COUNT(*) >"
+  },
+  {
+   "id": "b2-code-003",
+   "category": "code",
+   "text": "function debounce(fn, wait) {\n  let timer = null;\n  return function (...args) {\n    clearTimeout(timer);"
+  },
+  {
+   "id": "b2-code-004",
+   "category": "code",
+   "text": "def merge(left, right):\n    out = []\n    i = j = 0\n    while i < len(left) and j < len(right):"
+  },
+  {
+   "id": "b2-code-005",
+   "category": "code",
+   "text": "async fn fetch_all(urls: Vec<String>) -> Vec<Response> {\n    let mut handles = Vec::new();\n    for url in urls {"
+  },
+  {
+   "id": "b2-code-006",
+   "category": "code",
+   "text": "package main\n\nimport \"sync\"\n\nfunc worker(jobs <-chan int, wg *sync.WaitGroup) {\n\tdefer wg.Done()"
+  },
+  {
+   "id": "b2-code-007",
+   "category": "code",
+   "text": "const useInterval = (callback, delay) => {\n  const saved = useRef();\n  useEffect(() => {\n    saved.current = callback;"
+  },
+  {
+   "id": "b2-code-008",
+   "category": "code",
+   "text": "type Result[T any] struct {\n\tValue T\n\tErr   error\n}\n\nfunc Map[T, U any](rs []Result[T], f func(T) U)"
+  },
+  {
+   "id": "b2-code-009",
+   "category": "code",
+   "text": "class Cache:\n    def __init__(self, capacity):\n        self.capacity = capacity\n        self.store = {}\n\n    def get(self, key):"
+  },
+  {
+   "id": "b2-arithmetic-000",
+   "category": "arithmetic",
+   "text": "If a rectangle measures 14 metres by 9 metres, its area in square metres is"
+  },
+  {
+   "id": "b2-arithmetic-001",
+   "category": "arithmetic",
+   "text": "Seventeen multiplied by six equals one hundred and two."
+  },
+  {
+   "id": "b2-arithmetic-002",
+   "category": "arithmetic",
+   "text": "A shirt costs 45 pounds and is reduced by 20 percent, so the new price is"
+  },
+  {
+   "id": "b2-arithmetic-003",
+   "category": "arithmetic",
+   "text": "Nine cubed is seven hundred and twenty-nine."
+  },
+  {
+   "id": "b2-arithmetic-004",
+   "category": "arithmetic",
+   "text": "If three workers finish a job in twelve days, one worker alone would take"
+  },
+  {
+   "id": "b2-arithmetic-005",
+   "category": "arithmetic",
+   "text": "Dividing 918 by 27 gives exactly thirty-four."
+  },
+  {
+   "id": "b2-arithmetic-006",
+   "category": "arithmetic",
+   "text": "A car using 7 litres per 100 kilometres will need this many litres for 350 km:"
+  },
+  {
+   "id": "b2-arithmetic-007",
+   "category": "arithmetic",
+   "text": "Two hundred and fifty six is two raised to the power of eight."
+  },
+  {
+   "id": "b2-arithmetic-008",
+   "category": "arithmetic",
+   "text": "If an angle in a triangle is 40 degrees and another is 75, the third is"
+  },
+  {
+   "id": "b2-arithmetic-009",
+   "category": "arithmetic",
+   "text": "Compound interest of 5 percent on 2000 pounds for one year yields a balance of"
+  },
+  {
+   "id": "b2-structured-000",
+   "category": "structured",
+   "text": "{\"city\": \"Reykjavik\", \"country\": \"Iceland\", \"population\": 139000, \"coastal\":"
+  },
+  {
+   "id": "b2-structured-001",
+   "category": "structured",
+   "text": "apiVersion: apps/v1\nkind: Deployment\nmetadata:\n  name: frontend\nspec:\n  replicas: 3\n  selector:"
+  },
+  {
+   "id": "b2-structured-002",
+   "category": "structured",
+   "text": "| region | units | revenue |\n|--------|-------|---------|\n| north  | 1240  | 98,400  |\n| south  |"
+  },
+  {
+   "id": "b2-structured-003",
+   "category": "structured",
+   "text": "[server]\nhost = \"127.0.0.1\"\nport = 8080\nworkers = 4\n\n[logging]\nlevel ="
+  },
+  {
+   "id": "b2-structured-004",
+   "category": "structured",
+   "text": "<?xml version=\"1.0\"?>\n<catalog>\n  <book id=\"bk101\">\n    <author>Gambardella</author>\n    <title>"
+  },
+  {
+   "id": "b2-structured-005",
+   "category": "structured",
+   "text": "BEGIN:VCARD\nVERSION:3.0\nN:Okonkwo;Amaka\nFN:Amaka Okonkwo\nORG:"
+  },
+  {
+   "id": "b2-structured-006",
+   "category": "structured",
+   "text": "{\"errors\": [{\"code\": 422, \"field\": \"email\", \"message\": \"must be a valid address\"}, {\"code\":"
+  },
+  {
+   "id": "b2-structured-007",
+   "category": "structured",
+   "text": "date,open,high,low,close\n2025-03-01,101.2,104.8,100.9,103.7\n2025-03-02,"
+  },
+  {
+   "id": "b2-uncertain-000",
+   "category": "uncertain",
+   "text": "The hardest part of learning something new is"
+  },
+  {
+   "id": "b2-uncertain-001",
+   "category": "uncertain",
+   "text": "If I had to describe the last ten years in one word"
+  },
+  {
+   "id": "b2-uncertain-002",
+   "category": "uncertain",
+   "text": "What surprises most people about living alone is"
+  },
+  {
+   "id": "b2-uncertain-003",
+   "category": "uncertain",
+   "text": "The thing nobody tells you about moving abroad is"
+  },
+  {
+   "id": "b2-uncertain-004",
+   "category": "uncertain",
+   "text": "My favourite kind of weather is probably"
+  },
+  {
+   "id": "b2-uncertain-005",
+   "category": "uncertain",
+   "text": "If money were not a consideration I would spend my time"
+  },
+  {
+   "id": "b2-uncertain-006",
+   "category": "uncertain",
+   "text": "The worst advice I was ever given was"
+  },
+  {
+   "id": "b2-uncertain-007",
+   "category": "uncertain",
+   "text": "What I miss most about being a child is"
+  },
+  {
+   "id": "b2-uncertain-008",
+   "category": "uncertain",
+   "text": "The best meal I have ever eaten was somewhere"
+  },
+  {
+   "id": "b2-uncertain-009",
+   "category": "uncertain",
+   "text": "If I could learn any skill overnight it would be"
+  },
+  {
+   "id": "b2-longform-000",
+   "category": "longform",
+   "text": "Cartography has never been a neutral craft. Every map is an argument about what matters, made by deciding what to leave out. A road atlas erases rivers that a hydrological survey would treat as its whole subject, and a political map draws borders with a confidence that the ground beneath them rarely shares. The projection itself carries a claim: Mercator preserves angles at the cost of area, so it flatters the high latitudes and shrinks the equator, and generations of schoolchildren absorbed a picture of the world in which Greenland rivalled Africa. None of this is deceit exactly. A map that recorded everything would be the size of the territory and just as hard to read."
+  },
+  {
+   "id": "b2-longform-001",
+   "category": "longform",
+   "text": "The domestication of yeast is one of the stranger collaborations in the human record, because for most of its length neither party knew the other was there. Bread and beer predate microbiology by thousands of years, and the practices that sustained them were transmitted as craft rather than as theory: keep back a portion of yesterday's dough, wash the vessel but not too well, work in the same room your mother worked in. What was actually being preserved was a population of organisms, selected generation after generation for tolerance of alcohol, of acidity, of the particular temperature of a particular kitchen."
+  },
+  {
+   "id": "b2-longform-002",
+   "category": "longform",
+   "text": "Standardisation tends to be told as a story of engineers agreeing, but it is more often a story of engineers being compelled. Railway gauges did not converge because the arguments for a common width were finally understood; they converged because breaking bulk at every border became more expensive than rebuilding track. Screw threads, shipping containers, mains voltage, character encodings: in each case a plurality of locally sensible choices persisted until the cost of translation exceeded the cost of capitulation, and then one option won, not always the best one."
+  },
+  {
+   "id": "b2-longform-003",
+   "category": "longform",
+   "text": "A coastline has no definite length, which sounds like a riddle and is actually a measurement result. Walk it with a metre rule and you will record a longer distance than you would with a kilometre chain, because the shorter instrument follows inlets the longer one steps across, and the pattern does not stop as you shrink the ruler. Every bay contains smaller bays. The number you report is therefore a property of your procedure as much as of the shore, and the honest way to state it is as a relationship between scale and length rather than as a single figure."
+  },
+  {
+   "id": "b2-longform-004",
+   "category": "longform",
+   "text": "Musical tuning is a compromise nobody is entirely happy with. The intervals that sound most consonant correspond to simple frequency ratios, but those ratios do not close: stack twelve perfect fifths and you arrive very slightly above where seven octaves should have put you, a discrepancy known as the Pythagorean comma. Something has to give. Various temperaments distribute the error differently, sweetening some keys at the expense of others, and equal temperament spreads it uniformly so that every key is equally and slightly wrong."
+  },
+  {
+   "id": "b2-longform-005",
+   "category": "longform",
+   "text": "The archive is a technology of forgetting as much as of remembrance. To keep everything is to keep nothing findable, so archivists appraise, and appraisal means destruction on a scale that would alarm most people who imagine the archive as an attic. What survives is shaped by what seemed administratively significant at the moment of transfer, which is why the correspondence of ministries outlives the correspondence of households, and why the daily texture of ordinary life is reconstructed from accident: a shopping list used as packing, a diary kept for a bet."
+  }
+ ],
+ "disjointness": {
+  "method": "exact id match, whitespace/case-normalised text match, and a 40-character prefix near-duplicate scan",
+  "verified_against": {
+   "quality-bank-1": {
+    "prompts": 69,
+    "id_overlap": 0,
+    "text_overlap": 0,
+    "near_duplicate_pairs": 0
+   },
+   "sensitivity-1b-calibration": {
+    "prompts": 12,
+    "id_overlap": 0,
+    "text_overlap": 0,
+    "near_duplicate_pairs": 0
+   },
+   "internal_duplicates": 0
+  }
+ },
+ "text_digest": {
+  "algorithm": "sha256",
+  "value": "a3fb510b9c8945199d78c9bc50e1d1aa40f26e8d678238f716d38434b2e7181e"
+ },
+ "token_digest": {
+  "algorithm": "sha256",
+  "value": "a757240ce0e083fd6eb0ecde32e7c5a81c3b6e6179570d53d9b2d765e8afa868",
+  "limit": 128,
+  "positions": 1946,
+  "tokenizer": {
+   "path": "../../../../../chris-models/Qwen3.8-27B.vindex3/tokenizer.json",
+   "sha256": "0997f410c57a1f4e53b09e4be8f4a172d90edd9564368fb0847030937229b9f3"
+  }
+ },
+ "count": 69
+}

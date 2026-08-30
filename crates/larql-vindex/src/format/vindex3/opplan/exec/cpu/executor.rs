@@ -242,6 +242,7 @@ impl CpuExecutor {
         x: &[f32],
         out_dim: usize,
     ) -> Vec<f32> {
+        let clock = std::time::Instant::now();
         super::replay::record(weight, x, out_dim);
         let in_dim = x.len();
         let mut out = vec![0.0f32; out_dim];
@@ -251,22 +252,18 @@ impl CpuExecutor {
             self.workers_for(kernel.parallelism(), weight.bytes())
         };
         if workers <= 1 || out_dim < workers {
+            kernel.project_rows(weight, x, &mut out);
             ledger().record(
-                PhysicalProjectionPlan::for_resident(weight),
+                PhysicalProjectionPlan::for_resident(weight, in_dim),
                 weight.bytes(),
                 1,
+                clock.elapsed().as_nanos() as u64,
             );
-            kernel.project_rows(weight, x, &mut out);
             return out;
         }
         // Row-contiguous partitions: each worker streams one unbroken
         // slab of weight, which is what the memory system wants.
         let rows = out_dim.div_ceil(workers);
-        ledger().record(
-            PhysicalProjectionPlan::for_resident(weight),
-            weight.bytes(),
-            out_dim.div_ceil(rows),
-        );
         self.pool.install(|| {
             use rayon::prelude::*;
             out.par_chunks_mut(rows).enumerate().for_each(|(i, slot)| {
@@ -274,7 +271,95 @@ impl CpuExecutor {
                 kernel.project_rows(slab, x, slot);
             });
         });
+        ledger().record(
+            PhysicalProjectionPlan::for_resident(weight, in_dim),
+            weight.bytes(),
+            out_dim.div_ceil(rows),
+            clock.elapsed().as_nanos() as u64,
+        );
         out
+    }
+
+    /// **CPU-7C.** Run `y_p = W x_p` for every position `p` under this
+    /// executor's threading policy, giving the kernel the chance to serve
+    /// them all from ONE weight traversal.
+    ///
+    /// The partition is by output ROWS, exactly as [`Self::project`] —
+    /// never by position. Cutting by position would hand each worker its
+    /// own copy of the whole matrix, which is the traffic this exists to
+    /// remove and is precisely what the position-parallel caller already
+    /// does.
+    pub fn project_many(
+        &self,
+        kernel: &dyn DenseProjector,
+        weight: WeightRows<'_>,
+        xs: &[&[f32]],
+        out_dim: usize,
+    ) -> Vec<Vec<f32>> {
+        let _t = timed(OpClass::Projection);
+        let clock = std::time::Instant::now();
+        let n = xs.len();
+        let in_dim = xs[0].len();
+        for x in xs {
+            super::replay::record(weight, x, out_dim);
+        }
+        // Position-minor, so one worker's row range is one contiguous run.
+        let mut flat = vec![0.0f32; out_dim * n];
+        let workers = if caller_owns_the_machine() {
+            1
+        } else {
+            self.workers_for(kernel.parallelism(), weight.bytes())
+        };
+        // The ledger must charge what was actually READ. A stationary
+        // kernel streams the matrix once for all `n`; the looping default
+        // streams it `n` times, and a ledger that charged one traversal
+        // for both would report the fallback at `n` times its true rate —
+        // the exact failure mode `is_weight_stationary` exists to expose.
+        let stationary = kernel.is_weight_stationary(weight, in_dim, n);
+        let traversals = if stationary { 1 } else { n };
+        let plan = PhysicalProjectionPlan::for_resident(weight, in_dim);
+        if workers <= 1 || out_dim < workers {
+            kernel.project_rows_many(weight, xs, &mut flat, n);
+            let ns = clock.elapsed().as_nanos() as u64;
+            ledger().record_many(
+                plan,
+                super::ledger::Call {
+                    bytes: weight.bytes() * traversals,
+                    slabs: 1,
+                    positions: n,
+                    grouped: stationary,
+                    nanos: ns,
+                    nanos_many: ns,
+                },
+            );
+        } else {
+            let rows = out_dim.div_ceil(workers);
+            self.pool.install(|| {
+                use rayon::prelude::*;
+                flat.par_chunks_mut(rows * n)
+                    .enumerate()
+                    .for_each(|(i, slot)| {
+                        let count = slot.len() / n;
+                        let slab = weight.slice_rows(in_dim, i * rows, count);
+                        kernel.project_rows_many(slab, xs, slot, n);
+                    });
+            });
+            let ns = clock.elapsed().as_nanos() as u64;
+            ledger().record_many(
+                plan,
+                super::ledger::Call {
+                    bytes: weight.bytes() * traversals,
+                    slabs: out_dim.div_ceil(rows),
+                    positions: n,
+                    grouped: stationary,
+                    nanos: ns,
+                    nanos_many: ns,
+                },
+            );
+        }
+        (0..n)
+            .map(|p| (0..out_dim).map(|r| flat[r * n + p]).collect())
+            .collect()
     }
 }
 

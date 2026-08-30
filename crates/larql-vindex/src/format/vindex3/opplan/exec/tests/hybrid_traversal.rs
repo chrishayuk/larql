@@ -28,7 +28,7 @@ pub(super) fn hybrid_plan_for_tests() -> (tempfile::TempDir, ComponentOpPlan, Op
     hybrid()
 }
 
-fn hybrid() -> (tempfile::TempDir, ComponentOpPlan, OperandStore) {
+pub(super) fn hybrid() -> (tempfile::TempDir, ComponentOpPlan, OperandStore) {
     let src = tempfile::tempdir().unwrap();
     hybrid_lllf_f32_model(src.path());
     let inventory = larql_models::inventory::build_inventory(src.path()).unwrap();

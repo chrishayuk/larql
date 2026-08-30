@@ -469,6 +469,30 @@ pub trait DenseProjections: Sync {
     /// input, it is that invariant broken, and the same posture the
     /// kernels below already take.
     fn project(&self, weight: WeightRows<'_>, x: &[f32], out_dim: usize) -> Vec<f32>;
+
+    /// The same projection against every position, sharing ONE weight
+    /// traversal where the backend has a kernel that can.
+    ///
+    /// Default is the loop it replaces, so the reference realisation and
+    /// every other implementation keep working untouched.
+    ///
+    /// **A claim about SCHEDULE, never about arithmetic.** Each position
+    /// keeps its own activation quantisation and its own accumulator, and
+    /// nothing is summed across positions — so each returned vector is
+    /// bit-identical to what [`Self::project`] would have produced for
+    /// that position alone.
+    fn project_many(&self, weight: WeightRows<'_>, xs: &[&[f32]], out_dim: usize) -> Vec<Vec<f32>> {
+        xs.iter()
+            .map(|x| self.project(weight, x, out_dim))
+            .collect()
+    }
+
+    /// Whether [`Self::project_many`] would actually share the traversal
+    /// here. `false` means the loop — correct, and not the thing a
+    /// CPU-7C timing is about.
+    fn is_weight_stationary(&self, _weight: WeightRows<'_>, _in_dim: usize, _n: usize) -> bool {
+        false
+    }
 }
 
 /// The literal projection: one scalar dot per row.
@@ -548,12 +572,20 @@ pub fn layer_forward_with(
     let kernel = op.conv_kernel;
     let repeat = hv / hk;
     let mut planes = LayerPlanes::default();
+    // Attributes every projection below to the recurrent class, so `g`
+    // can be reported as `g_GD` and `g_FFN` separately in one binary.
+    let _site = super::cpu::ledger::in_site(super::cpu::ledger::Site::Recurrent);
 
-    // Stage 1: the fused projection, per position.
-    let mixed: Vec<Vec<f32>> = hidden
-        .iter()
-        .map(|h| proj.project(w.in_proj_qkv, h, conv_dim))
-        .collect();
+    // Stage 1: the fused projection, for every position.
+    //
+    // **CPU-7C.** One weight traversal serves all of them where the
+    // backend has a stationary kernel; where it does not, `project_many`
+    // is the same loop this used to be. `hidden` is the LAYER INPUT, so
+    // every position's operand exists before the recurrence has run — the
+    // eligibility that makes this legal is a property of the operand, not
+    // of the schedule.
+    let rows: Vec<&[f32]> = hidden.iter().map(Vec::as_slice).collect();
+    let mixed: Vec<Vec<f32>> = proj.project_many(w.in_proj_qkv, &rows, conv_dim);
 
     // Stage 2: depthwise causal convolution, then SiLU.
     //
@@ -619,6 +651,21 @@ pub fn layer_forward_with(
     }
     drop(convolution);
 
+    // **CPU-7C.** `a`, `b` and `z` read `hidden[t]` — the layer input —
+    // and never the recurrent state, so all three are eligible across
+    // positions and are lifted out of the sequential loop below. The
+    // recurrence still advances strictly in order; what moved is where
+    // its OPERANDS are computed, which is a schedule and not a semantics.
+    let gate_a = proj.project_many(w.in_proj_a, &rows, hv);
+    let gate_b = proj.project_many(w.in_proj_b, &rows, hv);
+    let gate_z = proj.project_many(w.in_proj_z, &rows, value_dim);
+
+    // `out_proj` is downstream of the recurrence: its operand for position
+    // `t` does not exist until `step_inner` has consumed `t-1`. It is
+    // therefore collected here and projected AFTER the loop — legal
+    // because nothing feeds `out_proj`'s result back into the recurrence.
+    let mut gated: Vec<Vec<f32>> = Vec::with_capacity(t_len);
+
     for t in 0..t_len {
         // Stage 3/4: split, then expand q/k from Hk heads to Hv.
         let expand = timed(OpClass::DeltaHeadExpand);
@@ -640,9 +687,7 @@ pub fn layer_forward_with(
 
         // Stage 5: the gates. The three projections are timed by the
         // executor; only the elementwise part is this leaf.
-        let a = proj.project(w.in_proj_a, &hidden[t], hv);
-        let b = proj.project(w.in_proj_b, &hidden[t], hv);
-        let z = proj.project(w.in_proj_z, &hidden[t], value_dim);
+        let (a, b, z) = (&gate_a[t], &gate_b[t], &gate_z[t]);
         let gates = timed(OpClass::DeltaGates);
         let beta: Vec<f32> = b.iter().map(|x| 1.0 / (1.0 + (-x).exp())).collect();
         let g: Vec<f32> = (0..hv)
@@ -682,17 +727,22 @@ pub fn layer_forward_with(
 
         drop(gated_norm);
 
-        // Stage 8: back into the residual stream.
-        planes
-            .output
-            .push(proj.project(w.out_proj, &normed, hidden[t].len()));
+        // Stage 8: held for the batched `out_proj` below.
+        gated.push(normed);
         planes.query.push(q);
         planes.key.push(k);
         planes.value.push(value);
         planes.g.push(g);
         planes.beta.push(beta);
-        planes.z.push(z);
+        planes.z.push(z.clone());
         planes.core.push(core);
+    }
+
+    // Stage 8, continued: one traversal of `out_proj` for every position,
+    // now that the recurrence has produced all of their operands.
+    if let Some(width) = hidden.first().map(Vec::len) {
+        let gated_rows: Vec<&[f32]> = gated.iter().map(Vec::as_slice).collect();
+        planes.output = proj.project_many(w.out_proj, &gated_rows, width);
     }
 
     // Roll the convolution history forward: the last `kernel` positions of

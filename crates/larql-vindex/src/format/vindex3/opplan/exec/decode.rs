@@ -204,6 +204,77 @@ impl<'a, B: PlanBackend> DecodeSession<'a, B> {
         self.step_observed(token, &mut NoopObserver)
     }
 
+    /// **CPU-7C.** Advance this continuation through exactly `tokens`, in
+    /// order, letting eligible projections execute across those positions
+    /// together.
+    ///
+    /// This is a VERIFICATION primitive, not a generator. It consumes
+    /// token ids the caller already has and never samples position `t+1`
+    /// from position `t`'s logits — doing so would make the traversal
+    /// autoregressive again and destroy the very parallelism it exists to
+    /// expose. Given proposed tokens, it evaluates the continuation
+    /// through all of them; deciding which to accept is the caller's.
+    ///
+    /// Semantically it must be indistinguishable from calling
+    /// [`step`](Self::step) once per token: the same logits, and the same
+    /// continuation state left behind — recurrent buffers, convolution
+    /// history, K/V rows and position alike. "Same logits" alone is not
+    /// the property, because a wrong recurrent state produces correct
+    /// logits for these positions and diverges only on the NEXT one,
+    /// which is what the follow-on-step parity gate is for.
+    ///
+    /// Returns the last position's logits, matching [`step`]. Per-position
+    /// logits need the streaming sink and are owed to CPU-7D, which is the
+    /// first thing that actually needs them.
+    pub fn step_many(&mut self, tokens: &[u32]) -> Result<StepOutput, VindexError> {
+        if tokens.is_empty() {
+            return Err(VindexError::Parse(
+                "step_many advances a continuation through supplied tokens and was given none;                  an empty advance is a caller bug, not a no-op"
+                    .to_string(),
+            ));
+        }
+        let Self {
+            plan,
+            backend,
+            ops,
+            kv,
+        } = self;
+        let ops = ops.get();
+        let hidden = ops.hidden();
+        let embed_table = ops.embed_table().ok_or_else(|| {
+            VindexError::Parse(
+                "this prepared image carries no embedding table — a layer-range slice consumes                  hidden states, not token ids"
+                    .to_string(),
+            )
+        })?;
+        // Checked for EVERY token before any state moves. A bad id found
+        // half way through would leave the continuation advanced by some
+        // of the batch, which is a corrupted session rather than a failed
+        // call.
+        for token in tokens {
+            if (*token as usize + 1) * hidden > embed_table.len() {
+                return Err(VindexError::Parse(format!(
+                    "token id {token} is outside the embedding table",
+                )));
+            }
+        }
+        let state = kv.state_mut();
+        let base = state.position();
+        let out = super::traverse(
+            plan,
+            ops,
+            tokens,
+            *backend,
+            None,
+            &mut |_| Ok(()),
+            Some(state),
+        )?;
+        // The provider is the position authority, and the traversal does
+        // not move it — the same contract `prefill_prepared` keeps.
+        state.set_position(base + tokens.len());
+        Ok(StepOutput { logits: out.logits })
+    }
+
     /// [`step`](Self::step) with a subscriber on the step's operation
     /// boundaries (LQL-2 TRACE). This IS the step — `step()` calls it
     /// with [`NoopObserver`] — so observation can never fork the
@@ -292,6 +363,7 @@ impl<'a, B: PlanBackend> DecodeSession<'a, B> {
                         layer.pre_attention_norm.eps,
                         hidden,
                     );
+                    let _site = super::cpu::ledger::in_site(super::cpu::ledger::Site::Attention);
                     let out = self.backend.attention_step(AttentionStepCall {
                         op: call,
                         position,
@@ -312,6 +384,7 @@ impl<'a, B: PlanBackend> DecodeSession<'a, B> {
 
             let normed = state.pre_ffn.apply(self.backend, &h);
             observer.operand_input(index, super::observe::InputSite::Ffn, normed.as_slice());
+            let _site = super::cpu::ledger::in_site(super::cpu::ledger::Site::Ffn);
             let ffn_out =
                 state
                     .ffn

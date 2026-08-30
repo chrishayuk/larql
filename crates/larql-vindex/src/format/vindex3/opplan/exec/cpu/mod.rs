@@ -19,16 +19,23 @@
 //! A kernel that wants no external threading says so
 //! ([`CpuParallelism::LibraryOwned`]) and is called once.
 
+pub mod arithmetic;
+pub mod cost;
 pub mod environment;
 pub mod executor;
+pub mod integer;
 pub mod kernels;
 pub mod ledger;
 pub mod physical;
 pub mod projector;
 pub mod replay;
+pub mod stationary;
 
+pub use arithmetic::{AccumulatorRep, ActivationRep, Arithmetic, ScaleSpan, WeightRep};
+pub use cost::{budget, predicted_tokens_per_second, ProjectionBudget, SYNTHETIC_TO_REAL};
 pub use environment::Environment;
 pub use executor::{shared, CpuExecutor};
+pub use integer::{quantise_activation, Bf16xQ8, Q4xQ8, Q8xQ8, QuantisedActivation};
 pub use kernels::{BlasF32, FusedBf16, FusedQ4, FusedQ8, ScalarF32};
 pub use ledger::{ledger, thread_projection_calls, PlanTally, ProjectionLedger};
 pub use physical::PhysicalProjectionPlan;

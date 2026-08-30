@@ -1,0 +1,1244 @@
+{
+ "bank": "quality-bank-3a",
+ "frozen": "2026-08-25",
+ "purpose": "CPU-6 validation bank A. Frozen simultaneously with 3B, before either ran. Authoring was blind to candidate-specific results per CPU6-VALIDATION.md.",
+ "note": "Editing invalidates every comparison against it.",
+ "authorship": {
+  "process": "hand-authored, single agent",
+  "limitation": "3A and 3B share a human-generation prior; they bound execution-side variation, not authorship bias"
+ },
+ "prompts": [
+  {
+   "id": "b3a-factual-000",
+   "category": "factual",
+   "text": "The Danube flows through more countries than any other river in Europe.",
+   "provenance": "hand-authored"
+  },
+  {
+   "id": "b3a-factual-001",
+   "category": "factual",
+   "text": "Tungsten has the highest melting point of any pure metal.",
+   "provenance": "hand-authored"
+  },
+  {
+   "id": "b3a-factual-002",
+   "category": "factual",
+   "text": "The Colosseum in Rome was completed during the reign of Titus.",
+   "provenance": "hand-authored"
+  },
+  {
+   "id": "b3a-factual-003",
+   "category": "factual",
+   "text": "Bees communicate the direction of food sources through a waggle dance.",
+   "provenance": "hand-authored"
+  },
+  {
+   "id": "b3a-factual-004",
+   "category": "factual",
+   "text": "New Zealand consists principally of two large islands and many smaller ones.",
+   "provenance": "hand-authored"
+  },
+  {
+   "id": "b3a-factual-005",
+   "category": "factual",
+   "text": "The atomic clock keeps time by counting oscillations of caesium atoms.",
+   "provenance": "hand-authored"
+  },
+  {
+   "id": "b3a-factual-006",
+   "category": "factual",
+   "text": "Cork is harvested from the bark of the cork oak without felling the tree.",
+   "provenance": "hand-authored"
+  },
+  {
+   "id": "b3a-factual-007",
+   "category": "factual",
+   "text": "The Suez Canal connects the Mediterranean Sea to the Red Sea.",
+   "provenance": "hand-authored"
+  },
+  {
+   "id": "b3a-factual-008",
+   "category": "factual",
+   "text": "Penguins are found almost exclusively in the southern hemisphere.",
+   "provenance": "hand-authored"
+  },
+  {
+   "id": "b3a-factual-009",
+   "category": "factual",
+   "text": "Latin was the administrative language of the Roman Empire for centuries.",
+   "provenance": "hand-authored"
+  },
+  {
+   "id": "b3a-factual-010",
+   "category": "factual",
+   "text": "A leap year occurs when the year divides by four, with exceptions at centuries.",
+   "provenance": "hand-authored"
+  },
+  {
+   "id": "b3a-factual-011",
+   "category": "factual",
+   "text": "The violin family was largely established by makers in Cremona.",
+   "provenance": "hand-authored"
+  },
+  {
+   "id": "b3a-factual-012",
+   "category": "factual",
+   "text": "Nitrogen makes up roughly seventy-eight percent of the atmosphere.",
+   "provenance": "hand-authored"
+  },
+  {
+   "id": "b3a-factual-013",
+   "category": "factual",
+   "text": "The Trans-Siberian Railway runs from Moscow to Vladivostok.",
+   "provenance": "hand-authored"
+  },
+  {
+   "id": "b3a-factual-014",
+   "category": "factual",
+   "text": "Marie Curie received Nobel Prizes in two different scientific disciplines.",
+   "provenance": "hand-authored"
+  },
+  {
+   "id": "b3a-factual-015",
+   "category": "factual",
+   "text": "Glass is an amorphous solid rather than a crystalline one.",
+   "provenance": "hand-authored"
+  },
+  {
+   "id": "b3a-factual-016",
+   "category": "factual",
+   "text": "The Great Barrier Reef lies off the north-eastern coast of Australia.",
+   "provenance": "hand-authored"
+  },
+  {
+   "id": "b3a-factual-017",
+   "category": "factual",
+   "text": "Braille represents characters using raised dots in a six-position cell.",
+   "provenance": "hand-authored"
+  },
+  {
+   "id": "b3a-factual-018",
+   "category": "factual",
+   "text": "The kilogram was redefined in terms of the Planck constant.",
+   "provenance": "hand-authored"
+  },
+  {
+   "id": "b3a-factual-019",
+   "category": "factual",
+   "text": "Iceland generates most of its electricity from hydro and geothermal sources.",
+   "provenance": "hand-authored"
+  },
+  {
+   "id": "b3a-factual-020",
+   "category": "factual",
+   "text": "Sharks have skeletons made of cartilage rather than bone.",
+   "provenance": "hand-authored"
+  },
+  {
+   "id": "b3a-factual-021",
+   "category": "factual",
+   "text": "The Hanseatic League was a commercial confederation of northern trading towns.",
+   "provenance": "hand-authored"
+  },
+  {
+   "id": "b3a-factual-022",
+   "category": "factual",
+   "text": "Chlorophyll absorbs red and blue light while reflecting green.",
+   "provenance": "hand-authored"
+  },
+  {
+   "id": "b3a-factual-023",
+   "category": "factual",
+   "text": "Mandarin has more native speakers than any other language.",
+   "provenance": "hand-authored"
+  },
+  {
+   "id": "b3a-factual-024",
+   "category": "factual",
+   "text": "The Panama Canal uses a system of locks to raise ships over the isthmus.",
+   "provenance": "hand-authored"
+  },
+  {
+   "id": "b3a-factual-025",
+   "category": "factual",
+   "text": "Amber is fossilised tree resin and sometimes preserves insects.",
+   "provenance": "hand-authored"
+  },
+  {
+   "id": "b3a-factual-026",
+   "category": "factual",
+   "text": "The Rosetta Stone carries the same decree in three scripts.",
+   "provenance": "hand-authored"
+  },
+  {
+   "id": "b3a-factual-027",
+   "category": "factual",
+   "text": "Uranus rotates on an axis tilted almost perpendicular to its orbit.",
+   "provenance": "hand-authored"
+  },
+  {
+   "id": "b3a-factual-028",
+   "category": "factual",
+   "text": "Sourdough bread rises through wild yeasts and lactic acid bacteria.",
+   "provenance": "hand-authored"
+  },
+  {
+   "id": "b3a-factual-029",
+   "category": "factual",
+   "text": "The metre was originally defined as a fraction of the Earth's meridian.",
+   "provenance": "hand-authored"
+  },
+  {
+   "id": "b3a-factual-030",
+   "category": "factual",
+   "text": "Bamboo is a grass, despite growing to the height of many trees.",
+   "provenance": "hand-authored"
+  },
+  {
+   "id": "b3a-factual-031",
+   "category": "factual",
+   "text": "The Silk Road was a network of routes rather than a single highway.",
+   "provenance": "hand-authored"
+  },
+  {
+   "id": "b3a-factual-032",
+   "category": "factual",
+   "text": "Helium was detected in the sun's spectrum before it was found on Earth.",
+   "provenance": "hand-authored"
+  },
+  {
+   "id": "b3a-factual-033",
+   "category": "factual",
+   "text": "Norway's coastline is greatly lengthened by its fjords and islands.",
+   "provenance": "hand-authored"
+  },
+  {
+   "id": "b3a-factual-034",
+   "category": "factual",
+   "text": "The printing of banknotes typically uses intaglio to raise the ink.",
+   "provenance": "hand-authored"
+  },
+  {
+   "id": "b3a-factual-035",
+   "category": "factual",
+   "text": "Octopuses have three hearts and blue, copper-based blood.",
+   "provenance": "hand-authored"
+  },
+  {
+   "id": "b3a-factual-036",
+   "category": "factual",
+   "text": "The Fibonacci sequence begins one, one, two, three, five, eight.",
+   "provenance": "hand-authored"
+  },
+  {
+   "id": "b3a-factual-037",
+   "category": "factual",
+   "text": "Cheddar cheese takes its name from a village in Somerset.",
+   "provenance": "hand-authored"
+  },
+  {
+   "id": "b3a-factual-038",
+   "category": "factual",
+   "text": "Sound cannot travel through the vacuum of space.",
+   "provenance": "hand-authored"
+  },
+  {
+   "id": "b3a-factual-039",
+   "category": "factual",
+   "text": "The Dead Sea lies at the lowest land elevation on Earth.",
+   "provenance": "hand-authored"
+  },
+  {
+   "id": "b3a-factual-040",
+   "category": "factual",
+   "text": "Diamonds and graphite are both composed entirely of carbon.",
+   "provenance": "hand-authored"
+  },
+  {
+   "id": "b3a-factual-041",
+   "category": "factual",
+   "text": "The Olympic Games were revived in Athens at the end of the nineteenth century.",
+   "provenance": "hand-authored"
+  },
+  {
+   "id": "b3a-factual-042",
+   "category": "factual",
+   "text": "Migrating Arctic terns travel between the polar regions each year.",
+   "provenance": "hand-authored"
+  },
+  {
+   "id": "b3a-factual-043",
+   "category": "factual",
+   "text": "Concrete gains most of its strength through hydration rather than drying.",
+   "provenance": "hand-authored"
+  },
+  {
+   "id": "b3a-prose-000",
+   "category": "prose",
+   "text": "The tide had gone further out than he had ever seen it, leaving the",
+   "provenance": "hand-authored"
+  },
+  {
+   "id": "b3a-prose-001",
+   "category": "prose",
+   "text": "She counted the floors as the lift descended, though she already knew",
+   "provenance": "hand-authored"
+  },
+  {
+   "id": "b3a-prose-002",
+   "category": "prose",
+   "text": "Nobody had lit the fire, and the room held the particular cold that",
+   "provenance": "hand-authored"
+  },
+  {
+   "id": "b3a-prose-003",
+   "category": "prose",
+   "text": "There were two suitcases by the door and only one of them was hers, which",
+   "provenance": "hand-authored"
+  },
+  {
+   "id": "b3a-prose-004",
+   "category": "prose",
+   "text": "The orchard had been sold years ago, but he still took the long way round",
+   "provenance": "hand-authored"
+  },
+  {
+   "id": "b3a-prose-005",
+   "category": "prose",
+   "text": "By the third day of rain the path had become something else entirely, and",
+   "provenance": "hand-authored"
+  },
+  {
+   "id": "b3a-prose-006",
+   "category": "prose",
+   "text": "He wrote the address twice because the first attempt looked like a lie,",
+   "provenance": "hand-authored"
+  },
+  {
+   "id": "b3a-prose-007",
+   "category": "prose",
+   "text": "The kitchen radio played to nobody most mornings, and she had stopped",
+   "provenance": "hand-authored"
+  },
+  {
+   "id": "b3a-prose-008",
+   "category": "prose",
+   "text": "Somewhere below them a door closed, and they both pretended not to have",
+   "provenance": "hand-authored"
+  },
+  {
+   "id": "b3a-prose-009",
+   "category": "prose",
+   "text": "It had been a good year for apples and a poor one for almost everything",
+   "provenance": "hand-authored"
+  },
+  {
+   "id": "b3a-prose-010",
+   "category": "prose",
+   "text": "The photograph was creased across one corner where somebody had folded it",
+   "provenance": "hand-authored"
+  },
+  {
+   "id": "b3a-prose-011",
+   "category": "prose",
+   "text": "She had expected the town to be smaller, the way places usually are when",
+   "provenance": "hand-authored"
+  },
+  {
+   "id": "b3a-prose-012",
+   "category": "prose",
+   "text": "The horse would not cross the bridge, and after an hour of coaxing they",
+   "provenance": "hand-authored"
+  },
+  {
+   "id": "b3a-prose-013",
+   "category": "prose",
+   "text": "Every winter the lake froze from the northern edge inward, and every",
+   "provenance": "hand-authored"
+  },
+  {
+   "id": "b3a-prose-014",
+   "category": "prose",
+   "text": "He kept the letter unopened for a week, which told him more about himself",
+   "provenance": "hand-authored"
+  },
+  {
+   "id": "b3a-prose-015",
+   "category": "prose",
+   "text": "The market emptied slowly, stall by stall, until only the fishmonger",
+   "provenance": "hand-authored"
+  },
+  {
+   "id": "b3a-prose-016",
+   "category": "prose",
+   "text": "There was a knack to the back door that visitors never managed, and she",
+   "provenance": "hand-authored"
+  },
+  {
+   "id": "b3a-prose-017",
+   "category": "prose",
+   "text": "The boy had learned to read from cereal packets and shop signs, which",
+   "provenance": "hand-authored"
+  },
+  {
+   "id": "b3a-prose-018",
+   "category": "prose",
+   "text": "Snow made the yard unfamiliar, filling in the places she navigated by",
+   "provenance": "hand-authored"
+  },
+  {
+   "id": "b3a-prose-019",
+   "category": "prose",
+   "text": "They had agreed not to talk about it, and had therefore talked about",
+   "provenance": "hand-authored"
+  },
+  {
+   "id": "b3a-prose-020",
+   "category": "prose",
+   "text": "The bus came twice a day and neither time was convenient, so he",
+   "provenance": "hand-authored"
+  },
+  {
+   "id": "b3a-prose-021",
+   "category": "prose",
+   "text": "Her handwriting had changed since the illness, though the signature",
+   "provenance": "hand-authored"
+  },
+  {
+   "id": "b3a-prose-022",
+   "category": "prose",
+   "text": "The garden wall had come down in the storm and revealed a view nobody",
+   "provenance": "hand-authored"
+  },
+  {
+   "id": "b3a-prose-023",
+   "category": "prose",
+   "text": "He could tell from the sound of the engine that it was not going to",
+   "provenance": "hand-authored"
+  },
+  {
+   "id": "b3a-prose-024",
+   "category": "prose",
+   "text": "The village had one shop, one pub, and an argument that had lasted",
+   "provenance": "hand-authored"
+  },
+  {
+   "id": "b3a-prose-025",
+   "category": "prose",
+   "text": "She left the window open despite the cold because the room otherwise",
+   "provenance": "hand-authored"
+  },
+  {
+   "id": "b3a-prose-026",
+   "category": "prose",
+   "text": "The map was forty years out of date and still more useful than the",
+   "provenance": "hand-authored"
+  },
+  {
+   "id": "b3a-prose-027",
+   "category": "prose",
+   "text": "There is a particular silence in a house where someone is packing, and",
+   "provenance": "hand-authored"
+  },
+  {
+   "id": "b3a-prose-028",
+   "category": "prose",
+   "text": "The dog had been waiting so long that the waiting had become the point",
+   "provenance": "hand-authored"
+  },
+  {
+   "id": "b3a-code-000",
+   "category": "code",
+   "text": "def flatten(nested):\n    for item in nested:\n        if isinstance(item, list):\n            yield from flatten(item)",
+   "provenance": "hand-authored"
+  },
+  {
+   "id": "b3a-code-001",
+   "category": "code",
+   "text": "impl fmt::Display for Duration {\n    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {\n        let secs = self.0 % 60;",
+   "provenance": "hand-authored"
+  },
+  {
+   "id": "b3a-code-002",
+   "category": "code",
+   "text": "CREATE INDEX idx_events_user_time\n    ON events (user_id, occurred_at DESC)\n    WHERE deleted_at IS",
+   "provenance": "hand-authored"
+  },
+  {
+   "id": "b3a-code-003",
+   "category": "code",
+   "text": "export function* chunks(arr, size) {\n  for (let i = 0; i < arr.length; i += size) {\n    yield arr.slice(",
+   "provenance": "hand-authored"
+  },
+  {
+   "id": "b3a-code-004",
+   "category": "code",
+   "text": "class Node:\n    __slots__ = ('key', 'left', 'right')\n\n    def insert(self, key):\n        if key < self.key:",
+   "provenance": "hand-authored"
+  },
+  {
+   "id": "b3a-code-005",
+   "category": "code",
+   "text": "func (s *Server) Shutdown(ctx context.Context) error {\n\ts.mu.Lock()\n\tdefer s.mu.Unlock()\n\tif s.closed {",
+   "provenance": "hand-authored"
+  },
+  {
+   "id": "b3a-code-006",
+   "category": "code",
+   "text": "template <typename T>\nclass RingBuffer {\npublic:\n    void push(T value) {\n        buf_[head_] = std::move(value);",
+   "provenance": "hand-authored"
+  },
+  {
+   "id": "b3a-code-007",
+   "category": "code",
+   "text": "const reducer = (state, action) => {\n  switch (action.type) {\n    case 'increment':\n      return { ...state,",
+   "provenance": "hand-authored"
+  },
+  {
+   "id": "b3a-code-008",
+   "category": "code",
+   "text": "SELECT DATE_TRUNC('month', paid_at) AS month,\n       SUM(amount) FILTER (WHERE status = 'ok')\nFROM invoices",
+   "provenance": "hand-authored"
+  },
+  {
+   "id": "b3a-code-009",
+   "category": "code",
+   "text": "let rec fold_left f acc = function\n  | [] -> acc\n  | x :: rest -> fold_left f (f acc x)",
+   "provenance": "hand-authored"
+  },
+  {
+   "id": "b3a-code-010",
+   "category": "code",
+   "text": "@dataclass(frozen=True)\nclass Interval:\n    lo: float\n    hi: float\n\n    def overlaps(self, other):",
+   "provenance": "hand-authored"
+  },
+  {
+   "id": "b3a-code-011",
+   "category": "code",
+   "text": "pub fn parse_header(bytes: &[u8]) -> Option<Header> {\n    if bytes.len() < HEADER_LEN {\n        return None;",
+   "provenance": "hand-authored"
+  },
+  {
+   "id": "b3a-code-012",
+   "category": "code",
+   "text": "static void swap(int *a, int *b) {\n    int t = *a;\n    *a = *b;\n    *b = t;\n}\n\nvoid bubble(int *xs, size_t n) {",
+   "provenance": "hand-authored"
+  },
+  {
+   "id": "b3a-code-013",
+   "category": "code",
+   "text": "trait Visitor {\n    fn visit_expr(&mut self, e: &Expr) {\n        walk_expr(self, e)\n    }",
+   "provenance": "hand-authored"
+  },
+  {
+   "id": "b3a-code-014",
+   "category": "code",
+   "text": "async def fetch_with_retry(url, attempts=3):\n    for n in range(attempts):\n        try:\n            return await get(url)",
+   "provenance": "hand-authored"
+  },
+  {
+   "id": "b3a-code-015",
+   "category": "code",
+   "text": "object Config {\n  def load(path: String): Either[String, Config] =\n    Try(read(path)).toEither.left.map(",
+   "provenance": "hand-authored"
+  },
+  {
+   "id": "b3a-code-016",
+   "category": "code",
+   "text": "public record Point(double x, double y) {\n    Point scaled(double k) {\n        return new Point(x * k,",
+   "provenance": "hand-authored"
+  },
+  {
+   "id": "b3a-code-017",
+   "category": "code",
+   "text": "#define LIKELY(x) __builtin_expect(!!(x), 1)\n\nsize_t count_set(uint64_t v) {\n    size_t n = 0;",
+   "provenance": "hand-authored"
+  },
+  {
+   "id": "b3a-code-018",
+   "category": "code",
+   "text": "module Counter (clk, rst, out);\n  input clk, rst;\n  output reg [7:0] out;\n  always @(posedge clk)",
+   "provenance": "hand-authored"
+  },
+  {
+   "id": "b3a-code-019",
+   "category": "code",
+   "text": "fn main() -> anyhow::Result<()> {\n    let args = Args::parse();\n    let data = std::fs::read_to_string(&args.input)?;",
+   "provenance": "hand-authored"
+  },
+  {
+   "id": "b3a-code-020",
+   "category": "code",
+   "text": "class EventEmitter {\n  #listeners = new Map();\n\n  on(name, fn) {\n    const list = this.#listeners.get(name)",
+   "provenance": "hand-authored"
+  },
+  {
+   "id": "b3a-code-021",
+   "category": "code",
+   "text": "def levenshtein(a, b):\n    prev = list(range(len(b) + 1))\n    for i, ca in enumerate(a, 1):\n        cur = [i]",
+   "provenance": "hand-authored"
+  },
+  {
+   "id": "b3a-code-022",
+   "category": "code",
+   "text": "SELECT c.name, COUNT(o.id)\nFROM customers c\nLEFT JOIN orders o ON o.customer_id = c.id\nGROUP BY",
+   "provenance": "hand-authored"
+  },
+  {
+   "id": "b3a-code-023",
+   "category": "code",
+   "text": "interface Repository<T, ID> {\n    Optional<T> findById(ID id);\n\n    default T getOrThrow(ID id) {",
+   "provenance": "hand-authored"
+  },
+  {
+   "id": "b3a-code-024",
+   "category": "code",
+   "text": "with open(path, 'rb') as f:\n    header = f.read(16)\n    if header[:4] != MAGIC:\n        raise ValueError(",
+   "provenance": "hand-authored"
+  },
+  {
+   "id": "b3a-code-025",
+   "category": "code",
+   "text": "let memo = new Map();\nconst fib = n => {\n  if (n < 2) return n;\n  if (memo.has(n)) return memo.get(n);",
+   "provenance": "hand-authored"
+  },
+  {
+   "id": "b3a-code-026",
+   "category": "code",
+   "text": "impl Iterator for Windows<'_> {\n    type Item = &[u8];\n\n    fn next(&mut self) -> Option<Self::Item> {",
+   "provenance": "hand-authored"
+  },
+  {
+   "id": "b3a-code-027",
+   "category": "code",
+   "text": "package main\n\nfunc median(xs []float64) float64 {\n\tsort.Float64s(xs)\n\tn := len(xs)\n\tif n%2 == 1 {",
+   "provenance": "hand-authored"
+  },
+  {
+   "id": "b3a-code-028",
+   "category": "code",
+   "text": "CREATE TRIGGER audit_update\n    AFTER UPDATE ON accounts\n    FOR EACH ROW\n    BEGIN\n        INSERT INTO",
+   "provenance": "hand-authored"
+  },
+  {
+   "id": "b3a-arithmetic-000",
+   "category": "arithmetic",
+   "text": "A field measuring 80 metres by 45 metres has a perimeter of",
+   "provenance": "hand-authored"
+  },
+  {
+   "id": "b3a-arithmetic-001",
+   "category": "arithmetic",
+   "text": "Eleven squared is one hundred and twenty-one.",
+   "provenance": "hand-authored"
+  },
+  {
+   "id": "b3a-arithmetic-002",
+   "category": "arithmetic",
+   "text": "If a recipe for six people uses 450 grams of flour, then for ten people it needs",
+   "provenance": "hand-authored"
+  },
+  {
+   "id": "b3a-arithmetic-003",
+   "category": "arithmetic",
+   "text": "Subtracting 289 from 1000 leaves seven hundred and eleven.",
+   "provenance": "hand-authored"
+  },
+  {
+   "id": "b3a-arithmetic-004",
+   "category": "arithmetic",
+   "text": "A journey of 240 kilometres at 80 kilometres per hour takes exactly three hours.",
+   "provenance": "hand-authored"
+  },
+  {
+   "id": "b3a-arithmetic-005",
+   "category": "arithmetic",
+   "text": "Half of three-quarters is three-eighths.",
+   "provenance": "hand-authored"
+  },
+  {
+   "id": "b3a-arithmetic-006",
+   "category": "arithmetic",
+   "text": "A book of 320 pages read at 40 pages a day will be finished in",
+   "provenance": "hand-authored"
+  },
+  {
+   "id": "b3a-arithmetic-007",
+   "category": "arithmetic",
+   "text": "The product of the first four prime numbers is two hundred and ten.",
+   "provenance": "hand-authored"
+  },
+  {
+   "id": "b3a-arithmetic-008",
+   "category": "arithmetic",
+   "text": "If 15 percent of a number is 45, the number itself is three hundred.",
+   "provenance": "hand-authored"
+  },
+  {
+   "id": "b3a-arithmetic-009",
+   "category": "arithmetic",
+   "text": "Two and a half hours after quarter past ten is quarter to one.",
+   "provenance": "hand-authored"
+  },
+  {
+   "id": "b3a-arithmetic-010",
+   "category": "arithmetic",
+   "text": "A cube with edges of 6 centimetres has a volume of two hundred and sixteen.",
+   "provenance": "hand-authored"
+  },
+  {
+   "id": "b3a-arithmetic-011",
+   "category": "arithmetic",
+   "text": "Dividing a bill of 96 pounds between eight people gives twelve pounds each.",
+   "provenance": "hand-authored"
+  },
+  {
+   "id": "b3a-arithmetic-012",
+   "category": "arithmetic",
+   "text": "The average of 12, 18 and 27 is nineteen.",
+   "provenance": "hand-authored"
+  },
+  {
+   "id": "b3a-arithmetic-013",
+   "category": "arithmetic",
+   "text": "Seven hundred minus three hundred and eighty-five equals",
+   "provenance": "hand-authored"
+  },
+  {
+   "id": "b3a-arithmetic-014",
+   "category": "arithmetic",
+   "text": "A tank holding 500 litres that drains at 25 litres a minute empties in",
+   "provenance": "hand-authored"
+  },
+  {
+   "id": "b3a-arithmetic-015",
+   "category": "arithmetic",
+   "text": "Doubling a quantity four times multiplies it by sixteen.",
+   "provenance": "hand-authored"
+  },
+  {
+   "id": "b3a-arithmetic-016",
+   "category": "arithmetic",
+   "text": "If a shirt costs 32 pounds after a quarter off, the original price was",
+   "provenance": "hand-authored"
+  },
+  {
+   "id": "b3a-arithmetic-017",
+   "category": "arithmetic",
+   "text": "The square root of one hundred and sixty-nine is thirteen.",
+   "provenance": "hand-authored"
+  },
+  {
+   "id": "b3a-arithmetic-018",
+   "category": "arithmetic",
+   "text": "Three consecutive integers summing to 42 are thirteen, fourteen and fifteen.",
+   "provenance": "hand-authored"
+  },
+  {
+   "id": "b3a-arithmetic-019",
+   "category": "arithmetic",
+   "text": "A wheel of circumference 2 metres turns 500 times to cover one kilometre.",
+   "provenance": "hand-authored"
+  },
+  {
+   "id": "b3a-arithmetic-020",
+   "category": "arithmetic",
+   "text": "Forty percent of two hundred and fifty is one hundred.",
+   "provenance": "hand-authored"
+  },
+  {
+   "id": "b3a-arithmetic-021",
+   "category": "arithmetic",
+   "text": "The difference between eight cubed and seven cubed is one hundred and sixty-nine.",
+   "provenance": "hand-authored"
+  },
+  {
+   "id": "b3a-arithmetic-022",
+   "category": "arithmetic",
+   "text": "If two workers paint a fence in six hours, three workers at the same rate take",
+   "provenance": "hand-authored"
+  },
+  {
+   "id": "b3a-arithmetic-023",
+   "category": "arithmetic",
+   "text": "One thousand seconds is sixteen minutes and forty seconds.",
+   "provenance": "hand-authored"
+  },
+  {
+   "id": "b3a-arithmetic-024",
+   "category": "arithmetic",
+   "text": "A triangle with base 14 and height 9 has an area of sixty-three.",
+   "provenance": "hand-authored"
+  },
+  {
+   "id": "b3a-arithmetic-025",
+   "category": "arithmetic",
+   "text": "Increasing 80 by a quarter and then decreasing the result by a fifth gives",
+   "provenance": "hand-authored"
+  },
+  {
+   "id": "b3a-arithmetic-026",
+   "category": "arithmetic",
+   "text": "The lowest common multiple of 12 and 18 is thirty-six.",
+   "provenance": "hand-authored"
+  },
+  {
+   "id": "b3a-arithmetic-027",
+   "category": "arithmetic",
+   "text": "A car covering 55 kilometres on 5 litres uses eleven litres per hundred kilometres.",
+   "provenance": "hand-authored"
+  },
+  {
+   "id": "b3a-arithmetic-028",
+   "category": "arithmetic",
+   "text": "Nine factorial divided by seven factorial is seventy-two.",
+   "provenance": "hand-authored"
+  },
+  {
+   "id": "b3a-uncertain-000",
+   "category": "uncertain",
+   "text": "The thing I understood far too late about friendship is",
+   "provenance": "hand-authored"
+  },
+  {
+   "id": "b3a-uncertain-001",
+   "category": "uncertain",
+   "text": "If I could give my younger self one warning it would be",
+   "provenance": "hand-authored"
+  },
+  {
+   "id": "b3a-uncertain-002",
+   "category": "uncertain",
+   "text": "What people get wrong about working from home is",
+   "provenance": "hand-authored"
+  },
+  {
+   "id": "b3a-uncertain-003",
+   "category": "uncertain",
+   "text": "The most overrated place I have ever visited was probably",
+   "provenance": "hand-authored"
+  },
+  {
+   "id": "b3a-uncertain-004",
+   "category": "uncertain",
+   "text": "I have never been able to explain why I dislike",
+   "provenance": "hand-authored"
+  },
+  {
+   "id": "b3a-uncertain-005",
+   "category": "uncertain",
+   "text": "Something I pretend to enjoy but genuinely do not is",
+   "provenance": "hand-authored"
+  },
+  {
+   "id": "b3a-uncertain-006",
+   "category": "uncertain",
+   "text": "The last time I changed my mind about something important was",
+   "provenance": "hand-authored"
+  },
+  {
+   "id": "b3a-uncertain-007",
+   "category": "uncertain",
+   "text": "If I never had to cook again I think I would",
+   "provenance": "hand-authored"
+  },
+  {
+   "id": "b3a-uncertain-008",
+   "category": "uncertain",
+   "text": "The strangest job I would still consider doing is",
+   "provenance": "hand-authored"
+  },
+  {
+   "id": "b3a-uncertain-009",
+   "category": "uncertain",
+   "text": "What I notice first about a new city is usually",
+   "provenance": "hand-authored"
+  },
+  {
+   "id": "b3a-uncertain-010",
+   "category": "uncertain",
+   "text": "I keep meaning to learn more about",
+   "provenance": "hand-authored"
+  },
+  {
+   "id": "b3a-uncertain-011",
+   "category": "uncertain",
+   "text": "The habit I would most like to break is",
+   "provenance": "hand-authored"
+  },
+  {
+   "id": "b3a-uncertain-012",
+   "category": "uncertain",
+   "text": "Given an entirely free Saturday my instinct is to",
+   "provenance": "hand-authored"
+  },
+  {
+   "id": "b3a-uncertain-013",
+   "category": "uncertain",
+   "text": "The book I recommend most often and have never finished is",
+   "provenance": "hand-authored"
+  },
+  {
+   "id": "b3a-uncertain-014",
+   "category": "uncertain",
+   "text": "What surprises visitors about where I grew up is",
+   "provenance": "hand-authored"
+  },
+  {
+   "id": "b3a-uncertain-015",
+   "category": "uncertain",
+   "text": "If the power went out for a week I would miss",
+   "provenance": "hand-authored"
+  },
+  {
+   "id": "b3a-uncertain-016",
+   "category": "uncertain",
+   "text": "I have a completely irrational preference for",
+   "provenance": "hand-authored"
+  },
+  {
+   "id": "b3a-uncertain-017",
+   "category": "uncertain",
+   "text": "The advice I give that I never take myself is",
+   "provenance": "hand-authored"
+  },
+  {
+   "id": "b3a-uncertain-018",
+   "category": "uncertain",
+   "text": "Something that seemed enormous at the time and now seems",
+   "provenance": "hand-authored"
+  },
+  {
+   "id": "b3a-uncertain-019",
+   "category": "uncertain",
+   "text": "The conversation I keep avoiding is about",
+   "provenance": "hand-authored"
+  },
+  {
+   "id": "b3a-uncertain-020",
+   "category": "uncertain",
+   "text": "I would happily give up almost anything except",
+   "provenance": "hand-authored"
+  },
+  {
+   "id": "b3a-uncertain-021",
+   "category": "uncertain",
+   "text": "What makes a house feel like somebody lives there is",
+   "provenance": "hand-authored"
+  },
+  {
+   "id": "b3a-uncertain-022",
+   "category": "uncertain",
+   "text": "The skill I lost through lack of practice was",
+   "provenance": "hand-authored"
+  },
+  {
+   "id": "b3a-uncertain-023",
+   "category": "uncertain",
+   "text": "If I had to work outdoors year-round I think",
+   "provenance": "hand-authored"
+  },
+  {
+   "id": "b3a-uncertain-024",
+   "category": "uncertain",
+   "text": "The compliment that meant the most to me was oddly",
+   "provenance": "hand-authored"
+  },
+  {
+   "id": "b3a-uncertain-025",
+   "category": "uncertain",
+   "text": "I still cannot decide whether it was courage or",
+   "provenance": "hand-authored"
+  },
+  {
+   "id": "b3a-uncertain-026",
+   "category": "uncertain",
+   "text": "The part of travelling I enjoy least is",
+   "provenance": "hand-authored"
+  },
+  {
+   "id": "b3a-uncertain-027",
+   "category": "uncertain",
+   "text": "What nobody warns you about learning an instrument is",
+   "provenance": "hand-authored"
+  },
+  {
+   "id": "b3a-uncertain-028",
+   "category": "uncertain",
+   "text": "If I could keep only one photograph it would be",
+   "provenance": "hand-authored"
+  },
+  {
+   "id": "b3a-structured-000",
+   "category": "structured",
+   "text": "{\"sensor\": \"roof-01\", \"readings\": [{\"t\": 0, \"c\": 18.4}, {\"t\": 300, \"c\":",
+   "provenance": "hand-authored"
+  },
+  {
+   "id": "b3a-structured-001",
+   "category": "structured",
+   "text": "version: '3.8'\nservices:\n  cache:\n    image: redis:7\n    ports:\n      - \"6379:6379\"\n    volumes:",
+   "provenance": "hand-authored"
+  },
+  {
+   "id": "b3a-structured-002",
+   "category": "structured",
+   "text": "id,species,height_cm,planted\n7,quercus robur,340,2011-03-14\n8,betula pendula,",
+   "provenance": "hand-authored"
+  },
+  {
+   "id": "b3a-structured-003",
+   "category": "structured",
+   "text": "[package]\nname = \"tide-model\"\nversion = \"0.4.1\"\nedition = \"2021\"\n\n[dependencies]\nserde =",
+   "provenance": "hand-authored"
+  },
+  {
+   "id": "b3a-structured-004",
+   "category": "structured",
+   "text": "<rss version=\"2.0\">\n  <channel>\n    <title>Harbour Notices</title>\n    <item>\n      <guid>",
+   "provenance": "hand-authored"
+  },
+  {
+   "id": "b3a-structured-005",
+   "category": "structured",
+   "text": "BEGIN:VEVENT\nDTSTART:20260914T090000Z\nSUMMARY:Bridge inspection\nLOCATION:",
+   "provenance": "hand-authored"
+  },
+  {
+   "id": "b3a-structured-006",
+   "category": "structured",
+   "text": "{\"query\": {\"bool\": {\"must\": [{\"term\": {\"status\": \"open\"}}], \"filter\": [{\"range\": {\"age\": {\"gte\":",
+   "provenance": "hand-authored"
+  },
+  {
+   "id": "b3a-structured-007",
+   "category": "structured",
+   "text": "# Deployment checklist\n\n- [x] migrations applied\n- [x] secrets rotated\n- [ ] cache warmed\n- [ ]",
+   "provenance": "hand-authored"
+  },
+  {
+   "id": "b3a-structured-008",
+   "category": "structured",
+   "text": "2026-08-14T03:11:07Z WARN  pool: connection reset by peer (attempt 2/5) host=db-03",
+   "provenance": "hand-authored"
+  },
+  {
+   "id": "b3a-structured-009",
+   "category": "structured",
+   "text": "graph LR\n  ingest --> normalise\n  normalise --> index\n  index --> serve\n  serve -->",
+   "provenance": "hand-authored"
+  },
+  {
+   "id": "b3a-structured-010",
+   "category": "structured",
+   "text": "| port | protocol | state    |\n|------|----------|----------|\n| 22   | tcp      | open     |\n| 443  |",
+   "provenance": "hand-authored"
+  },
+  {
+   "id": "b3a-structured-011",
+   "category": "structured",
+   "text": "digraph deps {\n  \"parser\" -> \"lexer\";\n  \"planner\" -> \"parser\";\n  \"executor\" ->",
+   "provenance": "hand-authored"
+  },
+  {
+   "id": "b3a-structured-012",
+   "category": "structured",
+   "text": "server {\n    listen 443 ssl;\n    server_name tide.example.org;\n    location /api/ {\n        proxy_pass",
+   "provenance": "hand-authored"
+  },
+  {
+   "id": "b3a-structured-013",
+   "category": "structured",
+   "text": "{\"$schema\": \"http://json-schema.org/draft-07/schema#\", \"type\": \"object\", \"required\": [\"id\",",
+   "provenance": "hand-authored"
+  },
+  {
+   "id": "b3a-structured-014",
+   "category": "structured",
+   "text": "*.tmp\nbuild/\n!build/keep.txt\n.env.local\nnode_modules/",
+   "provenance": "hand-authored"
+  },
+  {
+   "id": "b3a-structured-015",
+   "category": "structured",
+   "text": "SUBJECT: Weekly summary\nFROM: rota@harbour.example\nTO: crew@harbour.example\nX-Priority:",
+   "provenance": "hand-authored"
+  },
+  {
+   "id": "b3a-structured-016",
+   "category": "structured",
+   "text": "0 3 * * 1-5 /usr/local/bin/rotate-logs --keep 14 >> /var/log/rotate.log",
+   "provenance": "hand-authored"
+  },
+  {
+   "id": "b3a-structured-017",
+   "category": "structured",
+   "text": "openapi: 3.0.3\ninfo:\n  title: Tide API\n  version: 1.2.0\npaths:\n  /stations:\n    get:",
+   "provenance": "hand-authored"
+  },
+  {
+   "id": "b3a-structured-018",
+   "category": "structured",
+   "text": "{\"type\": \"FeatureCollection\", \"features\": [{\"type\": \"Feature\", \"geometry\": {\"type\": \"Point\",",
+   "provenance": "hand-authored"
+  },
+  {
+   "id": "b3a-structured-019",
+   "category": "structured",
+   "text": "-----BEGIN CERTIFICATE REQUEST-----\nMIIByjCCATMCAQAwgYkxCzAJBgNVBAYTAkdC",
+   "provenance": "hand-authored"
+  },
+  {
+   "id": "b3a-structured-020",
+   "category": "structured",
+   "text": "name,q1,q2,q3,q4\nnorth,412,455,398,501\nsouth,388,",
+   "provenance": "hand-authored"
+  },
+  {
+   "id": "b3a-structured-021",
+   "category": "structured",
+   "text": "[Unit]\nDescription=Tide ingest worker\nAfter=network.target\n\n[Service]\nExecStart=",
+   "provenance": "hand-authored"
+  },
+  {
+   "id": "b3a-structured-022",
+   "category": "structured",
+   "text": "{% for station in stations %}\n  <tr><td>{{ station.name }}</td><td>{{ station.height",
+   "provenance": "hand-authored"
+  },
+  {
+   "id": "b3a-longform-000",
+   "category": "longform",
+   "text": "Weights and measures were among the first things any state tried to control, and among the last it managed to. A bushel in one market town was not a bushel in the next, and the discrepancy was not usually fraud; it reflected genuinely different things being measured, heaped or struck, wet or dry, before or after milling. Standardisation therefore required not just a reference object in a vault but agreement about what the measurement was for. The metre survived partly because it was tied to something nobody owned.",
+   "provenance": "hand-authored"
+  },
+  {
+   "id": "b3a-longform-001",
+   "category": "longform",
+   "text": "The history of anaesthesia is unusually well dated because the change was so abrupt. Surgery before it was fast by necessity, and surgeons were admired for speed in a way that now reads as grotesque. Within a few years of the first public demonstrations the entire calculus of what an operation could attempt had shifted, and procedures that had been unthinkable became merely difficult. What did not shift as quickly was infection, and for a generation the two problems were confused with one another.",
+   "provenance": "hand-authored"
+  },
+  {
+   "id": "b3a-longform-002",
+   "category": "longform",
+   "text": "Rivers were the first highways, and most old cities sit at the point where a river stops being navigable. That point moves. Silt accumulates, channels shift, and a port can find itself several miles inland within a century, which is why so many medieval harbours are now meadows. The towns rarely moved with the water. They stayed and rebuilt their economies around whatever the new geography allowed, and the street plan preserves an argument about trade that nobody alive remembers having.",
+   "provenance": "hand-authored"
+  },
+  {
+   "id": "b3a-longform-003",
+   "category": "longform",
+   "text": "Forgery is a good lens on authentication because forgers are obliged to understand what their audience actually checks. A convincing forgery is rarely the most accurate copy; it is the one that satisfies the specific tests likely to be applied. When those tests change, whole classes of forgery become obvious overnight and previously undetected fakes surface in batches. The same reasoning applies to any verification system, which is why security proofs specify an adversary rather than merely a mechanism.",
+   "provenance": "hand-authored"
+  },
+  {
+   "id": "b3a-longform-004",
+   "category": "longform",
+   "text": "Crop rotation looks like agricultural technique and is really a theory of soil chemistry developed centuries before the chemistry existed. Farmers knew that following one crop with another restored something, and they were right about the effect while being wrong about the cause, attributing to rest what was actually nitrogen fixation. The practice worked regardless. It is a useful reminder that reliable procedure and correct explanation are separable, and that the first often precedes the second by a long way.",
+   "provenance": "hand-authored"
+  },
+  {
+   "id": "b3a-longform-005",
+   "category": "longform",
+   "text": "The idea of a timetable is younger than the railway and was forced by it. Before scheduled trains, towns kept their own noon, set by the sun, and the differences were small enough to ignore because nothing moved fast enough to notice. Railways noticed immediately. A schedule spanning several local times is not merely inconvenient, it is dangerous, and standard time was adopted less from a love of uniformity than from a well-founded fear of collisions.",
+   "provenance": "hand-authored"
+  },
+  {
+   "id": "b3a-longform-006",
+   "category": "longform",
+   "text": "Libraries have always had to decide what not to keep, and the decisions look arbitrary only in retrospect. Space is finite, binding is expensive, and a collection that grows without appraisal becomes unusable long before it becomes complete. What survives therefore reflects a series of judgements about future usefulness made by people who could not know the future. The gaps in any archive are not accidents; they are the fossilised opinions of previous librarians.",
+   "provenance": "hand-authored"
+  },
+  {
+   "id": "b3a-longform-007",
+   "category": "longform",
+   "text": "Colour naming varies between languages in ways that once suggested different perception and now suggests different partitioning. Every language distinguishes light from dark, and the order in which further terms appear across languages is surprisingly consistent, with red arriving early and blue often late. The eye is not in dispute. What differs is where the boundaries are drawn, and how much work a single word is asked to do.",
+   "provenance": "hand-authored"
+  },
+  {
+   "id": "b3a-longform-008",
+   "category": "longform",
+   "text": "Bridges fail more often from resonance and fatigue than from a single overwhelming load, which is why the interesting engineering is usually about repetition rather than magnitude. A structure that comfortably supports a static weight may still be destroyed by a much smaller force applied at the wrong rhythm. Designing for that requires imagining not the worst moment but the ten-millionth ordinary one, and it is a habit of mind that transfers poorly from intuition.",
+   "provenance": "hand-authored"
+  },
+  {
+   "id": "b3a-longform-009",
+   "category": "longform",
+   "text": "Dictionaries began as lists of hard words and only gradually became descriptions of a whole language. The shift changed what a dictionary was for: from a guide to unfamiliar terms encountered in reading, to an account of usage, with all the awkward questions about whose usage counts. Lexicographers have generally resolved this by observing rather than legislating, which reliably disappoints the people who write to complain.",
+   "provenance": "hand-authored"
+  },
+  {
+   "id": "b3a-longform-010",
+   "category": "longform",
+   "text": "The economics of lighthouses were argued about for a century because they seemed to be a service nobody could be excluded from and therefore nobody would pay for. In practice they were funded by dues on ships entering nearby harbours, which is exclusion by another route. The example survives in textbooks less because it settles anything than because it demonstrates how much depends on where the boundary of the service is drawn.",
+   "provenance": "hand-authored"
+  },
+  {
+   "id": "b3a-longform-011",
+   "category": "longform",
+   "text": "Vaccination preceded immunology by so long that the practice had to be defended on statistical grounds alone. Nobody could say what was happening inside the body, only that the treated group fared better, and the argument was conducted in tables of mortality rather than mechanism. That made it vulnerable to every objection that statistics attract, and the eventual mechanistic account did more to settle the public argument than it did to change the practice.",
+   "provenance": "hand-authored"
+  },
+  {
+   "id": "b3a-longform-012",
+   "category": "longform",
+   "text": "Musical notation records some things precisely and others not at all, and the selection tells you what a tradition considered essential. Pitch and duration are pinned down; timbre, ornamentation and rubato are frequently left to convention. Performers therefore reconstruct a great deal that the page does not contain, which is why historically informed performance is a research programme rather than a matter of following instructions.",
+   "provenance": "hand-authored"
+  },
+  {
+   "id": "b3a-longform-013",
+   "category": "longform",
+   "text": "Canals shaped industrial geography more than is usually credited, because bulk goods that could not travel by road could travel by water at a fraction of the cost. Coal, stone and clay moved economically for the first time, and industries relocated to the canal rather than the canal being dug to the industry. When railways arrived the advantage inverted within about twenty years, and a great deal of expensive infrastructure became scenery.",
+   "provenance": "hand-authored"
+  },
+  {
+   "id": "b3a-longform-014",
+   "category": "longform",
+   "text": "The concept of a species is used confidently in conversation and defended uneasily in biology, because the criteria that work for large animals fail for bacteria, hybrids and anything that reproduces asexually. Several definitions coexist, each useful in its own domain and inconsistent with the others at the edges. This is less a scandal than an admission that the category was drawn to serve observation before the underlying processes were understood.",
+   "provenance": "hand-authored"
+  },
+  {
+   "id": "b3a-longform-015",
+   "category": "longform",
+   "text": "Insurance required a mathematics of the unlikely, and its development is bound up with mortality tables, gambling problems and shipping losses. What made it work was not prediction of individual events, which remains impossible, but the discovery that aggregates behave far more regularly than their components. That insight is now so familiar that its strangeness is easy to miss: a business can be built on quantities nobody can forecast one at a time.",
+   "provenance": "hand-authored"
+  },
+  {
+   "id": "b3a-longform-016",
+   "category": "longform",
+   "text": "Roads built by empires tend to outlast the empires, partly because they are expensive to replace and partly because they encode a settled answer to where people need to go. The route persists even when the surface, the traffic and the political authority have all changed several times. Modern motorways frequently follow lines chosen for reasons that stopped applying centuries ago, which is either efficient reuse or path dependence depending on how charitable one feels.",
+   "provenance": "hand-authored"
+  }
+ ],
+ "text_digest": {
+  "algorithm": "sha256",
+  "value": "c5e2f5f45d4c351a5afd7061fa064f600de10c24cb3857257e196c95c48f29a9"
+ },
+ "token_digest": {
+  "algorithm": "sha256",
+  "value": "cbdaa46111a475ef8e96371bacdccbbcb017872f67a68c684f18f3a8a3ab5805",
+  "limit": 128,
+  "positions": 4859,
+  "tokenizer": {
+   "sha256": "0997f410c57a1f4e53b09e4be8f4a172d90edd9564368fb0847030937229b9f3"
+  }
+ },
+ "disjointness": {
+  "verified_against": [
+   "quality-bank-1",
+   "quality-bank-2",
+   "sensitivity-1b-calibration",
+   "the other CPU-6 bank"
+  ],
+  "method": "exact id, whitespace/case-normalised text, 40-character prefix near-duplicate scan"
+ },
+ "category_targets": {
+  "factual": 44,
+  "prose": 29,
+  "code": 29,
+  "arithmetic": 29,
+  "uncertain": 29,
+  "structured": 23,
+  "longform": 17
+ },
+ "count": 200
+}
