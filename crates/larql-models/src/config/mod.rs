@@ -30,6 +30,7 @@ pub mod linear_attn;
 pub mod mla;
 pub mod model_config;
 pub mod moe_router;
+pub mod nonfinite_json;
 pub mod norm;
 pub mod position;
 pub mod rope;

@@ -57,7 +57,10 @@ pub fn build_inventory(model_dir: &Path) -> Result<ArchitectureInventory, ModelE
         return Err(ModelError::ConfigMissing(config_path));
     }
     let text = std::fs::read_to_string(&config_path)?;
-    let config: serde_json::Value = serde_json::from_str(&text)?;
+    // The judged non-finite boundary: HF configs carry Python's bare
+    // `Infinity`/`NaN` literals; they parse here as the strings they
+    // spell, and nowhere else (config::nonfinite_json).
+    let config: serde_json::Value = crate::config::nonfinite_json::parse_config_json(&text)?;
 
     let identity = resolved::read_identity(&config);
     let (detection, topology) = resolved::resolve(&config, &identity);

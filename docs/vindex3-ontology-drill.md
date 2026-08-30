@@ -374,6 +374,16 @@ conversion of `state-spaces/mamba2-780m`; the original repos ship
 
 ## Closure log
 
+- **2026-08-30, finding zero closed:** the judged non-finite boundary
+  (`larql-models/src/config/nonfinite_json.rs`) — both config-parse
+  sites now route through one function that quotes Python's bare
+  `Infinity`/`-Infinity`/`NaN` literals as the strings they spell,
+  never impersonating them with a fabricated float; strict JSON pays
+  nothing, genuinely malformed JSON keeps the strict error. The raw
+  witness stub parses and produces the identical 19-blocking verdict,
+  with `time_step_limit` declared as `[0.0, "Infinity"]` in the
+  findings.
+
 - **2026-08-30, same day:** F13 closed (flattened preservation map on
   `Vindex3Index`, gated by `bake_preserves_unknown_index_fields`); F14
   closed (§5.7 amended to reported-discard); F10 closed
