@@ -29,6 +29,36 @@ LARQL = os.environ.get("LARQL", "./target/release/larql")
 BANK_DIR = os.environ.get("QBANK_DIR", HERE)
 
 
+def compiler_provenance():
+    """Which build produced the representation under test.
+
+    The container's digests pin the *artifact* exactly; they say nothing
+    about the code that compiled it. Those are two different facts, and
+    a bank that records only the first cannot answer "was this measured
+    before or after the role-classifier fix?" — a question that changed
+    Qwen3.8's decoder from 6.4138 to 4.5124 bits/weight without touching
+    a single byte of the source checkpoint.
+
+    `dirty` is reported rather than hidden. A result measured against an
+    uncommitted tree is still a result; it is just not one anybody else
+    can reproduce from a SHA, and saying so is the difference between
+    provenance and decoration.
+    """
+    def git(*args):
+        try:
+            return subprocess.run(["git", *args], cwd=HERE, capture_output=True,
+                                  text=True, check=True).stdout.strip()
+        except Exception:
+            return None
+    head = git("rev-parse", "HEAD")
+    status = git("status", "--porcelain")
+    return {
+        "commit": head,
+        "dirty": bool(status) if status is not None else None,
+        "describe": git("describe", "--always", "--dirty"),
+    }
+
+
 def load_bank():
     path = os.path.join(BANK_DIR, "prompts.json")
     bank = json.load(open(path))
@@ -58,6 +88,14 @@ def container_identity(container):
         "authority": idx.get("authority", "canonical"),
         "representations": digests,
         "payload_bytes": sum(v.get("payload_bytes", 0) for v in idx.get("representations", {}).values()),
+        # The programme the compiler was asked to produce, as the
+        # container itself records it: `{name, encoding, roles}`, where
+        # `roles` are the ones compiled and every other role is
+        # preserved. The SHA says which compiler ran; this says what it
+        # was asked for, and a result is only independently intelligible
+        # with both. Two candidates differing by one role name here is
+        # exactly what makes a controlled comparison legible later.
+        "precision_map": idx.get("precision_map"),
     }
 
 
@@ -191,6 +229,7 @@ def cmd_compare(container, outdir, backend, source, label, keep=False):
            "payload_bytes": cand_bytes,
            "runtime_compiled_total": compiled_total,
            "container": container_identity(container),
+           "compiler": compiler_provenance(),
            "reference": meta["container"], "rows": rows}
     path = os.path.join(outdir, f"compare-{label}.json")
     json.dump(out, open(path, "w"))
