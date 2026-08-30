@@ -177,6 +177,46 @@ fn inadmissible_plan_is_refused() {
     );
 }
 
+/// `encode_graph` runs the same validation as the planned path: a graph
+/// a caller built (or damaged) itself is refused BEFORE any bytes are
+/// written, with the defect named.
+#[test]
+fn a_graph_that_fails_validation_is_refused_before_encode() {
+    use crate::format::vindex3::encode::encode_graph;
+    use crate::format::vindex3::graph::build_from_inventories;
+
+    let (_a, _b, named) = glimmer_system();
+    let mut graph = build_from_inventories(&named).graph;
+    let duplicate = graph.objects[0].clone();
+    graph.objects.push(duplicate);
+    let out = tempfile::tempdir().unwrap();
+    let err = encode_graph(&graph, &named, out.path()).unwrap_err();
+    assert!(
+        err.to_string().contains("failed validation"),
+        "the refusal must say the graph is at fault: {err}"
+    );
+}
+
+/// An object stripped of every representation has nothing to encode —
+/// graph validation does not police representations (that is encode's
+/// concern), so encode itself must refuse and name the object.
+#[test]
+fn an_object_with_no_representation_is_refused_by_name() {
+    use crate::format::vindex3::encode::encode_graph;
+    use crate::format::vindex3::graph::build_from_inventories;
+
+    let (_a, _b, named) = glimmer_system();
+    let mut graph = build_from_inventories(&named).graph;
+    let victim = graph.objects[0].id.clone();
+    graph.objects[0].representations.clear();
+    let out = tempfile::tempdir().unwrap();
+    let err = encode_graph(&graph, &named, out.path()).unwrap_err();
+    assert!(
+        err.to_string().contains("carries no representation") && err.to_string().contains(&victim),
+        "the refusal must name the empty object: {err}"
+    );
+}
+
 /// A corrupted segment byte is caught by `inspect --verify` — with no
 /// source access.
 #[test]

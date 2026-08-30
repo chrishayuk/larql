@@ -39,6 +39,13 @@ const M_IN_PROJ_ROWS: usize = 2 * M_D_INNER + 2 * M_STATE + M_HEADS; // 62
 /// tensor whose name ends with it — the lever the closure-at-encode test
 /// pulls.
 fn miniature_mamba2(dir: &Path, skip_suffix: Option<&str>) {
+    miniature_mamba2_with(dir, skip_suffix, false)
+}
+
+/// `spartan` declares `rms_norm: false` and `use_conv_bias: false` and
+/// ships neither optional operand — the mixer's other honest shape,
+/// which closure must accept without them and refuse WITH them.
+fn miniature_mamba2_with(dir: &Path, skip_suffix: Option<&str>, spartan: bool) {
     // Rendered with the bare `Infinity` transformers actually writes, so
     // the fixture exercises the judged non-finite boundary end-to-end
     // rather than the pre-quoted string form.
@@ -62,9 +69,9 @@ fn miniature_mamba2(dir: &Path, skip_suffix: Option<&str>) {
         "time_step_max": 0.1,
         "time_step_rank": 8,
         "rescale_prenorm_residual": false,
-        "rms_norm": true,
+        "rms_norm": !spartan,
         "use_bias": false,
-        "use_conv_bias": true,
+        "use_conv_bias": !spartan,
         "hidden_act": "silu",
         "layer_norm_epsilon": 1e-5,
         "residual_in_fp32": true,
@@ -77,6 +84,9 @@ fn miniature_mamba2(dir: &Path, skip_suffix: Option<&str>) {
     let mut shard = ShardBuilder::new();
     let mut push = |name: String, shape: &[usize], values: Vec<f32>| {
         if skip_suffix.is_some_and(|suffix| name.ends_with(suffix)) {
+            return;
+        }
+        if spartan && (name.ends_with("mixer.conv1d.bias") || name.ends_with("mixer.norm.weight")) {
             return;
         }
         shard.push(&name, shape, &values);
@@ -399,4 +409,66 @@ fn f16_operands_widen_to_f32_exactly() {
     // is why the dtype label, not a guess, selects the decoder; and an
     // unjudged label still refuses.
     assert!(widen("F8_E4M3", &bytes, "probe").is_err());
+}
+
+/// **The mixer's other honest shape: `rms_norm: false`,
+/// `use_conv_bias: false`.** Closure accepts the layer WITHOUT the two
+/// optional operands (requiring them would fabricate work the config
+/// never declared), the plan carries `None` for both, preparation loads
+/// the spartan operand set, execution runs it — and the prepared image
+/// accounts for itself, mixer arms included, in both censuses.
+#[test]
+fn a_spartan_mixer_closes_prepares_executes_and_accounts() {
+    let dir = tempfile::tempdir().unwrap();
+    miniature_mamba2_with(dir.path(), None, true);
+    let out = tempfile::tempdir().unwrap();
+    let container = out.path().join("mamba2-spartan.vindex3");
+    encode_checkpoint(dir.path(), &container).expect("the spartan mixer encodes");
+
+    let inspection = inspect_container(&container, false).unwrap();
+    let outcome = plan_component_ops(&inspection, &container, "target").unwrap();
+    assert!(outcome.defects.is_empty(), "{:?}", outcome.defects);
+    let plan = outcome.plan.expect("closure held");
+    for layer in &plan.layers {
+        let LayerAttention::Mamba2(op) = &layer.attention else {
+            panic!("not a mixer: {:?}", layer.attention);
+        };
+        assert!(op.conv1d_bias.is_none(), "use_conv_bias: false");
+        assert!(op.gated_norm.is_none(), "rms_norm: false");
+        assert_eq!(
+            layer.operands_accounted, 7,
+            "nine minus the two declared absent"
+        );
+    }
+
+    let store = OperandStore::open(&container, &inspection).unwrap();
+    let prepared = PreparedOperands::load(
+        &plan,
+        &store,
+        &ProductionBackend::new(),
+        ExecutionSlice::Full,
+    )
+    .expect("the spartan operand set prepares");
+    // The image accounts for itself: the mixer's two matrices land in
+    // the census, its glue is counted, and no FFN bytes exist to claim.
+    let residency = prepared.residency_census();
+    assert!(residency.delta.total() > 0, "mixer matrices counted");
+    assert_eq!(residency.ffn.total(), 0, "no FFN exists to count");
+    let allocations = prepared.allocation_census();
+    assert!(allocations.bytes > 0);
+
+    let geometry = plan_continuation_geometry(&plan).expect("declared geometry");
+    let mut provider = RowKvState::default();
+    provider.prepare_continuation(&geometry).unwrap();
+    let logits = crate::format::vindex3::opplan::exec::prefill_plan(
+        &plan,
+        &store,
+        &[3, 17, 5],
+        &ReferenceBackend,
+        &mut provider,
+    )
+    .expect("the spartan mixer executes")
+    .logits
+    .expect("head present");
+    assert!(logits.iter().all(|v| v.is_finite()));
 }
