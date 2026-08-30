@@ -20,6 +20,7 @@
 
 pub mod backend;
 pub mod continuation;
+pub mod conv_qkv;
 pub mod cpu;
 pub mod decode;
 pub mod device;
@@ -586,6 +587,38 @@ fn execute_layer<B: PlanBackend + ?Sized, K: KvState + ?Sized>(
                 backend.dense_projector(),
             )
             .output
+        }
+        PreparedAttention::ConvQkv(ops) => {
+            let Some((provider, layer_index)) = kv else {
+                return Err(VindexError::Parse(format!(
+                    "layer {} keeps a KV cache and a conv history, and this traversal \
+                     was given no provider to hold either",
+                    layer.layer
+                )));
+            };
+            // Two regions, one provider, borrowed in phases: the rows
+            // already persisted are copied out first (the reference
+            // executor is deliberately literal — speed is a later
+            // rung's problem), the conv history is advanced by the
+            // forward, and the batch's new rows are appended after.
+            let past_keys: Vec<Vec<f32>> = provider.keys(layer_index).to_vec();
+            let past_values: Vec<Vec<f32>> = provider.values(layer_index).to_vec();
+            let base = provider.position();
+            let state = provider.recurrent_state(layer_index)?;
+            let planes = conv_qkv::layer_forward_with(
+                &ops.op,
+                &ops.weights()?,
+                &inputs,
+                state,
+                &past_keys,
+                &past_values,
+                base,
+                backend.dense_projector(),
+            );
+            for (key, value) in planes.keys.into_iter().zip(planes.values) {
+                provider.append(layer_index, key, value);
+            }
+            planes.output
         }
         PreparedAttention::Softmax(ops) => {
             let attention_op = layer

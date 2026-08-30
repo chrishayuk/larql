@@ -222,7 +222,13 @@ impl KvState for CanonicalKvState {
             self.prepare(&kv);
             return Ok(());
         }
-        let kv_opt: Vec<Option<LayerKvGeometry>> = layers.iter().map(|g| g.kv().cloned()).collect();
+        // `kv_side`, not `kv`: a conv-QKV attention layer keeps rows AND
+        // a conv history, and this provider genuinely serves both — its
+        // buffer was allocated above, its rows are sized here. The
+        // KV-only projection stays `kv()` so a provider that took the
+        // default still fails closed on such a layer.
+        let kv_opt: Vec<Option<LayerKvGeometry>> =
+            layers.iter().map(|g| g.kv_side().cloned()).collect();
         if self.geometry.is_empty() {
             assert!(
                 self.cache.layers.is_empty(),

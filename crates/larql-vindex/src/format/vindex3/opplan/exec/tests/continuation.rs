@@ -13,9 +13,11 @@
 
 use super::super::continuation::{
     plan_continuation_geometry, ContinuationState, LayerContinuationGeometry,
-    LayerContinuationState, RecurrentBufferGeometry, StateInitialization,
+    LayerContinuationState, RecurrentBufferGeometry, RecurrentGeometry, RecurrentState,
+    StateInitialization,
 };
 use super::super::kv::try_plan_kv_geometry;
+use super::super::kv::LayerKvGeometry;
 use crate::format::vindex3::opplan::{ComponentOpPlan, GatedDeltaOp, LayerAttention};
 use larql_models::inventory::report::RecurrentStateDtype;
 
@@ -309,6 +311,9 @@ fn the_runtime_state_allocates_what_the_geometry_asked_for() {
                     "layer {index} preallocated KV rows before any position"
                 );
             }
+            LayerContinuationState::Hybrid { .. } => {
+                panic!("layer {index} is hybrid; this fixture declares none")
+            }
             LayerContinuationState::Stateless => panic!("layer {index} is stateless"),
         }
     }
@@ -379,4 +384,157 @@ fn a_recurrent_state_refuses_the_wrong_number_of_cells() {
     assert!(RecurrentBuffer::from_cells(&g, vec![0.0; 20]).is_ok());
     let err = RecurrentBuffer::from_cells(&g, vec![0.0; 19]).expect_err("19 != 4*5");
     assert!(err.contains("19") && err.contains("20"), "{err}");
+}
+
+// ── The two-region shape (KvAndRecurrent) — the hybrid conv-QKV
+//    attention layer's continuation, in the vocabulary's own terms ──
+
+fn two_region_geometry() -> LayerContinuationGeometry {
+    LayerContinuationGeometry::KvAndRecurrent {
+        kv: LayerKvGeometry {
+            kv_dim: 4,
+            window: None,
+        },
+        recurrent: RecurrentGeometry::single(RecurrentBufferGeometry {
+            shape: vec![16, 2],
+            dtype: RecurrentStateDtype::Float32,
+            initialization: StateInitialization::Zeros,
+        }),
+    }
+}
+
+/// **The two-region layer's arithmetic is the sum of its claims**: the
+/// KV half scales with positions, the conv history does not — the same
+/// asymmetry the pure variants state, on one layer.
+#[test]
+fn a_two_region_layer_grows_on_one_side_only() {
+    let g = two_region_geometry();
+    assert_eq!(
+        g.elements_at(0),
+        32,
+        "the buffer exists before any position"
+    );
+    assert_eq!(g.elements_at(10), 10 * 4 * 2 + 32);
+    // And the pure variants keep their own answers beside it.
+    let kv = LayerContinuationGeometry::Kv(LayerKvGeometry {
+        kv_dim: 4,
+        window: None,
+    });
+    assert_eq!(kv.elements_at(10), 80);
+    assert_eq!(LayerContinuationGeometry::Stateless.elements_at(10), 0);
+    let r = RecurrentGeometry::single(RecurrentBufferGeometry {
+        shape: vec![16, 2],
+        dtype: RecurrentStateDtype::Float32,
+        initialization: StateInitialization::Zeros,
+    });
+    assert_eq!(r.elements(), 32);
+    assert_eq!(r.bytes(), 128, "f32 cells");
+    assert_eq!(LayerContinuationGeometry::Recurrent(r).elements_at(10), 32);
+}
+
+/// **`kv()` refuses the two-region layer; `kv_side()` serves it.** The
+/// split is the fail-closed contract: `kv()` is what the KV-only
+/// provider default projects through, and answering the hybrid's KV
+/// half there would allocate the cache while silently dropping the conv
+/// history — half a continuation that looks whole. A provider that
+/// genuinely holds both asks through `kv_side()`.
+#[test]
+fn the_kv_accessor_refuses_what_the_kv_side_accessor_serves() {
+    let g = two_region_geometry();
+    assert!(
+        g.kv().is_none(),
+        "kv() must not hand out half a continuation"
+    );
+    assert_eq!(g.kv_side().map(|kv| kv.kv_dim), Some(4));
+    assert_eq!(
+        g.recurrent().map(|r| r.elements()),
+        Some(32),
+        "the buffer half answers through the same accessor a pure recurrence uses"
+    );
+    // A pure KV layer answers both spellings identically.
+    let kv = LayerContinuationGeometry::Kv(LayerKvGeometry {
+        kv_dim: 4,
+        window: None,
+    });
+    assert_eq!(kv.kv().map(|k| k.kv_dim), Some(4));
+    assert_eq!(kv.kv_side().map(|k| k.kv_dim), Some(4));
+    assert!(kv.recurrent().is_none());
+}
+
+/// **A KV-only provider fails CLOSED on the two-region layer** — the
+/// default `prepare_continuation` projection refuses rather than
+/// allocating the cache without the conv history. The failure the
+/// accessor split above exists to force.
+#[test]
+fn a_kv_only_provider_refuses_the_two_region_layer() {
+    use super::super::kv::{ContinuationError, ContinuationProvider};
+
+    struct RowsOnly;
+    impl ContinuationProvider for RowsOnly {
+        fn prepare(&mut self, _layers: &[LayerKvGeometry]) {}
+        fn append(&mut self, _layer: usize, _key: Vec<f32>, _value: Vec<f32>) {}
+        fn keys(&self, _layer: usize) -> &[Vec<f32>] {
+            &[]
+        }
+        fn values(&self, _layer: usize) -> &[Vec<f32>] {
+            &[]
+        }
+        fn position(&self) -> usize {
+            0
+        }
+        fn set_position(&mut self, _position: usize) {}
+        fn recurrent_state(
+            &mut self,
+            layer: usize,
+        ) -> Result<&mut RecurrentState, ContinuationError> {
+            Err(ContinuationError::RecurrentUnsupported {
+                provider: "RowsOnly",
+                layer,
+            })
+        }
+    }
+
+    let layers = [
+        LayerContinuationGeometry::Kv(LayerKvGeometry {
+            kv_dim: 4,
+            window: None,
+        }),
+        two_region_geometry(),
+    ];
+    let err = RowsOnly
+        .prepare_continuation(&layers)
+        .expect_err("half a continuation must not be allocated");
+    assert_eq!(
+        err,
+        ContinuationError::RecurrentUnsupported {
+            provider: "a KV-only provider",
+            layer: 1,
+        }
+    );
+    let rendered = err.to_string();
+    assert!(rendered.contains("refusing"), "{rendered}");
+}
+
+/// The runtime state allocates BOTH regions for the two-region layer —
+/// empty rows and a zeroed buffer — and counts them the way the
+/// geometry promised.
+#[test]
+fn the_two_region_state_allocates_rows_and_buffer_together() {
+    let geometry = [two_region_geometry(), LayerContinuationGeometry::Stateless];
+    let state = ContinuationState::prepare(&geometry);
+    let LayerContinuationState::Hybrid {
+        rows,
+        state: buffer,
+    } = state.layer(0)
+    else {
+        panic!("layer 0 must hold both regions: {:?}", state.layer(0));
+    };
+    assert!(rows.keys().is_empty() && rows.values().is_empty());
+    assert_eq!(buffer.buffer(0).cells().len(), 32);
+    assert!(buffer.buffer(0).cells().iter().all(|c| *c == 0.0));
+    assert!(matches!(state.layer(1), LayerContinuationState::Stateless));
+    // The runtime state's KV width is learned from appended rows (the
+    // same convention the pure-KV arm holds), so a fresh state counts
+    // only the buffer — the region that exists from step zero.
+    assert_eq!(state.elements_at(5), 32);
 }

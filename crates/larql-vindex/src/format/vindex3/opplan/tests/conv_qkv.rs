@@ -295,20 +295,24 @@ fn stripping_the_conv_qkv_surface_is_a_named_defect() {
     assert_eq!(named.len(), 1, "the missing group must be named: {named:?}");
 }
 
-/// **The hybrid encodes — closure holds over BOTH operand programs —
-/// and execution refuses by name.** The plan carries the two operators
-/// with every operand accounted (5 on an attention layer, 9 on a mixer
-/// layer); preparing it is refused as "represented but not executable",
-/// and the continuation planner refuses to flatten the two-region state
-/// (KV cache AND conv history) to the cache alone. The executor rung
-/// flips both refusals.
+/// **The hybrid executes through the generic path, and its TWO-REGION
+/// continuation survives the step boundary.** Encode closes over both
+/// operand programs; the continuation planner declares KV **and** conv
+/// history on the attention layers; prefill is finite and bitwise
+/// deterministic across fresh states; and the single-token decode path
+/// agrees with batch prefill bitwise — which only holds if the conv
+/// history (pre-conv fused QKV) and the KV rows BOTH carry across the
+/// boundary, at the right rotary angles.
 #[test]
-fn the_hybrid_encodes_and_execution_refuses_by_name() {
+fn the_hybrid_executes_and_both_state_regions_survive_the_step() {
     use crate::format::vindex3::inspect::inspect_container;
-    use crate::format::vindex3::opplan::exec::continuation::plan_continuation_geometry;
+    use crate::format::vindex3::opplan::exec::continuation::{
+        plan_continuation_geometry, LayerContinuationGeometry,
+    };
+    use crate::format::vindex3::opplan::exec::decode::DecodeSession;
+    use crate::format::vindex3::opplan::exec::kv::{ContinuationProvider, RowKvState};
     use crate::format::vindex3::opplan::exec::operands::OperandStore;
-    use crate::format::vindex3::opplan::exec::prepared::{ExecutionSlice, PreparedOperands};
-    use crate::format::vindex3::opplan::exec::production::ProductionBackend;
+    use crate::format::vindex3::opplan::exec::reference::ReferenceBackend;
     use crate::format::vindex3::opplan::{plan_component_ops, LayerAttention};
 
     let dir = tempfile::tempdir().unwrap();
@@ -338,24 +342,68 @@ fn the_hybrid_encodes_and_execution_refuses_by_name() {
         }
     }
 
-    // Represented is not executable: preparation refuses by name.
-    let store = OperandStore::open(&container, &inspection).unwrap();
-    let Err(err) = PreparedOperands::load(
-        &plan,
-        &store,
-        &ProductionBackend::new(),
-        ExecutionSlice::Full,
-    ) else {
-        panic!("no executor exists for this operator yet — load must refuse");
-    };
-    assert!(
-        err.to_string().contains("represented but not executable"),
-        "the refusal must say WHY: {err}"
-    );
+    // The continuation declares BOTH regions on the attention layers —
+    // rows sized by the KV heads, a conv history over the fused QKV.
+    let geometry = plan_continuation_geometry(&plan).expect("two regions, declared");
+    for (index, layer) in geometry.iter().enumerate() {
+        if H_ATTN_LAYERS.contains(&index) {
+            let LayerContinuationGeometry::KvAndRecurrent { kv, recurrent } = layer else {
+                panic!("layer {index} must declare both regions: {layer:?}");
+            };
+            assert_eq!(kv.kv_dim, H_A_KV_HEADS * H_A_HEAD_DIM);
+            assert_eq!(recurrent.buffers.len(), 1);
+            assert_eq!(recurrent.buffers[0].shape, vec![H_A_QKV_ROWS, H_A_CONV]);
+        } else {
+            assert!(
+                matches!(layer, LayerContinuationGeometry::Recurrent(_)),
+                "layer {index}: {layer:?}"
+            );
+        }
+    }
 
-    // And the continuation planner refuses to flatten the two-region
-    // state to the KV half.
-    let err = plan_continuation_geometry(&plan).expect_err("two regions, one vocabulary");
-    assert!(err.contains("conv history"), "{err}");
-    assert!(err.contains("refusing to flatten"), "{err}");
+    let store = OperandStore::open(&container, &inspection).unwrap();
+    let prefill = |tokens: &[u32], provider: &mut RowKvState| -> Vec<f32> {
+        crate::format::vindex3::opplan::exec::prefill_plan(
+            &plan,
+            &store,
+            tokens,
+            &ReferenceBackend,
+            provider,
+        )
+        .expect("the hybrid executes")
+        .logits
+        .expect("the fixture carries an output head")
+    };
+    let fresh = || {
+        let mut p = RowKvState::default();
+        p.prepare_continuation(&geometry).unwrap();
+        p
+    };
+
+    let prompt = [3u32, 17, 5, 9, 12, 1];
+    let mut provider = fresh();
+    let logits = prefill(&prompt, &mut provider);
+    assert_eq!(logits.len(), H_VOCAB);
+    assert!(logits.iter().all(|v| v.is_finite()), "finite logits");
+
+    // Bitwise determinism across a fresh state — state reset is real.
+    let mut again = fresh();
+    assert_eq!(prefill(&prompt, &mut again), logits);
+
+    // The decode path, token by token from an empty state, must land on
+    // the batch answer bitwise: the conv history spans every step
+    // boundary (a window of one would be a different operator), the KV
+    // rows accumulate, and the rotary angle follows the ABSOLUTE
+    // position.
+    let mut session = DecodeSession::new(&plan, &store, &ReferenceBackend).unwrap();
+    let mut stepped = None;
+    for token in prompt {
+        stepped = session.step(token).unwrap().logits;
+    }
+    assert_eq!(session.position(), prompt.len());
+    assert_eq!(
+        stepped.expect("head present"),
+        logits,
+        "the decode step path diverged from batch prefill"
+    );
 }

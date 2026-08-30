@@ -121,6 +121,15 @@ pub enum LayerContinuationGeometry {
     Kv(LayerKvGeometry),
     /// Constant in the sequence.
     Recurrent(RecurrentGeometry),
+    /// Grows with the sequence AND keeps fixed buffers beside it — the
+    /// conv-QKV attention shape: a real per-position KV cache plus a
+    /// conv history over the pre-conv fused QKV. Its own variant, not a
+    /// flag on [`Self::Kv`]: a provider that can hold only rows must
+    /// fail closed on this layer, never quietly allocate half of it.
+    KvAndRecurrent {
+        kv: LayerKvGeometry,
+        recurrent: RecurrentGeometry,
+    },
     /// Nothing survives this layer.
     ///
     /// No judged operator produces this yet — it is here because "this
@@ -141,10 +150,18 @@ impl LayerContinuationGeometry {
             // K and V, one row of `kv_dim` each, per position.
             Self::Kv(kv) => kv.kv_dim * 2 * positions,
             Self::Recurrent(r) => r.elements(),
+            Self::KvAndRecurrent { kv, recurrent } => {
+                kv.kv_dim * 2 * positions + recurrent.elements()
+            }
             Self::Stateless => 0,
         }
     }
 
+    /// The KV geometry of a layer that keeps ONLY rows. Deliberately
+    /// `None` on [`Self::KvAndRecurrent`]: this accessor is what the
+    /// KV-only provider default projects through, and answering the
+    /// hybrid's KV half there would allocate the cache while silently
+    /// dropping the conv history — half a continuation that looks whole.
     pub fn kv(&self) -> Option<&LayerKvGeometry> {
         match self {
             Self::Kv(kv) => Some(kv),
@@ -152,9 +169,20 @@ impl LayerContinuationGeometry {
         }
     }
 
+    /// The KV side wherever one exists — [`Self::Kv`] and
+    /// [`Self::KvAndRecurrent`] alike. For providers and consumers that
+    /// genuinely serve both regions; a KV-only path must keep using
+    /// [`Self::kv`].
+    pub fn kv_side(&self) -> Option<&LayerKvGeometry> {
+        match self {
+            Self::Kv(kv) | Self::KvAndRecurrent { kv, .. } => Some(kv),
+            _ => None,
+        }
+    }
+
     pub fn recurrent(&self) -> Option<&RecurrentGeometry> {
         match self {
-            Self::Recurrent(r) => Some(r),
+            Self::Recurrent(r) | Self::KvAndRecurrent { recurrent: r, .. } => Some(r),
             _ => None,
         }
     }
@@ -183,21 +211,21 @@ pub fn plan_continuation_geometry(
             // dtype, and KDA is in that position for every checkpoint
             // observed so far. Execution is out of scope for the rung that
             // introduced this operator; refusing is what keeps it out.
-            // Conv-QKV attention's continuation is TWO regions — a real
-            // per-position KV cache AND a fixed conv history over the
-            // pre-conv fused QKV — and this planner's vocabulary cannot
-            // state both on one layer yet. Refused rather than flattened
-            // to the KV half: a provider that allocated only the cache
-            // would silently run the conv with no history, which is a
-            // different operator.
-            LayerAttention::ConvQkv(op) => Err(format!(
-                "conv-QKV attention layer: a {}-wide KV cache AND a [{}, {}] conv history \
-                 persist per layer, and no continuation vocabulary states both yet — \
-                 refusing to flatten to the cache alone",
-                op.geometry.num_kv_heads * op.geometry.head_dim,
-                op.geometry.qkv_rows(),
-                op.geometry.conv_kernel,
-            )),
+            // Conv-QKV attention's continuation is TWO regions: a real
+            // per-position KV cache (K/V cached post-conv, post-rotary)
+            // AND a conv history holding the last `conv_kernel` positions
+            // of the PRE-conv fused QKV — the reference's own cache
+            // shape (`conv_states[layer]`: full kernel width,
+            // left-padded). fp32 for the same transcribed reason the
+            // mixer's regions are: the reference executor computes in
+            // f32 over widened operands.
+            LayerAttention::ConvQkv(op) => Ok(LayerContinuationGeometry::KvAndRecurrent {
+                kv: LayerKvGeometry {
+                    kv_dim: op.geometry.num_kv_heads * op.geometry.head_dim,
+                    window: None,
+                },
+                recurrent: super::conv_qkv::conv_history_geometry(op),
+            }),
             LayerAttention::Kda(op) => Err(format!(
                 "KDA layer: {} state elements, but no state precision is declared for this \
                  operator — refusing to choose one",
@@ -293,6 +321,12 @@ pub enum LayerContinuationState {
     Kv(LayerKvRows),
     /// A fixed-size buffer the operator reads and rewrites in place.
     Recurrent(RecurrentState),
+    /// Both regions, on one layer — rows AND a fixed buffer, the
+    /// conv-QKV attention shape.
+    Hybrid {
+        rows: LayerKvRows,
+        state: RecurrentState,
+    },
     Stateless,
 }
 
@@ -455,6 +489,12 @@ impl ContinuationState {
                     LayerContinuationGeometry::Recurrent(r) => {
                         LayerContinuationState::Recurrent(RecurrentState::zeros(r))
                     }
+                    LayerContinuationGeometry::KvAndRecurrent { recurrent, .. } => {
+                        LayerContinuationState::Hybrid {
+                            rows: LayerKvRows::default(),
+                            state: RecurrentState::zeros(recurrent),
+                        }
+                    }
                     LayerContinuationGeometry::Stateless => LayerContinuationState::Stateless,
                 })
                 .collect(),
@@ -501,6 +541,12 @@ impl ContinuationState {
                 }
                 LayerContinuationState::Recurrent(r) => {
                     (0..r.len()).map(|i| r.buffer(i).cells().len()).sum()
+                }
+                LayerContinuationState::Hybrid { rows, state } => {
+                    rows.keys.first().map_or(0, |r| r.len()) * 2 * positions
+                        + (0..state.len())
+                            .map(|i| state.buffer(i).cells().len())
+                            .sum::<usize>()
                 }
                 LayerContinuationState::Stateless => 0,
             })

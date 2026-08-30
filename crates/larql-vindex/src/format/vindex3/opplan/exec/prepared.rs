@@ -217,6 +217,7 @@ pub(super) enum PreparedAttention {
     Softmax(Box<AttentionOperands>),
     GatedDelta(Box<GatedDeltaOperands>),
     Mamba2(Box<Mamba2Operands>),
+    ConvQkv(Box<ConvQkvOperands>),
 }
 
 impl PreparedAttention {
@@ -229,7 +230,7 @@ impl PreparedAttention {
     fn weight_slices(&self) -> Vec<WeightSlice<'_>> {
         match self {
             Self::Softmax(ops) => ops.weight_slices(),
-            Self::GatedDelta(_) | Self::Mamba2(_) => Vec::new(),
+            Self::GatedDelta(_) | Self::Mamba2(_) | Self::ConvQkv(_) => Vec::new(),
         }
     }
 }
@@ -400,6 +401,58 @@ impl Mamba2Operands {
     }
 }
 
+/// The four operands a conv-QKV attention layer reads, loaded once —
+/// the same matrix/glue split as the mixer's: two dense projections
+/// against kilobytes of conv taps.
+pub(super) struct ConvQkvOperands {
+    pub(super) op: super::super::conv_qkv::ConvQkvOp,
+    in_proj: LoadedWeight,
+    out_proj: LoadedWeight,
+    conv1d: Vec<f32>,
+    conv1d_bias: Option<Vec<f32>>,
+}
+
+impl ConvQkvOperands {
+    fn load(
+        op: &super::super::conv_qkv::ConvQkvOp,
+        store: OperandSource<'_>,
+        format: FormatFor<'_>,
+    ) -> Result<Self, VindexError> {
+        let matrix = |r: &OperandRef| load_weight(store, r, format(r));
+        let glue = |r: &OperandRef| store.load(r);
+        Ok(Self {
+            op: op.clone(),
+            in_proj: matrix(&op.in_proj)?,
+            out_proj: matrix(&op.out_proj)?,
+            conv1d: glue(&op.conv1d)?,
+            conv1d_bias: op.conv1d_bias.as_ref().map(glue).transpose()?,
+        })
+    }
+
+    /// The two matrices, for residency accounting.
+    pub(super) fn loaded_matrices(&self) -> [&LoadedWeight; 2] {
+        [&self.in_proj, &self.out_proj]
+    }
+
+    /// The f32 operands that are not matrix traffic.
+    pub(super) fn glue_bytes(&self) -> usize {
+        std::mem::size_of_val(&self.conv1d[..])
+            + self
+                .conv1d_bias
+                .as_ref()
+                .map_or(0, |v| std::mem::size_of_val(&v[..]))
+    }
+
+    pub(super) fn weights(&self) -> Result<super::conv_qkv::ConvQkvWeights<'_>, VindexError> {
+        Ok(super::conv_qkv::ConvQkvWeights {
+            in_proj: matrix_rows(&self.in_proj, &self.op.in_proj)?,
+            out_proj: matrix_rows(&self.out_proj, &self.op.out_proj)?,
+            conv1d: &self.conv1d,
+            conv1d_bias: self.conv1d_bias.as_deref(),
+        })
+    }
+}
+
 /// A resident matrix as row ranges, cut to the geometry the op declares.
 ///
 /// The geometry comes from the OP and never from the slice length: a
@@ -555,18 +608,9 @@ impl PreparedOperands {
                                 .to_string(),
                         ))
                     }
-                    // Same posture again: represented, not executable.
-                    // The conv-QKV operands are bound and the geometry is
-                    // stated; the executor (and the two-region
-                    // continuation it needs — KV cache AND conv history)
-                    // is the next rung.
-                    LayerAttention::ConvQkv(_) => {
-                        return Err(VindexError::Parse(
-                            "conv-QKV attention layers are represented but not \
-                             executable: no executor exists for this operator"
-                                .to_string(),
-                        ))
-                    }
+                    LayerAttention::ConvQkv(op) => PreparedAttention::ConvQkv(Box::new(
+                        ConvQkvOperands::load(op, store, &attention_format)?,
+                    )),
                     LayerAttention::Mamba2(op) => PreparedAttention::Mamba2(Box::new(
                         Mamba2Operands::load(op, store, &attention_format)?,
                     )),
@@ -697,6 +741,15 @@ impl PreparedOperands {
                     }
                     census.glue.widened_f32 += ops.glue_bytes();
                 }
+                PreparedAttention::ConvQkv(ops) => {
+                    // Attention matrix traffic — the block attends, and
+                    // its fused QKV/out projections are what a device
+                    // backend would hold resident on that site.
+                    for w in ops.loaded_matrices() {
+                        census.attention.add(w);
+                    }
+                    census.glue.widened_f32 += ops.glue_bytes();
+                }
             }
             if let Some(ffn) = &layer.ffn {
                 for w in ffn.loaded_matrices() {
@@ -731,6 +784,9 @@ impl PreparedOperands {
                     ops.loaded_matrices().iter().for_each(|w| add(w))
                 }
                 PreparedAttention::Mamba2(ops) => ops.loaded_matrices().iter().for_each(|w| add(w)),
+                PreparedAttention::ConvQkv(ops) => {
+                    ops.loaded_matrices().iter().for_each(|w| add(w))
+                }
             }
             if let Some(ffn) = &layer.ffn {
                 ffn.loaded_matrices().iter().for_each(|w| add(w));
