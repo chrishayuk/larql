@@ -156,3 +156,52 @@ fn graph_round_trips_through_json_with_nope_policies() {
     );
     assert_eq!(back.edges, graph.edges);
 }
+
+/// Drill finding F10: "the text model" is answered by uniqueness, never
+/// by first match — ambiguity names the candidates and refuses.
+#[test]
+fn primary_text_resolution_is_unique_or_refused() {
+    use crate::format::vindex3::graph::PrimaryTextLookup;
+
+    // Exactly one primary: resolved.
+    let graph = valid_graph();
+    assert_eq!(
+        graph.primary_text_component().unwrap().id,
+        "target",
+        "a unique primary_text component resolves"
+    );
+
+    // None: absent, distinctly from ambiguous (encode's drafter-only
+    // fallback depends on the distinction).
+    let none = SystemGraph {
+        schema: GRAPH_SCHEMA,
+        components: vec![component("draft", ComponentRole::Drafter, 2)],
+        objects: vec![],
+        edges: vec![],
+    };
+    assert_eq!(
+        none.primary_text_component().unwrap_err(),
+        PrimaryTextLookup::Absent
+    );
+
+    // Two: refused, naming both candidates — never first-wins.
+    let two = SystemGraph {
+        schema: GRAPH_SCHEMA,
+        components: vec![
+            component("target", ComponentRole::PrimaryText, 8),
+            component("second_text", ComponentRole::PrimaryText, 4),
+        ],
+        objects: vec![],
+        edges: vec![],
+    };
+    let err = two.primary_text_component().unwrap_err();
+    assert_eq!(
+        err,
+        PrimaryTextLookup::Ambiguous(vec!["target".to_string(), "second_text".to_string()])
+    );
+    let message = err.to_string();
+    assert!(
+        message.contains("exactly one") && message.contains("target") && message.contains("second_text"),
+        "the refusal names the candidates: {message}"
+    );
+}

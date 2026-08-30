@@ -277,12 +277,13 @@ fn outside_closure(capability: Capability, finding: &Finding, graph: &SystemGrap
     }
 }
 
-/// The primary text component, when the graph has one.
+/// The primary text component, when the graph has exactly one.
+///
+/// Ambiguity resolves to `None`, never to the first match (drill F10):
+/// grading capabilities against an arbitrarily chosen text component
+/// would be quiet wrongness; absence downgrades visibly instead.
 fn text_component(graph: &SystemGraph) -> Option<&Component> {
-    graph
-        .components
-        .iter()
-        .find(|c| c.role == ComponentRole::PrimaryText)
+    graph.primary_text_component().ok()
 }
 
 /// Admissibility of one capability: does anything it depends on block?

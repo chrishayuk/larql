@@ -182,6 +182,17 @@ pub struct Vindex3Index {
     /// is what an operator needs to find the authority again.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub derived_from_model: Option<String>,
+    /// Fields this build does not understand, carried verbatim.
+    ///
+    /// The compatibility rules (candidate spec §5.7) bind the writer, not
+    /// just the reader: additive 3.x vocabulary must survive a rewrite.
+    /// Ontology-drill finding F13 was exactly this loss — COMPILE
+    /// round-tripped the index through this struct and dropped newer
+    /// fields, while COMPACT (which carries the file byte-identically)
+    /// preserved them. The flatten map closes that asymmetry for every
+    /// struct round-trip at once.
+    #[serde(flatten, default, skip_serializing_if = "BTreeMap::is_empty")]
+    pub extra: BTreeMap<String, serde_json::Value>,
 }
 
 fn is_canonical(a: &ContainerAuthority) -> bool {
@@ -213,6 +224,7 @@ impl Vindex3Index {
             authority: ContainerAuthority::Canonical,
             precision_map: None,
             derived_from_model: None,
+            extra: BTreeMap::new(),
         }
     }
 
