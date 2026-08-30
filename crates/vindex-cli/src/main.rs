@@ -76,7 +76,13 @@ enum Command {
         encoding: String,
     },
     /// Bits per weight — derived from stored bytes over tensor elements, never asserted.
-    Precision { container: PathBuf },
+    Precision {
+        container: PathBuf,
+        /// The precision map, seen: bits per layer × semantic role, from the
+        /// representation each object would execute.
+        #[arg(long)]
+        matrix: bool,
+    },
     /// The container against its own recorded hashes, re-derived from the artifact alone.
     Verify { container: PathBuf },
     /// Install the latest release of this tool. Only ever runs when you ask:
@@ -169,6 +175,33 @@ fn render_peek(v: &Value) {
 }
 
 fn render_describe(v: &Value) {
+    if let Some(role) = v["role"].as_str() {
+        kv("role", role);
+        kv("object", v["object"].as_str().unwrap_or("?"));
+        kv("tensor", v["tensor"].as_str().unwrap_or("?"));
+        kv(
+            "shape",
+            serde_json::to_string(&v["shape"]).unwrap_or_default(),
+        );
+        for r in v["representations"].as_array().into_iter().flatten() {
+            kv(
+                "representation",
+                format!(
+                    "{} · {} · {:.4} bits/weight",
+                    r["encoding"].as_str().unwrap_or("?"),
+                    r["dtype"].as_str().unwrap_or("?"),
+                    r["bits_per_weight"].as_f64().unwrap_or(0.0)
+                ),
+            );
+        }
+        println!();
+        println!("VALUES");
+        for x in v["values"].as_array().into_iter().flatten() {
+            let x = x.as_f64().unwrap_or(0.0);
+            println!("  {}{:.6}", if x >= 0.0 { "+" } else { "" }, x);
+        }
+        return;
+    }
     let o = &v["object"];
     kv("object", o["id"].as_str().unwrap_or("?"));
     kv("kind", o["kind"].as_str().unwrap_or("?"));
@@ -203,6 +236,57 @@ fn render_describe(v: &Value) {
                 serde_json::to_string(&t["shape"]).unwrap_or_default()
             );
         }
+    }
+}
+
+fn render_precision_matrix(v: &Value) {
+    let roles: Vec<&str> = v["roles"]
+        .as_array()
+        .into_iter()
+        .flatten()
+        .filter_map(|r| r.as_str())
+        .collect();
+    let fmt_row = |bits: &Value| -> String {
+        roles
+            .iter()
+            .map(|r| match bits[r].as_f64() {
+                Some(b) => format!("{b:>7.2}"),
+                None => format!("{:>7}", "—"),
+            })
+            .collect::<String>()
+    };
+    println!(
+        "{:<10}{}",
+        "LAYER",
+        roles.iter().map(|r| format!("{r:>7}")).collect::<String>()
+    );
+    // Collapse runs of identical rows into ranges — a 64-layer model
+    // with a five-layer map should read as its regions, not 64 lines.
+    let rows: Vec<&Value> = v["rows"].as_array().into_iter().flatten().collect();
+    let mut i = 0;
+    while i < rows.len() {
+        let line = fmt_row(&rows[i]["bits"]);
+        let start = rows[i]["layer"].as_u64().unwrap_or(0);
+        let mut end = start;
+        while i + 1 < rows.len() && fmt_row(&rows[i + 1]["bits"]) == line {
+            i += 1;
+            end = rows[i]["layer"].as_u64().unwrap_or(end);
+        }
+        let label = if start == end {
+            format!("{start}")
+        } else {
+            format!("{start}–{end}")
+        };
+        println!("{label:<10}{line}");
+        i += 1;
+    }
+    println!();
+    for s in v["sources"].as_array().into_iter().flatten() {
+        println!(
+            "{:<34} {}",
+            s["object"].as_str().unwrap_or("?"),
+            s["representation"].as_str().unwrap_or("?")
+        );
     }
 }
 
@@ -401,7 +485,13 @@ fn main() -> ExitCode {
             out,
             encoding,
         } => vindex_cli::represent_facts(container, out, encoding),
-        Command::Precision { container } => vindex_cli::precision_facts(container),
+        Command::Precision { container, matrix } => {
+            if *matrix {
+                vindex_cli::precision_matrix_facts(container)
+            } else {
+                vindex_cli::precision_facts(container)
+            }
+        }
         Command::Verify { container } => vindex_cli::verify_facts(container),
         Command::Update { .. } => unreachable!("handled above"),
     };
@@ -416,7 +506,13 @@ fn main() -> ExitCode {
                     Command::Representations { .. } => render_representations(&v),
                     Command::Diff { .. } => render_diff(&v),
                     Command::Represent { .. } => render_represent(&v),
-                    Command::Precision { .. } => render_precision(&v),
+                    Command::Precision { matrix, .. } => {
+                        if *matrix {
+                            render_precision_matrix(&v)
+                        } else {
+                            render_precision(&v)
+                        }
+                    }
                     Command::Verify { .. } => render_verify(&v),
                     Command::Update { .. } => unreachable!("handled above"),
                 }
