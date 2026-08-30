@@ -53,16 +53,34 @@ fn representations_list_the_physical_directory_with_fidelity() {
 #[test]
 fn describe_finds_an_object_by_suffix_and_shows_its_tensor_table() {
     let dir = container();
-    let v = describe_facts(dir.path(), "decoder_stack", 4).unwrap();
+    let v = describe_facts(dir.path(), "decoder_stack", 4, None).unwrap();
     assert_eq!(v["object"]["id"], "target.decoder_stack");
     let head = &v["directory"][0]["tensor_table_head"];
     assert!(!head.as_array().unwrap().is_empty(), "{v}");
 }
 
 #[test]
+fn describe_peek_decodes_the_actual_values_of_one_tensor() {
+    let dir = container();
+    let v = describe_facts(
+        dir.path(),
+        "decoder_stack",
+        4,
+        Some("input_layernorm.weight"),
+    )
+    .unwrap();
+    let vals = v["peek"]["values"].as_array().unwrap();
+    assert_eq!(vals.len(), 4, "{v}");
+    assert!(vals.iter().all(|x| x.as_f64().unwrap().is_finite()), "{v}");
+
+    let err = describe_facts(dir.path(), "decoder_stack", 4, Some("no.such.tensor")).unwrap_err();
+    assert!(err.contains("tensors:"), "{err}");
+}
+
+#[test]
 fn describe_refuses_an_unknown_address_by_naming_the_holdings() {
     let dir = container();
-    let err = describe_facts(dir.path(), "no.such.object", 4).unwrap_err();
+    let err = describe_facts(dir.path(), "no.such.object", 4, None).unwrap_err();
     assert!(err.contains("the graph holds"), "{err}");
 }
 
