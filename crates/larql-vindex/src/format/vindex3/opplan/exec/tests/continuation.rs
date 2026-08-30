@@ -309,6 +309,9 @@ fn the_runtime_state_allocates_what_the_geometry_asked_for() {
                     "layer {index} preallocated KV rows before any position"
                 );
             }
+            LayerContinuationState::Hybrid { .. } => {
+                panic!("layer {index} is hybrid; this fixture declares none")
+            }
             LayerContinuationState::Stateless => panic!("layer {index} is stateless"),
         }
     }

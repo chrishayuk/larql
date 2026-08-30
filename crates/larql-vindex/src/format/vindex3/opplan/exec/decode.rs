@@ -365,6 +365,31 @@ impl<'a, B: PlanBackend> DecodeSession<'a, B> {
                     );
                     planes.output.remove(0)
                 }
+                super::prepared::PreparedAttention::ConvQkv(ops) => {
+                    // Two regions, borrowed in phases: past rows copied
+                    // out, conv history advanced by the forward, the
+                    // step's row appended after — same choreography as
+                    // the batch path, at one position.
+                    let past_keys: Vec<Vec<f32>> = self.kv.state().keys(index).to_vec();
+                    let past_values: Vec<Vec<f32>> = self.kv.state().values(index).to_vec();
+                    let base = position;
+                    let recurrent = self.kv.state_mut().recurrent_state(index)?;
+                    let projector = self.backend.dense_projector();
+                    let mut planes = super::conv_qkv::layer_forward_with(
+                        &ops.op,
+                        &ops.weights()?,
+                        &inputs,
+                        recurrent,
+                        &past_keys,
+                        &past_values,
+                        base,
+                        projector,
+                    );
+                    let key = planes.keys.remove(0);
+                    let value = planes.values.remove(0);
+                    self.kv.state_mut().append(index, key, value);
+                    planes.output.remove(0)
+                }
                 super::prepared::PreparedAttention::Softmax(sops) => {
                     let call = sops.call(
                         layer

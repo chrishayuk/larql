@@ -151,10 +151,10 @@ impl LayerOperator {
     /// arrow, and it is the one a plan cannot infer from the checkpoint.
     pub fn has_executor(&self) -> bool {
         match self {
-            Self::Softmax | Self::GatedDelta | Self::Mamba2 => true,
+            Self::Softmax | Self::GatedDelta | Self::Mamba2 | Self::ConvQkvAttention => true,
             // Represented, not executable — the operand contract is
             // complete and no executor consumes it yet.
-            Self::Kda | Self::Mla | Self::ConvQkvAttention => false,
+            Self::Kda | Self::Mla => false,
             Self::Recurrent => false,
         }
     }
