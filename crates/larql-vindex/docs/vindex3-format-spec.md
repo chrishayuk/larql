@@ -738,6 +738,40 @@ The manifest distinguishes the materially different meanings:
 | Down replaced by compact approximation | structurally-approximate | Must name `replacement` |
 | Routed branch skipped (shared-only) | structurally-approximate | Dropping an expert's `w2` alone yields **no** expert output — the honest mode is skipping the expert/branch, not a half-expert |
 
+### 9.4 Residency — contract vs plan (pinned direction)
+
+Residency is the third axis of the container model: semantic identity
+says what an object *is* (§5.1), a representation says which bytes
+implement it (§9.1), residency says where those bytes — and execution
+state — live at this moment of execution. The vocabulary is not yet
+standardised; the division of responsibility is fixed now, so the wrong
+kind of fact never enters the format:
+
+- **The residency contract is persisted facts** — model- and
+  representation-derived properties: access class (required-every-token
+  vs demand-driven/routed), zero-copy mmap capability, an encoding's
+  direct-execution capability, evictability, co-use grouping (the
+  segment/extent granularity of §7), and state lifetimes (§17.3). All
+  additive: under §5.7 an older reader ignores them.
+- **The residency plan is runtime-derived and never persisted in the
+  container** — which representation resides where, prefetch and
+  eviction decisions, device placement. A `device = GPU0`-shaped fact
+  in the format is a defect: placement ages with the machine, never
+  with the model.
+- **Residency never changes model meaning.** The same container means
+  the same thing mmap-cold on NVMe, resident in unified memory, or
+  split across devices; the plan changes efficiency, the graph changes
+  nothing. Artifact size, resident-set size and bytes-touched-per-token
+  are three independent quantities, and the container carries enough
+  semantics to describe each.
+- **Residency is measured, not assumed.** Routing locality in real MoEs
+  is poor enough that "sparse" does not imply "small resident set" —
+  the contract describes what is possible; the plan adapts to observed
+  traffic.
+
+Because the contract vocabulary is additive, standardising it is 3.x
+work under the compatibility rules, not a gate for Final (§21).
+
 ---
 
 ## 10. Kernel capability registry
@@ -973,6 +1007,54 @@ plan-declared discipline. Sessions, batch prefill, resume and the
 serving stack are specified in the runtime document; their contract
 point here is single: **state geometry is a container fact.**
 
+### 17.4 Pinned generalisations — design for Final, not yet normative
+
+Two abstraction lifts are pinned for 3.0 Final. They are recorded here
+so the freeze does not fossilise the one Transformer-shaped remnant of
+the execution ontology; neither is implemented as stated below, and
+this subsection is design, not description.
+
+- **The operation program replaces kind-implied completeness.** Today
+  the completeness contract derives required surfaces from object kinds
+  (a `DecoderStack` or `PerceptionTower` implies attention + ffn +
+  norm; an `Embedding` or `OutputHead` implies head). The lift: a
+  component carries an **ordered program of typed operations** —
+  attention, linear-attention, KDA, MLA, SSM/convolution, MoE, norm,
+  projection, gating, future kinds — and completeness means every
+  declared operation closes over its operands. Object kinds keep
+  identity; they stop implying operation sets. A pure-SSM decoder then
+  admits by declaring its program, not by resembling attention. The
+  implementation is already most of the way there — a binding *is* a
+  `ComponentOpPlan`, and the attention families are surfaces present
+  only when a model uses them — so the lift is normative, not
+  mechanical: stop deriving the program from the kind.
+- **ContinuationState replaces KV as the base state abstraction.**
+  Today the documented runtime contract is `KvState`, while recurrent
+  state (KDA) already exists in the executor de facto. The lift: the
+  plan declares a **state schema** — typed regions with role
+  (`kv | latent-kv | recurrent | convolution | future`), geometry,
+  lifetime and update semantics — and KV becomes one region kind.
+  Softmax attention declares KV rows; MLA declares latent-compressed
+  KV; KDA declares recurrent state; a stateless operation declares
+  none. §17.3's rule is unchanged and becomes fully general: state
+  geometry is a container fact.
+
+**Acceptance drill (paper, before freeze).** Four deliberately awkward
+architectures must be describable using extension points, without
+changing the meaning of any existing field:
+
+1. a pure SSM decoder — no attention anywhere;
+2. a KDA + MLA + softmax hybrid carrying three continuation-state
+   kinds — not hypothetical: this is Kimi-Linear-48B, already
+   executing (§1.1);
+3. an audio → perception → projector → text system with a drafter —
+   components and hidden-state edges under load;
+4. an unknown low-bit sparse-MoE representation with permuted
+   experts — §5.7 preservation under a codec nothing yet reads.
+
+A failure names the field whose meaning would have to change; that
+field is exactly what Final must fix.
+
 ---
 
 ## 18. Operations, observation, and the independent reader
@@ -1080,6 +1162,7 @@ gate, none of them drift:
 | 4 | **E8 held-out architecture** (§16 criterion 7) | not yet run |
 | 5 | **The M4 flip**: `DEFAULT_EXTRACTION_GENERATION = V3` per the generation policy | M1–M3 done, M4 open |
 | 6 | **Bank-ABI pre-freeze rows**: the remaining V2-0..V2-4 experiment gates (profile-authority derivation, variant-selection refusal, fixtures B–D, WALK/DESCRIBE parity) | open |
+| 7 | **The ontology lift** (§17.4): completeness from the declared operation program rather than object kinds, and ContinuationState generalising KV — accepted by the four-architecture paper drill | pinned design |
 
 Feature growth is not a gate: GENERATE, TRACE, overlays, logical DIFF,
 COMPILE and COMPACT are operations over V3 containers and do not add

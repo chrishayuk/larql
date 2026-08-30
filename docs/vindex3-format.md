@@ -440,6 +440,11 @@ DecoderStack / PerceptionTower object  →  attention + ffn + norm surface
 Embedding / OutputHead object          →  head surface
 ```
 
+> Pinned for Final (candidate spec §17.4): completeness moves from
+> kind-implied surfaces to the component's declared operation program —
+> object kinds keep identity and stop implying operation sets, so a
+> stack with no attention admits by declaring what it does have.
+
 It is enforced twice: at plan time an incomplete surface is a blocking
 finding (encode refuses — a missing `intermediate_size` is a schema
 refusal, not a mid-forward-pass discovery), and on the container
