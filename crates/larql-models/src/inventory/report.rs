@@ -564,6 +564,75 @@ pub struct TensorFact {
 mod tests {
     use super::*;
 
+    /// **The recurrent state dtype round-trips, and refuses what it
+    /// does not represent.**
+    ///
+    /// `None` means undeclared or spelled in a way this build cannot
+    /// represent — never "float32 by default". Qwen3.8 declares
+    /// `float32` against a bf16 model, so a defaulted answer would put
+    /// the recurrence at the model's precision and quietly change the
+    /// operator.
+    #[test]
+    fn the_recurrent_state_dtype_round_trips_and_refuses_the_unrepresented() {
+        for spelling in ["float32", "f32"] {
+            assert_eq!(
+                RecurrentStateDtype::from_declared(spelling),
+                Some(RecurrentStateDtype::Float32),
+                "`{spelling}` is a spelling of the same dtype"
+            );
+        }
+        assert_eq!(
+            RecurrentStateDtype::Float32.declared_name(),
+            "float32",
+            "the canonical spelling is what a container records"
+        );
+        assert_eq!(
+            RecurrentStateDtype::from_declared(RecurrentStateDtype::Float32.declared_name()),
+            Some(RecurrentStateDtype::Float32),
+            "the canonical spelling must parse back"
+        );
+        for unknown in ["bfloat16", "float16", "fp32", "", "FLOAT32"] {
+            assert_eq!(
+                RecurrentStateDtype::from_declared(unknown),
+                None,
+                "`{unknown}` is not represented, so it must be refused rather than \
+                 approximated by the one variant that exists"
+            );
+        }
+    }
+
+    /// **The linear-attention widths are DERIVED, so they cannot drift
+    /// from the head counts they come from.**
+    ///
+    /// Checked at Qwen3.8's real geometry, where the key and value sides
+    /// genuinely differ: `2·16·128 + 48·128 = 10240`, the observed
+    /// `in_proj_qkv` row count. A build that folded the two sides into
+    /// one head count would have to pick one, and either choice misses.
+    #[test]
+    fn the_linear_attention_widths_are_derived_from_both_sides() {
+        let qwen38 = LinearAttentionTopology {
+            key_heads: 16,
+            key_head_dim: 128,
+            value_heads: 48,
+            value_head_dim: 128,
+            conv_kernel: 4,
+            state_dtype: Some(RecurrentStateDtype::Float32),
+        };
+        assert_eq!(
+            qwen38.qkv_channels(),
+            10240,
+            "q and k at the KEY geometry, v at the value's"
+        );
+        assert_eq!(qwen38.value_width(), 6144);
+        // Folding the sides would give a different number either way,
+        // which is why they stay separate.
+        assert_ne!(
+            qwen38.qkv_channels(),
+            3 * qwen38.key_heads * qwen38.key_head_dim
+        );
+        assert_ne!(qwen38.qkv_channels(), 3 * qwen38.value_width());
+    }
+
     #[test]
     fn key_status_serialises_lowercase() {
         assert_eq!(

@@ -446,4 +446,105 @@ mod tests {
         .is_rotary());
         assert!(!PositionPolicy::None.is_rotary());
     }
+
+    /// **The M-RoPE axis table is the operator, not a label.**
+    ///
+    /// `section` counts FREQUENCY slots (`rotary_dim / 2`), and the two
+    /// layouts place the same counts differently: contiguous blocks
+    /// (`TTT…HHH…WWW…`) versus HF's interleaving (`THWTHW…`). A
+    /// consumer that built one while the checkpoint declared the other
+    /// would rotate the right dimensions by the wrong axis's position.
+    #[test]
+    fn the_mrope_axis_table_places_each_axis_where_the_layout_says() {
+        // Contiguous: 4 T slots, then 3 H, then 2 W, over 10 freqs.
+        let blocked = mrope_axis_table([4, 3, 2], false, 10);
+        assert_eq!(blocked, vec![0, 0, 0, 0, 1, 1, 1, 2, 2, 0]);
+
+        // Interleaved: H at 1, 4, 7…, W at 2, 5, 8…, everything else T.
+        let woven = mrope_axis_table([4, 3, 2], true, 10);
+        assert_eq!(woven, vec![0, 1, 2, 0, 1, 2, 0, 1, 0, 0]);
+
+        // The two are genuinely different placements of one section.
+        assert_ne!(blocked, woven);
+
+        // Slots past what `section` accounts for stay on T, matching
+        // HF's "overwrite the first dimension" construction.
+        assert!(mrope_axis_table([1, 1, 1], false, 8)[3..]
+            .iter()
+            .all(|a| *a == 0));
+
+        // A section wider than the frequency count truncates rather
+        // than writing past the table.
+        assert_eq!(mrope_axis_table([9, 9, 9], false, 4).len(), 4);
+        assert_eq!(mrope_axis_table([9, 9, 9], true, 4).len(), 4);
+        // Qwen3.8's real geometry: [11, 11, 10] over 32 frequencies.
+        let real = mrope_axis_table([11, 11, 10], false, 32);
+        assert_eq!(real.len(), 32);
+        assert_eq!(real.iter().filter(|a| **a == 0).count(), 11);
+        assert_eq!(real.iter().filter(|a| **a == 1).count(), 11);
+        assert_eq!(real.iter().filter(|a| **a == 2).count(), 10);
+    }
+
+    /// Each accessor answers for the variants that carry the fact and
+    /// `None` for the rest — never an implied default, which is the
+    /// whole reason these are `Option`.
+    #[test]
+    fn the_accessors_answer_only_where_the_fact_exists() {
+        let rope = PositionPolicy::Rope { theta: 10000.0 };
+        let partial_rot = PositionPolicy::PartialRope {
+            theta: 10000.0,
+            rotary_fraction: 0.25,
+            basis: RotaryFrequencyBasis::RotaryWidth,
+        };
+        let partial_head = PositionPolicy::PartialRope {
+            theta: 10000.0,
+            rotary_fraction: 0.5,
+            basis: RotaryFrequencyBasis::HeadWidth,
+        };
+        let mrope_rot = PositionPolicy::MRope {
+            theta: 10000.0,
+            rotary_fraction: 0.25,
+            basis: RotaryFrequencyBasis::RotaryWidth,
+            section: [11, 11, 10],
+            interleaved: false,
+        };
+        let mrope_head = PositionPolicy::MRope {
+            theta: 10000.0,
+            rotary_fraction: 0.25,
+            basis: RotaryFrequencyBasis::HeadWidth,
+            section: [8, 8, 8],
+            interleaved: true,
+        };
+        let nope = PositionPolicy::None;
+
+        // rotary_fraction: only the two partial-width policies have one.
+        assert_eq!(partial_rot.rotary_fraction(), Some(0.25));
+        assert_eq!(mrope_rot.rotary_fraction(), Some(0.25));
+        assert_eq!(rope.rotary_fraction(), None);
+        assert_eq!(nope.rotary_fraction(), None);
+
+        // mrope: the axis split, and None for everything that declares
+        // no axis split — never an implied single axis.
+        assert_eq!(mrope_rot.mrope(), Some(([11, 11, 10], false)));
+        assert_eq!(mrope_head.mrope(), Some(([8, 8, 8], true)));
+        assert_eq!(partial_rot.mrope(), None);
+        assert_eq!(rope.mrope(), None);
+        assert_eq!(nope.mrope(), None);
+
+        // declared_rope_type: the HF spelling, and only when it is not
+        // the default class. M-RoPE's own spelling lives in
+        // `mrope_section`, so a rotary-width M-RoPE answers None.
+        assert_eq!(partial_head.declared_rope_type(), Some("proportional"));
+        assert_eq!(mrope_head.declared_rope_type(), Some("proportional"));
+        assert_eq!(partial_rot.declared_rope_type(), None);
+        assert_eq!(mrope_rot.declared_rope_type(), None);
+        assert_eq!(rope.declared_rope_type(), None);
+        assert_eq!(nope.declared_rope_type(), None);
+
+        // is_rotary: everything but NoPE.
+        for p in [rope, partial_rot, partial_head, mrope_rot, mrope_head] {
+            assert!(p.is_rotary(), "{p:?} rotates");
+        }
+        assert!(!nope.is_rotary());
+    }
 }
