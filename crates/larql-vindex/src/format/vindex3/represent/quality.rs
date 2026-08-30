@@ -458,42 +458,116 @@ impl QualityEvidence {
         let verdict = self.verdict();
         let failed = |c: Criterion| verdict.failures.iter().any(|(k, _)| *k == c);
         let mut out = format!("QUALITY_GATE: {}\n\nAUTHORITY:\n", self.gate.id);
-        let asked: [(&str, bool, Criterion); 7] = [
-            ("positions", true, Criterion::Positions),
-            ("kl_p99", true, Criterion::KlP99),
+        // Each row states the MEASURED authority statistic against its
+        // bound — the statistic the criterion is actually judged on,
+        // never a neighbouring percentile. A bare PASS invites a later
+        // reader to reconstruct the comparison from whatever number is
+        // nearest to hand, and a p95 cannot establish a p99 bound.
+        let against = |measured: Option<f64>, bound: Option<f64>, dir: &str| match (measured, bound)
+        {
+            (Some(m), Some(b)) => format!("{m:.3e} vs {dir} {b:.3e}"),
+            (None, Some(b)) => format!("no changes vs {dir} {b:.3e}"),
+            _ => String::new(),
+        };
+        let route = self.bank.routing.route_weight_mass_moved.as_ref();
+        let route_detail = [
+            self.gate
+                .route_mixture_mass_p99_max
+                .map(|b| format!("p99 {}", against(route.map(|d| d.p99), Some(b), "<="))),
+            self.gate
+                .route_mixture_mass_max
+                .map(|b| format!("max {}", against(route.map(|d| d.max), Some(b), "<="))),
+        ]
+        .into_iter()
+        .flatten()
+        .collect::<Vec<_>>()
+        .join("; ");
+        let count_detail = format!(
+            "top1 {} top10 {} route {}",
+            against(
+                Some(self.bank.logits.top1_flips as f64),
+                self.gate.top1_flip_max.map(|b| b as f64),
+                "<=",
+            ),
+            against(
+                Some(self.bank.logits.top10_changes as f64),
+                self.gate.top10_change_max.map(|b| b as f64),
+                "<=",
+            ),
+            against(
+                Some(self.bank.routing.route_flips as f64),
+                self.gate.route_flip_max.map(|b| b as f64),
+                "<=",
+            ),
+        );
+        let asked: [(&str, bool, Criterion, String); 7] = [
+            (
+                "positions",
+                true,
+                Criterion::Positions,
+                format!("{} vs >= {}", self.bank.positions, self.gate.positions_min),
+            ),
+            (
+                "kl_p99",
+                true,
+                Criterion::KlP99,
+                format!(
+                    "{:.3e} vs <= {:.3e}",
+                    self.bank.logits.kl_p99, self.gate.kl_p99_max
+                ),
+            ),
             (
                 "covered_mass",
                 self.gate.covered_mass_min.is_some(),
                 Criterion::CoveredMass,
+                against(self.bank.min_covered_mass, self.gate.covered_mass_min, ">="),
             ),
             (
                 "top1_mass_displaced",
                 self.gate.top1_mass_displaced_max.is_some(),
                 Criterion::Top1Displacement,
+                format!(
+                    "max {}",
+                    against(
+                        self.bank.top1_mass_displaced.as_ref().map(|d| d.max),
+                        self.gate.top1_mass_displaced_max,
+                        "<=",
+                    )
+                ),
             ),
             (
                 "top10_mass_displaced",
                 self.gate.top10_mass_displaced_p99_max.is_some(),
                 Criterion::TopKDisplacement,
+                format!(
+                    "p99 {}",
+                    against(
+                        self.bank.top10_mass_displaced.as_ref().map(|d| d.p99),
+                        self.gate.top10_mass_displaced_p99_max,
+                        "<=",
+                    )
+                ),
             ),
             (
                 "route_mass",
                 self.gate.route_mixture_mass_p99_max.is_some()
                     || self.gate.route_mixture_mass_max.is_some(),
                 Criterion::RouteDisplacement,
+                route_detail,
             ),
             (
                 "discrete_counts",
                 self.gate.top1_flip_max.is_some(),
                 Criterion::Top1Flips,
+                count_detail,
             ),
         ];
-        for (name, asked_for, criterion) in asked {
+        for (name, asked_for, criterion, detail) in asked {
             if !asked_for {
                 continue;
             }
             out.push_str(&format!(
-                "  {name:<22} {}\n",
+                "  {name:<22} {}   {detail}\n",
                 if failed(criterion) { "FAIL" } else { "PASS" }
             ));
         }
