@@ -324,14 +324,19 @@ pub struct RepresentArgs {
     #[arg(long = "object")]
     pub objects: Vec<String>,
 
-    /// Compile a role the conservative default preserves. Repeat to name
-    /// several. Roles: decoder-linear, expert-weight, embedding,
-    /// output-head, norm, router, small-vector, unknown.
+    /// Compile a role the conservative default preserves. Repeat to
+    /// name several.
     ///
-    /// The default compiles decoder-linear and expert-weight only —
-    /// the parameter mass — and preserves the surfaces where 4-bit is
-    /// known to be delicate. This flag is how a profile becomes more
+    /// The default compiles the parameter mass — the decoder's and a
+    /// recurrence's bulk projections, and routed experts — and
+    /// preserves the surfaces where 4-bit is known to be delicate or
+    /// where error compounds. This flag is how a profile becomes more
     /// aggressive deliberately rather than by accident.
+    ///
+    /// The role names are not listed here on purpose: this comment
+    /// enumerated them once, and was silently wrong the moment a role
+    /// was added. Pass any name to be refused by one that names the
+    /// current set.
     #[arg(long = "include-role")]
     pub include_roles: Vec<String>,
 
@@ -537,8 +542,21 @@ fn run_represent(args: RepresentArgs) -> Result<(), Box<dyn std::error::Error>> 
 
     let mut roles = larql_vindex::format::vindex3::represent::policy::RolePolicy::default();
     for name in &args.include_roles {
-        let role = larql_vindex::format::vindex3::represent::policy::Role::parse(name)
-            .ok_or_else(|| format!("unknown role `{name}`"))?;
+        let role = larql_vindex::format::vindex3::represent::policy::Role::parse(name).ok_or_else(
+            || {
+                // Derived, never restated: a hand-written list is wrong
+                // one commit after a role is added, and this message is
+                // the only place the caller learns what is valid.
+                let known: Vec<&str> = larql_vindex::format::vindex3::represent::policy::Role::ALL
+                    .iter()
+                    .map(|r| r.name())
+                    .collect();
+                format!(
+                    "unknown role `{name}` — the roles are: {}",
+                    known.join(", ")
+                )
+            },
+        )?;
         roles = roles.including(role);
     }
     let mut protect = larql_vindex::format::vindex3::represent::policy::Protections::default();
