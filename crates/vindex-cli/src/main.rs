@@ -47,6 +47,8 @@ enum Command {
     },
     /// The physical directory: what exists as bytes, with recorded fidelity.
     Representations { container: PathBuf },
+    /// Every layer's token-mixer programme, from the operation plan.
+    Layers { container: PathBuf },
     /// One object under two of the container's representations, decoded and
     /// compared value by value — the error derived, never asserted.
     Diff {
@@ -174,7 +176,50 @@ fn render_peek(v: &Value) {
     }
 }
 
+fn render_layers(v: &Value) {
+    let rows: Vec<&Value> = v["layers"].as_array().into_iter().flatten().collect();
+    let line = |r: &Value| {
+        format!(
+            "{:<18} ffn {}",
+            r["mixer"].as_str().unwrap_or("?"),
+            r["ffn"].as_str().unwrap_or("?")
+        )
+    };
+    let mut i = 0;
+    while i < rows.len() {
+        let l = line(rows[i]);
+        let start = rows[i]["layer"].as_u64().unwrap_or(0);
+        let mut end = start;
+        while i + 1 < rows.len() && line(rows[i + 1]) == l {
+            i += 1;
+            end = rows[i]["layer"].as_u64().unwrap_or(end);
+        }
+        let label = if start == end {
+            format!("{start}")
+        } else {
+            format!("{start}–{end}")
+        };
+        println!("{label:<10}{l}");
+        i += 1;
+    }
+}
+
 fn render_describe(v: &Value) {
+    if let Some(mixer) = v["mixer"].as_str() {
+        kv("layer", v["layer"].as_u64().unwrap_or(0));
+        kv("token mixer", mixer);
+        println!();
+        println!("{:<28} {:<38} SHAPE", "SEMANTICS", "TENSOR");
+        for op in v["operands"].as_array().into_iter().flatten() {
+            println!(
+                "{:<28} {:<38} {}",
+                op["role"].as_str().unwrap_or("?"),
+                op["tensor"].as_str().unwrap_or("?"),
+                serde_json::to_string(&op["shape"]).unwrap_or_default()
+            );
+        }
+        return;
+    }
     if let Some(role) = v["role"].as_str() {
         kv("role", role);
         kv("object", v["object"].as_str().unwrap_or("?"));
@@ -240,52 +285,61 @@ fn render_describe(v: &Value) {
 }
 
 fn render_precision_matrix(v: &Value) {
-    let roles: Vec<&str> = v["roles"]
-        .as_array()
-        .into_iter()
-        .flatten()
-        .filter_map(|r| r.as_str())
-        .collect();
-    let fmt_row = |bits: &Value| -> String {
-        roles
-            .iter()
-            .map(|r| match bits[r].as_f64() {
-                Some(b) => format!("{b:>7.2}"),
-                None => format!("{:>7}", "—"),
-            })
-            .collect::<String>()
-    };
-    println!(
-        "{:<10}{}",
-        "LAYER",
-        roles.iter().map(|r| format!("{r:>7}")).collect::<String>()
-    );
-    // Collapse runs of identical rows into ranges — a 64-layer model
-    // with a five-layer map should read as its regions, not 64 lines.
-    let rows: Vec<&Value> = v["rows"].as_array().into_iter().flatten().collect();
-    let mut i = 0;
-    while i < rows.len() {
-        let line = fmt_row(&rows[i]["bits"]);
-        let start = rows[i]["layer"].as_u64().unwrap_or(0);
-        let mut end = start;
-        while i + 1 < rows.len() && fmt_row(&rows[i + 1]["bits"]) == line {
-            i += 1;
-            end = rows[i]["layer"].as_u64().unwrap_or(end);
-        }
-        let label = if start == end {
-            format!("{start}")
-        } else {
-            format!("{start}–{end}")
-        };
-        println!("{label:<10}{line}");
-        i += 1;
-    }
-    println!();
-    for s in v["sources"].as_array().into_iter().flatten() {
+    for prog in v["programmes"].as_array().into_iter().flatten() {
+        let roles: Vec<&str> = prog["roles"]
+            .as_array()
+            .into_iter()
+            .flatten()
+            .filter_map(|r| r.as_str())
+            .collect();
         println!(
-            "{:<34} {}",
+            "{} · {} layer(s)",
+            prog["label"].as_str().unwrap_or("?"),
+            prog["layers"].as_u64().unwrap_or(0)
+        );
+        let fmt_row = |bits: &Value| -> String {
+            roles
+                .iter()
+                .map(|r| match bits[r].as_f64() {
+                    Some(b) => format!("{b:>7.2}"),
+                    None => format!("{:>7}", "—"),
+                })
+                .collect::<String>()
+        };
+        println!(
+            "{:<10}{}",
+            "LAYER",
+            roles.iter().map(|r| format!("{r:>7}")).collect::<String>()
+        );
+        // Collapse runs of identical rows into ranges — a 64-layer
+        // model with a five-layer map should read as its regions.
+        let rows: Vec<&Value> = prog["rows"].as_array().into_iter().flatten().collect();
+        let mut i = 0;
+        while i < rows.len() {
+            let line = fmt_row(&rows[i]["bits"]);
+            let start = rows[i]["layer"].as_u64().unwrap_or(0);
+            let mut end = start;
+            while i + 1 < rows.len() && fmt_row(&rows[i + 1]["bits"]) == line {
+                i += 1;
+                end = rows[i]["layer"].as_u64().unwrap_or(end);
+            }
+            let label = if start == end {
+                format!("{start}")
+            } else {
+                format!("{start}–{end}")
+            };
+            println!("{label:<10}{line}");
+            i += 1;
+        }
+        println!();
+    }
+    println!("MODEL SURFACES");
+    for s in v["surfaces"].as_array().into_iter().flatten() {
+        println!(
+            "{:<34} {:<8} {:>8.4} bits/weight",
             s["object"].as_str().unwrap_or("?"),
-            s["representation"].as_str().unwrap_or("?")
+            s["representation"].as_str().unwrap_or("?"),
+            s["bits_per_weight"].as_f64().unwrap_or(0.0)
         );
     }
 }
@@ -472,6 +526,7 @@ fn main() -> ExitCode {
             peek,
         } => vindex_cli::describe_facts(container, address, *values, peek.as_deref()),
         Command::Representations { container } => vindex_cli::representations_facts(container),
+        Command::Layers { container } => vindex_cli::layers_facts(container),
         Command::Diff {
             container,
             a,
@@ -504,6 +559,7 @@ fn main() -> ExitCode {
                     Command::Inspect { .. } => render_inspect(&v),
                     Command::Describe { .. } => render_describe(&v),
                     Command::Representations { .. } => render_representations(&v),
+                    Command::Layers { .. } => render_layers(&v),
                     Command::Diff { .. } => render_diff(&v),
                     Command::Represent { .. } => render_represent(&v),
                     Command::Precision { matrix, .. } => {
