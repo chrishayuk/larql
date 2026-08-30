@@ -359,3 +359,53 @@ fn recurrent_state_is_explicitly_unsupported_not_absent() {
         other => panic!("must refuse with the provider and layer named: {other:?}"),
     }
 }
+
+/// **SERVE-HYBRID: the canonical provider holds recurrent buffers where
+/// the program declares them — and only there.** A mixed KV+recurrent
+/// geometry prepares both sides at absolute indices; the KV layer still
+/// refuses `recurrent_state` by name (a dispatch defect, never "empty
+/// state"); and a resumed preparation keeps the mutated buffers, because
+/// that persistence is the continuation.
+#[test]
+fn recurrent_layers_get_buffers_and_kv_layers_still_refuse() {
+    use larql_vindex::format::vindex3::opplan::exec::continuation::{
+        LayerContinuationGeometry, RecurrentBufferGeometry, RecurrentGeometry, StateInitialization,
+    };
+    use larql_vindex::format::vindex3::opplan::exec::kv::ContinuationError;
+
+    let geometry = vec![
+        LayerContinuationGeometry::Kv(LayerKvGeometry {
+            kv_dim: 4,
+            window: None,
+        }),
+        LayerContinuationGeometry::Recurrent(RecurrentGeometry::single(RecurrentBufferGeometry {
+            shape: vec![2, 3],
+            dtype: larql_vindex::format::vindex3::opplan::gated_delta::StateDtype::Float32,
+            initialization: StateInitialization::Zeros,
+        })),
+    ];
+    let mut provider = CanonicalKvState::new();
+    provider.prepare_continuation(&geometry).unwrap();
+
+    // The recurrent layer serves its declared buffer, zero-initialised.
+    let state = provider.recurrent_state(1).expect("declared recurrent");
+    assert_eq!(state.buffer(0).cells().len(), 6);
+    state.buffer_mut(0).cells_mut()[0] = 7.0;
+
+    // The KV layer refuses by name — not with an empty buffer.
+    assert!(matches!(
+        provider.recurrent_state(0),
+        Err(ContinuationError::NotRecurrent { layer: 0, .. })
+    ));
+    // And it still takes rows, at its absolute index.
+    provider.append(0, vec![1.0; 4], vec![2.0; 4]);
+    assert_eq!(provider.keys(0).len(), 1);
+
+    // Resume: the same program keeps the mutated state.
+    provider.prepare_continuation(&geometry).unwrap();
+    assert_eq!(
+        provider.recurrent_state(1).unwrap().buffer(0).cells()[0],
+        7.0,
+        "a resumed preparation must not reset the continuation"
+    );
+}
