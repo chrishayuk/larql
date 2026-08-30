@@ -40,6 +40,18 @@ pub struct OperandStore {
     precision_map: BTreeMap<String, BTreeMap<String, String>>,
     /// The container's precision program, when it states one.
     program: Option<crate::format::vindex3::represent::map::PrecisionMap>,
+    /// Every operand's role as the operation plan binds it, keyed
+    /// `(object, tensor)`.
+    ///
+    /// The conformance check below must resolve a role exactly as the
+    /// representation compiler did, or a legitimately compiled pack
+    /// fails its own check. That is not hypothetical: when the compiler
+    /// moved to plan-derived roles and this path was left on the name
+    /// heuristics, Qwen3.8's `linear_attn.in_proj_qkv` compiled as
+    /// `recurrence-projection` and then refused to load because
+    /// `classify` still called it `unknown`. One resolution, two
+    /// readers.
+    plan_roles: crate::format::vindex3::represent::plan_roles::PlanRoles,
     /// Where representations were allowed to come from.
     source: RepresentationSource,
     /// Process-unique identity — see [`SourceStamp`].
@@ -204,6 +216,9 @@ impl OperandStore {
             selected,
             precision_map,
             program: inspection.index.precision_map.clone(),
+            // Resolved once at open, so every conformance check in the
+            // load path reads the same answer the compiler wrote.
+            plan_roles: crate::format::vindex3::represent::plan_roles::plan_roles(root, inspection),
             source,
             id: next_identity(),
             loads: std::sync::atomic::AtomicU64::new(0),
@@ -252,6 +267,23 @@ impl OperandStore {
     /// The container's precision program, when it declares one.
     pub fn program(&self) -> Option<&crate::format::vindex3::represent::map::PrecisionMap> {
         self.program.as_ref()
+    }
+
+    /// The role the plan binds this tensor to, falling back to the name
+    /// heuristics for anything the plan does not cover — the same order
+    /// the representation compiler resolves in.
+    pub fn role_of(
+        &self,
+        object: &str,
+        tensor: &str,
+        shape: &[usize],
+    ) -> crate::format::vindex3::represent::policy::Role {
+        self.plan_roles
+            .get(&(object.to_string(), tensor.to_string()))
+            .copied()
+            .unwrap_or_else(|| {
+                crate::format::vindex3::represent::policy::classify(object, tensor, shape)
+            })
     }
 
     /// Whether this object's bytes come from a compiled pack.
