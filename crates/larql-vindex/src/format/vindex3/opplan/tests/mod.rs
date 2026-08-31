@@ -8,7 +8,7 @@ mod gemma4_closure;
 mod kda_op;
 mod kimi_mla_closure;
 mod kimi_moe_closure;
-mod mamba2;
+pub(crate) mod mamba2;
 mod mla_op;
 mod plan;
 mod unjudged;

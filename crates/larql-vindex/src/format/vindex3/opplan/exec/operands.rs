@@ -40,6 +40,18 @@ pub struct OperandStore {
     precision_map: BTreeMap<String, BTreeMap<String, String>>,
     /// The container's precision program, when it states one.
     program: Option<crate::format::vindex3::represent::map::PrecisionMap>,
+    /// Every operand's role as the operation plan binds it, keyed
+    /// `(object, tensor)`.
+    ///
+    /// The conformance check below must resolve a role exactly as the
+    /// representation compiler did, or a legitimately compiled pack
+    /// fails its own check. That is not hypothetical: when the compiler
+    /// moved to plan-derived roles and this path was left on the name
+    /// heuristics, Qwen3.8's `linear_attn.in_proj_qkv` compiled as
+    /// `recurrence-projection` and then refused to load because
+    /// `classify` still called it `unknown`. One resolution, two
+    /// readers.
+    plan_roles: crate::format::vindex3::represent::plan_roles::PlanRoles,
     /// Where representations were allowed to come from.
     source: RepresentationSource,
     /// Process-unique identity — see [`SourceStamp`].
@@ -204,6 +216,9 @@ impl OperandStore {
             selected,
             precision_map,
             program: inspection.index.precision_map.clone(),
+            // Resolved once at open, so every conformance check in the
+            // load path reads the same answer the compiler wrote.
+            plan_roles: crate::format::vindex3::represent::plan_roles::plan_roles(root, inspection),
             source,
             id: next_identity(),
             loads: std::sync::atomic::AtomicU64::new(0),
@@ -252,6 +267,23 @@ impl OperandStore {
     /// The container's precision program, when it declares one.
     pub fn program(&self) -> Option<&crate::format::vindex3::represent::map::PrecisionMap> {
         self.program.as_ref()
+    }
+
+    /// The role the plan binds this tensor to, falling back to the name
+    /// heuristics for anything the plan does not cover — the same order
+    /// the representation compiler resolves in.
+    pub fn role_of(
+        &self,
+        object: &str,
+        tensor: &str,
+        shape: &[usize],
+    ) -> crate::format::vindex3::represent::policy::Role {
+        self.plan_roles
+            .get(&(object.to_string(), tensor.to_string()))
+            .copied()
+            .unwrap_or_else(|| {
+                crate::format::vindex3::represent::policy::classify(object, tensor, shape)
+            })
     }
 
     /// Whether this object's bytes come from a compiled pack.
@@ -308,8 +340,23 @@ impl OperandStore {
     }
 
     /// Load one operand as f32 values.
+    ///
+    /// A compiled NVFP4 pack decodes here rather than in [`widen`],
+    /// because decoding it needs the operand's SHAPE — the group stream
+    /// is indexed per row — and `widen` sees only bytes and a dtype
+    /// label. Consumers that want the compact form for a kernel take
+    /// [`Self::load_raw`]; this is for the ones that need values, which
+    /// on a recurrence is most of them.
+    ///
+    /// The decode is lossy in exactly the way the pack is: these are the
+    /// 4-bit values, widened, not the checkpoint's originals. That is
+    /// the point — it is what makes an NVFP4 representation measurable
+    /// on a stack the device cannot run.
     pub fn load(&self, operand: &OperandRef) -> Result<Vec<f32>, VindexError> {
         let raw = self.load_raw(operand)?;
+        if raw.dtype == crate::format::vindex3::represent::nvfp4_pack::DTYPE_NVFP4 {
+            return decode_nvfp4_operand(&raw.bytes, &operand.shape, &operand.tensor);
+        }
         widen(&raw.dtype, &raw.bytes, &operand.tensor)
     }
 
@@ -370,6 +417,27 @@ impl OperandStore {
 pub struct RawOperand {
     pub dtype: String,
     pub bytes: Vec<u8>,
+}
+
+/// Decode a stored NVFP4 pack to f32, through the format's own layout
+/// and the reference decoder — no second opinion about the arithmetic.
+pub(crate) fn decode_nvfp4_operand(
+    bytes: &[u8],
+    shape: &[usize],
+    name: &str,
+) -> Result<Vec<f32>, VindexError> {
+    use crate::format::vindex3::represent::nvfp4_pack::{split, PackLayout};
+    let layout = PackLayout::derive(shape, name)?;
+    let (packed, scales, tensor_scale) = split(bytes, &layout, name)?;
+    let mut out = vec![0.0f32; layout.rows * layout.k];
+    let matrix = larql_models::quant::nvfp4::Nvfp4Matrix {
+        packed: packed.to_vec(),
+        scales: scales.to_vec(),
+        tensor_scale,
+    };
+    larql_models::quant::nvfp4::dequantize_into(&matrix, layout.rows, layout.k, &mut out)
+        .map_err(|e| VindexError::Parse(format!("tensor `{name}`: NVFP4 decode: {e}")))?;
+    Ok(out)
 }
 
 /// Widen stored bytes to f32 — judged dtypes only, fail-closed.
@@ -617,6 +685,19 @@ impl<'a> OperandSource<'a> {
             return false;
         }
         self.base.stored_dtype(operand) == Some(DTYPE_BF16)
+    }
+
+    /// Whether this operand is held as a compiled NVFP4 pack.
+    ///
+    /// Overlay edits are f32-space facts with no compact form, so an
+    /// overridden operand answers `false` and is served widened — the
+    /// same rule [`Self::is_stored_bf16`] follows, for the same reason.
+    pub fn is_stored_nvfp4(&self, operand: &OperandRef) -> bool {
+        if self.overrides.is_some_and(|o| o.is_overridden(operand)) {
+            return false;
+        }
+        self.base.stored_dtype(operand)
+            == Some(crate::format::vindex3::represent::nvfp4_pack::DTYPE_NVFP4)
     }
 
     /// Load one operand's stored bytes unwidened. Overlay edits are

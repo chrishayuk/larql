@@ -243,11 +243,11 @@ fn the_mixer_is_a_first_class_semantic_component() {
     assert!(roles.contains(&"fused recurrent q|k|v"), "{roles:?}");
     assert!(roles.contains(&"decay projection"), "{roles:?}");
 
+    // Exactly, not "one of these two": a disjunction here passes
+    // whichever answer arrives, and that is how a mixer label derived
+    // from the wrong source survived this suite. See `tests/mixer.rs`.
     let v = describe_facts(dir.path(), "layer.3.mixer", 2, None).unwrap();
-    assert!(
-        v["mixer"] == "SOFTMAX ATTENTION" || v["mixer"] == "GATED ATTENTION",
-        "{v}"
-    );
+    assert_eq!(v["mixer"], "SOFTMAX ATTENTION", "{v}");
 
     let l = layers_facts(dir.path()).unwrap();
     let mixers: Vec<&str> = l["layers"]
@@ -256,9 +256,20 @@ fn the_mixer_is_a_first_class_semantic_component() {
         .iter()
         .filter_map(|r| r["mixer"].as_str())
         .collect();
-    assert_eq!(mixers.len(), 4, "{l}");
-    assert_eq!(mixers[0], "GATED DELTANET", "{l}");
-    assert_ne!(mixers[3], "GATED DELTANET", "{l}");
+    // The whole sequence. `assert_ne!(mixers[3], "GATED DELTANET")`
+    // stood here and passed for the wrong reason: it holds for every
+    // operator that is not Gated DeltaNet, including the several this
+    // build once mislabelled as one.
+    assert_eq!(
+        mixers,
+        vec![
+            "GATED DELTANET",
+            "GATED DELTANET",
+            "GATED DELTANET",
+            "SOFTMAX ATTENTION"
+        ],
+        "{l}"
+    );
 }
 
 #[test]

@@ -34,6 +34,8 @@ use ndarray::{Array2, ArrayView2};
 /// CPU backend using BLAS (f32) and C kernel (Q4).
 pub struct CpuBackend;
 
+pub mod nvfp4_gemv;
+
 impl MatMul for CpuBackend {
     fn matmul(&self, a: ArrayView2<f32>, b: ArrayView2<f32>) -> Array2<f32> {
         ops::f32_matmul::matmul(a, b)
@@ -41,6 +43,18 @@ impl MatMul for CpuBackend {
 
     fn matmul_transb(&self, a: ArrayView2<f32>, b: ArrayView2<f32>) -> Array2<f32> {
         ops::f32_matmul::matmul_transb(a, b)
+    }
+
+    fn nvfp4_gemv(
+        &self,
+        packed: &[u8],
+        scales: &[u8],
+        tensor_scale: f32,
+        x: &[f32],
+        n: usize,
+        k: usize,
+    ) -> Option<Vec<f32>> {
+        nvfp4_gemv::nvfp4_gemv(packed, scales, tensor_scale, x, n, k)
     }
 }
 

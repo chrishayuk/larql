@@ -262,6 +262,7 @@ pub struct ProjectionLedger {
     // folded into another's counter would make the byte census agree with
     // itself while describing a mixture.
     q8_x_q8: Tally,
+    fused_nvfp4: Tally,
     q4_x_q8: Tally,
     bf16_x_q8: Tally,
     /// The same time, cut by operator class instead of by arithmetic.
@@ -276,6 +277,7 @@ impl ProjectionLedger {
             PhysicalProjectionPlan::FusedBf16 => &self.fused,
             PhysicalProjectionPlan::FusedQ8 => &self.fused_q8,
             PhysicalProjectionPlan::FusedQ4 => &self.fused_q4,
+            PhysicalProjectionPlan::FusedNvfp4 => &self.fused_nvfp4,
             PhysicalProjectionPlan::Q8xQ8 => &self.q8_x_q8,
             PhysicalProjectionPlan::Q4xQ8 => &self.q4_x_q8,
             PhysicalProjectionPlan::Bf16xQ8 => &self.bf16_x_q8,
@@ -414,6 +416,7 @@ impl ProjectionLedger {
             fused: ZERO,
             fused_q8: ZERO,
             fused_q4: ZERO,
+            fused_nvfp4: ZERO,
             q8_x_q8: ZERO,
             q4_x_q8: ZERO,
             bf16_x_q8: ZERO,

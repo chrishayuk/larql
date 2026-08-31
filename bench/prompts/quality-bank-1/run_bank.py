@@ -29,6 +29,110 @@ LARQL = os.environ.get("LARQL", "./target/release/larql")
 BANK_DIR = os.environ.get("QBANK_DIR", HERE)
 
 
+def compiler_provenance():
+    """Which build produced the representation under test.
+
+    The container's digests pin the *artifact* exactly; they say nothing
+    about the code that compiled it. Those are two different facts, and
+    a bank that records only the first cannot answer "was this measured
+    before or after the role-classifier fix?" — a question that changed
+    Qwen3.8's decoder from 6.4138 to 4.5124 bits/weight without touching
+    a single byte of the source checkpoint.
+
+    `dirty` is reported rather than hidden. A result measured against an
+    uncommitted tree is still a result; it is just not one anybody else
+    can reproduce from a SHA, and saying so is the difference between
+    provenance and decoration.
+    """
+    def git(*args):
+        try:
+            return subprocess.run(["git", *args], cwd=HERE, capture_output=True,
+                                  text=True, check=True).stdout.strip()
+        except Exception:
+            return None
+    head = git("rev-parse", "HEAD")
+    status = git("status", "--porcelain")
+    return {
+        "commit": head,
+        "dirty": bool(status) if status is not None else None,
+        "describe": git("describe", "--always", "--dirty"),
+    }
+
+
+def read_execution_facts(stdout):
+    """What the run actually executed, from the executor's own report.
+
+    `larql vindex3 exec` prints `representation: <enc>  source: <src>
+    objects from a compiled pack: A/B` **only when the backend asked for
+    a compiled encoding at all**. Its absence therefore means the run
+    bound the container's canonical bytes — which is the fact that has
+    to be recorded, because it is invisible in the numbers until they
+    come out as an exact zero.
+    """
+    # `requested` is what the backend ASKED for; the evidence that it was
+    # actually consumed is `objects_from_pack` being non-zero with
+    # `runtime_compiled` at zero. Naming the first one "executed" would
+    # be the same conflation that produced the false null.
+    facts = {"requested": None, "source": None, "objects_from_pack": None,
+             "objects_total": None, "runtime_compiled": 0}
+    for line in stdout.splitlines():
+        if line.startswith("runtime compile:"):
+            facts["runtime_compiled"] = int(line.split(":")[1].strip().split()[0])
+        elif line.startswith("representation:"):
+            # representation: NVFP4  source: stored  objects from a compiled pack: 1/5
+            body = line.split("representation:", 1)[1]
+            facts["requested"] = body.split()[0]
+            if "source:" in body:
+                facts["source"] = body.split("source:", 1)[1].split()[0]
+            if "pack:" in body:
+                ratio = body.rsplit("pack:", 1)[1].strip()
+                if "/" in ratio:
+                    a, b = ratio.split("/", 1)
+                    facts["objects_from_pack"], facts["objects_total"] = int(a), int(b)
+    return facts
+
+
+def assert_candidate_executed_its_representation(container_id, facts, label):
+    """A bank must never be able to compare the reference against itself.
+
+    This exists because it happened. A candidate compiled to NVFP4 was
+    run on a backend that requests no compiled encoding, so it bound the
+    canonical BF16 bytes and scored KL 0.00000 on all 1,740 positions —
+    a result indistinguishable from perfect fidelity, and entirely an
+    artefact of the invocation. `--representation-source stored` did not
+    catch it: that flag forbids *manufacturing* a representation, and
+    binding canonical bytes manufactures nothing.
+
+    So the artifact's declared programme is checked against what the
+    executor says it ran. An arm that cannot prove it executed the
+    representation under test is not evidence.
+    """
+    declared = (container_id or {}).get("precision_map")
+    if not declared:
+        return
+    want = declared.get("encoding")
+    got = facts.get("requested")
+    if got != want:
+        raise SystemExit(
+            f"{label}: the candidate's precision map declares `{want}`, but the run "
+            f"executed {got or 'the canonical representation'}. A candidate that did "
+            f"not execute its own representation cannot be compared against the "
+            f"reference — that is a reference-against-reference run, and it will look "
+            f"like perfect fidelity. Choose a backend that requests `{want}`."
+        )
+    if not facts.get("objects_from_pack"):
+        raise SystemExit(
+            f"{label}: requested `{want}` but bound no object from a compiled pack, so "
+            f"nothing of that representation was actually consumed."
+        )
+    if facts.get("source") == "stored" and facts.get("runtime_compiled"):
+        raise SystemExit(
+            f"{label}: {facts['runtime_compiled']} tensor(s) were quantised at load under "
+            f"`stored`. The arm measured a representation manufactured now, not the one "
+            f"the artifact carries."
+        )
+
+
 def load_bank():
     path = os.path.join(BANK_DIR, "prompts.json")
     bank = json.load(open(path))
@@ -58,6 +162,14 @@ def container_identity(container):
         "authority": idx.get("authority", "canonical"),
         "representations": digests,
         "payload_bytes": sum(v.get("payload_bytes", 0) for v in idx.get("representations", {}).values()),
+        # The programme the compiler was asked to produce, as the
+        # container itself records it: `{name, encoding, roles}`, where
+        # `roles` are the ones compiled and every other role is
+        # preserved. The SHA says which compiler ran; this says what it
+        # was asked for, and a result is only independently intelligible
+        # with both. Two candidates differing by one role name here is
+        # exactly what makes a controlled comparison legible later.
+        "precision_map": idx.get("precision_map"),
     }
 
 
@@ -80,11 +192,7 @@ def run_bank_arm(container, entries, backend, source, dump_dir):
     r = subprocess.run(cmd, capture_output=True, text=True)
     if r.returncode != 0:
         raise SystemExit(f"bank run failed:\n{r.stdout}\n{r.stderr}")
-    compiled = 0
-    for line in r.stdout.splitlines():
-        if line.startswith("runtime compile:"):
-            compiled = int(line.split(":")[1].strip().split()[0])
-    return compiled
+    return read_execution_facts(r.stdout)
 
 
 def run_arm(container, entry, backend, source, dump):
@@ -96,11 +204,7 @@ def run_arm(container, entry, backend, source, dump):
     r = subprocess.run(cmd, capture_output=True, text=True)
     if r.returncode != 0:
         raise SystemExit(f"{entry['id']}: {r.stdout}\n{r.stderr}")
-    compiled = 0
-    for line in r.stdout.splitlines():
-        if line.startswith("runtime compile:"):
-            compiled = int(line.split(":")[1].strip().split()[0])
-    return compiled
+    return read_execution_facts(r.stdout)
 
 
 def softmax_rows(x):
@@ -129,7 +233,10 @@ def cmd_compare(container, outdir, backend, source, label, keep=False):
     meta = json.load(open(os.path.join(outdir, "reference.json")))
     rows = []
     canddir = os.path.join(outdir, f"_cand-{label}")
-    compiled_total = run_bank_arm(container, meta["entries"], backend, source, canddir)
+    facts = run_bank_arm(container, meta["entries"], backend, source, canddir)
+    cand_id = container_identity(container)
+    assert_candidate_executed_its_representation(cand_id, facts, label)
+    compiled_total = facts["runtime_compiled"]
     for i, e in enumerate(meta["entries"]):
         refpath = os.path.join(outdir, e["dump"])
         candpath = os.path.join(canddir, f"{e['id']}.f32")
@@ -190,7 +297,9 @@ def cmd_compare(container, outdir, backend, source, label, keep=False):
     out = {"label": label, "backend": backend, "source": source,
            "payload_bytes": cand_bytes,
            "runtime_compiled_total": compiled_total,
-           "container": container_identity(container),
+           "container": cand_id,
+           "execution": facts,
+           "compiler": compiler_provenance(),
            "reference": meta["container"], "rows": rows}
     path = os.path.join(outdir, f"compare-{label}.json")
     json.dump(out, open(path, "w"))

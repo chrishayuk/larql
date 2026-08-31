@@ -54,6 +54,9 @@ pub mod gptq;
 pub mod map;
 pub mod nvfp4_pack;
 pub mod physical;
+pub mod plan_roles;
+#[cfg(test)]
+mod plan_roles_tests;
 pub mod policy;
 pub mod quality;
 pub mod selection;
@@ -234,6 +237,10 @@ pub fn compile_representation(
             .map(|o| o.id.clone())
             .collect()
     };
+    // The plan's own operand bindings, which outrank tensor spellings.
+    // Best-effort: a component whose plan does not build contributes
+    // nothing here and its tensors fall back to name classification.
+    let declared_roles = plan_roles::plan_roles(src, &inspection);
     let store = OperandStore::open(src, &inspection)?;
     let source = OperandSource::from(&store);
 
@@ -286,12 +293,24 @@ pub fn compile_representation(
             // Role first, shape second. A tensor the policy preserves is
             // carried whatever its shape; a tensor the policy admits is
             // still refused by the layout if its `k` cannot be grouped.
-            let role = classify_in(
-                primary_text.contains(&entry.object),
-                &entry.object,
-                &t.name,
-                &t.shape,
-            );
+            // The plan first: it bound this tensor to the role its
+            // operator computes with, and that is the container's own
+            // judgement. The name heuristics answer only for what the
+            // plan does not cover — object-level roles, components with
+            // no plan. A shape that cannot hold the encoding is still
+            // refused below, whatever the role says.
+            let role = declared_roles
+                .get(&(entry.object.clone(), t.name.clone()))
+                .copied()
+                .filter(|_| primary_text.contains(&entry.object))
+                .unwrap_or_else(|| {
+                    classify_in(
+                        primary_text.contains(&entry.object),
+                        &entry.object,
+                        &t.name,
+                        &t.shape,
+                    )
+                });
             // Role says the encoding applies; protection says whether to
             // spend it here. A protected tensor is carried, and counted as
             // preserved under its own role so the report says what the map

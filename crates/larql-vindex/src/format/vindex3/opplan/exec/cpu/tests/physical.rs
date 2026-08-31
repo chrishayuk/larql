@@ -570,8 +570,10 @@ fn a_plan_agrees_with_itself_about_format_kernel_and_residency() {
     // by `the_oracle_is_not_reachable_by_observation`; what belongs here
     // is that they are priced as different arithmetic.
     assert_ne!(
-        super::super::cost::measured_rate_gbps(PhysicalProjectionPlan::ScalarF32),
-        super::super::cost::measured_rate_gbps(PhysicalProjectionPlan::BlasF32),
+        super::super::cost::measured_rate_gbps(PhysicalProjectionPlan::ScalarF32)
+            .expect("a measured plan"),
+        super::super::cost::measured_rate_gbps(PhysicalProjectionPlan::BlasF32)
+            .expect("a measured plan"),
         "the oracle and the BLAS path must not be priced alike"
     );
 }

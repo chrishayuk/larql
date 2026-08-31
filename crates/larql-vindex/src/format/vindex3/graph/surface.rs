@@ -649,10 +649,24 @@ pub fn surface_from_nested(
     };
     // The epsilon spelling the config declares names the norm kind; a
     // component declaring neither has no norm surface to persist.
+    //
+    // The message says both halves on purpose. A bare `norm_eps` reads
+    // as one absent number a reader might reasonably supply, when what
+    // is actually absent is the *kind* as well: the spelling is the
+    // only evidence of whether this tower runs LayerNorm or RMSNorm,
+    // so a config carrying neither has said nothing about its norm at
+    // all. Qwen3.8's `vision_config` is exactly this — depth, heads,
+    // widths and activation all declared, no epsilon key of either
+    // spelling — and the honest answer is to refuse the surface rather
+    // than pick an epsilon and a kind on the checkpoint's behalf.
     let (kind, eps) = match (nested.norm_kind, nested.norm_eps) {
         (Some(kind), Some(eps)) => (kind, eps),
         _ => {
-            missing.push("norm_eps".to_string());
+            missing.push(
+                "norm_eps (declares neither `layer_norm_eps` nor `rms_norm_eps`, so the \
+                 norm kind is undeclared too — this build will not choose one)"
+                    .to_string(),
+            );
             (NormType::LayerNorm, 0.0)
         }
     };

@@ -45,6 +45,7 @@ pub mod encode;
 /// integration tests can encode a real container without duplicating
 /// the frozen fixture geometry the executor's parity gates certify.
 pub mod fixtures;
+pub mod fixtures_kimi;
 pub mod graph;
 pub mod import;
 pub mod index;

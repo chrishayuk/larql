@@ -75,9 +75,11 @@ fn a_mixed_plan_is_priced_arithmetic_by_arithmetic() {
         (PhysicalProjectionPlan::Q8xQ8, tally(5_000_000_000, 60)),
         (PhysicalProjectionPlan::FusedBf16, tally(340_000_000, 32)),
     ]);
-    let want = 10.0 / measured_rate_gbps(PhysicalProjectionPlan::Q4xQ8) * 1e3
-        + 5.0 / measured_rate_gbps(PhysicalProjectionPlan::Q8xQ8) * 1e3
-        + 0.34 / measured_rate_gbps(PhysicalProjectionPlan::FusedBf16) * 1e3;
+    let want = 10.0 / measured_rate_gbps(PhysicalProjectionPlan::Q4xQ8).expect("a measured plan")
+        * 1e3
+        + 5.0 / measured_rate_gbps(PhysicalProjectionPlan::Q8xQ8).expect("a measured plan") * 1e3
+        + 0.34 / measured_rate_gbps(PhysicalProjectionPlan::FusedBf16).expect("a measured plan")
+            * 1e3;
     assert!((mixed.synthetic_ms - want).abs() < 1e-6);
     assert_eq!(mixed.total_bytes, 15_340_000_000);
     assert_eq!(
@@ -131,35 +133,35 @@ fn every_arithmetic_carries_a_rate() {
         PhysicalProjectionPlan::Bf16xQ8,
     ];
     for p in all {
-        let r = measured_rate_gbps(p);
+        let r = measured_rate_gbps(p).expect("a measured plan");
         assert!(r > 0.0, "{p:?} has no positive streaming rate");
     }
     // The oracle is the slow literal transcription and the cached BLAS
     // path the fastest; pinning the ordering catches an arm that was
     // given a neighbour's number.
     assert!(
-        measured_rate_gbps(PhysicalProjectionPlan::ScalarF32)
-            < measured_rate_gbps(PhysicalProjectionPlan::FusedQ4),
+        measured_rate_gbps(PhysicalProjectionPlan::ScalarF32).expect("a measured plan")
+            < measured_rate_gbps(PhysicalProjectionPlan::FusedQ4).expect("a measured plan"),
         "the scalar oracle must be the slowest arm"
     );
     assert!(
-        measured_rate_gbps(PhysicalProjectionPlan::BlasF32)
-            > measured_rate_gbps(PhysicalProjectionPlan::Q8xQ8),
+        measured_rate_gbps(PhysicalProjectionPlan::BlasF32).expect("a measured plan")
+            > measured_rate_gbps(PhysicalProjectionPlan::Q8xQ8).expect("a measured plan"),
         "cache-resident sgemv must out-rate the streaming integer kernel"
     );
     // CPU-4A's finding, and the one rate that surprises: Q4 against an
     // f32 activation is SLOWER than Q8, because the kernel was already
     // conversion-bound and the nibble split adds to it.
     assert!(
-        measured_rate_gbps(PhysicalProjectionPlan::FusedQ4)
-            < measured_rate_gbps(PhysicalProjectionPlan::FusedQ8),
+        measured_rate_gbps(PhysicalProjectionPlan::FusedQ4).expect("a measured plan")
+            < measured_rate_gbps(PhysicalProjectionPlan::FusedQ8).expect("a measured plan"),
         "CPU-4A: Q4 x F32 is slower than Q8 x F32, not faster"
     );
     // The control streams bf16 bytes, so it must be priced at the bf16
     // rate exactly — a control priced differently would not be one.
     assert_eq!(
-        measured_rate_gbps(PhysicalProjectionPlan::Bf16xQ8),
-        measured_rate_gbps(PhysicalProjectionPlan::FusedBf16),
+        measured_rate_gbps(PhysicalProjectionPlan::Bf16xQ8).expect("a measured plan"),
+        measured_rate_gbps(PhysicalProjectionPlan::FusedBf16).expect("a measured plan"),
         "the A1 control runs the bf16 kernel and must carry its rate"
     );
 }

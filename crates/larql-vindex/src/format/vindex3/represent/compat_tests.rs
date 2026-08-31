@@ -24,6 +24,8 @@ use super::*;
 /// human-facing; this fixture then governs `wire_name`, unchanged.
 const GOLDEN_ROLE_WIRE_NAMES: &[(&str, policy::Role)] = &[
     ("decoder-linear", policy::Role::DecoderLinear),
+    ("recurrence-projection", policy::Role::RecurrenceProjection),
+    ("recurrence-control", policy::Role::RecurrenceControl),
     ("expert-weight", policy::Role::ExpertWeight),
     ("embedding", policy::Role::Embedding),
     ("output-head", policy::Role::OutputHead),
