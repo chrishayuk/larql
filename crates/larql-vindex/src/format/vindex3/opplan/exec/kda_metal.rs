@@ -50,6 +50,7 @@ use larql_compute_metal::trait_impl::bf16_grouped::GroupedShape;
 use larql_compute_metal::trait_impl::grouped_experts::{ExpertOffset, InputLayout};
 use larql_compute_metal::MetalBackend;
 
+use super::cpu::projector::WeightRows;
 use super::kda::{KdaProjections, KdaWeights};
 use super::timing::{timed, OpClass};
 
@@ -105,6 +106,22 @@ pub struct MetalKdaProjections<'a> {
     gpu_nanos: AtomicU64,
 }
 
+/// The bf16 codes this device path is built on.
+///
+/// The Metal KDA kernels ARE bf16 GEMVs: a differently-resident matrix is
+/// not a slower case here, it is one they cannot read. Naming the refusal
+/// keeps that a deployment error rather than a reinterpretation — the CPU
+/// path (`exec::kda::project`) is the arm that takes every residency.
+fn bf16_codes(rows: WeightRows<'_>) -> &[u16] {
+    match rows {
+        WeightRows::Bf16(w) => w,
+        other => panic!(
+            "the Metal KDA projector executes bf16 matrices; this layer's is resident as \
+             {other:?}"
+        ),
+    }
+}
+
 impl<'a> MetalKdaProjections<'a> {
     /// `w` supplies the layer's weights; only q/k/v are read here, and
     /// only when `submission` is [`QkvSubmission::Grouped`].
@@ -112,12 +129,12 @@ impl<'a> MetalKdaProjections<'a> {
         let (qkv_bank, qkv_offsets) = match submission {
             QkvSubmission::Batched => (Vec::new(), [ExpertOffset(0); 3]),
             QkvSubmission::Grouped => {
-                let per = w.q_proj.len() * BF16_BYTES;
-                debug_assert_eq!(w.k_proj.len() * BF16_BYTES, per);
-                debug_assert_eq!(w.v_proj.len() * BF16_BYTES, per);
+                let per = bf16_codes(w.q_proj).len() * BF16_BYTES;
+                debug_assert_eq!(bf16_codes(w.k_proj).len() * BF16_BYTES, per);
+                debug_assert_eq!(bf16_codes(w.v_proj).len() * BF16_BYTES, per);
                 let mut bank = Vec::with_capacity(3 * per);
                 for m in [w.q_proj, w.k_proj, w.v_proj] {
-                    bank.extend_from_slice(codes_as_bytes(m));
+                    bank.extend_from_slice(codes_as_bytes(bf16_codes(m)));
                 }
                 let offsets = [
                     ExpertOffset(0),
@@ -183,9 +200,9 @@ impl KdaProjections for MetalKdaProjections<'_> {
         let mut out = match self.submission {
             QkvSubmission::Batched => {
                 let batch = [
-                    (codes_as_bytes(w.q_proj), width, k),
-                    (codes_as_bytes(w.k_proj), width, k),
-                    (codes_as_bytes(w.v_proj), width, k),
+                    (codes_as_bytes(bf16_codes(w.q_proj)), width, k),
+                    (codes_as_bytes(bf16_codes(w.k_proj)), width, k),
+                    (codes_as_bytes(bf16_codes(w.v_proj)), width, k),
                 ];
                 let (out, gpu) = self
                     .metal
@@ -208,8 +225,8 @@ impl KdaProjections for MetalKdaProjections<'_> {
 
     /// `o_proj` alone — its input does not exist until the recurrence
     /// has run, so this crossing cannot be merged with the one above.
-    fn o(&self, w: &[u16], x: &[f32], out: usize) -> Vec<f32> {
+    fn o(&self, w: WeightRows<'_>, x: &[f32], out: usize) -> Vec<f32> {
         let _t = timed(OpClass::KdaOProj);
-        self.grouped(codes_as_bytes(w), &[ExpertOffset(0)], x, out)
+        self.grouped(codes_as_bytes(bf16_codes(w)), &[ExpertOffset(0)], x, out)
     }
 }

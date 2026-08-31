@@ -22,7 +22,8 @@ use std::collections::BTreeMap;
 use larql_models::config::{KdaGeometry, MlaGeometry};
 use serde_json::Value;
 
-use crate::format::vindex3::opplan::exec::kda::{KdaState, KdaWeights};
+use crate::format::vindex3::opplan::exec::cpu::projector::WeightRows;
+use crate::format::vindex3::opplan::exec::kda::{zero_state, KdaWeights};
 use crate::format::vindex3::opplan::exec::kimi_moe_block::ExpertWeights;
 use crate::format::vindex3::opplan::exec::mla::{MlaState, MlaWeights};
 use crate::format::vindex3::opplan::exec::stack::{
@@ -273,9 +274,9 @@ impl Fixture {
         let attention = if l.kind == "kda" {
             LayerAttention::Kda(
                 KdaWeights {
-                    q_proj: &l.kda_bf16["q_proj"],
-                    k_proj: &l.kda_bf16["k_proj"],
-                    v_proj: &l.kda_bf16["v_proj"],
+                    q_proj: WeightRows::Bf16(&l.kda_bf16["q_proj"]),
+                    k_proj: WeightRows::Bf16(&l.kda_bf16["k_proj"]),
+                    v_proj: WeightRows::Bf16(&l.kda_bf16["v_proj"]),
                     q_conv1d: &l.kda["q_conv1d"],
                     k_conv1d: &l.kda["k_conv1d"],
                     v_conv1d: &l.kda["v_conv1d"],
@@ -287,19 +288,22 @@ impl Fixture {
                     a_log: &l.kda["a_log"],
                     dt_bias: &l.kda["dt_bias"],
                     o_norm: &l.kda["o_norm"],
-                    o_proj: &l.kda_bf16["o_proj"],
+                    o_proj: WeightRows::Bf16(&l.kda_bf16["o_proj"]),
                     norm_eps: self.eps as f32,
+                    // The rank the gate factorisations meet at — this fixture's
+                    // own `f_a_proj`, not the head dim the executor used to assume.
+                    gate_rank: l.kda["f_a_proj"].len() / self.hidden,
                 },
                 self.kda_geometry,
             )
         } else {
             LayerAttention::Mla(
                 MlaWeights {
-                    q_proj: &l.mla["q_proj"],
-                    kv_a_proj: &l.mla["kv_a_proj"],
+                    q_proj: WeightRows::F32(&l.mla["q_proj"]),
+                    kv_a_proj: WeightRows::F32(&l.mla["kv_a_proj"]),
                     kv_a_norm: &l.mla["kv_a_norm"],
-                    kv_b_proj: &l.mla["kv_b_proj"],
-                    o_proj: &l.mla["o_proj"],
+                    kv_b_proj: WeightRows::F32(&l.mla["kv_b_proj"]),
+                    o_proj: WeightRows::F32(&l.mla["o_proj"]),
                     kv_a_norm_eps: self.mla_kv_a_norm_eps,
                 },
                 self.mla_geometry,
@@ -341,9 +345,9 @@ impl Fixture {
             .iter()
             .map(|l| {
                 if l.kind == "kda" {
-                    LayerState::Kda(KdaState::zeros(self.kda_geometry))
+                    LayerState::Kda(zero_state(self.kda_geometry))
                 } else {
-                    LayerState::Mla(MlaState::empty())
+                    LayerState::Mla(MlaState::default())
                 }
             })
             .collect()

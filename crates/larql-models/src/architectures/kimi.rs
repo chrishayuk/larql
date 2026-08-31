@@ -147,6 +147,23 @@ impl ModelArchitecture for KimiLinearArch {
         self.config().v_head_dim
     }
 
+    /// `KimiMLAAttention.__init__` builds the latent norm as
+    /// `self.kv_a_layernorm = KimiRMSNorm(self.kv_lora_rank)` —
+    /// `modeling_kimi.py:365`, no `eps` argument — so it runs at
+    /// `KimiRMSNorm.__init__`'s own default, `eps=1e-6`
+    /// (`modeling_kimi.py:225`). The config's `rms_norm_eps` is `1e-5`
+    /// and governs every OTHER norm in the layer; this is the one that
+    /// does not read it.
+    ///
+    /// Recorded here, carried through the graph, and consumed by the
+    /// operator — this is the fact the ontology drill found the container
+    /// could not carry (F6), living as `MLA_KV_A_NORM_EPS` inside a
+    /// family-shaped executor where no deleted checkpoint could restore
+    /// it.
+    fn mla_kv_a_norm_eps(&self) -> Option<f64> {
+        Some(1e-6)
+    }
+
     fn mla_kv_a_key(&self, layer: usize) -> Option<String> {
         Some(format!(
             "{}self_attn.kv_a_proj_with_mqa.weight",

@@ -852,6 +852,7 @@ pub fn plan_component_ops(
                     kv_b_proj: operand(&stack_id, get(OperandRole::MlaKvBProj)),
                     kv_a_norm: operand(&stack_id, get(OperandRole::MlaKvANorm)),
                     out_proj: operand(&stack_id, get(OperandRole::MlaOutProj)),
+                    kv_a_norm_eps: m.kv_a_norm_eps,
                 }))
             } else {
                 let a = attn.unwrap_or_else(|| {

@@ -26,7 +26,9 @@ use std::path::PathBuf;
 use larql_models::config::KdaGeometry;
 use serde_json::Value;
 
-use crate::format::vindex3::opplan::exec::kda::{layer_forward, KdaState, KdaWeights, Mutation};
+use crate::format::vindex3::opplan::exec::cpu::projector::WeightRows;
+use crate::format::vindex3::opplan::exec::kda;
+use crate::format::vindex3::opplan::exec::kda::{layer_forward, zero_state, KdaWeights, Mutation};
 
 /// Directory written by `scripts/kda_fixture_export.py`.
 const FIXTURE_ENV: &str = "LARQL_KDA_FIXTURE";
@@ -107,9 +109,9 @@ fn full_width_boundaries_and_state_match_the_oracle() {
     let (bp, al, dt) = (load("b_proj"), load("a_log"), load("dt_bias"));
     let (on, op) = (load("o_norm"), load_bf16("o_proj"));
     let weights = KdaWeights {
-        q_proj: &qp,
-        k_proj: &kp,
-        v_proj: &vp,
+        q_proj: WeightRows::Bf16(&qp),
+        k_proj: WeightRows::Bf16(&kp),
+        v_proj: WeightRows::Bf16(&vp),
         q_conv1d: &qc,
         k_conv1d: &kc,
         v_conv1d: &vc,
@@ -121,8 +123,13 @@ fn full_width_boundaries_and_state_match_the_oracle() {
         a_log: &al,
         dt_bias: &dt,
         o_norm: &on,
-        o_proj: &op,
+        o_proj: WeightRows::Bf16(&op),
         norm_eps: eps,
+        // The rank the two gate factorisations meet at, read from this
+        // fixture's own `f_a_proj` rather than assumed equal to the head
+        // dim: on this checkpoint the two coincide, and the executor no
+        // longer takes that coincidence as its definition.
+        gate_rank: fa.len() / hidden,
     };
 
     const BOUNDARIES: [&str; 15] = [
@@ -144,7 +151,7 @@ fn full_width_boundaries_and_state_match_the_oracle() {
     ];
     for n in POSITIONS {
         let x = read_f32(&dir, &format!("n{n}_input.f32"));
-        let mut state = KdaState::zeros(geometry);
+        let mut state = zero_state(geometry);
         let planes = layer_forward(&x, hidden, weights, geometry, &mut state, Mutation::None);
         let got = |name: &str| -> &Vec<f32> {
             match name {
@@ -174,13 +181,16 @@ fn full_width_boundaries_and_state_match_the_oracle() {
         // The state is the gate. An implementation can match every token
         // and still carry the wrong thing into the next call.
         let d = max_abs_diff(
-            &state.recurrent,
+            state.buffer(kda::RECURRENT).cells(),
             &read_f32(&dir, &format!("n{n}_state.f32")),
         );
         assert!(d < TOLERANCE, "N={n} recurrent state: max|Δ| {d:e}");
         // And the convolution windows, which are the other half of what a
         // continuation resumes from.
-        for (i, window) in state.conv.iter().enumerate() {
+        for (i, window) in (kda::CONV_Q..=kda::CONV_V)
+            .map(|b| state.buffer(b).cells())
+            .enumerate()
+        {
             let want = read_f32(&dir, &format!("n{n}_conv{i}.f32"));
             let d = max_abs_diff(window, &want);
             assert!(d < TOLERANCE, "N={n} conv window {i}: max|Δ| {d:e}");

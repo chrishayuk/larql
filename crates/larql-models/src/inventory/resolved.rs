@@ -264,6 +264,12 @@ pub fn resolve_with_tensor_evidence(
                 qk_nope_head_dim,
                 qk_rope_head_dim,
                 v_head_dim,
+                // Absent when the family's reference has not been read
+                // for it. Deliberately not filled from `rms_norm_eps`:
+                // on the one checkpoint judged so far the two differ by
+                // a factor of ten, and the resolved record must not
+                // manufacture the agreement.
+                kv_a_norm_eps: arch.mla_kv_a_norm_eps(),
             })
         }),
         activation: arch.activation(),

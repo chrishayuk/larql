@@ -12,7 +12,8 @@
 
 use larql_models::config::{KdaGeometry, NormType};
 
-use crate::format::vindex3::opplan::exec::kda::{KdaState, KdaWeights};
+use crate::format::vindex3::opplan::exec::cpu::projector::WeightRows;
+use crate::format::vindex3::opplan::exec::kda::{zero_state, KdaWeights};
 use crate::format::vindex3::opplan::exec::kernels::norm;
 use crate::format::vindex3::opplan::exec::kimi_moe_block::ExpertWeights;
 use crate::format::vindex3::opplan::exec::stack::{
@@ -111,9 +112,9 @@ impl Tiny {
         LayerSpec {
             attention: LayerAttention::Kda(
                 KdaWeights {
-                    q_proj: &self.q,
-                    k_proj: &self.k,
-                    v_proj: &self.v,
+                    q_proj: WeightRows::Bf16(&self.q),
+                    k_proj: WeightRows::Bf16(&self.k),
+                    v_proj: WeightRows::Bf16(&self.v),
                     q_conv1d: &f[0],
                     k_conv1d: &f[1],
                     v_conv1d: &f[2],
@@ -125,8 +126,11 @@ impl Tiny {
                     a_log: &f[8],
                     dt_bias: &f[9],
                     o_norm: &f[10],
-                    o_proj: &self.o,
+                    o_proj: WeightRows::Bf16(&self.o),
                     norm_eps: EPS as f32,
+                    // The rank the gate factorisations meet at — this fixture's
+                    // own `f_a_proj`, not the head dim the executor used to assume.
+                    gate_rank: f[3].len() / HIDDEN,
                 },
                 geometry(),
             ),
@@ -162,7 +166,7 @@ impl Tiny {
 }
 
 fn states() -> Vec<LayerState> {
-    vec![LayerState::Kda(KdaState::zeros(geometry()))]
+    vec![LayerState::Kda(zero_state(geometry()))]
 }
 
 /// The embedding gather is a LOOKUP: it returns the loaded row for that

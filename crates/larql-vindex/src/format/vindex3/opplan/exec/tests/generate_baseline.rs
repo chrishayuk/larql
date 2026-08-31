@@ -149,11 +149,11 @@ fn first_real_decode_baseline() {
         .iter()
         .map(|l| {
             if l.kind == "kda" {
-                LayerState::Kda(crate::format::vindex3::opplan::exec::kda::KdaState::zeros(
+                LayerState::Kda(crate::format::vindex3::opplan::exec::kda::zero_state(
                     kda_geometry,
                 ))
             } else {
-                LayerState::Mla(crate::format::vindex3::opplan::exec::mla::MlaState::empty())
+                LayerState::Mla(crate::format::vindex3::opplan::exec::mla::MlaState::default())
             }
         })
         .collect();

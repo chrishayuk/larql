@@ -19,6 +19,7 @@
 use larql_models::config::{MlaGeometry, NormType};
 use serde_json::Value;
 
+use crate::format::vindex3::opplan::exec::cpu::projector::WeightRows;
 use crate::format::vindex3::opplan::exec::kernels::norm as rms_norm;
 use crate::format::vindex3::opplan::exec::mla::{
     mla_forward, MlaState, MlaTrace, MlaWeights, Mutation,
@@ -78,11 +79,11 @@ impl Fixture {
     fn weights(&self) -> MlaWeights<'_> {
         let g = |n: &str| self.weights.get(n).expect(n).as_slice();
         MlaWeights {
-            q_proj: g("q_proj"),
-            kv_a_proj: g("kv_a_proj"),
+            q_proj: WeightRows::F32(g("q_proj")),
+            kv_a_proj: WeightRows::F32(g("kv_a_proj")),
             kv_a_norm: g("kv_a_norm"),
-            kv_b_proj: g("kv_b_proj"),
-            o_proj: g("o_proj"),
+            kv_b_proj: WeightRows::F32(g("kv_b_proj")),
+            o_proj: WeightRows::F32(g("o_proj")),
             kv_a_norm_eps: self.kv_a_norm_eps,
         }
     }
@@ -91,7 +92,7 @@ impl Fixture {
     /// exactly like a real decode sequence, returning the trace at
     /// `up_to`.
     fn run_to(&self, up_to: usize, mutation: Mutation) -> (MlaTrace, MlaState) {
-        let mut state = MlaState::empty();
+        let mut state = MlaState::default();
         let mut last = None;
         for p in 0..=up_to {
             last = Some(mla_forward(
@@ -205,8 +206,8 @@ fn control(mutation: Mutation) -> (f32, f32) {
     (
         max_abs_diff(&base.output, &changed.output),
         max_abs_diff(
-            base_state.compressed_kv.last().unwrap(),
-            changed_state.compressed_kv.last().unwrap(),
+            base_state.rows().last().unwrap(),
+            changed_state.rows().last().unwrap(),
         ),
     )
 }
@@ -231,8 +232,8 @@ fn treating_the_shared_k_rope_component_as_positioned_moves_the_output() {
 /// mutating how it is READ must never rewrite what got cached.
 #[test]
 fn the_rope_control_never_touches_what_was_cached() {
-    let mut none_state = MlaState::empty();
-    let mut mutated_state = MlaState::empty();
+    let mut none_state = MlaState::default();
+    let mut mutated_state = MlaState::default();
     for p in 0..=(load().positions - 1) {
         let f = load();
         mla_forward(
@@ -284,7 +285,7 @@ fn causality_is_structural_not_a_runtime_bound() {
     // What IS checkable: `state.compressed_kv` never grows past what
     // this call itself appended.
     let f = load();
-    let mut state = MlaState::empty();
+    let mut state = MlaState::default();
     for p in 0..f.positions {
         mla_forward(
             &f.input[p],
@@ -295,7 +296,7 @@ fn causality_is_structural_not_a_runtime_bound() {
             Mutation::None,
         );
         assert_eq!(
-            state.compressed_kv.len(),
+            state.len(),
             p + 1,
             "state must hold exactly the positions seen so far"
         );

@@ -365,12 +365,32 @@ fn traverse<B: PlanBackend + ?Sized, K: KvState + ?Sized>(
     // that is every layer and the check is unchanged; a reduced-depth
     // draft must not be refused — or charged state — for a recurrence in
     // a layer it never runs.
+    //
+    // Driven by the CONTINUATION GEOMETRY, not by "is this layer
+    // softmax": the question is which region a layer needs, and there
+    // are now three answers. An earlier form asked every non-softmax
+    // layer for recurrent buffers, which was right while a recurrence
+    // was the only alternative to rows and became wrong the moment MLA
+    // executed — it keeps a per-position latent cache and no recurrence
+    // at all, so the pre-flight would have refused a state the provider
+    // was holding perfectly well.
     let executed = ops.first_layer()..ops.first_layer() + ops.layers().len();
+    let regions = continuation::plan_continuation_geometry(plan).map_err(|e| {
+        VindexError::Parse(format!(
+            "component `{}` declares continuation state this build cannot size: {e}",
+            plan.component
+        ))
+    })?;
     for (offset, layer) in plan.layers.iter().enumerate() {
         if !executed.contains(&offset) {
             continue;
         }
-        if layer.attention.softmax().is_some() {
+        let region = &regions[offset];
+        if matches!(
+            region,
+            continuation::LayerContinuationGeometry::Kv(_)
+                | continuation::LayerContinuationGeometry::Stateless
+        ) {
             continue;
         }
         let Some(provider) = kv.as_mut() else {
@@ -381,13 +401,24 @@ fn traverse<B: PlanBackend + ?Sized, K: KvState + ?Sized>(
                 layer.attention.declared_name(),
             )));
         };
-        provider.recurrent_state(offset).map_err(|e| {
+        let named = |e: kv::ContinuationError| {
             VindexError::Parse(format!(
                 "layer {} carries `{}`: {e}",
                 layer.layer,
                 layer.attention.declared_name(),
             ))
-        })?;
+        };
+        match region {
+            continuation::LayerContinuationGeometry::Recurrent(_)
+            | continuation::LayerContinuationGeometry::KvAndRecurrent { .. } => {
+                provider.recurrent_state(offset).map_err(named)?;
+            }
+            continuation::LayerContinuationGeometry::LatentKv(_) => {
+                provider.latent_state(offset).map_err(named)?;
+            }
+            continuation::LayerContinuationGeometry::Kv(_)
+            | continuation::LayerContinuationGeometry::Stateless => {}
+        }
     }
 
     let (start_layer, mut h) = match resume {
@@ -587,6 +618,69 @@ fn execute_layer<B: PlanBackend + ?Sized, K: KvState + ?Sized>(
                 backend.dense_projector(),
             )
             .output
+        }
+        PreparedAttention::Kda(ops) => {
+            let Some((provider, layer_index)) = kv else {
+                return Err(VindexError::Parse(format!(
+                    "layer {} runs a recurrence, which needs durable continuation state, \
+                     and this traversal was given no provider to hold it",
+                    layer.layer
+                )));
+            };
+            let state = provider.recurrent_state(layer_index)?;
+            // The batch is the sequence, flat: KDA's reference consumes
+            // positions one after another because the recurrence IS
+            // sequential, and this traversal differs from the decode
+            // path only in how many positions it hands over.
+            let flat: Vec<f32> = inputs.concat();
+            let hidden_width = inputs.first().map_or(0, Vec::len);
+            let planes = kda::layer_forward_with(
+                &kda::BackendKdaProjections(backend.dense_projector()),
+                &flat,
+                hidden_width,
+                ops.weights()?,
+                ops.op.geometry(),
+                state,
+                kda::Mutation::None,
+            );
+            planes
+                .output
+                .chunks_exact(hidden_width.max(1))
+                .map(<[f32]>::to_vec)
+                .collect()
+        }
+        PreparedAttention::Mla(ops) => {
+            let Some((provider, layer_index)) = kv else {
+                return Err(VindexError::Parse(format!(
+                    "layer {} keeps a per-position latent cache, and this traversal was \
+                     given no provider to hold it",
+                    layer.layer
+                )));
+            };
+            let weights = ops.weights()?;
+            let geometry = ops.op.geometry();
+            let projector = backend.dense_projector();
+            let latent = provider.latent_state(layer_index)?;
+            // Position by position, appending each one's latent before
+            // reading the prefix back — the same call the decode path
+            // makes, run `inputs.len()` times. A whole-sequence form
+            // would need its own explicit causal mask; this one's
+            // causality is the append-then-read order itself.
+            inputs
+                .iter()
+                .map(|x| {
+                    mla::mla_forward_with(
+                        projector,
+                        x,
+                        x.len(),
+                        weights,
+                        geometry,
+                        latent,
+                        mla::Mutation::None,
+                    )
+                    .output
+                })
+                .collect()
         }
         PreparedAttention::ConvQkv(ops) => {
             let Some((provider, layer_index)) = kv else {

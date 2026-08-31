@@ -20,8 +20,11 @@
 use larql_models::config::KdaGeometry;
 use serde_json::Value;
 
+use crate::format::vindex3::opplan::exec::continuation::RecurrentState;
+use crate::format::vindex3::opplan::exec::cpu::projector::WeightRows;
+use crate::format::vindex3::opplan::exec::kda;
 use crate::format::vindex3::opplan::exec::kda::{
-    layer_forward, KdaPlanes, KdaState, KdaWeights, Mutation,
+    layer_forward, zero_state, KdaPlanes, KdaWeights, Mutation,
 };
 
 const ORACLE: &str = include_str!("kda_oracle.json");
@@ -100,9 +103,9 @@ impl Fixture {
         let g = |n: &str| self.weights.get(n).expect(n).as_slice();
         let b = |n: &str| self.bf16.get(n).expect(n).as_slice();
         KdaWeights {
-            q_proj: b("q_proj"),
-            k_proj: b("k_proj"),
-            v_proj: b("v_proj"),
+            q_proj: WeightRows::Bf16(b("q_proj")),
+            k_proj: WeightRows::Bf16(b("k_proj")),
+            v_proj: WeightRows::Bf16(b("v_proj")),
             q_conv1d: g("q_conv1d"),
             k_conv1d: g("k_conv1d"),
             v_conv1d: g("v_conv1d"),
@@ -114,12 +117,17 @@ impl Fixture {
             a_log: g("a_log"),
             dt_bias: g("dt_bias"),
             o_norm: g("o_norm"),
-            o_proj: b("o_proj"),
+            o_proj: WeightRows::Bf16(b("o_proj")),
             norm_eps: self.eps,
+            // The rank the two gate factorisations meet at, read from this
+            // fixture's own `f_a_proj` rather than assumed equal to the head
+            // dim: on this checkpoint the two coincide, and the executor no
+            // longer takes that coincidence as its definition.
+            gate_rank: self.weights.get("f_a_proj").expect("f_a_proj").len() / self.hidden,
         }
     }
 
-    fn run(&self, n: usize, mutation: Mutation) -> (KdaPlanes, KdaState) {
+    fn run(&self, n: usize, mutation: Mutation) -> (KdaPlanes, RecurrentState) {
         let run = &self.runs[n.to_string()];
         let x: Vec<f32> = run["input"]
             .as_array()
@@ -127,7 +135,7 @@ impl Fixture {
             .iter()
             .map(|v| v.as_f64().unwrap() as f32)
             .collect();
-        let mut state = KdaState::zeros(self.geometry);
+        let mut state = zero_state(self.geometry);
         let planes = layer_forward(
             &x,
             self.hidden,
@@ -192,7 +200,7 @@ fn assert_boundaries(n: usize) {
     }
     // The state is the gate, not the output: an implementation can match
     // every token and still carry the wrong thing forward.
-    let d = max_abs_diff(&state.recurrent, &f.expected_state(n));
+    let d = max_abs_diff(state.buffer(kda::RECURRENT).cells(), &f.expected_state(n));
     assert!(d < TOLERANCE, "N={n} recurrent state: max|Δ| {d:e}");
 }
 
@@ -226,7 +234,10 @@ fn control(mutation: Mutation) -> (f32, f32) {
     let (changed, changed_state) = f.run(N, mutation);
     (
         max_abs_diff(&base.output, &changed.output),
-        max_abs_diff(&base_state.recurrent, &changed_state.recurrent),
+        max_abs_diff(
+            base_state.buffer(kda::RECURRENT).cells(),
+            changed_state.buffer(kda::RECURRENT).cells(),
+        ),
     )
 }
 
@@ -320,10 +331,14 @@ fn the_executor_is_generic_over_both_observed_geometries() {
             head_dim: dim,
             conv_kernel: 4,
         };
-        let state = KdaState::zeros(g);
-        assert_eq!(state.recurrent.len(), heads * dim * dim, "{name}");
+        let state = zero_state(g);
         assert_eq!(
-            state.conv[0].len(),
+            state.buffer(kda::RECURRENT).cells().len(),
+            heads * dim * dim,
+            "{name}"
+        );
+        assert_eq!(
+            state.buffer(kda::CONV_Q).cells().len(),
             heads * dim * (g.conv_kernel - 1),
             "{name}"
         );

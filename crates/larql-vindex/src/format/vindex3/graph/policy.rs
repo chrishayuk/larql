@@ -151,10 +151,22 @@ impl LayerOperator {
     /// arrow, and it is the one a plan cannot infer from the checkpoint.
     pub fn has_executor(&self) -> bool {
         match self {
-            Self::Softmax | Self::GatedDelta | Self::Mamba2 | Self::ConvQkvAttention => true,
-            // Represented, not executable — the operand contract is
-            // complete and no executor consumes it yet.
-            Self::Kda | Self::Mla => false,
+            Self::Softmax
+            | Self::GatedDelta
+            | Self::Mamba2
+            | Self::ConvQkvAttention
+            // Lift 2: both are executed through the ordinary plan path —
+            // operands bound by `OperandRole`, state sized by
+            // `plan_continuation_geometry`, no family-shaped loader. What
+            // used to make them unexecutable was not a missing kernel
+            // (`exec::kda` and `exec::mla` were parity-proven long before)
+            // but two facts the container could not carry: KDA's state
+            // precision and MLA's latent-norm epsilon.
+            | Self::Kda
+            | Self::Mla => true,
+            // Still false, and for the reason the variant exists: nothing
+            // identified WHICH recurrence this is, so there is no
+            // operator to run.
             Self::Recurrent => false,
         }
     }

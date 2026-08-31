@@ -46,6 +46,7 @@ fn mla_op() -> MlaOp {
         ),
         kv_a_norm: operand("kv_a_layernorm.weight", vec![KV_LORA_RANK]),
         out_proj: operand("o_proj.weight", vec![HIDDEN, NUM_HEADS * V_HEAD_DIM]),
+        kv_a_norm_eps: Some(1e-6),
     }
 }
 

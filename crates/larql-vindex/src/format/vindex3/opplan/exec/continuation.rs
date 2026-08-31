@@ -114,11 +114,37 @@ impl RecurrentGeometry {
     }
 }
 
+/// ONE row per position, of a width the OPERATOR decides — a cache that
+/// grows with the sequence but is not a K/V pair.
+///
+/// MLA is the case that forced it: what an MLA layer retains is the
+/// compressed latent plus one shared rope-K, `kv_lora_rank + rope`
+/// elements per position, RAW — decompression into per-head K and V
+/// happens at read time and is never itself cached. Sizing that as
+/// [`LayerKvGeometry`] would claim two rows where the model keeps one,
+/// and would have to name a `kv_dim` no operand has; sizing it as
+/// [`RecurrentGeometry`] would claim a fixed-size buffer for something
+/// that grows with the prefix. It is a third fact, so it gets a third
+/// variant — the same argument the enum's own doc comment makes about
+/// `Option<LayerKvGeometry>`, one level along.
+///
+/// Deliberately no dtype field: the row store is f32 throughout, exactly
+/// as [`LayerKvGeometry`]'s rows are, and a precision this schema cannot
+/// yet vary must not be given a knob that implies it can.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct LayerLatentKvGeometry {
+    /// Elements retained per position — one row, not a pair.
+    pub width: usize,
+}
+
 /// One layer's continuation requirement.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum LayerContinuationGeometry {
     /// Grows with the sequence.
     Kv(LayerKvGeometry),
+    /// Grows with the sequence, one operator-defined row per position
+    /// rather than a K/V pair. See [`LayerLatentKvGeometry`].
+    LatentKv(LayerLatentKvGeometry),
     /// Constant in the sequence.
     Recurrent(RecurrentGeometry),
     /// Grows with the sequence AND keeps fixed buffers beside it — the
@@ -149,6 +175,9 @@ impl LayerContinuationGeometry {
         match self {
             // K and V, one row of `kv_dim` each, per position.
             Self::Kv(kv) => kv.kv_dim * 2 * positions,
+            // ONE row of `width` per position — the compression IS the
+            // difference from the arm above, and it shows here.
+            Self::LatentKv(latent) => latent.width * positions,
             Self::Recurrent(r) => r.elements(),
             Self::KvAndRecurrent { kv, recurrent } => {
                 kv.kv_dim * 2 * positions + recurrent.elements()
@@ -183,6 +212,16 @@ impl LayerContinuationGeometry {
     pub fn recurrent(&self) -> Option<&RecurrentGeometry> {
         match self {
             Self::Recurrent(r) | Self::KvAndRecurrent { recurrent: r, .. } => Some(r),
+            _ => None,
+        }
+    }
+
+    /// The latent-cache geometry of a layer that keeps operator-defined
+    /// rows. `None` everywhere else — including on [`Self::Kv`], whose
+    /// rows are a K/V pair and are served by [`Self::kv`].
+    pub fn latent_kv(&self) -> Option<LayerLatentKvGeometry> {
+        match self {
+            Self::LatentKv(latent) => Some(*latent),
             _ => None,
         }
     }
@@ -226,10 +265,19 @@ pub fn plan_continuation_geometry(
                 },
                 recurrent: super::conv_qkv::conv_history_geometry(op),
             }),
-            LayerAttention::Kda(op) => Err(format!(
-                "KDA layer: {} state elements, but no state precision is declared for this \
-                 operator — refusing to choose one",
-                op.state_elements()
+            // KDA's state geometry is known — one `Dk × Dv` matrix per
+            // head, plus the three convolution windows — and since the
+            // execution rung the precision is known too: no checkpoint
+            // declares one, and the reference recurrence
+            // (`fla`'s `naive_recurrent_kda`, transcribed and sha-pinned
+            // in `scripts/kda_reference.py`) holds its state in fp32, so
+            // the state is held at the precision the reference computes
+            // at. That judgment is a transcription and lives in exactly
+            // one place, `exec::kda::state_geometry` — the same footing
+            // as Mamba2's below, and the reason this arm no longer
+            // refuses.
+            LayerAttention::Kda(op) => Ok(LayerContinuationGeometry::Recurrent(
+                super::kda::state_geometry(op.geometry()),
             )),
             // MLA retains a real per-position cache (compressed, not
             // absent — see `MlaOp::compressed_kv_width`), so sizing it is
@@ -242,11 +290,19 @@ pub fn plan_continuation_geometry(
             // head_dim`) — inventing one now is exactly the kind of
             // plausible-but-unbuilt executor KDA's own refusal exists to
             // avoid becoming.
-            LayerAttention::Mla(op) => Err(format!(
-                "MLA layer: {}-element compressed KV cache per position, but continuation \
-                 planning has no geometry for it yet — refusing to invent one",
-                op.compressed_kv_width()
-            )),
+            // MLA retains a real per-position cache — compressed, not
+            // absent — and the schema can now state it: ONE row of
+            // `compressed_kv_width` per position, which is what the
+            // operator caches (raw, pre-norm) and what it decompresses at
+            // read time. It is NOT `LayerContinuationGeometry::Kv`: that
+            // arm means a K/V pair of `kv_dim` each, and answering it here
+            // would claim two rows the model does not keep, at a width no
+            // operand has. The third arm is the fact.
+            LayerAttention::Mla(op) => {
+                Ok(LayerContinuationGeometry::LatentKv(LayerLatentKvGeometry {
+                    width: op.compressed_kv_width(),
+                }))
+            }
             // Mamba2's geometry is fully declared, and the execution rung
             // brought the precision judgment with it: the reference's own
             // naive path computes the scan in fp32 (explicit `.float()`
@@ -319,6 +375,9 @@ pub fn plan_continuation_geometry(
 pub enum LayerContinuationState {
     /// Sequence-indexed rows, appended per position.
     Kv(LayerKvRows),
+    /// Sequence-indexed rows of ONE operator-defined species, appended
+    /// per position — see [`LayerLatentKvGeometry`].
+    LatentKv(LatentKvRows),
     /// A fixed-size buffer the operator reads and rewrites in place.
     Recurrent(RecurrentState),
     /// Both regions, on one layer — rows AND a fixed buffer, the
@@ -328,6 +387,38 @@ pub enum LayerContinuationState {
         state: RecurrentState,
     },
     Stateless,
+}
+
+/// One latent-cache layer's retained rows: one row per position, of the
+/// width its operator declared.
+///
+/// Storage only, and deliberately unnamed as to CONTENT — this type does
+/// not learn that MLA's row is a compressed latent followed by a shared
+/// rope-K, any more than [`RecurrentBuffer`] learns that buffer 1 is a
+/// convolution history. The operator that wrote the geometry is the one
+/// that knows how to split the row.
+#[derive(Debug, Clone, Default, PartialEq)]
+pub struct LatentKvRows {
+    rows: Vec<Vec<f32>>,
+}
+
+impl LatentKvRows {
+    pub fn append(&mut self, row: Vec<f32>) {
+        self.rows.push(row);
+    }
+
+    /// Every row appended, position-ordered from 0.
+    pub fn rows(&self) -> &[Vec<f32>] {
+        &self.rows
+    }
+
+    pub fn len(&self) -> usize {
+        self.rows.len()
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.rows.is_empty()
+    }
 }
 
 /// One softmax layer's retained rows.
@@ -486,6 +577,9 @@ impl ContinuationState {
                     LayerContinuationGeometry::Kv(_) => {
                         LayerContinuationState::Kv(LayerKvRows::default())
                     }
+                    LayerContinuationGeometry::LatentKv(_) => {
+                        LayerContinuationState::LatentKv(LatentKvRows::default())
+                    }
                     LayerContinuationGeometry::Recurrent(r) => {
                         LayerContinuationState::Recurrent(RecurrentState::zeros(r))
                     }
@@ -539,6 +633,9 @@ impl ContinuationState {
                 LayerContinuationState::Kv(rows) => {
                     rows.keys.first().map_or(0, |r| r.len()) * 2 * positions
                 }
+                LayerContinuationState::LatentKv(rows) => {
+                    rows.rows.first().map_or(0, |r| r.len()) * positions
+                }
                 LayerContinuationState::Recurrent(r) => {
                     (0..r.len()).map(|i| r.buffer(i).cells().len()).sum()
                 }
@@ -572,6 +669,20 @@ impl LayerContinuationState {
     pub fn recurrent(&self) -> Option<&RecurrentState> {
         match self {
             Self::Recurrent(state) => Some(state),
+            _ => None,
+        }
+    }
+
+    pub fn latent_kv_mut(&mut self) -> Option<&mut LatentKvRows> {
+        match self {
+            Self::LatentKv(rows) => Some(rows),
+            _ => None,
+        }
+    }
+
+    pub fn latent_kv(&self) -> Option<&LatentKvRows> {
+        match self {
+            Self::LatentKv(rows) => Some(rows),
             _ => None,
         }
     }

@@ -30,7 +30,7 @@
 //!   a later rung tied to that backend contract.
 
 use super::super::ComponentOpPlan;
-use super::continuation::{LayerContinuationGeometry, RecurrentState};
+use super::continuation::{LatentKvRows, LayerContinuationGeometry, RecurrentState};
 
 /// One layer's continuation-state geometry, read from the plan.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -69,10 +69,25 @@ pub fn try_plan_kv_geometry(plan: &ComponentOpPlan) -> Result<Vec<LayerKvGeometr
         .enumerate()
         .map(|(index, geometry)| {
             geometry.kv().cloned().ok_or_else(|| {
+                // Name the region actually there. "Recurrent" was the
+                // only alternative to rows when this adapter was
+                // written; a latent cache is a third answer, and a
+                // caller told the wrong one looks for the wrong seam.
+                let region = match geometry {
+                    LayerContinuationGeometry::Recurrent(_) => "recurrent continuation state",
+                    LayerContinuationGeometry::LatentKv(_) => {
+                        "a per-position LATENT cache, one operator-defined row per position"
+                    }
+                    LayerContinuationGeometry::KvAndRecurrent { .. } => {
+                        "KV rows AND recurrent buffers"
+                    }
+                    LayerContinuationGeometry::Kv(_) | LayerContinuationGeometry::Stateless => {
+                        "no KV rows"
+                    }
+                };
                 format!(
-                    "layer {index} carries recurrent continuation state, not KV; \
-                     this model needs `plan_continuation_geometry`, which describes \
-                     both forms"
+                    "layer {index} carries {region}, not a plain KV cache; this model \
+                     needs `plan_continuation_geometry`, which describes every form"
                 )
             })
         })
@@ -139,9 +154,21 @@ pub trait ContinuationProvider {
         // must have been refused by `recurrent_state` before reaching a
         // provider that took this default.
         if kv.len() != layers.len() {
-            return Err(ContinuationError::RecurrentUnsupported {
-                provider: "a KV-only provider",
-                layer: layers.iter().position(|g| g.kv().is_none()).unwrap_or(0),
+            let layer = layers.iter().position(|g| g.kv().is_none()).unwrap_or(0);
+            // Name the region actually missing. Reporting every
+            // non-KV layer as "no recurrent state" would send a serving
+            // cache after the wrong half of a hybrid.
+            return Err(match layers.get(layer) {
+                Some(LayerContinuationGeometry::LatentKv(_)) => {
+                    ContinuationError::LatentUnsupported {
+                        provider: "a KV-only provider",
+                        layer,
+                    }
+                }
+                _ => ContinuationError::RecurrentUnsupported {
+                    provider: "a KV-only provider",
+                    layer,
+                },
             });
         }
         self.prepare(&kv);
@@ -158,6 +185,20 @@ pub trait ContinuationProvider {
     /// level down. Every implementor states its position explicitly;
     /// nothing inherits an answer by omission.
     fn recurrent_state(&mut self, layer: usize) -> Result<&mut RecurrentState, ContinuationError>;
+
+    /// This layer's per-position latent cache — the rows an operator
+    /// whose continuation is ONE row per position reads and extends (an
+    /// MLA layer's compressed latent + shared rope-K).
+    ///
+    /// **Required, and a Result**, for the same reason
+    /// [`recurrent_state`](Self::recurrent_state) is: a provider that
+    /// cannot hold these rows must say so rather than answer with an
+    /// empty store, which an operator would read as "position 0 of a
+    /// fresh sequence" and continue from — silently, with every shape
+    /// closing. `&mut` because this operator reads its whole prefix and
+    /// appends the current position in one call, and the store, not the
+    /// operator, owns the rows either way.
+    fn latent_state(&mut self, layer: usize) -> Result<&mut LatentKvRows, ContinuationError>;
 }
 
 /// Why a continuation provider could not answer.
@@ -177,6 +218,21 @@ pub enum ContinuationError {
         provider: &'static str,
         layer: usize,
     },
+    /// This provider holds no per-position latent cache at all. Its own
+    /// variant rather than [`Self::RecurrentUnsupported`]: a latent cache
+    /// grows with the prefix and a recurrence does not, so a provider
+    /// missing one is not missing the other, and a serving cache told
+    /// "no recurrent state" when the real gap is MLA's latent rows would
+    /// be sent looking in the wrong place.
+    LatentUnsupported {
+        provider: &'static str,
+        layer: usize,
+    },
+    /// The provider holds latent rows, but not for this layer.
+    NotLatent {
+        provider: &'static str,
+        layer: usize,
+    },
 }
 
 impl std::fmt::Display for ContinuationError {
@@ -191,6 +247,17 @@ impl std::fmt::Display for ContinuationError {
                 f,
                 "layer {layer} is not a recurrent layer in `{provider}`'s geometry; asking \
                  it for recurrent state is a dispatch bug"
+            ),
+            Self::LatentUnsupported { provider, layer } => write!(
+                f,
+                "continuation provider `{provider}` holds no per-position latent cache, \
+                 which layer {layer} requires; refusing rather than continuing from an \
+                 empty prefix"
+            ),
+            Self::NotLatent { provider, layer } => write!(
+                f,
+                "layer {layer} keeps no latent cache in `{provider}`'s geometry; asking \
+                 it for latent rows is a dispatch bug"
             ),
         }
     }
@@ -226,6 +293,11 @@ pub struct RowKvState {
     /// buffer conjured mid-traversal would start from zeros in the middle
     /// of a sequence and look like a working continuation.
     recurrent: Vec<Option<RecurrentState>>,
+    /// Per-position latent rows, one slot per layer, `None` on layers
+    /// that keep something else. Allocated with the rest of the
+    /// continuation, for the same reason: a cache conjured mid-traversal
+    /// would look like the start of a sequence.
+    latent: Vec<Option<LatentKvRows>>,
     position: usize,
 }
 
@@ -308,6 +380,20 @@ impl KvState for RowKvState {
                 layers.len()
             );
         }
+        if self.latent.is_empty() {
+            self.latent = layers
+                .iter()
+                .map(|g| g.latent_kv().map(|_| LatentKvRows::default()))
+                .collect();
+        } else {
+            assert_eq!(
+                self.latent.len(),
+                layers.len(),
+                "resumed continuation state holds {} layers but the plan declares {}",
+                self.latent.len(),
+                layers.len()
+            );
+        }
         Ok(())
     }
 
@@ -316,6 +402,16 @@ impl KvState for RowKvState {
             .get_mut(layer)
             .and_then(Option::as_mut)
             .ok_or(ContinuationError::NotRecurrent {
+                provider: "RowKvState",
+                layer,
+            })
+    }
+
+    fn latent_state(&mut self, layer: usize) -> Result<&mut LatentKvRows, ContinuationError> {
+        self.latent
+            .get_mut(layer)
+            .and_then(Option::as_mut)
+            .ok_or(ContinuationError::NotLatent {
                 provider: "RowKvState",
                 layer,
             })

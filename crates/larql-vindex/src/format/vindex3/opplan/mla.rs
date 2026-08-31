@@ -57,6 +57,20 @@ pub struct MlaOp {
     pub kv_a_norm: OperandRef,
     /// Output projection, `[hidden, Hq·v_head_dim]`.
     pub out_proj: OperandRef,
+
+    /// Epsilon for [`Self::kv_a_norm`] — the family's own value, which on
+    /// Kimi Linear is `KimiRMSNorm`'s class default `1e-6` while the
+    /// layer's other norms run at `rms_norm_eps` (`1e-5`).
+    ///
+    /// Carried per-op, never inherited from the layer's norm: the two
+    /// differ by a factor of ten on the one checkpoint judged so far, and
+    /// this is the operator's own norm site. `None` = the container
+    /// carries no judged value (an older container, or a family whose
+    /// reference has not been read), and an executor must refuse — the
+    /// alternative is running the decompression through a norm the model
+    /// never used, with every shape still closing.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub kv_a_norm_eps: Option<f64>,
 }
 
 impl MlaOp {
@@ -73,5 +87,22 @@ impl MlaOp {
     /// and is never itself cached.
     pub fn compressed_kv_width(&self) -> usize {
         self.kv_lora_rank + self.qk_rope_head_dim
+    }
+
+    /// The five widths in the form the operator's own reference takes
+    /// them.
+    ///
+    /// A projection, not a second record — the same contract
+    /// [`KdaOp::geometry`](super::kda::KdaOp::geometry) states: every
+    /// field is carried here, so a planner and an executor cannot
+    /// disagree about the shape of what one sizes and the other fills.
+    pub fn geometry(&self) -> larql_models::config::MlaGeometry {
+        larql_models::config::MlaGeometry {
+            num_heads: self.num_heads,
+            kv_lora_rank: self.kv_lora_rank,
+            qk_nope_head_dim: self.qk_nope_head_dim,
+            qk_rope_head_dim: self.qk_rope_head_dim,
+            v_head_dim: self.v_head_dim,
+        }
     }
 }

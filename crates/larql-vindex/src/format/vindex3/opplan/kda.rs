@@ -142,4 +142,19 @@ impl KdaOp {
     pub fn state_elements(&self) -> usize {
         self.num_heads * self.head_dim * self.head_dim
     }
+
+    /// The three geometry numbers in the form the operator's own reference
+    /// takes them.
+    ///
+    /// A projection, not a second record: every field is carried on this
+    /// op and the executor reads exactly these, so a continuation planner
+    /// and an executor cannot disagree about the shape of the state one
+    /// sizes and the other advances.
+    pub fn geometry(&self) -> larql_models::config::KdaGeometry {
+        larql_models::config::KdaGeometry {
+            num_heads: self.num_heads,
+            head_dim: self.head_dim,
+            conv_kernel: self.conv_kernel,
+        }
+    }
 }

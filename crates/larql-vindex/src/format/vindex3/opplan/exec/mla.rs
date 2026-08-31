@@ -39,27 +39,9 @@
 
 use larql_models::config::{MlaGeometry, NormType};
 
-use super::cpu::projector::{DenseProjector, WeightRows};
+use super::continuation::LatentKvRows;
+use super::cpu::projector::WeightRows;
 use super::kernels::{norm, rope_rotate, softmax};
-
-/// Routed to the crate's existing BLAS projector, same reasoning
-/// `exec::kda`'s own local `matvec` states: the projections are ordinary
-/// linear algebra infrastructure already does well, and this operator's
-/// own math (the decompression-at-read-time recurrence, the softmax
-/// combine) stays a plain f32 transcription. Measured at P3d-n: MLA was
-/// the single largest per-token cost (306.8 ms/tok, only 7 of 27
-/// layers) while still calling `exec::kernels::matvec` — the crate's
-/// DELIBERATELY naive "Stage A oracle" reference (see that module's own
-/// doc comment), never meant as a production path. Swapping only this
-/// function changes no arithmetic — `BlasF32` and the scalar loop agree
-/// up to summation-order float noise — so the full real-weight parity
-/// suite re-run is the check that acceleration changed no semantics,
-/// not a new correctness claim.
-fn matvec(w: &[f32], x: &[f32], out: usize) -> Vec<f32> {
-    let mut y = vec![0.0f32; out];
-    super::cpu::kernels::BlasF32.project_rows(WeightRows::F32(w), x, &mut y);
-    y
-}
 
 /// One layer's five operands, f32 and row-major, plus the `kv_a_layernorm`
 /// epsilon — `1e-6`, `KimiRMSNorm`'s class DEFAULT, deliberately NOT
@@ -71,37 +53,36 @@ fn matvec(w: &[f32], x: &[f32], out: usize) -> Vec<f32> {
 /// silently coinciding.
 #[derive(Clone, Copy)]
 pub struct MlaWeights<'a> {
-    /// `[Hq·q_head_dim, hidden]`.
-    pub q_proj: &'a [f32],
+    /// `[Hq·q_head_dim, hidden]`, at whatever representation it is
+    /// resident as — the plan binds it like any other matrix.
+    pub q_proj: WeightRows<'a>,
     /// `[kv_lora_rank+rope, hidden]`.
-    pub kv_a_proj: &'a [f32],
+    pub kv_a_proj: WeightRows<'a>,
     /// `[kv_lora_rank]` — RMSNorm weight over the latent ONLY, never the
     /// shared rope-K half of `compressed_kv`.
     pub kv_a_norm: &'a [f32],
     /// `[Hq·(nope+v_head_dim), kv_lora_rank]`.
-    pub kv_b_proj: &'a [f32],
+    pub kv_b_proj: WeightRows<'a>,
     /// `[hidden, Hq·v_head_dim]`.
-    pub o_proj: &'a [f32],
+    pub o_proj: WeightRows<'a>,
     pub kv_a_norm_eps: f64,
 }
 
-/// The per-position KV cache MLA actually carries: the COMPRESSED latent
+/// The per-position cache MLA actually carries: the COMPRESSED latent
 /// plus the one shared rope-K, raw — never the decompressed
 /// `Hq·(nope+v_head_dim)` a per-head K/V pair would cost. Decompression
 /// happens at read time, for every cached position, on every call; that
 /// is the operator's real cost profile, not an artefact of this
 /// reference being naive.
-#[derive(Debug, Clone, Default, PartialEq)]
-pub struct MlaState {
-    /// One entry per cached position, each `kv_lora_rank+rope` long.
-    pub compressed_kv: Vec<Vec<f32>>,
-}
-
-impl MlaState {
-    pub fn empty() -> Self {
-        Self::default()
-    }
-}
+///
+/// Held in the engine's generic per-position row store
+/// ([`LatentKvRows`]), not in a type of this operator's own: one row per
+/// position, of the width [`MlaGeometry::compressed_kv_width`] declares,
+/// is exactly what [`LayerLatentKvGeometry`](super::continuation::LayerLatentKvGeometry)
+/// describes. A second state type here would be a second answer to
+/// "what does an MLA layer retain", and the point of the continuation
+/// schema is that there is one.
+pub type MlaState = LatentKvRows;
 
 /// Every boundary the operator crosses, for the CURRENT position only —
 /// prior positions' boundaries were already returned by their own call.
@@ -153,14 +134,14 @@ pub enum Mutation {
 /// hidden state (the layer applies `input_layernorm` before calling
 /// this, same contract `exec::kda::layer_forward` holds). Appends the
 /// current position's compressed KV to `state` before reading it back,
-/// so `state.compressed_kv.len() - 1` after this call is this position's
+/// so `state.len() - 1` after this call is this position's
 /// causal index.
 ///
 /// **Causality here is structural, not a runtime check** — deliberately
 /// with no `Mutation` to disable it, unlike every other property this
 /// module measures. `state` holds no position this call has not itself
 /// appended, so there is no "attend to the future" defect this function
-/// COULD express: reading `state.compressed_kv` in full already IS the
+/// COULD express: reading `state.rows()` in full already IS the
 /// causal set, by the append-then-read contract, not by a bound some
 /// omitted check would have enforced. A batched whole-sequence
 /// implementation would need its own explicit mask and its own control
@@ -171,9 +152,48 @@ pub fn mla_forward(
     hidden: usize,
     weights: MlaWeights<'_>,
     geometry: MlaGeometry,
-    state: &mut MlaState,
+    state: &mut LatentKvRows,
     mutation: Mutation,
 ) -> MlaTrace {
+    mla_forward_with(
+        &super::cpu::physical::ExecutorProjections,
+        x,
+        hidden,
+        weights,
+        geometry,
+        state,
+        mutation,
+    )
+}
+
+/// [`mla_forward`] with the four projections executed where the caller
+/// says — the plan-driven path hands it the BACKEND's projector, so a
+/// reference run computes them with the scalar oracle and a production
+/// run with the executor's format-aware dispatch. Everything else about
+/// this operator (the decompression, the softmax combine) is unchanged
+/// f32 transcription either way.
+#[allow(clippy::too_many_arguments)]
+pub fn mla_forward_with(
+    projections: &dyn super::gated_delta::DenseProjections,
+    x: &[f32],
+    hidden: usize,
+    weights: MlaWeights<'_>,
+    geometry: MlaGeometry,
+    state: &mut LatentKvRows,
+    mutation: Mutation,
+) -> MlaTrace {
+    // The four projections are ordinary linear algebra the caller's
+    // infrastructure already does well; this operator's own math (the
+    // decompression at read time, the softmax combine) stays a plain f32
+    // transcription either way. Measured at P3d-n: MLA was the single
+    // largest per-token cost (306.8 ms/tok, only 7 of 27 layers) while
+    // still calling `exec::kernels::matvec` — the crate's DELIBERATELY
+    // naive "Stage A oracle" reference, never meant as a production
+    // path. Which projector runs them changes no arithmetic beyond
+    // summation order, so the real-weight parity suite re-run is the
+    // check that routing changed no semantics, not a new correctness
+    // claim.
+    let matvec = |w: WeightRows<'_>, x: &[f32], out: usize| projections.project(w, x, out);
     let heads = geometry.num_heads;
     let nope = geometry.qk_nope_head_dim;
     let rope = geometry.qk_rope_head_dim;
@@ -186,9 +206,9 @@ pub fn mla_forward(
     let q_proj = matvec(weights.q_proj, x, heads * q_head_dim);
     let compressed_kv = matvec(weights.kv_a_proj, x, geometry.compressed_kv_width());
 
-    state.compressed_kv.push(compressed_kv.clone());
-    let cur_pos = state.compressed_kv.len() - 1;
-    let visible = state.compressed_kv.len(); // == cur_pos + 1: every cached position, never more
+    state.append(compressed_kv.clone());
+    let cur_pos = state.len() - 1;
+    let visible = state.len(); // == cur_pos + 1: every cached position, never more
 
     // ── Read every visible position, decompressing at read time ──
     // This operator's real cost profile: nothing decompressed is ever
@@ -199,7 +219,7 @@ pub fn mla_forward(
     let mut per_pos_kv_b = Vec::with_capacity(visible);
     let mut per_pos_k_rot = Vec::with_capacity(visible);
     for p in 0..visible {
-        let entry = &state.compressed_kv[p];
+        let entry = &state.rows()[p];
         let latent_input = if omit_kv_a_norm {
             entry[..latent].to_vec()
         } else {

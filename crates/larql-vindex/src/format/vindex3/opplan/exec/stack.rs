@@ -27,7 +27,8 @@
 
 use larql_models::config::{KdaGeometry, MlaGeometry};
 
-use super::kda::{KdaState, KdaWeights};
+use super::continuation::RecurrentState;
+use super::kda::KdaWeights;
 use super::kimi_kda_layer::{kda_decoder_layer_forward, kda_dense_decoder_layer_forward};
 use super::kimi_mla_layer::mla_decoder_layer_forward;
 use super::kimi_moe_block::ExpertWeights;
@@ -110,7 +111,7 @@ pub struct LayerSpec<'a> {
 /// One layer's carried state — a KDA layer's recurrent+conv state or an
 /// MLA layer's per-position KV cache, never both, never neither.
 pub enum LayerState {
-    Kda(KdaState),
+    Kda(RecurrentState),
     Mla(MlaState),
 }
 
@@ -209,7 +210,7 @@ fn layer_forward(
                 post_attention_residual: t.after_attention,
                 ffn_output: t.ffn_output,
                 layer_output: t.output,
-                state_size: s.recurrent.len(),
+                state_size: s.buffer(super::kda::RECURRENT).cells().len(),
             }
         }
         (
@@ -254,7 +255,7 @@ fn layer_forward(
                 post_attention_residual: t.after_attention,
                 ffn_output: t.moe.output,
                 layer_output: t.output,
-                state_size: s.recurrent.len(),
+                state_size: s.buffer(super::kda::RECURRENT).cells().len(),
             }
         }
         (
@@ -299,7 +300,7 @@ fn layer_forward(
                 post_attention_residual: t.after_attention,
                 ffn_output: t.moe.output,
                 layer_output: t.output,
-                state_size: s.compressed_kv.len(),
+                state_size: s.len(),
             }
         }
         (LayerAttention::Mla(..), LayerFfn::Dense { .. }, _) => {

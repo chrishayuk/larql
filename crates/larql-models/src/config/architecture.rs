@@ -1309,6 +1309,28 @@ pub trait ModelArchitecture: Send + Sync {
         None
     }
 
+    /// The epsilon MLA's latent norm (`kv_a_layernorm`) runs at, when this
+    /// family's own reference code fixes one.
+    ///
+    /// `None` — the default — means **unjudged**, never "use the layer
+    /// eps". The two are genuinely different numbers: Kimi Linear
+    /// constructs `kv_a_layernorm = KimiRMSNorm(self.kv_lora_rank)` with
+    /// no override, so it runs at `KimiRMSNorm.__init__`'s class default
+    /// `1e-6` while every other norm in the same layer runs at
+    /// `config.rms_norm_eps` (`1e-5`) — a factor of ten, on the one norm
+    /// standing between the compressed cache and its decompression.
+    ///
+    /// This is an ARCHITECTURE fact, not a config fact: no checkpoint
+    /// declares it, the family's modeling code does. So it is one of the
+    /// legitimate overrides — a default that answered `Some(rms_norm_eps)`
+    /// here would be the silent-wrong-serving shape the trait-default rule
+    /// exists to prevent, and a family whose reference has not been read
+    /// must reach an executor's named refusal rather than a plausible
+    /// number.
+    fn mla_kv_a_norm_eps(&self) -> Option<f64> {
+        None
+    }
+
     // ── RoPE scaling ──
 
     /// RoPE scaling type (None, "linear", "yarn", "dynamic", "llama3").

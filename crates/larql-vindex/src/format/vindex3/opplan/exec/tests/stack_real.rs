@@ -31,7 +31,8 @@ use std::path::{Path, PathBuf};
 use larql_models::config::{KdaGeometry, MlaGeometry};
 use serde_json::Value;
 
-use crate::format::vindex3::opplan::exec::kda::{KdaState, KdaWeights};
+use crate::format::vindex3::opplan::exec::cpu::projector::WeightRows;
+use crate::format::vindex3::opplan::exec::kda::{zero_state, KdaWeights};
 use crate::format::vindex3::opplan::exec::kimi_moe_block::ExpertWeights;
 use crate::format::vindex3::opplan::exec::mla::{MlaState, MlaWeights};
 use crate::format::vindex3::opplan::exec::stack::{
@@ -256,9 +257,9 @@ pub(super) fn spec<'a>(
         };
         LayerAttention::Kda(
             KdaWeights {
-                q_proj: fb("q_proj"),
-                k_proj: fb("k_proj"),
-                v_proj: fb("v_proj"),
+                q_proj: WeightRows::Bf16(fb("q_proj")),
+                k_proj: WeightRows::Bf16(fb("k_proj")),
+                v_proj: WeightRows::Bf16(fb("v_proj")),
                 q_conv1d: f("q_conv1d"),
                 k_conv1d: f("k_conv1d"),
                 v_conv1d: f("v_conv1d"),
@@ -270,8 +271,12 @@ pub(super) fn spec<'a>(
                 a_log: f("a_log"),
                 dt_bias: f("dt_bias"),
                 o_norm: f("o_norm"),
-                o_proj: fb("o_proj"),
+                o_proj: WeightRows::Bf16(fb("o_proj")),
                 norm_eps: eps as f32,
+                // The rank the gate factorisations meet at — read from
+                // this fixture's own `f_b_proj` (`[width, rank]`), not
+                // the head dim the executor used to assume.
+                gate_rank: f("f_b_proj").len() / kda_geometry.value_width(),
             },
             kda_geometry,
         )
@@ -281,11 +286,11 @@ pub(super) fn spec<'a>(
         };
         LayerAttention::Mla(
             MlaWeights {
-                q_proj: f("q_proj"),
-                kv_a_proj: f("kv_a_proj"),
+                q_proj: WeightRows::F32(f("q_proj")),
+                kv_a_proj: WeightRows::F32(f("kv_a_proj")),
                 kv_a_norm: f("kv_a_norm"),
-                kv_b_proj: f("kv_b_proj"),
-                o_proj: f("o_proj"),
+                kv_b_proj: WeightRows::F32(f("kv_b_proj")),
+                o_proj: WeightRows::F32(f("o_proj")),
                 kv_a_norm_eps: mla_kv_a_norm_eps,
             },
             mla_geometry,
@@ -417,9 +422,9 @@ fn three_positions_through_all_27_real_layers_match_the_oracle() {
         .iter()
         .map(|l| {
             if l.kind == "kda" {
-                LayerState::Kda(KdaState::zeros(kda_geometry))
+                LayerState::Kda(zero_state(kda_geometry))
             } else {
-                LayerState::Mla(MlaState::empty())
+                LayerState::Mla(MlaState::default())
             }
         })
         .collect();

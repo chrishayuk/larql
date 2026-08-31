@@ -128,6 +128,18 @@ fn a_kv_only_provider_refuses_a_recurrence_before_committing_output() {
                 layer,
             })
         }
+        fn latent_state(
+            &mut self,
+            layer: usize,
+        ) -> Result<
+            &mut crate::format::vindex3::opplan::exec::continuation::LatentKvRows,
+            ContinuationError,
+        > {
+            Err(ContinuationError::LatentUnsupported {
+                provider: "KvOnly",
+                layer,
+            })
+        }
     }
 
     let (_c, plan, store) = hybrid();

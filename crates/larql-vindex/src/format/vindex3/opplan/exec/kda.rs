@@ -29,16 +29,26 @@
 
 use larql_models::config::KdaGeometry;
 
+use super::continuation::{
+    RecurrentBufferGeometry, RecurrentGeometry, RecurrentState, StateInitialization,
+};
 use super::cpu::executor;
 use super::cpu::projector::{DenseProjector, WeightRows};
 use super::timing::{timed, OpClass};
 
 /// One layer's fifteen operands.
 ///
-/// `q_proj`/`k_proj`/`v_proj`/`o_proj` are BF16 (P4c-4) — the checkpoint's
-/// own representation for KDA's four largest projections, ~26 ms/token of
-/// the pre-fusion 44.97 ms KDA bucket, routed through the executor's
-/// ROW-parallel path rather than a single call (see [`matvec_bf16`]).
+/// `q_proj`/`k_proj`/`v_proj`/`o_proj` arrive in whatever representation
+/// they are RESIDENT as — the plan binds them through the same
+/// `OperandRole` → `LoadedWeight` path as every other matrix, and the
+/// backend's own format policy decides. BF16 is the measured fast case
+/// (P4c-4: the checkpoint's own representation for KDA's four largest
+/// projections, ~26 ms/token of the pre-fusion 44.97 ms KDA bucket,
+/// routed through the executor's ROW-parallel path — see
+/// [`matvec_bf16`]), and it stays exactly that; anything else goes
+/// through the executor's format-aware dispatcher rather than being
+/// refused for not being bf16.
+///
 /// Everything else stays plain `f32`: the convolution, gate and recurrence
 /// arithmetic is KDA-specific and small enough that compacting it is its
 /// own later decision (banked, not bundled into this one — see this
@@ -46,9 +56,9 @@ use super::timing::{timed, OpClass};
 /// execution-strategy changes made the earlier expert rung hard to read).
 #[derive(Clone, Copy)]
 pub struct KdaWeights<'a> {
-    pub q_proj: &'a [u16],
-    pub k_proj: &'a [u16],
-    pub v_proj: &'a [u16],
+    pub q_proj: WeightRows<'a>,
+    pub k_proj: WeightRows<'a>,
+    pub v_proj: WeightRows<'a>,
     pub q_conv1d: &'a [f32],
     pub k_conv1d: &'a [f32],
     pub v_conv1d: &'a [f32],
@@ -60,39 +70,87 @@ pub struct KdaWeights<'a> {
     pub a_log: &'a [f32],
     pub dt_bias: &'a [f32],
     pub o_norm: &'a [f32],
-    pub o_proj: &'a [u16],
+    pub o_proj: WeightRows<'a>,
     pub norm_eps: f32,
+    /// The inner rank the two gate factorisations meet at — `f_a_proj`'s
+    /// row count and `f_b_proj`'s column count, `KdaOp::gate_rank`.
+    ///
+    /// Carried explicitly because **no config declares it** and the
+    /// executor cannot recover it: it is resolved once, from the bound
+    /// operands, at plan-build time. This module used to substitute
+    /// `head_dim`, which is right on both observed checkpoints (Kimi
+    /// Linear and GLM-5.3-Flash both factor through 128) and right for
+    /// no stated reason — a coincidence two checkpoints agreed on, and
+    /// the kind a fixture whose widths are all distinct is built to
+    /// expose. It is a separate fact, so it is a separate field.
+    pub gate_rank: usize,
 }
 
-/// The recurrent and convolution state a KDA layer carries between calls.
+/// Buffer indices this operator assigns within its
+/// [`RecurrentState`] — the same contract [`super::mamba2`] states: the
+/// storage layer holds four indexed buffers and knows nothing about what
+/// they mean; this is the one place that mapping is written down.
+pub const RECURRENT: usize = 0;
+pub const CONV_Q: usize = 1;
+pub const CONV_K: usize = 2;
+pub const CONV_V: usize = 3;
+
+/// The recurrent and convolution state a KDA layer carries between
+/// calls, in the engine's generic terms.
 ///
 /// Nothing here is indexed by position: the recurrent part is one
 /// `D × D` matrix per head whatever the sequence length, and the
 /// convolution part is the last `kernel - 1` inputs of each stream. That
-/// is the whole reason a KV planner is told state elements and never a
-/// span.
-#[derive(Debug, Clone, PartialEq)]
-pub struct KdaState {
-    /// `[H][D][D]` flattened — head-major, then key dim, then value dim.
-    pub recurrent: Vec<f32>,
-    /// Three `[H*D][kernel-1]` windows, for q, k and v.
-    pub conv: [Vec<f32>; 3],
+/// is the whole reason a continuation planner is told state elements and
+/// never a span.
+///
+/// **fp32 is a judgment, not a default.** Kimi Linear declares no state
+/// precision anywhere — no `mamba_ssm_dtype`, no equivalent under any
+/// spelling (`linear_attn_config` carries `num_heads`, `head_dim` and
+/// `short_conv_kernel_size`, and nothing else) — so the schema has no
+/// declared value to carry and the planner does not get to pick one. The
+/// reference does: `fla`'s `naive_recurrent_kda`, which the checkpoint's
+/// own `modeling_kimi.py` calls through `fused_recurrent_kda`, holds the
+/// state as `torch.float32` and casts q, k, v, g and beta into it every
+/// step — transcribed, sha-pinned, in `scripts/kda_reference.py:130`.
+/// The state is therefore held at the precision the reference computes
+/// at, exactly as [`super::mamba2::state_geometry`] holds its sibling
+/// judgment, and this function is the one place it lives.
+///
+/// Corroborated rather than merely read: the P3d parity ladder scores
+/// this executor against that oracle at 2.1e-7 – 4.7e-7 relative on real
+/// weights, a bound a bf16 state could not reach.
+pub fn state_geometry(g: KdaGeometry) -> RecurrentGeometry {
+    let width = g.value_width();
+    // The window is `kernel - 1` inputs, not `kernel`: the current
+    // position's own input is not history, it arrives with the call.
+    // (Gated DeltaNet's conv buffer is a full `kernel` wide because HF
+    // seeds it by left-padding the position INTO the buffer — a
+    // different reference, a different shape, and the two must not be
+    // made to agree by symmetry.)
+    let tail = g.conv_kernel.saturating_sub(1);
+    let conv = || RecurrentBufferGeometry {
+        shape: vec![width, tail],
+        dtype: super::super::gated_delta::StateDtype::Float32,
+        initialization: StateInitialization::Zeros,
+    };
+    RecurrentGeometry {
+        buffers: vec![
+            RecurrentBufferGeometry {
+                shape: vec![g.num_heads, g.head_dim, g.head_dim],
+                dtype: super::super::gated_delta::StateDtype::Float32,
+                initialization: StateInitialization::Zeros,
+            },
+            conv(),
+            conv(),
+            conv(),
+        ],
+    }
 }
 
-impl KdaState {
-    /// The zero state a sequence starts from.
-    pub fn zeros(g: KdaGeometry) -> Self {
-        let width = g.value_width();
-        let tail = g.conv_kernel.saturating_sub(1);
-        Self {
-            recurrent: vec![0.0; g.state_elements()],
-            conv: [
-                vec![0.0; width * tail],
-                vec![0.0; width * tail],
-                vec![0.0; width * tail],
-            ],
-        }
-    }
+/// The zero state a sequence starts from.
+pub fn zero_state(g: KdaGeometry) -> RecurrentState {
+    RecurrentState::zeros(&state_geometry(g))
 }
 
 /// Every boundary the operator crosses, kept so a disagreement names its
@@ -222,7 +280,7 @@ pub trait KdaProjections: Sync {
 
     /// `o_proj(x)` — `[hidden, width]` against the gated, normed value
     /// stream, which does not exist until the recurrence has run.
-    fn o(&self, w: &[u16], x: &[f32], out: usize) -> Vec<f32>;
+    fn o(&self, w: WeightRows<'_>, x: &[f32], out: usize) -> Vec<f32>;
 }
 
 /// The proven CPU path: three row-parallel projections, one at a time.
@@ -235,14 +293,62 @@ pub struct CpuKdaProjections;
 impl KdaProjections for CpuKdaProjections {
     fn qkv(&self, w: KdaWeights<'_>, x: &[f32], width: usize) -> [Vec<f32>; 3] {
         [
-            matvec_bf16(OpClass::KdaQProj, w.q_proj, x, width),
-            matvec_bf16(OpClass::KdaKProj, w.k_proj, x, width),
-            matvec_bf16(OpClass::KdaVProj, w.v_proj, x, width),
+            project(OpClass::KdaQProj, w.q_proj, x, width),
+            project(OpClass::KdaKProj, w.k_proj, x, width),
+            project(OpClass::KdaVProj, w.v_proj, x, width),
         ]
     }
 
-    fn o(&self, w: &[u16], x: &[f32], out: usize) -> Vec<f32> {
-        matvec_bf16(OpClass::KdaOProj, w, x, out)
+    fn o(&self, w: WeightRows<'_>, x: &[f32], out: usize) -> Vec<f32> {
+        project(OpClass::KdaOProj, w, x, out)
+    }
+}
+
+/// One wide projection, at the resident representation.
+///
+/// BF16 keeps its own call — the row-parallel `FusedBf16` path P4c-4
+/// measured and every Kimi number quotes. Every other representation goes
+/// to the executor's format-aware dispatcher, the same one every
+/// production matrix uses, rather than being refused here: a container
+/// that stores these projections q8 is a representation decision, not a
+/// different operator, and the recurrence below is unchanged either way.
+fn project(class: OpClass, rows: WeightRows<'_>, x: &[f32], out: usize) -> Vec<f32> {
+    match rows {
+        WeightRows::Bf16(w) => matvec_bf16(class, w, x, out),
+        other => {
+            let _t = timed(class);
+            super::cpu::physical::project_rows(other, x, out)
+                .expect("the CPU executor pool is unavailable")
+        }
+    }
+}
+
+/// KDA's four wide projections through **the backend's own** dense
+/// projector — the arm the plan-driven path uses.
+///
+/// [`CpuKdaProjections`] is this operator's measured CPU realisation and
+/// picks its own kernels; this one asks the backend, exactly as
+/// [`super::gated_delta`] and [`super::mamba2`] do, so a reference run
+/// gets the scalar oracle and a production run gets the executor's
+/// format-aware dispatch without KDA choosing for either.
+///
+/// No timers here on purpose: the projector below already times what it
+/// runs, and wrapping it would nest two intervals over one operation —
+/// the "nothing nests" contract `timing.rs` enforces with its own
+/// counter.
+pub struct BackendKdaProjections<'a>(pub &'a dyn super::gated_delta::DenseProjections);
+
+impl KdaProjections for BackendKdaProjections<'_> {
+    fn qkv(&self, w: KdaWeights<'_>, x: &[f32], width: usize) -> [Vec<f32>; 3] {
+        [
+            self.0.project(w.q_proj, x, width),
+            self.0.project(w.k_proj, x, width),
+            self.0.project(w.v_proj, x, width),
+        ]
+    }
+
+    fn o(&self, w: WeightRows<'_>, x: &[f32], out: usize) -> Vec<f32> {
+        self.0.project(w, x, out)
     }
 }
 
@@ -343,7 +449,7 @@ pub fn step(
     x: &[f32],
     w: KdaWeights<'_>,
     g: KdaGeometry,
-    state: &mut KdaState,
+    state: &mut RecurrentState,
     planes: &mut KdaPlanes,
     mutation: Mutation,
 ) -> Vec<f32> {
@@ -357,7 +463,7 @@ pub fn step_with(
     x: &[f32],
     w: KdaWeights<'_>,
     g: KdaGeometry,
-    state: &mut KdaState,
+    state: &mut RecurrentState,
     planes: &mut KdaPlanes,
     mutation: Mutation,
 ) -> Vec<f32> {
@@ -376,7 +482,13 @@ pub fn step_with(
     let [q_p, k_p, v_p] = projections.qkv(w, x, width);
     let mut q = {
         let _t = timed(OpClass::KdaConv);
-        short_conv(&q_p, w.q_conv1d, &mut state.conv[0], width, g.conv_kernel)
+        short_conv(
+            &q_p,
+            w.q_conv1d,
+            state.buffer_mut(CONV_Q).cells_mut(),
+            width,
+            g.conv_kernel,
+        )
     };
     planes.q_conv.extend_from_slice(&q);
     {
@@ -389,7 +501,13 @@ pub fn step_with(
 
     let mut k = {
         let _t = timed(OpClass::KdaConv);
-        short_conv(&k_p, w.k_conv1d, &mut state.conv[1], width, g.conv_kernel)
+        short_conv(
+            &k_p,
+            w.k_conv1d,
+            state.buffer_mut(CONV_K).cells_mut(),
+            width,
+            g.conv_kernel,
+        )
     };
     planes.k_conv.extend_from_slice(&k);
     {
@@ -402,7 +520,13 @@ pub fn step_with(
 
     let v = {
         let _t = timed(OpClass::KdaConv);
-        short_conv(&v_p, w.v_conv1d, &mut state.conv[2], width, g.conv_kernel)
+        short_conv(
+            &v_p,
+            w.v_conv1d,
+            state.buffer_mut(CONV_V).cells_mut(),
+            width,
+            g.conv_kernel,
+        )
     };
     planes.v_conv.extend_from_slice(&v);
 
@@ -411,7 +535,7 @@ pub fn step_with(
     // by it every step, so a narrower accumulator compounds.
     let decay = {
         let _t = timed(OpClass::KdaDecayGate);
-        let f_low = matvec(w.f_b_proj, &matvec(w.f_a_proj, x, dim), width);
+        let f_low = matvec(w.f_b_proj, &matvec(w.f_a_proj, x, w.gate_rank), width);
         planes.f_lowrank.extend_from_slice(&f_low);
         let mut decay = vec![0.0f32; width];
         for h in 0..heads {
@@ -436,7 +560,7 @@ pub fn step_with(
 
     let gate = {
         let _t = timed(OpClass::KdaOutputGate);
-        let gate = matvec(w.g_b_proj, &matvec(w.g_a_proj, x, dim), width);
+        let gate = matvec(w.g_b_proj, &matvec(w.g_a_proj, x, w.gate_rank), width);
         planes.o_gate.extend_from_slice(&gate);
         gate
     };
@@ -481,7 +605,8 @@ pub fn step_with(
         let scale = (dim as f32).powf(-0.5);
         let mut out = vec![0.0f32; width];
         for h in 0..heads {
-            let s = &mut state.recurrent[h * dim * dim..(h + 1) * dim * dim];
+            let s =
+                &mut state.buffer_mut(RECURRENT).cells_mut()[h * dim * dim..(h + 1) * dim * dim];
             let (qh, kh, vh) = (&q[h * dim..], &k[h * dim..], &v[h * dim..]);
 
             let mut pred = vec![0.0f32; dim];
@@ -571,7 +696,12 @@ pub fn step_with(
     planes.k_proj.extend_from_slice(&k_p);
     planes.v_proj.extend_from_slice(&v_p);
 
-    let y = projections.o(w.o_proj, &normed, w.o_proj.len() / width);
+    // `o_proj` is `[hidden, Hv·Dv]`, so its output width is the hidden
+    // width this position arrived at — read from the ACTIVATION, never
+    // from the weight's slice length: a resident slab is page-padded and
+    // a compact representation is not even f32-shaped, so `len / width`
+    // was only ever right for one residency.
+    let y = projections.o(w.o_proj, &normed, x.len());
     planes.output.extend_from_slice(&y);
     y
 }
@@ -582,7 +712,7 @@ pub fn layer_forward(
     hidden: usize,
     w: KdaWeights<'_>,
     g: KdaGeometry,
-    state: &mut KdaState,
+    state: &mut RecurrentState,
     mutation: Mutation,
 ) -> KdaPlanes {
     layer_forward_with(&CpuKdaProjections, x, hidden, w, g, state, mutation)
@@ -597,7 +727,7 @@ pub fn layer_forward_with(
     hidden: usize,
     w: KdaWeights<'_>,
     g: KdaGeometry,
-    state: &mut KdaState,
+    state: &mut RecurrentState,
     mutation: Mutation,
 ) -> KdaPlanes {
     let mut planes = KdaPlanes::default();

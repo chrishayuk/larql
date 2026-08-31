@@ -35,7 +35,7 @@
 //! bits by construction.
 
 use larql_vindex::format::vindex3::opplan::exec::continuation::{
-    LayerContinuationGeometry, RecurrentState,
+    LatentKvRows, LayerContinuationGeometry, RecurrentState,
 };
 use larql_vindex::format::vindex3::opplan::exec::kv::{
     ContinuationError, KvState, LayerKvGeometry,
@@ -88,6 +88,12 @@ pub struct CanonicalKvState {
     /// [`prepare_continuation`](KvState::prepare_continuation). A
     /// KV-only program allocates none and behaves exactly as before.
     recurrent: Vec<Option<RecurrentState>>,
+    /// The latent-cache layers' per-position rows, absolute index,
+    /// allocated with the rest of the continuation. An MLA layer keeps
+    /// one row per position of its own width — not a K/V pair — so it
+    /// cannot live in [`Self::rows`] without claiming a second row the
+    /// model never wrote.
+    latent: Vec<Option<LatentKvRows>>,
 }
 
 impl Default for CanonicalKvState {
@@ -104,6 +110,7 @@ impl CanonicalKvState {
             geometry: Vec::new(),
             rows: Vec::new(),
             recurrent: Vec::new(),
+            latent: Vec::new(),
         }
     }
 
@@ -128,6 +135,7 @@ impl CanonicalKvState {
             geometry: Vec::new(),
             rows,
             recurrent: Vec::new(),
+            latent: Vec::new(),
         }
     }
 
@@ -214,6 +222,20 @@ impl KvState for CanonicalKvState {
                 layers.len(),
                 "resumed state holds {} layers but the plan declares {}",
                 self.recurrent.len(),
+                layers.len()
+            );
+        }
+        if self.latent.is_empty() {
+            self.latent = layers
+                .iter()
+                .map(|g| g.latent_kv().map(|_| LatentKvRows::default()))
+                .collect();
+        } else {
+            assert_eq!(
+                self.latent.len(),
+                layers.len(),
+                "resumed state holds {} layers but the plan declares {}",
+                self.latent.len(),
                 layers.len()
             );
         }
@@ -327,6 +349,24 @@ impl KvState for CanonicalKvState {
                 layer,
             }),
             None => Err(ContinuationError::RecurrentUnsupported {
+                provider: "CanonicalKvState",
+                layer,
+            }),
+        }
+    }
+
+    /// This layer's cached latent rows (MLA) — allocated at
+    /// `prepare_continuation` and kept across prefills and steps, the
+    /// same lifecycle as the recurrent buffers above and fail-closed in
+    /// the same two directions.
+    fn latent_state(&mut self, layer: usize) -> Result<&mut LatentKvRows, ContinuationError> {
+        match self.latent.get_mut(layer) {
+            Some(Some(rows)) => Ok(rows),
+            Some(None) => Err(ContinuationError::NotLatent {
+                provider: "CanonicalKvState",
+                layer,
+            }),
+            None => Err(ContinuationError::LatentUnsupported {
                 provider: "CanonicalKvState",
                 layer,
             }),

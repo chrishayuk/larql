@@ -13,6 +13,9 @@ use larql_inference::layer_graph::generate::detok::Detokenizer;
 use larql_inference::vindex3::{continue_session, Vindex3Runtime};
 use larql_inference::{EosConfig, SamplingConfig};
 use larql_kv::CanonicalKvState;
+use larql_vindex::format::vindex3::opplan::exec::continuation::{
+    plan_continuation_geometry, LayerContinuationGeometry,
+};
 use larql_vindex::format::vindex3::opplan::exec::production::ProductionBackend;
 use larql_vindex::format::vindex3::opplan::LayerAttention;
 use larql_vindex::tokenizers::Tokenizer;
@@ -261,49 +264,93 @@ impl Session {
         // the honest line counts it as what it is.
         let mut sliding = 0usize;
         let mut full = 0usize;
-        let mut recurrent = 0usize;
         let mut kv_dims: std::collections::BTreeSet<usize> = Default::default();
-        let mut state_elements = 0usize;
         for layer in &plan.layers {
-            match layer.attention.softmax() {
-                Some(op) => {
-                    if op.window.is_some() {
-                        sliding += 1;
-                    } else {
-                        full += 1;
-                    }
-                    kv_dims.insert(op.num_kv_heads * op.head_dim);
+            if let Some(op) = layer.attention.softmax() {
+                if op.window.is_some() {
+                    sliding += 1;
+                } else {
+                    full += 1;
                 }
-                None => {
-                    recurrent += 1;
-                    state_elements += layer.attention.recurrent_state_elements().unwrap_or(0);
+                kv_dims.insert(op.num_kv_heads * op.head_dim);
+            }
+        }
+        // **The continuation summary comes from the continuation
+        // planner**, never from "which layers are not softmax". That
+        // shortcut was true while a recurrence was the only alternative
+        // to rows, and became a false claim the moment MLA executed: its
+        // layers are not recurrent, and its cache is not constant in
+        // sequence length. Read off the wrong axis, this line reported a
+        // 27-layer Kimi stack as "recurrent state only … constant in
+        // sequence length" while 7 of those layers grew a cache with
+        // every position. A summary is exactly where such a claim goes
+        // unnoticed, so it is derived from the same seam the executor
+        // allocates from.
+        let regions = plan_continuation_geometry(plan);
+        let (mut recurrent, mut latent, mut state_elements) = (0usize, 0usize, 0usize);
+        let mut latent_widths: std::collections::BTreeSet<usize> = Default::default();
+        if let Ok(regions) = &regions {
+            for region in regions {
+                match region {
+                    LayerContinuationGeometry::Recurrent(r)
+                    | LayerContinuationGeometry::KvAndRecurrent { recurrent: r, .. } => {
+                        recurrent += 1;
+                        state_elements += r.elements();
+                    }
+                    LayerContinuationGeometry::LatentKv(l) => {
+                        latent += 1;
+                        latent_widths.insert(l.width);
+                    }
+                    LayerContinuationGeometry::Kv(_) | LayerContinuationGeometry::Stateless => {}
                 }
             }
         }
         let kv_dims: Vec<String> = kv_dims.iter().map(usize::to_string).collect();
-        let attention_line = if recurrent > 0 {
-            format!(
-                "Attention:       {sliding} sliding / {full} full / {recurrent} recurrent \
-                 (windows from the plan)"
-            )
-        } else {
-            format!("Attention:       {sliding} sliding / {full} full (windows from the plan)")
-        };
-        let continuation_line = if kv_dims.is_empty() {
-            format!(
-                "Continuation:    recurrent state only; {state_elements} elements across \
-                 {recurrent} layer(s), constant in sequence length"
-            )
-        } else if recurrent > 0 {
-            format!(
-                "Continuation:    KV (kv_dim {}) + recurrent state ({state_elements} elements)",
-                kv_dims.join(", ")
-            )
-        } else {
-            format!(
-                "KV geometry:     plan-derived; kv_dim {}",
-                kv_dims.join(", ")
-            )
+        let mut spans = vec![format!("{sliding} sliding"), format!("{full} full")];
+        if latent > 0 {
+            spans.push(format!("{latent} latent-cache"));
+        }
+        if recurrent > 0 {
+            spans.push(format!("{recurrent} recurrent"));
+        }
+        let attention_line = format!(
+            "Attention:       {} (windows from the plan)",
+            spans.join(" / ")
+        );
+        // One clause per region the program actually declares — nothing
+        // asserted about a region that is absent, and the growth
+        // behaviour stated per clause rather than for the stack as a
+        // whole, which is what made the old line wrong on a hybrid.
+        let continuation_line = match &regions {
+            Err(refusal) => format!("Continuation:    cannot be sized: {refusal}"),
+            Ok(_) => {
+                let mut parts: Vec<String> = Vec::new();
+                if !kv_dims.is_empty() {
+                    parts.push(format!(
+                        "KV rows (kv_dim {}), growing with the prefix",
+                        kv_dims.join(", ")
+                    ));
+                }
+                if latent > 0 {
+                    let widths: Vec<String> = latent_widths.iter().map(usize::to_string).collect();
+                    parts.push(format!(
+                        "latent cache on {latent} layer(s) ({} elements per position), growing \
+                         with the prefix",
+                        widths.join(", ")
+                    ));
+                }
+                if recurrent > 0 {
+                    parts.push(format!(
+                        "recurrent state on {recurrent} layer(s) ({state_elements} elements), \
+                         constant in sequence length"
+                    ));
+                }
+                if parts.is_empty() {
+                    "Continuation:    nothing survives a step".to_string()
+                } else {
+                    format!("Continuation:    {}", parts.join("; "))
+                }
+            }
         };
 
         Ok(vec![
