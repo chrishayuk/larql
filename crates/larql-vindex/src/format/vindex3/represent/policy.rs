@@ -62,26 +62,36 @@ pub enum Role {
     /// emit per-head decay and write strength (Gated DeltaNet
     /// `in_proj_a`/`in_proj_b`, KDA's gate factorisations and `b_proj`).
     ///
-    /// Preserved by the default profile, which retains the treatment
-    /// these tensors already had while making its reason explicit and
-    /// testable.
+    /// **Not protected by the default representation policy**, and the
+    /// reason is a cost/benefit judgement rather than a null result.
     ///
-    /// **The reason is a prior, not a finding.** The conjecture is that
-    /// error in a bulk projection perturbs one position's contribution
-    /// while error in the decay and write signals perturbs the state
-    /// every later position reads — so it would compound along the
-    /// sequence rather than average out. Qwen3.8 declaring
-    /// `linear_attention.state_dtype: float32` against otherwise-bf16
-    /// weights shows the *architecture* treats the state specially; it
-    /// does not show that these projections need BF16, and nothing here
-    /// should be read as if it did.
+    /// Q-BANK-1 compared an otherwise identical Qwen3.8 NVFP4 programme
+    /// with these projections preserved at BF16 against one compiling
+    /// them, matched on commit, reference bank and backend, differing by
+    /// this role alone. Protection reduced top-1 flips from 106 to 98
+    /// across 1,740 measured positions — a real effect, McNemar exact
+    /// two-sided p = 0.0215 — while changing mean KL by 0.000389
+    /// bits/token (1.6% of the mean) and costing 33,914,496 bytes,
+    /// 0.0112 bits/weight. The metrics disagreed on direction: KL p95
+    /// and mean ΔNLL were better *without* protection.
     ///
-    /// Whether the protection buys measurable fidelity is Q-BANK-1's
-    /// question, run as `protect-control` against `true-uniform` —
-    /// `--include-role recurrence-control` is the second arm. The
-    /// experiment is cheap because the decision is small: 23.6M weights
-    /// across Qwen3.8's 48 recurrent layers, under 0.1% of the stack.
-    /// If it does not separate, this role stops being protected.
+    /// The benefit concentrated in low-margin positions, where the BF16
+    /// reference was already least decisive; the high-margin tertile had
+    /// zero flips under either programme. So the measured effect did not
+    /// justify a default precision exception.
+    ///
+    /// The architecture treating recurrent *state* specially —
+    /// Qwen3.8 declares `linear_attention.state_dtype: float32` against
+    /// otherwise-bf16 weights — does not imply that the projections
+    /// controlling that state inherit special representation policy.
+    /// Precision exceptions require behavioural evidence sufficient to
+    /// justify their cost.
+    ///
+    /// Still its own role, because naming the operand is what made the
+    /// question askable: `--protect` is `--include-role`'s inverse, and
+    /// a profile with different evidence — a longer context, a different
+    /// recurrence — can hold these back deliberately rather than by an
+    /// accident of spelling.
     RecurrenceControl,
     /// Routed-expert weights — the bulk of an MoE model.
     ExpertWeight,
@@ -149,7 +159,10 @@ impl Role {
     pub fn in_default_policy(self) -> bool {
         matches!(
             self,
-            Role::DecoderLinear | Role::RecurrenceProjection | Role::ExpertWeight
+            Role::DecoderLinear
+                | Role::RecurrenceProjection
+                | Role::RecurrenceControl
+                | Role::ExpertWeight
         )
     }
 }
