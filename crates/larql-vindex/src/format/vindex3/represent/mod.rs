@@ -46,6 +46,7 @@
 //! at all: a profile cannot turn one encoding's bytes into another's.
 
 pub mod arena;
+pub mod assessment;
 pub mod bank;
 pub mod byte_ledger;
 pub mod compile;
