@@ -38,7 +38,7 @@ const M_IN_PROJ_ROWS: usize = 2 * M_D_INNER + 2 * M_STATE + M_HEADS; // 62
 /// Write the miniature pure-SSM checkpoint. `skip_suffix` drops every
 /// tensor whose name ends with it — the lever the closure-at-encode test
 /// pulls.
-fn miniature_mamba2(dir: &Path, skip_suffix: Option<&str>) {
+pub(crate) fn miniature_mamba2(dir: &Path, skip_suffix: Option<&str>) {
     miniature_mamba2_with(dir, skip_suffix, false)
 }
 

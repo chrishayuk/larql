@@ -69,6 +69,20 @@ pub enum ExecBackend {
     Reference,
     /// The `larql-compute` kernels.
     Production,
+    /// The `larql-compute` kernels, asking for a compiled NVFP4 pack.
+    ///
+    /// The CPU sibling of the `metal-nvfp4*` arms, and the only way to
+    /// execute an NVFP4 representation of a model the device cannot run.
+    /// Qwen3.8 is the case that forced it: 48 Gated DeltaNet layers with
+    /// no Metal kernel, so before this arm its NVFP4 pack could be
+    /// compiled and verified and then executed nowhere, and its
+    /// behavioural fidelity was unmeasurable in principle.
+    ///
+    /// Separate from [`Self::Production`] rather than a flag on it: the
+    /// backend is what declares which representation execution wants, and
+    /// silently changing that for every existing `production` run would
+    /// reinterpret every result already taken with it.
+    ProductionNvfp4,
     /// GPU matmuls via `larql-compute-metal` (rung 1: matrix work on
     /// the device, elementwise glue on the CPU).
     #[cfg(all(feature = "gpu", target_os = "macos"))]
@@ -324,14 +338,19 @@ pub struct RepresentArgs {
     #[arg(long = "object")]
     pub objects: Vec<String>,
 
-    /// Compile a role the conservative default preserves. Repeat to name
-    /// several. Roles: decoder-linear, expert-weight, embedding,
-    /// output-head, norm, router, small-vector, unknown.
+    /// Compile a role the conservative default preserves. Repeat to
+    /// name several.
     ///
-    /// The default compiles decoder-linear and expert-weight only —
-    /// the parameter mass — and preserves the surfaces where 4-bit is
-    /// known to be delicate. This flag is how a profile becomes more
+    /// The default compiles the parameter mass — the decoder's and a
+    /// recurrence's bulk projections, and routed experts — and
+    /// preserves the surfaces where 4-bit is known to be delicate or
+    /// where error compounds. This flag is how a profile becomes more
     /// aggressive deliberately rather than by accident.
+    ///
+    /// The role names are not listed here on purpose: this comment
+    /// enumerated them once, and was silently wrong the moment a role
+    /// was added. Pass any name to be refused by one that names the
+    /// current set.
     #[arg(long = "include-role")]
     pub include_roles: Vec<String>,
 
@@ -537,8 +556,21 @@ fn run_represent(args: RepresentArgs) -> Result<(), Box<dyn std::error::Error>> 
 
     let mut roles = larql_vindex::format::vindex3::represent::policy::RolePolicy::default();
     for name in &args.include_roles {
-        let role = larql_vindex::format::vindex3::represent::policy::Role::parse(name)
-            .ok_or_else(|| format!("unknown role `{name}`"))?;
+        let role = larql_vindex::format::vindex3::represent::policy::Role::parse(name).ok_or_else(
+            || {
+                // Derived, never restated: a hand-written list is wrong
+                // one commit after a role is added, and this message is
+                // the only place the caller learns what is valid.
+                let known: Vec<&str> = larql_vindex::format::vindex3::represent::policy::Role::ALL
+                    .iter()
+                    .map(|r| r.name())
+                    .collect();
+                format!(
+                    "unknown role `{name}` — the roles are: {}",
+                    known.join(", ")
+                )
+            },
+        )?;
         roles = roles.including(role);
     }
     let mut protect = larql_vindex::format::vindex3::represent::policy::Protections::default();

@@ -150,6 +150,13 @@ pub struct MatrixOperand {
     /// preference: a backend that wants compact bytes where there are
     /// none would have to quantise to get them.
     pub stored_bf16: bool,
+    /// Whether the container holds this operand as a compiled NVFP4
+    /// pack. The same kind of fact as [`Self::stored_bf16`] — physical,
+    /// not a preference — and it outranks the size policy: a pack exists
+    /// because someone compiled it deliberately, so a backend asking for
+    /// anything else would widen bytes that are already in the shape a
+    /// kernel wants.
+    pub stored_nvfp4: bool,
 }
 
 /// A backend's declared format per matrix class.
@@ -316,6 +323,34 @@ impl<'a> WeightSlice<'a> {
                         packed,
                         scales,
                         block: *block,
+                    }),
+                    _ => Err(short(packed.len() * 2)),
+                }
+            }
+            WeightSlice::Nvfp4 {
+                packed,
+                scales,
+                tensor_scale,
+            } => {
+                // Groups run along the input axis and the group size is
+                // the format's, not a policy's: `k/16` scale bytes and
+                // `k/2` code bytes per row.
+                const GROUP: usize = 16;
+                if !in_dim.is_multiple_of(GROUP) {
+                    return Err(VindexError::Parse(format!(
+                        "NVFP4 slab: in_dim={in_dim} is not a multiple of the {GROUP}-element \
+                         group, so this pack does not describe these rows"
+                    )));
+                }
+                let groups_per_row = in_dim / GROUP;
+                match (
+                    packed.get(..want / 2),
+                    scales.get(..out_dim * groups_per_row),
+                ) {
+                    (Some(packed), Some(scales)) => Ok(WeightRows::Nvfp4 {
+                        packed,
+                        scales,
+                        tensor_scale: *tensor_scale,
                     }),
                     _ => Err(short(packed.len() * 2)),
                 }

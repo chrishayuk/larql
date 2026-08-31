@@ -51,6 +51,13 @@ pub enum WeightRep {
     /// elements. Step `peak / 7` — **18.1x Q8's at the same block**, and
     /// that ratio is the whole numerical story of the format.
     Q4 { block: usize },
+    /// NVFP4: e2m1 codes with an E4M3 scale per 16 elements and one f32
+    /// tensor scale for the matrix.
+    ///
+    /// No `block` field, unlike [`Self::Q8`] and [`Self::Q4`]: the group
+    /// is 16 by the format's definition, not by a policy's choice, and a
+    /// field would invite a caller to pass a different one.
+    Nvfp4,
 }
 
 /// Over how many elements ONE activation scale applies.
@@ -106,6 +113,7 @@ impl fmt::Display for WeightRep {
             Self::Bf16 => write!(f, "BF16"),
             Self::Q8 { block } => write!(f, "Q8[{block}]"),
             Self::Q4 { block } => write!(f, "Q4[{block}]"),
+            Self::Nvfp4 => write!(f, "NVFP4"),
         }
     }
 }
@@ -162,6 +170,9 @@ pub fn plans_possible_for(rep: WeightRep) -> &'static [PhysicalProjectionPlan] {
             PhysicalProjectionPlan::FusedBf16,
             PhysicalProjectionPlan::Bf16xQ8,
         ],
+        // One kernel, so residency determines execution outright — the
+        // invariant this function exists to expose, satisfied trivially.
+        WeightRep::Nvfp4 => &[PhysicalProjectionPlan::FusedNvfp4],
         WeightRep::Q8 { .. } => &[
             PhysicalProjectionPlan::FusedQ8,
             PhysicalProjectionPlan::Q8xQ8,

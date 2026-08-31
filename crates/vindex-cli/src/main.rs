@@ -208,11 +208,19 @@ fn render_describe(v: &Value) {
     if let Some(mixer) = v["mixer"].as_str() {
         kv("layer", v["layer"].as_u64().unwrap_or(0));
         kv("token mixer", mixer);
+        // An operator the container names but this release cannot
+        // describe operand-by-operand says so, in place of the empty
+        // table that once stood in for the answer.
+        if let Some(why) = v["undescribed"].as_str() {
+            println!();
+            println!("operands      — {why}");
+            return;
+        }
         println!();
-        println!("{:<28} {:<38} SHAPE", "SEMANTICS", "TENSOR");
+        println!("{:<32} {:<38} SHAPE", "SEMANTICS", "TENSOR");
         for op in v["operands"].as_array().into_iter().flatten() {
             println!(
-                "{:<28} {:<38} {}",
+                "{:<32} {:<38} {}",
                 op["role"].as_str().unwrap_or("?"),
                 op["tensor"].as_str().unwrap_or("?"),
                 serde_json::to_string(&op["shape"]).unwrap_or_default()

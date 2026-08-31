@@ -373,8 +373,14 @@ pub fn load_weight(
                 store.store().program(),
                 store.store().is_stored(&operand.object),
             ) {
-                use crate::format::vindex3::represent::policy::classify;
-                let role = classify(&operand.object, &operand.tensor, &operand.shape);
+                // Resolved through the store, which reads the plan
+                // first and the name heuristics second — the same order
+                // the compiler used. Calling `classify` directly here
+                // was the miss that made a correctly compiled pack fail
+                // its own conformance check.
+                let role = store
+                    .store()
+                    .role_of(&operand.object, &operand.tensor, &operand.shape);
                 if !program.conforms(role, &operand.tensor, &raw.dtype) {
                     return Err(VindexError::Parse(format!(
                         "tensor `{}` is stored as `{}`, which the container's \

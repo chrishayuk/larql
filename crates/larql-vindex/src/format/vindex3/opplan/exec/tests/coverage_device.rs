@@ -672,6 +672,7 @@ fn an_nvfp4_device_backend_executes_and_decodes_the_dense_plan() {
             class: MatrixClass::FfnProjection,
             elements: 0,
             stored_bf16: false,
+            stored_nvfp4: false,
         }),
         WeightFormat::Nvfp4
     );

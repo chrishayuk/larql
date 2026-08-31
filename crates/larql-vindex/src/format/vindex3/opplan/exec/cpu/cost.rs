@@ -55,28 +55,36 @@ const BYTES_PER_GB: f64 = 1e9;
 /// Every value is from a harness whose bf16 arm reproduces the real
 /// model's projection class to -3.9%, so a ratio taken against it
 /// licenses something.
-pub fn measured_rate_gbps(plan: PhysicalProjectionPlan) -> f64 {
+pub fn measured_rate_gbps(plan: PhysicalProjectionPlan) -> Option<f64> {
     match plan {
         // The literal transcription: a flat 5.6 GB/s at every shape,
         // which is why it is the oracle and not a strategy.
-        PhysicalProjectionPlan::ScalarF32 => 5.6,
+        PhysicalProjectionPlan::ScalarF32 => Some(5.6),
         // Accelerate's sgemv reading from cache — this plan is only ever
         // chosen for operands whose image FITS cache, so the cache-
         // resident rate is the right one.
-        PhysicalProjectionPlan::BlasF32 => 262.0,
-        PhysicalProjectionPlan::FusedBf16 => 121.66,
-        PhysicalProjectionPlan::FusedQ8 => 81.69,
+        PhysicalProjectionPlan::BlasF32 => Some(262.0),
+        PhysicalProjectionPlan::FusedBf16 => Some(121.66),
+        PhysicalProjectionPlan::FusedQ8 => Some(81.69),
         // CPU-4A: Q4 against an f32 activation is SLOWER than Q8, because
         // the kernel was already conversion-bound and Q4 adds a nibble
         // split. 14.40 GB at 36.9 GB/s.
-        PhysicalProjectionPlan::FusedQ4 => 36.9,
-        PhysicalProjectionPlan::Q8xQ8 => 121.02,
-        PhysicalProjectionPlan::Q4xQ8 => 106.59,
+        PhysicalProjectionPlan::FusedQ4 => Some(36.9),
+        // **No rate has been measured for this plan.** `None` rather
+        // than a plausible-looking constant: every other value here
+        // comes from a harness, and one invented number in a table of
+        // measurements poisons every ratio taken against it. NVFP4 is
+        // reached by observation — a compiled pack the loader binds —
+        // so it can genuinely appear in a tally, and the budget omits it
+        // for the same reason it omits a plan with no calls.
+        PhysicalProjectionPlan::FusedNvfp4 => None,
+        PhysicalProjectionPlan::Q8xQ8 => Some(121.02),
+        PhysicalProjectionPlan::Q4xQ8 => Some(106.59),
         // The A1 control runs the exact bf16 kernel over a reconstructed
         // activation, so it streams bf16 bytes at the bf16 rate. It is
         // never a deployment plan and its cost is quoted only so a
         // control run's ledger still adds up.
-        PhysicalProjectionPlan::Bf16xQ8 => 121.66,
+        PhysicalProjectionPlan::Bf16xQ8 => Some(121.66),
     }
 }
 
@@ -124,7 +132,12 @@ pub fn budget(tallies: &[(PhysicalProjectionPlan, PlanTally)]) -> ProjectionBudg
         if tally.calls == 0 {
             continue;
         }
-        let rate = measured_rate_gbps(*plan);
+        // An unmeasured plan is omitted, never given a stand-in rate:
+        // the row would read as a measurement and the totals would carry
+        // a number nobody took.
+        let Some(rate) = measured_rate_gbps(*plan) else {
+            continue;
+        };
         let ms = tally.bytes as f64 / BYTES_PER_GB / rate * 1e3;
         out.rows.push(BudgetRow {
             plan: *plan,

@@ -48,7 +48,7 @@ const H_ATTN_LAYERS: [usize; 2] = [1, 3];
 /// shape: the mamba_ssm key dialect (no `n_groups`, no `rms_norm`), the
 /// `attention_*` block, a base-ambiguous `attention_layers_idx`, and
 /// `mlp_intermediate_size: 0`.
-fn miniature_hybrid(dir: &Path) {
+pub(crate) fn miniature_hybrid(dir: &Path) {
     let config = serde_json::json!({
         "architectures": ["Mamba2ForCausalLM"],
         "torch_dtype": "float32",

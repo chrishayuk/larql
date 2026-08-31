@@ -47,6 +47,42 @@ use std::fmt;
 pub enum Role {
     /// Attention and dense-FFN projections — the bulk of a dense model.
     DecoderLinear,
+    /// The bulk matmuls of a recurrent token mixer: Gated DeltaNet's
+    /// fused `in_proj_qkv`, its `in_proj_z` and `out_proj`; KDA's split
+    /// q/k/v and out; Mamba2's fused `in_proj` and `out_proj`.
+    ///
+    /// The same shape of operation as [`Self::DecoderLinear`] at the same
+    /// scale, and compiled by the same default — its own role because a
+    /// profile must be able to say something different about a
+    /// recurrence than about softmax attention without editing a
+    /// substring list, and because a report that cannot name them cannot
+    /// distinguish "protected" from "unrecognised".
+    RecurrenceProjection,
+    /// A recurrent mixer's *control* path: the narrow projections that
+    /// emit per-head decay and write strength (Gated DeltaNet
+    /// `in_proj_a`/`in_proj_b`, KDA's gate factorisations and `b_proj`).
+    ///
+    /// Preserved by the default profile, which retains the treatment
+    /// these tensors already had while making its reason explicit and
+    /// testable.
+    ///
+    /// **The reason is a prior, not a finding.** The conjecture is that
+    /// error in a bulk projection perturbs one position's contribution
+    /// while error in the decay and write signals perturbs the state
+    /// every later position reads — so it would compound along the
+    /// sequence rather than average out. Qwen3.8 declaring
+    /// `linear_attention.state_dtype: float32` against otherwise-bf16
+    /// weights shows the *architecture* treats the state specially; it
+    /// does not show that these projections need BF16, and nothing here
+    /// should be read as if it did.
+    ///
+    /// Whether the protection buys measurable fidelity is Q-BANK-1's
+    /// question, run as `protect-control` against `true-uniform` —
+    /// `--include-role recurrence-control` is the second arm. The
+    /// experiment is cheap because the decision is small: 23.6M weights
+    /// across Qwen3.8's 48 recurrent layers, under 0.1% of the stack.
+    /// If it does not separate, this role stops being protected.
+    RecurrenceControl,
     /// Routed-expert weights — the bulk of an MoE model.
     ExpertWeight,
     /// Token embedding table.
@@ -76,6 +112,8 @@ impl Role {
     /// Every role, for CLI parsing and exhaustive reporting.
     pub const ALL: &'static [Role] = &[
         Role::DecoderLinear,
+        Role::RecurrenceProjection,
+        Role::RecurrenceControl,
         Role::ExpertWeight,
         Role::Embedding,
         Role::OutputHead,
@@ -90,6 +128,8 @@ impl Role {
     pub fn name(self) -> &'static str {
         match self {
             Role::DecoderLinear => "decoder-linear",
+            Role::RecurrenceProjection => "recurrence-projection",
+            Role::RecurrenceControl => "recurrence-control",
             Role::ExpertWeight => "expert-weight",
             Role::Embedding => "embedding",
             Role::OutputHead => "output-head",
@@ -107,7 +147,10 @@ impl Role {
 
     /// Whether the conservative default compiles this role.
     pub fn in_default_policy(self) -> bool {
-        matches!(self, Role::DecoderLinear | Role::ExpertWeight)
+        matches!(
+            self,
+            Role::DecoderLinear | Role::RecurrenceProjection | Role::ExpertWeight
+        )
     }
 }
 

@@ -2,13 +2,13 @@
 //! explicit, and closure blocks on every shortfall.
 
 mod closure;
-mod conv_qkv;
+pub(crate) mod conv_qkv;
 mod coverage_opplan;
 mod gemma4_closure;
 mod kda_op;
 mod kimi_mla_closure;
 mod kimi_moe_closure;
-mod mamba2;
+pub(crate) mod mamba2;
 mod mla_op;
 mod plan;
 mod unjudged;
