@@ -142,3 +142,150 @@ fn scale_siblings_are_not_model_geometry() {
          semantic targets only, which is why scales are excluded upstream"
     );
 }
+
+/// Every role the name table maps must have an expected shape, and
+/// vice versa. A role in one table and not the other reaches the file
+/// named and unchecked, or checked and unnamed.
+#[test]
+fn the_name_table_and_the_shape_table_cover_the_same_roles() {
+    use super::super::plan::{qwen35_global_name, qwen35_tensor_name};
+    let model = qwen_model();
+    let roles = [
+        "query",
+        "key",
+        "value",
+        "output",
+        "fused recurrent q|k|v",
+        "output-gate projection",
+        "causal conv over q|k|v",
+        "log decay",
+        "timestep bias",
+        "decay projection",
+        "write-strength projection",
+        "gated norm",
+        "output projection",
+        "input layer norm",
+        "post-attention layer norm",
+        "attention q norm",
+        "attention k norm",
+        "ffn gate",
+        "ffn up",
+        "ffn down",
+        "embedding",
+        "final norm",
+        "output head",
+    ];
+    assert_eq!(roles.len(), 23, "20 per-layer roles and 3 model-scope ones");
+    for role in roles {
+        let named = qwen35_tensor_name(role, 0).is_some() || qwen35_global_name(role).is_some();
+        assert!(named, "`{role}` has no target name");
+        assert!(
+            qwen35_expected_shape(role, &model).is_some(),
+            "`{role}` has a target name and no expected shape"
+        );
+    }
+    // A role outside both tables is refused by name, not silently
+    // passed through by shape.
+    assert!(qwen35_expected_shape("a role nothing maps", &model).is_none());
+    let err = check_target("blk.0.x", "a role nothing maps", &[1], &model).unwrap_err();
+    assert!(matches!(err, GeometryError::NoExpectation { .. }), "{err}");
+}
+
+fn qwen_model() -> ModelGeometry {
+    ModelGeometry {
+        hidden_size: 5120,
+        vocab_size: 248_320,
+        intermediate_size: 17_408,
+        q_heads: Q_HEADS,
+        kv_heads: 4,
+        head_dim: HEAD_DIM,
+        query_carries_gate: true,
+        key_heads: 16,
+        key_head_dim: 128,
+        value_heads: 48,
+        value_head_dim: 128,
+        conv_kernel: 4,
+    }
+}
+
+/// **The fused-Q factor is a graph fact, not a Qwen assumption.** The
+/// surface declares `output_gate.source = fused_query_projection`; a
+/// model without it expects an ordinary-width Q and must not be refused
+/// for having one.
+#[test]
+fn the_query_expectation_reads_the_fused_gate_from_the_graph() {
+    let fused = qwen_model();
+    assert_eq!(
+        qwen35_expected_shape("query", &fused).unwrap().dims,
+        vec![12_288, 5120]
+    );
+    // On the walk, the ordinary width gets the semantic refusal first.
+    let err = check_target("blk.3.attn_q.weight", "query", &[6144, 5120], &fused).unwrap_err();
+    assert!(
+        matches!(err, GeometryError::UnfusedQueryWidth { .. }),
+        "{err}"
+    );
+
+    let plain = ModelGeometry {
+        query_carries_gate: false,
+        ..qwen_model()
+    };
+    assert_eq!(
+        qwen35_expected_shape("query", &plain).unwrap().dims,
+        vec![6144, 5120]
+    );
+    assert!(check_target("blk.3.attn_q.weight", "query", &[6144, 5120], &plain).is_ok());
+}
+
+/// The expectation is derived from the surface the metadata table reads
+/// — and refuses when the surface lacks a fact, rather than letting the
+/// plan check itself.
+#[test]
+fn model_geometry_comes_from_the_surface_and_names_what_it_lacks() {
+    use super::super::preflight::tests_support::qwen_shaped_surface;
+    use crate::format::vindex3::graph::surface::HeadSurface;
+    use larql_models::config::{
+        AttentionGateSpec, GateActivation, GateCombine, GatePlacement, GateSource,
+    };
+
+    let headless = qwen_shaped_surface();
+    assert_eq!(
+        ModelGeometry::from_surface(&headless, 5120),
+        Err(GeometryError::MissingFact("execution.head.vocab_size"))
+    );
+
+    let mut surface = qwen_shaped_surface();
+    surface.head = Some(HeadSurface {
+        vocab_size: 248_320,
+        embedding_norm: None,
+        embed_scale: None,
+        output_multiplier: None,
+        final_logit_softcapping: None,
+        head_reuses_embedding: false,
+    });
+    surface.attention.as_mut().unwrap().output_gate = Some(AttentionGateSpec {
+        source: GateSource::FusedQueryProjection,
+        activation: GateActivation::Sigmoid,
+        combine: GateCombine::ElementwiseMultiply,
+        placement: GatePlacement::AfterAggregationBeforeOutputProjection,
+    });
+    assert_eq!(
+        ModelGeometry::from_surface(&surface, 5120).unwrap(),
+        qwen_model()
+    );
+
+    // The DeltaNet shapes, from head counts rather than any tensor.
+    let m = qwen_model();
+    let dims = |role: &str| qwen35_expected_shape(role, &m).unwrap().dims;
+    assert_eq!(dims("fused recurrent q|k|v"), vec![10_240, 5120]);
+    assert_eq!(
+        dims("causal conv over q|k|v"),
+        vec![10_240, 4],
+        "post-squeeze"
+    );
+    assert_eq!(dims("output-gate projection"), vec![6144, 5120]);
+    assert_eq!(dims("decay projection"), vec![48, 5120]);
+    assert_eq!(dims("log decay"), vec![48]);
+    assert_eq!(dims("gated norm"), vec![128]);
+    assert_eq!(dims("output projection"), vec![5120, 6144]);
+}

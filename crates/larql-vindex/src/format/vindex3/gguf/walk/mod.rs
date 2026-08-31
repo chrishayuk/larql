@@ -31,10 +31,26 @@
 //! Roles arrive as input. The walk never infers one from a tensor name —
 //! that is the operation plan's job, and re-deriving it here would
 //! reintroduce the exact mistake §5:00 of the film exists to explain.
+//!
+//! A fourth invariant, checked per tensor as each plan is made:
+//!
+//! ```text
+//! GEOMETRY  every plan's target shape equals what the graph's facts and
+//!           the target ABI say that role must be
+//! ```
+//!
+//! The expectation comes from [`ModelGeometry`] — graph facts — and the
+//! plan from the physical tensor through its layout transforms. The two
+//! never consult each other, which is what makes their agreement mean
+//! something.
 
 use std::collections::BTreeMap;
 
-use super::plan::{qwen35_global_name, qwen35_tensor_name, LoweredTensorPlan, RepresentationKind};
+use super::geometry::{check_target, GeometryError, ModelGeometry};
+use super::plan::{
+    qwen35_global_name, qwen35_layout, qwen35_tensor_name, LoweredTensorPlan, PlanError,
+    RepresentationKind,
+};
 
 /// One physical tensor in the source, with the role the plan assigned.
 #[derive(Debug, Clone, PartialEq)]
@@ -77,6 +93,12 @@ pub enum WalkError {
         target: String,
         because: &'static str,
     },
+    /// The constructor refused the lowering — a squeeze of a real
+    /// channel axis, or a value transform on a quantised source.
+    Plan { name: String, error: PlanError },
+    /// The metadata's model and the planner's model disagree about this
+    /// tensor. Each is self-consistent; only comparing them finds it.
+    Geometry(GeometryError),
 }
 
 /// What the walk did, in categories that can fail independently.
@@ -88,12 +110,17 @@ pub struct Ledger {
     pub excluded: Vec<Exclusion>,
     pub target_total: usize,
     pub generated_scale_tensors: usize,
+    /// Plans whose target shape was compared with the graph-derived
+    /// expectation and agreed. Equal to `accounted` when ready.
+    pub geometry_reconciled: usize,
     pub errors: Vec<WalkError>,
 }
 
 impl Ledger {
     pub fn ready(&self) -> bool {
-        self.errors.is_empty() && self.accounted == self.source_total
+        self.errors.is_empty()
+            && self.accounted == self.source_total
+            && self.geometry_reconciled == self.accounted
     }
 }
 
@@ -103,16 +130,22 @@ impl Ledger {
 /// derived from the graph, not from what happened to be planned. That
 /// direction matters: deriving them from the plans would make the
 /// coverage check tautological.
+///
+/// `model` is the graph's account of the geometry, and the same
+/// direction applies: it is read from the surface, never from the
+/// tensors being walked.
 pub fn walk_primary_text(
     sources: &[SourceTensor],
     excluded: Vec<Exclusion>,
     required_targets: &[(&str, &'static str)],
+    model: &ModelGeometry,
 ) -> (Vec<LoweredTensorPlan>, Ledger) {
     let mut plans = Vec::new();
     let mut errors = Vec::new();
     let mut by_object: BTreeMap<String, usize> = BTreeMap::new();
     let mut claimed: BTreeMap<String, Vec<String>> = BTreeMap::new();
     let mut scales = 0usize;
+    let mut reconciled = 0usize;
 
     for t in sources {
         *by_object.entry(t.object.clone()).or_insert(0) += 1;
@@ -142,21 +175,36 @@ pub fn walk_primary_text(
             RepresentationKind::Bf16 => 30,
             RepresentationKind::Nvfp4 => larql_models::quant::nvfp4_ggml::TYPE_NVFP4,
         };
-        // Transforms are attached by the caller from graph facts; the
-        // walk's job is coverage, not arithmetic.
-        match LoweredTensorPlan::new(
+        // The ABI's own layout comes from the role table. Transforms
+        // that need graph facts (the V-head reorders) are attached by
+        // the caller; they preserve shape, so geometry is unaffected.
+        let plan = match LoweredTensorPlan::new(
             t.name.clone(),
-            target,
+            target.clone(),
             t.representation,
             target_type,
             t.shape.clone(),
-            vec![],
+            qwen35_layout(&t.role),
             vec![],
             scale_tensor,
         ) {
-            Ok(p) => plans.push(p),
-            Err(_) => unreachable!("no transforms are attached here"),
+            Ok(p) => p,
+            Err(error) => {
+                errors.push(WalkError::Plan {
+                    name: t.name.clone(),
+                    error,
+                });
+                continue;
+            }
+        };
+        // GEOMETRY: the plan's shape came from the tensor; the
+        // expectation comes from the graph. Compare them here, on every
+        // tensor, rather than trusting that both are right.
+        match check_target(&target, &t.role, &plan.target_shape, model) {
+            Ok(_) => reconciled += 1,
+            Err(e) => errors.push(WalkError::Geometry(e)),
         }
+        plans.push(plan);
     }
 
     for (target, sources) in &claimed {
@@ -185,6 +233,7 @@ pub fn walk_primary_text(
         excluded,
         target_total: plans.len() + scales,
         generated_scale_tensors: scales,
+        geometry_reconciled: reconciled,
         errors,
     };
     (plans, ledger)

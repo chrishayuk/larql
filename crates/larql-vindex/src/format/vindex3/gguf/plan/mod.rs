@@ -263,6 +263,20 @@ pub fn qwen35_tensor_name(role: &str, layer: usize) -> Option<String> {
     Some(format!("blk.{layer}.{suffix}"))
 }
 
+/// The layout the target ABI requires of a role, independent of any
+/// graph fact.
+///
+/// Only the convolution has one: the source stores `[channels, 1,
+/// kernel]` and llama.cpp binds `[channels, kernel]`. The V-head
+/// reorders are not here because they depend on head counts and the
+/// preflight's group-boundary invariant, which the caller supplies.
+pub fn qwen35_layout(role: &str) -> Vec<LayoutTransform> {
+    match role {
+        "causal conv over q|k|v" => vec![LayoutTransform::SqueezeSingletonAxis { axis: 1 }],
+        _ => vec![],
+    }
+}
+
 /// The three model-scope surfaces, which carry no layer index.
 pub fn qwen35_global_name(role: &str) -> Option<&'static str> {
     match role {

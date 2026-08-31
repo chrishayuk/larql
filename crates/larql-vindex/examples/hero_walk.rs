@@ -3,7 +3,10 @@
 //! Not a CI test — it needs the 51 GB artifact. This is the production
 //! canary the fixtures cannot stand in for.
 
-use larql_vindex::format::vindex3::gguf::geometry::{semantic_digest, TargetGeometry};
+use larql_vindex::format::vindex3::gguf::geometry::{
+    semantic_digest, ModelGeometry, TargetGeometry,
+};
+use larql_vindex::format::vindex3::gguf::walk::WalkError;
 use larql_vindex::format::vindex3::gguf::walk::{inventory_from_container, walk_primary_text};
 use larql_vindex::format::vindex3::inspect::inspect_container;
 
@@ -89,7 +92,22 @@ fn main() {
         ("output_norm.weight", "final norm before the head"),
         ("output.weight", "graph says head_reuses_embedding = false"),
     ];
-    let (plans, ledger) = walk_primary_text(&sources, excluded, &required);
+    // The expectation's authority: the graph, read off the primary-text
+    // component. Not the tensors — those are the other side.
+    let component = inspection
+        .graph
+        .primary_text_component()
+        .expect("one primary-text component");
+    let model = ModelGeometry::from_surface(
+        component
+            .execution
+            .as_ref()
+            .expect("the component carries its execution surface"),
+        component.hidden_size,
+    )
+    .expect("the graph carries every fact the expectation needs");
+
+    let (plans, ledger) = walk_primary_text(&sources, excluded, &required, &model);
 
     println!("SOURCE");
     for (obj, n) in &ledger.source_by_object {
@@ -110,6 +128,31 @@ fn main() {
     println!("  {:32} {:>5}", "errors", ledger.errors.len());
     for e in ledger.errors.iter().take(10) {
         println!("    {e:?}");
+    }
+    // Planner vs metadata, per tensor, on the real container. The
+    // digest below proves the two selections agree with each other;
+    // this proves both agree with the graph.
+    println!("\nGEOMETRY");
+    println!(
+        "  {:32} {:>5}",
+        "reconciled with graph", ledger.geometry_reconciled
+    );
+    let disagreements = ledger
+        .errors
+        .iter()
+        .filter(|e| matches!(e, WalkError::Geometry(_)))
+        .count();
+    println!("  {:32} {:>5}", "disagreements", disagreements);
+    for e in ledger
+        .errors
+        .iter()
+        .filter_map(|e| match e {
+            WalkError::Geometry(g) => Some(g),
+            _ => None,
+        })
+        .take(5)
+    {
+        println!("    {e}");
     }
     // Semantic geometry only: names and dims, no encoding, no scales.
     // Both selections of one model must agree.

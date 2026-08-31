@@ -5,6 +5,51 @@
 use super::*;
 
 const LAYERS: usize = 64;
+
+/// Qwen3.8-27B's geometry as the graph states it. The walk's
+/// expectation side; the fixture's shapes below are the other side, and
+/// are typed from the container's segment headers rather than derived
+/// from these numbers — deriving them would make the comparison check
+/// nothing.
+fn qwen_model() -> ModelGeometry {
+    ModelGeometry {
+        hidden_size: 5120,
+        vocab_size: 248_320,
+        intermediate_size: 17_408,
+        q_heads: 24,
+        kv_heads: 4,
+        head_dim: 256,
+        query_carries_gate: true,
+        key_heads: 16,
+        key_head_dim: 128,
+        value_heads: 48,
+        value_head_dim: 128,
+        conv_kernel: 4,
+    }
+}
+
+/// The physical shape each role has in the hero container, read from
+/// its segment headers. Literal on purpose.
+fn physical_shape(role: &str) -> Vec<u64> {
+    match role {
+        "embedding" | "output head" => vec![248_320, 5120],
+        "final norm" | "input layer norm" | "post-attention layer norm" => vec![5120],
+        "ffn gate" | "ffn up" => vec![17_408, 5120],
+        "ffn down" => vec![5120, 17_408],
+        "query" => vec![12_288, 5120],
+        "key" | "value" => vec![1024, 5120],
+        "output" => vec![5120, 6144],
+        "attention q norm" | "attention k norm" => vec![256],
+        "fused recurrent q|k|v" => vec![10_240, 5120],
+        "output-gate projection" => vec![6144, 5120],
+        "decay projection" | "write-strength projection" => vec![48, 5120],
+        "causal conv over q|k|v" => vec![10_240, 1, 4],
+        "log decay" | "timestep bias" => vec![48],
+        "gated norm" => vec![128],
+        "output projection" => vec![5120, 6144],
+        other => panic!("no physical shape recorded for role `{other}`"),
+    }
+}
 /// Attending layers sit at N ≡ 3 (mod 4): sixteen of sixty-four.
 fn attends(l: usize) -> bool {
     l % 4 == 3
@@ -22,9 +67,7 @@ fn qwen_sources() -> Vec<SourceTensor> {
             role: role.into(),
             layer,
             representation: RepresentationKind::Bf16,
-            // A plausible 2-D shape; geometry's own tests cover the
-            // shape rules, this fixture is about coverage.
-            shape: vec![5120, 5120],
+            shape: physical_shape(role),
         })
     };
     for l in 0..LAYERS {
@@ -164,7 +207,8 @@ fn the_whole_primary_text_surface_is_accounted_for() {
         "848 decoder + embedding + final norm + head"
     );
 
-    let (plans, ledger) = walk_primary_text(&sources, vision_excluded(), &required());
+    let (plans, ledger) =
+        walk_primary_text(&sources, vision_excluded(), &required(), &qwen_model());
 
     assert_eq!(ledger.errors, vec![], "no unplanned, duplicate or missing");
     assert_eq!(ledger.source_total, 851);
@@ -173,6 +217,10 @@ fn the_whole_primary_text_surface_is_accounted_for() {
         "every physical tensor traced to a target"
     );
     assert_eq!(plans.len(), 851);
+    assert_eq!(
+        ledger.geometry_reconciled, 851,
+        "every plan compared with the graph's expectation, and agreed"
+    );
     assert!(ledger.ready());
 
     assert_eq!(ledger.source_by_object["target.decoder_stack"], 848);
@@ -192,7 +240,7 @@ fn the_whole_primary_text_surface_is_accounted_for() {
 /// llama.cpp would find no norm where it expects one.
 #[test]
 fn post_attention_norm_is_a_trunk_norm_not_an_attention_layer_only_norm() {
-    let (plans, _) = walk_primary_text(&qwen_sources(), vec![], &[]);
+    let (plans, _) = walk_primary_text(&qwen_sources(), vec![], &[], &qwen_model());
     let count = plans
         .iter()
         .filter(|p| p.target_name.ends_with(".post_attention_norm.weight"))
@@ -230,7 +278,7 @@ fn untied_output_head_is_required_even_when_the_target_runtime_can_fallback() {
     sources.retain(|t| t.role != "output head");
     assert_eq!(sources.len(), 850);
 
-    let (_, ledger) = walk_primary_text(&sources, vision_excluded(), &required());
+    let (_, ledger) = walk_primary_text(&sources, vision_excluded(), &required(), &qwen_model());
     assert!(
         ledger.errors.iter().any(|e| matches!(
             e,
@@ -256,7 +304,7 @@ fn an_unmapped_role_is_reported_not_silently_dropped() {
         representation: RepresentationKind::Bf16,
         shape: vec![8, 8],
     });
-    let (_, ledger) = walk_primary_text(&sources, vec![], &[]);
+    let (_, ledger) = walk_primary_text(&sources, vec![], &[], &qwen_model());
     assert!(ledger.errors.iter().any(|e| matches!(
         e,
         WalkError::Unplanned { role, .. } if role == "a role nothing maps"
@@ -282,7 +330,7 @@ fn two_sources_claiming_one_target_name_is_an_error() {
         representation: RepresentationKind::Bf16,
         shape: vec![8, 8],
     });
-    let (_, ledger) = walk_primary_text(&sources, vec![], &[]);
+    let (_, ledger) = walk_primary_text(&sources, vec![], &[], &qwen_model());
     assert!(ledger.errors.iter().any(|e| matches!(
         e,
         WalkError::DuplicateTarget { target, .. } if target == "blk.0.ffn_down.weight"
@@ -299,7 +347,7 @@ fn nvfp4_sources_generate_sibling_scale_tensors() {
             t.representation = RepresentationKind::Nvfp4;
         }
     }
-    let (plans, ledger) = walk_primary_text(&sources, vec![], &[]);
+    let (plans, ledger) = walk_primary_text(&sources, vec![], &[], &qwen_model());
     assert_eq!(ledger.generated_scale_tensors, 64, "one per NVFP4 tensor");
     assert_eq!(
         ledger.target_total,
@@ -381,13 +429,137 @@ fn planner_walks_an_encoded_container_not_a_reconstructed_inventory() {
         sources.iter().map(|s| &s.name).take(8).collect::<Vec<_>>()
     );
 
+    // The expectation from the container's own graph — the production
+    // path, so the fixture's segment headers are reconciled against
+    // facts the encoder wrote, not facts this test typed.
+    let component = inspection.graph.primary_text_component().unwrap();
+    let model =
+        ModelGeometry::from_surface(component.execution.as_ref().unwrap(), component.hidden_size)
+            .expect("the encoded graph carries every fact the expectation needs");
+
     // And the unroled tensors are counted rather than dropped, so the
     // ledger refuses instead of quietly reporting success.
-    let (_, ledger) = walk_primary_text(&sources, excluded, &[]);
+    let (plans, ledger) = walk_primary_text(&sources, excluded, &[], &model);
     assert_eq!(ledger.source_total, sources.len());
     assert!(
         ledger.accounted < ledger.source_total,
         "this fixture roles only four families, so the walk must fall short and say so"
+    );
+    assert!(!ledger.ready());
+    // The four families it does role reconcile against the real graph.
+    assert!(!plans.is_empty());
+    assert_eq!(
+        ledger.geometry_reconciled,
+        plans.len(),
+        "every planned tensor agreed with the graph-derived expectation: {:?}",
+        ledger.errors
+    );
+    assert!(
+        !ledger
+            .errors
+            .iter()
+            .any(|e| matches!(e, WalkError::Geometry(_))),
+        "{:?}",
+        ledger.errors
+    );
+}
+
+/// **The loophole, closed on the walk rather than in a unit test.** A
+/// `q_proj` at ordinary width passes coverage, maps to a unique name,
+/// and is wrong. Before the walk reconciled per tensor, nothing on the
+/// container path could see it.
+#[test]
+fn a_self_consistent_disagreement_is_caught_on_the_walk_not_only_in_isolation() {
+    let mut sources = qwen_sources();
+    let q = sources
+        .iter_mut()
+        .find(|t| t.role == "query" && t.layer == Some(3))
+        .unwrap();
+    q.shape = vec![6144, 5120];
+
+    let (plans, ledger) =
+        walk_primary_text(&sources, vision_excluded(), &required(), &qwen_model());
+    // Coverage is untouched — that is what makes this dangerous.
+    assert_eq!(ledger.accounted, 851);
+    assert_eq!(plans.len(), 851);
+    assert_eq!(ledger.geometry_reconciled, 850);
+    let geometry: Vec<&GeometryError> = ledger
+        .errors
+        .iter()
+        .filter_map(|e| match e {
+            WalkError::Geometry(g) => Some(g),
+            _ => None,
+        })
+        .collect();
+    assert_eq!(geometry.len(), 1, "{:?}", ledger.errors);
+    assert!(
+        matches!(
+            geometry[0],
+            GeometryError::UnfusedQueryWidth { target, found: 6144, expected: 12288, .. }
+                if target == "blk.3.attn_q.weight"
+        ),
+        "the refusal is the semantic one, not a bare shape mismatch: {}",
+        geometry[0]
+    );
+    assert!(!ledger.ready());
+
+    // A head_dim disagreement on K shows both derivations.
+    let mut sources = qwen_sources();
+    let k = sources
+        .iter_mut()
+        .find(|t| t.role == "key" && t.layer == Some(7))
+        .unwrap();
+    k.shape = vec![512, 5120];
+    let (_, ledger) = walk_primary_text(&sources, vec![], &[], &qwen_model());
+    let msg = ledger
+        .errors
+        .iter()
+        .find_map(|e| match e {
+            WalkError::Geometry(g) => Some(g.to_string()),
+            _ => None,
+        })
+        .expect("a disagreement");
+    assert!(msg.contains("blk.7.attn_k.weight"), "{msg}");
+    assert!(
+        msg.contains("[512, 5120]") && msg.contains("[1024, 5120]"),
+        "{msg}"
+    );
+    assert!(
+        msg.contains("kv_heads x head_dim"),
+        "names the facts: {msg}"
+    );
+}
+
+/// The conv's singleton axis is squeezed on the walk, because llama.cpp
+/// binds `[channels, kernel]` — and a real channel axis is refused
+/// before any writer sees it.
+#[test]
+fn the_conv_singleton_axis_is_squeezed_by_the_walk_and_a_real_axis_is_refused() {
+    let (plans, ledger) = walk_primary_text(&qwen_sources(), vec![], &[], &qwen_model());
+    let conv = plans
+        .iter()
+        .find(|p| p.target_name == "blk.0.ssm_conv1d.weight")
+        .unwrap();
+    assert_eq!(conv.source_shape, vec![10_240, 1, 4]);
+    assert_eq!(conv.target_shape, vec![10_240, 4]);
+    assert!(ledger.ready());
+
+    let mut sources = qwen_sources();
+    let conv = sources
+        .iter_mut()
+        .find(|t| t.role == "causal conv over q|k|v" && t.layer == Some(0))
+        .unwrap();
+    conv.shape = vec![10_240, 2, 4];
+    let (plans, ledger) = walk_primary_text(&sources, vec![], &[], &qwen_model());
+    assert_eq!(plans.len(), 850, "the refused plan is not made");
+    assert!(
+        ledger.errors.iter().any(|e| matches!(
+            e,
+            WalkError::Plan { name, error: PlanError::NonSingletonSqueeze { axis: 1, .. } }
+                if name == "0.linear_attn.conv1d.weight"
+        )),
+        "{:?}",
+        ledger.errors
     );
     assert!(!ledger.ready());
 }
