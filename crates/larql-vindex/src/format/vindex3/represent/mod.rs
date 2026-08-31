@@ -57,6 +57,7 @@ pub mod experiment;
 pub mod gptq;
 pub mod kda_candidate;
 pub mod map;
+pub mod measurement;
 pub mod nvfp4_pack;
 pub mod physical;
 pub mod plan_roles;
