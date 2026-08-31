@@ -49,6 +49,7 @@ pub mod arena;
 pub mod bank;
 pub mod compile;
 pub mod compiler;
+pub mod constraint;
 pub mod experiment;
 pub mod gptq;
 pub mod kda_candidate;
