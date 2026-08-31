@@ -149,9 +149,8 @@ fn mamba2_operands_are_named() {
 #[test]
 fn conv_qkv_operands_are_attention_work_not_recurrence_work() {
     let roles = roles_for(miniature_hybrid);
-    let role_of = |tensor: &str| -> Option<Role> {
-        roles.iter().find(|(t, _)| t == tensor).map(|(_, r)| *r)
-    };
+    let role_of =
+        |tensor: &str| -> Option<Role> { roles.iter().find(|(t, _)| t == tensor).map(|(_, r)| *r) };
 
     // Layers 1 and 3 attend. Their projections are ordinary linear work.
     for layer in [1, 3] {
