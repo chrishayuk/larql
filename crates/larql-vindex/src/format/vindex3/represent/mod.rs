@@ -65,6 +65,7 @@ pub mod plan_roles;
 mod plan_roles_tests;
 pub mod policy;
 pub mod quality;
+pub mod search_evidence;
 pub mod selection;
 pub mod source_bank;
 
