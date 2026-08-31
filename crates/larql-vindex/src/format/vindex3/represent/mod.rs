@@ -64,6 +64,7 @@ pub mod plan_roles;
 #[cfg(test)]
 mod plan_roles_tests;
 pub mod policy;
+pub mod promotion;
 pub mod quality;
 pub mod search_evidence;
 pub mod selection;

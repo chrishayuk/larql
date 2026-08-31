@@ -38,6 +38,7 @@
 
 use serde::{Deserialize, Serialize};
 
+use super::measurement::{MeasurementStatus, TailSupport, TailSupportPolicy};
 use super::quality::{Criterion, QualityBank, QualityGate};
 
 /// Whether a limit is a ceiling the candidate spends against, or a
@@ -71,9 +72,31 @@ pub struct Margin {
     /// criterion measures, so there was nothing to record a magnitude
     /// for. Only then does `observed: None` mean "cost zero".
     pub vacuous: bool,
+    /// For a PERCENTILE, the observations behind its tail. `None` for a
+    /// statistic that is not a percentile — a count, a maximum, a mean —
+    /// where the question does not arise.
+    ///
+    /// Carried because a p99 over forty-six observations is a maximum
+    /// wearing a percentile's name, and the margin is the last place
+    /// that fact is still recoverable.
+    pub tail_support: Option<TailSupport>,
 }
 
 impl Margin {
+    /// Whether the evidence supports the statistic this margin reports.
+    ///
+    /// A non-percentile is `Measured` whenever it was observed at all:
+    /// counts and maxima do not have tails to be thin.
+    pub fn measurement_status(&self, policy: &TailSupportPolicy) -> MeasurementStatus {
+        if self.observed.is_none() {
+            return MeasurementStatus::NotObserved;
+        }
+        match self.tail_support {
+            Some(s) => policy.status(Some(s)),
+            None => MeasurementStatus::Measured,
+        }
+    }
+
     /// Fraction of this criterion's budget the candidate consumed, for
     /// ceilings — `1.0` is exactly at the limit.
     ///
@@ -128,25 +151,35 @@ impl ConstraintVector {
     /// The standing of `bank` against every criterion `gate` judges.
     pub fn of(gate: &QualityGate, bank: &QualityBank) -> Self {
         let mut margins = Vec::new();
-        let mut ceiling = |criterion, what: &str, limit: Option<f64>, observed, vacuous| {
-            if let Some(limit) = limit {
-                margins.push(Margin {
-                    criterion,
-                    what: what.into(),
-                    kind: LimitKind::Ceiling,
-                    limit,
-                    observed,
-                    vacuous,
-                });
-            }
+        let mut ceiling =
+            |criterion, what: &str, limit: Option<f64>, observed, vacuous, tail_support| {
+                if let Some(limit) = limit {
+                    margins.push(Margin {
+                        criterion,
+                        what: what.into(),
+                        kind: LimitKind::Ceiling,
+                        limit,
+                        observed,
+                        vacuous,
+                        tail_support,
+                    });
+                }
+            };
+        let p99 = |observations: u64| {
+            Some(TailSupport {
+                quantile: 0.99,
+                observations,
+            })
         };
 
+        // kl is DENSE: every position contributes a value.
         ceiling(
             Criterion::KlP99,
             "kl p99",
             Some(gate.kl_p99_max),
             Some(bank.logits.kl_p99),
             false,
+            p99(bank.positions),
         );
         for (criterion, what, limit, got) in [
             (
@@ -168,12 +201,14 @@ impl ConstraintVector {
                 bank.routing.route_flips,
             ),
         ] {
+            // Raw counts are not percentiles.
             ceiling(
                 criterion,
                 what,
                 limit.map(|l| l as f64),
                 Some(got as f64),
                 false,
+                None,
             );
         }
         // Each consequence magnitude sits beside the COUNT whose being
@@ -181,13 +216,18 @@ impl ConstraintVector {
         // them here, in one table, is what lets a reader check the
         // correspondence — the alternative is a second function that
         // re-derives it from the criterion and needs a wildcard arm.
-        for (criterion, what, limit, observed, changes) in [
+        // Each consequence magnitude sits beside the COUNT whose being
+        // zero makes its absence vacuous rather than missing, and beside
+        // the tail support of the statistic it reports. A MAX has no
+        // tail to be thin; a p99 over a handful of events is a max.
+        for (criterion, what, limit, observed, changes, support) in [
             (
                 Criterion::Top1Displacement,
                 "top-1 probability given up",
                 gate.top1_mass_displaced_max,
                 bank.top1_mass_displaced.map(|d| d.max),
                 bank.logits.top1_flips,
+                None,
             ),
             (
                 Criterion::TopKDisplacement,
@@ -195,6 +235,7 @@ impl ConstraintVector {
                 gate.top10_mass_displaced_p99_max,
                 bank.top10_mass_displaced.map(|d| d.p99),
                 bank.logits.top10_changes,
+                bank.top10_mass_displaced.map(|d| d.count).and_then(&p99),
             ),
             (
                 Criterion::RouteDisplacement,
@@ -202,6 +243,10 @@ impl ConstraintVector {
                 gate.route_mixture_mass_p99_max,
                 bank.routing.route_weight_mass_moved.map(|d| d.p99),
                 bank.routing.route_flips,
+                bank.routing
+                    .route_weight_mass_moved
+                    .map(|d| d.count)
+                    .and_then(&p99),
             ),
             (
                 Criterion::RouteDisplacement,
@@ -209,10 +254,11 @@ impl ConstraintVector {
                 gate.route_mixture_mass_max,
                 bank.routing.route_weight_mass_moved.map(|d| d.max),
                 bank.routing.route_flips,
+                None,
             ),
         ] {
             let vacuous = observed.is_none() && changes == 0;
-            ceiling(criterion, what, limit, observed, vacuous);
+            ceiling(criterion, what, limit, observed, vacuous, support);
         }
 
         // The floors. Neither is a resource a candidate spends; both
@@ -224,6 +270,7 @@ impl ConstraintVector {
             limit: gate.positions_min as f64,
             observed: Some(bank.positions as f64),
             vacuous: false,
+            tail_support: None,
         });
         if let Some(required) = gate.covered_mass_min {
             margins.push(Margin {
@@ -233,6 +280,7 @@ impl ConstraintVector {
                 limit: required,
                 observed: bank.min_covered_mass,
                 vacuous: false,
+                tail_support: None,
             });
         }
 

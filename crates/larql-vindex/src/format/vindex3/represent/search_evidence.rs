@@ -43,8 +43,7 @@
 
 use serde::{Deserialize, Serialize};
 
-use super::assessment::EvidenceScale;
-use super::measurement::MeasurementStatus;
+use super::measurement::{EvidenceScale, MeasurementStatus};
 
 /// How a search may use one statistic at one evidence scale.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]

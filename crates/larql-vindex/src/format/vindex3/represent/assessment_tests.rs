@@ -10,6 +10,7 @@
 use super::super::byte_ledger::{ByteLedger, ScopeBytes};
 use super::super::constraint::Margin;
 use super::super::execution_cost::{m3max_metal_001, ExecutionCostModel};
+use super::super::measurement::TailSupport;
 use super::*;
 
 const KIMI: &str = "Kimi-Linear-48B-A3B-Instruct";
@@ -34,6 +35,16 @@ fn ledger_removing(fraction: f64) -> ByteLedger {
 }
 
 fn ceiling(what: &str, criterion: Criterion, utilisation: f64) -> Margin {
+    // Well-supported by default; the thin-tail cases construct their own.
+    ceiling_with(what, criterion, utilisation, Some(2000))
+}
+
+fn ceiling_with(
+    what: &str,
+    criterion: Criterion,
+    utilisation: f64,
+    observations: Option<u64>,
+) -> Margin {
     Margin {
         criterion,
         what: what.into(),
@@ -41,6 +52,10 @@ fn ceiling(what: &str, criterion: Criterion, utilisation: f64) -> Margin {
         limit: 1.0,
         observed: Some(utilisation),
         vacuous: false,
+        tail_support: observations.map(|observations| TailSupport {
+            quantile: 0.99,
+            observations,
+        }),
     }
 }
 
@@ -52,6 +67,7 @@ fn floor(what: &str, criterion: Criterion, observed: f64, limit: f64) -> Margin 
         limit,
         observed: Some(observed),
         vacuous: false,
+        tail_support: None,
     }
 }
 
@@ -86,7 +102,7 @@ fn assess(
     after: ConstraintVector,
 ) -> CandidateAssessment {
     CandidateAssessment::of(
-        scale,
+        &EvidenceContext::route_cal_1(scale),
         &costs(),
         &ledger_removing(parent_removes),
         &ledger_removing(candidate_removes),
@@ -290,8 +306,17 @@ fn diagnostic_evidence_can_be_estimated_but_never_earned() {
     );
     assert_eq!(d.admission(), Admission::Estimated);
     assert_ne!(d.admission(), Admission::Earned);
-    // It is still rankable — that is the whole point of the scale.
-    assert!(d.ranking_score.score.is_some());
+    // But it is NOT priced. Under ROUTE-CAL-1 no criterion balanced-v1
+    // judges is priceable from a 256-position bank: kl is an ordering
+    // proxy and route mass p99 is unusable. The candidate is therefore
+    // Unscorable — which now means "cannot be priced at this evidence
+    // scale", not "the search knows nothing about it".
+    assert_eq!(d.ranking_score.class, MoveClass::Unscorable);
+    assert_eq!(d.ranking_score.score, None);
+    assert_eq!(
+        d.marginal.unpriceable_costs().count(),
+        d.marginal.costs.len()
+    );
 }
 
 #[test]
@@ -374,7 +399,7 @@ fn a_blind_diagnostic_is_refused_at_either_scale() {
 #[test]
 fn the_trace_names_the_scarce_resource_and_the_evidence_scale() {
     let a = assess(
-        EvidenceScale::Diagnostic,
+        EvidenceScale::Authority,
         0.16,
         0.20,
         vector(0.68, 0.83),
@@ -390,9 +415,27 @@ fn the_trace_names_the_scarce_resource_and_the_evidence_scale() {
         scarce_line.contains("routed mixture"),
         "routing consumed 5/17 against kl's 2/32 — {scarce_line}"
     );
-    assert!(t.contains("Diagnostic"), "{t}");
-    assert!(t.contains("Estimated"), "{t}");
+    assert!(t.contains("Authority"), "{t}");
+    assert!(t.contains("Earned"), "{t}");
     assert!(t.contains("MB/token"), "{t}");
+}
+
+#[test]
+fn a_diagnostic_trace_says_it_is_not_priced_rather_than_showing_a_number() {
+    let d = assess(
+        EvidenceScale::Diagnostic,
+        0.16,
+        0.20,
+        vector(0.68, 0.83),
+        vector(0.70, 0.88),
+    );
+    let t = d.describe();
+    assert!(t.contains("NOT priced"), "{t}");
+    assert!(t.contains("NOT PRICEABLE at this scale"), "{t}");
+    assert!(
+        !t.contains("<- scarce resource"),
+        "nothing is scarce if nothing is priced — {t}"
+    );
 }
 
 #[test]
@@ -416,7 +459,7 @@ fn byte_economics_still_do_not_transfer_across_models() {
         ..ledger_removing(0.20)
     };
     let r = CandidateAssessment::of(
-        EvidenceScale::Authority,
+        &EvidenceContext::route_cal_1(EvidenceScale::Authority),
         &costs(),
         &ledger_removing(0.16),
         &other,

@@ -35,6 +35,21 @@
 
 use serde::{Deserialize, Serialize};
 
+/// Whether an assessment rests on a diagnostic screen or on
+/// authority-scale evidence.
+///
+/// Lives here rather than beside the assessment because it is a
+/// property of the EVIDENCE: a scale is the thing a statistic's support
+/// is judged at, and the calibration registry has to key on it without
+/// depending on anything that consumes it.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub enum EvidenceScale {
+    /// A short bank, used to rank and to search.
+    Diagnostic,
+    /// A full bank at the contract's own position count.
+    Authority,
+}
+
 /// Whether a reported statistic is supported by its evidence.
 ///
 /// The three states are distinct in the way that matters to a search:

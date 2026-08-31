@@ -42,22 +42,10 @@ use serde::{Deserialize, Serialize};
 use super::byte_ledger::ByteLedger;
 use super::constraint::{ConstraintVector, LimitKind, Margin};
 use super::execution_cost::{CostPrediction, CostRefusal, ExecutionCostModel};
+pub use super::measurement::EvidenceScale;
+use super::measurement::TailSupportPolicy;
 use super::quality::Criterion;
-
-/// Whether an assessment rests on a diagnostic screen or on
-/// authority-scale evidence.
-///
-/// The distinction exists to stop a ranking becoming an admissibility
-/// claim. A diagnostic bank is cheap enough to run over many candidates
-/// and is how the search explores; it can be scored and sorted, and it
-/// may not admit anything.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-pub enum EvidenceScale {
-    /// A short bank, used to rank and to search.
-    Diagnostic,
-    /// A full bank at the contract's own position count.
-    Authority,
-}
+use super::search_evidence::{SearchCalibrationRegistry, SearchEvidence};
 
 /// What a move did to one criterion.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -81,10 +69,47 @@ pub struct MarginalConstraintCost {
     /// fraction, and reporting a huge number would let it be averaged.
     /// Negative when the move freed headroom.
     pub fraction_of_remaining_consumed: Option<f64>,
+    /// **How this dimension was obtained**, which decides whether its
+    /// magnitude may be priced at all. A thin-tailed percentile with a
+    /// good ordering correlation is real evidence and is still not a
+    /// number to spend a budget against.
+    pub search_evidence: SearchEvidence,
+}
+
+/// What a search needs in order to know which of its numbers mean what.
+#[derive(Debug, Clone)]
+pub struct EvidenceContext {
+    pub scale: EvidenceScale,
+    pub registry: SearchCalibrationRegistry,
+    pub tail_policy: TailSupportPolicy,
+}
+
+impl EvidenceContext {
+    /// The context this programme currently has: ROUTE-CAL-1's
+    /// registrations and its five-tail-observation policy.
+    pub fn route_cal_1(scale: EvidenceScale) -> Self {
+        Self {
+            scale,
+            registry: SearchCalibrationRegistry::route_cal_1(),
+            tail_policy: TailSupportPolicy::route_cal_1(),
+        }
+    }
 }
 
 impl MarginalConstraintCost {
-    fn between(before: &Margin, after: &Margin) -> Self {
+    /// Whether this dimension's magnitude may be turned into a fraction
+    /// of a remaining budget.
+    pub fn priceable(&self) -> bool {
+        self.search_evidence.is_priceable()
+    }
+
+    /// Whether it carries evidence usable for ORDERING, which is a
+    /// weaker claim than pricing.
+    pub fn orders(&self) -> bool {
+        self.search_evidence.orders()
+    }
+
+    fn between(before: &Margin, after: &Margin, ctx: &EvidenceContext) -> Self {
         let (b, a) = (before.utilisation(), after.utilisation());
         let delta = match (b, a) {
             (Some(b), Some(a)) => Some(a - b),
@@ -95,6 +120,23 @@ impl MarginalConstraintCost {
             (Some(d), Some(r)) if r > 0.0 => Some(d / r),
             _ => None,
         };
+        // The WEAKER of the two sides governs: a move whose "after" is
+        // well supported but whose "before" was not has no trustworthy
+        // delta.
+        let evidence = {
+            let each = [before, after].map(|m| {
+                ctx.registry.evidence_for(
+                    &m.what,
+                    ctx.scale,
+                    &m.measurement_status(&ctx.tail_policy),
+                )
+            });
+            if each[0].confidence_rank() <= each[1].confidence_rank() {
+                each[0].clone()
+            } else {
+                each[1].clone()
+            }
+        };
         Self {
             criterion: after.criterion,
             what: after.what.clone(),
@@ -103,6 +145,7 @@ impl MarginalConstraintCost {
             delta,
             remaining_before,
             fraction_of_remaining_consumed: fraction,
+            search_evidence: evidence,
         }
     }
 
@@ -122,7 +165,11 @@ impl MarginalConstraintVector {
     /// Pair the two vectors up by the gate's own wording for each
     /// limit. Criteria present in only one are dropped: they cannot
     /// have a before-and-after.
-    pub fn between(before: &ConstraintVector, after: &ConstraintVector) -> Self {
+    pub fn between(
+        before: &ConstraintVector,
+        after: &ConstraintVector,
+        ctx: &EvidenceContext,
+    ) -> Self {
         let costs = after
             .margins
             .iter()
@@ -132,10 +179,18 @@ impl MarginalConstraintVector {
                     .margins
                     .iter()
                     .find(|b| b.what == a.what)
-                    .map(|b| MarginalConstraintCost::between(b, a))
+                    .map(|b| MarginalConstraintCost::between(b, a, ctx))
             })
             .collect();
         Self { costs }
+    }
+
+    /// Dimensions that cost something but may not be priced — the
+    /// candidate's invisible costs. A search that ignored these would
+    /// prefer exactly the candidates whose expensive dimension it
+    /// cannot see.
+    pub fn unpriceable_costs(&self) -> impl Iterator<Item = &MarginalConstraintCost> {
+        self.costs.iter().filter(|c| !c.priceable())
     }
 
     /// **The scarce-resource cost of this move**: the largest fraction
@@ -154,6 +209,7 @@ impl MarginalConstraintVector {
     pub fn scarcest(&self) -> Option<&MarginalConstraintCost> {
         self.costs
             .iter()
+            .filter(|c| c.priceable())
             .filter(|c| c.fraction_of_remaining_consumed.is_some_and(|f| f > 0.0))
             .max_by(|x, y| {
                 let (a, b) = (
@@ -181,8 +237,12 @@ impl MarginalConstraintVector {
     /// ends. Anything this returns true for is unrankable, not free.
     pub fn unscorable(&self) -> bool {
         self.costs.iter().any(|c| {
-            c.fraction_of_remaining_consumed.is_none()
-                && (c.delta.is_none() || c.delta.is_some_and(|d| d > 0.0))
+            // Either the arithmetic could not produce a fraction...
+            (c.priceable()
+                && c.fraction_of_remaining_consumed.is_none()
+                && (c.delta.is_none() || c.delta.is_some_and(|d| d > 0.0)))
+                // ...or the evidence does not license pricing one.
+                || !c.priceable()
         })
     }
 
@@ -326,16 +386,17 @@ impl CandidateAssessment {
     /// difference between the two predictions, which is what the
     /// ranking wants.
     pub fn of(
-        scale: EvidenceScale,
+        ctx: &EvidenceContext,
         costs: &ExecutionCostModel,
         parent: &ByteLedger,
         candidate: &ByteLedger,
         before: ConstraintVector,
         after: ConstraintVector,
     ) -> Result<Self, CostRefusal> {
+        let scale = ctx.scale;
         let parent_cost = costs.predict(parent)?;
         let candidate_cost = costs.predict(candidate)?;
-        let marginal = MarginalConstraintVector::between(&before, &after);
+        let marginal = MarginalConstraintVector::between(&before, &after, ctx);
         let gpu_ms_saved = parent_cost.gpu_ms_per_token - candidate_cost.gpu_ms_per_token;
         let scarce = marginal.scarce_fraction_consumed();
         let score = match scarce {
@@ -436,9 +497,11 @@ impl CandidateAssessment {
         );
         let scarcest = self.marginal.scarcest().map(|c| c.what.clone());
         for c in &self.marginal.costs {
-            let share = match c.fraction_of_remaining_consumed {
-                Some(f) => format!("{:+.0}% of remaining headroom", 100.0 * f),
-                None => "not scored".into(),
+            let share = match (c.priceable(), c.fraction_of_remaining_consumed) {
+                (true, Some(f)) => format!("{:+.0}% of remaining headroom", 100.0 * f),
+                (true, None) => "not scored".into(),
+                (false, _) if c.orders() => "NOT PRICEABLE at this scale (ordering proxy)".into(),
+                (false, _) => "NOT PRICEABLE at this scale (no usable evidence)".into(),
             };
             let mark = if Some(&c.what) == scarcest.as_ref() {
                 "   <- scarce resource"
@@ -452,6 +515,13 @@ impl CandidateAssessment {
                 "\nrank: {:.2} ms per unit of scarce headroom ({:.0}% consumed)\n",
                 s,
                 100.0 * self.ranking_score.scarce_fraction_consumed.unwrap_or(0.0),
+            ),
+            None if self.marginal.unpriceable_costs().next().is_some() => format!(
+                "\nrank: {:+.2} ms GPU, NOT priced — {} of {} dimensions cannot be priced at \
+                 this evidence scale\n",
+                self.ranking_score.gpu_ms_saved,
+                self.marginal.unpriceable_costs().count(),
+                self.marginal.costs.len(),
             ),
             None => format!(
                 "\nrank: {:+.2} ms GPU at no behavioural cost\n",
