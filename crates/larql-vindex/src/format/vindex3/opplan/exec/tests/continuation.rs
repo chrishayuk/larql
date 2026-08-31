@@ -295,6 +295,11 @@ fn the_runtime_state_allocates_what_the_geometry_asked_for() {
     let mut kv = 0;
     for index in 0..LAYERS {
         match state.layer(index) {
+            // No layer in this fixture keeps one — the arm is here so
+            // adding a state species cannot silently pass this gate.
+            LayerContinuationState::LatentKv(_) => {
+                panic!("layer {index} allocated a latent cache the plan never declared")
+            }
             LayerContinuationState::Recurrent(r) => {
                 recurrent += 1;
                 assert_eq!(r.buffer(0).shape(), [VALUE_HEADS, HEAD_DIM, HEAD_DIM]);
@@ -492,6 +497,18 @@ fn a_kv_only_provider_refuses_the_two_region_layer() {
                 layer,
             })
         }
+        fn latent_state(
+            &mut self,
+            layer: usize,
+        ) -> Result<
+            &mut crate::format::vindex3::opplan::exec::continuation::LatentKvRows,
+            ContinuationError,
+        > {
+            Err(ContinuationError::LatentUnsupported {
+                provider: "RowsOnly",
+                layer,
+            })
+        }
     }
 
     let layers = [
@@ -513,6 +530,95 @@ fn a_kv_only_provider_refuses_the_two_region_layer() {
     );
     let rendered = err.to_string();
     assert!(rendered.contains("refusing"), "{rendered}");
+}
+
+/// **A KV-only provider refuses a LATENT layer too — and says which
+/// region it is missing.**
+///
+/// Not the same refusal as the recurrent one, deliberately. A latent
+/// cache grows with the prefix and a recurrence does not, so a provider
+/// told "no recurrent state" when the real gap is MLA's rows would be
+/// sent looking in the wrong place — and the two are separate variants
+/// exactly so the message cannot lie about which half is absent.
+#[test]
+fn a_kv_only_provider_refuses_a_latent_layer_and_names_that_region() {
+    use super::super::continuation::LayerLatentKvGeometry;
+    use super::super::kv::{ContinuationError, ContinuationProvider, RowKvState};
+
+    let layers = [
+        LayerContinuationGeometry::Kv(LayerKvGeometry {
+            kv_dim: 4,
+            window: None,
+        }),
+        LayerContinuationGeometry::LatentKv(LayerLatentKvGeometry { width: 7 }),
+    ];
+
+    // The default projection — what every KV-only provider inherits.
+    struct RowsOnlyLatent;
+    impl ContinuationProvider for RowsOnlyLatent {
+        fn prepare(&mut self, _layers: &[LayerKvGeometry]) {}
+        fn append(&mut self, _layer: usize, _key: Vec<f32>, _value: Vec<f32>) {}
+        fn keys(&self, _layer: usize) -> &[Vec<f32>] {
+            &[]
+        }
+        fn values(&self, _layer: usize) -> &[Vec<f32>] {
+            &[]
+        }
+        fn position(&self) -> usize {
+            0
+        }
+        fn set_position(&mut self, _position: usize) {}
+        fn recurrent_state(
+            &mut self,
+            layer: usize,
+        ) -> Result<&mut super::super::continuation::RecurrentState, ContinuationError> {
+            Err(ContinuationError::RecurrentUnsupported {
+                provider: "RowsOnlyLatent",
+                layer,
+            })
+        }
+        fn latent_state(
+            &mut self,
+            layer: usize,
+        ) -> Result<&mut super::super::continuation::LatentKvRows, ContinuationError> {
+            Err(ContinuationError::LatentUnsupported {
+                provider: "RowsOnlyLatent",
+                layer,
+            })
+        }
+    }
+
+    let err = RowsOnlyLatent
+        .prepare_continuation(&layers)
+        .expect_err("a latent cache is not rows");
+    assert_eq!(
+        err,
+        ContinuationError::LatentUnsupported {
+            provider: "a KV-only provider",
+            layer: 1,
+        },
+        "the refusal must name the LATENT region, not the recurrent one"
+    );
+    assert!(err.to_string().contains("latent"), "{err}");
+
+    // And a provider that DOES hold latent rows still refuses to serve
+    // them for a layer that keeps something else — a dispatch bug, named
+    // as one rather than answered with an empty cache.
+    let mut provider = RowKvState::default();
+    provider.prepare_continuation(&layers).unwrap();
+    assert!(
+        provider.latent_state(1).is_ok(),
+        "layer 1 keeps latent rows"
+    );
+    assert_eq!(
+        provider
+            .latent_state(0)
+            .expect_err("layer 0 keeps K/V rows"),
+        ContinuationError::NotLatent {
+            provider: "RowKvState",
+            layer: 0,
+        }
+    );
 }
 
 /// The runtime state allocates BOTH regions for the two-region layer —

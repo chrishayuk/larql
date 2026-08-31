@@ -73,6 +73,18 @@ impl KvState for RecordingKvState {
             layer,
         })
     }
+
+    /// Nor a latent cache — stated, not inherited.
+    fn latent_state(
+        &mut self,
+        layer: usize,
+    ) -> Result<&mut super::super::continuation::LatentKvRows, super::super::kv::ContinuationError>
+    {
+        Err(super::super::kv::ContinuationError::LatentUnsupported {
+            provider: "RecordingKvState",
+            layer,
+        })
+    }
 }
 
 #[test]

@@ -25,6 +25,7 @@ use std::path::PathBuf;
 use larql_models::config::MlaGeometry;
 use serde_json::Value;
 
+use crate::format::vindex3::opplan::exec::cpu::projector::WeightRows;
 use crate::format::vindex3::opplan::exec::kimi_mla_layer::mla_decoder_layer_forward;
 use crate::format::vindex3::opplan::exec::kimi_moe_block::ExpertWeights;
 use crate::format::vindex3::opplan::exec::mla::{MlaState, MlaWeights};
@@ -143,11 +144,11 @@ fn one_complete_mla_layer_matches_the_oracle_at_kimis_real_geometry() {
         read_f32(&dir, "mla_o_proj"),
     );
     let mla_weights = MlaWeights {
-        q_proj: &qp,
-        kv_a_proj: &kap,
+        q_proj: WeightRows::F32(&qp),
+        kv_a_proj: WeightRows::F32(&kap),
         kv_a_norm: &kan,
-        kv_b_proj: &kbp,
-        o_proj: &op,
+        kv_b_proj: WeightRows::F32(&kbp),
+        o_proj: WeightRows::F32(&op),
         kv_a_norm_eps,
     };
 
@@ -183,7 +184,7 @@ fn one_complete_mla_layer_matches_the_oracle_at_kimis_real_geometry() {
         down: &shared_down,
     };
 
-    let mut mla_state = MlaState::empty();
+    let mut mla_state = MlaState::default();
     for p in 0..positions {
         let trace = mla_decoder_layer_forward(
             &inputs[p],
@@ -263,7 +264,7 @@ fn one_complete_mla_layer_matches_the_oracle_at_kimis_real_geometry() {
     }
 
     assert_eq!(
-        mla_state.compressed_kv.len(),
+        mla_state.len(),
         positions,
         "the KV cache must hold exactly the positions run"
     );

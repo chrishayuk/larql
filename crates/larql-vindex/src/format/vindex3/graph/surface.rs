@@ -352,7 +352,9 @@ impl LinearAttentionSurface {
 /// does not reuse `LinearAttentionTopology`: the surface is the executor's
 /// contract, and may diverge from the architectural record. It does not,
 /// today.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+// No `Eq`: `kv_a_norm_eps` is a float, and the operator's own epsilon
+// is exactly the kind of fact whose equality is approximate.
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
 pub struct MlaSurface {
     /// Query/output head count — the decompressed K/V side always
     /// produces this many heads' worth of output.
@@ -366,6 +368,22 @@ pub struct MlaSurface {
     pub qk_rope_head_dim: usize,
     /// Value head width — independent of the query/key head width.
     pub v_head_dim: usize,
+    /// Epsilon of `kv_a_layernorm`, the latent norm applied between the
+    /// compressed cache and its decompression — the FAMILY'S OWN value,
+    /// which on Kimi Linear is `KimiRMSNorm`'s class default `1e-6` and
+    /// not the layer's `rms_norm_eps` (`1e-5`).
+    ///
+    /// Carried on the surface because it is a per-operator norm site the
+    /// component-level norm surface cannot speak for: the drill's F6, the
+    /// one judged semantic the container could not carry, which lived as
+    /// a constant inside a family-shaped executor and so could not
+    /// survive deleting the checkpoint.
+    ///
+    /// `None` = unjudged for this family; the operator refuses rather
+    /// than borrowing the layer eps. Absent on containers written before
+    /// it was recorded, which is the same state.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub kv_a_norm_eps: Option<f64>,
 }
 
 impl MlaSurface {
@@ -453,6 +471,7 @@ pub fn surface_from_resolved(
             qk_nope_head_dim: m.qk_nope_head_dim,
             qk_rope_head_dim: m.qk_rope_head_dim,
             v_head_dim: m.v_head_dim,
+            kv_a_norm_eps: m.kv_a_norm_eps,
         }),
         attention: attends.then_some(AttentionSurface {
             num_q_heads: resolved.num_q_heads,

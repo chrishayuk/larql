@@ -46,12 +46,6 @@ use crate::format::vindex3::represent::physical::{
 use crate::format::vindex3::represent::policy::{layer_of, projection_of, Role};
 use crate::format::vindex3::represent::source_bank::source_expert_bank;
 
-/// `kv_a_layernorm`'s epsilon is the reference class's DEFAULT, not the
-/// config's `rms_norm_eps`: `KimiMLAAttention.__init__` constructs it
-/// with no override (P3d-i, measured against the real checkpoint). The
-/// graph carries the config value; this one fact it cannot carry.
-const MLA_KV_A_NORM_EPS: f32 = 1e-6;
-
 /// Positions each MLA layer's device cache is sized for. A sequence
 /// longer than this is refused by the operator, not truncated.
 const MLA_CACHE_POSITIONS: usize = 64;
@@ -73,6 +67,16 @@ pub struct KimiGeometry {
     pub renormalize: bool,
     pub kda: KdaShape,
     pub mla: MlaShape,
+    /// The epsilon MLA's latent norm runs at, READ FROM THE GRAPH.
+    ///
+    /// This was `MLA_KV_A_NORM_EPS`, a constant in this file, and the
+    /// ontology drill's F6: the one judged semantic the container could
+    /// not carry, so deleting the checkpoint could not restore it. The
+    /// surface carries it since lift 2, and this loader consumes what
+    /// the container says — refusing a container that predates it
+    /// rather than re-supplying the number from memory, which is the
+    /// same posture every other field here takes.
+    pub mla_norm_eps: f32,
     /// Per layer, in order: `true` = MLA full attention, `false` = KDA.
     pub mla_layer: Vec<bool>,
 }
@@ -171,6 +175,7 @@ fn geometry_from_graph(graph: &serde_json::Value) -> Result<KimiGeometry, Vindex
             head_dim: need(&kda["head_dim"], "kda.head_dim")? as usize,
             conv_kernel: need(&kda["conv_kernel"], "kda.conv_kernel")? as usize,
         },
+        mla_norm_eps: need_f(&mla["kv_a_norm_eps"], "mla.kv_a_norm_eps")? as f32,
         mla: MlaShape {
             hidden,
             num_heads: need(&mla["num_heads"], "mla.num_heads")? as usize,
@@ -401,7 +406,7 @@ impl KimiSourceModel {
                 norm_eps: g.rms_eps,
                 kda_shape: g.kda,
                 mla_shape: g.mla,
-                mla_norm_eps: MLA_KV_A_NORM_EPS,
+                mla_norm_eps: g.mla_norm_eps,
             }
         };
         let mut d = if layer < g.dense_prefix_layers {

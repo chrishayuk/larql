@@ -31,7 +31,7 @@ mod kda_parity;
 mod kda_parity_real;
 #[cfg(all(feature = "gpu", target_os = "macos"))]
 mod kda_q8_real;
-mod kda_refusal;
+mod kda_state;
 mod kimi_kda_layer_real;
 #[cfg(all(feature = "gpu", target_os = "macos"))]
 mod kimi_layer_metal;
@@ -47,7 +47,7 @@ mod mamba2_exec;
 #[cfg(all(feature = "gpu", target_os = "macos"))]
 mod mla_metal;
 mod mla_parity;
-mod mla_refusal;
+mod mla_state;
 mod mrope_parity;
 mod nvfp4_decode;
 mod output_gate_fused;

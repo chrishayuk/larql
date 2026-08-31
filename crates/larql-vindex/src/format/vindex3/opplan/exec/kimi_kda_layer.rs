@@ -25,7 +25,8 @@
 
 use larql_models::config::{KdaGeometry, NormType};
 
-use super::kda::{layer_forward, KdaPlanes, KdaState, KdaWeights, Mutation as KdaMutation};
+use super::continuation::RecurrentState;
+use super::kda::{layer_forward, KdaPlanes, KdaWeights, Mutation as KdaMutation};
 use super::kernels::norm;
 use super::kimi_moe_block::{expert_ffn, moe_block_forward, ExpertWeights, MoeBlockTrace};
 use super::timing::{timed, OpClass};
@@ -65,7 +66,7 @@ pub fn kda_decoder_layer_forward<'a>(
     norm_eps: f64,
     kda_weights: KdaWeights<'_>,
     kda_geometry: KdaGeometry,
-    kda_state: &mut KdaState,
+    kda_state: &mut RecurrentState,
     inter: usize,
     router_weight: &[f32],
     router_bias: &[f32],
@@ -179,7 +180,7 @@ pub fn kda_dense_decoder_layer_forward(
     norm_eps: f64,
     kda_weights: KdaWeights<'_>,
     kda_geometry: KdaGeometry,
-    kda_state: &mut KdaState,
+    kda_state: &mut RecurrentState,
     ffn_weights: ExpertWeights<'_>,
     inter: usize,
 ) -> KdaDenseDecoderLayerTrace {

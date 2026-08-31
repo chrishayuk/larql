@@ -365,6 +365,44 @@ impl<'a, B: PlanBackend> DecodeSession<'a, B> {
                     );
                     planes.output.remove(0)
                 }
+                super::prepared::PreparedAttention::Kda(ops) => {
+                    let recurrent = self.kv.state_mut().recurrent_state(index)?;
+                    let projector = self.backend.dense_projector();
+                    let mut planes = super::kda::layer_forward_with(
+                        &super::kda::BackendKdaProjections(projector),
+                        &inputs[0],
+                        inputs[0].len(),
+                        ops.weights()?,
+                        ops.op.geometry(),
+                        recurrent,
+                        super::kda::Mutation::None,
+                    );
+                    // One position in, one position out: the planes are
+                    // flat and this call contributed exactly `hidden`.
+                    planes.output.truncate(inputs[0].len());
+                    std::mem::take(&mut planes.output)
+                }
+                super::prepared::PreparedAttention::Mla(ops) => {
+                    // MLA appends its own position to the latent cache
+                    // and reads the whole prefix back — the cache IS the
+                    // continuation, and the provider owns it across the
+                    // step boundary exactly as it owns KV rows.
+                    let projector = self.backend.dense_projector();
+                    let hidden = inputs[0].len();
+                    let weights = ops.weights()?;
+                    let geometry = ops.op.geometry();
+                    let latent = self.kv.state_mut().latent_state(index)?;
+                    super::mla::mla_forward_with(
+                        projector,
+                        &inputs[0],
+                        hidden,
+                        weights,
+                        geometry,
+                        latent,
+                        super::mla::Mutation::None,
+                    )
+                    .output
+                }
                 super::prepared::PreparedAttention::ConvQkv(ops) => {
                     // Two regions, borrowed in phases: past rows copied
                     // out, conv history advanced by the forward, the

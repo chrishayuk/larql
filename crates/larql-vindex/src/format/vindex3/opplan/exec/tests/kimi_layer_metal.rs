@@ -43,7 +43,8 @@ use larql_compute_metal::MetalBackend;
 use larql_models::config::KdaGeometry;
 use serde_json::Value;
 
-use crate::format::vindex3::opplan::exec::kda::{KdaState, KdaWeights};
+use crate::format::vindex3::opplan::exec::cpu::projector::WeightRows;
+use crate::format::vindex3::opplan::exec::kda::{zero_state, KdaWeights};
 use crate::format::vindex3::opplan::exec::kimi_kda_layer::kda_decoder_layer_forward;
 use crate::format::vindex3::opplan::exec::kimi_moe_block::ExpertWeights;
 
@@ -167,9 +168,9 @@ impl Fixture {
     fn kda_cpu(&self) -> KdaWeights<'_> {
         let f = &self.kda_f32;
         KdaWeights {
-            q_proj: &self.q,
-            k_proj: &self.k,
-            v_proj: &self.v,
+            q_proj: WeightRows::Bf16(&self.q),
+            k_proj: WeightRows::Bf16(&self.k),
+            v_proj: WeightRows::Bf16(&self.v),
             q_conv1d: &f.qc,
             k_conv1d: &f.kc,
             v_conv1d: &f.vc,
@@ -181,8 +182,11 @@ impl Fixture {
             a_log: &f.al,
             dt_bias: &f.dt,
             o_norm: &f.on,
-            o_proj: &self.o,
+            o_proj: WeightRows::Bf16(&self.o),
             norm_eps: self.eps,
+            // The rank the gate factorisations meet at — this fixture's
+            // own `f_a_proj`, not the head dim the executor used to assume.
+            gate_rank: f.fa.len() / self.hidden,
         }
     }
 
@@ -427,7 +431,7 @@ fn cpu_layer(
         up: &fx.cpu_shared.1,
         down: &fx.cpu_shared.2,
     };
-    let mut state = KdaState::zeros(fx.geometry);
+    let mut state = zero_state(fx.geometry);
     kda_decoder_layer_forward(
         &fx.x,
         fx.hidden,

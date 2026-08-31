@@ -516,6 +516,16 @@ pub struct MlaExecution {
     /// Value head width — independent of the query/key head width; MLA's
     /// asymmetry is structural, not an approximation.
     pub v_head_dim: usize,
+    /// Epsilon of the latent norm (`kv_a_layernorm`) that stands between
+    /// the compressed cache and its decompression — the family's own
+    /// reference value, NOT `rms_norm_eps` (see
+    /// [`ModelArchitecture::mla_kv_a_norm_eps`](crate::config::ModelArchitecture::mla_kv_a_norm_eps)).
+    ///
+    /// `None` = this family's reference has not been read for it, and an
+    /// executor must refuse rather than substitute the layer eps.
+    /// Defaults for inventories written before it was recorded.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub kv_a_norm_eps: Option<f64>,
 }
 
 /// One flattened `config.json` leaf.

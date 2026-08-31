@@ -1007,22 +1007,42 @@ plan-declared discipline. Sessions, batch prefill, resume and the
 serving stack are specified in the runtime document; their contract
 point here is single: **state geometry is a container fact.**
 
-### 17.4 Pinned generalisations — lift 1 landed at schema 6
+### 17.4 Pinned generalisations — both lifts landed within schema 6
 
-Two abstraction lifts are pinned for 3.0 Final, recorded here so the
+Two abstraction lifts were pinned for 3.0 Final, recorded here so the
 freeze does not fossilise the one Transformer-shaped remnant of the
-execution ontology. **Lift 1 is implemented** (2026-08-30): SystemGraph
-schema 6 carries the one intentional reinterpretation — presence means
-semantic presence (`attention` and `ffn` surface groups present iff the
-component's program runs those operations, the per-layer `operator`
-explicit with no absent-means-softmax default), the layer census fails
-closed on an undeclared family, and operand closure runs at encode (an
-encoder may not leave behind a container whose operands do not close;
-a failing closure removes the output). Lift 2's remaining schema facts
-— KDA state precision, MLA latent-KV geometry, the per-op norm-epsilon
-override (drill F5/F6) — are **additive within the v6 span** (optional
-fields, not reinterpretations of existing bytes), consistent with §12's
-numbering rule, and stay open gates below.
+execution ontology. **Both are now implemented.**
+
+**Lift 1** (2026-08-30): SystemGraph schema 6 carries the one
+intentional reinterpretation — presence means semantic presence
+(`attention` and `ffn` surface groups present iff the component's
+program runs those operations, the per-layer `operator` explicit with
+no absent-means-softmax default), the layer census fails closed on an
+undeclared family, and operand closure runs at encode (an encoder may
+not leave behind a container whose operands do not close; a failing
+closure removes the output).
+
+**Lift 2** (2026-08-31): the remaining state-schema facts — KDA state
+precision, MLA latent-KV geometry, the per-op norm-epsilon override
+(drill F5/F6) — landed as **additive fields within the v6 span**
+(optional, not reinterpretations of existing bytes), consistent with
+§12's numbering rule. The continuation schema now carries three region
+species rather than two: sequence-indexed KV rows, a **latent cache**
+(one operator-defined row per position — MLA's compressed latent plus
+its shared rope-K, never a K/V pair), and fixed-size recurrent buffers;
+`ExecutionSurface.mla.kv_a_norm_eps` carries the one judged semantic
+the container previously could not (`kv_a_layernorm` runs at its
+class default, not the layer's `rms_norm_eps`), and an operand set
+carrying none is refused rather than lent the layer's value. A
+precision no checkpoint declares is a recorded transcription of the
+operator's own reference, held in one place, never a planner's choice.
+
+The migration is **graph-only**, and that is the lift's own witness:
+re-encoding Kimi-Linear-48B-A3B-Instruct under lift 2 left all five
+representations' `payload_sha256` **byte-identical** to the schema-6
+container while the missing semantic moved into the graph. Meaning was
+corrected without touching a single physical representation — §5's
+separation of logical identity from stored bytes, exercised at 92 GB.
 
 - **The operation program replaces kind-implied completeness.** Today
   the completeness contract derives required surfaces from object kinds
@@ -1039,14 +1059,20 @@ numbering rule, and stay open gates below.
   only when a model uses them — so the lift is normative, not
   mechanical: stop deriving the program from the kind.
 - **ContinuationState replaces KV as the base state abstraction.**
-  Today the documented runtime contract is `KvState`, while recurrent
-  state (KDA) already exists in the executor de facto. The lift: the
-  plan declares a **state schema** — typed regions with role
-  (`kv | latent-kv | recurrent | convolution | future`), geometry,
-  lifetime and update semantics — and KV becomes one region kind.
-  Softmax attention declares KV rows; MLA declares latent-compressed
-  KV; KDA declares recurrent state; a stateless operation declares
-  none. §17.3's rule is unchanged and becomes fully general: state
+  *(Landed 2026-08-31.)* The plan declares a **state schema** — typed
+  regions with role (`kv | latent-kv | recurrent | convolution |
+  future`), geometry, lifetime and update semantics — and KV is one
+  region kind among them. Softmax attention declares KV rows; MLA
+  declares a latent cache, one compressed row per position; KDA
+  declares recurrent state *and* its three convolution windows;
+  conv-QKV attention declares KV rows and a convolution history on the
+  same layer; a stateless operation declares none. A consumer that can
+  hold only rows refuses a layer it cannot serve rather than allocating
+  half of one, and every reporting surface derives its account of
+  continuation from this same declaration — a summary that classified
+  layers itself reported a hybrid's seven growing latent caches as
+  constant-size recurrent state, which is the defect this rule exists
+  to prevent. §17.3's rule is unchanged and now fully general: state
   geometry is a container fact.
 
 **Acceptance drill (paper, before freeze).** Four deliberately awkward
@@ -1237,7 +1263,7 @@ gate, none of them drift:
 | 4 | **E8 held-out architecture** (§16 criterion 7) | not yet run |
 | 5 | **The M4 flip**: `DEFAULT_EXTRACTION_GENERATION = V3` per the generation policy | M1–M3 done, M4 open |
 | 6 | **Bank-ABI pre-freeze rows**: the remaining V2-0..V2-4 experiment gates (profile-authority derivation, variant-selection refusal, fixtures B–D, WALK/DESCRIBE parity) | open |
-| 7 | **The ontology lift** (§17.4): completeness from the declared operation program rather than object kinds, and ContinuationState generalising KV — accepted by the four-architecture paper drill | **lift 1 LANDED 2026-08-30** at SystemGraph schema 6, proven by the pure-SSM witness (mamba2-780m: encoded, zero fabricated surfaces, closure at encode, LQL-open under the deletion invariant); lift 2's state-schema facts (F5/F6) remain, additive within v6; drill findings F1–F16 in [`docs/vindex3-ontology-drill.md`](../../../docs/vindex3-ontology-drill.md) |
+| 7 | **The ontology lift** (§17.4): completeness from the declared operation program rather than object kinds, and ContinuationState generalising KV — accepted by the four-architecture paper drill | **CLOSED. Lift 1 LANDED 2026-08-30** at SystemGraph schema 6, proven by the pure-SSM witness (mamba2-780m: encoded, zero fabricated surfaces, closure at encode, LQL-open under the deletion invariant); **lift 2 LANDED 2026-08-31** — F5 (KDA state precision, MLA latent-cache geometry) and F6 (the per-op norm epsilon) additive within v6, F9's plan-driven KDA/MLA execution with them, witnessed by a graph-only re-encode of Kimi-Linear-48B whose five representation payload hashes were unchanged; drill findings F1–F16 in [`docs/vindex3-ontology-drill.md`](../../../docs/vindex3-ontology-drill.md) |
 
 Feature growth is not a gate: GENERATE, TRACE, overlays, logical DIFF,
 COMPILE and COMPACT are operations over V3 containers and do not add

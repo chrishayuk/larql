@@ -31,6 +31,7 @@ use larql_compute_metal::MetalBackend;
 use larql_models::config::MlaGeometry;
 use serde_json::Value;
 
+use crate::format::vindex3::opplan::exec::cpu::projector::WeightRows;
 use crate::format::vindex3::opplan::exec::mla::{mla_forward, MlaState, MlaWeights, Mutation};
 
 const FIXTURE_ENV: &str = "LARQL_KIMI_MLA_LAYER_FIXTURE";
@@ -94,11 +95,11 @@ struct Fixture {
 impl Fixture {
     fn host(&self) -> MlaWeights<'_> {
         MlaWeights {
-            q_proj: &self.q_proj,
-            kv_a_proj: &self.kv_a_proj,
+            q_proj: WeightRows::F32(&self.q_proj),
+            kv_a_proj: WeightRows::F32(&self.kv_a_proj),
             kv_a_norm: &self.kv_a_norm,
-            kv_b_proj: &self.kv_b_proj,
-            o_proj: &self.o_proj,
+            kv_b_proj: WeightRows::F32(&self.kv_b_proj),
+            o_proj: WeightRows::F32(&self.o_proj),
             kv_a_norm_eps: self.eps,
         }
     }
@@ -207,7 +208,7 @@ fn device_mla_matches_the_cpu_operator_across_positions() {
     let Some((metal, fx)) = setup() else {
         return;
     };
-    let mut host_state = MlaState::empty();
+    let mut host_state = MlaState::default();
     let device_state = MlaDeviceState::with_capacity(&metal, fx.shape(), 64);
 
     for (p, x) in fx.inputs.iter().enumerate() {
@@ -246,8 +247,8 @@ fn device_mla_matches_the_cpu_operator_across_positions() {
             "the cache must grow by exactly one position a step"
         );
         let cached = device_state.read_back();
-        assert_eq!(cached.len(), host_state.compressed_kv.len());
-        for (i, (a, b)) in cached.iter().zip(&host_state.compressed_kv).enumerate() {
+        assert_eq!(cached.len(), host_state.len());
+        for (i, (a, b)) in cached.iter().zip(host_state.rows()).enumerate() {
             let d = max_abs(a, b);
             assert!(d < TOLERANCE, "pos {p}, cache entry {i}: max|Δ| {d:e}");
         }
@@ -321,7 +322,7 @@ fn report_mla_step_cost() {
     };
     let x = &fx.inputs[fx.inputs.len() - 1];
     let host = || {
-        let mut st = MlaState::empty();
+        let mut st = MlaState::default();
         for prior in &fx.inputs {
             let _ = mla_forward(
                 prior,

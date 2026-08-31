@@ -23,7 +23,8 @@ use std::path::PathBuf;
 use larql_models::config::KdaGeometry;
 use serde_json::Value;
 
-use crate::format::vindex3::opplan::exec::kda::{KdaState, KdaWeights};
+use crate::format::vindex3::opplan::exec::cpu::projector::WeightRows;
+use crate::format::vindex3::opplan::exec::kda::{zero_state, KdaWeights};
 use crate::format::vindex3::opplan::exec::kimi_kda_layer::kda_decoder_layer_forward;
 use crate::format::vindex3::opplan::exec::kimi_moe_block::ExpertWeights;
 
@@ -120,9 +121,9 @@ fn one_complete_kda_layer_matches_the_oracle_at_kimis_real_geometry() {
     let (bp, al, dt) = (kda("b_proj"), kda("a_log"), kda("dt_bias"));
     let (on, op) = (kda("o_norm"), kda_bf16("o_proj"));
     let kda_weights = KdaWeights {
-        q_proj: &qp,
-        k_proj: &kp,
-        v_proj: &vp,
+        q_proj: WeightRows::Bf16(&qp),
+        k_proj: WeightRows::Bf16(&kp),
+        v_proj: WeightRows::Bf16(&vp),
         q_conv1d: &qc,
         k_conv1d: &kc,
         v_conv1d: &vc,
@@ -134,8 +135,13 @@ fn one_complete_kda_layer_matches_the_oracle_at_kimis_real_geometry() {
         a_log: &al,
         dt_bias: &dt,
         o_norm: &on,
-        o_proj: &op,
+        o_proj: WeightRows::Bf16(&op),
         norm_eps: eps as f32,
+        // The rank the two gate factorisations meet at, read from this
+        // fixture's own `f_a_proj` rather than assumed equal to the head
+        // dim: on this checkpoint the two coincide, and the executor no
+        // longer takes that coincidence as its definition.
+        gate_rank: fa.len() / hidden,
     };
 
     let router_weight = read_f32(&dir, "router_weight");
@@ -170,7 +176,7 @@ fn one_complete_kda_layer_matches_the_oracle_at_kimis_real_geometry() {
         down: &shared_down,
     };
 
-    let mut state = KdaState::zeros(geometry);
+    let mut state = zero_state(geometry);
     let trace = kda_decoder_layer_forward(
         &x,
         hidden,

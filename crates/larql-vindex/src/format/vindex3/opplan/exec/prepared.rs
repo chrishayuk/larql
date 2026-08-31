@@ -218,6 +218,8 @@ pub(super) enum PreparedAttention {
     GatedDelta(Box<GatedDeltaOperands>),
     Mamba2(Box<Mamba2Operands>),
     ConvQkv(Box<ConvQkvOperands>),
+    Kda(Box<KdaOperands>),
+    Mla(Box<MlaOperands>),
 }
 
 impl PreparedAttention {
@@ -230,7 +232,11 @@ impl PreparedAttention {
     fn weight_slices(&self) -> Vec<WeightSlice<'_>> {
         match self {
             Self::Softmax(ops) => ops.weight_slices(),
-            Self::GatedDelta(_) | Self::Mamba2(_) | Self::ConvQkv(_) => Vec::new(),
+            Self::GatedDelta(_)
+            | Self::Mamba2(_)
+            | Self::ConvQkv(_)
+            | Self::Kda(_)
+            | Self::Mla(_) => Vec::new(),
         }
     }
 }
@@ -453,6 +459,183 @@ impl ConvQkvOperands {
     }
 }
 
+/// The fifteen operands a KDA layer reads, loaded once.
+///
+/// The same matrix/glue split every recurrence here draws, at KDA's own
+/// proportions: four wide projections (q, k, v and the output, the whole
+/// of this layer's matrix traffic) against fifteen kilobytes of
+/// convolution taps, low-rank gate factors, decay parameters and the
+/// gated norm's weight. The gate factorisations are matrices too, but at
+/// `[rank, hidden]` and `[width, rank]` they are three orders of
+/// magnitude smaller than the four, and the executor consumes them f32 —
+/// so they load as glue, which is what they cost.
+pub(super) struct KdaOperands {
+    pub(super) op: super::super::KdaOp,
+    q_proj: LoadedWeight,
+    k_proj: LoadedWeight,
+    v_proj: LoadedWeight,
+    o_proj: LoadedWeight,
+    q_conv1d: Vec<f32>,
+    k_conv1d: Vec<f32>,
+    v_conv1d: Vec<f32>,
+    f_a_proj: Vec<f32>,
+    f_b_proj: Vec<f32>,
+    g_a_proj: Vec<f32>,
+    g_b_proj: Vec<f32>,
+    b_proj: Vec<f32>,
+    a_log: Vec<f32>,
+    dt_bias: Vec<f32>,
+    o_norm: Vec<f32>,
+    norm_eps: f32,
+}
+
+impl KdaOperands {
+    fn load(
+        op: &super::super::KdaOp,
+        store: OperandSource<'_>,
+        format: FormatFor<'_>,
+        norm_eps: f32,
+    ) -> Result<Self, VindexError> {
+        let matrix = |r: &OperandRef| load_weight(store, r, format(r));
+        let glue = |r: &OperandRef| store.load(r);
+        Ok(Self {
+            op: op.clone(),
+            q_proj: matrix(&op.q_proj)?,
+            k_proj: matrix(&op.k_proj)?,
+            v_proj: matrix(&op.v_proj)?,
+            o_proj: matrix(&op.out_proj)?,
+            q_conv1d: glue(&op.q_conv1d)?,
+            k_conv1d: glue(&op.k_conv1d)?,
+            v_conv1d: glue(&op.v_conv1d)?,
+            f_a_proj: glue(&op.f_a_proj)?,
+            f_b_proj: glue(&op.f_b_proj)?,
+            g_a_proj: glue(&op.g_a_proj)?,
+            g_b_proj: glue(&op.g_b_proj)?,
+            b_proj: glue(&op.b_proj)?,
+            a_log: glue(&op.a_log)?,
+            dt_bias: glue(&op.dt_bias)?,
+            o_norm: glue(&op.o_norm)?,
+            norm_eps,
+        })
+    }
+
+    /// The four matrices, for residency accounting.
+    pub(super) fn loaded_matrices(&self) -> [&LoadedWeight; 4] {
+        [&self.q_proj, &self.k_proj, &self.v_proj, &self.o_proj]
+    }
+
+    /// The f32 operands that are not matrix traffic.
+    pub(super) fn glue_bytes(&self) -> usize {
+        [
+            &self.q_conv1d,
+            &self.k_conv1d,
+            &self.v_conv1d,
+            &self.f_a_proj,
+            &self.f_b_proj,
+            &self.g_a_proj,
+            &self.g_b_proj,
+            &self.b_proj,
+            &self.a_log,
+            &self.dt_bias,
+            &self.o_norm,
+        ]
+        .iter()
+        .map(|v| std::mem::size_of_val(&v[..]))
+        .sum()
+    }
+
+    pub(super) fn weights(&self) -> Result<super::kda::KdaWeights<'_>, VindexError> {
+        Ok(super::kda::KdaWeights {
+            q_proj: matrix_rows(&self.q_proj, &self.op.q_proj)?,
+            k_proj: matrix_rows(&self.k_proj, &self.op.k_proj)?,
+            v_proj: matrix_rows(&self.v_proj, &self.op.v_proj)?,
+            o_proj: matrix_rows(&self.o_proj, &self.op.out_proj)?,
+            q_conv1d: &self.q_conv1d,
+            k_conv1d: &self.k_conv1d,
+            v_conv1d: &self.v_conv1d,
+            f_a_proj: &self.f_a_proj,
+            f_b_proj: &self.f_b_proj,
+            g_a_proj: &self.g_a_proj,
+            g_b_proj: &self.g_b_proj,
+            b_proj: &self.b_proj,
+            a_log: &self.a_log,
+            dt_bias: &self.dt_bias,
+            o_norm: &self.o_norm,
+            norm_eps: self.norm_eps,
+            gate_rank: self.op.gate_rank,
+        })
+    }
+}
+
+/// The five operands an MLA layer reads, loaded once — plus the one
+/// epsilon its own latent norm runs at.
+///
+/// That epsilon is why this struct exists in this form. It is not the
+/// layer's `rms_norm_eps`: `kv_a_layernorm` takes its class default
+/// (`1e-6` against the layer's `1e-5`), and until lift 2 the container
+/// could not carry that at all — it lived as a constant inside a
+/// family-shaped loader, where deleting the checkpoint could not restore
+/// it. Loading REFUSES a container that carries no judged value rather
+/// than borrowing the layer's: a norm at the wrong epsilon computes a
+/// different function with every shape still closing.
+pub(super) struct MlaOperands {
+    pub(super) op: super::super::MlaOp,
+    q_proj: LoadedWeight,
+    kv_a_proj: LoadedWeight,
+    kv_b_proj: LoadedWeight,
+    o_proj: LoadedWeight,
+    kv_a_norm: Vec<f32>,
+    kv_a_norm_eps: f64,
+}
+
+impl MlaOperands {
+    fn load(
+        op: &super::super::MlaOp,
+        store: OperandSource<'_>,
+        format: FormatFor<'_>,
+    ) -> Result<Self, VindexError> {
+        let matrix = |r: &OperandRef| load_weight(store, r, format(r));
+        let kv_a_norm_eps = op.kv_a_norm_eps.ok_or_else(|| {
+            VindexError::Parse(
+                "this MLA layer carries no epsilon for its latent norm (`kv_a_layernorm`), \
+                 which is NOT the layer's `rms_norm_eps` on any judged checkpoint; refusing \
+                 to substitute one"
+                    .to_string(),
+            )
+        })?;
+        Ok(Self {
+            op: op.clone(),
+            q_proj: matrix(&op.q_proj)?,
+            kv_a_proj: matrix(&op.kv_a_proj)?,
+            kv_b_proj: matrix(&op.kv_b_proj)?,
+            o_proj: matrix(&op.out_proj)?,
+            kv_a_norm: store.load(&op.kv_a_norm)?,
+            kv_a_norm_eps,
+        })
+    }
+
+    /// The four matrices, for residency accounting.
+    pub(super) fn loaded_matrices(&self) -> [&LoadedWeight; 4] {
+        [&self.q_proj, &self.kv_a_proj, &self.kv_b_proj, &self.o_proj]
+    }
+
+    /// The one f32 operand that is not matrix traffic.
+    pub(super) fn glue_bytes(&self) -> usize {
+        std::mem::size_of_val(&self.kv_a_norm[..])
+    }
+
+    pub(super) fn weights(&self) -> Result<super::mla::MlaWeights<'_>, VindexError> {
+        Ok(super::mla::MlaWeights {
+            q_proj: matrix_rows(&self.q_proj, &self.op.q_proj)?,
+            kv_a_proj: matrix_rows(&self.kv_a_proj, &self.op.kv_a_proj)?,
+            kv_b_proj: matrix_rows(&self.kv_b_proj, &self.op.kv_b_proj)?,
+            o_proj: matrix_rows(&self.o_proj, &self.op.out_proj)?,
+            kv_a_norm: &self.kv_a_norm,
+            kv_a_norm_eps: self.kv_a_norm_eps,
+        })
+    }
+}
+
 /// A resident matrix as row ranges, cut to the geometry the op declares.
 ///
 /// The geometry comes from the OP and never from the slice length: a
@@ -596,23 +779,27 @@ impl PreparedOperands {
                     // anything else would execute the wrong recurrence on
                     // correctly-bound tensors, which is the failure the
                     // separate variant exists to make impossible.
-                    LayerAttention::Kda(_) => {
-                        return Err(VindexError::Parse(
-                            "KDA (Kimi Delta Attention) layers are represented but not \
-                             executable: no executor exists for this operator"
-                                .to_string(),
-                        ))
-                    }
+                    // The layer's own pre-attention norm epsilon: KDA's
+                    // gated output norm is built as
+                    // `FusedRMSNormGated(head_dim, eps=config.rms_norm_eps)`
+                    // in the checkpoint's own modeling code, the same
+                    // value the layer norms use — unlike MLA's latent
+                    // norm below, which is exactly why that one is
+                    // carried per-op and this one is not.
+                    LayerAttention::Kda(op) => PreparedAttention::Kda(Box::new(KdaOperands::load(
+                        op,
+                        store,
+                        &attention_format,
+                        layer.pre_attention_norm.eps as f32,
+                    )?)),
                     // Same posture as KDA above: represented, not
                     // executable. MLA's operands are bound and its
                     // geometry is stated, but no executor consumes them.
-                    LayerAttention::Mla(_) => {
-                        return Err(VindexError::Parse(
-                            "MLA (Multi-Latent Attention) layers are represented but not \
-                             executable: no executor exists for this operator"
-                                .to_string(),
-                        ))
-                    }
+                    LayerAttention::Mla(op) => PreparedAttention::Mla(Box::new(MlaOperands::load(
+                        op,
+                        store,
+                        &attention_format,
+                    )?)),
                     LayerAttention::ConvQkv(op) => PreparedAttention::ConvQkv(Box::new(
                         ConvQkvOperands::load(op, store, &attention_format)?,
                     )),
@@ -755,6 +942,23 @@ impl PreparedOperands {
                     }
                     census.glue.widened_f32 += ops.glue_bytes();
                 }
+                // KDA is a recurrence: its four wide projections are
+                // counted where the other recurrences' are, so a
+                // hybrid's census still separates "the model attends"
+                // from "the model recurs".
+                PreparedAttention::Kda(ops) => {
+                    for w in ops.loaded_matrices() {
+                        census.delta.add(w);
+                    }
+                    census.glue.widened_f32 += ops.glue_bytes();
+                }
+                // MLA attends — over a compressed cache, but it attends.
+                PreparedAttention::Mla(ops) => {
+                    for w in ops.loaded_matrices() {
+                        census.attention.add(w);
+                    }
+                    census.glue.widened_f32 += ops.glue_bytes();
+                }
             }
             if let Some(ffn) = &layer.ffn {
                 for w in ffn.loaded_matrices() {
@@ -792,6 +996,8 @@ impl PreparedOperands {
                 PreparedAttention::ConvQkv(ops) => {
                     ops.loaded_matrices().iter().for_each(|w| add(w))
                 }
+                PreparedAttention::Kda(ops) => ops.loaded_matrices().iter().for_each(|w| add(w)),
+                PreparedAttention::Mla(ops) => ops.loaded_matrices().iter().for_each(|w| add(w)),
             }
             if let Some(ffn) = &layer.ffn {
                 ffn.loaded_matrices().iter().for_each(|w| add(w));

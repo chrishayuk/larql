@@ -41,8 +41,10 @@ use larql_compute_metal::MetalBackend;
 use larql_models::config::{KdaGeometry, NormType};
 use serde_json::Value;
 
+use crate::format::vindex3::opplan::exec::cpu::projector::WeightRows;
+use crate::format::vindex3::opplan::exec::kda;
 use crate::format::vindex3::opplan::exec::kda::{
-    layer_forward_with, CpuKdaProjections, KdaPlanes, KdaProjections, KdaState, KdaWeights,
+    layer_forward_with, zero_state, CpuKdaProjections, KdaPlanes, KdaProjections, KdaWeights,
     Mutation,
 };
 use crate::format::vindex3::opplan::exec::kda_metal::{MetalKdaProjections, QkvSubmission};
@@ -113,9 +115,9 @@ struct Fixture {
 impl Fixture {
     fn weights(&self) -> KdaWeights<'_> {
         KdaWeights {
-            q_proj: &self.q,
-            k_proj: &self.k,
-            v_proj: &self.v,
+            q_proj: WeightRows::Bf16(&self.q),
+            k_proj: WeightRows::Bf16(&self.k),
+            v_proj: WeightRows::Bf16(&self.v),
             q_conv1d: &self.qc,
             k_conv1d: &self.kc,
             v_conv1d: &self.vc,
@@ -127,8 +129,13 @@ impl Fixture {
             a_log: &self.al,
             dt_bias: &self.dt,
             o_norm: &self.on,
-            o_proj: &self.o,
+            o_proj: WeightRows::Bf16(&self.o),
             norm_eps: self.eps,
+            // The rank the two gate factorisations meet at, read from this
+            // fixture's own `f_a_proj` rather than assumed equal to the head
+            // dim: on this checkpoint the two coincide, and the executor no
+            // longer takes that coincidence as its definition.
+            gate_rank: self.fa.len() / self.hidden,
         }
     }
 
@@ -249,7 +256,7 @@ fn max_abs(a: &[f32], b: &[f32]) -> f32 {
 }
 
 fn run(fx: &Fixture, projections: &dyn KdaProjections) -> KdaPlanes {
-    let mut state = KdaState::zeros(fx.geometry);
+    let mut state = zero_state(fx.geometry);
     layer_forward_with(
         projections,
         &fx.normed,
@@ -309,10 +316,10 @@ fn a_transposed_projection_is_rejected() {
     // wrong streams, which is exactly the failure a tolerance-only gate
     // on the final vector would miss.
     let mut swapped = fx.weights();
-    swapped.q_proj = &fx.k;
-    swapped.k_proj = &fx.q;
+    swapped.q_proj = WeightRows::Bf16(&fx.k);
+    swapped.k_proj = WeightRows::Bf16(&fx.q);
     let projector = MetalKdaProjections::new(&metal, swapped, QkvSubmission::Grouped);
-    let mut state = KdaState::zeros(fx.geometry);
+    let mut state = zero_state(fx.geometry);
     let got = layer_forward_with(
         &projector,
         &fx.normed,
@@ -599,7 +606,7 @@ fn device_state_tracks_the_cpu_across_consecutive_tokens() {
     let dw = DeviceWeights::build(&fx);
     let shape = device_shape(&fx);
     let device_state = KdaDeviceState::zeros(&metal, shape);
-    let mut cpu_state = KdaState::zeros(fx.geometry);
+    let mut cpu_state = zero_state(fx.geometry);
 
     // The fixture is one position, so successive tokens are made by
     // perturbing it — the point is that the state ADVANCES and stays in
@@ -629,9 +636,9 @@ fn device_state_tracks_the_cpu_across_consecutive_tokens() {
 
         let (rec, conv) = device_state.read_back();
         let out_d = max_abs(&got, &cpu_out);
-        let rec_d = max_abs(&rec, &cpu_state.recurrent);
+        let rec_d = max_abs(&rec, cpu_state.buffer(kda::RECURRENT).cells());
         let conv_d = (0..3)
-            .map(|i| max_abs(&conv[i], &cpu_state.conv[i]))
+            .map(|i| max_abs(&conv[i], cpu_state.buffer(kda::CONV_Q + i).cells()))
             .fold(0.0f32, f32::max);
         eprintln!("[r5c] token {t}: output max|Δ| {out_d:e}  recurrent {rec_d:e}  conv {conv_d:e}");
         assert!(out_d < TOLERANCE, "token {t} output: max|Δ| {out_d:e}");
@@ -700,7 +707,7 @@ fn report_whole_attention_on_device_against_the_host() {
     let bytes = fx.projection_bytes();
 
     let cpu_arm = || {
-        let mut state = KdaState::zeros(fx.geometry);
+        let mut state = zero_state(fx.geometry);
         let mut planes = KdaPlanes::default();
         let t = Instant::now();
         std::hint::black_box(crate::format::vindex3::opplan::exec::kda::step_with(

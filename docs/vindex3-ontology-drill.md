@@ -284,11 +284,11 @@ amend §5.7 to "discard only with report".
 | F2 | Completeness derives from object kinds, never surface content (`complete.rs:55-63`) | **schema gap** | lift 1 (the pinned sentence, confirmed in code) |
 | F3 | No `layer_types` ⇒ every layer resolves `(Softmax, Full)`; `matches_declaration` vacuously true; census fails **open** | **schema gap** (fail-open) | lift 1: census must fail closed on undeclared families |
 | F4 | Operand closure runs post-encode only — encode admits containers closure will refuse | defect (ordering) | closure (or its census projection) at encode time |
-| F5 | State schema cannot declare KDA state precision or MLA latent-KV geometry; only GatedDelta expressible | **schema gap** | lift 2 (STATE-CONSOLIDATE, already named in code) |
-| F6 | `MLA_KV_A_NORM_EPS` — a judged semantic the container **cannot carry** (executor-resident constant) | **schema gap** | per-op norm-epsilon override on the surface |
+| F5 | State schema cannot declare KDA state precision or MLA latent-KV geometry; only GatedDelta expressible | **schema gap** — **closed** | lift 2: `LayerContinuationGeometry::LatentKv` (one operator-defined row per position, MLA's compressed latent — not a K/V pair, so `kv()` still answers `None`) and a KDA arm that answers `Recurrent` at the precision the reference computes at, the judgment living once in `exec::kda::state_geometry` exactly as Mamba2's does |
+| F6 | `MLA_KV_A_NORM_EPS` — a judged semantic the container **cannot carry** (executor-resident constant) | **schema gap** — **closed** | `MlaSurface.kv_a_norm_eps` → `MlaOp` → the executor, sourced from `ModelArchitecture::mla_kv_a_norm_eps` (an architecture fact, not a config one: no checkpoint declares it). Additive within v6. A container carrying none is REFUSED at preparation rather than lent the layer's `rms_norm_eps`; the family-shaped loader now reads the graph too |
 | F7 | `AttentionLayerPolicy.operator` `serde(default)` = Softmax — absence silently reinterprets | **schema gap** (silent default) | explicit operator at schema 6 |
 | F8 | `plan_kv_geometry` panics on recurrent layers; two production callers (LQL STATS, EXPLAIN) | defect | migrate callers to `plan_continuation_geometry` |
-| F9 | KDA/MLA execution is a family-shaped, test-only loader bypassing plan/roles; plan path refuses honestly | implementation gap | plan-driven KDA/MLA executor; not a freeze blocker |
+| F9 | KDA/MLA execution is a family-shaped, test-only loader bypassing plan/roles; plan path refuses honestly | implementation gap — **closed** | `PreparedAttention::{Kda,Mla}` bind by `OperandRole` and execute on both traversals; `LayerOperator::has_executor()` true for both. The device loader remains as the ACCELERATED arm, not as the definition |
 | F10 | `find(PrimaryText)` first-match sites — quiet wrongness when two text components exist (three of the six reported sites were already plural-safe `filter`s) | defect — **closed** | `SystemGraph::primary_text_component`: unique or refused naming the candidates; encode errors on ambiguity, capability/alias resolution yields none rather than first |
 | F11 | One edge species; producer must be PrimaryText; consumer hard-coded FeatureProjector; two producers refuses | scope decision | declare the 3.0 component algebra; typed edge kinds post-3.0 |
 | F12 | Closed graph enums + exact-schema refusal: every vocabulary addition is wire-breaking + re-encode | posture decision | spec must state the graph's strict-versioning posture explicitly |
@@ -320,7 +320,9 @@ enumerated**. The freeze checklist after this drill:
 
 1. Lift 1 with F3 fail-closed and F4 ordering — `GRAPH_SCHEMA 6`,
    re-encode.
-2. Lift 2 absorbing F6 and F7; retire the F8 panic sites.
+2. Lift 2 absorbing F6 and F7; retire the F8 panic sites. *(Done: F7
+   and F8 at schema 6; F5, F6 and F9 in the lift-2 pass — see the
+   closure log.)*
 3. F13/F14 preservation fixes (small, immediate).
 4. Declare the 3.0 component algebra and the graph's strict-versioning
    posture (F11, F12) in the candidate text.
@@ -434,3 +436,60 @@ conversion of `state-spaces/mamba2-780m`; the original repos ship
   executes (bitwise determinism, prefix equivalence across the
   batch↔decode seam), the hand-computed recurrence, dt-clamp bounds,
   conv causality by impulse, and the mixed KV+recurrent provider test.
+
+- **2026-08-31, lift 2 — the state schema stops refusing.** The two
+  operators the drill's Case 2 was written around now execute through
+  the ordinary plan path, and what unblocked them was not a kernel:
+  `exec::kda` and `exec::mla` had been parity-proven against banked
+  oracles since P3d. It was the two facts F5 and F6 named.
+  - **F5, KDA's state precision.** No checkpoint declares one — Kimi
+    Linear's `linear_attn_config` carries head count, head dim and conv
+    width and nothing else — so the schema had nothing to carry and the
+    planner refused rather than pick. The reference does declare it, in
+    the only way a reference can: `fla`'s `naive_recurrent_kda`, which
+    the checkpoint's own `modeling_kimi.py` calls, holds the state as
+    `torch.float32` and casts q, k, v, g and beta into it every step
+    (transcribed and sha-pinned at `scripts/kda_reference.py:130`). The
+    judgment is therefore a transcription, and it lives in exactly one
+    place — `exec::kda::state_geometry` — on the same footing as
+    Mamba2's. Four buffers: the `Dk × Dv` matrix per head and three
+    convolution windows, `kernel - 1` deep.
+  - **F5, MLA's latent cache.** A third state species, because it is a
+    third fact: `LayerContinuationGeometry::LatentKv` is ONE row per
+    position of an operator-defined width, neither a K/V pair (which
+    would claim two rows the model never keeps) nor a fixed-size
+    recurrence (which would not grow with the prefix). `kv()` answers
+    `None` for it, so every KV-only provider still fails closed; the
+    provider seam grew `latent_state`, required and fail-closed, the
+    same contract `recurrent_state` holds.
+  - **F6, the uncarriable epsilon.** `kv_a_layernorm` runs at
+    `KimiRMSNorm`'s class default `1e-6` while the layer's own norms run
+    at `rms_norm_eps` `1e-5` — an architecture fact no config states,
+    now read in `ModelArchitecture::mla_kv_a_norm_eps` (default `None` =
+    unjudged, never "use the layer eps") and carried
+    `MlaExecution` → `MlaSurface` → `MlaOp` → executor. Preparation
+    REFUSES a container that carries none, before binding a single
+    matrix. `MLA_KV_A_NORM_EPS` is gone from `kimi_source.rs`; that
+    loader reads the graph like every other field it consumes.
+  - **F9, the family-shaped executor.** `PreparedAttention::{Kda,Mla}`
+    bind through `OperandRole` and run on both traversals, so
+    `has_executor()` is true for both and the only operator left
+    answering `false` is `Recurrent` — the one whose family was never
+    identified, which is a different fact.
+  - **A coincidence the fixture caught.** KDA's executor read the gate
+    factorisations' inner rank as `head_dim`. That is true on both
+    observed checkpoints (128 = 128) and true for no stated reason;
+    `KdaOp::gate_rank` existed precisely because the config declares no
+    such field. A miniature whose widths are all distinct (rank 4,
+    head dim 3) failed on it immediately. `KdaWeights::gate_rank` is now
+    carried from the op, and every real-weight fixture reads its own
+    `f_a_proj`/`f_b_proj` shape rather than assuming the two agree.
+  - **The witness, in CI:** `opplan/tests/kda_mla_exec.rs` — a
+    KDA/MLA-alternating miniature admits with both operators declared
+    per layer, encodes with closure held over both operand programs,
+    declares both state species, and executes with the single-token
+    decode path bitwise-identical to batch prefill. The pre-flight
+    continuation check is now driven by the declared region rather than
+    by "is this layer softmax", which is what an MLA layer needs: it
+    keeps a cache and no recurrence, and the old form would have refused
+    a state the provider was holding correctly.

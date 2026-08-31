@@ -163,9 +163,10 @@ fn an_unidentified_recurrence_blocks_the_attention_policy() {
 ///
 /// The regression this guards is the one P1 fixed one level down: a plan
 /// that reports only "representable" invites a reader to conclude the
-/// stack runs. KDA is the first operator to occupy the gap — fully
-/// described, no executor — so it is the case that proves the two facts
-/// are reported separately rather than derived from one another.
+/// stack runs. KDA used to be the operator occupying that gap; since
+/// lift 2 it does not, and the case that still does is the one whose
+/// recurrence was never IDENTIFIED — there is no operator to run, which
+/// is a different fact from "identified, and unimplemented".
 #[test]
 fn a_represented_operator_without_an_executor_says_so() {
     use crate::format::vindex3::graph::LayerOperator;
@@ -174,18 +175,27 @@ fn a_represented_operator_without_an_executor_says_so() {
     assert!(LayerOperator::Softmax.has_executor());
     assert!(LayerOperator::GatedDelta.has_executor());
     assert!(
-        !LayerOperator::Kda.has_executor(),
-        "KDA is represented, not executable"
+        LayerOperator::Kda.has_executor() && LayerOperator::Mla.has_executor(),
+        "lift 2 executes both through the plan path"
     );
-    assert!(!LayerOperator::Recurrent.has_executor());
+    assert!(
+        !LayerOperator::Recurrent.has_executor(),
+        "an unidentified recurrence names no operator, so nothing can run it"
+    );
 
-    // And it is orthogonal to identification: KDA is identified (it is not
-    // the unidentified-recurrence variant) yet still has no executor.
+    // And the axis stays orthogonal to identification: KDA is identified
+    // AND executable, `Recurrent` is neither, and the two facts are still
+    // read separately rather than off one another.
     assert!(!LayerOperator::Kda.is_unidentified_recurrence());
+    assert!(LayerOperator::Recurrent.is_unidentified_recurrence());
     assert!(LayerOperator::Kda.is_recurrent());
     assert!(LayerOperator::GatedDelta.is_recurrent());
     assert!(LayerOperator::Recurrent.is_recurrent());
     assert!(!LayerOperator::Softmax.is_recurrent());
+    assert!(
+        !LayerOperator::Mla.is_recurrent(),
+        "MLA keeps a per-position cache; it is attention over a compressed prefix"
+    );
 }
 
 /// The two-set interleave spelling carries, and so does the KDA conv width
