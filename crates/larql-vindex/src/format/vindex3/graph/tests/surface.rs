@@ -425,3 +425,87 @@ fn a_component_implying_no_ops_needs_no_surface() {
         "a component that implies no operations cannot be missing a surface"
     );
 }
+
+/// **The execution semantic is the authority, not the tokenizer's copy.**
+///
+/// `max_position_embeddings` says how far the programme is declared to
+/// run and changes what a forward pass does. `model_max_length` in
+/// `tokenizer_config.json` is a serving bound on a different component.
+/// They usually agree, which is exactly why the disagreement is planted
+/// here: a lowering that reached for the tokenizer's number would pass
+/// every test where the two match, and be wrong on the one model where
+/// they do not.
+#[test]
+fn context_length_comes_from_the_execution_semantic_not_the_tokenizer_bound() {
+    let dir = tempfile::tempdir().unwrap();
+    let inv = crate::format::vindex3::plan::tests_support::known_dense_with_config(
+        dir.path(),
+        serde_json::json!({
+            "architectures": ["LlamaForCausalLM"],
+            "torch_dtype": "bfloat16",
+            "model_type": "llama",
+            "hidden_size": 64,
+            "num_hidden_layers": 2,
+            "intermediate_size": 256,
+            "num_attention_heads": 8,
+            "num_key_value_heads": 8,
+            "vocab_size": 128,
+            "rms_norm_eps": 1e-5,
+            "rope_theta": 10000.0,
+            "max_position_embeddings": 262144
+        }),
+    );
+    let surface = crate::format::vindex3::graph::surface::surface_from_resolved(&inv)
+        .expect("a complete config yields a surface");
+    assert_eq!(
+        surface.context_length,
+        Some(262144),
+        "the graph records the judged execution semantic"
+    );
+}
+
+/// A checkpoint that declares no extent records none. Absence is a fact
+/// about the source, and inventing a default here would be the silent
+/// substitution the whole surface exists to refuse.
+#[test]
+fn a_checkpoint_with_no_declared_extent_records_none() {
+    let dir = tempfile::tempdir().unwrap();
+    let inv = known_dense(dir.path());
+    let surface =
+        crate::format::vindex3::graph::surface::surface_from_resolved(&inv).expect("surface");
+    assert_eq!(
+        surface.context_length, None,
+        "undeclared is None, never a chosen number"
+    );
+}
+
+/// The field is additive within GRAPH_SCHEMA 6: a graph written before
+/// it existed still parses, and one written with it round-trips.
+#[test]
+fn context_length_is_additive_within_schema_six() {
+    use crate::format::vindex3::graph::surface::ExecutionSurface;
+    let dir = tempfile::tempdir().unwrap();
+    let inv = known_dense(dir.path());
+    let mut surface = crate::format::vindex3::graph::surface::surface_from_resolved(&inv).unwrap();
+
+    // A v6 graph written before the field existed: the key is simply
+    // absent from the JSON.
+    let json = serde_json::to_value(&surface).unwrap();
+    assert!(
+        json.get("context_length").is_none(),
+        "None is skipped, so old and new writers agree byte-for-byte when it is absent"
+    );
+    let reparsed: ExecutionSurface = serde_json::from_value(json).unwrap();
+    assert_eq!(reparsed, surface, "an old graph still reads");
+
+    // And one that carries it round-trips unchanged.
+    surface.context_length = Some(262144);
+    let json = serde_json::to_value(&surface).unwrap();
+    assert_eq!(json["context_length"], 262144);
+    let reparsed: ExecutionSurface = serde_json::from_value(json).unwrap();
+    assert_eq!(
+        reparsed.context_length,
+        Some(262144),
+        "a new graph round-trips"
+    );
+}

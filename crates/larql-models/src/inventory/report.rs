@@ -130,6 +130,12 @@ pub struct ResolvedTopology {
     pub head_dim: usize,
     pub vocab_size: Option<usize>,
     pub sliding_window: Option<usize>,
+    /// How far the programme is declared to run — `max_position_embeddings`
+    /// or a family's spelling of it. Read here so the graph can record it:
+    /// the encoder already judged it execution-semantic, and a judged fact
+    /// with nowhere to land is the same as an unread one.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub context_length: Option<usize>,
     pub attention: AttentionSummary,
     /// One entry per layer, in layer order.
     pub layers: Vec<LayerPolicy>,

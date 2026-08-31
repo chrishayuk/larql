@@ -237,6 +237,28 @@ pub struct HeadSurface {
 /// op over (the mixer is the whole block; no `intermediate_size` exists).
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct ExecutionSurface {
+    /// How far the component's program is declared to run — the
+    /// checkpoint's `max_position_embeddings`, or another family's
+    /// spelling of the same fact.
+    ///
+    /// **On the component, not on `attention`.** Context extent is a
+    /// property of the execution programme, not of softmax: a Gated
+    /// DeltaNet, KDA or Mamba stack has one without attending at all,
+    /// and Qwen3.8 runs forty-eight recurrent layers to sixteen
+    /// attending ones. Hanging it off the attention surface would make
+    /// it unreachable for exactly the architectures that most need it.
+    ///
+    /// Added additively within GRAPH_SCHEMA 6 — new information, not a
+    /// reinterpretation of existing bytes, so a v6 graph written before
+    /// this field still reads and a reader without it still parses one
+    /// that has it.
+    ///
+    /// `tokenizer_config.json`'s `model_max_length` is a serving bound
+    /// on the tokenizer and is **not** the authority for this. The two
+    /// usually agree; when they disagree the execution semantic wins,
+    /// because that is the one that changes what a forward pass does.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub context_length: Option<u64>,
     /// What the attention op reads — present iff any layer of the
     /// component's program attends (softmax or MLA).
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -446,6 +468,11 @@ pub fn surface_from_resolved(
     // each layer's geometry on its `AttentionLayerPolicy`, and the op
     // plan reads the layer's, so nothing here is averaged away.
     Ok(ExecutionSurface {
+        // The declared extent of the programme, transcribed from the
+        // judged execution semantic. Not read from the tokenizer's
+        // `model_max_length`, which is a serving bound on a different
+        // component and would be a second authority for one fact.
+        context_length: resolved.context_length.map(|v| v as u64),
         // Carried from the architectural record, not re-derived. `None`
         // when the model declares no recurrence — every layer attends by
         // softmax and the operator is never reached.
@@ -702,6 +729,9 @@ pub fn surface_from_nested(
         return Err(missing);
     }
     Ok(ExecutionSurface {
+        // A perception tower declares no sequence extent of its own; the
+        // absence is the fact, not a zero.
+        context_length: None,
         // No judged perception tower declares a linear-attention
         // recurrence, Multi-Latent Attention, or an SSM mixer.
         linear_attention: None,
