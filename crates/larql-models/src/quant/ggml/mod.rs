@@ -62,6 +62,11 @@ pub const TYPE_TQ2_0: u32 = 35;
 /// scale lives in adjacent `*_sub_norm.weight` F32 tensors.
 pub const TYPE_I2_S: u32 = 36;
 
+/// `GGML_TYPE_NVFP4`. 64-element blocks of four UE4M3 scales and
+/// thirty-two E2M1 code bytes. The per-tensor scale GGML has no room
+/// for travels as a sibling `.scale` tensor — see `quant::nvfp4_ggml`.
+pub const TYPE_NVFP4: u32 = 40;
+
 // ── Block geometry (canonical GGML wire format) ─────────────────────────
 //
 // Legacy quants (Q4_0/Q4_1/Q5_0/Q5_1/Q8_0) pack 32 elements per block.
@@ -201,6 +206,7 @@ pub fn tensor_data_size(tensor_type: u32, n_elements: usize) -> Result<usize, Mo
         TYPE_Q6_K => Ok(n_elements / K_QUANT_BLOCK_ELEMS * Q6_K_BLOCK_BYTES),
         TYPE_TQ1_0 => Ok(n_elements / K_QUANT_BLOCK_ELEMS * TQ1_0_BLOCK_BYTES),
         TYPE_TQ2_0 => Ok(n_elements / K_QUANT_BLOCK_ELEMS * TQ2_0_BLOCK_BYTES),
+        TYPE_NVFP4 => crate::quant::nvfp4_ggml::ggml_nvfp4_bytes(n_elements),
         TYPE_I2_S => {
             if !n_elements.is_multiple_of(I2_S_BLOCK_ELEMS) {
                 return Err(ModelError::Parse(format!(

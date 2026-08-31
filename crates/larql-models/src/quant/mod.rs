@@ -15,3 +15,4 @@ pub mod ggml;
 pub mod half;
 pub mod mxfp4;
 pub mod nvfp4;
+pub mod nvfp4_ggml;
