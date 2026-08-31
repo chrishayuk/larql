@@ -30,7 +30,7 @@ pub(super) const CONFIG_KEY_LANGUAGE_CONFIG: &str = "language_config";
 // The parser reads from either via the alias lists.
 
 /// Aliases for `hidden_size`. GPT-2 family uses `n_embd`.
-pub(super) const CONFIG_KEY_HIDDEN_SIZE_ALIASES: &[&str] = &["hidden_size", "n_embd"];
+pub(super) const CONFIG_KEY_HIDDEN_SIZE_ALIASES: &[&str] = &["hidden_size", "n_embd", "d_model"];
 
 /// Aliases for `num_hidden_layers`. GPT-2 family uses `n_layer`.
 pub(super) const CONFIG_KEY_NUM_HIDDEN_LAYERS_ALIASES: &[&str] = &["num_hidden_layers", "n_layer"];

@@ -164,6 +164,10 @@ pub struct ResolvedTopology {
     /// The hybrid stack's conv-QKV attention geometry, when declared.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub conv_qkv_attn: Option<crate::config::ConvQkvAttnGeometry>,
+    /// How the conv-QKV geometry was read: dialect and recorded family
+    /// defaults. Present exactly when [`Self::conv_qkv_attn`] is.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub conv_qkv_provenance: Option<crate::config::ConvQkvProvenance>,
 }
 
 /// The precision a recurrent state is kept at.

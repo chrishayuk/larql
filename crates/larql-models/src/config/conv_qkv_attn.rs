@@ -19,6 +19,31 @@
 
 use serde::{Deserialize, Serialize};
 
+use super::mamba2::Mamba2FamilyDefault;
+
+/// Which config shape declared the conv-QKV attention geometry.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum ConvQkvDialect {
+    /// OuteAI's flat HF-shaped keys (`attention_*`, `rope_emb_dim`).
+    OuteFlat,
+    /// The `mamba_ssm` package's own nested `attn_cfg` block
+    /// (state-spaces checkpoints).
+    MambaSsmAttnCfg,
+}
+
+/// How a [`ConvQkvAttnGeometry`] was read: the dialect, and every field
+/// filled from the source family's own default rather than a
+/// declaration — the same recorded-never-silent contract the Mamba2
+/// dialects hold ([`Mamba2FamilyDefault`] is the lineage's shared
+/// recorded-default row).
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct ConvQkvProvenance {
+    pub dialect: ConvQkvDialect,
+    /// Empty when every field was declared.
+    pub family_defaults: Vec<Mamba2FamilyDefault>,
+}
+
 /// The conv-QKV attention block's declared geometry.
 #[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
 pub struct ConvQkvAttnGeometry {
@@ -53,17 +78,83 @@ pub struct ConvQkvAttnGeometry {
 impl ConvQkvAttnGeometry {
     /// Read the geometry from a (text) config object. All fields or none.
     pub fn read(config: &serde_json::Value) -> Option<Self> {
+        Self::read_with_provenance(config).map(|(g, _)| g)
+    }
+
+    /// Read the geometry in whichever dialect this checkpoint declares,
+    /// with provenance. The flat OuteAI spelling admits no defaults; the
+    /// `attn_cfg` spelling fills exactly two fields the package leaves
+    /// to `MHA.__init__` defaults — the KV head count (MHA:
+    /// `num_heads_kv = num_heads`) and the rotary base
+    /// (`rotary_emb_base = 10000.0`) — each one recorded.
+    pub fn read_with_provenance(config: &serde_json::Value) -> Option<(Self, ConvQkvProvenance)> {
         let dim = |key: &str| config[key].as_u64().map(|v| v as usize).filter(|v| *v > 0);
-        Some(Self {
-            num_heads: dim("num_attention_heads")?,
-            num_kv_heads: dim("num_key_value_heads")?,
-            head_dim: dim("attention_head_dim")?,
-            conv_kernel: dim("attention_conv_kernel")?,
-            rotary_dim: dim("rope_emb_dim")?,
-            rope_theta: config["rope_theta"].as_f64()?,
-            qkv_bias: config["use_attention_qkv_bias"].as_bool()?,
-            out_bias: config["use_attention_out_bias"].as_bool()?,
-        })
+        if let Some(geometry) = (|| {
+            Some(Self {
+                num_heads: dim("num_attention_heads")?,
+                num_kv_heads: dim("num_key_value_heads")?,
+                head_dim: dim("attention_head_dim")?,
+                conv_kernel: dim("attention_conv_kernel")?,
+                rotary_dim: dim("rope_emb_dim")?,
+                rope_theta: config["rope_theta"].as_f64()?,
+                qkv_bias: config["use_attention_qkv_bias"].as_bool()?,
+                out_bias: config["use_attention_out_bias"].as_bool()?,
+            })
+        })() {
+            return Some((
+                geometry,
+                ConvQkvProvenance {
+                    dialect: ConvQkvDialect::OuteFlat,
+                    family_defaults: Vec::new(),
+                },
+            ));
+        }
+        Self::read_attn_cfg(config)
+    }
+
+    /// The `mamba_ssm` package's nested `attn_cfg` spelling.
+    fn read_attn_cfg(config: &serde_json::Value) -> Option<(Self, ConvQkvProvenance)> {
+        let attn = config.get("attn_cfg")?;
+        let dim = |key: &str| attn[key].as_u64().map(|v| v as usize).filter(|v| *v > 0);
+        let num_heads = dim("num_heads")?;
+        let mut family_defaults = Vec::new();
+        let mut defaulted = |key: &str, value: String| {
+            family_defaults.push(Mamba2FamilyDefault {
+                key: key.to_string(),
+                value,
+                source: "mamba_ssm MHA.__init__".to_string(),
+            });
+        };
+        let num_kv_heads = match dim("num_heads_kv") {
+            Some(declared) => declared,
+            None => {
+                defaulted("num_heads_kv", num_heads.to_string());
+                num_heads
+            }
+        };
+        let rope_theta = match attn["rotary_emb_base"].as_f64() {
+            Some(declared) => declared,
+            None => {
+                defaulted("rotary_emb_base", "10000.0".to_string());
+                10000.0
+            }
+        };
+        Some((
+            Self {
+                num_heads,
+                num_kv_heads,
+                head_dim: dim("head_dim")?,
+                conv_kernel: dim("d_conv")?,
+                rotary_dim: dim("rotary_emb_dim")?,
+                rope_theta,
+                qkv_bias: attn["qkv_proj_bias"].as_bool()?,
+                out_bias: attn["out_proj_bias"].as_bool()?,
+            },
+            ConvQkvProvenance {
+                dialect: ConvQkvDialect::MambaSsmAttnCfg,
+                family_defaults,
+            },
+        ))
     }
 
     /// Rows the fused QKV projection emits:

@@ -44,7 +44,7 @@ pub use attention_gate::{
     AttentionGateSpec, GateActivation, GateCombine, GatePlacement, GateSource,
 };
 pub use attention_sinks::AttentionSinkSpec;
-pub use conv_qkv_attn::ConvQkvAttnGeometry;
+pub use conv_qkv_attn::{ConvQkvAttnGeometry, ConvQkvDialect, ConvQkvProvenance};
 pub use experts::{
     ExpertFormat, ExpertGatePolicy, ExpertRoutingPolicy, GateUpBranch, GateUpLayout,
 };

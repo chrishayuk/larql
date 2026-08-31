@@ -189,10 +189,20 @@ pub const CONSUMED_LEAF_KEYS: &[&str] = &[
     // the same parser fallback chain.
     "tie_embedding_weights",
     // The mamba_ssm lineage's MLP declaration: width (0 = no MLP blocks,
-    // a declaration), padding multiple, bias flag.
+    // a declaration), padding multiple, bias flag. `d_intermediate` is
+    // the package's own spelling of the same width.
     "mlp_intermediate_size",
+    "d_intermediate",
     "mlp_padding_size",
     "use_mlp_bias",
+    // The mamba_ssm-native (state-spaces) top-level keys: the package's
+    // own spellings of facts judged under other names — `d_model`
+    // (hidden_size alias), `tie_embeddings` (the third tie spelling) —
+    // plus the embedding-row padding and the fused add+norm schedule.
+    "d_model",
+    "tie_embeddings",
+    "pad_vocab_size_multiple",
+    "fused_add_norm",
     "residual_in_fp32",
     "attn_output_gate",
     "output_gate_type",
@@ -234,6 +244,27 @@ pub const PATH_READ_LEAF_KEYS: &[&str] = &[
     "head_dim",
     "short_conv_kernel_size",
     "gate_lower_bound",
+    // The mamba_ssm-native nested blocks: `ssm_cfg.layer` is the
+    // package's identity declaration; the rest are the geometry keys
+    // its dialect reads (`Mamba2Geometry::read_mamba_ssm_native`,
+    // `ConvQkvAttnGeometry::read_attn_cfg`) — every absent one a
+    // RECORDED family default, never a silent fill.
+    "layer",
+    "expand",
+    "headdim",
+    "d_state",
+    "d_conv",
+    "ngroups",
+    "chunk_size",
+    "rmsnorm",
+    "bias",
+    "conv_bias",
+    "causal",
+    "num_heads_kv",
+    "rotary_emb_base",
+    "rotary_emb_dim",
+    "qkv_proj_bias",
+    "out_proj_bias",
 ];
 
 /// Containers the parser reads specific leaves of, by path, without
@@ -246,7 +277,8 @@ pub const PATH_READ_LEAF_KEYS: &[&str] = &[
 /// `linear_key_head_dim` instead and has never looked at it. That is the
 /// `vision_config.hidden_size` failure described above, and it under-reports
 /// in the direction this instrument exists to prevent.
-pub const PATH_READ_CONTAINER_KEYS: &[&str] = &["linear_attn_config", "mtp_config"];
+pub const PATH_READ_CONTAINER_KEYS: &[&str] =
+    &["linear_attn_config", "mtp_config", "ssm_cfg", "attn_cfg"];
 
 /// Full paths of the [`PATH_READ_LEAF_KEYS`] this config actually declares,
 /// for the recorded-read credit in `build_inventory`.

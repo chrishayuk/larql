@@ -366,6 +366,10 @@ mod tests {
             // `ExecutionSurface.conv_qkv` and the per-layer operator
             // table.
             "conv_qkv_attn",
+            "conv_qkv_provenance",
+            "attn_causal",
+            "pad_vocab_size_multiple",
+            "fused_add_norm",
             "mlp_intermediate_size",
             "mlp_padding_size",
             "use_mlp_bias",

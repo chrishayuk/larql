@@ -272,6 +272,20 @@ pub struct ModelConfig {
     /// block, or declares it partially — refused rather than defaulted.
     /// See [`ConvQkvAttnGeometry`](super::ConvQkvAttnGeometry).
     pub conv_qkv_attn: Option<super::ConvQkvAttnGeometry>,
+    /// How the conv-QKV geometry was read: dialect and recorded family
+    /// defaults. Present exactly when `conv_qkv_attn` is.
+    pub conv_qkv_provenance: Option<super::ConvQkvProvenance>,
+    /// `attn_cfg.causal` — the hybrid attention block's declared
+    /// masking, verbatim. The operator is causal by construction, so a
+    /// declared `false` blocks rather than running causal anyway.
+    pub attn_causal: Option<bool>,
+    /// `pad_vocab_size_multiple` — the embedding rows are the declared
+    /// vocab rounded UP to this multiple (mamba_ssm lineage).
+    pub pad_vocab_size_multiple: Option<usize>,
+    /// `fused_add_norm` — whether the reference runtime fuses the
+    /// residual add with the norm. A kernel-schedule fact about the
+    /// same operation, carried verbatim.
+    pub fused_add_norm: Option<bool>,
     /// The mamba_ssm lineage's declared MLP width (`mlp_intermediate_size`).
     /// `Some(0)` is a declaration — no MLP blocks exist in the stack —
     /// distinct from `None` (the key was never declared).

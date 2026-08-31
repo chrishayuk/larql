@@ -25,9 +25,16 @@ const ATTENTION_FULL: &str = "full";
 /// Read the checkpoint's identity facts straight from the config value.
 pub fn read_identity(config: &Value) -> Identity {
     let text_config = config.get("text_config").unwrap_or(config);
+    // The mamba_ssm-native spelling of the same fact: no `model_type`
+    // key exists, and `ssm_cfg.layer: "Mamba2"` is that package's
+    // identity declaration — the same judgment the parser makes, made
+    // here so detection and identity cannot disagree about it.
     let model_type = text_config["model_type"]
         .as_str()
         .or_else(|| config["model_type"].as_str())
+        .or_else(|| {
+            (text_config["ssm_cfg"]["layer"].as_str() == Some("Mamba2")).then_some("mamba2")
+        })
         .unwrap_or("")
         .to_string();
     let architectures = config["architectures"]
@@ -298,6 +305,7 @@ pub fn resolve_with_tensor_evidence(
         mamba2: cfg.mamba2_geometry,
         mamba2_provenance: cfg.mamba2_provenance.clone(),
         conv_qkv_attn: cfg.conv_qkv_attn,
+        conv_qkv_provenance: cfg.conv_qkv_provenance.clone(),
     };
     (detection, topology)
 }

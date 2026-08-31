@@ -248,3 +248,141 @@ fn the_conv_qkv_defects_name_grouping_and_odd_rotation() {
     assert_eq!(defects.len(), 1);
     assert!(defects[0].contains("odd"), "{defects:?}");
 }
+
+/// The state-spaces native declaration, verbatim: `ssm_cfg` names the
+/// layer class and NOTHING else — the whole geometry is package
+/// defaults.
+fn mamba2attn_native() -> serde_json::Value {
+    json!({
+        "d_model": 2560,
+        "d_intermediate": 0,
+        "n_layer": 64,
+        "vocab_size": 50277,
+        "ssm_cfg": { "layer": "Mamba2" },
+        "attn_layer_idx": [9, 18, 27, 36, 45, 56],
+        "attn_cfg": {
+            "causal": true,
+            "d_conv": 4,
+            "head_dim": 128,
+            "num_heads": 30,
+            "out_proj_bias": false,
+            "qkv_proj_bias": false,
+            "rotary_emb_dim": 64
+        },
+        "rms_norm": true,
+        "residual_in_fp32": true,
+        "fused_add_norm": true,
+        "pad_vocab_size_multiple": 16,
+        "tie_embeddings": true
+    })
+}
+
+/// **The native mamba_ssm dialect: the whole geometry is package
+/// defaults, every one RECORDED** — and the derived widths still close
+/// over the real tensor estate exactly (in_proj 10576, conv 5376 on
+/// d_model 2560), so a wrong default cannot hide.
+#[test]
+fn the_native_dialect_records_every_package_default() {
+    let (g, provenance) = Mamba2Geometry::read_with_provenance(&mamba2attn_native()).unwrap();
+    assert_eq!(
+        provenance.dialect,
+        super::mamba2::Mamba2Dialect::MambaSsmNative
+    );
+    assert_eq!((g.state_size, g.num_heads, g.head_dim), (128, 80, 64));
+    assert_eq!(
+        (g.expand, g.conv_kernel, g.n_groups, g.chunk_size),
+        (2, 4, 1, 256)
+    );
+    assert_eq!(g.dt_limit_min, DtBound::Finite(0.0));
+    assert_eq!(g.dt_limit_max, DtBound::Unbounded);
+    assert!(g.rms_norm && !g.use_bias && g.use_conv_bias);
+    // The recorded ledger: every fact the checkpoint never declared.
+    let keys: Vec<&str> = provenance
+        .family_defaults
+        .iter()
+        .map(|d| d.key.as_str())
+        .collect();
+    for key in [
+        "expand",
+        "headdim",
+        "d_state",
+        "d_conv",
+        "ngroups",
+        "chunk_size",
+        "num_heads",
+        "time_step_limit",
+        "norm_epsilon",
+        "rms_norm",
+        "use_bias",
+        "use_conv_bias",
+    ] {
+        assert!(keys.contains(&key), "{key} must be on the record: {keys:?}");
+    }
+    // And the closure widths the real estate holds.
+    assert_eq!(g.in_proj_rows(2560), 10576);
+    assert_eq!(g.conv_dim(2560), 5376);
+
+    // A declared ssm_cfg value outranks its default and leaves no record.
+    let mut declared = mamba2attn_native();
+    declared["ssm_cfg"]["d_state"] = json!(64);
+    let (g, provenance) = Mamba2Geometry::read_with_provenance(&declared).unwrap();
+    assert_eq!(g.state_size, 64);
+    assert!(!provenance
+        .family_defaults
+        .iter()
+        .any(|d| d.key == "d_state"));
+
+    // Any other layer class declares a lineage this read must not claim.
+    let mut foreign = mamba2attn_native();
+    foreign["ssm_cfg"]["layer"] = json!("Mamba1");
+    assert!(Mamba2Geometry::read_with_provenance(&foreign).is_none());
+}
+
+/// **The attn_cfg dialect fills exactly two MHA defaults, recorded:**
+/// the KV head count (`num_heads_kv = num_heads`) and the rotary base.
+#[test]
+fn the_attn_cfg_dialect_records_its_two_defaults() {
+    use super::ConvQkvAttnGeometry;
+    let (a, provenance) = ConvQkvAttnGeometry::read_with_provenance(&mamba2attn_native()).unwrap();
+    assert_eq!(
+        provenance.dialect,
+        super::conv_qkv_attn::ConvQkvDialect::MambaSsmAttnCfg
+    );
+    assert_eq!((a.num_heads, a.num_kv_heads, a.head_dim), (30, 30, 128));
+    assert_eq!((a.conv_kernel, a.rotary_dim), (4, 64));
+    assert_eq!(a.rope_theta, 10000.0);
+    assert!(!a.qkv_bias && !a.out_bias);
+    assert_eq!(a.qkv_rows(), 11520);
+    assert_eq!(a.attn_out_width(), 3840);
+    let keys: Vec<&str> = provenance
+        .family_defaults
+        .iter()
+        .map(|d| d.key.as_str())
+        .collect();
+    assert_eq!(keys, ["num_heads_kv", "rotary_emb_base"]);
+}
+
+/// **Identity from the declared config shape**: no `model_type` exists,
+/// and `ssm_cfg.layer: "Mamba2"` is the package's identity declaration
+/// — detection lands on the mamba2 family, never the generic fallback
+/// whose defaults fabricate a softmax tower. Any other class name stays
+/// undeclared.
+#[test]
+fn the_native_config_shape_declares_its_identity() {
+    let arch = crate::detect_from_json(&mamba2attn_native());
+    assert_eq!(arch.family(), "mamba2");
+    assert_eq!(
+        arch.config().hidden_size,
+        2560,
+        "d_model is the hidden width"
+    );
+    assert_eq!(arch.config().num_layers, 64);
+    // The family norm-eps default: both lineages agree on 1e-5, and the
+    // trait-wide 1e-6 must not answer for a config declaring no epsilon.
+    assert_eq!(arch.norm_eps(), 1e-5);
+
+    let mut foreign = mamba2attn_native();
+    foreign["ssm_cfg"]["layer"] = json!("Mamba1");
+    let arch = crate::detect_from_json(&foreign);
+    assert_ne!(arch.family(), "mamba2");
+}
