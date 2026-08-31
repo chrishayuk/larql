@@ -3,9 +3,8 @@
 //! Not a CI test — it needs the 51 GB artifact. This is the production
 //! canary the fixtures cannot stand in for.
 
-use larql_vindex::format::vindex3::gguf::geometry::{
-    semantic_digest, ModelGeometry, TargetGeometry,
-};
+use larql_vindex::format::vindex3::gguf::geometry::{semantic_digest, TargetGeometry};
+use larql_vindex::format::vindex3::gguf::plan::Qwen35Lowering;
 use larql_vindex::format::vindex3::gguf::walk::WalkError;
 use larql_vindex::format::vindex3::gguf::walk::{inventory_from_container, walk_primary_text};
 use larql_vindex::format::vindex3::inspect::inspect_container;
@@ -98,7 +97,7 @@ fn main() {
         .graph
         .primary_text_component()
         .expect("one primary-text component");
-    let model = ModelGeometry::from_surface(
+    let lowering = Qwen35Lowering::from_surface(
         component
             .execution
             .as_ref()
@@ -107,7 +106,7 @@ fn main() {
     )
     .expect("the graph carries every fact the expectation needs");
 
-    let (plans, ledger) = walk_primary_text(&sources, excluded, &required, &model);
+    let (plans, ledger) = walk_primary_text(&sources, excluded, &required, &lowering);
 
     println!("SOURCE");
     for (obj, n) in &ledger.source_by_object {
@@ -163,6 +162,14 @@ fn main() {
             dims: p.target_shape.clone(),
         })
         .collect();
+    // The transform programme, tallied — a dropped surface shows here
+    // before it shows as wrong output tokens.
+    let reordered = plans.iter().filter(|p| !p.layout.is_empty()).count();
+    let arithmetic = plans.iter().filter(|p| !p.value.is_empty()).count();
+    println!("\nPROGRAMME");
+    println!("  {:32} {:>5}", "layout-transformed", reordered);
+    println!("  {:32} {:>5}", "value-transformed", arithmetic);
+
     println!("\nSEMANTIC");
     println!("  {:32} {:>5}", "targets", geometry.len());
     // Names and dims, no encoding and no scale siblings — so the two

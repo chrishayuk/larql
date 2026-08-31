@@ -4,6 +4,8 @@
 
 use super::*;
 
+use super::super::geometry::ModelGeometry;
+
 const LAYERS: usize = 64;
 
 /// Qwen3.8-27B's geometry as the graph states it. The walk's
@@ -11,6 +13,17 @@ const LAYERS: usize = 64;
 /// are typed from the container's segment headers rather than derived
 /// from these numbers — deriving them would make the comparison check
 /// nothing.
+fn qwen_lowering() -> Qwen35Lowering {
+    Qwen35Lowering {
+        model: qwen_model(),
+        offsets: super::super::plan::NormOffsets {
+            trunk: 1.0,
+            final_norm: 1.0,
+            qk: 1.0,
+        },
+    }
+}
+
 fn qwen_model() -> ModelGeometry {
     ModelGeometry {
         hidden_size: 5120,
@@ -208,7 +221,7 @@ fn the_whole_primary_text_surface_is_accounted_for() {
     );
 
     let (plans, ledger) =
-        walk_primary_text(&sources, vision_excluded(), &required(), &qwen_model());
+        walk_primary_text(&sources, vision_excluded(), &required(), &qwen_lowering());
 
     assert_eq!(ledger.errors, vec![], "no unplanned, duplicate or missing");
     assert_eq!(ledger.source_total, 851);
@@ -240,7 +253,7 @@ fn the_whole_primary_text_surface_is_accounted_for() {
 /// llama.cpp would find no norm where it expects one.
 #[test]
 fn post_attention_norm_is_a_trunk_norm_not_an_attention_layer_only_norm() {
-    let (plans, _) = walk_primary_text(&qwen_sources(), vec![], &[], &qwen_model());
+    let (plans, _) = walk_primary_text(&qwen_sources(), vec![], &[], &qwen_lowering());
     let count = plans
         .iter()
         .filter(|p| p.target_name.ends_with(".post_attention_norm.weight"))
@@ -278,7 +291,7 @@ fn untied_output_head_is_required_even_when_the_target_runtime_can_fallback() {
     sources.retain(|t| t.role != "output head");
     assert_eq!(sources.len(), 850);
 
-    let (_, ledger) = walk_primary_text(&sources, vision_excluded(), &required(), &qwen_model());
+    let (_, ledger) = walk_primary_text(&sources, vision_excluded(), &required(), &qwen_lowering());
     assert!(
         ledger.errors.iter().any(|e| matches!(
             e,
@@ -304,7 +317,7 @@ fn an_unmapped_role_is_reported_not_silently_dropped() {
         representation: RepresentationKind::Bf16,
         shape: vec![8, 8],
     });
-    let (_, ledger) = walk_primary_text(&sources, vec![], &[], &qwen_model());
+    let (_, ledger) = walk_primary_text(&sources, vec![], &[], &qwen_lowering());
     assert!(ledger.errors.iter().any(|e| matches!(
         e,
         WalkError::Unplanned { role, .. } if role == "a role nothing maps"
@@ -330,7 +343,7 @@ fn two_sources_claiming_one_target_name_is_an_error() {
         representation: RepresentationKind::Bf16,
         shape: vec![8, 8],
     });
-    let (_, ledger) = walk_primary_text(&sources, vec![], &[], &qwen_model());
+    let (_, ledger) = walk_primary_text(&sources, vec![], &[], &qwen_lowering());
     assert!(ledger.errors.iter().any(|e| matches!(
         e,
         WalkError::DuplicateTarget { target, .. } if target == "blk.0.ffn_down.weight"
@@ -347,7 +360,7 @@ fn nvfp4_sources_generate_sibling_scale_tensors() {
             t.representation = RepresentationKind::Nvfp4;
         }
     }
-    let (plans, ledger) = walk_primary_text(&sources, vec![], &[], &qwen_model());
+    let (plans, ledger) = walk_primary_text(&sources, vec![], &[], &qwen_lowering());
     assert_eq!(ledger.generated_scale_tensors, 64, "one per NVFP4 tensor");
     assert_eq!(
         ledger.target_total,
@@ -433,13 +446,13 @@ fn planner_walks_an_encoded_container_not_a_reconstructed_inventory() {
     // path, so the fixture's segment headers are reconciled against
     // facts the encoder wrote, not facts this test typed.
     let component = inspection.graph.primary_text_component().unwrap();
-    let model =
-        ModelGeometry::from_surface(component.execution.as_ref().unwrap(), component.hidden_size)
+    let lowering =
+        Qwen35Lowering::from_surface(component.execution.as_ref().unwrap(), component.hidden_size)
             .expect("the encoded graph carries every fact the expectation needs");
 
     // And the unroled tensors are counted rather than dropped, so the
     // ledger refuses instead of quietly reporting success.
-    let (plans, ledger) = walk_primary_text(&sources, excluded, &[], &model);
+    let (plans, ledger) = walk_primary_text(&sources, excluded, &[], &lowering);
     assert_eq!(ledger.source_total, sources.len());
     assert!(
         ledger.accounted < ledger.source_total,
@@ -478,7 +491,7 @@ fn a_self_consistent_disagreement_is_caught_on_the_walk_not_only_in_isolation() 
     q.shape = vec![6144, 5120];
 
     let (plans, ledger) =
-        walk_primary_text(&sources, vision_excluded(), &required(), &qwen_model());
+        walk_primary_text(&sources, vision_excluded(), &required(), &qwen_lowering());
     // Coverage is untouched — that is what makes this dangerous.
     assert_eq!(ledger.accounted, 851);
     assert_eq!(plans.len(), 851);
@@ -510,7 +523,7 @@ fn a_self_consistent_disagreement_is_caught_on_the_walk_not_only_in_isolation() 
         .find(|t| t.role == "key" && t.layer == Some(7))
         .unwrap();
     k.shape = vec![512, 5120];
-    let (_, ledger) = walk_primary_text(&sources, vec![], &[], &qwen_model());
+    let (_, ledger) = walk_primary_text(&sources, vec![], &[], &qwen_lowering());
     let msg = ledger
         .errors
         .iter()
@@ -535,7 +548,7 @@ fn a_self_consistent_disagreement_is_caught_on_the_walk_not_only_in_isolation() 
 /// before any writer sees it.
 #[test]
 fn the_conv_singleton_axis_is_squeezed_by_the_walk_and_a_real_axis_is_refused() {
-    let (plans, ledger) = walk_primary_text(&qwen_sources(), vec![], &[], &qwen_model());
+    let (plans, ledger) = walk_primary_text(&qwen_sources(), vec![], &[], &qwen_lowering());
     let conv = plans
         .iter()
         .find(|p| p.target_name == "blk.0.ssm_conv1d.weight")
@@ -550,7 +563,7 @@ fn the_conv_singleton_axis_is_squeezed_by_the_walk_and_a_real_axis_is_refused() 
         .find(|t| t.role == "causal conv over q|k|v" && t.layer == Some(0))
         .unwrap();
     conv.shape = vec![10_240, 2, 4];
-    let (plans, ledger) = walk_primary_text(&sources, vec![], &[], &qwen_model());
+    let (plans, ledger) = walk_primary_text(&sources, vec![], &[], &qwen_lowering());
     assert_eq!(plans.len(), 850, "the refused plan is not made");
     assert!(
         ledger.errors.iter().any(|e| matches!(

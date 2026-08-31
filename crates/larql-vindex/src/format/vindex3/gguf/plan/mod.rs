@@ -25,6 +25,9 @@
 
 use std::fmt;
 
+use super::geometry::{GeometryError, ModelGeometry};
+use crate::format::vindex3::graph::surface::ExecutionSurface;
+
 /// Moves bytes. Safe on a quantised representation provided every
 /// permutation boundary lands on a quantisation-group boundary, which
 /// [`super::preflight`] establishes before planning begins.
@@ -114,6 +117,12 @@ impl RepresentationKind {
 pub enum PlanError {
     /// A squeeze of an axis that carries real channels.
     NonSingletonSqueeze { dims: Vec<u64>, axis: usize },
+    /// V heads that do not group evenly under K heads have no tiled
+    /// order, so the reorder is not definable.
+    VHeadsDoNotGroup {
+        value_heads: usize,
+        key_heads: usize,
+    },
     /// The one the constructor exists for.
     ValueTransformOnQuantised {
         target: String,
@@ -125,6 +134,14 @@ pub enum PlanError {
 impl fmt::Display for PlanError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
+            Self::VHeadsDoNotGroup {
+                value_heads,
+                key_heads,
+            } => write!(
+                f,
+                "cannot plan: {value_heads} value heads do not group evenly under {key_heads} \
+                 key heads, so the V-head reorder has no tiled order to produce"
+            ),
             Self::NonSingletonSqueeze { dims, axis } => write!(
                 f,
                 "cannot plan: axis {axis} of {dims:?} is not a singleton — the target lowering \
@@ -263,18 +280,142 @@ pub fn qwen35_tensor_name(role: &str, layer: usize) -> Option<String> {
     Some(format!("blk.{layer}.{suffix}"))
 }
 
-/// The layout the target ABI requires of a role, independent of any
-/// graph fact.
+/// The weight offsets each norm family folds at lowering time.
 ///
-/// Only the convolution has one: the source stores `[channels, 1,
-/// kernel]` and llama.cpp binds `[channels, kernel]`. The V-head
-/// reorders are not here because they depend on head counts and the
-/// preflight's group-boundary invariant, which the caller supplies.
-pub fn qwen35_layout(role: &str) -> Vec<LayoutTransform> {
-    match role {
-        "causal conv over q|k|v" => vec![LayoutTransform::SqueezeSingletonAxis { axis: 1 }],
-        _ => vec![],
+/// Three separate authorities, read separately, because llama.cpp's
+/// "+1 on every norm except the GDN's gated norm" is not an exception
+/// written here — it falls out of the graph: `norm.pre` and
+/// `norm.final_norm` declare `weight_offset: 1.0`, the q/k norms
+/// declare their own via `attention.qk_norm_weight_offset`, and the
+/// linear-attention surface declares no offset for its gated norm.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct NormOffsets {
+    pub trunk: f32,
+    pub final_norm: f32,
+    pub qk: f32,
+}
+
+/// Everything the transform table consumes: the model's geometry and
+/// the declared norm offsets. All of it graph facts — none of it read
+/// off a tensor, and none of it a family literal.
+#[derive(Debug, Clone, PartialEq)]
+pub struct Qwen35Lowering {
+    pub model: ModelGeometry,
+    pub offsets: NormOffsets,
+}
+
+impl Qwen35Lowering {
+    pub fn from_surface(
+        surface: &ExecutionSurface,
+        hidden_size: usize,
+    ) -> Result<Self, GeometryError> {
+        let model = ModelGeometry::from_surface(surface, hidden_size)?;
+        let attn = surface
+            .attention
+            .as_ref()
+            .expect("ModelGeometry::from_surface already required attention");
+        Ok(Self {
+            model,
+            offsets: NormOffsets {
+                trunk: surface.norm.pre.weight_offset,
+                final_norm: surface.norm.final_norm.weight_offset,
+                qk: attn.qk_norm_weight_offset,
+            },
+        })
     }
+}
+
+/// The complete transform programme a role's tensor undergoes between
+/// the container and the file. This is the target ABI's table, in one
+/// place, so the emitter below it can execute plans without knowing a
+/// single role name.
+///
+/// Two families of transform, both forced by llama.cpp's qwen35 graph:
+///
+/// - **V heads move from grouped to tiled order** so `ggml_repeat` can
+///   broadcast K-head state across its value heads. The permutation
+///   touches every tensor indexed by value head: the fused QKV's V rows
+///   (at an offset past Q and K), the gate's rows, the per-head decay
+///   and write-strength rows, the 1-D `log decay` and `timestep bias`
+///   elements, the convolution's V channels, and the output
+///   projection's input columns. Skipped entirely when `v_per_k == 1`,
+///   where it is the identity.
+/// - **Value arithmetic** the target stores pre-computed: `-exp` on the
+///   log decay, and each norm family's declared weight offset folded
+///   into the stored weight. An offset of exactly 0 attaches nothing —
+///   the operation is the identity, and forcing a conversion to carry
+///   it would change bytes for no semantic reason.
+pub fn qwen35_transforms(
+    role: &str,
+    lowering: &Qwen35Lowering,
+) -> Result<(Vec<LayoutTransform>, Vec<ValueTransform>), PlanError> {
+    let m = &lowering.model;
+    let o = &lowering.offsets;
+    if m.key_heads == 0 || !m.value_heads.is_multiple_of(m.key_heads) {
+        return Err(PlanError::VHeadsDoNotGroup {
+            value_heads: m.value_heads,
+            key_heads: m.key_heads,
+        });
+    }
+    let v_per_k = m.value_heads / m.key_heads;
+    let v_rows = |head_dim: usize, v_offset_rows: usize| {
+        if v_per_k == 1 {
+            vec![]
+        } else {
+            vec![LayoutTransform::ReorderVRows {
+                key_heads: m.key_heads,
+                v_per_k,
+                head_dim,
+                v_offset_rows,
+            }]
+        }
+    };
+    let offset = |value: f32| {
+        if value == 0.0 {
+            vec![]
+        } else {
+            vec![ValueTransform::ApplyWeightOffset(value)]
+        }
+    };
+    let qk_rows = 2 * m.key_heads * m.key_head_dim;
+
+    Ok(match role {
+        "fused recurrent q|k|v" => (v_rows(m.value_head_dim, qk_rows), vec![]),
+        "output-gate projection" => (v_rows(m.value_head_dim, 0), vec![]),
+        "decay projection" | "write-strength projection" => (v_rows(1, 0), vec![]),
+        "timestep bias" => (v_rows(1, 0), vec![]),
+        "log decay" => (v_rows(1, 0), vec![ValueTransform::MaterializeLogDecay]),
+        "causal conv over q|k|v" => {
+            let mut layout = vec![LayoutTransform::SqueezeSingletonAxis { axis: 1 }];
+            layout.extend(v_rows(m.value_head_dim, qk_rows));
+            (layout, vec![])
+        }
+        "output projection" => {
+            let layout = if v_per_k == 1 {
+                vec![]
+            } else {
+                vec![LayoutTransform::ReorderVColumnsByGroups {
+                    key_heads: m.key_heads,
+                    v_per_k,
+                    // Permutation moves whole heads, so for a quantised
+                    // source every 16-element group moves intact —
+                    // provided head_dim divides into groups, which the
+                    // preflight establishes before planning begins.
+                    groups_per_head: m.value_head_dim
+                        / larql_models::quant::nvfp4::NVFP4_GROUP_ELEMS,
+                }]
+            };
+            (layout, vec![])
+        }
+        "input layer norm" | "post-attention layer norm" => (vec![], offset(o.trunk)),
+        "final norm" => (vec![], offset(o.final_norm)),
+        "attention q norm" | "attention k norm" => (vec![], offset(o.qk)),
+        // The gated norm's absence here is the graph speaking: its
+        // surface declares no offset, so none is folded. llama.cpp's
+        // converter writes the same distinction as a name-based
+        // exception; this table never needs to.
+        _ => (vec![], vec![]),
+    })
 }
 
 /// The three model-scope surfaces, which carry no layer index.

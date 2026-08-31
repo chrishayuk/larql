@@ -46,10 +46,10 @@
 
 use std::collections::BTreeMap;
 
-use super::geometry::{check_target, GeometryError, ModelGeometry};
+use super::geometry::{check_target, GeometryError};
 use super::plan::{
-    qwen35_global_name, qwen35_layout, qwen35_tensor_name, LoweredTensorPlan, PlanError,
-    RepresentationKind,
+    qwen35_global_name, qwen35_tensor_name, qwen35_transforms, LoweredTensorPlan, PlanError,
+    Qwen35Lowering, RepresentationKind,
 };
 
 /// One physical tensor in the source, with the role the plan assigned.
@@ -131,14 +131,14 @@ impl Ledger {
 /// direction matters: deriving them from the plans would make the
 /// coverage check tautological.
 ///
-/// `model` is the graph's account of the geometry, and the same
-/// direction applies: it is read from the surface, never from the
-/// tensors being walked.
+/// `lowering` is the graph's account of the geometry and the declared
+/// norm offsets, and the same direction applies: it is read from the
+/// surface, never from the tensors being walked.
 pub fn walk_primary_text(
     sources: &[SourceTensor],
     excluded: Vec<Exclusion>,
     required_targets: &[(&str, &'static str)],
-    model: &ModelGeometry,
+    lowering: &Qwen35Lowering,
 ) -> (Vec<LoweredTensorPlan>, Ledger) {
     let mut plans = Vec::new();
     let mut errors = Vec::new();
@@ -170,22 +170,44 @@ pub fn walk_primary_text(
             scales += 1;
             target.replace(".weight", ".scale")
         });
+        // The role's complete transform programme, from the one table.
+        let (layout, value) = match qwen35_transforms(&t.role, lowering) {
+            Ok(t) => t,
+            Err(error) => {
+                errors.push(WalkError::Plan {
+                    name: t.name.clone(),
+                    error,
+                });
+                continue;
+            }
+        };
+        // Target encoding. A quantised source keeps its encoding — that
+        // is the whole point of the export. An unquantised source stays
+        // put only when it is a plain 2-D projection: anything that is
+        // not a matrix after lowering (norms, 1-D parameters, the
+        // convolution kernel) or that had arithmetic applied is stored
+        // F32, which is both llama.cpp's convention for these tensors
+        // and the exact representation of the f32 arithmetic's result.
         let target_type = match t.representation {
             RepresentationKind::F32 => 0,
-            RepresentationKind::Bf16 => 30,
             RepresentationKind::Nvfp4 => larql_models::quant::nvfp4_ggml::TYPE_NVFP4,
+            RepresentationKind::Bf16 => {
+                let stays_matrix = t.shape.len() == 2 && t.role != "causal conv over q|k|v";
+                if stays_matrix && value.is_empty() {
+                    30
+                } else {
+                    0
+                }
+            }
         };
-        // The ABI's own layout comes from the role table. Transforms
-        // that need graph facts (the V-head reorders) are attached by
-        // the caller; they preserve shape, so geometry is unaffected.
         let plan = match LoweredTensorPlan::new(
             t.name.clone(),
             target.clone(),
             t.representation,
             target_type,
             t.shape.clone(),
-            qwen35_layout(&t.role),
-            vec![],
+            layout,
+            value,
             scale_tensor,
         ) {
             Ok(p) => p,
@@ -200,7 +222,7 @@ pub fn walk_primary_text(
         // GEOMETRY: the plan's shape came from the tensor; the
         // expectation comes from the graph. Compare them here, on every
         // tensor, rather than trusting that both are right.
-        match check_target(&target, &t.role, &plan.target_shape, model) {
+        match check_target(&target, &t.role, &plan.target_shape, &lowering.model) {
             Ok(_) => reconciled += 1,
             Err(e) => errors.push(WalkError::Geometry(e)),
         }

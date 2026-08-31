@@ -265,3 +265,187 @@ fn layout_transforms_have_declared_shape_effects() {
     )
     .is_err());
 }
+
+/// The hero's transform facts, spelled from the graph values.
+fn hero_lowering() -> Qwen35Lowering {
+    use super::super::geometry::ModelGeometry;
+    Qwen35Lowering {
+        model: ModelGeometry {
+            hidden_size: 5120,
+            vocab_size: 248_320,
+            intermediate_size: 17_408,
+            q_heads: 24,
+            kv_heads: 4,
+            head_dim: 256,
+            query_carries_gate: true,
+            key_heads: 16,
+            key_head_dim: 128,
+            value_heads: 48,
+            value_head_dim: 128,
+            conv_kernel: 4,
+        },
+        offsets: NormOffsets {
+            trunk: 1.0,
+            final_norm: 1.0,
+            qk: 1.0,
+        },
+    }
+}
+
+/// **The V-head permutation touches every tensor indexed by value
+/// head**, pinned per role with the hero's numbers so a future edit
+/// cannot quietly drop one surface out of the programme. llama.cpp's
+/// graph broadcasts K-head state tiled; a tensor left in grouped order
+/// binds cleanly and mixes heads.
+#[test]
+fn the_v_head_reorder_reaches_every_value_head_indexed_tensor() {
+    let low = hero_lowering();
+    let t = |role: &str| qwen35_transforms(role, &low).unwrap();
+
+    // Fused QKV: only the V region moves, past 2 x 16 x 128 = 4096 rows.
+    assert_eq!(
+        t("fused recurrent q|k|v").0,
+        vec![LayoutTransform::ReorderVRows {
+            key_heads: 16,
+            v_per_k: 3,
+            head_dim: 128,
+            v_offset_rows: 4096,
+        }]
+    );
+    // The gate is V-only, so its reorder starts at row 0.
+    assert_eq!(
+        t("output-gate projection").0,
+        vec![LayoutTransform::ReorderVRows {
+            key_heads: 16,
+            v_per_k: 3,
+            head_dim: 128,
+            v_offset_rows: 0,
+        }]
+    );
+    // Per-head parameters permute as whole rows/elements: head_dim 1.
+    for role in [
+        "decay projection",
+        "write-strength projection",
+        "log decay",
+        "timestep bias",
+    ] {
+        assert_eq!(
+            t(role).0,
+            vec![LayoutTransform::ReorderVRows {
+                key_heads: 16,
+                v_per_k: 3,
+                head_dim: 1,
+                v_offset_rows: 0,
+            }],
+            "role `{role}`"
+        );
+    }
+    // The convolution squeezes, then its V channels move.
+    assert_eq!(
+        t("causal conv over q|k|v").0,
+        vec![
+            LayoutTransform::SqueezeSingletonAxis { axis: 1 },
+            LayoutTransform::ReorderVRows {
+                key_heads: 16,
+                v_per_k: 3,
+                head_dim: 128,
+                v_offset_rows: 4096,
+            },
+        ]
+    );
+    // The output projection reads V-space, so its INPUT axis permutes —
+    // by whole heads, which for NVFP4 is 8 intact 16-element groups.
+    assert_eq!(
+        t("output projection").0,
+        vec![LayoutTransform::ReorderVColumnsByGroups {
+            key_heads: 16,
+            v_per_k: 3,
+            groups_per_head: 8,
+        }]
+    );
+    // And nothing else moves.
+    for role in ["query", "key", "ffn down", "gated norm", "input layer norm"] {
+        assert_eq!(t(role).0, vec![], "role `{role}` has no layout transform");
+    }
+}
+
+/// When every K head owns exactly one V head the reorder is the
+/// identity, and the programme says nothing rather than permuting
+/// nothing.
+#[test]
+fn a_one_to_one_head_mapping_attaches_no_reorder() {
+    let mut low = hero_lowering();
+    low.model.value_heads = low.model.key_heads;
+    for role in [
+        "fused recurrent q|k|v",
+        "output-gate projection",
+        "log decay",
+        "output projection",
+        "causal conv over q|k|v",
+    ] {
+        let (layout, _) = qwen35_transforms(role, &low).unwrap();
+        assert!(
+            !layout.iter().any(|t| matches!(
+                t,
+                LayoutTransform::ReorderVRows { .. }
+                    | LayoutTransform::ReorderVColumnsByGroups { .. }
+            )),
+            "role `{role}`"
+        );
+    }
+    // And heads that do not group refuse rather than half-permuting.
+    low.model.value_heads = 46;
+    assert!(matches!(
+        qwen35_transforms("log decay", &low),
+        Err(PlanError::VHeadsDoNotGroup {
+            value_heads: 46,
+            key_heads: 16
+        })
+    ));
+}
+
+/// **Value arithmetic comes from the graph, not the family.** The
+/// norm offsets fold whichever number the surface declares; the gated
+/// norm's surface declares none, so none is folded — llama.cpp's
+/// name-based exception falls out of the artifact instead of being
+/// written down a second time here.
+#[test]
+fn value_transforms_fold_declared_facts_only() {
+    let low = hero_lowering();
+    let t = |role: &str| qwen35_transforms(role, &low).unwrap().1;
+
+    assert_eq!(t("log decay"), vec![ValueTransform::MaterializeLogDecay]);
+    for role in ["input layer norm", "post-attention layer norm"] {
+        assert_eq!(
+            t(role),
+            vec![ValueTransform::ApplyWeightOffset(1.0)],
+            "{role}"
+        );
+    }
+    assert_eq!(
+        t("final norm"),
+        vec![ValueTransform::ApplyWeightOffset(1.0)]
+    );
+    for role in ["attention q norm", "attention k norm"] {
+        assert_eq!(
+            t(role),
+            vec![ValueTransform::ApplyWeightOffset(1.0)],
+            "{role}"
+        );
+    }
+    assert_eq!(t("gated norm"), vec![], "the gated norm declares no offset");
+    assert_eq!(
+        t("timestep bias"),
+        vec![],
+        "dt_bias moves heads but keeps values"
+    );
+
+    // A declared zero offset attaches nothing: the op is the identity,
+    // and carrying it would force a conversion for no semantic reason.
+    let mut zero = hero_lowering();
+    zero.offsets.trunk = 0.0;
+    assert_eq!(
+        qwen35_transforms("input layer norm", &zero).unwrap().1,
+        vec![]
+    );
+}
