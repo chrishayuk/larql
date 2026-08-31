@@ -73,18 +73,7 @@ pub fn try_plan_kv_geometry(plan: &ComponentOpPlan) -> Result<Vec<LayerKvGeometr
                 // only alternative to rows when this adapter was
                 // written; a latent cache is a third answer, and a
                 // caller told the wrong one looks for the wrong seam.
-                let region = match geometry {
-                    LayerContinuationGeometry::Recurrent(_) => "recurrent continuation state",
-                    LayerContinuationGeometry::LatentKv(_) => {
-                        "a per-position LATENT cache, one operator-defined row per position"
-                    }
-                    LayerContinuationGeometry::KvAndRecurrent { .. } => {
-                        "KV rows AND recurrent buffers"
-                    }
-                    LayerContinuationGeometry::Kv(_) | LayerContinuationGeometry::Stateless => {
-                        "no KV rows"
-                    }
-                };
+                let region = super::continuation::region_name(geometry);
                 format!(
                     "layer {index} carries {region}, not a plain KV cache; this model \
                      needs `plan_continuation_geometry`, which describes every form"
