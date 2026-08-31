@@ -1,6 +1,7 @@
 //! The model head — final norm plus the vocabulary projection.
 
 use super::*;
+use crate::trait_impl::kimi_layer::ExpertEncoding;
 
 const VOCAB: usize = 5;
 
@@ -33,6 +34,7 @@ fn the_head_matches_a_host_reference() {
                 norm_eps: EPS,
                 weight: &w,
                 vocab: VOCAB,
+                encoding: ExpertEncoding::Bf16,
             },
             &x,
         )
@@ -77,6 +79,7 @@ fn the_head_inside_the_chain_equals_the_head_run_after_it() {
         norm_eps: EPS,
         weight: &w,
         vocab: VOCAB,
+        encoding: ExpertEncoding::Bf16,
     };
 
     let state_a = KdaDeviceState::zeros(&b, shape());
@@ -136,6 +139,7 @@ fn head_shape_faults_are_refused() {
         norm_eps: EPS,
         weight: &w,
         vocab: VOCAB,
+        encoding: ExpertEncoding::Bf16,
     };
 
     let mut truncated = ok;

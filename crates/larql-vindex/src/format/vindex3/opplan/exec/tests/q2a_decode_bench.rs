@@ -35,7 +35,7 @@ use larql_compute::backend::ComputeBackend;
 use larql_compute_metal::MetalBackend;
 use serde_json::Value;
 
-use super::kda_q8_real::{assemble, build_layers};
+use super::kda_q8_real::{assemble, assemble_with_head, build_layers};
 use super::q2a_teacher_forced::{
     build_stack, env_dir, sequence_embeddings, BANK_ENV, CANDIDATE_ENV, SOURCE_ENV,
 };
@@ -162,9 +162,10 @@ fn decode_rate_of_the_candidate_map_beside_its_own_bf16_baseline() {
             kda_layers.len(),
             "every KDA target re-encoded"
         );
+        let q8_head = std::env::var("LARQL_LMHEAD_Q8").is_ok_and(|v| v == "1");
         (
             assemble(&metal, &model, base),
-            assemble(&metal, &model, cand),
+            assemble_with_head(&metal, &model, cand, q8_head),
         )
     };
     metal.seal_weight_regions();

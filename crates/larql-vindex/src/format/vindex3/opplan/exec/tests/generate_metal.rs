@@ -562,6 +562,7 @@ fn sixteen_greedy_tokens_through_the_mixed_metal_stack() {
             weight: lm_head_bf16,
             vocab: vocab_from_head,
             norm_eps: eps as f32,
+            encoding: MetalEncoding::Bf16,
         }),
         "the stack must end on a device layer for the head to ride in its epoch"
     );
@@ -725,6 +726,7 @@ fn the_device_head_matches_the_oracle_from_the_last_layers_output() {
                 norm_eps: eps as f32,
                 weight: &w_bf16,
                 vocab,
+                encoding: MetalEncoding::Bf16,
             },
             &h,
         )
@@ -765,6 +767,7 @@ fn the_device_head_matches_the_oracle_from_the_last_layers_output() {
                 norm_eps: eps as f32,
                 weight: &w_bf16,
                 vocab,
+                encoding: MetalEncoding::Bf16,
             },
             &other,
         )

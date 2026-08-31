@@ -366,6 +366,9 @@ pub struct HybridHead {
     pub weight: Vec<u8>,
     pub vocab: usize,
     pub norm_eps: f32,
+    /// Physical representation of `weight` — the dispatch selects its
+    /// kernel by this, same contract as every projection bank.
+    pub encoding: ExpertEncoding,
 }
 
 impl<'a> HybridStack<'a> {
@@ -510,6 +513,7 @@ impl<'a> HybridStack<'a> {
                             norm_eps: hd.norm_eps,
                             weight: &hd.weight,
                             vocab: hd.vocab,
+                            encoding: hd.encoding,
                         },
                         &h,
                         trace.as_deref_mut(),
