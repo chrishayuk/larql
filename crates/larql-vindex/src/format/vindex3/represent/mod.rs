@@ -46,20 +46,27 @@
 //! at all: a profile cannot turn one encoding's bytes into another's.
 
 pub mod arena;
+pub mod assessment;
 pub mod bank;
+pub mod byte_ledger;
 pub mod compile;
 pub mod compiler;
+pub mod constraint;
+pub mod execution_cost;
 pub mod experiment;
 pub mod gptq;
 pub mod kda_candidate;
 pub mod map;
+pub mod measurement;
 pub mod nvfp4_pack;
 pub mod physical;
 pub mod plan_roles;
 #[cfg(test)]
 mod plan_roles_tests;
 pub mod policy;
+pub mod promotion;
 pub mod quality;
+pub mod search_evidence;
 pub mod selection;
 pub mod source_bank;
 
