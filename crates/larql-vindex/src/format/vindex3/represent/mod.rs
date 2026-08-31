@@ -587,7 +587,18 @@ pub fn compile_representation(
         std::fs::write(&graph_path, serialised)?;
     }
 
-    for aux in ["moe_manifest.json", "tokenizer.json"] {
+    // The capability snapshot travels with the representation: a compiled
+    // container that kept only tokenizer.json could tokenise and not
+    // chat — no eos, no template — which reads as a broken model rather
+    // than a missing file.
+    for aux in [
+        "moe_manifest.json",
+        "tokenizer.json",
+        "tokenizer_config.json",
+        "special_tokens_map.json",
+        "generation_config.json",
+        "chat_template.jinja",
+    ] {
         let from = src.join(aux);
         if from.exists() {
             std::fs::copy(&from, out.join(aux))?;
