@@ -625,3 +625,111 @@ fn a_selector_that_answers_badly_refuses_rather_than_dropping_tensors() {
     )
     .is_ok());
 }
+
+/// **Representation is a fact about the tensor, not the object.** An
+/// NVFP4 pack quantises the 2-D projections; norms, the convolution and
+/// the 1-D parameters stay at source precision, and the segment header
+/// records that per tensor. Reading the object's encoding instead
+/// inflated the represented hero's scale count to one per decoder
+/// tensor — 848 where the pack actually holds 496.
+#[test]
+fn representation_comes_from_the_tensor_dtype_not_the_objects_encoding() {
+    use crate::format::vindex3::encode::segment::read_segment_header;
+    use crate::format::vindex3::fixtures::{encode_fixture_container, hybrid_lllf_f32_model};
+    use crate::format::vindex3::inspect::inspect_container;
+    use crate::format::vindex3::represent::{compile_representation, RepresentSpec};
+
+    let checkpoint = tempfile::tempdir().unwrap();
+    let container = tempfile::tempdir().unwrap();
+    let represented = tempfile::tempdir().unwrap();
+    encode_fixture_container(
+        hybrid_lllf_f32_model,
+        checkpoint.path(),
+        container.path(),
+        "repr-dtype",
+    );
+    compile_representation(
+        container.path(),
+        represented.path(),
+        &RepresentSpec::nvfp4(),
+    )
+    .expect("the fixture compiles");
+    let inspection = inspect_container(represented.path(), false).unwrap();
+
+    // The authority this test compares against: the segment headers of
+    // whatever the programme selects, tallied per dtype.
+    let select = |_: &str, ids: &[&str]| {
+        ids.iter()
+            .find(|id| id.ends_with("@NVFP4"))
+            .or_else(|| ids.first())
+            .map(|s| s.to_string())
+    };
+    let mut nvfp4_named = std::collections::BTreeSet::new();
+    for (id, entry) in &inspection.index.representations {
+        if !id.starts_with("target.") {
+            continue;
+        }
+        let ids: Vec<&str> = inspection
+            .index
+            .representations
+            .keys()
+            .filter(|k| k.split('@').next() == id.split('@').next())
+            .map(String::as_str)
+            .collect();
+        if select(id, &ids).as_deref() != Some(id.as_str()) {
+            continue;
+        }
+        let (header, _) = read_segment_header(&represented.path().join(&entry.segment)).unwrap();
+        for t in &header.tensors {
+            if t.dtype == "NVFP4" {
+                nvfp4_named.insert(t.name.clone());
+            }
+        }
+    }
+    assert!(
+        !nvfp4_named.is_empty(),
+        "the compiled pack must actually quantise something, or this test checks nothing"
+    );
+
+    let (sources, _) = inventory_from_container(
+        represented.path(),
+        &inspection.index,
+        &|_, _| None,
+        &|object| object.starts_with("target."),
+        &select,
+    )
+    .unwrap();
+
+    for s in &sources {
+        let expect_nvfp4 = nvfp4_named.contains(&s.name);
+        assert_eq!(
+            s.representation == RepresentationKind::Nvfp4,
+            expect_nvfp4,
+            "`{}` is {:?} but its segment header says dtype {}",
+            s.name,
+            s.representation,
+            if expect_nvfp4 { "NVFP4" } else { "not NVFP4" },
+        );
+        if s.representation == RepresentationKind::Nvfp4 {
+            assert_eq!(
+                s.shape.len(),
+                2,
+                "the pack quantises matrices only: `{}`",
+                s.name
+            );
+        }
+    }
+    // And the object-level encoding really would have said otherwise —
+    // the represented object is catalogued as NVFP4 while holding
+    // source-precision members.
+    let mixed = inspection.index.representations.iter().any(|(id, e)| {
+        id.ends_with("@NVFP4") && {
+            let (h, _) = read_segment_header(&represented.path().join(&e.segment)).unwrap();
+            h.tensors.iter().any(|t| t.dtype != "NVFP4")
+        }
+    });
+    assert!(
+        mixed,
+        "an @NVFP4 object with only NVFP4 members would make this test vacuous"
+    );
+}

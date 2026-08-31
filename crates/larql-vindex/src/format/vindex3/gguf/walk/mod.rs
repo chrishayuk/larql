@@ -337,12 +337,25 @@ pub fn inventory_from_container(
             continue;
         }
 
-        let representation = match entry.encoding.to_ascii_uppercase().as_str() {
-            "NVFP4" => RepresentationKind::Nvfp4,
-            "F32" => RepresentationKind::F32,
-            _ => RepresentationKind::Bf16,
-        };
         for t in &header.tensors {
+            // Representation is a fact about THIS tensor, not about the
+            // object it lives in. An NVFP4 pack quantises only the 2-D
+            // projections; its norms, convolution and 1-D parameters
+            // stay at source precision, and the segment header says so
+            // per tensor. Reading the object's encoding here inflated
+            // the represented hero's scale-sibling count to 848 — one
+            // per decoder tensor — when the pack actually quantises 496.
+            let representation = match t.dtype.as_str() {
+                "NVFP4" => RepresentationKind::Nvfp4,
+                "F32" => RepresentationKind::F32,
+                "BF16" => RepresentationKind::Bf16,
+                other => {
+                    return Err(crate::VindexError::Parse(format!(
+                        "export: tensor `{}` in `{}` has dtype `{other}`, which no lowering                          understands — refusing rather than guessing a representation",
+                        t.name, entry.segment
+                    )))
+                }
+            };
             let Some((role, layer)) = roles(&object, &t.name) else {
                 // An unroled tensor is still counted, so the ledger's
                 // accounted total falls short and the walk refuses.
