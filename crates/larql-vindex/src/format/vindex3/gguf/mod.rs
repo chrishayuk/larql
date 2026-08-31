@@ -10,6 +10,7 @@
 //! independent-backend test.
 
 pub mod emit;
+pub mod export;
 pub mod geometry;
 pub mod metadata;
 pub mod plan;

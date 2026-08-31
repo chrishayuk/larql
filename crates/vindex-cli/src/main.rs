@@ -77,6 +77,13 @@ enum Command {
         #[arg(long, default_value = "NVFP4")]
         encoding: String,
     },
+    /// Compile the selected representation to a GGUF for an independent
+    /// runtime, verified against the plan before the command returns.
+    Export {
+        container: PathBuf,
+        /// The .gguf file to write.
+        out: PathBuf,
+    },
     /// Bits per weight — derived from stored bytes over tensor elements, never asserted.
     Precision {
         container: PathBuf,
@@ -94,6 +101,42 @@ enum Command {
         #[arg(long)]
         check: bool,
     },
+}
+
+fn render_export(v: &Value) {
+    kv("selected", v["selected"].as_str().unwrap_or("?"));
+    let w = &v["walk"];
+    kv(
+        "walk",
+        format!(
+            "{} tensors · geometry {}/{} · {} scale siblings",
+            w["source_tensors"], w["geometry_reconciled"], w["accounted"], w["scale_siblings"]
+        ),
+    );
+    let vc = &v["vocab"];
+    kv(
+        "vocab",
+        format!(
+            "{} tokens + {} pad · {} merges",
+            vc["tokens"], vc["padded"], vc["merges"]
+        ),
+    );
+    let ve = &v["verified"];
+    kv(
+        "verified",
+        format!(
+            "{} tensors ({} NVFP4 · {} scale siblings) · {} metadata keys",
+            ve["tensors"], ve["nvfp4_tensors"], ve["scale_siblings"], ve["metadata_keys"]
+        ),
+    );
+    kv(
+        "written",
+        format!(
+            "{} — {:.2} GB, independent reader agrees with the plan",
+            v["out"].as_str().unwrap_or("?"),
+            v["bytes"].as_f64().unwrap_or(0.0) / 1e9
+        ),
+    );
 }
 
 fn kv(label: &str, value: impl std::fmt::Display) {
@@ -556,6 +599,7 @@ fn main() -> ExitCode {
             }
         }
         Command::Verify { container } => vindex_cli::verify_facts(container),
+        Command::Export { container, out } => vindex_cli::export_facts(container, out),
         Command::Update { .. } => unreachable!("handled above"),
     };
     match result {
@@ -565,6 +609,7 @@ fn main() -> ExitCode {
             } else {
                 match &cli.command {
                     Command::Inspect { .. } => render_inspect(&v),
+                    Command::Export { .. } => render_export(&v),
                     Command::Describe { .. } => render_describe(&v),
                     Command::Representations { .. } => render_representations(&v),
                     Command::Layers { .. } => render_layers(&v),

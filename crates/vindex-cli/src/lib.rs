@@ -943,6 +943,43 @@ pub fn diff_facts(
 /// defines, through the reference compiler. The output container
 /// carries every original segment plus the compiled packs; nothing is
 /// destroyed, and `vindex verify` holds on the result.
+/// `vindex export` — the container's selected representation, compiled
+/// to a qwen35 GGUF and verified through the independent reader before
+/// the function returns. Every count in the result was observed from
+/// the finished file, none predicted.
+pub fn export_facts(root: &Path, out: &Path) -> Facts {
+    let report = larql_vindex::format::vindex3::gguf::export::export_qwen35(root, out)
+        .map_err(|e| e.to_string())?;
+    Ok(json!({
+        "container": root.display().to_string(),
+        "out": report.out.display().to_string(),
+        "bytes": report.bytes,
+        "selected": report.selected_encoding,
+        "walk": {
+            "source_tensors": report.ledger.source_total,
+            "accounted": report.ledger.accounted,
+            "geometry_reconciled": report.ledger.geometry_reconciled,
+            "scale_siblings": report.ledger.generated_scale_tensors,
+        },
+        "emitted": {
+            "tensors": report.emit.tensors,
+            "scale_siblings": report.emit.scale_siblings,
+            "metadata_keys": report.emit.metadata_keys,
+        },
+        "vocab": {
+            "tokens": report.vocab_tokens,
+            "padded": report.vocab_padded,
+            "merges": report.vocab_merges,
+        },
+        "verified": {
+            "tensors": report.verify.tensors,
+            "nvfp4_tensors": report.verify.nvfp4_tensors,
+            "scale_siblings": report.verify.scale_siblings,
+            "metadata_keys": report.verify.metadata_keys,
+        },
+    }))
+}
+
 pub fn represent_facts(src: &Path, out: &Path, encoding: &str) -> Facts {
     let mut spec = RepresentSpec::nvfp4();
     spec.encoding = encoding.to_uppercase();
