@@ -9,7 +9,7 @@
 //! machinery into the fixture would test a different rung's mechanism
 //! under this one's name. See `kimi_moe_closure.rs` for that one.
 
-use crate::format::vindex3::encode::encode_system;
+use crate::format::vindex3::encode::encode_system_unenforced as encode_system;
 use crate::format::vindex3::graph::OperandRole;
 use crate::format::vindex3::inspect::inspect_container;
 use crate::format::vindex3::opplan::{

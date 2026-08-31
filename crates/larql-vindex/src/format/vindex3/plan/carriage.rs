@@ -917,6 +917,72 @@ pub const CARRIAGE_RULES: &[CarriageRule] = &[
                mlp_intermediate_size declares 0, blocking otherwise",
         probe: Some(probe_mlp_padding_size),
     },
+    // ── The mamba_ssm-native nested spellings. ──
+    CarriageRule {
+        leaf: "layer",
+        reaches: Carriage::Represented,
+        site: "Component.attention[].operator — `ssm_cfg.layer` names the layer class; \
+               \"Mamba2\" is represented as the mixer operator, and any other class \
+               finds no surface and blocks",
+        probe: Some(probe_ssm_layer_class),
+    },
+    CarriageRule {
+        leaf: "d_conv",
+        reaches: Carriage::Represented,
+        site: "ExecutionSurface.{conv_qkv,mamba2}.conv_kernel — whichever block declared \
+               it; a width matching neither blocks",
+        probe: Some(probe_declared_conv_kernel),
+    },
+    CarriageRule {
+        leaf: "d_state",
+        reaches: Carriage::Represented,
+        site: "ExecutionSurface.mamba2.geometry.state_size — the ssm_cfg spelling",
+        probe: Some(probe_mamba2_state_size),
+    },
+    CarriageRule {
+        leaf: "headdim",
+        reaches: Carriage::Represented,
+        site: "ExecutionSurface.mamba2.geometry.head_dim — the ssm_cfg spelling",
+        probe: Some(probe_mamba2_head_dim),
+    },
+    CarriageRule {
+        leaf: "ngroups",
+        reaches: Carriage::Represented,
+        site: "ExecutionSurface.mamba2.geometry.n_groups — the ssm_cfg spelling",
+        probe: Some(probe_mamba2_n_groups),
+    },
+    CarriageRule {
+        leaf: "rotary_emb_dim",
+        reaches: Carriage::Represented,
+        site: "ExecutionSurface.conv_qkv.rotary_dim",
+        probe: Some(probe_conv_qkv_rotary_dim),
+    },
+    CarriageRule {
+        leaf: "qkv_proj_bias",
+        reaches: Carriage::Represented,
+        site: "ExecutionSurface.conv_qkv.qkv_bias — declared-FALSE carried; TRUE blocks",
+        probe: Some(probe_conv_qkv_qkv_bias),
+    },
+    CarriageRule {
+        leaf: "out_proj_bias",
+        reaches: Carriage::Represented,
+        site: "ExecutionSurface.conv_qkv.out_bias — same contract",
+        probe: Some(probe_conv_qkv_out_bias),
+    },
+    CarriageRule {
+        leaf: "causal",
+        reaches: Carriage::Represented,
+        site: "the conv-QKV operator's masking — causal by construction; a declared \
+               non-causal block has no operator and blocks",
+        probe: Some(probe_attn_causal),
+    },
+    CarriageRule {
+        leaf: "d_intermediate",
+        reaches: Carriage::Represented,
+        site: "ExecutionSurface.ffn presence per layer — mamba_ssm's own spelling of \
+               mlp_intermediate_size; 0 declares NO MLP blocks",
+        probe: Some(probe_mlp_intermediate_size),
+    },
     CarriageRule {
         leaf: "residual_in_fp32",
         reaches: Carriage::Represented,
@@ -1494,6 +1560,33 @@ fn probe_mlp_padding_size(component: &Component, ctx: &ProbeContext<'_>) -> Opti
             .iter()
             .all(|l| l.operator.is_mamba2() || l.operator.is_conv_qkv());
     mixer_lineage_only.then(|| ctx.declared.clone())
+}
+
+/// `ssm_cfg.layer` — the layer CLASS the package instantiates, which is
+/// also its identity declaration. "Mamba2" is represented exactly when
+/// the mixer surface exists; any other class name finds nothing here
+/// and blocks, which is the fail-closed direction for a lineage this
+/// build has not judged.
+fn probe_ssm_layer_class(component: &Component, _ctx: &ProbeContext<'_>) -> Option<Value> {
+    mamba2_geometry(component).map(|_| json!("Mamba2"))
+}
+
+/// `d_conv` — declared by whichever block's config section carries it.
+/// The declared width is echoed only when it matches a surface that
+/// really holds it (the conv-QKV block's kernel or the mixer's); a
+/// width matching neither blocks.
+fn probe_declared_conv_kernel(component: &Component, ctx: &ProbeContext<'_>) -> Option<Value> {
+    let declared = ctx.declared.as_u64()? as usize;
+    let conv_qkv = conv_qkv_geometry(component).map(|g| g.conv_kernel);
+    let mamba2 = mamba2_geometry(component).map(|g| g.conv_kernel);
+    (Some(declared) == conv_qkv || Some(declared) == mamba2).then(|| json!(declared))
+}
+
+/// `attn_cfg.causal` — the operator IS causal by construction, so a
+/// declared `true` is carried and a declared `false` finds no operator
+/// and blocks.
+fn probe_attn_causal(component: &Component, _ctx: &ProbeContext<'_>) -> Option<Value> {
+    conv_qkv_geometry(component).map(|_| json!(true))
 }
 
 fn probe_residual_in_fp32(component: &Component, _ctx: &ProbeContext<'_>) -> Option<Value> {

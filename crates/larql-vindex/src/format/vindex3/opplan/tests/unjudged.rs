@@ -10,7 +10,7 @@
 
 use larql_models::inventory::ArchitectureInventory;
 
-use crate::format::vindex3::encode::encode_system;
+use crate::format::vindex3::encode::encode_system_unenforced as encode_system;
 use crate::format::vindex3::inspect::inspect_container;
 use crate::format::vindex3::opplan::{plan_component_ops, ClosureDefect, OpPlanOutcome};
 use crate::format::vindex3::plan::tests_support::{drafter_shaped, glimmer_shaped_target_with};

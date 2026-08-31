@@ -3,7 +3,9 @@
 use std::io::{Read, Seek, SeekFrom};
 
 use crate::format::vindex3::encode::segment::read_segment_header;
-use crate::format::vindex3::encode::{encode_system, SEGMENTS_DIR, SYSTEM_GRAPH_JSON};
+use crate::format::vindex3::encode::{
+    encode_system, encode_system_unenforced, SEGMENTS_DIR, SYSTEM_GRAPH_JSON,
+};
 use crate::format::vindex3::inspect::inspect_container;
 use crate::format::vindex3::plan::tests_support::{
     drafter_shaped, glimmer_shaped_target, known_dense, payload_pattern,
@@ -264,7 +266,7 @@ fn known_dense_encodes_and_inspects() {
     let dir = tempfile::tempdir().unwrap();
     let named = vec![("llama-artifact".to_string(), known_dense(dir.path()))];
     let out = tempfile::tempdir().unwrap();
-    encode_system(&named, out.path()).unwrap();
+    encode_system_unenforced(&named, out.path()).unwrap();
     let inspection = inspect_container(out.path(), true).unwrap();
     assert!(inspection.is_coherent(), "{:?}", inspection.defects);
     assert!(inspection.graph.edges.is_empty());
@@ -420,7 +422,7 @@ fn tampered_directory(edit: impl FnOnce(&mut serde_json::Value)) -> Vec<String> 
     let dir = tempfile::tempdir().unwrap();
     let named = vec![("only-artifact".to_string(), known_dense(dir.path()))];
     let out = tempfile::tempdir().unwrap();
-    encode_system(&named, out.path()).unwrap();
+    encode_system_unenforced(&named, out.path()).unwrap();
 
     let index_path = out.path().join(crate::format::filenames::INDEX_JSON);
     let mut index: serde_json::Value =
@@ -501,7 +503,7 @@ fn an_untampered_container_inspects_clean_and_complete() {
     let dir = tempfile::tempdir().unwrap();
     let named = vec![("only-artifact".to_string(), known_dense(dir.path()))];
     let out = tempfile::tempdir().unwrap();
-    encode_system(&named, out.path()).unwrap();
+    encode_system_unenforced(&named, out.path()).unwrap();
 
     let inspection = inspect_container(out.path(), true).unwrap();
     assert!(inspection.is_coherent(), "{:?}", inspection.defects);
@@ -637,7 +639,7 @@ fn a_container_recording_no_system_graph_is_refused_by_inspection() {
     let dir = tempfile::tempdir().unwrap();
     let named = vec![("only-artifact".to_string(), known_dense(dir.path()))];
     let out = tempfile::tempdir().unwrap();
-    encode_system(&named, out.path()).unwrap();
+    encode_system_unenforced(&named, out.path()).unwrap();
 
     let index_path = out.path().join(crate::format::filenames::INDEX_JSON);
     let mut index: serde_json::Value =

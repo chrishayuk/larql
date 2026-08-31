@@ -8,7 +8,7 @@ use larql_models::config::ExpertFormat;
 
 use super::super::device::LoopDevice;
 use super::super::{lcg_values, norm_values, ShardBuilder};
-use crate::format::vindex3::encode::encode_system;
+use crate::format::vindex3::encode::encode_system_unenforced as encode_system;
 use crate::format::vindex3::inspect::inspect_container;
 use crate::format::vindex3::opplan::exec::backend::{WeightFormat, WeightFormats, WeightSlice};
 use crate::format::vindex3::opplan::exec::device::DevicePlanBackend;

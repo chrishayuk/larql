@@ -20,7 +20,9 @@ use super::golden::{
     executor_trace_from, golden_forward, max_abs, miniature_glimmer, miniature_glimmer_with,
     MiniatureExtras, BIAS_SUFFIXES, G_LAYERS, G_TOKENS, SINKS_SUFFIX,
 };
-use crate::format::vindex3::encode::{encode_system, SYSTEM_GRAPH_JSON};
+use crate::format::vindex3::encode::{
+    encode_system_unenforced as encode_system, SYSTEM_GRAPH_JSON,
+};
 use crate::format::vindex3::graph::OperandRole;
 use crate::format::vindex3::inspect::inspect_container;
 use crate::format::vindex3::opplan::exec::backend::WeightFormat;

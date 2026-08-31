@@ -133,13 +133,28 @@ pub fn encode_checkpoint(checkpoint: &Path, out: &Path) -> Result<CheckpointEnco
 
 /// Run operand closure over every component of the just-written
 /// container; on any defect, remove the container and refuse.
-fn enforce_closure_at_encode(out: &Path) -> Result<(), VindexError> {
+///
+/// `pub(crate)` because EVERY writer must pass through it: the gate
+/// lived only on the single-checkpoint path until the 2.7B hybrid
+/// found the multi-artifact CLI path writing a container whose
+/// operands did not close — the drill-F4 defect, one writer over.
+pub(crate) fn enforce_closure_at_encode(out: &Path) -> Result<(), VindexError> {
     let inspection = super::super::inspect::inspect_container(out, false)?;
+    // The components the DECODER op-planner claims: text-path roles with
+    // an execution surface. A perception tower also carries a surface
+    // (its norms and activation are real facts) but no decoder norm
+    // placement and no executor — running the decoder planner over it
+    // answers MissingSurface, which is true and is not a writeability
+    // verdict. Its execution story is gated where it belongs: the
+    // capability verdicts (`supported(ImageConditioned) = false`).
     let component_ids: Vec<String> = inspection
         .graph
         .components
         .iter()
-        .filter(|c| c.execution.is_some())
+        .filter(|c| {
+            c.execution.is_some()
+                && c.role != crate::format::vindex3::graph::ComponentRole::Perception
+        })
         .map(|c| c.id.clone())
         .collect();
     for id in component_ids {

@@ -98,10 +98,18 @@ fn topology_field(
 pub(super) fn parse_model_config(config: &serde_json::Value) -> ModelConfig {
     let text_config = config.get(CONFIG_KEY_TEXT_CONFIG).unwrap_or(config);
 
-    // Detect model_type from text_config or top level.
+    // Detect model_type from text_config or top level. The mamba_ssm
+    // package writes no `model_type` at all — its configs identify the
+    // model by the layer class named in `ssm_cfg.layer`, and "Mamba2"
+    // there is the same family fact transformers spells `model_type:
+    // "mamba2"`. A judged spelling, exact match only: any other class
+    // name stays undeclared rather than acquiring a family.
     let model_type = text_config["model_type"]
         .as_str()
         .or_else(|| config["model_type"].as_str())
+        .or_else(|| {
+            (text_config["ssm_cfg"]["layer"].as_str() == Some("Mamba2")).then_some("mamba2")
+        })
         .unwrap_or("")
         .to_string();
 
@@ -139,7 +147,13 @@ pub(super) fn parse_model_config(config: &serde_json::Value) -> ModelConfig {
     // The hybrid stack's conv-QKV attention block, all fields or none.
     // Its presence changes what "attention-shaped" means below: a hybrid
     // declares real attention heads beside the mixer geometry.
-    let conv_qkv_attn = crate::config::ConvQkvAttnGeometry::read(text_config);
+    let conv_qkv_read = crate::config::ConvQkvAttnGeometry::read_with_provenance(text_config);
+    let conv_qkv_attn = conv_qkv_read.as_ref().map(|(g, _)| *g);
+    let conv_qkv_provenance = conv_qkv_read.map(|(_, p)| p);
+    // `attn_cfg.causal` — the block's masking, declared. Our operator is
+    // causal by construction; a declared `false` must block downstream,
+    // never silently run causal anyway.
+    let attn_causal = text_config["attn_cfg"]["causal"].as_bool();
     // Gemma HF configs commonly omit num_attention_heads, head_dim, and
     // num_key_value_heads — they're architecture-class defaults from
     // transformers. See the `DEFAULT_*` constants for the values used.
@@ -230,10 +244,13 @@ pub(super) fn parse_model_config(config: &serde_json::Value) -> ModelConfig {
     // The mamba_ssm lineage (OuteAI Mamba2Attn) spells the same fact
     // `tie_embedding_weights` and declares no canonical spelling beside
     // it, so this is a read, not an alias-table entry.
+    // Three spellings of one fact: transformers' `tie_word_embeddings`,
+    // OuteAI's `tie_embedding_weights`, mamba_ssm's own `tie_embeddings`.
     let tie_word_embeddings = text_config
         .get("tie_word_embeddings")
         .or_else(|| config.get("tie_word_embeddings"))
         .or_else(|| text_config.get("tie_embedding_weights"))
+        .or_else(|| text_config.get("tie_embeddings"))
         .and_then(|v| v.as_bool());
 
     // MoE fields
@@ -553,11 +570,23 @@ pub(super) fn parse_model_config(config: &serde_json::Value) -> ModelConfig {
     // width and ZERO is a declaration — no MLP blocks exist anywhere in
     // the stack (OuteAI Mamba2Attn ships none). The padding multiple and
     // bias flag parameterise that same (possibly absent) MLP.
+    // `d_intermediate` is mamba_ssm's own spelling of the same width;
+    // OuteAI renamed it `mlp_intermediate_size`. Zero declares NO MLP
+    // blocks in either spelling.
     let mlp_intermediate_size = text_config["mlp_intermediate_size"]
         .as_u64()
+        .or_else(|| text_config["d_intermediate"].as_u64())
         .map(|v| v as usize);
     let mlp_padding_size = text_config["mlp_padding_size"].as_u64().map(|v| v as usize);
     let use_mlp_bias = text_config["use_mlp_bias"].as_bool();
+    // mamba_ssm rounds the embedding rows up to a multiple; the declared
+    // vocab and the tensor's row count differ by exactly this padding.
+    let pad_vocab_size_multiple = text_config["pad_vocab_size_multiple"]
+        .as_u64()
+        .map(|v| v as usize);
+    // Whether the reference runtime fuses residual-add with the norm —
+    // a kernel-schedule fact of the same operation, carried verbatim.
+    let fused_add_norm = text_config["fused_add_norm"].as_bool();
     let residual_in_fp32 = text_config["residual_in_fp32"].as_bool();
     let attn_output_gate = text_config["attn_output_gate"].as_bool();
     let output_gate_type = text_config["output_gate_type"].as_str().map(str::to_string);
@@ -663,6 +692,10 @@ pub(super) fn parse_model_config(config: &serde_json::Value) -> ModelConfig {
         mamba2_geometry,
         mamba2_provenance,
         conv_qkv_attn,
+        conv_qkv_provenance,
+        attn_causal,
+        pad_vocab_size_multiple,
+        fused_add_norm,
         mlp_intermediate_size,
         mlp_padding_size,
         use_mlp_bias,

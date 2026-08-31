@@ -9,7 +9,7 @@
 //! rung's machinery under this one's name. See `opplan/exec/tests/kda*`
 //! for KDA and `plan/tests/mla_nope.rs` for MLA.
 
-use crate::format::vindex3::encode::encode_system;
+use crate::format::vindex3::encode::encode_system_unenforced as encode_system;
 use crate::format::vindex3::graph::{ObjectKind, OperandRole};
 use crate::format::vindex3::inspect::inspect_container;
 use crate::format::vindex3::opplan::{

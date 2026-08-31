@@ -79,9 +79,30 @@ impl ModelArchitecture for Mamba2Arch {
         &["backbone."]
     }
 
-    /// `backbone.embeddings.weight`, after prefix stripping.
+    /// `backbone.embeddings.weight`, after prefix stripping — and the
+    /// state-spaces originals spell it SINGULAR (`embedding.weight`).
+    /// Both are checked because the loader takes one answer: the HF
+    /// conversions renamed the module, the natives did not.
     fn embed_key(&self) -> &str {
-        "embeddings.weight"
+        if self
+            .config
+            .mamba2_provenance
+            .as_ref()
+            .is_some_and(|p| p.dialect == crate::config::Mamba2Dialect::MambaSsmNative)
+        {
+            "embedding.weight"
+        } else {
+            "embeddings.weight"
+        }
+    }
+
+    /// When the config omits every epsilon spelling, the family default
+    /// is 1e-5 — transformers' `Mamba2Config.layer_norm_epsilon` default
+    /// and mamba_ssm's `MixerModel(norm_epsilon=1e-5)` agree on it. The
+    /// trait-wide 1e-6 would silently run every norm at the wrong
+    /// epsilon on a state-spaces checkpoint, which declares none.
+    fn default_norm_eps(&self) -> f32 {
+        1e-5
     }
 }
 

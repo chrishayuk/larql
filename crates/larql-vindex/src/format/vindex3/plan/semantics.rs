@@ -212,8 +212,21 @@ pub const EXECUTION_SEMANTIC_KEYS: &[&str] = &[
     // fact; the padding multiple and bias flag parameterise that same
     // (possibly absent) MLP.
     "mlp_intermediate_size",
+    "d_intermediate",
     "mlp_padding_size",
     "use_mlp_bias",
+    // The mamba_ssm-native nested spellings (`ssm_cfg.layer` is the
+    // identity-as-layer-class declaration; the attn_cfg leaves are the
+    // conv-QKV block's own names for judged facts).
+    "layer",
+    "d_conv",
+    "d_state",
+    "headdim",
+    "ngroups",
+    "rotary_emb_dim",
+    "qkv_proj_bias",
+    "out_proj_bias",
+    "causal",
     // Residual-stream precision, declared against a lower-precision
     // model. Execution-semantic wherever it appears.
     "residual_in_fp32",
@@ -308,7 +321,13 @@ pub const TENSOR_SEMANTIC_KEYS: &[&str] = &[
     "position_embedding_size",
     // Input standardisation: its parameters are the placed `std_scale` /
     // `std_bias` tensors; the flag says they apply.
-    "standardize",
+    "standardize", // mamba_ssm's own spelling of the hidden width, read through the
+    // same alias chain `n_embd` is.
+    "d_model",
+    // The embedding-row padding: declared vocab rounded UP to this
+    // multiple is the stored row count — a fact about the tensor the
+    // graph holds.
+    "pad_vocab_size_multiple",
 ];
 
 /// Keys that declare a cross-component contract: hidden-state taps, block
@@ -347,9 +366,15 @@ pub const METADATA_KEYS: &[&str] = &[
     "AutoModelForCausalLM",
     "model_type",
     "tie_word_embeddings",
-    // The mamba_ssm lineage spelling of the same fact, read by the same
+    // The mamba_ssm lineage spellings of the same fact, read by the same
     // parser fallback chain.
     "tie_embedding_weights",
+    "tie_embeddings",
+    // Whether the reference runtime fuses the residual add with the norm
+    // — a kernel-schedule fact about the SAME operation, the exact class
+    // `cache_implementation` sits in: two checkpoints differing only
+    // here compute the same function.
+    "fused_add_norm",
     // `rope_scaling` as a bare leaf (not recursed into) means its value is
     // not an object — in every checkpoint on hand, `null`. A non-null
     // object never reaches this leaf; it flattens into `rope_type`/

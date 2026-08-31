@@ -62,8 +62,14 @@ impl DtBound {
 pub enum Mamba2Dialect {
     /// transformers' key set.
     Hf,
-    /// The `mamba_ssm`-package key set (`mamba2_*`-prefixed).
+    /// The `mamba_ssm`-package key set (`mamba2_*`-prefixed), as OuteAI's
+    /// HF-shaped configs flatten it.
     MambaSsm,
+    /// The `mamba_ssm` package's OWN config shape (state-spaces
+    /// checkpoints): `ssm_cfg: {layer: "Mamba2"}` and nothing else — the
+    /// geometry lives entirely in `Mamba2.__init__` defaults, every one
+    /// recorded here and every one still answerable to shape closure.
+    MambaSsmNative,
 }
 
 /// One geometry field the declaration does not carry, filled from the
@@ -167,7 +173,107 @@ impl Mamba2Geometry {
                 },
             ));
         }
-        Self::read_mamba_ssm(config)
+        if let Some(read) = Self::read_mamba_ssm(config) {
+            return Some(read);
+        }
+        Self::read_mamba_ssm_native(config)
+    }
+
+    /// The `mamba_ssm` package's native config shape: the checkpoint
+    /// declares `ssm_cfg: {layer: "Mamba2"}` — the identity — and NO
+    /// geometry keys at all. Every field comes from the package's own
+    /// `Mamba2.__init__` defaults, each RECORDED; `num_heads` is the
+    /// package's own derivation `expand·d_model / headdim`, recorded the
+    /// same way. A wrong default here is not silent: the derived widths
+    /// (`in_proj_rows`, `conv_dim`, the per-head axes) must still close
+    /// over the tensor estate exactly, and closure names the mismatch.
+    fn read_mamba_ssm_native(config: &serde_json::Value) -> Option<(Self, Mamba2Provenance)> {
+        if config["ssm_cfg"]["layer"].as_str() != Some("Mamba2") {
+            return None;
+        }
+        let d_model = config["d_model"].as_u64().filter(|v| *v > 0)? as usize;
+        let mut family_defaults = Vec::new();
+        let mut defaulted = |key: &str, value: String| {
+            family_defaults.push(Mamba2FamilyDefault {
+                key: key.to_string(),
+                value,
+                source: "mamba_ssm Mamba2.__init__".to_string(),
+            });
+        };
+        let dim = |key: &str| config["ssm_cfg"][key].as_u64().map(|v| v as usize);
+        let declared_or =
+            |key: &str, fallback: usize, defaulted: &mut dyn FnMut(&str, String)| match dim(key) {
+                Some(v) => v,
+                None => {
+                    defaulted(key, fallback.to_string());
+                    fallback
+                }
+            };
+        let expand = declared_or("expand", 2, &mut defaulted);
+        let head_dim = declared_or("headdim", 64, &mut defaulted);
+        let state_size = declared_or("d_state", 128, &mut defaulted);
+        let conv_kernel = declared_or("d_conv", 4, &mut defaulted);
+        let n_groups = declared_or("ngroups", 1, &mut defaulted);
+        let chunk_size = declared_or("chunk_size", 256, &mut defaulted);
+        let d_inner = expand * d_model;
+        if !d_inner.is_multiple_of(head_dim) {
+            return None;
+        }
+        let num_heads = d_inner / head_dim;
+        defaulted(
+            "num_heads",
+            format!("{num_heads} (expand·d_model / headdim)"),
+        );
+        // The forward-time dt clamp: the package default is no clamp at
+        // all — `dt_limit=(0.0, float("inf"))`.
+        defaulted("time_step_limit", "[0.0, Infinity]".to_string());
+        // The block norms' epsilon: the package writes no epsilon key at
+        // all; `MixerModel(norm_epsilon=1e-5)` is its default, and the
+        // family's `default_norm_eps` serves the same value.
+        defaulted("norm_epsilon", "1e-5".to_string());
+        // The mixer's gated RMSNorm (`rmsnorm=True`) and the bias estate
+        // (`bias=False`, `conv_bias=True`).
+        let rms_norm = match config["ssm_cfg"]["rmsnorm"].as_bool() {
+            Some(declared) => declared,
+            None => {
+                defaulted("rms_norm", "true".to_string());
+                true
+            }
+        };
+        let use_bias = match config["ssm_cfg"]["bias"].as_bool() {
+            Some(declared) => declared,
+            None => {
+                defaulted("use_bias", "false".to_string());
+                false
+            }
+        };
+        let use_conv_bias = match config["ssm_cfg"]["conv_bias"].as_bool() {
+            Some(declared) => declared,
+            None => {
+                defaulted("use_conv_bias", "true".to_string());
+                true
+            }
+        };
+        Some((
+            Self {
+                state_size,
+                num_heads,
+                head_dim,
+                expand,
+                conv_kernel,
+                n_groups,
+                chunk_size,
+                dt_limit_min: DtBound::Finite(0.0),
+                dt_limit_max: DtBound::Unbounded,
+                rms_norm,
+                use_bias,
+                use_conv_bias,
+            },
+            Mamba2Provenance {
+                dialect: Mamba2Dialect::MambaSsmNative,
+                family_defaults,
+            },
+        ))
     }
 
     /// The `mamba_ssm`-package dialect (OuteAI Mamba2Attn): three renamed
