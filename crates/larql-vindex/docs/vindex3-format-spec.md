@@ -837,6 +837,52 @@ The binding obligation is not between the two on-disk formats (there is none —
 
 ---
 
+## 12b. Graph completeness — the independent-backend test
+
+**A SystemGraph is complete when an independent backend can be lowered
+from it without returning to source-family configuration.**
+
+This is a sharper test than "does the graph contain the fields we
+listed", and it was learned rather than designed. Building a GGUF
+target for llama.cpp in August 2026 found a defect no inference path
+had exposed in months of use:
+
+> `max_position_embeddings` was classified in
+> `EXECUTION_SEMANTIC_KEYS` — the encoder had judged that it changes
+> what a forward pass computes — and `inventory::components` read it.
+> It was judged, read, held, and then dropped at the graph boundary.
+> `ExecutionSurface` had no slot for it.
+
+The reason it survived so long is instructive. A family-specific loader
+never noticed, because it could quietly *know* the answer: a Qwen
+loader reaches for a Qwen config, so a missing graph field costs
+nothing. An independent target cannot do that. llama.cpp asked the
+artifact "how far does this programme run?" and the artifact — which
+claims to be self-describing, and whose deletion invariant says the
+source checkpoint may be removed without changing execution — had no
+answer.
+
+**This is the defect class the test exists to catch:** a fact the
+system knows is execution-semantic, captures during ingestion, and then
+has nowhere to preserve. It is invisible to every consumer that shares
+the ingestion path's family knowledge, and fatal to every consumer that
+does not.
+
+So a lowering target is a conformance instrument, not merely a feature.
+Each new backend asks the same question in its own vocabulary, and any
+field it cannot answer from the graph alone is either a lowering bug or
+a graph that has not finished being honest. When the answer is the
+second, the fix is a semantic slot on the graph — recorded once at
+encode, by the adapter that already reads it — never a `--source` flag
+and never a family branch in the lowering.
+
+Corollary for target authors: **semantic concepts are inputs, target
+vocabulary is output.** A lowering reads `context_length`,
+`attention.num_q_heads`, `ffn.intermediate_size`; it writes
+`qwen35.context_length`. Architecture knowledge belongs on the target
+side. The moment a lowering needs to know it is looking at Qwen in
+order to find a fact, that fact is missing from the graph.
+
 ## 13. Conformance envelope
 
 The MoE bank machinery freezes only after the envelope fixtures pass the generic reference executor (fixtures defined in the experiments document):
