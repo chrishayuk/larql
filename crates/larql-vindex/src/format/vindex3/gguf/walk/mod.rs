@@ -188,3 +188,128 @@ pub fn walk_primary_text(
 
 #[cfg(test)]
 mod tests;
+
+/// Read a container's primary-text inventory into the walk's input.
+///
+/// **The entry point, and the reason it exists as one.** A walk tested
+/// only against a hand-built inventory proves the planner reasons
+/// correctly about a shape someone typed. It does not prove the
+/// exporter can reach a real artifact — the same gap as a refusal test
+/// that only checks the message renders.
+///
+/// Roles are supplied by the caller from the operation plan. This
+/// function reads bytes and shapes; it does not decide what anything
+/// means.
+/// Which representation of an object the export should carry.
+///
+/// **Not optional, and not "whatever is in the index".** `represent` is
+/// archival: the compiled pack lands *beside* the canonical bytes, so a
+/// represented container holds `target.decoder_stack@BF16` and
+/// `@NVFP4` at once. Walking both produced 1,696 sources for an
+/// 848-tensor object and 848 duplicate-target errors — the walk faithfully
+/// reporting that it had been asked to emit each tensor twice.
+///
+/// Selecting is the precision programme's job. The walk takes the
+/// answer; it does not pick.
+pub type SelectRepresentation<'a> = &'a dyn Fn(&str, &[&str]) -> Option<String>;
+
+pub fn inventory_from_container(
+    root: &std::path::Path,
+    index: &crate::format::vindex3::index::Vindex3Index,
+    roles: &dyn Fn(&str, &str) -> Option<(String, Option<usize>)>,
+    surface_is_included: &dyn Fn(&str) -> bool,
+    select: SelectRepresentation<'_>,
+) -> Result<(Vec<SourceTensor>, Vec<Exclusion>), crate::VindexError> {
+    // Group the index by object, so the selector sees an object's whole
+    // catalogue rather than one entry at a time.
+    let mut by_object: BTreeMap<String, Vec<String>> = BTreeMap::new();
+    for id in index.representations.keys() {
+        let object = id.split('@').next().unwrap_or(id).to_string();
+        by_object.entry(object).or_default().push(id.clone());
+    }
+    // Three guardrails, because a selector that answers badly must not
+    // be able to quietly shrink the model.
+    let mut chosen = std::collections::BTreeSet::new();
+    for (object, ids) in &by_object {
+        if !surface_is_included(object) {
+            continue;
+        }
+        let refs: Vec<&str> = ids.iter().map(String::as_str).collect();
+        let Some(pick) = select(object, &refs) else {
+            // Declining to choose is not the same as having nothing to
+            // choose from. Omitting the object here would drop tensors
+            // and still report success.
+            return Err(crate::VindexError::Parse(format!(
+                "export: the precision programme selected no representation for `{object}`,                  which has {}: {refs:?}",
+                refs.len()
+            )));
+        };
+        if !refs.contains(&pick.as_str()) {
+            return Err(crate::VindexError::Parse(format!(
+                "export: the precision programme selected `{pick}` for `{object}`, which is                  not one of its representations: {refs:?}"
+            )));
+        }
+        chosen.insert(pick);
+    }
+    let included_objects = by_object.keys().filter(|o| surface_is_included(o)).count();
+    if chosen.len() != included_objects {
+        return Err(crate::VindexError::Parse(format!(
+            "export: {} representations selected for {included_objects} included objects —              exactly one each",
+            chosen.len()
+        )));
+    }
+
+    use crate::format::vindex3::encode::segment::read_segment_header;
+
+    let mut sources = Vec::new();
+    let mut excluded = Vec::new();
+
+    for (id, entry) in &index.representations {
+        if !chosen.contains(id) {
+            continue;
+        }
+        let object = id.split('@').next().unwrap_or(id).to_string();
+        let path = root.join(&entry.segment);
+        if !path.exists() {
+            continue;
+        }
+        let (header, _) = read_segment_header(&path)?;
+
+        if !surface_is_included(&object) {
+            excluded.push(Exclusion {
+                object,
+                count: header.tensors.len(),
+                reason: "surface not requested",
+            });
+            continue;
+        }
+
+        let representation = match entry.encoding.to_ascii_uppercase().as_str() {
+            "NVFP4" => RepresentationKind::Nvfp4,
+            "F32" => RepresentationKind::F32,
+            _ => RepresentationKind::Bf16,
+        };
+        for t in &header.tensors {
+            let Some((role, layer)) = roles(&object, &t.name) else {
+                // An unroled tensor is still counted, so the ledger's
+                // accounted total falls short and the walk refuses.
+                sources.push(SourceTensor {
+                    object: object.clone(),
+                    name: t.name.clone(),
+                    role: String::new(),
+                    layer: None,
+                    representation,
+                });
+                continue;
+            };
+            sources.push(SourceTensor {
+                object: object.clone(),
+                name: t.name.clone(),
+                role,
+                layer,
+                representation,
+            });
+        }
+    }
+    Ok((sources, excluded))
+}

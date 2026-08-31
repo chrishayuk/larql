@@ -307,3 +307,144 @@ fn nvfp4_sources_generate_sibling_scale_tensors() {
         .unwrap();
     assert_eq!(scaled.scale_tensor.as_deref(), Some("blk.0.ffn_down.scale"));
 }
+
+/// **The entry point, proved against a real encoded artifact.**
+///
+/// Every test above builds its inventory in Rust. That proves the
+/// planner reasons correctly about a shape someone typed — the same
+/// hollowness as a refusal test that only checks the message renders.
+/// This one encodes a container, reads its actual segment headers
+/// through the real reader, and walks what comes back.
+#[test]
+fn planner_walks_an_encoded_container_not_a_reconstructed_inventory() {
+    use crate::format::vindex3::fixtures::{encode_fixture_container, hybrid_lllf_f32_model};
+    use crate::format::vindex3::inspect::inspect_container;
+
+    let checkpoint = tempfile::tempdir().unwrap();
+    let container = tempfile::tempdir().unwrap();
+    encode_fixture_container(
+        hybrid_lllf_f32_model,
+        checkpoint.path(),
+        container.path(),
+        "walk-entry",
+    );
+    let inspection = inspect_container(container.path(), false).expect("a real container");
+
+    // Roles from the tensor's own name here only because this fixture
+    // has no plan attached; the production path passes the operation
+    // plan's assignment. The point of the test is the READER, not the
+    // role source.
+    let roles = |_object: &str, name: &str| -> Option<(String, Option<usize>)> {
+        let layer = name.split('.').next()?.parse::<usize>().ok();
+        let role = if name.contains("in_proj_qkv") {
+            "fused recurrent q|k|v"
+        } else if name.contains("input_layernorm") {
+            "input layer norm"
+        } else if name.contains("post_attention_layernorm") {
+            "post-attention layer norm"
+        } else if name.contains("mlp.down_proj") {
+            "ffn down"
+        } else {
+            return None;
+        };
+        Some((role.to_string(), layer))
+    };
+
+    let (sources, excluded) = inventory_from_container(
+        container.path(),
+        &inspection.index,
+        &roles,
+        &|object| object.starts_with("target."),
+        &|_object, ids| ids.first().map(|s| s.to_string()),
+    )
+    .expect("the reader reaches the segments");
+
+    assert!(
+        !sources.is_empty(),
+        "the entry point must actually read tensors out of the artifact"
+    );
+    // Every source came from a real header, so each carries the name the
+    // container stores rather than one this test invented.
+    assert!(
+        sources.iter().all(|s| !s.name.is_empty()),
+        "names come from segment headers"
+    );
+    // The fixture is a hybrid, so its recurrent projections are present.
+    assert!(
+        sources.iter().any(|s| s.name.contains("in_proj_qkv")),
+        "the walk sees the container's own Gated DeltaNet operands: {:?}",
+        sources.iter().map(|s| &s.name).take(8).collect::<Vec<_>>()
+    );
+
+    // And the unroled tensors are counted rather than dropped, so the
+    // ledger refuses instead of quietly reporting success.
+    let (_, ledger) = walk_primary_text(&sources, excluded, &[]);
+    assert_eq!(ledger.source_total, sources.len());
+    assert!(
+        ledger.accounted < ledger.source_total,
+        "this fixture roles only four families, so the walk must fall short and say so"
+    );
+    assert!(!ledger.ready());
+}
+
+/// **Catalogue is not programme.** A represented container holds the
+/// compiled pack beside the canonical bytes — that is what makes
+/// representation first-class — so "present in the index" must never be
+/// read as "selected for execution". A selector that declines, or names
+/// something the object does not have, must refuse rather than quietly
+/// shrink the model.
+#[test]
+fn a_selector_that_answers_badly_refuses_rather_than_dropping_tensors() {
+    use crate::format::vindex3::fixtures::{encode_fixture_container, hybrid_lllf_f32_model};
+    use crate::format::vindex3::inspect::inspect_container;
+
+    let checkpoint = tempfile::tempdir().unwrap();
+    let container = tempfile::tempdir().unwrap();
+    encode_fixture_container(
+        hybrid_lllf_f32_model,
+        checkpoint.path(),
+        container.path(),
+        "selector",
+    );
+    let inspection = inspect_container(container.path(), false).unwrap();
+    let no_roles = |_: &str, _: &str| None;
+    let included = |o: &str| o.starts_with("target.");
+
+    // Declining to choose is not the same as having nothing to choose.
+    let err = inventory_from_container(
+        container.path(),
+        &inspection.index,
+        &no_roles,
+        &included,
+        &|_object, _ids| None,
+    )
+    .expect_err("no selection must refuse");
+    assert!(
+        err.to_string().contains("selected no representation"),
+        "the refusal must name the object and its candidates: {err}"
+    );
+
+    // Naming a representation the object does not have.
+    let err = inventory_from_container(
+        container.path(),
+        &inspection.index,
+        &no_roles,
+        &included,
+        &|_object, _ids| Some("target.decoder_stack@INVENTED".to_string()),
+    )
+    .expect_err("an unavailable representation must refuse");
+    assert!(
+        err.to_string().contains("not one of its representations"),
+        "{err}"
+    );
+
+    // And a well-behaved selector still works.
+    assert!(inventory_from_container(
+        container.path(),
+        &inspection.index,
+        &no_roles,
+        &included,
+        &|_object, ids| ids.first().map(|s| s.to_string()),
+    )
+    .is_ok());
+}
