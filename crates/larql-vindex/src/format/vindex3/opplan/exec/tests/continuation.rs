@@ -644,3 +644,112 @@ fn the_two_region_state_allocates_rows_and_buffer_together() {
     // only the buffer — the region that exists from step zero.
     assert_eq!(state.elements_at(5), 32);
 }
+
+/// **The latent species, exercised end to end at the storage seam** —
+/// the accessors, the allocation, and the arithmetic that separates a
+/// growing cache from a constant-size one.
+///
+/// These are small surfaces, and small surfaces are exactly where a
+/// third species goes wrong quietly: an accessor that answers for the
+/// wrong arm, or an `elements_at` that counts a latent row twice as a
+/// K/V pair would, produce plausible numbers a summary would print
+/// without complaint.
+#[test]
+fn the_latent_species_allocates_reads_and_grows_as_declared() {
+    use super::super::continuation::{LatentKvRows, LayerLatentKvGeometry};
+
+    const WIDTH: usize = 7;
+    let geometry = [
+        LayerContinuationGeometry::LatentKv(LayerLatentKvGeometry { width: WIDTH }),
+        LayerContinuationGeometry::Stateless,
+    ];
+
+    // The geometry answers for its own arm and no other.
+    assert_eq!(geometry[0].latent_kv().map(|l| l.width), Some(WIDTH));
+    assert!(geometry[0].kv().is_none() && geometry[0].kv_side().is_none());
+    assert!(geometry[0].recurrent().is_none());
+    assert!(geometry[1].latent_kv().is_none());
+
+    // ONE row per position, not two: the compression is visible here.
+    assert_eq!(geometry[0].elements_at(0), 0);
+    assert_eq!(geometry[0].elements_at(5), WIDTH * 5);
+
+    let mut state = ContinuationState::prepare(&geometry);
+    let rows = state
+        .layer_mut(0)
+        .latent_kv_mut()
+        .expect("layer 0 keeps latent rows");
+    // `len` and `is_empty` are separate accessors and both are read by
+    // the census, so both are pinned rather than one standing in.
+    assert_eq!(rows.len(), 0);
+    assert!(rows.is_empty() && rows.rows().is_empty());
+    rows.append(vec![1.0; WIDTH]);
+    rows.append(vec![2.0; WIDTH]);
+    assert_eq!(rows.len(), 2);
+    assert_eq!(rows.rows()[1][0], 2.0);
+
+    // Read-only accessor, and the arms that must NOT answer for it.
+    assert_eq!(state.layer(0).latent_kv().map(LatentKvRows::len), Some(2));
+    assert!(state.layer(0).recurrent().is_none());
+    assert!(state.layer(1).latent_kv().is_none());
+    assert!(state.layer_mut(1).latent_kv_mut().is_none());
+
+    // The runtime state's own accounting learns the width from the rows
+    // it holds — the same convention the KV arm uses.
+    assert_eq!(state.elements_at(2), WIDTH * 2);
+}
+
+/// **The region vocabulary answers for every species** — the words a
+/// refusal uses to send its reader to the right seam.
+///
+/// One assertion per arm, because a single "it refused" would pass with
+/// every message wrong, and the message is the whole value here: a
+/// caller told "recurrent" when the layer keeps a growing latent cache
+/// looks for the wrong provider.
+#[test]
+fn every_continuation_species_names_itself() {
+    use super::super::continuation::{region_name, LayerLatentKvGeometry, RecurrentBufferGeometry};
+
+    let buffer = RecurrentBufferGeometry {
+        shape: vec![2, 2],
+        dtype: super::super::super::gated_delta::StateDtype::Float32,
+        initialization: StateInitialization::Zeros,
+    };
+    let kv = LayerKvGeometry {
+        kv_dim: 4,
+        window: None,
+    };
+    let cases = [
+        (LayerContinuationGeometry::Kv(kv), "KV rows"),
+        (
+            LayerContinuationGeometry::LatentKv(LayerLatentKvGeometry { width: 7 }),
+            "LATENT cache",
+        ),
+        (
+            LayerContinuationGeometry::Recurrent(RecurrentGeometry::single(buffer.clone())),
+            "recurrent",
+        ),
+        (
+            LayerContinuationGeometry::KvAndRecurrent {
+                kv,
+                recurrent: RecurrentGeometry::single(buffer),
+            },
+            "KV rows AND recurrent",
+        ),
+        (
+            LayerContinuationGeometry::Stateless,
+            "no continuation state",
+        ),
+    ];
+    for (geometry, expected) in &cases {
+        assert!(
+            region_name(geometry).contains(expected),
+            "{geometry:?} must name itself as {expected}, said {}",
+            region_name(geometry)
+        );
+    }
+    // No two species share a name — the whole point of naming them.
+    let names: std::collections::BTreeSet<&str> =
+        cases.iter().map(|(g, _)| region_name(g)).collect();
+    assert_eq!(names.len(), cases.len());
+}

@@ -580,3 +580,102 @@ fn the_report_names_authority_and_diagnostics_separately() {
     assert!(v1.report().contains("discrete_counts"));
     assert!(!v1.verdict().passed(), "v1 rejects this bank on counts");
 }
+
+// ── kimi-logit-balanced-v1: the frozen calibration, as executable
+//    anchors. Each bank below carries the MEASURED values of one
+//    8,192-position characterization from the calibration ladder
+//    (worst bank where two were measured), so the boundary the gate
+//    draws is checked against the exact evidence it was drawn from. ──
+
+fn dist(p99: f64, max: f64) -> Distribution {
+    Distribution {
+        count: 100,
+        min: 1e-6,
+        p50: p99 / 10.0,
+        p95: p99 / 2.0,
+        p99,
+        max,
+    }
+}
+
+/// One calibration anchor's authority-scale evidence.
+fn anchor_bank(kl_p99: f64, top1_max: f64, top10_p99: f64, covered: f64) -> QualityBank {
+    QualityBank {
+        positions: 8192,
+        logits: LogitEvidence {
+            kl_p50: kl_p99 / 100.0,
+            kl_p95: kl_p99 / 3.0,
+            kl_p99,
+            max_logit_delta: 1.0,
+            top1_flips: 30,
+            top10_changes: 1000,
+        },
+        routing: RoutingEvidence {
+            route_flips: 200,
+            positions_with_route_change: 150,
+            layers_with_route_change: 8,
+            first_layer_with_route_change: Some(20),
+            route_margin: Some(dist(5e-3, 5e-2)),
+            route_weight_mass_moved: Some(dist(0.13, 0.21)),
+        },
+        min_covered_mass: Some(covered),
+        top10_margin: Some(dist(0.1, 1.0)),
+        top10_candidate_margin: Some(dist(0.1, 1.0)),
+        top10_mass_displaced: Some(dist(top10_p99, top10_p99 * 2.0)),
+        top10_rank_displacement: None,
+        top1_margin: Some(dist(0.02, 0.5)),
+        top1_candidate_margin: Some(dist(0.02, 0.5)),
+        top1_mass_displaced: Some(dist(top1_max / 2.0, top1_max)),
+    }
+}
+
+/// The ladder, exactly as measured: strict, wide and the flagship pass
+/// balanced-v1; B3 — the map whose consequences changed character — is
+/// refused on BOTH of the dimensions that define the boundary.
+#[test]
+fn balanced_v1_draws_the_line_where_the_ladder_did() {
+    let g = kimi_logit_balanced_v1();
+    // strict map: sel 5.99e-4 kl, worst top-1 give-up 0.020.
+    assert!(g
+        .evaluate(&anchor_bank(5.99e-4, 0.020, 6.2e-2, 0.631))
+        .passed());
+    // wide map, worst bank: kl 1.233e-3 (held-out), top1 0.055 (sel).
+    assert!(g
+        .evaluate(&anchor_bank(1.233e-3, 0.055, 7.5e-2, 0.577))
+        .passed());
+    // flagship, worst bank each dimension: kl 2.60e-3, top1 0.094.
+    assert!(g
+        .evaluate(&anchor_bank(2.60e-3, 0.094, 7.6e-2, 0.577))
+        .passed());
+    // B3: kl 4.74e-3, worst give-up 0.181 — refused on both.
+    let v = g.evaluate(&anchor_bank(4.74e-3, 0.181, 6.2e-2, 0.631));
+    assert!(!v.passed());
+    let names: Vec<_> = v.failures.iter().map(|(c, _)| *c).collect();
+    assert!(names.contains(&Criterion::KlP99));
+    assert!(names.contains(&Criterion::Top1Displacement));
+}
+
+/// Balanced loosens NOTHING it has no evidence for: the route limits
+/// are v3's own (measured non-discriminating in the corridor), the
+/// positions floor stands, and the covered-mass floor moves only far
+/// enough to admit the held-out bank's own flattest position.
+#[test]
+fn balanced_v1_inherits_what_the_corridor_did_not_discriminate() {
+    let g = kimi_logit_balanced_v1();
+    assert_eq!(
+        g.route_mixture_mass_p99_max,
+        kimi_logit_v3().route_mixture_mass_p99_max
+    );
+    assert_eq!(
+        g.route_mixture_mass_max,
+        kimi_logit_v3().route_mixture_mass_max
+    );
+    assert_eq!(g.positions_min, kimi_logit_v3().positions_min);
+    assert_eq!(g.covered_mass_min, Some(0.55));
+    // A diagnostic-scale bank still cannot pass balanced.
+    let mut b = anchor_bank(1.0e-3, 0.03, 6e-2, 0.63);
+    b.positions = 256;
+    assert!(!g.evaluate(&b).passed());
+    // And a blind instrument is still refused.
+    assert!(!g.evaluate(&anchor_bank(1.0e-3, 0.03, 6e-2, 0.50)).passed());
+}

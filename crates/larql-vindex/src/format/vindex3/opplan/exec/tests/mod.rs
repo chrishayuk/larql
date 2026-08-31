@@ -27,6 +27,8 @@ mod gated_delta_tiny;
 mod hybrid_traversal;
 #[cfg(all(feature = "gpu", target_os = "macos"))]
 mod kda_metal;
+#[cfg(all(feature = "gpu", target_os = "macos"))]
+mod kda_native_parity;
 mod kda_parity;
 mod kda_parity_real;
 #[cfg(all(feature = "gpu", target_os = "macos"))]
@@ -50,6 +52,7 @@ mod mla_parity;
 mod mla_state;
 mod mrope_parity;
 mod nvfp4_decode;
+mod nvfp4_projection;
 mod output_gate_fused;
 mod plan_fixtures;
 mod projection_bench;
@@ -83,6 +86,7 @@ mod observe;
 mod overrides;
 mod parity;
 mod recurrence_shape;
+mod replay_capture;
 mod residency;
 mod residency_census;
 mod routed;

@@ -20,13 +20,17 @@ use super::super::grouped_experts::{ExpertOffset, GroupedError, InputLayout};
 use super::KimiLayerCall;
 use crate::MetalBackend;
 
-/// The head's weights. `weight` is `vocab x hidden` row-major bf16.
+/// The head's weights. `weight` is `vocab x hidden` row-major, in
+/// `encoding` — the same grouped-kernel family every projection in
+/// this crate reads, so the dispatch selects its pipeline by encoding
+/// exactly as the expert and KDA paths do.
 #[derive(Clone, Copy)]
 pub struct KimiHead<'a> {
     pub norm_weight: &'a [f32],
     pub norm_eps: f32,
     pub weight: &'a [u8],
     pub vocab: usize,
+    pub encoding: super::ExpertEncoding,
 }
 
 /// Device scratch for one head evaluation.
@@ -103,8 +107,14 @@ impl MetalBackend {
                 have_bytes: head.weight.len(),
             });
         }
-        // bf16: two bytes a code, one row a vocabulary entry.
-        if head.weight.len() != head.vocab * hidden * 2 {
+        // Bytes at the ENCODING's own stride — the bf16 arithmetic
+        // would over-demand on a quantised head and under-demand the
+        // other way, exactly the failure the KDA validator refuses.
+        let want = head
+            .encoding
+            .matrix_bytes(head.vocab, hidden)
+            .ok_or(GroupedError::KNotSuperblockAligned { k: hidden })?;
+        if head.weight.len() != want {
             return Err(GroupedError::HeadShapeMismatch {
                 vocab: head.vocab,
                 hidden,
@@ -137,7 +147,7 @@ impl MetalBackend {
         self.encode_rms_norm(enc, input, &norm_w, &s.normed, hidden, head.norm_eps);
         encode_grouped(
             enc,
-            self.default_grouped_handle(),
+            self.grouped_handle_for(head.encoding),
             GroupedBinding {
                 w: &w,
                 w_offset,

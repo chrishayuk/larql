@@ -39,6 +39,7 @@ use crate::format::vindex3::represent::compile::CandidatePlacement;
 use crate::format::vindex3::represent::compiler::{
     bank_base, read_source_identity, CandidateIndex,
 };
+use crate::format::vindex3::represent::kda_candidate::{KdaPlacement, KDA_PROJECTIONS};
 use crate::format::vindex3::represent::physical::{
     EncodedRegion, ExpertBankBinding, ExpertEncoding, ExtentPolicy, PhysicalStore,
     ProjectionAddressing, RoutedProjection, SharedExpertBinding, WeightRegion,
@@ -298,12 +299,39 @@ impl KimiSourceModel {
         })
     }
 
+    /// The eleven small f32 operands a KDA layer carries beside its
+    /// wide projections. `A_log` is stored `[1,1,H,1]` and flattens to
+    /// `[H]`; the conv weights' middle `1` dimension is inert under
+    /// row-major flattening — the only two transforms the proven
+    /// exporter ever applied. Always from the SOURCE stack: no
+    /// candidate kind stores them.
+    fn kda_f32s(&self, layer: usize) -> Result<Vec<Vec<f32>>, VindexError> {
+        let t = |suffix: &str| format!("{layer}.self_attn.{suffix}");
+        [
+            "q_conv1d.weight",
+            "k_conv1d.weight",
+            "v_conv1d.weight",
+            "f_a_proj.weight",
+            "f_b_proj.weight",
+            "g_a_proj.weight",
+            "g_b_proj.weight",
+            "b_proj.weight",
+            "A_log",
+            "dt_bias",
+            "o_norm.weight",
+        ]
+        .iter()
+        .map(|suffix| self.decoder.f32s(&t(suffix)))
+        .collect()
+    }
+
     /// One layer's attention operands, whichever operator the graph
     /// declares for it.
     fn attention(
         &self,
         metal: &MetalBackend,
         layer: usize,
+        kda: Option<&KdaOverlay>,
     ) -> Result<(DeviceAttn, DeviceState), VindexError> {
         let g = &self.geometry;
         let t = |suffix: &str| format!("{layer}.self_attn.{suffix}");
@@ -323,6 +351,23 @@ impl KimiSourceModel {
                 )),
             ));
         }
+        // A compiled KDA candidate substitutes the four wide projections
+        // and NOTHING else — the f32 operands below still come from the
+        // source stack, exactly as the behavioural evidence was earned.
+        if let Some(binding) = kda.and_then(|o| o.binding(layer as u32)) {
+            let b = binding?;
+            let f32s = self.kda_f32s(layer)?;
+            return Ok((
+                DeviceAttn::Kda {
+                    qkv_bank: b.qkv_bank,
+                    qkv_offsets: b.qkv_offsets,
+                    o_proj: b.o_proj,
+                    encoding: b.encoding,
+                    f32s,
+                },
+                DeviceState::Kda(KdaDeviceState::zeros(metal, g.kda)),
+            ));
+        }
         let (q, k, v) = (
             self.decoder.bytes(&t("q_proj.weight"))?,
             self.decoder.bytes(&t("k_proj.weight"))?,
@@ -340,26 +385,7 @@ impl KimiSourceModel {
         for b in [&q, &k, &v] {
             qkv_bank.extend_from_slice(b);
         }
-        // `KdaDeviceWeights`'s own field order. `A_log` is stored
-        // `[1,1,H,1]` and flattens to `[H]`; the conv weights' middle
-        // `1` dimension is inert under row-major flattening — the only
-        // two transforms the proven exporter ever applied.
-        let f32s: Vec<Vec<f32>> = [
-            "q_conv1d.weight",
-            "k_conv1d.weight",
-            "v_conv1d.weight",
-            "f_a_proj.weight",
-            "f_b_proj.weight",
-            "g_a_proj.weight",
-            "g_b_proj.weight",
-            "b_proj.weight",
-            "A_log",
-            "dt_bias",
-            "o_norm.weight",
-        ]
-        .iter()
-        .map(|suffix| self.decoder.f32s(&t(suffix)))
-        .collect::<Result<_, _>>()?;
+        let f32s = self.kda_f32s(layer)?;
         Ok((
             DeviceAttn::Kda {
                 qkv_bank,
@@ -387,8 +413,21 @@ impl KimiSourceModel {
         layer: usize,
         overlay: Option<&CandidateOverlay>,
     ) -> Result<DeviceLayer, VindexError> {
+        self.device_layer_with_kda(metal, layer, overlay, None)
+    }
+
+    /// [`Self::device_layer`], with a KDA candidate riding beside the
+    /// expert candidate — the two substitute DISJOINT operand families,
+    /// so their composition needs no arbitration.
+    pub fn device_layer_with_kda(
+        &self,
+        metal: &MetalBackend,
+        layer: usize,
+        overlay: Option<&CandidateOverlay>,
+        kda: Option<&KdaOverlay>,
+    ) -> Result<DeviceLayer, VindexError> {
         let g = &self.geometry;
-        let (attn, state) = self.attention(metal, layer)?;
+        let (attn, state) = self.attention(metal, layer, kda)?;
         let common = |bank, router_weight, router_bias, inter, top_k, dense| {
             DeviceLayer {
                 attn,
@@ -511,6 +550,7 @@ impl KimiSourceModel {
             weight: head.bytes("weight")?,
             vocab: self.geometry.vocab,
             norm_eps: self.geometry.rms_eps,
+            encoding: MetalEncoding::Bf16,
         })
     }
 
@@ -926,4 +966,155 @@ pub fn verify_complete(
         }
     }
     Ok((layers, projections, placement))
+}
+
+/// One compiled KDA layer's binding, copied out of the candidate bank.
+pub struct KdaBinding {
+    pub qkv_bank: Vec<u8>,
+    pub qkv_offsets: [ExpertOffset; 3],
+    pub o_proj: Vec<u8>,
+    pub encoding: MetalEncoding,
+}
+
+/// A compiled KDA candidate beside the source container — the second
+/// overlay kind. Opening PROVES completeness: every compiled layer's
+/// four projections sealed at exactly the placement's offsets, before
+/// any byte is served.
+pub struct KdaOverlay {
+    pub index: CandidateIndex,
+    bank: Vec<u8>,
+    placement: KdaPlacement,
+}
+
+impl KdaOverlay {
+    pub fn open(
+        dir: &Path,
+        source_dir: &Path,
+        geometry: &KimiGeometry,
+    ) -> Result<Self, VindexError> {
+        let index: CandidateIndex = serde_json::from_slice(&std::fs::read(dir.join("index.json"))?)
+            .map_err(|e| VindexError::Parse(format!("kda candidate index: {e}")))?;
+        index.source.verify(&read_source_identity(source_dir)?)?;
+        let object = "target.kda_bank";
+        let mut layers: Vec<u32> = index
+            .ledger
+            .sealed
+            .values()
+            .filter(|seal| seal.object == object)
+            .filter_map(|seal| layer_of(&seal.tensor))
+            .collect();
+        layers.sort_unstable();
+        layers.dedup();
+        let width = geometry.kda.num_heads * geometry.kda.head_dim;
+        let placement = KdaPlacement::resolve(
+            &index.map,
+            Role::DecoderLinear,
+            &layers,
+            width,
+            geometry.hidden,
+        )?;
+        // Completeness: all four projections per layer, at the
+        // placement's own offsets — a missing or relocated seal refuses
+        // here, not as garbage bytes mid-decode.
+        for &layer in &layers {
+            let layout = placement.layout(layer)?;
+            let base = placement.layer_base(layer)?;
+            for proj in KDA_PROJECTIONS {
+                let tensor = format!("{layer}.self_attn.{proj}.weight");
+                let seal = index.ledger.get(object, &tensor).ok_or_else(|| {
+                    VindexError::Parse(format!(
+                        "KDA candidate has no seal for `{tensor}` — the bank is incomplete"
+                    ))
+                })?;
+                let (off, len) = layout.slot(proj)?;
+                if seal.target_offset != base + off || seal.target_len != len {
+                    return Err(VindexError::Parse(format!(
+                        "`{tensor}` sealed at {}+{} but the placement puts it at {}+{len}",
+                        seal.target_offset,
+                        seal.target_len,
+                        base + off
+                    )));
+                }
+            }
+        }
+        let bank = std::fs::read(dir.join("segments").join(format!("{object}.bin")))?;
+        Ok(Self {
+            index,
+            bank,
+            placement,
+        })
+    }
+
+    pub fn compiled_layers(&self) -> Vec<u32> {
+        self.placement.layers().collect()
+    }
+
+    /// The compiled binding for `layer`, or `None` when this candidate
+    /// does not hold it. Bytes are verified against the seals' hashes
+    /// on every call — 200 MB hashes in milliseconds, and a bank whose
+    /// file was truncated or edited must refuse, not decode noise.
+    pub fn binding(&self, layer: u32) -> Option<Result<KdaBinding, VindexError>> {
+        if !self.placement.layers().any(|l| l == layer) {
+            return None;
+        }
+        Some(self.binding_inner(layer))
+    }
+
+    fn binding_inner(&self, layer: u32) -> Result<KdaBinding, VindexError> {
+        let layout = self.placement.layout(layer)?;
+        let base = self.placement.layer_base(layer)?;
+        let object = "target.kda_bank";
+        let slice = |proj: &str| -> Result<Vec<u8>, VindexError> {
+            let (off, len) = layout.slot(proj)?;
+            let start = (base + off) as usize;
+            let end = start + len as usize;
+            let bytes = self.bank.get(start..end).ok_or_else(|| {
+                VindexError::Parse(format!(
+                    "KDA bank file ends before layer {layer} `{proj}` ({end} > {})",
+                    self.bank.len()
+                ))
+            })?;
+            let tensor = format!("{layer}.self_attn.{proj}.weight");
+            let seal = self
+                .index
+                .ledger
+                .get(object, &tensor)
+                .expect("open() proved completeness");
+            let hash = crate::format::vindex3::represent::compile::hash_bytes(bytes);
+            if hash != seal.target_hash {
+                return Err(VindexError::Parse(format!(
+                    "`{tensor}`: bank bytes hash {hash} but the seal says {} — the bank \
+                     and its ledger disagree",
+                    seal.target_hash
+                )));
+            }
+            Ok(bytes.to_vec())
+        };
+        let q = slice("q_proj")?;
+        let stride = q.len() as u32;
+        let mut qkv_bank = q;
+        qkv_bank.extend_from_slice(&slice("k_proj")?);
+        qkv_bank.extend_from_slice(&slice("v_proj")?);
+        let encoding = match layout.encoding.as_str() {
+            "BF16" => MetalEncoding::Bf16,
+            "Q8_0" => MetalEncoding::Q80,
+            "Q6_K" => MetalEncoding::Q6K,
+            "Q4_K" => MetalEncoding::Q4K,
+            other => {
+                return Err(VindexError::Parse(format!(
+                    "KDA candidate encodes `{other}`, which no grouped kernel reads"
+                )))
+            }
+        };
+        Ok(KdaBinding {
+            qkv_bank,
+            qkv_offsets: [
+                ExpertOffset(0),
+                ExpertOffset(stride),
+                ExpertOffset(2 * stride),
+            ],
+            o_proj: slice("o_proj")?,
+            encoding,
+        })
+    }
 }

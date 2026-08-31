@@ -227,6 +227,23 @@ impl LayerContinuationGeometry {
     }
 }
 
+/// What a layer keeps, in words — the one place this vocabulary lives.
+///
+/// A refusal that says "recurrent" for a layer holding a growing latent
+/// cache sends its reader to the wrong seam, so the naming is a function
+/// rather than a phrase repeated at each refusal site.
+pub fn region_name(geometry: &LayerContinuationGeometry) -> &'static str {
+    match geometry {
+        LayerContinuationGeometry::Kv(_) => "sequence-indexed KV rows",
+        LayerContinuationGeometry::LatentKv(_) => {
+            "a per-position LATENT cache, one operator-defined row per position"
+        }
+        LayerContinuationGeometry::Recurrent(_) => "recurrent continuation state",
+        LayerContinuationGeometry::KvAndRecurrent { .. } => "KV rows AND recurrent buffers",
+        LayerContinuationGeometry::Stateless => "no continuation state at all",
+    }
+}
+
 /// Every layer's continuation requirement, in layer order.
 ///
 /// The authoritative seam. [`plan_kv_geometry`](super::kv::plan_kv_geometry)

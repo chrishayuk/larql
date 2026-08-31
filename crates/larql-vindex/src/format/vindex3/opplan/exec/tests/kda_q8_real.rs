@@ -33,21 +33,47 @@ use larql_compute_metal::MetalBackend;
 use serde_json::Value;
 
 use super::q2a_teacher_forced::{
-    env_dir, observation, run_sequence, sequence_embeddings, BANK_ENV, SOURCE_ENV,
+    env_dir, observation, run_sequence, sequence_embeddings, BANK_ENV, CANDIDATE_ENV, SOURCE_ENV,
 };
-use crate::format::vindex3::opplan::exec::kimi_source::KimiSourceModel;
+use crate::format::vindex3::opplan::exec::kimi_source::{CandidateOverlay, KimiSourceModel};
 use crate::format::vindex3::opplan::exec::stack_metal::{DeviceAttn, DeviceLayer, HybridStack};
 use crate::format::vindex3::represent::bank::BankBuilder;
 use crate::format::vindex3::represent::quality::{kimi_logit_v3, Criterion, QualityEvidence};
 
-/// Which KDA layer's projections the candidate arm re-encodes.
-/// Default 25: the depth with the richest expert-side evidence, so the
-/// recurrence-vs-router comparison is at matched depth.
+/// Which KDA layers' projections the candidate arm re-encodes — a
+/// comma list (`"20,21,22,24,25"` is the late band; MLA positions are
+/// refused by the requant itself). Default 25: the depth with the
+/// richest expert-side evidence, so the recurrence-vs-router
+/// comparison is at matched depth.
 const LAYER_ENV: &str = "LARQL_KDA_Q8_LAYER";
-const LAYER_DEFAULT: usize = 25;
+const LAYER_DEFAULT: &str = "25";
+
+fn target_layers() -> Vec<usize> {
+    let spec = std::env::var(LAYER_ENV).unwrap_or_else(|_| LAYER_DEFAULT.into());
+    if spec.trim().is_empty() {
+        // A HEAD-ONLY probe: no layer scope at all.
+        return Vec::new();
+    }
+    spec.split(',')
+        .map(|v| v.trim().parse().expect("layer index"))
+        .collect()
+}
+
+/// `LARQL_LMHEAD_Q8=1` re-encodes the candidate arm's OUTPUT HEAD to
+/// Q8_0 — the head's perturbation lands directly at the logits, with
+/// no downstream router or recurrence to mediate it, which makes this
+/// probe a control against the interaction mechanisms measured
+/// everywhere else as much as a lever measurement.
+const LMHEAD_ENV: &str = "LARQL_LMHEAD_Q8";
+
+fn head_q8() -> bool {
+    std::env::var(LMHEAD_ENV).is_ok_and(|v| v == "1")
+}
 /// Diagnostic slice, same default as the expert probes.
 const SEQUENCES_ENV: &str = "LARQL_Q2A_SEQUENCES";
 const SEQUENCES_DEFAULT: usize = 8;
+/// Null-arm sequences — the quality runner's own number.
+const NULL_SEQUENCES: usize = 4;
 
 fn env_count(var: &str, default: usize) -> usize {
     std::env::var(var)
@@ -126,36 +152,170 @@ fn layer_bytes(layer: &DeviceLayer) -> usize {
     }
 }
 
-/// `build_stack`, with one hook: the target layer's projections are
-/// re-encoded BEFORE its attention banks are registered — a mutation
-/// after registration would leave the residency declaration pointing at
+/// Build one arm's layers; the target layer (if any) is re-encoded
+/// BEFORE its attention banks are registered — a mutation after
+/// registration would leave the residency declaration pointing at
 /// freed bf16 bytes.
-fn build_stack_with<'a>(
+pub(super) fn build_layers(
     metal: &MetalBackend,
     model: &KimiSourceModel,
-    mutate: Option<usize>,
-) -> (HybridStack<'a>, Option<(usize, usize)>) {
+    mutate: &[usize],
+    overlay: Option<&CandidateOverlay>,
+) -> (Vec<Option<DeviceLayer>>, Vec<(usize, usize)>) {
     let n = model.geometry.num_layers;
-    let mut swapped = None;
+    let mut swapped = Vec::new();
     let mut device: Vec<Option<DeviceLayer>> = Vec::with_capacity(n);
     for i in 0..n {
         let mut d = model
-            .device_layer(metal, i, None)
+            .device_layer(metal, i, overlay)
             .unwrap_or_else(|e| panic!("layer {i} must load: {e}"));
-        if mutate == Some(i) {
-            swapped = Some(requant_kda_projections(&mut d));
+        if mutate.contains(&i) {
+            swapped.push(requant_kda_projections(&mut d));
         }
         device.push(Some(d));
     }
+    (device, swapped)
+}
+
+pub(super) fn assemble<'a>(
+    metal: &MetalBackend,
+    model: &KimiSourceModel,
+    device: Vec<Option<DeviceLayer>>,
+) -> HybridStack<'a> {
+    assemble_with_head(metal, model, device, false)
+}
+
+/// `assemble`, optionally re-encoding the head to Q8_0. Returns with
+/// the swap PROVEN: a candidate arm that silently kept the bf16 head
+/// would measure nothing.
+pub(super) fn assemble_with_head<'a>(
+    metal: &MetalBackend,
+    model: &KimiSourceModel,
+    device: Vec<Option<DeviceLayer>>,
+    q8_head: bool,
+) -> HybridStack<'a> {
     for d in device.iter().flatten() {
         for bank in d.attention_banks() {
             metal.register_weight_region(bank);
         }
     }
-    let host = (0..n).map(|_| None).collect();
+    let host = (0..device.len()).map(|_| None).collect();
     let mut stack = HybridStack::new(device, host);
-    assert!(stack.attach_head(model.head().expect("the head must load")));
-    (stack, swapped)
+    let mut head = model.head().expect("the head must load");
+    if q8_head {
+        let before = head.weight.len();
+        head.weight = quantize_q8_0(&widen_bf16(&head.weight));
+        head.encoding = MetalEncoding::Q80;
+        assert!(head.weight.len() < before, "the head swap did not happen");
+        eprintln!(
+            "[kda-q8] output head re-encoded Q8_0: {before} -> {} bytes ({:.1}%)",
+            head.weight.len(),
+            100.0 * head.weight.len() as f64 / before as f64
+        );
+    }
+    assert!(stack.attach_head(head));
+    stack
+}
+
+/// The attribution this probe's claim rests on: the arms differ at the
+/// TARGET layer's two projections and NOWHERE else. Expert banks are
+/// mmap-backed, so identity is the pointer; attention banks are owned
+/// copies, so identity is the bytes.
+fn assert_arms_differ_only_at(
+    baseline: &[Option<DeviceLayer>],
+    candidate: &[Option<DeviceLayer>],
+    targets: &[usize],
+    expert_layers: &[u32],
+) {
+    for (i, (b, c)) in baseline.iter().zip(candidate).enumerate() {
+        let (b, c) = (
+            b.as_ref().expect("all-device"),
+            c.as_ref().expect("all-device"),
+        );
+        let compiled_here = expert_layers.contains(&(i as u32));
+        for (name, pb, pc) in [
+            ("gate", &b.bank.gate, &c.bank.gate),
+            ("up", &b.bank.up, &c.bank.up),
+            ("down", &b.bank.down, &c.bank.down),
+        ] {
+            if compiled_here {
+                // The expert overlay substitutes this layer's routed
+                // bank — the same asymmetry q2a proves, restated here
+                // so the cross-family candidate's scope is explicit.
+                assert_eq!(pb.store_id(), "kimi-source-expert-bank", "baseline {name}");
+                assert_eq!(pc.store_id(), "kimi-candidate-bank", "candidate {name}");
+            } else {
+                assert_eq!(
+                    pb.region.region.bytes().as_ptr(),
+                    pc.region.region.bytes().as_ptr(),
+                    "layer {i} {name}: both arms must bind ONE mmap expert region"
+                );
+            }
+        }
+        match (&b.attn, &c.attn) {
+            (
+                DeviceAttn::Kda {
+                    qkv_bank: qb,
+                    o_proj: ob,
+                    encoding: eb,
+                    ..
+                },
+                DeviceAttn::Kda {
+                    qkv_bank: qc,
+                    o_proj: oc,
+                    encoding: ec,
+                    ..
+                },
+            ) if targets.contains(&i) => {
+                assert_eq!(*eb, MetalEncoding::Bf16, "baseline stays bf16");
+                assert_eq!(*ec, MetalEncoding::Q80, "target layer is Q8_0");
+                assert!(qc.len() < qb.len() && oc.len() < ob.len());
+            }
+            (
+                DeviceAttn::Kda {
+                    qkv_bank: qb,
+                    o_proj: ob,
+                    encoding: eb,
+                    ..
+                },
+                DeviceAttn::Kda {
+                    qkv_bank: qc,
+                    o_proj: oc,
+                    encoding: ec,
+                    ..
+                },
+            ) => {
+                assert_eq!((*eb, *ec), (MetalEncoding::Bf16, MetalEncoding::Bf16));
+                assert!(
+                    qb == qc && ob == oc,
+                    "layer {i}: KDA banks must be byte-equal"
+                );
+            }
+            (
+                DeviceAttn::Mla {
+                    q: qb,
+                    kv_a: ab,
+                    kv_b: bb,
+                    o: ob,
+                    ..
+                },
+                DeviceAttn::Mla {
+                    q: qc,
+                    kv_a: ac,
+                    kv_b: bc,
+                    o: oc,
+                    ..
+                },
+            ) => {
+                assert!(!targets.contains(&i), "every target must be a KDA layer");
+                assert!(
+                    qb == qc && ab == ac && bb == bc && ob == oc,
+                    "layer {i}: MLA banks must be byte-equal"
+                );
+            }
+            _ => panic!("layer {i}: the arms disagree on the attention operator"),
+        }
+    }
 }
 
 #[test]
@@ -173,7 +333,7 @@ fn one_kda_layers_projections_at_q8_through_the_consequence_metrics() {
         #[cfg(not(target_os = "macos"))]
         return;
     };
-    let layer = env_count(LAYER_ENV, LAYER_DEFAULT);
+    let layers = target_layers();
     let sequences = env_count(SEQUENCES_ENV, SEQUENCES_DEFAULT);
 
     let manifest: Value =
@@ -190,21 +350,75 @@ fn one_kda_layers_projections_at_q8_through_the_consequence_metrics() {
     model
         .register_stores(&metal, &moe_layers)
         .expect("stores register");
-    let (mut baseline, none) = build_stack_with(&metal, &model, None);
-    let (mut candidate, swapped) = build_stack_with(&metal, &model, Some(layer));
-    metal.seal_weight_regions();
-    assert!(none.is_none());
-    let (bf16_bytes, q8_bytes) = swapped.expect("the target layer was re-encoded");
+    // Optional CROSS-FAMILY composition: an expert candidate (compiled
+    // banks, q2a's own overlay machinery) beside the transient KDA
+    // requant. The baseline arm binds neither.
+    let overlay = env_dir(CANDIDATE_ENV).map(|dir| {
+        let o = CandidateOverlay::open(&dir, &source_dir, &g).expect("candidate overlay opens");
+        o.register_store(&metal);
+        o
+    });
+    let expert_layers: Vec<u32> = overlay
+        .as_ref()
+        .map(|o| o.compiled_layers().to_vec())
+        .unwrap_or_default();
+    let q8h = head_q8();
     assert!(
-        q8_bytes < bf16_bytes,
+        !layers.is_empty() || overlay.is_some() || q8h,
+        "an empty scope with no overlay and no head flag measures nothing"
+    );
+    let (base_layers, none) = build_layers(&metal, &model, &[], None);
+    let (cand_layers, swapped) = build_layers(&metal, &model, &layers, overlay.as_ref());
+    assert!(none.is_empty());
+    assert_eq!(swapped.len(), layers.len(), "every target was re-encoded");
+    let bf16_bytes: usize = swapped.iter().map(|(b, _)| b).sum();
+    let q8_bytes: usize = swapped.iter().map(|(_, q)| q).sum();
+    assert!(
+        layers.is_empty() || q8_bytes < bf16_bytes,
         "Q8_0 must be smaller than bf16 — the swap did not happen"
     );
+    // Attribution BEFORE assembly: proven on the layers themselves, so
+    // "identical except the targets' projections" is a checked fact,
+    // not a construction argument.
+    assert_arms_differ_only_at(&base_layers, &cand_layers, &layers, &expert_layers);
+    let (null_layers, _) = build_layers(&metal, &model, &[], None);
+    let mut baseline = assemble(&metal, &model, base_layers);
+    let mut candidate = assemble_with_head(&metal, &model, cand_layers, q8h);
+    let mut null_partner = assemble(&metal, &model, null_layers);
+    metal.seal_weight_regions();
     eprintln!(
-        "[kda-q8] arms loaded in {:.1}s; layer {layer} projections {bf16_bytes} -> \
-         {q8_bytes} bytes ({:.1}% of bf16); everything else identical by construction",
+        "[kda-q8] arms loaded in {:.1}s; layers {layers:?} projections {bf16_bytes} -> \
+         {q8_bytes} bytes ({:.1}% of bf16); every other bank byte-equal or \
+         pointer-identical, PROVEN above",
         t0.elapsed().as_secs_f64(),
         100.0 * q8_bytes as f64 / bf16_bytes as f64,
     );
+
+    // ── Null arm: BF16 against itself must be EXACTLY zero — the same
+    // instrument-integrity gate the quality runner carries. ──
+    {
+        let mut builder = BankBuilder::new();
+        for seq in 0..NULL_SEQUENCES {
+            let rows = sequence_embeddings(&bank_dir, seq, positions, g.hidden);
+            let a = run_sequence(&metal, &mut baseline, &rows, g.hidden);
+            let b = run_sequence(&metal, &mut null_partner, &rows, g.hidden);
+            for (pos, ((la, ta), (lb, tb))) in a.into_iter().zip(b).enumerate() {
+                builder.observe(&observation(seq, pos, &la, &ta, &lb, &tb));
+            }
+        }
+        let null_bank = builder.finish();
+        assert_eq!(
+            null_bank.logits.kl_p99, 0.0,
+            "null arm KL must be exactly zero"
+        );
+        assert_eq!(null_bank.logits.max_logit_delta, 0.0);
+        assert_eq!(null_bank.logits.top1_flips, 0);
+        assert_eq!(null_bank.routing.route_flips, 0);
+        eprintln!(
+            "[kda-q8] null arm: {} positions, everything exactly zero",
+            null_bank.positions
+        );
+    }
 
     let t1 = Instant::now();
     let mut builder = BankBuilder::new();
@@ -256,9 +470,25 @@ fn one_kda_layers_projections_at_q8_through_the_consequence_metrics() {
         let bytes = std::fs::read(bank_dir.join("manifest.json")).expect("bank manifest reads");
         format!("{:x}", Sha256::digest(&bytes))
     };
+    let mut label = layers
+        .iter()
+        .map(|l| l.to_string())
+        .collect::<Vec<_>>()
+        .join("-");
+    if let Some(o) = &overlay {
+        label = format!("{label}-x-{}", o.index.map.name);
+    }
+    if q8h {
+        label = if label.is_empty() || label == "" {
+            "headq8".into()
+        } else {
+            format!("{label}-headq8")
+        };
+    }
     let report = serde_json::json!({
-        "run": format!("kda-q8-l{layer}"),
-        "scope": "KDA projections (qkv bank + o_proj) of ONE layer, transient requant — no compiled candidate",
+        "run": format!("kda-q8-l{label}"),
+        "scope": "KDA projections (qkv bank + o_proj), transient requant; optional compiled expert candidate beside it",
+        "expert_candidate": overlay.as_ref().map(|o| o.index.map.name.clone()),
         "gate": evidence.gate,
         "authority_report": evidence.report(),
         "verdict_passed": verdict.passed(),
@@ -272,7 +502,7 @@ fn one_kda_layers_projections_at_q8_through_the_consequence_metrics() {
         "kl_by_position": curve,
         "wall_seconds": t1.elapsed().as_secs_f64(),
     });
-    let path = format!("/tmp/kimi_kda-q8-l{layer}_report.json");
+    let path = format!("/tmp/kimi_kda-q8-l{label}_report.json");
     std::fs::write(
         &path,
         serde_json::to_vec_pretty(&report).expect("serialises"),

@@ -35,6 +35,7 @@ use larql_compute::backend::ComputeBackend;
 use larql_compute_metal::MetalBackend;
 use serde_json::Value;
 
+use super::kda_q8_real::{assemble, assemble_with_head, build_layers};
 use super::q2a_teacher_forced::{
     build_stack, env_dir, sequence_embeddings, BANK_ENV, CANDIDATE_ENV, SOURCE_ENV,
 };
@@ -134,13 +135,49 @@ fn decode_rate_of_the_candidate_map_beside_its_own_bf16_baseline() {
         .register_stores(&metal, &moe_layers)
         .expect("stores register");
     overlay.register_store(&metal);
-    let mut baseline = build_stack(&metal, &model, None);
-    let mut candidate = build_stack(&metal, &model, Some(&overlay));
+    // Optional TRANSIENT KDA scope beside the compiled expert overlay.
+    // The device executes real Q8_0 buffers through the real quantised
+    // kernels either way, so the decode timing is real; only the
+    // STORAGE is transient — which makes this a **Q8 EXECUTION
+    // PREVIEW**: valid for decode compute economics and steady-state
+    // tok/s, NOT a measurement of native artifact size, cold-load,
+    // disk traffic or materialisation overhead.
+    let kda_layers: Vec<usize> = std::env::var("LARQL_KDA_Q8_LAYER")
+        .map(|v| {
+            v.split(',')
+                .map(|x| x.trim().parse().expect("layer index"))
+                .collect()
+        })
+        .unwrap_or_default();
+    let (mut baseline, mut candidate) = if kda_layers.is_empty() {
+        (
+            build_stack(&metal, &model, None),
+            build_stack(&metal, &model, Some(&overlay)),
+        )
+    } else {
+        let (base, _) = build_layers(&metal, &model, &[], None);
+        let (cand, swapped) = build_layers(&metal, &model, &kda_layers, Some(&overlay));
+        assert_eq!(
+            swapped.len(),
+            kda_layers.len(),
+            "every KDA target re-encoded"
+        );
+        let q8_head = std::env::var("LARQL_LMHEAD_Q8").is_ok_and(|v| v == "1");
+        (
+            assemble(&metal, &model, base),
+            assemble_with_head(&metal, &model, cand, q8_head),
+        )
+    };
     metal.seal_weight_regions();
     eprintln!(
-        "[bench] both arms loaded in {:.1}s; candidate scope {}",
+        "[bench] both arms loaded in {:.1}s; candidate scope {}{}",
         t0.elapsed().as_secs_f64(),
-        overlay.scope()
+        overlay.scope(),
+        if kda_layers.is_empty() {
+            String::new()
+        } else {
+            format!(" + TRANSIENT KDA Q8_0 at {kda_layers:?} (Q8 execution preview)")
+        }
     );
 
     // Enough distinct rows that a block never re-times one hot row, cycled

@@ -431,3 +431,153 @@ fn the_kda_mla_stack_executes_and_every_state_species_survives_the_step() {
         "the decode step path diverged from batch prefill"
     );
 }
+
+/// **A provider that knows recurrences but not caches is refused before
+/// any output** — and told which region it is missing.
+///
+/// The realistic migration case: every provider in the tree could hold
+/// recurrent buffers before MLA executed, and a latent cache is the new
+/// requirement. Refusing at announcement, rather than at the layer, is
+/// what stops a caller being handed the first two layers of a model and
+/// having no way to tell that from a finished one.
+#[test]
+fn a_provider_without_latent_rows_is_refused_at_announcement() {
+    use crate::format::vindex3::inspect::inspect_container;
+    use crate::format::vindex3::opplan::exec::continuation::{LatentKvRows, RecurrentState};
+    use crate::format::vindex3::opplan::exec::kv::{
+        ContinuationError, ContinuationProvider, LayerKvGeometry, RowKvState,
+    };
+    use crate::format::vindex3::opplan::exec::operands::OperandStore;
+    use crate::format::vindex3::opplan::exec::reference::ReferenceBackend;
+    use crate::format::vindex3::opplan::plan_component_ops;
+
+    /// Holds rows and recurrent buffers — everything that existed
+    /// before the latent cache did — and says plainly it holds no cache.
+    #[derive(Default)]
+    struct NoLatent(RowKvState);
+    impl ContinuationProvider for NoLatent {
+        fn prepare(&mut self, layers: &[LayerKvGeometry]) {
+            self.0.prepare(layers)
+        }
+        fn append(&mut self, layer: usize, key: Vec<f32>, value: Vec<f32>) {
+            self.0.append(layer, key, value)
+        }
+        fn keys(&self, layer: usize) -> &[Vec<f32>] {
+            self.0.keys(layer)
+        }
+        fn values(&self, layer: usize) -> &[Vec<f32>] {
+            self.0.values(layer)
+        }
+        fn position(&self) -> usize {
+            self.0.position()
+        }
+        fn set_position(&mut self, position: usize) {
+            self.0.set_position(position)
+        }
+        fn prepare_continuation(
+            &mut self,
+            layers: &[crate::format::vindex3::opplan::exec::continuation::LayerContinuationGeometry],
+        ) -> Result<(), ContinuationError> {
+            // Allocates the recurrent side happily; the latent side is
+            // simply not something this provider has.
+            self.0.prepare_continuation(layers)
+        }
+        fn recurrent_state(
+            &mut self,
+            layer: usize,
+        ) -> Result<&mut RecurrentState, ContinuationError> {
+            self.0.recurrent_state(layer)
+        }
+        fn latent_state(&mut self, layer: usize) -> Result<&mut LatentKvRows, ContinuationError> {
+            Err(ContinuationError::LatentUnsupported {
+                provider: "NoLatent",
+                layer,
+            })
+        }
+    }
+
+    let dir = tempfile::tempdir().unwrap();
+    miniature_kimi(dir.path());
+    let out = tempfile::tempdir().unwrap();
+    let container = out.path().join("kimi-mini.vindex3");
+    encode_checkpoint(dir.path(), &container).unwrap();
+    let inspection = inspect_container(&container, false).unwrap();
+    let plan = plan_component_ops(&inspection, &container, "target")
+        .unwrap()
+        .plan
+        .expect("closure held");
+    let store = OperandStore::open(&container, &inspection).unwrap();
+
+    let mut provider = NoLatent::default();
+    let err = crate::format::vindex3::opplan::exec::prefill_plan(
+        &plan,
+        &store,
+        &[3u32, 17],
+        &ReferenceBackend,
+        &mut provider,
+    )
+    .expect_err("this stack keeps caches this provider cannot hold");
+    let message = err.to_string();
+    assert!(
+        message.contains("latent"),
+        "the refusal must name the LATENT region, not the recurrent one it does hold: {message}"
+    );
+    assert!(
+        message.contains(&MLA_LAYERS[0].to_string()),
+        "and which layer required it: {message}"
+    );
+    // The recurrent layers are not the complaint: this provider holds
+    // those, and a refusal naming layer 0 would be the old
+    // not-softmax-therefore-recurrent reading coming back.
+    assert!(
+        !message.contains("no recurrent state"),
+        "the recurrent side was available: {message}"
+    );
+}
+
+/// **The census counts each operator where it belongs** — KDA's four
+/// wide projections as recurrence traffic, MLA's four as attention, and
+/// both operators' small operands as glue.
+///
+/// Residency is reported by site, not as one total, because a total is
+/// satisfied just as well by a stack that halved its FFN and left its
+/// mixers widened.
+#[test]
+fn the_residency_census_places_both_operators() {
+    use crate::format::vindex3::inspect::inspect_container;
+    use crate::format::vindex3::opplan::exec::operands::OperandStore;
+    use crate::format::vindex3::opplan::exec::prepared::{ExecutionSlice, PreparedOperands};
+    use crate::format::vindex3::opplan::exec::reference::ReferenceBackend;
+    use crate::format::vindex3::opplan::plan_component_ops;
+
+    let dir = tempfile::tempdir().unwrap();
+    miniature_kimi(dir.path());
+    let out = tempfile::tempdir().unwrap();
+    let container = out.path().join("kimi-mini.vindex3");
+    encode_checkpoint(dir.path(), &container).unwrap();
+    let inspection = inspect_container(&container, false).unwrap();
+    let plan = plan_component_ops(&inspection, &container, "target")
+        .unwrap()
+        .plan
+        .expect("closure held");
+    let store = OperandStore::open(&container, &inspection).unwrap();
+    let prepared =
+        PreparedOperands::load(&plan, &store, &ReferenceBackend, ExecutionSlice::Full).unwrap();
+
+    let census = prepared.residency_census();
+    // KDA's q/k/v/o — the whole of a KDA layer's matrix traffic —
+    // counted with the recurrences, MLA's with attention.
+    let kda_matrix = 2 * (3 * K_WIDTH * HIDDEN + HIDDEN * K_WIDTH) * 4;
+    let mla_matrix = 2
+        * (M_HEADS * M_Q_HEAD_DIM * HIDDEN
+            + M_CACHE_WIDTH * HIDDEN
+            + M_HEADS * (M_NOPE + M_V) * M_LATENT
+            + HIDDEN * M_HEADS * M_V)
+        * 4;
+    assert_eq!(census.delta.total(), kda_matrix, "KDA's four projections");
+    assert_eq!(census.attention.total(), mla_matrix, "MLA's four");
+    // The small operands are glue, not matrix traffic: the convolution
+    // taps, gate factorisations, decay parameters and both norms.
+    assert!(census.glue.widened_f32 > 0, "conv taps and gates are glue");
+    assert!(census.ffn.total() > 0, "the dense FFN is its own site");
+}

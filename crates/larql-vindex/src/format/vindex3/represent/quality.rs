@@ -720,6 +720,54 @@ pub fn kimi_logit_v3() -> QualityGate {
     }
 }
 
+/// **`kimi-logit-balanced-v1` — noticeable but bounded movement,
+/// calibrated from a measured consequence ladder on TWO banks.**
+///
+/// Not a relaxation ratio over v3: every limit is drawn from the
+/// empirical gap between the last candidate whose changes stayed
+/// small and local and the first whose consequences changed character,
+/// measured at 8,192 positions on the selection bank AND the held-out
+/// bank (zero window overlap, never used to choose topology):
+///
+/// | anchor @ 8192 | kl p99 (sel/held) | worst top-1 give-up | verdict here |
+/// |---|---|---|---|
+/// | strict map (experts 24-26 + KDA 24,25, all Q8_0) | 5.99e-4 / — | 0.020 | PASS |
+/// | wide map (+ KDA 21,22) | 9.65e-4 / 1.23e-3 | 0.055 / 0.028 | PASS |
+/// | flagship (experts 20-26 + KDA 20-25 plateau) | 2.38e-3 / 2.60e-3 | 0.094 / 0.058 | PASS |
+/// | B3 (experts 16-26) | 4.74e-3 / — | 0.181, 63 severe overturns | **FAIL** |
+///
+/// The ladder's ORDERING reproduced on the held-out bank with
+/// magnitudes shifting ±30-50%, so each limit carries bank-to-bank
+/// margin above the flagship's worst bank rather than sitting on one
+/// measurement:
+///
+/// | criterion | limit | why |
+/// |---|---|---|
+/// | `kl_p99_max` | 3.5e-3 | flagship worst bank 2.60e-3 × drift margin; refuses B3's 4.74e-3 |
+/// | `top1_mass_displaced_max` | 0.12 | flagship worst bank 0.094 × margin; refuses B3's 0.181 — the character change IS this dimension |
+/// | `top10_mass_displaced_p99_max` | 0.12 | flagship 0.076 both banks + margin |
+/// | route limits | unchanged from v3 | measured NON-discriminating in the corridor (p99 0.126-0.134 from strict to B3) — no evidence justifies loosening |
+/// | `covered_mass_min` | 0.55 | the held-out bank's flattest position covers 0.577 at top-2048 — a property of that bank, not of any candidate; 0.60 would make the held-out bank unusable while 0.55 still refuses a blind instrument |
+///
+/// KL is bounded but is deliberately NOT the definition — B3 taught
+/// that a diagnostic-benign map can hide dozens of confident overturns
+/// that only authority scale reveals, and the wide map taught that a
+/// single overturn's severity (0.055) can exceed strict's whole budget
+/// while everything else stays local. The contract boundary is where
+/// high-consequence top-1 overturns become materially larger and more
+/// frequent, and it was chosen on the held-out bank: the selection
+/// bank chose the corridor; the held-out bank chose the contract.
+pub fn kimi_logit_balanced_v1() -> QualityGate {
+    QualityGate {
+        id: "kimi-logit-balanced-v1".into(),
+        kl_p99_max: 3.5e-3,
+        covered_mass_min: Some(0.55),
+        top1_mass_displaced_max: Some(0.12),
+        top10_mass_displaced_p99_max: Some(0.12),
+        ..kimi_logit_v3()
+    }
+}
+
 #[cfg(test)]
 #[path = "quality_tests.rs"]
 mod tests;
