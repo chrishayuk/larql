@@ -1252,8 +1252,31 @@ The guarantees that make transformations provable rather than asserted:
 
 What the candidate settles: one canonical container model (§5), the
 contract stack (§0), compatibility rules (§5.7), the schema span (§12).
-What remains before this specification drops "candidate" — each a named
-gate, none of them drift:
+
+**The architecture is closed.** Four questions that were open when this
+document was promoted are no longer open, and they are recorded here as
+settled rather than as gates, so that nothing on the remaining list is
+about what VINDEX3 *is*:
+
+| Closed | Where | What closed it |
+| ------ | ----- | -------------- |
+| **The ontology lift** | §17.4 | both halves landed inside one schema span — lift 1 at SystemGraph schema 6 (2026-08-30), lift 2 additively within it (2026-08-31); the four-architecture drill's findings F1–F16, each with what closed it, in [`docs/vindex3-ontology-drill.md`](../../../docs/vindex3-ontology-drill.md) |
+| **State semantics** | §17.3–§17.4 | continuation is a set of declared regions with three species — KV rows, a latent cache, fixed-size recurrent buffers — sized from the plan, refused where undeclared, and consumed by execution and by every surface that reports it |
+| **Schema 6** | §5, §12 | presence means semantic presence; the per-layer operator is explicit; the census fails closed; closure is enforced at encode |
+| **The witness ladder** | §16 | a pure-SSM decoder, a 250M mixed-program rehearsal, a 2.7B scale witness, and a 48B three-operator hybrid — each admitting through judgments alone and executing through the generic path, the last of them re-encoded with all five representation payload hashes unchanged |
+
+**Execution placement is not a gate.** A backend's residency policy can
+make a semantically complete container infeasible to run on a given
+machine — Kimi-Linear-48B's routed-expert bank expands from 94 GB stored
+to roughly 188 GB resident under one CPU policy — and that is an
+execution-strategy fact, not an incompleteness in the model, the
+representation or the declared state. §5's separation of logical
+identity from stored bytes, and §17.3's rule that state geometry is a
+container fact, both hold across it.
+
+What remains before this specification drops "candidate" is therefore
+release closure — the freeze, an independent reader, the held-out test,
+the maturity flip — each a named gate, none of them drift:
 
 | # | Gate | Today |
 | - | ---- | ----- |
@@ -1263,7 +1286,6 @@ gate, none of them drift:
 | 4 | **E8 held-out architecture** (§16 criterion 7) | not yet run |
 | 5 | **The M4 flip**: `DEFAULT_EXTRACTION_GENERATION = V3` per the generation policy | M1–M3 done, M4 open |
 | 6 | **Bank-ABI pre-freeze rows**: the remaining V2-0..V2-4 experiment gates (profile-authority derivation, variant-selection refusal, fixtures B–D, WALK/DESCRIBE parity) | open |
-| 7 | **The ontology lift** (§17.4): completeness from the declared operation program rather than object kinds, and ContinuationState generalising KV — accepted by the four-architecture paper drill | **CLOSED. Lift 1 LANDED 2026-08-30** at SystemGraph schema 6, proven by the pure-SSM witness (mamba2-780m: encoded, zero fabricated surfaces, closure at encode, LQL-open under the deletion invariant); **lift 2 LANDED 2026-08-31** — F5 (KDA state precision, MLA latent-cache geometry) and F6 (the per-op norm epsilon) additive within v6, F9's plan-driven KDA/MLA execution with them, witnessed by a graph-only re-encode of Kimi-Linear-48B whose five representation payload hashes were unchanged; drill findings F1–F16 in [`docs/vindex3-ontology-drill.md`](../../../docs/vindex3-ontology-drill.md) |
 
 Feature growth is not a gate: GENERATE, TRACE, overlays, logical DIFF,
 COMPILE and COMPACT are operations over V3 containers and do not add
