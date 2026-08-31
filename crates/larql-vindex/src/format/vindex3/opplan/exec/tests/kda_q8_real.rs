@@ -41,14 +41,16 @@ use crate::format::vindex3::represent::bank::BankBuilder;
 use crate::format::vindex3::represent::physical::{
     EncodedRegion, ExpertEncoding as PhysEncoding, PhysicalStore, SharedExpertBinding,
 };
-use crate::format::vindex3::represent::quality::{kimi_logit_v3, Criterion, QualityEvidence};
+use crate::format::vindex3::represent::quality::{
+    kimi_logit_balanced_v1, kimi_logit_v3, Criterion, QualityEvidence,
+};
 
 /// Which KDA layers' projections the candidate arm re-encodes — a
 /// comma list (`"20,21,22,24,25"` is the late band; MLA positions are
 /// refused by the requant itself). Default 25: the depth with the
 /// richest expert-side evidence, so the recurrence-vs-router
 /// comparison is at matched depth.
-const LAYER_ENV: &str = "LARQL_KDA_Q8_LAYER";
+pub(super) const LAYER_ENV: &str = "LARQL_KDA_Q8_LAYER";
 const LAYER_DEFAULT: &str = "25";
 
 fn target_layers() -> Vec<usize> {
@@ -67,18 +69,18 @@ fn target_layers() -> Vec<usize> {
 /// no downstream router or recurrence to mediate it, which makes this
 /// probe a control against the interaction mechanisms measured
 /// everywhere else as much as a lever measurement.
-const LMHEAD_ENV: &str = "LARQL_LMHEAD_Q8";
+pub(super) const LMHEAD_ENV: &str = "LARQL_LMHEAD_Q8";
 
 /// MLA layers whose four wide projections the candidate arm re-encodes
 /// (comma list). The recurrence-free sibling of the KDA scope — the
 /// latent cache always holds decoded values whatever this says.
-const MLA_ENV: &str = "LARQL_MLA_Q8_LAYER";
+pub(super) const MLA_ENV: &str = "LARQL_MLA_Q8_LAYER";
 /// Layers whose SHARED-expert branch the candidate arm re-encodes
 /// (comma list). Zero kernel work: the shared dispatch has been
 /// encoding-aware since the expert rung — only these bytes were not.
-const SHARED_ENV: &str = "LARQL_SHARED_Q8_LAYER";
+pub(super) const SHARED_ENV: &str = "LARQL_SHARED_Q8_LAYER";
 
-fn layer_list(var: &str) -> Vec<usize> {
+pub(super) fn layer_list(var: &str) -> Vec<usize> {
     let Ok(spec) = std::env::var(var) else {
         return Vec::new();
     };
@@ -90,7 +92,7 @@ fn layer_list(var: &str) -> Vec<usize> {
         .collect()
 }
 
-fn head_q8() -> bool {
+pub(super) fn head_q8() -> bool {
     std::env::var(LMHEAD_ENV).is_ok_and(|v| v == "1")
 }
 /// Diagnostic slice, same default as the expert probes.
@@ -642,6 +644,12 @@ fn one_kda_layers_projections_at_q8_through_the_consequence_metrics() {
         bank: bank.clone(),
     };
     let verdict = evidence.verdict();
+    // v3 is the strict authority every earlier cell cited; balanced-v1
+    // is the frozen contract a COMPOSED map is admitted under. Both
+    // travel in the artifact so a reader never has to re-derive the
+    // verdict this run's claim rests on from the bank by hand.
+    let balanced_gate = kimi_logit_balanced_v1();
+    let balanced = balanced_gate.evaluate(&bank);
     let bank_manifest_sha256 = {
         use sha2::{Digest, Sha256};
         let bytes = std::fs::read(bank_dir.join("manifest.json")).expect("bank manifest reads");
@@ -664,7 +672,7 @@ fn one_kda_layers_projections_at_q8_through_the_consequence_metrics() {
         label = format!("{label}-shared{}", tag.join("-"));
     }
     if q8h {
-        label = if label.is_empty() || label == "" {
+        label = if label.is_empty() {
             "headq8".into()
         } else {
             format!("{label}-headq8")
@@ -678,6 +686,10 @@ fn one_kda_layers_projections_at_q8_through_the_consequence_metrics() {
         "authority_report": evidence.report(),
         "verdict_passed": verdict.passed(),
         "verdict_failures": verdict.failures.iter()
+            .map(|(c, d)| format!("{}: {d}", c.name())).collect::<Vec<_>>(),
+        "balanced_gate": balanced_gate,
+        "verdict_balanced_v1_passed": balanced.passed(),
+        "verdict_balanced_v1_failures": balanced.failures.iter()
             .map(|(c, d)| format!("{}: {d}", c.name())).collect::<Vec<_>>(),
         "bank_manifest_sha256": bank_manifest_sha256,
         "bank": bank,
@@ -694,7 +706,8 @@ fn one_kda_layers_projections_at_q8_through_the_consequence_metrics() {
     )
     .expect("report writes");
     eprintln!("{}", evidence.report());
-    eprintln!("[kda-q8] verdict: {verdict:?} — report at {path}");
+    eprintln!("[kda-q8] verdict (v3): {verdict:?}");
+    eprintln!("[kda-q8] verdict (balanced-v1): {balanced:?} — report at {path}");
 
     if bank.positions < 4096 {
         assert!(!verdict.passed(), "sub-4096 positions can never pass v3");
