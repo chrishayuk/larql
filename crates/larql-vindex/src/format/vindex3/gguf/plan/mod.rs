@@ -190,6 +190,19 @@ pub fn qwen35_tensor_name(role: &str, layer: usize) -> Option<String> {
         "write-strength projection" => "ssm_beta.weight",
         "gated norm" => "ssm_norm.weight",
         "output projection" => "ssm_out.weight",
+        // Trunk norms. Both are per-layer across the WHOLE stack — the
+        // real container carries 64 of each on a 64-layer model. The
+        // second one's name says "attention" and its applicability does
+        // not: keying it off layer kind would drop the 48 recurrent
+        // layers' copies.
+        "input layer norm" => "attn_norm.weight",
+        "post-attention layer norm" => "post_attention_norm.weight",
+        // Q/K norms, on attending layers only — 16 of each here. Their
+        // offset comes from `attention.qk_norm_weight_offset`, a
+        // separate authority from the trunk norms' `norm.pre`, so a
+        // model may legitimately differ between them.
+        "attention q norm" => "attn_q_norm.weight",
+        "attention k norm" => "attn_k_norm.weight",
         // Dense FFN.
         "ffn gate" => "ffn_gate.weight",
         "ffn up" => "ffn_up.weight",
