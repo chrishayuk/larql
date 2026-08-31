@@ -314,3 +314,132 @@ fn the_provider_learns_geometry_from_the_plan_and_keeps_the_rows() {
         assert_eq!(kv.values(layer).len(), G_TOKENS.len());
     }
 }
+
+/// **Announcement, not reset** — the contract every region shares.
+///
+/// A provider is announced its geometry before each traversal, and a
+/// prefilled state being resumed must keep what it holds: rows,
+/// recurrent buffers and latent rows alike. Re-announcing is how a long
+/// prompt prefills in chunks and how a decode session continues after
+/// one, so a reset here would silently restart the conversation while
+/// every shape still matched.
+#[test]
+fn re_announcing_the_geometry_keeps_every_region_it_already_holds() {
+    use super::super::continuation::{
+        LayerContinuationGeometry, LayerLatentKvGeometry, RecurrentBufferGeometry,
+        RecurrentGeometry, StateInitialization,
+    };
+    use super::super::kv::{ContinuationProvider, LayerKvGeometry, RowKvState};
+
+    let geometry = [
+        LayerContinuationGeometry::Kv(LayerKvGeometry {
+            kv_dim: 2,
+            window: None,
+        }),
+        LayerContinuationGeometry::Recurrent(RecurrentGeometry::single(RecurrentBufferGeometry {
+            shape: vec![2, 2],
+            dtype: larql_models::inventory::report::RecurrentStateDtype::Float32,
+            initialization: StateInitialization::Zeros,
+        })),
+        LayerContinuationGeometry::LatentKv(LayerLatentKvGeometry { width: 3 }),
+    ];
+
+    let mut provider = RowKvState::default();
+    provider.prepare_continuation(&geometry).unwrap();
+
+    // Fill one of each region, and advance the logical position.
+    provider.append(0, vec![1.0, 2.0], vec![3.0, 4.0]);
+    provider
+        .recurrent_state(1)
+        .unwrap()
+        .buffer_mut(0)
+        .cells_mut()[0] = 9.0;
+    provider
+        .latent_state(2)
+        .unwrap()
+        .append(vec![5.0, 6.0, 7.0]);
+    provider.set_position(1);
+
+    // The same geometry, announced again — as the next traversal does.
+    provider.prepare_continuation(&geometry).unwrap();
+
+    assert_eq!(provider.keys(0), &[vec![1.0, 2.0]], "rows survive");
+    assert_eq!(
+        provider.recurrent_state(1).unwrap().buffer(0).cells()[0],
+        9.0,
+        "recurrent buffers survive"
+    );
+    assert_eq!(
+        provider.latent_state(2).unwrap().rows(),
+        &[vec![5.0, 6.0, 7.0]],
+        "latent rows survive — the region added last is not the one that resets"
+    );
+    assert_eq!(provider.position(), 1, "and so does the logical position");
+
+    // The plain KV announcement takes the same path.
+    provider.prepare(
+        &[LayerKvGeometry {
+            kv_dim: 2,
+            window: None,
+        }; 3],
+    );
+    assert_eq!(provider.keys(0).len(), 1, "still one row after re-prepare");
+}
+
+/// Every refusal says which provider, which layer, and which region —
+/// the three things a caller needs to act on one.
+///
+/// Asserted per variant rather than through one formatted string,
+/// because these messages are the seam's whole diagnostic surface and a
+/// copy-paste between arms is exactly the defect that would survive a
+/// looser test.
+#[test]
+fn each_continuation_refusal_names_provider_layer_and_region() {
+    use super::super::kv::ContinuationError;
+
+    let cases = [
+        (
+            ContinuationError::RecurrentUnsupported {
+                provider: "P",
+                layer: 3,
+            },
+            ["holds no recurrent state", "layer 3"],
+        ),
+        (
+            ContinuationError::NotRecurrent {
+                provider: "P",
+                layer: 3,
+            },
+            ["not a recurrent layer", "dispatch bug"],
+        ),
+        (
+            ContinuationError::LatentUnsupported {
+                provider: "P",
+                layer: 3,
+            },
+            ["no per-position latent cache", "layer 3"],
+        ),
+        (
+            ContinuationError::NotLatent {
+                provider: "P",
+                layer: 3,
+            },
+            ["keeps no latent cache", "dispatch bug"],
+        ),
+    ];
+    for (error, expected) in &cases {
+        let rendered = error.to_string();
+        assert!(rendered.contains('P'), "{rendered}");
+        for phrase in expected {
+            assert!(
+                rendered.contains(phrase),
+                "{error:?} rendered as {rendered}"
+            );
+        }
+    }
+    // The four render differently — a shared message would make the
+    // wrong half of a hybrid look like the missing one.
+    let rendered: std::collections::BTreeSet<String> =
+        cases.iter().map(|(e, _)| e.to_string()).collect();
+    assert_eq!(rendered.len(), cases.len());
+}
