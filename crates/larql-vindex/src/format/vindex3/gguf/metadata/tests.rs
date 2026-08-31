@@ -90,6 +90,7 @@ fn nothing_but_target_constants_is_hardcoded() {
         &[11, 11, 10],
         0.25,
         &qwen_attending(),
+        true,
     )
     .expect("a complete surface yields a complete table");
 
@@ -104,10 +105,18 @@ fn nothing_but_target_constants_is_hardcoded() {
             "general.type",
             "general.architecture",
             "general.quantization_version",
-            "general.file_type"
         ],
         "only facts about llama.cpp may be literals"
     );
+    // file_type left the constants: it now states which representation
+    // programme was selected, and a BF16 export stamped MOSTLY_NVFP4
+    // would be the file lying about itself.
+    let file_type = table.iter().find(|m| m.key == "general.file_type").unwrap();
+    assert_eq!(
+        file_type.derived_from,
+        "the selected representation programme"
+    );
+    assert_eq!(file_type.value, MetaValue::U32(FILE_TYPE_MOSTLY_NVFP4));
     for m in &table {
         assert!(
             !m.derived_from.is_empty(),
@@ -129,6 +138,7 @@ fn the_table_matches_qwens_real_graph() {
         &[11, 11, 10],
         0.25,
         &qwen_attending(),
+        true,
     )
     .unwrap();
     let get = |k: &str| table.iter().find(|m| m.key == k).map(|m| m.value.clone());
@@ -185,7 +195,8 @@ fn a_missing_fact_refuses_the_whole_table() {
             1.0,
             &[11, 11, 10],
             0.25,
-            &qwen_attending()
+            &qwen_attending(),
+            true,
         ),
         Err(MetadataError::Missing("execution.context_length"))
     );

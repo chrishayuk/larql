@@ -27,7 +27,10 @@ fn main() {
     let built = build_from_inventories(&[(name, inventory)]);
 
     println!("unplaced groups        {}", built.unplaced.len());
-    println!("unresolved interfaces  {}", built.unresolved_interfaces.len());
+    println!(
+        "unresolved interfaces  {}",
+        built.unresolved_interfaces.len()
+    );
     println!("incomplete surfaces    {}", built.incomplete_surfaces.len());
     for s in &built.incomplete_surfaces {
         println!("  {}: {:?}", s.component, s.missing);

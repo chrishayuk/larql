@@ -34,6 +34,8 @@ pub const GENERAL_TYPE: &str = "model";
 pub const QUANTIZATION_VERSION: u32 = 2;
 /// `LLAMA_FTYPE_MOSTLY_NVFP4`. Not `GGML_TYPE_NVFP4`, which is 40.
 pub const FILE_TYPE_MOSTLY_NVFP4: u32 = 39;
+/// `LLAMA_FTYPE_MOSTLY_BF16`, for a canonical-selection export.
+pub const FILE_TYPE_MOSTLY_BF16: u32 = 32;
 /// llama.cpp's MRoPE array width.
 pub const ROPE_SECTION_SLOTS: usize = 4;
 
@@ -110,6 +112,7 @@ pub fn qwen35_metadata(
     declared_sections: &[u32],
     rotary_fraction: f64,
     attending_layers: &[usize],
+    nvfp4_in_use: bool,
 ) -> Result<Vec<MetaKey>, MetadataError> {
     let attn = surface
         .attention
@@ -149,10 +152,16 @@ pub fn qwen35_metadata(
             MetaValue::U32(QUANTIZATION_VERSION),
             "target constant",
         ),
+        // file_type is display metadata, but a BF16 export stamped
+        // MOSTLY_NVFP4 would still be the file lying about itself.
         k(
             "general.file_type",
-            MetaValue::U32(FILE_TYPE_MOSTLY_NVFP4),
-            "target constant",
+            MetaValue::U32(if nvfp4_in_use {
+                FILE_TYPE_MOSTLY_NVFP4
+            } else {
+                FILE_TYPE_MOSTLY_BF16
+            }),
+            "the selected representation programme",
         ),
         k(
             "qwen35.block_count",

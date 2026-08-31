@@ -201,7 +201,11 @@ pub fn walk_primary_text(
             }
         };
         let plan = match LoweredTensorPlan::new(
-            t.name.clone(),
+            // The object-qualified address: three model-scope surfaces
+            // all name their tensor `weight`, so the bare name is not
+            // an address and a payload source keyed on it would hand
+            // the embedding to the output head.
+            format!("{}/{}", t.object, t.name),
             target.clone(),
             t.representation,
             target_type,
@@ -348,7 +352,28 @@ pub fn inventory_from_container(
         if !path.exists() {
             continue;
         }
-        let (header, _) = read_segment_header(&path)?;
+        let (header, data_start) = read_segment_header(&path)?;
+        // A segment whose tensor table reaches past the end of its file
+        // is an interrupted write, and the missing tensors are silent
+        // until something reads them. The hero's first emission failed
+        // 500 tensors in with "0-byte payload" — this names the actual
+        // defect, at inventory time, before any plan exists.
+        let declared_end = data_start
+            + header
+                .tensors
+                .iter()
+                .map(|t| t.offset + t.len)
+                .max()
+                .unwrap_or(0);
+        let actual = std::fs::metadata(&path)?.len();
+        if declared_end > actual {
+            return Err(crate::VindexError::Parse(format!(
+                "export: segment `{}` is truncated — its tensor table declares {declared_end} \
+                 bytes and the file holds {actual}. The write that produced it did not finish; \
+                 the missing tensors would surface as zero-byte payloads mid-emission",
+                entry.segment
+            )));
+        }
 
         if !surface_is_included(&object) {
             excluded.push(Exclusion {

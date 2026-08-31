@@ -746,3 +746,51 @@ fn representation_comes_from_the_tensor_dtype_not_the_objects_encoding() {
         "an @NVFP4 object with only NVFP4 members would make this test vacuous"
     );
 }
+
+/// **An interrupted segment write refuses at inventory time.** The
+/// represented hero's first emission failed 500 tensors in with a
+/// zero-byte payload; the actual defect was a segment file shorter
+/// than its own tensor table, and that is what the refusal must say.
+#[test]
+fn a_truncated_segment_is_refused_by_name_not_discovered_mid_emission() {
+    use crate::format::vindex3::fixtures::{encode_fixture_container, hybrid_lllf_f32_model};
+    use crate::format::vindex3::inspect::inspect_container;
+
+    let checkpoint = tempfile::tempdir().unwrap();
+    let container = tempfile::tempdir().unwrap();
+    encode_fixture_container(
+        hybrid_lllf_f32_model,
+        checkpoint.path(),
+        container.path(),
+        "truncated",
+    );
+    let inspection = inspect_container(container.path(), false).unwrap();
+
+    // Cut the decoder segment short, as an interrupted write would.
+    let entry = inspection
+        .index
+        .representations
+        .values()
+        .find(|e| e.segment.contains("decoder_stack"))
+        .unwrap();
+    let path = container.path().join(&entry.segment);
+    let full = std::fs::metadata(&path).unwrap().len();
+    let f = std::fs::OpenOptions::new().write(true).open(&path).unwrap();
+    f.set_len(full - 1024).unwrap();
+
+    let err = inventory_from_container(
+        container.path(),
+        &inspection.index,
+        &|_, _| None,
+        &|object| object.starts_with("target."),
+        &|_object, ids| ids.first().map(|s| s.to_string()),
+    )
+    .expect_err("a truncated segment must refuse");
+    let msg = err.to_string();
+    assert!(msg.contains("truncated"), "{msg}");
+    assert!(
+        msg.contains(&full.to_string()) || msg.contains(&(full - 1024).to_string()),
+        "the refusal carries the numbers: {msg}"
+    );
+    assert!(msg.contains("did not finish"), "{msg}");
+}
