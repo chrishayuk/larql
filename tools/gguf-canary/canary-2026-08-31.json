@@ -1,0 +1,186 @@
+{
+  "prompt": "The capital of France is Paris. The capital of Germany is",
+  "token_ids": [
+    760,
+    6511,
+    314,
+    9338,
+    369,
+    11751,
+    13,
+    561,
+    6511,
+    314,
+    9564,
+    369
+  ],
+  "vocab": 248320,
+  "arm_a": {
+    "label": "vindex3 production-nvfp4",
+    "source": "/Users/christopherhay/chris-models/qwen3.8-nvfp4-uniform.vindex3",
+    "dump": "/private/tmp/claude-501/-Users-christopherhay-chris-source-quantization-video/fe5bf73b-272b-41bc-b990-ab5f374ec8a3/scratchpad/vindex_logits.f32"
+  },
+  "arm_b": {
+    "label": "llama.cpp b9542 (gguf)",
+    "source": "/Users/christopherhay/chris-models/qwen3.8-vindex.gguf",
+    "dump": "/private/tmp/claude-501/-Users-christopherhay-chris-source-quantization-video/fe5bf73b-272b-41bc-b990-ab5f374ec8a3/scratchpad/llama_logits.f32"
+  },
+  "hashes": {
+    "gguf_sha256": "9494a78a209408b714f5e0f6b1a45d74b7dda0778fdf5fba7cede9a0da6e7c64",
+    "larql_commit": "73dcc78c",
+    "llama_cpp": "b9542-6b80c74f2"
+  },
+  "tolerances": {
+    "top1_agreement": 1.0,
+    "top5_overlap_min": 0.8,
+    "kl_max": 0.05,
+    "cosine_min": 0.995
+  },
+  "summary": {
+    "positions": 12,
+    "top1_agreement": 1.0,
+    "top5_overlap_mean": 1.0,
+    "top5_overlap_min": 1.0,
+    "cosine_mean": 0.9999564150587812,
+    "cosine_min": 0.9998625763021138,
+    "kl_mean": 0.00013892801729162397,
+    "kl_max": 0.0002756530208687748,
+    "max_abs_dlogit": 0.21184277534484863,
+    "rms_dlogit_mean": 0.029573765178332198
+  },
+  "positions": [
+    {
+      "pos": 0,
+      "top1_a": 2614,
+      "top1_b": 2614,
+      "top1_match": true,
+      "top5_overlap": 1.0,
+      "cosine": 0.9999915911835024,
+      "kl": 0.00017989473796460478,
+      "max_abs_dlogit": 0.1131739616394043,
+      "rms_dlogit": 0.02091477467439042
+    },
+    {
+      "pos": 1,
+      "top1_a": 314,
+      "top1_b": 314,
+      "top1_match": true,
+      "top5_overlap": 1.0,
+      "cosine": 0.9999635667349263,
+      "kl": 0.00013609519508899759,
+      "max_abs_dlogit": 0.17220711708068848,
+      "rms_dlogit": 0.037728828737664546
+    },
+    {
+      "pos": 2,
+      "top1_a": 279,
+      "top1_b": 279,
+      "top1_match": true,
+      "top5_overlap": 1.0,
+      "cosine": 0.9999825746527464,
+      "kl": 0.00025513982366590776,
+      "max_abs_dlogit": 0.12382316589355469,
+      "rms_dlogit": 0.024301162233617543
+    },
+    {
+      "pos": 3,
+      "top1_a": 369,
+      "top1_b": 369,
+      "top1_match": true,
+      "top5_overlap": 1.0,
+      "cosine": 0.9998625763021138,
+      "kl": 0.00025518008144717174,
+      "max_abs_dlogit": 0.21184277534484863,
+      "rms_dlogit": 0.0476122177815665
+    },
+    {
+      "pos": 4,
+      "top1_a": 11751,
+      "top1_b": 11751,
+      "top1_match": true,
+      "top5_overlap": 1.0,
+      "cosine": 0.999951475362341,
+      "kl": 0.00018062731109954287,
+      "max_abs_dlogit": 0.1499347686767578,
+      "rms_dlogit": 0.028592795063450832
+    },
+    {
+      "pos": 5,
+      "top1_a": 13,
+      "top1_b": 13,
+      "top1_match": true,
+      "top5_overlap": 1.0,
+      "cosine": 0.9998923019833095,
+      "kl": 4.4578908642599156e-05,
+      "max_abs_dlogit": 0.16205310821533203,
+      "rms_dlogit": 0.032385580151179046
+    },
+    {
+      "pos": 6,
+      "top1_a": 198,
+      "top1_b": 198,
+      "top1_match": true,
+      "top5_overlap": 1.0,
+      "cosine": 0.9999694107588163,
+      "kl": 0.0002756530208687748,
+      "max_abs_dlogit": 0.15295195579528809,
+      "rms_dlogit": 0.02954805175417427
+    },
+    {
+      "pos": 7,
+      "top1_a": 6511,
+      "top1_b": 6511,
+      "top1_match": true,
+      "top5_overlap": 1.0,
+      "cosine": 0.9999860246857588,
+      "kl": 0.00014972728126050344,
+      "max_abs_dlogit": 0.11733055114746094,
+      "rms_dlogit": 0.02258141324297369
+    },
+    {
+      "pos": 8,
+      "top1_a": 314,
+      "top1_b": 314,
+      "top1_match": true,
+      "top5_overlap": 1.0,
+      "cosine": 0.9999583492625014,
+      "kl": 7.464885061150394e-06,
+      "max_abs_dlogit": 0.16930055618286133,
+      "rms_dlogit": 0.03389468039333078
+    },
+    {
+      "pos": 9,
+      "top1_a": 9564,
+      "top1_b": 9564,
+      "top1_match": true,
+      "top5_overlap": 1.0,
+      "cosine": 0.9999820985661518,
+      "kl": 0.00012154100003216648,
+      "max_abs_dlogit": 0.12407505512237549,
+      "rms_dlogit": 0.02309128015422172
+    },
+    {
+      "pos": 10,
+      "top1_a": 369,
+      "top1_b": 369,
+      "top1_match": true,
+      "top5_overlap": 1.0,
+      "cosine": 0.9999597490785291,
+      "kl": 2.618172144243461e-06,
+      "max_abs_dlogit": 0.14808440208435059,
+      "rms_dlogit": 0.029098907514018422
+    },
+    {
+      "pos": 11,
+      "top1_a": 19241,
+      "top1_b": 19241,
+      "top1_match": true,
+      "top5_overlap": 1.0,
+      "cosine": 0.999977262134677,
+      "kl": 5.861579022382478e-05,
+      "max_abs_dlogit": 0.1259530782699585,
+      "rms_dlogit": 0.025135490439398573
+    }
+  ],
+  "verdict": "PASS"
+}
