@@ -550,6 +550,7 @@ impl KimiSourceModel {
             weight: head.bytes("weight")?,
             vocab: self.geometry.vocab,
             norm_eps: self.geometry.rms_eps,
+            encoding: MetalEncoding::Bf16,
         })
     }
 
