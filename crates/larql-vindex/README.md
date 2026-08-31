@@ -6,6 +6,8 @@ The queryable model format. Decompile, browse, edit, and recompile neural networ
 
 A vindex (vector index) is a directory containing a model's weights reorganised for queryability. The model IS the database — each weight matrix is stored once in its optimal format. A VINDEX3 container (3.0 Candidate, graph schema 6) describes a model system by its declared operator program — softmax attention, MLA, KDA, Gated DeltaNet, Mamba2 — and its surfaces follow that program: a pure-SSM model carries no attention surface at all, because it has none.
 
+**VINDEX3 is specified and explained at [vindex3.org](https://vindex3.org)** — the container model, the system graph, the byte layout, representations and authority, each chapter carrying the evidence behind it ([vindex3.org/ladder](https://vindex3.org/ladder)). The normative documents live in this repository ([`docs/vindex3-format-spec.md`](docs/vindex3-format-spec.md) — the 3.0 Candidate ABI — and [`../../docs/vindex3-format.md`](../../docs/vindex3-format.md), the living spec); the site is where they are explained, explored and cited.
+
 ```rust
 use larql_vindex::*;
 
