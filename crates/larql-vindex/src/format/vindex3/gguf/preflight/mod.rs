@@ -342,3 +342,5 @@ pub fn qwen35_preflight(
 
 #[cfg(test)]
 mod tests;
+#[cfg(test)]
+pub mod tests_support;
