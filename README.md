@@ -4,6 +4,8 @@ The model IS the database. Query neural network weights like a graph database. N
 
 LARQL decompiles transformer models into a queryable format called a **vindex** (vector index), then provides **LQL** (Lazarus Query Language) to browse, edit, and recompile the model's knowledge.
 
+**VINDEX3 — the successor container — is specified and explained at [vindex3.org](https://vindex3.org).** The site is where the format is taught, explored and held to its evidence (the Record); this repository is its reference implementation. Install the format-native reader from [vindex3.org/get-started](https://vindex3.org/get-started), and cite the specification via [vindex3.org/cite](https://vindex3.org/cite).
+
 ```sql
 larql> USE "gemma3-4b.vindex";
 Using: gemma3-4b.vindex (34 layers, 348.2K features, relations: 512 types)
@@ -447,7 +449,10 @@ flip — a named decision, made in one place, not yet made (see
 See
 [`crates/larql-vindex/docs/vindex3-format-spec.md`](crates/larql-vindex/docs/vindex3-format-spec.md)
 (the 3.0 Candidate ABI) and [`docs/vindex3-format.md`](docs/vindex3-format.md)
-(the living spec).
+(the living spec) — both explained chapter by chapter at
+[vindex3.org](https://vindex3.org), with the version and its six claims at
+[vindex3.org/3.0](https://vindex3.org/3.0) and the status of every claim at
+[vindex3.org/ladder](https://vindex3.org/ladder).
 
 Three extraction levels:
 
@@ -1084,6 +1089,7 @@ The full surface is documented in [crates/larql-inference/ROADMAP.md](crates/lar
 |---|---|
 | [crates/larql-lql/docs/spec.md](crates/larql-lql/docs/spec.md) | LQL language specification (v0.4) |
 | [crates/larql-vindex/docs/format-spec.md](crates/larql-vindex/docs/format-spec.md) | Vindex file format specification (v0.4, ~98% implemented) |
+| [vindex3.org](https://vindex3.org) | VINDEX3 explained — the specification as chapters, an explorer, and the Record of what is demonstrated; [vindex3.org/3.0](https://vindex3.org/3.0) is the citable version page |
 | [crates/larql-vindex/docs/vindex3-format-spec.md](crates/larql-vindex/docs/vindex3-format-spec.md) | Vindex3 container ABI (`larql-vindex` side — bytes, sections, admission) |
 | [docs/vindex3-format.md](docs/vindex3-format.md) | Vindex3 model-system container spec — the actively updated spec (plan/encode/verify semantics); the ABI doc above governs the on-disk bytes |
 | [docs/vindex3-runtime.md](docs/vindex3-runtime.md) | Vindex3 runtime stack — `Vindex3Runtime`, `LogitsSession`, the KV seam, and V3 serving over `/v1/completions` |
