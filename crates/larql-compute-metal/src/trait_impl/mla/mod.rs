@@ -34,6 +34,7 @@
 use metal::{Buffer, ComputeCommandEncoderRef, MTLSize};
 
 use super::bf16_grouped::{encode_grouped, GroupedBinding, GroupedShape};
+use super::kimi_layer::ExpertEncoding;
 use super::grouped_experts::{ExpertOffset, GroupedError, InputLayout};
 use crate::shaders::mla as mla_shader;
 use crate::MetalBackend;
@@ -88,6 +89,11 @@ pub struct MlaDeviceWeights<'a> {
     /// `[hidden, heads * v_head_dim]` bf16.
     pub o_proj: &'a [u8],
     pub kv_a_norm_eps: f32,
+    /// Physical representation of the four wide projections — and of
+    /// nothing else: `kv_a_norm` stays f32, and the cache always holds
+    /// decoded latents. Dispatch selects its kernel by this value, the
+    /// same contract as the expert, KDA and head paths.
+    pub projection_encoding: ExpertEncoding,
 }
 
 /// The growing compressed-latent cache, resident for the sequence.
@@ -322,7 +328,7 @@ impl MetalBackend {
 
         encode_grouped(
             enc,
-            self.default_grouped_handle(),
+            self.grouped_handle_for(w.projection_encoding),
             GroupedBinding {
                 w: &wq.0,
                 w_offset: wq.1,
@@ -342,6 +348,7 @@ impl MetalBackend {
         // append kernel and nothing crosses to the host.
         self.encode_grouped_at_offset(
             enc,
+            self.grouped_handle_for(w.projection_encoding),
             (&wa.0, wa.1),
             &offsets,
             buf_x,
@@ -364,7 +371,7 @@ impl MetalBackend {
         );
         encode_grouped(
             enc,
-            self.default_grouped_handle(),
+            self.grouped_handle_for(w.projection_encoding),
             GroupedBinding {
                 w: &wb.0,
                 w_offset: wb.1,
@@ -382,7 +389,7 @@ impl MetalBackend {
         self.encode_mla_attention(enc, s, &state.cache, shape, visible);
         encode_grouped(
             enc,
-            self.default_grouped_handle(),
+            self.grouped_handle_for(w.projection_encoding),
             GroupedBinding {
                 w: &wo.0,
                 w_offset: wo.1,
@@ -405,6 +412,7 @@ impl MetalBackend {
     fn encode_grouped_at_offset(
         &self,
         enc: &ComputeCommandEncoderRef,
+        handle: &crate::kernels::KernelHandle,
         w: (&Buffer, u64),
         offsets: &Buffer,
         x: &Buffer,
@@ -412,7 +420,6 @@ impl MetalBackend {
         out_offset: u64,
         shape: GroupedShape,
     ) {
-        let handle = self.default_grouped_handle();
         let (n32, k32, stride) = (shape.n as u32, shape.k as u32, 0u32);
         enc.set_compute_pipeline_state(&handle.state);
         enc.set_buffer(0, Some(w.0), w.1);

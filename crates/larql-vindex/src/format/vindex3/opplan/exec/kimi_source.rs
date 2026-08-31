@@ -343,6 +343,7 @@ impl KimiSourceModel {
                     kv_b: self.decoder.bytes(&t("kv_b_proj.weight"))?,
                     o: self.decoder.bytes(&t("o_proj.weight"))?,
                     kv_a_norm: self.decoder.f32s(&t("kv_a_layernorm.weight"))?,
+                    encoding: MetalEncoding::Bf16,
                 },
                 DeviceState::Mla(MlaDeviceState::with_capacity(
                     metal,

@@ -38,6 +38,9 @@ use super::q2a_teacher_forced::{
 use crate::format::vindex3::opplan::exec::kimi_source::{CandidateOverlay, KimiSourceModel};
 use crate::format::vindex3::opplan::exec::stack_metal::{DeviceAttn, DeviceLayer, HybridStack};
 use crate::format::vindex3::represent::bank::BankBuilder;
+use crate::format::vindex3::represent::physical::{
+    EncodedRegion, ExpertEncoding as PhysEncoding, PhysicalStore, SharedExpertBinding,
+};
 use crate::format::vindex3::represent::quality::{kimi_logit_v3, Criterion, QualityEvidence};
 
 /// Which KDA layers' projections the candidate arm re-encodes — a
@@ -65,6 +68,27 @@ fn target_layers() -> Vec<usize> {
 /// probe a control against the interaction mechanisms measured
 /// everywhere else as much as a lever measurement.
 const LMHEAD_ENV: &str = "LARQL_LMHEAD_Q8";
+
+/// MLA layers whose four wide projections the candidate arm re-encodes
+/// (comma list). The recurrence-free sibling of the KDA scope — the
+/// latent cache always holds decoded values whatever this says.
+const MLA_ENV: &str = "LARQL_MLA_Q8_LAYER";
+/// Layers whose SHARED-expert branch the candidate arm re-encodes
+/// (comma list). Zero kernel work: the shared dispatch has been
+/// encoding-aware since the expert rung — only these bytes were not.
+const SHARED_ENV: &str = "LARQL_SHARED_Q8_LAYER";
+
+fn layer_list(var: &str) -> Vec<usize> {
+    let Ok(spec) = std::env::var(var) else {
+        return Vec::new();
+    };
+    if spec.trim().is_empty() {
+        return Vec::new();
+    }
+    spec.split(',')
+        .map(|v| v.trim().parse().expect("layer index"))
+        .collect()
+}
 
 fn head_q8() -> bool {
     std::env::var(LMHEAD_ENV).is_ok_and(|v| v == "1")
@@ -152,6 +176,73 @@ fn layer_bytes(layer: &DeviceLayer) -> usize {
     }
 }
 
+/// Re-encode an MLA layer's four wide projections in place.
+fn requant_mla_projections(layer: &mut DeviceLayer) -> (usize, usize) {
+    let DeviceAttn::Mla {
+        q,
+        kv_a,
+        kv_b,
+        o,
+        encoding,
+        ..
+    } = &mut layer.attn
+    else {
+        panic!("the MLA target layer must be MLA — check the interleave");
+    };
+    let before = q.len() + kv_a.len() + kv_b.len() + o.len();
+    for m in [q, kv_a, kv_b, o] {
+        *m = quantize_q8_0(&widen_bf16(m));
+    }
+    *encoding = MetalEncoding::Q80;
+    let after = match &layer.attn {
+        DeviceAttn::Mla {
+            q, kv_a, kv_b, o, ..
+        } => q.len() + kv_a.len() + kv_b.len() + o.len(),
+        _ => unreachable!(),
+    };
+    (before, after)
+}
+
+/// Re-encode a layer's shared-expert branch into an owned Q8_0 store.
+/// The routed bank, router and everything else stay untouched.
+fn requant_shared(layer_idx: usize, layer: &mut DeviceLayer) -> (usize, usize) {
+    let shared = layer
+        .bank
+        .shared
+        .as_ref()
+        .expect("the shared target layer declares a shared expert");
+    let mut bytes = Vec::new();
+    let mut tensors = std::collections::BTreeMap::new();
+    let mut before = 0usize;
+    let parts = [
+        ("gate", shared.gate.region.bytes().to_vec()),
+        ("up", shared.up.region.bytes().to_vec()),
+        ("down", shared.down.region.bytes().to_vec()),
+    ];
+    for (name, src) in &parts {
+        before += src.len();
+        let q = quantize_q8_0(&widen_bf16(src));
+        tensors.insert((*name).to_string(), (bytes.len() as u64, q.len() as u64));
+        bytes.extend(q);
+    }
+    let after = bytes.len();
+    let store = std::sync::Arc::new(PhysicalStore::owned(
+        format!("probe-shared-q8-l{layer_idx}"),
+        bytes,
+        tensors,
+    ));
+    let reg = |name: &str| EncodedRegion {
+        region: store.region(name).expect("just inserted"),
+        encoding: PhysEncoding::Q80,
+    };
+    layer.bank.shared = Some(SharedExpertBinding {
+        gate: reg("gate"),
+        up: reg("up"),
+        down: reg("down"),
+    });
+    (before, after)
+}
+
 /// Build one arm's layers; the target layer (if any) is re-encoded
 /// BEFORE its attention banks are registered — a mutation after
 /// registration would leave the residency declaration pointing at
@@ -162,6 +253,19 @@ pub(super) fn build_layers(
     mutate: &[usize],
     overlay: Option<&CandidateOverlay>,
 ) -> (Vec<Option<DeviceLayer>>, Vec<(usize, usize)>) {
+    build_layers_scoped(metal, model, mutate, &[], &[], overlay)
+}
+
+/// [`build_layers`], with every transient scope the probe knows:
+/// KDA projections, MLA projections and shared-expert branches.
+pub(super) fn build_layers_scoped(
+    metal: &MetalBackend,
+    model: &KimiSourceModel,
+    kda: &[usize],
+    mla: &[usize],
+    shared: &[usize],
+    overlay: Option<&CandidateOverlay>,
+) -> (Vec<Option<DeviceLayer>>, Vec<(usize, usize)>) {
     let n = model.geometry.num_layers;
     let mut swapped = Vec::new();
     let mut device: Vec<Option<DeviceLayer>> = Vec::with_capacity(n);
@@ -169,8 +273,14 @@ pub(super) fn build_layers(
         let mut d = model
             .device_layer(metal, i, overlay)
             .unwrap_or_else(|e| panic!("layer {i} must load: {e}"));
-        if mutate.contains(&i) {
+        if kda.contains(&i) {
             swapped.push(requant_kda_projections(&mut d));
+        }
+        if mla.contains(&i) {
+            swapped.push(requant_mla_projections(&mut d));
+        }
+        if shared.contains(&i) {
+            swapped.push(requant_shared(i, &mut d));
         }
         device.push(Some(d));
     }
@@ -225,6 +335,8 @@ fn assert_arms_differ_only_at(
     baseline: &[Option<DeviceLayer>],
     candidate: &[Option<DeviceLayer>],
     targets: &[usize],
+    mla_targets: &[usize],
+    shared_targets: &[usize],
     expert_layers: &[u32],
 ) {
     for (i, (b, c)) in baseline.iter().zip(candidate).enumerate() {
@@ -233,6 +345,30 @@ fn assert_arms_differ_only_at(
             c.as_ref().expect("all-device"),
         );
         let compiled_here = expert_layers.contains(&(i as u32));
+        match (&b.bank.shared, &c.bank.shared) {
+            (Some(sb), Some(sc)) if shared_targets.contains(&i) => {
+                assert_eq!(sc.gate.encoding, PhysEncoding::Q80, "layer {i} shared gate");
+                assert!(
+                    sc.gate.region.bytes().len() < sb.gate.region.bytes().len(),
+                    "layer {i}: the shared swap did not happen"
+                );
+            }
+            (Some(sb), Some(sc)) => {
+                for (nm, rb, rc) in [
+                    ("gate", &sb.gate, &sc.gate),
+                    ("up", &sb.up, &sc.up),
+                    ("down", &sb.down, &sc.down),
+                ] {
+                    assert_eq!(
+                        rb.region.bytes().as_ptr(),
+                        rc.region.bytes().as_ptr(),
+                        "layer {i} shared {nm}: both arms must bind ONE region"
+                    );
+                }
+            }
+            (None, None) => {}
+            _ => panic!("layer {i}: the arms disagree on the shared branch"),
+        }
         for (name, pb, pc) in [
             ("gate", &b.bank.gate, &c.bank.gate),
             ("up", &b.bank.up, &c.bank.up),
@@ -307,11 +443,21 @@ fn assert_arms_differ_only_at(
                     ..
                 },
             ) => {
-                assert!(!targets.contains(&i), "every target must be a KDA layer");
                 assert!(
-                    qb == qc && ab == ac && bb == bc && ob == oc,
-                    "layer {i}: MLA banks must be byte-equal"
+                    !targets.contains(&i),
+                    "every KDA target must be a KDA layer"
                 );
+                if mla_targets.contains(&i) {
+                    assert!(
+                        qc.len() < qb.len() && oc.len() < ob.len(),
+                        "layer {i}: the MLA swap did not happen"
+                    );
+                } else {
+                    assert!(
+                        qb == qc && ab == ac && bb == bc && ob == oc,
+                        "layer {i}: MLA banks must be byte-equal"
+                    );
+                }
             }
             _ => panic!("layer {i}: the arms disagree on the attention operator"),
         }
@@ -363,14 +509,31 @@ fn one_kda_layers_projections_at_q8_through_the_consequence_metrics() {
         .map(|o| o.compiled_layers().to_vec())
         .unwrap_or_default();
     let q8h = head_q8();
+    let mla_layers = layer_list(MLA_ENV);
+    let shared_layers = layer_list(SHARED_ENV);
     assert!(
-        !layers.is_empty() || overlay.is_some() || q8h,
+        !layers.is_empty()
+            || overlay.is_some()
+            || q8h
+            || !mla_layers.is_empty()
+            || !shared_layers.is_empty(),
         "an empty scope with no overlay and no head flag measures nothing"
     );
     let (base_layers, none) = build_layers(&metal, &model, &[], None);
-    let (cand_layers, swapped) = build_layers(&metal, &model, &layers, overlay.as_ref());
+    let (cand_layers, swapped) = build_layers_scoped(
+        &metal,
+        &model,
+        &layers,
+        &mla_layers,
+        &shared_layers,
+        overlay.as_ref(),
+    );
     assert!(none.is_empty());
-    assert_eq!(swapped.len(), layers.len(), "every target was re-encoded");
+    assert_eq!(
+        swapped.len(),
+        layers.len() + mla_layers.len() + shared_layers.len(),
+        "every target was re-encoded"
+    );
     let bf16_bytes: usize = swapped.iter().map(|(b, _)| b).sum();
     let q8_bytes: usize = swapped.iter().map(|(_, q)| q).sum();
     assert!(
@@ -380,7 +543,14 @@ fn one_kda_layers_projections_at_q8_through_the_consequence_metrics() {
     // Attribution BEFORE assembly: proven on the layers themselves, so
     // "identical except the targets' projections" is a checked fact,
     // not a construction argument.
-    assert_arms_differ_only_at(&base_layers, &cand_layers, &layers, &expert_layers);
+    assert_arms_differ_only_at(
+        &base_layers,
+        &cand_layers,
+        &layers,
+        &mla_layers,
+        &shared_layers,
+        &expert_layers,
+    );
     let (null_layers, _) = build_layers(&metal, &model, &[], None);
     let mut baseline = assemble(&metal, &model, base_layers);
     let mut candidate = assemble_with_head(&metal, &model, cand_layers, q8h);
@@ -419,6 +589,13 @@ fn one_kda_layers_projections_at_q8_through_the_consequence_metrics() {
             null_bank.positions
         );
     }
+    // The null partner is a THIRD full stack (~17 GB of wired
+    // attention banks) needed only for the instrument check above.
+    // Holding it through the measurement pushed the process against
+    // the wired-collector wall at four-family scale — the mid-run
+    // flat-instrument episode — so it is released here, before the
+    // long run begins.
+    drop(null_partner);
 
     let t1 = Instant::now();
     let mut builder = BankBuilder::new();
@@ -477,6 +654,14 @@ fn one_kda_layers_projections_at_q8_through_the_consequence_metrics() {
         .join("-");
     if let Some(o) = &overlay {
         label = format!("{label}-x-{}", o.index.map.name);
+    }
+    if !mla_layers.is_empty() {
+        let tag: Vec<String> = mla_layers.iter().map(|l| l.to_string()).collect();
+        label = format!("{label}-mla{}", tag.join("-"));
+    }
+    if !shared_layers.is_empty() {
+        let tag: Vec<String> = shared_layers.iter().map(|l| l.to_string()).collect();
+        label = format!("{label}-shared{}", tag.join("-"));
     }
     if q8h {
         label = if label.is_empty() || label == "" {

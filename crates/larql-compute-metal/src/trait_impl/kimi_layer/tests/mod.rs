@@ -525,6 +525,7 @@ impl MlaBits {
             kv_b_proj: &self.kb,
             o_proj: &self.o,
             kv_a_norm_eps: EPS,
+            projection_encoding: ExpertEncoding::Bf16,
         }
     }
 }

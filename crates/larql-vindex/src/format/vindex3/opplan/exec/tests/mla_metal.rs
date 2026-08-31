@@ -26,6 +26,7 @@
 use std::path::{Path, PathBuf};
 use std::time::Instant;
 
+use larql_compute_metal::trait_impl::kimi_layer::ExpertEncoding;
 use larql_compute_metal::trait_impl::mla::{MlaDeviceState, MlaDeviceWeights, MlaShape};
 use larql_compute_metal::MetalBackend;
 use larql_models::config::MlaGeometry;
@@ -112,6 +113,7 @@ impl Fixture {
             kv_b_proj: &self.kv_b_bytes,
             o_proj: &self.o_bytes,
             kv_a_norm_eps: self.eps as f32,
+            projection_encoding: ExpertEncoding::Bf16,
         }
     }
 

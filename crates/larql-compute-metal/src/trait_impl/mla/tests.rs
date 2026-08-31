@@ -91,6 +91,7 @@ impl Weights {
             kv_b_proj: &self.kb_bytes,
             o_proj: &self.o_bytes,
             kv_a_norm_eps: EPS,
+            projection_encoding: ExpertEncoding::Bf16,
         }
     }
 }
