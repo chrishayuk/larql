@@ -1,0 +1,161 @@
+# Tagged `vindex` release binaries.
+#
+# This workflow exists because the last one was cut by hand, and the
+# published binary then drifted 98 commits behind `main` — far enough
+# that it read graph schema 5 while every current container is schema 6,
+# so `vindex update` handed people a tool that refused to open anything.
+# It still reported the same version string as the working build, which
+# is what made the drift invisible.
+#
+# `release.yml` cannot cover this: it triggers on `v*` and builds
+# `larql` + `larql-server`. The vindex tags are `vindex-v*` and carry a
+# single binary, so they need their own trigger and their own asset
+# names — and the names matter, because `update.rs` constructs them:
+#   vindex-{version}-macos-arm64.tar.gz
+# Change one and `vindex update` stops finding releases.
+#
+# Feature flags mirror release.yml exactly: default (Metal) on macOS,
+# --no-default-features (CPU-only) elsewhere.
+
+name: vindex-release
+
+on:
+  push:
+    tags: ['vindex-v*']
+  workflow_dispatch: {}
+
+jobs:
+  build:
+    name: build - ${{ matrix.asset }}
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 60
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: macos-14
+            target: aarch64-apple-darwin
+            features: ""
+            asset: macos-arm64
+          # Pinned to 22.04 for the same reason release.yml pins it: the
+          # runner's glibc sets the binary's floor.
+          - os: ubuntu-22.04
+            target: x86_64-unknown-linux-gnu
+            features: "--no-default-features"
+            asset: linux-x86_64
+          - os: windows-latest
+            target: x86_64-pc-windows-msvc
+            features: "--no-default-features"
+            asset: windows-x86_64
+
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Install stable Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target }}
+
+      - name: Install OpenBLAS (Linux)
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libopenblas-dev pkg-config
+
+      - name: Install OpenBLAS (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $vcpkgRoot = $env:VCPKG_INSTALLATION_ROOT
+          if (-not $vcpkgRoot) { $vcpkgRoot = "C:\vcpkg" }
+          "VCPKG_ROOT=$vcpkgRoot" | Out-File -FilePath $env:GITHUB_ENV -Append
+          & "$vcpkgRoot\vcpkg.exe" install openblas:x64-windows
+
+      - name: Install protoc (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: choco install protoc -y --no-progress
+
+      - name: Cache cargo registry + build artefacts
+        uses: actions/cache@v6
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: ${{ runner.os }}-cargo-vindex-release-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-cargo-vindex-release-
+
+      - name: Version from the tag
+        id: v
+        shell: bash
+        run: |
+          # vindex-v0.6.0 -> 0.6.0. workflow_dispatch has no tag, so fall
+          # back to the crate's own version.
+          ref="${GITHUB_REF_NAME}"
+          if [[ "$ref" == vindex-v* ]]; then
+            echo "version=${ref#vindex-v}" >> "$GITHUB_OUTPUT"
+          else
+            echo "version=$(grep -m1 '^version' crates/vindex-cli/Cargo.toml | cut -d'"' -f2)" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Build
+        run: cargo build --release --target ${{ matrix.target }} -p vindex-cli ${{ matrix.features }}
+
+      # The tag and the binary must agree. A release whose asset reports
+      # a different version than its tag is the drift this workflow
+      # exists to prevent, so it fails here rather than shipping.
+      - name: The binary agrees with the tag
+        if: runner.os != 'Windows'
+        shell: bash
+        run: |
+          got=$(target/${{ matrix.target }}/release/vindex --version | awk '{print $2}')
+          want="${{ steps.v.outputs.version }}"
+          if [ "$got" != "$want" ]; then
+            echo "::error::binary reports $got, tag says $want — bump crates/vindex-cli/Cargo.toml"
+            exit 1
+          fi
+          echo "vindex $got matches the tag"
+
+      - name: Package (Unix)
+        if: runner.os != 'Windows'
+        shell: bash
+        run: |
+          cp target/${{ matrix.target }}/release/vindex .
+          strip vindex || true
+          tar czf "vindex-${{ steps.v.outputs.version }}-${{ matrix.asset }}.tar.gz" vindex
+
+      - name: Package (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          Copy-Item "target\${{ matrix.target }}\release\vindex.exe" .
+          Compress-Archive -Path vindex.exe -DestinationPath "vindex-${{ steps.v.outputs.version }}-${{ matrix.asset }}.zip"
+
+      - name: Upload artefact
+        uses: actions/upload-artifact@v7
+        with:
+          name: vindex-${{ matrix.asset }}
+          path: |
+            vindex-*.tar.gz
+            vindex-*.zip
+          if-no-files-found: error
+          retention-days: 7
+
+  release:
+    name: publish GitHub Release
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v8
+        with:
+          path: dist
+          merge-multiple: true
+      - name: Publish release
+        uses: softprops/action-gh-release@v3
+        with:
+          files: dist/*
+          generate_release_notes: true
