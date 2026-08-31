@@ -201,7 +201,7 @@ where
     f.write_all(&head)?;
     // Pad to the data section, then to each tensor's declared offset.
     let mut written = head.len() as u64;
-    let mut pad_to = |f: &mut dyn Write, written: &mut u64, target: u64| -> io::Result<()> {
+    let pad_to = |f: &mut dyn Write, written: &mut u64, target: u64| -> io::Result<()> {
         while *written < target {
             let chunk = (target - *written).min(4096) as usize;
             f.write_all(&vec![0u8; chunk])?;

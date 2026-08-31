@@ -186,6 +186,11 @@ pub struct LoweredTensorPlan {
 impl LoweredTensorPlan {
     /// The only way to build one. Refuses a value transform on a
     /// block-quantised source rather than trusting callers to notice.
+    ///
+    /// Eight parameters because the constructor takes every field: the
+    /// invariant is checked at the single point of creation, and a
+    /// builder would reopen the door the constructor exists to close.
+    #[allow(clippy::too_many_arguments)]
     pub fn new(
         source: impl Into<String>,
         target_name: impl Into<String>,
@@ -325,6 +330,10 @@ impl Qwen35Lowering {
     }
 }
 
+/// A role's complete programme: the layout moves and the value
+/// arithmetic, in application order.
+pub type TransformProgramme = (Vec<LayoutTransform>, Vec<ValueTransform>);
+
 /// The complete transform programme a role's tensor undergoes between
 /// the container and the file. This is the target ABI's table, in one
 /// place, so the emitter below it can execute plans without knowing a
@@ -348,7 +357,7 @@ impl Qwen35Lowering {
 pub fn qwen35_transforms(
     role: &str,
     lowering: &Qwen35Lowering,
-) -> Result<(Vec<LayoutTransform>, Vec<ValueTransform>), PlanError> {
+) -> Result<TransformProgramme, PlanError> {
     let m = &lowering.model;
     let o = &lowering.offsets;
     if m.key_heads == 0 || !m.value_heads.is_multiple_of(m.key_heads) {

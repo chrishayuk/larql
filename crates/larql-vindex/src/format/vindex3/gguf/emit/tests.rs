@@ -123,8 +123,8 @@ fn v_head_columns_move_as_whole_heads_within_every_row() {
     let cols: Vec<usize> = (0..COLS).collect();
     let want = reference_tiled(&cols, K, R, HEAD_COLS);
     for r in 0..ROWS {
-        for c in 0..COLS {
-            assert_eq!(read(r, c), r * 1000 + want[c], "row {r} col {c}");
+        for (c, w) in want.iter().enumerate() {
+            assert_eq!(read(r, c), r * 1000 + w, "row {r} col {c}");
         }
     }
 }
@@ -295,7 +295,7 @@ fn nvfp4_column_reorder_decodes_to_the_permuted_reference_exactly() {
 /// **Value arithmetic computes in f32 and stores its exact result.**
 #[test]
 fn value_transforms_store_the_exact_f32_result() {
-    let a_log: Vec<f32> = vec![0.5, -1.25, 2.0, -0.0078125];
+    let a_log: [f32; 4] = [0.5, -1.25, 2.0, -0.0078125];
     let bytes: Vec<u8> = a_log
         .iter()
         .flat_map(|v| f32_to_bf16(*v).to_le_bytes())
@@ -316,7 +316,7 @@ fn value_transforms_store_the_exact_f32_result() {
     }
 
     // The norm offset folds the declared number.
-    let w = vec![0.25f32, -1.0, 0.0];
+    let w = [0.25f32, -1.0, 0.0];
     let bytes: Vec<u8> = w
         .iter()
         .flat_map(|v| f32_to_bf16(*v).to_le_bytes())

@@ -104,6 +104,10 @@ pub fn rope_sections(declared: &[u32]) -> Result<Vec<u32>, MetadataError> {
 }
 
 /// Build the complete qwen35 metadata table from graph facts.
+///
+/// Eight parameters because eight separate authorities feed the table;
+/// bundling them into a struct would rename the count, not reduce it.
+#[allow(clippy::too_many_arguments)]
 pub fn qwen35_metadata(
     surface: &ExecutionSurface,
     num_layers: usize,

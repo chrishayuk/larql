@@ -292,10 +292,14 @@ mod tests;
 /// answer; it does not pick.
 pub type SelectRepresentation<'a> = &'a dyn Fn(&str, &[&str]) -> Option<String>;
 
+/// `(object, tensor name)` → `(role, layer)` — the operation plan's
+/// assignment, supplied by the caller.
+pub type AssignRole<'a> = &'a dyn Fn(&str, &str) -> Option<(String, Option<usize>)>;
+
 pub fn inventory_from_container(
     root: &std::path::Path,
     index: &crate::format::vindex3::index::Vindex3Index,
-    roles: &dyn Fn(&str, &str) -> Option<(String, Option<usize>)>,
+    roles: AssignRole<'_>,
     surface_is_included: &dyn Fn(&str) -> bool,
     select: SelectRepresentation<'_>,
 ) -> Result<(Vec<SourceTensor>, Vec<Exclusion>), crate::VindexError> {

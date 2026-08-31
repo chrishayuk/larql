@@ -57,12 +57,12 @@ fn err(msg: impl Into<String>) -> VindexError {
     VindexError::Parse(msg.into())
 }
 
-/// Role assignments from the operation plan: `(object, tensor)` →
-/// `(role, layer)`. Exhaustive over what qwen35 can express, and a
-/// refusal for what it cannot.
-fn roles_from_plan(
-    plan: &ComponentOpPlan,
-) -> Result<BTreeMap<(String, String), (String, Option<usize>)>, VindexError> {
+/// `(object, tensor)` → `(role, layer)`, from the operation plan.
+type RoleMap = BTreeMap<(String, String), (String, Option<usize>)>;
+
+/// Role assignments from the operation plan. Exhaustive over what
+/// qwen35 can express, and a refusal for what it cannot.
+fn roles_from_plan(plan: &ComponentOpPlan) -> Result<RoleMap, VindexError> {
     let mut roles = BTreeMap::new();
     let mut put =
         |op: &crate::format::vindex3::opplan::OperandRef, role: &str, layer: Option<usize>| {
