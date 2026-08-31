@@ -9,4 +9,5 @@
 //! fact is missing from the graph — see the format spec's
 //! independent-backend test.
 
+pub mod plan;
 pub mod preflight;
