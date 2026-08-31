@@ -7,6 +7,7 @@ mod executor;
 mod integer;
 mod kernels;
 mod ledger;
+mod nvfp4_slab;
 mod physical;
 mod projection_cost;
 mod q8;

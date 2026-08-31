@@ -49,6 +49,7 @@ mod mla_metal;
 mod mla_parity;
 mod mla_refusal;
 mod mrope_parity;
+mod nvfp4_decode;
 mod output_gate_fused;
 mod plan_fixtures;
 mod projection_bench;
