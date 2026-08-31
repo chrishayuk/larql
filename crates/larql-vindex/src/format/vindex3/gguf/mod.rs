@@ -14,4 +14,5 @@ pub mod geometry;
 pub mod metadata;
 pub mod plan;
 pub mod preflight;
+pub mod vocab;
 pub mod walk;
