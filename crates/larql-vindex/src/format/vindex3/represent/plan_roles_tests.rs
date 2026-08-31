@@ -14,6 +14,7 @@ use super::policy::{classify_in, Role};
 use crate::format::vindex3::fixtures::{encode_fixture_container, hybrid_lllf_f32_model};
 use crate::format::vindex3::fixtures_kimi::hybrid_kda_mla_f32_model;
 use crate::format::vindex3::inspect::inspect_container;
+use crate::format::vindex3::opplan::tests::conv_qkv::miniature_hybrid;
 use crate::format::vindex3::opplan::tests::mamba2::miniature_mamba2;
 
 /// The pure-SSM fixture, as a plain writer this file can pass around.
@@ -137,6 +138,47 @@ fn mamba2_operands_are_named() {
 
 /// The invariant that keeps this a classification change: across all
 /// three vocabularies, no operand the plan binds is left `Unknown`.
+/// Conv-QKV attends by softmax and keeps a per-position cache, so its
+/// two matmuls are ordinary decoder linear work and its depthwise
+/// kernel is the same small-vector shape every other operator's conv
+/// is. The fixture is the OuteAI hybrid: layers 1 and 3 attend, the
+/// rest are Mamba2 — so the same operand *names* carry different roles
+/// in the same model, and the test asserts the split rather than the
+/// names. A wildcard arm that swept conv-QKV in with the recurrences
+/// would compile, and would price an attention block as a recurrence.
+#[test]
+fn conv_qkv_operands_are_attention_work_not_recurrence_work() {
+    let roles = roles_for(miniature_hybrid);
+    let role_of = |tensor: &str| -> Option<Role> {
+        roles.iter().find(|(t, _)| t == tensor).map(|(_, r)| *r)
+    };
+
+    // Layers 1 and 3 attend. Their projections are ordinary linear work.
+    for layer in [1, 3] {
+        for operand in ["in_proj", "out_proj"] {
+            let tensor = format!("{layer}.mixer.{operand}.weight");
+            assert_eq!(role_of(&tensor), Some(Role::DecoderLinear), "{tensor}");
+        }
+        let conv = format!("{layer}.mixer.conv1d.weight");
+        assert_eq!(
+            role_of(&conv),
+            Some(Role::SmallVector),
+            "{conv} — a depthwise kernel no block layout fits"
+        );
+    }
+
+    // The recurrent layers keep the recurrence roles, on identically
+    // named operands. The role follows the operator, not the string.
+    for layer in [0, 2] {
+        let tensor = format!("{layer}.mixer.in_proj.weight");
+        assert_eq!(
+            role_of(&tensor),
+            Some(Role::RecurrenceProjection),
+            "{tensor} — same name, different operator, different role"
+        );
+    }
+}
+
 #[test]
 fn no_planned_operand_of_any_vocabulary_classifies_unknown() {
     for (write, name) in [
