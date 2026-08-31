@@ -105,9 +105,12 @@ fn collect_attention(attention: &LayerAttention, roles: &mut PlanRoles) {
         //
         // Two roles because they are two structurally different
         // operands, which is a classification fact. Whether that
-        // difference warrants different precision is a separate
-        // question, answered by measurement and not by this file — see
-        // `Role::RecurrenceControl`.
+        // difference warrants different precision was a separate
+        // question. Q-BANK-1 measured a small real benefit that did not
+        // justify its cost, so both compile by default — see
+        // `Role::RecurrenceControl` for the numbers.
+        // The roles stay distinct because naming the operand is what
+        // made the question askable at all.
         LayerAttention::GatedDelta(g) => {
             for op in [&g.in_proj_qkv, &g.in_proj_z, &g.out_proj] {
                 put(roles, Role::RecurrenceProjection, op);
