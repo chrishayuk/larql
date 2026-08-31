@@ -3,6 +3,7 @@
 //! Not a CI test — it needs the 51 GB artifact. This is the production
 //! canary the fixtures cannot stand in for.
 
+use larql_vindex::format::vindex3::gguf::geometry::{semantic_digest, TargetGeometry};
 use larql_vindex::format::vindex3::gguf::walk::{inventory_from_container, walk_primary_text};
 use larql_vindex::format::vindex3::inspect::inspect_container;
 
@@ -110,5 +111,23 @@ fn main() {
     for e in ledger.errors.iter().take(10) {
         println!("    {e:?}");
     }
+    // Semantic geometry only: names and dims, no encoding, no scales.
+    // Both selections of one model must agree.
+    let geometry: Vec<TargetGeometry> = plans
+        .iter()
+        .map(|p| TargetGeometry {
+            name: p.target_name.clone(),
+            dims: p.target_shape.clone(),
+        })
+        .collect();
+    println!("\nSEMANTIC");
+    println!("  {:32} {:>5}", "targets", geometry.len());
+    // Names and dims, no encoding and no scale siblings — so the two
+    // selections of one model must produce the same value.
+    println!(
+        "  {:32} {}",
+        "semantic-shape digest",
+        semantic_digest(geometry)
+    );
     println!("\nready  {}", ledger.ready());
 }

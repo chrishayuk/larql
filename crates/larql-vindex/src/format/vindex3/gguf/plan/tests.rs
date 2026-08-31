@@ -88,6 +88,7 @@ fn a_value_transform_on_a_quantised_source_is_an_illegal_plan() {
         "blk.0.ffn_down.weight",
         RepresentationKind::Nvfp4,
         TYPE_NVFP4,
+        vec![5120, 17408],
         vec![],
         vec![ValueTransform::ApplyWeightOffset(1.0)],
         None,
@@ -107,6 +108,7 @@ fn a_value_transform_on_a_quantised_source_is_an_illegal_plan() {
         "blk.0.ssm_a",
         RepresentationKind::Nvfp4,
         TYPE_NVFP4,
+        vec![5120, 17408],
         vec![],
         vec![ValueTransform::MaterializeLogDecay],
         None,
@@ -123,6 +125,7 @@ fn layout_transforms_are_legal_on_a_quantised_source() {
         "blk.0.ssm_out.weight",
         RepresentationKind::Nvfp4,
         TYPE_NVFP4,
+        vec![5120, 6144],
         vec![LayoutTransform::ReorderVColumnsByGroups {
             key_heads: 16,
             v_per_k: 3,
@@ -143,6 +146,7 @@ fn value_transforms_are_legal_on_unquantised_sources() {
         "blk.0.ssm_a",
         RepresentationKind::F32,
         TYPE_F32,
+        vec![5120, 17408],
         vec![],
         vec![ValueTransform::MaterializeLogDecay],
         None,
@@ -154,6 +158,7 @@ fn value_transforms_are_legal_on_unquantised_sources() {
         "blk.0.attn_norm.weight",
         RepresentationKind::Bf16,
         TYPE_BF16,
+        vec![5120, 17408],
         vec![],
         // The offset comes from the graph, not from a literal chosen here.
         vec![ValueTransform::ApplyWeightOffset(1.0)],
@@ -172,6 +177,7 @@ fn the_gated_norm_receives_no_offset() {
         "blk.0.ssm_norm.weight",
         RepresentationKind::Bf16,
         TYPE_BF16,
+        vec![5120, 17408],
         vec![],
         vec![],
         None,
@@ -181,4 +187,81 @@ fn the_gated_norm_receives_no_offset() {
         plan.value.is_empty(),
         "llama.cpp exempts this norm, and here the exemption is the graph declaring no offset"
     );
+}
+
+/// **Value transforms must not move a dimension.** Geometry is derived
+/// by folding the source shape through the LAYOUT transforms only, so a
+/// value transform cannot influence it even by mistake — the type
+/// system keeps it out of the fold rather than a comment asking nicely.
+#[test]
+fn value_transforms_do_not_change_geometry() {
+    let with_value = LoweredTensorPlan::new(
+        "layer.0.mixer.log_decay",
+        "blk.0.ssm_a",
+        RepresentationKind::F32,
+        TYPE_F32,
+        vec![48],
+        vec![],
+        vec![ValueTransform::MaterializeLogDecay],
+        None,
+    )
+    .unwrap();
+    assert_eq!(with_value.source_shape, vec![48]);
+    assert_eq!(
+        with_value.target_shape,
+        vec![48],
+        "materialising -exp changes numbers, not cardinality"
+    );
+}
+
+/// The reorders permute within an axis, so they preserve dims. Only the
+/// squeeze changes rank, and only for a singleton.
+#[test]
+fn layout_transforms_have_declared_shape_effects() {
+    let reordered = LoweredTensorPlan::new(
+        "layer.0.mixer.out_proj",
+        "blk.0.ssm_out.weight",
+        RepresentationKind::Nvfp4,
+        TYPE_NVFP4,
+        vec![5120, 6144],
+        vec![LayoutTransform::ReorderVColumnsByGroups {
+            key_heads: 16,
+            v_per_k: 3,
+            groups_per_head: 8,
+        }],
+        vec![],
+        None,
+    )
+    .unwrap();
+    assert_eq!(
+        reordered.target_shape,
+        vec![5120, 6144],
+        "a permutation preserves dims"
+    );
+
+    let squeezed = LoweredTensorPlan::new(
+        "layer.0.mixer.conv",
+        "blk.0.ssm_conv1d.weight",
+        RepresentationKind::Bf16,
+        TYPE_BF16,
+        vec![10240, 1, 4],
+        vec![LayoutTransform::SqueezeSingletonAxis { axis: 1 }],
+        vec![],
+        None,
+    )
+    .unwrap();
+    assert_eq!(squeezed.target_shape, vec![10240, 4]);
+
+    // And a real channel axis refuses at plan time, not at write time.
+    assert!(LoweredTensorPlan::new(
+        "layer.0.mixer.conv",
+        "blk.0.ssm_conv1d.weight",
+        RepresentationKind::Bf16,
+        TYPE_BF16,
+        vec![10240, 2, 4],
+        vec![LayoutTransform::SqueezeSingletonAxis { axis: 1 }],
+        vec![],
+        None,
+    )
+    .is_err());
 }

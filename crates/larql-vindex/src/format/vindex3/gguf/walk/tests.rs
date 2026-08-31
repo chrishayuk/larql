@@ -22,6 +22,9 @@ fn qwen_sources() -> Vec<SourceTensor> {
             role: role.into(),
             layer,
             representation: RepresentationKind::Bf16,
+            // A plausible 2-D shape; geometry's own tests cover the
+            // shape rules, this fixture is about coverage.
+            shape: vec![5120, 5120],
         })
     };
     for l in 0..LAYERS {
@@ -251,6 +254,7 @@ fn an_unmapped_role_is_reported_not_silently_dropped() {
         role: "a role nothing maps".into(),
         layer: Some(0),
         representation: RepresentationKind::Bf16,
+        shape: vec![8, 8],
     });
     let (_, ledger) = walk_primary_text(&sources, vec![], &[]);
     assert!(ledger.errors.iter().any(|e| matches!(
@@ -276,6 +280,7 @@ fn two_sources_claiming_one_target_name_is_an_error() {
         role: "ffn down".into(),
         layer: Some(0),
         representation: RepresentationKind::Bf16,
+        shape: vec![8, 8],
     });
     let (_, ledger) = walk_primary_text(&sources, vec![], &[]);
     assert!(ledger.errors.iter().any(|e| matches!(

@@ -54,6 +54,33 @@ pub enum LayoutTransform {
     SqueezeSingletonAxis { axis: usize },
 }
 
+impl LayoutTransform {
+    /// What this transform does to a shape.
+    ///
+    /// Both reorders permute within an axis and so preserve dims; only
+    /// the squeeze changes rank, and only for a singleton. Keeping the
+    /// effect here rather than in the writer means target geometry is
+    /// derived from the source tensor plus its transforms, never from
+    /// what the metadata expected — which is what makes the two
+    /// authorities independent.
+    pub fn apply_shape(&self, dims: &[u64]) -> Result<Vec<u64>, PlanError> {
+        match self {
+            Self::ReorderVRows { .. } | Self::ReorderVColumnsByGroups { .. } => Ok(dims.to_vec()),
+            Self::SqueezeSingletonAxis { axis } => {
+                if dims.get(*axis) != Some(&1) {
+                    return Err(PlanError::NonSingletonSqueeze {
+                        dims: dims.to_vec(),
+                        axis: *axis,
+                    });
+                }
+                let mut out = dims.to_vec();
+                out.remove(*axis);
+                Ok(out)
+            }
+        }
+    }
+}
+
 /// Changes numbers. Legal only on a representation that stores numbers
 /// directly.
 #[derive(Debug, Clone, PartialEq)]
@@ -85,6 +112,8 @@ impl RepresentationKind {
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum PlanError {
+    /// A squeeze of an axis that carries real channels.
+    NonSingletonSqueeze { dims: Vec<u64>, axis: usize },
     /// The one the constructor exists for.
     ValueTransformOnQuantised {
         target: String,
@@ -96,6 +125,11 @@ pub enum PlanError {
 impl fmt::Display for PlanError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
+            Self::NonSingletonSqueeze { dims, axis } => write!(
+                f,
+                "cannot plan: axis {axis} of {dims:?} is not a singleton — the target lowering \
+                 may remove only a singleton convolution axis, never collapse real channels"
+            ),
             Self::ValueTransformOnQuantised {
                 target,
                 representation,
@@ -122,6 +156,12 @@ pub struct LoweredTensorPlan {
     pub value: Vec<ValueTransform>,
     pub source_representation: RepresentationKind,
     pub target_type: u32,
+    /// The physical source shape, from the segment header.
+    pub source_shape: Vec<u64>,
+    /// Derived: source shape through the layout transforms. Value
+    /// transforms never appear here, because changing numbers must not
+    /// change geometry — asserted in the constructor.
+    pub target_shape: Vec<u64>,
     /// NVFP4's per-tensor scale, which GGML has no room for in-block.
     pub scale_tensor: Option<String>,
 }
@@ -134,6 +174,7 @@ impl LoweredTensorPlan {
         target_name: impl Into<String>,
         source_representation: RepresentationKind,
         target_type: u32,
+        source_shape: Vec<u64>,
         layout: Vec<LayoutTransform>,
         value: Vec<ValueTransform>,
         scale_tensor: Option<String>,
@@ -148,6 +189,14 @@ impl LoweredTensorPlan {
                 });
             }
         }
+        // Geometry is the source shape through the layout transforms,
+        // in order. Value transforms are deliberately absent: they may
+        // not move a dimension, and the type system keeps them out of
+        // this fold rather than trusting a comment.
+        let mut target_shape = source_shape.clone();
+        for t in &layout {
+            target_shape = t.apply_shape(&target_shape)?;
+        }
         Ok(Self {
             source: source.into(),
             target_name,
@@ -155,6 +204,8 @@ impl LoweredTensorPlan {
             value,
             source_representation,
             target_type,
+            source_shape,
+            target_shape,
             scale_tensor,
         })
     }

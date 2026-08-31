@@ -46,6 +46,9 @@ pub struct SourceTensor {
     /// `None` for model-scope surfaces.
     pub layer: Option<usize>,
     pub representation: RepresentationKind,
+    /// The physical shape, from the segment header. Carried so geometry
+    /// can be derived from the tensor rather than assumed from the role.
+    pub shape: Vec<u64>,
 }
 
 /// Why a source tensor was not lowered.
@@ -146,6 +149,7 @@ pub fn walk_primary_text(
             target,
             t.representation,
             target_type,
+            t.shape.clone(),
             vec![],
             vec![],
             scale_tensor,
@@ -299,6 +303,7 @@ pub fn inventory_from_container(
                     role: String::new(),
                     layer: None,
                     representation,
+                    shape: t.shape.iter().map(|d| *d as u64).collect(),
                 });
                 continue;
             };
@@ -308,6 +313,7 @@ pub fn inventory_from_container(
                 role,
                 layer,
                 representation,
+                shape: t.shape.iter().map(|d| *d as u64).collect(),
             });
         }
     }
