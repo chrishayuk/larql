@@ -18,8 +18,10 @@
 //! The reader hardcodes a 32-byte alignment for the data section, so we use
 //! the same here (llama.cpp's default `general.alignment` is also 32).
 //!
-//! Note: tensor data is held in RAM (`GgufTensor::data`); a streaming /
-//! lazy-source variant is a future optimization for >RAM exports.
+//! [`GgufWriter`] holds every tensor in RAM (`GgufTensor::data`), which is
+//! fine for fixtures and small models and unusable for a 20 GB export.
+//! [`write_streaming`] is the sibling for that case: same bytes, constant
+//! memory, payloads supplied by a callback as the file is written.
 
 use std::io::{self, Write};
 use std::path::Path;
@@ -130,6 +132,121 @@ impl GgufWriter {
         let mut f = std::io::BufWriter::new(std::fs::File::create(path)?);
         f.write_all(&bytes)?;
         f.flush()
+    }
+}
+
+/// One tensor to stream: everything the header needs, without the bytes.
+///
+/// `len` must equal the payload the emitter will write. It is declared
+/// up front because GGUF puts every tensor's offset in a table before
+/// any payload — the format requires knowing the sizes in advance, so a
+/// wrong `len` is a corrupt file rather than a short write.
+pub struct GgufTensorDescriptor {
+    pub name: String,
+    pub dims: Vec<u64>,
+    pub ggml_type: u32,
+    pub len: u64,
+}
+
+/// Serialize a GGUF to `path` without holding tensor payloads in memory.
+///
+/// Byte-identical to [`GgufWriter::to_bytes`] for the same inputs — the
+/// header, metadata and tensor table are built in memory (kilobytes),
+/// and only the data section streams. `emit` is called once per tensor,
+/// in order, with its index and the output sink; it must write exactly
+/// `descriptors[i].len` bytes.
+///
+/// The length is verified after each tensor. An emitter that writes the
+/// wrong amount produces a file whose every subsequent offset is wrong,
+/// and a reader would follow those offsets into the middle of another
+/// tensor and decode plausible nonsense — so this fails loudly at the
+/// point the mistake is made.
+pub fn write_streaming<F>(
+    metadata: &[(String, GgufValue)],
+    descriptors: &[GgufTensorDescriptor],
+    path: &Path,
+    mut emit: F,
+) -> io::Result<()>
+where
+    F: FnMut(usize, &mut dyn Write) -> io::Result<()>,
+{
+    let mut head = Vec::new();
+    write_u32(&mut head, GGUF_MAGIC);
+    write_u32(&mut head, GGUF_VERSION);
+    write_u64(&mut head, descriptors.len() as u64);
+    write_u64(&mut head, metadata.len() as u64);
+    for (key, value) in metadata {
+        write_string(&mut head, key);
+        write_value(&mut head, value);
+    }
+
+    let mut offsets = Vec::with_capacity(descriptors.len());
+    let mut running = 0u64;
+    for d in descriptors {
+        offsets.push(running);
+        running = align_up(running + d.len, GGUF_ALIGNMENT);
+    }
+    for (d, &offset) in descriptors.iter().zip(&offsets) {
+        write_string(&mut head, &d.name);
+        write_u32(&mut head, d.dims.len() as u32);
+        for &dim in &d.dims {
+            write_u64(&mut head, dim);
+        }
+        write_u32(&mut head, d.ggml_type);
+        write_u64(&mut head, offset);
+    }
+
+    let data_start = align_up(head.len() as u64, GGUF_ALIGNMENT);
+    let mut f = io::BufWriter::new(std::fs::File::create(path)?);
+    f.write_all(&head)?;
+    // Pad to the data section, then to each tensor's declared offset.
+    let mut written = head.len() as u64;
+    let pad_to = |f: &mut dyn Write, written: &mut u64, target: u64| -> io::Result<()> {
+        while *written < target {
+            let chunk = (target - *written).min(4096) as usize;
+            f.write_all(&vec![0u8; chunk])?;
+            *written += chunk as u64;
+        }
+        Ok(())
+    };
+    pad_to(&mut f, &mut written, data_start)?;
+
+    for (i, (d, &offset)) in descriptors.iter().zip(&offsets).enumerate() {
+        pad_to(&mut f, &mut written, data_start + offset)?;
+        let mut counter = CountingWriter {
+            inner: &mut f,
+            n: 0,
+        };
+        emit(i, &mut counter)?;
+        let n = counter.n;
+        if n != d.len {
+            return Err(io::Error::new(
+                io::ErrorKind::InvalidData,
+                format!(
+                    "tensor `{}` declared {} bytes but its emitter wrote {n} —                      every later offset in this file would be wrong",
+                    d.name, d.len
+                ),
+            ));
+        }
+        written += n;
+    }
+    f.flush()
+}
+
+/// Counts what passes through, so a declared length can be enforced.
+struct CountingWriter<'a, W: Write> {
+    inner: &'a mut W,
+    n: u64,
+}
+
+impl<W: Write> Write for CountingWriter<'_, W> {
+    fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
+        let n = self.inner.write(buf)?;
+        self.n += n as u64;
+        Ok(n)
+    }
+    fn flush(&mut self) -> io::Result<()> {
+        self.inner.flush()
     }
 }
 
@@ -381,5 +498,108 @@ mod tests {
         assert_eq!(&bytes[0..4], &GGUF_MAGIC.to_le_bytes());
         assert_eq!(&bytes[8..16], &1u64.to_le_bytes()); // n_tensors
         assert_eq!(&bytes[16..24], &9u64.to_le_bytes()); // n_metadata
+    }
+
+    /// **The streaming writer and the buffering writer must agree.**
+    ///
+    /// Not "produce a valid file" — produce the *same* file. The
+    /// streaming path exists because a 20 GB export cannot be built in a
+    /// `Vec`, and the moment it diverges from the reference
+    /// implementation it becomes a second format nobody is testing.
+    #[test]
+    fn streaming_and_buffered_writers_produce_identical_bytes() {
+        let metadata: Vec<(String, GgufValue)> = vec![
+            (
+                "general.architecture".into(),
+                GgufValue::String("qwen35".into()),
+            ),
+            ("general.name".into(), GgufValue::String("fixture".into())),
+            ("qwen35.block_count".into(), GgufValue::U32(3)),
+            (
+                "qwen35.layer_kinds".into(),
+                GgufValue::Array(vec![
+                    GgufValue::U32(0),
+                    GgufValue::U32(1),
+                    GgufValue::U32(0),
+                ]),
+            ),
+        ];
+        // Deliberately unaligned lengths, so the inter-tensor padding is
+        // exercised rather than coincidentally zero.
+        let payloads: Vec<Vec<u8>> = vec![
+            (0..37u8).collect(),
+            (0..64u8).map(|b| b ^ 0x5a).collect(),
+            (0..5u8).collect(),
+        ];
+        let names = [
+            "blk.0.attn_q.weight",
+            "blk.1.ffn_down.weight",
+            "output_norm.weight",
+        ];
+        let dims: Vec<Vec<u64>> = vec![vec![37], vec![8, 8], vec![5]];
+        let types = [30u32, 40, 0];
+
+        let mut w = GgufWriter::new();
+        for (k, v) in &metadata {
+            w.meta(k.clone(), v.clone());
+        }
+        for i in 0..3 {
+            w.tensor(GgufTensor {
+                name: names[i].into(),
+                dims: dims[i].clone(),
+                ggml_type: types[i],
+                data: payloads[i].clone(),
+            });
+        }
+        let buffered = w.to_bytes();
+
+        let descriptors: Vec<GgufTensorDescriptor> = (0..3)
+            .map(|i| GgufTensorDescriptor {
+                name: names[i].into(),
+                dims: dims[i].clone(),
+                ggml_type: types[i],
+                len: payloads[i].len() as u64,
+            })
+            .collect();
+        let dir = std::env::temp_dir().join(format!("gguf-stream-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let path = dir.join("streamed.gguf");
+        write_streaming(&metadata, &descriptors, &path, |i, out| {
+            out.write_all(&payloads[i])
+        })
+        .expect("stream");
+        let streamed = std::fs::read(&path).unwrap();
+        std::fs::remove_dir_all(&dir).ok();
+
+        assert_eq!(
+            streamed.len(),
+            buffered.len(),
+            "streamed {} bytes, buffered {}",
+            streamed.len(),
+            buffered.len()
+        );
+        assert_eq!(streamed, buffered, "the two writers disagree byte-for-byte");
+    }
+
+    /// A declared length the emitter does not honour corrupts every
+    /// later offset, so it is caught where the mistake happens.
+    #[test]
+    fn an_emitter_that_writes_the_wrong_length_is_refused() {
+        let descriptors = vec![GgufTensorDescriptor {
+            name: "blk.0.weight".into(),
+            dims: vec![4],
+            ggml_type: 0,
+            len: 16,
+        }];
+        let dir = std::env::temp_dir().join(format!("gguf-badlen-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let path = dir.join("bad.gguf");
+        let err = write_streaming(&[], &descriptors, &path, |_, out| out.write_all(&[0u8; 8]))
+            .expect_err("a short emitter must refuse");
+        std::fs::remove_dir_all(&dir).ok();
+        assert!(
+            err.to_string().contains("declared 16 bytes") && err.to_string().contains("wrote 8"),
+            "the refusal must name both numbers: {err}"
+        );
     }
 }

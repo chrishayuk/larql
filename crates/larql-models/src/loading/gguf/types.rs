@@ -6,7 +6,7 @@ use std::collections::HashMap;
 // GGUF metadata value
 // ═══════════════════════════════════════════════════════════════
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub enum GgufValue {
     U8(u8),
     I8(i8),

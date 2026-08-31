@@ -574,6 +574,16 @@ pub fn drafter_shaped(dir: &Path) -> ArchitectureInventory {
 
 /// A fully-known dense model: recognised family, no unconsumed keys beyond
 /// metadata, uniform attention.
+/// [`known_dense`] with the caller's config, for gates that turn on one
+/// declared key rather than on the shape.
+pub fn known_dense_with_config(dir: &Path, config: serde_json::Value) -> ArchitectureInventory {
+    let header = serde_json::json!({
+        "model.embed_tokens.weight":
+            {"dtype": "BF16", "shape": [128, 64], "data_offsets": [0, 16384]}
+    });
+    inventory_from(dir, &config, &header)
+}
+
 pub fn known_dense(dir: &Path) -> ArchitectureInventory {
     let config = serde_json::json!({
         "architectures": ["LlamaForCausalLM"],

@@ -288,6 +288,7 @@ pub fn resolve_with_tensor_evidence(
         head_reuses_embedding: arch.output_head_reuses_embedding(),
     };
     let topology = ResolvedTopology {
+        context_length: cfg.max_position_embeddings,
         num_layers: cfg.num_layers,
         hidden_size: cfg.hidden_size,
         intermediate_size: cfg.intermediate_size,
