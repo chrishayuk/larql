@@ -934,6 +934,24 @@ pub const CARRIAGE_RULES: &[CarriageRule] = &[
         probe: Some(probe_declared_conv_kernel),
     },
     CarriageRule {
+        leaf: "d_state",
+        reaches: Carriage::Represented,
+        site: "ExecutionSurface.mamba2.geometry.state_size — the ssm_cfg spelling",
+        probe: Some(probe_mamba2_state_size),
+    },
+    CarriageRule {
+        leaf: "headdim",
+        reaches: Carriage::Represented,
+        site: "ExecutionSurface.mamba2.geometry.head_dim — the ssm_cfg spelling",
+        probe: Some(probe_mamba2_head_dim),
+    },
+    CarriageRule {
+        leaf: "ngroups",
+        reaches: Carriage::Represented,
+        site: "ExecutionSurface.mamba2.geometry.n_groups — the ssm_cfg spelling",
+        probe: Some(probe_mamba2_n_groups),
+    },
+    CarriageRule {
         leaf: "rotary_emb_dim",
         reaches: Carriage::Represented,
         site: "ExecutionSurface.conv_qkv.rotary_dim",

@@ -220,6 +220,9 @@ pub const EXECUTION_SEMANTIC_KEYS: &[&str] = &[
     // conv-QKV block's own names for judged facts).
     "layer",
     "d_conv",
+    "d_state",
+    "headdim",
+    "ngroups",
     "rotary_emb_dim",
     "qkv_proj_bias",
     "out_proj_bias",

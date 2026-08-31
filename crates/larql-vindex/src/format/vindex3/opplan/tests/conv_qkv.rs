@@ -407,3 +407,227 @@ fn the_hybrid_executes_and_both_state_regions_survive_the_step() {
         "the decode step path diverged from batch prefill"
     );
 }
+
+/// Write the miniature hybrid in the NATIVE mamba_ssm spelling — the
+/// state-spaces config shape the 2.7B witness judged: no `model_type`
+/// (identity is `ssm_cfg.layer`), geometry declared inside `ssm_cfg`
+/// (overriding the package defaults the miniature widths cannot use,
+/// which exercises declared-outranks-default), the attention block in
+/// `attn_cfg` with its KV-head and rotary-base MHA defaults left to the
+/// record, `d_intermediate: 0`, and a vocabulary padded up to
+/// `pad_vocab_size_multiple` — the embedding carries the padded rows the
+/// head genuinely emits.
+fn miniature_native(dir: &Path) {
+    let config = serde_json::json!({
+        "d_model": H_HIDDEN,
+        "d_intermediate": 0,
+        "n_layer": H_LAYERS,
+        "vocab_size": 27,
+        "ssm_cfg": {
+            "layer": "Mamba2",
+            "d_state": H_M_STATE,
+            "headdim": H_M_HEAD_DIM,
+            "d_conv": H_M_CONV,
+            "expand": 2,
+            "ngroups": 1,
+            "chunk_size": 8
+        },
+        "attn_layer_idx": [1, 3],
+        "attn_cfg": {
+            "causal": true,
+            "d_conv": H_A_CONV,
+            "head_dim": H_A_HEAD_DIM,
+            "num_heads": H_A_HEADS,
+            "out_proj_bias": false,
+            "qkv_proj_bias": false,
+            "rotary_emb_dim": 2
+        },
+        "rms_norm": true,
+        "residual_in_fp32": true,
+        "fused_add_norm": true,
+        "pad_vocab_size_multiple": 8,
+        "tie_embeddings": true
+    })
+    .to_string();
+    std::fs::write(dir.join("config.json"), config).unwrap();
+    write_hybrid_tensors(dir, NativeShape);
+}
+
+/// The two spellings the fixture writer must not conflate: the HF
+/// conversions renamed the embedding module and set `rope_emb_dim`; the
+/// native shape keeps the singular key and takes the rotary width from
+/// `attn_cfg.rotary_emb_dim` — which this fixture leaves DECLARED
+/// (rotate-half needs an even width and the default 64 exceeds the
+/// miniature head), while the KV head count and rotary base stay
+/// package defaults.
+struct NativeShape;
+
+fn write_hybrid_tensors(dir: &Path, _shape: NativeShape) {
+    let padded_vocab = 32; // 27 padded up to a multiple of 8
+    let mut shard = ShardBuilder::new();
+    let mut push = |name: String, shape: &[usize], values: Vec<f32>| {
+        shard.push(&name, shape, &values);
+    };
+    push(
+        "backbone.embedding.weight".into(),
+        &[padded_vocab, H_HIDDEN],
+        lcg_values(padded_vocab * H_HIDDEN, 1),
+    );
+    push(
+        "backbone.norm_f.weight".into(),
+        &[H_HIDDEN],
+        norm_values(H_HIDDEN, 2),
+    );
+    // Native attention: MHA — the KV head count defaults to num_heads,
+    // so the fused rows are (H + 2H)·Dh, wider than the flat fixture's
+    // GQA shape.
+    let native_qkv_rows = 3 * H_A_HEADS * H_A_HEAD_DIM;
+    for layer in 0..H_LAYERS {
+        let seed = 900 + layer as u64 * 20;
+        let p = format!("backbone.layers.{layer}");
+        push(
+            format!("{p}.norm.weight"),
+            &[H_HIDDEN],
+            norm_values(H_HIDDEN, seed),
+        );
+        if H_ATTN_LAYERS.contains(&layer) {
+            push(
+                format!("{p}.mixer.in_proj.weight"),
+                &[native_qkv_rows, H_HIDDEN],
+                lcg_values(native_qkv_rows * H_HIDDEN, seed + 1),
+            );
+            push(
+                format!("{p}.mixer.conv1d.weight"),
+                &[native_qkv_rows, 1, H_A_CONV],
+                lcg_values(native_qkv_rows * H_A_CONV, seed + 2),
+            );
+            push(
+                format!("{p}.mixer.conv1d.bias"),
+                &[native_qkv_rows],
+                lcg_values(native_qkv_rows, seed + 3),
+            );
+            push(
+                format!("{p}.mixer.out_proj.weight"),
+                &[H_HIDDEN, H_A_OUT_WIDTH],
+                lcg_values(H_HIDDEN * H_A_OUT_WIDTH, seed + 4),
+            );
+        } else {
+            push(
+                format!("{p}.mixer.in_proj.weight"),
+                &[H_M_IN_PROJ_ROWS, H_HIDDEN],
+                lcg_values(H_M_IN_PROJ_ROWS * H_HIDDEN, seed + 1),
+            );
+            push(
+                format!("{p}.mixer.conv1d.weight"),
+                &[H_M_CONV_DIM, 1, H_M_CONV],
+                lcg_values(H_M_CONV_DIM * H_M_CONV, seed + 2),
+            );
+            push(
+                format!("{p}.mixer.conv1d.bias"),
+                &[H_M_CONV_DIM],
+                lcg_values(H_M_CONV_DIM, seed + 3),
+            );
+            push(
+                format!("{p}.mixer.A_log"),
+                &[H_M_HEADS],
+                lcg_values(H_M_HEADS, seed + 4),
+            );
+            push(
+                format!("{p}.mixer.D"),
+                &[H_M_HEADS],
+                lcg_values(H_M_HEADS, seed + 5),
+            );
+            push(
+                format!("{p}.mixer.dt_bias"),
+                &[H_M_HEADS],
+                lcg_values(H_M_HEADS, seed + 6),
+            );
+            push(
+                format!("{p}.mixer.norm.weight"),
+                &[H_M_D_INNER],
+                norm_values(H_M_D_INNER, seed + 7),
+            );
+            push(
+                format!("{p}.mixer.out_proj.weight"),
+                &[H_HIDDEN, H_M_D_INNER],
+                lcg_values(H_HIDDEN * H_M_D_INNER, seed + 8),
+            );
+        }
+    }
+    shard.write(dir);
+}
+
+/// **The native mamba_ssm spelling admits, encodes through the GATED
+/// system path, and executes — the 2.7B witness in CI miniature.** No
+/// `model_type` anywhere: identity is the config shape. The head
+/// carries the padded vocabulary the reference genuinely emits, the
+/// declared `ssm_cfg` values outrank the package defaults the miniature
+/// widths could not close under, and the whole thing runs to finite
+/// logits of the padded width.
+#[test]
+fn the_native_spelling_admits_encodes_and_executes() {
+    use crate::format::vindex3::inspect::inspect_container;
+    use crate::format::vindex3::opplan::exec::continuation::plan_continuation_geometry;
+    use crate::format::vindex3::opplan::exec::kv::{ContinuationProvider, RowKvState};
+    use crate::format::vindex3::opplan::exec::operands::OperandStore;
+    use crate::format::vindex3::opplan::exec::reference::ReferenceBackend;
+    use crate::format::vindex3::opplan::{plan_component_ops, LayerAttention};
+
+    let dir = tempfile::tempdir().unwrap();
+    miniature_native(dir.path());
+    let inventory = build_inventory(dir.path()).unwrap();
+    let plan = plan_system(&[("m2a-native-mini".to_string(), inventory.clone())]);
+    let blocking: Vec<String> = plan
+        .artifacts
+        .iter()
+        .flat_map(|a| &a.findings)
+        .filter(|f| f.blocks())
+        .map(|f| format!("{}: {}", f.subject, f.detail))
+        .collect();
+    assert!(plan.admissible, "blocking: {blocking:?}");
+    // Identity came from the config shape, not a model_type key.
+    assert_eq!(plan.artifacts[0].model_type, "mamba2");
+
+    // Encode through the GATED multi-artifact path — the writer the
+    // 2.7B found unguarded.
+    let out = tempfile::tempdir().unwrap();
+    crate::format::vindex3::encode::encode_system(
+        &[("m2a-native-mini".to_string(), inventory)],
+        out.path(),
+    )
+    .expect("closure holds through the gated system writer");
+
+    let inspection = inspect_container(out.path(), false).unwrap();
+    let outcome = plan_component_ops(&inspection, out.path(), "target").unwrap();
+    assert!(outcome.defects.is_empty(), "{:?}", outcome.defects);
+    let plan = outcome.plan.expect("closure held");
+    for (index, layer) in plan.layers.iter().enumerate() {
+        if H_ATTN_LAYERS.contains(&index) {
+            let LayerAttention::ConvQkv(op) = &layer.attention else {
+                panic!("layer {index} must be conv-QKV: {:?}", layer.attention);
+            };
+            // The MHA default, on the record and in the op.
+            assert_eq!(op.geometry.num_kv_heads, H_A_HEADS);
+            assert_eq!(op.geometry.rope_theta, 10000.0);
+        } else {
+            assert!(matches!(layer.attention, LayerAttention::Mamba2(_)));
+        }
+    }
+
+    let store = OperandStore::open(out.path(), &inspection).unwrap();
+    let geometry = plan_continuation_geometry(&plan).expect("declared geometry");
+    let mut provider = RowKvState::default();
+    provider.prepare_continuation(&geometry).unwrap();
+    let logits = crate::format::vindex3::opplan::exec::prefill_plan(
+        &plan,
+        &store,
+        &[3, 17, 5, 9],
+        &ReferenceBackend,
+        &mut provider,
+    )
+    .expect("the native spelling executes")
+    .logits
+    .expect("head present");
+    assert_eq!(logits.len(), 32, "the head emits the PADDED vocabulary");
+    assert!(logits.iter().all(|v| v.is_finite()));
+}
