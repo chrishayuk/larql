@@ -27,6 +27,8 @@ mod gated_delta_tiny;
 mod hybrid_traversal;
 #[cfg(all(feature = "gpu", target_os = "macos"))]
 mod kda_metal;
+#[cfg(all(feature = "gpu", target_os = "macos"))]
+mod kda_native_parity;
 mod kda_parity;
 mod kda_parity_real;
 #[cfg(all(feature = "gpu", target_os = "macos"))]

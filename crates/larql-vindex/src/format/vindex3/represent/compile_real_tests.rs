@@ -172,7 +172,7 @@ fn scope_projections() -> Vec<String> {
 }
 
 /// Reads operands straight out of a segment file.
-struct SegmentSource {
+pub(super) struct SegmentSource {
     path: PathBuf,
     payload_start: u64,
     offsets: std::collections::BTreeMap<String, (u64, u64)>,
@@ -183,7 +183,19 @@ impl SegmentSource {
         container: &std::path::Path,
         layers: &[u32],
     ) -> Result<(Self, Vec<SourceTensor>), VindexError> {
-        let path = container.join("segments").join(format!("{OBJECT}.bin"));
+        Self::open_object(container, OBJECT, layers, |_| true)
+    }
+
+    /// The same reader over any segment, with a NAME filter — the KDA
+    /// candidate reads `target.decoder_stack`, whose tensors are mostly
+    /// not in any candidate's scope.
+    pub(super) fn open_object(
+        container: &std::path::Path,
+        object: &str,
+        layers: &[u32],
+        keep: impl Fn(&str) -> bool,
+    ) -> Result<(Self, Vec<SourceTensor>), VindexError> {
+        let path = container.join("segments").join(format!("{object}.bin"));
         let (header, payload_start) =
             crate::format::vindex3::encode::segment::read_segment_header(&path)?;
         let mut offsets = std::collections::BTreeMap::new();
@@ -191,6 +203,7 @@ impl SegmentSource {
         for t in header.tensors {
             if crate::format::vindex3::represent::policy::layer_of(&t.name)
                 .is_some_and(|l| layers.contains(&l))
+                && keep(&t.name)
             {
                 tensors.push(SourceTensor {
                     name: t.name.clone(),
@@ -284,7 +297,7 @@ fn layer_q6(layer: u32, projections: &[String], encoding: &str) -> PrecisionMap 
 }
 
 /// The source's own identity, plus where it was found.
-fn source_dependency(
+pub(super) fn source_dependency(
     container: &std::path::Path,
 ) -> Result<super::compiler::SourceDependency, VindexError> {
     Ok(super::compiler::SourceDependency {
