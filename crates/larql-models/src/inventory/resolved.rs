@@ -306,6 +306,7 @@ pub fn resolve_with_tensor_evidence(
         mamba2_provenance: cfg.mamba2_provenance.clone(),
         conv_qkv_attn: cfg.conv_qkv_attn,
         conv_qkv_provenance: cfg.conv_qkv_provenance.clone(),
+        pad_vocab_size_multiple: cfg.pad_vocab_size_multiple,
     };
     (detection, topology)
 }

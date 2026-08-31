@@ -142,11 +142,19 @@ pub fn plan_component_ops(
     let attends = attention_table
         .iter()
         .any(|l| matches!(l.operator, LayerOperator::Softmax | LayerOperator::Mla));
-    let has_non_mixer = attention_table.iter().any(|l| !l.operator.is_mamba2());
+    // The mixer and the hybrid's conv-QKV block are the two judged
+    // layer programs with no FFN — the same rule the graph-level
+    // completeness check states, restated here because this closure gate
+    // is the one execution actually passes through (found live: the
+    // 2.7B hybrid declares no FFN anywhere and this line still demanded
+    // the surface).
+    let has_ffn_layer = attention_table
+        .iter()
+        .any(|l| !l.operator.is_mamba2() && !l.operator.is_conv_qkv());
     let runs_mamba2 = attention_table.iter().any(|l| l.operator.is_mamba2());
     for (runs, present, fact) in [
         (attends, attn.is_some(), "attention surface"),
-        (has_non_mixer, ffn_surface.is_some(), "ffn surface"),
+        (has_ffn_layer, ffn_surface.is_some(), "ffn surface"),
         (
             runs_mamba2,
             surface.mamba2.is_some(),

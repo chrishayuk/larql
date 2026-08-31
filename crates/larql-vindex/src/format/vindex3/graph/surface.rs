@@ -576,6 +576,15 @@ pub fn head_from_resolved(inventory: &ArchitectureInventory) -> Result<HeadSurfa
         missing.push("vocab_size".to_string());
         return Err(missing);
     };
+    // The mamba_ssm lineage pads the embedding rows up to a declared
+    // multiple, and the tied head genuinely EMITS the padded width — the
+    // reference's own logits are that wide. The surface carries what the
+    // head does; the declared vocab remains on the resolution as the
+    // meaningful prefix.
+    let vocab_size = match resolved.pad_vocab_size_multiple {
+        Some(multiple) if multiple > 0 => vocab_size.div_ceil(multiple) * multiple,
+        _ => vocab_size,
+    };
     Ok(HeadSurface {
         vocab_size,
         embedding_norm: execution.embedding_norm,

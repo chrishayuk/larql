@@ -168,6 +168,12 @@ pub struct ResolvedTopology {
     /// defaults. Present exactly when [`Self::conv_qkv_attn`] is.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub conv_qkv_provenance: Option<crate::config::ConvQkvProvenance>,
+    /// `pad_vocab_size_multiple` — the embedding rows are the declared
+    /// vocab rounded UP to this multiple (mamba_ssm lineage). The head
+    /// genuinely emits the padded width; the declared vocab names the
+    /// meaningful prefix.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub pad_vocab_size_multiple: Option<usize>,
 }
 
 /// The precision a recurrent state is kept at.

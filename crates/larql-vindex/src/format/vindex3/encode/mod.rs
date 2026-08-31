@@ -75,7 +75,13 @@ pub fn encode_system(
             plan.summary.blocking
         )));
     }
-    encode_graph(&plan.graph, named, out)
+    let outcome = encode_graph(&plan.graph, named, out)?;
+    // Closure at encode holds on THIS path too (drill F4): a container
+    // whose operands do not close is removed, never written — the
+    // single-checkpoint path has enforced this since schema 6, and the
+    // 2.7B hybrid witness caught this sibling path not enforcing it.
+    checkpoint::enforce_closure_at_encode(out)?;
+    Ok(outcome)
 }
 
 /// Encode a system gated on ONE capability's dependency closure instead of
@@ -126,12 +132,41 @@ pub fn encode_system_for_capability(
             "refusing to encode for {capability:?}: this build has no executor for it"
         )));
     }
+    let outcome = encode_graph(&plan.graph, named, out)?;
+    checkpoint::enforce_closure_at_encode(out)?;
+    Ok(outcome)
+}
+
+/// `encode_system` WITHOUT the closure-at-encode gate — the
+/// doctored-write seam for in-crate tests that construct their subject
+/// by encoding a deliberately defective source, or by editing the
+/// persisted graph after the write, and then prove the defect is caught
+/// downstream. The gate exists precisely so no PRODUCTION path can do
+/// what this function permits; it is `cfg(test)` so none ever can.
+#[cfg(test)]
+pub(crate) fn encode_system_unenforced(
+    named: &[(String, ArchitectureInventory)],
+    out: &Path,
+) -> Result<EncodeOutcome, VindexError> {
+    let plan = plan_system(named);
+    if !plan.admissible {
+        return Err(VindexError::Parse(format!(
+            "refusing to encode an inadmissible plan: {} blocking finding(s)",
+            plan.summary.blocking
+        )));
+    }
     encode_graph(&plan.graph, named, out)
 }
 
 /// Encode an already-built system graph. `encode_system` is this after
 /// the plan gate; a caller holding a graph it built (or edited) itself
 /// comes in here and gets the same validation and the same bytes.
+///
+/// **This seam does not enforce closure at encode**: a caller holding
+/// its own (possibly deliberately doctored) graph owns that
+/// responsibility, and the closure tests use exactly this property to
+/// write containers whose defects they then prove are caught. Every
+/// CLI writer path goes through the enforcing wrappers above.
 pub fn encode_graph(
     graph: &SystemGraph,
     named: &[(String, ArchitectureInventory)],
