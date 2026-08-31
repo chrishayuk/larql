@@ -34,8 +34,8 @@
 use metal::{Buffer, ComputeCommandEncoderRef, MTLSize};
 
 use super::bf16_grouped::{encode_grouped, GroupedBinding, GroupedShape};
-use super::kimi_layer::ExpertEncoding;
 use super::grouped_experts::{ExpertOffset, GroupedError, InputLayout};
+use super::kimi_layer::ExpertEncoding;
 use crate::shaders::mla as mla_shader;
 use crate::MetalBackend;
 
