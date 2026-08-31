@@ -112,3 +112,22 @@ fn a_missing_semantic_says_which_fact_and_who_needed_it() {
         "the refusal must place the defect: {msg}"
     );
 }
+
+/// The `-exp` on `ssm_a` is arithmetic on weights, and it is only
+/// legitimate because an operand declares itself a log decay. Without
+/// that role the transform would be "`-exp` because the tensor is called
+/// `A_log`", which is the source-family assumption the graph exists to
+/// replace.
+#[test]
+fn a_missing_log_decay_role_refuses_rather_than_assuming_the_tensor_name() {
+    let r = Refusal::MissingSemantic {
+        requirement: "operand role `log decay`",
+        required_by: "qwen35 ssm_a stores -exp(log decay), not the log parameter",
+    };
+    let msg = r.to_string();
+    assert!(msg.contains("log decay"));
+    assert!(
+        msg.contains("-exp"),
+        "the refusal must say what the target would have done with it: {msg}"
+    );
+}

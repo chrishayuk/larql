@@ -151,8 +151,33 @@ impl VHeadGeometry {
     }
 }
 
+/// Semantic facts the target's *value* transforms depend on, as opposed
+/// to the ones its metadata needs.
+///
+/// qwen35 stores `ssm_a` as the materialised negative decay coefficient
+/// rather than the log parameter, and stores the trunk norms with their
+/// offset already folded in. Both are arithmetic on weights, and both
+/// are only legitimate because the graph says which operand is a log
+/// decay and which norms carry an offset.
+///
+/// Requiring them here is the difference between a lowering that reads
+/// a fact and one that knows it is looking at Qwen. Without this, the
+/// two transforms would be `+ 1.0 because qwen35` and `-exp because
+/// A_log` — source-family assumptions smuggled back in one commit after
+/// they were removed.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct TransformFacts {
+    /// A GDN operand carries the `log decay` role, so the target can
+    /// materialise `-exp(x)` from a semantic rather than a tensor name.
+    pub log_decay_role_present: bool,
+}
+
 /// Preflight a component's execution surface against the qwen35 target.
-pub fn qwen35_preflight(surface: &ExecutionSurface, nvfp4_in_use: bool) -> Preflight {
+pub fn qwen35_preflight(
+    surface: &ExecutionSurface,
+    nvfp4_in_use: bool,
+    transforms: TransformFacts,
+) -> Preflight {
     let mut requirements = Vec::new();
     let mut constraints = Vec::new();
     let mut refusals = Vec::new();
@@ -274,6 +299,37 @@ pub fn qwen35_preflight(surface: &ExecutionSurface, nvfp4_in_use: bool) -> Prefl
                 }
             }
         }
+    }
+
+    // The trunk norms qwen35 stores pre-offset must SAY they carry one.
+    // The GDN's internal gated norm deliberately does not declare an
+    // offset and deliberately does not receive one — llama.cpp's
+    // converter makes the same exception, and here it falls out of the
+    // graph rather than being written down twice.
+    // Always declared, so this is not a presence check — it is a record
+    // that the transform reads the graph's number. `0.0` and `1.0` are
+    // both answers; the lowering must fold whichever is there, and never
+    // a literal `1.0` justified by the family name.
+    requirements.push(Requirement {
+        name: "execution.norm.pre.weight_offset",
+        value: Some(surface.norm.pre.weight_offset.to_string()),
+    });
+    requirements.push(Requirement {
+        name: "execution.norm.final_norm.weight_offset",
+        value: Some(surface.norm.final_norm.weight_offset.to_string()),
+    });
+
+    requirements.push(Requirement {
+        name: "operand role `log decay`",
+        value: transforms
+            .log_decay_role_present
+            .then(|| "present".to_string()),
+    });
+    if !transforms.log_decay_role_present {
+        refusals.push(Refusal::MissingSemantic {
+            requirement: "operand role `log decay`",
+            required_by: "qwen35 ssm_a stores -exp(log decay), not the log parameter",
+        });
     }
 
     Preflight {
