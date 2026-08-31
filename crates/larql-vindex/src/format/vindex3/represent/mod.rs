@@ -51,6 +51,7 @@ pub mod compile;
 pub mod compiler;
 pub mod experiment;
 pub mod gptq;
+pub mod kda_candidate;
 pub mod map;
 pub mod nvfp4_pack;
 pub mod physical;
