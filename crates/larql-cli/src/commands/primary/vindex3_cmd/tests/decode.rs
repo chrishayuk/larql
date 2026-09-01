@@ -12,9 +12,11 @@ use larql_vindex::format::vindex3::opplan::exec::reference::ReferenceBackend;
 use larql_vindex::format::vindex3::represent::nvfp4_pack::DTYPE_NVFP4;
 
 use super::super::decode::{greedy_decode, Flow};
+use larql_inference::vindex3::OpenedComponent;
+
 use super::super::prepare::{
     parse_representation_source, prepare, wanted_representation, with_plan_backend, BackendVisitor,
-    PreparedContainer, DEFAULT_COMPONENT,
+    DEFAULT_COMPONENT,
 };
 use super::super::ExecBackend;
 
@@ -22,7 +24,7 @@ const PROMPT: [u32; 3] = [1, 2, 3];
 const NEW_TOKENS: usize = 4;
 
 /// The dense fixture, encoded and prepared for the reference arm.
-fn prepared_dense(root: &Path) -> PreparedContainer {
+fn prepared_dense(root: &Path) -> OpenedComponent {
     let checkpoint = root.join("checkpoint");
     let container = root.join("container");
     std::fs::create_dir_all(&checkpoint).unwrap();
@@ -215,4 +217,50 @@ fn a_directory_that_is_not_a_container_cannot_be_prepared() {
         RepresentationSource::Auto,
     )
     .is_err());
+}
+
+/// The one-opening-authority invariant, pinned at the source: the CLI's
+/// preparation names no inspection, no plan construction and no operand
+/// store opening of its own. Everything a container *is* when it runs
+/// comes from `larql_inference::vindex3::open_component`.
+#[test]
+fn the_cli_preparation_opens_nothing_itself() {
+    let source = include_str!("../prepare.rs");
+    for forbidden in [
+        "inspect_container(",
+        "plan_component_ops(",
+        "OperandStore::open",
+    ] {
+        assert!(
+            !source.contains(forbidden),
+            "prepare.rs re-implements the opener: found `{forbidden}`"
+        );
+    }
+    assert!(source.contains("open_component("));
+}
+
+/// The CLI's policy reaches the store: what `--representation-source`
+/// asks for is what the opened store was bound under, and the opener's
+/// declared identity comes back with it.
+#[test]
+fn the_prepared_store_carries_the_requested_source_policy() {
+    let root = tempfile::tempdir().unwrap();
+    let checkpoint = root.path().join("checkpoint");
+    let container = root.path().join("container");
+    std::fs::create_dir_all(&checkpoint).unwrap();
+    std::fs::create_dir_all(&container).unwrap();
+    encode_fixture_container(dense_f32_model, &checkpoint, &container, "dense");
+    let opened = prepare(
+        &container,
+        DEFAULT_COMPONENT,
+        ExecBackend::ProductionNvfp4,
+        RepresentationSource::Transient,
+    )
+    .unwrap();
+    assert_eq!(
+        opened.store.representation_source(),
+        RepresentationSource::Transient
+    );
+    assert_eq!(opened.want.as_deref(), Some(DTYPE_NVFP4));
+    assert_eq!(opened.model_name, "dense");
 }

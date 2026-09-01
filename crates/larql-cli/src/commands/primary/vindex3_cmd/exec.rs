@@ -42,9 +42,10 @@ use ndarray::Array2;
 use super::super::shannon_trace::dump::{
     plane_name, write_plane, LayerDumpManifest, MANIFEST_NAME, PLANE_DTYPE,
 };
+use larql_inference::vindex3::OpenedComponent;
+
 use super::prepare::{
-    parse_representation_source, prepare, with_plan_backend, BackendVisitor, PreparedContainer,
-    ENGINE_PREFIX,
+    parse_representation_source, prepare, with_plan_backend, BackendVisitor, ENGINE_PREFIX,
 };
 use super::ExecArgs;
 
@@ -73,11 +74,12 @@ pub(super) struct ResumeSidecar {
 pub fn run_exec(args: ExecArgs) -> Result<(), Box<dyn std::error::Error>> {
     let tokens = parse_tokens(&args.tokens)?;
     let source = parse_representation_source(&args.representation_source)?;
-    let PreparedContainer { plan, store, want } =
-        prepare(&args.container, &args.component, args.backend, source)?;
+    let OpenedComponent {
+        plan, store, want, ..
+    } = prepare(&args.container, &args.component, args.backend, source)?;
 
     let from_pack = store.selection().values().filter(|s| s.stored).count();
-    if let Some(want) = want {
+    if let Some(want) = &want {
         println!(
             "representation: {want}  source: {}  objects from a compiled pack: {}/{}",
             args.representation_source,
@@ -90,7 +92,7 @@ pub fn run_exec(args: ExecArgs) -> Result<(), Box<dyn std::error::Error>> {
     {
         if let Some((formats, label)) = super::prepare::lowered_formats(args.backend) {
             let r = super::lowered::run_lowered(&args, &tokens, &plan, &store, formats, label);
-            report_representation_work(&store, want, r.is_ok());
+            report_representation_work(&store, want.as_deref(), r.is_ok());
             return r;
         }
     }
@@ -103,7 +105,7 @@ pub fn run_exec(args: ExecArgs) -> Result<(), Box<dyn std::error::Error>> {
             store: &store,
         },
     );
-    report_representation_work(&store, want, outcome.is_ok());
+    report_representation_work(&store, want.as_deref(), outcome.is_ok());
     outcome
 }
 

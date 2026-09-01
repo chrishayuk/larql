@@ -22,12 +22,19 @@
 //! the command line, or each line of the chat loop — gets a brand-new
 //! continuation state over them, so nothing from one turn can reach the
 //! next.
+//!
+//! The model is named by the container. `index.model` is the identity
+//! authority; the directory name is an explicit fallback for a container
+//! encoded nameless, and [`resolved_display_name`] is the only place
+//! that fallback is decided — the banner and the verbose report both
+//! read it, so neither can grow a second derivation.
 
 use std::io::{self, BufRead, Write};
 use std::path::Path;
 use std::time::Instant;
 
 use larql_inference::layer_graph::generate::{Detokenizer, EosConfig};
+use larql_inference::vindex3::OpenedComponent;
 use larql_vindex::format::filenames::TOKENIZER_JSON;
 use larql_vindex::format::generation::{detect_generation, ContainerGeneration};
 use larql_vindex::format::vindex3::opplan::exec::backend::PlanBackend;
@@ -41,7 +48,7 @@ use larql_vindex::tokenizers::Tokenizer;
 use super::run_cmd::{KvCacheKind, RunArgs};
 use super::vindex3_cmd::decode::{greedy_decode, DecodeReport, Flow};
 use super::vindex3_cmd::prepare::{
-    prepare, with_plan_backend, BackendVisitor, PreparedContainer, DEFAULT_COMPONENT, ENGINE_PREFIX,
+    prepare, with_plan_backend, BackendVisitor, DEFAULT_COMPONENT, ENGINE_PREFIX,
 };
 use super::vindex3_cmd::ExecBackend;
 
@@ -54,8 +61,30 @@ type BoxErr = Box<dyn std::error::Error>;
 /// this arm produces.
 const SINGLE_PREDICTION: usize = 1;
 
-/// The chat loop's prompt, written to stderr so stdout stays the model's.
+/// The chat loop's prompt, written to the status stream so stdout stays
+/// the model's.
 const CHAT_PROMPT: &str = "> ";
+
+/// What a container that declares no name is called, when even its
+/// directory has no printable name.
+const NAMELESS_CONTAINER: &str = "container";
+
+/// The name a run shows for its model.
+///
+/// The container's own declaration (`index.model`) is the identity
+/// authority and wins whenever it is non-empty. The directory name is
+/// the explicit fallback for a container encoded nameless — the only
+/// path on which filesystem identity may ever be shown as the model's.
+pub(super) fn resolved_display_name(declared: &str, container: &Path) -> String {
+    if !declared.is_empty() {
+        return declared.to_string();
+    }
+    container
+        .file_name()
+        .and_then(|n| n.to_str())
+        .unwrap_or(NAMELESS_CONTAINER)
+        .to_string()
+}
 
 /// Whether `dir` is a VINDEX3 container.
 ///
@@ -73,16 +102,20 @@ pub fn run(container: &Path, args: &RunArgs) -> Result<(), BoxErr> {
         args,
         &mut io::stdin().lock(),
         &mut io::stdout().lock(),
+        &mut io::stderr(),
     )
 }
 
-/// [`run`] with its streams injected — the chat loop reads `input`, and
-/// every generated character goes to `out`.
+/// [`run`] with its streams injected — the chat loop reads `input`,
+/// every generated character goes to `out`, and everything that is
+/// *about* the run (banner, prompt, ids, timings, errors) goes to
+/// `status`, which is stderr in the binary.
 pub(super) fn run_to(
     container: &Path,
     args: &RunArgs,
     input: &mut dyn BufRead,
     out: &mut dyn Write,
+    status: &mut dyn Write,
 ) -> Result<(), BoxErr> {
     refuse_inapplicable_flags(args)?;
     let backend = select_backend(args.metal)?;
@@ -114,6 +147,7 @@ pub(super) fn run_to(
             eos: &eos,
             input,
             out,
+            status,
         },
     )
 }
@@ -180,11 +214,12 @@ fn select_backend(metal: bool) -> Result<ExecBackend, BoxErr> {
 struct Runner<'a> {
     container: &'a Path,
     args: &'a RunArgs,
-    prepared: &'a PreparedContainer,
+    prepared: &'a OpenedComponent,
     tokenizer: &'a Tokenizer,
     eos: &'a EosConfig,
     input: &'a mut dyn BufRead,
     out: &'a mut dyn Write,
+    status: &'a mut dyn Write,
 }
 
 impl BackendVisitor for Runner<'_> {
@@ -200,11 +235,14 @@ impl BackendVisitor for Runner<'_> {
             ExecutionSlice::Full,
         )?;
         let engine = format!("{ENGINE_PREFIX}-{}", backend.name());
+        let identity = resolved_display_name(&self.prepared.model_name, self.container);
         if self.args.verbose {
-            eprintln!(
-                "[{engine}] weights resident in {:.1} s",
+            writeln!(
+                self.status,
+                "[{engine}] {identity} ({}): weights resident in {:.1} s",
+                self.prepared.family,
                 loading.elapsed().as_secs_f64()
-            );
+            )?;
         }
         let model = ResidentModel {
             plan: &self.prepared.plan,
@@ -216,9 +254,9 @@ impl BackendVisitor for Runner<'_> {
             args: self.args,
         };
         if let Some(prompt) = self.args.prompt.as_deref() {
-            return model.generate(prompt, self.out);
+            return model.generate(prompt, self.out, self.status);
         }
-        chat_loop(self.container, &model, self.input, self.out)
+        chat_loop(&identity, &model, self.input, self.out, self.status)
     }
 }
 
@@ -236,7 +274,12 @@ struct ResidentModel<'a, B: PlanBackend> {
 impl<B: PlanBackend> ResidentModel<'_, B> {
     /// Encode `prompt`, decode up to `--max-tokens` greedily, and stream
     /// the text to `out` as it is produced. Ends at the first EOS.
-    fn generate(&self, prompt: &str, out: &mut dyn Write) -> Result<(), BoxErr> {
+    fn generate(
+        &self,
+        prompt: &str,
+        out: &mut dyn Write,
+        status: &mut dyn Write,
+    ) -> Result<(), BoxErr> {
         let encoded = self
             .tokenizer
             .encode(prompt, true)
@@ -265,25 +308,31 @@ impl<B: PlanBackend> ResidentModel<'_, B> {
         })?;
         writeln!(out)?;
         if self.args.emit_ids {
-            eprintln!("[{}] prompt ids: {:?}", self.engine, ids);
-            eprintln!("[{}] generated ids: {:?}", self.engine, decoded.generated);
+            writeln!(status, "[{}] prompt ids: {:?}", self.engine, ids)?;
+            writeln!(
+                status,
+                "[{}] generated ids: {:?}",
+                self.engine, decoded.generated
+            )?;
         }
         if self.args.verbose {
-            eprintln!(
+            writeln!(
+                status,
                 "[{}] {} prompt tokens in {:.2} s, {} generated",
                 self.engine,
                 ids.len(),
                 decoded.prompt_seconds,
                 decoded.generated.len(),
-            );
+            )?;
             if let Some(report) = DecodeReport::from_steps(&decoded.step_seconds) {
-                eprintln!(
+                writeln!(
+                    status,
                     "[{}] decode {:.0} ms/token ({:.2} tok/s), steady {:.0} ms/token",
                     self.engine,
                     report.mean_seconds_per_token * 1e3,
                     report.mean_seconds_per_token.recip(),
                     report.steady_seconds_per_token * 1e3,
-                );
+                )?;
             }
         }
         Ok(())
@@ -294,26 +343,24 @@ impl<B: PlanBackend> ResidentModel<'_, B> {
 /// line is its own prompt — no history, no template — over the one
 /// resident model.
 fn chat_loop<B: PlanBackend>(
-    container: &Path,
+    identity: &str,
     model: &ResidentModel<'_, B>,
     input: &mut dyn BufRead,
     out: &mut dyn Write,
+    status: &mut dyn Write,
 ) -> Result<(), BoxErr> {
-    eprintln!(
-        "larql chat ({}) — {} (Ctrl-D to exit)",
-        model.engine,
-        container
-            .file_name()
-            .and_then(|n| n.to_str())
-            .unwrap_or("container")
-    );
+    writeln!(
+        status,
+        "larql chat ({}) — {identity} (Ctrl-D to exit)",
+        model.engine
+    )?;
     loop {
-        eprint!("{CHAT_PROMPT}");
-        io::stderr().flush()?;
+        write!(status, "{CHAT_PROMPT}")?;
+        status.flush()?;
         let mut line = String::new();
         match input.read_line(&mut line) {
             Ok(0) => {
-                eprintln!();
+                writeln!(status)?;
                 return Ok(());
             }
             Ok(_) => {}
@@ -323,8 +370,8 @@ fn chat_loop<B: PlanBackend>(
         if prompt.is_empty() {
             continue;
         }
-        if let Err(e) = model.generate(prompt, out) {
-            eprintln!("Error: {e}");
+        if let Err(e) = model.generate(prompt, out, status) {
+            writeln!(status, "Error: {e}")?;
         }
     }
 }

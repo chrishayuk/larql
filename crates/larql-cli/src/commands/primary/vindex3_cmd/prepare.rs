@@ -1,25 +1,24 @@
-//! Opening a container for execution — the one authority on how a
-//! container gets prepared.
+//! The CLI's policy over the one VINDEX3 opener.
 //!
 //! `larql vindex3 exec` and `larql run <container>` execute the same
 //! program through the same interpreter; they differ only in what wraps
-//! it (token ids and a research report, or text and a stream). Both
-//! therefore come through here: inspect the container, close the
-//! component's plan, bind the operands the chosen backend wants, and
-//! hand the backend — as a concrete type, chosen exactly once — to a
-//! [`BackendVisitor`]. A second copy of this sequence would be a second
-//! authority on what a container *is* when it runs, and the two would
-//! drift.
+//! it (token ids and a research report, or text and a stream). Neither
+//! opens a container itself: `larql_inference`'s `open_component` is the
+//! single authority on what a container *is* when it runs — inspect,
+//! close the plan, bind the operands — and `larql serve` binds through
+//! the same call. What this module owns is the CLI's side of that line:
+//! which encoding a `--backend` asks for, whether the runtime may
+//! manufacture it, and handing the chosen backend — a concrete type,
+//! chosen exactly once — to a [`BackendVisitor`]. Realisation is not
+//! interpretation, so it stays here.
 
 use std::path::Path;
 
-use larql_vindex::format::vindex3::inspect::inspect_container;
+use larql_inference::vindex3::{open_component, OpenPolicy, OpenedComponent};
 use larql_vindex::format::vindex3::opplan::exec::backend::PlanBackend;
-use larql_vindex::format::vindex3::opplan::exec::operands::{OperandStore, RepresentationSource};
+use larql_vindex::format::vindex3::opplan::exec::operands::RepresentationSource;
 use larql_vindex::format::vindex3::opplan::exec::production::ProductionBackend;
 use larql_vindex::format::vindex3::opplan::exec::reference::ReferenceBackend;
-use larql_vindex::format::vindex3::opplan::plan_component_ops;
-use larql_vindex::format::vindex3::opplan::ComponentOpPlan;
 
 use super::ExecBackend;
 
@@ -34,45 +33,23 @@ pub(crate) const DEFAULT_COMPONENT: &str = "target";
 /// realisation.
 pub(crate) const ENGINE_PREFIX: &str = "vindex3";
 
-/// A container opened for execution: the plan closed, the operands bound.
-pub(crate) struct PreparedContainer {
-    pub(crate) plan: ComponentOpPlan,
-    pub(crate) store: OperandStore,
-    /// The encoding a compiled pack would have to carry for the backend
-    /// this was prepared for. `None` on arms that execute the canonical
-    /// bytes directly, which then never look for a pack.
-    pub(crate) want: Option<&'static str>,
-}
-
-/// Inspect, plan and bind — everything that has to happen before a
-/// backend can be handed the program.
+/// Open `container`'s `component` for `backend`.
 ///
-/// A component that does not close is refused here, with every defect
-/// printed, so no caller can execute a partial plan.
+/// The CLI decides the policy — the encoding this backend executes and
+/// whether it may be manufactured at load — and the runtime opener does
+/// everything else, refusing a component that does not close with every
+/// defect in the error.
 pub(crate) fn prepare(
     container: &Path,
     component: &str,
     backend: ExecBackend,
     source: RepresentationSource,
-) -> Result<PreparedContainer, BoxErr> {
-    let inspection = inspect_container(container, false)?;
-    let outcome = plan_component_ops(&inspection, container, component)?;
-    if !outcome.defects.is_empty() {
-        for defect in &outcome.defects {
-            eprintln!("defect: {defect}");
-        }
-        return Err(format!(
-            "component `{component}` does not close: {} defect(s)",
-            outcome.defects.len()
-        )
-        .into());
-    }
-    let plan = outcome
-        .plan
-        .ok_or_else(|| format!("component `{component}` produced no plan"))?;
-    let want = wanted_representation(backend);
-    let store = OperandStore::open_for(container, &inspection, want, source)?;
-    Ok(PreparedContainer { plan, store, want })
+) -> Result<OpenedComponent, BoxErr> {
+    let policy = OpenPolicy {
+        want: wanted_representation(backend).map(str::to_string),
+        source,
+    };
+    Ok(open_component(container, component, policy)?)
 }
 
 /// Parse `--representation-source`.
