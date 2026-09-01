@@ -10,6 +10,15 @@
 /// rather than only recognise it (see `RopeScaling::to_config_json`).
 pub const ROPE_TYPE_DEFAULT: &str = "default";
 
+/// The one value `position_embedding_type` may take that means "rotate".
+///
+/// A different key from `rope_scaling.rope_type` and a different
+/// question: `rope_type` says WHICH rotary a rotating model uses, while
+/// this says WHETHER it rotates. `granitemoehybrid` documents
+/// `[None, "rope"]` and builds no rotary embedding for anything else —
+/// so on that family absence is NoPE, not a default rotation.
+pub const POSITION_EMBEDDING_TYPE_ROPE: &str = "rope";
+
 /// Divide the position by `factor`. Gemma 3 applies this to global layers only,
 /// via the structured per-layer-type form.
 pub const ROPE_TYPE_LINEAR: &str = "linear";

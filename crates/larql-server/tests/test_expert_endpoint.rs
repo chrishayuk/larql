@@ -72,6 +72,7 @@ impl TestMoeArch {
                 rope_local_base: None,
                 sliding_window: None,
                 use_sliding_window: None,
+                position_embedding_type: None,
                 max_window_layers: None,
                 num_experts: Some(NUM_EXPERTS),
                 num_experts_per_token: None,

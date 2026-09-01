@@ -82,6 +82,12 @@ pub const EXECUTION_SEMANTIC_KEYS: &[&str] = &[
     // answer.
     "use_sliding_window",
     "max_window_layers",
+    // Execution semantics, and on one family the switch itself: HF builds
+    // `granitemoehybrid`'s rotary embedding only when this reads `rope`,
+    // so a checkpoint omitting it runs with no positional encoding. The
+    // same leaf is `absolute` / `relative_key` in the BERT lineage, which
+    // is why the value is interpreted by the architecture and not here.
+    "position_embedding_type",
     "max_position_embeddings",
     // Kimi Linear's spelling of the same serving bound.
     "model_max_length",

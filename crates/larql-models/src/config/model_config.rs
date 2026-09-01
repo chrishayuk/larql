@@ -34,6 +34,21 @@ pub struct ModelConfig {
     /// via [`PositionPolicy::from_declared_theta`](super::PositionPolicy::from_declared_theta) —
     /// nothing else may read this array's zeros as numbers.
     pub layer_rope_theta: Option<Vec<f64>>,
+    /// The checkpoint's declared positional-encoding scheme
+    /// (`position_embedding_type`), verbatim.
+    ///
+    /// Carried as the declared string rather than a parsed enum because
+    /// **the same leaf means different things in different families**:
+    /// the BERT lineage spells `absolute` / `relative_key` here, while
+    /// `granitemoehybrid` documents exactly `[None, "rope"]`. A shared
+    /// enum would have to be the union of every family's vocabulary, and
+    /// a value's meaning would still depend on who declared it.
+    ///
+    /// Nothing may read this directly to decide behaviour — the effective
+    /// policy is resolved in
+    /// [`ModelArchitecture::position_policy_for_layer`](super::ModelArchitecture::position_policy_for_layer),
+    /// where the family that owns the spelling interprets it.
+    pub position_embedding_type: Option<String>,
     pub sliding_window: Option<usize>,
     /// The checkpoint's explicit *enable* flag for sliding-window
     /// attention (`use_sliding_window`).

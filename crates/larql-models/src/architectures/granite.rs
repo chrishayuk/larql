@@ -4,8 +4,15 @@
 //! Granite Vision variants additionally declare a multi-modal protocol
 //! for SigLIP2 + MLP GELU connector + AnyRes tiling (Phase 2).
 
-use crate::config::{ModelArchitecture, ModelConfig};
+use crate::config::{
+    default_position_policy_for_layer, ModelArchitecture, ModelConfig, PositionPolicy,
+    POSITION_EMBEDDING_TYPE_ROPE,
+};
 use crate::multimodal::{MultiModalProtocol, PlaceholderProtocol, PrecomputedScaling, TokenBudget};
+
+/// The one `model_type` in this family whose rotary embedding is
+/// conditional. See [`GraniteArch::position_policy_for_layer`].
+const GRANITE_MOE_HYBRID: &str = "granitemoehybrid";
 
 /// Multi-modal contract for Granite Vision models.
 pub struct GraniteVisionMultiModal;
@@ -67,6 +74,46 @@ impl ModelArchitecture for GraniteArch {
         } else {
             None
         }
+    }
+
+    /// `granitemoehybrid` rotates only when it says so.
+    ///
+    /// `GraniteMoeHybridConfig` documents `position_embedding_type` as
+    /// *"defaults to None. Allowed options: `[None, "rope"]`"*, and
+    /// `modeling_granitemoehybrid.py` builds
+    ///
+    /// ```text
+    /// self.rotary_emb = GraniteMoeHybridRotaryEmbedding(config)
+    ///                   if config.position_embedding_type == "rope" else None
+    /// ```
+    ///
+    /// So for this one `model_type` the key is not a restatement of a
+    /// default — it is the **opt-in that turns rotation on at all**, and
+    /// its absence means no positional encoding anywhere in the model.
+    /// `rope_theta` is declared regardless (granite-4.0-micro ships
+    /// `10000000`), so a resolver that reads the theta and rotates would
+    /// be right about this checkpoint by luck and wrong about any
+    /// `granitemoehybrid` that omits the opt-in — rotating every position
+    /// against the model's own instruction.
+    ///
+    /// Scoped to `granitemoehybrid` deliberately. `granite`, `granitemoe`
+    /// and `granitemoeshared` all construct their rotary embedding
+    /// unconditionally and never mention the key, so applying this rule
+    /// across the family would turn every one of them into a NoPE model.
+    /// That check is the whole content of the fix, and the test named
+    /// `a_dense_granite_still_rotates_without_the_key` is its control.
+    fn position_policy_for_layer(&self, layer: usize) -> PositionPolicy {
+        if self.config.model_type == GRANITE_MOE_HYBRID {
+            // Matching the reference exactly, including its treatment of
+            // an out-of-contract value: HF compares against `"rope"` and
+            // takes every other string — and absence — down the `else`
+            // branch that builds no rotary at all.
+            if self.config.position_embedding_type.as_deref() != Some(POSITION_EMBEDDING_TYPE_ROPE)
+            {
+                return PositionPolicy::None;
+            }
+        }
+        default_position_policy_for_layer(self, layer)
     }
 
     // ── MoE (granitemoe) ──
@@ -208,6 +255,7 @@ mod tests {
             rope_local_base: None,
             sliding_window: None,
             use_sliding_window: None,
+            position_embedding_type: None,
             max_window_layers: None,
             num_experts: None,
             num_experts_per_token: None,

@@ -39,7 +39,9 @@ pub mod rope;
 pub mod rope_types;
 
 pub use activation::{Activation, FfnType};
-pub use architecture::{score_scale_from_query_pre_attn_scalar, ModelArchitecture};
+pub use architecture::{
+    default_position_policy_for_layer, score_scale_from_query_pre_attn_scalar, ModelArchitecture,
+};
 pub use attention_gate::{
     AttentionGateSpec, GateActivation, GateCombine, GatePlacement, GateSource,
 };
@@ -66,7 +68,8 @@ pub use norm::{EmbeddingNorm, NormSpec, NormType, ParameterFreeQkNorm, PostNormE
 pub use position::{mrope_axis_table, PositionPolicy, RotaryFrequencyBasis};
 pub use rope::{Llama3RopeScaling, RopeScaling, YarnRopeScaling};
 pub use rope_types::{
-    ROPE_TYPE_DEFAULT, ROPE_TYPE_LINEAR, ROPE_TYPE_LLAMA3, ROPE_TYPE_PROPORTIONAL, ROPE_TYPE_YARN,
+    POSITION_EMBEDDING_TYPE_ROPE, ROPE_TYPE_DEFAULT, ROPE_TYPE_LINEAR, ROPE_TYPE_LLAMA3,
+    ROPE_TYPE_PROPORTIONAL, ROPE_TYPE_YARN,
 };
 
 #[cfg(test)]
