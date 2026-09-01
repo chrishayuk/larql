@@ -500,12 +500,32 @@ pub const IGNORED_SAFE_KEYS: &[&str] = &[];
 /// it means "nobody has looked" — and a report made mostly of `unknown`
 /// tells you how much was unexamined rather than how much is left.
 ///
-/// **Entries are earned by evidence, not by adjacency.** Every key here
-/// is grouped on something checkable: a shared prefix, a self-consistent
-/// geometry, an array whose length equals the layer count. A key that
-/// merely sits nearby stays [`SemanticClass::Unknown`], which is the
-/// honest answer and the one that keeps this table from becoming the
-/// convenient bucket everything falls into.
+/// # The registration rule
+///
+/// **An entry requires positive evidence of component ownership, never
+/// merely plausible adjacency.**
+///
+/// Concretely, that rules out the shortcuts that would make this table
+/// cheap to extend:
+///
+/// * no prefix-only registration — `index*` is how these keys were
+///   *found*, not why they are grouped;
+/// * no regex or pattern rule, ever. A regex over `rope` is what filed
+///   `indexer_rope_interleave` under general RoPE, where acting on it
+///   would have re-paired the whole model's rotary against the wrong
+///   partners;
+/// * a key that merely sits beside a registered one stays
+///   [`SemanticClass::Unknown`], which is the honest answer.
+///
+/// What counts as positive evidence is a semantic witness: a geometry
+/// self-consistent and distinct from the model's own, a value that is a
+/// selection count rather than a width, an array whose length equals the
+/// layer count and so is a per-layer schedule for *this* component. The
+/// discovery tool may be a pattern; the authority may not be.
+///
+/// The cost of relaxing this is not a wrong label — it is an engineering
+/// estimate that reads tidier than the evidence supports, which is worse
+/// than no estimate.
 pub const UNSUPPORTED_COMPONENT_KEYS: &[(&str, &str)] = &[
     // GLM-5.3-Flash's learned SPARSE ATTENTION INDEXER: a side network
     // that scores keys so attention can read `index_topk` of them
