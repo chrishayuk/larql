@@ -281,6 +281,28 @@ pub const CARRIAGE_RULES: &[CarriageRule] = &[
     // `Parsed` — the effect is visible on every layer's carried
     // PositionPolicy, so the container can be asked what it believes
     // rather than trusted to have read the key.
+    // The rotary schedule, answered from the graph in the checkpoint's
+    // own polarity so a declared mask and a carried one are comparable
+    // term by term. `Represented`: each layer's PositionPolicy is what
+    // the schedule produced, so the container can be asked rather than
+    // trusted.
+    CarriageRule {
+        leaf: "no_rope_layers",
+        reaches: Carriage::Represented,
+        site: "Component.attention[].position — 1 where the layer rotates, 0 where it is NoPE,                the same polarity the checkpoint declares",
+        probe: Some(probe_no_rope_layers),
+    },
+    // The fallback generator. `Parsed`, and honestly so: both references
+    // consult it only when the mask is absent, so on a checkpoint that
+    // declares both it is SUPERSEDED and contributes nothing to the
+    // graph. Same shape as `max_window_layers` being inert while the
+    // window is disabled.
+    CarriageRule {
+        leaf: "no_rope_layer_interval",
+        reaches: Carriage::Parsed,
+        site: "absorbed by ModelArchitecture::position_policy_for_layer as the schedule when                no_rope_layers is absent; superseded by an explicit mask, as upstream supersedes it",
+        probe: None,
+    },
     CarriageRule {
         leaf: "position_embedding_type",
         reaches: Carriage::Represented,
@@ -1178,6 +1200,23 @@ fn probe_layer_rope_theta(component: &Component, _ctx: &ProbeContext<'_>) -> Opt
 /// `proportional` when any holds a head-width-basis partial rotary
 /// (Gemma 4's full layers), else `default`. Within one scope the class
 /// is uniform, so the first classed layer answers for all.
+/// The rotary schedule the graph carries, in the checkpoint's polarity.
+///
+/// `1` where the layer rotates and `0` where it does not — deliberately
+/// the declared spelling and not a boolean, so the probe's answer and
+/// the declaration are comparable element by element. Emitting the
+/// natural-language polarity instead would make every SmolLM3 look
+/// mismatched while being right.
+fn probe_no_rope_layers(component: &Component, _ctx: &ProbeContext<'_>) -> Option<Value> {
+    let table = component.attention.as_ref()?;
+    Some(Value::Array(
+        table
+            .iter()
+            .map(|l| json!(i64::from(l.position.rope_theta().is_some())))
+            .collect(),
+    ))
+}
+
 /// The positional scheme the graph actually carries.
 ///
 /// `rope` when any layer in scope rotates; `null` when none does, which

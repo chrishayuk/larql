@@ -88,6 +88,13 @@ pub const EXECUTION_SEMANTIC_KEYS: &[&str] = &[
     // same leaf is `absolute` / `relative_key` in the BERT lineage, which
     // is why the value is interpreted by the architecture and not here.
     "position_embedding_type",
+    // The per-layer rotary schedule. Execution semantics of the plainest
+    // kind — it decides which layers encode position at all — and the
+    // mask's polarity is inverted relative to its own name, so an
+    // unconsumed declaration here is 27 of SmolLM3-3B's 36 layers rotated
+    // the wrong way while still emitting fluent text.
+    "no_rope_layers",
+    "no_rope_layer_interval",
     "max_position_embeddings",
     // Kimi Linear's spelling of the same serving bound.
     "model_max_length",

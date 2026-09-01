@@ -42,6 +42,13 @@ pub const CONSUMED_LEAF_KEYS: &[&str] = &[
     // it is the opt-in that turns rotation on at all, and the same leaf
     // means `absolute` / `relative_key` in the BERT lineage.
     "position_embedding_type",
+    // The per-layer rotary SCHEDULE (SmolLM3, Llama 4), resolved by
+    // `position_policy_for_layer` before the rotary shape. The mask's
+    // polarity is inverted relative to its name and is honoured once, in
+    // `PositionPolicy::rope_enabled_by_flag`; the interval is the
+    // fallback both references consult only when the mask is absent.
+    "no_rope_layers",
+    "no_rope_layer_interval",
     "sliding_window_pattern",
     "layer_types",
     "global_head_dim",

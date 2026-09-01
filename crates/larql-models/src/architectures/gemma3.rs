@@ -214,6 +214,8 @@ mod tests {
             sliding_window: Some(1024),
             use_sliding_window: None,
             position_embedding_type: None,
+            no_rope_layers: None,
+            no_rope_layer_interval: None,
             max_window_layers: None,
             num_experts: None,
             num_experts_per_token: None,
