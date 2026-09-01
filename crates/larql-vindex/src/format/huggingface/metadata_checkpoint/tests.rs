@@ -125,6 +125,55 @@ fn the_cache_is_keyed_by_repo_and_revision_under_larql_home() {
 
 #[test]
 #[serial]
+fn the_home_fallback_accepts_either_platform_spelling() {
+    // Windows sets `USERPROFILE` and not `HOME`, so a fallback reading
+    // only `HOME` makes every unconfigured `hf://` command there fail
+    // with "HOME is not set" instead of staging anything. Asserted from
+    // both directions rather than per-platform, so whichever variable the
+    // host happens to define, the one it does NOT define is the one under
+    // test.
+    let prev_larql = std::env::var("LARQL_HOME").ok();
+    let prev_home = std::env::var("HOME").ok();
+    let prev_profile = std::env::var("USERPROFILE").ok();
+    std::env::remove_var("LARQL_HOME");
+
+    for var in ["HOME", "USERPROFILE"] {
+        let other = if var == "HOME" { "USERPROFILE" } else { "HOME" };
+        std::env::remove_var(other);
+        std::env::set_var(var, "/somewhere");
+        let dir = header_cache_dir("Qwen/Qwen3-4B", "abc123")
+            .unwrap_or_else(|e| panic!("{var} alone should resolve a cache root: {e}"));
+        assert!(
+            dir.to_string_lossy().contains("hf-headers"),
+            "{var} alone gave {}",
+            dir.display()
+        );
+        std::env::remove_var(var);
+    }
+
+    // With neither, the refusal names both spellings rather than one.
+    let err = header_cache_dir("Qwen/Qwen3-4B", "abc123")
+        .expect_err("no home variable at all is not resolvable");
+    let message = err.to_string();
+    assert!(
+        message.contains("HOME") && message.contains("USERPROFILE"),
+        "the refusal should name both, got: {message}"
+    );
+
+    for (var, value) in [
+        ("LARQL_HOME", prev_larql),
+        ("HOME", prev_home),
+        ("USERPROFILE", prev_profile),
+    ] {
+        match value {
+            Some(value) => std::env::set_var(var, value),
+            None => std::env::remove_var(var),
+        }
+    }
+}
+
+#[test]
+#[serial]
 fn the_revision_resolves_to_the_commit_the_hub_names() {
     let dir = tempfile::tempdir().unwrap();
     served_repo(dir.path(), &["model.safetensors"]);

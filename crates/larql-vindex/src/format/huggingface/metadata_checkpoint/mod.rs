@@ -100,16 +100,23 @@ pub fn resolve_commit(client: &HfRangeClient) -> Result<Option<String>, VindexEr
 /// Where headers for `repo` at `revision` are staged.
 ///
 /// `~/.cache/larql/hf-headers/{owner}--{name}/{revision}/`, honouring
-/// `LARQL_HOME` exactly as the vindex cache does. Keyed by revision, and
-/// the caller keys by the resolved COMMIT once it has one, so two runs
-/// against a moved `main` never share a stub whose offsets belong to a
-/// different checkpoint.
+/// `LARQL_HOME` exactly as the vindex cache does — including its home
+/// fallback, which is `HOME` **or** `USERPROFILE`. Windows sets only the
+/// second, and reading `HOME` alone made every unconfigured `hf://`
+/// command there fail with "HOME is not set" rather than stage anything.
+///
+/// Keyed by revision, and the caller keys by the resolved COMMIT once it
+/// has one, so two runs against a moved `main` never share a stub whose
+/// offsets belong to a different checkpoint.
 pub fn header_cache_dir(repo: &str, revision: &str) -> Result<PathBuf, VindexError> {
     let root = match std::env::var("LARQL_HOME") {
         Ok(home) if !home.is_empty() => PathBuf::from(home),
         _ => {
             let home = std::env::var("HOME")
-                .map_err(|_| VindexError::Parse("HOME is not set".to_string()))?;
+                .or_else(|_| std::env::var("USERPROFILE"))
+                .map_err(|_| {
+                    VindexError::Parse("neither HOME nor USERPROFILE is set".to_string())
+                })?;
             PathBuf::from(home).join(".cache").join("larql")
         }
     };
