@@ -110,7 +110,7 @@ larql run <MODEL> [PROMPT] [OPTIONS]
 
 | Flag | Description | Default |
 |---|---|---|
-| `<MODEL>` | Vindex dir, `hf://owner/name`, `owner/name`, or cache shorthand | — |
+| `<MODEL>` | Vindex dir, VINDEX3 container, `hf://owner/name`, `owner/name`, or cache shorthand | — |
 | `[PROMPT]` | Prompt text; omit to enter chat mode | — |
 | `-n, --max-tokens <N>` | Max tokens to generate autoregressively | 64 |
 | `--top <N>` | Show the top-K prediction table per step instead of just the argmax (implied by `--verbose`) | 1 |
@@ -130,6 +130,25 @@ larql run <MODEL> [PROMPT] [OPTIONS]
 | `--ops <NAME[,…]>` | Restrict `--experts` to a comma-separated subset of op names | all |
 | `--constrained` | Run constrained-decoding mode (require all generated tokens to satisfy declared ops) | false |
 | `-v, --verbose` | Verbose load / timing output | false |
+| `--emit-ids` | Print the prompt token ids and the generated ids to stderr, so the run can serve as an id-level oracle for `larql vindex3 exec --tokens` on the same model (VINDEX3 containers; `--routed-from --metal` composed runs) | false |
+
+**VINDEX3 containers.** A container written by `larql vindex3 encode` is
+detected from its `index.json` generation and routed to its own arm: the
+container's program runs through the VINDEX3 interpreter — the same one
+`larql vindex3 exec` reports on, prepared by the same code — with the
+tokenizer the container carries. Decode is greedy, the prompt is encoded
+raw (no chat template), and generation stops at the first EOS from the
+container's `generation_config.json` or at `--max-tokens`. `--metal`
+selects the Metal realisation (macOS, `gpu` feature); otherwise the
+`larql-compute` CPU kernels run. Weights load once; each prompt — one on
+the command line, or every line of chat mode — starts from a fresh
+continuation state. Flags that describe the dense VINDEX2 engine
+(`--top`, `--kv-cache`, `--engine`, `--ffn`, `--routed-from`,
+`--moe-shards`, `--moe-units-manifest`, `--experts`, `--experts-dir`,
+`--ops`, `--constrained`, `--image`, `--mm-weights`) are refused by name
+rather than ignored. A container encoded from a checkpoint that had no
+`tokenizer.json` cannot tokenise text and is refused; run it from ids
+with `larql vindex3 exec --tokens`.
 
 Examples:
 
@@ -138,6 +157,8 @@ larql run gemma-3-4b-it-vindex "The capital of France is"
 larql run chrishayuk/gemma-3-4b-it-vindex           # chat mode
 larql run hf://chrishayuk/gemma-3-4b-it-vindex      # explicit HF
 larql run gemma4-31b.vindex --ffn http://server:8080 "…"
+larql run qwen3-0.6b.vindex3 "The capital of France is"   # VINDEX3 container
+larql run qwen3-0.6b.vindex3 --metal --emit-ids "…"       # Metal; ids to stderr
 ```
 
 ### `larql chat`
@@ -1914,7 +1935,7 @@ larql vindex3 <SUBCOMMAND> [OPTIONS]
 | `inspect <container>` | Reconstruct and check a container solely from its own contents — no source checkpoint, no architecture registry. `--verify` re-hashes every segment; `--execution-complete` additionally requires every component with executable objects to carry the surface those operations read. |
 | `verify <artifacts...> --container <DIR>` | Prove source ≡ encoded: four-authority semantic comparison plus per-representation byte equivalence, both ends re-hashed now. Exits non-zero on any disagreement. |
 | `ops <container>` | Emit the generic operation plan of one component, solely from the container. Operand closure is the gate: every stack tensor must classify into a role a declared op consumes, with the geometry the surface states. Exits non-zero on any closure defect. |
-| `exec <container> --tokens <IDS>` | Execute one component's own program from the container alone. `--dump-layers` writes per-layer hidden states in the `shannon layer-dump` format so `layer-diff` can compare against an upstream trace. |
+| `exec <container> --tokens <IDS>` | Execute one component's own program from the container alone. `--dump-layers` writes per-layer hidden states in the `shannon layer-dump` format so `layer-diff` can compare against an upstream trace. `larql run <container> [prompt]` is the text-in/text-out shell over the same interpreter. |
 
 **`larql vindex3 exec`** flags:
 
@@ -1926,7 +1947,7 @@ larql vindex3 <SUBCOMMAND> [OPTIONS]
 | `--backend <B>` | Numerical realisation: `reference` (naive f32), `production` (`larql-compute` kernels), plus Metal arms on macOS with the `gpu` feature (`metal`, `metal-mxfp4`, `metal-nvfp4`, `metal-lowered`, …) — same program, same interpreter, only the arithmetic differs | reference |
 | `--dump-layers <DIR>` | Write per-layer planes + manifest here instead of a summary. Planes are written as each layer completes, so an interrupted run leaves everything it finished | — |
 | `--resume` | Continue an interrupted `--dump-layers` run from its last complete plane. The recorded fixture (tokens, container, engine) must match | false |
-| `--generate <N>` | Greedy-decode N new tokens after the prompt, printing per-step timing and a decode report. Every step re-runs the full forward — the interpreter has no KV cache | — |
+| `--generate <N>` | Greedy-decode N new tokens after the prompt, printing per-step timing and a decode report. Runs on a `DecodeSession`: operands load once and each token advances one position against the session's continuation state (KV cache, or recurrent state), so weight load, prompt ingestion and steady decode are priced separately | — |
 | `--logit-dump <PATH>` | Step the tokens through one position at a time and write every position's logits as `[positions, vocab]` f32 (teacher forcing — what a KL/NLL gate needs; `--generate` cannot supply it) | — |
 | `--profile` | Lowered backends only, requires `--generate`: attribute each decode token's GPU time to its stage classes and print the ledger against the bytes each class reads | false |
 

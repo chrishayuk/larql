@@ -187,8 +187,10 @@ pub struct ExecArgs {
 
     /// Greedy-decode this many new tokens after the prompt, printing
     /// per-step timing and a decode report instead of a single-forward
-    /// summary. Every step re-runs the full forward — the interpreter
-    /// has no KV cache yet, and the report says so.
+    /// summary. Runs on a `DecodeSession`: operands are loaded once and
+    /// each token advances one position against the session's
+    /// continuation state (KV cache, or recurrent state), so the report
+    /// prices weight load, prompt ingestion and steady decode separately.
     #[arg(long, conflicts_with_all = ["dump_layers", "resume"])]
     pub generate: Option<usize>,
 
@@ -446,12 +448,14 @@ pub fn run(cmd: Vindex3Command) -> Result<(), Box<dyn std::error::Error>> {
 mod artifact;
 mod bank;
 mod consequence;
+pub(crate) mod decode;
 mod exec;
 mod generate;
 #[cfg(all(feature = "gpu", target_os = "macos"))]
 mod lowered;
 mod ops;
 mod optional_op;
+pub(crate) mod prepare;
 mod sensitivity;
 mod teacher_force;
 use exec::run_exec;

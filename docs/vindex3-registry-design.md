@@ -62,6 +62,14 @@ qwen3.8` cannot actually execute yet regardless of what the resolver
 returns — that gap is pre-existing and out of scope here (§7 says not
 to wire runtime lifecycle in this rung).
 
+> **Closed 2026-09-01.** `run_cmd::run` now detects a VINDEX3 container
+> from its `index.json` generation before any VINDEX2-only reader opens
+> it, and routes to `run_cmd_vindex3`: the container is prepared through
+> `vindex3_cmd::prepare` — the one authority `larql vindex3 exec` also
+> uses — and text streams through the tokenizer the container carries.
+> The resolver consolidation above is still open; the execution gap is
+> not.
+
 **The local cache has no persisted manifest at all — the filesystem
 *is* the registry.** `~/.cache/larql/local/` is a directory of
 symlinks (`<name>.vindex` → target dir); `~/.cache/huggingface/hub/`
@@ -255,7 +263,8 @@ the CLI needing to pass it anywhere yet).
 follow-ups): consolidating the three existing resolvers into calling
 the new one; wiring `--profile` through to `Vindex3Runtime::open`;
 fixing `larql pull`'s VINDEX2-fixed-file-list download so a VINDEX3
-repo actually round-trips; giving `larql run` a VINDEX3 execution path.
+repo actually round-trips; giving `larql run` a VINDEX3 execution path
+(done 2026-09-01, `run_cmd_vindex3`).
 
 ## 8. Confirmed architecture decisions (2026-08-23)
 

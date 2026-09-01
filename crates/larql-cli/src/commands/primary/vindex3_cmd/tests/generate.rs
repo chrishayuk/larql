@@ -2,7 +2,7 @@
 //! report's timing math, and one end-to-end greedy decode over the
 //! encoded fixture.
 
-use super::super::generate::{argmax, DecodeReport};
+use super::super::decode::{argmax, DecodeReport};
 use super::super::{run, EncodeArgs, ExecArgs, ExecBackend, Vindex3Command};
 use super::fixture_dir;
 
