@@ -12,6 +12,7 @@ mod kimi_moe_closure;
 pub(crate) mod mamba2;
 mod mla_op;
 mod plan;
+mod tied_head_realization;
 mod unjudged;
 
 use std::path::PathBuf;

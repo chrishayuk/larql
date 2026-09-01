@@ -73,6 +73,15 @@ pub const EXECUTION_SEMANTIC_KEYS: &[&str] = &[
     // Whether the MLA block omits rotary entirely.
     "mla_use_nope",
     "sliding_window",
+    // The window's ENABLE flag and its layer bound. Execution semantics,
+    // not metadata: they decide whether the window applies at all and how
+    // far up the stack, and `ModelArchitecture::sliding_window_size`
+    // resolves all three into one effective policy. Qwen ships a window
+    // beside `use_sliding_window: false`, and honouring the size without
+    // the flag is how a declared-inactive feature becomes an active wrong
+    // answer.
+    "use_sliding_window",
+    "max_window_layers",
     "max_position_embeddings",
     // Kimi Linear's spelling of the same serving bound.
     "model_max_length",

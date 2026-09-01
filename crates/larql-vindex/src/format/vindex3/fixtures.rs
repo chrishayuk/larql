@@ -125,12 +125,36 @@ pub const DENSE_LAYERS: usize = 2;
 /// A dense Llama-shaped checkpoint with real F32 weights — loadable by
 /// the production path and encodable into a VINDEX3 container.
 pub fn dense_f32_model(dir: &Path) {
+    dense_f32_model_with(dir, HeadStorage::Separate);
+}
+
+/// How a checkpoint stores its output head.
+///
+/// A logical role and a serialised object are different things, and this
+/// is the axis on which they come apart. Qwen3-4B is the real instance:
+/// it declares `tie_word_embeddings: true` and ships no `lm_head.weight`
+/// at all, while Qwen3-0.6B and Qwen3-1.7B declare the same flag and ship
+/// the tensor anyway. Same family, same declaration, different
+/// realisation.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum HeadStorage {
+    /// A distinct `lm_head.weight` group — its own object in the
+    /// container.
+    Separate,
+    /// `tie_word_embeddings: true` and no head tensor. The logical role
+    /// still exists; nothing is serialised for it.
+    Tied,
+}
+
+/// The dense Llama-shaped checkpoint, with the head stored either way.
+pub fn dense_f32_model_with(dir: &Path, head: HeadStorage) {
     std::fs::write(
         dir.join("config.json"),
         serde_json::json!({
             "architectures": ["LlamaForCausalLM"],
             "torch_dtype": "float32",
             "model_type": "llama",
+            "tie_word_embeddings": head == HeadStorage::Tied,
             "hidden_size": DENSE_HIDDEN,
             "num_hidden_layers": DENSE_LAYERS,
             "intermediate_size": DENSE_INTERMEDIATE,
@@ -158,11 +182,13 @@ pub fn dense_f32_model(dir: &Path) {
         &[DENSE_HIDDEN],
         &norm_values(DENSE_HIDDEN, 2),
     );
-    shard.push(
-        "lm_head.weight",
-        &[DENSE_VOCAB, DENSE_HIDDEN],
-        &lcg_values(DENSE_VOCAB * DENSE_HIDDEN, 3),
-    );
+    if head == HeadStorage::Separate {
+        shard.push(
+            "lm_head.weight",
+            &[DENSE_VOCAB, DENSE_HIDDEN],
+            &lcg_values(DENSE_VOCAB * DENSE_HIDDEN, 3),
+        );
+    }
     for layer in 0..DENSE_LAYERS {
         let seed = 100 + layer as u64 * 10;
         let prefix = format!("model.layers.{layer}");

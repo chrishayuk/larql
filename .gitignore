@@ -49,6 +49,14 @@ build/
 *.hdf5
 *.vindex
 
+# ...except safetensors HEADER STUBS under a test fixtures directory. A
+# stub is a real upstream header with its payload truncated away — tens
+# of KB standing in for gigabytes — and it has to be in the repo, because
+# a range source's gates are only meaningful against metadata that came
+# from an actual checkpoint. `granite_tied_weights` asserts each stub is
+# under 100 KB, so this exception cannot quietly grow into real weights.
+!crates/larql-vindex/src/format/vindex3/encode/source/tests/fixtures/**/*.safetensors
+
 # Nix
 result
 result-*

@@ -10,6 +10,7 @@ use std::path::{Path, PathBuf};
 use clap::{Args, Subcommand};
 
 use larql_models::inventory::{build_inventory, ArchitectureInventory};
+use larql_vindex::format::vindex3::encode::source::TensorSource;
 use larql_vindex::format::vindex3::plan::plan_system;
 
 /// Extension distinguishing a saved inventory JSON from a checkpoint dir.
@@ -275,7 +276,12 @@ pub struct VerifyArgs {
 
 #[derive(Args)]
 pub struct EncodeArgs {
-    /// Checkpoint directories or inventory JSON files (one per artifact).
+    /// Checkpoint directories, inventory JSON files, or `hf://` repos
+    /// (one per artifact).
+    ///
+    /// An `hf://org/name[@revision]` artifact is admitted from its
+    /// safetensors headers alone — a few MB staged locally, standing in
+    /// for a checkpoint that is never downloaded.
     #[arg(required = true)]
     pub artifacts: Vec<PathBuf>,
 
@@ -409,7 +415,12 @@ pub struct InspectArgs {
 
 #[derive(Args)]
 pub struct PlanArgs {
-    /// Checkpoint directories or inventory JSON files (one per artifact).
+    /// Checkpoint directories, inventory JSON files, or `hf://` repos
+    /// (one per artifact).
+    ///
+    /// Planning an `hf://` repo costs its safetensors headers and
+    /// nothing else — the admission verdict for a 328 GB checkpoint,
+    /// before deciding whether to spend the download.
     #[arg(required = true)]
     pub artifacts: Vec<PathBuf>,
 
@@ -432,6 +443,7 @@ pub fn run(cmd: Vindex3Command) -> Result<(), Box<dyn std::error::Error>> {
     }
 }
 
+mod artifact;
 mod bank;
 mod consequence;
 mod exec;
@@ -448,6 +460,20 @@ use ops::run_ops;
 fn run_verify(args: VerifyArgs) -> Result<(), Box<dyn std::error::Error>> {
     let mut named = Vec::new();
     for path in &args.artifacts {
+        // Verification re-reads every payload byte to re-hash it, so an
+        // `hf://` artifact would re-transfer the whole checkpoint — the
+        // one thing the remote encode exists to avoid. Refuse by name
+        // rather than let it look like a path that does not exist.
+        if artifact::is_remote_spec(path) {
+            return Err(format!(
+                "`{}` is a repo, and verification re-reads every payload byte to \
+                 re-hash it — pointing it at a repo would re-transfer the whole \
+                 checkpoint. Verify against a local checkpoint, or check the \
+                 container's own recorded payload_sha256.",
+                path.display()
+            )
+            .into());
+        }
         named.push((artifact_name(path), load_artifact(path)?));
     }
     let verification =
@@ -502,24 +528,47 @@ fn run_verify(args: VerifyArgs) -> Result<(), Box<dyn std::error::Error>> {
 }
 
 fn run_encode(args: EncodeArgs) -> Result<(), Box<dyn std::error::Error>> {
-    let mut named = Vec::new();
-    for path in &args.artifacts {
-        named.push((artifact_name(path), load_artifact(path)?));
-    }
-    let outcome = match args.capability {
-        Some(capability) => {
-            eprintln!(
-                "admission scoped to {:?}; whole-model completeness is NOT asserted",
-                capability
-            );
-            larql_vindex::format::vindex3::encode::encode_system_for_capability(
-                &named,
-                &args.output,
-                capability.into(),
-            )?
+    let resolved = artifact::resolve_all(&args.artifacts)?;
+    for entry in &resolved {
+        if let Some(commit) = entry.commit() {
+            eprintln!("artifact `{}` pinned at commit {commit}", entry.name);
         }
-        None => larql_vindex::format::vindex3::encode::encode_system(&named, &args.output)?,
-    };
+    }
+    if let Some(capability) = args.capability {
+        eprintln!(
+            "admission scoped to {:?}; whole-model completeness is NOT asserted",
+            capability
+        );
+    }
+
+    // Opening a source reads no payload: the local one reads shard
+    // headers, the remote one indexes headers already staged. The
+    // admission gate then runs inside `encode_system_from_sources`,
+    // before the first `stream_payload`. So an inadmissible repo costs
+    // its headers and not one tensor byte.
+    let named: Vec<(String, ArchitectureInventory)> = resolved
+        .iter()
+        .map(|a| (a.name.clone(), a.inventory.clone()))
+        .collect();
+    let payloads: Vec<(String, artifact::ArtifactPayloads)> = resolved
+        .into_iter()
+        .map(|a| {
+            let name = a.name.clone();
+            a.payloads().map(|p| (name, p))
+        })
+        .collect::<Result<_, _>>()?;
+    let sources: std::collections::BTreeMap<&str, &dyn TensorSource> = payloads
+        .iter()
+        .map(|(name, p)| (name.as_str(), p.as_source()))
+        .collect();
+
+    let outcome = larql_vindex::format::vindex3::encode::encode_system_from_sources(
+        &named,
+        Some(&sources),
+        &args.output,
+        args.capability.map(Into::into),
+    )?;
+    report_remote_transfer(&payloads);
     // Capability snapshot: tokenizer + HF metadata from the first
     // artifact directory that carries them (the inventory records its
     // source dir, so this covers both checkpoint-dir and saved-inventory
@@ -538,12 +587,41 @@ fn run_encode(args: EncodeArgs) -> Result<(), Box<dyn std::error::Error>> {
         }
     }
     eprintln!(
-        "encoded {} representation(s), {:.2} GB payload → {}",
+        "encoded {} representation(s), {} payload → {}",
         outcome.representations,
-        outcome.total_payload_bytes as f64 / 1e9,
+        artifact::size(outcome.total_payload_bytes),
         outcome.container.display(),
     );
     Ok(())
+}
+
+/// What the repo-backed artifacts actually pulled over the wire.
+///
+/// The headline claim of an `hf://` encode is a ratio: bytes fetched
+/// against bytes the checkpoint declares. Printing it makes the claim
+/// checkable rather than asserted — and a ratio near 1.0 is the signal
+/// that the representation plan asked for everything, which is worth
+/// seeing.
+fn report_remote_transfer(payloads: &[(String, artifact::ArtifactPayloads)]) {
+    for (name, entry) in payloads {
+        let Some(remote) = entry.remote() else {
+            continue;
+        };
+        let declared = remote.declared_bytes();
+        let fetched = remote.fetched();
+        let share = if declared == 0 {
+            0.0
+        } else {
+            fetched as f64 / declared as f64 * 100.0
+        };
+        eprintln!(
+            "{name}: fetched {} of {} declared ({share:.1}%) across {} tensor(s); \
+             the checkpoint was never on this disk",
+            artifact::size(fetched),
+            artifact::size(declared),
+            remote.tensors(),
+        );
+    }
 }
 
 /// `larql vindex3 represent` — compile a physical representation.
@@ -874,10 +952,11 @@ fn load_artifact(path: &Path) -> Result<ArchitectureInventory, Box<dyn std::erro
 }
 
 fn run_plan(args: PlanArgs) -> Result<(), Box<dyn std::error::Error>> {
-    let mut named = Vec::new();
-    for path in &args.artifacts {
-        named.push((artifact_name(path), load_artifact(path)?));
-    }
+    let resolved = artifact::resolve_all(&args.artifacts)?;
+    let named: Vec<(String, ArchitectureInventory)> = resolved
+        .into_iter()
+        .map(|a| (a.name, a.inventory))
+        .collect();
     let plan = plan_system(&named);
     let json = serde_json::to_string_pretty(&plan)?;
     match &args.output {

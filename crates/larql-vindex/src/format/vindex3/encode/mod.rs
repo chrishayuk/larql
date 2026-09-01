@@ -40,7 +40,7 @@ use super::plan::plan_system;
 use crate::error::VindexError;
 use crate::format::filenames::INDEX_JSON;
 use segment::PlannedTensor;
-use source::ArtifactSource;
+use source::{ArtifactSource, TensorSource};
 
 /// Filename of the system-graph manifest within a container.
 pub const SYSTEM_GRAPH_JSON: &str = "system_graph.json";
@@ -67,21 +67,7 @@ pub fn encode_system(
     named: &[(String, ArchitectureInventory)],
     out: &Path,
 ) -> Result<EncodeOutcome, VindexError> {
-    let plan = plan_system(named);
-    if !plan.admissible {
-        return Err(VindexError::Parse(format!(
-            "refusing to encode an inadmissible plan: {} blocking finding(s); \
-             run `larql vindex3 plan` for the itemised reasons",
-            plan.summary.blocking
-        )));
-    }
-    let outcome = encode_graph(&plan.graph, named, out)?;
-    // Closure at encode holds on THIS path too (drill F4): a container
-    // whose operands do not close is removed, never written — the
-    // single-checkpoint path has enforced this since schema 6, and the
-    // 2.7B hybrid witness caught this sibling path not enforcing it.
-    checkpoint::enforce_closure_at_encode(out)?;
-    Ok(outcome)
+    encode_system_from_sources(named, None, out, None)
 }
 
 /// Encode a system gated on ONE capability's dependency closure instead of
@@ -109,30 +95,74 @@ pub fn encode_system_for_capability(
     out: &Path,
     capability: crate::format::vindex3::plan::capability::Capability,
 ) -> Result<EncodeOutcome, VindexError> {
+    encode_system_from_sources(named, None, out, Some(capability))
+}
+
+/// [`encode_system`] over payload sources the caller supplies.
+///
+/// The gate is unchanged and runs first, on the inventories — which is
+/// the whole reason a remote encode is possible at all. Admission reads
+/// headers, and headers are cheap; only once the plan is admissible does
+/// anything ask a source for a payload byte.
+///
+/// `sources` maps artifact name to the place that artifact's tensors come
+/// from. `None` opens the local directory each inventory records, which
+/// is what every caller predating remote sources meant.
+///
+/// `capability` scopes the admission gate exactly as
+/// [`encode_system_for_capability`] describes; `None` is the whole-model
+/// bar.
+pub fn encode_system_from_sources(
+    named: &[(String, ArchitectureInventory)],
+    sources: Option<&BTreeMap<&str, &dyn TensorSource>>,
+    out: &Path,
+    capability: Option<crate::format::vindex3::plan::capability::Capability>,
+) -> Result<EncodeOutcome, VindexError> {
     let plan = plan_system(named);
-    let status = plan
-        .capabilities
-        .iter()
-        .find(|c| c.capability == capability)
-        .ok_or_else(|| {
-            VindexError::Parse(format!("this build reports no verdict for {capability:?}"))
-        })?;
-    if !status.admissible {
-        return Err(VindexError::Parse(format!(
-            "refusing to encode for {:?}: {} blocking finding(s) inside that capability's \
-             closure; run `larql vindex3 plan` for the itemised reasons",
-            capability, status.blocking
-        )));
+    match capability {
+        None => {
+            if !plan.admissible {
+                return Err(VindexError::Parse(format!(
+                    "refusing to encode an inadmissible plan: {} blocking finding(s); \
+                     run `larql vindex3 plan` for the itemised reasons",
+                    plan.summary.blocking
+                )));
+            }
+        }
+        Some(capability) => {
+            let status = plan
+                .capabilities
+                .iter()
+                .find(|c| c.capability == capability)
+                .ok_or_else(|| {
+                    VindexError::Parse(format!("this build reports no verdict for {capability:?}"))
+                })?;
+            if !status.admissible {
+                return Err(VindexError::Parse(format!(
+                    "refusing to encode for {:?}: {} blocking finding(s) inside that \
+                     capability's closure; run `larql vindex3 plan` for the itemised reasons",
+                    capability, status.blocking
+                )));
+            }
+            // Understanding the semantics is not the same as this build
+            // being able to run them, and a container written for a
+            // capability nothing can execute would be a promise the
+            // runtime cannot keep.
+            if !status.supported {
+                return Err(VindexError::Parse(format!(
+                    "refusing to encode for {capability:?}: this build has no executor for it"
+                )));
+            }
+        }
     }
-    // Understanding the semantics is not the same as this build being
-    // able to run them, and a container written for a capability nothing
-    // can execute would be a promise the runtime cannot keep.
-    if !status.supported {
-        return Err(VindexError::Parse(format!(
-            "refusing to encode for {capability:?}: this build has no executor for it"
-        )));
-    }
-    let outcome = encode_graph(&plan.graph, named, out)?;
+    let outcome = match sources {
+        Some(sources) => encode_graph_with_sources(&plan.graph, named, sources, out)?,
+        None => encode_graph(&plan.graph, named, out)?,
+    };
+    // Closure at encode holds on THIS path too (drill F4): a container
+    // whose operands do not close is removed, never written — the
+    // single-checkpoint path has enforced this since schema 6, and the
+    // 2.7B hybrid witness caught this sibling path not enforcing it.
     checkpoint::enforce_closure_at_encode(out)?;
     Ok(outcome)
 }
@@ -172,20 +202,48 @@ pub fn encode_graph(
     named: &[(String, ArchitectureInventory)],
     out: &Path,
 ) -> Result<EncodeOutcome, VindexError> {
-    let defects = graph.validate();
-    if !defects.is_empty() {
-        return Err(VindexError::Parse(format!(
-            "system graph failed validation before encode: {defects:?}"
-        )));
-    }
+    // Validation before I/O: a defective graph must report the defect,
+    // not a failure to open the checkpoint it would never have read.
+    // `encode_graph_with_sources` validates again — it is a public entry
+    // and cannot assume it — and validating an in-memory graph twice
+    // costs nothing.
+    validate_graph(graph)?;
 
-    // Sources by artifact name, opened once.
-    let mut sources: BTreeMap<&str, ArtifactSource> = BTreeMap::new();
-    for (name, inventory) in named {
-        sources.insert(
-            name.as_str(),
-            ArtifactSource::open(Path::new(&inventory.path))?,
-        );
+    // Sources by artifact name, opened once, from the directory each
+    // inventory records.
+    let opened: Vec<(&str, ArtifactSource)> = named
+        .iter()
+        .map(|(name, inventory)| {
+            ArtifactSource::open(Path::new(&inventory.path)).map(|source| (name.as_str(), source))
+        })
+        .collect::<Result<_, _>>()?;
+    let sources: BTreeMap<&str, &dyn TensorSource> = opened
+        .iter()
+        .map(|(name, source)| (*name, source as &dyn TensorSource))
+        .collect();
+    encode_graph_with_sources(graph, named, &sources, out)
+}
+
+/// [`encode_graph`] over payload sources the caller supplies, keyed by
+/// artifact name.
+///
+/// This is where the container's bytes are actually written, and it is
+/// the only place that reads a payload. Everything above it — plan,
+/// admission, capability closure — runs on headers alone.
+pub fn encode_graph_with_sources(
+    graph: &SystemGraph,
+    named: &[(String, ArchitectureInventory)],
+    sources: &BTreeMap<&str, &dyn TensorSource>,
+    out: &Path,
+) -> Result<EncodeOutcome, VindexError> {
+    validate_graph(graph)?;
+
+    for (name, _) in named {
+        if !sources.contains_key(name.as_str()) {
+            return Err(VindexError::Parse(format!(
+                "no payload source supplied for artifact `{name}`"
+            )));
+        }
     }
     let inventories: BTreeMap<&str, &ArchitectureInventory> =
         named.iter().map(|(n, i)| (n.as_str(), i)).collect();
@@ -267,6 +325,17 @@ pub fn encode_graph(
         representations: index.representations.len(),
         total_payload_bytes,
     })
+}
+
+/// Refuse a graph that does not validate, naming its defects.
+fn validate_graph(graph: &SystemGraph) -> Result<(), VindexError> {
+    let defects = graph.validate();
+    if defects.is_empty() {
+        return Ok(());
+    }
+    Err(VindexError::Parse(format!(
+        "system graph failed validation before encode: {defects:?}"
+    )))
 }
 
 /// The artifact owning `source_name` under one of `object`'s bindings —

@@ -212,6 +212,8 @@ mod tests {
             layer_rope_theta: None,
             rope_local_base: Some(10_000.0),
             sliding_window: Some(1024),
+            use_sliding_window: None,
+            max_window_layers: None,
             num_experts: None,
             num_experts_per_token: None,
             num_shared_experts: None,
