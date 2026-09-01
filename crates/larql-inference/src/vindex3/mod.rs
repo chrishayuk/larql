@@ -53,7 +53,7 @@ pub use generate::{
     continue_session, continue_session_masked, generate_session, LogitsMask, SessionGeneration,
 };
 pub use larql_vindex::format::vindex3::opplan::exec::prepared::{ExecutionSlice, PreparedOperands};
-pub use runtime::{PreparedVindex3, Vindex3Runtime};
+pub use runtime::{open_component, OpenPolicy, OpenedComponent, PreparedVindex3, Vindex3Runtime};
 pub use session::{LogitsSession, Vindex3Session};
 
 pub use explain::{

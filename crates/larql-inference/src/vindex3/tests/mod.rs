@@ -16,6 +16,8 @@
 //! known-different input): a diverged prompt stream must produce
 //! diverged logits, or bit-equality above proves nothing.
 
+mod opener;
+
 use std::path::Path;
 
 use larql_vindex::format::vindex3::fixtures::{
