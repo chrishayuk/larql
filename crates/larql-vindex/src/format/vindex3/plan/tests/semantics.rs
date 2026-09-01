@@ -102,3 +102,72 @@ fn leaf_extraction() {
     );
     assert_eq!(leaf_of("block_size"), "block_size");
 }
+
+/// **A named absent component is not a normalisation gap.**
+///
+/// The census's own falsification test. Almost everything it has found so
+/// far has been normalisation — an alias, a disabled flag, a checked
+/// default — and a taxonomy able to express only those would score
+/// GLM-5.3-Flash's sparse indexer as more of the same. It has to say
+/// instead that this is architecture work nobody has done.
+#[test]
+fn a_key_configuring_an_absent_component_grades_unsupported_and_blocks() {
+    for key in [
+        "index_head_dim",
+        "index_topk",
+        "indexer_types",
+        "indexer_rope_interleave",
+        "hc_sinkhorn_iters",
+    ] {
+        assert_eq!(
+            classify_key(key),
+            SemanticClass::UnsupportedComponent,
+            "{key}"
+        );
+    }
+
+    // It must still block. The class changes what the report SAYS, never
+    // how much it permits: an unimplemented component is exactly as
+    // disqualifying as an unexamined key.
+    assert!(SemanticClass::UnsupportedComponent.is_critical());
+}
+
+/// The indexer's rotary pairing belongs to the indexer.
+///
+/// A regex over `rope` swept `indexer_rope_interleave` into the general
+/// RoPE cluster, where acting on it would have applied an interleaved
+/// pairing to the whole model — wrong component and wrong operator, and
+/// live rather than latent, because GLM declares `true`.
+#[test]
+fn the_indexers_rotary_pairing_is_owned_by_the_indexer() {
+    use crate::format::vindex3::plan::semantics::unsupported_component;
+
+    assert_eq!(
+        unsupported_component("indexer_rope_interleave"),
+        unsupported_component("index_topk"),
+        "the indexer's own rope belongs to the indexer, not to general RoPE handling"
+    );
+    assert_ne!(
+        classify_key("indexer_rope_interleave"),
+        classify_key("rope_interleaved"),
+        "the model's rotary pairing and the indexer's are different facts"
+    );
+}
+
+/// **The table may not become the convenient bucket.**
+///
+/// `mhc: true` sits directly beside `hc_eps`, `hc_mult` and
+/// `hc_sinkhorn_iters` in GLM's config and is very likely part of the
+/// same component. It is a bare boolean whose expansion cannot be
+/// checked — `glm5_next` is not in transformers 5.5.0 and the repo ships
+/// no modeling code — so it stays `unknown`.
+///
+/// This arm is what stops the registry absorbing everything nearby and
+/// reporting a tidier estimate than the evidence supports.
+#[test]
+fn a_neighbouring_key_with_no_evidence_stays_unknown() {
+    assert_eq!(classify_key("mhc"), SemanticClass::Unknown);
+    for key in ["qk_head_dim", "topk_method", "moe_router_dtype"] {
+        assert_eq!(classify_key(key), SemanticClass::Unknown, "{key}");
+    }
+}

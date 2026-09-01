@@ -164,6 +164,22 @@ pub enum SemanticClass {
     TensorSemantic,
     /// Declares a cross-component contract (taps, token protocol).
     InterfaceSemantic,
+    /// Judged, and it configures a model COMPONENT this build does not
+    /// implement.
+    ///
+    /// Blocking, exactly like [`Self::Unknown`] — the difference is not
+    /// severity but knowledge. `Unknown` means nobody has looked; this
+    /// means somebody looked and found real architecture work behind the
+    /// key. Nine keys naming one absent component is one piece of work,
+    /// and reporting them as nine anonymous unknowns says nothing about
+    /// how much.
+    ///
+    /// The distinction is what stops the census from flattering itself.
+    /// Most of its findings so far have been normalization — an alias, a
+    /// disabled flag, a checked default — and a taxonomy that could only
+    /// express those would score GLM-5.3-Flash's sparse indexer as more
+    /// of the same. This class is the arm that refuses to.
+    UnsupportedComponent,
     /// Not in the registry — nobody has judged it, so it blocks.
     Unknown,
 }
@@ -176,6 +192,7 @@ impl SemanticClass {
             Self::ExecutionSemantic
                 | Self::TensorSemantic
                 | Self::InterfaceSemantic
+                | Self::UnsupportedComponent
                 | Self::Unknown
         )
     }

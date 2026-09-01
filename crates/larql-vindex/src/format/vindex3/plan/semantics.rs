@@ -491,6 +491,83 @@ pub const ALIAS_KEYS: &[(&str, &str)] = &[
 /// been reviewed; every future entry must carry a justification comment.
 pub const IGNORED_SAFE_KEYS: &[&str] = &[];
 
+/// Keys that configure a model COMPONENT this build does not implement:
+/// `leaf → component`.
+///
+/// The point is arithmetic. A component is one piece of engineering
+/// whatever its key count, so nine keys naming one absent indexer should
+/// read as one job and not nine mysteries. `Unknown` cannot say that —
+/// it means "nobody has looked" — and a report made mostly of `unknown`
+/// tells you how much was unexamined rather than how much is left.
+///
+/// **Entries are earned by evidence, not by adjacency.** Every key here
+/// is grouped on something checkable: a shared prefix, a self-consistent
+/// geometry, an array whose length equals the layer count. A key that
+/// merely sits nearby stays [`SemanticClass::Unknown`], which is the
+/// honest answer and the one that keeps this table from becoming the
+/// convenient bucket everything falls into.
+pub const UNSUPPORTED_COMPONENT_KEYS: &[(&str, &str)] = &[
+    // GLM-5.3-Flash's learned SPARSE ATTENTION INDEXER: a side network
+    // that scores keys so attention can read `index_topk` of them
+    // instead of the whole context.
+    //
+    // Grouped on evidence rather than on the `index` prefix alone. The
+    // geometry is self-consistent and separate from the model's own
+    // (`index_n_heads: 32`, `index_head_dim: 128`, against the text
+    // stack's `qk_head_dim: 256`); `index_topk: 2048` is a selection
+    // count, not a width; the pooling trio describes one mechanism; and
+    // `indexer_types` carries exactly 45 entries against
+    // `num_hidden_layers: 45`, so it is a per-layer schedule for this
+    // component the way `layer_types` is for attention.
+    //
+    // No reference implementation exists to check any of this against:
+    // `glm5_next` is absent from transformers 5.5.0 and the repo ships
+    // no remote modeling code (72 files, zero `.py`). So the component is
+    // NAMED and REFUSED, never guessed at — which is the whole difference
+    // between an engineering estimate and a compatibility claim.
+    ("index_head_dim", GLM_SPARSE_INDEXER),
+    ("index_n_heads", GLM_SPARSE_INDEXER),
+    ("index_topk", GLM_SPARSE_INDEXER),
+    ("index_kpool", GLM_SPARSE_INDEXER),
+    ("index_kpool_compress", GLM_SPARSE_INDEXER),
+    ("index_kpool_always_select_tail", GLM_SPARSE_INDEXER),
+    ("index_share_for_mtp_iteration", GLM_SPARSE_INDEXER),
+    ("indexer_types", GLM_SPARSE_INDEXER),
+    // The indexer's OWN rotary pairing, and the reason this key is worth
+    // singling out: a regex over `rope` swept it into the general RoPE
+    // cluster, where "fixing" it would have meant applying an interleaved
+    // pairing to the whole model. Wrong component AND wrong operator, and
+    // the checkpoint declares `true`, so the mistake would have been live
+    // rather than latent.
+    ("indexer_rope_interleave", GLM_SPARSE_INDEXER),
+    // Hyper-connections: a residual stream widened by `hc_mult` and mixed
+    // by a Sinkhorn-normalised map. Grouped on the shared `hc_` prefix
+    // plus `hc_sinkhorn_iters`, which names a specific algorithm rather
+    // than a generic knob.
+    //
+    // `mhc: true` sits beside these and is NOT listed. It is a bare
+    // boolean whose expansion cannot be checked without a reference, and
+    // guessing it into this table is exactly the failure the table's
+    // contract forbids. It stays `unknown`, which is what it is.
+    ("hc_eps", GLM_HYPER_CONNECTIONS),
+    ("hc_mult", GLM_HYPER_CONNECTIONS),
+    ("hc_sinkhorn_iters", GLM_HYPER_CONNECTIONS),
+];
+
+/// Component label for GLM's learned sparse attention indexer.
+const GLM_SPARSE_INDEXER: &str = "sparse attention indexer (GLM-5.x)";
+
+/// Component label for GLM's hyper-connection residual mixing.
+const GLM_HYPER_CONNECTIONS: &str = "hyper-connections (GLM-5.x)";
+
+/// The unimplemented component this leaf configures, if any.
+pub fn unsupported_component(leaf: &str) -> Option<&'static str> {
+    UNSUPPORTED_COMPONENT_KEYS
+        .iter()
+        .find(|(key, _)| *key == leaf)
+        .map(|(_, component)| *component)
+}
+
 /// The canonical spelling this leaf aliases, if it is a registered alias.
 pub fn alias_canonical(leaf: &str) -> Option<&'static str> {
     ALIAS_KEYS
@@ -515,6 +592,8 @@ pub fn classify_key(leaf: &str) -> SemanticClass {
         SemanticClass::Alias
     } else if IGNORED_SAFE_KEYS.contains(&leaf) {
         SemanticClass::IgnoredSafe
+    } else if unsupported_component(leaf).is_some() {
+        SemanticClass::UnsupportedComponent
     } else {
         SemanticClass::Unknown
     }
