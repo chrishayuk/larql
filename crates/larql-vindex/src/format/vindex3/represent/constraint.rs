@@ -39,7 +39,7 @@
 use serde::{Deserialize, Serialize};
 
 use super::measurement::{MeasurementStatus, TailSupport, TailSupportPolicy};
-use super::quality::{Criterion, QualityBank, QualityGate};
+use super::quality::{Criterion, QualityBank, QualityGate, Statistic};
 
 /// Whether a limit is a ceiling the candidate spends against, or a
 /// floor the measurement itself has to clear.
@@ -56,10 +56,12 @@ pub enum LimitKind {
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct Margin {
     pub criterion: Criterion,
-    /// Which limit this is, in the gate's own words — `Criterion` is
-    /// coarser than the gate: `RouteDisplacement` carries both a p99
-    /// and a max limit, and they can bind independently.
-    pub what: String,
+    /// Which limit this is — `Criterion` is coarser than the gate:
+    /// `RouteDisplacement` carries both a p99 and a max limit, and they
+    /// can bind independently. TYPED, because this is the join key the
+    /// calibration registry and a candidate's proxies look up on; see
+    /// [`Statistic`] for what a free string cost.
+    pub what: Statistic,
     pub kind: LimitKind,
     pub limit: f64,
     /// `None` when the bank did not record this quantity. That is NOT
@@ -152,11 +154,11 @@ impl ConstraintVector {
     pub fn of(gate: &QualityGate, bank: &QualityBank) -> Self {
         let mut margins = Vec::new();
         let mut ceiling =
-            |criterion, what: &str, limit: Option<f64>, observed, vacuous, tail_support| {
+            |criterion, what: Statistic, limit: Option<f64>, observed, vacuous, tail_support| {
                 if let Some(limit) = limit {
                     margins.push(Margin {
                         criterion,
-                        what: what.into(),
+                        what,
                         kind: LimitKind::Ceiling,
                         limit,
                         observed,
@@ -175,7 +177,7 @@ impl ConstraintVector {
         // kl is DENSE: every position contributes a value.
         ceiling(
             Criterion::KlP99,
-            "kl p99",
+            Statistic::KlP99,
             Some(gate.kl_p99_max),
             Some(bank.logits.kl_p99),
             false,
@@ -184,19 +186,19 @@ impl ConstraintVector {
         for (criterion, what, limit, got) in [
             (
                 Criterion::Top1Flips,
-                "top-1 flips",
+                Statistic::Top1Flips,
                 gate.top1_flip_max,
                 bank.logits.top1_flips,
             ),
             (
                 Criterion::Top10Changes,
-                "top-10 changes",
+                Statistic::Top10Changes,
                 gate.top10_change_max,
                 bank.logits.top10_changes,
             ),
             (
                 Criterion::RouteFlips,
-                "route flips",
+                Statistic::RouteFlips,
                 gate.route_flip_max,
                 bank.routing.route_flips,
             ),
@@ -223,7 +225,7 @@ impl ConstraintVector {
         for (criterion, what, limit, observed, changes, support) in [
             (
                 Criterion::Top1Displacement,
-                "top-1 probability given up",
+                Statistic::Top1MassDisplaced,
                 gate.top1_mass_displaced_max,
                 bank.top1_mass_displaced.map(|d| d.max),
                 bank.logits.top1_flips,
@@ -231,7 +233,7 @@ impl ConstraintVector {
             ),
             (
                 Criterion::TopKDisplacement,
-                "top-10 mass displaced at p99",
+                Statistic::Top10MassDisplacedP99,
                 gate.top10_mass_displaced_p99_max,
                 bank.top10_mass_displaced.map(|d| d.p99),
                 bank.logits.top10_changes,
@@ -239,7 +241,7 @@ impl ConstraintVector {
             ),
             (
                 Criterion::RouteDisplacement,
-                "routed mixture moved at p99",
+                Statistic::RouteMixtureMassP99,
                 gate.route_mixture_mass_p99_max,
                 bank.routing.route_weight_mass_moved.map(|d| d.p99),
                 bank.routing.route_flips,
@@ -250,7 +252,7 @@ impl ConstraintVector {
             ),
             (
                 Criterion::RouteDisplacement,
-                "routed mixture moved at max",
+                Statistic::RouteMixtureMassMax,
                 gate.route_mixture_mass_max,
                 bank.routing.route_weight_mass_moved.map(|d| d.max),
                 bank.routing.route_flips,
@@ -265,7 +267,7 @@ impl ConstraintVector {
         // are conditions without which the ceilings above mean nothing.
         margins.push(Margin {
             criterion: Criterion::Positions,
-            what: "positions".into(),
+            what: Statistic::Positions,
             kind: LimitKind::Floor,
             limit: gate.positions_min as f64,
             observed: Some(bank.positions as f64),
@@ -275,7 +277,7 @@ impl ConstraintVector {
         if let Some(required) = gate.covered_mass_min {
             margins.push(Margin {
                 criterion: Criterion::CoveredMass,
-                what: "covered mass at the worst position".into(),
+                what: Statistic::CoveredMass,
                 kind: LimitKind::Floor,
                 limit: required,
                 observed: bank.min_covered_mass,

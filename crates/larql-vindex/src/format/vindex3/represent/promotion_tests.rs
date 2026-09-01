@@ -6,6 +6,7 @@ use super::super::constraint::{ConstraintVector, LimitKind, Margin};
 use super::super::execution_cost::{m3max_metal_001, ExecutionCostModel};
 use super::super::measurement::{EvidenceScale, TailSupport};
 use super::super::quality::Criterion;
+use super::super::quality::Statistic;
 use super::*;
 
 const KIMI: &str = "Kimi-Linear-48B-A3B-Instruct";
@@ -26,9 +27,9 @@ fn ledger(fraction: f64, name: &str) -> ByteLedger {
 }
 
 fn vector(kl: f64, route: f64) -> ConstraintVector {
-    let ceiling = |what: &str, criterion, u: f64| Margin {
+    let ceiling = |what: Statistic, criterion, u: f64| Margin {
         criterion,
-        what: what.into(),
+        what,
         kind: LimitKind::Ceiling,
         limit: 1.0,
         observed: Some(u),
@@ -41,9 +42,9 @@ fn vector(kl: f64, route: f64) -> ConstraintVector {
     ConstraintVector {
         gate_id: "kimi-logit-balanced-v1".into(),
         margins: vec![
-            ceiling("kl p99", Criterion::KlP99, kl),
+            ceiling(Statistic::KlP99, Criterion::KlP99, kl),
             ceiling(
-                "routed mixture moved at p99",
+                Statistic::RouteMixtureMassP99,
                 Criterion::RouteDisplacement,
                 route,
             ),
@@ -65,8 +66,8 @@ fn candidate(name: &str, removes: f64, kl_after: f64, route_after: f64) -> Candi
 
 fn flip_rate(parent: f64, cand: f64) -> ProxyObservation {
     ProxyObservation {
-        statistic: "route flip rate".into(),
-        for_criterion: "routed mixture moved at p99".into(),
+        statistic: Statistic::RouteFlips,
+        for_criterion: Statistic::RouteMixtureMassP99,
         parent,
         candidate: cand,
         evidence: SearchEvidence::OrderingProxy {
@@ -159,7 +160,7 @@ fn the_weakest_unpriceable_dimension_decides_not_the_average() {
     );
     assert_eq!(a.readiness(), PromotionReadiness::ProxySupported);
     let mut orphan = flip_rate(0.16, 0.15);
-    orphan.for_criterion = "some other criterion".into();
+    orphan.for_criterion = Statistic::Top10Changes;
     let b = PromotionCandidate::new(candidate("b", 0.22, 0.70, 0.84), vec![orphan]);
     assert_eq!(
         b.readiness(),

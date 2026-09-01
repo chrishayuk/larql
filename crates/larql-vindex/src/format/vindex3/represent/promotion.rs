@@ -38,6 +38,7 @@
 use serde::{Deserialize, Serialize};
 
 use super::assessment::{CandidateAssessment, MoveClass};
+use super::quality::Statistic;
 use super::search_evidence::SearchEvidence;
 
 /// Which way a proxy points for the criterion it stands in for.
@@ -55,9 +56,9 @@ pub enum ProxyRisk {
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct ProxyObservation {
     /// The proxy itself, e.g. `"route flip rate"`.
-    pub statistic: String,
+    pub statistic: Statistic,
     /// The contract criterion it stands in for.
-    pub for_criterion: String,
+    pub for_criterion: Statistic,
     pub parent: f64,
     pub candidate: f64,
     /// Why this proxy may be believed for ordering. Anything that is
@@ -130,7 +131,7 @@ impl PromotionCandidate {
     }
 
     /// Proxy evidence for one unpriceable criterion, if any is usable.
-    pub fn proxy_for(&self, criterion: &str) -> Option<&ProxyObservation> {
+    pub fn proxy_for(&self, criterion: Statistic) -> Option<&ProxyObservation> {
         self.proxies
             .iter()
             .find(|p| p.for_criterion == criterion && p.usable())
@@ -153,7 +154,7 @@ impl PromotionCandidate {
             if c.orders() {
                 continue;
             }
-            match self.proxy_for(&c.what).map(ProxyObservation::risk) {
+            match self.proxy_for(c.what).map(ProxyObservation::risk) {
                 Some(ProxyRisk::Benign) => {}
                 Some(ProxyRisk::Elevated) => {
                     if worst != PromotionReadiness::Uninformed {
@@ -224,7 +225,7 @@ impl PromotionCandidate {
                 if c.orders() {
                     return format!("{} unpriceable, orders itself", c.what);
                 }
-                match self.proxy_for(&c.what) {
+                match self.proxy_for(c.what) {
                     Some(p) => format!("{} unpriceable, {} {:?}", c.what, p.statistic, p.risk()),
                     None => format!("{} unpriceable, no proxy", c.what),
                 }

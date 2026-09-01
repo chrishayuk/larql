@@ -8,6 +8,7 @@
 //! resource is scarce should be tested against the measurement that
 //! made the question worth asking.
 
+use super::super::quality::Statistic;
 use super::super::quality::{
     kimi_logit_balanced_v1, kimi_logit_v1, Distribution, LogitEvidence, QualityBank, QualityGate,
     RoutingEvidence,
@@ -323,7 +324,7 @@ fn headroom_is_what_is_left_of_a_budget_and_floors_have_none() {
     let v = ConstraintVector::of(&kimi_logit_balanced_v1(), &four_family_selection());
     let route = v
         .spendable()
-        .find(|m| m.what == "routed mixture moved at p99")
+        .find(|m| m.what == Statistic::RouteMixtureMassP99)
         .expect("judged");
     // 1 - 0.1248/0.15: about a sixth of the route budget is left, which
     // is the number a search should be allocating against.
@@ -377,7 +378,7 @@ fn a_zero_budget_is_judged_but_never_ranked() {
         ..kimi_logit_v1()
     };
     let v = ConstraintVector::of(&gate, &four_family_selection());
-    for what in ["top-1 flips", "route flips"] {
+    for what in [Statistic::Top1Flips, Statistic::RouteFlips] {
         let m = v.spendable().find(|m| m.what == what).expect("judged");
         assert_eq!(m.limit, 0.0);
         assert_eq!(
@@ -416,7 +417,7 @@ fn a_zero_budget_that_was_never_spent_does_not_poison_the_ranking() {
     let v = ConstraintVector::of(&gate, &bank);
     let m = v
         .spendable()
-        .find(|m| m.what == "top-1 flips")
+        .find(|m| m.what == Statistic::Top1Flips)
         .expect("judged");
     assert!(m.satisfied(), "zero spent against a zero budget is fine");
     assert_eq!(
@@ -428,5 +429,56 @@ fn a_zero_budget_that_was_never_spent_does_not_poison_the_ranking() {
         v.binding().expect("scored").criterion,
         Criterion::Top1Flips,
         "an unrankable criterion must never be reported as the scarce one"
+    );
+}
+
+/// **BS2-F2.** A margin's key looks the calibration up — the registry
+/// and the constraint vector share ONE vocabulary.
+///
+/// The defect this pins: the registry keyed `"route flip rate"` while
+/// `ConstraintVector::of` emitted `"route flips"`. The lookup missed,
+/// `evidence_for` fell through to its `is_priceable()` arm, and route
+/// flips — a COUNT, so always `Measured` — came back `Direct`. The one
+/// statistic ROUTE-CAL-1 calibrated as ordering-ONLY was silently
+/// PRICED, which is the failure the ladder exists to prevent. Two of
+/// the four keys did match, so nothing looked wrong.
+///
+/// A free string could drift again; `Statistic` cannot. This test would
+/// not have caught the original defect had it passed its own literal to
+/// both sides — which is exactly what the fixtures did — so it takes the
+/// key from a REAL margin built by `ConstraintVector::of`.
+#[test]
+fn a_counted_proxy_is_ordered_never_priced_when_keyed_from_a_real_margin() {
+    use super::super::measurement::{EvidenceScale, MeasurementStatus, TailSupportPolicy};
+    use super::super::search_evidence::{SearchCalibrationRegistry, SearchEvidence};
+
+    // A gate that DOES limit route flips, so the vector emits that margin.
+    let gate = QualityGate {
+        route_flip_max: Some(64),
+        ..kimi_logit_v1()
+    };
+    let v = ConstraintVector::of(&gate, &four_family_selection());
+    let m = v
+        .margins
+        .iter()
+        .find(|m| m.criterion == Criterion::RouteFlips)
+        .expect("the gate limits route flips, so a margin exists");
+
+    // A count has no tail to be thin: it IS well measured.
+    let status = m.measurement_status(&TailSupportPolicy::route_cal_1());
+    assert_eq!(status, MeasurementStatus::Measured);
+
+    // And is STILL only a proxy. Before the typed key this returned
+    // Direct, because the lookup missed and `Measured` is priceable.
+    let r = SearchCalibrationRegistry::route_cal_1();
+    let e = r.evidence_for(m.what, EvidenceScale::Diagnostic, &status);
+    assert!(
+        matches!(e, SearchEvidence::OrderingProxy { .. }),
+        "a well-measured COUNT is still ordering-only evidence, got {e:?}"
+    );
+    assert!(e.orders());
+    assert!(
+        !e.is_priceable(),
+        "BS2-F2: a calibrated proxy must never become price"
     );
 }

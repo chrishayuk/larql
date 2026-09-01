@@ -267,6 +267,62 @@ pub enum Criterion {
     CoveredMass,
 }
 
+/// The exact quantity a [`super::constraint::Margin`] reports — the JOIN
+/// KEY between a constraint vector, the calibration registry, and a
+/// candidate's proxy observations.
+///
+/// **Finer than [`Criterion`] on purpose.** `RouteDisplacement` carries
+/// both a p99 and a max limit and they bind independently: at 256
+/// positions the p99 is a maximum wearing a percentile's name while the
+/// max is exactly what it says, so keying evidence on the criterion
+/// would hand the thin percentile the max's confidence.
+///
+/// **An enum and not a string, on purpose.** BS2-F2: the registry keyed
+/// `"route flip rate"` while the vector emitted `"route flips"`. The
+/// lookup missed, `SearchCalibrationRegistry::evidence_for` fell through
+/// to its `is_priceable()` arm, and a COUNT — always `Measured` —
+/// returned `Direct`. That silently PRICED the one statistic ROUTE-CAL-1
+/// calibrated as ordering-only, which is the failure the whole evidence
+/// ladder exists to prevent. Two of the three keys matched, so the
+/// mechanism looked like it worked. A typed key cannot drift.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+pub enum Statistic {
+    KlP99,
+    Top1Flips,
+    Top10Changes,
+    RouteFlips,
+    Top1MassDisplaced,
+    Top10MassDisplacedP99,
+    RouteMixtureMassP99,
+    RouteMixtureMassMax,
+    Positions,
+    CoveredMass,
+}
+
+impl Statistic {
+    /// The human label, for traces. Not a key — nothing joins on this.
+    pub fn label(self) -> &'static str {
+        match self {
+            Self::KlP99 => "kl p99",
+            Self::Top1Flips => "top-1 flips",
+            Self::Top10Changes => "top-10 changes",
+            Self::RouteFlips => "route flips",
+            Self::Top1MassDisplaced => "top-1 probability given up",
+            Self::Top10MassDisplacedP99 => "top-10 mass displaced at p99",
+            Self::RouteMixtureMassP99 => "routed mixture moved at p99",
+            Self::RouteMixtureMassMax => "routed mixture moved at max",
+            Self::Positions => "positions",
+            Self::CoveredMass => "covered mass at the worst position",
+        }
+    }
+}
+
+impl std::fmt::Display for Statistic {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(self.label())
+    }
+}
+
 impl Criterion {
     pub fn name(self) -> &'static str {
         match self {

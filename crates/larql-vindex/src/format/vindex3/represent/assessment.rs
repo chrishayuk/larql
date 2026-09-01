@@ -45,6 +45,7 @@ use super::execution_cost::{CostPrediction, CostRefusal, ExecutionCostModel};
 pub use super::measurement::EvidenceScale;
 use super::measurement::TailSupportPolicy;
 use super::quality::Criterion;
+use super::quality::Statistic;
 use super::search_evidence::{SearchCalibrationRegistry, SearchEvidence};
 
 /// What a move did to one criterion.
@@ -53,7 +54,7 @@ pub struct MarginalConstraintCost {
     pub criterion: Criterion,
     /// The gate's own wording for this limit, which is the key: a
     /// criterion can carry several limits that move independently.
-    pub what: String,
+    pub what: Statistic,
     /// Utilisation before the move, as a fraction of the limit.
     pub before: Option<f64>,
     pub after: Option<f64>,
@@ -126,7 +127,7 @@ impl MarginalConstraintCost {
         let evidence = {
             let each = [before, after].map(|m| {
                 ctx.registry.evidence_for(
-                    &m.what,
+                    m.what,
                     ctx.scale,
                     &m.measurement_status(&ctx.tail_policy),
                 )
@@ -139,7 +140,7 @@ impl MarginalConstraintCost {
         };
         Self {
             criterion: after.criterion,
-            what: after.what.clone(),
+            what: after.what,
             before: b,
             after: a,
             delta,
@@ -472,7 +473,7 @@ impl CandidateAssessment {
                 self.scale == EvidenceScale::Authority || m.criterion != Criterion::Positions
             })
             .filter(|m| !m.satisfied())
-            .map(|m| m.what.clone())
+            .map(|m| m.what.label().to_string())
             .collect();
         failures.sort();
         if !failures.is_empty() {
@@ -495,7 +496,7 @@ impl CandidateAssessment {
             self.bytes_removed_marginal as f64 / 1e6,
             -self.ranking_score.gpu_ms_saved,
         );
-        let scarcest = self.marginal.scarcest().map(|c| c.what.clone());
+        let scarcest = self.marginal.scarcest().map(|c| c.what);
         for c in &self.marginal.costs {
             let share = match (c.priceable(), c.fraction_of_remaining_consumed) {
                 (true, Some(f)) => format!("{:+.0}% of remaining headroom", 100.0 * f),
@@ -503,7 +504,7 @@ impl CandidateAssessment {
                 (false, _) if c.orders() => "NOT PRICEABLE at this scale (ordering proxy)".into(),
                 (false, _) => "NOT PRICEABLE at this scale (no usable evidence)".into(),
             };
-            let mark = if Some(&c.what) == scarcest.as_ref() {
+            let mark = if Some(c.what) == scarcest {
                 "   <- scarce resource"
             } else {
                 ""
