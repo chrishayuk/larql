@@ -272,9 +272,15 @@ fn a_concurrent_projection_is_captured_without_disturbing_the_owner_count() {
         rows.len(),
         "every projection the owner issued is recorded, none dropped"
     );
-    assert_eq!(
-        theirs.len(),
-        1,
+    // Identify the concurrent call by ITS operand, not by counting.
+    // `theirs` also collects whatever sibling tests projected during the
+    // window — a capture is process-wide, which is this test's own
+    // premise, so asserting `theirs.len() == 1` asserted an exclusivity
+    // that does not exist. It held under `cargo test` and broke under
+    // `cargo llvm-cov`, where the slower run let 19 sibling calls land.
+    let foreign_addr = foreign.rows()[0].primary_addr();
+    assert!(
+        theirs.iter().any(|c| c.operand_addr() == foreign_addr),
         "the concurrent call is recorded too — a capture is process-wide"
     );
 }
