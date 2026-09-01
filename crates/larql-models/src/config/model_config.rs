@@ -35,6 +35,25 @@ pub struct ModelConfig {
     /// nothing else may read this array's zeros as numbers.
     pub layer_rope_theta: Option<Vec<f64>>,
     pub sliding_window: Option<usize>,
+    /// The checkpoint's explicit *enable* flag for sliding-window
+    /// attention (`use_sliding_window`).
+    ///
+    /// Separate from [`Self::sliding_window`] because declaring a window
+    /// and using one are different facts, and Qwen states both: Qwen2.5
+    /// ships `sliding_window: 32768` beside `use_sliding_window: false`,
+    /// and Qwen3 ships `sliding_window: null` beside the same flag.
+    /// `None` means the checkpoint does not state the flag, which every
+    /// family before Qwen leaves to the window's own presence.
+    ///
+    /// Nothing may read this directly to decide behaviour — the effective
+    /// policy is resolved once, in
+    /// [`ModelArchitecture::sliding_window_size`](super::ModelArchitecture::sliding_window_size),
+    /// so a caller cannot honour the window while ignoring the flag.
+    pub use_sliding_window: Option<bool>,
+    /// How many layers use the window when it is enabled
+    /// (`max_window_layers`): the bottom `n` layers slide, the rest
+    /// attend fully. Inert while the window is disabled.
+    pub max_window_layers: Option<usize>,
     // MoE fields
     pub num_experts: Option<usize>,
     pub num_experts_per_token: Option<usize>,

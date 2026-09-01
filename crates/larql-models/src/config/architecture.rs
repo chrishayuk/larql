@@ -424,12 +424,47 @@ pub trait ModelArchitecture: Send + Sync {
     ///
     /// See [`super::layer_types`] for why this default is not `false`.
     fn is_sliding_window_layer(&self, layer: usize) -> bool {
+        // The enable flag first: a checkpoint that declares the feature
+        // off means it, whatever its interleave says. Qwen2.5 ships
+        // `sliding_window: 32768` AND a `use_sliding_window: false`, and
+        // a family that also declared sliding `layer_types` would
+        // otherwise have the window applied against its own instruction.
+        if self.sliding_window_size().is_none() {
+            return false;
+        }
+        // `max_window_layers` bounds which layers slide when the feature
+        // is on: the bottom `n` use the window, the rest attend fully.
+        if let Some(bound) = self.config().max_window_layers {
+            if layer >= bound {
+                return false;
+            }
+        }
         layer_types::is_sliding_from_layer_types(self.config().layer_types.as_ref(), layer)
             .unwrap_or(false)
     }
 
-    /// Sliding window size (None = full attention).
+    /// The **effective** sliding window (None = full attention).
+    ///
+    /// One place resolves the three declarations a checkpoint can make
+    /// about this feature, so nothing downstream can honour one while
+    /// ignoring another:
+    ///
+    /// ```text
+    /// sliding_window       the window, when there is one
+    /// use_sliding_window   whether it applies at all
+    /// max_window_layers    how far up the stack it applies
+    /// ```
+    ///
+    /// An explicit `use_sliding_window: false` yields `None` even when a
+    /// window is declared beside it. That is not a special case for Qwen
+    /// — it is what the checkpoint says, and reading the size without the
+    /// flag is how a declared-inactive feature becomes an active wrong
+    /// answer. A family whose config states no flag is unaffected: `None`
+    /// is not `Some(false)`.
     fn sliding_window_size(&self) -> Option<usize> {
+        if self.config().use_sliding_window == Some(false) {
+            return None;
+        }
         self.config().sliding_window
     }
 

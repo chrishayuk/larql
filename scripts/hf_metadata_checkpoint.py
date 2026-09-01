@@ -16,6 +16,14 @@ produce the **same verdict they would produce against the real weights** —
 identity, per-layer attention policy, every unconsumed config key, the full
 tensor inventory with exact shapes, dtypes and byte counts.
 
+**LARQL does this natively now.** `larql vindex3 plan hf://org/name` stages
+the same headers itself and goes on to `encode` from byte ranges, so the
+stub never has to be produced by hand — see docs/vindex3-remote-source.md.
+This script remains the standalone tool: it needs nothing but `curl`, and
+it writes a stub directory any consumer can read. Note that it cannot
+detect a host that ignores `Range:` and answers `200` with the whole file,
+because `curl -sL` hides the status; the native path refuses that case.
+
     python scripts/hf_metadata_checkpoint.py zai-org/GLM-5.3-Flash --out stub
     larql inspect-hf stub --no-tensor-list --output inventory.json
     larql vindex3 plan stub --output plan.json

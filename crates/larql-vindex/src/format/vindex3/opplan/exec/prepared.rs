@@ -114,7 +114,7 @@ impl ExecutionSlice {
     /// the model does not have is a deployment error, and preparing
     /// "as much as exists" would serve a silently wrong submodel — the
     /// same failure the V3 load options used to have.
-    fn validate(&self, plan: &ComponentOpPlan) -> Result<(), VindexError> {
+    pub(super) fn validate(&self, plan: &ComponentOpPlan) -> Result<(), VindexError> {
         if let Self::Draft { end } = self {
             if *end == 0 {
                 return Err(VindexError::Parse(

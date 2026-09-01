@@ -31,7 +31,7 @@ use crate::error::VindexError;
 use crate::format::vindex3::encode::segment::{
     read_segment_header, sort_into_payload_order, PlannedTensor, SegmentTensor,
 };
-use crate::format::vindex3::encode::source::ArtifactSource;
+use crate::format::vindex3::encode::source::{ArtifactSource, TensorSource};
 use crate::format::vindex3::encode::{binding_owner, plan_object_tensors, REPRESENTATION_ID_SEP};
 use crate::format::vindex3::graph::SystemGraph;
 use crate::format::vindex3::index::Vindex3Index;

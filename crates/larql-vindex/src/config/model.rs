@@ -36,6 +36,16 @@ pub struct VindexModelConfig {
     pub rope_base: f64,
     #[serde(default)]
     pub sliding_window: Option<usize>,
+    /// The window's explicit enable flag, persisted separately from the
+    /// window itself because they are separate declarations: Qwen2.5
+    /// ships a 32768 window beside `use_sliding_window: false`. Dropping
+    /// the flag on the way into a vindex would serve the window against
+    /// the checkpoint's instruction.
+    #[serde(default)]
+    pub use_sliding_window: Option<bool>,
+    /// How far up the stack an enabled window applies.
+    #[serde(default)]
+    pub max_window_layers: Option<usize>,
     /// MoE configuration (None for dense models).
     #[serde(default)]
     pub moe: Option<MoeConfig>,
@@ -217,6 +227,8 @@ impl VindexModelConfig {
             num_kv_heads: cfg.num_kv_heads,
             rope_base: cfg.rope_base,
             sliding_window: cfg.sliding_window,
+            use_sliding_window: cfg.use_sliding_window,
+            max_window_layers: cfg.max_window_layers,
             moe: if arch.is_moe() {
                 Some(MoeConfig {
                     num_experts: arch.num_experts(),
@@ -488,6 +500,8 @@ mod tests {
             num_kv_heads: 4,
             rope_base: 10000.0,
             sliding_window: None,
+            use_sliding_window: None,
+            max_window_layers: None,
             moe: None,
             global_head_dim: None,
             num_global_kv_heads: None,

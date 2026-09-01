@@ -3,6 +3,7 @@
 mod calibration_digest;
 mod exec_resume;
 mod generate;
+mod sizes;
 
 use super::*;
 use std::io::Write;

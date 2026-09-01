@@ -69,7 +69,11 @@ pub(crate) const VINDEX_WEIGHT_FILES: &[&str] = &[
 
 pub mod discovery;
 pub mod download;
+/// Header-only checkpoint staging: admission without the weights.
+pub mod metadata_checkpoint;
 pub mod publish;
+/// Byte-range reads — the tier `download` is not.
+pub mod range;
 
 // Re-export the previous flat-module surface so callers don't have to
 // pick a submodule.

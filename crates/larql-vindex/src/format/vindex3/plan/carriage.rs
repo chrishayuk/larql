@@ -253,6 +253,34 @@ pub const CARRIAGE_RULES: &[CarriageRule] = &[
         site: "Component.attention[].window → AttentionOp.window",
         probe: Some(probe_sliding_window),
     },
+    // The window's ENABLE flag and its layer bound. Both are read by
+    // `ModelArchitecture::sliding_window_size`, which resolves all three
+    // declarations into one effective per-layer policy, and both are
+    // persisted by the vindex config round-trip — so the container does
+    // not lose them.
+    //
+    // `Parsed`, and that is the honest stage rather than a weak one: the
+    // effect of both facts is fully ABSORBED into the resolved per-layer
+    // window before a graph exists. `sliding_window_size` returns `None`
+    // for a disabled window and `is_sliding_window_layer` applies the
+    // bound, so what the container carries is the effective policy —
+    // there is no separate flag downstream to read back, and a deeper
+    // claim would need a probe the schema cannot answer.
+    CarriageRule {
+        leaf: "use_sliding_window",
+        reaches: Carriage::Parsed,
+        site: "absorbed by ModelArchitecture::sliding_window_size into the resolved \
+               per-layer window the graph carries; also persisted by the vindex config \
+               round-trip",
+        probe: None,
+    },
+    CarriageRule {
+        leaf: "max_window_layers",
+        reaches: Carriage::Parsed,
+        site: "absorbed by ModelArchitecture::is_sliding_window_layer as the bound on an \
+               enabled window; also persisted by the vindex config round-trip",
+        probe: None,
+    },
     // Inkling-Small's spelling of the same window. One site, because it
     // is one fact: the graph carries a window per layer whichever key
     // stated it.
@@ -1614,7 +1642,15 @@ fn probe_linear_state_dtype(component: &Component, _ctx: &ProbeContext<'_>) -> O
 fn probe_sliding_window(component: &Component, _ctx: &ProbeContext<'_>) -> Option<Value> {
     let table = component.attention.as_ref()?;
     let mut windows = table.iter().filter_map(|l| l.window);
-    let first = windows.next()?;
+    let Some(first) = windows.next() else {
+        // No layer carries a window. That is an ANSWER, not a failure to
+        // answer: the graph states that this component attends fully
+        // everywhere. A checkpoint declaring `sliding_window: null` — the
+        // whole Qwen3 generation — agrees with it, and one declaring a
+        // window that reaches no layer genuinely disagrees and should
+        // read as mismatched rather than as an unanswered probe.
+        return Some(Value::Null);
+    };
     windows.all(|w| w == first).then(|| json!(first))
 }
 

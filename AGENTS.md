@@ -50,6 +50,11 @@ larql-vindex      vindex lifecycle: extract, load, query, mutate, patch, save,
                   VINDEX3 container format lives in `src/format/vindex3/`
                   (plan/encode/verify/execute; spec in
                   docs/vindex3-format-spec.md + docs/vindex3-format.md).
+                  Payload sources are a trait (`encode/source`): a local
+                  checkpoint dir, or an `hf://` repo read by byte range —
+                  `plan`/`encode` admit a repo from its staged safetensors
+                  headers and never download the checkpoint
+                  (docs/vindex3-remote-source.md).
     ↓
 larql-core        graph algorithms (merge, diff, BFS, pagerank, shortest-path)
 larql-inference   engines (Standard, MarkovResidual, Apollo, etc.), chat,

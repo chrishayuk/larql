@@ -46,6 +46,7 @@ pub mod prepared;
 pub mod production;
 pub mod quantise;
 pub mod reference;
+pub mod requirements;
 pub mod stack;
 #[cfg(all(feature = "gpu", target_os = "macos"))]
 pub mod stack_metal;

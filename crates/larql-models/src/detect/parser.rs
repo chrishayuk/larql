@@ -239,6 +239,14 @@ pub(super) fn parse_model_config(config: &serde_json::Value) -> ModelConfig {
         .or_else(|| text_config["rope_local_base_freq"].as_f64());
     let vocab_size = text_config["vocab_size"].as_u64().map(|v| v as usize);
     let sliding_window = text_config["sliding_window"].as_u64().map(|v| v as usize);
+    // The window's ENABLE flag and its layer bound, read here so the
+    // effective policy can be resolved in one place. A checkpoint that
+    // declares a window and then disables it means what it says: Qwen2.5
+    // ships `sliding_window: 32768` with `use_sliding_window: false`.
+    let use_sliding_window = text_config["use_sliding_window"].as_bool();
+    let max_window_layers = text_config["max_window_layers"]
+        .as_u64()
+        .map(|v| v as usize);
     // Read from the *outer* config too: some families declare it at the top
     // level next to `architectures` rather than inside `text_config`.
     // The mamba_ssm lineage (OuteAI Mamba2Attn) spells the same fact
@@ -620,6 +628,8 @@ pub(super) fn parse_model_config(config: &serde_json::Value) -> ModelConfig {
         rope_local_base,
         layer_rope_theta,
         sliding_window,
+        use_sliding_window,
+        max_window_layers,
         num_experts,
         num_experts_per_token,
         num_shared_experts,

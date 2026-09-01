@@ -30,6 +30,13 @@ pub const CONSUMED_LEAF_KEYS: &[&str] = &[
     "head_dim",
     "num_key_value_heads",
     "sliding_window",
+    // Read by `ModelArchitecture::sliding_window_size`, which resolves the
+    // effective policy from all three declarations at once — the flag is
+    // credited because something reads it and acts on what it read.
+    "use_sliding_window",
+    // Read by `ModelArchitecture::is_sliding_window_layer` as the bound on
+    // how far up the stack an enabled window applies.
+    "max_window_layers",
     "sliding_window_pattern",
     "layer_types",
     "global_head_dim",
