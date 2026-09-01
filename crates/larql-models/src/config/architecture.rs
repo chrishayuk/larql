@@ -1509,6 +1509,15 @@ pub fn default_position_policy_for_layer<A: ModelArchitecture + ?Sized>(
     if arch.config().mla_use_nope == Some(true) {
         return PositionPolicy::None;
     }
+    // The per-layer rotary SCHEDULE, asked before the rotary SHAPE.
+    // `no_rope_layers` says whether this layer rotates at all; everything
+    // below says how a rotating layer rotates. Composed rather than
+    // branched so a scheduled layer still picks up YaRN, a partial
+    // rotary, or a per-layer theta — the drop `layer_rope_theta`'s branch
+    // already guards against, one key over.
+    if !rope_scheduled_for_layer(arch.config(), layer) {
+        return PositionPolicy::None;
+    }
     let yarn = arch.yarn_rope_scaling();
     match arch
         .config()
@@ -1539,4 +1548,30 @@ pub fn default_position_policy_for_layer<A: ModelArchitecture + ?Sized>(
             None => arch.rotary_policy(arch.rope_base_for_layer(layer)),
         },
     }
+}
+
+/// Whether the declared rotary schedule rotates `layer` at all.
+///
+/// Two spellings of one fact, and they are NOT equal partners: both
+/// SmolLM3 and Llama 4 build the mask from the interval only
+/// `if no_rope_layers is None`, so an explicit mask SUPERSEDES a declared
+/// interval rather than being cross-checked against it. Preferring the
+/// interval — or reconciling the two — would put this build on a
+/// schedule the reference never runs.
+///
+/// A mask shorter than the stack makes no statement about the layers past
+/// its end (both references document "at least the same length as the
+/// number of layers" and index it directly), so those layers keep the
+/// unscheduled behaviour rather than acquiring a guessed one.
+fn rope_scheduled_for_layer(cfg: &ModelConfig, layer: usize) -> bool {
+    if let Some(mask) = cfg.no_rope_layers.as_ref() {
+        return mask
+            .get(layer)
+            .copied()
+            .is_none_or(PositionPolicy::rope_enabled_by_flag);
+    }
+    if let Some(interval) = cfg.no_rope_layer_interval {
+        return PositionPolicy::rope_enabled_by_interval(layer, interval);
+    }
+    true
 }

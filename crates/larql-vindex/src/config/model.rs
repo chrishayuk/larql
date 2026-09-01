@@ -54,6 +54,25 @@ pub struct VindexModelConfig {
     /// the boundary the question was asked.
     #[serde(default)]
     pub position_embedding_type: Option<String>,
+    /// The per-layer rotary schedule, in the checkpoint's own polarity:
+    /// `1` rotates, `0` is NoPE.
+    ///
+    /// Persisted because it decides which layers encode position at all.
+    /// Dropping it would rebuild SmolLM3 as a model that rotates
+    /// everywhere — fluent, and wrong on 9 of 36 layers.
+    #[serde(default)]
+    pub no_rope_layers: Option<Vec<i64>>,
+    /// The interval fallback, persisted so a container that carried no
+    /// explicit mask still knows the schedule it was compiled under.
+    #[serde(default)]
+    pub no_rope_layer_interval: Option<usize>,
+    /// The declared rotary pairing, persisted so the container records
+    /// what the checkpoint claimed rather than what this build does.
+    #[serde(default)]
+    pub rope_interleaved: Option<bool>,
+    /// The declared multi-axis flag, persisted for the same reason.
+    #[serde(default)]
+    pub use_mrope: Option<bool>,
     /// MoE configuration (None for dense models).
     #[serde(default)]
     pub moe: Option<MoeConfig>,
@@ -238,6 +257,10 @@ impl VindexModelConfig {
             use_sliding_window: cfg.use_sliding_window,
             max_window_layers: cfg.max_window_layers,
             position_embedding_type: cfg.position_embedding_type.clone(),
+            no_rope_layers: cfg.no_rope_layers.clone(),
+            no_rope_layer_interval: cfg.no_rope_layer_interval,
+            rope_interleaved: cfg.rope_interleaved,
+            use_mrope: cfg.use_mrope,
             moe: if arch.is_moe() {
                 Some(MoeConfig {
                     num_experts: arch.num_experts(),
@@ -512,6 +535,10 @@ mod tests {
             use_sliding_window: None,
             max_window_layers: None,
             position_embedding_type: None,
+            no_rope_layers: None,
+            no_rope_layer_interval: None,
+            rope_interleaved: None,
+            use_mrope: None,
             moe: None,
             global_head_dim: None,
             num_global_kv_heads: None,

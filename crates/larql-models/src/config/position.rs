@@ -20,6 +20,30 @@ use serde::{Deserialize, Serialize};
 /// layer". Consumed at the parse boundary only.
 const NOPE_THETA_SENTINEL: f64 = 0.0;
 
+/// The `no_rope_layers` entry meaning "no positional encoding on this
+/// layer". Consumed at the parse boundary only, by
+/// [`PositionPolicy::rope_enabled_by_flag`].
+const NOPE_LAYER_FLAG: i64 = 0;
+
+/// Whether this build's rotary pairs dimensions by INTERLEAVING them.
+///
+/// It does not: `larql-compute`'s rope rotates `(x[i], x[i + half])` —
+/// split-half, HuggingFace's default and MLX's `traditional=False` — and
+/// there is exactly one pairing in the executor.
+///
+/// Declared here rather than left implicit because a checkpoint can SAY
+/// otherwise. SmolLM2-135M ships `rope_interleaved: false`, which agrees;
+/// the value of naming the fact is that a checkpoint shipping `true`
+/// becomes a mismatch the planner reports instead of a rotation quietly
+/// performed the other way round. An interleaved pairing rotates the same
+/// dimensions against different partners, so nothing about the output
+/// looks wrong — it is simply a different operator.
+///
+/// `larql-compute`'s `the_executor_pairs_split_half` pins the executor to
+/// this value, so the constant cannot drift away from the code it
+/// describes.
+pub const ROPE_PAIRING_INTERLEAVED: bool = false;
+
 /// How a layer encodes position.
 #[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
 #[serde(tag = "kind", rename_all = "snake_case")]
@@ -174,6 +198,41 @@ impl PositionPolicy {
         } else {
             Self::Rope { theta }
         }
+    }
+
+    /// Whether one `no_rope_layers` entry means "this layer rotates".
+    ///
+    /// The second sentinel this type exists to honour exactly once, and
+    /// the more dangerous of the two, because **the key's name says the
+    /// opposite of its values**. SmolLM3's config documents *"A `1` at an
+    /// index position indicates that the corresponding layer will use
+    /// RoPE, while a `0` indicates that it's a NoPE layer"*, and both
+    /// SmolLM3 and Llama 4 read it as
+    /// `self.use_rope = config.no_rope_layers[layer_idx]`.
+    ///
+    /// So a reader who trusts the name inverts the entire schedule. On
+    /// SmolLM3-3B that is 27 of 36 layers rotated that should not be, and
+    /// 9 left unrotated that should be — a model that still emits fluent
+    /// text, which is exactly why it needs a named boundary rather than
+    /// an inline `!= 0` at each use site.
+    pub fn rope_enabled_by_flag(flag: i64) -> bool {
+        flag != NOPE_LAYER_FLAG
+    }
+
+    /// Whether the interval fallback rotates `layer`.
+    ///
+    /// Both references generate the mask as
+    /// `int((layer_idx + 1) % interval != 0)`, so every `interval`-th
+    /// layer counting from one is the NoPE layer.
+    ///
+    /// An interval of zero is not a schedule — upstream divides by it and
+    /// raises — so it leaves the layer UNSCHEDULED (rotating) rather than
+    /// answering. Answering `false` would turn a malformed declaration
+    /// into a silently NoPE model, which is the larger of the two
+    /// mistakes and the direction a plain `interval != 0 &&` guard falls
+    /// in.
+    pub fn rope_enabled_by_interval(layer: usize, interval: usize) -> bool {
+        interval == 0 || !(layer + 1).is_multiple_of(interval)
     }
 
     /// Interpret a declared per-layer theta under a checkpoint-wide YaRN

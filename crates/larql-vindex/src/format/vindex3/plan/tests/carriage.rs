@@ -782,3 +782,157 @@ fn an_incomplete_nested_surface_is_reported_and_blocks() {
     );
     assert!(finding.blocks());
 }
+
+/// **A declaration no reference implementation reads still has to agree.**
+///
+/// SmolLM2-135M ships `rope_interleaved: false` under `model_type: llama`,
+/// which has no such field — transformers reads it nowhere. This build
+/// pairs split-half, so `false` agrees and the key is satisfied.
+///
+/// The second arm is the whole point of reading it at all: `true` names a
+/// different operator, and an unread agreement would have let that
+/// through as a rotation performed against different partners in silence.
+#[test]
+fn a_declared_rotary_pairing_must_agree_with_the_one_that_runs() {
+    let findings = plan_with(|config| {
+        config["text_config"]["rope_interleaved"] = serde_json::json!(false);
+    });
+    let finding = finding_for(&findings, "rope_interleaved");
+    assert_eq!(finding.class, SemanticClass::ExecutionSemantic);
+    assert_eq!(
+        finding.category,
+        FindingCategory::Representable,
+        "split-half agrees with `false`: {}",
+        finding.detail
+    );
+    assert!(!finding.blocks());
+
+    let findings = plan_with(|config| {
+        config["text_config"]["rope_interleaved"] = serde_json::json!(true);
+    });
+    let finding = finding_for(&findings, "rope_interleaved");
+    assert_ne!(
+        finding.category,
+        FindingCategory::Representable,
+        "an interleaved pairing is not what this build performs: {}",
+        finding.detail
+    );
+    assert_eq!(finding.resolved, Some(serde_json::json!(false)));
+}
+
+/// The same shape for `use_mrope`, checked against the policy the axis
+/// geometry resolves rather than against the flag itself.
+#[test]
+fn a_declared_mrope_flag_must_agree_with_the_resolved_policy() {
+    // Qwen2.5-0.5B's real declaration: `false`, on a config carrying no
+    // axis geometry, so no multi-axis policy resolves and the two agree.
+    let findings = plan_with(|config| {
+        config["text_config"]["use_mrope"] = serde_json::json!(false);
+    });
+    let finding = finding_for(&findings, "use_mrope");
+    assert_eq!(finding.class, SemanticClass::ExecutionSemantic);
+    assert_eq!(
+        finding.category,
+        FindingCategory::Representable,
+        "{}",
+        finding.detail
+    );
+
+    // Claiming multi-axis without the geometry to build one is a claim
+    // nothing can honour, and must not pass merely because the flag was
+    // read.
+    let findings = plan_with(|config| {
+        config["text_config"]["use_mrope"] = serde_json::json!(true);
+    });
+    let finding = finding_for(&findings, "use_mrope");
+    assert_ne!(
+        finding.category,
+        FindingCategory::Representable,
+        "no mrope_section resolves no MRope policy: {}",
+        finding.detail
+    );
+    assert_eq!(finding.resolved, Some(serde_json::json!(false)));
+}
+
+/// The rotary SCHEDULE, answered layer by layer from the graph.
+///
+/// The fixture already leaves layers 3 and 7 unrotated through
+/// `layer_rope_theta`'s zero sentinel, so a `no_rope_layers` mask stating
+/// the same schedule must be reported as carried. The second arm is what
+/// makes that non-vacuous: a mask that schedules NOTHING changes the
+/// answer, so the probe is reading the graph rather than echoing the
+/// declaration back.
+#[test]
+fn a_declared_rope_schedule_is_carried_layer_by_layer() {
+    let agreeing = serde_json::json!([1, 1, 1, 0, 1, 1, 1, 0]);
+    let findings = plan_with(|config| {
+        config["text_config"]["no_rope_layers"] = agreeing.clone();
+    });
+    let finding = finding_for(&findings, "no_rope_layers");
+    assert_eq!(finding.class, SemanticClass::ExecutionSemantic);
+    assert_eq!(
+        finding.category,
+        FindingCategory::Representable,
+        "{}",
+        finding.detail
+    );
+    assert_eq!(
+        finding.resolved,
+        Some(agreeing),
+        "the probe must answer the schedule in the checkpoint's own polarity: {}",
+        finding.detail
+    );
+
+    // Every layer NoPE: a different declaration must produce a different
+    // carried answer, or the first arm proves nothing.
+    let all_nope = serde_json::json!([0, 0, 0, 0, 0, 0, 0, 0]);
+    let findings = plan_with(|config| {
+        config["text_config"]["no_rope_layers"] = all_nope.clone();
+    });
+    assert_eq!(
+        finding_for(&findings, "no_rope_layers").resolved,
+        Some(all_nope),
+        "a mask that rotates nowhere must be carried as such"
+    );
+}
+
+/// The positional SCHEME, and the null answer that is an answer.
+#[test]
+fn a_stack_that_rotates_nowhere_reports_no_scheme() {
+    // The fixture rotates on six of its eight layers, so a declared
+    // `rope` agrees with what the graph carries.
+    let findings = plan_with(|config| {
+        config["text_config"]["position_embedding_type"] = serde_json::json!("rope");
+    });
+    let finding = finding_for(&findings, "position_embedding_type");
+    assert_eq!(finding.class, SemanticClass::ExecutionSemantic);
+    assert_eq!(
+        finding.category,
+        FindingCategory::Representable,
+        "{}",
+        finding.detail
+    );
+    assert_eq!(finding.resolved, Some(serde_json::json!("rope")));
+
+    // Take the rotation away and the same declaration must stop being
+    // satisfied. `null` here is the graph saying "this stack encodes no
+    // position" — reporting it as unknown would hide exactly the case
+    // the rule exists for.
+    let findings = plan_with(|config| {
+        config["text_config"]["position_embedding_type"] = serde_json::json!("rope");
+        config["text_config"]["no_rope_layers"] = serde_json::json!([0, 0, 0, 0, 0, 0, 0, 0]);
+    });
+    let finding = finding_for(&findings, "position_embedding_type");
+    assert_eq!(
+        finding.resolved,
+        Some(serde_json::Value::Null),
+        "a stack that rotates nowhere answers null: {}",
+        finding.detail
+    );
+    assert_ne!(
+        finding.category,
+        FindingCategory::Representable,
+        "a declared scheme the graph does not carry must not read as satisfied: {}",
+        finding.detail
+    );
+}

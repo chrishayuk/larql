@@ -201,18 +201,32 @@ fn config_key_findings(inventory: &ArchitectureInventory, built: &BuiltGraph) ->
             match fact.status {
                 // Read by nothing: the original G1 finding. Carriage is
                 // moot — a fact no parser read cannot be carried anywhere.
-                KeyStatus::Unconsumed => Finding {
-                    category: FindingCategory::Unrepresented,
-                    class: unconsumed_class(leaf, inventory),
-                    component,
-                    subject: fact.path.clone(),
-                    declared: Some(fact.value.clone()),
-                    resolved: None,
-                    carriage: None,
-                    detail: "declared by the checkpoint, read by nothing in any registered \
-                             parser"
-                        .to_string(),
-                },
+                KeyStatus::Unconsumed => {
+                    let class = unconsumed_class(leaf, inventory);
+                    Finding {
+                        category: FindingCategory::Unrepresented,
+                        class,
+                        component,
+                        subject: fact.path.clone(),
+                        declared: Some(fact.value.clone()),
+                        resolved: None,
+                        carriage: None,
+                        // A named component is the whole value of the
+                        // class: "read by nothing" counts keys, while
+                        // this counts jobs.
+                        detail: match semantics::unsupported_component(leaf) {
+                            Some(component) if class == SemanticClass::UnsupportedComponent => {
+                                format!(
+                                    "configures `{component}`, which this build does not \
+                                     implement — architecture work, not a normalisation gap"
+                                )
+                            }
+                            _ => "declared by the checkpoint, read by nothing in any registered \
+                                  parser"
+                                .to_string(),
+                        },
+                    }
+                }
                 KeyStatus::Metadata => Finding {
                     category: FindingCategory::Representable,
                     class: SemanticClass::MetadataOnly,

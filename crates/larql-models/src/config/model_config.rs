@@ -34,6 +34,54 @@ pub struct ModelConfig {
     /// via [`PositionPolicy::from_declared_theta`](super::PositionPolicy::from_declared_theta) —
     /// nothing else may read this array's zeros as numbers.
     pub layer_rope_theta: Option<Vec<f64>>,
+    /// Per-layer rotary mask (`no_rope_layers`), verbatim.
+    ///
+    /// **The key is named for what it disables and its values say the
+    /// opposite**: SmolLM3's config documents *"A `1` at an index
+    /// position indicates that the corresponding layer will use RoPE,
+    /// while a `0` indicates that it's a NoPE layer"*, and both SmolLM3
+    /// and Llama 4 read it as `self.use_rope = config.no_rope_layers[i]`.
+    /// Reading the name instead of the reference inverts the schedule,
+    /// which on SmolLM3-3B is 27 of 36 layers rotated wrongly and a model
+    /// that still produces fluent-looking output.
+    ///
+    /// Held verbatim for the same reason [`Self::layer_rope_theta`] holds
+    /// its `0.0` sentinel verbatim: the polarity is honoured exactly once,
+    /// in [`PositionPolicy::rope_enabled_by_flag`](super::PositionPolicy::rope_enabled_by_flag),
+    /// and nothing else may read these integers as booleans.
+    pub no_rope_layers: Option<Vec<i64>>,
+    /// The regular-interval FALLBACK for [`Self::no_rope_layers`]
+    /// (`no_rope_layer_interval`): every `n`-th layer is NoPE.
+    ///
+    /// A generator, not a redundant spelling — both references consult it
+    /// only `if no_rope_layers is None`, so when the explicit mask is
+    /// present this is superseded and must not be allowed to disagree
+    /// with it into effect.
+    pub no_rope_layer_interval: Option<usize>,
+    /// The checkpoint's declared rotary PAIRING (`rope_interleaved`).
+    ///
+    /// Read by no reference implementation — the exact key appears
+    /// nowhere in transformers, and SmolLM2-135M declares it under
+    /// `model_type: llama`, which has no such field. It is read here
+    /// anyway, because the alternative is an unread declaration that
+    /// happens to agree: this build pairs split-half
+    /// ([`ROPE_PAIRING_INTERLEAVED`](super::ROPE_PAIRING_INTERLEAVED)),
+    /// so `false` agrees and `true` is a different operator that would
+    /// otherwise be performed the wrong way round in silence.
+    pub rope_interleaved: Option<bool>,
+    /// The checkpoint's declared multi-axis rotary flag (`use_mrope`).
+    ///
+    /// Also read by no reference implementation in transformers 5.5.0 —
+    /// and unlike `use_sliding_window`, which HF genuinely consults, this
+    /// one has no upstream reader to agree with. Read for the same reason:
+    /// Qwen2.5-0.5B declares `false`, which agrees with the text policy
+    /// this build resolves, and `true` on a config carrying no
+    /// `mrope_section` is a claim nothing can honour.
+    ///
+    /// A third spelling of the fact [`Self::mrope_section`] and
+    /// [`Self::mrope_interleaved`] state jointly; the effective policy is
+    /// resolved from those, and this is checked against it.
+    pub use_mrope: Option<bool>,
     /// The checkpoint's declared positional-encoding scheme
     /// (`position_embedding_type`), verbatim.
     ///

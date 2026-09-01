@@ -164,6 +164,35 @@ pub enum SemanticClass {
     TensorSemantic,
     /// Declares a cross-component contract (taps, token protocol).
     InterfaceSemantic,
+    /// A model component has been **positively identified** from the
+    /// checkpoint semantics, and this build has no implementation for it.
+    ///
+    /// Blocking, exactly like [`Self::Unknown`] — the difference is not
+    /// severity but knowledge:
+    ///
+    /// ```text
+    /// Unknown               nobody has established what this means yet
+    /// UnsupportedComponent  we know what component this configures,
+    ///                       and this build does not implement it
+    /// ```
+    ///
+    /// which is the difference between uncertainty and known engineering
+    /// work. Nine keys naming one absent component is one job; reporting
+    /// them as nine anonymous unknowns says nothing about how much.
+    ///
+    /// Deliberately distinct from every neighbouring idea, because the
+    /// engineering implication differs in each case. This is **not** a
+    /// parser chore, a spelling alias, a checked default, or an inactive
+    /// declaration. It means *there is machinery missing*.
+    ///
+    /// **The registration rule is positive evidence of component
+    /// ownership, never plausible adjacency** — see
+    /// [`UNSUPPORTED_COMPONENT_KEYS`](super::semantics::UNSUPPORTED_COMPONENT_KEYS).
+    /// A prefix match or a regex is a discovery tool and must not become
+    /// the authority; that is precisely how `indexer_rope_interleave`
+    /// ended up filed under general RoPE, where acting on it would have
+    /// re-paired the whole model's rotary.
+    UnsupportedComponent,
     /// Not in the registry — nobody has judged it, so it blocks.
     Unknown,
 }
@@ -176,6 +205,7 @@ impl SemanticClass {
             Self::ExecutionSemantic
                 | Self::TensorSemantic
                 | Self::InterfaceSemantic
+                | Self::UnsupportedComponent
                 | Self::Unknown
         )
     }

@@ -255,6 +255,22 @@ pub(super) fn parse_model_config(config: &serde_json::Value) -> ModelConfig {
     let position_embedding_type = text_config["position_embedding_type"]
         .as_str()
         .map(str::to_string);
+    // The per-layer rotary schedule, verbatim in the checkpoint's own
+    // polarity — `1` rotates, `0` is NoPE, despite the key's name. The
+    // inversion is honoured once, in `PositionPolicy::rope_enabled_by_flag`.
+    let no_rope_layers = text_config["no_rope_layers"].as_array().map(|mask| {
+        mask.iter()
+            .map(|v| v.as_i64().unwrap_or_default())
+            .collect::<Vec<i64>>()
+    });
+    let no_rope_layer_interval = text_config["no_rope_layer_interval"]
+        .as_u64()
+        .map(|v| v as usize);
+    // Two declarations no reference implementation reads. Read here so
+    // that agreement is CHECKED rather than assumed — an unread flag that
+    // happens to match is one value away from a silent wrong answer.
+    let rope_interleaved = text_config["rope_interleaved"].as_bool();
+    let use_mrope = text_config["use_mrope"].as_bool();
     // Read from the *outer* config too: some families declare it at the top
     // level next to `architectures` rather than inside `text_config`.
     // The mamba_ssm lineage (OuteAI Mamba2Attn) spells the same fact
@@ -639,6 +655,10 @@ pub(super) fn parse_model_config(config: &serde_json::Value) -> ModelConfig {
         use_sliding_window,
         max_window_layers,
         position_embedding_type,
+        no_rope_layers,
+        no_rope_layer_interval,
+        rope_interleaved,
+        use_mrope,
         num_experts,
         num_experts_per_token,
         num_shared_experts,
