@@ -5,9 +5,14 @@
 //! predictions. If no prompt is given, drops into a stdin chat loop — one
 //! line in, one forward pass out, repeat until EOF.
 //!
+//! A VINDEX3 container is routed first, to `run_cmd_vindex3`: it executes
+//! its own program through the VINDEX3 interpreter, with the tokenizer the
+//! container carries, and honours only the flags that apply to it.
+//!
 //! Flag surface:
-//!   <model>         required; vindex directory, `hf://owner/name`, or a
-//!                   cache shorthand (e.g. `gemma-3-4b-it-vindex`).
+//!   <model>         required; vindex directory, VINDEX3 container,
+//!                   `hf://owner/name`, or a cache shorthand
+//!                   (e.g. `gemma-3-4b-it-vindex`).
 //!   [prompt]        optional; enters chat mode if omitted.
 //!   -n, --top N     number of predictions to show (default 10).
 //!   --ffn URL       route FFN to a remote larql-server.
@@ -365,6 +370,14 @@ pub fn run(args: RunArgs) -> Result<(), Box<dyn std::error::Error>> {
             vindex_path.display()
         )
         .into());
+    }
+
+    // A VINDEX3 container executes its own program through the VINDEX3
+    // interpreter — detect early and route, before any VINDEX2-only
+    // reader is asked to open it. A directory that is not a VINDEX3
+    // container falls through so the dense path surfaces its own error.
+    if super::run_cmd_vindex3::is_vindex3_container(&vindex_path) {
+        return super::run_cmd_vindex3::run(&vindex_path, &args);
     }
 
     if args.experts {
@@ -994,8 +1007,9 @@ fn run_with_moe_shards(
 /// only variable is where the expert bytes came from.
 ///
 /// This is a *composed* run, not a VINDEX3 model. A container holding only
-/// routed banks has no tokenizer and no spine; `larql run <vindex3-dir>` is
-/// still correctly refused. Container completeness is a separate rung.
+/// routed banks has no tokenizer and no spine; `larql run <vindex3-dir>`
+/// on one is refused by `run_cmd_vindex3` (no tokenizer, no system graph),
+/// while a complete container executes there as its own program.
 /// The composed Metal serve arm of [`run_with_routed_container`].
 ///
 /// Split out as two whole definitions rather than a `cfg` block inside the

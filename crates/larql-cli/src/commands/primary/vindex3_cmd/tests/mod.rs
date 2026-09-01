@@ -1,6 +1,7 @@
 //! CLI-level gates for the vindex3 verbs.
 
 mod calibration_digest;
+mod decode;
 mod exec_resume;
 mod generate;
 mod sizes;

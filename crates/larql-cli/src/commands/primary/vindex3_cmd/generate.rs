@@ -1,38 +1,36 @@
 //! `larql vindex3 exec --generate N` — greedy autoregressive decode
-//! from the container's own program.
+//! from the container's own program, with the research report around it.
 //!
 //! Runs on a [`DecodeSession`]: every operand is loaded once (in the
 //! backend's declared weight format, so a device buffer cache can keep
 //! the model resident) and each token advances one position against the
-//! session's KV cache. The phases are timed separately — weight load,
-//! prompt ingestion, first generated token, steady decode — because
-//! they are different costs and conflating them is how a decode number
-//! lies.
+//! session's KV cache. The loop itself is [`greedy_decode`]; this file
+//! is what the exec verb wraps around it — the per-token trace, the
+//! phase timings (weight load, prompt ingestion, first generated token,
+//! steady decode, reported separately because they are different costs
+//! and conflating them is how a decode number lies), the residency and
+//! allocation censuses, the weight-traffic ledger and the optional
+//! projection replay.
 //!
-//! Sampling is greedy argmax on purpose: generation doubles as a
-//! fixture (same ids in → same ids out per backend), and a sampler
-//! would put a source of randomness between two runs of a parity
-//! comparison. Token ids go in and come out as ids — a tokenizer is
-//! part of the fixture and lives outside this binary.
+//! Token ids go in and come out as ids — a tokenizer is part of the
+//! fixture and lives outside this verb. `larql run` is the wrapper that
+//! owns one.
 
 use std::time::Instant;
 
 use larql_vindex::format::vindex3::opplan::exec::backend::PlanBackend;
-use larql_vindex::format::vindex3::opplan::exec::cpu::{
-    self, ledger, PhysicalProjectionPlan, PlanTally,
-};
+use larql_vindex::format::vindex3::opplan::exec::cpu::{self, PhysicalProjectionPlan, PlanTally};
 use larql_vindex::format::vindex3::opplan::exec::decode::DecodeSession;
 use larql_vindex::format::vindex3::opplan::exec::operands::OperandStore;
 use larql_vindex::format::vindex3::opplan::exec::prepared::{AllocationCensus, ResidencyCensus};
 use larql_vindex::format::vindex3::opplan::exec::timing;
 use larql_vindex::format::vindex3::opplan::ComponentOpPlan;
 
-/// The steady-state window is the tail half of the decode steps — after
-/// the page cache and device buffer pools have warmed on the early ones.
-const STEADY_TAIL_DIVISOR: usize = 2;
+use super::decode::{greedy_decode, DecodeReport, Flow};
 
-/// Greedy decode: ingest the prompt one position at a time, then append
-/// the argmax of each step's logits.
+/// Greedy decode with the exec verb's report. Returns the generated ids
+/// (the prompt excluded), so a caller has them as data and not only as
+/// lines on the console.
 pub(super) fn run_generate<B: PlanBackend>(
     backend: &B,
     engine: &str,
@@ -40,12 +38,12 @@ pub(super) fn run_generate<B: PlanBackend>(
     new_tokens: usize,
     plan: &ComponentOpPlan,
     store: &OperandStore,
-) -> Result<(), Box<dyn std::error::Error>> {
+) -> Result<Vec<u32>, Box<dyn std::error::Error>> {
     // Admission BEFORE any work: this is the only point at which the
     // load average is about the machine rather than about us.
     let replaying = std::env::var("LARQL_REPLAY_PROJECTIONS").is_ok();
     if replaying && !admitted(cpu::environment::Phase::BeforeWork)? {
-        return Ok(());
+        return Ok(Vec::new());
     }
 
     let loading = Instant::now();
@@ -55,61 +53,30 @@ pub(super) fn run_generate<B: PlanBackend>(
     report_residency(&session.residency_census());
     report_allocations(&session.allocation_census());
 
-    // Prompt ingestion: every position must pass through the stack to
-    // fill the KV cache; only the last position's logits are consumed.
-    let prompt_started = Instant::now();
-    let mut logits = None;
-    for &token in prompt {
-        logits = session.step(token)?.logits;
-    }
-    let prompt_seconds = prompt_started.elapsed().as_secs_f64();
-    let logits = logits.ok_or("plan carries no output head — cannot generate")?;
-    let (mut next, mut value) = argmax(&logits).ok_or("output head produced no logits")?;
-
-    let mut ids = prompt.to_vec();
-    let mut step_seconds = Vec::with_capacity(new_tokens);
-    let mut priced_step: Option<(f64, Vec<(PhysicalProjectionPlan, PlanTally)>)> = None;
-    for step in 0..new_tokens {
-        ids.push(next as u32);
+    let mut emitted = 0usize;
+    let decoded = greedy_decode(&mut session, prompt, new_tokens, &mut |id, value| {
+        emitted += 1;
         eprintln!(
-            "token {:>3}/{new_tokens}  id {next:<8} ({value:+.3})  context {}",
-            step + 1,
-            ids.len(),
+            "token {emitted:>3}/{new_tokens}  id {id:<8} ({value:+.3})  context {}",
+            prompt.len() + emitted,
         );
-        if step + 1 == new_tokens {
-            break;
-        }
-        // Price ONE steady step's weight traffic. Reset immediately
-        // before the step it belongs to: the ledger is process-wide and
-        // has been counting since the prompt.
-        let price_this_step = step + 1 == new_tokens.saturating_sub(1);
-        if price_this_step {
-            ledger().reset();
-            timing::ledger().reset();
-        }
-        let started = Instant::now();
-        let logits = session
-            .step(next as u32)?
-            .logits
-            .ok_or("plan carries no output head — cannot generate")?;
-        (next, value) = argmax(&logits).ok_or("output head produced no logits")?;
-        step_seconds.push(started.elapsed().as_secs_f64());
-        if price_this_step {
-            priced_step = Some((*step_seconds.last().expect("just pushed"), read_ledger()));
-        }
-    }
+        Ok(Flow::Continue)
+    })?;
+    let generated = decoded.generated;
+    let sequence: Vec<u32> = prompt.iter().chain(&generated).copied().collect();
 
     println!("engine: {engine}");
     println!("prompt tokens: {}", prompt.len());
-    println!("generated ids: {}", join_ids(&ids[prompt.len()..]));
-    println!("sequence ids: {}", join_ids(&ids));
+    println!("generated ids: {}", join_ids(&generated));
+    println!("sequence ids: {}", join_ids(&sequence));
     println!("weights loaded: {load_seconds:.1} s");
     println!(
-        "prompt: {} tokens in {prompt_seconds:.1} s ({:.0} ms/token) — first new token ready",
+        "prompt: {} tokens in {:.1} s ({:.0} ms/token) — first new token ready",
         prompt.len(),
-        prompt_seconds * 1e3 / prompt.len().max(1) as f64,
+        decoded.prompt_seconds,
+        decoded.prompt_seconds * 1e3 / prompt.len().max(1) as f64,
     );
-    if let Some(report) = DecodeReport::from_steps(&step_seconds) {
+    if let Some(report) = DecodeReport::from_steps(&decoded.step_seconds) {
         println!("decode tokens: {}", report.decode_tokens);
         println!("decode elapsed: {:.1} s", report.decode_seconds);
         println!(
@@ -144,14 +111,14 @@ pub(super) fn run_generate<B: PlanBackend>(
             );
         }
     }
-    if let Some((seconds, tallies)) = priced_step {
+    if let Some((seconds, tallies)) = decoded.priced_step {
         report_projections(seconds, &tallies);
         report_leaves(seconds);
     }
     if replaying {
         replay_projections(&mut session)?;
     }
-    Ok(())
+    Ok(generated)
 }
 
 /// The prepared image's bytes, site by site.
@@ -432,52 +399,6 @@ const UNATTRIBUTED_LIMIT: f64 = 5.0;
 /// prediction that omitted it would improve without bound as the weights
 /// shrank.
 const NON_PROJECTION_FLOOR_MS: [f64; 2] = [17.0, 24.0];
-
-/// Snapshot every plan's tally.
-fn read_ledger() -> Vec<(PhysicalProjectionPlan, PlanTally)> {
-    ledger().all().to_vec()
-}
-
-/// Index and value of the largest logit; ties keep the first, matching
-/// the summary path's fold.
-pub(super) fn argmax(logits: &[f32]) -> Option<(usize, f32)> {
-    logits
-        .iter()
-        .enumerate()
-        .fold(None, |best, (index, &value)| match best {
-            Some((_, best_value)) if value <= best_value => best,
-            _ => Some((index, value)),
-        })
-}
-
-/// Steady-decode timing over the per-step seconds (prompt ingestion and
-/// weight load are reported separately by the caller).
-#[derive(Debug, PartialEq)]
-pub(super) struct DecodeReport {
-    pub(super) decode_tokens: usize,
-    pub(super) decode_seconds: f64,
-    pub(super) mean_seconds_per_token: f64,
-    pub(super) steady_seconds_per_token: f64,
-}
-
-impl DecodeReport {
-    /// `None` when no decode step beyond the first token ran — a single
-    /// forward has no decode rate to report.
-    pub(super) fn from_steps(step_seconds: &[f64]) -> Option<Self> {
-        if step_seconds.is_empty() {
-            return None;
-        }
-        let decode_seconds: f64 = step_seconds.iter().sum();
-        let steady_len = (step_seconds.len() / STEADY_TAIL_DIVISOR).max(1);
-        let steady = &step_seconds[step_seconds.len() - steady_len..];
-        Some(Self {
-            decode_tokens: step_seconds.len(),
-            decode_seconds,
-            mean_seconds_per_token: decode_seconds / step_seconds.len() as f64,
-            steady_seconds_per_token: steady.iter().sum::<f64>() / steady.len() as f64,
-        })
-    }
-}
 
 /// Comma-separated ids, the same shape `--tokens` accepts, so a run's
 /// output can be fed straight back in as a prompt.

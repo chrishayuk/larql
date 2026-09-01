@@ -441,7 +441,9 @@ with the source checkpoint deleted). Whole production models — gpt-oss-20b,
 Gemma 4 26B-A4B, Granite 4.1 3B/8B/30B — encode and execute
 byte-identically to their HF sources, and `larql serve` serves a V3
 container over `/v1/completions` via the V3 runtime (see
-[`docs/vindex3-runtime.md`](docs/vindex3-runtime.md)). VINDEX3 extraction
+[`docs/vindex3-runtime.md`](docs/vindex3-runtime.md)), while
+`larql run <container> [prompt]` executes one from the command line, text
+in and text out, with the tokenizer the container carries. VINDEX3 extraction
 is available on request (`larql extract --generation v3`, LQL
 `EXTRACT ... FORMAT VINDEX3`); the *default* remains VINDEX2 until the M4
 flip — a named decision, made in one place, not yet made (see
