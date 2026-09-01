@@ -52,6 +52,7 @@ pub mod byte_ledger;
 pub mod compile;
 pub mod compiler;
 pub mod constraint;
+pub mod decision;
 pub mod diagnostic;
 pub mod execution_cost;
 pub mod experiment;
@@ -70,6 +71,7 @@ pub mod quality;
 pub mod search_evidence;
 pub mod selection;
 pub mod source_bank;
+pub mod statistic;
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::io::{Read, Seek, SeekFrom};

@@ -281,7 +281,7 @@ impl MoveClass {
     /// Higher sorts first. Encoded as a method rather than left to the
     /// enum's declaration order so that reordering the variants cannot
     /// silently become search policy.
-    fn tier(self) -> u8 {
+    pub(super) fn tier(self) -> u8 {
         match self {
             Self::Unpriced => 3,
             Self::Priced => 2,
