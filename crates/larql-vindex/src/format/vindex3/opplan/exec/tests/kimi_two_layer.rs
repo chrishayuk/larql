@@ -207,6 +207,7 @@ impl Layer {
                     kv_b_proj: kv_b,
                     o_proj: o,
                     kv_a_norm_eps: fx.mla_eps,
+                    projection_encoding: ExpertEncoding::Bf16,
                 },
                 shape: fx.mla_shape(),
                 state,

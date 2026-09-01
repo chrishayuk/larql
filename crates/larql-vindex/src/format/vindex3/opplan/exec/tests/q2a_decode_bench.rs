@@ -21,10 +21,15 @@
 //!   one-command-buffer-per-token step serving takes, logits readback
 //!   included, instrumentation off (`forward`, not `forward_traced`).
 //!
+//! The candidate map is the compiled expert overlay plus whichever
+//! TRANSIENT scopes the quality probe's own environment variables
+//! name, so the arm that is timed is the arm that was judged:
+//!
 //! ```text
-//! LARQL_KIMI_VINDEX3=~/chris-models/Kimi-Linear-48B-A3B-Instruct.aligned.vindex3 \
-//! LARQL_KIMI_Q6_CANDIDATE=/tmp/kimi-map-l24-26q80.vindex3 \
+//! LARQL_KIMI_VINDEX3=~/chris-models/Kimi-Linear-48B-A3B-Instruct.lift2.vindex3 \
+//! LARQL_KIMI_Q6_CANDIDATE=/tmp/kimi-map-l20-26q80-lift2.vindex3 \
 //! LARQL_KIMI_QUALITY_BANK=~/chris-models/qbanks/kimi-quality-bank-256x32 \
+//! LARQL_KDA_Q8_LAYER=20,21,22,24,25 LARQL_MLA_Q8_LAYER=23,26 LARQL_LMHEAD_Q8=1 \
 //!   cargo test -p larql-vindex --features gpu --release --lib \
 //!   q2a_decode_bench -- --nocapture
 //! ```
@@ -35,7 +40,10 @@ use larql_compute::backend::ComputeBackend;
 use larql_compute_metal::MetalBackend;
 use serde_json::Value;
 
-use super::kda_q8_real::{assemble, assemble_with_head, build_layers};
+use super::kda_q8_real::{
+    assemble, assemble_with_head, build_layers, build_layers_scoped, head_q8, layer_list,
+    LAYER_ENV, MLA_ENV, SHARED_ENV,
+};
 use super::q2a_teacher_forced::{
     build_stack, env_dir, sequence_embeddings, BANK_ENV, CANDIDATE_ENV, SOURCE_ENV,
 };
@@ -135,49 +143,69 @@ fn decode_rate_of_the_candidate_map_beside_its_own_bf16_baseline() {
         .register_stores(&metal, &moe_layers)
         .expect("stores register");
     overlay.register_store(&metal);
-    // Optional TRANSIENT KDA scope beside the compiled expert overlay.
-    // The device executes real Q8_0 buffers through the real quantised
-    // kernels either way, so the decode timing is real; only the
-    // STORAGE is transient — which makes this a **Q8 EXECUTION
-    // PREVIEW**: valid for decode compute economics and steady-state
-    // tok/s, NOT a measurement of native artifact size, cold-load,
-    // disk traffic or materialisation overhead.
-    let kda_layers: Vec<usize> = std::env::var("LARQL_KDA_Q8_LAYER")
-        .map(|v| {
-            v.split(',')
-                .map(|x| x.trim().parse().expect("layer index"))
-                .collect()
-        })
-        .unwrap_or_default();
-    let (mut baseline, mut candidate) = if kda_layers.is_empty() {
-        (
-            build_stack(&metal, &model, None),
-            build_stack(&metal, &model, Some(&overlay)),
-        )
-    } else {
+    // Optional TRANSIENT scopes beside the compiled expert overlay —
+    // the same probe vocabulary the quality runner judges: KDA and MLA
+    // projections, shared-expert branches, the output head. The device
+    // executes real Q8_0 buffers through the real quantised kernels
+    // either way, so the decode timing is real; only the STORAGE is
+    // transient — which makes this a **Q8 EXECUTION PREVIEW**: valid
+    // for decode compute economics and steady-state tok/s, NOT a
+    // measurement of native artifact size, cold-load, disk traffic or
+    // materialisation overhead.
+    let kda_layers = layer_list(LAYER_ENV);
+    let mla_layers = layer_list(MLA_ENV);
+    let shared_layers = layer_list(SHARED_ENV);
+    let q8_head = head_q8();
+    // The head counts: a map whose only transient member is the head
+    // would otherwise time two arms that differ in nothing.
+    let transient =
+        !kda_layers.is_empty() || !mla_layers.is_empty() || !shared_layers.is_empty() || q8_head;
+    let (mut baseline, mut candidate) = if transient {
         let (base, _) = build_layers(&metal, &model, &[], None);
-        let (cand, swapped) = build_layers(&metal, &model, &kda_layers, Some(&overlay));
+        let (cand, swapped) = build_layers_scoped(
+            &metal,
+            &model,
+            &kda_layers,
+            &mla_layers,
+            &shared_layers,
+            Some(&overlay),
+        );
         assert_eq!(
             swapped.len(),
-            kda_layers.len(),
-            "every KDA target re-encoded"
+            kda_layers.len() + mla_layers.len() + shared_layers.len(),
+            "every transient target re-encoded"
         );
-        let q8_head = std::env::var("LARQL_LMHEAD_Q8").is_ok_and(|v| v == "1");
         (
             assemble(&metal, &model, base),
             assemble_with_head(&metal, &model, cand, q8_head),
         )
+    } else {
+        (
+            build_stack(&metal, &model, None),
+            build_stack(&metal, &model, Some(&overlay)),
+        )
     };
     metal.seal_weight_regions();
+    let mut transient_scope = String::new();
+    for (name, layers) in [
+        ("KDA", &kda_layers),
+        ("MLA", &mla_layers),
+        ("shared", &shared_layers),
+    ] {
+        if !layers.is_empty() {
+            transient_scope.push_str(&format!(" + TRANSIENT {name} Q8_0 at {layers:?}"));
+        }
+    }
+    if q8_head {
+        transient_scope.push_str(" + TRANSIENT head Q8_0");
+    }
+    if !transient_scope.is_empty() {
+        transient_scope.push_str(" (Q8 execution preview)");
+    }
     eprintln!(
-        "[bench] both arms loaded in {:.1}s; candidate scope {}{}",
+        "[bench] both arms loaded in {:.1}s; candidate scope {}{transient_scope}",
         t0.elapsed().as_secs_f64(),
         overlay.scope(),
-        if kda_layers.is_empty() {
-            String::new()
-        } else {
-            format!(" + TRANSIENT KDA Q8_0 at {kda_layers:?} (Q8 execution preview)")
-        }
     );
 
     // Enough distinct rows that a block never re-times one hot row, cycled

@@ -277,6 +277,7 @@ fn attention_for(
                 kv_b: mla("kv_b_proj"),
                 o: mla("o_proj"),
                 kv_a_norm: read_f32(dir, &format!("layer{i}_mla_kv_a_norm")),
+                encoding: MetalEncoding::Bf16,
             },
             DeviceState::Mla(MlaDeviceState::with_capacity(
                 metal,

@@ -73,6 +73,8 @@ pub enum DeviceAttn {
         kv_b: Vec<u8>,
         o: Vec<u8>,
         kv_a_norm: Vec<f32>,
+        /// Physical representation of the four wide projections.
+        encoding: ExpertEncoding,
     },
 }
 
@@ -202,6 +204,7 @@ impl DeviceLayer {
                     kv_b,
                     o,
                     kv_a_norm,
+                    encoding,
                 },
                 DeviceState::Mla(state),
             ) => AttentionSpec::Mla {
@@ -212,6 +215,7 @@ impl DeviceLayer {
                     kv_b_proj: kv_b,
                     o_proj: o,
                     kv_a_norm_eps: self.mla_norm_eps,
+                    projection_encoding: *encoding,
                 },
                 shape: self.mla_shape,
                 state,

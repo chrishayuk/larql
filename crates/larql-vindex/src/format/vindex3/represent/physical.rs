@@ -204,7 +204,7 @@ impl PhysicalStore {
         self.all()
     }
 
-    fn region(self: &Arc<Self>, tensor: &str) -> Option<WeightRegion> {
+    pub(crate) fn region(self: &Arc<Self>, tensor: &str) -> Option<WeightRegion> {
         let (offset, len) = *self.tensors.get(tensor)?;
         let start = self.payload_start + offset;
         (start + len <= self.all().len() as u64).then(|| WeightRegion {
