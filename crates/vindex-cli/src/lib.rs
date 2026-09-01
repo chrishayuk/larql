@@ -8,7 +8,7 @@
 //! test for every fact is that an independent VINDEX3 implementation
 //! could derive it from the artifact alone.
 
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 use serde_json::{json, Value};
 use sha2::{Digest, Sha256};
@@ -17,6 +17,7 @@ pub mod mixer;
 use mixer::{layer_range, MixerOperands};
 
 use larql_vindex::format::filenames::INDEX_JSON;
+use larql_vindex::format::vindex3::artifact;
 use larql_vindex::format::vindex3::encode::segment::read_segment_header;
 use larql_vindex::format::vindex3::graph::Component;
 use larql_vindex::format::vindex3::index::{ContainerAuthority, Vindex3Index};
@@ -25,6 +26,8 @@ use larql_vindex::format::vindex3::opplan::exec::operands::{OperandStore, Repres
 use larql_vindex::format::vindex3::opplan::{
     plan_component_ops, ComponentOpPlan, LayerFfn, OperandRef,
 };
+use larql_vindex::format::vindex3::plan::capability::Capability;
+use larql_vindex::format::vindex3::plan::plan_system;
 use larql_vindex::format::vindex3::represent::nvfp4_pack::{split, PackLayout, DTYPE_NVFP4};
 use larql_vindex::format::vindex3::represent::{compile_representation, RepresentSpec};
 
@@ -1021,5 +1024,112 @@ pub fn represent_facts(src: &Path, out: &Path, encoding: &str) -> Facts {
         "compiled": compiled,
         "preserved": preserved,
         "linked_segments": report.linked_segments,
+    }))
+}
+
+// ── Ingest: bringing a model in ──────────────────────────────────────────
+//
+// Every other verb reads a container that already exists. These two make
+// one, and they are the reason `vindex` is a tool you can start with
+// rather than a tool you reach for afterwards.
+//
+// Both resolve their arguments through
+// `larql_vindex::format::vindex3::artifact`, which is also what
+// `larql vindex3` uses — one authority on what an artifact argument means,
+// so the two binaries cannot disagree about a model's identity or produce
+// different containers from the same input.
+
+/// The admission verdict for an artifact, without moving its weights.
+///
+/// A bring-up instrument, not the ordinary path: it answers "what does
+/// VINDEX still need to understand about this model?" from configuration
+/// and safetensors headers alone. On GLM-5.3-Flash that is ~39 MB of
+/// staging against a 328 GB checkpoint.
+pub fn plan_facts(artifacts: &[PathBuf]) -> Facts {
+    let resolved = artifact::resolve_all(artifacts).map_err(|e| e.to_string())?;
+    let staging: Vec<Value> = resolved.iter().filter_map(staging_value).collect();
+    let named: Vec<_> = resolved
+        .into_iter()
+        .map(|a| (a.name, a.inventory))
+        .collect();
+    let plan = plan_system(&named);
+    let mut value = serde_json::to_value(&plan).map_err(|e| e.to_string())?;
+    if !staging.is_empty() {
+        value["staging"] = Value::Array(staging);
+    }
+    Ok(value)
+}
+
+/// Encode artifacts into a container.
+///
+/// An `hf://` argument is read over byte ranges: the canonical checkpoint
+/// never needs to exist as a complete local file.
+pub fn encode_facts(artifacts: &[PathBuf], output: &Path, text_only: bool) -> Facts {
+    let resolved = artifact::resolve_all(artifacts).map_err(|e| e.to_string())?;
+    let staging: Vec<Value> = resolved.iter().filter_map(staging_value).collect();
+    let pinned: Vec<Value> = resolved
+        .iter()
+        .filter_map(|a| {
+            Some(json!({
+                "artifact": a.name,
+                "commit": a.commit()?,
+            }))
+        })
+        .collect();
+    let unpinned: Vec<Value> = resolved
+        .iter()
+        .filter_map(|a| {
+            Some(json!({
+                "artifact": a.name,
+                "revision": a.unpinned_revision()?,
+            }))
+        })
+        .collect();
+
+    let capability = text_only.then_some(Capability::TextGeneration);
+    let outcome =
+        artifact::encode_from_specs(resolved, output, capability).map_err(|e| e.to_string())?;
+
+    Ok(json!({
+        "container": outcome.container.display().to_string(),
+        "representations": outcome.representations,
+        "payload_bytes": outcome.total_payload_bytes,
+        "payload": artifact::size(outcome.total_payload_bytes),
+        "capabilities": outcome.capabilities,
+        "staging": staging,
+        "pinned": pinned,
+        "unpinned": unpinned,
+        "transfers": outcome.transfers.iter().map(|t| json!({
+            "artifact": t.name,
+            "tensors": t.tensors,
+            "fetched_bytes": t.fetched,
+            "fetched": artifact::size(t.fetched),
+            "declared": artifact::size(t.declared),
+            // The ratio IS the claim. Near 1.0 means the plan bound every
+            // tensor; well under means the container carries less than the
+            // checkpoint holds.
+            "fraction": if t.declared == 0 { 0.0 } else { t.fetched as f64 / t.declared as f64 },
+        })).collect::<Vec<_>>(),
+    }))
+}
+
+/// One artifact's staging figures, when it was staged from a repo.
+fn staging_value(a: &artifact::ResolvedArtifact) -> Option<Value> {
+    let report = a.staging()?;
+    Some(json!({
+        "artifact": a.name,
+        "commit": a.commit(),
+        "shards": report.shards,
+        "staged": artifact::size(report.staged_bytes()),
+        "headers": artifact::size(report.header_bytes),
+        "metadata": artifact::size(report.metadata_bytes),
+        "stands_in_for": report.payload_bytes.as_ref().ok().map(|b| artifact::size(*b)),
+        // Stated only when the index disagrees with its own headers, so
+        // the difference reads as a fact about the checkpoint rather than
+        // a units bug in the report.
+        "index_declares": report
+            .declared_total
+            .filter(|d| report.payload_bytes.as_ref().is_ok_and(|p| d != p))
+            .map(artifact::size),
     }))
 }

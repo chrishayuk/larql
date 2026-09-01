@@ -69,17 +69,26 @@ impl MockRepo {
                 .expect("under the served dir")
                 .to_string_lossy()
                 .replace('\\', "/");
-            mocks.extend(mock_file(&mut server, &name, &path, behaviour));
+            mocks.extend(mock_file(
+                &mut server,
+                resolve_path(&name),
+                &path,
+                behaviour,
+            ));
+            mocks.extend(mock_file(&mut server, commit_path(&name), &path, behaviour));
             served.push(name);
         }
         for name in STAGED_METADATA_FILES {
             if !served.iter().any(|s| s == name) {
-                mocks.push(
-                    server
-                        .mock("GET", resolve_path(name).as_str())
-                        .with_status(404)
-                        .create(),
-                );
+                for absent in [resolve_path(name), commit_path(name)] {
+                    mocks.push(
+                        server
+                            .mock("GET", absent.as_str())
+                            .with_status(404)
+                            .expect_at_least(0)
+                            .create(),
+                    );
+                }
             }
         }
         Self {
@@ -126,15 +135,26 @@ fn resolve_path(file: &str) -> String {
     format!("/{MOCK_REPO}/resolve/{MOCK_REVISION}/{file}")
 }
 
+/// The same file under the resolved COMMIT, which is how the hub serves it
+/// once a revision has been pinned.
+///
+/// Both spellings are served because that is what the hub does, and
+/// because the code under test re-pins: `artifact::resolve` reads the
+/// commit from the branch and then fetches everything under the commit,
+/// so a mock offering only the branch would 501 on exactly the step that
+/// makes headers and payloads come from the same checkpoint.
+fn commit_path(file: &str) -> String {
+    format!("/{MOCK_REPO}/resolve/{MOCK_COMMIT}/{file}")
+}
+
 /// Range-honouring and whole-file mocks for one file.
 fn mock_file(
     server: &mut Server,
-    name: &str,
+    url: String,
     path: &PathBuf,
     behaviour: RangeBehaviour,
 ) -> Vec<Mock> {
     let body = std::fs::read(path).expect("read fixture file");
-    let url = resolve_path(name);
 
     // Un-ranged fallback FIRST: mockito matches the most recently
     // registered mock, so the ranged mock below must be registered last

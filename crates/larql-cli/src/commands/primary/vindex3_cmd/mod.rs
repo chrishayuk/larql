@@ -10,7 +10,6 @@ use std::path::{Path, PathBuf};
 use clap::{Args, Subcommand};
 
 use larql_models::inventory::{build_inventory, ArchitectureInventory};
-use larql_vindex::format::vindex3::encode::source::TensorSource;
 use larql_vindex::format::vindex3::plan::plan_system;
 
 /// Extension distinguishing a saved inventory JSON from a checkpoint dir.
@@ -531,12 +530,66 @@ fn run_verify(args: VerifyArgs) -> Result<(), Box<dyn std::error::Error>> {
     }
 }
 
+/// What staging one repo-backed artifact cost, and what it stands in for.
+///
+/// The library returns these figures rather than printing them, so this is
+/// where `larql vindex3` gets its voice back. Headers and metadata are
+/// quoted separately and then totalled: the header figure alone
+/// understates the transfer, since a tokenizer can outweigh every shard
+/// header put together.
+fn report_staging(entry: &artifact::ResolvedArtifact) {
+    let Some(report) = entry.staging() else {
+        return;
+    };
+    if let Some(commit) = entry.commit() {
+        eprintln!("artifact `{}` pinned at commit {commit}", entry.name);
+    }
+    if let Some(revision) = entry.unpinned_revision() {
+        eprintln!(
+            "warning: the hub named no commit for `{revision}` — provenance records \
+             the revision name, which can move"
+        );
+    }
+    eprintln!(
+        "staged {} ({} of headers over {} shard(s), {} of metadata)",
+        artifact::size(report.staged_bytes()),
+        artifact::size(report.header_bytes),
+        report.shards,
+        artifact::size(report.metadata_bytes),
+    );
+    match &report.payload_bytes {
+        Ok(payload) => {
+            eprintln!(
+                "  standing in for {} of tensor payload",
+                artifact::size(*payload)
+            );
+            // Only when the index disagrees with its own headers: tied
+            // weights are counted once there and serialised twice in the
+            // file, and a silent 7% gap reads like a units bug.
+            if let Some(declared) = report.declared_total.filter(|d| d != payload) {
+                eprintln!(
+                    "  note: the shard index declares {} — {} {} its own headers sum to; \
+                     the header sum is what transfers",
+                    artifact::size(declared),
+                    artifact::size(declared.abs_diff(*payload)),
+                    if declared < *payload {
+                        "less than"
+                    } else {
+                        "more than"
+                    },
+                );
+            }
+        }
+        // A census failure is not a reason to abort: the encode reads the
+        // same headers and will fail with a better message.
+        Err(err) => eprintln!("warning: could not total the staged headers: {err}"),
+    }
+}
+
 fn run_encode(args: EncodeArgs) -> Result<(), Box<dyn std::error::Error>> {
     let resolved = artifact::resolve_all(&args.artifacts)?;
     for entry in &resolved {
-        if let Some(commit) = entry.commit() {
-            eprintln!("artifact `{}` pinned at commit {commit}", entry.name);
-        }
+        report_staging(entry);
     }
     if let Some(capability) = args.capability {
         eprintln!(
@@ -545,50 +598,30 @@ fn run_encode(args: EncodeArgs) -> Result<(), Box<dyn std::error::Error>> {
         );
     }
 
-    // Opening a source reads no payload: the local one reads shard
-    // headers, the remote one indexes headers already staged. The
-    // admission gate then runs inside `encode_system_from_sources`,
-    // before the first `stream_payload`. So an inadmissible repo costs
-    // its headers and not one tensor byte.
-    let named: Vec<(String, ArchitectureInventory)> = resolved
-        .iter()
-        .map(|a| (a.name.clone(), a.inventory.clone()))
-        .collect();
-    let payloads: Vec<(String, artifact::ArtifactPayloads)> = resolved
-        .into_iter()
-        .map(|a| {
-            let name = a.name.clone();
-            a.payloads().map(|p| (name, p))
-        })
-        .collect::<Result<_, _>>()?;
-    let sources: std::collections::BTreeMap<&str, &dyn TensorSource> = payloads
-        .iter()
-        .map(|(name, p)| (name.as_str(), p.as_source()))
-        .collect();
+    // One ingest, shared with `vindex encode`. Two orchestrations here
+    // would be free to differ on the capability snapshot alone, and a
+    // container that binds with token-ids only is not obviously wrong —
+    // it just answers differently.
+    let outcome =
+        artifact::encode_from_specs(resolved, &args.output, args.capability.map(Into::into))?;
 
-    let outcome = larql_vindex::format::vindex3::encode::encode_system_from_sources(
-        &named,
-        Some(&sources),
-        &args.output,
-        args.capability.map(Into::into),
-    )?;
-    report_remote_transfer(&payloads);
-    // Capability snapshot: tokenizer + HF metadata from the first
-    // artifact directory that carries them (the inventory records its
-    // source dir, so this covers both checkpoint-dir and saved-inventory
-    // inputs). A container without them binds with token-id capability
-    // only — which is why the granite smoke needed a manual copy before
-    // this existed.
-    for (_, inventory) in &named {
-        let copied =
-            larql_vindex::format::vindex3::encode::checkpoint::snapshot_checkpoint_capabilities(
-                std::path::Path::new(&inventory.path),
-                &args.output,
-            )?;
-        if !copied.is_empty() {
-            eprintln!("capabilities: {}", copied.join(", "));
-            break;
-        }
+    for transfer in &outcome.transfers {
+        eprintln!(
+            "{}: fetched {} of {} declared ({:.1}%) across {} tensor(s); \
+             the checkpoint was never on this disk",
+            transfer.name,
+            artifact::size(transfer.fetched),
+            artifact::size(transfer.declared),
+            if transfer.declared == 0 {
+                0.0
+            } else {
+                100.0 * transfer.fetched as f64 / transfer.declared as f64
+            },
+            transfer.tensors,
+        );
+    }
+    if !outcome.capabilities.is_empty() {
+        eprintln!("capabilities: {}", outcome.capabilities.join(", "));
     }
     eprintln!(
         "encoded {} representation(s), {} payload → {}",
@@ -597,35 +630,6 @@ fn run_encode(args: EncodeArgs) -> Result<(), Box<dyn std::error::Error>> {
         outcome.container.display(),
     );
     Ok(())
-}
-
-/// What the repo-backed artifacts actually pulled over the wire.
-///
-/// The headline claim of an `hf://` encode is a ratio: bytes fetched
-/// against bytes the checkpoint declares. Printing it makes the claim
-/// checkable rather than asserted — and a ratio near 1.0 is the signal
-/// that the representation plan asked for everything, which is worth
-/// seeing.
-fn report_remote_transfer(payloads: &[(String, artifact::ArtifactPayloads)]) {
-    for (name, entry) in payloads {
-        let Some(remote) = entry.remote() else {
-            continue;
-        };
-        let declared = remote.declared_bytes();
-        let fetched = remote.fetched();
-        let share = if declared == 0 {
-            0.0
-        } else {
-            fetched as f64 / declared as f64 * 100.0
-        };
-        eprintln!(
-            "{name}: fetched {} of {} declared ({share:.1}%) across {} tensor(s); \
-             the checkpoint was never on this disk",
-            artifact::size(fetched),
-            artifact::size(declared),
-            remote.tensors(),
-        );
-    }
 }
 
 /// `larql vindex3 represent` — compile a physical representation.
@@ -957,6 +961,9 @@ fn load_artifact(path: &Path) -> Result<ArchitectureInventory, Box<dyn std::erro
 
 fn run_plan(args: PlanArgs) -> Result<(), Box<dyn std::error::Error>> {
     let resolved = artifact::resolve_all(&args.artifacts)?;
+    for entry in &resolved {
+        report_staging(entry);
+    }
     let named: Vec<(String, ArchitectureInventory)> = resolved
         .into_iter()
         .map(|a| (a.name, a.inventory))

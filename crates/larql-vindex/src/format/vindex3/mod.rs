@@ -36,6 +36,7 @@
 //! the silent conversion §9.1 forbids, buried one layer below where anyone
 //! would look for it. Regions are placed exactly as their producer wrote them.
 
+pub mod artifact;
 pub mod build;
 pub mod compact;
 pub mod compile;
