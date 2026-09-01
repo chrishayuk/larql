@@ -95,6 +95,12 @@ pub const EXECUTION_SEMANTIC_KEYS: &[&str] = &[
     // the wrong way while still emitting fluent text.
     "no_rope_layers",
     "no_rope_layer_interval",
+    // Declared by checkpoints, read by no reference implementation. Still
+    // execution semantics: each names an operator this build either
+    // performs or does not, and an unread agreement is one value away
+    // from a rotation done the wrong way round.
+    "rope_interleaved",
+    "use_mrope",
     "max_position_embeddings",
     // Kimi Linear's spelling of the same serving bound.
     "model_max_length",

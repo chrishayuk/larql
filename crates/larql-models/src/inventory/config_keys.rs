@@ -49,6 +49,12 @@ pub const CONSUMED_LEAF_KEYS: &[&str] = &[
     // fallback both references consult only when the mask is absent.
     "no_rope_layers",
     "no_rope_layer_interval",
+    // Two declarations no reference implementation reads. Consumed here
+    // so agreement is CHECKED: this build pairs split-half and resolves
+    // a text policy, and a checkpoint claiming otherwise must mismatch
+    // rather than be quietly overridden.
+    "rope_interleaved",
+    "use_mrope",
     "sliding_window_pattern",
     "layer_types",
     "global_head_dim",

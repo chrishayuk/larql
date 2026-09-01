@@ -783,6 +783,77 @@ fn an_incomplete_nested_surface_is_reported_and_blocks() {
     assert!(finding.blocks());
 }
 
+/// **A declaration no reference implementation reads still has to agree.**
+///
+/// SmolLM2-135M ships `rope_interleaved: false` under `model_type: llama`,
+/// which has no such field — transformers reads it nowhere. This build
+/// pairs split-half, so `false` agrees and the key is satisfied.
+///
+/// The second arm is the whole point of reading it at all: `true` names a
+/// different operator, and an unread agreement would have let that
+/// through as a rotation performed against different partners in silence.
+#[test]
+fn a_declared_rotary_pairing_must_agree_with_the_one_that_runs() {
+    let findings = plan_with(|config| {
+        config["text_config"]["rope_interleaved"] = serde_json::json!(false);
+    });
+    let finding = finding_for(&findings, "rope_interleaved");
+    assert_eq!(finding.class, SemanticClass::ExecutionSemantic);
+    assert_eq!(
+        finding.category,
+        FindingCategory::Representable,
+        "split-half agrees with `false`: {}",
+        finding.detail
+    );
+    assert!(!finding.blocks());
+
+    let findings = plan_with(|config| {
+        config["text_config"]["rope_interleaved"] = serde_json::json!(true);
+    });
+    let finding = finding_for(&findings, "rope_interleaved");
+    assert_ne!(
+        finding.category,
+        FindingCategory::Representable,
+        "an interleaved pairing is not what this build performs: {}",
+        finding.detail
+    );
+    assert_eq!(finding.resolved, Some(serde_json::json!(false)));
+}
+
+/// The same shape for `use_mrope`, checked against the policy the axis
+/// geometry resolves rather than against the flag itself.
+#[test]
+fn a_declared_mrope_flag_must_agree_with_the_resolved_policy() {
+    // Qwen2.5-0.5B's real declaration: `false`, on a config carrying no
+    // axis geometry, so no multi-axis policy resolves and the two agree.
+    let findings = plan_with(|config| {
+        config["text_config"]["use_mrope"] = serde_json::json!(false);
+    });
+    let finding = finding_for(&findings, "use_mrope");
+    assert_eq!(finding.class, SemanticClass::ExecutionSemantic);
+    assert_eq!(
+        finding.category,
+        FindingCategory::Representable,
+        "{}",
+        finding.detail
+    );
+
+    // Claiming multi-axis without the geometry to build one is a claim
+    // nothing can honour, and must not pass merely because the flag was
+    // read.
+    let findings = plan_with(|config| {
+        config["text_config"]["use_mrope"] = serde_json::json!(true);
+    });
+    let finding = finding_for(&findings, "use_mrope");
+    assert_ne!(
+        finding.category,
+        FindingCategory::Representable,
+        "no mrope_section resolves no MRope policy: {}",
+        finding.detail
+    );
+    assert_eq!(finding.resolved, Some(serde_json::json!(false)));
+}
+
 /// The rotary SCHEDULE, answered layer by layer from the graph.
 ///
 /// The fixture already leaves layers 3 and 7 unrotated through

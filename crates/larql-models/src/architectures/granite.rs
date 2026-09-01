@@ -258,6 +258,8 @@ mod tests {
             position_embedding_type: None,
             no_rope_layers: None,
             no_rope_layer_interval: None,
+            rope_interleaved: None,
+            use_mrope: None,
             max_window_layers: None,
             num_experts: None,
             num_experts_per_token: None,

@@ -25,6 +25,25 @@ const NOPE_THETA_SENTINEL: f64 = 0.0;
 /// [`PositionPolicy::rope_enabled_by_flag`].
 const NOPE_LAYER_FLAG: i64 = 0;
 
+/// Whether this build's rotary pairs dimensions by INTERLEAVING them.
+///
+/// It does not: `larql-compute`'s rope rotates `(x[i], x[i + half])` —
+/// split-half, HuggingFace's default and MLX's `traditional=False` — and
+/// there is exactly one pairing in the executor.
+///
+/// Declared here rather than left implicit because a checkpoint can SAY
+/// otherwise. SmolLM2-135M ships `rope_interleaved: false`, which agrees;
+/// the value of naming the fact is that a checkpoint shipping `true`
+/// becomes a mismatch the planner reports instead of a rotation quietly
+/// performed the other way round. An interleaved pairing rotates the same
+/// dimensions against different partners, so nothing about the output
+/// looks wrong — it is simply a different operator.
+///
+/// `larql-compute`'s `the_executor_pairs_split_half` pins the executor to
+/// this value, so the constant cannot drift away from the code it
+/// describes.
+pub const ROPE_PAIRING_INTERLEAVED: bool = false;
+
 /// How a layer encodes position.
 #[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
 #[serde(tag = "kind", rename_all = "snake_case")]

@@ -326,3 +326,49 @@ fn proportional_plan_takes_frequencies_over_the_full_head_and_zeroes_the_rest() 
         "different angles, not a relabelling"
     );
 }
+
+/// **The executor pairs split-half, and `ROPE_PAIRING_INTERLEAVED` says so.**
+///
+/// `larql-models` declares the pairing as a constant so the VINDEX3
+/// planner can check a checkpoint's `rope_interleaved` declaration
+/// against what actually runs. A constant describing code it is not tied
+/// to would drift the moment the pairing changed, and the drift would be
+/// invisible: an interleaved rotation produces plausible numbers of the
+/// same magnitude, just against different partners.
+///
+/// So this pins the constant to the executor empirically. With a single
+/// dimension set and the rest zero, the rotation's output names that
+/// dimension's partner exactly: under split-half `i` moves with
+/// `i + half`, under an interleaved pairing it would move with `i ^ 1`.
+#[test]
+fn the_executor_pairs_split_half() {
+    const HEAD_DIM: usize = 8;
+    const HALF: usize = HEAD_DIM / 2;
+
+    for probe in 0..HALF {
+        // The expectation is DERIVED from the constant rather than
+        // asserted against it, so the coupling runs both ways: flipping
+        // `ROPE_PAIRING_INTERLEAVED` flips what this test demands, and it
+        // then fails against an executor that did not change with it.
+        let partner = if larql_models::config::ROPE_PAIRING_INTERLEAVED {
+            probe ^ 1
+        } else {
+            probe + HALF
+        };
+
+        let mut x = Array2::<f32>::zeros((1, HEAD_DIM));
+        x[[0, probe]] = 1.0;
+        // Position 1 so both cos and sin are non-zero; at position 0 the
+        // rotation is the identity and would pair nothing with anything.
+        let out = apply_rope_partial_at(&x, 1, HEAD_DIM, 10000.0, 1.0, 1);
+
+        let moved: Vec<usize> = (0..HEAD_DIM).filter(|&d| out[[0, d]] != 0.0).collect();
+        let mut expected = vec![probe, partner];
+        expected.sort_unstable();
+        assert_eq!(
+            moved, expected,
+            "dimension {probe} must rotate against {partner}, the partner \
+             ROPE_PAIRING_INTERLEAVED declares"
+        );
+    }
+}

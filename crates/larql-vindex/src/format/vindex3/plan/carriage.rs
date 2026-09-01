@@ -297,6 +297,27 @@ pub const CARRIAGE_RULES: &[CarriageRule] = &[
     // declares both it is SUPERSEDED and contributes nothing to the
     // graph. Same shape as `max_window_layers` being inert while the
     // window is disabled.
+    // The rotary PAIRING. No reference implementation reads this key, so
+    // there is no upstream behaviour to match — only this build's, which
+    // is split-half and uniform. `Represented` because the answer comes
+    // from the executor's own declared pairing rather than from the
+    // config that was just read.
+    CarriageRule {
+        leaf: "rope_interleaved",
+        reaches: Carriage::Represented,
+        site: "larql-compute rotates (x[i], x[i + half]) — split-half, so an interleaved \
+               pairing is a different operator and mismatches",
+        probe: Some(probe_rope_interleaved),
+    },
+    // The multi-axis flag, checked against the policy actually resolved
+    // from `mrope_section` + `mrope_interleaved` rather than against
+    // itself.
+    CarriageRule {
+        leaf: "use_mrope",
+        reaches: Carriage::Represented,
+        site: "Component.attention[].position — PositionPolicy::MRope when the axis geometry                resolves one, false otherwise",
+        probe: Some(probe_use_mrope),
+    },
     CarriageRule {
         leaf: "no_rope_layer_interval",
         reaches: Carriage::Parsed,
@@ -1195,11 +1216,33 @@ fn probe_layer_rope_theta(component: &Component, _ctx: &ProbeContext<'_>) -> Opt
     ))
 }
 
-/// The rope *class* the layers in scope carry, in the checkpoint's own
-/// spelling: `yarn` when any rotating layer holds a YaRN block,
-/// `proportional` when any holds a head-width-basis partial rotary
-/// (Gemma 4's full layers), else `default`. Within one scope the class
-/// is uniform, so the first classed layer answers for all.
+/// This build's rotary pairing.
+///
+/// Constant because the executor has exactly one pairing — split-half,
+/// `(x[i], x[i + half])` — and the point of answering at all is that a
+/// checkpoint declaring the interleaved pairing gets a mismatch instead
+/// of a rotation performed against different partners in silence. The
+/// value comes from [`ROPE_PAIRING_INTERLEAVED`], which
+/// `larql-compute`'s own gate pins to the executor, so this cannot drift
+/// away from what actually runs.
+fn probe_rope_interleaved(_component: &Component, _ctx: &ProbeContext<'_>) -> Option<Value> {
+    Some(json!(larql_models::config::ROPE_PAIRING_INTERLEAVED))
+}
+
+/// Whether the resolved policy is multi-axis rotary.
+///
+/// Answered from the policy the axis geometry produced, never from the
+/// flag itself — a probe that echoed `use_mrope` back would agree with
+/// every checkpoint including one declaring `true` with no
+/// `mrope_section` to build it from.
+fn probe_use_mrope(component: &Component, ctx: &ProbeContext<'_>) -> Option<Value> {
+    let mut layers = layers_in_scope(component, ctx)?;
+    Some(json!(layers.any(|l| matches!(
+        l.position,
+        larql_models::config::PositionPolicy::MRope { .. }
+    ))))
+}
+
 /// The rotary schedule the graph carries, in the checkpoint's polarity.
 ///
 /// `1` where the layer rotates and `0` where it does not — deliberately
@@ -1233,6 +1276,11 @@ fn probe_position_embedding_type(component: &Component, ctx: &ProbeContext<'_>) 
     })
 }
 
+/// The rope *class* the layers in scope carry, in the checkpoint's own
+/// spelling: `yarn` when any rotating layer holds a YaRN block,
+/// `proportional` when any holds a head-width-basis partial rotary
+/// (Gemma 4's full layers), else `default`. Within one scope the class
+/// is uniform, so the first classed layer answers for all.
 fn probe_rope_type(component: &Component, ctx: &ProbeContext<'_>) -> Option<Value> {
     let mut layers = layers_in_scope(component, ctx)?;
     let class = layers

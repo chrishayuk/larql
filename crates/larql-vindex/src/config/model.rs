@@ -66,6 +66,13 @@ pub struct VindexModelConfig {
     /// explicit mask still knows the schedule it was compiled under.
     #[serde(default)]
     pub no_rope_layer_interval: Option<usize>,
+    /// The declared rotary pairing, persisted so the container records
+    /// what the checkpoint claimed rather than what this build does.
+    #[serde(default)]
+    pub rope_interleaved: Option<bool>,
+    /// The declared multi-axis flag, persisted for the same reason.
+    #[serde(default)]
+    pub use_mrope: Option<bool>,
     /// MoE configuration (None for dense models).
     #[serde(default)]
     pub moe: Option<MoeConfig>,
@@ -252,6 +259,8 @@ impl VindexModelConfig {
             position_embedding_type: cfg.position_embedding_type.clone(),
             no_rope_layers: cfg.no_rope_layers.clone(),
             no_rope_layer_interval: cfg.no_rope_layer_interval,
+            rope_interleaved: cfg.rope_interleaved,
+            use_mrope: cfg.use_mrope,
             moe: if arch.is_moe() {
                 Some(MoeConfig {
                     num_experts: arch.num_experts(),
@@ -528,6 +537,8 @@ mod tests {
             position_embedding_type: None,
             no_rope_layers: None,
             no_rope_layer_interval: None,
+            rope_interleaved: None,
+            use_mrope: None,
             moe: None,
             global_head_dim: None,
             num_global_kv_heads: None,
