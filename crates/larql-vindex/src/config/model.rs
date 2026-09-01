@@ -46,6 +46,14 @@ pub struct VindexModelConfig {
     /// How far up the stack an enabled window applies.
     #[serde(default)]
     pub max_window_layers: Option<usize>,
+    /// The declared positional scheme, verbatim.
+    ///
+    /// Persisted because on `granitemoehybrid` it is what turns rotation
+    /// on at all — a container that dropped it would rebuild the model as
+    /// a NoPE model, or as a rotating one, depending only on which side of
+    /// the boundary the question was asked.
+    #[serde(default)]
+    pub position_embedding_type: Option<String>,
     /// MoE configuration (None for dense models).
     #[serde(default)]
     pub moe: Option<MoeConfig>,
@@ -229,6 +237,7 @@ impl VindexModelConfig {
             sliding_window: cfg.sliding_window,
             use_sliding_window: cfg.use_sliding_window,
             max_window_layers: cfg.max_window_layers,
+            position_embedding_type: cfg.position_embedding_type.clone(),
             moe: if arch.is_moe() {
                 Some(MoeConfig {
                     num_experts: arch.num_experts(),
@@ -502,6 +511,7 @@ mod tests {
             sliding_window: None,
             use_sliding_window: None,
             max_window_layers: None,
+            position_embedding_type: None,
             moe: None,
             global_head_dim: None,
             num_global_kv_heads: None,

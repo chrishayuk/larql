@@ -247,6 +247,14 @@ pub(super) fn parse_model_config(config: &serde_json::Value) -> ModelConfig {
     let max_window_layers = text_config["max_window_layers"]
         .as_u64()
         .map(|v| v as usize);
+    // The declared positional scheme, verbatim. Read here rather than
+    // interpreted here: `granitemoehybrid` uses it to *enable* rotation
+    // at all, while the BERT lineage uses the same leaf for
+    // `absolute` / `relative_key`. Only the family knows which vocabulary
+    // it is speaking, so the string travels and the architecture decides.
+    let position_embedding_type = text_config["position_embedding_type"]
+        .as_str()
+        .map(str::to_string);
     // Read from the *outer* config too: some families declare it at the top
     // level next to `architectures` rather than inside `text_config`.
     // The mamba_ssm lineage (OuteAI Mamba2Attn) spells the same fact
@@ -630,6 +638,7 @@ pub(super) fn parse_model_config(config: &serde_json::Value) -> ModelConfig {
         sliding_window,
         use_sliding_window,
         max_window_layers,
+        position_embedding_type,
         num_experts,
         num_experts_per_token,
         num_shared_experts,

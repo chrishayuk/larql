@@ -213,6 +213,7 @@ mod tests {
             rope_local_base: Some(10_000.0),
             sliding_window: Some(1024),
             use_sliding_window: None,
+            position_embedding_type: None,
             max_window_layers: None,
             num_experts: None,
             num_experts_per_token: None,

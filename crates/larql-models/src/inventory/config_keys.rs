@@ -37,6 +37,11 @@ pub const CONSUMED_LEAF_KEYS: &[&str] = &[
     // Read by `ModelArchitecture::is_sliding_window_layer` as the bound on
     // how far up the stack an enabled window applies.
     "max_window_layers",
+    // Read by `ModelArchitecture::position_policy_for_layer`, where the
+    // family that owns the spelling interprets it: on `granitemoehybrid`
+    // it is the opt-in that turns rotation on at all, and the same leaf
+    // means `absolute` / `relative_key` in the BERT lineage.
+    "position_embedding_type",
     "sliding_window_pattern",
     "layer_types",
     "global_head_dim",

@@ -513,72 +513,7 @@ pub trait ModelArchitecture: Send + Sync {
     /// forward path and dropped by everything else ([`Self::yarn_rope_scaling`]
     /// is the config read; this is where it becomes per-layer policy).
     fn position_policy_for_layer(&self, layer: usize) -> PositionPolicy {
-        // A declared relative scheme decides the policy outright. Checked
-        // before every rotary branch because `rope_base` carries a
-        // DEFAULT: without this, a checkpoint that declares no rope key at
-        // all still resolves to `Rope { theta: 10000 }`, which is a
-        // rotation the author never asked for on every layer.
-        if let (Some(d_rel), Some(extent)) = (self.config().d_rel, self.config().rel_extent) {
-            return PositionPolicy::Relative { d_rel, extent };
-        }
-        // `mla_use_nope` means what it says: the MLA block applies no
-        // positional rotation at all.
-        //
-        // Judged from Kimi Linear's own `modeling_kimi.py`, not from the
-        // flag's name, because the config looks self-contradictory — it
-        // declares `mla_use_nope: true` *and* `qk_rope_head_dim: 64`. The
-        // reference settles it two ways:
-        //
-        //   1. the file contains **no rotary code whatsoever** — `q_rot`
-        //      and `k_rot` are split out and concatenated straight back,
-        //      unrotated;
-        //   2. `self.use_nope` is read exactly once, as `assert
-        //      self.use_nope` — the flag is a *precondition*, not a
-        //      switch, and the class refuses to run without it.
-        //
-        // So `qk_rope_head_dim` is a **structural width**, not a rotary
-        // subspace: it splits `q_head_dim = 128 + 64 = 192` (q_proj rows
-        // 32·192 = 6144, as stored) and gives `kv_a_proj_with_mqa` its
-        // extra 64 outputs, broadcast across heads as a shared unrotated K
-        // component. The key name is actively misleading and only the
-        // reference could settle it.
-        //
-        // Deliberately keyed on `Some(true)`. `false` is a combination the
-        // reference does not implement — its assert fires — so this build
-        // has no ground truth for it and must not answer.
-        if self.config().mla_use_nope == Some(true) {
-            return PositionPolicy::None;
-        }
-        let yarn = self.yarn_rope_scaling();
-        match self
-            .config()
-            .layer_rope_theta
-            .as_ref()
-            .and_then(|thetas| thetas.get(layer))
-        {
-            Some(&declared) => {
-                // A per-layer theta states WHICH base this layer rotates
-                // at. It does not state that the layer stops being a
-                // partial or multi-axis rotary, so the config's rotary
-                // shape is re-applied at that theta. Without this, any
-                // checkpoint declaring `layer_rope_theta` alongside
-                // `partial_rotary_factor` would silently rotate the whole
-                // head — the same drop this rung exists to close, one
-                // branch over.
-                match PositionPolicy::from_declared_theta_with_yarn(declared, yarn) {
-                    PositionPolicy::Rope { theta } => self.rotary_policy(theta),
-                    // NoPE has no rotary shape, and YaRN carries its own.
-                    resolved => resolved,
-                }
-            }
-            None => match yarn {
-                Some(scaling) => PositionPolicy::Yarn {
-                    theta: self.rope_base_for_layer(layer),
-                    scaling,
-                },
-                None => self.rotary_policy(self.rope_base_for_layer(layer)),
-            },
-        }
+        default_position_policy_for_layer(self, layer)
     }
 
     /// The unscaled rotary policy at `theta`: plain, partial, or
@@ -1519,5 +1454,89 @@ pub trait ModelArchitecture: Send + Sync {
     fn kv_recomputable_from_residuals(&self) -> bool {
         let norm_stateless = matches!(self.norm_type(), NormType::RmsNorm | NormType::LayerNorm);
         norm_stateless && self.position_embed_key().is_none() && !self.uses_mla()
+    }
+}
+
+/// The family-agnostic position policy — what
+/// [`ModelArchitecture::position_policy_for_layer`] resolves unless a
+/// family overrides it.
+///
+/// A free function as well as a trait default so that an override can
+/// **narrow** the decision and then defer to it. A family whose config
+/// gates rotation on its own key — `granitemoehybrid`'s
+/// `position_embedding_type` — has to answer that question first and
+/// this one second, and Rust gives an override no way to call the
+/// default it replaced. Copying the body into the override instead
+/// would leave two resolvers to keep in agreement, which is the exact
+/// shape [`PositionPolicy`] exists to prevent.
+pub fn default_position_policy_for_layer<A: ModelArchitecture + ?Sized>(
+    arch: &A,
+    layer: usize,
+) -> PositionPolicy {
+    // A declared relative scheme decides the policy outright. Checked
+    // before every rotary branch because `rope_base` carries a
+    // DEFAULT: without this, a checkpoint that declares no rope key at
+    // all still resolves to `Rope { theta: 10000 }`, which is a
+    // rotation the author never asked for on every layer.
+    if let (Some(d_rel), Some(extent)) = (arch.config().d_rel, arch.config().rel_extent) {
+        return PositionPolicy::Relative { d_rel, extent };
+    }
+    // `mla_use_nope` means what it says: the MLA block applies no
+    // positional rotation at all.
+    //
+    // Judged from Kimi Linear's own `modeling_kimi.py`, not from the
+    // flag's name, because the config looks self-contradictory — it
+    // declares `mla_use_nope: true` *and* `qk_rope_head_dim: 64`. The
+    // reference settles it two ways:
+    //
+    //   1. the file contains **no rotary code whatsoever** — `q_rot`
+    //      and `k_rot` are split out and concatenated straight back,
+    //      unrotated;
+    //   2. `arch.use_nope` is read exactly once, as `assert
+    //      arch.use_nope` — the flag is a *precondition*, not a
+    //      switch, and the class refuses to run without it.
+    //
+    // So `qk_rope_head_dim` is a **structural width**, not a rotary
+    // subspace: it splits `q_head_dim = 128 + 64 = 192` (q_proj rows
+    // 32·192 = 6144, as stored) and gives `kv_a_proj_with_mqa` its
+    // extra 64 outputs, broadcast across heads as a shared unrotated K
+    // component. The key name is actively misleading and only the
+    // reference could settle it.
+    //
+    // Deliberately keyed on `Some(true)`. `false` is a combination the
+    // reference does not implement — its assert fires — so this build
+    // has no ground truth for it and must not answer.
+    if arch.config().mla_use_nope == Some(true) {
+        return PositionPolicy::None;
+    }
+    let yarn = arch.yarn_rope_scaling();
+    match arch
+        .config()
+        .layer_rope_theta
+        .as_ref()
+        .and_then(|thetas| thetas.get(layer))
+    {
+        Some(&declared) => {
+            // A per-layer theta states WHICH base this layer rotates
+            // at. It does not state that the layer stops being a
+            // partial or multi-axis rotary, so the config's rotary
+            // shape is re-applied at that theta. Without this, any
+            // checkpoint declaring `layer_rope_theta` alongside
+            // `partial_rotary_factor` would silently rotate the whole
+            // head — the same drop this rung exists to close, one
+            // branch over.
+            match PositionPolicy::from_declared_theta_with_yarn(declared, yarn) {
+                PositionPolicy::Rope { theta } => arch.rotary_policy(theta),
+                // NoPE has no rotary shape, and YaRN carries its own.
+                resolved => resolved,
+            }
+        }
+        None => match yarn {
+            Some(scaling) => PositionPolicy::Yarn {
+                theta: arch.rope_base_for_layer(layer),
+                scaling,
+            },
+            None => arch.rotary_policy(arch.rope_base_for_layer(layer)),
+        },
     }
 }

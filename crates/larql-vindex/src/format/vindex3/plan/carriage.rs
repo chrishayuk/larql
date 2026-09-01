@@ -274,6 +274,20 @@ pub const CARRIAGE_RULES: &[CarriageRule] = &[
                round-trip",
         probe: None,
     },
+    // The positional scheme, answered from the graph rather than the
+    // config, because on `granitemoehybrid` this key is the SWITCH: HF
+    // builds a rotary embedding only when it reads `rope`, so a
+    // checkpoint that omits it is a NoPE model. `Represented` and not
+    // `Parsed` — the effect is visible on every layer's carried
+    // PositionPolicy, so the container can be asked what it believes
+    // rather than trusted to have read the key.
+    CarriageRule {
+        leaf: "position_embedding_type",
+        reaches: Carriage::Represented,
+        site: "Component.attention[].position — a rotating policy answers `rope`, a stack \
+               that rotates nowhere answers null",
+        probe: Some(probe_position_embedding_type),
+    },
     CarriageRule {
         leaf: "max_window_layers",
         reaches: Carriage::Parsed,
@@ -1164,6 +1178,22 @@ fn probe_layer_rope_theta(component: &Component, _ctx: &ProbeContext<'_>) -> Opt
 /// `proportional` when any holds a head-width-basis partial rotary
 /// (Gemma 4's full layers), else `default`. Within one scope the class
 /// is uniform, so the first classed layer answers for all.
+/// The positional scheme the graph actually carries.
+///
+/// `rope` when any layer in scope rotates; `null` when none does, which
+/// is an ANSWER and not a failure to answer — "this stack encodes no
+/// position" is exactly what a `granitemoehybrid` without the opt-in
+/// means, and reporting it as unknown would hide the case the rule
+/// exists for. Mirrors `probe_sliding_window`, which answers null the
+/// same way for a stack with no windowed layer.
+fn probe_position_embedding_type(component: &Component, ctx: &ProbeContext<'_>) -> Option<Value> {
+    let mut layers = layers_in_scope(component, ctx)?;
+    Some(match layers.any(|l| l.position.rope_theta().is_some()) {
+        true => json!(larql_models::config::POSITION_EMBEDDING_TYPE_ROPE),
+        false => Value::Null,
+    })
+}
+
 fn probe_rope_type(component: &Component, ctx: &ProbeContext<'_>) -> Option<Value> {
     let mut layers = layers_in_scope(component, ctx)?;
     let class = layers
