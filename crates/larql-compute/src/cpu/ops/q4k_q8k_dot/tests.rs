@@ -1,8 +1,6 @@
-#[cfg(all(target_arch = "aarch64", target_feature = "neon"))]
 use super::common::BLOCK_BYTES;
 #[cfg(target_arch = "x86_64")]
 use super::q4k_avx2::q4k_q8k_matvec_avx2;
-#[cfg(all(target_arch = "aarch64", target_feature = "neon"))]
 use super::q6k::Q6K_BLOCK_BYTES;
 use super::*;
 use crate::cpu::ops::q4_common::{q4k_matvec_into, quantize_q4_k, quantize_q6_k};
@@ -761,7 +759,7 @@ fn q8k_matvec_avx2_matches_scalar() {
     let mut out_scalar = vec![0.0f32; rows];
     let mut out_avx2 = vec![0.0f32; rows];
     q4k_q8k_matvec_scalar(&mut out_scalar, &q8, &w_q4, rows, cols).expect("valid shape");
-    unsafe { q4k_q8k_matvec_avx2(&mut out_avx2, &q8, &w_q4, rows, cols) };
+    unsafe { q4k_q8k_matvec_avx2(&mut out_avx2, &q8, &w_q4, rows, cols) }.expect("valid shape");
 
     for r in 0..rows {
         assert_eq!(
