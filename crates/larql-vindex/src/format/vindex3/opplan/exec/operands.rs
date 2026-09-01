@@ -70,6 +70,24 @@ pub struct OperandStore {
     /// Tensors bound at their stored precision rather than the format the
     /// backend asked for — see [`Self::bound_at_stored_precision`].
     stored_precision: std::sync::atomic::AtomicU64,
+    /// Objects the container describes whose segment is not on disk.
+    ///
+    /// Distinct from "not in the container": these are declared by the
+    /// graph and the index, and only their bytes are elsewhere. Keeping
+    /// them named is what lets the load path refuse by residency rather
+    /// than by absence.
+    absent: std::collections::BTreeSet<String>,
+    /// Which objects this store has actually resolved an operand out of.
+    ///
+    /// The consumption half of the residency ledger. `load_count` says
+    /// how much was read; this says *from where*, which is the question a
+    /// hydration set has to answer: an execution that needs three objects
+    /// must not be handed four, and the only way to know which three is
+    /// to watch a real preparation ask.
+    ///
+    /// Recorded in [`Self::load_raw`] because that is the one resolution
+    /// path — a second place to record would be a second answer.
+    touched: std::sync::Mutex<std::collections::BTreeSet<String>>,
 }
 
 /// Where an execution representation is allowed to come from.
@@ -128,6 +146,7 @@ impl OperandStore {
         source: RepresentationSource,
     ) -> Result<Self, VindexError> {
         let mut segments = BTreeMap::new();
+        let mut absent: std::collections::BTreeSet<String> = std::collections::BTreeSet::new();
         let mut selected = BTreeMap::new();
         let mut precision_map: BTreeMap<String, BTreeMap<String, String>> = BTreeMap::new();
         for object in &inspection.graph.objects {
@@ -197,6 +216,21 @@ impl OperandStore {
                 },
             );
             let path = root.join(&entry.segment);
+            // A described object whose bytes are not here is NOT a
+            // malformed container. `index.json` and the system graph say
+            // what the model is, and that description is complete whether
+            // or not every segment has been hydrated yet — which is the
+            // whole basis on which a hydration set can be a SUBSET.
+            //
+            // Reading eagerly and propagating made a partly resident
+            // container unopenable, so the refusal moves to the load
+            // path, where it can name the object and say the true thing.
+            // A segment that exists but cannot be read is still an error
+            // here: that is corruption, not absence.
+            if !path.exists() {
+                absent.insert(object.id.clone());
+                continue;
+            }
             let (header, payload_start) = read_segment_header(&path)?;
             segments.insert(
                 object.id.clone(),
@@ -213,6 +247,7 @@ impl OperandStore {
         }
         Ok(Self {
             segments,
+            absent,
             selected,
             precision_map,
             program: inspection.index.precision_map.clone(),
@@ -224,6 +259,7 @@ impl OperandStore {
             loads: std::sync::atomic::AtomicU64::new(0),
             runtime_quantised: std::sync::atomic::AtomicU64::new(0),
             stored_precision: std::sync::atomic::AtomicU64::new(0),
+            touched: std::sync::Mutex::new(std::collections::BTreeSet::new()),
         })
     }
 
@@ -371,6 +407,31 @@ impl OperandStore {
         self.loads.load(std::sync::atomic::Ordering::Relaxed)
     }
 
+    /// Whether this object's bytes are on disk.
+    ///
+    /// `false` for an object the container describes but has not
+    /// hydrated, and for one it does not describe at all — the caller
+    /// asking this question wants to know if a load would succeed, and
+    /// both answers are "no".
+    pub fn is_resident(&self, object: &str) -> bool {
+        self.segments.contains_key(object)
+    }
+
+    /// Objects described by the container whose bytes are not here.
+    pub fn absent_objects(&self) -> &std::collections::BTreeSet<String> {
+        &self.absent
+    }
+
+    /// The objects this store has resolved an operand out of.
+    ///
+    /// Measured, not predicted. A hydration set computed by folding over
+    /// a plan is a claim about what an execution will ask for; this is
+    /// what it did ask for, and the two agreeing on a real model is the
+    /// only thing that makes the fold trustworthy.
+    pub fn touched_objects(&self) -> std::collections::BTreeSet<String> {
+        self.touched.lock().unwrap().clone()
+    }
+
     /// The dtype the container stores this operand as — tensor-table
     /// metadata only, no payload read.
     ///
@@ -392,7 +453,15 @@ impl OperandStore {
     pub fn load_raw(&self, operand: &OperandRef) -> Result<RawOperand, VindexError> {
         self.loads
             .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+        self.touched.lock().unwrap().insert(operand.object.clone());
         let segment = self.segments.get(&operand.object).ok_or_else(|| {
+            if self.absent.contains(&operand.object) {
+                return VindexError::Parse(format!(
+                    "object `{}` is described by this container but its segment is \
+                     not resident — it was not hydrated",
+                    operand.object
+                ));
+            }
             VindexError::Parse(format!("no segment for object `{}`", operand.object))
         })?;
         let tensor = segment.tensors.get(&operand.tensor).ok_or_else(|| {
