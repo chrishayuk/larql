@@ -15,13 +15,46 @@
 
 name: bench-regress
 
+# ── Two honesty caveats on what this gate can establish. ──
+#
+# 1. The comparison is CROSS-RUNNER. The baseline is recorded on a
+#    `main` push, cached, and restored onto a DIFFERENT macos-14 runner
+#    for the PR. Criterion then compares absolute timings across two
+#    physical machines at different times, which this repo's own bench
+#    discipline does not accept anywhere else: the decode benchmark in
+#    `opplan/exec/tests/q2a_decode_bench.rs` runs BOTH arms in one
+#    process, interleaved with alternating order, and takes a min-of-N
+#    floor, precisely because a cross-session number is not a
+#    measurement. Read a red here as a SIGNAL to go and measure
+#    properly, never as proof a change caused it.
+#
+# 2. It therefore only runs where it could plausibly be causal. The
+#    gated surface is `larql-compute` and `larql-compute-metal` (see
+#    BENCHES in scripts/bench-regress.sh); a PR that cannot reach those
+#    crates cannot have caused a movement in them, and a red on such a
+#    PR is pure runner variance masquerading as attribution. That
+#    happened twice on 2026-09-01 — a +31 % "regression" in
+#    `ridge_decomposition_solve` on branches touching only
+#    `larql-vindex` — which is what motivated the paths filter below.
+#
+# Fixing (1) properly means benchmarking main and the PR head back to
+# back on the SAME runner in one job. That doubles bench wall-clock and
+# is tracked separately.
+
 on:
   push:
     branches: [main]
   pull_request:
     branches: [main]
+    paths:
+      - 'crates/larql-compute/**'
+      - 'crates/larql-compute-metal/**'
+      - 'scripts/bench-regress.sh'
+      - '.github/workflows/bench-regress.yml'
+      - 'Cargo.lock'
   # Manual trigger so a maintainer can re-baseline after intentional
-  # perf changes without waiting for the next merge to main.
+  # perf changes without waiting for the next merge to main — and so a
+  # reviewer can ask for the check on a PR the paths filter skipped.
   workflow_dispatch: {}
 
 jobs:
