@@ -27,7 +27,7 @@ use larql_vindex::format::vindex3::opplan::{
     plan_component_ops, ComponentOpPlan, LayerFfn, OperandRef,
 };
 use larql_vindex::format::vindex3::plan::capability::Capability;
-use larql_vindex::format::vindex3::plan::plan_system;
+use larql_vindex::format::vindex3::plan::{plan_system_with_sources, ArtifactSource};
 use larql_vindex::format::vindex3::represent::nvfp4_pack::{split, PackLayout, DTYPE_NVFP4};
 use larql_vindex::format::vindex3::represent::{compile_representation, RepresentSpec};
 
@@ -1048,11 +1048,22 @@ pub fn represent_facts(src: &Path, out: &Path, encoding: &str) -> Facts {
 pub fn plan_facts(artifacts: &[PathBuf]) -> Facts {
     let resolved = artifact::resolve_all(artifacts).map_err(|e| e.to_string())?;
     let staging: Vec<Value> = resolved.iter().filter_map(staging_value).collect();
+    // The verdict names its subject: the argument as given and, for a
+    // repo, the commit the facts were read at.
+    let sources: Vec<ArtifactSource> = artifacts
+        .iter()
+        .zip(&resolved)
+        .map(|(spec, a)| ArtifactSource {
+            path: spec.display().to_string(),
+            revision: a.commit().map(str::to_string),
+            unpinned_revision: a.unpinned_revision().map(str::to_string),
+        })
+        .collect();
     let named: Vec<_> = resolved
         .into_iter()
         .map(|a| (a.name, a.inventory))
         .collect();
-    let plan = plan_system(&named);
+    let plan = plan_system_with_sources(&named, &sources).map_err(|e| e.to_string())?;
     let mut value = serde_json::to_value(&plan).map_err(|e| e.to_string())?;
     if !staging.is_empty() {
         value["staging"] = Value::Array(staging);

@@ -19,6 +19,7 @@
 use serde::{Deserialize, Serialize};
 
 use super::carriage::Carriage;
+use crate::error::VindexError;
 use crate::format::vindex3::graph::SystemGraph;
 
 /// Current plan schema. Bump on any breaking change to these types.
@@ -32,13 +33,114 @@ use crate::format::vindex3::graph::SystemGraph;
 /// ones — so `unrepresented: N` is a count against a stated denominator
 /// instead of a lower bound. Adds the `training_only` and `alias`
 /// semantic classes.
-pub const PLAN_SCHEMA: u32 = 3;
+///
+/// v4: the plan names who judged it and what it judged. `planner` carries
+/// the planner's package version and its *semantics* version; every
+/// artifact carries its `source` — the argument as given and, for a repo,
+/// the immutable commit the facts were read at. A verdict without these
+/// is not attributable, and a plan of an earlier schema is refused by
+/// [`SystemPlan::parse`] rather than read as unattributed.
+pub const PLAN_SCHEMA: u32 = 4;
+
+/// The planner's semantics version.
+///
+/// Bumped **only** when a verdict can change: a new or corrected rule that
+/// makes a checkpoint admissible or blocked where it was not before (the
+/// sliding-window normalisation flipped six Qwen3 sizes from three
+/// blockers to zero — that is a bump). A fix to the CLI, the report's
+/// wording or the JSON layout is not. The package version says which
+/// build ran; this says whether its answers are comparable with another
+/// build's. Anything caching verdicts keys on (source revision, this).
+///
+/// `plan/tests/identity.rs` pins fixture verdicts against this value, so
+/// a change that flips one fails there until the version is bumped.
+pub const PLANNER_SEMANTICS_VERSION: u32 = 1;
+
+/// Who judged a plan.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct PlannerIdentity {
+    /// The crate that implements the planner.
+    pub package: String,
+    /// That crate's package version — which build ran.
+    pub package_version: String,
+    /// [`PLANNER_SEMANTICS_VERSION`] at the time — whether two verdicts
+    /// are comparable.
+    pub semantics_version: u32,
+}
+
+impl PlannerIdentity {
+    /// This build's identity.
+    pub fn current() -> Self {
+        Self {
+            package: env!("CARGO_PKG_NAME").to_string(),
+            package_version: env!("CARGO_PKG_VERSION").to_string(),
+            semantics_version: PLANNER_SEMANTICS_VERSION,
+        }
+    }
+}
+
+/// What an artifact's facts were read from, so the verdict names its
+/// subject.
+///
+/// **Cache authority is pinned-only.** A persisted verdict cache requires
+/// an immutable source revision — [`revision`](Self::revision), a commit.
+/// [`unpinned_revision`](Self::unpinned_revision) is provenance, not a
+/// cache identity: `main` on Monday and `main` on Tuesday can name
+/// different facts, so a verdict over it may be shown, visibly marked
+/// unpinned, and must never be stored as authority.
+/// [`SystemPlan::cache_key`] enforces this for the whole plan.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ArtifactSource {
+    /// The artifact as the caller gave it: a checkpoint directory, a saved
+    /// inventory, or an `hf://org/name[@revision]` spec.
+    pub path: String,
+    /// The immutable revision the facts were read at, when the source has
+    /// one — a repo's commit. A verdict is re-usable exactly as far as
+    /// this and the planner's semantics version are unchanged.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub revision: Option<String>,
+    /// A revision *name* the source fell back to because the hub named no
+    /// commit — provenance that can move, and worth saying so. Never a
+    /// cache identity.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub unpinned_revision: Option<String>,
+}
+
+impl ArtifactSource {
+    /// A local source: the path the inventory recorded, no revision.
+    pub fn local(path: impl Into<String>) -> Self {
+        Self {
+            path: path.into(),
+            revision: None,
+            unpinned_revision: None,
+        }
+    }
+
+    /// The immutable revision a cache may key on, if this source has one.
+    /// `None` for a local path and for an unpinned revision name.
+    pub fn pinned_revision(&self) -> Option<&str> {
+        self.revision.as_deref()
+    }
+}
+
+/// The identity under which a plan's verdict may be persisted: every
+/// artifact's immutable revision, in artifact order, and the semantics
+/// version that judged them. Exists only when every artifact is pinned.
+#[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
+pub struct VerdictCacheKey {
+    pub revisions: Vec<String>,
+    pub semantics_version: u32,
+}
 
 /// The whole-system plan over every artifact given.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SystemPlan {
     /// Always [`PLAN_SCHEMA`].
     pub schema: u32,
+    /// Who judged this plan. Not defaulted on deserialisation: a plan
+    /// without it is an earlier schema and is refused, not read as
+    /// unattributed.
+    pub planner: PlannerIdentity,
     /// One entry per inspected artifact, in input order.
     pub artifacts: Vec<ArtifactPlan>,
     /// Cross-component interfaces resolved into graph edges.
@@ -83,8 +185,63 @@ pub struct PlanSummary {
 pub struct ArtifactPlan {
     /// Artifact name (the inspected directory's stem).
     pub name: String,
+    /// What this artifact's facts were read from.
+    pub source: ArtifactSource,
     pub model_type: String,
     pub findings: Vec<Finding>,
+}
+
+impl SystemPlan {
+    /// The identity under which this verdict may be cached, or `None`.
+    ///
+    /// A verdict is cacheable only when every artifact carries an
+    /// immutable revision and the planner's semantics version is known —
+    /// the same facts under the same rules. One local path or one
+    /// unpinned revision name among the artifacts makes the whole plan
+    /// uncacheable: it may still be shown, marked as such, but a cache
+    /// that stored it would answer tomorrow's question with today's
+    /// facts.
+    pub fn cache_key(&self) -> Option<VerdictCacheKey> {
+        let revisions = self
+            .artifacts
+            .iter()
+            .map(|a| a.source.pinned_revision().map(str::to_string))
+            .collect::<Option<Vec<String>>>()?;
+        Some(VerdictCacheKey {
+            revisions,
+            semantics_version: self.planner.semantics_version,
+        })
+    }
+
+    /// Read a plan back, refusing one written by another schema by name.
+    ///
+    /// The schema is checked before the body is parsed, so an older plan
+    /// fails as "schema 3, this build reads 4" rather than as a missing
+    /// field several lines in — and a plan that predates planner identity
+    /// can never be read as a verdict nobody attributed.
+    pub fn parse(json: &str) -> Result<Self, VindexError> {
+        #[derive(Deserialize)]
+        struct SchemaProbe {
+            schema: Option<u32>,
+        }
+        let probe: SchemaProbe = serde_json::from_str(json)
+            .map_err(|e| VindexError::Parse(format!("plan is not a JSON object: {e}")))?;
+        match probe.schema {
+            Some(found) if found == PLAN_SCHEMA => {}
+            Some(found) => {
+                return Err(VindexError::Parse(format!(
+                    "plan schema {found}; this build reads plan schema {PLAN_SCHEMA} — \
+                     re-run `vindex plan` so the verdict is attributed"
+                )))
+            }
+            None => {
+                return Err(VindexError::Parse(format!(
+                    "plan declares no schema; this build reads plan schema {PLAN_SCHEMA}"
+                )))
+            }
+        }
+        serde_json::from_str(json).map_err(|e| VindexError::Parse(format!("parse plan: {e}")))
+    }
 }
 
 /// One statement about one subject.
