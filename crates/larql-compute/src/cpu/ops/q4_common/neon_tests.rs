@@ -89,12 +89,13 @@ fn q4k_dual_matvec_into_matches_two_sequential_calls() {
 
     let mut sep_a = vec![0.0f32; rows];
     let mut sep_b = vec![0.0f32; rows];
-    q4k_matvec_into(&mut sep_a, &x, &q4k_a, rows, cols);
-    q4k_matvec_into(&mut sep_b, &x, &q4k_b, rows, cols);
+    q4k_matvec_into(&mut sep_a, &x, &q4k_a, rows, cols).expect("valid shape");
+    q4k_matvec_into(&mut sep_b, &x, &q4k_b, rows, cols).expect("valid shape");
 
     let mut fused_a = vec![0.0f32; rows];
     let mut fused_b = vec![0.0f32; rows];
-    q4k_dual_matvec_into(&mut fused_a, &mut fused_b, &x, &q4k_a, &q4k_b, rows, cols);
+    q4k_dual_matvec_into(&mut fused_a, &mut fused_b, &x, &q4k_a, &q4k_b, rows, cols)
+        .expect("valid shape");
 
     for r in 0..rows {
         let rel_a = (sep_a[r] - fused_a[r]).abs() / sep_a[r].abs().max(1e-6);
@@ -118,20 +119,23 @@ fn q4k_dual_matvec_into_matches_two_sequential_calls() {
 fn q4k_dual_matvec_into_zero_dims_zero_output() {
     let mut out_a = vec![1.0f32; 4];
     let mut out_b = vec![1.0f32; 4];
-    q4k_dual_matvec_into(&mut out_a, &mut out_b, &[], &[], &[], 4, 0);
+    q4k_dual_matvec_into(&mut out_a, &mut out_b, &[], &[], &[], 4, 0).expect("valid shape");
     assert!(out_a.iter().all(|&v| v == 0.0));
     assert!(out_b.iter().all(|&v| v == 0.0));
 }
 
 #[test]
-fn q4k_dual_matvec_into_non_multiple_cols_zeros_output() {
-    // cols = 100 is not a multiple of 256 → must zero output, not
-    // panic. Matches the single-matvec contract.
+fn q4k_dual_matvec_into_non_multiple_cols_is_refused_untouched() {
+    // cols = 100 is not a multiple of 256: refused by name, both
+    // outputs left as handed in. Matches the single-matvec contract.
     let mut out_a = vec![1.0f32; 2];
     let mut out_b = vec![2.0f32; 2];
     let x = vec![1.0f32; 100];
     let w = vec![0u8; 2 * 144];
-    q4k_dual_matvec_into(&mut out_a, &mut out_b, &x, &w, &w, 2, 100);
-    assert!(out_a.iter().all(|&v| v == 0.0));
-    assert!(out_b.iter().all(|&v| v == 0.0));
+    let err = q4k_dual_matvec_into(&mut out_a, &mut out_b, &x, &w, &w, 2, 100)
+        .expect_err("cols off a super-block must be refused");
+    assert_eq!(out_a, vec![1.0f32; 2]);
+    assert_eq!(out_b, vec![2.0f32; 2]);
+    assert_eq!(err.kernel, "q4k_dual_matvec_into (a)");
+    assert_eq!(err.cols, 100);
 }

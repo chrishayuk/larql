@@ -356,7 +356,7 @@ impl MetalBackend {
             if stage_timing_split {
                 enc.end_encoding();
                 cmd.commit();
-                let _ = crate::cb_status::wait_checked(
+                crate::cb_status::wait_or_abort(
                     &cmd,
                     "crates/larql-compute-metal/src/decode/token.rs:359",
                 );
@@ -416,7 +416,7 @@ impl MetalBackend {
                     self.encode_ffn_gate_up_phase(&enc, layer, &ffn_bufs, ffn_dims);
                     enc.end_encoding();
                     cmd.commit();
-                    let _ = crate::cb_status::wait_checked(
+                    crate::cb_status::wait_or_abort(
                         &cmd,
                         "crates/larql-compute-metal/src/decode/token.rs:416",
                     );
@@ -435,7 +435,7 @@ impl MetalBackend {
                     );
                     enc.end_encoding();
                     cmd.commit();
-                    let _ = crate::cb_status::wait_checked(
+                    crate::cb_status::wait_or_abort(
                         &cmd,
                         "crates/larql-compute-metal/src/decode/token.rs:432",
                     );
@@ -524,7 +524,7 @@ impl MetalBackend {
                     enc.end_encoding();
                 }
                 cmd.commit();
-                let _ = crate::cb_status::wait_checked(
+                crate::cb_status::wait_or_abort(
                     &cmd,
                     "crates/larql-compute-metal/src/decode/token.rs:518",
                 );
@@ -636,7 +636,7 @@ impl MetalBackend {
                     if !encoder_ended {
                         enc.end_encoding();
                         cmd.commit();
-                        let _ = crate::cb_status::wait_checked(
+                        crate::cb_status::wait_or_abort(
                             &cmd,
                             "crates/larql-compute-metal/src/decode/token.rs:627",
                         );
@@ -675,7 +675,7 @@ impl MetalBackend {
                 if !encoder_ended {
                     enc.end_encoding();
                     cmd.commit();
-                    let _ = crate::cb_status::wait_checked(
+                    crate::cb_status::wait_or_abort(
                         &cmd,
                         "crates/larql-compute-metal/src/decode/token.rs:663",
                     );
@@ -731,7 +731,7 @@ impl MetalBackend {
                 if !encoder_ended {
                     enc.end_encoding();
                     cmd.commit();
-                    let _ = crate::cb_status::wait_checked(
+                    crate::cb_status::wait_or_abort(
                         &cmd,
                         "crates/larql-compute-metal/src/decode/token.rs:716",
                     );
@@ -779,7 +779,7 @@ impl MetalBackend {
         if !encoder_ended {
             enc.end_encoding();
             cmd.commit();
-            let _ = crate::cb_status::wait_checked(
+            crate::cb_status::wait_or_abort(
                 &cmd,
                 "crates/larql-compute-metal/src/decode/token.rs:761",
             );

@@ -1,5 +1,6 @@
 use super::dual::q4_dual_dot_32;
 use super::f16_to_f32;
+use crate::cpu::ops::KernelShapeError;
 
 /// Direct Q4_K matrix-vector product: `out = W · x` where `W` is the raw
 /// Q4_K byte stream (`rows × cols` weights, 144 bytes per 256 elements).
@@ -28,37 +29,36 @@ use super::f16_to_f32;
 /// sum is row-invariant.  Computing it once outside the row loop saves
 /// `rows × 8 · n_blocks` redundant sums.
 ///
-/// Returns silently on shape mismatch (debug-asserted) and on Q4_K layout
-/// errors (input too short, or `cols` not a multiple of 256).
+/// Refuses a shape mismatch or a Q4_K layout error (input too short, or
+/// `cols` not a multiple of 256) with a [`KernelShapeError`] naming the
+/// operands, leaving `out` untouched.
 ///
 /// Caller layout: `w.len() == rows * (cols / 256) * 144` bytes.
-pub fn q4k_matvec_into(out: &mut [f32], x: &[f32], w: &[u8], rows: usize, cols: usize) {
-    debug_assert_eq!(out.len(), rows);
-    debug_assert_eq!(x.len(), cols);
-    if rows == 0 || cols == 0 {
-        for v in out.iter_mut() {
-            *v = 0.0;
-        }
-        return;
-    }
+pub fn q4k_matvec_into(
+    out: &mut [f32],
+    x: &[f32],
+    w: &[u8],
+    rows: usize,
+    cols: usize,
+) -> Result<(), KernelShapeError> {
     const BLOCK_BYTES: usize = 144;
     const ELEMS_PER_BLOCK: usize = 256;
-    if !cols.is_multiple_of(ELEMS_PER_BLOCK) {
-        // Caller pads; falling back to zero output makes the failure visible
-        // without panicking (the existing dequant path returns Vec::new()).
-        for v in out.iter_mut() {
-            *v = 0.0;
-        }
-        return;
+    KernelShapeError::check(
+        "q4k_matvec_into",
+        out.len(),
+        rows,
+        x.len(),
+        cols,
+        w.len(),
+        ELEMS_PER_BLOCK,
+        BLOCK_BYTES,
+    )?;
+    if rows == 0 || cols == 0 {
+        out.fill(0.0);
+        return Ok(());
     }
     let n_blocks = cols / ELEMS_PER_BLOCK;
     let row_bytes = n_blocks * BLOCK_BYTES;
-    if w.len() < rows * row_bytes {
-        for v in out.iter_mut() {
-            *v = 0.0;
-        }
-        return;
-    }
 
     // Precompute per-sub-block sum_x (one f32 per 32-element chunk of x).
     // 2-byte stride per (sb, subblk) pair lets us index by `sb * 8 + subblk`.
@@ -102,6 +102,7 @@ pub fn q4k_matvec_into(out: &mut [f32], x: &[f32], w: &[u8], rows: usize, cols: 
             *out_slot = acc;
         }
     });
+    Ok(())
 }
 
 /// Per-super-block dot contribution for a Q4_K row. Returned scalar

@@ -111,7 +111,8 @@ fn bench_q4k_q8k(c: &mut Criterion) {
         #[cfg(target_arch = "aarch64")]
         group.bench_with_input(BenchmarkId::new("neon", name), &(), |b, _| {
             b.iter(|| {
-                q4k_q8k_matvec_neon(&mut out, &q8, &w_q4, rows, cols);
+                q4k_q8k_matvec_neon(&mut out, &q8, &w_q4, rows, cols)
+                    .expect("bench shapes are valid");
                 std::hint::black_box(out[0]);
             });
         });
@@ -120,7 +121,8 @@ fn bench_q4k_q8k(c: &mut Criterion) {
         #[cfg(target_arch = "aarch64")]
         group.bench_with_input(BenchmarkId::new("asm", name), &(), |b, _| {
             b.iter(|| {
-                q4k_q8k_matvec_asm(&mut out, &q8, &w_q4, rows, cols);
+                q4k_q8k_matvec_asm(&mut out, &q8, &w_q4, rows, cols)
+                    .expect("bench shapes are valid");
                 std::hint::black_box(out[0]);
             });
         });
@@ -130,7 +132,8 @@ fn bench_q4k_q8k(c: &mut Criterion) {
         if rows * cols <= 2560 * 2560 {
             group.bench_with_input(BenchmarkId::new("scalar", name), &(), |b, _| {
                 b.iter(|| {
-                    q4k_q8k_matvec_scalar(&mut out, &q8, &w_q4, rows, cols);
+                    q4k_q8k_matvec_scalar(&mut out, &q8, &w_q4, rows, cols)
+                        .expect("bench shapes are valid");
                     std::hint::black_box(out[0]);
                 });
             });
@@ -159,13 +162,15 @@ fn bench_q4k_q8k(c: &mut Criterion) {
         group.throughput(Throughput::Bytes(2 * weight_bytes(rows, cols)));
         group.bench_with_input(BenchmarkId::new("neon", "ffn_gate_up"), &(), |b, _| {
             b.iter(|| {
-                q4k_q8k_gate_up_neon(&mut g_out, &mut u_out, &q8, &g_q4, &u_q4, rows, cols);
+                q4k_q8k_gate_up_neon(&mut g_out, &mut u_out, &q8, &g_q4, &u_q4, rows, cols)
+                    .expect("bench shapes are valid");
                 std::hint::black_box(g_out[0] + u_out[0]);
             });
         });
         group.bench_with_input(BenchmarkId::new("asm", "ffn_gate_up"), &(), |b, _| {
             b.iter(|| {
-                q4k_q8k_gate_up_asm(&mut g_out, &mut u_out, &q8, &g_q4, &u_q4, rows, cols);
+                q4k_q8k_gate_up_asm(&mut g_out, &mut u_out, &q8, &g_q4, &u_q4, rows, cols)
+                    .expect("bench shapes are valid");
                 std::hint::black_box(g_out[0] + u_out[0]);
             });
         });
@@ -190,13 +195,15 @@ fn bench_q4k_q8k(c: &mut Criterion) {
         ));
         group.bench_with_input(BenchmarkId::new("neon", "ffn_down"), &(), |b, _| {
             b.iter(|| {
-                q6k_q8k_matvec_neon(&mut out, &q8, &w_q6, rows, cols);
+                q6k_q8k_matvec_neon(&mut out, &q8, &w_q6, rows, cols)
+                    .expect("bench shapes are valid");
                 std::hint::black_box(out[0]);
             });
         });
         group.bench_with_input(BenchmarkId::new("asm", "ffn_down"), &(), |b, _| {
             b.iter(|| {
-                q6k_q8k_matvec_asm(&mut out, &q8, &w_q6, rows, cols);
+                q6k_q8k_matvec_asm(&mut out, &q8, &w_q6, rows, cols)
+                    .expect("bench shapes are valid");
                 std::hint::black_box(out[0]);
             });
         });
@@ -304,7 +311,7 @@ fn bench_sb_decomposition(c: &mut Criterion) {
     group.bench_function("full_matvec", |b| {
         let mut out = vec![0.0f32; rows];
         b.iter(|| {
-            q4k_q8k_matvec_asm(&mut out, &q8, &w_q4, rows, cols);
+            q4k_q8k_matvec_asm(&mut out, &q8, &w_q4, rows, cols).expect("bench shapes are valid");
             std::hint::black_box(out[0]);
         });
     });
@@ -313,7 +320,8 @@ fn bench_sb_decomposition(c: &mut Criterion) {
         use larql_compute::cpu::ops::q4k_q8k_dot::q4k_q8k_matvec_asm_v2;
         let mut out = vec![0.0f32; rows];
         b.iter(|| {
-            q4k_q8k_matvec_asm_v2(&mut out, &q8, &w_q4, rows, cols);
+            q4k_q8k_matvec_asm_v2(&mut out, &q8, &w_q4, rows, cols)
+                .expect("bench shapes are valid");
             std::hint::black_box(out[0]);
         });
     });
@@ -322,7 +330,8 @@ fn bench_sb_decomposition(c: &mut Criterion) {
         use larql_compute::cpu::ops::q4k_q8k_dot::q4k_q8k_matvec_asm_v3;
         let mut out = vec![0.0f32; rows];
         b.iter(|| {
-            q4k_q8k_matvec_asm_v3(&mut out, &q8, &w_q4, rows, cols);
+            q4k_q8k_matvec_asm_v3(&mut out, &q8, &w_q4, rows, cols)
+                .expect("bench shapes are valid");
             std::hint::black_box(out[0]);
         });
     });
@@ -374,7 +383,8 @@ fn bench_mt_shapes(c: &mut Criterion) {
                         return;
                     }
                     let w = &w_q4[row_start * bytes_per_row..(row_start + n) * bytes_per_row];
-                    q4k_q8k_matvec_asm_v3(&mut chunk[..n], &q8, w, n, cols);
+                    q4k_q8k_matvec_asm_v3(&mut chunk[..n], &q8, w, n, cols)
+                        .expect("bench shapes are valid");
                 });
                 std::hint::black_box(out[0]);
             });
@@ -408,8 +418,10 @@ fn bench_mt_shapes(c: &mut Criterion) {
                     .map(|_| {
                         let mut gu_out = vec![0.0f32; gu_rows];
                         let mut dn_out = vec![0.0f32; hidden];
-                        q4k_q8k_matvec_asm_v3(&mut gu_out, &q8, &per_expert_gu, gu_rows, hidden);
-                        q4k_q8k_matvec_asm_v3(&mut dn_out, &q8_act, &per_expert_dn, hidden, 768);
+                        q4k_q8k_matvec_asm_v3(&mut gu_out, &q8, &per_expert_gu, gu_rows, hidden)
+                            .expect("bench shapes are valid");
+                        q4k_q8k_matvec_asm_v3(&mut dn_out, &q8_act, &per_expert_dn, hidden, 768)
+                            .expect("bench shapes are valid");
                         gu_out[0] + dn_out[0]
                     })
                     .sum();
@@ -467,7 +479,8 @@ fn bench_mt_production(c: &mut Criterion) {
         group.throughput(Throughput::Bytes((rows * bytes_per_row) as u64));
         group.bench_function(label, |b| {
             b.iter(|| {
-                q4k_q8k_matvec_parallel(&mut out, &q8, &w_q4, rows, cols, "Q4_K");
+                q4k_q8k_matvec_parallel(&mut out, &q8, &w_q4, rows, cols, "Q4_K")
+                    .expect("bench shapes are valid");
                 std::hint::black_box(out[0]);
             });
         });

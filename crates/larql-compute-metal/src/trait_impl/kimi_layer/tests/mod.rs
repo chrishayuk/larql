@@ -709,6 +709,72 @@ fn a_kda_layer_and_an_mla_layer_share_one_command_buffer() {
     );
 }
 
+/// **A failed command buffer refuses the whole chain and advances nothing.**
+///
+/// The fault is injected at the chain's own wait site, so it fires after
+/// the (valid) buffer ran; what is under test is the host's response: a
+/// typed refusal naming the site, no readback, the MLA cache still at its
+/// pre-call length, and a backend that serves the next call normally.
+/// This is the path the Kimi MLA/KDA trajectory evidence runs through.
+#[test]
+fn a_failed_command_buffer_refuses_the_chain_and_advances_nothing() {
+    let m = backend();
+    let f = fixture();
+    let bits = mla_bits();
+    let kda_state = KdaDeviceState::zeros(&m, shape());
+    let mla_state = MlaDeviceState::with_capacity(&m, mla_shape(), 8);
+
+    let mut second = f.layer(&kda_state);
+    second.attention = AttentionSpec::Mla {
+        weights: bits.device(),
+        shape: mla_shape(),
+        state: &mla_state,
+    };
+    let chain = [
+        KimiLayerCall {
+            weights: f.layer(&kda_state),
+        },
+        KimiLayerCall { weights: second },
+    ];
+
+    crate::cb_status::inject_fault_at_for_test("kimi_layer/mod.rs:layers");
+    let faults_before = crate::cb_status::non_completed_count();
+    let err = m
+        .kimi_decoder_layers(&chain, &f.x, None)
+        .expect_err("a failed command buffer must refuse the chain");
+    assert!(
+        matches!(&err, GroupedError::CommandBufferFailed { site, .. }
+            if site.ends_with("kimi_layer/mod.rs:layers")),
+        "refusal must name the chain's wait site: {err}"
+    );
+    assert_eq!(
+        mla_state.len(),
+        0,
+        "the MLA cache must not advance past a failed buffer"
+    );
+    assert!(
+        !crate::cb_status::injected_fault_pending(),
+        "the fault fired at the chain's own wait, not at an earlier one"
+    );
+    assert_eq!(
+        crate::cb_status::non_completed_count(),
+        faults_before,
+        "an injected fault is not a GPU observation"
+    );
+
+    // The refusal left the backend usable: the same chain now runs and
+    // advances the cache exactly once.
+    let (out, _) = m
+        .kimi_decoder_layers(&chain, &f.x, None)
+        .expect("a healthy chain after a refused one");
+    assert_eq!(out.len(), f.x.len());
+    assert_eq!(
+        mla_state.len(),
+        1,
+        "the healthy call advanced the cache once"
+    );
+}
+
 mod addressing;
 mod dense;
 mod encoding;

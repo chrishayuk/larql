@@ -823,7 +823,8 @@ mod tests {
         }));
         enc.end_encoding();
         cmd.commit();
-        let _ = crate::cb_status::wait_checked(cmd, "kv_cache refuse test");
+        crate::cb_status::wait_checked(cmd, "kv_cache refuse test")
+            .expect("command buffer completed");
         let msg = match refused {
             Err(payload) => payload
                 .downcast_ref::<String>()
@@ -866,10 +867,8 @@ mod tests {
         );
         enc.end_encoding();
         cmd.commit();
-        let _ = crate::cb_status::wait_checked(
-            cmd,
-            "crates/larql-compute-metal/src/ops/kv_cache.rs:1042",
-        );
+        crate::cb_status::wait_checked(cmd, "crates/larql-compute-metal/src/ops/kv_cache.rs:1042")
+            .expect("command buffer completed");
 
         // The callsite is responsible for bumping `current_len`; the
         // encoder itself only writes the buffer.  Mirror the legacy
@@ -911,10 +910,8 @@ mod tests {
         );
         enc.end_encoding();
         cmd.commit();
-        let _ = crate::cb_status::wait_checked(
-            cmd,
-            "crates/larql-compute-metal/src/ops/kv_cache.rs:1084",
-        );
+        crate::cb_status::wait_checked(cmd, "crates/larql-compute-metal/src/ops/kv_cache.rs:1084")
+            .expect("command buffer completed");
 
         let out = crate::buffers::read_buffer_f32(&out_buf, num_kv * head_dim);
         assert!(out.iter().all(|v| v.is_finite()));
@@ -961,10 +958,8 @@ mod tests {
         );
         enc.end_encoding();
         cmd.commit();
-        let _ = crate::cb_status::wait_checked(
-            cmd,
-            "crates/larql-compute-metal/src/ops/kv_cache.rs:1131",
-        );
+        crate::cb_status::wait_checked(cmd, "crates/larql-compute-metal/src/ops/kv_cache.rs:1131")
+            .expect("command buffer completed");
 
         // Output buffer length matches the requested shape (a weak but
         // valid post-condition: a panicked kernel never gets here, and
@@ -1009,10 +1004,8 @@ mod tests {
             (head_dim as f32).sqrt().recip(),
         );
         cmd.commit();
-        let _ = crate::cb_status::wait_checked(
-            cmd,
-            "crates/larql-compute-metal/src/ops/kv_cache.rs:1176",
-        );
+        crate::cb_status::wait_checked(cmd, "crates/larql-compute-metal/src/ops/kv_cache.rs:1176")
+            .expect("command buffer completed");
 
         assert_eq!(
             layer.current_len, 1,

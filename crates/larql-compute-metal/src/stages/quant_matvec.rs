@@ -355,10 +355,11 @@ mod tests {
         );
         enc.end_encoding();
         cmd.commit();
-        let _ = crate::cb_status::wait_checked(
+        crate::cb_status::wait_checked(
             cmd,
             "crates/larql-compute-metal/src/stages/quant_matvec.rs:358",
-        );
+        )
+        .expect("command buffer completed");
     }
 
     /// Q4_KF format dispatches the dedicated Q4_KF shader when the
@@ -461,10 +462,11 @@ mod tests {
         }));
         enc.end_encoding();
         cmd.commit();
-        let _ = crate::cb_status::wait_checked(
+        crate::cb_status::wait_checked(
             cmd,
             "crates/larql-compute-metal/src/stages/quant_matvec.rs:461",
-        );
+        )
+        .expect("command buffer completed");
         if let Err(payload) = result {
             std::panic::resume_unwind(payload);
         }
@@ -509,10 +511,11 @@ mod tests {
             }));
             enc.end_encoding();
             cmd.commit();
-            let _ = crate::cb_status::wait_checked(
+            crate::cb_status::wait_checked(
                 cmd,
                 "crates/larql-compute-metal/src/stages/quant_matvec.rs:506",
-            );
+            )
+            .expect("command buffer completed");
             let payload = result.expect_err("float formats must refuse, not no-op");
             let msg = payload
                 .downcast_ref::<String>()

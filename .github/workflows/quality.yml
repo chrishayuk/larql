@@ -150,7 +150,29 @@ jobs:
       #
       # `--locked` matters: without it cargo may resolve a newer dependency
       # than Cargo.lock pins and the job would test a graph nobody ships.
+      #
+      # `RUSTUP_TOOLCHAIN` matters more. `rust-toolchain.toml` pins the
+      # DEVELOPMENT toolchain and rustup honours that file over whatever
+      # `dtolnay/rust-toolchain` installed, so from the day the pin landed
+      # (2026-08-22) this step silently checked at the development version
+      # and the gate was hollow. The env var outranks the file, and the
+      # step before the check refuses to run it under any other compiler.
+      - name: Report the compiler running the gate
+        env:
+          RUSTUP_TOOLCHAIN: ${{ steps.msrv.outputs.version }}
+        run: |
+          rustc --version
+          cargo --version
+          actual=$(rustc --version | awk '{print $2}')
+          if [ "$actual" != "${{ steps.msrv.outputs.version }}" ]; then
+            echo "::error::MSRV gate would run rustc $actual, not the declared ${{ steps.msrv.outputs.version }}"
+            exit 1
+          fi
+          echo "MSRV gate runs rustc $actual"
+
       - name: Check at declared MSRV
+        env:
+          RUSTUP_TOOLCHAIN: ${{ steps.msrv.outputs.version }}
         run: cargo check ${{ matrix.args }} --locked
 
   doc-links:

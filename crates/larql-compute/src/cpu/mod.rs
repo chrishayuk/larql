@@ -102,7 +102,9 @@ impl QuantMatVec for CpuBackend {
         // Parallelised across rows with rayon for the matvec shapes
         // a decode step pulls (2560–8192 rows).
         let mut out = vec![0.0f32; num_rows];
-        ops::q4_common::q4k_matvec_into(&mut out, x, q4k_data, num_rows, hidden);
+        // Shape errors surface as `None`, the trait's contract for a
+        // backend that cannot compute the request.
+        ops::q4_common::q4k_matvec_into(&mut out, x, q4k_data, num_rows, hidden).ok()?;
         Some(out)
     }
 
@@ -145,7 +147,8 @@ impl QuantMatVec for CpuBackend {
         let mut out_b = vec![0.0f32; num_rows];
         ops::q4_common::q4k_dual_matvec_into(
             &mut out_a, &mut out_b, x, q4k_a, q4k_b, num_rows, hidden,
-        );
+        )
+        .ok()?;
         Some((out_a, out_b))
     }
 

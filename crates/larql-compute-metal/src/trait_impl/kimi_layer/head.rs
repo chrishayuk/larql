@@ -83,10 +83,14 @@ impl MetalBackend {
         let held = self.encode_kimi_head(enc, head, &buf_x, &s, x.len());
         enc.end_encoding();
         cmd.commit();
-        let _ = crate::cb_status::wait_checked(
+        crate::cb_status::wait_checked(
             cmd,
             "crates/larql-compute-metal/src/trait_impl/kimi_layer/head.rs:kimi_head",
-        );
+        )
+        .map_err(|detail| GroupedError::CommandBufferFailed {
+            site: "crates/larql-compute-metal/src/trait_impl/kimi_layer/head.rs:kimi_head",
+            detail,
+        })?;
         let gpu_ms = crate::decode::gpu_timing::gpu_elapsed_ms(cmd);
         drop(held);
         let logits = crate::buffers::read_buffer_f32(&s.logits, head.vocab);

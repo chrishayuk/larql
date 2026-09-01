@@ -118,7 +118,7 @@ impl MetalBackend {
         p.commit = t.elapsed().as_secs_f64() * 1e6;
 
         let t = Instant::now();
-        let _ = crate::cb_status::wait_checked(
+        crate::cb_status::wait_or_abort(
             cmd,
             "crates/larql-compute-metal/src/diag/nvfp4_call_profile.rs:121",
         );
@@ -209,7 +209,7 @@ impl MetalBackend {
             last = Some(cmd);
         }
         if let Some(cmd) = last {
-            let _ = crate::cb_status::wait_checked(
+            crate::cb_status::wait_or_abort(
                 &cmd,
                 "crates/larql-compute-metal/src/diag/nvfp4_call_profile.rs:209",
             );

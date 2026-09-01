@@ -81,7 +81,13 @@ pub fn q4k_q8k_gemm_into(
                 w,
                 rows,
                 cols,
-            );
+            )
+            .unwrap_or_else(|e| {
+                panic!(
+                    "q4k_q8k_gemm_into: row {} refused after the asserts above: {e}",
+                    seq_base + local
+                )
+            });
         }
     });
 }
@@ -126,7 +132,8 @@ mod tests {
         for (s, x) in xs.iter().enumerate() {
             let q8 = quantize_x_to_q8k(x);
             let mut row_out = vec![0.0f32; ROWS];
-            q4k_q8k_matvec_parallel(&mut row_out, &q8, &w, ROWS, COLS, "Q4_K");
+            q4k_q8k_matvec_parallel(&mut row_out, &q8, &w, ROWS, COLS, "Q4_K")
+                .expect("valid shape");
             assert_eq!(
                 &gemm_out[s * ROWS..(s + 1) * ROWS],
                 row_out.as_slice(),

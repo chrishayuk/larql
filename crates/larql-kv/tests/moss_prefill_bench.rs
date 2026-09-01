@@ -130,7 +130,8 @@ fn q4_prefill_prediction() {
                     op.rows,
                     op.cols,
                     Q4K_FORMAT_TAG,
-                );
+                )
+                .expect("bench shapes are valid");
                 sink += out_row[0];
             }
         }

@@ -37,7 +37,7 @@ impl F32Ops {
         Self::encode_static(&self.sgemm_pipeline, enc, &buf_a, &buf_b, &buf_c, m, n, k);
         enc.end_encoding();
         cmd.commit();
-        let _ = crate::cb_status::wait_checked(cmd, "crates/larql-compute-metal/src/f32_ops.rs:40");
+        crate::cb_status::wait_or_abort(cmd, "crates/larql-compute-metal/src/f32_ops.rs:40");
 
         super::buffers::read_buffer_f32(&buf_c, m * n)
     }
@@ -63,7 +63,7 @@ impl F32Ops {
         Self::encode_static(&self.transb_pipeline, enc, &buf_a, &buf_b, &buf_c, m, n, k);
         enc.end_encoding();
         cmd.commit();
-        let _ = crate::cb_status::wait_checked(cmd, "crates/larql-compute-metal/src/f32_ops.rs:66");
+        crate::cb_status::wait_or_abort(cmd, "crates/larql-compute-metal/src/f32_ops.rs:66");
 
         super::buffers::read_buffer_f32(&buf_c, m * n)
     }

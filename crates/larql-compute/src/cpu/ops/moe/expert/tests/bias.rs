@@ -286,10 +286,33 @@ fn parallel_expert_variant_matches_serial_exactly() {
     .to_vec();
     assert_eq!(serial, parallel, "schedules must not change the numbers");
     assert!(serial.iter().any(|v| v.abs() > 1e-4));
+}
 
-    // Degenerate guards return zeroed output on both variants.
+/// The parallel variant refuses a short gate+up slab by name, like the
+/// serial one; it used to hand back a zeroed expert output.
+#[test]
+#[should_panic(expected = "run_single_expert_kq_q8k_parallel_into: refused operands")]
+fn parallel_expert_variant_refuses_a_short_slab() {
+    use super::super::super::{
+        quantize_h_norm_for_q4k, run_single_expert_kq_q8k_parallel_into, ExpertScratch,
+    };
+    use crate::cpu::ops::q4_common::quantize_q6_k;
+
+    const H: usize = 256;
+    const I: usize = 256;
+    let gu_q = quantize_q6_k(&vec![0.25f32; 2 * I * H]);
+    let dn_q = quantize_q6_k(&vec![0.25f32; H * I]);
+    let q8k = quantize_h_norm_for_q4k(&vec![1.0f32; H]).expect("block-multiple width");
+    let mlp = ExpertMlp {
+        rule: MoeGateRule::ClampedGlu {
+            limit: 7.0,
+            alpha: 1.702,
+        },
+        gate_up_bias: &[],
+        down_bias: &[],
+    };
     let mut s3 = ExpertScratch::new(H, I, I);
-    let short = run_single_expert_kq_q8k_parallel_into(
+    let _ = run_single_expert_kq_q8k_parallel_into(
         &mut s3,
         &q8k,
         &gu_q[..10],
@@ -298,5 +321,4 @@ fn parallel_expert_variant_matches_serial_exactly() {
         crate::QuantFormat::Q6_K,
         mlp,
     );
-    assert!(short.iter().all(|v| *v == 0.0));
 }

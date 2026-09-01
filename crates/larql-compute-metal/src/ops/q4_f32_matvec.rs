@@ -45,7 +45,7 @@ pub fn dispatch(
     enc.dispatch_threads(threads, tg);
     enc.end_encoding();
     cmd.commit();
-    let _ = crate::cb_status::wait_checked(
+    crate::cb_status::wait_or_abort(
         cmd,
         "crates/larql-compute-metal/src/ops/q4_f32_matvec.rs:48",
     );

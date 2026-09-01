@@ -7,6 +7,7 @@ use super::common::ELEMS_PER_BLOCK;
 use super::q4k_neon::sdot_acc;
 use super::q8k_activation::Q8KActivation;
 use crate::cpu::ops::q4_common::f16_to_f32;
+use crate::cpu::ops::KernelShapeError;
 
 // ── Q6_K × Q8_K matvec ───────────────────────────────────────────────────────
 //
@@ -40,20 +41,22 @@ pub fn q6k_q8k_matvec_scalar(
     w: &[u8],
     rows: usize,
     cols: usize,
-) {
+) -> Result<(), KernelShapeError> {
+    KernelShapeError::check(
+        "q6k_q8k_matvec_scalar",
+        out.len(),
+        rows,
+        q8k_x.qs.len(),
+        cols,
+        w.len(),
+        ELEMS_PER_BLOCK,
+        Q6K_BLOCK_BYTES,
+    )?;
     let n_blocks = cols / ELEMS_PER_BLOCK;
     let row_bytes = n_blocks * Q6K_BLOCK_BYTES;
-    for v in out.iter_mut() {
-        *v = 0.0;
-    }
-    if rows == 0
-        || cols == 0
-        || !cols.is_multiple_of(ELEMS_PER_BLOCK)
-        || out.len() != rows
-        || q8k_x.qs.len() != cols
-        || w.len() < rows * row_bytes
-    {
-        return;
+    out.fill(0.0);
+    if rows == 0 || cols == 0 {
+        return Ok(());
     }
     for (r, out_r) in out.iter_mut().enumerate().take(rows) {
         let row_base = r * row_bytes;
@@ -85,6 +88,7 @@ pub fn q6k_q8k_matvec_scalar(
         }
         *out_r = acc;
     }
+    Ok(())
 }
 
 /// NEON-accelerated Q6_K × Q8_K matvec for `aarch64`.
@@ -112,22 +116,24 @@ pub fn q6k_q8k_matvec_neon(
     w: &[u8],
     rows: usize,
     cols: usize,
-) {
+) -> Result<(), KernelShapeError> {
     use std::arch::aarch64::*;
 
+    KernelShapeError::check(
+        "q6k_q8k_matvec_neon",
+        out.len(),
+        rows,
+        q8k_x.qs.len(),
+        cols,
+        w.len(),
+        ELEMS_PER_BLOCK,
+        Q6K_BLOCK_BYTES,
+    )?;
     let n_blocks = cols / ELEMS_PER_BLOCK;
     let row_bytes = n_blocks * Q6K_BLOCK_BYTES;
-    for v in out.iter_mut() {
-        *v = 0.0;
-    }
-    if rows == 0
-        || cols == 0
-        || !cols.is_multiple_of(ELEMS_PER_BLOCK)
-        || out.len() != rows
-        || q8k_x.qs.len() != cols
-        || w.len() < rows * row_bytes
-    {
-        return;
+    out.fill(0.0);
+    if rows == 0 || cols == 0 {
+        return Ok(());
     }
 
     let mask_0f = unsafe { vdupq_n_u8(0x0F) };
@@ -201,6 +207,7 @@ pub fn q6k_q8k_matvec_neon(
         }
         *out_r = acc;
     }
+    Ok(())
 }
 
 /// TBL index table for the Q6_K hi2 replicate: group `j` (of 4 within one
@@ -330,20 +337,22 @@ pub fn q6k_q8k_matvec_asm(
     w: &[u8],
     rows: usize,
     cols: usize,
-) {
+) -> Result<(), KernelShapeError> {
+    KernelShapeError::check(
+        "q6k_q8k_matvec_asm",
+        out.len(),
+        rows,
+        q8k_x.qs.len(),
+        cols,
+        w.len(),
+        ELEMS_PER_BLOCK,
+        Q6K_BLOCK_BYTES,
+    )?;
     let n_blocks = cols / ELEMS_PER_BLOCK;
     let row_bytes = n_blocks * Q6K_BLOCK_BYTES;
-    for v in out.iter_mut() {
-        *v = 0.0;
-    }
-    if rows == 0
-        || cols == 0
-        || !cols.is_multiple_of(ELEMS_PER_BLOCK)
-        || out.len() != rows
-        || q8k_x.qs.len() != cols
-        || w.len() < rows * row_bytes
-    {
-        return;
+    out.fill(0.0);
+    if rows == 0 || cols == 0 {
+        return Ok(());
     }
 
     for (r, out_r) in out.iter_mut().enumerate().take(rows) {
@@ -373,6 +382,7 @@ pub fn q6k_q8k_matvec_asm(
         }
         *out_r = acc;
     }
+    Ok(())
 }
 
 /// Public entry point: dispatches to NEON on aarch64, scalar elsewhere.
@@ -384,16 +394,15 @@ pub fn q6k_q8k_matvec_into(
     w: &[u8],
     rows: usize,
     cols: usize,
-) {
+) -> Result<(), KernelShapeError> {
     #[cfg(all(target_arch = "aarch64", target_feature = "neon"))]
     {
         // TODO(q6k-planar): the `LARQL_Q4K_ASM=1` hand-asm form still decodes
         // the pre-fix interleaved layout, so unlike the Q4_K kernels there is
         // no asm opt-in here yet. The NEON intrinsic form is ggml-planar and
         // bit-exact with the scalar reference.
-        q6k_q8k_matvec_neon(out, q8k_x, w, rows, cols);
-        return;
+        return q6k_q8k_matvec_neon(out, q8k_x, w, rows, cols);
     }
     #[allow(unreachable_code)]
-    q6k_q8k_matvec_scalar(out, q8k_x, w, rows, cols);
+    q6k_q8k_matvec_scalar(out, q8k_x, w, rows, cols)
 }

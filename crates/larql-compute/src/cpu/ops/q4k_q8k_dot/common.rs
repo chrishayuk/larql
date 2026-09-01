@@ -12,24 +12,12 @@ pub(super) const SUBBLOCKS_PER_BLOCK: usize = 8;
 /// Sub-block size (matches Q4_K's per-32 nibble groups).
 pub(super) const SUBBLOCK_SIZE: usize = 32;
 
-/// Runtime-checked replacement for the `out.len()==rows` / `q8k_x.qs.len()==cols`
-/// / `cols % ELEMS_PER_BLOCK==0` shape invariants every matvec kernel below
-/// used to rely on `debug_assert_eq!` alone for. Those compile to nothing in
-/// this workspace's release profile (`[profile.release]` never sets
-/// `debug-assertions`), so a caller-side length mismatch on `q8k_x.qs` fell
-/// straight through the NEON/scalar kernels' own bounds-checked slicing is
-/// fine on its own, but the hand-asm kernels (`q4k_q8k_matvec_asm*`,
-/// `q4k_q8k_gate_up_asm`, `q6k_q8k_matvec_asm`) take `q8k_x.qs.as_ptr()` as a
-/// bare pointer with no length of its own and no per-iteration bound in the
-/// `asm!` block - a real unguarded OOB read, not a debug-only guard.
-/// Callers zero-fill and return early when this is `false`, matching the
-/// `w.len() < rows * row_bytes` early-return already present in every one of
-/// these kernels.
-#[inline]
-pub(super) fn q8k_shape_ok(out_len: usize, rows: usize, q8k_qs_len: usize, cols: usize) -> bool {
-    out_len == rows && q8k_qs_len == cols && cols.is_multiple_of(ELEMS_PER_BLOCK)
-}
-
+/// Operand validation for every kernel in this module is
+/// [`crate::cpu::ops::KernelShapeError::check`]: the hand-asm kernels take
+/// `q8k_x.qs.as_ptr()` as a bare pointer with no length of its own and no
+/// per-iteration bound in the `asm!` block, so a caller-side mismatch is a
+/// real unguarded OOB read. The kernels used to zero-fill and return on a
+/// mismatch; they now refuse by name and leave `out` untouched.
 /// One-line summary of which SIMD kernel class each Q4_K/Q6_K×Q8_K matvec
 /// kernel selects **on this machine, right now** — not what the doc
 /// comments claim.

@@ -350,10 +350,14 @@ impl MetalBackend {
         self.encode_kda_attention(enc, w, shape, state, &buf_x, &s);
         enc.end_encoding();
         cmd.commit();
-        let _ = crate::cb_status::wait_checked(
+        crate::cb_status::wait_checked(
             cmd,
             "crates/larql-compute-metal/src/trait_impl/kda/mod.rs:step",
-        );
+        )
+        .map_err(|detail| GroupedError::CommandBufferFailed {
+            site: "crates/larql-compute-metal/src/trait_impl/kda/mod.rs:step",
+            detail,
+        })?;
         Ok((s, crate::decode::gpu_timing::gpu_elapsed_ms(cmd)))
     }
 

@@ -379,7 +379,7 @@ impl MetalBackend {
         let out = self.encode_descriptor_gather(enc, table, &ids_buf, n_slots, gate_half_bytes);
         enc.end_encoding();
         cmd.commit();
-        let _ = crate::cb_status::wait_checked(
+        crate::cb_status::wait_or_abort(
             cmd,
             "crates/larql-compute-metal/src/moe_descriptor.rs:382",
         );
@@ -443,7 +443,7 @@ impl MetalBackend {
         );
         enc.end_encoding();
         cmd.commit();
-        let _ = crate::cb_status::wait_checked(
+        crate::cb_status::wait_or_abort(
             cmd,
             "crates/larql-compute-metal/src/moe_descriptor.rs:443",
         );

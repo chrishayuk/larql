@@ -1,12 +1,12 @@
 #[cfg(all(target_arch = "aarch64", target_feature = "neon"))]
 use super::common::{
-    q8k_shape_ok, unpack_scales_mins, BLOCK_BYTES, ELEMS_PER_BLOCK, SUBBLOCKS_PER_BLOCK,
-    SUBBLOCK_SIZE,
+    unpack_scales_mins, BLOCK_BYTES, ELEMS_PER_BLOCK, SUBBLOCKS_PER_BLOCK, SUBBLOCK_SIZE,
 };
 #[cfg(all(target_arch = "aarch64", target_feature = "neon"))]
 use super::q8k_activation::Q8KActivation;
 #[cfg(all(target_arch = "aarch64", target_feature = "neon"))]
 use crate::cpu::ops::q4_common::f16_to_f32;
+use crate::cpu::ops::KernelShapeError;
 
 /// SDOT (signed 8-bit dot-product, accumulate-into-i32x4) wrapper.
 ///
@@ -73,23 +73,25 @@ pub fn q4k_q8k_matvec_neon(
     w: &[u8],
     rows: usize,
     cols: usize,
-) {
+) -> Result<(), KernelShapeError> {
     use std::arch::aarch64::*;
 
-    if !q8k_shape_ok(out.len(), rows, q8k_x.qs.len(), cols) || rows == 0 || cols == 0 {
-        for v in out.iter_mut() {
-            *v = 0.0;
-        }
-        return;
+    KernelShapeError::check(
+        "q4k_q8k_matvec_neon",
+        out.len(),
+        rows,
+        q8k_x.qs.len(),
+        cols,
+        w.len(),
+        ELEMS_PER_BLOCK,
+        BLOCK_BYTES,
+    )?;
+    if rows == 0 || cols == 0 {
+        out.fill(0.0);
+        return Ok(());
     }
     let n_blocks = cols / ELEMS_PER_BLOCK;
     let row_bytes = n_blocks * BLOCK_BYTES;
-    if w.len() < rows * row_bytes {
-        for v in out.iter_mut() {
-            *v = 0.0;
-        }
-        return;
-    }
 
     // Mask vector for low-nibble extraction (broadcast 0x0F across 16 lanes).
     let mask_lo = unsafe { vdupq_n_u8(0x0F) };
@@ -192,6 +194,7 @@ pub fn q4k_q8k_matvec_neon(
         }
         *out_slot = acc;
     }
+    Ok(())
 }
 
 /// Two-row variant of `q4k_q8k_matvec_neon`: processes a pair of output rows
@@ -219,23 +222,25 @@ pub fn q4k_q8k_matvec_neon_2row(
     w: &[u8],
     rows: usize,
     cols: usize,
-) {
+) -> Result<(), KernelShapeError> {
     use std::arch::aarch64::*;
 
-    if !q8k_shape_ok(out.len(), rows, q8k_x.qs.len(), cols) || rows == 0 || cols == 0 {
-        for v in out.iter_mut() {
-            *v = 0.0;
-        }
-        return;
+    KernelShapeError::check(
+        "q4k_q8k_matvec_neon_2row",
+        out.len(),
+        rows,
+        q8k_x.qs.len(),
+        cols,
+        w.len(),
+        ELEMS_PER_BLOCK,
+        BLOCK_BYTES,
+    )?;
+    if rows == 0 || cols == 0 {
+        out.fill(0.0);
+        return Ok(());
     }
     let n_blocks = cols / ELEMS_PER_BLOCK;
     let row_bytes = n_blocks * BLOCK_BYTES;
-    if w.len() < rows * row_bytes {
-        for v in out.iter_mut() {
-            *v = 0.0;
-        }
-        return;
-    }
 
     let mask_lo = unsafe { vdupq_n_u8(0x0F) };
 
@@ -340,7 +345,8 @@ pub fn q4k_q8k_matvec_neon_2row(
         let r = rows - 1;
         let mut tail_out = [0.0f32; 1];
         let row_w = &w[r * row_bytes..(r + 1) * row_bytes];
-        q4k_q8k_matvec_neon(&mut tail_out, q8k_x, row_w, 1, cols);
+        q4k_q8k_matvec_neon(&mut tail_out, q8k_x, row_w, 1, cols)?;
         out[r] = tail_out[0];
     }
+    Ok(())
 }

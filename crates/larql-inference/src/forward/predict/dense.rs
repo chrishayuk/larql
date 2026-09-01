@@ -181,7 +181,8 @@ pub fn logits_to_predictions_q4_lm_head(
         let mut h_q8k = Q8KActivation::with_capacity(hidden);
         quantize_x_to_q8k_into(&mut h_q8k, last_row);
         let mut out = vec![0.0f32; vocab];
-        q4k_q8k_matvec_parallel(&mut out, &h_q8k, q4_lm_head, vocab, hidden, "Q4_K");
+        q4k_q8k_matvec_parallel(&mut out, &h_q8k, q4_lm_head, vocab, hidden, "Q4_K")
+            .unwrap_or_else(|e| panic!("Q4_K lm_head: {e}"));
         out
     };
     let _ = backend;
@@ -235,7 +236,8 @@ pub fn q4_lm_head_argmax(
         let mut h_q8k = Q8KActivation::with_capacity(hidden);
         quantize_x_to_q8k_into(&mut h_q8k, last_row);
         let mut out = vec![0.0f32; vocab];
-        q4k_q8k_matvec_parallel(&mut out, &h_q8k, q4_lm_head, vocab, hidden, "Q4_K");
+        q4k_q8k_matvec_parallel(&mut out, &h_q8k, q4_lm_head, vocab, hidden, "Q4_K")
+            .unwrap_or_else(|e| panic!("Q4_K lm_head: {e}"));
         out
     };
 

@@ -3,6 +3,7 @@ use crate::cpu::ops::q4k_q8k_dot::{
     q4k_q8k_matvec_into, q6k_q8k_matvec_into, quantize_x_to_q8k, quantize_x_to_q8k_into,
     Q8KActivation,
 };
+use crate::cpu::ops::KernelShapeError;
 use crate::options;
 
 /// One integer matvec, dispatched by the store's weight format. The two
@@ -17,11 +18,41 @@ fn kq_q8k_matvec_into(
     rows: usize,
     cols: usize,
     format: crate::QuantFormat,
-) {
+) -> Result<(), KernelShapeError> {
     match format {
         crate::QuantFormat::Q6_K => q6k_q8k_matvec_into(out, q8k_x, w, rows, cols),
         _ => q4k_q8k_matvec_into(out, q8k_x, w, rows, cols),
     }
+}
+
+/// The expert paths below return a borrowed scratch slice and have no
+/// error channel; a refused operand shape is a defect in the caller's
+/// slab arithmetic, and the step ends here rather than with zeros.
+fn refuse(kernel: &'static str, e: KernelShapeError) -> ! {
+    panic!("{kernel}: {e}")
+}
+
+/// A gate+up slab shorter than two `inter`-row halves: refused by name,
+/// with the same fields the kernels report.
+fn short_gate_up_slab(
+    kernel: &'static str,
+    have: usize,
+    need: usize,
+    inter: usize,
+    cols: usize,
+) -> ! {
+    panic!(
+        "{}",
+        KernelShapeError {
+            kernel,
+            out_len: inter,
+            rows: inter,
+            x_len: cols,
+            cols,
+            weight_bytes: have,
+            needed_bytes: need,
+        }
+    )
 }
 
 /// Bytes per weight row at `cols` elements under `format`. `cols` must be
@@ -72,10 +103,13 @@ pub fn run_single_expert_kq_q8k_parallel_into<'s>(
     let inter_padded = inter.div_ceil(block) * block;
     let half = inter * row_block_bytes(cols, format);
     if gate_up_bytes.len() < 2 * half {
-        for v in scratch.out.iter_mut() {
-            *v = 0.0;
-        }
-        return &scratch.out;
+        short_gate_up_slab(
+            "run_single_expert_kq_q8k_parallel_into",
+            gate_up_bytes.len(),
+            2 * half,
+            inter,
+            cols,
+        );
     }
     let tag = format.registry_tag();
     q4k_q8k_matvec_parallel(
@@ -85,7 +119,8 @@ pub fn run_single_expert_kq_q8k_parallel_into<'s>(
         inter,
         cols,
         tag,
-    );
+    )
+    .unwrap_or_else(|e| refuse("run_single_expert_kq_q8k_parallel_into", e));
     q4k_q8k_matvec_parallel(
         &mut scratch.up_out,
         h_norm_q8k,
@@ -93,7 +128,8 @@ pub fn run_single_expert_kq_q8k_parallel_into<'s>(
         inter,
         cols,
         tag,
-    );
+    )
+    .unwrap_or_else(|e| refuse("run_single_expert_kq_q8k_parallel_into", e));
     for j in 0..inter {
         let g = scratch.gate_out[j] + mlp.gate_bias(j);
         let u = scratch.up_out[j] + mlp.up_bias(j);
@@ -108,7 +144,8 @@ pub fn run_single_expert_kq_q8k_parallel_into<'s>(
         hidden_out,
         inter_padded,
         tag,
-    );
+    )
+    .unwrap_or_else(|e| refuse("run_single_expert_kq_q8k_parallel_into", e));
     mlp.add_down_bias(&mut scratch.out);
     &scratch.out
 }
@@ -207,10 +244,13 @@ pub fn run_single_expert_kq_q8k_into<'s>(
     let inter_padded = inter.div_ceil(block) * block;
     let half = inter * row_block_bytes(cols, format);
     if gate_up_bytes.len() < 2 * half {
-        for v in scratch.out.iter_mut() {
-            *v = 0.0;
-        }
-        return &scratch.out;
+        short_gate_up_slab(
+            "run_single_expert_kq_q8k_into",
+            gate_up_bytes.len(),
+            2 * half,
+            inter,
+            cols,
+        );
     }
     let gate_bytes = &gate_up_bytes[..half];
     let up_bytes = &gate_up_bytes[half..2 * half];
@@ -231,7 +271,8 @@ pub fn run_single_expert_kq_q8k_into<'s>(
         inter,
         cols,
         format,
-    );
+    )
+    .unwrap_or_else(|e| refuse("run_single_expert_kq_q8k_into", e));
     let t_gate = if timing { Some(t.elapsed()) } else { None };
     if timing {
         t = std::time::Instant::now();
@@ -244,7 +285,8 @@ pub fn run_single_expert_kq_q8k_into<'s>(
         inter,
         cols,
         format,
-    );
+    )
+    .unwrap_or_else(|e| refuse("run_single_expert_kq_q8k_into", e));
     let t_up = if timing { Some(t.elapsed()) } else { None };
     if timing {
         t = std::time::Instant::now();
@@ -288,7 +330,8 @@ pub fn run_single_expert_kq_q8k_into<'s>(
         hidden_out,
         inter_padded,
         format,
-    );
+    )
+    .unwrap_or_else(|e| refuse("run_single_expert_kq_q8k_into", e));
     mlp.add_down_bias(&mut scratch.out);
     let t_down = if timing { Some(t.elapsed()) } else { None };
 

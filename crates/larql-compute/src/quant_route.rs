@@ -31,6 +31,7 @@
 
 use crate::cpu::ops::q4_common::{q4k_matmul_into, q6k_matmul_into};
 use crate::cpu::ops::q4k_q8k_dot::{q4k_q8k_matvec_into, q6k_q8k_matvec_into, Q8KActivation};
+use crate::cpu::ops::KernelShapeError;
 use crate::QuantFormat;
 
 /// Dequantise exactly `padded_elems` (a block-multiple) values from a
@@ -40,7 +41,8 @@ pub type DequantPaddedFn = fn(&[u8], usize) -> Result<Vec<f32>, String>;
 /// Multi-row matvec `(out, q8k_x, weight_bytes, rows, cols)` against a
 /// pre-quantised Q8K activation. Single-threaded per call; row-chunk
 /// parallelism lives in `q4k_q8k_matvec_parallel`.
-pub type Q8kMatvecFn = fn(&mut [f32], &Q8KActivation, &[u8], usize, usize);
+pub type Q8kMatvecFn =
+    fn(&mut [f32], &Q8KActivation, &[u8], usize, usize) -> Result<(), KernelShapeError>;
 
 /// Amortised matmul `(out, x, weight_bytes, rows, cols, seq)` reading
 /// the packed bytes once for all `seq` positions.

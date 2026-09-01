@@ -1,9 +1,9 @@
 use super::common::{
-    q8k_shape_ok, unpack_scales_mins, BLOCK_BYTES, ELEMS_PER_BLOCK, SUBBLOCKS_PER_BLOCK,
-    SUBBLOCK_SIZE,
+    unpack_scales_mins, BLOCK_BYTES, ELEMS_PER_BLOCK, SUBBLOCKS_PER_BLOCK, SUBBLOCK_SIZE,
 };
 use super::q8k_activation::Q8KActivation;
 use crate::cpu::ops::q4_common::f16_to_f32;
+use crate::cpu::ops::KernelShapeError;
 
 /// Scalar reference: `out = W · x` where `W` is `rows × cols` Q4_K and `x`
 /// has been pre-quantised to Q8_K.  Mathematically equivalent (within Q8
@@ -17,21 +17,23 @@ pub fn q4k_q8k_matvec_scalar(
     w: &[u8],
     rows: usize,
     cols: usize,
-) {
-    if !q8k_shape_ok(out.len(), rows, q8k_x.qs.len(), cols) || rows == 0 || cols == 0 {
-        for v in out.iter_mut() {
-            *v = 0.0;
-        }
-        return;
+) -> Result<(), KernelShapeError> {
+    KernelShapeError::check(
+        "q4k_q8k_matvec_scalar",
+        out.len(),
+        rows,
+        q8k_x.qs.len(),
+        cols,
+        w.len(),
+        ELEMS_PER_BLOCK,
+        BLOCK_BYTES,
+    )?;
+    if rows == 0 || cols == 0 {
+        out.fill(0.0);
+        return Ok(());
     }
     let n_blocks = cols / ELEMS_PER_BLOCK;
     let row_bytes = n_blocks * BLOCK_BYTES;
-    if w.len() < rows * row_bytes {
-        for v in out.iter_mut() {
-            *v = 0.0;
-        }
-        return;
-    }
 
     for (r, out_slot) in out.iter_mut().enumerate().take(rows) {
         let row_base = r * row_bytes;
@@ -78,4 +80,5 @@ pub fn q4k_q8k_matvec_scalar(
         }
         *out_slot = acc;
     }
+    Ok(())
 }

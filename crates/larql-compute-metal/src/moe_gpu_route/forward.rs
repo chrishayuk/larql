@@ -43,7 +43,7 @@ impl MetalBackend {
         );
         enc.end_encoding();
         cmd.commit();
-        let _ = crate::cb_status::wait_checked(
+        crate::cb_status::wait_or_abort(
             cmd,
             "crates/larql-compute-metal/src/moe_gpu_route/forward.rs:46",
         );
@@ -156,7 +156,7 @@ impl MetalBackend {
         );
         enc.end_encoding();
         cmd.commit();
-        let _ = crate::cb_status::wait_checked(
+        crate::cb_status::wait_or_abort(
             cmd,
             "crates/larql-compute-metal/src/moe_gpu_route/forward.rs:156",
         );
@@ -280,7 +280,7 @@ impl MetalBackend {
             }
             enc.end_encoding();
             cmd.commit();
-            let _ = crate::cb_status::wait_checked(
+            crate::cb_status::wait_or_abort(
                 cmd,
                 "crates/larql-compute-metal/src/moe_gpu_route/forward.rs:278",
             );
@@ -298,7 +298,7 @@ impl MetalBackend {
                 encode_layer(enc, &prev, out);
                 enc.end_encoding();
                 cmd.commit();
-                let _ = crate::cb_status::wait_checked(
+                crate::cb_status::wait_or_abort(
                     cmd,
                     "crates/larql-compute-metal/src/moe_gpu_route/forward.rs:293",
                 );

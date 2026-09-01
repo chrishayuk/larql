@@ -56,7 +56,7 @@ impl QuantMatVec for MetalBackend {
             self.encode_argmax_partial(enc, &scores, num_rows);
         enc.end_encoding();
         cmd.commit();
-        let _ = crate::cb_status::wait_checked(
+        crate::cb_status::wait_or_abort(
             cmd,
             "crates/larql-compute-metal/src/trait_impl/quant_matvec.rs:59",
         );
@@ -103,7 +103,7 @@ impl QuantMatVec for MetalBackend {
             self.encode_topk_partial(enc, &scores, num_rows);
         enc.end_encoding();
         cmd.commit();
-        let _ = crate::cb_status::wait_checked(
+        crate::cb_status::wait_or_abort(
             cmd,
             "crates/larql-compute-metal/src/trait_impl/quant_matvec.rs:103",
         );
@@ -187,7 +187,7 @@ impl QuantMatVec for MetalBackend {
         );
         enc.end_encoding();
         cmd.commit();
-        let _ = crate::cb_status::wait_checked(
+        crate::cb_status::wait_or_abort(
             cmd,
             "crates/larql-compute-metal/src/trait_impl/quant_matvec.rs:184",
         );
@@ -240,7 +240,7 @@ impl QuantMatVec for MetalBackend {
             self.encode_topk_partial(enc, &buf_out, num_rows);
         enc.end_encoding();
         cmd.commit();
-        let _ = crate::cb_status::wait_checked(
+        crate::cb_status::wait_or_abort(
             cmd,
             "crates/larql-compute-metal/src/trait_impl/quant_matvec.rs:234",
         );
@@ -300,7 +300,7 @@ impl QuantMatVec for MetalBackend {
         );
         enc.end_encoding();
         cmd.commit();
-        let _ = crate::cb_status::wait_checked(
+        crate::cb_status::wait_or_abort(
             cmd,
             "crates/larql-compute-metal/src/trait_impl/quant_matvec.rs:291",
         );
@@ -348,7 +348,7 @@ impl QuantMatVec for MetalBackend {
         );
         enc.end_encoding();
         cmd.commit();
-        let _ = crate::cb_status::wait_checked(
+        crate::cb_status::wait_or_abort(
             cmd,
             "crates/larql-compute-metal/src/trait_impl/quant_matvec.rs:336",
         );

@@ -110,10 +110,11 @@ fn sealing_is_a_no_op_under_the_implicit_arm() {
     let enc = cmd.new_compute_command_encoder();
     enc.end_encoding();
     cmd.commit();
-    let _ = crate::cb_status::wait_checked(
+    crate::cb_status::wait_checked(
         cmd,
         "crates/larql-compute-metal/src/buffers/regions/tests.rs:104",
-    );
+    )
+    .expect("command buffer completed");
 }
 
 /// Both explicit arms build, commit and attach a set over the registered
@@ -134,10 +135,11 @@ fn sealing_runs_both_explicit_arms_and_leaves_the_queue_usable() {
         let enc = cmd.new_compute_command_encoder();
         enc.end_encoding();
         cmd.commit();
-        let _ = crate::cb_status::wait_checked(
+        crate::cb_status::wait_checked(
             cmd,
             "crates/larql-compute-metal/src/buffers/regions/tests.rs:125",
-        );
+        )
+        .expect("command buffer completed");
     }
 }
 

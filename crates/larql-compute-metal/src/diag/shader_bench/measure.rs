@@ -61,7 +61,7 @@ pub(crate) fn measure_isolated(
         encode(enc);
         enc.end_encoding();
         cmd.commit();
-        let _ = crate::cb_status::wait_checked(
+        crate::cb_status::wait_or_abort(
             cmd,
             "crates/larql-compute-metal/src/diag/shader_bench/measure.rs:64",
         );
@@ -89,7 +89,7 @@ pub(crate) fn measure_batched(
         }
         enc.end_encoding();
         cmd.commit();
-        let _ = crate::cb_status::wait_checked(
+        crate::cb_status::wait_or_abort(
             cmd,
             "crates/larql-compute-metal/src/diag/shader_bench/measure.rs:89",
         );

@@ -394,10 +394,11 @@ mod tests {
         };
         let cmd = m.queue.new_command_buffer();
         cmd.commit();
-        let _ = crate::cb_status::wait_checked(
+        crate::cb_status::wait_checked(
             cmd,
             "crates/larql-compute-metal/src/decode/gpu_timing.rs:397",
-        );
+        )
+        .expect("command buffer completed");
 
         let mut t = TokenGpuTime::default();
         // gpu_elapsed_ms returns 0.0 for an empty cmd buffer (no GPU

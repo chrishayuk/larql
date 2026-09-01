@@ -1,7 +1,6 @@
 #[cfg(all(target_arch = "aarch64", target_feature = "neon"))]
 use super::common::{
-    q8k_shape_ok, unpack_scales_mins, BLOCK_BYTES, ELEMS_PER_BLOCK, SUBBLOCKS_PER_BLOCK,
-    SUBBLOCK_SIZE,
+    unpack_scales_mins, BLOCK_BYTES, ELEMS_PER_BLOCK, SUBBLOCKS_PER_BLOCK, SUBBLOCK_SIZE,
 };
 #[cfg(all(target_arch = "aarch64", target_feature = "neon"))]
 use super::q4k_asm::use_asm_kernel;
@@ -11,6 +10,7 @@ use super::q4k_scalar::q4k_q8k_matvec_scalar;
 use super::q8k_activation::Q8KActivation;
 #[cfg(all(target_arch = "aarch64", target_feature = "neon"))]
 use crate::cpu::ops::q4_common::f16_to_f32;
+use crate::cpu::ops::KernelShapeError;
 
 /// Fused gate+up matvec: produce two output vectors from two weight matrices
 /// against the SAME pre-quantised Q8_K activation in one pass.  Each
@@ -35,24 +35,23 @@ pub fn q4k_q8k_gate_up_into(
     up_w: &[u8],
     rows: usize,
     cols: usize,
-) {
+) -> Result<(), KernelShapeError> {
     #[cfg(all(target_arch = "aarch64", target_feature = "neon"))]
     {
         // C12: same opt-in as `q4k_q8k_matvec_into` — `LARQL_Q4K_ASM=1`
         // routes the fused kernel through the hand-asm form. Bit-exact
         // (`q8k_gate_up_asm_matches_scalar_bit_exact`); default off.
-        if use_asm_kernel() {
-            q4k_q8k_gate_up_asm(gate_out, up_out, q8k_x, gate_w, up_w, rows, cols);
+        return if use_asm_kernel() {
+            q4k_q8k_gate_up_asm(gate_out, up_out, q8k_x, gate_w, up_w, rows, cols)
         } else {
-            q4k_q8k_gate_up_neon(gate_out, up_out, q8k_x, gate_w, up_w, rows, cols);
-        }
-        return;
+            q4k_q8k_gate_up_neon(gate_out, up_out, q8k_x, gate_w, up_w, rows, cols)
+        };
     }
     #[allow(unreachable_code)]
     {
         // Scalar fallback: just call the existing single-matvec path twice.
-        q4k_q8k_matvec_scalar(gate_out, q8k_x, gate_w, rows, cols);
-        q4k_q8k_matvec_scalar(up_out, q8k_x, up_w, rows, cols);
+        q4k_q8k_matvec_scalar(gate_out, q8k_x, gate_w, rows, cols)?;
+        q4k_q8k_matvec_scalar(up_out, q8k_x, up_w, rows, cols)
     }
 }
 
@@ -65,31 +64,36 @@ pub fn q4k_q8k_gate_up_neon(
     up_w: &[u8],
     rows: usize,
     cols: usize,
-) {
+) -> Result<(), KernelShapeError> {
     use std::arch::aarch64::*;
 
-    let shapes_ok =
-        q8k_shape_ok(gate_out.len(), rows, q8k_x.qs.len(), cols) && up_out.len() == rows;
-    if !shapes_ok || rows == 0 || cols == 0 {
-        for v in gate_out.iter_mut() {
-            *v = 0.0;
-        }
-        for v in up_out.iter_mut() {
-            *v = 0.0;
-        }
-        return;
+    KernelShapeError::check(
+        "q4k_q8k_gate_up_neon (gate)",
+        gate_out.len(),
+        rows,
+        q8k_x.qs.len(),
+        cols,
+        gate_w.len(),
+        ELEMS_PER_BLOCK,
+        BLOCK_BYTES,
+    )?;
+    KernelShapeError::check(
+        "q4k_q8k_gate_up_neon (up)",
+        up_out.len(),
+        rows,
+        q8k_x.qs.len(),
+        cols,
+        up_w.len(),
+        ELEMS_PER_BLOCK,
+        BLOCK_BYTES,
+    )?;
+    if rows == 0 || cols == 0 {
+        gate_out.fill(0.0);
+        up_out.fill(0.0);
+        return Ok(());
     }
     let n_blocks = cols / ELEMS_PER_BLOCK;
     let row_bytes = n_blocks * BLOCK_BYTES;
-    if gate_w.len() < rows * row_bytes || up_w.len() < rows * row_bytes {
-        for v in gate_out.iter_mut() {
-            *v = 0.0;
-        }
-        for v in up_out.iter_mut() {
-            *v = 0.0;
-        }
-        return;
-    }
 
     let mask_lo = unsafe { vdupq_n_u8(0x0F) };
 
@@ -180,6 +184,7 @@ pub fn q4k_q8k_gate_up_neon(
         gate_out[r] = acc_g;
         up_out[r] = acc_u;
     }
+    Ok(())
 }
 
 /// Fused gate+up twin of [`q4k_sb_sum1_asm`] (C12): one super-block's integer
@@ -314,29 +319,34 @@ pub fn q4k_q8k_gate_up_asm(
     up_w: &[u8],
     rows: usize,
     cols: usize,
-) {
-    let shapes_ok =
-        q8k_shape_ok(gate_out.len(), rows, q8k_x.qs.len(), cols) && up_out.len() == rows;
-    if !shapes_ok || rows == 0 || cols == 0 {
-        for v in gate_out.iter_mut() {
-            *v = 0.0;
-        }
-        for v in up_out.iter_mut() {
-            *v = 0.0;
-        }
-        return;
+) -> Result<(), KernelShapeError> {
+    KernelShapeError::check(
+        "q4k_q8k_gate_up_asm (gate)",
+        gate_out.len(),
+        rows,
+        q8k_x.qs.len(),
+        cols,
+        gate_w.len(),
+        ELEMS_PER_BLOCK,
+        BLOCK_BYTES,
+    )?;
+    KernelShapeError::check(
+        "q4k_q8k_gate_up_asm (up)",
+        up_out.len(),
+        rows,
+        q8k_x.qs.len(),
+        cols,
+        up_w.len(),
+        ELEMS_PER_BLOCK,
+        BLOCK_BYTES,
+    )?;
+    if rows == 0 || cols == 0 {
+        gate_out.fill(0.0);
+        up_out.fill(0.0);
+        return Ok(());
     }
     let n_blocks = cols / ELEMS_PER_BLOCK;
     let row_bytes = n_blocks * BLOCK_BYTES;
-    if gate_w.len() < rows * row_bytes || up_w.len() < rows * row_bytes {
-        for v in gate_out.iter_mut() {
-            *v = 0.0;
-        }
-        for v in up_out.iter_mut() {
-            *v = 0.0;
-        }
-        return;
-    }
 
     for r in 0..rows {
         let row_base = r * row_bytes;
@@ -406,4 +416,5 @@ pub fn q4k_q8k_gate_up_asm(
         gate_out[r] = acc_g;
         up_out[r] = acc_u;
     }
+    Ok(())
 }
