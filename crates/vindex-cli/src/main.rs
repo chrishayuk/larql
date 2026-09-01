@@ -30,6 +30,34 @@ struct Cli {
 
 #[derive(Subcommand)]
 enum Command {
+    /// Encode a checkpoint into a VINDEX3 container.
+    ///
+    /// An `hf://org/name[@revision]` argument is read from Hugging Face
+    /// over byte ranges — the canonical checkpoint never needs to exist
+    /// as a complete local download.
+    Encode {
+        /// Checkpoint directories, saved inventories, or `hf://` repos.
+        #[arg(required = true)]
+        artifacts: Vec<PathBuf>,
+        /// Container directory to write.
+        #[arg(long)]
+        output: PathBuf,
+        /// Admit on text generation's execution closure instead of
+        /// whole-model completeness. The container written is identical
+        /// either way; only the gate changes.
+        #[arg(long)]
+        text_only: bool,
+    },
+    /// What VINDEX understands about a model, before moving its weights.
+    ///
+    /// Reads configuration and safetensors headers only. A bring-up
+    /// instrument: it answers what VINDEX still needs to understand, not
+    /// whether you can use the model.
+    Plan {
+        /// Checkpoint directories, saved inventories, or `hf://` repos.
+        #[arg(required = true)]
+        artifacts: Vec<PathBuf>,
+    },
     /// The container, reconstructed from itself: identity, census, coherence.
     Inspect { container: PathBuf },
     /// One logical object, in full — identity, bindings, representations, tensor-table head.
@@ -532,6 +560,110 @@ fn render_represent(v: &Value) {
     );
 }
 
+/// Staging lines shared by both ingest verbs.
+///
+/// Headers and metadata are quoted separately and then totalled. The
+/// header figure alone understates the transfer — a tokenizer can outweigh
+/// every shard header put together — and the honest number is the one that
+/// makes "the checkpoint was never downloaded" checkable.
+fn render_staging(v: &Value) {
+    for s in v["staging"].as_array().into_iter().flatten() {
+        kv(
+            "staged",
+            format!(
+                "{} ({} of headers over {} shard(s), {} of metadata)",
+                s["staged"].as_str().unwrap_or("?"),
+                s["headers"].as_str().unwrap_or("?"),
+                s["shards"],
+                s["metadata"].as_str().unwrap_or("?"),
+            ),
+        );
+        if let Some(stands) = s["stands_in_for"].as_str() {
+            kv("standing in for", format!("{stands} of tensor payload"));
+        }
+        // Only when the index disagrees with its own headers: tied
+        // weights are counted once there and serialised twice in the file.
+        if let Some(declared) = s["index_declares"].as_str() {
+            kv(
+                "note",
+                format!("the shard index declares {declared} — the header sum is what transfers"),
+            );
+        }
+        if let Some(commit) = s["commit"].as_str() {
+            kv("pinned at", commit.to_string());
+        }
+    }
+}
+
+fn render_plan(v: &Value) {
+    render_staging(v);
+    println!();
+    let summary = &v["summary"];
+    kv("representable", summary["representable"].to_string());
+    kv("mismatched", summary["mismatched"].to_string());
+    kv("unrepresented", summary["unrepresented"].to_string());
+    kv("blocking", summary["blocking"].to_string());
+    kv(
+        "admissible",
+        if v["admissible"].as_bool().unwrap_or(false) {
+            "yes — every declaration has a home"
+        } else {
+            "no — see the blocking findings"
+        },
+    );
+}
+
+fn render_encode(v: &Value) {
+    render_staging(v);
+    for t in v["transfers"].as_array().into_iter().flatten() {
+        println!();
+        kv(
+            "fetched",
+            format!(
+                "{} of {} declared across {} tensor(s)",
+                t["fetched"].as_str().unwrap_or("?"),
+                t["declared"].as_str().unwrap_or("?"),
+                t["tensors"],
+            ),
+        );
+        kv("checkpoint", "never present on this disk".to_string());
+    }
+    for u in v["unpinned"].as_array().into_iter().flatten() {
+        kv(
+            "warning",
+            format!(
+                "the hub named no commit for `{}` — provenance records a revision name, which can move",
+                u["revision"].as_str().unwrap_or("?")
+            ),
+        );
+    }
+    println!();
+    let caps = v["capabilities"]
+        .as_array()
+        .map(|c| {
+            c.iter()
+                .filter_map(|x| x.as_str())
+                .collect::<Vec<_>>()
+                .join(", ")
+        })
+        .unwrap_or_default();
+    if !caps.is_empty() {
+        kv("capabilities", caps);
+    }
+    kv(
+        "encoded",
+        format!(
+            "{} representation(s), {} payload",
+            v["representations"],
+            v["payload"].as_str().unwrap_or("?")
+        ),
+    );
+    kv(
+        "container",
+        v["container"].as_str().unwrap_or("?").to_string(),
+    );
+}
+
 fn render_verify(v: &Value) {
     for e in v["entries"].as_array().into_iter().flatten() {
         let ok = e["segment_ok"].as_bool().unwrap_or(false)
@@ -569,6 +701,12 @@ fn main() -> ExitCode {
         };
     }
     let result = match &cli.command {
+        Command::Encode {
+            artifacts,
+            output,
+            text_only,
+        } => vindex_cli::encode_facts(artifacts, output, *text_only),
+        Command::Plan { artifacts } => vindex_cli::plan_facts(artifacts),
         Command::Inspect { container } => vindex_cli::inspect_facts(container),
         Command::Describe {
             container,
@@ -608,6 +746,8 @@ fn main() -> ExitCode {
                 println!("{}", serde_json::to_string_pretty(&v).unwrap_or_default());
             } else {
                 match &cli.command {
+                    Command::Encode { .. } => render_encode(&v),
+                    Command::Plan { .. } => render_plan(&v),
                     Command::Inspect { .. } => render_inspect(&v),
                     Command::Export { .. } => render_export(&v),
                     Command::Describe { .. } => render_describe(&v),
