@@ -11,6 +11,7 @@ use super::super::byte_ledger::{ByteLedger, ScopeBytes};
 use super::super::constraint::Margin;
 use super::super::execution_cost::{m3max_metal_001, ExecutionCostModel};
 use super::super::measurement::TailSupport;
+use super::super::quality::Statistic;
 use super::*;
 
 const KIMI: &str = "Kimi-Linear-48B-A3B-Instruct";
@@ -34,20 +35,20 @@ fn ledger_removing(fraction: f64) -> ByteLedger {
     }
 }
 
-fn ceiling(what: &str, criterion: Criterion, utilisation: f64) -> Margin {
+fn ceiling(what: Statistic, criterion: Criterion, utilisation: f64) -> Margin {
     // Well-supported by default; the thin-tail cases construct their own.
     ceiling_with(what, criterion, utilisation, Some(2000))
 }
 
 fn ceiling_with(
-    what: &str,
+    what: Statistic,
     criterion: Criterion,
     utilisation: f64,
     observations: Option<u64>,
 ) -> Margin {
     Margin {
         criterion,
-        what: what.into(),
+        what,
         kind: LimitKind::Ceiling,
         limit: 1.0,
         observed: Some(utilisation),
@@ -59,10 +60,10 @@ fn ceiling_with(
     }
 }
 
-fn floor(what: &str, criterion: Criterion, observed: f64, limit: f64) -> Margin {
+fn floor(what: Statistic, criterion: Criterion, observed: f64, limit: f64) -> Margin {
     Margin {
         criterion,
-        what: what.into(),
+        what,
         kind: LimitKind::Floor,
         limit,
         observed: Some(observed),
@@ -77,19 +78,14 @@ fn vector(kl: f64, route: f64) -> ConstraintVector {
     ConstraintVector {
         gate_id: "kimi-logit-balanced-v1".into(),
         margins: vec![
-            ceiling("kl p99", Criterion::KlP99, kl),
+            ceiling(Statistic::KlP99, Criterion::KlP99, kl),
             ceiling(
-                "routed mixture moved at p99",
+                Statistic::RouteMixtureMassP99,
                 Criterion::RouteDisplacement,
                 route,
             ),
-            floor("positions", Criterion::Positions, 8192.0, 4096.0),
-            floor(
-                "covered mass at the worst position",
-                Criterion::CoveredMass,
-                0.63,
-                0.55,
-            ),
+            floor(Statistic::Positions, Criterion::Positions, 8192.0, 4096.0),
+            floor(Statistic::CoveredMass, Criterion::CoveredMass, 0.63, 0.55),
         ],
     }
 }

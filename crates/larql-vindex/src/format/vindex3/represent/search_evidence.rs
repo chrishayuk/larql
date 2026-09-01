@@ -44,6 +44,7 @@
 use serde::{Deserialize, Serialize};
 
 use super::measurement::{EvidenceScale, MeasurementStatus};
+use super::quality::Statistic;
 
 /// How a search may use one statistic at one evidence scale.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -96,7 +97,7 @@ pub struct SearchCalibration {
     /// The statistic, in the gate's own wording where it is a contract
     /// criterion — `"kl p99"`, `"routed mixture moved at p99"` — or its
     /// own name where it is a proxy, `"route flip rate"`.
-    pub statistic: String,
+    pub statistic: Statistic,
     pub scale: EvidenceScale,
     pub verdict: SearchEvidence,
     /// Paired diagnostic/authority observations behind the verdict.
@@ -119,7 +120,7 @@ impl SearchCalibrationRegistry {
         Self { entries }
     }
 
-    pub fn lookup(&self, statistic: &str, scale: EvidenceScale) -> Option<&SearchCalibration> {
+    pub fn lookup(&self, statistic: Statistic, scale: EvidenceScale) -> Option<&SearchCalibration> {
         self.entries
             .iter()
             .find(|e| e.statistic == statistic && e.scale == scale)
@@ -141,7 +142,7 @@ impl SearchCalibrationRegistry {
     /// to be unmeasured.
     pub fn evidence_for(
         &self,
-        statistic: &str,
+        statistic: Statistic,
         scale: EvidenceScale,
         status: &MeasurementStatus,
     ) -> SearchEvidence {
@@ -161,7 +162,7 @@ impl SearchCalibrationRegistry {
         Self::new(vec![
             SearchCalibration {
                 id: "ROUTE-CAL-1".into(),
-                statistic: "kl p99".into(),
+                statistic: Statistic::KlP99,
                 scale: EvidenceScale::Diagnostic,
                 verdict: SearchEvidence::OrderingProxy {
                     calibration: "ROUTE-CAL-1".into(),
@@ -176,7 +177,7 @@ impl SearchCalibrationRegistry {
             },
             SearchCalibration {
                 id: "ROUTE-CAL-1".into(),
-                statistic: "routed mixture moved at p99".into(),
+                statistic: Statistic::RouteMixtureMassP99,
                 scale: EvidenceScale::Diagnostic,
                 verdict: SearchEvidence::Unusable,
                 pairs: 7,
@@ -189,7 +190,7 @@ impl SearchCalibrationRegistry {
             },
             SearchCalibration {
                 id: "ROUTE-CAL-1".into(),
-                statistic: "route flip rate".into(),
+                statistic: Statistic::RouteFlips,
                 scale: EvidenceScale::Diagnostic,
                 verdict: SearchEvidence::OrderingProxy {
                     calibration: "ROUTE-CAL-1".into(),
@@ -204,7 +205,7 @@ impl SearchCalibrationRegistry {
             },
             SearchCalibration {
                 id: "ROUTE-CAL-1".into(),
-                statistic: "top-10 mass displaced at p99".into(),
+                statistic: Statistic::Top10MassDisplacedP99,
                 scale: EvidenceScale::Diagnostic,
                 verdict: SearchEvidence::Unusable,
                 pairs: 0,

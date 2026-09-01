@@ -1,6 +1,7 @@
 //! `tests` for [`super`].
 
 use super::super::measurement::{MeasurementStatus, TailSupport, TailSupportPolicy};
+use super::super::quality::Statistic;
 use super::*;
 
 fn thin() -> MeasurementStatus {
@@ -25,9 +26,9 @@ fn measurement_and_usefulness_are_orthogonal() {
     // them.
     let r = SearchCalibrationRegistry::route_cal_1();
     assert_eq!(thin(), thin(), "identical measurement status");
-    let kl = r.evidence_for("kl p99", EvidenceScale::Diagnostic, &thin());
+    let kl = r.evidence_for(Statistic::KlP99, EvidenceScale::Diagnostic, &thin());
     let route = r.evidence_for(
-        "routed mixture moved at p99",
+        Statistic::RouteMixtureMassP99,
         EvidenceScale::Diagnostic,
         &thin(),
     );
@@ -39,7 +40,7 @@ fn measurement_and_usefulness_are_orthogonal() {
 fn an_ordering_proxy_may_not_be_priced_against_the_contract() {
     // The trap this exists to close: correlation is not magnitude.
     let r = SearchCalibrationRegistry::route_cal_1();
-    let kl = r.evidence_for("kl p99", EvidenceScale::Diagnostic, &thin());
+    let kl = r.evidence_for(Statistic::KlP99, EvidenceScale::Diagnostic, &thin());
     assert!(kl.orders(), "it does order candidates — rho +0.857");
     assert!(
         !kl.is_priceable(),
@@ -54,7 +55,7 @@ fn a_well_measured_statistic_can_still_be_only_a_proxy() {
     // mass. A registration must be able to lower, not only raise.
     let r = SearchCalibrationRegistry::route_cal_1();
     let e = r.evidence_for(
-        "route flip rate",
+        Statistic::RouteFlips,
         EvidenceScale::Diagnostic,
         &MeasurementStatus::Measured,
     );
@@ -70,12 +71,12 @@ fn an_unregistered_thin_percentile_is_unusable_not_usable() {
     // expensive dimension it could not see.
     let r = SearchCalibrationRegistry::route_cal_1();
     assert_eq!(
-        r.evidence_for("some future p99", EvidenceScale::Diagnostic, &thin()),
+        r.evidence_for(Statistic::Top1Flips, EvidenceScale::Diagnostic, &thin()),
         SearchEvidence::Unusable
     );
     // And a directly supported one needs no registration.
     assert_eq!(
-        r.evidence_for("some future p99", EvidenceScale::Authority, &supported()),
+        r.evidence_for(Statistic::Top1Flips, EvidenceScale::Authority, &supported()),
         SearchEvidence::Direct
     );
 }
@@ -84,7 +85,7 @@ fn an_unregistered_thin_percentile_is_unusable_not_usable() {
 fn top10_is_unusable_by_absence_of_evidence_and_says_so() {
     let r = SearchCalibrationRegistry::route_cal_1();
     let e = r
-        .lookup("top-10 mass displaced at p99", EvidenceScale::Diagnostic)
+        .lookup(Statistic::Top10MassDisplacedP99, EvidenceScale::Diagnostic)
         .expect("registered");
     assert_eq!(e.verdict, SearchEvidence::Unusable);
     assert_eq!(e.pairs, 0, "no paired calibration has been run");
@@ -146,7 +147,7 @@ fn authority_scale_route_mass_is_priced_directly() {
     // calibration needed, the measurement carries it.
     let r = SearchCalibrationRegistry::route_cal_1();
     let e = r.evidence_for(
-        "routed mixture moved at p99",
+        Statistic::RouteMixtureMassP99,
         EvidenceScale::Authority,
         &supported(),
     );
