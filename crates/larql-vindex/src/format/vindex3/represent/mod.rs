@@ -52,6 +52,7 @@ pub mod byte_ledger;
 pub mod compile;
 pub mod compiler;
 pub mod constraint;
+pub mod diagnostic;
 pub mod execution_cost;
 pub mod experiment;
 pub mod gptq;

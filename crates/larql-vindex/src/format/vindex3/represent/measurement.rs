@@ -145,6 +145,27 @@ impl TailSupportPolicy {
         (self.min_tail_observations / tail).ceil() as u64
     }
 
+    /// Judge one reported STATISTIC: whether it was observed at all,
+    /// and its tail support if it is a percentile.
+    ///
+    /// The single derivation, shared by
+    /// [`super::constraint::Margin::measurement_status`] and
+    /// [`super::diagnostic::DiagnosticReading::measurement_status`].
+    /// Two copies would drift — a non-percentile's `None` support means
+    /// "no tail to be thin", while [`Self::status`]'s `None` means "no
+    /// percentile recorded", and reading one as the other silently
+    /// turns a well-measured COUNT into `NotObserved`.
+    pub fn status_of(&self, observed: bool, support: Option<TailSupport>) -> MeasurementStatus {
+        if !observed {
+            return MeasurementStatus::NotObserved;
+        }
+        match support {
+            Some(s) => self.status(Some(s)),
+            // Counts and maxima do not have tails to be thin.
+            None => MeasurementStatus::Measured,
+        }
+    }
+
     /// Judge one reported percentile.
     pub fn status(&self, support: Option<TailSupport>) -> MeasurementStatus {
         let Some(s) = support else {

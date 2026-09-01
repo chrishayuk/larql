@@ -432,27 +432,25 @@ fn a_zero_budget_that_was_never_spent_does_not_poison_the_ranking() {
     );
 }
 
-/// **BS2-F2.** A margin's key looks the calibration up — the registry
-/// and the constraint vector share ONE vocabulary.
+/// **BS2-F2 + BS2-F1.** A margin's key looks the calibration up — the
+/// registry and the constraint vector share ONE vocabulary — and a
+/// bounded COUNT is still not priceable at diagnostic scale.
 ///
-/// The defect this pins: the registry keyed `"route flip rate"` while
+/// BS2-F2: the registry keyed `"route flip rate"` while
 /// `ConstraintVector::of` emitted `"route flips"`. The lookup missed,
-/// `evidence_for` fell through to its `is_priceable()` arm, and route
-/// flips — a COUNT, so always `Measured` — came back `Direct`. The one
-/// statistic ROUTE-CAL-1 calibrated as ordering-ONLY was silently
-/// PRICED, which is the failure the ladder exists to prevent. Two of
-/// the four keys did match, so nothing looked wrong.
+/// `evidence_for` fell through, and a count — always `Measured` — came
+/// back `Direct`, PRICING a statistic ROUTE-CAL-1 had calibrated as
+/// ordering-only. A typed [`Statistic`] cannot drift like that.
 ///
-/// A free string could drift again; `Statistic` cannot. This test would
-/// not have caught the original defect had it passed its own literal to
-/// both sides — which is exactly what the fixtures did — so it takes the
-/// key from a REAL margin built by `ConstraintVector::of`.
+/// BS2-F1 then showed the fall-through itself was wrong at diagnostic
+/// scale, which is what this pins: a count SCALES with sample size, so
+/// 46 flips over 256 positions is not a fraction of a bound written for
+/// 8,192, however well measured it is. Transfer must be earned.
 #[test]
-fn a_counted_proxy_is_ordered_never_priced_when_keyed_from_a_real_margin() {
+fn a_bounded_count_is_well_measured_and_still_not_priceable_at_diagnostic_scale() {
     use super::super::measurement::{EvidenceScale, MeasurementStatus, TailSupportPolicy};
     use super::super::search_evidence::{SearchCalibrationRegistry, SearchEvidence};
 
-    // A gate that DOES limit route flips, so the vector emits that margin.
     let gate = QualityGate {
         route_flip_max: Some(64),
         ..kimi_logit_v1()
@@ -462,23 +460,24 @@ fn a_counted_proxy_is_ordered_never_priced_when_keyed_from_a_real_margin() {
         .margins
         .iter()
         .find(|m| m.criterion == Criterion::RouteFlips)
-        .expect("the gate limits route flips, so a margin exists");
+        .expect("the gate bounds route flips, so a margin exists");
+    assert_eq!(m.what, Statistic::RouteFlips, "one typed vocabulary");
 
     // A count has no tail to be thin: it IS well measured.
     let status = m.measurement_status(&TailSupportPolicy::route_cal_1());
     assert_eq!(status, MeasurementStatus::Measured);
 
-    // And is STILL only a proxy. Before the typed key this returned
-    // Direct, because the lookup missed and `Measured` is priceable.
+    // And is STILL unusable as a diagnostic price.
     let r = SearchCalibrationRegistry::route_cal_1();
-    let e = r.evidence_for(m.what, EvidenceScale::Diagnostic, &status);
-    assert!(
-        matches!(e, SearchEvidence::OrderingProxy { .. }),
-        "a well-measured COUNT is still ordering-only evidence, got {e:?}"
+    assert_eq!(
+        r.evidence_for(m.what, EvidenceScale::Diagnostic, &status),
+        SearchEvidence::Unusable,
+        "well measured at 256 positions is not transferable to an 8,192-position bound"
     );
-    assert!(e.orders());
-    assert!(
-        !e.is_priceable(),
-        "BS2-F2: a calibrated proxy must never become price"
+
+    // At the scale the bound was written for, it is exactly what it says.
+    assert_eq!(
+        r.evidence_for(m.what, EvidenceScale::Authority, &status),
+        SearchEvidence::Direct
     );
 }

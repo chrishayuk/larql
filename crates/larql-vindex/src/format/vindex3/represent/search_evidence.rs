@@ -140,6 +140,19 @@ impl SearchCalibrationRegistry {
     /// the failure this whole layer exists to prevent is a search
     /// preferring a candidate because its expensive dimension happened
     /// to be unmeasured.
+    ///
+    /// **At [`EvidenceScale::Diagnostic`] the fall-through never reaches
+    /// `Direct`.** Being well measured at a small scale does not make a
+    /// number transferable, and the previous default said otherwise: a
+    /// COUNT is always `Measured` — counts have no tail to be thin — so
+    /// an unregistered bounded count came back directly priceable. It
+    /// would then be spent against a budget written for a different
+    /// sample size, and a count SCALES with positions: 46 route flips
+    /// over 256 positions against a bound set for 8,192 is not 72 % of
+    /// anything. Magnitude transfer at diagnostic scale is a claim that
+    /// has to be EARNED by a calibration, which is what the registry
+    /// records — so an unregistered statistic is `Unusable` here, and
+    /// the way to change that is to measure the transfer.
     pub fn evidence_for(
         &self,
         statistic: Statistic,
@@ -149,10 +162,15 @@ impl SearchCalibrationRegistry {
         if let Some(e) = self.lookup(statistic, scale) {
             return e.verdict.clone();
         }
-        if status.is_priceable() {
-            SearchEvidence::Direct
-        } else {
-            SearchEvidence::Unusable
+        match scale {
+            EvidenceScale::Authority => {
+                if status.is_priceable() {
+                    SearchEvidence::Direct
+                } else {
+                    SearchEvidence::Unusable
+                }
+            }
+            EvidenceScale::Diagnostic => SearchEvidence::Unusable,
         }
     }
 
@@ -190,7 +208,7 @@ impl SearchCalibrationRegistry {
             },
             SearchCalibration {
                 id: "ROUTE-CAL-1".into(),
-                statistic: Statistic::RouteFlips,
+                statistic: Statistic::RouteFlipRate,
                 scale: EvidenceScale::Diagnostic,
                 verdict: SearchEvidence::OrderingProxy {
                     calibration: "ROUTE-CAL-1".into(),

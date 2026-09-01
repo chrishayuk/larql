@@ -55,7 +55,7 @@ fn a_well_measured_statistic_can_still_be_only_a_proxy() {
     // mass. A registration must be able to lower, not only raise.
     let r = SearchCalibrationRegistry::route_cal_1();
     let e = r.evidence_for(
-        Statistic::RouteFlips,
+        Statistic::RouteFlipRate,
         EvidenceScale::Diagnostic,
         &MeasurementStatus::Measured,
     );

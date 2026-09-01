@@ -90,13 +90,7 @@ impl Margin {
     /// A non-percentile is `Measured` whenever it was observed at all:
     /// counts and maxima do not have tails to be thin.
     pub fn measurement_status(&self, policy: &TailSupportPolicy) -> MeasurementStatus {
-        if self.observed.is_none() {
-            return MeasurementStatus::NotObserved;
-        }
-        match self.tail_support {
-            Some(s) => policy.status(Some(s)),
-            None => MeasurementStatus::Measured,
-        }
+        policy.status_of(self.observed.is_some(), self.tail_support)
     }
 
     /// Fraction of this criterion's budget the candidate consumed, for

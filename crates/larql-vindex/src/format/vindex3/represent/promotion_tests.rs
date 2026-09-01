@@ -66,7 +66,7 @@ fn candidate(name: &str, removes: f64, kl_after: f64, route_after: f64) -> Candi
 
 fn flip_rate(parent: f64, cand: f64) -> ProxyObservation {
     ProxyObservation {
-        statistic: Statistic::RouteFlips,
+        statistic: Statistic::RouteFlipRate,
         for_criterion: Statistic::RouteMixtureMassP99,
         parent,
         candidate: cand,
@@ -220,4 +220,43 @@ fn a_proxy_is_a_direction_and_never_a_magnitude() {
     // No route price appears anywhere in the assessment.
     assert_eq!(c.assessment.ranking_score.scarce_fraction_consumed, None);
     assert_eq!(c.assessment.ranking_score.score, None);
+}
+
+/// **(5)** A candidate is CLASSIFIED by the proxy and never priced by
+/// it: readiness improves, and no route-flip cost exists to spend.
+#[test]
+fn the_proxy_classifies_a_candidate_without_pricing_it() {
+    use super::super::diagnostic::{DiagnosticPolicy, DiagnosticVector};
+    use super::super::measurement::TailSupportPolicy;
+    use super::super::search_evidence::SearchCalibrationRegistry;
+    let bank = super::super::diagnostic::tests::guard_256();
+    let d = DiagnosticVector::of(&DiagnosticPolicy::bs2_kimi_v1(), &bank);
+    let r = d.reading(Statistic::RouteFlipRate).expect("observed");
+    let evidence = r.evidence(
+        &SearchCalibrationRegistry::route_cal_1(),
+        &TailSupportPolicy::route_cal_1(),
+    );
+
+    let proxy = ProxyObservation {
+        statistic: Statistic::RouteFlipRate,
+        for_criterion: Statistic::RouteMixtureMassP99,
+        parent: 0.180,
+        candidate: 0.176,
+        evidence,
+    };
+    let candidate = PromotionCandidate::new(candidate("c", 0.22, 0.70, 0.84), vec![proxy]);
+    assert_eq!(
+        candidate.readiness(),
+        PromotionReadiness::ProxySupported,
+        "the search may PREFER on it"
+    );
+    assert!(
+        !candidate
+            .assessment
+            .marginal
+            .costs
+            .iter()
+            .any(|c| c.what == Statistic::RouteFlipRate || c.what == Statistic::RouteFlips),
+        "and there is no route-flip cost anywhere to spend against a budget"
+    );
 }
