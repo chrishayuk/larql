@@ -1,4 +1,13 @@
 //! Opening a VINDEX3 container as an inference runtime.
+//!
+//! [`open_component`] is the **one** opening authority in the workspace:
+//! inspect the container, close the component's plan, bind its operands.
+//! `larql serve`, `larql run` and `larql vindex3 exec` all come through
+//! it, so the same container under the same [`OpenPolicy`] means the same
+//! program bound to the same bytes whichever front door was used. What
+//! *executes* that program — CPU, Metal, an interpreter or a lowering —
+//! is not decided here: that is a realisation, chosen by the caller and
+//! handed in as the backend.
 
 use std::path::Path;
 
@@ -6,7 +15,7 @@ use larql_vindex::format::vindex3::inspect::inspect_container;
 use larql_vindex::format::vindex3::opplan::exec::backend::PlanBackend;
 use larql_vindex::format::vindex3::opplan::exec::kv::KvState;
 use larql_vindex::format::vindex3::opplan::exec::operands::{
-    OperandOverrides, OperandSource, OperandStore,
+    OperandOverrides, OperandSource, OperandStore, RepresentationSource,
 };
 use larql_vindex::format::vindex3::opplan::exec::prepared::{ExecutionSlice, PreparedOperands};
 use larql_vindex::format::vindex3::opplan::exec::{
@@ -18,20 +27,52 @@ use crate::error::InferenceError;
 
 use super::session::Vindex3Session;
 
-/// Inspect the container, plan `component`'s operations, and open the
-/// operand store — solely from the container's own contents. Kept
-/// outside the generic impl so the whole opening path (and its
-/// refusals) is one instantiation regardless of backend.
-/// What opening a component yields: the executable plan, its operand
-/// store, and the two identities the container declares about itself.
-struct OpenedComponent {
-    plan: ComponentOpPlan,
-    store: OperandStore,
-    model_name: String,
-    family: String,
+/// How a component's operands are bound when it is opened.
+///
+/// Two separate questions, deliberately: `want` is *what* encoding
+/// execution asks for — `None` executes the canonical bytes and never
+/// looks for a compiled pack, so adding packs to a container cannot
+/// change what such a caller runs — and `source` is *whether* the runtime
+/// may manufacture that encoding at load or must find it already
+/// compiled. The default is the canonical program, which is what a
+/// server binds.
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
+pub struct OpenPolicy {
+    /// The stored encoding to serve from, if one is compiled.
+    pub want: Option<String>,
+    pub source: RepresentationSource,
 }
 
-fn open_component(container: &Path, component: &str) -> Result<OpenedComponent, InferenceError> {
+/// What opening a component yields: the executable plan, its operand
+/// store, the two identities the container declares about itself, and
+/// the encoding the store was asked for.
+pub struct OpenedComponent {
+    pub plan: ComponentOpPlan,
+    pub store: OperandStore,
+    /// The container's self-declared model name (`index.model`) — the
+    /// identity authority. Callers must not fall back to a directory
+    /// name when this is non-empty.
+    pub model_name: String,
+    /// The model family the container declares.
+    pub family: String,
+    /// [`OpenPolicy::want`], carried so a caller can report what it
+    /// asked for beside what the store bound.
+    pub want: Option<String>,
+}
+
+/// Inspect the container, plan `component`'s operations, and open the
+/// operand store under `policy` — solely from the container's own
+/// contents. Kept outside the generic impl so the whole opening path
+/// (and its refusals) is one instantiation regardless of backend.
+///
+/// A component whose stack does not close refuses to open, with every
+/// defect in the error: an unclosed program is never "best-effort"
+/// executed by anyone.
+pub fn open_component(
+    container: &Path,
+    component: &str,
+    policy: OpenPolicy,
+) -> Result<OpenedComponent, InferenceError> {
     let inspection = inspect_container(container, false)?;
     let outcome = plan_component_ops(&inspection, container, component)?;
     if !outcome.closed() {
@@ -40,7 +81,12 @@ fn open_component(container: &Path, component: &str) -> Result<OpenedComponent, 
     let plan = outcome.plan.ok_or_else(|| {
         InferenceError::Parse(format!("component `{component}` produced no plan"))
     })?;
-    let store = OperandStore::open(container, &inspection)?;
+    let store = OperandStore::open_for(
+        container,
+        &inspection,
+        policy.want.as_deref(),
+        policy.source,
+    )?;
     // The container names itself (`index.model`) — identity travels
     // with the artifact, never a sidecar or a directory name — and
     // declares its own family, which is the only authority a V3
@@ -50,6 +96,7 @@ fn open_component(container: &Path, component: &str) -> Result<OpenedComponent, 
         store,
         model_name: inspection.index.model.clone(),
         family: inspection.index.family.clone(),
+        want: policy.want,
     })
 }
 
@@ -87,15 +134,28 @@ pub struct Vindex3Runtime<B: PlanBackend> {
 }
 
 impl<B: PlanBackend> Vindex3Runtime<B> {
-    /// Open `component` from the container, refusing any closure
-    /// defect (see [`unclosed_component`]'s doc).
+    /// Open `component` from the container as its canonical program —
+    /// [`open_with`](Self::open_with) under the default [`OpenPolicy`].
     pub fn open(container: &Path, component: &str, backend: B) -> Result<Self, InferenceError> {
+        Self::open_with(container, component, backend, OpenPolicy::default())
+    }
+
+    /// Open `component` from the container with its operands bound under
+    /// `policy`, refusing any closure defect (see [`unclosed_component`]'s
+    /// doc). The backend is the realisation; the policy is what it runs.
+    pub fn open_with(
+        container: &Path,
+        component: &str,
+        backend: B,
+        policy: OpenPolicy,
+    ) -> Result<Self, InferenceError> {
         let OpenedComponent {
             plan,
             store,
             model_name,
             family,
-        } = open_component(container, component)?;
+            want: _,
+        } = open_component(container, component, policy)?;
         Ok(Self {
             plan,
             store,

@@ -58,6 +58,16 @@ container.
   contents. A component whose stack does not fully classify into the
   declared operations **refuses to open**, with the closure defects in
   the error: an unclosed program must not be "best-effort" executed.
+- `Vindex3Runtime::open_with(container, component, backend, policy)` — the
+  same opening under an explicit `OpenPolicy { want, source }`: *what*
+  encoding execution asks for (a compiled pack such as NVFP4, or `None`
+  for the canonical bytes) and *whether* the runtime may manufacture it
+  at load. `open` is `open_with` under the default policy. The opener
+  itself is `open_component`, the one opening authority: `larql serve`
+  binds through it today, and `larql run` / `larql vindex3 exec` are
+  being converged onto it so no caller re-implements inspect, plan and
+  store opening. The backend handed in is the realisation, never part
+  of what the container means.
 - `Vindex3Runtime::session()` — an incremental session at position zero.
 - `Vindex3Runtime::session_with_kv(kv)` — a session whose continuation
   state lives in, and outlives the session as, the caller's `KvState`
