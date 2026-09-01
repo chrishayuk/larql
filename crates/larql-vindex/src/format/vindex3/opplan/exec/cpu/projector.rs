@@ -163,6 +163,21 @@ pub enum WeightRows<'a> {
 }
 
 impl WeightRows<'_> {
+    /// The address of the PRIMARY weight stream — this slab's identity.
+    ///
+    /// Two live operands cannot share a primary address, so this is what
+    /// distinguishes one caller's projections from another's in a
+    /// process-global record such as [`super::replay`]'s capture.
+    pub fn primary_addr(&self) -> usize {
+        match self {
+            Self::F32(w) => w.as_ptr() as usize,
+            Self::Bf16(w) => w.as_ptr() as usize,
+            Self::Q8 { codes, .. } => codes.as_ptr() as usize,
+            Self::Q4 { packed, .. } => packed.as_ptr() as usize,
+            Self::Nvfp4 { packed, .. } => packed.as_ptr() as usize,
+        }
+    }
+
     /// Rows in this slab, given the column count.
     pub fn rows(&self, in_dim: usize) -> usize {
         match self {

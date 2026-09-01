@@ -33,6 +33,7 @@
 //! locality effect from a cost intrinsic to traversing hundreds of
 //! distinct allocations.
 
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Mutex;
 
 use super::executor::CpuExecutor;
@@ -82,6 +83,16 @@ pub struct Captured {
 }
 
 impl Captured {
+    /// The address of the primary weight stream this call read — the
+    /// operand's identity.
+    ///
+    /// A capture is process-wide, so a caller that must count only the
+    /// calls IT issued selects them with this against its own operands'
+    /// [`WeightRows::primary_addr`].
+    pub fn operand_addr(&self) -> usize {
+        self.primary.0
+    }
+
     /// Rebuild the row view.
     ///
     /// # Safety
@@ -123,13 +134,33 @@ impl Captured {
 
 static CAPTURE: Mutex<Option<Vec<Captured>>> = Mutex::new(None);
 
+/// Whether a recording is open, readable WITHOUT taking the lock.
+///
+/// The idle cost of [`record`] is this one acquire load — cheaper than
+/// the lock probe it replaces — which is what lets that function block
+/// on the mutex when a capture IS open instead of dropping the call.
+///
+/// Acquire/release rather than relaxed so that a thread which observes
+/// the flag set also observes the `Some(..)` that [`start_capture`]
+/// wrote before setting it.
+static ACTIVE: AtomicBool = AtomicBool::new(false);
+
 /// Begin recording projections. Any previous recording is discarded.
+///
+/// **A capture is process-wide.** It records every projection the
+/// process issues while it is open, from any thread — which is the
+/// point, since [`super::executor::CpuExecutor::parallel6`] issues
+/// KDA's q/k/v and gate branches from pool workers. A caller that needs
+/// only its OWN calls must select them by operand; see
+/// [`Captured::operand_addr`].
 pub fn start_capture() {
     *CAPTURE.lock().expect("capture lock") = Some(Vec::new());
+    ACTIVE.store(true, Ordering::Release);
 }
 
 /// Stop recording and take what was captured.
 pub fn take_capture() -> Vec<Captured> {
+    ACTIVE.store(false, Ordering::Release);
     CAPTURE
         .lock()
         .expect("capture lock")
@@ -140,19 +171,32 @@ pub fn take_capture() -> Vec<Captured> {
 /// Record one projection, if recording is on.
 ///
 /// Called from the executor's own `project`, so a captured call is the
-/// call the model made and not a reconstruction of it. Costs one
-/// uncontended lock check per projection while idle.
+/// call the model made and not a reconstruction of it. Costs one acquire
+/// load per projection while idle.
+///
+/// **Every issued projection is recorded, including concurrent ones.**
+/// This previously probed the lock with `try_lock` and returned on
+/// contention, reasoning that a racing worker "would only ever be inside
+/// a projection this call already recorded". Nothing enforces that.
+/// [`super::executor::CpuExecutor::parallel6`] exists precisely to run
+/// six independent branches — KDA's q/k/v, decay-gate, output-gate and
+/// b_proj — on separate pool workers, and those issue DISTINCT
+/// projections; the moment it is wired to a caller that goes through
+/// `project`, a lost probe becomes a silently dropped call in the very
+/// traffic this capture exists to price.
+///
+/// **As of 2026-09-01 that path is latent, not live**: `parallel6` has
+/// no production call site, and the MoE fan-out reaches
+/// `DenseProjector::project_rows` directly rather than through
+/// `project`, so no shipped measurement is known to have lost a call. A
+/// recorder whose correctness rests on no caller ever fanning out is
+/// still the wrong shape, and blocking costs nothing while idle. The
+/// operand is built before the lock is taken, so the section held is one
+/// `push`.
 pub(super) fn record(weight: WeightRows<'_>, x: &[f32], out_dim: usize) {
-    let mut slot = match CAPTURE.try_lock() {
-        Ok(slot) => slot,
-        // A worker thread racing the capture would only ever be inside a
-        // projection this call already recorded; skipping is correct and
-        // cheaper than blocking a decode.
-        Err(_) => return,
-    };
-    let Some(log) = slot.as_mut() else {
+    if !ACTIVE.load(Ordering::Acquire) {
         return;
-    };
+    }
     let mut tensor_scale = 0.0f32;
     let (kind, primary, secondary, tertiary, block) = match weight {
         WeightRows::F32(w) => (Kind::F32, (w.as_ptr() as usize, w.len()), (0, 0), (0, 0), 0),
@@ -202,6 +246,10 @@ pub(super) fn record(weight: WeightRows<'_>, x: &[f32], out_dim: usize) {
                 0,
             )
         }
+    };
+    let mut slot = CAPTURE.lock().expect("capture lock");
+    let Some(log) = slot.as_mut() else {
+        return;
     };
     log.push(Captured {
         kind,
