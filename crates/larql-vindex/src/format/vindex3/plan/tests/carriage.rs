@@ -782,3 +782,86 @@ fn an_incomplete_nested_surface_is_reported_and_blocks() {
     );
     assert!(finding.blocks());
 }
+
+/// The rotary SCHEDULE, answered layer by layer from the graph.
+///
+/// The fixture already leaves layers 3 and 7 unrotated through
+/// `layer_rope_theta`'s zero sentinel, so a `no_rope_layers` mask stating
+/// the same schedule must be reported as carried. The second arm is what
+/// makes that non-vacuous: a mask that schedules NOTHING changes the
+/// answer, so the probe is reading the graph rather than echoing the
+/// declaration back.
+#[test]
+fn a_declared_rope_schedule_is_carried_layer_by_layer() {
+    let agreeing = serde_json::json!([1, 1, 1, 0, 1, 1, 1, 0]);
+    let findings = plan_with(|config| {
+        config["text_config"]["no_rope_layers"] = agreeing.clone();
+    });
+    let finding = finding_for(&findings, "no_rope_layers");
+    assert_eq!(finding.class, SemanticClass::ExecutionSemantic);
+    assert_eq!(
+        finding.category,
+        FindingCategory::Representable,
+        "{}",
+        finding.detail
+    );
+    assert_eq!(
+        finding.resolved,
+        Some(agreeing),
+        "the probe must answer the schedule in the checkpoint's own polarity: {}",
+        finding.detail
+    );
+
+    // Every layer NoPE: a different declaration must produce a different
+    // carried answer, or the first arm proves nothing.
+    let all_nope = serde_json::json!([0, 0, 0, 0, 0, 0, 0, 0]);
+    let findings = plan_with(|config| {
+        config["text_config"]["no_rope_layers"] = all_nope.clone();
+    });
+    assert_eq!(
+        finding_for(&findings, "no_rope_layers").resolved,
+        Some(all_nope),
+        "a mask that rotates nowhere must be carried as such"
+    );
+}
+
+/// The positional SCHEME, and the null answer that is an answer.
+#[test]
+fn a_stack_that_rotates_nowhere_reports_no_scheme() {
+    // The fixture rotates on six of its eight layers, so a declared
+    // `rope` agrees with what the graph carries.
+    let findings = plan_with(|config| {
+        config["text_config"]["position_embedding_type"] = serde_json::json!("rope");
+    });
+    let finding = finding_for(&findings, "position_embedding_type");
+    assert_eq!(finding.class, SemanticClass::ExecutionSemantic);
+    assert_eq!(
+        finding.category,
+        FindingCategory::Representable,
+        "{}",
+        finding.detail
+    );
+    assert_eq!(finding.resolved, Some(serde_json::json!("rope")));
+
+    // Take the rotation away and the same declaration must stop being
+    // satisfied. `null` here is the graph saying "this stack encodes no
+    // position" — reporting it as unknown would hide exactly the case
+    // the rule exists for.
+    let findings = plan_with(|config| {
+        config["text_config"]["position_embedding_type"] = serde_json::json!("rope");
+        config["text_config"]["no_rope_layers"] = serde_json::json!([0, 0, 0, 0, 0, 0, 0, 0]);
+    });
+    let finding = finding_for(&findings, "position_embedding_type");
+    assert_eq!(
+        finding.resolved,
+        Some(serde_json::Value::Null),
+        "a stack that rotates nowhere answers null: {}",
+        finding.detail
+    );
+    assert_ne!(
+        finding.category,
+        FindingCategory::Representable,
+        "a declared scheme the graph does not carry must not read as satisfied: {}",
+        finding.detail
+    );
+}
