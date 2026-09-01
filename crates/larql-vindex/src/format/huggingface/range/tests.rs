@@ -241,3 +241,137 @@ fn control_a_chunked_span_still_refuses_a_short_body() {
         "the refusal should state the CHUNK it measured, got: {err}"
     );
 }
+
+#[test]
+fn a_spec_is_recognised_by_its_scheme_alone() {
+    // The CLI branches on this before anything is parsed, so a local
+    // directory whose name merely mentions the hub must not be taken for
+    // a repo.
+    assert!(super::is_hf_spec("hf://Qwen/Qwen3-4B"));
+    assert!(super::is_hf_spec("hf://"));
+    assert!(!super::is_hf_spec("./hf/Qwen3-4B"));
+    assert!(!super::is_hf_spec("/models/hf://not-a-scheme"));
+    assert!(!super::is_hf_spec("Qwen/Qwen3-4B"));
+}
+
+#[test]
+fn a_client_opened_from_a_spec_reports_what_it_was_pinned_to() {
+    // `from_spec` is the CLI's entry point, and the two accessors are how
+    // every refusal message names the repo it was talking to. A client
+    // that reported a different revision than it was opened with would
+    // make every such message a lie.
+    let client = HfRangeClient::from_spec("hf://Qwen/Qwen3-4B@refs/pr/1").unwrap();
+    assert_eq!(client.repo(), "Qwen/Qwen3-4B");
+    assert_eq!(client.revision(), "refs/pr/1");
+
+    let defaulted = HfRangeClient::from_spec("hf://Qwen/Qwen3-4B").unwrap();
+    assert_eq!(defaulted.revision(), DEFAULT_REVISION);
+
+    // `is_err` rather than `expect_err`: the client holds the token, so
+    // it deliberately does not derive Debug.
+    assert!(
+        HfRangeClient::from_spec("./local/checkpoint").is_err(),
+        "a path is not a spec and must not open a client"
+    );
+}
+
+#[test]
+#[serial]
+fn a_zero_length_span_costs_no_request() {
+    // A tensor can legitimately declare zero bytes. Asking the hub for an
+    // empty range is not a valid request, so the client must answer it
+    // itself. The endpoint is pointed at a closed port rather than left
+    // unset: with no override the client would reach the real hub, and a
+    // regression here would leave the suite making network calls instead
+    // of failing.
+    let prev = std::env::var("HF_ENDPOINT").ok();
+    std::env::set_var("HF_ENDPOINT", "http://127.0.0.1:1");
+    let client = client();
+    let mut sink = Vec::new();
+    let copied = client
+        .stream_range(FIXTURE_FILE, 0, 0, &mut sink, &mut |_| {})
+        .expect("an empty span is an answer, not an error");
+    assert_eq!(copied, 0);
+    assert!(
+        sink.is_empty(),
+        "nothing was asked for, so nothing is written"
+    );
+
+    match prev {
+        Some(prev) => std::env::set_var("HF_ENDPOINT", prev),
+        None => std::env::remove_var("HF_ENDPOINT"),
+    }
+}
+
+#[test]
+#[serial]
+fn a_server_error_is_refused_by_name_and_not_read_as_absence() {
+    // 404 means "this repo does not carry that file" and is an ANSWER
+    // (`Ok(None)`) — see `absent_optional_file_is_absence_not_failure`.
+    // Every other failure status must NOT collapse into the same shape,
+    // or a hub outage would look like a checkpoint that ships no
+    // tokenizer, and the encode would proceed with a capability missing.
+    let mut server = mockito::Server::new();
+    let prev = std::env::var("HF_ENDPOINT").ok();
+    std::env::set_var("HF_ENDPOINT", server.url());
+    let _mock = server
+        .mock(
+            "GET",
+            format!("/{MOCK_REPO}/resolve/{MOCK_REVISION}/{FIXTURE_FILE}").as_str(),
+        )
+        .with_status(503)
+        .create();
+
+    let err = client()
+        .fetch(FIXTURE_FILE)
+        .expect_err("a 503 is not an absence");
+    let message = err.to_string();
+    assert!(
+        message.contains("503") && message.contains(FIXTURE_FILE),
+        "the refusal must name the status and the URL it asked for, got: {message}"
+    );
+
+    match prev {
+        Some(prev) => std::env::set_var("HF_ENDPOINT", prev),
+        None => std::env::remove_var("HF_ENDPOINT"),
+    }
+}
+
+#[test]
+#[serial]
+fn a_token_in_the_environment_is_sent_as_a_bearer() {
+    // A gated repo answers 401 without this, and the failure would read
+    // as "that model does not exist". The mock only matches when the
+    // header is present, so an unauthenticated request 501s instead.
+    let dir = fixture_dir();
+    let prev_token = std::env::var("HF_TOKEN").ok();
+    std::env::set_var("HF_TOKEN", "hf_test_token");
+    let mut server = mockito::Server::new();
+    let prev_endpoint = std::env::var("HF_ENDPOINT").ok();
+    std::env::set_var("HF_ENDPOINT", server.url());
+    let body = std::fs::read(dir.path().join(FIXTURE_FILE)).unwrap();
+    let _mock = server
+        .mock(
+            "GET",
+            format!("/{MOCK_REPO}/resolve/{MOCK_REVISION}/{FIXTURE_FILE}").as_str(),
+        )
+        .match_header("authorization", "Bearer hf_test_token")
+        .with_status(200)
+        .with_body(body.clone())
+        .create();
+
+    let got = client()
+        .fetch(FIXTURE_FILE)
+        .expect("the request must carry the token")
+        .expect("the file is served");
+    assert_eq!(got.len(), body.len());
+
+    match prev_token {
+        Some(prev) => std::env::set_var("HF_TOKEN", prev),
+        None => std::env::remove_var("HF_TOKEN"),
+    }
+    match prev_endpoint {
+        Some(prev) => std::env::set_var("HF_ENDPOINT", prev),
+        None => std::env::remove_var("HF_ENDPOINT"),
+    }
+}

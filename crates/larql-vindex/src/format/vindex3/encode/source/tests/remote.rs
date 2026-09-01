@@ -25,7 +25,9 @@ use larql_models::inventory::build_inventory;
 use serial_test::serial;
 
 use super::super::{RemoteArtifactSource, TensorSource};
-use crate::format::huggingface::metadata_checkpoint::stage_metadata_checkpoint;
+use crate::format::huggingface::metadata_checkpoint::{
+    stage_metadata_checkpoint, StagedCheckpoint,
+};
 use crate::format::huggingface::range::test_support::{
     MockRepo, RangeBehaviour, MOCK_REPO, MOCK_REVISION,
 };
@@ -339,4 +341,92 @@ fn the_headers_are_the_payload_authority_not_the_index() {
     // And the census must equal what the source will actually stream.
     let source = RemoteArtifactSource::open(client, &staged).unwrap();
     assert_eq!(source.declared_bytes(), true_total);
+}
+
+/// A stub directory holding one shard per entry, each announcing `header`.
+fn stub_checkpoint(headers: &[(&str, serde_json::Value)]) -> (tempfile::TempDir, StagedCheckpoint) {
+    let dir = tempfile::tempdir().unwrap();
+    let mut shards = Vec::new();
+    for (name, header) in headers {
+        let json = serde_json::to_vec(header).unwrap();
+        let mut stub = (json.len() as u64).to_le_bytes().to_vec();
+        stub.extend_from_slice(&json);
+        std::fs::write(dir.path().join(name), stub).unwrap();
+        shards.push((*name).to_string());
+    }
+    let staged = StagedCheckpoint {
+        dir: dir.path().to_path_buf(),
+        commit: None,
+        shards,
+        metadata: Vec::new(),
+        stub_bytes: 0,
+        metadata_bytes: 0,
+        declared_total_size: None,
+    };
+    (dir, staged)
+}
+
+fn tensor(name: &str, start: u64, end: u64) -> (String, serde_json::Value) {
+    (
+        name.to_string(),
+        serde_json::json!({"dtype": "F32", "shape": [(end - start) / 4], "data_offsets": [start, end]}),
+    )
+}
+
+#[test]
+fn a_repo_whose_headers_declare_no_tensors_is_refused_at_open() {
+    // Well-formed headers that announce nothing are the shape a repo has
+    // when the range read landed on the right file and the wrong
+    // revision. Opening the source anyway would defer the failure to the
+    // first tensor, by which point the encode has already written an
+    // index and a graph describing a model with no weights.
+    let (_dir, staged) = stub_checkpoint(&[
+        ("model-00001-of-00002.safetensors", serde_json::json!({})),
+        ("model-00002-of-00002.safetensors", serde_json::json!({})),
+    ]);
+    let client = HfRangeClient::new(MOCK_REPO, MOCK_REVISION).unwrap();
+
+    let err = RemoteArtifactSource::open(client, &staged)
+        .err()
+        .expect("headers that declare no tensors are not a checkpoint");
+    let message = err.to_string();
+    assert!(
+        message.contains("no tensors") && message.contains("2 shard(s)"),
+        "the refusal must state what it read and how much of it, got: {message}"
+    );
+}
+
+#[test]
+fn the_source_names_each_shard_once_however_many_tensors_it_holds() {
+    // `shards()` is what the CLI reports as the repo's file set, and what
+    // a caller would use to size the transfer. Keyed off tensors rather
+    // than shards it would count a 300-tensor shard three hundred times.
+    let (_dir, staged) = stub_checkpoint(&[
+        (
+            "b-second.safetensors",
+            serde_json::Value::Object(
+                [tensor("beta", 0, 16), tensor("gamma", 16, 32)]
+                    .into_iter()
+                    .collect(),
+            ),
+        ),
+        (
+            "a-first.safetensors",
+            serde_json::Value::Object([tensor("alpha", 0, 16)].into_iter().collect()),
+        ),
+    ]);
+    let client = HfRangeClient::new(MOCK_REPO, MOCK_REVISION).unwrap();
+    let source = RemoteArtifactSource::open(client, &staged).unwrap();
+
+    let shards: Vec<String> = source
+        .shards()
+        .iter()
+        .map(|p| p.to_string_lossy().to_string())
+        .collect();
+    assert_eq!(
+        shards,
+        vec!["a-first.safetensors", "b-second.safetensors"],
+        "each shard once, in a stable order"
+    );
+    assert_eq!(source.declared_bytes(), 48);
 }

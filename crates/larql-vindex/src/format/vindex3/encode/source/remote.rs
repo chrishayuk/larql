@@ -157,3 +157,54 @@ impl TensorSource for RemoteArtifactSource {
         Ok(copied)
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::format::vindex3::encode::source::TensorSource;
+
+    /// The struct's own contract, which `open` cannot exercise.
+    ///
+    /// `PayloadLocation::shard` is a `PathBuf` because the local source
+    /// needs a filesystem path. A repo-relative shard has to become a URL
+    /// segment, and not every `PathBuf` can: today `index_staged_shards`
+    /// builds them from `StagedCheckpoint::shards`, which are `String`s,
+    /// so the conversion is total *by construction of that one caller*.
+    /// That is an invariant of the caller and not of the type, and this
+    /// arm is what stops a second caller from silently forming a mangled
+    /// URL instead of saying it cannot form one at all.
+    #[cfg(unix)]
+    #[test]
+    fn a_shard_name_that_cannot_be_a_url_is_refused_by_name() {
+        use std::os::unix::ffi::OsStrExt;
+
+        // Lone continuation bytes: a valid POSIX filename, not UTF-8.
+        let shard = PathBuf::from(std::ffi::OsStr::from_bytes(b"model-\xff\xfe.safetensors"));
+        let subject = RemoteArtifactSource {
+            locations: [(
+                "weight".to_string(),
+                PayloadLocation {
+                    shard,
+                    offset: 0,
+                    len: 16,
+                },
+            )]
+            .into_iter()
+            .collect(),
+            client: HfRangeClient::new("larql-test/fixture", "main").unwrap(),
+            fetched: AtomicU64::new(0),
+            tensors: AtomicU64::new(0),
+        };
+
+        let mut sink = Vec::new();
+        let err = subject
+            .stream_payload("weight", &mut sink, &mut |_| {})
+            .expect_err("a shard name that is not UTF-8 cannot address a repo");
+        assert!(
+            err.to_string().contains("not valid UTF-8"),
+            "the refusal must say why the name cannot be used, got: {err}"
+        );
+        assert!(sink.is_empty(), "nothing may be written on a refusal");
+        assert_eq!(subject.fetched(), 0, "and nothing counted as fetched");
+    }
+}

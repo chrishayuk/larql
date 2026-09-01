@@ -311,3 +311,6 @@ fn fetch_shard_header(client: &HfRangeClient, dir: &Path, shard: &str) -> Result
     std::fs::rename(&staging, &dest)?;
     Ok(())
 }
+
+#[cfg(test)]
+mod tests;
