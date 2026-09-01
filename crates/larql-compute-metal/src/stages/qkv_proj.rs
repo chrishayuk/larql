@@ -566,10 +566,11 @@ mod tests {
         );
         enc.end_encoding();
         cmd.commit();
-        let _ = crate::cb_status::wait_checked(
+        crate::cb_status::wait_checked(
             cmd,
             "crates/larql-compute-metal/src/stages/qkv_proj.rs:569",
-        );
+        )
+        .expect("command buffer completed");
 
         let q = crate::buffers::read_buffer_f32(&q_out, q_rows);
         let k = crate::buffers::read_buffer_f32(&k_out, kv_rows);

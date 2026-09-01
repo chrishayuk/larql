@@ -525,10 +525,20 @@ impl MetalBackend {
         let encode_ms = encode_clock.elapsed().as_secs_f64() * 1000.0;
         let wait_clock = std::time::Instant::now();
         cmd.commit();
-        let _ = crate::cb_status::wait_checked(
-            cmd,
-            "crates/larql-compute-metal/src/trait_impl/kimi_layer/mod.rs:layers",
-        );
+        // A buffer that did not complete leaves every scratch holding
+        // whatever it held before, and nothing here may read it or
+        // advance a cache on it: refuse before the MLA positions move,
+        // and hand the scratch back to the pool untouched.
+        const WAIT_SITE: &str =
+            "crates/larql-compute-metal/src/trait_impl/kimi_layer/mod.rs:layers";
+        if let Err(detail) = crate::cb_status::wait_checked(cmd, WAIT_SITE) {
+            drop(held);
+            self.recycle_chain(scratch, kda_scratch);
+            return Err(GroupedError::CommandBufferFailed {
+                site: WAIT_SITE,
+                detail,
+            });
+        }
         let wait_ms = wait_clock.elapsed().as_secs_f64() * 1000.0;
         let gpu_ms = crate::decode::gpu_timing::gpu_elapsed_ms(cmd);
         // Encode-vs-wait, because they have different fixes: encode is

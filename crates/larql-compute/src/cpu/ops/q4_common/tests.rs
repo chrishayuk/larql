@@ -200,7 +200,7 @@ fn q6k_int8_matvec_matches_models_reference_incl_tiny_scales() {
         let mut x_q8k = Q8KActivation::with_capacity(cols);
         quantize_x_to_q8k_into(&mut x_q8k, &x);
         let mut out = vec![0.0f32; rows];
-        q6k_q8k_matvec_into(&mut out, &x_q8k, &bytes, rows, cols);
+        q6k_q8k_matvec_into(&mut out, &x_q8k, &bytes, rows, cols).expect("valid shape");
         for (r, (got, want)) in out.iter().zip(expected.iter()).enumerate() {
             assert!(
                 (got - want).abs() <= 2e-2 * denom,
@@ -240,7 +240,7 @@ fn q4k_matvecs_match_dequant_dot_incl_subnormal_scales() {
 
         // f32-activation kernel: decode-identical, tight tolerance.
         let mut out_f32 = vec![0.0f32; rows];
-        q4k_matvec_into(&mut out_f32, &x, &bytes, rows, cols);
+        q4k_matvec_into(&mut out_f32, &x, &bytes, rows, cols).expect("valid shape");
         for (r, (got, want)) in out_f32.iter().zip(expected.iter()).enumerate() {
             assert!(
                 (got - want).abs() <= 1e-4 * denom,
@@ -252,7 +252,7 @@ fn q4k_matvecs_match_dequant_dot_incl_subnormal_scales() {
         let mut x_q8k = Q8KActivation::with_capacity(cols);
         quantize_x_to_q8k_into(&mut x_q8k, &x);
         let mut out_i8 = vec![0.0f32; rows];
-        q4k_q8k_matvec_into(&mut out_i8, &x_q8k, &bytes, rows, cols);
+        q4k_q8k_matvec_into(&mut out_i8, &x_q8k, &bytes, rows, cols).expect("valid shape");
         for (r, (got, want)) in out_i8.iter().zip(expected.iter()).enumerate() {
             assert!(
                 (got - want).abs() <= 2e-2 * denom,
@@ -374,7 +374,7 @@ fn q4k_matvec_matches_dequant_then_matmul() {
     }
 
     let mut got = vec![0.0f32; rows];
-    q4k_matvec_into(&mut got, &x, &q4k, rows, cols);
+    q4k_matvec_into(&mut got, &x, &q4k, rows, cols).expect("valid shape");
 
     let max_diff: f32 = reference
         .iter()
@@ -416,7 +416,7 @@ fn q4k_matvec_multi_block_matches_dequant() {
         }
     }
     let mut got = vec![0.0f32; rows];
-    q4k_matvec_into(&mut got, &x, &q4k, rows, cols);
+    q4k_matvec_into(&mut got, &x, &q4k, rows, cols).expect("valid shape");
     let max_diff: f32 = reference
         .iter()
         .zip(got.iter())
@@ -500,7 +500,8 @@ fn q4k_matmul_rows_match_q4k_matvec() {
             &q4k,
             rows,
             hidden,
-        );
+        )
+        .expect("valid shape");
         for r in 0..rows {
             let diff = (mm[s * rows + r] - mv[r]).abs();
             assert!(
@@ -619,29 +620,48 @@ fn q6k_matmul_matches_dequant_then_matmul() {
     assert!(max < 5e-3, "q6k_matmul diverged: {max}");
 }
 
-/// Defensive: caller passes a malformed `cols` (not multiple of 256).
-/// We zero the output rather than reading past the buffer, mirroring
-/// `dequantize_q4_k`'s `Vec::new()` shape-error contract.
+/// A malformed `cols` (not a multiple of 256) is refused by name rather
+/// than read past the buffer, and the output is left exactly as handed
+/// in — the old contract zeroed it, which a caller could mistake for a
+/// computed result.
 #[test]
 fn q4k_matvec_rejects_non_multiple_of_256() {
-    let mut out = vec![1.0f32; 4]; // pre-fill to detect zeroing
+    let mut out = vec![1.0f32; 4]; // pre-fill to detect any write
     let x = vec![0.5f32; 100];
     let w = vec![0u8; 4 * 144];
-    q4k_matvec_into(&mut out, &x, &w, 4, 100);
-    assert_eq!(out, vec![0.0f32; 4]);
+    let err = q4k_matvec_into(&mut out, &x, &w, 4, 100).expect_err("cols off a super-block");
+    assert_eq!(out, vec![1.0f32; 4], "refusal must not touch the output");
+    assert_eq!(err.cols, 100);
+    assert!(
+        err.to_string().contains("whole number of super-blocks"),
+        "{err}"
+    );
 }
 
+/// `q4k_matvec_into`: zero dims are the empty product, and a short weight
+/// slab is refused by name with the output untouched.
 #[test]
-fn q4k_matvec_zero_dims_and_short_weights_zero_output() {
+fn q4k_matvec_zero_dims_are_empty_and_short_weights_are_refused() {
     let mut out = vec![1.0f32; 3];
-    q4k_matvec_into(&mut out, &[], &[], 3, 0);
+    q4k_matvec_into(&mut out, &[], &[], 3, 0).expect("zero dims are the empty product");
     assert_eq!(out, vec![0.0f32; 3]);
 
     let mut out = vec![1.0f32; 2];
     let x = vec![0.5f32; 256];
     let short_w = vec![0u8; 144];
-    q4k_matvec_into(&mut out, &x, &short_w, 2, 256);
-    assert_eq!(out, vec![0.0f32; 2]);
+    let err =
+        q4k_matvec_into(&mut out, &x, &short_w, 2, 256).expect_err("short slab must be refused");
+    assert_eq!(out, vec![1.0f32; 2], "refusal must not touch the output");
+    assert_eq!(err.kernel, "q4k_matvec_into");
+    assert_eq!((err.weight_bytes, err.needed_bytes), (144, 288));
+
+    // The dual kernel refuses the same way, naming the half that is short.
+    let (mut a, mut b) = (vec![1.0f32; 2], vec![1.0f32; 2]);
+    let full = vec![0u8; 288];
+    let err = q4k_dual_matvec_into(&mut a, &mut b, &x, &full, &short_w, 2, 256)
+        .expect_err("short b slab must be refused");
+    assert_eq!((a, b), (vec![1.0f32; 2], vec![1.0f32; 2]));
+    assert_eq!(err.kernel, "q4k_dual_matvec_into (b)");
 }
 
 #[test]

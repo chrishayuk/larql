@@ -37,6 +37,7 @@ fn q8k_direct_proj_chunking_is_bit_exact() {
             }
             _ => q6k_q8k_matvec_into(&mut whole, &q8, &bytes, num_rows, in_dim),
         }
+        .expect("whole-matrix matvec on a valid shape");
         for (r, (&c, &w)) in chunked.iter().zip(whole.iter()).enumerate() {
             assert_eq!(
                 c.to_bits(),

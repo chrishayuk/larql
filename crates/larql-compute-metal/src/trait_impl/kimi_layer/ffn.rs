@@ -380,10 +380,14 @@ impl MetalBackend {
         );
         enc.end_encoding();
         cmd.commit();
-        let _ = crate::cb_status::wait_checked(
+        crate::cb_status::wait_checked(
             cmd,
             "crates/larql-compute-metal/src/trait_impl/kimi_layer/ffn.rs:encoded",
-        );
+        )
+        .map_err(|detail| GroupedError::CommandBufferFailed {
+            site: "crates/larql-compute-metal/src/trait_impl/kimi_layer/ffn.rs:encoded",
+            detail,
+        })?;
         Ok(crate::buffers::read_buffer_f32(
             &buf_out,
             offsets.len() * shape.n,

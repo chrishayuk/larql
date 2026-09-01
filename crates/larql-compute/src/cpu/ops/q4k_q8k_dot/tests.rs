@@ -74,11 +74,11 @@ fn q8k_matvec_matches_f32_cached_within_q8_noise() {
     assert_eq!(w_q4.len(), rows * 144);
 
     let mut out_f32 = vec![0.0f32; rows];
-    q4k_matvec_into(&mut out_f32, &x, &w_q4, rows, cols);
+    q4k_matvec_into(&mut out_f32, &x, &w_q4, rows, cols).expect("valid shape");
 
     let q8 = quantize_x_to_q8k(&x);
     let mut out_q8 = vec![0.0f32; rows];
-    q4k_q8k_matvec_scalar(&mut out_q8, &q8, &w_q4, rows, cols);
+    q4k_q8k_matvec_scalar(&mut out_q8, &q8, &w_q4, rows, cols).expect("valid shape");
 
     // Q8 quantisation step on x is amax/127; downstream noise per
     // output element is ~‖w_row‖₁ · step.  For typical sin-ramp inputs
@@ -108,11 +108,11 @@ fn q8k_matvec_multi_block_within_noise() {
     let w_q4 = quantize_q4_k(&w_f32);
 
     let mut out_f32 = vec![0.0f32; rows];
-    q4k_matvec_into(&mut out_f32, &x, &w_q4, rows, cols);
+    q4k_matvec_into(&mut out_f32, &x, &w_q4, rows, cols).expect("valid shape");
 
     let q8 = quantize_x_to_q8k(&x);
     let mut out_q8 = vec![0.0f32; rows];
-    q4k_q8k_matvec_scalar(&mut out_q8, &q8, &w_q4, rows, cols);
+    q4k_q8k_matvec_scalar(&mut out_q8, &q8, &w_q4, rows, cols).expect("valid shape");
 
     for r in 0..rows {
         let diff = (out_f32[r] - out_q8[r]).abs();
@@ -153,8 +153,8 @@ fn q8k_matvec_neon_matches_scalar_bit_exact() {
 
     let mut out_scalar = vec![0.0f32; rows];
     let mut out_neon = vec![0.0f32; rows];
-    q4k_q8k_matvec_scalar(&mut out_scalar, &q8, &w_q4, rows, cols);
-    q4k_q8k_matvec_neon(&mut out_neon, &q8, &w_q4, rows, cols);
+    q4k_q8k_matvec_scalar(&mut out_scalar, &q8, &w_q4, rows, cols).expect("valid shape");
+    q4k_q8k_matvec_neon(&mut out_neon, &q8, &w_q4, rows, cols).expect("valid shape");
 
     for r in 0..rows {
         assert_eq!(
@@ -195,8 +195,8 @@ fn q8k_matvec_asm_matches_scalar_bit_exact() {
 
         let mut out_scalar = vec![0.0f32; rows];
         let mut out_asm = vec![0.0f32; rows];
-        q4k_q8k_matvec_scalar(&mut out_scalar, &q8, &w_q4, rows, cols);
-        q4k_q8k_matvec_asm(&mut out_asm, &q8, &w_q4, rows, cols);
+        q4k_q8k_matvec_scalar(&mut out_scalar, &q8, &w_q4, rows, cols).expect("valid shape");
+        q4k_q8k_matvec_asm(&mut out_asm, &q8, &w_q4, rows, cols).expect("valid shape");
 
         for r in 0..rows {
             assert_eq!(
@@ -211,31 +211,37 @@ fn q8k_matvec_asm_matches_scalar_bit_exact() {
     }
 }
 
-/// Asm kernel's early-return guards (zero dims, short weight buffer)
-/// must zero the output, same as the scalar/neon paths.
+/// `q4k_q8k_matvec_asm`: zero dims are the empty product (zeros written), and a
+/// weight slab shorter than `rows` packed rows is refused by name with the
+/// output left exactly as handed in — never silently zeroed.
 #[cfg(all(target_arch = "aarch64", target_feature = "neon"))]
 #[test]
-fn q8k_matvec_asm_zero_dims_and_short_weights_zero_output() {
-    // cols == 0 → early return.
+fn q8k_matvec_asm_zero_dims_are_empty_and_short_weights_are_refused() {
     let empty = Q8KActivation {
         qs: vec![],
         d: vec![],
         sums: vec![],
     };
     let mut out = vec![1.0f32; 4];
-    q4k_q8k_matvec_asm(&mut out, &empty, &[], 4, 0);
+    q4k_q8k_matvec_asm(&mut out, &empty, &[], 4, 0).expect("zero dims are the empty product");
     assert!(out.iter().all(|&v| v == 0.0), "zero-dims must zero output");
 
-    // w shorter than rows * row_bytes → early return.
     let cols = 256;
     let rows = 2;
     let q = quantize_x_to_q8k(&vec![0.5f32; cols]);
     let w = vec![0u8; BLOCK_BYTES]; // one row's worth, but rows == 2
     let mut out = vec![1.0f32; rows];
-    q4k_q8k_matvec_asm(&mut out, &q, &w, rows, cols);
-    assert!(
-        out.iter().all(|&v| v == 0.0),
-        "short buffer must zero output"
+    let err = q4k_q8k_matvec_asm(&mut out, &q, &w, rows, cols)
+        .expect_err("a short weight slab must be refused");
+    assert_eq!(out, vec![1.0f32; rows], "refusal must not touch the output");
+    assert_eq!(err.kernel, "q4k_q8k_matvec_asm");
+    assert_eq!(
+        (err.weight_bytes, err.needed_bytes),
+        (BLOCK_BYTES, 2 * BLOCK_BYTES)
+    );
+    assert_eq!(
+        (err.out_len, err.rows, err.x_len, err.cols),
+        (rows, rows, cols, cols)
     );
 }
 
@@ -271,12 +277,13 @@ fn q8k_gate_up_asm_matches_scalar_bit_exact() {
 
         let mut g_scalar = vec![0.0f32; rows];
         let mut u_scalar = vec![0.0f32; rows];
-        q4k_q8k_matvec_scalar(&mut g_scalar, &q8, &g_q4, rows, cols);
-        q4k_q8k_matvec_scalar(&mut u_scalar, &q8, &u_q4, rows, cols);
+        q4k_q8k_matvec_scalar(&mut g_scalar, &q8, &g_q4, rows, cols).expect("valid shape");
+        q4k_q8k_matvec_scalar(&mut u_scalar, &q8, &u_q4, rows, cols).expect("valid shape");
 
         let mut g_asm = vec![0.0f32; rows];
         let mut u_asm = vec![0.0f32; rows];
-        q4k_q8k_gate_up_asm(&mut g_asm, &mut u_asm, &q8, &g_q4, &u_q4, rows, cols);
+        q4k_q8k_gate_up_asm(&mut g_asm, &mut u_asm, &q8, &g_q4, &u_q4, rows, cols)
+            .expect("valid shape");
 
         for r in 0..rows {
             assert_eq!(
@@ -297,11 +304,11 @@ fn q8k_gate_up_asm_matches_scalar_bit_exact() {
     }
 }
 
-/// Fused gate+up asm early-return guards: zero dims and short weight
-/// buffers must zero BOTH outputs (same contract as the neon form).
+/// `q4k_q8k_gate_up_asm`: zero dims zero BOTH outputs, and a short gate slab is
+/// refused naming the gate half, with both outputs left untouched.
 #[cfg(all(target_arch = "aarch64", target_feature = "neon"))]
 #[test]
-fn q8k_gate_up_asm_zero_dims_and_short_weights_zero_output() {
+fn q8k_gate_up_asm_zero_dims_are_empty_and_short_weights_are_refused() {
     let empty = Q8KActivation {
         qs: vec![],
         d: vec![],
@@ -309,7 +316,8 @@ fn q8k_gate_up_asm_zero_dims_and_short_weights_zero_output() {
     };
     let mut g = vec![1.0f32; 4];
     let mut u = vec![1.0f32; 4];
-    q4k_q8k_gate_up_asm(&mut g, &mut u, &empty, &[], &[], 4, 0);
+    q4k_q8k_gate_up_asm(&mut g, &mut u, &empty, &[], &[], 4, 0)
+        .expect("zero dims are the empty product");
     assert!(g.iter().chain(u.iter()).all(|&v| v == 0.0));
 
     let cols = 256;
@@ -319,8 +327,25 @@ fn q8k_gate_up_asm_zero_dims_and_short_weights_zero_output() {
     let w_full = vec![0u8; 2 * BLOCK_BYTES];
     let mut g = vec![1.0f32; rows];
     let mut u = vec![1.0f32; rows];
-    q4k_q8k_gate_up_asm(&mut g, &mut u, &q, &w_short, &w_full, rows, cols);
-    assert!(g.iter().chain(u.iter()).all(|&v| v == 0.0));
+    let err = q4k_q8k_gate_up_asm(&mut g, &mut u, &q, &w_short, &w_full, rows, cols)
+        .expect_err("a short gate slab must be refused");
+    assert_eq!(
+        (g, u),
+        (vec![1.0f32; rows], vec![1.0f32; rows]),
+        "refusal must not touch either output"
+    );
+    assert_eq!(err.kernel, "q4k_q8k_gate_up_asm (gate)");
+    assert_eq!(
+        (err.weight_bytes, err.needed_bytes),
+        (BLOCK_BYTES, 2 * BLOCK_BYTES)
+    );
+
+    // The up half is checked independently: a short UP slab names it.
+    let mut g = vec![1.0f32; rows];
+    let mut u = vec![1.0f32; rows];
+    let err = q4k_q8k_gate_up_asm(&mut g, &mut u, &q, &w_full, &w_short, rows, cols)
+        .expect_err("a short up slab must be refused");
+    assert_eq!(err.kernel, "q4k_q8k_gate_up_asm (up)");
 }
 
 /// The v2 (all-glue-in-asm) kernel must be bit-exact with the scalar
@@ -348,8 +373,8 @@ fn q8k_matvec_asm_v2_matches_scalar_bit_exact() {
 
         let mut out_scalar = vec![0.0f32; rows];
         let mut out_v2 = vec![0.0f32; rows];
-        q4k_q8k_matvec_scalar(&mut out_scalar, &q8, &w_q4, rows, cols);
-        q4k_q8k_matvec_asm_v2(&mut out_v2, &q8, &w_q4, rows, cols);
+        q4k_q8k_matvec_scalar(&mut out_scalar, &q8, &w_q4, rows, cols).expect("valid shape");
+        q4k_q8k_matvec_asm_v2(&mut out_v2, &q8, &w_q4, rows, cols).expect("valid shape");
 
         for r in 0..rows {
             assert_eq!(
@@ -388,8 +413,8 @@ fn q8k_matvec_asm_v3_matches_scalar_bit_exact() {
 
         let mut out_scalar = vec![0.0f32; rows];
         let mut out_v3 = vec![0.0f32; rows];
-        q4k_q8k_matvec_scalar(&mut out_scalar, &q8, &w_q4, rows, cols);
-        q4k_q8k_matvec_asm_v3(&mut out_v3, &q8, &w_q4, rows, cols);
+        q4k_q8k_matvec_scalar(&mut out_scalar, &q8, &w_q4, rows, cols).expect("valid shape");
+        q4k_q8k_matvec_asm_v3(&mut out_v3, &q8, &w_q4, rows, cols).expect("valid shape");
 
         for r in 0..rows {
             assert_eq!(
@@ -433,8 +458,8 @@ fn q6k_matvec_asm_matches_scalar_bit_exact() {
 
         let mut out_scalar = vec![0.0f32; rows];
         let mut out_asm = vec![0.0f32; rows];
-        q6k_q8k_matvec_scalar(&mut out_scalar, &q8, &w_q6, rows, cols);
-        q6k_q8k_matvec_asm(&mut out_asm, &q8, &w_q6, rows, cols);
+        q6k_q8k_matvec_scalar(&mut out_scalar, &q8, &w_q6, rows, cols).expect("valid shape");
+        q6k_q8k_matvec_asm(&mut out_asm, &q8, &w_q6, rows, cols).expect("valid shape");
 
         for r in 0..rows {
             assert_eq!(
@@ -449,26 +474,38 @@ fn q6k_matvec_asm_matches_scalar_bit_exact() {
     }
 }
 
-/// Q6_K asm early-return guards: zero dims / short weights zero output.
+/// `q6k_q8k_matvec_asm`: zero dims are the empty product (zeros written), and a
+/// weight slab shorter than `rows` packed rows is refused by name with the
+/// output left exactly as handed in — never silently zeroed.
 #[cfg(all(target_arch = "aarch64", target_feature = "neon"))]
 #[test]
-fn q6k_matvec_asm_zero_dims_and_short_weights_zero_output() {
+fn q6k_matvec_asm_zero_dims_are_empty_and_short_weights_are_refused() {
     let empty = Q8KActivation {
         qs: vec![],
         d: vec![],
         sums: vec![],
     };
     let mut out = vec![1.0f32; 4];
-    q6k_q8k_matvec_asm(&mut out, &empty, &[], 4, 0);
-    assert!(out.iter().all(|&v| v == 0.0));
+    q6k_q8k_matvec_asm(&mut out, &empty, &[], 4, 0).expect("zero dims are the empty product");
+    assert!(out.iter().all(|&v| v == 0.0), "zero-dims must zero output");
 
     let cols = 256;
     let rows = 2;
     let q = quantize_x_to_q8k(&vec![0.5f32; cols]);
-    let w = vec![0u8; Q6K_BLOCK_BYTES]; // one row's worth, rows == 2
+    let w = vec![0u8; Q6K_BLOCK_BYTES]; // one row's worth, but rows == 2
     let mut out = vec![1.0f32; rows];
-    q6k_q8k_matvec_asm(&mut out, &q, &w, rows, cols);
-    assert!(out.iter().all(|&v| v == 0.0));
+    let err = q6k_q8k_matvec_asm(&mut out, &q, &w, rows, cols)
+        .expect_err("a short weight slab must be refused");
+    assert_eq!(out, vec![1.0f32; rows], "refusal must not touch the output");
+    assert_eq!(err.kernel, "q6k_q8k_matvec_asm");
+    assert_eq!(
+        (err.weight_bytes, err.needed_bytes),
+        (Q6K_BLOCK_BYTES, 2 * Q6K_BLOCK_BYTES)
+    );
+    assert_eq!(
+        (err.out_len, err.rows, err.x_len, err.cols),
+        (rows, rows, cols, cols)
+    );
 }
 
 /// `quantize_x_to_q8k_into` must produce the same `qs`, `d`, `sums` as
@@ -518,8 +555,8 @@ fn q8k_matvec_2row_matches_single_row_bit_exact() {
 
         let mut out_single = vec![0.0f32; rows];
         let mut out_2row = vec![0.0f32; rows];
-        q4k_q8k_matvec_neon(&mut out_single, &q8, &w_q4, rows, cols);
-        q4k_q8k_matvec_neon_2row(&mut out_2row, &q8, &w_q4, rows, cols);
+        q4k_q8k_matvec_neon(&mut out_single, &q8, &w_q4, rows, cols).expect("valid shape");
+        q4k_q8k_matvec_neon_2row(&mut out_2row, &q8, &w_q4, rows, cols).expect("valid shape");
 
         for r in 0..rows {
             assert_eq!(
@@ -556,12 +593,13 @@ fn q8k_gate_up_fused_matches_separate_matvecs() {
 
     let mut g_sep = vec![0.0f32; rows];
     let mut u_sep = vec![0.0f32; rows];
-    q4k_q8k_matvec_into(&mut g_sep, &q8, &g_w, rows, cols);
-    q4k_q8k_matvec_into(&mut u_sep, &q8, &u_w, rows, cols);
+    q4k_q8k_matvec_into(&mut g_sep, &q8, &g_w, rows, cols).expect("valid shape");
+    q4k_q8k_matvec_into(&mut u_sep, &q8, &u_w, rows, cols).expect("valid shape");
 
     let mut g_fused = vec![0.0f32; rows];
     let mut u_fused = vec![0.0f32; rows];
-    q4k_q8k_gate_up_into(&mut g_fused, &mut u_fused, &q8, &g_w, &u_w, rows, cols);
+    q4k_q8k_gate_up_into(&mut g_fused, &mut u_fused, &q8, &g_w, &u_w, rows, cols)
+        .expect("valid shape");
 
     for r in 0..rows {
         assert_eq!(
@@ -590,22 +628,30 @@ fn q8k_matvec_zero_dims_returns_zero() {
         sums: vec![],
     };
     let mut out = vec![1.0f32; 4];
-    q4k_q8k_matvec_scalar(&mut out, &q, &[], 4, 0);
+    q4k_q8k_matvec_scalar(&mut out, &q, &[], 4, 0).expect("valid shape");
     assert!(out.iter().all(|&v| v == 0.0));
 }
 
-/// Misaligned col count (not a multiple of 256) should fail safely
-/// (leave caller-visible zeros, like the scalar `q4k_matvec_into`).
+/// A weight slab shorter than `rows` packed rows is refused by name, and
+/// the output is left exactly as the caller handed it in — never zeros,
+/// which a sampler would accept as logits.
 #[test]
-fn q8k_matvec_short_weight_buffer_returns_zero() {
+fn q8k_matvec_short_weight_buffer_is_refused_untouched() {
     let cols = 256;
     let rows = 2;
     let x = vec![0.5f32; cols];
     let q = quantize_x_to_q8k(&x);
     let w = vec![0u8; 144]; // only enough for 1 row, but rows=2
     let mut out = vec![1.0f32; rows];
-    q4k_q8k_matvec_scalar(&mut out, &q, &w, rows, cols);
-    assert!(out.iter().all(|&v| v == 0.0));
+    let err = q4k_q8k_matvec_scalar(&mut out, &q, &w, rows, cols)
+        .expect_err("a short weight slab must be refused");
+    assert_eq!(out, vec![1.0f32; rows], "refusal must not touch the output");
+    assert_eq!(err.kernel, "q4k_q8k_matvec_scalar");
+    assert_eq!((err.weight_bytes, err.needed_bytes), (144, 288));
+    assert_eq!(
+        (err.out_len, err.rows, err.x_len, err.cols),
+        (rows, rows, cols, cols)
+    );
 }
 
 #[test]
@@ -621,7 +667,7 @@ fn q6k_q8k_matvec_matches_q6k_f32_dispatch_within_noise() {
     let f32_path = crate::cpu::ops::q6k_matvec::dispatch(&w_q6, &x, rows, cols);
     let q8 = quantize_x_to_q8k(&x);
     let mut q8_path = vec![0.0f32; rows];
-    q6k_q8k_matvec_scalar(&mut q8_path, &q8, &w_q6, rows, cols);
+    q6k_q8k_matvec_scalar(&mut q8_path, &q8, &w_q6, rows, cols).expect("valid shape");
 
     for r in 0..rows {
         let diff = (f32_path[r] - q8_path[r]).abs();
@@ -647,26 +693,45 @@ fn q6k_q8k_public_entrypoint_matches_scalar() {
     let mut scalar = vec![0.0f32; rows];
     let mut dispatched = vec![0.0f32; rows];
 
-    q6k_q8k_matvec_scalar(&mut scalar, &q8, &w_q6, rows, cols);
-    q6k_q8k_matvec_into(&mut dispatched, &q8, &w_q6, rows, cols);
+    q6k_q8k_matvec_scalar(&mut scalar, &q8, &w_q6, rows, cols).expect("valid shape");
+    q6k_q8k_matvec_into(&mut dispatched, &q8, &w_q6, rows, cols).expect("valid shape");
 
     for (a, b) in scalar.iter().zip(dispatched.iter()) {
         assert_eq!(a.to_bits(), b.to_bits());
     }
 }
 
+/// `q6k_q8k_matvec_scalar`: zero dims are the empty product (zeros written), and a
+/// weight slab shorter than `rows` packed rows is refused by name with the
+/// output left exactly as handed in — never silently zeroed.
 #[test]
-fn q6k_q8k_zero_dims_and_short_weights_zero_output() {
-    let q = Q8KActivation::with_capacity(0);
+fn q6k_q8k_zero_dims_are_empty_and_short_weights_are_refused() {
+    let empty = Q8KActivation {
+        qs: vec![],
+        d: vec![],
+        sums: vec![],
+    };
     let mut out = vec![1.0f32; 4];
-    q6k_q8k_matvec_scalar(&mut out, &q, &[], 4, 0);
-    assert_eq!(out, vec![0.0f32; 4]);
+    q6k_q8k_matvec_scalar(&mut out, &empty, &[], 4, 0).expect("zero dims are the empty product");
+    assert!(out.iter().all(|&v| v == 0.0), "zero-dims must zero output");
 
-    let x = vec![1.0f32; 256];
-    let q = quantize_x_to_q8k(&x);
-    let mut out = vec![1.0f32; 2];
-    q6k_q8k_matvec_scalar(&mut out, &q, &vec![0u8; 210], 2, 256);
-    assert_eq!(out, vec![0.0f32; 2]);
+    let cols = 256;
+    let rows = 2;
+    let q = quantize_x_to_q8k(&vec![0.5f32; cols]);
+    let w = vec![0u8; Q6K_BLOCK_BYTES]; // one row's worth, but rows == 2
+    let mut out = vec![1.0f32; rows];
+    let err = q6k_q8k_matvec_scalar(&mut out, &q, &w, rows, cols)
+        .expect_err("a short weight slab must be refused");
+    assert_eq!(out, vec![1.0f32; rows], "refusal must not touch the output");
+    assert_eq!(err.kernel, "q6k_q8k_matvec_scalar");
+    assert_eq!(
+        (err.weight_bytes, err.needed_bytes),
+        (Q6K_BLOCK_BYTES, 2 * Q6K_BLOCK_BYTES)
+    );
+    assert_eq!(
+        (err.out_len, err.rows, err.x_len, err.cols),
+        (rows, rows, cols, cols)
+    );
 }
 
 /// AVX2 must produce bit-identical output to the scalar reference.
@@ -695,7 +760,7 @@ fn q8k_matvec_avx2_matches_scalar() {
 
     let mut out_scalar = vec![0.0f32; rows];
     let mut out_avx2 = vec![0.0f32; rows];
-    q4k_q8k_matvec_scalar(&mut out_scalar, &q8, &w_q4, rows, cols);
+    q4k_q8k_matvec_scalar(&mut out_scalar, &q8, &w_q4, rows, cols).expect("valid shape");
     unsafe { q4k_q8k_matvec_avx2(&mut out_avx2, &q8, &w_q4, rows, cols) };
 
     for r in 0..rows {
@@ -721,7 +786,7 @@ fn matvec_parallel_panics_on_unknown_format_tag_instead_of_zero_filling() {
     let q8k_x = quantize_x_to_q8k(&x);
     let bytes = quantize_q4_k(&x);
     let mut out = vec![0.0f32; 1];
-    q4k_q8k_matvec_parallel(&mut out, &q8k_x, &bytes, 1, 256, "MXFP9");
+    q4k_q8k_matvec_parallel(&mut out, &q8k_x, &bytes, 1, 256, "MXFP9").expect("valid shape");
 }
 
 /// Same contract for a format that parses but has no Q8K matvec kernel.
@@ -733,19 +798,7 @@ fn matvec_parallel_panics_on_format_without_q8k_kernel() {
     let mut out = vec![0.0f32; 1];
     // BF16 parses via `from_registry_tag` but has no block-stream kernel.
     let bytes = vec![0u8; 512];
-    q4k_q8k_matvec_parallel(&mut out, &q8k_x, &bytes, 1, 256, "BF16");
-}
-
-/// Same contract for a weight slab shorter than `rows × bytes_per_row` —
-/// previously a silent early-return that left the output zeroed.
-#[test]
-#[should_panic(expected = "weight slab too short")]
-fn matvec_parallel_panics_on_short_weight_slab() {
-    let x: Vec<f32> = (0..256).map(|i| i as f32 * 0.01).collect();
-    let q8k_x = quantize_x_to_q8k(&x);
-    let bytes = quantize_q4_k(&x); // one row's worth
-    let mut out = vec![0.0f32; 2];
-    q4k_q8k_matvec_parallel(&mut out, &q8k_x, &bytes, 2, 256, "Q4_K");
+    q4k_q8k_matvec_parallel(&mut out, &q8k_x, &bytes, 1, 256, "BF16").expect("valid shape");
 }
 
 /// The NEON-intrinsic fused gate+up kernel must be bit-exact with two
@@ -780,12 +833,13 @@ fn q8k_gate_up_neon_matches_scalar_bit_exact() {
 
         let mut g_scalar = vec![0.0f32; rows];
         let mut u_scalar = vec![0.0f32; rows];
-        q4k_q8k_matvec_scalar(&mut g_scalar, &q8, &g_q4, rows, cols);
-        q4k_q8k_matvec_scalar(&mut u_scalar, &q8, &u_q4, rows, cols);
+        q4k_q8k_matvec_scalar(&mut g_scalar, &q8, &g_q4, rows, cols).expect("valid shape");
+        q4k_q8k_matvec_scalar(&mut u_scalar, &q8, &u_q4, rows, cols).expect("valid shape");
 
         let mut g_neon = vec![0.0f32; rows];
         let mut u_neon = vec![0.0f32; rows];
-        q4k_q8k_gate_up_neon(&mut g_neon, &mut u_neon, &q8, &g_q4, &u_q4, rows, cols);
+        q4k_q8k_gate_up_neon(&mut g_neon, &mut u_neon, &q8, &g_q4, &u_q4, rows, cols)
+            .expect("valid shape");
 
         for r in 0..rows {
             assert_eq!(
@@ -806,11 +860,11 @@ fn q8k_gate_up_neon_matches_scalar_bit_exact() {
     }
 }
 
-/// Fused gate+up NEON early-return guards: zero dims and short weight
-/// buffers must zero BOTH outputs (same contract as the asm form).
+/// `q4k_q8k_gate_up_neon`: zero dims zero BOTH outputs, and a short gate slab is
+/// refused naming the gate half, with both outputs left untouched.
 #[cfg(all(target_arch = "aarch64", target_feature = "neon"))]
 #[test]
-fn q8k_gate_up_neon_zero_dims_and_short_weights_zero_output() {
+fn q8k_gate_up_neon_zero_dims_are_empty_and_short_weights_are_refused() {
     let empty = Q8KActivation {
         qs: vec![],
         d: vec![],
@@ -818,7 +872,8 @@ fn q8k_gate_up_neon_zero_dims_and_short_weights_zero_output() {
     };
     let mut g = vec![1.0f32; 4];
     let mut u = vec![1.0f32; 4];
-    q4k_q8k_gate_up_neon(&mut g, &mut u, &empty, &[], &[], 4, 0);
+    q4k_q8k_gate_up_neon(&mut g, &mut u, &empty, &[], &[], 4, 0)
+        .expect("zero dims are the empty product");
     assert!(g.iter().chain(u.iter()).all(|&v| v == 0.0));
 
     let cols = 256;
@@ -828,8 +883,25 @@ fn q8k_gate_up_neon_zero_dims_and_short_weights_zero_output() {
     let w_full = vec![0u8; 2 * BLOCK_BYTES];
     let mut g = vec![1.0f32; rows];
     let mut u = vec![1.0f32; rows];
-    q4k_q8k_gate_up_neon(&mut g, &mut u, &q, &w_short, &w_full, rows, cols);
-    assert!(g.iter().chain(u.iter()).all(|&v| v == 0.0));
+    let err = q4k_q8k_gate_up_neon(&mut g, &mut u, &q, &w_short, &w_full, rows, cols)
+        .expect_err("a short gate slab must be refused");
+    assert_eq!(
+        (g, u),
+        (vec![1.0f32; rows], vec![1.0f32; rows]),
+        "refusal must not touch either output"
+    );
+    assert_eq!(err.kernel, "q4k_q8k_gate_up_neon (gate)");
+    assert_eq!(
+        (err.weight_bytes, err.needed_bytes),
+        (BLOCK_BYTES, 2 * BLOCK_BYTES)
+    );
+
+    // The up half is checked independently: a short UP slab names it.
+    let mut g = vec![1.0f32; rows];
+    let mut u = vec![1.0f32; rows];
+    let err = q4k_q8k_gate_up_neon(&mut g, &mut u, &q, &w_full, &w_short, rows, cols)
+        .expect_err("a short up slab must be refused");
+    assert_eq!(err.kernel, "q4k_q8k_gate_up_neon (up)");
 }
 
 /// The Q6_K NEON-intrinsic kernel must be bit-exact with the scalar
@@ -856,8 +928,8 @@ fn q6k_matvec_neon_matches_scalar_bit_exact() {
 
         let mut out_scalar = vec![0.0f32; rows];
         let mut out_neon = vec![0.0f32; rows];
-        q6k_q8k_matvec_scalar(&mut out_scalar, &q8, &w_q6, rows, cols);
-        q6k_q8k_matvec_neon(&mut out_neon, &q8, &w_q6, rows, cols);
+        q6k_q8k_matvec_scalar(&mut out_scalar, &q8, &w_q6, rows, cols).expect("valid shape");
+        q6k_q8k_matvec_neon(&mut out_neon, &q8, &w_q6, rows, cols).expect("valid shape");
 
         for r in 0..rows {
             assert_eq!(
@@ -871,50 +943,72 @@ fn q6k_matvec_neon_matches_scalar_bit_exact() {
     }
 }
 
-/// Q6_K NEON early-return guards: zero dims / short weights zero output.
+/// `q6k_q8k_matvec_neon`: zero dims are the empty product (zeros written), and a
+/// weight slab shorter than `rows` packed rows is refused by name with the
+/// output left exactly as handed in — never silently zeroed.
 #[cfg(all(target_arch = "aarch64", target_feature = "neon"))]
 #[test]
-fn q6k_matvec_neon_zero_dims_and_short_weights_zero_output() {
+fn q6k_matvec_neon_zero_dims_are_empty_and_short_weights_are_refused() {
     let empty = Q8KActivation {
         qs: vec![],
         d: vec![],
         sums: vec![],
     };
     let mut out = vec![1.0f32; 4];
-    q6k_q8k_matvec_neon(&mut out, &empty, &[], 4, 0);
-    assert!(out.iter().all(|&v| v == 0.0));
+    q6k_q8k_matvec_neon(&mut out, &empty, &[], 4, 0).expect("zero dims are the empty product");
+    assert!(out.iter().all(|&v| v == 0.0), "zero-dims must zero output");
 
     let cols = 256;
     let rows = 2;
     let q = quantize_x_to_q8k(&vec![0.5f32; cols]);
-    let w = vec![0u8; Q6K_BLOCK_BYTES]; // one row's worth, rows == 2
+    let w = vec![0u8; Q6K_BLOCK_BYTES]; // one row's worth, but rows == 2
     let mut out = vec![1.0f32; rows];
-    q6k_q8k_matvec_neon(&mut out, &q, &w, rows, cols);
-    assert!(out.iter().all(|&v| v == 0.0));
+    let err = q6k_q8k_matvec_neon(&mut out, &q, &w, rows, cols)
+        .expect_err("a short weight slab must be refused");
+    assert_eq!(out, vec![1.0f32; rows], "refusal must not touch the output");
+    assert_eq!(err.kernel, "q6k_q8k_matvec_neon");
+    assert_eq!(
+        (err.weight_bytes, err.needed_bytes),
+        (Q6K_BLOCK_BYTES, 2 * Q6K_BLOCK_BYTES)
+    );
+    assert_eq!(
+        (err.out_len, err.rows, err.x_len, err.cols),
+        (rows, rows, cols, cols)
+    );
 }
 
-/// Q4_K NEON single-row kernel guards: zero dims / short weights zero
-/// output (the asm form already has this; the intrinsic form's guards
-/// were only reachable through the dispatch before).
+/// `q4k_q8k_matvec_neon`: zero dims are the empty product (zeros written), and a
+/// weight slab shorter than `rows` packed rows is refused by name with the
+/// output left exactly as handed in — never silently zeroed.
 #[cfg(all(target_arch = "aarch64", target_feature = "neon"))]
 #[test]
-fn q4k_matvec_neon_zero_dims_and_short_weights_zero_output() {
+fn q4k_matvec_neon_zero_dims_are_empty_and_short_weights_are_refused() {
     let empty = Q8KActivation {
         qs: vec![],
         d: vec![],
         sums: vec![],
     };
     let mut out = vec![1.0f32; 4];
-    q4k_q8k_matvec_neon(&mut out, &empty, &[], 4, 0);
-    assert!(out.iter().all(|&v| v == 0.0));
+    q4k_q8k_matvec_neon(&mut out, &empty, &[], 4, 0).expect("zero dims are the empty product");
+    assert!(out.iter().all(|&v| v == 0.0), "zero-dims must zero output");
 
     let cols = 256;
     let rows = 2;
     let q = quantize_x_to_q8k(&vec![0.5f32; cols]);
-    let w_short = vec![0u8; BLOCK_BYTES]; // one row's worth, rows == 2
+    let w = vec![0u8; BLOCK_BYTES]; // one row's worth, but rows == 2
     let mut out = vec![1.0f32; rows];
-    q4k_q8k_matvec_neon(&mut out, &q, &w_short, rows, cols);
-    assert!(out.iter().all(|&v| v == 0.0));
+    let err = q4k_q8k_matvec_neon(&mut out, &q, &w, rows, cols)
+        .expect_err("a short weight slab must be refused");
+    assert_eq!(out, vec![1.0f32; rows], "refusal must not touch the output");
+    assert_eq!(err.kernel, "q4k_q8k_matvec_neon");
+    assert_eq!(
+        (err.weight_bytes, err.needed_bytes),
+        (BLOCK_BYTES, 2 * BLOCK_BYTES)
+    );
+    assert_eq!(
+        (err.out_len, err.rows, err.x_len, err.cols),
+        (rows, rows, cols, cols)
+    );
 }
 
 /// Q4_K NEON 2-row kernel: guards zero the output, and an ODD row count
@@ -928,7 +1022,7 @@ fn q4k_matvec_neon_2row_guards_and_odd_row_tail() {
         sums: vec![],
     };
     let mut out = vec![1.0f32; 4];
-    q4k_q8k_matvec_neon_2row(&mut out, &empty, &[], 4, 0);
+    q4k_q8k_matvec_neon_2row(&mut out, &empty, &[], 4, 0).expect("valid shape");
     assert!(out.iter().all(|&v| v == 0.0));
 
     let cols = 512;
@@ -943,15 +1037,18 @@ fn q4k_matvec_neon_2row_guards_and_odd_row_tail() {
         .collect();
     let w = quantize_q4_k(&w_f32);
 
-    // short-weight guard: one row's bytes for rows == 3
+    // short-weight guard: one row's bytes for rows == 3 is refused,
+    // output untouched.
     let mut out = vec![1.0f32; rows];
-    q4k_q8k_matvec_neon_2row(&mut out, &q8, &w[..2 * BLOCK_BYTES], rows, cols);
-    assert!(out.iter().all(|&v| v == 0.0));
+    let err = q4k_q8k_matvec_neon_2row(&mut out, &q8, &w[..2 * BLOCK_BYTES], rows, cols)
+        .expect_err("a short weight slab must be refused");
+    assert_eq!(out, vec![1.0f32; rows]);
+    assert_eq!(err.kernel, "q4k_q8k_matvec_neon_2row");
 
     let mut out_single = vec![0.0f32; rows];
     let mut out_2row = vec![0.0f32; rows];
-    q4k_q8k_matvec_neon(&mut out_single, &q8, &w, rows, cols);
-    q4k_q8k_matvec_neon_2row(&mut out_2row, &q8, &w, rows, cols);
+    q4k_q8k_matvec_neon(&mut out_single, &q8, &w, rows, cols).expect("valid shape");
+    q4k_q8k_matvec_neon_2row(&mut out_2row, &q8, &w, rows, cols).expect("valid shape");
     for r in 0..rows {
         assert_eq!(
             out_single[r].to_bits(),
@@ -961,4 +1058,111 @@ fn q4k_matvec_neon_2row_guards_and_odd_row_tail() {
             out_2row[r],
         );
     }
+}
+
+// ── Public execution path: `q4k_q8k_matvec_parallel` ─────────────────────
+//
+// The parallel entry is the single source for every quantised projection
+// on the decode path. One fixture serves the refusal cases and the parity
+// case beside them, so the same weights prove both halves of the change:
+// an invalid shape refuses with the output untouched, and the unchanged
+// valid shape still computes exactly what the scalar reference computes.
+
+/// `(packed Q4_K weights, Q8_K activation, rows, cols)` for the public-path
+/// tests. Five rows keeps a partial final chunk out of the picture; two
+/// super-blocks per row keeps the scale/min unpack exercised twice.
+fn public_path_fixture() -> (Vec<u8>, Q8KActivation, usize, usize) {
+    let rows = 5;
+    let cols = 512;
+    let x: Vec<f32> = (0..cols).map(|i| (i as f32 * 0.013).sin() * 1.7).collect();
+    let w_f32: Vec<f32> = (0..rows * cols)
+        .map(|i| (i as f32 * 0.007).cos() * 0.6)
+        .collect();
+    (quantize_q4_k(&w_f32), quantize_x_to_q8k(&x), rows, cols)
+}
+
+/// Valid shape, unchanged numerics: the parallel entry is bit-identical to
+/// the scalar reference on the fixture the refusal tests below reuse.
+#[test]
+fn q8k_matvec_parallel_computes_exactly_the_scalar_reference_on_the_fixture() {
+    let (w, q, rows, cols) = public_path_fixture();
+    let mut reference = vec![0.0f32; rows];
+    q4k_q8k_matvec_scalar(&mut reference, &q, &w, rows, cols).expect("valid shape");
+    let mut out = vec![7.0f32; rows];
+    q4k_q8k_matvec_parallel(&mut out, &q, &w, rows, cols, "Q4_K").expect("valid shape");
+    assert!(
+        reference.iter().any(|&v| v != 0.0),
+        "control: the fixture must not be all zeros"
+    );
+    for r in 0..rows {
+        assert_eq!(
+            out[r].to_bits(),
+            reference[r].to_bits(),
+            "row {r}: parallel={} scalar={}",
+            out[r],
+            reference[r]
+        );
+    }
+}
+
+/// An activation that is not `cols` long is refused by name — the hand-asm
+/// kernels read `qs` through a bare pointer, so this used to be an OOB
+/// read hidden behind a zero-filled output.
+#[test]
+fn q8k_matvec_parallel_refuses_an_activation_of_the_wrong_length() {
+    let (w, _, rows, cols) = public_path_fixture();
+    let wrong = quantize_x_to_q8k(&vec![0.5f32; cols + 256]);
+    let mut out = vec![7.0f32; rows];
+    let err = q4k_q8k_matvec_parallel(&mut out, &wrong, &w, rows, cols, "Q4_K")
+        .expect_err("activation length must match cols");
+    assert_eq!(out, vec![7.0f32; rows], "refusal must not touch the output");
+    assert_eq!(err.kernel, "q4k_q8k_matvec_parallel");
+    assert_eq!((err.x_len, err.cols), (cols + 256, cols));
+    assert!(
+        err.to_string()
+            .contains("activation length 768 for 512 cols"),
+        "{err}"
+    );
+}
+
+/// An output shorter than `rows` is refused before any row is written.
+#[test]
+fn q8k_matvec_parallel_refuses_an_output_shorter_than_rows() {
+    let (w, q, rows, cols) = public_path_fixture();
+    let mut out = vec![7.0f32; rows - 1];
+    let err = q4k_q8k_matvec_parallel(&mut out, &q, &w, rows, cols, "Q4_K")
+        .expect_err("output must hold rows");
+    assert_eq!(out, vec![7.0f32; rows - 1]);
+    assert_eq!((err.out_len, err.rows), (rows - 1, rows));
+}
+
+/// A weight slab shorter than `rows` packed rows is refused by name. This
+/// case used to panic at the entry point; it is now the same typed
+/// refusal the per-row kernels return, so a caller with a channel can
+/// carry it up.
+#[test]
+fn q8k_matvec_parallel_refuses_a_short_weight_slab() {
+    let (w, q, rows, cols) = public_path_fixture();
+    let short = &w[..w.len() - BLOCK_BYTES];
+    let mut out = vec![7.0f32; rows];
+    let err = q4k_q8k_matvec_parallel(&mut out, &q, short, rows, cols, "Q4_K")
+        .expect_err("short slab must be refused");
+    assert_eq!(out, vec![7.0f32; rows]);
+    assert_eq!(
+        (err.weight_bytes, err.needed_bytes),
+        (w.len() - BLOCK_BYTES, w.len())
+    );
+}
+
+/// The refusal reaches the `FormatRoute` registry's kernel pointer too:
+/// the Q6_K route returns the same typed error.
+#[test]
+fn q8k_matvec_parallel_refuses_through_the_q6k_route_as_well() {
+    let (_, q, rows, cols) = public_path_fixture();
+    let short = vec![0u8; Q6K_BLOCK_BYTES];
+    let mut out = vec![7.0f32; rows];
+    let err = q4k_q8k_matvec_parallel(&mut out, &q, &short, rows, cols, "Q6_K")
+        .expect_err("short Q6_K slab must be refused");
+    assert_eq!(out, vec![7.0f32; rows]);
+    assert_eq!(err.needed_bytes, rows * 2 * Q6K_BLOCK_BYTES);
 }

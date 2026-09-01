@@ -559,10 +559,7 @@ impl MetalBackend {
         enc_c.end_encoding();
 
         cmd.commit();
-        let _ = crate::cb_status::wait_checked(
-            cmd,
-            "crates/larql-compute-metal/src/decode_hybrid.rs:562",
-        );
+        crate::cb_status::wait_or_abort(cmd, "crates/larql-compute-metal/src/decode_hybrid.rs:562");
 
         super::buffers::read_buffer_f32(&h_post_attn, hidden)
     }

@@ -257,7 +257,8 @@ pub(crate) fn matvec_q4k_or_q6k_q8k(
     let mut out = vec![0.0f32; rows];
     crate::cpu::ops::q4k_q8k_dot::q4k_q8k_matvec_parallel(
         &mut out, x_q8k, bytes, rows, cols, format,
-    );
+    )
+    .unwrap_or_else(|e| panic!("matvec_q4k_or_q6k_q8k: refused after pre-flight checks: {e}"));
     Some(out)
 }
 

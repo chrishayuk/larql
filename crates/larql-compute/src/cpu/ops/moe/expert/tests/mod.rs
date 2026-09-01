@@ -153,15 +153,18 @@ fn quantize_h_norm_for_q4k_rejects_empty_or_misaligned_input() {
     assert_eq!(q8.qs.len(), 256);
 }
 
+/// An empty gate+up slab is the same refusal at the smallest shape, and
+/// the pre-filled output is never overwritten with zeros first.
 #[test]
-fn run_single_expert_q4k_q8k_into_zeroes_output_for_short_gate_up() {
+#[should_panic(expected = "288 are needed")]
+fn run_single_expert_q4k_q8k_into_refuses_an_empty_gate_up() {
     let hidden = 256;
     let inter = 1;
     let mut scratch = ExpertScratch::new(hidden, inter, 256);
     scratch.out.fill(7.0);
     let h_q8 = quantize_h_norm_for_q4k(&vec![1.0f32; hidden]).unwrap();
 
-    let out = run_single_expert_q4k_q8k_into(
+    let _ = run_single_expert_q4k_q8k_into(
         &mut scratch,
         &h_q8,
         &[],
@@ -169,8 +172,6 @@ fn run_single_expert_q4k_q8k_into_zeroes_output_for_short_gate_up() {
         inter,
         crate::ExpertMlp::gated(Activation::Silu),
     );
-
-    assert!(out.iter().all(|v| *v == 0.0));
 }
 
 #[test]
@@ -588,10 +589,13 @@ fn run_single_expert_q4k_q8k_into_zero_inter_returns_zeroed() {
     assert_eq!(out, &[0.0f32; 256]);
 }
 
-/// `gate_up_bytes` too short for the claimed (hidden, inter) shape
-/// returns zeroed output instead of panicking.
+/// `gate_up_bytes` too short for the claimed (hidden, inter) shape is
+/// refused by name. This path returns a borrowed scratch slice and has no
+/// error channel, so the refusal ends the step; it used to hand back a
+/// zeroed expert output that a combine would add as if it were computed.
 #[test]
-fn run_single_expert_q4k_q8k_into_short_bytes_returns_zeroed() {
+#[should_panic(expected = "run_single_expert_kq_q8k_into: refused operands")]
+fn run_single_expert_q4k_q8k_into_short_bytes_are_refused() {
     let hidden = 256usize;
     let inter = 256usize;
     let mut scratch = ExpertScratch::new(hidden, inter, inter);
@@ -599,7 +603,7 @@ fn run_single_expert_q4k_q8k_into_short_bytes_returns_zeroed() {
     let h_q8k = quantize_x_to_q8k(&h);
     // Only 100 bytes — far less than 2 * inter * (hidden/256) * 144.
     let short_gate_up = vec![0u8; 100];
-    let out = run_single_expert_q4k_q8k_into(
+    let _ = run_single_expert_q4k_q8k_into(
         &mut scratch,
         &h_q8k,
         &short_gate_up,
@@ -607,7 +611,6 @@ fn run_single_expert_q4k_q8k_into_short_bytes_returns_zeroed() {
         inter,
         crate::ExpertMlp::gated(Activation::Silu),
     );
-    assert_eq!(out, &[0.0f32; 256]);
 }
 
 /// GeluTanh activation branch in `run_single_expert_q4k_q8k_into`.

@@ -243,10 +243,14 @@ impl MetalBackend {
         self.encode_mla_attention_into(enc, w, shape, state, &buf_x, &s, visible);
         enc.end_encoding();
         cmd.commit();
-        let _ = crate::cb_status::wait_checked(
+        crate::cb_status::wait_checked(
             cmd,
             "crates/larql-compute-metal/src/trait_impl/mla/mod.rs:step",
-        );
+        )
+        .map_err(|detail| GroupedError::CommandBufferFailed {
+            site: "crates/larql-compute-metal/src/trait_impl/mla/mod.rs:step",
+            detail,
+        })?;
         state.positions.set(visible);
         Ok((s, visible, crate::decode::gpu_timing::gpu_elapsed_ms(cmd)))
     }

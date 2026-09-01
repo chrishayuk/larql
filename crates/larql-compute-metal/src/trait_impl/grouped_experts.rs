@@ -73,6 +73,14 @@ pub enum GroupedError {
     /// layer index: `slot` already means the projection a host-side
     /// bounds check failed on, and a caller that read one as the other
     /// would blame the wrong thing. A control did exactly that.
+    /// The command buffer carrying this call finished in a state other
+    /// than `Completed`: the GPU faulted, or Metal dropped the buffer
+    /// after an earlier fault. Its outputs are whatever the scratch held
+    /// before, so nothing is read back and no cache advances.
+    CommandBufferFailed {
+        site: &'static str,
+        detail: String,
+    },
     LayerRouteNotResident {
         layer: usize,
         refusals: u32,
@@ -97,6 +105,9 @@ pub enum GroupedError {
 impl std::fmt::Display for GroupedError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
+            Self::CommandBufferFailed { site, detail } => {
+                write!(f, "command buffer at {site} did not complete: {detail}")
+            }
             Self::KNotSuperblockAligned { k } => {
                 write!(f, "grouped experts: K={k} is not a multiple of 256")
             }
@@ -316,10 +327,14 @@ impl MetalBackend {
         );
         enc.end_encoding();
         cmd.commit();
-        let _ = crate::cb_status::wait_checked(
+        crate::cb_status::wait_checked(
             cmd,
             "crates/larql-compute-metal/src/trait_impl/grouped_experts.rs:kquant_grouped",
-        );
+        )
+        .map_err(|detail| GroupedError::CommandBufferFailed {
+            site: "crates/larql-compute-metal/src/trait_impl/grouped_experts.rs:kquant_grouped",
+            detail,
+        })?;
         let gpu_ms = crate::decode::gpu_timing::gpu_elapsed_ms(cmd);
         Ok((
             crate::buffers::read_buffer_f32(&buf_out, offsets.len() * n),

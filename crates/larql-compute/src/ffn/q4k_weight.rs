@@ -128,7 +128,8 @@ impl FfnBackend for Q4kFfn {
                 l.intermediate,
                 l.hidden,
                 Q4K_FORMAT_TAG,
-            );
+            )
+            .unwrap_or_else(|e| panic!("Q4kFfn::forward layer {layer}: {e}"));
             q4k_q8k_matvec_parallel(
                 up.row_mut(row).as_slice_mut().expect("contiguous"),
                 &q8,
@@ -136,7 +137,8 @@ impl FfnBackend for Q4kFfn {
                 l.intermediate,
                 l.hidden,
                 Q4K_FORMAT_TAG,
-            );
+            )
+            .unwrap_or_else(|e| panic!("Q4kFfn::forward layer {layer}: {e}"));
         }
         let activation = silu_gate_up(&gate, &up);
         let mut out = Array2::<f32>::zeros((rows, l.hidden));
@@ -150,7 +152,8 @@ impl FfnBackend for Q4kFfn {
                 l.hidden,
                 l.intermediate,
                 Q4K_FORMAT_TAG,
-            );
+            )
+            .unwrap_or_else(|e| panic!("Q4kFfn::forward layer {layer}: {e}"));
         }
         out
     }

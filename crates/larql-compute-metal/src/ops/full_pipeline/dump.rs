@@ -67,7 +67,7 @@ pub(super) fn dump_layer0_q_after_stage(
         return cmd;
     }
     cmd.commit();
-    let _ = crate::cb_status::wait_checked(
+    crate::cb_status::wait_or_abort(
         &cmd,
         "crates/larql-compute-metal/src/ops/full_pipeline/dump.rs:70",
     );
@@ -96,7 +96,7 @@ pub(super) fn dump_layer_snapshots(
         return cmd;
     };
     cmd.commit();
-    let _ = crate::cb_status::wait_checked(
+    crate::cb_status::wait_or_abort(
         &cmd,
         "crates/larql-compute-metal/src/ops/full_pipeline/dump.rs:96",
     );

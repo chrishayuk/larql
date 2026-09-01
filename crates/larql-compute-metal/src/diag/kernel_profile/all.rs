@@ -42,7 +42,7 @@ pub fn profile_all(n_layers: usize, warmup: usize, iters: usize) -> Vec<KernelRe
             let enc = cmd.new_compute_command_encoder();
             enc.end_encoding();
             cmd.commit();
-            let _ = crate::cb_status::wait_checked(
+            crate::cb_status::wait_or_abort(
                 cmd,
                 "crates/larql-compute-metal/src/diag/kernel_profile/all.rs:45",
             );
@@ -132,7 +132,7 @@ pub fn profile_all(n_layers: usize, warmup: usize, iters: usize) -> Vec<KernelRe
                 }
                 enc.end_encoding();
                 cmd.commit();
-                let _ = crate::cb_status::wait_checked(
+                crate::cb_status::wait_or_abort(
                     cmd,
                     "crates/larql-compute-metal/src/diag/kernel_profile/all.rs:132",
                 );
@@ -213,7 +213,7 @@ pub fn profile_all(n_layers: usize, warmup: usize, iters: usize) -> Vec<KernelRe
             dispatch(enc);
             enc.end_encoding();
             cmd.commit();
-            let _ = crate::cb_status::wait_checked(
+            crate::cb_status::wait_or_abort(
                 cmd,
                 "crates/larql-compute-metal/src/diag/kernel_profile/all.rs:210",
             );
@@ -284,7 +284,7 @@ pub fn profile_all(n_layers: usize, warmup: usize, iters: usize) -> Vec<KernelRe
                 }
                 enc.end_encoding();
                 cmd.commit();
-                let _ = crate::cb_status::wait_checked(
+                crate::cb_status::wait_or_abort(
                     cmd,
                     "crates/larql-compute-metal/src/diag/kernel_profile/all.rs:278",
                 );
@@ -441,7 +441,7 @@ pub fn profile_all(n_layers: usize, warmup: usize, iters: usize) -> Vec<KernelRe
             dispatch(enc);
             enc.end_encoding();
             cmd.commit();
-            let _ = crate::cb_status::wait_checked(
+            crate::cb_status::wait_or_abort(
                 cmd,
                 "crates/larql-compute-metal/src/diag/kernel_profile/all.rs:432",
             );
@@ -540,7 +540,7 @@ pub fn profile_all(n_layers: usize, warmup: usize, iters: usize) -> Vec<KernelRe
             dispatch(enc);
             enc.end_encoding();
             cmd.commit();
-            let _ = crate::cb_status::wait_checked(
+            crate::cb_status::wait_or_abort(
                 cmd,
                 "crates/larql-compute-metal/src/diag/kernel_profile/all.rs:528",
             );

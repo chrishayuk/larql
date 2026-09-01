@@ -188,10 +188,14 @@ impl MetalBackend {
         );
         enc.end_encoding();
         cmd.commit();
-        let _ = crate::cb_status::wait_checked(
+        crate::cb_status::wait_checked(
             cmd,
             "crates/larql-compute-metal/src/trait_impl/bf16_grouped.rs:at",
-        );
+        )
+        .map_err(|detail| GroupedError::CommandBufferFailed {
+            site: "crates/larql-compute-metal/src/trait_impl/bf16_grouped.rs:at",
+            detail,
+        })?;
         Ok(crate::buffers::read_buffer_f32(&buf_out, offsets.len() * n))
     }
 
@@ -236,10 +240,14 @@ impl MetalBackend {
         );
         enc.end_encoding();
         cmd.commit();
-        let _ = crate::cb_status::wait_checked(
+        crate::cb_status::wait_checked(
             cmd,
             "crates/larql-compute-metal/src/trait_impl/bf16_grouped.rs:dispatch",
-        );
+        )
+        .map_err(|detail| GroupedError::CommandBufferFailed {
+            site: "crates/larql-compute-metal/src/trait_impl/bf16_grouped.rs:dispatch",
+            detail,
+        })?;
 
         let gpu_ms = crate::decode::gpu_timing::gpu_elapsed_ms(cmd);
         Ok((

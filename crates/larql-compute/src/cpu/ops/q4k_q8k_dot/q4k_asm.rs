@@ -1,8 +1,7 @@
-use super::common::{
-    q8k_shape_ok, unpack_scales_mins, BLOCK_BYTES, ELEMS_PER_BLOCK, SUBBLOCKS_PER_BLOCK,
-};
+use super::common::{unpack_scales_mins, BLOCK_BYTES, ELEMS_PER_BLOCK, SUBBLOCKS_PER_BLOCK};
 use super::q8k_activation::Q8KActivation;
 use crate::cpu::ops::q4_common::f16_to_f32;
+use crate::cpu::ops::KernelShapeError;
 
 /// Hand-asm inner loop (C12 Phase 1): the per-super-block scaled integer dot
 /// `sum1 = Σ_sb scale[sb] · Σ_i nibble[sb][i]·y[sb][i]`, computed in one
@@ -109,21 +108,23 @@ pub fn q4k_q8k_matvec_asm(
     w: &[u8],
     rows: usize,
     cols: usize,
-) {
-    if !q8k_shape_ok(out.len(), rows, q8k_x.qs.len(), cols) || rows == 0 || cols == 0 {
-        for v in out.iter_mut() {
-            *v = 0.0;
-        }
-        return;
+) -> Result<(), KernelShapeError> {
+    KernelShapeError::check(
+        "q4k_q8k_matvec_asm",
+        out.len(),
+        rows,
+        q8k_x.qs.len(),
+        cols,
+        w.len(),
+        ELEMS_PER_BLOCK,
+        BLOCK_BYTES,
+    )?;
+    if rows == 0 || cols == 0 {
+        out.fill(0.0);
+        return Ok(());
     }
     let n_blocks = cols / ELEMS_PER_BLOCK;
     let row_bytes = n_blocks * BLOCK_BYTES;
-    if w.len() < rows * row_bytes {
-        for v in out.iter_mut() {
-            *v = 0.0;
-        }
-        return;
-    }
 
     for (r, out_slot) in out.iter_mut().enumerate().take(rows) {
         let row_base = r * row_bytes;
@@ -166,6 +167,7 @@ pub fn q4k_q8k_matvec_asm(
         }
         *out_slot = acc;
     }
+    Ok(())
 }
 
 /// TBL index tables for the v2 super-block kernel's vectorised scale/min
@@ -330,21 +332,23 @@ pub fn q4k_q8k_matvec_asm_v2(
     w: &[u8],
     rows: usize,
     cols: usize,
-) {
-    if !q8k_shape_ok(out.len(), rows, q8k_x.qs.len(), cols) || rows == 0 || cols == 0 {
-        for v in out.iter_mut() {
-            *v = 0.0;
-        }
-        return;
+) -> Result<(), KernelShapeError> {
+    KernelShapeError::check(
+        "q4k_q8k_matvec_asm_v2",
+        out.len(),
+        rows,
+        q8k_x.qs.len(),
+        cols,
+        w.len(),
+        ELEMS_PER_BLOCK,
+        BLOCK_BYTES,
+    )?;
+    if rows == 0 || cols == 0 {
+        out.fill(0.0);
+        return Ok(());
     }
     let n_blocks = cols / ELEMS_PER_BLOCK;
     let row_bytes = n_blocks * BLOCK_BYTES;
-    if w.len() < rows * row_bytes {
-        for v in out.iter_mut() {
-            *v = 0.0;
-        }
-        return;
-    }
 
     for (r, out_slot) in out.iter_mut().enumerate().take(rows) {
         let row_base = r * row_bytes;
@@ -367,6 +371,7 @@ pub fn q4k_q8k_matvec_asm_v2(
         }
         *out_slot = acc;
     }
+    Ok(())
 }
 
 /// v3 (C12): one `asm!` block per ROW — the super-block loop lives inside
@@ -510,21 +515,23 @@ pub fn q4k_q8k_matvec_asm_v3(
     w: &[u8],
     rows: usize,
     cols: usize,
-) {
-    if !q8k_shape_ok(out.len(), rows, q8k_x.qs.len(), cols) || rows == 0 || cols == 0 {
-        for v in out.iter_mut() {
-            *v = 0.0;
-        }
-        return;
+) -> Result<(), KernelShapeError> {
+    KernelShapeError::check(
+        "q4k_q8k_matvec_asm_v3",
+        out.len(),
+        rows,
+        q8k_x.qs.len(),
+        cols,
+        w.len(),
+        ELEMS_PER_BLOCK,
+        BLOCK_BYTES,
+    )?;
+    if rows == 0 || cols == 0 {
+        out.fill(0.0);
+        return Ok(());
     }
     let n_blocks = cols / ELEMS_PER_BLOCK;
     let row_bytes = n_blocks * BLOCK_BYTES;
-    if w.len() < rows * row_bytes {
-        for v in out.iter_mut() {
-            *v = 0.0;
-        }
-        return;
-    }
 
     for (r, out_slot) in out.iter_mut().enumerate().take(rows) {
         // SAFETY: the row spans n_blocks × 144 bytes (checked above); the
@@ -539,6 +546,7 @@ pub fn q4k_q8k_matvec_asm_v3(
             )
         };
     }
+    Ok(())
 }
 
 /// C12: route Q4_K × Q8_K matvecs through the hand-asm kernel

@@ -45,6 +45,9 @@ pub enum Mxfp4Error {
         got: usize,
         need: usize,
     },
+    /// The command buffer carrying this call finished in a state other
+    /// than `Completed`; its output is not read back.
+    CommandBufferFailed { site: &'static str, detail: String },
     /// A ladder rung that does not exist yet.
     Unimplemented(&'static str),
 }
@@ -52,6 +55,9 @@ pub enum Mxfp4Error {
 impl std::fmt::Display for Mxfp4Error {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
+            Self::CommandBufferFailed { site, detail } => {
+                write!(f, "command buffer at {site} did not complete: {detail}")
+            }
             Self::KNotGroupAligned { k } => {
                 write!(f, "MXFP4: K={k} is not a multiple of the 32-element group")
             }
@@ -159,10 +165,14 @@ impl MetalBackend {
         );
         enc.end_encoding();
         cmd.commit();
-        let _ = crate::cb_status::wait_checked(
+        crate::cb_status::wait_checked(
             cmd,
             "crates/larql-compute-metal/src/trait_impl/mxfp4.rs:162",
-        );
+        )
+        .map_err(|detail| Mxfp4Error::CommandBufferFailed {
+            site: "crates/larql-compute-metal/src/trait_impl/mxfp4.rs:162",
+            detail,
+        })?;
 
         Ok(crate::buffers::read_buffer_f32(&buf_out, m))
     }

@@ -3,6 +3,7 @@ use super::common::{
 };
 use super::q8k_activation::Q8KActivation;
 use crate::cpu::ops::q4_common::f16_to_f32;
+use crate::cpu::ops::KernelShapeError;
 
 /// AVX2 Q4_K × Q8_K matvec for x86_64.
 ///
@@ -19,14 +20,22 @@ pub(super) unsafe fn q4k_q8k_matvec_avx2(
     w: &[u8],
     rows: usize,
     cols: usize,
-) {
+) -> Result<(), KernelShapeError> {
     use std::arch::x86_64::*;
 
-    if rows == 0 || cols == 0 || w.len() < rows * (cols / ELEMS_PER_BLOCK) * BLOCK_BYTES {
-        for v in out.iter_mut() {
-            *v = 0.0;
-        }
-        return;
+    KernelShapeError::check(
+        "q4k_q8k_matvec_avx2",
+        out.len(),
+        rows,
+        q8k_x.qs.len(),
+        cols,
+        w.len(),
+        ELEMS_PER_BLOCK,
+        BLOCK_BYTES,
+    )?;
+    if rows == 0 || cols == 0 {
+        out.fill(0.0);
+        return Ok(());
     }
 
     let n_blocks = cols / ELEMS_PER_BLOCK;
@@ -88,6 +97,7 @@ pub(super) unsafe fn q4k_q8k_matvec_avx2(
         }
         *out_slot = acc;
     }
+    Ok(())
 }
 
 #[cfg(target_arch = "x86_64")]

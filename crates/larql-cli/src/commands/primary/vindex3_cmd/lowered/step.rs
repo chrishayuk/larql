@@ -90,7 +90,10 @@ impl LoweredSession<'_> {
         let p = self.prepared.take()?;
         let mut id = None;
         if p.committed {
-            p.cmd.wait_until_completed();
+            larql_compute_metal::cb_status::wait_or_abort(
+                &p.cmd,
+                "crates/larql-cli/src/commands/primary/vindex3_cmd/lowered/step.rs:quiesce",
+            );
             if let (Some(am), true) = (&self.argmax, p.has_logits) {
                 id = read_u32(&am[2 + p.position % 2]).ok();
                 self.last_device_id = id;
@@ -210,7 +213,14 @@ impl LoweredSession<'_> {
             });
         }
 
-        prepared.cmd.wait_until_completed();
+        // A step whose buffer did not complete has no logits and no
+        // argmax; the refusal carries Metal's own description up through
+        // the step's error channel instead of reading stale scratch.
+        larql_compute_metal::cb_status::wait_checked(
+            &prepared.cmd,
+            "crates/larql-cli/src/commands/primary/vindex3_cmd/lowered/step.rs:step",
+        )
+        .map_err(|detail| VindexError::Parse(format!("metal-lowered step refused: {detail}")))?;
         self.last_gpu_ms = gpu_span_ms(&prepared.cmd);
         if let (Some(samples), Some(ledger)) = (&prepared.samples, self.ledger.as_mut()) {
             if let Some(token) = samples.resolve() {
@@ -248,7 +258,10 @@ impl LoweredSession<'_> {
         // A committed step may still be executing; its buffers cannot
         // rejoin the pool until the GPU is done with them.
         if p.committed {
-            p.cmd.wait_until_completed();
+            larql_compute_metal::cb_status::wait_or_abort(
+                &p.cmd,
+                "crates/larql-cli/src/commands/primary/vindex3_cmd/lowered/step.rs:discard",
+            );
         }
         for buf in p.captures {
             self.gpu.recycle_lowering_scratch(buf);

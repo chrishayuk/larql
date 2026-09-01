@@ -244,8 +244,15 @@ impl MetalBackend {
             {
                 std::hint::spin_loop();
             }
+            // The spin only knows the buffer stopped; whether it
+            // completed is a separate question, answered the same way
+            // as on the blocking arm.
+            crate::cb_status::require_completed(
+                state.cmd,
+                "crates/larql-compute-metal/src/decode/moe_interleave.rs:spin",
+            );
         } else {
-            let _ = crate::cb_status::wait_checked(
+            crate::cb_status::wait_or_abort(
                 state.cmd,
                 "crates/larql-compute-metal/src/decode/moe_interleave.rs:248",
             );
@@ -256,7 +263,7 @@ impl MetalBackend {
             for _ in 0..extra {
                 let cb = self.queue.new_command_buffer();
                 cb.commit();
-                let _ = crate::cb_status::wait_checked(
+                crate::cb_status::wait_or_abort(
                     cb,
                     "crates/larql-compute-metal/src/decode/moe_interleave.rs:256",
                 );
@@ -360,7 +367,7 @@ impl MetalBackend {
                 .as_deref_mut()
                 .expect("split_mode implies moe_collect_fn");
             let result = collect(ctx.layer_idx);
-            let _ = crate::cb_status::wait_checked(
+            crate::cb_status::wait_or_abort(
                 state.cmd,
                 "crates/larql-compute-metal/src/decode/moe_interleave.rs:357",
             );

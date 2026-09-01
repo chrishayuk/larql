@@ -81,7 +81,7 @@ pub fn profile_grouped_experts(
             }
             enc.end_encoding();
             cmd.commit();
-            let _ = crate::cb_status::wait_checked(
+            crate::cb_status::wait_or_abort(
                 cmd,
                 "crates/larql-compute-metal/src/diag/kernel_profile/grouped.rs:84",
             );
@@ -116,7 +116,7 @@ pub fn profile_grouped_experts(
             }
             enc.end_encoding();
             cmd.commit();
-            let _ = crate::cb_status::wait_checked(
+            crate::cb_status::wait_or_abort(
                 cmd,
                 "crates/larql-compute-metal/src/diag/kernel_profile/grouped.rs:116",
             );

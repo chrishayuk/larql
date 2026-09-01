@@ -186,7 +186,8 @@ fn q4_frame_prediction() {
             let q8k = quantize_x_to_q8k(&x);
             let mut out = vec![0.0f32; *rows];
             for _ in 0..*uses {
-                q4k_q8k_matvec_into(&mut out, &q8k, blob, *rows, *cols);
+                q4k_q8k_matvec_into(&mut out, &q8k, blob, *rows, *cols)
+                    .expect("bench shapes are valid");
                 sink += out[0];
             }
         }
@@ -201,7 +202,8 @@ fn q4_frame_prediction() {
             let q8k = quantize_x_to_q8k(&x);
             let mut out = vec![0.0f32; *rows];
             for _ in 0..*uses {
-                q4k_q8k_matvec_parallel(&mut out, &q8k, blob, *rows, *cols, "Q4_K");
+                q4k_q8k_matvec_parallel(&mut out, &q8k, blob, *rows, *cols, "Q4_K")
+                    .expect("bench shapes are valid");
                 sink += out[0];
             }
         }

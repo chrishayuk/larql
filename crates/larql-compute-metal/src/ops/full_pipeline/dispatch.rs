@@ -462,7 +462,7 @@ pub fn dispatch_full_pipeline(
         if let Some(iv) = intervention {
             if l == iv.target_layer {
                 cmd.commit();
-                let _ = crate::cb_status::wait_checked(
+                crate::cb_status::wait_or_abort(
                     &cmd,
                     "crates/larql-compute-metal/src/ops/full_pipeline/dispatch.rs:465",
                 );
@@ -532,7 +532,7 @@ pub fn dispatch_full_pipeline(
         if let Some(iv) = intervention {
             if l == iv.target_layer {
                 cmd.commit();
-                let _ = crate::cb_status::wait_checked(
+                crate::cb_status::wait_or_abort(
                     &cmd,
                     "crates/larql-compute-metal/src/ops/full_pipeline/dispatch.rs:532",
                 );
@@ -748,7 +748,7 @@ pub fn dispatch_full_pipeline(
         // restart the command buffer for the next layer.
         if needs_per_layer_commit {
             cmd.commit();
-            let _ = crate::cb_status::wait_checked(
+            crate::cb_status::wait_or_abort(
                 &cmd,
                 "crates/larql-compute-metal/src/ops/full_pipeline/dispatch.rs:745",
             );
@@ -779,7 +779,7 @@ pub fn dispatch_full_pipeline(
 
     if !needs_per_layer_commit {
         cmd.commit();
-        let _ = crate::cb_status::wait_checked(
+        crate::cb_status::wait_or_abort(
             &cmd,
             "crates/larql-compute-metal/src/ops/full_pipeline/dispatch.rs:773",
         );

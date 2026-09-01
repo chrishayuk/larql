@@ -45,15 +45,18 @@ pub(super) fn q8k_direct_proj(
             return;
         }
         let w_chunk = &qw.data[row_start * bytes_per_row..(row_start + chunk_len) * bytes_per_row];
-        match qw.format() {
+        let run = match qw.format() {
             crate::QuantFormat::Q4_K => {
                 q4k_q8k_matvec_into(&mut chunk[..chunk_len], x_q8k, w_chunk, chunk_len, in_dim)
             }
             crate::QuantFormat::Q6_K => {
                 q6k_q8k_matvec_into(&mut chunk[..chunk_len], x_q8k, w_chunk, chunk_len, in_dim)
             }
-            _ => {}
-        }
+            _ => Ok(()),
+        };
+        // Every chunk is a sub-slice of the pre-flight-checked whole;
+        // a refusal here is a defect in the chunking, not in the input.
+        run.unwrap_or_else(|e| panic!("q8k_direct_proj: chunk {chunk_idx} refused: {e}"));
     });
     Array2::from_shape_vec((1, num_rows), out).ok()
 }

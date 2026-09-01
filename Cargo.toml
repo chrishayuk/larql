@@ -61,7 +61,12 @@ chunks_exact_to_as_chunks = "allow"
 [workspace.package]
 version = "0.2.0"
 edition = "2021"
-rust-version = "1.88"
+# MSRV. The NEON dot-product intrinsics (`vdotq_s32` and friends,
+# `stdarch_neon_dotprod`) that the VINDEX3 CPU integer path and the
+# cpu7_probe example use stabilised in 1.98; every toolchain from 1.88 to
+# 1.97 refuses them (bisected 2026-09-01). The quality workflow checks
+# this claim under `RUSTUP_TOOLCHAIN`, so it cannot drift silently again.
+rust-version = "1.98"
 authors = []
 license = "Apache-2.0"
 repository = "https://github.com/chrishayuk/larql"

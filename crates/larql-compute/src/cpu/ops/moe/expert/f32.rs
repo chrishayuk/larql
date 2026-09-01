@@ -230,12 +230,14 @@ pub fn run_single_expert_into<'s>(
         let half = inter * row_block_bytes;
         let gate_bytes = &gate_up_bytes[..half];
         let up_bytes = &gate_up_bytes[half..2 * half];
-        q4k_matvec_into(&mut scratch.gate_out, &h_w, gate_bytes, inter, weight_cols);
+        q4k_matvec_into(&mut scratch.gate_out, &h_w, gate_bytes, inter, weight_cols)
+            .unwrap_or_else(|e| panic!("run_single_expert_into: {e}"));
         let t_gate = if timing { Some(t.elapsed()) } else { None };
         if timing {
             t = std::time::Instant::now();
         }
-        q4k_matvec_into(&mut scratch.up_out, &h_w, up_bytes, inter, weight_cols);
+        q4k_matvec_into(&mut scratch.up_out, &h_w, up_bytes, inter, weight_cols)
+            .unwrap_or_else(|e| panic!("run_single_expert_into: {e}"));
         let t_up = if timing { Some(t.elapsed()) } else { None };
         if timing {
             t = std::time::Instant::now();
@@ -255,7 +257,8 @@ pub fn run_single_expert_into<'s>(
             down_bytes,
             hidden,
             inter_padded,
-        );
+        )
+        .unwrap_or_else(|e| panic!("run_single_expert_into: {e}"));
         mlp.add_down_bias(&mut scratch.out);
         let t_down = if timing { Some(t.elapsed()) } else { None };
         if timing {

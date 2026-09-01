@@ -91,7 +91,7 @@ mod tests {
         encode(enc, &pipeline, &h_buf, seq_len, hidden, scalar);
         enc.end_encoding();
         cmd.commit();
-        let _ = crate::cb_status::wait_checked(
+        crate::cb_status::wait_or_abort(
             cmd,
             "crates/larql-compute-metal/src/stages/layer_scalar.rs:94",
         );
@@ -139,7 +139,7 @@ mod tests {
         encode(enc, &pipeline, &h_buf, 1, hidden, 0.0);
         enc.end_encoding();
         cmd.commit();
-        let _ = crate::cb_status::wait_checked(
+        crate::cb_status::wait_or_abort(
             cmd,
             "crates/larql-compute-metal/src/stages/layer_scalar.rs:139",
         );

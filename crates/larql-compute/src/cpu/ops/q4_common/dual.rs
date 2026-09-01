@@ -1,4 +1,5 @@
 use super::f16_to_f32;
+use crate::cpu::ops::KernelShapeError;
 
 /// Fused two-weight Q4_K matvec sharing one input vector.
 ///
@@ -26,41 +27,36 @@ pub fn q4k_dual_matvec_into(
     w_b: &[u8],
     rows: usize,
     cols: usize,
-) {
-    debug_assert_eq!(out_a.len(), rows);
-    debug_assert_eq!(out_b.len(), rows);
-    debug_assert_eq!(x.len(), cols);
-    if rows == 0 || cols == 0 {
-        for v in out_a.iter_mut() {
-            *v = 0.0;
-        }
-        for v in out_b.iter_mut() {
-            *v = 0.0;
-        }
-        return;
-    }
+) -> Result<(), KernelShapeError> {
     const BLOCK_BYTES: usize = 144;
     const ELEMS_PER_BLOCK: usize = 256;
-    if !cols.is_multiple_of(ELEMS_PER_BLOCK) {
-        for v in out_a.iter_mut() {
-            *v = 0.0;
-        }
-        for v in out_b.iter_mut() {
-            *v = 0.0;
-        }
-        return;
+    KernelShapeError::check(
+        "q4k_dual_matvec_into (a)",
+        out_a.len(),
+        rows,
+        x.len(),
+        cols,
+        w_a.len(),
+        ELEMS_PER_BLOCK,
+        BLOCK_BYTES,
+    )?;
+    KernelShapeError::check(
+        "q4k_dual_matvec_into (b)",
+        out_b.len(),
+        rows,
+        x.len(),
+        cols,
+        w_b.len(),
+        ELEMS_PER_BLOCK,
+        BLOCK_BYTES,
+    )?;
+    if rows == 0 || cols == 0 {
+        out_a.fill(0.0);
+        out_b.fill(0.0);
+        return Ok(());
     }
     let n_blocks = cols / ELEMS_PER_BLOCK;
     let row_bytes = n_blocks * BLOCK_BYTES;
-    if w_a.len() < rows * row_bytes || w_b.len() < rows * row_bytes {
-        for v in out_a.iter_mut() {
-            *v = 0.0;
-        }
-        for v in out_b.iter_mut() {
-            *v = 0.0;
-        }
-        return;
-    }
 
     // Precompute sum_x once.
     let n_subblocks = n_blocks * 8;
@@ -167,6 +163,7 @@ pub fn q4k_dual_matvec_into(
             }
         },
     );
+    Ok(())
 }
 
 /// 32-element dual nibble dot product: returns

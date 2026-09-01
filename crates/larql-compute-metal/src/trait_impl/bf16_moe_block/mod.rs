@@ -378,10 +378,14 @@ impl MetalBackend {
         }
         enc.end_encoding();
         cmd.commit();
-        let _ = crate::cb_status::wait_checked(
+        crate::cb_status::wait_checked(
             cmd,
             "crates/larql-compute-metal/src/trait_impl/bf16_moe_block/mod.rs:blocks",
-        );
+        )
+        .map_err(|detail| GroupedError::CommandBufferFailed {
+            site: "crates/larql-compute-metal/src/trait_impl/bf16_moe_block/mod.rs:blocks",
+            detail,
+        })?;
 
         let gpu_ms = crate::decode::gpu_timing::gpu_elapsed_ms(cmd);
         let results: Vec<Vec<f32>> = outs

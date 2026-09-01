@@ -139,7 +139,7 @@ LQL parser and executor are split: [crates/larql-lql/src/parser/](crates/larql-l
 
 ## Build, test, run
 
-**The toolchain is pinned.** [rust-toolchain.toml](rust-toolchain.toml) fixes it at **1.98.0** with clippy and rustfmt; rustup fetches that version automatically, so do not override it with your own `stable`. This exists because CI installs the newest stable while a developer's `stable` is whenever they last ran `rustup update` — the two drifted to 1.95 vs 1.98, and clippy failed in CI on lints that could not be reproduced locally. (`Cargo.toml`'s `rust-version = 1.88` is the MSRV — a different thing, and not what you build with.)
+**The toolchain is pinned.** [rust-toolchain.toml](rust-toolchain.toml) fixes it at **1.98.0** with clippy and rustfmt; rustup fetches that version automatically, so do not override it with your own `stable`. This exists because CI installs the newest stable while a developer's `stable` is whenever they last ran `rustup update` — the two drifted to 1.95 vs 1.98, and clippy failed in CI on lints that could not be reproduced locally. (`Cargo.toml`'s `rust-version` is the MSRV — a different claim, checked by the `quality` workflow's MSRV job under an explicit `RUSTUP_TOOLCHAIN`, because the toolchain file otherwise overrides the installed MSRV compiler and the gate ran at 1.98 while claiming 1.88 for weeks. Today the two coincide at 1.98: the NEON dot-product intrinsics the VINDEX3 CPU integer path uses stabilised there.)
 
 ```bash
 cargo build --release                             # optimised build

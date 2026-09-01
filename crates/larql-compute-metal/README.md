@@ -53,10 +53,20 @@ Two module boundaries are load-bearing rather than tidy:
 - **`diag/` is never on the decode path.** Anything that samples
   timestamps drains the pipeline; keeping it separate is what makes the
   production encoder one uninstrumented encoder.
-- **`cb_status::wait_checked` replaced 77 raw `wait_until_completed()`
-  calls.** A raw wait swallows GPU errors silently. There are ~121 checked
-  call sites now; new code must use the helper, and `cb_status/tests.rs`
-  enforces it by scanning the source tree.
+- **Every command-buffer wait refuses on failure.** A raw
+  `wait_until_completed()` returns for a failed or ignored buffer exactly
+  as for a finished one, with stale bytes in the outputs, so a step that
+  only waited would report garbage at full speed (#229). The rule is that
+  any number this crate contributes to a benchmark comes from an execution
+  that actually completed: `cb_status::wait_checked` hands the failure to
+  callers with an error channel (`GroupedError::CommandBufferFailed` on
+  the Kimi/MLA/KDA and grouped-expert paths, which refuse before any cache
+  advances), `cb_status::wait_or_abort` ends the step for callers without
+  one (a `None` there would be taken as "fall back to the CPU" and the
+  fallback's number reported as the GPU's), and tests `.expect` it.
+  `cb_status/tests.rs` scans the source tree for both a naked wait and a
+  discarded result. A real fault cannot be produced deterministically, so
+  the refusal paths are witnessed through `cb_status::inject_fault_at_for_test`.
 
 ## Operator controls
 
