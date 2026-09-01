@@ -158,7 +158,11 @@ impl TensorSource for RemoteArtifactSource {
     }
 }
 
-#[cfg(test)]
+/// Unix-only: the subject is a filename that is not valid UTF-8, which
+/// Windows paths cannot represent. The gate is on the module rather than
+/// the test, because a `#[cfg(unix)]` test leaves its imports unused
+/// everywhere else and `-D warnings` is a build failure there.
+#[cfg(all(test, unix))]
 mod tests {
     use super::*;
     use crate::format::vindex3::encode::source::TensorSource;
@@ -173,7 +177,6 @@ mod tests {
     /// That is an invariant of the caller and not of the type, and this
     /// arm is what stops a second caller from silently forming a mangled
     /// URL instead of saying it cannot form one at all.
-    #[cfg(unix)]
     #[test]
     fn a_shard_name_that_cannot_be_a_url_is_refused_by_name() {
         use std::os::unix::ffi::OsStrExt;
