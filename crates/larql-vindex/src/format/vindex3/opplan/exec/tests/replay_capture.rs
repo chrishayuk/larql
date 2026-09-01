@@ -33,9 +33,23 @@ use crate::format::vindex3::opplan::exec::cpu::executor::shared;
 use crate::format::vindex3::opplan::exec::cpu::physical::PhysicalProjectionPlan;
 use crate::format::vindex3::opplan::exec::cpu::projector::WeightRows;
 use crate::format::vindex3::opplan::exec::cpu::replay::{
-    captured_bytes, replay, start_capture, take_capture, ReplayOrder,
+    captured_bytes, replay, start_capture, take_capture, Captured, ReplayOrder,
 };
 use crate::format::vindex3::opplan::exec::quantise::{Q4_BLOCK, Q8_BLOCK};
+
+/// Serialises the tests that OPEN a capture.
+///
+/// A capture is process-wide and singular: `start_capture` replaces any
+/// recording in progress, and `take_capture` removes it. Two tests
+/// holding one open at the same time therefore take each other's calls,
+/// no matter how carefully each selects its own operands afterwards —
+/// so opening one is mutually exclusive, and every test below that calls
+/// `start_capture` takes THIS lock, not a lock of its own.
+///
+/// Concurrency with tests that merely PROJECT is not excluded here: that
+/// is the process-wide behaviour the capture is specified to have, and
+/// it is handled by selecting on [`WeightRows::primary_addr`].
+static CAPTURE_TESTS: std::sync::Mutex<()> = std::sync::Mutex::new(());
 
 const ROWS: usize = 3;
 /// One Q8 block wide, so the blocked formats carry real per-block
@@ -108,6 +122,7 @@ impl Operands {
 /// reconstructs all of it in every diagnostic order.
 #[test]
 fn capture_and_replay_carry_every_representation_the_executor_projects() {
+    let _exclusive = CAPTURE_TESTS.lock().unwrap_or_else(|e| e.into_inner());
     let operands = Operands::build();
     let exec = shared().expect("the CPU executor pool");
     let rows = operands.rows();
@@ -118,21 +133,39 @@ fn capture_and_replay_carry_every_representation_the_executor_projects() {
         }
     };
 
+    // A capture is PROCESS-WIDE: it records every projection the process
+    // issues while it is open, which under `cargo test` includes calls
+    // from whatever sibling test is running on another thread. Counting
+    // those would make this assertion a statement about the scheduler.
+    // So select this test's own calls by operand address, which is
+    // unique per live allocation.
+    let mine = |calls: Vec<Captured>| -> Vec<Captured> {
+        let ours: std::collections::BTreeSet<usize> =
+            rows.iter().map(WeightRows::primary_addr).collect();
+        calls
+            .into_iter()
+            .filter(|c| ours.contains(&c.operand_addr()))
+            .collect()
+    };
+
     // Off by default: the projection runs, nothing is kept. A recorder
     // left on would grow behind every later measurement.
     project_all();
-    assert!(take_capture().is_empty(), "capture is off until started");
+    assert!(
+        mine(take_capture()).is_empty(),
+        "capture is off until started"
+    );
 
     start_capture();
     project_all();
-    let calls = take_capture();
+    let calls = mine(take_capture());
     assert_eq!(
         calls.len(),
         rows.len(),
         "one captured call per projection, in issue order"
     );
     assert!(
-        take_capture().is_empty(),
+        mine(take_capture()).is_empty(),
         "taking a capture ends it — a second take must not re-serve the same calls"
     );
 
@@ -178,8 +211,70 @@ fn capture_and_replay_carry_every_representation_the_executor_projects() {
     start_capture();
     project_all();
     assert_eq!(
-        take_capture().len(),
+        mine(take_capture()).len(),
         rows.len(),
         "a new capture starts empty"
+    );
+}
+
+/// A concurrent projection is captured too, and does not disturb the
+/// caller's own count.
+///
+/// The regression for the Windows CI failure at `8ac0b7a7`, where
+/// `capture_and_replay_carry_every_representation_the_executor_projects`
+/// counted SIX calls for five issued: a capture is process-wide, so a
+/// sibling test projecting on another thread landed inside its window.
+///
+/// Two properties have to hold together, and each fails a different old
+/// defect:
+///
+/// ```text
+///   the foreign call IS recorded      record() no longer drops a call
+///                                     that loses a lock probe — latent
+///                                     today (parallel6 is unwired), a
+///                                     silent under-count the moment it
+///                                     is not
+///   the caller's own count is exact   selecting by operand address
+///                                     isolates it from the scheduler
+/// ```
+#[test]
+fn a_concurrent_projection_is_captured_without_disturbing_the_owner_count() {
+    let _exclusive = CAPTURE_TESTS.lock().unwrap_or_else(|e| e.into_inner());
+    let operands = Operands::build();
+    let foreign = Operands::build();
+    let exec = shared().expect("the CPU executor pool");
+    let rows = operands.rows();
+
+    start_capture();
+    std::thread::scope(|s| {
+        // One projection from ANOTHER thread, guaranteed inside the
+        // window because the scope joins before the capture is taken.
+        s.spawn(|| {
+            let w = foreign.rows()[0];
+            let plan = PhysicalProjectionPlan::for_resident(w, K);
+            exec.project(plan.kernel(), w, &foreign.x, ROWS);
+        });
+        for w in &rows {
+            let plan = PhysicalProjectionPlan::for_resident(*w, K);
+            exec.project(plan.kernel(), *w, &operands.x, ROWS);
+        }
+    });
+    let calls = take_capture();
+
+    let ours: std::collections::BTreeSet<usize> =
+        rows.iter().map(WeightRows::primary_addr).collect();
+    let (mine, theirs): (Vec<Captured>, Vec<Captured>) = calls
+        .into_iter()
+        .partition(|c| ours.contains(&c.operand_addr()));
+
+    assert_eq!(
+        mine.len(),
+        rows.len(),
+        "every projection the owner issued is recorded, none dropped"
+    );
+    assert_eq!(
+        theirs.len(),
+        1,
+        "the concurrent call is recorded too — a capture is process-wide"
     );
 }
