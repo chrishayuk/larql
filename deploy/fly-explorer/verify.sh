@@ -114,7 +114,41 @@ AGAIN="$(curl -sS --max-time 180 -X POST "$BASE/v1/plan" \
   || fail "the second ask was not served from cache"
 pass "second ask served from the verdict cache"
 
-# ── 5. the promise, kept ────────────────────────────────────────────
+# ── 5. a hit must not redo the work ─────────────────────────────────
+# Latency alone cannot show this: before the cache moved ahead of the
+# work, a hit was already fast because hf-hub's disk cache had removed
+# the network, while the 39 MB header parse still ran. So measure the
+# round trip to a route that does nothing (/v1/health) and subtract it.
+# What remains is server-side time.
+#
+#   pre-fix hit    0.76-1.81 s of work (reparse from local disk)
+#   post-fix hit   ~0.25 s             (one ranged GET for the commit)
+#
+# measured 2026-09-03 on this box. The threshold sits between them with
+# room either side; it is a deployment signature, not a perf budget.
+MAX_HIT_WORK_S=0.50
+
+floor="$(for _ in 1 2 3; do
+  curl -s -o /dev/null -w '%{time_total}\n' --max-time 60 "$BASE/v1/health"
+done | sort -n | head -1)"
+hit="$(curl -s -o /dev/null --max-time 180 -w '%{time_total}' \
+  -X POST "$BASE/v1/plan" -H 'content-type: application/json' \
+  -d "{\"sources\":[\"$MODEL\"]}")"
+
+python3 - "$floor" "$hit" "$MAX_HIT_WORK_S" <<'PYEOF' || fail "a cache hit is still doing the work it should have skipped"
+import sys
+floor, hit, limit = (float(x) for x in sys.argv[1:])
+work = hit - floor
+print(f"  ok    a hit costs {work:.2f}s of server work "
+      f"({hit:.2f}s minus a {floor:.2f}s network floor), under {limit}s"
+      if work < limit else
+      f"  FAIL  a hit costs {work:.2f}s of server work "
+      f"({hit:.2f}s minus a {floor:.2f}s floor) — at or above the {limit}s "
+      f"ceiling, which is where a full header reparse lands")
+raise SystemExit(0 if work < limit else 1)
+PYEOF
+
+# ── 6. the promise, kept ────────────────────────────────────────────
 CODE="$(curl -sS -o /dev/null -w '%{http_code}' --max-time 60 \
   -X POST "$BASE/v1/plan" -H 'content-type: application/json' \
   -d "{\"sources\":[\"$LOCAL_PROBE\"]}")"
