@@ -42,7 +42,7 @@ pub use resolve::{
     is_remote_spec, resolve, resolve_all, ArtifactPayloads, ResolvedArtifact, INVENTORY_EXT,
 };
 pub use size::size;
-pub use staging::StagingReport;
+pub use staging::{staging_json, StagingReport};
 
 #[cfg(test)]
 mod tests;
