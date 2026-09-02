@@ -18,11 +18,11 @@ use super::support::{
     declare_gated_delta_geometry, declare_hybrid_cadence, glimmer_shaped_target_with,
 };
 use crate::format::vindex3::graph::{build_from_inventories, LayerOperator};
-use crate::format::vindex3::plan::{plan_system, Finding, FindingCategory};
+use crate::format::vindex3::plan::{plan_system, Finding, FindingCategory, PlannedFinding};
 
 /// The plan findings for the hybrid cadence, with the identifying
 /// geometry declared or withheld — the one difference between the arms.
-fn findings_with_geometry(declare_geometry: bool) -> Vec<Finding> {
+fn findings_with_geometry(declare_geometry: bool) -> Vec<PlannedFinding> {
     let dir = tempfile::tempdir().unwrap();
     let inventory = glimmer_shaped_target_with(dir.path(), |config| {
         declare_hybrid_cadence(config);
@@ -37,7 +37,7 @@ fn findings_with_geometry(declare_geometry: bool) -> Vec<Finding> {
         .collect()
 }
 
-fn attention_policy(findings: &[Finding]) -> &Finding {
+fn attention_policy(findings: &[PlannedFinding]) -> &Finding {
     findings
         .iter()
         .find(|f| f.subject == "attention_policy")
@@ -232,7 +232,7 @@ fn the_two_set_spelling_and_the_kda_geometry_both_carry() {
             .unwrap()
             .remove("layer_types");
     });
-    let findings: Vec<Finding> = plan_system(&[("target-artifact".to_string(), inventory)])
+    let findings: Vec<PlannedFinding> = plan_system(&[("target-artifact".to_string(), inventory)])
         .artifacts
         .into_iter()
         .flat_map(|a| a.findings)

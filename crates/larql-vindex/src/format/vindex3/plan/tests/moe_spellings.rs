@@ -8,7 +8,7 @@
 //! an execution surface saying `ffn: dense`.
 
 use super::support::gemma4_shaped_target_with;
-use crate::format::vindex3::plan::{plan_system, Finding, FindingCategory};
+use crate::format::vindex3::plan::{plan_system, FindingCategory, PlannedFinding};
 
 const BRANCH_SCALE: f64 = 2.446;
 const DENSE_PREFIX: usize = 1;
@@ -30,7 +30,7 @@ fn kimi_spellings(config: &mut serde_json::Value) {
     text["first_k_dense_replace"] = serde_json::json!(DENSE_PREFIX);
 }
 
-fn findings_with(mutate: impl FnOnce(&mut serde_json::Value)) -> Vec<Finding> {
+fn findings_with(mutate: impl FnOnce(&mut serde_json::Value)) -> Vec<PlannedFinding> {
     let dir = tempfile::tempdir().unwrap();
     let inventory = gemma4_shaped_target_with(dir.path(), mutate, |_| {});
     plan_system(&[("target-artifact".to_string(), inventory)])
@@ -40,7 +40,7 @@ fn findings_with(mutate: impl FnOnce(&mut serde_json::Value)) -> Vec<Finding> {
         .collect()
 }
 
-fn finding<'a>(findings: &'a [Finding], leaf: &str) -> &'a Finding {
+fn finding<'a>(findings: &'a [PlannedFinding], leaf: &str) -> &'a PlannedFinding {
     findings
         .iter()
         .find(|f| f.subject.ends_with(leaf))

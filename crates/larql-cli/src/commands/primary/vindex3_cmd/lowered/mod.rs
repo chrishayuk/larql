@@ -673,6 +673,16 @@ impl<'a> LoweredSession<'a> {
                             .1;
                         LoweredPosition::Scaled { theta, amplitude }
                     }
+                    // Llama-3 rides the same shared table as YaRN — the
+                    // per-layer `inv_freq` built in `new` — but at unit
+                    // amplitude: the family adjusts frequencies only.
+                    // Written as an explicit 1.0 rather than reusing
+                    // YaRN's arm, so an amplitude can never be inherited
+                    // by a family that does not define one.
+                    PositionPolicy::Llama3 { theta, .. } => LoweredPosition::Scaled {
+                        theta,
+                        amplitude: 1.0,
+                    },
                     // No lowering exists for a relative scheme. It
                     // lowers to `None` — no rotation — and the executor
                     // refuses rather than running it unpositioned, so the

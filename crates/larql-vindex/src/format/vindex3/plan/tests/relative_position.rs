@@ -10,7 +10,7 @@ use larql_models::config::PositionPolicy;
 
 use super::support::glimmer_shaped_target_with;
 use crate::format::vindex3::graph::build_from_inventories;
-use crate::format::vindex3::plan::{plan_system, Finding, FindingCategory};
+use crate::format::vindex3::plan::{plan_system, FindingCategory, PlannedFinding};
 
 const D_REL: usize = 16;
 const REL_EXTENT: usize = 1024;
@@ -78,7 +78,7 @@ fn the_same_fixture_without_the_declaration_still_rotates() {
 fn both_relative_parameters_carry_to_the_position_policy() {
     let dir = tempfile::tempdir().unwrap();
     let inventory = glimmer_shaped_target_with(dir.path(), declare_relative);
-    let findings: Vec<Finding> = plan_system(&[("target-artifact".to_string(), inventory)])
+    let findings: Vec<PlannedFinding> = plan_system(&[("target-artifact".to_string(), inventory)])
         .artifacts
         .into_iter()
         .flat_map(|a| a.findings)

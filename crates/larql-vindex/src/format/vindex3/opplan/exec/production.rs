@@ -250,6 +250,26 @@ pub(super) fn condition_qk_in_place(
                 rope_rotate_scaled(head, position, &plan.inv_freq, amplitude);
             }
         }
+        // Llama-3 through the same served rope planner: wavelength-band
+        // frequencies at full rotary width, unit amplitude. The planner
+        // has implemented this since before the container could express
+        // it — the gap this arm closes was carriage, not mathematics.
+        PositionPolicy::Llama3 { theta, scaling } => {
+            let plan = rope_freq_plan(
+                head_dim,
+                FULL_ROTARY,
+                theta,
+                NO_POSITION_DIVISOR,
+                RopeFreqScaling::Llama3(scaling),
+            );
+            let amplitude = plan.amplitude as f32;
+            for head in q.chunks_exact_mut(head_dim) {
+                rope_rotate_scaled(head, position, &plan.inv_freq, amplitude);
+            }
+            for head in k.chunks_exact_mut(head_dim) {
+                rope_rotate_scaled(head, position, &plan.inv_freq, amplitude);
+            }
+        }
         // Declared, and no backend rotates for it. Refusing is the only
         // honest arm: doing nothing would run the model with no position
         // information at all, which is a wrong answer that produces

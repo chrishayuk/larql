@@ -18,6 +18,8 @@
 
 use serde::{Deserialize, Serialize};
 
+use super::semantics::SemanticCluster;
+
 use super::carriage::Carriage;
 use crate::error::VindexError;
 use crate::format::vindex3::graph::SystemGraph;
@@ -40,7 +42,7 @@ use crate::format::vindex3::graph::SystemGraph;
 /// the immutable commit the facts were read at. A verdict without these
 /// is not attributable, and a plan of an earlier schema is refused by
 /// [`SystemPlan::parse`] rather than read as unattributed.
-pub const PLAN_SCHEMA: u32 = 4;
+pub const PLAN_SCHEMA: u32 = 6;
 
 /// The planner's semantics version.
 ///
@@ -54,7 +56,38 @@ pub const PLAN_SCHEMA: u32 = 4;
 ///
 /// `plan/tests/identity.rs` pins fixture verdicts against this value, so
 /// a change that flips one fails there until the version is bumped.
-pub const PLANNER_SEMANTICS_VERSION: u32 = 1;
+///
+/// **5** — MoE routing. A key declared with no value states that its
+/// subject does not apply and no longer demands a home (Gemma 4's dense
+/// sizes declare `top_k_experts: null`), and Qwen's expert schedule
+/// (`decoder_sparse_step`, `mlp_only_layers`) is judged against its
+/// value: inert at the uniform all-MoE stack, blocking for any real
+/// per-layer topology.
+///
+/// **4** — Llama-3 wavelength-band rope scaling is represented.
+/// `PositionPolicy::Llama3` carries the block, so a checkpoint declaring
+/// `rope_type: "llama3"` is admissible where it used to be refused. Not
+/// new mathematics: `larql-compute` has always implemented the family,
+/// and the gap was that the container had nowhere to say so.
+///
+/// Deliberately NOT bumped for plan schema 6: findings gained an `id` and
+/// a `cluster`, and each capability now names its blockers, but no verdict
+/// moved. The schema says what the document contains; this says whether
+/// its answers are comparable. An instrumentation change that shifted this
+/// number would make every stored verdict falsely incomparable.
+///
+/// **3** — decoding-policy and dropout defaults stopped blocking. They
+/// are preserved as declared facts and classified for what they are
+/// ([`SemanticClass::GenerationPolicy`], [`SemanticClass::TrainingOnly`])
+/// instead of grading `Unknown`, and `pretraining_tp` is judged against
+/// its VALUE, because HF Llama's forward pass reads it above 1.
+///
+/// **2** — the architecture-identity gate. A `model_type` no registry
+/// entry matches, and a container/text pair that resolve to different
+/// architectures, now block instead of passing silently into
+/// `GenericArch`'s Llama-shaped defaults. Measured on the conformance
+/// corpus: 15 of 42 declared `model_type` strings, across 30 checkpoints.
+pub const PLANNER_SEMANTICS_VERSION: u32 = 5;
 
 /// Who judged a plan.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -188,7 +221,7 @@ pub struct ArtifactPlan {
     /// What this artifact's facts were read from.
     pub source: ArtifactSource,
     pub model_type: String,
-    pub findings: Vec<Finding>,
+    pub findings: Vec<PlannedFinding>,
 }
 
 impl SystemPlan {
@@ -241,6 +274,55 @@ impl SystemPlan {
             }
         }
         serde_json::from_str(json).map_err(|e| VindexError::Parse(format!("parse plan: {e}")))
+    }
+}
+
+/// A finding's identity within one plan document.
+///
+/// Assigned by the document, not by the rule that raised the finding: a
+/// rule states something about a subject and has no view on where that
+/// statement sits among the others. Stable for the life of a plan JSON,
+/// which is all a capability closure needs to point at its blockers.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
+#[serde(transparent)]
+pub struct FindingId(pub usize);
+
+/// A finding as it appears in a plan document: what the rule stated, plus
+/// what the document assigns to it.
+///
+/// The split is deliberate. [`Finding`] is a rule's output and carries
+/// only facts the rule established. `id` and `cluster` are *derived*, in
+/// one place, at assembly — so a new finding-raising rule cannot forget
+/// to classify itself, and two rules cannot disagree about which concept
+/// a subject belongs to. Thirty construction sites setting a cluster by
+/// hand is thirty chances to drift.
+///
+/// Serialises flat: a reader sees `id` and `cluster` beside `subject` and
+/// `class`, with no nesting.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct PlannedFinding {
+    pub id: FindingId,
+    /// The model concept this finding is about.
+    pub cluster: SemanticCluster,
+    #[serde(flatten)]
+    pub finding: Finding,
+}
+
+impl std::ops::Deref for PlannedFinding {
+    type Target = Finding;
+    fn deref(&self) -> &Finding {
+        &self.finding
+    }
+}
+
+impl PlannedFinding {
+    /// Wrap a rule's finding, deriving everything the document assigns.
+    pub fn assign(id: usize, finding: Finding) -> Self {
+        Self {
+            id: FindingId(id),
+            cluster: super::semantics::cluster_for(&finding.subject),
+            finding,
+        }
     }
 }
 
@@ -310,6 +392,24 @@ pub enum SemanticClass {
     /// training*, so the reason they are safe to drop is that inference
     /// does not run that path, not that they are identity strings.
     TrainingOnly,
+    /// A decoding-policy default that ships in `config.json` for
+    /// historical reasons — sampling temperature, beam count, banned
+    /// tokens, what `generate()` returns.
+    ///
+    /// Its own class rather than [`Self::TrainingOnly`] or
+    /// [`Self::MetadataOnly`] because it is neither: it is read at
+    /// *inference*, by the decode loop, and it is not an identity fact.
+    /// What makes it inert **for VINDEX3** is narrower and worth stating
+    /// exactly — a container represents the model's computation, and none
+    /// of these change what a forward pass computes; they select among its
+    /// outputs. A caller sets them per request, and a checkpoint's values
+    /// are a suggested default rather than a property of the weights.
+    ///
+    /// Measured on the conformance corpus: 40 such subjects across 8
+    /// checkpoints graded `Unknown` and therefore blocked — GPT-2 was
+    /// refused partly over
+    /// `task_specific_params.text-generation.do_sample`.
+    GenerationPolicy,
     /// A redundant spelling of a fact the checkpoint declares elsewhere
     /// and a parser reads. Safe only while the canonical key is present
     /// and agrees — the registry names it and the gate checks both, so

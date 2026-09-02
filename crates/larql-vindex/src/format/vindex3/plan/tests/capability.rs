@@ -18,11 +18,32 @@ use crate::format::vindex3::graph::{
 use crate::format::vindex3::plan::capability::{
     admissible_for, available_for, requires, supported, Capability,
 };
-use crate::format::vindex3::plan::report::{Finding, FindingCategory, SemanticClass};
+use crate::format::vindex3::plan::report::{
+    Finding, FindingCategory, PlannedFinding, SemanticClass,
+};
 
-fn blocking(component: &str, subject: &str) -> Finding {
+/// A blocking finding, as the document would carry it.
+///
+/// Ids are distinct per fixture because a closure now reports *which*
+/// findings block: two fixtures sharing an id would let a wrong-set bug
+/// pass as a right-count one.
+fn blocking(component: &str, subject: &str) -> PlannedFinding {
+    PlannedFinding::assign(
+        next_id(),
+        raw(FindingCategory::Unrepresented, component, subject),
+    )
+}
+
+fn representable(component: &str, subject: &str) -> PlannedFinding {
+    PlannedFinding::assign(
+        next_id(),
+        raw(FindingCategory::Representable, component, subject),
+    )
+}
+
+fn raw(category: FindingCategory, component: &str, subject: &str) -> Finding {
     Finding {
-        category: FindingCategory::Unrepresented,
+        category,
         class: SemanticClass::ExecutionSemantic,
         component: component.to_string(),
         subject: subject.to_string(),
@@ -33,11 +54,11 @@ fn blocking(component: &str, subject: &str) -> Finding {
     }
 }
 
-fn representable(component: &str, subject: &str) -> Finding {
-    Finding {
-        category: FindingCategory::Representable,
-        ..blocking(component, subject)
-    }
+/// Monotonic fixture ids, so no two findings in one test share one.
+fn next_id() -> usize {
+    use std::sync::atomic::{AtomicUsize, Ordering};
+    static NEXT: AtomicUsize = AtomicUsize::new(0);
+    NEXT.fetch_add(1, Ordering::Relaxed)
 }
 
 fn perception(id: &str, modality: Modality, encoder: bool) -> Component {
@@ -363,7 +384,7 @@ fn the_three_verdicts_are_independent() {
 #[test]
 fn what_is_not_present_is_not_runnable() {
     let g = graph(vec![language()], Vec::new());
-    let findings: Vec<Finding> = Vec::new();
+    let findings: Vec<PlannedFinding> = Vec::new();
     assert!(admissible_for(Capability::TextGeneration, &findings, &g).runnable());
     for capability in [Capability::ImageConditioned, Capability::AudioConditioned] {
         assert!(!available_for(capability, &g));
@@ -396,11 +417,14 @@ fn present_and_supported_is_still_not_runnable_while_semantics_are_open() {
 
 // ── QW-3.5D: capability relevance as a separate judgement ────────────
 
-fn declared_bool(component: &str, subject: &str, value: bool) -> Finding {
-    Finding {
-        declared: Some(serde_json::json!(value)),
-        ..blocking(component, subject)
-    }
+fn declared_bool(component: &str, subject: &str, value: bool) -> PlannedFinding {
+    PlannedFinding::assign(
+        next_id(),
+        Finding {
+            declared: Some(serde_json::json!(value)),
+            ..raw(FindingCategory::Unrepresented, component, subject)
+        },
+    )
 }
 
 /// **D1.** The draft head is required by `Drafting` and by nothing else.
@@ -471,4 +495,50 @@ fn language_model_only_is_excluded_only_when_the_graph_agrees() {
         requires(Capability::TextGeneration, &says_multimodal, &text_only),
         "`false` with nothing to be multimodal about is a contradiction too"
     );
+}
+
+#[test]
+fn a_closure_names_its_blockers_and_not_merely_how_many() {
+    // Why the count was not enough: two checkpoints can report "6 blocking"
+    // and share no concept at all. Leverage — "retiring idea X clears N
+    // rows" — needs the SET, and computing it from whole-model findings
+    // instead made every estimate an upper bound.
+    let g = graph(
+        vec![language(), perception("vis", Modality::Image, true)],
+        Vec::new(),
+    );
+    let text_blocker = blocking("text", "text_config.layer_types");
+    let vision_blocker = blocking("vis", "vision_config.num_heads");
+    let fine = representable("text", "text_config.hidden_size");
+    let text_id = text_blocker.id;
+    let vision_id = vision_blocker.id;
+    let findings = vec![text_blocker, vision_blocker, fine];
+
+    let text = admissible_for(Capability::TextGeneration, &findings, &g);
+    assert_eq!(
+        text.blocker_ids,
+        vec![text_id],
+        "text names its own blocker"
+    );
+    assert_eq!(text.blocking, text.blocker_ids.len(), "count and set agree");
+
+    let image = admissible_for(Capability::ImageConditioned, &findings, &g);
+    assert!(
+        image.blocker_ids.contains(&vision_id),
+        "the vision blocker belongs to the image closure"
+    );
+    // The discriminating arm: the two closures must not report the same
+    // set. A `blocker_ids` that simply echoed every blocking finding would
+    // pass every assertion above.
+    assert_ne!(text.blocker_ids, image.blocker_ids);
+    assert!(!text.blocker_ids.contains(&vision_id));
+}
+
+#[test]
+fn an_admissible_closure_names_no_blockers() {
+    let g = graph(vec![language()], Vec::new());
+    let findings = vec![representable("text", "text_config.hidden_size")];
+    let text = admissible_for(Capability::TextGeneration, &findings, &g);
+    assert!(text.admissible);
+    assert!(text.blocker_ids.is_empty());
 }

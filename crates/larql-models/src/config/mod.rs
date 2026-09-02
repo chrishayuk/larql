@@ -66,7 +66,8 @@ pub use model_config::ModelConfig;
 pub use moe_router::MoeRouterKind;
 pub use norm::{EmbeddingNorm, NormSpec, NormType, ParameterFreeQkNorm, PostNormEps, QkNormScope};
 pub use position::{
-    mrope_axis_table, PositionPolicy, RotaryFrequencyBasis, ROPE_PAIRING_INTERLEAVED,
+    mrope_axis_table, DeclaredRopeScaling, PositionPolicy, RotaryFrequencyBasis,
+    ROPE_PAIRING_INTERLEAVED,
 };
 pub use rope::{Llama3RopeScaling, RopeScaling, YarnRopeScaling};
 pub use rope_types::{

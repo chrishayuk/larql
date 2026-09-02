@@ -22,9 +22,9 @@ use super::backend::{
     PlanBackend, ProjectCall, ProjectedQkv, QkNormCall, RoutedFfnCall,
 };
 use super::kernels::{
-    activate, gather_fused_half_mutated, matvec, mrope_rotate, norm, partial_rotary_frequencies,
-    partial_rotary_slice, rope_rotate, rope_rotate_scaled, sigmoid, softcap, softmax,
-    softmax_with_sink, yarn_frequencies, FusedHalf, GateMutation,
+    activate, gather_fused_half_mutated, llama3_frequencies, matvec, mrope_rotate, norm,
+    partial_rotary_frequencies, partial_rotary_slice, rope_rotate, rope_rotate_scaled, sigmoid,
+    softcap, softmax, softmax_with_sink, yarn_frequencies, FusedHalf, GateMutation,
 };
 use crate::error::VindexError;
 use larql_models::config::NormType;
@@ -188,6 +188,20 @@ impl ReferenceBackend {
                 }
                 for head in k.chunks_exact_mut(head_dim) {
                     rope_rotate_scaled(head, position, &inv_freq, amplitude);
+                }
+            }
+            // Llama-3, transcribed: wavelength-band frequencies at unit
+            // amplitude. `UNIT_AMPLITUDE` is passed explicitly rather
+            // than defaulted, so an amplitude arriving here later has to
+            // be written down rather than inherited.
+            PositionPolicy::Llama3 { theta, scaling } => {
+                const UNIT_AMPLITUDE: f32 = 1.0;
+                let inv_freq = llama3_frequencies(&scaling, head_dim, theta);
+                for head in q.chunks_exact_mut(head_dim) {
+                    rope_rotate_scaled(head, position, &inv_freq, UNIT_AMPLITUDE);
+                }
+                for head in k.chunks_exact_mut(head_dim) {
+                    rope_rotate_scaled(head, position, &inv_freq, UNIT_AMPLITUDE);
                 }
             }
             // See `production.rs`: no backend rotates for a relative

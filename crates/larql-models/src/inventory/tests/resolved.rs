@@ -633,3 +633,42 @@ fn inconsistent_tensor_evidence_settles_nothing() {
     let (_, topology) = resolve_with_tensor_evidence(&config, &identity, &[]);
     assert!(topology.layers.iter().all(|l| l.declared_kind.is_none()));
 }
+
+#[test]
+fn a_nested_text_declaration_does_not_erase_the_container_one() {
+    // Kimi K3: the container says `kimi_k3`, the text component says
+    // `kimi_linear`. The reader prefers the text declaration, so before
+    // this the container's was simply gone by the time anything could
+    // judge it — and `kimi_linear` resolves, so detection would have
+    // dispatched a 93-layer model to the 48B implementation without a
+    // word. Both declarations must reach the gate.
+    let identity = read_identity(&serde_json::json!({
+        "model_type": "kimi_k3",
+        "text_config": { "model_type": "kimi_linear", "num_hidden_layers": 93 },
+    }));
+    assert_eq!(identity.model_type, "kimi_linear");
+    assert_eq!(identity.container_model_type.as_deref(), Some("kimi_k3"));
+}
+
+#[test]
+fn a_flat_config_declares_once_and_reports_no_second_fact() {
+    // The control: without it, every flat checkpoint would report its own
+    // `model_type` as a container declaration and the conflict gate would
+    // be comparing a fact with itself.
+    let identity = read_identity(&serde_json::json!({ "model_type": "llama" }));
+    assert_eq!(identity.model_type, "llama");
+    assert_eq!(identity.container_model_type, None);
+}
+
+#[test]
+fn a_text_config_that_declares_nothing_leaves_the_container_authoritative() {
+    // A nested block exists but states no identity: the container's
+    // declaration is the only one, so there is nothing to reconcile and
+    // reporting a second fact would invent a disagreement.
+    let identity = read_identity(&serde_json::json!({
+        "model_type": "gemma3",
+        "text_config": { "num_hidden_layers": 26 },
+    }));
+    assert_eq!(identity.model_type, "gemma3");
+    assert_eq!(identity.container_model_type, None);
+}

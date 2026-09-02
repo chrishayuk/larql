@@ -164,7 +164,7 @@ pub const CARRIAGE_RULES: &[CarriageRule] = &[
         // rope class (llama3, dynamic, ...) still has no variant and
         // mismatches here — represented, not lowered: the interpreter and
         // the lowering refuse a YaRN layer until A-9.3/A-9.4 execute it.
-        site: "Component.attention[].position (PositionPolicy::Rope | Yarn)",
+        site: "Component.attention[].position (PositionPolicy::Rope | Yarn | Llama3)",
         probe: Some(probe_rope_type),
     },
     // The YaRN block's own leaves, each carried on `PositionPolicy::Yarn`
@@ -174,8 +174,8 @@ pub const CARRIAGE_RULES: &[CarriageRule] = &[
     CarriageRule {
         leaf: "factor",
         reaches: Carriage::Represented,
-        site: "Component.attention[].position (PositionPolicy::Yarn.scaling.factor)",
-        probe: Some(probe_yarn_factor),
+        site: "Component.attention[].position ({Yarn,Llama3}.scaling.factor)",
+        probe: Some(probe_scaling_factor),
     },
     CarriageRule {
         leaf: "beta_fast",
@@ -198,8 +198,8 @@ pub const CARRIAGE_RULES: &[CarriageRule] = &[
     CarriageRule {
         leaf: "original_max_position_embeddings",
         reaches: Carriage::Represented,
-        site: "Component.attention[].position (PositionPolicy::Yarn.scaling.original_max_position_embeddings)",
-        probe: Some(probe_yarn_original_max),
+        site: "Component.attention[].position ({Yarn,Llama3}.scaling.original_max_position_embeddings)",
+        probe: Some(probe_scaling_original_max),
     },
     CarriageRule {
         leaf: "type",
@@ -213,17 +213,19 @@ pub const CARRIAGE_RULES: &[CarriageRule] = &[
     CarriageRule {
         leaf: "low_freq_factor",
         reaches: Carriage::Represented,
-        // Llama-3-style rope scaling — a different scaling convention from
-        // the YaRN one `factor`/`beta_fast`/etc. above represent.
-        // `PositionPolicy::Yarn` has no field for it; always refuses.
-        site: "no schema field — Llama-3 rope scaling is not represented yet",
-        probe: Some(probe_unrepresented),
+        // Llama-3 wavelength-band scaling, carried on its own policy
+        // variant. It is NOT the YaRN convention `beta_fast`/`beta_slow`
+        // above represent: llama3 adjusts frequencies by wavelength band
+        // and leaves the amplitude at unity, where YaRN also rescales
+        // every logit. Two conventions, two blocks, one probe each.
+        site: "Component.attention[].position (PositionPolicy::Llama3.scaling.low_freq_factor)",
+        probe: Some(probe_llama3_low_freq),
     },
     CarriageRule {
         leaf: "high_freq_factor",
         reaches: Carriage::Represented,
-        site: "no schema field — Llama-3 rope scaling is not represented yet",
-        probe: Some(probe_unrepresented),
+        site: "Component.attention[].position (PositionPolicy::Llama3.scaling.high_freq_factor)",
+        probe: Some(probe_llama3_high_freq),
     },
     CarriageRule {
         leaf: "mscale",
@@ -1457,8 +1459,38 @@ fn yarn_block(component: &Component) -> Option<larql_models::YarnRopeScaling> {
         .find_map(|l| l.position.yarn())
 }
 
-fn probe_yarn_factor(component: &Component, _ctx: &ProbeContext<'_>) -> Option<Value> {
-    Some(json!(yarn_block(component)?.factor))
+/// The Llama-3 block a built layer carries, if any.
+fn llama3_block(component: &Component) -> Option<larql_models::Llama3RopeScaling> {
+    component
+        .attention
+        .as_ref()?
+        .iter()
+        .find_map(|l| l.position.llama3())
+}
+
+/// `factor` means the same thing in both scaling families — the extension
+/// ratio — so it is answered from whichever block the layer carries.
+///
+/// Asked of both deliberately. Before Llama-3 had a variant this probe
+/// read the YaRN block alone, so a checkpoint declaring `rope_type:
+/// "llama3"` had its `factor` reported as unanswered and blocked: the
+/// carriage rule claimed a home the schema did not yet have. Answering
+/// from one family and defaulting the other would have been the worse
+/// fix, since the two are alternatives and a wrong `factor` is a wrong
+/// long-context model.
+fn probe_scaling_factor(component: &Component, _ctx: &ProbeContext<'_>) -> Option<Value> {
+    let factor = yarn_block(component)
+        .map(|y| y.factor)
+        .or_else(|| llama3_block(component).map(|l| l.factor))?;
+    Some(json!(factor))
+}
+
+fn probe_llama3_low_freq(component: &Component, _ctx: &ProbeContext<'_>) -> Option<Value> {
+    Some(json!(llama3_block(component)?.low_freq_factor))
+}
+
+fn probe_llama3_high_freq(component: &Component, _ctx: &ProbeContext<'_>) -> Option<Value> {
+    Some(json!(llama3_block(component)?.high_freq_factor))
 }
 
 fn probe_yarn_beta_fast(component: &Component, _ctx: &ProbeContext<'_>) -> Option<Value> {
@@ -1473,10 +1505,13 @@ fn probe_yarn_truncate(component: &Component, _ctx: &ProbeContext<'_>) -> Option
     Some(json!(yarn_block(component)?.truncate))
 }
 
-fn probe_yarn_original_max(component: &Component, _ctx: &ProbeContext<'_>) -> Option<Value> {
-    Some(json!(
-        yarn_block(component)?.original_max_position_embeddings
-    ))
+/// The pre-trained context window, from whichever scaling block declares
+/// it. Both families define their bands against it.
+fn probe_scaling_original_max(component: &Component, _ctx: &ProbeContext<'_>) -> Option<Value> {
+    let original = yarn_block(component)
+        .map(|y| y.original_max_position_embeddings)
+        .or_else(|| llama3_block(component).map(|l| l.original_max_position_embeddings))?;
+    Some(json!(original))
 }
 
 /// Per-layer span kinds in the checkpoint's own vocabulary, so the

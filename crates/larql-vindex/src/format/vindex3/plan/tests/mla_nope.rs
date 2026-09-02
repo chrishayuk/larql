@@ -19,7 +19,7 @@ use larql_models::config::PositionPolicy;
 
 use super::support::glimmer_shaped_target_with;
 use crate::format::vindex3::graph::build_from_inventories;
-use crate::format::vindex3::plan::{plan_system, Finding, FindingCategory};
+use crate::format::vindex3::plan::{plan_system, FindingCategory, PlannedFinding};
 
 const KIMI_ROPE_WIDTH: usize = 64;
 const DECLARED_THETA: f64 = 10000.0;
@@ -91,7 +91,7 @@ fn an_absent_flag_does_not_resolve_nope() {
     assert!(!policies.iter().all(|p| *p == PositionPolicy::None));
 }
 
-fn findings(mutate: impl FnOnce(&mut serde_json::Value)) -> Vec<Finding> {
+fn findings(mutate: impl FnOnce(&mut serde_json::Value)) -> Vec<PlannedFinding> {
     let dir = tempfile::tempdir().unwrap();
     let inventory = glimmer_shaped_target_with(dir.path(), mutate);
     plan_system(&[("target-artifact".to_string(), inventory)])
@@ -104,7 +104,7 @@ fn findings(mutate: impl FnOnce(&mut serde_json::Value)) -> Vec<Finding> {
 /// Every finding about the checkpoint-wide rope base. Two rules speak to
 /// it — the declared-vs-resolved comparator and the carriage rule — and a
 /// verdict is only honest if both agree.
-fn rope_theta_findings(findings: &[Finding]) -> Vec<&Finding> {
+fn rope_theta_findings(findings: &[PlannedFinding]) -> Vec<&PlannedFinding> {
     findings
         .iter()
         .filter(|f| f.subject.ends_with("rope_theta") && !f.subject.contains("layer_"))

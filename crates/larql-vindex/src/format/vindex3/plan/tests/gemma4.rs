@@ -11,20 +11,22 @@ use crate::format::vindex3::plan::tests_support::{
     GEMMA4_FULL_THETA, GEMMA4_GLOBAL_HEAD_DIM, GEMMA4_GLOBAL_KV_HEADS, GEMMA4_HEAD_DIM,
     GEMMA4_KV_HEADS, GEMMA4_PARTIAL_ROTARY, GEMMA4_SLIDING_THETA, GEMMA4_TOP_K,
 };
-use crate::format::vindex3::plan::{plan_system, Finding, FindingCategory, SystemPlan};
+use crate::format::vindex3::plan::{
+    plan_system, Finding, FindingCategory, PlannedFinding, SystemPlan,
+};
 
 fn plan_of(inventory: larql_models::inventory::ArchitectureInventory) -> SystemPlan {
     plan_system(&[("gemma4-artifact".to_string(), inventory)])
 }
 
-fn findings(plan: &SystemPlan) -> Vec<&Finding> {
+fn findings(plan: &SystemPlan) -> Vec<&PlannedFinding> {
     plan.artifacts
         .iter()
         .flat_map(|a| a.findings.iter())
         .collect()
 }
 
-fn finding_for<'a>(plan: &'a SystemPlan, subject: &str) -> &'a Finding {
+fn finding_for<'a>(plan: &'a SystemPlan, subject: &str) -> &'a PlannedFinding {
     findings(plan)
         .into_iter()
         .find(|f| f.subject == subject)

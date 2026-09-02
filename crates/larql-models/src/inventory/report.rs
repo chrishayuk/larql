@@ -91,6 +91,24 @@ pub struct ArchitectureInventory {
 pub struct Identity {
     /// `model_type`, read from `text_config` first, then top level.
     pub model_type: String,
+    /// The *other* declaration, when a nested text config supplied
+    /// [`Self::model_type`] and the container declares one too.
+    ///
+    /// Kept because the two are not interchangeable facts and the reader
+    /// above throws one of them away. Kimi K3 declares `kimi_k3` at the
+    /// container and `kimi_linear` under `text_config`: taking the text
+    /// declaration alone dispatches a 93-layer, 1.56 TB model to the
+    /// Kimi-Linear-48B implementation, and taking the container alone
+    /// falls to the generic architecture. Neither reading refuses, so
+    /// both declarations have to survive as far as the gate that can.
+    ///
+    /// `None` when the config is flat, or when only one level declares.
+    /// Usually equal-in-meaning rather than conflicting — 27 of the 28
+    /// checkpoints in the conformance corpus that declare at both levels
+    /// use the `<container>_text` suffix form — so the divergence that
+    /// matters is not string inequality but the two resolving to
+    /// different architectures.
+    pub container_model_type: Option<String>,
     /// HF `architectures` list, verbatim.
     pub architectures: Vec<String>,
     /// Checkpoint dtype (`dtype` or `torch_dtype`).

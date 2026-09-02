@@ -122,8 +122,19 @@ impl RopeScaling {
 ///
 /// Applied as a wavelength-dependent per-channel adjustment to `inv_freq`
 /// — see HF's `_compute_llama3_parameters` in `modeling_rope_utils.py`.
-/// The actual math lives in `larql-inference::attention::rope`.
-#[derive(Debug, Clone, Copy)]
+/// The actual math lives in `larql-compute::attention::rope::llama3`.
+///
+/// Serialisable and comparable for the same reason [`YarnRopeScaling`]
+/// is: [`PositionPolicy::Llama3`] carries it into the VINDEX3 container.
+/// Before that variant existed the block had nowhere to live at the
+/// container boundary, so a checkpoint declaring `rope_type: "llama3"`
+/// resolved to plain `Rope { theta }` — every Llama 3.x model refused at
+/// `plan`, correctly, because encoding one would have served the wrong
+/// long-context behaviour. The engine could always run it; the schema
+/// could not say it.
+///
+/// [`PositionPolicy::Llama3`]: super::position::PositionPolicy::Llama3
+#[derive(Debug, Clone, Copy, PartialEq, serde::Serialize, serde::Deserialize)]
 pub struct Llama3RopeScaling {
     pub factor: f64,
     pub low_freq_factor: f64,

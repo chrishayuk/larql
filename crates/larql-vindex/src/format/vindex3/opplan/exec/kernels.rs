@@ -309,6 +309,51 @@ pub fn yarn_frequencies(
     (inv_freq, scaling.attention_amplitude() as f32)
 }
 
+/// Llama-3 wavelength-band frequencies, transcribed from HF's
+/// `_compute_llama3_parameters`.
+///
+/// An independent transcription, like [`yarn_frequencies`] beside it —
+/// the reference exec path exists to disagree with the production one
+/// when the production one is wrong, which it cannot do by calling it.
+///
+/// Frequencies only. Unlike YaRN there is no amplitude term: `cos` and
+/// `sin` keep unit scale, so this returns no second value. Giving it one
+/// "for symmetry" would invite a caller to apply an attention-temperature
+/// change that Llama-3 does not specify.
+///
+/// Each half-pair's wavelength `2π / inv_freq` is compared against two
+/// thresholds derived from the *pre-trained* context window:
+/// - shorter than `original / high_freq_factor` — rotating fast enough to
+///   be unaffected by the extension, left alone;
+/// - longer than `original / low_freq_factor` — divided by `factor`;
+/// - between them — a smooth blend of the two.
+pub fn llama3_frequencies(
+    scaling: &larql_models::Llama3RopeScaling,
+    head_dim: usize,
+    theta: f64,
+) -> Vec<f64> {
+    let half = head_dim / 2;
+    let d = head_dim as f64;
+    let low_freq_wavelen = scaling.original_max_position_embeddings / scaling.low_freq_factor;
+    let high_freq_wavelen = scaling.original_max_position_embeddings / scaling.high_freq_factor;
+    (0..half)
+        .map(|i| {
+            let inv_freq = theta.powf(-2.0 * i as f64 / d);
+            let wavelen = std::f64::consts::TAU / inv_freq;
+            if wavelen < high_freq_wavelen {
+                inv_freq
+            } else if wavelen > low_freq_wavelen {
+                inv_freq / scaling.factor
+            } else {
+                let smooth = (scaling.original_max_position_embeddings / wavelen
+                    - scaling.low_freq_factor)
+                    / (scaling.high_freq_factor - scaling.low_freq_factor);
+                (1.0 - smooth) * inv_freq / scaling.factor + smooth * inv_freq
+            }
+        })
+        .collect()
+}
+
 /// Tanh softcap: `cap * tanh(x / cap)`.
 pub fn softcap(x: f32, cap: f32) -> f32 {
     cap * (x / cap).tanh()
@@ -422,4 +467,67 @@ pub fn gather_fused_half_mutated(
         return full[start..start + rows].to_vec();
     }
     gather_fused_half(full, num_heads, head_dim, half)
+}
+
+#[cfg(test)]
+mod llama3_tests {
+    use super::llama3_frequencies;
+
+    fn scaling() -> larql_models::Llama3RopeScaling {
+        // Llama-3.2-1B's own block.
+        larql_models::Llama3RopeScaling {
+            factor: 32.0,
+            low_freq_factor: 1.0,
+            high_freq_factor: 4.0,
+            original_max_position_embeddings: 8192.0,
+        }
+    }
+
+    /// The reference transcription and the production planner are two
+    /// independent implementations of `_compute_llama3_parameters`, and
+    /// the reference is only worth having if it can disagree. It must
+    /// agree here.
+    #[test]
+    fn the_reference_transcription_matches_the_production_planner() {
+        const HEAD_DIM: usize = 64;
+        const THETA: f64 = 500000.0;
+        let reference = llama3_frequencies(&scaling(), HEAD_DIM, THETA);
+        let base: Vec<f64> = (0..HEAD_DIM / 2)
+            .map(|i| THETA.powf(-2.0 * i as f64 / HEAD_DIM as f64))
+            .collect();
+        let production = larql_compute::attention::rope::apply_llama3_inv_freq(&scaling(), &base);
+        assert_eq!(reference.len(), production.len());
+        for (i, (r, p)) in reference.iter().zip(&production).enumerate() {
+            assert!(
+                (r - p).abs() <= 1e-12 * p.abs().max(1.0),
+                "dim {i}: reference {r} vs production {p}"
+            );
+        }
+    }
+
+    /// The control. Without it the parity test above would pass for an
+    /// implementation that ignored the block entirely and returned the
+    /// unscaled frequencies — which is exactly the behaviour the whole
+    /// variant exists to stop.
+    #[test]
+    fn scaling_actually_moves_the_low_frequencies() {
+        const HEAD_DIM: usize = 64;
+        const THETA: f64 = 500000.0;
+        let scaled = llama3_frequencies(&scaling(), HEAD_DIM, THETA);
+        let plain: Vec<f64> = (0..HEAD_DIM / 2)
+            .map(|i| THETA.powf(-2.0 * i as f64 / HEAD_DIM as f64))
+            .collect();
+        // Fast-rotating dimensions are left alone...
+        assert_eq!(scaled[0], plain[0], "the fastest band must be untouched");
+        // ...and the slowest are divided by the factor. If these matched,
+        // the model would be served at its pre-training context length.
+        let last = scaled.len() - 1;
+        assert!(
+            (scaled[last] - plain[last] / 32.0).abs() < 1e-12,
+            "slowest band: {} vs {}",
+            scaled[last],
+            plain[last] / 32.0
+        );
+        assert_ne!(scaled, plain);
+    }
 }

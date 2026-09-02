@@ -8,14 +8,14 @@ use super::support::{
     declare_gated_delta_geometry, declare_hybrid_cadence, glimmer_shaped_target_with,
     FIXTURE_LAYERS,
 };
-use crate::format::vindex3::plan::{plan_system, Finding, FindingCategory, SemanticClass};
+use crate::format::vindex3::plan::{plan_system, FindingCategory, PlannedFinding, SemanticClass};
 
 /// The Glimmer-shaped fixture with its `layer_types` swapped for a
 /// Qwen3.5-style hybrid interleave — three `linear_attention` layers to
 /// one `full_attention` layer — plus the declared-but-unexecuted hybrid
 /// linear-attention / MTP / mRoPE fields a real Qwen3.5 `config.json`
 /// carries alongside it.
-fn hybrid_findings() -> Vec<Finding> {
+fn hybrid_findings() -> Vec<PlannedFinding> {
     let dir = tempfile::tempdir().unwrap();
     let inventory = glimmer_shaped_target_with(dir.path(), |config| {
         declare_hybrid_cadence(config);
@@ -43,7 +43,7 @@ fn hybrid_findings() -> Vec<Finding> {
         .collect()
 }
 
-fn finding_for<'a>(findings: &'a [Finding], suffix: &str) -> &'a Finding {
+fn finding_for<'a>(findings: &'a [PlannedFinding], suffix: &str) -> &'a PlannedFinding {
     findings
         .iter()
         .find(|f| f.subject.ends_with(suffix))
@@ -69,7 +69,7 @@ fn finding_for<'a>(findings: &'a [Finding], suffix: &str) -> &'a Finding {
 #[test]
 fn a_declared_linear_attention_interleave_is_carried_on_both_findings() {
     let findings = hybrid_findings();
-    let layer_types_findings: Vec<&Finding> = findings
+    let layer_types_findings: Vec<&PlannedFinding> = findings
         .iter()
         .filter(|f| f.subject == "text_config.layer_types")
         .collect();
@@ -137,12 +137,12 @@ fn an_unrecognised_spelling_still_blocks_on_both_findings() {
             .collect();
         config["text_config"]["layer_types"] = serde_json::json!(layer_types);
     });
-    let findings: Vec<Finding> = plan_system(&[("target-artifact".to_string(), inventory)])
+    let findings: Vec<PlannedFinding> = plan_system(&[("target-artifact".to_string(), inventory)])
         .artifacts
         .into_iter()
         .flat_map(|a| a.findings)
         .collect();
-    let layer_types_findings: Vec<&Finding> = findings
+    let layer_types_findings: Vec<&PlannedFinding> = findings
         .iter()
         .filter(|f| f.subject == "text_config.layer_types")
         .collect();
@@ -406,7 +406,7 @@ fn full_attention_interval_is_a_non_blocking_alias() {
 /// is always emitted is one this assertion could never fail on.
 #[test]
 fn attention_policy_summary_counts_a_recurrence_and_reserves_the_disclosure() {
-    let summary_for = |findings: &[Finding]| {
+    let summary_for = |findings: &[PlannedFinding]| {
         findings
             .iter()
             .find(|f| f.subject == "attention_policy")
@@ -434,7 +434,7 @@ fn attention_policy_summary_counts_a_recurrence_and_reserves_the_disclosure() {
         config["text_config"]["layer_types"] =
             serde_json::json!(vec!["hyena_attention"; FIXTURE_LAYERS]);
     });
-    let unknown: Vec<Finding> = plan_system(&[("target-artifact".to_string(), inventory)])
+    let unknown: Vec<PlannedFinding> = plan_system(&[("target-artifact".to_string(), inventory)])
         .artifacts
         .into_iter()
         .flat_map(|a| a.findings)
@@ -530,7 +530,7 @@ fn a_section_that_does_not_close_the_arithmetic_blocks() {
         // fraction gives 4.
         config["text_config"]["rope_parameters"]["mrope_section"] = serde_json::json!([1, 1, 1]);
     });
-    let findings: Vec<Finding> = plan_system(&[("target-artifact".to_string(), inventory)])
+    let findings: Vec<PlannedFinding> = plan_system(&[("target-artifact".to_string(), inventory)])
         .artifacts
         .into_iter()
         .flat_map(|a| a.findings)
