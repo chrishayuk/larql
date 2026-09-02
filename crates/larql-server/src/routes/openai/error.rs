@@ -135,6 +135,19 @@ impl OpenAIError {
             code: None,
         }
     }
+
+    /// The serving profile will not do this for this caller. Kept
+    /// distinct from `not_implemented`: the capability exists, and the
+    /// same request succeeds on a server serving a different profile.
+    pub fn permission_denied(message: impl Into<String>) -> Self {
+        Self {
+            status: StatusCode::FORBIDDEN,
+            message: message.into(),
+            error_type: "permission_error",
+            param: None,
+            code: None,
+        }
+    }
 }
 
 impl From<ServerError> for OpenAIError {
@@ -147,6 +160,7 @@ impl From<ServerError> for OpenAIError {
             ServerError::Timeout(m) => OpenAIError::timeout(m),
             ServerError::Conflict(m) => OpenAIError::conflict(m),
             ServerError::Unsupported(m) => OpenAIError::not_implemented(m),
+            ServerError::Refused(m) => OpenAIError::permission_denied(m),
         }
     }
 }

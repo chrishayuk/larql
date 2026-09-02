@@ -23,6 +23,7 @@ pub mod maintenance;
 pub mod memcheck;
 pub mod metrics;
 pub mod openapi;
+pub mod plan_service;
 pub mod ratelimit;
 pub mod response_kv;
 pub mod response_store;

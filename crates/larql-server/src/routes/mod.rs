@@ -13,6 +13,7 @@ pub mod models;
 pub mod openai;
 pub mod patches;
 pub(crate) mod paths;
+pub mod plan;
 pub mod query;
 pub mod relations;
 pub mod runtime;
@@ -96,12 +97,27 @@ impl Mount {
             mounted.record(CAPABILITIES),
             "capabilities mounted twice: {CAPABILITIES}"
         );
+        // Planning is served on every profile — it reads a source's
+        // headers and builds nothing, so it is safe to offer publicly.
+        // WHICH sources a profile will plan is the policy question, and
+        // it lives in one place that both the handler and the
+        // capability report ask (`capabilities::plans_source`).
+        assert!(mounted.record(PLAN), "plan mounted twice: {PLAN}");
+
         let caps = Arc::new(Capabilities::derive(profile, mounted));
-        let mut app = router.with_state(state).merge(
-            Router::new()
-                .route(CAPABILITIES, get(capabilities::handle_capabilities))
-                .with_state(caps),
-        );
+        let planning = Arc::new(crate::plan_service::PlanService::new(profile));
+        let mut app = router
+            .with_state(state)
+            .merge(
+                Router::new()
+                    .route(CAPABILITIES, get(capabilities::handle_capabilities))
+                    .with_state(caps),
+            )
+            .merge(
+                Router::new()
+                    .route(PLAN, post(plan::handle_plan))
+                    .with_state(planning),
+            );
         for graft in grafts {
             app = app.merge(graft);
         }
