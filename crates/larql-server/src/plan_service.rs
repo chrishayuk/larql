@@ -227,7 +227,10 @@ struct Planned {
 fn plan_specs(specs: &[PathBuf]) -> Result<Planned, ServerError> {
     let resolved = artifact::resolve_all(specs)
         .map_err(|e| ServerError::BadRequest(format!("cannot read this source: {e}")))?;
-    let staging: Vec<Value> = resolved.iter().filter_map(artifact::staging_json).collect();
+    let staging: Vec<Value> = resolved
+        .iter()
+        .filter_map(artifact::ResolvedArtifact::staging_json)
+        .collect();
 
     let plan = plan_resolved(specs, resolved)
         .map_err(|e| ServerError::BadRequest(format!("cannot plan this source: {e}")))?;
