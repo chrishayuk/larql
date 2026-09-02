@@ -1,0 +1,89 @@
+# Reject generator attribution before it becomes part of main's immutable
+# history. GitHub commit-metadata push rules are unavailable for public
+# repositories, so this check is made required by the main-branch ruleset.
+
+name: commit messages
+
+on:
+  pull_request:
+    branches: [main]
+    types: [opened, synchronize, reopened, edited]
+
+permissions:
+  contents: read
+  pull-requests: read
+
+jobs:
+  generated-attribution:
+    name: no generated attribution
+    runs-on: ubuntu-latest
+    timeout-minutes: 2
+    steps:
+      # No checkout: the check reads commit metadata through the API and never
+      # executes code from the pull request.
+      - name: Inspect every pull-request commit
+        uses: actions/github-script@v8
+        with:
+          script: |
+            const {owner, repo} = context.repo;
+            const pullNumber = context.payload.pull_request.number;
+            const commits = await github.paginate(
+              github.rest.pulls.listCommits,
+              {owner, repo, pull_number: pullNumber, per_page: 100},
+            );
+
+            const forbidden = [
+              {
+                label: "Claude co-author trailer",
+                pattern: /^co-authored-by:\s*claude(?:\s|$)/im,
+              },
+              {
+                label: "Claude session metadata",
+                pattern: /^claude-session:/im,
+              },
+              {
+                label: "Claude Code generator attribution",
+                pattern: /generated\s+(?:with|by)\s+\[?claude code\]?/i,
+              },
+              {
+                label: "Claude Code session URL",
+                pattern: /https:\/\/claude\.ai\/code\/session_/i,
+              },
+            ];
+
+            const findings = [];
+
+            function inspect(where, value) {
+              for (const rule of forbidden) {
+                if (!rule.pattern.test(value)) continue;
+                const line = value
+                  .split(/\r?\n/)
+                  .find(candidate => rule.pattern.test(candidate));
+                findings.push({where, label: rule.label, line: line ?? value});
+              }
+            }
+
+            for (const commit of commits) {
+              inspect(commit.sha.slice(0, 12), commit.commit.message);
+            }
+            inspect(
+              `PR #${pullNumber} title`,
+              context.payload.pull_request.title,
+            );
+
+            for (const finding of findings) {
+              core.error(
+                `${finding.where}: ${finding.label}: ${finding.line.trim()}`,
+              );
+            }
+
+            if (findings.length > 0) {
+              core.setFailed(
+                `${findings.length} generated attribution marker(s) found. ` +
+                "Remove them by rewriting the affected commit message(s).",
+              );
+            } else {
+              core.info(
+                `${commits.length} commit message(s) and the PR title are clean.`,
+              );
+            }
