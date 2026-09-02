@@ -8,6 +8,8 @@
 //! not pass silently, because "unconsumed and unjudged" is exactly the
 //! silent-default shape the whole instrument exists to catch.
 
+use serde::{Deserialize, Serialize};
+
 use super::report::SemanticClass;
 
 /// Keys that change what a forward pass computes: norms, activations,
@@ -596,6 +598,540 @@ pub fn alias_canonical(leaf: &str) -> Option<&'static str> {
         .map(|(_, canonical)| *canonical)
 }
 
+/// `generate()` defaults that ship inside `config.json`.
+///
+/// Transformers moved decoding policy to `generation_config.json` years
+/// ago and still reads these from the model config for old checkpoints,
+/// so they keep appearing. Every entry selects among a forward pass's
+/// outputs or says what `generate()` returns; none changes what the
+/// forward pass computes, which is what a container represents.
+///
+/// The contract is the same as every table here: an entry is a claim
+/// about a specific key, not a pattern. `top_k` is listed because it is
+/// the sampling cutoff; MoE's `num_experts_per_tok` is the routing
+/// top-k and is execution-semantic, which is exactly why membership is
+/// by exact leaf name and never by a substring.
+pub const GENERATION_POLICY_KEYS: &[&str] = &[
+    // Sampling policy.
+    "do_sample",
+    "temperature",
+    "top_k",
+    "top_p",
+    "typical_p",
+    "epsilon_cutoff",
+    "eta_cutoff",
+    "repetition_penalty",
+    "encoder_repetition_penalty",
+    "length_penalty",
+    "no_repeat_ngram_size",
+    "encoder_no_repeat_ngram_size",
+    "exponential_decay_length_penalty",
+    "renormalize_logits",
+    "remove_invalid_values",
+    // Search policy.
+    "num_beams",
+    "num_beam_groups",
+    "diversity_penalty",
+    "early_stopping",
+    "num_return_sequences",
+    "penalty_alpha",
+    // Length policy.
+    "max_length",
+    "min_length",
+    "max_new_tokens",
+    "min_new_tokens",
+    // Token constraints. Vocabulary *positions*, not model geometry:
+    // banning a token changes which of the logits may be selected, never
+    // the logits.
+    "bad_words_ids",
+    "begin_suppress_tokens",
+    "suppress_tokens",
+    "forced_bos_token_id",
+    "forced_eos_token_id",
+    "forced_decoder_ids",
+    // What `generate()` hands back. `output_hidden_states` and
+    // `output_attentions` make the forward pass *retain* intermediates;
+    // they do not change the values it computes.
+    "output_scores",
+    "output_attentions",
+    "output_hidden_states",
+    "output_logits",
+    "return_dict",
+    "return_dict_in_generate",
+    "num_logits_to_keep",
+    "use_cache",
+    // Legacy per-task default blocks (`task_specific_params.*`) and the
+    // GPT-2-era sequence-classification head knobs, which describe a head
+    // no text-generation container builds.
+    "summary_type",
+    "summary_use_proj",
+    "summary_activation",
+    "summary_proj_to_labels",
+    "summary_first_dropout",
+];
+
+/// Regularisation rates. Dropout is the identity at inference — the
+/// module is placed but never active outside training — so the RATE
+/// parameterises a path a container never runs.
+///
+/// Value-independent, unlike [`INERT_AT_VALUE`]: a dropout of 0.0 and one
+/// of 0.5 compute the same forward pass here.
+pub const DROPOUT_KEYS: &[&str] = &[
+    "attn_pdrop",
+    "embd_pdrop",
+    "resid_pdrop",
+    "summary_pdrop",
+    "attention_dropout",
+    "hidden_dropout",
+    "embedding_dropout",
+    "residual_dropout",
+    "classifier_dropout",
+    "mlp_dropout",
+    "conv_dropout",
+    // MoE router noise, added to logits during training only.
+    "input_jitter_noise",
+    "router_jitter_noise",
+];
+
+/// A value a key must hold to be inert.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub enum InertValue {
+    /// Inert when the declared integer equals this.
+    Int(i64),
+    /// Inert when the declared array is empty — a schedule that selects
+    /// no layers is not a schedule.
+    EmptyList,
+}
+
+impl InertValue {
+    fn matches(self, value: &serde_json::Value) -> bool {
+        match self {
+            Self::Int(want) => value.as_i64() == Some(want),
+            Self::EmptyList => value.as_array().is_some_and(|a| a.is_empty()),
+        }
+    }
+}
+
+/// Keys inert **at one value** and execution-semantic at any other.
+///
+/// `pretraining_tp` is why this table is keyed by value rather than by
+/// name. It reads as a training-time knob and is not one: HF Llama's
+/// forward pass branches on it, slicing every projection into `tp` shards
+/// and summing them, to reproduce the numerics of the tensor-parallel run
+/// that trained the weights. At the `1` that every checkpoint in the
+/// conformance corpus declares it is exactly a no-op. Listing the NAME
+/// would have silenced a key that changes the forward pass the moment a
+/// checkpoint ships `2` — a checked default, never an assumed one.
+///
+/// An entry here must name a value whose inertness is *verified*, not
+/// assumed from the key reading like a default.
+pub const INERT_AT_VALUE: &[(&str, InertValue)] = &[
+    ("pretraining_tp", InertValue::Int(1)),
+    // Qwen's MoE layer schedule: which layers route to an expert bank and
+    // which run a plain MLP. `decoder_sparse_step` is the stride (HF:
+    // `layer_idx % decoder_sparse_step == 0` is a MoE layer) and
+    // `mlp_only_layers` names the exceptions.
+    //
+    // At a stride of 1 with no exceptions, every layer is a MoE layer —
+    // which is the uniform stack the graph already builds, so the pair
+    // describes what is already represented. Any OTHER value is a real
+    // per-layer topology: a stride of 2 makes half the tower dense, and a
+    // non-empty exception list carves out named layers. Neither is
+    // expressible today, and both keep blocking.
+    //
+    // Value-keyed rather than name-listed for exactly that reason. This
+    // is the same shape as `pretraining_tp` above: a key that reads like
+    // a default and is one only at one value.
+    ("decoder_sparse_step", InertValue::Int(1)),
+    ("mlp_only_layers", InertValue::EmptyList),
+];
+
+/// The inert value registered for this leaf, if any.
+pub fn inert_at_value(leaf: &str) -> Option<InertValue> {
+    INERT_AT_VALUE
+        .iter()
+        .find(|(key, _)| *key == leaf)
+        .map(|(_, v)| *v)
+}
+
+/// [`classify_key`], with the declared value available.
+///
+/// The value settles exactly one question — whether a key registered in
+/// [`INERT_AT_VALUE`] is holding the value that makes it inert. Every
+/// other classification is by name, so a key not in that table answers
+/// identically here and in [`classify_key`].
+pub fn classify_key_at(leaf: &str, value: &serde_json::Value) -> SemanticClass {
+    match inert_at_value(leaf) {
+        // Inert at this value: declared, preserved, and read by nothing a
+        // forward pass runs.
+        Some(inert) if inert.matches(value) => SemanticClass::TrainingOnly,
+        // Registered, but holding some OTHER value: this is the case the
+        // table exists to keep blocking.
+        Some(_) => SemanticClass::ExecutionSemantic,
+        None => classify_key(leaf),
+    }
+}
+
+/// The model concept a finding is about.
+///
+/// This is the census's third axis, and it answers a different question
+/// from [`SemanticClass`]. The class says how much losing a subject would
+/// matter and decides whether it blocks; the cluster says *which idea of
+/// the model* it belongs to. Forty `rope_*` spellings across ten
+/// organisations are forty subjects, one idea — and the unit of
+/// remediation work is the idea, never the spelling.
+///
+/// It lives here, keyed by exact leaf name, rather than in a script's
+/// regex, because a regex over finding text is a fourth authority on a
+/// question three already answer. `num_experts_per_tok` and a sampling
+/// `top_k` share no substring rule that separates them; an exact table
+/// does.
+///
+/// [`Self::Unclustered`] is honest and expected: a subject no table has
+/// judged. It is a *finding about the taxonomy*, not a bucket to grow by
+/// pattern-matching, and the conformance report counts it as its own row.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum SemanticCluster {
+    PositionRope,
+    PositionMrope,
+    AttentionSchedule,
+    AttentionBias,
+    AttentionSparseIndexer,
+    AttentionLogitSoftcapping,
+    MoeRouting,
+    FfnActivation,
+    NormGeometry,
+    ShapeAndTensorNaming,
+    MixerSsmGeometry,
+    DecodeMultiTokenPrediction,
+    ResidualHyperConnections,
+    ResidualWiring,
+    ScaleMultipliers,
+    RepresentationQuantization,
+    ModalityVision,
+    ModalityAudio,
+    /// The graph could not be completed — a consequence finding, whose
+    /// cause is one of the others.
+    ExecutionSurface,
+    /// Who the checkpoint says it is.
+    ArchitectureIdentity,
+    InertTrainingOnly,
+    InertGenerationPolicy,
+    Unclustered,
+}
+
+/// Leaf names whose concept is known, grouped by concept.
+///
+/// Exact names throughout. The contract is the same one every table in
+/// this module carries: an entry is a claim about a specific key, and a
+/// key nobody has judged stays [`SemanticCluster::Unclustered`] rather
+/// than being pattern-matched into a neighbour.
+const CLUSTER_KEYS: &[(SemanticCluster, &[&str])] = &[
+    (
+        SemanticCluster::PositionRope,
+        &[
+            "rope_theta",
+            "rope_type",
+            "type",
+            "factor",
+            "rope_scaling",
+            "rope_parameters",
+            "low_freq_factor",
+            "high_freq_factor",
+            "original_max_position_embeddings",
+            "attention_factor",
+            "beta_fast",
+            "beta_slow",
+            "mscale",
+            "mscale_all_dim",
+            "short_factor",
+            "long_factor",
+            "short_mscale",
+            "long_mscale",
+            "partial_rotary_factor",
+            "rotary_pct",
+            "rotary_emb_base",
+            "rope_interleave",
+            "rope_local_base_freq",
+            "no_rope_layers",
+            "no_rope_layer_interval",
+            "position_embedding_type",
+            "n_positions",
+            "n_ctx",
+            "interpolate_factor",
+            "llama_4_scaling_beta",
+            "rope_scaling_factor",
+            "use_mrope",
+        ],
+    ),
+    (
+        SemanticCluster::PositionMrope,
+        &["mrope_section", "mrope_interleaved"],
+    ),
+    (
+        SemanticCluster::AttentionSchedule,
+        &[
+            "sliding_window",
+            "use_sliding_window",
+            "sliding_window_size",
+            "layer_types",
+            "local_layer_ids",
+            "full_attention_interval",
+            "attn_layer_indices",
+            "attn_layer_offset",
+            "attn_layer_period",
+            "attention_chunk_size",
+            "full_attn_mod",
+            "attention_policy",
+            "max_window_layers",
+            "num_kv_shared_layers",
+        ],
+    ),
+    (
+        SemanticCluster::AttentionBias,
+        &[
+            "attention_bias",
+            "qkv_bias",
+            "use_bias",
+            "bias",
+            "clip_qkv",
+            "o_proj_bias",
+            "attention_out_bias",
+        ],
+    ),
+    (
+        SemanticCluster::AttentionSparseIndexer,
+        &[
+            "index_topk",
+            "index_n_heads",
+            "index_head_dim",
+            "index_topk_freq",
+            "index_topk_pattern",
+            "index_skip_topk_offset",
+            "index_kpool",
+            "index_kpool_compress",
+            "index_kpool_always_select_tail",
+            "indexer_rope_interleave",
+            "compress_ratios",
+            "compress_rope_theta",
+            "o_lora_rank",
+            "o_groups",
+        ],
+    ),
+    (
+        SemanticCluster::AttentionLogitSoftcapping,
+        &[
+            "attn_logit_softcapping",
+            "final_logit_softcapping",
+            "query_pre_attn_scalar",
+        ],
+    ),
+    (
+        SemanticCluster::MoeRouting,
+        &[
+            "num_experts",
+            "num_local_experts",
+            "num_experts_per_tok",
+            "n_routed_experts",
+            "n_shared_experts",
+            "shared_expert_intermediate_size",
+            "moe_intermediate_size",
+            "expert_intermediate_size",
+            "top_k_experts",
+            "topk_method",
+            "topk_group",
+            "n_group",
+            "scoring_func",
+            "norm_topk_prob",
+            "routed_scaling_factor",
+            "decoder_sparse_step",
+            "mlp_only_layers",
+            "moe_layer_freq",
+            "first_k_dense_replace",
+            "num_experts_shared",
+            "use_qk_norm",
+        ],
+    ),
+    (
+        SemanticCluster::FfnActivation,
+        &[
+            "hidden_act",
+            "hidden_activation",
+            "activation",
+            "activation_function",
+            "swiglu_limit",
+            "mlp_type",
+            "mlp_expansion_factor",
+            "use_double_wide_mlp",
+        ],
+    ),
+    (
+        SemanticCluster::NormGeometry,
+        &[
+            "rms_norm_eps",
+            "layer_norm_eps",
+            "layer_norm_epsilon",
+            "norm_eps",
+            "normalization_type",
+            "qk_layernorm",
+            "use_qk_layernorm",
+        ],
+    ),
+    (
+        SemanticCluster::MixerSsmGeometry,
+        &[
+            "mamba_d_conv",
+            "mamba_d_state",
+            "mamba_expand",
+            "mamba_n_heads",
+            "mamba_n_groups",
+            "mamba_conv_bias",
+            "mamba_proj_bias",
+            "mamba_d_head",
+            "mamba_chunk_size",
+            "conv_kernel",
+            "state_size",
+            "linear_conv_kernel_dim",
+            "linear_attn_config",
+            "time_step_limit",
+        ],
+    ),
+    (
+        SemanticCluster::DecodeMultiTokenPrediction,
+        &[
+            "num_nextn_predict_layers",
+            "mtp_num_hidden_layers",
+            "mtp_use_dedicated_embeddings",
+            "layers",
+            "fc",
+            "norm",
+            "pre_fc_norm_embedding",
+            "pre_fc_norm_hidden",
+        ],
+    ),
+    (
+        SemanticCluster::ResidualHyperConnections,
+        &[
+            "hc_mult",
+            "hc_eps",
+            "hc_sinkhorn_iters",
+            "hc_count",
+            "hc_lowrank",
+            "hc_head_base",
+            "hc_head_fn",
+            "hc_head_scale",
+            "mhc",
+        ],
+    ),
+    (
+        SemanticCluster::ResidualWiring,
+        &[
+            "use_parallel_residual",
+            "attn_res_block_size",
+            "output_attn_res_proj",
+        ],
+    ),
+    (
+        SemanticCluster::ScaleMultipliers,
+        &[
+            "attention_multiplier",
+            "embedding_multiplier",
+            "logits_scaling",
+            "residual_multiplier",
+            "attention_in_multiplier",
+            "attention_out_multiplier",
+            "key_multiplier",
+            "lm_head_multiplier",
+            "mlp_multipliers",
+        ],
+    ),
+    (
+        SemanticCluster::ShapeAndTensorNaming,
+        &[
+            "hidden_size",
+            "intermediate_size",
+            "num_hidden_layers",
+            "num_attention_heads",
+            "num_key_value_heads",
+            "head_dim",
+            "vocab_size",
+            "max_position_embeddings",
+            "n_head",
+            "n_embd",
+            "n_layer",
+            "n_inner",
+            "qk_nope_head_dim",
+            "qk_rope_head_dim",
+            "v_head_dim",
+            "kv_lora_rank",
+            "q_lora_rank",
+            "architectures",
+        ],
+    ),
+    (
+        SemanticCluster::ModalityAudio,
+        &[
+            "audio_token_id",
+            "boa_token_id",
+            "eoa_token_id",
+            "eoa_token_index",
+            "audio_embed_dim",
+            "audio_config",
+        ],
+    ),
+];
+
+/// Clusters carried by a whole flattened path rather than a leaf name.
+///
+/// A structural finding names a rule, not a config key — `layer_census`
+/// is not a leaf anyone declared — and a subject that is a *nested
+/// section* (`quantization_config.…`) is owned by the section rather than
+/// by whatever its last segment happens to be called.
+fn cluster_by_path(subject: &str) -> Option<SemanticCluster> {
+    if subject.contains("quantization_config") {
+        return Some(SemanticCluster::RepresentationQuantization);
+    }
+    if subject.contains("vision") || subject.contains("image") || subject.contains("video") {
+        return Some(SemanticCluster::ModalityVision);
+    }
+    if subject.contains("execution_surface") || subject == "layer_census" {
+        return Some(SemanticCluster::ExecutionSurface);
+    }
+    if subject == "architecture_identity" || subject == "architecture_family" {
+        return Some(SemanticCluster::ArchitectureIdentity);
+    }
+    if subject.contains("mtp") {
+        return Some(SemanticCluster::DecodeMultiTokenPrediction);
+    }
+    None
+}
+
+/// The concept a finding's subject belongs to.
+///
+/// One derivation, used by the plan document and by anything reporting
+/// over it. Path-scoped ownership is asked first: a key nested under a
+/// section belongs to that section even when its leaf name would match a
+/// general table.
+pub fn cluster_for(subject: &str) -> SemanticCluster {
+    if let Some(cluster) = cluster_by_path(subject) {
+        return cluster;
+    }
+    let leaf = leaf_of(subject);
+    if let Some((cluster, _)) = CLUSTER_KEYS.iter().find(|(_, keys)| keys.contains(&leaf)) {
+        return *cluster;
+    }
+    // Fall back to what the key IS, when the registry already judged it
+    // inert. These are concepts too — "this is decoding policy" is a
+    // statement about the model, and reporting them as unclustered would
+    // hide the largest cheap win in the corpus behind a shrug.
+    match classify_key(leaf) {
+        SemanticClass::GenerationPolicy => SemanticCluster::InertGenerationPolicy,
+        SemanticClass::TrainingOnly => SemanticCluster::InertTrainingOnly,
+        _ => SemanticCluster::Unclustered,
+    }
+}
+
 /// Classify an unconsumed config key by its leaf name.
 pub fn classify_key(leaf: &str) -> SemanticClass {
     if EXECUTION_SEMANTIC_KEYS.contains(&leaf) {
@@ -606,8 +1142,10 @@ pub fn classify_key(leaf: &str) -> SemanticClass {
         SemanticClass::InterfaceSemantic
     } else if METADATA_KEYS.contains(&leaf) {
         SemanticClass::MetadataOnly
-    } else if TRAINING_ONLY_KEYS.contains(&leaf) {
+    } else if TRAINING_ONLY_KEYS.contains(&leaf) || DROPOUT_KEYS.contains(&leaf) {
         SemanticClass::TrainingOnly
+    } else if GENERATION_POLICY_KEYS.contains(&leaf) {
+        SemanticClass::GenerationPolicy
     } else if alias_canonical(leaf).is_some() {
         SemanticClass::Alias
     } else if IGNORED_SAFE_KEYS.contains(&leaf) {

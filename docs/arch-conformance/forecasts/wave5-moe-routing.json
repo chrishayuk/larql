@@ -1,0 +1,93 @@
+{
+ "wave": "moe_routing",
+ "registered": "2026-09-02",
+ "baseline_semantics_version": 4,
+ "baseline": {
+  "GREEN": 21,
+  "AMBER": 6,
+  "RED": 61,
+  "text_closure_blockers": 756
+ },
+ "reach": 37,
+ "clears_alone": 4,
+ "predicted_to_go_green": [
+  "Qwen/Qwen3-235B-A22B",
+  "Qwen/Qwen3-30B-A3B",
+  "google/gemma-4-12B-it",
+  "google/gemma-4-31B-it"
+ ],
+ "predicted_subjects": [
+  "decoder_sparse_step",
+  "mlp_only_layers",
+  "text_config.expert_intermediate_size",
+  "text_config.top_k_experts"
+ ],
+ "must_not_clear_from_this_wave_alone": [
+  "Qwen/Qwen1.5-MoE-A2.7B",
+  "Qwen/Qwen3.5-0.8B",
+  "Qwen/Qwen3.5-122B-A10B",
+  "Qwen/Qwen3.5-27B",
+  "Qwen/Qwen3.5-35B-A3B",
+  "Qwen/Qwen3.5-397B-A17B",
+  "Qwen/Qwen3.5-9B",
+  "Qwen/Qwen3.8-Flash-Next",
+  "ai21labs/AI21-Jamba2-3B",
+  "ai21labs/AI21-Jamba2-Mini",
+  "deepseek-ai/DeepSeek-V2-Lite",
+  "deepseek-ai/DeepSeek-V2.5",
+  "deepseek-ai/DeepSeek-V3.1",
+  "deepseek-ai/DeepSeek-V3.2",
+  "deepseek-ai/DeepSeek-V4-Flash",
+  "deepseek-ai/DeepSeek-V4-Pro",
+  "google/gemma-4-E2B-it",
+  "google/gemma-4-E4B-it",
+  "ibm-granite/granite-4.0-h-micro",
+  "ibm-granite/granite-4.0-micro",
+  "meta-llama/Llama-4-Maverick-17B-128E",
+  "meta-llama/Llama-4-Scout-17B-16E",
+  "moonshotai/Kimi-K2-Instruct",
+  "moonshotai/Kimi-K2.5",
+  "moonshotai/Kimi-K2.6",
+  "moonshotai/Kimi-K2.7-Code",
+  "moonshotai/Kimi-K3",
+  "zai-org/GLM-4.5-Air",
+  "zai-org/GLM-4.6",
+  "zai-org/GLM-4.7-Flash",
+  "zai-org/GLM-5.2",
+  "zai-org/GLM-5.3",
+  "zai-org/GLM-5.3-Flash"
+ ],
+ "falsifiers": [
+  "fewer than 4 clear -> a subject was not actually the whole blocker set for that row",
+  "more than 4 clear -> the change reached beyond moe_routing, or a cluster boundary is wrong",
+  "any GREEN row regresses -> not a remediation",
+  "BUG > 0 or a silent drop appears -> do not merge",
+  "K3 cluster count moves off 7 -> unrelated work is being credited to K3"
+ ],
+ "result": {
+  "scored_on": "2026-09-02",
+  "outcome_semantics_version": 5,
+  "predicted_clears": 4,
+  "actual_clears": 5,
+  "hit": [
+   "Qwen/Qwen3-235B-A22B",
+   "Qwen/Qwen3-30B-A3B",
+   "google/gemma-4-12B-it",
+   "google/gemma-4-31B-it"
+  ],
+  "missed": [],
+  "unpredicted": [
+   "allenai/OLMoE-1B-7B-0125"
+  ],
+  "regressions": [],
+  "after": {
+   "GREEN": 26,
+   "AMBER": 6,
+   "RED": 56,
+   "text_closure_blockers": 671
+  },
+  "verdict": "FALSIFIER TRIGGERED \u2014 one unpredicted clear",
+  "diagnosis": "The wave shipped TWO changes, and only one was moe_routing. (a) The expert schedule (decoder_sparse_step / mlp_only_layers judged by value) is moe_routing proper, and cleared exactly the two Qwen3-MoE rows. (b) The null-declaration rule \u2014 a key declared with no value has nothing to carry \u2014 is a CROSS-CUTTING census rule. It cleared the two Gemma 4 dense rows, whose blocking subjects happened to be moe-clustered, AND OLMoE-1B-7B, whose blocker clip_qkv: null sits in attention_bias. So moe_routing proper cleared 2, not 4.",
+  "lesson": "A cluster names what a blocker is ABOUT, not which fix will clear it. clears_alone is exact only when the remediation is confined to one cluster. A cross-cutting rule breaks the cluster->fix mapping in both directions: it over-credits the cluster it was filed under and under-predicts rows elsewhere. Future forecasts must state the FIX being made, not only the cluster."
+ }
+}

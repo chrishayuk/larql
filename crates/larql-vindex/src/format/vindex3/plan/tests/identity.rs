@@ -101,12 +101,65 @@ fn identity_survives_a_round_trip_and_parse_refuses_other_schemas_by_name() {
 /// witness is re-recorded.
 #[test]
 fn the_semantics_version_is_pinned_to_known_verdicts() {
-    assert_eq!(PLANNER_SEMANTICS_VERSION, 1);
+    assert_eq!(PLANNER_SEMANTICS_VERSION, 5);
 
     let dir = tempfile::tempdir().unwrap();
     let admissible = plan_system(&one_glimmer(dir.path()));
     assert!(admissible.admissible, "{:?}", admissible.summary);
     assert_eq!(admissible.summary.blocking, 0);
+
+    // Version 2's verdict: an identity no registry entry matches blocks,
+    // where it used to pass into `GenericArch` unremarked. Pinned as a
+    // verdict rather than as a unit of the gate, because that is what the
+    // version number promises is comparable between builds.
+    let dir = tempfile::tempdir().unwrap();
+    let unjudged = glimmer_shaped_target_with(dir.path(), |config| {
+        config["text_config"]["model_type"] = serde_json::json!("no_such_family");
+    });
+    let refused = plan_system(&[(ARTIFACT.to_string(), unjudged)]);
+    assert!(!refused.admissible, "{:?}", refused.summary);
+
+    // Version 3's verdict: a decoding-policy default no longer blocks,
+    // and `pretraining_tp` is judged against its value rather than its
+    // name. Both arms are pinned — the second is what keeps the first
+    // from having been implemented as "stop reading these keys".
+    let dir = tempfile::tempdir().unwrap();
+    let inert = glimmer_shaped_target_with(dir.path(), |config| {
+        config["text_config"]["do_sample"] = serde_json::json!(true);
+        config["text_config"]["pretraining_tp"] = serde_json::json!(1);
+    });
+    let passed = plan_system(&[(ARTIFACT.to_string(), inert)]);
+    assert!(passed.admissible, "{:?}", passed.summary);
+
+    let dir = tempfile::tempdir().unwrap();
+    let sliced = glimmer_shaped_target_with(dir.path(), |config| {
+        config["text_config"]["pretraining_tp"] = serde_json::json!(2);
+    });
+    let blocked = plan_system(&[(ARTIFACT.to_string(), sliced)]);
+    assert!(
+        !blocked.admissible,
+        "pretraining_tp above 1 slices every projection and must block: {:?}",
+        blocked.summary
+    );
+
+    // Version 4's verdict: a Llama-3 wavelength-band block is carried,
+    // where every one of its four keys used to block.
+    let dir = tempfile::tempdir().unwrap();
+    let llama3 = glimmer_shaped_target_with(dir.path(), |config| {
+        // Declared in the block this fixture already uses, so the
+        // checkpoint states ONE rope type. Adding a second block would
+        // test a conflicting declaration, which is a different gate.
+        config["text_config"]["rope_parameters"] = serde_json::json!({
+            "rope_theta": 500000.0,
+            "rope_type": "llama3",
+            "factor": 32.0,
+            "low_freq_factor": 1.0,
+            "high_freq_factor": 4.0,
+            "original_max_position_embeddings": 8192,
+        });
+    });
+    let carried = plan_system(&[(ARTIFACT.to_string(), llama3)]);
+    assert!(carried.admissible, "{:?}", carried.summary);
 
     let dir = tempfile::tempdir().unwrap();
     let inventory = glimmer_shaped_target_with(dir.path(), |config| {

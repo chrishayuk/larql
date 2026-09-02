@@ -8,10 +8,10 @@
 
 use super::support::glimmer_shaped_target_with;
 use crate::format::vindex3::plan::carriage::{rule_for, Carriage, CARRIAGE_RULES};
-use crate::format::vindex3::plan::{plan_system, Finding, FindingCategory, SemanticClass};
+use crate::format::vindex3::plan::{plan_system, FindingCategory, PlannedFinding, SemanticClass};
 
 /// Plan the Glimmer-shaped fixture with `mutate` applied to its config.
-fn plan_with(mutate: impl FnOnce(&mut serde_json::Value)) -> Vec<Finding> {
+fn plan_with(mutate: impl FnOnce(&mut serde_json::Value)) -> Vec<PlannedFinding> {
     let dir = tempfile::tempdir().unwrap();
     let named = vec![(
         "target-artifact".to_string(),
@@ -25,7 +25,7 @@ fn plan_with(mutate: impl FnOnce(&mut serde_json::Value)) -> Vec<Finding> {
 }
 
 /// The finding whose subject ends with `suffix`.
-fn finding_for<'a>(findings: &'a [Finding], suffix: &str) -> &'a Finding {
+fn finding_for<'a>(findings: &'a [PlannedFinding], suffix: &str) -> &'a PlannedFinding {
     findings
         .iter()
         .find(|f| f.subject.ends_with(suffix))
@@ -933,6 +933,35 @@ fn a_stack_that_rotates_nowhere_reports_no_scheme() {
         finding.category,
         FindingCategory::Representable,
         "a declared scheme the graph does not carry must not read as satisfied: {}",
+        finding.detail
+    );
+}
+
+#[test]
+fn a_declaration_with_no_value_has_nothing_to_carry() {
+    // Gemma 4's dense sizes declare `top_k_experts: null` — a dense model
+    // stating it has no expert bank. The carriage rule pointed at
+    // `ExecutionSurface.ffn.moe.top_k`, which no dense component can
+    // answer, so the checkpoint was refused over the absence of a thing
+    // it had said it did not have.
+    let findings = plan_with(|config| {
+        config["text_config"]["top_k_experts"] = serde_json::Value::Null;
+    });
+    let finding = finding_for(&findings, "top_k_experts");
+    assert_eq!(finding.category, FindingCategory::Representable);
+    assert!(!finding.blocks());
+
+    // The control, on the same key. A value this build cannot place must
+    // still block — otherwise the rule reads as "nulls and everything
+    // else are both fine", which is the silent-default shape the whole
+    // census exists to catch.
+    let findings = plan_with(|config| {
+        config["text_config"]["top_k_experts"] = serde_json::json!(8);
+    });
+    let finding = finding_for(&findings, "top_k_experts");
+    assert!(
+        finding.blocks(),
+        "a declared expert top-k on a fixture with no expert bank must block: {:?}",
         finding.detail
     );
 }

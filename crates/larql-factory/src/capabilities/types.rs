@@ -2,7 +2,7 @@
 //! describes: "does this larql release understand `model_type` X, and
 //! if so what does it support."
 
-use larql_models::detect::AttentionKind;
+use larql_models::detect::{AttentionKind, ModelTypeMatch};
 use larql_vindex_spec::QuantFormat;
 use serde::Serialize;
 
@@ -27,10 +27,44 @@ pub struct ArchitectureCapability {
     /// [`larql_models::detect::ArchitectureEntry::model_type`] for the
     /// caveat on what this means for Qwen/Granite).
     pub model_type: String,
+    /// How a checkpoint's declared `model_type` is matched against this
+    /// entry.
+    ///
+    /// Without this the manifest cannot answer the question it exists to
+    /// answer. `model_type` above is a *representative label*, and half
+    /// the registry matches by prefix: a consumer comparing a
+    /// checkpoint's declared `gemma3_text`, `qwen3`, `granitemoehybrid`
+    /// or `deepseek_v2` against the labels alone concludes "unsupported"
+    /// for four families this build fully recognises. The gate this
+    /// manifest feeds (docs/vindex-factory.md §15.2) would then reject
+    /// recipes that work.
+    pub matches: Vec<ModelTypePattern>,
     /// Attention mechanism this family uses.
     pub attention_kind: AttentionKind,
     /// Quant formats the extractor supports for this family today.
     pub quant_formats: Vec<QuantFormat>,
+}
+
+/// One way a declared `model_type` may match an architecture entry.
+///
+/// The wire form of [`ModelTypeMatch`], kept as its own type so the
+/// registry does not have to take a serde dependency to be reportable.
+#[derive(Debug, Serialize)]
+#[serde(tag = "kind", content = "value", rename_all = "lowercase")]
+pub enum ModelTypePattern {
+    /// The declared `model_type` must equal this string.
+    Exact(String),
+    /// The declared `model_type` must start with this string.
+    Prefix(String),
+}
+
+impl From<&ModelTypeMatch> for ModelTypePattern {
+    fn from(m: &ModelTypeMatch) -> Self {
+        match m {
+            ModelTypeMatch::Exact(s) => Self::Exact((*s).to_string()),
+            ModelTypeMatch::Prefix(p) => Self::Prefix((*p).to_string()),
+        }
+    }
 }
 
 #[cfg(test)]
@@ -43,6 +77,7 @@ mod tests {
             larql_version: "0.1.0".into(),
             architectures: vec![ArchitectureCapability {
                 model_type: "gemma3".into(),
+                matches: vec![ModelTypePattern::Prefix("gemma3".into())],
                 attention_kind: AttentionKind::Standard,
                 quant_formats: vec![QuantFormat::None, QuantFormat::Q4K],
             }],
@@ -52,5 +87,7 @@ mod tests {
         assert!(json.contains("\"model_type\":\"gemma3\""));
         assert!(json.contains("\"attention_kind\":\"standard\""));
         assert!(json.contains("\"quant_formats\":[\"none\",\"q4k\"]"));
+        assert!(json.contains("\"kind\":\"prefix\""));
+        assert!(json.contains("\"value\":\"gemma3\""));
     }
 }

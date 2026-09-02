@@ -43,7 +43,7 @@
 use serde::{Deserialize, Serialize};
 
 use super::super::graph::{Component, ComponentRole, Modality, SystemGraph};
-use super::report::Finding;
+use super::report::{Finding, FindingId, PlannedFinding};
 
 /// One thing a caller can ask the model to do.
 ///
@@ -299,10 +299,10 @@ fn text_component(graph: &SystemGraph) -> Option<&Component> {
 /// is the entire point.
 pub fn admissible_for<'a>(
     capability: Capability,
-    findings: impl IntoIterator<Item = &'a Finding>,
+    findings: impl IntoIterator<Item = &'a PlannedFinding>,
     graph: &SystemGraph,
 ) -> CapabilityStatus {
-    let mut blocking = 0usize;
+    let mut blocker_ids = Vec::new();
     let mut required = 0usize;
     for finding in findings {
         if !requires(capability, finding, graph) {
@@ -310,16 +310,17 @@ pub fn admissible_for<'a>(
         }
         required += 1;
         if finding.blocks() {
-            blocking += 1;
+            blocker_ids.push(finding.id);
         }
     }
     CapabilityStatus {
         capability,
-        admissible: blocking == 0,
+        admissible: blocker_ids.is_empty(),
         available: available_for(capability, graph),
         supported: supported(capability),
         required,
-        blocking,
+        blocking: blocker_ids.len(),
+        blocker_ids,
     }
 }
 
@@ -426,6 +427,15 @@ pub struct CapabilityStatus {
     pub required: usize,
     /// Of those, how many block.
     pub blocking: usize,
+    /// Which ones — by [`FindingId`], in document order.
+    ///
+    /// The count alone made every leverage estimate an upper bound:
+    /// knowing a checkpoint has six blockers says nothing about which
+    /// concepts they belong to, so "retiring idea X clears N rows" had to
+    /// be computed over whole-model findings and hedged. With the set
+    /// named, a reader can intersect it with any grouping and get the
+    /// exact answer.
+    pub blocker_ids: Vec<FindingId>,
 }
 
 impl CapabilityStatus {

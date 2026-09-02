@@ -17,10 +17,10 @@
 use crate::validation::ConfigValidationResult;
 
 use super::{
-    layer_types, rope_types, Activation, EmbeddingNorm, ExpertFormat, ExpertGatePolicy,
-    ExpertRoutingPolicy, FfnType, GateUpLayout, LayerKind, Llama3RopeScaling, ModelConfig,
-    NormSpec, NormType, PositionPolicy, PostNormEps, QkNormScope, RotaryFrequencyBasis,
-    YarnRopeScaling,
+    layer_types, rope_types, Activation, DeclaredRopeScaling, EmbeddingNorm, ExpertFormat,
+    ExpertGatePolicy, ExpertRoutingPolicy, FfnType, GateUpLayout, LayerKind, Llama3RopeScaling,
+    ModelConfig, NormSpec, NormType, PositionPolicy, PostNormEps, QkNormScope,
+    RotaryFrequencyBasis, YarnRopeScaling,
 };
 
 /// The multiplier that leaves a value unchanged.
@@ -1371,12 +1371,42 @@ pub trait ModelArchitecture: Send + Sync {
         1.0
     }
 
-    /// `llama3` RoPE scaling parameters when the architecture uses them.
-    /// Default: `None`. Llama 3.x overrides to return the parsed factor
-    /// and frequency-band thresholds. Consumed by
-    /// `larql-inference::attention::rope::apply_rope_partial_at_full`.
+    /// `llama3` RoPE scaling parameters when the checkpoint declares them.
+    ///
+    /// **The read lives in the trait default**, for the reason recorded on
+    /// [`Self::yarn_rope_scaling`] below. This used to return `None` and
+    /// make each family opt in, which is the shape that doc-comment warns
+    /// about: `rope_type: "llama3"` is a *config fact*, and a checkpoint
+    /// declaring it was served the wrong frequencies unless its
+    /// architecture happened to have overridden this method. Only
+    /// `llama.rs` had, so a family arriving with Llama-3 scaling under any
+    /// other `model_type` silently lost it.
+    ///
+    /// The band factors default because HF defaults them; the pre-trained
+    /// context window does too — unlike YaRN, whose correction bounds are
+    /// undefined without it, `_compute_llama3_parameters` reads
+    /// `original_max_position_embeddings` from the config proper when the
+    /// block omits it.
     fn llama3_rope_scaling(&self) -> Option<Llama3RopeScaling> {
-        None
+        let rs = self.config().rope_scaling.as_ref()?;
+        if !rs
+            .scaling_type
+            .eq_ignore_ascii_case(rope_types::ROPE_TYPE_LLAMA3)
+        {
+            return None;
+        }
+        Some(Llama3RopeScaling {
+            factor: rs.factor,
+            low_freq_factor: rs
+                .llama3_low_freq_factor
+                .unwrap_or(crate::defaults::LLAMA3_LOW_FREQ_FACTOR_DEFAULT),
+            high_freq_factor: rs
+                .llama3_high_freq_factor
+                .unwrap_or(crate::defaults::LLAMA3_HIGH_FREQ_FACTOR_DEFAULT),
+            original_max_position_embeddings: rs
+                .llama3_original_max_position_embeddings
+                .unwrap_or(crate::defaults::LLAMA3_ORIGINAL_MAX_POSITION_EMBEDDINGS_DEFAULT),
+        })
     }
 
     /// `yarn` RoPE scaling parameters when the checkpoint declares them.
@@ -1414,6 +1444,22 @@ pub trait ModelArchitecture: Send + Sync {
             mscale: rs.yarn_mscale,
             mscale_all_dim: rs.yarn_mscale_all_dim,
         })
+    }
+
+    /// Which frequency-scaling family this checkpoint declares.
+    ///
+    /// The one place the question is answered. `rope_type` holds a single
+    /// value, so the families are alternatives, not a set — asking the two
+    /// accessors separately at each call site would invent a "both" state
+    /// and leave every site to pick a precedence of its own.
+    fn declared_rope_scaling(&self) -> DeclaredRopeScaling {
+        if let Some(yarn) = self.yarn_rope_scaling() {
+            return DeclaredRopeScaling::Yarn(yarn);
+        }
+        if let Some(llama3) = self.llama3_rope_scaling() {
+            return DeclaredRopeScaling::Llama3(llama3);
+        }
+        DeclaredRopeScaling::None
     }
 
     /// Multi-modal contract for this architecture, if any.
@@ -1518,7 +1564,9 @@ pub fn default_position_policy_for_layer<A: ModelArchitecture + ?Sized>(
     if !rope_scheduled_for_layer(arch.config(), layer) {
         return PositionPolicy::None;
     }
-    let yarn = arch.yarn_rope_scaling();
+    // One resolution of "which scaling family did this checkpoint
+    // declare", asked once and composed with the per-layer theta below.
+    let scaling = arch.declared_rope_scaling();
     match arch
         .config()
         .layer_rope_theta
@@ -1534,18 +1582,22 @@ pub fn default_position_policy_for_layer<A: ModelArchitecture + ?Sized>(
             // `partial_rotary_factor` would silently rotate the whole
             // head — the same drop this rung exists to close, one
             // branch over.
-            match PositionPolicy::from_declared_theta_with_yarn(declared, yarn) {
+            match PositionPolicy::from_declared_theta_with_scaling(declared, scaling) {
                 PositionPolicy::Rope { theta } => arch.rotary_policy(theta),
                 // NoPE has no rotary shape, and YaRN carries its own.
                 resolved => resolved,
             }
         }
-        None => match yarn {
-            Some(scaling) => PositionPolicy::Yarn {
+        None => match scaling {
+            DeclaredRopeScaling::Yarn(scaling) => PositionPolicy::Yarn {
                 theta: arch.rope_base_for_layer(layer),
                 scaling,
             },
-            None => arch.rotary_policy(arch.rope_base_for_layer(layer)),
+            DeclaredRopeScaling::Llama3(scaling) => PositionPolicy::Llama3 {
+                theta: arch.rope_base_for_layer(layer),
+                scaling,
+            },
+            DeclaredRopeScaling::None => arch.rotary_policy(arch.rope_base_for_layer(layer)),
         },
     }
 }

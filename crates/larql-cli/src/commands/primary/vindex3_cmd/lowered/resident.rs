@@ -328,6 +328,23 @@ pub(super) fn rope_table_key(position: &PositionPolicy, head_dim: usize) -> Opti
     };
     match position {
         PositionPolicy::Rope { theta } => Some(with_width(theta.to_bits())),
+        // Llama-3's table is the wavelength-band adjustment of the base
+        // frequencies, so every parameter that moves a band is part of
+        // the key. Keying on `theta` alone would let two layers scaled
+        // for different pre-trained windows share one table.
+        PositionPolicy::Llama3 { theta, scaling } => {
+            let mut h = std::collections::hash_map::DefaultHasher::new();
+            theta.to_bits().hash(&mut h);
+            scaling.factor.to_bits().hash(&mut h);
+            scaling.low_freq_factor.to_bits().hash(&mut h);
+            scaling.high_freq_factor.to_bits().hash(&mut h);
+            scaling
+                .original_max_position_embeddings
+                .to_bits()
+                .hash(&mut h);
+            head_dim.hash(&mut h);
+            Some(h.finish() | 1)
+        }
         // The partial rotary's table is the full-head rotate-half table
         // with the top frequencies zero (head-width basis); fraction and
         // basis join the key.
@@ -386,6 +403,14 @@ pub(super) fn rope_inv_freq_table(position: &PositionPolicy, head_dim: usize) ->
                     scaling, head_dim, *theta,
                 );
             inv_freq.iter().map(|f| *f as f32).collect()
+        }
+        PositionPolicy::Llama3 { theta, scaling } => {
+            larql_vindex::format::vindex3::opplan::exec::kernels::llama3_frequencies(
+                scaling, head_dim, *theta,
+            )
+            .iter()
+            .map(|f| *f as f32)
+            .collect()
         }
         PositionPolicy::Relative { .. } | PositionPolicy::None => Vec::new(),
         // Head-width basis: the interpreter's own table (zeros above the

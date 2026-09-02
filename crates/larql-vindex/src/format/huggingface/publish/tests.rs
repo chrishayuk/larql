@@ -203,6 +203,7 @@ fn get_hf_token_reads_env_var() {
 /// RAII guard for HF_TOKEN + HOME env vars, restored on drop.
 struct HfTokenEnvGuard {
     prev_token: Option<String>,
+    prev_hub_token: Option<String>,
     prev_home: Option<String>,
     _tmp: tempfile::TempDir,
 }
@@ -213,12 +214,15 @@ impl HfTokenEnvGuard {
     /// populate.
     fn new() -> Self {
         let prev_token = std::env::var("HF_TOKEN").ok();
+        let prev_hub_token = std::env::var("HUGGING_FACE_HUB_TOKEN").ok();
         let prev_home = std::env::var("HOME").ok();
         let tmp = tempfile::tempdir().unwrap();
         std::env::remove_var("HF_TOKEN");
+        std::env::remove_var("HUGGING_FACE_HUB_TOKEN");
         std::env::set_var("HOME", tmp.path());
         Self {
             prev_token,
+            prev_hub_token,
             prev_home,
             _tmp: tmp,
         }
@@ -232,6 +236,10 @@ impl Drop for HfTokenEnvGuard {
         match self.prev_token.take() {
             Some(v) => std::env::set_var("HF_TOKEN", v),
             None => std::env::remove_var("HF_TOKEN"),
+        }
+        match self.prev_hub_token.take() {
+            Some(v) => std::env::set_var("HUGGING_FACE_HUB_TOKEN", v),
+            None => std::env::remove_var("HUGGING_FACE_HUB_TOKEN"),
         }
         match self.prev_home.take() {
             Some(v) => std::env::set_var("HOME", v),

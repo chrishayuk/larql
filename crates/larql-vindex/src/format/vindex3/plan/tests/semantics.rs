@@ -171,3 +171,137 @@ fn a_neighbouring_key_with_no_evidence_stays_unknown() {
         assert_eq!(classify_key(key), SemanticClass::Unknown, "{key}");
     }
 }
+
+#[test]
+fn decoding_policy_is_recognised_without_swallowing_routing_or_geometry() {
+    use crate::format::vindex3::plan::semantics::classify_key;
+    // Preserved and classified, not blocking.
+    for leaf in [
+        "do_sample",
+        "top_k",
+        "bad_words_ids",
+        "num_beams",
+        "max_length",
+    ] {
+        assert_eq!(
+            classify_key(leaf),
+            SemanticClass::GenerationPolicy,
+            "{leaf} is decoding policy"
+        );
+    }
+    // The control the table's exact-name contract exists for. `top_k` is a
+    // sampling cutoff; MoE's routing top-k is spelled differently and is
+    // execution-semantic. A substring rule would have taken both.
+    assert_ne!(
+        classify_key("num_experts_per_tok"),
+        SemanticClass::GenerationPolicy
+    );
+    assert!(classify_key("num_experts_per_tok").is_critical());
+    // Dropout parameterises a path inference never runs, at any rate.
+    for leaf in ["attn_pdrop", "attention_dropout", "input_jitter_noise"] {
+        assert_eq!(classify_key(leaf), SemanticClass::TrainingOnly, "{leaf}");
+    }
+}
+
+#[test]
+fn pretraining_tp_is_judged_by_value_because_the_forward_pass_reads_it() {
+    use crate::format::vindex3::plan::semantics::classify_key_at;
+    // At 1 — every checkpoint in the conformance corpus — a no-op.
+    assert_eq!(
+        classify_key_at("pretraining_tp", &serde_json::json!(1)),
+        SemanticClass::TrainingOnly
+    );
+    // Above 1, HF Llama slices every projection into `tp` shards and sums
+    // them. Same key, different fact, and the name-only reading would have
+    // silenced this arm.
+    assert_eq!(
+        classify_key_at("pretraining_tp", &serde_json::json!(2)),
+        SemanticClass::ExecutionSemantic
+    );
+    assert!(classify_key_at("pretraining_tp", &serde_json::json!(2)).is_critical());
+    // A key outside the value table answers the same either way.
+    assert_eq!(
+        classify_key_at("do_sample", &serde_json::json!(true)),
+        classify_key("do_sample")
+    );
+}
+
+#[test]
+fn one_idea_collects_its_many_spellings_without_taking_a_neighbour() {
+    use crate::format::vindex3::plan::semantics::{cluster_for, SemanticCluster};
+    // The claim the census rests on: forty rope spellings, one idea.
+    for subject in [
+        "rope_theta",
+        "rope_scaling.rope_type",
+        "text_config.rope_parameters.mscale_all_dim",
+        "rope_scaling.low_freq_factor",
+        "partial_rotary_factor",
+    ] {
+        assert_eq!(
+            cluster_for(subject),
+            SemanticCluster::PositionRope,
+            "{subject}"
+        );
+    }
+    // ...and the neighbours it must not swallow. `mrope_section` is its own
+    // operator, and a sampling `top_k` is not MoE routing — the pair a
+    // substring rule would have merged.
+    assert_eq!(
+        cluster_for("text_config.rope_parameters.mrope_section"),
+        SemanticCluster::PositionMrope
+    );
+    assert_eq!(
+        cluster_for("num_experts_per_tok"),
+        SemanticCluster::MoeRouting
+    );
+    assert_eq!(cluster_for("top_k"), SemanticCluster::InertGenerationPolicy);
+}
+
+#[test]
+fn a_nested_section_owns_its_keys_whatever_the_leaf_is_called() {
+    use crate::format::vindex3::plan::semantics::{cluster_for, SemanticCluster};
+    // `…quantization_config.…weights.type` ends in `type`, which the rope
+    // table claims. Path ownership is asked first, so the section wins.
+    assert_eq!(
+        cluster_for("type"),
+        SemanticCluster::PositionRope,
+        "a bare `type` is the rope spelling"
+    );
+    assert_eq!(
+        cluster_for("quantization_config.config_groups.group_0.weights.type"),
+        SemanticCluster::RepresentationQuantization
+    );
+}
+
+#[test]
+fn an_unjudged_subject_stays_unclustered_rather_than_joining_a_neighbour() {
+    use crate::format::vindex3::plan::semantics::{cluster_for, SemanticCluster};
+    // The control. `Unclustered` is a finding about the taxonomy; growing
+    // the buckets by pattern-matching would hide exactly the subjects that
+    // still need a judgement.
+    assert_eq!(
+        cluster_for("some_field_nobody_has_reviewed"),
+        SemanticCluster::Unclustered
+    );
+}
+
+#[test]
+fn the_expert_schedule_is_inert_only_at_the_uniform_stack() {
+    use crate::format::vindex3::plan::semantics::classify_key_at;
+    // Stride 1, no exceptions: every layer routes, which is the uniform
+    // stack the graph already builds.
+    assert_eq!(
+        classify_key_at("decoder_sparse_step", &serde_json::json!(1)),
+        SemanticClass::TrainingOnly
+    );
+    assert_eq!(
+        classify_key_at("mlp_only_layers", &serde_json::json!([])),
+        SemanticClass::TrainingOnly
+    );
+    // The controls. A stride of 2 makes half the tower dense and a
+    // non-empty exception list carves out named layers — real per-layer
+    // topology, not expressible, and it must keep blocking. Without
+    // these, the fix reads as "stop looking at the expert schedule".
+    assert!(classify_key_at("decoder_sparse_step", &serde_json::json!(2)).is_critical());
+    assert!(classify_key_at("mlp_only_layers", &serde_json::json!([0, 1])).is_critical());
+}

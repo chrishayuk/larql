@@ -29,9 +29,18 @@ pub fn read_identity(config: &Value) -> Identity {
     // key exists, and `ssm_cfg.layer: "Mamba2"` is that package's
     // identity declaration — the same judgment the parser makes, made
     // here so detection and identity cannot disagree about it.
-    let model_type = text_config["model_type"]
-        .as_str()
-        .or_else(|| config["model_type"].as_str())
+    let text_declares = text_config["model_type"].as_str();
+    let container_declares = config["model_type"].as_str();
+    // Only when the text component supplied the primary declaration AND
+    // the container states one of its own is there a second fact to
+    // reconcile. A flat config declares once, at both addresses.
+    let container_model_type = (!std::ptr::eq(text_config, config))
+        .then_some(())
+        .and(text_declares)
+        .and(container_declares)
+        .map(str::to_string);
+    let model_type = text_declares
+        .or(container_declares)
         .or_else(|| {
             (text_config["ssm_cfg"]["layer"].as_str() == Some("Mamba2")).then_some("mamba2")
         })
@@ -63,6 +72,7 @@ pub fn read_identity(config: &Value) -> Identity {
         .unwrap_or_default();
     Identity {
         model_type,
+        container_model_type,
         architectures,
         dtype,
         transformers_version,

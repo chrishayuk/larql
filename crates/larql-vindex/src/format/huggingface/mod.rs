@@ -74,6 +74,7 @@ pub mod metadata_checkpoint;
 pub mod publish;
 /// Byte-range reads — the tier `download` is not.
 pub mod range;
+mod token;
 
 // Re-export the previous flat-module surface so callers don't have to
 // pick a submodule.

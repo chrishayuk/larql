@@ -375,3 +375,120 @@ fn a_token_in_the_environment_is_sent_as_a_bearer() {
         None => std::env::remove_var("HF_ENDPOINT"),
     }
 }
+
+#[test]
+#[serial]
+fn a_token_only_on_disk_is_sent_as_a_bearer() {
+    // The regression this guards: the range client read the environment
+    // and nothing else, so a machine logged in with `huggingface-cli
+    // login` — token on disk, environment empty — got HTTP 401 on every
+    // gated repo, and the refusal read as "that model does not exist".
+    // Every other HF path in this crate already read the file.
+    //
+    // The mock matches only when the header is present, so a client that
+    // regressed to environment-only fails here instead of passing on a
+    // developer machine that happens to export HF_TOKEN.
+    let dir = fixture_dir();
+    let home = tempfile::tempdir().unwrap();
+    let token_path = home.path().join(".cache").join("huggingface").join("token");
+    std::fs::create_dir_all(token_path.parent().unwrap()).unwrap();
+    std::fs::write(&token_path, "hf_disk_token\n").unwrap();
+
+    let prev_token = std::env::var("HF_TOKEN").ok();
+    let prev_hub_token = std::env::var("HUGGING_FACE_HUB_TOKEN").ok();
+    let prev_home = std::env::var("HOME").ok();
+    std::env::remove_var("HF_TOKEN");
+    std::env::remove_var("HUGGING_FACE_HUB_TOKEN");
+    std::env::set_var("HOME", home.path());
+
+    let mut server = mockito::Server::new();
+    let prev_endpoint = std::env::var("HF_ENDPOINT").ok();
+    std::env::set_var("HF_ENDPOINT", server.url());
+    let body = std::fs::read(dir.path().join(FIXTURE_FILE)).unwrap();
+    let _mock = server
+        .mock(
+            "GET",
+            format!("/{MOCK_REPO}/resolve/{MOCK_REVISION}/{FIXTURE_FILE}").as_str(),
+        )
+        .match_header("authorization", "Bearer hf_disk_token")
+        .with_status(200)
+        .with_body(body.clone())
+        .create();
+
+    let got = client().fetch(FIXTURE_FILE);
+
+    // Restore before asserting so a failure does not leak the overrides
+    // into every test that runs after it.
+    match prev_token {
+        Some(prev) => std::env::set_var("HF_TOKEN", prev),
+        None => std::env::remove_var("HF_TOKEN"),
+    }
+    match prev_hub_token {
+        Some(prev) => std::env::set_var("HUGGING_FACE_HUB_TOKEN", prev),
+        None => std::env::remove_var("HUGGING_FACE_HUB_TOKEN"),
+    }
+    match prev_home {
+        Some(prev) => std::env::set_var("HOME", prev),
+        None => std::env::remove_var("HOME"),
+    }
+    match prev_endpoint {
+        Some(prev) => std::env::set_var("HF_ENDPOINT", prev),
+        None => std::env::remove_var("HF_ENDPOINT"),
+    }
+
+    let got = got
+        .expect("the request must carry the token from disk")
+        .expect("the file is served");
+    assert_eq!(got.len(), body.len());
+}
+
+#[test]
+#[serial]
+fn an_empty_token_variable_is_no_token_at_all() {
+    // `HF_TOKEN=` in a shell profile is the empty string, not a
+    // credential. Sending it would put `Bearer ` on the wire and turn a
+    // public read into a 401 — so an empty value must fall through to
+    // the next source, and here there is none.
+    let prev_token = std::env::var("HF_TOKEN").ok();
+    let prev_hub_token = std::env::var("HUGGING_FACE_HUB_TOKEN").ok();
+    let prev_home = std::env::var("HOME").ok();
+    let home = tempfile::tempdir().unwrap();
+    std::env::set_var("HF_TOKEN", "");
+    std::env::remove_var("HUGGING_FACE_HUB_TOKEN");
+    std::env::set_var("HOME", home.path());
+
+    let mut server = mockito::Server::new();
+    let prev_endpoint = std::env::var("HF_ENDPOINT").ok();
+    std::env::set_var("HF_ENDPOINT", server.url());
+    let _mock = server
+        .mock(
+            "GET",
+            format!("/{MOCK_REPO}/resolve/{MOCK_REVISION}/{FIXTURE_FILE}").as_str(),
+        )
+        .match_header("authorization", mockito::Matcher::Missing)
+        .with_status(200)
+        .with_body("{}")
+        .create();
+
+    let got = client().fetch(FIXTURE_FILE);
+
+    match prev_token {
+        Some(prev) => std::env::set_var("HF_TOKEN", prev),
+        None => std::env::remove_var("HF_TOKEN"),
+    }
+    match prev_hub_token {
+        Some(prev) => std::env::set_var("HUGGING_FACE_HUB_TOKEN", prev),
+        None => std::env::remove_var("HUGGING_FACE_HUB_TOKEN"),
+    }
+    match prev_home {
+        Some(prev) => std::env::set_var("HOME", prev),
+        None => std::env::remove_var("HOME"),
+    }
+    match prev_endpoint {
+        Some(prev) => std::env::set_var("HF_ENDPOINT", prev),
+        None => std::env::remove_var("HF_ENDPOINT"),
+    }
+
+    got.expect("an empty variable must not become an empty bearer")
+        .expect("the file is served");
+}
