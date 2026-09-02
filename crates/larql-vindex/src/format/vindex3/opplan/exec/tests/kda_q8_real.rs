@@ -26,7 +26,7 @@
 use std::time::Instant;
 
 use larql_compute::backend::ComputeBackend;
-use larql_compute::cpu::ops::q4_common::quantize_q8_0;
+use larql_compute::cpu::ops::q4_common::{quantize_q4_k, quantize_q6_k, quantize_q8_0};
 use larql_compute_metal::trait_impl::grouped_experts::ExpertOffset;
 use larql_compute_metal::trait_impl::kimi_layer::ExpertEncoding as MetalEncoding;
 use larql_compute_metal::MetalBackend;
@@ -70,6 +70,93 @@ fn target_layers() -> Vec<usize> {
 /// probe a control against the interaction mechanisms measured
 /// everywhere else as much as a lever measurement.
 pub(super) const LMHEAD_ENV: &str = "LARQL_LMHEAD_Q8";
+
+/// **Per-family encoding selectors.** Which rung of the precision ladder
+/// each family's scope is re-encoded to, defaulting to `Q8_0` so every
+/// pre-existing invocation means exactly what it meant before.
+///
+/// PER FAMILY rather than one global knob: candidates are already
+/// heading toward mixed maps (`MLA Q6_K x head Q8_0`), and a single
+/// selector would have to be undone the moment that happens.
+///
+/// The probe pinned `MetalEncoding::Q80` at five quantisation sites and
+/// four encoding assignments, which made "which family is cheapest at
+/// the NEXT rung down" unaskable — an artificial limit of the
+/// instrument, not of the runtime: `ExpertEncoding` has carried `Q6K`
+/// and `Q4K` all along, and `quantize_q6_k`/`quantize_q4_k` sit beside
+/// `quantize_q8_0` in the same module.
+const KDA_ENC_ENV: &str = "LARQL_KDA_ENCODING";
+const MLA_ENC_ENV: &str = "LARQL_MLA_ENCODING";
+const LMHEAD_ENC_ENV: &str = "LARQL_LMHEAD_ENCODING";
+const SHARED_ENC_ENV: &str = "LARQL_SHARED_ENCODING";
+
+fn parse_encoding(env: &str, name: &str) -> MetalEncoding {
+    match name.trim() {
+        "Q8_0" => MetalEncoding::Q80,
+        "Q6_K" => MetalEncoding::Q6K,
+        "Q4_K" => MetalEncoding::Q4K,
+        other => panic!("{env}={other} is not one of Q8_0 | Q6_K | Q4_K"),
+    }
+}
+
+/// The encoding one family's scope is re-encoded to. `Q8_0` unless said
+/// otherwise, so the historical behaviour is the default and every
+/// earlier measurement remains reproducible by its original command.
+fn family_encoding(env: &str) -> MetalEncoding {
+    parse_encoding(env, &std::env::var(env).unwrap_or_else(|_| "Q8_0".into()))
+}
+
+/// The encoding for ONE layer of a family, which is the granularity a
+/// candidate actually moves at.
+///
+/// Two accepted forms, because a family-wide move is a legitimate
+/// coarser candidate and should stay expressible:
+///
+/// ```text
+/// LARQL_MLA_ENCODING=Q6_K            every MLA scope layer
+/// LARQL_MLA_ENCODING=23:Q8_0,26:Q6_K one layer moves, the rest hold
+/// ```
+///
+/// A layer the per-layer form does not name keeps `Q8_0`, so naming
+/// only what MOVES is enough and the parent is never restated by
+/// accident.
+fn layer_encoding(env: &str, layer: usize) -> MetalEncoding {
+    let spec = std::env::var(env).unwrap_or_else(|_| "Q8_0".into());
+    if !spec.contains(':') {
+        return parse_encoding(env, &spec);
+    }
+    for band in spec.split(',') {
+        let (l, e) = band
+            .split_once(':')
+            .unwrap_or_else(|| panic!("{env}: `{band}` is not `LAYER:ENCODING`"));
+        if l.trim().parse::<usize>().expect("layer index") == layer {
+            return parse_encoding(env, e);
+        }
+    }
+    MetalEncoding::Q80
+}
+
+/// Quantise f32 values into `enc`. BF16 is not a re-encoding target here
+/// — the baseline arm already holds it.
+fn encode_as(enc: MetalEncoding, values: &[f32]) -> Vec<u8> {
+    match enc {
+        MetalEncoding::Q80 => quantize_q8_0(values),
+        MetalEncoding::Q6K => quantize_q6_k(values),
+        MetalEncoding::Q4K => quantize_q4_k(values),
+        MetalEncoding::Bf16 => panic!("re-encoding to BF16 is the baseline, not a candidate"),
+    }
+}
+
+/// [`MetalEncoding`] as the physical-store encoding the shared binding
+/// records.
+fn phys_of(enc: MetalEncoding) -> PhysEncoding {
+    match enc {
+        MetalEncoding::Q80 => PhysEncoding::Q80,
+        MetalEncoding::Q6K => PhysEncoding::Q6K,
+        MetalEncoding::Q4K => PhysEncoding::Q4K,
+        MetalEncoding::Bf16 => panic!("shared baseline is not a re-encoding target"),
+    }
+}
 
 /// MLA layers whose four wide projections the candidate arm re-encodes
 /// (comma list). The recurrence-free sibling of the KDA scope — the
@@ -140,7 +227,7 @@ fn widen_bf16(bytes: &[u8]) -> Vec<f32> {
 /// Re-encode the layer's two wide projections in place. Returns the
 /// (bf16, q8) byte counts so the caller can assert the swap really
 /// happened — an arm that silently kept bf16 would measure nothing.
-fn requant_kda_projections(layer: &mut DeviceLayer) -> (usize, usize) {
+fn requant_kda_projections(layer_idx: usize, layer: &mut DeviceLayer) -> (usize, usize) {
     let shape = layer.kda_shape;
     let (width, hidden) = (shape.num_heads * shape.head_dim, shape.hidden);
     let DeviceAttn::Kda {
@@ -153,6 +240,7 @@ fn requant_kda_projections(layer: &mut DeviceLayer) -> (usize, usize) {
     else {
         panic!("the target layer must be KDA — pick one from the interleave");
     };
+    let enc = layer_encoding(KDA_ENC_ENV, layer_idx);
     let per = width * hidden * 2;
     let before = qkv_bank.len() + o_proj.len();
     let mut q8 = Vec::new();
@@ -160,12 +248,12 @@ fn requant_kda_projections(layer: &mut DeviceLayer) -> (usize, usize) {
     for (slot, off) in qkv_offsets.iter().enumerate() {
         let start = off.0 as usize;
         offsets[slot] = ExpertOffset(q8.len() as u32);
-        q8.extend(quantize_q8_0(&widen_bf16(&qkv_bank[start..start + per])));
+        q8.extend(encode_as(enc, &widen_bf16(&qkv_bank[start..start + per])));
     }
     *qkv_bank = q8;
     *qkv_offsets = offsets;
-    *o_proj = quantize_q8_0(&widen_bf16(o_proj));
-    *encoding = MetalEncoding::Q80;
+    *o_proj = encode_as(enc, &widen_bf16(o_proj));
+    *encoding = enc;
     (before, layer_bytes(layer))
 }
 
@@ -179,7 +267,7 @@ fn layer_bytes(layer: &DeviceLayer) -> usize {
 }
 
 /// Re-encode an MLA layer's four wide projections in place.
-fn requant_mla_projections(layer: &mut DeviceLayer) -> (usize, usize) {
+fn requant_mla_projections(layer_idx: usize, layer: &mut DeviceLayer) -> (usize, usize) {
     let DeviceAttn::Mla {
         q,
         kv_a,
@@ -192,10 +280,11 @@ fn requant_mla_projections(layer: &mut DeviceLayer) -> (usize, usize) {
         panic!("the MLA target layer must be MLA — check the interleave");
     };
     let before = q.len() + kv_a.len() + kv_b.len() + o.len();
+    let enc = layer_encoding(MLA_ENC_ENV, layer_idx);
     for m in [q, kv_a, kv_b, o] {
-        *m = quantize_q8_0(&widen_bf16(m));
+        *m = encode_as(enc, &widen_bf16(m));
     }
-    *encoding = MetalEncoding::Q80;
+    *encoding = enc;
     let after = match &layer.attn {
         DeviceAttn::Mla {
             q, kv_a, kv_b, o, ..
@@ -213,6 +302,7 @@ fn requant_shared(layer_idx: usize, layer: &mut DeviceLayer) -> (usize, usize) {
         .shared
         .as_ref()
         .expect("the shared target layer declares a shared expert");
+    let shared_enc = layer_encoding(SHARED_ENC_ENV, layer_idx);
     let mut bytes = Vec::new();
     let mut tensors = std::collections::BTreeMap::new();
     let mut before = 0usize;
@@ -223,7 +313,7 @@ fn requant_shared(layer_idx: usize, layer: &mut DeviceLayer) -> (usize, usize) {
     ];
     for (name, src) in &parts {
         before += src.len();
-        let q = quantize_q8_0(&widen_bf16(src));
+        let q = encode_as(shared_enc, &widen_bf16(src));
         tensors.insert((*name).to_string(), (bytes.len() as u64, q.len() as u64));
         bytes.extend(q);
     }
@@ -235,7 +325,7 @@ fn requant_shared(layer_idx: usize, layer: &mut DeviceLayer) -> (usize, usize) {
     ));
     let reg = |name: &str| EncodedRegion {
         region: store.region(name).expect("just inserted"),
-        encoding: PhysEncoding::Q80,
+        encoding: phys_of(shared_enc),
     };
     layer.bank.shared = Some(SharedExpertBinding {
         gate: reg("gate"),
@@ -276,10 +366,10 @@ pub(super) fn build_layers_scoped(
             .device_layer(metal, i, overlay)
             .unwrap_or_else(|e| panic!("layer {i} must load: {e}"));
         if kda.contains(&i) {
-            swapped.push(requant_kda_projections(&mut d));
+            swapped.push(requant_kda_projections(i, &mut d));
         }
         if mla.contains(&i) {
-            swapped.push(requant_mla_projections(&mut d));
+            swapped.push(requant_mla_projections(i, &mut d));
         }
         if shared.contains(&i) {
             swapped.push(requant_shared(i, &mut d));
@@ -316,11 +406,12 @@ pub(super) fn assemble_with_head<'a>(
     let mut head = model.head().expect("the head must load");
     if q8_head {
         let before = head.weight.len();
-        head.weight = quantize_q8_0(&widen_bf16(&head.weight));
-        head.encoding = MetalEncoding::Q80;
+        let henc = family_encoding(LMHEAD_ENC_ENV);
+        head.weight = encode_as(henc, &widen_bf16(&head.weight));
+        head.encoding = henc;
         assert!(head.weight.len() < before, "the head swap did not happen");
         eprintln!(
-            "[kda-q8] output head re-encoded Q8_0: {before} -> {} bytes ({:.1}%)",
+            "[kda-q8] output head re-encoded {henc:?}: {before} -> {} bytes ({:.1}%)",
             head.weight.len(),
             100.0 * head.weight.len() as f64 / before as f64
         );
@@ -349,7 +440,11 @@ fn assert_arms_differ_only_at(
         let compiled_here = expert_layers.contains(&(i as u32));
         match (&b.bank.shared, &c.bank.shared) {
             (Some(sb), Some(sc)) if shared_targets.contains(&i) => {
-                assert_eq!(sc.gate.encoding, PhysEncoding::Q80, "layer {i} shared gate");
+                assert_eq!(
+                    sc.gate.encoding,
+                    phys_of(layer_encoding(SHARED_ENC_ENV, i)),
+                    "layer {i} shared gate"
+                );
                 assert!(
                     sc.gate.region.bytes().len() < sb.gate.region.bytes().len(),
                     "layer {i}: the shared swap did not happen"
@@ -406,7 +501,7 @@ fn assert_arms_differ_only_at(
                 },
             ) if targets.contains(&i) => {
                 assert_eq!(*eb, MetalEncoding::Bf16, "baseline stays bf16");
-                assert_eq!(*ec, MetalEncoding::Q80, "target layer is Q8_0");
+                assert_eq!(*ec, layer_encoding(KDA_ENC_ENV, i), "target layer encoding");
                 assert!(qc.len() < qb.len() && oc.len() < ob.len());
             }
             (
