@@ -51,3 +51,31 @@ impl StagingReport {
             .map(|declared| declared.abs_diff(payload))
     }
 }
+
+/// What staging read to answer a question about `artifact`, as JSON —
+/// or `None` for a local artifact, which staged nothing.
+///
+/// Lives here rather than in a caller because two front doors report it
+/// (`vindex plan --json` and `POST /v1/plan`) and the server's response
+/// body is defined as the CLI's document plus one serving field. Two
+/// hand-written copies of this object would make that parity a
+/// coincidence rather than a property.
+pub fn staging_json(artifact: &super::ResolvedArtifact) -> Option<serde_json::Value> {
+    let report = artifact.staging()?;
+    Some(serde_json::json!({
+        "artifact": artifact.name,
+        "commit": artifact.commit(),
+        "shards": report.shards,
+        "staged": super::size(report.staged_bytes()),
+        "headers": super::size(report.header_bytes),
+        "metadata": super::size(report.metadata_bytes),
+        "stands_in_for": report.payload_bytes.as_ref().ok().map(|b| super::size(*b)),
+        // Stated only when the index disagrees with its own headers, so
+        // the difference reads as a fact about the checkpoint rather than
+        // a units bug in the report.
+        "index_declares": report
+            .declared_total
+            .filter(|d| report.payload_bytes.as_ref().is_ok_and(|p| d != p))
+            .map(super::size),
+    }))
+}
