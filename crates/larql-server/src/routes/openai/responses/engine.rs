@@ -22,7 +22,9 @@ use super::super::chat::ChatMessage;
 use super::super::prompt::{pick_template, render};
 use super::super::schema::Schema;
 use super::super::token_tap::{EmitFailure, TokenTap};
-use super::super::util::{build_sampling_eos, contains_any, trim_at_stop, SamplingParams};
+use super::super::util::{
+    build_sampling_eos, build_sampling_eos_from, contains_any, trim_at_stop, SamplingParams,
+};
 
 /// The resolved runtime binding for one request, cloned out of
 /// `AppState` so generation can move onto a blocking thread.
@@ -213,7 +215,7 @@ fn generate_on_v3(
     let prompt = render(template, messages);
     let prompt_ids = encode(&model.tokenizer, &prompt)?;
 
-    let (sampling, eos) = build_sampling_eos(params, stop_strings);
+    let (sampling, eos) = build_sampling_eos_from(model.eos.clone(), params, stop_strings);
     let mut tap = TokenTap::new(stop_strings, EmitFailure::StopEmitting);
     // The mask pipeline is V2's `build_constrained_mask` verbatim —
     // one grammar implementation, two runtimes.

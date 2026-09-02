@@ -80,9 +80,7 @@ pub async fn handle_walk_ffn(
         let resp_ct = crate::wire::preferred_response_ct(accept.as_deref()).to_owned();
 
         let result = tokio::task::spawn_blocking(move || {
-            let model = state
-                .model(None)
-                .ok_or_else(|| ServerError::NotFound("no model loaded".into()))?;
+            let model = state.v2_or_unsupported(None)?;
             validate_residual(&req, model.config.hidden_size)?;
             let scan_layers = collect_scan_layers(&req)?;
             validate_owned(&model, &scan_layers)?;

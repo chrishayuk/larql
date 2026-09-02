@@ -586,6 +586,25 @@ pub struct ComponentOpPlan {
     pub output: Option<OutputOp>,
 }
 
+/// Which FFN a layer runs, as a declaration or as operand evidence.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+pub enum FfnIdentity {
+    /// A dense MLP.
+    Dense,
+    /// A routed expert block (routed alone, or routed-plus-dense hybrid).
+    Routed,
+}
+
+impl FfnIdentity {
+    /// Lower-case name for messages.
+    pub const fn name(self) -> &'static str {
+        match self {
+            Self::Dense => "dense",
+            Self::Routed => "routed",
+        }
+    }
+}
+
 /// Why a plan could not be built — each variant names the exact operand
 /// or fact, so a refusal is a work item, not a mystery.
 #[derive(Debug, Clone, PartialEq, Serialize)]
@@ -612,6 +631,20 @@ pub enum ClosureDefect {
     },
     /// An op the surface/placement implies has no operand.
     MissingOperand { layer: usize, role: OperandRole },
+    /// The declared FFN schedule and the operand evidence disagree for a
+    /// layer. The surface declares which layers are routed
+    /// (`dense_prefix_layers`, else every layer of a MoE surface); the
+    /// expert bank and router operands are evidence that the declaration
+    /// is honoured, never the authority. A routed layer whose bank is
+    /// absent used to plan as dense with no defect — a missing expert
+    /// bank must not quietly turn a MoE layer into an MLP — and a
+    /// declared-dense prefix layer with routed operands is the same
+    /// disagreement the other way round.
+    FfnIdentityMismatch {
+        layer: usize,
+        declared: FfnIdentity,
+        evidence: FfnIdentity,
+    },
     /// Two tensors classified into the same role of the same layer.
     DuplicateOperand { layer: usize, role: OperandRole },
     /// An operand's stored shape contradicts the surface's geometry.
@@ -650,6 +683,18 @@ impl std::fmt::Display for ClosureDefect {
             Self::UnclassifiedOperand { object, tensor } => {
                 write!(f, "unclassified executable operand: {object}/{tensor}")
             }
+            Self::FfnIdentityMismatch {
+                layer,
+                declared,
+                evidence,
+            } => write!(
+                f,
+                "layer {layer}: the surface declares a {} FFN but the operands are those of a {} \
+                 one — a missing expert bank does not make a routed layer dense, and stray \
+                 routed operands do not make a dense-prefix layer routed",
+                declared.name(),
+                evidence.name()
+            ),
             Self::MisplacedOperand {
                 object,
                 tensor,

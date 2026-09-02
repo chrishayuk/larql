@@ -32,7 +32,7 @@ use super::completions::{
 };
 use super::error::OpenAIError;
 use super::util::{
-    build_sampling_eos, contains_any, error_chunk, join_generation, new_id_suffix, unix_now,
+    build_sampling_eos_from, contains_any, error_chunk, join_generation, new_id_suffix, unix_now,
     FINISH_REASON_LENGTH, FINISH_REASON_STOP, SSE_CHANNEL_DEPTH, SSE_DONE,
 };
 
@@ -119,7 +119,8 @@ fn run_v3_completions_loop(
     let mut completion_tokens_sum = 0;
     for (index, prompt) in prompts.iter().enumerate() {
         let prompt_ids = encode_prompt(model, prompt)?;
-        let (sampling, eos) = build_sampling_eos(sampling_params, stop_strings);
+        let (sampling, eos) =
+            build_sampling_eos_from(model.eos.clone(), sampling_params, stop_strings);
         let generation = generate_v3(model, &prompt_ids, max_tokens, sampling, &eos, |_, _| {})?;
         tally.add_v3(
             generation.prompt_tokens,
@@ -176,7 +177,8 @@ fn stream_v3_completions(
                 return;
             }
         };
-        let (sampling, eos) = build_sampling_eos(sampling_params, &stop_strings);
+        let (sampling, eos) =
+            build_sampling_eos_from(model.eos.clone(), sampling_params, &stop_strings);
 
         let cmpl_id_cb = cmpl_id.clone();
         let model_id_cb = model_id.clone();

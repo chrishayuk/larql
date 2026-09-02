@@ -11,7 +11,7 @@
 
 use std::path::Path;
 
-use larql_vindex::format::vindex3::inspect::inspect_container;
+use larql_vindex::format::vindex3::inspect::{inspect_container, SystemInspection};
 use larql_vindex::format::vindex3::opplan::exec::backend::PlanBackend;
 use larql_vindex::format::vindex3::opplan::exec::kv::KvState;
 use larql_vindex::format::vindex3::opplan::exec::operands::{
@@ -47,6 +47,11 @@ pub struct OpenPolicy {
 /// store, the two identities the container declares about itself, and
 /// the encoding the store was asked for.
 pub struct OpenedComponent {
+    /// The inspection the plan and store were built from — the
+    /// container's own directory, graph and index facts — so a caller
+    /// that needs them (provenance checks, representation listings)
+    /// reads the same inspection the opener judged, not a second one.
+    pub inspection: SystemInspection,
     pub plan: ComponentOpPlan,
     pub store: OperandStore,
     /// The container's self-declared model name (`index.model`) — the
@@ -97,6 +102,7 @@ pub fn open_component(
         model_name: inspection.index.model.clone(),
         family: inspection.index.family.clone(),
         want: policy.want,
+        inspection,
     })
 }
 
@@ -155,6 +161,7 @@ impl<B: PlanBackend> Vindex3Runtime<B> {
             model_name,
             family,
             want: _,
+            inspection: _,
         } = open_component(container, component, policy)?;
         Ok(Self {
             plan,

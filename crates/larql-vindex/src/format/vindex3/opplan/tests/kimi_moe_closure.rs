@@ -13,7 +13,7 @@ use crate::format::vindex3::encode::encode_system_unenforced as encode_system;
 use crate::format::vindex3::graph::{ObjectKind, OperandRole};
 use crate::format::vindex3::inspect::inspect_container;
 use crate::format::vindex3::opplan::{
-    plan_component_ops, ClosureDefect, ExpertBank, LayerFfn, OpPlanOutcome,
+    plan_component_ops, ClosureDefect, ExpertBank, FfnIdentity, LayerFfn, OpPlanOutcome,
 };
 use crate::format::vindex3::plan::tests_support::custom_artifact;
 
@@ -138,6 +138,15 @@ fn kimi_tensors() -> Vec<(String, Vec<usize>)> {
 
 /// Encode a Kimi-shaped variant and plan its target component.
 fn plan_variant(mutate: impl FnOnce(&mut Vec<(String, Vec<usize>)>)) -> OpPlanOutcome {
+    plan_variant_with(kimi_config(), mutate)
+}
+
+/// [`plan_variant`] under a different declaration — the dense-prefix
+/// tests change what the config SAYS, not only what the estate holds.
+fn plan_variant_with(
+    config: serde_json::Value,
+    mutate: impl FnOnce(&mut Vec<(String, Vec<usize>)>),
+) -> OpPlanOutcome {
     let dir = tempfile::tempdir().unwrap();
     let mut tensors = kimi_tensors();
     mutate(&mut tensors);
@@ -145,7 +154,7 @@ fn plan_variant(mutate: impl FnOnce(&mut Vec<(String, Vec<usize>)>)) -> OpPlanOu
         .iter()
         .map(|(name, shape)| (name.as_str(), shape.as_slice()))
         .collect();
-    let inventory = custom_artifact(dir.path(), &kimi_config(), &borrowed);
+    let inventory = custom_artifact(dir.path(), &config, &borrowed);
     let named = vec![("kimi-artifact".to_string(), inventory)];
     let out = tempfile::tempdir().unwrap();
     encode_system(&named, out.path()).unwrap();
@@ -388,4 +397,134 @@ fn carving_places_every_expert_tensor_in_the_bank_object_and_nothing_else() {
             binding.tensor_prefix
         );
     }
+}
+
+// ── The dense prefix is declared, not inferred ────────────────────────
+//
+// `first_k_dense_replace` is the surface's schedule (`dense_prefix_layers`).
+// Closure used to route a layer by operand evidence alone, so a routed
+// layer whose expert bank was missing quietly planned as dense. The
+// declaration is now the authority and the operands are evidence that it
+// is honoured; disagreement in either direction is a defect, not a
+// different plan.
+
+/// Kimi's own config with a one-layer dense prefix.
+fn dense_prefix_config(prefix: usize) -> serde_json::Value {
+    let mut config = kimi_config();
+    config["first_k_dense_replace"] = serde_json::json!(prefix);
+    config
+}
+
+/// Replace layer 0's routed block with the dense MLP a Kimi dense-prefix
+/// layer carries.
+fn make_layer_0_dense(tensors: &mut Vec<(String, Vec<usize>)>) {
+    tensors.retain(|(name, _)| {
+        !(name.starts_with("model.layers.0.") && name.contains("block_sparse_moe"))
+    });
+    let inter = HIDDEN * 4;
+    tensors.push((
+        "model.layers.0.mlp.gate_proj.weight".to_string(),
+        vec![inter, HIDDEN],
+    ));
+    tensors.push((
+        "model.layers.0.mlp.up_proj.weight".to_string(),
+        vec![inter, HIDDEN],
+    ));
+    tensors.push((
+        "model.layers.0.mlp.down_proj.weight".to_string(),
+        vec![HIDDEN, inter],
+    ));
+}
+
+fn identity_defect(layer: usize, declared: FfnIdentity, evidence: FfnIdentity) -> ClosureDefect {
+    ClosureDefect::FfnIdentityMismatch {
+        layer,
+        declared,
+        evidence,
+    }
+}
+
+/// A declared dense-prefix layer plans dense, and the layers after it
+/// keep their routed plan: the declaration is valid as dense when the
+/// estate agrees with it.
+///
+/// Three layers, not the fixture's two: with a single routed layer the
+/// encoder names the bank's tensors relative to that one layer's prefix
+/// and the layer segment vanishes from the name (`0.w1.weight`), which
+/// closure then cannot place — an encoder naming artefact of a one-layer
+/// bank, not a closure fact, and outside this test's claim.
+#[test]
+fn a_declared_dense_prefix_layer_plans_dense_and_the_rest_routed() {
+    const THREE: usize = 3;
+    let mut config = dense_prefix_config(1);
+    config["num_hidden_layers"] = serde_json::json!(THREE);
+    config["linear_attn_config"]["full_attn_layers"] =
+        serde_json::json!((1..=THREE).collect::<Vec<_>>());
+    let outcome = plan_variant_with(config, |tensors| {
+        tensors.extend(kimi_layer_tensors(2));
+        make_layer_0_dense(tensors);
+    });
+    assert!(outcome.closed(), "{:?}", outcome.defects);
+    let plan = outcome.plan.unwrap();
+    assert_eq!(plan.layers.len(), THREE);
+    assert!(
+        matches!(plan.layers[0].ffn, Some(LayerFfn::Dense(_))),
+        "layer 0 is the declared dense prefix"
+    );
+    for layer in &plan.layers[1..] {
+        assert!(
+            matches!(layer.ffn, Some(LayerFfn::Routed(_))),
+            "layer {} is routed by declaration and by its bank",
+            layer.layer
+        );
+    }
+}
+
+/// A routed layer whose expert bank and router are missing is refused by
+/// name. It used to plan as dense with no defect — the silent identity
+/// change a missing bank must never cause.
+#[test]
+fn a_routed_layer_with_no_expert_bank_is_refused_not_planned_dense() {
+    let outcome = plan_variant(|tensors| {
+        tensors.retain(|(name, _)| {
+            !(name.starts_with("model.layers.1.") && name.contains("block_sparse_moe"))
+        })
+    });
+    assert!(!outcome.closed(), "a bank-less routed layer must not close");
+    let mismatch = identity_defect(1, FfnIdentity::Routed, FfnIdentity::Dense);
+    assert!(outcome.defects.contains(&mismatch), "{:?}", outcome.defects);
+    let text = mismatch.to_string();
+    assert!(
+        text.starts_with(
+            "layer 1: the surface declares a routed FFN but the operands are those of a dense"
+        ),
+        "{text}"
+    );
+    assert!(
+        !outcome
+            .defects
+            .iter()
+            .any(|d| matches!(d, ClosureDefect::FfnIdentityMismatch { layer: 0, .. })),
+        "layer 0 still agrees with its declaration: {:?}",
+        outcome.defects
+    );
+}
+
+/// The other direction: a declared-dense prefix layer that still carries
+/// routed operands is the same disagreement, refused the same way rather
+/// than routed on the strength of the stray operands.
+#[test]
+fn a_dense_prefix_layer_carrying_routed_operands_is_refused() {
+    let outcome = plan_variant_with(dense_prefix_config(1), |_| {});
+    assert!(
+        !outcome.closed(),
+        "routed operands on a declared-dense layer must not close"
+    );
+    assert!(
+        outcome
+            .defects
+            .contains(&identity_defect(0, FfnIdentity::Dense, FfnIdentity::Routed)),
+        "{:?}",
+        outcome.defects
+    );
 }

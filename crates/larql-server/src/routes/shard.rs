@@ -66,9 +66,12 @@ pub async fn handle_shard(
             .into_response();
     }
 
-    let model = match state.model(Some(&model_id)) {
-        Some(m) => m.clone(),
-        None => {
+    let model = match state.v2_or_unsupported(Some(&model_id)) {
+        Ok(m) => m,
+        Err(crate::error::ServerError::Unsupported(msg)) => {
+            return (StatusCode::NOT_IMPLEMENTED, msg).into_response();
+        }
+        Err(_) => {
             return (
                 StatusCode::NOT_FOUND,
                 format!("model '{model_id}' not loaded on this server"),
