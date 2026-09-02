@@ -18,6 +18,15 @@
 
 set -euo pipefail
 
+# --revision <sha>: assert the live server IS this commit. Without it
+# the gate can only show the server BEHAVES like the build it expects,
+# which is circumstantial — a signature, not an identity.
+EXPECT_REVISION=""
+if [ "${1:-}" = "--revision" ]; then
+  EXPECT_REVISION="${2:?--revision needs a commit sha}"
+  shift 2
+fi
+
 BASE="${1:-https://vindex3-explorer.fly.dev}"
 MODEL="${VERIFY_MODEL:-hf://Qwen/Qwen3-0.6B}"
 # Never a path that exists: this must be refused by POLICY, before the
@@ -60,6 +69,21 @@ SCHEMA="$(printf '%s' "$CAPS" | jget schema)"
 [ "$SCHEMA" = "1" ] \
   || fail "capabilities schema is $SCHEMA; this script reads schema 1 only"
 pass "capabilities schema 1"
+
+REVISION="$(printf '%s' "$CAPS" | jget server.revision)"
+if [ -n "$EXPECT_REVISION" ]; then
+  [ "$REVISION" = "-" ] \
+    && fail "the server reports no build revision, so this gate cannot confirm which code is live. Deploy with --build-arg LARQL_SERVER_REVISION=\$(git rev-parse HEAD)."
+  [ "$REVISION" = "$EXPECT_REVISION" ] \
+    || fail "live server is $REVISION, expected $EXPECT_REVISION — a different build is serving traffic"
+  pass "live server IS $EXPECT_REVISION"
+elif [ "$REVISION" != "-" ]; then
+  pass "build revision $REVISION (pass --revision <sha> to assert it)"
+else
+  # Not a failure: a build may legitimately not know its commit. But say
+  # so, because everything below is then a behavioural signature only.
+  pass "build revision not reported — identity unasserted, signature only"
+fi
 
 PROFILE="$(printf '%s' "$CAPS" | jget profile)"
 [ "$PROFILE" = "public_explorer" ] \

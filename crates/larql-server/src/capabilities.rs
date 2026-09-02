@@ -361,10 +361,7 @@ impl Capabilities {
             "object": "capabilities",
             "schema": CAPABILITIES_SCHEMA,
             "profile": self.profile.as_str(),
-            "server": {
-                "name": env!("CARGO_PKG_NAME"),
-                "version": env!("CARGO_PKG_VERSION"),
-            },
+            "server": server_identity(BUILD_REVISION),
             "runtime": { "backends": V3_BACKENDS },
             "routes": self.mounted.paths().collect::<Vec<_>>(),
         });
@@ -374,6 +371,41 @@ impl Capabilities {
         }
         report
     }
+}
+
+/// The commit this binary was built from, or `None`.
+///
+/// `option_env!`, so it is resolved at COMPILE time and baked into the
+/// binary. A build that was not told its revision produces `None` here
+/// and the field is then absent from the report — never `"unknown"`,
+/// and never derived at runtime.
+///
+/// That last part is the point. A revision read from the working
+/// directory, or from a `.git` beside the executable, describes the
+/// machine the process happens to be running on rather than the code
+/// it is running, and would let a stale binary in a fresh checkout
+/// claim the checkout's commit. The only honest source is the build.
+pub const BUILD_REVISION: Option<&str> = option_env!("LARQL_SERVER_REVISION");
+
+/// The `server` block: what is answering, and which build of it.
+///
+/// `revision` is omitted rather than nulled when the build did not say,
+/// so a client can distinguish "this server does not report a
+/// revision" from "this server reports it does not know" — the same
+/// discipline the site's build record uses, where an identifier that
+/// does not exist is absent rather than guessed.
+fn server_identity(revision: Option<&str>) -> serde_json::Value {
+    let mut block = serde_json::json!({
+        "name": env!("CARGO_PKG_NAME"),
+        "version": env!("CARGO_PKG_VERSION"),
+    });
+    if let Some(revision) = revision {
+        // Verbatim. Not shortened, not validated as a sha: the build
+        // said this, and the deploy gate compares it to what it
+        // expected to publish.
+        block["revision"] = serde_json::Value::String(revision.to_string());
+    }
+    block
 }
 
 /// Insert `value` at a `/`-separated JSON pointer, creating the
@@ -393,5 +425,67 @@ fn insert_at(root: &mut serde_json::Value, pointer: &str, value: serde_json::Val
             node[segment] = serde_json::json!({});
         }
         node = &mut node[segment];
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// A build that was told its commit reports it verbatim — not
+    /// shortened, not reformatted. The deploy gate compares this string
+    /// to the SHA it expected to publish, so any tidying here would
+    /// break the comparison it exists for.
+    #[test]
+    fn a_stated_revision_is_reported_verbatim() {
+        let block = server_identity(Some("481fa87cdeadbeef"));
+        assert_eq!(block["revision"], "481fa87cdeadbeef");
+        assert_eq!(block["name"], "larql-server");
+    }
+
+    /// A build that was told nothing omits the field. Not `null`, not
+    /// `"unknown"`: a client must be able to tell "this server does not
+    /// report a revision" from "this server claims not to know", and a
+    /// manufactured placeholder would make a gate comparing against it
+    /// silently unfalsifiable.
+    #[test]
+    fn an_unstated_revision_is_absent_rather_than_invented() {
+        let block = server_identity(None);
+        assert!(
+            block.get("revision").is_none(),
+            "revision must be absent, got {block}"
+        );
+        assert!(
+            block.get("name").is_some(),
+            "the rest of the block still stands"
+        );
+    }
+
+    /// The revision can only come from the build. This pins the
+    /// mechanism, because the failure it guards against — deriving the
+    /// commit at runtime from a `.git` next to the process — would let
+    /// a stale binary in a fresh checkout report the checkout's commit
+    /// and pass a deploy gate it should fail.
+    #[test]
+    fn the_revision_is_a_compile_time_fact() {
+        // Only the non-test half: this module's own assertions quote the
+        // very strings being searched for, so scanning the whole file
+        // would have it match itself and fail regardless of the code.
+        let whole = include_str!("capabilities.rs");
+        let source = &whole[..whole.find("#[cfg(test)]").unwrap_or(whole.len())];
+        assert!(
+            source.contains("option_env!(\"LARQL_SERVER_REVISION\")"),
+            "the revision must be baked in by the build"
+        );
+        for runtime_source in [
+            "std::env::var",
+            "Command::new(\"git\")",
+            "read_to_string(\".git",
+        ] {
+            assert!(
+                !source.contains(runtime_source),
+                "the revision must not be derived at runtime: found {runtime_source}"
+            );
+        }
     }
 }

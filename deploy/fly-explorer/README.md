@@ -29,8 +29,17 @@ keeping: wipe the machine and it rebuilds identically.
 
 ```bash
 fly apps create vindex3-explorer
-fly deploy --app vindex3-explorer --config deploy/fly-explorer/fly.toml --remote-only
+fly deploy --app vindex3-explorer --config deploy/fly-explorer/fly.toml --remote-only \
+  --build-arg LARQL_SERVER_REVISION=$(git rev-parse HEAD)
 ```
+
+Run the deploy from a checkout of the commit you intend to publish, not
+from a feature branch: `--build-arg` states which commit the image is
+built from, and `GET /v1/capabilities` reports it back as
+`server.revision`. `verify.sh --revision <sha>` then asserts the live
+server *is* that commit, rather than inferring it from behaviour.
+Omitting the arg is allowed — the field is simply absent, and the gate
+says so instead of passing quietly.
 
 Hardening is layered: fly's connection limits → per-IP rate limit
 (`RATE_LIMIT`, default 120/min, trusting `X-Forwarded-For` from fly's
