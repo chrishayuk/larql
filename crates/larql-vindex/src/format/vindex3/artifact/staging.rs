@@ -52,19 +52,27 @@ impl StagingReport {
     }
 }
 
-/// What staging read to answer a question about `artifact`, as JSON —
-/// or `None` for a local artifact, which staged nothing.
+/// What a staging pass cost and what it stands in for, as JSON.
 ///
-/// Lives here rather than in a caller because two front doors report it
-/// (`vindex plan --json` and `POST /v1/plan`) and the server's response
-/// body is defined as the CLI's document plus one serving field. Two
-/// hand-written copies of this object would make that parity a
+/// The one place this object's shape is written. Two front doors print
+/// it — `vindex plan --json` and `POST /v1/plan` — and the server's
+/// response body is defined as the CLI's document plus one serving
+/// field, so two hand-written copies would make that parity a
 /// coincidence rather than a property.
-pub fn staging_json(artifact: &super::ResolvedArtifact) -> Option<serde_json::Value> {
-    let report = artifact.staging()?;
-    Some(serde_json::json!({
-        "artifact": artifact.name,
-        "commit": artifact.commit(),
+///
+/// A pure function of the report rather than a method on
+/// `ResolvedArtifact`, because an artifact with a remote origin can
+/// only be built by staging a real repo: through that door the shape
+/// could only ever be checked over the network, which is to say never.
+/// `ResolvedArtifact::staging_json` is the two-line adapter.
+pub(super) fn staging_report_json(
+    name: &str,
+    commit: Option<&str>,
+    report: &StagingReport,
+) -> serde_json::Value {
+    serde_json::json!({
+        "artifact": name,
+        "commit": commit,
         "shards": report.shards,
         "staged": super::size(report.staged_bytes()),
         "headers": super::size(report.header_bytes),
@@ -77,5 +85,5 @@ pub fn staging_json(artifact: &super::ResolvedArtifact) -> Option<serde_json::Va
             .declared_total
             .filter(|d| report.payload_bytes.as_ref().is_ok_and(|p| d != p))
             .map(super::size),
-    }))
+    })
 }

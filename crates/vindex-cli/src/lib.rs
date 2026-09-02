@@ -1047,7 +1047,10 @@ pub fn represent_facts(src: &Path, out: &Path, encoding: &str) -> Facts {
 /// staging against a 328 GB checkpoint.
 pub fn plan_facts(artifacts: &[PathBuf]) -> Facts {
     let resolved = artifact::resolve_all(artifacts).map_err(|e| e.to_string())?;
-    let staging: Vec<Value> = resolved.iter().filter_map(artifact::staging_json).collect();
+    let staging: Vec<Value> = resolved
+        .iter()
+        .filter_map(artifact::ResolvedArtifact::staging_json)
+        .collect();
     let plan = plan_resolved(artifacts, resolved).map_err(|e| e.to_string())?;
     let mut value = serde_json::to_value(&plan).map_err(|e| e.to_string())?;
     if !staging.is_empty() {
@@ -1062,7 +1065,10 @@ pub fn plan_facts(artifacts: &[PathBuf]) -> Facts {
 /// never needs to exist as a complete local file.
 pub fn encode_facts(artifacts: &[PathBuf], output: &Path, text_only: bool) -> Facts {
     let resolved = artifact::resolve_all(artifacts).map_err(|e| e.to_string())?;
-    let staging: Vec<Value> = resolved.iter().filter_map(artifact::staging_json).collect();
+    let staging: Vec<Value> = resolved
+        .iter()
+        .filter_map(artifact::ResolvedArtifact::staging_json)
+        .collect();
     let pinned: Vec<Value> = resolved
         .iter()
         .filter_map(|a| {
