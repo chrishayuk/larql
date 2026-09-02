@@ -55,6 +55,7 @@ use serde::{Deserialize, Serialize};
 
 use super::diagnostic::DiagnosticVector;
 use super::measurement::TailSupportPolicy;
+use super::participation::ParticipationDeclaration;
 use super::promotion::{PromotionCandidate, PromotionReadiness};
 use super::quality::Statistic;
 use super::search_evidence::SearchCalibrationRegistry;
@@ -66,6 +67,12 @@ pub struct SearchCandidate {
     pub id: String,
     pub promotion: PromotionCandidate,
     pub diagnostic: DiagnosticVector,
+    /// What this candidate's action can and cannot causally affect.
+    ///
+    /// R4-F10: a statistic the action cannot move must not rank it
+    /// against one that can. Defaults to all-affected, so a candidate
+    /// that declares nothing is compared on everything.
+    pub participation: ParticipationDeclaration,
 }
 
 impl SearchCandidate {
@@ -84,6 +91,12 @@ impl SearchCandidate {
             .filter(|r| {
                 r.observed.is_some()
                     && r.evidence(registry, policy).orders()
+                    // R4-F10. A dimension either side is structurally
+                    // invariant on cannot rank this PAIR: an unchanged
+                    // value that the action could not have changed is
+                    // not evidence that it fared well.
+                    && self.participation.of(r.statistic).participates()
+                    && other.participation.of(r.statistic).participates()
                     && other.diagnostic.reading(r.statistic).is_some_and(|o| {
                         o.observed.is_some() && o.evidence(registry, policy).orders()
                     })
@@ -112,12 +125,26 @@ impl SearchCandidate {
             .assessment
             .marginal
             .unpriceable_costs()
-            .filter(|c| !c.orders() && self.promotion.proxy_for(c.what).is_none())
+            .filter(|c| {
+                !c.orders()
+                    && self.promotion.proxy_for(c.what).is_none()
+                    // Exact zero spend is knowledge, not an open risk.
+                    && !self.participation.of(c.what).is_structurally_invariant()
+            })
             .map(|c| c.what)
             .collect();
         out.sort_by_key(|s| s.label());
         out.dedup();
         out
+    }
+
+    /// Authority dimensions this candidate provably cannot spend.
+    ///
+    /// The complement of [`Self::unresolved_dimensions`]: those are what
+    /// the diagnostic scale could not speak to, these are what it can
+    /// speak to with certainty (R4-F10).
+    pub fn known_zero_spend(&self) -> Vec<Statistic> {
+        self.participation.known_zero_spend()
     }
 
     /// **`self` proxy-dominates `other`**: no worse on every comparable
@@ -187,6 +214,12 @@ pub struct PromotionEvidence {
     /// exactly the criteria on which this candidate might still be
     /// refused, and a trace that omitted them would read as confidence.
     pub unresolved: Vec<Statistic>,
+    /// **Dimensions this action provably cannot spend** (R4-F10).
+    ///
+    /// Recorded beside `unresolved` because the two are opposite kinds
+    /// of statement and a reader must not have to guess which a missing
+    /// dimension was.
+    pub known_zero_spend: Vec<Statistic>,
 }
 
 /// The outcome of one search round.
@@ -330,11 +363,26 @@ pub fn decide_promotion(
         // but a trace that differs between runs of the same round is not
         // reproducible, and identity is allowed to order a record.
         dominated.sort();
-        let deciding = pool
+        // Every proxy on which the winner was strictly better than
+        // something it beat.
+        //
+        // This once read the comparable set of whichever candidate came
+        // FIRST, which was invisible while every pair shared one set.
+        // R4-F10 makes the comparable set pair-dependent, so that
+        // shortcut made the RECORD depend on input order even though the
+        // decision did not — the same defect as R4-F1, one layer out.
+        let mut deciding: Vec<Statistic> = pool
             .iter()
-            .find(|o| !std::ptr::eq(**o, winner))
-            .map(|o| winner.comparable(o, registry, policy))
-            .unwrap_or_default();
+            .filter(|o| !std::ptr::eq(**o, winner))
+            .flat_map(|o| {
+                winner
+                    .comparable(o, registry, policy)
+                    .into_iter()
+                    .filter(|s| winner.order_on(o, *s) == Some(Ordering::Less))
+            })
+            .collect();
+        deciding.sort_by_key(|s| s.label());
+        deciding.dedup();
         return PromotionDecision::SelectForAuthority {
             candidate: winner.id.clone(),
             evidence: PromotionEvidence {
@@ -343,6 +391,7 @@ pub fn decide_promotion(
                 readiness: winner.promotion.readiness(),
                 decided_by_physical_gain: false,
                 unresolved: winner.unresolved_dimensions(),
+                known_zero_spend: winner.known_zero_spend(),
             },
         };
     }
@@ -404,6 +453,7 @@ pub fn decide_promotion(
                 readiness: by_gain[0].promotion.readiness(),
                 decided_by_physical_gain: true,
                 unresolved: by_gain[0].unresolved_dimensions(),
+                known_zero_spend: by_gain[0].known_zero_spend(),
             },
         };
     }
