@@ -57,6 +57,13 @@ pub const PLAN_SCHEMA: u32 = 6;
 /// `plan/tests/identity.rs` pins fixture verdicts against this value, so
 /// a change that flips one fails there until the version is bumped.
 ///
+/// **6** — a declaration a companion switch turns off is inert. Qwen2.5
+/// ships `sliding_window: 32768` beside `use_sliding_window: false`; the
+/// graph carries no window, which agrees with the checkpoint, and the
+/// carriage rule was reporting that agreement as a dropped fact. The
+/// companion is read at the same nesting level, so one component's switch
+/// cannot silence another's window.
+///
 /// **5** — MoE routing. A key declared with no value states that its
 /// subject does not apply and no longer demands a home (Gemma 4's dense
 /// sizes declare `top_k_experts: null`), and Qwen's expert schedule
@@ -87,7 +94,7 @@ pub const PLAN_SCHEMA: u32 = 6;
 /// architectures, now block instead of passing silently into
 /// `GenericArch`'s Llama-shaped defaults. Measured on the conformance
 /// corpus: 15 of 42 declared `model_type` strings, across 30 checkpoints.
-pub const PLANNER_SEMANTICS_VERSION: u32 = 5;
+pub const PLANNER_SEMANTICS_VERSION: u32 = 6;
 
 /// Who judged a plan.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]

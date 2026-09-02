@@ -1,0 +1,64 @@
+{
+ "wave": "attention_schedule / sliding-window disabled",
+ "registered": "2026-09-03",
+ "baseline_semantics_version": 5,
+ "the_fix": "A declared window size is inert when its companion switch declares it off. Qwen2.5 ships sliding_window: 32768 WITH use_sliding_window: false; VINDEX3 resolves no window, correctly, and the carriage rule reports that agreement as a dropped fact. This is a COMPANION-GATED rule over one key pair, not a cluster-wide change.",
+ "why_not_forecast_the_cluster": "Wave 5's lesson. `attention_schedule` has reach 19 and clears_alone 2, but the cluster contains layer_types, attention_policy, attention_chunk_size, num_kv_shared_layers and attn_layer_period, none of which this fix touches. The fix's own reach is 3, measured over every cached config.",
+ "baseline": {
+  "GREEN": 26,
+  "RED": 56,
+  "text_closure_blockers": 671
+ },
+ "fix_reach": 3,
+ "predicted_to_go_green": [
+  "Qwen/Qwen2.5-0.5B",
+  "Qwen/Qwen2.5-7B"
+ ],
+ "predicted_to_improve_but_stay_red": [
+  {
+   "repo": "Qwen/Qwen1.5-MoE-A2.7B",
+   "from": 2,
+   "to": 1,
+   "residual": "shared_expert_intermediate_size (moe_routing)"
+  }
+ ],
+ "predicted_after": {
+  "GREEN": 28,
+  "RED": 54,
+  "text_closure_blockers": 668
+ },
+ "predicted_no_other_row_changes": true,
+ "falsifiers": [
+  "any row outside those three changes -> the rule is not companion-gated as claimed",
+  "fewer than 2 clear -> sliding_window was not the whole blocker set",
+  "Qwen1.5-MoE clears -> the change reached moe_routing too",
+  "a checkpoint that USES sliding window stops blocking -> the gate is not reading the companion",
+  "BUG > 0 or a silent drop -> do not merge"
+ ],
+ "result": {
+  "scored_on": "2026-09-03",
+  "outcome_semantics_version": 6,
+  "predicted_clears": 2,
+  "actual_clears": 2,
+  "hit": [
+   "Qwen/Qwen2.5-0.5B",
+   "Qwen/Qwen2.5-7B"
+  ],
+  "missed": [],
+  "unpredicted": [],
+  "regressions": [],
+  "rows_whose_blocker_count_changed": [
+   "Qwen/Qwen1.5-MoE-A2.7B",
+   "Qwen/Qwen2.5-0.5B",
+   "Qwen/Qwen2.5-7B"
+  ],
+  "after": {
+   "GREEN": 28,
+   "RED": 54,
+   "text_closure_blockers": 668
+  },
+  "predicted_after_matched": true,
+  "verdict": "EXACT \u2014 every arm, including the negative predictions",
+  "note": "The Wave 5 lesson applied. Forecasting the FIX (a window its companion switch turns off) rather than the CLUSTER (attention_schedule, reach 19) predicted not only which two rows would clear but which third would improve and stay red, and that nothing else in the corpus would move. All three held. attention_schedule still has reach 19 \u2014 layer_types, attention_policy, attention_chunk_size, num_kv_shared_layers and attn_layer_period are untouched and remain real work."
+ }
+}

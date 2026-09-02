@@ -44,16 +44,16 @@ The sweep is the regression instrument for the conformance programme. Every
 semantic change is measured against the same 88-row corpus, and the two
 invariants are the ones that matter most:
 
-| Metric | Baseline | Waves 1+3 | `position.rope` | `moe_routing` |
-|---|---:|---:|---:|---:|
-| semantics version | 1 | 3 | 4 | **5** |
-| GREEN | 17 | 18 | 21 | **26** |
-| AMBER | 6 | 6 | 6 | 6 |
-| RED | 65 | 64 | 61 | **56** |
-| **BUG** | **0** | **0** | **0** | **0** |
-| **silent drops** | **0** | **0** | **0** | **0** |
-| text-closure blockers | 886 | 776 | 756 | **671** |
-| K3 clusters remaining | 7 | 7 | 7 | **7** |
+| Metric | Baseline | Waves 1+3 | rope | moe | sliding window |
+|---|---:|---:|---:|---:|---:|
+| semantics version | 1 | 3 | 4 | 5 | **6** |
+| GREEN | 17 | 18 | 21 | 26 | **28** |
+| AMBER | 6 | 6 | 6 | 6 | 6 |
+| RED | 65 | 64 | 61 | 56 | **54** |
+| **BUG** | **0** | **0** | **0** | **0** | **0** |
+| **silent drops** | **0** | **0** | **0** | **0** | **0** |
+| text-closure blockers | 886 | 776 | 756 | 671 | **668** |
+| K3 clusters remaining | 7 | 7 | 7 | 7 | **7** |
 
 Wave 2 changed the document, not the verdict: schema 4 → 6, semantics 1 → 3,
 and every row identical across it.
@@ -165,6 +165,27 @@ when the remediation is confined to one cluster; a cross-cutting rule breaks the
 cluster→fix mapping in both directions — over-crediting the cluster it was filed
 under, and under-predicting rows elsewhere. Future forecasts must name **the fix
 being made**, not only the cluster it was drawn from.
+
+**Wave 6 — the lesson applied, and an exact forecast (semantics 6).** Qwen2.5
+ships `sliding_window: 32768` beside `use_sliding_window: false`. VINDEX3
+resolves no window — correctly — and the carriage rule reported that agreement
+as a dropped fact, refusing the checkpoint over a window it had been told not
+to apply. A `CompanionGate` now names the pair: a declaration its own switch
+turns off is inert, and the switch is read at the same nesting level so one
+component's flag cannot silence another's attention.
+
+The forecast was written against **the fix, not the cluster** — the Wave 5
+correction. `attention_schedule` has reach 19, but this fix reaches 3, measured
+over every cached config. It predicted two rows green, one row improving from 2
+blockers to 1 while staying red, and *nothing else in the corpus moving*.
+
+**Every arm held**, including the negatives: exactly three rows changed, GREEN
+28, RED 54, blockers 668 — all as predicted. Forecasting the fix turns
+`clears_alone` from an estimate into a statement.
+
+`attention_schedule` still has reach 19: `layer_types`, `attention_policy`,
+`attention_chunk_size`, `num_kv_shared_layers` and `attn_layer_period` are
+untouched and remain real work.
 
 **What did not happen, and why it is worth recording.** The inert clusters
 reach 34 checkpoints, which looked like a large GREEN wave. It was one row
