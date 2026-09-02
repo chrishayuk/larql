@@ -177,3 +177,63 @@ fn a_path_with_no_stem_still_gets_a_name() {
         "root is not a checkpoint, and must fail rather than resolve namelessly"
     );
 }
+
+// ── the commit probe: identity without staging ───────────────────────
+//
+// `resolve_pinned_commit` exists so a caller holding a verdict cache can
+// look up an answer before paying for the headers that would produce it.
+// What matters here is that it says "no persistent identity" for exactly
+// the cases where a cached verdict would be wrong to reuse, and that it
+// does so without touching the network.
+
+#[test]
+fn a_local_path_has_no_commit_to_pin() {
+    let dir = tempfile::tempdir().unwrap();
+    assert_eq!(
+        super::super::resolve_pinned_commit(dir.path()).unwrap(),
+        None,
+        "a local checkpoint has no persistent identity, so a verdict about it is never cacheable"
+    );
+}
+
+#[test]
+fn a_relative_local_path_is_not_mistaken_for_a_repo() {
+    assert_eq!(
+        super::super::resolve_pinned_commit(Path::new("./some/checkpoint")).unwrap(),
+        None
+    );
+}
+
+/// One unpinnable artifact among many is the case the caller must not
+/// get wrong, so the plural form reports per artifact rather than
+/// collapsing to a single answer.
+#[test]
+fn commits_are_reported_per_artifact_in_order() {
+    let a = tempfile::tempdir().unwrap();
+    let b = tempfile::tempdir().unwrap();
+    let got = super::super::resolve_pinned_commits(&[
+        a.path().to_path_buf(),
+        b.path().to_path_buf(),
+    ])
+    .unwrap();
+    assert_eq!(got, vec![None, None]);
+}
+
+#[test]
+fn no_specs_is_no_commits_rather_than_an_error() {
+    assert_eq!(
+        super::super::resolve_pinned_commits(&[]).unwrap(),
+        Vec::<Option<String>>::new()
+    );
+}
+
+/// A malformed reference is refused by the spec parser, before a client
+/// is built — so a bad argument costs nothing, and the probe cannot be
+/// used to make this process open connections on request.
+#[test]
+fn a_malformed_reference_is_refused_before_any_network() {
+    let err = super::super::resolve_pinned_commit(Path::new("hf://"))
+        .unwrap_err()
+        .to_string();
+    assert!(err.contains("malformed"), "{err}");
+}
