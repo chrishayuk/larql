@@ -151,9 +151,26 @@ type exists to remove.
 ## 4. G1/G2 — the representability plan
 
 `larql vindex3 plan <artifact>…` → `SystemPlan`
-(`larql-vindex/src/format/vindex3/plan/`), schema `PLAN_SCHEMA = 2`.
-Artifacts are checkpoint dirs and/or saved inventory JSONs, treated as one
-model system. Exit is non-zero when the plan is inadmissible.
+(`larql-vindex/src/format/vindex3/plan/`), schema `PLAN_SCHEMA = 4`.
+Artifacts are checkpoint dirs, saved inventory JSONs and/or `hf://` specs,
+treated as one model system. Exit is non-zero when the plan is
+inadmissible.
+
+Since schema 4 a plan names who judged it and what it judged. `planner`
+carries the planner crate's package version and its *semantics version*
+(`PLANNER_SEMANTICS_VERSION`), which is bumped only when a rule change can
+flip a verdict — a CLI or layout fix never bumps it — so two verdicts are
+comparable exactly when their semantics versions agree. Each artifact
+carries its `source`: the argument as given and, for a repo, the
+immutable commit the facts were read at (`revision`), or the revision
+*name* it fell back to when the hub named no commit (`unpinned_revision`).
+A persisted verdict cache requires an immutable source revision:
+`SystemPlan::cache_key` yields (commits, semantics version) only when every
+artifact carries a commit, and nothing for a local path or an unpinned
+revision — such a verdict may be shown, marked unpinned, and is never
+stored as authority, because a revision name can point at different facts
+tomorrow. `SystemPlan::parse` refuses a plan of another schema by name
+rather than reading it as an unattributed verdict.
 
 Findings are typed twice:
 

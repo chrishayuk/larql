@@ -5,6 +5,7 @@ mod carriage;
 mod compare;
 mod gemma4;
 mod hybrid_linear_attention;
+mod identity;
 mod mla_nope;
 mod moe_spellings;
 mod qw35d_admission;

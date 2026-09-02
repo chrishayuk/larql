@@ -47,20 +47,54 @@ use larql_models::inventory::{ArchitectureInventory, KeyStatus};
 use super::graph::{build_from_inventories, BuiltGraph, Component, ComponentRole};
 
 pub use report::{
-    ArtifactPlan, Finding, FindingCategory, InterfacePlan, PlanSummary, SemanticClass, SystemPlan,
+    ArtifactPlan, ArtifactSource, Finding, FindingCategory, InterfacePlan, PlanSummary,
+    PlannerIdentity, SemanticClass, SystemPlan, VerdictCacheKey, PLANNER_SEMANTICS_VERSION,
     PLAN_SCHEMA,
 };
 
 /// Build the system plan over one or more inventories.
 ///
 /// `named` pairs one display name per inventory (the CLI passes directory
-/// stems).
+/// stems). Each artifact's source is the path its inventory recorded, with
+/// no revision — the local-checkpoint case. A caller that knows more
+/// (a repo commit) uses [`plan_system_with_sources`].
 pub fn plan_system(named: &[(String, ArchitectureInventory)]) -> SystemPlan {
+    let sources: Vec<ArtifactSource> = named
+        .iter()
+        .map(|(_, inventory)| ArtifactSource::local(inventory.path.clone()))
+        .collect();
+    plan_sourced(named, &sources)
+}
+
+/// [`plan_system`] with each artifact's source stated by the caller —
+/// `sources[i]` describes `named[i]`. Refuses mismatched lengths rather
+/// than pairing verdicts with the wrong subjects.
+pub fn plan_system_with_sources(
+    named: &[(String, ArchitectureInventory)],
+    sources: &[ArtifactSource],
+) -> Result<SystemPlan, crate::error::VindexError> {
+    if named.len() != sources.len() {
+        return Err(crate::error::VindexError::Parse(format!(
+            "{} artifact(s) but {} source(s): every artifact needs exactly one source",
+            named.len(),
+            sources.len()
+        )));
+    }
+    Ok(plan_sourced(named, sources))
+}
+
+/// The planner proper. `sources` is exactly as long as `named`; both
+/// public entry points guarantee it.
+fn plan_sourced(
+    named: &[(String, ArchitectureInventory)],
+    sources: &[ArtifactSource],
+) -> SystemPlan {
     let built = build_from_inventories(named);
 
     let artifacts: Vec<ArtifactPlan> = named
         .iter()
-        .map(|(name, inventory)| plan_artifact(name, inventory, &built))
+        .zip(sources)
+        .map(|((name, inventory), source)| plan_artifact(name, inventory, source, &built))
         .collect();
 
     let interfaces: Vec<InterfacePlan> = built
@@ -103,6 +137,7 @@ pub fn plan_system(named: &[(String, ArchitectureInventory)]) -> SystemPlan {
 
     SystemPlan {
         schema: PLAN_SCHEMA,
+        planner: PlannerIdentity::current(),
         artifacts,
         interfaces,
         admissible,
@@ -117,6 +152,7 @@ pub fn plan_system(named: &[(String, ArchitectureInventory)]) -> SystemPlan {
 fn plan_artifact(
     name: &str,
     inventory: &ArchitectureInventory,
+    source: &ArtifactSource,
     built: &BuiltGraph,
 ) -> ArtifactPlan {
     let mut findings = compare::compare(inventory);
@@ -129,6 +165,7 @@ fn plan_artifact(
     findings.extend(unresolved_interface_findings(name, built));
     ArtifactPlan {
         name: name.to_string(),
+        source: source.clone(),
         model_type: inventory.identity.model_type.clone(),
         findings,
     }
