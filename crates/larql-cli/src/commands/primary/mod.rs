@@ -26,6 +26,7 @@ pub mod run_cmd_image;
 pub mod run_cmd_speak;
 pub mod run_cmd_vindex3;
 pub mod serve_resolve;
+pub mod server_capabilities_cmd;
 pub mod shannon_cmd;
 pub mod shannon_trace;
 pub mod show_cmd;
