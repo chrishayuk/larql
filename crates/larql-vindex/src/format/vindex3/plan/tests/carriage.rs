@@ -965,3 +965,71 @@ fn a_declaration_with_no_value_has_nothing_to_carry() {
         finding.detail
     );
 }
+
+/// The CARRIAGE finding for `subject` — the one that asks whether the
+/// container holds the fact. `sliding_window` also raises a compare
+/// finding on the same subject, and picking that one by suffix reads
+/// "declared and resolved agree" no matter what carriage did.
+fn carriage_finding_for<'a>(findings: &'a [PlannedFinding], subject: &str) -> &'a PlannedFinding {
+    findings
+        .iter()
+        .find(|f| f.subject == subject && f.carriage.is_some())
+        .unwrap_or_else(|| panic!("no carriage finding for {subject}"))
+}
+
+#[test]
+fn a_window_its_own_switch_turns_off_is_inert() {
+    // Qwen2.5 ships `sliding_window: 32768` beside
+    // `use_sliding_window: false`. VINDEX3 resolves no window — correctly
+    // — and the carriage rule read that agreement as a dropped fact,
+    // refusing the checkpoint over a window it had been told not to use.
+    let findings = plan_with(|config| {
+        config["text_config"]["sliding_window"] = serde_json::json!(4096);
+        config["text_config"]["use_sliding_window"] = serde_json::json!(false);
+    });
+    let finding = carriage_finding_for(&findings, "text_config.sliding_window");
+    assert_eq!(finding.category, FindingCategory::Representable);
+    assert!(!finding.blocks());
+    assert!(
+        finding.detail.contains("use_sliding_window"),
+        "the agreement must name the switch that made it one: {}",
+        finding.detail
+    );
+}
+
+#[test]
+fn an_enabled_window_is_still_asked_of_the_container() {
+    // THE CONTROL. Same declared window, switch ON: the gate must not
+    // fire, so the finding is whatever probing the graph says — not an
+    // assertion that the value is inert. Without this the change reads as
+    // "sliding_window stopped being checked".
+    let findings = plan_with(|config| {
+        config["text_config"]["sliding_window"] = serde_json::json!(4096);
+        config["text_config"]["use_sliding_window"] = serde_json::json!(true);
+    });
+    let finding = carriage_finding_for(&findings, "text_config.sliding_window");
+    assert!(
+        !finding.detail.contains("switched off by"),
+        "the gate must not fire while the switch is on: {}",
+        finding.detail
+    );
+}
+
+#[test]
+fn a_switch_in_another_component_does_not_reach_across() {
+    // The companion is looked up at the SAME nesting level. A root-level
+    // `use_sliding_window: false` must not silence a window declared
+    // inside the text component — one tower's flag cannot disable
+    // another's attention.
+    let findings = plan_with(|config| {
+        config["text_config"]["sliding_window"] = serde_json::json!(4096);
+        config["text_config"]["use_sliding_window"] = serde_json::json!(true);
+        config["use_sliding_window"] = serde_json::json!(false);
+    });
+    let finding = carriage_finding_for(&findings, "text_config.sliding_window");
+    assert!(
+        !finding.detail.contains("switched off by"),
+        "a root switch must not gate a nested window: {}",
+        finding.detail
+    );
+}

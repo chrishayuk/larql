@@ -129,6 +129,58 @@ impl ProbeContext<'_> {
     }
 }
 
+/// A declaration whose effect another declaration switches off.
+///
+/// Distinct from [`super::semantics::INERT_AT_VALUE`], which asks whether a
+/// key holds an inert value of its own. Here the key holds a perfectly
+/// real value and a *companion* says not to use it — so no probe of the
+/// graph can settle it, because the graph is right to carry nothing.
+///
+/// Qwen2.5 is the witness: `sliding_window: 32768` beside
+/// `use_sliding_window: false`. VINDEX3 resolves no window, which is
+/// correct, and the carriage rule read that agreement as a dropped fact
+/// and refused the checkpoint over a window it had been told not to
+/// apply.
+pub struct CompanionGate {
+    /// The leaf whose value is inert while the switch is off.
+    pub leaf: &'static str,
+    /// The leaf that switches it off, at the same nesting level.
+    pub switch: &'static str,
+    /// The switch value that disables it.
+    pub off: bool,
+}
+
+/// The gates. Each entry is a claim that one declaration cancels another,
+/// and needs the same justification as any other rule in this file.
+pub const COMPANION_GATES: &[CompanionGate] = &[CompanionGate {
+    leaf: "sliding_window",
+    switch: "use_sliding_window",
+    off: false,
+}];
+
+/// The switch that disables `path`, if one is declared beside it and set
+/// to its off value.
+///
+/// The companion is looked up at the SAME nesting level — `text_config.
+/// sliding_window` is gated by `text_config.use_sliding_window`, never by
+/// a root-level switch belonging to another component. A gate that
+/// reached across components would let one tower's flag silence another's
+/// window.
+pub fn disabled_by_companion<'a>(
+    path: &str,
+    keys: impl IntoIterator<Item = (&'a str, &'a Value)>,
+) -> Option<&'static str> {
+    let gate = COMPANION_GATES
+        .iter()
+        .find(|g| super::semantics::leaf_of(path) == g.leaf)?;
+    let prefix = &path[..path.len() - gate.leaf.len()];
+    let switch_path = format!("{prefix}{}", gate.switch);
+    keys.into_iter()
+        .find(|(p, _)| *p == switch_path)
+        .filter(|(_, v)| v.as_bool() == Some(gate.off))
+        .map(|_| gate.switch)
+}
+
 /// The rules. Every leaf classified
 /// [`ExecutionSemantic`](super::report::SemanticClass::ExecutionSemantic)
 /// must appear here or block.

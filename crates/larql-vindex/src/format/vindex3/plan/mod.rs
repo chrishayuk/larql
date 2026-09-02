@@ -443,7 +443,7 @@ fn config_key_findings(inventory: &ArchitectureInventory, built: &BuiltGraph) ->
                     carriage: None,
                     detail: "identity or training-time fact, inert for a forward pass".to_string(),
                 },
-                KeyStatus::Consumed => carriage_finding(fact, leaf, component, built),
+                KeyStatus::Consumed => carriage_finding(fact, leaf, component, built, inventory),
             }
         })
         .collect()
@@ -532,6 +532,7 @@ fn carriage_finding(
     leaf: &str,
     component_name: String,
     built: &BuiltGraph,
+    inventory: &ArchitectureInventory,
 ) -> Finding {
     let class = semantics::classify_key_at(leaf, &fact.value);
     // Tensor semantics are proven carried by the placed-object findings
@@ -600,6 +601,32 @@ fn carriage_finding(
             resolved: None,
             carriage: Some(carriage::Carriage::Parsed),
             detail: format!("stops at the parser by judgement — {}", rule.site),
+        };
+    }
+    // A declaration a companion switches off has nothing for the graph to
+    // carry, and probing for it asks the wrong question: the graph is
+    // right to hold no value, so the comparison would report agreement as
+    // a dropped fact.
+    if let Some(switch) = carriage::disabled_by_companion(
+        &fact.path,
+        inventory
+            .config_keys
+            .iter()
+            .map(|k| (k.path.as_str(), &k.value)),
+    ) {
+        return Finding {
+            category: FindingCategory::Representable,
+            class: SemanticClass::ExecutionSemantic,
+            component: component_name,
+            subject: fact.path.clone(),
+            declared: Some(fact.value.clone()),
+            resolved: None,
+            carriage: Some(carriage::Carriage::Parsed),
+            detail: format!(
+                "declared and switched off by `{switch}` — the value is inert, and the \
+                 graph carrying no window agrees with the checkpoint rather than dropping \
+                 its declaration"
+            ),
         };
     }
     let ctx = carriage::ProbeContext {
