@@ -164,6 +164,22 @@ pub fn build_sampling_eos(
     params: SamplingParams,
     stop_strings: &[String],
 ) -> (larql_inference::SamplingConfig, larql_inference::EosConfig) {
+    build_sampling_eos_from(larql_inference::EosConfig::builtin(), params, stop_strings)
+}
+
+/// [`build_sampling_eos`] on top of a model's own EOS declaration.
+///
+/// The V2 decode loop re-decodes special tokens and matches their
+/// surface form against the built-in stop strings, so starting from
+/// [`EosConfig::builtin`](larql_inference::EosConfig::builtin) is enough
+/// there. The V3 driver judges EOS on ids only: a V3 route must start
+/// from the ids the container declares ([`V3Model::eos`](crate::vindex3::V3Model::eos))
+/// or every generation runs to `max_tokens`.
+pub fn build_sampling_eos_from(
+    base: larql_inference::EosConfig,
+    params: SamplingParams,
+    stop_strings: &[String],
+) -> (larql_inference::SamplingConfig, larql_inference::EosConfig) {
     let temp = params.temperature.unwrap_or(0.0).max(0.0);
     let mut sampling = if temp > 0.0 {
         larql_inference::SamplingConfig::temperature(temp)
@@ -185,7 +201,7 @@ pub fn build_sampling_eos(
     if let Some(p) = params.presence_penalty {
         sampling = sampling.with_presence_penalty(p.clamp(-2.0, 2.0));
     }
-    let mut eos = larql_inference::EosConfig::builtin();
+    let mut eos = base;
     for s in stop_strings {
         if !s.is_empty() {
             eos = eos.with_stop_string(s.clone());

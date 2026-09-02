@@ -113,11 +113,37 @@ impl OpenAIError {
         }
     }
 
+    /// A bound model whose generation this route does not serve
+    /// (a VINDEX3 container on a VINDEX2-only capability): `501`, so
+    /// a loaded-but-unsupported model never reads as absent.
+    pub fn not_implemented(message: impl Into<String>) -> Self {
+        Self {
+            status: StatusCode::NOT_IMPLEMENTED,
+            message: message.into(),
+            error_type: "not_implemented_error",
+            param: None,
+            code: None,
+        }
+    }
+
     pub fn conflict(message: impl Into<String>) -> Self {
         Self {
             status: StatusCode::CONFLICT,
             message: message.into(),
             error_type: "conflict_error",
+            param: None,
+            code: None,
+        }
+    }
+
+    /// The serving profile will not do this for this caller. Kept
+    /// distinct from `not_implemented`: the capability exists, and the
+    /// same request succeeds on a server serving a different profile.
+    pub fn permission_denied(message: impl Into<String>) -> Self {
+        Self {
+            status: StatusCode::FORBIDDEN,
+            message: message.into(),
+            error_type: "permission_error",
             param: None,
             code: None,
         }
@@ -133,6 +159,8 @@ impl From<ServerError> for OpenAIError {
             ServerError::Internal(m) => OpenAIError::server_error(m),
             ServerError::Timeout(m) => OpenAIError::timeout(m),
             ServerError::Conflict(m) => OpenAIError::conflict(m),
+            ServerError::Unsupported(m) => OpenAIError::not_implemented(m),
+            ServerError::Refused(m) => OpenAIError::permission_denied(m),
         }
     }
 }

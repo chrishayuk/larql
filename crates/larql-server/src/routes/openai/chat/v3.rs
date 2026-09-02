@@ -33,9 +33,9 @@ use crate::routes::openai::prompt::{render, ASSISTANT_ROLE};
 use crate::routes::openai::schema::Schema;
 use crate::routes::openai::token_tap::{EmitFailure, TokenTap};
 use crate::routes::openai::util::{
-    build_sampling_eos, contains_any, error_chunk, join_generation, new_id_suffix, trim_at_stop,
-    unix_now, SamplingParams, FINISH_REASON_LENGTH, FINISH_REASON_STOP, SSE_CHANNEL_DEPTH,
-    SSE_DONE,
+    build_sampling_eos_from, contains_any, error_chunk, join_generation, new_id_suffix,
+    trim_at_stop, unix_now, SamplingParams, FINISH_REASON_LENGTH, FINISH_REASON_STOP,
+    SSE_CHANNEL_DEPTH, SSE_DONE,
 };
 use crate::routes::openai::OpenAIError;
 use crate::vindex3::{generate_v3, generate_v3_constrained, V3Generation, V3Model};
@@ -181,7 +181,7 @@ fn run_v3_chat(
     tally: &mut crate::runtime_stats::GenerationTally,
 ) -> Result<BufferedChat, ServerError> {
     let prompt_ids = encode_chat_prompt(model, messages)?;
-    let (sampling, eos) = build_sampling_eos(sampling_params, stop_strings);
+    let (sampling, eos) = build_sampling_eos_from(model.eos.clone(), sampling_params, stop_strings);
     let generation = generate_maybe_masked(
         model,
         &prompt_ids,
@@ -287,7 +287,8 @@ fn stream_v3_chat(
             return;
         }
 
-        let (sampling, eos) = build_sampling_eos(sampling_params, &stop_strings);
+        let (sampling, eos) =
+            build_sampling_eos_from(model.eos.clone(), sampling_params, &stop_strings);
         // Tools buffer (the tool_calls delta shape only makes sense
         // once the full JSON has parsed); content streams per token.
         let mut tap = if tools_active {

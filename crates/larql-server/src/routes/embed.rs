@@ -247,11 +247,9 @@ async fn handle_embed_inner(
     body: Body,
 ) -> Response {
     state.bump_requests();
-    let model = match state.model(model_id) {
-        Some(m) => m,
-        None => {
-            return error_response(ServerError::NotFound("model not found".into()));
-        }
+    let model = match state.v2_or_unsupported(model_id) {
+        Ok(m) => m,
+        Err(e) => return error_response(e),
     };
 
     let is_binary = crate::wire::has_content_type(&headers, BINARY_FFN_CONTENT_TYPE);
@@ -372,9 +370,9 @@ async fn handle_logits_inner(
     body: Body,
 ) -> Response {
     state.bump_requests();
-    let model = match state.model(model_id) {
-        Some(m) => m,
-        None => return error_response(ServerError::NotFound("model not found".into())),
+    let model = match state.v2_or_unsupported(model_id) {
+        Ok(m) => m,
+        Err(e) => return error_response(e),
     };
 
     let is_binary = crate::wire::has_content_type(&headers, BINARY_FFN_CONTENT_TYPE);
@@ -653,9 +651,9 @@ fn handle_embed_single_inner(
     headers: axum::http::HeaderMap,
 ) -> Response {
     state.bump_requests();
-    let model = match state.model(model_id) {
-        Some(m) => m,
-        None => return error_response(ServerError::NotFound("model not found".into())),
+    let model = match state.v2_or_unsupported(model_id) {
+        Ok(m) => m,
+        Err(e) => return error_response(e),
     };
 
     let row: Vec<f32> = if let Some(ref store) = model.embed_store {

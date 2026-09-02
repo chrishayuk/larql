@@ -92,9 +92,7 @@ pub async fn handle_walk_ffn_q8k(
         };
         use larql_inference::vindex::{kquant_ffn_forward_layer, kquant_ffn_forward_layer_q8k};
 
-        let model = state
-            .model(None)
-            .ok_or_else(|| crate::error::ServerError::NotFound("no model loaded".into()))?;
+        let model = state.v2_or_unsupported(None)?;
 
         // Require interleaved Q4K to serve this endpoint.
         let has_q4k = {

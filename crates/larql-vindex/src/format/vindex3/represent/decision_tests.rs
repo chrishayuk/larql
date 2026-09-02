@@ -7,6 +7,7 @@ use super::super::constraint::ConstraintVector;
 use super::super::diagnostic::{DiagnosticPolicy, DiagnosticVector};
 use super::super::execution_cost::{m3max_metal_001, ExecutionCostModel};
 use super::super::measurement::EvidenceScale;
+use super::super::participation::ParticipationDeclaration;
 use super::super::promotion::PromotionCandidate;
 use super::super::quality::{kimi_logit_balanced_v1, QualityBank};
 use super::*;
@@ -36,6 +37,23 @@ fn ledger(name: &str, bytes: u64) -> ByteLedger {
 
 /// A candidate whose diagnostic bank says `kl`/`flips`, removing `bytes`.
 fn candidate(id: &str, kl: f64, flips: u64, bytes: u64) -> SearchCandidate {
+    declaring(
+        id,
+        kl,
+        flips,
+        bytes,
+        ParticipationDeclaration::all_affected(),
+    )
+}
+
+/// The same, with an explicit participation declaration (R4-F10).
+fn declaring(
+    id: &str,
+    kl: f64,
+    flips: u64,
+    bytes: u64,
+    participation: ParticipationDeclaration,
+) -> SearchCandidate {
     let b = bank(kl, flips);
     let gate = kimi_logit_balanced_v1();
     let parent = bank(2.4762e-3, 46);
@@ -52,6 +70,7 @@ fn candidate(id: &str, kl: f64, flips: u64, bytes: u64) -> SearchCandidate {
         id: id.into(),
         promotion: PromotionCandidate::new(a, vec![]),
         diagnostic: DiagnosticVector::of(&DiagnosticPolicy::bs2_kimi_v1(), &b),
+        participation,
     }
 }
 
@@ -269,5 +288,115 @@ fn uninformed_may_be_selected_for_authority_and_names_what_it_cannot_see() {
             }
         }
         other => panic!("Uninformed must be eligible to measure: {other:?}"),
+    }
+}
+
+// ---------------------------------------------------------------------
+// R4-F10 — structural invariance is not ordering evidence.
+// ---------------------------------------------------------------------
+
+/// The head's causal ground, as proven in rung-4 iteration 4.
+const HEAD: &str = "lm_head is applied after every routing decision";
+
+/// Iteration 4's real four, against the M26 parent (kl 2.5707e-3,
+/// flips 43). `H` cannot move routing; the other three did.
+fn iteration4(head_declares_invariance: bool) -> Vec<SearchCandidate> {
+    let head = if head_declares_invariance {
+        ParticipationDeclaration::all_affected()
+            .structurally_invariant(Statistic::RouteFlipRate, HEAD)
+    } else {
+        ParticipationDeclaration::all_affected()
+    };
+    vec![
+        declaring("H", 4.4171e-3, 43, 13_040_000_000, head),
+        candidate("M23", 5.7311e-3, 53, 13_040_000_000),
+        candidate("K25", 2.5262e-3, 50, 13_040_000_000),
+        candidate("K24", 5.3580e-3, 51, 13_040_000_000),
+    ]
+}
+
+#[test]
+fn undeclared_invariance_manufactures_the_conflict_that_blocked_iteration_4() {
+    // The DEFECT, pinned. H's unchanged flip rate reads as a win.
+    let set = iteration4(false);
+    match decide_promotion(&set, &reg(), &pol()) {
+        PromotionDecision::Ambiguous { candidates, reason } => {
+            assert_eq!(candidates, vec!["H".to_string(), "K25".to_string()]);
+            assert_eq!(reason, AmbiguityReason::ConflictingOrderingProxies);
+        }
+        other => panic!("expected the historical refusal, got {other:?}"),
+    }
+}
+
+#[test]
+fn declaring_the_invariance_lets_the_applicable_evidence_decide() {
+    let set = iteration4(true);
+    match decide_promotion(&set, &reg(), &pol()) {
+        PromotionDecision::SelectForAuthority {
+            candidate,
+            evidence,
+        } => {
+            assert_eq!(candidate, "K25");
+            assert_eq!(evidence.dominated, vec!["H", "K24", "M23"]);
+            // It won on evidence that APPLIES, not on bytes.
+            assert!(!evidence.decided_by_physical_gain);
+        }
+        other => panic!("expected K25, got {other:?}"),
+    }
+}
+
+#[test]
+fn the_corrected_decision_is_permutation_invariant() {
+    let mut set = iteration4(true);
+    let forward = decide_promotion(&set, &reg(), &pol());
+    set.reverse();
+    assert_eq!(forward, decide_promotion(&set, &reg(), &pol()));
+}
+
+#[test]
+fn an_invariant_dimension_is_dropped_from_the_pair_not_from_the_candidate() {
+    let set = iteration4(true);
+    let h = &set[0];
+    let k25 = &set[2];
+    // The pair loses the route dimension...
+    assert_eq!(h.comparable(k25, &reg(), &pol()), vec![Statistic::KlP99]);
+    // ...while two participants keep it.
+    let k24 = &set[3];
+    assert!(k25
+        .comparable(k24, &reg(), &pol())
+        .contains(&Statistic::RouteFlipRate));
+}
+
+#[test]
+fn invariance_is_recorded_as_known_zero_spend_not_as_unresolved() {
+    let set = iteration4(true);
+    let h = &set[0];
+    assert_eq!(h.known_zero_spend(), vec![Statistic::RouteFlipRate]);
+    assert!(
+        !h.unresolved_dimensions()
+            .contains(&Statistic::RouteFlipRate),
+        "a proven zero is knowledge, not an open risk"
+    );
+}
+
+#[test]
+fn physical_gain_still_cannot_rescue_a_dominated_candidate() {
+    // H saves 10x the bytes of K25 and is still refused, because the
+    // comparison it loses is on evidence that applies to both.
+    let head = ParticipationDeclaration::all_affected()
+        .structurally_invariant(Statistic::RouteFlipRate, HEAD);
+    let set = vec![
+        declaring("H", 4.4171e-3, 43, 12_000_000_000, head),
+        candidate("K25", 2.5262e-3, 50, 13_040_000_000),
+    ];
+    match decide_promotion(&set, &reg(), &pol()) {
+        PromotionDecision::SelectForAuthority {
+            candidate,
+            evidence,
+        } => {
+            assert_eq!(candidate, "K25");
+            assert!(!evidence.decided_by_physical_gain);
+        }
+        other => panic!("expected K25, got {other:?}"),
     }
 }

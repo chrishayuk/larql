@@ -77,9 +77,7 @@ pub(crate) fn run_walk_ffn(
     state: &AppState,
     req: &WalkFfnRequest,
 ) -> Result<serde_json::Value, ServerError> {
-    let model = state
-        .model(None)
-        .ok_or_else(|| ServerError::NotFound("no model loaded".into()))?;
+    let model = state.v2_or_unsupported(None)?;
 
     let hidden = model.config.hidden_size;
     validate_residual(req, hidden)?;

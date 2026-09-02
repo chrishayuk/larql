@@ -29,10 +29,10 @@ use super::super::graph::surface::MoeSurface;
 use super::super::graph::{LogicalObject, NormPlacement, ObjectKind, OperandRole};
 use super::super::inspect::SystemInspection;
 use super::{
-    AttentionOp, ClosureDefect, ComponentOpPlan, EmbeddingOp, ExpertBank, FfnOp, GateOp,
-    GatedDeltaOp, HybridFfnOp, KdaOp, LayerAttention, LayerFfn, LayerPlan, Mamba2Op, MlaOp, NormOp,
-    OpPlanOutcome, OperandRef, OutputOp, PackedProjection, QkNormOp, RoutedFfnOp, SharedExpertOp,
-    SinkOp,
+    AttentionOp, ClosureDefect, ComponentOpPlan, EmbeddingOp, ExpertBank, FfnIdentity, FfnOp,
+    GateOp, GatedDeltaOp, HybridFfnOp, KdaOp, LayerAttention, LayerFfn, LayerPlan, Mamba2Op, MlaOp,
+    NormOp, OpPlanOutcome, OperandRef, OutputOp, PackedProjection, QkNormOp, RoutedFfnOp,
+    SharedExpertOp, SinkOp,
 };
 use crate::error::VindexError;
 use larql_models::config::ExpertFormat;
@@ -50,6 +50,15 @@ const GATE_UP_LAYOUT_FACT: &str = "gate_up branch layout";
 /// Build the operation plan for `component_id` from a container's
 /// inspection plus its segment tables. I/O failures are hard errors;
 /// every semantic shortfall is a [`ClosureDefect`].
+/// Whether the surface declares `layer` routed: `None` when the surface
+/// carries no MoE judgment at all, `Some(false)` inside the dense prefix
+/// the surface names (`dense_prefix_layers`), `Some(true)` otherwise.
+/// The one derivation both the closure pass and the plan construction
+/// read, so they cannot disagree about which layers are routed.
+fn declared_routed(moe: Option<&MoeSurface>, layer: usize) -> Option<bool> {
+    moe.map(|m| m.dense_prefix_layers.is_none_or(|prefix| layer >= prefix))
+}
+
 pub fn plan_component_ops(
     inspection: &SystemInspection,
     root: &Path,
@@ -302,13 +311,41 @@ pub fn plan_component_ops(
             let geometry = layer_geometry(layer);
             let present = by_layer.get(&layer);
             let bank = bank_by_layer.get(&layer);
-            // A layer is routed by operand evidence — it has an expert
-            // bank or a router — under the surface's judgment; the
-            // judgment alone routes nothing, the evidence alone is a
-            // stray operand (`absent_op` names it).
-            let routed = ffn_moe.is_some()
-                && (bank.is_some()
-                    || present.is_some_and(|s| s.contains_key(&OperandRole::MoeRouterWeight)));
+            // Which layers are routed is DECLARED by the surface: every
+            // layer of a MoE surface, less the dense prefix it names
+            // (`dense_prefix_layers`, Kimi's 1, GLM-5.3-Flash's 3). The
+            // expert bank and router operands are evidence that the
+            // declaration is honoured. They never decide: a routed layer
+            // whose bank is missing is a defect, not a dense layer, and a
+            // dense-prefix layer carrying routed operands is the same
+            // disagreement the other way. A surface with no MoE judgment
+            // routes nothing; its stray operands are `absent_op`'s to
+            // name.
+            let evidence_routed = bank.is_some()
+                || present.is_some_and(|s| s.contains_key(&OperandRole::MoeRouterWeight));
+            let routed = match declared_routed(ffn_moe.as_ref(), layer) {
+                Some(true) => {
+                    if !evidence_routed {
+                        defects.push(ClosureDefect::FfnIdentityMismatch {
+                            layer,
+                            declared: FfnIdentity::Routed,
+                            evidence: FfnIdentity::Dense,
+                        });
+                    }
+                    true
+                }
+                Some(false) => {
+                    if evidence_routed {
+                        defects.push(ClosureDefect::FfnIdentityMismatch {
+                            layer,
+                            declared: FfnIdentity::Dense,
+                            evidence: FfnIdentity::Routed,
+                        });
+                    }
+                    false
+                }
+                None => false,
+            };
             // A hybrid layer is routed AND dense: the judgment says the
             // family runs both, and the evidence is the routed evidence.
             let hybrid = routed && ffn_moe.is_some_and(|m| m.hybrid);
@@ -642,7 +679,11 @@ pub fn plan_component_ops(
             down: operand(&stack_id, get(OperandRole::FfnDown)),
         };
         let ffn = match (ffn_moe, bank_slot) {
-            (Some(moe), Some(bank)) => {
+            // A declared-dense prefix layer plans dense even if stray bank
+            // tensors exist (the mismatch defect above already refuses
+            // the plan); a declared-routed layer with no bank plans dense
+            // only as a placeholder behind its own defect.
+            (Some(moe), Some(bank)) if declared_routed(ffn_moe.as_ref(), layer) == Some(true) => {
                 let bank_operand = |role: OperandRole| operand(&bank_id, &bank[&role]);
                 let optional = |role: OperandRole| bank.get(&role).map(|t| operand(&bank_id, t));
                 let gemma4_router = moe.router_kind == MoeRouterKind::Gemma4Hybrid;

@@ -10,7 +10,7 @@ use std::path::{Path, PathBuf};
 use clap::{Args, Subcommand};
 
 use larql_models::inventory::{build_inventory, ArchitectureInventory};
-use larql_vindex::format::vindex3::plan::{plan_system_with_sources, ArtifactSource};
+use larql_vindex::format::vindex3::plan::plan_resolved;
 
 /// Extension distinguishing a saved inventory JSON from a checkpoint dir.
 const INVENTORY_EXT: &str = "json";
@@ -964,23 +964,7 @@ fn run_plan(args: PlanArgs) -> Result<(), Box<dyn std::error::Error>> {
     for entry in &resolved {
         report_staging(entry);
     }
-    // The verdict names its subject: the argument as given and, for a
-    // repo, the commit the facts were read at.
-    let sources: Vec<ArtifactSource> = args
-        .artifacts
-        .iter()
-        .zip(&resolved)
-        .map(|(spec, a)| ArtifactSource {
-            path: spec.display().to_string(),
-            revision: a.commit().map(str::to_string),
-            unpinned_revision: a.unpinned_revision().map(str::to_string),
-        })
-        .collect();
-    let named: Vec<(String, ArchitectureInventory)> = resolved
-        .into_iter()
-        .map(|a| (a.name, a.inventory))
-        .collect();
-    let plan = plan_system_with_sources(&named, &sources)?;
+    let plan = plan_resolved(&args.artifacts, resolved)?;
     let json = serde_json::to_string_pretty(&plan)?;
     match &args.output {
         Some(path) => {

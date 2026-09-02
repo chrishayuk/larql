@@ -29,7 +29,7 @@ use super::quality::QualityBank;
 /// calibrated as ordering-only, which is the failure the whole evidence
 /// ladder exists to prevent. Two of the three keys matched, so the
 /// mechanism looked like it worked. A typed key cannot drift.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
 pub enum Statistic {
     KlP99,
     Top1Flips,

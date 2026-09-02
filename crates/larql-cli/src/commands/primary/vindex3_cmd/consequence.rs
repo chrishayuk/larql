@@ -37,7 +37,7 @@ use std::collections::BTreeMap;
 use std::path::PathBuf;
 
 use clap::Args;
-use larql_vindex::format::vindex3::inspect::inspect_container;
+use larql_inference::vindex3::{open_component, OpenPolicy, OpenedComponent};
 use larql_vindex::format::vindex3::opplan::exec::operands::{OperandStore, RepresentationSource};
 use larql_vindex::format::vindex3::opplan::OperandRef;
 use larql_vindex::format::vindex3::represent::policy::{classify_in, Role};
@@ -179,7 +179,21 @@ pub fn run(args: ConsequenceArgs) -> Result<(), Box<dyn std::error::Error>> {
         .into());
     }
 
-    let inspection = inspect_container(&args.container, false)?;
+    // The opener is the one authority on inspect → plan → open; the
+    // provenance checks below read the inspection it judged.
+    let OpenedComponent {
+        inspection,
+        store,
+        plan,
+        ..
+    } = open_component(
+        &args.container,
+        "target",
+        OpenPolicy {
+            want: None,
+            source: RepresentationSource::Transient,
+        },
+    )?;
     if inspection.index.model != moments.container.model {
         return Err(format!(
             "REFUSED: container is not the one the moments were captured from.\n  \
@@ -216,18 +230,6 @@ pub fn run(args: ConsequenceArgs) -> Result<(), Box<dyn std::error::Error>> {
     );
 
     // ---- the operands --------------------------------------------------
-    let store = OperandStore::open_for(
-        &args.container,
-        &inspection,
-        None,
-        RepresentationSource::Transient,
-    )?;
-    let outcome = larql_vindex::format::vindex3::opplan::plan_component_ops(
-        &inspection,
-        &args.container,
-        "target",
-    )?;
-    let plan = outcome.plan.ok_or("component produced no plan")?;
     let activation = ffn_activation(&plan)?;
     println!("ffn activation {activation:?}  (from the plan the executor runs)");
 

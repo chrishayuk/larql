@@ -66,6 +66,15 @@ pub struct V3Model {
     /// directory basename, so id-substring matching answers "plain" for
     /// any container whose folder is not named after its family.
     pub family: String,
+    /// The end-of-turn tokens the container declares
+    /// (`generation_config.json::eos_token_id`), resolved once at load
+    /// through the same authority the CLI's V3 arm uses. The V3 driver
+    /// judges EOS on ids alone — it has no tokenizer to re-decode a
+    /// special token's surface form the way the V2 loop does — so a
+    /// route that starts from the empty built-in set runs every
+    /// generation to `max_tokens`. Every V3 route builds its request
+    /// EOS on top of this.
+    pub eos: EosConfig,
     /// Count of in-flight generations on this container — the V3
     /// counterpart of `LoadedModel.requests_in_flight`, which V3 had
     /// none of before this (no walk-ffn/grid participation to have
@@ -147,6 +156,7 @@ pub fn load_v3_model(path: &Path) -> Result<V3Model, Box<dyn std::error::Error +
         runtime,
         tokenizer,
         family,
+        eos: EosConfig::from_vindex_dir(path),
         requests_in_flight: Arc::new(AtomicU32::new(0)),
     };
     if matches!(

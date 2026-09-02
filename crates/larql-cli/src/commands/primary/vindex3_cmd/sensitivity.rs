@@ -31,8 +31,8 @@
 use std::path::PathBuf;
 
 use clap::Args;
-use larql_vindex::format::vindex3::inspect::inspect_container;
-use larql_vindex::format::vindex3::opplan::exec::operands::{OperandStore, RepresentationSource};
+use larql_inference::vindex3::{open_component, OpenPolicy, OpenedComponent};
+use larql_vindex::format::vindex3::opplan::exec::operands::RepresentationSource;
 use larql_vindex::format::vindex3::opplan::OperandRef;
 use larql_vindex::format::vindex3::represent::policy::{classify_in, Role};
 
@@ -88,14 +88,18 @@ pub fn run(args: SensitivityArgs) -> Result<(), Box<dyn std::error::Error>> {
     use larql_models::quant::nvfp4::{round_trip, NVFP4_GROUP_ELEMS};
     use larql_vindex::format::vindex3::represent::nvfp4_pack::PackLayout;
 
-    let inspection = inspect_container(&args.container, false)?;
     // Canonical bytes: the screen scores what quantisation would do to the
-    // source, so it must read the source.
-    let store = OperandStore::open_for(
+    // source, so it must read the source. The opener is the one authority
+    // on inspect → plan → open, and refuses an unclosed program.
+    let OpenedComponent {
+        inspection, store, ..
+    } = open_component(
         &args.container,
-        &inspection,
-        None,
-        RepresentationSource::Transient,
+        "target",
+        OpenPolicy {
+            want: None,
+            source: RepresentationSource::Transient,
+        },
     )?;
 
     let text: std::collections::BTreeSet<&str> = inspection
@@ -347,20 +351,22 @@ fn capture_moments(
 ) -> Result<(), Box<dyn std::error::Error>> {
     use larql_vindex::format::vindex3::opplan::exec::decode::DecodeSession;
     use larql_vindex::format::vindex3::opplan::exec::kv::RowKvState;
-    use larql_vindex::format::vindex3::opplan::plan_component_ops;
-
     let out = args
         .moments
         .clone()
         .ok_or("--calibration requires --moments")?;
-    let inspection = inspect_container(&args.container, false)?;
-    let outcome = plan_component_ops(&inspection, &args.container, "target")?;
-    let plan = outcome.plan.ok_or("component produced no plan")?;
-    let store = OperandStore::open_for(
+    let OpenedComponent {
+        inspection,
+        plan,
+        store,
+        ..
+    } = open_component(
         &args.container,
-        &inspection,
-        None,
-        RepresentationSource::Transient,
+        "target",
+        OpenPolicy {
+            want: None,
+            source: RepresentationSource::Transient,
+        },
     )?;
 
     let text = std::fs::read_to_string(calibration)?;

@@ -17,6 +17,7 @@ use super::graph::{SystemGraph, GRAPH_SCHEMA};
 use super::index::Vindex3Index;
 use crate::error::VindexError;
 use crate::format::filenames::INDEX_JSON;
+use crate::format::generation::{detect_generation, ContainerGeneration};
 
 /// A structural problem found while inspecting a container.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
@@ -103,6 +104,22 @@ pub fn inspect_container(
     root: &Path,
     verify_payloads: bool,
 ) -> Result<SystemInspection, VindexError> {
+    // The generation before any other byte. `index.json`'s `version` is
+    // the sole schema discriminator, and this is the opening step for
+    // every graph-path consumer (`vindex3 exec`, the runtime opener,
+    // represent, compile, the download validator), so an old VINDEX2
+    // directory, a future schema this build does not read, or an index
+    // with no version at all must be refused here by name — not parsed
+    // as if it were current and reported as a defect in something else.
+    match detect_generation(root)? {
+        ContainerGeneration::V3 => {}
+        ContainerGeneration::V2 => {
+            return Err(VindexError::WrongContainerGeneration {
+                found: "VINDEX2",
+                required: "VINDEX3",
+            })
+        }
+    }
     let index: Vindex3Index = serde_json::from_str(
         &std::fs::read_to_string(root.join(INDEX_JSON))
             .map_err(|e| VindexError::Parse(format!("read {INDEX_JSON}: {e}")))?,
@@ -251,3 +268,6 @@ fn verify_segment_hash(
     }
     Ok(())
 }
+
+#[cfg(test)]
+mod tests;

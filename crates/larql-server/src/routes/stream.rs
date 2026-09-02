@@ -196,9 +196,9 @@ async fn stream_describe_messages(
         None => return vec![ws_error("missing entity")],
     };
 
-    let model = match state.model(None) {
-        Some(m) => m,
-        None => return vec![ws_error("no model loaded")],
+    let model = match state.v2_or_unsupported(None) {
+        Ok(m) => m,
+        Err(e) => return vec![ws_error(e.message())],
     };
 
     let band = request["band"].as_str().unwrap_or("all");
@@ -300,10 +300,10 @@ async fn handle_stream_infer(
         }
     };
 
-    let model = match state.model(None) {
-        Some(m) => m,
-        None => {
-            send_error(socket, "no model loaded").await;
+    let model = match state.v2_or_unsupported(None) {
+        Ok(m) => m,
+        Err(e) => {
+            send_error(socket, e.message()).await;
             return;
         }
     };
@@ -407,10 +407,10 @@ async fn handle_stream_generate(
         .as_u64()
         .unwrap_or(DEFAULT_STREAM_MAX_TOKENS) as usize;
 
-    let model = match state.model(None) {
-        Some(m) => m,
-        None => {
-            send_error(socket, "no model loaded").await;
+    let model = match state.v2_or_unsupported(None) {
+        Ok(m) => m,
+        Err(e) => {
+            send_error(socket, e.message()).await;
             return;
         }
     };

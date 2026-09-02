@@ -91,6 +91,19 @@ impl ResolvedArtifact {
 
     /// What staging cost, for a repo artifact. `None` for a local one,
     /// which staged nothing.
+    /// What staging read to answer a question about this artifact, as
+    /// JSON — or `None` for a local artifact, which staged nothing.
+    /// Not an empty report: that would read as "staged, and it cost
+    /// zero". The object's shape is
+    /// [`super::staging::staging_report_json`].
+    pub fn staging_json(&self) -> Option<serde_json::Value> {
+        Some(super::staging::staging_report_json(
+            &self.name,
+            self.commit(),
+            &self.staging()?,
+        ))
+    }
+
     pub fn staging(&self) -> Option<StagingReport> {
         let Origin::Remote(remote) = &self.origin else {
             return None;
