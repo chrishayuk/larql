@@ -68,7 +68,16 @@ jobs:
             }
             inspect(
               `PR #${pullNumber} title`,
-              context.payload.pull_request.title,
+              context.payload.pull_request.title ?? "",
+            );
+            // The body is where the generator attribution actually
+            // landed historically — a trailing "Generated with [Claude
+            // Code]" line plus a session URL. Checking only the title
+            // would have let through every case this guard exists for.
+            // Null when a pull request has no description at all.
+            inspect(
+              `PR #${pullNumber} body`,
+              context.payload.pull_request.body ?? "",
             );
 
             for (const finding of findings) {
