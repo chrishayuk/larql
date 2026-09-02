@@ -378,10 +378,20 @@ fn plan_specs(specs: &[PathBuf], work: &PlanWork) -> Result<Planned, ServerError
 mod tests {
     use super::*;
 
+    /// A key as `plan()` would build one.
+    ///
+    /// The version is read from the constant, not written as a literal.
+    /// It was `1`, which silently stopped matching the moment the planner
+    /// bumped to 2 — `a_cache_hit_stages_nothing_and_plans_nothing` then
+    /// stored under one identity and looked up under another, and failed
+    /// as "the STORED verdict is served" rather than as what it was.
+    /// A fixture that pins a version this crate does not own has to be
+    /// re-pinned on every bump, and only fails once it is too late to
+    /// notice cheaply.
     fn key(revisions: &[&str]) -> VerdictCacheKey {
         VerdictCacheKey {
             revisions: revisions.iter().map(|r| r.to_string()).collect(),
-            semantics_version: 1,
+            semantics_version: PLANNER_SEMANTICS_VERSION,
         }
     }
 
@@ -405,7 +415,7 @@ mod tests {
         s.store(key(&["abc"]), serde_json::json!({"v": 1}));
         let newer = VerdictCacheKey {
             revisions: vec!["abc".into()],
-            semantics_version: 2,
+            semantics_version: PLANNER_SEMANTICS_VERSION + 1,
         };
         assert_eq!(s.cached(&newer), None);
     }
