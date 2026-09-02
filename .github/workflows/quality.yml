@@ -163,12 +163,18 @@ jobs:
         run: |
           rustc --version
           cargo --version
+          # `rust-version` may be two components ("1.98"); rustc reports
+          # three ("1.98.0"). The declared version must equal the running
+          # one or be its major.minor prefix.
+          declared="${{ steps.msrv.outputs.version }}"
           actual=$(rustc --version | awk '{print $2}')
-          if [ "$actual" != "${{ steps.msrv.outputs.version }}" ]; then
-            echo "::error::MSRV gate would run rustc $actual, not the declared ${{ steps.msrv.outputs.version }}"
-            exit 1
-          fi
-          echo "MSRV gate runs rustc $actual"
+          case "$actual" in
+            "$declared"|"$declared".*) echo "MSRV gate runs rustc $actual (declared $declared)" ;;
+            *)
+              echo "::error::MSRV gate would run rustc $actual, not the declared $declared"
+              exit 1
+              ;;
+          esac
 
       - name: Check at declared MSRV
         env:
