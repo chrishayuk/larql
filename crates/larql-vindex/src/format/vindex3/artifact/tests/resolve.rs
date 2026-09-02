@@ -211,11 +211,9 @@ fn a_relative_local_path_is_not_mistaken_for_a_repo() {
 fn commits_are_reported_per_artifact_in_order() {
     let a = tempfile::tempdir().unwrap();
     let b = tempfile::tempdir().unwrap();
-    let got = super::super::resolve_pinned_commits(&[
-        a.path().to_path_buf(),
-        b.path().to_path_buf(),
-    ])
-    .unwrap();
+    let got =
+        super::super::resolve_pinned_commits(&[a.path().to_path_buf(), b.path().to_path_buf()])
+            .unwrap();
     assert_eq!(got, vec![None, None]);
 }
 
