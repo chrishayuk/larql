@@ -27,7 +27,7 @@ use larql_vindex::format::vindex3::opplan::{
     plan_component_ops, ComponentOpPlan, LayerFfn, OperandRef,
 };
 use larql_vindex::format::vindex3::plan::capability::Capability;
-use larql_vindex::format::vindex3::plan::{plan_system_with_sources, ArtifactSource};
+use larql_vindex::format::vindex3::plan::plan_resolved;
 use larql_vindex::format::vindex3::represent::nvfp4_pack::{split, PackLayout, DTYPE_NVFP4};
 use larql_vindex::format::vindex3::represent::{compile_representation, RepresentSpec};
 
@@ -1047,23 +1047,11 @@ pub fn represent_facts(src: &Path, out: &Path, encoding: &str) -> Facts {
 /// staging against a 328 GB checkpoint.
 pub fn plan_facts(artifacts: &[PathBuf]) -> Facts {
     let resolved = artifact::resolve_all(artifacts).map_err(|e| e.to_string())?;
-    let staging: Vec<Value> = resolved.iter().filter_map(staging_value).collect();
-    // The verdict names its subject: the argument as given and, for a
-    // repo, the commit the facts were read at.
-    let sources: Vec<ArtifactSource> = artifacts
+    let staging: Vec<Value> = resolved
         .iter()
-        .zip(&resolved)
-        .map(|(spec, a)| ArtifactSource {
-            path: spec.display().to_string(),
-            revision: a.commit().map(str::to_string),
-            unpinned_revision: a.unpinned_revision().map(str::to_string),
-        })
+        .filter_map(artifact::ResolvedArtifact::staging_json)
         .collect();
-    let named: Vec<_> = resolved
-        .into_iter()
-        .map(|a| (a.name, a.inventory))
-        .collect();
-    let plan = plan_system_with_sources(&named, &sources).map_err(|e| e.to_string())?;
+    let plan = plan_resolved(artifacts, resolved).map_err(|e| e.to_string())?;
     let mut value = serde_json::to_value(&plan).map_err(|e| e.to_string())?;
     if !staging.is_empty() {
         value["staging"] = Value::Array(staging);
@@ -1077,7 +1065,10 @@ pub fn plan_facts(artifacts: &[PathBuf]) -> Facts {
 /// never needs to exist as a complete local file.
 pub fn encode_facts(artifacts: &[PathBuf], output: &Path, text_only: bool) -> Facts {
     let resolved = artifact::resolve_all(artifacts).map_err(|e| e.to_string())?;
-    let staging: Vec<Value> = resolved.iter().filter_map(staging_value).collect();
+    let staging: Vec<Value> = resolved
+        .iter()
+        .filter_map(artifact::ResolvedArtifact::staging_json)
+        .collect();
     let pinned: Vec<Value> = resolved
         .iter()
         .filter_map(|a| {
@@ -1121,26 +1112,5 @@ pub fn encode_facts(artifacts: &[PathBuf], output: &Path, text_only: bool) -> Fa
             // checkpoint holds.
             "fraction": if t.declared == 0 { 0.0 } else { t.fetched as f64 / t.declared as f64 },
         })).collect::<Vec<_>>(),
-    }))
-}
-
-/// One artifact's staging figures, when it was staged from a repo.
-fn staging_value(a: &artifact::ResolvedArtifact) -> Option<Value> {
-    let report = a.staging()?;
-    Some(json!({
-        "artifact": a.name,
-        "commit": a.commit(),
-        "shards": report.shards,
-        "staged": artifact::size(report.staged_bytes()),
-        "headers": artifact::size(report.header_bytes),
-        "metadata": artifact::size(report.metadata_bytes),
-        "stands_in_for": report.payload_bytes.as_ref().ok().map(|b| artifact::size(*b)),
-        // Stated only when the index disagrees with its own headers, so
-        // the difference reads as a fact about the checkpoint rather than
-        // a units bug in the report.
-        "index_declares": report
-            .declared_total
-            .filter(|d| report.payload_bytes.as_ref().is_ok_and(|p| d != p))
-            .map(artifact::size),
     }))
 }

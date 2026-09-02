@@ -199,14 +199,77 @@ fn resolve_artifact_path_with(
     path_str: &str,
     registry: &larql_vindex::registry::RegistryManifest,
 ) -> Result<PathBuf, BoxError> {
+    match classify_with(path_str, registry)? {
+        SourceResolution::Registry(resolved) => Ok(resolved),
+        SourceResolution::Hf => Ok(larql_vindex::resolve_hf_vindex(path_str)?),
+        SourceResolution::Local => Ok(PathBuf::from(path_str)),
+    }
+}
+
+/// Which branch a reference takes, carrying whatever that branch
+/// already resolved. Split out of [`resolve_artifact_path_with`] so
+/// that `/v1/capabilities` can report the reference forms this server
+/// accepts by *asking the resolver* ([`classify_source`]) rather than
+/// restating its branches in a second list that can drift.
+///
+/// The registry arm carries its resolved path because
+/// `resolve_claimed` has already done the work — classifying and then
+/// re-resolving would run it twice on the load path.
+enum SourceResolution {
+    /// A registry-claimed name, resolved by the registry.
+    Registry(PathBuf),
+    /// An `hf://` reference to a *published container*. Not fetched
+    /// yet: classification is free, resolution is a download.
+    Hf,
+    /// A literal filesystem path.
+    Local,
+}
+
+fn classify_with(
+    path_str: &str,
+    registry: &larql_vindex::registry::RegistryManifest,
+) -> Result<SourceResolution, BoxError> {
     if let Some(resolved) = larql_vindex::registry::resolve_claimed(path_str, registry)? {
-        return Ok(resolved);
+        return Ok(SourceResolution::Registry(resolved));
     }
     if larql_vindex::is_hf_path(path_str) {
-        Ok(larql_vindex::resolve_hf_vindex(path_str)?)
+        Ok(SourceResolution::Hf)
     } else {
-        Ok(PathBuf::from(path_str))
+        Ok(SourceResolution::Local)
     }
+}
+
+/// How `load_artifact` will interpret `reference`.
+///
+/// Reported by `GET /v1/capabilities` as the source forms this
+/// server's load verb accepts. Note what an `Hf` answer does and does
+/// not promise: `resolve_hf_vindex` fetches an **already-encoded
+/// VINDEX container** (it looks for `index.json`), so `hf://` here
+/// means "a published container", never "a raw checkpoint". Encoding
+/// a checkpoint is `vindex encode`, a capability this server does not
+/// have — which is why the capability table keeps `load` and `encode`
+/// as separate verbs over separate objects.
+pub fn classify_source(reference: &str) -> SourceKind {
+    match classify_with(reference, &larql_vindex::registry::production_registry()) {
+        // A refusal from the registry is still the registry
+        // answering: the name was claimed, and failed. Reporting it
+        // as `Local` would say a claimed-but-broken name is a
+        // filesystem path.
+        Ok(SourceResolution::Registry(_)) | Err(_) => SourceKind::Registry,
+        Ok(SourceResolution::Hf) => SourceKind::Hf,
+        Ok(SourceResolution::Local) => SourceKind::Local,
+    }
+}
+
+/// The reference forms [`classify_source`] distinguishes.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum SourceKind {
+    /// A name the VINDEX3 registry has claimed.
+    Registry,
+    /// An `hf://owner/repo` reference to a published container.
+    Hf,
+    /// A literal filesystem path.
+    Local,
 }
 
 pub fn load_single_vindex(

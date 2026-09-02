@@ -25,8 +25,8 @@ pub use cli::{
     DEFAULT_PORT, DEFAULT_SESSION_TTL_SECS,
 };
 pub use load::{
-    discover_vindexes, load_artifact, load_single_vindex, parse_unit_manifest, LoadVindexOptions,
-    LoadedArtifact, UnitManifest,
+    classify_source, discover_vindexes, load_artifact, load_single_vindex, parse_unit_manifest,
+    LoadVindexOptions, LoadedArtifact, SourceKind, UnitManifest,
 };
 
 use std::sync::Arc;
