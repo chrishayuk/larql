@@ -24,8 +24,8 @@ fn report_expert_bank_representation_screen() {
         fx.inter
     );
     eprintln!(
-        "[q1a] {:<6} {:>7} {:>9} {:>11} {:>11} {:>8}  {}",
-        "format", "bpw", "MiB/bank", "rel_rms", "max/scale", "x floor", "dispatch"
+        "[q1a] {:<6} {:>7} {:>9} {:>11} {:>11} {:>8}  dispatch",
+        "format", "bpw", "MiB/bank", "rel_rms", "max/scale", "x floor"
     );
     for (a, out) in arms.iter().zip(&outputs) {
         let rms = rel_rms(out, &oracle);
@@ -323,7 +323,12 @@ fn the_k_quant_grouped_dispatch_is_correct_across_slots_and_layouts() {
             f.label(),
             stage.label()
         );
-        if !(overall < 1e-3) {
+        // Not `overall >= 1e-3`: the point of the guard is that a
+        // NON-FINITE overall reaches the per-slot dump, and `>=` is
+        // false for NaN. `partial_cmp` says the same thing as the
+        // original negation without hiding that the values may be
+        // incomparable.
+        if !matches!(overall.partial_cmp(&1e-3), Some(std::cmp::Ordering::Less)) {
             for s in 0..slots {
                 eprintln!(
                     "[q1a-grouped]   slot {s}: vs own {:.3e}, vs slot0 {:.3e}",

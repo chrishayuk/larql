@@ -378,16 +378,11 @@ fn plan_specs(specs: &[PathBuf], work: &PlanWork) -> Result<Planned, ServerError
 mod tests {
     use super::*;
 
-    /// A key as `plan()` would build one.
-    ///
-    /// The version is read from the constant, not written as a literal.
-    /// It was `1`, which silently stopped matching the moment the planner
-    /// bumped to 2 — `a_cache_hit_stages_nothing_and_plans_nothing` then
-    /// stored under one identity and looked up under another, and failed
-    /// as "the STORED verdict is served" rather than as what it was.
-    /// A fixture that pins a version this crate does not own has to be
-    /// re-pinned on every bump, and only fails once it is too late to
-    /// notice cheaply.
+    /// A key as the SERVICE would build it — reading the planner's own
+    /// constant, not a copy of today's value. Hardcoding `1` here made
+    /// every one of these tests fail the moment the planner's semantics
+    /// version moved to 5, for a reason that had nothing to do with the
+    /// cache.
     fn key(revisions: &[&str]) -> VerdictCacheKey {
         VerdictCacheKey {
             revisions: revisions.iter().map(|r| r.to_string()).collect(),
@@ -413,6 +408,9 @@ mod tests {
     fn semantics_version_is_part_of_the_identity() {
         let s = PlanService::new(ServerProfile::SingleModel);
         s.store(key(&["abc"]), serde_json::json!({"v": 1}));
+        // Whatever the planner says today, plus one: the point is that a
+        // DIFFERENT semantics version is a different verdict, not that
+        // any particular number is.
         let newer = VerdictCacheKey {
             revisions: vec!["abc".into()],
             semantics_version: PLANNER_SEMANTICS_VERSION + 1,
