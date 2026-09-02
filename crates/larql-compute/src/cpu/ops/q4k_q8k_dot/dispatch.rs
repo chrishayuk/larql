@@ -139,9 +139,10 @@ pub fn q4k_q8k_matvec_parallel(
             return;
         }
         let w_chunk = &bytes[row_start * bytes_per_row..(row_start + chunk_len) * bytes_per_row];
-        kernel(&mut chunk[..chunk_len], q8k_x, w_chunk, chunk_len, cols).unwrap_or_else(|e| {
-            panic!("q4k_q8k_matvec_parallel: chunk {chunk_idx} refused after whole-shape validation: {e}")
-        });
+        // Unreachable by construction — every chunk is a sub-slice of the
+        // whole validated above — so the refusal needs no detail of its own.
+        kernel(&mut chunk[..chunk_len], q8k_x, w_chunk, chunk_len, cols)
+            .expect("q4k_q8k_matvec_parallel: a chunk refused after whole-shape validation");
     });
     Ok(())
 }
