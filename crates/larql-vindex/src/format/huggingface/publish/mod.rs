@@ -329,32 +329,11 @@ pub struct SilentPublishCallbacks;
 impl PublishCallbacks for SilentPublishCallbacks {}
 
 pub(in crate::format::huggingface) fn get_hf_token() -> Result<String, VindexError> {
-    // Try environment variable first
-    if let Ok(token) = std::env::var("HF_TOKEN") {
-        return Ok(token);
-    }
-
-    // Try token file
-    let home = std::env::var("HOME").unwrap_or_else(|_| ".".into());
-    let token_path = PathBuf::from(&home).join(".huggingface").join("token");
-    if token_path.exists() {
-        let token = std::fs::read_to_string(&token_path)?;
-        return Ok(token.trim().to_string());
-    }
-
-    // Try newer cache location
-    let token_path = PathBuf::from(&home)
-        .join(".cache")
-        .join("huggingface")
-        .join("token");
-    if token_path.exists() {
-        let token = std::fs::read_to_string(&token_path)?;
-        return Ok(token.trim().to_string());
-    }
-
-    Err(VindexError::Parse(
-        "HuggingFace token not found. Set HF_TOKEN or run `huggingface-cli login`.".into(),
-    ))
+    super::token::resolve().ok_or_else(|| {
+        VindexError::Parse(
+            "HuggingFace token not found. Set HF_TOKEN or run `huggingface-cli login`.".into(),
+        )
+    })
 }
 
 #[cfg(test)]

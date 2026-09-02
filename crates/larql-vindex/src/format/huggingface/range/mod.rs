@@ -40,9 +40,6 @@ const DEFAULT_ENDPOINT: &str = "https://huggingface.co";
 /// or a mirror can redirect both paths together.
 const ENDPOINT_ENV: &str = "HF_ENDPOINT";
 
-/// Token variables, in the order `hf-hub` consults them.
-const TOKEN_ENVS: [&str; 2] = ["HF_TOKEN", "HUGGING_FACE_HUB_TOKEN"];
-
 /// Header the hub sets on a `resolve` response naming the commit the
 /// revision resolved to. Recorded as provenance: `main` is a moving
 /// target and a container compiled from it must say which `main`.
@@ -166,10 +163,7 @@ impl HfRangeClient {
                 .to_string(),
             repo: repo.to_string(),
             revision: revision.to_string(),
-            token: TOKEN_ENVS
-                .iter()
-                .find_map(|key| std::env::var(key).ok())
-                .filter(|t| !t.is_empty()),
+            token: super::token::resolve(),
             client,
             retry: RetryPolicy::default(),
             chunk: RANGE_CHUNK,
