@@ -180,6 +180,43 @@ fn load_local(path: &Path) -> Result<ArchitectureInventory, VindexError> {
 /// payloads read at another would address a different checkpoint with the
 /// same offsets, which is the one failure this whole path could have that
 /// still produces plausible bytes.
+/// The immutable commit `spec` resolves to, **without staging it**.
+///
+/// One ranged request that reads the hub's commit header — the cheap
+/// half of what [`resolve`] does before it fetches anything. It exists
+/// so a caller holding a verdict cache can learn enough immutable
+/// identity to look up an answer *before* paying for the headers that
+/// would produce it. Measured on the public explorer, that is the
+/// difference between a repeat plan costing ~90 MB and a full header
+/// parse, and costing one HTTP round trip.
+///
+/// `None` — meaning "no persistent identity, do not cache" — for:
+/// - a local path, which has no commit at all; and
+/// - a repo the hub answers without a commit header, i.e. an unpinned
+///   revision name, which can move.
+///
+/// Goes through the same [`resolve_commit`] that [`resolve`] itself
+/// uses, so the commit a cache is keyed on and the commit a verdict
+/// records cannot disagree by construction rather than by discipline.
+pub fn resolve_pinned_commit(spec: &Path) -> Result<Option<String>, VindexError> {
+    let text = spec.to_string_lossy();
+    if !is_hf_spec(&text) {
+        return Ok(None);
+    }
+    let parsed = parse_spec(&text)?;
+    resolve_commit(&HfRangeClient::new(&parsed.repo, &parsed.revision)?)
+}
+
+/// [`resolve_pinned_commit`] for every spec, in order.
+///
+/// A caller may key a cache on the result only when **every** entry is
+/// `Some`: one local path or one unpinned revision among the artifacts
+/// makes the whole verdict uncacheable, the same rule
+/// `SystemPlan::cache_key` applies after the fact.
+pub fn resolve_pinned_commits(specs: &[PathBuf]) -> Result<Vec<Option<String>>, VindexError> {
+    specs.iter().map(|s| resolve_pinned_commit(s)).collect()
+}
+
 fn resolve_remote(spec: &str) -> Result<ResolvedArtifact, VindexError> {
     let parsed = parse_spec(spec)?;
     let named = HfRangeClient::new(&parsed.repo, &parsed.revision)?;

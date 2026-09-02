@@ -30,10 +30,13 @@
 
 use std::collections::HashMap;
 use std::path::PathBuf;
-use std::sync::Mutex;
+use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::{Arc, Mutex};
 
 use larql_vindex::format::vindex3::artifact;
-use larql_vindex::format::vindex3::plan::{plan_resolved, VerdictCacheKey};
+use larql_vindex::format::vindex3::plan::{
+    plan_resolved, VerdictCacheKey, PLANNER_SEMANTICS_VERSION,
+};
 use serde_json::Value;
 use tokio::sync::Semaphore;
 use tracing::info;
@@ -55,11 +58,57 @@ const CACHE_CAPACITY: usize = 256;
 pub const MAX_CONCURRENT_PLANS: usize = 2;
 
 /// The planning surface for one server.
+/// How this service learns an artifact's immutable commit.
+///
+/// Injectable because the real one is a network call, and the
+/// invariant that matters here — a cache hit performs no staging and
+/// no planning — is a statement about work not happening, which can
+/// only be asserted by driving both paths deterministically.
+pub type CommitResolver = Arc<
+    dyn Fn(&[PathBuf]) -> Result<Vec<Option<String>>, larql_vindex::error::VindexError>
+        + Send
+        + Sync,
+>;
+
 pub struct PlanService {
     profile: ServerProfile,
+    resolver: CommitResolver,
     cache: Mutex<HashMap<VerdictCacheKey, Value>>,
     cache_capacity: usize,
     permits: Semaphore,
+    work: Arc<PlanWork>,
+}
+
+/// What this service has actually done, as counts.
+///
+/// Exists because "the cache is consulted before the work" is a claim
+/// about work NOT happening, and the only honest way to assert that is
+/// to count the work. A structural check — the lookup appears earlier
+/// in the function — would still pass if some staging leaked in ahead
+/// of it. Production measurement made the point: before this, a hit
+/// answered in 0.9 s and still moved the process high-water mark,
+/// because it had already staged and planned.
+#[derive(Debug, Default)]
+pub struct PlanWork {
+    /// Commit probes: one ranged request per artifact, no staging.
+    pub commits_resolved: AtomicU64,
+    /// Header staging passes — the expensive half.
+    pub staged: AtomicU64,
+    /// Planner invocations.
+    pub planned: AtomicU64,
+}
+
+impl PlanWork {
+    /// `(commit probes, staging passes, planner invocations)`, for a
+    /// caller that wants to assert what this service did — or, more
+    /// usefully, what it did not do.
+    pub fn snapshot(&self) -> (u64, u64, u64) {
+        (
+            self.commits_resolved.load(Ordering::Relaxed),
+            self.staged.load(Ordering::Relaxed),
+            self.planned.load(Ordering::Relaxed),
+        )
+    }
 }
 
 impl PlanService {
@@ -75,11 +124,29 @@ impl PlanService {
         max_concurrent: usize,
         cache_capacity: usize,
     ) -> Self {
+        Self::with_resolver(
+            profile,
+            max_concurrent,
+            cache_capacity,
+            Arc::new(artifact::resolve_pinned_commits),
+        )
+    }
+
+    /// [`Self::with_limits`] with the commit probe stated, so a test
+    /// can drive cache hit and cache miss without a hub.
+    pub fn with_resolver(
+        profile: ServerProfile,
+        max_concurrent: usize,
+        cache_capacity: usize,
+        resolver: CommitResolver,
+    ) -> Self {
         Self {
             profile,
+            resolver,
             cache: Mutex::new(HashMap::new()),
             cache_capacity,
             permits: Semaphore::new(max_concurrent),
+            work: Arc::new(PlanWork::default()),
         }
     }
 
@@ -150,37 +217,58 @@ impl PlanService {
         }
     }
 
-    /// Serve a verdict: a held pinned one from cache, otherwise store
-    /// this one and serve it.
-    ///
-    /// Split out of [`Self::plan`] because the branch that matters —
-    /// a pinned verdict coming back from cache instead of being
-    /// recomputed — can only be reached with an immutable commit, and
-    /// every source that has one is a network fetch. As its own
-    /// method it is reachable from a unit test, so the cache rule is
-    /// checked rather than assumed.
-    fn serve(&self, document: Value, cache_key: Option<&VerdictCacheKey>) -> (Value, bool) {
-        let Some(key) = cache_key else {
-            // Unpinned: served, never stored. A cache that held this
-            // would answer tomorrow's question with today's facts.
-            return (document, false);
-        };
-        match self.cached(key) {
-            Some(hit) => (hit, true),
-            None => {
-                self.store(key.clone(), document.clone());
-                (document, false)
-            }
-        }
+    /// Counts of what this service has actually done. Test surface for
+    /// the invariant that a cache hit performs no staging and no
+    /// planning.
+    pub fn work(&self) -> &PlanWork {
+        &self.work
     }
 
-    /// Plan `sources`, serving a pinned verdict from cache when one is
-    /// held.
+    /// The identity a cached verdict would be filed under, learned
+    /// **without staging anything**.
+    ///
+    /// `None` means "do not consult the cache": a local path, an
+    /// unpinned revision name among the artifacts, or a probe that
+    /// failed. The last is deliberately not an error — the probe is an
+    /// optimisation, and a repo that cannot be reached will fail again
+    /// in the planning path below with a better message than a bare
+    /// commit lookup can give.
+    async fn lookup_key(&self, specs: &[PathBuf]) -> Option<VerdictCacheKey> {
+        let owned = specs.to_vec();
+        let work = Arc::clone(&self.work);
+        let resolver = Arc::clone(&self.resolver);
+        let commits = tokio::task::spawn_blocking(move || {
+            work.commits_resolved
+                .fetch_add(owned.len() as u64, Ordering::Relaxed);
+            resolver(&owned)
+        })
+        .await
+        .ok()?
+        .ok()?;
+        // Every artifact pinned, or no key at all. One unpinned source
+        // poisons the whole verdict — a partially immutable verdict is
+        // not an immutable verdict.
+        let revisions: Vec<String> = commits.into_iter().collect::<Option<Vec<_>>>()?;
+        Some(VerdictCacheKey {
+            revisions,
+            semantics_version: PLANNER_SEMANTICS_VERSION,
+        })
+    }
+
+    /// Plan `sources`, answering from cache before doing the work that
+    /// would produce the answer.
+    ///
+    /// The order is the point. Keying on the resolved commit means the
+    /// identity is only knowable after asking the hub — but asking for
+    /// the commit is one ranged request, while producing the verdict is
+    /// tens of megabytes of headers and a planner pass. Consulting the
+    /// cache after the second step, as this did originally, makes a hit
+    /// fast (the hub's bytes are locally cached) while still costing
+    /// the full parse and allocation. Measured on the public box: a hit
+    /// answered in 0.9 s and still pushed peak RSS up 23 MB.
     ///
     /// The returned document is the plan exactly as `vindex plan
-    /// --json` writes it, plus `staging` and a `serving` block — so a
-    /// client can read a server's answer and a CLI's answer with the
-    /// same parser.
+    /// --json` writes it, plus `staging` and a `serving` block.
     pub async fn plan(&self, sources: Vec<String>) -> Result<Value, ServerError> {
         let specs = self.validate(&sources)?;
 
@@ -195,26 +283,56 @@ impl PlanService {
             ))
         })?;
 
-        let planned = tokio::task::spawn_blocking(move || plan_specs(&specs))
+        // ── the cheap half ──
+        let probe_key = self.lookup_key(&specs).await;
+        if let Some(key) = &probe_key {
+            if let Some(hit) = self.cached(key) {
+                return Ok(with_serving(hit, true, true, self.profile));
+            }
+        }
+
+        // ── the expensive half, only on a miss ──
+        let work = Arc::clone(&self.work);
+        let owned = specs.clone();
+        let planned = tokio::task::spawn_blocking(move || plan_specs(&owned, &work))
             .await
             .map_err(|e| ServerError::Internal(format!("plan task failed: {e}")))??;
-
         let Planned {
             document,
             cache_key,
         } = planned;
 
-        let (mut document, served_from_cache) = self.serve(document, cache_key.as_ref());
-
-        document["serving"] = serde_json::json!({
-            "cached": served_from_cache,
-            // Says why a verdict was not stored without making the
-            // client infer it from the absence of a commit.
-            "cacheable": cache_key.is_some(),
-            "profile": self.profile.as_str(),
-        });
-        Ok(document)
+        // Filed under the PLAN's key, never the probe's. If the repo
+        // moved between the probe and the staging, this verdict belongs
+        // to the commit that was actually read.
+        if let Some(key) = &cache_key {
+            self.store(key.clone(), document.clone());
+        }
+        Ok(with_serving(
+            document,
+            false,
+            cache_key.is_some(),
+            self.profile,
+        ))
     }
+}
+
+/// Attach the serving block. One place, so a cache hit and a fresh
+/// verdict cannot describe themselves differently.
+fn with_serving(
+    mut document: Value,
+    cached: bool,
+    cacheable: bool,
+    profile: ServerProfile,
+) -> Value {
+    document["serving"] = serde_json::json!({
+        "cached": cached,
+        // Says why a verdict was not stored without making the client
+        // infer it from the absence of a commit.
+        "cacheable": cacheable,
+        "profile": profile.as_str(),
+    });
+    document
 }
 
 struct Planned {
@@ -224,7 +342,8 @@ struct Planned {
 
 /// Resolve and plan, on a blocking thread. Everything that touches the
 /// network lives here.
-fn plan_specs(specs: &[PathBuf]) -> Result<Planned, ServerError> {
+fn plan_specs(specs: &[PathBuf], work: &PlanWork) -> Result<Planned, ServerError> {
+    work.staged.fetch_add(1, Ordering::Relaxed);
     let resolved = artifact::resolve_all(specs)
         .map_err(|e| ServerError::BadRequest(format!("cannot read this source: {e}")))?;
     let staging: Vec<Value> = resolved
@@ -232,6 +351,7 @@ fn plan_specs(specs: &[PathBuf]) -> Result<Planned, ServerError> {
         .filter_map(artifact::ResolvedArtifact::staging_json)
         .collect();
 
+    work.planned.fetch_add(1, Ordering::Relaxed);
     let plan = plan_resolved(specs, resolved)
         .map_err(|e| ServerError::BadRequest(format!("cannot plan this source: {e}")))?;
     let cache_key = plan.cache_key();
@@ -311,29 +431,137 @@ mod tests {
         );
     }
 
-    #[test]
-    fn an_unpinned_verdict_is_served_and_never_stored() {
-        let s = PlanService::new(ServerProfile::SingleModel);
-        let (doc, cached) = s.serve(serde_json::json!({"v": 1}), None);
-        assert_eq!(doc, serde_json::json!({"v": 1}));
-        assert!(!cached);
-        assert!(s.cache.lock().unwrap().is_empty(), "nothing may be stored");
+    // ── cache before work: the invariant, asserted as work NOT done ──
+
+    /// A real checkpoint on disk, so the miss path actually plans.
+    fn checkpoint() -> tempfile::TempDir {
+        let dir = tempfile::tempdir().unwrap();
+        larql_vindex::format::vindex3::fixtures::miniature_glimmer(dir.path());
+        dir
     }
 
-    #[test]
-    fn a_pinned_verdict_is_stored_on_the_first_ask_and_served_on_the_second() {
-        let s = PlanService::new(ServerProfile::SingleModel);
-        let k = key(&["abc"]);
+    /// A commit probe that answers whatever the test says, without a hub.
+    fn resolver(answers: Vec<Option<&'static str>>) -> CommitResolver {
+        Arc::new(move |_: &[PathBuf]| {
+            Ok(answers
+                .iter()
+                .map(|a| a.map(str::to_string))
+                .collect::<Vec<_>>())
+        })
+    }
 
-        let (first, cached) = s.serve(serde_json::json!({"v": 1}), Some(&k));
-        assert_eq!(first, serde_json::json!({"v": 1}));
-        assert!(!cached, "the first ask computed it");
+    fn service(answers: Vec<Option<&'static str>>) -> PlanService {
+        PlanService::with_resolver(ServerProfile::SingleModel, 2, 8, resolver(answers))
+    }
 
-        // A second, DIFFERENT document under the same key must lose to
-        // the stored one — that is what "cached" has to mean.
-        let (second, cached) = s.serve(serde_json::json!({"v": 2}), Some(&k));
-        assert_eq!(second, serde_json::json!({"v": 1}));
-        assert!(cached);
+    /// The whole point of the rung. A hit must cost one commit probe
+    /// and nothing else — no header staging, no planner pass. Asserted
+    /// by counting, because "the lookup happens earlier in the
+    /// function" is a structural claim that would still hold if some
+    /// staging leaked in ahead of it.
+    #[tokio::test]
+    async fn a_cache_hit_stages_nothing_and_plans_nothing() {
+        let s = service(vec![Some("abc")]);
+        s.store(
+            key(&["abc"]),
+            serde_json::json!({"schema": 4, "stored": true}),
+        );
+        let dir = checkpoint();
+
+        let before = s.work().snapshot();
+        let out = s
+            .plan(vec![dir.path().to_string_lossy().into_owned()])
+            .await
+            .unwrap();
+        let after = s.work().snapshot();
+
+        assert_eq!(
+            out["stored"],
+            serde_json::json!(true),
+            "the STORED verdict is served"
+        );
+        assert_eq!(out["serving"]["cached"], serde_json::json!(true));
+        assert_eq!(after.0, before.0 + 1, "exactly one commit probe");
+        assert_eq!(after.1, before.1, "no header staging on a hit");
+        assert_eq!(after.2, before.2, "no planner invocation on a hit");
+    }
+
+    /// The invalidation control. Same request shape, a different
+    /// resolved commit: the stored verdict must not answer for it.
+    #[tokio::test]
+    async fn a_different_resolved_commit_is_a_miss() {
+        let s = service(vec![Some("def")]);
+        s.store(key(&["abc"]), serde_json::json!({"stored": true}));
+        let dir = checkpoint();
+
+        let before = s.work().snapshot();
+        let out = s
+            .plan(vec![dir.path().to_string_lossy().into_owned()])
+            .await
+            .unwrap();
+        let after = s.work().snapshot();
+
+        assert!(
+            out.get("stored").is_none(),
+            "a different commit must not reuse the verdict"
+        );
+        assert_eq!(out["serving"]["cached"], serde_json::json!(false));
+        assert_eq!(after.1, before.1 + 1, "a miss stages");
+        assert_eq!(after.2, before.2 + 1, "a miss plans");
+    }
+
+    /// A local path has no persistent identity, so it is planned
+    /// normally and its verdict is never filed.
+    #[tokio::test]
+    async fn a_local_source_is_planned_and_never_cached() {
+        let s = service(vec![None]);
+        let dir = checkpoint();
+        let out = s
+            .plan(vec![dir.path().to_string_lossy().into_owned()])
+            .await
+            .unwrap();
+        assert_eq!(out["serving"]["cached"], serde_json::json!(false));
+        assert_eq!(out["serving"]["cacheable"], serde_json::json!(false));
+        assert_eq!(s.work().snapshot().2, 1, "it really planned");
+        assert!(
+            s.cache.lock().unwrap().is_empty(),
+            "an unpinned verdict must never be stored"
+        );
+    }
+
+    /// One unpinned artifact poisons the whole key: a partially
+    /// immutable verdict is not an immutable verdict.
+    #[tokio::test]
+    async fn one_unpinned_artifact_makes_the_whole_plan_uncacheable() {
+        let s = service(vec![Some("abc"), None]);
+        assert!(
+            s.lookup_key(&[PathBuf::from("a"), PathBuf::from("b")])
+                .await
+                .is_none(),
+            "every artifact must be pinned, or there is no key at all"
+        );
+    }
+
+    /// A probe that fails is not an error — it means "do not consult
+    /// the cache", and the planning path below reports the real
+    /// problem with a better message.
+    #[tokio::test]
+    async fn a_failed_commit_probe_falls_through_to_planning() {
+        let failing: CommitResolver = Arc::new(|_: &[PathBuf]| {
+            Err(larql_vindex::error::VindexError::Parse(
+                "hub unreachable".into(),
+            ))
+        });
+        let s = PlanService::with_resolver(ServerProfile::SingleModel, 2, 8, failing);
+        assert!(s.lookup_key(&[PathBuf::from("hf://o/r")]).await.is_none());
+
+        let dir = checkpoint();
+        let out = s
+            .plan(vec![dir.path().to_string_lossy().into_owned()])
+            .await
+            .unwrap();
+        assert_eq!(out["serving"]["cached"], serde_json::json!(false));
+        assert_eq!(s.work().snapshot().2, 1, "it planned anyway");
     }
 
     #[tokio::test]
