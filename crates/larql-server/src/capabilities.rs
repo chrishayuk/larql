@@ -45,6 +45,11 @@ use crate::routes::paths;
 /// to plan schema 4: an unattributed answer is refused, not guessed.
 pub const CAPABILITIES_SCHEMA: u32 = 1;
 
+/// The plan-document schema this build's `/v1/plan` emits, re-exported
+/// from the planner so a test asserting the wire shape reads the
+/// planner's own number rather than a copy of it.
+pub const PLAN_SCHEMA_EXPECTED: u32 = larql_vindex::format::vindex3::plan::PLAN_SCHEMA;
+
 /// The execution backends this server can actually bind a VINDEX3
 /// container to.
 ///
@@ -136,10 +141,44 @@ pub struct RouteCapability {
     /// The route whose presence **is** this capability. Reported
     /// `true` iff `routes::mod` mounted exactly this path.
     pub route: &'static str,
-    /// An extra conjunct for source-taking verbs: the resolver must
-    /// also accept this reference form. `None` for capabilities that
-    /// are purely a question of the route existing.
-    pub source: Option<SourceScheme>,
+    /// An extra conjunct for source-taking verbs. `None` for
+    /// capabilities that are purely a question of the route existing.
+    pub source: Option<SourceGate>,
+}
+
+/// The second half of a source-taking capability: what, besides the
+/// route existing, has to be true for the server to accept this
+/// reference form.
+///
+/// Each variant names the authority that decides it, and the handler
+/// for that verb asks the *same* authority — so what the report
+/// advertises and what the endpoint does are one decision read twice.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum SourceGate {
+    /// `load` — `bootstrap::classify_source` must recognise the form.
+    Resolver(SourceScheme),
+    /// `plan` — this profile must be willing to plan that form.
+    /// `routes::plan` refuses through [`plans_source`].
+    PlanPolicy(SourceScheme),
+}
+
+/// Whether `profile` will plan a source of this form.
+///
+/// The public surface plans `hf://` references and nothing else. A
+/// local path accepted from an internet caller is a filesystem probe:
+/// even when it plans nothing, the refusals distinguish "no such
+/// directory" from "not a checkpoint", and that difference maps the
+/// host. A localhost server has no such caller and plans either.
+///
+/// `POST /v1/plan` refuses through this function, and
+/// `sources.plan.{local,hf}` is advertised through it — one decision,
+/// two readings, checked against each other in
+/// `tests/test_plan_route.rs`.
+pub const fn plans_source(profile: ServerProfile, scheme: SourceScheme) -> bool {
+    !matches!(
+        (profile, scheme),
+        (ServerProfile::PublicExplorer, SourceScheme::Local)
+    )
 }
 
 /// Every capability this server advertises. The report's whole
@@ -156,32 +195,35 @@ pub const ROUTE_CAPABILITIES: &[RouteCapability] = &[
     RouteCapability {
         key: "/sources/load/local",
         route: paths::RUNTIME_MODEL,
-        source: Some(SourceScheme::Local),
+        source: Some(SourceGate::Resolver(SourceScheme::Local)),
     },
     RouteCapability {
         key: "/sources/load/hf",
         route: paths::RUNTIME_MODEL,
-        source: Some(SourceScheme::Hf),
+        source: Some(SourceGate::Resolver(SourceScheme::Hf)),
     },
     RouteCapability {
         key: "/sources/plan/local",
         route: paths::PLAN,
-        source: Some(SourceScheme::Local),
+        source: Some(SourceGate::PlanPolicy(SourceScheme::Local)),
     },
     RouteCapability {
         key: "/sources/plan/hf",
         route: paths::PLAN,
-        source: Some(SourceScheme::Hf),
+        source: Some(SourceGate::PlanPolicy(SourceScheme::Hf)),
     },
     RouteCapability {
         key: "/sources/encode/local",
         route: paths::ENCODE,
-        source: Some(SourceScheme::Local),
+        // No gate: encode-by-source has no policy yet, and the route is
+        // mounted by nobody, so this is `false` on the route alone. The
+        // rung that mounts it brings its own `SourceGate`.
+        source: None,
     },
     RouteCapability {
         key: "/sources/encode/hf",
         route: paths::ENCODE,
-        source: Some(SourceScheme::Hf),
+        source: None,
     },
     // ── explorer: the read surface over a bound container ──
     RouteCapability {
@@ -303,7 +345,12 @@ impl Capabilities {
     /// Whether `cap` is offered: its route was mounted, and — for a
     /// source-taking verb — the resolver accepts that reference form.
     pub fn advertises(&self, cap: &RouteCapability) -> bool {
-        self.mounted.contains(cap.route) && cap.source.is_none_or(SourceScheme::accepted)
+        self.mounted.contains(cap.route)
+            && match cap.source {
+                None => true,
+                Some(SourceGate::Resolver(scheme)) => scheme.accepted(),
+                Some(SourceGate::PlanPolicy(scheme)) => plans_source(self.profile, scheme),
+            }
     }
 
     /// The report. The `sources` / `explorer` / `runtime` blocks are

@@ -288,19 +288,21 @@ async fn a_local_single_model_server_does_not_yet_serve_container_facts() {
     );
 }
 
-/// No profile plans or encodes a checkpoint. This is the honest
-/// answer for step 3, and the test that will *fail loudly* when the
-/// rung that mounts `/v1/plan` lands — at which point the expectation
-/// flips here and nowhere else, because no capability table was
-/// hand-edited.
+/// Step 4 mounted `/v1/plan`, and this is the whole point of deriving
+/// the report from the route ledger: the capability flipped because the
+/// route appeared, with no edit to `ROUTE_CAPABILITIES`. Encode and
+/// residency are still mounted by nobody and still report false.
 #[tokio::test]
-async fn no_profile_claims_to_plan_encode_or_report_residency() {
+async fn planning_is_offered_but_encoding_and_residency_are_not() {
     let container = v3_container();
     for (name, app) in all_profiles(container.path()).await {
         let report = capabilities_of(&app).await;
+        assert_eq!(
+            report.pointer("/sources/plan/hf").unwrap(),
+            &serde_json::json!(true),
+            "{name}: every profile plans an hf:// source"
+        );
         for key in [
-            "/sources/plan/local",
-            "/sources/plan/hf",
             "/sources/encode/local",
             "/sources/encode/hf",
             "/explorer/residency",
@@ -312,6 +314,31 @@ async fn no_profile_claims_to_plan_encode_or_report_residency() {
             );
         }
     }
+}
+
+/// The one capability that differs by profile rather than by route.
+/// A public server plans `hf://` and refuses a local path; a localhost
+/// server plans either. `tests/test_plan_route.rs` checks that the
+/// endpoint actually behaves this way — here we only pin what is
+/// advertised.
+#[tokio::test]
+async fn only_a_local_server_advertises_planning_a_local_path() {
+    let container = v3_container();
+    let public = capabilities_of(&public_app(container.path())).await;
+    assert_eq!(
+        public.pointer("/sources/plan/local").unwrap(),
+        &serde_json::json!(false),
+        "the public surface must not offer to plan a filesystem path"
+    );
+
+    let local = capabilities_of(&larql_server::routes::single_model_router(common::state(
+        Vec::new(),
+    )))
+    .await;
+    assert_eq!(
+        local.pointer("/sources/plan/local").unwrap(),
+        &serde_json::json!(true)
+    );
 }
 
 // ── the two facts that are not route-derived ────────────────────────

@@ -56,6 +56,16 @@ pub enum ServerError {
     /// Implemented` with the generation named, never a 404.
     #[error("not supported: {0}")]
     Unsupported(String),
+
+    /// The request is well-formed and this build can do it, but the
+    /// profile this server is serving under will not do it for this
+    /// caller — `POST /v1/plan` given a local path on the public
+    /// surface. Distinct from `Unsupported`: the capability exists and
+    /// the same request succeeds on a localhost server, so `403`, not
+    /// `501`, and `GET /v1/capabilities` says so in advance rather
+    /// than leaving the client to discover it by being refused.
+    #[error("refused: {0}")]
+    Refused(String),
 }
 
 impl ServerError {
@@ -69,7 +79,8 @@ impl ServerError {
             | ServerError::InferenceUnavailable(m)
             | ServerError::Internal(m)
             | ServerError::Timeout(m)
-            | ServerError::Unsupported(m) => m,
+            | ServerError::Unsupported(m)
+            | ServerError::Refused(m) => m,
         }
     }
 }
@@ -86,6 +97,7 @@ impl IntoResponse for ServerError {
             ServerError::Internal(msg) => (StatusCode::INTERNAL_SERVER_ERROR, msg.clone()),
             ServerError::Timeout(msg) => (StatusCode::GATEWAY_TIMEOUT, msg.clone()),
             ServerError::Unsupported(msg) => (StatusCode::NOT_IMPLEMENTED, msg.clone()),
+            ServerError::Refused(msg) => (StatusCode::FORBIDDEN, msg.clone()),
         };
 
         (status, axum::Json(ErrorBody { error: message })).into_response()
@@ -105,6 +117,7 @@ mod tests {
             ServerError::Internal("in".into()),
             ServerError::Timeout("to".into()),
             ServerError::Unsupported("un".into()),
+            ServerError::Refused("rf".into()),
         ]
     }
 

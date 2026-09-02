@@ -690,6 +690,7 @@ pub mod schemas {
         // admin
         crate::routes::health::handle_health,
         crate::routes::capabilities::handle_capabilities,
+        crate::routes::plan::handle_plan,
         crate::routes::runtime::handle_runtime,
         crate::routes::runtime_lifecycle::handle_load_model,
         crate::routes::runtime_lifecycle::handle_unload_model,
@@ -748,6 +749,7 @@ pub mod schemas {
         schemas::LayerBands,
         schemas::LoadedCapabilities,
         schemas::CapabilitiesResponse,
+        crate::routes::plan::PlanRequest,
         schemas::StatsResponse,
         schemas::ModelEntry,
         schemas::ModelsListResponse,
