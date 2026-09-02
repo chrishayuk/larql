@@ -17,7 +17,7 @@
 
 mod types;
 
-pub use types::{ArchitectureCapability, CapabilityManifest};
+pub use types::{ArchitectureCapability, CapabilityManifest, ModelTypePattern};
 
 use larql_models::detect::ARCHITECTURE_REGISTRY;
 
@@ -29,6 +29,7 @@ pub fn manifest() -> CapabilityManifest {
             .iter()
             .map(|entry| ArchitectureCapability {
                 model_type: entry.model_type.to_string(),
+                matches: entry.patterns.iter().map(Into::into).collect(),
                 attention_kind: entry.attention_kind,
                 quant_formats: entry.quant_formats.to_vec(),
             })
@@ -45,6 +46,38 @@ mod tests {
         let m = manifest();
         assert_eq!(m.architectures.len(), ARCHITECTURE_REGISTRY.len());
         assert!(!m.larql_version.is_empty());
+    }
+
+    /// The regression this guards: the manifest exists to answer "does
+    /// this build understand this `model_type`", and a checkpoint does
+    /// not declare the registry's representative label — Gemma 3 text
+    /// declares `gemma3_text`, Qwen 3 declares `qwen3`. A manifest
+    /// carrying labels alone answers "no" for both, and the Factory gate
+    /// built on it rejects recipes this build serves.
+    #[test]
+    fn manifest_carries_the_patterns_a_declared_model_type_is_matched_by() {
+        let m = manifest();
+        let matches = |declared: &str| {
+            m.architectures.iter().any(|a| {
+                a.matches.iter().any(|p| match p {
+                    ModelTypePattern::Exact(s) => declared == s,
+                    ModelTypePattern::Prefix(s) => declared.starts_with(s.as_str()),
+                })
+            })
+        };
+        // Spellings real checkpoints declare, none of which equal a label.
+        for declared in ["gemma3_text", "gemma4_text", "qwen3", "granitemoehybrid"] {
+            assert!(
+                matches(declared),
+                "{declared} must resolve through the manifest"
+            );
+            assert!(
+                larql_models::detect::find_architecture(declared).is_some(),
+                "{declared} must also resolve through the registry itself"
+            );
+        }
+        // And the manifest must not start answering yes to everything.
+        assert!(!matches("definitely-not-an-architecture"));
     }
 
     #[test]

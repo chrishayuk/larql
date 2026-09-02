@@ -30,7 +30,7 @@ pub use build::{
 };
 pub use build_id::build_id;
 pub use capabilities::{
-    manifest as capabilities_manifest, ArchitectureCapability, CapabilityManifest,
+    manifest as capabilities_manifest, ArchitectureCapability, CapabilityManifest, ModelTypePattern,
 };
 pub use card::{
     render as render_card, revision_tag, CardInputs, LogitMatchResult, ReconstructionResult,
