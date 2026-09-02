@@ -339,6 +339,30 @@ pub mod schemas {
 
     // ---- admin -------------------------------------------------------
 
+    /// `GET /v1/capabilities`. The `sources` / `explorer` /
+    /// `runtime` blocks are generated from
+    /// `crate::capabilities::ROUTE_CAPABILITIES` and the mounted-route
+    /// ledger, so this schema documents the *shape*; the authority for
+    /// which keys appear is that table, not this struct.
+    #[derive(Serialize, ToSchema)]
+    pub struct CapabilitiesResponse {
+        /// Always `"capabilities"`.
+        pub object: String,
+        /// Report schema version. A client that does not recognise it
+        /// must refuse the document rather than read the keys it knows.
+        pub schema: u32,
+        /// `"public_explorer"` | `"single_model"` | `"multi_model"`.
+        pub profile: String,
+        /// Which source reference forms each source-taking verb accepts.
+        pub sources: serde_json::Value,
+        /// The read surface over a bound container.
+        pub explorer: serde_json::Value,
+        /// What this process will do with the bound model, and on what.
+        pub runtime: serde_json::Value,
+        /// Every path this server mounted, sorted.
+        pub routes: Vec<String>,
+    }
+
     #[derive(Serialize, ToSchema)]
     pub struct HealthResponse {
         pub status: String,
@@ -665,6 +689,7 @@ pub mod schemas {
         crate::routes::patches::handle_remove_patch,
         // admin
         crate::routes::health::handle_health,
+        crate::routes::capabilities::handle_capabilities,
         crate::routes::runtime::handle_runtime,
         crate::routes::runtime_lifecycle::handle_load_model,
         crate::routes::runtime_lifecycle::handle_unload_model,
@@ -722,6 +747,7 @@ pub mod schemas {
         schemas::RelationsResponse,
         schemas::LayerBands,
         schemas::LoadedCapabilities,
+        schemas::CapabilitiesResponse,
         schemas::StatsResponse,
         schemas::ModelEntry,
         schemas::ModelsListResponse,

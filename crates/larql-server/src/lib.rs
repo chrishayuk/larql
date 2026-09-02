@@ -9,6 +9,7 @@ pub mod auth;
 pub mod band_utils;
 pub mod bootstrap;
 pub mod cache;
+pub mod capabilities;
 pub mod embed_store;
 pub mod env_flags;
 pub mod error;
