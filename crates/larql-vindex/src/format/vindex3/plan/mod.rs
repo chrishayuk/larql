@@ -722,3 +722,50 @@ fn unresolved_interface_findings(artifact: &str, built: &BuiltGraph) -> Vec<Find
         })
         .collect()
 }
+
+// ── The plan-by-source sequence, in one place ────────────────────────
+
+/// Plan artifacts the caller has already resolved.
+///
+/// `specs[i]` is the argument the caller was given for `resolved[i]` —
+/// the string the user typed, which is what the verdict should name, not
+/// the local directory an `hf://` reference happened to stage into.
+///
+/// This exists because three front doors were carrying their own copy of
+/// the same fifteen lines (`vindex plan`, `larql vindex3 plan`, and
+/// `POST /v1/plan`): resolve, name each artifact's source with the commit
+/// its facts were read at, then plan. A verdict that differs by which
+/// door asked for it is not a verdict, so the sequence is one function
+/// and the doors differ only in how they report it.
+///
+/// Resolution stays with the caller: it is the step that can be slow and
+/// can fail, and each door reports staging differently — the CLIs to
+/// stderr as it happens, the server as a field in its response.
+pub fn plan_resolved(
+    specs: &[std::path::PathBuf],
+    resolved: Vec<super::artifact::ResolvedArtifact>,
+) -> Result<SystemPlan, crate::error::VindexError> {
+    if specs.len() != resolved.len() {
+        return Err(crate::error::VindexError::Parse(format!(
+            "{} spec(s) but {} resolved artifact(s): every artifact needs exactly one spec",
+            specs.len(),
+            resolved.len()
+        )));
+    }
+    // The verdict names its subject: the argument as given and, for a
+    // repo, the commit the facts were read at.
+    let sources: Vec<ArtifactSource> = specs
+        .iter()
+        .zip(&resolved)
+        .map(|(spec, a)| ArtifactSource {
+            path: spec.display().to_string(),
+            revision: a.commit().map(str::to_string),
+            unpinned_revision: a.unpinned_revision().map(str::to_string),
+        })
+        .collect();
+    let named: Vec<(String, ArchitectureInventory)> = resolved
+        .into_iter()
+        .map(|a| (a.name, a.inventory))
+        .collect();
+    plan_system_with_sources(&named, &sources)
+}

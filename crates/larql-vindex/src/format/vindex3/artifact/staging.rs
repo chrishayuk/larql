@@ -51,3 +51,39 @@ impl StagingReport {
             .map(|declared| declared.abs_diff(payload))
     }
 }
+
+/// What a staging pass cost and what it stands in for, as JSON.
+///
+/// The one place this object's shape is written. Two front doors print
+/// it — `vindex plan --json` and `POST /v1/plan` — and the server's
+/// response body is defined as the CLI's document plus one serving
+/// field, so two hand-written copies would make that parity a
+/// coincidence rather than a property.
+///
+/// A pure function of the report rather than a method on
+/// `ResolvedArtifact`, because an artifact with a remote origin can
+/// only be built by staging a real repo: through that door the shape
+/// could only ever be checked over the network, which is to say never.
+/// `ResolvedArtifact::staging_json` is the two-line adapter.
+pub(super) fn staging_report_json(
+    name: &str,
+    commit: Option<&str>,
+    report: &StagingReport,
+) -> serde_json::Value {
+    serde_json::json!({
+        "artifact": name,
+        "commit": commit,
+        "shards": report.shards,
+        "staged": super::size(report.staged_bytes()),
+        "headers": super::size(report.header_bytes),
+        "metadata": super::size(report.metadata_bytes),
+        "stands_in_for": report.payload_bytes.as_ref().ok().map(|b| super::size(*b)),
+        // Stated only when the index disagrees with its own headers, so
+        // the difference reads as a fact about the checkpoint rather than
+        // a units bug in the report.
+        "index_declares": report
+            .declared_total
+            .filter(|d| report.payload_bytes.as_ref().is_ok_and(|p| d != p))
+            .map(super::size),
+    })
+}
