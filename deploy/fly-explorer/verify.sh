@@ -41,7 +41,13 @@ except Exception:
 for k in sys.argv[1].split('.'):
     d = d.get(k) if isinstance(d, dict) else None
     if d is None: print('-'); sys.exit()
-print(json.dumps(d) if isinstance(d,(dict,list)) else d)
+# JSON spelling, not Python's, so a boolean prints lowercase
+# true and never capital-True: the comparisons below are against
+# JSON literals and matched neither, which made this gate report a
+# capability the server was in fact advertising.
+# (No backticks in here - this block is inside a double-quoted
+# shell string, where bash would run them as commands.)
+print(d if isinstance(d, str) else json.dumps(d))
 " "$1"; }
 
 say "== $BASE =="
