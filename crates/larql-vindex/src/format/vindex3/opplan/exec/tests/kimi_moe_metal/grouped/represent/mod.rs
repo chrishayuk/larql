@@ -149,6 +149,11 @@ impl Format {
     /// bandwidth question is asked in: wall time at these durations is
     /// dominated by a fixed ~0.2 ms of submission, so a GB/s taken from
     /// it prices the stack rather than the kernel.
+    /// The argument list is the backend's grouped-dispatch signature,
+    /// not this shim's: every parameter is forwarded verbatim to
+    /// `*_grouped_experts*` below. A params struct would be unpacked
+    /// again at that single call site.
+    #[allow(clippy::too_many_arguments)]
     fn dispatch_profiled(
         self,
         metal: &MetalBackend,
@@ -169,6 +174,11 @@ impl Format {
         r.unwrap_or_else(|e| panic!("{} grouped dispatch refused: {e}", self.label()))
     }
 
+    /// The argument list is the backend's grouped-dispatch signature,
+    /// not this shim's: every parameter is forwarded verbatim to
+    /// `*_grouped_experts*` below. A params struct would be unpacked
+    /// again at that single call site.
+    #[allow(clippy::too_many_arguments)]
     fn dispatch(
         self,
         metal: &MetalBackend,
