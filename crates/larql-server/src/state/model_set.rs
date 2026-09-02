@@ -187,13 +187,33 @@ impl AppState {
         &self,
         id: Option<&str>,
     ) -> Result<Arc<LoadedModel>, crate::error::ServerError> {
-        self.model(id).ok_or_else(|| {
-            let msg = match id {
-                Some(mid) => format!("model '{}' not found", mid),
-                None => "no model loaded".into(),
-            };
-            crate::error::ServerError::NotFound(msg)
-        })
+        self.v2_or_unsupported(id)
+    }
+
+    /// Resolve a request's model for a route that serves VINDEX2 only.
+    ///
+    /// Three answers, and the distinction is the point: nothing bound
+    /// is `NotFound` (404); a VINDEX2 model is the model; a VINDEX3
+    /// container is `Unsupported` (501) naming the generation. The
+    /// third used to fall into the first — `model()` looked only at the
+    /// V2 registry — so a server with one V3 container bound answered
+    /// "no model loaded" on every V2-only route while `GET /v1/models`
+    /// listed it. A loaded-but-unsupported model never masquerades as
+    /// absent. This refuses; it does not make the route serve V3.
+    pub fn v2_or_unsupported(
+        &self,
+        id: Option<&str>,
+    ) -> Result<Arc<LoadedModel>, crate::error::ServerError> {
+        match self.served_or_err(id)? {
+            ServedModel::V2(model) => Ok(model),
+            ServedModel::V3(model) => Err(crate::error::ServerError::Unsupported(format!(
+                "model '{}' is a VINDEX3 container; this operation is served for VINDEX2 \
+                 models only (VINDEX3 is served on /v1/models, /v1/runtime, /v1/stats, \
+                 /v1/completions, /v1/chat/completions, /v1/responses and the \
+                 container-facts routes)",
+                model.id
+            ))),
+        }
     }
 }
 

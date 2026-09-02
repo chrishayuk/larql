@@ -234,7 +234,7 @@ async fn list_patches_for_model(
         })));
     }
 
-    let model = state.model(model_id).unwrap();
+    let model = state.v2_or_unsupported(model_id)?;
     let patched = model.patched.read().await;
     let patches: Vec<serde_json::Value> = patched
         .patches

@@ -624,3 +624,295 @@ fn v3_generation_in_flight_counter_reflects_genuine_concurrency() {
         "the guard must decrement back to 0 once generation returns"
     );
 }
+
+/// Ids named by `[N]` tokens in a synthetic-tokenizer surface string, in
+/// order — the chat route returns text, and on this fixture the text IS
+/// the id sequence.
+fn ids_in_surface(text: &str) -> Vec<u32> {
+    text.split('[')
+        .filter_map(|piece| piece.split(']').next())
+        .filter_map(|n| n.parse().ok())
+        .collect()
+}
+
+/// Encode the fixture and declare `eos_id` as its end-of-turn token in
+/// `generation_config.json`, the file the CLI's V3 arm already reads.
+fn v3_container_declaring_eos(eos_id: u32) -> tempfile::TempDir {
+    let container = v3_container();
+    std::fs::write(
+        container
+            .path()
+            .join(larql_vindex::format::filenames::GENERATION_CONFIG_JSON),
+        serde_json::json!({ "eos_token_id": eos_id }).to_string(),
+    )
+    .unwrap();
+    container
+}
+
+/// **A container's declared end-of-turn token stops served generation.**
+///
+/// The V3 driver judges EOS on ids alone, so the server must hand it the
+/// ids the container declares — an empty built-in set means every V3
+/// completion runs to `max_tokens`. The direct arm says what the fixture
+/// emits for PROMPT; its second id is declared as EOS; the same request
+/// then finishes with `stop` after exactly the tokens before that id,
+/// buffered and streamed, and a chat turn stops the same way. The
+/// identical container without the declaration runs to `length`, which
+/// is the control that the stop came from the declaration.
+#[tokio::test]
+async fn v3_generation_stops_on_the_containers_declared_eos_token() {
+    // Control: no declaration, the budget is filled.
+    let plain = v3_container();
+    let emitted = direct_arm(plain.path(), NEW_TOKENS);
+    let eos_id = emitted[1].0;
+    let expected_len = emitted
+        .iter()
+        .position(|(id, _)| *id == eos_id)
+        .expect("the declared id is one the fixture emits");
+    let expected_text: String = emitted[..expected_len]
+        .iter()
+        .map(|(_, t)| t.as_str())
+        .collect();
+    let plain_app = larql_server::routes::single_model_router(v3_state(plain.path()));
+    let resp = common::post_json(
+        plain_app.clone(),
+        "/v1/completions",
+        serde_json::json!({"prompt": PROMPT, "max_tokens": NEW_TOKENS}),
+    )
+    .await;
+    let json = common::body_json(resp.into_body()).await;
+    assert_eq!(
+        json["choices"][0]["finish_reason"], "length",
+        "control: {json}"
+    );
+    assert_eq!(
+        json["usage"]["completion_tokens"], NEW_TOKENS,
+        "control: {json}"
+    );
+    let plain_chat = common::post_json(
+        plain_app,
+        "/v1/chat/completions",
+        serde_json::json!({
+            "messages": [{"role": "user", "content": "[1]"}],
+            "max_tokens": NEW_TOKENS,
+        }),
+    )
+    .await;
+    let plain_chat = common::body_json(plain_chat.into_body()).await;
+    assert_eq!(
+        plain_chat["choices"][0]["finish_reason"], "length",
+        "control: {plain_chat}"
+    );
+    let chat_ids = ids_in_surface(
+        plain_chat["choices"][0]["message"]["content"]
+            .as_str()
+            .unwrap(),
+    );
+    assert!(
+        chat_ids.len() >= 2,
+        "control: the chat turn must emit ids: {plain_chat}"
+    );
+    let chat_eos_id = chat_ids[1];
+    let chat_expected_len = chat_ids.iter().position(|&id| id == chat_eos_id).unwrap();
+
+    // Declared: the same fixture with `generation_config.json`.
+    let container = v3_container_declaring_eos(eos_id);
+    let app = larql_server::routes::single_model_router(v3_state(container.path()));
+
+    let resp = common::post_json(
+        app.clone(),
+        "/v1/completions",
+        serde_json::json!({"prompt": PROMPT, "max_tokens": NEW_TOKENS}),
+    )
+    .await;
+    assert_eq!(resp.status(), axum::http::StatusCode::OK);
+    let json = common::body_json(resp.into_body()).await;
+    assert_eq!(
+        json["choices"][0]["finish_reason"], "stop",
+        "buffered: {json}"
+    );
+    assert_eq!(
+        json["usage"]["completion_tokens"], expected_len,
+        "buffered: {json}"
+    );
+    assert_eq!(
+        json["choices"][0]["text"],
+        expected_text.as_str(),
+        "buffered: {json}"
+    );
+
+    let resp = common::post_json(
+        app.clone(),
+        "/v1/completions",
+        serde_json::json!({"prompt": PROMPT, "max_tokens": NEW_TOKENS, "stream": true}),
+    )
+    .await;
+    assert_eq!(resp.status(), axum::http::StatusCode::OK);
+    let bytes = axum::body::to_bytes(resp.into_body(), usize::MAX)
+        .await
+        .unwrap();
+    let chunks = sse_chunks(core::str::from_utf8(&bytes).unwrap());
+    assert_eq!(
+        chunks.len(),
+        expected_len + 1,
+        "streamed: one chunk per kept token plus the stop"
+    );
+    assert_eq!(
+        chunks[expected_len]["choices"][0]["finish_reason"], "stop",
+        "streamed: {chunks:?}"
+    );
+
+    // Chat: its own prompt, its own sequence, the same stop.
+    let chat_container = v3_container_declaring_eos(chat_eos_id);
+    let chat_app = larql_server::routes::single_model_router(v3_state(chat_container.path()));
+    let resp = common::post_json(
+        chat_app,
+        "/v1/chat/completions",
+        serde_json::json!({
+            "messages": [{"role": "user", "content": "[1]"}],
+            "max_tokens": NEW_TOKENS,
+        }),
+    )
+    .await;
+    assert_eq!(resp.status(), axum::http::StatusCode::OK);
+    let json = common::body_json(resp.into_body()).await;
+    assert_eq!(json["choices"][0]["finish_reason"], "stop", "chat: {json}");
+    assert_eq!(
+        json["usage"]["completion_tokens"], chat_expected_len,
+        "chat: {json}"
+    );
+    assert_eq!(
+        ids_in_surface(json["choices"][0]["message"]["content"].as_str().unwrap()),
+        chat_ids[..chat_expected_len],
+        "chat: {json}"
+    );
+}
+
+/// An `AppState` with nothing bound: the control for "absent".
+fn empty_state() -> Arc<AppState> {
+    let state = v3_state(v3_container().path());
+    state
+        .model_set
+        .write()
+        .unwrap_or_else(|p| p.into_inner())
+        .v3_models
+        .clear();
+    state
+}
+
+/// **A loaded-but-unsupported model never masquerades as absent.**
+///
+/// The V2-only surfaces resolve a VINDEX2 model; on a server that has
+/// only a VINDEX3 container bound they used to answer 404 "no model
+/// loaded" while `/v1/models` listed the container. The rule is three-
+/// way: no model is 404, a V2 model takes the route, and a V3 model on
+/// a V2-only capability is 501 naming VINDEX3 — a truthful refusal, not
+/// V3 support, which those routes do not have.
+#[tokio::test]
+async fn v2_only_surfaces_refuse_a_v3_container_as_unsupported_not_absent() {
+    let container = v3_container();
+    let state = v3_state(container.path());
+    let app = larql_server::routes::single_model_router(state.clone());
+
+    let gets = [
+        "/v1/describe?entity=%5B1%5D",
+        "/v1/relations",
+        "/v1/patches",
+        "/v1/walk?prompt=%5B1%5D&top=1",
+    ];
+    for path in gets {
+        let resp = app
+            .clone()
+            .oneshot(
+                Request::builder()
+                    .method("GET")
+                    .uri(path)
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        let status = resp.status();
+        let json = common::body_json(resp.into_body()).await;
+        assert_eq!(status, StatusCode::NOT_IMPLEMENTED, "{path}: {json}");
+        let error = json["error"].as_str().unwrap_or_default().to_string();
+        assert!(
+            error.contains("VINDEX3"),
+            "{path}: refusal must name VINDEX3: {json}"
+        );
+        assert!(
+            !error.contains("not found"),
+            "{path}: a bound model is not absent: {json}"
+        );
+    }
+    let resp = common::post_json(
+        app.clone(),
+        "/v1/infer",
+        serde_json::json!({"prompt": "[1]"}),
+    )
+    .await;
+    let status = resp.status();
+    let json = common::body_json(resp.into_body()).await;
+    assert_eq!(status, StatusCode::NOT_IMPLEMENTED, "/v1/infer: {json}");
+    assert!(
+        json["error"]
+            .as_str()
+            .unwrap_or_default()
+            .contains("VINDEX3"),
+        "{json}"
+    );
+
+    // An OpenAI-shaped V2-only route answers in the OpenAI envelope.
+    let resp = common::post_json(
+        app.clone(),
+        "/v1/embeddings",
+        serde_json::json!({"input": "[1]"}),
+    )
+    .await;
+    let status = resp.status();
+    let json = common::body_json(resp.into_body()).await;
+    assert_eq!(
+        status,
+        StatusCode::NOT_IMPLEMENTED,
+        "/v1/embeddings: {json}"
+    );
+    assert_eq!(json["error"]["type"], "not_implemented_error", "{json}");
+    assert!(
+        json["error"]["message"]
+            .as_str()
+            .unwrap_or_default()
+            .contains("VINDEX3"),
+        "{json}"
+    );
+
+    // gRPC: the same rule, in gRPC's vocabulary.
+    use larql_server::grpc::proto::vindex_service_server::VindexService;
+    let svc = larql_server::grpc::VindexGrpcService {
+        state: state.clone(),
+    };
+    let err = svc
+        .get_stats(tonic::Request::new(
+            larql_server::grpc::proto::StatsRequest {},
+        ))
+        .await
+        .expect_err("a V3-only server refuses the V2 gRPC surface");
+    assert_eq!(err.code(), tonic::Code::Unimplemented, "{err}");
+    assert!(err.message().contains("VINDEX3"), "{err}");
+
+    // Control: nothing bound is still "absent".
+    let empty = larql_server::routes::single_model_router(empty_state());
+    let resp = empty
+        .oneshot(
+            Request::builder()
+                .method("GET")
+                .uri("/v1/describe?entity=%5B1%5D")
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    let status = resp.status();
+    let json = common::body_json(resp.into_body()).await;
+    assert_eq!(status, StatusCode::NOT_FOUND, "control: {json}");
+    assert_eq!(json["error"], "no model loaded", "control: {json}");
+}

@@ -113,6 +113,19 @@ impl OpenAIError {
         }
     }
 
+    /// A bound model whose generation this route does not serve
+    /// (a VINDEX3 container on a VINDEX2-only capability): `501`, so
+    /// a loaded-but-unsupported model never reads as absent.
+    pub fn not_implemented(message: impl Into<String>) -> Self {
+        Self {
+            status: StatusCode::NOT_IMPLEMENTED,
+            message: message.into(),
+            error_type: "not_implemented_error",
+            param: None,
+            code: None,
+        }
+    }
+
     pub fn conflict(message: impl Into<String>) -> Self {
         Self {
             status: StatusCode::CONFLICT,
@@ -133,6 +146,7 @@ impl From<ServerError> for OpenAIError {
             ServerError::Internal(m) => OpenAIError::server_error(m),
             ServerError::Timeout(m) => OpenAIError::timeout(m),
             ServerError::Conflict(m) => OpenAIError::conflict(m),
+            ServerError::Unsupported(m) => OpenAIError::not_implemented(m),
         }
     }
 }
