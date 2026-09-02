@@ -121,6 +121,13 @@ enum Commands {
     /// Serve a vindex over HTTP + gRPC.
     Serve(ServeArgs),
 
+    #[command(next_help_heading = "Server")]
+    /// Ask a running LARQL server what it will and will not do
+    /// (`GET /v1/capabilities`). Distinct from `capabilities`, which
+    /// reports what this release recognises rather than what one
+    /// server offers.
+    ServerCapabilities(server_capabilities_cmd::ServerCapabilitiesArgs),
+
     // ── LQL ─────────────────────────────────────────────────────────
     #[command(next_help_heading = "LQL")]
     /// Launch the LQL interactive REPL.
@@ -661,6 +668,7 @@ fn real_main() -> i32 {
         // ── Factory ──
         Commands::Recipe(cmd) => recipe_cmd::run(cmd),
         Commands::Capabilities => capabilities_cmd::run(),
+        Commands::ServerCapabilities(args) => server_capabilities_cmd::run(args),
         Commands::InspectHf(args) => inspect_hf_cmd::run(args),
         Commands::Vindex3(cmd) => vindex3_cmd::run(cmd),
         Commands::Card(cmd) => card_cmd::run(cmd),
