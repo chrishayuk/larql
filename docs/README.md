@@ -72,6 +72,8 @@ distributed).
 | [fleet-routing-extensions.md](fleet-routing-extensions.md) | Fleet routing extensions FR1–FR4 — spec + frozen pre-registrations |
 | [fhg.md](fhg.md) | FHG — Fourier heuristic graph programme (behavioural, model-agnostic) |
 | [authority-control-plane.md](authority-control-plane.md) | Authority control plane (EXP-26..38) — layer-mechanism branch closed |
+| [kimi-precision-topology.md](kimi-precision-topology.md) | Kimi Linear 48B — the PRECISION-1 topology, the first complete REPRESENT chain |
+| [represent-optimizer-mcp.md](represent-optimizer-mcp.md) | REPRESENT as a queryable optimiser — map DAG, MCP surface, and the search ladder to MCTS (design) |
 
 ## Positioning
 
