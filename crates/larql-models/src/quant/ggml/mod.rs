@@ -37,6 +37,10 @@ pub use q3_k::dequantize_q3_k;
 pub use q4_k::{dequantize_q4_k, q4k_row_dot, q4k_row_scaled_add};
 pub use q5_k::dequantize_q5_k;
 pub use q6_k::{dequantize_q6_k, q6k_row_dot, q6k_row_scaled_add};
+
+#[cfg(test)]
+#[path = "type_id_conformance_tests.rs"]
+mod type_id_conformance_tests;
 pub use quantize::{quantize_q4_0, quantize_q8_0};
 
 // ── Tensor-type IDs (match GGML wire format) ────────────────────────────
@@ -44,9 +48,23 @@ pub const TYPE_F32: u32 = 0;
 pub const TYPE_F16: u32 = 1;
 pub const TYPE_Q4_0: u32 = 2;
 pub const TYPE_Q4_1: u32 = 3;
-pub const TYPE_Q8_0: u32 = 6;
-pub const TYPE_Q5_0: u32 = 8;
-pub const TYPE_Q5_1: u32 = 9;
+// Upstream ggml's ids, verified against `ggml_get_type_traits` itself —
+// see `larql-vindex`'s `ggml_kquant_golden` fixture, which carries the
+// numbers ggml reports for the types it encodes.
+//
+// These four were TRANSPOSED: `TYPE_Q8_0` was 6 (upstream's Q5_0) and
+// `TYPE_Q5_0` was 8 (upstream's Q8_0), so a GGUF containing either was
+// decoded as the other — wrong values AND a wrong block stride. It
+// stayed invisible because every internal caller passes these same
+// constants both ways round, and `loading/gguf/parser.rs` is the only
+// place an id arrives from outside. Q8_0 is a common GGUF type; this
+// was a live data-corruption bug on GGUF ingest, not a latent one.
+pub const TYPE_Q5_0: u32 = 6;
+pub const TYPE_Q5_1: u32 = 7;
+pub const TYPE_Q8_0: u32 = 8;
+/// Upstream's Q8_1. No decoder yet — named so the id cannot be
+/// reassigned to something else by accident.
+pub const TYPE_Q8_1: u32 = 9;
 pub const TYPE_Q2_K: u32 = 10;
 pub const TYPE_Q3_K: u32 = 11;
 pub const TYPE_Q4_K: u32 = 12;
