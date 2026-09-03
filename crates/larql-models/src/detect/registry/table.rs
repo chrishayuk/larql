@@ -58,6 +58,16 @@ pub static ARCHITECTURE_REGISTRY: &[ArchitectureEntry] = &[
     // EXAONE-4: prefixed, so the nested `exaone4_5_text` spelling
     // resolves too. `exaone` (v3) is a different architecture and stays
     // on the generic path until its semantics are judged.
+    // LFM2 — a hybrid whose every other layer is a short causal
+    // convolution rather than attention. Prefixed so `lfm2_moe` resolves
+    // too. Recognised so the identity stops resolving to `GenericArch`,
+    // which was serving Llama-shaped defaults to a stack that is not one.
+    ArchitectureEntry {
+        model_type: "lfm2",
+        patterns: &[ModelTypeMatch::Prefix("lfm2")],
+        attention_kind: AttentionKind::Standard,
+        quant_formats: STANDARD_QUANT_FORMATS,
+    },
     ArchitectureEntry {
         model_type: "exaone4",
         patterns: &[ModelTypeMatch::Prefix("exaone4")],

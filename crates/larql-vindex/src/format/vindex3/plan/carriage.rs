@@ -609,6 +609,15 @@ pub const CARRIAGE_RULES: &[CarriageRule] = &[
         site: "ExecutionSurface.norm.pre.eps → NormOp.eps",
         probe: Some(probe_pre_norm_eps),
     },
+    // LFM2 spells the same fact `norm_eps`. Its separate
+    // `block_norm_eps` is NOT this fact and has no rule, so it keeps
+    // refusing until something judges the FFN blocks it names.
+    CarriageRule {
+        leaf: "norm_eps",
+        reaches: Carriage::Lowered,
+        site: "ExecutionSurface.norm.pre.eps → NormOp.eps",
+        probe: Some(probe_pre_norm_eps),
+    },
     CarriageRule {
         leaf: "layer_norm_eps",
         reaches: Carriage::Lowered,

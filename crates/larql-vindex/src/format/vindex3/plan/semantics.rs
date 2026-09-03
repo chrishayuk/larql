@@ -26,6 +26,7 @@ pub const EXECUTION_SEMANTIC_KEYS: &[&str] = &[
     "layer_norm_eps",
     "rms_norm_eps",
     "norm_epsilon",
+    "norm_eps",
     "rope_theta",
     "rope_type",
     "layer_types",

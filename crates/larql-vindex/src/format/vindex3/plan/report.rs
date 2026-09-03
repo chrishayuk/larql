@@ -57,6 +57,18 @@ pub const PLAN_SCHEMA: u32 = 6;
 /// `plan/tests/identity.rs` pins fixture verdicts against this value, so
 /// a change that flips one fails there until the version is bumped.
 ///
+/// **13** — LFM2's norm dialect is carried. `operator_norm` and
+/// `ffn_norm` are the two-norm PRE-only estate under LFM2's own
+/// spelling (`Lfm2DecoderLayer.forward`), and `norm_eps` is its
+/// epsilon key. No new execution semantic: the placement is one this
+/// build already runs. Registering `lfm2` also stops the identity
+/// resolving to `GenericArch`, which was serving Llama-shaped defaults
+/// to a stack whose every other layer is a short convolution. Forecast
+/// before the code, and deliberately not a GREEN wave: four rows lose
+/// three blockers each and NONE clears — the conv mixer's geometry and
+/// the `full_attn_idxs` schedule are still absent, and they are
+/// execution semantics rather than spellings.
+///
 /// **12** — three families resolve to their own identities. `olmo2`,
 /// `olmo3` and `exaone4` matched no registry entry and fell through to
 /// `GenericArch`, which had already chosen PER-HEAD QK norm for OLMo-2 —
@@ -176,7 +188,7 @@ pub const PLAN_SCHEMA: u32 = 6;
 /// architectures, now block instead of passing silently into
 /// `GenericArch`'s Llama-shaped defaults. Measured on the conformance
 /// corpus: 15 of 42 declared `model_type` strings, across 30 checkpoints.
-pub const PLANNER_SEMANTICS_VERSION: u32 = 12;
+pub const PLANNER_SEMANTICS_VERSION: u32 = 13;
 
 /// Who judged a plan.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]

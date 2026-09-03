@@ -138,3 +138,39 @@ fn exaone4_is_its_own_identity_with_per_head_qk_norm() {
     // Both take the 1e-5 class default, and neither takes Llama's 1e-6.
     assert!((exaone.default_norm_eps() - 1e-5).abs() < 1e-12);
 }
+
+/// LFM2's dialect resolves to a real identity — never to `GenericArch`,
+/// which is what the registry's own honoured-by-dispatch gate insists on:
+/// a registered NAME that dispatches to the generic path would report a
+/// resolved identity while being served generic defaults.
+#[test]
+fn lfm2_resolves_to_its_own_identity_with_its_own_tensor_spellings() {
+    for model_type in ["lfm2", "lfm2_moe"] {
+        let arch = detect_from_json(&serde_json::json!({
+            "model_type": model_type,
+            "hidden_size": 1024, "num_hidden_layers": 16,
+            "intermediate_size": 4608, "num_attention_heads": 16,
+            "num_key_value_heads": 8, "vocab_size": 65536,
+            "norm_eps": 1e-05, "full_attn_idxs": [2, 5, 8, 10, 12, 14]
+        }));
+        assert_eq!(arch.family(), model_type);
+        // Its epsilon is spelled `norm_eps`, and it is read.
+        assert!(
+            (arch.norm_eps() - 1e-5).abs() < 1e-12,
+            "{}",
+            arch.norm_eps()
+        );
+        // Per-head QK norm — `Lfm2RMSNorm(head_dim)` after the reshape.
+        assert_eq!(arch.qk_norm_scope(), QkNormScope::PerHead);
+        // The four spellings that differ from Llama's.
+        assert_eq!(
+            arch.attn_q_norm_key(0).as_deref(),
+            Some("layers.0.self_attn.q_layernorm.weight")
+        );
+        assert_eq!(arch.attn_o_key(0), "layers.0.self_attn.out_proj.weight");
+        assert_eq!(arch.ffn_gate_key(0), "layers.0.feed_forward.w1.weight");
+        assert_eq!(arch.ffn_up_key(0), "layers.0.feed_forward.w3.weight");
+        assert_eq!(arch.ffn_down_key(0), "layers.0.feed_forward.w2.weight");
+        assert_eq!(arch.final_norm_key(), "model.embedding_norm.weight");
+    }
+}

@@ -214,3 +214,31 @@ fn placement_evidence_refuses_partial_and_absent_estates() {
     let err = norm_placement_evidence(none.iter().copied()).unwrap_err();
     assert!(err.contains("no per-layer norm operands"), "{err}");
 }
+
+/// LFM2's spelling of the two-norm estate resolves to the placement it
+/// actually is, and the mapping that looks wrong is the one that is
+/// right: `ffn_norm` binds to `PostAttentionNorm`, because in a two-norm
+/// layer that role IS the pre-FFN norm and keeps the historical name.
+#[test]
+fn the_lfm2_norm_dialect_resolves_to_the_two_norm_placement() {
+    let lfm2 = ["0.operator_norm.weight", "0.ffn_norm.weight"];
+    assert_eq!(
+        norm_placement_evidence(lfm2.iter().copied()),
+        Ok(NormPlacement::PreOnly)
+    );
+
+    // The falsifier for the mapping choice: binding `ffn_norm` to the
+    // honestly-named `PreFfnNorm` would read the estate as a PARTIAL
+    // four-norm stack and refuse it. That is what this arrangement
+    // avoids, and the assertion states the shape it would have produced.
+    let as_pre_ffn = [
+        "0.operator_norm.weight",
+        "0.pre_feedforward_layernorm.weight",
+    ];
+    let err = norm_placement_evidence(as_pre_ffn.iter().copied()).unwrap_err();
+    assert!(err.contains("neither two-norm nor four-norm"), "{err}");
+
+    // And one norm alone is still no judged placement.
+    let half = ["0.operator_norm.weight"];
+    assert!(norm_placement_evidence(half.iter().copied()).is_err());
+}

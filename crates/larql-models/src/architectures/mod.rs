@@ -16,6 +16,7 @@ pub mod gpt2;
 pub mod gpt_oss;
 pub mod granite;
 pub mod kimi;
+pub mod lfm2;
 pub mod llama;
 pub mod mamba2;
 pub mod mistral;

@@ -448,12 +448,16 @@ pub(super) fn parse_model_config(config: &serde_json::Value) -> ModelConfig {
     //  - `layer_norm_eps`         — BERT-family
     //  - `layer_norm_epsilon`     — GPT-2
     //  - `norm_epsilon`           — StarCoder2
+    //  - `norm_eps`               — LFM2 (which also ships a separate
+    //                               `block_norm_eps` for its FFN blocks;
+    //                               only the stack epsilon is this fact)
     // Most modern archs ship 1e-5; older ones used 1e-6. None → arch default.
     let norm_eps = text_config["rms_norm_eps"]
         .as_f64()
         .or_else(|| text_config["layer_norm_eps"].as_f64())
         .or_else(|| text_config["layer_norm_epsilon"].as_f64())
-        .or_else(|| text_config["norm_epsilon"].as_f64());
+        .or_else(|| text_config["norm_epsilon"].as_f64())
+        .or_else(|| text_config["norm_eps"].as_f64());
 
     // Softcapping and attention scale
     let attn_logit_softcapping = text_config["attn_logit_softcapping"].as_f64();

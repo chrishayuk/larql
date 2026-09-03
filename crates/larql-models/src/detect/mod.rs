@@ -23,6 +23,7 @@ use crate::architectures::gpt2::Gpt2Arch;
 use crate::architectures::gpt_oss::GptOssArch;
 use crate::architectures::granite::GraniteArch;
 use crate::architectures::kimi::KimiLinearArch;
+use crate::architectures::lfm2::Lfm2Arch;
 use crate::architectures::llama::LlamaArch;
 use crate::architectures::mamba2::{Mamba2Arch, MAMBA2_MODEL_TYPE};
 use crate::architectures::mistral::MistralArch;
@@ -173,6 +174,9 @@ pub fn detect_from_json(config: &serde_json::Value) -> Box<dyn ModelArchitecture
         // QK norm rather than whole-projection. Its own entry because
         // that difference is an operator, not a label.
         t if t.starts_with("exaone4") => Box::new(Exaone4Arch::from_config(model_config)),
+        // LFM2 — the two-norm pre-only stack under its own spelling.
+        // Its conv mixer is deliberately NOT declared; see `Lfm2Arch`.
+        t if t.starts_with("lfm2") => Box::new(Lfm2Arch::from_config(model_config)),
         // DeepSeek-V4 (MoE + MLA + MXFP4 + HCA attention; new tensor naming)
         "deepseek_v4" => Box::new(DeepSeekV4Arch::from_config(model_config)),
         // DeepSeek V2/V3 family (MoE + MLA, model.* prefixed keys)

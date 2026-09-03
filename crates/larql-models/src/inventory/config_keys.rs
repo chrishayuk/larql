@@ -117,6 +117,10 @@ pub const CONSUMED_LEAF_KEYS: &[&str] = &[
     "layer_norm_eps",
     "layer_norm_epsilon",
     "norm_epsilon",
+    // LFM2's spelling. Its separate `block_norm_eps` is a DIFFERENT
+    // fact (the FFN blocks' epsilon) and is deliberately not credited
+    // here — nothing reads it yet, and it must keep saying so.
+    "norm_eps",
     // softcapping + scaling multipliers
     "attn_logit_softcapping",
     "final_logit_softcapping",

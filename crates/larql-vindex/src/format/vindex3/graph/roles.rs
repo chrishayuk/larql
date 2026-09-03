@@ -402,6 +402,21 @@ const ROLE_TABLE: &[(&str, OperandRole)] = &[
         OperandRole::LinearAttnOutProj,
     ),
     ("input_layernorm.weight", OperandRole::PreAttentionNorm),
+    // LFM2's spelling of the same two-norm estate. `Lfm2DecoderLayer.
+    // forward` is `residual = h; h = mixer(operator_norm(h)); h = h +
+    // residual; h = h + feed_forward(ffn_norm(h))` — structurally the
+    // two-norm PRE-only stack, with the mixer being attention on the
+    // layers named in `full_attn_idxs` and a short convolution
+    // elsewhere.
+    //
+    // `ffn_norm` binds to `PostAttentionNorm` and that reads oddly until
+    // you know the rule this module already states: in a TWO-norm layer
+    // `post_attention_layernorm` IS the pre-FFN norm, and the role keeps
+    // the historical name. Binding LFM2's honestly-named `ffn_norm` to
+    // the honestly-named `PreFfnNorm` would instead resolve the estate
+    // as a partial FOUR-norm stack and refuse it.
+    ("operator_norm.weight", OperandRole::PreAttentionNorm),
+    ("ffn_norm.weight", OperandRole::PostAttentionNorm),
     (
         "post_attention_layernorm.weight",
         OperandRole::PostAttentionNorm,

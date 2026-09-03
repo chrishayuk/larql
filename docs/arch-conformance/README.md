@@ -48,14 +48,14 @@ invariants are the ones that matter most:
 
 | Metric | Baseline | Waves 1+3 | rope | moe | sliding window | frontier census† | partial rotary | vestigial pair | qwen MoE |
 |---|---:|---:|---:|---:|---:|---:|---:|---:|---:|
-| semantics version | 1 | 3 | 4 | 5 | 6 | 6 (held) | 7 | 8 | 9 | 10 | 11 | **12** |
-| GREEN | 17 | 18 | 21 | 26 | 28 | 28 | 31 | 33 | 38 | 38 | 38 | **41** |
-| AMBER | 6 | 6 | 6 | 6 | 6 | 7 | 7 | 7 | 7 | 3‡ | 3 | **3** |
-| RED | 65 | 64 | 61 | 56 | 54 | 74 | 71 | 69 | 64 | 68‡ | 68 | **65** |
-| **BUG** | **0** | **0** | **0** | **0** | **0** | **0** | **0** | **0** | **0** | **0** | **0** | **0** |
-| **silent drops** | **0** | **0** | **0** | **0** | **0** | **0** | **0** | **0** | **0** | **0** | **0** | **0** |
-| text-closure blockers | 886 | 776 | 756 | 671 | 668 | 1109 | 1091 | 1089 | 1076 | 1058 | 1051 | **1044** |
-| K3 clusters remaining | 7 | 7 | 7 | 7 | 7 | 7 | 7 | 7 | 7 | 7 | 7 | **7** |
+| semantics version | 1 | 3 | 4 | 5 | 6 | 6 (held) | 7 | 8 | 9 | 10 | 11 | 12 | **13** |
+| GREEN | 17 | 18 | 21 | 26 | 28 | 28 | 31 | 33 | 38 | 38 | 38 | 41 | **41** |
+| AMBER | 6 | 6 | 6 | 6 | 6 | 7 | 7 | 7 | 7 | 3‡ | 3 | 3 | **3** |
+| RED | 65 | 64 | 61 | 56 | 54 | 74 | 71 | 69 | 64 | 68‡ | 68 | 65 | **65** |
+| **BUG** | **0** | **0** | **0** | **0** | **0** | **0** | **0** | **0** | **0** | **0** | **0** | **0** | **0** |
+| **silent drops** | **0** | **0** | **0** | **0** | **0** | **0** | **0** | **0** | **0** | **0** | **0** | **0** | **0** |
+| text-closure blockers | 886 | 776 | 756 | 671 | 668 | 1109 | 1091 | 1089 | 1076 | 1058 | 1051 | 1044 | **1029** |
+| K3 clusters remaining | 7 | 7 | 7 | 7 | 7 | 7 | 7 | 7 | 7 | 7 | 7 | 7 | **7** |
 
 ‡ **The AMBER and RED columns are not comparable across wave 9 → 10.** Wave
 11 tightened the sweep's own classifier: AMBER means "component identified,
@@ -585,6 +585,43 @@ Forecast held on every arm: OLMo-2 ×2 and EXAONE-4.0-1.2B → GREEN; Olmo-3
 ×2 keep `rope_scaling.attention_factor`; EXAONE-4.0-32B keeps
 `sliding_window_pattern`; EXAONE-4.5-33B keeps five more; every cleared
 blocker was `architecture_family` and nothing else; no unrelated row moved.
+
+**Wave 15 — LFM2's norm dialect (semantics 13), and a forecast miss that
+was mine.** `operator_norm` and `ffn_norm` are the two-norm PRE-only estate
+under LFM2's own spelling; `norm_eps` is its epsilon key; and registering
+`lfm2` stops the identity resolving to `GenericArch`, which was serving
+Llama-shaped defaults to a stack whose every other layer is a short
+convolution. No new execution semantic — the placement is one this build
+already runs.
+
+**Preregistered as not a GREEN wave, and it was not one.** The norms are
+three blockers out of 13–24 per row. Four surfaces now build that
+previously refused; no row cleared; GREEN held at 41.
+
+The blocker arm missed by three, all on LFM2.5-8B-A1B, and the miss was
+mine rather than the code's: making the surface build turned three dormant
+MoE probes into answering ones (`num_experts_per_tok` 4 → 4,
+`norm_topk_prob` True → True, `routed_scaling_factor` 1.0 → 1.0), each
+verified a genuine carry before the number was accepted. I had used
+"surface building is not row clearing" to predict correctly that nothing
+would go GREEN, then failed to apply it in the other direction. **A
+forecast that enumerates what will stop blocking must also enumerate what
+will start answering.**
+
+Three standing gates fired in sequence and each was right. `norm_eps` was
+read by the parser and carried to the surface at the correct value, and
+the finding still said "read by nothing in any registered parser" — the
+consumed-key list did not credit it. Crediting it demanded a semantic
+class; classifying it demanded a carriage rule. `block_norm_eps` is
+deliberately left uncredited: it is a different fact and must keep
+refusing.
+
+**The witness refused, one stage earlier than forecast.** `vindex encode`
+gates on plan admissibility, so a row with seventeen remaining blockers
+never reaches execution — the conv-operator refusal is real but sits
+behind a gate that fires sooner. That is the fail-closed state: a container
+here, or a forward that ran, would mean the conv layers were being served
+as something else.
 
 **Wave 14 — the twelve no-norm rows, classified (a discovery wave).** No
 code, no verdict delta. The deliverable is what these rows actually are,
