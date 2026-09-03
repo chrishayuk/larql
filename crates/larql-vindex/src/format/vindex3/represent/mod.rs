@@ -70,6 +70,8 @@ mod plan_roles_tests;
 pub mod policy;
 pub mod promotion;
 pub mod quality;
+#[cfg(feature = "reference-encoder")]
+pub mod reference_encoder;
 pub mod search_evidence;
 pub mod selection;
 pub mod source_bank;
@@ -275,10 +277,26 @@ impl TensorEncoding {
     }
 }
 
-/// Encode a K-quant pack's values.
+/// Which encoder chooses a K-quant pack's values.
 ///
-/// Derived in one place alongside [`kquant_encoder_recipe`], so the
-/// bytes and the provenance that describes them cannot disagree.
+/// **The control is architectural, not a runtime flag.** The feature
+/// being compiled in IS the switch, so a comparative campaign cannot
+/// accidentally call the native encoder, and a later regression in
+/// `quantize_q6_k` cannot perturb an experiment that never called it.
+///
+/// Paired with [`kquant_encoder_recipe`] and derived in this one place,
+/// so the bytes and the provenance that describes them cannot disagree.
+#[cfg(feature = "reference-encoder")]
+fn encode_kquant(
+    k: kquant::KQuant,
+    values: &[f32],
+    row_len: usize,
+    tensor: &str,
+) -> Result<Vec<u8>, VindexError> {
+    reference_encoder::encode(k, values, row_len, tensor)
+}
+
+#[cfg(not(feature = "reference-encoder"))]
 fn encode_kquant(
     k: kquant::KQuant,
     values: &[f32],
@@ -289,6 +307,12 @@ fn encode_kquant(
 }
 
 /// The provenance for whichever encoder [`encode_kquant`] is.
+#[cfg(feature = "reference-encoder")]
+fn kquant_encoder_recipe() -> EncoderRecipe {
+    EncoderRecipe::kquant_ggml_reference(reference_encoder::PINNED_UPSTREAM)
+}
+
+#[cfg(not(feature = "reference-encoder"))]
 fn kquant_encoder_recipe() -> EncoderRecipe {
     EncoderRecipe::kquant_native_v1()
 }
