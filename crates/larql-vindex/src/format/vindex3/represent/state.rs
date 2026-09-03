@@ -70,6 +70,8 @@
 //! generation (unprotecting is a move, un-refusing is not). Identity
 //! collapses them; explanation does not.
 
+pub mod action_space;
+pub mod candidate;
 pub mod evidence_bank;
 pub mod graph;
 pub mod identity;
@@ -82,6 +84,11 @@ pub mod snapshot;
 pub mod surface;
 pub mod transition;
 
+pub use action_space::{ActionVocabulary, MapEdit};
+pub use candidate::{
+    Candidate, CandidateDisposition, CandidateSet, Census, Footprint, Generator, MeasurementIntent,
+    PreMeasurementPrune,
+};
 pub use evidence_bank::{EvidenceBank, EvidenceBankId, EVIDENCE_BANK_ID_VERSION};
 pub use graph::{RepresentationStateGraph, StateNode, TransitionPolicy};
 pub use identity::{RepresentationState, RepresentationStateId, STATE_ID_VERSION};
@@ -97,6 +104,8 @@ pub use snapshot::{Adjudication, FrontierEntry, Objective, SearchSnapshot, SNAPS
 pub use surface::{SurfaceTensor, TensorSurface};
 pub use transition::{Action, Provenance, Transition};
 
+#[cfg(test)]
+mod candidate_tests;
 #[cfg(test)]
 mod graph_tests;
 #[cfg(test)]

@@ -1,8 +1,8 @@
 # The LARQL Physical Optimizer — evidence-constrained physical-plan search
 
 **Branch `worktree-represent-optimizer-mcp`, based on `origin/main` at
-`8f647872`.** Stage 1 (a-d) is implemented and green; everything below
-it is design.
+`8f647872`.** Stages 1 (a-d) and 2 are implemented and green;
+everything below them is design.
 
 The abstraction is not "quantization search". It is **evidence-
 constrained physical-plan search**, and it is the query optimiser the
@@ -286,7 +286,7 @@ Unconstrained               any edge; a general graph, caller owns
 
 The strict policy is what rung 5 already enforces — N1 pruned `−E26 + H`
 at +1.39 GB and `−K25 + M23` at +2,091,136 B for being physically worse,
-and Ruling 1 lists physical dominance among the four legitimate
+and Ruling 1 lists physical dominance among the three usable
 pre-measurement prunes. It is nonetheless **a policy and not a law**, and
 the programme's own roadmap says when it breaks: once residency joins the
 state and the objective is measured tok/s, a move that *adds* logical
@@ -521,6 +521,110 @@ of states the graph never held → the foreign-state test.
 
 ---
 
+## 4e. Stage 2 — the candidate generator (IMPLEMENTED)
+
+`represent/state/{action_space,candidate}.rs`, 11 tests, 100% on
+`action_space.rs` and 98.8% on `candidate.rs`.
+
+```text
+realization
+    ↓ enumerate legal transformations
+    ↓ resolve the child realization
+    ↓ derive the physical state
+    ↓ price it, from the footprint oracle
+    ↓ apply ONLY registered pre-measurement pruning
+CandidateSet
+```
+
+No ranking, no sensitivity intuition, no family heuristic, no
+`decide_promotion`. One question: *what experiments are legitimately
+available from this realization?*
+
+### Three prunes, not four
+
+Ruling 1's complete list — and my earlier summary said "four legitimate
+prunes", which is wrong:
+
+```text
+1  identical MeasurementKey observed            dedup          USABLE
+2  not physically better than an available map  dominance      USABLE
+3  structurally impossible map                  structural     USABLE
+4  a PROVED monotonicity theorem                NOT CURRENTLY HELD
+```
+
+`PreMeasurementPrune` therefore has **three** variants. The fourth is
+absent by construction rather than present-and-unused, so adding it is a
+visible schema change and not a quiet flag flip.
+
+**Behavioural-superset pruning is not on the list.** Authority refusal
+attaches to the measured map, is not upward-closed under action-set
+inclusion, and "more low precision" is not a behavioural partial order —
+the programme holds evidence against it at every level (R4-F7 sign,
+R4-F2 magnitude, R5-F4 scale N=3 both directions, R5-F9 ordering, R5-F7's
+2.47× between two states). The line:
+
+```text
+"this cannot produce a valid physical experiment"   → prune
+"this probably will not teach us anything"          → NOT a prune
+```
+
+The second belongs downstream in assessment, where it can be argued
+with. Here it would be indistinguishable from the first. A mutation that
+slips it in reddens the test that records the line.
+
+### The conservation law
+
+```text
+enumerated = eligible + already observed + dominated + structural
+```
+
+`Census::conserves()` asserts it, and every disposition is
+`Eligible(candidate)` or `Pruned { action, child_state, reason }` — so
+nothing disappears silently, and *why aren't we exploring E24* is
+answered from a deterministic partition rather than by a language model
+reconstructing a rationale.
+
+### The vocabulary is an input, and enumeration covers it
+
+R5-F6: neighbourhood 1 drew its in-moves from the candidates left
+unpromoted at iteration 4 and never listed `{E20,E22,E23,E24,E25}` —
+two moves worth ~430 MB each were invisible because the vocabulary had
+been mistaken for the last round's leftovers. `ActionVocabulary` holds
+the declared moves; enumeration is every unapplied edit as an addition
+plus every (applied, unapplied) pair as a 1-out/1-in exchange, always
+over the whole vocabulary.
+
+The vocabulary's declaration order also supplies map order, so an
+applied *set* has exactly one map — which is what makes 1a's identity
+contract meaningful over search states rather than only over
+hand-written maps.
+
+### Physics is derived, never asserted
+
+No `MapEdit` carries a byte figure. The generator applies, resolves,
+asks the `Footprint` oracle what parent and child cost, and computes the
+delta — guarding the R5-F5 class where a footprint column was read as a
+saving and overstated a revert 3.39×. Dominance then delegates to
+`TransitionPolicy::admits`, so the generator and the graph cannot give
+two answers to one question.
+
+### Dedup needs the experimental context
+
+The generator never asks *have we measured this state*. It asks about a
+`MeasurementIntent { bank, scale, instrument }`, because 1c proved
+`diagnostic(child) ≠ authority(child)`. A candidate whose exact
+experiment exists is pruned; one whose state carries *other* readings
+arrives eligible with `prior_observations` attached, so an escalation is
+visible rather than silent.
+
+Four mutations, each killing exactly its own tests: dedup on the state
+instead of the intent → 1 red; behavioural-superset pruning slipped in →
+2 red, including the test that records the line; the census dropping a
+category → the conservation assertion; enumeration covering part of the
+vocabulary → 4 red.
+
+---
+
 ## 5. The reward, which must not be diagnostic KL
 
 Rung 4/5 established that diagnostic KL supplies neither magnitude, sign,
@@ -613,8 +717,8 @@ Deliberately boring, so MCTS is a policy swap and not a rewrite.
 | 1b | State graph with **edge** provenance (§4b) | **done** |
 | 1c | `MeasurementKey` + measurement dedup (§4c) | **done** |
 | 1d | Persistent, replayable search state (§4d) | **done** |
-| 2 | Deterministic action generator — exact physical deltas, participation, novelty and admissibility *before* measurement | |
-| 3 | Best-first / beam; establish the objective API and the search/evidence boundary | |
+| 2 | Deterministic action generator (§4e) | **done** |
+| 3 | Best-first / beam; establish the objective API and the search/evidence boundary | next |
 | 4 | MCP facade — inspect state, hypotheses, frontier; request experiments | |
 | 5 | PUCT as another `SearchPolicy`; same states, actions, evidence | |
 | 6 | Extend `PhysicalState` with residency; optimise measured tok/s | |
@@ -682,10 +786,10 @@ Note what may *not* be inferred meanwhile: Ruling 1 forbids pruning
 either candidate for being a superset of a refused map. Authority refusal
 attaches to the measured map, is not upward-closed under action-set
 inclusion, and "more low precision" is not a behavioural partial order.
-The only legitimate pre-measurement prunes are an identical
-`MeasurementKey`, physical dominance, structural impossibility, and a
-proved monotonicity theorem — and no such theorem is currently held.
-**That list is the action generator's entire contract at stage 2.**
+The legitimate pre-measurement prunes are an identical `MeasurementKey`,
+physical dominance and structural impossibility — **three**, plus a
+fourth that would need a proved monotonicity theorem and is explicitly
+NOT HELD. **That list is the action generator's entire contract** (§4e).
 
 Residency will likely make the phenomenon common:
 

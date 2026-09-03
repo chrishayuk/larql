@@ -75,7 +75,13 @@ pub enum TransitionPolicy {
 
 impl TransitionPolicy {
     /// Whether an edge with this delta is admitted.
-    fn admits(self, physical_delta: i64) -> bool {
+    ///
+    /// Public because the candidate generator prunes on physical
+    /// dominance by asking THIS, rather than by reimplementing the
+    /// comparison — a generator that offered candidates the graph would
+    /// then refuse, or pruned ones it would have taken, would be two
+    /// answers to one question.
+    pub fn admits(self, physical_delta: i64) -> bool {
         match self {
             Self::StrictlyImprovingPhysical => physical_delta < 0,
             Self::Unconstrained => true,
