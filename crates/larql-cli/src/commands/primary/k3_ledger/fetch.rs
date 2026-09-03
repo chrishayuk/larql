@@ -13,6 +13,7 @@ use std::collections::BTreeMap;
 
 use serde_json::Value;
 
+use super::access::{AccessMode, DenseCensus, Family, LayerTopology};
 use super::geometry::K3Geometry;
 
 const SAFETENSORS_LEN_PREFIX: u64 = 8;
@@ -216,6 +217,139 @@ fn layer_list(cfg: &Value, key: &str) -> Vec<usize> {
         .unwrap_or_default()
 }
 
+/// All-in bits per weight for the families `quantization_config.ignore`
+/// excludes, from the checkpoint's own `dtype`.
+///
+/// K3-L1-F1: this is the number the ledger used to hardcode at 4.25. The
+/// routed side has always been derived; now the dense side is too.
+fn dense_stored(cfg: &Value) -> (f64, String) {
+    let dtype = cfg
+        .get("dtype")
+        .or_else(|| cfg.get("torch_dtype"))
+        .and_then(Value::as_str)
+        .unwrap_or("bfloat16");
+    let bits = match dtype {
+        "float32" | "float" => 32.0,
+        "float64" | "double" => 64.0,
+        _ => 16.0,
+    };
+    let label = match dtype {
+        "bfloat16" => "BF16".to_string(),
+        "float16" | "half" => "FP16".to_string(),
+        other => other.to_uppercase(),
+    };
+    (bits, label)
+}
+
+/// Split one layer's header into dense families by tensor name.
+///
+/// The patterns are the checkpoint's own: `quantization_config.ignore`
+/// names `self_attn`, `shared_experts` and `mlp.*_proj`, and the LatentMoE
+/// wrapper and router sit beside them under `block_sparse_moe`.
+fn family_split(header: &Value) -> BTreeMap<&'static str, u64> {
+    let mut out: BTreeMap<&'static str, u64> = BTreeMap::new();
+    let Some(obj) = header.as_object() else {
+        return out;
+    };
+    for (name, entry) in obj {
+        if name == "__metadata__" {
+            continue;
+        }
+        // Routed experts are not dense. `shared_experts` must not be caught
+        // by the `.experts.` test — it is BF16 and always-on.
+        if name.contains(".experts.") && !name.contains("shared_experts") {
+            continue;
+        }
+        let family = if name.contains("shared_experts") {
+            "shared_experts"
+        } else if name.contains("self_attn") {
+            "self_attn"
+        } else if name.contains("routed_expert_") {
+            "LatentMoE wrapper"
+        } else if name.contains("block_sparse_moe.gate") {
+            "router"
+        } else if name.contains("mlp.") {
+            "dense MLP"
+        } else {
+            "norms / res_proj"
+        };
+        *out.entry(family).or_default() += tensor_bytes(entry);
+    }
+    out
+}
+
+/// The measured dense census: every BF16 family and how it is TOUCHED.
+///
+/// K3-LEDGER-2. `embed_tokens` and `lm_head` are byte-identical and untied;
+/// only the head is a full read. Layer 0 is dense, so shared experts, the
+/// wrapper and the router multiply by `n_moe()`, not by `n_layers`.
+fn dense_census(
+    cfg: &Value,
+    kda: &BTreeMap<&'static str, u64>,
+    mla: &BTreeMap<&'static str, u64>,
+    topo: LayerTopology,
+    n_kda: usize,
+    n_mla: usize,
+) -> DenseCensus {
+    let hidden = usize_at(cfg, "hidden_size") as u64;
+    let vocab = usize_at(cfg, "vocab_size") as u64;
+    let ffn = usize_at(cfg, "intermediate_size") as u64;
+    let dtype_bytes = 2u64;
+    let get = |m: &BTreeMap<&'static str, u64>, k: &str| m.get(k).copied().unwrap_or(0);
+
+    // A dense layer has no shared experts, wrapper or router; it has an MLP.
+    let dense0 = 3 * ffn * hidden * dtype_bytes;
+    let head = vocab * hidden * dtype_bytes;
+
+    DenseCensus::new(vec![
+        Family::full_read("KDA self_attn", get(kda, "self_attn"), n_kda),
+        Family::full_read("shared_experts", get(kda, "shared_experts"), topo.n_moe()),
+        Family::full_read("MLA self_attn", get(mla, "self_attn"), n_mla),
+        Family::full_read(
+            "LatentMoE wrapper",
+            get(kda, "LatentMoE wrapper"),
+            topo.n_moe(),
+        ),
+        Family::full_read("lm_head", head, 1),
+        Family::full_read("dense layer-0 MLP", dense0, topo.n_dense()),
+        Family::full_read("router", get(kda, "router"), topo.n_moe()),
+        Family::full_read(
+            "norms / res_proj",
+            get(kda, "norms / res_proj"),
+            topo.n_layers,
+        ),
+        Family {
+            name: "embed_tokens".into(),
+            bytes_per_unit: head,
+            units: 1,
+            // A gather, not a matmul. This is the -2.35 GB correction.
+            access: AccessMode::Gather {
+                rows_per_token: 1,
+                total_rows: vocab,
+            },
+        },
+    ])
+}
+
+/// One layer's family byte profile, from its shard header alone.
+///
+/// Layer `n` lives in shard `n + 1` — verified against layers 0, 3 and 49.
+pub fn layer_profile(
+    repo: &Repo,
+    template: &str,
+    layer: usize,
+) -> Result<super::homogeneity::LayerProfile, Box<dyn std::error::Error>> {
+    let shard = template.replace("{:05}", &format!("{:05}", layer + 1));
+    let header = repo.shard_header(&shard)?;
+    Ok(super::homogeneity::LayerProfile {
+        index: layer,
+        families: family_split(&header)
+            .into_iter()
+            .map(|(k, v)| (k.to_string(), v))
+            .collect(),
+    })
+}
+
 pub fn load_geometry(
     repo: &Repo,
     kda_shard: &str,
@@ -239,9 +373,23 @@ pub fn load_geometry(
     }
 
     let n_layers = usize_at(&cfg, "num_hidden_layers");
-    let full_attn = layer_list(&cfg, "full_attn_layers").len();
-    let kda = layer_list(&cfg, "kda_layers").len();
+    let full_attn_list = layer_list(&cfg, "full_attn_layers");
+    let kda_list = layer_list(&cfg, "kda_layers");
+    let full_attn = full_attn_list.len();
+    let kda = kda_list.len();
+    // 1-indexed in the config, 0-indexed in tensor names.
+    let kda_layer_indices: Vec<usize> = kda_list.iter().filter_map(|l| l.checked_sub(1)).collect();
     let vocab = usize_at(&cfg, "vocab_size") as u64;
+    let (dense_stored_bits, dense_stored_label) = dense_stored(&cfg);
+    let topology = LayerTopology::new(n_layers, usize_at(&cfg, "first_k_dense_replace"));
+    let census = dense_census(
+        &cfg,
+        &family_split(&kda_hdr),
+        &family_split(&mla_hdr),
+        topology,
+        if kda > 0 { kda } else { n_layers - full_attn },
+        full_attn,
+    );
     let hidden = usize_at(&cfg, "hidden_size");
 
     Ok(K3Geometry {
@@ -260,6 +408,11 @@ pub fn load_geometry(
         mla_layer_dense_params: mla_dense,
         // Untied embed + lm_head. Vision is deliberately excluded.
         embedding_params: 2 * vocab * hidden as u64,
+        dense_stored_bits,
+        dense_stored_label,
+        kda_layer_indices,
+        topology,
+        dense_census: census,
         vision_included: false,
     })
 }

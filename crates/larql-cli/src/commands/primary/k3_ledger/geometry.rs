@@ -13,6 +13,10 @@
 
 use serde::{Deserialize, Serialize};
 
+#[cfg(test)]
+use super::access::{AccessMode, Family};
+use super::access::{DenseCensus, LayerTopology};
+
 /// Bytes per weight for MXFP4: 4-bit codeword plus one 8-bit block scale per 32.
 ///
 /// Two conventions travel with any bit-width quoted against this (standing rule
@@ -20,6 +24,60 @@ use serde::{Deserialize, Serialize};
 /// MXFP4 is 4.0 payload / 4.25 all-in. They diverge by 0.25 bits, which is
 /// immaterial at 4-bit and decisive at 1-bit.
 pub const MXFP4_BYTES_PER_WEIGHT: f64 = 0.53125;
+
+/// **K3-L1-F1 — price what is REPRESENTED NOW, not what the optimiser hopes
+/// to make it become.**
+///
+/// The routed side has always derived its bit-width from the checkpoint
+/// (`ScenarioPremises::routed_all_in_bits`), "rather than assumed, so it
+/// stays honest if the codec changes". The dense side did not: it carried a
+/// hardcoded `4.25` with no flag to override it, so every report priced
+/// K3's BF16 dense surfaces as though the entire dense-side REPRESENT
+/// programme had already landed.
+///
+/// The gap is not small. K3's dense side is BF16 today —
+/// `quantization_config.ignore` names `self_attn`, `shared_experts`,
+/// `mlp.(gate|up|gate_up|down)_proj`, `lm_head`, `vision_tower` — so the
+/// real dense read is 112.42 GB/token against the 29.86 GB that was
+/// printed. A future hypothetical was being reported as today's source
+/// model.
+///
+/// So a hypothetical is now a DIFFERENT VARIANT, not a different number,
+/// and reports can tell them apart.
+#[derive(Debug, Clone, Copy, PartialEq, Default, Serialize, Deserialize)]
+pub enum DensePricing {
+    /// Price the dense side exactly as the checkpoint stores it.
+    #[default]
+    AsStored,
+    /// A width the caller asked for. Every report MUST label it.
+    Hypothetical { all_in_bits: f64 },
+}
+
+impl DensePricing {
+    /// Resolve against the checkpoint. `AsStored` reads the geometry.
+    pub fn all_in_bits(&self, geom: &K3Geometry) -> f64 {
+        match self {
+            Self::AsStored => geom.dense_stored_bits,
+            Self::Hypothetical { all_in_bits } => *all_in_bits,
+        }
+    }
+
+    /// Whether this is a width the checkpoint does not have.
+    pub fn is_hypothetical(&self) -> bool {
+        matches!(self, Self::Hypothetical { .. })
+    }
+
+    /// How a report must describe it.
+    pub fn label(&self, geom: &K3Geometry) -> String {
+        match self {
+            Self::AsStored => format!("{} AS STORED", geom.dense_stored_label),
+            Self::Hypothetical { all_in_bits } => format!(
+                "{all_in_bits:.4} bpw HYPOTHETICAL — the checkpoint stores {} at {:.4}",
+                geom.dense_stored_label, geom.dense_stored_bits
+            ),
+        }
+    }
+}
 pub const MXFP4_PAYLOAD_BITS: f64 = 4.0;
 pub const SCALE_BITS_PER_WEIGHT: f64 = 8.0 / 32.0;
 
@@ -50,6 +108,26 @@ pub struct K3Geometry {
     pub mla_layer_dense_params: u64,
     /// Embedding + LM head parameters. Vision is EXCLUDED — see `vision_excluded`.
     pub embedding_params: u64,
+    /// All-in bits per weight the dense families are ACTUALLY stored at,
+    /// from the checkpoint's own `dtype` for the families
+    /// `quantization_config.ignore` excludes. K3: BF16, 16.0.
+    pub dense_stored_bits: f64,
+    /// Human label for that representation, e.g. `BF16`.
+    pub dense_stored_label: String,
+    /// 0-based tensor indices of the KDA layers, from the config's own
+    /// `linear_attn_config.kda_layers`. NOT reconstructed from a stride:
+    /// K3's `full_attn_layers` tail is `..., 88, 92, 93` — irregular — so
+    /// any periodic reconstruction is right by luck.
+    pub kda_layer_indices: Vec<usize>,
+    /// Which layers are dense and which are MoE. K3-LEDGER-2: the
+    /// multiplier for shared experts, the wrapper and the router is
+    /// `n_moe()`, never `n_layers`.
+    pub topology: LayerTopology,
+    /// Every BF16 family and HOW IT IS TOUCHED. The authority for dense
+    /// activated bytes — `dense_params` derives from this rather than
+    /// summing tensor sizes, so a gather can never be priced as a full
+    /// read.
+    pub dense_census: DenseCensus,
     /// Always false-if-honest: the ledger sums `language_model` layers plus text
     /// embeddings only. `vision_tower` + `mm_projector` are ~2 GB BF16 by
     /// residual against the published repo size, under 2% of the dense term. A
@@ -63,11 +141,17 @@ impl K3Geometry {
         self.n_layers.saturating_sub(self.n_dense_layers)
     }
 
-    /// Always-on parameters read once per forward pass, whatever it emits.
+    /// Always-on parameters ACTIVATED per token.
+    ///
+    /// K3-LEDGER-2: derived from [`DenseCensus`], which prices each family
+    /// by its `AccessMode`. Summing tensor sizes instead is what made
+    /// `embed_tokens` — a 2.35 GB gather that moves 14 KB — look like a
+    /// full read, and what gave layer 0 a router it does not have.
     pub fn dense_params(&self) -> u64 {
-        self.n_kda_layers as u64 * self.kda_layer_dense_params
-            + self.n_mla_layers as u64 * self.mla_layer_dense_params
-            + self.embedding_params
+        if self.dense_stored_bits <= 0.0 {
+            return 0;
+        }
+        (self.dense_census.activated_bytes() as f64 * 8.0 / self.dense_stored_bits) as u64
     }
 
     /// Routed-expert parameters activated per token position.
@@ -159,6 +243,13 @@ impl BitConvention {
     }
 }
 
+/// The 4.25-bpw dense premise every ledger row was computed under before
+/// K3-L1-F1. Tests written in that world name it rather than inheriting it
+/// from a default, so moving the default cannot silently change what they
+/// claim.
+#[cfg(test)]
+pub(crate) const DENSE_4_25: DensePricing = DensePricing::Hypothetical { all_in_bits: 4.25 };
+
 #[cfg(test)]
 pub(crate) fn k3_reference() -> K3Geometry {
     // The real moonshotai/Kimi-K3 geometry, measured 2026-07-31 from config.json
@@ -178,6 +269,41 @@ pub(crate) fn k3_reference() -> K3Geometry {
         kda_layer_dense_params: 633_700_000,
         mla_layer_dense_params: 422_200_000,
         embedding_params: 2 * 163_840 * 7_168,
+        // quantization_config ignores every dense family; dtype is bfloat16.
+        dense_stored_bits: 16.0,
+        dense_stored_label: "BF16".to_string(),
+        kda_layer_indices: (1..=93)
+            .filter(|l| !(l % 4 == 0 || *l > 91))
+            .map(|l| l - 1)
+            .collect(),
+        topology: LayerTopology::new(93, 1),
+        // K3-DENSE-1, measured from safetensors headers 2026-09-03 (layer 49
+        // KDA, layer 3 MLA, layer 0 dense, shard 94 head/embed). EXACT byte
+        // counts, never rounded MB — a rounded constant divides wrong.
+        dense_census: DenseCensus::new(vec![
+            // 5 x [12288,7168] q/k/v/g/o + convs, f_a/f_b, b_proj, dt_bias.
+            Family::full_read("KDA self_attn", 887_800_832, 69),
+            // 3 x [6144,7168] — 184 shared experts across 92 MoE layers.
+            Family::full_read("shared_experts", 264_241_152, 92),
+            // g_proj + o_proj [12288,7168] dominate; q_a/q_b/kv_a/kv_b.
+            Family::full_read("MLA self_attn", 464_392_192, 24),
+            // routed_expert up/down [3584,7168] — BF16 around an MXFP4 bank.
+            Family::full_read("LatentMoE wrapper", 102_767_616, 92),
+            Family::full_read("lm_head", 2_348_810_240, 1),
+            // 3 x [33792,7168]. first_k_dense_replace = 1, so ONE layer.
+            Family::full_read("dense layer-0 MLP", 1_453_326_336, 1),
+            Family::full_read("router", 12_848_640, 92),
+            Family::full_read("norms / res_proj", 86_016, 93),
+            Family {
+                name: "embed_tokens".to_string(),
+                bytes_per_unit: 2_348_810_240,
+                units: 1,
+                access: AccessMode::Gather {
+                    rows_per_token: 1,
+                    total_rows: 163_840,
+                },
+            },
+        ]),
         vision_included: false,
     }
 }
@@ -203,9 +329,14 @@ mod tests {
 
     #[test]
     fn activated_params_match_the_published_figure() {
-        // Published ~104.2B; measured 104.83B, agreeing to 0.6%.
+        // **K3-LEDGER-2 corroboration.** This test used to read "Published
+        // ~104.2B; measured 104.83B, agreeing to 0.6%" — the 0.6% gap WAS
+        // the modelling error. Pricing `embed_tokens` as a gather and layer
+        // 0 as dense lands on 104.2007B, matching the published activated
+        // count to four significant figures. An external check the old
+        // model failed and the corrected one passes.
         let g = k3_reference();
-        approx(g.activated_params() as f64 / 1e9, 104.83, 0.15);
+        approx(g.activated_params() as f64 / 1e9, 104.20, 0.01);
     }
 
     #[test]
