@@ -111,6 +111,11 @@ pub struct CarriageRule {
 pub struct ProbeContext<'a> {
     pub span: Option<AttentionSpan>,
     pub declared: &'a Value,
+    /// The registry label the component's declared identity resolved to,
+    /// `None` when no family matched. For the probes that judge a claim
+    /// about WHICH family serves the checkpoint, so they answer from the
+    /// resolution rather than from the flag.
+    pub family: Option<&'a str>,
 }
 
 impl ProbeContext<'_> {
@@ -372,6 +377,15 @@ pub const CARRIAGE_RULES: &[CarriageRule] = &[
         site: "Component.attention[].position — PositionPolicy::MRope when the axis geometry                resolves one, false otherwise",
         probe: Some(probe_use_mrope),
     },
+    // A claim about which family serves the checkpoint. Answered from the
+    // registry's resolution of the declared identity, never from the flag.
+    CarriageRule {
+        leaf: "is_llama_config",
+        reaches: Carriage::Represented,
+        site: "the registry entry the declared model_type resolved to — true when it is the \
+               Llama family, false for any other or none",
+        probe: Some(probe_is_llama_config),
+    },
     CarriageRule {
         leaf: "no_rope_layer_interval",
         reaches: Carriage::Parsed,
@@ -618,6 +632,15 @@ pub const CARRIAGE_RULES: &[CarriageRule] = &[
         reaches: Carriage::Lowered,
         site: "ExecutionSurface.ffn.activation → FfnOp.activation",
         probe: Some(probe_activation),
+    },
+    // Falcon's one-word FFN shape: `swiglu` is gated + SiLU, `geglu` is
+    // gated + GELU, a plain nonlinearity name is the ungated shape. Two
+    // surface facts answer for one declared word.
+    CarriageRule {
+        leaf: "activation",
+        reaches: Carriage::Lowered,
+        site: "ExecutionSurface.ffn.{ffn_type, activation} → FfnOp — the shape the word names",
+        probe: Some(probe_ffn_shape_name),
     },
     CarriageRule {
         leaf: "swiglu_limit",
@@ -1886,6 +1909,35 @@ fn probe_activation(component: &Component, ctx: &ProbeContext<'_>) -> Option<Val
         }
     }
     serde_json::to_value(activation).ok()
+}
+
+/// The FFN shape that runs, in the checkpoint's own word when that word
+/// names it (`swiglu` for a gated SiLU FFN); the schema's word for the
+/// shape otherwise, so a disagreement reads as one — `geglu` declared on
+/// a SiLU-gated stack resolves to `swiglu`, and a plain `silu` on the
+/// same stack resolves to `swiglu` too, because the plain name is the
+/// ungated shape. Both directions come from one table in
+/// `larql_models::config::activation`.
+fn probe_ffn_shape_name(component: &Component, ctx: &ProbeContext<'_>) -> Option<Value> {
+    let ffn = component.execution.as_ref()?.ffn.as_ref()?;
+    if let Some(declared) = ctx.declared.as_str() {
+        if larql_models::config::ffn_shape_from_hf_name(declared)
+            == Some((ffn.ffn_type, ffn.activation))
+        {
+            return Some(json!(declared));
+        }
+    }
+    larql_models::config::ffn_shape_hf_name(ffn.ffn_type, ffn.activation).map(Value::String)
+}
+
+/// Whether the declared identity resolved to the Llama family. The
+/// answer comes from [`ProbeContext::family`] — the registry's resolution
+/// — so a checkpoint declaring `true` under a `model_type` no entry
+/// matches is refused rather than believed.
+fn probe_is_llama_config(_component: &Component, ctx: &ProbeContext<'_>) -> Option<Value> {
+    Some(json!(
+        ctx.family == Some(larql_models::detect::registry::LLAMA_FAMILY)
+    ))
 }
 
 /// The clamp bound the FFN surface carries, when its gate policy is the

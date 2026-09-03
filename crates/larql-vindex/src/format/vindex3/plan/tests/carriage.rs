@@ -6,7 +6,7 @@
 //! declared fact is dropped and stay silent when the same fact is carried.
 //! A gate that only ever fires proves nothing about the facts it passes.
 
-use super::support::glimmer_shaped_target_with;
+use super::support::{glimmer_shaped_target_with, known_dense_config, known_dense_with_config};
 use crate::format::vindex3::plan::carriage::{rule_for, Carriage, CARRIAGE_RULES};
 use crate::format::vindex3::plan::{plan_system, FindingCategory, PlannedFinding, SemanticClass};
 
@@ -849,6 +849,123 @@ fn a_declared_mrope_flag_must_agree_with_the_resolved_policy() {
         finding.category,
         FindingCategory::Representable,
         "no mrope_section resolves no MRope policy: {}",
+        finding.detail
+    );
+    assert_eq!(finding.resolved, Some(serde_json::json!(false)));
+}
+
+/// A dense Llama-family plan with one extra declared key — for the two
+/// vestigial keys below, which are checked against a *recognised* family
+/// rather than the Glimmer shape.
+fn dense_plan_with(mutate: impl FnOnce(&mut serde_json::Value)) -> Vec<PlannedFinding> {
+    let dir = tempfile::tempdir().unwrap();
+    let mut config = known_dense_config();
+    mutate(&mut config);
+    let named = vec![(
+        "target-artifact".to_string(),
+        known_dense_with_config(dir.path(), config),
+    )];
+    plan_system(&named)
+        .artifacts
+        .into_iter()
+        .flat_map(|a| a.findings)
+        .collect()
+}
+
+/// **Falcon's `activation` names the FFN SHAPE, and it is checked against
+/// the FFN that runs.** Falcon3-1B-Base declares `activation: "swiglu"`
+/// beside `hidden_act: "silu"` under `model_type: llama`; no
+/// transformers-5.5.0 loader reads `activation` for that family, so the
+/// only behaviour to match is this build's. `swiglu` is "gated, SiLU on
+/// the gate" in one word — two facts the execution surface carries as
+/// `ffn_type` and `activation` — and the same word for a GELU-gated or an
+/// ungated FFN would be one value away from the wrong arithmetic.
+#[test]
+fn a_declared_ffn_shape_name_must_describe_the_ffn_that_runs() {
+    let findings = dense_plan_with(|config| {
+        config["activation"] = serde_json::json!("swiglu");
+    });
+    let finding = finding_for(&findings, "activation");
+    assert_eq!(finding.class, SemanticClass::ExecutionSemantic);
+    assert_eq!(
+        finding.category,
+        FindingCategory::Representable,
+        "a gated SiLU FFN is what `swiglu` names: {}",
+        finding.detail
+    );
+    assert!(!finding.blocks());
+
+    // GELU-gated is a different FFN, and the resolved value says which
+    // one actually runs rather than echoing the declaration.
+    let findings = dense_plan_with(|config| {
+        config["activation"] = serde_json::json!("geglu");
+    });
+    let finding = finding_for(&findings, "activation");
+    assert_ne!(
+        finding.category,
+        FindingCategory::Representable,
+        "{}",
+        finding.detail
+    );
+    assert_eq!(finding.resolved, Some(serde_json::json!("swiglu")));
+
+    // A plain nonlinearity name is the UNGATED shape. On a gated FFN it
+    // does not describe what runs, even though the gate is SiLU.
+    let findings = dense_plan_with(|config| {
+        config["activation"] = serde_json::json!("silu");
+    });
+    let finding = finding_for(&findings, "activation");
+    assert_ne!(
+        finding.category,
+        FindingCategory::Representable,
+        "{}",
+        finding.detail
+    );
+}
+
+/// **`is_llama_config` is checked against the family the identity
+/// resolved to, never echoed.** SmolLM2-135M declares `true` under
+/// `model_type: llama`; the key appears nowhere in transformers 5.5.0.
+/// The agreeing arm is the recognised dense family; the disagreeing arm
+/// is the same flag on a checkpoint whose identity resolves elsewhere,
+/// and `false` on a Llama stack — both must refuse, with the resolved
+/// value naming what the registry actually answered.
+#[test]
+fn a_declared_llama_identity_flag_must_agree_with_the_resolved_family() {
+    let findings = dense_plan_with(|config| {
+        config["is_llama_config"] = serde_json::json!(true);
+    });
+    let finding = finding_for(&findings, "is_llama_config");
+    assert_eq!(finding.class, SemanticClass::ExecutionSemantic);
+    assert_eq!(
+        finding.category,
+        FindingCategory::Representable,
+        "{}",
+        finding.detail
+    );
+    assert!(!finding.blocks());
+
+    let findings = dense_plan_with(|config| {
+        config["is_llama_config"] = serde_json::json!(false);
+    });
+    let finding = finding_for(&findings, "is_llama_config");
+    assert_ne!(
+        finding.category,
+        FindingCategory::Representable,
+        "{}",
+        finding.detail
+    );
+    assert_eq!(finding.resolved, Some(serde_json::json!(true)));
+
+    // The Glimmer fixture resolves to its own family, not Llama.
+    let findings = plan_with(|config| {
+        config["text_config"]["is_llama_config"] = serde_json::json!(true);
+    });
+    let finding = finding_for(&findings, "is_llama_config");
+    assert_ne!(
+        finding.category,
+        FindingCategory::Representable,
+        "{}",
         finding.detail
     );
     assert_eq!(finding.resolved, Some(serde_json::json!(false)));

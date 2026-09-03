@@ -10,16 +10,48 @@
   "HuggingFaceTB/SmolLM2-135M"
  ],
  "predicted_after": {
-  "GREEN": 30,
+  "GREEN": 33,
   "AMBER": 7,
-  "RED": 72,
+  "RED": 69,
   "BUG": 0,
   "silent_drops": 0,
-  "text_closure_blockers": 1107
+  "text_closure_blockers": 1089
  },
- "note": "Written against the wave-7 baseline. If wave 8 lands first, add its deltas: GREEN 33, RED 69, blockers 1089.",
+ "note": "Rebased on the wave-8 baseline before the code was written; the original text was written against wave 7 and said to add wave 8's deltas.",
  "falsifiers": [
   "any other row moving",
   "either key found to be read by a transformers 5.5.0 loader after all"
- ]
+ ],
+ "baseline": "wave 8 (semantics 7): GREEN 31 / AMBER 7 / RED 71 / blockers 1091",
+ "rows_whose_blocker_count_changes": 2,
+ "result": {
+  "scored_on": "2026-09-03",
+  "outcome_semantics_version": 8,
+  "predicted_clears": 2,
+  "actual_clears": 2,
+  "hit": [
+   "tiiuae/Falcon3-1B-Base",
+   "HuggingFaceTB/SmolLM2-135M"
+  ],
+  "missed": [],
+  "unpredicted": [],
+  "regressions": [],
+  "rows_whose_blocker_count_changed": {
+   "tiiuae/Falcon3-1B-Base": "1 -> 0",
+   "HuggingFaceTB/SmolLM2-135M": "1 -> 0"
+  },
+  "after": {
+   "GREEN": 33,
+   "AMBER": 7,
+   "RED": 69,
+   "BUG": 0,
+   "silent_drops": 0,
+   "text_closure_blockers": 1089
+  },
+  "predicted_after_matched": true,
+  "verdict": "EXACT. Also checked at whole-model granularity: the blocker SET changed on exactly these two rows, so the path-to-component fix that rode along (a bare leaf ending in `_config` is a root key, not a section) moved nothing else across 109 plans.",
+  "controls": "Both VINDEX3 tests run before the rules existed failed with class Unknown; after the rules but before the parser stored the keys they failed as `read by nothing in any registered parser` \u2014 the consumed-key contract holding \u2014 and pass once the parser reads them. Full 117-row re-plan on the semantics-8 binary.",
+  "fix_as_landed": "`activation` \u2192 ExecutionSurface.ffn.{ffn_type, activation} through one two-way table in larql_models::config::activation (`swiglu` = gated SiLU, `geglu` = gated GELU, a plain name = ungated); `is_llama_config` \u2192 the registry entry the declared identity resolved to, via ProbeContext.family. Both stored on ModelConfig and credited as consumed, like use_mrope.",
+  "defect_found_on_the_way": "`component_of` read any first segment ending in `_config` as a component section, so `is_llama_config` was sent to a component named `is_llama` that the graph never builds. A section is a segment with something after it."
+ }
 }

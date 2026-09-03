@@ -57,6 +57,15 @@ pub const PLAN_SCHEMA: u32 = 6;
 /// `plan/tests/identity.rs` pins fixture verdicts against this value, so
 /// a change that flips one fails there until the version is bumped.
 ///
+/// **8** — two keys read by no implementation, ours or upstream, are
+/// read-and-checked rather than graded `Unknown`. Falcon3's
+/// `activation: "swiglu"` names the FFN shape (gated, SiLU on the gate) and
+/// is judged against the shape the execution surface carries; SmolLM2's
+/// `is_llama_config: true` is judged against the family the declared
+/// identity resolved to. Same treatment as `use_mrope` / `rope_interleaved`
+/// in version 3's wave: never echoed, one value away from a wrong FFN or
+/// a wrong family. Forecast before the code: exactly two rows clear.
+///
 /// **7** — `partial_rotary_factor` is read from inside `rope_parameters`,
 /// the transformers-5.x flat form and the only spelling every Qwen3.5
 /// checkpoint uses. The parser read the legacy top-level key and Gemma 4's
@@ -105,7 +114,7 @@ pub const PLAN_SCHEMA: u32 = 6;
 /// architectures, now block instead of passing silently into
 /// `GenericArch`'s Llama-shaped defaults. Measured on the conformance
 /// corpus: 15 of 42 declared `model_type` strings, across 30 checkpoints.
-pub const PLANNER_SEMANTICS_VERSION: u32 = 7;
+pub const PLANNER_SEMANTICS_VERSION: u32 = 8;
 
 /// Who judged a plan.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]

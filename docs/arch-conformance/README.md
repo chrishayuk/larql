@@ -46,16 +46,16 @@ The sweep is the regression instrument for the conformance programme. Every
 semantic change is measured against the same 88-row corpus, and the two
 invariants are the ones that matter most:
 
-| Metric | Baseline | Waves 1+3 | rope | moe | sliding window | frontier census† | partial rotary |
-|---|---:|---:|---:|---:|---:|---:|---:|
-| semantics version | 1 | 3 | 4 | 5 | 6 | 6 (held) | **7** |
-| GREEN | 17 | 18 | 21 | 26 | 28 | 28 | **31** |
-| AMBER | 6 | 6 | 6 | 6 | 6 | 7 | 7 |
-| RED | 65 | 64 | 61 | 56 | 54 | 74 | **71** |
-| **BUG** | **0** | **0** | **0** | **0** | **0** | **0** | **0** |
-| **silent drops** | **0** | **0** | **0** | **0** | **0** | **0** | **0** |
-| text-closure blockers | 886 | 776 | 756 | 671 | 668 | 1109 | **1091** |
-| K3 clusters remaining | 7 | 7 | 7 | 7 | 7 | 7 | **7** |
+| Metric | Baseline | Waves 1+3 | rope | moe | sliding window | frontier census† | partial rotary | vestigial pair |
+|---|---:|---:|---:|---:|---:|---:|---:|---:|
+| semantics version | 1 | 3 | 4 | 5 | 6 | 6 (held) | 7 | **8** |
+| GREEN | 17 | 18 | 21 | 26 | 28 | 28 | 31 | **33** |
+| AMBER | 6 | 6 | 6 | 6 | 6 | 7 | 7 | 7 |
+| RED | 65 | 64 | 61 | 56 | 54 | 74 | 71 | **69** |
+| **BUG** | **0** | **0** | **0** | **0** | **0** | **0** | **0** | **0** |
+| **silent drops** | **0** | **0** | **0** | **0** | **0** | **0** | **0** | **0** |
+| text-closure blockers | 886 | 776 | 756 | 671 | 668 | 1109 | 1091 | **1089** |
+| K3 clusters remaining | 7 | 7 | 7 | 7 | 7 | 7 | 7 | **7** |
 
 † Wave 7 widened the corpus from 88 to 109 scored rows. The 88 rows every
 earlier column was measured on are unchanged — same verdicts, same 668
@@ -285,6 +285,31 @@ the checkpoint asks for 64. VINDEX3 refused those checkpoints; the engine
 did not. The fix lands in the shared parser, so both doors now read the
 reference's spelling.
 
+**Wave 9 — the vestigial pair (semantics 8).** Two keys read by no
+implementation, ours or upstream, checked by exact-word grep of transformers
+5.5.0: Falcon3-1B-Base's `activation: "swiglu"` beside `hidden_act: "silu"`
+under `model_type: llama`, and SmolLM2-135M's `is_llama_config: true`. Same
+treatment as the earlier `use_mrope` / `rope_interleaved` pair: read,
+stored, credited as consumed, and **checked against what actually
+resolves** rather than echoed. `swiglu` is "gated, SiLU on the gate" in one
+word, judged against the FFN shape the execution surface carries through one
+two-way table (`geglu` on a SiLU-gated stack resolves to `swiglu`; a plain
+`silu` is the ungated shape and mismatches too). `is_llama_config` is judged
+against the registry entry the declared identity resolved to, so `true`
+under a `model_type` nothing matches is refused, not believed.
+
+Frozen before the code in
+[`forecasts/wave9-vestigial-pair.json`](forecasts/wave9-vestigial-pair.json):
+exactly two rows clear, nothing else moves. **Held**, and held at whole-model
+granularity too — the blocker *set* changed on exactly those two rows across
+109 plans. That second check mattered, because a fix rode along: the
+path-to-component mapping read any first segment ending in `_config` as a
+component section, so `is_llama_config` was sent to a component named
+`is_llama` that no graph builds. A section is a segment with something after
+it. The controls ran in three stages: both tests failed as `Unknown` before
+the rules, then as "read by nothing in any registered parser" with the rules
+but no parser read — the consumed-key contract holding — then passed.
+
 **What did not happen, and why it is worth recording.** The inert clusters
 reach 34 checkpoints, which looked like a large GREEN wave. It was one row
 (Yi-1.5-6B). Cluster *reach* counts checkpoints a fix touches; only a
@@ -303,11 +328,11 @@ Scored against the **text-generation closure**, which the plan computes
 itself — a checkpoint whose only blockers sit in a vision tower is not
 evidence about its language model.
 
-| outcome | baseline (88) | after wave 8 (109) | share now |
+| outcome | baseline (88) | after wave 9 (109) | share now |
 |---|---:|---:|---:|
-| GREEN — representable | 17 | 31 | 28% |
+| GREEN — representable | 17 | 33 | 30% |
 | AMBER — identified, no implementation | 6 | 7 | 6% |
-| RED — semantic gap | 65 | 71 | 65% |
+| RED — semantic gap | 65 | 69 | 63% |
 | BUG — should work, doesn't | 0 | 0 | 0% |
 | *unreachable (gated/absent/no config)* | *6* | *8* | *not evidence* |
 
@@ -336,7 +361,7 @@ the table; the verdict columns are the sweep's, not the table's.
 
 | envelope | lineages | rows | gens | GREEN | AMBER | RED |
 |---|---|---:|---:|---:|---:|---:|
-| Dense Transformer | bitnet, falcon-dense, gpt-neox, gpt2, granite-dense, internlm, llama-dense, olmo, phi, qwen-dense, starcoder2, yi | 28 | 21 | 13 | 0 | 15 |
+| Dense Transformer | bitnet, falcon-dense, gpt-neox, gpt2, granite-dense, internlm, llama-dense, olmo, phi, qwen-dense, starcoder2, yi | 28 | 21 | 15 | 0 | 13 |
 | Hybrid local ↔ global attention | exaone, gemma2, gemma3, gemma4-dense, gemma4-moe, mistral-dense | 19 | 10 | 6 | 0 | 13 |
 | Classic sparse MoE | llama4-moe, mistral-moe, mixtral-moe, olmoe, phi-moe, qwen-moe | 11 | 8 | 5 | 0 | 6 |
 | Fine-grained MoE | command-a, exaone-moe, glm, gpt-oss, hunyuan, minimax-m2, step | 12 | 11 | 2 | 0 | 10 |
@@ -443,9 +468,7 @@ cause. Each is a whole family-generation:
 
 | blocking | checkpoints | subjects |
 |---|---|---|
-| 1 | Falcon3-1B-Base | `activation` — `activation: swiglu` beside `hidden_act: silu` — read by nothing in transformers 5.5.0; agrees with the gated-SiLU FFN. Vestigial, read-and-check |
 | 1 | Qwen1.5-MoE-A2.7B | `shared_expert_intermediate_size` — the Qwen-style *gated* shared expert; DeepSeek's ungated `n_shared_experts` already lowers (Kimi-Linear is GREEN) |
-| 1 | SmolLM2-135M | `is_llama_config` — `true` under `model_type: llama` — read by nothing in transformers 5.5.0. Vestigial, read-and-check |
 | 2 | phi-4 | `architecture_family`, `original_max_position_embeddings` — `phi3` is unregistered (fused `qkv_proj` / `gate_up_proj`) — a family entry, not an alias |
 | 3 | GLM-4.5-Air, GLM-4.6 | `architecture_family`, `num_nextn_predict_layers`, `use_qk_norm` |
 | 3 | Phi-3-mini-4k-instruct | `architecture_family`, `original_max_position_embeddings`, `sliding_window` |
@@ -455,14 +478,54 @@ cause. Each is a whole family-generation:
 | 4 | EXAONE-4.0-1.2B | `architecture_family`, `execution_surface`, `hidden_act`, `rms_norm_eps` — all four follow from the unregistered `exaone4` family |
 | 4 | gemma-3-1b-it | `rope_local_base_freq`, `rope_theta`, `sliding_window_pattern` — `gemma3_text` at the ROOT: `rope_theta` is *mismatched* ("resolution does not honour the declared value") where the same keys under `text_config` lower on the 4B and 27B. A flat-layout parse, and the one mismatch in the frontier |
 
-Four of the eleven entries are the recurring *kinds* the census predicted — two
-vestigial keys, a gated variant of a component that already lowers, and a
-flat-layout parse of a family that is green when nested (wave 8 was the
-fifth, a key read from the wrong spot, and cleared its three). Together they
-clear four more rows across four family-generations without a new kernel. `attention_schedule`, at reach 23,
+Two of the nine entries are the recurring *kinds* the census predicted — a
+gated variant of a component that already lowers, and a flat-layout parse of
+a family that is green when nested. Waves 8 and 9 were three more of those
+kinds (a key read from the wrong spot, two vestigial keys) and cleared their
+five rows exactly as forecast. Everything else in the table is a family
+entry or an execution semantic. `attention_schedule`, at reach 23,
 clears **none** alone: its `layer_types` blockers are missing mixer vocabulary
 (`conv`, `mamba`, sparse spans) or Step's length rule, and every carrier has
 three to ten other clusters. Reach ranks; the cover predicts.
+
+## After wave 9: the rerank, from the 109-row closure
+
+Every remaining text-closure blocker, by what kind of work retires it
+(semantics 8; a row counts under every class it touches):
+
+| class | blockers | rows touched | clears alone |
+|---|---:|---:|---:|
+| vocabulary — `unclustered`, or class `unknown` | 584 | 75 | **0** |
+| real execution semantics — indexers, hyper-connections, SSM/conv mixers, MTP, quantised representations | 266 | 43 | 0 |
+| carriage — clustered and judged, not yet carried | 214 | 65 | 6 |
+| family entry — an unregistered identity | 25 | 25 | 0 |
+
+The vocabulary class is 54% of the debt and moves **no verdict on its own**:
+not one row is blocked only on unclustered subjects, and only two are blocked
+on unclustered plus one other cluster. Its largest members are training and
+framework-default keys (`ep_size`, `aux_loss_alpha`, `seq_aux`,
+`use_mamba_kernels`, the `is_decoder` / `torchscript` / `use_bfloat16` quintet
+that `PretrainedConfig` dumps into every Kimi config) and the whole-mixer
+vocabularies of Nemotron and LFM2. Worth burning down for the blocker count
+and for what the report *says*, never as a GREEN wave.
+
+Verdicts move in the carriage class, and the greedy cover names the order:
+
+| # | fix | rows it clears |
+|---|---|---:|
+| 1 | the `qwen3_5_moe` family's own MoE facts — `num_experts_per_tok`, `hidden_act` and the *gated* shared expert (`shared_expert_intermediate_size`), which the dense sibling already carries | 5 — Qwen1.5-MoE-A2.7B, Qwen3.5 35B-A3B / 122B-A10B / 397B-A17B, Qwen3.8-2.4T-A95B |
+| 2 | `gemma3_text` at the root: `rope_theta` *mismatched* where the same keys lower under `text_config` | 1 — gemma-3-1b-it, and the one genuine mismatch in the frontier |
+| 3 | a `phi3` family entry (fused `qkv_proj` / `gate_up_proj`, `original_max_position_embeddings`) | 2 — phi-4, Phi-3-mini |
+
+Only the first is a wave in the sense above, and even it is not pure carriage:
+the gated shared expert is a small operator (DeepSeek's ungated
+`n_shared_experts` already lowers — Kimi-Linear is GREEN — but Qwen gates
+the shared branch with a sigmoid), so its forecast must name the operator,
+not the cluster. After those three, every remaining row is in the family or
+the real-semantics class, and the third class is where engineering time
+should start to go: multi-token prediction (22 rows), the sparse indexer
+(7, all AMBER by design), SSM and conv mixers (16), quantised representations
+(22).
 
 ## Caveats
 
