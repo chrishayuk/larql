@@ -72,6 +72,7 @@ pub mod quality;
 pub mod search_evidence;
 pub mod selection;
 pub mod source_bank;
+pub mod state;
 pub mod statistic;
 
 use std::collections::{BTreeMap, BTreeSet};
