@@ -106,7 +106,7 @@ pub struct TransportContext {
 }
 
 pub fn context(geom: &K3Geometry, p: &ServingPremises, link_gb_s: f64) -> TransportContext {
-    let dense = geom.dense_bytes(p.dense_all_in_bits);
+    let dense = geom.dense_bytes(p.dense_all_in_bits(geom));
     let routed = geom.routed_bytes_per_position();
     let link = link_gb_s * 1e9;
     TransportContext {
@@ -199,6 +199,7 @@ pub fn kill_table(
 
 #[cfg(test)]
 mod tests {
+    use super::super::geometry::DENSE_4_25;
     use super::*;
     use crate::commands::primary::k3_ledger::geometry::k3_reference;
 
@@ -207,7 +208,10 @@ mod tests {
     }
 
     fn ctx() -> (TransportContext, ServingPremises) {
-        let p = ServingPremises::default();
+        let p = ServingPremises {
+            dense: DENSE_4_25,
+            ..Default::default()
+        };
         (context(&k3_reference(), &p, 3.5), p)
     }
 

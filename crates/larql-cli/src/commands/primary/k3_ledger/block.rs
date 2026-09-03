@@ -187,7 +187,7 @@ pub fn evaluate(
     let accepted = draft.accepted_at_width(width);
     let union_equivalents = geom.expert_union(width) / geom.top_k as f64;
 
-    let dense = geom.dense_bytes(p.dense_all_in_bits) * reuse.dense;
+    let dense = geom.dense_bytes(p.dense_all_in_bits(geom)) * reuse.dense;
     let routed = geom.routed_bytes_per_position() * p.routed_retention * reuse.routed;
     let bytes_per_pass = dense + routed + state.total(width);
 
@@ -227,7 +227,7 @@ pub fn dense_alone_refuses(
     state: StateTraffic,
     target_tok_s: f64,
 ) -> bool {
-    let dense = geom.dense_bytes(p.dense_all_in_bits) * reuse.dense + state.total(width);
+    let dense = geom.dense_bytes(p.dense_all_in_bits(geom)) * reuse.dense + state.total(width);
     p.budget_per_token(target_tok_s) * accepted <= dense
 }
 
@@ -255,6 +255,7 @@ pub fn sweep<'a>(
 
 #[cfg(test)]
 mod tests {
+    use super::super::geometry::DENSE_4_25;
     use super::*;
     use crate::commands::primary::k3_ledger::geometry::k3_reference;
 
@@ -292,7 +293,14 @@ mod tests {
     fn routed_term_is_carried_not_dropped() {
         // v1's error: scaling the routed-zeroed ceiling by T. Adding routed
         // bytes must always reduce the achievable rate.
-        let (g, p, d) = (k3_reference(), ServingPremises::default(), dspark());
+        let (g, p, d) = (
+            k3_reference(),
+            ServingPremises {
+                dense: DENSE_4_25,
+                ..Default::default()
+            },
+            dspark(),
+        );
         let st = StateTraffic::default();
         let with_routed = evaluate(&g, &p, &d, 4, PhysicalReuse::assumed_ideal(3.9), st, 20.0);
         let without = evaluate(&g, &p, &d, 4, PhysicalReuse::assumed_ideal(0.0), st, 20.0);
@@ -303,7 +311,14 @@ mod tests {
     fn twenty_tok_s_needs_far_more_than_the_withdrawn_block_length() {
         // The withdrawn claim was L ~= 1.6. Carrying the routed term, no width
         // near that reaches the target under banked retention.
-        let (g, p, d) = (k3_reference(), ServingPremises::default(), dspark());
+        let (g, p, d) = (
+            k3_reference(),
+            ServingPremises {
+                dense: DENSE_4_25,
+                ..Default::default()
+            },
+            dspark(),
+        );
         let rows = sweep(&g, &p, &d, &[2, 3, 4], StateTraffic::default(), 20.0);
         for r in &rows {
             assert!(
@@ -317,7 +332,14 @@ mod tests {
 
     #[test]
     fn rho_max_has_an_interior_optimum() {
-        let (g, p, d) = (k3_reference(), ServingPremises::default(), dspark());
+        let (g, p, d) = (
+            k3_reference(),
+            ServingPremises {
+                dense: DENSE_4_25,
+                ..Default::default()
+            },
+            dspark(),
+        );
         let widths: Vec<u32> = (1..=12).collect();
         let rows = sweep(&g, &p, &d, &widths, StateTraffic::default(), 20.0);
         let best = rows
@@ -337,7 +359,14 @@ mod tests {
         // R6: the ideal is an assumption and the record must say so.
         let ideal = PhysicalReuse::assumed_ideal(3.0);
         assert!(!ideal.measured);
-        let (g, p, d) = (k3_reference(), ServingPremises::default(), dspark());
+        let (g, p, d) = (
+            k3_reference(),
+            ServingPremises {
+                dense: DENSE_4_25,
+                ..Default::default()
+            },
+            dspark(),
+        );
         let row = evaluate(&g, &p, &d, 4, ideal, StateTraffic::default(), 20.0);
         assert!(row.rests_on_assumptions);
     }
@@ -346,7 +375,14 @@ mod tests {
     fn a_token_loop_destroys_the_amortisation() {
         // Without grouping and block GEMM, speculation improves orchestration
         // and leaves weight traffic nearly unchanged.
-        let (g, p, d) = (k3_reference(), ServingPremises::default(), dspark());
+        let (g, p, d) = (
+            k3_reference(),
+            ServingPremises {
+                dense: DENSE_4_25,
+                ..Default::default()
+            },
+            dspark(),
+        );
         let st = StateTraffic::default();
         let grouped = evaluate(&g, &p, &d, 6, PhysicalReuse::assumed_ideal(5.74), st, 20.0);
         let looped = evaluate(&g, &p, &d, 6, PhysicalReuse::token_loop(6), st, 20.0);
@@ -357,7 +393,14 @@ mod tests {
     fn state_traffic_lowers_the_optimum_when_it_is_priced() {
         // S(T) scales with width while A(T) saturates, so pricing it must not
         // move the optimum upward.
-        let (g, p, d) = (k3_reference(), ServingPremises::default(), dspark());
+        let (g, p, d) = (
+            k3_reference(),
+            ServingPremises {
+                dense: DENSE_4_25,
+                ..Default::default()
+            },
+            dspark(),
+        );
         let widths: Vec<u32> = (1..=12).collect();
         let best = |st: StateTraffic| {
             sweep(&g, &p, &d, &widths, st, 20.0)
@@ -377,7 +420,13 @@ mod tests {
 
     #[test]
     fn dense_alone_refuses_when_acceptance_is_too_low() {
-        let (g, p) = (k3_reference(), ServingPremises::default());
+        let (g, p) = (
+            k3_reference(),
+            ServingPremises {
+                dense: DENSE_4_25,
+                ..Default::default()
+            },
+        );
         let (r, st) = (PhysicalReuse::assumed_ideal(1.0), StateTraffic::default());
         assert!(dense_alone_refuses(&g, &p, 1.0, 7, r, st, 20.0));
         assert!(!dense_alone_refuses(&g, &p, 3.85, 7, r, st, 20.0));

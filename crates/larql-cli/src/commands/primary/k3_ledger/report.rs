@@ -132,11 +132,16 @@ pub fn touch(geom: &K3Geometry, p: &ServingPremises, a: &TouchArgs, as_json: boo
     header(geom);
     println!();
     println!(
-        "--- per-token touch at {:.2} all-in bits ---",
-        p.dense_all_in_bits
+        "--- per-token touch: dense {:.2} all-in bits [{}] ---",
+        p.dense_all_in_bits(geom),
+        p.dense.label(geom)
     );
     println!(
-        "  dense (irreducible) {:>7.2} GB -> {:>5.1} tok/s",
+        // NOT "irreducible": this 111 GB is exactly what REPRESENT exists to
+        // reduce. What is irreducible is that these operations are ACTIVATED
+        // every token under the current execution graph — a statement about
+        // the graph, never about the representation's byte width.
+        "  dense (always-on, full-read) {:>7.2} GB -> {:>5.1} tok/s",
         l.dense_bytes / 1e9,
         l.tok_s_dense_only
     );
@@ -147,9 +152,62 @@ pub fn touch(geom: &K3Geometry, p: &ServingPremises, a: &TouchArgs, as_json: boo
         l.tok_s_total
     );
     println!();
+    // Two different shares, printed together on purpose. The param share is
+    // representation-independent; the BYTE share is what a bandwidth lever
+    // actually acts on, and they diverge by 28 points on today's K3 because
+    // dense is BF16 and routed is MXFP4. Printing only the first next to a
+    // table of bytes is how a 53.6% reads as though it described traffic.
+    // K3-DENSE-1. The census is the ledger's own answer to "what IS the
+    // dense side", and it is ordered by ACTIVATED bytes — `embed_tokens` is
+    // the joint-largest RESIDENT family and nearly the smallest activated
+    // one, so ordering by footprint would put it at the top of a traffic
+    // report.
+    println!();
     println!(
-        "  dense is {:.1}% of activated params — the LARGER half",
-        100.0 * l.dense_share
+        "--- dense families, by activated bytes/token [{}] ---",
+        p.dense.label(geom)
+    );
+    println!(
+        "  {:<22} {:>9} {:>7} {:>10}  access",
+        "family", "activated", "share", "resident"
+    );
+    for f in &geom.dense_census.families {
+        println!(
+            "  {:<22} {:>7.2} GB {:>6.1}% {:>8.2} GB  {}",
+            f.name,
+            f.activated_bytes() as f64 / 1e9,
+            100.0 * geom.dense_census.activated_share(&f.name),
+            f.resident_bytes() as f64 / 1e9,
+            if f.access.is_full_read() {
+                "full read"
+            } else {
+                "gather"
+            }
+        );
+    }
+    println!(
+        "  {:<22} {:>7.2} GB {:>6} {:>8.2} GB",
+        "TOTAL",
+        geom.dense_census.activated_bytes() as f64 / 1e9,
+        "100.0%",
+        geom.dense_census.resident_bytes() as f64 / 1e9
+    );
+    println!(
+        "  resident exceeds activated by {:.2} GB — the embed table that is \
+         never read in full",
+        (geom.dense_census.resident_bytes() - geom.dense_census.activated_bytes()) as f64 / 1e9
+    );
+    println!(
+        "  layer topology: {} dense + {} MoE = {} (first_k_dense_replace)",
+        geom.topology.n_dense(),
+        geom.topology.n_moe(),
+        geom.topology.n_layers
+    );
+    println!();
+    println!(
+        "  dense is {:.1}% of activated params, and {:.1}% of TODAY'S BYTES",
+        100.0 * l.dense_share,
+        100.0 * l.dense_bytes / l.total_bytes
     );
     println!(
         "  expert-side levers cap at {:.2}x; {:.2}x needed for {} tok/s",
@@ -306,8 +364,10 @@ pub fn frontier(geom: &K3Geometry, p: &ServingPremises, a: &FrontierArgs, as_jso
         println!();
         println!("--- R4 zero-out: routed traffic deleted entirely ---");
         println!(
-            "  dense at {:.2} bits caps decode at {:.1} tok/s",
-            p.dense_all_in_bits, ceiling
+            "  dense at {:.2} bits [{}] caps decode at {:.1} tok/s",
+            p.dense_all_in_bits(geom),
+            p.dense.label(geom),
+            ceiling
         );
         println!("  >> no expert-side experiment can decide any target above {ceiling:.1}");
     }
@@ -1412,5 +1472,135 @@ pub fn formats(as_json: bool) -> R {
         Container::Q6K.all_in_bits() / floor.all_in_bits()
     );
     println!("  Everything below this bar requires approximation, not encoding.");
+    Ok(())
+}
+
+/// `k3-ledger homogeneity` — read every layer's header and witness that
+/// one measured layer represents its family.
+pub fn homogeneity(
+    repo: &super::fetch::Repo,
+    geom: &K3Geometry,
+    a: &super::args::HomogeneityArgs,
+    as_json: bool,
+) -> R {
+    use super::homogeneity::HomogeneityWitness;
+
+    let n = if a.limit == 0 {
+        geom.n_layers
+    } else {
+        a.limit.min(geom.n_layers)
+    };
+    eprintln!("reading {n} layer headers (headers only, no weights)");
+    let mut profiles = Vec::with_capacity(n);
+    for layer in 0..n {
+        profiles.push(super::fetch::layer_profile(repo, &a.shard_template, layer)?);
+        if (layer + 1) % 10 == 0 {
+            eprintln!("  {} / {n}", layer + 1);
+        }
+    }
+    let w = HomogeneityWitness::build(&profiles, &geom.kda_layer_indices, geom.topology);
+
+    if as_json {
+        println!("{}", serde_json::to_string_pretty(&w)?);
+        return Ok(());
+    }
+    println!();
+    println!("--- family homogeneity, from {n} layer headers ---");
+    for f in &w.families {
+        println!(
+            "  {:<16} {:>3} layers, ref layer {:>2}  {}",
+            f.family,
+            f.members,
+            f.reference,
+            if f.is_homogeneous() {
+                "WITNESSED HOMOGENEOUS".to_string()
+            } else {
+                format!("{} DIVERGENCES", f.divergences.len())
+            }
+        );
+        for d in f.divergences.iter().take(5) {
+            println!("      {d:?}");
+        }
+        if let Some(r) = profiles.iter().find(|p| p.index == f.reference) {
+            println!(
+                "      reference layer total {:.2} MB",
+                r.total_bytes() as f64 / 1e6
+            );
+        }
+    }
+    println!();
+    if w.all_homogeneous() {
+        println!(
+            "  VERDICT: the census may multiply ONE measured layer by its family \
+             count — that is now a WITNESSED FACT, not an assumption."
+        );
+    } else {
+        println!(
+            "  VERDICT: {} divergences — the census's per-family multiplication \
+             is NOT sound as stated.",
+            w.divergence_count()
+        );
+    }
+    Ok(())
+}
+
+/// `k3-ledger actions` — K3-ACTIONS-1, the physical action catalogue.
+///
+/// Physical opportunity only. Nothing here is a behavioural claim, and a
+/// `family (CEILING)` row is not something one authority run can decide.
+pub fn actions(geom: &K3Geometry, a: &super::args::ActionsArgs, as_json: bool) -> R {
+    use super::actions::{catalogue, whole_side_ceiling, ActionScope, DENSE_CODECS};
+
+    let cat = catalogue(&geom.dense_census, geom.dense_stored_bits);
+    if as_json {
+        println!("{}", serde_json::to_string_pretty(&cat)?);
+        return Ok(());
+    }
+    header(geom);
+    println!();
+    println!(
+        "--- K3-ACTIONS-1: physical opportunity from {} ---",
+        geom.dense_stored_label
+    );
+    println!("  NO behavioural claim. A CEILING row is not an atomic candidate.");
+    println!();
+    println!(
+        "  {:<18} {:<7} {:<16} {:>10} {:>10}  execution role",
+        "family", "codec", "scope", "activated", "resident"
+    );
+    for act in &cat {
+        if !a.ceilings && act.scope != ActionScope::Layer {
+            continue;
+        }
+        let gb = act.activated_saving() as f64 / 1e9;
+        if gb < a.min_gb && act.scope != ActionScope::Layer {
+            continue;
+        }
+        println!(
+            "  {:<18} {:<7} {:<16} {:>7.2} GB {:>7.2} GB  {}",
+            act.family,
+            act.codec,
+            act.scope.label(),
+            gb,
+            act.resident_saving() as f64 / 1e9,
+            act.role.label()
+        );
+    }
+    let candidates = cat.iter().filter(|a| a.scope.is_atomic_candidate()).count();
+    println!();
+    println!(
+        "  {candidates} atomic candidates (one authority run each); the rest are \
+         CEILINGS that aggregate members which must each earn their own admission"
+    );
+    println!();
+    println!("  --- whole-dense-side ceilings (every family moves AND earns it) ---");
+    for codec in DENSE_CODECS {
+        println!(
+            "  {:<7} {:>7.2} GB/token removed of {:.2} GB dense",
+            codec.name,
+            whole_side_ceiling(&geom.dense_census, geom.dense_stored_bits, codec) as f64 / 1e9,
+            geom.dense_census.activated_bytes() as f64 / 1e9
+        );
+    }
     Ok(())
 }

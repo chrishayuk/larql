@@ -6,6 +6,11 @@
 //!
 //! Module map:
 //!
+//!   access    — HOW a tensor is touched: FullRead / Gather / Routed, plus
+//!               the dense/MoE layer topology. Physical existence is not
+//!               execution touch (pure, gated).
+//!   actions   — K3-ACTIONS-1: the weight-free physical action catalogue.
+//!               Representation is not execution role (pure, gated).
 //!   args      — clap surface (`budget` / `touch` / `frontier` / `block`).
 //!   geometry  — measured checkpoint shape; nothing derived (pure, gated).
 //!   budget    — DEC-8.0 miss budget and read-granularity (pure, gated).
@@ -18,6 +23,8 @@
 //!   freqmass  — frequency-mass coverage: static / adaptive / oracle / null.
 //!               Model-agnostic and symbol-agnostic; grades the resident bank,
 //!               the static slice, and compact-dense with one instrument (pure).
+//!   homogeneity — is ONE measured layer representative of its family?
+//!               Witnesses it from headers before any weight is read (pure).
 //!   kda_a_log — is A_log per-head or per-channel? Fails closed (pure).
 //!   kda_graph — which KDA projections share one input, for rotation (pure).
 //!   scenario  — the premises a `frontier` row is conditional on (pure).
@@ -43,6 +50,8 @@
 //! was arithmetic over correct measurements, so the arithmetic carries unit
 //! tests and the network does not.
 
+pub mod access;
+pub mod actions;
 pub mod args;
 pub mod block;
 pub mod budget;
@@ -57,6 +66,7 @@ pub mod freqmass;
 mod freqmass_tests;
 pub mod frontier;
 pub mod geometry;
+pub mod homogeneity;
 pub mod kda_a_log;
 pub mod kda_graph;
 mod report;
@@ -103,11 +113,17 @@ pub fn run(args: K3LedgerArgs) -> Result<(), Box<dyn std::error::Error>> {
     let premises = frontier::ServingPremises {
         bandwidth_gb_s: args.bandwidth_gb_s,
         dequant_efficiency: args.dequant_efficiency,
+        dense: match args.hypothetical_dense_bits {
+            Some(all_in_bits) => geometry::DensePricing::Hypothetical { all_in_bits },
+            None => geometry::DensePricing::AsStored,
+        },
         ..Default::default()
     };
 
     match &args.cmd {
         args::K3LedgerCmd::Budget(a) => report::budget(&geom, a, args.json),
+        args::K3LedgerCmd::Homogeneity(a) => report::homogeneity(&repo, &geom, a, args.json),
+        args::K3LedgerCmd::Actions(a) => report::actions(&geom, a, args.json),
         args::K3LedgerCmd::Touch(a) => report::touch(&geom, &premises, a, args.json),
         args::K3LedgerCmd::Frontier(a) => report::frontier(&geom, &premises, a, args.json),
         args::K3LedgerCmd::Block(a) => report::block(&geom, &premises, a, args.json),

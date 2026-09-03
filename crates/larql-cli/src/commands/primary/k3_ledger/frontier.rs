@@ -10,7 +10,7 @@
 
 use serde::{Deserialize, Serialize};
 
-use super::geometry::{BitConvention, K3Geometry, MXFP4_PAYLOAD_BITS};
+use super::geometry::{BitConvention, DensePricing, K3Geometry, MXFP4_PAYLOAD_BITS};
 
 /// Measured attainable bandwidth, not spec sheet (`project_memory_bandwidth_roofline`).
 pub const BW_GPU_GB_S: f64 = 367.0;
@@ -29,7 +29,9 @@ pub struct ServingPremises {
     /// the MXFP4 kernel bench (DEC-8.8). The banked Q4K band is 0.74-0.86.
     pub dequant_efficiency: f64,
     pub routed_retention: f64,
-    pub dense_all_in_bits: f64,
+    /// How the dense side is priced. Defaults to the checkpoint's own
+    /// representation; a hypothetical must be asked for and is labelled.
+    pub dense: DensePricing,
 }
 
 impl Default for ServingPremises {
@@ -38,7 +40,7 @@ impl Default for ServingPremises {
             bandwidth_gb_s: BW_GPU_GB_S,
             dequant_efficiency: 1.0,
             routed_retention: 2.0 / 3.0,
-            dense_all_in_bits: 4.25,
+            dense: DensePricing::AsStored,
         }
     }
 }
@@ -47,6 +49,12 @@ impl ServingPremises {
     /// Bytes per second actually available.
     pub fn effective_bw(&self) -> f64 {
         self.bandwidth_gb_s * 1e9 * self.dequant_efficiency
+    }
+
+    /// All-in bits the dense side is priced at, resolved against the
+    /// checkpoint.
+    pub fn dense_all_in_bits(&self, geom: &K3Geometry) -> f64 {
+        self.dense.all_in_bits(geom)
     }
 
     /// Bytes a token may read at `target` tokens/second.
@@ -129,7 +137,7 @@ pub fn frontier_row(geom: &K3Geometry, p: &ServingPremises, target: f64) -> Fron
 /// target, that lever cannot decide the target — however good its result. One
 /// division, run before an experiment is designed.
 pub fn expert_side_ceiling_tok_s(geom: &K3Geometry, p: &ServingPremises) -> f64 {
-    p.effective_bw() / geom.dense_bytes(p.dense_all_in_bits)
+    p.effective_bw() / geom.dense_bytes(p.dense_all_in_bits(geom))
 }
 
 /// Whether an expert-side experiment could decide `target` at all.
@@ -143,6 +151,7 @@ pub fn frontier(geom: &K3Geometry, p: &ServingPremises, targets: &[f64]) -> Vec<
 
 #[cfg(test)]
 mod tests {
+    use super::super::geometry::DENSE_4_25;
     use super::*;
     use crate::commands::primary::k3_ledger::geometry::k3_reference;
 
@@ -153,13 +162,25 @@ mod tests {
     #[test]
     fn expert_side_ceiling_is_the_governing_constant() {
         // 12.3 tok/s with dense at 4-bit: no expert-side result can exceed it.
-        let ceiling = expert_side_ceiling_tok_s(&k3_reference(), &ServingPremises::default());
+        let ceiling = expert_side_ceiling_tok_s(
+            &k3_reference(),
+            &ServingPremises {
+                dense: DENSE_4_25,
+                ..Default::default()
+            },
+        );
         approx(ceiling, 12.3, 0.2);
     }
 
     #[test]
     fn r4_refuses_twenty_tok_s_for_every_expert_side_lever() {
-        let (g, p) = (k3_reference(), ServingPremises::default());
+        let (g, p) = (
+            k3_reference(),
+            ServingPremises {
+                dense: DENSE_4_25,
+                ..Default::default()
+            },
+        );
         assert!(!expert_side_can_decide(&g, &p, 20.0));
         assert!(!expert_side_can_decide(&g, &p, 14.0));
         assert!(expert_side_can_decide(&g, &p, 8.0));
@@ -184,13 +205,26 @@ mod tests {
 
     #[test]
     fn twenty_tok_s_is_not_a_quantisation_problem() {
-        let row = frontier_row(&k3_reference(), &ServingPremises::default(), 20.0);
+        let row = frontier_row(
+            &k3_reference(),
+            &ServingPremises {
+                dense: DENSE_4_25,
+                ..Default::default()
+            },
+            20.0,
+        );
         assert_eq!(row.verdict, DenseVerdict::NewModelProgramme);
     }
 
     #[test]
     fn the_ladder_separates_into_difficulty_classes() {
-        let (g, p) = (k3_reference(), ServingPremises::default());
+        let (g, p) = (
+            k3_reference(),
+            ServingPremises {
+                dense: DENSE_4_25,
+                ..Default::default()
+            },
+        );
         let rows = frontier(&g, &p, &[8.0, 10.0, 12.0, 14.0, 20.0]);
         let verdicts: Vec<_> = rows.iter().map(|r| r.verdict).collect();
         // Under the BANKED up-fold retention (2/3). These are harsher than the
@@ -205,7 +239,13 @@ mod tests {
 
     #[test]
     fn requirement_tightens_monotonically_with_the_target() {
-        let (g, p) = (k3_reference(), ServingPremises::default());
+        let (g, p) = (
+            k3_reference(),
+            ServingPremises {
+                dense: DENSE_4_25,
+                ..Default::default()
+            },
+        );
         let rows = frontier(&g, &p, &[6.0, 8.0, 10.0, 12.0, 14.0, 20.0]);
         for w in rows.windows(2) {
             assert!(w[1].payload_bits < w[0].payload_bits);
@@ -217,7 +257,10 @@ mod tests {
         // The banked Metal band is 0.74-0.86, so this is not hypothetical: the
         // 10 tok/s row moves from credible-3-bit to serious-stretch-2-bit.
         let g = k3_reference();
-        let ideal = ServingPremises::default();
+        let ideal = ServingPremises {
+            dense: DENSE_4_25,
+            ..Default::default()
+        };
         let real = ServingPremises {
             dequant_efficiency: 0.80,
             ..Default::default()
@@ -236,7 +279,10 @@ mod tests {
     #[test]
     fn retention_defaults_to_the_banked_up_fold_not_to_one_point_eight_seven() {
         // Regression guard: 1.87 was the R4 zero-out ratio wearing the wrong hat.
-        let p = ServingPremises::default();
+        let p = ServingPremises {
+            dense: DENSE_4_25,
+            ..Default::default()
+        };
         approx(
             p.routed_retention,
             k3_reference().up_fold_retention(),
