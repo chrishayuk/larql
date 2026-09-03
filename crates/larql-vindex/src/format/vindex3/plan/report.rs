@@ -57,6 +57,17 @@ pub const PLAN_SCHEMA: u32 = 6;
 /// `plan/tests/identity.rs` pins fixture verdicts against this value, so
 /// a change that flips one fails there until the version is bumped.
 ///
+/// **7** — `partial_rotary_factor` is read from inside `rope_parameters`,
+/// the transformers-5.x flat form and the only spelling every Qwen3.5
+/// checkpoint uses. The parser read the legacy top-level key and Gemma 4's
+/// per-layer-type block, so Qwen3.8 (which writes both) resolved while
+/// Qwen3.5 lost its fraction: no layer carried one, the partial and
+/// multi-axis rotary probes answered nothing, and three leaves refused a
+/// family whose text path this build executes. Precedence now mirrors
+/// `standardize_rope_params`: top level, then per-type block, then flat
+/// block. Forecast before the code: three Qwen3.5 dense rows admissible,
+/// three Qwen3.5 MoE rows from six blockers to three, nothing else moves.
+///
 /// **6** — a declaration a companion switch turns off is inert. Qwen2.5
 /// ships `sliding_window: 32768` beside `use_sliding_window: false`; the
 /// graph carries no window, which agrees with the checkpoint, and the
@@ -94,7 +105,7 @@ pub const PLAN_SCHEMA: u32 = 6;
 /// architectures, now block instead of passing silently into
 /// `GenericArch`'s Llama-shaped defaults. Measured on the conformance
 /// corpus: 15 of 42 declared `model_type` strings, across 30 checkpoints.
-pub const PLANNER_SEMANTICS_VERSION: u32 = 6;
+pub const PLANNER_SEMANTICS_VERSION: u32 = 7;
 
 /// Who judged a plan.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]

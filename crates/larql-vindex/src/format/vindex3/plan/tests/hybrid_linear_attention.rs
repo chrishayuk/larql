@@ -477,6 +477,58 @@ fn the_rotary_facts_are_carried_into_the_position_policy() {
     }
 }
 
+/// **The real Qwen3.5 shape: the fraction is declared under
+/// `rope_parameters` only, and it must still lower — with its mrope.**
+///
+/// `hybrid_findings` mirrors Qwen3.8, which writes the fraction at both
+/// spots. Every Qwen3.5 checkpoint (0.8B through 397B-A17B) writes only
+/// the nested one, and until wave 8 the parser read only the flat one:
+/// no layer carried a rotary fraction, `probe_partial_rotary_factor` and
+/// `mrope_of` both answered `None`, and three leaves refused a family
+/// whose text path this build executes. The reference reads the nested
+/// spelling (`rope_parameters_dict.get("partial_rotary_factor", 1.0)`),
+/// so this is a carriage gap on the parser side of the boundary, not a
+/// new position policy.
+#[test]
+fn the_nested_only_partial_rotary_spelling_lowers_with_its_mrope() {
+    let dir = tempfile::tempdir().unwrap();
+    let inventory = glimmer_shaped_target_with(dir.path(), |config| {
+        declare_hybrid_cadence(config);
+        declare_gated_delta_geometry(config);
+        config["text_config"]["attn_output_gate"] = serde_json::json!(true);
+        config["text_config"]["output_gate_type"] = serde_json::json!("swish");
+        // Same closing geometry as `hybrid_findings`, nested spelling only.
+        config["text_config"]["rope_parameters"]["partial_rotary_factor"] = serde_json::json!(0.5);
+        config["text_config"]["rope_parameters"]["mrope_interleaved"] = serde_json::json!(true);
+        config["text_config"]["rope_parameters"]["mrope_section"] = serde_json::json!([1, 1, 0]);
+    });
+    let findings: Vec<PlannedFinding> = plan_system(&[("target-artifact".to_string(), inventory)])
+        .artifacts
+        .into_iter()
+        .flat_map(|a| a.findings)
+        .collect();
+    assert!(
+        !findings
+            .iter()
+            .any(|f| f.subject == "text_config.partial_rotary_factor"),
+        "the fixture must not declare the flat spelling, or it proves nothing"
+    );
+    for subject in [
+        "text_config.rope_parameters.partial_rotary_factor",
+        "text_config.rope_parameters.mrope_section",
+        "text_config.rope_parameters.mrope_interleaved",
+    ] {
+        let finding = finding_for(&findings, subject);
+        assert_eq!(
+            finding.category,
+            FindingCategory::Representable,
+            "{subject}: {}",
+            finding.detail
+        );
+        assert!(!finding.blocks(), "{subject}");
+    }
+}
+
 /// **The value-sensitive half.** Two spellings of the partial rotary that
 /// DISAGREE must block, even though both parse.
 ///

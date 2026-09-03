@@ -35,5 +35,39 @@
   "any Qwen3.5 dense row staying red \u2014 would mean the mrope identity does not close on this head geometry",
   "BUG > 0"
  ],
- "engine_note": "Outside VINDEX3 this is a fail-open wrong answer: the engine path would rotate all 256 head dims of a Qwen3.5 layer instead of 64. VINDEX3 refuses; the engine does not. The fix lands in the shared parser so both doors read the reference's spelling."
+ "engine_note": "Outside VINDEX3 this is a fail-open wrong answer: the engine path would rotate all 256 head dims of a Qwen3.5 layer instead of 64. VINDEX3 refuses; the engine does not. The fix lands in the shared parser so both doors read the reference's spelling.",
+ "result": {
+  "scored_on": "2026-09-03",
+  "outcome_semantics_version": 7,
+  "predicted_clears": 3,
+  "actual_clears": 3,
+  "hit": [
+   "Qwen/Qwen3.5-0.8B",
+   "Qwen/Qwen3.5-9B",
+   "Qwen/Qwen3.5-27B"
+  ],
+  "missed": [],
+  "unpredicted": [],
+  "regressions": [],
+  "rows_whose_blocker_count_changed": {
+   "Qwen/Qwen3.5-0.8B": "3 -> 0",
+   "Qwen/Qwen3.5-9B": "3 -> 0",
+   "Qwen/Qwen3.5-27B": "3 -> 0",
+   "Qwen/Qwen3.5-35B-A3B": "6 -> 3",
+   "Qwen/Qwen3.5-122B-A10B": "6 -> 3",
+   "Qwen/Qwen3.5-397B-A17B": "6 -> 3"
+  },
+  "after": {
+   "GREEN": 31,
+   "AMBER": 7,
+   "RED": 71,
+   "BUG": 0,
+   "silent_drops": 0,
+   "text_closure_blockers": 1091
+  },
+  "predicted_after_matched": true,
+  "verdict": "EXACT \u2014 every arm, including the three rows predicted to stay red at exactly 3 and the three declared-but-unmoved rows (Flash-Next, Nemotron, GLM-4.7).",
+  "controls": "Both new tests (larql-models nested-only parse; larql-vindex nested-only lowering) were run BEFORE the parser change and failed with the corpus's own message: `rule claims lowered ... but no built component answered the probe`. After the change both pass. Full sweep re-planned all 117 rows on the semantics-7 binary in 43 s.",
+  "fix_as_landed": "detect/parser.rs: precedence top level -> rope_parameters.full_attention -> rope_parameters, mirroring standardize_rope_params (the reference copies the top-level key INTO the block, overwriting). Pinned by `the_flat_partial_rotary_spelling_overrides_the_nested_one`."
+ }
 }
