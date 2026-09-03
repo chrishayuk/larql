@@ -71,7 +71,9 @@
 //! collapses them; explanation does not.
 
 pub mod action_space;
+pub mod allocation;
 pub mod assess;
+pub mod authority;
 pub mod candidate;
 pub mod evidence_bank;
 pub mod graph;
