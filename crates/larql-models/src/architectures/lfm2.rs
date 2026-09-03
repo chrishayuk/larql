@@ -97,3 +97,55 @@ impl ModelArchitecture for Lfm2Arch {
         "model.embedding_norm.weight"
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn arch(model_type: &str) -> Box<dyn ModelArchitecture> {
+        crate::detect_from_json(&serde_json::json!({
+            "model_type": model_type,
+            "hidden_size": 1024,
+            "num_hidden_layers": 16,
+            "intermediate_size": 4608,
+            "num_attention_heads": 16,
+            "num_key_value_heads": 8,
+            "vocab_size": 65536,
+            "norm_eps": 1e-05,
+            "full_attn_idxs": [2, 5, 8, 10, 12, 14]
+        }))
+    }
+
+    /// Every spelling this entry carries, exercised. Each differs from
+    /// the Llama default it replaces, and a spelling nothing reads is a
+    /// spelling nothing is checking.
+    #[test]
+    fn every_dialect_spelling_is_readable() {
+        let a = arch("lfm2");
+        assert_eq!(a.family(), "lfm2");
+        assert_eq!(a.config().hidden_size, 1024);
+        assert_eq!(a.qk_norm_scope(), QkNormScope::PerHead);
+        assert_eq!(
+            a.attn_q_norm_key(2).as_deref(),
+            Some("layers.2.self_attn.q_layernorm.weight")
+        );
+        assert_eq!(
+            a.attn_k_norm_key(2).as_deref(),
+            Some("layers.2.self_attn.k_layernorm.weight")
+        );
+        assert_eq!(a.attn_o_key(2), "layers.2.self_attn.out_proj.weight");
+        assert_eq!(a.ffn_gate_key(2), "layers.2.feed_forward.w1.weight");
+        assert_eq!(a.ffn_up_key(2), "layers.2.feed_forward.w3.weight");
+        assert_eq!(a.ffn_down_key(2), "layers.2.feed_forward.w2.weight");
+        assert_eq!(a.final_norm_key(), "model.embedding_norm.weight");
+        // `norm_eps`, not `rms_norm_eps`.
+        assert!((a.norm_eps() - 1e-5).abs() < 1e-12);
+    }
+
+    /// The MoE generation reaches the same entry and keeps its own label,
+    /// so a report says which one it is describing.
+    #[test]
+    fn the_moe_generation_keeps_its_own_label() {
+        assert_eq!(arch("lfm2_moe").family(), "lfm2_moe");
+    }
+}

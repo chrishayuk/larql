@@ -68,3 +68,50 @@ impl ModelArchitecture for Exaone4Arch {
         qk_norm::k(&self.layer_prefix(layer))
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn arch(model_type: &str) -> Box<dyn ModelArchitecture> {
+        crate::detect_from_json(&serde_json::json!({
+            "model_type": model_type,
+            "hidden_size": 2048,
+            "num_hidden_layers": 30,
+            "intermediate_size": 4096,
+            "num_attention_heads": 32,
+            "num_key_value_heads": 8,
+            "head_dim": 64,
+            "rms_norm_eps": 1e-05,
+            "vocab_size": 102400
+        }))
+    }
+
+    /// Every accessor this entry declares, exercised. Each is a fact read
+    /// from `Exaone4Attention`/`Exaone4Config`, and a fact nothing reads
+    /// is a fact nothing is checking.
+    #[test]
+    fn every_declared_fact_is_readable() {
+        let a = arch("exaone4");
+        assert_eq!(a.family(), "exaone4");
+        assert_eq!(a.config().hidden_size, 2048);
+        assert_eq!(a.qk_norm_scope(), QkNormScope::PerHead);
+        assert_eq!(
+            a.attn_q_norm_key(3).as_deref(),
+            Some("layers.3.self_attn.q_norm.weight")
+        );
+        assert_eq!(
+            a.attn_k_norm_key(3).as_deref(),
+            Some("layers.3.self_attn.k_norm.weight")
+        );
+        // `Exaone4Config.rms_norm_eps` defaults to 1e-5, not Llama's 1e-6.
+        assert!((a.default_norm_eps() - 1e-5).abs() < 1e-12);
+    }
+
+    /// The nested spelling every released 4.5 checkpoint declares reaches
+    /// the same entry and reports its own label.
+    #[test]
+    fn the_nested_spelling_keeps_its_own_label() {
+        assert_eq!(arch("exaone4_5_text").family(), "exaone4_5_text");
+    }
+}

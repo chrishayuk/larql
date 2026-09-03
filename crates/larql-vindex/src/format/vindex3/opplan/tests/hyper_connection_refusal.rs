@@ -173,3 +173,35 @@ fn a_partial_declaration_refuses_rather_than_defaulting_to_one_stream() {
         incomplete.missing
     );
 }
+
+/// The two refusal defects must READ differently, because they mean
+/// opposite things to whoever acts on them: one says a value is missing,
+/// the other that an operator is. A reader who cannot tell them apart
+/// cannot tell "go and find the number" from "go and write the code".
+#[test]
+fn the_two_refusal_defects_do_not_read_alike() {
+    use crate::format::vindex3::opplan::ClosureDefect;
+
+    let unimplemented = ClosureDefect::UnimplementedSemantic {
+        component: "target".to_string(),
+        fact: "residual topology (4 parallel streams)".to_string(),
+        representable_as: "ResidualTopology::HyperConnection".to_string(),
+    };
+    let unjudged = ClosureDefect::UnjudgedSemantic {
+        component: "target".to_string(),
+        fact: "post-norm epsilon".to_string(),
+        required_by: "four-norm placement".to_string(),
+    };
+
+    let a = unimplemented.to_string();
+    let b = unjudged.to_string();
+    assert_ne!(a, b);
+    // The unimplemented one says the representation is FINE and the
+    // lowering is what is missing.
+    assert!(a.contains("representable"), "{a}");
+    assert!(a.contains("no lowering"), "{a}");
+    assert!(a.contains("ResidualTopology::HyperConnection"), "{a}");
+    // The unjudged one says nothing established the value.
+    assert!(!b.contains("representable"), "{b}");
+    assert!(b.contains("post-norm epsilon"), "{b}");
+}
