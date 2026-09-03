@@ -174,9 +174,20 @@ impl Serialize for Role {
 }
 
 impl<'de> Deserialize<'de> for Role {
+    /// Read through `Cow`, not `&str`.
+    ///
+    /// `&str` demands a BORROWED string and so only works for a
+    /// deserializer reading from a buffer it can borrow out of —
+    /// `from_str`, `from_slice`. It fails on every owning one:
+    /// `serde_json::from_value`, `from_reader`, and any binary format.
+    /// A role that could only survive one transport would put an
+    /// arbitrary limit on where a precision map may travel, and the
+    /// symptom is an unhelpful `invalid type: string, expected a
+    /// borrowed string` far from the cause. `Cow` still borrows where
+    /// borrowing is possible.
     fn deserialize<D: serde::Deserializer<'de>>(d: D) -> Result<Self, D::Error> {
-        let s = <&str as Deserialize>::deserialize(d)?;
-        Role::parse(s).ok_or_else(|| {
+        let s = <std::borrow::Cow<'de, str> as Deserialize>::deserialize(d)?;
+        Role::parse(&s).ok_or_else(|| {
             serde::de::Error::custom(format!(
                 "`{s}` is not a role; a precision map naming it cannot be resolved"
             ))

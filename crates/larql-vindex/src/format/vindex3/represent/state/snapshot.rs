@@ -58,15 +58,32 @@ use std::collections::BTreeMap;
 
 use serde::{Deserialize, Serialize};
 
+use std::collections::BTreeSet;
+
+use super::super::assessment::{CandidateAssessment, EvidenceContext};
+use super::super::byte_ledger::ByteLedger;
 use super::super::constraint::{ConstraintVector, Margin};
+use super::super::decision::SearchCandidate;
+use super::super::diagnostic::{DiagnosticPolicy, DiagnosticVector};
+use super::super::execution_cost::{CostRefusal, ExecutionCostModel};
+use super::super::map::PrecisionMap;
 use super::super::measurement::{EvidenceScale, TailSupportPolicy};
+use super::super::participation::ParticipationDeclaration;
+use super::super::promotion::PromotionCandidate;
+use super::super::quality::QualityBank;
 use super::super::quality::QualityGate;
-use super::assess::ParentStanding;
+use super::super::search_evidence::SearchCalibrationRegistry;
+use super::action_space::ActionVocabulary;
+use super::assess::{ParentStanding, RankingSemantics};
+use super::candidate::{Footprint, Generator, MeasurementIntent};
 use super::graph::RepresentationStateGraph;
 use super::identity::RepresentationStateId;
 use super::key::{MeasurementKey, MeasurementRegistry};
 use super::realization::LogicalBytes;
+use super::resolved::LayoutAdmission;
+use super::search_policy::{BestFirst, Selection};
 use super::semantics::{SearchSemantics, SearchSemanticsId};
+use super::surface::TensorSurface;
 use crate::error::VindexError;
 
 /// The snapshot format version.
@@ -176,39 +193,85 @@ impl FrontierEntry {
     }
 }
 
+/// **What the search is over**: the model's surface and the moves that
+/// exist at all.
+///
+/// The vocabulary belongs here and not in the policy: R5-F6 was a
+/// vocabulary failure, not a ranking failure, and no policy can recover
+/// a state whose move was never declared.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct SearchSpace {
+    pub surface: TensorSurface,
+    /// The map every applied set is layered onto.
+    pub base_map: PrecisionMap,
+    pub vocabulary: ActionVocabulary,
+}
+
+/// **How facts become conclusions.** Every field is a rule or a
+/// threshold; none is an outcome.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct SearchConfig {
+    pub objective: Objective,
+    /// The frozen behavioural contract conclusions are drawn against.
+    pub gate: QualityGate,
+    pub tail_support: TailSupportPolicy,
+    /// What this programme has learned about its own instruments — the
+    /// `SearchEvidence` ladder's registrations.
+    pub calibrations: SearchCalibrationRegistry,
+    /// Which statistics a diagnostic reads, and for what purpose.
+    pub diagnostic_policy: DiagnosticPolicy,
+    /// The rules the original conclusions were drawn under, so a later
+    /// replay can tell a changed procedure from changed data.
+    pub semantics: SearchSemantics,
+    pub ranking: RankingSemantics,
+}
+
+/// **What has been observed, and what it costs.**
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct SearchFacts {
+    pub graph: RepresentationStateGraph,
+    pub measurements: MeasurementRegistry,
+    /// Per-token reads, per state. NOT [`LogicalBytes`], which is a
+    /// whole-map footprint — the two are different quantities and the
+    /// newtype exists to keep them apart.
+    pub byte_ledgers: BTreeMap<RepresentationStateId, ByteLedger>,
+    /// Measured execution observations, each carrying its machine,
+    /// device, backend and compiler commit. The COST is not stored:
+    /// `ExecutionCostModel::predict` derives it, and its `status()`
+    /// refuses to call the model calibrated until beta has been shown
+    /// across separated breadths.
+    pub execution_cost: ExecutionCostModel,
+}
+
 /// **The persisted scientific state of a search.**
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct SearchSnapshot {
     schema: String,
-    objective: Objective,
-    /// The frozen behavioural contract conclusions are drawn against.
-    gate: QualityGate,
-    tail_support: TailSupportPolicy,
-    /// The rules the original conclusions were drawn under, so a later
-    /// replay can tell a changed procedure from changed data.
-    semantics: SearchSemantics,
-    graph: RepresentationStateGraph,
-    measurements: MeasurementRegistry,
+    space: SearchSpace,
+    config: SearchConfig,
+    facts: SearchFacts,
 }
 
 impl SearchSnapshot {
-    pub fn new(
-        objective: Objective,
-        gate: QualityGate,
-        tail_support: TailSupportPolicy,
-        semantics: SearchSemantics,
-        graph: RepresentationStateGraph,
-        measurements: MeasurementRegistry,
-    ) -> Self {
+    pub fn new(space: SearchSpace, config: SearchConfig, facts: SearchFacts) -> Self {
         Self {
             schema: SNAPSHOT_SCHEMA.into(),
-            objective,
-            gate,
-            tail_support,
-            semantics,
-            graph,
-            measurements,
+            space,
+            config,
+            facts,
         }
+    }
+
+    pub fn space(&self) -> &SearchSpace {
+        &self.space
+    }
+
+    pub fn config(&self) -> &SearchConfig {
+        &self.config
+    }
+
+    pub fn facts(&self) -> &SearchFacts {
+        &self.facts
     }
 
     /// Refuse a snapshot written under another schema.
@@ -229,34 +292,39 @@ impl SearchSnapshot {
     }
 
     pub fn objective(&self) -> Objective {
-        self.objective
+        self.config.objective
     }
 
     pub fn gate(&self) -> &QualityGate {
-        &self.gate
+        &self.config.gate
     }
 
     pub fn tail_support(&self) -> &TailSupportPolicy {
-        &self.tail_support
+        &self.config.tail_support
     }
 
     pub fn semantics(&self) -> &SearchSemantics {
-        &self.semantics
+        &self.config.semantics
     }
 
     /// The rules this snapshot's conclusions were originally drawn
     /// under. A replay whose own semantics differ is answering a
     /// different question, and this is what lets it say so.
     pub fn semantics_id(&self) -> SearchSemanticsId {
-        self.semantics.id()
+        self.config.semantics.id()
     }
 
     pub fn graph(&self) -> &RepresentationStateGraph {
-        &self.graph
+        &self.facts.graph
     }
 
     pub fn measurements(&self) -> &MeasurementRegistry {
-        &self.measurements
+        &self.facts.measurements
+    }
+
+    /// The per-token ledger for one state, where it is held.
+    pub fn ledger(&self, state: &RepresentationStateId) -> Option<&ByteLedger> {
+        self.facts.byte_ledgers.get(state)
     }
 
     // ---------------------------------------------------------- derived
@@ -265,10 +333,10 @@ impl SearchSnapshot {
     /// reading and the stored gate. `None` when no such experiment was
     /// run — a miss, which is a fact about the record and not a failure.
     pub fn adjudicate(&self, key: &MeasurementKey) -> Option<Adjudication> {
-        let observation = self.measurements.get(key)?;
+        let observation = self.facts.measurements.get(key)?;
         Some(Adjudication {
             key: key.clone(),
-            constraints: ConstraintVector::of(&self.gate, observation),
+            constraints: ConstraintVector::of(&self.config.gate, observation),
         })
     }
 
@@ -276,20 +344,21 @@ impl SearchSnapshot {
     /// holds, in state-id order — a stated order, never insertion order.
     pub fn frontier(&self) -> Vec<FrontierEntry> {
         let mut by_state: BTreeMap<&RepresentationStateId, Vec<Adjudication>> = BTreeMap::new();
-        for node in self.graph.nodes() {
+        for node in self.facts.graph.nodes() {
             by_state.entry(node.physical_id()).or_default();
         }
-        for (key, observation) in self
-            .measurements
-            .keys()
-            .filter_map(|k| self.measurements.get(k).map(|observation| (k, observation)))
-        {
+        for (key, observation) in self.facts.measurements.keys().filter_map(|k| {
+            self.facts
+                .measurements
+                .get(k)
+                .map(|observation| (k, observation))
+        }) {
             // A measurement of a state this graph does not hold belongs
             // to another search; it is not this frontier's business.
             if let Some(entry) = by_state.get_mut(key.state()) {
                 entry.push(Adjudication {
                     key: key.clone(),
-                    constraints: ConstraintVector::of(&self.gate, observation),
+                    constraints: ConstraintVector::of(&self.config.gate, observation),
                 });
             }
         }
@@ -298,6 +367,7 @@ impl SearchSnapshot {
             .map(|(state, adjudications)| FrontierEntry {
                 state: state.clone(),
                 logical_bytes: self
+                    .facts
                     .graph
                     .node(state)
                     .expect("every key came from the graph")
@@ -334,5 +404,129 @@ impl SearchSnapshot {
             .filter(|e| !e.measured_at(scale))
             .map(|e| e.state)
             .collect()
+    }
+
+    // ------------------------------------------------ the derivation chain
+
+    /// **The action space, from stored facts.**
+    ///
+    /// `layout` and `footprint` are supplied because they are CODE — a
+    /// layout rule and a pricing routine — not data. Everything the
+    /// generator reads that is a fact or a rule comes from the snapshot:
+    /// the model from the graph, the surface, base map and vocabulary
+    /// from the space, the transition policy from the graph, and the
+    /// measurement registry from the facts.
+    pub fn generator<'a>(
+        &'a self,
+        layout: &'a dyn LayoutAdmission,
+        footprint: &'a dyn Footprint,
+    ) -> Generator<'a> {
+        Generator {
+            model: self.facts.graph.model(),
+            surface: &self.space.surface,
+            base_map: &self.space.base_map,
+            vocabulary: &self.space.vocabulary,
+            layout,
+            footprint,
+            policy: self.facts.graph.policy(),
+            measurements: &self.facts.measurements,
+        }
+    }
+
+    /// The ordering policy this snapshot's conclusions are drawn under.
+    pub fn best_first(&self) -> BestFirst {
+        BestFirst::new(self.config.ranking.clone())
+    }
+
+    /// **What to measure next**, derived end to end from stored facts.
+    pub fn next_experiment(
+        &self,
+        applied: &BTreeSet<String>,
+        intent: &MeasurementIntent,
+        layout: &dyn LayoutAdmission,
+        footprint: &dyn Footprint,
+    ) -> Result<Selection, VindexError> {
+        let set = self
+            .generator(layout, footprint)
+            .candidates(applied, intent)?;
+        Ok(self.best_first().select(&set, self))
+    }
+
+    /// **Promotion, derived from stored facts.**
+    ///
+    /// Builds one [`SearchCandidate`] per measured move and hands the set
+    /// to [`decide_promotion`], which is not reimplemented here: it
+    /// already refuses to scalarise disagreeing proxies, and making this
+    /// convenient is not a reason to weaken it.
+    ///
+    /// **Promotion reads the graph's EDGES, not a candidate set.**
+    ///
+    /// A promotion candidate is a move that has been built and measured;
+    /// the generator prunes exactly those as `AlreadyObserved`, because
+    /// its question is what to try NEXT. Feeding it eligible candidates
+    /// would ask which unmeasured move should replace the incumbent,
+    /// which is not a question any evidence can answer.
+    ///
+    /// A move is only a promotion candidate when BOTH ends carry a
+    /// reading at `scale` and both carry a per-token ledger — the
+    /// marginal quantities are a difference between two predictions, and
+    /// a difference with one end missing is not a smaller number, it is
+    /// no number. Such a move is skipped, not defaulted.
+    pub fn promotion_candidates(
+        &self,
+        scale: EvidenceScale,
+    ) -> Result<Vec<SearchCandidate>, CostRefusal> {
+        let ctx = EvidenceContext {
+            scale,
+            registry: self.config.calibrations.clone(),
+            tail_policy: self.config.tail_support.clone(),
+        };
+        let mut candidates = Vec::new();
+        for edge in self.facts.graph.edges() {
+            let (Some(parent_bank), Some(child_bank)) = (
+                self.reading_of(edge.parent(), scale),
+                self.reading_of(edge.child(), scale),
+            ) else {
+                continue;
+            };
+            let (Some(parent_ledger), Some(child_ledger)) =
+                (self.ledger(edge.parent()), self.ledger(edge.child()))
+            else {
+                continue;
+            };
+            let assessment = CandidateAssessment::of(
+                &ctx,
+                &self.facts.execution_cost,
+                parent_ledger,
+                child_ledger,
+                ConstraintVector::of(&self.config.gate, parent_bank),
+                ConstraintVector::of(&self.config.gate, child_bank),
+            )?;
+            candidates.push(SearchCandidate {
+                id: edge.action().label.clone(),
+                // No proxies: a proxy observation is a registered
+                // finding about an instrument, and none has been
+                // recorded for these statistics. An invented one would
+                // be exactly the magnitude claim ROUTE-CAL-1 refused.
+                promotion: PromotionCandidate::new(assessment, Vec::new()),
+                diagnostic: DiagnosticVector::of(&self.config.diagnostic_policy, child_bank),
+                participation: ParticipationDeclaration::all_affected(),
+            });
+        }
+        Ok(candidates)
+    }
+
+    /// The reading held of one state at one scale, under any bank or
+    /// instrument this snapshot holds.
+    fn reading_of<'a>(
+        &'a self,
+        state: &'a RepresentationStateId,
+        scale: EvidenceScale,
+    ) -> Option<&'a QualityBank> {
+        self.facts
+            .measurements
+            .of_state(state)
+            .find(|(k, _)| k.scale() == scale)
+            .map(|(_, bank)| bank)
     }
 }

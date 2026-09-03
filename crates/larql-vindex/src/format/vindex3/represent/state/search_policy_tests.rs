@@ -8,6 +8,8 @@
 use std::collections::{BTreeMap, BTreeSet};
 
 use super::super::compiler::SourceIdentity;
+use super::super::diagnostic::DiagnosticPolicy;
+use super::super::execution_cost::ExecutionCostModel;
 use super::super::map::{Exception, PrecisionMap};
 use super::super::measurement::{EvidenceScale, TailSupportPolicy};
 use super::super::nvfp4_pack::{PackLayout, DTYPE_NVFP4};
@@ -15,6 +17,7 @@ use super::super::policy::Role;
 use super::super::quality::{
     kimi_logit_balanced_v1, Criterion, Distribution, LogitEvidence, QualityBank, RoutingEvidence,
 };
+use super::super::search_evidence::SearchCalibrationRegistry;
 use super::*;
 
 // ---------------------------------------------------------------- fixtures
@@ -164,6 +167,33 @@ impl Rig {
             .candidates(&applied(from), &intent(scale))
             .expect("generate")
     }
+}
+
+/// A snapshot over the given root and readings, with the same space and
+/// config every test here uses.
+fn snapshot(root: ResolvedState, measurements: MeasurementRegistry) -> SearchSnapshot {
+    SearchSnapshot::new(
+        SearchSpace {
+            surface: surface(),
+            base_map: base_map(),
+            vocabulary: vocabulary(),
+        },
+        SearchConfig {
+            objective: Objective::MinimiseLogicalBytes,
+            gate: kimi_logit_balanced_v1(),
+            tail_support: TailSupportPolicy::route_cal_1(),
+            calibrations: SearchCalibrationRegistry::default(),
+            diagnostic_policy: DiagnosticPolicy::bs2_kimi_v1(),
+            semantics: SearchSemantics::new("g/v1", "p/v1", "e/v1", "pr/v1", "rank/v1", "b/v1"),
+            ranking: semantics(),
+        },
+        SearchFacts {
+            graph: RepresentationStateGraph::new(TransitionPolicy::StrictlyImprovingPhysical, root),
+            measurements,
+            byte_ledgers: BTreeMap::new(),
+            execution_cost: ExecutionCostModel::new(Vec::new()),
+        },
+    )
 }
 
 // ------------------------------------------------------- one answer, always
@@ -567,14 +597,7 @@ fn a_measured_parent_contributes_its_whole_standing_not_a_number() {
             observation(3.3532e-3),
         )
         .expect("record");
-    let snapshot = SearchSnapshot::new(
-        Objective::MinimiseLogicalBytes,
-        kimi_logit_balanced_v1(),
-        TailSupportPolicy::route_cal_1(),
-        SearchSemantics::new("g/v1", "p/v1", "e/v1", "pr/v1", "rank/v1", "b/v1"),
-        RepresentationStateGraph::new(TransitionPolicy::StrictlyImprovingPhysical, parent.clone()),
-        measurements,
-    );
+    let snapshot = snapshot(parent.clone(), measurements);
 
     let set = rig.candidates(&[], EvidenceScale::Diagnostic);
     let assessed = policy.assess(&set, &snapshot);
@@ -606,14 +629,7 @@ fn a_diagnostic_reading_of_the_parent_is_not_its_standing() {
             observation(3.3532e-3),
         )
         .expect("record");
-    let snapshot = SearchSnapshot::new(
-        Objective::MinimiseLogicalBytes,
-        kimi_logit_balanced_v1(),
-        TailSupportPolicy::route_cal_1(),
-        SearchSemantics::new("g/v1", "p/v1", "e/v1", "pr/v1", "rank/v1", "b/v1"),
-        RepresentationStateGraph::new(TransitionPolicy::StrictlyImprovingPhysical, parent),
-        measurements,
-    );
+    let snapshot = snapshot(parent, measurements);
 
     let assessed = policy.assess(&rig.candidates(&[], EvidenceScale::Diagnostic), &snapshot);
     assert!(

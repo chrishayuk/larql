@@ -107,7 +107,10 @@ pub use resolved::{
 };
 pub use search_policy::{BestFirst, MeasurementOpportunity, Selection};
 pub use semantics::{SearchSemantics, SearchSemanticsId, SEARCH_SEMANTICS_ID_VERSION};
-pub use snapshot::{Adjudication, FrontierEntry, Objective, SearchSnapshot, SNAPSHOT_SCHEMA};
+pub use snapshot::{
+    Adjudication, FrontierEntry, Objective, SearchConfig, SearchFacts, SearchSnapshot, SearchSpace,
+    SNAPSHOT_SCHEMA,
+};
 pub use surface::{SurfaceTensor, TensorSurface};
 pub use transition::{Action, Provenance, Transition};
 
@@ -117,6 +120,8 @@ mod candidate_tests;
 mod graph_tests;
 #[cfg(test)]
 mod key_tests;
+#[cfg(test)]
+mod replay_tests;
 #[cfg(test)]
 mod search_policy_tests;
 #[cfg(test)]

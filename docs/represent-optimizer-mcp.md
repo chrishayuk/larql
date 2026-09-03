@@ -1,7 +1,7 @@
 # The LARQL Physical Optimizer — evidence-constrained physical-plan search
 
 **Branch `worktree-represent-optimizer-mcp`, based on `origin/main` at
-`8f647872`.** Stages 1 (a-d), 2 and 3 are implemented and green;
+`8f647872`.** Stages 1 (a-d), 2, 3 and 3b are implemented and green;
 everything below them is design.
 
 The abstraction is not "quantization search". It is **evidence-
@@ -733,6 +733,96 @@ as the parent's standing → 1.
 
 ---
 
+## 4g. Stage 3b — the chain runs from a snapshot (IMPLEMENTED)
+
+`represent/state/{snapshot,replay_tests}.rs`, 7 tests.
+
+```text
+snapshot facts → action space → assessment → ranking → promotion
+```
+
+with none of the intermediates serialised. 1d closed the contract half
+and left promotion open on principle; 3b adds the two **facts** it
+needed rather than the conclusion it lacked.
+
+### Two gaps, both closed by adding inputs
+
+**The snapshot could not produce an action space.** It held
+`{schema, objective, gate, tail_support, semantics, graph, measurements}`
+— no surface, base map or vocabulary — so nothing could build a
+`Generator` from it, and the stage-3 tests assembled candidates from a
+test rig rather than from reloaded facts.
+
+**Promotion needed a per-state `ByteLedger` and an `ExecutionCostModel`.**
+
+The snapshot is now grouped, which makes the doctrine visible in the
+type:
+
+```text
+SearchSpace   surface, base map, vocabulary        what is searched over
+SearchConfig  objective, gate, tail support,       how facts become
+              calibrations, diagnostic policy,     conclusions
+              semantics, ranking
+SearchFacts   graph, measurements, byte ledgers,   what has been observed
+              execution cost                       and what it costs
+```
+
+`ExecutionCostModel` already had the discipline: it stores measured
+*observations*, each carrying machine, device, backend and compiler
+commit, and `predict()` derives the cost while `status()` refuses to
+call the model calibrated until beta has been shown across separated
+breadths. Nothing about a cost is persisted.
+
+### Promotion reads edges, not candidates
+
+The first wiring fed `promotion_candidates` an eligible `CandidateSet`
+and it returned nothing — correctly. **A measured move is exactly what
+the generator prunes**, because its question is what to try *next*.
+Promotion's question is about what has been built and measured, so it
+reads the graph's edges. Feeding it eligible candidates would ask which
+*unmeasured* move should replace the incumbent, which no evidence can
+answer.
+
+A move is a promotion candidate only when both ends carry a reading at
+the scale **and** both carry a ledger. Otherwise it is skipped, not
+defaulted: a marginal quantity with one end missing is not a smaller
+number, it is no number.
+
+`decide_promotion` is called unmodified, and no proxies are invented —
+a `ProxyObservation` is a registered finding about an instrument, and
+none exists for these statistics.
+
+### A real defect the widening surfaced
+
+`Role`'s `Deserialize` read `<&str>`, which demands a **borrowed**
+string. It worked under `serde_json::from_str` and failed under
+`from_value`, `from_reader` and every binary format, with an
+`invalid type: string, expected a borrowed string` far from the cause.
+A `TensorSurface` carries `Role`s, so a snapshot could not round-trip
+through `serde_json::Value` — and an MCP surface will. Fixed to `Cow`,
+which still borrows where borrowing is possible, and tested through
+both an owning and a reader deserializer.
+
+### The anti-cheat survived the widening
+
+Six new fields, every one a fact or a rule, and the structural check
+still holds. It found its second naming collision:
+`config.calibrations[].verdict` is ROUTE-CAL-1 saying how a statistic
+may be used — a registered finding about an *instrument*, not a
+conclusion about a candidate. Exempted by name, so the check stays blunt
+everywhere else, and `ranking_score`, `selection` and `next_experiment`
+were added to the forbidden list.
+
+### What is real and what is a fixture
+
+The recorded rung-5 numbers — kl p99, logical bytes, covered mass — are
+exercised in §4d against the register. 3b tests the *derivation chain*;
+its per-token ledgers and GPU cost observation are **fixtures**, because
+the record holds no measured GPU time for P, T1 or S2. Inventing one and
+calling it recorded would be worse than saying so.
+
+---
+
 ## 5. The reward, which must not be diagnostic KL
 
 Rung 4/5 established that diagnostic KL supplies neither magnitude, sign,
@@ -827,6 +917,7 @@ Deliberately boring, so MCTS is a policy swap and not a rewrite.
 | 1d | Persistent, replayable search state (§4d) | **done** |
 | 2 | Deterministic action generator (§4e) | **done** |
 | 3 | Best-first; the objective API and the search/evidence boundary (§4f) | **done** |
+| 3b | Promotion-input closure — the chain runs from a snapshot (§4g) | **done** |
 | 4 | MCP facade — inspect state, hypotheses, frontier; request experiments | next |
 | 5 | PUCT as another `SearchPolicy`; same states, actions, evidence | |
 | 6 | Extend `PhysicalState` with residency; optimise measured tok/s | |

@@ -27,6 +27,8 @@
 use std::collections::BTreeMap;
 
 use super::super::compiler::SourceIdentity;
+use super::super::diagnostic::DiagnosticPolicy;
+use super::super::execution_cost::ExecutionCostModel;
 use super::super::map::{Exception, PrecisionMap};
 use super::super::measurement::{EvidenceScale, TailSupportPolicy};
 use super::super::nvfp4_pack::DTYPE_NVFP4;
@@ -34,6 +36,7 @@ use super::super::policy::Role;
 use super::super::quality::{
     kimi_logit_balanced_v1, Criterion, Distribution, LogitEvidence, QualityBank, RoutingEvidence,
 };
+use super::super::search_evidence::SearchCalibrationRegistry;
 use super::*;
 
 // ---------------------------------------------------------------- fixtures
@@ -182,6 +185,41 @@ fn key_for(s: &ResolvedState, scale: EvidenceScale) -> MeasurementKey {
     )
 }
 
+/// The space, config and facts a snapshot is built from. Split so the
+/// tests below vary one at a time.
+fn space() -> SearchSpace {
+    SearchSpace {
+        surface: surface(),
+        base_map: map(vec![]),
+        vocabulary: ActionVocabulary::default(),
+    }
+}
+
+fn config() -> SearchConfig {
+    SearchConfig {
+        objective: Objective::MinimiseLogicalBytes,
+        gate: kimi_logit_balanced_v1(),
+        tail_support: TailSupportPolicy::route_cal_1(),
+        calibrations: SearchCalibrationRegistry::default(),
+        diagnostic_policy: DiagnosticPolicy::bs2_kimi_v1(),
+        semantics: semantics(),
+        ranking: RankingSemantics::new(RankingRule::PhysicalPrizeFirst),
+    }
+}
+
+fn facts(graph: RepresentationStateGraph, measurements: MeasurementRegistry) -> SearchFacts {
+    SearchFacts {
+        graph,
+        measurements,
+        byte_ledgers: BTreeMap::new(),
+        execution_cost: ExecutionCostModel::new(Vec::new()),
+    }
+}
+
+fn snapshot(graph: RepresentationStateGraph, measurements: MeasurementRegistry) -> SearchSnapshot {
+    SearchSnapshot::new(space(), config(), facts(graph, measurements))
+}
+
 /// The Rung 5 record, as FACTS: which states exist, how they were
 /// reached, and what was observed of them. No verdicts.
 fn rung5_snapshot() -> SearchSnapshot {
@@ -222,14 +260,7 @@ fn rung5_snapshot() -> SearchSnapshot {
             .expect("record");
     }
 
-    SearchSnapshot::new(
-        Objective::MinimiseLogicalBytes,
-        kimi_logit_balanced_v1(),
-        TailSupportPolicy::route_cal_1(),
-        semantics(),
-        graph,
-        measurements,
-    )
+    snapshot(graph, measurements)
 }
 
 /// Store it, throw the in-memory object away, and read it back. Every
@@ -348,14 +379,7 @@ fn the_objective_orders_the_admitted_set_and_ties_break_deterministically() {
             )
             .expect("record");
     }
-    let snap = SearchSnapshot::new(
-        Objective::MinimiseLogicalBytes,
-        kimi_logit_balanced_v1(),
-        TailSupportPolicy::route_cal_1(),
-        semantics(),
-        graph,
-        measurements,
-    );
+    let snap = snapshot(graph, measurements);
 
     let admitted = snap.admitted();
     assert_eq!(admitted.len(), 2);
@@ -379,11 +403,7 @@ fn an_authority_pass_admits_and_a_diagnostic_pass_does_not() {
             authority_reading(3.3532e-3, 1427),
         )
         .expect("record");
-    let snap = SearchSnapshot::new(
-        Objective::MinimiseLogicalBytes,
-        kimi_logit_balanced_v1(),
-        TailSupportPolicy::route_cal_1(),
-        semantics(),
+    let snap = snapshot(
         RepresentationStateGraph::new(TransitionPolicy::StrictlyImprovingPhysical, p()),
         measurements,
     );
@@ -451,18 +471,27 @@ fn the_stored_form_carries_no_conclusion() {
 
     // And the facts ARE there, so the emptiness above is not vacuous.
     assert_eq!(json["schema"], SNAPSHOT_SCHEMA);
-    assert_eq!(json["objective"], "MinimiseLogicalBytes");
-    assert_eq!(json["gate"]["id"], "kimi-logit-balanced-v1");
-    assert_eq!(json["graph"]["policy"], "StrictlyImprovingPhysical");
-    assert_eq!(json["graph"]["nodes"].as_object().expect("nodes").len(), 4);
+    assert_eq!(json["config"]["objective"], "MinimiseLogicalBytes");
+    assert_eq!(json["config"]["gate"]["id"], "kimi-logit-balanced-v1");
     assert_eq!(
-        json["measurements"]["observations"]
+        json["facts"]["graph"]["policy"],
+        "StrictlyImprovingPhysical"
+    );
+    assert_eq!(
+        json["facts"]["graph"]["nodes"]
+            .as_object()
+            .expect("nodes")
+            .len(),
+        4
+    );
+    assert_eq!(
+        json["facts"]["measurements"]["observations"]
             .as_array()
             .expect("observations")
             .len(),
         3
     );
-    assert!(json["semantics"]["promotion_rule"].is_string());
+    assert!(json["config"]["semantics"]["promotion_rule"].is_string());
 }
 
 // ------------------------------------------------- decision-procedure drift
@@ -560,11 +589,7 @@ fn a_measurement_of_a_state_this_graph_does_not_hold_is_not_this_frontier() {
             authority_reading(1.0e-3, 10),
         )
         .expect("record");
-    let snap = SearchSnapshot::new(
-        Objective::MinimiseLogicalBytes,
-        kimi_logit_balanced_v1(),
-        TailSupportPolicy::route_cal_1(),
-        semantics(),
+    let snap = snapshot(
         RepresentationStateGraph::new(TransitionPolicy::StrictlyImprovingPhysical, p()),
         measurements,
     );
