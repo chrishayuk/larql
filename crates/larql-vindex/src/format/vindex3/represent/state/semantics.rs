@@ -59,7 +59,7 @@ impl std::fmt::Display for SearchSemanticsId {
     }
 }
 
-/// The five decision procedures between a fact and a conclusion.
+/// The six decision procedures between a fact and a conclusion.
 ///
 /// Named separately because they change independently and for different
 /// reasons — Ruling 1 rewrote pruning without touching evidence
@@ -69,8 +69,8 @@ impl std::fmt::Display for SearchSemanticsId {
 pub struct SearchSemantics {
     /// How candidate states are proposed.
     pub candidate_generation: String,
-    /// What may be pruned before it is measured. Ruling 1's list of
-    /// four, and no fifth.
+    /// What may be pruned before it is measured. Ruling 1's three
+    /// usable categories, and no fourth.
     pub pre_measurement_pruning: String,
     /// How a statistic may be used — the `SearchEvidence` ladder.
     pub evidence_interpretation: String,
@@ -82,6 +82,11 @@ pub struct SearchSemantics {
     /// be mistaken for a decision. The name is the disambiguation, so
     /// the check can stay blunt instead of growing an exemption.
     pub promotion_rule: String,
+    /// How eligible candidates are ordered for measurement — the
+    /// `RankingSemanticsId` in force. Separate from `promotion_rule`
+    /// because the two answer different questions: which experiment has
+    /// priority, and which candidate may replace the incumbent.
+    pub ranking_rule: String,
     /// How bytes are counted.
     pub physical_accounting: String,
 }
@@ -92,6 +97,7 @@ impl SearchSemantics {
         pre_measurement_pruning: impl Into<String>,
         evidence_interpretation: impl Into<String>,
         promotion: impl Into<String>,
+        ranking: impl Into<String>,
         physical_accounting: impl Into<String>,
     ) -> Self {
         Self {
@@ -99,6 +105,7 @@ impl SearchSemantics {
             pre_measurement_pruning: pre_measurement_pruning.into(),
             evidence_interpretation: evidence_interpretation.into(),
             promotion_rule: promotion.into(),
+            ranking_rule: ranking.into(),
             physical_accounting: physical_accounting.into(),
         }
     }
@@ -107,11 +114,12 @@ impl SearchSemantics {
     pub fn id(&self) -> SearchSemanticsId {
         let input = format!(
             "{SEARCH_SEMANTICS_ID_VERSION}{SECTION}generation={}{FIELD}pruning={}{FIELD}\
-             evidence={}{FIELD}promotion={}{FIELD}physical={}",
+             evidence={}{FIELD}promotion={}{FIELD}ranking={}{FIELD}physical={}",
             self.candidate_generation,
             self.pre_measurement_pruning,
             self.evidence_interpretation,
             self.promotion_rule,
+            self.ranking_rule,
             self.physical_accounting
         );
         SearchSemanticsId(hash_bytes(input.as_bytes()))

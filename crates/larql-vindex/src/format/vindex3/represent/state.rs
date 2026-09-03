@@ -71,6 +71,7 @@
 //! collapses them; explanation does not.
 
 pub mod action_space;
+pub mod assess;
 pub mod candidate;
 pub mod evidence_bank;
 pub mod graph;
@@ -79,12 +80,17 @@ pub mod instrument;
 pub mod key;
 pub mod realization;
 pub mod resolved;
+pub mod search_policy;
 pub mod semantics;
 pub mod snapshot;
 pub mod surface;
 pub mod transition;
 
 pub use action_space::{ActionVocabulary, MapEdit};
+pub use assess::{
+    Assessment, NothingMeasured, ParentStanding, RankingRule, RankingSemantics, RankingSemanticsId,
+    Score, RANKING_SEMANTICS_ID_VERSION,
+};
 pub use candidate::{
     Candidate, CandidateDisposition, CandidateSet, Census, Footprint, Generator, MeasurementIntent,
     PreMeasurementPrune,
@@ -99,6 +105,7 @@ pub use resolved::{
     resolve, LayoutAdmission, NoLayoutConstraint, PackLayoutAdmission, ResolvedDecision,
     ResolvedDecisionVector, ResolvedEncoding, SOURCE_PRECISION,
 };
+pub use search_policy::{BestFirst, MeasurementOpportunity, Selection};
 pub use semantics::{SearchSemantics, SearchSemanticsId, SEARCH_SEMANTICS_ID_VERSION};
 pub use snapshot::{Adjudication, FrontierEntry, Objective, SearchSnapshot, SNAPSHOT_SCHEMA};
 pub use surface::{SurfaceTensor, TensorSurface};
@@ -110,6 +117,8 @@ mod candidate_tests;
 mod graph_tests;
 #[cfg(test)]
 mod key_tests;
+#[cfg(test)]
+mod search_policy_tests;
 #[cfg(test)]
 mod snapshot_tests;
 #[cfg(test)]

@@ -1,7 +1,7 @@
 # The LARQL Physical Optimizer — evidence-constrained physical-plan search
 
 **Branch `worktree-represent-optimizer-mcp`, based on `origin/main` at
-`8f647872`.** Stages 1 (a-d) and 2 are implemented and green;
+`8f647872`.** Stages 1 (a-d), 2 and 3 are implemented and green;
 everything below them is design.
 
 The abstraction is not "quantization search". It is **evidence-
@@ -625,6 +625,114 @@ vocabulary → 4 red.
 
 ---
 
+## 4f. Stage 3 — best-first (IMPLEMENTED)
+
+`represent/state/{assess,search_policy}.rs`, 12 tests, 100% on
+`assess.rs` and 98.8% on `search_policy.rs`.
+
+```text
+CandidateSet → Assessment → BestFirst        experiment selection
+Measurements → SearchEvidence → decide_promotion   admissibility
+```
+
+Two different questions, kept apart: a candidate can rank first *for
+measurement* precisely because it is uncertain while being nowhere near
+promotable. `decide_promotion` stays downstream and unweakened.
+
+### Assessment carries ingredients, not a score
+
+`CandidateAssessment` holds a `ranking_score`, and a score is a
+conclusion — that is exactly why 1d could not replay promotion. So
+`Assessment` holds `physical_delta`, `child_bytes`, `intended_key`,
+`prior_observations` and the parent's whole `ConstraintVector`, and a
+score is computed on demand under a named rule (`Assessment::score`) and
+stored nowhere.
+
+The parent's standing is kept whole rather than reduced: the binding
+margin, the headroom and which criterion is scarce are all questions a
+reader may want, and a scalar answers none. It is served at **authority
+scale only** — a diagnostic reading prices nothing against the contract,
+and handing one over as though it did is the inference R5-F4 and R5-F9
+closed.
+
+Sign convention is not flipped anywhere: `physical_delta` stays negative
+for bytes removed, and ordering prefers the most negative.
+
+### One answer, always
+
+The complete order, stated once in `RankingSemantics::tie_break_chain`:
+
+```text
+1  registered rule
+2  greater physical improvement
+3  canonical child state id
+4  canonical child realization id
+5  canonical action identity
+```
+
+Everything after (1) exists so no answer can depend on insertion order,
+map iteration, thread completion or vocabulary traversal. Tested against
+reversed and rotated input, on a genuine tie, and on the case that
+reaches element (4): one physical state, two realizations. Truncating
+the chain reddens two tests.
+
+`RankingRule` has one variant — `PhysicalPrizeFirst` — because one rule
+has actually been used: rung 5 spent its run on the prize (−431,777,920 B
+over −2,091,136 B). `RankingSemanticsId` digests the rule *and the
+chain*, and `SearchSemantics` gained a `ranking_rule` field so a snapshot
+can tell the same observations under best-first-v1 from v2.
+
+### Search orders states; measurement orders experiments
+
+```text
+A --action x--> C (realization r1) ┐
+                                   ├─ one MeasurementKey, run once
+B --action y--> C (realization r2) ┘
+```
+
+`MeasurementOpportunity` groups by experiment, not by realization, so an
+experiment is never scheduled twice in a round — while both routes
+survive inside it because their future action spaces differ. When the
+observation lands both inherit it, since 1c keys evidence on the physical
+state while 1b keeps the realizations apart. Keying opportunities by
+realization instead reddens that test.
+
+### Ruling 3, encoded
+
+```text
+0 eligible  → Exhausted
+1 eligible  → Sole — SELECT it; the diagnostic cannot veto
+> 1         → Ranked — the registered rule chooses which runs first
+```
+
+The middle line is a ruling, not an optimisation: with one opportunity
+"what next?" is already answered, and consulting a diagnostic there
+would promote it into an admissibility screen — the accident that was
+withdrawn.
+
+### What stage 3 does not do, and what it needs
+
+It does not order the **authority escalation** of diagnostically-measured
+candidates, and it does not run promotion. Both go through
+`CandidateAssessment`, which needs two facts a snapshot does not yet
+hold: a per-state `ByteLedger` (per-token reads — *not* `LogicalBytes`,
+which is a whole-map footprint; the newtype exists to keep them apart)
+and an `ExecutionCostModel`. Those are **inputs to add**, not conclusions
+to invent. Adding them is what would close the gap 1d left open.
+
+No information-gain model either. A 40 MB experiment that would resolve
+whether a family of moves is state-dependent may deserve to run before a
+600 MB candidate, and *experimental value* is a real quantity distinct
+from *physical value* — but nothing has measured it, and inventing it
+here would put a heuristic where registered semantics belong.
+
+Four mutations, each killing exactly its own tests: truncating the
+tie-break chain → 2 red; grouping opportunities by realization → 1;
+reporting a sole opportunity as ranked → 1; serving a diagnostic reading
+as the parent's standing → 1.
+
+---
+
 ## 5. The reward, which must not be diagnostic KL
 
 Rung 4/5 established that diagnostic KL supplies neither magnitude, sign,
@@ -718,8 +826,8 @@ Deliberately boring, so MCTS is a policy swap and not a rewrite.
 | 1c | `MeasurementKey` + measurement dedup (§4c) | **done** |
 | 1d | Persistent, replayable search state (§4d) | **done** |
 | 2 | Deterministic action generator (§4e) | **done** |
-| 3 | Best-first / beam; establish the objective API and the search/evidence boundary | next |
-| 4 | MCP facade — inspect state, hypotheses, frontier; request experiments | |
+| 3 | Best-first; the objective API and the search/evidence boundary (§4f) | **done** |
+| 4 | MCP facade — inspect state, hypotheses, frontier; request experiments | next |
 | 5 | PUCT as another `SearchPolicy`; same states, actions, evidence | |
 | 6 | Extend `PhysicalState` with residency; optimise measured tok/s | |
 

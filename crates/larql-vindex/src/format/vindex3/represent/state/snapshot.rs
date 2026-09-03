@@ -61,6 +61,7 @@ use serde::{Deserialize, Serialize};
 use super::super::constraint::{ConstraintVector, Margin};
 use super::super::measurement::{EvidenceScale, TailSupportPolicy};
 use super::super::quality::QualityGate;
+use super::assess::ParentStanding;
 use super::graph::RepresentationStateGraph;
 use super::identity::RepresentationStateId;
 use super::key::{MeasurementKey, MeasurementRegistry};
@@ -123,6 +124,25 @@ impl Adjudication {
             .iter()
             .filter(|m| !m.satisfied())
             .collect()
+    }
+}
+
+impl ParentStanding for SearchSnapshot {
+    /// A state's standing at AUTHORITY scale, where such a reading
+    /// exists.
+    ///
+    /// Authority and not "whatever was measured": a diagnostic reading
+    /// prices nothing against the contract, and a policy handed one as
+    /// though it did would be reading a diagnostic as authority — the
+    /// inference R5-F4 and R5-F9 closed.
+    fn of(&self, state: &RepresentationStateId) -> Option<ConstraintVector> {
+        self.frontier()
+            .into_iter()
+            .find(|e| &e.state == state)?
+            .adjudications
+            .into_iter()
+            .find(|a| a.key().scale() == EvidenceScale::Authority)
+            .map(|a| a.constraints().clone())
     }
 }
 

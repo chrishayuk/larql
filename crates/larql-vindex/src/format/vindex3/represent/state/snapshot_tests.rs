@@ -165,9 +165,10 @@ fn instrument() -> InstrumentSemantics {
 fn semantics() -> SearchSemantics {
     SearchSemantics::new(
         "exchange-1-out-1-in/v1",
-        "ruling-1-four-prunes/v1",
+        "ruling-1-three-prunes/v1",
         "search-evidence-ladder/v1",
         "decide-promotion-ordinal/v1",
+        "physical-prize-first/v1",
         "logical-bytes/v1",
     )
 }
@@ -500,6 +501,10 @@ fn the_semantics_a_conclusion_was_drawn_under_travel_with_it() {
         },
         SearchSemantics {
             physical_accounting: "bytes-per-token/v1".into(),
+            ..semantics()
+        },
+        SearchSemantics {
+            ranking_rule: "beam-width-4/v1".into(),
             ..semantics()
         },
     ] {
