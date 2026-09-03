@@ -57,6 +57,21 @@ const NUM_EXPERTS_PER_TOK_KEYS: &[&str] = &["num_experts_per_tok", "num_experts_
 /// and reading only the first spelling silently drops the always-on branch.
 const NUM_SHARED_EXPERTS_KEYS: &[&str] = &["n_shared_experts", "num_shared_experts"];
 
+/// The always-on branch's OWN intermediate width, where a family sizes it
+/// independently of the routed experts. Qwen2-MoE and Qwen3.5-MoE write
+/// `shared_expert_intermediate_size`; Nemotron-H writes
+/// `moe_shared_expert_intermediate_size`. One fact, two spellings.
+///
+/// Not interchangeable with `moe_intermediate_size * shared experts`,
+/// which is how the DeepSeek/Kimi lineage sizes one wider shared FFN:
+/// Qwen1.5-MoE declares 5632 against a routed width of 1408, and
+/// Nemotron-3 Nano declares 3712 against 1856 with one shared expert.
+/// Deriving it would have built the branch four times too narrow.
+const SHARED_EXPERT_INTERMEDIATE_SIZE_KEYS: &[&str] = &[
+    "shared_expert_intermediate_size",
+    "moe_shared_expert_intermediate_size",
+];
+
 /// Whether the router renormalises its selected top-k probabilities.
 /// `norm_topk_prob` in the DeepSeek lineage, `moe_renormalize` on Kimi
 /// Linear. The two settings differ by a rescale of the whole expert
@@ -294,6 +309,8 @@ pub(super) fn parse_model_config(config: &serde_json::Value) -> ModelConfig {
     let num_experts_per_token =
         field_u64(text_config, NUM_EXPERTS_PER_TOK_KEYS).map(|v| v as usize);
     let num_shared_experts = field_u64(text_config, NUM_SHARED_EXPERTS_KEYS).map(|v| v as usize);
+    let shared_expert_intermediate_size =
+        field_u64(text_config, SHARED_EXPERT_INTERMEDIATE_SIZE_KEYS).map(|v| v as usize);
     // Gemma 4 A4B hybrid MoE fields
     let enable_moe_block = text_config["enable_moe_block"].as_bool().unwrap_or(false);
     let top_k_experts = text_config["top_k_experts"].as_u64().map(|v| v as usize);
@@ -687,6 +704,7 @@ pub(super) fn parse_model_config(config: &serde_json::Value) -> ModelConfig {
         num_experts,
         num_experts_per_token,
         num_shared_experts,
+        shared_expert_intermediate_size,
         kv_lora_rank,
         q_lora_rank,
         qk_nope_head_dim,

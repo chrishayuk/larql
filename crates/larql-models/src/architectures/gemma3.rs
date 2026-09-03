@@ -224,6 +224,7 @@ mod tests {
             num_experts: None,
             num_experts_per_token: None,
             num_shared_experts: None,
+            shared_expert_intermediate_size: None,
             enable_moe_block: false,
             top_k_experts: None,
             moe_intermediate_size: None,

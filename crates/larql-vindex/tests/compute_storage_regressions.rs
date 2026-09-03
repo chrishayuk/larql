@@ -182,6 +182,7 @@ fn moe_model_config() -> VindexModelConfig {
             num_experts: NUM_EXPERTS,
             top_k: ROUTER_TOP_K,
             shared_expert: false,
+            shared_expert_intermediate_size: None,
             router_type: "top_k_softmax".into(),
             moe_intermediate_size: Some(INTERMEDIATE_SIZE),
             hybrid: false,

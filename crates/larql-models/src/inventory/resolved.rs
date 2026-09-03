@@ -253,6 +253,8 @@ pub fn resolve_with_tensor_evidence(
             expert_format: arch.expert_format(),
             gate_up_layout: arch.gate_up_layout(),
             shared_experts: arch.num_shared_experts(),
+            shared_expert_intermediate_size: arch.shared_expert_intermediate_size(),
+            shared_expert_gate: arch.shared_expert_branch_gate(),
             hybrid: arch.is_hybrid_moe(),
         }),
         // `uses_mla()` alone decides the LAYER'S OPERATOR (every

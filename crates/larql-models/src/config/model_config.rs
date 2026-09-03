@@ -141,6 +141,17 @@ pub struct ModelConfig {
     pub num_experts: Option<usize>,
     pub num_experts_per_token: Option<usize>,
     pub num_shared_experts: Option<usize>,
+    /// The always-on shared branch's own intermediate width, where the
+    /// family declares one (`shared_expert_intermediate_size` on Qwen
+    /// MoE, `moe_shared_expert_intermediate_size` on Nemotron-H).
+    ///
+    /// `None` does NOT mean "no shared expert": the DeepSeek/Kimi lineage
+    /// declares a shared-expert COUNT and sizes one wider FFN at
+    /// `moe_intermediate_size * count`. Which of the two a family means is
+    /// answered once, by
+    /// [`ModelArchitecture::shared_expert_intermediate_size`](super::ModelArchitecture::shared_expert_intermediate_size),
+    /// so no caller has to know the lineage to size the branch.
+    pub shared_expert_intermediate_size: Option<usize>,
     /// Gemma 4 A4B: enables hybrid dense-MLP + MoE-experts block per layer.
     pub enable_moe_block: bool,
     /// Gemma 4 A4B: experts activated per token (stored as `top_k_experts` in config.json).

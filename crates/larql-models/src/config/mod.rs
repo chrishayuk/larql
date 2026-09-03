@@ -37,6 +37,7 @@ pub mod norm;
 pub mod position;
 pub mod rope;
 pub mod rope_types;
+pub mod shared_expert_gate;
 
 pub use activation::{ffn_shape_from_hf_name, ffn_shape_hf_name, Activation, FfnType};
 pub use architecture::{
@@ -74,6 +75,7 @@ pub use rope_types::{
     POSITION_EMBEDDING_TYPE_ROPE, ROPE_TYPE_DEFAULT, ROPE_TYPE_LINEAR, ROPE_TYPE_LLAMA3,
     ROPE_TYPE_PROPORTIONAL, ROPE_TYPE_YARN,
 };
+pub use shared_expert_gate::{SharedExpertGateSource, SharedExpertGateSpec};
 
 #[cfg(test)]
 mod kda_geometry_tests;

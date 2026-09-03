@@ -51,6 +51,16 @@ pub const EXECUTION_SEMANTIC_KEYS: &[&str] = &[
     // the same execution surface the DeepSeek-lineage spellings do.
     "moe_renormalize",
     "num_shared_experts",
+    // The same branch's WIDTH, in both declared spellings. Beside the
+    // count and not with the operand sizes, because the proof the two
+    // buckets offer is different: a `tensor_semantic` key is waved
+    // through as "read by a registered parser", which on a component
+    // that built no surface proves nothing at all. This one is judged by
+    // its carriage rule against the width the branch will actually be
+    // built at, so a checkpoint whose declaration and resolution
+    // disagree is a mismatch rather than a pass.
+    "shared_expert_intermediate_size",
+    "moe_shared_expert_intermediate_size",
     "moe_router_activation_func",
     "scoring_func",
     // The two-set interleave and the KDA conv width.
@@ -946,6 +956,7 @@ const CLUSTER_KEYS: &[(SemanticCluster, &[&str])] = &[
             "n_routed_experts",
             "n_shared_experts",
             "shared_expert_intermediate_size",
+            "moe_shared_expert_intermediate_size",
             "moe_intermediate_size",
             "expert_intermediate_size",
             "top_k_experts",

@@ -97,6 +97,10 @@ pub const CONSUMED_LEAF_KEYS: &[&str] = &[
     "num_experts_per_tok",
     "num_experts_per_token",
     "n_shared_experts",
+    // The shared branch's own width, in both spellings: Qwen MoE writes
+    // `shared_expert_intermediate_size`, Nemotron-H prefixes it.
+    "shared_expert_intermediate_size",
+    "moe_shared_expert_intermediate_size",
     "enable_moe_block",
     "top_k_experts",
     "moe_intermediate_size",

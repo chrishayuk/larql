@@ -32,7 +32,7 @@ use super::{
     AttentionOp, ClosureDefect, ComponentOpPlan, EmbeddingOp, ExpertBank, FfnIdentity, FfnOp,
     GateOp, GatedDeltaOp, HybridFfnOp, KdaOp, LayerAttention, LayerFfn, LayerPlan, Mamba2Op, MlaOp,
     NormOp, OpPlanOutcome, OperandRef, OutputOp, PackedProjection, QkNormOp, RoutedFfnOp,
-    SharedExpertOp, SinkOp,
+    SharedExpertBranchGateOp, SharedExpertOp, SinkOp,
 };
 use crate::error::VindexError;
 use larql_models::config::ExpertFormat;
@@ -161,9 +161,24 @@ pub fn plan_component_ops(
         .iter()
         .any(|l| !l.operator.is_mamba2() && !l.operator.is_conv_qkv());
     let runs_mamba2 = attention_table.iter().any(|l| l.operator.is_mamba2());
+    // A dense FFN needs a dense width. A wholly-routed component has
+    // none and plans no dense layer, so the fact is required exactly when
+    // some layer will run one: no routed judgment at all, a routed
+    // judgment with a declared dense prefix, or Gemma 4's hybrid, where
+    // both branches run every layer.
+    let runs_dense_ffn = has_ffn_layer
+        && ffn_surface.is_some_and(|f| {
+            f.moe
+                .is_none_or(|m| m.hybrid || m.dense_prefix_layers.unwrap_or(0) > 0)
+        });
     for (runs, present, fact) in [
         (attends, attn.is_some(), "attention surface"),
         (has_ffn_layer, ffn_surface.is_some(), "ffn surface"),
+        (
+            runs_dense_ffn,
+            ffn_surface.is_some_and(|f| f.intermediate_size.is_some()),
+            "ffn.intermediate_size (a dense FFN layer's width)",
+        ),
         (
             runs_mamba2,
             surface.mamba2.is_some(),
@@ -178,7 +193,11 @@ pub fn plan_component_ops(
             });
         }
     }
-    let inter = ffn_surface.map_or(0, |f| f.intermediate_size);
+    // The DENSE width, absent on a wholly-routed stack. Zero-filled only
+    // where it feeds `StackGeometry`, whose convention for a fact this
+    // component does not have is already zero (see the attention
+    // geometry above); the dense FFN op reads the checked value.
+    let inter = ffn_surface.and_then(|f| f.intermediate_size);
     let gated_ffn = ffn_surface.is_some_and(|f| f.ffn_type == FfnType::Gated);
     let ffn_moe = ffn_surface.and_then(|f| f.moe);
     // Head geometry is a per-layer fact when the family varies it
@@ -211,7 +230,7 @@ pub fn plan_component_ops(
                     1
                 },
             kv_rows: num_kv_heads * head_dim,
-            intermediate: inter,
+            intermediate: inter.unwrap_or(0),
             head_dim,
             num_q_heads,
             num_kv_heads,
@@ -671,7 +690,13 @@ pub fn plan_component_ops(
             .map(|(o, _)| o.id.clone())
             .unwrap_or_default();
         let dense_op = || FfnOp {
-            intermediate_size: inter,
+            intermediate_size: inter.unwrap_or_else(|| {
+                panic!(
+                    "component {} plans a dense FFN layer with no declared dense width; \
+                     closure should have refused this before the plan was built",
+                    component.id
+                )
+            }),
             activation: ffn_s.activation,
             gate_policy: ffn_s.gate_policy,
             gate: gated_ffn.then(|| operand(&stack_id, get(OperandRole::FfnGate))),
@@ -722,13 +747,17 @@ pub fn plan_component_ops(
                 // `required_roles`/`absent_op` paired `Some` here with
                 // `moe.shared_experts > 0` exactly, so this cannot desync
                 // from the closure pass that admitted the layer.
-                let shared = (moe.shared_experts > 0).then(|| SharedExpertOp {
-                    intermediate_size: moe.expert_intermediate_size * moe.shared_experts,
+                let shared = shared_expert_width(&moe).map(|width| SharedExpertOp {
+                    intermediate_size: width,
                     activation: ffn_s.activation,
                     gate_policy: ffn_s.gate_policy,
                     gate: operand(&stack_id, get(OperandRole::SharedExpertGate)),
                     up: operand(&stack_id, get(OperandRole::SharedExpertUp)),
                     down: operand(&stack_id, get(OperandRole::SharedExpertDown)),
+                    branch_gate: moe.shared_expert_gate.map(|spec| SharedExpertBranchGateOp {
+                        spec,
+                        weight: operand(&stack_id, get(OperandRole::SharedExpertBranchGate)),
+                    }),
                 });
                 let routed = RoutedFfnOp {
                     experts: moe.experts,
@@ -1245,6 +1274,12 @@ fn required_roles(ops: &LayerOps) -> Vec<OperandRole> {
                     OperandRole::SharedExpertUp,
                     OperandRole::SharedExpertDown,
                 ]);
+                // Paired with the judgment, both ways: a declared gate
+                // must find its operand, and the `absent_op` arm below
+                // refuses the operand where no gate is declared.
+                if moe.shared_expert_gate.is_some() {
+                    roles.push(OperandRole::SharedExpertBranchGate);
+                }
             }
         }
     }
@@ -1380,6 +1415,13 @@ fn absent_op(role: OperandRole, ops: &LayerOps) -> Option<&'static str> {
             if ops.moe.is_some_and(|m| m.shared_experts == 0) =>
         {
             Some("a shared expert (the routed-FFN judgment declares none)")
+        }
+        OperandRole::SharedExpertBranchGate
+            if ops
+                .moe
+                .is_some_and(|m| m.shared_experts == 0 || m.shared_expert_gate.is_none()) =>
+        {
+            Some("a gate on the shared-expert branch (the judgment declares none, so the branch is summed unscaled)")
         }
         OperandRole::ExpertGateUpScales | OperandRole::ExpertDownScales
             if ops
@@ -1673,23 +1715,40 @@ fn expected_shape(
         }
         OperandRole::PerExpertDown(_) => Some(vec![hidden, moe?.expert_intermediate_size]),
         // Always-active shared expert(s): the same gated-FFN shape as a
-        // routed expert, widened by `shared_experts` — Kimi's
-        // `KimiSparseMoeBlock.__init__` sizes `KimiMLP` at
-        // `moe_intermediate_size * num_shared_experts`, one wider FFN
-        // rather than `shared_experts` separate ones.
+        // routed expert, at the width the judgment declares. Sized from
+        // `shared_expert_intermediate_size` and NOT re-derived here —
+        // Kimi's `KimiSparseMoeBlock.__init__` sizes one wider `KimiMLP`
+        // at `moe_intermediate_size * num_shared_experts` while Qwen's
+        // block sizes it from its own key, and Qwen1.5-MoE's two answers
+        // differ fourfold (5632 declared against 1408 derived).
         OperandRole::SharedExpertGate | OperandRole::SharedExpertUp => {
-            let m = moe?;
-            Some(vec![m.expert_intermediate_size * m.shared_experts, hidden])
+            Some(vec![shared_expert_width(moe?)?, hidden])
         }
-        OperandRole::SharedExpertDown => {
-            let m = moe?;
-            Some(vec![hidden, m.expert_intermediate_size * m.shared_experts])
-        }
+        OperandRole::SharedExpertDown => Some(vec![hidden, shared_expert_width(moe?)?]),
+        // The scalar that gates the branch: one logit per token.
+        OperandRole::SharedExpertBranchGate => Some(vec![SCALAR_GATE_ROWS, hidden]),
     }
 }
 
 /// Gate and up: the two branches sharing one fused operand.
 const FUSED_BRANCHES: usize = larql_models::quant::mxfp4::FUSED_HALVES;
+
+/// The shared-expert branch gate projects to ONE logit per token, so its
+/// operand carries a single row. Named rather than written as a literal
+/// `1`, which at that position would read as a placeholder.
+const SCALAR_GATE_ROWS: usize = 1;
+
+/// The width of the always-active shared branch, or `None` when the
+/// judgment declares no shared expert.
+///
+/// The single place this build answers the question. The two lineages
+/// size the branch differently and the architecture already resolved
+/// which applies (`ModelArchitecture::shared_expert_intermediate_size`);
+/// re-deriving it here from the routed width would put a second answer
+/// beside that one, and on Qwen1.5-MoE the two differ fourfold.
+fn shared_expert_width(moe: &MoeSurface) -> Option<usize> {
+    (moe.shared_experts > 0).then_some(moe.shared_expert_intermediate_size)?
+}
 
 /// Stored shape of a packed `[experts, rows, k]` projection under the
 /// judged format: MXFP4 packs `k` as `k/32` groups of 16 bytes (32
@@ -1766,6 +1825,8 @@ mod tests {
             expert_format,
             gate_up_layout: Some(larql_models::config::GateUpLayout::ContiguousHalves),
             shared_experts: 0,
+            shared_expert_intermediate_size: None,
+            shared_expert_gate: None,
             hybrid: false,
         }
     }

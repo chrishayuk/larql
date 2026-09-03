@@ -224,15 +224,34 @@ pub enum ExpertBank {
 /// shared_experts(identity)`).
 #[derive(Debug, Clone, PartialEq, Serialize)]
 pub struct SharedExpertOp {
-    /// `moe_intermediate_size * shared_experts` — the checkpoint sizes one
-    /// wider FFN rather than `shared_experts` separate ones (`KimiMLP`'s
-    /// `intermediate_size` in `KimiSparseMoeBlock.__init__`).
+    /// The branch's intermediate width, as the judgment declares it —
+    /// `FfnSurface::moe`'s `shared_expert_intermediate_size`. Two
+    /// lineages size it differently (Qwen from its own key, DeepSeek and
+    /// Kimi as one wider FFN at `moe_intermediate_size * shared_experts`)
+    /// and the architecture already chose between them, so this is
+    /// transcribed rather than recomputed.
     pub intermediate_size: usize,
     pub activation: Activation,
     pub gate_policy: larql_models::ExpertGatePolicy,
+    /// The branch's own SwiGLU gate projection.
     pub gate: OperandRef,
     pub up: OperandRef,
     pub down: OperandRef,
+    /// The scalar gate on the branch's OUTPUT, where the family runs one:
+    /// `out = routed + sigmoid(branch_gate(x)) * shared(x)`. `None` sums
+    /// the branch unscaled, which is the DeepSeek/Kimi form — the two are
+    /// different models, not a present-or-defaulted operand, so closure
+    /// requires this operand iff the surface declares the gate.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub branch_gate: Option<SharedExpertBranchGateOp>,
+}
+
+/// The judged semantics of the shared branch's output gate, beside the
+/// operand it reads.
+#[derive(Debug, Clone, PartialEq, Serialize)]
+pub struct SharedExpertBranchGateOp {
+    pub spec: larql_models::config::SharedExpertGateSpec,
+    pub weight: OperandRef,
 }
 
 /// One layer's routed FFN op — a mixture of experts, entirely inside the

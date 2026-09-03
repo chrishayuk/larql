@@ -6,8 +6,8 @@
 //! - Qwen3 MoE: router at `mlp.gate.weight`, per-expert `mlp.experts.{E}.{gate,up,down}_proj.weight`
 
 use crate::config::{
-    AttentionGateSpec, GateActivation, GateCombine, GatePlacement, GateSource, ModelArchitecture,
-    ModelConfig,
+    AttentionGateSpec, ExpertFormat, GateActivation, GateCombine, GatePlacement, GateSource,
+    GateUpLayout, ModelArchitecture, ModelConfig, SharedExpertGateSource, SharedExpertGateSpec,
 };
 use crate::tensor_keys::{attn_bias, moe_experts, qk_norm};
 
@@ -32,6 +32,31 @@ const PLUS_ONE_NORM_FAMILIES: &[&str] = &["qwen3_5", "qwen3_next"];
 /// Whether this model type's saved norm weights are offsets from one.
 fn stores_norm_weight_as_offset(model_type: &str) -> bool {
     PLUS_ONE_NORM_FAMILIES
+        .iter()
+        .any(|family| model_type.starts_with(family))
+}
+
+/// Model types whose expert bank is ONE stacked tensor per projection
+/// rather than a tensor per expert.
+///
+/// `Qwen3_5MoeExperts` holds `gate_up_proj[num_experts, 2 ·
+/// moe_intermediate_size, hidden_size]` and `down_proj[num_experts,
+/// hidden_size, moe_intermediate_size]` as plain parameters, and the
+/// checkpoints ship exactly that: `mlp.experts.gate_up_proj` with no
+/// expert index, where `qwen2_moe` and `qwen3_moe` ship
+/// `mlp.experts.{id}.{gate,up,down}_proj.weight`. Same family name,
+/// different storage, and reading one as the other finds no operands at
+/// all.
+///
+/// Prefix-matched like [`PLUS_ONE_NORM_FAMILIES`], so the nested
+/// `qwen3_5_moe_text` spelling resolves too. `qwen3_5` (dense) is not a
+/// prefix of this and keeps its own answer.
+const PACKED_EXPERT_FAMILIES: &[&str] = &["qwen3_5_moe"];
+
+/// Whether this model type stacks its experts into one tensor per
+/// projection.
+fn stacks_experts(model_type: &str) -> bool {
+    PACKED_EXPERT_FAMILIES
         .iter()
         .any(|family| model_type.starts_with(family))
 }
@@ -152,6 +177,87 @@ impl ModelArchitecture for QwenArch {
             return None;
         }
         moe_experts::down_proj(&self.layer_prefix(layer), expert_id)
+    }
+
+    /// Qwen3.5-MoE stores one stacked tensor per projection; every other
+    /// Qwen MoE stores a tensor per expert. See [`PACKED_EXPERT_FAMILIES`].
+    fn expert_format(&self) -> ExpertFormat {
+        if stacks_experts(&self.config.model_type) {
+            ExpertFormat::PackedBF16
+        } else {
+            ExpertFormat::PerExpert
+        }
+    }
+
+    /// `Qwen3_5MoeExperts.forward` splits the fused projection with
+    /// `.chunk(2, dim=-1)` — the first half is the gate. Declared only
+    /// where a fused operand exists to split; a per-expert bank has no
+    /// fused layout to describe.
+    fn gate_up_layout(&self) -> Option<GateUpLayout> {
+        stacks_experts(&self.config.model_type).then_some(GateUpLayout::ContiguousHalves)
+    }
+
+    // ── The gated shared expert (Qwen2-MoE, Qwen3.5-MoE) ──
+    //
+    // `Qwen2MoeSparseMoeBlock` and `Qwen3_5MoeSparseMoeBlock` build
+    // exactly ONE always-on branch, sized by its own key rather than by
+    // the routed width, and scale it by a sigmoid of a one-logit
+    // projection before summing it with the routed output. Qwen3-MoE
+    // declares no such width and builds no such branch, so the declared
+    // width is what tells the two apart — not a list of model names.
+
+    /// One, when the checkpoint declares a width for it. The count is not
+    /// declared by any Qwen config: it is read from the reference block,
+    /// which constructs a single `shared_expert`.
+    fn num_shared_experts(&self) -> usize {
+        usize::from(self.config.shared_expert_intermediate_size.is_some())
+    }
+
+    fn shared_expert_branch_gate(&self) -> Option<SharedExpertGateSpec> {
+        self.config
+            .shared_expert_intermediate_size
+            .map(|_| SharedExpertGateSpec {
+                source: SharedExpertGateSource::HiddenStateToScalar,
+                activation: GateActivation::Sigmoid,
+                combine: GateCombine::ElementwiseMultiply,
+            })
+    }
+
+    fn shared_expert_branch_gate_key(&self, layer: usize) -> Option<String> {
+        self.config
+            .shared_expert_intermediate_size
+            .map(|_| format!("{}mlp.shared_expert_gate.weight", self.layer_prefix(layer)))
+    }
+
+    // The branch's own SwiGLU projections. Singular `shared_expert` — the
+    // DeepSeek/Kimi lineage spells the same role `shared_experts`, and a
+    // shared spelling would bind neither.
+
+    fn shared_expert_gate_key(&self, layer: usize) -> Option<String> {
+        self.config.shared_expert_intermediate_size.map(|_| {
+            format!(
+                "{}mlp.shared_expert.gate_proj.weight",
+                self.layer_prefix(layer)
+            )
+        })
+    }
+
+    fn shared_expert_up_key(&self, layer: usize) -> Option<String> {
+        self.config.shared_expert_intermediate_size.map(|_| {
+            format!(
+                "{}mlp.shared_expert.up_proj.weight",
+                self.layer_prefix(layer)
+            )
+        })
+    }
+
+    fn shared_expert_down_key(&self, layer: usize) -> Option<String> {
+        self.config.shared_expert_intermediate_size.map(|_| {
+            format!(
+                "{}mlp.shared_expert.down_proj.weight",
+                self.layer_prefix(layer)
+            )
+        })
     }
 
     // ── QK norms (Qwen3) ──

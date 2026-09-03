@@ -13,6 +13,7 @@ mod gpt2_aliases;
 mod kv_recompute;
 mod norm_eps;
 mod qwen35_hybrid;
+mod qwen_moe_shared_expert;
 mod real_configs;
 mod rope_scaling;
 mod routing;

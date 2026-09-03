@@ -434,6 +434,7 @@ mod tests {
             num_experts: 8,
             top_k: 2,
             shared_expert: false,
+            shared_expert_intermediate_size: None,
             router_type: "softmax".into(),
             moe_intermediate_size: Some(1024),
             hybrid: false,
@@ -456,6 +457,7 @@ mod tests {
             num_experts: 128,
             top_k: 8,
             shared_expert: true,
+            shared_expert_intermediate_size: None,
             router_type: "topk".into(),
             moe_intermediate_size: None, // no override
             hybrid: true,

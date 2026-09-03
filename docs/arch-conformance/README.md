@@ -46,16 +46,16 @@ The sweep is the regression instrument for the conformance programme. Every
 semantic change is measured against the same 88-row corpus, and the two
 invariants are the ones that matter most:
 
-| Metric | Baseline | Waves 1+3 | rope | moe | sliding window | frontier census† | partial rotary | vestigial pair |
-|---|---:|---:|---:|---:|---:|---:|---:|---:|
-| semantics version | 1 | 3 | 4 | 5 | 6 | 6 (held) | 7 | **8** |
-| GREEN | 17 | 18 | 21 | 26 | 28 | 28 | 31 | **33** |
-| AMBER | 6 | 6 | 6 | 6 | 6 | 7 | 7 | 7 |
-| RED | 65 | 64 | 61 | 56 | 54 | 74 | 71 | **69** |
-| **BUG** | **0** | **0** | **0** | **0** | **0** | **0** | **0** | **0** |
-| **silent drops** | **0** | **0** | **0** | **0** | **0** | **0** | **0** | **0** |
-| text-closure blockers | 886 | 776 | 756 | 671 | 668 | 1109 | 1091 | **1089** |
-| K3 clusters remaining | 7 | 7 | 7 | 7 | 7 | 7 | 7 | **7** |
+| Metric | Baseline | Waves 1+3 | rope | moe | sliding window | frontier census† | partial rotary | vestigial pair | qwen MoE |
+|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|
+| semantics version | 1 | 3 | 4 | 5 | 6 | 6 (held) | 7 | 8 | **9** |
+| GREEN | 17 | 18 | 21 | 26 | 28 | 28 | 31 | 33 | **38** |
+| AMBER | 6 | 6 | 6 | 6 | 6 | 7 | 7 | 7 | 7 |
+| RED | 65 | 64 | 61 | 56 | 54 | 74 | 71 | 69 | **64** |
+| **BUG** | **0** | **0** | **0** | **0** | **0** | **0** | **0** | **0** | **0** |
+| **silent drops** | **0** | **0** | **0** | **0** | **0** | **0** | **0** | **0** | **0** |
+| text-closure blockers | 886 | 776 | 756 | 671 | 668 | 1109 | 1091 | 1089 | **1076** |
+| K3 clusters remaining | 7 | 7 | 7 | 7 | 7 | 7 | 7 | 7 | **7** |
 
 † Wave 7 widened the corpus from 88 to 109 scored rows. The 88 rows every
 earlier column was measured on are unchanged — same verdicts, same 668
@@ -310,6 +310,84 @@ it. The controls ran in three stages: both tests failed as `Unknown` before
 the rules, then as "read by nothing in any registered parser" with the rules
 but no parser read — the consumed-key contract holding — then passed.
 
+**Wave 10 — Qwen's MoE facts and the gated shared expert (semantics 9).**
+Three defects, all reaching the same five rows, and none of them clearing a
+row on its own.
+
+*The FFN presence rule read only the dense width.* `has_ffn` was
+`resolved.intermediate_size > 0`, and `Qwen3_5MoeTextConfig` is `@strict`
+with no `intermediate_size` field at all — every one of its layers is a
+`Qwen3_5MoeSparseMoeBlock`, so its FFN's width lives in
+`moe_intermediate_size`. A 397B mixture of experts was therefore graded as
+running no FFN op, and `hidden_act` and `num_experts_per_tok` reported
+"no built component answered the probe": the routed block was declared and
+judged, then had nowhere to be read back from. Qwen3-30B-A3B slipped
+through only because it declares *both* widths. Measured before the fix,
+the population is exactly four rows — the only primary-text components in
+117 plans with an execution surface and no `ffn` on it. `FfnSurface`'s
+dense width is now `Option`, so a wholly-routed stack **states** the
+absence rather than asserting a zero, and the GGUF geometry and metadata
+writers refuse instead of stamping `feed_forward_length: 0`.
+
+*The shared branch's width was derived where it should be declared.*
+`SharedExpertOp` sized itself at `expert_intermediate_size *
+shared_experts`. That is Kimi's fact — `KimiSparseMoeBlock.__init__` sizes
+one wider `KimiMLP` — and it is wrong for the lineage that declares the
+width outright: Qwen1.5-MoE states 5632 against a derived 1408, a fourfold
+error, and Nemotron-3 Nano states 3712 against 1856. The width is now read
+(in both declared spellings) and is the single authority for the op's size
+*and* for the shared-expert operand shapes. The derivation survives as the
+trait default, which is what the count-only lineage means.
+
+*Qwen3.5-MoE stacks its expert bank.* It ships `mlp.experts.gate_up_proj`
+and `mlp.experts.down_proj` as 3-D parameters where its siblings ship a
+tensor per expert. Left undeclared, fixing the presence rule would have
+made the routed FFN present while the judgment still said `PerExpert`, and
+operand closure would have demanded 256 per-expert operands the checkpoint
+does not ship. Greening a row on a wrong expert format is the fail-open
+this instrument exists to catch, so it is in the same wave.
+
+Beside them, Qwen's shared expert is **gated**: `out = routed +
+sigmoid(shared_expert_gate(x)) · shared(x)`. The gate is a `[1, hidden]`
+projection one name away from the branch's own SwiGLU gate
+(`mlp.shared_expert_gate.weight` against
+`mlp.shared_expert.gate_proj.weight`) and differs from it in every
+dimension, so it gets its own operand role. Dropping it does not fail —
+it runs the branch at full weight on every token — which is why it is
+declared rather than inferred from an operand that happens to be present.
+
+Frozen before the code in
+[`forecasts/wave10-qwen-moe-shared-expert.json`](forecasts/wave10-qwen-moe-shared-expert.json):
+five rows clear, GREEN 38, blockers 1076, and an explicit *nothing moves*
+prediction for the five other rows that declare the same key. **Exact on
+every arm**, including at whole-model granularity — the blocker set
+changed on those five rows and nowhere else, and no row anywhere gained a
+blocker.
+
+**The first score disagreed, and the forecast was right.** The first
+re-plan came back five blockers lower than predicted, with Qwen3.8-Flash-Next
+and the four Nemotron-3 rows each losing their shared-expert blocker —
+rows whose components build no execution surface at all, so nothing could
+have checked anything. The cause was a classification: the new key had
+been filed as `tensor_semantic`, and that bucket's findings are reported
+`carriage: parsed` / "read by a registered parser", so the carriage rule
+and its probe were never consulted. The key was clearing because a parser
+had touched it. That is wave 9's lesson restated — read *and check*, never
+echo — and it is the reason a forecast is written down first: the number
+that disagreed was the code's, not the prediction's. Moved to the
+execution-semantic bucket beside the shared-expert count that already
+lives there, the declared width is compared against the width the branch
+will be built at, and a component that resolved no branch refuses.
+`the_shared_expert_width_carries_only_where_a_branch_resolves` is the
+standing guard, with both arms: the same consumed key carries where a
+branch resolves and blocks where none does.
+
+**A defect found on the way.** The GGUF orientation path sized the
+shared-expert tensors by the *dense* width. That coincides on Qwen1.5-MoE
+(5632 either way) and is wrong everywhere else — and on Qwen3.5-MoE, which
+has no dense width, it left the shared expert unoriented entirely. Pointed
+at the same single authority as everything else.
+
 **What did not happen, and why it is worth recording.** The inert clusters
 reach 34 checkpoints, which looked like a large GREEN wave. It was one row
 (Yi-1.5-6B). Cluster *reach* counts checkpoints a fix touches; only a
@@ -328,11 +406,11 @@ Scored against the **text-generation closure**, which the plan computes
 itself — a checkpoint whose only blockers sit in a vision tower is not
 evidence about its language model.
 
-| outcome | baseline (88) | after wave 9 (109) | share now |
+| outcome | baseline (88) | after wave 10 (109) | share now |
 |---|---:|---:|---:|
-| GREEN — representable | 17 | 33 | 30% |
+| GREEN — representable | 17 | 38 | 35% |
 | AMBER — identified, no implementation | 6 | 7 | 6% |
-| RED — semantic gap | 65 | 69 | 63% |
+| RED — semantic gap | 65 | 64 | 59% |
 | BUG — should work, doesn't | 0 | 0 | 0% |
 | *unreachable (gated/absent/no config)* | *6* | *8* | *not evidence* |
 
@@ -488,7 +566,13 @@ clears **none** alone: its `layer_types` blockers are missing mixer vocabulary
 (`conv`, `mamba`, sparse spans) or Step's length rule, and every carrier has
 three to ten other clusters. Reach ranks; the cover predicts.
 
-## After wave 9: the rerank, from the 109-row closure
+## After wave 9: the rerank, from the 109-row closure *(superseded)*
+
+Kept as the record of what wave 10 was chosen from and how well the choice
+scored. The current ranking is
+[the current rerank](#the-rerank-and-what-wave-11-settled--read-this-before-picking-wave-12);
+item 1 below is the wave that landed, and it cleared exactly the five rows
+named here.
 
 Every remaining text-closure blocker, by what kind of work retires it
 (semantics 8; a row counts under every class it touches):
@@ -516,6 +600,13 @@ Verdicts move in the carriage class, and the greedy cover names the order:
 | 1 | the `qwen3_5_moe` family's own MoE facts — `num_experts_per_tok`, `hidden_act` and the *gated* shared expert (`shared_expert_intermediate_size`), which the dense sibling already carries | 5 — Qwen1.5-MoE-A2.7B, Qwen3.5 35B-A3B / 122B-A10B / 397B-A17B, Qwen3.8-2.4T-A95B |
 | 2 | `gemma3_text` at the root: `rope_theta` *mismatched* where the same keys lower under `text_config` | 1 — gemma-3-1b-it, and the one genuine mismatch in the frontier |
 | 3 | a `phi3` family entry (fused `qkv_proj` / `gate_up_proj`, `original_max_position_embeddings`) | 2 — phi-4, Phi-3-mini |
+
+**Scored.** Item 1 landed as wave 10 and cleared all five, and the note
+below about naming the operator was the right instinct for the wrong
+reason: the gated shared expert *was* a small operator, but two further
+facts had to travel with it (a wholly-routed family has no dense width to
+find an FFN by, and Qwen3.5-MoE stacks its expert bank), and neither was
+visible from the cluster.
 
 Only the first is a wave in the sense above, and even it is not pure carriage:
 the gated shared expert is a small operator (DeepSeek's ungated

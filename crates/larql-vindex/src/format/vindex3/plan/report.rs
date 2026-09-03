@@ -57,6 +57,23 @@ pub const PLAN_SCHEMA: u32 = 6;
 /// `plan/tests/identity.rs` pins fixture verdicts against this value, so
 /// a change that flips one fails there until the version is bumped.
 ///
+/// **9** — a wholly-routed family has an FFN, and the always-on shared
+/// branch is sized by what the checkpoint declares. The FFN presence rule
+/// read only the DENSE width, so `Qwen3_5MoeTextConfig` — which declares
+/// no `intermediate_size` at all, because every layer is a routed block —
+/// was graded as having no FFN op, and `hidden_act` and
+/// `num_experts_per_tok` had nothing to answer to. `FfnSurface`'s dense
+/// width becomes optional so that absence is stated rather than written
+/// as a zero. Beside it, `shared_expert_intermediate_size` is read (in
+/// both declared spellings) and becomes the ONE authority for the shared
+/// branch's width: two lineages size it differently and this build was
+/// deriving it as `moe_intermediate_size * shared_experts`, which is
+/// Kimi's fact and is fourfold wrong on Qwen1.5-MoE. Qwen's gated shared
+/// expert — `sigmoid(shared_expert_gate(x)) * shared(x)`, summed with the
+/// routed branch — is declared with its own operand, and Qwen3.5-MoE's
+/// stacked expert bank is declared as the `PackedBF16` it is. Forecast
+/// before the code: exactly five rows clear.
+///
 /// **8** — two keys read by no implementation, ours or upstream, are
 /// read-and-checked rather than graded `Unknown`. Falcon3's
 /// `activation: "swiglu"` names the FFN shape (gated, SiLU on the gate) and
@@ -114,7 +131,7 @@ pub const PLAN_SCHEMA: u32 = 6;
 /// architectures, now block instead of passing silently into
 /// `GenericArch`'s Llama-shaped defaults. Measured on the conformance
 /// corpus: 15 of 42 declared `model_type` strings, across 30 checkpoints.
-pub const PLANNER_SEMANTICS_VERSION: u32 = 8;
+pub const PLANNER_SEMANTICS_VERSION: u32 = 9;
 
 /// Who judged a plan.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]

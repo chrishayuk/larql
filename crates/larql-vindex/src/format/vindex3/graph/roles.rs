@@ -240,6 +240,19 @@ pub enum OperandRole {
     SharedExpertGate,
     SharedExpertUp,
     SharedExpertDown,
+    /// The scalar gate on the shared branch's OUTPUT — Qwen MoE's
+    /// `shared_expert_gate`, a `[1, hidden]` projection whose sigmoid
+    /// scales the whole branch before it is summed with the routed one.
+    ///
+    /// Not [`Self::SharedExpertGate`], which is the branch's own SwiGLU
+    /// gate projection at `[shared_expert_intermediate_size, hidden]`.
+    /// The two live one name apart in the checkpoint
+    /// (`mlp.shared_expert_gate.weight` against
+    /// `mlp.shared_expert.gate_proj.weight`) and differ in every
+    /// dimension; binding either to the other's role would load a
+    /// 5632-row projection where one row is read, and produce plausible
+    /// output while gating nothing.
+    SharedExpertBranchGate,
     /// The three FFN-branch norms beyond the pre/post pair: the expert
     /// branch's own pre-norm over the residual, and the post-norms on
     /// each branch's output before they are summed
@@ -413,6 +426,25 @@ const ROLE_TABLE: &[(&str, OperandRole)] = &[
     (
         "block_sparse_moe.shared_experts.down_proj.weight",
         OperandRole::SharedExpertDown,
+    ),
+    // Qwen MoE: the branch is singular (`shared_expert`) where the
+    // DeepSeek/Kimi lineage spells it `shared_experts`, and it carries a
+    // scalar output gate the other lineage has no operand for.
+    (
+        "mlp.shared_expert.gate_proj.weight",
+        OperandRole::SharedExpertGate,
+    ),
+    (
+        "mlp.shared_expert.up_proj.weight",
+        OperandRole::SharedExpertUp,
+    ),
+    (
+        "mlp.shared_expert.down_proj.weight",
+        OperandRole::SharedExpertDown,
+    ),
+    (
+        "mlp.shared_expert_gate.weight",
+        OperandRole::SharedExpertBranchGate,
     ),
 ];
 

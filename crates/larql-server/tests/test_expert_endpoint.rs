@@ -83,6 +83,7 @@ impl TestMoeArch {
                 num_experts: Some(NUM_EXPERTS),
                 num_experts_per_token: None,
                 num_shared_experts: None,
+                shared_expert_intermediate_size: None,
                 enable_moe_block: true,
                 top_k_experts: Some(TOP_K),
                 moe_intermediate_size: Some(INTER),
