@@ -586,6 +586,37 @@ Forecast held on every arm: OLMo-2 ×2 and EXAONE-4.0-1.2B → GREEN; Olmo-3
 `sliding_window_pattern`; EXAONE-4.5-33B keeps five more; every cleared
 blocker was `architecture_family` and nothing else; no unrelated row moved.
 
+**Wave 14 — the twelve no-norm rows, classified (a discovery wave).** No
+code, no verdict delta. The deliverable is what these rows actually are,
+derived per row from the reference forward implementation where one exists,
+the **actual** tensor inventory read from each checkpoint's safetensors
+header, and the config — never from a filename or from an absence.
+
+**It is not one problem, and not one row is legitimately normless.** Every
+one of the twelve has per-layer norms. The refusal was reading the absence
+of four particular spellings as the absence of an operator.
+
+| rows | family | what it actually has | class | next action |
+|---:|---|---|---|---|
+| 4 | LFM2 | `operator_norm` + `ffn_norm`; `Lfm2DecoderLayer.forward` is a plain two-norm **pre-only** stack | **C** dialect | role-table entries + the `norm_eps` config spelling |
+| 5 | Nemotron-H | one norm per **block** (`backbone.layers.N.norm`), one mixer per block — Mamba, attention, MLP or MoE | **C** spelling, **D** topology | forecast the block topology first; naming is a prerequisite |
+| 2 | DeepSeek-V4 | `attn_norm` + `ffn_norm` — *and* `hc_attn_scale` / `hc_ffn_scale` hyper-connections | **C** norms, **D** residual | hyper-connections **before** the norms |
+| 1 | Qwen3.8-Flash-Next | no plain norm at all; its only per-layer norms live inside `attn_hyper_connection.hc_norm` | **D** absent | nothing until hyper-connections exist |
+
+**The trap this wave exists to avoid.** Three of the four families would
+have their surface *build* from role-table entries alone, because their
+norms really are there under other names. Two of those three also carry a
+residual topology this schema cannot express. Adding the names first would
+move rows toward GREEN while leaving their arithmetic wrong — the same
+shape as wave 13's skipped FFN, which the sweep could not see and only a
+real-checkpoint witness caught.
+
+So the cheap half separates cleanly from the expensive half: four LFM2 rows
+are a pure dialect over a placement this build already executes; the other
+eight need a semantic first. And the count that made this look like one
+cluster — twelve rows, 13–36 blockers each — was the same illusion as the
+wave-10 rerank's, where `architecture_identity` looked causal and was not.
+
 ## The rerank, and what wave 11 settled — read this before picking wave 12
 
 The greedy cover over semantic ideas is now **empty**: no single cluster
