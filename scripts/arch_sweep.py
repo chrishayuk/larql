@@ -22,6 +22,7 @@ saved plan JSON under `--out`.
 
     scripts/arch_sweep.py run              # sweep, resumable
     scripts/arch_sweep.py report           # table + semantic leverage map
+    scripts/arch_sweep.py envelopes        # coverage by semantic shape
 """
 
 from __future__ import annotations
@@ -75,7 +76,11 @@ SCORED_CAPABILITY = "text_generation"
 # counted as one.
 UNREACHABLE_PATTERNS = [
     (re.compile(r"HTTP 401|HTTP 403"), "gated"),
-    (re.compile(r"has no config\.json|HTTP 404"), "absent"),
+    # A repo that exists but ships only Mistral-native `params.json` is not
+    # absent: it is a config DIALECT this source does not read. Saying
+    # "absent" would file a real gap under a network accident.
+    (re.compile(r"has no config\.json"), "no-config.json"),
+    (re.compile(r"HTTP 404"), "absent"),
     (re.compile(r"HTTP 429"), "rate-limited"),
 ]
 
@@ -106,9 +111,13 @@ OUTCOMES = ["GREEN", "AMBER", "RED", "BUG", "UNREACHABLE"]
 
 UNCLUSTERED = "unclustered"
 
-# Clusters that describe a modality other than text. The scored gate is
-# the text closure, so retiring these cannot move a text verdict.
-NON_TEXT_CLUSTERS = {"modality_vision", "modality_audio"}
+# There is deliberately NO list of "non-text" clusters to exclude from the
+# leverage tables. The text closure names `modality_vision` findings on 18
+# checkpoints — a container whose root the closure cannot assign blocks on
+# its image keys — and the script reads what the closure decided. An earlier
+# exclusion set was spelled two ways (`modality_vision` at the top of the
+# file, `modality.vision` above the cover) and so matched nothing, which is
+# the same lesson as the retired regex table: two derivations of one fact.
 
 
 def slug(repo: str) -> str:
@@ -117,6 +126,11 @@ def slug(repo: str) -> str:
 
 def load_matrix(path: pathlib.Path) -> list[dict]:
     return json.loads(path.read_text())["checkpoints"]
+
+
+def load_envelopes(path: pathlib.Path) -> dict[str, dict]:
+    """The envelope vocabulary the matrix declares beside its rows."""
+    return json.loads(path.read_text())["envelopes"]
 
 
 def recognised_model_types() -> list[tuple[str, str]]:
@@ -340,8 +354,9 @@ def cmd_report(args: argparse.Namespace) -> int:
 
     if by_outcome["UNREACHABLE"]:
         print(f"\n{'-' * 78}\nUNREACHABLE\n{'-' * 78}")
+        reason_width = max(len(reason) for _, reason in UNREACHABLE_PATTERNS) + 2
         for row in sorted(by_outcome["UNREACHABLE"], key=lambda r: r["repo"]):
-            print(f"  {row['reason']:<14}{row['repo']}")
+            print(f"  {row['reason']:<{reason_width}}{row['repo']}")
 
     print(f"\n{'-' * 78}\nSEMANTIC LEVERAGE — one fix, how many checkpoints\n{'-' * 78}")
     clusters: dict[tuple[str, str, str], set[str]] = {}
@@ -362,6 +377,41 @@ def cmd_report(args: argparse.Namespace) -> int:
         print(f"\nwrote {args.json}")
     return 0
 
+
+
+def cmd_envelopes(args: argparse.Namespace) -> int:
+    """Coverage by semantic shape — the claim worth publishing.
+
+    Every scored row sits in exactly one envelope, declared on the row in
+    the matrix. The verdict columns are the sweep's; this only groups.
+    """
+    rows, _ = load_results(args)
+    envelopes = load_envelopes(args.matrix)
+    scored = [r for r in rows if r["outcome"] != "UNREACHABLE"]
+
+    groups: dict[str, list[dict]] = {}
+    for row in scored:
+        groups.setdefault(row["envelope"], []).append(row)
+
+    print(f"\n{'=' * 78}\nCOVERAGE BY SEMANTIC ENVELOPE — {len(scored)} scored rows\n{'=' * 78}")
+    header = ("| envelope | lineages | rows | gens | GREEN | AMBER | RED |", "|---|---|---:|---:|---:|---:|---:|")
+    print("\n".join(header))
+    for slug in envelopes:
+        members = groups.get(slug)
+        if not members:
+            continue
+        lineages = sorted({r["lineage"] for r in members})
+        gens = {r["generation"] for r in members}
+        counts = {o: sum(1 for r in members if r["outcome"] == o) for o in ("GREEN", "AMBER", "RED")}
+        print(
+            f"| {envelopes[slug]['name']} | {', '.join(lineages)} | {len(members)} | {len(gens)} "
+            f"| {counts['GREEN']} | {counts['AMBER']} | {counts['RED']} |"
+        )
+    unfiled = sorted(slug for slug in groups if slug not in envelopes)
+    if unfiled:
+        print(f"\nrows filed under an undeclared envelope: {unfiled}")
+        return 1
+    return 0
 
 
 def cmd_clusters(args: argparse.Namespace) -> int:
@@ -410,12 +460,6 @@ def cmd_clusters(args: argparse.Namespace) -> int:
 
 
 
-# Clusters that describe a modality other than text. The scored gate is
-# the text closure, so retiring these cannot move a text verdict — they
-# are excluded from the cover rather than allowed to look like leverage.
-NON_TEXT_CLUSTERS = {"modality.vision", "modality.audio"}
-
-
 def cmd_leverage(args: argparse.Namespace) -> int:
     """Which ideas to retire, and what each one actually buys.
 
@@ -445,8 +489,7 @@ def cmd_leverage(args: argparse.Namespace) -> int:
             reach[cluster] = reach.get(cluster, 0) + 1
         for blocker in row["blockers"]:
             c = blocker["cluster"]
-            if c in reach or c not in NON_TEXT_CLUSTERS:
-                removed[c] = removed.get(c, 0) + 1
+            removed[c] = removed.get(c, 0) + 1
 
     print(f"\n{'=' * 78}\nENGINEERING LEVERAGE — exact, from the text closure\n{'=' * 78}")
     print(f"{len(blocked)} checkpoints have a non-empty text closure\n")
@@ -502,6 +545,9 @@ def main() -> int:
     report.add_argument("--json", type=pathlib.Path, help="also write the rows here")
     report.add_argument("--top", type=int, default=30, help="leverage rows to show")
     report.set_defaults(func=cmd_report)
+
+    envelopes = sub.add_parser("envelopes", help="coverage by semantic shape")
+    envelopes.set_defaults(func=cmd_envelopes)
 
     clusters = sub.add_parser("clusters", help="subjects -> semantic ideas")
     clusters.add_argument("--show", help="list the subjects in one cluster")
