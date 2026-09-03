@@ -116,6 +116,9 @@ pub use transition::{Action, Provenance, Transition};
 
 #[cfg(test)]
 mod candidate_tests;
+/// The Rung 5 record, shared by every test that needs a real search.
+#[cfg(any(test, feature = "test-utils"))]
+pub mod fixtures;
 #[cfg(test)]
 mod graph_tests;
 #[cfg(test)]
