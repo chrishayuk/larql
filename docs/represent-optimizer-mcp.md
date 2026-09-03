@@ -1,8 +1,8 @@
 # The LARQL Physical Optimizer — evidence-constrained physical-plan search
 
-**Branch `worktree-represent-optimizer-mcp`, based on `origin/main` at
-`8f647872`.** Stages 1 (a-d), 2, 3 and 3b are implemented and green;
-everything below them is design.
+**Stages 1 (a-d), 2, 3 and 3b landed on `main` in #409; stage 4 is on
+`worktree-optimizer-mcp-facade`, based on `origin/main` at `474a0392`.**
+Everything below stage 4 is design.
 
 The abstraction is not "quantization search". It is **evidence-
 constrained physical-plan search**, and it is the query optimiser the
@@ -823,6 +823,162 @@ calling it recorded would be worse than saying so.
 
 ---
 
+## 4h. Stage 4 — the read-only facade (IMPLEMENTED)
+
+> **Anything an agent can learn through the facade is already derivable
+> from the deterministic optimiser substrate.**
+
+Everything an agent is shown is a projection of a stored record.
+Nothing in the facade orders what the optimiser did not order, draws a
+verdict the contract did not draw, or prices a byte a footprint did not
+price. Two layers, and the theorem lives entirely in the first:
+
+```text
+larql-vindex  represent::view      the seven questions, as pure projections
+larql-cli     optimizer_mcp        JSON-RPC on stdio: dispatch and serde
+```
+
+### The seven, and what each one is allowed to call
+
+```text
+optimizer.describe          schema, model, surface, contract, policies,
+                            the six decision procedures, the vocabulary
+optimizer.current           root, graph shape, the incumbent, admitted,
+                            what is still dark per evidence scale
+optimizer.frontier          every state's standing, every adjudication
+optimizer.explain           identity  ·  discovery path  ·  standing
+optimizer.compare           two standings and one physical delta
+optimizer.evidence          the raw banks beside their verdicts
+optimizer.next_experiment   a refusal, and what is missing (below)
+```
+
+Absent, and not "not yet": `record`, `apply`, `expand`, `promote`,
+and above all `accept_candidate`. A test parses the facade's own source
+and fails if an eighth method appears or if any method's name contains a
+writing verb, so the surface is checked against the code rather than
+against a list in a comment.
+
+### Rendering a derived verdict is not storing one
+
+[`Adjudication`] and [`FrontierEntry`] withhold `Serialize` on purpose:
+1d forbids storing a conclusion. Rendering one is a different act — the
+agent is shown a verdict the optimiser reached just now, from facts —
+but it is the act with the most room to lie. So the split is:
+
+```text
+substrate type derives Serialize    render the type itself
+substrate answers via a method      one view field, naming the method
+```
+
+Rendering the type is the stronger option wherever it is available: a
+reshaped `Margin` is a second `Margin` that can disagree with the first.
+
+### The anti-cheat, pointed the other way
+
+1d walks a STORED snapshot and fails on any key that names a
+conclusion. Stage 4 walks a RENDERED response and fails on any leaf that
+names nothing at all. Every field declares the call behind it, and the
+walk checks both directions:
+
+```text
+undeclared leaf        a value the facade invented
+unreached declaration  a registry entry that has stopped describing the
+                       code, and the next field added under it would
+                       inherit its alibi
+```
+
+Descent stops at a declared path, so an embedded substrate type is
+covered whole and the registry does not have to restate `Margin`'s
+fields. An absent field or an empty collection is excused by a
+declaration beneath it and by nothing else.
+
+Eight mutations, each killed by exactly its own tests: drop an origin →
+1; declare a dead one → 1; render an undeclared `recommendation` → 2;
+grow a writer → 2; order the admitted set in the facade → 1; treat a
+diagnostic pass as an admission → 1; subtract the wrong way round → 1;
+serve a write tool → 3.
+
+**The ordering test could not have failed.** Rung 5 admitted exactly one
+state, so `first()` and `last()` were the same element and "the
+incumbent is position zero" asserted nothing. It now runs against an
+openly counterfactual fixture that gives S1 a passing authority reading
+it never had — labelled as not the record — purely so the claim has two
+elements to order.
+
+### The transport carries; it does not derive
+
+`Server` is handed an `OptimizerView` and never a `SearchSnapshot`, so
+"derive nothing in transport" is a matter of what is reachable rather
+than of what a reviewer noticed. The load-bearing test compares each
+tool's payload against the view's own serialisation character for
+character: a transport that reshaped, ordered, summarised or annotated
+an answer fails rather than being noticed later.
+
+An id the record does not hold comes back as a tool error carrying
+WHICH id was wrong, not as a protocol failure and not as an empty
+success.
+
+### What stage 4 found: `next_experiment` cannot be served
+
+The one tool of the seven that does not answer, and the refusal is the
+stage's real finding.
+
+`SearchSnapshot::next_experiment` derives the whole chain from stored
+facts, but takes two arguments that are CODE and not data: a
+`LayoutAdmission` and a `Footprint`. The first has production
+implementations. **The second has none** — `Footprint`'s own contract is
+*"supplied, never derived here"*, and the only implementations in the
+tree are three copies of a test fixture, identical up to variable names.
+
+Nor can the facade write one:
+
+```text
+declared   SearchSemantics.physical_accounting = "logical-bytes/v1"
+held       a version id, which names a procedure and is not one
+missing    a Footprint oracle the snapshot can name
+missing    a source dtype on TensorSurface
+```
+
+Pricing a decision the map PROTECTS needs the source dtype, and
+`TensorSurface` carries object, tensor, role and shape and no dtype at
+all. The three fixtures close that gap by multiplying by two, which is
+bf16 asserted rather than read. Promoting an assertion about a dtype
+into production is exactly the move that makes a search price bytes it
+never saved — and adding a dtype to `TensorSurface` re-opens 1a, since
+the surface feeds every `RepresentationStateId`.
+
+So the tool refuses and names both missing facts, and still serves what
+needs no oracle: the move vocabulary (R5-F6 was a vocabulary failure and
+cost two ~430 MB moves) and the unmeasured states, which are already in
+the graph and already priced.
+
+Closing this is a substrate question and not a transport one. A stored
+price table keyed by state id is the obvious shape — an INPUT, the same
+move stages 3 and 3b made twice — but `Footprint::logical_bytes` returns
+`LogicalBytes` with no channel for a miss, and an unpriced candidate
+that is neither eligible nor pruned breaks the census conservation law.
+That is a stage of its own, not a line in this one.
+
+### Coverage and the fixture
+
+100 % line coverage on all nine `view/` files; `protocol.rs` and
+`tools.rs` at 100 %, `server.rs` at 97.2 %. The `optimizer_mcp/` subtree
+is brought UNDER the CLI coverage policy rather than left outside it,
+with one baseline: `run` locks the process's own stdin and stdout, so
+its six lines cannot be reached in-process. Everything below it was
+split out as `dispatch`/`declare`/`serve`/`load`, which take their
+reader and writer and are driven end to end from a record on disk.
+
+The Rung 5 record is now ONE fixture, shared by the 1d replay gate and
+the stage-4 views and exposed to downstream test suites behind
+`larql-vindex`'s `test-utils` feature. Two copies of those numbers would
+be two records, and the second would drift.
+
+[`Adjudication`]: #4d-stage-1d--the-replay-gate-implemented
+[`FrontierEntry`]: #4d-stage-1d--the-replay-gate-implemented
+
+---
+
 ## 5. The reward, which must not be diagnostic KL
 
 Rung 4/5 established that diagnostic KL supplies neither magnitude, sign,
@@ -918,7 +1074,8 @@ Deliberately boring, so MCTS is a policy swap and not a rewrite.
 | 2 | Deterministic action generator (§4e) | **done** |
 | 3 | Best-first; the objective API and the search/evidence boundary (§4f) | **done** |
 | 3b | Promotion-input closure — the chain runs from a snapshot (§4g) | **done** |
-| 4 | MCP facade — inspect state, hypotheses, frontier; request experiments | next |
+| 4 | MCP facade — read-only; seven intent-level tools (§4h) | **done** |
+| 4b | A footprint oracle the snapshot can name (§4h) — `next_experiment` | next |
 | 5 | PUCT as another `SearchPolicy`; same states, actions, evidence | |
 | 6 | Extend `PhysicalState` with residency; optimise measured tok/s | |
 
