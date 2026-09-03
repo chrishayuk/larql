@@ -63,6 +63,7 @@ larql-models = { path = "../larql-models", features = ["test-utils"] }
 # used by card_cmd tests to build a real VindexManifest without
 # enumerating every field by hand.
 larql-vindex-spec = { path = "../larql-vindex-spec", features = ["test-utils"] }
+larql-vindex = { path = "../larql-vindex", features = ["test-utils"] }
 
 [lints]
 workspace = true

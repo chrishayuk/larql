@@ -206,6 +206,11 @@ enum Commands {
     /// Render a Hub model card for a build (docs/vindex-factory.md §9).
     Card(card_cmd::CardCommand),
 
+    #[command(next_help_heading = "Factory")]
+    /// Serve a stored physical-plan search record over MCP, read-only
+    /// (docs/represent-optimizer-mcp.md §4h).
+    OptimizerMcp(optimizer_mcp::OptimizerMcpArgs),
+
     // ── Query (legacy, pre-LQL graph-file surface) ──────────────────
     #[command(next_help_heading = "Query")]
     /// Query a graph file for facts.
@@ -671,6 +676,7 @@ fn real_main() -> i32 {
         Commands::ServerCapabilities(args) => server_capabilities_cmd::run(args),
         Commands::InspectHf(args) => inspect_hf_cmd::run(args),
         Commands::Vindex3(cmd) => vindex3_cmd::run(cmd),
+        Commands::OptimizerMcp(args) => optimizer_mcp::run(args),
         Commands::Card(cmd) => card_cmd::run(cmd),
 
         // ── Serve (exec into larql-server) ──
