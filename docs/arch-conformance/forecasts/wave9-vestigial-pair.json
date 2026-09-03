@@ -1,0 +1,25 @@
+{
+ "wave": 9,
+ "name": "vestigial-pair-activation-is-llama-config",
+ "written": "2026-09-03",
+ "written_before": "any code. Reach measured over all 109 cached plans after wave 7.",
+ "the_fix": "Two keys read by no implementation, ours or upstream, checked against transformers 5.5.0 by exact-word grep: Falcon3-1B-Base declares `activation: swiglu` beside `hidden_act: silu` under `model_type: llama` (LlamaConfig has no `activation`); SmolLM2-135M declares `is_llama_config: true` under `model_type: llama` (no hit anywhere). Same treatment as PR #375's `use_mrope` / `rope_interleaved`: read-and-check against the EFFECTIVE policy, never echo. `activation` agrees only when the built FFN is gated with the declared gate activation (swiglu == gated silu); `is_llama_config` agrees only when the resolved family is llama. A checkpoint declaring `activation: gelu` or `is_llama_config: false` under a llama stack refuses.",
+ "why_not_the_cluster": "ffn_activation has reach 26 and unclustered reach 59; these two keys reach exactly one row each.",
+ "predicted_to_go_green": [
+  "tiiuae/Falcon3-1B-Base",
+  "HuggingFaceTB/SmolLM2-135M"
+ ],
+ "predicted_after": {
+  "GREEN": 30,
+  "AMBER": 7,
+  "RED": 72,
+  "BUG": 0,
+  "silent_drops": 0,
+  "text_closure_blockers": 1107
+ },
+ "note": "Written against the wave-7 baseline. If wave 8 lands first, add its deltas: GREEN 33, RED 69, blockers 1089.",
+ "falsifiers": [
+  "any other row moving",
+  "either key found to be read by a transformers 5.5.0 loader after all"
+ ]
+}

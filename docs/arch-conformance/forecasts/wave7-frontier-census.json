@@ -1,0 +1,577 @@
+{
+ "wave": 7,
+ "name": "frontier-census",
+ "written": "2026-09-03",
+ "written_before": "any of the new rows was planned; the 94 existing plans are cached and untouched",
+ "kind": "corpus widening, no compiler change \u2014 semantics version HELD at 6",
+ "claim_under_test": [
+  "The census thesis: checkpoint count grows quickly, family-generation count more slowly, semantic-idea count slowest. The taxonomy is CLOSED to new clusters without code, so every blocker on a new row lands either in an existing cluster (vocabulary reuse) or in `unclustered` (vocabulary gap). The split is the measurement.",
+  "The two doors hold on checkpoints nobody wrote code for: BUG stays 0 and no new row passes the gate while carrying an unread declaration."
+ ],
+ "rows_added": 23,
+ "predicted_per_row": {
+  "nvidia/NVIDIA-Nemotron-3-Nano-4B-BF16": {
+   "outcome": "RED",
+   "clusters_include": [
+    "mixer_ssm_geometry",
+    "architecture_identity",
+    "unclustered"
+   ],
+   "why": "nemotron_h unrecognised; hybrid_override_pattern, mamba_num_heads, mamba_head_dim, ssm_state_size, time_step_* have no leaf entry"
+  },
+  "nvidia/NVIDIA-Nemotron-3-Nano-30B-A3B-BF16": {
+   "outcome": "RED",
+   "clusters_include": [
+    "mixer_ssm_geometry",
+    "moe_routing",
+    "architecture_identity",
+    "unclustered"
+   ],
+   "why": "as Nano-4B plus n_routed_experts/n_shared_experts/topk_group"
+  },
+  "nvidia/NVIDIA-Nemotron-3-Super-120B-A12B-BF16": {
+   "outcome": "RED",
+   "clusters_include": [
+    "mixer_ssm_geometry",
+    "moe_routing",
+    "decode_multi_token_prediction",
+    "unclustered"
+   ],
+   "why": "adds moe_latent_size (no entry), num_nextn_predict_layers, mtp_hybrid_override_pattern"
+  },
+  "nvidia/NVIDIA-Nemotron-3-Ultra-550B-A55B-BF16": {
+   "outcome": "RED",
+   "clusters_include": [
+    "mixer_ssm_geometry",
+    "moe_routing",
+    "decode_multi_token_prediction",
+    "unclustered"
+   ],
+   "why": "same family, different dialect: layers_block_type list instead of hybrid_override_pattern string, and NO num_hidden_layers"
+  },
+  "nvidia/NVIDIA-Nemotron-3.5-Lightning-30B-A3B-BF16": {
+   "outcome": "RED",
+   "clusters_include": [
+    "mixer_ssm_geometry",
+    "moe_routing",
+    "decode_multi_token_prediction",
+    "unclustered"
+   ],
+   "why": "Ultra's dialect at Nano's size"
+  },
+  "MiniMaxAI/MiniMax-M2": {
+   "outcome": "RED",
+   "clusters_include": [
+    "moe_routing",
+    "decode_multi_token_prediction",
+    "representation_quantization",
+    "attention_schedule",
+    "unclustered"
+   ],
+   "why": "minimax_m2 unrecognised; attn_type_list, qk_norm_type, rotary_dim, use_routing_bias have no entry; fp8 quantization_config; sliding_window"
+  },
+  "MiniMaxAI/MiniMax-M2.7": {
+   "outcome": "RED",
+   "clusters_include": [
+    "moe_routing",
+    "decode_multi_token_prediction",
+    "representation_quantization",
+    "unclustered"
+   ],
+   "why": "M2 minus the vestigial keys M2 still carries (layernorm_*_beta, router_*, output_router_logits, sliding_window)"
+  },
+  "stepfun-ai/Step-3.5-Flash": {
+   "outcome": "RED",
+   "clusters_include": [
+    "attention_schedule",
+    "position_rope",
+    "decode_multi_token_prediction",
+    "unclustered"
+   ],
+   "why": "step3p5 unrecognised; layer_types+sliding_window; rope_scaling llama3; moe_num_experts/moe_top_k/moe_router_activation spelled outside the table; partial_rotary_factors PLURAL; sink; swiglu_limits per layer"
+  },
+  "stepfun-ai/Step-3.7-Flash": {
+   "outcome": "RED",
+   "clusters_include": [
+    "attention_schedule",
+    "modality_vision",
+    "unclustered"
+   ],
+   "why": "step3p7 container over a step3p5 text_config \u2014 the nesting case; same text blockers as 3.5 plus vision"
+  },
+  "tencent/Hy3": {
+   "outcome": "RED",
+   "clusters_include": [
+    "moe_routing",
+    "decode_multi_token_prediction",
+    "unclustered"
+   ],
+   "why": "hy_v3 unrecognised; moe_router_use_sigmoid, route_norm, qk_norm, enable_*_fp32 have no entry"
+  },
+  "tencent/Hy4-preview": {
+   "outcome": "AMBER",
+   "clusters_include": [
+    "attention_sparse_indexer",
+    "residual_hyper_connections",
+    "decode_multi_token_prediction",
+    "moe_routing",
+    "unclustered"
+   ],
+   "why": "index_head_dim/index_n_heads/index_topk/indexer_types and hc_eps/hc_mult are in UNSUPPORTED_COMPONENT_KEYS, so the plan will NAME the component. EXPECTED DEFECT: the label reads '(GLM-5.x)' on a Tencent checkpoint \u2014 the table is leaf-keyed but family-labelled. use_dsa/use_mla/gated_mla/learnable_sink/enable_ihc stay unknown"
+  },
+  "mistralai/Mistral-Large-3-675B-Instruct-2512": {
+   "outcome": "UNREACHABLE",
+   "reason": "no config.json in any Large-3 repo (Instruct, BF16, NVFP4, Base): Mistral-native params.json only. Not evidence about VINDEX3; evidence about a config DIALECT the source does not read"
+  },
+  "Qwen/Qwen3.8-2.4T-A95B": {
+   "outcome": "RED",
+   "text_blocking": "4 +/- 1",
+   "clusters_include": [
+    "ffn_activation",
+    "moe_routing",
+    "position_rope"
+   ],
+   "why": "qwen3_5_moe_text at TOP LEVEL (no container). Qwen3.5-35B-A3B/397B-A17B are RED on 6 with these three plus position_mrope; 2.4T declares no mrope_section, so minus 2. Prefix `qwen` is recognised, so no architecture_identity"
+  },
+  "CohereLabs/c4ai-command-a-03-2025": {
+   "outcome": "UNREACHABLE",
+   "reason": "gated for this token (HTTP 403 on config.json), like the two command-r rows"
+  },
+  "CohereLabs/command-a-plus-05-2026-bf16": {
+   "outcome": "RED",
+   "clusters_include": [
+    "attention_schedule",
+    "moe_routing",
+    "modality_vision",
+    "architecture_identity",
+    "unclustered"
+   ],
+   "why": "cohere2_vision over cohere2_moe; layer_types+sliding_window+layer_switch; expert_selection_fn, logit_scale, use_parallel_block, shared_expert_combination_strategy have no entry"
+  },
+  "LGAI-EXAONE/EXAONE-4.0-1.2B": {
+   "outcome": "RED",
+   "clusters_include": [
+    "attention_schedule",
+    "architecture_identity"
+   ],
+   "why": "exaone4 unrecognised. sliding_window: null AND sliding_window_pattern: null beside an all-full_attention layer_types \u2014 the declared-and-disabled shape again, at a third spelling. rope_scaling is llama3 and should NOT block after wave 4"
+  },
+  "LGAI-EXAONE/EXAONE-4.0-32B": {
+   "outcome": "RED",
+   "clusters_include": [
+    "attention_schedule",
+    "architecture_identity",
+    "unclustered"
+   ],
+   "why": "sliding_window 4096, sliding_window_pattern 'LLLG' (no entry), layer_types L/G"
+  },
+  "LGAI-EXAONE/EXAONE-4.5-33B": {
+   "outcome": "RED",
+   "clusters_include": [
+    "attention_schedule",
+    "decode_multi_token_prediction",
+    "modality_vision",
+    "unclustered"
+   ],
+   "why": "exaone4_5 container over exaone4_5_text; adds num_nextn_predict_layers, mtp_share_layers, _num_mtp_layers"
+  },
+  "LGAI-EXAONE/K-EXAONE-2.0-750B-A37B-NVFP4": {
+   "outcome": "RED",
+   "clusters_include": [
+    "moe_routing",
+    "representation_quantization",
+    "attention_schedule",
+    "decode_multi_token_prediction",
+    "unclustered"
+   ],
+   "why": "exaone_moe; modelopt NVFP4 quantization_config; sliding_windows PLURAL per-layer list; mtp_sliding_windows; swiglu_limits; topk_method noaux_tc"
+  },
+  "LiquidAI/LFM2-350M": {
+   "outcome": "RED",
+   "clusters_include": [
+    "architecture_identity",
+    "unclustered"
+   ],
+   "why": "lfm2 unrecognised; full_attn_idxs (older dialect), conv_L_cache, block_* have no entry"
+  },
+  "LiquidAI/LFM2-2.6B": {
+   "outcome": "RED",
+   "clusters_include": [
+    "attention_schedule",
+    "architecture_identity",
+    "unclustered"
+   ],
+   "why": "same model_type, NEWER dialect: layer_types conv/full_attention instead of full_attn_idxs \u2014 two config dialects under one model_type"
+  },
+  "LiquidAI/LFM2.5-2.6B": {
+   "outcome": "RED",
+   "clusters_include": [
+    "attention_schedule",
+    "architecture_identity",
+    "unclustered"
+   ],
+   "why": "as LFM2-2.6B with rope_parameters"
+  },
+  "LiquidAI/LFM2.5-8B-A1B": {
+   "outcome": "RED",
+   "clusters_include": [
+    "attention_schedule",
+    "moe_routing",
+    "architecture_identity",
+    "unclustered"
+   ],
+   "why": "lfm2_moe; num_experts, num_experts_per_tok, num_dense_layers, use_expert_bias"
+  }
+ },
+ "predicted_aggregate": {
+  "new_rows": {
+   "GREEN": 0,
+   "AMBER": 1,
+   "RED": 20,
+   "UNREACHABLE": 2,
+   "BUG": 0
+  },
+  "after": {
+   "GREEN": 28,
+   "AMBER": 7,
+   "RED": 74,
+   "BUG": 0,
+   "silent_drops": 0,
+   "scored": 109
+  },
+  "existing_rows_changed": 0,
+  "new_clusters": 0,
+  "unclustered_reach_gain": "~20 \u2014 every RED row; this is the vocabulary gap the wave exists to measure",
+  "attention_schedule_reach_gain": ">= 9 (Step x2, Command A+, EXAONE x4, LFM2 x3, MiniMax M2)",
+  "note_on_ordering": "Census BEFORE the attention_schedule fix, so that fix's forecast is written against the wider denominator instead of being rescored twice."
+ },
+ "falsifiers": [
+  "any new row GREEN \u2014 a checkpoint nobody wrote code for passing the gate would mean the gate is not reading what the config declares",
+  "any new row BUG",
+  "Hy4-preview RED rather than AMBER \u2014 would mean the unsupported-component table is not leaf-keyed the way semantics.rs says",
+  "Qwen3.8-2.4T text closure outside 3..5",
+  "Mistral Large 3 planning at all"
+ ],
+ "result": {
+  "scored_on": "2026-09-03",
+  "outcome_semantics_version": 6,
+  "rows_planned": 23,
+  "outcome_hits": 23,
+  "outcome_misses": 0,
+  "after": {
+   "GREEN": 28,
+   "AMBER": 7,
+   "RED": 74,
+   "BUG": 0,
+   "scored": 109,
+   "unreachable": 8,
+   "lineages": 44,
+   "family_generations": 79,
+   "text_closure_blockers": 1109
+  },
+  "predicted_after_matched": true,
+  "existing_rows_changed": [],
+  "new_clusters": 0,
+  "unclustered_reach": "42 -> 62 (whole-model), 40 -> 59 (text closure)",
+  "attention_schedule_reach": "16 -> 23 whole-model; text closure 23 (predicted >= 9 gain: got 7 whole-model \u2014 Command A+ and EXAONE-4.0 consumed layer_types/sliding_window, which the forecast did not credit)",
+  "per_row": {
+   "nvidia/NVIDIA-Nemotron-3-Nano-4B-BF16": {
+    "predicted": "RED",
+    "actual": "RED",
+    "text_blocking": 20,
+    "text_clusters": [
+     "architecture_identity",
+     "attention_bias",
+     "execution_surface",
+     "mixer_ssm_geometry",
+     "norm_geometry",
+     "unclustered"
+    ]
+   },
+   "nvidia/NVIDIA-Nemotron-3-Nano-30B-A3B-BF16": {
+    "predicted": "RED",
+    "actual": "RED",
+    "text_blocking": 26,
+    "text_clusters": [
+     "architecture_identity",
+     "attention_bias",
+     "execution_surface",
+     "mixer_ssm_geometry",
+     "moe_routing",
+     "norm_geometry",
+     "position_rope",
+     "unclustered"
+    ]
+   },
+   "nvidia/NVIDIA-Nemotron-3-Super-120B-A12B-BF16": {
+    "predicted": "RED",
+    "actual": "RED",
+    "text_blocking": 29,
+    "text_clusters": [
+     "architecture_identity",
+     "attention_bias",
+     "decode_multi_token_prediction",
+     "execution_surface",
+     "mixer_ssm_geometry",
+     "moe_routing",
+     "norm_geometry",
+     "position_rope",
+     "unclustered"
+    ]
+   },
+   "nvidia/NVIDIA-Nemotron-3-Ultra-550B-A55B-BF16": {
+    "predicted": "RED",
+    "actual": "RED",
+    "text_blocking": 29,
+    "text_clusters": [
+     "architecture_identity",
+     "attention_bias",
+     "decode_multi_token_prediction",
+     "execution_surface",
+     "mixer_ssm_geometry",
+     "moe_routing",
+     "norm_geometry",
+     "position_rope",
+     "unclustered"
+    ]
+   },
+   "nvidia/NVIDIA-Nemotron-3.5-Lightning-30B-A3B-BF16": {
+    "predicted": "RED",
+    "actual": "RED",
+    "text_blocking": 28,
+    "text_clusters": [
+     "architecture_identity",
+     "attention_bias",
+     "decode_multi_token_prediction",
+     "execution_surface",
+     "mixer_ssm_geometry",
+     "moe_routing",
+     "norm_geometry",
+     "position_rope",
+     "unclustered"
+    ]
+   },
+   "MiniMaxAI/MiniMax-M2": {
+    "predicted": "RED",
+    "actual": "RED",
+    "text_blocking": 17,
+    "text_clusters": [
+     "architecture_identity",
+     "decode_multi_token_prediction",
+     "moe_routing",
+     "representation_quantization",
+     "unclustered"
+    ]
+   },
+   "MiniMaxAI/MiniMax-M2.7": {
+    "predicted": "RED",
+    "actual": "RED",
+    "text_blocking": 12,
+    "text_clusters": [
+     "architecture_identity",
+     "decode_multi_token_prediction",
+     "moe_routing",
+     "representation_quantization",
+     "unclustered"
+    ]
+   },
+   "stepfun-ai/Step-3.5-Flash": {
+    "predicted": "RED",
+    "actual": "RED",
+    "text_blocking": 35,
+    "text_clusters": [
+     "architecture_identity",
+     "attention_schedule",
+     "decode_multi_token_prediction",
+     "moe_routing",
+     "position_rope",
+     "shape_and_tensor_naming",
+     "unclustered"
+    ]
+   },
+   "stepfun-ai/Step-3.7-Flash": {
+    "predicted": "RED",
+    "actual": "RED",
+    "text_blocking": 45,
+    "text_clusters": [
+     "architecture_identity",
+     "attention_schedule",
+     "decode_multi_token_prediction",
+     "modality_vision",
+     "position_rope",
+     "shape_and_tensor_naming",
+     "unclustered"
+    ]
+   },
+   "tencent/Hy3": {
+    "predicted": "RED",
+    "actual": "RED",
+    "text_blocking": 14,
+    "text_clusters": [
+     "architecture_identity",
+     "decode_multi_token_prediction",
+     "unclustered"
+    ]
+   },
+   "tencent/Hy4-preview": {
+    "predicted": "AMBER",
+    "actual": "AMBER",
+    "text_blocking": 25,
+    "text_clusters": [
+     "architecture_identity",
+     "attention_schedule",
+     "attention_sparse_indexer",
+     "decode_multi_token_prediction",
+     "ffn_activation",
+     "residual_hyper_connections",
+     "unclustered"
+    ]
+   },
+   "mistralai/Mistral-Large-3-675B-Instruct-2512": {
+    "predicted": "UNREACHABLE",
+    "actual": "UNREACHABLE",
+    "text_blocking": null,
+    "text_clusters": []
+   },
+   "Qwen/Qwen3.8-2.4T-A95B": {
+    "predicted": "RED",
+    "actual": "RED",
+    "text_blocking": 3,
+    "text_clusters": [
+     "ffn_activation",
+     "moe_routing"
+    ]
+   },
+   "CohereLabs/c4ai-command-a-03-2025": {
+    "predicted": "UNREACHABLE",
+    "actual": "UNREACHABLE",
+    "text_blocking": null,
+    "text_clusters": []
+   },
+   "CohereLabs/command-a-plus-05-2026-bf16": {
+    "predicted": "RED",
+    "actual": "RED",
+    "text_blocking": 39,
+    "text_clusters": [
+     "architecture_identity",
+     "attention_bias",
+     "execution_surface",
+     "ffn_activation",
+     "modality_vision",
+     "moe_routing",
+     "norm_geometry",
+     "position_rope",
+     "unclustered"
+    ]
+   },
+   "LGAI-EXAONE/EXAONE-4.0-1.2B": {
+    "predicted": "RED",
+    "actual": "RED",
+    "text_blocking": 4,
+    "text_clusters": [
+     "architecture_identity",
+     "execution_surface",
+     "ffn_activation",
+     "norm_geometry"
+    ]
+   },
+   "LGAI-EXAONE/EXAONE-4.0-32B": {
+    "predicted": "RED",
+    "actual": "RED",
+    "text_blocking": 5,
+    "text_clusters": [
+     "architecture_identity",
+     "execution_surface",
+     "ffn_activation",
+     "norm_geometry",
+     "unclustered"
+    ]
+   },
+   "LGAI-EXAONE/EXAONE-4.5-33B": {
+    "predicted": "RED",
+    "actual": "RED",
+    "text_blocking": 9,
+    "text_clusters": [
+     "architecture_identity",
+     "decode_multi_token_prediction",
+     "execution_surface",
+     "ffn_activation",
+     "modality_vision",
+     "norm_geometry",
+     "position_rope",
+     "unclustered"
+    ]
+   },
+   "LGAI-EXAONE/K-EXAONE-2.0-750B-A37B-NVFP4": {
+    "predicted": "RED",
+    "actual": "RED",
+    "text_blocking": 24,
+    "text_clusters": [
+     "architecture_identity",
+     "attention_schedule",
+     "decode_multi_token_prediction",
+     "moe_routing",
+     "representation_quantization",
+     "unclustered"
+    ]
+   },
+   "LiquidAI/LFM2-350M": {
+    "predicted": "RED",
+    "actual": "RED",
+    "text_blocking": 20,
+    "text_clusters": [
+     "architecture_identity",
+     "execution_surface",
+     "norm_geometry",
+     "unclustered"
+    ]
+   },
+   "LiquidAI/LFM2-2.6B": {
+    "predicted": "RED",
+    "actual": "RED",
+    "text_blocking": 24,
+    "text_clusters": [
+     "architecture_identity",
+     "attention_schedule",
+     "execution_surface",
+     "norm_geometry",
+     "unclustered"
+    ]
+   },
+   "LiquidAI/LFM2.5-2.6B": {
+    "predicted": "RED",
+    "actual": "RED",
+    "text_blocking": 20,
+    "text_clusters": [
+     "architecture_identity",
+     "attention_schedule",
+     "execution_surface",
+     "norm_geometry",
+     "unclustered"
+    ]
+   },
+   "LiquidAI/LFM2.5-8B-A1B": {
+    "predicted": "RED",
+    "actual": "RED",
+    "text_blocking": 13,
+    "text_clusters": [
+     "architecture_identity",
+     "attention_schedule",
+     "execution_surface",
+     "moe_routing",
+     "norm_geometry",
+     "unclustered"
+    ]
+   }
+  },
+  "verdict": "EXACT on every outcome, including the two negatives (Mistral Large 3 no config.json, Command A gated) and the one AMBER (Hy4-preview). Cluster-membership predictions were coarser: 14 of 21 planned rows matched the predicted cluster set exactly, 7 carried extra generic clusters (ffn_activation, norm_geometry, execution_surface, attention_bias) that follow from an unregistered family rather than from any key the forecast reasoned about.",
+  "findings": [
+   "Hy4-preview is AMBER because its indexer and hyper-connection leaves match the unsupported-component table \u2014 and the component labels read '(GLM-5.x)' on a Tencent checkpoint. The table is leaf-keyed but family-labelled. `indexer_types` is named as a component yet reports cluster `unclustered`: named in one table, absent from the other.",
+   "EXAONE-4.0-1.2B blocks on exactly 4 subjects \u2014 architecture_family, target.execution_surface, hidden_act, rms_norm_eps \u2014 none of which is a config fact the model declares unusually. Its `sliding_window: null` + `sliding_window_pattern: null` + all-full layer_types passed as inert (wave 6's companion gate reached a third spelling). Everything left is the unregistered family. Registering exaone4 is NOT a Llama alias: EXAONE 4 uses QK-Reorder-Norm, so the family entry must declare that.",
+   "Qwen3.8-2.4T-A95B blocks on 3 (hidden_act, num_experts_per_tok, shared_expert_intermediate_size). At the TOP level `rope_parameters.partial_rotary_factor` did not block; nested under text_config on Qwen3.5-35B-A3B it does. Same key, two fates by nesting \u2014 see per-key check below.",
+   "Command A+ declares layer_types sliding/full with sliding_window 4096 and attention_schedule is NOT in its text closure: the schedule is consumed generically. Step-3.5 declares the same shape and attention_schedule IS in its closure \u2014 its `use_rope_layers`, `yarn_only_types`, `partial_rotary_factors` (plural) and sliding_window 512 co-declare, so the blocker is the per-layer rope schedule spelled beside it, not the window.",
+   "Nemotron 3 Ultra and 3.5 Lightning spell the hybrid schedule as `layers_block_type` (a list, no num_hidden_layers) where Nano and Super spell it `hybrid_override_pattern` (a string). One family, two dialects, same generation year. LFM2 likewise: 350M uses full_attn_idxs, 2.6B uses layer_types.",
+   "Mistral Large 3 ships params.json only, in every variant. The sweep reports it as absent; the honest reason is a config DIALECT the source does not read, and the script now says so."
+  ]
+ }
+}
