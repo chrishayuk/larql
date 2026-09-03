@@ -233,6 +233,114 @@ silently colliding.
 
 ---
 
+## 4b. Stage 1b — the state graph (IMPLEMENTED)
+
+`represent/state/{realization,transition,graph}.rs`, 12 tests, 100% line
+coverage on all six state files.
+
+### Physical identity is not search-context identity
+
+Stage 1a collapses a protection and a layout refusal into one
+`RepresentationStateId`. That is right for evidence and, left alone,
+would have been a 1b information-loss bug — the two are not
+*action*-equivalent:
+
+```text
+                 physical equivalence
+                         │
+                RepresentationStateId
+                   ↑                ↑
+         realization A        realization B
+         X = Source           X = LayoutRefused
+                   │                │
+         "unprotect X" is    nothing compiles X;
+         a legal move        the layout refuses it
+```
+
+So the graph carries two keys:
+
+```text
+RepresentationStateId   what is PRESENTED   → evidence, MeasurementKey
+RealizationId           what is DECIDED     → the action generator
+```
+
+A node is one physical state holding a *set* of realizations. **Evidence
+may deduplicate more aggressively than search may.** `ResolvedEncoding`
+gained `fact()`, and the decision vector gained `canonical_full()`
+alongside `canonical()` — the realization digest reads the refining
+form, the physical digest the collapsed one.
+
+### Earning the word DAG
+
+Acyclicity is a **theorem under a declared policy**, not a property of
+the domain, so the policy is a value on the graph rather than a comment:
+
+```text
+StrictlyImprovingPhysical   every edge strictly reduces LogicalBytes
+                            ⇒ a cycle would need a strictly decreasing
+                              u64 sequence returning to its start
+                            ⇒ no cycles. This is a DAG.
+Unconstrained               any edge; a general graph, caller owns
+                            termination
+```
+
+The strict policy is what rung 5 already enforces — N1 pruned `−E26 + H`
+at +1.39 GB and `−K25 + M23` at +2,091,136 B for being physically worse,
+and Ruling 1 lists physical dominance among the four legitimate
+pre-measurement prunes. It is nonetheless **a policy and not a law**, and
+the programme's own roadmap says when it breaks: once residency joins the
+state and the objective is measured tok/s, a move that *adds* logical
+bytes while freeing unified memory for resident experts is exactly what
+the search must be able to make. The type is therefore
+`RepresentationStateGraph`, the policy is recorded and serialised, and a
+graph built under one policy is recognisably not a graph built under the
+other.
+
+One consequence worth naming: a cost-neutral edge is refused too. From a
+layout-refused realization, "unprotect" changes the facts and no bytes at
+all — physical dominance prunes it anyway, and admitting it would put a
+zero-weight edge into the structure the strict decrease is what keeps
+acyclic.
+
+### Edges own how you got there
+
+```text
+Transition { parent, child, child_realization, action, physical_delta, provenance }
+```
+
+`physical_delta` is **computed** from two footprints, never supplied —
+R5-F5 read a footprint column as a saving and overstated an expert revert
+by 3.39×, so `LogicalBytes` is a newtype that keeps footprint, per-token
+read and delta apart. Edge identity is
+`(parent, child, child_realization, action)`, with the action's removed
+and added lists sorted, so `+q +k` and `+k +q` are one move while a
+different *destination realization* is a different move. Re-discovering
+an edge under provenance already recorded is a no-op; a genuinely
+different discoverer is kept.
+
+Round number, candidate rank, diagnostic reading and an agent's rationale
+all live in `Provenance.note` as **text**, precisely so that no
+comparator can compute on them — rung 5's rule that the action lists are
+recorded for reproduction *and for no other purpose*.
+
+One graph holds one model and one surface: a map's physical prize is a
+property of the model it resolves against, and mixing them would hold
+costs that cannot be compared.
+
+### The tests, and that they can fail
+
+The six that were asked for, plus five refusal guards. Four mutations,
+each killing exactly its own tests:
+
+| Mutation | Killed |
+|---|---|
+| realization digest reads the *collapsed* form | `one_physical_state_keeps_both_realizations`, `…serialization…` (2) |
+| `observe()` always appends provenance | `rediscovering_an_edge…` (1) |
+| policy admits a cost-neutral edge (`<=` for `<`) | `a_transition_that_does_not_improve_physically…` (1) |
+| edge identity drops the action | `different_recipes_with_one_effective_representation…` (1) |
+
+---
+
 ## 5. The reward, which must not be diagnostic KL
 
 Rung 4/5 established that diagnostic KL supplies neither magnitude, sign,
@@ -322,8 +430,8 @@ Deliberately boring, so MCTS is a policy swap and not a rewrite.
 | # | Rung | State |
 |---|---|---|
 | 1a | Resolved-state identity contract + adversarial tests | **done** |
-| 1b | DAG with **edge** provenance | next |
-| 1c | `MeasurementKey` + measurement dedup | |
+| 1b | State graph with **edge** provenance (§4b) | **done** |
+| 1c | `MeasurementKey` + measurement dedup | next |
 | 1d | Persistent, replayable search state | |
 | 2 | Deterministic action generator — exact physical deltas, participation, novelty and admissibility *before* measurement | |
 | 3 | Best-first / beam; establish the objective API and the search/evidence boundary | |

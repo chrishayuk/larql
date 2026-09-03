@@ -70,16 +70,24 @@
 //! generation (unprotecting is a move, un-refusing is not). Identity
 //! collapses them; explanation does not.
 
+pub mod graph;
 pub mod identity;
+pub mod realization;
 pub mod resolved;
 pub mod surface;
+pub mod transition;
 
+pub use graph::{RepresentationStateGraph, StateNode, TransitionPolicy};
 pub use identity::{RepresentationState, RepresentationStateId, STATE_ID_VERSION};
+pub use realization::{LogicalBytes, RealizationId, ResolvedState};
 pub use resolved::{
     resolve, LayoutAdmission, NoLayoutConstraint, PackLayoutAdmission, ResolvedDecision,
     ResolvedDecisionVector, ResolvedEncoding, SOURCE_PRECISION,
 };
 pub use surface::{SurfaceTensor, TensorSurface};
+pub use transition::{Action, Provenance, Transition};
 
+#[cfg(test)]
+mod graph_tests;
 #[cfg(test)]
 mod tests;

@@ -74,6 +74,22 @@ impl ResolvedEncoding {
     pub fn is_compiled(&self) -> bool {
         matches!(self, Self::Compiled(_))
     }
+
+    /// **Which fact produced this decision**, as distinct from what it
+    /// presents.
+    ///
+    /// `Source` and `LayoutRefused` present identical bytes and are one
+    /// physical state; they are not one *realization*, because the
+    /// actions available from them differ. Unprotecting a protected
+    /// tensor is a legal move; un-refusing a layout is not a move at
+    /// all. The search reads this; the physical digest does not.
+    pub fn fact(&self) -> &'static str {
+        match self {
+            Self::Compiled(_) => "compiled",
+            Self::Source => "source",
+            Self::LayoutRefused { .. } => "layout-refused",
+        }
+    }
 }
 
 /// Whether an encoding's storage layout can hold a tensor.
@@ -137,6 +153,18 @@ impl ResolvedDecision {
             self.encoding.effective()
         )
     }
+
+    /// The canonical record with the fact retained — what the search,
+    /// as opposed to the physical digest, is entitled to distinguish.
+    fn canonical_full(&self) -> String {
+        format!(
+            "{}{FIELD}{}{FIELD}{}{FIELD}{}",
+            self.object,
+            self.tensor,
+            self.encoding.effective(),
+            self.encoding.fact()
+        )
+    }
 }
 
 /// **The resolved decision vector: one entry per surface tensor, in
@@ -185,11 +213,27 @@ impl ResolvedDecisionVector {
             .collect()
     }
 
-    /// The canonical form the state digest reads.
+    /// The canonical form the PHYSICAL digest reads: what is presented,
+    /// with protection and layout refusal collapsed.
     pub(crate) fn canonical(&self) -> String {
         self.decisions
             .iter()
             .map(ResolvedDecision::canonical)
+            .collect::<Vec<_>>()
+            .join(&RECORD.to_string())
+    }
+
+    /// The canonical form the REALIZATION digest reads: every decision
+    /// with the fact that produced it, nothing collapsed.
+    ///
+    /// Two vectors can share [`Self::canonical`] and differ here. That
+    /// is not a defect of the physical digest — evidence may deduplicate
+    /// more aggressively than search may, and this is the form that
+    /// keeps the difference available to the action generator.
+    pub(crate) fn canonical_full(&self) -> String {
+        self.decisions
+            .iter()
+            .map(ResolvedDecision::canonical_full)
             .collect::<Vec<_>>()
             .join(&RECORD.to_string())
     }
