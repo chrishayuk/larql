@@ -4,6 +4,18 @@
 FROM rust:1-slim AS builder
 WORKDIR /build
 
+# The commit this image is built from, surfaced by the server as
+# `server.revision` in GET /v1/capabilities so a deploy can be asserted
+# rather than inferred from behaviour. Passed by the deploy:
+#
+#   fly deploy --build-arg LARQL_SERVER_REVISION=$(git rev-parse HEAD) ...
+#
+# Unset is a legitimate state: `option_env!` then yields None and the
+# field is absent from the report. Never defaulted to a placeholder —
+# a build that does not know its commit must not claim one.
+ARG LARQL_SERVER_REVISION
+ENV LARQL_SERVER_REVISION=${LARQL_SERVER_REVISION}
+
 COPY Cargo.toml Cargo.lock rust-toolchain.toml ./
 COPY crates/ crates/
 # larql-vindex embeds registry model records via include_str! at compile
