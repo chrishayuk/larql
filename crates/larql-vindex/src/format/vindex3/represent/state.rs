@@ -70,15 +70,21 @@
 //! generation (unprotecting is a move, un-refusing is not). Identity
 //! collapses them; explanation does not.
 
+pub mod evidence_bank;
 pub mod graph;
 pub mod identity;
+pub mod instrument;
+pub mod key;
 pub mod realization;
 pub mod resolved;
 pub mod surface;
 pub mod transition;
 
+pub use evidence_bank::{EvidenceBank, EvidenceBankId, EVIDENCE_BANK_ID_VERSION};
 pub use graph::{RepresentationStateGraph, StateNode, TransitionPolicy};
 pub use identity::{RepresentationState, RepresentationStateId, STATE_ID_VERSION};
+pub use instrument::{InstrumentSemantics, InstrumentSemanticsId, INSTRUMENT_SEMANTICS_ID_VERSION};
+pub use key::{MeasurementKey, MeasurementRegistry, MEASUREMENT_KEY_VERSION};
 pub use realization::{LogicalBytes, RealizationId, ResolvedState};
 pub use resolved::{
     resolve, LayoutAdmission, NoLayoutConstraint, PackLayoutAdmission, ResolvedDecision,
@@ -89,5 +95,7 @@ pub use transition::{Action, Provenance, Transition};
 
 #[cfg(test)]
 mod graph_tests;
+#[cfg(test)]
+mod key_tests;
 #[cfg(test)]
 mod tests;

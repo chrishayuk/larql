@@ -1,8 +1,8 @@
 # The LARQL Physical Optimizer — evidence-constrained physical-plan search
 
 **Branch `worktree-represent-optimizer-mcp`, based on `origin/main` at
-`8f647872`.** Stage 1a is implemented and green; everything below it is
-design.
+`8f647872`.** Stages 1a-1c are implemented and green; everything below
+them is design.
 
 The abstraction is not "quantization search". It is **evidence-
 constrained physical-plan search**, and it is the query optimiser the
@@ -341,6 +341,97 @@ each killing exactly its own tests:
 
 ---
 
+## 4c. Stage 1c — measurement identity (IMPLEMENTED)
+
+`represent/state/{evidence_bank,instrument,key}.rs`, 14 tests, 100% line
+coverage on all nine state files.
+
+```text
+MeasurementKey { state_id, bank, scale, instrument }
+```
+
+R5-F3 registered the shape; the correction that came with it is why it
+is not keyed on the state alone — that would forbid the diagnostic →
+authority escalation the ladder depends on.
+
+### `QualityBank` was the wrong home, and the reason matters
+
+The plan was to lift bank identity into `QualityBank`. It does not
+belong there: `QualityBank` is *"one bank of measurements over a fixed
+token sequence"* — the **observation** (measured KL, routing evidence,
+margin distributions). The programme's "evidence bank" is the **corpus**
+those were taken over — 256 teacher-forced sequences, a directory with a
+`manifest.json`. One word, two things, and only the second identifies an
+experiment. Before this stage the corpus had no type at all.
+
+Its identity today is a `sha256` of `manifest.json` computed inline in
+the Q2a harness and written to the report as `bank_manifest_sha256`.
+Right instinct, **not sufficient** — because the harness *slices* the
+corpus. `LARQL_Q2A_SEQUENCES` takes 32 of 256, so a 32-sequence and a
+256-sequence reading share a manifest digest while being different
+experiments. That slice is the difference between a diagnostic and an
+authority run, and a key built on the manifest hash alone would have
+called them repeats.
+
+So `EvidenceBankId` digests schema, manifest digest, **the ordered
+samples actually used**, and positions-per-sample — and excludes
+location, timestamp and description. `EvidenceBank::positions()` is
+computed, never multiplied by hand: `LARQL_Q2A_SEQUENCES=256` is
+*sequences*, and 256 × 32 = 8192 *positions* is the confusion that once
+nearly inverted an acceptance check.
+
+### Instrument semantics, not a version string
+
+A version string fails in both directions — it moves on a refactor that
+changes nothing observable, and stays put when someone changes the
+truncation. So `InstrumentSemanticsId` digests declared meaning: metric,
+truncation, aggregation, token selection, procedure. `implementation_note`
+is excluded, so a refactor cannot split a state's evidence.
+
+Truncation is the case already paid for: `min_covered_mass` exists
+because a KL over a truncation covering a third of the mass is a
+different measurement from one covering all of it — top-128 saw 0.307 of
+a first position, top-2048 saw 0.729.
+
+**The limit, stated rather than papered over**: a declaration can lie.
+Change the runner's truncation without changing what it reports and the
+id does not move. The mitigation is construction — build the declaration
+from the constants the runner uses — and this module can make that
+possible, not mandatory.
+
+### What is deliberately absent
+
+No PASS/FAIL, no promotion status, no contract. The key says *what
+experiment was performed against what state*, never what the result
+meant. Classification stays downstream in `Margin`/`Frontier` and
+`decide_promotion`, so a later contract reinterprets observations
+already held instead of making them disappear.
+
+`MeasurementRegistry` stores readings only. Re-recording an identical
+reading is a no-op — a control witness reproducing is what a replayed
+round should do — while a *different* reading under the same key is
+refused: that says the experiment is not reproducible, and quietly
+keeping either would hide it.
+
+### The case that joins 1a, 1b and 1c
+
+```text
+RealizationId differs, RepresentationStateId same
+    action search  → distinguish
+    measurement    → collapse, reuse the observation
+```
+
+A protected tensor and a layout-refused one present identical bytes, so
+a measurement of one *is* a measurement of the other, while the moves
+available from each still differ.
+
+Five mutations, each killing exactly its own tests: key ignores scale →
+2 red; bank id counts samples instead of naming them → 1; instrument id
+ignores truncation → 2; bank id includes its storage location → 1;
+`record` overwrites a contradiction → 1.
+
+---
+
 ## 5. The reward, which must not be diagnostic KL
 
 Rung 4/5 established that diagnostic KL supplies neither magnitude, sign,
@@ -431,8 +522,8 @@ Deliberately boring, so MCTS is a policy swap and not a rewrite.
 |---|---|---|
 | 1a | Resolved-state identity contract + adversarial tests | **done** |
 | 1b | State graph with **edge** provenance (§4b) | **done** |
-| 1c | `MeasurementKey` + measurement dedup | next |
-| 1d | Persistent, replayable search state | |
+| 1c | `MeasurementKey` + measurement dedup (§4c) | **done** |
+| 1d | Persistent, replayable search state | next |
 | 2 | Deterministic action generator — exact physical deltas, participation, novelty and admissibility *before* measurement | |
 | 3 | Best-first / beam; establish the objective API and the search/evidence boundary | |
 | 4 | MCP facade — inspect state, hypotheses, frontier; request experiments | |
@@ -521,19 +612,12 @@ effect on the future physical plan.
 
 ## 9. Open questions
 
-1. **`MeasurementKey` dimensions — mostly settled already.** R5-F3
-   registered them: `{map_hash, bank_manifest, evidence_scale,
-   instrument_semantics}`, with the explicit correction that **dedup on
-   bare `map_hash` is wrong** because it would forbid the
-   diagnostic → authority escalation the whole ladder depends on. In
-   this module's vocabulary `map_hash` becomes `state_id`. Still to
-   settle: whether `QualityGate.id` is already implied by
-   `instrument_semantics` or belongs as its own dimension, and whether
-   execution/backend identity enters the key for benchmark measurements
-   only or for all of them. Note that `bank_manifest` exists in the
-   programme (`17d59a6b…`) but not as a field on `QualityBank`, which
-   carries `positions` and evidence and no id — so bank identity has to
-   be lifted into the type before 1c can key on it.
+1. **How an instrument declaration is bound to the runner.** 1c
+   settled the *shape* of `InstrumentSemanticsId` and left the binding
+   open: nothing forces the Q2a harness to build its declaration from
+   `TOP_N` rather than restating it. Until it does, a silent semantics
+   change is undetectable. The fix is a constructor at the call site,
+   not a validator here.
 2. **Where the DAG persists.** Evidence already lives in the experiments
    ledger; a second store risks two truths. Candidate: the DAG holds
    identities and edges and dereferences every measurement to the ledger
