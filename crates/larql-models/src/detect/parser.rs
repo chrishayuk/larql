@@ -450,12 +450,31 @@ pub(super) fn parse_model_config(config: &serde_json::Value) -> ModelConfig {
     let num_global_kv_heads = text_config["num_global_key_value_heads"]
         .as_u64()
         .map(|v| v as usize);
-    // Partial rotary factor: check rope_parameters.full_attention first (Gemma 4),
-    // then top-level partial_rotary_factor.
-    let partial_rotary_factor = rope_params
-        .and_then(|rp| rp.get("full_attention"))
-        .and_then(|fa| fa["partial_rotary_factor"].as_f64())
-        .or_else(|| text_config["partial_rotary_factor"].as_f64());
+    // Partial rotary factor, in the reference's precedence
+    // (`PreTrainedConfig::standardize_rope_params`, transformers 5.x):
+    //  1. partial_rotary_factor at the top level — the legacy flat form.
+    //     The reference copies it INTO `rope_parameters`, overwriting
+    //     whatever the block declared, so when both are present this one
+    //     is the fraction the model runs with;
+    //  2. rope_parameters.full_attention.partial_rotary_factor — Gemma 4's
+    //     per-layer-type form;
+    //  3. rope_parameters.partial_rotary_factor — the 5.x flat form, and
+    //     the ONLY spelling every Qwen3.5 checkpoint uses.
+    //
+    // Form 3 was not read until wave 8 of the conformance sweep. Qwen3.8
+    // writes forms 1 and 3 together, so it resolved; Qwen3.5 writes form 3
+    // alone, lost the fraction, and would have rotated all 256 head dims
+    // where the checkpoint asks for 64 — the same fallthrough shape as
+    // `rope_theta` form 2 above, on the next key. VINDEX3 refused those
+    // checkpoints outright; the engine path did not.
+    let partial_rotary_factor = text_config["partial_rotary_factor"]
+        .as_f64()
+        .or_else(|| {
+            rope_params
+                .and_then(|rp| rp.get("full_attention"))
+                .and_then(|fa| fa["partial_rotary_factor"].as_f64())
+        })
+        .or_else(|| rope_params.and_then(|rp| rp["partial_rotary_factor"].as_f64()));
     // Sliding window pattern: explicit sliding_window_pattern field, or infer later.
     let sliding_window_pattern = text_config["sliding_window_pattern"]
         .as_u64()

@@ -46,16 +46,16 @@ The sweep is the regression instrument for the conformance programme. Every
 semantic change is measured against the same 88-row corpus, and the two
 invariants are the ones that matter most:
 
-| Metric | Baseline | Waves 1+3 | rope | moe | sliding window | frontier census† |
-|---|---:|---:|---:|---:|---:|---:|
-| semantics version | 1 | 3 | 4 | 5 | **6** | 6 (held) |
-| GREEN | 17 | 18 | 21 | 26 | **28** | 28 |
-| AMBER | 6 | 6 | 6 | 6 | 6 | 7 |
-| RED | 65 | 64 | 61 | 56 | **54** | 74 |
-| **BUG** | **0** | **0** | **0** | **0** | **0** | **0** |
-| **silent drops** | **0** | **0** | **0** | **0** | **0** | **0** |
-| text-closure blockers | 886 | 776 | 756 | 671 | **668** | 1109 |
-| K3 clusters remaining | 7 | 7 | 7 | 7 | **7** | 7 |
+| Metric | Baseline | Waves 1+3 | rope | moe | sliding window | frontier census† | partial rotary |
+|---|---:|---:|---:|---:|---:|---:|---:|
+| semantics version | 1 | 3 | 4 | 5 | 6 | 6 (held) | **7** |
+| GREEN | 17 | 18 | 21 | 26 | 28 | 28 | **31** |
+| AMBER | 6 | 6 | 6 | 6 | 6 | 7 | 7 |
+| RED | 65 | 64 | 61 | 56 | 54 | 74 | **71** |
+| **BUG** | **0** | **0** | **0** | **0** | **0** | **0** | **0** |
+| **silent drops** | **0** | **0** | **0** | **0** | **0** | **0** | **0** |
+| text-closure blockers | 886 | 776 | 756 | 671 | 668 | 1109 | **1091** |
+| K3 clusters remaining | 7 | 7 | 7 | 7 | 7 | 7 | **7** |
 
 † Wave 7 widened the corpus from 88 to 109 scored rows. The 88 rows every
 earlier column was measured on are unchanged — same verdicts, same 668
@@ -252,6 +252,39 @@ against 45 layers, the three multi-token-prediction layers included, so no
 layer aligns. The cluster reads as "attention schedule"; the fix is a length
 rule.
 
+**Wave 8 — `partial_rotary_factor` inside `rope_parameters` (semantics 7).**
+The first fix chosen from the 109-row corpus, and the cheapest kind there is:
+a key read from the wrong spot. The parser read the legacy top-level
+`partial_rotary_factor` and Gemma 4's per-layer-type block, never
+`rope_parameters.partial_rotary_factor` — the transformers-5.x flat form, the
+spelling the reference reads
+(`rope_parameters_dict.get("partial_rotary_factor", 1.0)`), and the only one
+every Qwen3.5 checkpoint uses. Qwen3.8 writes both and was GREEN; Qwen3.5
+wrote one and lost the fraction, so no layer carried one, the partial and
+multi-axis rotary probes answered nothing, and three leaves refused a family
+this build executes. Precedence now mirrors `standardize_rope_params`: top
+level (the reference copies it *into* the block, overwriting), then the
+per-type block, then the flat block.
+
+Frozen before the code in
+[`forecasts/wave8-partial-rotary-factor-in-rope-parameters.json`](forecasts/wave8-partial-rotary-factor-in-rope-parameters.json):
+three Qwen3.5 dense rows green, three Qwen3.5 MoE rows from six blockers to
+three, and three rows that *declare* the key staying exactly where they were
+(Qwen3.8-Flash-Next, Nemotron 3, GLM-4.7-Flash). **Every arm held**: GREEN 31,
+RED 71, blockers 1091, six rows changed and no others. Both new tests were run
+before the parser change and failed with the corpus's own message, then
+passed after it.
+
+Two things worth keeping. The earlier parser test
+`partial_rotary_factor_is_read_from_the_declared_spot` passed only because
+its fixture mirrored Qwen3.8 and declared both spellings — it pinned a
+coincidence of the fixture, not the parser; the nested-only test now sits
+beside it. And outside VINDEX3 this was a fail-open wrong answer: the engine
+path would have rotated all 256 head dims of a Qwen3.5 attention layer where
+the checkpoint asks for 64. VINDEX3 refused those checkpoints; the engine
+did not. The fix lands in the shared parser, so both doors now read the
+reference's spelling.
+
 **What did not happen, and why it is worth recording.** The inert clusters
 reach 34 checkpoints, which looked like a large GREEN wave. It was one row
 (Yi-1.5-6B). Cluster *reach* counts checkpoints a fix touches; only a
@@ -270,11 +303,11 @@ Scored against the **text-generation closure**, which the plan computes
 itself — a checkpoint whose only blockers sit in a vision tower is not
 evidence about its language model.
 
-| outcome | baseline (88) | after wave 7 (109) | share now |
+| outcome | baseline (88) | after wave 8 (109) | share now |
 |---|---:|---:|---:|
-| GREEN — representable | 17 | 28 | 26% |
+| GREEN — representable | 17 | 31 | 28% |
 | AMBER — identified, no implementation | 6 | 7 | 6% |
-| RED — semantic gap | 65 | 74 | 68% |
+| RED — semantic gap | 65 | 71 | 65% |
 | BUG — should work, doesn't | 0 | 0 | 0% |
 | *unreachable (gated/absent/no config)* | *6* | *8* | *not evidence* |
 
@@ -309,12 +342,11 @@ the table; the verdict columns are the sweep's, not the table's.
 | Fine-grained MoE | command-a, exaone-moe, glm, gpt-oss, hunyuan, minimax-m2, step | 12 | 11 | 2 | 0 | 10 |
 | MLA + MoE | deepseek-mla, kimi-moe | 7 | 7 | 0 | 0 | 7 |
 | Sparse-indexed / DSA + MLA + MoE | deepseek-mla, deepseek-v4, glm-5, hunyuan | 7 | 5 | 0 | 7 | 0 |
-| Linear-attention hybrid | qwen-3.8, qwen-dense, qwen-moe | 9 | 4 | 1 | 0 | 8 |
+| Linear-attention hybrid | qwen-3.8, qwen-dense, qwen-moe | 9 | 4 | 4 | 0 | 5 |
 | KDA + MLA | kimi-k3, kimi-linear | 2 | 2 | 1 | 0 | 1 |
 | SSM + attention | falcon-hybrid, granite-hybrid, jamba, nemotron-hybrid | 6 | 4 | 0 | 0 | 6 |
 | SSM + attention + latent MoE + MTP | nemotron-hybrid | 4 | 4 | 0 | 0 | 4 |
 | Conv + attention hybrid | lfm2, lfm2-moe | 4 | 3 | 0 | 0 | 4 |
-
 Read across: the sparse-indexed frontier is **seven for seven AMBER** — every
 DeepSeek V3.2/V4, GLM-5.x and Hy4 row names its indexer and is refused, none
 is approximated — and the three recurrent envelopes (SSM, latent-MoE
@@ -417,18 +449,17 @@ cause. Each is a whole family-generation:
 | 2 | phi-4 | `architecture_family`, `original_max_position_embeddings` — `phi3` is unregistered (fused `qkv_proj` / `gate_up_proj`) — a family entry, not an alias |
 | 3 | GLM-4.5-Air, GLM-4.6 | `architecture_family`, `num_nextn_predict_layers`, `use_qk_norm` |
 | 3 | Phi-3-mini-4k-instruct | `architecture_family`, `original_max_position_embeddings`, `sliding_window` |
-| 3 | Qwen3.5-0.8B, Qwen3.5-27B, Qwen3.5-9B | `mrope_interleaved`, `mrope_section`, `partial_rotary_factor` — the rule already claims `PositionPolicy::MRope`; no built component answers the probe. One lowering, one family-generation |
-| 3 | Qwen3.8-2.4T-A95B | `hidden_act`, `num_experts_per_tok`, `shared_expert_intermediate_size` — the MoE keys the `qwen3_5_moe` parser does not carry; the dense sibling carries them |
+| 3 | Qwen3.5-35B-A3B, 122B-A10B, 397B-A17B, Qwen3.8-2.4T-A95B | `hidden_act`, `num_experts_per_tok`, `shared_expert_intermediate_size` — the MoE keys the `qwen3_5_moe` parser does not carry; the dense sibling carries them. The three Qwen3.5 MoE rows arrived here from six in wave 8 |
 | 3 | bitnet-b1.58-2B-4T-bf16 | `hidden_act`, `linear_class`, `quantization_mode` — BitNet's ternary representation |
 | 3 | gemma-4-E4B-it | `hidden_size_per_layer_input`, `num_kv_shared_layers`, `per_layer_model_projection` — per-layer input embeddings and KV sharing — execution semantics, not spelling |
 | 4 | EXAONE-4.0-1.2B | `architecture_family`, `execution_surface`, `hidden_act`, `rms_norm_eps` — all four follow from the unregistered `exaone4` family |
 | 4 | gemma-3-1b-it | `rope_local_base_freq`, `rope_theta`, `sliding_window_pattern` — `gemma3_text` at the ROOT: `rope_theta` is *mismatched* ("resolution does not honour the declared value") where the same keys under `text_config` lower on the 4B and 27B. A flat-layout parse, and the one mismatch in the frontier |
 
-Five of the twelve entries are the recurring *kinds* the census predicted — two
-vestigial keys, a gated variant of a component that already lowers, a
-lowering the rule already names, and a flat-layout parse of a family that is
-green when nested. Together they clear seven rows across five
-family-generations without a new kernel. `attention_schedule`, at reach 23,
+Four of the eleven entries are the recurring *kinds* the census predicted — two
+vestigial keys, a gated variant of a component that already lowers, and a
+flat-layout parse of a family that is green when nested (wave 8 was the
+fifth, a key read from the wrong spot, and cleared its three). Together they
+clear four more rows across four family-generations without a new kernel. `attention_schedule`, at reach 23,
 clears **none** alone: its `layer_types` blockers are missing mixer vocabulary
 (`conv`, `mamba`, sparse spans) or Step's length rule, and every carrier has
 three to ten other clusters. Reach ranks; the cover predicts.

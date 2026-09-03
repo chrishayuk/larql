@@ -96,14 +96,49 @@ fn qwen35_uses_the_qwen_prefix_route() {
     assert_eq!(arch.family(), "qwen3_5_text");
 }
 
-/// `partial_rotary_factor` is read from both the flat `text_config` spot
-/// and the nested `rope_parameters` spot the real checkpoint declares it
-/// under — the flat form wins when `rope_parameters.full_attention` is
-/// absent (Gemma 4's structured nesting is a different shape).
+/// `partial_rotary_factor` is read when the checkpoint declares it at
+/// both the flat `text_config` spot and under `rope_parameters` — the
+/// Qwen3.8 shape, which this fixture mirrors.
 #[test]
 fn partial_rotary_factor_is_read_from_the_declared_spot() {
     let arch = detect_from_json(&qwen35_shaped_config());
     assert_eq!(arch.config().partial_rotary_factor, Some(0.25));
+}
+
+/// **The real Qwen3.5 shape declares the fraction under `rope_parameters`
+/// only.** Every Qwen3.5 checkpoint on the Hub (0.8B through 397B-A17B)
+/// omits the flat key; Qwen3.8 happens to write both, which is the only
+/// reason the test above ever passed — it pinned a coincidence of the
+/// fixture, not the parser. transformers 5.5.0 reads the fraction from
+/// `rope_parameters` (`modeling_rope_utils.py`, every `_compute_*`
+/// function: `rope_parameters_dict.get("partial_rotary_factor", 1.0)`),
+/// so a parser that only reads the flat spelling rotates all 256 head
+/// dims of a Qwen3.5 layer where the checkpoint asks for 64.
+#[test]
+fn the_nested_only_partial_rotary_spelling_is_read() {
+    let mut config = qwen35_shaped_config();
+    config["text_config"]
+        .as_object_mut()
+        .unwrap()
+        .remove("partial_rotary_factor");
+    assert!(config["text_config"]["rope_parameters"]["partial_rotary_factor"].is_number());
+    let arch = detect_from_json(&config);
+    assert_eq!(arch.config().partial_rotary_factor, Some(0.25));
+}
+
+/// When both spellings are present the flat one wins, because that is
+/// what the reference does: `PreTrainedConfig::standardize_rope_params`
+/// copies a top-level `partial_rotary_factor` INTO `rope_parameters`,
+/// overwriting whatever the block declared. VINDEX3 blocks the
+/// disagreement separately (`two_disagreeing_partial_rotary_spellings_block`);
+/// this pins which value the engine path resolves so that the two doors
+/// agree on what "the declared fraction" is.
+#[test]
+fn the_flat_partial_rotary_spelling_overrides_the_nested_one() {
+    let mut config = qwen35_shaped_config();
+    config["text_config"]["partial_rotary_factor"] = serde_json::json!(0.5);
+    let arch = detect_from_json(&config);
+    assert_eq!(arch.config().partial_rotary_factor, Some(0.5));
 }
 
 /// An absent hybrid block (an ordinary dense Qwen3 config) leaves every
