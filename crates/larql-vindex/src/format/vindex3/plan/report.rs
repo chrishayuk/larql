@@ -57,6 +57,37 @@ pub const PLAN_SCHEMA: u32 = 6;
 /// `plan/tests/identity.rs` pins fixture verdicts against this value, so
 /// a change that flips one fails there until the version is bumped.
 ///
+/// **11** — post-norm placement EXECUTES. Wave 10 could represent it and
+/// refused to lower it; the generic executor already applied the wrap
+/// norms to each sublayer's OUTPUT before the residual add, and what it
+/// could not do was run with NO pre-sublayer norm. Both the batch and the
+/// decode path now read the raw residual where the placement says no norm
+/// conditions it, and the epsilon QK norm runs at moved off the
+/// pre-attention norm's field onto the layer's own `declared_norm_eps` —
+/// an epsilon and a placement are unrelated facts, and coupling them is
+/// what made this unrepresentable. A post-only stack's single declared
+/// epsilon belongs to the post sites, which are the only norm sites it
+/// has; a four-norm stack still refuses an unjudged post epsilon, because
+/// there the two sites exist and can differ. Forecast before the code:
+/// no row clears (identity still blocks all seven), seven rows lose the
+/// unsupported-component blocker.
+///
+/// **10** — a stack may normalise its sublayers' OUTPUT. `NormPlacement`
+/// knew two transformer shapes, two-norm and four-norm, and OLMo-2,
+/// OLMo-3 and EXAONE-4 declare a third: the sublayer reads the raw
+/// residual and its result is normalised before the add
+/// (`Olmo2DecoderLayer.forward`, identical in the other two). Their
+/// operand estate — both wrap norms, neither pre-norm — matched nothing,
+/// so the execution surface refused to build and every probe on those
+/// components answered nothing at all. `PostOnly` is recognised from that
+/// estate, and the spelling collision is why it is read from which norms
+/// EXIST: these families' `post_attention_layernorm` is a true post-norm
+/// where a Llama stack's is the pre-FFN norm. The op plan REFUSES it —
+/// representable, explicitly not executable, a distinction the closure
+/// vocabulary now states in its own defect. Forecast before the code:
+/// no row clears, seven surfaces build, sixteen blockers retire because a
+/// probe can finally answer, and three answer and still refuse.
+///
 /// **9** — a wholly-routed family has an FFN, and the always-on shared
 /// branch is sized by what the checkpoint declares. The FFN presence rule
 /// read only the DENSE width, so `Qwen3_5MoeTextConfig` — which declares
@@ -131,7 +162,7 @@ pub const PLAN_SCHEMA: u32 = 6;
 /// architectures, now block instead of passing silently into
 /// `GenericArch`'s Llama-shaped defaults. Measured on the conformance
 /// corpus: 15 of 42 declared `model_type` strings, across 30 checkpoints.
-pub const PLANNER_SEMANTICS_VERSION: u32 = 9;
+pub const PLANNER_SEMANTICS_VERSION: u32 = 11;
 
 /// Who judged a plan.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]

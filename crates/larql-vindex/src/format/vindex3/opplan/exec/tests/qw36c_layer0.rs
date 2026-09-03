@@ -119,7 +119,7 @@ fn the_first_recurrent_layer_matches_hf_on_the_real_container() {
         dt_bias: &dt,
         norm: &nrm,
         out_proj: WeightRows::F32(&outp),
-        norm_eps: plan.layers[0].pre_attention_norm.eps as f32,
+        norm_eps: plan.layers[0].declared_norm_eps as f32,
     };
     let mut state = RecurrentState::zeros(&state_geometry(op).unwrap());
     let planes = layer_forward(op, &weights, &ln_in, &mut state, Mutation::None);
@@ -227,12 +227,12 @@ fn every_stage_of_the_first_layer_matches_hf() {
     };
 
     println!();
-    let w_pre = store.load(&layer.pre_attention_norm.weight).unwrap();
+    let w_pre = store.load(&pre_norm(layer).weight).unwrap();
     let mine_ln_in = rms(
         plane0.last().unwrap(),
         &w_pre,
-        layer.pre_attention_norm.weight_offset,
-        layer.pre_attention_norm.eps,
+        pre_norm(layer).weight_offset,
+        pre_norm(layer).eps,
     );
     let a = report("pre_attention norm", &mine_ln_in, ln_in.last().unwrap());
 
@@ -312,4 +312,15 @@ fn the_real_checkpoint_reproduces_hf_logits_and_next_token() {
     assert_eq!(mine_arg, hf_arg, "different next token");
     assert!(cos > 0.9999, "logit direction diverged: cos {cos:.7}");
     assert!(rel < 2e-2, "logit magnitude diverged: rel_rms {rel:e}");
+}
+
+/// This fixture is a pre-norm stack; its pre-attention norm is a premise,
+/// not an option to be handled.
+fn pre_norm(
+    layer: &crate::format::vindex3::opplan::LayerPlan,
+) -> &crate::format::vindex3::opplan::NormOp {
+    layer
+        .pre_attention_norm
+        .as_ref()
+        .expect("this fixture is a pre-norm stack")
 }

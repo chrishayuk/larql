@@ -48,14 +48,23 @@ invariants are the ones that matter most:
 
 | Metric | Baseline | Waves 1+3 | rope | moe | sliding window | frontier census† | partial rotary | vestigial pair | qwen MoE |
 |---|---:|---:|---:|---:|---:|---:|---:|---:|---:|
-| semantics version | 1 | 3 | 4 | 5 | 6 | 6 (held) | 7 | 8 | **9** |
-| GREEN | 17 | 18 | 21 | 26 | 28 | 28 | 31 | 33 | **38** |
-| AMBER | 6 | 6 | 6 | 6 | 6 | 7 | 7 | 7 | 7 |
-| RED | 65 | 64 | 61 | 56 | 54 | 74 | 71 | 69 | **64** |
-| **BUG** | **0** | **0** | **0** | **0** | **0** | **0** | **0** | **0** | **0** |
-| **silent drops** | **0** | **0** | **0** | **0** | **0** | **0** | **0** | **0** | **0** |
-| text-closure blockers | 886 | 776 | 756 | 671 | 668 | 1109 | 1091 | 1089 | **1076** |
-| K3 clusters remaining | 7 | 7 | 7 | 7 | 7 | 7 | 7 | 7 | **7** |
+| semantics version | 1 | 3 | 4 | 5 | 6 | 6 (held) | 7 | 8 | 9 | 10 | **11** |
+| GREEN | 17 | 18 | 21 | 26 | 28 | 28 | 31 | 33 | 38 | 38 | **38** |
+| AMBER | 6 | 6 | 6 | 6 | 6 | 7 | 7 | 7 | 7 | 3‡ | **3** |
+| RED | 65 | 64 | 61 | 56 | 54 | 74 | 71 | 69 | 64 | 68‡ | **68** |
+| **BUG** | **0** | **0** | **0** | **0** | **0** | **0** | **0** | **0** | **0** | **0** | **0** |
+| **silent drops** | **0** | **0** | **0** | **0** | **0** | **0** | **0** | **0** | **0** | **0** | **0** |
+| text-closure blockers | 886 | 776 | 756 | 671 | 668 | 1109 | 1091 | 1089 | 1076 | 1058 | **1051** |
+| K3 clusters remaining | 7 | 7 | 7 | 7 | 7 | 7 | 7 | 7 | 7 | 7 | **7** |
+
+‡ **The AMBER and RED columns are not comparable across wave 9 → 10.** Wave
+11 tightened the sweep's own classifier: AMBER means "component identified,
+no implementation", so it is no longer awarded to a checkpoint whose
+`model_type` matches no registered family — that credits an identification
+that has not happened. Four rows move AMBER → RED on that change alone
+(Hy4-preview, GLM-5.2, GLM-5.3, GLM-5.3-Flash), and none of them moved
+because of a semantic change. GREEN, BUG, silent drops and the blocker
+count remain comparable throughout.
 
 † Wave 7 widened the corpus from 88 to 109 scored rows. The 88 rows every
 earlier column was measured on are unchanged — same verdicts, same 668
@@ -395,6 +404,206 @@ checkpoint whose **every** blocker is retired changes verdict. The greedy
 cover already said this — `inert.training_only` cleared 1 — and it was the
 better predictor. Reach ranks work; the cover predicts verdicts.
 
+**Wave 11 — a stack may normalise its sublayers' output (semantics 10).**
+`NormPlacement` knew two transformer shapes. OLMo-2, OLMo-3 and EXAONE-4
+declare a third, and because their operand estate matched neither, their
+execution surface refused to build and *every probe on those components
+answered nothing at all*. Seven rows, 4–9 blockers each, and most of those
+blockers were not facts about the model — they were the silence left by an
+absent surface.
+
+The variant is read from which norms EXIST, not from what any one of them
+is called, and that is load-bearing: these families' `post_attention_layernorm`
+is a true post-norm where a Llama stack's tensor of the same name is the
+pre-FFN norm. The discriminator is `post_feedforward_layernorm` without
+`input_layernorm`.
+
+**The op plan refuses to lower it.** `LayerPlan.pre_attention_norm` is a
+required `NormOp` that every executor reads before its sublayer, and a
+post-norm stack carries no such operand; lowering it as the two-norm shape
+would find an operand for every site and would *run*, normalising the wrong
+tensor at every layer. The closure vocabulary gained
+`UnimplementedSemantic` to say this — the exact opposite of
+`UnjudgedSemantic`, and a reader must be able to tell them apart: one means
+"we do not know what this model does", the other "we know exactly what it
+does and cannot yet do it".
+
+Frozen before the code in
+[`forecasts/wave11-post-norm-placement.json`](forecasts/wave11-post-norm-placement.json)
+as a **revelation** forecast — no row clears, GREEN unchanged, seven
+surfaces build, sixteen blockers retire because a probe can finally answer,
+and three answer and still refuse. **Exact on every per-row arm**, including
+the sharp one: `sliding_window_pattern` ("LLLG", no schema field for a
+period string) and `num_nextn_predict_layers` (1, against a schema that
+represents only MTP's absence) both started answering and both correctly
+stayed blocking.
+
+**The forecast caught a fail-open for the second wave running.** The first
+score came back at 1051, seven *better* than predicted, because each row
+lost its incomplete-surface blocker with nothing replacing it — OLMo-2 fell
+to a single blocker, its unresolved identity. The refusal was real, and the
+plan report never consulted it. That row was one registry entry away from
+reading `text closure: every declaration has a home` for a model VINDEX3
+cannot build a single op for, and the next wave is exactly the one that
+would have registered it. `NormPlacement::unimplemented_reason()` is now the
+one authority both the op plan and the report read, and a complete-but-
+unlowerable surface reports as an unsupported component. A wave scored on
+"blockers went down" would have booked the bug as a win.
+
+**And the same error was in the instrument.** Emitting that finding on seven
+rows with unresolved identities exposed that the sweep would have called
+them AMBER — "component identified, no implementation" — while their
+`model_type` matched nothing. Four other rows were already sitting in that
+state (Hy4-preview, GLM-5.2, GLM-5.3, GLM-5.3-Flash). AMBER now requires a
+resolved identity. That is the ‡ footnote on the ledger above, and it is
+declared separately because it moved four verdicts on its own.
+
+**Wave 12 — post-norm placement EXECUTES (semantics 11).** Wave 11 could
+represent the placement and refused to lower it. This wave makes it run,
+and it is the first in a long while that expands the executable
+architecture envelope rather than the representation vocabulary — so the
+sweep is *not* its authority. The sweep can only show a refusal was
+withdrawn; only parity can show the right thing replaced it.
+
+Two facts made it far smaller than the 27-consumer count suggested, and
+one made it necessary.
+
+*The executor was already half right.* The generic path computes
+`attn_out = post_attention.apply(raw_attn); h += attn_out` — the norm on
+the sublayer output, before the add, which is the OLMo-2 semantic exactly.
+What it could not do was run with **no** pre-sublayer norm. Post-norm
+execution is the four-norm program minus the pre-norms, not a new residual
+topology.
+
+*An epsilon was coupled to a placement.* `QkNormOp` carried no epsilon of
+its own; every executor read `layer.pre_attention_norm.eps` as the QK-norm
+epsilon, and DeltaNet's gated norm and KDA's read it too. A post-norm stack
+has no pre-attention norm to borrow from — and an epsilon and a placement
+are unrelated facts. It is now `LayerPlan.declared_norm_eps`, the
+component's declared epsilon in its own right. That decoupling is what made
+the placement representable in the op plan at all.
+
+*And a name means two causal positions.* `post_attention_norm` is applied
+before the residual add in the generic path and **after** it in
+`exec/kimi_mla_layer.rs`, where the operand of that name is semantically
+the pre-FFN norm. Both are correct for their family, so the witness pins
+the generic path by construction rather than by name.
+
+**The witness is exact, not statistical.** Two containers carry the *same
+numeric weights* and differ only in which norm names they ship, so any
+behavioural difference is placement and nothing else. Under post-norm
+placement nothing conditions the residual before attention, so layer 0's
+observed attention input must be the embedding row **bit for bit** — and
+the fixture states that row from its own generator, so the test compares
+the executor against the checkpoint rather than against itself. Its control
+is the same assertion against the pre-norm estate, which must *fail* to
+hold. A third arm requires the two placements' logits to differ by a
+margin, and its failure message says outright that every other assertion in
+the file is worthless if it ever trips.
+
+The negative control is the whole `larql-vindex` suite — 3744 tests, every
+committed parity oracle (Kimi's 27-layer stack, MLA, KDA, Gemma 4,
+gated-delta, conv-QKV), which are the existing pre-norm and four-norm
+families. None moved. This is precisely the wave where "support a new
+placement" could have changed the default path.
+
+Forecast held exactly on the sweep: seven rows lose the
+unsupported-component blocker, 1058 → 1051, and **no row clears** —
+`architecture_identity` still blocks all seven. Two things are deliberately
+not done here: reference parity against real OLMo-2 weights is gated on
+wave 13 (no container can be built for an unregistered identity), and the
+Metal trunk now **refuses** a post-norm layer explicitly rather than
+lowering it as a shape it is not.
+
+## The rerank, and what wave 11 settled — read this before picking wave 12
+
+The greedy cover over semantic ideas is now **empty**: no single cluster
+clears any of the 71 non-admissible rows on its own. Cluster-level fixes
+are exhausted as verdict movers, which is what wave 10 already looked like
+from the inside — it cut across `ffn_activation`, `moe_routing` and a
+storage format, and no one of the three cleared a row alone.
+
+**51 of the 64 RED rows are blocked on `architecture_identity`** — a
+`model_type` no registry entry matches. That makes identity the most
+*common* blocker, and the first version of this section claimed it was
+therefore the causal one: that an unmatched identity means no component
+builds, so a registry entry would retire the dependent probes for free.
+
+**That claim was wrong, and checking it is what found the real gate.**
+`phi3` and `glm4_moe` match nothing and their components build anyway —
+they fall through to `GenericArch`, which is precisely the fail-open door
+this programme exists to keep visible. Identity and surface are
+independent.
+
+The rows whose surface genuinely does not build say so in their own
+finding, and there are **25 of them — 23 on norm placement**, in three
+distinct shapes:
+
+| operand evidence | rows | families | blockers each |
+|---|---:|---|---|
+| no per-layer norm operands at all | 12 | LFM2, Nemotron-H, DeepSeek-V4, Qwen3.8-Flash-Next | 13–36 |
+| `post_attn` + `post_ffn`, no pre-norms | **7** | OLMo-2, OLMo-3, EXAONE-4 | **4–9** |
+| `pre_attn` only | 4 | Cohere2-MoE, Jamba2, Falcon-H1 | 16–39 |
+
+The middle group is the wave. `NormPlacement` knows two shapes — two-norm
+(pre-only) and four-norm (pre+post) — and these seven declare a third the
+vocabulary cannot express. Judged from the references rather than from the
+name, all three families are byte-identical in shape:
+
+```text
+residual = h
+h = attn(h)                        # NO pre-norm; the sublayer reads the raw residual
+h = post_attention_layernorm(h)    # the norm applies to the sublayer OUTPUT
+h = residual + h                   # ...before the add
+```
+
+That is `Olmo2DecoderLayer.forward`, `Olmo3DecoderLayer.forward` and
+`Exaone4DecoderLayer.forward`, line for line. It is **not** classic
+post-LN (`norm(x + attn(x))`, norm after the add) — the difference is
+which tensor the norm sees, and picking the wrong one produces fluent
+wrong output rather than a failure, so it is a variant to be declared and
+not a placement to be inferred.
+
+Neither fix clears a row alone: the placement leaves identity blocking,
+and identity leaves the surface refusing. That pairing is the wave-10
+shape again.
+
+**What wave 11 settled, and what it leaves for wave 12.** The placement is
+now represented and explicitly refused, so those seven rows report what is
+actually true of them. Three routes out, and they are not equivalent:
+
+| route | rows | status |
+|---|---:|---|
+| make post-norm **executable** | 7 | **done — wave 12.** CPU both paths; Metal refuses explicitly, pending its kernel |
+| register `olmo2` / `olmo3` / `exaone4` | 7 | **wave 13**, and its expectation CHANGED — see below |
+| the 12 rows with **no** per-layer norm operands | 12 | **wave 14**, a discovery wave (LFM2, Nemotron-H, DeepSeek-V4), 13–36 blockers each |
+
+**Wave 13's expectation changed because wave 12 landed first.** While the
+placement was unimplemented, registering the families would have moved
+seven rows RED → AMBER without making one model runnable. Now the
+placement executes, so the registry entry removes the *last* blocker on
+some of them:
+
+| row | after wave 13 | why |
+|---|---|---|
+| OLMo-2-0425-1B, OLMo-2-1124-7B | **GREEN** | identity is their only remaining blocker |
+| EXAONE-4.0-1.2B | **GREEN** | same |
+| Olmo-3-1025-7B, Olmo-3-1125-32B | RED | `rope_scaling.attention_factor` |
+| EXAONE-4.0-32B | RED | `sliding_window_pattern` ("LLLG", no schema field) |
+| EXAONE-4.5-33B | RED | five more, including MTP |
+
+That also unlocks the parity wave 12 could not run: with a container
+buildable for a registered identity, the real OLMo-2 checkpoint can be
+scored against an HF reference oracle, which is a far stronger authority
+than any synthetic fixture.
+
+**Wave 14 is a discovery wave and must be preregistered as one.** Not
+"support 12 models" — the question is which of four things is true, per
+row: a legitimately normless architecture; a norm represented through
+another object; a config dialect or naming gap; or an execution semantic
+genuinely absent. The outcome to forecast is the *classification*, not a
+verdict count.
+
 Kimi K3 is the standing witness: 97 blocking subjects → 73, text-closure
 blockers 72 → 48, and **7 semantic clusters both before and after**. The
 spelling collapsed; the ideas did not. That gap is the whole argument for
@@ -406,11 +615,11 @@ Scored against the **text-generation closure**, which the plan computes
 itself — a checkpoint whose only blockers sit in a vision tower is not
 evidence about its language model.
 
-| outcome | baseline (88) | after wave 10 (109) | share now |
+| outcome | baseline (88) | after wave 11 (109) | share now |
 |---|---:|---:|---:|
 | GREEN — representable | 17 | 38 | 35% |
-| AMBER — identified, no implementation | 6 | 7 | 6% |
-| RED — semantic gap | 65 | 64 | 59% |
+| AMBER — identified, no implementation | 6 | 3 | 3% |
+| RED — semantic gap | 65 | 68 | 62% |
 | BUG — should work, doesn't | 0 | 0 | 0% |
 | *unreachable (gated/absent/no config)* | *6* | *8* | *not evidence* |
 

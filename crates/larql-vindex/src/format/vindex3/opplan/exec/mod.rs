@@ -558,10 +558,13 @@ fn execute_layer<B: PlanBackend + ?Sized, K: KvState + ?Sized>(
     // is untouched and rows are disjoint, so the result is bit-identical
     // to the serial order — parallelism here is an execution strategy,
     // never a reassociation.
-    let inputs: Vec<Vec<f32>> = h
-        .par_iter()
-        .map(|row| prepared.pre_attention.apply(backend, row))
-        .collect();
+    // Under post-norm placement the sublayer reads the RAW residual; the
+    // wrap norm applies to its output before the add. Same program as the
+    // decode path, which must not be able to disagree with this one.
+    let inputs: Vec<Vec<f32>> = match &prepared.pre_attention {
+        Some(norm) => h.par_iter().map(|row| norm.apply(backend, row)).collect(),
+        None => h.to_vec(),
+    };
     // V3-SERVE-2: the attention realisation and the K/V behaviour are
     // separate decisions. Wanting a populated provider does not mean
     // wanting per-position arithmetic — the batched pass computes the
@@ -725,7 +728,7 @@ fn execute_layer<B: PlanBackend + ?Sized, K: KvState + ?Sized>(
                     let out = backend.attention(ops.call(
                         attention_op,
                         &inputs,
-                        layer.pre_attention_norm.eps,
+                        layer.declared_norm_eps,
                         hidden,
                     ))?;
                     for (key, value) in out.keys.into_iter().zip(out.values) {
@@ -739,7 +742,7 @@ fn execute_layer<B: PlanBackend + ?Sized, K: KvState + ?Sized>(
                         attention_op,
                         ops,
                         &inputs,
-                        layer.pre_attention_norm.eps,
+                        layer.declared_norm_eps,
                         hidden,
                         backend,
                         kv,
@@ -751,7 +754,7 @@ fn execute_layer<B: PlanBackend + ?Sized, K: KvState + ?Sized>(
                         .attention(ops.call(
                             attention_op,
                             &inputs,
-                            layer.pre_attention_norm.eps,
+                            layer.declared_norm_eps,
                             hidden,
                         ))?
                         .outputs

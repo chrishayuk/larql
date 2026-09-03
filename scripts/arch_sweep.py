@@ -252,10 +252,19 @@ def classify(record: dict, recognised: list[tuple[str, str]]) -> dict:
         }
     )
 
+    # AMBER's own definition is "component identified, no implementation",
+    # so it cannot be reported for a checkpoint whose `model_type` matches
+    # no registered family: that component is not identified, and calling
+    # it AMBER would say this build knows what the model is when it does
+    # not. Such a row stays RED until its identity resolves, and only then
+    # can an unsupported component be the thing standing in its way.
+    identity_unresolved = any(b["cluster"] == "architecture_identity" for b in blockers)
     if text_admissible:
         outcome = "GREEN"
         reason = "text closure: every declaration has a home"
-    elif any(b["class"] == UNSUPPORTED_COMPONENT for b in blockers):
+    elif not identity_unresolved and any(
+        b["class"] == UNSUPPORTED_COMPONENT for b in blockers
+    ):
         outcome = "AMBER"
         reason = "component identified, no implementation"
     else:

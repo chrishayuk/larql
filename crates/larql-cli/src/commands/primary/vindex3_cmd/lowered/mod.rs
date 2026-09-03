@@ -367,7 +367,21 @@ impl<'a> LoweredSession<'a> {
                     None => None,
                 },
                 ffn: build_ffn(gpu, store, layer, formats, keep)?,
-                pre_attn_norm: resident_norm(gpu, store, &layer.pre_attention_norm)?.0,
+                // The Metal trunk applies a norm before attention. A
+                // post-norm stack has none, and this path refuses rather
+                // than lowering an identity norm that would read as one.
+                pre_attn_norm: resident_norm(
+                    gpu,
+                    store,
+                    layer.pre_attention_norm.as_ref().ok_or_else(|| {
+                        VindexError::Parse(format!(
+                            "layer {} carries no pre-attention norm (post-norm placement); the \
+                             Metal trunk has no lowering for it",
+                            layer.layer
+                        ))
+                    })?,
+                )?
+                .0,
                 post_attn_norm: match &layer.post_attention_norm {
                     Some(op) => Some(resident_norm(gpu, store, op)?),
                     None => None,
@@ -642,11 +656,18 @@ impl<'a> LoweredSession<'a> {
                 num_q_heads: a.num_q_heads,
                 num_kv_heads: a.num_kv_heads,
                 head_dim: a.head_dim,
-                norm_eps: plan_layer.pre_attention_norm.eps as f32,
-                norm_weight_offset: plan_layer.pre_attention_norm.weight_offset,
-                // The interpreter passes the pre-attention norm's epsilon
-                // as the QK-norm epsilon; it is not a separate fact.
-                qk_norm_eps: plan_layer.pre_attention_norm.eps as f32,
+                norm_eps: plan_layer.declared_norm_eps as f32,
+                // The weight offset of the norm that conditions the
+                // attention input. Under post-norm placement no norm does,
+                // so the offset that would scale nothing is the identity.
+                norm_weight_offset: plan_layer
+                    .pre_attention_norm
+                    .as_ref()
+                    .map_or(0.0, |n| n.weight_offset),
+                // The component's declared epsilon, which QK norm runs at.
+                // Read from the layer's own field rather than off a norm
+                // site that a post-norm stack does not carry.
+                qk_norm_eps: plan_layer.declared_norm_eps as f32,
                 parameter_free_q: a.parameter_free_qk_norm.q && !self.ablate.no_qk_norm,
                 parameter_free_k: a.parameter_free_qk_norm.k && !self.ablate.no_qk_norm,
                 parameter_free_v: a.parameter_free_qk_norm.v && !self.ablate.no_qk_norm,

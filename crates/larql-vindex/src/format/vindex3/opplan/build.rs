@@ -40,6 +40,10 @@ use larql_models::config::ExpertFormat;
 /// The post-norm epsilon, named as [`ClosureDefect::UnjudgedSemantic`]
 /// reports it.
 const POST_NORM_EPS_FACT: &str = "post-norm epsilon";
+/// The shape OLMo-2, OLMo-3 and EXAONE-4 declare, named as the surface
+/// names it.
+const POST_ONLY_PLACEMENT_FACT: &str =
+    "post-norm placement (the norm applies to the sublayer's output)";
 /// The structure that makes the post-norm epsilon load-bearing.
 const FOUR_NORM_PLACEMENT: &str = "four-norm placement";
 /// The routed-FFN op, as the requirer of its judged facts.
@@ -84,6 +88,30 @@ pub fn plan_component_ops(
         }
     };
     let placement = surface.norm.placement.expect("checked above");
+    // Representable, and explicitly NOT executable.
+    //
+    // The container states this placement exactly; what is missing is the
+    // op set. `LayerPlan::pre_attention_norm` is a required `NormOp` that
+    // every executor reads BEFORE its sublayer, and a post-norm stack has
+    // no such operand — the norm it does carry belongs after the sublayer
+    // and before the residual add. Lowering it as `PreOnly` would find
+    // operands for both sites (the names collide: this family's
+    // `post_attention_layernorm` is a true post-norm where a Llama stack's
+    // is the pre-FFN norm) and would run, applying each norm to the wrong
+    // tensor and producing fluent wrong output. So it refuses, the way the
+    // unimplemented router kinds and position policies refuse.
+    if let Some(reason) = placement.unimplemented_reason() {
+        return Ok(OpPlanOutcome {
+            plan: None,
+            defects: vec![ClosureDefect::UnimplementedSemantic {
+                component: component.id.clone(),
+                fact: format!("{POST_ONLY_PLACEMENT_FACT} — {reason}"),
+                representable_as: format!(
+                    "NormPlacement::{placement:?}, from the operand evidence"
+                ),
+            }],
+        });
+    }
     // A four-norm stack executes two norms whose epsilon nothing else
     // supplies. `Shared` and a declared value are both judgments;
     // absence is not — and inheriting `eps` here would build exactly the
@@ -91,7 +119,11 @@ pub fn plan_component_ops(
     // means no unjudged epsilon is ever written into one.
     let post_norm: Option<larql_models::config::NormSpec> = match placement {
         NormPlacement::PreOnly | NormPlacement::PreMixer => None,
-        NormPlacement::PrePost => match surface.norm.post {
+        // A post-norm stack runs TWO norms whose epsilon nothing else
+        // supplies, exactly as a four-norm stack does — and it has no
+        // pre-norm site to borrow from, so the requirement is if anything
+        // sharper here.
+        NormPlacement::PostOnly | NormPlacement::PrePost => match surface.norm.post {
             Some(judged) => Some(judged),
             None => {
                 return Ok(OpPlanOutcome {
@@ -565,12 +597,13 @@ pub fn plan_component_ops(
             });
             let consumed = slot.len();
             layers.push(LayerPlan {
+                declared_norm_eps: surface.norm.pre.eps,
                 layer,
-                pre_attention_norm: norm_op(
+                pre_attention_norm: Some(norm_op(
                     surface.norm.pre,
                     &stack_id,
                     get(OperandRole::Mamba2PreMixerNorm),
-                ),
+                )),
                 attention: LayerAttention::Mamba2(Box::new(Mamba2Op {
                     geometry: mixer.geometry,
                     activation: mixer.activation,
@@ -613,12 +646,13 @@ pub fn plan_component_ops(
             });
             let consumed = slot.len();
             layers.push(LayerPlan {
+                declared_norm_eps: surface.norm.pre.eps,
                 layer,
-                pre_attention_norm: norm_op(
+                pre_attention_norm: Some(norm_op(
                     surface.norm.pre,
                     &stack_id,
                     get(OperandRole::Mamba2PreMixerNorm),
-                ),
+                )),
                 attention: LayerAttention::ConvQkv(Box::new(super::conv_qkv::ConvQkvOp {
                     geometry: attn_geometry,
                     residual_in_fp32: surface.residual_in_fp32,
@@ -665,6 +699,16 @@ pub fn plan_component_ops(
         // Placement decides which operand feeds the pre-FFN norm: the
         // dedicated one under four-norm, the overloaded
         // `post_attention_layernorm` under two-norm.
+        // Which norm operand feeds each site. `None` for the pre-FFN
+        // slot means the FFN reads the raw residual — the post-norm
+        // program — and is not the same as a missing operand.
+        // Which pre-sublayer norm operands this placement HAS. `None`
+        // means the site does not exist, and the operand is not there to
+        // be fetched — a post-norm stack ships neither.
+        let pre_attn_role = match placement {
+            NormPlacement::PostOnly => None,
+            _ => Some(OperandRole::PreAttentionNorm),
+        };
         let (post_attention_norm, pre_ffn_role, post_ffn_norm) = match placement {
             NormPlacement::PrePost => {
                 let spec = post_norm.expect("PrePost resolves or returns above");
@@ -674,11 +718,25 @@ pub fn plan_component_ops(
                         &stack_id,
                         get(OperandRole::PostAttentionNorm),
                     )),
-                    OperandRole::PreFfnNorm,
+                    Some(OperandRole::PreFfnNorm),
                     Some(norm_op(spec, &stack_id, get(OperandRole::PostFfnNorm))),
                 )
             }
-            NormPlacement::PreOnly => (None, OperandRole::PostAttentionNorm, None),
+            // Both wrap norms, no pre-FFN norm: each sublayer reads the
+            // raw residual and its OUTPUT is normalised before the add.
+            NormPlacement::PostOnly => {
+                let spec = post_norm.expect("PostOnly resolves or returns above");
+                (
+                    Some(norm_op(
+                        spec,
+                        &stack_id,
+                        get(OperandRole::PostAttentionNorm),
+                    )),
+                    None,
+                    Some(norm_op(spec, &stack_id, get(OperandRole::PostFfnNorm))),
+                )
+            }
+            NormPlacement::PreOnly => (None, Some(OperandRole::PostAttentionNorm), None),
             NormPlacement::PreMixer => panic!(
                 "layer {layer} carries transformer operands under a mixer-only norm \
                  placement; closure should have refused this before the plan was built"
@@ -815,12 +873,10 @@ pub fn plan_component_ops(
             .map(|t| operand(&stack_id, t));
         let consumed = slot.len() + bank_slot.map_or(0, |b| b.len());
         layers.push(LayerPlan {
+            declared_norm_eps: surface.norm.pre.eps,
             layer,
-            pre_attention_norm: norm_op(
-                surface.norm.pre,
-                &stack_id,
-                get(OperandRole::PreAttentionNorm),
-            ),
+            pre_attention_norm: pre_attn_role
+                .map(|role| norm_op(surface.norm.pre, &stack_id, get(role))),
             // Which attention-class operator this layer runs, decided on
             // OPERAND EVIDENCE: a layer holding the fused q|k|v projection
             // of a recurrence is a DeltaNet layer, whatever else is
@@ -1003,7 +1059,10 @@ pub fn plan_component_ops(
                 }))
             },
             post_attention_norm,
-            pre_ffn_norm: Some(norm_op(surface.norm.pre, &stack_id, get(pre_ffn_role))),
+            // Absent under post-norm placement: the FFN reads the raw
+            // residual there, and `post_ffn_norm` carries the site that
+            // does exist.
+            pre_ffn_norm: pre_ffn_role.map(|role| norm_op(surface.norm.pre, &stack_id, get(role))),
             ffn: Some(ffn),
             post_ffn_norm,
             layer_scale,
@@ -1150,10 +1209,18 @@ fn required_roles(ops: &LayerOps) -> Vec<OperandRole> {
         }
         return roles;
     }
-    let mut roles = vec![
-        OperandRole::PreAttentionNorm,
-        OperandRole::PostAttentionNorm,
-    ];
+    // The attention block's two trunk norms, required per placement. A
+    // post-norm stack has no pre-attention norm to require, and
+    // requiring one would report a missing operand for a tensor the
+    // checkpoint correctly never shipped.
+    let mut roles = if ops.placement == NormPlacement::PostOnly {
+        vec![OperandRole::PostAttentionNorm]
+    } else {
+        vec![
+            OperandRole::PreAttentionNorm,
+            OperandRole::PostAttentionNorm,
+        ]
+    };
     if ops.operator.is_kda() {
         // Fifteen operands, and all fifteen are required: a KDA layer
         // missing one is not a partially-specified attention layer, it is
@@ -1212,9 +1279,14 @@ fn required_roles(ops: &LayerOps) -> Vec<OperandRole> {
             roles.push(OperandRole::AttnV);
         }
     }
-    if ops.placement == NormPlacement::PrePost {
-        roles.push(OperandRole::PreFfnNorm);
-        roles.push(OperandRole::PostFfnNorm);
+    match ops.placement {
+        NormPlacement::PrePost => {
+            roles.push(OperandRole::PreFfnNorm);
+            roles.push(OperandRole::PostFfnNorm);
+        }
+        // The FFN reads the raw residual; only its output is normed.
+        NormPlacement::PostOnly => roles.push(OperandRole::PostFfnNorm),
+        NormPlacement::PreOnly | NormPlacement::PreMixer => {}
     }
     if ops.output_gate {
         roles.push(OperandRole::AttnOutputGate);
@@ -1434,6 +1506,14 @@ fn absent_op(role: OperandRole, ops: &LayerOps) -> Option<&'static str> {
             if ops.placement == NormPlacement::PreOnly =>
         {
             Some("four-norm placement")
+        }
+        // Paired the other way: a post-norm stack refuses the two
+        // pre-sublayer norms, so a checkpoint shipping one under this
+        // placement is a disagreement rather than a spare tensor.
+        OperandRole::PreAttentionNorm | OperandRole::PreFfnNorm
+            if ops.placement == NormPlacement::PostOnly =>
+        {
+            Some("a pre-sublayer norm (post-norm placement normalises each sublayer's output)")
         }
         _ => None,
     }

@@ -161,6 +161,43 @@ fn placement_evidence_reads_two_and_four_norm_estates() {
     );
 }
 
+/// The OLMo-2 / OLMo-3 / EXAONE-4 estate: both wrap norms, neither
+/// pre-norm. Its whole discriminator against a two-norm Llama stack is
+/// `post_feedforward_layernorm` — the families share the
+/// `post_attention_layernorm` SPELLING and mean opposite things by it
+/// (there, the norm on the attention output; in Llama, the norm on the
+/// FFN input), so the placement is read from which norms EXIST rather
+/// than from what any one of them is called.
+#[test]
+fn placement_evidence_reads_the_post_norm_estate() {
+    let post = [
+        "0.post_attention_layernorm.weight",
+        "0.post_feedforward_layernorm.weight",
+    ];
+    assert_eq!(
+        norm_placement_evidence(post.iter().copied()),
+        Ok(NormPlacement::PostOnly)
+    );
+
+    // The falsifier, and the reason the discriminator is the FFN norm: a
+    // two-norm Llama stack carries a tensor of the same name and must
+    // keep reading as `PreOnly`.
+    let llama = [
+        "0.input_layernorm.weight",
+        "0.post_attention_layernorm.weight",
+    ];
+    assert_eq!(
+        norm_placement_evidence(llama.iter().copied()),
+        Ok(NormPlacement::PreOnly)
+    );
+
+    // And a post-attention norm ALONE is still no judged placement —
+    // one wrap norm describes no complete stack.
+    let half = ["0.post_attention_layernorm.weight"];
+    let err = norm_placement_evidence(half.iter().copied()).unwrap_err();
+    assert!(err.contains("neither two-norm nor four-norm"), "{err}");
+}
+
 #[test]
 fn placement_evidence_refuses_partial_and_absent_estates() {
     // Three of four: neither judged placement — refuse, naming the flags.

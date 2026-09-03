@@ -151,7 +151,11 @@ fn print_layer(component: &str, layer: &LayerPlan) {
     let norm = |op: &NormOp, site: &str| {
         println!("  {:?}({site}, eps {:e})", op.kind, op.eps);
     };
-    norm(&layer.pre_attention_norm, "pre_attention");
+    // Absent under post-norm placement; printing nothing is the honest
+    // rendering of a site the layer does not have.
+    if let Some(op) = &layer.pre_attention_norm {
+        norm(op, "pre_attention");
+    }
     match &layer.attention {
         LayerAttention::Softmax(op) => print_softmax(op),
         LayerAttention::GatedDelta(op) => print_gated_delta(op),

@@ -871,15 +871,43 @@ fn execution_surface_findings(artifact: &str, built: &BuiltGraph) -> Vec<Finding
             if surface.head.is_some() {
                 groups.push("head");
             }
-            Finding {
-                category: FindingCategory::Representable,
-                class: SemanticClass::ExecutionSemantic,
-                component: component.id.clone(),
-                subject: format!("{}.execution_surface", component.id),
-                declared: None,
-                resolved: None,
-                carriage: None,
-                detail: format!("execution surface complete ({})", groups.join(", ")),
+            // A complete surface is not an executable one. Where the
+            // judged placement is a shape this build refuses to lower,
+            // the report must SAY so — otherwise the row reads as "every
+            // declaration has a home" while `plan_component_ops` returns
+            // no plan at all, which is the looks-supported failure the
+            // whole instrument exists to catch. Read from the same
+            // authority the op plan refuses on, so the two cannot drift.
+            match surface
+                .norm
+                .placement
+                .and_then(|p| p.unimplemented_reason().map(|reason| (p, reason)))
+            {
+                Some((placement, reason)) => Finding {
+                    category: FindingCategory::Unrepresented,
+                    class: SemanticClass::UnsupportedComponent,
+                    component: component.id.clone(),
+                    subject: format!("{}.execution_surface", component.id),
+                    declared: None,
+                    resolved: None,
+                    carriage: None,
+                    detail: format!(
+                        "execution surface complete ({}), and its norm placement \
+                         ({placement:?}) is representable but NOT executable by this \
+                         build — {reason}",
+                        groups.join(", ")
+                    ),
+                },
+                None => Finding {
+                    category: FindingCategory::Representable,
+                    class: SemanticClass::ExecutionSemantic,
+                    component: component.id.clone(),
+                    subject: format!("{}.execution_surface", component.id),
+                    declared: None,
+                    resolved: None,
+                    carriage: None,
+                    detail: format!("execution surface complete ({})", groups.join(", ")),
+                },
             }
         })
         .collect();

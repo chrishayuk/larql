@@ -324,7 +324,14 @@ impl<'a, B: PlanBackend> DecodeSession<'a, B> {
             let layer = &self.plan.layers[index];
             // Attention input is normalised once and handed over; the
             // judged gate reads the same vector (same as the batch path).
-            let inputs = [state.pre_attention.apply(self.backend, &h)];
+            // Under post-norm placement there is no pre-attention norm and
+            // the sublayer reads the RAW residual — the norm applies to
+            // its output, below, before the add. Cloning `h` rather than
+            // normalising by an identity keeps the absent op absent.
+            let inputs = [match &state.pre_attention {
+                Some(norm) => norm.apply(self.backend, &h),
+                None => h.clone(),
+            }];
             // The sensitivity tap from main, kept ahead of the operator
             // dispatch: it observes the attention INPUT, which both
             // operators read, so it belongs to neither branch.
@@ -435,7 +442,7 @@ impl<'a, B: PlanBackend> DecodeSession<'a, B> {
                             .softmax()
                             .expect("prepared softmax operands imply a softmax op"),
                         &inputs,
-                        layer.pre_attention_norm.eps,
+                        layer.declared_norm_eps,
                         hidden,
                     );
                     let _site = super::cpu::ledger::in_site(super::cpu::ledger::Site::Attention);

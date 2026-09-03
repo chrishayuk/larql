@@ -636,6 +636,23 @@ pub fn attach_stack_evidence(
     match evidence {
         Ok(placement) => {
             surface.norm.placement = Some(placement);
+            // A post-norm stack's ONLY norm sites are the post ones, and
+            // the component declares exactly one epsilon. So the declared
+            // epsilon is theirs.
+            //
+            // This is not the four-norm case wearing a different hat, and
+            // the difference is why it is safe here and refused there. A
+            // four-norm stack HAS both sites and they can genuinely
+            // differ — Muse-Glimmer's are 1e-5 pre and 1e-8 post — so
+            // filling `post` from `pre` there would be inheriting one
+            // site's judged value into another's, which is the
+            // executable-but-unfounded failure. Here there is no second
+            // site to disagree with: reading the declaration as belonging
+            // to the pre sites would give an epsilon to norms this stack
+            // does not have and none to the norms it does.
+            if placement == super::roles::NormPlacement::PostOnly && surface.norm.post.is_none() {
+                surface.norm.post = Some(surface.norm.pre);
+            }
             Ok(())
         }
         Err(reason) => Err(vec![format!("norm placement ({reason})")]),
