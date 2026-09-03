@@ -412,6 +412,23 @@ pub struct ModelConfig {
     /// Whether the residual stream is kept at fp32 against a lower-precision
     /// model (`residual_in_fp32`) — an execution-precision fact, verbatim.
     pub residual_in_fp32: Option<bool>,
+    /// `hc_mult` — how many parallel residual streams the component's
+    /// state carries. `None` = one, the topology every family judged
+    /// before hyper-connections uses.
+    ///
+    /// A COMPONENT fact, never a layer one: once the residual means
+    /// `[..., hc, d]`, the embedding, every branch operator and the head
+    /// all have to agree about it.
+    pub hc_streams: Option<usize>,
+    /// `hc_sinkhorn_iters` — iterations of the normalisation that splits
+    /// the projected state statistics into the reduce weights, the
+    /// expand weights and the cross-stream combination matrix.
+    pub hc_sinkhorn_iters: Option<usize>,
+    /// `hc_eps` — the epsilon that split runs at. NOT the component's
+    /// `norm_eps`: the reference passes them separately (the mix
+    /// projection's RMS uses `norm_eps`, the split uses this), and
+    /// merging them would run a different model.
+    pub hc_eps: Option<f64>,
     /// Whether attention output is gated before `o_proj` (`attn_output_gate`).
     /// Distinct from the judged [`AttentionGateSpec`](super::AttentionGateSpec)
     /// an architecture returns from `attention_output_gate()` — this is the

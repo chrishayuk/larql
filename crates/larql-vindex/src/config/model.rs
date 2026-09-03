@@ -368,6 +368,14 @@ mod tests {
         // Genuinely not persisted yet. Each entry is a known gap, not an
         // exemption: no vindex-served model can use these today.
         const KNOWN_GAPS: &[&str] = &[
+            // Hyper-connections. The residual topology is REPRESENTED on
+            // the execution surface (wave 16) and explicitly not
+            // executable, so no vindex-served model can use it — and
+            // persisting it in the model config would claim a serving
+            // path that refuses. It moves here when wave 17 lowers it.
+            "hc_streams",
+            "hc_sinkhorn_iters",
+            "hc_eps",
             // Multi-head latent attention (DeepSeek V2/V3). No MLA model
             // is served from a vindex yet; serving one without these
             // would silently rebuild the wrong attention geometry.

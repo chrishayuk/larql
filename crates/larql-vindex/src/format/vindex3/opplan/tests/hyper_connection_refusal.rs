@@ -1,0 +1,175 @@
+//! A hyper-connection stack is REPRESENTED and explicitly NOT LOWERED.
+//!
+//! The claim under test is narrow and architectural: the single-stream
+//! residual programme cannot lower the declared hyper-connection topology
+//! without discarding something the checkpoint declares. Read off
+//! DeepSeek-V4-Flash's own `inference/model.py`, three facts are each
+//! independently sufficient —
+//!
+//!   1. the state SHAPE differs: `hc_mult` parallel streams, not one;
+//!   2. the reduce and expand weights are DYNAMIC, computed per token
+//!      from the current state rather than stored per layer;
+//!   3. the expand mixes every stream into every other through a
+//!      `[hc, hc]` combination matrix.
+//!
+//! So the assertion is not "no function could reproduce this" — an
+//! unconstrained `f(h)` can encode almost anything. It is that the
+//! EXISTING single-stream contract has nowhere to put a stream count, a
+//! per-token weight, or a cross-stream mix, and therefore refuses.
+
+use crate::format::vindex3::graph::build_from_inventories;
+use crate::format::vindex3::plan::tests_support::glimmer_shaped_target_with;
+use crate::format::vindex3::plan::{plan_system, FindingCategory, SemanticClass};
+use larql_models::config::{HyperConnection, HyperConnectionWeights, ResidualTopology};
+
+/// DeepSeek-V4-Flash's own declared numbers.
+const STREAMS: usize = 4;
+const SINKHORN_ITERS: usize = 20;
+const SINKHORN_EPS: f64 = 1e-6;
+
+fn hyper_connected(config: &mut serde_json::Value) {
+    let text = &mut config["text_config"];
+    text["hc_mult"] = serde_json::json!(STREAMS);
+    text["hc_sinkhorn_iters"] = serde_json::json!(SINKHORN_ITERS);
+    text["hc_eps"] = serde_json::json!(SINKHORN_EPS);
+}
+
+fn surface_of(
+    mutate: impl FnOnce(&mut serde_json::Value),
+) -> crate::format::vindex3::graph::surface::ExecutionSurface {
+    let dir = tempfile::tempdir().unwrap();
+    let inventory = glimmer_shaped_target_with(dir.path(), mutate);
+    build_from_inventories(&[("target-artifact".to_string(), inventory)])
+        .graph
+        .components
+        .iter()
+        .find(|c| c.id == "target")
+        .and_then(|c| c.execution.clone())
+        .expect("the component builds")
+}
+
+/// The topology is a declared COMPONENT fact, carried with every
+/// parameter the reference reads — none of them defaulted.
+#[test]
+fn the_topology_is_represented_with_its_declared_parameters() {
+    let surface = surface_of(hyper_connected);
+    let ResidualTopology::HyperConnection(hc) = surface.residual_topology else {
+        panic!(
+            "expected a hyper-connection topology, got {:?}",
+            surface.residual_topology
+        );
+    };
+    assert_eq!(
+        hc,
+        HyperConnection {
+            streams: STREAMS,
+            sinkhorn_iters: SINKHORN_ITERS,
+            sinkhorn_eps: SINKHORN_EPS,
+        }
+    );
+    assert_eq!(surface.residual_topology.streams(), STREAMS);
+    // The mix projection's row count is derived from the stream count,
+    // so the two cannot drift: `(2 + 4) * 4 = 24` on DeepSeek-V4.
+    assert_eq!(HyperConnectionWeights::mix_rows_for(hc.streams), 24);
+
+    // The control: without the declaration, the same fixture is a
+    // single-stream stack. If it were not, the assertion above would
+    // pass on a fixture that is hyper-connected by accident.
+    let plain = surface_of(|_| {});
+    assert_eq!(plain.residual_topology, ResidualTopology::SingleStream);
+    assert_eq!(plain.residual_topology.streams(), 1);
+}
+
+/// **The single-stream programme cannot lower it.** Not "lowers it
+/// differently" — refuses, before any operand is read.
+#[test]
+fn the_single_stream_residual_programme_refuses_to_lower_it() {
+    let reason = ResidualTopology::HyperConnection(HyperConnection {
+        streams: STREAMS,
+        sinkhorn_iters: SINKHORN_ITERS,
+        sinkhorn_eps: SINKHORN_EPS,
+    })
+    .unimplemented_reason()
+    .expect("a hyper-connection topology must refuse");
+    // The three independently sufficient reasons, each named.
+    for fragment in ["stream multiplicity", "dynamic", "cross-stream"] {
+        assert!(
+            reason.contains(fragment),
+            "reason omits {fragment:?}: {reason}"
+        );
+    }
+    // And the topology this build DOES run says nothing of the kind.
+    assert!(ResidualTopology::SingleStream
+        .unimplemented_reason()
+        .is_none());
+}
+
+/// **Wave 11's lesson, applied to a second topology.** The refusal must
+/// reach the plan REPORT, not only the op plan — a refusal one consumer
+/// can see is not a refusal.
+#[test]
+fn the_report_names_the_refusal_as_an_unsupported_component() {
+    let dir = tempfile::tempdir().unwrap();
+    let inventory = glimmer_shaped_target_with(dir.path(), hyper_connected);
+    let plan = plan_system(&[("target-artifact".to_string(), inventory)]);
+
+    let finding = plan
+        .artifacts
+        .iter()
+        .flat_map(|a| &a.findings)
+        .find(|f| f.subject.ends_with("execution_surface"))
+        .expect("the component has an execution-surface finding");
+
+    assert_eq!(
+        finding.class,
+        SemanticClass::UnsupportedComponent,
+        "{finding:?}"
+    );
+    assert_eq!(
+        finding.category,
+        FindingCategory::Unrepresented,
+        "{finding:?}"
+    );
+    assert!(finding.blocks(), "{finding:?}");
+    // Both halves: the surface IS complete, and the topology is what
+    // cannot run. A reader seeing only the refusal cannot tell this from
+    // a broken checkpoint.
+    assert!(finding.detail.contains("complete"), "{}", finding.detail);
+    assert!(
+        finding.detail.contains("HyperConnection"),
+        "{}",
+        finding.detail
+    );
+    assert!(
+        finding.detail.contains("NOT executable"),
+        "{}",
+        finding.detail
+    );
+}
+
+/// A HALF-declared topology resolves to nothing and refuses, rather than
+/// completing itself with one stream. This is the failure the field
+/// exists to prevent: a four-stream checkpoint served as a one-stream
+/// model computes fluent wrong output.
+#[test]
+fn a_partial_declaration_refuses_rather_than_defaulting_to_one_stream() {
+    let dir = tempfile::tempdir().unwrap();
+    let inventory = glimmer_shaped_target_with(dir.path(), |config| {
+        // Streams declared, the split's parameters not.
+        config["text_config"]["hc_mult"] = serde_json::json!(STREAMS);
+    });
+    let built = build_from_inventories(&[("target-artifact".to_string(), inventory)]);
+    let incomplete = built
+        .incomplete_surfaces
+        .iter()
+        .find(|s| s.component == "target")
+        .expect("a half-declared topology must refuse the surface");
+    assert!(
+        incomplete
+            .missing
+            .iter()
+            .any(|m| m.contains("residual topology")),
+        "{:?}",
+        incomplete.missing
+    );
+}

@@ -459,6 +459,15 @@ pub(super) fn parse_model_config(config: &serde_json::Value) -> ModelConfig {
         .or_else(|| text_config["norm_epsilon"].as_f64())
         .or_else(|| text_config["norm_eps"].as_f64());
 
+    // Hyper-connections (DeepSeek-V4). Read as declared or not at all —
+    // a defaulted stream count would silently make a four-stream model a
+    // one-stream one.
+    let hc_streams = text_config["hc_mult"].as_u64().map(|v| v as usize);
+    let hc_sinkhorn_iters = text_config["hc_sinkhorn_iters"]
+        .as_u64()
+        .map(|v| v as usize);
+    let hc_eps = text_config["hc_eps"].as_f64();
+
     // Softcapping and attention scale
     let attn_logit_softcapping = text_config["attn_logit_softcapping"].as_f64();
     let final_logit_softcapping = text_config["final_logit_softcapping"].as_f64();
@@ -786,6 +795,9 @@ pub(super) fn parse_model_config(config: &serde_json::Value) -> ModelConfig {
         mlp_padding_size,
         use_mlp_bias,
         residual_in_fp32,
+        hc_streams,
+        hc_sinkhorn_iters,
+        hc_eps,
         attn_output_gate,
         output_gate_type,
         mtp_num_hidden_layers,

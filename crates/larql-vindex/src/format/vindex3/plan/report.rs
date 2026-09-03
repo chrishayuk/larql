@@ -57,6 +57,22 @@ pub const PLAN_SCHEMA: u32 = 6;
 /// `plan/tests/identity.rs` pins fixture verdicts against this value, so
 /// a change that flips one fails there until the version is bumped.
 ///
+/// **14** — hyper-connections are a declared RESIDUAL TOPOLOGY, and
+/// explicitly not executable. Read from DeepSeek-V4-Flash's own
+/// `inference/model.py`: the state is a bundle of `hc_mult` parallel
+/// streams, each sublayer reduces the bundle to one vector and expands
+/// its output back, and the weights are computed per token through a
+/// projection whose statistics a 20-iteration Sinkhorn split turns into
+/// reduce weights, expand weights and a cross-stream combination matrix.
+/// `ResidualTopology` states it on the COMPONENT — once the residual
+/// means `[.., streams, d]`, the embedding, every branch operator and
+/// the head must agree — and a HALF declaration refuses rather than
+/// completing itself with one stream. The op plan refuses before reading
+/// an operand and the report says so, both through the topology's own
+/// `unimplemented_reason`. The component label also stops being
+/// family-named: `hyper-connections (GLM-5.x)` appeared verbatim on
+/// Tencent and DeepSeek checkpoints, and is now named for the mechanism.
+///
 /// **13** — LFM2's norm dialect is carried. `operator_norm` and
 /// `ffn_norm` are the two-norm PRE-only estate under LFM2's own
 /// spelling (`Lfm2DecoderLayer.forward`), and `norm_eps` is its
@@ -188,7 +204,7 @@ pub const PLAN_SCHEMA: u32 = 6;
 /// architectures, now block instead of passing silently into
 /// `GenericArch`'s Llama-shaped defaults. Measured on the conformance
 /// corpus: 15 of 42 declared `model_type` strings, across 30 checkpoints.
-pub const PLANNER_SEMANTICS_VERSION: u32 = 13;
+pub const PLANNER_SEMANTICS_VERSION: u32 = 14;
 
 /// Who judged a plan.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]

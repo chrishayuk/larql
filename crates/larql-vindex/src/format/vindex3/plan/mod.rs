@@ -547,7 +547,20 @@ fn carriage_finding(
     // Granite's four multipliers and 37 other keys were silently passing
     // this way — `plan/tests/semantics.rs::every_consumed_leaf_key_is_judged`
     // now keeps the registry complete enough that this arm cannot fire).
-    if class != SemanticClass::ExecutionSemantic && class != SemanticClass::Unknown {
+    // `UnsupportedComponent` cannot take this exit either, and for a
+    // sharper reason than `Unknown` can. That class means "we know
+    // exactly what component this configures and have no implementation
+    // for it" — so a parser reading the key proves recognition and
+    // nothing more. Letting it grade `representable` here says the fact
+    // has a home when the component it configures does not exist in this
+    // build, and it made DeepSeek-V4 lose three blockers the moment
+    // wave 16 started READING `hc_mult` — the row looking closer to
+    // admissible purely because the topology became recognised, which is
+    // the failure that wave's own falsifier named.
+    if class != SemanticClass::ExecutionSemantic
+        && class != SemanticClass::Unknown
+        && class != SemanticClass::UnsupportedComponent
+    {
         return Finding {
             category: FindingCategory::Representable,
             class,
@@ -557,6 +570,22 @@ fn carriage_finding(
             resolved: None,
             carriage: Some(carriage::Carriage::Parsed),
             detail: "read by a registered parser".to_string(),
+        };
+    }
+    if class == SemanticClass::UnsupportedComponent {
+        return Finding {
+            category: FindingCategory::Unrepresented,
+            class,
+            component: component_name,
+            subject: fact.path.clone(),
+            declared: Some(fact.value.clone()),
+            resolved: None,
+            carriage: Some(carriage::Carriage::Parsed),
+            detail: format!(
+                "read by a registered parser, and it configures {} — recognised, and \
+                 not implemented by this build",
+                semantics::unsupported_component(leaf).unwrap_or("an absent component")
+            ),
         };
     }
     if class == SemanticClass::Unknown {
@@ -878,12 +907,21 @@ fn execution_surface_findings(artifact: &str, built: &BuiltGraph) -> Vec<Finding
             // no plan at all, which is the looks-supported failure the
             // whole instrument exists to catch. Read from the same
             // authority the op plan refuses on, so the two cannot drift.
-            match surface
-                .norm
-                .placement
-                .and_then(|p| p.unimplemented_reason().map(|reason| (p, reason)))
-            {
-                Some((placement, reason)) => Finding {
+            // The topology is asked FIRST, because it decides what the
+            // residual even is; the placement is asked only of a stack
+            // whose residual this build can represent.
+            let refusal = surface
+                .residual_topology
+                .unimplemented_reason()
+                .map(|reason| (format!("{:?}", surface.residual_topology), reason))
+                .or_else(|| {
+                    surface.norm.placement.and_then(|p| {
+                        p.unimplemented_reason()
+                            .map(|reason| (format!("its norm placement ({p:?})"), reason))
+                    })
+                });
+            match refusal {
+                Some((what, reason)) => Finding {
                     category: FindingCategory::Unrepresented,
                     class: SemanticClass::UnsupportedComponent,
                     component: component.id.clone(),
@@ -892,9 +930,8 @@ fn execution_surface_findings(artifact: &str, built: &BuiltGraph) -> Vec<Finding
                     resolved: None,
                     carriage: None,
                     detail: format!(
-                        "execution surface complete ({}), and its norm placement \
-                         ({placement:?}) is representable but NOT executable by this \
-                         build — {reason}",
+                        "execution surface complete ({}), and {what} is representable \
+                         but NOT executable by this build — {reason}",
                         groups.join(", ")
                     ),
                 },

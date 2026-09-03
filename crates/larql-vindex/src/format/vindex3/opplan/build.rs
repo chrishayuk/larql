@@ -100,6 +100,24 @@ pub fn plan_component_ops(
     // is the pre-FFN norm) and would run, applying each norm to the wrong
     // tensor and producing fluent wrong output. So it refuses, the way the
     // unimplemented router kinds and position policies refuse.
+    // The residual topology is asked FIRST, because it decides what the
+    // residual even is. A stack whose state is a bundle of streams
+    // cannot be lowered by the single-stream programme below at all —
+    // not "with a different scale", but at all — so no operand is read
+    // before this refuses.
+    if let Some(reason) = surface.residual_topology.unimplemented_reason() {
+        return Ok(OpPlanOutcome {
+            plan: None,
+            defects: vec![ClosureDefect::UnimplementedSemantic {
+                component: component.id.clone(),
+                fact: format!(
+                    "residual topology ({} parallel streams) — {reason}",
+                    surface.residual_topology.streams()
+                ),
+                representable_as: format!("ResidualTopology::{:?}", surface.residual_topology),
+            }],
+        });
+    }
     if let Some(reason) = placement.unimplemented_reason() {
         return Ok(OpPlanOutcome {
             plan: None,

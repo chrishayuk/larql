@@ -297,6 +297,10 @@ pub fn resolve_with_tensor_evidence(
         final_logit_softcapping: arch.final_logit_softcapping(),
         residual_scale: arch.residual_scale(),
         residual_in_fp32: cfg.residual_in_fp32,
+        // A partial declaration resolves to NOTHING, and the surface
+        // builder refuses on the absence. Defaulting it to one stream
+        // would be the silent wrong answer this whole wave is about.
+        residual_topology: arch.residual_topology().ok(),
         head_reuses_embedding: arch.output_head_reuses_embedding(),
     };
     let topology = ResolvedTopology {

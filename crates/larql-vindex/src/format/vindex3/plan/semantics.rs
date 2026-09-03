@@ -592,16 +592,26 @@ pub const UNSUPPORTED_COMPONENT_KEYS: &[(&str, &str)] = &[
     // boolean whose expansion cannot be checked without a reference, and
     // guessing it into this table is exactly the failure the table's
     // contract forbids. It stays `unknown`, which is what it is.
-    ("hc_eps", GLM_HYPER_CONNECTIONS),
-    ("hc_mult", GLM_HYPER_CONNECTIONS),
-    ("hc_sinkhorn_iters", GLM_HYPER_CONNECTIONS),
+    ("hc_eps", HYPER_CONNECTION_TOPOLOGY),
+    ("hc_mult", HYPER_CONNECTION_TOPOLOGY),
+    ("hc_sinkhorn_iters", HYPER_CONNECTION_TOPOLOGY),
 ];
 
 /// Component label for GLM's learned sparse attention indexer.
 const GLM_SPARSE_INDEXER: &str = "sparse attention indexer (GLM-5.x)";
 
-/// Component label for GLM's hyper-connection residual mixing.
-const GLM_HYPER_CONNECTIONS: &str = "hyper-connections (GLM-5.x)";
+/// Component label for the hyper-connection residual topology.
+///
+/// Named for the MECHANISM, not the family that first showed it here.
+/// The label was `hyper-connections (GLM-5.x)` and appeared verbatim on
+/// Tencent's Hy4-preview and DeepSeek-V4 — a Tencent and a DeepSeek
+/// checkpoint told they carried a GLM component. Wave 7 recorded that as
+/// a defect; this is the first of those labels to be fixed, because
+/// wave 16 read the actual arithmetic from DeepSeek-V4's own reference
+/// and can now say what the component IS rather than where it was seen.
+const HYPER_CONNECTION_TOPOLOGY: &str =
+    "hyper-connection residual topology (parallel residual streams, reduced and expanded \
+     per token through a Sinkhorn-split mixing matrix)";
 
 /// The unimplemented component this leaf configures, if any.
 pub fn unsupported_component(leaf: &str) -> Option<&'static str> {

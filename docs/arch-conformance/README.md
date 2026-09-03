@@ -48,14 +48,20 @@ invariants are the ones that matter most:
 
 | Metric | Baseline | Waves 1+3 | rope | moe | sliding window | frontier census† | partial rotary | vestigial pair | qwen MoE |
 |---|---:|---:|---:|---:|---:|---:|---:|---:|---:|
-| semantics version | 1 | 3 | 4 | 5 | 6 | 6 (held) | 7 | 8 | 9 | 10 | 11 | 12 | **13** |
-| GREEN | 17 | 18 | 21 | 26 | 28 | 28 | 31 | 33 | 38 | 38 | 38 | 41 | **41** |
-| AMBER | 6 | 6 | 6 | 6 | 6 | 7 | 7 | 7 | 7 | 3‡ | 3 | 3 | **3** |
-| RED | 65 | 64 | 61 | 56 | 54 | 74 | 71 | 69 | 64 | 68‡ | 68 | 65 | **65** |
-| **BUG** | **0** | **0** | **0** | **0** | **0** | **0** | **0** | **0** | **0** | **0** | **0** | **0** | **0** |
-| **silent drops** | **0** | **0** | **0** | **0** | **0** | **0** | **0** | **0** | **0** | **0** | **0** | **0** | **0** |
-| text-closure blockers | 886 | 776 | 756 | 671 | 668 | 1109 | 1091 | 1089 | 1076 | 1058 | 1051 | 1044 | **1029** |
-| K3 clusters remaining | 7 | 7 | 7 | 7 | 7 | 7 | 7 | 7 | 7 | 7 | 7 | 7 | **7** |
+| semantics version | 1 | 3 | 4 | 5 | 6 | 6 (held) | 7 | 8 | 9 | 10 | 11 | 12 | 13 | **14** |
+| GREEN | 17 | 18 | 21 | 26 | 28 | 28 | 31 | 33 | 38 | 38 | 38 | 41 | 41 | **41** |
+| AMBER | 6 | 6 | 6 | 6 | 6 | 7 | 7 | 7 | 7 | 3‡ | 3 | 3 | 3 | **3** |
+| RED | 65 | 64 | 61 | 56 | 54 | 74 | 71 | 69 | 64 | 68‡ | 68 | 65 | 65 | **65** |
+| **BUG** | **0** | **0** | **0** | **0** | **0** | **0** | **0** | **0** | **0** | **0** | **0** | **0** | **0** | **0** |
+| **silent drops** | **0** | **0** | **0** | **0** | **0** | **0** | **0** | **0** | **0** | **0** | **0** | **0** | **0** | **0** |
+| text-closure blockers | 886 | 776 | 756 | 671 | 668 | 1109 | 1091 | 1089 | 1076 | 1058 | 1051 | 1044 | 1029 | **1037**§ |
+| K3 clusters remaining | 7 | 7 | 7 | 7 | 7 | 7 | 7 | 7 | 7 | 7 | 7 | 7 | 7 | **7** |
+
+§ **Blockers ROSE in wave 16, and that was the forecast.** Declaring the
+hyper-connection topology makes a refusal visible where there was previously
+just an absent surface, and a half-declared topology refuses rather than
+completing itself. Understanding more lets the report say more precisely what
+cannot run — the count is not the objective.
 
 ‡ **The AMBER and RED columns are not comparable across wave 9 → 10.** Wave
 11 tightened the sweep's own classifier: AMBER means "component identified,

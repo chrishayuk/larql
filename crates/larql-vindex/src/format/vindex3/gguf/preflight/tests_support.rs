@@ -57,6 +57,7 @@ pub fn qwen_shaped_surface() -> ExecutionSurface {
         },
         head: None,
         residual_scale: None,
+        residual_topology: larql_models::config::ResidualTopology::SingleStream,
         residual_in_fp32: None,
         linear_attention: Some(LinearAttentionSurface {
             key_heads: 16,

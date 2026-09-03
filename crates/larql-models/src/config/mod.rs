@@ -35,6 +35,7 @@ pub mod moe_router;
 pub mod nonfinite_json;
 pub mod norm;
 pub mod position;
+pub mod residual_topology;
 pub mod rope;
 pub mod rope_types;
 pub mod shared_expert_gate;
@@ -70,6 +71,7 @@ pub use position::{
     mrope_axis_table, DeclaredRopeScaling, PositionPolicy, RotaryFrequencyBasis,
     ROPE_PAIRING_INTERLEAVED,
 };
+pub use residual_topology::{HyperConnection, HyperConnectionWeights, ResidualTopology};
 pub use rope::{Llama3RopeScaling, RopeScaling, YarnRopeScaling};
 pub use rope_types::{
     POSITION_EMBEDDING_TYPE_ROPE, ROPE_TYPE_DEFAULT, ROPE_TYPE_LINEAR, ROPE_TYPE_LLAMA3,

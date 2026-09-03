@@ -101,6 +101,13 @@ pub const CONSUMED_LEAF_KEYS: &[&str] = &[
     // `shared_expert_intermediate_size`, Nemotron-H prefixes it.
     "shared_expert_intermediate_size",
     "moe_shared_expert_intermediate_size",
+    // Hyper-connections (DeepSeek-V4): the residual is a bundle of
+    // `hc_mult` streams, reduced and expanded per token through a
+    // Sinkhorn-split mixing matrix. All three are read together — a
+    // partial declaration refuses rather than being completed.
+    "hc_mult",
+    "hc_sinkhorn_iters",
+    "hc_eps",
     "enable_moe_block",
     "top_k_experts",
     "moe_intermediate_size",

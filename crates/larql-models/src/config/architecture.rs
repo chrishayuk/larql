@@ -18,9 +18,9 @@ use crate::validation::ConfigValidationResult;
 
 use super::{
     layer_types, rope_types, Activation, DeclaredRopeScaling, EmbeddingNorm, ExpertFormat,
-    ExpertGatePolicy, ExpertRoutingPolicy, FfnType, GateUpLayout, LayerKind, Llama3RopeScaling,
-    ModelConfig, NormSpec, NormType, PositionPolicy, PostNormEps, QkNormScope,
-    RotaryFrequencyBasis, SharedExpertGateSpec, YarnRopeScaling,
+    ExpertGatePolicy, ExpertRoutingPolicy, FfnType, GateUpLayout, HyperConnection, LayerKind,
+    Llama3RopeScaling, ModelConfig, NormSpec, NormType, PositionPolicy, PostNormEps, QkNormScope,
+    ResidualTopology, RotaryFrequencyBasis, SharedExpertGateSpec, YarnRopeScaling,
 };
 
 /// The multiplier that leaves a value unchanged.
@@ -1151,6 +1151,34 @@ pub trait ModelArchitecture: Send + Sync {
         self.config()
             .shared_expert_intermediate_size
             .or_else(|| Some(self.moe_intermediate_size() * count))
+    }
+
+    /// How this component's residual stream is shaped and recombined.
+    ///
+    /// Resolved once, here, so that no caller has to decide what an
+    /// absent `hc_mult` means. A checkpoint declaring the stream count
+    /// declares the whole topology: the reference reads `hc_mult`,
+    /// `hc_sinkhorn_iters` and `hc_eps` together, and a partial
+    /// declaration is a checkpoint this build has not judged rather than
+    /// one to be completed with defaults — so it REFUSES rather than
+    /// filling in the missing halves.
+    fn residual_topology(&self) -> Result<ResidualTopology, String> {
+        let cfg = self.config();
+        match (cfg.hc_streams, cfg.hc_sinkhorn_iters, cfg.hc_eps) {
+            (None, None, None) => Ok(ResidualTopology::SingleStream),
+            (Some(streams), Some(sinkhorn_iters), Some(sinkhorn_eps)) => {
+                Ok(ResidualTopology::HyperConnection(HyperConnection {
+                    streams,
+                    sinkhorn_iters,
+                    sinkhorn_eps,
+                }))
+            }
+            (streams, iters, eps) => Err(format!(
+                "partial hyper-connection declaration (hc_mult {streams:?}, \
+                 hc_sinkhorn_iters {iters:?}, hc_eps {eps:?}) — the reference reads all \
+                 three together and this build will not choose the missing ones"
+            )),
+        }
     }
 
     /// The gate on the shared branch's output, where the family runs one.

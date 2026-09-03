@@ -346,6 +346,23 @@ pub struct ExecutionSurface {
     /// chosen by an executor. `None` = the checkpoint declares nothing.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub residual_in_fp32: Option<bool>,
+    /// How this component's residual stream is shaped and recombined.
+    ///
+    /// A COMPONENT fact rather than a per-layer one: once the residual
+    /// means `[..., streams, d]`, the embedding, every branch operator
+    /// and the head must all agree about it, and a per-layer flag would
+    /// let a stack claim a bundle while its embedding assumed one vector.
+    ///
+    /// Defaults to `SingleStream` when absent, which is what every
+    /// container written before this field carried.
+    #[serde(default = "single_stream")]
+    pub residual_topology: larql_models::config::ResidualTopology,
+}
+
+/// The topology every family judged before hyper-connections uses, and
+/// what a container written before this field meant.
+fn single_stream() -> larql_models::config::ResidualTopology {
+    larql_models::config::ResidualTopology::SingleStream
 }
 
 /// What the Gated DeltaNet operator reads.
@@ -524,6 +541,19 @@ pub fn surface_from_resolved(
         }),
         conv_qkv: resolved.conv_qkv_attn,
         residual_in_fp32: execution.residual_in_fp32,
+        // Absent means the checkpoint half-declared it; refusing here is
+        // the point, because the alternative is a four-stream model
+        // quietly served as a one-stream one.
+        residual_topology: match execution.residual_topology {
+            Some(topology) => topology,
+            None => {
+                return Err(vec![
+                    "residual topology (the checkpoint declares hc_mult, hc_sinkhorn_iters \
+                     and hc_eps only in part, and this build will not choose the rest)"
+                        .to_string(),
+                ])
+            }
+        },
         mla: execution.mla.map(|m| MlaSurface {
             num_heads: m.num_heads,
             kv_lora_rank: m.kv_lora_rank,
@@ -851,5 +881,8 @@ pub fn surface_from_nested(
         head: None,
         // No perception tower has declared a residual-scale operation.
         residual_scale: None,
+        // Nor a multi-stream residual: every judged tower adds its
+        // sublayer outputs into one vector.
+        residual_topology: larql_models::config::ResidualTopology::SingleStream,
     })
 }
