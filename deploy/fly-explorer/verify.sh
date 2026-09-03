@@ -110,9 +110,26 @@ PLAN="$(curl -sS --max-time 180 -X POST "$BASE/v1/plan" \
   -H 'content-type: application/json' \
   -d "{\"sources\":[\"$MODEL\"]}")"
 
-[ "$(printf '%s' "$PLAN" | jget schema)" = "4" ] \
-  || fail "plan schema is not 4: $(printf '%s' "$PLAN" | head -c 200)"
-pass "plan schema 4"
+# The expected schema is read from THIS checkout's source, never
+# hardcoded. It has already moved 4 -> 6 while this gate said 4, and a
+# gate that fails because the format advanced is a gate people learn to
+# ignore. Now that the revision assertion above pins the live server to
+# this commit, the constant here IS the constant it was built from.
+SCHEMA_SRC=crates/larql-vindex/src/format/vindex3/plan/report.rs
+WANT_SCHEMA="$(sed -n 's/^pub const PLAN_SCHEMA: u32 = \([0-9]*\);.*/\1/p' "$SCHEMA_SRC" 2>/dev/null | head -1)"
+GOT_SCHEMA="$(printf '%s' "$PLAN" | jget schema)"
+if [ -n "$WANT_SCHEMA" ]; then
+  [ "$GOT_SCHEMA" = "$WANT_SCHEMA" ] \
+    || fail "plan schema is $GOT_SCHEMA, this checkout declares $WANT_SCHEMA"
+  pass "plan schema $GOT_SCHEMA, as this checkout declares"
+else
+  # Run from outside a checkout: still refuse an unattributed document,
+  # but say that the number itself went unchecked.
+  case "$GOT_SCHEMA" in
+    ''|*[!0-9]*) fail "plan carries no schema: $(printf '%s' "$PLAN" | head -c 160)" ;;
+    *) pass "plan schema $GOT_SCHEMA (source not readable here — number unverified)" ;;
+  esac
+fi
 
 REV="$(printf '%s' "$PLAN" | jget artifacts)"
 printf '%s' "$PLAN" | python3 -c "
