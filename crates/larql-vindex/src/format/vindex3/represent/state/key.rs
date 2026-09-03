@@ -40,14 +40,14 @@
 //!
 //! The key says *what experiment was performed against what state*; it
 //! does not say what the result meant. Classification stays downstream —
-//! [`Margin`] and [`Frontier`] price an observation against a gate, and
-//! [`decide_promotion`] rules on it — so that a later contract, or a
+//! [`Margin`] and [`ConstraintVector`] price an observation against a
+//! gate, and [`decide_promotion`] rules on it — so that a later contract, or a
 //! later promotion policy, reinterprets observations already held
 //! instead of making them disappear. A key carrying the verdict would
 //! turn every re-reading of old evidence into a re-measurement.
 //!
 //! [`Margin`]: super::super::constraint::Margin
-//! [`Frontier`]: super::super::constraint::Frontier
+//! [`ConstraintVector`]: super::super::constraint::ConstraintVector
 //! [`decide_promotion`]: super::super::decision::decide_promotion
 
 use std::collections::BTreeMap;

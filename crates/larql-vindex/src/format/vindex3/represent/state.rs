@@ -77,6 +77,8 @@ pub mod instrument;
 pub mod key;
 pub mod realization;
 pub mod resolved;
+pub mod semantics;
+pub mod snapshot;
 pub mod surface;
 pub mod transition;
 
@@ -90,6 +92,8 @@ pub use resolved::{
     resolve, LayoutAdmission, NoLayoutConstraint, PackLayoutAdmission, ResolvedDecision,
     ResolvedDecisionVector, ResolvedEncoding, SOURCE_PRECISION,
 };
+pub use semantics::{SearchSemantics, SearchSemanticsId, SEARCH_SEMANTICS_ID_VERSION};
+pub use snapshot::{Adjudication, FrontierEntry, Objective, SearchSnapshot, SNAPSHOT_SCHEMA};
 pub use surface::{SurfaceTensor, TensorSurface};
 pub use transition::{Action, Provenance, Transition};
 
@@ -97,5 +101,7 @@ pub use transition::{Action, Provenance, Transition};
 mod graph_tests;
 #[cfg(test)]
 mod key_tests;
+#[cfg(test)]
+mod snapshot_tests;
 #[cfg(test)]
 mod tests;

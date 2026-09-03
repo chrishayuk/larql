@@ -1,8 +1,8 @@
 # The LARQL Physical Optimizer — evidence-constrained physical-plan search
 
 **Branch `worktree-represent-optimizer-mcp`, based on `origin/main` at
-`8f647872`.** Stages 1a-1c are implemented and green; everything below
-them is design.
+`8f647872`.** Stage 1 (a-d) is implemented and green; everything below
+it is design.
 
 The abstraction is not "quantization search". It is **evidence-
 constrained physical-plan search**, and it is the query optimiser the
@@ -91,7 +91,7 @@ Grounded, all under
 | Concern | Where |
 |---|---|
 | The map as policy, not transcript | `map.rs` — `PrecisionMap`, `Exception`, `resolve`, `conforms` |
-| Behavioural contract + margins | `constraint.rs` — `Margin`, `Frontier`, `binding()`, `admissible()` |
+| Behavioural contract + margins | `constraint.rs` — `Margin`, `ConstraintVector`, `binding()`, `admissible()` |
 | The frozen contract | `quality.rs:764` — `kimi-logit-balanced-v1`; `QualityGate.id` — *"changing a threshold means a NEW id"* |
 | Measurement adequacy | `measurement.rs` — `MeasurementStatus`, `EvidenceScale::{Diagnostic,Authority}` |
 | How a search may *use* a statistic | `search_evidence.rs` — the four-rung ladder, `SearchCalibrationRegistry` |
@@ -403,7 +403,7 @@ possible, not mandatory.
 
 No PASS/FAIL, no promotion status, no contract. The key says *what
 experiment was performed against what state*, never what the result
-meant. Classification stays downstream in `Margin`/`Frontier` and
+meant. Classification stays downstream in `Margin`/`ConstraintVector` and
 `decide_promotion`, so a later contract reinterprets observations
 already held instead of making them disappear.
 
@@ -429,6 +429,95 @@ Five mutations, each killing exactly its own tests: key ignores scale →
 2 red; bank id counts samples instead of naming them → 1; instrument id
 ignores truncation → 2; bank id includes its storage location → 1;
 `record` overwrites a contradiction → 1.
+
+---
+
+## 4d. Stage 1d — the replay gate (IMPLEMENTED)
+
+`represent/state/{semantics,snapshot}.rs`, 9 tests, 100% on `semantics.rs`
+and 99.4% on `snapshot.rs`.
+
+```text
+STORED — facts and configuration
+    schema, objective, gate, tail-support policy, search semantics
+    the state graph      (which states exist, how they were reached)
+    the measurements     (what was observed of them)
+
+NEVER STORED — conclusions
+    admissible / refused      chosen candidate     candidate rank
+    binding constraint        the frontier         "best map"
+    promotion decision        an agent's recommendation
+```
+
+> **Delete every derived conclusion, deserialise the factual state, run
+> the deterministic optimiser, and recover the same conclusion.**
+
+The frontier is recomputed on every call rather than stored: a persisted
+frontier is a second authority that can drift from the graph and
+measurements it came from. Caching is a later optimisation; the gate
+passes without one.
+
+### The replay, on the real numbers
+
+The snapshot is serialised, the in-memory object thrown away, and every
+conclusion below derived from the reloaded facts:
+
+```text
+map   logical bytes     auth kl p99   re-derived      recorded
+P     13,684,764,800    3.3532e-03    admitted        K25 survives
+T1    13,682,673,664    3.6480e-03    REFUSED (kl)    kl 3.648e-3 > 3.500e-3
+S2    13,602,484,352    4.0563e-03    REFUSED         refused
+S1    13,600,393,216    —             MISS            never measured
+```
+
+`binding()` re-derives `KlP99` on the admitted parent — the fact the
+exchange rung exists because of. S1's absence re-derives as a
+*measurement miss*, which is a fact about the record rather than a
+failure. Only `kl_p99`, `min_covered_mass` and the byte figures are
+recorded values; the other criteria are fixtures placed well inside
+their limits so that what the replay turns on is the recorded evidence.
+
+### Semantics have identity too
+
+Six months from now `decide_promotion` legitimately changes, an old
+snapshot replays, and the answer differs while every stored measurement
+is intact. **That is not corruption — the decision procedure changed.**
+So `SearchSemanticsId` digests five normative version identities
+(candidate generation, pre-measurement pruning, evidence interpretation,
+promotion rule, physical accounting), never source hashes, and separates:
+
+```text
+observation replay          same facts, CURRENT rules
+historical decision replay  same facts, the rules OF THE TIME
+```
+
+That is 1c's *observation is not meaning* applied one level up.
+
+### What 1d does not replay, and why that is principled
+
+`decide_promotion` takes a `SearchCandidate` carrying an
+`assessment.ranking_score` — **a conclusion**. Persisting one to make
+promotion replayable would be exactly the cheat this stage forbids;
+re-deriving it needs the assessment layer wired to the graph, which is
+the candidate generator's job at stage 2. So 1d replays the *contract*
+chain — margins, binding constraint, admissibility, refusal and its
+reasons — and does not claim promotion ordering.
+
+### The anti-cheat is structural
+
+A test walks the serialised JSON and fails on any key named
+`admissible`, `admitted`, `refused`, `binding`, `frontier`, `verdict`,
+`promotion`, `rank`, `chosen`, `best`, `recommendation`, `failures`,
+`passed` or `adjudication` — then asserts the *facts* are present, so
+the emptiness is not vacuous. It caught its first real case immediately:
+`SearchSemantics.promotion` is a rule identity, not a decision, and the
+field is now `promotion_rule` so the check can stay blunt instead of
+growing an exemption.
+
+Three mutations, each killing exactly its own test: storing the admitted
+set → the anti-cheat; admission ignoring evidence scale → the
+diagnostic-is-not-an-admission test; the frontier absorbing measurements
+of states the graph never held → the foreign-state test.
 
 ---
 
@@ -523,7 +612,7 @@ Deliberately boring, so MCTS is a policy swap and not a rewrite.
 | 1a | Resolved-state identity contract + adversarial tests | **done** |
 | 1b | State graph with **edge** provenance (§4b) | **done** |
 | 1c | `MeasurementKey` + measurement dedup (§4c) | **done** |
-| 1d | Persistent, replayable search state | next |
+| 1d | Persistent, replayable search state (§4d) | **done** |
 | 2 | Deterministic action generator — exact physical deltas, participation, novelty and admissibility *before* measurement | |
 | 3 | Best-first / beam; establish the objective API and the search/evidence boundary | |
 | 4 | MCP facade — inspect state, hypotheses, frontier; request experiments | |
