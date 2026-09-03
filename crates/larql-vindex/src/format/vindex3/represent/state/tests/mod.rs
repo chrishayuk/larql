@@ -16,6 +16,8 @@
 //! both get tests, and the ones that assert *sameness* are as load-
 //! bearing as the ones that assert difference.
 
+mod source_seal;
+
 use std::collections::BTreeMap;
 
 use super::super::compiler::SourceIdentity;
