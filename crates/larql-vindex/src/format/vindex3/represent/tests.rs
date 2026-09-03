@@ -576,6 +576,7 @@ fn a_different_encoder_is_not_a_refusal_only_a_weaker_claim() {
     let gptq = nvfp4_pack::EncoderRecipe {
         algorithm: "nvfp4-gptq".into(),
         revision: 1,
+        source: None,
     };
     assert!(!gptq.is_reproducible_by_this_build());
     assert_eq!(gptq.name(), "nvfp4-gptq-v1");
@@ -589,6 +590,7 @@ fn a_different_encoder_is_not_a_refusal_only_a_weaker_claim() {
     let newer = nvfp4_pack::EncoderRecipe {
         algorithm: "nvfp4-nearest".into(),
         revision: 2,
+        source: None,
     };
     assert!(!newer.is_reproducible_by_this_build());
 }

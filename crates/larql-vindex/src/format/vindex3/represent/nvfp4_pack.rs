@@ -296,12 +296,23 @@ impl CodecIdentity {
 
     /// Refuse a pack this build cannot decode under the rules it was
     /// written under.
+    ///
+    /// Two representation families reach here. NVFP4 is one contract;
+    /// each K-quant is its OWN family rather than a revision of a shared
+    /// one, because `Q4_K` and `Q6_K` are different block layouts and a
+    /// shared family would let a reader that implements one accept the
+    /// other's bytes on a revision match.
     pub fn admit(&self) -> Result<(), VindexError> {
-        let want = Self::nvfp4_v1();
+        let want = match super::kquant::lookup(&self.family) {
+            Some(k) => k.codec_identity(),
+            None => Self::nvfp4_v1(),
+        };
         if self.family != want.family {
             return Err(VindexError::Parse(format!(
-                "representation family `{}` is not `{}`",
-                self.family, want.family
+                "representation family `{}` is not `{}`, nor one of {}",
+                self.family,
+                want.family,
+                super::kquant::compilable_names()
             )));
         }
         if self.revision != want.revision {
@@ -357,6 +368,14 @@ pub struct EncoderRecipe {
     pub algorithm: String,
     /// Revision within that family.
     pub revision: u32,
+    /// Upstream identity, for an encoder this workspace does not own.
+    ///
+    /// Absent for LARQL's own encoders, whose identity is the recipe
+    /// name. Present for a linked reference encoder, where the upstream
+    /// revision is part of what determines the bytes — so it takes part
+    /// in equality and therefore in the reproducibility claim.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub source: Option<String>,
 }
 
 impl EncoderRecipe {
@@ -366,6 +385,7 @@ impl EncoderRecipe {
         Self {
             algorithm: "nvfp4-nearest".into(),
             revision: 1,
+            source: None,
         }
     }
 
@@ -377,12 +397,44 @@ impl EncoderRecipe {
         Self {
             algorithm: "nvfp4-gptq".into(),
             revision: 1,
+            source: None,
         }
     }
 
     /// The recipe this build compiles with.
     pub fn current() -> Self {
         Self::nearest_v1()
+    }
+
+    /// LARQL's own K-quant encoders. Legal, correctly-laid-out bytes
+    /// with LARQL's choice of values — measured against ggml at
+    /// Q8_0 0.9967, Q4_K 1.0326, Q6_K 1.1146 reconstruction RMS.
+    ///
+    /// Fine for a self-contained artifact; NOT the encoder a comparison
+    /// against a llama.cpp-derived artifact may use, because a
+    /// bit-width-dependent codec deficit would be indistinguishable from
+    /// an allocation difference.
+    pub fn kquant_native_v1() -> Self {
+        Self {
+            algorithm: "kquant-larql-native".into(),
+            revision: 1,
+            source: None,
+        }
+    }
+
+    /// The ecosystem's own encoder, linked and pinned.
+    ///
+    /// `source` carries the upstream revision because — unlike a LARQL
+    /// recipe name, which this type's docs rightly keep free of build
+    /// ids — an external encoder's upstream identity genuinely
+    /// determines the chosen values. It participates in equality, so
+    /// `is_reproducible_by_this_build` is honest across an upstream bump.
+    pub fn kquant_ggml_reference(upstream: &str) -> Self {
+        Self {
+            algorithm: "kquant-ggml-reference".into(),
+            revision: 1,
+            source: Some(upstream.to_string()),
+        }
     }
 
     /// `nvfp4-nearest-v1`, for reports and CLI output.
