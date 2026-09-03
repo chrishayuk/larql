@@ -131,16 +131,27 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y libopenblas-dev pkg-config
 
-      - name: Cache cargo registry + build artefacts
+      - name: Cache cargo registry (downloads only, never target/)
         uses: actions/cache@v6
         with:
           path: |
             ~/.cargo/registry
             ~/.cargo/git
-            target
-          key: ${{ runner.os }}-cargo-msrv-${{ steps.msrv.outputs.version }}-${{ hashFiles('**/Cargo.lock') }}
+          key: ${{ runner.os }}-cargo-reg2-msrv-${{ steps.msrv.outputs.version }}-${{ hashFiles('**/Cargo.lock') }}
           restore-keys: |
-            ${{ runner.os }}-cargo-msrv-${{ steps.msrv.outputs.version }}-
+            ${{ runner.os }}-cargo-reg2-msrv-${{ steps.msrv.outputs.version }}-
+
+      - name: No compiled workspace artefacts may be restored
+        shell: bash
+        run: |
+          # The cache above carries downloads only. A target/ restored from
+          # another commit can satisfy a link against stale code, so a green
+          # matrix would be evidence about an artefact that is not in this
+          # commit. Fail loudly rather than build on one.
+          if [ -e target ]; then
+            echo "::error::target/ was restored from cache - the cache key or path is wrong"
+            exit 1
+          fi
 
       # This is `cargo check` at the pinned toolchain rather than
       # `cargo msrv verify`. cargo-msrv bisects across many toolchains to

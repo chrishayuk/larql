@@ -70,10 +70,21 @@ jobs:
           path: |
             ~/.cargo/registry
             ~/.cargo/git
-            target
-          key: ${{ runner.os }}-cargo-shannon-${{ hashFiles('**/Cargo.lock') }}
+          key: ${{ runner.os }}-cargo-reg2-shannon-${{ hashFiles('**/Cargo.lock') }}
           restore-keys: |
-            ${{ runner.os }}-cargo-shannon-
+            ${{ runner.os }}-cargo-reg2-shannon-
+
+      - name: No compiled workspace artefacts may be restored
+        shell: bash
+        run: |
+          # The cache above carries downloads only. A target/ restored from
+          # another commit can satisfy a link against stale code, so a green
+          # matrix would be evidence about an artefact that is not in this
+          # commit. Fail loudly rather than build on one.
+          if [ -e target ]; then
+            echo "::error::target/ was restored from cache - the cache key or path is wrong"
+            exit 1
+          fi
 
       - name: Cache HF model snapshot
         uses: actions/cache@v6

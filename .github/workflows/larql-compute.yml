@@ -81,16 +81,27 @@ jobs:
           "VCPKG_ROOT=$root" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
           "$root\installed\x64-windows\bin" | Out-File -FilePath $env:GITHUB_PATH -Encoding utf8 -Append
 
-      - name: Cache cargo registry + build artefacts
+      - name: Cache cargo registry (downloads only, never target/)
         uses: actions/cache@v6
         with:
           path: |
             ~/.cargo/registry
             ~/.cargo/git
-            target
-          key: ${{ runner.os }}-cargo-compute-${{ hashFiles('**/Cargo.lock') }}
+          key: ${{ runner.os }}-cargo-reg2-compute-${{ hashFiles('**/Cargo.lock') }}
           restore-keys: |
-            ${{ runner.os }}-cargo-compute-
+            ${{ runner.os }}-cargo-reg2-compute-
+
+      - name: No compiled workspace artefacts may be restored
+        shell: bash
+        run: |
+          # The cache above carries downloads only. A target/ restored from
+          # another commit can satisfy a link against stale code, so a green
+          # matrix would be evidence about an artefact that is not in this
+          # commit. Fail loudly rather than build on one.
+          if [ -e target ]; then
+            echo "::error::target/ was restored from cache - the cache key or path is wrong"
+            exit 1
+          fi
 
       - name: Format check
         run: cargo fmt -p larql-compute -- --check

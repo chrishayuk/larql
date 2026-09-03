@@ -53,16 +53,27 @@ jobs:
         with:
           components: clippy, rustfmt
 
-      - name: Cache cargo registry + build artefacts
+      - name: Cache cargo registry (downloads only, never target/)
         uses: actions/cache@v6
         with:
           path: |
             ~/.cargo/registry
             ~/.cargo/git
-            target
-          key: macOS-cargo-compute-metal-${{ hashFiles('**/Cargo.lock') }}
+          key: macOS-cargo-reg2-compute-metal-${{ hashFiles('**/Cargo.lock') }}
           restore-keys: |
-            macOS-cargo-compute-metal-
+            macOS-cargo-reg2-compute-metal-
+
+      - name: No compiled workspace artefacts may be restored
+        shell: bash
+        run: |
+          # The cache above carries downloads only. A target/ restored from
+          # another commit can satisfy a link against stale code, so a green
+          # matrix would be evidence about an artefact that is not in this
+          # commit. Fail loudly rather than build on one.
+          if [ -e target ]; then
+            echo "::error::target/ was restored from cache - the cache key or path is wrong"
+            exit 1
+          fi
 
       - name: Format check
         run: cargo fmt -p larql-compute-metal -- --check
