@@ -57,6 +57,20 @@ pub const PLAN_SCHEMA: u32 = 6;
 /// `plan/tests/identity.rs` pins fixture verdicts against this value, so
 /// a change that flips one fails there until the version is bumped.
 ///
+/// **12** — three families resolve to their own identities. `olmo2`,
+/// `olmo3` and `exaone4` matched no registry entry and fell through to
+/// `GenericArch`, which had already chosen PER-HEAD QK norm for OLMo-2 —
+/// the wrong reduction for a family whose reference normalises the whole
+/// projection. Each entry declares only what its reference establishes:
+/// OLMo-2's `QkNormScope::FullProjection` (the operator OLMoE already
+/// judges), the 1e-5 `rms_norm_eps` class default both families take, and
+/// EXAONE-4's per-head norm applied after the head reshape — its own
+/// entry precisely because that one difference is an operator, not a
+/// label. Registration resolves a NAME and grants nothing else: a
+/// declaration the schema cannot carry still refuses under a registered
+/// family. Forecast before the code: three rows clear, four keep the
+/// blocker named for each.
+///
 /// **11** — post-norm placement EXECUTES. Wave 10 could represent it and
 /// refused to lower it; the generic executor already applied the wrap
 /// norms to each sublayer's OUTPUT before the residual add, and what it
@@ -162,7 +176,7 @@ pub const PLAN_SCHEMA: u32 = 6;
 /// architectures, now block instead of passing silently into
 /// `GenericArch`'s Llama-shaped defaults. Measured on the conformance
 /// corpus: 15 of 42 declared `model_type` strings, across 30 checkpoints.
-pub const PLANNER_SEMANTICS_VERSION: u32 = 11;
+pub const PLANNER_SEMANTICS_VERSION: u32 = 12;
 
 /// Who judged a plan.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]

@@ -48,14 +48,14 @@ invariants are the ones that matter most:
 
 | Metric | Baseline | Waves 1+3 | rope | moe | sliding window | frontier census† | partial rotary | vestigial pair | qwen MoE |
 |---|---:|---:|---:|---:|---:|---:|---:|---:|---:|
-| semantics version | 1 | 3 | 4 | 5 | 6 | 6 (held) | 7 | 8 | 9 | 10 | **11** |
-| GREEN | 17 | 18 | 21 | 26 | 28 | 28 | 31 | 33 | 38 | 38 | **38** |
-| AMBER | 6 | 6 | 6 | 6 | 6 | 7 | 7 | 7 | 7 | 3‡ | **3** |
-| RED | 65 | 64 | 61 | 56 | 54 | 74 | 71 | 69 | 64 | 68‡ | **68** |
-| **BUG** | **0** | **0** | **0** | **0** | **0** | **0** | **0** | **0** | **0** | **0** | **0** |
-| **silent drops** | **0** | **0** | **0** | **0** | **0** | **0** | **0** | **0** | **0** | **0** | **0** |
-| text-closure blockers | 886 | 776 | 756 | 671 | 668 | 1109 | 1091 | 1089 | 1076 | 1058 | **1051** |
-| K3 clusters remaining | 7 | 7 | 7 | 7 | 7 | 7 | 7 | 7 | 7 | 7 | **7** |
+| semantics version | 1 | 3 | 4 | 5 | 6 | 6 (held) | 7 | 8 | 9 | 10 | 11 | **12** |
+| GREEN | 17 | 18 | 21 | 26 | 28 | 28 | 31 | 33 | 38 | 38 | 38 | **41** |
+| AMBER | 6 | 6 | 6 | 6 | 6 | 7 | 7 | 7 | 7 | 3‡ | 3 | **3** |
+| RED | 65 | 64 | 61 | 56 | 54 | 74 | 71 | 69 | 64 | 68‡ | 68 | **65** |
+| **BUG** | **0** | **0** | **0** | **0** | **0** | **0** | **0** | **0** | **0** | **0** | **0** | **0** |
+| **silent drops** | **0** | **0** | **0** | **0** | **0** | **0** | **0** | **0** | **0** | **0** | **0** | **0** |
+| text-closure blockers | 886 | 776 | 756 | 671 | 668 | 1109 | 1091 | 1089 | 1076 | 1058 | 1051 | **1044** |
+| K3 clusters remaining | 7 | 7 | 7 | 7 | 7 | 7 | 7 | 7 | 7 | 7 | 7 | **7** |
 
 ‡ **The AMBER and RED columns are not comparable across wave 9 → 10.** Wave
 11 tightened the sweep's own classifier: AMBER means "component identified,
@@ -515,6 +515,77 @@ wave 13 (no container can be built for an unregistered identity), and the
 Metal trunk now **refuses** a post-norm layer explicitly rather than
 lowering it as a shape it is not.
 
+**Wave 13 — exact family identity, and the first real-checkpoint witness
+(semantics 12).** `olmo2`, `olmo3` and `exaone4` matched no registry entry.
+What that cost is concrete rather than theoretical: VINDEX3 resolved
+OLMo-2 through `GenericArch` and had **already chosen per-head QK norm**,
+the wrong reduction for a family whose reference normalises the whole
+projection. That is the fail-open the identity gate exists to make visible.
+
+Each entry declares only what a reference establishes. OLMo-2 gets
+`QkNormScope::FullProjection` — the operator OLMoE already judges, named as
+a shared semantic rather than a new one — plus the 1e-5 `rms_norm_eps`
+class default (the same trap `OlmoeArch` documents, where serving 1e-6
+moved final-residual cosine 0.890 → 0.991) and weight offset 0.0. Its
+post-norm placement is *not* declared here: the tensors settle it, and a
+config flag would be a second authority. EXAONE-4 gets its **own** entry,
+because the one place it differs is an operator —
+`Exaone4RMSNorm(head_dim)` applied *after* the head reshape is per-head,
+not whole-projection, and aliasing either family onto the other would
+normalise a different vector.
+
+Registration resolves a NAME and grants nothing else, and there is a
+control saying so: under a fully registered `olmo2`, a
+`sliding_window_pattern: "LLLG"` still refuses, and the refusal names that
+declaration rather than the family. Its own control confirms an unmatched
+`model_type` still blocks on identity, so the first assertion cannot pass
+on a fixture that never had an identity blocker.
+
+**The authority witness is the real checkpoint.**
+`allenai/OLMo-2-0425-1B` carried the whole ladder — HF config and tensor
+inventory → plan (admissible, placement `post_only`, QK scope
+`full_projection`) → encode → reopen → `vindex verify` → execute → HF
+reference observable — and PASSED at three depths:
+
+| tap | max_abs | rel_rms |
+|---|---:|---:|
+| embedding | **0.000e+00** | 0.000e+00 |
+| layer-0 output | 2.50e-06 | 1.27e-06 |
+| layer-15 output | 5.87e-05 | 3.00e-06 |
+| logits | 7.25e-05 | 1.41e-06 |
+
+`argmax` and top-5 match exactly. Absolute error grows across sixteen
+layers while *relative* error stays flat at ~3e-06 — the signature of fp32
+accumulation, not of a semantic difference.
+
+**The oracle refused before it was believed.** Its first run failed its own
+self-check: `attention_mask=None` let eager attention see future tokens. A
+reference must be shown consistent before it is used as an authority. With
+a causal mask, recomputing layer 0 from the captured embedding under the
+post-norm program reproduces HF to **0.000e+00**, and the same weights
+under pre-norm placement land **8.95e+01** away — which is what makes this
+checkpoint a witness rather than a fixture.
+
+**And it found a bug wave 12's synthetic witness could not.** The FFN
+sublayer was gated on its PRE-NORM being present — a guard written for
+mixer-only layers, where absent-pre-norm really does mean no-FFN. Under
+post-norm placement that norm is legitimately absent, so **OLMo-2 ran as an
+attention-only stack**, every FFN skipped, on both executor paths. Wave
+12's margin arm passed anyway *because* one container had no FFNs at all: a
+stack missing every FFN still produces finite, plausible planes. The taps
+localised it — embedding exact, layer-0 wrong but only 1.06 from correct
+where the old placement would be 89.5, and position 0 already wrong, where
+softmax over a single key is 1.0 so q, k, rope, QK norm and scaling cannot
+matter, which eliminated attention entirely. Both paths now key on the FFN
+*op*, and `a_post_norm_layer_still_runs_its_ffn_over_the_raw_residual`
+asserts the FFN site is observed on every layer, with a pre-norm control so
+an empty capture cannot be blamed on the tap.
+
+Forecast held on every arm: OLMo-2 ×2 and EXAONE-4.0-1.2B → GREEN; Olmo-3
+×2 keep `rope_scaling.attention_factor`; EXAONE-4.0-32B keeps
+`sliding_window_pattern`; EXAONE-4.5-33B keeps five more; every cleared
+blocker was `architecture_family` and nothing else; no unrelated row moved.
+
 ## The rerank, and what wave 11 settled — read this before picking wave 12
 
 The greedy cover over semantic ideas is now **empty**: no single cluster
@@ -615,11 +686,11 @@ Scored against the **text-generation closure**, which the plan computes
 itself — a checkpoint whose only blockers sit in a vision tower is not
 evidence about its language model.
 
-| outcome | baseline (88) | after wave 11 (109) | share now |
+| outcome | baseline (88) | after wave 13 (109) | share now |
 |---|---:|---:|---:|
-| GREEN — representable | 17 | 38 | 35% |
+| GREEN — representable | 17 | 41 | 38% |
 | AMBER — identified, no implementation | 6 | 3 | 3% |
-| RED — semantic gap | 65 | 68 | 62% |
+| RED — semantic gap | 65 | 65 | 60% |
 | BUG — should work, doesn't | 0 | 0 | 0% |
 | *unreachable (gated/absent/no config)* | *6* | *8* | *not evidence* |
 

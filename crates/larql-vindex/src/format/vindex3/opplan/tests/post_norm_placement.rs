@@ -188,6 +188,51 @@ impl StepObserver for SiteCapture {
     }
 }
 
+fn site_input(
+    plan: &ComponentOpPlan,
+    store: &OperandStore,
+    layer: usize,
+    site: InputSite,
+) -> Vec<f32> {
+    let backend = ReferenceBackend::new();
+    let mut session = DecodeSession::new(plan, store, &backend).unwrap();
+    let mut capture = SiteCapture {
+        layer,
+        site: Some(site),
+        values: Vec::new(),
+    };
+    session.step_observed(TOKEN, &mut capture).unwrap();
+    capture.values
+}
+
+/// **The FFN must RUN.** Under post-norm placement the FFN has no
+/// pre-norm, and gating the sublayer on that norm's presence skipped it
+/// entirely — a stack that computes attention and no FFN, which still
+/// produces finite planes and still differs from the pre-norm container,
+/// so the margin arm below passed anyway. Real-checkpoint parity caught
+/// it; this is the assertion that would have.
+#[test]
+fn a_post_norm_layer_still_runs_its_ffn_over_the_raw_residual() {
+    let (_c, post, store) = plan_of(Estate::PostNorm);
+    for layer in 0..post.layers.len() {
+        assert!(
+            post.layers[layer].pre_ffn_norm.is_none(),
+            "premise: a post-norm layer carries no pre-FFN norm"
+        );
+        let ffn_in = site_input(&post, &store, layer, InputSite::Ffn);
+        assert!(
+            !ffn_in.is_empty(),
+            "layer {layer}: the FFN sublayer did not run — its absent pre-norm is not \
+             a reason to skip it"
+        );
+    }
+
+    // And the control: a pre-norm stack observes the site too, so an
+    // empty capture cannot be explained by the tap never firing.
+    let (_c2, pre, store2) = plan_of(Estate::PreNorm);
+    assert!(!site_input(&pre, &store2, 0, InputSite::Ffn).is_empty());
+}
+
 fn attention_input(plan: &ComponentOpPlan, store: &OperandStore, layer: usize) -> Vec<f32> {
     let backend = ReferenceBackend::new();
     let mut session = DecodeSession::new(plan, store, &backend).unwrap();
