@@ -240,6 +240,19 @@ pub enum OperandRole {
     SharedExpertGate,
     SharedExpertUp,
     SharedExpertDown,
+    /// The scalar gate on the shared branch's OUTPUT — Qwen MoE's
+    /// `shared_expert_gate`, a `[1, hidden]` projection whose sigmoid
+    /// scales the whole branch before it is summed with the routed one.
+    ///
+    /// Not [`Self::SharedExpertGate`], which is the branch's own SwiGLU
+    /// gate projection at `[shared_expert_intermediate_size, hidden]`.
+    /// The two live one name apart in the checkpoint
+    /// (`mlp.shared_expert_gate.weight` against
+    /// `mlp.shared_expert.gate_proj.weight`) and differ in every
+    /// dimension; binding either to the other's role would load a
+    /// 5632-row projection where one row is read, and produce plausible
+    /// output while gating nothing.
+    SharedExpertBranchGate,
     /// The three FFN-branch norms beyond the pre/post pair: the expert
     /// branch's own pre-norm over the residual, and the post-norms on
     /// each branch's output before they are summed
@@ -281,11 +294,66 @@ pub enum NormPlacement {
     PreOnly,
     /// Four norms: attention and FFN each wrapped pre + post.
     PrePost,
+    /// Two norms, both on the sublayer's OUTPUT: the attention and FFN
+    /// blocks each read the raw residual and their result is normalised
+    /// before the add.
+    ///
+    /// ```text
+    /// residual = h
+    /// h = attn(h)                      // no pre-norm
+    /// h = post_attention_layernorm(h)  // the norm sees the sublayer OUTPUT
+    /// h = residual + h                 // ...before the add
+    /// ```
+    ///
+    /// Transcribed from `Olmo2DecoderLayer.forward`, and identical line
+    /// for line in `Olmo3DecoderLayer.forward` and
+    /// `Exaone4DecoderLayer.forward`.
+    ///
+    /// **Not classic post-LN** (`h = norm(residual + attn(h))`, the norm
+    /// after the add), and not [`Self::PreOnly`] with the norms renamed.
+    /// All three place a norm somewhere around a sublayer; they differ in
+    /// which tensor it sees, and reading one as another produces fluent
+    /// wrong output rather than a failure. That is why this is a variant
+    /// recognised from operand evidence rather than a flag.
+    ///
+    /// The operand evidence is unambiguous: `post_attention_layernorm`
+    /// AND `post_feedforward_layernorm` with NO `input_layernorm`. A
+    /// two-norm Llama stack carries `input_layernorm` and overloads
+    /// `post_attention_layernorm` as its pre-FFN norm, and it has no
+    /// `post_feedforward_layernorm` at all.
+    PostOnly,
     /// One norm: the pre-mixer norm of a mixer-only (pure-SSM) layer.
     /// There is no FFN and no attention to wrap, so neither existing
     /// placement describes it — and reading a one-norm layer as a broken
     /// two-norm one is exactly the misreading its own variant prevents.
     PreMixer,
+}
+
+impl NormPlacement {
+    /// Why this build cannot lower this placement, when it cannot.
+    ///
+    /// **One authority, two readers.** The op plan refuses on it and the
+    /// plan report names it as an unsupported component, and those two
+    /// must never be able to disagree: a report that calls a component
+    /// admissible while the op plan refuses to build it is the
+    /// looks-supported failure in its purest form — every declaration
+    /// has a home, and nothing can run. Two separate lists of "what we
+    /// cannot lower" would drift into exactly that, so there is one.
+    ///
+    /// `None` is a claim, not an absence: this build lowers the
+    /// placement and an executor reads its operands.
+    pub fn unimplemented_reason(self) -> Option<&'static str> {
+        match self {
+            // Every judged placement lowers. `PostOnly` joined them in
+            // wave 12: the generic executor already applied the wrap
+            // norms to each sublayer's OUTPUT before the residual add,
+            // and what it lacked was the ability to run with NO
+            // pre-sublayer norm. It has that now, on both the batch and
+            // the decode path, and the epsilon its QK norm runs at moved
+            // off the pre-norm site onto the layer's own declared field.
+            Self::PreOnly | Self::PrePost | Self::PreMixer | Self::PostOnly => None,
+        }
+    }
 }
 
 /// Suffix → role. Exact matches on the layer-relative suffix (after
@@ -334,6 +402,21 @@ const ROLE_TABLE: &[(&str, OperandRole)] = &[
         OperandRole::LinearAttnOutProj,
     ),
     ("input_layernorm.weight", OperandRole::PreAttentionNorm),
+    // LFM2's spelling of the same two-norm estate. `Lfm2DecoderLayer.
+    // forward` is `residual = h; h = mixer(operator_norm(h)); h = h +
+    // residual; h = h + feed_forward(ffn_norm(h))` — structurally the
+    // two-norm PRE-only stack, with the mixer being attention on the
+    // layers named in `full_attn_idxs` and a short convolution
+    // elsewhere.
+    //
+    // `ffn_norm` binds to `PostAttentionNorm` and that reads oddly until
+    // you know the rule this module already states: in a TWO-norm layer
+    // `post_attention_layernorm` IS the pre-FFN norm, and the role keeps
+    // the historical name. Binding LFM2's honestly-named `ffn_norm` to
+    // the honestly-named `PreFfnNorm` would instead resolve the estate
+    // as a partial FOUR-norm stack and refuse it.
+    ("operator_norm.weight", OperandRole::PreAttentionNorm),
+    ("ffn_norm.weight", OperandRole::PostAttentionNorm),
     (
         "post_attention_layernorm.weight",
         OperandRole::PostAttentionNorm,
@@ -413,6 +496,25 @@ const ROLE_TABLE: &[(&str, OperandRole)] = &[
     (
         "block_sparse_moe.shared_experts.down_proj.weight",
         OperandRole::SharedExpertDown,
+    ),
+    // Qwen MoE: the branch is singular (`shared_expert`) where the
+    // DeepSeek/Kimi lineage spells it `shared_experts`, and it carries a
+    // scalar output gate the other lineage has no operand for.
+    (
+        "mlp.shared_expert.gate_proj.weight",
+        OperandRole::SharedExpertGate,
+    ),
+    (
+        "mlp.shared_expert.up_proj.weight",
+        OperandRole::SharedExpertUp,
+    ),
+    (
+        "mlp.shared_expert.down_proj.weight",
+        OperandRole::SharedExpertDown,
+    ),
+    (
+        "mlp.shared_expert_gate.weight",
+        OperandRole::SharedExpertBranchGate,
     ),
 ];
 
@@ -646,6 +748,9 @@ pub fn norm_placement_evidence<'a>(
     match (pre_attention, post_attention, pre_ffn, post_ffn) {
         (true, true, true, true) => Ok(NormPlacement::PrePost),
         (true, true, false, false) => Ok(NormPlacement::PreOnly),
+        // Both wrap norms present, neither pre-norm: the sublayer reads
+        // the raw residual. See [`NormPlacement::PostOnly`].
+        (false, true, false, true) => Ok(NormPlacement::PostOnly),
         (false, false, false, false) => Err("stack carries no per-layer norm operands".to_string()),
         _ => Err(format!(
             "norm operand set is neither two-norm nor four-norm \

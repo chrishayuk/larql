@@ -82,7 +82,13 @@ fn roles_from_plan(plan: &ComponentOpPlan) -> Result<RoleMap, VindexError> {
     }
     for layer in &plan.layers {
         let l = Some(layer.layer);
-        put(&layer.pre_attention_norm.weight, "input layer norm", l);
+        // A post-norm stack carries no `input_layernorm`. The target
+        // spells exactly two trunk norms per layer and a post-norm stack
+        // fills both with its wrap norms below, so there is nothing to
+        // write here rather than a zero-weight norm to invent.
+        if let Some(n) = &layer.pre_attention_norm {
+            put(&n.weight, "input layer norm", l);
+        }
         // qwen35 has exactly two trunk norms per layer. The plan may
         // spell the second as post-attention or pre-FFN; both land on
         // the same target name, and a layer carrying both has a third

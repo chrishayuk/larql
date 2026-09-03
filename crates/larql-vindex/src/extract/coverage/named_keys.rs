@@ -38,7 +38,7 @@ use larql_models::ModelArchitecture;
 /// fails a test here rather than surfacing as spurious "unrecognised" tensors
 /// on somebody's extraction run.
 #[cfg(test)]
-pub(crate) const KEY_ACCESSOR_COUNT: usize = 62;
+pub(crate) const KEY_ACCESSOR_COUNT: usize = 63;
 
 /// Output projection, resolved by `WeightSource::lm_head()` rather than by a
 /// key accessor. Mirrors the name the safetensors loader looks up.
@@ -133,6 +133,7 @@ pub fn collect(arch: &dyn ModelArchitecture, num_layers: usize) -> HashSet<Strin
             arch.shared_expert_gate_key(layer),
             arch.shared_expert_up_key(layer),
             arch.shared_expert_down_key(layer),
+            arch.shared_expert_branch_gate_key(layer),
             arch.mla_kv_a_key(layer),
             arch.mla_kv_b_key(layer),
             arch.mla_q_a_key(layer),

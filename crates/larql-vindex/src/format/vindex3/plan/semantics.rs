@@ -26,6 +26,7 @@ pub const EXECUTION_SEMANTIC_KEYS: &[&str] = &[
     "layer_norm_eps",
     "rms_norm_eps",
     "norm_epsilon",
+    "norm_eps",
     "rope_theta",
     "rope_type",
     "layer_types",
@@ -51,6 +52,16 @@ pub const EXECUTION_SEMANTIC_KEYS: &[&str] = &[
     // the same execution surface the DeepSeek-lineage spellings do.
     "moe_renormalize",
     "num_shared_experts",
+    // The same branch's WIDTH, in both declared spellings. Beside the
+    // count and not with the operand sizes, because the proof the two
+    // buckets offer is different: a `tensor_semantic` key is waved
+    // through as "read by a registered parser", which on a component
+    // that built no surface proves nothing at all. This one is judged by
+    // its carriage rule against the width the branch will actually be
+    // built at, so a checkpoint whose declaration and resolution
+    // disagree is a mismatch rather than a pass.
+    "shared_expert_intermediate_size",
+    "moe_shared_expert_intermediate_size",
     "moe_router_activation_func",
     "scoring_func",
     // The two-set interleave and the KDA conv width.
@@ -581,16 +592,26 @@ pub const UNSUPPORTED_COMPONENT_KEYS: &[(&str, &str)] = &[
     // boolean whose expansion cannot be checked without a reference, and
     // guessing it into this table is exactly the failure the table's
     // contract forbids. It stays `unknown`, which is what it is.
-    ("hc_eps", GLM_HYPER_CONNECTIONS),
-    ("hc_mult", GLM_HYPER_CONNECTIONS),
-    ("hc_sinkhorn_iters", GLM_HYPER_CONNECTIONS),
+    ("hc_eps", HYPER_CONNECTION_TOPOLOGY),
+    ("hc_mult", HYPER_CONNECTION_TOPOLOGY),
+    ("hc_sinkhorn_iters", HYPER_CONNECTION_TOPOLOGY),
 ];
 
 /// Component label for GLM's learned sparse attention indexer.
 const GLM_SPARSE_INDEXER: &str = "sparse attention indexer (GLM-5.x)";
 
-/// Component label for GLM's hyper-connection residual mixing.
-const GLM_HYPER_CONNECTIONS: &str = "hyper-connections (GLM-5.x)";
+/// Component label for the hyper-connection residual topology.
+///
+/// Named for the MECHANISM, not the family that first showed it here.
+/// The label was `hyper-connections (GLM-5.x)` and appeared verbatim on
+/// Tencent's Hy4-preview and DeepSeek-V4 — a Tencent and a DeepSeek
+/// checkpoint told they carried a GLM component. Wave 7 recorded that as
+/// a defect; this is the first of those labels to be fixed, because
+/// wave 16 read the actual arithmetic from DeepSeek-V4's own reference
+/// and can now say what the component IS rather than where it was seen.
+const HYPER_CONNECTION_TOPOLOGY: &str =
+    "hyper-connection residual topology (parallel residual streams, reduced and expanded \
+     per token through a Sinkhorn-split mixing matrix)";
 
 /// The unimplemented component this leaf configures, if any.
 pub fn unsupported_component(leaf: &str) -> Option<&'static str> {
@@ -946,6 +967,7 @@ const CLUSTER_KEYS: &[(SemanticCluster, &[&str])] = &[
             "n_routed_experts",
             "n_shared_experts",
             "shared_expert_intermediate_size",
+            "moe_shared_expert_intermediate_size",
             "moe_intermediate_size",
             "expert_intermediate_size",
             "top_k_experts",

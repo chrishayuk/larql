@@ -65,7 +65,7 @@ fn builder_fills_every_component_surface() {
     assert!(attention.parameter_free_qk_norm.q);
     assert_eq!(attention.num_q_heads, 8);
     assert_eq!(attention.num_kv_heads, 2);
-    assert_eq!(ffn.intermediate_size, 256);
+    assert_eq!(ffn.intermediate_size, Some(256));
     // Each norm site carries a complete spec. The declared post_norm_eps
     // reaches the post sites as a distinct value, and Glimmer's centred
     // layer norms reach every site that needs them — while the final norm

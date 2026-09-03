@@ -231,6 +231,14 @@ pub struct MoeConfig {
     /// Whether there's a shared expert always active (DeepSeek V2/V3).
     #[serde(default)]
     pub shared_expert: bool,
+    /// That branch's intermediate width, where the judgment declares one.
+    /// Carried beside the boolean rather than derived from
+    /// [`Self::moe_intermediate_size`]: the DeepSeek/Kimi lineage sizes
+    /// the branch as one wider FFN at `moe_intermediate_size * count`
+    /// while Qwen sizes it from its own key, and on Qwen1.5-MoE the two
+    /// answers differ fourfold.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub shared_expert_intermediate_size: Option<usize>,
     /// Router type (e.g., "top_k_softmax", "gemma4_top_k_softmax").
     #[serde(default = "default_router_type")]
     pub router_type: String,
@@ -275,6 +283,7 @@ impl VindexModelConfig {
                     num_experts: arch.num_experts(),
                     top_k: arch.num_experts_per_token(),
                     shared_expert: arch.num_shared_experts() > 0,
+                    shared_expert_intermediate_size: arch.shared_expert_intermediate_size(),
                     router_type: arch.moe_router_type().into(),
                     moe_intermediate_size: if arch.moe_intermediate_size() > 0 {
                         Some(arch.moe_intermediate_size())
@@ -351,6 +360,7 @@ mod tests {
             "num_experts",
             "num_experts_per_token",
             "num_shared_experts",
+            "shared_expert_intermediate_size",
             "enable_moe_block",
             "top_k_experts",
             "moe_intermediate_size",
@@ -358,6 +368,14 @@ mod tests {
         // Genuinely not persisted yet. Each entry is a known gap, not an
         // exemption: no vindex-served model can use these today.
         const KNOWN_GAPS: &[&str] = &[
+            // Hyper-connections. The residual topology is REPRESENTED on
+            // the execution surface (wave 16) and explicitly not
+            // executable, so no vindex-served model can use it — and
+            // persisting it in the model config would claim a serving
+            // path that refuses. It moves here when wave 17 lowers it.
+            "hc_streams",
+            "hc_sinkhorn_iters",
+            "hc_eps",
             // Multi-head latent attention (DeepSeek V2/V3). No MLA model
             // is served from a vindex yet; serving one without these
             // would silently rebuild the wrong attention geometry.
@@ -614,6 +632,7 @@ mod tests {
             num_experts: 8,
             top_k: 2,
             shared_expert: false,
+            shared_expert_intermediate_size: None,
             router_type: "top_k_softmax".into(),
             moe_intermediate_size: Some(2048),
             hybrid: false,
@@ -753,6 +772,7 @@ mod tests {
             num_experts: 64,
             top_k: 6,
             shared_expert: true,
+            shared_expert_intermediate_size: None,
             router_type: "top_k_softmax".into(),
             moe_intermediate_size: None,
             hybrid: false,

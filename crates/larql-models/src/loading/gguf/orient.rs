@@ -69,16 +69,26 @@ pub(super) fn orient_ffn_tensors(
             orient_in_place(tensors, &arch.ffn_down_key(layer), hidden, dense_inter);
         }
 
-        // Shared-expert FFN tensors share dense intermediate dim.
-        if dense_inter > 0 {
+        // The shared branch is sized by the architecture's own answer,
+        // not by the dense width. The two coincide on Qwen1.5-MoE
+        // (5632 either way) and nowhere else: DeepSeek's branch is
+        // `moe_intermediate_size * n_shared_experts` against a much wider
+        // dense FFN, and Qwen3.5-MoE has no dense width at all — under
+        // the old rule its shared expert was left unoriented entirely.
+        if let Some(shared_inter) = arch.shared_expert_intermediate_size() {
             if let Some(key) = arch.shared_expert_gate_key(layer) {
-                orient_in_place(tensors, &key, dense_inter, hidden);
+                orient_in_place(tensors, &key, shared_inter, hidden);
             }
             if let Some(key) = arch.shared_expert_up_key(layer) {
-                orient_in_place(tensors, &key, dense_inter, hidden);
+                orient_in_place(tensors, &key, shared_inter, hidden);
             }
             if let Some(key) = arch.shared_expert_down_key(layer) {
-                orient_in_place(tensors, &key, hidden, dense_inter);
+                orient_in_place(tensors, &key, hidden, shared_inter);
+            }
+            // One logit per token; the row count is the gate's own, not
+            // the branch's.
+            if let Some(key) = arch.shared_expert_branch_gate_key(layer) {
+                orient_in_place(tensors, &key, 1, hidden);
             }
         }
 
@@ -292,6 +302,10 @@ fn synth_gpt2_config(
         num_experts: None,
         num_experts_per_token: None,
         num_shared_experts: None,
+        shared_expert_intermediate_size: None,
+        hc_streams: None,
+        hc_sinkhorn_iters: None,
+        hc_eps: None,
         enable_moe_block: false,
         top_k_experts: None,
         moe_intermediate_size: None,
@@ -570,6 +584,10 @@ mod tests {
             num_experts: None,
             num_experts_per_token: None,
             num_shared_experts: None,
+            shared_expert_intermediate_size: None,
+            hc_streams: None,
+            hc_sinkhorn_iters: None,
+            hc_eps: None,
             enable_moe_block: false,
             top_k_experts: None,
             moe_intermediate_size: None,

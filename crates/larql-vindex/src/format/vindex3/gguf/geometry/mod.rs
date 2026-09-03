@@ -90,7 +90,12 @@ impl ModelGeometry {
         Ok(Self {
             hidden_size,
             vocab_size: head.vocab_size,
-            intermediate_size: ffn.intermediate_size,
+            // This writer emits a DENSE feed-forward geometry, so a
+            // component that declares no dense width has nothing for it
+            // to write. Refused, never zero-filled.
+            intermediate_size: ffn.intermediate_size.ok_or(GeometryError::MissingFact(
+                "execution.ffn.intermediate_size",
+            ))?,
             q_heads: attn.num_q_heads,
             kv_heads: attn.num_kv_heads,
             head_dim: attn.head_dim,

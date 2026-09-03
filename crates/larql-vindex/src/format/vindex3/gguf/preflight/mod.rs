@@ -218,7 +218,8 @@ pub fn qwen35_preflight(
         surface
             .ffn
             .as_ref()
-            .map(|f| f.intermediate_size.to_string()),
+            .and_then(|f| f.intermediate_size)
+            .map(|v| v.to_string()),
         "qwen35.feed_forward_length",
     );
     need(

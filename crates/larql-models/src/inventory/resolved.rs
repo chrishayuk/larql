@@ -253,6 +253,8 @@ pub fn resolve_with_tensor_evidence(
             expert_format: arch.expert_format(),
             gate_up_layout: arch.gate_up_layout(),
             shared_experts: arch.num_shared_experts(),
+            shared_expert_intermediate_size: arch.shared_expert_intermediate_size(),
+            shared_expert_gate: arch.shared_expert_branch_gate(),
             hybrid: arch.is_hybrid_moe(),
         }),
         // `uses_mla()` alone decides the LAYER'S OPERATOR (every
@@ -295,6 +297,10 @@ pub fn resolve_with_tensor_evidence(
         final_logit_softcapping: arch.final_logit_softcapping(),
         residual_scale: arch.residual_scale(),
         residual_in_fp32: cfg.residual_in_fp32,
+        // A partial declaration resolves to NOTHING, and the surface
+        // builder refuses on the absence. Defaulting it to one stream
+        // would be the silent wrong answer this whole wave is about.
+        residual_topology: arch.residual_topology().ok(),
         head_reuses_embedding: arch.output_head_reuses_embedding(),
     };
     let topology = ResolvedTopology {

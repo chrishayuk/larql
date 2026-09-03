@@ -43,6 +43,37 @@ pub static ARCHITECTURE_REGISTRY: &[ArchitectureEntry] = &[
         attention_kind: AttentionKind::Standard,
         quant_formats: STANDARD_QUANT_FORMATS,
     },
+    // OLMo-2 and OLMo-3: one decoder shape, two labels. Exact rather
+    // than prefixed, because `olmo` (v1) and `olmoe` are different
+    // architectures and a prefix would swallow both.
+    ArchitectureEntry {
+        model_type: "olmo2",
+        patterns: &[
+            ModelTypeMatch::Exact("olmo2"),
+            ModelTypeMatch::Exact("olmo3"),
+        ],
+        attention_kind: AttentionKind::Standard,
+        quant_formats: STANDARD_QUANT_FORMATS,
+    },
+    // EXAONE-4: prefixed, so the nested `exaone4_5_text` spelling
+    // resolves too. `exaone` (v3) is a different architecture and stays
+    // on the generic path until its semantics are judged.
+    // LFM2 — a hybrid whose every other layer is a short causal
+    // convolution rather than attention. Prefixed so `lfm2_moe` resolves
+    // too. Recognised so the identity stops resolving to `GenericArch`,
+    // which was serving Llama-shaped defaults to a stack that is not one.
+    ArchitectureEntry {
+        model_type: "lfm2",
+        patterns: &[ModelTypeMatch::Prefix("lfm2")],
+        attention_kind: AttentionKind::Standard,
+        quant_formats: STANDARD_QUANT_FORMATS,
+    },
+    ArchitectureEntry {
+        model_type: "exaone4",
+        patterns: &[ModelTypeMatch::Prefix("exaone4")],
+        attention_kind: AttentionKind::Standard,
+        quant_formats: STANDARD_QUANT_FORMATS,
+    },
     ArchitectureEntry {
         model_type: "mistral",
         patterns: &[ModelTypeMatch::Exact("mistral")],

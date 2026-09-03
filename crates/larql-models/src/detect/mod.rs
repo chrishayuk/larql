@@ -14,6 +14,7 @@ use std::path::Path;
 use crate::architectures::bitnet::BitnetArch;
 use crate::architectures::deepseek::DeepSeekArch;
 use crate::architectures::deepseek_v4::DeepSeekV4Arch;
+use crate::architectures::exaone4::Exaone4Arch;
 use crate::architectures::gemma2::Gemma2Arch;
 use crate::architectures::gemma3::Gemma3Arch;
 use crate::architectures::gemma4::Gemma4Arch;
@@ -22,12 +23,14 @@ use crate::architectures::gpt2::Gpt2Arch;
 use crate::architectures::gpt_oss::GptOssArch;
 use crate::architectures::granite::GraniteArch;
 use crate::architectures::kimi::KimiLinearArch;
+use crate::architectures::lfm2::Lfm2Arch;
 use crate::architectures::llama::LlamaArch;
 use crate::architectures::mamba2::{Mamba2Arch, MAMBA2_MODEL_TYPE};
 use crate::architectures::mistral::MistralArch;
 use crate::architectures::mixtral::MixtralArch;
 use crate::architectures::moss_tts_realtime::{MossTtsRealtimeArch, MOSS_TTS_REALTIME_MODEL_TYPE};
 use crate::architectures::muse_glimmer::MuseGlimmerArch;
+use crate::architectures::olmo2::Olmo2Arch;
 use crate::architectures::olmoe::OlmoeArch;
 use crate::architectures::qwen::QwenArch;
 use crate::architectures::starcoder2::StarCoder2Arch;
@@ -161,6 +164,19 @@ pub fn detect_from_json(config: &serde_json::Value) -> Box<dyn ModelArchitecture
         // `intermediate_size` (no `moe_intermediate_size` field) and does not
         // renormalize top-k router probabilities.
         "olmoe" => Box::new(OlmoeArch::from_config(model_config)),
+        // OLMo-2 / OLMo-3 — a POST-NORM stack (each sublayer's output is
+        // normalised before its residual add) with whole-projection QK
+        // norm and a 1e-5 class default for `rms_norm_eps`. Matched
+        // before the bare `olmo` prefix would be, and deliberately NOT
+        // aliased onto Llama: all three facts are silent when inherited.
+        "olmo2" | "olmo3" => Box::new(Olmo2Arch::from_config(model_config)),
+        // EXAONE-4 — the same post-norm stack as OLMo-2, with PER-HEAD
+        // QK norm rather than whole-projection. Its own entry because
+        // that difference is an operator, not a label.
+        t if t.starts_with("exaone4") => Box::new(Exaone4Arch::from_config(model_config)),
+        // LFM2 — the two-norm pre-only stack under its own spelling.
+        // Its conv mixer is deliberately NOT declared; see `Lfm2Arch`.
+        t if t.starts_with("lfm2") => Box::new(Lfm2Arch::from_config(model_config)),
         // DeepSeek-V4 (MoE + MLA + MXFP4 + HCA attention; new tensor naming)
         "deepseek_v4" => Box::new(DeepSeekV4Arch::from_config(model_config)),
         // DeepSeek V2/V3 family (MoE + MLA, model.* prefixed keys)

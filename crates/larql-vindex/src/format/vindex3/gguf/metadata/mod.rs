@@ -133,6 +133,12 @@ pub fn qwen35_metadata(
     let context = surface
         .context_length
         .ok_or(MetadataError::Missing("execution.context_length"))?;
+    // `feed_forward_length` is the DENSE width. A wholly-routed component
+    // has none, and stamping a zero would make the file misdescribe
+    // itself the way a BF16 export stamped MOSTLY_NVFP4 would.
+    let feed_forward_length = ffn
+        .intermediate_size
+        .ok_or(MetadataError::Missing("execution.ffn.intermediate_size"))?;
 
     let k = |key: &str, value: MetaValue, derived_from: &'static str| MetaKey {
         key: key.to_string(),
@@ -184,7 +190,7 @@ pub fn qwen35_metadata(
         ),
         k(
             "qwen35.feed_forward_length",
-            MetaValue::U32(ffn.intermediate_size as u32),
+            MetaValue::U32(feed_forward_length as u32),
             "ffn.intermediate_size",
         ),
         k(

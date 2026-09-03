@@ -107,7 +107,20 @@ pub struct AttentionSurface {
 /// What the FFN op reads.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct FfnSurface {
-    pub intermediate_size: usize,
+    /// The DENSE FFN's intermediate width.
+    ///
+    /// `None` on a wholly-routed stack, which has no dense FFN to size —
+    /// `Qwen3_5MoeTextConfig` is `@strict` and declares no
+    /// `intermediate_size` at all, because every one of its layers is a
+    /// routed block. Absence is the fact; a zero here would be a width,
+    /// and every consumer that needs a dense width would take it.
+    ///
+    /// Added additively within GRAPH_SCHEMA 6: a container written before
+    /// this carries the number and still reads as `Some`, and only a
+    /// wholly-routed component — which could not be represented at all
+    /// before this — omits it.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub intermediate_size: Option<usize>,
     pub activation: Activation,
     pub ffn_type: FfnType,
     /// How the gate combines with the up branch: plain `activation(gate) *
@@ -157,6 +170,14 @@ pub struct MoeSurface {
     pub gate_up_layout: Option<GateUpLayout>,
     /// Always-active experts alongside the routed ones.
     pub shared_experts: usize,
+    /// That branch's own intermediate width, resolved once by the
+    /// architecture. `None` iff [`Self::shared_experts`] is zero.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub shared_expert_intermediate_size: Option<usize>,
+    /// The gate on that branch's output, where the family runs one.
+    /// `None` = summed unscaled.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub shared_expert_gate: Option<larql_models::config::SharedExpertGateSpec>,
     /// Multiplier on the routed-expert branch (`routed_scaling_factor`).
     /// `None` when undeclared — not 1.0, which is a different claim, and
     /// a wrong one would rescale the whole branch.
@@ -325,6 +346,23 @@ pub struct ExecutionSurface {
     /// chosen by an executor. `None` = the checkpoint declares nothing.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub residual_in_fp32: Option<bool>,
+    /// How this component's residual stream is shaped and recombined.
+    ///
+    /// A COMPONENT fact rather than a per-layer one: once the residual
+    /// means `[..., streams, d]`, the embedding, every branch operator
+    /// and the head must all agree about it, and a per-layer flag would
+    /// let a stack claim a bundle while its embedding assumed one vector.
+    ///
+    /// Defaults to `SingleStream` when absent, which is what every
+    /// container written before this field carried.
+    #[serde(default = "single_stream")]
+    pub residual_topology: larql_models::config::ResidualTopology,
+}
+
+/// The topology every family judged before hyper-connections uses, and
+/// what a container written before this field meant.
+fn single_stream() -> larql_models::config::ResidualTopology {
+    larql_models::config::ResidualTopology::SingleStream
 }
 
 /// What the Gated DeltaNet operator reads.
@@ -452,9 +490,15 @@ pub fn surface_from_resolved(
     // per-layer kind is an attention-class layer — that is what absence
     // means on every judged transformer config — so the surface is
     // present unless EVERY layer declares a recurrence. The FFN follows
-    // the declared width: a family with no `intermediate_size` has no
-    // FFN op to describe (the mixer-only case), and writing one anyway
-    // is the F1 fabrication one op over.
+    // the declared width, and a wholly-routed family declares its width
+    // in the ROUTED spelling: `Qwen3_5MoeTextConfig` has no
+    // `intermediate_size` field at all (it is `@strict`, and every layer
+    // is a `Qwen3_5MoeSparseMoeBlock`), so reading only the dense
+    // spelling graded a 397B MoE as having no FFN op and sent both
+    // `hidden_act` and `num_experts_per_tok` to "no built component
+    // answered the probe". A mixer-only stack declares NEITHER width and
+    // still has no FFN — writing one there is the F1 fabrication one op
+    // over.
     let attends = resolved.layers.is_empty()
         || resolved.layers.iter().any(|l| {
             !matches!(
@@ -462,7 +506,12 @@ pub fn surface_from_resolved(
                 Some(larql_models::config::LayerKind::Recurrent(_))
             )
         });
-    let has_ffn = resolved.intermediate_size > 0;
+    let dense_ffn_width = (resolved.intermediate_size > 0).then_some(resolved.intermediate_size);
+    let routed_ffn_width = execution
+        .moe
+        .filter(|m| m.expert_intermediate_size > 0)
+        .map(|m| m.expert_intermediate_size);
+    let has_ffn = dense_ffn_width.is_some() || routed_ffn_width.is_some();
     // The surface carries the component's declared head geometry; a
     // family that varies it by layer (Gemma 4's global layers) records
     // each layer's geometry on its `AttentionLayerPolicy`, and the op
@@ -492,6 +541,19 @@ pub fn surface_from_resolved(
         }),
         conv_qkv: resolved.conv_qkv_attn,
         residual_in_fp32: execution.residual_in_fp32,
+        // Absent means the checkpoint half-declared it; refusing here is
+        // the point, because the alternative is a four-stream model
+        // quietly served as a one-stream one.
+        residual_topology: match execution.residual_topology {
+            Some(topology) => topology,
+            None => {
+                return Err(vec![
+                    "residual topology (the checkpoint declares hc_mult, hc_sinkhorn_iters \
+                     and hc_eps only in part, and this build will not choose the rest)"
+                        .to_string(),
+                ])
+            }
+        },
         mla: execution.mla.map(|m| MlaSurface {
             num_heads: m.num_heads,
             kv_lora_rank: m.kv_lora_rank,
@@ -516,7 +578,7 @@ pub fn surface_from_resolved(
             attention_bias: execution.attention_bias,
         }),
         ffn: has_ffn.then(|| FfnSurface {
-            intermediate_size: resolved.intermediate_size,
+            intermediate_size: dense_ffn_width,
             activation: execution.activation,
             ffn_type: execution.ffn_type,
             gate_policy: execution.gate_policy,
@@ -532,6 +594,8 @@ pub fn surface_from_resolved(
                 expert_format: m.expert_format,
                 gate_up_layout: m.gate_up_layout,
                 shared_experts: m.shared_experts,
+                shared_expert_intermediate_size: m.shared_expert_intermediate_size,
+                shared_expert_gate: m.shared_expert_gate,
                 hybrid: m.hybrid,
             }),
         }),
@@ -602,6 +666,23 @@ pub fn attach_stack_evidence(
     match evidence {
         Ok(placement) => {
             surface.norm.placement = Some(placement);
+            // A post-norm stack's ONLY norm sites are the post ones, and
+            // the component declares exactly one epsilon. So the declared
+            // epsilon is theirs.
+            //
+            // This is not the four-norm case wearing a different hat, and
+            // the difference is why it is safe here and refused there. A
+            // four-norm stack HAS both sites and they can genuinely
+            // differ — Muse-Glimmer's are 1e-5 pre and 1e-8 post — so
+            // filling `post` from `pre` there would be inheriting one
+            // site's judged value into another's, which is the
+            // executable-but-unfounded failure. Here there is no second
+            // site to disagree with: reading the declaration as belonging
+            // to the pre sites would give an epsilon to norms this stack
+            // does not have and none to the norms it does.
+            if placement == super::roles::NormPlacement::PostOnly && surface.norm.post.is_none() {
+                surface.norm.post = Some(surface.norm.pre);
+            }
             Ok(())
         }
         Err(reason) => Err(vec![format!("norm placement ({reason})")]),
@@ -762,7 +843,9 @@ pub fn surface_from_nested(
             attention_bias: nested.tower.attention_bias,
         }),
         ffn: Some(FfnSurface {
-            intermediate_size,
+            // A perception tower's width is required above (its absence
+            // is already a refusal), so it is always present here.
+            intermediate_size: Some(intermediate_size),
             activation,
             ffn_type: if has_gate_tensors {
                 FfnType::Gated
@@ -798,5 +881,8 @@ pub fn surface_from_nested(
         head: None,
         // No perception tower has declared a residual-scale operation.
         residual_scale: None,
+        // Nor a multi-stream residual: every judged tower adds its
+        // sublayer outputs into one vector.
+        residual_topology: larql_models::config::ResidualTopology::SingleStream,
     })
 }

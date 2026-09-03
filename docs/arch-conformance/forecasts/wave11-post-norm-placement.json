@@ -1,0 +1,184 @@
+{
+ "wave": 11,
+ "name": "post-norm-placement-representable-not-executable",
+ "written": "2026-09-03",
+ "written_before": "any code. Measured over all 117 cached plans on the wave-10 (semantics 9) binary.",
+ "baseline": "wave 10 (semantics 9): GREEN 38 / AMBER 7 / RED 64 / BUG 0 / silent drops 0 / blockers 1076 / K3 7 clusters",
+ "this_is_a_revelation_wave": "It is forecast to clear NO row and to leave GREEN unchanged. What it changes is what the report can SEE: seven components whose execution surface refuses to build today will build one, and the probes that currently answer nothing will answer. A wave like this is scored on whether the newly reachable findings are the ones named here \u2014 not on GREEN.",
+ "the_correction_that_found_it": {
+  "what_was_claimed": "The wave-10 rerank said `architecture_identity` was the causal gate: an unmatched `model_type` means no component builds, so a registry entry would retire the dependent probes for free. 51 of 64 RED rows carry that blocker.",
+  "what_checking_showed": "False. `phi3` and `glm4_moe` match no registered family and their components build anyway \u2014 they fall through to `GenericArch`, which is the fail-open door itself. Identity and surface are independent, and phi-4 is NOT a witness for the mechanism it was picked to prove: its surface already exists, so registering `phi3` would clear one of its two blockers and leave `original_max_position_embeddings` (declared 16384 beside `rope_scaling: null`, so no scaling block exists to hold it).",
+  "what_the_real_gate_is": "25 rows say in their own finding that the surface did not build, and 23 of those are norm placement, in three shapes: 12 rows with no per-layer norm operands at all (LFM2, Nemotron-H, DeepSeek-V4, Qwen3.8-Flash-Next; 13-36 blockers each), 7 rows that are post-norm only (OLMo-2, OLMo-3, EXAONE-4; 4-9 blockers each), and 4 rows with a lone pre-attention norm (Cohere2-MoE, Jamba2, Falcon-H1)."
+ },
+ "the_fix": "`NormPlacement` knows two transformer shapes \u2014 PreOnly (two norms) and PrePost (four) \u2014 plus PreMixer. Seven rows declare a third. Judged from the references and not from the name: `Olmo2DecoderLayer.forward`, `Olmo3DecoderLayer.forward` and `Exaone4DecoderLayer.forward` are line-for-line identical \u2014 `residual = h; h = attn(h); h = post_attention_layernorm(h); h = residual + h`, and the same for the MLP. The sublayer reads the RAW residual and the norm applies to the sublayer's OUTPUT before the add. This is NOT classic post-LN (`norm(x + attn(x))`, norm after the add); the difference is which tensor the norm sees, and reading one as the other produces fluent wrong output rather than a failure. Added as `NormPlacement::PostOnly`, recognised from the operand evidence `(pre_attn false, post_attn true, pre_ffn false, post_ffn true)`, which no other judged stack produces.",
+ "representable_not_executable": "The op plan REFUSES to lower it, the way `MoeRouterKind::Sigmoid` and `PositionPolicy::Relative` already refuse. That is deliberate and it is the whole shape of this wave: `LayerPlan.pre_attention_norm` is a required `NormOp` with 27 consumers across the CPU and Metal forward paths, and a post-norm stack has no such operand. Making those rows EXECUTABLE means changing where the executors apply the norm, which is a separate wave with its own parity gate. Recognising a shape must not imply implementing it.",
+ "predicted_per_row": {
+  "allenai/OLMo-2-0425-1B": {
+   "blockers": "5 -> 2",
+   "clears": [
+    "attention_bias",
+    "hidden_act",
+    "rms_norm_eps"
+   ],
+   "keeps": [
+    "architecture_family",
+    "the post-norm non-execution refusal (replacing the incomplete-surface blocker)"
+   ]
+  },
+  "allenai/OLMo-2-1124-7B": {
+   "blockers": "5 -> 2",
+   "clears": [
+    "attention_bias",
+    "hidden_act",
+    "rms_norm_eps"
+   ],
+   "keeps": [
+    "architecture_family",
+    "post-norm refusal"
+   ]
+  },
+  "allenai/Olmo-3-1025-7B": {
+   "blockers": "6 -> 3",
+   "clears": [
+    "attention_bias",
+    "hidden_act",
+    "rms_norm_eps"
+   ],
+   "keeps": [
+    "architecture_family",
+    "rope_scaling.attention_factor",
+    "post-norm refusal"
+   ]
+  },
+  "allenai/Olmo-3-1125-32B": {
+   "blockers": "6 -> 3",
+   "clears": [
+    "attention_bias",
+    "hidden_act",
+    "rms_norm_eps"
+   ],
+   "keeps": [
+    "architecture_family",
+    "rope_scaling.attention_factor",
+    "post-norm refusal"
+   ]
+  },
+  "LGAI-EXAONE/EXAONE-4.0-1.2B": {
+   "blockers": "4 -> 2",
+   "clears": [
+    "hidden_act",
+    "rms_norm_eps"
+   ],
+   "keeps": [
+    "architecture_family",
+    "post-norm refusal"
+   ]
+  },
+  "LGAI-EXAONE/EXAONE-4.0-32B": {
+   "blockers": "5 -> 3",
+   "clears": [
+    "hidden_act",
+    "rms_norm_eps"
+   ],
+   "keeps": [
+    "architecture_family",
+    "sliding_window_pattern",
+    "post-norm refusal"
+   ]
+  },
+  "LGAI-EXAONE/EXAONE-4.5-33B": {
+   "blockers": "9 -> 7",
+   "clears": [
+    "hidden_act",
+    "rms_norm_eps"
+   ],
+   "keeps": [
+    "architecture_family",
+    "_num_mtp_layers",
+    "rope_scaling.rope_theta",
+    "vision_token_id",
+    "sliding_window_pattern",
+    "num_nextn_predict_layers",
+    "post-norm refusal"
+   ]
+  }
+ },
+ "answers_but_still_refuses": "Two keys will start ANSWERING and must still BLOCK, and predicting them apart from the ones that clear is the point of the exercise. `sliding_window_pattern` is \"LLLG\" on both EXAONE rows and its rule has no schema field to carry a period string (`probe_unrepresented` always refuses). `num_nextn_predict_layers` is 1 on EXAONE-4.5 and its rule represents only MTP's ABSENCE (`probe_absent_when_zero`), so a positive count mismatches. A wave that cleared either would mean the schema had quietly grown a claim it cannot honour.",
+ "revelation_table": {
+  "identity_blockers_removed": 0,
+  "execution_surfaces_newly_built": 7,
+  "blockers_cleared_because_a_probe_can_now_answer": 16,
+  "blockers_that_newly_answer_and_still_refuse": 3,
+  "newly_exposed_blockers_not_previously_reported": "0 expected \u2014 every finding on these rows already exists; what changes is its category, from `unrepresented (no component answered)` to either representable or a stated refusal. If any row gains a SUBJECT it did not have, that is a genuine revelation and must be named and explained, not absorbed.",
+  "rows_cleared": 0,
+  "rows_remaining_RED": 7
+ },
+ "predicted_after": {
+  "semantics_version": 10,
+  "GREEN": 38,
+  "AMBER": 7,
+  "RED": 64,
+  "BUG": 0,
+  "silent_drops": 0,
+  "text_closure_blockers": 1058,
+  "K3_clusters": 7
+ },
+ "falsifiers": [
+  "any row going GREEN \u2014 nothing here makes a post-norm stack executable",
+  "any row going AMBER \u2014 the refusal is an incomplete-execution-surface fact, not an identified-but-unimplemented COMPONENT; an AMBER here would also be dishonest while `architecture_identity` still blocks the same row",
+  "any row outside the seven changing at all",
+  "`sliding_window_pattern` or `num_nextn_predict_layers` clearing",
+  "a row gaining a blocker subject it did not previously have",
+  "BUG > 0 or a silent-drop regression",
+  "the four `pre_attn`-only rows or the twelve no-norm-operand rows moving \u2014 they are different shapes and this variant must not absorb them"
+ ],
+ "known_limitation_not_fixed_here": "Carriage is judged against the SURFACE, not against a successfully built op plan. So `rms_norm_eps` will report `carried to lowered at ExecutionSurface.norm.pre.eps -> NormOp.eps` on these seven rows even though the op plan refuses to build any NormOp for them, and even though a post-only stack has no pre-norm site. That is a pre-existing property of the instrument rather than something this wave introduces, and it is the same claim-congruence gap in a milder form than wave 10's. Recorded here so the next wave that touches these rows does not read the cleared blocker as proof the eps reached an operator.",
+ "controls_required": [
+  "the new evidence arm must fail before the variant exists, with the corpus's own message (`norm operand set is neither two-norm nor four-norm (pre_attn false, post_attn true, pre_ffn false, post_ffn true)`)",
+  "a two-norm and a four-norm fixture must resolve exactly as before \u2014 the new arm must be unreachable from their operand sets",
+  "the op plan must REFUSE a PostOnly component explicitly rather than lower it as PreOnly or PrePost"
+ ],
+ "result": {
+  "scored_on": "2026-09-03",
+  "outcome_semantics_version": 10,
+  "rows_cleared": 0,
+  "predicted_rows_cleared": 0,
+  "verdicts_moved_by_the_semantic_change": 0,
+  "per_row": {
+   "allenai/OLMo-2-0425-1B": "5 -> 2 (predicted 5 -> 2)",
+   "allenai/OLMo-2-1124-7B": "5 -> 2 (predicted 5 -> 2)",
+   "allenai/Olmo-3-1025-7B": "6 -> 3 (predicted 6 -> 3)",
+   "allenai/Olmo-3-1125-32B": "6 -> 3 (predicted 6 -> 3)",
+   "LGAI-EXAONE/EXAONE-4.0-1.2B": "4 -> 2 (predicted 4 -> 2)",
+   "LGAI-EXAONE/EXAONE-4.0-32B": "5 -> 3 (predicted 5 -> 3)",
+   "LGAI-EXAONE/EXAONE-4.5-33B": "9 -> 7 (predicted 9 -> 7)"
+  },
+  "answers_but_still_refuses_held": "`sliding_window_pattern` (both EXAONE rows) and `num_nextn_predict_layers` (EXAONE-4.5) started answering and did NOT clear, exactly as predicted. Distinguishing them from the sixteen that did clear was the sharpest arm of the forecast.",
+  "after": {
+   "semantics_version": 10,
+   "GREEN": 38,
+   "AMBER": 3,
+   "RED": 68,
+   "BUG": 0,
+   "silent_drops": 0,
+   "text_closure_blockers": 1058,
+   "K3_clusters": 7,
+   "scored": 109
+  },
+  "verdict": "EXACT on the semantic change \u2014 every per-row prediction hit, blockers 1076 -> 1058 as forecast, no row cleared, no row outside the seven moved. The aggregate AMBER/RED columns differ from the forecast for a separate reason, declared below.",
+  "the_forecast_caught_a_fail_open_again": {
+   "first_score": "1051, not the forecast 1058. The seven rows each lost their `target.execution_surface` blocker with NOTHING replacing it: OLMo-2 fell to a single blocker, its unresolved identity.",
+   "what_that_meant": "The op plan's refusal was real \u2014 `plan_component_ops` returned no plan and an `UnimplementedSemantic` defect \u2014 but the PLAN REPORT never consulted it, so no finding said so. The row read as one registry entry away from `text closure: every declaration has a home` while VINDEX3 could not build a single op for it. That is the looks-supported failure in its purest form, and it would have fired in the very next wave: registering `olmo2` would have turned a model this build cannot execute GREEN.",
+   "the_fix": "`NormPlacement::unimplemented_reason()` is now the ONE authority. The op plan refuses on it and the plan report reads the same function to emit an `unsupported_component` finding on a complete-but-unlowerable surface. Two lists of what cannot be lowered would have drifted into exactly the state above, so there is one.",
+   "why_it_was_caught": "Only because the forecast said 1058 and named what should replace the cleared blocker. A wave scored on 'blockers went down' would have booked this as a better result than predicted."
+  },
+  "instrument_change_declared_separately": {
+   "what": "`arch_sweep.py` now refuses to report AMBER for a checkpoint whose `model_type` matches no registered family.",
+   "why": "AMBER's own definition is 'component identified, no implementation'. Awarding it to a row whose identity is unresolved credits an identification that has not happened \u2014 the same class of error as the one above, in the instrument rather than in the compiler. It surfaced because this wave was about to emit an unsupported-component finding on seven rows with unresolved identities.",
+   "effect": "4 rows move AMBER -> RED: tencent/Hy4-preview (`hy_v4`), zai-org/GLM-5.2 and GLM-5.3 (`glm_moe_dsa`), zai-org/GLM-5.3-Flash (`glm5_next_text`). All four were being called identified while matching nothing. The 3 rows that remain AMBER (DeepSeek-V3.2, V4-Flash, V4-Pro) have resolved identities and a genuinely unimplemented component.",
+   "consequence_for_the_ledger": "The AMBER and RED columns are NOT comparable across wave 10 -> 11. GREEN, BUG, silent drops and the blocker count are."
+  },
+  "controls": "The pre-fix control is the corpus itself: all seven rows reported `norm operand set is neither two-norm nor four-norm (pre_attn false, post_attn true, pre_ffn false, post_ffn true)` on the wave-10 binary, which is the exact estate the new arm reads. Beside it, `placement_evidence_reads_the_post_norm_estate` pins the discriminator (a two-norm Llama stack carrying the same `post_attention_layernorm` spelling must still read PreOnly, and a lone wrap norm must still refuse), and `a_post_norm_stack_is_refused_as_unimplemented_not_lowered_as_two_norm` pins the refusal with its own negative control \u2014 the same fixture with its pre-norms intact still lowers as four-norm.",
+  "what_this_wave_did_not_do": "It did not make a post-norm stack executable. `LayerPlan.pre_attention_norm` is a required `NormOp` with 27 consumers across the CPU and Metal forward paths, and moving the norm to the sublayer output is a separate wave with its own parity gate. Recognising a shape is not implementing it, and the closure vocabulary now states that difference in its own defect (`UnimplementedSemantic`, the opposite of `UnjudgedSemantic`: there the value is unknown, here the operator is missing)."
+ }
+}

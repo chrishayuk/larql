@@ -224,15 +224,34 @@ pub enum ExpertBank {
 /// shared_experts(identity)`).
 #[derive(Debug, Clone, PartialEq, Serialize)]
 pub struct SharedExpertOp {
-    /// `moe_intermediate_size * shared_experts` — the checkpoint sizes one
-    /// wider FFN rather than `shared_experts` separate ones (`KimiMLP`'s
-    /// `intermediate_size` in `KimiSparseMoeBlock.__init__`).
+    /// The branch's intermediate width, as the judgment declares it —
+    /// `FfnSurface::moe`'s `shared_expert_intermediate_size`. Two
+    /// lineages size it differently (Qwen from its own key, DeepSeek and
+    /// Kimi as one wider FFN at `moe_intermediate_size * shared_experts`)
+    /// and the architecture already chose between them, so this is
+    /// transcribed rather than recomputed.
     pub intermediate_size: usize,
     pub activation: Activation,
     pub gate_policy: larql_models::ExpertGatePolicy,
+    /// The branch's own SwiGLU gate projection.
     pub gate: OperandRef,
     pub up: OperandRef,
     pub down: OperandRef,
+    /// The scalar gate on the branch's OUTPUT, where the family runs one:
+    /// `out = routed + sigmoid(branch_gate(x)) * shared(x)`. `None` sums
+    /// the branch unscaled, which is the DeepSeek/Kimi form — the two are
+    /// different models, not a present-or-defaulted operand, so closure
+    /// requires this operand iff the surface declares the gate.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub branch_gate: Option<SharedExpertBranchGateOp>,
+}
+
+/// The judged semantics of the shared branch's output gate, beside the
+/// operand it reads.
+#[derive(Debug, Clone, PartialEq, Serialize)]
+pub struct SharedExpertBranchGateOp {
+    pub spec: larql_models::config::SharedExpertGateSpec,
+    pub weight: OperandRef,
 }
 
 /// One layer's routed FFN op — a mixture of experts, entirely inside the
@@ -511,7 +530,28 @@ pub struct LayerPlan {
     /// The pre-block norm. On an attention-class layer this is
     /// `input_layernorm`; on a mixer-only layer it is the layer's single
     /// pre-mixer norm — same position in the program, one field.
-    pub pre_attention_norm: NormOp,
+    ///
+    /// `None` under [`NormPlacement::PostOnly`](crate::format::vindex3::graph::NormPlacement):
+    /// the sublayer reads the RAW residual there and the norm applies to
+    /// its output instead. Absence is the program, not a missing operand
+    /// — closure requires this norm's operand exactly when the placement
+    /// says the site exists.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub pre_attention_norm: Option<NormOp>,
+    /// The component's DECLARED norm epsilon (`rms_norm_eps`).
+    ///
+    /// Carried on the layer in its own right rather than read back off
+    /// [`Self::pre_attention_norm`], because the operators that need it
+    /// are not all norms at that site: QK norm, DeltaNet's gated RMSNorm
+    /// and KDA's all run at this epsilon. Reading it from one norm SITE
+    /// was a coupling between an epsilon and a placement — two unrelated
+    /// facts — and it is what made a post-norm stack, which has no
+    /// pre-attention norm to borrow from, unrepresentable in the op plan.
+    ///
+    /// The same reasoning `MlaOp::kv_a_norm_eps` already applies in the
+    /// other direction: a norm whose epsilon differs from the layer's
+    /// carries its own, and one that shares it reads this.
+    pub declared_norm_eps: f64,
     /// This layer's attention-class operator. Not every layer attends by
     /// softmax: a hybrid checkpoint interleaves DeltaNet recurrences with
     /// full-attention layers, so the op is a choice, not a shape.
@@ -669,6 +709,30 @@ pub enum ClosureDefect {
         /// The structure that makes it load-bearing.
         required_by: String,
     },
+    /// The surface states the fact exactly, and this build has no
+    /// lowering for it.
+    ///
+    /// The opposite of [`Self::UnjudgedSemantic`] and the distinction
+    /// matters: there, nothing established the value and executing would
+    /// be guessing; here the value is established and the OP SET is what
+    /// is missing. Recognising a shape is not implementing it, and the
+    /// two must not read alike — a reader who cannot tell them apart
+    /// cannot tell "we do not know what this model does" from "we know
+    /// exactly what it does and cannot yet do it".
+    ///
+    /// Refusing is the point. Every alternative lowering of a shape this
+    /// build does not implement is numerically plausible and
+    /// semantically wrong, and produces fluent output rather than an
+    /// error — the same reason `MoeRouterKind::Sigmoid` and
+    /// `PositionPolicy::Relative` refuse at their own match arms.
+    UnimplementedSemantic {
+        component: String,
+        /// The fact, named as the surface names it.
+        fact: String,
+        /// What the container can already state about it, so a reader
+        /// knows the gap is in execution and not in representation.
+        representable_as: String,
+    },
 }
 
 impl std::fmt::Display for ClosureDefect {
@@ -677,6 +741,14 @@ impl std::fmt::Display for ClosureDefect {
             Self::MissingSurface { component } => {
                 write!(f, "component `{component}` has no complete execution surface")
             }
+            Self::UnimplementedSemantic {
+                component,
+                fact,
+                representable_as,
+            } => write!(
+                f,
+                "component `{component}`: {fact} is representable ({representable_as}) and this                  build has no lowering for it — refused rather than lowered as a shape it is not"
+            ),
             Self::MissingAttentionTable { component } => {
                 write!(f, "component `{component}` has no per-layer attention policy table")
             }

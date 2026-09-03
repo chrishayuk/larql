@@ -64,7 +64,9 @@ fn operands(plan: &ComponentOpPlan) -> Vec<OperandRef> {
     // this test is about the head, so the stack is represented by
     // whichever object its first operand names.
     if let Some(layer) = plan.layers.first() {
-        out.push(layer.pre_attention_norm.weight.clone());
+        if let Some(n) = &layer.pre_attention_norm {
+            out.push(n.weight.clone());
+        }
     }
     if let Some(norm) = &plan.final_norm {
         out.push(norm.weight.clone());

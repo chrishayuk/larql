@@ -178,7 +178,9 @@ impl PreparedNorm {
 
 /// One layer's operands, lowered into the backend's execution form.
 pub(super) struct PreparedLayer {
-    pub(super) pre_attention: PreparedNorm,
+    /// `None` under post-norm placement — the sublayer reads the raw
+    /// residual and the wrap norm applies to its output instead.
+    pub(super) pre_attention: Option<PreparedNorm>,
     pub(super) attention: PreparedAttention,
     pub(super) post_attention: Option<PreparedNorm>,
     /// Absent on a mixer-only (Mamba2) layer — the plan carries no FFN
@@ -195,7 +197,7 @@ impl PreparedLayer {
     /// up to the whole image rather than to the parts that were easy.
     fn glue_bytes(&self) -> usize {
         let norm = |n: &PreparedNorm| std::mem::size_of_val(&n.weight[..]);
-        norm(&self.pre_attention)
+        self.pre_attention.as_ref().map_or(0, norm)
             + self.pre_ffn.as_ref().map_or(0, norm)
             + self.post_attention.as_ref().map_or(0, norm)
             + self.post_ffn.as_ref().map_or(0, norm)
@@ -765,7 +767,13 @@ impl PreparedOperands {
         let mut layers = Vec::with_capacity(range.len());
         for layer in &plan.layers[range] {
             layers.push(PreparedLayer {
-                pre_attention: PreparedNorm::load(&layer.pre_attention_norm, store)?,
+                // Absent under post-norm placement: the sublayer reads
+                // the raw residual there. `None` is the program, and the
+                // executor skips the site rather than applying identity.
+                pre_attention: match &layer.pre_attention_norm {
+                    Some(op) => Some(PreparedNorm::load(op, store)?),
+                    None => None,
+                },
                 // The operator is decided here, from the plan, and the
                 // operands follow it. No layer is prepared as softmax by
                 // default.
@@ -790,7 +798,7 @@ impl PreparedOperands {
                         op,
                         store,
                         &attention_format,
-                        layer.pre_attention_norm.eps as f32,
+                        layer.declared_norm_eps as f32,
                     )?)),
                     // Same posture as KDA above: represented, not
                     // executable. MLA's operands are bound and its
@@ -811,7 +819,7 @@ impl PreparedOperands {
                             op,
                             store,
                             &attention_format,
-                            layer.pre_attention_norm.eps as f32,
+                            layer.declared_norm_eps as f32,
                         )?))
                     }
                 },

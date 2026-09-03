@@ -870,7 +870,7 @@ fn run_inspect(args: InspectArgs) -> Result<(), Box<dyn std::error::Error>> {
                         };
                         let ffn = match &surface.ffn {
                             Some(f) => format!(
-                                "ffn {:?} {:?} {}",
+                                "ffn {:?} {:?} {:?}",
                                 f.activation, f.ffn_type, f.intermediate_size
                             ),
                             None => "ffn absent".to_string(),

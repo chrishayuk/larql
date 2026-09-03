@@ -5,6 +5,7 @@ mod closure;
 pub(crate) mod conv_qkv;
 mod coverage_opplan;
 mod gemma4_closure;
+mod hyper_connection_refusal;
 mod kda_mla_exec;
 mod kda_op;
 mod kimi_mla_closure;
@@ -12,6 +13,7 @@ mod kimi_moe_closure;
 pub(crate) mod mamba2;
 mod mla_op;
 mod plan;
+mod post_norm_placement;
 mod tied_head_realization;
 mod unjudged;
 

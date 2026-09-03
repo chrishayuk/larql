@@ -1,0 +1,118 @@
+{
+ "wave": 10,
+ "name": "qwen-moe-facts-and-the-gated-shared-expert",
+ "written": "2026-09-03",
+ "written_before": "any code. Reach measured over all 117 cached plans on the wave-9 (semantics 8) binary.",
+ "baseline": "wave 9 (semantics 8): GREEN 33 / AMBER 7 / RED 69 / BUG 0 / silent drops 0 / blockers 1089 / K3 7 clusters",
+ "the_defects": [
+  {
+   "id": "A",
+   "one_line": "The FFN presence rule reads only the DENSE width, so a wholly-routed family is graded as having no FFN op at all.",
+   "site": "graph/surface.rs \u2014 `let has_ffn = resolved.intermediate_size > 0`",
+   "evidence": "`Qwen3_5MoeTextConfig` is @strict and declares NO `intermediate_size` field; every layer is a `Qwen3_5MoeSparseMoeBlock` (`self.mlp = Qwen3_5MoeSparseMoeBlock(config)` unconditionally, no `mlp_only_layers` branch in modeling_qwen3_5_moe.py). The width of its FFN lives in `moe_intermediate_size`. Qwen3-30B-A3B slipped through only because it declares BOTH a dense width (6144, for `mlp_only_layers`) and a routed one.",
+   "consequence": "`ExecutionSurface.ffn` is absent, so `probe_activation` and `probe_moe_top_k` return None and `hidden_act` / `num_experts_per_tok` report `rule claims lowered ... but no built component answered the probe`.",
+   "population_measured": "EXACTLY 4 rows across 117 plans \u2014 every primary_text component that has an execution surface but no `ffn` key. All four are `qwen3_5_moe_text`. 80 primary_text components have one."
+  },
+  {
+   "id": "B",
+   "one_line": "`shared_expert_intermediate_size` is read by nothing, and the shared-expert width is DERIVED where it should be declared.",
+   "site": "detect/parser.rs (no read) and opplan/build.rs \u2014 `intermediate_size: moe.expert_intermediate_size * moe.shared_experts`",
+   "evidence": "Qwen2-MoE and Qwen3.5-MoE size the always-active branch with their own key and gate it: `shared_expert = MLP(intermediate_size=config.shared_expert_intermediate_size)`, `shared_expert_gate = nn.Linear(hidden, 1, bias=False)`, `out = routed + sigmoid(shared_expert_gate(x)) * shared_expert(x)`. The existing derivation is DeepSeek/Kimi's fact (one wider FFN of N x moe_intermediate), and it is wrong here: Qwen1.5-MoE is 1408 x 1 = 1408 against a declared 5632.",
+   "coincidence_warning": "On Qwen3.5-35B the two agree (512 == 512 x 1). A fixture built from that checkpoint would pin the coincidence, so the control uses Qwen1.5-MoE's numbers where they differ 4x."
+  },
+  {
+   "id": "C",
+   "one_line": "Qwen3.5-MoE stores its experts as fused 3-D tensors, and nothing declares that.",
+   "site": "architectures/qwen.rs \u2014 no `expert_format` / `gate_up_layout` override",
+   "evidence": "The checkpoint ships `mlp.experts.gate_up_proj` and `mlp.experts.down_proj` (3-D, no expert index) where qwen2_moe/qwen3_moe ship `mlp.experts.{E}.{gate,up,down}_proj.weight`. `Qwen3_5MoeExperts` holds `gate_up_proj[num_experts, 2*moe_intermediate, hidden]` and splits with `.chunk(2, dim=-1)` \u2014 `ExpertFormat::PackedBF16` with `GateUpLayout::ContiguousHalves`, the same pair Gemma 4 26B-A4B declares.",
+   "why_it_is_in_this_wave": "Defect A alone would make the routed FFN present while the judgment still said PerExpert, and operand closure would demand 256 per-expert operands the checkpoint does not ship. Greening a row on a wrong expert format is the fail-open this programme exists to prevent."
+  }
+ ],
+ "the_fix": "One presence rule, one authority for the shared-expert width, one declared operator. (A) An FFN is present when the component declares a width for one \u2014 the dense `intermediate_size` OR a routed block's `expert_intermediate_size`; `FfnSurface.intermediate_size` becomes Option<usize> so a wholly-routed stack states the dense width is ABSENT instead of asserting zero, and every consumer that needs a dense width fails closed. (B) `shared_expert_intermediate_size` (and Nemotron's `moe_shared_expert_intermediate_size` spelling \u2014 one fact, two spellings, like NUM_SHARED_EXPERTS_KEYS) is parsed onto ModelConfig, carried on MoeSurface, and becomes the single authority for SharedExpertOp's width; DeepSeek/Kimi's `expert_intermediate_size * shared_experts` becomes what THEIR architecture declares, so there is one derivation instead of two. The Qwen MoE families declare the shared expert they have (count 1) and its sigmoid branch gate, with a new operand role distinct from the shared expert's own SwiGLU gate projection. (C) `qwen3_5_moe` declares PackedBF16 + ContiguousHalves.",
+ "why_not_the_cluster": "moe_routing has reach 37 and the `hidden_act`/`num_experts_per_tok` subjects reach 13 and 12 rows respectively, but the FFN-presence defect is EXACTLY 4 rows and the shared-expert key EXACTLY 10. Reach is not verdict movement: of the 10 rows declaring the shared-expert width, 5 clear and 5 do not.",
+ "predicted_to_go_green": [
+  "Qwen/Qwen1.5-MoE-A2.7B",
+  "Qwen/Qwen3.5-35B-A3B",
+  "Qwen/Qwen3.5-122B-A10B",
+  "Qwen/Qwen3.5-397B-A17B",
+  "Qwen/Qwen3.8-2.4T-A95B"
+ ],
+ "rows_whose_blocker_count_changes": 5,
+ "predicted_blocker_deltas": {
+  "Qwen/Qwen1.5-MoE-A2.7B": "1 -> 0",
+  "Qwen/Qwen3.5-35B-A3B": "3 -> 0",
+  "Qwen/Qwen3.5-122B-A10B": "3 -> 0",
+  "Qwen/Qwen3.5-397B-A17B": "3 -> 0",
+  "Qwen/Qwen3.8-2.4T-A95B": "3 -> 0"
+ },
+ "predicted_to_move_nothing": {
+  "Qwen/Qwen3.8-Flash-Next": "36 -> 36. Declares the same key, but its `qwen4_exp_text` component builds NO execution surface at all, so the new rule's probe cannot answer. The finding is reclassified from `unknown` (read by nothing) to `unrepresented` (no probe answer) and blocks either way.",
+  "nvidia/NVIDIA-Nemotron-3-Nano-30B-A3B-BF16": "26 -> 26, same reason (`nemotron_h` matches no registered family).",
+  "nvidia/NVIDIA-Nemotron-3-Super-120B-A12B-BF16": "26 -> 26",
+  "nvidia/NVIDIA-Nemotron-3-Ultra-550B-A55B-BF16": "26 -> 26",
+  "nvidia/NVIDIA-Nemotron-3.5-Lightning-30B-A3B-BF16": "26 -> 26"
+ },
+ "predicted_after": {
+  "semantics_version": 9,
+  "GREEN": 38,
+  "AMBER": 7,
+  "RED": 64,
+  "BUG": 0,
+  "silent_drops": 0,
+  "text_closure_blockers": 1076,
+  "K3_clusters": 7
+ },
+ "falsifiers": [
+  "any row outside the five moving verdict",
+  "any of the five gaining a blocker it did not have (a probe that now answers and DISAGREES is a mismatch, not a fix)",
+  "the four Nemotron rows or Qwen3.8-Flash-Next changing blocker count",
+  "BUG > 0 or a silent-drop regression",
+  "the shared-expert operands failing to bind \u2014 `mlp.shared_expert.{gate,up,down}_proj.weight` is the Qwen spelling and the role table carries only Kimi's `block_sparse_moe.shared_experts.*`"
+ ],
+ "controls_required": [
+  "every new VINDEX3 test must fail on the wave-9 binary with the corpus's own message before the fix",
+  "the shared-expert width control must use Qwen1.5-MoE's 5632-against-1408, where the declared width and the old derivation differ",
+  "a dense MoE family (Qwen3-30B-A3B, GREEN today) must be unmoved: it declares both widths and PerExpert experts"
+ ],
+ "result": {
+  "scored_on": "2026-09-03",
+  "outcome_semantics_version": 9,
+  "predicted_clears": 5,
+  "actual_clears": 5,
+  "hit": [
+   "Qwen/Qwen1.5-MoE-A2.7B",
+   "Qwen/Qwen3.5-35B-A3B",
+   "Qwen/Qwen3.5-122B-A10B",
+   "Qwen/Qwen3.5-397B-A17B",
+   "Qwen/Qwen3.8-2.4T-A95B"
+  ],
+  "missed": [],
+  "unpredicted": [],
+  "regressions": [],
+  "rows_whose_blocker_count_changed": {
+   "Qwen/Qwen1.5-MoE-A2.7B": "1 -> 0",
+   "Qwen/Qwen3.5-35B-A3B": "3 -> 0",
+   "Qwen/Qwen3.5-122B-A10B": "3 -> 0",
+   "Qwen/Qwen3.5-397B-A17B": "3 -> 0",
+   "Qwen/Qwen3.8-2.4T-A95B": "3 -> 0"
+  },
+  "after": {
+   "semantics_version": 9,
+   "GREEN": 38,
+   "AMBER": 7,
+   "RED": 64,
+   "BUG": 0,
+   "silent_drops": 0,
+   "text_closure_blockers": 1076,
+   "K3_clusters": 7,
+   "scored": 109
+  },
+  "predicted_after_matched": true,
+  "verdict": "EXACT. Five rows cleared, exactly the five named. Checked at whole-model granularity too: the blocker SET changed on those five rows and nowhere else across 117 plans, and no row anywhere gained a blocker \u2014 so the three fixes moved nothing they did not name.",
+  "the_first_score_was_wrong_and_why_it_mattered": "The first re-plan came back at 1076-5 = 1071, with the five rows I had predicted would move NOTHING each losing their shared-expert blocker (Qwen3.8-Flash-Next 36 -> 35, four Nemotron-3 rows -1 each). The forecast was right and the CODE was wrong. `shared_expert_intermediate_size` had been classified `tensor_semantic`, and that bucket's findings are reported `carriage: parsed / 'read by a registered parser'` \u2014 the carriage rule and its probe were never consulted. The key was clearing because a parser had touched it, not because anything checked the width, which is the fail-open this programme exists to prevent and the exact shape of wave 9's read-AND-check lesson. Moved to the execution-semantic bucket, beside the shared-expert COUNT that already lives there, so the rule governs it: the declared width is compared against the width the branch will be built at, and a component that resolved no branch refuses instead of passing. The five rows that should not move stopped moving.",
+  "a_forecast_defect_worth_recording": "The forecast quoted all four Nemotron-3 rows at 26 blockers. Only Nano is 26; Super and Ultra are 29 and 3.5-Lightning is 28. The PREDICTION (no change) was right and is what scored, but the baseline numbers beside it were extrapolated from one row instead of read, which is the same shortcut the programme forbids for verdicts.",
+  "controls": "The presence rule's control failed on the wave-9 binary with `a component whose every layer is a routed block runs an FFN`. Two standing conformance gates fired during the work and both were real: `every_key_accessor_is_enumerated` demanded the branch-gate accessor join extraction coverage (otherwise its tensors report unrecognised - a silent drop), and `every_consumed_leaf_key_is_judged` refused both new spellings until they were classified. `the_shared_expert_width_carries_only_where_a_branch_resolves` is the standing guard against the classification drifting back to the waved-through bucket.",
+  "fix_as_landed": "(A) `has_ffn` reads the dense width OR the routed block's expert width; `FfnSurface.intermediate_size` becomes Option so a wholly-routed stack STATES the dense width is absent, and the GGUF geometry/metadata writers and the op plan's dense FFN refuse rather than take a zero. (B) `shared_expert_intermediate_size` / `moe_shared_expert_intermediate_size` parsed onto ModelConfig, carried on MoeSurface, and made the single authority for `SharedExpertOp.intermediate_size` and the shared-expert operand SHAPES - the old `expert_intermediate_size * shared_experts` derivation is Kimi's fact and stays as the trait DEFAULT for the lineage that declares only a count. Qwen MoE declares its one shared expert, its `mlp.shared_expert.*` operand spellings, and its sigmoid branch gate under a new `SharedExpertBranchGate` role kept distinct from the branch's own SwiGLU gate projection. (C) `qwen3_5_moe` declares `ExpertFormat::PackedBF16` + `GateUpLayout::ContiguousHalves`.",
+  "defect_found_on_the_way": "The GGUF orientation path sized the shared-expert tensors by the DENSE width (`if dense_inter > 0 { ... orient(shared, dense_inter, hidden) }`). That coincides on Qwen1.5-MoE (5632 either way) and is wrong everywhere else: DeepSeek's branch is `moe_intermediate_size * n_shared_experts`, and Qwen3.5-MoE has no dense width at all, so its shared expert was left unoriented. Now pointed at the same single authority."
+ }
+}

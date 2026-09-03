@@ -1,0 +1,123 @@
+{
+ "wave": 16,
+ "name": "hyper-connection-representation-and-refusal",
+ "written": "2026-09-03",
+ "written_before": "any code. Arithmetic read from DeepSeek-V4-Flash's own `inference/model.py`, which the repo ships; tensor estate read from its safetensors index; parameters from its config.json.",
+ "baseline": "wave 15 (semantics 13): GREEN 41 / AMBER 3 / RED 65 / BUG 0 / silent drops 0 / blockers 1029 / K3 7 clusters",
+ "the_claim": "Hyper-connections are a RESIDUAL TOPOLOGY, and VINDEX3 states it as one: the residual is a bundle of parallel streams, each sublayer reduces the bundle to one vector and expands its output back, and the reduce/expand weights are computed per token. This build represents that exactly and REFUSES to execute it \u2014 and no ordinary residual path may lower it.",
+ "the_arithmetic_as_the_reference_states_it": {
+  "source": "deepseek-ai/DeepSeek-V4-Flash `inference/model.py`, class `Block`",
+  "state_shape": "The hidden state is `[b, s, hc, d]` with `hc = hc_mult = 4` \u2014 FOUR parallel residual streams \u2014 not `[b, s, d]`. This is a stack-level state fact, not a per-layer operation.",
+  "per_sublayer": [
+   "residual = x                                     # the whole bundle is kept",
+   "x_flat = x.flatten(2).float()                    # [b,s,hc*d]",
+   "rsqrt  = rsqrt(mean(x_flat^2) + norm_eps)        # RMS over the FLATTENED streams",
+   "mixes  = Linear(x_flat, hc_fn) * rsqrt           # [b,s,mix_hc], mix_hc = (2+hc)*hc",
+   "pre, post, comb = hc_split_sinkhorn(mixes, hc_scale, hc_base, hc, 20, 1e-6)",
+   "x = sum(pre[...,None] * x, dim=2)                # hc streams -> ONE vector",
+   "x = sublayer_norm(x); x = sublayer(x)            # the ordinary branch, on the reduced stream",
+   "x = post[...,None]*x[...,None,:] + sum(comb[...,None]*residual[...,None,:], dim=2)   # ONE -> hc streams"
+  ],
+  "why_it_cannot_be_a_scale_field_on_an_ordinary_residual": "Three reasons, any one of which is sufficient. (1) The state SHAPE differs \u2014 four streams, not one. (2) The weights are DYNAMIC, computed per token from the current state through `hc_*_fn`, not stored per layer. (3) The expand mixes every stream into every other through `comb[hc,hc]`, so the streams are not independent residuals running in parallel. `h <- h + f(h)` cannot be parameterised into this.",
+  "the_sinkhorn_step_is_a_real_operator": "`hc_split_sinkhorn` runs 20 iterations (`hc_sinkhorn_iters`) at `hc_eps` 1e-6 to split one `[mix_hc]` vector into `pre`, `post` and a `comb` matrix. It is iterative normalisation, not a reshape, and it has no existing analogue in this build.",
+  "operands_per_layer": "SIX \u2014 `hc_attn_fn [mix_hc, hc*d]`, `hc_attn_base [mix_hc]`, `hc_attn_scale [3]` and the same three for `ffn` \u2014 x43 layers, plus a stack-level `hc_head_{fn,base,scale}` for the head's own reduction and a further set on the MTP block."
+ },
+ "a_correction_this_wave_forced": "Wave 14 classified this row (correctly) as D, but described the mechanism as 'learned per-site scales' and recorded that no reference was readable. The repo ships one, and the mechanism is a four-stream bundle with per-token Sinkhorn-split mixing. The classification stands; the scope was understated, and the wave-14 record has been amended rather than quietly left.",
+ "scope": {
+  "in": [
+   "A `ResidualTopology` vocabulary on the component's execution surface: `SingleStream` (every family judged so far) and `HyperConnection { streams, sinkhorn_iters, sinkhorn_eps }`, all three read from the config and never defaulted.",
+   "The Sinkhorn split named as its own operation in the representation, with its inputs and its three outputs.",
+   "Operand roles for the hyper-connection sites (attention, FFN, head), each owning its `fn` / `base` / `scale`.",
+   "An explicit execution refusal raised through the SAME single authority the norm placement uses, so the op plan and the plan report cannot disagree.",
+   "An adversarial synthetic witness for the tightened claim above."
+  ],
+  "out": [
+   "Executing it (wave 17).",
+   "DeepSeek-V4's `attn_norm`/`ffn_norm` and Qwen3.8-Flash-Next's `hc_norm` spellings (wave 18) \u2014 deliberately, because until the topology exists those names have nowhere semantically correct to land, and carrying them first would let a surface build whose residual arithmetic is wrong.",
+   "Qwen3.8-Flash-Next's variant. It ships NO reference \u2014 only a README \u2014 so its `attn_hyper_connection.hc_norm` estate cannot be grounded the way DeepSeek's can. Whether it is the same mechanism is an open question, not an assumption."
+  ]
+ },
+ "predicted_sweep_effect": {
+  "rows_cleared": 0,
+  "verdicts_moved": 0,
+  "expected_direction": "Blockers may RISE. Classifying the six hyper-connection operands makes them recognised where they were unclassified, and declaring the topology makes a refusal visible that today is simply an absent surface. A wave that made these rows look closer to admissible would be the failure, not the success.",
+  "rows_that_may_change": [
+   "deepseek-ai/DeepSeek-V4-Flash",
+   "deepseek-ai/DeepSeek-V4-Pro"
+  ],
+  "predicted_after": {
+   "semantics_version": 14,
+   "GREEN": 41,
+   "AMBER": 3,
+   "BUG": 0,
+   "silent_drops": 0
+  }
+ },
+ "the_witness": {
+  "shape": "A synthetic layer where the two programs are guaranteed to differ: `h + f(h)` against the reduce/branch/expand equation, on a bundle whose streams are deliberately unequal and with a `comb` that genuinely mixes them. Chosen so that no parameterisation of an ordinary residual reproduces the hyper-connected output.",
+  "assertions": [
+   "the graph records the six operands and their causal positions",
+   "the op plan recognises the topology rather than treating the operands as strays",
+   "the executor reports an explicit unimplemented-semantic refusal",
+   "NO ordinary residual path lowers it \u2014 a hyper-connection component must not silently plan as a plain residual stack",
+   "report, closure and execution all expose the SAME refusal authority \u2014 wave 11's lesson, that a refusal hidden from the report is still fail-open"
+  ],
+  "claim_tightened": {
+   "was": "chosen so that no parameterisation of an ordinary residual reproduces the hyper-connected output",
+   "why_that_was_too_strong": "An unconstrained f(h) can encode almost anything, so the claim as written is a statement about arbitrary functions rather than about this build. It would be hard to defend and easy to satisfy trivially.",
+   "now": "The existing SingleStream residual programme cannot lower the declared HyperConnection topology without DISCARDING one of: residual multiplicity, the dynamic reduce weights, the dynamic expand/mixing matrix, or the Sinkhorn computation. Each of the three structural reasons is independently sufficient, and all are read off the reference rather than argued."
+  }
+ },
+ "falsifiers": [
+  "any row going GREEN or AMBER on this wave",
+  "a hyper-connection component planning as an ordinary residual stack",
+  "the refusal visible in the op plan but not in the plan report, or vice versa",
+  "the synthetic witness's two programs agreeing within tolerance \u2014 the fixture would then prove nothing",
+  "BUG > 0 or a silent-drop regression",
+  "any existing parity oracle moving"
+ ],
+ "amended_before_implementation": "Refined on review, with no code yet written. Four changes: the witness claim is tightened to what is architecturally defensible; the stream count is stated as a STACK-level state property rather than a per-layer one; the Sinkhorn split is given first-class status in the execution language rather than being buried inside hyper-connection lowering; and the residual topology is named as a vocabulary rather than as a DeepSeek feature.",
+ "state_shape_is_a_stack_property": {
+  "rule": "Once the residual means `[..., hc, d]`, EVERY consumer of the residual stream has to know it. The stream count therefore belongs to the component's execution state, not to a layer.",
+  "consumers_that_must_agree": [
+   "the embedding entering the first layer \u2014 it produces one vector and the stack expects a bundle",
+   "ordinary branch operators, which receive the REDUCED `[..., d]` and are otherwise unchanged",
+   "the final norm and head, which have their own reduction (`hc_head_{fn,base,scale}`)",
+   "the MTP block, which carries a further set of its own"
+  ],
+  "consequence_for_this_wave": "A single per-layer flag would let a stack claim hyper-connections while its embedding and head silently assumed one stream. The topology is declared once, on the component."
+ },
+ "sinkhorn_is_first_class": {
+  "rule": "`hc_split_sinkhorn` is an operation in the execution language, not metadata preprocessing and not a reshape. It runs 20 iterative normalisation steps.",
+  "shape": "HyperConnectionWeights { input: projected current-state statistics, base, scale, streams, iterations, epsilon } -> { pre[hc], post[hc], comb[hc,hc] }",
+  "why_it_matters_now": "Naming it separately in the representation is what lets wave 17 test five things independently \u2014 the dynamic mix projection, the Sinkhorn split, the stream reduction, the branch, and the stream expansion \u2014 instead of one opaque hyper-connection path that can only be judged end to end."
+ },
+ "result": {
+  "scored_on": "2026-09-03",
+  "outcome_semantics_version": 14,
+  "rows_cleared": 0,
+  "verdicts_moved": 0,
+  "text_closure_blockers": "1029 -> 1037 (+8)",
+  "direction": "ROSE, as preregistered. VINDEX3 now understands more and can therefore say more precisely what it cannot do.",
+  "per_row": {
+   "tencent/Hy4-preview": "25 -> 32 (+7). It declares `hc_mult` and `hc_eps` but NOT `hc_sinkhorn_iters` \u2014 a PARTIAL topology, which refuses. Withdrawing the surface takes six probes dark with it (attention_bias, hidden_act, rms_norm_eps, norm_topk_prob, num_experts_per_tok, routed_scaling_factor) and adds the surface refusal itself. This is the wave-11 revelation pattern running BACKWARDS, and it is the honest direction: half a declaration is not a topology, Hy4 ships no reference, and guessing the missing parameter is what the refusal exists to prevent.",
+   "zai-org/GLM-5.3-Flash": "30 -> 31 (+1). Declares all three, so the topology resolves, the surface builds, and the op plan refuses it \u2014 one added blocker, and its three hc keys correctly still block as an unimplemented component.",
+   "deepseek-ai/DeepSeek-V4-Flash / -Pro": "34 -> 34, unchanged. The forecast said these two 'may change'; they did not, and the reason is the wave ordering. Their surface does not build at all \u2014 they are two of the twelve rows with no recognised per-layer norm operands \u2014 so a topology declared on the surface cannot be observed there until wave 18 carries their `attn_norm`/`ffn_norm` spellings. Their hc keys still block, as they should."
+  },
+  "the_first_implementation_fired_this_wave_s_OWN_falsifier": {
+   "the_falsifier": "'if these models look closer to GREEN simply because the topology became recognized, the implementation is wrong.'",
+   "what_happened": "The first run measured 1029 -> 1026, with DeepSeek-V4 going 34 -> 31 and clearing exactly `hc_mult`, `hc_eps` and `hc_sinkhorn_iters`. Blockers went DOWN on the very rows this wave was about.",
+   "the_cause": "Registering the three keys as consumed routed them through the plan's 'read by a registered parser' exit, which grades a finding `representable` for any class except `ExecutionSemantic` and `Unknown`. They kept the correct CLASS \u2014 `unsupported_component` \u2014 and lost the blocking CATEGORY. So a key configuring a component this build knows it cannot execute stopped blocking the moment a parser touched it.",
+   "why_it_is_the_sharpest_instance_yet": "`UnsupportedComponent` means 'we know exactly what this configures and have no implementation'. A parser reading such a key proves recognition and nothing whatever about carriage \u2014 the same doctrine wave 10 established, in the one place where the gap between the two is widest. `Unknown` was already excluded from that exit for a weaker version of the same reason.",
+   "the_fix": "`UnsupportedComponent` joins `ExecutionSemantic` and `Unknown` in being unable to take the parser-read exit, and gets its own arm: `Unrepresented`, still blocking, with a detail naming the component it configures. DeepSeek-V4 went back to 34.",
+   "caught_by": "The preregistered falsifier, not a test. Every suite was green on the broken version."
+  },
+  "the_witness": {
+   "the_topology_is_represented": "`ResidualTopology::HyperConnection { streams: 4, sinkhorn_iters: 20, sinkhorn_eps: 1e-6 }` on the COMPONENT, with the mix projection's row count derived as `(2 + streams) * streams` = 24 so it cannot drift. Control: the same fixture without the declaration is `SingleStream` with one stream.",
+   "the_single_stream_programme_refuses": "Not 'lowers it differently' \u2014 refuses, before an operand is read, naming all three independently sufficient reasons (stream multiplicity, dynamic weights, cross-stream mixing).",
+   "the_report_says_so_too": "An `unsupported_component` finding that blocks, whose detail carries BOTH halves \u2014 the surface is complete AND the topology is not executable. Wave 11's lesson applied to a second topology.",
+   "a_partial_declaration_refuses": "`hc_mult` alone resolves to nothing and the surface refuses, rather than completing itself with one stream. A four-stream checkpoint served as a one-stream model computes fluent wrong output, and Hy4-preview is the real row that takes this path."
+  },
+  "a_wave_7_defect_closed_on_the_way": "The unsupported-component label for this mechanism was `hyper-connections (GLM-5.x)` and appeared verbatim on a Tencent checkpoint and two DeepSeek ones. Wave 7 recorded family-named labels as a defect; this is the first fixed, and it could only be fixed now because wave 16 read the actual arithmetic and can name the mechanism rather than the place it was first seen."
+ }
+}

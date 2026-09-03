@@ -57,6 +57,96 @@ pub const PLAN_SCHEMA: u32 = 6;
 /// `plan/tests/identity.rs` pins fixture verdicts against this value, so
 /// a change that flips one fails there until the version is bumped.
 ///
+/// **14** — hyper-connections are a declared RESIDUAL TOPOLOGY, and
+/// explicitly not executable. Read from DeepSeek-V4-Flash's own
+/// `inference/model.py`: the state is a bundle of `hc_mult` parallel
+/// streams, each sublayer reduces the bundle to one vector and expands
+/// its output back, and the weights are computed per token through a
+/// projection whose statistics a 20-iteration Sinkhorn split turns into
+/// reduce weights, expand weights and a cross-stream combination matrix.
+/// `ResidualTopology` states it on the COMPONENT — once the residual
+/// means `[.., streams, d]`, the embedding, every branch operator and
+/// the head must agree — and a HALF declaration refuses rather than
+/// completing itself with one stream. The op plan refuses before reading
+/// an operand and the report says so, both through the topology's own
+/// `unimplemented_reason`. The component label also stops being
+/// family-named: `hyper-connections (GLM-5.x)` appeared verbatim on
+/// Tencent and DeepSeek checkpoints, and is now named for the mechanism.
+///
+/// **13** — LFM2's norm dialect is carried. `operator_norm` and
+/// `ffn_norm` are the two-norm PRE-only estate under LFM2's own
+/// spelling (`Lfm2DecoderLayer.forward`), and `norm_eps` is its
+/// epsilon key. No new execution semantic: the placement is one this
+/// build already runs. Registering `lfm2` also stops the identity
+/// resolving to `GenericArch`, which was serving Llama-shaped defaults
+/// to a stack whose every other layer is a short convolution. Forecast
+/// before the code, and deliberately not a GREEN wave: four rows lose
+/// three blockers each and NONE clears — the conv mixer's geometry and
+/// the `full_attn_idxs` schedule are still absent, and they are
+/// execution semantics rather than spellings.
+///
+/// **12** — three families resolve to their own identities. `olmo2`,
+/// `olmo3` and `exaone4` matched no registry entry and fell through to
+/// `GenericArch`, which had already chosen PER-HEAD QK norm for OLMo-2 —
+/// the wrong reduction for a family whose reference normalises the whole
+/// projection. Each entry declares only what its reference establishes:
+/// OLMo-2's `QkNormScope::FullProjection` (the operator OLMoE already
+/// judges), the 1e-5 `rms_norm_eps` class default both families take, and
+/// EXAONE-4's per-head norm applied after the head reshape — its own
+/// entry precisely because that one difference is an operator, not a
+/// label. Registration resolves a NAME and grants nothing else: a
+/// declaration the schema cannot carry still refuses under a registered
+/// family. Forecast before the code: three rows clear, four keep the
+/// blocker named for each.
+///
+/// **11** — post-norm placement EXECUTES. Wave 10 could represent it and
+/// refused to lower it; the generic executor already applied the wrap
+/// norms to each sublayer's OUTPUT before the residual add, and what it
+/// could not do was run with NO pre-sublayer norm. Both the batch and the
+/// decode path now read the raw residual where the placement says no norm
+/// conditions it, and the epsilon QK norm runs at moved off the
+/// pre-attention norm's field onto the layer's own `declared_norm_eps` —
+/// an epsilon and a placement are unrelated facts, and coupling them is
+/// what made this unrepresentable. A post-only stack's single declared
+/// epsilon belongs to the post sites, which are the only norm sites it
+/// has; a four-norm stack still refuses an unjudged post epsilon, because
+/// there the two sites exist and can differ. Forecast before the code:
+/// no row clears (identity still blocks all seven), seven rows lose the
+/// unsupported-component blocker.
+///
+/// **10** — a stack may normalise its sublayers' OUTPUT. `NormPlacement`
+/// knew two transformer shapes, two-norm and four-norm, and OLMo-2,
+/// OLMo-3 and EXAONE-4 declare a third: the sublayer reads the raw
+/// residual and its result is normalised before the add
+/// (`Olmo2DecoderLayer.forward`, identical in the other two). Their
+/// operand estate — both wrap norms, neither pre-norm — matched nothing,
+/// so the execution surface refused to build and every probe on those
+/// components answered nothing at all. `PostOnly` is recognised from that
+/// estate, and the spelling collision is why it is read from which norms
+/// EXIST: these families' `post_attention_layernorm` is a true post-norm
+/// where a Llama stack's is the pre-FFN norm. The op plan REFUSES it —
+/// representable, explicitly not executable, a distinction the closure
+/// vocabulary now states in its own defect. Forecast before the code:
+/// no row clears, seven surfaces build, sixteen blockers retire because a
+/// probe can finally answer, and three answer and still refuse.
+///
+/// **9** — a wholly-routed family has an FFN, and the always-on shared
+/// branch is sized by what the checkpoint declares. The FFN presence rule
+/// read only the DENSE width, so `Qwen3_5MoeTextConfig` — which declares
+/// no `intermediate_size` at all, because every layer is a routed block —
+/// was graded as having no FFN op, and `hidden_act` and
+/// `num_experts_per_tok` had nothing to answer to. `FfnSurface`'s dense
+/// width becomes optional so that absence is stated rather than written
+/// as a zero. Beside it, `shared_expert_intermediate_size` is read (in
+/// both declared spellings) and becomes the ONE authority for the shared
+/// branch's width: two lineages size it differently and this build was
+/// deriving it as `moe_intermediate_size * shared_experts`, which is
+/// Kimi's fact and is fourfold wrong on Qwen1.5-MoE. Qwen's gated shared
+/// expert — `sigmoid(shared_expert_gate(x)) * shared(x)`, summed with the
+/// routed branch — is declared with its own operand, and Qwen3.5-MoE's
+/// stacked expert bank is declared as the `PackedBF16` it is. Forecast
+/// before the code: exactly five rows clear.
+///
 /// **8** — two keys read by no implementation, ours or upstream, are
 /// read-and-checked rather than graded `Unknown`. Falcon3's
 /// `activation: "swiglu"` names the FFN shape (gated, SiLU on the gate) and
@@ -114,7 +204,7 @@ pub const PLAN_SCHEMA: u32 = 6;
 /// architectures, now block instead of passing silently into
 /// `GenericArch`'s Llama-shaped defaults. Measured on the conformance
 /// corpus: 15 of 42 declared `model_type` strings, across 30 checkpoints.
-pub const PLANNER_SEMANTICS_VERSION: u32 = 8;
+pub const PLANNER_SEMANTICS_VERSION: u32 = 14;
 
 /// Who judged a plan.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]

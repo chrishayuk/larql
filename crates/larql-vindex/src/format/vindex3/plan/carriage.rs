@@ -452,6 +452,21 @@ pub const CARRIAGE_RULES: &[CarriageRule] = &[
         site: "ExecutionSurface.ffn.moe.shared_experts",
         probe: Some(probe_moe_shared_experts),
     },
+    // The same branch's WIDTH, which two lineages state two ways. The
+    // container carries the resolved width, so this is checked against
+    // what the branch will actually be built at — not echoed back.
+    CarriageRule {
+        leaf: "shared_expert_intermediate_size",
+        reaches: Carriage::Lowered,
+        site: "ExecutionSurface.ffn.moe.shared_expert_intermediate_size → SharedExpertOp.intermediate_size (and the shared-expert operand shapes)",
+        probe: Some(probe_shared_expert_width),
+    },
+    CarriageRule {
+        leaf: "moe_shared_expert_intermediate_size",
+        reaches: Carriage::Lowered,
+        site: "ExecutionSurface.ffn.moe.shared_expert_intermediate_size → SharedExpertOp.intermediate_size (and the shared-expert operand shapes)",
+        probe: Some(probe_shared_expert_width),
+    },
     CarriageRule {
         leaf: "moe_router_activation_func",
         reaches: Carriage::Represented,
@@ -590,6 +605,15 @@ pub const CARRIAGE_RULES: &[CarriageRule] = &[
     // ── Norms ───────────────────────────────────────────────────────
     CarriageRule {
         leaf: "rms_norm_eps",
+        reaches: Carriage::Lowered,
+        site: "ExecutionSurface.norm.pre.eps → NormOp.eps",
+        probe: Some(probe_pre_norm_eps),
+    },
+    // LFM2 spells the same fact `norm_eps`. Its separate
+    // `block_norm_eps` is NOT this fact and has no rule, so it keeps
+    // refusing until something judges the FFN blocks it names.
+    CarriageRule {
+        leaf: "norm_eps",
         reaches: Carriage::Lowered,
         site: "ExecutionSurface.norm.pre.eps → NormOp.eps",
         probe: Some(probe_pre_norm_eps),
@@ -2100,6 +2124,17 @@ fn probe_moe_routing_policy(component: &Component, _ctx: &ProbeContext<'_>) -> O
 fn probe_moe_shared_experts(component: &Component, _ctx: &ProbeContext<'_>) -> Option<Value> {
     let moe = component.execution.as_ref()?.ffn.as_ref()?.moe.as_ref()?;
     Some(json!(moe.shared_experts))
+}
+
+/// The width the shared branch will be built at.
+///
+/// A checkpoint that declares this key and a container that resolved the
+/// branch to some other width disagree about a real projection, and the
+/// mismatch must show: Qwen1.5-MoE declares 5632 where the routed width
+/// times the shared count is 1408.
+fn probe_shared_expert_width(component: &Component, _ctx: &ProbeContext<'_>) -> Option<Value> {
+    let moe = component.execution.as_ref()?.ffn.as_ref()?.moe.as_ref()?;
+    Some(json!(moe.shared_expert_intermediate_size?))
 }
 
 fn probe_moe_router_kind(component: &Component, _ctx: &ProbeContext<'_>) -> Option<Value> {

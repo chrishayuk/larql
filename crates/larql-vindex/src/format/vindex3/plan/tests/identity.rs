@@ -101,7 +101,7 @@ fn identity_survives_a_round_trip_and_parse_refuses_other_schemas_by_name() {
 /// witness is re-recorded.
 #[test]
 fn the_semantics_version_is_pinned_to_known_verdicts() {
-    assert_eq!(PLANNER_SEMANTICS_VERSION, 8);
+    assert_eq!(PLANNER_SEMANTICS_VERSION, 14);
 
     let dir = tempfile::tempdir().unwrap();
     let admissible = plan_system(&one_glimmer(dir.path()));

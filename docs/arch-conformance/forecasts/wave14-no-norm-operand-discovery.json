@@ -1,0 +1,55 @@
+{
+ "wave": 14,
+ "name": "no-per-layer-norm-operand-discovery",
+ "written": "2026-09-03",
+ "kind": "DISCOVERY \u2014 the deliverable is a CLASSIFICATION, not a verdict delta. Nothing is implemented in this wave, and a GREEN count is not how it is scored.",
+ "baseline": "wave 13 (semantics 12): GREEN 41 / AMBER 3 / RED 65 / BUG 0 / silent drops 0 / blockers 1044",
+ "the_population": "12 rows whose execution surface refuses with `norm placement (stack carries no per-layer norm operands)` \u2014 the largest of the three norm-placement shapes found in the wave-11 rerank, and the one deliberately left until last because premature implementation was the risk.",
+ "the_method_and_its_constraint": "Class derived from THREE sources per row and never from a filename or an absence: (1) the reference forward implementation where one exists; (2) the ACTUAL tensor inventory, read from each checkpoint's safetensors header over HTTP range requests rather than assumed; (3) the config. Where no reference exists, that is recorded as a fact about the evidence rather than papered over.",
+ "the_headline": "It is NOT one problem. Four families, three distinct causes, and none of the twelve rows is legitimately normless \u2014 every one of them HAS per-layer norms. The refusal was reading the absence of four specific SPELLINGS as the absence of an operator.",
+ "classification": [
+  {
+   "rows": 4,
+   "family": "lfm2 / lfm2_moe (LFM2-350M, LFM2-2.6B, LFM2.5-2.6B, LFM2.5-8B-A1B)",
+   "current_symptom": "no per-layer norm operands",
+   "actual_architecture_fact": "It has two per-layer norms and they are spelled `operator_norm` and `ffn_norm`. `Lfm2DecoderLayer.forward` is `residual = h; h = mixer(operator_norm(h)); h = h + residual; h = h + feed_forward(ffn_norm(h))` \u2014 a standard two-norm PRE-only stack, structurally identical to what `NormPlacement::PreOnly` already executes. The mixer is attention on the layers named in `full_attn_idxs` and a short conv elsewhere. The config also spells its epsilon `norm_eps` (with a separate `block_norm_eps`), not `rms_norm_eps`.",
+   "classification": "C \u2014 config/tensor naming dialect gap",
+   "next_action": "Role-table entries for `operator_norm` -> PreAttentionNorm and `ffn_norm` -> PreFfnNorm, plus the `norm_eps` config spelling. No new placement and no new operator: the shape is one this build already runs."
+  },
+  {
+   "rows": 5,
+   "family": "nemotron_h (Nemotron-3 Nano-4B / Nano-30B-A3B / Super-120B / Ultra-550B, Nemotron-3.5 Lightning)",
+   "current_symptom": "no per-layer norm operands",
+   "actual_architecture_fact": "One norm per BLOCK \u2014 `backbone.layers.N.norm.weight` (42 of them on Nano-4B) \u2014 plus the Mamba2 mixer's own gated norm `backbone.layers.N.mixer.norm.weight` (21) and a final `backbone.norm_f.weight`. `NemotronHBlock`'s own docstring: 'Each block applies pre-normalization followed by the mixer, then adds a residual connection.' The estate is the mamba_ssm lineage's (`backbone.` / `mixer.`), and the config declares its schedule as `hybrid_override_pattern` ('M-M-M-MM-...') with `layer_norm_epsilon` beside `rms_norm_eps`.",
+   "classification": "C for the spelling, D for the topology \u2014 and the second is the load-bearing half",
+   "why_it_is_not_only_a_dialect": "A Nemotron-H 'layer' is ONE block carrying ONE mixer \u2014 Mamba, attention, MLP or MoE \u2014 with a single norm and a single residual add. VINDEX3's layer model is an attention-class operator PAIRED with an FFN. `NormPlacement::PreMixer` already describes one-norm-one-operator for a pure-SSM stack; what is absent is that shape with HETEROGENEOUS block types in one stack. Mapping the names without the topology would pair blocks that the reference never pairs.",
+   "next_action": "Forecast the block-topology semantic first, as its own wave. The naming is a prerequisite, not the fix."
+  },
+  {
+   "rows": 2,
+   "family": "deepseek_v4 (DeepSeek-V4-Flash, DeepSeek-V4-Pro)",
+   "current_symptom": "no per-layer norm operands",
+   "actual_architecture_fact": "It has `layers.N.attn_norm.weight` and `layers.N.ffn_norm.weight`, 43 of each \u2014 the same two-norm shape under a third spelling, with no `model.` prefix at all. But the estate ALSO carries `layers.N.hc_attn_scale`, `layers.N.hc_ffn_scale` and `hc_head_scale`: hyper-connections, a residual topology in which the sublayer output is combined through learned per-site scales rather than added plainly.",
+   "classification": "C for the norms, D for the residual topology",
+   "next_action": "The dialect entries are cheap and would let the surface build \u2014 and that is exactly the trap. Building the surface without hyper-connections would produce a component whose residual arithmetic is wrong while every declaration has a home. Hyper-connections must be represented (or explicitly refused) BEFORE the norms are mapped, or this row goes GREEN and cannot execute.",
+   "no_reference_available": "transformers 5.5.0 ships no `deepseek_v4` modeling code, so the forward is not readable here. That is a fact about the evidence: the classification above rests on the tensor estate and the config, and the hyper-connection semantics would need the checkpoint's own remote code before anything is implemented.",
+   "CORRECTION_2026_09_03": "This entry said the estate carries 'hyper-connections, a residual topology in which the sublayer output is combined through learned per-site scales rather than added plainly', and recorded that no reference was readable. BOTH halves need correcting. The repo DOES ship a reference at `inference/model.py`, and the mechanism is far more than scales: the hidden state is a BUNDLE of `hc_mult` = 4 parallel residual streams, `[b,s,hc,d]` rather than `[b,s,d]`. Each sublayer reduces hc streams to one, runs the ordinary branch, then expands back to hc \u2014 and the reduce/expand weights are computed PER TOKEN from the current state through a `[mix_hc, hc*d]` projection (`hc_*_fn`, mix_hc = (2+hc)*hc), RMS-normalised over the flattened streams, then split by 20 iterations of Sinkhorn normalisation (`hc_sinkhorn_iters: 20`, `hc_eps: 1e-6`) into `pre[hc]`, `post[hc]` and a `comb[hc,hc]` combination matrix. The per-layer operands are six, not one: `hc_{attn,ffn}_{fn,base,scale}` x43, plus a stack-level `hc_head_{fn,base,scale}` for the head's own reduction and a further set on the MTP block. The classification (D) stands; the SCOPE was understated, and a reader would have under-planned the work."
+  },
+  {
+   "rows": 1,
+   "family": "qwen4_exp_text (Qwen3.8-Flash-Next)",
+   "current_symptom": "no per-layer norm operands",
+   "actual_architecture_fact": "There is NO plain per-layer norm at all. The only per-layer norms are INSIDE hyper-connection modules \u2014 `layers.N.attn_hyper_connection.hc_norm.weight` and `layers.N.mlp_hyper_connection.hc_norm.weight`, 48 of each \u2014 beside a stack-level `hyper_connection_mixer.hc_norm`, per-layer-embedding norms (`ple.norm_conv`, `ple.norm_key`, `ple.norm_query`) and an MTP head with its own `pre_fc_norm_*` pair.",
+   "classification": "D \u2014 execution semantic genuinely absent (with a B flavour: the norm IS represented, through another object)",
+   "why_it_is_the_cleanest_D": "The other three rows have a norm that a role-table entry could bind. This one's norm is a COMPONENT of a mechanism this schema does not have. Binding `hc_norm` to a pre-attention norm role would not be a dialect mapping; it would be asserting a residual topology the checkpoint does not use.",
+   "next_action": "Nothing until hyper-connections are represented. This row is the right witness for that semantic, and it is already blocked on 36 concepts, so it is a poor early target."
+  }
+ ],
+ "what_this_says_about_the_remaining_work": "The wave-11 rerank counted this population as one cluster of 12 rows and 13-36 blockers each. It is four families and three causes, and the cheap half (4 LFM2 rows, a pure naming dialect over a placement this build already executes) is separable from the expensive half (hyper-connections on 3 rows, heterogeneous block topology on 5). That is the pattern the earlier sweeps kept finding: one compatibility cluster hiding distinct causal semantics \u2014 see the wave-10 rerank, where `architecture_identity` looked causal and was not.",
+ "the_follow_up_forecasts_to_freeze_after_this": [
+  "LFM2 dialect: role-table entries for `operator_norm`/`ffn_norm` and the `norm_eps` config spelling. Predict per row which of the remaining 13-24 blockers actually clear \u2014 the norms are one idea among several on these rows (conv geometry, `full_attn_idxs`, block sizing), so the surface building is NOT the same as the row clearing.",
+  "Nemotron-H block topology: a stack whose layers are single heterogeneous blocks. Forecast the SCHEMA change, and expect it to reveal rather than retire \u2014 these rows carry 20-29 blockers each.",
+  "Hyper-connections: represent or explicitly refuse, with DeepSeek-V4 and Qwen3.8-Flash-Next as the witnesses. Until then, the LFM2 and Nemotron dialect work must not be allowed to make a hyper-connection row admissible."
+ ],
+ "the_trap_this_wave_exists_to_avoid": "Three of the four families would have their surface BUILD from role-table entries alone, because their norms are really there under other names. Two of those three also carry a residual topology this schema cannot express. Adding the names first would move rows toward GREEN while leaving their arithmetic wrong \u2014 the same shape as wave 13's skipped FFN, which the sweep could not see and only a real-checkpoint witness caught."
+}

@@ -167,7 +167,7 @@ mod mutation_table {
             },
         )
         .unwrap();
-        let call = operands.call(op, &inputs, layer.pre_attention_norm.eps, hidden);
+        let call = operands.call(op, &inputs, layer.declared_norm_eps, hidden);
         ReferenceBackend
             .attention_mutated(call, mutation)
             .unwrap()

@@ -32,7 +32,7 @@ use super::{
     AttentionOp, ClosureDefect, ComponentOpPlan, EmbeddingOp, ExpertBank, FfnIdentity, FfnOp,
     GateOp, GatedDeltaOp, HybridFfnOp, KdaOp, LayerAttention, LayerFfn, LayerPlan, Mamba2Op, MlaOp,
     NormOp, OpPlanOutcome, OperandRef, OutputOp, PackedProjection, QkNormOp, RoutedFfnOp,
-    SharedExpertOp, SinkOp,
+    SharedExpertBranchGateOp, SharedExpertOp, SinkOp,
 };
 use crate::error::VindexError;
 use larql_models::config::ExpertFormat;
@@ -40,6 +40,10 @@ use larql_models::config::ExpertFormat;
 /// The post-norm epsilon, named as [`ClosureDefect::UnjudgedSemantic`]
 /// reports it.
 const POST_NORM_EPS_FACT: &str = "post-norm epsilon";
+/// The shape OLMo-2, OLMo-3 and EXAONE-4 declare, named as the surface
+/// names it.
+const POST_ONLY_PLACEMENT_FACT: &str =
+    "post-norm placement (the norm applies to the sublayer's output)";
 /// The structure that makes the post-norm epsilon load-bearing.
 const FOUR_NORM_PLACEMENT: &str = "four-norm placement";
 /// The routed-FFN op, as the requirer of its judged facts.
@@ -84,6 +88,48 @@ pub fn plan_component_ops(
         }
     };
     let placement = surface.norm.placement.expect("checked above");
+    // Representable, and explicitly NOT executable.
+    //
+    // The container states this placement exactly; what is missing is the
+    // op set. `LayerPlan::pre_attention_norm` is a required `NormOp` that
+    // every executor reads BEFORE its sublayer, and a post-norm stack has
+    // no such operand — the norm it does carry belongs after the sublayer
+    // and before the residual add. Lowering it as `PreOnly` would find
+    // operands for both sites (the names collide: this family's
+    // `post_attention_layernorm` is a true post-norm where a Llama stack's
+    // is the pre-FFN norm) and would run, applying each norm to the wrong
+    // tensor and producing fluent wrong output. So it refuses, the way the
+    // unimplemented router kinds and position policies refuse.
+    // The residual topology is asked FIRST, because it decides what the
+    // residual even is. A stack whose state is a bundle of streams
+    // cannot be lowered by the single-stream programme below at all —
+    // not "with a different scale", but at all — so no operand is read
+    // before this refuses.
+    if let Some(reason) = surface.residual_topology.unimplemented_reason() {
+        return Ok(OpPlanOutcome {
+            plan: None,
+            defects: vec![ClosureDefect::UnimplementedSemantic {
+                component: component.id.clone(),
+                fact: format!(
+                    "residual topology ({} parallel streams) — {reason}",
+                    surface.residual_topology.streams()
+                ),
+                representable_as: format!("ResidualTopology::{:?}", surface.residual_topology),
+            }],
+        });
+    }
+    if let Some(reason) = placement.unimplemented_reason() {
+        return Ok(OpPlanOutcome {
+            plan: None,
+            defects: vec![ClosureDefect::UnimplementedSemantic {
+                component: component.id.clone(),
+                fact: format!("{POST_ONLY_PLACEMENT_FACT} — {reason}"),
+                representable_as: format!(
+                    "NormPlacement::{placement:?}, from the operand evidence"
+                ),
+            }],
+        });
+    }
     // A four-norm stack executes two norms whose epsilon nothing else
     // supplies. `Shared` and a declared value are both judgments;
     // absence is not — and inheriting `eps` here would build exactly the
@@ -91,7 +137,11 @@ pub fn plan_component_ops(
     // means no unjudged epsilon is ever written into one.
     let post_norm: Option<larql_models::config::NormSpec> = match placement {
         NormPlacement::PreOnly | NormPlacement::PreMixer => None,
-        NormPlacement::PrePost => match surface.norm.post {
+        // A post-norm stack runs TWO norms whose epsilon nothing else
+        // supplies, exactly as a four-norm stack does — and it has no
+        // pre-norm site to borrow from, so the requirement is if anything
+        // sharper here.
+        NormPlacement::PostOnly | NormPlacement::PrePost => match surface.norm.post {
             Some(judged) => Some(judged),
             None => {
                 return Ok(OpPlanOutcome {
@@ -161,9 +211,24 @@ pub fn plan_component_ops(
         .iter()
         .any(|l| !l.operator.is_mamba2() && !l.operator.is_conv_qkv());
     let runs_mamba2 = attention_table.iter().any(|l| l.operator.is_mamba2());
+    // A dense FFN needs a dense width. A wholly-routed component has
+    // none and plans no dense layer, so the fact is required exactly when
+    // some layer will run one: no routed judgment at all, a routed
+    // judgment with a declared dense prefix, or Gemma 4's hybrid, where
+    // both branches run every layer.
+    let runs_dense_ffn = has_ffn_layer
+        && ffn_surface.is_some_and(|f| {
+            f.moe
+                .is_none_or(|m| m.hybrid || m.dense_prefix_layers.unwrap_or(0) > 0)
+        });
     for (runs, present, fact) in [
         (attends, attn.is_some(), "attention surface"),
         (has_ffn_layer, ffn_surface.is_some(), "ffn surface"),
+        (
+            runs_dense_ffn,
+            ffn_surface.is_some_and(|f| f.intermediate_size.is_some()),
+            "ffn.intermediate_size (a dense FFN layer's width)",
+        ),
         (
             runs_mamba2,
             surface.mamba2.is_some(),
@@ -178,7 +243,11 @@ pub fn plan_component_ops(
             });
         }
     }
-    let inter = ffn_surface.map_or(0, |f| f.intermediate_size);
+    // The DENSE width, absent on a wholly-routed stack. Zero-filled only
+    // where it feeds `StackGeometry`, whose convention for a fact this
+    // component does not have is already zero (see the attention
+    // geometry above); the dense FFN op reads the checked value.
+    let inter = ffn_surface.and_then(|f| f.intermediate_size);
     let gated_ffn = ffn_surface.is_some_and(|f| f.ffn_type == FfnType::Gated);
     let ffn_moe = ffn_surface.and_then(|f| f.moe);
     // Head geometry is a per-layer fact when the family varies it
@@ -211,7 +280,7 @@ pub fn plan_component_ops(
                     1
                 },
             kv_rows: num_kv_heads * head_dim,
-            intermediate: inter,
+            intermediate: inter.unwrap_or(0),
             head_dim,
             num_q_heads,
             num_kv_heads,
@@ -546,12 +615,13 @@ pub fn plan_component_ops(
             });
             let consumed = slot.len();
             layers.push(LayerPlan {
+                declared_norm_eps: surface.norm.pre.eps,
                 layer,
-                pre_attention_norm: norm_op(
+                pre_attention_norm: Some(norm_op(
                     surface.norm.pre,
                     &stack_id,
                     get(OperandRole::Mamba2PreMixerNorm),
-                ),
+                )),
                 attention: LayerAttention::Mamba2(Box::new(Mamba2Op {
                     geometry: mixer.geometry,
                     activation: mixer.activation,
@@ -594,12 +664,13 @@ pub fn plan_component_ops(
             });
             let consumed = slot.len();
             layers.push(LayerPlan {
+                declared_norm_eps: surface.norm.pre.eps,
                 layer,
-                pre_attention_norm: norm_op(
+                pre_attention_norm: Some(norm_op(
                     surface.norm.pre,
                     &stack_id,
                     get(OperandRole::Mamba2PreMixerNorm),
-                ),
+                )),
                 attention: LayerAttention::ConvQkv(Box::new(super::conv_qkv::ConvQkvOp {
                     geometry: attn_geometry,
                     residual_in_fp32: surface.residual_in_fp32,
@@ -646,6 +717,16 @@ pub fn plan_component_ops(
         // Placement decides which operand feeds the pre-FFN norm: the
         // dedicated one under four-norm, the overloaded
         // `post_attention_layernorm` under two-norm.
+        // Which norm operand feeds each site. `None` for the pre-FFN
+        // slot means the FFN reads the raw residual — the post-norm
+        // program — and is not the same as a missing operand.
+        // Which pre-sublayer norm operands this placement HAS. `None`
+        // means the site does not exist, and the operand is not there to
+        // be fetched — a post-norm stack ships neither.
+        let pre_attn_role = match placement {
+            NormPlacement::PostOnly => None,
+            _ => Some(OperandRole::PreAttentionNorm),
+        };
         let (post_attention_norm, pre_ffn_role, post_ffn_norm) = match placement {
             NormPlacement::PrePost => {
                 let spec = post_norm.expect("PrePost resolves or returns above");
@@ -655,11 +736,25 @@ pub fn plan_component_ops(
                         &stack_id,
                         get(OperandRole::PostAttentionNorm),
                     )),
-                    OperandRole::PreFfnNorm,
+                    Some(OperandRole::PreFfnNorm),
                     Some(norm_op(spec, &stack_id, get(OperandRole::PostFfnNorm))),
                 )
             }
-            NormPlacement::PreOnly => (None, OperandRole::PostAttentionNorm, None),
+            // Both wrap norms, no pre-FFN norm: each sublayer reads the
+            // raw residual and its OUTPUT is normalised before the add.
+            NormPlacement::PostOnly => {
+                let spec = post_norm.expect("PostOnly resolves or returns above");
+                (
+                    Some(norm_op(
+                        spec,
+                        &stack_id,
+                        get(OperandRole::PostAttentionNorm),
+                    )),
+                    None,
+                    Some(norm_op(spec, &stack_id, get(OperandRole::PostFfnNorm))),
+                )
+            }
+            NormPlacement::PreOnly => (None, Some(OperandRole::PostAttentionNorm), None),
             NormPlacement::PreMixer => panic!(
                 "layer {layer} carries transformer operands under a mixer-only norm \
                  placement; closure should have refused this before the plan was built"
@@ -671,7 +766,13 @@ pub fn plan_component_ops(
             .map(|(o, _)| o.id.clone())
             .unwrap_or_default();
         let dense_op = || FfnOp {
-            intermediate_size: inter,
+            intermediate_size: inter.unwrap_or_else(|| {
+                panic!(
+                    "component {} plans a dense FFN layer with no declared dense width; \
+                     closure should have refused this before the plan was built",
+                    component.id
+                )
+            }),
             activation: ffn_s.activation,
             gate_policy: ffn_s.gate_policy,
             gate: gated_ffn.then(|| operand(&stack_id, get(OperandRole::FfnGate))),
@@ -722,13 +823,17 @@ pub fn plan_component_ops(
                 // `required_roles`/`absent_op` paired `Some` here with
                 // `moe.shared_experts > 0` exactly, so this cannot desync
                 // from the closure pass that admitted the layer.
-                let shared = (moe.shared_experts > 0).then(|| SharedExpertOp {
-                    intermediate_size: moe.expert_intermediate_size * moe.shared_experts,
+                let shared = shared_expert_width(&moe).map(|width| SharedExpertOp {
+                    intermediate_size: width,
                     activation: ffn_s.activation,
                     gate_policy: ffn_s.gate_policy,
                     gate: operand(&stack_id, get(OperandRole::SharedExpertGate)),
                     up: operand(&stack_id, get(OperandRole::SharedExpertUp)),
                     down: operand(&stack_id, get(OperandRole::SharedExpertDown)),
+                    branch_gate: moe.shared_expert_gate.map(|spec| SharedExpertBranchGateOp {
+                        spec,
+                        weight: operand(&stack_id, get(OperandRole::SharedExpertBranchGate)),
+                    }),
                 });
                 let routed = RoutedFfnOp {
                     experts: moe.experts,
@@ -786,12 +891,10 @@ pub fn plan_component_ops(
             .map(|t| operand(&stack_id, t));
         let consumed = slot.len() + bank_slot.map_or(0, |b| b.len());
         layers.push(LayerPlan {
+            declared_norm_eps: surface.norm.pre.eps,
             layer,
-            pre_attention_norm: norm_op(
-                surface.norm.pre,
-                &stack_id,
-                get(OperandRole::PreAttentionNorm),
-            ),
+            pre_attention_norm: pre_attn_role
+                .map(|role| norm_op(surface.norm.pre, &stack_id, get(role))),
             // Which attention-class operator this layer runs, decided on
             // OPERAND EVIDENCE: a layer holding the fused q|k|v projection
             // of a recurrence is a DeltaNet layer, whatever else is
@@ -974,7 +1077,10 @@ pub fn plan_component_ops(
                 }))
             },
             post_attention_norm,
-            pre_ffn_norm: Some(norm_op(surface.norm.pre, &stack_id, get(pre_ffn_role))),
+            // Absent under post-norm placement: the FFN reads the raw
+            // residual there, and `post_ffn_norm` carries the site that
+            // does exist.
+            pre_ffn_norm: pre_ffn_role.map(|role| norm_op(surface.norm.pre, &stack_id, get(role))),
             ffn: Some(ffn),
             post_ffn_norm,
             layer_scale,
@@ -1121,10 +1227,18 @@ fn required_roles(ops: &LayerOps) -> Vec<OperandRole> {
         }
         return roles;
     }
-    let mut roles = vec![
-        OperandRole::PreAttentionNorm,
-        OperandRole::PostAttentionNorm,
-    ];
+    // The attention block's two trunk norms, required per placement. A
+    // post-norm stack has no pre-attention norm to require, and
+    // requiring one would report a missing operand for a tensor the
+    // checkpoint correctly never shipped.
+    let mut roles = if ops.placement == NormPlacement::PostOnly {
+        vec![OperandRole::PostAttentionNorm]
+    } else {
+        vec![
+            OperandRole::PreAttentionNorm,
+            OperandRole::PostAttentionNorm,
+        ]
+    };
     if ops.operator.is_kda() {
         // Fifteen operands, and all fifteen are required: a KDA layer
         // missing one is not a partially-specified attention layer, it is
@@ -1183,9 +1297,14 @@ fn required_roles(ops: &LayerOps) -> Vec<OperandRole> {
             roles.push(OperandRole::AttnV);
         }
     }
-    if ops.placement == NormPlacement::PrePost {
-        roles.push(OperandRole::PreFfnNorm);
-        roles.push(OperandRole::PostFfnNorm);
+    match ops.placement {
+        NormPlacement::PrePost => {
+            roles.push(OperandRole::PreFfnNorm);
+            roles.push(OperandRole::PostFfnNorm);
+        }
+        // The FFN reads the raw residual; only its output is normed.
+        NormPlacement::PostOnly => roles.push(OperandRole::PostFfnNorm),
+        NormPlacement::PreOnly | NormPlacement::PreMixer => {}
     }
     if ops.output_gate {
         roles.push(OperandRole::AttnOutputGate);
@@ -1245,6 +1364,12 @@ fn required_roles(ops: &LayerOps) -> Vec<OperandRole> {
                     OperandRole::SharedExpertUp,
                     OperandRole::SharedExpertDown,
                 ]);
+                // Paired with the judgment, both ways: a declared gate
+                // must find its operand, and the `absent_op` arm below
+                // refuses the operand where no gate is declared.
+                if moe.shared_expert_gate.is_some() {
+                    roles.push(OperandRole::SharedExpertBranchGate);
+                }
             }
         }
     }
@@ -1381,6 +1506,13 @@ fn absent_op(role: OperandRole, ops: &LayerOps) -> Option<&'static str> {
         {
             Some("a shared expert (the routed-FFN judgment declares none)")
         }
+        OperandRole::SharedExpertBranchGate
+            if ops
+                .moe
+                .is_some_and(|m| m.shared_experts == 0 || m.shared_expert_gate.is_none()) =>
+        {
+            Some("a gate on the shared-expert branch (the judgment declares none, so the branch is summed unscaled)")
+        }
         OperandRole::ExpertGateUpScales | OperandRole::ExpertDownScales
             if ops
                 .moe
@@ -1392,6 +1524,14 @@ fn absent_op(role: OperandRole, ops: &LayerOps) -> Option<&'static str> {
             if ops.placement == NormPlacement::PreOnly =>
         {
             Some("four-norm placement")
+        }
+        // Paired the other way: a post-norm stack refuses the two
+        // pre-sublayer norms, so a checkpoint shipping one under this
+        // placement is a disagreement rather than a spare tensor.
+        OperandRole::PreAttentionNorm | OperandRole::PreFfnNorm
+            if ops.placement == NormPlacement::PostOnly =>
+        {
+            Some("a pre-sublayer norm (post-norm placement normalises each sublayer's output)")
         }
         _ => None,
     }
@@ -1673,23 +1813,40 @@ fn expected_shape(
         }
         OperandRole::PerExpertDown(_) => Some(vec![hidden, moe?.expert_intermediate_size]),
         // Always-active shared expert(s): the same gated-FFN shape as a
-        // routed expert, widened by `shared_experts` — Kimi's
-        // `KimiSparseMoeBlock.__init__` sizes `KimiMLP` at
-        // `moe_intermediate_size * num_shared_experts`, one wider FFN
-        // rather than `shared_experts` separate ones.
+        // routed expert, at the width the judgment declares. Sized from
+        // `shared_expert_intermediate_size` and NOT re-derived here —
+        // Kimi's `KimiSparseMoeBlock.__init__` sizes one wider `KimiMLP`
+        // at `moe_intermediate_size * num_shared_experts` while Qwen's
+        // block sizes it from its own key, and Qwen1.5-MoE's two answers
+        // differ fourfold (5632 declared against 1408 derived).
         OperandRole::SharedExpertGate | OperandRole::SharedExpertUp => {
-            let m = moe?;
-            Some(vec![m.expert_intermediate_size * m.shared_experts, hidden])
+            Some(vec![shared_expert_width(moe?)?, hidden])
         }
-        OperandRole::SharedExpertDown => {
-            let m = moe?;
-            Some(vec![hidden, m.expert_intermediate_size * m.shared_experts])
-        }
+        OperandRole::SharedExpertDown => Some(vec![hidden, shared_expert_width(moe?)?]),
+        // The scalar that gates the branch: one logit per token.
+        OperandRole::SharedExpertBranchGate => Some(vec![SCALAR_GATE_ROWS, hidden]),
     }
 }
 
 /// Gate and up: the two branches sharing one fused operand.
 const FUSED_BRANCHES: usize = larql_models::quant::mxfp4::FUSED_HALVES;
+
+/// The shared-expert branch gate projects to ONE logit per token, so its
+/// operand carries a single row. Named rather than written as a literal
+/// `1`, which at that position would read as a placeholder.
+const SCALAR_GATE_ROWS: usize = 1;
+
+/// The width of the always-active shared branch, or `None` when the
+/// judgment declares no shared expert.
+///
+/// The single place this build answers the question. The two lineages
+/// size the branch differently and the architecture already resolved
+/// which applies (`ModelArchitecture::shared_expert_intermediate_size`);
+/// re-deriving it here from the routed width would put a second answer
+/// beside that one, and on Qwen1.5-MoE the two differ fourfold.
+fn shared_expert_width(moe: &MoeSurface) -> Option<usize> {
+    (moe.shared_experts > 0).then_some(moe.shared_expert_intermediate_size)?
+}
 
 /// Stored shape of a packed `[experts, rows, k]` projection under the
 /// judged format: MXFP4 packs `k` as `k/32` groups of 16 bytes (32
@@ -1766,6 +1923,8 @@ mod tests {
             expert_format,
             gate_up_layout: Some(larql_models::config::GateUpLayout::ContiguousHalves),
             shared_experts: 0,
+            shared_expert_intermediate_size: None,
+            shared_expert_gate: None,
             hybrid: false,
         }
     }

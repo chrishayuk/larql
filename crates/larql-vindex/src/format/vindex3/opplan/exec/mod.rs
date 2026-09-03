@@ -558,10 +558,13 @@ fn execute_layer<B: PlanBackend + ?Sized, K: KvState + ?Sized>(
     // is untouched and rows are disjoint, so the result is bit-identical
     // to the serial order — parallelism here is an execution strategy,
     // never a reassociation.
-    let inputs: Vec<Vec<f32>> = h
-        .par_iter()
-        .map(|row| prepared.pre_attention.apply(backend, row))
-        .collect();
+    // Under post-norm placement the sublayer reads the RAW residual; the
+    // wrap norm applies to its output before the add. Same program as the
+    // decode path, which must not be able to disagree with this one.
+    let inputs: Vec<Vec<f32>> = match &prepared.pre_attention {
+        Some(norm) => h.par_iter().map(|row| norm.apply(backend, row)).collect(),
+        None => h.to_vec(),
+    };
     // V3-SERVE-2: the attention realisation and the K/V behaviour are
     // separate decisions. Wanting a populated provider does not mean
     // wanting per-position arithmetic — the batched pass computes the
@@ -725,7 +728,7 @@ fn execute_layer<B: PlanBackend + ?Sized, K: KvState + ?Sized>(
                     let out = backend.attention(ops.call(
                         attention_op,
                         &inputs,
-                        layer.pre_attention_norm.eps,
+                        layer.declared_norm_eps,
                         hidden,
                     ))?;
                     for (key, value) in out.keys.into_iter().zip(out.values) {
@@ -739,7 +742,7 @@ fn execute_layer<B: PlanBackend + ?Sized, K: KvState + ?Sized>(
                         attention_op,
                         ops,
                         &inputs,
-                        layer.pre_attention_norm.eps,
+                        layer.declared_norm_eps,
                         hidden,
                         backend,
                         kv,
@@ -751,7 +754,7 @@ fn execute_layer<B: PlanBackend + ?Sized, K: KvState + ?Sized>(
                         .attention(ops.call(
                             attention_op,
                             &inputs,
-                            layer.pre_attention_norm.eps,
+                            layer.declared_norm_eps,
                             hidden,
                         ))?
                         .outputs
@@ -775,8 +778,10 @@ fn execute_layer<B: PlanBackend + ?Sized, K: KvState + ?Sized>(
     // A mixer-only (Mamba2) layer carries no FFN program: its one
     // residual add happened above, and the layer is complete. Presence
     // follows the program at execution time too.
-    let (Some(pre_ffn), Some(ffn), Some(ffn_op)) = (&prepared.pre_ffn, &prepared.ffn, &layer.ffn)
-    else {
+    // The FFN OP is the discriminator, never its pre-norm — see the
+    // decode path's note. A post-norm layer has no pre-FFN norm and must
+    // still run its FFN, over the raw residual.
+    let (Some(ffn), Some(ffn_op)) = (&prepared.ffn, &layer.ffn) else {
         return Ok(LayerTrace {
             post_attention,
             ffn_input: Vec::new(),
@@ -786,10 +791,13 @@ fn execute_layer<B: PlanBackend + ?Sized, K: KvState + ?Sized>(
     // The normed FFN inputs are computed once here (same values the
     // in-loop computation produced — one deterministic norm per row)
     // so the trace can carry the tap without a second norm pass.
-    let ffn_inputs: Vec<Vec<f32>> = h
-        .par_iter()
-        .map(|row| pre_ffn.apply(backend, row))
-        .collect();
+    let ffn_inputs: Vec<Vec<f32>> = match &prepared.pre_ffn {
+        Some(pre_ffn) => h
+            .par_iter()
+            .map(|row| pre_ffn.apply(backend, row))
+            .collect(),
+        None => h.to_vec(),
+    };
     // The tail every arm shares: post-FFN norm, residual scaling, the
     // residual add and the layer scale. Factored so the two FFN shapes
     // below cannot drift into doing different things after the FFN.

@@ -161,6 +161,43 @@ fn placement_evidence_reads_two_and_four_norm_estates() {
     );
 }
 
+/// The OLMo-2 / OLMo-3 / EXAONE-4 estate: both wrap norms, neither
+/// pre-norm. Its whole discriminator against a two-norm Llama stack is
+/// `post_feedforward_layernorm` — the families share the
+/// `post_attention_layernorm` SPELLING and mean opposite things by it
+/// (there, the norm on the attention output; in Llama, the norm on the
+/// FFN input), so the placement is read from which norms EXIST rather
+/// than from what any one of them is called.
+#[test]
+fn placement_evidence_reads_the_post_norm_estate() {
+    let post = [
+        "0.post_attention_layernorm.weight",
+        "0.post_feedforward_layernorm.weight",
+    ];
+    assert_eq!(
+        norm_placement_evidence(post.iter().copied()),
+        Ok(NormPlacement::PostOnly)
+    );
+
+    // The falsifier, and the reason the discriminator is the FFN norm: a
+    // two-norm Llama stack carries a tensor of the same name and must
+    // keep reading as `PreOnly`.
+    let llama = [
+        "0.input_layernorm.weight",
+        "0.post_attention_layernorm.weight",
+    ];
+    assert_eq!(
+        norm_placement_evidence(llama.iter().copied()),
+        Ok(NormPlacement::PreOnly)
+    );
+
+    // And a post-attention norm ALONE is still no judged placement —
+    // one wrap norm describes no complete stack.
+    let half = ["0.post_attention_layernorm.weight"];
+    let err = norm_placement_evidence(half.iter().copied()).unwrap_err();
+    assert!(err.contains("neither two-norm nor four-norm"), "{err}");
+}
+
 #[test]
 fn placement_evidence_refuses_partial_and_absent_estates() {
     // Three of four: neither judged placement — refuse, naming the flags.
@@ -176,4 +213,32 @@ fn placement_evidence_refuses_partial_and_absent_estates() {
     let none = ["0.self_attn.q_proj.weight"];
     let err = norm_placement_evidence(none.iter().copied()).unwrap_err();
     assert!(err.contains("no per-layer norm operands"), "{err}");
+}
+
+/// LFM2's spelling of the two-norm estate resolves to the placement it
+/// actually is, and the mapping that looks wrong is the one that is
+/// right: `ffn_norm` binds to `PostAttentionNorm`, because in a two-norm
+/// layer that role IS the pre-FFN norm and keeps the historical name.
+#[test]
+fn the_lfm2_norm_dialect_resolves_to_the_two_norm_placement() {
+    let lfm2 = ["0.operator_norm.weight", "0.ffn_norm.weight"];
+    assert_eq!(
+        norm_placement_evidence(lfm2.iter().copied()),
+        Ok(NormPlacement::PreOnly)
+    );
+
+    // The falsifier for the mapping choice: binding `ffn_norm` to the
+    // honestly-named `PreFfnNorm` would read the estate as a PARTIAL
+    // four-norm stack and refuse it. That is what this arrangement
+    // avoids, and the assertion states the shape it would have produced.
+    let as_pre_ffn = [
+        "0.operator_norm.weight",
+        "0.pre_feedforward_layernorm.weight",
+    ];
+    let err = norm_placement_evidence(as_pre_ffn.iter().copied()).unwrap_err();
+    assert!(err.contains("neither two-norm nor four-norm"), "{err}");
+
+    // And one norm alone is still no judged placement.
+    let half = ["0.operator_norm.weight"];
+    assert!(norm_placement_evidence(half.iter().copied()).is_err());
 }

@@ -11,6 +11,7 @@ mod mla_nope;
 mod moe_spellings;
 mod qw35d_admission;
 mod recurrence_identification;
+mod registration_grants_nothing;
 mod relative_position;
 mod semantics;
 mod system;

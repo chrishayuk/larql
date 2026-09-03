@@ -324,7 +324,14 @@ impl<'a, B: PlanBackend> DecodeSession<'a, B> {
             let layer = &self.plan.layers[index];
             // Attention input is normalised once and handed over; the
             // judged gate reads the same vector (same as the batch path).
-            let inputs = [state.pre_attention.apply(self.backend, &h)];
+            // Under post-norm placement there is no pre-attention norm and
+            // the sublayer reads the RAW residual — the norm applies to
+            // its output, below, before the add. Cloning `h` rather than
+            // normalising by an identity keeps the absent op absent.
+            let inputs = [match &state.pre_attention {
+                Some(norm) => norm.apply(self.backend, &h),
+                None => h.clone(),
+            }];
             // The sensitivity tap from main, kept ahead of the operator
             // dispatch: it observes the attention INPUT, which both
             // operators read, so it belongs to neither branch.
@@ -435,7 +442,7 @@ impl<'a, B: PlanBackend> DecodeSession<'a, B> {
                             .softmax()
                             .expect("prepared softmax operands imply a softmax op"),
                         &inputs,
-                        layer.pre_attention_norm.eps,
+                        layer.declared_norm_eps,
                         hidden,
                     );
                     let _site = super::cpu::ledger::in_site(super::cpu::ledger::Site::Attention);
@@ -461,10 +468,19 @@ impl<'a, B: PlanBackend> DecodeSession<'a, B> {
             // residual add happened above, and running a fabricated FFN
             // stage here would be the schema-6 fabrication re-enacted at
             // execution time. Presence follows the program here too.
-            if let (Some(pre_ffn), Some(ffn), Some(ffn_op)) =
-                (&state.pre_ffn, &state.ffn, &layer.ffn)
-            {
-                let normed = pre_ffn.apply(self.backend, &h);
+            //
+            // The discriminator is the FFN OP, never its pre-norm. Under
+            // post-norm placement the FFN reads the raw residual and has
+            // no pre-norm at all, and gating the whole sublayer on that
+            // norm's presence silently ran OLMo-2 as attention-only —
+            // caught by real-checkpoint parity, not by any synthetic
+            // fixture, because a stack missing every FFN still produces
+            // fluent-looking planes.
+            if let (Some(ffn), Some(ffn_op)) = (&state.ffn, &layer.ffn) {
+                let normed = match &state.pre_ffn {
+                    Some(pre_ffn) => pre_ffn.apply(self.backend, &h),
+                    None => h.clone(),
+                };
                 observer.operand_input(index, super::observe::InputSite::Ffn, normed.as_slice());
                 let _site = super::cpu::ledger::in_site(super::cpu::ledger::Site::Ffn);
                 let ffn_out = ffn.apply_from_residual(ffn_op, self.backend, &h, &normed, hidden)?;

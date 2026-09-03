@@ -142,3 +142,39 @@ fn a_router_activation_the_architecture_contradicts_is_caught() {
     assert_eq!(f.category, FindingCategory::Mismatched, "{f:?}");
     assert!(f.blocks(), "{f:?}");
 }
+
+/// The shared branch's WIDTH is judged against the width the branch will
+/// be built at — never waved through because a parser read it.
+///
+/// The two arms are the whole point. `shared_expert_intermediate_size` is
+/// a consumed key either way, so "the parser reads it" cannot be the
+/// evidence: what separates them is whether anything resolved a branch
+/// for the width to describe.
+#[test]
+fn the_shared_expert_width_carries_only_where_a_branch_resolves() {
+    const DECLARED: usize = 4096;
+
+    // With a shared branch declared, the width reaches the surface and is
+    // reported as the value the checkpoint stated.
+    let with_branch = findings_with(|config| {
+        config["text_config"]["n_shared_experts"] = serde_json::json!(1);
+        config["text_config"]["shared_expert_intermediate_size"] = serde_json::json!(DECLARED);
+    });
+    let f = finding(&with_branch, "shared_expert_intermediate_size");
+    assert_eq!(f.category, FindingCategory::Representable, "{f:?}");
+    assert_eq!(f.resolved, Some(serde_json::json!(DECLARED)), "{f:?}");
+    assert!(!f.blocks(), "{f:?}");
+
+    // Without one, nothing resolves a width for it to be. The key is
+    // still consumed — and it must still REFUSE, because a size for a
+    // branch this build does not run is a fact that reached no operator.
+    let without_branch = findings_with(|config| {
+        config["text_config"]["shared_expert_intermediate_size"] = serde_json::json!(DECLARED);
+    });
+    let f = finding(&without_branch, "shared_expert_intermediate_size");
+    assert_eq!(f.category, FindingCategory::Unrepresented, "{f:?}");
+    assert!(
+        f.blocks(),
+        "a width with no branch to size must block, not pass as parsed: {f:?}"
+    );
+}

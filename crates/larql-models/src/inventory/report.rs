@@ -398,6 +398,17 @@ pub struct ResolvedExecution {
     /// must not choose a residual precision the checkpoint never stated.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub residual_in_fp32: Option<bool>,
+    /// How the residual stream is shaped and recombined across this
+    /// component. A component fact, because every consumer of the
+    /// residual — embedding, branch operators, head — must agree.
+    ///
+    /// `None` means the checkpoint declared the topology PARTIALLY and
+    /// nothing resolved it. That is deliberately not the same as
+    /// `Some(SingleStream)`: defaulting a half-declared bundle to one
+    /// stream is precisely the failure this field exists to prevent, so
+    /// the surface refuses to build instead.
+    #[serde(default = "single_stream_topology")]
+    pub residual_topology: Option<crate::config::ResidualTopology>,
     /// Whether a missing standalone output-head tensor means "tied to the
     /// embedding matrix" rather than "lost". See
     /// [`ModelArchitecture::output_head_reuses_embedding`](crate::config::ModelArchitecture::output_head_reuses_embedding).
@@ -508,6 +519,22 @@ pub struct MoeExecution {
     pub gate_up_layout: Option<crate::config::GateUpLayout>,
     /// Always-active experts alongside the routed ones.
     pub shared_experts: usize,
+    /// The width of that always-active branch, resolved once by
+    /// [`ModelArchitecture::shared_expert_intermediate_size`](crate::config::ModelArchitecture::shared_expert_intermediate_size)
+    /// — the checkpoint's own key where it declares one, the
+    /// count-times-routed-width convention where it declares a count
+    /// instead. `None` iff [`Self::shared_experts`] is zero.
+    ///
+    /// Carried rather than re-derived downstream: the two conventions
+    /// disagree by 4x on Qwen1.5-MoE, so a second derivation is a second
+    /// answer.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub shared_expert_intermediate_size: Option<usize>,
+    /// The gate on that branch's output, where the family runs one
+    /// (Qwen MoE's `sigmoid(shared_expert_gate(x)) *`). `None` = summed
+    /// unscaled, the DeepSeek/Kimi form.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub shared_expert_gate: Option<crate::config::SharedExpertGateSpec>,
     /// A dense MLP summed with the expert block every layer (Gemma 4 A4B).
     pub hybrid: bool,
 }
@@ -621,6 +648,12 @@ pub struct TensorFact {
     pub bytes: u64,
     /// Shard filename holding the bytes, relative to the model dir.
     pub file: String,
+}
+
+/// Containers written before residual topology was a field carried one
+/// stream, which is what every family judged then used.
+fn single_stream_topology() -> Option<crate::config::ResidualTopology> {
+    Some(crate::config::ResidualTopology::SingleStream)
 }
 
 #[cfg(test)]

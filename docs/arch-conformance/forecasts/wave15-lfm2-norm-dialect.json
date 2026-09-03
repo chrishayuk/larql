@@ -1,0 +1,96 @@
+{
+ "wave": 15,
+ "name": "lfm2-norm-dialect",
+ "written": "2026-09-03",
+ "written_before": "any code. Blocker sets read from the wave-13 (semantics 12) cached plans.",
+ "baseline": "wave 13/14 (semantics 12): GREEN 41 / AMBER 3 / RED 65 / BUG 0 / silent drops 0 / blockers 1044",
+ "a_correction_to_the_agreed_expectation": {
+  "what_was_expected": "Four LFM2 rows GREEN \u2014 'the purest remaining compatibility win', on the reasoning that the execution topology already exists and only the dialect is missing.",
+  "what_the_measurement_says": "The first two premises hold and the third does not. LFM2's placement IS one this build already executes, and the dialect IS cheap \u2014 but the norms are three blockers out of 13 to 24 per row, and NO LFM2 row clears.",
+  "per_row": {
+   "LiquidAI/LFM2-350M": "20 -> 17",
+   "LiquidAI/LFM2-2.6B": "24 -> 21",
+   "LiquidAI/LFM2.5-2.6B": "20 -> 17",
+   "LiquidAI/LFM2.5-8B-A1B": "13 -> 10"
+  },
+  "what_remains_and_why_it_is_not_more_vocabulary": "After the dialect, the older rows keep ten `block_*` and five `conv_*` keys plus `full_attn_idxs` / `layer_types` / `use_pos_enc`; LFM2.5-8B-A1B keeps its MoE facts (`num_experts_per_tok`, `norm_topk_prob`, `routed_scaling_factor`, `use_expert_bias`, `num_dense_layers`) and its attention schedule. Some of the `block_*` set is genuinely inert (`block_mlp_init_scale`, `block_out_init_scale`, `block_use_xavier_init`, `conv_use_xavier_init` are initialiser knobs \u2014 the wave-3 pattern), but the load-bearing remainder is the CONV MIXER's geometry and the per-layer attention schedule. Those are execution semantics, not spellings, and no amount of naming work retires them.",
+  "so_what_this_wave_is": "Honest carriage: it retires twelve blockers, makes four execution surfaces build that currently refuse, and closes a real fail-open \u2014 LFM2 currently falls through to `GenericArch` and is served Llama-shaped defaults for a stack whose every other layer is a short convolution. It is worth doing on those grounds and NOT on a GREEN count, and this file is written so the wave cannot later be read as having promised one."
+ },
+ "the_fix": "Three things, none of them a new execution semantic. (1) Role-table entries: `operator_norm` -> PreAttentionNorm and `ffn_norm` -> PreFfnNorm, which is the two-norm PRE-only estate under LFM2's spelling \u2014 `Lfm2DecoderLayer.forward` is `residual = h; h = mixer(operator_norm(h)); h = h + residual; h = h + feed_forward(ffn_norm(h))`, structurally identical to what `NormPlacement::PreOnly` already runs. (2) The `norm_eps` config spelling beside `rms_norm_eps`. (3) An `lfm2` family entry, since `architecture_identity` blocks every row and no placement work can clear it.",
+ "explicitly_not_in_this_wave": "The conv mixer's geometry, the `full_attn_idxs` / `layer_types` schedule, the `block_*` vocabulary, and LFM2.5-8B-A1B's MoE facts. Each is its own forecast against its own baseline.",
+ "predicted": {
+  "rows_cleared": 0,
+  "rows_whose_blocker_count_changes": 4,
+  "blockers_retired_per_row": [
+   "architecture_family",
+   "norm_eps",
+   "target.execution_surface"
+  ],
+  "after": {
+   "semantics_version": 13,
+   "GREEN": 41,
+   "AMBER": 3,
+   "RED": 65,
+   "BUG": 0,
+   "silent_drops": 0,
+   "text_closure_blockers": 1032,
+   "K3_clusters": 7
+  }
+ },
+ "the_witness": {
+  "why_a_real_one_is_practical_here": "LFM2-350M is 350M parameters \u2014 the smallest real checkpoint in this population, and small enough to carry the full ladder in-session.",
+  "ladder": "HF config + tensor inventory -> plan -> encode -> reopen -> verify -> execute -> HF reference observable, with the taps standardised after wave 13: embedding, an early/mid layer, logits, ranking.",
+  "what_it_must_show": "That the surface building did not merely stop the refusal. LFM2 interleaves attention layers (`full_attn_idxs`) with short-conv layers, and the conv mixer is NOT in this wave \u2014 so the honest expected outcome is an explicit REFUSE at execution, naming the conv operator, rather than a parity pass. A pass here would mean something ran that this build has not judged.",
+  "the_failure_that_would_matter": "If execution proceeds and produces plausible planes, the conv layers are being served as something else \u2014 the wave-13 skipped-FFN shape again, and the reason this witness is worth running even though it is expected to refuse."
+ },
+ "falsifiers": [
+  "any LFM2 row going GREEN \u2014 the conv geometry and the attention schedule are still absent, and a GREEN would mean the closure stopped asking for something it needs",
+  "any row outside the four moving",
+  "an LFM2 row gaining a blocker it did not have",
+  "the real checkpoint EXECUTING rather than refusing on its conv layers",
+  "BUG > 0 or a silent-drop regression",
+  "any existing parity oracle moving"
+ ],
+ "result": {
+  "scored_on": "2026-09-03",
+  "outcome_semantics_version": 13,
+  "rows_cleared": 0,
+  "predicted_rows_cleared": 0,
+  "per_row": {
+   "LiquidAI/LFM2-350M": "20 -> 17 (predicted 20 -> 17)",
+   "LiquidAI/LFM2-2.6B": "24 -> 21 (predicted 24 -> 21)",
+   "LiquidAI/LFM2.5-2.6B": "20 -> 17 (predicted 20 -> 17)",
+   "LiquidAI/LFM2.5-8B-A1B": "13 -> 7 (predicted 13 -> 10) \u2014 MISSED BY THREE"
+  },
+  "after": {
+   "semantics_version": 13,
+   "GREEN": 41,
+   "AMBER": 3,
+   "RED": 65,
+   "BUG": 0,
+   "silent_drops": 0,
+   "text_closure_blockers": 1029,
+   "K3_clusters": 7,
+   "scored": 109
+  },
+  "verdict": "The verdict arm held exactly \u2014 no row cleared, no unrelated row moved, GREEN 41 unchanged. The blocker arm missed by three, all on the single MoE row, and the miss was MINE rather than the code's.",
+  "the_forecast_miss_explained_before_it_was_accepted": {
+   "predicted": "1032 (twelve retired: three per row).",
+   "measured": "1029 (fifteen retired).",
+   "where": "LFM2.5-8B-A1B cleared six, not three. The extra three were `norm_topk_prob`, `num_experts_per_tok` and `routed_scaling_factor`.",
+   "why": "The wave-11 revelation pattern: making an execution surface BUILD turns dormant probes into answering ones. Those three are MoE facts whose probes read `ExecutionSurface.ffn.moe`, which did not exist while the norm placement refused. They fired only on the one MoE row, because the other three LFM2 rows have no MoE facts to answer.",
+   "verified_before_accepting": "Each of the three was checked to be a genuine carry with declared == resolved (`num_experts_per_tok` 4 -> 4 lowered at `ffn.moe.top_k`; `norm_topk_prob` True -> True at `ffn.moe.routing_policy`; `routed_scaling_factor` 1.0 -> 1.0 at `ffn.moe.branch_scale`). So this is not waves 10 and 11, where a better-than-forecast number meant the code was wrong.",
+   "the_lesson": "I had written in wave 14's notes that 'surface building is NOT the same as row clearing', and used it to predict correctly that no row would GREEN \u2014 then failed to apply the same reasoning in the other direction. A forecast that enumerates what will STOP blocking must also enumerate what will START answering. See [[feedback_forecast_disagreement_is_a_correctness_signal]]: the discrepancy was information either way, and checking it is what separated 'my model was incomplete' from 'the code is wrong'."
+  },
+  "three_standing_gates_fired_in_sequence_and_each_was_right": "`norm_eps` was read by the parser and carried to the surface at the correct value, and the finding still said 'read by nothing in any registered parser' \u2014 the consumed-key list did not credit it (wave 9's lesson). Crediting it then tripped `every_consumed_leaf_key_is_judged`, which demanded a semantic class; classifying it as execution-semantic then tripped `every_execution_semantic_leaf_has_a_carriage_rule`, which demanded a rule. `block_norm_eps` is deliberately left uncredited: it is a DIFFERENT fact (the FFN blocks' epsilon) and must keep refusing until something judges it.",
+  "the_witness": {
+   "outcome": "REFUSED, and one stage earlier than forecast.",
+   "what_was_predicted": "An explicit refusal at EXECUTION, naming the conv operator.",
+   "what_happened": "`vindex encode` refuses first: 'refusing to encode an inadmissible plan: 17 blocking finding(s)'. Encode gates on plan admissibility, so execution is unreachable for a row that still refuses seventeen declarations. The conv-operator refusal is real but sits behind a gate that fires sooner.",
+   "why_the_refusal_is_the_right_result": "LFM2 interleaves attention with short convolutions and the conv mixer is NOT in this wave. A container that encoded here \u2014 or a forward that ran \u2014 would mean the conv layers were being served as something else, which is the wave-13 skipped-FFN shape. The ladder stopping at `plan (17 blockers, surface builds, placement pre_only) -> encode REFUSES` is the fail-closed state.",
+   "what_the_wave_did_deliver": "The surface BUILDS where it previously refused, at placement `pre_only`, on all four rows. That is the deliverable, and it is visible in the plan without needing a container."
+  },
+  "what_this_wave_bought": "Twelve blockers on the three older rows and six on the MoE row; four execution surfaces that previously refused; and a closed fail-open \u2014 LFM2 resolved to `GenericArch` and was being served Llama-shaped defaults for a stack whose every other layer is a short convolution.",
+  "what_it_did_not_buy": "A single GREEN row, as preregistered. The conv mixer's geometry, the `full_attn_idxs` / `layer_types` schedule and the `block_*` vocabulary remain, and the first two are execution semantics rather than spellings."
+ }
+}

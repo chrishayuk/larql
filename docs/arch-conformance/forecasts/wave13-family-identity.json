@@ -1,0 +1,133 @@
+{
+ "wave": 13,
+ "name": "exact-family-identity-olmo2-olmo3-exaone4",
+ "written": "2026-09-03",
+ "written_before": "any code. Facts below read from transformers 5.5.0 and the checkpoints' own configs.",
+ "baseline": "wave 12 (semantics 11): GREEN 38 / AMBER 3 / RED 68 / BUG 0 / silent drops 0 / blockers 1051 / K3 7 clusters",
+ "this_is_a_family_ENTRY_authority_wave": "Not 'make OLMo and EXAONE work'. The claim is that these three `model_type` strings resolve to EXPLICIT identities whose declared semantics come from their reference implementations \u2014 and that registration by itself grants nothing else. A family entry that made a checkpoint admissible by inheriting Llama-shaped defaults would be the exact failure `architecture_identity` was made a gate to catch.",
+ "the_rule_every_execution_sensitive_fact_must_satisfy": "One of three, and never a fourth: (1) DECLARED by the checkpoint's config or established by its reference implementation; (2) EXPLICITLY shared with a semantic this build already judges, named as such; (3) UNRESOLVED, and therefore blocking. 'The trait default happened to be right' is not one of them.",
+ "facts_established_from_the_references": {
+  "olmo2": {
+   "qk_norm_scope": "FullProjection \u2014 `Olmo2Attention.__init__` builds `q_norm = Olmo2RMSNorm(num_attention_heads * head_dim)` and `k_norm = Olmo2RMSNorm(num_key_value_heads * head_dim)`, and `forward` applies them to the projection output BEFORE the head reshape and before rotary. This is rule (2): OLMoE already declares the same operator, and it is NOT Qwen3/Gemma's `PerHead` (`Qwen3RMSNorm(head_dim)`), which normalises each head independently over a different number of elements.",
+   "note_on_the_two_widths": "q_norm and k_norm have DIFFERENT widths under GQA. OLMo-2-0425-1B is MHA (16 q, 16 kv) so they coincide there \u2014 a fixture built only from the 1B would pin that coincidence, and the 7B is the row that would catch it.",
+   "default_norm_eps": "1e-5. `Olmo2Config.rms_norm_eps` class default, exactly the trap `OlmoeArch` already documents (OLMoE ships no `rms_norm_eps` at all and serving it at 1e-6 moved final-residual cosine 0.890 -> 0.991). OLMo-2-0425-1B DOES ship `rms_norm_eps: 1e-06`, so the default does not bite on this checkpoint \u2014 which is why it must be declared from the class rather than observed from the row.",
+   "norm_weight_offset": "0.0 \u2014 `Olmo2RMSNorm` initialises `weight` to ONES and applies `weight * x`. Not the `(1 + weight)` convention Qwen3.5 uses.",
+   "placement": "post-norm, and it needs no declaration: it is read from operand evidence (wave 11) and executes (wave 12).",
+   "attention_bias": "false, declared by the config; `Olmo2Config.attention_bias` default is also false.",
+   "checkpoint_geometry": "hidden 2048, 16 layers, 16 q heads, 16 kv heads (MHA), intermediate 8192, vocab 100352, rope_theta 500000, rope_scaling null, tie_word_embeddings false, torch_dtype float32."
+  },
+  "olmo3": "Same decoder shape as OLMo-2 (`Olmo3DecoderLayer.forward` is line-for-line identical). Its remaining blocker is NOT the family: `rope_scaling.attention_factor` is a rope fact this schema does not carry, and it must still block after registration.",
+  "exaone4": "Post-norm placement identical to OLMo-2's. Memory records QK-Reorder-Norm as its distinguishing feature; the entry must state its QK norm scope from `Exaone4Attention.__init__` and not inherit one. Its `sliding_window_pattern` (\"LLLG\") has no schema field and must still block."
+ },
+ "predicted": {
+  "rows_that_go_GREEN": [
+   "allenai/OLMo-2-0425-1B",
+   "allenai/OLMo-2-1124-7B",
+   "LGAI-EXAONE/EXAONE-4.0-1.2B"
+  ],
+  "rows_that_stay_RED_and_why": {
+   "allenai/Olmo-3-1025-7B": "rope_scaling.attention_factor",
+   "allenai/Olmo-3-1125-32B": "rope_scaling.attention_factor",
+   "LGAI-EXAONE/EXAONE-4.0-32B": "sliding_window_pattern (\"LLLG\", no schema field)",
+   "LGAI-EXAONE/EXAONE-4.5-33B": "five more, including MTP and a vision token id"
+  },
+  "per_row_blockers": {
+   "allenai/OLMo-2-0425-1B": "1 -> 0",
+   "allenai/OLMo-2-1124-7B": "1 -> 0",
+   "allenai/Olmo-3-1025-7B": "2 -> 1",
+   "allenai/Olmo-3-1125-32B": "2 -> 1",
+   "LGAI-EXAONE/EXAONE-4.0-1.2B": "1 -> 0",
+   "LGAI-EXAONE/EXAONE-4.0-32B": "2 -> 1",
+   "LGAI-EXAONE/EXAONE-4.5-33B": "6 -> 5"
+  },
+  "after": {
+   "semantics_version": 12,
+   "GREEN": 41,
+   "AMBER": 3,
+   "RED": 65,
+   "BUG": 0,
+   "silent_drops": 0,
+   "text_closure_blockers": 1044,
+   "K3_clusters": 7
+  }
+ },
+ "the_authority_ladder": "The sweep scores representation. The WITNESS is the real checkpoint, carried the whole way and observed at three depths rather than only at the end: HF config + tensor inventory -> VINDEX3 plan -> encode -> reopen/verify -> execute -> compared against an HF reference observable -> PASS or REFUSE. Final logits alone would say only that something is wrong; the earlier taps say WHERE.",
+ "the_three_taps": [
+  "embedding / residual input \u2014 proves the container reproduces the checkpoint's own starting state before any operator runs",
+  "one early layer's output \u2014 localises a mismatch to the first layer that has it, and is the tap that directly exercises wave 12's post-norm causal position on REAL weights",
+  "final logits \u2014 the end-to-end claim"
+ ],
+ "the_negative_witness_that_guards_against_inherited_defaults": "A registry-level control: construct an `olmo2` identity with one execution-sensitive fact deliberately absent or unknown, and prove the plan is NOT admissible. Registration must never turn 'we recognise this name' into 'we may fill in the rest'. Without this control, a later refactor that adds a convenient default to the entry would make the family MORE admissible with no test objecting.",
+ "falsifiers": [
+  "any of the three predicted-GREEN rows not clearing, or clearing for a reason other than its identity resolving",
+  "any of the four predicted-RED rows clearing \u2014 each keeps a blocker that has nothing to do with its family name",
+  "any unrelated row moving",
+  "the negative witness passing (an olmo2 identity missing a fact becoming admissible)",
+  "real-checkpoint parity failing at the final logits while both earlier taps pass, or passing at the logits while an earlier tap fails \u2014 either would mean the taps are not measuring what they claim",
+  "BUG > 0 or a silent-drop regression",
+  "any existing parity oracle moving"
+ ],
+ "explicitly_not_in_this_wave": "Metal post-norm lowering (still an explicit refusal, and correct as such), and the 12 no-norm-operand rows (wave 14, a DISCOVERY wave: classify each as legitimately normless / norm represented through another object / config dialect or naming gap / execution semantic genuinely absent \u2014 forecast the CLASSIFICATION, not a verdict count).",
+ "result": {
+  "scored_on": "2026-09-03",
+  "outcome_semantics_version": 12,
+  "rows_that_went_GREEN": [
+   "allenai/OLMo-2-0425-1B",
+   "allenai/OLMo-2-1124-7B",
+   "LGAI-EXAONE/EXAONE-4.0-1.2B"
+  ],
+  "predicted_the_same": true,
+  "per_row": {
+   "allenai/OLMo-2-0425-1B": "1 -> 0 (predicted 1 -> 0)",
+   "allenai/OLMo-2-1124-7B": "1 -> 0 (predicted 1 -> 0)",
+   "allenai/Olmo-3-1025-7B": "2 -> 1 (predicted 2 -> 1), still held by rope_scaling.attention_factor",
+   "allenai/Olmo-3-1125-32B": "2 -> 1 (predicted 2 -> 1), same",
+   "LGAI-EXAONE/EXAONE-4.0-1.2B": "1 -> 0 (predicted 1 -> 0)",
+   "LGAI-EXAONE/EXAONE-4.0-32B": "2 -> 1 (predicted 2 -> 1), still held by sliding_window_pattern",
+   "LGAI-EXAONE/EXAONE-4.5-33B": "6 -> 5 (predicted 6 -> 5), five concepts remain"
+  },
+  "after": {
+   "semantics_version": 12,
+   "GREEN": 41,
+   "AMBER": 3,
+   "RED": 65,
+   "BUG": 0,
+   "silent_drops": 0,
+   "text_closure_blockers": 1044,
+   "K3_clusters": 7,
+   "scored": 109
+  },
+  "predicted_after_matched": true,
+  "verdict": "EXACT on every arm. Three rows GREEN, exactly the three named; the four predicted to stay RED each kept the blocker predicted for it; every cleared blocker was `architecture_family` and nothing else; no unrelated row moved.",
+  "the_authority_witness_PASSED": {
+   "checkpoint": "allenai/OLMo-2-0425-1B, fp32, 7 tokens, production backend",
+   "ladder": "HF config + tensor inventory -> plan (admissible, 0 blockers, placement post_only, qk_scope full_projection) -> encode (5.6 GB container) -> reopen -> `vindex verify` (the artifact agrees with its own record) -> execute -> HF reference observable",
+   "taps": {
+    "embedding": "max_abs 0.000e+00 \u2014 exact",
+    "layer_0_output": "max_abs 2.50e-06, rel_rms 1.27e-06",
+    "layer_1_output": "max_abs 2.74e-06, rel_rms 1.81e-06",
+    "layer_7_output": "max_abs 6.44e-06, rel_rms 2.60e-06",
+    "layer_15_output": "max_abs 5.87e-05, rel_rms 3.00e-06",
+    "final_norm": "max_abs 8.49e-05, rel_rms 2.70e-06",
+    "logits": "max_abs 7.25e-05, rel_rms 1.41e-06; argmax MATCHES (315); top-5 MATCHES exactly"
+   },
+   "why_it_reads_as_accumulation_and_not_semantics": "Absolute error grows across the sixteen layers while RELATIVE error stays flat at ~3e-06. A semantic difference does not behave that way; fp32 accumulation does.",
+   "the_oracle_refused_first": "Its own self-check rejected the first run: `attention_mask=None` let eager attention see future tokens. A reference must be shown consistent before it is used as an authority, and this one was not until a causal mask was supplied. With it: post-norm recomputation of layer 0 from the captured embedding reproduces HF to 0.000e+00, and the SAME weights under pre-norm placement land 8.95e+01 away \u2014 so the checkpoint can tell the placements apart by ~90 max-abs, which is what makes it a witness rather than a fixture."
+  },
+  "the_bug_the_real_checkpoint_found_that_the_synthetic_witness_could_not": {
+   "what": "Wave 12 left the FFN sublayer gated on its PRE-NORM being present: `if let (Some(pre_ffn), Some(ffn), Some(ffn_op))`. That guard was written for mixer-only layers, where an absent pre-norm really does mean no FFN. Under post-norm placement the pre-FFN norm is legitimately absent \u2014 the FFN reads the raw residual \u2014 so OLMo-2 ran as an ATTENTION-ONLY stack, every FFN skipped, on both the batch and the decode path.",
+   "why_wave_12s_witness_passed_anyway": "Its two arms were (a) the attention input equals the embedding row \u2014 true, attention still ran \u2014 and (b) the two placements' logits differ by a margin \u2014 also true, but BECAUSE one container had no FFNs at all. The margin arm passed for the wrong reason. A stack missing every FFN still produces finite, plausible planes.",
+   "how_the_taps_localised_it": "embedding exact; layer-0 wrong but only 1.06 from correct where the OLD placement would be 89.5, so not a placement regression; and position 0 \u2014 where softmax over a single key is 1.0, so q, k, rope, QK norm and scaling cannot affect the result \u2014 was ALREADY wrong, which eliminated attention entirely.",
+   "the_fix": "Both paths now key on the FFN OP, never on its pre-norm, and the pre-norm is optional within the block.",
+   "the_assertion_that_would_have_caught_it": "`a_post_norm_layer_still_runs_its_ffn_over_the_raw_residual` \u2014 the FFN input site must be observed on every layer, with a pre-norm control so an empty capture cannot be explained by the tap never firing.",
+   "a_reporting_correction": "I first said the layer dump 'captures mid-layer'. It does not: planes are layer OUTPUTS, and they matched the reference's mid-layer state only because the FFN was being skipped. One bug, not two \u2014 and the plane convention was an artefact of it, asserted rather than checked."
+  },
+  "what_registration_actually_bought": "Before it, VINDEX3 resolved OLMo-2 through GenericArch and had already silently chosen PER-HEAD QK norm \u2014 the wrong reduction for a family whose reference normalises the whole projection. That is the `GenericArch` fail-open made concrete on a real model, and it is what the identity gate exists to make visible.",
+  "each_entry_declares_only_what_a_reference_establishes": {
+   "olmo2_olmo3": "QkNormScope::FullProjection (shared with OLMoE, named as such), 1e-5 class default for rms_norm_eps, norm weight offset 0.0. Post-norm placement is NOT declared here \u2014 it is read from operand evidence, because the tensors settle it and a config flag would be a second authority.",
+   "exaone4": "Its OWN entry, because the one place it differs from OLMo-2 is an operator: `Exaone4RMSNorm(head_dim)` applied AFTER the head reshape is per-head, not whole-projection. Aliasing either onto the other would normalise a different vector and produce a running model with different numbers."
+  },
+  "the_negative_witness_holds": "`registration_does_not_admit_a_declaration_the_schema_cannot_carry` \u2014 under a fully registered `olmo2` identity, a `sliding_window_pattern: \"LLLG\"` still blocks, and the refusal names THAT declaration rather than the family. Its control confirms an unmatched `model_type` still refuses on identity, so the first assertion cannot pass on a fixture that never had an identity blocker.",
+  "a_process_note": "The first sweep read EXAONE as unmoved. That was a stale binary, not a result \u2014 the build had not finished before the sweep started. Planning EXAONE directly with the current `vindex` gave `blocking: 0`, and the re-run scored exact. A binary timestamp is part of a measurement's provenance."
+ }
+}

@@ -97,6 +97,17 @@ pub const CONSUMED_LEAF_KEYS: &[&str] = &[
     "num_experts_per_tok",
     "num_experts_per_token",
     "n_shared_experts",
+    // The shared branch's own width, in both spellings: Qwen MoE writes
+    // `shared_expert_intermediate_size`, Nemotron-H prefixes it.
+    "shared_expert_intermediate_size",
+    "moe_shared_expert_intermediate_size",
+    // Hyper-connections (DeepSeek-V4): the residual is a bundle of
+    // `hc_mult` streams, reduced and expanded per token through a
+    // Sinkhorn-split mixing matrix. All three are read together — a
+    // partial declaration refuses rather than being completed.
+    "hc_mult",
+    "hc_sinkhorn_iters",
+    "hc_eps",
     "enable_moe_block",
     "top_k_experts",
     "moe_intermediate_size",
@@ -113,6 +124,10 @@ pub const CONSUMED_LEAF_KEYS: &[&str] = &[
     "layer_norm_eps",
     "layer_norm_epsilon",
     "norm_epsilon",
+    // LFM2's spelling. Its separate `block_norm_eps` is a DIFFERENT
+    // fact (the FFN blocks' epsilon) and is deliberately not credited
+    // here — nothing reads it yet, and it must keep saying so.
+    "norm_eps",
     // softcapping + scaling multipliers
     "attn_logit_softcapping",
     "final_logit_softcapping",

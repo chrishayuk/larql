@@ -139,12 +139,18 @@ fn both_realisations<B: PlanBackend>(
     let layer = &plan.layers[layer_index];
     let prepared = &ops.layers()[layer_index];
     let width = ops.hidden();
-    let eps = layer.pre_attention_norm.eps;
+    let eps = layer.declared_norm_eps;
 
     // Exactly what `execute_layer` feeds attention.
     let inputs: Vec<Vec<f32>> = hidden
         .iter()
-        .map(|row| prepared.pre_attention.apply(backend, row))
+        .map(|row| {
+            prepared
+                .pre_attention
+                .as_ref()
+                .expect("this fixture is a pre-norm stack")
+                .apply(backend, row)
+        })
         .collect();
 
     // This probe is about the KV realisations of SOFTMAX attention, so
@@ -260,7 +266,13 @@ fn stepping_the_same_position_twice_yields_identical_rows() {
     let width = ops.hidden();
     let inputs: Vec<Vec<f32>> = hidden[0]
         .iter()
-        .map(|row| prepared.pre_attention.apply(&backend, row))
+        .map(|row| {
+            prepared
+                .pre_attention
+                .as_ref()
+                .expect("this fixture is a pre-norm stack")
+                .apply(&backend, row)
+        })
         .collect();
 
     let super::super::prepared::PreparedAttention::Softmax(attn_ops) = &prepared.attention else {
@@ -270,7 +282,7 @@ fn stepping_the_same_position_twice_yields_identical_rows() {
         let call = attn_ops.call(
             layer.attention.softmax().unwrap(),
             &inputs[position..=position],
-            layer.pre_attention_norm.eps,
+            layer.declared_norm_eps,
             width,
         );
         backend

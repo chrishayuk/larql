@@ -1,0 +1,110 @@
+{
+ "wave": 12,
+ "name": "post-norm-execution",
+ "written": "2026-09-03",
+ "written_before": "any code. Substrate read on the wave-11 (semantics 10) tree.",
+ "baseline": "wave 11 (semantics 10): GREEN 38 / AMBER 3 / RED 68 / BUG 0 / silent drops 0 / blockers 1058 / K3 7 clusters",
+ "claim": "A model declaring post-attention / post-FFN normalisation executes that norm at its declared causal position: the sublayer reads the RAW residual, and the norm applies to the sublayer's OUTPUT before the residual add.",
+ "this_is_an_execution_semantics_change": "Waves 4-11 moved carriage and vocabulary. This one changes what a forward pass computes, so the sweep is NOT its authority. The sweep can only show that a refusal was withdrawn; only parity can show that the right thing replaced it. Both are scored, and the parity gate is the one that decides the wave.",
+ "what_the_substrate_already_does": {
+  "generic_path": "`exec/decode.rs` already computes `attn_out = post_attention.apply(raw_attn); h += attn_out` \u2014 the norm on the sublayer OUTPUT, before the add, which is exactly the OLMo-2 semantic. `pre_ffn` and `post_*` are already `Option`. So post-norm execution is the four-norm program with the PRE-norms absent, not a new residual topology.",
+  "what_blocks_it": [
+   "`LayerPlan.pre_attention_norm` is a required `NormOp`, and `PreparedLayer.pre_attention` a required `PreparedNorm`. A post-norm stack carries neither.",
+   "`QkNormOp` has NO epsilon of its own: the executors pass `layer.pre_attention_norm.eps` as the QK-norm epsilon. OLMo-2 runs QK norm AND has no pre-attention norm, so that epsilon would have to be inherited from a norm that does not exist \u2014 the unjudged-semantic shape exactly. QK norm gets its own declared epsilon in this wave.",
+   "The Metal lowering requires `pre_attn_norm` unconditionally, and the GGUF export writes it unconditionally."
+  ],
+  "a_naming_hazard_that_is_live_in_the_EXECUTOR_too": "`post_attention_norm` means two different causal positions in two paths. In the generic path it is applied to the raw attention output BEFORE the residual add (Gemma's four-norm convention). In `exec/kimi_mla_layer.rs` it is applied to `after_attention` \u2014 AFTER the add \u2014 because there the operand named `post_attention_layernorm` is semantically the PRE-FFN norm (Llama's convention). Both are correct in their own family. The witness must therefore pin the GENERIC path by construction, or it could pass against the wrong convention."
+ },
+ "the_witness": {
+  "requirement": "The test must prove the norm MOVED, not that a norm operation appeared. A fixture where the two placements happen to agree numerically would pass with the old placement retained.",
+  "construction": "A synthetic tiny layer, built so that `pre_norm(x) -> branch -> add` and `branch -> post_norm -> add` differ BY CONSTRUCTION: a non-uniform norm weight vector, an input whose RMS is far from 1, and a branch matrix that is not orthogonal (so `rms(Wx)` is not a fixed multiple of `rms(x)` and the norm does not commute with the branch).",
+  "the_assertion_that_makes_it_sharp": "Not only `|cpu - post_norm_reference| < tol`, but ALSO `|post_norm_reference - pre_norm_reference| > 1000 * tol`. The second assertion is what forbids a coincidence: it fails loudly if the fixture is ever weakened into one where placement does not matter.",
+  "authorities": [
+   "reference: a Python script computing both placements explicitly, pinned as a committed oracle, following `scripts/*_reference_oracle.py`",
+   "CPU: the generic `exec` path, batch AND decode \u2014 a post-norm stack must agree at prefill and at every decode step, since a placement error that only shows in one is still a wrong model",
+   "Metal: the same plan lowered and run on the GPU path",
+   "cross-backend: CPU and Metal against each other on the same container, not merely each against the oracle"
+  ],
+  "negative_control": "The existing two-norm and four-norm families must be bit-identical before and after. This is the exact wave where 'support a new placement' can quietly change the default path, so the control is a re-run of the existing parity oracles, not a new assertion."
+ },
+ "predicted_sweep_effect": {
+  "note": "Small and not the point. `NormPlacement::PostOnly.unimplemented_reason()` becomes `None`, so the unsupported-component finding is withdrawn from the seven rows.",
+  "per_row": {
+   "allenai/OLMo-2-0425-1B": "2 -> 1",
+   "allenai/OLMo-2-1124-7B": "2 -> 1",
+   "allenai/Olmo-3-1025-7B": "3 -> 2",
+   "allenai/Olmo-3-1125-32B": "3 -> 2",
+   "LGAI-EXAONE/EXAONE-4.0-1.2B": "2 -> 1",
+   "LGAI-EXAONE/EXAONE-4.0-32B": "3 -> 2",
+   "LGAI-EXAONE/EXAONE-4.5-33B": "7 -> 6"
+  },
+  "rows_cleared": 0,
+  "why_zero": "`architecture_identity` still blocks all seven \u2014 none of these families is registered. That is wave 13.",
+  "predicted_after": {
+   "semantics_version": 11,
+   "GREEN": 38,
+   "AMBER": 3,
+   "RED": 68,
+   "BUG": 0,
+   "silent_drops": 0,
+   "text_closure_blockers": 1051,
+   "K3_clusters": 7
+  }
+ },
+ "a_correction_to_the_agreed_plan": "Wave 13 was framed as 'three exact family identities -> expected RED -> AMBER'. That was right while post-norm was unimplemented. AFTER wave 12 it is no longer: with the placement executable, registering the families removes the LAST blocker on some of these rows, so wave 13's expectation becomes RED -> GREEN for OLMo-2 (both sizes) and EXAONE-4.0-1.2B, and RED -> RED for the rest, which keep unrelated blockers \u2014 Olmo-3 x2 (`rope_scaling.attention_factor`), EXAONE-4.0-32B (`sliding_window_pattern`), EXAONE-4.5-33B (five more). Stated here so wave 13 is not scored against the stale expectation.",
+ "falsifiers": [
+  "any of the seven rows clearing in THIS wave \u2014 identity still blocks them",
+  "any of the other 110 rows changing a blocker",
+  "the pre-norm reference and the post-norm reference agreeing within 1000x tolerance on the witness \u2014 the fixture would then prove nothing",
+  "CPU agreeing with the oracle at prefill but not at decode, or vice versa",
+  "any existing parity oracle moving by more than its committed tolerance",
+  "BUG > 0 or a silent-drop regression",
+  "QK norm silently reading an epsilon from a norm the stack does not carry"
+ ],
+ "explicitly_not_in_this_wave": "Registering `olmo2`, `olmo3` or `exaone4` (wave 13), and the 12 rows that carry no per-layer norm operands at all (wave 14, which is a DISCOVERY wave: per row, decide between a legitimately normless architecture, a norm represented through another object, a config dialect or naming gap, and an execution semantic that is genuinely absent \u2014 not preregistered as 'support 12 models').",
+ "result": {
+  "scored_on": "2026-09-03",
+  "outcome_semantics_version": 11,
+  "sweep": {
+   "verdicts_moved": 0,
+   "predicted_verdicts_moved": 0,
+   "per_row": {
+    "allenai/OLMo-2-0425-1B": "2 -> 1 (predicted 2 -> 1)",
+    "allenai/OLMo-2-1124-7B": "2 -> 1 (predicted 2 -> 1)",
+    "allenai/Olmo-3-1025-7B": "3 -> 2 (predicted 3 -> 2)",
+    "allenai/Olmo-3-1125-32B": "3 -> 2 (predicted 3 -> 2)",
+    "LGAI-EXAONE/EXAONE-4.0-1.2B": "2 -> 1 (predicted 2 -> 1)",
+    "LGAI-EXAONE/EXAONE-4.0-32B": "3 -> 2 (predicted 3 -> 2)",
+    "LGAI-EXAONE/EXAONE-4.5-33B": "7 -> 6 (predicted 7 -> 6)"
+   },
+   "after": {
+    "semantics_version": 11,
+    "GREEN": 38,
+    "AMBER": 3,
+    "RED": 68,
+    "BUG": 0,
+    "silent_drops": 0,
+    "text_closure_blockers": 1051,
+    "K3_clusters": 7,
+    "scored": 109
+   },
+   "predicted_after_matched": true
+  },
+  "parity": {
+   "the_exact_arm": "`a_post_norm_layer_feeds_attention_the_raw_residual` \u2014 under post-norm placement NOTHING conditions the residual before attention, so layer 0's observed attention input must be the embedding row BIT FOR BIT. The row is stated from the fixture's own generator rather than read back, so the assertion compares the executor against the checkpoint and not against itself. PASSES.",
+   "its_control": "The same assertion run against the pre-norm estate must FAIL to hold \u2014 the pre-norm control's attention input must differ from the embedding row, or the exact arm proves nothing. PASSES.",
+   "the_margin_arm": "`placement_is_load_bearing_end_to_end` \u2014 two containers carrying the SAME numeric weights, differing only in which norm names they ship, must produce materially different logits. A build that ignored placement would produce two identical rows. The assertion is relative (`max_gap > scale * 1e-3`) and its failure message says that every other assertion in the file is worthless if it ever trips. PASSES.",
+   "the_structural_arm": "`the_two_estates_judge_two_placements_and_carry_different_norm_sites` \u2014 the post-norm plan carries NO pre-attention norm and NO pre-FFN norm, and both wrap norms; the pre-norm plan is the mirror image. PASSES.",
+   "the_negative_control": "The full `larql-vindex` suite: 3744 tests, 0 failures. That includes every committed parity oracle (Kimi 27-layer stack, MLA, KDA, Gemma 4, gated-delta, conv-QKV), which are the existing pre-norm and four-norm families. None moved. This is the wave where 'support a new placement' could have changed the default path, and it did not.",
+   "not_done_here": "Reference-interpreter parity against REAL OLMo-2 weights. It cannot be done before wave 13: no container can be built for an unregistered identity, so the real-checkpoint oracle is gated on the family entry. Metal parity is likewise deferred \u2014 the Metal trunk now REFUSES a post-norm layer explicitly rather than lowering it as a shape it is not, which is the fail-closed state to be in until the kernel path is written."
+  },
+  "verdict": "EXACT on the sweep, and the parity witness holds on the arm that matters: the norm MOVED, proven bit-for-bit rather than statistically, with a control that fails if the fixture ever stops being able to tell the placements apart.",
+  "design_facts_found_while_building_it": [
+   "The generic executor ALREADY applied `post_attention` / `post_ffn` to the sublayer output before the residual add. Post-norm execution was the four-norm program minus the pre-norms, not a new residual topology.",
+   "`QkNormOp` had no epsilon of its own: every executor read `layer.pre_attention_norm.eps` as the QK-norm epsilon, and DeltaNet's gated norm and KDA's read it too. That coupled an EPSILON to a PLACEMENT \u2014 unrelated facts \u2014 and is precisely what made a post-norm stack unrepresentable. It is now `LayerPlan.declared_norm_eps`, the component's declared epsilon in its own right.",
+   "`post_attention_norm` means two different causal positions in two executor paths: before the residual add in the generic path, AFTER it in `exec/kimi_mla_layer.rs`, where the operand of that name is semantically the pre-FFN norm. Both are correct for their family. The witness pins the generic path by construction.",
+   "A post-only stack's single declared epsilon belongs to its post sites \u2014 the only norm sites it has. This is NOT the four-norm case: there both sites exist and can genuinely differ (Muse-Glimmer's are 1e-5 and 1e-8), so an unjudged post epsilon still refuses there."
+  ],
+  "the_correction_to_wave_13_stands": "With the placement now executable, registering `olmo2`/`olmo3`/`exaone4` removes the LAST blocker on three rows rather than leaving them AMBER: OLMo-2 (both sizes) and EXAONE-4.0-1.2B are predicted RED -> GREEN, and Olmo-3 x2, EXAONE-4.0-32B and EXAONE-4.5-33B stay RED on unrelated blockers."
+ }
+}
