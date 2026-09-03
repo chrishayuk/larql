@@ -82,6 +82,7 @@ mod generate_real;
 mod golden;
 mod kernels;
 mod kv;
+mod llama3_rope;
 mod observe;
 mod overrides;
 mod parity;
