@@ -7,6 +7,48 @@
 
 use super::*;
 
+/// Every [`Activation`] variant has a canonical HF spelling, and the
+/// shape vocabulary round-trips through the same two tables in both
+/// directions — so the probe that answers "what FFN runs" and the parser
+/// that reads `activation: swiglu` cannot drift apart.
+#[test]
+fn activation_names_round_trip() {
+    for activation in [
+        Activation::Silu,
+        Activation::Gelu,
+        Activation::GeluTanh,
+        Activation::Relu,
+    ] {
+        let name = activation.hf_name().expect("every variant has a row");
+        assert_eq!(Activation::from_hf_name(name), Some(activation));
+        assert_eq!(
+            ffn_shape_from_hf_name(name),
+            Some((FfnType::Standard, activation)),
+            "a plain name is the ungated shape"
+        );
+        let shape = ffn_shape_hf_name(FfnType::Gated, activation).unwrap();
+        match activation.hf_glu_name() {
+            Some(glu) => {
+                assert_eq!(shape, glu);
+                assert_eq!(
+                    ffn_shape_from_hf_name(glu),
+                    Some((FfnType::Gated, activation))
+                );
+            }
+            None => assert_eq!(shape, format!("gated-{name}")),
+        }
+    }
+    assert_eq!(
+        ffn_shape_from_hf_name("SwiGLU"),
+        Some((FfnType::Gated, Activation::Silu))
+    );
+    assert_eq!(
+        ffn_shape_from_hf_name("hyena"),
+        None,
+        "an unjudged spelling is not guessed"
+    );
+}
+
 /// The architecture that overrides nothing.
 struct DefaultsArch(ModelConfig);
 

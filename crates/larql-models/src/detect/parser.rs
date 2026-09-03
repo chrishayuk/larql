@@ -271,6 +271,10 @@ pub(super) fn parse_model_config(config: &serde_json::Value) -> ModelConfig {
     // happens to match is one value away from a silent wrong answer.
     let rope_interleaved = text_config["rope_interleaved"].as_bool();
     let use_mrope = text_config["use_mrope"].as_bool();
+    // Two more declarations no reference reads, stored so they are
+    // checked (see `ModelConfig::ffn_shape_name` / `is_llama_config`).
+    let ffn_shape_name = text_config["activation"].as_str().map(str::to_string);
+    let is_llama_config = text_config["is_llama_config"].as_bool();
     // Read from the *outer* config too: some families declare it at the top
     // level next to `architectures` rather than inside `text_config`.
     // The mamba_ssm lineage (OuteAI Mamba2Attn) spells the same fact
@@ -678,6 +682,8 @@ pub(super) fn parse_model_config(config: &serde_json::Value) -> ModelConfig {
         no_rope_layer_interval,
         rope_interleaved,
         use_mrope,
+        ffn_shape_name,
+        is_llama_config,
         num_experts,
         num_experts_per_token,
         num_shared_experts,

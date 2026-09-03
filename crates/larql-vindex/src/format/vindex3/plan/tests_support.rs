@@ -584,8 +584,10 @@ pub fn known_dense_with_config(dir: &Path, config: serde_json::Value) -> Archite
     inventory_from(dir, &config, &header)
 }
 
-pub fn known_dense(dir: &Path) -> ArchitectureInventory {
-    let config = serde_json::json!({
+/// [`known_dense`]'s config, for gates that add one declared key to a
+/// recognised dense family rather than to the Glimmer shape.
+pub fn known_dense_config() -> serde_json::Value {
+    serde_json::json!({
         "architectures": ["LlamaForCausalLM"],
         "torch_dtype": "bfloat16",
         "model_type": "llama",
@@ -597,12 +599,11 @@ pub fn known_dense(dir: &Path) -> ArchitectureInventory {
         "vocab_size": 128,
         "rms_norm_eps": 1e-5,
         "rope_theta": 10000.0
-    });
-    let header = serde_json::json!({
-        "model.embed_tokens.weight":
-            {"dtype": "BF16", "shape": [128, 64], "data_offsets": [0, 16384]}
-    });
-    inventory_from(dir, &config, &header)
+    })
+}
+
+pub fn known_dense(dir: &Path) -> ArchitectureInventory {
+    known_dense_with_config(dir, known_dense_config())
 }
 
 /// Period of the hybrid interleave: one `full_attention` layer in every

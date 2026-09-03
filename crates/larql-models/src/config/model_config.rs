@@ -82,6 +82,26 @@ pub struct ModelConfig {
     /// [`Self::mrope_interleaved`] state jointly; the effective policy is
     /// resolved from those, and this is checked against it.
     pub use_mrope: Option<bool>,
+    /// The checkpoint's declared FFN shape in Falcon's one-word dialect
+    /// (`activation`: `swiglu`, `geglu`, or a plain nonlinearity name),
+    /// verbatim.
+    ///
+    /// Read by no transformers-5.5.0 loader for a `model_type: llama`
+    /// checkpoint (Falcon3 declares `activation: "swiglu"` beside
+    /// `hidden_act: "silu"`). Stored so the claim is CHECKED against the
+    /// FFN this build runs — `swiglu` is gated SiLU, `geglu` is a different
+    /// FFN, and a plain name is the ungated shape — rather than left as an
+    /// unread agreement one value away from the wrong arithmetic. The
+    /// vocabulary is [`super::activation::ffn_shape_from_hf_name`].
+    pub ffn_shape_name: Option<String>,
+    /// The checkpoint's declared `is_llama_config` flag (SmolLM2), verbatim.
+    ///
+    /// Appears nowhere in transformers 5.5.0. A claim about WHICH family
+    /// serves the checkpoint, checked against the family the declared
+    /// identity actually resolved to — never echoed, so `true` under a
+    /// `model_type` no registry entry matches is refused rather than
+    /// believed.
+    pub is_llama_config: Option<bool>,
     /// The checkpoint's declared positional-encoding scheme
     /// (`position_embedding_type`), verbatim.
     ///

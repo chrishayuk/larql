@@ -632,6 +632,7 @@ fn carriage_finding(
     let ctx = carriage::ProbeContext {
         span: carriage::ProbeContext::span_of(&fact.path),
         declared: &fact.value,
+        family: find_architecture(&inventory.identity.model_type).map(|entry| entry.model_type),
     };
     let carried = component_for_key(built, &component_name)
         .and_then(|component| rule.probe.and_then(|probe| probe(component, &ctx)));

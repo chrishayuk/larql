@@ -77,6 +77,8 @@ impl TestMoeArch {
                 no_rope_layer_interval: None,
                 rope_interleaved: None,
                 use_mrope: None,
+                ffn_shape_name: None,
+                is_llama_config: None,
                 max_window_layers: None,
                 num_experts: Some(NUM_EXPERTS),
                 num_experts_per_token: None,

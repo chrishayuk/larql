@@ -56,6 +56,8 @@ fn component_attribution_follows_config_nesting() {
     assert_eq!(component_of("text_config.qk_scale_factor"), "text");
     assert_eq!(component_of("vision_config.patch_size"), "vision");
     assert_eq!(component_of("image_token_id"), "root");
+    // A bare leaf ending in `_config` is a root key, not a section.
+    assert_eq!(component_of("is_llama_config"), "root");
     assert_eq!(
         component_of("vision_config.rope_parameters.rope_theta"),
         "vision"

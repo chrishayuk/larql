@@ -68,6 +68,66 @@ impl Activation {
     }
 }
 
+/// HF spellings that name the FFN SHAPE together with its nonlinearity —
+/// Falcon's `activation: "swiglu"` is "gated, SiLU on the gate" in one
+/// word. One row per gated variant; the single definition, beside
+/// [`HF_ACTIVATION_NAMES`], so a probe and a parser cannot disagree about
+/// what `geglu` means.
+const HF_GLU_NAMES: &[(&str, Activation)] = &[
+    ("swiglu", Activation::Silu),
+    ("geglu", Activation::Gelu),
+    ("reglu", Activation::Relu),
+];
+
+impl Activation {
+    /// The canonical HF spelling of this variant — the first row of
+    /// [`HF_ACTIVATION_NAMES`] that names it. Every variant has one;
+    /// `activation_names_round_trip` pins that.
+    pub fn hf_name(self) -> Option<&'static str> {
+        HF_ACTIVATION_NAMES
+            .iter()
+            .find(|&&(_, activation)| activation == self)
+            .map(|&(name, _)| name)
+    }
+
+    /// The gated-FFN spelling of this nonlinearity, if HF has one.
+    pub fn hf_glu_name(self) -> Option<&'static str> {
+        HF_GLU_NAMES
+            .iter()
+            .find(|&&(_, activation)| activation == self)
+            .map(|&(name, _)| name)
+    }
+}
+
+/// The FFN shape an HF `activation` spelling names: a GLU name is the
+/// gated shape with that nonlinearity on the gate, a plain nonlinearity
+/// name is the ungated shape. `None` for a spelling this build has never
+/// judged — callers must not guess.
+pub fn ffn_shape_from_hf_name(name: &str) -> Option<(FfnType, Activation)> {
+    HF_GLU_NAMES
+        .iter()
+        .find(|(glu, _)| name.eq_ignore_ascii_case(glu))
+        .map(|&(_, activation)| (FfnType::Gated, activation))
+        .or_else(|| {
+            Activation::from_hf_name(name).map(|activation| (FfnType::Standard, activation))
+        })
+}
+
+/// The HF spelling of an FFN shape — the inverse of
+/// [`ffn_shape_from_hf_name`], from the same two tables. A gated
+/// nonlinearity HF has no GLU word for (gelu-tanh) is spelled
+/// `gated-<name>` so the answer is still distinguishable from the ungated
+/// shape.
+pub fn ffn_shape_hf_name(ffn_type: FfnType, activation: Activation) -> Option<String> {
+    let name = activation.hf_name()?;
+    Some(match ffn_type {
+        FfnType::Gated => activation
+            .hf_glu_name()
+            .map_or_else(|| format!("gated-{name}"), str::to_string),
+        FfnType::Standard => name.to_string(),
+    })
+}
+
 /// Whether the FFN uses a gated architecture.
 #[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]

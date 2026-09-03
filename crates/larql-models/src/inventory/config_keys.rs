@@ -55,6 +55,12 @@ pub const CONSUMED_LEAF_KEYS: &[&str] = &[
     // rather than be quietly overridden.
     "rope_interleaved",
     "use_mrope",
+    // Two more of the same kind (wave 9 of the conformance sweep):
+    // Falcon's one-word FFN shape and SmolLM2's family flag. Stored by
+    // the parser, judged against the FFN and the family that actually
+    // resolve.
+    "activation",
+    "is_llama_config",
     "sliding_window_pattern",
     "layer_types",
     "global_head_dim",

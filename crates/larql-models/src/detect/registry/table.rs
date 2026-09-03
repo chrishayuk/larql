@@ -11,6 +11,10 @@ use super::pattern::ModelTypeMatch;
 /// Every architecture `detect_from_json` recognises, in the same
 /// first-match-wins order as its `match` arms. A `model_type` matching
 /// none of these falls back to [`crate::architectures::generic::GenericArch`].
+/// The Llama family's registry label — also the prefix it matches on, and
+/// the family a checkpoint's `is_llama_config` flag is a claim about.
+pub const LLAMA_FAMILY: &str = "llama";
+
 pub static ARCHITECTURE_REGISTRY: &[ArchitectureEntry] = &[
     ArchitectureEntry {
         model_type: "gemma4",
@@ -34,8 +38,8 @@ pub static ARCHITECTURE_REGISTRY: &[ArchitectureEntry] = &[
         quant_formats: STANDARD_QUANT_FORMATS,
     },
     ArchitectureEntry {
-        model_type: "llama",
-        patterns: &[ModelTypeMatch::Prefix("llama")],
+        model_type: LLAMA_FAMILY,
+        patterns: &[ModelTypeMatch::Prefix(LLAMA_FAMILY)],
         attention_kind: AttentionKind::Standard,
         quant_formats: STANDARD_QUANT_FORMATS,
     },

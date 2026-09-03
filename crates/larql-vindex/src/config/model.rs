@@ -73,6 +73,13 @@ pub struct VindexModelConfig {
     /// The declared multi-axis flag, persisted for the same reason.
     #[serde(default)]
     pub use_mrope: Option<bool>,
+    /// Falcon's one-word FFN shape (`activation`), persisted so the
+    /// container records the claim the boundary checked.
+    #[serde(default)]
+    pub ffn_shape_name: Option<String>,
+    /// The declared `is_llama_config` flag, persisted for the same reason.
+    #[serde(default)]
+    pub is_llama_config: Option<bool>,
     /// MoE configuration (None for dense models).
     #[serde(default)]
     pub moe: Option<MoeConfig>,
@@ -261,6 +268,8 @@ impl VindexModelConfig {
             no_rope_layer_interval: cfg.no_rope_layer_interval,
             rope_interleaved: cfg.rope_interleaved,
             use_mrope: cfg.use_mrope,
+            ffn_shape_name: cfg.ffn_shape_name.clone(),
+            is_llama_config: cfg.is_llama_config,
             moe: if arch.is_moe() {
                 Some(MoeConfig {
                     num_experts: arch.num_experts(),
@@ -539,6 +548,8 @@ mod tests {
             no_rope_layer_interval: None,
             rope_interleaved: None,
             use_mrope: None,
+            ffn_shape_name: None,
+            is_llama_config: None,
             moe: None,
             global_head_dim: None,
             num_global_kv_heads: None,

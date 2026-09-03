@@ -103,6 +103,16 @@ pub const EXECUTION_SEMANTIC_KEYS: &[&str] = &[
     // from a rotation done the wrong way round.
     "rope_interleaved",
     "use_mrope",
+    // Falcon's dialect for the FFN SHAPE: `activation: "swiglu"` beside
+    // `hidden_act: "silu"` under `model_type: llama` (Falcon3). No
+    // transformers-5.5.0 loader reads it for that family; still the word
+    // names gated-vs-ungated and the gate nonlinearity together, and the
+    // wrong word is a different FFN.
+    "activation",
+    // SmolLM2's `is_llama_config: true` — read by nothing upstream; a claim
+    // about which family serves the checkpoint, checked against the
+    // family the identity actually resolved to.
+    "is_llama_config",
     "max_position_embeddings",
     // Kimi Linear's spelling of the same serving bound.
     "model_max_length",
@@ -1046,6 +1056,7 @@ const CLUSTER_KEYS: &[(SemanticCluster, &[&str])] = &[
             "mlp_multipliers",
         ],
     ),
+    (SemanticCluster::ArchitectureIdentity, &["is_llama_config"]),
     (
         SemanticCluster::ShapeAndTensorNaming,
         &[
@@ -1160,22 +1171,26 @@ pub fn classify_key(leaf: &str) -> SemanticClass {
 /// Logical component a flattened config path belongs to.
 ///
 /// `<name>_config.<rest>` attributes to `<name>` (`text_config.x` → `text`);
-/// everything else is the artifact root.
+/// everything else is the artifact root — including a bare leaf that
+/// happens to end in `_config`. SmolLM2's `is_llama_config: true` is a
+/// boolean at the root, not the section of a component called `is_llama`,
+/// and reading it as one sent its probe to a component the graph never
+/// builds. A section is a segment with something after it.
 pub fn component_of(path: &str) -> String {
     const CONFIG_SUFFIX: &str = "_config";
     const ROOT_COMPONENT: &str = "root";
-    match path.split('.').next() {
+    match path.split_once('.') {
         // A section that parameterises an operator of the main stack is
         // not a component of its own, so its keys belong to the stack that
         // runs that operator. Naming a component here that the graph never
         // builds sends every probe looking for it and finding nothing —
         // which reads as "not carried" for facts that are carried
         // perfectly well. `linear_attn_config` is the case.
-        Some(first)
-            if first.ends_with(CONFIG_SUFFIX)
-                && !larql_models::inventory::is_operator_config_section(first) =>
+        Some((section, _rest))
+            if section.ends_with(CONFIG_SUFFIX)
+                && !larql_models::inventory::is_operator_config_section(section) =>
         {
-            first[..first.len() - CONFIG_SUFFIX.len()].to_string()
+            section[..section.len() - CONFIG_SUFFIX.len()].to_string()
         }
         _ => ROOT_COMPONENT.to_string(),
     }
