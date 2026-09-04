@@ -73,14 +73,16 @@ use super::super::promotion::PromotionCandidate;
 use super::super::quality::QualityBank;
 use super::super::quality::QualityGate;
 use super::super::search_evidence::SearchCalibrationRegistry;
+use super::accounting::PhysicalAccountingFacts;
 use super::action_space::ActionVocabulary;
 use super::assess::{ParentStanding, RankingSemantics};
 use super::candidate::{Footprint, Generator, MeasurementIntent};
+use super::footprint::{compiled_bytes, SurfaceFootprint};
 use super::graph::RepresentationStateGraph;
 use super::identity::RepresentationStateId;
 use super::key::{MeasurementKey, MeasurementRegistry};
 use super::realization::LogicalBytes;
-use super::resolved::LayoutAdmission;
+use super::resolved::{layout_admission, LayoutAdmission};
 use super::search_policy::{BestFirst, Selection};
 use super::semantics::{SearchSemantics, SearchSemanticsId};
 use super::surface::TensorSurface;
@@ -205,6 +207,17 @@ pub struct SearchSpace {
     /// The map every applied set is layered onto.
     pub base_map: PrecisionMap,
     pub vocabulary: ActionVocabulary,
+    /// **Where the search STANDS** — the vocabulary names currently
+    /// layered onto `base_map`.
+    ///
+    /// A position, not a verdict. The record does not say this position
+    /// is best, admissible or promoted; `frontier` and `compare` derive
+    /// all of that. It says which applied set the next question is asked
+    /// FROM, the same way `objective` says what is being minimised —
+    /// without it, a caller would have to supply the question and the
+    /// answer would stop being a property of the record.
+    #[serde(default)]
+    pub applied: BTreeSet<String>,
 }
 
 /// **How facts become conclusions.** Every field is a rule or a
@@ -224,6 +237,16 @@ pub struct SearchConfig {
     /// replay can tell a changed procedure from changed data.
     pub semantics: SearchSemantics,
     pub ranking: RankingSemantics,
+    /// **The experiment the next run would be**: which corpus, at which
+    /// scale, read by which instrument.
+    ///
+    /// Protocol, not outcome — 1c's `MeasurementKey` minus the state,
+    /// which is exactly what the generator dedups against. Stored
+    /// because "what should I measure next" is unanswerable without it:
+    /// `diagnostic(child)` and `authority(child)` are two experiments on
+    /// one state, and which one is due is a standing decision about how
+    /// this search is run.
+    pub standing_intent: MeasurementIntent,
 }
 
 /// **What has been observed, and what it costs.**
@@ -241,6 +264,21 @@ pub struct SearchFacts {
     /// refuses to call the model calibrated until beta has been shown
     /// across separated breadths.
     pub execution_cost: ExecutionCostModel,
+    /// **The sealed source facts every candidate is priced from.**
+    ///
+    /// A factual input, exactly like `measurements`: read once from the
+    /// container's own authority (4b-c) and stored, so a reload can
+    /// rebuild the price table without the container being present.
+    /// What is NOT stored is anything derived from it — the bind, the
+    /// price table, any state's footprint, the ranking, the selected
+    /// experiment. Those are recomputed, which is what keeps 1d's
+    /// theorem intact rather than weakened to make a tool answer.
+    ///
+    /// Absent on a record written before accounting authority existed,
+    /// and absence is a fact about the record rather than a default:
+    /// `next_experiment` refuses, and says which authority is missing.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub accounting: Option<PhysicalAccountingFacts>,
 }
 
 /// **The persisted scientific state of a search.**
@@ -305,6 +343,16 @@ impl SearchSnapshot {
 
     pub fn semantics(&self) -> &SearchSemantics {
         &self.config.semantics
+    }
+
+    /// The applied set the next question is asked from.
+    pub fn applied(&self) -> &BTreeSet<String> {
+        &self.space.applied
+    }
+
+    /// The experiment the next run would be.
+    pub fn standing_intent(&self) -> &MeasurementIntent {
+        &self.config.standing_intent
     }
 
     /// The rules this snapshot's conclusions were originally drawn
@@ -433,13 +481,97 @@ impl SearchSnapshot {
         }
     }
 
+    /// **The layout policy this record was built under.**
+    ///
+    /// Resolved from the name the record carries, never chosen here.
+    /// The same reference is handed to state resolution and to price
+    /// table construction, so the two cannot be wired to different
+    /// policies — a layout refusal that collapses a state onto the
+    /// protected one must also be the reason that state is priced as
+    /// source.
+    pub fn layout(&self) -> Result<&'static dyn LayoutAdmission, VindexError> {
+        layout_admission(&self.config.semantics.layout_admission)
+    }
+
+    /// Every encoding the base map and the vocabulary between them can
+    /// put into a decision.
+    ///
+    /// An INPUT to pricing, in the same sense `ActionVocabulary` is an
+    /// input to enumeration (R5-F6): what the search may select is
+    /// declared, so a price for it can be required up front instead of
+    /// missed at the first candidate.
+    pub fn selectable_encodings(&self) -> Vec<String> {
+        let mut encodings = vec![self.space.base_map.encoding.clone()];
+        for edit in self.space.vocabulary.edits() {
+            if let Some(encoding) = &edit.exception.encoding {
+                encodings.push(encoding.clone());
+            }
+        }
+        encodings.sort();
+        encodings.dedup();
+        encodings
+    }
+
+    /// **Rebuild the price table from stored facts.**
+    ///
+    /// bind → construct, both under the record's own declared policies.
+    /// Derived on every call and cached nowhere: a stored price table
+    /// would be a second authority that can disagree with the facts it
+    /// came from.
+    pub fn footprint(&self) -> Result<SurfaceFootprint, VindexError> {
+        let accounting = self.facts.accounting.as_ref().ok_or_else(|| {
+            VindexError::Parse(
+                "this record carries no physical accounting authority, so no candidate can \
+                 be priced and none may be enumerated, ranked or pruned"
+                    .into(),
+            )
+        })?;
+        let bound = accounting
+            .bind(self.facts.graph.model(), &self.space.surface)
+            .map_err(|e| VindexError::Parse(e.to_string()))?;
+        let layout = self.layout()?;
+        let compiled = compiled_bytes(&self.config.semantics.physical_accounting)?;
+        SurfaceFootprint::new(
+            &bound,
+            &self.space.surface,
+            layout,
+            compiled,
+            &self.selectable_encodings(),
+        )
+        .map_err(|e| VindexError::Parse(e.to_string()))
+    }
+
     /// The ordering policy this snapshot's conclusions are drawn under.
     pub fn best_first(&self) -> BestFirst {
         BestFirst::new(self.config.ranking.clone())
     }
 
     /// **What to measure next**, derived end to end from stored facts.
-    pub fn next_experiment(
+    ///
+    /// Nothing is injected. The layout policy and the pricing procedure
+    /// are named by the record and resolved from it, and the price
+    /// table is rebuilt from the stored accounting facts — so the
+    /// answer is a property of the record and not of whatever the
+    /// caller happened to wire in.
+    pub fn next_experiment(&self) -> Result<Selection, VindexError> {
+        let footprint = self.footprint()?;
+        self.next_experiment_under(
+            &self.space.applied,
+            &self.config.standing_intent,
+            self.layout()?,
+            &footprint,
+        )
+    }
+
+    /// The same chain with the two code inputs supplied.
+    ///
+    /// Stage 2 and 3's form, kept for a caller that holds a layout rule
+    /// and a pricing routine rather than a record that names them —
+    /// including a record written before physical accounting authority
+    /// existed, which cannot derive a footprint and can still be
+    /// replayed. One chain, two ways of supplying the same two things,
+    /// so the derived path and the injected path cannot diverge.
+    pub fn next_experiment_under(
         &self,
         applied: &BTreeSet<String>,
         intent: &MeasurementIntent,

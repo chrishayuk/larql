@@ -996,7 +996,7 @@ and is that seal load-bearing in the identity?**
 4b-c   read sealed SourceStorageFacts              done
 4b-d   require whole-surface accounting completeness  done
 4b-e   production Footprint over a bound surface       done
-4b-f   next_experiment answers, transport unchanged
+4b-f   next_experiment answers, transport unchanged   done
 ```
 
 ### 4b-a — the seal exists, and it is the segment's own table
@@ -1399,6 +1399,87 @@ asserts against a figure derived from the FORMAT: a `[64, 64]` NVFP4
 pack is `64×4×8` code bytes + `64×4` scale bytes + one f32 = 2308, and
 `numel × 2` is 8192.
 
+### 4b-f — the record answers, and the transport did not change
+
+```text
+SearchFacts.accounting          ← the only new stored input
+        │ reload
+        ▼
+bind(surface)  →  BoundPhysicalAccounting
+        ▼
+SurfaceFootprint, under the record's OWN declared policies
+        ▼
+candidate generation → assessment → best-first
+        ▼
+NextExperiment::Available(…)
+```
+
+Everything below `PhysicalAccountingFacts` is derived on every call and
+cached nowhere. 1d's theorem is intact rather than weakened to make a
+tool answer.
+
+**Three answers, because an agent takes three actions.** `Available`,
+`Exhausted` and `Unavailable{reason, detail}`. Collapsing the middle
+into the last would say "nothing to do" and "I cannot tell you" in the
+same words. `Available` means the deterministic optimiser had the
+factual authority to SELECT the next unresolved experiment — not that it
+has been run, admitted or promoted.
+
+**The question is stored too.** `SearchSpace.applied` (where the search
+stands — a position, never a verdict) and `SearchConfig.standing_intent`
+(which corpus, scale and instrument the next run would be). Without them
+the caller would supply the question and the answer would stop being a
+property of the record — and the tool would need arguments, which is a
+transport change.
+
+**One layout truth.** `SearchSemantics` gained a seventh field,
+`layout_admission`, and it was missing: a layout refusal removes a
+tensor from the action space and collapses its state onto the protected
+one, so a record that did not name its layout policy could be replayed
+under another and produce different states with nothing failing. The
+snapshot resolves the NAME to the one implementation and hands the SAME
+reference to state resolution and to price-table construction.
+`compiled_bytes(procedure)` does the same on the compiled side. An
+unknown name is refused, never defaulted.
+
+The cross-test: the same `k = 24` tensor under `no-layout-constraint/v1`
+is ADMITTED, so a compiled price becomes required and nothing prices it
+— refused; under `pack-layout-admission/v1` it is refused by the layout,
+resolves to source, and needs none — answered. Only the declared policy
+differs between the two records.
+
+**Two defects this step found:**
+
+* `PhysicalAccountingFacts` could not be serialised at all.
+  `source_storage` was a `BTreeMap` keyed by a STRUCT, which derives
+  `Serialize` happily and fails at runtime — *key must be a string* —
+  the moment it holds anything. Every 4b-c test read the facts in
+  memory, so nothing noticed. It is `Role::deserialize`'s
+  borrowed-string bug one level up. Now an ordered sequence, with a
+  round-trip test through both `from_str` and `from_value`.
+* The view anti-cheat caught 20 declarations no rendering reached. A
+  type with alternative shapes can only describe all of them across all
+  of them, so coverage is now the UNION over the three variants —
+  which needs a record that can actually answer.
+
+**The acceptance test.** Two records through ONE view method:
+
+```text
+no accounting authority   → Unavailable(no-accounting-authority)
+sealed container facts    → Available(a real experiment)
+```
+
+and the answer survives a round trip through stored JSON — serialise,
+drop everything, reload, ask again, same experiment. Derivation, not
+recall.
+
+**What changed under `optimizer_mcp/`: one test assertion.**
+`protocol.rs`, `server.rs` and `tools.rs` are untouched. The dispatch
+still calls one view method and serialises whatever it returns; the test
+that asserted the payload named `NoFootprintOracle` now asserts it names
+`Unavailable{reason}`. MCP was complete when it refused, and supplying
+the missing substrate truth made the existing transport answer.
+
 ---
 
 ## 5. The reward, which must not be diagnostic KL
@@ -1497,7 +1578,7 @@ Deliberately boring, so MCTS is a policy swap and not a rewrite.
 | 3 | Best-first; the objective API and the search/evidence boundary (§4f) | **done** |
 | 3b | Promotion-input closure — the chain runs from a snapshot (§4g) | **done** |
 | 4 | MCP facade — read-only; seven intent-level tools (§4h) | **done** |
-| 4b | The source identity the optimizer prices from (§4i) | a–e **done** |
+| 4b | The source identity the optimizer prices from (§4i) | **done** |
 | 5 | PUCT as another `SearchPolicy`; same states, actions, evidence | |
 | 6 | Extend `PhysicalState` with residency; optimise measured tok/s | |
 

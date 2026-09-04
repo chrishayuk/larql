@@ -9,8 +9,9 @@
 //! stopped describing the code, and the next field added under it would
 //! inherit its alibi.
 
+use super::super::super::state::tests::container;
 use super::super::origin::{walk, Coverage, Origin, Rendered};
-use super::{reloaded, view};
+use super::{priced_record, priced_record_from, reloaded, view};
 
 /// Assert both directions for one rendered value.
 fn declared<T: Rendered>(rendered: &T) -> Coverage {
@@ -27,6 +28,34 @@ fn declared<T: Rendered>(rendered: &T) -> Coverage {
         coverage.unreached(&origins)
     );
     coverage
+}
+
+/// The same two directions over several renders of one view type.
+///
+/// Undeclared fields are caught per render; unreached declarations are
+/// caught against the UNION, because a type with alternative shapes can
+/// only describe all of them across all of them.
+fn declared_across<T: Rendered>(rendered: &[T]) {
+    let mut covered = std::collections::BTreeSet::new();
+    for one in rendered {
+        let coverage = walk(one).expect("a view serializes");
+        assert!(
+            coverage.undeclared.is_empty(),
+            "fields rendered with no substrate call behind them: {:?}",
+            coverage.undeclared
+        );
+        covered.extend(coverage.covered);
+    }
+    let origins = T::origins();
+    let unreached: Vec<&str> = origins
+        .iter()
+        .map(|o| o.field.as_str())
+        .filter(|f| !covered.contains(*f))
+        .collect();
+    assert!(
+        unreached.is_empty(),
+        "origins declared but never rendered by any shape: {unreached:?}"
+    );
 }
 
 #[test]
@@ -46,7 +75,26 @@ fn every_rendered_field_names_the_call_that_produced_it() {
     declared(&facade.compare(&left, &right).expect("both are held"));
     declared(&facade.evidence(None));
     declared(&facade.evidence(Some(p)));
-    declared(&facade.next_experiment());
+    // `next_experiment` answers in THREE shapes and the registry
+    // describes all three, so coverage is their union: a variant that
+    // never renders leaves its declarations unreached, which is the
+    // same stale-registry defect seen from the other side. The refusing
+    // record cannot reach `Available`, and only a record with real
+    // accounting facts can.
+    let dir = container::dense();
+    let answering = priced_record(dir.path());
+    let closed = priced_record_from(
+        dir.path(),
+        ["compile-all", "compile-all-by-another-name"]
+            .into_iter()
+            .map(str::to_string)
+            .collect(),
+    );
+    declared_across(&[
+        facade.next_experiment(),
+        view(&answering).next_experiment(),
+        view(&closed).next_experiment(),
+    ]);
 }
 
 #[test]

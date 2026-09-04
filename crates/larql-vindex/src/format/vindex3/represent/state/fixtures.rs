@@ -23,7 +23,7 @@
 //! evidence and not a number invented here — and so that `binding()`
 //! reproducing `KlP99` means something.
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 
 use super::super::compiler::SourceIdentity;
 use super::super::diagnostic::DiagnosticPolicy;
@@ -36,6 +36,7 @@ use super::super::quality::{
     kimi_logit_balanced_v1, Distribution, LogitEvidence, QualityBank, RoutingEvidence,
 };
 use super::super::search_evidence::SearchCalibrationRegistry;
+use super::resolved::PACK_LAYOUT_ADMISSION;
 use super::*;
 
 // ---------------------------------------------------------------- fixtures
@@ -172,6 +173,7 @@ pub fn semantics() -> SearchSemantics {
         "decide-promotion-ordinal/v1",
         "physical-prize-first/v1",
         "logical-bytes/v1",
+        PACK_LAYOUT_ADMISSION,
     )
 }
 
@@ -191,6 +193,7 @@ pub fn space() -> SearchSpace {
         surface: surface(),
         base_map: map(vec![]),
         vocabulary: ActionVocabulary::default(),
+        applied: BTreeSet::new(),
     }
 }
 
@@ -203,7 +206,17 @@ pub fn config() -> SearchConfig {
         diagnostic_policy: DiagnosticPolicy::bs2_kimi_v1(),
         semantics: semantics(),
         ranking: RankingSemantics::new(RankingRule::PhysicalPrizeFirst),
+        standing_intent: standing_intent(),
     }
+}
+
+/// The experiment the record's next run would be.
+pub fn standing_intent() -> MeasurementIntent {
+    MeasurementIntent::new(
+        selection_bank().id(),
+        EvidenceScale::Authority,
+        instrument().id(),
+    )
 }
 
 pub fn facts(graph: RepresentationStateGraph, measurements: MeasurementRegistry) -> SearchFacts {
@@ -212,6 +225,7 @@ pub fn facts(graph: RepresentationStateGraph, measurements: MeasurementRegistry)
         measurements,
         byte_ledgers: BTreeMap::new(),
         execution_cost: ExecutionCostModel::new(Vec::new()),
+        accounting: None,
     }
 }
 

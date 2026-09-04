@@ -140,4 +140,4 @@ mod search_policy_tests;
 #[cfg(test)]
 mod snapshot_tests;
 #[cfg(test)]
-mod tests;
+pub(crate) mod tests;

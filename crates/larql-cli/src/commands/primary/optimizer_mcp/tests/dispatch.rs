@@ -185,9 +185,20 @@ fn the_refusal_arrives_as_a_refusal_and_not_as_an_empty_answer() {
     );
     let refusal: serde_json::Value = serde_json::from_str(payload(&answer)).expect("structured");
 
-    // An agent must be able to tell "nothing to try" from "cannot say".
-    let body = &refusal["NoFootprintOracle"];
+    // An agent must be able to tell "nothing to try" from "cannot say",
+    // and this record cannot say: it carries no physical accounting
+    // authority, so no candidate can be priced. The transport is not
+    // what decides that — it serialises whatever the view returns, and
+    // the same call on a record carrying sealed container facts comes
+    // back as `Available`. See
+    // `larql_vindex::…::view::tests::next_experiment`.
+    let body = &refusal["Unavailable"];
     assert!(body.is_object(), "the refusal is named in the payload");
-    assert_eq!(body["missing"].as_array().expect("missing").len(), 2);
-    assert_eq!(body["declared_accounting"], "logical-bytes/v1");
+    assert_eq!(body["reason"], "no-accounting-authority");
+    assert_eq!(body["missing"].as_array().expect("missing").len(), 1);
+    assert_eq!(body["accounting"]["procedure"], "logical-bytes/v1");
+    assert!(
+        body["accounting"]["semantics"].is_null(),
+        "a procedure that did not run has no meaning to report"
+    );
 }

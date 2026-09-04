@@ -312,6 +312,31 @@ fn a_sealed_segment_whose_header_does_not_parse_is_refused() {
     assert!(format!("{err}").contains("segment header"), "{err}");
 }
 
+#[test]
+fn the_facts_survive_a_round_trip_through_json() {
+    // **They did not.** `source_storage` was a `BTreeMap` keyed by a
+    // STRUCT, which derives `Serialize` happily and then fails at
+    // runtime — "key must be a string" — the moment it holds anything.
+    // The snapshot is written as JSON, so a record carrying accounting
+    // authority could not be stored at all, and nothing here noticed
+    // because every test read the facts in memory.
+    let container = container::glimmer();
+    let before = facts(container.path());
+    assert!(before.len() > 1);
+
+    let text = serde_json::to_string(&before).expect("accounting facts must serialise");
+    let after: super::super::accounting::PhysicalAccountingFacts =
+        serde_json::from_str(&text).expect("and reload");
+    assert_eq!(before, after);
+
+    // Through `Value` as well as `from_str`: the borrowed-string bug in
+    // `Role::deserialize` passed one and failed the other.
+    let value = serde_json::to_value(&before).expect("to value");
+    let from_value: super::super::accounting::PhysicalAccountingFacts =
+        serde_json::from_value(value).expect("from value");
+    assert_eq!(before, from_value);
+}
+
 // ------------------------------------------------------------- aliasing
 
 #[test]

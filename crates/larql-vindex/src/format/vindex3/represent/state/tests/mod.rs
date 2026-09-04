@@ -18,7 +18,7 @@
 
 mod accounting;
 mod bind;
-mod container;
+pub(crate) mod container;
 mod footprint;
 mod source_identity;
 mod source_seal;

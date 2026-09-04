@@ -177,6 +177,7 @@ fn snapshot(root: ResolvedState, measurements: MeasurementRegistry) -> SearchSna
             surface: surface(),
             base_map: base_map(),
             vocabulary: vocabulary(),
+            applied: BTreeSet::new(),
         },
         SearchConfig {
             objective: Objective::MinimiseLogicalBytes,
@@ -184,14 +185,18 @@ fn snapshot(root: ResolvedState, measurements: MeasurementRegistry) -> SearchSna
             tail_support: TailSupportPolicy::route_cal_1(),
             calibrations: SearchCalibrationRegistry::default(),
             diagnostic_policy: DiagnosticPolicy::bs2_kimi_v1(),
-            semantics: SearchSemantics::new("g/v1", "p/v1", "e/v1", "pr/v1", "rank/v1", "b/v1"),
+            semantics: SearchSemantics::new(
+                "g/v1", "p/v1", "e/v1", "pr/v1", "rank/v1", "b/v1", "l/v1",
+            ),
             ranking: semantics(),
+            standing_intent: intent(EvidenceScale::Authority),
         },
         SearchFacts {
             graph: RepresentationStateGraph::new(TransitionPolicy::StrictlyImprovingPhysical, root),
             measurements,
             byte_ledgers: BTreeMap::new(),
             execution_cost: ExecutionCostModel::new(Vec::new()),
+            accounting: None,
         },
     )
 }
@@ -644,7 +649,7 @@ fn the_ranking_rule_is_named_in_the_search_semantics() {
     // best-first-v1 from the same observations under v2: those can
     // legitimately select different experiments without anything
     // measured having changed.
-    let v1 = SearchSemantics::new("g/v1", "p/v1", "e/v1", "pr/v1", "rank/v1", "b/v1");
+    let v1 = SearchSemantics::new("g/v1", "p/v1", "e/v1", "pr/v1", "rank/v1", "b/v1", "l/v1");
     let v2 = SearchSemantics {
         ranking_rule: "rank/v2".into(),
         ..v1.clone()

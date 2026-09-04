@@ -36,6 +36,8 @@
 
 use serde::{Deserialize, Serialize};
 
+use crate::error::VindexError;
+
 use super::super::map::{Precision, PrecisionMap};
 use super::super::nvfp4_pack::{PackLayout, DTYPE_NVFP4};
 use super::surface::{SurfaceTensor, TensorSurface, FIELD, RECORD};
@@ -101,6 +103,33 @@ impl ResolvedEncoding {
 pub trait LayoutAdmission {
     /// `false` only where the layout is known to refuse the tensor.
     fn admits(&self, encoding: &str, tensor: &SurfaceTensor) -> bool;
+}
+
+/// **The layout policies this build implements, by name.**
+///
+/// A snapshot stores the NAME and this resolves it. Injecting the
+/// implementation and storing nothing would leave a second layout truth
+/// next to the physical one 4b just closed: the policy that decided
+/// which tensors were refused would be unrecorded, and a replay could
+/// wire a different one without anything failing.
+pub const PACK_LAYOUT_ADMISSION: &str = "pack-layout-admission/v1";
+pub const NO_LAYOUT_CONSTRAINT: &str = "no-layout-constraint/v1";
+
+/// Resolve a declared layout policy to the one implementation of it.
+///
+/// Deterministic and total over what this build knows; an unknown name
+/// is refused rather than defaulted, because defaulting would silently
+/// re-answer every refusal the record was built under.
+pub fn layout_admission(id: &str) -> Result<&'static dyn LayoutAdmission, VindexError> {
+    match id {
+        PACK_LAYOUT_ADMISSION => Ok(&PackLayoutAdmission),
+        NO_LAYOUT_CONSTRAINT => Ok(&NoLayoutConstraint),
+        other => Err(VindexError::Parse(format!(
+            "the record was built under layout policy `{other}`, which this build does not \
+             implement — resolving it as any other policy would re-answer every layout \
+             refusal the stored states were resolved under"
+        ))),
+    }
 }
 
 /// Declares no constraint for any encoding.

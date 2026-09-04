@@ -59,7 +59,7 @@ pub use describe::Describe;
 pub use evidence::{EvidenceReport, Observation};
 pub use explain::Explanation;
 pub use frontier::{AdjudicationView, Frontier, StateStanding};
-pub use next_experiment::{Missing, NextExperiment, Refusal};
+pub use next_experiment::{Accounting, Available, Exhausted, Missing, NextExperiment, Unavailable};
 pub use origin::{Coverage, Origin, Rendered};
 
 use super::state::snapshot::SearchSnapshot;
@@ -131,8 +131,13 @@ impl<'a> OptimizerView<'a> {
         EvidenceReport::of(self.snapshot, state)
     }
 
-    /// What to measure next, which this record cannot say. The refusal
-    /// names what is missing.
+    /// **What to measure next**, derived from the record's own facts and
+    /// its own declared policies.
+    ///
+    /// The question — from which applied set, at which scale, by which
+    /// instrument — is stored too, so the view supplies no code, the
+    /// transport supplies nothing, and the answer is a property of the
+    /// record.
     pub fn next_experiment(&self) -> NextExperiment {
         NextExperiment::of(self.snapshot)
     }

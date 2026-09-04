@@ -30,7 +30,7 @@ use crate::format::vindex3::plan::tests_support::{
 /// The source tempdir is dropped on return: the encode has already
 /// copied every byte it needs, and what the tests read afterwards is
 /// the container alone.
-pub(super) fn dense() -> tempfile::TempDir {
+pub(crate) fn dense() -> tempfile::TempDir {
     let source = tempfile::tempdir().expect("source dir");
     let named = vec![("only-artifact".to_string(), known_dense(source.path()))];
     encode(named)
@@ -40,7 +40,7 @@ pub(super) fn dense() -> tempfile::TempDir {
 ///
 /// A one-representation container cannot tell "refused" from "returned
 /// an identity over what was left", because nothing is left. This can.
-pub(super) fn glimmer() -> tempfile::TempDir {
+pub(crate) fn glimmer() -> tempfile::TempDir {
     let target = tempfile::tempdir().expect("target dir");
     let drafter = tempfile::tempdir().expect("drafter dir");
     let named = vec![
@@ -65,12 +65,12 @@ fn encode(
 }
 
 /// The container's index, as a document.
-pub(super) fn read_index(container: &Path) -> serde_json::Value {
+pub(crate) fn read_index(container: &Path) -> serde_json::Value {
     serde_json::from_str(&std::fs::read_to_string(container.join(INDEX_JSON)).expect("index"))
         .expect("index is JSON")
 }
 
-pub(super) fn write_index(container: &Path, index: &serde_json::Value) {
+pub(crate) fn write_index(container: &Path, index: &serde_json::Value) {
     std::fs::write(
         container.join(INDEX_JSON),
         serde_json::to_string_pretty(index).expect("index"),
@@ -79,7 +79,7 @@ pub(super) fn write_index(container: &Path, index: &serde_json::Value) {
 }
 
 /// Rewrite the index through `edit` and return the container's path.
-pub(super) fn with_index(container: &Path, edit: impl FnOnce(&mut serde_json::Value)) {
+pub(crate) fn with_index(container: &Path, edit: impl FnOnce(&mut serde_json::Value)) {
     let mut index = read_index(container);
     edit(&mut index);
     write_index(container, &index);
@@ -94,13 +94,13 @@ pub(super) fn with_index(container: &Path, edit: impl FnOnce(&mut serde_json::Va
 /// that difference before taking a baseline, so a comparison of the
 /// exported bytes measures the edit and not this harness's
 /// pretty-printer.
-pub(super) fn reserialise(container: &Path) {
+pub(crate) fn reserialise(container: &Path) {
     let index = read_index(container);
     write_index(container, &index);
 }
 
 /// The id of some representation entry, for tests that need to name one.
-pub(super) fn a_representation(index: &serde_json::Value) -> String {
+pub(crate) fn a_representation(index: &serde_json::Value) -> String {
     index["representations"]
         .as_object()
         .expect("representations")
@@ -111,11 +111,11 @@ pub(super) fn a_representation(index: &serde_json::Value) -> String {
 }
 
 /// A container's identity before and after a restatement of its table.
-pub(super) struct Restated {
-    pub(super) before: SourceIdentity,
-    pub(super) after: SourceIdentity,
+pub(crate) struct Restated {
+    pub(crate) before: SourceIdentity,
+    pub(crate) after: SourceIdentity,
     /// Every `index.json` field whose value changed, as a dotted path.
-    pub(super) index_changes: Vec<String>,
+    pub(crate) index_changes: Vec<String>,
 }
 
 /// **Rewrite one segment's tensor table, copying the payload verbatim.**
@@ -125,7 +125,7 @@ pub(super) struct Restated {
 /// do is disturb the payload — asserted here rather than assumed, since
 /// a harness that quietly moved a payload byte would make every test
 /// below pass for the wrong reason.
-pub(super) fn restate_table(root: &Path, edit: impl FnOnce(&mut SegmentHeader)) -> Restated {
+pub(crate) fn restate_table(root: &Path, edit: impl FnOnce(&mut SegmentHeader)) -> Restated {
     // Put the index into this harness's own serialisation BEFORE the
     // baseline is taken. The SEMANTIC identity is blind to
     // serialisation, but `index_changes` and the artifact digest are
@@ -229,7 +229,7 @@ fn walk(a: &serde_json::Value, b: &serde_json::Value, path: String, out: &mut Ve
 }
 
 /// The same map, surface and layout under two container identities.
-pub(super) fn state_id(model: &SourceIdentity) -> (RepresentationStateId, String) {
+pub(crate) fn state_id(model: &SourceIdentity) -> (RepresentationStateId, String) {
     let surface = TensorSurface::new([SurfaceTensor::new(
         "target.embedding",
         "weight",
@@ -251,7 +251,7 @@ pub(super) fn state_id(model: &SourceIdentity) -> (RepresentationStateId, String
 /// A byte-for-byte copy of a container, so siblings diverge from one
 /// export rather than from two encodes that might differ for reasons
 /// nobody chose.
-pub(super) fn sibling(container: &Path) -> tempfile::TempDir {
+pub(crate) fn sibling(container: &Path) -> tempfile::TempDir {
     let out = tempfile::tempdir().expect("sibling dir");
     copy_into(container, out.path());
     out

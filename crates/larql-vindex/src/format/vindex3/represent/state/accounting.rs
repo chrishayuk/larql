@@ -139,6 +139,21 @@ impl std::fmt::Display for TensorIdentity {
     }
 }
 
+/// One tensor's identity beside its facts.
+///
+/// A sequence and not a map, because `TensorIdentity` is a STRUCT and a
+/// JSON object key must be a string: a `BTreeMap<TensorIdentity, _>`
+/// derives `Serialize` happily and then fails at runtime the moment it
+/// holds anything. The snapshot is written as JSON, so that is not a
+/// theoretical concern — it is `Role::deserialize`'s borrowed-string
+/// bug one level up, and `the_facts_survive_a_round_trip_through_json`
+/// is the test that would have caught either.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct StoredTensor {
+    pub tensor: TensorIdentity,
+    pub fact: SourceStorageFact,
+}
+
 /// What one tensor occupies in the source container, and as what.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct SourceStorageFact {
@@ -164,6 +179,10 @@ pub struct SourceStorageFact {
 pub struct PhysicalAccountingSemantics {
     /// Where a tensor's source byte count comes from.
     pub source_byte_authority: String,
+    /// Where a COMPILED tensor's byte count comes from. Declared here
+    /// and not only on the source side, because `logical-bytes/v1`
+    /// names one procedure and a state's footprint mixes both.
+    pub compiled_byte_authority: String,
     /// How the table it is read from is proved to be the sealed one.
     pub seal_verification: String,
     /// What the declared dtype is permitted to do.
@@ -175,6 +194,7 @@ impl PhysicalAccountingSemantics {
     pub fn logical_bytes_v1() -> Self {
         Self {
             source_byte_authority: "segment-table-len".into(),
+            compiled_byte_authority: "pack-layout-stored-len".into(),
             seal_verification: "segment-sha256-recomputed".into(),
             dtype_role: "explanatory-never-multiplied".into(),
         }
@@ -187,8 +207,11 @@ impl PhysicalAccountingSemantics {
     fn canonical(&self) -> String {
         format!(
             "{PHYSICAL_ACCOUNTING_PROCEDURE}{SECTION}source_byte_authority={}{FIELD}\
-             seal_verification={}{FIELD}dtype_role={}",
-            self.source_byte_authority, self.seal_verification, self.dtype_role
+             compiled_byte_authority={}{FIELD}seal_verification={}{FIELD}dtype_role={}",
+            self.source_byte_authority,
+            self.compiled_byte_authority,
+            self.seal_verification,
+            self.dtype_role
         )
     }
 }
@@ -212,7 +235,9 @@ impl PhysicalAccountingSemanticsId {
 pub struct PhysicalAccountingFacts {
     semantics: PhysicalAccountingSemanticsId,
     source: String,
-    source_storage: BTreeMap<TensorIdentity, SourceStorageFact>,
+    /// Ordered by `(object, tensor)`, so the record is byte-stable and
+    /// lookup is a binary search rather than a scan.
+    source_storage: Vec<StoredTensor>,
 }
 
 impl PhysicalAccountingFacts {
@@ -226,11 +251,16 @@ impl PhysicalAccountingFacts {
     }
 
     pub fn get(&self, tensor: &TensorIdentity) -> Option<&SourceStorageFact> {
-        self.source_storage.get(tensor)
+        self.source_storage
+            .binary_search_by(|held| held.tensor.cmp(tensor))
+            .ok()
+            .map(|at| &self.source_storage[at].fact)
     }
 
     pub fn tensors(&self) -> impl Iterator<Item = (&TensorIdentity, &SourceStorageFact)> {
-        self.source_storage.iter()
+        self.source_storage
+            .iter()
+            .map(|held| (&held.tensor, &held.fact))
     }
 
     pub fn len(&self) -> usize {
@@ -266,6 +296,8 @@ pub fn read_source_storage(
     identity: &SourceIdentity,
 ) -> Result<PhysicalAccountingFacts, VindexError> {
     let mut source_storage: BTreeMap<TensorIdentity, SourceStorageFact> = BTreeMap::new();
+    // Assembled through a map so a repeated `(object, tensor)` is
+    // caught, then flattened to the ordered sequence the record stores.
     for authority in &identity.semantic.representations {
         let segment = container.join(&authority.segment);
         verify_seal(&segment, authority)?;
@@ -313,7 +345,10 @@ pub fn read_source_storage(
     Ok(PhysicalAccountingFacts {
         semantics: PhysicalAccountingSemantics::logical_bytes_v1().id(),
         source: identity.semantic_digest(),
-        source_storage,
+        source_storage: source_storage
+            .into_iter()
+            .map(|(tensor, fact)| StoredTensor { tensor, fact })
+            .collect(),
     })
 }
 

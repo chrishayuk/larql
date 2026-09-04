@@ -89,6 +89,15 @@ pub struct SearchSemantics {
     pub ranking_rule: String,
     /// How bytes are counted.
     pub physical_accounting: String,
+    /// Which layout policy decided what could be compiled at all.
+    ///
+    /// Normative, and it was missing. A layout refusal removes a tensor
+    /// from the action space and collapses its state onto the protected
+    /// one, so a record that did not name its layout policy could be
+    /// replayed under another and produce different states without
+    /// anything failing — the "second layout truth" the physical
+    /// accounting work closed on the byte side.
+    pub layout_admission: String,
 }
 
 impl SearchSemantics {
@@ -99,6 +108,7 @@ impl SearchSemantics {
         promotion: impl Into<String>,
         ranking: impl Into<String>,
         physical_accounting: impl Into<String>,
+        layout_admission: impl Into<String>,
     ) -> Self {
         Self {
             candidate_generation: candidate_generation.into(),
@@ -107,6 +117,7 @@ impl SearchSemantics {
             promotion_rule: promotion.into(),
             ranking_rule: ranking.into(),
             physical_accounting: physical_accounting.into(),
+            layout_admission: layout_admission.into(),
         }
     }
 
@@ -114,13 +125,15 @@ impl SearchSemantics {
     pub fn id(&self) -> SearchSemanticsId {
         let input = format!(
             "{SEARCH_SEMANTICS_ID_VERSION}{SECTION}generation={}{FIELD}pruning={}{FIELD}\
-             evidence={}{FIELD}promotion={}{FIELD}ranking={}{FIELD}physical={}",
+             evidence={}{FIELD}promotion={}{FIELD}ranking={}{FIELD}physical={}{FIELD}\
+             layout={}",
             self.candidate_generation,
             self.pre_measurement_pruning,
             self.evidence_interpretation,
             self.promotion_rule,
             self.ranking_rule,
-            self.physical_accounting
+            self.physical_accounting,
+            self.layout_admission
         );
         SearchSemanticsId(hash_bytes(input.as_bytes()))
     }

@@ -62,12 +62,14 @@ use std::collections::BTreeMap;
 
 use super::super::nvfp4_pack::{PackLayout, DTYPE_NVFP4};
 use super::accounting::TensorIdentity;
+use super::accounting::PHYSICAL_ACCOUNTING_PROCEDURE;
 use super::bind::BoundPhysicalAccounting;
 use super::candidate::Footprint;
 use super::identity::RepresentationState;
 use super::realization::LogicalBytes;
 use super::resolved::{LayoutAdmission, SOURCE_PRECISION};
 use super::surface::TensorSurface;
+use crate::error::VindexError;
 
 /// **What one tensor occupies once compiled to one encoding.**
 ///
@@ -98,6 +100,25 @@ impl CompiledBytes for PackCompiledBytes {
         PackLayout::derive(shape, encoding)
             .ok()
             .map(|layout| LogicalBytes::new(layout.total_len as u64))
+    }
+}
+
+/// Resolve a declared accounting procedure to the one compiled-bytes
+/// oracle that implements it.
+///
+/// The same discipline [`super::resolved::layout_admission`] applies to
+/// layouts: the record names the procedure, this resolves it, and an
+/// unknown name is refused rather than defaulted. Otherwise "no second
+/// physical truth" would hold for the source side and not the compiled
+/// one.
+pub fn compiled_bytes(procedure: &str) -> Result<&'static dyn CompiledBytes, VindexError> {
+    match procedure {
+        PHYSICAL_ACCOUNTING_PROCEDURE => Ok(&PackCompiledBytes),
+        other => Err(VindexError::Parse(format!(
+            "the record counts bytes under `{other}`, which this build does not implement — \
+             pricing its states under another procedure would compare figures nothing \
+             produced together"
+        ))),
     }
 }
 
