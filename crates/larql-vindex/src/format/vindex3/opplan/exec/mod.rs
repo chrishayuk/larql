@@ -26,6 +26,7 @@ pub mod decode;
 pub mod device;
 mod experts;
 pub mod gated_delta;
+pub mod hyper_connection;
 pub mod kda;
 #[cfg(all(feature = "gpu", target_os = "macos"))]
 pub mod kda_metal;

@@ -86,6 +86,22 @@ impl ResidualTopology {
     /// report (which must say so). Wave 11 established that a refusal
     /// only one consumer can see is not a refusal, and that two lists of
     /// what cannot be lowered drift into exactly that state.
+    ///
+    /// **Wave 17 changed what this reason says without changing whether
+    /// it refuses.** The arithmetic is no longer missing: all five
+    /// stages execute and are checked against the reference (see
+    /// `larql-vindex`'s `opplan::exec::hyper_connection`). What blocks
+    /// carriage now is one plane further out — no placement rule owns
+    /// the `hc_attn_*`, `hc_ffn_*` or `hc_head_*` tensor groups, so the
+    /// per-token weights the stages need cannot be addressed in a
+    /// checkpoint, and a plan therefore cannot run them.
+    ///
+    /// Saying so precisely matters more than it looks. A reason that
+    /// still claimed the arithmetic was absent would be false, and a
+    /// build that lifted the refusal because the arithmetic exists would
+    /// be claiming carriage from the existence of code — the same
+    /// mistake in a new place as grading a config key representable
+    /// because a parser read it.
     pub fn unimplemented_reason(self) -> Option<&'static str> {
         match self {
             Self::SingleStream => None,
@@ -93,7 +109,11 @@ impl ResidualTopology {
                 "the residual is a bundle of parallel streams reduced and expanded per token \
                  through a Sinkhorn-split mixing matrix; the single-stream residual programme \
                  cannot lower it without discarding the stream multiplicity, the dynamic \
-                 reduce and expand weights, or the cross-stream combination",
+                 reduce and expand weights, or the cross-stream combination. The five stages \
+                 are implemented and checked against the reference, so the arithmetic is not \
+                 what is missing: no placement rule owns the hc_attn_*, hc_ffn_* and hc_head_* \
+                 tensor groups, so their per-token weights cannot be addressed in a checkpoint \
+                 and no plan can carry the bundle",
             ),
         }
     }
@@ -144,6 +164,44 @@ mod tests {
         assert_eq!(hc.streams(), 4);
         let reason = hc.unimplemented_reason().expect("must refuse");
         assert!(reason.contains("bundle"), "{reason}");
+    }
+
+    /// Wave 17 implemented the arithmetic, so the refusal must no longer
+    /// claim it is missing — and must name the gap that actually blocks
+    /// carriage, which is operand addressing.
+    ///
+    /// A refusal whose stated reason has gone stale is worse than a
+    /// blunt one: it sends the next wave to fix something already done.
+    #[test]
+    fn the_refusal_names_the_operand_gap_and_not_the_arithmetic() {
+        let hc = ResidualTopology::HyperConnection(HyperConnection {
+            streams: 4,
+            sinkhorn_iters: 20,
+            sinkhorn_eps: 1e-6,
+        });
+        let reason = hc.unimplemented_reason().expect("still refuses");
+
+        assert!(
+            reason.contains("placement rule"),
+            "the reason must name operand addressing as the blocker: {reason}"
+        );
+        assert!(
+            reason.contains("implemented"),
+            "the reason must record that the arithmetic exists: {reason}"
+        );
+        assert!(
+            reason.contains("the arithmetic is not what is missing"),
+            "the reason must not leave a reader thinking the stages are unwritten: {reason}"
+        );
+        // Wave 16's three structural reasons survive verbatim: they say
+        // why a SINGLE-STREAM programme cannot lower this, which is still
+        // true and is a different claim from what blocks carriage today.
+        for structural in ["stream multiplicity", "dynamic", "cross-stream"] {
+            assert!(
+                reason.contains(structural),
+                "reason omits {structural:?}: {reason}"
+            );
+        }
     }
 
     /// DeepSeek-V4's own numbers: `hc_mult` 4 gives a `[24, 4*d]`

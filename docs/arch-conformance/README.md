@@ -48,14 +48,51 @@ invariants are the ones that matter most:
 
 | Metric | Baseline | Waves 1+3 | rope | moe | sliding window | frontier census† | partial rotary | vestigial pair | qwen MoE |
 |---|---:|---:|---:|---:|---:|---:|---:|---:|---:|
-| semantics version | 1 | 3 | 4 | 5 | 6 | 6 (held) | 7 | 8 | 9 | 10 | 11 | 12 | 13 | **14** |
-| GREEN | 17 | 18 | 21 | 26 | 28 | 28 | 31 | 33 | 38 | 38 | 38 | 41 | 41 | **41** |
-| AMBER | 6 | 6 | 6 | 6 | 6 | 7 | 7 | 7 | 7 | 3‡ | 3 | 3 | 3 | **3** |
-| RED | 65 | 64 | 61 | 56 | 54 | 74 | 71 | 69 | 64 | 68‡ | 68 | 65 | 65 | **65** |
-| **BUG** | **0** | **0** | **0** | **0** | **0** | **0** | **0** | **0** | **0** | **0** | **0** | **0** | **0** | **0** |
-| **silent drops** | **0** | **0** | **0** | **0** | **0** | **0** | **0** | **0** | **0** | **0** | **0** | **0** | **0** | **0** |
-| text-closure blockers | 886 | 776 | 756 | 671 | 668 | 1109 | 1091 | 1089 | 1076 | 1058 | 1051 | 1044 | 1029 | **1037**§ |
-| K3 clusters remaining | 7 | 7 | 7 | 7 | 7 | 7 | 7 | 7 | 7 | 7 | 7 | 7 | 7 | **7** |
+| semantics version | 1 | 3 | 4 | 5 | 6 | 6 (held) | 7 | 8 | 9 | 10 | 11 | 12 | 13 | 14 | **14 (held)** |
+| GREEN | 17 | 18 | 21 | 26 | 28 | 28 | 31 | 33 | 38 | 38 | 38 | 41 | 41 | 41 | **41** |
+| AMBER | 6 | 6 | 6 | 6 | 6 | 7 | 7 | 7 | 7 | 3‡ | 3 | 3 | 3 | 3 | **3** |
+| RED | 65 | 64 | 61 | 56 | 54 | 74 | 71 | 69 | 64 | 68‡ | 68 | 65 | 65 | 65 | **65** |
+| **BUG** | **0** | **0** | **0** | **0** | **0** | **0** | **0** | **0** | **0** | **0** | **0** | **0** | **0** | **0** | **0** |
+| **silent drops** | **0** | **0** | **0** | **0** | **0** | **0** | **0** | **0** | **0** | **0** | **0** | **0** | **0** | **0** | **0** |
+| text-closure blockers | 886 | 776 | 756 | 671 | 668 | 1109 | 1091 | 1089 | 1076 | 1058 | 1051 | 1044 | 1029 | 1037§ | **1037**¶ |
+| K3 clusters remaining | 7 | 7 | 7 | 7 | 7 | 7 | 7 | 7 | 7 | 7 | 7 | 7 | 7 | 7 | **7** |
+
+¶ **Wave 17 moved nothing, and the forecast said it would move twelve.**
+The five stages of the hyper-connection sublayer now execute and are checked
+against DeepSeek-V4-Flash's own reference — the mix projection, the Sinkhorn
+split, the stream reduction, the branch, the stream expansion, plus the head's
+separate reduction and the embedding replication. The forecast predicted that
+finishing them would lift the execution refusal and drop blockers to 1025. It
+does not, because **executing the arithmetic is not the same as the topology
+executing**: the stages need `hc_attn_fn`, `hc_ffn_fn` and `hc_head_fn` as
+bound operands, and no placement rule owns those tensor groups. Lifting the
+refusal would have graded a component executable on the evidence that code
+exists to execute it — carriage claimed from recognition, which is wave 16's
+own falsifier wearing different clothes. The refusal stays and now names the
+real blocker; the arithmetic plane is closed and the tensor-address plane is
+wave 18's.
+
+**A header census, run before wave 18 was scoped, corrected one refusal.**
+The staged safetensors headers carry every hyper-connection tensor's name,
+shape and dtype without a byte of payload, and they say three things wave 17
+could not. `hc_attn_fn`, `hc_ffn_fn` and `hc_head_fn` are the checkpoint's own
+names, not the forecast's invention. The head's `(4, 16384)` with a one-entry
+scale, against the layer's `(24, 16384)` with three, independently confirms
+wave 17's correction that the head reduction is a different operation — from a
+source that is not the reference the oracle was transcribed from, which is the
+one epistemic weakness wave 17 recorded as unfixable. And DeepSeek-V4-Flash
+carries a complete `mtp.0` hyper-connection site that no wave had named.
+
+The correction: **Hy4-preview was refusing as a "partial declaration", and it
+is not one.** Its `hc_pre.hc_fn` is `[2*hc, hc*d]` against the Sinkhorn form's
+`[(2+hc)*hc, hc*d]`, it carries two scales rather than three and no
+combination block, and its config declares `hc_magnitude` 2.0 — an explicit
+parameter where the Sinkhorn kernel hardcodes the factor of two — and no
+iteration count, because nothing iterates. That is a complete declaration of a
+Sinkhorn-free topology. The refusal stands; its reason now says this build
+judges only the Sinkhorn-split form and that an absent iteration count may
+mean a different topology rather than an incomplete one. Registered as
+**HC-PREPOST**, awaiting arithmetic, and out of wave 18's scope.
 
 § **Blockers ROSE in wave 16, and that was the forecast.** Declaring the
 hyper-connection topology makes a refusal visible where there was previously

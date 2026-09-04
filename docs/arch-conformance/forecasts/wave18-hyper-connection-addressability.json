@@ -1,0 +1,106 @@
+{
+  "wave": 18,
+  "name": "hyper-connection-addressability",
+  "written": "2026-09-04",
+  "written_before": "any placement code. The tensor vocabulary in this forecast was read from the STAGED SAFETENSORS HEADERS at ~/.cache/larql/hf-headers/, not from wave 17's forecast prose and not from any reference implementation. Every shape, dtype, prefix and count below is a direct header read and is reproducible without downloading a byte of payload.",
+  "baseline": {
+    "semantics_version": 14,
+    "GREEN": 41,
+    "AMBER": 3,
+    "RED": 65,
+    "BUG": 0,
+    "silent_drops": 0,
+    "text_closure_blocking": 1037,
+    "corpus_blocking_total": 1377,
+    "K3_clusters": 7,
+    "a_metric_naming_rule_this_wave_adopts": "Wave 17's record quotes bare 'blockers'. There are two correct denominators and they differ by 340: `text_closure_blocking` (1037, the README series) and `corpus_blocking_total` (1377, the sum of `plan.summary.blocking` over the 109 cached plans). Comparing one against the other reads as a 33% regression that never happened. From this wave the metric name travels with the value, always."
+  },
+  "what_the_header_census_read": {
+    "method": "The staged stubs carry each shard's 8-byte length prefix and JSON header and no tensor data. That is enough for name, shape, dtype, shard and byte range — everything addressability needs, and nothing execution needs. 39.39 MB stands in for 328.33 GB on GLM-5.3-Flash.",
+    "deepseek-ai/DeepSeek-V4-Flash": {
+      "config": "hc_mult 4, hc_eps 1e-6, hc_sinkhorn_iters 20, hidden_size 4096, num_hidden_layers 43",
+      "groups": {
+        "layers.N.hc_attn_{fn,base,scale}": "F32 (24, 16384) / (24,) / (3,) — 43 layers, all of them",
+        "layers.N.hc_ffn_{fn,base,scale}": "F32 (24, 16384) / (24,) / (3,) — 43 layers, all of them",
+        "hc_head_{fn,base,scale}": "F32 (4, 16384) / (4,) / (1,) — one site, bare, no `model.` prefix",
+        "mtp.0.hc_{attn,ffn,head}_{fn,base,scale}": "the SAME nine groups again, 18 tensors, on the multi-token-prediction module"
+      },
+      "total_hc_tensors": 270
+    },
+    "zai-org/GLM-5.3-Flash": {
+      "config": "nested under `text_config` (the checkpoint is multimodal and carries a `vision_config`): text_config.hc_mult 4, hc_eps 1e-6, hc_sinkhorn_iters 20, hidden_size 4096, num_hidden_layers 45, mhc true",
+      "groups": {
+        "model.language_model.layers.N.hc_attn_{fn,base,scale}": "fn BF16 (24, 16384); base F32 (24,); scale F32 (3,) — 45 layers",
+        "model.language_model.layers.N.hc_ffn_{fn,base,scale}": "same shapes and dtypes — 45 layers"
+      },
+      "no_head": "GLM-5.3-Flash carries NO hc_head_* tensor of any spelling.",
+      "total_hc_tensors": 270
+    },
+    "tencent/Hy4-preview": {
+      "config": "enable_ihc true, hc_mult 4, hc_eps 1e-6, hc_magnitude 2.0, hidden_size 6144, num_hidden_layers 78, and NO hc_sinkhorn_iters",
+      "groups": {
+        "model.layers.N.hc_{attn,mlp}_layer.hc_pre.hc_{fn,base,scale}": "F32 (8, 24576) / (8,) / (2,) — 78 layers",
+        "model.hc_head.hc_head_{fn,base,scale}": "F32 (4, 24576) / (4,) / (1,)"
+      },
+      "why_this_is_a_different_topology_and_not_a_partial_one": "8 = 2*hc, not (2 + hc)*hc = 24. Two scales, not three. The module is spelled `hc_pre` and there is no combination block anywhere on the surface. The config declares no iteration count because nothing iterates, and `hc_magnitude` 2.0 is an explicit parameter where the Sinkhorn kernel hardcodes the factor of two on `post`. Every one of those is positive evidence of a COMPLETE Sinkhorn-free declaration."
+    }
+  },
+  "what_the_census_settled_before_this_wave_started": {
+    "the_vocabulary_was_never_invented": "Wave 17's forecast named `hc_attn_fn`, `hc_ffn_fn` and `hc_head_fn` from a reference implementation, and this build contains only `hc_head_fn`, inside a cluster that classifies CONFIG KEYS. The headers show all three are the checkpoint's own tensor names, verbatim. There is no naming task in this wave; there is a placement task.",
+    "wave_17s_unfixable_risk_is_now_partly_closed": "Wave 17 recorded that its oracle and its Rust read the same source, so both would inherit any MISREADING of the reference, and that no numerical test could see it. The headers are not that source. They independently confirm `mix_hc = (2 + hc)*hc = 24`, `hc*d = 16384`, a three-entry layer scale, and — the correction wave 17 forced on wave 16 — a head whose `fn` is `[hc, hc*d]` with a ONE-entry scale. A misreading that tidied the head into the layer form would have to produce (24, 16384) and (3,) there, and the checkpoint says (4, 16384) and (1,).",
+    "and_one_thing_it_broke": "Hy4-preview's refusal reason said 'partial declaration'. The header evidence contradicts it. Corrected ahead of this wave rather than inside it, because leaving it would send this wave's reader to complete a declaration nothing is missing from."
+  },
+  "the_claim": "Every tensor belonging to the Sinkhorn hyper-connection topology on the staged DeepSeek-V4-Flash surface — including the eighteen on `mtp.0` — has an explicit semantic fate. Every required operand resolves from header metadata alone to a concrete typed byte range and is carried into the plan as a bound operand. The addressability half of the topology refusal disappears. The payload half does not, and a control proves it could have.",
+  "scope": {
+    "in": [
+      "A semantic role per hc tensor group, distinct from its spelling.",
+      "Family-dialect placement: DeepSeek's bare `layers.N.`, GLM's `model.language_model.layers.N.`, each resolving the SAME role to a different path, dtype and layer count.",
+      "A total-fate invariant over every recognised hc declaration on a surface: placed, or explicitly refused with a reason. No tensor may be neither.",
+      "`mtp.0` given a fate by name — placed or refused, but never silently unmatched.",
+      "Carriage of the complete operand bundle into the op plan, so the wave-17 executor can be instantiated from a checkpoint's addresses.",
+      "Splitting the topology refusal into its addressability and payload halves at the single authority wave 16 established."
+    ],
+    "out": [
+      "Hy4-preview's Sinkhorn-free topology. Registered as HC-PREPOST, a second topology awaiting arithmetic, NOT scope here. Recognising it needs `enable_ihc` and `hc_magnitude` parsed, which this build does not do, and inferring it from the ABSENCE of `hc_sinkhorn_iters` would be an unsupported-component call made without positive evidence.",
+      "Any semantic claim about GLM's `mhc`. It is `text_config.mhc = true`, and GLM is the family with no `hc_head_*` tensors while DeepSeek has no `mhc` key and does have them. That is one bit across two checkpoints. GLM may become physically addressable for the roles that ARE known without promoting that correlation to meaning.",
+      "Executing GLM's topology. A second placement dialect is not evidence that the arithmetic is the same arithmetic.",
+      "Real-weight execution. No hyper-connection checkpoint has payload on this machine; the cheapest is DeepSeek-V4-Flash at 159.61 GB. That is wave 19.",
+      "Metal or any GPU lowering."
+    ]
+  },
+  "predicted_sweep_effect": {
+    "expected_direction": "DOWN on the DeepSeek rows, and only there.",
+    "per_row": {
+      "deepseek-ai/DeepSeek-V4-Flash": "the three `hc_head_*` tensor-group findings clear. The three hc CONFIG keys may or may not clear depending on whether the surface builds, which still needs the wave-18 attn_norm/ffn_norm spellings; if the surface does not build, the config keys keep blocking and that is correct.",
+      "deepseek-ai/DeepSeek-V4-Pro": "same, same reasoning.",
+      "zai-org/GLM-5.3-Flash": "the hc_attn_*/hc_ffn_* roles become addressable. `mhc` STAYS blocking — recognised signal, insufficient execution meaning. Finding 111 may narrow but must not clear while the head reduction is unexplained.",
+      "tencent/Hy4-preview": "UNCHANGED at 32. Its refusal now reads as a recognised unsupported topology rather than a partial declaration, which changes the text and not the count.",
+      "zai-org/GLM-5.3": "19 -> 19. Declares no hc keys. Control.",
+      "Qwen/Qwen3-0.6B": "0 -> 0. Control."
+    },
+    "rows_cleared": 0,
+    "verdicts_moved": 0,
+    "and_a_deliberate_refusal_to_predict_a_number": "Wave 17's forecast named an exact blocker total and was wrong for a reason no arithmetic could have reached — it modelled a plane it had not yet distinguished. The honest prediction here is per-finding and directional. A wave that has just learned it was confusing two planes should not express its confidence as a decimal."
+  },
+  "falsifiers": [
+    "Any hc tensor on the DeepSeek surface with no fate. The 18 `mtp.0` tensors are the specific trap: placement rules written for `layers.N.` plus a bare head will miss them and the wave must fail rather than pass quietly.",
+    "The topology refusal disappearing ENTIRELY. Addressability is half of it; a build that lifts the whole refusal has promoted 'I know the address' into 'I executed the tensor'.",
+    "A real-weight witness becoming available. There is no payload on this machine; if something claims to have executed hyper-connections on DeepSeek-V4-Flash weights, it is reading a stub whose header does not describe data that follows.",
+    "One placement rule matching all three families. The prefixes, dtypes and leaf spellings genuinely differ; a rule general enough to match all three is matching on something too weak to be the role.",
+    "`hc_attn_fn` being given a single source dtype. It is F32 on DeepSeek and BF16 on GLM. A role that carries a dtype has confused the semantic with the physical, and REPRESENT will inherit the mistake.",
+    "Hy4-preview being placed. Its `hc_pre.hc_fn` is `[2*hc, hc*d]` and would bind to a `[(2+hc)*hc, hc*d]` role only if the rule ignores shape.",
+    "`mhc` acquiring a meaning. One bit across two checkpoints is a hypothesis.",
+    "Any row going GREEN or AMBER, any existing parity oracle moving, BUG > 0, or a silent-drop regression."
+  ],
+  "the_witness": {
+    "positive": "Every required operand for DeepSeek-V4-Flash's hyper-connection topology resolves from the staged header alone to (tensor name, shape, dtype, shard, byte range), and the op plan carries the bundle. Asserted per group, including `mtp.0`, against the header census committed as a fixture.",
+    "the_total_fate_invariant": "Enumerate every tensor on the surface whose name the hc dialect recognises; assert the count matched equals the count recognised; assert the residue is empty. Written so that removing the `mtp.0` rule makes it fail, and checked by removing it.",
+    "the_negative_control_that_makes_the_wave_meaningful": "With addressability satisfied, the real-weight witness must STILL be unavailable, for the stated reason that the staged surface has no payload. Both halves are asserted: header present -> addressability succeeds; header-only stub -> execution witness refuses. If the second cannot be made to fail on its own, the two planes have been renamed rather than separated.",
+    "the_dialect_control": "The same semantic role resolves to a different path and dtype on GLM than on DeepSeek, and neither resolution is expressible as the other's spelling."
+  },
+  "the_topology_registry_this_wave_opens": {
+    "HC-SINKHORN": "DeepSeek-V4-{Flash,Pro}, and GLM-5.3-Flash's layer sites pending `mhc`. Arithmetic closed wave 17; addressability this wave; real-weight witness wave 19.",
+    "HC-PREPOST": "Hy4-preview. Physical structure recognised from headers — `[2*hc, hc*d]`, two scales, no combination block, explicit `hc_magnitude`. Arithmetic not implemented, recognition not parsed. Refuses, and the reason now says which of those it is."
+  },
+  "how_this_wave_can_be_wrong_in_a_way_the_tests_would_not_catch": "Every shape in this forecast comes from headers, and a header is a claim the file makes about itself that nothing here verifies against data. A shard whose header announces `(24, 16384)` over a region holding something else would place cleanly and execute wrongly, and no test in this wave can see it — that is precisely the boundary wave 19 exists to cross. The census is also four checkpoints; a fifth family could spell the role a fifth way, and 'the dialect matcher is general' is not a claim this wave can make."
+}

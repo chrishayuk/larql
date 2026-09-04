@@ -1,0 +1,177 @@
+{
+ "wave": 17,
+ "name": "hyper-connection-execution",
+ "written": "2026-09-03",
+ "written_before": "any code. Arithmetic read directly from DeepSeek-V4-Flash's `inference/model.py` (class `Block`, `ParallelHead`, `Transformer.forward`) AND `inference/kernel.py` (`hc_split_sinkhorn_kernel`), both fetched this wave. NOT from wave 16's transcription: wave 16 named `hc_split_sinkhorn` as an operation but could not state what its twenty iterations compute, and that is exactly stage 2. Parameters from the checkpoint's own config.json.",
+ "baseline": {
+  "semantics_version": 14,
+  "GREEN": 41,
+  "AMBER": 3,
+  "RED": 65,
+  "BUG": 0,
+  "silent_drops": 0,
+  "text_closure_blockers": 1037,
+  "K3_clusters": 7,
+  "read_from": "the cached plans at ~/chris-models/_conformance/plans/, not from the wave-16 record. Per-row text-closure blocking counts confirmed there: GLM-5.3-Flash 31, Hy4-preview 32, DeepSeek-V4-Flash 34, DeepSeek-V4-Pro 34. Control: Qwen3-0.6B reads 0, so the reader is not returning zero for everything."
+ },
+ "the_claim": "The five stages of the hyper-connection sublayer execute, each judged independently against the reference rather than only end to end. The topology stops being an execution refusal for checkpoints that declare it COMPLETELY, and stays a refusal for the one that declares it in part. No row becomes admissible: executing a residual topology cannot clear the twenty-seven-plus unrelated blockers these rows carry.",
+ "what_wave_16_could_not_state_and_this_wave_read": {
+  "the_sinkhorn_split_verbatim": {
+   "source": "`inference/kernel.py`, `hc_split_sinkhorn_kernel`, hc=4 iters=20 eps=1e-6",
+   "inputs": "mixes[mix_hc] with mix_hc = (2+hc)*hc, hc_scale[3], hc_base[mix_hc]",
+   "steps": [
+    "pre[j]  = sigmoid(mixes[j] * hc_scale[0] + hc_base[j]) + eps            for j in 0..hc",
+    "post[j] = 2 * sigmoid(mixes[j+hc] * hc_scale[1] + hc_base[j+hc])        for j in 0..hc   (NO eps)",
+    "comb[j,k] = mixes[j*hc + k + 2*hc] * hc_scale[2] + hc_base[j*hc + k + 2*hc]",
+    "comb = row_softmax(comb) + eps                                          (subtract row max, exp, divide by row sum, THEN add eps)",
+    "comb[j,k] /= (col_sum[k] + eps)                                         where col_sum[k] = sum over j",
+    "then (sinkhorn_iters - 1) times: comb[j,k] /= (row_sum[j] + eps); comb[j,k] /= (col_sum[k] + eps)"
+   ],
+   "asymmetries_that_are_real_and_must_not_be_tidied": [
+    "`pre` gets `+ eps`; `post` does not.",
+    "`post` carries a factor of 2; `pre` does not.",
+    "hc_scale is indexed 0/1/2 for pre/post/comb \u2014 three different scalars, not one.",
+    "the loop runs iters-1 times because the first row+column pass is spelled out before it, so 20 iterations means 1 softmax-row pass + 1 column pass + 19 row/column pairs.",
+    "the last operation is a COLUMN normalisation, so columns sum to ~1 \u2014 which is what makes the expansion a weighted average over source streams."
+   ]
+  },
+  "the_expansion_index_order": "`out[k] = post[k] * branch + sum_j comb[j,k] * residual[j]`. The output stream is comb's SECOND index and the sum runs over the first. Read off the broadcast in `hc_post` (`comb.unsqueeze(-1) * residual.unsqueeze(-2)`, summed over dim=2), and independently corroborated by the Sinkhorn ending on a column normalisation: if the index order were transposed the expansion would not be a weighted average.",
+  "the_head_reduction_is_a_DIFFERENT_operation": "Wave 16 recorded that the head 'carries its own reduction (`hc_head_{fn,base,scale}`)', which is true but understates it. `ParallelHead.hc_head` runs NO Sinkhorn, produces NO post and NO comb, its `hc_head_fn` is `[hc, hc*d]` and not `[mix_hc, hc*d]`, and its `hc_head_scale` is a scalar `[1]` and not a 3-vector. It is `pre = sigmoid(mixes*scale + base) + hc_eps` followed by the same weighted sum. Treating it as a sixth site rather than a reuse of stages 1-3 is a correction this wave forces on the wave-16 record.",
+  "the_embedding_expansion": "`Transformer.forward` does `h = h.unsqueeze(2).repeat(1, 1, hc_mult, 1)` \u2014 the embedding is REPLICATED into every stream, not zero-padded and not split. Wave 16 named the embedding as a consumer that must agree; this is what it actually does."
+ },
+ "the_five_stages_each_independently_falsifiable": [
+  {
+   "stage": 1,
+   "name": "mix projection",
+   "arithmetic": "x_flat = flatten(x[hc,d]); rsqrt = 1/sqrt(mean(x_flat^2) + norm_eps); mixes = hc_fn @ x_flat * rsqrt",
+   "judged_by": "its own test against the torch oracle; the eps here is the component's norm_eps, NOT hc_eps, and a test asserts swapping them changes the result"
+  },
+  {
+   "stage": 2,
+   "name": "Sinkhorn split",
+   "arithmetic": "as transcribed above",
+   "judged_by": "golden vectors from the torch transcription of the kernel, plus an iteration-count sensitivity test"
+  },
+  {
+   "stage": 3,
+   "name": "stream reduction",
+   "arithmetic": "y[d] = sum_j pre[j] * x[j,d]",
+   "judged_by": "its own test, with deliberately unequal streams so a wrong pre vector cannot pass"
+  },
+  {
+   "stage": 4,
+   "name": "branch",
+   "arithmetic": "the ordinary sublayer on the reduced [d] vector \u2014 norm then attention or FFN",
+   "judged_by": "unchanged from the existing single-stream path; the test asserts the branch receives [d] and not [hc,d]"
+  },
+  {
+   "stage": 5,
+   "name": "stream expansion",
+   "arithmetic": "out[k,d] = post[k]*branch[d] + sum_j comb[j,k]*residual[j,d]",
+   "judged_by": "its own test, including the index-order assertion that a transposed comb gives a different answer"
+  }
+ ],
+ "scope": {
+  "in": [
+   "The five sublayer stages, executing, each with its own test.",
+   "The head reduction as a sixth named operation, distinct from stages 1-3.",
+   "The embedding replication into streams.",
+   "Lifting the op-plan refusal for a COMPLETELY declared topology, through the same single authority wave 16 established.",
+   "A golden fixture generated from a torch transcription of the reference, committed rather than generated at test time."
+  ],
+  "out": [
+   "Tensor placement rules for the `hc_head_*` and `hc_{attn,ffn}_*` groups. That is the tensor-address dialect plane and belongs with wave 18's `attn_norm`/`ffn_norm` spellings. Consequence: DeepSeek-V4's `hc_head_{fn,base,scale}` findings stay unknown, and its surface still does not build.",
+   "GLM-5.3-Flash's `mhc` key, which no reference this wave can read explains. Recorded as an open fact, not guessed.",
+   "Qwen3.8-Flash-Next's variant, still ungrounded \u2014 unchanged from wave 16.",
+   "Metal or any GPU lowering. CPU reference execution only."
+  ]
+ },
+ "predicted_sweep_effect": {
+  "rows_cleared": 0,
+  "verdicts_moved": 0,
+  "expected_direction": "DOWN, the opposite of wave 16 \u2014 and for the symmetric reason. Wave 16 declared a topology it could not execute and blockers rose; wave 17 executes it, so keys that block because they configure an unimplemented component stop blocking. The refusal that remains must be the honest one: Hy4-preview's PARTIAL declaration.",
+  "predicted_after": {
+   "semantics_version": 15,
+   "GREEN": 41,
+   "AMBER": 3,
+   "BUG": 0,
+   "silent_drops": 0,
+   "text_closure_blockers": 1025
+  },
+  "per_row": {
+   "zai-org/GLM-5.3-Flash": "31 -> 27 (-4). Ids 24/25/26 (hc_eps, hc_mult, hc_sinkhorn_iters, all unsupported_component) stop blocking because the component is now implemented, and id 111 (execution surface complete AND topology not executable) clears. Id 50 (`mhc`, unknown) STAYS \u2014 nothing this wave reads explains it.",
+   "tencent/Hy4-preview": "32 -> 30 (-2). Ids 21/23 (hc_eps, hc_mult) reclassify away from unsupported_component. Id 76 MUST REMAIN: the checkpoint declares the topology only in part and this build still refuses it. Ids 22 (`hc_magnitude`) and 74 (`model.hc_head` placement) stay.",
+   "deepseek-ai/DeepSeek-V4-Flash": "34 -> 31 (-3). The three hc config keys stop blocking. Ids 68/69/70 (`hc_head_*` tensor groups) STAY \u2014 placement is wave 18. The surface still does not build, so no verdict moves.",
+   "deepseek-ai/DeepSeek-V4-Pro": "34 -> 31 (-3), same reasoning.",
+   "zai-org/GLM-5.3": "19 -> 19, unchanged. It declares no hc keys."
+  }
+ },
+ "falsifiers": [
+  "Hy4-preview ceasing to refuse. Half a declaration is not a topology, and the partial-declaration refusal is the single most important thing this wave must NOT break.",
+  "Any row going GREEN or AMBER. A residual topology cannot clear twenty-seven unrelated blockers, so a verdict moving means something cleared that was not earned.",
+  "DeepSeek-V4's execution surface building. Its norm spellings are wave 18; if the surface builds now, something inferred a norm the checkpoint does not declare.",
+  "The five stages only being testable end to end. If a stage cannot be made to fail on its own, wave 16's reason for naming Sinkhorn separately was wasted.",
+  "The witness passing with sinkhorn_iters = 1. If twenty iterations and one agree within tolerance on the fixture, the fixture proves nothing about the iteration and the streams were too symmetric \u2014 the fixture, not the code, is then wrong.",
+  "A transposed `comb` passing. If out[k] = sum_j comb[k,j] * residual[j] also passes, the fixture cannot see index order.",
+  "BUG > 0 or any silent-drop regression.",
+  "Any existing parity oracle moving.",
+  "Blockers RISING. This wave implements rather than declares; a rise would mean the implementation introduced a new refusal it did not intend."
+ ],
+ "the_witness": {
+  "shape": "A synthetic bundle with hc=4 streams that are deliberately unequal in norm and direction (realised L2 spread 28x-76x across positions), a `comb` that genuinely mixes every stream into every other, and a branch function whose output is not in the span of any single stream. Golden values come from a torch transcription of `hc_split_sinkhorn_kernel` and `Block.hc_pre`/`hc_post` as written, committed as a fixture rather than recomputed at test time.",
+  "assertions": [
+   "each of the five stages matches the oracle on its own",
+   "20 Sinkhorn iterations differ measurably from 1 \u2014 the iteration count is load-bearing",
+   "the comb columns sum to ~1 after the final column normalisation",
+   "a transposed comb gives a different answer than the reference order",
+   "swapping norm_eps for hc_eps in stage 1 changes the result",
+   "the full sublayer composed from the five stages matches the reference end to end",
+   "a partially declared topology still refuses, at the same single authority"
+  ]
+ },
+ "how_this_wave_can_be_wrong_in_a_way_the_tests_would_not_catch": "The oracle is a torch transcription of the same source the Rust reads, so both inherit any MISREADING of the reference (as opposed to any slip in transcribing it). The two independent checks on that risk are structural, not numerical: the Sinkhorn ends on a column normalisation, which only makes the expansion a weighted average if the index order is the one read; and `post` carrying a factor of 2 with no eps while `pre` carries an eps with no factor of 2 is an asymmetry that a misreading would be likely to tidy away.",
+ "result": {
+  "scored_on": "2026-09-04",
+  "outcome_semantics_version": 14,
+  "rows_cleared": 0,
+  "verdicts_moved": 0,
+  "text_closure_blockers": "1037 -> 1037 (unchanged)",
+  "GREEN": 41,
+  "AMBER": 3,
+  "BUG": 0,
+  "silent_drops": 0,
+  "measured_how": "The four hyper-connection rows re-planned with the wave-17 binary, plus two controls (GLM-5.3, which declares no hc keys, and Qwen3-0.6B at 0 blockers). All six unchanged. The rest of the corpus is untouched by this wave, and the cached-plan total reproduces the README's recorded 1037 exactly, so the corpus figure carries.",
+  "THE_FORECAST_WAS_WRONG_AND_THAT_IS_THE_FINDING": {
+   "predicted": "blockers 1037 -> 1025, semantics 14 -> 15, the refusal lifted for completely-declared checkpoints",
+   "measured": "blockers unchanged at 1037, semantics stays 14, the refusal STAYS for every row including the two that declare the topology completely",
+   "the_cause": "The forecast assumed that executing the five stages is the same thing as the topology executing. It is not. The stages need `hc_attn_fn`, `hc_ffn_fn` and `hc_head_fn` as BOUND OPERANDS, and those names exist in this build only inside the `ResidualHyperConnections` semantic cluster, which classifies config keys. No placement rule owns the tensor groups, so no plan can address the weights and no plan can carry the bundle.",
+   "why_lifting_the_refusal_would_have_been_the_error": "It would have graded the topology executable on the evidence that code exists to execute it \u2014 carriage claimed from recognition. That is wave 16's own falsifier in a new place: there, a config key stopped blocking because a parser touched it; here, a component would have stopped blocking because a function was written for it. The arithmetic plane and the carriage plane are different planes, and only one of them moved.",
+   "which_of_the_three_failure_planes_this_wave_closed": "The execution plane's ARITHMETIC half. The tensor-address dialect plane \u2014 the silent middle one \u2014 is what still blocks, and it is wave 18's, exactly where the scope section put it. The wave did not fail; the model of what finishing it would do to the sweep was wrong."
+  },
+  "falsifiers_that_fired": "None. Hy4-preview still refuses (32, unchanged); no row went GREEN or AMBER; DeepSeek-V4's surface still does not build; every stage has its own failing-capable test; 20 Sinkhorn iterations differ from 1; a transposed comb disagrees; BUG 0 and silent drops 0; 3854 larql-vindex and 787 larql-models tests pass with no oracle moving; blockers did not rise.",
+  "what_the_tests_could_not_see_until_attacked": {
+   "method": "Seven deliberate mutations of the implementation. Five were caught at once: transposed comb index order, dropped factor of two on post, an off-by-one on the iteration loop, the wrong epsilon in the mix projection, and swapped pre/post scale indices.",
+   "survivor_1_the_eps_on_pre": {
+    "what": "Removing `+ eps` from `pre` left the entire suite green.",
+    "why": "At the checkpoint's own hc_eps of 1e-6 the change is an order of magnitude below f32 transcription noise, so NO comparison against the oracle can resolve it. Tightening the tolerance cannot fix this; the signal is genuinely smaller than the noise.",
+    "fix": "A structural test instead of a numerical one: run the split at two far-apart epsilons and assert `pre` shifts by exactly the difference while `post` does not move at all. It tests the asymmetry rather than trying to measure it."
+   },
+   "survivor_2_the_pass_order": {
+    "what": "Swapping the row and column normalisation passes inside the loop left the suite green.",
+    "why": "This one is an EQUIVALENT MUTATION at twenty iterations, not a test gap. Sinkhorn's fixed point is doubly stochastic, so once converged the order of the final passes stops mattering. Measured: 8.9e-08 at 20 iterations, 9.0e-02 at 2.",
+    "fix": "Both halves stated. A test asserts the converged matrix is doubly stochastic (the positive fact that explains the equivalence), and a two-iteration golden pins the pass order in the regime where it is still observable.",
+    "the_general_lesson": "A surviving mutant is either an untested claim or a claim that is not true at the operating point. Deciding which requires measuring, not assuming \u2014 and the answer here was different for the two survivors."
+   }
+  },
+  "a_correction_this_wave_forced_on_the_refusal_text": "Wave 16's reason said the single-stream programme 'cannot lower it without discarding' the three structural facts. That sentence is still true and is kept verbatim. But left alone it would now imply the arithmetic is unwritten, which is false, and would send wave 18 to build something that exists. The reason now carries both halves: why a single-stream programme cannot express this, and that what actually blocks carriage is operand addressing. Verified to reach the plan report on GLM-5.3-Flash's finding 111, still blocking.",
+  "what_wave_18_needs_from_this": "Placement rules for the hc_attn_*, hc_ffn_* and hc_head_* tensor groups, alongside DeepSeek-V4's attn_norm/ffn_norm spellings. Once the operands can be addressed, the executor is already written and tested, and the refusal has one condition left to drop.",
+  "gates": {
+   "larql-vindex coverage": "hyper_connection.rs 100.00% lines / 100.00% functions / 100.00% regions; crate total 93.61% lines against a 90% floor; make exit 0",
+   "tests": "larql-vindex 3854 passed, larql-models 787 passed, 0 failed",
+   "fmt and clippy": "clean on both changed crates",
+   "measured_where": "an isolated worktree carrying only this wave's changes. Two concurrent edits by another session in the shared worktree (larql-cli k3_ledger, and a larql-vindex `mod k3_representable;` added at 00:09 pointing at a file that does not exist) break any test-profile build of the crate; neither was touched.",
+   "a_signal_that_lied": "the first isolated run was invoked as `make ... | grep ...`, so the reported exit status was GREP's, not make's, and the filter also swallowed the summary table. Re-run capturing make's own status. Same shape as the `gh pr checks` exit-0-while-pending trap already on record.",
+   "larql-models coverage": "residual_topology.rs 100.00% lines / 100.00% functions / 100.00% regions; crate total 91.59% lines against a 90% floor; make exit 0"
+  }
+ }
+}

@@ -1156,12 +1156,21 @@ pub trait ModelArchitecture: Send + Sync {
     /// How this component's residual stream is shaped and recombined.
     ///
     /// Resolved once, here, so that no caller has to decide what an
-    /// absent `hc_mult` means. A checkpoint declaring the stream count
-    /// declares the whole topology: the reference reads `hc_mult`,
-    /// `hc_sinkhorn_iters` and `hc_eps` together, and a partial
-    /// declaration is a checkpoint this build has not judged rather than
-    /// one to be completed with defaults — so it REFUSES rather than
-    /// filling in the missing halves.
+    /// absent `hc_mult` means. The Sinkhorn-split reference reads
+    /// `hc_mult`, `hc_sinkhorn_iters` and `hc_eps` together, so a
+    /// checkpoint declaring them apart is one this build has not judged
+    /// rather than one to be completed with defaults — it REFUSES rather
+    /// than filling in the missing halves.
+    ///
+    /// **It is not judged INCOMPLETE.** Hy4-preview declares `hc_mult`
+    /// and `hc_eps` with no iteration count because its topology runs no
+    /// Sinkhorn at all: its `hc_pre.hc_fn` is `[2 * hc, hc * d]` against
+    /// the Sinkhorn form's `[(2 + hc) * hc, hc * d]`, it carries two
+    /// scales rather than three, no combination block, and an explicit
+    /// `hc_magnitude` where the Sinkhorn kernel hardcodes a factor of
+    /// two. Recognising that variant needs positive evidence this build
+    /// does not yet parse; until then the honest statement is that the
+    /// combination is unjudged, not that it is half-written.
     fn residual_topology(&self) -> Result<ResidualTopology, String> {
         let cfg = self.config();
         match (cfg.hc_streams, cfg.hc_sinkhorn_iters, cfg.hc_eps) {
@@ -1174,9 +1183,10 @@ pub trait ModelArchitecture: Send + Sync {
                 }))
             }
             (streams, iters, eps) => Err(format!(
-                "partial hyper-connection declaration (hc_mult {streams:?}, \
-                 hc_sinkhorn_iters {iters:?}, hc_eps {eps:?}) — the reference reads all \
-                 three together and this build will not choose the missing ones"
+                "unjudged hyper-connection declaration (hc_mult {streams:?}, \
+                 hc_sinkhorn_iters {iters:?}, hc_eps {eps:?}) — the Sinkhorn-split form \
+                 reads all three together, and declaring them apart may mean a different \
+                 topology rather than an incomplete one, so this build chooses neither"
             )),
         }
     }
