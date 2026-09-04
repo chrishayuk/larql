@@ -576,6 +576,39 @@ pub fn drafter_shaped(dir: &Path) -> ArchitectureInventory {
 /// metadata, uniform attention.
 /// [`known_dense`] with the caller's config, for gates that turn on one
 /// declared key rather than on the shape.
+/// Write a config plus one or more **header-only** safetensors shards and
+/// build the inventory over them.
+///
+/// The shards carry the 8-byte length prefix and the header JSON, and stop
+/// there — no payload byte is written. `scan_tensors` reads exactly that
+/// much (`read_shard_header` never seeks past the header and never checks
+/// the file against its own offsets), so every tensor fact — name, dtype,
+/// shape, and the byte count derived from `data_offsets` — is the real one
+/// while the file on disk stays kilobytes.
+///
+/// That is what lets a fixture carry a REAL checkpoint's estate at its real
+/// sizes. [`known_dense_with_config`] and friends write payloads because
+/// encode tests compare bytes; a fixture whose subject is the tensor-address
+/// plane needs the names and geometry, and materialising 1.56 TB to get them
+/// is not an option. Any test that reads a byte of payload must NOT use this.
+///
+/// `shards` maps a shard filename to its safetensors header object.
+pub fn header_only_shards(
+    dir: &Path,
+    config: &serde_json::Value,
+    shards: &serde_json::Map<String, serde_json::Value>,
+) -> ArchitectureInventory {
+    std::fs::write(dir.join("config.json"), config.to_string()).unwrap();
+    for (name, header) in shards {
+        let header_bytes = serde_json::to_vec(header).unwrap();
+        let mut file = std::fs::File::create(dir.join(name)).unwrap();
+        file.write_all(&(header_bytes.len() as u64).to_le_bytes())
+            .unwrap();
+        file.write_all(&header_bytes).unwrap();
+    }
+    build_inventory(dir).unwrap()
+}
+
 pub fn known_dense_with_config(dir: &Path, config: serde_json::Value) -> ArchitectureInventory {
     let header = serde_json::json!({
         "model.embed_tokens.weight":
