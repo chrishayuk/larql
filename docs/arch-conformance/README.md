@@ -72,6 +72,28 @@ own falsifier wearing different clothes. The refusal stays and now names the
 real blocker; the arithmetic plane is closed and the tensor-address plane is
 wave 18's.
 
+**A header census, run before wave 18 was scoped, corrected one refusal.**
+The staged safetensors headers carry every hyper-connection tensor's name,
+shape and dtype without a byte of payload, and they say three things wave 17
+could not. `hc_attn_fn`, `hc_ffn_fn` and `hc_head_fn` are the checkpoint's own
+names, not the forecast's invention. The head's `(4, 16384)` with a one-entry
+scale, against the layer's `(24, 16384)` with three, independently confirms
+wave 17's correction that the head reduction is a different operation — from a
+source that is not the reference the oracle was transcribed from, which is the
+one epistemic weakness wave 17 recorded as unfixable. And DeepSeek-V4-Flash
+carries a complete `mtp.0` hyper-connection site that no wave had named.
+
+The correction: **Hy4-preview was refusing as a "partial declaration", and it
+is not one.** Its `hc_pre.hc_fn` is `[2*hc, hc*d]` against the Sinkhorn form's
+`[(2+hc)*hc, hc*d]`, it carries two scales rather than three and no
+combination block, and its config declares `hc_magnitude` 2.0 — an explicit
+parameter where the Sinkhorn kernel hardcodes the factor of two — and no
+iteration count, because nothing iterates. That is a complete declaration of a
+Sinkhorn-free topology. The refusal stands; its reason now says this build
+judges only the Sinkhorn-split form and that an absent iteration count may
+mean a different topology rather than an incomplete one. Registered as
+**HC-PREPOST**, awaiting arithmetic, and out of wave 18's scope.
+
 § **Blockers ROSE in wave 16, and that was the forecast.** Declaring the
 hyper-connection topology makes a refusal visible where there was previously
 just an absent surface, and a half-declared topology refuses rather than

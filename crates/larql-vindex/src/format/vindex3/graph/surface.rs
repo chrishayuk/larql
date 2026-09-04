@@ -541,15 +541,27 @@ pub fn surface_from_resolved(
         }),
         conv_qkv: resolved.conv_qkv_attn,
         residual_in_fp32: execution.residual_in_fp32,
-        // Absent means the checkpoint half-declared it; refusing here is
-        // the point, because the alternative is a four-stream model
-        // quietly served as a one-stream one.
+        // Absent means this build has not judged what the checkpoint
+        // declares. Refusing is still the point — the alternative is a
+        // four-stream model quietly served as a one-stream one — but the
+        // reason must NOT say the declaration is incomplete.
+        //
+        // A header census of Hy4-preview read its surface directly:
+        // `hc_pre.hc_fn` is `[2 * hc, hc * d]` with a two-entry scale and
+        // no combination block, the config carries `hc_magnitude` and no
+        // `hc_sinkhorn_iters`. That is a COMPLETE declaration of a
+        // Sinkhorn-free hyper-connection, not a half-written Sinkhorn
+        // one. Calling it partial sends the next reader to finish a
+        // declaration nothing is missing from.
         residual_topology: match execution.residual_topology {
             Some(topology) => topology,
             None => {
                 return Err(vec![
-                    "residual topology (the checkpoint declares hc_mult, hc_sinkhorn_iters \
-                     and hc_eps only in part, and this build will not choose the rest)"
+                    "residual topology (this build lowers only the Sinkhorn-split \
+                     hyper-connection, which declares hc_mult, hc_sinkhorn_iters and hc_eps \
+                     together; this checkpoint declares them apart. An absent iteration count \
+                     may mean a DIFFERENT topology rather than an incomplete declaration, so \
+                     this build chooses neither)"
                         .to_string(),
                 ])
             }

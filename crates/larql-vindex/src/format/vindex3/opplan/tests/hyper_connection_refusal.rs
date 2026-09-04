@@ -147,12 +147,18 @@ fn the_report_names_the_refusal_as_an_unsupported_component() {
     );
 }
 
-/// A HALF-declared topology resolves to nothing and refuses, rather than
-/// completing itself with one stream. This is the failure the field
-/// exists to prevent: a four-stream checkpoint served as a one-stream
-/// model computes fluent wrong output.
+/// A topology this build has not judged resolves to nothing and refuses,
+/// rather than completing itself with one stream. This is the failure the
+/// field exists to prevent: a four-stream checkpoint served as a
+/// one-stream model computes fluent wrong output.
+///
+/// The refusal must not call the declaration INCOMPLETE. Hy4-preview
+/// declares `hc_mult` and `hc_eps` with no iteration count because its
+/// topology runs no Sinkhorn — `[2 * hc, hc * d]` with two scales and no
+/// combination block — so "partial" would send a reader to finish a
+/// declaration nothing is missing from.
 #[test]
-fn a_partial_declaration_refuses_rather_than_defaulting_to_one_stream() {
+fn an_unjudged_declaration_refuses_rather_than_defaulting_to_one_stream() {
     let dir = tempfile::tempdir().unwrap();
     let inventory = glimmer_shaped_target_with(dir.path(), |config| {
         // Streams declared, the split's parameters not.
@@ -163,15 +169,20 @@ fn a_partial_declaration_refuses_rather_than_defaulting_to_one_stream() {
         .incomplete_surfaces
         .iter()
         .find(|s| s.component == "target")
-        .expect("a half-declared topology must refuse the surface");
-    assert!(
-        incomplete
-            .missing
-            .iter()
-            .any(|m| m.contains("residual topology")),
-        "{:?}",
-        incomplete.missing
-    );
+        .expect("an unjudged topology must refuse the surface");
+    let reason = incomplete
+        .missing
+        .iter()
+        .find(|m| m.contains("residual topology"))
+        .unwrap_or_else(|| panic!("{:?}", incomplete.missing));
+
+    // What this build DOES lower, named — so a reader knows which form
+    // the checkpoint failed to match rather than only that it failed.
+    assert!(reason.contains("Sinkhorn-split"), "{reason}");
+    // And the reading that is NOT ruled out. Without this the refusal
+    // reads as "go and find the missing number", which for a
+    // Sinkhorn-free checkpoint is work with no end.
+    assert!(reason.contains("DIFFERENT topology"), "{reason}");
 }
 
 /// The two refusal defects must READ differently, because they mean
