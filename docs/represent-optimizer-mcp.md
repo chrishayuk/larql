@@ -995,7 +995,7 @@ and is that seal load-bearing in the identity?**
 4b-b2  identity semantic, not formatting-sensitive  done
 4b-c   read sealed SourceStorageFacts              done
 4b-d   require whole-surface accounting completeness  done
-4b-e   production BoundFootprint
+4b-e   production Footprint over a bound surface       done
 4b-f   next_experiment answers, transport unchanged
 ```
 
@@ -1317,11 +1317,87 @@ own tests:
 | `prices_for` answers over any surface | `a_bound_accounting_refuses_a_surface…` (1) |
 | the missing list is not ordered | `several_missing…` (1) |
 
-**An open question for 4b-e**, recorded rather than acted on: a container
-may store tensors the surface does not enumerate, so summing the bound
-prices is the surface's footprint and not necessarily the container's.
-`LogicalBytes` is documented as a whole-map footprint, and which of the
-two a `Footprint` owes is 4b-e's to settle.
+**The open question 4b-d recorded**, settled in 4b-e: a container may
+store tensors the surface does not enumerate, so summing the bound
+prices is the SURFACE's footprint and not the container's.
+
+### 4b-e — the production `Footprint`
+
+> **`Footprint` is the complete footprint of the bound REPRESENT surface
+> under a representation state — not the byte size of the whole
+> container.**
+
+```text
+container footprint        everything physically stored in the container
+representation footprint   every tensor in the bound TensorSurface,
+                           priced under one resolved state        ← this
+```
+
+A map resolves over a `TensorSurface`, so its domain is that surface.
+Anything outside it has no representation decision in this search
+problem, and counting it would make the optimiser account for bytes it
+cannot transform. 4b-d's asymmetry is the proof: an extra stored fact
+neither satisfies nor damages surface completeness, so it must not
+reappear in the state's footprint either. `LogicalBytes`' doc comment
+said "whole-map footprint", which reads either way; it now says what it
+means, and whole-container accounting gets its own type when it is
+needed rather than a second meaning for this one.
+
+```text
+effective == source      → the sealed SourceStorageFact
+effective == encoding    → the pack layout's stored length
+```
+
+`effective()` and not the declared encoding: a protected tensor and a
+layout-refused one present the same bytes, and pricing the refusal as
+compiled would book a saving the container never made. Two realizations
+of one `RepresentationStateId` therefore cost the same, which is a
+cross-stage invariant `physical_delta` depends on.
+
+**Misses are made impossible, not handled.** `Footprint` returns
+`LogicalBytes` with no channel for "I could not price that", and
+inventing one would break stage 2's census — an unpriced candidate is
+neither eligible nor pruned. So the constructor enumerates the finite
+problem instead: every bound tensor × every encoding the search may
+select.
+
+```text
+layout REFUSES (tensor, encoding)   → resolves to source; no price needed
+layout ADMITS  (tensor, encoding)   → a compiled price is REQUIRED
+```
+
+Using the same `LayoutAdmission` the resolver uses, so the price table
+and the decision vector cannot disagree about which tensors are
+compiled. What remains is a state resolved against another surface,
+which `try_logical_bytes` reports and the trait method — by contract,
+loudly — cannot.
+
+**A substrate fact this surfaces:** `PackCompiledBytes` prices NVFP4 from
+`PackLayout::derive`, the same call the compiler and `PackLayoutAdmission`
+make, and declares nothing about any other encoding. `PackLayoutAdmission`
+admits Q6_K (it holds no rule for it) and nothing prices a Q6_K pack in
+this build, so a search whose vocabulary names Q6_K is refused at
+construction, naming the tensor and the encoding — before the first
+candidate rather than at it.
+
+**Verified they can fail.** Five mutations, each killed by exactly its
+own tests:
+
+| Mutation | Killed |
+|---|---|
+| prices the DECLARED encoding, not what is presented | `a_layout_refusal_is_priced_as_source…`, `two_realizations_of_one_state…` (2) |
+| the compiled price is `numel × 2`, not the pack layout | `a_compiled_state_costs…`, `nothing_but_nvfp4_is_priced…` (2) |
+| an unpriceable admitted encoding is skipped, not refused | 2 |
+| the surface check is dropped | 3 |
+| the source price is used for every decision | `a_compiled_state_costs…` (1) |
+
+**One survived the first attempt and is worth recording.** Replacing the
+pack layout with `numel × 2` passed, because the compiled-price test
+asked `PackCompiledBytes` what `PackCompiledBytes` said — a
+self-normalising test over the very arithmetic under test. It now
+asserts against a figure derived from the FORMAT: a `[64, 64]` NVFP4
+pack is `64×4×8` code bytes + `64×4` scale bytes + one f32 = 2308, and
+`numel × 2` is 8192.
 
 ---
 
@@ -1421,7 +1497,7 @@ Deliberately boring, so MCTS is a policy swap and not a rewrite.
 | 3 | Best-first; the objective API and the search/evidence boundary (§4f) | **done** |
 | 3b | Promotion-input closure — the chain runs from a snapshot (§4g) | **done** |
 | 4 | MCP facade — read-only; seven intent-level tools (§4h) | **done** |
-| 4b | The source identity the optimizer prices from (§4i) | a–d **done** |
+| 4b | The source identity the optimizer prices from (§4i) | a–e **done** |
 | 5 | PUCT as another `SearchPolicy`; same states, actions, evidence | |
 | 6 | Extend `PhysicalState` with residency; optimise measured tok/s | |
 

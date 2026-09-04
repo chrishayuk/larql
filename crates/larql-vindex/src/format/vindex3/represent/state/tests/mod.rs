@@ -19,6 +19,7 @@
 mod accounting;
 mod bind;
 mod container;
+mod footprint;
 mod source_identity;
 mod source_seal;
 mod source_semantics;

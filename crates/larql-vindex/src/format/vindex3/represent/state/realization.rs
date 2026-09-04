@@ -43,7 +43,24 @@ use super::super::compile::hash_bytes;
 use super::identity::{RepresentationState, RepresentationStateId, STATE_ID_VERSION};
 use super::surface::SECTION;
 
-/// **The whole-map logical footprint of one state.**
+/// **Total logical bytes presented by every tensor in the
+/// representation state's bound `TensorSurface`.**
+///
+/// Not the byte size of the container. A map resolves over a
+/// `TensorSurface`, so its domain is that surface and not every
+/// artifact that happens to coexist in the same VINDEX3 container:
+///
+/// ```text
+/// container footprint        everything physically stored
+/// representation footprint   every tensor in the bound surface,
+///                            priced under one resolved state   ← this
+/// ```
+///
+/// Anything outside the surface has no representation decision in this
+/// search problem, and counting it would make the optimiser account for
+/// bytes it cannot transform. Whole-container storage accounting is a
+/// real question and a different one; when it is needed it gets its own
+/// type rather than a second meaning for this one.
 ///
 /// A newtype, and not a bare `u64`, because this programme has already
 /// paid for confusing three different byte quantities:
@@ -59,10 +76,12 @@ use super::surface::SECTION;
 /// prunable. A delta is therefore never supplied — it is computed, by
 /// [`Self::delta_from`], from two footprints the graph holds.
 ///
-/// Supplied by the caller from the byte ledger, never derived here:
+/// Supplied by the caller, never derived here:
 /// [`super::super::byte_ledger`] states why scopes are supplied rather
 /// than inferred, and inferring a footprint from geometry would be the
-/// same mistake one level down.
+/// same mistake one level down. [`super::footprint::SurfaceFootprint`]
+/// is the production supplier, and it reads sealed container facts
+/// rather than geometry.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
 pub struct LogicalBytes(u64);
 

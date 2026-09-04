@@ -76,6 +76,7 @@ pub mod assess;
 pub mod bind;
 pub mod candidate;
 pub mod evidence_bank;
+pub mod footprint;
 pub mod graph;
 pub mod identity;
 pub mod instrument;
@@ -104,6 +105,7 @@ pub use candidate::{
     PreMeasurementPrune,
 };
 pub use evidence_bank::{EvidenceBank, EvidenceBankId, EVIDENCE_BANK_ID_VERSION};
+pub use footprint::{CompiledBytes, FootprintError, PackCompiledBytes, SurfaceFootprint};
 pub use graph::{RepresentationStateGraph, StateNode, TransitionPolicy};
 pub use identity::{RepresentationState, RepresentationStateId, STATE_ID_VERSION};
 pub use instrument::{InstrumentSemantics, InstrumentSemanticsId, INSTRUMENT_SEMANTICS_ID_VERSION};
