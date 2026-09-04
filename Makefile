@@ -1,5 +1,49 @@
 .PHONY: build release test test-fast test-full test-integration test-models check clean fmt lint demos bench bench-core bench-inference bench-compute bench-wire bench-routing bench-grid bench-all bench-vindex bench-vindex-scaling bench-save bench-check coverage coverage-summary larql-core-ci larql-core-test larql-core-fmt-check larql-core-lint larql-core-feature-test larql-core-bench-test larql-core-bench larql-core-examples larql-core-coverage larql-core-coverage-html larql-models-ci larql-models-test larql-models-fmt-check larql-models-lint larql-models-coverage larql-models-coverage-summary larql-models-coverage-html larql-models-coverage-policy larql-models-bench-test larql-vindex-ci larql-vindex-test larql-vindex-fmt-check larql-vindex-lint larql-vindex-examples larql-vindex-bench-test larql-vindex-bench larql-vindex-coverage larql-vindex-coverage-summary larql-vindex-coverage-html larql-vindex-coverage-policy larql-factory-ci larql-factory-test larql-factory-fmt-check larql-factory-lint larql-factory-coverage larql-factory-coverage-summary larql-factory-coverage-html larql-factory-coverage-policy larql-compute-test larql-compute-test-fast larql-compute-test-integration larql-compute-check-fast larql-compute-check-tests larql-compute-check-all larql-compute-test-metal-decode larql-compute-test-metal-lib larql-compute-fmt-check larql-compute-lint larql-compute-coverage larql-compute-coverage-summary larql-compute-coverage-html larql-compute-coverage-policy larql-compute-ci larql-compute-metal-test larql-compute-metal-test-tests larql-compute-metal-check larql-compute-metal-check-tests larql-compute-metal-check-all larql-compute-metal-fmt-check larql-compute-metal-lint larql-compute-metal-coverage larql-compute-metal-coverage-summary larql-compute-metal-coverage-html larql-compute-metal-coverage-policy larql-compute-metal-ci larql-boundary-ci larql-boundary-test larql-boundary-fmt-check larql-boundary-lint larql-boundary-bench-test larql-boundary-examples larql-kv-ci larql-kv-test larql-kv-fmt-check larql-kv-lint larql-kv-examples larql-kv-bench-test larql-kv-bench larql-kv-coverage larql-kv-coverage-summary larql-kv-coverage-html larql-kv-coverage-policy larql-server-ci larql-server-test larql-server-fmt-check larql-server-lint larql-server-coverage larql-server-coverage-summary larql-server-coverage-html larql-server-coverage-policy larql-router-ci larql-router-test larql-router-fmt-check larql-router-lint larql-router-coverage larql-router-coverage-summary larql-router-coverage-html larql-router-coverage-policy larql-lql-ci larql-lql-test larql-lql-fmt-check larql-lql-lint larql-lql-examples larql-lql-bench-test larql-lql-coverage-summary larql-cli-ci larql-cli-test larql-cli-fmt-check larql-cli-lint larql-cli-coverage larql-cli-coverage-summary larql-cli-coverage-html larql-cli-coverage-policy larql-inference-ci larql-inference-test larql-inference-fmt-check larql-inference-lint larql-inference-bench-test larql-inference-coverage-summary
 
+
+# ---------------------------------------------------------------------------
+# Coverage measurement state
+#
+#     A coverage gate must not consume measurement artifacts originating
+#     from a different source tree.
+#
+# WHAT IS OBSERVED. On 2026-09-04 `make larql-models-ci` failed on
+# `quant/ggml/mod.rs` at 75.94% in a branch that never touches that file;
+# `cargo llvm-cov clean --workspace` and a re-run gave 91.50% and a pass.
+# The same dirty state reported `architectures/kimi_k3.rs` at 0.00% while
+# checked out at a commit where that file does not exist. Both numbers were
+# real measurements of something other than the tree in front of them.
+#
+# WHAT IS NOT KNOWN. The exact trigger is unreproduced. Two candidate
+# mechanisms were tested under controlled differential experiments and BOTH
+# were excluded — neither produced any contamination:
+#
+#     models -> vindex -> models, one unchanged tree      (gate ordering)
+#     models at tree A -> models at tree B                (tree change)
+#
+# So the comment you would expect here — "one gate consumes the previous
+# gate's profraw" — is a story this repo's own evidence does not support.
+# `cargo llvm-cov` cleans old build artifacts by default (hence its
+# `--no-clean` flag), which is consistent with both exclusions.
+#
+# The invariant is therefore per MEASUREMENT and defended in depth rather
+# than by one mechanism: $(COVERAGE_CLEAN) is the first recipe line of each
+# of the 24 coverage-producing targets, never a shared prerequisite. Make
+# builds a prerequisite once per invocation, so `make a-coverage b-coverage`
+# would clean once and hand `b` whatever `a` produced.
+#
+# `--workspace` rather than `--profraw-only`: the latter leaves built
+# artifacts in place, and stale artifacts are the half of this that produced
+# a report naming a file absent from the tree.
+COVERAGE_CLEAN = cargo llvm-cov clean --workspace
+
+# Coverage gates share one measurement store, so two of them must never run
+# at the same time: `b` cleaning mid-flight through `a` invalidates `a`.
+# GNU Make 3.81 (Apple's) ignores prerequisites on .NOTPARALLEL, so this is
+# necessarily global — which costs nothing here, because nothing in this
+# repo runs make with -j and cargo owns the real parallelism.
+.NOTPARALLEL:
+
 # Build
 build:
 	cargo build --workspace
@@ -66,6 +110,7 @@ larql-core-coverage:
 		echo "  cargo install cargo-llvm-cov"; \
 		exit 1; \
 	fi
+	$(COVERAGE_CLEAN)
 	cargo llvm-cov --package larql-core --summary-only
 
 larql-core-coverage-html:
@@ -114,6 +159,7 @@ larql-models-coverage:
 		echo "  cargo install cargo-llvm-cov"; \
 		exit 1; \
 	fi
+	$(COVERAGE_CLEAN)
 	cargo llvm-cov --package larql-models --fail-under-lines $(LARQL_MODELS_COVERAGE_MIN)
 	@mkdir -p coverage/larql-models
 	cargo llvm-cov report --package larql-models --json --summary-only --output-path $(LARQL_MODELS_COVERAGE_REPORT)
@@ -125,6 +171,7 @@ larql-models-coverage-summary:
 		echo "  cargo install cargo-llvm-cov"; \
 		exit 1; \
 	fi
+	$(COVERAGE_CLEAN)
 	cargo llvm-cov --package larql-models --summary-only --fail-under-lines $(LARQL_MODELS_COVERAGE_MIN)
 	@mkdir -p coverage/larql-models
 	cargo llvm-cov report --package larql-models --json --summary-only --output-path $(LARQL_MODELS_COVERAGE_REPORT)
@@ -179,6 +226,7 @@ larql-vindex-coverage:
 		echo "  cargo install cargo-llvm-cov"; \
 		exit 1; \
 	fi
+	$(COVERAGE_CLEAN)
 	cargo llvm-cov --package larql-vindex --fail-under-lines $(LARQL_VINDEX_COVERAGE_MIN)
 	@mkdir -p coverage/larql-vindex
 	cargo llvm-cov report --package larql-vindex --json --summary-only --output-path $(LARQL_VINDEX_COVERAGE_REPORT)
@@ -190,6 +238,7 @@ larql-vindex-coverage-summary:
 		echo "  cargo install cargo-llvm-cov"; \
 		exit 1; \
 	fi
+	$(COVERAGE_CLEAN)
 	cargo llvm-cov --package larql-vindex --summary-only --fail-under-lines $(LARQL_VINDEX_COVERAGE_MIN)
 	@mkdir -p coverage/larql-vindex
 	cargo llvm-cov report --package larql-vindex --json --summary-only --output-path $(LARQL_VINDEX_COVERAGE_REPORT)
@@ -237,6 +286,7 @@ larql-factory-coverage:
 		echo "  cargo install cargo-llvm-cov"; \
 		exit 1; \
 	fi
+	$(COVERAGE_CLEAN)
 	cargo llvm-cov --package larql-factory --fail-under-lines $(LARQL_FACTORY_COVERAGE_MIN)
 	@mkdir -p coverage/larql-factory
 	cargo llvm-cov report --package larql-factory --json --summary-only --output-path $(LARQL_FACTORY_COVERAGE_REPORT)
@@ -248,6 +298,7 @@ larql-factory-coverage-summary:
 		echo "  cargo install cargo-llvm-cov"; \
 		exit 1; \
 	fi
+	$(COVERAGE_CLEAN)
 	cargo llvm-cov --package larql-factory --summary-only --fail-under-lines $(LARQL_FACTORY_COVERAGE_MIN)
 	@mkdir -p coverage/larql-factory
 	cargo llvm-cov report --package larql-factory --json --summary-only --output-path $(LARQL_FACTORY_COVERAGE_REPORT)
@@ -304,6 +355,7 @@ larql-kv-coverage:
 		echo "  cargo install cargo-llvm-cov"; \
 		exit 1; \
 	fi
+	$(COVERAGE_CLEAN)
 	cargo llvm-cov --package larql-kv --fail-under-lines $(LARQL_KV_COVERAGE_MIN)
 	@mkdir -p coverage/larql-kv
 	cargo llvm-cov report --package larql-kv --json --summary-only --output-path $(LARQL_KV_COVERAGE_REPORT)
@@ -315,6 +367,7 @@ larql-kv-coverage-summary:
 		echo "  cargo install cargo-llvm-cov"; \
 		exit 1; \
 	fi
+	$(COVERAGE_CLEAN)
 	cargo llvm-cov --package larql-kv --summary-only --fail-under-lines $(LARQL_KV_COVERAGE_MIN)
 	@mkdir -p coverage/larql-kv
 	cargo llvm-cov report --package larql-kv --json --summary-only --output-path $(LARQL_KV_COVERAGE_REPORT)
@@ -423,6 +476,7 @@ larql-compute-coverage:
 		echo "  cargo install cargo-llvm-cov"; \
 		exit 1; \
 	fi
+	$(COVERAGE_CLEAN)
 	cargo llvm-cov --package larql-compute --fail-under-lines $(LARQL_COMPUTE_COVERAGE_MIN)
 	@mkdir -p coverage/larql-compute
 	cargo llvm-cov report --package larql-compute --json --summary-only --output-path $(LARQL_COMPUTE_COVERAGE_REPORT)
@@ -434,6 +488,7 @@ larql-compute-coverage-summary:
 		echo "  cargo install cargo-llvm-cov"; \
 		exit 1; \
 	fi
+	$(COVERAGE_CLEAN)
 	cargo llvm-cov --package larql-compute --summary-only --fail-under-lines $(LARQL_COMPUTE_COVERAGE_MIN)
 	@mkdir -p coverage/larql-compute
 	cargo llvm-cov report --package larql-compute --json --summary-only --output-path $(LARQL_COMPUTE_COVERAGE_REPORT)
@@ -491,6 +546,7 @@ larql-compute-metal-coverage:
 		echo "  cargo install cargo-llvm-cov"; \
 		exit 1; \
 	fi
+	$(COVERAGE_CLEAN)
 	cargo llvm-cov --package larql-compute-metal --fail-under-lines $(LARQL_COMPUTE_METAL_COVERAGE_MIN) -- --test-threads=1
 	@mkdir -p coverage/larql-compute-metal
 	cargo llvm-cov report --package larql-compute-metal --json --summary-only --output-path $(LARQL_COMPUTE_METAL_COVERAGE_REPORT)
@@ -502,6 +558,7 @@ larql-compute-metal-coverage-summary:
 		echo "  cargo install cargo-llvm-cov"; \
 		exit 1; \
 	fi
+	$(COVERAGE_CLEAN)
 	# `--test-threads=1` serialises env-sensitive tests across lib + tests/.
 	# Many flag tests (LARQL_QKV_FUSED, LARQL_GATE_UP_*, DECODE_DEBUG, etc.)
 	# touch process-global env vars; cargo's default parallel test runner
@@ -546,6 +603,7 @@ larql-boundary-coverage:
 		echo "  cargo install cargo-llvm-cov"; \
 		exit 1; \
 	fi
+	$(COVERAGE_CLEAN)
 	cargo llvm-cov --package larql-boundary --summary-only
 
 larql-boundary-coverage-html:
@@ -595,6 +653,7 @@ larql-server-coverage:
 		echo "  cargo install cargo-llvm-cov"; \
 		exit 1; \
 	fi
+	$(COVERAGE_CLEAN)
 	cargo llvm-cov --package larql-server --fail-under-lines $(LARQL_SERVER_COVERAGE_MIN) -- --test-threads=1
 	@mkdir -p coverage/larql-server
 	cargo llvm-cov report --package larql-server --json --summary-only --output-path $(LARQL_SERVER_COVERAGE_REPORT)
@@ -606,6 +665,7 @@ larql-server-coverage-summary:
 		echo "  cargo install cargo-llvm-cov"; \
 		exit 1; \
 	fi
+	$(COVERAGE_CLEAN)
 	cargo llvm-cov --package larql-server --summary-only --fail-under-lines $(LARQL_SERVER_COVERAGE_MIN) -- --test-threads=1
 	@mkdir -p coverage/larql-server
 	cargo llvm-cov report --package larql-server --json --summary-only --output-path $(LARQL_SERVER_COVERAGE_REPORT)
@@ -654,6 +714,7 @@ larql-router-coverage:
 		echo "  cargo install cargo-llvm-cov"; \
 		exit 1; \
 	fi
+	$(COVERAGE_CLEAN)
 	cargo llvm-cov --package larql-router --fail-under-lines $(LARQL_ROUTER_COVERAGE_MIN)
 	@mkdir -p coverage/larql-router
 	cargo llvm-cov report --package larql-router --json --summary-only --output-path $(LARQL_ROUTER_COVERAGE_REPORT)
@@ -665,6 +726,7 @@ larql-router-coverage-summary:
 		echo "  cargo install cargo-llvm-cov"; \
 		exit 1; \
 	fi
+	$(COVERAGE_CLEAN)
 	cargo llvm-cov --package larql-router --summary-only --fail-under-lines $(LARQL_ROUTER_COVERAGE_MIN)
 	@mkdir -p coverage/larql-router
 	cargo llvm-cov report --package larql-router --json --summary-only --output-path $(LARQL_ROUTER_COVERAGE_REPORT)
@@ -711,6 +773,7 @@ larql-router-protocol-coverage-summary:
 		echo "  cargo install cargo-llvm-cov"; \
 		exit 1; \
 	fi
+	$(COVERAGE_CLEAN)
 	cargo llvm-cov --package larql-router-protocol --features http3 --summary-only --fail-under-lines $(LARQL_ROUTER_PROTOCOL_COVERAGE_MIN)
 	@mkdir -p coverage/larql-router-protocol
 	cargo llvm-cov report --package larql-router-protocol --json --summary-only --output-path $(LARQL_ROUTER_PROTOCOL_COVERAGE_REPORT)
@@ -741,6 +804,7 @@ larql-lql-coverage-summary:
 		echo "  cargo install cargo-llvm-cov"; \
 		exit 1; \
 	fi
+	$(COVERAGE_CLEAN)
 	cargo llvm-cov --package larql-lql --summary-only
 
 larql-lql-ci: larql-lql-fmt-check larql-lql-lint larql-lql-test larql-lql-examples larql-lql-bench-test
@@ -780,6 +844,7 @@ larql-cli-coverage-summary:
 		echo "  cargo install cargo-llvm-cov"; \
 		exit 1; \
 	fi
+	$(COVERAGE_CLEAN)
 	cargo llvm-cov --package larql-cli $(LARQL_CLI_DEFAULT_FEATURES) --summary-only --fail-under-lines $(LARQL_CLI_COVERAGE_MIN)
 	@mkdir -p coverage/larql-cli
 	cargo llvm-cov report --package larql-cli --json --summary-only --output-path $(LARQL_CLI_COVERAGE_REPORT)
@@ -791,6 +856,7 @@ larql-cli-coverage:
 		echo "  cargo install cargo-llvm-cov"; \
 		exit 1; \
 	fi
+	$(COVERAGE_CLEAN)
 	cargo llvm-cov --package larql-cli $(LARQL_CLI_DEFAULT_FEATURES) --fail-under-lines $(LARQL_CLI_COVERAGE_MIN)
 	@mkdir -p coverage/larql-cli
 	cargo llvm-cov report --package larql-cli --json --summary-only --output-path $(LARQL_CLI_COVERAGE_REPORT)
@@ -846,6 +912,7 @@ larql-inference-coverage:
 		echo "  cargo install cargo-llvm-cov"; \
 		exit 1; \
 	fi
+	$(COVERAGE_CLEAN)
 	cargo llvm-cov --package larql-inference --features gpu --fail-under-lines $(LARQL_INFERENCE_COVERAGE_MIN)
 	@mkdir -p coverage/larql-inference
 	cargo llvm-cov report --package larql-inference --json --summary-only --output-path $(LARQL_INFERENCE_COVERAGE_REPORT)
@@ -857,6 +924,7 @@ larql-inference-coverage-summary:
 		echo "  cargo install cargo-llvm-cov"; \
 		exit 1; \
 	fi
+	$(COVERAGE_CLEAN)
 	cargo llvm-cov --package larql-inference --features gpu --summary-only --fail-under-lines $(LARQL_INFERENCE_COVERAGE_MIN)
 	@mkdir -p coverage/larql-inference
 	cargo llvm-cov report --package larql-inference --json --summary-only --output-path $(LARQL_INFERENCE_COVERAGE_REPORT)

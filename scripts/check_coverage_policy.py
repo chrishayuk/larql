@@ -86,6 +86,16 @@ def main() -> int:
     checked = 0
     debt = 0
     seen: set[str] = set()
+    # Files the report names that are not in the tree. A coverage report can
+    # only describe source that exists; anything else came from a build the
+    # measurement store never discarded, and every number in that report is
+    # then suspect — not just this file's.
+    #
+    # This is the tell that exposed the 2026-09-04 contamination, and it was
+    # noticed by accident: a run checked out at a commit predating
+    # `architectures/kimi_k3.rs` reported it at 0.00%. Accidents do not
+    # generalise, so it is checked here on every gate.
+    phantom: list[str] = []
     included_covered = 0
     included_count = 0
     for file_entry in data["files"]:
@@ -94,6 +104,9 @@ def main() -> int:
             continue
         if matches_any(rel_path, exclude_globs):
             continue
+
+        if not (repo_root / rel_path).exists():
+            phantom.append(rel_path)
 
         line_count, line_percent = line_summary(file_entry)
         if line_count == 0:
@@ -131,6 +144,15 @@ def main() -> int:
     stale = sorted(set(per_file_min) - seen)
     for rel_path in stale:
         failures.append(f"{rel_path}: policy entry did not match any covered file")
+
+    if phantom:
+        failures.append(
+            f"{len(phantom)} file(s) in the report do not exist in the tree "
+            f"(e.g. {', '.join(sorted(phantom)[:3])}) \u2014 the measurement store "
+            "holds artifacts from another build, so NO number in this report is "
+            "trustworthy. Run `cargo llvm-cov clean --workspace` and re-measure; "
+            "do not write tests against these percentages."
+        )
 
     if failures:
         print("Coverage policy failed:", file=sys.stderr)

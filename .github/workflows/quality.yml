@@ -239,3 +239,21 @@ jobs:
       # duplicate field numbers, unresolvable types).
       - name: Build descriptor set
         run: buf build --output /dev/null
+
+  coverage-gate-isolation:
+    name: coverage gate isolation
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v7
+
+      # The property lives in 24 separate make recipes, so it rots silently:
+      # a 25th coverage target added without its clean reports whatever the
+      # previous gate left in `target/llvm-cov-target`. On 2026-09-04 that
+      # produced a 75.94% "regression" in a file the branch never touched,
+      # immediately after a rebase, where it read as inherited debt rather
+      # than as an instrument defect.
+      #
+      # Cheap and static — it reads the Makefile, runs no coverage.
+      - name: Check every coverage gate owns its measurement state
+        run: python3 scripts/check_coverage_gate_isolation.py
