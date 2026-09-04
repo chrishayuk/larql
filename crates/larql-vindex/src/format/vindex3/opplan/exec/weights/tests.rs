@@ -181,7 +181,7 @@ fn the_nvfp4_loader_fails_closed_on_bad_geometry() {
 fn every_loaded_variant_accounts_for_itself() {
     let page = DEVICE_PAGE_ALIGN;
     let cases: Vec<(LoadedWeight, usize, bool, &str)> = vec![
-        (LoadedWeight::F32(vec![0.0; 16]), 64, true, "f32"),
+        (LoadedWeight::F32(vec![0.0; 16].into()), 64, true, "f32"),
         (
             LoadedWeight::Q8 {
                 codes: vec![0i8; 64],
@@ -240,7 +240,7 @@ fn every_loaded_variant_accounts_for_itself() {
 /// obvious: Q8 holds three buffers, bf16 one.
 #[test]
 fn resident_bytes_counts_every_buffer_a_variant_holds() {
-    let f32w = LoadedWeight::F32(vec![0.0f32; 100]);
+    let f32w = LoadedWeight::F32(vec![0.0f32; 100].into());
     assert_eq!(f32w.resident_bytes(), 400, "f32 is four bytes an element");
 
     // Q8: codes + scales + the optional sums index.
@@ -299,7 +299,7 @@ fn resident_bytes_counts_every_buffer_a_variant_holds() {
 /// allocates one matrix and reuses it.
 #[test]
 fn allocations_enumerate_each_backing_buffer_separately() {
-    let f32w = LoadedWeight::F32(vec![0.0f32; 100]);
+    let f32w = LoadedWeight::F32(vec![0.0f32; 100].into());
     assert_eq!(f32w.allocations().len(), 1);
     assert_eq!(f32w.allocations()[0].1, 400);
 
@@ -379,7 +379,7 @@ fn allocations_enumerate_each_backing_buffer_separately() {
 /// the variant, never inferred from a size.
 #[test]
 fn only_the_widened_variant_admits_to_being_widened() {
-    assert!(LoadedWeight::F32(vec![0.0; 4]).is_widened_f32());
+    assert!(LoadedWeight::F32(vec![0.0; 4].into()).is_widened_f32());
     assert!(!LoadedWeight::Bf16(AlignedBytes::zeroed(8)).is_widened_f32());
     assert!(!LoadedWeight::Q8 {
         codes: vec![0i8; 8],
@@ -471,7 +471,9 @@ fn each_resident_variant_slices_as_its_own_representation() {
     }
 
     assert_eq!(
-        LoadedWeight::F32(vec![0.0; 8]).slice().representation(),
+        LoadedWeight::F32(vec![0.0; 8].into())
+            .slice()
+            .representation(),
         "f32"
     );
 }

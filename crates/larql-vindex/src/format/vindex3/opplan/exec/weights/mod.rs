@@ -27,6 +27,7 @@ use crate::format::vindex3::represent::nvfp4_pack::DTYPE_NVFP4;
 // nibble first) plus one e8m0 scale byte each — is the models crate's,
 // so the kernel's layout contract and the codec's have one definition.
 use larql_models::quant::mxfp4::{e8m0_to_f32, MXFP4_GROUP_BYTES, MXFP4_GROUP_ELEMS, MXFP4_TABLE};
+use staged::StagedF32;
 
 /// Alignment (and length granularity) of f16 weight allocations:
 /// the Apple-GPU page size. A page-aligned, page-multiple allocation
@@ -122,7 +123,7 @@ impl Drop for AlignedBytes {
 /// backend declared.
 #[derive(Debug)]
 pub enum LoadedWeight {
-    F32(Vec<f32>),
+    F32(StagedF32),
     /// Symmetric int8 codes plus one f32 scale per [`Q8_BLOCK`]
     /// elements. The only LOSSY residency format on this path: the values
     /// resident are not the values stored.
@@ -157,6 +158,9 @@ pub enum LoadedWeight {
         tensor_scale: f32,
     },
 }
+
+pub mod staged;
+pub use staged::StagedF32 as F32Image;
 
 impl LoadedWeight {
     /// The borrowed view a call struct carries.
@@ -293,7 +297,7 @@ pub fn load_weight(
     format: WeightFormat,
 ) -> Result<LoadedWeight, VindexError> {
     match format {
-        WeightFormat::F32 => Ok(LoadedWeight::F32(store.load(operand)?)),
+        WeightFormat::F32 => Ok(LoadedWeight::F32(StagedF32::stage(store.load(operand)?)?)),
         WeightFormat::Q8 => {
             let in_dim = operand.shape.get(1).copied().ok_or_else(|| {
                 VindexError::Parse(format!(
@@ -647,5 +651,7 @@ fn nearest_mxfp4_code(v: f32) -> u8 {
     }
 }
 
+#[cfg(test)]
+mod staged_tests;
 #[cfg(test)]
 mod tests;

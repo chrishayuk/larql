@@ -498,7 +498,9 @@ fn from_f32(
     name: &str,
 ) -> Result<LoadedWeight, VindexError> {
     match format {
-        WeightFormat::F32 => Ok(LoadedWeight::F32(values)),
+        WeightFormat::F32 => Ok(LoadedWeight::F32(super::weights::staged::StagedF32::stage(
+            values,
+        )?)),
         WeightFormat::F16 => {
             let bytes: Vec<u8> = values.iter().flat_map(|v| v.to_le_bytes()).collect();
             Ok(LoadedWeight::F16(f32_bytes_to_f16(&bytes, name)?))
