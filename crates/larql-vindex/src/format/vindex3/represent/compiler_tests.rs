@@ -409,17 +409,50 @@ fn a_moved_source_container_still_verifies() {
 /// different identity.
 #[test]
 fn identity_is_read_from_the_containers_own_metadata() {
+    use crate::format::vindex3::index::{RepresentationEntry, Vindex3Index};
+
+    // Built through the container's OWN schema rather than as a hand
+    // written fragment. `read_source_identity` parses through
+    // `Vindex3Index`, so a fragment that the schema would refuse is not
+    // a container this test may claim anything about — that asymmetry
+    // is what `state::tests::source_identity` closed.
+    let entry = |object: &str, segment: &str, payload: &str| RepresentationEntry {
+        object: object.into(),
+        encoding: "BF16".into(),
+        segment: segment.into(),
+        tensor_count: 1,
+        payload_bytes: 16,
+        payload_sha256: payload.into(),
+        segment_sha256: format!("file-{payload}"),
+        compiled_from: None,
+        codec: None,
+        source_representation_digest: None,
+        encoder: None,
+    };
+    let index_json = {
+        let mut index = Vindex3Index::new("m", "llama", 64, 2, "", BTreeMap::new());
+        index.system_graph = Some("system_graph.json".into());
+        index.representations = BTreeMap::from([
+            (
+                "target.expert_bank@BF16".to_string(),
+                entry("target.expert_bank", "target.expert_bank", "aaaa"),
+            ),
+            (
+                "target.decoder_stack@BF16".to_string(),
+                entry("target.decoder_stack", "target.decoder_stack", "bbbb"),
+            ),
+        ]);
+        serde_json::to_string(&index).expect("index")
+    };
+
     let dir = std::env::temp_dir().join(format!("larql-identity-{}", std::process::id()));
     let write = |root: &std::path::Path, index: &str, graph: &str| {
         std::fs::create_dir_all(root).expect("dir");
         std::fs::write(root.join("index.json"), index).expect("index");
         std::fs::write(root.join("system_graph.json"), graph).expect("graph");
     };
-    let index_json = r#"{"system_graph":"system_graph.json","representations":{
-        "target.expert_bank@BF16":{"segment":"target.expert_bank","payload_sha256":"aaaa"},
-        "target.decoder_stack@BF16":{"segment":"target.decoder_stack","payload_sha256":"bbbb"}}}"#;
     let a = dir.join("a");
-    write(&a, index_json, r#"{"components":[]}"#);
+    write(&a, &index_json, r#"{"components":[]}"#);
     let id = read_source_identity(&a).expect("identity");
     assert_eq!(id.segments.len(), 2, "one entry per representation");
     assert_eq!(id.segments["target.expert_bank"], "aaaa");
@@ -431,7 +464,7 @@ fn identity_is_read_from_the_containers_own_metadata() {
     // A different GRAPH under byte-identical payload hashes is a
     // different model, and the identity says so.
     let b = dir.join("b");
-    write(&b, index_json, r#"{"components":[{"id":"target"}]}"#);
+    write(&b, &index_json, r#"{"components":[{"id":"target"}]}"#);
     let other = read_source_identity(&b).expect("identity");
     assert_eq!(other.segments, id.segments, "same payload hashes");
     assert_eq!(other.manifest_hash, id.manifest_hash, "same index");
@@ -440,7 +473,8 @@ fn identity_is_read_from_the_containers_own_metadata() {
     // An index naming a non-default graph file is followed.
     let c = dir.join("c");
     std::fs::create_dir_all(&c).expect("dir");
-    std::fs::write(c.join("index.json"), r#"{"system_graph":"other.json"}"#).expect("index");
+    let renamed = index_json.replace("system_graph.json", "other.json");
+    std::fs::write(c.join("index.json"), &renamed).expect("index");
     std::fs::write(c.join("other.json"), "{}").expect("graph");
     read_source_identity(&c).expect("a named graph file is followed");
 

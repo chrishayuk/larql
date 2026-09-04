@@ -35,6 +35,8 @@ use super::map::{Precision, PrecisionMap};
 use super::policy::{layer_of, projection_of, Role};
 use super::selection::Promotion;
 use crate::error::VindexError;
+use crate::format::filenames::INDEX_JSON;
+use crate::format::vindex3::index::Vindex3Index;
 use crate::format::vindex3::opplan::OperandRef;
 
 /// One tensor the compiler was asked to consider.
@@ -81,27 +83,106 @@ pub struct SourceIdentity {
     pub segments: BTreeMap<String, String>,
 }
 
-/// Read a container's identity from its own metadata.
+/// Every refusal from this function is prefixed, so a caller reading a
+/// message knows the container was rejected as an IDENTITY rather than
+/// as anything else.
+const REFUSED: &str = "source identity refused";
+
+/// **Read a container's identity from its own metadata — totally.**
+///
+/// Parsed through [`Vindex3Index`], the same validated schema every
+/// other reader of `index.json` uses, and not through a second informal
+/// walk over `serde_json::Value`. The doctrine is worth stating:
+///
+/// > **The thing computing identity must consume the same validated
+/// > facts as the thing that consumes the container.**
+///
+/// An identity function may be stricter than the consumer it identifies
+/// and must never be looser. The earlier untyped walk was looser in
+/// three ways, each of which produced a confident-looking identity over
+/// facts it had silently dropped:
+///
+/// ```text
+/// no `representations` key      an identity sealing NO payload at all
+/// entry missing segment/digest  that segment quietly left out of the seal
+/// two entries, one segment      last writer wins, the other discarded
+/// no `system_graph`             a filename assumed, and hashed as authority
+/// ```
+///
+/// So this refuses instead. What it does NOT do is change which valid
+/// containers identify as equal: `segments` still maps a segment path to
+/// its `payload_sha256`, and `manifest_hash` is still the index file's
+/// bytes. Removing the false SPLIT that byte-hashing causes is a change
+/// to the equivalence relation itself and belongs to its own step, under
+/// its own identity version.
+///
+/// `segment_sha256` is read here as a VALIDITY condition and is not
+/// folded into the identity. It is what seals the segment header table —
+/// the per-tensor `dtype` and `len` a physical optimiser prices a
+/// protected decision from — and an entry that omits it leaves that
+/// table sealed by nothing.
 pub fn read_source_identity(container: &Path) -> Result<SourceIdentity, VindexError> {
-    let index_bytes = std::fs::read(container.join("index.json"))?;
-    let index: serde_json::Value = serde_json::from_slice(&index_bytes)
-        .map_err(|e| VindexError::Parse(format!("source index: {e}")))?;
-    let graph_name = index["system_graph"]
-        .as_str()
-        .unwrap_or("system_graph.json");
+    // Read as text and parsed with `from_str`, which is what all seven
+    // other readers of this index do. One deserialiser for one document
+    // format, and the bytes hashed below are the ones that were parsed.
+    let index_text = std::fs::read_to_string(container.join(INDEX_JSON))?;
+    let index: Vindex3Index = serde_json::from_str(&index_text)
+        .map_err(|e| VindexError::Parse(format!("{REFUSED}: {INDEX_JSON} does not parse: {e}")))?;
+
+    // Absence means "no graph recorded", never "the usual filename".
+    // Hashing an assumed path would seal a document the container never
+    // claimed as its authority.
+    let graph_name = index.system_graph.as_deref().ok_or_else(|| {
+        VindexError::Parse(format!(
+            "{REFUSED}: the index declares no `system_graph`, and the semantic \
+             graph is one of the three things a source identity seals"
+        ))
+    })?;
     let graph_bytes = std::fs::read(container.join(graph_name))?;
-    let mut segments = BTreeMap::new();
-    if let Some(reps) = index["representations"].as_object() {
-        for entry in reps.values() {
-            if let (Some(seg), Some(hash)) =
-                (entry["segment"].as_str(), entry["payload_sha256"].as_str())
-            {
-                segments.insert(seg.to_string(), hash.to_string());
+
+    if index.representations.is_empty() {
+        return Err(VindexError::Parse(format!(
+            "{REFUSED}: the index declares no representations, so this identity \
+             would seal no payload bytes at all"
+        )));
+    }
+
+    let mut segments: BTreeMap<String, String> = BTreeMap::new();
+    // Kept beside `segments` so a second reference to one segment can be
+    // checked against the WHOLE authority, not only the half the
+    // identity happens to carry.
+    let mut authority: BTreeMap<&str, (&str, &str)> = BTreeMap::new();
+    for (id, entry) in &index.representations {
+        for (field, value) in [
+            ("segment", entry.segment.as_str()),
+            ("payload_sha256", entry.payload_sha256.as_str()),
+            ("segment_sha256", entry.segment_sha256.as_str()),
+        ] {
+            if value.is_empty() {
+                return Err(VindexError::Parse(format!(
+                    "{REFUSED}: representation `{id}` carries an empty `{field}`, \
+                     which is a missing fact wearing a present field"
+                )));
             }
         }
+        let facts = (entry.payload_sha256.as_str(), entry.segment_sha256.as_str());
+        match authority.insert(entry.segment.as_str(), facts) {
+            // Two representations may legitimately share one segment;
+            // what they may not do is disagree about what is in it.
+            Some(held) if held != facts => {
+                return Err(VindexError::Parse(format!(
+                    "{REFUSED}: representation `{id}` and an earlier one both name \
+                     segment `{}` and disagree about its digests",
+                    entry.segment
+                )))
+            }
+            _ => {}
+        }
+        segments.insert(entry.segment.clone(), entry.payload_sha256.clone());
     }
+
     Ok(SourceIdentity {
-        manifest_hash: hash_bytes(&index_bytes),
+        manifest_hash: hash_bytes(index_text.as_bytes()),
         graph_hash: hash_bytes(&graph_bytes),
         segments,
     })

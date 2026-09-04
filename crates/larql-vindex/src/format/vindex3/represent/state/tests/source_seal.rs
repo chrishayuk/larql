@@ -44,9 +44,7 @@ use std::path::Path;
 
 use sha2::{Digest, Sha256};
 
-use crate::format::vindex3::encode::encode_system_unenforced;
 use crate::format::vindex3::encode::segment::{SegmentHeader, SEGMENT_PAYLOAD_ALIGN};
-use crate::format::vindex3::plan::tests_support::known_dense;
 
 use super::super::super::compiler::{read_source_identity, SourceIdentity};
 use super::super::super::map::PrecisionMap;
@@ -54,22 +52,7 @@ use super::super::super::policy::Role;
 use super::super::identity::{RepresentationState, RepresentationStateId};
 use super::super::resolved::NoLayoutConstraint;
 use super::super::surface::{SurfaceTensor, TensorSurface};
-
-/// Encode the dense fixture into a fresh container.
-///
-/// The source tempdir is dropped on return: the encode has already
-/// copied every byte it needs, and what the tests read afterwards is
-/// the container alone.
-fn encode_dense_fixture() -> tempfile::TempDir {
-    let source = tempfile::tempdir().expect("source dir");
-    let named = vec![("only-artifact".to_string(), known_dense(source.path()))];
-    let out = tempfile::tempdir().expect("container dir");
-    encode_system_unenforced(&named, out.path()).expect("encode");
-    out
-}
-
-/// The container's one representation entry, and the segment it names.
-const INDEX_JSON: &str = "index.json";
+use super::container;
 
 /// A container's identity before and after a restatement of its table.
 struct Restated {
@@ -86,19 +69,16 @@ struct Restated {
 /// do is disturb the payload — asserted here rather than assumed, since
 /// a harness that quietly moved a payload byte would make every test
 /// below pass for the wrong reason.
-fn restate_table(container: &Path, edit: impl FnOnce(&mut SegmentHeader)) -> Restated {
-    let index_path = container.join(INDEX_JSON);
+fn restate_table(root: &Path, edit: impl FnOnce(&mut SegmentHeader)) -> Restated {
     // Put the index into this harness's own serialisation BEFORE the
     // baseline is taken. `manifest_hash` digests the file's bytes, not
     // its content — see
     // `reserialising_the_index_alone_moves_the_state_id` — so without
     // this the control below would fail on pretty-printing and prove
     // nothing about the seal.
-    reserialise(&index_path);
-    let before = read_source_identity(container).expect("a container identity");
-    let index_before: serde_json::Value =
-        serde_json::from_str(&std::fs::read_to_string(&index_path).expect("index"))
-            .expect("index is JSON");
+    container::reserialise(root);
+    let before = read_source_identity(root).expect("a container identity");
+    let index_before = container::read_index(root);
 
     let (id, entry) = index_before["representations"]
         .as_object()
@@ -106,7 +86,7 @@ fn restate_table(container: &Path, edit: impl FnOnce(&mut SegmentHeader)) -> Res
         .iter()
         .next()
         .expect("the fixture writes one representation");
-    let segment_path = container.join(entry["segment"].as_str().expect("a segment path"));
+    let segment_path = root.join(entry["segment"].as_str().expect("a segment path"));
 
     // Split the file into its three parts.
     let mut file = std::fs::File::open(&segment_path).expect("open segment");
@@ -153,30 +133,13 @@ fn restate_table(container: &Path, edit: impl FnOnce(&mut SegmentHeader)) -> Res
     let mut index_after = index_before.clone();
     index_after["representations"][id]["segment_sha256"] =
         serde_json::json!(format!("{:x}", Sha256::digest(&written)));
-    std::fs::write(
-        &index_path,
-        serde_json::to_string_pretty(&index_after).expect("index"),
-    )
-    .expect("rewrite index");
+    container::write_index(root, &index_after);
 
     Restated {
-        after: read_source_identity(container).expect("a container identity"),
+        after: read_source_identity(root).expect("a container identity"),
         before,
         index_changes: changed_paths(&index_before, &index_after),
     }
-}
-
-/// Rewrite `index.json` through this harness's serialiser, changing no
-/// value.
-fn reserialise(index_path: &Path) {
-    let index: serde_json::Value =
-        serde_json::from_str(&std::fs::read_to_string(index_path).expect("index"))
-            .expect("index is JSON");
-    std::fs::write(
-        index_path,
-        serde_json::to_string_pretty(&index).expect("index"),
-    )
-    .expect("rewrite index");
 }
 
 /// Every leaf whose value differs between two JSON documents.
@@ -265,7 +228,7 @@ fn only_the_header_moved(restated: &Restated) {
 
 #[test]
 fn a_changed_source_dtype_moves_the_state_id_though_no_payload_byte_moves() {
-    let container = encode_dense_fixture();
+    let container = container::dense();
     let restated = restate_table(container.path(), |header| {
         header.tensors[0].dtype = "FP16".into();
     });
@@ -278,7 +241,7 @@ fn a_changed_source_length_moves_the_state_id_though_no_payload_byte_moves() {
     // source footprint. A packed or padded storage has a length the
     // naive product does not predict, so a seal blind to this field
     // would let two different physical realities share one price.
-    let container = encode_dense_fixture();
+    let container = container::dense();
     let restated = restate_table(container.path(), |header| {
         header.tensors[0].len -= 1;
     });
@@ -290,7 +253,7 @@ fn restating_the_table_unchanged_moves_nothing() {
     // The control. Without it, "the id moved" could just mean the
     // harness rewrites the file differently from the writer, and both
     // tests above would pass on a seal that sealed nothing.
-    let container = encode_dense_fixture();
+    let container = container::dense();
     let restated = restate_table(container.path(), |_| {});
 
     assert_eq!(restated.before, restated.after, "identity is content");
@@ -308,12 +271,9 @@ fn restating_the_table_unchanged_moves_nothing() {
 fn the_segments_map_carries_the_payload_digest_and_not_the_file_digest() {
     // Which is why the header needed its own test at all: `segments`
     // seals the payload region, and the table sits outside it.
-    let container = encode_dense_fixture();
+    let container = container::dense();
     let identity = read_source_identity(container.path()).expect("identity");
-    let index: serde_json::Value = serde_json::from_str(
-        &std::fs::read_to_string(container.path().join(INDEX_JSON)).expect("index"),
-    )
-    .expect("JSON");
+    let index = container::read_index(container.path());
     let entry = &index["representations"]["target.embedding@BF16"];
 
     let recorded: BTreeMap<String, String> = BTreeMap::from([(
@@ -343,9 +303,9 @@ fn reserialising_the_index_alone_moves_the_state_id() {
     // merging would credit one state's evidence to another — but it is
     // a failure, and 4b binds physical accounting to this identity, so
     // it is pinned here rather than rediscovered later.
-    let container = encode_dense_fixture();
+    let container = container::dense();
     let before = read_source_identity(container.path()).expect("identity");
-    reserialise(&container.path().join(INDEX_JSON));
+    container::reserialise(container.path());
     let after = read_source_identity(container.path()).expect("identity");
 
     assert_eq!(
