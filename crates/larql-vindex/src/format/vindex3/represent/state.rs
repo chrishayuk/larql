@@ -73,6 +73,7 @@
 pub mod accounting;
 pub mod action_space;
 pub mod assess;
+pub mod bind;
 pub mod candidate;
 pub mod evidence_bank;
 pub mod graph;
@@ -97,6 +98,7 @@ pub use assess::{
     Assessment, NothingMeasured, ParentStanding, RankingRule, RankingSemantics, RankingSemanticsId,
     Score, RANKING_SEMANTICS_ID_VERSION,
 };
+pub use bind::{AccountingBindError, AccountingIncomplete, BoundPhysicalAccounting};
 pub use candidate::{
     Candidate, CandidateDisposition, CandidateSet, Census, Footprint, Generator, MeasurementIntent,
     PreMeasurementPrune,

@@ -220,6 +220,11 @@ impl PhysicalAccountingFacts {
         &self.semantics
     }
 
+    /// The `SourceSemanticIdentity` digest these facts were read from.
+    pub fn source_digest(&self) -> &str {
+        &self.source
+    }
+
     pub fn get(&self, tensor: &TensorIdentity) -> Option<&SourceStorageFact> {
         self.source_storage.get(tensor)
     }

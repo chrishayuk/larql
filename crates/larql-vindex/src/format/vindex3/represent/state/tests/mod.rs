@@ -17,6 +17,7 @@
 //! bearing as the ones that assert difference.
 
 mod accounting;
+mod bind;
 mod container;
 mod source_identity;
 mod source_seal;

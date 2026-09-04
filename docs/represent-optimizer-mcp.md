@@ -994,7 +994,7 @@ and is that seal load-bearing in the identity?**
 4b-b1  refuse incomplete/contradictory identity   done
 4b-b2  identity semantic, not formatting-sensitive  done
 4b-c   read sealed SourceStorageFacts              done
-4b-d   require whole-surface accounting completeness
+4b-d   require whole-surface accounting completeness  done
 4b-e   production BoundFootprint
 4b-f   next_experiment answers, transport unchanged
 ```
@@ -1251,6 +1251,78 @@ tests:
 The first is the one that matters: it is the regression this step exists
 to foreclose, and it dies against three independent tests.
 
+### 4b-d — can this surface be priced authoritatively at all?
+
+One question. No cost is computed, nothing is ranked and nothing is
+pruned.
+
+```text
+PhysicalAccountingFacts
++ TensorSurface
+        ↓ bind()
+BoundPhysicalAccounting
+or
+AccountingIncomplete { missing: [TensorIdentity, …] }
+```
+
+> **READY means every tensor on the REPRESENT surface has exactly one
+> authoritative source price from the sealed container facts.**
+
+The two populations are genuinely different — `PhysicalAccountingFacts`
+is what the CONTAINER stores, a `TensorSurface` is what REPRESENT
+*enumerated* under one role classification — and only one direction of
+disagreement matters:
+
+```text
+surface tensor with no stored fact   → cannot be priced. INCOMPLETE.
+stored fact no surface tensor names  → not this surface's business
+```
+
+An extra stored fact neither satisfies nor damages completeness. Letting
+it do either is how a missing price gets papered over by an unrelated
+one that happened to be present.
+
+**Incompleteness is a failure to bind, not a fourth prune.** Stage 2's
+register holds exactly THREE usable pre-measurement prunes and "cannot
+be priced" is not among them; an unpriceable candidate arriving neither
+eligible nor pruned would break the census conservation law (§4e). So
+the search does not start. `BoundPhysicalAccounting` is constructed only
+by `bind`, so holding one IS the proof — which is what lets 4b-e
+implement `Footprint` with no `Option`, no fallback and no missing-data
+branch. `prices_for(surface)` makes ONE check, that this is the surface
+that was bound, and then pairs every tensor with its price totally.
+
+**Blind to role and shape**, asserted rather than assumed: a
+reclassified role moves the surface identity and is a different search
+problem (1a), and a shape is not what anything is priced by (4b-c), so
+neither may change whether a model can be priced at all.
+
+Two failures, kept apart because they call for different actions:
+`ForeignSource` is the wrong facts entirely and re-reading fixes it;
+`Incomplete` is a real gap. A foreign source is reported as foreign even
+though every surface tensor is also, incidentally, unpriceable. The
+source check resolves on the SEMANTIC digest, so a re-exported container
+still binds.
+
+**Verified they can fail.** Seven mutations, each killed by exactly its
+own tests:
+
+| Mutation | Killed |
+|---|---|
+| a missing tensor is skipped instead of collected | 4 |
+| binding stops at the FIRST missing tensor | `several_missing…` (1) |
+| keyed on the tensor NAME, so an alias is satisfied by its twin | `an_alias_is_two_entries…`, `a_surface_the_container_stores_entirely_binds` (2) |
+| the source is not checked | `facts_from_another_container…` (1) |
+| the source check resolves on the artifact digest | 9 |
+| `prices_for` answers over any surface | `a_bound_accounting_refuses_a_surface…` (1) |
+| the missing list is not ordered | `several_missing…` (1) |
+
+**An open question for 4b-e**, recorded rather than acted on: a container
+may store tensors the surface does not enumerate, so summing the bound
+prices is the surface's footprint and not necessarily the container's.
+`LogicalBytes` is documented as a whole-map footprint, and which of the
+two a `Footprint` owes is 4b-e's to settle.
+
 ---
 
 ## 5. The reward, which must not be diagnostic KL
@@ -1349,7 +1421,7 @@ Deliberately boring, so MCTS is a policy swap and not a rewrite.
 | 3 | Best-first; the objective API and the search/evidence boundary (§4f) | **done** |
 | 3b | Promotion-input closure — the chain runs from a snapshot (§4g) | **done** |
 | 4 | MCP facade — read-only; seven intent-level tools (§4h) | **done** |
-| 4b | The source identity the optimizer prices from (§4i) | a–c **done** |
+| 4b | The source identity the optimizer prices from (§4i) | a–d **done** |
 | 5 | PUCT as another `SearchPolicy`; same states, actions, evidence | |
 | 6 | Extend `PhysicalState` with residency; optimise measured tok/s | |
 
