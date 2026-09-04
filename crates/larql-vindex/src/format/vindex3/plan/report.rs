@@ -57,6 +57,29 @@ pub const PLAN_SCHEMA: u32 = 6;
 /// `plan/tests/identity.rs` pins fixture verdicts against this value, so
 /// a change that flips one fails there until the version is bumped.
 ///
+/// **15** — hyper-connection ADDRESSABILITY (wave 18). The six per-layer
+/// Sinkhorn site operands (`hc_{attn,ffn}_{fn,base,scale}`) are operand
+/// roles, required on every layer of a component that declares the
+/// topology, checked against the declared stream count's geometry and
+/// bound into the op plan; the head's three bare operands
+/// (`hc_head_{fn,base,scale}`) are placed as their own object, and only
+/// under the declaration. The op plan therefore no longer refuses on the
+/// topology — it runs closure — while the plan report and the executor's
+/// preparation step still refuse, through the same
+/// `ResidualTopology::unimplemented_reason`, whose text now names the
+/// traversal as what is missing rather than the arithmetic (wave 17) or
+/// the placement (wave 18). Measured before the code: the two
+/// DeepSeek-V4 rows lose their three `hc_head_*` unplaced-group blockers
+/// and nothing else moves; GLM-5.3-Flash's execution-surface refusal
+/// changes its text and keeps its category; Hy4-preview is untouched
+/// because its head is spelled under `model.hc_head` and its topology
+/// resolves to none. And a measurement that contradicted the programme's
+/// expectation: Kimi-K3's four `*_res_{norm,proj}` operands are
+/// `[hidden]` and `[1, hidden]` — not a Sinkhorn site's
+/// `[(2 + hc)·hc, hc·hidden]` under any stream count — so they are a
+/// different residual topology (AttnRes), not this one's second dialect,
+/// and they do not move.
+///
 /// **14** — hyper-connections are a declared RESIDUAL TOPOLOGY, and
 /// explicitly not executable. Read from DeepSeek-V4-Flash's own
 /// `inference/model.py`: the state is a bundle of `hc_mult` parallel
@@ -204,7 +227,7 @@ pub const PLAN_SCHEMA: u32 = 6;
 /// architectures, now block instead of passing silently into
 /// `GenericArch`'s Llama-shaped defaults. Measured on the conformance
 /// corpus: 15 of 42 declared `model_type` strings, across 30 checkpoints.
-pub const PLANNER_SEMANTICS_VERSION: u32 = 14;
+pub const PLANNER_SEMANTICS_VERSION: u32 = 15;
 
 /// Who judged a plan.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]

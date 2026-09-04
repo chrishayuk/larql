@@ -1,10 +1,16 @@
 {
  "artifact": "wave18-execution-notes",
+
  "purpose": "What wave 18 LEARNED while executing, kept apart from what it PREDICTED before executing. The frozen forecast is immutable; falsifications are recorded here so a reader at HEAD can tell the two apart without consulting git history.",
+
  "rule_this_establishes": "Frozen forecasts are immutable. Falsifications discovered during execution are recorded in a sibling execution-notes artifact, linked to the frozen forecast and the baseline commit.",
+
  "forecast": "wave18-hyper-connection-addressability.json",
+
  "forecast_commit": "446197d5",
+
  "baseline_commit": "8b6a8d78",
+
  "written": "2026-09-04, before any wave-18 capability code",
 
  "baseline_observations": {
@@ -69,5 +75,99 @@
   "a falsely classified HC spelling (hc_attn_fn -> FfnDown, injected into roles.rs)": "CAUGHT — fails on both GLM and DeepSeek",
   "an mtp leak": "NOT YET TESTABLE — nothing can leak until HC roles exist. The fixture carries the mtp namespace so the test can be written with the implementation, and that is stated in the witness rather than left implied.",
   "two assumptions the instrument falsified on its first run": "that GLM's unclassified set was six (it is nine), and that DeepSeek classified nothing (it classifies exactly one). Both were corrected to the measurement, not the other way round."
+ },
+
+ "implementation_findings": {
+  "written": "2026-09-05, with the code, before the sweep was re-run",
+  "what_landed": [
+   "Six OperandRoles — HcAttnMixFn, HcAttnBase, HcAttnScale, HcFfnMixFn, HcFfnBase, HcFfnScale — bound to the exact bare leaves `hc_{attn,ffn}_{fn,base,scale}` in ROLE_TABLE. Layer-blind (GLM's KDA and MLA layers each carry all six). The role carries no dtype: F32 on DeepSeek, BF16 on GLM, asserted from the headers.",
+   "ObjectKind::HyperConnectionHead — the head's three BARE groups (`hc_head_{fn,base,scale}`, DeepSeek's spelling) become one object with three bindings, placed ONLY when the artifact's resolved residual topology is HyperConnection. Without the declaration the groups stay unplaced and the reason names the disagreement. Hy4-preview's `model.hc_head` spelling is not in the table and its topology resolves to none, so it is untouched.",
+   "opplan::build no longer refuses on the topology. Closure runs: the six roles are required on every transformer layer of a hyper-connected component; the same six are `OperandImpliesAbsentOp` strays on a single-stream component; geometry is checked against the DECLARED stream count — mix_fn `[(2+hc)·hc, hc·hidden]`, base `[(2+hc)·hc]`, scale `[3]`; the head against `[hc, hc·hidden]`, `[hc]`, `[1]`. A hyper-connected component's mixer-only or conv-QKV layer is refused as unjudged.",
+   "The plan carries the bundle: `ComponentOpPlan.residual_topology`, `LayerPlan.hyper_connection { attention, ffn }` with three OperandRefs each, `ComponentOpPlan.hyper_connection_head`. Single-stream plans serialise byte-identically (the new keys are skipped).",
+   "The refusal moved, it did not disappear. `PreparedOperands::load` refuses a hyper-connected plan before loading one operand, reading `ResidualTopology::unimplemented_reason` — the same authority the plan report reads — whose text now names the TRAVERSAL as what is missing, neither the arithmetic (wave 17) nor the placement (wave 18). The production encode gate also still refuses the container as inadmissible (the three hc_* keys and the surface finding block).",
+   "PLANNER_SEMANTICS_VERSION 14 -> 15."
+  ],
+  "the_instrument_was_mutation_tested_again": {
+   "executor refusal disabled": "CAUGHT — `an_addressable_topology_is_still_refused_at_the_executors_door` fails; the single-stream control in the same test still executes, so the failure is the refusal's absence and not a broken store.",
+   "head placement ungated from the declaration": "CAUGHT — `head_operands_without_the_declaration_stay_unplaced_with_the_disagreement_named` and `deepseeks_head_loses_its_owner_when_the_topology_is_not_declared` fail; the twelve other carriage tests pass, so the head can be placed for the wrong reason without any positive test noticing — the controls are what see it.",
+   "the four closure refusals": "each has its own test that fires it alone on the synthetic estate: a missing site operand (MissingOperand{HcFfnScale}), a Sinkhorn-free `[2·hc, hc·hidden]` mix projection (GeometryMismatch vs `[24, 256]`), a two-entry scale (GeometryMismatch vs `[3]`), a head stored at a site's geometry (two GeometryMismatches), site operands on a single-stream component (six OperandImpliesAbsentOp naming the topology)."
+  },
+  "the_mtp_leak_test_the_baseline_could_not_write": "Written now, on DeepSeek-V4-Flash's real headers: the head's three bare groups are owned, the layer sites sit in the decoder stack, `mtp` stays unplaced with its original reason, no object binding starts with `mtp`, and every hyper-connection tensor on the surface has exactly one fate (owned XOR external).",
+  "k3_transfer_measured": {
+   "expected_by_the_k3_programme": "the four `*_res_{norm,proj}` operands on K3's KDA layer are hyper-connection operands; wave 18's generic roles should address them, leaving `g_proj` alone (`plan::tests::k3_representable::KDA_LAYER_UNADDRESSED`).",
+   "measured": "Zero of four moved, and `k3_kda_operands_are_addressed_except_the_five_named_deltas` still passes UNCHANGED. Read from K3's own headers: `self_attention_res_norm.weight` is `[7168]` and `self_attention_res_proj.weight` is `[1, 7168]` (same for `mlp_res_*`). A Sinkhorn site's mix projection is `[(2+hc)·hc, hc·hidden]`, which equals `[1, 7168]` for NO stream count (hc=1 gives `[3, 7168]`). They are a different residual topology — K3's config calls it AttnRes (`attn_res_block_size`, `output_attn_res_proj`, already in the ResidualWiring semantic cluster) — not this one's second dialect.",
+   "how_to_read_it": "This is the 'fewer than 4 gone' arm of the K3 witness's own tripwire, and it is NOT accommodation: no K3-shaped name entered wave 18's vocabulary and the abstraction did not bend. The generic abstraction had nothing to transfer to, because the premise that K3's residual operands are Sinkhorn hyper-connections was a classification made at K3-ARCH-1 without reading their shapes — exactly the discoverable baseline fact the new doctrine says to measure rather than forecast. The four operands belong to a K3 rung of their own (a third residual topology, AttnRes), beside K3-REP-GATE-1 and K3-LATENTMOE-1, and its arithmetic is unread.",
+   "pinned_by": "`opplan::tests::wave18_hc_carriage::k3s_residual_operands_are_not_sinkhorn_sites_under_any_stream_count` — both halves: no spelling classifies under Kda, and no stream count from 1 to 16 makes the shapes a site's."
+  },
+  "success_claim": "LARQL can assign semantic operand identity to the Sinkhorn hyper-connection vocabulary and carry those operands through its normal execution-planning machinery, demonstrated on GLM and transferred independently to K3.",
+  "success_claim_as_measured": "The first clause holds on GLM-5.3-Flash's real headers (six operands to six named roles, three FP8 sidecars unmoved) and on DeepSeek-V4-Flash's (same six roles from a different path and dtype; head placed under the declaration; mtp external), and the carriage clause holds on a synthetic estate that declares the topology (closure holds, the plan carries the bundle, the executor refuses). The transfer clause does NOT hold as written: K3's residual operands are not instances of this vocabulary, so there was nothing to transfer to — see k3_transfer_measured.",
+  "explicit_non_claim": "Wave 18 does not make DeepSeek-V4 plannable. DeepSeek-V4 remains blocked by an independently unsupported base tensor dialect; its reference implementation supplied Wave 17's arithmetic oracle, not Wave 18's addressability witness.",
+  "three_kinds_of_evidence_from_three_models": {
+   "DeepSeek": "tells us what the Sinkhorn HC computation MEANS (wave 17's oracle), and now that its head and sites are addressable under its own dialect's spellings — while its base dialect keeps it blocked.",
+   "GLM": "cleanly tells us whether HC semantic addressability works — the controlled subject, one variable moved.",
+   "K3": "was to tell us whether the addressability transfers beyond the primary subject; it told us instead that its residual topology is a different one."
+  },
+  "future_closure_condition": "A DeepSeek dialect rung that makes its base operands plannable should let the wave-18 HC roles attach with no new HC-specific work, so wave 17's arithmetic and wave 18's addressability meet on the original DeepSeek checkpoint. If that happens without touching roles.rs or graph::build's head rule, the decomposition was real.",
+  "doctrine_from_wave_19_onward": {
+   "order": "reconnaissance -> freeze -> implementation",
+   "rule": "Measure the baseline; forecast the intervention. Never forecast discoverable baseline mechanics.",
+   "reconnaissance_may_establish": [
+    "exact authority boundaries",
+    "current classification/placement behaviour",
+    "subjects and controls",
+    "current refusal paths",
+    "fixture census",
+    "what is and is not observable",
+    "existing metrics"
+   ],
+   "reconnaissance_may_not": "implement the proposed capability",
+   "the_forecast_then_predicts_only_the_transition": "Given baseline X, intervention Y should produce delta Z while controls A/B remain unchanged.",
+   "why": "Wave 18's five falsifications were all statements about the existing system, measurable before preregistration. The hypothesis survived; the model of the starting state failed. Wave 18 is the evidence for the rule."
+  }
+ },
+
+ "result": {
+  "scored_on": "2026-09-05",
+  "outcome_semantics_version": 15,
+  "rows_re_planned": "the seven rows a plan-stage change could touch, with the wave-18 binary: GLM-5.3-Flash, DeepSeek-V4-Flash, DeepSeek-V4-Pro, Hy4-preview, Qwen3.8-Flash-Next, plus the controls GLM-5.3 and Qwen3-0.6B. The other 102 cached plans carry no bare hc_head_* group and no hyper-connected surface (grep over every cached finding), so their verdicts cannot move and they were not re-planned; the cache therefore mixes version 15 (7 rows) and 14 (102 rows), which differ only in the stamp.",
+  "per_row_text_closure_blocking": {
+   "deepseek-ai/DeepSeek-V4-Flash": "34 -> 31. Cleared: hc_head_base, hc_head_fn, hc_head_scale (unplaced groups). New: `target.hyper_connection_head` placed, 262,164 bytes = (4·16384 + 4 + 1)·4 F32, from the real headers. Still blocked by its base dialect (execution surface incomplete: norm placement) and everything else it carried.",
+   "deepseek-ai/DeepSeek-V4-Pro": "34 -> 31, same three cleared, head object 458,772 bytes = (4·28672 + 4 + 1)·4 — hidden 7168, hc 4.",
+   "zai-org/GLM-5.3-Flash": "31 -> 31. Finding 111 (execution_surface) keeps its class and category; its detail changes from 'no placement rule owns the hc_* groups' to the traversal gap. `mhc` stays unknown and blocking. The three hc_* config keys stay unsupported_component and blocking — the component is represented and addressable, not executable.",
+   "tencent/Hy4-preview": "32 -> 32. Its `model.hc_head` group is not the bare DeepSeek spelling and its topology resolves to none, so nothing wave 18 added can touch it. (Its surface text changed between the cached plan and now, but that is the HC-PREPOST correction landed before wave 18 at feb98a73, not this wave's.)",
+   "Qwen/Qwen3.8-Flash-Next": "36 -> 36. Its hc_count / hc_lowrank keys and attn_hyper_connection.hc_norm spelling are a third variant this wave does not read.",
+   "zai-org/GLM-5.3": "19 -> 19 (control, declares no hc keys).",
+   "Qwen/Qwen3-0.6B": "0 -> 0 (control)."
+  },
+  "corpus": {
+   "GREEN": 41,
+   "AMBER": 3,
+   "RED": 65,
+   "BUG": 0,
+   "silent_drops": 0,
+   "text_closure_blocking": "1037 -> 1031",
+   "corpus_blocking_total": "1377 -> 1371",
+   "K3_clusters": "7 -> 7 (K3 34 blocking, unchanged; not re-planned, nothing wave 18 changed reaches its plan)",
+   "whole_model_admissible": 32,
+   "silent_drops_method": "no finding in the 109 cached plans carries a drop carriage; the control is that 2,949 findings carry the other three carriage states (represented 436, parsed 1960, lowered 553)."
+  },
+  "rows_cleared": 0,
+  "verdicts_moved": 0,
+  "falsifiers_checked": {
+   "any hc tensor on the DeepSeek surface with no fate": "NONE — asserted over the real headers: every hc_ tensor is owned (stack or head object) XOR external (mtp.0), never neither.",
+   "the topology refusal disappearing entirely": "did not — it moved from opplan::build to PreparedOperands::load and the plan report still blocks (GLM finding 111, DeepSeek/Pro surface findings). Mutation-tested: disabling the executor refusal fails its test.",
+   "a real-weight witness becoming available": "none claimed; no payload exists on this machine; the production encode gate also refuses the hyper-connected container as inadmissible (asserted).",
+   "one placement rule matching all three families": "did not — Hy4-preview's site and head spellings match nothing, its shapes would fail the geometry if they did (asserted with a [2·hc, hc·hidden] fixture), and K3's residual operands match nothing under any stream count.",
+   "hc_attn_fn given a single source dtype": "did not — F32 on DeepSeek, BF16 on GLM, same role, asserted from the headers.",
+   "Hy4-preview being placed": "did not — 32 unchanged, hc_pre.* still unclassified (baseline test kept).",
+   "mhc acquiring a meaning": "did not — still `unknown`, still blocking.",
+   "any row GREEN/AMBER, oracle moving, BUG > 0, silent-drop regression": "none — 41/3/65/0/0, larql-vindex 3918 tests and larql-models 800 pass, every wave-17 hyper-connection oracle test unchanged and green."
+  },
+  "gates": {
+   "larql-vindex": "fmt clean; clippy --all-targets -D warnings clean; 3918 passed / 0 failed / 6 ignored (under llvm-cov); coverage 93.65% lines against the 90% floor, policy passed; changed files: graph/build.rs 93.75, graph/object.rs 100, graph/roles.rs 92.74, opplan/build.rs 92.99, opplan/mod.rs 92.11, opplan/exec/prepared.rs 91.83, opplan/exec/hyper_connection.rs 100, plan/report.rs 99.13",
+   "larql-models": "fmt clean; clippy --all-targets --no-deps -D warnings clean; 800 passed; coverage 91.64% lines against the 88% floor, residual_topology.rs 100%",
+   "one_failure_on_the_way": "the first full run failed exactly one test, plan::tests::identity::the_semantics_version_is_pinned_to_known_verdicts, which pins the version at 14 — the designed tripwire for a bump. Re-pinned at 15 with a two-sided version-15 verdict (head groups placed under the declaration, unplaced without it); the coverage run that followed is the full green run.",
+   "measured_where": "the main worktree at feb98a73 + this wave's changes, main target dir for tests/coverage; the release CLIs for the re-plan were built in a scratch target dir so the two never contended for the build lock."
+  }
  }
 }

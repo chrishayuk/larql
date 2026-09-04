@@ -3,7 +3,7 @@
 
 use larql_models::inventory::ArchitectureInventory;
 
-use super::support::{glimmer_shaped_target, glimmer_shaped_target_with};
+use super::support::{custom_artifact, glimmer_shaped_target, glimmer_shaped_target_with};
 use crate::format::vindex3::plan::{
     plan_system, plan_system_with_sources, ArtifactSource, PlannerIdentity, SystemPlan,
     VerdictCacheKey, PLANNER_SEMANTICS_VERSION, PLAN_SCHEMA,
@@ -101,7 +101,7 @@ fn identity_survives_a_round_trip_and_parse_refuses_other_schemas_by_name() {
 /// witness is re-recorded.
 #[test]
 fn the_semantics_version_is_pinned_to_known_verdicts() {
-    assert_eq!(PLANNER_SEMANTICS_VERSION, 14);
+    assert_eq!(PLANNER_SEMANTICS_VERSION, 15);
 
     let dir = tempfile::tempdir().unwrap();
     let admissible = plan_system(&one_glimmer(dir.path()));
@@ -168,6 +168,66 @@ fn the_semantics_version_is_pinned_to_known_verdicts() {
     let blocked = plan_system(&[(ARTIFACT.to_string(), inventory)]);
     assert!(!blocked.admissible, "{:?}", blocked.summary);
     assert!(blocked.summary.blocking > 0);
+
+    // Version 15's verdict (wave 18): the hyper-connection head's three
+    // bare groups are PLACED on a component that declares the topology
+    // — no longer three unplaced-group blockers — and stay unplaced on
+    // one that does not. Both arms pinned: the second is what keeps the
+    // first from having been implemented as "own anything named hc_".
+    // Neither plan is admissible (the topology is represented and not
+    // executable, and its keys say so), so the verdict pinned is the
+    // groups' fate, read off the findings by subject.
+    let head_groups = ["hc_head_fn", "hc_head_base", "hc_head_scale"];
+    let head_fate = |declares_topology: bool| -> Vec<String> {
+        let dir = tempfile::tempdir().unwrap();
+        let mut config = serde_json::json!({
+            "architectures": ["LlamaForCausalLM"],
+            "torch_dtype": "bfloat16",
+            "model_type": "llama",
+            "hidden_size": 64,
+            "num_hidden_layers": 1,
+            "intermediate_size": 256,
+            "num_attention_heads": 8,
+            "num_key_value_heads": 2,
+            "head_dim": 8,
+            "vocab_size": 128,
+            "rms_norm_eps": 1e-5,
+            "rope_theta": 10000.0
+        });
+        if declares_topology {
+            config["hc_mult"] = serde_json::json!(4);
+            config["hc_sinkhorn_iters"] = serde_json::json!(20);
+            config["hc_eps"] = serde_json::json!(1e-6);
+        }
+        let tensors: Vec<(&str, &[usize])> = vec![
+            ("model.embed_tokens.weight", &[128, 64]),
+            ("model.norm.weight", &[64]),
+            ("model.layers.0.input_layernorm.weight", &[64]),
+            ("hc_head_fn", &[4, 256]),
+            ("hc_head_base", &[4]),
+            ("hc_head_scale", &[1]),
+        ];
+        let inventory = custom_artifact(dir.path(), &config, &tensors);
+        let plan = plan_system(&[(ARTIFACT.to_string(), inventory)]);
+        plan.artifacts
+            .iter()
+            .flat_map(|a| &a.findings)
+            .filter(|f| head_groups.contains(&f.subject.as_str()) && f.blocks())
+            .map(|f| f.subject.clone())
+            .collect()
+    };
+    assert_eq!(
+        head_fate(true),
+        Vec::<String>::new(),
+        "under the declaration the head groups are placed, not blockers"
+    );
+    let mut undeclared = head_fate(false);
+    undeclared.sort();
+    assert_eq!(
+        undeclared,
+        ["hc_head_base", "hc_head_fn", "hc_head_scale"],
+        "without the declaration the same groups block as unplaced"
+    );
 }
 
 fn pinned(commit: &str) -> ArtifactSource {

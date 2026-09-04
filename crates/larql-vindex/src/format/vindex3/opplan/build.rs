@@ -16,23 +16,29 @@
 use std::collections::BTreeMap;
 use std::path::Path;
 
-use larql_models::config::{FfnType, MoeRouterKind};
+use larql_models::config::{
+    FfnType, HyperConnection, HyperConnectionWeights, MoeRouterKind, ResidualTopology,
+};
 
 use super::super::encode::segment::{read_segment_header, SegmentTensor};
 use super::super::encode::REPRESENTATION_ID_SEP;
 use super::super::graph::policy::LayerOperator;
-use super::super::graph::roles::classify_stack_tensor_on;
+use super::super::graph::roles::{
+    classify_hyper_connection_head_tensor, classify_stack_tensor_on, HcHeadOperand,
+};
 use super::super::graph::surface::LinearAttentionSurface;
 use super::super::graph::surface::Mamba2Surface;
 use super::super::graph::surface::MlaSurface;
 use super::super::graph::surface::MoeSurface;
 use super::super::graph::{LogicalObject, NormPlacement, ObjectKind, OperandRole};
 use super::super::inspect::SystemInspection;
+use super::exec::hyper_connection::{HC_HEAD_SCALE_LEN, HC_SCALE_LEN};
 use super::{
     AttentionOp, ClosureDefect, ComponentOpPlan, EmbeddingOp, ExpertBank, FfnIdentity, FfnOp,
-    GateOp, GatedDeltaOp, HybridFfnOp, KdaOp, LayerAttention, LayerFfn, LayerPlan, Mamba2Op, MlaOp,
-    NormOp, OpPlanOutcome, OperandRef, OutputOp, PackedProjection, QkNormOp, RoutedFfnOp,
-    SharedExpertBranchGateOp, SharedExpertOp, SinkOp,
+    GateOp, GatedDeltaOp, HcSiteOp, HybridFfnOp, HyperConnectionHeadOp, HyperConnectionLayerOp,
+    KdaOp, LayerAttention, LayerFfn, LayerPlan, Mamba2Op, MlaOp, NormOp, OpPlanOutcome, OperandRef,
+    OutputOp, PackedProjection, QkNormOp, RoutedFfnOp, SharedExpertBranchGateOp, SharedExpertOp,
+    SinkOp,
 };
 use crate::error::VindexError;
 use larql_models::config::ExpertFormat;
@@ -50,6 +56,26 @@ const FOUR_NORM_PLACEMENT: &str = "four-norm placement";
 const ROUTED_FFN_OP: &str = "routed FFN op";
 /// A packed fused operand with no declared branch layout cannot be read.
 const GATE_UP_LAYOUT_FACT: &str = "gate_up branch layout";
+/// The primitive a hyper-connection site operand implies, named as
+/// [`ClosureDefect::OperandImpliesAbsentOp`] reports it on a component
+/// whose declared residual is one stream.
+const HC_SITE_ON_SINGLE_STREAM: &str =
+    "hyper-connection residual topology (the component declares a single residual stream)";
+/// The same operand on a mixer-only or conv-QKV layer: the block has no
+/// attention and FFN sublayers to wrap in two sites, and this build has
+/// judged no hyper-connected form of it.
+const HC_SITE_ON_MIXER_LAYER: &str =
+    "a hyper-connected transformer layer (a mixer-only program has no attention and FFN \
+     sublayers to wrap in two sites)";
+/// The fact a hyper-connected component's mixer-only layer leaves
+/// unjudged, named as [`ClosureDefect::UnjudgedSemantic`] reports it.
+const HC_ON_MIXER_FACT: &str = "hyper-connection sites on a mixer-only layer";
+/// What requires that judgment: the traversal, which has to know how a
+/// one-sublayer block reduces and expands the bundle.
+const HC_ON_MIXER_REQUIRED_BY: &str = "the hyper-connected residual traversal";
+/// The primitive the head's operands imply on a single-stream component.
+const HC_HEAD_ON_SINGLE_STREAM: &str =
+    "hyper-connection head reduction (the component declares a single residual stream)";
 
 /// Build the operation plan for `component_id` from a container's
 /// inspection plus its segment tables. I/O failures are hard errors;
@@ -101,23 +127,23 @@ pub fn plan_component_ops(
     // tensor and producing fluent wrong output. So it refuses, the way the
     // unimplemented router kinds and position policies refuse.
     // The residual topology is asked FIRST, because it decides what the
-    // residual even is. A stack whose state is a bundle of streams
-    // cannot be lowered by the single-stream programme below at all —
-    // not "with a different scale", but at all — so no operand is read
-    // before this refuses.
-    if let Some(reason) = surface.residual_topology.unimplemented_reason() {
-        return Ok(OpPlanOutcome {
-            plan: None,
-            defects: vec![ClosureDefect::UnimplementedSemantic {
-                component: component.id.clone(),
-                fact: format!(
-                    "residual topology ({} parallel streams) — {reason}",
-                    surface.residual_topology.streams()
-                ),
-                representable_as: format!("ResidualTopology::{:?}", surface.residual_topology),
-            }],
-        });
-    }
+    // residual even is — and since wave 18 it is asked as a CLOSURE
+    // question here, not as a refusal. A hyper-connected component's six
+    // per-layer site operands classify, are required on every
+    // transformer layer, are checked against the topology's own geometry
+    // and are bound into the plan; a single-stream component refuses the
+    // same operands as strays. What this build still cannot do is
+    // TRAVERSE the bundle, and that refusal lives where traversal starts
+    // (`exec::prepared::PreparedOperands::load`) and in the plan report,
+    // both reading `ResidualTopology::unimplemented_reason`. Refusing
+    // here as well would hide the addressability answer behind the
+    // traversal gap — the structural silence the wave-18 baseline
+    // recorded, where a hyper-connection checkpoint emitted no
+    // UnclassifiedOperand because nothing ever asked.
+    let hyper_connection = match surface.residual_topology {
+        ResidualTopology::HyperConnection(hc) => Some(hc),
+        ResidualTopology::SingleStream => None,
+    };
     if let Some(reason) = placement.unimplemented_reason() {
         return Ok(OpPlanOutcome {
             plan: None,
@@ -182,6 +208,7 @@ pub fn plan_component_ops(
                 | ObjectKind::Embedding
                 | ObjectKind::FinalNorm
                 | ObjectKind::OutputHead
+                | ObjectKind::HyperConnectionHead
         ) {
             tables.insert(
                 object.kind,
@@ -292,6 +319,7 @@ pub fn plan_component_ops(
             mla: surface.mla,
             mamba2: surface.mamba2,
             conv_qkv: surface.conv_qkv,
+            hyper_connection,
         }
     };
 
@@ -436,6 +464,7 @@ pub fn plan_component_ops(
                 mamba2: surface.mamba2,
                 conv_qkv: surface.conv_qkv,
                 v_from_k: policy.v_from_k,
+                hyper_connection: hyper_connection.is_some(),
                 // Which operand family this layer must supply, taken from
                 // the GRAPH's operator. The op below picks its operator
                 // from operand EVIDENCE instead, so the two authorities
@@ -459,6 +488,21 @@ pub fn plan_component_ops(
                 if holder.is_none_or(|slot| !slot.contains_key(&role)) {
                     defects.push(ClosureDefect::MissingOperand { layer, role });
                 }
+            }
+            // A hyper-connected component's mixer-only or conv-QKV layer
+            // is a combination no reference this build has read describes
+            // — one sublayer, two sites? none? — so the layer is refused
+            // as unjudged rather than planned with no site and a topology
+            // that says every layer has two. Nothing observed declares
+            // this shape; the arm exists so that if something does, it
+            // blocks by name instead of building a plan whose layers
+            // disagree with its component.
+            if ops.hyper_connection && (ops.operator.is_mamba2() || ops.operator.is_conv_qkv()) {
+                defects.push(ClosureDefect::UnjudgedSemantic {
+                    component: component.id.clone(),
+                    fact: format!("{HC_ON_MIXER_FACT} (layer {layer})"),
+                    required_by: HC_ON_MIXER_REQUIRED_BY.to_string(),
+                });
             }
             // QK norms travel as a pair.
             if let Some(slot) = present {
@@ -566,6 +610,19 @@ pub fn plan_component_ops(
             component: component.id.clone(),
         });
     }
+    // ── The hyper-connection head ──
+    let hc_head_tensors =
+        tables
+            .get(&ObjectKind::HyperConnectionHead)
+            .and_then(|(object, tensors)| {
+                hyper_connection_head_closure(
+                    object,
+                    tensors,
+                    hyper_connection,
+                    hidden,
+                    &mut defects,
+                )
+            });
 
     if !defects.is_empty() {
         return Ok(OpPlanOutcome {
@@ -601,6 +658,27 @@ pub fn plan_component_ops(
         let get = |role: OperandRole| &slot[&role];
         let policy = &attention_table[layer];
         let geometry = layer_geometry(layer);
+        // The two sites, bound iff the component declares the topology.
+        // Closure required all six on every transformer layer, so the
+        // lookups are total here; the mixer arms below never reach this
+        // under the topology (closure refused them as unjudged).
+        let hc_site = |mix_fn: OperandRole, base: OperandRole, scale: OperandRole| HcSiteOp {
+            mix_fn: operand(&stack_id, get(mix_fn)),
+            base: operand(&stack_id, get(base)),
+            scale: operand(&stack_id, get(scale)),
+        };
+        let hyper_connection_sites = hyper_connection.map(|_| HyperConnectionLayerOp {
+            attention: hc_site(
+                OperandRole::HcAttnMixFn,
+                OperandRole::HcAttnBase,
+                OperandRole::HcAttnScale,
+            ),
+            ffn: hc_site(
+                OperandRole::HcFfnMixFn,
+                OperandRole::HcFfnBase,
+                OperandRole::HcFfnScale,
+            ),
+        });
         // A mixer-only layer, on operand evidence: the fused five-way
         // `in_proj` is the discriminator (no other operator's role table
         // can put it in `slot`). Its whole program is the mixer — one
@@ -644,6 +722,7 @@ pub fn plan_component_ops(
                 ffn: None,
                 post_ffn_norm: None,
                 layer_scale: None,
+                hyper_connection: None,
                 residual_scale: surface.residual_scale,
                 operands_accounted: consumed,
                 operands_present: consumed,
@@ -686,6 +765,7 @@ pub fn plan_component_ops(
                 ffn: None,
                 post_ffn_norm: None,
                 layer_scale: None,
+                hyper_connection: None,
                 residual_scale: surface.residual_scale,
                 operands_accounted: consumed,
                 operands_present: consumed,
@@ -1084,6 +1164,7 @@ pub fn plan_component_ops(
             ffn: Some(ffn),
             post_ffn_norm,
             layer_scale,
+            hyper_connection: hyper_connection_sites,
             residual_scale: surface.residual_scale,
             operands_accounted: consumed,
             operands_present: consumed,
@@ -1092,6 +1173,14 @@ pub fn plan_component_ops(
 
     let plan = ComponentOpPlan {
         component: component.id.clone(),
+        residual_topology: surface.residual_topology,
+        hyper_connection_head: hc_head_tensors.map(|(object, reduce_fn, base, scale)| {
+            HyperConnectionHeadOp {
+                reduce_fn: operand(&object, &reduce_fn),
+                base: operand(&object, &base),
+                scale: operand(&object, &scale),
+            }
+        }),
         embedding: embedding_tensor.map(|(object, tensor)| EmbeddingOp {
             table: operand(&object, &tensor),
             norm: surface.head.as_ref().and_then(|h| h.embedding_norm),
@@ -1114,6 +1203,89 @@ pub fn plan_component_ops(
         plan: Some(plan),
         defects,
     })
+}
+
+/// Closure over the hyper-connection head object: every tensor classifies
+/// as one of the head's three operands, each operand is present exactly
+/// once, each has the head's geometry, and the component declares the
+/// topology the head reduces. Returns the three tensors for binding when
+/// all of that holds; every shortfall is itemised into `defects`.
+///
+/// The head's geometry is deliberately NOT a site's — `[hc, hc·hidden]`
+/// against `[(2 + hc)·hc, hc·hidden]`, `[1]` against `[3]` — because
+/// `ParallelHead.hc_head` runs no Sinkhorn (see
+/// [`super::exec::hyper_connection::head_reduce`]). A checkpoint that
+/// stored a site's operands under the head's names fails here rather
+/// than binding a split into an operation that has none.
+fn hyper_connection_head_closure(
+    object: &LogicalObject,
+    tensors: &[SegmentTensor],
+    hyper_connection: Option<HyperConnection>,
+    hidden: usize,
+    defects: &mut Vec<ClosureDefect>,
+) -> Option<(String, SegmentTensor, SegmentTensor, SegmentTensor)> {
+    // The graph only places this object under the declaration, so this
+    // arm states the invariant for a container whose graph was edited
+    // rather than built; it is the operand-level form of the same
+    // disagreement the builder refuses by name.
+    let Some(hc) = hyper_connection else {
+        for tensor in tensors {
+            defects.push(ClosureDefect::OperandImpliesAbsentOp {
+                object: object.id.clone(),
+                tensor: tensor.name.clone(),
+                required_primitive: HC_HEAD_ON_SINGLE_STREAM.to_string(),
+            });
+        }
+        return None;
+    };
+    let mut bound: BTreeMap<HcHeadOperand, SegmentTensor> = BTreeMap::new();
+    for tensor in tensors {
+        let Some(role) = classify_hyper_connection_head_tensor(&tensor.name) else {
+            defects.push(ClosureDefect::UnclassifiedOperand {
+                object: object.id.clone(),
+                tensor: tensor.name.clone(),
+            });
+            continue;
+        };
+        let expected = match role {
+            HcHeadOperand::ReduceFn => vec![hc.streams, hc.streams * hidden],
+            HcHeadOperand::Base => vec![hc.streams],
+            HcHeadOperand::Scale => vec![HC_HEAD_SCALE_LEN],
+        };
+        if !shape_satisfies(&tensor.shape, &expected) {
+            defects.push(ClosureDefect::GeometryMismatch {
+                tensor: format!("{}/{}", object.id, tensor.name),
+                expected,
+                actual: tensor.shape.clone(),
+            });
+        }
+        if bound.insert(role, tensor.clone()).is_some() {
+            defects.push(ClosureDefect::ObjectShape {
+                object: object.id.clone(),
+                detail: format!("two operands claim the head's {role:?}"),
+            });
+        }
+    }
+    for role in [
+        HcHeadOperand::ReduceFn,
+        HcHeadOperand::Base,
+        HcHeadOperand::Scale,
+    ] {
+        if !bound.contains_key(&role) {
+            defects.push(ClosureDefect::ObjectShape {
+                object: object.id.clone(),
+                detail: format!("no operand for the head's {role:?}"),
+            });
+        }
+    }
+    let (Some(reduce_fn), Some(base), Some(scale)) = (
+        bound.remove(&HcHeadOperand::ReduceFn),
+        bound.remove(&HcHeadOperand::Base),
+        bound.remove(&HcHeadOperand::Scale),
+    ) else {
+        return None;
+    };
+    Some((object.id.clone(), reduce_fn, base, scale))
 }
 
 /// Tensor table of one object's canonical segment.
@@ -1165,6 +1337,10 @@ struct LayerOps {
     /// V is the K projection on this layer: no V operand is required, and
     /// one present is a stray.
     v_from_k: bool,
+    /// The component declares the Sinkhorn hyper-connection topology, so
+    /// every transformer layer must supply its two sites' six operands —
+    /// and a single-stream component refuses the same six as strays.
+    hyper_connection: bool,
     /// Which attention-class operator this layer runs.
     ///
     /// The operator itself rather than an `is_recurrent` flag: the two
@@ -1239,6 +1415,21 @@ fn required_roles(ops: &LayerOps) -> Vec<OperandRole> {
             OperandRole::PostAttentionNorm,
         ]
     };
+    // Two sites per hyper-connected layer, three operands each, on EVERY
+    // transformer layer of the component — DeepSeek-V4 and GLM-5.3-Flash
+    // both carry all six on all 43 / 45 layers. A layer missing one is
+    // not a partially hyper-connected layer; it is a bundle the traversal
+    // cannot reduce or expand at that site.
+    if ops.hyper_connection {
+        roles.extend([
+            OperandRole::HcAttnMixFn,
+            OperandRole::HcAttnBase,
+            OperandRole::HcAttnScale,
+            OperandRole::HcFfnMixFn,
+            OperandRole::HcFfnBase,
+            OperandRole::HcFfnScale,
+        ]);
+    }
     if ops.operator.is_kda() {
         // Fifteen operands, and all fifteen are required: a KDA layer
         // missing one is not a partially-specified attention layer, it is
@@ -1394,6 +1585,33 @@ fn required_roles(ops: &LayerOps) -> Vec<OperandRole> {
 /// its op. `None` when the operand is consumed by a declared op.
 fn absent_op(role: OperandRole, ops: &LayerOps) -> Option<&'static str> {
     match role {
+        // A site operand on a component whose residual is ONE vector: the
+        // declaration and the estate disagree, and the operand implies an
+        // operation the surface never declared. Paired with
+        // `required_roles`, which demands all six iff the topology is
+        // declared, so presence and requirement cannot desync.
+        OperandRole::HcAttnMixFn
+        | OperandRole::HcAttnBase
+        | OperandRole::HcAttnScale
+        | OperandRole::HcFfnMixFn
+        | OperandRole::HcFfnBase
+        | OperandRole::HcFfnScale
+            if !ops.hyper_connection =>
+        {
+            Some(HC_SITE_ON_SINGLE_STREAM)
+        }
+        // The same operand on a one-sublayer block, under the topology:
+        // no judged form exists, so it is a stray rather than a site.
+        OperandRole::HcAttnMixFn
+        | OperandRole::HcAttnBase
+        | OperandRole::HcAttnScale
+        | OperandRole::HcFfnMixFn
+        | OperandRole::HcFfnBase
+        | OperandRole::HcFfnScale
+            if ops.operator.is_mamba2() || ops.operator.is_conv_qkv() =>
+        {
+            Some(HC_SITE_ON_MIXER_LAYER)
+        }
         // A mixer-only layer runs neither attention nor an FFN; any
         // transformer-shaped operand on it is a stray, whatever its name.
         OperandRole::AttnQ
@@ -1581,6 +1799,11 @@ struct StackGeometry {
     /// The hybrid's conv-QKV attention geometry, on a component whose
     /// full layers run it.
     conv_qkv: Option<larql_models::config::ConvQkvAttnGeometry>,
+    /// The declared hyper-connection topology, whose stream count sizes
+    /// the site operands: `[(2 + hc)·hc, hc·hidden]`, `[(2 + hc)·hc]`,
+    /// `[3]`. `None` on a single-stream component, where a site operand
+    /// is refused by `absent_op` before its shape is ever asked.
+    hyper_connection: Option<HyperConnection>,
 }
 
 /// Whether a stored shape satisfies a contract.
@@ -1628,8 +1851,30 @@ fn expected_shape(
         mla,
         mamba2,
         conv_qkv,
+        hyper_connection,
     } = *g;
     match role {
+        // Sinkhorn hyper-connection sites. Every contract follows from the
+        // component's DECLARED stream count closing over its width — the
+        // same derivation the executor's `mix_rows_for` runs — and none
+        // from the tensor: a `[2·hc, hc·hidden]` Sinkhorn-free operand
+        // (Hy4-preview's shape) fails here rather than binding to a split
+        // it does not parameterise. `hyper_connection` absent while such
+        // an operand exists is unreachable past `absent_op`, and answers
+        // `None` for the same reason the other family absences do.
+        OperandRole::HcAttnMixFn | OperandRole::HcFfnMixFn => {
+            let hc = hyper_connection?;
+            Some(vec![
+                HyperConnectionWeights::mix_rows_for(hc.streams),
+                hc.streams * hidden,
+            ])
+        }
+        OperandRole::HcAttnBase | OperandRole::HcFfnBase => {
+            Some(vec![HyperConnectionWeights::mix_rows_for(
+                hyper_connection?.streams,
+            )])
+        }
+        OperandRole::HcAttnScale | OperandRole::HcFfnScale => Some(vec![HC_SCALE_LEN]),
         // Mamba2/SSD. Every contract follows from the mixer's own
         // declared geometry closing over the component width; none from
         // the softmax fields, which are zero on a mixer-only stack.
@@ -1892,6 +2137,7 @@ mod tests {
             gated_ffn: true,
             mamba2: None,
             conv_qkv: None,
+            hyper_connection: false,
             output_gate: false,
             attention_bias: false,
             sinks: false,
@@ -2082,6 +2328,7 @@ mod tests {
             mla: None,
             mamba2: None,
             conv_qkv: None,
+            hyper_connection: None,
             hidden: 64,
             q_rows: 32,
             kv_rows: 16,

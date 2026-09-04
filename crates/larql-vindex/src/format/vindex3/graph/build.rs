@@ -9,7 +9,7 @@
 
 use std::collections::BTreeMap;
 
-use larql_models::config::{PositionPolicy, LAYER_TYPE_LINEAR_ATTENTION};
+use larql_models::config::{PositionPolicy, ResidualTopology, LAYER_TYPE_LINEAR_ATTENTION};
 use larql_models::inventory::{ArchitectureInventory, TensorGroup};
 
 use super::component::{
@@ -22,6 +22,7 @@ use super::policy::{
     resolve_layer_kind, AttentionLayerPolicy, AttentionSpan, HeadGeometry, LayerOperator,
     RecurrenceKind,
 };
+use super::roles::is_hyper_connection_head_group;
 use super::surface::{
     attach_stack_evidence, gate_evidence, head_from_resolved, surface_from_nested,
     surface_from_resolved,
@@ -187,8 +188,41 @@ enum GroupClass {
     Head,
     Norm,
     Stack,
+    /// One of the Sinkhorn hyper-connection head's three bare tensor
+    /// groups (`hc_head_{fn,base,scale}`), recognised by exact name from
+    /// the role module's own table. Recognition is not ownership: the
+    /// placement arm still asks whether the artifact DECLARES the
+    /// topology, and refuses by name when it does not.
+    HyperConnectionHead,
     Unknown,
 }
+
+/// Whether this artifact declares the Sinkhorn-split hyper-connection
+/// topology — `hc_mult`, `hc_sinkhorn_iters` and `hc_eps` together,
+/// resolved once by the architecture and never re-derived here.
+///
+/// The gate on placing the head's operands. Hy4-preview declares a
+/// Sinkhorn-free variant (no iteration count) and resolves to NO
+/// topology, so its head stays unplaced whatever it is called; a
+/// single-stream checkpoint carrying the three names would be a
+/// disagreement between estate and declaration, and is refused as one.
+fn declares_sinkhorn_hyper_connection(inventory: &ArchitectureInventory) -> bool {
+    matches!(
+        inventory
+            .resolved
+            .execution
+            .as_ref()
+            .and_then(|e| e.residual_topology),
+        Some(ResidualTopology::HyperConnection(_))
+    )
+}
+
+/// The refusal a recognised hyper-connection head group gets on an
+/// artifact that does not declare the topology it belongs to.
+const HC_HEAD_UNDECLARED_REASON: &str =
+    "recognised as a Sinkhorn hyper-connection head operand, but the artifact declares no \
+     Sinkhorn-split hyper-connection topology (hc_mult, hc_sinkhorn_iters and hc_eps \
+     together) — the estate and the declaration disagree, so the operand has no owner";
 
 /// Which modality a tensor group belongs to, from the subtree that owns it.
 ///
@@ -254,6 +288,12 @@ fn perception_component_for(
 fn classify_group(prefix: &str) -> GroupClass {
     if is_component_external_namespace(prefix) {
         return GroupClass::Unknown;
+    }
+    // Exact, and before the substring scan: the head's three groups are
+    // bare top-level names, and `mtp.0.hc_head_fn` never reaches here
+    // because its group is the external `mtp` namespace above.
+    if is_hyper_connection_head_group(prefix) {
+        return GroupClass::HyperConnectionHead;
     }
     for (class, patterns) in GROUP_PATTERNS {
         if patterns.iter().any(|p| prefix.contains(p)) {
@@ -397,7 +437,17 @@ pub fn build_from_inventories(named: &[(String, ArchitectureInventory)]) -> Buil
                 GroupClass::Stack => text_component
                     .clone()
                     .map(|c| (c, ObjectKind::DecoderStack)),
-                GroupClass::Unknown => None,
+                // Ownership follows the DECLARATION, not the name: the
+                // head's operands belong to the text component exactly
+                // when that component declares the topology they reduce.
+                GroupClass::HyperConnectionHead
+                    if declares_sinkhorn_hyper_connection(inventory) =>
+                {
+                    text_component
+                        .clone()
+                        .map(|c| (c, ObjectKind::HyperConnectionHead))
+                }
+                GroupClass::HyperConnectionHead | GroupClass::Unknown => None,
             };
             match placement {
                 Some((component, kind)) => {
@@ -409,10 +459,19 @@ pub fn build_from_inventories(named: &[(String, ArchitectureInventory)]) -> Buil
                 None => unplaced.push(UnplacedGroup {
                     artifact: artifact.clone(),
                     prefix: group.prefix.clone(),
-                    reason: if matches!(class, GroupClass::Unknown) {
-                        "no placement rule owns this group — judge it before conversion".to_string()
-                    } else {
-                        "classified for a component this artifact does not declare".to_string()
+                    reason: match class {
+                        GroupClass::Unknown => {
+                            "no placement rule owns this group — judge it before conversion"
+                                .to_string()
+                        }
+                        GroupClass::HyperConnectionHead
+                            if !declares_sinkhorn_hyper_connection(inventory) =>
+                        {
+                            HC_HEAD_UNDECLARED_REASON.to_string()
+                        }
+                        _ => {
+                            "classified for a component this artifact does not declare".to_string()
+                        }
                     },
                 }),
             }

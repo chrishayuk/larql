@@ -31,6 +31,18 @@ pub enum ObjectKind {
     /// residency, representation choice and remote placement address; the
     /// stack keeps the router, which is dense.
     ExpertBank,
+    /// The Sinkhorn hyper-connection HEAD's own operands
+    /// (`hc_head_{fn,base,scale}`): the reduction that collapses the
+    /// residual bundle to one vector before the final norm and output
+    /// head, on a component whose declared residual topology is
+    /// `ResidualTopology::HyperConnection`. Its own object because it is
+    /// neither a layer operand (not layer-shaped, and a different
+    /// operation from a site's — see
+    /// [`super::roles::HcHeadOperand`]) nor part of the single-tensor
+    /// final norm or output head. Placed ONLY under the declaration:
+    /// the same three bare names on a single-stream component stay
+    /// unplaced, with the disagreement named.
+    HyperConnectionHead,
 }
 
 impl ObjectKind {
@@ -45,6 +57,7 @@ impl ObjectKind {
             Self::PerceptionAdapter => "perception_adapter",
             Self::FeatureProjector => "feature_projector",
             Self::ExpertBank => "expert_bank",
+            Self::HyperConnectionHead => "hyper_connection_head",
         }
     }
 }

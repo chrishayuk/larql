@@ -16,6 +16,7 @@ mod plan;
 mod post_norm_placement;
 mod tied_head_realization;
 mod unjudged;
+mod wave18_hc_carriage;
 
 use std::path::PathBuf;
 

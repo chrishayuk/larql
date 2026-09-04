@@ -264,6 +264,39 @@ pub enum OperandRole {
     /// A per-layer scalar `[1]` the whole layer output is multiplied by
     /// (Gemma 4 `layer_scalar`).
     LayerScalar,
+    /// Sinkhorn hyper-connection SITE operands (wave 18). A layer whose
+    /// component declares `ResidualTopology::HyperConnection` wraps each
+    /// of its two sublayers in one site, and a site owns three operands
+    /// that the five wave-17 stages read:
+    ///
+    /// ```text
+    /// mix_fn   [(2 + hc)·hc, hc·hidden]   stage 1, the dynamic mix
+    ///                                     projection over the FLATTENED
+    ///                                     bundle
+    /// base     [(2 + hc)·hc]              stage 2, the logits' additive
+    ///                                     offset before the split
+    /// scale    [3]                        stage 2, one scalar each for
+    ///                                     the pre, post and combination
+    ///                                     logits
+    /// ```
+    ///
+    /// The role carries **no dtype**. DeepSeek-V4 stores `hc_attn_fn` as
+    /// F32 and GLM-5.3-Flash as BF16, and both are the same operand; a
+    /// role that pinned a dtype would have confused the semantic with the
+    /// physical, and REPRESENT would inherit the mistake. The geometry IS
+    /// the role's: `hc` comes from the component's declared topology, so
+    /// Hy4-preview's `[2·hc, hc·hidden]` Sinkhorn-free form cannot bind
+    /// here even if its spelling ever matched.
+    ///
+    /// The head's own reduction (`hc_head_{fn,base,scale}`) is NOT a
+    /// stack operand — it is not layer-shaped and it is a different
+    /// operation — see [`HcHeadOperand`].
+    HcAttnMixFn,
+    HcAttnBase,
+    HcAttnScale,
+    HcFfnMixFn,
+    HcFfnBase,
+    HcFfnScale,
 }
 
 impl OperandRole {
@@ -516,7 +549,80 @@ const ROLE_TABLE: &[(&str, OperandRole)] = &[
         "mlp.shared_expert_gate.weight",
         OperandRole::SharedExpertBranchGate,
     ),
+    // Sinkhorn hyper-connection sites, as DeepSeek-V4 and GLM-5.3-Flash
+    // both spell them — read from the checkpoints' own safetensors
+    // headers, not from a reference implementation. Bare leaves with no
+    // `.weight`: `layers.N.hc_attn_fn` on DeepSeek,
+    // `model.language_model.layers.N.hc_attn_fn` on GLM, and the stack
+    // prefix is what differs between the two, never the suffix. Layer-
+    // blind, like the norms: a KDA layer and an MLA layer of the same
+    // GLM stack each carry all six.
+    //
+    // Hy4-preview's `hc_attn_layer.hc_pre.hc_fn` is deliberately NOT
+    // here. It spells a Sinkhorn-free topology this build has not
+    // judged (HC-PREPOST), and binding it to a Sinkhorn role would be
+    // matching on the substring `hc_` rather than on the operation.
+    ("hc_attn_fn", OperandRole::HcAttnMixFn),
+    ("hc_attn_base", OperandRole::HcAttnBase),
+    ("hc_attn_scale", OperandRole::HcAttnScale),
+    ("hc_ffn_fn", OperandRole::HcFfnMixFn),
+    ("hc_ffn_base", OperandRole::HcFfnBase),
+    ("hc_ffn_scale", OperandRole::HcFfnScale),
 ];
+
+/// The hyper-connection HEAD's own operands — a component-level object,
+/// not a stack operand, and a different operation from a site's.
+///
+/// `ParallelHead.hc_head` runs no Sinkhorn: `reduce_fn` has ONE row per
+/// stream where a site's `mix_fn` has `(2 + hc)·hc`, and `scale` is a
+/// single scalar where a site carries three. Wave 17 recorded the
+/// difference in the executor ([`HeadWeights`](crate::format::vindex3::opplan::exec::hyper_connection::HeadWeights));
+/// this is the same difference on the addressing side, so a checkpoint
+/// that stored a site's operands under the head's names would fail the
+/// head's geometry rather than bind.
+///
+/// ```text
+/// reduce_fn   [hc, hc·hidden]
+/// base        [hc]
+/// scale       [1]
+/// ```
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum HcHeadOperand {
+    ReduceFn,
+    Base,
+    Scale,
+}
+
+/// The head's spellings, as DeepSeek-V4 writes them: three BARE
+/// top-level tensors with no `model.` prefix. GLM-5.3-Flash ships none
+/// (its `mhc` flag sits unexplained beside that absence and is not read
+/// as meaning anything here). Hy4-preview's `model.hc_head.hc_head_fn`
+/// is not listed for the same reason its site spelling is not: a
+/// different topology's dialect.
+const HC_HEAD_TABLE: &[(&str, HcHeadOperand)] = &[
+    ("hc_head_fn", HcHeadOperand::ReduceFn),
+    ("hc_head_base", HcHeadOperand::Base),
+    ("hc_head_scale", HcHeadOperand::Scale),
+];
+
+/// Classify one tensor of the hyper-connection head object by its
+/// object-relative name. Exact, like every classifier in this module:
+/// a spelling not in [`HC_HEAD_TABLE`] is `None` and blocks.
+pub fn classify_hyper_connection_head_tensor(relative_name: &str) -> Option<HcHeadOperand> {
+    HC_HEAD_TABLE
+        .iter()
+        .find(|(name, _)| *name == relative_name)
+        .map(|(_, operand)| *operand)
+}
+
+/// Whether `group_prefix` is one of the head's bare tensor groups — the
+/// graph builder's placement question, answered from the same table the
+/// op plan classifies by so the two cannot disagree about which names
+/// are the head's.
+pub fn is_hyper_connection_head_group(group_prefix: &str) -> bool {
+    HC_HEAD_TABLE.iter().any(|(name, _)| *name == group_prefix)
+}
 
 /// One leaf spelling after the expert index (`"w1.weight"`) and the role
 /// constructor it binds.

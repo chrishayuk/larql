@@ -53,6 +53,12 @@ pub const SCALE_COMB: usize = 2;
 /// `hc_scale` carries exactly these three, and a checkpoint offering a
 /// different count is describing a different operation.
 pub const HC_SCALE_LEN: usize = 3;
+/// The HEAD's `hc_head_scale` is a single scalar — one of the two shape
+/// facts (with `[hc, hc·hidden]` against a site's `[(2 + hc)·hc, ..]`)
+/// that make [`head_reduce`] a different operation from a site's split.
+/// Named so the op plan checks the head's operand against the same
+/// number the executor consumes.
+pub const HC_HEAD_SCALE_LEN: usize = 1;
 
 /// `post = 2 * sigmoid(..)`. The factor is the reference's, and it is
 /// named because `pre` deliberately does NOT carry it — the two
