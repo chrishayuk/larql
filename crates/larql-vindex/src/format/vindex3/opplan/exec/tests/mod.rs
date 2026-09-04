@@ -25,6 +25,7 @@ mod draft_slice;
 mod gated_delta_parity;
 mod gated_delta_tiny;
 mod hybrid_traversal;
+mod hyper_connection;
 #[cfg(all(feature = "gpu", target_os = "macos"))]
 mod kda_metal;
 #[cfg(all(feature = "gpu", target_os = "macos"))]
