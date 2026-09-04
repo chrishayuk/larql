@@ -228,3 +228,91 @@ fn plan_refuses_a_scalar_rather_than_succeeding_degenerately() {
 fn plan_accepts_a_conforming_one_dimensional_operand() {
     assert_eq!(Q6_K.plan(&[512], "t").unwrap(), 2 * Q6_K.bytes_per_block);
 }
+
+/// A shape whose element count overflows `usize` is refused rather than
+/// wrapping into a plausible-looking small length.
+#[test]
+fn a_shape_that_overflows_an_element_count_is_refused() {
+    let err = Q6_K
+        .plan(&[usize::MAX, 256], "some.tensor")
+        .unwrap_err()
+        .to_string();
+    assert!(err.contains("overflows an element count"), "{err}");
+    assert!(err.contains("some.tensor"), "{err}");
+}
+
+/// A row in the geometry table with no encoder behind it must refuse,
+/// not fall through to binding source bytes under a name that claims
+/// they were encoded. Constructed directly because the shipped table
+/// deliberately contains no such row — the guard exists for the moment
+/// someone adds one.
+#[test]
+fn a_table_row_without_an_encoder_refuses_rather_than_passing_bytes_through() {
+    let phantom = KQuant {
+        name: "Q9_9",
+        ggml_type: 0,
+        elements_per_block: 32,
+        bytes_per_block: 34,
+    };
+    let err = phantom
+        .encode(&sample(64), "some.tensor")
+        .unwrap_err()
+        .to_string();
+    assert!(err.contains("has no encoder"), "{err}");
+    assert!(err.contains("claims otherwise"), "{err}");
+}
+
+/// If the table and the codec ever disagree about a length, the write is
+/// refused at that point rather than producing a segment whose tensor
+/// table does not describe its payload.
+#[test]
+fn a_table_that_disagrees_with_its_codec_is_caught_at_encode_time() {
+    let wrong = KQuant {
+        bytes_per_block: 99, // Q8_0 really writes 34
+        ..Q8_0
+    };
+    let err = wrong
+        .encode(&sample(64), "some.tensor")
+        .unwrap_err()
+        .to_string();
+    assert!(err.contains("geometry implies"), "{err}");
+    assert!(
+        err.contains("table and the codec disagree"),
+        "the message must say which two things disagree: {err}"
+    );
+}
+
+/// A truncated segment is named as a decode failure for this tensor, not
+/// surfaced as a short vector somewhere downstream.
+#[test]
+fn a_truncated_pack_fails_the_decode_by_name() {
+    let full = Q6_K.encode(&sample(512), "t").unwrap();
+    let err = Q6_K
+        .decode(&full[..full.len() - 1], 512, "some.tensor")
+        .unwrap_err()
+        .to_string();
+    assert!(err.contains("some.tensor"), "{err}");
+    assert!(err.contains("Q6_K"), "{err}");
+}
+
+/// Each K-quant's codec identity is its OWN family, and the ABI gate
+/// admits it. Two different K-quants must not admit each other's
+/// contract — that is the whole reason they are separate families.
+#[test]
+fn each_kquant_codec_identity_is_admitted_and_is_not_another_s() {
+    for k in COMPILABLE {
+        let id = k.codec_identity();
+        assert_eq!(id.family, k.name);
+        id.admit()
+            .unwrap_or_else(|e| panic!("{}: this build wrote it and must admit it: {e}", k.name));
+        for other in COMPILABLE.into_iter().filter(|o| o.name != k.name) {
+            assert_ne!(
+                id,
+                other.codec_identity(),
+                "{} and {} share a codec identity",
+                k.name,
+                other.name
+            );
+        }
+    }
+}

@@ -154,8 +154,9 @@ impl CompiledObject {
 /// Which objects to compile, and into what.
 #[derive(Debug, Clone)]
 pub struct RepresentSpec {
-    /// Target encoding. Only [`DTYPE_NVFP4`] today; the match below is the
-    /// single place a second encoding is added.
+    /// Target encoding: [`DTYPE_NVFP4`], or any name [`kquant::lookup`]
+    /// recognises. The `Target` dispatch below is the single place a
+    /// further encoding is added.
     pub encoding: String,
     /// Objects to compile. Empty means every object carrying a tensor the
     /// policy admits.
