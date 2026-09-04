@@ -266,8 +266,26 @@ fn architecture_identity_findings(
     // a conflict.
     if let Some(container) = &inventory.identity.container_model_type {
         let container_resolved = find_architecture(container);
+        // Three answers, not two. The gate's principle is unchanged —
+        // which config level happened to be read must never decide which
+        // architecture the runtime serves — but container identity and
+        // component identity are not competing claims about the same
+        // level of abstraction. A container may DECLARE which
+        // architecture occupies its text slot, and when it does, the two
+        // levels agreeing with that declaration is not a conflict.
+        //
+        // Lineage only. The declaration confers nothing: it says who
+        // occupies the slot, never what may execute. See
+        // `ArchitectureEntry::components`.
         let differs = match (container_resolved, resolved) {
-            (Some(a), Some(b)) => !std::ptr::eq(a, b),
+            (Some(a), Some(b)) if std::ptr::eq(a, b) => false,
+            (Some(container_entry), Some(_)) => {
+                // Directional: the CONTAINER declares its component, and
+                // the reverse is never consulted.
+                container_entry
+                    .declares_component(larql_models::detect::registry::ComponentRole::Text)
+                    != Some(declared.as_str())
+            }
             (None, None) => false,
             _ => true,
         };

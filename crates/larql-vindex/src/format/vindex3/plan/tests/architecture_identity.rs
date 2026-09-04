@@ -87,15 +87,23 @@ fn an_unregistered_family_is_not_promoted_to_unsupported_component() {
 
 #[test]
 fn two_levels_that_resolve_differently_are_a_refused_conflict() {
-    // Kimi K3's shape: the container declares `kimi_k3`, which nothing
-    // registers, and the text component declares `kimi_linear`, which
-    // resolves to the 48B implementation. Reading either level alone is a
-    // decision the checkpoint did not authorise.
-    let mut config = base("kimi_k3");
+    // **The fixture moved; the invariant did not.** This case was written
+    // with Kimi K3's shape — container `kimi_k3`, which nothing then
+    // registered, beside text `kimi_linear`. K3-ARCH-1 registered
+    // `kimi_k3` and had it DECLARE `kimi_linear` as its text component,
+    // so that exact config is now a declared containment and correctly
+    // stops refusing (see `k3_arch_1_declared_containment_is_not_a_conflict`).
+    //
+    // What this case guards is unchanged and still needs a witness: two
+    // levels resolving to different architectures with NO declaration
+    // relating them. Reading either level alone would be a decision the
+    // checkpoint did not authorise. `kimi_linear` declares no components,
+    // so it stands in for the original K3 shape exactly.
+    let mut config = base("kimi_linear");
     config["text_config"] = serde_json::json!({
-        "model_type": "kimi_linear",
-        "num_hidden_layers": 93,
-        "hidden_size": 7168
+        "model_type": "llama",
+        "num_hidden_layers": 8,
+        "hidden_size": 64
     });
     let findings = identity_findings(config);
     let conflict = findings
@@ -106,11 +114,11 @@ fn two_levels_that_resolve_differently_are_a_refused_conflict() {
     assert!(conflict.blocks());
     assert_eq!(
         conflict.declared,
-        Some(serde_json::Value::String("kimi_k3".into()))
+        Some(serde_json::Value::String("kimi_linear".into()))
     );
     assert_eq!(
         conflict.resolved,
-        Some(serde_json::Value::String("kimi_linear".into()))
+        Some(serde_json::Value::String("llama".into()))
     );
 }
 
@@ -131,5 +139,224 @@ fn the_suffix_form_declares_one_identity_twice_and_is_not_a_conflict() {
     assert!(
         identity_findings(config).is_empty(),
         "one identity spelled twice is not a disagreement"
+    );
+}
+
+// ---- K3-ARCH-1 acceptance suite --------------------------------------
+//
+// **Container identity and component identity are not competing claims
+// about the same level of abstraction.**
+//
+// K3 declares `kimi_k3` on the container and `kimi_linear` on the text
+// component. Today that refuses, correctly, because the only relationship
+// the gate understands is "these must resolve to the same architecture".
+// But the truthful structure is containment:
+//
+// ```text
+// container architecture   KimiK3
+//     └── text component   KimiLinear
+// ```
+//
+// The principle the gate protects — that which config level happened to be
+// read must never decide which architecture the runtime serves — is
+// preserved. What changes is recognising a DECLARED containment as a third
+// answer beside "same" and "disagreeing".
+//
+// Registering `kimi_k3` alone does NOT fix this: the gate would then see
+// `(Some(KimiK3), Some(KimiLinear))`, hit `!ptr::eq`, and still refuse.
+// The relationship has to be declared, not inferred from both sides
+// resolving to something.
+
+/// K3-ARCH-1 case 1 — an unregistered container identity beside a
+/// registered component one must refuse.
+///
+/// **The fixture changed and the invariant did not.** This case was
+/// written with `kimi_k3` as its example of an unregistered container,
+/// and pinning it BEFORE the implementation is what made the change
+/// announce itself: registering `kimi_k3` moved that config onto the
+/// declared-containment path, where it correctly no longer refuses. The
+/// subject was invalidated by design; the rule it guards —
+/// `(None, Some(_))` refuses — is untouched, so it keeps a fixture that
+/// is genuinely unknown.
+#[test]
+fn k3_arch_1_unknown_container_beside_known_component_is_refused() {
+    let mut config = base("no-such-container-architecture");
+    config["text_config"] = serde_json::json!({
+        "model_type": "kimi_linear",
+        "num_hidden_layers": 93,
+        "hidden_size": 7168
+    });
+    let findings = identity_findings(config);
+    let conflict = findings
+        .iter()
+        .find(|f| f.subject == "architecture_identity")
+        .expect("an unknown outer identity must refuse");
+    assert_eq!(conflict.category, FindingCategory::Mismatched);
+    assert!(
+        conflict.blocks(),
+        "an outer identity nothing registers stays refused, containment or not"
+    );
+}
+
+/// K3-ARCH-1 case 4 — CURRENT BEHAVIOUR, pinned.
+///
+/// One architecture declared at both levels raises nothing. Any
+/// containment support must leave this untouched.
+#[test]
+fn k3_arch_1_matching_levels_remain_silent() {
+    let mut config = base("kimi_linear");
+    config["text_config"] = serde_json::json!({
+        "model_type": "kimi_linear",
+        "num_hidden_layers": 93,
+        "hidden_size": 7168
+    });
+    assert!(
+        identity_findings(config)
+            .iter()
+            .all(|f| f.subject != "architecture_identity"),
+        "one identity spelled twice is not a conflict"
+    );
+}
+
+// Cases 2, 3, 5, 6 and 7 were specified here as comments BEFORE the
+// containment relationship existed, and are now executable below. The
+// prose is kept because it is the specification the implementation was
+// written to satisfy, not a description of it:
+//
+//   2  registered KimiK3 declaring text = KimiLinear, config says
+//      kimi_linear                                        -> ACCEPT
+//   3  registered KimiK3, text config an incompatible family
+//                                                         -> REFUSE
+//   5  aliasing KimiK3 directly to KimiLinear must be IMPOSSIBLE to
+//      express, not merely discouraged — it asserts K3 executes as its
+//      ancestor, which is false
+//   6  K3-specific semantics (AttnRes, SiTU-GLU, QB frozen bias,
+//      LatentMoE wrapping) are NOT inherited merely because text ancestry
+//      is declared. `text_component = KimiLinear` means "this is the
+//      architectural lineage occupying the text slot", never "execute the
+//      whole model with KimiLinear's implementation".
+//
+//   7  containment is DIRECTIONAL. `KimiK3 declares text = KimiLinear`
+//      must not imply `KimiLinear declares KimiK3`, and must not imply
+//      substitutability in either direction.
+//
+// Case 6 is load-bearing: the LatentMoE wrapper alone is 9.45 GB/token of
+// BF16 machinery Kimi-Linear does not have.
+//
+// # A constraint on the API, not only on the semantics
+//
+// The relation must be spelled so that the wrong reading is hard to
+// write:
+//
+// ```text
+// declares_component(ComponentRole::Text, KimiLinear)   SAFE
+// is_compatible_with(KimiLinear)                        UNSAFE
+// ```
+//
+// A predicate named for compatibility invites symmetry, and a symmetric
+// relation invites substitution — at which point a later caller expecting
+// execution equivalence gets it, silently, from a relation that only ever
+// meant lineage. Case 7 exists because that mistake is a naming accident
+// away, not a design decision away.
+//
+// The relation must also NOT participate in capability inheritance unless
+// some other explicit mechanism grants it. Declaring lineage answers "who
+// occupies the text slot", never "what may this execute".
+
+/// K3-ARCH-1 case 2 — a DECLARED container/component relationship is
+/// accepted.
+#[test]
+fn k3_arch_1_declared_containment_is_not_a_conflict() {
+    let mut config = base("kimi_k3");
+    config["text_config"] = serde_json::json!({
+        "model_type": "kimi_linear",
+        "num_hidden_layers": 93,
+        "hidden_size": 7168
+    });
+    assert!(
+        identity_findings(config)
+            .iter()
+            .all(|f| f.subject != "architecture_identity"),
+        "kimi_k3 declares text = kimi_linear, so the two levels agree by declaration"
+    );
+}
+
+/// K3-ARCH-1 case 3 — a registered container beside an UNdeclared
+/// component still refuses. The declaration is what accepts, not the mere
+/// fact that both sides resolve.
+#[test]
+fn k3_arch_1_a_component_the_container_did_not_declare_is_refused() {
+    let mut config = base("kimi_k3");
+    config["text_config"] = serde_json::json!({
+        "model_type": "llama",
+        "num_hidden_layers": 8,
+        "hidden_size": 64
+    });
+    let findings = identity_findings(config);
+    let conflict = findings
+        .iter()
+        .find(|f| f.subject == "architecture_identity")
+        .expect("kimi_k3 declares kimi_linear, not llama");
+    assert_eq!(conflict.category, FindingCategory::Mismatched);
+    assert!(conflict.blocks());
+}
+
+/// K3-ARCH-1 case 5 — containment is NOT aliasing.
+#[test]
+fn k3_arch_1_kimi_k3_is_not_kimi_linear() {
+    use larql_models::detect::registry::find_architecture;
+    let k3 = find_architecture("kimi_k3").expect("registered");
+    let ancestor = find_architecture("kimi_linear").expect("registered");
+    assert!(
+        !std::ptr::eq(k3, ancestor),
+        "aliasing would assert K3 executes as its ancestor, which is false"
+    );
+    assert_eq!(k3.model_type, "kimi_k3");
+}
+
+/// K3-ARCH-1 case 6 — declaring lineage grants no capability.
+#[test]
+fn k3_arch_1_lineage_is_not_capability_inheritance() {
+    use larql_models::detect::detect_from_json;
+    let arch = detect_from_json(&serde_json::json!({ "model_type": "kimi_k3" }));
+    assert_eq!(arch.family(), "kimi_k3", "never the ancestor's family");
+    assert_ne!(arch.family(), "kimi_linear");
+    // And explicitly not the silent generic default, which is the failure
+    // this whole gate exists to prevent.
+    assert_ne!(arch.family(), "generic");
+}
+
+/// K3-ARCH-1 case 7 — containment is DIRECTIONAL.
+#[test]
+fn k3_arch_1_containment_is_directional_not_symmetric() {
+    use larql_models::detect::registry::{find_architecture, ComponentRole};
+    let k3 = find_architecture("kimi_k3").expect("registered");
+    let ancestor = find_architecture("kimi_linear").expect("registered");
+
+    assert_eq!(
+        k3.declares_component(ComponentRole::Text),
+        Some("kimi_linear")
+    );
+    assert_eq!(
+        ancestor.declares_component(ComponentRole::Text),
+        None,
+        "the ancestor declares nothing about K3 — the relation is one-way"
+    );
+
+    // The reverse nesting must still refuse: kimi_linear does not declare
+    // kimi_k3 as its text component, so this is an undeclared disagreement.
+    let mut reversed = base("kimi_linear");
+    reversed["text_config"] = serde_json::json!({
+        "model_type": "kimi_k3",
+        "num_hidden_layers": 93,
+        "hidden_size": 7168
+    });
+    let findings = identity_findings(reversed);
+    assert!(
+        findings
+            .iter()
+            .any(|f| f.subject == "architecture_identity"
+                && f.category == FindingCategory::Mismatched),
+        "containment must not be readable backwards"
     );
 }

@@ -96,11 +96,22 @@ pub struct Identity {
     ///
     /// Kept because the two are not interchangeable facts and the reader
     /// above throws one of them away. Kimi K3 declares `kimi_k3` at the
-    /// container and `kimi_linear` under `text_config`: taking the text
-    /// declaration alone dispatches a 93-layer, 1.56 TB model to the
-    /// Kimi-Linear-48B implementation, and taking the container alone
-    /// falls to the generic architecture. Neither reading refuses, so
-    /// both declarations have to survive as far as the gate that can.
+    /// container and `kimi_linear` under `text_config`, and taking the
+    /// text declaration alone dispatches a 93-layer, 1.56 TB model to the
+    /// Kimi-Linear-48B implementation.
+    ///
+    /// K3-ARCH-1 registered `kimi_k3` and had it declare `kimi_linear` as
+    /// its text component, so the container reading no longer falls to
+    /// the generic architecture: it resolves to a registry entry that is
+    /// identified and deliberately not executable. That makes the gate's
+    /// job narrower, not unnecessary — a container declaring a family it
+    /// does NOT relate to its text component still refuses, and only both
+    /// declarations surviving lets the gate tell the two cases apart.
+    ///
+    /// Registry lookup only. `detect_from_json` still prefers
+    /// `text_config.model_type` and hands a real K3 config to the
+    /// ancestor; that gap is pinned in `architectures::kimi_k3` and is
+    /// the reason this field cannot be collapsed into one reading.
     ///
     /// `None` when the config is flat, or when only one level declares.
     /// Usually equal-in-meaning rather than conflicting — 27 of the 28
