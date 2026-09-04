@@ -6,9 +6,7 @@
 //! information-loss bug*: a node keyed on the physical id quietly
 //! overwriting one realization with the other.
 
-use std::collections::BTreeMap;
-
-use super::super::compiler::SourceIdentity;
+use super::super::compiler::{SourceIdentity, SourceSemanticIdentity};
 use super::super::map::{Exception, PrecisionMap};
 use super::super::nvfp4_pack::DTYPE_NVFP4;
 use super::super::policy::Role;
@@ -17,11 +15,11 @@ use super::*;
 // ---------------------------------------------------------------- fixtures
 
 fn model() -> SourceIdentity {
-    SourceIdentity {
-        manifest_hash: "manifest-aaaa".into(),
-        graph_hash: "graph-1111".into(),
-        segments: BTreeMap::from([("target.decoder_stack".to_string(), "seg-dddd".to_string())]),
-    }
+    SourceIdentity::synthetic(
+        "manifest-aaaa",
+        "graph-1111",
+        [("target.decoder_stack".to_string(), "seg-dddd".to_string())],
+    )
 }
 
 fn tensor(projection: &str, shape: Vec<usize>) -> SurfaceTensor {
@@ -454,7 +452,10 @@ fn one_graph_holds_one_model_and_one_surface() {
     let mut g = dag(root.clone());
 
     let other_model = SourceIdentity {
-        graph_hash: "graph-2222".into(),
+        semantic: SourceSemanticIdentity {
+            graph_hash: "graph-2222".into(),
+            ..model().semantic
+        },
         ..model()
     };
     let elsewhere = ResolvedState::new(

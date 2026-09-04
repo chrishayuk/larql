@@ -55,16 +55,13 @@ fn a_whole_container_identifies_from_its_own_declared_facts() {
     let entries = index["representations"].as_object().expect("entries");
 
     assert_eq!(entries.len(), 8, "the fixture is not a single-entry one");
-    assert_eq!(identity.segments.len(), entries.len());
+    assert_eq!(identity.segments().len(), entries.len());
     for entry in entries.values() {
         assert_eq!(
             identity
-                .segments
+                .segments()
                 .get(entry["segment"].as_str().expect("segment")),
-            entry["payload_sha256"]
-                .as_str()
-                .map(str::to_string)
-                .as_ref(),
+            entry["payload_sha256"].as_str().as_ref(),
             "every declared segment is sealed by its own payload digest"
         );
     }
@@ -147,6 +144,21 @@ fn an_index_that_names_no_system_graph_is_refused_rather_than_assumed() {
 }
 
 #[test]
+fn an_index_naming_a_graph_file_that_is_not_there_is_refused() {
+    // The graph is named and absent, which is not the same as unnamed:
+    // b1 refuses the second because a filename would have to be
+    // assumed, and this one because the authority the container DOES
+    // name cannot be read. Neither may be identified around.
+    let container = container::glimmer();
+    let graph = container::read_index(container.path())["system_graph"]
+        .as_str()
+        .expect("the fixture records a graph")
+        .to_string();
+    std::fs::remove_file(container.path().join(&graph)).expect("remove the graph");
+    assert!(read_source_identity(container.path()).is_err());
+}
+
+#[test]
 fn a_malformed_entry_is_refused_by_the_schema_rather_than_stepped_over() {
     let container = container::glimmer();
     let index = container::read_index(container.path());
@@ -185,7 +197,7 @@ fn two_representations_may_share_a_segment_when_they_agree_about_it() {
 
     let identity = read_source_identity(container.path()).expect("agreement is not a conflict");
     assert_eq!(
-        identity.segments.len(),
+        identity.segments().len(),
         7,
         "a shared segment appears once; sharing is deduplicated, not forbidden"
     );

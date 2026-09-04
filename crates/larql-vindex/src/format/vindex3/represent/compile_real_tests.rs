@@ -418,7 +418,7 @@ fn compile_the_layer_one_q6_candidate() {
          (compiled bytes are not authority); depends on {} source segments",
         index.can_represent_as,
         index.selected_representation,
-        index.source.identity.segments.len()
+        index.source.identity.segments().len()
     );
     // The overlay must accept the container it was compiled against, and
     // only that one.
@@ -432,7 +432,7 @@ fn compile_the_layer_one_q6_candidate() {
         .verify(&actual)
         .expect("a moved container is still the same container");
     let mut altered = actual.clone();
-    altered.graph_hash = "0".repeat(64);
+    altered.semantic.graph_hash = "0".repeat(64);
     assert!(
         index.source.verify(&altered).is_err(),
         "identical payloads under a different graph must still be refused"

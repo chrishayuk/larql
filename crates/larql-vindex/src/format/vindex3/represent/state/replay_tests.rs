@@ -48,11 +48,11 @@ const MODEL: &str = "kimi-linear-48b";
 // ---------------------------------------------------------------- fixtures
 
 fn model() -> SourceIdentity {
-    SourceIdentity {
-        manifest_hash: MODEL.into(),
-        graph_hash: "aligned-vindex3".into(),
-        segments: BTreeMap::from([("target.decoder_stack".to_string(), "seg-dddd".to_string())]),
-    }
+    SourceIdentity::synthetic(
+        MODEL,
+        "aligned-vindex3",
+        [("target.decoder_stack".to_string(), "seg-dddd".to_string())],
+    )
 }
 
 fn surface() -> TensorSurface {

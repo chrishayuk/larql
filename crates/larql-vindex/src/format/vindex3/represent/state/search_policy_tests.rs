@@ -23,11 +23,11 @@ use super::*;
 // ---------------------------------------------------------------- fixtures
 
 fn model() -> SourceIdentity {
-    SourceIdentity {
-        manifest_hash: "kimi-linear-48b".into(),
-        graph_hash: "aligned-vindex3".into(),
-        segments: BTreeMap::from([("target.decoder_stack".to_string(), "seg-dddd".to_string())]),
-    }
+    SourceIdentity::synthetic(
+        "kimi-linear-48b",
+        "aligned-vindex3",
+        [("target.decoder_stack".to_string(), "seg-dddd".to_string())],
+    )
 }
 
 /// Three projections of increasing width, so the moves that compile them

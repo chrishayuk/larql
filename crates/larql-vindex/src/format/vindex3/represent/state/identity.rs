@@ -9,10 +9,11 @@
 //!
 //! Three inputs, each answering a question the other two cannot:
 //!
-//! * **model identity** — [`SourceIdentity`], the container's own
-//!   three-level answer (index, semantic graph, payload segments). The
-//!   same map over two models is two states, and the graph level is
-//!   what catches byte-identical payloads under different semantics.
+//! * **model identity** — the SEMANTIC half of [`SourceIdentity`]:
+//!   the graph by content, every representation's authority, and the
+//!   rest of the validated index. The same map over two models is two
+//!   states, and the graph level is what catches byte-identical
+//!   payloads under different semantics.
 //! * **surface identity** — a digest of every `(object, tensor, role,
 //!   shape)`. Adding, removing, renaming or reshaping a tensor is a
 //!   different surface even when every surviving decision is unchanged.
@@ -20,12 +21,28 @@
 //!   protected and layout-refused collapsed to source precision.
 //!
 //! The model identity already covers a great deal of what the surface
-//! covers, and both are kept: `SourceIdentity` hashes a container's
-//! files, while the surface is what REPRESENT *enumerated* from them
-//! under one classification. A change to role classification moves the
+//! covers, and both are kept: the semantic identity states a
+//! container's own declared facts, while the surface is what REPRESENT
+//! *enumerated* from them under one classification. A change to role classification moves the
 //! surface without moving a single byte on disk, and that is a genuinely
 //! different search problem — the set of maps that would compile a
 //! tensor changed.
+//!
+//! # What is NOT read: how the index was serialised
+//!
+//! v1 folded in `hash_bytes(index.json)`, so an index carrying
+//! identical values in a different serialisation was a different
+//! state. That is a FALSE SPLIT — the same physical reality arriving
+//! with none of its own evidence — and removing it is why this is v2.
+//! [`SourceIdentity::artifact`] still records those bytes, as
+//! provenance, and no digest here reads it.
+//!
+//! ```text
+//! presentation bytes changed only     SAME physical state
+//! header/storage reality changed      DIFFERENT physical state
+//! payload reality changed             DIFFERENT physical state
+//! graph reality changed               DIFFERENT physical state
+//! ```
 //!
 //! # Versioned, because the canonical form is a promise
 //!
@@ -42,10 +59,10 @@ use super::super::compile::hash_bytes;
 use super::super::compiler::SourceIdentity;
 use super::super::map::PrecisionMap;
 use super::resolved::{resolve, LayoutAdmission, ResolvedDecisionVector};
-use super::surface::{TensorSurface, FIELD, RECORD, SECTION};
+use super::surface::{TensorSurface, SECTION};
 
 /// The canonical-form version every state id is computed under.
-pub const STATE_ID_VERSION: &str = "represent-state-id/v1";
+pub const STATE_ID_VERSION: &str = "represent-state-id/v2";
 
 /// **What a representation state IS.** Opaque by construction: it is a
 /// digest and there is nothing to read out of it, which is the point —
@@ -147,6 +164,11 @@ impl RepresentationState {
 /// Written out as one function so the canonical form is stated in a
 /// single place a reader can check against the doc comment, rather than
 /// implied by the order of calls at three call sites.
+///
+/// The model is written by
+/// [`SourceSemanticIdentity::canonical`](super::super::source_identity::SourceSemanticIdentity::canonical)
+/// and not restated here: a second canonicalisation of the same facts
+/// is a second authority that can disagree with the first.
 fn digest_input(
     model: &SourceIdentity,
     surface_identity: &str,
@@ -154,25 +176,7 @@ fn digest_input(
 ) -> String {
     format!(
         "{STATE_ID_VERSION}{SECTION}model={}{SECTION}surface={surface_identity}{SECTION}decisions={}",
-        model_canonical(model),
+        model.semantic.canonical(),
         decisions.canonical()
-    )
-}
-
-/// A container's identity as one canonical string.
-///
-/// All three levels, because they can disagree independently and an
-/// overlay depends on all three: payload segments alone would miss a
-/// changed semantic graph over identical bytes.
-fn model_canonical(model: &SourceIdentity) -> String {
-    let segments = model
-        .segments
-        .iter()
-        .map(|(seg, hash)| format!("{seg}{FIELD}{hash}"))
-        .collect::<Vec<_>>()
-        .join(&RECORD.to_string());
-    format!(
-        "{}{FIELD}{}{RECORD}{segments}",
-        model.manifest_hash, model.graph_hash
     )
 }

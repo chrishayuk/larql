@@ -19,8 +19,7 @@
 mod container;
 mod source_identity;
 mod source_seal;
-
-use std::collections::BTreeMap;
+mod source_semantics;
 
 use super::super::compiler::SourceIdentity;
 use super::super::map::{Exception, PrecisionMap};
@@ -31,14 +30,14 @@ use super::*;
 // ---------------------------------------------------------------- fixtures
 
 fn model(graph: &str) -> SourceIdentity {
-    SourceIdentity {
-        manifest_hash: "manifest-aaaa".into(),
-        graph_hash: graph.into(),
-        segments: BTreeMap::from([
+    SourceIdentity::synthetic(
+        "manifest-aaaa",
+        graph,
+        [
             ("target.decoder_stack".to_string(), "seg-dddd".to_string()),
             ("target.embedding".to_string(), "seg-eeee".to_string()),
-        ]),
-    }
+        ],
+    )
 }
 
 /// A small decoder surface: q/k/v at two depths, all NVFP4-admissible.
@@ -190,11 +189,9 @@ fn the_same_map_on_a_different_model_is_a_different_state() {
         "identical payloads under a different semantic graph are still a different model"
     );
 
-    // And a changed payload segment, with index and graph unchanged.
+    // And a changed payload segment, with the graph unchanged.
     let mut moved = model("graph-1111");
-    moved
-        .segments
-        .insert("target.decoder_stack".into(), "seg-ffff".into());
+    moved.semantic.representations[0].payload_sha256 = "seg-ffff".into();
     assert_ne!(
         a.id(),
         RepresentationState::resolve(&moved, &s, &m, layout).id()

@@ -227,9 +227,10 @@ killing exactly its own tests and nothing else:
 | model identity dropped from the digest | `the_same_map_on_a_different_model…` (1) |
 | `LayoutRefused` no longer collapses to source | `a_layout_refusal_presents_source…` (1) |
 
-The canonical form is versioned (`represent-state-id/v1`) so a persisted
-DAG that outlives a change to it is recognisably stale rather than
-silently colliding.
+The canonical form is versioned so a persisted DAG that outlives a
+change to it is recognisably stale rather than silently colliding. It is
+now `represent-state-id/v2`: §4i removed a false split and that changed
+which containers are the same state.
 
 ---
 
@@ -979,6 +980,191 @@ be two records, and the second would drift.
 
 ---
 
+## 4i. Stage 4b — the source identity the optimizer prices from
+
+Stage 4 could not serve `next_experiment`: pricing a PROTECTED decision
+needs the source `dtype` and `len`, and `TensorSurface` carries neither.
+The obvious fix — add a `source_dtype` to `TensorSurface` — re-opens 1a,
+because the surface feeds every `RepresentationStateId`. 4b asks the
+prior question instead: **does the container already seal those facts,
+and is that seal load-bearing in the identity?**
+
+```text
+4b-a   prove the physical seal                    done
+4b-b1  refuse incomplete/contradictory identity   done
+4b-b2  make identity semantic, not formatting-sensitive
+4b-c   read sealed SourceStorageFacts
+4b-d   require whole-surface accounting completeness
+4b-e   production BoundFootprint
+4b-f   next_experiment answers, transport unchanged
+```
+
+### 4b-a — the seal exists, and it is the segment's own table
+
+The facts a footprint needs live in the segment header, not the payload:
+
+```text
+SegmentTensor { name, dtype, shape, offset, len }
+```
+
+and `len` is the authority, **not** `shape × width(dtype)` — a packed or
+padded tensor has a length the naive product does not predict, which is
+exactly why stage 4 refused to price a `Source` decision by multiplying
+by two.
+
+Two adversarial tests on a real encoded container move one field of that
+table — `dtype` in one, `len` in the other — copy the payload verbatim,
+recompute `segment_sha256`, and require the state id to move while the
+effective decision vector stays byte-identical. A control restates the
+table unchanged and requires the id to hold. The invariant:
+
+> A `RepresentationStateId` must never be reusable across two
+> physical-accounting realities that price the same effective decision
+> vector differently.
+
+**So B holds and `TensorSurface` gains nothing.** The container seals
+bytes AND table, which is strictly stronger than a dtype on the surface,
+and 1a stays closed.
+
+### 4b-b1 — identity construction is typed, total and refusing
+
+`read_source_identity` walked `index.json` as untyped JSON and took what
+it found, while the container parser refused the same document. Every
+one of these returned `Ok`, over facts it had silently dropped:
+
+```text
+no `representations` key      an identity sealing NO payload at all
+entry missing segment/digest  that segment left out of the seal
+two entries, one segment      last writer wins, the other discarded
+no `system_graph`             a filename assumed, and hashed as authority
+```
+
+Now parsed through `Vindex3Index` — the same validated schema the other
+seven readers use — and refusing, naming the entry and the field.
+
+> **An identity function may be stricter than the consumer it
+> identifies. It must never be looser.**
+
+Two representations may share a segment; what they may not do is
+disagree about its digests. Eight tests on an **eight**-representation
+container: a one-entry fixture cannot tell "refused" from "identified
+over what was left", because nothing is left. The historical walk,
+restored verbatim, is killed by six of them.
+
+b1 changed no equivalence relation on purpose, and left the false split
+below standing so it could be its own step.
+
+### 4b-b2 — semantic identity, and an equivalence relation that moved
+
+`manifest_hash` was `hash_bytes(index.json)`. So:
+
+```text
+same container semantics
+same graph, payload and segment table
+different index.json formatting
+        ↓  different manifest_hash
+        ↓  different RepresentationStateId
+```
+
+A re-exported container was a different search state carrying none of
+its own evidence — 1a's SPLIT direction. Two digests now, and only one
+of them identifies:
+
+```text
+index.json raw bytes
+        → ContainerArtifactDigest      provenance; MAY move on re-export
+
+typed Vindex3Index
++ graph authority (by content)
++ representation → segment/header/payload associations
+        → SourceSemanticIdentity      what the container IS
+        → RepresentationStateId
+```
+
+**The non-negotiable invariant.** Byte-hashing the index sealed the
+segment header table by accident. When those bytes left, `segment_sha256`
+had to enter the semantic identity **explicitly**, or b2 would have
+severed exactly what 4b-a had just proved. It is
+`CanonicalRepresentationAuthority::segment_sha256`, and a test asserts
+the canonical form writes it.
+
+**Associations, not a multiset.** Each authority is one record binding an
+entry's identity to its own digests, ordered by that identity rather than
+by input order. Hashing a sorted multiset of `segment_sha256`s would be
+blind to two entries exchanging which segment file seals them — the
+multiset survives and the model changes.
+
+**A purpose-built projection, not a normalised document.** What counts is
+decided by typed structures; canonical JSON is only the encoding of the
+container-level tail, which is *sealed* rather than enumerated so that a
+field the index gains next is IN by default. Dropping a fact is the MERGE
+direction, so leaving one out takes a deliberate, named, tested removal:
+
+```text
+system_graph         a FILENAME; the graph is sealed by CONTENT
+derived_from_model   an operator's hint for finding the authority
+encoder              the encode RECIPE; its bytes are already sealed
+compiled_from        lineage; the bytes are sealed either way
+source_representation_digest
+```
+
+`codec` stays IN: `encoding` names a family, the codec names the decode
+contract, and the same bytes under a revision a reader implements
+differently are different bytes.
+
+**The three siblings**, on one real encoded container:
+
+```text
+A  original
+B  semantically identical index, differently serialised
+C  identical index and payload, one segment-table `len` changed
+
+artifact(A) != artifact(B)      a re-export IS a different file
+semantic(A) == semantic(B)      and the same source
+state(A)    == state(B)
+semantic(A) != semantic(C)      a different physical reality
+state(A)    != state(C)
+```
+
+C is checked to have moved in exactly one field — `segment_sha256` —
+so the test cannot pass on a projection that threw itself away. The full
+relation:
+
+```text
+presentation bytes changed only     SAME physical state
+header/storage reality changed      DIFFERENT physical state
+payload reality changed             DIFFERENT physical state
+graph reality changed               DIFFERENT physical state
+```
+
+`SourceDependency::verify` moved to the same footing: a byte-different
+export of the container a candidate was compiled against now verifies,
+and the catch-all reads the same digest the search identifies states by,
+so verification and identity cannot give two answers.
+
+**Verified they can fail.** Seven mutations, each killed by exactly its
+own tests:
+
+| Mutation | Killed |
+|---|---|
+| the artifact digest reaches the state id again | `three_siblings…`, `a_provenance_only_change…` (2) |
+| the authority stops writing `segment_sha256` | both 4b-a header tests, `the_semantic_identity_carries…`, `three_siblings…`, `swapping_two_authorities…`, `a_candidate_refuses_a_source…` (6) |
+| the canonical form drops the catalogue | `a_catalogue_fact_no_authority_carries…` (1) |
+| associations collapse to a sorted multiset | `swapping_two_authorities…` (1) |
+| the projection stops removing `derived_from_model` | `a_provenance_only_change…` (1) |
+| the catalogue is hashed from the index TEXT | `three_siblings…`, `a_provenance_only_change…` (2) |
+| `canonical_json` sorts array items | `the_order_the_profiles_are_declared_in…` (1) |
+
+**Versioned, because the equality changed.** `source-semantic-id/v1`
+feeds `represent-state-id/v2`. v1 and v2 answer differently for
+containers that already exist, which is precisely what 1a versioned the
+canonical form to make visible.
+
+> v2 removes an identified false-split failure while retaining
+> sensitivity to graph, header and payload authority.
+
+---
+
 ## 5. The reward, which must not be diagnostic KL
 
 Rung 4/5 established that diagnostic KL supplies neither magnitude, sign,
@@ -1075,7 +1261,7 @@ Deliberately boring, so MCTS is a policy swap and not a rewrite.
 | 3 | Best-first; the objective API and the search/evidence boundary (§4f) | **done** |
 | 3b | Promotion-input closure — the chain runs from a snapshot (§4g) | **done** |
 | 4 | MCP facade — read-only; seven intent-level tools (§4h) | **done** |
-| 4b | A footprint oracle the snapshot can name (§4h) — `next_experiment` | next |
+| 4b | The source identity the optimizer prices from (§4i) | a–b2 **done** |
 | 5 | PUCT as another `SearchPolicy`; same states, actions, evidence | |
 | 6 | Extend `PhysicalState` with residency; optimise measured tok/s | |
 
