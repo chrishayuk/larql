@@ -576,6 +576,7 @@ fn a_different_encoder_is_not_a_refusal_only_a_weaker_claim() {
     let gptq = nvfp4_pack::EncoderRecipe {
         algorithm: "nvfp4-gptq".into(),
         revision: 1,
+        source: None,
     };
     assert!(!gptq.is_reproducible_by_this_build());
     assert_eq!(gptq.name(), "nvfp4-gptq-v1");
@@ -589,6 +590,7 @@ fn a_different_encoder_is_not_a_refusal_only_a_weaker_claim() {
     let newer = nvfp4_pack::EncoderRecipe {
         algorithm: "nvfp4-nearest".into(),
         revision: 2,
+        source: None,
     };
     assert!(!newer.is_reproducible_by_this_build());
 }
@@ -1300,5 +1302,211 @@ fn the_serde_form_is_the_role_name() {
         let back: super::policy::Role = serde_json::from_str(&json).expect("round trips");
         assert_eq!(back, *r);
         assert_eq!(super::policy::Role::parse(r.name()), Some(*r));
+    }
+}
+
+// ── The K-quant path, end to end ─────────────────────────────────────────
+//
+// The vocabulary in `kquant.rs` is tested directly and thoroughly, and
+// that is exactly why these are here: unit-testing the pieces proved the
+// codec, not the WIRING. Nothing exercised `compile_representation` down
+// the K-quant branch or `OperandStore::load` through the K-quant decode,
+// so both were type-checked, reviewed, and never once executed. Coverage
+// said 65% on a file with nineteen passing tests, which is what that gap
+// looks like from the outside.
+
+fn kquant_spec(encoding: &str) -> RepresentSpec {
+    RepresentSpec {
+        encoding: encoding.to_string(),
+        objects: Vec::new(),
+        roles: policy::RolePolicy::default(),
+        deployment: false,
+        protect: policy::Protections::default(),
+    }
+}
+
+/// The fixture's rows are 64 wide (projections) and 256 wide
+/// (`down_proj`), so Q8_0's 32-element blocks divide every one of them.
+/// This is the full path: plan, encode, seal, re-open, decode.
+#[test]
+fn a_q8_0_representation_compiles_binds_and_decodes() {
+    let tmp = tempfile::tempdir().unwrap();
+    let checkpoint = tmp.path().join("ckpt");
+    std::fs::create_dir_all(&checkpoint).unwrap();
+    let src = tmp.path().join("src.vindex3");
+    let out = tmp.path().join("q8.vindex3");
+    encode_fixture_container(dense_f32_model, &checkpoint, &src, "target");
+
+    let report = compile_representation(&src, &out, &kquant_spec("Q8_0"))
+        .expect("every fixture row divides by 32");
+    assert!(
+        !report.compiled_objects.is_empty(),
+        "nothing compiled: {report:?}"
+    );
+
+    let index = index_of(&out);
+    let (rep_id, entry) = index
+        .representations
+        .iter()
+        .find(|(_, e)| e.encoding == "Q8_0")
+        .expect("a Q8_0 representation was registered");
+
+    // Provenance: the pack says which contract decodes it and which
+    // encoder chose its values, and those are different questions.
+    let codec = entry
+        .codec
+        .as_ref()
+        .expect("a K-quant pack declares a codec");
+    assert_eq!(*codec, kquant::Q8_0.codec_identity());
+    codec
+        .admit()
+        .expect("this build implements the contract it just wrote");
+    // The provenance must name whichever encoder actually ran, and the
+    // two builds must not be able to claim each other's. This is the
+    // architectural control made observable in the artifact: the feature
+    // being compiled in IS the switch, so a comparative campaign that
+    // forgot to enable it produces a pack that SAYS so.
+    let recipe = entry.encoder.as_ref().expect("an encoder recipe");
+    #[cfg(not(feature = "reference-encoder"))]
+    {
+        assert_eq!(
+            recipe,
+            &nvfp4_pack::EncoderRecipe::kquant_native_v1(),
+            "a default build encodes with LARQL's own K-quant encoder"
+        );
+        assert!(
+            recipe.source.is_none(),
+            "a native encode has no upstream to pin"
+        );
+    }
+    #[cfg(feature = "reference-encoder")]
+    {
+        assert_eq!(
+            recipe.algorithm, "kquant-ggml-reference",
+            "a reference-encoder build must record that ggml chose the values"
+        );
+        assert!(
+            recipe.source.is_some(),
+            "a reference encode records the upstream it was pinned to, or the \
+             comparison it supports is not reproducible"
+        );
+        assert_ne!(
+            recipe,
+            &nvfp4_pack::EncoderRecipe::kquant_native_v1(),
+            "the two encoders must not be able to claim each other's provenance"
+        );
+    }
+
+    // It is actually smaller: BF16 is 16 bits, Q8_0 is 8.5.
+    let source = index
+        .representations
+        .get(entry.compiled_from.as_ref().expect("compiled_from"))
+        .expect("the source representation survives");
+    assert!(
+        entry.payload_bytes < source.payload_bytes,
+        "{rep_id}: {} is not smaller than its source {}",
+        entry.payload_bytes,
+        source.payload_bytes
+    );
+
+    // And the executor can bind it: values come back through the
+    // K-quant branch of `OperandStore::load`, not through `widen`.
+    let inspection = inspect_container(&out, false).unwrap();
+    let store = OperandStore::open_for(
+        &out,
+        &inspection,
+        Some("Q8_0"),
+        crate::format::vindex3::opplan::exec::operands::RepresentationSource::Stored,
+    )
+    .expect("the compiled pack binds");
+
+    let (header, _) = read_segment_header(&out.join(&entry.segment)).unwrap();
+    let quantised = header
+        .tensors
+        .iter()
+        .find(|t| t.dtype == "Q8_0")
+        .expect("the pack holds at least one Q8_0 tensor");
+    let values = store
+        .load(&OperandRef {
+            object: entry.object.clone(),
+            tensor: quantised.name.clone(),
+            dtype: quantised.dtype.clone(),
+            shape: quantised.shape.clone(),
+        })
+        .expect("a Q8_0 operand decodes");
+    let expected: usize = quantised.shape.iter().product();
+    assert_eq!(values.len(), expected, "{}", quantised.name);
+    assert!(
+        values.iter().any(|v| *v != 0.0),
+        "{} decoded to all zeros — the pack is not being read",
+        quantised.name
+    );
+}
+
+/// Q6_K frames 256 values per block, so it fits `down_proj`'s 256-wide
+/// rows and NOT the 64-wide projections. The compiler must take the one
+/// and carry the others rather than refusing the object whole — the
+/// row-geometry rule acting as an eligibility filter, not an error.
+#[test]
+fn a_q6_k_map_compiles_only_the_rows_whose_geometry_holds_it() {
+    let tmp = tempfile::tempdir().unwrap();
+    let checkpoint = tmp.path().join("ckpt");
+    std::fs::create_dir_all(&checkpoint).unwrap();
+    let src = tmp.path().join("src.vindex3");
+    let out = tmp.path().join("q6.vindex3");
+    encode_fixture_container(dense_f32_model, &checkpoint, &src, "target");
+
+    let report = compile_representation(&src, &out, &kquant_spec("Q6_K"))
+        .expect("down_proj's 256-wide rows hold Q6_K");
+    let compiled: usize = report
+        .compiled_objects
+        .iter()
+        .map(|o| o.compiled_tensors)
+        .sum();
+    let carried: usize = report
+        .compiled_objects
+        .iter()
+        .map(|o| o.carried_tensors)
+        .sum();
+    assert!(compiled > 0, "down_proj should have compiled: {report:?}");
+    assert!(
+        carried > 0,
+        "the 64-wide projections cannot hold a 256-element block and must be carried: {report:?}"
+    );
+
+    // Every compiled tensor's row really does divide by 256.
+    let index = index_of(&out);
+    let entry = index
+        .representations
+        .values()
+        .find(|e| e.encoding == "Q6_K")
+        .expect("a Q6_K representation was registered");
+    let (header, _) = read_segment_header(&out.join(&entry.segment)).unwrap();
+    let mut seen = 0usize;
+    for t in header.tensors.iter().filter(|t| t.dtype == "Q6_K") {
+        let row = *t.shape.last().unwrap();
+        assert_eq!(row % 256, 0, "{} has a {row}-wide row", t.name);
+        seen += 1;
+    }
+    assert!(seen > 0, "no Q6_K tensor in the pack");
+}
+
+/// An encoding with no compiler is refused by name, and the refusal
+/// lists what IS available rather than a stale literal.
+#[test]
+fn an_uncompilable_kquant_names_the_ones_that_are() {
+    let tmp = tempfile::tempdir().unwrap();
+    let checkpoint = tmp.path().join("ckpt");
+    std::fs::create_dir_all(&checkpoint).unwrap();
+    let src = tmp.path().join("src.vindex3");
+    let out = tmp.path().join("q3.vindex3");
+    encode_fixture_container(dense_f32_model, &checkpoint, &src, "target");
+
+    let err = compile_representation(&src, &out, &kquant_spec("Q3_K"))
+        .unwrap_err()
+        .to_string();
+    assert!(err.contains("no representation compiler"), "{err}");
+    for name in ["Q8_0", "Q6_K", "Q4_K"] {
+        assert!(err.contains(name), "the refusal must list {name}: {err}");
     }
 }

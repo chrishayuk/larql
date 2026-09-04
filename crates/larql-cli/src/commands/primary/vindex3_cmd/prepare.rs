@@ -74,6 +74,7 @@ pub(crate) fn parse_representation_source(spec: &str) -> Result<RepresentationSo
 /// the canonical bytes return `None` and never look for a pack, so adding
 /// packs to a container cannot change what they execute.
 pub(crate) fn wanted_representation(backend: ExecBackend) -> Option<&'static str> {
+    use larql_vindex::format::vindex3::represent::kquant;
     use larql_vindex::format::vindex3::represent::nvfp4_pack::DTYPE_NVFP4;
     // Exhaustive, with no wildcard arm, and that is the point: `_ =>
     // None` stood here and a newly added NVFP4 backend silently
@@ -85,6 +86,9 @@ pub(crate) fn wanted_representation(backend: ExecBackend) -> Option<&'static str
     match backend {
         ExecBackend::Reference | ExecBackend::Production => None,
         ExecBackend::ProductionNvfp4 => Some(DTYPE_NVFP4),
+        ExecBackend::ProductionQ8 => Some(kquant::Q8_0.name),
+        ExecBackend::ProductionQ6k => Some(kquant::Q6_K.name),
+        ExecBackend::ProductionQ4k => Some(kquant::Q4_K.name),
         #[cfg(all(feature = "gpu", target_os = "macos"))]
         ExecBackend::Metal
         | ExecBackend::MetalMxfp4
@@ -153,6 +157,11 @@ pub(super) fn lowered_formats(
         ExecBackend::Reference
         | ExecBackend::Production
         | ExecBackend::ProductionNvfp4
+        // The K-quant arms are interpreted CPU arms; there is no lowered
+        // GPU path for them, and this model has no Metal kernel at all.
+        | ExecBackend::ProductionQ8
+        | ExecBackend::ProductionQ6k
+        | ExecBackend::ProductionQ4k
         | ExecBackend::Metal
         | ExecBackend::MetalMxfp4
         | ExecBackend::MetalMxfp4All
@@ -192,6 +201,14 @@ pub(crate) fn with_plan_backend<V: BackendVisitor>(
         // projector then dispatches `FusedNvfp4` off the resident
         // representation, exactly as it dispatches every other arm.
         ExecBackend::ProductionNvfp4 => visitor.visit(&ProductionBackend::new()),
+        // Same kernels again. A K-quant operand is decoded to f32 in
+        // `OperandStore::load`, so what these arms measure is the
+        // REPRESENTATION's effect on behaviour, not a K-quant kernel's
+        // speed — which is the right instrument for a behaviour-per-byte
+        // curve and would be the wrong one for a throughput claim.
+        ExecBackend::ProductionQ8 | ExecBackend::ProductionQ6k | ExecBackend::ProductionQ4k => {
+            visitor.visit(&ProductionBackend::new())
+        }
         #[cfg(all(feature = "gpu", target_os = "macos"))]
         ExecBackend::MetalMxfp4 => {
             let gpu = larql_compute_metal::MetalBackend::new()

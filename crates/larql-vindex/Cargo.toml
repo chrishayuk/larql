@@ -65,6 +65,11 @@ default = []
 # (target-gated to macOS, optional so non-Mac builds skip it entirely).
 # Future Vulkan/CUDA backends will compose under the same flag.
 gpu = ["dep:larql-compute-metal"]
+# The ecosystem's own K-quant encoder, for COMPARATIVE artifacts only.
+# Links a built llama.cpp (LARQL_GGML_LIB_DIR); records the upstream in
+# LARQL_GGML_REVISION. A production-side dependency: nothing that reads
+# or executes a container needs it. See represent/reference_encoder.rs.
+reference-encoder = []
 
 [dev-dependencies]
 larql-inference = { path = "../larql-inference" }

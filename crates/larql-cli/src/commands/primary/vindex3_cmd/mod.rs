@@ -83,6 +83,19 @@ pub enum ExecBackend {
     /// silently changing that for every existing `production` run would
     /// reinterpret every result already taken with it.
     ProductionNvfp4,
+    /// The `larql-compute` kernels, asking for a compiled Q8_0 pack.
+    ///
+    /// These three exist for the same reason `ProductionNvfp4` does: the
+    /// BACKEND declares which representation execution wants, so a
+    /// container's compiled K-quant pack is bound instead of its
+    /// canonical bytes. One arm per encoding rather than one arm plus a
+    /// flag, because `wanted_representation` is exhaustive on purpose —
+    /// a new arm is a compile error until someone states what it runs.
+    ProductionQ8,
+    /// The `larql-compute` kernels, asking for a compiled Q6_K pack.
+    ProductionQ6k,
+    /// The `larql-compute` kernels, asking for a compiled Q4_K pack.
+    ProductionQ4k,
     /// GPU matmuls via `larql-compute-metal` (rung 1: matrix work on
     /// the device, elementwise glue on the CPU).
     #[cfg(all(feature = "gpu", target_os = "macos"))]

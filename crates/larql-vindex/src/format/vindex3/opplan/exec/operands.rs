@@ -393,6 +393,25 @@ impl OperandStore {
         if raw.dtype == crate::format::vindex3::represent::nvfp4_pack::DTYPE_NVFP4 {
             return decode_nvfp4_operand(&raw.bytes, &operand.shape, &operand.tensor);
         }
+        // A K-quant decodes here for the same reason NVFP4 does: the
+        // block count comes from the operand's SHAPE, and `widen` sees
+        // only bytes and a dtype label. It stays out of `widen` rather
+        // than growing a shape parameter there, so the one function that
+        // answers "what does this dtype mean as f32, from bytes alone"
+        // keeps meaning exactly that.
+        if let Some(k) = crate::format::vindex3::represent::kquant::lookup(&raw.dtype) {
+            let elements = operand
+                .shape
+                .iter()
+                .try_fold(1usize, |a, d| a.checked_mul(*d))
+                .ok_or_else(|| {
+                    VindexError::Parse(format!(
+                        "tensor `{}`: shape {:?} overflows an element count",
+                        operand.tensor, operand.shape
+                    ))
+                })?;
+            return k.decode(&raw.bytes, elements, &operand.tensor);
+        }
         widen(&raw.dtype, &raw.bytes, &operand.tensor)
     }
 
