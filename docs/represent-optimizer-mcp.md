@@ -992,8 +992,8 @@ and is that seal load-bearing in the identity?**
 ```text
 4b-a   prove the physical seal                    done
 4b-b1  refuse incomplete/contradictory identity   done
-4b-b2  make identity semantic, not formatting-sensitive
-4b-c   read sealed SourceStorageFacts
+4b-b2  identity semantic, not formatting-sensitive  done
+4b-c   read sealed SourceStorageFacts              done
 4b-d   require whole-surface accounting completeness
 4b-e   production BoundFootprint
 4b-f   next_experiment answers, transport unchanged
@@ -1163,6 +1163,94 @@ canonical form to make visible.
 > v2 removes an identified false-split failure while retaining
 > sensitivity to graph, header and payload authority.
 
+### 4b-c — the accounting facts, from the same authority
+
+> **Accounting does not discover new source facts. It projects
+> accounting facts from the same validated authority already used to
+> establish source identity.**
+
+```text
+CanonicalRepresentationAuthority     segment, segment_sha256, tensor_count
+        ↓ opens exactly that segment, recomputes exactly that digest
+SegmentTensor { name, dtype, shape, offset, len }
+        ↓
+SourceStorageFact { logical_bytes = len, dtype }
+```
+
+**A dereference, not a second parse.** The per-tensor table is not in
+`index.json` — it is inside the segment file, which is exactly why
+`segment_sha256` had to enter `SourceSemanticIdentity` explicitly in
+4b-b2. `read_source_storage` opens the file the authority names,
+recomputes the digest the authority seals, and refuses before reading a
+number if they differ. Without that check, accounting would be pricing
+whatever happens to be on disk under a path an index mentions, next to a
+state id built on something else. The header itself is parsed by the
+writer's own `read_segment_header` — a second header parser here would
+be 4b-b1's untyped walk one level down.
+
+**`len` is the byte count; `dtype` explains it.** `SourceDType` is
+deliberately opaque: no `width`, no `size_of`, no conversion to a
+number. The moment one exists, `numel × width` is one refactor away, and
+that is precisely the shape stage 4's three fixture footprints had — all
+three multiplying by two and calling it bf16.
+
+4b-a moved `dtype` and `len` in two SEPARATE adversarial tests so that
+this asymmetry could be asserted:
+
+```text
+same shape, same dtype, changed len     → the price changes
+same shape, changed dtype, same len     → the price does NOT change
+changed shape, same len                 → the price does NOT change
+```
+
+**What it refuses**, rather than omitting: a segment that is not the
+sealed one; a segment that cannot be read; a sealed segment whose header
+does not parse; a table contradicting the `tensor_count` the index
+declares (two sealed facts about one segment disagreeing); and one
+`(object, tensor)` stored twice. That last is a container holding a
+source pack and a compiled pack for one object — `compiled_from` is the
+obvious discriminator and adopting it is a decision with its own
+evidence, so the collision is named rather than resolved.
+
+Aliases stay two facts: `(object, tensor)` is the optimizer's tensor
+identity, now a named `TensorIdentity` because 4b-d has to hand back the
+exact identities a bind is missing.
+
+**The declaration became the code.** Stage 4 refused `next_experiment`
+because `SearchSemantics.physical_accounting` named a procedure that did
+not exist. `PhysicalAccountingSemantics` digests the declared MEANING —
+byte authority, seal verification, and what the dtype is permitted to do
+— and `read_source_storage` stamps it, with no other constructor for
+`PhysicalAccountingFacts`. 1c had to state that a declaration can lie and
+that the module could not enforce otherwise; here it can. The procedure
+keeps the name stage 1d already declares (`logical-bytes/v1`): renaming
+it would move `SearchSemanticsId` for every stored snapshot and announce
+a changed procedure, and the procedure did not change — it started
+existing.
+
+`PhysicalAccountingFacts` carries the `SourceSemanticIdentity` digest it
+was read from, so `describe(model)` is checkable rather than assumed —
+and it resolves on the semantic digest, so a re-export does not orphan a
+footprint. It carries no `TensorSurfaceId`: the facts describe what the
+CONTAINER stores and the surface is what REPRESENT enumerated. Those are
+different populations, and finding where they disagree is 4b-d's whole
+job.
+
+**Verified they can fail.** Six mutations, each killed by exactly its own
+tests:
+
+| Mutation | Killed |
+|---|---|
+| price computed as `numel × width(dtype)` | all three arithmetic tests (3) |
+| the seal is not verified | `a_segment_that_is_not_the_sealed_one…`, `another_containers_identity…`, `a_missing_segment…` (3) |
+| keyed on the tensor name alone | `two_objects_sharing_a_tensor_name…`, `the_facts_come_from_the_segment…` (2) |
+| the declared `tensor_count` is not cross-checked | `a_table_that_contradicts_its_own_declared_count…` (1) |
+| a repeated `(object, tensor)` is last-writer-wins | `one_object_stored_twice…` (1) |
+| `describe()` resolves on the artifact digest | `a_reserialised_container_is_still_the_source…` (1) |
+
+The first is the one that matters: it is the regression this step exists
+to foreclose, and it dies against three independent tests.
+
 ---
 
 ## 5. The reward, which must not be diagnostic KL
@@ -1261,7 +1349,7 @@ Deliberately boring, so MCTS is a policy swap and not a rewrite.
 | 3 | Best-first; the objective API and the search/evidence boundary (§4f) | **done** |
 | 3b | Promotion-input closure — the chain runs from a snapshot (§4g) | **done** |
 | 4 | MCP facade — read-only; seven intent-level tools (§4h) | **done** |
-| 4b | The source identity the optimizer prices from (§4i) | a–b2 **done** |
+| 4b | The source identity the optimizer prices from (§4i) | a–c **done** |
 | 5 | PUCT as another `SearchPolicy`; same states, actions, evidence | |
 | 6 | Extend `PhysicalState` with residency; optimise measured tok/s | |
 

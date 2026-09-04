@@ -70,6 +70,7 @@
 //! generation (unprotecting is a move, un-refusing is not). Identity
 //! collapses them; explanation does not.
 
+pub mod accounting;
 pub mod action_space;
 pub mod assess;
 pub mod candidate;
@@ -86,6 +87,11 @@ pub mod snapshot;
 pub mod surface;
 pub mod transition;
 
+pub use accounting::{
+    read_source_storage, PhysicalAccountingFacts, PhysicalAccountingSemantics,
+    PhysicalAccountingSemanticsId, SourceDType, SourceStorageFact, TensorIdentity,
+    PHYSICAL_ACCOUNTING_PROCEDURE,
+};
 pub use action_space::{ActionVocabulary, MapEdit};
 pub use assess::{
     Assessment, NothingMeasured, ParentStanding, RankingRule, RankingSemantics, RankingSemanticsId,

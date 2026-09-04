@@ -34,40 +34,13 @@
 //! without C the fix has severed the seal 4b-a just proved, which is
 //! the specific way this change could go wrong.
 
-use std::path::Path;
-
 use super::super::super::compiler::read_source_identity;
 use super::super::super::source_identity::{
     CanonicalRepresentationAuthority, CATALOGUE_REMOVALS, ENTRY_OMISSIONS,
     SOURCE_SEMANTIC_ID_VERSION,
 };
 use super::container;
-use super::container::state_id;
-
-/// A byte-for-byte copy of a container, so siblings diverge from one
-/// export rather than from two encodes that might differ for reasons
-/// nobody chose.
-fn sibling(container: &Path) -> tempfile::TempDir {
-    let out = tempfile::tempdir().expect("sibling dir");
-    copy_into(container, out.path());
-    out
-}
-
-fn copy_into(from: &Path, to: &Path) {
-    for entry in std::fs::read_dir(from).expect("read container") {
-        let entry = entry.expect("entry");
-        let target = to.join(entry.file_name());
-        match entry.file_type().expect("file type").is_dir() {
-            true => {
-                std::fs::create_dir_all(&target).expect("dir");
-                copy_into(&entry.path(), &target);
-            }
-            false => {
-                std::fs::copy(entry.path(), &target).expect("copy");
-            }
-        }
-    }
-}
+use super::container::{sibling, state_id};
 
 // ------------------------------------------------------ the centrepiece
 

@@ -16,6 +16,7 @@
 //! both get tests, and the ones that assert *sameness* are as load-
 //! bearing as the ones that assert difference.
 
+mod accounting;
 mod container;
 mod source_identity;
 mod source_seal;

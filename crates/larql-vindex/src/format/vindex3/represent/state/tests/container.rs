@@ -247,3 +247,28 @@ pub(super) fn state_id(model: &SourceIdentity) -> (RepresentationStateId, String
     let decisions = resolved.decisions().canonical_full();
     (resolved.id().clone(), decisions)
 }
+
+/// A byte-for-byte copy of a container, so siblings diverge from one
+/// export rather than from two encodes that might differ for reasons
+/// nobody chose.
+pub(super) fn sibling(container: &Path) -> tempfile::TempDir {
+    let out = tempfile::tempdir().expect("sibling dir");
+    copy_into(container, out.path());
+    out
+}
+
+fn copy_into(from: &Path, to: &Path) {
+    for entry in std::fs::read_dir(from).expect("read container") {
+        let entry = entry.expect("entry");
+        let target = to.join(entry.file_name());
+        match entry.file_type().expect("file type").is_dir() {
+            true => {
+                std::fs::create_dir_all(&target).expect("dir");
+                copy_into(&entry.path(), &target);
+            }
+            false => {
+                std::fs::copy(entry.path(), &target).expect("copy");
+            }
+        }
+    }
+}
