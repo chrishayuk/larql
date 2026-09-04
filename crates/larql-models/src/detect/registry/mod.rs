@@ -28,7 +28,7 @@ mod pattern;
 mod table;
 
 pub use attention::AttentionKind;
-pub use entry::ArchitectureEntry;
+pub use entry::{ArchitectureEntry, ComponentRole};
 pub use pattern::ModelTypeMatch;
 pub use table::{ARCHITECTURE_REGISTRY, LLAMA_FAMILY};
 

@@ -23,6 +23,7 @@ use crate::architectures::gpt2::Gpt2Arch;
 use crate::architectures::gpt_oss::GptOssArch;
 use crate::architectures::granite::GraniteArch;
 use crate::architectures::kimi::KimiLinearArch;
+use crate::architectures::kimi_k3::KimiK3Arch;
 use crate::architectures::lfm2::Lfm2Arch;
 use crate::architectures::llama::LlamaArch;
 use crate::architectures::mamba2::{Mamba2Arch, MAMBA2_MODEL_TYPE};
@@ -185,6 +186,14 @@ pub fn detect_from_json(config: &serde_json::Value) -> Box<dyn ModelArchitecture
         // selection, shared expert) — `block_sparse_moe.*` keys distinct
         // from both the DeepSeek lineage and Mixtral's routing/shared-
         // expert semantics, though it reuses Mixtral's `w1/w2/w3` spelling.
+        // Kimi K3 — the container identity. IDENTIFIED, not executable:
+        // `KimiK3Arch` carries only architecture facts the public config
+        // establishes and declares no K3-specific execution semantics.
+        // Recognised explicitly, like BitNet, so a K3 config cannot
+        // collapse into the generic fallback — and NOT routed to
+        // `KimiLinearArch`, which would assert K3 executes as its
+        // ancestor.
+        "kimi_k3" => Box::new(KimiK3Arch::from_config(model_config)),
         "kimi_linear" => Box::new(KimiLinearArch::from_config(model_config)),
         // StarCoder 2
         "starcoder2" => Box::new(StarCoder2Arch::from_config(model_config)),
