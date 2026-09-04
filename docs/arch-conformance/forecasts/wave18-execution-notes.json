@@ -1,0 +1,73 @@
+{
+ "artifact": "wave18-execution-notes",
+ "purpose": "What wave 18 LEARNED while executing, kept apart from what it PREDICTED before executing. The frozen forecast is immutable; falsifications are recorded here so a reader at HEAD can tell the two apart without consulting git history.",
+ "rule_this_establishes": "Frozen forecasts are immutable. Falsifications discovered during execution are recorded in a sibling execution-notes artifact, linked to the frozen forecast and the baseline commit.",
+ "forecast": "wave18-hyper-connection-addressability.json",
+ "forecast_commit": "446197d5",
+ "baseline_commit": "8b6a8d78",
+ "written": "2026-09-04, before any wave-18 capability code",
+
+ "baseline_observations": {
+  "method": "`classify_stack_tensor_on(relative_name, operator)` called directly against real safetensors headers. It has to be direct: `opplan::build` returns on the residual-topology refusal before reading any operand, so a hyper-connection checkpoint emits no UnclassifiedOperand for its HC tensors and that absence is structural silence, not evidence. Same move `k3_representable.rs` makes one stage down, for the same reason.",
+  "fixture": "scripts/hc_header_fixture_export.py fetches the shard headers over HTTP range requests; no payload is read. 130 tensors across three checkpoints, indexed families capped at two real members.",
+  "classifier_control": {
+   "status": "PASS",
+   "evidence": [
+    "0.self_attn.q_proj.weight -> AttnQ under Softmax and MlaQProj under Mla — operator awareness is live, not assumed",
+    "0.mlp.gate_proj.weight -> FfnGate, 0.mlp.down_proj.weight -> FfnDown",
+    "0.input_layernorm.weight -> PreAttentionNorm, 0.post_attention_layernorm.weight -> PostAttentionNorm"
+   ]
+  },
+  "hc_role_probe": {
+   "deepseek-ai/DeepSeek-V4-Flash": "6/6 layer operands unclassified, and hc_head_{base,fn,scale} unplaced one stage earlier",
+   "zai-org/GLM-5.3-Flash": "6/6 unclassified",
+   "tencent/Hy4-preview": "6/6 unclassified, spelled a third way (hc_attn_layer.hc_pre.hc_fn — role in the module path)"
+  }
+ },
+
+ "forecast_falsifications": [
+  {
+   "prediction": "'no placement rule owns the hc_attn_*, hc_ffn_* and hc_head_* tensor groups' — one gap, one mechanism",
+   "result": "half true",
+   "reason": "Three stages, and the gap splits across two. `graph::build::classify_group` owns tensor-GROUP placement (failure: UnplacedGroup) and does block top-level hc_head_*. `plan` owns config semantics and physical SegmentTensor {name,dtype,shape,offset,len} — bytes, never meaning. `opplan::build` owns semantic role binding via the operator-aware classify_stack_tensor_on (failure: ClosureDefect::UnclassifiedOperand). The layer-level hc_attn_*/hc_ffn_* groups are ALREADY physically placed by the `layers` prefix; their unresolved plane is role classification, not placement."
+  },
+  {
+   "prediction": "GLM-5.3-Flash's layer HC tensors should surface as UnclassifiedOperand today",
+   "result": "false",
+   "reason": "opplan::build returns on the residual-topology refusal before any operand is read — its own comment says so. The general lesson, beside #415's: absence of a downstream defect does not imply downstream capability when an earlier refusal prevents the observation from being made."
+  },
+  {
+   "prediction": "mtp.0 is a silent-omission trap; prove HC total-fate matching catches its 18 tensors",
+   "result": "wrong mechanism, and backwards",
+   "reason": "COMPONENT_EXTERNAL_NAMESPACES = [\"mtp\"] is checked BEFORE the group-pattern scan precisely because `mtp.layers` contains 'layers' and would otherwise merge a distinct sub-model into the primary DecoderStack. DeepSeek already reports `mtp` as one honestly-unplaced group (finding 72), and graph::tests::build already pins the whole family as unplaced. The correct invariant is the opposite: adding HC role recognition must NOT give any mtp.* tensor a primary-stack fate."
+  },
+  {
+   "prediction": "DeepSeek-V4-Flash is wave 18's subject; it needs 'attn_norm/ffn_norm spellings' alongside HC placement",
+   "result": "false, and the understatement was large",
+   "reason": "DeepSeek's ENTIRE tensor dialect is foreign — attn.wq_a, attn.wq_b, attn.wkv, attn.wo_a, attn_norm, ffn.experts.N.w1. Measured overlap with the role vocabulary is exactly ONE operand on layer 0: ffn_norm.weight -> PostAttentionNorm. Adding HC roles would move DeepSeek from 'all unclassified' to 'nearly all unclassified', attributing nothing. The forecast centred DeepSeek because wave 17's arithmetic ORACLE came from DeepSeek's reference; that is the right source for arithmetic and the wrong specimen for addressability."
+  },
+  {
+   "prediction": "GLM isolates exactly one variable",
+   "result": "nearly — two, and the second is pinned",
+   "reason": "GLM-5.3-Flash is FP8, so each mlp.*_proj carries a weight_scale_inv block-scale sidecar, and those three are unaddressed for reasons unrelated to residual topology. The baseline pins all NINE unclassified operands rather than the six, so a wave-18 rule loose enough to swallow a scale sidecar fails the assertion instead of passing a narrower one."
+  }
+ ],
+
+ "preserved_question": "Unchanged from the frozen forecast: can a declared hyper-connection topology acquire complete executable carriage — semantic operand roles entering the normal closure — without collapsing the namespace, payload, or execution boundaries? Only the specimen changed, because the originally chosen one cannot isolate the variable.",
+
+ "re_aimed_subjects": {
+  "zai-org/GLM-5.3-Flash": "PRIMARY CONTROLLED SUBJECT — ordinary operands classify, HC operands do not",
+  "moonshotai/Kimi-K3": "TRANSFER WITNESS — ordinary operands classify, four generic HC gaps remain, pinned independently in plan::tests::k3_representable::KDA_LAYER_UNADDRESSED by a programme with no stake in making this abstraction look general",
+  "deepseek-ai/DeepSeek-V4-Flash": "DIALECT-BLOCKED CONTROL — must stay blocked; a wave-18 change that appears to unblock it is a leak, not progress",
+  "tencent/Hy4-preview": "OUT OF SCOPE — HC-PREPOST, a distinct Sinkhorn-free topology"
+ },
+
+ "acceptance_criterion": "Wave 18 succeeds when GLM's six hyper-connection operands acquire semantic roles and enter the normal operand closure without changing the classification of its already-supported operands OR its three FP8 scale sidecars; the same generic HC role machinery reduces K3's independently-existing HC addressability gap without K3-shaped names appearing in wave 18's vocabulary; DeepSeek remains blocked by its separate base-dialect deficit; mtp remains external to the primary stack; and no payload-backed execution claim is promoted.",
+
+ "the_instrument_was_mutation_tested_before_it_was_trusted": {
+  "wrong operator (Kda -> Softmax) on GLM": "CAUGHT — 11 extra operands read as unclassified and the control assertion fails",
+  "a falsely classified HC spelling (hc_attn_fn -> FfnDown, injected into roles.rs)": "CAUGHT — fails on both GLM and DeepSeek",
+  "an mtp leak": "NOT YET TESTABLE — nothing can leak until HC roles exist. The fixture carries the mtp namespace so the test can be written with the implementation, and that is stated in the witness rather than left implied.",
+  "two assumptions the instrument falsified on its first run": "that GLM's unclassified set was six (it is nine), and that DeepSeek classified nothing (it classifies exactly one). Both were corrected to the measurement, not the other way round."
+ }
+}

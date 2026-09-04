@@ -62,3 +62,4 @@ pub(super) fn encoded_fixture() -> PlannedFixture {
         named,
     }
 }
+mod wave18_hc_baseline;
