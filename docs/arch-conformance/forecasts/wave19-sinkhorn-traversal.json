@@ -1,0 +1,110 @@
+{
+  "wave": 19,
+  "name": "sinkhorn-traversal",
+  "artifact_kind": "forecast (frozen)",
+  "written": "2026-09-05",
+  "written_before": "any capability code. Frozen against the reconnaissance commit; immutable from here. Execution-time falsifications go in a sibling wave19-execution-notes.json.",
+  "baseline": {
+    "commit": "399a8370 — docs(arch-conformance): record wave 19 Sinkhorn traversal reconnaissance (on f8c2cd5a, origin/main)",
+    "artefact": "wave19-sinkhorn-traversal-reconnaissance.json",
+    "state": "Sinkhorn topology is declared, arithmetically defined (wave 17, oracle-pinned stages), physically owned, semantically addressed and carried (wave 18), and execution refuses before traversal at PreparedOperands::load (prepared.rs:741). 44 HC tests pass. Text-closure blockers 1031; GLM-5.3-Flash 31 (HC cluster 5), DeepSeek-V4-Flash/Pro 31 each (HC cluster 3), Qwen3-0.6B 0.",
+    "what_the_reconnaissance_already_changed": [
+      "the residual add is the seam: expand_streams replaces `backend.residual_add` (carry + add are one op)",
+      "the pre-norm moves inside the branch and normalises the reduced vector, not the bundle",
+      "sublayer_forward does not drop into the batch path: stages 1-3 per position, operator over the batch, stage 5 per position",
+      "no existing tap can witness the path; the witness state is the split and the reduced vector",
+      "the oracle (hidden 5) and the synthetic container (hidden 64, pattern bytes) disagree in geometry",
+      "the refusal has four readers; the config-key table in plan/semantics.rs is independent of the text authority"
+    ]
+  },
+
+  "the_transition": {
+    "intervention": "Change the residual carrier from one `[hidden]` vector to an explicit hyper-connection bundle across hyper-connected transformer layers, reducing to `[hidden]` only at ordinary operator boundaries and expanding back into the bundle at the two HC sites.",
+    "success": "An independent intermediate-state witness proves the wave-17 HC operation actually ran, in decode AND batch traversal; ordinary operator dispatch is unchanged; headless layer traversal works; single-stream traversal stays byte-identical; only then do the traversal refusals lift.",
+    "non_claim": "No DeepSeek base-dialect work, no K3 AttnRes work, no representation work (no new role, placement or schema), no real-payload claim, no explanation of GLM's `mhc`."
+  },
+
+  "the_four_decisions": {
+    "1_carrier": "The traversal state becomes a bundle; `hidden` does not change meaning. decode: `[streams, hidden]`; batch: `[positions, streams, hidden]`. Every ordinary operation keeps consuming `[hidden]` / `[positions, hidden]`. The topology dimension and the model width are different semantic dimensions and are never flattened into a pretend wider residual at an API boundary: wherever a plane, trace row or resume row crosses a boundary for an HC plan it is typed as a bundle (streams × hidden), and validated as such.",
+    "2_composition_owner": "Traversal owns SEQUENCING. `exec::hyper_connection` owns TOPOLOGY ARITHMETIC and gains the site-level composition: `reduce(bundle, site) -> (split, v)` and `update(bundle, branch_out, split) -> bundle'`. The backend keeps owning the ordinary operator. Neither mix_projection nor the Sinkhorn split appears in operator dispatch. `sublayer_forward` stays as the single-position reference composition; the decode path may call it directly. Invariant: wave 19 changes the residual carrier and traversal sequencing; it does not change what attention or FFN means. The hybrid FFN's raw-residual reads receive v_ffn, never the bundle.",
+    "3_refusals": "No reader lifts early. Order: bundle traversal implemented -> intermediate witness exists -> witness mutation-tested -> decode traversal proven -> batch traversal proven -> shared execution authority lifts (executor, report, encode admission move TOGETHER) -> the independent plan/semantics table is reconciled and scored SEPARATELY. Traversal is not CLOSED after decode alone. The wave splits into 19a and 19b with the global refusal intact after 19a.",
+    "4_substrate": "A new finite synthetic container at hidden 5 whose geometry agrees with the untouched wave-17 oracle (streams 4, hidden 5, mix rows 24, iters 20, eps 1e-6), with deterministic finite operand values — never the pattern-byte fixture. Its HC site operands ARE the oracle's weights. The oracle is not adapted."
+  },
+
+  "the_split": {
+    "19a_decode": {
+      "delivers": "bundle carrier on the decode path; `exec::hyper_connection::{reduce, update}` composition; the hidden-5 substrate (headless and head-bearing variants; a hybrid-FFN variant for mutant d); the HC site trace on the decode observer; the witness; the mutation tests; a crate-internal preparation seam used only by the witness (the doctored-seam pattern encode_graph already sets), so the PUBLIC refusal at PreparedOperands::load is untouched.",
+      "does_not_deliver": "no batch traversal, no plane/resume/CLI width change, no reader lifts, no fixture migration, no semantics-version bump."
+    },
+    "19b_batch_and_lift": {
+      "delivers": "bundle carrier on the batch path (stages 1-3 per position, operator over the batch, stage 5 per position); the HC site trace on the plane sink; decode-vs-batch parity on the HC container; bundle-typed planes, resume rows and CLI plane persistence; the head reduction at the exit when declared; the headless whole-stack refusal; removal of the 19a seam; the shared authority lifts (readers 1, 2, 4 together); the semantics table reconciled; fixture migration; semantics version 15 -> 16."
+    }
+  },
+
+  "the_witness": {
+    "substrate": "hidden 5, 4 streams, 2 layers, 3 positions with DISTINCT hidden states (the oracle's x has per-stream scales 0.1/1/3/7 and per-position variation), deterministic finite values, HC site operands = oracle weights (hc_fn 24x20, hc_base 24, hc_scale 3), head variant = oracle head weights (head_fn 4x20, head_base 4, head_scale). Ordinary operands (attention, FFN, norms, embedding, output) deterministic finite; their correctness is owned by single-stream byte-identity, not by this witness.",
+    "entry_for_the_foreign_comparison": "The oracle's input x `[3, 4, 5]` enters layer 0 as a bundle through the layer-range contract (a ResumePoint whose rows are bundles), so the attention site's stages see EXACTLY the oracle's state. The embedding entry cannot produce it (expand_embedding replicates streams), which is why the foreign comparison lives at the layer-range entry and the embedding entry is checked structurally.",
+    "trace": "one record per (layer, site ∈ {attn, ffn}, position): the Sinkhorn split {pre, post, comb}, the reduced vector v, and the branch output b. The branch output is included because mutant (d) is only detectable by recomputing the FFN branch from v_ffn and comparing. A one-stream transformer cannot produce any of these accidentally.",
+    "assertions": [
+      "A1 foreign: at layer 0 attention site, tapped mix/pre/post/comb/reduced equal the oracle's stages within the wave-17 TOLERANCE, at all 3 positions",
+      "A2 structural: tapped bundle' == expand_streams(b_tapped, x, split_tapped) within TOLERANCE, and differs from x + b by more than TOLERANCE at every position (the oracle's single_stream_residual control disagrees)",
+      "A3 branch input: the existing attention-input tap equals pre_attention(v_tapped), not pre_attention(any stream) nor pre_attention(mean of streams)",
+      "A4 FFN site: b_ffn_tapped == the reference backend's FFN recomputed from v_ffn (residual argument = v_ffn) — on the hybrid variant this pins the router's input",
+      "A5 width: every HC-plan plane/trace row is a bundle of streams x hidden; every single-stream plane is `[hidden]` and byte-identical to baseline",
+      "A6 headless: LayerRange on the headless variant runs and yields a bundle; Full on the headless variant refuses at preparation with a reason naming the absent head, distinct from the topology reason; Full on the head-bearing variant produces `[hidden]` after head_reduce and logits",
+      "A7 parity: decode and batch produce bit-identical HC traces and logits on the reference backend"
+    ],
+    "mutants_each_must_be_caught_before_any_reader_lifts": [
+      "(a) bypass the HC composition (run the layer single-stream on stream 0) -> A5 (width) and A1 (no split emitted)",
+      "(b) wrong split or reduction (1 Sinkhorn iteration; uniform pre; transposed comb) -> A1 at the split, A2 at the expansion",
+      "(c) pre-norm on the original residual / a stream / the stream mean instead of v -> A3",
+      "(d) bundle or wrong stream as the hybrid FFN's raw residual -> A4",
+      "(e) batch only: apply position 0's split to every row -> A1 at positions 1 and 2, A7"
+    ],
+    "glm_constraint_hard": "No `hc_head_*` is needed anywhere inside a layer or a LayerRange. `head_reduce` runs only after the whole hyper-connected stack and only when a head is declared."
+  },
+
+  "settled_from_the_reconnaissance": {
+    "mix_fn_residency": "f32 glue via store.load (as norms are), counted as glue in the residency census. A backend-formatted mix projection is a later performance rung, not this wave.",
+    "head_reduce_norm_eps": "the component's declared norm eps, read from the plan's layers, which carry it per layer as one component fact; the executor asserts all layers agree and refuses otherwise (one canonical derivation).",
+    "layer_scale_on_a_bundle": "unjudged (no HC checkpoint declares one): a plan carrying both refuses at preparation with its own named reason, mirroring the mixer-only-under-HC refusal.",
+    "planes_resume_cli": "for HC plans, LayerTrace rows, PlaneEvent rows and ResumePoint rows are bundles; ResumePoint validation checks streams x hidden; the CLI plane writer/reader follow in 19b.",
+    "trace_delivery": "the HC site record is a new event on each existing surface (plane sink; step observer), not a widening of an existing tap.",
+    "whole_stack_headless": "refuses at preparation (refuse-before-any-output), with the head reason; the layer-range contract is the headless witness shape."
+  },
+
+  "predictions_scored_individually": {
+    "rule": "Each line is scored on its own. No aggregate is a prediction; where a sum is shown it is derived from the lines above it and carries no evidential weight of its own.",
+    "P1_19a_public_refusal_unchanged": "after 19a, `execute_text` on the hidden-64 carriage fixture still refuses with the topology reason, the sweep re-derives to 1031, and every reader is unchanged; only the witness (through the internal seam) traverses.",
+    "P2_19a_witness": "A1-A4 hold on the decode path on the hidden-5 substrate; mutants (a)-(d) are each caught by the named assertion; no mutant survives.",
+    "P3_19b_batch": "A1-A5 hold on the batch path; mutant (e) is caught by A1 at positions 1 and 2; A7 holds to the bit on the reference backend.",
+    "P4_single_stream_byte_identity": "every existing execution, parity and golden-trace test passes unchanged; the synthetic single-stream sibling's execute_text trace is byte-identical before and after; the decode-vs-batch parity suites are untouched.",
+    "P5_headless": "A6 holds: LayerRange runs headless; Full refuses headless with the head reason; Full runs head-bearing.",
+    "P6_reader_1_executor": "after 19b, PreparedOperands::load no longer emits the topology reason for any plan; it emits the head reason for a headless HC plan on a whole-stack slice and the layer_scale reason where that op is present. Sweep effect of this reader: none (it is not plan-level).",
+    "P7_reader_2_report": {
+      "GLM-5.3-Flash": "finding 111 (execution_surface: topology not executable) is REPLACED by one finding on the same subject naming the absent hyper_connection_head (and `mhc`); count 31 -> 31 on this reader. A count of 30 here is the looks-supported failure (fail-open) and is scored as a BUG, not a success.",
+      "DeepSeek-V4-Flash_and_Pro": "unchanged, 31 -> 31: the report never asks them the topology question (norm-placement surface gap, finding 72, comes first)."
+    },
+    "P8_reader_3_semantics_table": "hc_eps, hc_mult, hc_sinkhorn_iters are retired from UNSUPPORTED_COMPONENT_KEYS because each is read into HyperConnection{streams, sinkhorn_iters, sinkhorn_eps} and executed; each becomes Representable/carried. Per row: GLM-5.3-Flash -3, DeepSeek-V4-Flash -3, DeepSeek-V4-Pro -3; no other row moves. Derived sum, not a prediction: 1031 -> 1022.",
+    "P9_reader_4_admission_and_encode": "GLM and both DeepSeek rows stay inadmissible; whole-model admissible stays 32; the headless synthetic fixture is still refused by the production encoder (with the head reason); a head-bearing synthetic fixture encodes.",
+    "P10_verdicts": "GREEN 41 / AMBER 3 / RED 65 / BUG 0 unchanged; Qwen3-0.6B stays at 0; GLM `mhc` (finding 50) stays Unknown.",
+    "P11_fixture_migration_named": "exactly these change meaning: wave18_hc_carriage::an_addressable_topology_is_still_refused_at_the_executors_door (splits into executes-with-head / refused-headless-with-head-reason), wave18_hc_carriage::the_production_encode_gate_refuses_a_hyper_connected_container (headless still refused, head-bearing encodes), hyper_connection_refusal::the_single_stream_residual_programme_refuses_to_lower_it, hyper_connection_refusal::the_report_names_the_refusal_as_an_unsupported_component, larql-models residual_topology.rs 'must refuse' / 'still refuses', plan/tests/identity.rs (version 15 -> 16). Every other HC test is unchanged in meaning."
+  },
+
+  "falsifiers": [
+    "A1 fails at any position -> the traversal fed the site the wrong state or bound the wrong operand; do not proceed to 19b",
+    "any mutant survives -> the witness is not a witness; the refusal stays and the witness is redesigned before any capability claim",
+    "A7 not bit-identical -> decode and batch compose differently; resolve before any reader lifts",
+    "any single-stream test changes by one bit -> the carrier leaked into the single-stream program",
+    "P7 GLM reads 30 on reader 2 -> a hyper-connected component with no head was reported executable: fail-open, a BUG",
+    "P8 retiring the table moves a row other than the three HC rows, or fails to move one of them -> the table encoded something other than 'traversal unsupported' and needs its own finding",
+    "the hidden-5 substrate cannot be entered with the oracle's x through the layer-range contract -> the entry contract is the wrong witness shape; record it, do not widen the contract silently"
+  ],
+
+  "how_this_wave_can_be_wrong_in_a_way_the_tests_would_not_catch": [
+    "Only stages 1-3 have a foreign reference through the traversal (A1). Stage 5 and the FFN site are checked by recomputation with this build's own stage functions and reference backend (A2, A4): a shared misreading of the reference that the wave-17 stage tests did not already catch would pass both.",
+    "Decode and batch will share the composition helper, so A7 cannot see a bug they share; A1 is the only check that stands outside both.",
+    "The hidden-5 container's ordinary operands have no external reference; single-stream byte-identity covers the operators but not the specific numbers, so an FFN-site error that is symmetric under the mutants listed would pass.",
+    "Storage orientation and dtype of hc_fn on a real checkpoint (DeepSeek F32, GLM BF16) are untested until the real-weight witness; this wave says nothing about them."
+  ]
+}
