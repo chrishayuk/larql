@@ -449,8 +449,16 @@ fn the_two_containers_differ_only_in_the_transcoded_tensors() {
             if entry.file_type().unwrap().is_dir() {
                 walk(root, &path, out);
             } else {
-                let relative = path.strip_prefix(root).unwrap();
-                out.insert(relative.to_str().unwrap().to_string());
+                // Joined with `/` regardless of platform: the index
+                // records segment paths with forward slashes, and the
+                // skip below compares against those strings.
+                let relative: Vec<&str> = path
+                    .strip_prefix(root)
+                    .unwrap()
+                    .components()
+                    .map(|c| c.as_os_str().to_str().unwrap())
+                    .collect();
+                out.insert(relative.join("/"));
             }
         }
     }
