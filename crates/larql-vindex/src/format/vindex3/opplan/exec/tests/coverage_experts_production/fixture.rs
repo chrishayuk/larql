@@ -292,6 +292,7 @@ pub(super) struct RoutedFixture {
     _container: tempfile::TempDir,
     pub(super) store: OperandStore,
     pub(super) op: RoutedFfnOp,
+    pub(super) plan: ComponentOpPlan,
 }
 
 pub(super) fn routed_fixture() -> RoutedFixture {
@@ -311,6 +312,7 @@ pub(super) fn routed_fixture() -> RoutedFixture {
         _container: container,
         store,
         op,
+        plan,
     }
 }
 

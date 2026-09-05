@@ -30,6 +30,7 @@ pub mod gated_delta;
 pub mod kda;
 pub mod mamba2;
 pub mod mla;
+pub mod planned;
 
 #[cfg(test)]
 pub(crate) mod tests;

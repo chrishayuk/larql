@@ -20,6 +20,7 @@
 
 mod bf16_zlib_bank;
 mod fixture;
+mod planned_bank;
 
 use crate::format::vindex3::opplan::{ExpertBank, OperandRef, PackedProjection};
 use larql_models::config::{

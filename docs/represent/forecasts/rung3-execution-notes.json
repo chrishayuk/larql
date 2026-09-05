@@ -1,0 +1,37 @@
+{
+ "programme": "represent-codec-contract",
+ "rung": 3,
+ "forecast": "rung3-planned-realizations.json (frozen at 5007bb77; not edited)",
+ "waves": {
+  "3a_requirements": {
+   "executed": "2026-09-05",
+   "result": "HELD. `ComponentOpPlan::planned_operands()` (opplan/planned.rs) is a derived, hardware-independent view: one `PlannedOperand { operand, operation, access, extent, logical_elements }` per matrix operand per operation, with `Operation ∈ { Embed, Project(MatrixClass), ExpertBankSlice, OutputHead }`. Embed and ExpertBankSlice require RowRandom; Project and OutputHead require Sequential; every extent is TERMINAL. Nothing under exec/ outside tests/ changed; the plan's wire shape is unchanged.",
+   "witnesses": [
+    "bytes-level cross-check: over the Glimmer target (softmax + output gate), the LLLF hybrid (gated delta), the OuteAI miniature (Mamba2 + conv-QKV) and the Kimi miniature (KDA + MLA), the reference loader's census holds exactly four bytes per planned element at the embedding, head and FFN sites, and at attention + delta together; compact is zero — so nothing the loader binds is missing from the view and nothing in the view is a matrix the loader does not bind (opplan/tests/planned.rs)",
+    "per-variant counts pinned against the plan's own structure and the loader's rule for the output gate (a gate fused into the query projection has no operand)",
+    "a tied head is two operations over one operand, and the loader binds it twice — the residency census, which is a BINDING census (execution touch per operation), says so in bytes. The stored physical footprint is a different instrument and counts the shared object once.",
+    "the wire shape carries none of it: the serialised plan has no planned_operands / operation / required_access / extent field",
+    "routed miniature: a packed bank is two RowRandom expert-bank slices per routed layer (never the router or a bias); the production loader's FFN census equals the view's logical bytes; a per-expert bank is a set of Sequential whole projections (exec/tests/coverage_experts_production/planned_bank.rs)"
+   ],
+   "falsifiers_scored": {
+    "F1_behaviour_delta": "NO by construction — no non-test file under exec/ changed; the wire-shape guard passes on every fixture; full-suite and coverage results below",
+    "touch_set_vs_forecast": "the forecast named opplan/mod.rs (+types, +method) and opplan/tests (+1 file). Actual: opplan/planned.rs (a new module — one file per concern, not a larger mod.rs), opplan/mod.rs (+1 mod line), opplan/tests/planned.rs, AND three test-side files under exec/tests/coverage_experts_production/ (planned_bank.rs new; fixture.rs keeps the plan it already built; the mod file +1 line) because the only packed-bank fixture is scoped there. Zero non-test exec changes, as forecast."
+   },
+   "findings_not_in_the_forecast": [
+    {
+     "id": "3a-N1",
+     "finding": "A packed bank's OperandRef shape is the STORED tensor's shape, not the logical matrices: for MXFP4 blocks it is [experts, rows, k/32, 16] (build.rs packed_shape), so its product is half the weight count. The first bytes-level bank check failed at exactly 2× (census 98304 vs view 49152).",
+     "resolution": "PlannedOperand carries `logical_elements`, sized for a packed bank from the op's declared geometry — experts × (FUSED_HALVES × intermediate) × hidden for gate/up, experts × hidden × intermediate for down, hidden from the router's width — the same three facts load_packed is handed. Every other operand's count is its shape.",
+     "for_3b": "the logical extent of an operand is an op-level fact for banks; RepresentationFacts must not derive element counts from OperandRef.shape for them."
+    },
+    {
+     "id": "3a-N2",
+     "finding": "The CPU loader never binds a routed op's SHARED expert: `.shared` is read only by stack_metal.rs (the Metal stack binds it) and kimi_source.rs (which sets it). On the CPU path a plan with a shared expert prepares and runs without it.",
+     "resolution": "The view lists the shared expert's gate/up/down as Project(FfnProjection), because the PLAN executes them; the routed test pins the gap in bytes (view exceeds the CPU binding census by exactly the shared expert) so a CPU loader that binds it changes that assertion deliberately.",
+     "for_3b_3d": "PROMOTED TO A HARD 3b INVARIANT (user, on review of 3a): a planned shared-expert projection with no CPU binding/realization is an explicit MissingRealization refusal at preparation — 3b must not admit such a plan, and a provider claiming generic projection support is insufficient unless preparation can bind the actual shared-expert operand. Until 3d supplies a correct CPU realization the CPU path is semantically incomplete for models with shared experts. Consequence for the record: previous CPU-path measurements of affected Qwen-MoE, Kimi and DeepSeek paths are measurements of a REDUCED computation, not full-model execution — preserved, labelled as such, and not used as parity or final performance evidence."
+    }
+   ],
+   "gates": {"full_crate": "cargo test -p larql-vindex: 4160 lib tests passed, 0 failed, 7 ignored (pre-existing); every integration binary green", "workspace_check": "cargo check --workspace --all-targets: green", "clippy": "clean on rustc 1.98, --all-targets -D warnings", "fmt": "clean, run last", "coverage": "policy passed, total 93.78% over 427 files; opplan/planned.rs 94.44% (119/126), no debt entry", "docs": "check_doc_links.py + check_doc_references.py --strict: green"}
+  }
+ }
+}
