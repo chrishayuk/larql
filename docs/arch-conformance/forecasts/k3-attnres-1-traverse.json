@@ -1,0 +1,165 @@
+{
+  "rung": "K3-ATTNRES-1",
+  "transition": "2 of the rung — traverse",
+  "name": "attention-residual-traversal",
+  "artifact_kind": "forecast (frozen)",
+  "written": "2026-09-05",
+  "written_before": "any traversal code. Frozen against the ORACLE commit, not against a description of the mechanism. Immutable from here; execution-time falsifications go in the rung's k3-attnres-1-execution-notes.json, which is where transition 1's falsification already lives. The earlier freeze (a416ffc7) is NOT edited — where this one contradicts it, the contradiction is recorded below and the oracle is the authority.",
+
+  "baseline": {
+    "commit": "ec7da08d — feat(arch-conformance): the attention-residual oracle, before any Rust arithmetic",
+    "artefacts": [
+      "scripts/attn_res_oracle_export.py — a torch transcription of Kimi-K3's own modeling_kimi_linear.py, read verbatim",
+      "crates/larql-vindex/src/format/vindex3/opplan/exec/tests/attn_res_oracle.json — the exported witness, deterministic, 4 candidates at the exit"
+    ],
+    "code_state": "transition 1 landed (f45129ca): the topology is declared, the exit pair is owned as one object, the four per-layer roles are addressed, and `ResidualTopology::unimplemented_reason` refuses AttentionResidual through one authority read by `PreparedOperands::load` and the plan report. Kimi-K3 sits at 32 text-closure blockers of 152 and reads AMBER — 'component identified, no implementation' — with `target.execution_surface` (id 178) its ONLY `unsupported_component` finding. Semantics 17. Canonical cache still uniform at 16; it is refreshed after merge, never before a measurement.",
+
+    "THE_SCHEDULE_IS_NOW_MEASURED_NOT_INFERRED": {
+      "why_this_section_exists": "The earlier freeze's decision 5 listed 'layer 0's mlp reduction runs over one candidate' among its rejecting controls, inheriting a parenthetical from the reconnaissance's diagram. The oracle read the reference and falsified it. This freeze's baseline is the oracle's OBSERVED schedule, and every later assertion is derived from it rather than from any prose description of the mechanism.",
+      "observed": [
+        "layer 0 attention site: NO reduction — not a reduction over one candidate, and not a skip chosen for tidiness. The reference guards on `block_residual.shape[1] > 0` and the set starts EMPTY (`new_zeros(tokens, 0, hidden)`), so at layer 0 there is nothing to read.",
+        "layer 0 boundary event: the entering prefix state is appended BEFORE the mlp site runs, because layer 0 satisfies `layer_idx % B == 0` and the append sits between the two sites.",
+        "layer 0 mlp site: TWO candidates — the snapshot just taken, and the prefix. NEVER one.",
+        "a later boundary layer (3 in the fixture, 12/24/... on K3): the attention site reduces over the OLD set, THEN the boundary event extends it by one, THEN the mlp site reduces over the EXTENDED set. Measured in the fixture at layer 3: attention over 1 snapshot (2 candidates), event 1 -> 2, mlp over 2 snapshots (3 candidates).",
+        "an ordinary layer: both sites read the same unchanged set.",
+        "exit: mandatory, over every snapshot plus the prefix, before the final norm. Four candidates in the fixture; nine on K3 (8 snapshots at B = 12 over 93 layers).",
+        "NO SITE ANYWHERE EVER REDUCES OVER ONE CANDIDATE. The minimum candidate count in the whole schedule is 2, and the only empty-set site in the stack is layer 0's attention site, where the reference does not reduce at all."
+      ],
+      "fixture_schedule_verbatim": [
+        "layer 0   attn: NO reduction (snapshot set empty)",
+        "          snapshot: entering prefix state -> 0 becomes 1; prefix reset",
+        "          mlp:  reduce over 1 snapshot(s) + prefix = 2 candidates",
+        "layer 1   attn: reduce over 1 snapshot(s) + prefix = 2 candidates",
+        "          mlp:  reduce over 1 snapshot(s) + prefix = 2 candidates",
+        "layer 3   attn: reduce over 1 snapshot(s) + prefix = 2 candidates",
+        "          snapshot: entering prefix state -> 1 becomes 2; prefix reset",
+        "          mlp:  reduce over 2 snapshot(s) + prefix = 3 candidates",
+        "layer 6   attn: reduce over 2 snapshot(s) + prefix = 3 candidates",
+        "          snapshot: entering prefix state -> 2 becomes 3; prefix reset",
+        "          mlp:  reduce over 3 snapshot(s) + prefix = 4 candidates",
+        "exit      reduce over 3 snapshot(s) + prefix = 4 candidates, then the final norm"
+      ],
+      "supersedes": "the earlier freeze's 'layer 0's mlp reduction runs over one candidate'. That control is REPLACED by `mlp_site_skipped_at_layer_0` (oracle delta 4.50e-01), which proves the property the earlier freeze was reaching for: the mlp site is UNCONDITIONAL where the attention site is guarded."
+    },
+
+    "what_the_oracle_proved_it_cannot_prove": {
+      "layer_0_attention_skip": "NUMERICALLY UNREACHABLE, forever, at any geometry. Softmax over one candidate is exactly the identity, so 'skip the site' and 'run the site over one candidate' compute the same vector to the bit. Oracle control `layer0_attention_site_runs`: delta exactly 0.0.",
+      "the_mlp_guard": "NUMERICALLY UNREACHABLE for a different reason: the guard never fires, because no mlp site in the schedule ever sees an empty set. Oracle control `mlp_site_guarded_on_nonempty`: delta exactly 0.0.",
+      "consequence_for_this_transition": "two of the six properties CANNOT be checked by output parity, per-site value parity, or logits parity. They are checked against the shape of the WITNESS or they are not checked at all. This is decision 3 below, and it is a constraint on the design rather than a note about the tests."
+    }
+  },
+
+  "the_transition": {
+    "claim_boundary": "Given the committed Torch oracle, LARQL will carry an explicit residual-history state through decode and batch traversal, reproduce the oracle's per-site candidate counts, probabilities, mixed vectors, snapshot events and exit reduction, and catch the named ordering mutations. No public execution refusal moves until those intermediate witnesses can fail.",
+    "success": "the decode traversal reproduces the oracle's per-site witness and every named mutant is caught; the batch traversal does the same with per-position histories and is caught by a positional mutant; only then does the refusal lift, moving K3's readers exactly as scored below.",
+    "non_claim": "No new representation semantics: no role, object, placement rule, carriage rule or config key changes. No K3-REP-GATE-1 (`use_full_rank_gate` / `g_proj`), no K3-LATENTMOE-1, no quantization, no vision. No real-payload witness now or ever in this rung — the substrate is synthetic by construction. No claim that KDA, MLA or MoE layers execute; the traversal is operator-blind and the substrate's branch is ordinary."
+  },
+
+  "the_four_decisions": {
+    "1_a_history_typed_carrier_not_a_stream_bundle": {
+      "decision": "the decode carrier gains a THIRD form whose type encodes a history, and the batch plane gains its per-position counterpart:\n\n    AttentionResidualState { prefix: [hidden], snapshots: Vec<[hidden]> }\n    batch: [positions] x AttentionResidualState\n\nIt is NOT `Bundle` with a variable stream count, and the difference is semantic rather than a matter of width. A bundle's streams are interchangeable parallel residuals whose count is DECLARED once and fixed for the whole stack; snapshots are ordered historical states whose count is a function of depth, produced by boundary EVENTS, and read by every site after them. Reaching for `Bundle` because it also holds more than one vector is how a second topology becomes a wrong dialect of the first.",
+      "consequences_that_must_follow_the_type": "`Carrier` (decode) and `Plane` (batch) each gain a variant; `FinalState`, `ResumePoint.hidden`, `LayerTrace` and `PlaneEvent` follow the type as they did in wave 19; a layer-range image of an attention-residual component ends on a history state and has no `[hidden]` exit; the CLI plane writer refuses a history plane by name rather than inventing a flat file format for it.",
+      "recorded_from_transition_1": "this was already decided and written down at the declaration transition (`ResidualTopology::streams()` answers ONE for AttentionResidual, with the doc stating that the history is neither a declared width nor a stream count). This freeze does not revisit it; it builds it."
+    },
+
+    "2_the_exact_site_ordering_from_the_oracle": {
+      "decision": "the traversal encodes, in this order and pinned by tests rather than inferred from helper naming:\n\n    enter layer with prefix + OLD snapshots\n    attention site:  if OLD snapshots non-empty -> reduce(OLD snapshots + prefix)\n                     else                       -> branch input IS the prefix, and NO site record is emitted\n    boundary event (layer % B == 0):  snapshots.push(ENTERING prefix state); prefix := reset\n    attention branch on the branch input\n    prefix := (prefix + a)  or  := a when the boundary reset it\n    mlp site:        reduce(UPDATED snapshots + prefix)   -- unconditional\n    mlp branch\n    prefix := prefix + m\n    exit (after the last layer): reduce(all snapshots + prefix)  -- mandatory, then the final norm",
+      "the_seam_needs_a_third_contract_point": "wave 19's site seam is TWO points — `enter_site` produces the branch input, `leave_site` folds the delta back. The boundary event fits neither: it happens BETWEEN the attention site's enter and the attention branch, it mutates the history rather than the prefix, and it changes what `leave` means (a reset prefix is ASSIGNED the branch output, not added to it). A traversal that tried to hide the event inside `enter` or `leave` would be ordering by side effect. The event is its own contract point, and the freeze names that as a design requirement rather than leaving it to the implementer.",
+      "operator_blindness_preserved": "the ordinary operators still consume `[hidden]` and never see the carrier, exactly as under the bundle. Pre-norms read the MIXED vector, as they read the reduced one under hyper-connections."
+    },
+
+    "3_structural_witness_assertions_for_the_two_inert_properties": {
+      "decision": "the executor emits a per-site record of its own shape — not `HcSiteRecord`, whose `split: &SinkhornSplit` is a hyper-connection fact — carrying:\n\n    layer, site, position,\n    candidate_count, snapshot_count_before, snapshot_event,\n    probs, mixed_vector, prefix_before, prefix_after\n\nand the assertions read the SHAPE of the record stream, not only its values.",
+      "what_that_buys_and_parity_cannot": [
+        "layer 0 emits NO attention-site record at all (not a record with one candidate) — the only way to distinguish the reference's guard from a regularised always-run site, which the oracle measured as bit-identical",
+        "layer 0's mlp record carries candidate_count 2 — the falsified 'one candidate' cannot be re-introduced silently",
+        "layer 3's attention record carries snapshot_count_before 1, its boundary event takes 1 -> 2, and its mlp record carries snapshot_count_before 2 — the ordering claim of decision 2, read off the record stream in emission order",
+        "every layer emits an mlp record — the unconditional-guard property, which the oracle measured as inert"
+      ],
+      "the_rule_this_sets": "a property the oracle measured at delta 0.0 may NOT be listed as covered by any value comparison. If the record stream cannot express it, it is unproven and must be said to be unproven."
+    },
+
+    "4_decode_and_batch_are_separate_evidence": {
+      "decision": "wave 19's discipline, unchanged: prove the decode traversal against the oracle first; then prove the batch traversal carries a DISTINCT history per position; only then lift the refusal. The refusal is one authority with two readers, so it lifts once, at the end, and never per-path.",
+      "the_batch_specific_mutant_required": "swap the snapshot histories between two positions immediately before one reduction. If decode/batch parity still passes under that mutation, the batch witness is not strong enough and the transition has not been proven — a batch path that shared one history across positions would otherwise pass every per-site value check that a single-position fixture can pose.",
+      "why_it_is_the_right_falsifier": "the histories are per token and grow identically in COUNT, so a shape check cannot separate them; only their contents differ. The positional mutant is the cheapest thing that makes a shared-history implementation visible."
+    }
+  },
+
+  "the_saturation_constraint_carried_forward": {
+    "hard_rule": "the synthetic substrate must keep its attention-residual probabilities inside the oracle's measured non-saturated band. Regeneration outside that band is an INSTRUMENT FAILURE, not a valid witness, and a run that reports green outside it reports nothing.",
+    "the_measured_band": "min 0.112, max 0.756, shipped in the oracle JSON as `controls.softmax_probability_band` with a floor of 5e-3 and a ceiling of 0.98.",
+    "why_it_is_frozen_here_rather_than_left_to_care": "this exact failure was demonstrated while building the oracle, not imagined. Its first draft drew the score pair at the layer scales and produced probabilities of [1.0, 4.2e-11]; the old/new snapshot-set mutation then measured a delta of EXACTLY 0.0 while its own witness showed the candidate count changing from 2 to 3. The mechanism was right, the mutation fired, the structure changed, and the numbers did not move — because a candidate carrying 4e-11 of the mass can be added or removed without shifting a softmax mix. An oracle in that state reports every control as passing while rejecting none of them.",
+    "how_it_binds_this_transition": "the Rust substrate's assertions must include the band, measured on the substrate's own records, before any value comparison is scored. A substrate that drifts into saturation must FAIL rather than pass quietly."
+  },
+
+  "the_split": {
+    "2a_decode": {
+      "delivers": "the history carrier, the three-point site seam with its boundary event, the exit reduction, the per-site record type and its observer hook, and the foreign comparison against the oracle on the decode path. The public refusal stays up, and the batch path refuses an attention-residual image by name until 2b — so the seam cannot make the batch path look supported.",
+      "does_not_deliver": "no batch traversal, no reader moves, no plane/resume/CLI width change, no semantics bump."
+    },
+    "2b_batch_and_lift": {
+      "delivers": "the per-position history plane, the positional mutant, decode/batch parity, and — only after both witnesses can fail — the lift: `unimplemented_reason` returns `None` for AttentionResidual, its two readers follow, and the carriage rule moves from `represented` to `lowered`."
+    }
+  },
+
+  "the_witness": {
+    "substrate": "a hidden-5-style synthetic stack on an ordinary operator, carrying the oracle's own weights at every site of every layer, plus the exit pair — the shape wave 19 used. The oracle's geometry (hidden 5, positions 3, layers 7, block 3) is the substrate's, so the schedule under test contains a layer-0 boundary, ordinary layers, two later boundaries, and a four-candidate exit.",
+    "entry_for_the_foreign_comparison": "each site is replayed from the ORACLE's own recorded entering state — `witness[layer].prefix_in` and the snapshot set reconstructed from the recorded boundary-event values — and the executor's probs and mixed vector are compared against that site's. The stack's final vector is NOT the comparison: the oracle's branch is a stand-in (pre-norm, linear, tanh) and the Rust substrate's operators are its own, so a full-stack value comparison would be measuring the branch rather than the topology. The SCHEDULE is compared structurally over the whole stack; the ARITHMETIC is compared per site against the oracle.",
+    "assertions": {
+      "A1_foreign_per_site": "for every site the oracle records, the executor's `probs` and `mixed_vector` equal the oracle's, given that site's entering (prefix, snapshots)",
+      "A2_structural": "`prefix_after == prefix_before + branch_output` at every site EXCEPT the attention site of a boundary layer, where `prefix_after == branch_output` because the event reset it; and `mixed_vector == probs @ candidates` over the RAW candidates",
+      "A3_branch_input": "the branch reads the MIXED vector, not the prefix — the tap wave 19 already has",
+      "A4_schedule": "the record stream's shape matches the oracle's schedule exactly: which layers emit an attention-site record, every layer's candidate counts, and each boundary event's before/after counts, in emission order",
+      "A5_exit": "the exit reduction runs exactly once, over every snapshot plus the prefix, before the final norm, using the SHIPPED output pair",
+      "A6_band": "no record's probability distribution lies outside the oracle's measured band",
+      "A7_parity": "batch equals decode to the bit, per position and per site"
+    },
+    "mutants_each_must_be_caught_before_any_reader_lifts": [
+      "attn_site_over_new_snapshots — append the boundary snapshot before the attention reduce (oracle delta 4.62e-01)",
+      "snapshot_is_mixed_vector — snapshot the attention site's output (9.11e-01)",
+      "snapshot_after_attention — snapshot the post-attention prefix (1.72e+00)",
+      "mlp_site_skipped_at_layer_0 — the falsified 'one candidate' misreading, in its honest form (4.50e-01)",
+      "mix_over_normalised_candidates — mix `k` instead of `v` (1.30e+00)",
+      "score_without_rmsnorm — score the raw candidates (5.83e-01)",
+      "exit_skipped (2.26e+00) and exit_uses_a_layer_pair (5.91e-01)",
+      "layer0_attention_site_runs — caught by A4 ALONE, never by a value; a run that reports it caught by A1 or A2 has a broken assertion, because the oracle measured it at exactly 0.0",
+      "mlp_site_guarded_on_nonempty — likewise caught by A4 alone, at exactly 0.0",
+      "swap_position_histories (batch only) — must fail A7; if it does not, the batch witness is void"
+    ]
+  },
+
+  "predictions_scored_individually": {
+    "rule": "each line scored on its own from a re-plan of the K3 row and the controls with a release build, into a separate cache, the canonical cache untouched until merge. VERDICTS ARE FORECAST FROM THE CLASSIFIER, not from blocker arithmetic — the lesson transition 1's P8 was falsified by.",
+    "P1_decode_witness": "every A-assertion holds on the decode path over the substrate, and every mutant above is caught by the assertion named for it. No sweep effect: no plan-level code changes in 2a.",
+    "P2_batch_witness": "the same on the batch path with per-position histories, plus A7 to the bit, plus the positional mutant failing A7.",
+    "P3_execution_surface_finding_178": "on the lift, `target.execution_surface` moves from Unrepresented/UnsupportedComponent back to Representable/ExecutionSemantic — K3 ships the exit pair, so no exit finding stands behind the topology's. K3 -1 on this reader.",
+    "P4_net_on_the_k3_row": "32 -> 31. Derived, not a claim.",
+    "P5_the_k3_VERDICT": "AMBER -> RED. Finding 178 is K3's ONLY `unsupported_component` blocker (measured: the class was absent from its 180 findings before transition 1 and this is the single one transition 1 added), so retiring it empties the class and the classifier's AMBER arm becomes unreachable for the row. The estate returns to GREEN 41 / AMBER 3 / RED 64 + 1 = RED 65 — i.e. exactly the pre-transition-1 distribution, GREEN 41 / AMBER 3 / RED 65. Forecast from `arch_sweep.classify` and not from the count, and scored as its own line.",
+    "P6_carriage_stage_moves_and_the_count_does_not": "`attn_res_block_size` moves from `represented` to `lowered` with the site text naming the executor's history carrier. It is already Representable/ExecutionSemantic and non-blocking, so this reader's COUNT does not move at all. Both halves scored: a count change here would mean the stage name is doing work it should not.",
+    "P7_op_plan_unchanged": "K3's op plan still does not close (`self_attn.g_proj`, K3-REP-GATE-1), so K3's executor is never reached and every witness above is on the synthetic substrate. No layer-role, object or closure behaviour changes.",
+    "P8_controls": "every other scored row unchanged, including the four hyper-connection rows and Kimi-Linear-48B-A3B — only K3 declares the period, measured over all 117 cached plans on both the declaration plane and the object-binding plane. No verdict but K3's moves.",
+    "P9_semantics_version": "17 -> 18, with the identity pin gaining this transition's verdict pair: a synthetic attention-residual estate with every operand and the exit pair becomes ADMISSIBLE, and the same estate without the exit pair stays blocked by the exit's finding. The second arm is what keeps the first from having been implemented as 'stop refusing AttnRes'.",
+    "P10_fixture_migration_named": "`plan/tests/identity.rs` version 18 and its first arm's expectation flips from blocked-by-traversal to admissible; `opplan/tests/k3_attnres_addressing.rs::the_report_and_the_executor_refuse_the_topology_through_one_authority` is REWRITTEN as the executor preparing what the witness proved, keeping its single-stream control; `larql-models`'s `the_witnessed_traversals_lower_and_the_unwitnessed_one_refuses` gains the third lowering topology. No other test changes meaning."
+  },
+
+  "falsifiers": [
+    "any mutant survives -> the witness is decorative and the refusal must not lift",
+    "`layer0_attention_site_runs` or `mlp_site_guarded_on_nonempty` is reported caught by a VALUE assertion -> that assertion is broken, because the oracle measured both at exactly 0.0",
+    "the positional mutant passes A7 -> the batch path is sharing one history across positions and the batch witness is void",
+    "any substrate record's probabilities fall outside the oracle's band -> instrument failure; the run proves nothing and is not evidence either way",
+    "K3 reads 30 or fewer -> more moved than the traversal, and something outside this transition's scope changed",
+    "K3 stays AMBER after the lift -> an `unsupported_component` blocker this freeze did not account for is still standing; find it before claiming the transition",
+    "any row other than K3 moves -> a rule reached an estate it does not describe",
+    "the history carrier is implemented as `Bundle` with a growing stream count -> decision 1 was not taken, and the two topologies will share a wrong abstraction"
+  ],
+
+  "how_this_transition_can_be_wrong_in_a_way_the_tests_would_not_catch": [
+    "The oracle is a transcription, and a faithful transcription of the wrong dtype path is still faithful. It runs the reference's f32-internal reduction on f32 inputs; a bf16 checkpoint enters `_apply_attn_res` at bf16 and leaves cast back, and neither the oracle nor this transition exercises that.",
+    "Two of the six properties are proven by the SHAPE of a record stream the same build emits. If the executor and the witness share a wrong idea of when a site occurred, the assertions agree with each other and with nothing else. The oracle's schedule is the only foreign check on that, and it is a check on counts and ordering rather than on timing within a layer.",
+    "The substrate's branch is not K3's. Nothing here shows a KDA or MLA layer traverses correctly under the topology; it shows the topology traverses correctly around an ordinary branch.",
+    "K3's own op plan does not close, so no assertion in this transition ever runs on the real row. The row moves at the plan level only, and the traversal it thereby stops refusing has never been exercised on it."
+  ],
+
+  "sequence_after_this_transition": "the public lift closes the rung's execution question; what remains of K3-ATTNRES-1 is nothing — `g_proj` (K3-REP-GATE-1) and the routed-expert bank (K3-LATENTMOE-1) are their own rungs. After it the centre of gravity moves back to REPRESENT, residency and the K3 physical execution plan."
+}
