@@ -115,11 +115,31 @@ impl WeightSource for MapSource {
     }
 }
 
+/// A directory of its own for every call, however many callers share a
+/// `name` — within this process (a counter) and across processes (the
+/// pid). A fixed name per label let two test processes running at once
+/// remove each other's files mid-read.
 fn temp_dir(name: &str) -> std::path::PathBuf {
-    let dir = std::env::temp_dir().join("moe-per-expert-tests").join(name);
-    let _ = std::fs::remove_dir_all(&dir);
+    use std::sync::atomic::{AtomicUsize, Ordering};
+    static SEQUENCE: AtomicUsize = AtomicUsize::new(0);
+    let dir = std::env::temp_dir()
+        .join("moe-per-expert-tests")
+        .join(format!(
+            "{name}-{}-{}",
+            std::process::id(),
+            SEQUENCE.fetch_add(1, Ordering::Relaxed)
+        ));
     std::fs::create_dir_all(&dir).unwrap();
     dir
+}
+
+/// Two calls under one label are two directories, both present.
+#[test]
+fn temp_dirs_are_unique_per_invocation() {
+    let first = temp_dir("shared-label");
+    let second = temp_dir("shared-label");
+    assert_ne!(first, second);
+    assert!(first.is_dir() && second.is_dir());
 }
 
 fn layer_file(dir: &Path, layer: usize) -> std::path::PathBuf {

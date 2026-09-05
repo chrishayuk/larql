@@ -306,3 +306,67 @@ fn debug_names_the_residency_and_the_count_not_the_values() {
     assert!(mapped.is_mapped());
     assert_eq!(format!("{mapped:?}"), "StagedF32(Mapped(4 f32))");
 }
+
+/// Two arenas opened by ONE process have their own names: the pid is
+/// shared, the counter is not. This is the naming contract that stops
+/// concurrent opens colliding on `create_new`.
+#[test]
+fn arena_names_are_unique_within_one_process() {
+    use super::staged::arena_path;
+    let dir = tempfile::tempdir().unwrap();
+    let first = arena_path(dir.path());
+    let second = arena_path(dir.path());
+    assert_ne!(
+        first, second,
+        "two arenas in one process must not share a file"
+    );
+    let pid = std::process::id().to_string();
+    for path in [&first, &second] {
+        let name = path.file_name().unwrap().to_string_lossy();
+        assert!(name.starts_with("larql-f32-stage-"), "{name}");
+        assert!(
+            name.contains(&pid),
+            "{name} names the process it belongs to"
+        );
+        assert!(name.ends_with(".bin"), "{name}");
+    }
+}
+
+/// Eight opens released at once in one process all succeed and coexist,
+/// each on its own unlinked inode. With a pid-only name most of these
+/// found the sibling's file inside its create-to-unlink window and
+/// refused with "File exists" — the failure two test suites running at
+/// once reproduced on 2026-09-05.
+#[test]
+fn concurrent_arenas_in_one_process_coexist() {
+    use super::staged::open_arena;
+    use std::sync::{Arc, Barrier};
+    const OPENS: usize = 8;
+    let dir = Arc::new(tempfile::tempdir().unwrap());
+    let go = Arc::new(Barrier::new(OPENS));
+    let handles: Vec<_> = (0..OPENS)
+        .map(|_| {
+            let dir = Arc::clone(&dir);
+            let go = Arc::clone(&go);
+            std::thread::spawn(move || {
+                go.wait();
+                open_arena(dir.path()).map(|arena| arena.file.metadata().is_ok())
+            })
+        })
+        .collect();
+    let mut opened = 0;
+    for handle in handles {
+        match handle.join().expect("the thread ran") {
+            Ok(alive) => {
+                assert!(alive, "an opened arena keeps a live descriptor");
+                opened += 1;
+            }
+            Err(e) => panic!("a concurrent open must not collide: {e}"),
+        }
+    }
+    assert_eq!(opened, OPENS);
+    // Every one unlinked itself: nothing named after this process is
+    // left behind for a later process to trip on.
+    let leftovers = std::fs::read_dir(dir.path()).unwrap().count();
+    assert_eq!(leftovers, 0, "arenas leave no file behind");
+}
