@@ -164,3 +164,19 @@ representations with different storage and access semantics.
 "Representation-open" waits on VQ and progressive; pluggable *lowering
 targets* are enabled by the seam but not delivered — rung 3 (planner
 admission, realization trace) is their prerequisite.
+
+## Rung 3 — planned execution realizations: preregistered, not yet built
+
+Frozen before any code in
+[`represent/forecasts/rung3-planned-realizations.json`](represent/forecasts/rung3-planned-realizations.json),
+with the baseline measured at the rung-2 merge: the seam between plan and
+backend is three stored-dtype booleans, selection is a boolean ladder over
+them, the kernel is observed from resident bytes rather than pinned, MXFP4
+banks enter through a `U8` label nobody registered, and realization identity
+is a closed enum. The forecast fixes the contract-level design — a
+hardware-independent `PlannedOperand`, a derived candidate set, one pinned
+`RealizationId` with its reason and resource profile — and predicts the
+transition per wave (3a requirements, 3b admission and selection, 3c trace
+and accounting, 3d privileged paths removed), including the blocker an
+external provider is expected to hit. Execution notes go in a sibling
+`rung3-execution-notes.json`; the forecast is immutable once committed.
