@@ -174,5 +174,24 @@
     ],
     "gates": "fmt clean; clippy -p larql-vindex --all-targets -D warnings clean; clippy -p larql-models clean; cargo check --workspace --all-targets clean; larql-vindex library suite 4173 passed / 0 failed / 7 ignored (run alone); larql-models 796 passed / 0 failed; coverage policy passed (total 93.69% lines, 425 files): vindex3/plan/mod.rs 91.22% (89.35% before the dead refusal arm was removed), plan/carriage.rs 92.22%, plan/semantics.rs 98.97%, encode/mod.rs 90.37%, exec/prepared.rs 93.71%. The re-plan was run twice, the second time on release binaries built from the final code; both gave the same verdicts.",
     "what_the_lift_does_not_claim": "no DeepSeek base-dialect work (its rows did not move and cannot until their surface builds), no K3-ATTNRES-1 work, no explanation of GLM's `mhc`, no real-payload witness; the CLI still refuses to persist a bundle plane."
+  },
+  "after_merge_canonical_refresh": {
+    "written": "2026-09-05, after PR #424 merged as 3b0b50e1; documentary only — no code, no semantics bump, wave 19 is not reopened",
+    "what_was_done": "the canonical conformance cache (`~/chris-models/_conformance/plans`) was re-planned in full from merged main with release binaries of the merged tree (`scripts/arch_sweep.py run --refresh`); the previous cache was snapshotted first as `plans-baseline-sem15/`",
+    "refreshed_sweep": {
+      "scored": 109,
+      "verdicts": "GREEN 41 / AMBER 3 / RED 65 / BUG 0 — unchanged",
+      "whole_model_admissible": "32 — unchanged",
+      "text_closure_blockers": "1031 -> 1027",
+      "semantics_version": "16 on every scored row"
+    },
+    "rows_that_moved": {
+      "zai-org/GLM-5.3-Flash": "31 -> 28 — the wave 19 movement, exactly as scored in 19b_lift: the three topology keys carried, the execution-surface finding still blocking at the missing-head boundary, `mhc` unknown",
+      "moonshotai/Kimi-K3": "34 -> 33 — NOT wave 19. The finding that left is the container-versus-text `architecture_identity` mismatch (`kimi_k3` against `kimi_linear`), retired by `b86f2aa4` (2026-09-04, before wave 18 merged). The cached K3 row was still at semantics version 14 and had never been re-planned since, so the correction surfaced only now. Stale-cache catch-up, attributed by diffing the two cached plans: same source revision `f831ab66`, planner 14 -> 16, one blocker gone."
+    },
+    "aggregate_revised": "wave 19's derived text-closure total is 1027, not the 1028 that 19b_lift derived from GLM alone: the extra -1 is K3's catch-up and carries no evidential weight for this wave",
+    "cache_hygiene_finding": "the cache described as the semantics-15 baseline held 102 rows at semantics 14 and 7 at 15: the wave 18 refresh had re-planned only the rows it touched. Every aggregate 'no other row moves' claim scored before this refresh was therefore compared against a mixed-version estate, in which a row could move for a reason older than the wave under test.",
+    "doctrine": "Before a freeze measures its baseline, the canonical cache must be uniformly current — every scored row planned at the same semantics version by the same binary — and the refresh that makes it so is part of the baseline measurement, not of the wave's scoring. Cross-row movement is only evidence about a wave when the rows that did not move were planned under the same rules as the rows that did.",
+    "state_after": "wave 19 closed on main; canonical cache uniform at semantics 16; next architecture rung K3-ATTNRES-1"
   }
 }
