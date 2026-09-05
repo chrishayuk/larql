@@ -372,13 +372,22 @@ fn every_condition_the_harness_checks_has_a_refusal_to_return() {
             measured: 512,
         }
         .into(),
+        Inadmissible::NullArmNotZero {
+            statistic: "kl_p99".into(),
+            observed: 1e-9,
+        }
+        .into(),
         Inadmissible::GateMismatch {
             requested: "kimi-logit-balanced-v1".into(),
             evaluated: "kimi-logit-v3".into(),
         }
         .into(),
     ];
-    assert_eq!(inventory.len(), 10, "ten validity conditions, each named");
+    assert_eq!(
+        inventory.len(),
+        11,
+        "eleven validity conditions, each named"
+    );
     for refusal in &inventory {
         assert!(
             !refusal.nothing_was_measured(),
@@ -409,6 +418,28 @@ fn every_condition_the_harness_checks_has_a_refusal_to_return() {
     ] {
         assert!(MeasurementRefusal::from(failure).nothing_was_measured());
     }
+}
+
+#[test]
+fn the_determinism_control_is_a_validity_condition_and_not_a_pleasantry() {
+    // The variant the first pass of this vocabulary missed, found by
+    // walking the harness assertion by assertion instead of reasoning
+    // about what it ought to check.
+    //
+    // It is the most dangerous condition in the set: a
+    // non-deterministic device produces a plausible KL that is
+    // entirely artifact, and every OTHER check still passes. So it is
+    // inadmissible evidence rather than an execution failure — the
+    // numbers exist, and repeating the run reproduces the same
+    // non-evidence.
+    let refusal: MeasurementRefusal = Inadmissible::NullArmNotZero {
+        statistic: "kl_p99".into(),
+        observed: 1e-9,
+    }
+    .into();
+    assert!(!refusal.nothing_was_measured());
+    assert!(!refusal.worth_retrying());
+    assert!(refusal.to_string().contains("NullArmNotZero"), "{refusal}");
 }
 
 #[test]

@@ -40,6 +40,72 @@
 //! derived from a harness that has produced real Rung 4/5 verdicts,
 //! not designed against an imagined one.
 
+//! # The conservation inventory
+//!
+//! The compiler cannot tell whether a check got WEAKER, so the move of
+//! the harness body into a callable procedure is specified here first.
+//! Every assertion site in `q2a_teacher_forced`'s test function is
+//! listed with where its authority goes, and the review question
+//! becomes *where did each one go* rather than *does the new function
+//! look equivalent*.
+//!
+//! ```text
+//! harness site   what it asserts                  new authority
+//! ────────────────────────────────────────────────────────────────────
+//! 372            Metal present                    ExecutionFailure::BackendUnavailable
+//! 378-9,384,391  artifacts open and parse         ExecutionFailure::ArtifactUnreadable
+//! 416            stores register                  ExecutionFailure::ArtifactUnreadable
+//! 294 (helper)   layer loads, zero missing        ExecutionFailure::LayerIncomplete
+//! 308 (helper)   head attaches                    ExecutionFailure::HeadDidNotAttach
+//! 267 (helper)   sequence file reads, right size  ExecutionFailure::ArtifactUnreadable
+//! 338 (helper)   the step does not refuse         ExecutionFailure::StepRefused
+//! 433,436        probe layers load                ExecutionFailure::LayerIncomplete
+//! 530,533        neighbour probes load            ExecutionFailure::LayerIncomplete
+//!
+//! 368            LARQL_RESIDENCY_SET unset        Inadmissible::ResidencyModeWouldBeMeasured
+//! 386            bank hidden == model hidden      Inadmissible::CorpusNotForThisModel
+//! 459            the overlay compiles something   Inadmissible::CandidateCompilesNothing
+//! 444,449        baseline is source-backed BF16   Inadmissible::UnexpectedPhysicalRead
+//! 476,477        candidate matches its scope      Inadmissible::UnexpectedPhysicalRead
+//! 520,521        shared expert from the stack     Inadmissible::UnexpectedPhysicalRead
+//! 534            neighbour is source-backed       Inadmissible::UnexpectedPhysicalRead
+//! 487            out-of-scope pointer identity    Inadmissible::ProtectedOperandChanged
+//! 535            neighbour pointer identity       Inadmissible::ProtectedOperandChanged
+//! 506,512        identity vs table addressing     Inadmissible::AddressingMismatch
+//! 542            reads match seals                Inadmissible::SealMismatch
+//! 741            the routed operand was sealed    Inadmissible::OperandNotSealed
+//! 571,613        position counts                  Inadmissible::PositionCountMismatch
+//! 575,579,583-6  the null arm is exactly zero     Inadmissible::NullArmNotZero
+//! (5a-0a)        the gate evaluated is the one
+//!                requested                        Inadmissible::GateMismatch
+//!
+//! 391,459,471    which layers/projections         VerifiedFacts::compiled_layers,
+//!                the overlay compiles             VerifiedFacts::compiled_projections
+//! 430-521        per-layer attribution done       VerifiedFacts::attribution_checked_layers
+//! 542            operands whose reads matched     VerifiedFacts::seal_checked_operands
+//! 529            the invariant neighbour          VerifiedFacts::invariant_neighbour_layer
+//! 613            positions measured               VerifiedFacts::positions
+//! 630            the gate evaluated               VerifiedFacts::gate_evaluated
+//!
+//! 688-706        a sub-4096 bank cannot pass      STAYS IN THE TEST. A claim about the
+//!                                                 GATE, already enforced by
+//!                                                 `QualityGate::evaluate`, not a validity
+//!                                                 condition of the measurement.
+//! 723-750        removing a sealed operand makes  STAYS IN THE TEST. A claim about
+//!                `verify_complete` refuse         `verify_complete`, not about this run.
+//! ```
+//!
+//! Two sites are deliberately NOT production authority, and saying so
+//! is part of the inventory: a check that moves for tidiness is as lost
+//! as one that vanishes.
+//!
+//! **The inventory has already earned itself.** `NullArmNotZero` is
+//! absent from the first pass of this vocabulary, which was written
+//! after reading the harness once. Walking it assertion by assertion
+//! found it — and it is the most dangerous condition in the set,
+//! because a non-deterministic device yields a plausible KL that is
+//! entirely artifact while every other check still passes.
+
 use serde::{Deserialize, Serialize};
 
 /// The run could not be performed. Nothing was measured.
@@ -74,7 +140,7 @@ pub enum ExecutionFailure {
 ///
 /// The distinction that matters: every one of these can occur with a
 /// complete, plausible-looking set of logits already computed.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub enum Inadmissible {
     /// The residency SET would wire ~94 GB of expert bank, past the
     /// wired-collector wall (~45 GB), and the run would degrade into a
@@ -140,6 +206,21 @@ pub enum Inadmissible {
     /// gate judging on tail statistics over a different position count
     /// is judging a different experiment (1c).
     PositionCountMismatch { expected: u64, measured: u64 },
+    /// The baseline arm compared against ITSELF was not exactly zero.
+    ///
+    /// The determinism control, and the one the first pass of this
+    /// vocabulary missed — found by walking the harness assertion by
+    /// assertion rather than by reasoning about what it "should"
+    /// check. `assert_eq!(null_bank.logits.kl_p99, 0.0, "null arm KL
+    /// must be exactly zero")`, plus bit-equal logits and zero flips
+    /// and route changes.
+    ///
+    /// It is the most dangerous condition in the list: a
+    /// non-deterministic device produces a plausible KL that is
+    /// entirely artifact, and every other check here would still pass.
+    /// Metal decode non-determinism has been a real defect on this
+    /// stack before.
+    NullArmNotZero { statistic: String, observed: f64 },
     /// The verdict was drawn under a gate other than the requested one.
     ///
     /// The defect 5a-0a closed structurally, kept here because a
@@ -152,7 +233,7 @@ pub enum Inadmissible {
 }
 
 /// Why a measurement produced no admissible reading.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub enum MeasurementRefusal {
     Execution(ExecutionFailure),
     Inadmissible(Inadmissible),
