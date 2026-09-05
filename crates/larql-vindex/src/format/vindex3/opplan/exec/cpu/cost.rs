@@ -78,6 +78,10 @@ pub fn measured_rate_gbps(plan: PhysicalProjectionPlan) -> Option<f64> {
         // so it can genuinely appear in a tally, and the budget omits it
         // for the same reason it omits a plan with no calls.
         PhysicalProjectionPlan::FusedNvfp4 => None,
+        // Unmeasured for the same reason as NVFP4: reached by observation
+        // of a compiled pack, and no harness has priced it. PARETO-1's v3
+        // qualification is an EQUIVALENCE gate, not a rate.
+        PhysicalProjectionPlan::FusedKQuant => None,
         PhysicalProjectionPlan::Q8xQ8 => Some(121.02),
         PhysicalProjectionPlan::Q4xQ8 => Some(106.59),
         // The A1 control runs the exact bf16 kernel over a reconstructed

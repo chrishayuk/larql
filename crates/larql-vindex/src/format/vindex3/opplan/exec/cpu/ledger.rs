@@ -263,6 +263,7 @@ pub struct ProjectionLedger {
     // itself while describing a mixture.
     q8_x_q8: Tally,
     fused_nvfp4: Tally,
+    fused_kquant: Tally,
     q4_x_q8: Tally,
     bf16_x_q8: Tally,
     /// The same time, cut by operator class instead of by arithmetic.
@@ -278,6 +279,7 @@ impl ProjectionLedger {
             PhysicalProjectionPlan::FusedQ8 => &self.fused_q8,
             PhysicalProjectionPlan::FusedQ4 => &self.fused_q4,
             PhysicalProjectionPlan::FusedNvfp4 => &self.fused_nvfp4,
+            PhysicalProjectionPlan::FusedKQuant => &self.fused_kquant,
             PhysicalProjectionPlan::Q8xQ8 => &self.q8_x_q8,
             PhysicalProjectionPlan::Q4xQ8 => &self.q4_x_q8,
             PhysicalProjectionPlan::Bf16xQ8 => &self.bf16_x_q8,
@@ -330,13 +332,19 @@ impl ProjectionLedger {
     /// Every plan, so a reader enumerates rather than remembers. A caller
     /// that listed the plans itself would stop covering a new one on the
     /// day it was added.
-    pub fn all(&self) -> [(PhysicalProjectionPlan, PlanTally); 8] {
+    pub fn all(&self) -> [(PhysicalProjectionPlan, PlanTally); 10] {
         [
             PhysicalProjectionPlan::ScalarF32,
             PhysicalProjectionPlan::BlasF32,
             PhysicalProjectionPlan::FusedBf16,
             PhysicalProjectionPlan::FusedQ8,
             PhysicalProjectionPlan::FusedQ4,
+            // The observation-only plans are enumerated too. NVFP4 had a
+            // slot here and no row, so a decode that ran a compiled pack
+            // reported its bytes nowhere — exactly the silent omission
+            // this method's doc comment says it exists to prevent.
+            PhysicalProjectionPlan::FusedNvfp4,
+            PhysicalProjectionPlan::FusedKQuant,
             PhysicalProjectionPlan::Q8xQ8,
             PhysicalProjectionPlan::Q4xQ8,
             PhysicalProjectionPlan::Bf16xQ8,
@@ -386,6 +394,10 @@ impl ProjectionLedger {
         self.fused.reset();
         self.fused_q8.reset();
         self.fused_q4.reset();
+        // The observation-only plans were missing here too: NVFP4 bytes
+        // survived every reset, so a priced step could carry the load.
+        self.fused_nvfp4.reset();
+        self.fused_kquant.reset();
         self.q8_x_q8.reset();
         self.q4_x_q8.reset();
         self.bf16_x_q8.reset();
@@ -417,6 +429,7 @@ impl ProjectionLedger {
             fused_q8: ZERO,
             fused_q4: ZERO,
             fused_nvfp4: ZERO,
+            fused_kquant: ZERO,
             q8_x_q8: ZERO,
             q4_x_q8: ZERO,
             bf16_x_q8: ZERO,

@@ -34,6 +34,11 @@ use ndarray::{Array2, ArrayView2};
 /// CPU backend using BLAS (f32) and C kernel (Q4).
 pub struct CpuBackend;
 
+/// The CPU's ggml K-quant gemvs, executing stored blocks in place.
+///
+/// Distinct from [`pipeline::quant_format::QuantFormat::Q8_0`], which is
+/// a different layout under the same name — see the module docs.
+pub mod kquant_gemv;
 pub mod nvfp4_gemv;
 
 impl MatMul for CpuBackend {

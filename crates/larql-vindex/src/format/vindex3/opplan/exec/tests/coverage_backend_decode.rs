@@ -107,6 +107,13 @@ fn as_f32_returns_f32_and_refuses_every_other_representation() {
                 tensor_scale: NVFP4_TENSOR_SCALE,
             },
         ),
+        (
+            "Q8_0",
+            WeightSlice::KQuant {
+                blocks: &FOREIGN_BYTES,
+                codec: crate::format::vindex3::represent::kquant::Q8_0,
+            },
+        ),
     ];
     for (label, slice) in foreign {
         let message = parse_message(slice.as_f32().expect_err(label));

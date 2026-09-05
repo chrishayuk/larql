@@ -37,7 +37,7 @@
     "crates/larql-vindex/src/format/vindex3/opplan/exec/continuation.rs": 86.0,
     "crates/larql-vindex/src/format/vindex3/opplan/exec/cpu/environment.rs": 63.7,
     "crates/larql-vindex/src/format/vindex3/opplan/exec/cpu/integer.rs": 62.0,
-    "crates/larql-vindex/src/format/vindex3/opplan/exec/cpu/physical.rs": 83.0,
+    "crates/larql-vindex/src/format/vindex3/opplan/exec/cpu/physical.rs": 87.0,
     "crates/larql-vindex/src/format/vindex3/opplan/exec/cpu/replay.rs": 6.4,
     "crates/larql-vindex/src/format/vindex3/opplan/exec/cpu/stationary.rs": 71.0,
     "crates/larql-vindex/src/format/vindex3/opplan/exec/kv.rs": 87.2,

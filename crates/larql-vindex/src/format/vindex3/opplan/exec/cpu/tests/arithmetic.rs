@@ -22,6 +22,8 @@ fn a_weight_rendering_carries_its_block() {
     assert_eq!(WeightRep::Bf16.to_string(), "BF16");
     assert_eq!(WeightRep::Q8 { block: 64 }.to_string(), "Q8[64]");
     assert_eq!(WeightRep::Q4 { block: 32 }.to_string(), "Q4[32]");
+    assert_eq!(WeightRep::Nvfp4.to_string(), "NVFP4");
+    assert_eq!(WeightRep::KQuant.to_string(), "KQUANT");
     assert_ne!(
         WeightRep::Q8 { block: 64 }.to_string(),
         WeightRep::Q8 { block: 16 }.to_string(),
@@ -105,6 +107,8 @@ fn every_representation_admits_a_runnable_plan_and_never_the_oracle() {
         WeightRep::Bf16,
         WeightRep::Q8 { block: 64 },
         WeightRep::Q4 { block: 64 },
+        WeightRep::Nvfp4,
+        WeightRep::KQuant,
     ] {
         let plans = plans_possible_for(rep);
         assert!(!plans.is_empty(), "{rep} admits no plan at all");

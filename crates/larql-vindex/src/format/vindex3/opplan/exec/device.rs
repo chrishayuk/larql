@@ -147,7 +147,10 @@ impl<M: MatMul + Send> DevicePlanBackend<M> {
             )));
         }
         let result = match weight {
-            WeightSlice::Bf16(_) | WeightSlice::Q8 { .. } | WeightSlice::Q4 { .. } => {
+            WeightSlice::Bf16(_)
+            | WeightSlice::Q8 { .. }
+            | WeightSlice::Q4 { .. }
+            | WeightSlice::KQuant { .. } => {
                 return Err(VindexError::Parse(format!(
                     "the device backend has no {} kernel; declare F16 or F32 for it",
                     weight.representation()
@@ -365,7 +368,10 @@ impl<M: MatMul + Send> PlanBackend for DevicePlanBackend<M> {
                 // A residency hint computes nothing and must change no
                 // number, so an unplaceable format is skipped here; the
                 // refusal that matters fires where it would be USED.
-                WeightSlice::Bf16(_) | WeightSlice::Q8 { .. } | WeightSlice::Q4 { .. } => continue,
+                WeightSlice::Bf16(_)
+                | WeightSlice::Q8 { .. }
+                | WeightSlice::Q4 { .. }
+                | WeightSlice::KQuant { .. } => continue,
                 WeightSlice::F16(bytes) => streams.push(bytes),
                 WeightSlice::Mxfp4 { packed, scales }
                 | WeightSlice::Nvfp4 { packed, scales, .. } => {

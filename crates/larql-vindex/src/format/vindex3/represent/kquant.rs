@@ -214,6 +214,61 @@ impl KQuant {
 }
 
 impl KQuant {
+    /// Stored bytes one `[_, in_dim]` row occupies, or `None` when the
+    /// row is not a whole number of blocks and therefore has no layout.
+    ///
+    /// Blocks run along the row (see [`Self::plan`]), so this is the
+    /// stride every row-addressed consumer — a slab cut, a kernel — must
+    /// use. `None` rather than a rounded stride: a stride that rounded
+    /// would place every row after the first at the wrong offset and
+    /// return finite, plausible numbers.
+    pub fn row_bytes(&self, in_dim: usize) -> Option<usize> {
+        if in_dim == 0 || !in_dim.is_multiple_of(self.elements_per_block) {
+            return None;
+        }
+        Some(in_dim / self.elements_per_block * self.bytes_per_block)
+    }
+
+    /// `out[n] = W[n, k] · x[k]`, with `W` read straight from these
+    /// stored blocks — no decode to a whole f32 matrix first.
+    ///
+    /// **The association is the codec's, not the executor's.** Which
+    /// kernel answers for which encoding is decided here, beside
+    /// [`Self::encode`] and [`Self::decode`], so there is one place a
+    /// reader can check that the bytes a name denotes reach the kernel
+    /// that reads that layout. This workspace has already seen what
+    /// happens when that lives elsewhere: ggml Q8_0 blocks (34 bytes)
+    /// routed through a kernel expecting another 32-value layout, read
+    /// at the wrong stride, producing garbage. `larql-compute` still
+    /// carries a `QuantFormat::Q8_0` that means int8 codes with an
+    /// EXTERNAL f32 scale stream; ggml's Q8_0 never reaches it from here.
+    ///
+    /// `None` when the geometry does not describe the blocks: the row
+    /// stride is checked against the stream before any kernel sees it,
+    /// so a stream of the right total length under the wrong shape is
+    /// refused by the codec that knows the layout rather than by
+    /// whichever kernel happens to notice.
+    ///
+    /// This is the direct-execution arm PARETO-1's v3 gate qualifies
+    /// against decode-then-multiply on the same stored bytes; layer 1 of
+    /// that gate calls exactly this function.
+    pub fn gemv(&self, blocks: &[u8], x: &[f32], rows: usize, in_dim: usize) -> Option<Vec<f32>> {
+        use larql_compute::backend::QuantMatVec;
+        use larql_compute::cpu::{kquant_gemv, CpuBackend};
+        use larql_compute::QuantFormat;
+        if self.row_bytes(in_dim)? * rows != blocks.len() || x.len() != in_dim {
+            return None;
+        }
+        match self.name {
+            "Q8_0" => kquant_gemv::q8_0_gemv(blocks, x, rows, in_dim),
+            "Q6_K" => CpuBackend.quant_matvec(QuantFormat::Q6_K, blocks, x, rows, in_dim),
+            "Q4_K" => CpuBackend.quant_matvec(QuantFormat::Q4_K, blocks, x, rows, in_dim),
+            _ => None,
+        }
+    }
+}
+
+impl KQuant {
     /// The decode contract these bytes are written under.
     ///
     /// A K-quant is its own **family**, not a revision of one: `Q4_K` and
@@ -252,3 +307,7 @@ mod tests;
 #[cfg(test)]
 #[path = "kquant_conformance_tests.rs"]
 mod conformance_tests;
+
+#[cfg(test)]
+#[path = "kquant_direct_tests.rs"]
+mod direct_tests;

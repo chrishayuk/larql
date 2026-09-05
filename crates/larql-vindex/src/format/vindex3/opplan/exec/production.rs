@@ -40,7 +40,9 @@ use super::backend::{
     GateCall, MatrixClass, MatrixOperand, NormCall, PlanBackend, ProjectCall, ProjectedQkv,
     QkNormCall, RoutedFfnCall, WeightFormat,
 };
-use super::cpu::physical::{project_matrix, project_matrix_many, ExecutorProjections};
+use super::cpu::physical::{
+    kquant_execution, project_matrix, project_matrix_many, ExecutorProjections, KQuantExecution,
+};
 use super::cpu::PhysicalProjectionPlan;
 use super::kernels::{
     gather_fused_half, mrope_rotate_scaled, rope_rotate, rope_rotate_scaled, FusedHalf,
@@ -695,6 +697,37 @@ impl ProductionBackend {
     }
 }
 
+/// [`ProductionBackend::weight_format`]'s decision, with the K-quant
+/// execution arm passed in rather than read from the environment — so
+/// both arms are testable in one process without touching it.
+pub(crate) fn declared_format(operand: MatrixOperand, kquant: KQuantExecution) -> WeightFormat {
+    match operand.class {
+        // The packed bank is widened to f32 on the way in and sliced
+        // into per-expert matrices; there are no stored bytes left to
+        // keep by the time a format could apply.
+        MatrixClass::RoutedExpertBank => WeightFormat::F32,
+        // A compiled pack outranks the size policy. `choose_for`
+        // decides what to MAKE an operand resident as, from its size;
+        // an operand that is already NVFP4 has had that decision made
+        // for it deliberately, and re-deciding here would widen 4-bit
+        // bytes to f32 to satisfy a policy about bf16.
+        _ if operand.stored_nvfp4 => WeightFormat::Nvfp4,
+        // The same for a stored K-quant, under one condition: the arm.
+        // `Widen` is rung A's authority path (decode to f32, BLAS) and
+        // falls through to the size policy exactly as before this arm
+        // existed — with `stored_bf16` false, that is `BlasF32`.
+        _ if operand.stored_kquant && kquant == KQuantExecution::Direct => WeightFormat::KQuant,
+        MatrixClass::AttentionProjection | MatrixClass::FfnProjection | MatrixClass::OutputHead => {
+            PhysicalProjectionPlan::choose_for(
+                Some(operand.class),
+                operand.elements,
+                operand.stored_bf16,
+            )
+            .format()
+        }
+    }
+}
+
 impl PlanBackend for ProductionBackend {
     fn dense_projector(&self) -> &dyn super::gated_delta::DenseProjections {
         &ExecutorProjections
@@ -704,26 +737,7 @@ impl PlanBackend for ProductionBackend {
     /// and the kernel at [`project_rows`] — see
     /// [`PhysicalProjectionPlan`].
     fn weight_format(&self, operand: MatrixOperand) -> WeightFormat {
-        match operand.class {
-            // The packed bank is widened to f32 on the way in and sliced
-            // into per-expert matrices; there are no stored bytes left to
-            // keep by the time a format could apply.
-            MatrixClass::RoutedExpertBank => WeightFormat::F32,
-            // A compiled pack outranks the size policy. `choose_for`
-            // decides what to MAKE an operand resident as, from its size;
-            // an operand that is already NVFP4 has had that decision made
-            // for it deliberately, and re-deciding here would widen 4-bit
-            // bytes to f32 to satisfy a policy about bf16.
-            _ if operand.stored_nvfp4 => WeightFormat::Nvfp4,
-            MatrixClass::AttentionProjection
-            | MatrixClass::FfnProjection
-            | MatrixClass::OutputHead => PhysicalProjectionPlan::choose_for(
-                Some(operand.class),
-                operand.elements,
-                operand.stored_bf16,
-            )
-            .format(),
-        }
+        declared_format(operand, kquant_execution())
     }
 
     fn name(&self) -> &str {

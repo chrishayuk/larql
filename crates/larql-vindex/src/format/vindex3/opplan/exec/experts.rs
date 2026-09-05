@@ -498,7 +498,9 @@ fn from_f32(
     name: &str,
 ) -> Result<LoadedWeight, VindexError> {
     match format {
-        WeightFormat::F32 => Ok(LoadedWeight::F32(values)),
+        WeightFormat::F32 => Ok(LoadedWeight::F32(super::weights::staged::StagedF32::stage(
+            values,
+        )?)),
         WeightFormat::F16 => {
             let bytes: Vec<u8> = values.iter().flat_map(|v| v.to_le_bytes()).collect();
             Ok(LoadedWeight::F16(f32_bytes_to_f16(&bytes, name)?))
@@ -510,6 +512,10 @@ fn from_f32(
         WeightFormat::Q4 => Err(VindexError::Parse(format!(
             "expert bank `{name}` cannot be made q4-resident: the bank is widened to f32 on \
              the way in, so there is nothing compact left to keep"
+        ))),
+        WeightFormat::KQuant => Err(VindexError::Parse(format!(
+            "expert bank `{name}` cannot bind a stored K-quant: the bank is widened to f32 on \
+             the way in, so the stored blocks are no longer what is being bound"
         ))),
         WeightFormat::Mxfp4 => quantize_mxfp4(&values, rows, k, name),
         WeightFormat::Nvfp4 => quantize_nvfp4(&values, rows, k, name),

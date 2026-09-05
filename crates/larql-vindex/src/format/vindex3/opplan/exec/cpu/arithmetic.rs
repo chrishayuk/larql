@@ -58,6 +58,12 @@ pub enum WeightRep {
     /// is 16 by the format's definition, not by a policy's choice, and a
     /// field would invite a caller to pass a different one.
     Nvfp4,
+    /// A stored ggml K-quant block stream — Q8_0, Q6_K or Q4_K — read in
+    /// place. Which codec is a property of the BYTES (`WeightRows::KQuant`
+    /// carries it), not of the arithmetic: every codec's kernel takes an
+    /// f32 activation and accumulates f32, so this is one representation
+    /// with three layouts rather than three representations.
+    KQuant,
 }
 
 /// Over how many elements ONE activation scale applies.
@@ -114,6 +120,7 @@ impl fmt::Display for WeightRep {
             Self::Q8 { block } => write!(f, "Q8[{block}]"),
             Self::Q4 { block } => write!(f, "Q4[{block}]"),
             Self::Nvfp4 => write!(f, "NVFP4"),
+            Self::KQuant => write!(f, "KQUANT"),
         }
     }
 }
@@ -173,6 +180,7 @@ pub fn plans_possible_for(rep: WeightRep) -> &'static [PhysicalProjectionPlan] {
         // One kernel, so residency determines execution outright — the
         // invariant this function exists to expose, satisfied trivially.
         WeightRep::Nvfp4 => &[PhysicalProjectionPlan::FusedNvfp4],
+        WeightRep::KQuant => &[PhysicalProjectionPlan::FusedKQuant],
         WeightRep::Q8 { .. } => &[
             PhysicalProjectionPlan::FusedQ8,
             PhysicalProjectionPlan::Q8xQ8,

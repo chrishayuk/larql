@@ -2,10 +2,12 @@
 //! with one, and the ledger that records what ran.
 
 mod arithmetic;
+mod arm_selection;
 mod cost;
 mod executor;
 mod integer;
 mod kernels;
+mod kquant_plan;
 mod ledger;
 mod nvfp4_slab;
 mod physical;

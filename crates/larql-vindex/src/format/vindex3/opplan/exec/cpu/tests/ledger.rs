@@ -12,12 +12,17 @@ use super::super::physical::PhysicalProjectionPlan;
 /// Every plan the ledger has a slot for. Adding a plan without adding it
 /// here would leave the new slot untested, so `all_enumerates_every_plan`
 /// checks the two agree in length as well as in content.
-const PLANS: [PhysicalProjectionPlan; 8] = [
+const PLANS: [PhysicalProjectionPlan; 10] = [
     PhysicalProjectionPlan::ScalarF32,
     PhysicalProjectionPlan::BlasF32,
     PhysicalProjectionPlan::FusedBf16,
     PhysicalProjectionPlan::FusedQ8,
     PhysicalProjectionPlan::FusedQ4,
+    // The observation-only plans — a compiled pack the loader bound.
+    // NVFP4 had a slot and no row here until the K-quant arm was added
+    // beside it, so its bytes were tallied and never enumerated.
+    PhysicalProjectionPlan::FusedNvfp4,
+    PhysicalProjectionPlan::FusedKQuant,
     // The integer arms. Each has its OWN slot on purpose: an arm folded
     // into another's counter would let a byte census agree with itself
     // while describing a mixture of two arithmetics.

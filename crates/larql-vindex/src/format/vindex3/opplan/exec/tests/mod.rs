@@ -82,6 +82,8 @@ mod generate_metal;
 mod generate_real;
 mod golden;
 mod kernels;
+mod kquant_projection;
+mod kquant_projection_real;
 mod kv;
 mod llama3_rope;
 mod observe;
