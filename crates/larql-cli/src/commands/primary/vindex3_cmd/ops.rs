@@ -21,8 +21,12 @@ pub(super) fn run_ops(args: OpsArgs) -> Result<(), Box<dyn std::error::Error>> {
             plan,
             &args.container,
             &inspection,
-            args.budget_gib,
-            args.bind,
+            realizations::Ask {
+                budget_gib: args.budget_gib,
+                bandwidth_gbs: args.bandwidth_gbs,
+                target_tok_s: args.target_tok_s,
+                bind: args.bind,
+            },
         );
     }
     if args.json {

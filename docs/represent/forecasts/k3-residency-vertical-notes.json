@@ -67,6 +67,85 @@
     "llvm-cov -p larql-cli (clean profile) + policy": "passed; vindex3_cmd/realizations.rs 96.81%",
     "doc links / doc references --strict / fmt": "clean"
    }
+  },
+  "V2_budgeted_residency": {
+   "refinement_before_build": "User, 2026-09-05, on V1's result: a 98.01 GB mapping with 7.9 GB peak RSS is NOT 98.01 GB physically resident. 'Declared resident' conflated addressable mapped bytes with committed physical memory. V2 separates the resources BEFORE any budget decision, and the 128 GiB decision constrains the PHYSICAL working set and the transient peak — never the mapping's length. The expert bank can be 91.28 GiB mapped while only the selected experts' regions become resident.",
+   "resource_dimensions": {
+    "stored_footprint": "sum once per physical object",
+    "mapped_address_space": "sum once per mapping",
+    "persistent_resident_memory": "sum of allocations kept physically resident",
+    "transient_decode_or_staging": "MAXIMUM overlapping lifetime, not a total across operations",
+    "execution_touch": "sum per operation and position",
+    "expected_page_in": "per-token miss estimate",
+    "device_memory": "sum per target or device"
+   },
+   "throughput_constraint": "Carried into selection beside capacity: bytes touched or page-faulted per token against a link or memory bandwidth at a target token rate — a plan can fit in RAM and still be unusably slow (the K3 pre-registration's miss budget: 3.5 GB/s × 1 port / 20 tok/s = 175 MB/token against 25.83 GB/token routed).",
+   "decisive_arms": [
+    "A1 real 128 GiB profile: selects the mapped bank and reconciles ALL resource dimensions",
+    "A2 constrained profile: changes at least one realization — proving selection rather than validation",
+    "A3 impossible profile: refuses before payload reads and reports the irreducible resource deficit plus the rejected alternatives"
+   ],
+   "status": "BUILT 2026-09-05 (uncommitted); gates run at the wave boundary",
+   "real_container_arms": {
+    "instrument": "`larql vindex3 ops <container> --realizations [--budget-gib N] [--bandwidth-gbs G --target-tok-s T] [--bind]`: seven resources from tensor tables, selection re-chosen under the budget, refusal with deficit and alternatives, and with --bind the reconciliation reporting committed bytes exactly, mappings held to their address space, and the pages of those mappings physically resident at that moment",
+    "A1_unbounded_or_machine": {
+     "budget": "128 GiB physical (machine)",
+     "re_selected": 0,
+     "resources": {
+      "stored_gb": 98.14,
+      "mapped_gb": 94.22,
+      "persistent_resident_gb": 3.79,
+      "transient_peak_gb": 1.51,
+      "touch_per_token_gb": 6.73,
+      "page_in_per_token_gb": 2.944,
+      "device_gb": 0.0,
+      "physical_working_set_gib": 7.68
+     },
+     "verdict": "WITHIN BUDGET — and the number the 128 GiB decision constrains is 7.68 GiB, not the 94 GB mapping"
+    },
+    "A2_constrained_7_gib": {
+     "budget": "7 GiB physical",
+     "re_selected": 67,
+     "what_changed": "67 FusedQ8 operands → Q4xQ8 (reason BudgetPolicy), from the backend's own candidate lists; persistent resident 3.79 → 3.06 GB; touch per token 6.73 → 6.00 GB",
+     "physical_working_set_gib": 7.0,
+     "verdict": "WITHIN BUDGET — selection, not validation; 8 GiB fits with 0 re-selections, so the arm sits inside the window the resources define"
+    },
+    "A3_impossible_3_gib": {
+     "budget": "3 GiB physical",
+     "verdict": "REFUSED before any payload byte",
+     "deficit": "physical working set 6.86 GB (resident 2.40 + staging peak 1.51 + page-in per token 2.94) against 3.22 GB; irreducible deficit 3.63 GB physical",
+     "largest_with_no_cheaper_candidate": "the embedding table (decode-f32+gather, 1.51 GB) and the head and dense projections already at Q4xQ8",
+     "alternatives_taken": 190
+    },
+    "A3b_impossible_5_gib": {
+     "budget": "5 GiB physical",
+     "verdict": "REFUSED — the same irreducible floor: 2.94 GB of experts a token pages in cold (8 of 256 experts on each of 26 routed layers) plus the embedding's f32 image and the staging peak exceed 5 GiB whatever the dense side is re-quantised to"
+    },
+    "finding_V2-N1": "A token's cold page-in from the mapped bank is 2.94 GB, not the 113 MB the forecast's P4 estimated: eight experts on EACH of 26 routed layers, three matrices each. The instrument computed it from the plan's own multiplicity; the hand estimate had dropped the layer count. Recorded as the class of error the ledger exists to remove."
+   },
+   "result": "HELD on all three arms, on the real container and on the bytes-backed miniature. The accounting now prices SEVEN resources by seven rules (`Resources`, `ResourceLedger::aggregate`): stored once per object, mapped address space once per mapping, persistent resident as the sum of committed allocations, transient as the PEAK, host touch per token as the image the executor streams, expected cold page-in per token from the mappings (top_k/experts of each bank access), device memory apart. A `ResidencyBudget` (physical bytes, optional `ThroughputBudget` in bytes per token) is an input to preparation: `select_realizations_within` re-selects, record by record, the largest resident saving among each operand's OWN candidates — reason `BudgetPolicy` — until the physical working set (resident + transient peak + page-in per token) and the per-token touch fit, or refuses before any payload byte with the deficit, the largest committed operands with nowhere cheaper to go, and every alternative already taken; `PreparedOperands::load_within` binds the re-selected pins. The observation side distinguishes a mapping's address space (`Observed.mapped_bytes`, held EXACTLY against the declaration) from the pages of it physically resident at that moment (`WeightRegion::resident_bytes` through `mincore`, reported beside the declaration and never reconciled against it); the census carries a `mapped` bucket apart from committed bytes.",
+   "A1_bind_real_container": {
+    "budget": "128 GiB physical (machine)",
+    "re_selected": 0,
+    "prepared_seconds": 153.4,
+    "objects_mapped": 1,
+    "regions_bound": 19968,
+    "payload_reads": 525,
+    "pins_reconciled": 20159,
+    "committed_declared_gb": 3.79,
+    "committed_observed_gb": 3.79,
+    "padding_gb": 0.0,
+    "mapped_address_space_gb": 94.22,
+    "mapped_physically_resident_now_gb": 0.0,
+    "peak_rss_gb": 7.94,
+    "reading": "the sentence the vocabulary was for: 94.22 GB mapped, 0.000 GB of it resident after binding, 3.79 GB committed — the machine's 128 GiB decision constrains 7.68 GiB of physical working set, and the mapping's length constrains nothing"
+   },
+   "witnesses": [
+    "exec/tests/residency_budget.rs over the per-expert miniature with its matrices transcoded to bf16 (an f32 source offers only BLAS and the scalar transcription, which cost the same, so nothing could be chosen — the subject had to store the form the real container stores): the ledger aggregates each resource by its rule (mapped == the bank, resident == everything else, transient the max and strictly below the sum, touch == resident + page-in, page-in == top_k/experts of the bank); a budget one byte below the preferred working set changes at least one realization to a cheaper-resident candidate the backend had listed, the plan fits, prepares under `load_within` and reconciles in the re-selected form; a 1-byte physical budget and a 1-byte-per-second throughput budget refuse before any byte naming the deficit, the largest committed operands, and the alternatives taken; the machine budget is a real number",
+    "the V1 witness now holds a mapping to its address space and reports its resident pages apart; `mapped_bytes` on observations, `mapped` and `mapped_resident` on the reconciliation",
+    "CLI: seven-dimension report, `--budget-gib`, `--bandwidth-gbs`/`--target-tok-s`, `--bind` reporting committed and mapped apart; six tests incl. the per-token throughput arm"
+   ],
+   "finding_V2-N2": "The re-quantised images were priced per WEIGHT (Q4 at 0.5 + 4/64 bytes) while the loader blocks per ROW and never lets a block straddle one, so a matrix whose width is not a whole number of blocks carries a short last block with its own scale — the 32-wide miniature's Q4 image is 640 bytes where the constant said 576, and the first constrained-arm reconciliation refused on exactly that. Pricing is now the loader's own rule (`requantised_image_bytes`: codes per element, one scale per row-block, one sum per row sum-block when indexed), shared by the ledger and the budget's re-selection (`declared_resident_for`). The real container never showed it (k = 2304, a multiple of 64); the awkward shape did. It also exposed that the per-weight constant priced code sums per Q8 block where the loader keeps them per 16-element sum-block, a latent disagreement whenever the weight index is on."
   }
  }
 }

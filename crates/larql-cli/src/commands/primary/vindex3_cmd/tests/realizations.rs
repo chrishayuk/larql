@@ -20,6 +20,15 @@ fn ops(container: &std::path::Path, budget_gib: Option<f64>) -> Vindex3Command {
 }
 
 fn ops_binding(container: &std::path::Path, budget_gib: Option<f64>, bind: bool) -> Vindex3Command {
+    ops_full(container, budget_gib, None, bind)
+}
+
+fn ops_full(
+    container: &std::path::Path,
+    budget_gib: Option<f64>,
+    bandwidth_gbs: Option<f64>,
+    bind: bool,
+) -> Vindex3Command {
     Vindex3Command::Ops(OpsArgs {
         container: container.to_path_buf(),
         component: "target".to_string(),
@@ -28,7 +37,21 @@ fn ops_binding(container: &std::path::Path, budget_gib: Option<f64>, bind: bool)
         realizations: true,
         budget_gib,
         bind,
+        bandwidth_gbs,
+        target_tok_s: 20.0,
     })
+}
+
+/// A throughput budget no plan can meet refuses before I/O naming the
+/// per-token deficit; a generous one passes.
+#[test]
+fn a_throughput_budget_is_held_per_token() {
+    let (_dir, out) = encoded_fixture();
+    run(ops_full(&out, Some(1024.0), Some(1_000.0), false)).expect("a TB/s budget passes");
+    let err = run(ops_full(&out, Some(1024.0), Some(1e-9), false))
+        .unwrap_err()
+        .to_string();
+    assert!(err.contains("within the budget"), "{err}");
 }
 
 /// `--bind` prepares the plan for real and reconciles what was bound
@@ -40,7 +63,7 @@ fn bind_reconciles_within_budget_and_is_never_reached_over_it() {
     let err = run(ops_binding(&out, Some(1e-9), true))
         .unwrap_err()
         .to_string();
-    assert!(err.contains("exceeds the budget"), "{err}");
+    assert!(err.contains("within the budget"), "{err}");
 }
 
 /// A closable fixture pins every planned operand and its declared working
@@ -65,7 +88,7 @@ fn the_default_budget_is_the_machine() {
 fn an_unmeetable_budget_refuses_before_io() {
     let (_dir, out) = encoded_fixture();
     let err = run(ops(&out, Some(1e-9))).unwrap_err().to_string();
-    assert!(err.contains("exceeds the budget"), "{err}");
+    assert!(err.contains("within the budget"), "{err}");
     assert!(err.contains("nothing was read"), "{err}");
 }
 
@@ -88,15 +111,12 @@ fn a_registry_without_the_representation_refuses_before_io() {
     let store = OperandStore::open(&out, &inspection)
         .unwrap()
         .with_registry(empty);
-    let err = super::super::realizations::report_through(&plan, &store, Some(1024.0))
+    let budget = larql_vindex::format::vindex3::opplan::exec::accounting::ResidencyBudget::physical(
+        1024 * 1024 * 1024 * 1024,
+    );
+    let err = super::super::realizations::report_through(&plan, &store, &budget)
         .unwrap_err()
         .to_string();
     assert!(err.contains("no admissible preparation"), "{err}");
     assert!(err.contains("nothing was read"), "{err}");
-}
-
-/// The default budget is a real number on this machine.
-#[test]
-fn the_machine_budget_is_positive() {
-    assert!(super::super::realizations::physical_memory_gib() > 0.0);
 }

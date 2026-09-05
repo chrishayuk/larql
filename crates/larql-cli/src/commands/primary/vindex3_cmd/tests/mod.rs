@@ -247,6 +247,8 @@ fn ops_emits_a_closed_plan_for_an_encoded_fixture() {
         realizations: false,
         budget_gib: None,
         bind: false,
+        bandwidth_gbs: None,
+        target_tok_s: 20.0,
     }))
     .expect("a closable estate must plan");
     run(Vindex3Command::Ops(OpsArgs {
@@ -257,6 +259,8 @@ fn ops_emits_a_closed_plan_for_an_encoded_fixture() {
         realizations: false,
         budget_gib: None,
         bind: false,
+        bandwidth_gbs: None,
+        target_tok_s: 20.0,
     }))
     .expect("json summary must also close");
     run(Vindex3Command::Ops(OpsArgs {
@@ -267,6 +271,8 @@ fn ops_emits_a_closed_plan_for_an_encoded_fixture() {
         realizations: false,
         budget_gib: None,
         bind: false,
+        bandwidth_gbs: None,
+        target_tok_s: 20.0,
     }))
     .expect("per-layer summary must also close");
 }
@@ -323,6 +329,8 @@ fn ops_refusals_and_bad_layer_exit_nonzero() {
         realizations: false,
         budget_gib: None,
         bind: false,
+        bandwidth_gbs: None,
+        target_tok_s: 20.0,
     }))
     .unwrap_err();
     assert!(err.to_string().contains("no layer 99"), "{err}");
@@ -343,6 +351,8 @@ fn ops_refusals_and_bad_layer_exit_nonzero() {
         realizations: false,
         budget_gib: None,
         bind: false,
+        bandwidth_gbs: None,
+        target_tok_s: 20.0,
     }))
     .unwrap_err();
     assert!(err.to_string().contains("operand closure failed"), "{err}");

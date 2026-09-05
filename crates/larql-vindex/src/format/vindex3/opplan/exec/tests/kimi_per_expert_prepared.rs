@@ -180,11 +180,17 @@ fn the_bank_is_bound_once_as_a_mapping_and_reconciles_exactly() {
     assert!(bank_observed
         .iter()
         .all(|o| o.allocations == 0 && o.format == WeightFormat::F32));
-    let bank_resident: u64 = bank_observed.iter().map(|o| o.resident_bytes).sum();
+    let bank_mapped: u64 = bank_observed.iter().map(|o| o.mapped_bytes).sum();
     assert_eq!(
-        bank_resident, bank_stored,
-        "observed == stored for a mapping"
+        bank_mapped, bank_stored,
+        "mapped address space == stored bytes"
     );
+    assert_eq!(reconciled.mapped, bank_stored);
+    // The pages resident are a fact of the moment: at most the mapping,
+    // and reported apart from it.
+    assert!(reconciled.mapped_resident <= reconciled.mapped);
+    let bank_resident: u64 = bank_observed.iter().map(|o| o.resident_bytes).sum();
+    assert_eq!(bank_resident, reconciled.mapped_resident);
 }
 
 /// The production kernels over the mapped bank compute what the

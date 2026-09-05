@@ -101,6 +101,7 @@ mod recurrence_shape;
 mod replay_capture;
 mod requirements;
 mod residency;
+mod residency_budget;
 mod residency_census;
 mod routed;
 mod seam;

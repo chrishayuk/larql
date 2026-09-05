@@ -243,7 +243,10 @@ impl LoadedWeight {
                 packed.len() + std::mem::size_of_val(&scales[..])
             }
             LoadedWeight::Bf16(b) | LoadedWeight::F16(b) => b.as_slice().len(),
-            LoadedWeight::Mapped { region, .. } => region.len() as usize,
+            // The committed half of a mapping: its pages resident now.
+            // Address space is `mapped_bytes`, and the two are never
+            // summed into one figure.
+            LoadedWeight::Mapped { region, .. } => region.resident_bytes().unwrap_or(0) as usize,
             LoadedWeight::Mxfp4 { packed, scales } => {
                 packed.as_slice().len() + scales.as_slice().len()
             }
@@ -283,10 +286,9 @@ impl LoadedWeight {
                 of(packed.as_ptr().cast(), packed.len()),
                 of(scales.as_ptr().cast(), std::mem::size_of_val(&scales[..])),
             ],
-            // The mapping IS the resident object: its pages, as touched.
-            LoadedWeight::Mapped { region, .. } => {
-                vec![of(region.bytes().as_ptr(), region.len() as usize)]
-            }
+            // A mapping is the OS's page cache, not an allocation of this
+            // process; `mapped_bytes` and `resident_bytes` account for it.
+            LoadedWeight::Mapped { .. } => Vec::new(),
             LoadedWeight::Bf16(b) | LoadedWeight::F16(b) => {
                 vec![of(b.as_slice().as_ptr(), b.as_slice().len())]
             }
@@ -297,6 +299,23 @@ impl LoadedWeight {
                 ]
             }
             LoadedWeight::KQuant { blocks, .. } => vec![of(blocks.as_ptr(), blocks.len())],
+        }
+    }
+
+    /// Address space this weight occupies as a mapping of the container's
+    /// segment — zero for every owned form. Pages of it become resident
+    /// only as touched; `resident_bytes` reports those.
+    pub fn mapped_bytes(&self) -> usize {
+        match self {
+            LoadedWeight::Mapped { region, .. } => region.len() as usize,
+            LoadedWeight::F32(_)
+            | LoadedWeight::Q8 { .. }
+            | LoadedWeight::Q4 { .. }
+            | LoadedWeight::Bf16(_)
+            | LoadedWeight::F16(_)
+            | LoadedWeight::Mxfp4 { .. }
+            | LoadedWeight::Nvfp4 { .. }
+            | LoadedWeight::KQuant { .. } => 0,
         }
     }
 

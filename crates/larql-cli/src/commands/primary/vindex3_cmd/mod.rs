@@ -284,12 +284,22 @@ pub struct OpsArgs {
     #[arg(long)]
     pub budget_gib: Option<f64>,
 
-    /// With `--realizations`, and only when the declared working set is
-    /// within budget: PREPARE the plan — bind every pin to its object —
-    /// and reconcile what the loader bound against what the pins
-    /// declared, reporting what was mapped and what was read.
+    /// With `--realizations`, and only when the plan fits the budget:
+    /// PREPARE the plan — bind every pin to its object — and reconcile
+    /// what the loader bound against what the pins declared, reporting
+    /// what was mapped, what is physically resident, and what was read.
     #[arg(long)]
     pub bind: bool,
+
+    /// Host bandwidth in GB/s the plan may stream per second (with
+    /// `--target-tok-s`, a per-token touch budget). Omitted: no
+    /// throughput constraint.
+    #[arg(long)]
+    pub bandwidth_gbs: Option<f64>,
+
+    /// The token rate the throughput budget is held at.
+    #[arg(long, default_value_t = 20.0)]
+    pub target_tok_s: f64,
 }
 
 #[derive(Args)]

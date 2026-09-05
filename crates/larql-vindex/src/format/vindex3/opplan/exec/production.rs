@@ -49,7 +49,7 @@ use super::kernels::{
     gather_fused_half, mrope_rotate_scaled, rope_rotate, rope_rotate_scaled, FusedHalf,
 };
 use super::realization::{
-    class_of, common_selection, cpu_projection_candidates, resident_profile, RealizationForm,
+    class_of, common_selection, cpu_projection_candidates, realization_residency, RealizationForm,
     RealizationId, RefusalKind, RepresentationFacts, Selection, SelectionReason, SelectionRefusal,
 };
 use super::timing::{timed, OpClass};
@@ -746,23 +746,16 @@ pub(crate) fn select_cpu(
     let Some(class) = class_of(operand.operation) else {
         return Err(refuse(RefusalKind::MissingRealization, vec![]));
     };
-    let Some(registered) = &facts.registered else {
+    if facts.registered.is_none() {
         return Err(refuse(RefusalKind::UnregisteredRepresentation, vec![]));
-    };
+    }
     let candidates = cpu_projection_candidates(facts, PhysicalProjectionPlan::BlasF32, &REQUANTISE);
     let has = |form: RealizationForm| candidates.iter().any(|c| c.form == form);
     let decode = RealizationId::cpu(Decode(PhysicalProjectionPlan::BlasF32));
     let pick = |id: RealizationId, reason: SelectionReason| {
-        let residency = match id.form {
-            Direct(plan) => facts
-                .direct_residency(plan)
-                .unwrap_or(registered.decode_residency),
-            Decode(_) => registered.decode_residency,
-            _ => resident_profile(id.format()),
-        };
         Ok(Selection {
             realization: id,
-            residency,
+            residency: realization_residency(facts, id),
             reason,
             candidates: candidates.clone(),
         })

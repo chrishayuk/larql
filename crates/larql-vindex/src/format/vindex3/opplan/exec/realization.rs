@@ -278,6 +278,10 @@ pub enum SelectionReason {
     /// A per-expert bank's matrices bound as a mapping of the stored
     /// bytes, in their stored form — one physical binding per bank.
     BankMappedAsStored,
+    /// Re-selected from the operand's candidates so the plan's physical
+    /// working set fits the residency budget: a cheaper-resident
+    /// realization the backend had considered and not preferred.
+    BudgetPolicy,
     /// The device backend's class table names its resident form.
     DeviceClassTable,
     /// An embedding table is decoded whole and gathered per token.
@@ -297,6 +301,7 @@ impl SelectionReason {
             Self::SizePolicy => "size policy over a float source",
             Self::BankSlicedAtLoad => "packed bank sliced per expert at load",
             Self::BankMappedAsStored => "per-expert bank mapped as stored, bound once",
+            Self::BudgetPolicy => "re-selected to fit the residency budget",
             Self::DeviceClassTable => "device class table",
             Self::EmbeddingGather => "table decoded whole, gathered per token",
             Self::ReferenceOracle => "reference oracle",
@@ -544,6 +549,33 @@ pub fn common_selection(
         // A shared expert's projections are whole matrices: the same
         // candidates as any dense FFN projection, chosen by the backend.
         Operation::Project(_) | Operation::OutputHead | Operation::SharedExpertProject => None,
+    }
+}
+
+/// What `id` would make resident for an operand with these facts — the
+/// ONE pricing every selector and the budget's re-selection read, so a
+/// candidate costs the same wherever it is weighed: a direct kernel the
+/// codec's own declared profile, a decode the codec's decode residency,
+/// every executor-owned form the executor's own geometry.
+pub fn realization_residency(facts: &RepresentationFacts, id: RealizationId) -> ResidencyProfile {
+    match id.form {
+        RealizationForm::Direct(plan) => facts.direct_residency(plan).unwrap_or_else(|| {
+            facts
+                .registered
+                .as_ref()
+                .map(|r| r.decode_residency)
+                .unwrap_or(ResidencyProfile::DECODED_F32)
+        }),
+        RealizationForm::Decode(_) => facts
+            .registered
+            .as_ref()
+            .map(|r| r.decode_residency)
+            .unwrap_or(ResidencyProfile::DECODED_F32),
+        RealizationForm::DecodedGather => ResidencyProfile::DECODED_F32,
+        RealizationForm::Requantise(_)
+        | RealizationForm::SliceStored { .. }
+        | RealizationForm::MappedStored { .. }
+        | RealizationForm::DeviceResident(_) => resident_profile(id.format()),
     }
 }
 
