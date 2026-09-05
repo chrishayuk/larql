@@ -22,7 +22,7 @@ use super::policy::{
     resolve_layer_kind, AttentionLayerPolicy, AttentionSpan, HeadGeometry, LayerOperator,
     RecurrenceKind,
 };
-use super::roles::is_hyper_connection_head_group;
+use super::roles::{is_hyper_connection_head_group, ATTENTION_RESIDUAL_EXIT_LEAVES};
 use super::surface::{
     attach_stack_evidence, gate_evidence, head_from_resolved, surface_from_nested,
     surface_from_resolved,
@@ -144,6 +144,23 @@ const GROUP_PATTERNS: &[(GroupClass, &[&str])] = &[
         GroupClass::Head,
         &["lm_head", "output.weight", "llm.unembed"],
     ),
+    // The attention-residual exit's pair, and it MUST precede the
+    // generic `norm` fragment below. `output_attn_res_norm` contains
+    // "norm", so the substring pass filed it into the text component's
+    // FinalNorm object — which then bound two tensors while claiming to
+    // be the single final norm, and the `[1, hidden]` projection beside
+    // it matched nothing and surfaced as an unplaced group. Ownership of
+    // a pair that belongs to ONE operation was decided by substring luck
+    // in both directions, and only the op plan's `single(FinalNorm)`
+    // check could ever have seen the half that was silent.
+    //
+    // Recognition is not ownership: the placement arm still asks whether
+    // the artifact DECLARES the topology, and refuses by name when it
+    // does not.
+    (
+        GroupClass::AttentionResidualExit,
+        ATTENTION_RESIDUAL_EXIT_LEAVES,
+    ),
     (GroupClass::Norm, &["norm", "ln_", "layernorm"]),
     (GroupClass::Stack, &["layers", "blocks"]),
 ];
@@ -194,6 +211,11 @@ enum GroupClass {
     /// placement arm still asks whether the artifact DECLARES the
     /// topology, and refuses by name when it does not.
     HyperConnectionHead,
+    /// One of the attention-residual exit's two tensor groups
+    /// (`output_attn_res_{norm,proj}`), recognised by name fragment from
+    /// the role module's own table. Recognition is not ownership here
+    /// either: the placement arm asks the declaration.
+    AttentionResidualExit,
     Unknown,
 }
 
@@ -216,6 +238,31 @@ fn declares_sinkhorn_hyper_connection(inventory: &ArchitectureInventory) -> bool
         Some(ResidualTopology::HyperConnection(_))
     )
 }
+
+/// Whether this artifact declares the attention-residual topology —
+/// `attn_res_block_size`, resolved once by the architecture and never
+/// re-derived here.
+///
+/// The gate on placing the exit pair. A checkpoint carrying the two
+/// names without the period is a disagreement between estate and
+/// declaration, and is refused as one rather than acquiring a residual
+/// topology from its tensor spellings.
+fn declares_attention_residual(inventory: &ArchitectureInventory) -> bool {
+    matches!(
+        inventory
+            .resolved
+            .execution
+            .as_ref()
+            .and_then(|e| e.residual_topology),
+        Some(ResidualTopology::AttentionResidual { .. })
+    )
+}
+
+/// The refusal a recognised attention-residual exit group gets on an
+/// artifact that does not declare the topology it belongs to.
+const ATTN_RES_EXIT_UNDECLARED_REASON: &str =
+    "recognised as an attention-residual exit operand, but the artifact declares no \
+     attn_res_block_size — the estate and the declaration disagree, so the operand has no owner";
 
 /// The refusal a recognised hyper-connection head group gets on an
 /// artifact that does not declare the topology it belongs to.
@@ -447,7 +494,18 @@ pub fn build_from_inventories(named: &[(String, ArchitectureInventory)]) -> Buil
                         .clone()
                         .map(|c| (c, ObjectKind::HyperConnectionHead))
                 }
-                GroupClass::HyperConnectionHead | GroupClass::Unknown => None,
+                // The exit pair follows the same rule as the head's
+                // operands, and for the same reason: it is the topology's
+                // own reduction, so it belongs to the component exactly
+                // when that component declares the topology.
+                GroupClass::AttentionResidualExit if declares_attention_residual(inventory) => {
+                    text_component
+                        .clone()
+                        .map(|c| (c, ObjectKind::AttentionResidualExit))
+                }
+                GroupClass::HyperConnectionHead
+                | GroupClass::AttentionResidualExit
+                | GroupClass::Unknown => None,
             };
             match placement {
                 Some((component, kind)) => {
@@ -473,6 +531,14 @@ pub fn build_from_inventories(named: &[(String, ArchitectureInventory)]) -> Buil
                         // CI mutation run on this wave's diff proved it dead —
                         // replacing the guard with `true` changed nothing.
                         GroupClass::HyperConnectionHead => HC_HEAD_UNDECLARED_REASON.to_string(),
+                        // Unguarded for the same reason the arm above is:
+                        // every artifact gets a non-perception component
+                        // in pass 1, so an exit group reaches here for ONE
+                        // reason — the placement arm found no declared
+                        // period.
+                        GroupClass::AttentionResidualExit => {
+                            ATTN_RES_EXIT_UNDECLARED_REASON.to_string()
+                        }
                         _ => {
                             "classified for a component this artifact does not declare".to_string()
                         }

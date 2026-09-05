@@ -101,7 +101,7 @@ fn identity_survives_a_round_trip_and_parse_refuses_other_schemas_by_name() {
 /// witness is re-recorded.
 #[test]
 fn the_semantics_version_is_pinned_to_known_verdicts() {
-    assert_eq!(PLANNER_SEMANTICS_VERSION, 16);
+    assert_eq!(PLANNER_SEMANTICS_VERSION, 17);
 
     let dir = tempfile::tempdir().unwrap();
     let admissible = plan_system(&one_glimmer(dir.path()));
@@ -299,6 +299,76 @@ fn the_semantics_version_is_pinned_to_known_verdicts() {
         "{:?}",
         blockers[0]
     );
+
+    // Version 17's verdict (K3-ATTNRES-1, transition 1): an
+    // attention-residual stack with every site operand AND the exit pair
+    // is REPRESENTED — its period is carried, its exit is one placed
+    // object, its four per-layer operands are addressed — and blocked by
+    // ONE finding, the topology's own refusal, because no traversal for
+    // it exists. The same stack without the exit pair is blocked by the
+    // exit's finding instead. Both arms pinned: the second is what keeps
+    // the first from having been implemented as "refuse anything that
+    // declares a period", and a plan that BLOCKED on neither would be
+    // the fail-open this rung exists to make impossible.
+    let attn_res_stack = |exit: bool| -> SystemPlan {
+        let dir = tempfile::tempdir().unwrap();
+        let mut config = serde_json::json!({
+            "architectures": ["LlamaForCausalLM"],
+            "torch_dtype": "bfloat16",
+            "model_type": "llama",
+            "hidden_size": 64,
+            "num_hidden_layers": 1,
+            "intermediate_size": 256,
+            "num_attention_heads": 8,
+            "num_key_value_heads": 2,
+            "head_dim": 8,
+            "vocab_size": 128,
+            "rms_norm_eps": 1e-5,
+            "rope_theta": 10000.0
+        });
+        config["attn_res_block_size"] = serde_json::json!(3);
+        let mut tensors: Vec<(&str, &[usize])> = vec![
+            ("model.embed_tokens.weight", &[128, 64]),
+            ("model.norm.weight", &[64]),
+            ("lm_head.weight", &[128, 64]),
+            ("model.layers.0.self_attn.q_proj.weight", &[64, 64]),
+            ("model.layers.0.self_attn.k_proj.weight", &[16, 64]),
+            ("model.layers.0.self_attn.v_proj.weight", &[16, 64]),
+            ("model.layers.0.self_attn.o_proj.weight", &[64, 64]),
+            ("model.layers.0.input_layernorm.weight", &[64]),
+            ("model.layers.0.post_attention_layernorm.weight", &[64]),
+            ("model.layers.0.mlp.gate_proj.weight", &[256, 64]),
+            ("model.layers.0.mlp.up_proj.weight", &[256, 64]),
+            ("model.layers.0.mlp.down_proj.weight", &[64, 256]),
+            ("model.layers.0.self_attention_res_norm.weight", &[64]),
+            ("model.layers.0.self_attention_res_proj.weight", &[1, 64]),
+            ("model.layers.0.mlp_res_norm.weight", &[64]),
+            ("model.layers.0.mlp_res_proj.weight", &[1, 64]),
+        ];
+        if exit {
+            tensors.push(("model.output_attn_res_norm.weight", &[64]));
+            tensors.push(("model.output_attn_res_proj.weight", &[1, 64]));
+        }
+        let inventory = custom_artifact(dir.path(), &config, &tensors);
+        plan_system(&[(ARTIFACT.to_string(), inventory)])
+    };
+    for (exit, expected) in [(true, "traversal"), (false, "attention_residual_exit")] {
+        let plan = attn_res_stack(exit);
+        assert!(!plan.admissible, "exit={exit}: {:?}", plan.summary);
+        let blockers: Vec<_> = plan
+            .artifacts
+            .iter()
+            .flat_map(|a| &a.findings)
+            .filter(|f| f.blocks())
+            .collect();
+        assert_eq!(blockers.len(), 1, "exit={exit}: {blockers:?}");
+        assert!(
+            blockers[0].subject.ends_with("execution_surface")
+                && blockers[0].detail.contains(expected),
+            "exit={exit}: {:?}",
+            blockers[0]
+        );
+    }
 }
 
 fn pinned(commit: &str) -> ArtifactSource {

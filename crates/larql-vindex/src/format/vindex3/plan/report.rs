@@ -57,6 +57,46 @@ pub const PLAN_SCHEMA: u32 = 6;
 /// `plan/tests/identity.rs` pins fixture verdicts against this value, so
 /// a change that flips one fails there until the version is bumped.
 ///
+/// **17** — attention residuals are a declared RESIDUAL TOPOLOGY, owned
+/// and addressed, and explicitly not traversable (K3-ATTNRES-1,
+/// transition 1). Read from Kimi-K3's own `modeling_kimi_linear.py`
+/// (`_apply_attn_res`, `_forward_attn_residual`,
+/// `_apply_output_attn_res`): the state is ONE prefix sum plus a history
+/// of snapshots of it taken every `attn_res_block_size` layers, each
+/// sublayer reads a softmax-weighted mix over that history before it
+/// runs and adds its result back, and the stack's end reduces the whole
+/// history once more before the final norm. A third topology, not a
+/// dialect of the second: no stream count makes a `[1, hidden]`
+/// projection a Sinkhorn site's mix.
+///
+/// Three planes move. `attn_res_block_size` is parsed and carried to
+/// `ResidualTopology::AttentionResidual.block_size` — `Represented`, not
+/// `Lowered`, because no traversal receives it. The exit pair
+/// (`output_attn_res_{norm,proj}`) becomes ONE placed object under the
+/// declaration, and the generic `norm` name fragment stops sweeping the
+/// exit norm into the component's final norm, which had been binding two
+/// tensors while claiming to be one. The four per-layer operands
+/// classify to four roles of this topology — under the DECLARATION, so a
+/// checkpoint shipping the spellings without the period gains no
+/// topology from its tensor names — are required on every transformer
+/// layer, and are checked at `[hidden]` and `[1, hidden]`.
+///
+/// What is refused is said by name, and the seam wave 19 retired returns
+/// with the variant that needs it: `unimplemented_reason` answers `Some`
+/// for this topology alone, and the executor's preparation step and this
+/// report both read it, so a plan the report calls executable is one the
+/// executor prepares. A component declaring the period and shipping no
+/// exit object is refused one step earlier, by the exit's own name — the
+/// analogue of the head boundary for the bundle. NO arithmetic is
+/// implemented: the traversal and the torch oracle that would judge one
+/// are the rung's next artefacts, and a build that lifted this refusal
+/// because the operands are addressable would be claiming execution from
+/// addressing. Forecast before the code
+/// (`forecasts/k3-attnres-1-declare-own-address.json`, scored per
+/// reader): K3 33 -> 32, as -1 declaration, -1 ownership, +1 execution
+/// surface; a reading of 31 is the fail-open and a BUG. No other cached
+/// row declares the period or ships a pair.
+///
 /// **16** — hyper-connection TRAVERSAL (wave 19). The residual topology's
 /// refusal is retired from its one authority
 /// (`ResidualTopology::unimplemented_reason`), which the executor's
@@ -247,7 +287,7 @@ pub const PLAN_SCHEMA: u32 = 6;
 /// architectures, now block instead of passing silently into
 /// `GenericArch`'s Llama-shaped defaults. Measured on the conformance
 /// corpus: 15 of 42 declared `model_type` strings, across 30 checkpoints.
-pub const PLANNER_SEMANTICS_VERSION: u32 = 16;
+pub const PLANNER_SEMANTICS_VERSION: u32 = 17;
 
 /// Who judged a plan.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]

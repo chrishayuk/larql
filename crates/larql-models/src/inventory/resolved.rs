@@ -227,6 +227,11 @@ pub fn resolve_with_tensor_evidence(
     // indistinguishable from a real declaration, so an ingestion
     // regression would produce a fully executable *wrong* program rather
     // than a loud one. Only a judgment may turn absence into an operation.
+
+    // The residual topology is resolved ONCE, here, and both projections
+    // of that one `Result` travel below: the topology when it resolves,
+    // the reason when it does not.
+    let residual_topology = arch.residual_topology();
     let execution = ResolvedExecution {
         query_scale: arch.qk_scale_factor(),
         score_scale: arch.attention_scale(),
@@ -298,11 +303,15 @@ pub fn resolve_with_tensor_evidence(
         residual_scale: arch.residual_scale(),
         residual_in_fp32: cfg.residual_in_fp32,
         // An unjudged declaration resolves to NOTHING, and the surface
-        // builder refuses on the absence — which is where the reason a
-        // reader sees is written, since this Err is discarded here.
-        // Defaulting it to one stream would be the silent wrong answer
-        // this whole wave is about.
-        residual_topology: arch.residual_topology().ok(),
+        // builder refuses on the absence. Defaulting it to one stream
+        // would be the silent wrong answer the topology field exists to
+        // prevent. The reason travels BESIDE the absence rather than
+        // being discarded here: two different declarations resolve to
+        // nothing and mean opposite things, and the surface has no way
+        // to tell them apart without re-deriving the judgment it is
+        // reading. Both fields are projections of ONE `Result`.
+        residual_topology: residual_topology.as_ref().ok().copied(),
+        residual_topology_refusal: residual_topology.err(),
         head_reuses_embedding: arch.output_head_reuses_embedding(),
     };
     let topology = ResolvedTopology {

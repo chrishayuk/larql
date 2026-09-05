@@ -6,6 +6,7 @@ pub(crate) mod conv_qkv;
 mod coverage_opplan;
 mod gemma4_closure;
 mod hyper_connection_refusal;
+mod k3_attnres_addressing;
 mod kda_mla_exec;
 mod kda_op;
 mod kimi_mla_closure;
