@@ -148,7 +148,16 @@ fn arena() -> Result<&'static Mutex<Arena>, VindexError> {
 /// of the failure path through `arena()` would depend on whether any
 /// other test had staged an image first.
 pub(super) fn open_arena(dir: &std::path::Path) -> Result<Arena, VindexError> {
-    let path = dir.join(format!("larql-f32-stage-{}.bin", std::process::id()));
+    // Unique per OPEN, not per process: two operands widened on two
+    // threads at once would otherwise race to `create_new` one file
+    // (observed as "File exists" under a parallel test run), and a
+    // process id recycled after a crash would find its predecessor's.
+    static NEXT: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+    let serial = NEXT.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+    let path = dir.join(format!(
+        "larql-f32-stage-{}-{serial}.bin",
+        std::process::id()
+    ));
     let file = std::fs::OpenOptions::new()
         .create_new(true)
         .read(true)
