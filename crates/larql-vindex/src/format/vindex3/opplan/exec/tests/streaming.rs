@@ -11,7 +11,7 @@ use crate::format::vindex3::inspect::inspect_container;
 use crate::format::vindex3::opplan::exec::operands::OperandStore;
 use crate::format::vindex3::opplan::exec::reference::ReferenceBackend;
 use crate::format::vindex3::opplan::exec::{
-    execute_plan, execute_plan_streaming, ExecutionTrace, PlaneEvent, ResumePoint,
+    execute_plan, execute_plan_streaming, ExecutionTrace, Plane, PlaneEvent, ResumePoint,
 };
 use crate::format::vindex3::opplan::{plan_component_ops, ComponentOpPlan};
 
@@ -63,13 +63,21 @@ fn streamed(
         &mut |event| {
             match event {
                 PlaneEvent::Embedded(_) => saw_embedded = true,
-                PlaneEvent::Layer { index, trace } => layers.push((index, trace.post_layer)),
+                PlaneEvent::Layer { index, trace } => {
+                    layers.push((index, trace.post_layer.rows().to_vec()))
+                }
+                PlaneEvent::HyperConnectionSite(_) => {}
             }
             Ok(())
         },
     )
     .unwrap();
-    (saw_embedded, layers, out.final_hidden, out.logits)
+    (
+        saw_embedded,
+        layers,
+        out.final_hidden().to_vec(),
+        out.logits,
+    )
 }
 
 #[test]
@@ -85,10 +93,11 @@ fn resume_from_a_mid_run_plane_is_bit_identical() {
     assert_eq!(layers.len(), full.layers.len() - 1);
     assert_eq!(layers[0].0, 1, "resume must continue at the next layer");
     assert_eq!(
-        layers[0].1, full.layers[1].post_layer,
+        layers[0].1,
+        full.layers[1].post_layer.rows(),
         "resumed layer output must be bit-identical"
     );
-    assert_eq!(final_hidden, full.final_hidden);
+    assert_eq!(final_hidden, full.final_hidden());
     assert_eq!(logits, full.logits);
 }
 
@@ -103,9 +112,9 @@ fn resume_from_the_embedding_plane_replays_every_layer() {
     assert!(!saw_embedded);
     assert_eq!(layers.len(), full.layers.len());
     for (got, want) in layers.iter().zip(&full.layers) {
-        assert_eq!(got.1, want.post_layer);
+        assert_eq!(got.1, want.post_layer.rows());
     }
-    assert_eq!(final_hidden, full.final_hidden);
+    assert_eq!(final_hidden, full.final_hidden());
     assert_eq!(logits, full.logits);
 }
 
@@ -116,7 +125,7 @@ fn a_fresh_streaming_run_emits_every_plane_in_order() {
     assert!(saw_embedded, "a fresh run must emit plane 000");
     let indices: Vec<usize> = layers.iter().map(|(i, _)| *i).collect();
     assert_eq!(indices, (0..full.layers.len()).collect::<Vec<_>>());
-    assert_eq!(final_hidden, full.final_hidden);
+    assert_eq!(final_hidden, full.final_hidden());
     assert_eq!(logits, full.logits);
 }
 
@@ -128,7 +137,7 @@ fn resume_refuses_mismatched_state() {
     // Wrong position count: a plane from a different fixture length.
     let short = ResumePoint {
         next_layer: 1,
-        hidden: full.layers[0].post_layer[..G_TOKENS.len() - 1].to_vec(),
+        hidden: Plane::Rows(full.layers[0].post_layer.rows()[..G_TOKENS.len() - 1].to_vec()),
     };
     let err = execute_plan_streaming(&plan, &store, &G_TOKENS, &backend, Some(short), &mut |_| {
         Ok(())
@@ -137,11 +146,11 @@ fn resume_refuses_mismatched_state() {
     assert!(err.to_string().contains("positions"), "{err}");
 
     // Wrong hidden width: a plane from a different model.
-    let mut rows = full.layers[0].post_layer.clone();
+    let mut rows = full.layers[0].post_layer.rows().to_vec();
     rows[0].pop();
     let narrow = ResumePoint {
         next_layer: 1,
-        hidden: rows,
+        hidden: Plane::Rows(rows),
     };
     let err = execute_plan_streaming(
         &plan,

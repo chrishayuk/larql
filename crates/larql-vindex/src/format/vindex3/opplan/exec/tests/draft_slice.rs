@@ -91,7 +91,7 @@ fn a_full_depth_draft_is_the_whole_stack_on_the_hybrid_fixture() {
         draft.logits, full.logits,
         "a full-depth draft must be the target bit for bit"
     );
-    assert_eq!(draft.final_hidden, full.final_hidden);
+    assert_eq!(draft.final_hidden(), full.final_hidden());
 }
 
 /// Truncation must reach the head, stay finite, and actually change the

@@ -306,7 +306,7 @@ fn max_abs(a: &[Vec<f32>], b: &[Vec<f32>]) -> f32 {
 
 fn assert_traces_agree(a: &ExecutionTrace, b: &ExecutionTrace, ceiling: f32, label: &str) {
     for (index, (da, db)) in a.layers.iter().zip(&b.layers).enumerate() {
-        let delta = max_abs(&da.post_layer, &db.post_layer);
+        let delta = max_abs(da.post_layer.rows(), db.post_layer.rows());
         assert!(delta < ceiling, "{label}: layer {index} max_abs {delta}");
     }
     let logits_delta = max_abs(

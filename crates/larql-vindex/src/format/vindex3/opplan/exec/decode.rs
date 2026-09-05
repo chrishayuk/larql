@@ -317,6 +317,7 @@ impl<'a, B: PlanBackend> DecodeSession<'a, B> {
             None,
             &mut |_| Ok(()),
             Some(state),
+            Mutation::None,
         )?;
         // The provider is the position authority, and the traversal does
         // not move it — the same contract `prefill_prepared` keeps.

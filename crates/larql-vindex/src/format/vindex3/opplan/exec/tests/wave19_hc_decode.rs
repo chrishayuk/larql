@@ -35,6 +35,7 @@
 //! every assertion first, so "caught" is a difference, not a default.
 
 use crate::format::vindex3::opplan::exec::decode::{DecodeSession, StepRun};
+use crate::format::vindex3::opplan::exec::execute_text;
 use crate::format::vindex3::opplan::exec::hyper_connection::{
     expand_streams, head_reduce, Bundle, Mutation, SinkhornSplit,
 };
@@ -45,7 +46,6 @@ use crate::format::vindex3::opplan::exec::observe::{
 use crate::format::vindex3::opplan::exec::operands::OperandStore;
 use crate::format::vindex3::opplan::exec::prepared::{ExecutionSlice, PreparedOperands};
 use crate::format::vindex3::opplan::exec::reference::ReferenceBackend;
-use crate::format::vindex3::opplan::exec::{execute_prepared_streaming, execute_text};
 
 use super::wave19_hc_substrate::{
     self as substrate, Oracle, Substrate, Variant, HIDDEN, LAYERS, MIX_ROWS, NORM_EPS, POSITIONS,
@@ -54,30 +54,30 @@ use super::wave19_hc_substrate::{
 
 /// The wave-17 stage tolerance: f32 transcription noise between torch's
 /// vectorised accumulation and scalar loops, at values around 20.
-const TOLERANCE: f32 = 5e-5;
+pub(super) const TOLERANCE: f32 = 5e-5;
 /// The smallest disagreement a control must produce to count as one —
 /// well above [`TOLERANCE`], so "differs" cannot be transcription noise.
-const CONTROL_FLOOR: f32 = 1e-4;
+pub(super) const CONTROL_FLOOR: f32 = 1e-4;
 /// Sites per layer.
-const SITES: usize = 2;
+pub(super) const SITES: usize = 2;
 
 /// One site's record, owned.
-struct Record {
-    layer: usize,
-    site: HcSite,
-    position: usize,
-    split: SinkhornSplit,
-    reduced: Vec<f32>,
-    branch_output: Vec<f32>,
-    bundle_out: Bundle,
+pub(super) struct Record {
+    pub(super) layer: usize,
+    pub(super) site: HcSite,
+    pub(super) position: usize,
+    pub(super) split: SinkhornSplit,
+    pub(super) reduced: Vec<f32>,
+    pub(super) branch_output: Vec<f32>,
+    pub(super) bundle_out: Bundle,
 }
 
 /// The observer: records every site and the attention-input tap.
 #[derive(Default)]
-struct Witness {
-    records: Vec<Record>,
-    attention_inputs: Vec<(usize, Vec<f32>)>,
-    events: Vec<StepEvent>,
+pub(super) struct Witness {
+    pub(super) records: Vec<Record>,
+    pub(super) attention_inputs: Vec<(usize, Vec<f32>)>,
+    pub(super) events: Vec<StepEvent>,
 }
 
 impl StepObserver for Witness {
@@ -105,7 +105,7 @@ impl StepObserver for Witness {
 }
 
 impl Witness {
-    fn record(&self, layer: usize, site: HcSite, position: usize) -> Option<&Record> {
+    pub(super) fn record(&self, layer: usize, site: HcSite, position: usize) -> Option<&Record> {
         self.records
             .iter()
             .find(|r| r.layer == layer && r.site == site && r.position == position)
@@ -121,12 +121,12 @@ impl Witness {
 }
 
 /// A decode run's observations and outputs.
-struct Run {
-    witness: Witness,
-    steps: Vec<StepRun>,
+pub(super) struct Run {
+    pub(super) witness: Witness,
+    pub(super) steps: Vec<StepRun>,
 }
 
-fn max_abs_diff(a: &[f32], b: &[f32]) -> f32 {
+pub(super) fn max_abs_diff(a: &[f32], b: &[f32]) -> f32 {
     assert_eq!(a.len(), b.len(), "comparing different shapes");
     a.iter()
         .zip(b)
@@ -134,7 +134,7 @@ fn max_abs_diff(a: &[f32], b: &[f32]) -> f32 {
         .fold(0.0f32, f32::max)
 }
 
-fn close(actual: &[f32], expected: &[f32], what: &str) -> Result<(), String> {
+pub(super) fn close(actual: &[f32], expected: &[f32], what: &str) -> Result<(), String> {
     if actual.len() != expected.len() {
         return Err(format!(
             "{what}: {} values against {}",
@@ -150,12 +150,12 @@ fn close(actual: &[f32], expected: &[f32], what: &str) -> Result<(), String> {
     }
 }
 
-fn store(sub: &Substrate) -> OperandStore {
+pub(super) fn store(sub: &Substrate) -> OperandStore {
     OperandStore::open(sub.container.path(), &sub.inspection).unwrap()
 }
 
 /// Prepare through the witness seam.
-fn prepare(sub: &Substrate, slice: ExecutionSlice) -> Result<PreparedOperands, String> {
+pub(super) fn prepare(sub: &Substrate, slice: ExecutionSlice) -> Result<PreparedOperands, String> {
     let store = store(sub);
     PreparedOperands::load_for_hyper_connection_witness(
         &sub.plan,
@@ -175,7 +175,7 @@ fn prepare_err(sub: &Substrate, slice: ExecutionSlice) -> String {
 }
 
 /// The whole layer range of the substrate: the headless shape.
-fn layer_range() -> ExecutionSlice {
+pub(super) fn layer_range() -> ExecutionSlice {
     ExecutionSlice::LayerRange {
         start: 0,
         end: LAYERS,
@@ -184,7 +184,7 @@ fn layer_range() -> ExecutionSlice {
 
 /// Run the oracle's three positions through the stack, each entering
 /// layer 0 as the oracle's own bundle, under `mutation`.
-fn run_from_oracle(sub: &Substrate, slice: ExecutionSlice, mutation: Mutation) -> Run {
+pub(super) fn run_from_oracle(sub: &Substrate, slice: ExecutionSlice, mutation: Mutation) -> Run {
     let ops = prepare(sub, slice).expect("the seam prepares the substrate");
     let backend = ReferenceBackend::new();
     let mut kv = RowKvState::default();
@@ -203,7 +203,7 @@ fn run_from_oracle(sub: &Substrate, slice: ExecutionSlice, mutation: Mutation) -
 
 /// Run `tokens` through a whole-stack image from the embedding, under
 /// `mutation`.
-fn run_from_tokens(sub: &Substrate, tokens: &[u32], mutation: Mutation) -> Run {
+pub(super) fn run_from_tokens(sub: &Substrate, tokens: &[u32], mutation: Mutation) -> Run {
     let ops = prepare(sub, ExecutionSlice::Full).expect("the seam prepares the substrate");
     let backend = ReferenceBackend::new();
     let mut kv = RowKvState::default();
@@ -224,59 +224,84 @@ fn run_from_tokens(sub: &Substrate, tokens: &[u32], mutation: Mutation) -> Run {
 
 /// A1. The foreign reference: at layer 0's attention site, fed the
 /// oracle's state, the split and the reduced vector are the oracle's.
-fn a1_foreign_stages(run: &Run, oracle: &Oracle) -> Result<(), String> {
+pub(super) fn a1_foreign_stages(witness: &Witness, oracle: &Oracle) -> Result<(), String> {
     for position in 0..POSITIONS {
-        let record = run
-            .witness
-            .record(0, HcSite::Attention, position)
-            .ok_or_else(|| format!("A1: no record at layer 0 attention, position {position}"))?;
-        close(
-            &record.split.pre,
-            &oracle.stage("sinkhorn_pre", position),
-            &format!("A1 position {position} pre"),
-        )?;
-        close(
-            &record.split.post,
-            &oracle.stage("sinkhorn_post", position),
-            &format!("A1 position {position} post"),
-        )?;
-        close(
-            &record.split.comb,
-            &oracle.stage("sinkhorn_comb", position),
-            &format!("A1 position {position} comb"),
-        )?;
-        close(
-            &record.reduced,
-            &oracle.stage("reduced", position),
-            &format!("A1 position {position} reduced"),
-        )?;
+        a1_at(witness, oracle, position)?;
     }
     Ok(())
 }
 
-/// The bundle that entered each record's site, in emission order: the
-/// oracle's state at layer 0's attention site, and the previous
-/// record's output everywhere else.
-fn entering_bundles<'a>(run: &'a Run, oracle: &Oracle) -> Vec<(&'a Record, Bundle)> {
+/// A1 at one position — so a defect that is invisible at position 0
+/// and visible after it can be named as such.
+pub(super) fn a1_at(witness: &Witness, oracle: &Oracle, position: usize) -> Result<(), String> {
+    let record = witness
+        .record(0, HcSite::Attention, position)
+        .ok_or_else(|| format!("A1: no record at layer 0 attention, position {position}"))?;
+    close(
+        &record.split.pre,
+        &oracle.stage("sinkhorn_pre", position),
+        &format!("A1 position {position} pre"),
+    )?;
+    close(
+        &record.split.post,
+        &oracle.stage("sinkhorn_post", position),
+        &format!("A1 position {position} post"),
+    )?;
+    close(
+        &record.split.comb,
+        &oracle.stage("sinkhorn_comb", position),
+        &format!("A1 position {position} comb"),
+    )?;
+    close(
+        &record.reduced,
+        &oracle.stage("reduced", position),
+        &format!("A1 position {position} reduced"),
+    )
+}
+
+/// The bundle that entered each record's site, chained by (layer,
+/// site, position) rather than by emission order — the decode path
+/// emits one position through every site, the batch path every position
+/// through one site, and the chain is the same: the oracle's state
+/// enters layer 0's attention site, the attention site's output enters
+/// the FFN site, and the FFN site's output enters the next layer.
+fn entering_bundles<'a>(
+    witness: &'a Witness,
+    oracle: &Oracle,
+) -> Result<Vec<(&'a Record, Bundle)>, String> {
     let mut out = Vec::new();
-    let mut previous: Option<&Bundle> = None;
-    for record in &run.witness.records {
-        let entering = if record.layer == 0 && record.site == HcSite::Attention {
-            oracle.input(record.position)
-        } else {
-            previous
-                .expect("every site after the first follows a record")
-                .clone()
+    for record in &witness.records {
+        let entering = match record.site {
+            HcSite::Attention if record.layer == 0 => oracle.input(record.position),
+            HcSite::Attention => witness
+                .record(record.layer - 1, HcSite::Ffn, record.position)
+                .ok_or_else(|| {
+                    format!(
+                        "A2: no FFN record before layer {} position {}",
+                        record.layer, record.position
+                    )
+                })?
+                .bundle_out
+                .clone(),
+            HcSite::Ffn => witness
+                .record(record.layer, HcSite::Attention, record.position)
+                .ok_or_else(|| {
+                    format!(
+                        "A2: no attention record at layer {} position {}",
+                        record.layer, record.position
+                    )
+                })?
+                .bundle_out
+                .clone(),
         };
         out.push((record, entering));
-        previous = Some(&record.bundle_out);
     }
-    out
+    Ok(out)
 }
 
 /// A2. Stage five ran, and it is not a residual add.
-fn a2_expansion(run: &Run, oracle: &Oracle) -> Result<(), String> {
-    for (record, x) in entering_bundles(run, oracle) {
+pub(super) fn a2_expansion(witness: &Witness, oracle: &Oracle) -> Result<(), String> {
+    for (record, x) in entering_bundles(witness, oracle)? {
         let what = format!(
             "A2 layer {} {:?} position {}",
             record.layer, record.site, record.position
@@ -310,7 +335,7 @@ fn a2_expansion(run: &Run, oracle: &Oracle) -> Result<(), String> {
 }
 
 /// A3. The attention input is the pre-norm of the REDUCED vector.
-fn a3_branch_input(run: &Run, ops: &PreparedOperands) -> Result<(), String> {
+pub(super) fn a3_branch_input(witness: &Witness, ops: &PreparedOperands) -> Result<(), String> {
     let backend = ReferenceBackend::new();
     for layer in 0..LAYERS {
         let norm = ops.layers()[layer]
@@ -318,12 +343,10 @@ fn a3_branch_input(run: &Run, ops: &PreparedOperands) -> Result<(), String> {
             .as_ref()
             .ok_or("A3: the substrate has a pre-attention norm")?;
         for position in 0..POSITIONS {
-            let record = run
-                .witness
+            let record = witness
                 .record(layer, HcSite::Attention, position)
                 .ok_or_else(|| format!("A3: no record at layer {layer} position {position}"))?;
-            let tapped = run
-                .witness
+            let tapped = witness
                 .attention_input(layer, position)
                 .ok_or_else(|| format!("A3: no attention-input tap at layer {layer}"))?;
             close(
@@ -338,7 +361,11 @@ fn a3_branch_input(run: &Run, ops: &PreparedOperands) -> Result<(), String> {
 
 /// A4. The FFN site's branch output is the FFN recomputed from the
 /// reduced vector — residual argument included.
-fn a4_ffn_branch(run: &Run, sub: &Substrate, ops: &PreparedOperands) -> Result<(), String> {
+pub(super) fn a4_ffn_branch(
+    witness: &Witness,
+    sub: &Substrate,
+    ops: &PreparedOperands,
+) -> Result<(), String> {
     let backend = ReferenceBackend::new();
     for layer in 0..LAYERS {
         let prepared = &ops.layers()[layer];
@@ -348,8 +375,7 @@ fn a4_ffn_branch(run: &Run, sub: &Substrate, ops: &PreparedOperands) -> Result<(
             _ => return Err(format!("A4: layer {layer} carries no FFN")),
         };
         for position in 0..POSITIONS {
-            let record = run
-                .witness
+            let record = witness
                 .record(layer, HcSite::Ffn, position)
                 .ok_or_else(|| format!("A4: no FFN record at layer {layer} position {position}"))?;
             let v = &record.reduced;
@@ -380,15 +406,15 @@ fn a4_ffn_branch(run: &Run, sub: &Substrate, ops: &PreparedOperands) -> Result<(
 
 /// A5. One record per site per layer per position, every one a
 /// `streams x hidden` bundle with `[hidden]` vectors beside it.
-fn a5_width(run: &Run) -> Result<(), String> {
+pub(super) fn a5_width(witness: &Witness) -> Result<(), String> {
     let expected = LAYERS * SITES * POSITIONS;
-    if run.witness.records.len() != expected {
+    if witness.records.len() != expected {
         return Err(format!(
             "A5: {} records, expected {expected}",
-            run.witness.records.len()
+            witness.records.len()
         ));
     }
-    for record in &run.witness.records {
+    for record in &witness.records {
         let what = format!(
             "A5 layer {} {:?} position {}",
             record.layer, record.site, record.position
@@ -420,11 +446,11 @@ fn witness_headless(mutation: Mutation) -> Vec<(&'static str, Result<(), String>
     let run = run_from_oracle(&sub, layer_range(), mutation);
     let ops = prepare(&sub, layer_range()).unwrap();
     vec![
-        ("A1", a1_foreign_stages(&run, &oracle)),
-        ("A2", a2_expansion(&run, &oracle)),
-        ("A3", a3_branch_input(&run, &ops)),
-        ("A4", a4_ffn_branch(&run, &sub, &ops)),
-        ("A5", a5_width(&run)),
+        ("A1", a1_foreign_stages(&run.witness, &oracle)),
+        ("A2", a2_expansion(&run.witness, &oracle)),
+        ("A3", a3_branch_input(&run.witness, &ops)),
+        ("A4", a4_ffn_branch(&run.witness, &sub, &ops)),
+        ("A5", a5_width(&run.witness)),
     ]
 }
 
@@ -435,20 +461,20 @@ fn witness_hybrid(mutation: Mutation) -> Vec<(&'static str, Result<(), String>)>
     let run = run_from_oracle(&sub, layer_range(), mutation);
     let ops = prepare(&sub, layer_range()).unwrap();
     vec![
-        ("A1", a1_foreign_stages(&run, &oracle)),
-        ("A2", a2_expansion(&run, &oracle)),
-        ("A4", a4_ffn_branch(&run, &sub, &ops)),
-        ("A5", a5_width(&run)),
+        ("A1", a1_foreign_stages(&run.witness, &oracle)),
+        ("A2", a2_expansion(&run.witness, &oracle)),
+        ("A4", a4_ffn_branch(&run.witness, &sub, &ops)),
+        ("A5", a5_width(&run.witness)),
     ]
 }
 
-fn assert_all_hold(results: &[(&str, Result<(), String>)]) {
+pub(super) fn assert_all_hold(results: &[(&str, Result<(), String>)]) {
     for (name, result) in results {
         assert!(result.is_ok(), "{name} failed: {:?}", result);
     }
 }
 
-fn assert_caught_by(results: &[(&str, Result<(), String>)], named: &[&str]) {
+pub(super) fn assert_caught_by(results: &[(&str, Result<(), String>)], named: &[&str]) {
     for name in named {
         let (_, result) = results
             .iter()
@@ -683,30 +709,6 @@ fn a_layer_scale_under_the_topology_is_refused_at_preparation() {
     let err = prepare_err(&sub, layer_range());
     assert!(err.contains("layer scale"), "{err}");
     assert!(err.contains("unjudged"), "{err}");
-}
-
-/// The batch traversal refuses an image that carries the bundle: the
-/// seam cannot make the batch path look supported before 19b.
-#[test]
-fn the_batch_traversal_refuses_a_hyper_connected_image() {
-    let sub = substrate::build(Variant::HeadBearing);
-    let ops = prepare(&sub, ExecutionSlice::Full).unwrap();
-    let backend = ReferenceBackend::new();
-    let err = execute_prepared_streaming(&sub.plan, &ops, &[1, 2], &backend, None, &mut |_| Ok(()))
-        .err()
-        .map(|e| e.to_string())
-        .expect("the batch traversal refuses");
-    assert!(err.contains("batch traversal"), "{err}");
-    assert!(err.contains("19b"), "{err}");
-    // `step_many` is the batch traversal in decode clothing.
-    let mut kv = RowKvState::default();
-    let mut session = DecodeSession::over_prepared(&sub.plan, &ops, &backend, &mut kv).unwrap();
-    let err = session
-        .step_many(&[1, 2])
-        .err()
-        .map(|e| e.to_string())
-        .unwrap();
-    assert!(err.contains("batch traversal"), "{err}");
 }
 
 /// P4. The single stream is untouched: on the sibling with no topology,

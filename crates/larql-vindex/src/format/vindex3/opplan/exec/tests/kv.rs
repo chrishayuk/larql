@@ -166,7 +166,8 @@ fn assert_prefill_matches_batch<B: PlanBackend>(backend: &B) {
 
     assert_eq!(prefilled.logits, batch.logits, "prefill logits diverge");
     assert_eq!(
-        prefilled.final_hidden, batch.final_hidden,
+        prefilled.final_hidden(),
+        batch.final_hidden(),
         "prefill final hidden diverges"
     );
     assert_eq!(kv.position(), G_TOKENS.len());

@@ -127,7 +127,8 @@ fn prepared_and_unprepared_paths_agree_bit_for_bit() {
 
     assert_eq!(cold.logits, warm.logits, "prefill logits must be identical");
     assert_eq!(
-        cold.final_hidden, warm.final_hidden,
+        cold.final_hidden(),
+        warm.final_hidden(),
         "final hidden state must be identical"
     );
     assert_eq!(kv_cold.position(), kv_warm.position());
@@ -309,7 +310,7 @@ fn batch_traversal_agrees_between_prepared_and_unprepared_forms() {
     let mut cold_layers = Vec::new();
     let cold = execute_plan_streaming(&plan, &store, &TOKENS, &backend, None, &mut |event| {
         if let crate::format::vindex3::opplan::exec::PlaneEvent::Layer { index, trace } = event {
-            cold_layers.push((index, trace.post_layer.clone()));
+            cold_layers.push((index, trace.post_layer.rows().to_vec()));
         }
         Ok(())
     })
@@ -318,14 +319,14 @@ fn batch_traversal_agrees_between_prepared_and_unprepared_forms() {
     let mut warm_layers = Vec::new();
     let warm = execute_prepared_streaming(&plan, &ops, &TOKENS, &backend, None, &mut |event| {
         if let crate::format::vindex3::opplan::exec::PlaneEvent::Layer { index, trace } = event {
-            warm_layers.push((index, trace.post_layer.clone()));
+            warm_layers.push((index, trace.post_layer.rows().to_vec()));
         }
         Ok(())
     })
     .unwrap();
 
     assert_eq!(cold.logits, warm.logits);
-    assert_eq!(cold.final_hidden, warm.final_hidden);
+    assert_eq!(cold.final_hidden(), warm.final_hidden());
     assert_eq!(cold_layers, warm_layers, "every layer plane must match");
 }
 

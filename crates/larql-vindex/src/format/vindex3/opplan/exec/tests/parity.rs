@@ -88,7 +88,7 @@ fn container_execution_matches_the_checkpoint_forward_layer_by_layer() {
     assert_eq!(executed.layers.len(), LAYERS);
     for layer in 0..LAYERS {
         let attn = max_abs_diff(
-            &executed.layers[layer].post_attention,
+            executed.layers[layer].post_attention.rows(),
             &oracle.post_attention[layer],
         );
         assert!(
@@ -96,7 +96,7 @@ fn container_execution_matches_the_checkpoint_forward_layer_by_layer() {
             "layer {layer} post_attention diverges: max_abs {attn}"
         );
         let post = max_abs_diff(
-            &executed.layers[layer].post_layer,
+            executed.layers[layer].post_layer.rows(),
             &oracle.post_layer[layer],
         );
         assert!(
@@ -105,6 +105,7 @@ fn container_execution_matches_the_checkpoint_forward_layer_by_layer() {
         );
     }
 
+    assert_eq!(executed.final_hidden().len(), HIDDEN);
     let logits = executed.logits.expect("plan carries an output op");
     assert_eq!(logits.len(), VOCAB);
     let worst = logits
@@ -113,14 +114,16 @@ fn container_execution_matches_the_checkpoint_forward_layer_by_layer() {
         .map(|(a, b)| (a - b).abs())
         .fold(0.0f32, f32::max);
     assert!(worst < LOGIT_TOLERANCE, "logits diverge: max_abs {worst}");
-    assert_eq!(executed.final_hidden.len(), HIDDEN);
 
     // Instrument check: the two sides share no arithmetic (naive loops
     // vs BLAS), so bit-identical agreement everywhere would mean the
     // comparison is accidentally degenerate, not that execution is
     // perfect. Reassociation must show up somewhere.
     let last = LAYERS - 1;
-    let residual_diff = max_abs_diff(&executed.layers[last].post_layer, &oracle.post_layer[last]);
+    let residual_diff = max_abs_diff(
+        executed.layers[last].post_layer.rows(),
+        &oracle.post_layer[last],
+    );
     assert!(
         residual_diff > 0.0 || worst > 0.0,
         "independent arithmetic cannot agree bit-for-bit across a whole forward"
@@ -165,7 +168,7 @@ fn parity_fails_on_a_corrupted_operand() {
     let executed = execute_text(&plan, &store, &TOKENS).unwrap();
 
     let diff = max_abs_diff(
-        &executed.layers[LAYERS - 1].post_layer,
+        executed.layers[LAYERS - 1].post_layer.rows(),
         &oracle.post_layer[LAYERS - 1],
     );
     assert!(

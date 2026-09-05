@@ -533,6 +533,15 @@ pub enum Mutation {
     HybridResidualFromStreamZero,
     /// (d) The same with the stream mean.
     HybridResidualFromStreamMean,
+    /// (e, batch only) Apply position 0's split and reduced vector to
+    /// every position. Invisible at batch size one; the batch witness
+    /// runs three distinguishable positions so it is not.
+    SplitFromPositionZero,
+    /// (batch only) Exchange positions 0 and 1's bundles between the
+    /// reduction and the update, so each position's update carries the
+    /// other's state forward. A witness that cannot see per-position
+    /// state passes this.
+    SwapPositionsBeforeUpdate,
 }
 
 /// What one site's reduction produced: the split (stages one and two,

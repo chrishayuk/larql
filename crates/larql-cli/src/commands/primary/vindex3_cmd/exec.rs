@@ -34,7 +34,7 @@ use larql_vindex::format::vindex3::opplan::exec::backend::PlanBackend;
 use larql_vindex::format::vindex3::opplan::exec::operands::OperandStore;
 use larql_vindex::format::vindex3::opplan::exec::prepared::ExecutionSlice;
 use larql_vindex::format::vindex3::opplan::exec::{
-    execute_plan_streaming, execute_slice, ExecutionTrace, PlaneEvent, ResumePoint,
+    execute_plan_streaming, execute_slice, ExecutionTrace, Plane, PlaneEvent, ResumePoint,
 };
 use larql_vindex::format::vindex3::opplan::ComponentOpPlan;
 use ndarray::Array2;
@@ -280,15 +280,18 @@ fn run_dump<B: PlanBackend>(
     let mut layer_started = Instant::now();
     let out = execute_plan_streaming(plan, store, tokens, backend, resume, &mut |event| {
         match event {
-            PlaneEvent::Embedded(rows) => {
-                write_rows(&dir.join(plane_name(0)), rows)?;
+            PlaneEvent::Embedded(plane) => {
+                write_rows(&dir.join(plane_name(0)), plane.try_rows()?)?;
                 eprintln!(
                     "plane 000 (embedding)  {:.1}s",
                     started.elapsed().as_secs_f64()
                 );
             }
             PlaneEvent::Layer { index, trace } => {
-                write_rows(&dir.join(plane_name(index + 1)), &trace.post_layer)?;
+                write_rows(
+                    &dir.join(plane_name(index + 1)),
+                    trace.post_layer.try_rows()?,
+                )?;
                 eprintln!(
                     "layer {:>3}/{}  {:.1}s  (elapsed {:.0}s)",
                     index + 1,
@@ -297,14 +300,17 @@ fn run_dump<B: PlanBackend>(
                     started.elapsed().as_secs_f64(),
                 );
             }
+            PlaneEvent::HyperConnectionSite(_) => {}
         }
         layer_started = Instant::now();
         Ok(())
     })?;
+    // (A hyper-connection site's state is the witness's tap, not a
+    // plane; the dump persists layer boundaries only.)
 
     write_rows(
         &dir.join(FINAL_NORM_PLANE),
-        std::slice::from_ref(&out.final_hidden),
+        &[out.exit.try_hidden()?.to_vec()],
     )?;
     if let Some(logits) = &out.logits {
         write_rows(&dir.join(LOGITS_PLANE), std::slice::from_ref(logits))?;
@@ -366,7 +372,7 @@ pub(super) fn prepare_resume(
             );
             Ok(Some(ResumePoint {
                 next_layer: plane,
-                hidden: rows,
+                hidden: Plane::Rows(rows),
             }))
         }
         None => Ok(None),
@@ -472,8 +478,11 @@ fn summarise(engine: &str, trace: &ExecutionTrace) {
     println!(
         "layers: {}  seq: {}  hidden: {}",
         trace.layers.len(),
-        trace.embedded.len(),
-        trace.embedded.first().map(Vec::len).unwrap_or(0),
+        trace.embedded.positions(),
+        match &trace.embedded {
+            Plane::Rows(rows) => rows.first().map(Vec::len).unwrap_or(0),
+            Plane::Bundles(bundles) => bundles.first().map(|b| b.hidden()).unwrap_or(0),
+        },
     );
     match &trace.logits {
         Some(logits) => match super::decode::argmax(logits) {

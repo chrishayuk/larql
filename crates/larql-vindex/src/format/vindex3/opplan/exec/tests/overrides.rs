@@ -57,7 +57,11 @@ fn an_empty_source_is_the_bare_store_bit_for_bit() {
 
     assert_eq!(base.logits, overlaid.logits, "logits diverge");
     for (a, b) in base.layers.iter().zip(&overlaid.layers) {
-        assert_eq!(a.post_layer, b.post_layer, "a residual diverges");
+        assert_eq!(
+            a.post_layer.rows(),
+            b.post_layer.rows(),
+            "a residual diverges"
+        );
     }
 }
 
