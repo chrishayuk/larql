@@ -729,6 +729,21 @@ impl PreparedOperands {
     ) -> Result<Self, VindexError> {
         let store = store.into();
         slice.validate(plan)?;
+        // **Refuse before any operand is loaded.** The plan may carry a
+        // residual topology this traversal cannot run: a hyper-connected
+        // component's operands are all bound (wave 18 closed the
+        // addressing), but everything below carries ONE residual vector
+        // through the stack and would run a four-stream model as a
+        // one-stream one — fluent wrong output, not a failure. Read from
+        // the same authority the plan report refuses on, so a plan the
+        // report calls not executable can never be prepared here.
+        if let Some(reason) = plan.residual_topology.unimplemented_reason() {
+            return Err(VindexError::Parse(format!(
+                "component `{}`: residual topology {:?} is represented and its operands are \
+                 bound, but this build cannot execute it — {reason}",
+                plan.component, plan.residual_topology
+            )));
+        }
         let stamp = store.stamp();
         let whole = slice.is_whole_stack();
         let embedding = plan.embedding.as_ref().ok_or_else(|| {

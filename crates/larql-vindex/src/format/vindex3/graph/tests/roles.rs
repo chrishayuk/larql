@@ -242,3 +242,119 @@ fn the_lfm2_norm_dialect_resolves_to_the_two_norm_placement() {
     let half = ["0.operator_norm.weight"];
     assert!(norm_placement_evidence(half.iter().copied()).is_err());
 }
+
+/// Wave 18: the six Sinkhorn hyper-connection site operands classify by
+/// their exact bare leaf, on every layer operator — a KDA layer and an
+/// MLA layer of the same GLM-5.3-Flash stack each carry all six — and
+/// nothing that merely contains `hc_` does.
+#[test]
+fn hyper_connection_site_operands_classify_exactly_and_layer_blind() {
+    for op in [
+        LayerOperator::Softmax,
+        LayerOperator::Kda,
+        LayerOperator::Mla,
+    ] {
+        assert_eq!(
+            classify_stack_tensor_on("0.hc_attn_fn", op),
+            Some((0, OperandRole::HcAttnMixFn)),
+            "{op:?}"
+        );
+        assert_eq!(
+            classify_stack_tensor_on("7.hc_attn_base", op),
+            Some((7, OperandRole::HcAttnBase))
+        );
+        assert_eq!(
+            classify_stack_tensor_on("42.hc_attn_scale", op),
+            Some((42, OperandRole::HcAttnScale))
+        );
+        assert_eq!(
+            classify_stack_tensor_on("0.hc_ffn_fn", op),
+            Some((0, OperandRole::HcFfnMixFn))
+        );
+        assert_eq!(
+            classify_stack_tensor_on("0.hc_ffn_base", op),
+            Some((0, OperandRole::HcFfnBase))
+        );
+        assert_eq!(
+            classify_stack_tensor_on("0.hc_ffn_scale", op),
+            Some((0, OperandRole::HcFfnScale))
+        );
+    }
+    // Near misses refuse rather than fuzzy-match. Each is a real spelling
+    // from a real checkpoint that is NOT a Sinkhorn site operand.
+    // A `.weight` suffix the checkpoints do not write.
+    assert_eq!(classify_stack_tensor("0.hc_attn_fn.weight"), None);
+    // Hy4-preview's Sinkhorn-free site (HC-PREPOST).
+    assert_eq!(classify_stack_tensor("0.hc_attn_layer.hc_pre.hc_fn"), None);
+    // Kimi-K3's AttnRes operands — a different residual topology.
+    assert_eq!(
+        classify_stack_tensor_on("0.self_attention_res_proj.weight", LayerOperator::Kda),
+        None
+    );
+    assert_eq!(
+        classify_stack_tensor_on("0.self_attention_res_norm.weight", LayerOperator::Kda),
+        None
+    );
+    // The head is not a stack operand, even layer-prefixed.
+    assert_eq!(classify_stack_tensor("0.hc_head_fn"), None);
+}
+
+/// The head's three operands classify by their BARE DeepSeek-V4 names and
+/// nothing else: Hy4-preview's `model.hc_head.hc_head_fn` spells a
+/// topology this build has not judged and must not bind.
+#[test]
+fn hyper_connection_head_operands_classify_by_bare_name_only() {
+    use crate::format::vindex3::graph::roles::{
+        classify_hyper_connection_head_tensor, is_hyper_connection_head_group, HcHeadOperand,
+    };
+    assert_eq!(
+        classify_hyper_connection_head_tensor("hc_head_fn"),
+        Some(HcHeadOperand::ReduceFn)
+    );
+    assert_eq!(
+        classify_hyper_connection_head_tensor("hc_head_base"),
+        Some(HcHeadOperand::Base)
+    );
+    assert_eq!(
+        classify_hyper_connection_head_tensor("hc_head_scale"),
+        Some(HcHeadOperand::Scale)
+    );
+    assert_eq!(
+        classify_hyper_connection_head_tensor("model.hc_head.hc_head_fn"),
+        None
+    );
+    assert_eq!(
+        classify_hyper_connection_head_tensor("hc_head_fn.weight"),
+        None
+    );
+    assert_eq!(classify_hyper_connection_head_tensor("hc_attn_fn"), None);
+
+    // The builder's placement question reads the same table.
+    assert!(is_hyper_connection_head_group("hc_head_fn"));
+    assert!(is_hyper_connection_head_group("hc_head_base"));
+    assert!(is_hyper_connection_head_group("hc_head_scale"));
+    assert!(!is_hyper_connection_head_group("model.hc_head"));
+    assert!(!is_hyper_connection_head_group("mtp"));
+    assert!(!is_hyper_connection_head_group("hc_head"));
+}
+
+/// The site operands are not norms: norm-placement evidence must read
+/// straight past them. A hyper-connected two-norm stack is still a
+/// two-norm stack.
+#[test]
+fn hyper_connection_operands_do_not_disturb_norm_placement_evidence() {
+    let names = [
+        "0.input_layernorm.weight",
+        "0.post_attention_layernorm.weight",
+        "0.hc_attn_fn",
+        "0.hc_attn_base",
+        "0.hc_attn_scale",
+        "0.hc_ffn_fn",
+        "0.hc_ffn_base",
+        "0.hc_ffn_scale",
+    ];
+    assert_eq!(
+        norm_placement_evidence(names.iter().copied()),
+        Ok(NormPlacement::PreOnly)
+    );
+}

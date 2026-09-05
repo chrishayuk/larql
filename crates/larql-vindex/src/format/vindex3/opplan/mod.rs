@@ -37,6 +37,7 @@ pub(crate) mod tests;
 use larql_models::config::{
     Activation, AttentionGateSpec, AttentionSinkSpec, ExpertFormat, ExpertRoutingPolicy,
     GateUpLayout, MoeRouterKind, NormType, ParameterFreeQkNorm, PositionPolicy, QkNormScope,
+    ResidualTopology,
 };
 use serde::Serialize;
 
@@ -577,6 +578,19 @@ pub struct LayerPlan {
     /// a multiply by one that a reader may assume.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub layer_scale: Option<OperandRef>,
+    /// The two Sinkhorn hyper-connection sites this layer wraps its
+    /// sublayers in — present iff the component's
+    /// [`ComponentOpPlan::residual_topology`] is a hyper-connection, and
+    /// then on every layer (closure requires all six operands). `None` on
+    /// a single-stream component, whose serialisation is unchanged.
+    ///
+    /// Carried so the wave-17 executor can be instantiated from a
+    /// checkpoint's own addresses; NOT a claim that this build traverses
+    /// the bundle. That refusal lives in
+    /// [`exec::prepared`](crate::format::vindex3::opplan::exec::prepared)
+    /// and reads the same authority the plan report does.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub hyper_connection: Option<HyperConnectionLayerOp>,
     /// Residual-stream scaling: the attention/FFN sublayer's own output
     /// (after any post-norm above) is multiplied by this immediately
     /// before its residual add, at both sites with the same value.
@@ -613,15 +627,81 @@ pub struct OutputOp {
     pub softcapping: Option<f32>,
 }
 
+/// One Sinkhorn hyper-connection SITE's operands (wave 18) — what the
+/// five wave-17 stages read for one sublayer.
+///
+/// ```text
+/// mix_fn   [(2 + hc)·hc, hc·hidden]   stage 1's dynamic mix projection
+/// base     [(2 + hc)·hc]              stage 2's additive logit offset
+/// scale    [3]                        stage 2's pre / post / comb scalars
+/// ```
+///
+/// Geometry is checked at closure against the component's declared
+/// stream count, so a bound site is one the executor's `SiteWeights` can
+/// be built from without a further length check. Dtype is whatever the
+/// checkpoint stored (F32 on DeepSeek-V4, BF16 on GLM-5.3-Flash): the
+/// operand reference carries it, the role does not.
+#[derive(Debug, Clone, PartialEq, Serialize)]
+pub struct HcSiteOp {
+    pub mix_fn: OperandRef,
+    pub base: OperandRef,
+    pub scale: OperandRef,
+}
+
+/// The two sites one hyper-connected layer wraps its sublayers in.
+#[derive(Debug, Clone, PartialEq, Serialize)]
+pub struct HyperConnectionLayerOp {
+    /// Reduces the bundle before attention and expands its output after.
+    pub attention: HcSiteOp,
+    /// The same around the FFN.
+    pub ffn: HcSiteOp,
+}
+
+/// The hyper-connection HEAD's own reduction operands — a different
+/// operation from a site's, with different geometry (one row per stream,
+/// a single scalar, no Sinkhorn), bound from the component's
+/// `hyper_connection_head` object.
+///
+/// ```text
+/// reduce_fn   [hc, hc·hidden]
+/// base        [hc]
+/// scale       [1]
+/// ```
+///
+/// Optional even on a hyper-connected component: GLM-5.3-Flash declares
+/// the topology and ships no head operands at all, and what reduces its
+/// bundle before the final norm is not something this build has read
+/// (its `mhc` flag is recorded as unknown, not guessed). A plan with the
+/// topology and no head is therefore representable and, for a second
+/// reason, not executable.
+#[derive(Debug, Clone, PartialEq, Serialize)]
+pub struct HyperConnectionHeadOp {
+    pub reduce_fn: OperandRef,
+    pub base: OperandRef,
+    pub scale: OperandRef,
+}
+
 /// The complete generic program of one component.
 #[derive(Debug, Clone, PartialEq, Serialize)]
 pub struct ComponentOpPlan {
     pub component: String,
+    /// How the residual stream is shaped across the whole component — a
+    /// COMPONENT fact, carried once so the executor, the embedding and
+    /// the head cannot disagree about it. Serialised only when it is not
+    /// the single stream every plan before wave 18 implicitly carried, so
+    /// those plans' JSON is byte-identical.
+    #[serde(skip_serializing_if = "ResidualTopology::is_single_stream")]
+    pub residual_topology: ResidualTopology,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub embedding: Option<EmbeddingOp>,
     pub layers: Vec<LayerPlan>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub final_norm: Option<NormOp>,
+    /// The hyper-connection head's reduction, when the component owns
+    /// one. See [`HyperConnectionHeadOp`] for why this is optional even
+    /// under the topology.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub hyper_connection_head: Option<HyperConnectionHeadOp>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub output: Option<OutputOp>,
 }

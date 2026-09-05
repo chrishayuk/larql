@@ -336,7 +336,7 @@ const KDA_ROLES_ADDRESSED: [OperandRole; 13] = [
 
 /// The KDA layer's operands the vocabulary does NOT name, exactly.
 ///
-/// Each is a K3 delta with a config twin, and neither is a shape problem:
+/// Each is a K3 delta with a config twin, and none is a shape problem:
 ///
 /// ```text
 /// self_attn.g_proj        the FULL-RANK output gate. The table carries
@@ -346,41 +346,42 @@ const KDA_ROLES_ADDRESSED: [OperandRole; 13] = [
 ///                         on both planes, which is the agreement that
 ///                         makes it a real gap and not a parser slip.
 ///
-/// self_attention_res_*    AttnRes: a residual NORM and a `[1, hidden]`
-/// mlp_res_*               residual PROJECTION per sublayer. These are
-///                         hyper-connection operands, and wave 17 closed
-///                         their arithmetic while leaving placement open.
-///                         K3 is the checkpoint that needs wave 18.
+/// self_attention_res_*    AttnRes: a residual NORM `[hidden]` and a
+/// mlp_res_*               `[1, hidden]` residual PROJECTION per
+///                         sublayer. A THIRD residual topology — twin of
+///                         the config keys `attn_res_block_size` and
+///                         `output_attn_res_proj` (the ResidualWiring
+///                         cluster) — whose arithmetic this build has not
+///                         read. K3-ATTNRES-1, not started.
 /// ```
 ///
-/// # This list is a cross-programme tripwire — read a failure carefully
+/// # This list was a cross-programme tripwire, and it fired the way that
+/// # says "the premise was wrong"
 ///
-/// The four `*_res_*` entries are NOT K3's to fix. They are the generic
-/// hyper-connection carriage gap wave 17 exposed, wave 18 owns, and
-/// DeepSeek-V4 needs identically. K3 is wave 18's second consumer, and
-/// this array is the instrument that says whether its abstraction
-/// transfers — so when wave 18 lands, **this test is expected to fail**:
+/// Before wave 18 this comment called the four `*_res_*` entries
+/// hyper-connection operands that wave 18's generic `hc_*` roles would
+/// address, and laid out how to read the failure it expected. Wave 18
+/// landed (2026-09-05), this witness was rerun UNCHANGED, and it
+/// **passed**: zero of the four moved. That is the "fewer than 4 gone"
+/// arm — and it is not accommodation, because no K3-shaped name entered
+/// wave 18's vocabulary. The abstraction had nothing to transfer to.
 ///
-/// ```text
-/// 4 HC entries gone, `self_attn.g_proj` alone remains
-///     the generic abstraction transferred to an architecture it was
-///     not designed against. Shrink the array to 1 and say so.
+/// The shapes settle it. A Sinkhorn hyper-connection site's mix
+/// projection is `[(2 + hc)·hc, hc·hidden]`, which equals `[1, 7168]` for
+/// NO stream count (hc = 1 gives `[3, 7168]`); its base is
+/// `[(2 + hc)·hc]`, never `[hidden]`. K3's operands are a different
+/// mechanism that shares the word "residual", and the claim that they
+/// were hyper-connection operands was made here without reading their
+/// shapes — a discoverable baseline fact stated as a forecast. Pinned
+/// both ways in
+/// `opplan::tests::wave18_hc_carriage::k3s_residual_operands_are_not_sinkhorn_sites_under_any_stream_count`.
 ///
-/// fewer than 4 gone, or K3-shaped names appear in wave 18's placement
-///     the abstraction did NOT transfer; it accommodated. That is the
-///     finding, and it belongs to wave 18, not here.
-///
-/// `g_proj` gone too
-///     something addressed a K3 delta under wave 18's name. Investigate
-///     before shrinking anything — the programme boundary has leaked.
-/// ```
-///
-/// The K3-specific deltas get their own rungs and must NOT be folded into
-/// wave 18: `K3-REP-GATE-1` (`use_full_rank_gate` ↔ `g_proj`) and
-/// `K3-LATENTMOE-1` (`routed_expert_hidden_size` ↔ the
-/// `routed_expert_*` operands, which are off this layer). Neither is
-/// started, and neither should start before wave 18 reruns this witness
-/// unchanged.
+/// So all five stay, and all five are K3's own rungs, none of which is
+/// started: `K3-REP-GATE-1` (`use_full_rank_gate` ↔ `g_proj`),
+/// `K3-ATTNRES-1` (the four `*_res_*` operands ↔ `attn_res_block_size` /
+/// `output_attn_res_proj`; read the arithmetic before naming a role), and
+/// `K3-LATENTMOE-1` (`routed_expert_hidden_size` ↔ the `routed_expert_*`
+/// operands, which are off this layer).
 const KDA_LAYER_UNADDRESSED: [&str; 5] = [
     "mlp_res_norm.weight",
     "mlp_res_proj.weight",

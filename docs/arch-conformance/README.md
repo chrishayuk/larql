@@ -46,16 +46,53 @@ The sweep is the regression instrument for the conformance programme. Every
 semantic change is measured against the same 88-row corpus, and the two
 invariants are the ones that matter most:
 
-| Metric | Baseline | Waves 1+3 | rope | moe | sliding window | frontier census† | partial rotary | vestigial pair | qwen MoE |
-|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|
-| semantics version | 1 | 3 | 4 | 5 | 6 | 6 (held) | 7 | 8 | 9 | 10 | 11 | 12 | 13 | 14 | **14 (held)** |
-| GREEN | 17 | 18 | 21 | 26 | 28 | 28 | 31 | 33 | 38 | 38 | 38 | 41 | 41 | 41 | **41** |
-| AMBER | 6 | 6 | 6 | 6 | 6 | 7 | 7 | 7 | 7 | 3‡ | 3 | 3 | 3 | 3 | **3** |
-| RED | 65 | 64 | 61 | 56 | 54 | 74 | 71 | 69 | 64 | 68‡ | 68 | 65 | 65 | 65 | **65** |
-| **BUG** | **0** | **0** | **0** | **0** | **0** | **0** | **0** | **0** | **0** | **0** | **0** | **0** | **0** | **0** | **0** |
-| **silent drops** | **0** | **0** | **0** | **0** | **0** | **0** | **0** | **0** | **0** | **0** | **0** | **0** | **0** | **0** | **0** |
-| text-closure blockers | 886 | 776 | 756 | 671 | 668 | 1109 | 1091 | 1089 | 1076 | 1058 | 1051 | 1044 | 1029 | 1037§ | **1037**¶ |
-| K3 clusters remaining | 7 | 7 | 7 | 7 | 7 | 7 | 7 | 7 | 7 | 7 | 7 | 7 | 7 | 7 | **7** |
+| Metric | Baseline | Waves 1+3 | rope | moe | sliding window | frontier census† | partial rotary | vestigial pair | qwen MoE | … | hc execution | hc addressability |
+|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|
+| semantics version | 1 | 3 | 4 | 5 | 6 | 6 (held) | 7 | 8 | 9 | 10 | 11 | 12 | 13 | 14 | 14 (held) | **15** |
+| GREEN | 17 | 18 | 21 | 26 | 28 | 28 | 31 | 33 | 38 | 38 | 38 | 41 | 41 | 41 | 41 | **41** |
+| AMBER | 6 | 6 | 6 | 6 | 6 | 7 | 7 | 7 | 7 | 3‡ | 3 | 3 | 3 | 3 | 3 | **3** |
+| RED | 65 | 64 | 61 | 56 | 54 | 74 | 71 | 69 | 64 | 68‡ | 68 | 65 | 65 | 65 | 65 | **65** |
+| **BUG** | **0** | **0** | **0** | **0** | **0** | **0** | **0** | **0** | **0** | **0** | **0** | **0** | **0** | **0** | **0** | **0** |
+| **silent drops** | **0** | **0** | **0** | **0** | **0** | **0** | **0** | **0** | **0** | **0** | **0** | **0** | **0** | **0** | **0** | **0** |
+| text-closure blockers | 886 | 776 | 756 | 671 | 668 | 1109 | 1091 | 1089 | 1076 | 1058 | 1051 | 1044 | 1029 | 1037§ | 1037¶ | **1031**∥ |
+| K3 clusters remaining | 7 | 7 | 7 | 7 | 7 | 7 | 7 | 7 | 7 | 7 | 7 | 7 | 7 | 7 | 7 | **7** |
+
+∥ **Wave 18 moved exactly what the frozen forecast said, and its transfer
+witness said no.** The six Sinkhorn hyper-connection site operands
+(`hc_{attn,ffn}_{fn,base,scale}`) are operand roles, required on every layer
+of a component that declares the topology, checked against the declared
+stream count's geometry, and bound into the op plan; the head's three bare
+operands (`hc_head_{fn,base,scale}`) are placed as their own object, and only
+under the declaration. The op plan therefore runs closure on a hyper-connected
+component instead of refusing before reading an operand — and the refusal did
+not disappear, it moved: the executor's preparation step refuses before loading
+one operand, through the same `unimplemented_reason` the plan report reads,
+whose text now names the traversal as what is missing. Measured on the seven
+rows a plan-stage change could touch, re-planned with the wave-18 binary:
+DeepSeek-V4-Flash and -Pro 34 → 31 each (the three `hc_head_*` unplaced-group
+blockers become one placed `hyper_connection_head` object — 262,164 and
+458,772 bytes, `(4·hc·d + 4 + 1)·4` from their own headers); GLM-5.3-Flash 31
+→ 31 with only its refusal text changed; Hy4-preview 32, GLM-5.3 19,
+Qwen3.8-Flash-Next 36 and Qwen3-0.6B 0 unchanged. No verdict moved. The other
+102 rows carry no bare `hc_head_*` group and no hyper-connected surface, so
+their plans differ only by the version stamp; they were not re-planned.
+
+**The claim is narrow on purpose.** Wave 18 shows LARQL can assign semantic
+operand identity to the Sinkhorn hyper-connection vocabulary and carry those
+operands through its normal execution-planning machinery. It does **not**
+make DeepSeek-V4 plannable: DeepSeek-V4 remains blocked by an independently
+unsupported base tensor dialect (`attn.wq_a`, `attn.wkv`, `attn_norm`,
+`ffn.experts.N.w1`); its reference implementation supplied wave 17's
+arithmetic oracle, not wave 18's addressability witness. And the
+cross-architecture transfer the K3 programme expected did not happen, for a
+reason the shapes settle: K3's four `*_res_{norm,proj}` operands are a
+`[hidden]` norm and a `[1, hidden]` projection, which is no Sinkhorn site under
+any stream count. They are a third residual topology (AttnRes), not this one's
+second dialect, and the unchanged K3 witness passed — zero of four moved.
+Wave 18 is also the evidence for the programme's new order from wave 19 on:
+**reconnaissance → freeze → implementation** — measure the baseline, forecast
+the intervention, never forecast discoverable baseline mechanics. See
+`forecasts/wave18-execution-notes.json`.
 
 ¶ **Wave 17 moved nothing, and the forecast said it would move twelve.**
 The five stages of the hyper-connection sublayer now execute and are checked
