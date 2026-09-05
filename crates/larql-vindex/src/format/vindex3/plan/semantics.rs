@@ -15,6 +15,11 @@ use super::report::SemanticClass;
 /// Keys that change what a forward pass computes: norms, activations,
 /// position encoding, attention/output scaling, attention span policy.
 pub const EXECUTION_SEMANTIC_KEYS: &[&str] = &[
+    // The Sinkhorn hyper-connection topology (wave 19): carried to the
+    // component's residual topology and executed by both traversals.
+    "hc_mult",
+    "hc_sinkhorn_iters",
+    "hc_eps",
     "layer_rope_theta",
     "qk_scale_factor",
     "output_multiplier",
@@ -583,35 +588,19 @@ pub const UNSUPPORTED_COMPONENT_KEYS: &[(&str, &str)] = &[
     // the checkpoint declares `true`, so the mistake would have been live
     // rather than latent.
     ("indexer_rope_interleave", GLM_SPARSE_INDEXER),
-    // Hyper-connections: a residual stream widened by `hc_mult` and mixed
-    // by a Sinkhorn-normalised map. Grouped on the shared `hc_` prefix
-    // plus `hc_sinkhorn_iters`, which names a specific algorithm rather
-    // than a generic knob.
-    //
-    // `mhc: true` sits beside these and is NOT listed. It is a bare
-    // boolean whose expansion cannot be checked without a reference, and
-    // guessing it into this table is exactly the failure the table's
-    // contract forbids. It stays `unknown`, which is what it is.
-    ("hc_eps", HYPER_CONNECTION_TOPOLOGY),
-    ("hc_mult", HYPER_CONNECTION_TOPOLOGY),
-    ("hc_sinkhorn_iters", HYPER_CONNECTION_TOPOLOGY),
+    // Hyper-connections (`hc_mult`, `hc_sinkhorn_iters`, `hc_eps`) left
+    // this table in wave 19: the topology they configure is executed on
+    // both traversals, so they are execution semantics carried to the
+    // component's residual topology — see [`EXECUTION_SEMANTIC_KEYS`] and
+    // the carriage rules. `mhc: true` sits beside them and is NOT listed
+    // anywhere: it is a bare boolean whose expansion cannot be checked
+    // without a reference, and guessing it into a table is exactly the
+    // failure the tables' contract forbids. It stays `unknown`, which is
+    // what it is.
 ];
 
 /// Component label for GLM's learned sparse attention indexer.
 const GLM_SPARSE_INDEXER: &str = "sparse attention indexer (GLM-5.x)";
-
-/// Component label for the hyper-connection residual topology.
-///
-/// Named for the MECHANISM, not the family that first showed it here.
-/// The label was `hyper-connections (GLM-5.x)` and appeared verbatim on
-/// Tencent's Hy4-preview and DeepSeek-V4 — a Tencent and a DeepSeek
-/// checkpoint told they carried a GLM component. Wave 7 recorded that as
-/// a defect; this is the first of those labels to be fixed, because
-/// wave 16 read the actual arithmetic from DeepSeek-V4's own reference
-/// and can now say what the component IS rather than where it was seen.
-const HYPER_CONNECTION_TOPOLOGY: &str =
-    "hyper-connection residual topology (parallel residual streams, reduced and expanded \
-     per token through a Sinkhorn-split mixing matrix)";
 
 /// The unimplemented component this leaf configures, if any.
 pub fn unsupported_component(leaf: &str) -> Option<&'static str> {

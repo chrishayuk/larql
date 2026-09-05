@@ -1,21 +1,16 @@
-//! A hyper-connection stack is REPRESENTED and explicitly NOT LOWERED.
+//! A hyper-connection stack is REPRESENTED with its declared parameters,
+//! and what still refuses is said by name.
 //!
-//! The claim under test is narrow and architectural: the single-stream
-//! residual programme cannot lower the declared hyper-connection topology
-//! without discarding something the checkpoint declares. Read off
-//! DeepSeek-V4-Flash's own `inference/model.py`, three facts are each
-//! independently sufficient —
-//!
-//!   1. the state SHAPE differs: `hc_mult` parallel streams, not one;
-//!   2. the reduce and expand weights are DYNAMIC, computed per token
-//!      from the current state rather than stored per layer;
-//!   3. the expand mixes every stream into every other through a
-//!      `[hc, hc]` combination matrix.
-//!
-//! So the assertion is not "no function could reproduce this" — an
-//! unconstrained `f(h)` can encode almost anything. It is that the
-//! EXISTING single-stream contract has nowhere to put a stream count, a
-//! per-token weight, or a cross-stream mix, and therefore refuses.
+//! Waves 16-18 pinned here that the single-stream residual programme
+//! could not lower the topology without discarding a stream count, a
+//! per-token weight or a cross-stream mix. Wave 19 gave the programme
+//! a bundle carrier on both traversals, so the refusal that lived on the
+//! topology's own authority is retired with the seam that read it — and the tests
+//! below pin the two things that replaced it: both judged topologies
+//! lower, and a stack that declares the topology WITHOUT a head object
+//! keeps a blocking execution-surface finding that names the head, not
+//! the topology. An unjudged (partial) declaration still refuses the
+//! surface, as before.
 
 use crate::format::vindex3::graph::build_from_inventories;
 use crate::format::vindex3::plan::tests_support::glimmer_shaped_target_with;
@@ -80,35 +75,30 @@ fn the_topology_is_represented_with_its_declared_parameters() {
     assert_eq!(plain.residual_topology.streams(), 1);
 }
 
-/// **The single-stream programme cannot lower it.** Not "lowers it
-/// differently" — refuses, before any operand is read.
+/// Both judged topologies lower. The single stream always did; the
+/// hyper-connection topology does since wave 19, when the decode step
+/// and the batch traversal each carried the bundle under an
+/// intermediate-state witness that can fail.
 #[test]
-fn the_single_stream_residual_programme_refuses_to_lower_it() {
-    let reason = ResidualTopology::HyperConnection(HyperConnection {
+fn both_judged_topologies_lower() {
+    let hc = ResidualTopology::HyperConnection(HyperConnection {
         streams: STREAMS,
         sinkhorn_iters: SINKHORN_ITERS,
         sinkhorn_eps: SINKHORN_EPS,
-    })
-    .unimplemented_reason()
-    .expect("a hyper-connection topology must refuse");
-    // The three independently sufficient reasons, each named.
-    for fragment in ["stream multiplicity", "dynamic", "cross-stream"] {
-        assert!(
-            reason.contains(fragment),
-            "reason omits {fragment:?}: {reason}"
-        );
-    }
-    // And the topology this build DOES run says nothing of the kind.
-    assert!(ResidualTopology::SingleStream
-        .unimplemented_reason()
-        .is_none());
+    });
+    assert_eq!(hc.streams(), STREAMS);
+    assert!(!hc.is_single_stream());
+    assert!(ResidualTopology::SingleStream.is_single_stream());
 }
 
-/// **Wave 11's lesson, applied to a second topology.** The refusal must
-/// reach the plan REPORT, not only the op plan — a refusal one consumer
-/// can see is not a refusal.
+/// **Wave 11's lesson, applied to the refusal that remains.** A
+/// component that declares the topology and ships no head object cannot
+/// run whole-stack — there is no declared reduction from the bundle to
+/// the vector the final norm reads — and the plan REPORT must say so,
+/// naming the head and not the topology. This fixture ships no
+/// `hc_head_*`, so it is GLM-5.3-Flash's shape.
 #[test]
-fn the_report_names_the_refusal_as_an_unsupported_component() {
+fn the_report_names_the_missing_head_as_the_remaining_refusal() {
     let dir = tempfile::tempdir().unwrap();
     let inventory = glimmer_shaped_target_with(dir.path(), hyper_connected);
     let plan = plan_system(&[("target-artifact".to_string(), inventory)]);
@@ -131,18 +121,23 @@ fn the_report_names_the_refusal_as_an_unsupported_component() {
         "{finding:?}"
     );
     assert!(finding.blocks(), "{finding:?}");
-    // Both halves: the surface IS complete, and the topology is what
-    // cannot run. A reader seeing only the refusal cannot tell this from
-    // a broken checkpoint.
+    // Both halves: the surface IS complete and the topology runs; the
+    // head is what is missing. A reader must be able to tell this from
+    // "the topology cannot run".
     assert!(finding.detail.contains("complete"), "{}", finding.detail);
     assert!(
-        finding.detail.contains("HyperConnection"),
+        finding.detail.contains("hyper_connection_head"),
         "{}",
         finding.detail
     );
     assert!(
-        finding.detail.contains("NOT executable"),
+        finding.detail.contains("executable layer by layer"),
         "{}",
+        finding.detail
+    );
+    assert!(
+        !finding.detail.contains("NOT executable"),
+        "the topology's old refusal must not reappear: {}",
         finding.detail
     );
 }

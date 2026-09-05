@@ -340,11 +340,11 @@ fn final_logits(trace: &ExecutionTrace) -> &[f32] {
 }
 
 fn post_layer(trace: &ExecutionTrace, layer: usize) -> &[Vec<f32>] {
-    &trace.layers[layer].post_layer
+    trace.layers[layer].post_layer.rows()
 }
 
 fn post_attention(trace: &ExecutionTrace, layer: usize) -> &[Vec<f32>] {
-    &trace.layers[layer].post_attention
+    trace.layers[layer].post_attention.rows()
 }
 
 fn max_abs_1d(a: &[f32], b: &[f32]) -> f32 {

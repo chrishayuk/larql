@@ -180,9 +180,18 @@ pub(crate) fn encode_system_unenforced(
 ) -> Result<EncodeOutcome, VindexError> {
     let plan = plan_system(named);
     if !plan.admissible {
+        // Itemised, because a test has no CLI to run for the reasons.
+        let blocking: Vec<String> = plan
+            .artifacts
+            .iter()
+            .flat_map(|a| &a.findings)
+            .filter(|f| f.blocks())
+            .map(|f| format!("{}: {}", f.subject, f.detail))
+            .collect();
         return Err(VindexError::Parse(format!(
-            "refusing to encode an inadmissible plan: {} blocking finding(s)",
-            plan.summary.blocking
+            "refusing to encode an inadmissible plan: {} blocking finding(s):\n  {}",
+            plan.summary.blocking,
+            blocking.join("\n  ")
         )));
     }
     encode_graph(&plan.graph, named, out)

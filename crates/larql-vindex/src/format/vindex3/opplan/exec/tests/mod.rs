@@ -72,6 +72,9 @@ mod stack_real;
 mod token2_real;
 mod token_real;
 mod token_tiny;
+mod wave19_hc_batch;
+mod wave19_hc_decode;
+mod wave19_hc_substrate;
 #[rustfmt::skip]
 mod qw2_tiny_fixture;
 mod gated_delta_refusal;
