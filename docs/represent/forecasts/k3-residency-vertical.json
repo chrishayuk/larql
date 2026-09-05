@@ -1,0 +1,109 @@
+{
+ "programme": "residency-into-k3",
+ "name": "K3-RESIDENCY-VERTICAL-1 — a real K3-class plan through selection, refusal, accounting and execution, end to end",
+ "written": "2026-09-05",
+ "written_before": "any code beyond the read-only instrument `vindex3 ops --realizations`",
+ "base": "rung 3d (6669d252, PR #425) merged with origin/main 797b173c; local merge 2acbd875 on branch k3-residency-vertical in .claude/worktrees/k3-residency — to be re-based onto main once #425 merges",
+ "ruling_in_force": "Do not extend the codec architecture until a real K3 plan has exercised selection, refusal, accounting and execution end to end (user, 2026-09-05). No new abstractions; use the machinery.",
+ "exit_criterion": "A K3-class plan either runs within its declared budget or refuses before I/O with a COMPLETE list of missing realizations, by operand and operation.",
+ "subject": {
+  "executable": "moonshotai/Kimi-Linear-48B-A3B-Instruct — K3's direct ancestor, the funnel's R2 rung, the only K3-class checkpoint with weights on this box. Container ~/chris-models/Kimi-Linear-48B-A3B-Instruct.lift2.vindex3 (index v4, graph schema 6, encoded 2026-08-31): 5 representations, 98.25 GB payload; decoder_stack BF16+F32 2.51 GB / 522 tensors, embedding BF16 0.75 GB, expert_bank BF16 94.22 GB / 19,968 per-expert tensors, final_norm, output_head BF16 0.75 GB. Config: 27 layers (20 KDA + 7 MLA), hidden 2304, 256 experts × top-8, moe_intermediate 1024, 1 shared expert, first_k_dense_replace 1. Same operand families as K3: KDA, MLA, per-expert bank, shared expert.",
+  "metadata_only": "moonshotai/Kimi-K3 — 93 layers (69 KDA + 24 MLA), 896 experts × top-16, hidden 7168, MXFP4 routed experts, ~1.56 TB; no weights on this box (175 GiB free of 1.8 TiB). Its plan does not close today (K3-ARCH-1: 2 config + 5 KDA operands; AttnRes = K3-ATTNRES-1), so its refusal list is a plan-stage refusal, not a realization refusal. The vertical earns its claim on the ancestor and states K3 proper's list the day its plan closes.",
+  "machine": "128 GiB RAM (sysctl hw.memsize), 1.8 TiB volume at 91% (175 GiB free)."
+ },
+ "baseline_measured": {
+  "instrument": "`larql vindex3 ops <container> --realizations [--budget-gib N]` (this worktree): plans, opens the store from segment headers only, runs `select_realizations` under the production CPU backend and `ExecutionSlice::Full`, prices the pins with `expectations` from the tensor tables, and holds the working set against the budget. No payload byte is read (93 MB RSS over a 98 GB container). Cost 84 s wall (26 s user, 40 s sys) — an instrument fact, recorded, not the subject.",
+  "planned_operands": 20081,
+  "pinned": 20081,
+  "refused": 0,
+  "pins": {
+   "BF16 → cpu:decode-f32+gather (embedding)": {
+    "operands": 1,
+    "weights": 377487360
+   },
+   "BF16 → cpu:requantise/FusedQ8 (size policy)": {
+    "operands": 98,
+    "weights": 1361313792
+   },
+   "BF16 → cpu:decode-f32+BlasF32 (size policy)": {
+    "operands": 19975,
+    "weights": 47119712256,
+    "note": "19,968 of these are the per-expert bank tensors, each [1024, 2304] bf16 = 4.72 MB, below the compact threshold, so the size policy widens every one of them to f32"
+   },
+   "BF16 → cpu:direct/FusedBf16": {
+    "operands": 7,
+    "weights": 29360128
+   }
+  },
+  "declared": {
+   "stored_footprint_gb": 97.78,
+   "execution_touch_gb": 97.78,
+   "declared_resident_gb": 191.49,
+   "declared_resident_gib": 178.34,
+   "staging_peak_gb": 1.51,
+   "working_set_gib": 179.75,
+   "budget_gib": 128.0,
+   "verdict": "OVER BUDGET by 51.75 GiB"
+  },
+  "B1_shared_expert_silently_dropped": "The container's graph declares `moe.shared_experts: 1` and lists 78 shared-expert tensors (26 routed layers × gate/up/down, [1024,2304]/[2304,1024] bf16, 0.37 GB) which closure counts as ACCOUNTED (layer 1: 790/790 = 768 per-expert + 22 decoder_stack tensors including the three shared ones). The plan carries NO `SharedExpertOp`: `opplan::build::shared_expert_width` returns `None` when the graph's `shared_expert_intermediate_size` is absent, and that field (`#[serde(default, skip_serializing_if)]`) entered the graph schema on 2026-09-03 (`9d5f9965`, semantics 9) — after every real container on disk was encoded. So the 3b refusal `SharedExpertProject → MissingRealization` never fires on a real model, and 98.25 − 97.78 = 0.47 GB of stored bytes are planned by nothing (0.37 GB of it the shared expert). The Kimi-specific loader (`exec/kimi_source.rs`) binds the same branch BY NAME outside the plan, so the two execution paths disagree about the model's operand set.",
+  "B2_per_expert_bank_misclassified": "`planned_operands()` lists a per-expert bank as 19,968 ordinary `Operation::Project(FfnProjection)` operands. The selector admits each as a whole projection (widen-to-f32, 188 GB), the executor cannot run any of them (`RoutedOperands::load` refuses `ExpertBank::PerExpert` at load, AFTER layer 0's bytes were read), and the residency verdict is wrong in kind: a bank is held as stored and gathered top-k per token, never widened matrix by matrix. The old three-axes refusal (94 GB bf16 → 188 GB f32) reproduces exactly, now as a declaration before I/O — which is progress in location, not in substance.",
+  "B3_what_already_executes": "The per-expert bank and the shared expert DO execute on CPU today — through `exec/{kimi_source,kimi_router,kimi_moe_block,kimi_kda_layer,kimi_mla_layer,stack}.rs`, with real-checkpoint oracles (`kimi_moe_real`, `kimi_kda_layer_real`, `kimi_mla_layer_real`, `generate_real` 16/16 greedy tokens) and a mapped-region loader that binds bf16 slices without copying (`ExpertWeights<'_>` over mmap'd segments). None of it passes through `PreparedOperands`, so none of it is selected, pinned, priced or reconciled. The vertical's realization work is BINDING an existing executor as a named realization, not writing kernels.",
+  "B4_parity_assets": "Python oracle exporters exist for every rung (scripts/kimi_{moe,kda_layer,mla_layer,two_layer,stack,generate,token}_export.py; torch 2.6.0, transformers 5.5.0 present; HF checkpoint present, 92 GB). No fixture is on disk (/tmp/kimi_* absent) — every oracle must be regenerated (minutes each). The miniature `fixtures_kimi::hybrid_kda_mla_f32_model` is consumed only by the planner's tests, never executed through the prepared plan."
+ },
+ "design_frozen_at_the_contract_level": {
+  "D1 shared expert is planned or refused, never dropped": "A routed-FFN judgment with `shared_experts > 0` and no stored width resolves the width by the ONE rule the models crate already states (`ModelArchitecture::shared_expert_intermediate_size`: the declared key, else count × routed width) and VERIFIES it against the stored shapes of the three shared tensors, which the builder already checks for a declared width (`expected_shape`). A branch whose width is neither declared nor confirmed by its tensors' shapes is a closure defect and refuses the layer by name. `absent_op`/`required_roles` and the op are then paired for real. Fixtures that declare the width (Qwen-MoE shape) produce byte-identical plans.",
+  "D2 a per-expert bank is its own operation": "`Operation::ExpertProject { experts, top_k }` replaces `Project(FfnProjection)` for `ExpertBank::PerExpert` operands. Operation MULTIPLICITY is preserved for execution touch (19,968 logical accesses, top_k per token), while the plan represents the SHARED PHYSICAL STORAGE: one bank object per layer per projection family, bound once, priced once for footprint and residency. Until D4 lands, the CPU selector refuses each as `MissingRealization` — the complete pre-I/O list — and the per-expert loader refusal at load becomes unreachable.",
+  "D3 the budget is an input to preparation": "`PreparedOperands::load` and `select_realizations` take a `ResidencyBudget` (`Machine` = physical memory, `Bytes(n)`, `Unbounded` for tests/oracles). Applied only after D1/D2/D4/D5 make the plan complete. Under a budget, selection CHOOSES among the realizations an operand has — resident (decoded/requantised in memory), mapped on-demand (the stored bank bound once, paged as touched), decoded, staged — by the declared working set they imply, and pins the executable set; when no set fits, it refuses before any payload byte with the exact deficit (declared working set, budget, the operands that break it) and the alternatives it considered. `Unbounded` reproduces today's pins byte for byte. The user's ruling supersedes the earlier 'the budget only refuses': 'all operands pinned at 178 GiB' is a diagnostic baseline, never an admitted executable plan.",
+  "D4 the CPU per-expert realization binds stored bytes without copying": "The EXISTING mapped Kimi executor is registered as a named realization — no new kernel: `RealizationForm::Direct(FusedBf16)` on an `ExpertProject` operand means the bank stays in its stored bf16 form, bound ONCE as mapped regions of the container's segment (the `kimi_source` binding, lifted into `LoadedWeight`/`Bound` as a mapped object so the census covers the bound buffer), gathered top-k per token, executed by `kimi_moe_block::expert_ffn`. A realization covers the BANK, not one operand: one bound object serves thousands of logical accesses. Declared residency = the bank's stored bytes; declared touch per token = top_k × 3 × expert bytes. A realization that COPIES the bank is never a candidate.",
+  "D5 the shared expert executes through the prepared plan": "`RoutedFfnCall` gains `shared: Option<SharedExpertWeights>`; the executor composes the unscaled add (`y = moe(x) + shared(x)`, `KimiSparseMoeBlock.forward`) once, backend-independently; the three shared projections are ordinary dense projections under the size policy (4.72 MB → widened f32). Their realization records read `SharedExpertProject → Decode(BlasF32)` with reason `SizePolicy`.",
+  "D6 observed residency, not declared, prices the paths": "Reconciliation extends to mapped objects: a mapped bank's OBSERVED residency is its touched pages (RSS delta / mincore over the mapping after N tokens), reported beside the declared stored bytes; direct (bf16 mapped), decoded (widened f32 dense side) and requantised (Q8 dense side) paths are priced from those observations and the ledger's per-token touch, in one table. No tok/s figure is forecast here — the K3 pre-registration's own rule: no bands until measured.",
+  "D7 the parity ladder runs THROUGH the prepared plan": "one layer — layer 1 (KDA + routed + shared) via `ExecutionSlice::LayerRange{1,2}` against the Python oracle (`kimi_kda_layer_export.py --layer 1`), every boundary exposed; miniature — `hybrid_kda_mla_f32_model` through `execute_plan` under the production backend against the reference backend AND against an f32 transcription with a per-expert control (wrong expert's weights); full — 16 greedy tokens on the real container through `vindex3 generate` against `kimi_generate_export.py`'s trajectory (16/16 ids, top-10 stable), the same gate `generate_real` closed on the Kimi-specific path."
+ },
+ "predictions": {
+  "P1 after D1 on the real container": "planned operands 20081 → 20159 (+78 SharedExpertProject); with D2/D4 absent the selector refuses ALL 78 as MissingRealization, before I/O, in one list; every fixture that declares a shared width plans byte-identically (plan JSON diff empty).",
+  "P2 after D2": "19,968 operands re-listed under ExpertProject{256, 8}; refused as MissingRealization until D4; the load-time PerExpert refusal is unreachable (its test moves to the selector).",
+  "P3 after D3": "the baseline plan refuses at preparation with 'declared working set 179.75 GiB exceeds budget 128 GiB' naming the bank tensors first; `Unbounded` reproduces today's behaviour byte for byte.",
+  "P4 after D4+D5, declared": "resident ≈ 94.22 GB (mapped bank, stored) + 1.45 GB (98 Q8 requantised dense operands, 1.36 G weights) + 1.51 GB (embedding f32 gather) + 0.74 GB (78 shared projections widened) + 0.06 GB (7 FusedBf16) ≈ 98.0 GB ≈ 91.3 GiB — WITHIN a 128 GiB budget with ≈ 37 GiB headroom; execution touch per token ≈ 2.14 GB dense (decoder_stack minus shared) + 0.75 GB head + 0.113 GB routed (8 × 3 × 4.72 MB) + 0.014 GB shared ≈ 3.0 GB stored bytes per token.",
+  "P5 observed vs declared": "after 64 decode tokens the mapped bank's touched pages ≈ tokens × top_k × 3 × 4.72 MB minus overlap — well under 10 GB, i.e. the OBSERVED residency of the bank is a small fraction of its DECLARED (stored) 94 GB; this gap is the number the residency chapter wants and the reason declared-resident must not be the only column.",
+  "P6 parity": "one layer: every boundary within the existing `kimi_kda_layer_real` bounds (rel-RMS ≤ 3e-4 at the layer output); miniature: production == reference to f32 summation noise, and the wrong-expert control fails by orders; full: 16/16 greedy ids, top-10 stable.",
+  "P7 the reconciliation": "every pin of the real plan reconciles with a bound object — the mapped bank as ONE bound object per layer per projection family, not 19,968 allocations; mutating the bank's declared element width breaks exactly the bank rows of the reconciliation and nothing else."
+ },
+ "falsifiers": [
+  "F1 D1 changes any plan that already declares a shared width (any fixture's plan JSON differs)",
+  "F2 a declared-but-widthless branch is completed silently instead of verified against stored shapes or refused",
+  "F3 after D2 any per-expert tensor is still listed as Project(FfnProjection), or the load-time PerExpert refusal is still reachable",
+  "F4 a payload byte is read before the budget verdict, or a budget refusal does not name the operands that break it",
+  "F5 the CPU per-expert realization copies the bank (observed resident ≈ 2 × stored, or RSS grows with the bank at load)",
+  "F6 one-layer parity exceeds the existing real-fixture bounds, or the wrong-expert control passes",
+  "F7 the 16-token greedy trajectory differs from the oracle, or the numeric diagnostics show an unexplained discontinuity",
+  "F8 the dense-side pins (98 FusedQ8, 7 FusedBf16, 1 gather) change from the baseline without a recorded reason",
+  "F9 declared and observed residency disagree for any non-mapped object beyond the page window (3c's reconciliation), or the mapped bank's observed touch does not scale with tokens × top_k",
+  "F10 a new source file lands under 90% line coverage; any workspace gate red at push"
+ ],
+ "explicitly_not_claimed": [
+  "no K3-proper execution: its plan does not close (K3-ARCH-1, K3-ATTNRES-1); the vertical's claim is on the ancestor and transfers as machinery, never as a K3 number",
+  "no new codec, no codec-contract change, no execution-target registry, no MLX, no GGUF (roadmap stages 2–6)",
+  "no decode-rate claim before it is measured beside its own baseline in one process (bench protocol)",
+  "no Metal changes: the Metal stack binds both branches today and is not the subject",
+  "no re-selection under budget: the budget refuses; choosing a cheaper representation is REPRESENT's move"
+ ],
+ "waves": {
+  "V1 semantic truth": "D1 (plan the shared expert: realization or explicit pre-I/O refusal) + D4/D5 (register the existing mapped Kimi executor and the shared branch as named realizations) + D2 (replace the 19,968 fictitious whole projections with a bank-scoped operation: multiplicity for touch, one binding for footprint) + D6's reconciliation re-run — only now is the resident total meaningful",
+  "V2 budgeted residency": "D3: selection among resident / mapped-on-demand / decoded / staged realizations under the 128 GiB machine budget, or refusal before payload I/O with the exact deficit and alternatives; `ops --realizations` is presentation over it",
+  "V3 execution proof": "D7 in the user's order — one expert access → one layer → miniature → one real Kimi-Linear token — with parity AND census agreement at each step",
+  "V4 observed pricing": "D6's table: direct / decoded / packed-bank paths priced from observed residency and per-token touch, fed back to REPRESENT"
+ },
+ "gates_before_each_push": "cargo test -p larql-vindex; clippy --workspace --all-targets -D warnings (1.98.0); check --target x86_64-apple-darwin; llvm-cov + scripts/check_coverage_policy.py; check_doc_links.py; check_doc_references.py --strict; cargo fmt --check last; real-container runs are env-gated and reported from kept logs",
+ "immutability": "This file is not edited after its commit. Execution notes go in a sibling k3-residency-vertical-notes.json, wave by wave, with every finding the forecast did not contain.",
+ "review_before_freeze": "User review 2026-09-05, applied before the commit that freezes this file: the codec plane has done its job — K3 fails at realization and residency, not representation. The 178 GiB figure is not to be optimised: it is produced by an incomplete, mis-modelled plan (shared expert absent, one physical bank as 19,968 whole projections, the mapped Kimi executor invisible as a realization). Semantic truth first; the budget applies only once the plan is complete; execution proof last.",
+ "acceptance_statement": "The complete K3 graph selects a physically executable set of realizations within the machine budget, or refuses before reading payload bytes with the exact deficit and alternatives.",
+ "what_k3_teaches_the_lowering_contract": [
+  "realizations are not always independent tensor kernels: one stored bank may serve thousands of logical operations",
+  "one object may be bound once but touched repeatedly — footprint and touch are different sums",
+  "a realization may cover a bank or a subgraph, not merely one operand",
+  "residency cannot be calculated by summing independently selected pins",
+  "graph completeness must be checked before target lowering",
+  "the next abstraction, named by the hostile real model: shared, bank-scoped execution realizations under a global residency budget"
+ ],
+ "roadmap_after": "merge rung 3 → commit this forecast → mapped Kimi realization → complete K3 planning → budgeted residency → K3 execution; only then progressive → VQ/codebook → freeze codec v1 → execution-target extraction → external/remote target → MLX → GGUF artifact adapter"
+}

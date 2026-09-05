@@ -4,6 +4,7 @@ mod calibration_digest;
 mod decode;
 mod exec_resume;
 mod generate;
+mod realizations;
 mod sizes;
 
 use super::*;
@@ -243,6 +244,8 @@ fn ops_emits_a_closed_plan_for_an_encoded_fixture() {
         component: "target".to_string(),
         layer: Some(0),
         json: false,
+        realizations: false,
+        budget_gib: None,
     }))
     .expect("a closable estate must plan");
     run(Vindex3Command::Ops(OpsArgs {
@@ -250,6 +253,8 @@ fn ops_emits_a_closed_plan_for_an_encoded_fixture() {
         component: "target".to_string(),
         layer: None,
         json: true,
+        realizations: false,
+        budget_gib: None,
     }))
     .expect("json summary must also close");
     run(Vindex3Command::Ops(OpsArgs {
@@ -257,6 +262,8 @@ fn ops_emits_a_closed_plan_for_an_encoded_fixture() {
         component: "target".to_string(),
         layer: None,
         json: false,
+        realizations: false,
+        budget_gib: None,
     }))
     .expect("per-layer summary must also close");
 }
@@ -310,6 +317,8 @@ fn ops_refusals_and_bad_layer_exit_nonzero() {
         component: "target".to_string(),
         layer: Some(99),
         json: false,
+        realizations: false,
+        budget_gib: None,
     }))
     .unwrap_err();
     assert!(err.to_string().contains("no layer 99"), "{err}");
@@ -327,6 +336,8 @@ fn ops_refusals_and_bad_layer_exit_nonzero() {
         component: "target".to_string(),
         layer: None,
         json: false,
+        realizations: false,
+        budget_gib: None,
     }))
     .unwrap_err();
     assert!(err.to_string().contains("operand closure failed"), "{err}");

@@ -5,12 +5,20 @@ use larql_vindex::format::vindex3::opplan::{
 };
 
 use super::optional_op::scalar;
+use super::realizations;
 use super::OpsArgs;
 
 pub(super) fn run_ops(args: OpsArgs) -> Result<(), Box<dyn std::error::Error>> {
     let inspection =
         larql_vindex::format::vindex3::inspect::inspect_container(&args.container, false)?;
     let outcome = plan_component_ops(&inspection, &args.container, &args.component)?;
+    if args.realizations {
+        let plan = outcome
+            .plan
+            .as_ref()
+            .ok_or("the component did not close; nothing to prepare")?;
+        return realizations::report(plan, &args.container, &inspection, args.budget_gib);
+    }
     if args.json {
         println!("{}", serde_json::to_string_pretty(&outcome)?);
     } else if let Some(plan) = &outcome.plan {

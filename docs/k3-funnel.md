@@ -909,6 +909,25 @@ decode↔lm_head command-buffer boundary (open: fold final norm →
 lm_head → top-K into the decode CB). Full ladder + evidence: ROADMAP
 "Native MXFP4 served end to end (2026-08-14)".
 
+### 4.13 K3-RESIDENCY-VERTICAL-1 — the real plan through selection, refusal, accounting and execution (2026-09-05)
+
+Preregistered in
+[`represent/forecasts/k3-residency-vertical.json`](represent/forecasts/k3-residency-vertical.json)
+after the REPRESENT codec contract closed at rung 3d (PR #425). The
+executable subject is Kimi-Linear-48B-A3B, the R2 rung, because K3 proper
+has no weights on this box; the machinery is what transfers. The baseline
+was measured with a read-only instrument, `larql vindex3 ops <container>
+--realizations`, which prepares the plan from segment headers alone: on
+the real container every one of 20,081 planned operands is pinned, the
+pins declare 178 GiB resident against 128 GiB, the plan silently omits the
+shared expert its own graph declares (the width field postdates every
+container on disk), and the per-expert bank is planned as 19,968 whole
+projections the executor cannot run. The forecast fixes the interventions
+(plan completeness, a budget at preparation, the mapped-bank and
+shared-expert realizations through the prepared plan, observed pricing, a
+three-rung parity ladder), the predictions and the falsifiers before any
+of it is built.
+
 ## 5. Claims under test
 
 | ID | Claim | Falsifier |

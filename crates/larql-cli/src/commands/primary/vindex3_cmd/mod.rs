@@ -270,6 +270,19 @@ pub struct OpsArgs {
     /// Print the full plan as JSON instead of the summary.
     #[arg(long)]
     pub json: bool,
+
+    /// Prepare the plan against the production CPU backend WITHOUT
+    /// reading a payload byte: select and pin a realization per planned
+    /// operand, or print every refusal; then price the pins — declared
+    /// resident bytes, staging, stored footprint, execution touch — from
+    /// the container's tensor tables alone.
+    #[arg(long)]
+    pub realizations: bool,
+
+    /// A memory budget in GiB to hold the declared working set against
+    /// (with `--realizations`). Omitted: the machine's physical memory.
+    #[arg(long)]
+    pub budget_gib: Option<f64>,
 }
 
 #[derive(Args)]
@@ -468,6 +481,7 @@ mod lowered;
 mod ops;
 mod optional_op;
 pub(crate) mod prepare;
+mod realizations;
 mod sensitivity;
 mod teacher_force;
 use exec::run_exec;
