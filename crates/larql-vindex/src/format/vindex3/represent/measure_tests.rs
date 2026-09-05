@@ -16,6 +16,7 @@
 use std::collections::BTreeMap;
 use std::path::PathBuf;
 
+use super::measure::outcome::{ExecutionFailure, Inadmissible, MeasurementRefusal, VerifiedFacts};
 use super::measure::{
     MeasurementProcedure, TeacherForcedRequest, BANK_ENV, CANDIDATE_ENV, DEFAULT_GATE,
     DEFAULT_LABEL, DEFAULT_SEQUENCES, GATE_ENV, LABEL_ENV, SEQUENCES_ENV, SOURCE_ENV,
@@ -260,5 +261,225 @@ fn a_request_survives_a_round_trip_through_json() {
     assert_eq!(
         serde_json::from_value::<TeacherForcedRequest>(value).expect("from value"),
         request
+    );
+}
+
+// ------------------------------- execution failure vs validity failure
+
+/// A run that checked everything, for tests that move one fact at a
+/// time away from complete.
+fn verified() -> VerifiedFacts {
+    VerifiedFacts {
+        compiled_layers: vec![25],
+        compiled_projections: vec!["w1".into()],
+        attribution_checked_layers: vec![25],
+        seal_checked_operands: 16,
+        invariant_neighbour_layer: Some(26),
+        positions: 1024,
+        gate_evaluated: "kimi-logit-v3".into(),
+    }
+}
+
+#[test]
+fn nothing_measured_and_not_admissible_are_different_answers() {
+    // **The distinction stage 5 needs.** An agent told only "it
+    // failed" would retry an inadmissible run forever; the numbers
+    // would come back identical and still not be evidence.
+    let execution: MeasurementRefusal = ExecutionFailure::BackendUnavailable {
+        detail: "no Metal device".into(),
+    }
+    .into();
+    let validity: MeasurementRefusal = Inadmissible::ProtectedOperandChanged {
+        layer: 25,
+        projection: "w3".into(),
+    }
+    .into();
+
+    assert!(execution.nothing_was_measured());
+    assert!(execution.worth_retrying());
+    assert!(!validity.nothing_was_measured());
+    assert!(
+        !validity.worth_retrying(),
+        "repeating a mis-prepared experiment reproduces the same non-evidence"
+    );
+    assert_ne!(execution, validity);
+}
+
+#[test]
+fn a_refusal_says_which_kind_it_is_in_words() {
+    // The message a caller reads has to carry the distinction too — a
+    // structured variant nobody prints is a distinction that reaches
+    // no one.
+    let execution: MeasurementRefusal = ExecutionFailure::HeadDidNotAttach.into();
+    let validity: MeasurementRefusal = Inadmissible::CandidateCompilesNothing.into();
+    assert!(
+        execution.to_string().contains("could not be performed"),
+        "{execution}"
+    );
+    assert!(
+        validity.to_string().contains("not admissible evidence"),
+        "{validity}"
+    );
+}
+
+#[test]
+fn every_condition_the_harness_checks_has_a_refusal_to_return() {
+    // The inventory. Each of these is an `assert!` in
+    // `q2a_teacher_forced` today, and the move to a callable procedure
+    // must not quietly drop one — a check that becomes nothing is
+    // indistinguishable from a check that passes.
+    let inventory: Vec<MeasurementRefusal> = vec![
+        Inadmissible::ResidencyModeWouldBeMeasured {
+            detail: String::new(),
+        }
+        .into(),
+        Inadmissible::CorpusNotForThisModel {
+            corpus_hidden: 1,
+            model_hidden: 2,
+        }
+        .into(),
+        Inadmissible::CandidateCompilesNothing.into(),
+        Inadmissible::UnexpectedPhysicalRead {
+            arm: "baseline".into(),
+            layer: 25,
+            projection: "gate".into(),
+            expected_store: "kimi-source-expert-bank".into(),
+            actual_store: "kimi-candidate-bank".into(),
+        }
+        .into(),
+        Inadmissible::ProtectedOperandChanged {
+            layer: 25,
+            projection: "up".into(),
+        }
+        .into(),
+        Inadmissible::AddressingMismatch {
+            layer: 25,
+            projection: "down".into(),
+            detail: String::new(),
+        }
+        .into(),
+        Inadmissible::SealMismatch {
+            layer: 25,
+            detail: String::new(),
+        }
+        .into(),
+        Inadmissible::OperandNotSealed {
+            tensor: "w1".into(),
+        }
+        .into(),
+        Inadmissible::PositionCountMismatch {
+            expected: 1024,
+            measured: 512,
+        }
+        .into(),
+        Inadmissible::GateMismatch {
+            requested: "kimi-logit-balanced-v1".into(),
+            evaluated: "kimi-logit-v3".into(),
+        }
+        .into(),
+    ];
+    assert_eq!(inventory.len(), 10, "ten validity conditions, each named");
+    for refusal in &inventory {
+        assert!(
+            !refusal.nothing_was_measured(),
+            "{refusal} measured nothing"
+        );
+    }
+
+    // And the execution class covers the ways a run does not happen.
+    for failure in [
+        ExecutionFailure::BackendUnavailable {
+            detail: String::new(),
+        },
+        ExecutionFailure::ArtifactUnreadable {
+            what: "source".into(),
+            path: "/m/s".into(),
+            detail: String::new(),
+        },
+        ExecutionFailure::LayerIncomplete {
+            layer: 3,
+            detail: String::new(),
+        },
+        ExecutionFailure::HeadDidNotAttach,
+        ExecutionFailure::StepRefused {
+            sequence: 0,
+            position: 0,
+            detail: String::new(),
+        },
+    ] {
+        assert!(MeasurementRefusal::from(failure).nothing_was_measured());
+    }
+}
+
+#[test]
+fn a_run_that_skipped_a_check_is_not_complete() {
+    // `complete()` is explicit and not a count: four conditions out of
+    // five is not eighty per cent of a verified run.
+    assert!(verified().complete());
+
+    let missing: Vec<VerifiedFacts> = vec![
+        VerifiedFacts {
+            compiled_layers: vec![],
+            ..verified()
+        },
+        VerifiedFacts {
+            compiled_projections: vec![],
+            ..verified()
+        },
+        VerifiedFacts {
+            attribution_checked_layers: vec![],
+            ..verified()
+        },
+        VerifiedFacts {
+            seal_checked_operands: 0,
+            ..verified()
+        },
+        VerifiedFacts {
+            invariant_neighbour_layer: None,
+            ..verified()
+        },
+        VerifiedFacts {
+            positions: 0,
+            ..verified()
+        },
+        VerifiedFacts {
+            gate_evaluated: String::new(),
+            ..verified()
+        },
+    ];
+    assert_eq!(missing.len(), 7, "one omission per recorded fact");
+    for facts in missing {
+        assert!(!facts.complete(), "{facts:?} passed with a fact missing");
+    }
+
+    // Attribution must cover EVERY compiled layer, not merely some: a
+    // composed map earns the check per layer, at that layer's own
+    // encoding.
+    assert!(!VerifiedFacts {
+        compiled_layers: vec![25, 26],
+        attribution_checked_layers: vec![25],
+        ..verified()
+    }
+    .complete());
+}
+
+#[test]
+fn a_refusal_and_its_verified_facts_survive_json() {
+    // A receipt that cannot be stored cannot be an observation later.
+    let refusal: MeasurementRefusal = Inadmissible::SealMismatch {
+        layer: 25,
+        detail: "operand 3".into(),
+    }
+    .into();
+    let text = serde_json::to_string(&refusal).expect("serialise");
+    assert_eq!(
+        serde_json::from_str::<MeasurementRefusal>(&text).expect("reload"),
+        refusal
+    );
+    let facts = verified();
+    let value = serde_json::to_value(&facts).expect("to value");
+    assert_eq!(
+        serde_json::from_value::<VerifiedFacts>(value).expect("from value"),
+        facts
     );
 }

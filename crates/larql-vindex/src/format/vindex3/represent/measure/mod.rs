@@ -36,6 +36,8 @@
 //! is true by construction rather than by a comparison that needs a
 //! 48 B model to run.
 
+pub mod outcome;
+
 use std::path::{Path, PathBuf};
 
 use serde::{Deserialize, Serialize};
