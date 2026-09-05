@@ -1,0 +1,58 @@
+{
+  "artifact": "wave19-execution-notes",
+  "purpose": "What wave 19 LEARNED while executing, kept apart from what it PREDICTED before executing. The frozen forecast is immutable; each prediction is scored here as it is measured, and every deviation from the frozen design is recorded with its reason.",
+  "forecast": "wave19-sinkhorn-traversal.json",
+  "forecast_commit": "a2f2bfa1",
+  "baseline_commit": "399a8370",
+  "reconnaissance": "wave19-sinkhorn-traversal-reconnaissance.json",
+  "19a_decode": {
+    "written": "2026-09-05, after the decode carrier, the hidden-5 substrate, the witness and the controls were built and measured; before any batch-path code and before any reader moved",
+    "what_landed": [
+      "exec::hyper_connection: a typed `Bundle` (streams x hidden, never a wider hidden state), `reduce` (stages 1-3) and `update` (stage 5, replacing the residual add) as the site composition, `Mutation` for the controls; `sublayer_forward` re-expressed as reduce -> branch -> update so there is one composition",
+      "exec::observe: `HcSiteRecord { layer, site, position, split, reduced, branch_output, bundle_out }` on a default `StepObserver::hyper_connection_site`; existing observers untouched",
+      "exec::prepared: `PreparedHcSite` / `PreparedHyperConnection` per layer and `PreparedHcHead` on a whole-stack image, all f32 glue and counted as glue; the public `load` keeps the topology refusal verbatim and delegates to `load_unrefused`; `#[cfg(test)] load_for_hyper_connection_witness` is the seam — hyper-connected plans only, no public affordance; a whole-stack image of a headless component refuses at preparation with the head reason; a layer scale under the topology refuses by name; layers that disagree on norm eps leave the head no epsilon and refuse",
+      "exec::decode: the step runs over a `Carrier` (one vector, or a bundle); each site enters through `reduce` and leaves through `update`; the pre-attention norm and the hybrid FFN's raw residual both read the REDUCED vector; the exit reduces through the head only when the image carries one, and a layer-range image's output is its bundle; `step_mutated` and `step_from_bundle` exist only under test",
+      "exec::mod: the batch traversal refuses an image that carries site operands, by name, until 19b — so the seam cannot make the batch path look supported",
+      "the hidden-5 substrate in three variants plus a layer-scale variant, F32 throughout, HC operands = the oracle's weights at every site of every layer; the single-stream sibling as the control"
+    ],
+    "predictions_scored": {
+      "P1_19a_public_refusal_unchanged": {
+        "result": "HELD",
+        "evidence": "the public loader refuses Headless, HeadBearing and Hybrid with the topology text ('cannot execute it', 'traversal'); `execute_text` refuses the same; no plan-level code changed, so the cached plans and the 1031 stand by construction. Test: the_public_loader_still_refuses_every_variant."
+      },
+      "P2_19a_witness": {
+        "result": "HELD",
+        "evidence": "A1-A5 hold on the decode path over the hidden-5 substrate at all three oracle positions (the_decode_traversal_runs_the_bundle_and_the_witness_holds; the_hybrid_ffn_receives_the_reduced_vector). Mutants: (a) bypass -> caught by A1 and A5; (b) one iteration -> A1 and NOT A2; uniform reduction -> A1; transposed comb -> A2 and NOT A1; (c) pre-norm on stream 0 / stream mean -> A3 alone; (d) hybrid residual from stream 0 / stream mean -> A4, with the attention site untouched. No survivor. 27 tests."
+      },
+      "P4_single_stream_byte_identity": {
+        "result": "HELD (decode half)",
+        "evidence": "the full larql-vindex library suite passes unchanged (4149 passed, 7 ignored, 0 failed) including every decode-vs-batch parity gate; the hidden-5 single-stream sibling's decode logits equal its batch logits bit for bit, and its step emits no site record."
+      },
+      "P5_headless_decode_half": {
+        "result": "HELD",
+        "evidence": "Full on Headless refuses at preparation naming `hyper_connection_head` and the layer-range alternative, without the topology word; LayerRange on Headless prepares, runs three positions and yields a bundle with no logits and no exit vector; Full on HeadBearing reduces through `head_reduce` with the oracle's head weights and produces VOCAB logits."
+      }
+    },
+    "deviations_from_the_frozen_design": [
+      {
+        "what": "the site record carries `bundle_out` in addition to {split, reduced, branch_output}",
+        "why": "A2 compares the bundle after the update with `expand_streams(b, x_in, split)`; without the bundle in the record the witness could not chain the entering state from one site to the next, and A2 would have needed a second tap. It is the state the next site reads, so it is the same kind of witness value, not observational bloat."
+      },
+      {
+        "what": "the foreign comparison enters the DECODE path through a test-only `step_from_bundle`, the decode form of the layer-range contract",
+        "why": "the freeze placed the oracle's entry at the layer-range boundary (a batch ResumePoint whose rows are bundles). 19a is decode-only and the decode session has no resume entry, so the entry exists as a `cfg(test)` method on the session. The embedding entry cannot produce the oracle's state (replication makes every stream equal, the oracle's streams are scaled 0.1/1/3/7), which the reconnaissance had already established."
+      },
+      {
+        "what": "mutant (d) is recorded as invisible on the dense estate",
+        "why": "a dense FFN reads only its normed input, so the residual argument is inert there; the hybrid substrate is what makes the defect observable. Measured (mutant_d_is_invisible_on_the_dense_estate), so the choice of substrate is a fact rather than an assumption."
+      }
+    ],
+    "observed_while_building": [
+      "the Gemma-4-shaped hybrid declares the topology from `text_config.hc_*` and closes with the six site operands under `model.language_model.layers.N.` — the second real spelling (GLM's) exercised end to end, on a hybrid MoE estate",
+      "`head_dim` 4 on hidden 5 with one head plans and executes: the substrate deliberately keeps `hidden != heads * head_dim` so no shape coincidence can pass a transposed operand",
+      "the transposed-combination control is caught by A2 and passes A1 exactly as frozen: the split it reports is correct and only its expansion lies — the assertions measure what they claim, separately"
+    ],
+    "gates": "fmt clean; clippy -p larql-vindex --all-targets -D warnings clean; cargo check --workspace --all-targets clean; full library suite 4149 passed / 0 failed / 7 ignored; coverage policy passed (total 93.73% lines, 425 files): decode.rs 92.97%, prepared.rs 93.88% (baseline 86.6), hyper_connection.rs 94.35%, observe.rs 100%, exec/mod.rs 87.22% (baseline 86.5). Measured on macOS, which reads low against the ubuntu job.",
+    "what_19a_does_not_claim": "no batch traversal, no reader moved, no plane/resume/CLI width change, no semantics-version bump, no real-payload witness. Public execution of a hyper-connected component still refuses with the wave-18 text."
+  }
+}

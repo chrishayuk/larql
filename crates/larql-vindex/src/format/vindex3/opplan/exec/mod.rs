@@ -355,6 +355,20 @@ fn traverse<B: PlanBackend + ?Sized, K: KvState + ?Sized>(
     })?;
     let hidden = embedding.table.shape[1];
 
+    // **Wave 19a.** The decode step carries the hyper-connection bundle;
+    // this traversal still carries one `[hidden]` vector per position and
+    // must not run an image that holds site operands as if it were one
+    // stream. Reachable only through the witness seam until 19b — the
+    // public preparation path refuses the topology before loading — and
+    // named so the seam cannot make the batch path look supported.
+    if ops.carries_hyper_connection() {
+        return Err(VindexError::Parse(format!(
+            "component `{}`: the batch traversal carries one residual vector per position and \
+             does not run the hyper-connection bundle (wave 19b); only the decode step does",
+            plan.component
+        )));
+    }
+
     // **Refuse before any output.** A recurrence needs durable buffers,
     // and discovering at layer 63 that nobody can hold them would mean
     // every earlier layer had already been emitted — a caller left

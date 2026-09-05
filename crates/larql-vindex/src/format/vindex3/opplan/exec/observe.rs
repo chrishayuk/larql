@@ -17,6 +17,8 @@
 //! [`DecodeSession::step_observed`]: super::decode::DecodeSession::step_observed
 //! [`step`]: super::decode::DecodeSession::step
 
+use super::hyper_connection::{Bundle, SinkhornSplit};
+
 /// One decode step's observation events, in execution order.
 #[derive(Debug, Clone, PartialEq)]
 pub enum StepEvent {
@@ -59,6 +61,43 @@ pub enum InputSite {
     FfnOutput,
 }
 
+/// Which of a layer's two hyper-connection sites a record came from.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum HcSite {
+    Attention,
+    Ffn,
+}
+
+/// One hyper-connection site's intermediate state at one position
+/// (wave 19a) — the values that exist ONLY if the bundle traversal ran.
+///
+/// A single-stream traversal of the same plan produces every other tap
+/// this module offers; none of them can say whether the Sinkhorn split
+/// happened. This record can: the split is stage two's output, the
+/// reduced vector is what the ordinary operator actually saw, the
+/// branch output is what the expansion consumed, and the bundle after
+/// the update is what the next site reads. A witness holding the
+/// bundle that entered the site can recompute every one of them.
+///
+/// Borrowed, like [`StepObserver::operand_input`]: the executor does not
+/// clone its state to be observed.
+#[derive(Debug, Clone, Copy)]
+pub struct HcSiteRecord<'a> {
+    pub layer: usize,
+    pub site: HcSite,
+    pub position: usize,
+    /// Stage two's `pre`, `post` and `comb`.
+    pub split: &'a SinkhornSplit,
+    /// Stage three's `[hidden]` vector — the branch's input, before the
+    /// site's pre-norm.
+    pub reduced: &'a [f32],
+    /// The `[hidden]` delta the update consumed: the branch's output
+    /// after its post-norm and residual scaling, where the plan has them.
+    pub branch_output: &'a [f32],
+    /// The bundle after stage five.
+    pub bundle_out: &'a Bundle,
+}
+
 /// A subscriber to the canonical step's observation points.
 pub trait StepObserver {
     fn event(&mut self, event: StepEvent);
@@ -69,6 +108,12 @@ pub trait StepObserver {
     ///
     /// [`event`]: Self::event
     fn operand_input(&mut self, _layer: usize, _site: InputSite, _values: &[f32]) {}
+
+    /// Observe one hyper-connection site's intermediate state. Fired
+    /// only on a hyper-connected component, once per site per layer per
+    /// step, immediately after the site's update and before the
+    /// sublayer's completion event. Default: ignore.
+    fn hyper_connection_site(&mut self, _record: HcSiteRecord<'_>) {}
 }
 
 /// The default subscriber: observes nothing. [`DecodeSession::step`]
