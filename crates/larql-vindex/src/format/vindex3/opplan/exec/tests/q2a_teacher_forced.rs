@@ -46,36 +46,13 @@ use crate::format::vindex3::opplan::exec::stack_metal::{DeviceLayer, HybridStack
 use crate::format::vindex3::represent::bank::{
     BankBuilder, PositionObservation, Top1Change, TopKChange,
 };
+use crate::format::vindex3::represent::measure::TeacherForcedRequest;
 use crate::format::vindex3::represent::physical::{ExpertEncoding, ProjectionAddressing};
 use crate::format::vindex3::represent::quality::{
-    kimi_logit_v1, kimi_logit_v2, kimi_logit_v3, Criterion, QualityEvidence,
+    kimi_logit_v1, kimi_logit_v2, Criterion, QualityEvidence,
 };
 
-pub(super) const SOURCE_ENV: &str = "LARQL_KIMI_VINDEX3";
-pub(super) const CANDIDATE_ENV: &str = "LARQL_KIMI_Q6_CANDIDATE";
-pub(super) const BANK_ENV: &str = "LARQL_KIMI_QUALITY_BANK";
-
-/// Q2a's slice of the exported bank: 32 of the 256 sequences.
-///
-/// Overridable, because SCOPE SEARCH is now the experiment and a
-/// diagnostic that only has to separate "this projection cascades" from
-/// "this one does not" does not need the full slice. Q2a's own headline
-/// run is 32; a projection or depth probe is 8.
-const SEQUENCES_ENV: &str = "LARQL_Q2A_SEQUENCES";
-const SEQUENCES: usize = 32;
-
-fn sequences() -> usize {
-    std::env::var(SEQUENCES_ENV)
-        .ok()
-        .and_then(|v| v.parse().ok())
-        .unwrap_or(SEQUENCES)
-}
-
-/// A label for the report, so a sweep's outputs do not overwrite each
-/// other and each names the scope it measured.
-fn run_label() -> String {
-    std::env::var("LARQL_Q2A_LABEL").unwrap_or_else(|_| "q2a".to_string())
-}
+pub(super) use crate::format::vindex3::represent::measure::{BANK_ENV, CANDIDATE_ENV, SOURCE_ENV};
 /// Sequences the null arm re-runs — enough positions for the all-zero
 /// claim to cover real routing variety, cheap enough not to double the
 /// run.
@@ -363,14 +340,26 @@ pub(super) fn run_sequence(
 
 #[test]
 fn q2a_teacher_forced_quality_bank_runs_and_the_gate_refuses_on_positions() {
-    let (Some(source_dir), Some(candidate_dir), Some(bank_dir)) = (
-        env_dir(SOURCE_ENV),
-        env_dir(CANDIDATE_ENV),
-        env_dir(BANK_ENV),
-    ) else {
+    // **The environment form is an ADAPTER.** It builds the request a
+    // prepared experiment would build and runs nothing of its own, so
+    // there is one procedure rather than an env path and a direct path
+    // that could drift.
+    let Some(request) = TeacherForcedRequest::from_env() else {
         eprintln!("skipped: set {SOURCE_ENV}, {CANDIDATE_ENV} and {BANK_ENV}");
         return;
     };
+    // Refused before anything is loaded: an unknown gate, an empty
+    // slice, a missing artifact. The gate is RESOLVED here and used
+    // below — the runner no longer holds one.
+    let requested_gate = request
+        .admit()
+        .expect("the request names what this build performs");
+    let (source_dir, candidate_dir, bank_dir) = (
+        request.source.clone(),
+        request.candidate.clone(),
+        request.quality_bank.clone(),
+    );
+    let sequences = || request.sequences;
     // The residency SET would try to wire ~94 GB of expert bank, past
     // the wired-collector wall (~45 GB). This run uses registered
     // regions under IMPLICIT residency; refusing is better than
@@ -627,7 +616,7 @@ fn q2a_teacher_forced_quality_bank_runs_and_the_gate_refuses_on_positions() {
     // reported because every earlier claim in this programme cited
     // them and a reader needs to compare like with like. ──
     let evidence = QualityEvidence {
-        gate: kimi_logit_v3(),
+        gate: requested_gate.clone(),
         bank: bank.clone(),
     };
     let verdict = evidence.verdict();
@@ -648,7 +637,7 @@ fn q2a_teacher_forced_quality_bank_runs_and_the_gate_refuses_on_positions() {
         let bytes = std::fs::read(bank_dir.join("manifest.json")).expect("bank manifest reads");
         format!("{:x}", Sha256::digest(&bytes))
     };
-    let label = run_label();
+    let label = request.label.clone();
     let report = serde_json::json!({
         "run": label,
         "gate": evidence.gate,
