@@ -45,14 +45,14 @@
 //! seam the decoupled surfaces grow from, and preparation refuses a
 //! slice the plan cannot satisfy rather than silently preparing less.
 
-use super::backend::{
-    MatrixClass, MatrixOperand, NormCall, PlanBackend, WeightFormat, WeightSlice,
-};
+use super::backend::{MatrixClass, NormCall, PlanBackend, WeightFormat, WeightSlice};
 use super::experts::FfnOperands;
 use super::operands::{OperandSource, SourceStamp};
+use super::realization::{RealizationRecord, RepresentationFacts, SelectionRefusals};
 use super::weights::{load_weight, LoadedWeight};
 use super::AttentionOperands;
 use crate::error::VindexError;
+use crate::format::vindex3::opplan::planned::Operation;
 
 use super::super::{
     ComponentOpPlan, GatedDeltaOp, LayerAttention, Mamba2Op, NormOp, OperandRef, OutputOp,
@@ -225,6 +225,19 @@ pub(super) enum PreparedAttention {
 }
 
 impl PreparedAttention {
+    /// Every matrix this attention holds resident — what a pinned
+    /// projection realization is checked against.
+    pub(super) fn matrices(&self) -> Vec<&LoadedWeight> {
+        match self {
+            Self::Softmax(ops) => ops.loaded_matrices(),
+            Self::GatedDelta(ops) => ops.loaded_matrices().to_vec(),
+            Self::Mamba2(ops) => ops.loaded_matrices().to_vec(),
+            Self::ConvQkv(ops) => ops.loaded_matrices().to_vec(),
+            Self::Kda(ops) => ops.loaded_matrices().to_vec(),
+            Self::Mla(ops) => ops.loaded_matrices().to_vec(),
+        }
+    }
+
     /// Matrix operands for device placement.
     ///
     /// A recurrence contributes none: its nine operands are elementwise
@@ -274,7 +287,7 @@ impl GatedDeltaOperands {
         // while `in_proj_a` is 0.5 MB and does not. A single format for
         // the layer could not express that, and the version of this that
         // loaded everything f32 is what left 48 of 64 layers widened.
-        let matrix = |r: &OperandRef| load_weight(store, r, format(r));
+        let matrix = |r: &OperandRef| load_weight(store, r, format(r)?);
         let glue = |r: &OperandRef| store.load(r);
         Ok(Self {
             op: op.clone(),
@@ -355,7 +368,7 @@ impl Mamba2Operands {
         store: OperandSource<'_>,
         format: FormatFor<'_>,
     ) -> Result<Self, VindexError> {
-        let matrix = |r: &OperandRef| load_weight(store, r, format(r));
+        let matrix = |r: &OperandRef| load_weight(store, r, format(r)?);
         let glue = |r: &OperandRef| store.load(r);
         Ok(Self {
             op: op.clone(),
@@ -426,7 +439,7 @@ impl ConvQkvOperands {
         store: OperandSource<'_>,
         format: FormatFor<'_>,
     ) -> Result<Self, VindexError> {
-        let matrix = |r: &OperandRef| load_weight(store, r, format(r));
+        let matrix = |r: &OperandRef| load_weight(store, r, format(r)?);
         let glue = |r: &OperandRef| store.load(r);
         Ok(Self {
             op: op.clone(),
@@ -498,7 +511,7 @@ impl KdaOperands {
         format: FormatFor<'_>,
         norm_eps: f32,
     ) -> Result<Self, VindexError> {
-        let matrix = |r: &OperandRef| load_weight(store, r, format(r));
+        let matrix = |r: &OperandRef| load_weight(store, r, format(r)?);
         let glue = |r: &OperandRef| store.load(r);
         Ok(Self {
             op: op.clone(),
@@ -596,7 +609,7 @@ impl MlaOperands {
         store: OperandSource<'_>,
         format: FormatFor<'_>,
     ) -> Result<Self, VindexError> {
-        let matrix = |r: &OperandRef| load_weight(store, r, format(r));
+        let matrix = |r: &OperandRef| load_weight(store, r, format(r)?);
         let kv_a_norm_eps = op.kv_a_norm_eps.ok_or_else(|| {
             VindexError::Parse(
                 "this MLA layer carries no epsilon for its latent norm (`kv_a_layernorm`), \
@@ -673,27 +686,102 @@ fn two_dims(r: &OperandRef) -> Result<(usize, usize), VindexError> {
 /// projections — to the same resolver and can get different answers, which
 /// is what lets a `48 x 5120` gate stay f32 inside a stack whose `10240 x
 /// 5120` projections do not.
-pub(super) type FormatFor<'a> = &'a dyn Fn(&OperandRef) -> WeightFormat;
+pub(super) type FormatFor<'a> = &'a dyn Fn(&OperandRef) -> Result<WeightFormat, VindexError>;
 
-/// Ask the backend about one operand, with the physical facts attached.
+/// Resolve, admit and select a realization for every planned operand
+/// `slice` of `plan` will load — BEFORE any byte is read.
 ///
-/// The backend still cannot reach the bytes — it is told the element
-/// count and what the checkpoint holds, and answers with a
-/// representation. Handing it the `OperandRef` would let it resolve
-/// operands by name, which is the one thing the seam forbids.
-fn resolve<B: PlanBackend + ?Sized>(
-    backend: &B,
+/// The backend is handed the planned operation and the registry's facts
+/// for the stored dtype, never the bytes and never a label to match on.
+/// Every refusal is collected, so the caller sees the whole problem and
+/// not its first symptom. An operand the container does not hold is
+/// skipped here: the loader refuses it by name, as it always has.
+pub fn select_realizations<B: PlanBackend + ?Sized>(
+    plan: &ComponentOpPlan,
     store: OperandSource<'_>,
-    class: MatrixClass,
+    backend: &B,
+    slice: &ExecutionSlice,
+) -> Result<Vec<RealizationRecord>, VindexError> {
+    let whole = slice.is_whole_stack();
+    let range = slice.layers(plan);
+    let mut records = Vec::new();
+    let mut refusals = Vec::new();
+    for planned in plan.planned_operands() {
+        let in_scope = match planned.layer {
+            Some(layer) => range.contains(&layer),
+            None => whole,
+        };
+        if !in_scope {
+            continue;
+        }
+        let Some(label) = store.store().stored_dtype(&planned.operand) else {
+            continue;
+        };
+        let mut facts = RepresentationFacts::resolve(label);
+        if store.is_overridden(&planned.operand) {
+            facts = facts.overlaid();
+        }
+        match backend.select(&planned, &facts) {
+            Ok(selection) => records.push(RealizationRecord {
+                representation: label.to_string(),
+                planned,
+                selection,
+            }),
+            Err(refusal) => refusals.push(*refusal),
+        }
+    }
+    if refusals.is_empty() {
+        Ok(records)
+    } else {
+        Err(VindexError::Parse(SelectionRefusals(refusals).to_string()))
+    }
+}
+
+/// The representation pinned for `op` under `operation`.
+///
+/// An operand with no record is either absent from the container — the
+/// loader refuses it by name a moment later, so any answer here is
+/// unread — or one the plan's own view failed to list, which is a
+/// disagreement between `planned_operands()` and the loader and is
+/// refused as such rather than defaulted.
+fn pinned_format(
+    records: &[RealizationRecord],
+    store: OperandSource<'_>,
     op: &OperandRef,
-) -> WeightFormat {
-    backend.weight_format(MatrixOperand {
-        class,
-        elements: op.shape.iter().product(),
-        stored_bf16: store.is_stored_bf16(op),
-        stored_nvfp4: store.is_stored_nvfp4(op),
-        stored_kquant: store.is_stored_kquant(op),
-    })
+    operation: Operation,
+) -> Result<WeightFormat, VindexError> {
+    if let Some(record) = records.iter().find(|r| {
+        r.planned.operand.object == op.object
+            && r.planned.operand.tensor == op.tensor
+            && r.planned.operation == operation
+    }) {
+        return Ok(record.selection.realization.format());
+    }
+    if store.store().stored_dtype(op).is_none() {
+        return Ok(WeightFormat::F32);
+    }
+    Err(VindexError::Parse(format!(
+        "tensor `{}` ({}): the loader resolves an operand the plan's own view does not list — \
+         planned_operands() and the loader disagree",
+        op.tensor,
+        operation.name()
+    )))
+}
+
+/// The resident form pinned for layer `index`'s packed bank.
+fn bank_pin(records: &[RealizationRecord], index: usize) -> Result<WeightFormat, VindexError> {
+    records
+        .iter()
+        .find(|r| {
+            r.planned.layer == Some(index) && r.planned.operation == Operation::ExpertBankSlice
+        })
+        .map(|r| r.selection.realization.format())
+        .ok_or_else(|| {
+            VindexError::Parse(format!(
+                "layer {index}: a routed FFN with no pinned bank realization — planned_operands() \
+                 and the loader disagree"
+            ))
+        })
 }
 
 /// A component's operands, lowered once for a given slice and backend.
@@ -715,6 +803,9 @@ pub struct PreparedOperands {
     layers: Vec<PreparedLayer>,
     final_norm: Option<PreparedNorm>,
     output: Option<(OutputOp, LoadedWeight)>,
+    /// One pinned realization per planned operand this image executes,
+    /// in the plan's order — the record the trace reads.
+    realizations: Vec<RealizationRecord>,
 }
 
 impl PreparedOperands {
@@ -747,6 +838,11 @@ impl PreparedOperands {
         }
         let stamp = store.stamp();
         let whole = slice.is_whole_stack();
+        // **Select before any operand is loaded.** Every planned operand
+        // this slice executes is resolved against the registry, admitted,
+        // and pinned to one realization — or the whole plan is refused
+        // with every reason — before a byte of any of them is read.
+        let realizations = select_realizations(plan, store, backend, &slice)?;
         let embedding = plan.embedding.as_ref().ok_or_else(|| {
             VindexError::Parse(format!(
                 "component `{}` has no embedding op — external hidden-state input is a later rung",
@@ -760,29 +856,28 @@ impl PreparedOperands {
             None
         };
 
-        // One resolver per matrix class, each answering per operand.
+        // The loaders ask by operand and class; the answer is the pin.
+        let pinned = |op: &OperandRef, operation: Operation| {
+            pinned_format(&realizations, store, op, operation)
+        };
         let attention_format =
-            |op: &OperandRef| resolve(backend, store, MatrixClass::AttentionProjection, op);
-        let ffn_format = |op: &OperandRef| resolve(backend, store, MatrixClass::FfnProjection, op);
-        // The bank is asked once, for the class: it is one stored tensor
-        // holding every expert's matrix, so there is no per-matrix size to
-        // answer about.
-        let bank_format = backend.weight_format(MatrixOperand {
-            class: MatrixClass::RoutedExpertBank,
-            elements: 0,
-            stored_bf16: false,
-            // The bank is widened and sliced into per-expert matrices on
-            // the way in, so no stored form survives for a format to
-            // apply to — the same reason `elements` is 0 here.
-            stored_nvfp4: false,
-            stored_kquant: false,
-        });
-        let head_format = |op: &OperandRef| resolve(backend, store, MatrixClass::OutputHead, op);
+            |op: &OperandRef| pinned(op, Operation::Project(MatrixClass::AttentionProjection));
+        let ffn_format =
+            |op: &OperandRef| pinned(op, Operation::Project(MatrixClass::FfnProjection));
+        let head_format = |op: &OperandRef| pinned(op, Operation::OutputHead);
 
         let range = slice.layers(plan);
         let first_layer = range.start;
         let mut layers = Vec::with_capacity(range.len());
-        for layer in &plan.layers[range] {
+        for index in range.clone() {
+            let layer = &plan.layers[index];
+            // A packed bank's realization is pinned per layer; a layer
+            // with no bank never reads the value, and gets the widened
+            // form so nothing compact is implied.
+            let bank_format = match layer.ffn.as_ref().and_then(|f| f.routed()) {
+                Some(_) => bank_pin(&realizations, index)?,
+                None => WeightFormat::F32,
+            };
             layers.push(PreparedLayer {
                 // Absent under post-norm placement: the sublayer reads
                 // the raw residual there. `None` is the program, and the
@@ -885,7 +980,7 @@ impl PreparedOperands {
                 .map(|op| {
                     Ok::<_, VindexError>((
                         op.clone(),
-                        load_weight(store, &op.projection, head_format(&op.projection))?,
+                        load_weight(store, &op.projection, head_format(&op.projection)?)?,
                     ))
                 })
                 .transpose()?
@@ -902,7 +997,13 @@ impl PreparedOperands {
             layers,
             final_norm,
             output,
+            realizations,
         };
+        // **The executor runs what was pinned.** Every resident matrix
+        // holds the representation its record named, checked here so a
+        // loader that drifted from the selector cannot hand the executor
+        // bytes the plan never pinned.
+        prepared.verify_pins()?;
         prepared.place(backend);
         Ok(prepared)
     }
@@ -934,6 +1035,81 @@ impl PreparedOperands {
     /// The embedding table is the one f32 population that is EXPECTED:
     /// decode gathers a single row from it per token, so it is residency
     /// without traffic, and no kernel here consumes a compact one.
+    /// One pinned realization per planned operand this image executes:
+    /// the representation resolved, the candidates considered, the one
+    /// selected, its reason and its declared residency.
+    pub fn realizations(&self) -> &[RealizationRecord] {
+        &self.realizations
+    }
+
+    #[cfg(test)]
+    pub(super) fn realizations_mut(&mut self) -> &mut Vec<RealizationRecord> {
+        &mut self.realizations
+    }
+
+    /// Every resident matrix holds the representation its pinned
+    /// realization named — checked per layer and site as a multiset, so
+    /// the executor, which reads its kernel off the resident bytes, can
+    /// run nothing the plan did not pin. A packed bank's per-expert slices
+    /// are a different realization and are checked by the bank loader.
+    pub fn verify_pins(&self) -> Result<(), VindexError> {
+        let pinned =
+            |layer: Option<usize>, want: &dyn Fn(Operation) -> bool| -> Vec<WeightFormat> {
+                let mut out: Vec<WeightFormat> = self
+                    .realizations
+                    .iter()
+                    .filter(|r| r.planned.layer == layer && want(r.planned.operation))
+                    .map(|r| r.selection.realization.format())
+                    .collect();
+                out.sort_by_key(|f| format!("{f:?}"));
+                out
+            };
+        let observed = |weights: Vec<&LoadedWeight>| -> Vec<WeightFormat> {
+            let mut out: Vec<WeightFormat> = weights.iter().map(|w| w.format()).collect();
+            out.sort_by_key(|f| format!("{f:?}"));
+            out
+        };
+        let mismatch = |site: String, pinned: Vec<WeightFormat>, resident: Vec<WeightFormat>| {
+            VindexError::Parse(format!(
+                "{site}: the resident representations {resident:?} are not the pinned \
+                 realizations {pinned:?} — the loader drifted from the selector"
+            ))
+        };
+        for (offset, layer) in self.layers.iter().enumerate() {
+            let index = self.first_layer + offset;
+            let attention = pinned(Some(index), &|o| {
+                o == Operation::Project(MatrixClass::AttentionProjection)
+            });
+            let resident = observed(layer.attention.matrices());
+            if attention != resident {
+                return Err(mismatch(
+                    format!("layer {index} attention"),
+                    attention,
+                    resident,
+                ));
+            }
+            let ffn = pinned(Some(index), &|o| {
+                o == Operation::Project(MatrixClass::FfnProjection)
+            });
+            let resident = observed(
+                layer
+                    .ffn
+                    .as_ref()
+                    .map(|f| f.dense_matrices())
+                    .unwrap_or_default(),
+            );
+            if ffn != resident {
+                return Err(mismatch(format!("layer {index} ffn"), ffn, resident));
+            }
+        }
+        let head = pinned(None, &|o| o == Operation::OutputHead);
+        let resident = observed(self.output.iter().map(|(_, w)| w).collect());
+        if head != resident {
+            return Err(mismatch("output head".to_string(), head, resident));
+        }
+        Ok(())
+    }
+
     pub fn residency_census(&self) -> ResidencyCensus {
         let mut census = ResidencyCensus::default();
         if let Some(table) = &self.embed_table {

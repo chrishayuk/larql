@@ -720,51 +720,12 @@ impl<'a> OperandSource<'a> {
         Ok(values)
     }
 
-    /// Whether this operand can be held in the checkpoint's own compact
-    /// bytes.
-    ///
-    /// Two conditions, and the second is easy to forget: the container
-    /// must store bf16, AND no overlay edit may stand in the way. An edit
-    /// is an f32-space fact with no representation in stored bytes, so an
-    /// edited operand has to be widened to be honoured at all — see
-    /// [`Self::load_raw`], which refuses it.
-    ///
-    /// False on anything it cannot establish. This decides how many bytes
-    /// a weight occupies, never what it means, so an unknown answers
-    /// "widen it" and the load path reports any real problem a moment
-    /// later with the tensor's name.
-    pub fn is_stored_bf16(&self, operand: &OperandRef) -> bool {
-        if self.overrides.is_some_and(|o| o.is_overridden(operand)) {
-            return false;
-        }
-        self.base.stored_dtype(operand) == Some(DTYPE_BF16)
-    }
-
-    /// Whether this operand is held as a compiled NVFP4 pack.
-    ///
-    /// Overlay edits are f32-space facts with no compact form, so an
-    /// overridden operand answers `false` and is served widened — the
-    /// same rule [`Self::is_stored_bf16`] follows, for the same reason.
-    pub fn is_stored_nvfp4(&self, operand: &OperandRef) -> bool {
-        if self.overrides.is_some_and(|o| o.is_overridden(operand)) {
-            return false;
-        }
-        self.base.stored_dtype(operand)
-            == Some(crate::format::vindex3::represent::nvfp4_pack::DTYPE_NVFP4)
-    }
-
-    /// Whether this operand is held as a compiled K-quant pack — any
-    /// encoding `represent::kquant::lookup` names.
-    ///
-    /// The same overlay rule as [`Self::is_stored_bf16`], for the same
-    /// reason: an edited operand has no compact form and answers `false`.
-    pub fn is_stored_kquant(&self, operand: &OperandRef) -> bool {
-        if self.overrides.is_some_and(|o| o.is_overridden(operand)) {
-            return false;
-        }
-        self.base
-            .stored_dtype(operand)
-            .is_some_and(|d| crate::format::vindex3::represent::kquant::lookup(d).is_some())
+    /// Whether an overlay edit stands on this operand. An edit is an
+    /// f32-space fact with no representation in stored bytes, so the only
+    /// realization that can honour it decodes — the selector reads this
+    /// beside the registry's facts, and [`Self::load_raw`] refuses it.
+    pub fn is_overridden(&self, operand: &OperandRef) -> bool {
+        self.overrides.is_some_and(|o| o.is_overridden(operand))
     }
 
     /// Load one operand's stored bytes unwidened. Overlay edits are

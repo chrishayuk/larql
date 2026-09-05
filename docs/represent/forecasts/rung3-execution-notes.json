@@ -31,7 +31,69 @@
      "for_3b_3d": "PROMOTED TO A HARD 3b INVARIANT (user, on review of 3a): a planned shared-expert projection with no CPU binding/realization is an explicit MissingRealization refusal at preparation — 3b must not admit such a plan, and a provider claiming generic projection support is insufficient unless preparation can bind the actual shared-expert operand. Until 3d supplies a correct CPU realization the CPU path is semantically incomplete for models with shared experts. Consequence for the record: previous CPU-path measurements of affected Qwen-MoE, Kimi and DeepSeek paths are measurements of a REDUCED computation, not full-model execution — preserved, labelled as such, and not used as parity or final performance evidence."
     }
    ],
-   "gates": {"full_crate": "cargo test -p larql-vindex: 4160 lib tests passed, 0 failed, 7 ignored (pre-existing); every integration binary green", "workspace_check": "cargo check --workspace --all-targets: green", "clippy": "clean on rustc 1.98, --all-targets -D warnings", "fmt": "clean, run last", "coverage": "policy passed, total 93.78% over 427 files; opplan/planned.rs 94.44% (119/126), no debt entry", "docs": "check_doc_links.py + check_doc_references.py --strict: green"}
+   "gates": {
+    "full_crate": "cargo test -p larql-vindex: 4160 lib tests passed, 0 failed, 7 ignored (pre-existing); every integration binary green",
+    "workspace_check": "cargo check --workspace --all-targets: green",
+    "clippy": "clean on rustc 1.98, --all-targets -D warnings",
+    "fmt": "clean, run last",
+    "coverage": "policy passed, total 93.78% over 427 files; opplan/planned.rs 94.44% (119/126), no debt entry",
+    "docs": "check_doc_links.py + check_doc_references.py --strict: green"
+   }
+  },
+  "3b_admission_and_selection": {
+   "executed": "2026-09-05",
+   "result": "HELD, with one refinement to the view. `exec/realization.rs` is the vocabulary: `RepresentationFacts` (resolved from the registry per operand, plus an `overlaid` fact for overlay edits), `RealizationId { backend, form }` with forms Direct / Decode / Requantise / SliceStored / DecodedGather / DeviceResident, `Selection { realization, residency (declared), reason, candidates }`, `SelectionRefusal { operand, operation, representation, requested, kind, considered }`, `RealizationRecord`. `PlanBackend::weight_format(MatrixOperand)` is gone; `PlanBackend::select(&PlannedOperand, &RepresentationFacts)` replaces it, defaulting to the reference oracle. `PreparedOperands::load` selects EVERY planned operand of the slice before reading any byte (`select_realizations`), collects every refusal, pins one realization per operand in `realizations()`, hands the loaders the pinned format through a fallible resolver, and verifies after loading that every resident matrix holds its pinned representation (`verify_pins`, a per-site multiset over formats).",
+   "the_three_booleans": "DELETED, not wrapped: `MatrixOperand { stored_bf16, stored_nvfp4, stored_kquant }` and `OperandSource::is_stored_bf16 / is_stored_nvfp4 / is_stored_kquant` no longer exist; grep for `stored_bf16|stored_nvfp4|stored_kquant|is_stored_|MatrixOperand|declared_format|fn weight_format` under exec/ outside tests returns nothing. The only per-operand physical fact left beside the registry's declarations is `is_overridden` (an overlay edit), which is not a dtype.",
+   "the_selector_is_the_old_policy_over_a_derived_set": "`production::select_cpu` derives candidates from `facts.accelerations()` (Direct), the universal decode (Decode(BlasF32)), and the executor's own re-quantised forms offered only when the codec declares the direct bf16 kernel (Requantise), then orders them with the old ladder: NVFP4 pack first, K-quant by the process arm, then `choose_for` over the float source. An oracle test copies the pre-rung-3 boolean ladder verbatim and compares the selected resident format for every label × class × size × arm (108 cases): identical.",
+   "invariants_witnessed": [
+    "refusal before bytes: an unregistered label is refused at preparation naming every refused operand with load_count unchanged (the rung-2 test moved from the load to the preparation and asserts both layers); a BF16_ZLIB packed bank is refused by access class through the same admission the bank loader still applies",
+    "direct and decode are distinct realizations: a stored Q6_K under the two arms pins Direct(FusedKQuant) vs Decode(BlasF32) with different declared residencies over one candidate set",
+    "the executor cannot silently change the pin: `verify_pins` runs at the end of every preparation, and a tampered record is refused naming both sides",
+    "the shared expert is refused: `Operation::SharedExpertProject` (new in the view) has no realization on any PlanBackend, so a plan whose routed op carries a shared expert the container holds is refused at preparation with `missing realization`, before any byte — the hard invariant from the 3a review",
+    "the reference backend pins Decode(ScalarF32) for every projection with a single-candidate set — the oracle stays the oracle",
+    "the entropy-coded container pins Decode(BlasF32) with reason `no direct realization registered` and a one-element candidate set; its declared residency is DECODED_F32",
+    "an overlay edit pins decode with its own reason (`OverlaidEdit`): facts carry `overlaid`, which empties the direct candidates — the overlay tests are unchanged and green",
+    "the device backend's class table is its own single candidate (`DeviceResident(format)`, reason `device class table`); the NVFP4 device coverage test now asks it through select"
+   ],
+   "refinements_to_the_3a_view": [
+    "`Operation::SharedExpertProject` replaces `Project(FfnProjection)` for a shared expert's three projections, so the missing realization is refusable by name rather than by tensor-name inspection; the 3a bank test that pinned the CPU census as short by the shared expert is replaced by the refusal test",
+    "`PlannedOperand.layer: Option<usize>` — the prepared plan selects only the operands its slice loads, and pins banks per layer"
+   ],
+   "falsifiers_scored": {
+    "F2_label_or_boolean_survives": "NO — see the grep gate above",
+    "F3_selection_changed_without_a_reason": "NO — the 108-case oracle comparison is exact; the full suite (below) is green, every parity oracle included",
+    "F4_pin_mismatch_executes": "NO — verify_pins at preparation; the tampered pin is refused",
+    "F5_contract_change_needed": "NO — `git diff c52497a7 -- represent/codec/` is empty; the rung-1/2 declarations were sufficient",
+    "F9_parity_oracle_moved": "NO — 4168 lib tests green on the final tree, every parity oracle included",
+    "touch_set_vs_forecast": "as forecast, plus: `exec/realization.rs` (new module — the vocabulary lives in one file rather than in backend.rs), `weights/mod.rs` gains `LoadedWeight::format()` for the pin check, `experts.rs` gains `dense_matrices()` for it and its bank preflight now calls the facts' `admit_row_slicing` (one derivation, two call sites), and every `FormatFor` resolver is fallible so a loader asking for an operand the view does not list is refused rather than defaulted (five per-variant loaders, the attention loader, the dense FFN loader and five test closures changed mechanically). opplan/planned.rs changed for the two refinements above. Tests moved off the old API: cpu/tests/kquant_plan.rs, tests/coverage_device.rs.",
+    "F10_new_file_under_floor": "NO after the vocabulary and device-selector tests were added — the first coverage run had realization.rs at 74.90% and device.rs at 89.57%; both are above the floor on the final tree"
+   },
+   "findings_not_in_the_forecast": [
+    {
+     "id": "3b-N1",
+     "finding": "The forecast's W3 said the bank's admission (rung 2's `require_row_access`) would be 'folded into the SliceStored candidate'. It is — the selector calls `RepresentationFacts::admit_row_slicing` — but the bank loader keeps calling the same function, because `FfnOperands::load` is reachable directly (three tests do) and a direct caller must get the same refusal rather than a read followed by a dtype-name refusal. One derivation, two call sites, recorded rather than pretended away."
+    },
+    {
+     "id": "3b-N2",
+     "finding": "`resident_profile(WeightFormat)` prices the executor's re-quantised and device forms from its own block constants (Q8: 1 + 4/Q8_BLOCK bytes per weight; Q4: 0.5 + 4/Q4_BLOCK; F16: 2, requantised; KQuant: the widest of the three codecs). These are DECLARATIONS made by the executor about its own resident forms and are not yet checked against what the loader holds; 3c binds them into the census and will find out where they are wrong."
+    },
+    {
+     "id": "3b-N3",
+     "finding": "Absent operands (partial hydration) are skipped by the selector and refused by the loader by name exactly as before; a resolver asked for such an operand answers the widened form, which the loader never reads because `load_raw` refuses first. Recorded so nobody reads that answer as a selection."
+    }
+   ],
+   "gates": {
+    "affected_suites": "opplan: 636 tests green (the one failure was the rung-2 refusal test, moved); realization + planned + bf16_zlib: 19 green",
+    "full_crate": "cargo test -p larql-vindex on the final tree: 4168 lib tests passed, 0 failed, 7 ignored (pre-existing); every integration binary green",
+    "workspace_check": "cargo check --workspace --all-targets: green (the trait method change reaches every backend and every crate that names one)",
+    "clippy": "clean on rustc 1.98, --all-targets -D warnings (the refusal type is boxed to satisfy result_large_err)",
+    "fmt": "clean, run last",
+    "coverage": "policy passed on the final tree: 93.79% total over 428 files; realization.rs 99.22%, device.rs 91.91%, prepared.rs 93.56%, production.rs 91.35%, planned.rs 98.61%; no debt entry added. The first coverage attempt's instrumented test phase reported one failure whose name my output filter dropped; it did not recur in three subsequent full runs (two instrumented, one plain), so it is recorded as an unnamed flake, not as a pass.",
+    "docs": "check_doc_links.py + check_doc_references.py --strict: green",
+    "grep": "stored_bf16|stored_nvfp4|stored_kquant|is_stored_*|MatrixOperand|declared_format|fn weight_format under exec/ outside tests: none; the size policy's parameter was renamed to bf16_kernel_declared, which is what the selector now feeds it"
+   },
+   "the_oracle_is_transitional": "The copied boolean ladder in exec/tests/realization.rs is a migration oracle, not the new semantic authority (user, on review). Once 3c establishes independent accounting and 3d real provider inventories, new behaviour may diverge from it deliberately; the test is then narrowed or retired rather than preserving old mistakes.",
+   "what_this_closes": "The silent-fallback problem, structurally: all operands selected → all refusals collected → no bytes read unless the complete plan is admissible → exact realization pinned → loaded state verified against the pin. The shared-expert refusal is the operational consequence: LARQL refuses an incomplete CPU computation instead of producing plausible but semantically invalid output."
   }
  }
 }

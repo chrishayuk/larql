@@ -292,7 +292,7 @@ fn a_gate_less_dense_op_binds_two_operands_and_runs_ungated() {
     let operands = FfnOperands::load(
         &ffn,
         (&store).into(),
-        &|_: &OperandRef| WeightFormat::F32,
+        &|_: &OperandRef| Ok(WeightFormat::F32),
         WeightFormat::F32,
     )
     .unwrap();

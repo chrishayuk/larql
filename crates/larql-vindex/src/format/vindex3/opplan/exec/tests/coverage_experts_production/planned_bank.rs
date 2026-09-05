@@ -4,7 +4,7 @@
 //! the view lists for the FFN site. Lives beside the routed fixture because
 //! that fixture is scoped here.
 
-use super::fixture::{routed_fixture, EXPERTS};
+use super::fixture::{bf16_carrier_store, routed_fixture, BF16_SUFFIX, BLOCKS_SUFFIX, EXPERTS};
 use crate::format::vindex3::opplan::exec::backend::MatrixClass;
 use crate::format::vindex3::opplan::exec::prepared::{ExecutionSlice, PreparedOperands};
 use crate::format::vindex3::opplan::exec::production::ProductionBackend;
@@ -103,12 +103,13 @@ fn a_per_expert_bank_is_a_set_of_whole_projections() {
 }
 
 /// The plan executes a shared expert beside the routed ones, so the view
-/// lists its three projections. The CPU loader does not bind them today —
-/// only the Metal stack does — and this test pins that gap in bytes: the
-/// view exceeds the CPU census by exactly the shared expert. When a CPU
-/// loader binds it, this assertion is what changes, deliberately.
+/// lists its three projections under their own operation. No backend
+/// binds them through the prepared plan yet, and the plan is REFUSED at
+/// preparation — before any byte is read — rather than prepared without
+/// its shared expert (rung 3b's hard invariant). When a CPU realization
+/// for the shared expert arrives (3d), this is the test that changes.
 #[test]
-fn a_shared_expert_is_three_projections_the_cpu_loader_does_not_yet_bind() {
+fn a_plan_with_a_shared_expert_is_refused_before_any_byte_is_read() {
     let fixture = routed_fixture();
     let mut plan = fixture.plan.clone();
     let mut op = fixture.op.clone();
@@ -138,33 +139,53 @@ fn a_shared_expert_is_three_projections_the_cpu_loader_does_not_yet_bind() {
     assert_eq!(shared.len(), 3);
     assert!(shared
         .iter()
-        .all(|p| p.operation == Operation::Project(MatrixClass::FfnProjection)));
-    let shared_bytes: usize = shared.iter().map(|p| p.elements() * F32_WIDTH).sum();
-    assert_eq!(shared_bytes, 3 * inter * hidden * F32_WIDTH);
+        .all(|p| p.operation == Operation::SharedExpertProject
+            && p.access == RequiredAccess::Sequential));
 
-    // The synthetic operands are not in the container, and the CPU loader
-    // never asks for them: preparation succeeds and the census is short by
-    // exactly the shared expert.
-    let census = PreparedOperands::load(
+    // The synthetic operands are not in the container, so the selector
+    // skips them (the loader would refuse them by name); the refusal has
+    // to come from a shared expert the container DOES hold. Point the
+    // shared projections at the dense-shaped bf16 copies the carrier
+    // stores, which exist and are registered.
+    let (_dir, _container, carrier) = bf16_carrier_store();
+    let mut op = fixture.op.clone();
+    let ExpertBank::Packed { gate_up, down } = &op.bank else {
+        panic!("packed");
+    };
+    let existing = |projection: &crate::format::vindex3::opplan::PackedProjection| OperandRef {
+        object: projection.weights.object.clone(),
+        tensor: projection
+            .weights
+            .tensor
+            .replace(BLOCKS_SUFFIX, BF16_SUFFIX),
+        dtype: "BF16".into(),
+        shape: projection.weights.shape.clone(),
+    };
+    op.shared = Some(SharedExpertOp {
+        intermediate_size: inter,
+        activation: op.activation,
+        gate_policy: op.gate_policy,
+        gate: existing(gate_up),
+        up: existing(gate_up),
+        down: existing(down),
+        branch_gate: None,
+    });
+    plan.layers[0].ffn = Some(LayerFfn::Routed(Box::new(op)));
+    let before = carrier.load_count();
+    let err = PreparedOperands::load(
         &plan,
-        &fixture.store,
+        &carrier,
         &ProductionBackend::new(),
         ExecutionSlice::Full,
     )
-    .expect("the CPU loader ignores the shared expert")
-    .residency_census();
-    let ffn_planned: usize = planned
-        .iter()
-        .filter(|p| {
-            matches!(
-                p.operation,
-                Operation::ExpertBankSlice | Operation::Project(MatrixClass::FfnProjection)
-            )
-        })
-        .map(|p| p.elements() * F32_WIDTH)
-        .sum();
+    .err()
+    .map(|e| e.to_string())
+    .expect("a plan with a shared expert has no realization on the CPU path");
+    assert!(err.contains("missing realization"), "{err}");
+    assert!(err.contains("shared-expert-project"), "{err}");
     assert_eq!(
-        ffn_planned - (census.ffn.widened_f32 + census.ffn.compact),
-        shared_bytes
+        carrier.load_count(),
+        before,
+        "refused before any byte was read"
     );
 }

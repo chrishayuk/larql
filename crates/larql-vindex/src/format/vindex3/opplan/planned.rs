@@ -38,6 +38,10 @@ pub enum Operation {
     ExpertBankSlice,
     /// The vocabulary projection of the final hidden state.
     OutputHead,
+    /// A shared expert's projection beside the routed ones — its own
+    /// operation, because whether a backend can bind it is a question the
+    /// prepared plan must be able to refuse by name (rung 3b).
+    SharedExpertProject,
 }
 
 impl Operation {
@@ -45,7 +49,9 @@ impl Operation {
     pub const fn access(self) -> RequiredAccess {
         match self {
             Self::Embed | Self::ExpertBankSlice => RequiredAccess::RowRandom,
-            Self::Project(_) | Self::OutputHead => RequiredAccess::Sequential,
+            Self::Project(_) | Self::OutputHead | Self::SharedExpertProject => {
+                RequiredAccess::Sequential
+            }
         }
     }
 
@@ -58,6 +64,7 @@ impl Operation {
             Self::Project(MatrixClass::RoutedExpertBank) => "project/bank",
             Self::ExpertBankSlice => "expert-bank-slice",
             Self::OutputHead => "output-head",
+            Self::SharedExpertProject => "shared-expert-project",
         }
     }
 }
@@ -71,6 +78,9 @@ pub struct PlannedOperand {
     pub operation: Operation,
     pub access: RequiredAccess,
     pub extent: RepresentationExtent,
+    /// The plan layer the operand belongs to; `None` for the embedding and
+    /// the head, which sit outside the stack.
+    pub layer: Option<usize>,
     /// The weights the operation touches. For every operand but a packed
     /// bank this is the operand's shape; a packed bank's `OperandRef`
     /// carries the STORED tensor's shape — MXFP4 blocks are sixteen bytes
@@ -80,16 +90,22 @@ pub struct PlannedOperand {
 }
 
 impl PlannedOperand {
-    fn new(operand: &OperandRef, operation: Operation) -> Self {
-        Self::sized(operand, operation, operand.shape.iter().product())
+    fn new(operand: &OperandRef, operation: Operation, layer: Option<usize>) -> Self {
+        Self::sized(operand, operation, layer, operand.shape.iter().product())
     }
 
-    fn sized(operand: &OperandRef, operation: Operation, logical_elements: usize) -> Self {
+    fn sized(
+        operand: &OperandRef,
+        operation: Operation,
+        layer: Option<usize>,
+        logical_elements: usize,
+    ) -> Self {
         Self {
             operand: operand.clone(),
             operation,
             access: operation.access(),
             extent: RepresentationExtent::TERMINAL,
+            layer,
             logical_elements,
         }
     }
@@ -111,17 +127,21 @@ impl ComponentOpPlan {
     pub fn planned_operands(&self) -> Vec<PlannedOperand> {
         let mut out = Vec::new();
         if let Some(embedding) = &self.embedding {
-            out.push(PlannedOperand::new(&embedding.table, Operation::Embed));
+            out.push(PlannedOperand::new(
+                &embedding.table,
+                Operation::Embed,
+                None,
+            ));
         }
-        for layer in &self.layers {
-            attention(&layer.attention, &mut out);
+        for (index, layer) in self.layers.iter().enumerate() {
+            attention(&layer.attention, index, &mut out);
             match &layer.ffn {
                 None => {}
-                Some(LayerFfn::Dense(op)) => dense(op, &mut out),
-                Some(LayerFfn::Routed(op)) => routed(op, &mut out),
+                Some(LayerFfn::Dense(op)) => dense(op, index, &mut out),
+                Some(LayerFfn::Routed(op)) => routed(op, index, &mut out),
                 Some(LayerFfn::Hybrid(op)) => {
-                    dense(&op.dense, &mut out);
-                    routed(&op.routed, &mut out);
+                    dense(&op.dense, index, &mut out);
+                    routed(&op.routed, index, &mut out);
                 }
             }
         }
@@ -129,6 +149,7 @@ impl ComponentOpPlan {
             out.push(PlannedOperand::new(
                 &output.projection,
                 Operation::OutputHead,
+                None,
             ));
         }
         out
@@ -138,8 +159,9 @@ impl ComponentOpPlan {
 const ATTENTION: Operation = Operation::Project(MatrixClass::AttentionProjection);
 const FFN: Operation = Operation::Project(MatrixClass::FfnProjection);
 
-fn attention(attention: &LayerAttention, out: &mut Vec<PlannedOperand>) {
-    let mut push = |operand: &OperandRef| out.push(PlannedOperand::new(operand, ATTENTION));
+fn attention(attention: &LayerAttention, layer: usize, out: &mut Vec<PlannedOperand>) {
+    let mut push =
+        |operand: &OperandRef| out.push(PlannedOperand::new(operand, ATTENTION, Some(layer)));
     match attention {
         LayerAttention::Softmax(op) => {
             for operand in [&op.q, &op.k, &op.v, &op.o] {
@@ -186,12 +208,12 @@ fn attention(attention: &LayerAttention, out: &mut Vec<PlannedOperand>) {
     }
 }
 
-fn dense(op: &FfnOp, out: &mut Vec<PlannedOperand>) {
+fn dense(op: &FfnOp, layer: usize, out: &mut Vec<PlannedOperand>) {
     if let Some(gate) = &op.gate {
-        out.push(PlannedOperand::new(gate, FFN));
+        out.push(PlannedOperand::new(gate, FFN, Some(layer)));
     }
-    out.push(PlannedOperand::new(&op.up, FFN));
-    out.push(PlannedOperand::new(&op.down, FFN));
+    out.push(PlannedOperand::new(&op.up, FFN, Some(layer)));
+    out.push(PlannedOperand::new(&op.down, FFN, Some(layer)));
 }
 
 /// The router, its biases and scales are glue; the banks are the
@@ -202,7 +224,7 @@ fn dense(op: &FfnOp, out: &mut Vec<PlannedOperand>) {
 /// `[FUSED_HALVES * intermediate, hidden]` for gate/up and
 /// `[hidden, intermediate]` for down, with `hidden` read off the router's
 /// declared width — the same three facts `load_packed` is handed.
-fn routed(op: &RoutedFfnOp, out: &mut Vec<PlannedOperand>) {
+fn routed(op: &RoutedFfnOp, layer: usize, out: &mut Vec<PlannedOperand>) {
     match &op.bank {
         ExpertBank::Packed { gate_up, down } => {
             let hidden = op.router.shape.get(1).copied().unwrap_or(0);
@@ -210,27 +232,34 @@ fn routed(op: &RoutedFfnOp, out: &mut Vec<PlannedOperand>) {
             out.push(PlannedOperand::sized(
                 &gate_up.weights,
                 Operation::ExpertBankSlice,
+                Some(layer),
                 op.experts * FUSED_HALVES * inter * hidden,
             ));
             out.push(PlannedOperand::sized(
                 &down.weights,
                 Operation::ExpertBankSlice,
+                Some(layer),
                 op.experts * hidden * inter,
             ));
         }
         ExpertBank::PerExpert { gate, up, down } => {
             for operand in gate.iter().chain(up).chain(down) {
-                out.push(PlannedOperand::new(operand, FFN));
+                out.push(PlannedOperand::new(operand, FFN, Some(layer)));
             }
         }
     }
     // The shared expert is three whole projections the plan executes
-    // beside the routed ones. Listed because the PLAN executes them: the
-    // Metal stack binds them, and the CPU loader does not yet — a gap the
-    // census cross-check pins rather than hides.
+    // beside the routed ones. Listed under their own operation because the
+    // PLAN executes them and no backend binds them through the prepared
+    // plan yet: the selector refuses them by name (rung 3b) rather than
+    // preparing a model without its shared expert.
     if let Some(shared) = &op.shared {
         for operand in [&shared.gate, &shared.up, &shared.down] {
-            out.push(PlannedOperand::new(operand, FFN));
+            out.push(PlannedOperand::new(
+                operand,
+                Operation::SharedExpertProject,
+                Some(layer),
+            ));
         }
     }
 }

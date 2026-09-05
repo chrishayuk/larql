@@ -11,7 +11,6 @@
 //! and unsupported-activation FFN arms. Each test here drives one of
 //! those arms directly and asserts what the arm is *for*.
 
-use crate::format::vindex3::opplan::exec::backend::MatrixOperand;
 use std::sync::{Arc, Mutex};
 
 use larql_compute::backend::MatMul;
@@ -667,15 +666,26 @@ fn an_nvfp4_device_backend_executes_and_decodes_the_dense_plan() {
         "nvfp4-loop-dense",
         WeightFormats::uniform(WeightFormat::Nvfp4),
     );
+    // The class table is the device backend's own candidate: an FFN
+    // projection of a registered representation lands on NVFP4 whatever
+    // the container stores it as.
+    let ffn = plan
+        .planned_operands()
+        .into_iter()
+        .find(|p| {
+            p.operation
+                == crate::format::vindex3::opplan::planned::Operation::Project(
+                    MatrixClass::FfnProjection,
+                )
+        })
+        .expect("the dense plan has an FFN projection");
+    let facts =
+        crate::format::vindex3::opplan::exec::realization::RepresentationFacts::resolve("F32");
+    let selection = backend.select(&ffn, &facts).unwrap();
+    assert_eq!(selection.realization.format(), WeightFormat::Nvfp4);
     assert_eq!(
-        backend.weight_format(MatrixOperand {
-            class: MatrixClass::FfnProjection,
-            elements: 0,
-            stored_bf16: false,
-            stored_nvfp4: false,
-            stored_kquant: false,
-        }),
-        WeightFormat::Nvfp4
+        selection.reason,
+        crate::format::vindex3::opplan::exec::realization::SelectionReason::DeviceClassTable
     );
     let on_device: ExecutionTrace = execute_plan(&plan, &store, &DENSE_TOKENS, &backend).unwrap();
     let on_reference =
@@ -697,4 +707,70 @@ fn an_nvfp4_device_backend_executes_and_decodes_the_dense_plan() {
     // Every matrix went through the device: the batch pass and the
     // decode pass both submitted work.
     assert!(backend.dispatch_stats().unwrap().submissions > 0);
+}
+
+/// Rung 3b: the device backend answers the prepared plan's question the
+/// way every backend does — its class table is its own single candidate
+/// for a projection, the table and the bank take the common selections,
+/// and what it cannot bind it refuses by name.
+#[test]
+fn the_device_backend_selects_by_its_class_table_and_refuses_what_it_cannot_bind() {
+    use crate::format::vindex3::opplan::exec::realization::{
+        RealizationBackend, RealizationForm, RefusalKind, RepresentationFacts, SelectionReason,
+    };
+    use crate::format::vindex3::opplan::planned::{Operation, PlannedOperand};
+    use crate::format::vindex3::opplan::OperandRef;
+    use crate::format::vindex3::represent::codec::RepresentationExtent;
+
+    let backend = DevicePlanBackend::with_formats(
+        Nvfp4LoopDevice,
+        "nvfp4-loop-select",
+        WeightFormats::uniform(WeightFormat::Nvfp4),
+    );
+    let planned = |operation: Operation| PlannedOperand {
+        operand: OperandRef {
+            object: "target.decoder_stack".into(),
+            tensor: "0.w".into(),
+            dtype: String::new(),
+            shape: vec![8, 8],
+        },
+        operation,
+        access: operation.access(),
+        extent: RepresentationExtent::TERMINAL,
+        layer: Some(0),
+        logical_elements: 64,
+    };
+    let bf16 = RepresentationFacts::resolve("BF16");
+    let head = backend
+        .select(&planned(Operation::OutputHead), &bf16)
+        .unwrap();
+    assert_eq!(head.realization.backend, RealizationBackend::Device);
+    assert_eq!(
+        head.realization.form,
+        RealizationForm::DeviceResident(WeightFormat::Nvfp4)
+    );
+    assert_eq!(head.reason, SelectionReason::DeviceClassTable);
+    assert_eq!(head.candidates, vec![head.realization]);
+    let table = backend.select(&planned(Operation::Embed), &bf16).unwrap();
+    assert_eq!(table.realization.form, RealizationForm::DecodedGather);
+    let bank = backend
+        .select(&planned(Operation::ExpertBankSlice), &bf16)
+        .unwrap();
+    assert_eq!(
+        bank.realization.form,
+        RealizationForm::SliceStored {
+            convert: WeightFormat::Nvfp4
+        }
+    );
+    let refused = backend
+        .select(
+            &planned(Operation::Project(MatrixClass::FfnProjection)),
+            &RepresentationFacts::resolve("U8"),
+        )
+        .unwrap_err();
+    assert_eq!(refused.kind, RefusalKind::UnregisteredRepresentation);
+    let refused = backend
+        .select(&planned(Operation::SharedExpertProject), &bf16)
+        .unwrap_err();
+    assert_eq!(refused.kind, RefusalKind::MissingRealization);
 }

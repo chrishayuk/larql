@@ -46,6 +46,7 @@ pub mod operands;
 pub mod prepared;
 pub mod production;
 pub mod quantise;
+pub mod realization;
 pub mod reference;
 pub mod requirements;
 pub mod stack;
@@ -933,10 +934,10 @@ impl AttentionOperands {
         // V before conditioning Q/K, and apply the parameter-free V norm
         // to it when the op carries one.
         Ok(Self {
-            w_q: load_weight(store, &op.q, format(&op.q))?,
-            w_k: load_weight(store, &op.k, format(&op.k))?,
-            w_v: load_weight(store, &op.v, format(&op.v))?,
-            w_o: load_weight(store, &op.o, format(&op.o))?,
+            w_q: load_weight(store, &op.q, format(&op.q)?)?,
+            w_k: load_weight(store, &op.k, format(&op.k)?)?,
+            w_v: load_weight(store, &op.v, format(&op.v)?)?,
+            w_o: load_weight(store, &op.o, format(&op.o)?)?,
             qk_weights: match &op.qk_norm {
                 Some(qk) => Some((store.load(&qk.q)?, store.load(&qk.k)?)),
                 None => None,
@@ -956,7 +957,7 @@ impl AttentionOperands {
             // unrelated loader change broke the aliasing.
             gate: match &op.output_gate {
                 Some(gate) if gate.spec.source != GateSource::FusedQueryProjection => Some(
-                    load_weight(store, &gate.projection, format(&gate.projection))?,
+                    load_weight(store, &gate.projection, format(&gate.projection)?)?,
                 ),
                 _ => None,
             },

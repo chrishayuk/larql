@@ -16,12 +16,12 @@ use larql_models::quant::mxfp4::{dequantize_expert, MXFP4_GROUP_BYTES, MXFP4_GRO
 use super::backend::{FfnCall, NormCall, RoutedFfnCall, WeightFormat, WeightSlice};
 use super::narrow::{bf16_bytes_to_f16, f32_bytes_to_f16};
 use super::operands::{widen, OperandSource};
+use super::realization::RepresentationFacts;
 use super::weights::{load_weight, quantize_mxfp4, quantize_nvfp4, AlignedBytes, LoadedWeight};
 use crate::error::VindexError;
 use crate::format::vindex3::opplan::{
     ExpertBank, FfnOp, LayerFfn, NormOp, OperandRef, PackedProjection, RoutedFfnOp,
 };
-use crate::format::vindex3::represent::codec::{CodecRegistry, RequiredAccess};
 
 /// Stored dtype of MXFP4 block and scale streams.
 const DTYPE_U8: &str = "U8";
@@ -112,6 +112,17 @@ impl FfnOperands {
                 post_dense_norm: LoadedNormWeight::load(&op.post_dense_norm, store)?,
                 post_experts_norm: LoadedNormWeight::load(&op.post_experts_norm, store)?,
             }))),
+        }
+    }
+
+    /// The dense projections only — what a pinned projection realization
+    /// is checked against. A bank's per-expert slices are a different
+    /// realization and are not projections of the plan's operands.
+    pub(super) fn dense_matrices(&self) -> Vec<&LoadedWeight> {
+        match self {
+            Self::Dense(d) => d.loaded_matrices(),
+            Self::Routed(_) => Vec::new(),
+            Self::Hybrid(h) => h.dense.loaded_matrices(),
         }
     }
 
@@ -245,15 +256,15 @@ impl DenseOperands {
     ) -> Result<Self, VindexError> {
         Ok(Self {
             gate: match &op.gate {
-                Some(gate) => Some(load_weight(store, gate, format(gate))?),
+                Some(gate) => Some(load_weight(store, gate, format(gate)?)?),
                 None => None,
             },
-            up: load_weight(store, &op.up, format(&op.up))?,
-            down: load_weight(store, &op.down, format(&op.down))?,
+            up: load_weight(store, &op.up, format(&op.up)?)?,
+            down: load_weight(store, &op.down, format(&op.down)?)?,
         })
     }
 
-    fn loaded_matrices(&self) -> Vec<&LoadedWeight> {
+    pub(super) fn loaded_matrices(&self) -> Vec<&LoadedWeight> {
         let mut all = vec![&self.up, &self.down];
         if let Some(gate) = &self.gate {
             all.push(gate);
@@ -546,11 +557,10 @@ fn require_row_access(store: OperandSource<'_>, operand: &OperandRef) -> Result<
     let Some(dtype) = store.store().stored_dtype(operand) else {
         return Ok(());
     };
-    if let Some(codec) = CodecRegistry::builtin().by_label(dtype) {
-        codec
-            .capabilities()
-            .require(RequiredAccess::RowRandom, codec.encoding_label())?;
-    }
+    // The same admission the selector made before this loader was
+    // reached — one derivation, kept here so a direct caller gets the
+    // same refusal rather than a read followed by a dtype-name refusal.
+    RepresentationFacts::resolve(dtype).admit_row_slicing()?;
     Ok(())
 }
 

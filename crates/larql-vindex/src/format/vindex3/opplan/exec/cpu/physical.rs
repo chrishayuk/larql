@@ -338,15 +338,18 @@ impl PhysicalProjectionPlan {
     /// and its `10240 x 5120` fused projection are both attention-class
     /// operands, and they want opposite answers.
     ///
-    /// `stored_bf16` is a physical fact about the checkpoint, not a
+    /// `bf16_kernel_declared` was `stored_bf16` until rung 3b: a physical
+    /// fact about the checkpoint, read off a dtype label. It is now the
+    /// codec DECLARING the direct bf16 kernel, resolved by the selector —
+    /// the same fact, from the declaration instead of the label. Not a
     /// preference. A container holding f32 has no compact bytes to keep,
     /// and narrowing them here would ROUND — bf16 residency promises the
     /// stored bytes are the resident bytes, and a policy that quietly
     /// quantised to hit its own threshold would make that a lie.
-    pub fn choose(elements: usize, stored_bf16: bool) -> Self {
+    pub fn choose(elements: usize, bf16_kernel_declared: bool) -> Self {
         // Class-agnostic: every class admitted, which is what a caller
         // asking without one means.
-        Self::choose_for(None, elements, stored_bf16)
+        Self::choose_for(None, elements, bf16_kernel_declared)
     }
 
     /// The same policy, told which class the operand belongs to.
@@ -354,8 +357,12 @@ impl PhysicalProjectionPlan {
     /// The class changes nothing except whether a Q4 arm may reach this
     /// operand — the cache thresholds are physical and identical for
     /// every class.
-    pub fn choose_for(class: Option<MatrixClass>, elements: usize, stored_bf16: bool) -> Self {
-        if !stored_bf16 || elements * F32_BYTES < compact_threshold_bytes() {
+    pub fn choose_for(
+        class: Option<MatrixClass>,
+        elements: usize,
+        bf16_kernel_declared: bool,
+    ) -> Self {
+        if !bf16_kernel_declared || elements * F32_BYTES < compact_threshold_bytes() {
             return Self::BlasF32;
         }
         // **The same cache argument, one format further down.**

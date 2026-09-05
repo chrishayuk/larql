@@ -259,6 +259,21 @@ impl LoadedWeight {
         matches!(self, LoadedWeight::F32(_))
     }
 
+    /// The representation these bytes are resident in — what a pinned
+    /// realization is checked against.
+    pub fn format(&self) -> WeightFormat {
+        match self {
+            LoadedWeight::F32(_) => WeightFormat::F32,
+            LoadedWeight::Bf16(_) => WeightFormat::Bf16,
+            LoadedWeight::F16(_) => WeightFormat::F16,
+            LoadedWeight::Q8 { .. } => WeightFormat::Q8,
+            LoadedWeight::Q4 { .. } => WeightFormat::Q4,
+            LoadedWeight::Mxfp4 { .. } => WeightFormat::Mxfp4,
+            LoadedWeight::Nvfp4 { .. } => WeightFormat::Nvfp4,
+            LoadedWeight::KQuant { .. } => WeightFormat::KQuant,
+        }
+    }
+
     pub fn slice(&self) -> WeightSlice<'_> {
         match self {
             LoadedWeight::F32(w) => WeightSlice::F32(w),

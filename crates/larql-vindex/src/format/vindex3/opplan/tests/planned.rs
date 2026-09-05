@@ -102,7 +102,9 @@ fn every_operation_declares_its_access_and_every_extent_is_terminal() {
             assert_eq!(p.extent, RepresentationExtent::TERMINAL, "{name}");
             let expected = match p.operation {
                 Operation::Embed | Operation::ExpertBankSlice => RequiredAccess::RowRandom,
-                Operation::Project(_) | Operation::OutputHead => RequiredAccess::Sequential,
+                Operation::Project(_) | Operation::OutputHead | Operation::SharedExpertProject => {
+                    RequiredAccess::Sequential
+                }
             };
             assert_eq!(p.access, expected, "{name}: {}", p.operation.name());
         }
@@ -159,8 +161,12 @@ fn each_variant_lists_exactly_its_matrices_in_loader_order() {
             let per_ffn = match &layer.ffn {
                 None => 0,
                 Some(LayerFfn::Dense(op)) => 2 + usize::from(op.gate.is_some()),
-                Some(LayerFfn::Routed(_)) => 2,
-                Some(LayerFfn::Hybrid(op)) => 2 + usize::from(op.dense.gate.is_some()) + 2,
+                Some(LayerFfn::Routed(op)) => 2 + 3 * usize::from(op.shared.is_some()),
+                Some(LayerFfn::Hybrid(op)) => {
+                    2 + usize::from(op.dense.gate.is_some())
+                        + 2
+                        + 3 * usize::from(op.routed.shared.is_some())
+                }
             };
             expected += per_attention + per_ffn;
         }
