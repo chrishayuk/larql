@@ -1,0 +1,80 @@
+{
+  "rung": "K3-ATTNRES-1",
+  "name": "attention-residual-reconnaissance",
+  "artifact_kind": "reconnaissance",
+  "written": "2026-09-05, on branch k3-attnres-1 from main b2596f25 (post wave 19, post test-isolation), before any forecast and before any capability code",
+  "rule_this_follows": "uniform-cache check -> reconnaissance -> measured baseline -> freeze transition -> implementation. This artefact establishes the baseline only. It implements nothing and forecasts nothing.",
+  "uniform_cache_check": "PASSED before measurement: all 109 scored rows of ~/chris-models/_conformance/plans carry planner.semantics_version 16 from one binary (the post-wave-19 refresh; snapshot of the mixed 14/15 cache kept at plans-baseline-sem15/).",
+  "the_first_question_answered_what_k3_attnres_is": {
+    "source": "moonshotai/Kimi-K3, modeling_kimi_linear.py (the TEXT model's file; modeling_kimi_k3.py is the multimodal wrapper and never touches the mechanism): KimiDecoderLayer.__init__ ~L907, _forward_attn_residual ~L973, _apply_attn_res ~L1075, KimiLinearModel.forward ~L1189, _apply_output_attn_res ~L1226. Read, not inferred from tensor names.",
+    "mechanism": [
+      "config: attn_res_block_size = B (K3 declares 12; None means the ordinary residual)",
+      "per layer L: self_attention_res_norm [hidden], self_attention_res_proj [1, hidden]; mlp_res_norm [hidden], mlp_res_proj [1, hidden]",
+      "model: output_attn_res_norm [hidden], output_attn_res_proj [1, hidden] — REQUIRED and shipped",
+      "state per token: prefix_sum [hidden] (the running residual within a block) and block_residual [N, hidden] (snapshots of the state ENTERING layers 0, B, 2B, ...; N grows by one per block)",
+      "_apply_attn_res(prefix_sum, blocks, proj, norm): v = cat(blocks, prefix_sum) [N+1, hidden]; k = rmsnorm(v) with NO weight; score_i = sum_h k_i,h * (norm.weight_h * proj.weight_h) — ONE learned score vector, no query; probs = softmax over the N+1 candidates; out = probs @ v over the RAW candidates",
+      "layer forward: prefix_sum = h_in; if N > 0: h = apply(prefix_sum, blocks, self_attention_res_*); if L % B == 0: blocks.append(h_in), prefix_sum = None; a = self_attn(input_layernorm(h)); prefix_sum = (prefix_sum + a) or a; h = apply(prefix_sum, blocks, mlp_res_*) [always, even at N == 0 where it is a softmax over one candidate = identity]; m = mlp_or_moe(post_attention_layernorm(h)); prefix_sum += m; return (prefix_sum, blocks)",
+      "model: blocks start EMPTY; after the last layer h = apply(prefix_sum, blocks, output_attn_res_*) then the final norm and the head"
+    ],
+    "what_it_is": "a THIRD residual topology, attention residuals: each sublayer READS a softmax-weighted mix over the block snapshots and the current prefix sum, and WRITES by plain addition into the prefix sum. Reduce is the attention; update is the add. It is not a Sinkhorn dialect in any form: no stream multiplicity, no per-token expand weights, no combination matrix. The [hidden] norm and [1, hidden] projection are the score vector's two factors.",
+    "k3_numbers": "B = 12, 93 layers, hidden 7168, first_k_dense_replace = 1 -> snapshots at layers 0, 12, ..., 84 = 8; the exit mixes 9 candidates; layers 1..11 mix over 2 candidates (the layer-0 snapshot and the prefix sum); at layer 0's attention site N == 0 and the mix is skipped, at its mlp site N == 0 and the mix is the identity"
+  },
+
+  "baseline_measured": {
+    "commit": "b2596f25 (main after PR #427)",
+    "k3_plan": "text_generation blocking 33 of 152 required; by cluster: unclustered 14, representation_quantization 14, residual_wiring 2, ffn_activation 1, moe_routing 1, modality_vision 1; the TEXT component's execution surface is complete (attention, ffn, norm, head) and representable — the incomplete surface on the row is the vision tower's",
+    "the_two_residual_wiring_blockers": {
+      "id_23": "text_config.attn_res_block_size — Unrepresented/Unknown: declared 12, read by no registered parser (larql-models has no field for it; the ResidualWiring cluster names it)",
+      "id_176": "language_model.model.output_attn_res_proj — Unrepresented/Unknown: no placement rule owns the group ([1, 7168] matches no fragment)"
+    },
+    "the_silent_one": "language_model.model.output_attn_res_norm is NOT a blocker because the group pattern (GroupClass::Norm, [\"norm\", \"ln_\", \"layernorm\"]) swept it into the component's FinalNorm object: target.norm now binds TWO tensors, model.norm [7168] and output_attn_res_norm [7168]. The plan stage says nothing. The op-plan stage would: `single(ObjectKind::FinalNorm, [hidden])` pushes ClosureDefect::ObjectShape 'expected exactly 1 tensor, found 2' — but K3's op plan never builds today (K3-ARCH-1's five deltas), so the defect is masked. Byte-complete, role-wrong: the middle plane, silent.",
+    "the_four_per_layer_operands": "self_attention_res_{norm,proj}, mlp_res_{norm,proj} on every layer (header fixture k3_two_layer_headers.json shows layers 0 and 3, BF16, [7168] and [1, 7168]); physically placed under the layers prefix, classified by NO role on the KDA layer — four of K3-ARCH-1's five standing deltas (the fifth, self_attn.g_proj, is K3-REP-GATE-1's). Pinned by plan/tests/k3_representable.rs KDA_LAYER_UNADDRESSED.",
+    "existing_hc_tests_untouched": "wave18_hc_carriage::k3s_residual_operands_are_not_sinkhorn_sites_under_any_stream_count pins that these are not hyper-connection sites; nothing here changes that.",
+    "no_oracle_exists": "there is no attention-residual oracle. torch 2.6.0 is available locally, so a transcription of _apply_attn_res plus the block schedule in the wave-17 style (scripts/hyper_connection_oracle_export.py) is the instrument to build; the reference cannot reject anything until it exists.",
+    "no_payload": "Kimi-K3 is 2.8 T; no real-weight witness is possible on this machine, and K3's op plan does not close for reasons outside this rung. The execution witness for this rung is therefore SYNTHETIC by construction: a hidden-5-style substrate on an ordinary stack carrying attention-residual operands and the oracle's weights, as wave 19 did."
+  },
+
+  "q1_where_the_traversal_enters_and_exits_each_sublayer": "unchanged from wave 19's reconnaissance and now typed: decode runs a Carrier {Single, Bundle}, batch runs a Plane {Rows, Bundles}; each sublayer is a SITE entered through enter_site / enter_batch_site (producing the [hidden] branch input) and left through leave_site / leave_batch_site (folding the [hidden] delta back into the carrier). The ordinary operators consume [hidden] and never see the carrier. Attention residuals fit that seam exactly: enter = the softmax mix (reduce to [hidden]), leave = prefix_sum += delta (an add, not an expansion), plus two things the seam does not have today — a block-boundary EVENT at the attention site (snapshot the entering state, reset the prefix) and a required EXIT reduction (the output pair) before the final norm.",
+  "q2_what_the_plan_carries_today": "nothing of this topology: ResidualTopology has SingleStream and HyperConnection only; larql-models parses no attn_res_block_size (detect/parser.rs reads hc_* at ~L465; the ModelConfig has hc_streams/hc_sinkhorn_iters/hc_eps and nothing for a block size); the surface carries residual_topology from the execution; the graph has no GroupClass for the output pair (the proj is Unknown/unplaced, the norm is mis-owned by FinalNorm); the KDA and softmax role tables carry no *_res_* role; the op plan has no site op for it. The carrier and site machinery from wave 19 is the only thing already in place.",
+  "q3_placement_relative_to_the_existing_residual_updates": [
+    "entry: the embedding is the first prefix sum; blocks are empty (no replication, unlike HC)",
+    "order at a layer, from the reference: (1) when N > 0, reduce with the attention pair over (blocks, prefix) — reading the OLD blocks; (2) then, when L % B == 0, snapshot h_in into blocks and reset the prefix; (3) pre-norm, attention; (4) prefix += a (or = a after a reset); (5) reduce with the mlp pair over (blocks, prefix), always; (6) pre-ffn norm, FFN; (7) prefix += m. The snapshot is of the ENTERING state h_in, not of the reduced vector, and it lands after that layer's attention-site reduce",
+    "the existing residual-add sites (mod.rs leave_batch_site / decode.rs leave_site) stay adds — into prefix_sum, which is the Single carrier's own vector; the change is at ENTER (a mix instead of the identity) and at the boundary and exit events",
+    "pre-norms read the MIXED vector, as HC's read the reduced one",
+    "exit: apply(prefix, blocks, output pair) -> final norm -> head; required, and K3 ships it"
+  ],
+  "q4_which_intermediate_state_can_witness_the_path": "per site per layer per position: the softmax probs over the N+1 candidates (a single-stream traversal has no such object; a mix that ignored the blocks would show probs = [0, ..., 1]); the mixed vector; the snapshot events (which layers appended, what they appended); the exit probs over 9 candidates. Assertions available once an oracle exists: A1 foreign (site probs and mixed vector equal the oracle's at every position for a given entering (prefix, blocks)), A2 structural (prefix_sum after a site == prefix_before + delta; the mixed vector == probs @ candidates), A3 branch input (pre-norm reads the MIXED vector — the same tap wave 19 used), boundary (blocks grow by exactly one at L % B == 0 with the entering state, never the mixed one), exit (the output pair is applied once, over all snapshots). Controls that must be caught: skip the mix (feed prefix_sum), mix over the normalised candidates instead of the raw ones, snapshot the mixed vector instead of the entering state, snapshot after attention instead of before, apply the mlp-site mix only when N > 0, skip the exit reduction.",
+  "q5_layer_local_versus_global": {
+    "layer_local": ["the two pairs (norm [hidden], proj [1, hidden]) per layer", "the layer's own operators, norms, MoE — untouched"],
+    "global_consumed_per_layer": ["B, the block size — one declared component fact (text_config.attn_res_block_size)", "the snapshot set — grows with depth, read by every site after it, at width [N, hidden]", "the schedule L % B == 0 — derived from the layer index, not declared per layer"],
+    "stack_ends_only": ["blocks start empty at entry (no expansion)", "the output pair at the exit — REQUIRED here; a component declaring B and shipping no output pair would be the analogue of GLM's headless case and must refuse whole-stack by that name", "layer-range slices carry (prefix, blocks) in and out; a resume point for this topology is a (prefix, blocks) plane"],
+    "the_first_block_asymmetry": "at layer 0 the attention-site mix is skipped (N == 0) while the mlp-site mix runs over one candidate; a reader of the reference who regularised the two would compute the same numbers only at layer 0 and diverge from layer 1 on — the attention site must keep its N > 0 guard verbatim"
+  },
+  "q6_exactly_what_refuses_today": {
+    "plan_level": "id 23 (block size Unknown), id 176 (output proj unplaced); the swept output norm is silent at this level",
+    "op_plan_level": "K3's op plan does not close (K3-ARCH-1: five unclassified operands on the KDA layer, four of them this rung's); if the four classified, `single(FinalNorm)` would refuse next on the two-tensor norm object — the masked defect named above",
+    "executor_level": "never reached for K3; nothing in the executor refuses this topology because nothing declares it — a component that somehow declared it today would be run as a single stream, which is the fail-open the topology enum exists to make impossible and the reason the declaration plane must land first",
+    "independent_k3_blockers_this_rung_must_not_touch": "self_attn.g_proj (K3-REP-GATE-1), routed_expert_* / LatentMoE (K3-LATENTMOE-1), the 14 quantization and 14 unclustered findings, the vision tower"
+  },
+  "diagram": [
+    "embed -> prefix [hidden], blocks = []",
+    "layer L:   [N > 0]  h = softmax-mix(blocks + prefix; attn pair)  else h = prefix",
+    "           [L % B == 0]  blocks.push(h_in); prefix = none",
+    "           a = ATTENTION(input_norm(h));  prefix = prefix + a (or a)",
+    "           h = softmax-mix(blocks + prefix; mlp pair)            <- always",
+    "           m = FFN/MoE(post_norm(h));    prefix = prefix + m",
+    "exit:      h = softmax-mix(blocks + prefix; output pair)  -> final norm -> head   (REQUIRED)",
+    "K3: B = 12, 93 layers, 8 snapshots, 9 candidates at the exit"
+  ],
+  "decisions_the_freeze_must_settle_not_decided_here": [
+    "declaration: a third ResidualTopology variant (AttentionResidual { block_size }) read from text_config.attn_res_block_size — parsed as declared or not at all, never defaulted",
+    "placement: a GroupClass for the output pair, owned by the text component exactly when it declares the topology (the HC head's rule), and the Norm fragment must stop sweeping output_attn_res_norm — an ordered, more specific fragment before the generic one",
+    "roles: four site roles (norm and proj at the attention and mlp sites) on every layer under the declaration, checked at [hidden] and [1, hidden]; strays refused on a single-stream component, as HC's are",
+    "carrier: whether wave 19's Bundle (fixed streams x hidden) generalises to (prefix, N snapshots) or the carrier gains a second typed form; planes and resume rows follow the type",
+    "sites: reduce = mix over candidates, update = add — the enter/leave seam is the same; the block-boundary event and the required exit are new contract points",
+    "oracle: a torch transcription of _apply_attn_res and the schedule at a small geometry, with controls that reject each named defect, before any Rust arithmetic is trusted",
+    "substrate: synthetic, on an ordinary stack (K3's own plan does not close and its payload is 2.8 T); the real K3 rows move only at the plan level — ids 23 and 176 and the four per-layer deltas — and the freeze must score them per reader as wave 19 did",
+    "scope: no g_proj, no LatentMoE, no quantization, no vision"
+  ],
+  "what_this_reconnaissance_did_not_do": "No code changed. No forecast written. No oracle written. The K3 plan was read from the uniformly-current cache, not re-planned."
+}
