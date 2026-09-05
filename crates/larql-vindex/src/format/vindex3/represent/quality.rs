@@ -30,6 +30,8 @@
 
 use serde::{Deserialize, Serialize};
 
+use crate::error::VindexError;
+
 /// Acceptance criteria, identified so a claim can name what it passed.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct QualityGate {
@@ -623,6 +625,47 @@ impl QualityEvidence {
 /// The bar this must clear before it is used on anything: a NULL arm
 /// (BF16 against itself) has to pass it with every count at zero. A gate
 /// its own reference cannot satisfy is measuring the harness.
+/// **Every gate this build implements, by name.**
+///
+/// A record names its gate; this resolves it. The alternative — a
+/// caller choosing the gate and the record merely describing one — is
+/// how `q2a_teacher_forced` came to evaluate `kimi-logit-v3` while the
+/// optimiser record declared `kimi-logit-balanced-v1`: two authorities,
+/// and the stored one was not the one that judged.
+///
+/// **No fallback.** An unknown id is refused, never resolved to
+/// whichever gate this file happens to consider current. A gate decides
+/// what is admissible; silently substituting one re-answers every
+/// verdict drawn under the name that was asked for.
+pub fn gate_by_id(id: &str) -> Result<QualityGate, VindexError> {
+    let gate = match id {
+        "kimi-logit-v1" => kimi_logit_v1(),
+        "kimi-logit-v2" => kimi_logit_v2(),
+        "kimi-logit-v3" => kimi_logit_v3(),
+        "kimi-logit-balanced-v1" => kimi_logit_balanced_v1(),
+        other => {
+            return Err(VindexError::Parse(format!(
+                "no gate named `{other}` is implemented by this build — a run judged under \
+                 another gate would carry a verdict nobody asked for"
+            )))
+        }
+    };
+    debug_assert_eq!(
+        gate.id, id,
+        "a gate must answer to the name it is looked up by"
+    );
+    Ok(gate)
+}
+
+/// The gates [`gate_by_id`] resolves, so a test can assert the registry
+/// and the constructors do not drift apart.
+pub const IMPLEMENTED_GATES: [&str; 4] = [
+    "kimi-logit-v1",
+    "kimi-logit-v2",
+    "kimi-logit-v3",
+    "kimi-logit-balanced-v1",
+];
+
 pub fn kimi_logit_v1() -> QualityGate {
     QualityGate {
         id: "kimi-logit-v1".into(),

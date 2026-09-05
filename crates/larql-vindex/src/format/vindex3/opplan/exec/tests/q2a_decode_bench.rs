@@ -44,11 +44,12 @@ use super::kda_q8_real::{
     assemble, assemble_with_head, build_layers, build_layers_scoped, head_q8, layer_list,
     LAYER_ENV, MLA_ENV, SHARED_ENV,
 };
-use super::q2a_teacher_forced::{
-    build_stack, env_dir, sequence_embeddings, BANK_ENV, CANDIDATE_ENV, SOURCE_ENV,
-};
 use crate::format::vindex3::opplan::exec::kimi_source::{CandidateOverlay, KimiSourceModel};
 use crate::format::vindex3::opplan::exec::stack_metal::HybridStack;
+use crate::format::vindex3::represent::measure::teacher_forced::{
+    build_stack, env_dir, sequence_embeddings,
+};
+use crate::format::vindex3::represent::measure::{BANK_ENV, CANDIDATE_ENV, SOURCE_ENV};
 
 /// Tokens per measured block. At the BF16 stack's known ~27 ms/token a
 /// 128-token block is ~3.5 s — long enough to average submission
@@ -181,8 +182,8 @@ fn decode_rate_of_the_candidate_map_beside_its_own_bf16_baseline() {
         )
     } else {
         (
-            build_stack(&metal, &model, None),
-            build_stack(&metal, &model, Some(&overlay)),
+            build_stack(&metal, &model, None).expect("the baseline arm loads"),
+            build_stack(&metal, &model, Some(&overlay)).expect("the candidate arm loads"),
         )
     };
     metal.seal_weight_regions();
@@ -212,7 +213,9 @@ fn decode_rate_of_the_candidate_map_beside_its_own_bf16_baseline() {
     // deterministically.
     let seqs_needed = (tokens.max(WARMUP_TOKENS)).div_ceil(positions).max(1);
     let rows: Vec<Vec<Vec<f32>>> = (0..seqs_needed)
-        .map(|s| sequence_embeddings(&bank_dir, s, positions, hidden))
+        .map(|s| {
+            sequence_embeddings(&bank_dir, s, positions, hidden).expect("the corpus sequence reads")
+        })
         .collect();
 
     for (name, stack) in [("baseline", &mut baseline), ("candidate", &mut candidate)] {
