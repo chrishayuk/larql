@@ -918,9 +918,9 @@ fn carve_expert_banks(
 /// packed e2m1 nibbles and the e8m0 scales, both stored as `U8`.
 const MXFP4_BLOCKS_SUFFIX: &str = "_blocks";
 const MXFP4_SCALES_SUFFIX: &str = "_scales";
-/// The encoding name a declared MXFP4 tensor is placed under, in the same
-/// vocabulary as the region formats a container writes.
-const MXFP4_ENCODING: &str = "MXFP4";
+/// The encoding name a declared MXFP4 tensor is placed under — the
+/// codec's own label, so the graph and the registry cannot spell it apart.
+const MXFP4_ENCODING: &str = crate::format::vindex3::represent::codec::codecs::mxfp4::DTYPE_MXFP4;
 
 /// The encoding one tensor is placed under: its shard dtype, unless the
 /// checkpoint's declared stored representation says those bytes are

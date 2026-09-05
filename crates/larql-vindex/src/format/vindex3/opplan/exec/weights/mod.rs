@@ -23,7 +23,10 @@ use super::quantise::{quantise_q4, quantise_q8, Q4_BLOCK, Q8_BLOCK};
 use crate::error::VindexError;
 use crate::format::vindex3::opplan::OperandRef;
 use crate::format::vindex3::represent::nvfp4_pack::DTYPE_NVFP4;
-use larql_models::quant::mxfp4::{e8m0_to_f32, MXFP4_TABLE};
+// MXFP4 group geometry — per row, `k/32` groups of 16 packed bytes (lo
+// nibble first) plus one e8m0 scale byte each — is the models crate's,
+// so the kernel's layout contract and the codec's have one definition.
+use larql_models::quant::mxfp4::{e8m0_to_f32, MXFP4_GROUP_BYTES, MXFP4_GROUP_ELEMS, MXFP4_TABLE};
 
 /// Alignment (and length granularity) of f16 weight allocations:
 /// the Apple-GPU page size. A page-aligned, page-multiple allocation
@@ -497,11 +500,6 @@ fn widen_raw(raw: &super::operands::RawOperand, name: &str) -> Result<Vec<f32>, 
     super::operands::widen(&raw.dtype, &raw.bytes, name)
 }
 
-/// MXFP4 group geometry, matching the kernel's layout contract exactly:
-/// per row, `k/32` groups of 16 packed bytes (lo nibble first) plus one
-/// e8m0 scale byte each.
-const MXFP4_GROUP_ELEMS: usize = 32;
-const MXFP4_GROUP_BYTES: usize = 16;
 /// e2m1's largest magnitude; the shared exponent is chosen so the
 /// group's max maps at or below it, saturating the rare overshoot.
 const MXFP4_MAX_MAG: f32 = 6.0;

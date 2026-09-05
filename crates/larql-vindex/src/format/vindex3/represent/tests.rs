@@ -536,9 +536,17 @@ fn a_future_abi_revision_is_refused_rather_than_decoded() {
     assert!(err.contains("another build"), "{err}");
     assert!(err.contains("Recompile"), "{err}");
 
+    // A family nothing registers is refused as unknown. (`mxfp4` was the
+    // alien here until the codec registry admitted it as a family of its
+    // own; NVFP4's geometry under that name is now a geometry
+    // disagreement, asserted below, not an unknown family.)
     let mut alien = nvfp4_pack::CodecIdentity::nvfp4_v1();
-    alien.family = "mxfp4".into();
+    alien.family = "vq-codebook".into();
     assert!(alien.admit().unwrap_err().to_string().contains("is not"));
+    let mut misfiled = nvfp4_pack::CodecIdentity::nvfp4_v1();
+    misfiled.family = "mxfp4".into();
+    let err = misfiled.admit().unwrap_err().to_string();
+    assert!(err.contains("disagrees with its own revision"), "{err}");
 
     // Same revision, disagreeing geometry: a corrupted or hand-edited
     // index, and named differently so it is not mistaken for version skew.

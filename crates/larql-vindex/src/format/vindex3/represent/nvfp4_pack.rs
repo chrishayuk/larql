@@ -297,47 +297,16 @@ impl CodecIdentity {
     /// Refuse a pack this build cannot decode under the rules it was
     /// written under.
     ///
-    /// Two representation families reach here. NVFP4 is one contract;
-    /// each K-quant is its OWN family rather than a revision of a shared
-    /// one, because `Q4_K` and `Q6_K` are different block layouts and a
-    /// shared family would let a reader that implements one accept the
-    /// other's bytes on a revision match.
+    /// The decision is the codec registry's
+    /// ([`super::codec::CodecRegistry::admit`]): every registered family
+    /// is its OWN contract — `Q4_K` and `Q6_K` are different block
+    /// layouts, and filing them under one family would let a reader that
+    /// implements one accept the other's bytes on a revision match.
     pub fn admit(&self) -> Result<(), VindexError> {
-        let want = match super::kquant::lookup(&self.family) {
-            Some(k) => k.codec_identity(),
-            None => Self::nvfp4_v1(),
-        };
-        if self.family != want.family {
-            return Err(VindexError::Parse(format!(
-                "representation family `{}` is not `{}`, nor one of {}",
-                self.family,
-                want.family,
-                super::kquant::compilable_names()
-            )));
-        }
-        if self.revision != want.revision {
-            return Err(VindexError::Parse(format!(
-                "`{}` ABI revision {} was compiled by another build; this one \
-                 implements revision {}. Recompile the representation from its \
-                 canonical source rather than decoding it under new rules.",
-                self.family, self.revision, want.revision
-            )));
-        }
-        // A same-revision pack whose geometry disagrees is a corrupted or
-        // hand-edited index, not a version skew — say so differently.
-        if self.group_elems != want.group_elems
-            || self.element != want.element
-            || self.group_scale != want.group_scale
-            || self.tensor_scale != want.tensor_scale
-            || self.layout != want.layout
-        {
-            return Err(VindexError::Parse(format!(
-                "`{}` revision {} declares geometry this build does not \
-                 produce ({:?}); the index disagrees with its own revision",
-                self.family, self.revision, self
-            )));
-        }
-        Ok(())
+        super::codec::CodecRegistry::builtin()
+            .admit(self)
+            .map(|_| ())
+            .map_err(Into::into)
     }
 }
 
