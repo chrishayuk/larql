@@ -1,0 +1,129 @@
+{
+ "programme": "represent-codec-contract",
+ "rung": 2,
+ "name": "entropy-coded-bf16-hostile-codec",
+ "forecast": "rung2-entropy-coded-bf16.json (frozen at 9cc12a16; not edited)",
+ "executed": "2026-09-05",
+ "base_commit": "f92fac65",
+
+ "the_result": "HELD. An entropy-coded, sequential, instance-sized representation (`BF16_ZLIB`) executes through registration alone: one `.register` line, zero edits to prepared.rs, production.rs, physical.rs, weights/mod.rs or operands.rs, and the candidate container's logits are bit-exact to the raw-bf16 control's under the production backend. The one contract leak the forecast named — shape-derived storage size — was the one that surfaced, and it cost exactly one refusal variant in the contract's vocabulary; every other contract file is byte-identical to f92fac65. The row-random consumer refuses the codec by access class before reading a byte.",
+
+ "the_claim_this_earns": {
+  "before": "LARQL has a representation registry and an extensible codec/execution contract — registry-pluggable representation IMPLEMENTATIONS, not runtime-pluggable packages.",
+  "now": "LARQL supports plug-in representations with different storage and access semantics. Evidence: a representation that violates the mmap / random-access assumptions of every prior codec was made executable by registering it, with the executor untouched.",
+  "not_yet": "'representation-open' waits on VQ (represented auxiliary dependencies) and progressive (selectable extents). Pluggable LOWERING TARGETS — a second and third registry for execution providers and artifact projections — are enabled by this seam but not delivered; rung 3's planner-visible admission and realization trace is their prerequisite."
+ },
+
+ "falsifiers_scored": {
+  "F1_other_contract_file_changed": "NO. `git diff --stat f92fac65` on codec/{mod,capability,residency,extent,streams,geometry}.rs is empty.",
+  "F2_error_rs_more_than_one_variant": "NO. +6 lines: `InstanceSized { tensor, label }` and its message, nothing else.",
+  "F3_label_outside_codec_in_non_test_code": "NO, with one literal hit to report: the encoder's doc comment in `format/vindex3/fixtures.rs` names `BF16_ZLIB` in prose. No code outside represent/codec/ mentions the label.",
+  "F4_enum_variant_added": "NO. WeightFormat 7→7, PhysicalProjectionPlan 9→9, LoadedWeight 7→7, ExpertEncoding 4→4; format/lyrw2/region_format.rs untouched. (Measured on the f92fac65 base. The branch was then rebased onto f8c2cd5a for the merge, where PR #420 had independently added WeightFormat::KQuant and PhysicalProjectionPlan::FusedKQuant — a direct K-quant realization, not rung 2's doing. The only rebase conflict was the no-kernel roster in contract.rs: the K-quants leave it, BF16_ZLIB joins it.)",
+  "F5_executor_edit_needed": "NO. The five executor files are untouched; the only non-test edit under exec/ is the packed-bank preflight in experts.rs, which the dense witness does not exercise.",
+  "F6_logits_not_bit_exact": "NO. `to_bits` equality on the last position's logits and final hidden state, candidate vs control, production backend.",
+  "F7_more_than_six_gate_tests_changed": "YES — SEVEN. `ranges.rs:125 a_row_the_codec_cannot_block_is_refused_by_group` prices ungrouped codecs from shape as a side statement inside a test whose subject is the grouped refusal. The reconnaissance grep for pinned assumptions read the test NAMES and the six bodies they suggested; it did not read every body. Recorded as a missed baseline fact, not absorbed.",
+  "F8_foreign_stream_fails_while_own_passes": "NO. Python zlib's streams for both images decode bit-for-bit, specials included; the crate's own encoder agrees on meaning and is not required to agree on bytes.",
+  "F9_pre_registration_control_did_not_fire": "NO. A registry built from the eight rung-1 codecs refuses the label with UnknownEncoding listing exactly those eight; and the same zlib bytes under a label nobody registers are refused AT LOAD by name, through the real container path.",
+  "F10_stored_bytes_refusal_broke_another_consumer": "NO. The full crate suite (3978 lib tests, every integration binary) is green; the workspace check is green.",
+  "F11_bank_refusal_read_bytes_or_named_a_dtype": "NO. `load_count` is unchanged across the refusal and the message is `BF16_ZLIB provides sequential access; the plan requires row-random`, not `expected stored dtype`.",
+  "F12_new_file_under_coverage_floor": "NO. Per-file (lines): codecs/bf16_zlib.rs 98.91%, opplan/exec/experts.rs 92.84%, format/vindex3/fixtures.rs 99.48%, codec/error.rs 100%, codec/registry.rs 100%; no coverage-policy entry added."
+ },
+
+ "gate_collisions_classified": [
+  {"gate": "contract.rs:74 every_codec_admits_its_own_alignment_and_refuses_access_it_lacks", "was": "require(RowRandom) Ok for EVERY codec", "class": "accidental universal — true of every rung-1 codec, not of the contract", "now": "row and element access provided iff declared, refusal named; PLUS the genuine requirement retained: a codec with any acceleration must provide RowRandom (a kernel behind it was promised rows); asserts the sequential arm ran exactly once"},
+  {"gate": "contract.rs:153 codecs_with_no_direct_cpu_realization_say_so", "was": "exact roster", "class": "roster", "now": "roster + BF16_ZLIB"},
+  {"gate": "contract.rs:169 stored_bytes_are_the_certificate_s_bits_at_scale", "was": "stored_bytes prices for EVERY codec", "class": "accidental universal — fixed-rate codes only", "now": "prices consistently with the certificate OR refuses InstanceSized naming itself; asserts (8 priced, 1 instance-sized) so neither arm is vacuous"},
+  {"gate": "decode.rs:147 every_fixture_validates_and_is_the_size_the_codec_declares", "was": "fixture length == stored_bytes", "class": "accidental universal", "now": "equality when the codec prices; the instance-sized arm asserts a non-empty stream and ran once"},
+  {"gate": "ranges.rs:87 a_stream_shorter_than_the_shape_implies_is_refused_by_stream_name", "was": "validate refuses a short stream with StreamLength for EVERY codec", "class": "accidental universal — 'validate by length' presumes shape-derived size", "now": "keyed to the DECLARATION (does stored_bytes answer?), not to a label: pricing codecs refuse at validate by stream name; an instance-sized codec validates the header and refuses at decode naming tensor and label; asserts the decode arm ran once"},
+  {"gate": "ranges.rs:125 a_row_the_codec_cannot_block_is_refused_by_group", "was": "ungrouped codecs priced at 200 × align as a side statement", "class": "accidental universal, UNFORECAST (F7)", "now": "the side statement admits InstanceSized; the grouped refusal it exists for is unchanged"},
+  {"gate": "registry.rs:7 the_built_in_registry_carries_the_eight_encodings_in_declaration_order", "was": "eight", "class": "roster", "now": "nine, renamed"}
+ ],
+
+ "findings_not_in_the_forecast": [
+  {
+   "id": "N1",
+   "finding": "The reader-adapter inflater conflates 'input ended' with 'stream ended'. A stream missing its final Adler-32 byte decoded WHOLE and was accepted: the DEFLATE data was complete, the adapter returned end-of-file at the missing trailer, and nothing distinguished that from a verified end. The generalized ranges.rs:87 gate — the arm that says an instance-sized codec must refuse a short stream at decode — is what caught it.",
+   "fix": "decode_rows inflates through the low-level `Decompress` API and, for a whole decode, requires `Status::StreamEnd` (the trailer read and verified), refuses an image longer than the shape through a one-byte spare buffer, refuses a stream that ends before its trailer, and refuses bytes after the stream. A prefix decode judges only that the prefix exists — as preregistered.",
+   "lesson": "The trailer must be positively witnessed; 'no more input' is not 'the stream vouched for itself'. And the gate that found it was a universal quantifier I had just weakened — weakening it by DECLARATION rather than by label is why it still had teeth."
+  },
+  {
+   "id": "N2",
+   "finding": "The forecast's W3 wording 'index.json byte-identical between the two containers' was impossible: index.json records payload_bytes / payload_sha256 / segment_sha256 per representation entry (index.rs:32-38), so two containers with different payload bytes cannot share an index. A reconnaissance miss.",
+   "resolution": "The witness re-records the rewritten segments in the index exactly as the compiler does (compile/mod.rs:180), asserts the two indexes equal modulo those three fields of the transcoded entries, verifies the recorded segment hashes against the files, and compares every other regular file byte for byte with equal name sets asserted first."
+  },
+  {
+   "id": "N3",
+   "finding": "Packed MXFP4 expert banks are labelled `U8` in the tensor table (experts.rs DTYPE_U8) — a label outside the registry, judged by the bank loader's own arm. The new preflight therefore applies only to registered labels and leaves the U8 dialect on its existing path unchanged.",
+   "for_rung_3": "The row-random consumer's dtype vocabulary is not fully registry-backed; the same is true of the seam's `stored_bf16` / `stored_nvfp4` booleans (prepared.rs:685-697). Planner-visible admission has to replace both with codec declarations."
+  },
+  {
+   "id": "N4",
+   "finding": "W4 lives at `coverage_experts_production/bf16_zlib_bank.rs`, not in `bf16_zlib_execution.rs` as forecast: the routed fixture's builders are `pub(super)` inside that module and a witness that reuses them has to be its descendant. Widening the fixture's visibility would have been the alternative; moving the test was the smaller change. `coverage_experts_production.rs` gains one `mod` line."
+  },
+  {
+   "id": "N5",
+   "finding": "The only BF16_ZLIB encoder lives in `format/vindex3/fixtures.rs` (`encode_bf16_zlib`), the crate's public fixture module, so both the codec tests and the execution witnesses reach it. The compile path (`arena.rs` encode table, `compile.rs` bank pricing) is untouched and cannot emit BF16_ZLIB — as forecast: encode is not part of the contract."
+  },
+  {
+   "id": "N6",
+   "finding": "The container written by `encode_system` holds a subdirectory as well as files; the first byte-comparison read it as a file. The comparison is over regular files."
+  }
+ ],
+
+ "contract_verdict": {
+  "trait_surfaces": "unchanged — every signature and provided method of RepresentationCodec, every capability / residency / extent / stream / geometry type, byte-identical to f92fac65",
+  "contract_vocabulary": "+1 refusal: CodecError::InstanceSized. Reported as a contract change because the user asked for that honesty; the freeze decides whether vocabulary growth counts",
+  "observations_for_the_freeze": [
+   "ExtentCertificate.bits_per_weight has no vocabulary for a variable-rate code; BF16_ZLIB certifies the supremum (16.0) and its tests pin instances on both sides of it. Whether the freeze wants a rate/bound distinction is open.",
+   "ResidencyProfile prices resident image only; source traffic is undeclared for every realization of every codec. BF16_ZLIB makes the gap visible because its stored length is instance-dependent, falling on either side of the shape-derived image. The census witness reads source touch from the container's recorded length instead.",
+   "validate() for an instance-sized codec can judge only the header; 'length against shape' moves to decode. The trait allows this; the gates that assumed otherwise were tests."
+  ]
+ },
+
+ "measured_touch_set": {
+  "new": [
+   "crates/larql-vindex/src/format/vindex3/represent/codec/codecs/bf16_zlib.rs",
+   "crates/larql-vindex/src/format/vindex3/represent/codec/tests/bf16_zlib.rs",
+   "crates/larql-vindex/src/format/vindex3/represent/codec/tests/fixtures/mod.rs",
+   "crates/larql-vindex/src/format/vindex3/represent/codec/tests/fixtures/bf16_zlib_foreign.rs (generated)",
+   "scripts/gen_bf16_zlib_fixture.py",
+   "crates/larql-vindex/src/format/vindex3/opplan/exec/tests/bf16_zlib_execution.rs",
+   "crates/larql-vindex/src/format/vindex3/opplan/exec/tests/coverage_experts_production/bf16_zlib_bank.rs (N4)",
+   "docs/represent/forecasts/rung2-execution-notes.json"
+  ],
+  "edited": [
+   "codec/codecs/mod.rs (+1 mod)", "codec/registry.rs (+1 use, +1 register)", "codec/error.rs (+1 variant)",
+   "codec/tests/mod.rs (+2 mods, +2 uses, fixture table +1)", "codec/tests/contract.rs (3 fns)", "codec/tests/decode.rs (1 fn)",
+   "codec/tests/ranges.rs (2 fns — F7)", "codec/tests/registry.rs (1 fn)",
+   "opplan/exec/experts.rs (preflight `require_row_access`, +2 uses)", "opplan/exec/tests/mod.rs (+1 mod)",
+   "opplan/exec/tests/coverage_experts_production.rs (+1 mod — N4)", "format/vindex3/fixtures.rs (encoder — N5)",
+   "crates/larql-vindex/Cargo.toml (+flate2)", "Cargo.lock (one edge: larql-vindex → flate2; no new crate)",
+   "docs/represent-codec-contract.md (rung 2 status)"
+  ],
+  "untouched_as_forecast": [
+   "every file under opplan/ outside exec/", "prepared.rs, production.rs, physical.rs, weights/mod.rs, operands.rs",
+   "represent/arena.rs, represent/compile.rs, represent/map.rs, lyrw2/region_format.rs",
+   "codec/{mod,capability,residency,extent,streams,geometry}.rs"
+  ]
+ },
+
+ "gates_run": {
+  "codec_module": "75 passed (59 at baseline + 16 in tests/bf16_zlib.rs), 0 failed",
+  "witnesses": "23 passed under the `bf16_zlib` filter (codec + execution + bank)",
+  "full_crate": "cargo test -p larql-vindex: 3978 lib tests passed, 6 ignored (pre-existing), every integration binary green",
+  "workspace": "cargo check --workspace --all-targets: green (no exhaustive match on CodecError elsewhere)",
+  "fmt": "cargo fmt --all --check: clean, run last",
+  "clippy": "cargo clippy -p larql-vindex --all-targets -- -D warnings on rustc 1.98.0 (= CI stable, = rust-version): clean; also clean for --target x86_64-apple-darwin --no-deps",
+  "coverage": "policy passed, 93.65% total, every new file above the 90% floor",
+  "docs": "check_doc_links.py and check_doc_references.py --strict: green"
+ },
+
+ "coverage": "cargo llvm-cov --package larql-vindex (one crate per run) + scripts/check_coverage_policy.py: PASSED, total 93.65% lines over 411 files, after the last edit; no new debt baseline. Local macOS llvm-cov reads low against CI, so headroom rather than a margin of 0.1% is what these numbers show.",
+ "docs_gates": "check_doc_links.py: all 852 relative links resolve; check_doc_references.py --strict: no broken references.",
+
+ "handoff_to_rung_3": [
+  "Planner-visible capability admission: replace the seam's stored_bf16 / stored_nvfp4 booleans (prepared.rs) and the bank loader's per-label arms (experts.rs, incl. the U8 dialect — N3) with codec declarations consulted at prepared-plan time; opplan stays dtype-blind until the planner reads the registry.",
+  "Explicit realization / fallback trace: today `choose_for(stored_bf16=false) → BlasF32` is a silent, well-defined fallback and the only observable is the residency census. Derive requested / selected / reason / residency from `accelerations()` and `decode_residency()` — the census witness here shows the declarations already agree with the observation.",
+  "Then the lowering-target registries: execution providers and artifact projections as separate registries with provider-independent identities; first-party CPU/Metal/GGUF through the same interfaces; the severe test is an out-of-tree crate registering with no core edit."
+ ]
+}

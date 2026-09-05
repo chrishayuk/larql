@@ -6,6 +6,7 @@
 //! grids, the operand widener for the floats — so registering a codec
 //! adds a *declaration*, never a second opinion about what bytes mean.
 
+pub mod bf16_zlib;
 pub mod float;
 pub mod kquant;
 pub mod lyrw2;

@@ -24,9 +24,12 @@ use larql_compute_metal::MetalBackend;
 use serde_json::Value;
 
 use super::kda_q8_real::build_layers;
-use super::q2a_teacher_forced::{env_dir, run_sequence, sequence_embeddings, BANK_ENV, SOURCE_ENV};
 use crate::format::vindex3::opplan::exec::kimi_source::{KdaOverlay, KimiSourceModel};
 use crate::format::vindex3::opplan::exec::stack_metal::{DeviceAttn, DeviceLayer, HybridStack};
+use crate::format::vindex3::represent::measure::teacher_forced::{
+    env_dir, run_sequence, sequence_embeddings,
+};
+use crate::format::vindex3::represent::measure::{BANK_ENV, SOURCE_ENV};
 
 const KDA_CANDIDATE_ENV: &str = "LARQL_KIMI_KDA_CANDIDATE";
 /// Sequences for the end-to-end logit comparison. Two is enough: the
@@ -137,9 +140,10 @@ fn native_kda_bytes_and_logits_are_bit_equal_to_the_transient_arm() {
     let mut b = assemble(native);
     metal.seal_weight_regions();
     for seq in 0..SEQUENCES {
-        let rows = sequence_embeddings(&bank_dir, seq, positions, g.hidden);
-        let la = run_sequence(&metal, &mut a, &rows, g.hidden);
-        let lb = run_sequence(&metal, &mut b, &rows, g.hidden);
+        let rows = sequence_embeddings(&bank_dir, seq, positions, g.hidden)
+            .expect("the corpus sequence reads");
+        let la = run_sequence(&metal, &mut a, &rows, g.hidden).expect("the arm runs");
+        let lb = run_sequence(&metal, &mut b, &rows, g.hidden).expect("the arm runs");
         for (pos, ((va, _), (vb, _))) in la.into_iter().zip(lb).enumerate() {
             assert!(
                 va.iter().zip(&vb).all(|(x, y)| x.to_bits() == y.to_bits()),

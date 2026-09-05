@@ -4,14 +4,34 @@ use super::*;
 use crate::format::vindex3::represent::nvfp4_pack::CodecIdentity;
 
 #[test]
-fn the_built_in_registry_carries_the_eight_encodings_in_declaration_order() {
+fn the_built_in_registry_carries_the_nine_encodings_in_declaration_order() {
     assert_eq!(
         CodecRegistry::builtin().labels(),
-        ["BF16", "F16", "F32", "Q4_K", "Q6_K", "Q8_0", "NVFP4", "MXFP4"]
+        [
+            "BF16",
+            "F16",
+            "F32",
+            "Q4_K",
+            "Q6_K",
+            "Q8_0",
+            "NVFP4",
+            "MXFP4",
+            "BF16_ZLIB"
+        ]
     );
     assert_eq!(
         CodecRegistry::builtin().families(),
-        ["BF16", "F16", "F32", "Q4_K", "Q6_K", "Q8_0", "nvfp4", "mxfp4"]
+        [
+            "BF16",
+            "F16",
+            "F32",
+            "Q4_K",
+            "Q6_K",
+            "Q8_0",
+            "nvfp4",
+            "mxfp4",
+            "BF16_ZLIB"
+        ]
     );
 }
 

@@ -72,6 +72,7 @@ fn every_codec_is_terminal_today_and_says_so_at_any_other_depth() {
 
 #[test]
 fn every_codec_admits_its_own_alignment_and_refuses_access_it_lacks() {
+    let mut sequential = 0;
     for codec in builtin() {
         let label = codec.encoding_label();
         let caps = codec.capabilities();
@@ -84,15 +85,43 @@ fn every_codec_admits_its_own_alignment_and_refuses_access_it_lacks() {
             caps.group_elems >= 1 && caps.row_align_elems >= caps.group_elems,
             "{label}"
         );
+        // Every codec serves a front-to-back read. Finer access is
+        // provided exactly when declared and refused by name otherwise —
+        // rung 1 asserted row access for every codec, which was true of
+        // every codec it had and not a property of the contract.
         caps.require(RequiredAccess::Sequential, label).unwrap();
-        caps.require(RequiredAccess::RowRandom, label).unwrap();
-        let element = caps.require(RequiredAccess::ElementRandom, label);
-        assert_eq!(
-            element.is_ok(),
-            caps.access == AccessGranularity::ElementRandom,
-            "{label}"
-        );
+        for required in [RequiredAccess::RowRandom, RequiredAccess::ElementRandom] {
+            let result = caps.require(required, label);
+            assert_eq!(
+                result.is_ok(),
+                caps.access.provides(required),
+                "{label}: {}",
+                required.name()
+            );
+            if let Err(err) = result {
+                assert!(
+                    matches!(
+                        &err,
+                        CodecError::AccessRefused { provided, required: r, .. }
+                            if *provided == caps.access.name() && r == required.name()
+                    ),
+                    "{label}: {err}"
+                );
+            }
+        }
+        // The requirement that IS genuine: a codec offering a direct
+        // realization has promised the kernel behind it arbitrary rows.
+        if !codec.accelerations().is_empty() {
+            caps.require(RequiredAccess::RowRandom, label).unwrap();
+        }
+        if caps.access == AccessGranularity::Sequential {
+            sequential += 1;
+        }
     }
+    assert_eq!(
+        sequential, 1,
+        "the sequential witness is registered, so the refusal arm ran"
+    );
 }
 
 #[test]
@@ -173,9 +202,10 @@ fn codecs_with_no_direct_cpu_realization_say_so_rather_than_claim_one() {
         .filter(|c| c.accelerations().is_empty())
         .map(|c| c.encoding_label())
         .collect();
-    // K-quants gained a direct CPU realization (FusedKQuant); only the
-    // formats with no in-place kernel remain here.
-    assert_eq!(without, ["F16", "MXFP4"]);
+    // K-quants gained a direct CPU realization (FusedKQuant), and the
+    // entropy-coded codec registers none: only the formats with no
+    // in-place kernel remain here.
+    assert_eq!(without, ["F16", "MXFP4", "BF16_ZLIB"]);
     let with: Vec<&str> = builtin()
         .into_iter()
         .filter(|c| !c.accelerations().is_empty())
@@ -189,16 +219,29 @@ fn stored_bytes_are_the_certificate_s_bits_at_scale() {
     // The certificate is asymptotic; on a large matrix the exact byte
     // count must agree with it to the per-tensor overhead.
     let shape = [4096usize, 4096];
+    let (mut priced, mut instance_sized) = (0, 0);
     for codec in builtin() {
         let label = codec.encoding_label();
-        let bytes = codec
-            .stored_bytes(&shape, RepresentationExtent::TERMINAL, TENSOR)
-            .unwrap() as f64;
-        let bpw = bytes * extent::BITS_PER_BYTE / (shape[0] * shape[1]) as f64;
-        let declared = codec.extents()[0].bits_per_weight;
-        assert!(
-            (bpw - declared).abs() < 1e-3,
-            "{label}: {bpw} vs {declared}"
-        );
+        match codec.stored_bytes(&shape, RepresentationExtent::TERMINAL, TENSOR) {
+            Ok(bytes) => {
+                let bpw = bytes as f64 * extent::BITS_PER_BYTE / (shape[0] * shape[1]) as f64;
+                let declared = codec.extents()[0].bits_per_weight;
+                assert!(
+                    (bpw - declared).abs() < 1e-3,
+                    "{label}: {bpw} vs {declared}"
+                );
+                priced += 1;
+            }
+            // A variable-rate code cannot price a shape: its certificate
+            // is a bound, and the refusal names the container's recorded
+            // length as the authority. Rung 1 asserted pricing for every
+            // codec; that was true of fixed-rate codes, not of the trait.
+            Err(CodecError::InstanceSized { label: refused, .. }) => {
+                assert_eq!(refused, label);
+                instance_sized += 1;
+            }
+            Err(other) => panic!("{label}: {other}"),
+        }
     }
+    assert_eq!((priced, instance_sized), (8, 1), "both arms ran");
 }

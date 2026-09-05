@@ -5,9 +5,11 @@
 //! about MXFP4's declaration and not about the test.
 
 mod baseline;
+mod bf16_zlib;
 mod capability;
 mod contract;
 mod decode;
+mod fixtures;
 mod geometry;
 mod lyrw2;
 mod ranges;
@@ -15,6 +17,7 @@ mod registry;
 mod residency;
 mod streams;
 
+use super::codecs::bf16_zlib::BF16_ZLIB;
 use super::codecs::float::{BF16, F16, F32};
 use super::codecs::kquant::{Q4_K, Q6_K, Q8_0};
 use super::codecs::mxfp4::{DTYPE_MXFP4, MXFP4};
@@ -23,6 +26,7 @@ use super::codecs::nvfp4::NVFP4;
 // `streams` module for every file under it.
 use super::streams::{GROUP_SCALES, TENSOR_SCALE, VALUES};
 use super::*;
+use crate::format::vindex3::fixtures::encode_bf16_zlib;
 use crate::format::vindex3::opplan::exec::weights::{quantize_mxfp4, LoadedWeight};
 use crate::format::vindex3::represent::nvfp4_pack::{encode as encode_nvfp4, PackLayout};
 use larql_models::quant::half::{encode_bf16, encode_f16};
@@ -114,6 +118,10 @@ pub(super) fn fixtures() -> Vec<Fixture> {
         &NVFP4,
         encode_nvfp4(&matrix, &layout, TENSOR).expect("packs"),
     ));
+    // The sequential codec: the same ramp, one zlib stream. Its stored
+    // size is whatever the stream came to, which is the point. Pushed
+    // here, before MXFP4's destructuring shadows `packed`.
+    out.push(packed(&BF16_ZLIB, encode_bf16_zlib(&values)));
     let LoadedWeight::Mxfp4 { packed, scales } =
         quantize_mxfp4(&values, ROWS, K, TENSOR).expect("mxfp4")
     else {
