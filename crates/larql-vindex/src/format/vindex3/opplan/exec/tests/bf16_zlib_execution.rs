@@ -209,9 +209,10 @@ impl Witness {
         let (plan, store) = self.open();
         let trace = execute_plan(&plan, &store, &TOKENS, &ProductionBackend::new()).unwrap();
         let bits = |v: &[f32]| v.iter().map(|x| x.to_bits()).collect::<Vec<u32>>();
+        let hidden = bits(trace.final_hidden());
         (
             bits(&trace.logits.expect("the dense fixture carries a head")),
-            bits(&trace.final_hidden),
+            hidden,
         )
     }
 

@@ -132,14 +132,15 @@ pub fn plan_component_ops(
     // per-layer site operands classify, are required on every
     // transformer layer, are checked against the topology's own geometry
     // and are bound into the plan; a single-stream component refuses the
-    // same operands as strays. What this build still cannot do is
-    // TRAVERSE the bundle, and that refusal lives where traversal starts
-    // (`exec::prepared::PreparedOperands::load`) and in the plan report,
-    // both reading `ResidualTopology::unimplemented_reason`. Refusing
-    // here as well would hide the addressability answer behind the
-    // traversal gap — the structural silence the wave-18 baseline
-    // recorded, where a hyper-connection checkpoint emitted no
-    // UnclassifiedOperand because nothing ever asked.
+    // same operands as strays. Since wave 19 both traversals carry the
+    // bundle; what a hyper-connected component still cannot do is said
+    // by name where traversal starts (`exec::prepared::PreparedOperands::load`:
+    // a whole-stack image with no head, a layer scale under the topology)
+    // and in the plan report, from the same facts. Refusing here would
+    // hide the addressability answer behind an execution gap — the
+    // structural silence the wave-18 baseline recorded, where a
+    // hyper-connection checkpoint emitted no UnclassifiedOperand because
+    // nothing ever asked.
     let hyper_connection = match surface.residual_topology {
         ResidualTopology::HyperConnection(hc) => Some(hc),
         ResidualTopology::SingleStream => None,

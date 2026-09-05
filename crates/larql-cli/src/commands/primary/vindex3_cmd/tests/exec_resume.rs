@@ -127,5 +127,5 @@ fn resume_state_is_the_last_complete_plane() {
         .unwrap()
         .expect("two complete planes must yield a resume point");
     assert_eq!(point.next_layer, 1);
-    assert!(point.hidden.iter().flatten().all(|&v| v == 1.5));
+    assert!(point.hidden.rows().iter().flatten().all(|&v| v == 1.5));
 }

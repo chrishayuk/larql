@@ -62,7 +62,7 @@ fn c1_query_scale_mutation_changes_computation() {
     let executed = executor_trace_from(container.path());
 
     let layer0 = max_abs(
-        &executed.layers[0].post_attention,
+        executed.layers[0].post_attention.rows(),
         &golden.layers[0].post_attention,
     );
     assert!(
@@ -86,13 +86,16 @@ fn c2_position_policy_mutation_diverges_exactly_at_its_layer() {
     });
     let executed = executor_trace_from(container.path());
 
-    let layer0 = max_abs(&executed.layers[0].post_layer, &golden.layers[0].post_layer);
+    let layer0 = max_abs(
+        executed.layers[0].post_layer.rows(),
+        &golden.layers[0].post_layer,
+    );
     assert!(
         layer0 < NOISE_CEILING,
         "layer 0 precedes the mutation and must match golden (diff {layer0:e})"
     );
     let layer1 = max_abs(
-        &executed.layers[1].post_attention,
+        executed.layers[1].post_attention.rows(),
         &golden.layers[1].post_attention,
     );
     assert!(
@@ -169,7 +172,7 @@ fn c4_sliding_window_binds_exactly_from_the_first_excluded_position() {
     let executed = executor_trace_from(container.path());
 
     let masked = &golden.layers[0].post_attention;
-    let widened = &executed.layers[0].post_attention;
+    let widened = executed.layers[0].post_attention.rows();
     assert!(
         masked.len() > FIRST_MASKED_POSITION,
         "fixture must run past the first masked position to test the window"
@@ -213,7 +216,7 @@ fn c5_removing_the_embedding_norm_changes_computation() {
 
     let intact = executor_trace_from(container.path());
     let layer0 = max_abs(
-        &intact.layers[0].post_attention,
+        intact.layers[0].post_attention.rows(),
         &golden.layers[0].post_attention,
     );
     assert!(
@@ -226,7 +229,7 @@ fn c5_removing_the_embedding_norm_changes_computation() {
     });
     let stripped = executor_trace_from(container.path());
     let diverged = max_abs(
-        &stripped.layers[0].post_attention,
+        stripped.layers[0].post_attention.rows(),
         &golden.layers[0].post_attention,
     );
     assert!(
@@ -251,7 +254,7 @@ fn c6_layer_norm_weight_offset_is_authoritative() {
 
     let intact = executor_trace_from(container.path());
     let before = max_abs(
-        &intact.layers[0].post_attention,
+        intact.layers[0].post_attention.rows(),
         &golden.layers[0].post_attention,
     );
     assert!(
@@ -265,13 +268,13 @@ fn c6_layer_norm_weight_offset_is_authoritative() {
     let flattened = executor_trace_from(container.path());
 
     // The embedding precedes every layer norm and must not move.
-    let embed = max_abs(&flattened.embedded, &intact.embedded);
+    let embed = max_abs(flattened.embedded.rows(), intact.embedded.rows());
     assert!(
         embed < NOISE_CEILING,
         "the embedding precedes the mutated norm and must not move ({embed:e})"
     );
     let after = max_abs(
-        &flattened.layers[0].post_attention,
+        flattened.layers[0].post_attention.rows(),
         &golden.layers[0].post_attention,
     );
     assert!(
@@ -301,8 +304,8 @@ fn c7_final_norm_offset_is_site_local() {
     let mutated = executor_trace_from(container.path());
 
     for (layer, (a, b)) in intact.layers.iter().zip(&mutated.layers).enumerate() {
-        let attn = max_abs(&a.post_attention, &b.post_attention);
-        let post = max_abs(&a.post_layer, &b.post_layer);
+        let attn = max_abs(a.post_attention.rows(), b.post_attention.rows());
+        let post = max_abs(a.post_layer.rows(), b.post_layer.rows());
         assert!(
             attn < NOISE_CEILING && post < NOISE_CEILING,
             "layer {layer} moved, but the final norm runs after every layer \
@@ -310,8 +313,8 @@ fn c7_final_norm_offset_is_site_local() {
         );
     }
     let final_gap = max_abs(
-        std::slice::from_ref(&mutated.final_hidden),
-        std::slice::from_ref(&intact.final_hidden),
+        &[mutated.final_hidden().to_vec()],
+        &[intact.final_hidden().to_vec()],
     );
     assert!(
         final_gap > NOISE_CEILING,

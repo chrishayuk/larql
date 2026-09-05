@@ -412,7 +412,7 @@ fn executor_matches_the_independent_golden_semantics() {
 
     for layer in 0..G_LAYERS {
         let attn = max_abs(
-            &executed.layers[layer].post_attention,
+            executed.layers[layer].post_attention.rows(),
             &golden.layers[layer].post_attention,
         );
         assert!(
@@ -420,7 +420,7 @@ fn executor_matches_the_independent_golden_semantics() {
             "layer {layer} post_attention diverges from golden: {attn:e}"
         );
         let post = max_abs(
-            &executed.layers[layer].post_layer,
+            executed.layers[layer].post_layer.rows(),
             &golden.layers[layer].post_layer,
         );
         assert!(

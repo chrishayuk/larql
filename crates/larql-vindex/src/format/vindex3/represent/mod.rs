@@ -61,6 +61,9 @@ pub mod gptq;
 pub mod kda_candidate;
 pub mod kquant;
 pub mod map;
+pub mod measure;
+#[cfg(test)]
+mod measure_tests;
 pub mod measurement;
 pub mod nvfp4_pack;
 pub mod participation;

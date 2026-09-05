@@ -101,7 +101,7 @@ fn identity_survives_a_round_trip_and_parse_refuses_other_schemas_by_name() {
 /// witness is re-recorded.
 #[test]
 fn the_semantics_version_is_pinned_to_known_verdicts() {
-    assert_eq!(PLANNER_SEMANTICS_VERSION, 15);
+    assert_eq!(PLANNER_SEMANTICS_VERSION, 16);
 
     let dir = tempfile::tempdir().unwrap();
     let admissible = plan_system(&one_glimmer(dir.path()));
@@ -174,9 +174,9 @@ fn the_semantics_version_is_pinned_to_known_verdicts() {
     // — no longer three unplaced-group blockers — and stay unplaced on
     // one that does not. Both arms pinned: the second is what keeps the
     // first from having been implemented as "own anything named hc_".
-    // Neither plan is admissible (the topology is represented and not
-    // executable, and its keys say so), so the verdict pinned is the
-    // groups' fate, read off the findings by subject.
+    // Neither plan is admissible (the estate is a stub with no layer
+    // operands), so the verdict pinned is the groups' fate, read off the
+    // findings by subject.
     let head_groups = ["hc_head_fn", "hc_head_base", "hc_head_scale"];
     let head_fate = |declares_topology: bool| -> Vec<String> {
         let dir = tempfile::tempdir().unwrap();
@@ -227,6 +227,77 @@ fn the_semantics_version_is_pinned_to_known_verdicts() {
         undeclared,
         ["hc_head_base", "hc_head_fn", "hc_head_scale"],
         "without the declaration the same groups block as unplaced"
+    );
+
+    // Version 16's verdict (wave 19): a hyper-connected stack with every
+    // site operand AND a head object is ADMISSIBLE — the topology's keys
+    // are carried and the traversal runs — while the same stack with no
+    // head stays blocked, by the head's own finding and not the
+    // topology's. Both arms pinned: the second is what keeps the first
+    // from having been implemented as "stop refusing hc_".
+    let hc_stack = |head: bool| -> SystemPlan {
+        let dir = tempfile::tempdir().unwrap();
+        let mut config = serde_json::json!({
+            "architectures": ["LlamaForCausalLM"],
+            "torch_dtype": "bfloat16",
+            "model_type": "llama",
+            "hidden_size": 64,
+            "num_hidden_layers": 1,
+            "intermediate_size": 256,
+            "num_attention_heads": 8,
+            "num_key_value_heads": 2,
+            "head_dim": 8,
+            "vocab_size": 128,
+            "rms_norm_eps": 1e-5,
+            "rope_theta": 10000.0
+        });
+        config["hc_mult"] = serde_json::json!(4);
+        config["hc_sinkhorn_iters"] = serde_json::json!(20);
+        config["hc_eps"] = serde_json::json!(1e-6);
+        let mut tensors: Vec<(&str, &[usize])> = vec![
+            ("model.embed_tokens.weight", &[128, 64]),
+            ("model.norm.weight", &[64]),
+            ("lm_head.weight", &[128, 64]),
+            ("model.layers.0.self_attn.q_proj.weight", &[64, 64]),
+            ("model.layers.0.self_attn.k_proj.weight", &[16, 64]),
+            ("model.layers.0.self_attn.v_proj.weight", &[16, 64]),
+            ("model.layers.0.self_attn.o_proj.weight", &[64, 64]),
+            ("model.layers.0.input_layernorm.weight", &[64]),
+            ("model.layers.0.post_attention_layernorm.weight", &[64]),
+            ("model.layers.0.mlp.gate_proj.weight", &[256, 64]),
+            ("model.layers.0.mlp.up_proj.weight", &[256, 64]),
+            ("model.layers.0.mlp.down_proj.weight", &[64, 256]),
+            ("model.layers.0.hc_attn_fn", &[24, 256]),
+            ("model.layers.0.hc_attn_base", &[24]),
+            ("model.layers.0.hc_attn_scale", &[3]),
+            ("model.layers.0.hc_ffn_fn", &[24, 256]),
+            ("model.layers.0.hc_ffn_base", &[24]),
+            ("model.layers.0.hc_ffn_scale", &[3]),
+        ];
+        if head {
+            tensors.push(("hc_head_fn", &[4, 256]));
+            tensors.push(("hc_head_base", &[4]));
+            tensors.push(("hc_head_scale", &[1]));
+        }
+        let inventory = custom_artifact(dir.path(), &config, &tensors);
+        plan_system(&[(ARTIFACT.to_string(), inventory)])
+    };
+    let with_head = hc_stack(true);
+    assert!(with_head.admissible, "{:?}", with_head.summary);
+    let headless = hc_stack(false);
+    assert!(!headless.admissible, "{:?}", headless.summary);
+    let blockers: Vec<_> = headless
+        .artifacts
+        .iter()
+        .flat_map(|a| &a.findings)
+        .filter(|f| f.blocks())
+        .collect();
+    assert_eq!(blockers.len(), 1, "{blockers:?}");
+    assert!(
+        blockers[0].subject.ends_with("execution_surface")
+            && blockers[0].detail.contains("hyper_connection_head"),
+        "{:?}",
+        blockers[0]
     );
 }
 

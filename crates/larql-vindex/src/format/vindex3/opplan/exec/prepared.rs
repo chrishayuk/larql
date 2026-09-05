@@ -50,6 +50,7 @@ use super::accounting::{
 };
 use super::backend::{MatrixClass, NormCall, PlanBackend, WeightFormat, WeightSlice};
 use super::experts::FfnOperands;
+use super::hyper_connection::{HeadWeights, SiteWeights, HC_HEAD_SCALE_LEN, HC_SCALE_LEN};
 use super::operands::{OperandSource, SourceStamp};
 use super::realization::{RealizationRecord, RepresentationFacts, SelectionRefusals};
 use super::weights::{load_weight, LoadedWeight};
@@ -61,9 +62,10 @@ use crate::format::vindex3::represent::nvfp4_pack::CodecIdentity;
 
 use super::super::conv_qkv::ConvQkvOp;
 use super::super::{
-    ComponentOpPlan, GatedDeltaOp, KdaOp, LayerAttention, LayerFfn, Mamba2Op, MlaOp, NormOp,
-    OperandRef, OutputOp,
+    ComponentOpPlan, GatedDeltaOp, HcSiteOp, HyperConnectionLayerOp, KdaOp, LayerAttention,
+    LayerFfn, LayerPlan, Mamba2Op, MlaOp, NormOp, OperandRef, OutputOp,
 };
+use larql_models::config::{HyperConnection, HyperConnectionWeights, ResidualTopology};
 
 /// Which part of a component's program to prepare.
 ///
@@ -183,6 +185,255 @@ impl PreparedNorm {
     }
 }
 
+/// Why a whole-stack image cannot be prepared over a hyper-connected
+/// component that declares no head object (GLM-5.3-Flash ships none and
+/// its `mhc` is unexplained): there is no declared reduction from the
+/// bundle to one vector before the final norm, and this build does not
+/// invent one. A layer-range image runs the layers without one.
+const HC_HEADLESS_WHOLE_STACK: &str = "declares the hyper-connection residual topology and no \
+     hyper_connection_head object: a whole-stack image has no declared reduction from the bundle \
+     to one vector before the final norm, and this build does not invent one. A layer-range image \
+     runs the layers without a head";
+
+/// A per-layer output scalar has one judged meaning — multiply the
+/// `[hidden]` residual after the FFN add — and no hyper-connected
+/// checkpoint declares one. Applied to a bundle it is unjudged.
+const HC_WITH_LAYER_SCALE: &str = "carries a layer scale under the hyper-connection residual \
+     topology; a scalar applied to a bundle of streams is unjudged, and no hyper-connected \
+     checkpoint declares one";
+
+/// One hyper-connection site's three operands, resident as f32 glue.
+///
+/// Glue, not matrix traffic, in this wave: stage one's mix projection
+/// runs through the reference matvec in f32 (`hyper_connection::mix_projection`),
+/// no backend format class describes a `[(2 + hc)·hc, hc·hidden]`
+/// operand, and the residency census counts it beside the norms. A
+/// backend-formatted mix projection is a later performance rung.
+pub(super) struct PreparedHcSite {
+    mix_fn: Vec<f32>,
+    base: Vec<f32>,
+    scale: Vec<f32>,
+}
+
+impl PreparedHcSite {
+    fn load(
+        op: &HcSiteOp,
+        store: OperandSource<'_>,
+        hc: HyperConnection,
+        hidden: usize,
+        what: &str,
+    ) -> Result<Self, VindexError> {
+        let mix_fn = store.load(&op.mix_fn)?;
+        let base = store.load(&op.base)?;
+        let scale = store.load(&op.scale)?;
+        // Closure checked these shapes at plan time; the loaded lengths
+        // are checked again so a store answering with a different tensor
+        // cannot reach the stages, whose asserts are debug-only in spirit.
+        let mix_rows = HyperConnectionWeights::mix_rows_for(hc.streams);
+        let expect = |name: &str, got: usize, want: usize| {
+            if got == want {
+                Ok(())
+            } else {
+                Err(VindexError::Parse(format!(
+                    "{what}: {name} holds {got} values, the declared geometry needs {want}"
+                )))
+            }
+        };
+        expect("mix_fn", mix_fn.len(), mix_rows * hc.streams * hidden)?;
+        expect("base", base.len(), mix_rows)?;
+        expect("scale", scale.len(), HC_SCALE_LEN)?;
+        Ok(Self {
+            mix_fn,
+            base,
+            scale,
+        })
+    }
+
+    pub(super) fn weights(&self) -> SiteWeights<'_> {
+        SiteWeights {
+            mix_fn: &self.mix_fn,
+            base: &self.base,
+            scale: &self.scale,
+        }
+    }
+
+    fn glue_bytes(&self) -> usize {
+        std::mem::size_of_val(&self.mix_fn[..])
+            + std::mem::size_of_val(&self.base[..])
+            + std::mem::size_of_val(&self.scale[..])
+    }
+}
+
+/// The two sites one hyper-connected layer wraps its sublayers in.
+pub(super) struct PreparedHyperConnection {
+    pub(super) attention: PreparedHcSite,
+    pub(super) ffn: PreparedHcSite,
+}
+
+impl PreparedHyperConnection {
+    /// The layer's sites under the component's topology — present
+    /// exactly when both agree, and a plan where they disagree is one
+    /// the builder never produced.
+    fn for_layer(
+        layer: &LayerPlan,
+        topology: Option<HyperConnection>,
+        hidden: usize,
+        store: OperandSource<'_>,
+    ) -> Result<Option<Self>, VindexError> {
+        match (&layer.hyper_connection, topology) {
+            (None, None) => Ok(None),
+            (Some(sites), Some(hc)) => {
+                if layer.layer_scale.is_some() {
+                    return Err(VindexError::Parse(format!(
+                        "layer {} {HC_WITH_LAYER_SCALE}",
+                        layer.layer
+                    )));
+                }
+                Ok(Some(Self::load(sites, hc, hidden, layer.layer, store)?))
+            }
+            (Some(_), None) => Err(VindexError::Parse(format!(
+                "layer {} carries hyper-connection sites but the component declares a single \
+                 residual stream; the op plan never produces this",
+                layer.layer
+            ))),
+            (None, Some(_)) => Err(VindexError::Parse(format!(
+                "the component declares the hyper-connection topology but layer {} carries no \
+                 sites; closure requires them on every layer",
+                layer.layer
+            ))),
+        }
+    }
+
+    fn load(
+        sites: &HyperConnectionLayerOp,
+        hc: HyperConnection,
+        hidden: usize,
+        layer: usize,
+        store: OperandSource<'_>,
+    ) -> Result<Self, VindexError> {
+        Ok(Self {
+            attention: PreparedHcSite::load(
+                &sites.attention,
+                store,
+                hc,
+                hidden,
+                &format!("layer {layer} attention site"),
+            )?,
+            ffn: PreparedHcSite::load(
+                &sites.ffn,
+                store,
+                hc,
+                hidden,
+                &format!("layer {layer} ffn site"),
+            )?,
+        })
+    }
+
+    fn glue_bytes(&self) -> usize {
+        self.attention.glue_bytes() + self.ffn.glue_bytes()
+    }
+}
+
+/// The head's own reduction operands (a different operation from a
+/// site's: one row per stream, one scalar, no Sinkhorn), plus the norm
+/// epsilon its mix projection runs at.
+pub(super) struct PreparedHcHead {
+    reduce_fn: Vec<f32>,
+    base: Vec<f32>,
+    scale: f32,
+    norm_eps: f64,
+}
+
+impl PreparedHcHead {
+    /// Present only on a whole-stack image of a hyper-connected
+    /// component, and REQUIRED there: see [`HC_HEADLESS_WHOLE_STACK`].
+    fn load(
+        plan: &ComponentOpPlan,
+        hc: HyperConnection,
+        hidden: usize,
+        store: OperandSource<'_>,
+    ) -> Result<Self, VindexError> {
+        let Some(op) = &plan.hyper_connection_head else {
+            return Err(VindexError::Parse(format!(
+                "component `{}` {HC_HEADLESS_WHOLE_STACK}",
+                plan.component
+            )));
+        };
+        let reduce_fn = store.load(&op.reduce_fn)?;
+        let base = store.load(&op.base)?;
+        let scale = store.load(&op.scale)?;
+        if reduce_fn.len() != hc.streams * hc.streams * hidden || base.len() != hc.streams {
+            return Err(VindexError::Parse(format!(
+                "component `{}`: the hyper-connection head's operands do not hold the head's \
+                 geometry ([{}, {}] and [{}])",
+                plan.component,
+                hc.streams,
+                hc.streams * hidden,
+                hc.streams
+            )));
+        }
+        let scale = match scale[..] {
+            [scale] => scale,
+            ref other => {
+                return Err(VindexError::Parse(format!(
+                    "component `{}`: the hyper-connection head's scale holds {} values; the \
+                     head reads exactly {HC_HEAD_SCALE_LEN}",
+                    plan.component,
+                    other.len()
+                )))
+            }
+        };
+        Ok(Self {
+            reduce_fn,
+            base,
+            scale,
+            norm_eps: component_norm_eps(plan)?,
+        })
+    }
+
+    pub(super) fn weights(&self) -> HeadWeights<'_> {
+        HeadWeights {
+            reduce_fn: &self.reduce_fn,
+            base: &self.base,
+            scale: self.scale,
+        }
+    }
+
+    /// The component's declared norm epsilon — stage one's `norm_eps`
+    /// for the head's mix projection.
+    pub(super) fn norm_eps(&self) -> f64 {
+        self.norm_eps
+    }
+
+    fn glue_bytes(&self) -> usize {
+        std::mem::size_of_val(&self.reduce_fn[..]) + std::mem::size_of_val(&self.base[..])
+    }
+}
+
+/// The component's ONE declared norm epsilon, read from the layers that
+/// carry it. The head's mix projection runs at the component's
+/// `rms_norm_eps`, which the plan carries per layer as a single
+/// component fact; layers that disagree are a plan this build has not
+/// judged, so the derivation refuses rather than picking one.
+fn component_norm_eps(plan: &ComponentOpPlan) -> Result<f64, VindexError> {
+    let mut layers = plan.layers.iter();
+    let Some(first) = layers.next() else {
+        return Err(VindexError::Parse(format!(
+            "component `{}` has no layers to read a norm epsilon from",
+            plan.component
+        )));
+    };
+    let eps = first.declared_norm_eps;
+    if let Some(other) = layers.find(|l| l.declared_norm_eps != eps) {
+        return Err(VindexError::Parse(format!(
+            "component `{}`: layer {} declares norm eps {} where layer {} declares {}; the \
+             hyper-connection head needs one component value",
+            plan.component, other.layer, other.declared_norm_eps, first.layer, eps
+        )));
+    }
+    Ok(eps)
+}
+
 /// One layer's operands, lowered into the backend's execution form.
 pub(super) struct PreparedLayer {
     /// `None` under post-norm placement — the sublayer reads the raw
@@ -197,17 +448,26 @@ pub(super) struct PreparedLayer {
     pub(super) post_ffn: Option<PreparedNorm>,
     /// The layer's output scalar, when the plan carries one.
     pub(super) layer_scale: Option<f32>,
+    /// The two Sinkhorn sites, present exactly when the component
+    /// declares the topology (wave 19a).
+    pub(super) hyper_connection: Option<PreparedHyperConnection>,
 }
 
 impl PreparedLayer {
     /// This layer's norm weights — f32 glue, counted so the census adds
     /// up to the whole image rather than to the parts that were easy.
+    /// The hyper-connection sites count here too, by the decision that
+    /// made them f32 glue.
     fn glue_bytes(&self) -> usize {
         let norm = |n: &PreparedNorm| std::mem::size_of_val(&n.weight[..]);
         self.pre_attention.as_ref().map_or(0, norm)
             + self.pre_ffn.as_ref().map_or(0, norm)
             + self.post_attention.as_ref().map_or(0, norm)
             + self.post_ffn.as_ref().map_or(0, norm)
+            + self
+                .hyper_connection
+                .as_ref()
+                .map_or(0, PreparedHyperConnection::glue_bytes)
     }
 }
 
@@ -888,6 +1148,12 @@ pub struct PreparedOperands {
     /// One pinned realization per planned operand this image executes,
     /// in the plan's order — the record the trace reads.
     realizations: Vec<RealizationRecord>,
+    /// The component's residual topology, carried so the traversal reads
+    /// the stream count from the image it executes.
+    topology: ResidualTopology,
+    /// The head's reduction — present only on a whole-stack image of a
+    /// hyper-connected component.
+    hyper_connection_head: Option<PreparedHcHead>,
 }
 
 impl PreparedOperands {
@@ -903,21 +1169,24 @@ impl PreparedOperands {
     ) -> Result<Self, VindexError> {
         let store = store.into();
         slice.validate(plan)?;
-        // **Refuse before any operand is loaded.** The plan may carry a
-        // residual topology this traversal cannot run: a hyper-connected
-        // component's operands are all bound (wave 18 closed the
-        // addressing), but everything below carries ONE residual vector
-        // through the stack and would run a four-stream model as a
-        // one-stream one — fluent wrong output, not a failure. Read from
-        // the same authority the plan report refuses on, so a plan the
-        // report calls not executable can never be prepared here.
-        if let Some(reason) = plan.residual_topology.unimplemented_reason() {
-            return Err(VindexError::Parse(format!(
-                "component `{}`: residual topology {:?} is represented and its operands are \
-                 bound, but this build cannot execute it — {reason}",
-                plan.component, plan.residual_topology
-            )));
-        }
+        // No topology refusal stands here any more (wave 19): the decode
+        // step and the batch traversal both carry a hyper-connected
+        // component's bundle, witnessed against the reference's oracle.
+        // What a hyper-connected image still cannot be is said below by
+        // name — a whole-stack image with no declared head reduction, a
+        // layer scale under the topology — and the plan report reads the
+        // same facts, so a plan it calls executable is one prepared here.
+        Self::load_validated(plan, store, backend, slice)
+    }
+
+    /// The loader proper, past slice validation. Every operand the slice
+    /// needs is loaded here, and none of it is loaded again.
+    fn load_validated<B: PlanBackend + ?Sized>(
+        plan: &ComponentOpPlan,
+        store: OperandSource<'_>,
+        backend: &B,
+        slice: ExecutionSlice,
+    ) -> Result<Self, VindexError> {
         let stamp = store.stamp();
         let whole = slice.is_whole_stack();
         // **Select before any operand is loaded.** Every planned operand
@@ -936,6 +1205,11 @@ impl PreparedOperands {
             Some(store.load(&embedding.table)?)
         } else {
             None
+        };
+        let topology = plan.residual_topology;
+        let hyper_connection = match topology {
+            ResidualTopology::HyperConnection(hc) => Some(hc),
+            ResidualTopology::SingleStream => None,
         };
 
         // The loaders ask by operand and class; the answer is the pin.
@@ -1045,6 +1319,12 @@ impl PreparedOperands {
                     .as_ref()
                     .map(|op| store.load(op).and_then(|v| super::layer_scalar_of(&v)))
                     .transpose()?,
+                hyper_connection: PreparedHyperConnection::for_layer(
+                    layer,
+                    hyper_connection,
+                    hidden,
+                    store,
+                )?,
             });
         }
 
@@ -1070,6 +1350,14 @@ impl PreparedOperands {
             None
         };
 
+        // The head's reduction belongs to the stack's END: a whole-stack
+        // image of a hyper-connected component must carry one, and a
+        // layer-range image must not consult one — the per-layer contract
+        // needs no head (GLM-5.3-Flash has none to offer).
+        let hyper_connection_head = match (whole, hyper_connection) {
+            (true, Some(hc)) => Some(PreparedHcHead::load(plan, hc, hidden, store)?),
+            _ => None,
+        };
         let prepared = Self {
             stamp,
             slice,
@@ -1081,6 +1369,8 @@ impl PreparedOperands {
             output,
             registry: store.registry(),
             realizations,
+            topology,
+            hyper_connection_head,
         };
         // **The executor runs what was pinned.** Every resident matrix
         // holds the representation its record named, checked here so a
@@ -1376,6 +1666,9 @@ impl PreparedOperands {
         if let Some(norm) = &self.final_norm {
             census.glue.widened_f32 += std::mem::size_of_val(&norm.weight[..]);
         }
+        if let Some(head) = &self.hyper_connection_head {
+            census.glue.widened_f32 += head.glue_bytes();
+        }
         if let Some((_, projection)) = &self.output {
             census.head.add(projection);
         }
@@ -1495,6 +1788,25 @@ impl PreparedOperands {
 
     pub(super) fn output(&self) -> Option<&(OutputOp, LoadedWeight)> {
         self.output.as_ref()
+    }
+
+    /// The declared hyper-connection topology this image was prepared
+    /// under, `None` for the single stream.
+    pub(super) fn hyper_connection(&self) -> Option<HyperConnection> {
+        match self.topology {
+            ResidualTopology::HyperConnection(hc) => Some(hc),
+            ResidualTopology::SingleStream => None,
+        }
+    }
+
+    /// Whether this image holds hyper-connection site operands — i.e.
+    /// whether the residual it executes is a bundle.
+    pub fn carries_hyper_connection(&self) -> bool {
+        self.hyper_connection().is_some()
+    }
+
+    pub(super) fn hyper_connection_head(&self) -> Option<&PreparedHcHead> {
+        self.hyper_connection_head.as_ref()
     }
 }
 

@@ -1,0 +1,178 @@
+{
+  "artifact": "wave19-execution-notes",
+  "purpose": "What wave 19 LEARNED while executing, kept apart from what it PREDICTED before executing. The frozen forecast is immutable; each prediction is scored here as it is measured, and every deviation from the frozen design is recorded with its reason.",
+  "forecast": "wave19-sinkhorn-traversal.json",
+  "forecast_commit": "a2f2bfa1",
+  "baseline_commit": "399a8370",
+  "reconnaissance": "wave19-sinkhorn-traversal-reconnaissance.json",
+  "19a_decode": {
+    "written": "2026-09-05, after the decode carrier, the hidden-5 substrate, the witness and the controls were built and measured; before any batch-path code and before any reader moved",
+    "what_landed": [
+      "exec::hyper_connection: a typed `Bundle` (streams x hidden, never a wider hidden state), `reduce` (stages 1-3) and `update` (stage 5, replacing the residual add) as the site composition, `Mutation` for the controls; `sublayer_forward` re-expressed as reduce -> branch -> update so there is one composition",
+      "exec::observe: `HcSiteRecord { layer, site, position, split, reduced, branch_output, bundle_out }` on a default `StepObserver::hyper_connection_site`; existing observers untouched",
+      "exec::prepared: `PreparedHcSite` / `PreparedHyperConnection` per layer and `PreparedHcHead` on a whole-stack image, all f32 glue and counted as glue; the public `load` keeps the topology refusal verbatim and delegates to `load_unrefused`; `#[cfg(test)] load_for_hyper_connection_witness` is the seam — hyper-connected plans only, no public affordance; a whole-stack image of a headless component refuses at preparation with the head reason; a layer scale under the topology refuses by name; layers that disagree on norm eps leave the head no epsilon and refuse",
+      "exec::decode: the step runs over a `Carrier` (one vector, or a bundle); each site enters through `reduce` and leaves through `update`; the pre-attention norm and the hybrid FFN's raw residual both read the REDUCED vector; the exit reduces through the head only when the image carries one, and a layer-range image's output is its bundle; `step_mutated` and `step_from_bundle` exist only under test",
+      "exec::mod: the batch traversal refuses an image that carries site operands, by name, until 19b — so the seam cannot make the batch path look supported",
+      "the hidden-5 substrate in three variants plus a layer-scale variant, F32 throughout, HC operands = the oracle's weights at every site of every layer; the single-stream sibling as the control"
+    ],
+    "predictions_scored": {
+      "P1_19a_public_refusal_unchanged": {
+        "result": "HELD",
+        "evidence": "the public loader refuses Headless, HeadBearing and Hybrid with the topology text ('cannot execute it', 'traversal'); `execute_text` refuses the same; no plan-level code changed, so the cached plans and the 1031 stand by construction. Test: the_public_loader_still_refuses_every_variant."
+      },
+      "P2_19a_witness": {
+        "result": "HELD",
+        "evidence": "A1-A5 hold on the decode path over the hidden-5 substrate at all three oracle positions (the_decode_traversal_runs_the_bundle_and_the_witness_holds; the_hybrid_ffn_receives_the_reduced_vector). Mutants: (a) bypass -> caught by A1 and A5; (b) one iteration -> A1 and NOT A2; uniform reduction -> A1; transposed comb -> A2 and NOT A1; (c) pre-norm on stream 0 / stream mean -> A3 alone; (d) hybrid residual from stream 0 / stream mean -> A4, with the attention site untouched. No survivor. 27 tests."
+      },
+      "P4_single_stream_byte_identity": {
+        "result": "HELD (decode half)",
+        "evidence": "the full larql-vindex library suite passes unchanged (4149 passed, 7 ignored, 0 failed) including every decode-vs-batch parity gate; the hidden-5 single-stream sibling's decode logits equal its batch logits bit for bit, and its step emits no site record."
+      },
+      "P5_headless_decode_half": {
+        "result": "HELD",
+        "evidence": "Full on Headless refuses at preparation naming `hyper_connection_head` and the layer-range alternative, without the topology word; LayerRange on Headless prepares, runs three positions and yields a bundle with no logits and no exit vector; Full on HeadBearing reduces through `head_reduce` with the oracle's head weights and produces VOCAB logits."
+      }
+    },
+    "deviations_from_the_frozen_design": [
+      {
+        "what": "the site record carries `bundle_out` in addition to {split, reduced, branch_output}",
+        "why": "A2 compares the bundle after the update with `expand_streams(b, x_in, split)`; without the bundle in the record the witness could not chain the entering state from one site to the next, and A2 would have needed a second tap. It is the state the next site reads, so it is the same kind of witness value, not observational bloat."
+      },
+      {
+        "what": "the foreign comparison enters the DECODE path through a test-only `step_from_bundle`, the decode form of the layer-range contract",
+        "why": "the freeze placed the oracle's entry at the layer-range boundary (a batch ResumePoint whose rows are bundles). 19a is decode-only and the decode session has no resume entry, so the entry exists as a `cfg(test)` method on the session. The embedding entry cannot produce the oracle's state (replication makes every stream equal, the oracle's streams are scaled 0.1/1/3/7), which the reconnaissance had already established."
+      },
+      {
+        "what": "mutant (d) is recorded as invisible on the dense estate",
+        "why": "a dense FFN reads only its normed input, so the residual argument is inert there; the hybrid substrate is what makes the defect observable. Measured (mutant_d_is_invisible_on_the_dense_estate), so the choice of substrate is a fact rather than an assumption."
+      }
+    ],
+    "observed_while_building": [
+      "the Gemma-4-shaped hybrid declares the topology from `text_config.hc_*` and closes with the six site operands under `model.language_model.layers.N.` — the second real spelling (GLM's) exercised end to end, on a hybrid MoE estate",
+      "`head_dim` 4 on hidden 5 with one head plans and executes: the substrate deliberately keeps `hidden != heads * head_dim` so no shape coincidence can pass a transposed operand",
+      "the transposed-combination control is caught by A2 and passes A1 exactly as frozen: the split it reports is correct and only its expansion lies — the assertions measure what they claim, separately"
+    ],
+    "gates": "fmt clean; clippy -p larql-vindex --all-targets -D warnings clean; cargo check --workspace --all-targets clean; full library suite 4149 passed / 0 failed / 7 ignored; coverage policy passed (total 93.73% lines, 425 files): decode.rs 92.97%, prepared.rs 93.88% (baseline 86.6), hyper_connection.rs 94.35%, observe.rs 100%, exec/mod.rs 87.22% (baseline 86.5). Measured on macOS, which reads low against the ubuntu job.",
+    "what_19a_does_not_claim": "no batch traversal, no reader moved, no plane/resume/CLI width change, no semantics-version bump, no real-payload witness. Public execution of a hyper-connected component still refuses with the wave-18 text."
+  },
+  "19b_batch": {
+    "written": "2026-09-05, after the batch carrier and its witness were built and measured; before any reader moved",
+    "what_landed": [
+      "exec::mod: a typed `Plane` — `Rows(Vec<Vec<f32>>)` or `Bundles(Vec<Bundle>)` — is the batch carrier `[positions, streams, hidden]` and the type of every plane, trace row and resume row; `LayerTrace.post_attention/post_layer`, `ExecutionTrace.embedded`, `PlaneEvent::Embedded` and `ResumePoint.hidden` are planes, `ffn_input` stays `[hidden]` rows; `FinalOutput`/`ExecutionTrace` end on a `FinalState` (`Hidden` or, for a layer-range image of a hyper-connected component, `Bundle`); `PlaneEvent::HyperConnectionSite(HcSitePlane)` carries every position's split, reduced vector, branch output and post-update bundle",
+      "exec::mod traverse/execute_layer: each site enters through `reduce` per position (in parallel) and leaves through `update` per position, while the ordinary operator runs once over `[positions, hidden]`; the resume point is validated against the topology (rows on a bundle carrier and bundles on a single stream both refuse, by name); the exit reduces through the head only when the image carries one; the 19a batch guard is removed",
+      "hyper_connection::Mutation gains two batch-only controls: `SplitFromPositionZero` (the frozen (e)) and `SwapPositionsBeforeUpdate` (the user's added falsifier); the decode-side controls (a)-(d) apply to the batch path as well",
+      "consumers of the plane types follow the type: the CLI plane writer persists row planes and refuses a bundle plane by name (`try_rows`), the resume reader builds a row plane, the summary reports positions and width from the plane's kind; every executor test reads planes through `rows()`",
+      "wave19_hc_batch.rs: the batch witness, reusing the decode witness's records and assertions (now order-independent: the entering bundle is chained by (layer, site, position), not by emission order)"
+    ],
+    "predictions_scored": {
+      "P3_19b_batch": {
+        "result": "HELD",
+        "evidence": "A1, A2, A4, A5 hold on the batch path over the hidden-5 substrate (headless layer range; hybrid); A7 holds: every record equals the decode traversal's to the bit, and the head-bearing whole-stack logits equal the decode step's at the last position; mutant (e) fails A1 at positions 1 and 2 while passing at 0, and fails A7; the added falsifier (swap positions 0 and 1 before the update) fails A2 and A7 while A1 holds; (a) -> A1+A5, (b) one iteration -> A1 and A7 not A2, transposed -> A2 and A7 not A1, (c) -> A7 alone (the batch has no attention-input tap; parity with the A3-pinned decode path is its reference), (d) hybrid -> A4 and A7. The three positions carry distinct reduced vectors at every site, so no single-position shortcut can pass. 45 wave-19 tests."
+      },
+      "P4_single_stream_byte_identity": {
+        "result": "HELD (batch half)",
+        "evidence": "the full larql-vindex library suite passes unchanged in meaning after the plane refactor (4174 passed, 7 ignored, 0 failed) — every golden, parity and streaming gate reads its rows through the typed plane and compares the same numbers; the single-stream sibling batches as it decodes; from tokens, batch and decode agree to the bit on the hyper-connected substrate too."
+      },
+      "P5_headless_batch_half": {
+        "result": "HELD",
+        "evidence": "a headless layer-range run ends on `FinalState::Bundle` (the last position's last-layer bundle) with no logits; a head-bearing whole-stack run reduces through `head_reduce` with the oracle's head weights, then the final norm, and produces VOCAB logits equal to decode's."
+      },
+      "A7_parity": {
+        "result": "HELD to the bit",
+        "evidence": "batched softmax attention and per-position `attention_step` agree exactly on the reference backend, as the existing decode-vs-batch gates already asserted; `step_many`, which is the batch traversal in decode clothing, now runs on a hyper-connected component and matches stepping."
+      }
+    },
+    "deviations_from_the_frozen_design": [
+      {
+        "what": "the CLI does not persist bundle planes; it refuses them by name",
+        "why": "the freeze said the plane writer and reader 'follow in 19b'. Following honestly here means the typed refusal: a bundle plane has no row form, and inventing a flattened file format for it is representation work the scope rule excludes. Until a reader lifts, the CLI cannot reach a hyper-connected plan anyway."
+      },
+      {
+        "what": "the batch path has no attention-input tap, so A3 is not asserted on it",
+        "why": "the batch trace carries the FFN input (a `[hidden]` row on every topology) but has never tapped the attention input; adding one is a new tap the freeze did not name. The (c) controls are caught on the batch path by A7 against the decode traversal, whose A3 is pinned."
+      },
+      {
+        "what": "the 19a test `the_batch_traversal_refuses_a_hyper_connected_image` is removed",
+        "why": "the guard it pinned is the thing 19b replaces; the batch witness and the resume refusals stand where it stood (fixture migration within the wave, by design)."
+      }
+    ],
+    "observed_while_building": [
+      "the exit's two vectors are different things: the decode witness reports the head reduction BEFORE the final norm, the batch exit is the final-normed vector the head reads — a first draft of the parity test compared them and failed by exactly the norm's scale; the test now applies the image's own final norm on the decode side",
+      "the batch path is bit-identical to decode without any care taken for it: per position the stage functions run in the same order on both, and the operator's batched form already matched its stepped form",
+      "a typed plane surfaced every consumer that had assumed rows: the compiler listed the CLI plane writer, the resume reader, the summary line, and sixty test sites; none of them had a reading for a bundle, which is the fail-open the type exists to make impossible"
+    ],
+    "gates": "fmt clean; clippy -p larql-vindex --all-targets -D warnings clean; clippy -p larql-cli (both CI variants) clean; cargo check --workspace --all-targets clean; full library suite 4174 passed / 0 failed / 7 ignored; coverage policy passed (total 93.71% lines, 425 files): decode.rs 92.79%, prepared.rs 93.76% (baseline 86.6), hyper_connection.rs 94.35%, observe.rs 100%, exec/mod.rs 88.10% (baseline 86.5). One instrumented run failed on weights/staged_tests::a_mapped_image_reads_back_bit_identically ('File exists' on the pid-named f32 staging arena from PR #420, a same-process collision unrelated to this branch); the re-run passed.",
+    "what_19b_batch_does_not_claim": "no reader moved; the public loader still refuses with the wave-18 text; the semantics table is untouched; the CLI cannot persist a bundle plane; no real-payload witness."
+  },
+  "19b_lift": {
+    "written": "2026-09-05, after both traversals were witnessed (19a `0d84b263`, 19b `6336420c`) and every batch control was caught; scored against the frozen predictions P6-P11 by re-planning the rows that declare hyper-connection keys with a release build of this code, into a separate cache (`~/chris-models/_conformance-wave19`), the baseline cache untouched",
+    "what_landed": [
+      "the topology's refusal is retired at its authority: `ResidualTopology::unimplemented_reason` returned `None` for both judged topologies and then, having no reader left, was removed; the executor's preparation step no longer refuses the topology and the 19a witness seam is gone — the public loader prepares what the witness proved",
+      "the report's execution-surface finding no longer reads a refusing authority (none refuses: every judged topology and every judged placement lowers, so the seam that named a refused variant was dead code and is removed rather than baselined); the fact that remains is the HEAD's: a hyper-connected component with no `hyper_connection_head` object keeps a blocking finding naming the head, read from the same fact the executor refuses on",
+      "`hc_mult`, `hc_sinkhorn_iters`, `hc_eps` leave `UNSUPPORTED_COMPONENT_KEYS` and join `EXECUTION_SEMANTIC_KEYS`, with three carriage rules whose probes read the BUILT component's residual topology (never the declaration) and reach `lowered`",
+      "semantics version 15 -> 16; the identity pin gains version 16's verdict pair: a hyper-connected stack with every site operand AND a head object is admissible, the same stack without a head is blocked by the head's finding alone",
+      "fixture migration, each named: wave18_hc_carriage (the executor's door: head-bearing executes, headless refused by the head; the encode gate: head-bearing admitted, headless refused), hyper_connection_refusal (both topologies lower; the report names the missing head), larql-models residual_topology unit tests, plan/tests/identity.rs, wave19_hc_decode (the public loader prepares what the witness proved; the seam test removed), and one the freeze did not name: plan/tests/semantics.rs pinned `hc_sinkhorn_iters` as an unsupported component since wave 7",
+      "the test-only encoder itemises its blocking findings, because a test has no CLI to run for the reasons"
+    ],
+    "predictions_scored": {
+      "P6_reader_1_executor": {
+        "result": "HELD",
+        "evidence": "PreparedOperands::load prepares a head-bearing whole stack and a headless layer range, refuses a headless whole stack naming `hyper_connection_head`, refuses a layer scale under the topology by name; the topology text is gone from every refusal (the_public_loader_prepares_what_the_witness_proved; a_head_bearing_stack_executes_and_a_headless_whole_stack_is_refused_at_the_executors_door). Sweep effect of this reader: none, as predicted."
+      },
+      "P7_reader_2_report": {
+        "GLM-5.3-Flash": {
+          "result": "HELD",
+          "evidence": "finding `target.execution_surface` still blocks: the topology text ('representable but NOT executable') is REPLACED by 'executable layer by layer, but the component declares no hyper_connection_head object'; the row's count on this reader is 31 -> 31 exactly as forecast. `text_config.mhc` stays Unknown."
+        },
+        "DeepSeek-V4-Flash_and_Pro": {
+          "result": "HELD",
+          "evidence": "unchanged, 31 -> 31 on this reader: the surface is incomplete on norm placement (the base dialect), so the head question is never asked."
+        }
+      },
+      "P8_reader_3_semantics_table": {
+        "GLM-5.3-Flash": {
+          "result": "HELD",
+          "evidence": "text_config.hc_eps / hc_mult / hc_sinkhorn_iters: unrepresented/unsupported_component -> representable/execution_semantic 'carried to `lowered` at Component.execution.residual_topology'. 31 -> 28."
+        },
+        "DeepSeek-V4-Flash_and_Pro": {
+          "result": "FALSIFIED",
+          "evidence": "31 -> 31 each, not 28. The three keys did leave the table and now grade as execution semantics, but their carriage rule's probe reads the BUILT component's residual topology, and DeepSeek's component never builds a surface — its norm-placement dialect gap refuses the surface first (finding 72) — so no component can answer the probe and the finding stays Unrepresented ('rule claims `lowered` ... but no built component answered the probe'). The class changed; the count did not.",
+          "why_the_forecast_was_wrong": "the freeze modelled the three keys as carried by the parser's reading of them into `HyperConnection`. Carriage is read back off the built graph, never off the declaration — the reconnaissance had already recorded that DeepSeek never reaches the topology question because its surface is incomplete, and the prediction should have followed that fact for the keys as it did for the report reader. A prediction about a row whose surface does not build cannot move on a carriage rule. The keys will move on DeepSeek when its base dialect lands, not before."
+        },
+        "Hy4-preview": {
+          "result": "HELD by count, recorded",
+          "evidence": "32 -> 32. Its two keys (`hc_mult`, `hc_eps`, no `hc_sinkhorn_iters`) leave the table and, the surface being refused as an unjudged declaration, grade as execution semantics with no answering component — still blocking, differently worded. No other cached row declares any hc_* key (measured over the 109 cached plans: exactly four do)."
+        }
+      },
+      "P9_reader_4_admission_and_encode": {
+        "result": "HELD",
+        "evidence": "GLM, DeepSeek-V4-Flash, DeepSeek-V4-Pro and Hy4-preview stay inadmissible; the synthetic head-bearing estate is admissible and encodes through the production writer's gate, the headless one is refused with the head's finding itemised (the_production_encode_gate_admits_a_head_bearing_container_and_refuses_a_headless_one; identity.rs version 16 pair)."
+      },
+      "P10_verdicts": {
+        "result": "HELD",
+        "evidence": "GLM-5.3-Flash stays RED (28), both DeepSeek-V4 rows stay AMBER (31), Hy4-preview stays RED (32), Qwen3-0.6B stays at 0 and admissible; only rows declaring hc_* keys can move on these readers, and all four were re-planned. GREEN 41 / AMBER 3 / RED 65 / BUG 0 by construction from the unchanged verdicts."
+      },
+      "P11_fixture_migration_named": {
+        "result": "HELD, plus one unnamed",
+        "evidence": "every named fixture migrated as predicted; plan/tests/semantics.rs::a_key_configuring_an_absent_component_grades_unsupported_and_blocks had pinned `hc_sinkhorn_iters` as unsupported since wave 7 and was not in the freeze's list — it now pins the three keys as execution semantics and `mhc` as unknown."
+      },
+      "derived_sum": "1031 -> 1028 (GLM -3), not the 1022 the freeze derived from P8; the difference is DeepSeek's two rows, whose keys cannot be attested carried until their surface builds. Recorded as derived, not claimed."
+    },
+    "deviations_from_the_frozen_design": [
+      {
+        "what": "`ResidualTopology::unimplemented_reason` is removed, not left returning `None`",
+        "why": "with the executor and the report no longer reading it, a function that answers `None` for every variant is a seam with no reader. The placement's authority (`NormPlacement::unimplemented_reason`) keeps its one reader in the op plan builder; the report's reader of it is removed with the topology's for the same reason, and its doc says a variant returning `Some` must bring the report reader back beside it."
+      },
+      {
+        "what": "the report's dead refusal arm was removed rather than baselined",
+        "why": "the coverage gate first read plan/mod.rs at 89.35% against 90.00: the `Some` arm of the refusal match had no authority left able to reach it. A debt baseline would have recorded dead code as a measurement artefact; removing the arm is the honest form."
+      }
+    ],
+    "observed_while_building": [
+      "an incrementally rebuilt test binary once refused the head-bearing carriage estate at the encode gate with one blocker while the same planner call in the same test reported it admissible three times in a row; the next build passed and both independent builds since (the plain suite and the instrumented coverage run) agree. Recorded, not explained.",
+      "two test processes running at once (the suite and the instrumented run) collided on a fixed-name temp directory in write_kquant's per-expert MoE test (`temp_dir(\"streaming_packed_ref\")`), one reading after the other removed it; solo it passes. Not this branch's code; the gates were re-run in sequence."
+    ],
+    "gates": "fmt clean; clippy -p larql-vindex --all-targets -D warnings clean; clippy -p larql-models clean; cargo check --workspace --all-targets clean; larql-vindex library suite 4173 passed / 0 failed / 7 ignored (run alone); larql-models 796 passed / 0 failed; coverage policy passed (total 93.69% lines, 425 files): vindex3/plan/mod.rs 91.22% (89.35% before the dead refusal arm was removed), plan/carriage.rs 92.22%, plan/semantics.rs 98.97%, encode/mod.rs 90.37%, exec/prepared.rs 93.71%. The re-plan was run twice, the second time on release binaries built from the final code; both gave the same verdicts.",
+    "what_the_lift_does_not_claim": "no DeepSeek base-dialect work (its rows did not move and cannot until their surface builds), no K3-ATTNRES-1 work, no explanation of GLM's `mhc`, no real-payload witness; the CLI still refuses to persist a bundle plane."
+  }
+}

@@ -181,7 +181,12 @@ fn the_gated_four_norm_program_executes_finite() {
     let trace = executed(dir.path());
     assert_eq!(trace.layers.len(), LAYERS);
     for layer in &trace.layers {
-        for row in layer.post_layer.iter().chain(&layer.post_attention) {
+        for row in layer
+            .post_layer
+            .rows()
+            .iter()
+            .chain(layer.post_attention.rows())
+        {
             assert!(row.iter().all(|v| v.is_finite()), "non-finite hidden state");
         }
     }

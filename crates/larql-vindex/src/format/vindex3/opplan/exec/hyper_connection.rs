@@ -374,6 +374,12 @@ pub struct SiteWeights<'a> {
 /// returns one, exactly as an ordinary sublayer would. Everything that
 /// makes this topology different from `h + f(h)` lives on either side of
 /// it, which is why the ordinary operators need no changes at all.
+///
+/// The single-position reference composition: [`reduce`], the branch,
+/// [`update`]. The decode traversal runs the same two halves around its
+/// own operator dispatch rather than calling this, because the branch
+/// there borrows the session's continuation state — but the halves ARE
+/// these, so the two cannot compute different sublayers.
 pub fn sublayer_forward(
     x: &[f32],
     streams: usize,
@@ -384,16 +390,231 @@ pub fn sublayer_forward(
     branch: impl FnOnce(&[f32]) -> Vec<f32>,
 ) -> Vec<f32> {
     debug_assert_eq!(streams, hc.streams, "the site and the topology must agree");
+    let bundle = Bundle::from_flat(streams, hidden, x.to_vec()).unwrap_or_else(|e| panic!("{e}"));
+    let entry = reduce(&bundle, site, hc, norm_eps, Mutation::None);
+    let branched = branch(&entry.reduced);
+    update(&bundle, &branched, &entry.split, Mutation::None).into_flat()
+}
+
+/// The residual carrier of a hyper-connected component at ONE position:
+/// `streams` parallel `[hidden]` vectors, held row-major `[streams,
+/// hidden]` exactly as the five stages read it.
+///
+/// A type, not a wider `Vec<f32>`: the stream count and the hidden width
+/// are different semantic dimensions. Every ordinary operator keeps
+/// consuming `[hidden]`, and nothing outside this module can hand a
+/// bundle to one by mistake — the flat view is explicit, and a
+/// `[hidden]` vector comes out of it only through [`reduce`] (a site)
+/// or [`head_reduce`] (the stack's end).
+#[derive(Debug, Clone, PartialEq)]
+pub struct Bundle {
+    streams: usize,
+    hidden: usize,
+    data: Vec<f32>,
+}
+
+impl Bundle {
+    /// The embedding entering the stack, replicated into every stream —
+    /// [`expand_embedding`] as a typed value.
+    pub fn replicate(h: &[f32], streams: usize) -> Self {
+        Self {
+            streams,
+            hidden: h.len(),
+            data: expand_embedding(h, streams),
+        }
+    }
+
+    /// A bundle from its flat `[streams * hidden]` form, refused when the
+    /// length does not factor.
+    pub fn from_flat(streams: usize, hidden: usize, data: Vec<f32>) -> Result<Self, String> {
+        if streams == 0 || hidden == 0 || data.len() != streams * hidden {
+            return Err(format!(
+                "a bundle of {streams} streams x {hidden} hidden needs {} values, got {}",
+                streams * hidden,
+                data.len()
+            ));
+        }
+        Ok(Self {
+            streams,
+            hidden,
+            data,
+        })
+    }
+
+    /// A bundle from one `[hidden]` row per stream, refused when the rows
+    /// disagree in width or there are none.
+    pub fn from_streams(rows: &[Vec<f32>]) -> Result<Self, String> {
+        let Some(first) = rows.first() else {
+            return Err("a bundle needs at least one stream".to_string());
+        };
+        let hidden = first.len();
+        if rows.iter().any(|r| r.len() != hidden) {
+            return Err("every stream of a bundle has the same hidden width".to_string());
+        }
+        Self::from_flat(rows.len(), hidden, rows.concat())
+    }
+
+    pub fn streams(&self) -> usize {
+        self.streams
+    }
+
+    pub fn hidden(&self) -> usize {
+        self.hidden
+    }
+
+    /// Stream `j`'s `[hidden]` vector.
+    pub fn stream(&self, j: usize) -> &[f32] {
+        &self.data[j * self.hidden..(j + 1) * self.hidden]
+    }
+
+    pub fn stream_mut(&mut self, j: usize) -> &mut [f32] {
+        &mut self.data[j * self.hidden..(j + 1) * self.hidden]
+    }
+
+    /// The `[streams, hidden]` view the stages read. Explicitly named so
+    /// a reader can see where a bundle is handed to topology arithmetic.
+    pub fn as_flat(&self) -> &[f32] {
+        &self.data
+    }
+
+    pub fn into_flat(self) -> Vec<f32> {
+        self.data
+    }
+
+    /// The elementwise mean over streams — NOT a reduction the topology
+    /// defines. It exists for the negative controls, which need a
+    /// plausible wrong `[hidden]` vector to feed where the reduced one
+    /// belongs.
+    pub fn stream_mean(&self) -> Vec<f32> {
+        let mut mean = vec![0.0f32; self.hidden];
+        for j in 0..self.streams {
+            for (m, v) in mean.iter_mut().zip(self.stream(j)) {
+                *m += v;
+            }
+        }
+        for m in mean.iter_mut() {
+            *m /= self.streams as f32;
+        }
+        mean
+    }
+}
+
+/// Deliberate defects, for the negative controls (wave 19a).
+///
+/// Test-only in use, but each perturbs the REAL composition or the real
+/// traversal rather than a copy: a control that mutates a duplicate
+/// proves only that the duplicate is detectable. Three live in the
+/// arithmetic here ([`reduce`] and [`update`] read them); the rest are
+/// SEQUENCING defects the traversal applies, because the thing they
+/// break — which vector reaches which operator — is decided there.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Mutation {
+    None,
+    /// (a) Run the sublayer single-stream on stream 0 and add its output
+    /// back into stream 0: no split, no reduction, no expansion. The
+    /// plausible way to "support" the topology without running it.
+    BypassComposition,
+    /// (b) One Sinkhorn pass instead of the declared count.
+    SingleIteration,
+    /// (b) Reduce with uniform weights instead of the split's `pre`.
+    UniformReduction,
+    /// (b) Expand with `comb` transposed — source and destination
+    /// streams swapped. The split reported is still the correct one, so
+    /// only the expansion disagrees.
+    TransposedCombination,
+    /// (c) Feed the pre-attention norm stream 0 instead of the reduced
+    /// vector.
+    PreNormOnStreamZero,
+    /// (c) Feed the pre-attention norm the stream mean instead of the
+    /// reduced vector.
+    PreNormOnStreamMean,
+    /// (d) Hand the hybrid FFN stream 0 as its raw residual instead of
+    /// the reduced vector — the router and the expert pre-norm read it.
+    HybridResidualFromStreamZero,
+    /// (d) The same with the stream mean.
+    HybridResidualFromStreamMean,
+    /// (e, batch only) Apply position 0's split and reduced vector to
+    /// every position. Invisible at batch size one; the batch witness
+    /// runs three distinguishable positions so it is not.
+    SplitFromPositionZero,
+    /// (batch only) Exchange positions 0 and 1's bundles between the
+    /// reduction and the update, so each position's update carries the
+    /// other's state forward. A witness that cannot see per-position
+    /// state passes this.
+    SwapPositionsBeforeUpdate,
+}
+
+/// What one site's reduction produced: the split (stages one and two,
+/// kept because stage five needs it and because it is the state a
+/// witness can observe) and the reduced vector the branch sees.
+#[derive(Debug, Clone, PartialEq)]
+pub struct SiteReduction {
+    pub split: SinkhornSplit,
+    pub reduced: Vec<f32>,
+}
+
+/// Stages one to three at one site: the bundle collapses to the ONE
+/// `[hidden]` vector the ordinary operator consumes.
+pub fn reduce(
+    x: &Bundle,
+    site: &SiteWeights<'_>,
+    hc: HyperConnection,
+    norm_eps: f64,
+    mutation: Mutation,
+) -> SiteReduction {
+    let (streams, hidden) = (x.streams(), x.hidden());
+    debug_assert_eq!(
+        streams, hc.streams,
+        "the bundle and the topology must agree"
+    );
     let mixes = mix_projection(
-        x,
+        x.as_flat(),
         streams,
         hidden,
         site.mix_fn,
         mix_rows_for(streams),
         norm_eps,
     );
-    let split = split_sinkhorn(&mixes, site.scale, site.base, hc);
-    let reduced = reduce_streams(&split.pre, x, streams, hidden);
-    let branched = branch(&reduced);
-    expand_streams(&branched, x, &split, streams, hidden)
+    let hc_run = match mutation {
+        Mutation::SingleIteration => HyperConnection {
+            sinkhorn_iters: 1,
+            ..hc
+        },
+        _ => hc,
+    };
+    let mut split = split_sinkhorn(&mixes, site.scale, site.base, hc_run);
+    if mutation == Mutation::UniformReduction {
+        split.pre = vec![1.0 / streams as f32; streams];
+    }
+    let reduced = reduce_streams(&split.pre, x.as_flat(), streams, hidden);
+    SiteReduction { split, reduced }
+}
+
+/// Stage five at one site: the branch's output is scattered back and the
+/// bundle carried forward through `comb`. This REPLACES the residual
+/// add — the carry and the add are one operation here.
+pub fn update(x: &Bundle, branch: &[f32], split: &SinkhornSplit, mutation: Mutation) -> Bundle {
+    let (streams, hidden) = (x.streams(), x.hidden());
+    let transposed;
+    let split = if mutation == Mutation::TransposedCombination {
+        let mut comb = vec![0.0f32; streams * streams];
+        for j in 0..streams {
+            for k in 0..streams {
+                comb[j * streams + k] = split.comb_at(streams, k, j);
+            }
+        }
+        transposed = SinkhornSplit {
+            pre: split.pre.clone(),
+            post: split.post.clone(),
+            comb,
+        };
+        &transposed
+    } else {
+        split
+    };
+    Bundle {
+        streams,
+        hidden,
+        data: expand_streams(branch, x.as_flat(), split, streams, hidden),
+    }
 }

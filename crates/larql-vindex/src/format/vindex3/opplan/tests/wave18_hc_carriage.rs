@@ -6,9 +6,10 @@
 //! operands per layer classify to roles, are required by closure, are
 //! checked against the DECLARED stream count's geometry, and are bound
 //! into the plan; the head's three bare operands are placed as their own
-//! object under the declaration and bound beside them. What this build
-//! still cannot do — traverse the bundle — it refuses at the executor's
-//! door, through the same authority the plan report reads.
+//! object under the declaration and bound beside them. Since wave 19 the
+//! executor traverses the bundle; what it still refuses — a whole-stack
+//! image with no head object — it refuses at its door by the head's
+//! name, through the same fact the plan report reads.
 //!
 //! **What this file does NOT claim.** It does not make DeepSeek-V4
 //! plannable: DeepSeek remains blocked by an independently unsupported
@@ -160,13 +161,11 @@ struct Planned {
 }
 
 /// Encode through the doctored-write seam: the plan is built and its
-/// graph encoded WITHOUT the admissibility gate. Every hyper-connected
-/// fixture here is inadmissible on purpose — its `hc_*` keys configure a
-/// component this build represents and does not execute, and the
-/// production writers refuse it (see
-/// [`the_production_encode_gate_refuses_a_hyper_connected_container`]).
-/// This seam exists so a test can construct that subject and prove what
-/// happens downstream: closure holds, the executor refuses.
+/// graph encoded WITHOUT the admissibility gate, so a headless
+/// hyper-connected fixture — inadmissible by the head's own finding — can
+/// still be constructed and its closure and refusals proven downstream.
+/// (A head-bearing estate is admissible since wave 19; see
+/// [`the_production_encode_gate_admits_a_head_bearing_container_and_refuses_a_headless_one`].)
 fn plan(config: serde_json::Value, tensors: Tensors) -> Planned {
     let source = tempfile::tempdir().unwrap();
     let borrowed: Vec<(&str, &[usize])> = tensors
@@ -490,30 +489,43 @@ fn head_operands_without_the_declaration_stay_unplaced_with_the_disagreement_nam
     }
 }
 
-/// **The payload half stays refused, and the control proves it could
-/// have passed.** Addressability satisfied, the executor's preparation
-/// step refuses the plan before loading one operand, naming the
-/// traversal as what is missing. The same estate without the topology
-/// executes. Both halves are asserted against the same fixture family,
-/// so the refusal cannot be a broken store or a broken plan wearing the
-/// topology's name.
+/// **The payload half runs, and the control proves what still refuses.**
+/// Addressability satisfied, the executor's preparation step prepares a
+/// hyper-connected stack that carries a head object and executes it
+/// (wave 19); the same stack with no head object is refused at the
+/// executor's door, naming the HEAD — a whole-stack image has no declared
+/// reduction from the bundle — and not the topology. Both halves against
+/// the same fixture family, so the refusal cannot be a broken store or a
+/// broken plan wearing the topology's name.
 #[test]
-fn an_addressable_topology_is_still_refused_at_the_executors_door() {
-    let planned = hyper_connected();
-    let hc_plan = planned.outcome.plan.as_ref().unwrap();
-    let store = OperandStore::open(planned.container.path(), &planned.inspection).unwrap();
+fn a_head_bearing_stack_executes_and_a_headless_whole_stack_is_refused_at_the_executors_door() {
+    let mut tensors = dense_tensors();
+    tensors.extend(site_tensors());
+    tensors.extend(head_tensors());
+    let with_head = plan(config(true), tensors);
+    let plan_with_head = with_head.outcome.plan.as_ref().unwrap();
+    assert!(plan_with_head.hyper_connection_head.is_some());
+    let store = OperandStore::open(with_head.container.path(), &with_head.inspection).unwrap();
+    let trace = execute_text(plan_with_head, &store, &[1, 2, 3])
+        .expect("a hyper-connected stack with a head executes");
+    assert_eq!(trace.executed_layers, vec![0, 1]);
+    assert_eq!(
+        trace.logits.expect("the head prices the vocabulary").len(),
+        128
+    );
+
+    let headless = hyper_connected();
+    let hc_plan = headless.outcome.plan.as_ref().unwrap();
+    assert!(hc_plan.hyper_connection_head.is_none());
+    let store = OperandStore::open(headless.container.path(), &headless.inspection).unwrap();
     let err = execute_text(hc_plan, &store, &[1, 2, 3])
         .unwrap_err()
         .to_string();
-    assert!(err.contains("cannot execute it"), "{err}");
-    assert!(err.contains("traversal"), "{err}");
-    assert!(err.contains("HyperConnection"), "{err}");
-    // The reason must not send the reader back to fix the planes this
-    // wave and the last one closed.
-    assert!(!err.contains("no placement rule"), "{err}");
+    assert!(err.contains("hyper_connection_head"), "{err}");
+    assert!(err.contains("layer-range"), "{err}");
     assert!(
-        err.contains("the arithmetic is not what is missing"),
-        "{err}"
+        !err.contains("traversal"),
+        "the topology's old refusal must not reappear: {err}"
     );
 
     // The control: one stream, same estate minus the sites, executes.
@@ -527,15 +539,42 @@ fn an_addressable_topology_is_still_refused_at_the_executors_door() {
     execute_text(single_plan, &store, &[1, 2, 3]).expect("a single-stream plan executes");
 }
 
-/// **No payload-backed claim is promoted at the encode boundary either.**
-/// The production writers refuse the hyper-connected fixture as an
-/// inadmissible plan: its three `hc_*` keys configure a component this
-/// build represents and does not execute, and the execution surface says
-/// so. Wave 18 closed addressability without opening a path that writes
-/// a container it cannot run. The control: the same estate without the
-/// declaration encodes.
+/// **The encode boundary follows the same fact.** The production writers
+/// admit a hyper-connected estate that carries a head object — its
+/// `hc_*` keys are carried and its execution surface is executable — and
+/// refuse the same estate without one, itemising the head's finding.
+/// Wave 18 closed addressability without opening a path that wrote a
+/// container it could not run; wave 19 opens exactly the path it can.
 #[test]
-fn the_production_encode_gate_refuses_a_hyper_connected_container() {
+fn the_production_encode_gate_admits_a_head_bearing_container_and_refuses_a_headless_one() {
+    let source = tempfile::tempdir().unwrap();
+    let mut tensors = dense_tensors();
+    tensors.extend(site_tensors());
+    tensors.extend(head_tensors());
+    let borrowed: Vec<(&str, &[usize])> = tensors
+        .iter()
+        .map(|(name, shape)| (name.as_str(), shape.as_slice()))
+        .collect();
+    let inventory = custom_artifact(source.path(), &config(true), &borrowed);
+    let named = vec![("hc-with-head".to_string(), inventory)];
+    // Named first, so a refusal reads as the finding it is rather than
+    // as a count.
+    let system = plan_system(&named);
+    let blocking: Vec<String> = system
+        .artifacts
+        .iter()
+        .flat_map(|a| &a.findings)
+        .filter(|f| f.blocks())
+        .map(|f| format!("{}: {}", f.subject, f.detail))
+        .collect();
+    assert!(
+        system.admissible,
+        "a head-bearing hyper-connected estate is admissible: {blocking:#?}"
+    );
+    let out = tempfile::tempdir().unwrap();
+    encode_system_unenforced(&named, out.path())
+        .expect("a head-bearing hyper-connected estate encodes");
+
     let source = tempfile::tempdir().unwrap();
     let mut tensors = dense_tensors();
     tensors.extend(site_tensors());
@@ -544,23 +583,12 @@ fn the_production_encode_gate_refuses_a_hyper_connected_container() {
         .map(|(name, shape)| (name.as_str(), shape.as_slice()))
         .collect();
     let inventory = custom_artifact(source.path(), &config(true), &borrowed);
-    let named = vec![("hc-artifact".to_string(), inventory)];
     let out = tempfile::tempdir().unwrap();
-    let err = encode_system_unenforced(&named, out.path())
+    let err = encode_system_unenforced(&[("hc-headless".to_string(), inventory)], out.path())
         .unwrap_err()
         .to_string();
     assert!(err.contains("inadmissible"), "{err}");
-
-    let source = tempfile::tempdir().unwrap();
-    let tensors = dense_tensors();
-    let borrowed: Vec<(&str, &[usize])> = tensors
-        .iter()
-        .map(|(name, shape)| (name.as_str(), shape.as_slice()))
-        .collect();
-    let inventory = custom_artifact(source.path(), &config(false), &borrowed);
-    let out = tempfile::tempdir().unwrap();
-    encode_system_unenforced(&[("plain".to_string(), inventory)], out.path())
-        .expect("the single-stream sibling is admissible");
+    assert!(err.contains("hyper_connection_head"), "{err}");
 }
 
 /// A single-stream plan serialises exactly as it did before the topology

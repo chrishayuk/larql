@@ -193,6 +193,31 @@ pub fn disabled_by_companion<'a>(
 /// Adding a key here is a claim about the VINDEX3 schema, not about the
 /// parser — which is the whole point of the module.
 pub const CARRIAGE_RULES: &[CarriageRule] = &[
+    // ── Residual topology (wave 19) ─────────────────────────────────
+    //
+    // The three Sinkhorn hyper-connection parameters are one declared
+    // component fact, read together (a partial declaration refuses the
+    // surface, not these rules), carried to the component's residual
+    // topology, and lowered: the op plan carries it, and the decode step
+    // and batch traversal both run the bundle it declares.
+    CarriageRule {
+        leaf: "hc_mult",
+        reaches: Carriage::Lowered,
+        site: "Component.execution.residual_topology (ResidualTopology::HyperConnection.streams) → ComponentOpPlan.residual_topology → the executor's bundle carrier",
+        probe: Some(probe_hc_streams),
+    },
+    CarriageRule {
+        leaf: "hc_sinkhorn_iters",
+        reaches: Carriage::Lowered,
+        site: "Component.execution.residual_topology (ResidualTopology::HyperConnection.sinkhorn_iters) → hc_split_sinkhorn's pass count",
+        probe: Some(probe_hc_sinkhorn_iters),
+    },
+    CarriageRule {
+        leaf: "hc_eps",
+        reaches: Carriage::Lowered,
+        site: "Component.execution.residual_topology (ResidualTopology::HyperConnection.sinkhorn_eps) → hc_split_sinkhorn's epsilon",
+        probe: Some(probe_hc_eps),
+    },
     // ── Position ────────────────────────────────────────────────────
     CarriageRule {
         leaf: "rope_theta",
@@ -1291,6 +1316,28 @@ fn probe_unrepresented(_component: &Component, _ctx: &ProbeContext<'_>) -> Optio
 /// its full layers and 1e4 on its sliding ones — two facts, two probes).
 /// A per-layer split (Muse-Glimmer's `layer_rope_theta`) answers `None`
 /// here and is checked by [`probe_layer_rope_theta`] instead.
+/// The declared hyper-connection topology, when the component carries
+/// one; `None` on a single stream (the leaf would not be declared) and
+/// on a component with no surface.
+fn probe_hc(component: &Component) -> Option<larql_models::config::HyperConnection> {
+    match component.execution.as_ref()?.residual_topology {
+        larql_models::config::ResidualTopology::HyperConnection(hc) => Some(hc),
+        larql_models::config::ResidualTopology::SingleStream => None,
+    }
+}
+
+fn probe_hc_streams(component: &Component, _ctx: &ProbeContext<'_>) -> Option<Value> {
+    Some(json!(probe_hc(component)?.streams))
+}
+
+fn probe_hc_sinkhorn_iters(component: &Component, _ctx: &ProbeContext<'_>) -> Option<Value> {
+    Some(json!(probe_hc(component)?.sinkhorn_iters))
+}
+
+fn probe_hc_eps(component: &Component, _ctx: &ProbeContext<'_>) -> Option<Value> {
+    Some(json!(probe_hc(component)?.sinkhorn_eps))
+}
+
 fn probe_rope_theta(component: &Component, ctx: &ProbeContext<'_>) -> Option<Value> {
     // Nothing in scope rotates: the declared base is inert, and reporting
     // it as uncarried would demand a rotation the model does not perform.

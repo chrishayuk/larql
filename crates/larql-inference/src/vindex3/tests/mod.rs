@@ -769,7 +769,7 @@ fn execute_streaming_matches_prefill_and_taps_every_layer() {
     let output = runtime
         .execute_streaming(&G_TOKENS, &mut |event| {
             if let super::PlaneEvent::Layer { index, trace } = event {
-                tapped.push((index, trace.post_layer.len()));
+                tapped.push((index, trace.post_layer.rows().len()));
             }
             Ok(())
         })

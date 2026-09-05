@@ -289,10 +289,9 @@ impl Container {
         let (plan, store) = self.open(registry);
         let trace = execute_plan(&plan, &store, &TOKENS, &ProductionBackend::new()).unwrap();
         let bits = |v: &[f32]| v.iter().map(|x| x.to_bits()).collect::<Vec<u32>>();
-        (
-            bits(&trace.logits.expect("the dense fixture carries a head")),
-            bits(&trace.final_hidden),
-        )
+        let hidden = bits(trace.final_hidden());
+        let logits = bits(&trace.logits.expect("the dense fixture carries a head"));
+        (logits, hidden)
     }
 
     fn prepared(&self, registry: &'static CodecRegistry) -> Result<PreparedOperands, VindexError> {

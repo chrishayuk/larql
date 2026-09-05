@@ -347,14 +347,17 @@ fn max_abs(a: &[Vec<f32>], b: &[Vec<f32>]) -> f32 {
 fn assert_matches_oracle(trace: &ExecutionTrace, oracle: &OracleTrace, label: &str) {
     for layer in 0..LAYERS {
         let attn = max_abs(
-            &trace.layers[layer].post_attention,
+            trace.layers[layer].post_attention.rows(),
             &oracle.post_attention[layer],
         );
         assert!(
             attn < TOLERANCE,
             "{label}: layer {layer} post_attention {attn:e}"
         );
-        let post = max_abs(&trace.layers[layer].post_layer, &oracle.post_layer[layer]);
+        let post = max_abs(
+            trace.layers[layer].post_layer.rows(),
+            &oracle.post_layer[layer],
+        );
         assert!(
             post < TOLERANCE,
             "{label}: layer {layer} post_layer {post:e}"
@@ -464,7 +467,10 @@ fn router_and_expert_operands_are_load_bearing() {
         let dir = tempfile::tempdir().unwrap();
         miniature_gpt_oss(dir.path(), Some(suffix));
         let moved = traces(encoded(dir.path()).path()).0;
-        let layer0 = max_abs(&base.layers[0].post_layer, &moved.layers[0].post_layer);
+        let layer0 = max_abs(
+            base.layers[0].post_layer.rows(),
+            moved.layers[0].post_layer.rows(),
+        );
         let logits = max_abs(
             std::slice::from_ref(base.logits.as_ref().unwrap()),
             std::slice::from_ref(moved.logits.as_ref().unwrap()),
@@ -628,13 +634,13 @@ fn the_plan_executes_yarn_and_its_factor_is_load_bearing() {
     let moved = execute_plan(&plan, &store, &TOKENS, &ReferenceBackend::new()).unwrap();
     // Position 0 has no rotation, only the amplitude: if it moves, the
     // amplitude is executed, not just the ramp.
-    let position0 = (base.layers[0].post_attention[0].iter())
-        .zip(&moved.layers[0].post_attention[0])
+    let position0 = (base.layers[0].post_attention.rows()[0].iter())
+        .zip(&moved.layers[0].post_attention.rows()[0])
         .map(|(a, b)| (a - b).abs())
         .fold(0.0f32, f32::max);
     let layer0 = max_abs(
-        &base.layers[0].post_attention,
-        &moved.layers[0].post_attention,
+        base.layers[0].post_attention.rows(),
+        moved.layers[0].post_attention.rows(),
     );
     eprintln!("yarn factor 32→4: layer0 post_attention {layer0:e}, position 0 {position0:e}");
     // The effect is bounded by the fixture's attention temperature: on

@@ -918,28 +918,31 @@ fn execution_surface_findings(artifact: &str, built: &BuiltGraph) -> Vec<Finding
             if surface.head.is_some() {
                 groups.push("head");
             }
-            // A complete surface is not an executable one. Where the
-            // judged placement is a shape this build refuses to lower,
-            // the report must SAY so — otherwise the row reads as "every
-            // declaration has a home" while `plan_component_ops` returns
-            // no plan at all, which is the looks-supported failure the
-            // whole instrument exists to catch. Read from the same
-            // authority the op plan refuses on, so the two cannot drift.
-            // The topology is asked FIRST, because it decides what the
-            // residual even is; the placement is asked only of a stack
-            // whose residual this build can represent.
-            let refusal = surface
-                .residual_topology
-                .unimplemented_reason()
-                .map(|reason| (format!("{:?}", surface.residual_topology), reason))
-                .or_else(|| {
-                    surface.norm.placement.and_then(|p| {
-                        p.unimplemented_reason()
-                            .map(|reason| (format!("its norm placement ({p:?})"), reason))
-                    })
-                });
-            match refusal {
-                Some((what, reason)) => Finding {
+            // A complete surface is not an executable one, and the report
+            // must SAY what cannot run — otherwise a row reads as "every
+            // declaration has a home" while nothing executes, the
+            // looks-supported failure the whole instrument exists to
+            // catch. Since wave 19 every judged topology and every judged
+            // placement lowers, so the seam that named a refusing variant
+            // has nothing left to read and is gone; the fact that remains
+            // is the head's. A hyper-connected component with no head
+            // object (GLM-5.3-Flash: `mhc` unexplained, no `hc_head_*`
+            // shipped) runs layer by layer but has no declared reduction
+            // from the bundle to the one vector the final norm reads, and
+            // this build does not invent one. Read from the same fact the
+            // executor's preparation step refuses on, so a whole-stack
+            // image the report calls executable is one the executor
+            // prepares. A count that dropped here when the topology lifted
+            // would be capability granted past that boundary.
+            let headless = matches!(
+                surface.residual_topology,
+                larql_models::config::ResidualTopology::HyperConnection(_)
+            ) && !built.graph.objects.iter().any(|o| {
+                o.component == component.id
+                    && matches!(o.kind, super::graph::ObjectKind::HyperConnectionHead)
+            });
+            if headless {
+                Finding {
                     category: FindingCategory::Unrepresented,
                     class: SemanticClass::UnsupportedComponent,
                     component: component.id.clone(),
@@ -948,12 +951,17 @@ fn execution_surface_findings(artifact: &str, built: &BuiltGraph) -> Vec<Finding
                     resolved: None,
                     carriage: None,
                     detail: format!(
-                        "execution surface complete ({}), and {what} is representable \
-                         but NOT executable by this build — {reason}",
-                        groups.join(", ")
+                        "execution surface complete ({}), and {:?} is executable layer by \
+                         layer, but the component declares no hyper_connection_head object: \
+                         a whole-stack execution has no declared reduction from the bundle to \
+                         the vector the final norm reads, and this build does not invent one \
+                         (a layer-range image runs without a head)",
+                        groups.join(", "),
+                        surface.residual_topology
                     ),
-                },
-                None => Finding {
+                }
+            } else {
+                Finding {
                     category: FindingCategory::Representable,
                     class: SemanticClass::ExecutionSemantic,
                     component: component.id.clone(),
@@ -962,7 +970,7 @@ fn execution_surface_findings(artifact: &str, built: &BuiltGraph) -> Vec<Finding
                     resolved: None,
                     carriage: None,
                     detail: format!("execution surface complete ({})", groups.join(", ")),
-                },
+                }
             }
         })
         .collect();

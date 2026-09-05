@@ -110,8 +110,9 @@ fn hidden_per_layer<B: PlanBackend>(
     let mut per_layer = Vec::new();
     execute_prepared_streaming(plan, ops, &TOKENS, backend, None, &mut |event| {
         match event {
-            PlaneEvent::Embedded(rows) => per_layer.push(rows.to_vec()),
-            PlaneEvent::Layer { trace, .. } => per_layer.push(trace.post_layer.clone()),
+            PlaneEvent::Embedded(rows) => per_layer.push(rows.rows().to_vec()),
+            PlaneEvent::Layer { trace, .. } => per_layer.push(trace.post_layer.rows().to_vec()),
+            PlaneEvent::HyperConnectionSite(_) => {}
         }
         Ok(())
     })

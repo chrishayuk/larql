@@ -32,12 +32,13 @@ use larql_compute_metal::trait_impl::kimi_layer::ExpertEncoding as MetalEncoding
 use larql_compute_metal::MetalBackend;
 use serde_json::Value;
 
-use super::q2a_teacher_forced::{
-    env_dir, observation, run_sequence, sequence_embeddings, BANK_ENV, CANDIDATE_ENV, SOURCE_ENV,
-};
 use crate::format::vindex3::opplan::exec::kimi_source::{CandidateOverlay, KimiSourceModel};
 use crate::format::vindex3::opplan::exec::stack_metal::{DeviceAttn, DeviceLayer, HybridStack};
 use crate::format::vindex3::represent::bank::BankBuilder;
+use crate::format::vindex3::represent::measure::teacher_forced::{
+    env_dir, observation, run_sequence, sequence_embeddings,
+};
+use crate::format::vindex3::represent::measure::{BANK_ENV, CANDIDATE_ENV, SOURCE_ENV};
 use crate::format::vindex3::represent::physical::{
     EncodedRegion, ExpertEncoding as PhysEncoding, PhysicalStore, SharedExpertBinding,
 };
@@ -666,9 +667,10 @@ fn one_kda_layers_projections_at_q8_through_the_consequence_metrics() {
     {
         let mut builder = BankBuilder::new();
         for seq in 0..NULL_SEQUENCES {
-            let rows = sequence_embeddings(&bank_dir, seq, positions, g.hidden);
-            let a = run_sequence(&metal, &mut baseline, &rows, g.hidden);
-            let b = run_sequence(&metal, &mut null_partner, &rows, g.hidden);
+            let rows = sequence_embeddings(&bank_dir, seq, positions, g.hidden)
+                .expect("the corpus sequence reads");
+            let a = run_sequence(&metal, &mut baseline, &rows, g.hidden).expect("the arm runs");
+            let b = run_sequence(&metal, &mut null_partner, &rows, g.hidden).expect("the arm runs");
             for (pos, ((la, ta), (lb, tb))) in a.into_iter().zip(b).enumerate() {
                 builder.observe(&observation(seq, pos, &la, &ta, &lb, &tb));
             }
@@ -699,9 +701,10 @@ fn one_kda_layers_projections_at_q8_through_the_consequence_metrics() {
     // KL by position index, across sequences — the token-distance curve.
     let mut kl_by_pos: Vec<Vec<f64>> = vec![Vec::new(); positions];
     for seq in 0..sequences {
-        let rows = sequence_embeddings(&bank_dir, seq, positions, g.hidden);
-        let base = run_sequence(&metal, &mut baseline, &rows, g.hidden);
-        let cand = run_sequence(&metal, &mut candidate, &rows, g.hidden);
+        let rows = sequence_embeddings(&bank_dir, seq, positions, g.hidden)
+            .expect("the corpus sequence reads");
+        let base = run_sequence(&metal, &mut baseline, &rows, g.hidden).expect("the arm runs");
+        let cand = run_sequence(&metal, &mut candidate, &rows, g.hidden).expect("the arm runs");
         for (pos, ((lb, tb), (lc, tc))) in base.into_iter().zip(cand).enumerate() {
             kl_by_pos[pos].push(full_kl(&lb, &lc));
             builder.observe(&observation(seq, pos, &lb, &tb, &lc, &tc));
