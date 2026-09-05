@@ -5,9 +5,10 @@
 //! component the decode step's residual is a bundle; each site reduces it
 //! to the `[hidden]` vector the ordinary operator consumes and expands
 //! the operator's output back; the observer sees state that cannot exist
-//! on the single-stream path. The public refusal at
-//! `PreparedOperands::load` stands throughout — every image here is
-//! prepared through the test-only witness seam.
+//! on the single-stream path. Built while the public refusal at
+//! `PreparedOperands::load` still stood (every image was then prepared
+//! through a test-only seam); the lift that followed removed the seam,
+//! and the public loader prepares what the witness proved.
 //!
 //! # The assertions (the freeze's A1–A6, decode half)
 //!
@@ -154,19 +155,14 @@ pub(super) fn store(sub: &Substrate) -> OperandStore {
     OperandStore::open(sub.container.path(), &sub.inspection).unwrap()
 }
 
-/// Prepare through the witness seam.
+/// Prepare through the public loader.
 pub(super) fn prepare(sub: &Substrate, slice: ExecutionSlice) -> Result<PreparedOperands, String> {
     let store = store(sub);
-    PreparedOperands::load_for_hyper_connection_witness(
-        &sub.plan,
-        &store,
-        &ReferenceBackend::new(),
-        slice,
-    )
-    .map_err(|e| e.to_string())
+    PreparedOperands::load(&sub.plan, &store, &ReferenceBackend::new(), slice)
+        .map_err(|e| e.to_string())
 }
 
-/// The seam's refusal text, for the negative preparations.
+/// The loader's refusal text, for the negative preparations.
 fn prepare_err(sub: &Substrate, slice: ExecutionSlice) -> String {
     match prepare(sub, slice) {
         Ok(_) => panic!("preparation succeeded where it must refuse"),
@@ -185,7 +181,7 @@ pub(super) fn layer_range() -> ExecutionSlice {
 /// Run the oracle's three positions through the stack, each entering
 /// layer 0 as the oracle's own bundle, under `mutation`.
 pub(super) fn run_from_oracle(sub: &Substrate, slice: ExecutionSlice, mutation: Mutation) -> Run {
-    let ops = prepare(sub, slice).expect("the seam prepares the substrate");
+    let ops = prepare(sub, slice).expect("the loader prepares the substrate");
     let backend = ReferenceBackend::new();
     let mut kv = RowKvState::default();
     let mut session = DecodeSession::over_prepared(&sub.plan, &ops, &backend, &mut kv).unwrap();
@@ -204,7 +200,7 @@ pub(super) fn run_from_oracle(sub: &Substrate, slice: ExecutionSlice, mutation: 
 /// Run `tokens` through a whole-stack image from the embedding, under
 /// `mutation`.
 pub(super) fn run_from_tokens(sub: &Substrate, tokens: &[u32], mutation: Mutation) -> Run {
-    let ops = prepare(sub, ExecutionSlice::Full).expect("the seam prepares the substrate");
+    let ops = prepare(sub, ExecutionSlice::Full).expect("the loader prepares the substrate");
     let backend = ReferenceBackend::new();
     let mut kv = RowKvState::default();
     let mut session = DecodeSession::over_prepared(&sub.plan, &ops, &backend, &mut kv).unwrap();
@@ -641,42 +637,36 @@ fn mutant_d_is_invisible_on_the_dense_estate() {
 
 // ── The refusals, unchanged and new ──
 
-/// P1. The public loader still refuses every hyper-connected variant
-/// with the topology reason, and so does public execution.
+/// The public loader prepares what the witness proved: a head-bearing
+/// whole stack prepares and executes end to end, a headless component
+/// prepares as a layer range, and a headless whole stack is refused by
+/// the head's name — never by the topology's.
 #[test]
-fn the_public_loader_still_refuses_every_variant() {
-    for variant in [Variant::Headless, Variant::HeadBearing, Variant::Hybrid] {
+fn the_public_loader_prepares_what_the_witness_proved() {
+    let backend = ReferenceBackend::new();
+    let sub = substrate::build(Variant::HeadBearing);
+    let operands = store(&sub);
+    PreparedOperands::load(&sub.plan, &operands, &backend, ExecutionSlice::Full)
+        .expect("a head-bearing whole stack prepares");
+    let trace = execute_text(&sub.plan, &operands, &[1, 2]).expect("and executes");
+    assert_eq!(trace.logits.unwrap().len(), VOCAB);
+    assert!(
+        trace.embedded.bundles().is_some(),
+        "the embedding entered as bundles"
+    );
+
+    for variant in [Variant::Headless, Variant::Hybrid] {
         let sub = substrate::build(variant);
-        let store = store(&sub);
-        let err = PreparedOperands::load(
-            &sub.plan,
-            &store,
-            &ReferenceBackend::new(),
-            ExecutionSlice::Full,
-        )
-        .err()
-        .map(|e| e.to_string())
-        .unwrap_or_else(|| {
-            panic!("{variant:?}: the public loader prepared a hyper-connected plan")
-        });
-        assert!(err.contains("cannot execute it"), "{variant:?}: {err}");
-        assert!(err.contains("traversal"), "{variant:?}: {err}");
-        let err = execute_text(&sub.plan, &store, &[1, 2])
+        let operands = store(&sub);
+        PreparedOperands::load(&sub.plan, &operands, &backend, layer_range())
+            .unwrap_or_else(|e| panic!("{variant:?}: a headless layer range prepares: {e}"));
+        let err = PreparedOperands::load(&sub.plan, &operands, &backend, ExecutionSlice::Full)
             .err()
             .map(|e| e.to_string())
-            .unwrap_or_else(|| panic!("{variant:?}: public execution ran"));
-        assert!(err.contains("cannot execute it"), "{variant:?}: {err}");
+            .unwrap_or_else(|| panic!("{variant:?}: a headless whole stack must refuse"));
+        assert!(err.contains("hyper_connection_head"), "{variant:?}: {err}");
+        assert!(!err.contains("traversal"), "{variant:?}: {err}");
     }
-}
-
-/// The seam is for hyper-connected plans only: the single-stream sibling
-/// is sent back to the public path.
-#[test]
-fn the_seam_refuses_a_single_stream_plan() {
-    let sub = substrate::single_stream_sibling();
-    let err = prepare_err(&sub, ExecutionSlice::Full);
-    assert!(err.contains("single residual stream"), "{err}");
-    assert!(err.contains("public path"), "{err}");
 }
 
 /// A6. Headless: a whole-stack image refuses at preparation, naming the
@@ -788,16 +778,11 @@ fn head_bearing_plan() -> (Substrate, OperandStore) {
     (sub, store)
 }
 
-fn seam_err(
+fn load_err(
     plan: &crate::format::vindex3::opplan::ComponentOpPlan,
     store: &OperandStore,
 ) -> String {
-    match PreparedOperands::load_for_hyper_connection_witness(
-        plan,
-        store,
-        &ReferenceBackend::new(),
-        ExecutionSlice::Full,
-    ) {
+    match PreparedOperands::load(plan, store, &ReferenceBackend::new(), ExecutionSlice::Full) {
         Ok(_) => panic!("preparation succeeded where it must refuse"),
         Err(err) => err.to_string(),
     }
@@ -808,7 +793,7 @@ fn a_layer_without_sites_under_the_topology_is_refused() {
     let (sub, store) = head_bearing_plan();
     let mut plan = sub.plan.clone();
     plan.layers[1].hyper_connection = None;
-    let err = seam_err(&plan, &store);
+    let err = load_err(&plan, &store);
     assert!(err.contains("layer 1 carries no"), "{err}");
 }
 
@@ -836,12 +821,12 @@ fn a_head_at_a_sites_geometry_is_refused() {
     let site = sub.plan.layers[0].hyper_connection.clone().unwrap();
     let mut plan = sub.plan.clone();
     plan.hyper_connection_head.as_mut().unwrap().reduce_fn = site.attention.mix_fn.clone();
-    let err = seam_err(&plan, &store);
+    let err = load_err(&plan, &store);
     assert!(err.contains("head's geometry"), "{err}");
 
     let mut plan = sub.plan.clone();
     plan.hyper_connection_head.as_mut().unwrap().scale = site.attention.scale.clone();
-    let err = seam_err(&plan, &store);
+    let err = load_err(&plan, &store);
     assert!(err.contains("scale holds 3 values"), "{err}");
 }
 
@@ -851,7 +836,7 @@ fn a_site_at_the_heads_geometry_is_refused() {
     let head = sub.plan.hyper_connection_head.clone().unwrap();
     let mut plan = sub.plan.clone();
     plan.layers[0].hyper_connection.as_mut().unwrap().ffn.mix_fn = head.reduce_fn;
-    let err = seam_err(&plan, &store);
+    let err = load_err(&plan, &store);
     assert!(err.contains("layer 0 ffn site: mix_fn holds"), "{err}");
 }
 
@@ -860,7 +845,7 @@ fn layers_that_disagree_on_norm_eps_leave_the_head_no_epsilon() {
     let (sub, store) = head_bearing_plan();
     let mut plan = sub.plan.clone();
     plan.layers[1].declared_norm_eps = 2.0 * NORM_EPS;
-    let err = seam_err(&plan, &store);
+    let err = load_err(&plan, &store);
     assert!(err.contains("one component value"), "{err}");
 }
 

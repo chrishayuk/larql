@@ -57,6 +57,26 @@ pub const PLAN_SCHEMA: u32 = 6;
 /// `plan/tests/identity.rs` pins fixture verdicts against this value, so
 /// a change that flips one fails there until the version is bumped.
 ///
+/// **16** — hyper-connection TRAVERSAL (wave 19). The residual topology's
+/// refusal is retired from its one authority
+/// (`ResidualTopology::unimplemented_reason`), which the executor's
+/// preparation step and this report both read: the decode step (19a)
+/// and the batch traversal (19b) carry the bundle, reduce it to one
+/// vector at each site and expand the sublayer's output back, and an
+/// intermediate-state witness against the reference's oracle fails on
+/// every deliberate defect tried. The three topology keys (`hc_mult`,
+/// `hc_sinkhorn_iters`, `hc_eps`) leave the unsupported-component table
+/// and are carried as execution semantics to the component's residual
+/// topology. What remains refused is said by name: a component with the
+/// topology and NO `hyper_connection_head` object (GLM-5.3-Flash, `mhc`
+/// unexplained) keeps a blocking execution-surface finding, because a
+/// whole-stack execution has no declared reduction from the bundle
+/// before the final norm — so its count does not move, and a drop there
+/// would be capability granted past the head boundary. Forecast before
+/// the code (`forecasts/wave19-sinkhorn-traversal.json`, scored per
+/// reader): GLM-5.3-Flash 31 -> 31 on this reader and -3 on the key
+/// table; DeepSeek-V4 rows -3 each, never reaching this reader.
+///
 /// **15** — hyper-connection ADDRESSABILITY (wave 18). The six per-layer
 /// Sinkhorn site operands (`hc_{attn,ffn}_{fn,base,scale}`) are operand
 /// roles, required on every layer of a component that declares the
@@ -227,7 +247,7 @@ pub const PLAN_SCHEMA: u32 = 6;
 /// architectures, now block instead of passing silently into
 /// `GenericArch`'s Llama-shaped defaults. Measured on the conformance
 /// corpus: 15 of 42 declared `model_type` strings, across 30 checkpoints.
-pub const PLANNER_SEMANTICS_VERSION: u32 = 15;
+pub const PLANNER_SEMANTICS_VERSION: u32 = 16;
 
 /// Who judged a plan.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]

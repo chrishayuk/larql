@@ -997,58 +997,19 @@ impl PreparedOperands {
     ) -> Result<Self, VindexError> {
         let store = store.into();
         slice.validate(plan)?;
-        // **Refuse before any operand is loaded.** The plan may carry a
-        // residual topology this build cannot run publicly: a
-        // hyper-connected component's operands are all bound (wave 18
-        // closed the addressing) and the decode step can carry the bundle
-        // (wave 19a), but the batch traversal still carries ONE residual
-        // vector per position and would run a four-stream model as a
-        // one-stream one — fluent wrong output, not a failure. Read from
-        // the same authority the plan report refuses on, so a plan the
-        // report calls not executable can never be prepared here. The
-        // authority lifts only when both traversals are proven (19b).
-        if let Some(reason) = plan.residual_topology.unimplemented_reason() {
-            return Err(VindexError::Parse(format!(
-                "component `{}`: residual topology {:?} is represented and its operands are \
-                 bound, but this build cannot execute it — {reason}",
-                plan.component, plan.residual_topology
-            )));
-        }
-        Self::load_unrefused(plan, store, backend, slice)
+        // No topology refusal stands here any more (wave 19): the decode
+        // step and the batch traversal both carry a hyper-connected
+        // component's bundle, witnessed against the reference's oracle.
+        // What a hyper-connected image still cannot be is said below by
+        // name — a whole-stack image with no declared head reduction, a
+        // layer scale under the topology — and the plan report reads the
+        // same facts, so a plan it calls executable is one prepared here.
+        Self::load_validated(plan, store, backend, slice)
     }
 
-    /// **The wave-19a witness seam.** Prepares a hyper-connected plan
-    /// WITHOUT the public topology refusal, so the decode traversal's
-    /// bundle carrier can be proven while `load` keeps refusing.
-    ///
-    /// Test-only by construction (`cfg(test)`), crate-internal, and
-    /// hyper-connected plans only: a single-stream plan is sent back to
-    /// the public path, so nothing prepared here is ever the thing a
-    /// caller could have prepared without the seam. Everything below the
-    /// refusal is the production loader — this is the refusal removed,
-    /// not a second loader. Removed in 19b, when the authority lifts.
-    #[cfg(test)]
-    pub(super) fn load_for_hyper_connection_witness<'s, B: PlanBackend + ?Sized>(
-        plan: &ComponentOpPlan,
-        store: impl Into<OperandSource<'s>>,
-        backend: &B,
-        slice: ExecutionSlice,
-    ) -> Result<Self, VindexError> {
-        let store = store.into();
-        slice.validate(plan)?;
-        if plan.residual_topology.is_single_stream() {
-            return Err(VindexError::Parse(format!(
-                "component `{}` declares a single residual stream; the witness seam prepares \
-                 hyper-connected plans only, and this plan takes the public path",
-                plan.component
-            )));
-        }
-        Self::load_unrefused(plan, store, backend, slice)
-    }
-
-    /// The loader proper, past the topology refusal. Every operand the
-    /// slice needs is loaded here, and none of it is loaded again.
-    fn load_unrefused<B: PlanBackend + ?Sized>(
+    /// The loader proper, past slice validation. Every operand the slice
+    /// needs is loaded here, and none of it is loaded again.
+    fn load_validated<B: PlanBackend + ?Sized>(
         plan: &ComponentOpPlan,
         store: OperandSource<'_>,
         backend: &B,

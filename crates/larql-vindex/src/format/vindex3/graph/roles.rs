@@ -365,13 +365,14 @@ pub enum NormPlacement {
 impl NormPlacement {
     /// Why this build cannot lower this placement, when it cannot.
     ///
-    /// **One authority, two readers.** The op plan refuses on it and the
-    /// plan report names it as an unsupported component, and those two
-    /// must never be able to disagree: a report that calls a component
+    /// **One authority.** The op plan refuses on it. The plan report read
+    /// it too, naming a refused placement as an unsupported component so
+    /// the two could never disagree — a report that calls a component
     /// admissible while the op plan refuses to build it is the
-    /// looks-supported failure in its purest form — every declaration
-    /// has a home, and nothing can run. Two separate lists of "what we
-    /// cannot lower" would drift into exactly that, so there is one.
+    /// looks-supported failure in its purest form — and stopped in wave
+    /// 19, when no judged placement (nor topology) refused any more and
+    /// the reader had nothing left to read. A variant that returns `Some`
+    /// again must bring that reader back beside it.
     ///
     /// `None` is a claim, not an absence: this build lowers the
     /// placement and an executor reads its operands.

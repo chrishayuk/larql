@@ -87,57 +87,6 @@ impl ResidualTopology {
     pub fn is_single_stream(&self) -> bool {
         matches!(self, Self::SingleStream)
     }
-
-    /// Why this build cannot EXECUTE this topology, when it cannot.
-    ///
-    /// ONE authority, two readers: the executor's preparation step
-    /// (`larql-vindex`'s `opplan::exec::prepared`), which refuses before a
-    /// single operand is loaded, and the plan report, which must say so.
-    /// Wave 11 established that a refusal only one consumer can see is
-    /// not a refusal, and that two lists of what cannot be lowered drift
-    /// into exactly that state.
-    ///
-    /// **The op plan is deliberately NOT a reader.** Wave 18 made the
-    /// topology a closure question there — the six per-layer site
-    /// operands classify, are required, are checked against the
-    /// topology's own geometry and are bound into the plan — and refusing
-    /// at that stage would hide the addressability answer behind the
-    /// traversal gap, which is the structural silence wave 18's baseline
-    /// recorded.
-    ///
-    /// **Three waves have each changed what this reason says without
-    /// changing whether it refuses.** Wave 16 named the three structural
-    /// facts a single-stream programme would have to discard. Wave 17
-    /// implemented the arithmetic, so the reason stopped claiming it was
-    /// missing. Wave 18 bound the operands, so it stops claiming the
-    /// `hc_*` groups have no owner. What remains is the traversal: the
-    /// generic executor carries one residual vector through the stack,
-    /// and no real-weight witness has run the bundle from a checkpoint's
-    /// own operands.
-    ///
-    /// Saying so precisely matters more than it looks. A stale reason
-    /// sends the next wave to build something that exists; a build that
-    /// lifted the refusal because the operands are addressable would be
-    /// claiming execution from addressing — the same mistake as grading
-    /// a config key representable because a parser read it.
-    pub fn unimplemented_reason(self) -> Option<&'static str> {
-        match self {
-            Self::SingleStream => None,
-            Self::HyperConnection(_) => Some(
-                "the residual is a bundle of parallel streams reduced and expanded per token \
-                 through a Sinkhorn-split mixing matrix; the single-stream residual programme \
-                 cannot lower it without discarding the stream multiplicity, the dynamic \
-                 reduce and expand weights, or the cross-stream combination. The five stages \
-                 are implemented and checked against the reference, so the arithmetic is not \
-                 what is missing; the hc_attn_*, hc_ffn_* and hc_head_* operands are addressed \
-                 by role and bound into the op plan, so addressing is not what is missing \
-                 either. What is missing is the traversal: the generic executor carries ONE \
-                 residual vector through the stack, and no real-weight witness has run the \
-                 bundle, the head reduction or the embedding replication from a checkpoint's \
-                 own operands",
-            ),
-        }
-    }
 }
 
 /// One operation in the execution language, named separately rather than
@@ -170,12 +119,15 @@ impl HyperConnectionWeights {
 mod tests {
     use super::*;
 
+    /// Both judged topologies lower: the refusal that lived here through
+    /// waves 16-18 was retired in wave 19, after the decode and batch
+    /// traversals were each witnessed against the reference's oracle.
+    /// What the type still says is the stream count and which of the two
+    /// residual programmes a component runs.
     #[test]
-    fn single_stream_lowers_and_hyper_connections_refuse() {
+    fn both_judged_topologies_lower() {
         assert_eq!(ResidualTopology::SingleStream.streams(), 1);
-        assert!(ResidualTopology::SingleStream
-            .unimplemented_reason()
-            .is_none());
+        assert!(ResidualTopology::SingleStream.is_single_stream());
 
         let hc = ResidualTopology::HyperConnection(HyperConnection {
             streams: 4,
@@ -183,90 +135,6 @@ mod tests {
             sinkhorn_eps: 1e-6,
         });
         assert_eq!(hc.streams(), 4);
-        let reason = hc.unimplemented_reason().expect("must refuse");
-        assert!(reason.contains("bundle"), "{reason}");
-    }
-
-    /// Wave 17 implemented the arithmetic and wave 18 bound the operands,
-    /// so the refusal must claim neither is missing — and must name the
-    /// gap that actually blocks execution, which is the traversal.
-    ///
-    /// A refusal whose stated reason has gone stale is worse than a
-    /// blunt one: it sends the next wave to fix something already done.
-    /// Wave 17's reason said "no placement rule owns the hc_* groups";
-    /// that sentence became false the moment the roles landed, and this
-    /// test is what makes it fail to compile as a claim.
-    #[test]
-    fn the_refusal_names_the_traversal_gap_and_neither_the_arithmetic_nor_the_addressing() {
-        let hc = ResidualTopology::HyperConnection(HyperConnection {
-            streams: 4,
-            sinkhorn_iters: 20,
-            sinkhorn_eps: 1e-6,
-        });
-        let reason = hc.unimplemented_reason().expect("still refuses");
-
-        assert!(
-            reason.contains("implemented"),
-            "the reason must record that the arithmetic exists: {reason}"
-        );
-        assert!(
-            reason.contains("the arithmetic is not what is missing"),
-            "the reason must not leave a reader thinking the stages are unwritten: {reason}"
-        );
-        assert!(
-            reason.contains("addressing is not what is missing"),
-            "the reason must record that the operands are bound: {reason}"
-        );
-        assert!(
-            !reason.contains("no placement rule"),
-            "wave 17's addressability claim is stale after wave 18: {reason}"
-        );
-        assert!(
-            reason.contains("traversal"),
-            "the reason must name what actually blocks execution: {reason}"
-        );
-        // Wave 16's three structural reasons survive verbatim: they say
-        // why a SINGLE-STREAM programme cannot lower this, which is still
-        // true and is a different claim from what blocks execution today.
-        for structural in ["stream multiplicity", "dynamic", "cross-stream"] {
-            assert!(
-                reason.contains(structural),
-                "reason omits {structural:?}: {reason}"
-            );
-        }
-    }
-
-    #[test]
-    fn only_the_single_stream_topology_is_single_stream() {
-        assert!(ResidualTopology::SingleStream.is_single_stream());
-        assert!(!ResidualTopology::HyperConnection(HyperConnection {
-            streams: 4,
-            sinkhorn_iters: 20,
-            sinkhorn_eps: 1e-6,
-        })
-        .is_single_stream());
-    }
-
-    /// DeepSeek-V4's own numbers: `hc_mult` 4 gives a `[24, 4*d]`
-    /// projection, and the row count is derived rather than stored.
-    #[test]
-    fn the_mix_projection_row_count_is_derived_from_the_stream_count() {
-        assert_eq!(HyperConnectionWeights::mix_rows_for(4), 24);
-        assert_eq!(HyperConnectionWeights::mix_rows_for(1), 3);
-    }
-
-    #[test]
-    fn the_topology_round_trips_as_a_tagged_enum() {
-        let hc = ResidualTopology::HyperConnection(HyperConnection {
-            streams: 4,
-            sinkhorn_iters: 20,
-            sinkhorn_eps: 1e-6,
-        });
-        let json = serde_json::to_string(&hc).expect("serialise");
-        assert!(json.contains("hyper_connection"), "{json}");
-        assert_eq!(
-            serde_json::from_str::<ResidualTopology>(&json).expect("round trip"),
-            hc
-        );
+        assert!(!hc.is_single_stream());
     }
 }

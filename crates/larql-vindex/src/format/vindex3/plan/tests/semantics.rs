@@ -119,7 +119,6 @@ fn a_key_configuring_an_absent_component_grades_unsupported_and_blocks() {
         "index_topk",
         "indexer_types",
         "indexer_rope_interleave",
-        "hc_sinkhorn_iters",
     ] {
         assert_eq!(
             classify_key(key),
@@ -132,6 +131,16 @@ fn a_key_configuring_an_absent_component_grades_unsupported_and_blocks() {
     // how much it permits: an unimplemented component is exactly as
     // disqualifying as an unexamined key.
     assert!(SemanticClass::UnsupportedComponent.is_critical());
+
+    // The Sinkhorn hyper-connection keys sat in this list from wave 7 to
+    // wave 18. Wave 19 executed the topology they configure on both
+    // traversals, so they grade as execution semantics carried to the
+    // component's residual topology — and `mhc`, which no reference
+    // explains, stays exactly where it was.
+    for key in ["hc_mult", "hc_sinkhorn_iters", "hc_eps"] {
+        assert_eq!(classify_key(key), SemanticClass::ExecutionSemantic, "{key}");
+    }
+    assert_eq!(classify_key("mhc"), SemanticClass::Unknown);
 }
 
 /// The indexer's rotary pairing belongs to the indexer.

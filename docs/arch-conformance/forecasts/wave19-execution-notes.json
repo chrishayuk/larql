@@ -103,5 +103,76 @@
     ],
     "gates": "fmt clean; clippy -p larql-vindex --all-targets -D warnings clean; clippy -p larql-cli (both CI variants) clean; cargo check --workspace --all-targets clean; full library suite 4174 passed / 0 failed / 7 ignored; coverage policy passed (total 93.71% lines, 425 files): decode.rs 92.79%, prepared.rs 93.76% (baseline 86.6), hyper_connection.rs 94.35%, observe.rs 100%, exec/mod.rs 88.10% (baseline 86.5). One instrumented run failed on weights/staged_tests::a_mapped_image_reads_back_bit_identically ('File exists' on the pid-named f32 staging arena from PR #420, a same-process collision unrelated to this branch); the re-run passed.",
     "what_19b_batch_does_not_claim": "no reader moved; the public loader still refuses with the wave-18 text; the semantics table is untouched; the CLI cannot persist a bundle plane; no real-payload witness."
+  },
+  "19b_lift": {
+    "written": "2026-09-05, after both traversals were witnessed (19a `0d84b263`, 19b `6336420c`) and every batch control was caught; scored against the frozen predictions P6-P11 by re-planning the rows that declare hyper-connection keys with a release build of this code, into a separate cache (`~/chris-models/_conformance-wave19`), the baseline cache untouched",
+    "what_landed": [
+      "the topology's refusal is retired at its authority: `ResidualTopology::unimplemented_reason` returned `None` for both judged topologies and then, having no reader left, was removed; the executor's preparation step no longer refuses the topology and the 19a witness seam is gone — the public loader prepares what the witness proved",
+      "the report's execution-surface finding no longer reads a refusing authority (none refuses: every judged topology and every judged placement lowers, so the seam that named a refused variant was dead code and is removed rather than baselined); the fact that remains is the HEAD's: a hyper-connected component with no `hyper_connection_head` object keeps a blocking finding naming the head, read from the same fact the executor refuses on",
+      "`hc_mult`, `hc_sinkhorn_iters`, `hc_eps` leave `UNSUPPORTED_COMPONENT_KEYS` and join `EXECUTION_SEMANTIC_KEYS`, with three carriage rules whose probes read the BUILT component's residual topology (never the declaration) and reach `lowered`",
+      "semantics version 15 -> 16; the identity pin gains version 16's verdict pair: a hyper-connected stack with every site operand AND a head object is admissible, the same stack without a head is blocked by the head's finding alone",
+      "fixture migration, each named: wave18_hc_carriage (the executor's door: head-bearing executes, headless refused by the head; the encode gate: head-bearing admitted, headless refused), hyper_connection_refusal (both topologies lower; the report names the missing head), larql-models residual_topology unit tests, plan/tests/identity.rs, wave19_hc_decode (the public loader prepares what the witness proved; the seam test removed), and one the freeze did not name: plan/tests/semantics.rs pinned `hc_sinkhorn_iters` as an unsupported component since wave 7",
+      "the test-only encoder itemises its blocking findings, because a test has no CLI to run for the reasons"
+    ],
+    "predictions_scored": {
+      "P6_reader_1_executor": {
+        "result": "HELD",
+        "evidence": "PreparedOperands::load prepares a head-bearing whole stack and a headless layer range, refuses a headless whole stack naming `hyper_connection_head`, refuses a layer scale under the topology by name; the topology text is gone from every refusal (the_public_loader_prepares_what_the_witness_proved; a_head_bearing_stack_executes_and_a_headless_whole_stack_is_refused_at_the_executors_door). Sweep effect of this reader: none, as predicted."
+      },
+      "P7_reader_2_report": {
+        "GLM-5.3-Flash": {
+          "result": "HELD",
+          "evidence": "finding `target.execution_surface` still blocks: the topology text ('representable but NOT executable') is REPLACED by 'executable layer by layer, but the component declares no hyper_connection_head object'; the row's count on this reader is 31 -> 31 exactly as forecast. `text_config.mhc` stays Unknown."
+        },
+        "DeepSeek-V4-Flash_and_Pro": {
+          "result": "HELD",
+          "evidence": "unchanged, 31 -> 31 on this reader: the surface is incomplete on norm placement (the base dialect), so the head question is never asked."
+        }
+      },
+      "P8_reader_3_semantics_table": {
+        "GLM-5.3-Flash": {
+          "result": "HELD",
+          "evidence": "text_config.hc_eps / hc_mult / hc_sinkhorn_iters: unrepresented/unsupported_component -> representable/execution_semantic 'carried to `lowered` at Component.execution.residual_topology'. 31 -> 28."
+        },
+        "DeepSeek-V4-Flash_and_Pro": {
+          "result": "FALSIFIED",
+          "evidence": "31 -> 31 each, not 28. The three keys did leave the table and now grade as execution semantics, but their carriage rule's probe reads the BUILT component's residual topology, and DeepSeek's component never builds a surface — its norm-placement dialect gap refuses the surface first (finding 72) — so no component can answer the probe and the finding stays Unrepresented ('rule claims `lowered` ... but no built component answered the probe'). The class changed; the count did not.",
+          "why_the_forecast_was_wrong": "the freeze modelled the three keys as carried by the parser's reading of them into `HyperConnection`. Carriage is read back off the built graph, never off the declaration — the reconnaissance had already recorded that DeepSeek never reaches the topology question because its surface is incomplete, and the prediction should have followed that fact for the keys as it did for the report reader. A prediction about a row whose surface does not build cannot move on a carriage rule. The keys will move on DeepSeek when its base dialect lands, not before."
+        },
+        "Hy4-preview": {
+          "result": "HELD by count, recorded",
+          "evidence": "32 -> 32. Its two keys (`hc_mult`, `hc_eps`, no `hc_sinkhorn_iters`) leave the table and, the surface being refused as an unjudged declaration, grade as execution semantics with no answering component — still blocking, differently worded. No other cached row declares any hc_* key (measured over the 109 cached plans: exactly four do)."
+        }
+      },
+      "P9_reader_4_admission_and_encode": {
+        "result": "HELD",
+        "evidence": "GLM, DeepSeek-V4-Flash, DeepSeek-V4-Pro and Hy4-preview stay inadmissible; the synthetic head-bearing estate is admissible and encodes through the production writer's gate, the headless one is refused with the head's finding itemised (the_production_encode_gate_admits_a_head_bearing_container_and_refuses_a_headless_one; identity.rs version 16 pair)."
+      },
+      "P10_verdicts": {
+        "result": "HELD",
+        "evidence": "GLM-5.3-Flash stays RED (28), both DeepSeek-V4 rows stay AMBER (31), Hy4-preview stays RED (32), Qwen3-0.6B stays at 0 and admissible; only rows declaring hc_* keys can move on these readers, and all four were re-planned. GREEN 41 / AMBER 3 / RED 65 / BUG 0 by construction from the unchanged verdicts."
+      },
+      "P11_fixture_migration_named": {
+        "result": "HELD, plus one unnamed",
+        "evidence": "every named fixture migrated as predicted; plan/tests/semantics.rs::a_key_configuring_an_absent_component_grades_unsupported_and_blocks had pinned `hc_sinkhorn_iters` as unsupported since wave 7 and was not in the freeze's list — it now pins the three keys as execution semantics and `mhc` as unknown."
+      },
+      "derived_sum": "1031 -> 1028 (GLM -3), not the 1022 the freeze derived from P8; the difference is DeepSeek's two rows, whose keys cannot be attested carried until their surface builds. Recorded as derived, not claimed."
+    },
+    "deviations_from_the_frozen_design": [
+      {
+        "what": "`ResidualTopology::unimplemented_reason` is removed, not left returning `None`",
+        "why": "with the executor and the report no longer reading it, a function that answers `None` for every variant is a seam with no reader. The placement's authority (`NormPlacement::unimplemented_reason`) keeps its one reader in the op plan builder; the report's reader of it is removed with the topology's for the same reason, and its doc says a variant returning `Some` must bring the report reader back beside it."
+      },
+      {
+        "what": "the report's dead refusal arm was removed rather than baselined",
+        "why": "the coverage gate first read plan/mod.rs at 89.35% against 90.00: the `Some` arm of the refusal match had no authority left able to reach it. A debt baseline would have recorded dead code as a measurement artefact; removing the arm is the honest form."
+      }
+    ],
+    "observed_while_building": [
+      "an incrementally rebuilt test binary once refused the head-bearing carriage estate at the encode gate with one blocker while the same planner call in the same test reported it admissible three times in a row; the next build passed and both independent builds since (the plain suite and the instrumented coverage run) agree. Recorded, not explained.",
+      "two test processes running at once (the suite and the instrumented run) collided on a fixed-name temp directory in write_kquant's per-expert MoE test (`temp_dir(\"streaming_packed_ref\")`), one reading after the other removed it; solo it passes. Not this branch's code; the gates were re-run in sequence."
+    ],
+    "gates": "fmt clean; clippy -p larql-vindex --all-targets -D warnings clean; clippy -p larql-models clean; cargo check --workspace --all-targets clean; larql-vindex library suite 4173 passed / 0 failed / 7 ignored (run alone); larql-models 796 passed / 0 failed; coverage policy passed (total 93.69% lines, 425 files): vindex3/plan/mod.rs 91.22% (89.35% before the dead refusal arm was removed), plan/carriage.rs 92.22%, plan/semantics.rs 98.97%, encode/mod.rs 90.37%, exec/prepared.rs 93.71%. The re-plan was run twice, the second time on release binaries built from the final code; both gave the same verdicts.",
+    "what_the_lift_does_not_claim": "no DeepSeek base-dialect work (its rows did not move and cannot until their surface builds), no K3-ATTNRES-1 work, no explanation of GLM's `mhc`, no real-payload witness; the CLI still refuses to persist a bundle plane."
   }
 }
