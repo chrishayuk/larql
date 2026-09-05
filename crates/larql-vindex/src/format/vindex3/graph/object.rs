@@ -43,6 +43,27 @@ pub enum ObjectKind {
     /// the same three bare names on a single-stream component stay
     /// unplaced, with the disagreement named.
     HyperConnectionHead,
+    /// The attention-residual EXIT's operand pair
+    /// (`output_attn_res_{norm,proj}`): the reduction that collapses the
+    /// stack's prefix sum and its block-boundary snapshots to the one
+    /// vector the final norm and output head read, on a component whose
+    /// declared residual topology is
+    /// [`ResidualTopology::AttentionResidual`](larql_models::config::ResidualTopology::AttentionResidual).
+    ///
+    /// **One object binding TWO tensors**, which is the whole point of
+    /// it. Before this object existed the `[hidden]` norm was swept into
+    /// the component's [`Self::FinalNorm`] by a generic `norm` name
+    /// fragment — leaving a "single tensor" object holding two — while
+    /// the `[1, hidden]` projection beside it matched no fragment at all
+    /// and stayed unplaced. Byte placement was complete and ownership
+    /// was wrong, and only the op plan's `single(FinalNorm)` check could
+    /// have seen it. The pair belongs to one operation and is owned as
+    /// one thing.
+    ///
+    /// Placed ONLY under the declaration, the hyper-connection head's
+    /// rule: the same two names on a single-stream component stay
+    /// unplaced with the disagreement named.
+    AttentionResidualExit,
 }
 
 impl ObjectKind {
@@ -58,6 +79,7 @@ impl ObjectKind {
             Self::FeatureProjector => "feature_projector",
             Self::ExpertBank => "expert_bank",
             Self::HyperConnectionHead => "hyper_connection_head",
+            Self::AttentionResidualExit => "attention_residual_exit",
         }
     }
 }

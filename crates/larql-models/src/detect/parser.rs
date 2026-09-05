@@ -482,6 +482,14 @@ pub(super) fn parse_model_config(config: &serde_json::Value) -> ModelConfig {
         .map(|v| v as usize);
     let hc_eps = text_config["hc_eps"].as_f64();
 
+    // Attention residuals (Kimi-K3). Same rule as the stream count above
+    // and the same reason: a defaulted block size would snapshot at
+    // different layers than the checkpoint declares, which computes a
+    // different model rather than failing.
+    let attn_res_block_size = text_config["attn_res_block_size"]
+        .as_u64()
+        .map(|v| v as usize);
+
     // Softcapping and attention scale
     let attn_logit_softcapping = text_config["attn_logit_softcapping"].as_f64();
     let final_logit_softcapping = text_config["final_logit_softcapping"].as_f64();
@@ -813,6 +821,7 @@ pub(super) fn parse_model_config(config: &serde_json::Value) -> ModelConfig {
         hc_streams,
         hc_sinkhorn_iters,
         hc_eps,
+        attn_res_block_size,
         attn_output_gate,
         output_gate_type,
         mtp_num_hidden_layers,

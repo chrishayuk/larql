@@ -1361,9 +1361,26 @@ impl PreparedOperands {
     ) -> Result<Self, VindexError> {
         let store = store.into();
         slice.validate(plan)?;
-        // No topology refusal stands here any more (wave 19): the decode
-        // step and the batch traversal both carry a hyper-connected
-        // component's bundle, witnessed against the reference's oracle.
+        // **Refuse before any operand is loaded.** The plan may carry a
+        // residual topology this build cannot traverse. Hyper-connections
+        // are not that any more — wave 19 witnessed the bundle on both
+        // the decode step and the batch traversal — but attention
+        // residuals are: the carrier holds one vector and no snapshot
+        // history, so an attention-residual plan prepared here would run
+        // a K3-shaped model as an ordinary one and produce fluent wrong
+        // output rather than a failure.
+        //
+        // Read from the same authority the plan report refuses on, so a
+        // plan the report calls not executable can never be prepared
+        // here. The authority lifts only when a traversal exists AND an
+        // oracle has judged it.
+        if let Some(reason) = plan.residual_topology.unimplemented_reason() {
+            return Err(VindexError::Parse(format!(
+                "component `{}`: residual topology {:?} is represented and its operands are \
+                 addressed, but this build cannot execute it — {reason}",
+                plan.component, plan.residual_topology
+            )));
+        }
         // What a hyper-connected image still cannot be is said below by
         // name — a whole-stack image with no declared head reduction, a
         // layer scale under the topology — and the plan report reads the
@@ -1402,7 +1419,11 @@ impl PreparedOperands {
         let topology = plan.residual_topology;
         let hyper_connection = match topology {
             ResidualTopology::HyperConnection(hc) => Some(hc),
-            ResidualTopology::SingleStream => None,
+            // Neither of the others is a bundle. An attention-residual
+            // plan never reaches this loader at all — `load` refuses it
+            // above — and the arm answers what is true of the topology
+            // rather than restating that refusal.
+            ResidualTopology::SingleStream | ResidualTopology::AttentionResidual { .. } => None,
         };
 
         // The loaders ask by operand and class; the answer is the pin.
@@ -2018,7 +2039,7 @@ impl PreparedOperands {
     pub(super) fn hyper_connection(&self) -> Option<HyperConnection> {
         match self.topology {
             ResidualTopology::HyperConnection(hc) => Some(hc),
-            ResidualTopology::SingleStream => None,
+            ResidualTopology::SingleStream | ResidualTopology::AttentionResidual { .. } => None,
         }
     }
 

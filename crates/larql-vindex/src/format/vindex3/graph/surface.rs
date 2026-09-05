@@ -561,17 +561,24 @@ pub fn surface_from_resolved(
         // Sinkhorn-free hyper-connection, not a half-written Sinkhorn
         // one. Calling it partial sends the next reader to finish a
         // declaration nothing is missing from.
+        //
+        // The reason is READ, not written here. Since K3-ATTNRES-1 there
+        // are two ways to resolve to nothing — a partial Sinkhorn
+        // declaration, and a checkpoint declaring two whole topologies at
+        // once — and they send a reader to opposite places. A single
+        // hardcoded sentence told the second case to go and find a
+        // missing iteration count. The architecture decided it and its
+        // words travel with the absence.
         residual_topology: match execution.residual_topology {
             Some(topology) => topology,
             None => {
-                return Err(vec![
-                    "residual topology (this build lowers only the Sinkhorn-split \
-                     hyper-connection, which declares hc_mult, hc_sinkhorn_iters and hc_eps \
-                     together; this checkpoint declares them apart. An absent iteration count \
-                     may mean a DIFFERENT topology rather than an incomplete declaration, so \
-                     this build chooses neither)"
-                        .to_string(),
-                ])
+                return Err(vec![format!(
+                    "residual topology ({})",
+                    execution.residual_topology_refusal.as_deref().unwrap_or(
+                        "the declaration resolved to no judged topology, and this inventory \
+                         predates the field that carries why — re-run inspect-hf"
+                    )
+                )])
             }
         },
         mla: execution.mla.map(|m| MlaSurface {

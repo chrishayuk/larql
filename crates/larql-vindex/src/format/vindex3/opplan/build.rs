@@ -24,7 +24,9 @@ use super::super::encode::segment::{read_segment_header, SegmentTensor};
 use super::super::encode::REPRESENTATION_ID_SEP;
 use super::super::graph::policy::LayerOperator;
 use super::super::graph::roles::{
-    classify_hyper_connection_head_tensor, classify_stack_tensor_on, HcHeadOperand,
+    classify_attention_residual_exit_tensor, classify_hyper_connection_head_tensor,
+    classify_stack_tensor_under, is_attention_residual_site_operand, AttentionResidualExitOperand,
+    HcHeadOperand,
 };
 use super::super::graph::surface::LinearAttentionSurface;
 use super::super::graph::surface::Mamba2Surface;
@@ -76,6 +78,27 @@ const HC_ON_MIXER_REQUIRED_BY: &str = "the hyper-connected residual traversal";
 /// The primitive the head's operands imply on a single-stream component.
 const HC_HEAD_ON_SINGLE_STREAM: &str =
     "hyper-connection head reduction (the component declares a single residual stream)";
+/// The primitive an attention-residual site operand implies on a
+/// component that declares no block size, named as
+/// [`ClosureDefect::OperandImpliesAbsentOp`] reports it.
+///
+/// Reported from the tensor's NAME rather than from a role, because the
+/// role vocabulary deliberately refuses to name these spellings without
+/// the declaration — see
+/// [`is_attention_residual_site_operand`](crate::format::vindex3::graph::roles::is_attention_residual_site_operand).
+const ATTN_RES_SITE_WITHOUT_DECLARATION: &str =
+    "attention-residual sites (the component declares no attn_res_block_size, so its residual \
+     is one vector with no snapshot history for a site to read)";
+/// The same operand on a mixer-only or conv-QKV layer: the block has no
+/// attention and FFN sublayers to carry the topology's two sites, and
+/// this build has judged no attention-residual form of one.
+const ATTN_RES_SITE_ON_MIXER_LAYER: &str =
+    "an attention-residual transformer layer (a mixer-only program has no attention and FFN \
+     sublayers to carry the topology's two sites)";
+/// The primitive the exit pair implies on a component that declares no
+/// block size.
+const ATTN_RES_EXIT_WITHOUT_DECLARATION: &str =
+    "attention-residual exit reduction (the component declares no attn_res_block_size)";
 
 /// Build the operation plan for `component_id` from a container's
 /// inspection plus its segment tables. I/O failures are hard errors;
@@ -143,8 +166,20 @@ pub fn plan_component_ops(
     // nothing ever asked.
     let hyper_connection = match surface.residual_topology {
         ResidualTopology::HyperConnection(hc) => Some(hc),
-        ResidualTopology::SingleStream => None,
+        ResidualTopology::SingleStream | ResidualTopology::AttentionResidual { .. } => None,
     };
+    // The attention-residual topology is the same kind of closure
+    // question, and asked here for the same reason: its four per-layer
+    // operands classify ONLY under this declaration, are required on
+    // every transformer layer, and are checked against `[hidden]` and
+    // `[1, hidden]`. What the topology still cannot do is said by name
+    // where traversal starts (`exec::prepared::PreparedOperands::load`,
+    // from `ResidualTopology::unimplemented_reason`) and in the plan
+    // report, from that same authority.
+    let attention_residual = matches!(
+        surface.residual_topology,
+        ResidualTopology::AttentionResidual { .. }
+    );
     if let Some(reason) = placement.unimplemented_reason() {
         return Ok(OpPlanOutcome {
             plan: None,
@@ -210,6 +245,7 @@ pub fn plan_component_ops(
                 | ObjectKind::FinalNorm
                 | ObjectKind::OutputHead
                 | ObjectKind::HyperConnectionHead
+                | ObjectKind::AttentionResidualExit
         ) {
             tables.insert(
                 object.kind,
@@ -400,7 +436,23 @@ pub fn plan_component_ops(
                 .and_then(|(index, _)| index.parse::<usize>().ok())
                 .and_then(|layer| attention_table.get(layer))
                 .map_or(LayerOperator::Softmax, |policy| policy.operator);
-            match classify_stack_tensor_on(&tensor.name, operator) {
+            match classify_stack_tensor_under(&tensor.name, operator, surface.residual_topology) {
+                // An attention-residual site operand on a component that
+                // declares no period is named for what it implies, not
+                // merely reported as unclassified: the estate and the
+                // declaration disagree, and saying which operation the
+                // tensor requires is what tells a reader that from "no
+                // rule has ever judged this spelling". The role
+                // vocabulary itself stays silent — identity is declared,
+                // not inferred from operands — so this is the one place
+                // the bare spelling is recognised.
+                None if is_attention_residual_site_operand(&tensor.name) => {
+                    defects.push(ClosureDefect::OperandImpliesAbsentOp {
+                        object: object.id.clone(),
+                        tensor: tensor.name.clone(),
+                        required_primitive: ATTN_RES_SITE_WITHOUT_DECLARATION.to_string(),
+                    })
+                }
                 None => defects.push(ClosureDefect::UnclassifiedOperand {
                     object: object.id.clone(),
                     tensor: tensor.name.clone(),
@@ -499,6 +551,7 @@ pub fn plan_component_ops(
                 conv_qkv: surface.conv_qkv,
                 v_from_k: policy.v_from_k,
                 hyper_connection: hyper_connection.is_some(),
+                attention_residual,
                 // Which operand family this layer must supply, taken from
                 // the GRAPH's operator. The op below picks its operator
                 // from operand EVIDENCE instead, so the two authorities
@@ -665,6 +718,11 @@ pub fn plan_component_ops(
                     &mut defects,
                 )
             });
+
+    // ── The attention-residual exit ──
+    if let Some((object, tensors)) = tables.get(&ObjectKind::AttentionResidualExit) {
+        attention_residual_exit_closure(object, tensors, attention_residual, hidden, &mut defects);
+    }
 
     if !defects.is_empty() {
         return Ok(OpPlanOutcome {
@@ -1337,6 +1395,84 @@ fn hyper_connection_head_closure(
     Some((object.id.clone(), reduce_fn, base, scale))
 }
 
+/// Closure over the attention-residual exit object: both operands
+/// present exactly once, each classified, each at the pair's geometry,
+/// and the component declaring the topology the exit reduces.
+///
+/// **Nothing is returned to bind.** The pair is owned and addressed at
+/// this transition and no further: there is no traversal to carry the
+/// snapshot history it reduces, and no oracle against which one could be
+/// judged, so binding it into an op would be building the argument list
+/// of an operation that does not exist. What closure gives is the
+/// guarantee that when that operation IS built, the object it reads is
+/// the pair the checkpoint declares and not whatever a name fragment
+/// swept together.
+///
+/// The exit's geometry is a site's — `[hidden]` and `[1, hidden]`,
+/// because it is the same reduction run once over the whole history —
+/// and it is checked here rather than inherited, so a checkpoint storing
+/// something else under these names fails rather than binding.
+fn attention_residual_exit_closure(
+    object: &LogicalObject,
+    tensors: &[SegmentTensor],
+    attention_residual: bool,
+    hidden: usize,
+    defects: &mut Vec<ClosureDefect>,
+) {
+    // The graph only places this object under the declaration, so this
+    // arm states the invariant for a container whose graph was edited
+    // rather than built; it is the operand-level form of the same
+    // disagreement the builder refuses by name.
+    if !attention_residual {
+        for tensor in tensors {
+            defects.push(ClosureDefect::OperandImpliesAbsentOp {
+                object: object.id.clone(),
+                tensor: tensor.name.clone(),
+                required_primitive: ATTN_RES_EXIT_WITHOUT_DECLARATION.to_string(),
+            });
+        }
+        return;
+    }
+    let mut bound: BTreeMap<AttentionResidualExitOperand, SegmentTensor> = BTreeMap::new();
+    for tensor in tensors {
+        let Some(role) = classify_attention_residual_exit_tensor(&tensor.name) else {
+            defects.push(ClosureDefect::UnclassifiedOperand {
+                object: object.id.clone(),
+                tensor: tensor.name.clone(),
+            });
+            continue;
+        };
+        let expected = match role {
+            AttentionResidualExitOperand::Norm => vec![hidden],
+            AttentionResidualExitOperand::Proj => vec![1, hidden],
+        };
+        if !shape_satisfies(&tensor.shape, &expected) {
+            defects.push(ClosureDefect::GeometryMismatch {
+                tensor: format!("{}/{}", object.id, tensor.name),
+                expected,
+                actual: tensor.shape.clone(),
+            });
+        }
+        if bound.insert(role, tensor.clone()).is_some() {
+            defects.push(ClosureDefect::ObjectShape {
+                object: object.id.clone(),
+                detail: format!("two operands claim the exit's {role:?}"),
+            });
+        }
+    }
+    for role in [
+        AttentionResidualExitOperand::Norm,
+        AttentionResidualExitOperand::Proj,
+    ] {
+        if !bound.contains_key(&role) {
+            defects.push(ClosureDefect::ObjectShape {
+                object: object.id.clone(),
+                detail: format!("no operand for the exit's {role:?}"),
+            });
+        }
+    }
+}
+
 /// Tensor table of one object's canonical segment.
 fn object_tensors(
     inspection: &SystemInspection,
@@ -1390,6 +1526,14 @@ struct LayerOps {
     /// every transformer layer must supply its two sites' six operands —
     /// and a single-stream component refuses the same six as strays.
     hyper_connection: bool,
+    /// The component declares the attention-residual topology, so every
+    /// transformer layer must supply its two sites' four operands. A
+    /// component that does not declare it never classifies these
+    /// spellings at all (see
+    /// [`classify_stack_tensor_under`](crate::format::vindex3::graph::roles::classify_stack_tensor_under)),
+    /// so the stray case is caught one step earlier, where the tensor is
+    /// still a name rather than a role.
+    attention_residual: bool,
     /// Which attention-class operator this layer runs.
     ///
     /// The operator itself rather than an `is_recurrent` flag: the two
@@ -1477,6 +1621,19 @@ fn required_roles(ops: &LayerOps) -> Vec<OperandRole> {
             OperandRole::HcFfnMixFn,
             OperandRole::HcFfnBase,
             OperandRole::HcFfnScale,
+        ]);
+    }
+    // Two sites per attention-residual layer, a norm and a projection
+    // each, on EVERY transformer layer of the component — K3 carries all
+    // four on all 93. A layer missing one is not a partially
+    // attention-residual layer; it is a site whose score vector has one
+    // factor, and there is no judged form for that.
+    if ops.attention_residual {
+        roles.extend([
+            OperandRole::AttnResAttentionNorm,
+            OperandRole::AttnResAttentionProj,
+            OperandRole::AttnResMlpNorm,
+            OperandRole::AttnResMlpProj,
         ]);
     }
     if ops.operator.is_kda() {
@@ -1660,6 +1817,22 @@ fn absent_op(role: OperandRole, ops: &LayerOps) -> Option<&'static str> {
             if ops.operator.is_mamba2() || ops.operator.is_conv_qkv() =>
         {
             Some(HC_SITE_ON_MIXER_LAYER)
+        }
+        // The same reasoning for the attention-residual pairs: the
+        // topology names its two sites after the two sublayers a
+        // transformer block has, and a one-sublayer block has neither.
+        // Nothing observed declares this combination; the arm exists so
+        // that if something does, it blocks by name instead of planning a
+        // layer with no sites under a topology that says every layer has
+        // two. There is no single-stream arm beside it — those operands
+        // never become roles without the declaration.
+        OperandRole::AttnResAttentionNorm
+        | OperandRole::AttnResAttentionProj
+        | OperandRole::AttnResMlpNorm
+        | OperandRole::AttnResMlpProj
+            if ops.operator.is_mamba2() || ops.operator.is_conv_qkv() =>
+        {
+            Some(ATTN_RES_SITE_ON_MIXER_LAYER)
         }
         // A mixer-only layer runs neither attention nor an FFN; any
         // transformer-shaped operand on it is a stray, whatever its name.
@@ -1924,6 +2097,16 @@ fn expected_shape(
             )])
         }
         OperandRole::HcAttnScale | OperandRole::HcFfnScale => Some(vec![HC_SCALE_LEN]),
+        // Attention-residual sites. Both contracts close over the
+        // component's width alone — the block size parameterises the
+        // SCHEDULE, not any operand's shape — and the pair's asymmetry is
+        // the contract: a `[hidden]` norm and a `[1, hidden]` projection,
+        // multiplied elementwise into one score vector. `[1, hidden]` is
+        // checked as the two-dimensional shape it is, so a `[hidden]`
+        // tensor stored under the projection's name fails rather than
+        // satisfying it by the one-dimensional broadcast equivalence.
+        OperandRole::AttnResAttentionNorm | OperandRole::AttnResMlpNorm => Some(vec![hidden]),
+        OperandRole::AttnResAttentionProj | OperandRole::AttnResMlpProj => Some(vec![1, hidden]),
         // Mamba2/SSD. Every contract follows from the mixer's own
         // declared geometry closing over the component width; none from
         // the softmax fields, which are zero on a mixer-only stack.
@@ -2222,6 +2405,7 @@ mod tests {
             mamba2: None,
             conv_qkv: None,
             hyper_connection: false,
+            attention_residual: false,
             output_gate: false,
             attention_bias: false,
             sinks: false,
@@ -2563,6 +2747,166 @@ mod tests {
         assert_eq!(
             expected_shape(OperandRole::ExpertDownScales, &g, Some(&m)),
             Some(scales_shape(&m, g.hidden, m.expert_intermediate_size))
+        );
+    }
+
+    // ── Attention residuals (K3-ATTNRES-1) ───────────────────────────
+
+    /// The four site operands are required on every transformer layer of
+    /// a component that declares the period, and on no other component.
+    /// Presence and requirement come from the same flag, so they cannot
+    /// desync — the `required_roles` half of what `absent_op` states
+    /// below.
+    #[test]
+    fn attention_residual_sites_are_required_exactly_under_the_declaration() {
+        let sites = [
+            OperandRole::AttnResAttentionNorm,
+            OperandRole::AttnResAttentionProj,
+            OperandRole::AttnResMlpNorm,
+            OperandRole::AttnResMlpProj,
+        ];
+        let declared = LayerOps {
+            attention_residual: true,
+            ..base_ops()
+        };
+        let required = required_roles(&declared);
+        for role in sites {
+            assert!(required.contains(&role), "{role:?}");
+        }
+        let plain = required_roles(&base_ops());
+        for role in sites {
+            assert!(!plain.contains(&role), "{role:?}");
+        }
+    }
+
+    /// A one-sublayer block under the declaration has no attention and
+    /// FFN sites for the topology's pairs to sit at, and this build has
+    /// judged no attention-residual form of one — so the operands are
+    /// strays there, named for the layer kind they would need. On an
+    /// ordinary transformer layer under the same declaration they are
+    /// consumed.
+    ///
+    /// There is no single-stream arm to test beside this one, and its
+    /// absence is deliberate: without the declaration these spellings
+    /// never become roles at all
+    /// ([`classify_stack_tensor_under`](crate::format::vindex3::graph::roles::classify_stack_tensor_under)),
+    /// so `absent_op` is never asked about them and a guard here would
+    /// be dead.
+    #[test]
+    fn attention_residual_sites_on_a_one_sublayer_block_are_strays() {
+        let sites = [
+            OperandRole::AttnResAttentionNorm,
+            OperandRole::AttnResAttentionProj,
+            OperandRole::AttnResMlpNorm,
+            OperandRole::AttnResMlpProj,
+        ];
+        for operator in [LayerOperator::Mamba2, LayerOperator::ConvQkvAttention] {
+            let mixer = LayerOps {
+                attention_residual: true,
+                operator,
+                ..base_ops()
+            };
+            for role in sites {
+                assert_eq!(
+                    absent_op(role, &mixer),
+                    Some(ATTN_RES_SITE_ON_MIXER_LAYER),
+                    "{role:?} on {operator:?}"
+                );
+            }
+        }
+        let transformer = LayerOps {
+            attention_residual: true,
+            ..base_ops()
+        };
+        for role in sites {
+            assert_eq!(absent_op(role, &transformer), None, "{role:?}");
+        }
+    }
+
+    /// The pair's geometry closes over the component's width alone: the
+    /// declared period parameterises the snapshot SCHEDULE and no
+    /// operand's shape, so nothing here reads it. The asymmetry between
+    /// the two halves is the contract.
+    #[test]
+    fn attention_residual_shapes_close_over_the_width_and_not_the_period() {
+        let g = base_geometry(None);
+        for role in [
+            OperandRole::AttnResAttentionNorm,
+            OperandRole::AttnResMlpNorm,
+        ] {
+            assert_eq!(
+                expected_shape(role, &g, None),
+                Some(vec![g.hidden]),
+                "{role:?}"
+            );
+        }
+        for role in [
+            OperandRole::AttnResAttentionProj,
+            OperandRole::AttnResMlpProj,
+        ] {
+            assert_eq!(
+                expected_shape(role, &g, None),
+                Some(vec![1, g.hidden]),
+                "{role:?}"
+            );
+        }
+    }
+
+    /// The exit's operand-level invariant, stated for a container whose
+    /// graph was edited rather than built: the builder places this object
+    /// only under the declaration, so closure asked about it on a
+    /// single-stream component names what the pair would require instead
+    /// of binding it. Unreachable through the builder, and checked here
+    /// so the refusal is not merely asserted in a comment.
+    #[test]
+    fn the_exit_pair_on_an_undeclared_component_names_what_it_requires() {
+        let object = LogicalObject {
+            id: "target.attention_residual_exit".to_string(),
+            component: "target".to_string(),
+            kind: ObjectKind::AttentionResidualExit,
+            source_bindings: Vec::new(),
+            representations: Vec::new(),
+        };
+        let tensor = |name: &str, shape: Vec<usize>| SegmentTensor {
+            name: name.to_string(),
+            dtype: "BF16".to_string(),
+            shape,
+            offset: 0,
+            len: 0,
+        };
+        let tensors = vec![
+            tensor("output_attn_res_norm.weight", vec![64]),
+            tensor("output_attn_res_proj.weight", vec![1, 64]),
+        ];
+
+        let mut defects = Vec::new();
+        attention_residual_exit_closure(&object, &tensors, false, 64, &mut defects);
+        assert_eq!(defects.len(), 2, "{defects:?}");
+        assert!(
+            defects.iter().all(|d| matches!(
+                d,
+                ClosureDefect::OperandImpliesAbsentOp {
+                    required_primitive,
+                    ..
+                } if required_primitive == ATTN_RES_EXIT_WITHOUT_DECLARATION
+            )),
+            "{defects:?}"
+        );
+
+        // Under the declaration the same pair closes silently.
+        let mut declared = Vec::new();
+        attention_residual_exit_closure(&object, &tensors, true, 64, &mut declared);
+        assert!(declared.is_empty(), "{declared:?}");
+
+        // ...and a half-shipped pair names the missing operand.
+        let mut half = Vec::new();
+        attention_residual_exit_closure(&object, &tensors[..1], true, 64, &mut half);
+        assert!(
+            half.iter().any(|d| matches!(
+                d,
+                ClosureDefect::ObjectShape { detail, .. } if detail.contains("Proj")
+            )),
+            "{half:?}"
         );
     }
 }

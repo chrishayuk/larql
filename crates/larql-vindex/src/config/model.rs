@@ -383,6 +383,13 @@ mod tests {
             "hc_streams",
             "hc_sinkhorn_iters",
             "hc_eps",
+            // Attention residuals, and the same status for a sharper
+            // reason: the VINDEX3 execution surface carries the declared
+            // period (K3-ATTNRES-1) and the executor refuses the topology
+            // by name at preparation, so no vindex-served model can use
+            // it. Persisting the period in the legacy model config would
+            // claim a serving path that refuses.
+            "attn_res_block_size",
             // Multi-head latent attention (DeepSeek V2/V3). No MLA model
             // is served from a vindex yet; serving one without these
             // would silently rebuild the wrong attention geometry.
