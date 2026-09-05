@@ -137,4 +137,15 @@ mod tests {
         assert_eq!(hc.streams(), 4);
         assert!(!hc.is_single_stream());
     }
+
+    /// The mix projection's row count is derived from the stream count,
+    /// never declared beside it: `(2 + hc) * hc`, which for the four
+    /// streams both real checkpoints declare is the 24 rows the wave-17
+    /// oracle and every site operand carry.
+    #[test]
+    fn mix_rows_derive_from_the_stream_count() {
+        assert_eq!(HyperConnectionWeights::mix_rows_for(4), 24);
+        assert_eq!(HyperConnectionWeights::mix_rows_for(1), 3);
+        assert_eq!(HyperConnectionWeights::mix_rows_for(8), 80);
+    }
 }
