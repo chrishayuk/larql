@@ -658,27 +658,6 @@ pub fn plan_component_ops(
         let get = |role: OperandRole| &slot[&role];
         let policy = &attention_table[layer];
         let geometry = layer_geometry(layer);
-        // The two sites, bound iff the component declares the topology.
-        // Closure required all six on every transformer layer, so the
-        // lookups are total here; the mixer arms below never reach this
-        // under the topology (closure refused them as unjudged).
-        let hc_site = |mix_fn: OperandRole, base: OperandRole, scale: OperandRole| HcSiteOp {
-            mix_fn: operand(&stack_id, get(mix_fn)),
-            base: operand(&stack_id, get(base)),
-            scale: operand(&stack_id, get(scale)),
-        };
-        let hyper_connection_sites = hyper_connection.map(|_| HyperConnectionLayerOp {
-            attention: hc_site(
-                OperandRole::HcAttnMixFn,
-                OperandRole::HcAttnBase,
-                OperandRole::HcAttnScale,
-            ),
-            ffn: hc_site(
-                OperandRole::HcFfnMixFn,
-                OperandRole::HcFfnBase,
-                OperandRole::HcFfnScale,
-            ),
-        });
         // A mixer-only layer, on operand evidence: the fused five-way
         // `in_proj` is the discriminator (no other operator's role table
         // can put it in `slot`). Its whole program is the mixer — one
@@ -969,6 +948,31 @@ pub fn plan_component_ops(
         let layer_scale = slot
             .get(&OperandRole::LayerScalar)
             .map(|t| operand(&stack_id, t));
+        // The two sites, bound iff the component declares the topology.
+        // Built HERE, in the transformer arm, and not above the mixer
+        // arms: closure required all six on every transformer layer, so
+        // the lookups are total for this layer kind — and a mixer layer
+        // under the topology never reaches this point, because closure
+        // refused it as unjudged. Binding eagerly for every layer kind
+        // would turn that refusal's absence into an index panic instead
+        // of the named defect.
+        let hc_site = |mix_fn: OperandRole, base: OperandRole, scale: OperandRole| HcSiteOp {
+            mix_fn: operand(&stack_id, get(mix_fn)),
+            base: operand(&stack_id, get(base)),
+            scale: operand(&stack_id, get(scale)),
+        };
+        let hyper_connection_sites = hyper_connection.map(|_| HyperConnectionLayerOp {
+            attention: hc_site(
+                OperandRole::HcAttnMixFn,
+                OperandRole::HcAttnBase,
+                OperandRole::HcAttnScale,
+            ),
+            ffn: hc_site(
+                OperandRole::HcFfnMixFn,
+                OperandRole::HcFfnBase,
+                OperandRole::HcFfnScale,
+            ),
+        });
         let consumed = slot.len() + bank_slot.map_or(0, |b| b.len());
         layers.push(LayerPlan {
             declared_norm_eps: surface.norm.pre.eps,
