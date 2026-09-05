@@ -9,6 +9,7 @@
 //! about *semantics* — plan interpretation, operand binding, norm
 //! placement, RoPE convention, residual order — not shared arithmetic.
 
+mod accounting;
 mod attention_kv_parity;
 mod backend_rows;
 mod bf16_gemv_bench;

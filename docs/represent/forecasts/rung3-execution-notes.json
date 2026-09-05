@@ -94,6 +94,53 @@
    },
    "the_oracle_is_transitional": "The copied boolean ladder in exec/tests/realization.rs is a migration oracle, not the new semantic authority (user, on review). Once 3c establishes independent accounting and 3d real provider inventories, new behaviour may diverge from it deliberately; the test is then narrowed or retired rather than preserving old mistakes.",
    "what_this_closes": "The silent-fallback problem, structurally: all operands selected → all refusals collected → no bytes read unless the complete plan is admissible → exact realization pinned → loaded state verified against the pin. The shared-expert refusal is the operational consequence: LARQL refuses an incomplete CPU computation instead of producing plausible but semantically invalid output."
+  },
+  "3c_trace_and_accounting": {
+   "executed": "2026-09-05",
+   "wording": "Bind the realization declaration AGAINST the census, not INTO it (user). `exec/accounting.rs` keeps two instruments apart: an Expectation is priced from the pin, the codec's declared residency, the executor's own block geometry and the container's RECORDED operand length, and reads no loaded object; an Observed is read off the objects the loader bound, paired operand-by-operand by each loader naming its own fields. `reconcile` holds one against the other. The residency census is a third reading and is checked against the observed sum.",
+   "result": "HELD. Every decisive test the review named is in place and green: same Q6_K pack → one stored footprint (the recorded length) under direct and decode, with different resident/staging/working-set accounting, each reconciled against the object the loader binds; the entropy-coded container's stored bytes are the recorded instance length (≠ 2 × logical elements) and its staging is the f32 image over `logical_elements`; every pin of a prepared dense plan reconciles with exactly one resident object and the census equals the observed sum; a mutated block geometry breaks the reconciliation of exactly the forms it prices (Q8, Q4) and none of the others; a tied head counts once in the stored footprint and once per operation in the execution touch; the selection summary is presentation over structured records (one line per representation × realization × reason, nothing added); a provider that disappears from the registry invalidates the preparation (`ensure_providers_in`, checked at the streaming executor and at session assembly) and preparing against it refuses outright; planned operands × pins × bound objects × ledger correspond exactly — in POSITIONS.",
+   "surfaces": [
+    "`PreparedOperands::bound(plan)`, `expectations(store, geometry)`, `reconcile(plan, store)`, `providers()`, `ensure_providers_in(registry)`, `load_in(.., registry)`; `select_realizations` takes the registry; `RealizationRecord.provider` carries the identity the label resolved to",
+    "`LoadedWeight::padded_allocations()` — the reconciliation is exact for vector-backed forms and tolerates less than one page per page-aligned allocation, never less than declared",
+    "`OperandStore::stored_len` / `OperandSource::stored_len` — the container's recorded length, tensor-table metadata, no payload read",
+    "`DecodeSession::realizations()`; `vindex3 generate` prints `render_selection_summary` beside the residency report",
+    "`resident_profile` now delegates to `accounting::resident_profile_with(format, BlockGeometry::executor())`; the Q8 pricing includes the i16 code sum per block when the executor's weight index is on — the same predicate the loader reads"
+   ],
+   "findings_not_in_the_forecast": [
+    {
+     "id": "3c-N1",
+     "finding": "The ledger's CALLS are not the unit that corresponds to pins: the executor batches a projection's positions differently per site (per position at the attention, all at once in the FFN), and threads them, so a thread-local count sees only a share. POSITIONS are exact: on the dense fixture over three tokens, 15 pinned BlasF32 projections tallied 31 calls, 31 slabs and 43 positions = 14 layer projections × 3 tokens + the head × 1 (the head processes the last position only). `ledger_correspondence` therefore returns the tally per pinned plan and enforces set equality (every pinned plan ran, no unpinned plan ran); the test asserts the positions identity."
+    },
+    {
+     "id": "3c-N2",
+     "finding": "The first reconciliation refused every exact match: the tolerance was written as `resident < declared + allocations × page` with a strict inequality, which is empty for an object with no padded allocation. Fixed to exact equality for vector-backed forms and a half-open page window per aligned allocation. Recorded because a tolerance rule is itself a declaration that needed its own witness."
+    },
+    {
+     "id": "3c-N3",
+     "finding": "The bf16 loader refuses an f32-stored operand rather than converting, so the disagreeing-form witness uses the executor's own Q8 re-quantisation of an f32 source; the F16 device form is exercised as a narrowing of f32 (the only f16 path there is)."
+    },
+    {
+     "id": "3c-N4",
+     "finding": "The widened-f32 staging arena (exec/weights/staged.rs, from PR #420) is a process singleton initialised through OnceLock::get_or_init behind a bare `get()` check, and its file was named by process id alone: two threads widening at once both found the arena unset, both tried `create_new` on the same `larql-f32-stage-<pid>.bin`, and the second failed with `File exists`. Reproduced in a PLAIN full run (routed::router_and_expert_operands_are_load_bearing), not only under instrumentation — so the earlier unnamed flake almost certainly had this cause. Fixed by a per-open serial in the file name (the loser's file is unlinked on open as before). Recorded because the kept log is what named it; the earlier filtered run could not."
+    },
+    {
+     "id": "3c-N5",
+     "finding": "The projection ledger is process-global, and every test that executes a plan lands in it, so the exact four-way correspondence is only observable in a process that runs nothing else. The witness re-launches the test binary on itself with a marker (`LARQL_LEDGER_WITNESS`, `--exact`, `--test-threads=1`) and asserts in the child; `#[serial]` was insufficient because non-serial tests keep executing. The library check (`ledger_correspondence`) is the production instrument and is unaffected."
+    },
+    {
+     "id": "3c-N6",
+     "finding": "The Gemma-4 miniature binds layer 3's key projection tensor as BOTH its key and its value projection, and ties its head to the embedding table. The first reconciliation refused the repeat as 'expected twice'. The pairing now matches by COUNT per (operand, operation, layer) instance: two expectations meet two objects. Consequence made visible: the CPU loader holds the aliased projection resident TWICE — one stored operand, two operation instances, two f32 images — which the stored footprint counts once and the execution touch and residency count twice, exactly as the tied head is counted. A shared-object realization (bind once, reference twice) is a missing CPU realization for 3d's inventory, beside the shared expert."
+    }
+   ],
+   "gates": {
+    "affected_suites": "accounting + planned_bank + kquant_projection: 38 tests green; opplan: 656 green in the parallel run",
+    "full_crate": "cargo test -p larql-vindex on the final tree: 4193 lib tests passed, 0 failed, 7 ignored (pre-existing); every integration binary green; the log was kept in full",
+    "workspace_check": "cargo check --workspace --all-targets: green",
+    "clippy": "clean on rustc 1.98, --all-targets -D warnings",
+    "fmt": "clean, run last",
+    "coverage": "policy passed on the final tree: 93.77% total over 429 files; accounting.rs 94.14%, realization.rs 99.16%, prepared.rs 90.69% (back above the floor after the pairing and provider witnesses were added — it had slipped to 89.23% on a debt baseline), weights/staged.rs 91.67%; no debt entry added; the instrumented test phase ran clean with its log kept",
+    "docs": "check_doc_links.py + check_doc_references.py --strict: green"
+   }
   }
  }
 }

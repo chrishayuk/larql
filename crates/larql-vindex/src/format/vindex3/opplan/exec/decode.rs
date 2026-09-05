@@ -164,6 +164,9 @@ impl<'a, B: PlanBackend> DecodeSession<'a, B> {
         backend: &'a B,
         mut kv: KvSlot<'a>,
     ) -> Result<Self, VindexError> {
+        ops.get().ensure_providers_in(
+            crate::format::vindex3::represent::codec::CodecRegistry::builtin(),
+        )?;
         // The FULL continuation geometry, KV and recurrent alike.
         // `plan_kv_geometry` is the KV-only adapter and refuses a hybrid
         // plan; a session over one needs both forms announced.
@@ -182,6 +185,12 @@ impl<'a, B: PlanBackend> DecodeSession<'a, B> {
     /// representation — see [`PreparedOperands::residency_census`].
     pub fn residency_census(&self) -> super::prepared::ResidencyCensus {
         self.ops.get().residency_census()
+    }
+
+    /// The realization pinned for every operand this session executes,
+    /// with its candidates, reason and declared residency.
+    pub fn realizations(&self) -> &[super::realization::RealizationRecord] {
+        self.ops.get().realizations()
     }
 
     /// Where this session's operand allocations landed.

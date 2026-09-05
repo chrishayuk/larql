@@ -52,6 +52,14 @@ pub(super) fn run_generate<B: PlanBackend>(
     eprintln!("weights resident in {load_seconds:.1} s");
     report_residency(&session.residency_census());
     report_allocations(&session.allocation_census());
+    // What was pinned, from the structured records; the rendering is
+    // presentation only.
+    eprint!(
+        "{}",
+        larql_vindex::format::vindex3::opplan::exec::accounting::render_selection_summary(
+            session.realizations()
+        )
+    );
 
     let mut emitted = 0usize;
     let decoded = greedy_decode(&mut session, prompt, new_tokens, &mut |id, value| {

@@ -18,6 +18,7 @@
 //! after the FFN residual add) so parity can compare layer by layer
 //! against a checkpoint-driven oracle.
 
+pub mod accounting;
 pub mod backend;
 pub mod continuation;
 pub mod conv_qkv;
@@ -59,6 +60,7 @@ pub mod weights;
 #[cfg(test)]
 mod tests;
 
+use crate::format::vindex3::represent::codec::CodecRegistry;
 use larql_models::config::GateSource;
 
 use super::{AttentionOp, ComponentOpPlan, LayerPlan};
@@ -242,6 +244,9 @@ pub fn execute_prepared_streaming<B: PlanBackend + ?Sized>(
     resume: Option<ResumePoint>,
     sink: &mut dyn FnMut(PlaneEvent) -> Result<(), VindexError>,
 ) -> Result<FinalOutput, VindexError> {
+    // A pin whose provider has gone or changed invalidates the image;
+    // nothing here falls back to another realization.
+    ops.ensure_providers_in(CodecRegistry::builtin())?;
     // A one-shot forward owns whatever continuation state the plan needs.
     //
     // For a wholly-softmax stack that is nothing: `None` keeps the
@@ -989,6 +994,20 @@ impl AttentionOperands {
     /// Every matrix operand this attention holds, for residency
     /// preparation.
     /// Every matrix operand, for residency accounting.
+    /// Each matrix paired with the operand it binds, field by field.
+    pub(super) fn bound<'a>(&'a self, op: &'a AttentionOp) -> Vec<accounting::Bound<'a>> {
+        let mut out = vec![
+            accounting::Bound::one(&op.q, &self.w_q),
+            accounting::Bound::one(&op.k, &self.w_k),
+            accounting::Bound::one(&op.v, &self.w_v),
+            accounting::Bound::one(&op.o, &self.w_o),
+        ];
+        if let (Some(gate), Some(weight)) = (&op.output_gate, &self.gate) {
+            out.push(accounting::Bound::one(&gate.projection, weight));
+        }
+        out
+    }
+
     pub(super) fn loaded_matrices(&self) -> Vec<&LoadedWeight> {
         let mut all = vec![&self.w_q, &self.w_k, &self.w_v, &self.w_o];
         if let Some(gate) = &self.gate {

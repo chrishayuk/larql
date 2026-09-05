@@ -45,6 +45,9 @@
 //! seam the decoupled surfaces grow from, and preparation refuses a
 //! slice the plan cannot satisfy rather than silently preparing less.
 
+use super::accounting::{
+    expectations, reconcile, BlockGeometry, Bound, Expectation, Observed, Reconciliation,
+};
 use super::backend::{MatrixClass, NormCall, PlanBackend, WeightFormat, WeightSlice};
 use super::experts::FfnOperands;
 use super::operands::{OperandSource, SourceStamp};
@@ -53,9 +56,13 @@ use super::weights::{load_weight, LoadedWeight};
 use super::AttentionOperands;
 use crate::error::VindexError;
 use crate::format::vindex3::opplan::planned::Operation;
+use crate::format::vindex3::represent::codec::CodecRegistry;
+use crate::format::vindex3::represent::nvfp4_pack::CodecIdentity;
 
+use super::super::conv_qkv::ConvQkvOp;
 use super::super::{
-    ComponentOpPlan, GatedDeltaOp, LayerAttention, Mamba2Op, NormOp, OperandRef, OutputOp,
+    ComponentOpPlan, GatedDeltaOp, KdaOp, LayerAttention, LayerFfn, Mamba2Op, MlaOp, NormOp,
+    OperandRef, OutputOp,
 };
 
 /// Which part of a component's program to prepare.
@@ -225,6 +232,28 @@ pub(super) enum PreparedAttention {
 }
 
 impl PreparedAttention {
+    /// Every bound operand, paired by the loader that bound it — refusing
+    /// a plan whose attention is a different program from the prepared one.
+    pub(super) fn bound<'a>(
+        &'a self,
+        attention: &'a LayerAttention,
+    ) -> Result<Vec<Bound<'a>>, VindexError> {
+        Ok(match (self, attention) {
+            (Self::Softmax(ops), LayerAttention::Softmax(op)) => ops.bound(op),
+            (Self::GatedDelta(ops), LayerAttention::GatedDelta(op)) => ops.bound(op),
+            (Self::Mamba2(ops), LayerAttention::Mamba2(op)) => ops.bound(op),
+            (Self::ConvQkv(ops), LayerAttention::ConvQkv(op)) => ops.bound(op),
+            (Self::Kda(ops), LayerAttention::Kda(op)) => ops.bound(op),
+            (Self::Mla(ops), LayerAttention::Mla(op)) => ops.bound(op),
+            _ => {
+                return Err(VindexError::Parse(
+                    "the prepared attention and the plan's attention are different programs"
+                        .to_string(),
+                ))
+            }
+        })
+    }
+
     /// Every matrix this attention holds resident — what a pinned
     /// projection realization is checked against.
     pub(super) fn matrices(&self) -> Vec<&LoadedWeight> {
@@ -276,6 +305,16 @@ pub(super) struct GatedDeltaOperands {
 }
 
 impl GatedDeltaOperands {
+    pub(super) fn bound<'a>(&'a self, op: &'a GatedDeltaOp) -> Vec<Bound<'a>> {
+        vec![
+            Bound::one(&op.in_proj_qkv, &self.in_proj_qkv),
+            Bound::one(&op.in_proj_a, &self.in_proj_a),
+            Bound::one(&op.in_proj_b, &self.in_proj_b),
+            Bound::one(&op.in_proj_z, &self.in_proj_z),
+            Bound::one(&op.out_proj, &self.out_proj),
+        ]
+    }
+
     fn load(
         op: &GatedDeltaOp,
         store: OperandSource<'_>,
@@ -363,6 +402,13 @@ pub(super) struct Mamba2Operands {
 }
 
 impl Mamba2Operands {
+    pub(super) fn bound<'a>(&'a self, op: &'a Mamba2Op) -> Vec<Bound<'a>> {
+        vec![
+            Bound::one(&op.in_proj, &self.in_proj),
+            Bound::one(&op.out_proj, &self.out_proj),
+        ]
+    }
+
     fn load(
         op: &Mamba2Op,
         store: OperandSource<'_>,
@@ -434,6 +480,13 @@ pub(super) struct ConvQkvOperands {
 }
 
 impl ConvQkvOperands {
+    pub(super) fn bound<'a>(&'a self, op: &'a ConvQkvOp) -> Vec<Bound<'a>> {
+        vec![
+            Bound::one(&op.in_proj, &self.in_proj),
+            Bound::one(&op.out_proj, &self.out_proj),
+        ]
+    }
+
     fn load(
         op: &super::super::conv_qkv::ConvQkvOp,
         store: OperandSource<'_>,
@@ -505,6 +558,15 @@ pub(super) struct KdaOperands {
 }
 
 impl KdaOperands {
+    pub(super) fn bound<'a>(&'a self, op: &'a KdaOp) -> Vec<Bound<'a>> {
+        vec![
+            Bound::one(&op.q_proj, &self.q_proj),
+            Bound::one(&op.k_proj, &self.k_proj),
+            Bound::one(&op.v_proj, &self.v_proj),
+            Bound::one(&op.out_proj, &self.o_proj),
+        ]
+    }
+
     fn load(
         op: &super::super::KdaOp,
         store: OperandSource<'_>,
@@ -604,6 +666,15 @@ pub(super) struct MlaOperands {
 }
 
 impl MlaOperands {
+    pub(super) fn bound<'a>(&'a self, op: &'a MlaOp) -> Vec<Bound<'a>> {
+        vec![
+            Bound::one(&op.q_proj, &self.q_proj),
+            Bound::one(&op.kv_a_proj, &self.kv_a_proj),
+            Bound::one(&op.kv_b_proj, &self.kv_b_proj),
+            Bound::one(&op.out_proj, &self.o_proj),
+        ]
+    }
+
     fn load(
         op: &super::super::MlaOp,
         store: OperandSource<'_>,
@@ -701,6 +772,7 @@ pub fn select_realizations<B: PlanBackend + ?Sized>(
     store: OperandSource<'_>,
     backend: &B,
     slice: &ExecutionSlice,
+    registry: &CodecRegistry,
 ) -> Result<Vec<RealizationRecord>, VindexError> {
     let whole = slice.is_whole_stack();
     let range = slice.layers(plan);
@@ -717,13 +789,15 @@ pub fn select_realizations<B: PlanBackend + ?Sized>(
         let Some(label) = store.store().stored_dtype(&planned.operand) else {
             continue;
         };
-        let mut facts = RepresentationFacts::resolve(label);
+        let mut facts = RepresentationFacts::resolve_in(registry, label);
         if store.is_overridden(&planned.operand) {
             facts = facts.overlaid();
         }
+        let provider = facts.registered.as_ref().map(|r| r.identity.clone());
         match backend.select(&planned, &facts) {
             Ok(selection) => records.push(RealizationRecord {
                 representation: label.to_string(),
+                provider,
                 planned,
                 selection,
             }),
@@ -819,6 +893,20 @@ impl PreparedOperands {
         backend: &B,
         slice: ExecutionSlice,
     ) -> Result<Self, VindexError> {
+        Self::load_in(plan, store, backend, slice, CodecRegistry::builtin())
+    }
+
+    /// [`Self::load`] with the codec registry named: the providers the
+    /// selection resolves against. A scratch registry is how a test
+    /// prepares against codecs this build does not ship, and how a
+    /// provider that later disappears is witnessed.
+    pub fn load_in<'s, B: PlanBackend + ?Sized>(
+        plan: &ComponentOpPlan,
+        store: impl Into<OperandSource<'s>>,
+        backend: &B,
+        slice: ExecutionSlice,
+        registry: &CodecRegistry,
+    ) -> Result<Self, VindexError> {
         let store = store.into();
         slice.validate(plan)?;
         // **Refuse before any operand is loaded.** The plan may carry a
@@ -842,7 +930,7 @@ impl PreparedOperands {
         // this slice executes is resolved against the registry, admitted,
         // and pinned to one realization — or the whole plan is refused
         // with every reason — before a byte of any of them is read.
-        let realizations = select_realizations(plan, store, backend, &slice)?;
+        let realizations = select_realizations(plan, store, backend, &slice, registry)?;
         let embedding = plan.embedding.as_ref().ok_or_else(|| {
             VindexError::Parse(format!(
                 "component `{}` has no embedding op — external hidden-state input is a later rung",
@@ -1106,6 +1194,121 @@ impl PreparedOperands {
         let resident = observed(self.output.iter().map(|(_, w)| w).collect());
         if head != resident {
             return Err(mismatch("output head".to_string(), head, resident));
+        }
+        Ok(())
+    }
+
+    /// Every planned operand paired with the object(s) the loader bound
+    /// for it — the OBSERVATION side of the accounting, read off the
+    /// resident objects and never off a declaration.
+    pub fn bound(&self, plan: &ComponentOpPlan) -> Result<Vec<Observed>, VindexError> {
+        let mut out = Vec::new();
+        if let (Some(embedding), Some(table)) = (&plan.embedding, &self.embed_table) {
+            out.push(Observed {
+                operand: embedding.table.clone(),
+                operation: Operation::Embed,
+                layer: None,
+                format: WeightFormat::F32,
+                resident_bytes: std::mem::size_of_val(&table[..]) as u64,
+                allocations: 0,
+            });
+        }
+        for (offset, prepared) in self.layers.iter().enumerate() {
+            let index = self.first_layer + offset;
+            let layer = plan.layers.get(index).ok_or_else(|| {
+                VindexError::Parse(format!("layer {index}: prepared but not in the plan"))
+            })?;
+            for bound in prepared.attention.bound(&layer.attention)? {
+                out.push(bound.observed(
+                    Operation::Project(MatrixClass::AttentionProjection),
+                    Some(index),
+                )?);
+            }
+            if let (Some(ffn), Some(op)) = (&prepared.ffn, &layer.ffn) {
+                for bound in ffn.bound(op)? {
+                    let operation = match op {
+                        LayerFfn::Routed(_) => Operation::ExpertBankSlice,
+                        LayerFfn::Dense(_) => Operation::Project(MatrixClass::FfnProjection),
+                        // A hybrid binds its dense projections one each
+                        // and its banks over their experts; the pairing
+                        // says which by how many objects it holds.
+                        LayerFfn::Hybrid(_) => {
+                            if bound.weights.len() == 1 {
+                                Operation::Project(MatrixClass::FfnProjection)
+                            } else {
+                                Operation::ExpertBankSlice
+                            }
+                        }
+                    };
+                    out.push(bound.observed(operation, Some(index))?);
+                }
+            }
+        }
+        if let Some((op, weight)) = &self.output {
+            out.push(Bound::one(&op.projection, weight).observed(Operation::OutputHead, None)?);
+        }
+        Ok(out)
+    }
+
+    /// What every pinned realization DECLARES it costs, priced from the
+    /// pin, the codec's declared residency, `geometry`, and the container's
+    /// recorded lengths — the EXPECTATION side, which reads no object.
+    pub fn expectations(
+        &self,
+        store: OperandSource<'_>,
+        geometry: BlockGeometry,
+    ) -> Vec<Expectation> {
+        expectations(&self.realizations, |op| store.stored_len(op), geometry)
+    }
+
+    /// Bind the declarations AGAINST the observations: every pin meets
+    /// exactly one resident object in the pinned representation holding
+    /// the declared bytes, and nothing resident is unpinned.
+    pub fn reconcile(
+        &self,
+        plan: &ComponentOpPlan,
+        store: OperandSource<'_>,
+    ) -> Result<Reconciliation, VindexError> {
+        reconcile(
+            &self.expectations(store, BlockGeometry::executor()),
+            &self.bound(plan)?,
+        )
+    }
+
+    /// The providers this image was prepared against, by stored label,
+    /// with the identity each resolved to (`None` for a label no codec
+    /// claims — a dialect the loader judged itself).
+    pub fn providers(&self) -> Vec<(String, Option<CodecIdentity>)> {
+        let mut out: Vec<(String, Option<CodecIdentity>)> = Vec::new();
+        for r in &self.realizations {
+            if !out.iter().any(|(label, _)| *label == r.representation) {
+                out.push((r.representation.clone(), r.provider.clone()));
+            }
+        }
+        out
+    }
+
+    /// Refuse to execute this image against a registry that no longer
+    /// resolves every provider it was prepared with to the same identity
+    /// — a provider that disappeared or changed invalidates the
+    /// preparation; nothing falls back.
+    pub fn ensure_providers_in(&self, registry: &CodecRegistry) -> Result<(), VindexError> {
+        let describe = |identity: &Option<CodecIdentity>| {
+            identity
+                .as_ref()
+                .map(|i| format!("{} r{}", i.family, i.revision))
+                .unwrap_or_else(|| "no registered codec".to_string())
+        };
+        for (label, prepared) in self.providers() {
+            let now = registry.by_label(&label).map(|c| c.identity());
+            if now != prepared {
+                return Err(VindexError::Parse(format!(
+                    "representation `{label}` was prepared against {} and the registry now \
+                     offers {}; re-prepare rather than execute a pin whose provider changed",
+                    describe(&prepared),
+                    describe(&now)
+                )));
+            }
         }
         Ok(())
     }

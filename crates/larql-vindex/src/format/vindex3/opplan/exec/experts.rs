@@ -13,6 +13,7 @@
 use larql_models::config::ExpertFormat;
 use larql_models::quant::mxfp4::{dequantize_expert, MXFP4_GROUP_BYTES, MXFP4_GROUP_ELEMS};
 
+use super::accounting::Bound;
 use super::backend::{FfnCall, NormCall, RoutedFfnCall, WeightFormat, WeightSlice};
 use super::narrow::{bf16_bytes_to_f16, f32_bytes_to_f16};
 use super::operands::{widen, OperandSource};
@@ -112,6 +113,23 @@ impl FfnOperands {
                 post_dense_norm: LoadedNormWeight::load(&op.post_dense_norm, store)?,
                 post_experts_norm: LoadedNormWeight::load(&op.post_experts_norm, store)?,
             }))),
+        }
+    }
+
+    /// Every bound operand of this FFN: the dense projections one each,
+    /// a packed bank as one operand over its per-expert objects.
+    pub(super) fn bound<'a>(&'a self, ffn: &'a LayerFfn) -> Result<Vec<Bound<'a>>, VindexError> {
+        match (self, ffn) {
+            (Self::Dense(d), LayerFfn::Dense(op)) => Ok(d.bound(op)),
+            (Self::Routed(r), LayerFfn::Routed(op)) => Ok(r.bound(op)),
+            (Self::Hybrid(h), LayerFfn::Hybrid(op)) => {
+                let mut out = h.dense.bound(&op.dense);
+                out.extend(h.routed.bound(&op.routed));
+                Ok(out)
+            }
+            _ => Err(VindexError::Parse(
+                "the prepared FFN and the plan's FFN are different programs".to_string(),
+            )),
         }
     }
 
@@ -264,6 +282,17 @@ impl DenseOperands {
         })
     }
 
+    /// Each projection paired with the operand it binds.
+    pub(super) fn bound<'a>(&'a self, op: &'a FfnOp) -> Vec<Bound<'a>> {
+        let mut out = Vec::new();
+        if let (Some(gate), Some(weight)) = (&op.gate, &self.gate) {
+            out.push(Bound::one(gate, weight));
+        }
+        out.push(Bound::one(&op.up, &self.up));
+        out.push(Bound::one(&op.down, &self.down));
+        out
+    }
+
     pub(super) fn loaded_matrices(&self) -> Vec<&LoadedWeight> {
         let mut all = vec![&self.up, &self.down];
         if let Some(gate) = &self.gate {
@@ -320,6 +349,24 @@ impl DenseOperands {
 }
 
 impl RoutedOperands {
+    /// The two banks, each one operand over its per-expert objects. A
+    /// per-expert bank is refused before it is loaded, so it binds nothing.
+    pub(super) fn bound<'a>(&'a self, op: &'a RoutedFfnOp) -> Vec<Bound<'a>> {
+        match &op.bank {
+            ExpertBank::Packed { gate_up, down } => vec![
+                Bound {
+                    operand: &gate_up.weights,
+                    weights: self.gate_up.iter().collect(),
+                },
+                Bound {
+                    operand: &down.weights,
+                    weights: self.down.iter().collect(),
+                },
+            ],
+            ExpertBank::PerExpert { .. } => Vec::new(),
+        }
+    }
+
     /// Every expert matrix, for residency accounting. The router itself
     /// is f32 glue and is counted with the norms.
     fn loaded_matrices(&self) -> Vec<&LoadedWeight> {

@@ -189,3 +189,137 @@ fn a_plan_with_a_shared_expert_is_refused_before_any_byte_is_read() {
         "refused before any byte was read"
     );
 }
+
+/// Rung 3c over the routed miniature: two bank pins reconcile with the
+/// per-expert objects the loader bound (one operand, `EXPERTS` objects),
+/// and the bank's declared residency is the widened image.
+#[test]
+fn a_packed_bank_s_pin_reconciles_with_its_per_expert_objects() {
+    use crate::format::vindex3::opplan::exec::accounting::BlockGeometry;
+    use crate::format::vindex3::opplan::exec::backend::WeightFormat;
+    let fixture = routed_fixture();
+    let ops = PreparedOperands::load(
+        &fixture.plan,
+        &fixture.store,
+        &ProductionBackend::new(),
+        ExecutionSlice::Full,
+    )
+    .unwrap();
+    let done = ops
+        .reconcile(&fixture.plan, (&fixture.store).into())
+        .unwrap();
+    assert_eq!(done.matched, ops.realizations().len());
+    let observed = ops.bound(&fixture.plan).unwrap();
+    let banks: Vec<_> = observed
+        .iter()
+        .filter(|o| o.operation == Operation::ExpertBankSlice)
+        .collect();
+    assert!(!banks.is_empty());
+    for bank in &banks {
+        assert_eq!(bank.format, WeightFormat::F32);
+        assert_eq!(bank.allocations, 0, "widened experts are exact vectors");
+    }
+    let expected = ops.expectations((&fixture.store).into(), BlockGeometry::executor());
+    for e in expected
+        .iter()
+        .filter(|e| e.operation == Operation::ExpertBankSlice)
+    {
+        assert_eq!(
+            e.declared_resident,
+            e.logical_elements as u64 * F32_WIDTH as u64
+        );
+        assert_eq!(
+            e.staging, 0,
+            "the bank is widened per expert straight into residency"
+        );
+        assert!(
+            e.stored_bytes > 0 && e.stored_bytes < e.declared_resident,
+            "an MXFP4 bank is stored compact"
+        );
+    }
+}
+
+/// Rung 3c: a bank stored under a dialect no codec claims is prepared
+/// with no provider; a registry that later claims the label is a changed
+/// provider, and the image is invalidated rather than executed. And a
+/// plan whose FFN is a different program from the prepared one is refused
+/// by the pairing.
+#[test]
+fn an_unregistered_dialect_that_gains_a_provider_invalidates_the_preparation() {
+    use super::super::accounting::ProviderStub;
+    use crate::format::vindex3::opplan::exec::operands::OperandStore;
+    use crate::format::vindex3::represent::codec::CodecRegistry;
+    let fixture = routed_fixture();
+    let ops = PreparedOperands::load(
+        &fixture.plan,
+        &fixture.store,
+        &ProductionBackend::new(),
+        ExecutionSlice::Full,
+    )
+    .unwrap();
+    let providers = ops.providers();
+    let u8 = providers
+        .iter()
+        .find(|(label, _)| label == "U8")
+        .expect("the MXFP4 bank is stored as U8");
+    assert!(u8.1.is_none(), "no codec claims the dialect");
+    ops.ensure_providers_in(CodecRegistry::builtin()).unwrap();
+    // Every shipped codec, so the only change is the dialect gaining a
+    // claimant; a registry with just the stub would mismatch on F32 first.
+    use crate::format::vindex3::represent::codec::codecs::{
+        bf16_zlib, float, kquant, mxfp4, nvfp4,
+    };
+    let claimed = CodecRegistry::new()
+        .register(Box::new(float::BF16))
+        .and_then(|r| r.register(Box::new(float::F16)))
+        .and_then(|r| r.register(Box::new(float::F32)))
+        .and_then(|r| r.register(Box::new(kquant::Q4_K)))
+        .and_then(|r| r.register(Box::new(kquant::Q6_K)))
+        .and_then(|r| r.register(Box::new(kquant::Q8_0)))
+        .and_then(|r| r.register(Box::new(nvfp4::NVFP4)))
+        .and_then(|r| r.register(Box::new(mxfp4::MXFP4)))
+        .and_then(|r| r.register(Box::new(bf16_zlib::BF16_ZLIB)))
+        .and_then(|r| r.register(Box::new(ProviderStub { label: "U8" })))
+        .unwrap();
+    let err = ops.ensure_providers_in(&claimed).unwrap_err().to_string();
+    assert!(
+        err.contains("`U8`") && err.contains("no registered codec") && err.contains("stub-U8 r7"),
+        "{err}"
+    );
+
+    // The dense fixture's prepared image, held against this routed plan:
+    // same attention program, different FFN program.
+    let dense = {
+        let src = tempfile::tempdir().unwrap();
+        let container = tempfile::tempdir().unwrap();
+        crate::format::vindex3::fixtures::encode_fixture_container(
+            crate::format::vindex3::fixtures::dense_f32_model,
+            src.path(),
+            container.path(),
+            "dense",
+        );
+        let inspection =
+            crate::format::vindex3::inspect::inspect_container(container.path(), false).unwrap();
+        let plan = crate::format::vindex3::opplan::plan_component_ops(
+            &inspection,
+            container.path(),
+            "target",
+        )
+        .unwrap()
+        .plan
+        .unwrap();
+        let store = OperandStore::open(container.path(), &inspection).unwrap();
+        (src, container, plan, store)
+    };
+    let dense_ops = PreparedOperands::load(
+        &dense.2,
+        &dense.3,
+        &ProductionBackend::new(),
+        ExecutionSlice::Full,
+    )
+    .unwrap();
+    let mut mixed = dense.2.clone();
+    mixed.layers[0].ffn = Some(LayerFfn::Routed(Box::new(fixture.op.clone())));
+    let err = dense_ops.bound(&mixed).unwrap_err().to_string();
+    assert!(err.contains("different programs"), "{err}");
+}

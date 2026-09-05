@@ -22,21 +22,13 @@ use std::fmt;
 
 use super::backend::{MatrixClass, WeightFormat};
 use super::cpu::physical::PhysicalProjectionPlan;
-use super::quantise::{Q4_BLOCK, Q8_BLOCK};
 use crate::format::vindex3::opplan::planned::{Operation, PlannedOperand};
 use crate::format::vindex3::opplan::OperandRef;
 use crate::format::vindex3::represent::codec::{
     Acceleration, AccelerationBackend, CodecCapabilities, CodecError, CodecRegistry,
-    RepresentationCodec, RequiredAccess, ResidencyClass, ResidencyProfile,
+    RepresentationCodec, RequiredAccess, ResidencyProfile,
 };
 use crate::format::vindex3::represent::nvfp4_pack::CodecIdentity;
-
-/// Width of the canonical decode target.
-const F32_WIDTH: f64 = std::mem::size_of::<f32>() as f64;
-/// Width of a half-precision resident element.
-const HALF_WIDTH: f64 = std::mem::size_of::<u16>() as f64;
-/// Bits in a byte, for the stored-bit pricings below.
-const BITS_PER_BYTE: f64 = 8.0;
 
 /// What the registry declares for one stored dtype — resolved once per
 /// operand at preparation, and the only thing a backend is told about the
@@ -233,36 +225,10 @@ impl RealizationId {
 }
 
 /// What the executor makes resident for `format`, priced from its own
-/// resident forms: a widened image is f32 per weight; a re-quantised image
-/// is its codes plus one f32 scale per block; a device's half-precision
-/// image is two bytes per weight and, being rounded from the source, is a
-/// re-quantisation; a compact pack bound as stored is its stored bits.
-///
-/// Rung 3c binds these into the census and checks them against what the
-/// loader actually holds.
+/// block geometry — see [`super::accounting::resident_profile_with`],
+/// which is the one definition; this is it under the executor's constants.
 pub fn resident_profile(format: WeightFormat) -> ResidencyProfile {
-    match format {
-        WeightFormat::F32 => ResidencyProfile::DECODED_F32,
-        WeightFormat::Bf16 => ResidencyProfile::rebound(HALF_WIDTH * BITS_PER_BYTE),
-        WeightFormat::F16 => ResidencyProfile {
-            class: ResidencyClass::TransientRequantised,
-            bytes_per_weight: HALF_WIDTH,
-        },
-        WeightFormat::Q8 => ResidencyProfile {
-            class: ResidencyClass::TransientRequantised,
-            bytes_per_weight: 1.0 + F32_WIDTH / Q8_BLOCK as f64,
-        },
-        WeightFormat::Q4 => ResidencyProfile {
-            class: ResidencyClass::TransientRequantised,
-            bytes_per_weight: 0.5 + F32_WIDTH / Q4_BLOCK as f64,
-        },
-        WeightFormat::Nvfp4 => ResidencyProfile::rebound(4.5),
-        WeightFormat::Mxfp4 => ResidencyProfile::stored(4.25),
-        // Three codecs share the resident form; the bound operand carries
-        // which, so the profile is the widest of them until 3c reads it
-        // off the record's own codec declaration.
-        WeightFormat::KQuant => ResidencyProfile::stored(8.5),
-    }
+    super::accounting::resident_profile_with(format, super::accounting::BlockGeometry::executor())
 }
 
 /// Why a backend chose what it chose.
@@ -400,6 +366,9 @@ impl fmt::Display for SelectionRefusals {
 pub struct RealizationRecord {
     pub planned: PlannedOperand,
     pub representation: String,
+    /// The identity the stored label resolved to at preparation; `None`
+    /// for a label no codec claims.
+    pub provider: Option<CodecIdentity>,
     pub selection: Selection,
 }
 

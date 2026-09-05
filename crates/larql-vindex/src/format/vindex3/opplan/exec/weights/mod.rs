@@ -259,6 +259,19 @@ impl LoadedWeight {
         matches!(self, LoadedWeight::F32(_))
     }
 
+    /// How many of this operand's allocations are page-padded — the
+    /// `AlignedBytes` buffers, whose length rounds up to the page. A
+    /// reconciliation of declared against resident bytes tolerates one
+    /// page of padding per such allocation and nothing for the rest.
+    pub fn padded_allocations(&self) -> usize {
+        match self {
+            LoadedWeight::F32(_) | LoadedWeight::Q8 { .. } | LoadedWeight::Q4 { .. } => 0,
+            LoadedWeight::Bf16(_) | LoadedWeight::F16(_) => 1,
+            LoadedWeight::Mxfp4 { .. } | LoadedWeight::Nvfp4 { .. } => 2,
+            LoadedWeight::KQuant { .. } => 0,
+        }
+    }
+
     /// The representation these bytes are resident in — what a pinned
     /// realization is checked against.
     pub fn format(&self) -> WeightFormat {

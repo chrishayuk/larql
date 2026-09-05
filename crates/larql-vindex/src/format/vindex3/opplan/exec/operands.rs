@@ -452,6 +452,19 @@ impl OperandStore {
             .map(|t| t.dtype.as_str())
     }
 
+    /// The length the container RECORDS for this operand's stored bytes —
+    /// tensor-table metadata only, no payload read. An instance fact: for
+    /// an entropy-coded operand it is not a function of the shape, which
+    /// is exactly why the stored footprint reads it here and never from
+    /// a codec.
+    pub fn stored_len(&self, operand: &OperandRef) -> Option<u64> {
+        self.segments
+            .get(&operand.object)?
+            .tensors
+            .get(&operand.tensor)
+            .map(|t| t.len)
+    }
+
     /// Load one operand's stored bytes and dtype, unwidened — for a
     /// caller that converts to a representation other than f32 (and for
     /// [`Self::load`] itself, so there is exactly one resolution path).
@@ -726,6 +739,13 @@ impl<'a> OperandSource<'a> {
     /// beside the registry's facts, and [`Self::load_raw`] refuses it.
     pub fn is_overridden(&self, operand: &OperandRef) -> bool {
         self.overrides.is_some_and(|o| o.is_overridden(operand))
+    }
+
+    /// The container's recorded length for an operand's stored bytes —
+    /// the base store's record; an overlay edit changes values, not what
+    /// the container holds.
+    pub fn stored_len(&self, operand: &OperandRef) -> Option<u64> {
+        self.base.stored_len(operand)
     }
 
     /// Load one operand's stored bytes unwidened. Overlay edits are

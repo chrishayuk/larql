@@ -83,7 +83,7 @@ fn bf16_bytes(values: &[f32]) -> Vec<u8> {
 /// The miniature Gemma 4 checkpoint. `perturb` names one layer-relative
 /// operand (on the full layer for attention, every layer otherwise) whose
 /// values are scaled by [`PERTURB_GAIN`].
-fn miniature_gemma4(dir: &Path, perturb: Option<&str>) {
+pub(super) fn miniature_gemma4(dir: &Path, perturb: Option<&str>) {
     let layer_types: Vec<&str> = (0..LAYERS)
         .map(|i| {
             if i == FULL_LAYER {
@@ -298,14 +298,14 @@ fn miniature_gemma4(dir: &Path, perturb: Option<&str>) {
     shard.write(dir);
 }
 
-fn encoded(dir: &Path) -> tempfile::TempDir {
+pub(super) fn encoded(dir: &Path) -> tempfile::TempDir {
     let inventory = larql_models::inventory::build_inventory(dir).unwrap();
     let container = tempfile::tempdir().unwrap();
     encode_system(&[("mini-gemma4".to_string(), inventory)], container.path()).unwrap();
     container
 }
 
-fn closure(container: &Path) -> OpPlanOutcome {
+pub(super) fn closure(container: &Path) -> OpPlanOutcome {
     let inspection = inspect_container(container, false).unwrap();
     plan_component_ops(&inspection, container, "target").unwrap()
 }
