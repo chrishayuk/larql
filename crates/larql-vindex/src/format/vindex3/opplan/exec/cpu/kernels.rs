@@ -235,6 +235,55 @@ impl DenseProjector for FusedNvfp4 {
     }
 }
 
+/// **Direct K-quant.** The stored ggml blocks — Q8_0, Q6_K or Q4_K —
+/// multiplied where they lie, by the kernel their codec names.
+///
+/// PARETO-1's v3 execution arm. Until it existed a K-quant operand had
+/// one route: decode the whole matrix to f32 and run an f32 GEMV over
+/// the result, which is correct and is what rung A was measured with,
+/// but prices a Q8_0 model at four bytes per weight — 97.4 GB of widened
+/// f32 per token on Qwen3.8-27B where the artifact holds 24.4. The bytes
+/// this kernel reads are the artifact's own: no decode, no requantise,
+/// no derivative.
+///
+/// [`CpuParallelism::LibraryOwned`] because the kernels behind it thread
+/// themselves, as [`BlasF32`] does: the Q4_K and Q6_K kernels in
+/// `larql-compute` split rows across their own pool, and the Q8_0 one
+/// was written to match them. Partitioning on top would nest a second
+/// fan-out inside the first, which is the one thing this executor's
+/// module note forbids.
+///
+/// Whether this arm is admissible as a BEHAVIOURAL authority, rather
+/// than a throughput backend, is decided by the equivalence gate in
+/// `~/chris-models/pareto1/V3-QUALIFICATION.md` against
+/// decode-then-multiply on the same stored bytes — never by this
+/// comment.
+pub struct FusedKQuant;
+
+impl DenseProjector for FusedKQuant {
+    fn parallelism(&self) -> CpuParallelism {
+        CpuParallelism::LibraryOwned
+    }
+
+    fn project_rows(&self, weight_rows: WeightRows<'_>, x: &[f32], out: &mut [f32]) {
+        let WeightRows::KQuant { blocks, codec } = weight_rows else {
+            panic!("the direct K-quant kernel consumes stored K-quant blocks only");
+        };
+        let n = out.len();
+        let Some(values) = codec.gemv(blocks, x, n, x.len()) else {
+            // Geometry is settled at `WeightSlice::rows` before dispatch,
+            // so a refusal here means the two disagree — a bug in this
+            // file, not a runtime condition to absorb.
+            panic!(
+                "{} slab geometry does not describe [{n}, {}]",
+                codec.name,
+                x.len()
+            );
+        };
+        out.copy_from_slice(&values);
+    }
+}
+
 /// One block's unscaled dot. `packed.len() * 2 == x.len()`.
 #[inline]
 fn q4_block_dot(packed: &[u8], x: &[f32]) -> f32 {

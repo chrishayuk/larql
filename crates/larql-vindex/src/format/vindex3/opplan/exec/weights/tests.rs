@@ -223,6 +223,17 @@ fn every_loaded_variant_accounts_for_itself() {
             false,
             "nvfp4",
         ),
+        // Plain owned bytes, so the census charges exactly the stream —
+        // no page padding, and the codec's name is the representation.
+        (
+            LoadedWeight::KQuant {
+                blocks: vec![0u8; 2 * kquant::Q6_K.bytes_per_block],
+                codec: kquant::Q6_K,
+            },
+            2 * kquant::Q6_K.bytes_per_block,
+            false,
+            "Q6_K",
+        ),
     ];
     for (loaded, bytes, widened, name) in cases {
         assert_eq!(loaded.resident_bytes(), bytes, "{name} miscounts its bytes");

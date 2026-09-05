@@ -753,6 +753,20 @@ impl<'a> OperandSource<'a> {
             == Some(crate::format::vindex3::represent::nvfp4_pack::DTYPE_NVFP4)
     }
 
+    /// Whether this operand is held as a compiled K-quant pack — any
+    /// encoding `represent::kquant::lookup` names.
+    ///
+    /// The same overlay rule as [`Self::is_stored_bf16`], for the same
+    /// reason: an edited operand has no compact form and answers `false`.
+    pub fn is_stored_kquant(&self, operand: &OperandRef) -> bool {
+        if self.overrides.is_some_and(|o| o.is_overridden(operand)) {
+            return false;
+        }
+        self.base
+            .stored_dtype(operand)
+            .is_some_and(|d| crate::format::vindex3::represent::kquant::lookup(d).is_some())
+    }
+
     /// Load one operand's stored bytes unwidened. Overlay edits are
     /// f32-space facts and cannot be represented in raw stored bytes,
     /// so an overridden operand refuses here rather than serving stale

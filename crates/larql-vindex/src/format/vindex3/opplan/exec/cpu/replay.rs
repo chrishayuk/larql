@@ -39,6 +39,7 @@ use std::sync::Mutex;
 use super::executor::CpuExecutor;
 use super::physical::PhysicalProjectionPlan;
 use super::projector::WeightRows;
+use crate::format::vindex3::represent::kquant::KQuant;
 
 /// Which representation a captured operand was resident as.
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
@@ -48,6 +49,7 @@ enum Kind {
     Q8,
     Q4,
     Nvfp4,
+    KQuant,
 }
 
 /// One projection exactly as the decode issued it.
@@ -74,6 +76,10 @@ pub struct Captured {
     /// numerically different weights, which is exactly the substitution
     /// this harness exists to rule out.
     tensor_scale: f32,
+    /// A stored K-quant's codec — which layout the block stream is.
+    /// Captured for the same reason the tensor scale is: replaying the
+    /// bytes under another codec would price a kernel over garbage.
+    codec: Option<KQuant>,
     out_dim: usize,
     /// The activation the decode actually projected. Kept by value
     /// because it is tens of KB against tens of MB of weight, and
@@ -122,6 +128,10 @@ impl Captured {
                 packed: std::slice::from_raw_parts(p as *const u8, n),
                 scales: std::slice::from_raw_parts(s as *const u8, m),
                 tensor_scale: self.tensor_scale,
+            },
+            Kind::KQuant => WeightRows::KQuant {
+                blocks: std::slice::from_raw_parts(p as *const u8, n),
+                codec: self.codec.expect("a K-quant capture records its codec"),
             },
         }
     }
@@ -198,6 +208,7 @@ pub(super) fn record(weight: WeightRows<'_>, x: &[f32], out_dim: usize) {
         return;
     }
     let mut tensor_scale = 0.0f32;
+    let mut codec = None;
     let (kind, primary, secondary, tertiary, block) = match weight {
         WeightRows::F32(w) => (Kind::F32, (w.as_ptr() as usize, w.len()), (0, 0), (0, 0), 0),
         WeightRows::Bf16(w) => (
@@ -246,6 +257,17 @@ pub(super) fn record(weight: WeightRows<'_>, x: &[f32], out_dim: usize) {
                 0,
             )
         }
+        WeightRows::KQuant { blocks, codec: c } => {
+            codec = Some(c);
+            (
+                Kind::KQuant,
+                (blocks.as_ptr() as usize, blocks.len()),
+                (0, 0),
+                (0, 0),
+                // The block is the codec's, carried by `codec`.
+                0,
+            )
+        }
     };
     let mut slot = CAPTURE.lock().expect("capture lock");
     let Some(log) = slot.as_mut() else {
@@ -254,6 +276,7 @@ pub(super) fn record(weight: WeightRows<'_>, x: &[f32], out_dim: usize) {
     log.push(Captured {
         kind,
         tensor_scale,
+        codec,
         primary,
         secondary,
         tertiary,

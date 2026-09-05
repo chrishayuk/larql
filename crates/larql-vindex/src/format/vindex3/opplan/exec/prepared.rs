@@ -692,6 +692,7 @@ fn resolve<B: PlanBackend + ?Sized>(
         elements: op.shape.iter().product(),
         stored_bf16: store.is_stored_bf16(op),
         stored_nvfp4: store.is_stored_nvfp4(op),
+        stored_kquant: store.is_stored_kquant(op),
     })
 }
 
@@ -774,6 +775,7 @@ impl PreparedOperands {
             // the way in, so no stored form survives for a format to
             // apply to — the same reason `elements` is 0 here.
             stored_nvfp4: false,
+            stored_kquant: false,
         });
         let head_format = |op: &OperandRef| resolve(backend, store, MatrixClass::OutputHead, op);
 

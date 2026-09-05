@@ -673,6 +673,7 @@ fn an_nvfp4_device_backend_executes_and_decodes_the_dense_plan() {
             elements: 0,
             stored_bf16: false,
             stored_nvfp4: false,
+            stored_kquant: false,
         }),
         WeightFormat::Nvfp4
     );

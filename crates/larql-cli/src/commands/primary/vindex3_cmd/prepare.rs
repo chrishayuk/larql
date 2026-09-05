@@ -201,11 +201,14 @@ pub(crate) fn with_plan_backend<V: BackendVisitor>(
         // projector then dispatches `FusedNvfp4` off the resident
         // representation, exactly as it dispatches every other arm.
         ExecBackend::ProductionNvfp4 => visitor.visit(&ProductionBackend::new()),
-        // Same kernels again. A K-quant operand is decoded to f32 in
-        // `OperandStore::load`, so what these arms measure is the
-        // REPRESENTATION's effect on behaviour, not a K-quant kernel's
-        // speed — which is the right instrument for a behaviour-per-byte
-        // curve and would be the wrong one for a throughput claim.
+        // Same kernels again, and the same policy: a stored K-quant pack
+        // is bound and executed IN PLACE by its codec's kernel
+        // (`FusedKQuant`), or — under `LARQL_KQUANT_EXEC=widen` — decoded
+        // to f32 in `OperandStore::load` and run through BLAS as rung A's
+        // authority path did. The two arms read the same stored bytes and
+        // differ only in where the arithmetic happens; the executor
+        // reports which one ran in its `projection plans:` line rather
+        // than leaving it to the backend's name.
         ExecBackend::ProductionQ8 | ExecBackend::ProductionQ6k | ExecBackend::ProductionQ4k => {
             visitor.visit(&ProductionBackend::new())
         }

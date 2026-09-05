@@ -77,20 +77,30 @@ pub const STAGE_OFF: &str = "off";
 /// them is never read.
 const ARENA_PAGE: u64 = 16 * 1024;
 
-fn env_flag_disabled() -> bool {
-    std::env::var(STAGE_ENV)
-        .ok()
-        .as_deref()
+/// Whether a value of [`STAGE_ENV`] turns staging off: the word
+/// [`STAGE_OFF`], any case, and nothing else.
+pub(super) fn staging_disabled_by(value: Option<&str>) -> bool {
+    value
         .map(str::trim)
         .map(|v| v.eq_ignore_ascii_case(STAGE_OFF))
         .unwrap_or(false)
 }
 
-fn min_bytes() -> usize {
-    std::env::var(STAGE_MIN_BYTES_ENV)
-        .ok()
+fn env_flag_disabled() -> bool {
+    staging_disabled_by(std::env::var(STAGE_ENV).ok().as_deref())
+}
+
+/// The threshold a value of [`STAGE_MIN_BYTES_ENV`] sets, or the default
+/// when it is absent or not a number — a typo must not stage every
+/// norm vector or none of the matrices.
+pub(super) fn min_bytes_from(value: Option<&str>) -> usize {
+    value
         .and_then(|v| v.trim().parse().ok())
         .unwrap_or(DEFAULT_STAGE_MIN_BYTES)
+}
+
+fn min_bytes() -> usize {
+    min_bytes_from(std::env::var(STAGE_MIN_BYTES_ENV).ok().as_deref())
 }
 
 /// Bytes staged into the arena so far, for the residency report.
@@ -108,8 +118,9 @@ pub fn staged_images() -> u64 {
     STAGED_IMAGES.load(Ordering::Relaxed)
 }
 
-struct Arena {
-    file: std::fs::File,
+#[derive(Debug)]
+pub(super) struct Arena {
+    pub(super) file: std::fs::File,
     next: u64,
 }
 
@@ -126,6 +137,17 @@ fn arena() -> Result<&'static Mutex<Arena>, VindexError> {
     let dir = std::env::var_os(STAGE_DIR_ENV)
         .map(std::path::PathBuf::from)
         .unwrap_or_else(std::env::temp_dir);
+    let arena = open_arena(&dir)?;
+    Ok(ARENA.get_or_init(|| Mutex::new(arena)))
+}
+
+/// Create the arena file under `dir` and unlink it at once.
+///
+/// Separate from [`arena`] so the fallible part is testable on its own:
+/// the process-wide `OnceLock` can only be initialised once, so a test
+/// of the failure path through `arena()` would depend on whether any
+/// other test had staged an image first.
+pub(super) fn open_arena(dir: &std::path::Path) -> Result<Arena, VindexError> {
     let path = dir.join(format!("larql-f32-stage-{}.bin", std::process::id()));
     let file = std::fs::OpenOptions::new()
         .create_new(true)
@@ -150,7 +172,7 @@ fn arena() -> Result<&'static Mutex<Arena>, VindexError> {
             path.display()
         ))
     })?;
-    Ok(ARENA.get_or_init(|| Mutex::new(Arena { file, next: 0 })))
+    Ok(Arena { file, next: 0 })
 }
 
 /// An f32 weight image, either owned outright or mapped from the arena.

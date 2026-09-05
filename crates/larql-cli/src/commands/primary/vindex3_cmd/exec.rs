@@ -155,6 +155,37 @@ fn report_representation_work(store: &OperandStore, want: Option<&str>, ok: bool
              (the pack's precision map)"
         );
     }
+    report_projection_plans();
+}
+
+/// Bytes per gigabyte, as the projection ledger reports traffic.
+const BYTES_PER_GB: f64 = 1e9;
+
+/// Which projection plans actually ran, from the executor's own ledger.
+///
+/// The representation line says what the backend ASKED for; this says
+/// what the bytes were consumed by. PARETO-1 needs the second: a stored
+/// K-quant pack can be executed in place (`FusedKQuant`) or decoded and
+/// run as f32 (`BlasF32`), and both bind the same pack, both report
+/// `runtime compile: 0`, and they differ in every logit. A guard that
+/// read only the first line could not tell them apart — which is how the
+/// format-cap confound went unseen.
+fn report_projection_plans() {
+    let rows: Vec<String> = larql_vindex::format::vindex3::opplan::exec::cpu::ledger()
+        .all()
+        .iter()
+        .filter(|(_, t)| t.calls > 0)
+        .map(|(plan, t)| {
+            format!(
+                "{plan:?} {} calls {:.2} GB",
+                t.calls,
+                t.bytes as f64 / BYTES_PER_GB
+            )
+        })
+        .collect();
+    if !rows.is_empty() {
+        println!("projection plans: {}", rows.join(", "));
+    }
 }
 
 /// One monomorphised run: the backend is chosen exactly once, above.

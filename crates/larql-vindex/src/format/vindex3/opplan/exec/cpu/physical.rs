@@ -21,7 +21,7 @@
 
 use super::arithmetic::{AccumulatorRep, ActivationRep, Arithmetic, WeightRep};
 use super::integer::{activation_scaling, Bf16xQ8, Q4xQ8, Q8xQ8};
-use super::kernels::{BlasF32, FusedBf16, FusedNvfp4, FusedQ4, FusedQ8, ScalarF32};
+use super::kernels::{BlasF32, FusedBf16, FusedKQuant, FusedNvfp4, FusedQ4, FusedQ8, ScalarF32};
 use super::projector::{DenseProjector, WeightRows};
 use crate::error::VindexError;
 use crate::format::vindex3::opplan::exec::backend::{MatrixClass, WeightFormat, WeightSlice};
@@ -65,6 +65,16 @@ pub enum PhysicalProjectionPlan {
     /// representation with no execution path cannot be measured, and
     /// before this arm every NVFP4 backend was a device backend.
     FusedNvfp4,
+    /// A stored ggml K-quant — Q8_0, Q6_K or Q4_K — executed in place by
+    /// the kernel its codec names. PARETO-1's v3 arm.
+    ///
+    /// Reached by OBSERVATION, like [`Self::FusedNvfp4`], and for the
+    /// same reason: nobody manufactures a K-quant at load. A pack is
+    /// compiled deliberately by `vindex represent`, the loader binds the
+    /// bytes the container holds, and this is where they execute. The
+    /// policy's only say is whether a stored pack executes in place at
+    /// all — [`kquant_execution`] — never which codec.
+    FusedKQuant,
     /// f32 resident, BLAS `sgemv`, threaded by the library.
     ///
     /// The right answer for a matrix whose widened image still fits
@@ -162,51 +172,62 @@ impl Q4Classes {
 /// `attn`, `ffn`, `head`, or `all`.
 pub const Q4_CLASSES_ENV: &str = "LARQL_CPU_Q4_CLASSES";
 
-/// The Q4 class set, resolved once per process.
-///
-/// Unset means [`Q4Classes::ALL`] — the blanket arm — so an arm run
-/// without this variable is the hypothesis rather than a silent
-/// exception set.
-pub fn q4_classes() -> Q4Classes {
-    static CLASSES: std::sync::OnceLock<Q4Classes> = std::sync::OnceLock::new();
-    *CLASSES.get_or_init(|| match std::env::var(Q4_CLASSES_ENV).ok() {
-        None => Q4Classes::ALL,
-        Some(v) if v.trim().is_empty() || v.trim() == "all" => Q4Classes::ALL,
-        Some(v) => {
-            let named = |k: &str| v.split(',').any(|t| t.trim() == k);
-            Q4Classes {
-                attention: named("attn"),
-                ffn: named("ffn"),
-                head: named("head"),
+impl Q4Classes {
+    /// The class set a value of [`Q4_CLASSES_ENV`] names.
+    ///
+    /// Unset, empty and `all` mean [`Self::ALL`] — the blanket arm — so
+    /// an arm run without the variable is the hypothesis rather than a
+    /// silent exception set. Tokens are exact: `ATTN` names nothing, and
+    /// a set that names nothing restores every class to Q8.
+    pub fn from_env_value(value: Option<&str>) -> Self {
+        match value.map(str::trim) {
+            None | Some("") | Some("all") => Self::ALL,
+            Some(v) => {
+                let named = |k: &str| v.split(',').any(|t| t.trim() == k);
+                Self {
+                    attention: named("attn"),
+                    ffn: named("ffn"),
+                    head: named("head"),
+                }
             }
         }
-    })
+    }
+}
+
+/// The Q4 class set, resolved once per process.
+pub fn q4_classes() -> Q4Classes {
+    static CLASSES: std::sync::OnceLock<Q4Classes> = std::sync::OnceLock::new();
+    *CLASSES
+        .get_or_init(|| Q4Classes::from_env_value(std::env::var(Q4_CLASSES_ENV).ok().as_deref()))
 }
 
 /// Names the arithmetic arm. See [`ArithmeticArm`].
 pub const ARITHMETIC_ARM_ENV: &str = "LARQL_CPU_ARITHMETIC";
 
-/// The arm, resolved once per process.
-///
-/// An unrecognised value is the DEFAULT rather than an error, matching
-/// [`MAX_FORMAT_ENV`]: a typo must not silently invent a fourth
-/// numerical regime that then gets reported as a measurement.
-pub fn arithmetic_arm() -> ArithmeticArm {
-    static ARM: std::sync::OnceLock<ArithmeticArm> = std::sync::OnceLock::new();
-    *ARM.get_or_init(|| {
-        match std::env::var(ARITHMETIC_ARM_ENV)
-            .ok()
-            .as_deref()
-            .map(str::trim)
-        {
+impl ArithmeticArm {
+    /// The arm a value of [`ARITHMETIC_ARM_ENV`] names.
+    ///
+    /// An unrecognised value is the DEFAULT rather than an error, matching
+    /// [`MAX_FORMAT_ENV`]: a typo must not silently invent a fourth
+    /// numerical regime that then gets reported as a measurement.
+    pub fn from_env_value(value: Option<&str>) -> Self {
+        match value.map(str::trim) {
             // The `b` suffix selects a per-BLOCK activation scale; the
             // arm itself is the same arithmetic either way, which is why
             // the scale geometry is a separate value and not a fourth arm.
-            Some("bf16xq8") | Some("bf16xq8b") => ArithmeticArm::Bf16TimesQ8,
-            Some("q8xq8") | Some("q8xq8b") => ArithmeticArm::Q8TimesQ8,
-            Some("q4xq8") | Some("q4xq8b") => ArithmeticArm::Q4TimesQ8,
-            _ => ArithmeticArm::FloatActivation,
+            Some("bf16xq8") | Some("bf16xq8b") => Self::Bf16TimesQ8,
+            Some("q8xq8") | Some("q8xq8b") => Self::Q8TimesQ8,
+            Some("q4xq8") | Some("q4xq8b") => Self::Q4TimesQ8,
+            _ => Self::FloatActivation,
         }
+    }
+}
+
+/// The arm, resolved once per process.
+pub fn arithmetic_arm() -> ArithmeticArm {
+    static ARM: std::sync::OnceLock<ArithmeticArm> = std::sync::OnceLock::new();
+    *ARM.get_or_init(|| {
+        ArithmeticArm::from_env_value(std::env::var(ARITHMETIC_ARM_ENV).ok().as_deref())
     })
 }
 
@@ -219,6 +240,7 @@ impl PhysicalProjectionPlan {
             Self::FusedQ8 | Self::Q8xQ8 => WeightFormat::Q8,
             Self::FusedQ4 | Self::Q4xQ8 => WeightFormat::Q4,
             Self::FusedNvfp4 => WeightFormat::Nvfp4,
+            Self::FusedKQuant => WeightFormat::KQuant,
         }
     }
 
@@ -262,6 +284,11 @@ impl PhysicalProjectionPlan {
                 activation: ActivationRep::F32,
                 accumulator: AccumulatorRep::F32,
             },
+            Self::FusedKQuant => Arithmetic {
+                weight: WeightRep::KQuant,
+                activation: ActivationRep::F32,
+                accumulator: AccumulatorRep::F32,
+            },
             // The control holds EXACT weights and an f32 dot; only the
             // activation is quantised, which is the whole of its job.
             Self::Bf16xQ8 => Arithmetic {
@@ -296,6 +323,7 @@ impl PhysicalProjectionPlan {
             Self::FusedQ8 => &FusedQ8,
             Self::FusedQ4 => &FusedQ4,
             Self::FusedNvfp4 => &FusedNvfp4,
+            Self::FusedKQuant => &FusedKQuant,
             Self::Q8xQ8 => &Q8xQ8,
             Self::Q4xQ8 => &Q4xQ8,
             Self::Bf16xQ8 => &Bf16xQ8,
@@ -417,6 +445,10 @@ impl PhysicalProjectionPlan {
             // assume, so there is one kernel and the arm does not enter
             // into it.
             WeightRows::Nvfp4 { .. } => Self::FusedNvfp4,
+            // One kernel per codec and no integer arm, so the bytes
+            // determine execution outright — and the codec they name
+            // travels with them rather than with the plan.
+            WeightRows::KQuant { .. } => Self::FusedKQuant,
         }
     }
 }
@@ -526,11 +558,76 @@ pub const MAX_FORMAT_ENV: &str = "LARQL_CPU_MAX_FORMAT";
 /// Only `bf16` caps anything; every other value (and no value) leaves the
 /// measured policy in force, so a typo cannot silently disable Q8 in
 /// production and be mistaken for a regression.
+///
+/// The cap does not touch a STORED K-quant pack. It forbids the policy
+/// from MANUFACTURING a lossy residency at load; binding compiled blocks
+/// manufactures nothing, and whether they execute in place or widened is
+/// [`kquant_execution`]'s question, not this one's.
 fn q8_permitted() -> bool {
     !matches!(
         std::env::var(MAX_FORMAT_ENV).ok().as_deref().map(str::trim),
         Some("bf16")
     )
+}
+
+/// Selects how a STORED K-quant pack executes. See [`KQuantExecution`].
+pub const KQUANT_EXEC_ENV: &str = "LARQL_KQUANT_EXEC";
+
+/// Value of [`KQUANT_EXEC_ENV`] that restores the widening path.
+pub const KQUANT_EXEC_WIDEN: &str = "widen";
+
+/// How a stored K-quant operand is executed, for the whole process.
+///
+/// Both arms read the SAME stored bytes and neither manufactures
+/// anything. They differ in WHERE the arithmetic happens:
+///
+/// ```text
+/// Widen    stored blocks -> decode -> f32 image -> BLAS gemv     (v2)
+/// Direct   stored blocks -> the codec's kernel, in place          (v3)
+/// ```
+///
+/// `Widen` is PARETO-1's rung-A authority path: it decodes every K-quant
+/// to f32 precisely so that kernel quality cannot move a behavioural
+/// curve. `Direct` is admissible as the campaign executor only once the
+/// equivalence gate has passed against `Widen` — and that gate is only
+/// meaningful because both arms live in ONE binary, so "the kernel
+/// changed the answer" cannot be confused with "the compiler did". Same
+/// rule, same reason, as `weights::staged::STAGE_ENV`.
+#[derive(Clone, Copy, PartialEq, Eq, Debug, Default)]
+pub enum KQuantExecution {
+    /// Execute the stored blocks in place:
+    /// [`PhysicalProjectionPlan::FusedKQuant`].
+    #[default]
+    Direct,
+    /// Decode to f32 at load and run the f32 path, as v2 did.
+    Widen,
+}
+
+impl KQuantExecution {
+    /// The arm a value of [`KQUANT_EXEC_ENV`] selects.
+    ///
+    /// Only the exact word [`KQUANT_EXEC_WIDEN`] widens — the same rule
+    /// [`MAX_FORMAT_ENV`] follows, for the same reason: a typo must not
+    /// silently select a numerical regime and then be reported as a
+    /// measurement. The executor reports the plan it OBSERVED running, so
+    /// a value that did not take effect is visible in the run's own
+    /// output rather than inferred from its environment.
+    pub fn from_env_value(value: Option<&str>) -> Self {
+        match value.map(str::trim) {
+            Some(v) if v == KQUANT_EXEC_WIDEN => Self::Widen,
+            _ => Self::Direct,
+        }
+    }
+}
+
+/// The arm in force, read from the environment.
+///
+/// Read per call rather than cached, like `q8_permitted`: it is
+/// consulted once per operand at load, and a cached value would let a
+/// process that set the variable after first use silently run the other
+/// arm.
+pub fn kquant_execution() -> KQuantExecution {
+    KQuantExecution::from_env_value(std::env::var(KQUANT_EXEC_ENV).ok().as_deref())
 }
 
 /// Whether this operand is one the policy would have made Q8 —

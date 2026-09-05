@@ -1,5 +1,7 @@
 //! What a dense projection kernel must expose, and who threads it.
 
+use crate::format::vindex3::represent::kquant::KQuant;
+
 /// Who owns the machine while a primitive runs.
 ///
 /// Declared by the kernel because only the kernel knows: a BLAS call has
@@ -160,6 +162,18 @@ pub enum WeightRows<'a> {
         scales: &'a [u8],
         tensor_scale: f32,
     },
+    /// A stored ggml K-quant block stream — Q8_0, Q6_K or Q4_K — with
+    /// the codec that names its layout. Scales are inside the blocks.
+    ///
+    /// Reaches the kernel compact, as every variant here does, and
+    /// UNTOUCHED: these are the artifact's own bytes, which is the whole
+    /// claim of PARETO-1's v3 arm. The codec travels with the bytes
+    /// because it is a property of them — the plan is one plan and the
+    /// kernel asks the codec which arithmetic reads this layout.
+    KQuant {
+        blocks: &'a [u8],
+        codec: KQuant,
+    },
 }
 
 impl WeightRows<'_> {
@@ -175,6 +189,7 @@ impl WeightRows<'_> {
             Self::Q8 { codes, .. } => codes.as_ptr() as usize,
             Self::Q4 { packed, .. } => packed.as_ptr() as usize,
             Self::Nvfp4 { packed, .. } => packed.as_ptr() as usize,
+            Self::KQuant { blocks, .. } => blocks.as_ptr() as usize,
         }
     }
 
@@ -186,6 +201,12 @@ impl WeightRows<'_> {
             Self::Q8 { codes, .. } => codes.len() / in_dim,
             Self::Q4 { packed, .. } => packed.len() * 2 / in_dim,
             Self::Nvfp4 { packed, .. } => packed.len() * 2 / in_dim,
+            // Blocks run along the row, so the stride is the codec's, and
+            // a width off its grid has no rows at all — never a rounded
+            // count that would put row 1 at the wrong offset.
+            Self::KQuant { blocks, codec } => codec
+                .row_bytes(in_dim)
+                .map_or(0, |per_row| blocks.len() / per_row),
         }
     }
 
@@ -250,6 +271,19 @@ impl WeightRows<'_> {
                     tensor_scale: *tensor_scale,
                 }
             }
+            Self::KQuant { blocks, codec } => {
+                // Cut at the codec's row stride. A width off the block
+                // grid was refused at `WeightSlice::rows`, so a missing
+                // stride here is an executor bug, not a runtime
+                // condition to absorb.
+                let per_row = codec
+                    .row_bytes(in_dim)
+                    .expect("a K-quant slab was admitted with a width off its block grid");
+                Self::KQuant {
+                    blocks: &blocks[start * per_row..(start + count) * per_row],
+                    codec: *codec,
+                }
+            }
         }
     }
 
@@ -272,6 +306,9 @@ impl WeightRows<'_> {
             // The tensor scale is one f32 for the whole matrix, not per
             // row, so it is not counted in a row slab's footprint.
             Self::Nvfp4 { packed, scales, .. } => packed.len() + scales.len(),
+            // The scales are inside the blocks, so the stream is the
+            // whole cost.
+            Self::KQuant { blocks, .. } => blocks.len(),
         }
     }
 }

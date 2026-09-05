@@ -74,10 +74,19 @@ def read_execution_facts(stdout):
     # `runtime_compiled` at zero. Naming the first one "executed" would
     # be the same conflation that produced the false null.
     facts = {"requested": None, "source": None, "objects_from_pack": None,
-             "objects_total": None, "runtime_compiled": 0}
+             "objects_total": None, "runtime_compiled": 0, "plans": {}}
     for line in stdout.splitlines():
         if line.startswith("runtime compile:"):
             facts["runtime_compiled"] = int(line.split(":")[1].strip().split()[0])
+        elif line.startswith("projection plans:"):
+            # projection plans: FusedKQuant 4832 calls 233.10 GB, BlasF32 16 calls 0.02 GB
+            # What the bytes were CONSUMED by, from the executor's own
+            # ledger — the only line that can tell a pack executed in
+            # place from the same pack decoded to f32 and run through BLAS.
+            for item in line.split(":", 1)[1].split(","):
+                parts = item.split()
+                if len(parts) >= 4 and parts[2] == "calls":
+                    facts["plans"][parts[0]] = {"calls": int(parts[1]), "gb": float(parts[3])}
         elif line.startswith("representation:"):
             # representation: NVFP4  source: stored  objects from a compiled pack: 1/5
             body = line.split("representation:", 1)[1]
@@ -90,6 +99,61 @@ def read_execution_facts(stdout):
                     a, b = ratio.split("/", 1)
                     facts["objects_from_pack"], facts["objects_total"] = int(a), int(b)
     return facts
+
+
+# The K-quant encodings a container may declare, and the two plans a
+# stored K-quant can execute under. `direct` is v3 (the codec's kernel
+# over the stored blocks, in place); `widen` is v2 (decode to f32, BLAS).
+KQUANT_ENCODINGS = ("Q8_0", "Q6_K", "Q4_K")
+KQUANT_EXEC_ENV = "LARQL_KQUANT_EXEC"
+KQUANT_EXEC_WIDEN = "widen"
+DIRECT_PLAN, WIDENED_PLAN = "FusedKQuant", "BlasF32"
+
+
+def assert_stored_kquant_ran_as_declared(container_id, facts, label):
+    """The K-quant EXECUTION arm is a run parameter, and it must be observed.
+
+    v3 added a second way to execute a stored K-quant pack: in place, by
+    the codec's kernel (`FusedKQuant`), beside v2's decode-to-f32-then-BLAS
+    (`BlasF32`). Both bind the same pack, both report `runtime compile: 0`,
+    and they differ in every logit. `LARQL_KQUANT_EXEC` selects the arm;
+    this reads the executor's own plan ledger to confirm the arm that RAN
+    is the one the environment named. Only the exact word `widen` widens,
+    so a misspelling would silently select the default and — without this
+    — be recorded as the other arm.
+    """
+    declared = (container_id or {}).get("precision_map") or {}
+    if declared.get("encoding") not in KQUANT_ENCODINGS:
+        return
+    expected = os.environ.get(KQUANT_EXEC_ENV, "").strip()
+    plans = facts.get("plans") or {}
+    if not plans:
+        raise SystemExit(
+            f"{label}: the executor reported no projection plans; this binary predates "
+            f"the plan ledger line and cannot attest which K-quant arm ran.")
+    direct = plans.get(DIRECT_PLAN, {})
+    if expected == KQUANT_EXEC_WIDEN:
+        if direct.get("calls"):
+            raise SystemExit(
+                f"{label}: {KQUANT_EXEC_ENV}={KQUANT_EXEC_WIDEN} but {direct['calls']} "
+                f"projections ran through {DIRECT_PLAN}. The arm that ran is not the arm named.")
+        facts["kquant_exec"] = KQUANT_EXEC_WIDEN
+        return
+    if expected not in ("", "direct"):
+        raise SystemExit(
+            f"{label}: {KQUANT_EXEC_ENV}={expected!r} is not a word the executor knows; it "
+            f"would run the default and this record would misname the arm. Use `direct` or "
+            f"`{KQUANT_EXEC_WIDEN}`.")
+    if not direct.get("calls"):
+        raise SystemExit(
+            f"{label}: direct execution was selected but no projection ran through "
+            f"{DIRECT_PLAN}: {plans}")
+    widened_gb = plans.get(WIDENED_PLAN, {}).get("gb", 0.0)
+    if widened_gb > direct["gb"]:
+        raise SystemExit(
+            f"{label}: {WIDENED_PLAN} carried {widened_gb} GB against {DIRECT_PLAN}'s "
+            f"{direct['gb']} GB — most of the pack was widened, not executed in place.")
+    facts["kquant_exec"] = "direct"
 
 
 def assert_candidate_executed_its_representation(container_id, facts, label):
@@ -236,6 +300,7 @@ def cmd_compare(container, outdir, backend, source, label, keep=False):
     facts = run_bank_arm(container, meta["entries"], backend, source, canddir)
     cand_id = container_identity(container)
     assert_candidate_executed_its_representation(cand_id, facts, label)
+    assert_stored_kquant_ran_as_declared(cand_id, facts, label)
     compiled_total = facts["runtime_compiled"]
     for i, e in enumerate(meta["entries"]):
         refpath = os.path.join(outdir, e["dump"])

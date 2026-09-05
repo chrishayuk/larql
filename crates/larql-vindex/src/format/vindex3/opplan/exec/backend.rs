@@ -30,6 +30,7 @@ use super::super::super::graph::policy::AttentionSpan;
 use super::cpu::WeightRows;
 use super::quantise::SUM_BLOCK;
 use crate::error::VindexError;
+use crate::format::vindex3::represent::kquant::KQuant;
 
 /// The numerical representation a backend wants matrix operands in.
 ///
@@ -109,6 +110,20 @@ pub enum WeightFormat {
     /// size worth nothing and the scale format worth 1.27x in relative RMS
     /// and 1.7x in worst-element error.
     Nvfp4,
+    /// A stored ggml K-quant pack — Q8_0, Q6_K or Q4_K — kept as the
+    /// container holds it and executed in place by the codec's kernel.
+    ///
+    /// Like [`Self::Bf16`] and unlike [`Self::Q8`], NOT a conversion: the
+    /// resident bytes are the stored bytes. The lossy step, if any,
+    /// happened when `vindex represent` compiled the pack, and it is the
+    /// artifact under measurement, not this loader's doing. Which codec
+    /// is a property of the bytes, carried with them — the format names
+    /// the family, the operand's stored dtype names the member.
+    ///
+    /// Only ever declared for an operand the container holds as a
+    /// K-quant; a backend asking for it over anything else is refused at
+    /// load rather than served a manufactured pack.
+    KQuant,
 }
 
 /// Which matrix a format question is about. Formats are declared per
@@ -157,6 +172,14 @@ pub struct MatrixOperand {
     /// anything else would widen bytes that are already in the shape a
     /// kernel wants.
     pub stored_nvfp4: bool,
+    /// Whether the container holds this operand as a compiled K-quant
+    /// pack — Q8_0, Q6_K or Q4_K. The same kind of fact as
+    /// [`Self::stored_nvfp4`], with one difference in how it is acted
+    /// on: a stored K-quant has TWO execution routes, in place or
+    /// widened to f32, and which one runs is the process's
+    /// [`super::cpu::physical::KQuantExecution`] arm rather than a
+    /// consequence of the bytes alone.
+    pub stored_kquant: bool,
 }
 
 /// A backend's declared format per matrix class.
@@ -228,6 +251,13 @@ pub enum WeightSlice<'a> {
         packed: &'a [u8],
         scales: &'a [u8],
         tensor_scale: f32,
+    },
+    /// A stored ggml K-quant block stream, still compact, with the codec
+    /// that names its layout. Scales live inside the blocks, so this is
+    /// one stream, not two.
+    KQuant {
+        blocks: &'a [u8],
+        codec: KQuant,
     },
 }
 
@@ -355,6 +385,42 @@ impl<'a> WeightSlice<'a> {
                     _ => Err(short(packed.len() * 2)),
                 }
             }
+            WeightSlice::KQuant { blocks, codec } => {
+                // The stride is the codec's: blocks run along the row,
+                // and a width off the block grid describes no rows.
+                let Some(per_row) = codec.row_bytes(in_dim) else {
+                    return Err(VindexError::Parse(format!(
+                        "{} slab: in_dim={in_dim} is not a whole number of {}-element blocks, \
+                         so this pack does not describe these rows",
+                        codec.name, codec.elements_per_block
+                    )));
+                };
+                // EXACT, not a prefix cut like the arms above. Those
+                // tolerate a longer slice because `AlignedBytes` pads to
+                // the device page; a K-quant is plain owned bytes bound at
+                // load against the codec's own plan of the shape, so any
+                // length but the matrix means the codec or the geometry is
+                // wrong. The LONGER direction is the dangerous one: Q6_K
+                // bytes read as Q4_K are longer than Q4_K wants, would pass
+                // a prefix cut, and would then be walked at a 144-byte
+                // stride over 210-byte blocks — finite, plausible, wrong.
+                let want_bytes = out_dim * per_row;
+                if blocks.len() < want_bytes {
+                    return Err(short(blocks.len() / per_row * in_dim));
+                }
+                if blocks.len() > want_bytes {
+                    return Err(VindexError::Parse(format!(
+                        "{} slab: {} bytes describe more than a {out_dim} x {in_dim} matrix's \
+                         {want_bytes} — the bytes are not this codec's, or not this shape's",
+                        codec.name,
+                        blocks.len()
+                    )));
+                }
+                Ok(WeightRows::KQuant {
+                    blocks,
+                    codec: *codec,
+                })
+            }
             other => Err(VindexError::Parse(format!(
                 "no CPU projection kernel consumes {} weights — the backend declared a \
                  representation only a device can run, so this refuses rather than converting \
@@ -376,6 +442,7 @@ impl<'a> WeightSlice<'a> {
             WeightSlice::F16(_) => "f16",
             WeightSlice::Mxfp4 { .. } => "mxfp4",
             WeightSlice::Nvfp4 { .. } => "nvfp4",
+            WeightSlice::KQuant { codec, .. } => codec.name,
         }
     }
 
@@ -387,7 +454,8 @@ impl<'a> WeightSlice<'a> {
             | WeightSlice::Q4 { .. }
             | WeightSlice::F16(_)
             | WeightSlice::Mxfp4 { .. }
-            | WeightSlice::Nvfp4 { .. } => Err(VindexError::Parse(
+            | WeightSlice::Nvfp4 { .. }
+            | WeightSlice::KQuant { .. } => Err(VindexError::Parse(
                 "backend declared f32 weights but was handed another format — interpreter \
                  loaded the wrong representation"
                     .to_string(),

@@ -22,6 +22,7 @@ use super::operands::{OperandSource, RepresentationSource};
 use super::quantise::{quantise_q4, quantise_q8, Q4_BLOCK, Q8_BLOCK};
 use crate::error::VindexError;
 use crate::format::vindex3::opplan::OperandRef;
+use crate::format::vindex3::represent::kquant::{self, KQuant};
 use crate::format::vindex3::represent::nvfp4_pack::DTYPE_NVFP4;
 // MXFP4 group geometry — per row, `k/32` groups of 16 packed bytes (lo
 // nibble first) plus one e8m0 scale byte each — is the models crate's,
@@ -157,6 +158,18 @@ pub enum LoadedWeight {
         scales: AlignedBytes,
         tensor_scale: f32,
     },
+    /// A compiled ggml K-quant pack, byte-for-byte as the container holds
+    /// it, with the codec that names its layout.
+    ///
+    /// The cheapest load after [`Self::Bf16`]: the bytes are read and
+    /// kept. No decode, no requantise — PARETO-1's v3 arm, whose whole
+    /// claim is that the bytes the kernel reads are the artifact's own.
+    /// Plain owned bytes rather than [`AlignedBytes`]: no device wraps a
+    /// K-quant, so page alignment would buy nothing here.
+    KQuant {
+        blocks: Vec<u8>,
+        codec: KQuant,
+    },
 }
 
 pub mod staged;
@@ -190,6 +203,7 @@ impl LoadedWeight {
             LoadedWeight::Nvfp4 { packed, scales, .. } => {
                 packed.as_slice().len() + scales.as_slice().len()
             }
+            LoadedWeight::KQuant { blocks, .. } => blocks.len(),
         }
     }
 
@@ -231,6 +245,7 @@ impl LoadedWeight {
                     of(scales.as_slice().as_ptr(), scales.as_slice().len()),
                 ]
             }
+            LoadedWeight::KQuant { blocks, .. } => vec![of(blocks.as_ptr(), blocks.len())],
         }
     }
 
@@ -284,6 +299,10 @@ impl LoadedWeight {
                 packed: packed.as_slice(),
                 scales: scales.as_slice(),
                 tensor_scale: *tensor_scale,
+            },
+            LoadedWeight::KQuant { blocks, codec } => WeightSlice::KQuant {
+                blocks,
+                codec: *codec,
             },
         }
     }
@@ -370,33 +389,7 @@ pub fn load_weight(
             // the whole load is a read: no widening to f32, no requantise,
             // no arithmetic at all. That is the point of persisting it.
             let raw = store.load_raw(operand)?;
-            // The map is the authority a pack is supposed to satisfy, so
-            // `stored` checks conformance rather than taking the bytes'
-            // word for what program they implement. A pack that compiled a
-            // tensor the map protects is not a pack for this program, and
-            // silently executing it would mean running something other
-            // than what the container declares.
-            if let (Some(program), true) = (
-                store.store().program(),
-                store.store().is_stored(&operand.object),
-            ) {
-                // Resolved through the store, which reads the plan
-                // first and the name heuristics second — the same order
-                // the compiler used. Calling `classify` directly here
-                // was the miss that made a correctly compiled pack fail
-                // its own conformance check.
-                let role = store
-                    .store()
-                    .role_of(&operand.object, &operand.tensor, &operand.shape);
-                if !program.conforms(role, &operand.tensor, &raw.dtype) {
-                    return Err(VindexError::Parse(format!(
-                        "tensor `{}` is stored as `{}`, which the container's \
-                         precision map `{}` does not permit — the pack does not \
-                         implement the program the container declares",
-                        operand.tensor, raw.dtype, program.name
-                    )));
-                }
-            }
+            check_pack_conforms(store, operand, &raw.dtype)?;
             if raw.dtype == DTYPE_NVFP4 {
                 return nvfp4_from_stored(&raw.bytes, rows, k, &operand.tensor);
             }
@@ -434,6 +427,7 @@ pub fn load_weight(
             let values = widen_raw(&raw, &operand.tensor)?;
             quantize_nvfp4(&values, rows, k, &operand.tensor)
         }
+        WeightFormat::KQuant => kquant_from_stored(store, operand),
         WeightFormat::F16 => {
             let raw = store.load_raw(operand)?;
             match raw.dtype.as_str() {
@@ -452,6 +446,85 @@ pub fn load_weight(
             }
         }
     }
+}
+
+/// Refuse a stored tensor whose dtype the container's precision map does
+/// not permit.
+///
+/// The map is the authority a pack is supposed to satisfy, so `stored`
+/// checks conformance rather than taking the bytes' word for what program
+/// they implement. A pack that compiled a tensor the map protects is not
+/// a pack for this program, and silently executing it would mean running
+/// something other than what the container declares. Shared by every arm
+/// that binds stored compiled bytes, so the NVFP4 and K-quant paths
+/// cannot drift in what they check.
+fn check_pack_conforms(
+    store: OperandSource<'_>,
+    operand: &OperandRef,
+    dtype: &str,
+) -> Result<(), VindexError> {
+    if let (Some(program), true) = (
+        store.store().program(),
+        store.store().is_stored(&operand.object),
+    ) {
+        // Resolved through the store, which reads the plan first and the
+        // name heuristics second — the same order the compiler used.
+        // Calling `classify` directly here was the miss that made a
+        // correctly compiled pack fail its own conformance check.
+        let role = store
+            .store()
+            .role_of(&operand.object, &operand.tensor, &operand.shape);
+        if !program.conforms(role, &operand.tensor, dtype) {
+            return Err(VindexError::Parse(format!(
+                "tensor `{}` is stored as `{dtype}`, which the container's precision map \
+                 `{}` does not permit — the pack does not implement the program the \
+                 container declares",
+                operand.tensor, program.name
+            )));
+        }
+    }
+    Ok(())
+}
+
+/// Bind a compiled K-quant pack: read the stored blocks and keep them.
+///
+/// No decode happens here and none may: if this path ever widened a
+/// block or re-encoded one, the executed bytes would be a derivative of
+/// the artifact rather than the artifact, and the v3 gate's claim — the
+/// SAME stored bytes, two arithmetics — would be void. The geometry is
+/// checked against the codec's own plan of the operand's shape, so a
+/// stream of the wrong length for `[out, in]` is refused here by name
+/// rather than read at the wrong stride by a kernel.
+fn kquant_from_stored(
+    store: OperandSource<'_>,
+    operand: &OperandRef,
+) -> Result<LoadedWeight, VindexError> {
+    let raw = store.load_raw(operand)?;
+    let Some(codec) = kquant::lookup(&raw.dtype) else {
+        return Err(VindexError::Parse(format!(
+            "tensor `{}` is `{}`, not a K-quant this executor runs in place ({}) — direct \
+             K-quant residency binds stored blocks and performs no conversion",
+            operand.tensor,
+            raw.dtype,
+            kquant::compilable_names()
+        )));
+    };
+    check_pack_conforms(store, operand, &raw.dtype)?;
+    let want = codec.plan(&operand.shape, &operand.tensor)?;
+    if raw.bytes.len() != want {
+        return Err(VindexError::Parse(format!(
+            "tensor `{}`: {} bytes of {} do not describe shape {:?}, which needs {want} — \
+             refusing rather than reading rows at the wrong stride",
+            operand.tensor,
+            raw.bytes.len(),
+            codec.name,
+            operand.shape
+        )));
+    }
+    Ok(LoadedWeight::KQuant {
+        blocks: raw.bytes,
+        codec,
+    })
 }
 
 /// Bind a compiled NVFP4 pack: copy each region into a page-aligned

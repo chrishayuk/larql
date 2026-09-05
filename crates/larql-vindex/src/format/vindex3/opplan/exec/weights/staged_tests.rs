@@ -224,3 +224,85 @@ fn an_empty_image_is_owned_rather_than_mapped() {
     assert!(!staged.is_mapped());
     assert!(staged.is_empty());
 }
+
+/// Only the word `off`, in any case, turns staging off. `0`, `false` and
+/// `on` are not spellings of it and leave staging on — a value that did
+/// not take effect would otherwise be recorded as an arm that ran.
+#[test]
+fn only_the_off_word_disables_staging_in_any_case() {
+    use super::staged::staging_disabled_by;
+    assert!(!staging_disabled_by(None));
+    for v in ["off", "OFF", " Off\n"] {
+        assert!(staging_disabled_by(Some(v)), "{v:?}");
+    }
+    for v in ["", "0", "false", "on", "off please"] {
+        assert!(!staging_disabled_by(Some(v)), "{v:?}");
+    }
+}
+
+/// The threshold is a number or the default — never zero from a typo,
+/// which would stage every norm vector, and never "everything owned".
+#[test]
+fn the_threshold_parses_a_number_and_falls_back_on_anything_else() {
+    use super::staged::{min_bytes_from, DEFAULT_STAGE_MIN_BYTES};
+    assert_eq!(min_bytes_from(None), DEFAULT_STAGE_MIN_BYTES);
+    assert_eq!(min_bytes_from(Some("1024")), 1024);
+    assert_eq!(min_bytes_from(Some(" 7 ")), 7);
+    assert_eq!(min_bytes_from(Some("0")), 0);
+    for v in ["", "lots", "-1", "1e6"] {
+        assert_eq!(min_bytes_from(Some(v)), DEFAULT_STAGE_MIN_BYTES, "{v:?}");
+    }
+}
+
+/// The arena is unlinked the moment it exists, so nothing outlives the
+/// process — and the unlinked descriptor is still a writable file.
+#[test]
+fn the_arena_file_is_unlinked_the_moment_it_exists() {
+    use super::staged::open_arena;
+    use std::io::Write;
+    let dir = tempfile::tempdir().unwrap();
+    let mut arena = open_arena(dir.path()).expect("a writable directory holds an arena");
+    assert_eq!(
+        std::fs::read_dir(dir.path()).unwrap().count(),
+        0,
+        "the arena must not be visible in the directory"
+    );
+    arena
+        .file
+        .write_all(&[0u8; 64])
+        .expect("the unlinked descriptor is still writable");
+    assert_eq!(arena.file.metadata().unwrap().len(), 64);
+}
+
+/// A directory that cannot hold the arena is a refusal that names the
+/// two ways out, never a silent fall back to anonymous memory — the
+/// exact failure this module exists to make impossible.
+#[test]
+fn an_arena_that_cannot_be_created_is_refused_naming_the_remedy() {
+    use super::staged::{open_arena, STAGE_DIR_ENV, STAGE_ENV};
+    let dir = tempfile::tempdir().unwrap();
+    let missing = dir.path().join("no-such-dir");
+    let err = open_arena(&missing)
+        .expect_err("a missing directory cannot hold the arena")
+        .to_string();
+    assert!(err.contains("could not be created"), "{err}");
+    assert!(
+        err.contains(STAGE_DIR_ENV) && err.contains(STAGE_ENV),
+        "the refusal must name both ways out: {err}"
+    );
+    assert!(err.contains("no-such-dir"), "{err}");
+}
+
+/// Debug says WHERE an image lives and how big it is, never its values —
+/// a 17408 x 5120 matrix printed elementwise is not a diagnostic.
+#[test]
+#[serial]
+fn debug_names_the_residency_and_the_count_not_the_values() {
+    let owned = StagedF32::from(vec![1.0f32, 2.0]);
+    assert_eq!(format!("{owned:?}"), "StagedF32(Owned(2 f32))");
+    let mapped = with_env(false, Some(0), || {
+        StagedF32::stage(vec![1.0f32; 4]).unwrap()
+    });
+    assert!(mapped.is_mapped());
+    assert_eq!(format!("{mapped:?}"), "StagedF32(Mapped(4 f32))");
+}

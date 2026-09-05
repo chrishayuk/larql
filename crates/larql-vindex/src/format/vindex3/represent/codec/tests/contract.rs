@@ -117,6 +117,10 @@ fn label_of(format: WeightFormat) -> Option<&'static str> {
         WeightFormat::Mxfp4 => Some("MXFP4"),
         // Runtime re-quantisations of a float source: no stored codec.
         WeightFormat::Q8 | WeightFormat::Q4 => None,
+        // The three K-quants share one resident format — the codec rides
+        // in the bound operand, not the format — so this cannot name one.
+        // `every_acceleration_...` checks the family membership directly.
+        WeightFormat::KQuant => None,
     }
 }
 
@@ -139,12 +143,25 @@ fn every_acceleration_runs_over_the_stored_bytes_and_names_a_plan_for_them() {
             let touched = accel.residency.bytes_per_weight * extent::BITS_PER_BYTE;
             assert!((touched - bpw).abs() < 1e-9, "{label}: {touched} vs {bpw}");
             assert_eq!(accel.requires, RequiredAccess::RowRandom, "{label}");
-            assert_eq!(
-                label_of(accel.plan.format()),
-                Some(label),
-                "{label}: {:?}",
-                accel.plan
-            );
+            // A codec's direct plan names it. The K-quants are the one
+            // family that shares a resident format (`WeightFormat::KQuant`,
+            // the codec carried by the operand): there the plan names the
+            // FAMILY, and the label is Q4_K/Q6_K/Q8_0.
+            if matches!(label, "Q4_K" | "Q6_K" | "Q8_0") {
+                assert_eq!(
+                    accel.plan.format(),
+                    WeightFormat::KQuant,
+                    "{label}: {:?}",
+                    accel.plan
+                );
+            } else {
+                assert_eq!(
+                    label_of(accel.plan.format()),
+                    Some(label),
+                    "{label}: {:?}",
+                    accel.plan
+                );
+            }
         }
     }
 }
@@ -156,13 +173,15 @@ fn codecs_with_no_direct_cpu_realization_say_so_rather_than_claim_one() {
         .filter(|c| c.accelerations().is_empty())
         .map(|c| c.encoding_label())
         .collect();
-    assert_eq!(without, ["F16", "Q4_K", "Q6_K", "Q8_0", "MXFP4"]);
+    // K-quants gained a direct CPU realization (FusedKQuant); only the
+    // formats with no in-place kernel remain here.
+    assert_eq!(without, ["F16", "MXFP4"]);
     let with: Vec<&str> = builtin()
         .into_iter()
         .filter(|c| !c.accelerations().is_empty())
         .map(|c| c.encoding_label())
         .collect();
-    assert_eq!(with, ["BF16", "F32", "NVFP4"]);
+    assert_eq!(with, ["BF16", "F32", "Q4_K", "Q6_K", "Q8_0", "NVFP4"]);
 }
 
 #[test]
