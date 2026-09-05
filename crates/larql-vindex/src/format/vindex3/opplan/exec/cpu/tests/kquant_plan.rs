@@ -229,6 +229,7 @@ fn planned(operation: Operation) -> PlannedOperand {
         access: operation.access(),
         extent: RepresentationExtent::TERMINAL,
         layer: Some(0),
+        declared_representation: None,
         logical_elements: 17408 * 5120,
     }
 }

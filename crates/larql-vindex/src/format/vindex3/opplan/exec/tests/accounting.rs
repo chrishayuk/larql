@@ -22,7 +22,7 @@ use super::bf16_zlib_execution::{transcode, Transcode};
 use crate::format::vindex3::fixtures::{
     dense_f32_model, dense_f32_model_with, encode_fixture_container, HeadStorage,
 };
-use crate::format::vindex3::inspect::inspect_container;
+use crate::format::vindex3::inspect::{inspect_container, SystemInspection};
 use crate::format::vindex3::opplan::planned::{Operation, PlannedOperand};
 use crate::format::vindex3::opplan::{plan_component_ops, ComponentOpPlan, OperandRef};
 use crate::format::vindex3::represent::codec::codecs::{float, kquant, mxfp4, nvfp4};
@@ -37,9 +37,19 @@ const TOKENS: [u32; 3] = [3, 17, 28];
 
 struct Fixture {
     _src: tempfile::TempDir,
-    _container: tempfile::TempDir,
+    container: tempfile::TempDir,
+    inspection: SystemInspection,
     plan: ComponentOpPlan,
     store: OperandStore,
+}
+
+impl Fixture {
+    /// The same container, decoding through `registry`.
+    fn store_through(&self, registry: &'static CodecRegistry) -> OperandStore {
+        OperandStore::open(self.container.path(), &self.inspection)
+            .unwrap()
+            .with_registry(registry)
+    }
 }
 
 fn fixture(write: fn(&std::path::Path), into: Option<Transcode>) -> Fixture {
@@ -62,7 +72,8 @@ fn fixture(write: fn(&std::path::Path), into: Option<Transcode>) -> Fixture {
     let store = OperandStore::open(container.path(), &inspection).unwrap();
     Fixture {
         _src: src,
-        _container: container,
+        container,
+        inspection,
         plan,
         store,
     }
@@ -97,6 +108,7 @@ fn record(
             access: operation.access(),
             extent: RepresentationExtent::TERMINAL,
             layer: Some(0),
+            declared_representation: None,
             logical_elements: operand.shape.iter().product(),
         },
         representation: operand.dtype.clone(),
@@ -317,32 +329,33 @@ fn rung_one_registry(with_f32: bool) -> CodecRegistry {
 #[test]
 fn a_provider_that_disappears_invalidates_the_preparation_rather_than_falling_back() {
     let f = fixture(dense_f32_model, None);
-    let with = rung_one_registry(true);
-    let ops = PreparedOperands::load_in(
+    // The store carries the registry it decodes through, so selection,
+    // provider identity and decode all read one registry.
+    let with: &'static CodecRegistry = Box::leak(Box::new(rung_one_registry(true)));
+    let ops = PreparedOperands::load(
         &f.plan,
-        &f.store,
+        &f.store_through(with),
         &ProductionBackend::new(),
         ExecutionSlice::Full,
-        &with,
     )
     .unwrap();
-    ops.ensure_providers_in(&with).unwrap();
+    ops.ensure_providers_in(with).unwrap();
     ops.ensure_providers_in(CodecRegistry::builtin())
         .expect("the built-in registry offers the same F32 identity");
-    let without = rung_one_registry(false);
-    let err = ops.ensure_providers_in(&without).unwrap_err().to_string();
+    let without: &'static CodecRegistry = Box::leak(Box::new(rung_one_registry(false)));
+    let err = ops.ensure_providers_in(without).unwrap_err().to_string();
     assert!(
         err.contains("`F32`") && err.contains("no registered codec"),
         "{err}"
     );
     assert!(err.contains("re-prepare"), "{err}");
-    // And preparing against the registry that lacks F32 refuses outright.
-    let Err(err) = PreparedOperands::load_in(
+    // And preparing through a store whose registry lacks F32 refuses
+    // outright.
+    let Err(err) = PreparedOperands::load(
         &f.plan,
-        &f.store,
+        &f.store_through(without),
         &ProductionBackend::new(),
         ExecutionSlice::Full,
-        &without,
     ) else {
         panic!("F32 is not registered there");
     };

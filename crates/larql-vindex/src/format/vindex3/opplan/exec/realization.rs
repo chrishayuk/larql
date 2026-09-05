@@ -35,11 +35,13 @@ use crate::format::vindex3::represent::nvfp4_pack::CodecIdentity;
 /// representation.
 #[derive(Debug, Clone, PartialEq)]
 pub struct RepresentationFacts {
-    /// The label the container stores the operand under.
+    /// The label the facts were resolved from: the container's stored
+    /// label, or the codec the plan declares when the stored label is a
+    /// carrier dialect that names none (see [`Self::resolve_declared`]).
     pub label: String,
     /// The codec's declarations, when the label names a registered codec.
     /// `None` is a fact too: an unregistered label has no decode and no
-    /// capabilities, and only a loader with its own dialect can bind it.
+    /// capabilities, and nothing binds it.
     pub registered: Option<RegisteredFacts>,
     /// Whether an overlay edit stands on the operand. An edit is an
     /// f32-space fact with no stored bytes, so no direct realization can
@@ -59,6 +61,7 @@ pub struct RegisteredFacts {
 
 impl RepresentationFacts {
     /// Resolve `label` through the built-in registry.
+    #[cfg(test)]
     pub fn resolve(label: &str) -> Self {
         Self::resolve_in(CodecRegistry::builtin(), label)
     }
@@ -116,13 +119,34 @@ impl RepresentationFacts {
         })
     }
 
+    /// The facts for an operand whose container label is `stored` and
+    /// whose plan declares `declared`. The STORED representation is
+    /// authoritative: the container's label wins whenever it names a
+    /// codec, because the bytes say what they are. The plan's declaration
+    /// is a legacy default, consulted only for a carrier dialect whose
+    /// label names no codec — a packed MXFP4 bank stored as two `U8`
+    /// streams. These are not two competing truths; the declaration fills
+    /// in where the container says nothing a registry knows. One rule, so
+    /// the selector and the bank loader cannot disagree about what a
+    /// bank is.
+    pub fn resolve_declared(
+        registry: &CodecRegistry,
+        stored: &str,
+        declared: Option<&str>,
+    ) -> Self {
+        let label = match declared {
+            Some(declared) if registry.by_label(stored).is_none() => declared,
+            _ => stored,
+        };
+        Self::resolve_in(registry, label)
+    }
+
     /// Admit slicing the stored bytes per expert — the packed-bank
-    /// realization's requirement, judged BEFORE any byte is read.
-    ///
-    /// A registered codec must provide row access; an unregistered label
-    /// is a dialect the bank loader judges itself (the MXFP4 bank's `U8`
-    /// streams), and is admitted here so that judgement stays where it
-    /// is until 3d moves it into declarations.
+    /// realization's requirement, judged BEFORE any byte is read. A
+    /// registered codec must declare row access. An unregistered label
+    /// has no capabilities to judge; registration itself is refused
+    /// first, by the same rule as every other operation, so this answers
+    /// only for a codec.
     pub fn admit_row_slicing(&self) -> Result<(), CodecError> {
         match &self.registered {
             Some(r) => r
@@ -442,6 +466,9 @@ pub fn common_selection(
             let id = RealizationId::cpu(RealizationForm::SliceStored {
                 convert: bank_convert,
             });
+            if facts.registered.is_none() {
+                return Some(Err(refuse(RefusalKind::UnregisteredRepresentation, vec![])));
+            }
             Some(match facts.admit_row_slicing() {
                 Ok(()) => Ok(Selection {
                     realization: id,

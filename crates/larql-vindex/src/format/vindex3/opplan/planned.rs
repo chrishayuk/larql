@@ -17,14 +17,19 @@
 //! provide that — a direct kernel over stored rows, a whole decode and then
 //! a gather — is the prepared plan's question (3b), not this one's.
 
-use larql_models::config::GateSource;
+use larql_models::config::{ExpertFormat, GateSource};
 use larql_models::quant::mxfp4::FUSED_HALVES;
 
 use super::exec::backend::MatrixClass;
 use super::{
     ComponentOpPlan, ExpertBank, FfnOp, LayerAttention, LayerFfn, OperandRef, RoutedFfnOp,
 };
+use crate::format::vindex3::represent::codec::codecs::float::FloatDtype;
+use crate::format::vindex3::represent::codec::codecs::mxfp4::DTYPE_MXFP4;
 use crate::format::vindex3::represent::codec::{RepresentationExtent, RequiredAccess};
+
+/// The bf16 codec's label, as the float codec spells it.
+const BF16_LABEL: &str = FloatDtype::Bf16.label();
 
 /// What a plan does with one matrix operand.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -81,6 +86,14 @@ pub struct PlannedOperand {
     /// The plan layer the operand belongs to; `None` for the embedding and
     /// the head, which sit outside the stack.
     pub layer: Option<usize>,
+    /// A legacy default for the operand's codec, consulted only when the
+    /// container's stored label is a carrier dialect that names no codec:
+    /// a packed MXFP4 bank is stored as two `U8` byte tensors, and only
+    /// the architecture's declaration says they are MXFP4's two streams.
+    /// The STORED representation stays authoritative — a label that names
+    /// a codec is never overridden by this. `None` when the stored label
+    /// is the representation.
+    pub declared_representation: Option<&'static str>,
     /// The weights the operation touches. For every operand but a packed
     /// bank this is the operand's shape; a packed bank's `OperandRef`
     /// carries the STORED tensor's shape — MXFP4 blocks are sixteen bytes
@@ -106,8 +119,14 @@ impl PlannedOperand {
             access: operation.access(),
             extent: RepresentationExtent::TERMINAL,
             layer,
+            declared_representation: None,
             logical_elements,
         }
+    }
+
+    fn declaring(mut self, representation: Option<&'static str>) -> Self {
+        self.declared_representation = representation;
+        self
     }
 
     pub fn elements(&self) -> usize {
@@ -229,18 +248,25 @@ fn routed(op: &RoutedFfnOp, layer: usize, out: &mut Vec<PlannedOperand>) {
         ExpertBank::Packed { gate_up, down } => {
             let hidden = op.router.shape.get(1).copied().unwrap_or(0);
             let inter = op.expert_intermediate_size;
-            out.push(PlannedOperand::sized(
-                &gate_up.weights,
-                Operation::ExpertBankSlice,
-                Some(layer),
-                op.experts * FUSED_HALVES * inter * hidden,
-            ));
-            out.push(PlannedOperand::sized(
-                &down.weights,
-                Operation::ExpertBankSlice,
-                Some(layer),
-                op.experts * hidden * inter,
-            ));
+            let declared = declared_bank_representation(op.expert_format);
+            out.push(
+                PlannedOperand::sized(
+                    &gate_up.weights,
+                    Operation::ExpertBankSlice,
+                    Some(layer),
+                    op.experts * FUSED_HALVES * inter * hidden,
+                )
+                .declaring(declared),
+            );
+            out.push(
+                PlannedOperand::sized(
+                    &down.weights,
+                    Operation::ExpertBankSlice,
+                    Some(layer),
+                    op.experts * hidden * inter,
+                )
+                .declaring(declared),
+            );
         }
         ExpertBank::PerExpert { gate, up, down } => {
             for operand in gate.iter().chain(up).chain(down) {
@@ -261,5 +287,19 @@ fn routed(op: &RoutedFfnOp, layer: usize, out: &mut Vec<PlannedOperand>) {
                 Some(layer),
             ));
         }
+    }
+}
+
+/// The codec a packed bank's declared layout carries — the legacy default
+/// behind [`PlannedOperand::declared_representation`]. A packed MXFP4 bank
+/// is stored as two `U8` tensors that are MXFP4's values and group-scale
+/// streams; a packed bf16 bank is stored as what it is, and its stored
+/// label answers before this does. A per-expert bank is not packed and
+/// declares nothing beyond its tensors' own labels.
+pub fn declared_bank_representation(format: ExpertFormat) -> Option<&'static str> {
+    match format {
+        ExpertFormat::PackedMxfp4 => Some(DTYPE_MXFP4),
+        ExpertFormat::PackedBF16 => Some(BF16_LABEL),
+        ExpertFormat::PerExpert => None,
     }
 }

@@ -2,32 +2,36 @@
 //! declared format, and building the resolved call.
 //!
 //! The routed case binds a **packed expert bank**: every expert's
-//! projections live in one operand (`[experts, rows, k]`, MXFP4 blocks
-//! plus a scales stream, or unquantised BF16). Per expert, the loader
-//! either binds the stored bytes as they are — an MXFP4 expert for a
-//! backend that declared MXFP4 is a copy into aligned memory and nothing
-//! else — or converts through f32 to the format the backend asked for,
-//! exactly as `load_weight` does for a dense matrix. One resolution path,
-//! so the batch executor and the decode session cannot drift.
+//! projections live in one operand (`[experts, rows, k]`), bound ONCE as
+//! its codec's named streams over the whole `[experts × rows, k]` region.
+//! The codec — the container's label when that names one, else the codec
+//! the plan's declared layout carries (a packed MXFP4 bank is stored as
+//! two `U8` streams) — validates the streams against that geometry and
+//! decodes each expert as a row range of it, which the loader converts to
+//! the format the backend asked for exactly as `load_weight` does for a
+//! dense matrix. A backend that declared the bank's own format gets each
+//! expert's stored rows copied into aligned memory and nothing else. One
+//! resolution path, so the batch executor and the decode session cannot
+//! drift, and no dtype name is judged here: the codec is.
 
-use larql_models::config::ExpertFormat;
-use larql_models::quant::mxfp4::{dequantize_expert, MXFP4_GROUP_BYTES, MXFP4_GROUP_ELEMS};
+use larql_models::quant::mxfp4::{MXFP4_GROUP_BYTES, MXFP4_GROUP_ELEMS};
 
 use super::accounting::Bound;
 use super::backend::{FfnCall, NormCall, RoutedFfnCall, WeightFormat, WeightSlice};
-use super::narrow::{bf16_bytes_to_f16, f32_bytes_to_f16};
-use super::operands::{widen, OperandSource};
+use super::narrow::f32_bytes_to_f16;
+use super::operands::OperandSource;
 use super::realization::RepresentationFacts;
 use super::weights::{load_weight, quantize_mxfp4, quantize_nvfp4, AlignedBytes, LoadedWeight};
 use crate::error::VindexError;
+use crate::format::vindex3::opplan::planned::declared_bank_representation;
 use crate::format::vindex3::opplan::{
     ExpertBank, FfnOp, LayerFfn, NormOp, OperandRef, PackedProjection, RoutedFfnOp,
 };
+use crate::format::vindex3::represent::codec::codecs::lyrw2::bind_region;
+use crate::format::vindex3::represent::codec::codecs::mxfp4::DTYPE_MXFP4;
+use crate::format::vindex3::represent::codec::streams::{GROUP_SCALES, VALUES};
+use crate::format::vindex3::represent::codec::RepresentationExtent;
 
-/// Stored dtype of MXFP4 block and scale streams.
-const DTYPE_U8: &str = "U8";
-/// Stored dtype of an unquantised packed bank.
-const DTYPE_BF16: &str = "BF16";
 /// Gate and up: the two branches sharing one fused operand.
 const FUSED_BRANCHES: usize = larql_models::quant::mxfp4::FUSED_HALVES;
 
@@ -467,7 +471,8 @@ impl RoutedOperands {
 }
 
 /// Load one packed projection as `experts` matrices of `[rows, k]` in
-/// `format`.
+/// `format`: the bank bound once through its codec, each expert decoded
+/// as a row range of it.
 fn load_packed(
     store: OperandSource<'_>,
     projection: &PackedProjection,
@@ -477,79 +482,93 @@ fn load_packed(
     format: WeightFormat,
 ) -> Result<Vec<LoadedWeight>, VindexError> {
     let name = projection.weights.tensor.as_str();
-    // Declared geometry before bytes: a `k` the group cannot tile is a
-    // fact about the op, and refusing it costs no read.
-    if op.expert_format == ExpertFormat::PackedMxfp4 && !k.is_multiple_of(MXFP4_GROUP_ELEMS) {
+    let facts = bank_facts(store, op, &projection.weights)?;
+    let Some(registered) = facts.registered.as_ref() else {
         return Err(VindexError::Parse(format!(
-            "`{name}`: k={k} is not a multiple of the MXFP4 group"
+            "`{name}`: `{}` names no registered codec, so the bank cannot be decoded",
+            facts.label
+        )));
+    };
+    // Declared geometry before bytes: a `k` the codec's row alignment
+    // cannot tile is a fact about the op, and refusing it costs no read.
+    if !registered.capabilities.admits_k(k) {
+        return Err(VindexError::Parse(format!(
+            "`{name}`: k={k} is not a whole number of `{}` row alignments of {} elements",
+            facts.label, registered.capabilities.row_align_elems
         )));
     }
-    require_row_access(store, &projection.weights)?;
+    // The same admission the selector made before this loader was
+    // reached — one derivation, so a direct caller gets the same refusal
+    // rather than a read followed by a decode-time one.
+    facts.admit_row_slicing()?;
+    let codec = store.registry().resolve(&facts.label, name)?;
     let raw = store.load_raw(&projection.weights)?;
-    match op.expert_format {
-        ExpertFormat::PackedMxfp4 => {
-            let scales_ref = projection.scales.as_ref().ok_or_else(|| {
-                VindexError::Parse(format!(
-                    "`{name}`: MXFP4 expert projection carries no scales operand"
-                ))
-            })?;
-            let scales = store.load_raw(scales_ref)?;
-            expect_dtype(&raw.dtype, DTYPE_U8, name)?;
-            expect_dtype(&scales.dtype, DTYPE_U8, &scales_ref.tensor)?;
-            let groups = k / MXFP4_GROUP_ELEMS;
-            let block_stride = rows * groups * MXFP4_GROUP_BYTES;
-            let scale_stride = rows * groups;
-            expect_len(raw.bytes.len(), op.experts * block_stride, name)?;
-            expect_len(
-                scales.bytes.len(),
-                op.experts * scale_stride,
-                &scales_ref.tensor,
-            )?;
-            (0..op.experts)
-                .map(|e| {
-                    let packed = &raw.bytes[e * block_stride..(e + 1) * block_stride];
-                    let scale = &scales.bytes[e * scale_stride..(e + 1) * scale_stride];
-                    match format {
-                        // Native: the stored bytes are the operand.
-                        WeightFormat::Mxfp4 => Ok(LoadedWeight::Mxfp4 {
-                            packed: AlignedBytes::from_bytes(packed),
-                            scales: AlignedBytes::from_bytes(scale),
-                        }),
-                        // Everything else converts through f32, exactly as
-                        // a dense matrix would.
-                        other => {
-                            let values = dequantize_expert(packed, scale, rows, groups)
-                                .map_err(|e| VindexError::Parse(format!("`{name}`: {e}")))?;
-                            from_f32(values, rows, k, other, name)
-                        }
-                    }
-                })
-                .collect()
-        }
-        ExpertFormat::PackedBF16 => {
-            expect_dtype(&raw.dtype, DTYPE_BF16, name)?;
-            let stride = rows * k * 2;
-            expect_len(raw.bytes.len(), op.experts * stride, name)?;
-            (0..op.experts)
-                .map(|e| {
-                    let bytes = &raw.bytes[e * stride..(e + 1) * stride];
-                    match format {
-                        WeightFormat::F16 => Ok(LoadedWeight::F16(bf16_bytes_to_f16(bytes, name)?)),
-                        other => from_f32(widen(DTYPE_BF16, bytes, name)?, rows, k, other, name),
-                    }
-                })
-                .collect()
-        }
-        // Unreachable via `RoutedOperands::load` (it refuses `ExpertBank::
-        // PerExpert` before this is called), kept as the function's own
-        // invariant rather than trusting the one caller never to drift.
-        ExpertFormat::PerExpert => Err(VindexError::Parse(format!(
-            "`{name}`: per-expert tensors are not a packed projection"
-        ))),
-    }
+    let scales = projection
+        .scales
+        .as_ref()
+        .map(|scales_ref| store.load_raw(scales_ref))
+        .transpose()?;
+    // The whole bank is one region of `experts × rows` rows: the codec
+    // validates every stream's length against that geometry, and a codec
+    // that declares no scales stream refuses a partner it cannot consume.
+    let bank_shape = [op.experts * rows, k];
+    let operands = bind_region(
+        codec,
+        &bank_shape,
+        &raw.bytes,
+        scales.as_ref().map(|s| s.bytes.as_slice()),
+        name,
+    )?;
+    (0..op.experts)
+        .map(|e| {
+            let expert_rows = e * rows..(e + 1) * rows;
+            match format {
+                // Native: the bank IS MXFP4 — the codec bound it as
+                // MXFP4's two streams — so each expert's rows are one
+                // contiguous slab of each stream, copied as they are.
+                WeightFormat::Mxfp4 if facts.label == DTYPE_MXFP4 => {
+                    let groups = k / MXFP4_GROUP_ELEMS;
+                    let code_row = groups * MXFP4_GROUP_BYTES;
+                    let codes = operands.stream_of_len(
+                        VALUES,
+                        expert_rows.end * code_row,
+                        DTYPE_MXFP4,
+                        name,
+                    )?;
+                    let scales = operands.stream_of_len(
+                        GROUP_SCALES,
+                        expert_rows.end * groups,
+                        DTYPE_MXFP4,
+                        name,
+                    )?;
+                    Ok(LoadedWeight::Mxfp4 {
+                        packed: AlignedBytes::from_bytes(
+                            &codes[expert_rows.start * code_row..expert_rows.end * code_row],
+                        ),
+                        scales: AlignedBytes::from_bytes(
+                            &scales[expert_rows.start * groups..expert_rows.end * groups],
+                        ),
+                    })
+                }
+                // Everything else decodes through the codec and converts
+                // exactly as a dense matrix would.
+                other => {
+                    let mut values = vec![0.0f32; rows * k];
+                    codec.decode_rows(
+                        &operands,
+                        &bank_shape,
+                        expert_rows,
+                        RepresentationExtent::TERMINAL,
+                        &mut values,
+                        name,
+                    )?;
+                    from_f32(values, rows, k, other, name)
+                }
+            }
+        })
+        .collect()
 }
 
-/// One expert's `[rows, k]` f32 matrix, converted to `format`.
 fn from_f32(
     values: Vec<f32>,
     rows: usize,
@@ -591,42 +610,25 @@ fn from_f32(
     }
 }
 
-/// A packed bank is sliced per expert — arbitrary rows of the stored
-/// bytes. Ask the representation whether it can be addressed that way
-/// BEFORE its bytes are read, so a sequential codec is refused by its
-/// access class, which is the planner's question, and not by dtype name
-/// after the read was paid for.
-///
-/// Only a registered codec can answer. The MXFP4 bank's `U8` streams are
-/// a dialect this loader judges itself below, and an unregistered label
-/// keeps taking that path unchanged.
-fn require_row_access(store: OperandSource<'_>, operand: &OperandRef) -> Result<(), VindexError> {
-    let Some(dtype) = store.store().stored_dtype(operand) else {
-        return Ok(());
-    };
-    // The same admission the selector made before this loader was
-    // reached — one derivation, kept here so a direct caller gets the
-    // same refusal rather than a read followed by a dtype-name refusal.
-    RepresentationFacts::resolve(dtype).admit_row_slicing()?;
-    Ok(())
-}
-
-fn expect_dtype(found: &str, expected: &str, name: &str) -> Result<(), VindexError> {
-    if found == expected {
-        Ok(())
-    } else {
-        Err(VindexError::Parse(format!(
-            "`{name}`: expected stored dtype {expected}, found {found}"
-        )))
-    }
-}
-
-fn expect_len(found: usize, expected: usize, name: &str) -> Result<(), VindexError> {
-    if found == expected {
-        Ok(())
-    } else {
-        Err(VindexError::Parse(format!(
-            "`{name}`: {found} stored bytes, expected {expected} for the declared expert geometry"
-        )))
+/// What a packed bank IS: the same resolution the selector made before
+/// this loader was reached — the container's label when it names a codec,
+/// else the codec the plan's declared layout carries — so a direct caller
+/// is refused exactly as the selector would have refused it.
+fn bank_facts(
+    store: OperandSource<'_>,
+    op: &RoutedFfnOp,
+    operand: &OperandRef,
+) -> Result<RepresentationFacts, VindexError> {
+    let registry = store.registry();
+    let declared = declared_bank_representation(op.expert_format);
+    match (store.store().stored_dtype(operand), declared) {
+        (Some(stored), declared) => Ok(RepresentationFacts::resolve_declared(
+            registry, stored, declared,
+        )),
+        (None, Some(declared)) => Ok(RepresentationFacts::resolve_in(registry, declared)),
+        (None, None) => Err(VindexError::Parse(format!(
+            "`{}`: the bank is neither stored under a label nor declared by the plan",
+            operand.tensor
+        ))),
     }
 }

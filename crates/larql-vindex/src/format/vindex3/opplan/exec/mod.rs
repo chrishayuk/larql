@@ -60,7 +60,6 @@ pub mod weights;
 #[cfg(test)]
 mod tests;
 
-use crate::format::vindex3::represent::codec::CodecRegistry;
 use larql_models::config::GateSource;
 
 use super::{AttentionOp, ComponentOpPlan, LayerPlan};
@@ -245,8 +244,9 @@ pub fn execute_prepared_streaming<B: PlanBackend + ?Sized>(
     sink: &mut dyn FnMut(PlaneEvent) -> Result<(), VindexError>,
 ) -> Result<FinalOutput, VindexError> {
     // A pin whose provider has gone or changed invalidates the image;
-    // nothing here falls back to another realization.
-    ops.ensure_providers_in(CodecRegistry::builtin())?;
+    // nothing here falls back to another realization. The registry is
+    // the image's own — the store's — never a built-in default.
+    ops.ensure_providers_in(ops.registry())?;
     // A one-shot forward owns whatever continuation state the plan needs.
     //
     // For a wholly-softmax stack that is nothing: `None` keeps the

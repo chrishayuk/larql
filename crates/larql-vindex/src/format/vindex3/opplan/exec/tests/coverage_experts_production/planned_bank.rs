@@ -239,16 +239,21 @@ fn a_packed_bank_s_pin_reconciles_with_its_per_expert_objects() {
     }
 }
 
-/// Rung 3c: a bank stored under a dialect no codec claims is prepared
-/// with no provider; a registry that later claims the label is a changed
-/// provider, and the image is invalidated rather than executed. And a
-/// plan whose FFN is a different program from the prepared one is refused
-/// by the pairing.
+/// Rung 3d: a packed MXFP4 bank is stored as two `U8` streams, and its
+/// provider is the MXFP4 codec the plan declares — no dialect, no
+/// provider-less record. A registry without MXFP4 invalidates the image
+/// rather than executing it, and a registry that also claims `U8` changes
+/// nothing: the record names MXFP4, not the carrier label. And a plan
+/// whose FFN is a different program from the prepared one is refused by
+/// the pairing.
 #[test]
-fn an_unregistered_dialect_that_gains_a_provider_invalidates_the_preparation() {
+fn a_packed_bank_s_provider_is_the_declared_codec_and_its_loss_invalidates() {
     use super::super::accounting::ProviderStub;
     use crate::format::vindex3::opplan::exec::operands::OperandStore;
-    use crate::format::vindex3::represent::codec::CodecRegistry;
+    use crate::format::vindex3::represent::codec::codecs::{
+        bf16_zlib, float, kquant, mxfp4, nvfp4,
+    };
+    use crate::format::vindex3::represent::codec::{CodecRegistry, RepresentationCodec};
     let fixture = routed_fixture();
     let ops = PreparedOperands::load(
         &fixture.plan,
@@ -258,18 +263,21 @@ fn an_unregistered_dialect_that_gains_a_provider_invalidates_the_preparation() {
     )
     .unwrap();
     let providers = ops.providers();
-    let u8 = providers
+    assert!(
+        !providers.iter().any(|(label, _)| label == "U8"),
+        "no record names the carrier label: {providers:?}"
+    );
+    let bank = providers
         .iter()
-        .find(|(label, _)| label == "U8")
-        .expect("the MXFP4 bank is stored as U8");
-    assert!(u8.1.is_none(), "no codec claims the dialect");
+        .find(|(label, _)| label == mxfp4::DTYPE_MXFP4)
+        .expect("the bank's record names the declared codec");
+    assert_eq!(bank.1.as_ref(), Some(&mxfp4::MXFP4.identity()));
+    assert!(
+        providers.iter().all(|(_, p)| p.is_some()),
+        "every record has a provider: {providers:?}"
+    );
     ops.ensure_providers_in(CodecRegistry::builtin()).unwrap();
-    // Every shipped codec, so the only change is the dialect gaining a
-    // claimant; a registry with just the stub would mismatch on F32 first.
-    use crate::format::vindex3::represent::codec::codecs::{
-        bf16_zlib, float, kquant, mxfp4, nvfp4,
-    };
-    let claimed = CodecRegistry::new()
+    let mut without_mxfp4 = CodecRegistry::new()
         .register(Box::new(float::BF16))
         .and_then(|r| r.register(Box::new(float::F16)))
         .and_then(|r| r.register(Box::new(float::F32)))
@@ -277,15 +285,23 @@ fn an_unregistered_dialect_that_gains_a_provider_invalidates_the_preparation() {
         .and_then(|r| r.register(Box::new(kquant::Q6_K)))
         .and_then(|r| r.register(Box::new(kquant::Q8_0)))
         .and_then(|r| r.register(Box::new(nvfp4::NVFP4)))
-        .and_then(|r| r.register(Box::new(mxfp4::MXFP4)))
         .and_then(|r| r.register(Box::new(bf16_zlib::BF16_ZLIB)))
-        .and_then(|r| r.register(Box::new(ProviderStub { label: "U8" })))
         .unwrap();
-    let err = ops.ensure_providers_in(&claimed).unwrap_err().to_string();
+    let err = ops
+        .ensure_providers_in(&without_mxfp4)
+        .unwrap_err()
+        .to_string();
     assert!(
-        err.contains("`U8`") && err.contains("no registered codec") && err.contains("stub-U8 r7"),
+        err.contains("`MXFP4`") && err.contains("no registered codec"),
         "{err}"
     );
+    // Claiming the carrier label disturbs nothing: the record's provider
+    // is MXFP4, and MXFP4 is back.
+    without_mxfp4 = without_mxfp4
+        .register(Box::new(mxfp4::MXFP4))
+        .and_then(|r| r.register(Box::new(ProviderStub { label: "U8" })))
+        .unwrap();
+    ops.ensure_providers_in(&without_mxfp4).unwrap();
 
     // The dense fixture's prepared image, held against this routed plan:
     // same attention program, different FFN program.

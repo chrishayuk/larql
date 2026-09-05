@@ -16,6 +16,7 @@ use super::super::super::encode::REPRESENTATION_ID_SEP;
 use super::super::super::inspect::SystemInspection;
 use super::super::OperandRef;
 use crate::error::VindexError;
+use crate::format::vindex3::represent::codec::CodecRegistry;
 
 /// Safetensors dtype labels this reference executor can widen to f32.
 const DTYPE_F32: &str = "F32";
@@ -31,6 +32,10 @@ struct SegmentMap {
 
 /// Operand store over one container.
 pub struct OperandStore {
+    /// The codecs this store decodes through — the built-in registry
+    /// unless a caller binds another, which is how a representation this
+    /// build does not ship becomes executable through registration alone.
+    registry: &'static CodecRegistry,
     segments: BTreeMap<String, SegmentMap>,
     /// Which representation each object was bound to.
     selected: BTreeMap<String, SelectedRepresentation>,
@@ -246,6 +251,7 @@ impl OperandStore {
             );
         }
         Ok(Self {
+            registry: CodecRegistry::builtin(),
             segments,
             absent,
             selected,
@@ -261,6 +267,20 @@ impl OperandStore {
             stored_precision: std::sync::atomic::AtomicU64::new(0),
             touched: std::sync::Mutex::new(std::collections::BTreeSet::new()),
         })
+    }
+
+    /// The same store, decoding through `registry` instead of the built-in
+    /// one. Selection, provider identity and decode all read this one
+    /// registry, so a codec registered here is executable end to end and a
+    /// codec absent from it is refused everywhere.
+    pub fn with_registry(mut self, registry: &'static CodecRegistry) -> Self {
+        self.registry = registry;
+        self
+    }
+
+    /// The codecs this store decodes through.
+    pub fn registry(&self) -> &'static CodecRegistry {
+        self.registry
     }
 
     /// What each object was bound to.
@@ -390,9 +410,9 @@ impl OperandStore {
     /// That is the point — it is what makes a compact representation
     /// measurable on a stack the device cannot run.
     pub fn load(&self, operand: &OperandRef) -> Result<Vec<f32>, VindexError> {
-        use crate::format::vindex3::represent::codec::{CodecRegistry, RepresentationExtent};
+        use crate::format::vindex3::represent::codec::RepresentationExtent;
         let raw = self.load_raw(operand)?;
-        let codec = CodecRegistry::builtin().resolve(&raw.dtype, &operand.tensor)?;
+        let codec = self.registry.resolve(&raw.dtype, &operand.tensor)?;
         Ok(codec.decode_packed(
             &raw.bytes,
             &operand.shape,
@@ -714,6 +734,11 @@ impl<'a> OperandSource<'a> {
     /// how many tensors were quantised at load.
     pub fn store(&self) -> &OperandStore {
         self.base
+    }
+
+    /// The codecs this source decodes through.
+    pub fn registry(&self) -> &'static CodecRegistry {
+        self.base.registry()
     }
 
     /// This source's identity, for stamping derived artefacts.

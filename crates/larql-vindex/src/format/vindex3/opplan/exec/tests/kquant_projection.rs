@@ -503,6 +503,7 @@ fn a_stored_pack_has_one_stored_footprint_and_two_realization_costs() {
         access: operation.access(),
         extent: RepresentationExtent::TERMINAL,
         layer: Some(0),
+        declared_representation: None,
         logical_elements: op.shape.iter().product(),
     };
     let facts = RepresentationFacts::resolve(Q6_K.name);

@@ -102,6 +102,7 @@ fn synthetic(operation: Operation, elements: usize) -> PlannedOperand {
         access: operation.access(),
         extent: RepresentationExtent::TERMINAL,
         layer: Some(0),
+        declared_representation: None,
         logical_elements: elements,
     }
 }

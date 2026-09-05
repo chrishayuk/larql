@@ -772,8 +772,8 @@ pub fn select_realizations<B: PlanBackend + ?Sized>(
     store: OperandSource<'_>,
     backend: &B,
     slice: &ExecutionSlice,
-    registry: &CodecRegistry,
 ) -> Result<Vec<RealizationRecord>, VindexError> {
+    let registry = store.registry();
     let whole = slice.is_whole_stack();
     let range = slice.layers(plan);
     let mut records = Vec::new();
@@ -786,10 +786,15 @@ pub fn select_realizations<B: PlanBackend + ?Sized>(
         if !in_scope {
             continue;
         }
-        let Some(label) = store.store().stored_dtype(&planned.operand) else {
+        let Some(stored) = store.store().stored_dtype(&planned.operand) else {
             continue;
         };
-        let mut facts = RepresentationFacts::resolve_in(registry, label);
+        let mut facts = RepresentationFacts::resolve_declared(
+            registry,
+            stored,
+            planned.declared_representation,
+        );
+        let label = facts.label.clone();
         if store.is_overridden(&planned.operand) {
             facts = facts.overlaid();
         }
@@ -865,6 +870,9 @@ fn bank_pin(records: &[RealizationRecord], index: usize) -> Result<WeightFormat,
 /// rather than mutating them, so one prepared image can serve every
 /// concurrent request on the model.
 pub struct PreparedOperands {
+    /// The registry this image was prepared through — the store's — and
+    /// the one execution re-checks its providers against.
+    registry: &'static CodecRegistry,
     /// Which effective source this image was compiled from.
     stamp: SourceStamp,
     slice: ExecutionSlice,
@@ -893,20 +901,6 @@ impl PreparedOperands {
         backend: &B,
         slice: ExecutionSlice,
     ) -> Result<Self, VindexError> {
-        Self::load_in(plan, store, backend, slice, CodecRegistry::builtin())
-    }
-
-    /// [`Self::load`] with the codec registry named: the providers the
-    /// selection resolves against. A scratch registry is how a test
-    /// prepares against codecs this build does not ship, and how a
-    /// provider that later disappears is witnessed.
-    pub fn load_in<'s, B: PlanBackend + ?Sized>(
-        plan: &ComponentOpPlan,
-        store: impl Into<OperandSource<'s>>,
-        backend: &B,
-        slice: ExecutionSlice,
-        registry: &CodecRegistry,
-    ) -> Result<Self, VindexError> {
         let store = store.into();
         slice.validate(plan)?;
         // **Refuse before any operand is loaded.** The plan may carry a
@@ -930,7 +924,7 @@ impl PreparedOperands {
         // this slice executes is resolved against the registry, admitted,
         // and pinned to one realization — or the whole plan is refused
         // with every reason — before a byte of any of them is read.
-        let realizations = select_realizations(plan, store, backend, &slice, registry)?;
+        let realizations = select_realizations(plan, store, backend, &slice)?;
         let embedding = plan.embedding.as_ref().ok_or_else(|| {
             VindexError::Parse(format!(
                 "component `{}` has no embedding op — external hidden-state input is a later rung",
@@ -1085,6 +1079,7 @@ impl PreparedOperands {
             layers,
             final_norm,
             output,
+            registry: store.registry(),
             realizations,
         };
         // **The executor runs what was pinned.** Every resident matrix
@@ -1126,6 +1121,11 @@ impl PreparedOperands {
     /// One pinned realization per planned operand this image executes:
     /// the representation resolved, the candidates considered, the one
     /// selected, its reason and its declared residency.
+    /// The registry this image was prepared through.
+    pub fn registry(&self) -> &'static CodecRegistry {
+        self.registry
+    }
+
     pub fn realizations(&self) -> &[RealizationRecord] {
         &self.realizations
     }
@@ -1275,9 +1275,11 @@ impl PreparedOperands {
         )
     }
 
-    /// The providers this image was prepared against, by stored label,
-    /// with the identity each resolved to (`None` for a label no codec
-    /// claims — a dialect the loader judged itself).
+    /// The providers this image was prepared against, by representation
+    /// label, with the identity each resolved to. Since 3d every record
+    /// names a registered codec — a packed bank's carrier label resolves
+    /// to the codec the plan declares — so a `None` here is an overlay
+    /// edit's f32-space fact, never a label a loader judged for itself.
     pub fn providers(&self) -> Vec<(String, Option<CodecIdentity>)> {
         let mut out: Vec<(String, Option<CodecIdentity>)> = Vec::new();
         for r in &self.realizations {

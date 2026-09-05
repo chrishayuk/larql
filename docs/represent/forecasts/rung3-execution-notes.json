@@ -141,6 +141,93 @@
     "coverage": "policy passed on the final tree: 93.77% total over 429 files; accounting.rs 94.14%, realization.rs 99.16%, prepared.rs 90.69% (back above the floor after the pairing and provider witnesses were added — it had slipped to 89.23% on a debt baseline), weights/staged.rs 91.67%; no debt entry added; the instrumented test phase ran clean with its log kept",
     "docs": "check_doc_links.py + check_doc_references.py --strict: green"
    }
+  },
+  "3d_remove_privileged_paths": {
+   "executed": "2026-09-05",
+   "wording": "Split the inventory by consequence (user): shared expert = correctness gap, implement a CPU realization or preserve the hard refusal; MXFP4 dialect = architectural gap, remove its label/boolean bypass and admit it through registry semantics; external provider = extensibility proof, a separate crate adds a provider without changing planner or executor selection; aliased object = optimisation gap, shared materialization first, projection CSE only with semantic proof, and it must not delay the first three.",
+   "result": "HELD, with one falsifier fired and recorded (F8). (1) Shared expert: the hard refusal is PRESERVED, not replaced — every real shared-expert model (Kimi, DeepSeek, Qwen-MoE) plans `ExpertBank::PerExpert` banks, which the CPU loader refuses before the shared projection is reached, so a CPU shared-expert realization has no executable container to be qualified on yet; the inventory names two missing CPU realizations, the per-expert bank binding and the shared-expert projection (the Metal stack binds both). (2) MXFP4: the packed bank's planned operand DECLARES its codec (`PlannedOperand.declared_representation`, from `ExpertFormat` through one function); the selector and the loader resolve the bank's facts through one rule, `RepresentationFacts::resolve_declared` — the container's label wins whenever it names a codec, the declaration answers only when the label names none — and the loader binds the whole bank ONCE as the codec's named streams over `[experts × rows, k]` through `lyrw2::bind_region`, decodes each expert as a row range through `decode_rows`, and keeps the device's native MXFP4 slab as a copy of the bound streams. `DTYPE_U8`, `DTYPE_BF16`, `expect_dtype`, `expect_len` and `require_row_access` are deleted; the k-alignment refusal reads the codec's `row_align_elems`; the routed parity oracles did not move (the codec's `decode_rows` IS `dequantize_expert`). The prepared image's record for a bank names `MXFP4` with the MXFP4 identity, and a registry without MXFP4 invalidates it. (3) External provider: PROVED at the codec plane by `crates/larql-vindex/tests/external_codec_provider.rs` — an integration test, a separate crate in cargo's model that sees only exported API — which registers `F32X` (f32 under another label, declaring the shipped `BlasF32`/`ScalarF32` plans) into a scratch registry, relabels the dense fixture's projections in place, and executes: bit-exact logits and hidden state against the control, every selection identical to the shipped label's (only the record's representation and provider differ), refusal by name before any byte without the provider, and invalidation of an image prepared with it. The forecast's kernel-plane blocker was MEASURED, not opened (see 3d-N3). (4) Aliased object: noted, not built.",
+   "surfaces": [
+    "`PlannedOperand.declared_representation: Option<&'static str>` and `planned::declared_bank_representation(ExpertFormat)` — the plan's declaration of a packed bank's codec (PackedMxfp4 → MXFP4, PackedBF16 → BF16, PerExpert → none)",
+    "`RepresentationFacts::resolve_declared(registry, stored, declared)` — the one rule the selector and the bank loader share; `RepresentationFacts::resolve` (built-in registry) is now test-only",
+    "`OperandStore::with_registry` / `registry()`, `OperandSource::registry()` — the store carries the registry it decodes through; `OperandStore::load` resolves through it, never through the built-in registry",
+    "`PreparedOperands::registry()` — the image carries the registry it was prepared through; `select_realizations(plan, store, backend, slice)` reads the store's; `execute_prepared_streaming` and `DecodeSession::assemble` check providers against `ops.registry()`; `load_in` is gone",
+    "`experts::load_packed` — bank bound once through `lyrw2::bind_region` over `[experts × rows, k]`, experts decoded as row ranges through the codec, `from_f32` unchanged; `experts::bank_facts` resolves the bank the way the selector did; the selector's bank arm refuses an unregistered label as `UnregisteredRepresentation` like every other operation",
+    "`lyrw2::bind_region` — a region's streams must total exactly `stored_bytes(shape)` (3d-N1)",
+    "`tests/external_codec_provider.rs` (integration) — the acceptance test; `planned_bank::a_packed_bank_s_provider_is_the_declared_codec_and_its_loss_invalidates` replaces the 3c dialect test; the routed refusal witnesses now assert the codec's own terms"
+   ],
+   "forecast_scored": {
+    "P1 DTYPE_U8 leaves experts.rs; bank binds through the MXFP4 codec's two named streams; parity bit-exact": "HELD. The bank binds as one region of `experts × rows` rows rather than expert by expert — one validation, one exactness check, per-expert row ranges.",
+    "P2 KQuantExecution a selector preference; stored_kquant gone; Direct(FusedKQuant) iff declared": "HELD in 3b (recorded there); nothing remained for 3d.",
+    "P3 the predicted blocker (RealizationId closed over PhysicalProjectionPlan; four named files)": "The proof passed WITHOUT opening the enum — the forecast's own 'surprise to record' branch — because it was run at the CODEC plane: a representation provider declaring a SHIPPED plan needs no new kernel identity. The KERNEL-plane blocker stands and was measured, not estimated: see 3d-N3.",
+    "P4 zero edits under exec/ other than registration": "FALSIFIED in letter (F8 fired), see 3d-N2: the executor held three hidden built-in registries that registration could not reach. After they became values carried by the store and the image, the provider needed zero edits, and the acceptance test proves it from outside the crate."
+   },
+   "falsifiers": {
+    "F7 DTYPE_U8 or ExpertFormat-keyed dtype expectations survive": "not fired — both constants and both expect_* helpers are deleted; `ExpertFormat` keys one thing, the DECLARED CODEC of a packed bank, and no dtype name is judged anywhere under exec/",
+    "F8 the provider needs an exec/ edit beyond registration": "FIRED — three `CodecRegistry::builtin()` defaults under exec/ (store decode, selector, execution-time provider check ×2) were edited into explicit registries; recorded as 3d-N2 rather than smoothed over",
+    "F9 a parity oracle moves": "not fired — routed and dense oracles green, external provider bit-exact",
+    "F10 a new file lands under 90% line coverage": "not fired — no new source file; the new file is an integration test outside the policy's scope, and every touched source file above the floor except exec/mod.rs on its pre-existing baseline"
+   },
+   "findings_not_in_the_forecast": [
+    {
+     "id": "3d-N1",
+     "finding": "The contract validates a LOWER BOUND, never an exact length: `validate` proves each stream at least as long as the shape implies (`stream_of_len`), so binding the bank through the codec ACCEPTED a scales operand pointed at the f32 bias (1024 bytes where 256 were needed) that the old loader's exact `expect_len` refused — the routed coverage test caught it on the first codec-driven run. Fixed in `lyrw2::bind_region`, the storage-arrangement helper: a region is the whole of a tensor of `shape`, so its streams must total exactly `stored_bytes(shape)`; with each stream already at least its minimum and the minima summing to the total, every stream is exact. Recorded as a contract finding — a codec validates what it can decode from, a REGION is exact — and left at the helper rather than widened into the trait."
+    },
+    {
+     "id": "3d-N2",
+     "finding": "'Executable through registration alone' held at selection and FAILED at execution on the first run of the provider proof: the image prepared through the scratch registry was refused as 'prepared against external-f32x r1 and the registry now offers no registered codec', because `execute_prepared_streaming` and `DecodeSession::assemble` checked providers against `CodecRegistry::builtin()`, and `OperandStore::load` decoded through it too — three hidden registries no registration could reach. The negative arm (refusal without the provider) had passed, which is exactly the false-green shape a positive arm exists to catch. The registry is now a value: the store carries it, the selector reads the store's, the image records the one it was prepared through, and execution checks against the image's own. With immutable `&'static` registries that execution-time check is a consistency assertion; the meaningful invalidation is the explicit `ensure_providers_in(other)` a caller runs when it switches registries, which the proof exercises."
+    },
+    {
+     "id": "3d-N3",
+     "finding": "The kernel-plane blocker, measured: a provider that brings its OWN plan (not a shipped `PhysicalProjectionPlan`) meets five closed enums — `PhysicalProjectionPlan`, `WeightFormat`, `WeightSlice`, `WeightRows`, `LoadedWeight` — matched exhaustively across the non-test files counted at the end of this wave (see `kernel_plane_blocker`), more than the forecast's four named files. Not opened here: the plugin-planes staging puts it in the ExecutionTargetRegistry stage, and 3d's remit ended at removing privileged paths and proving the codec plane."
+    },
+    {
+     "id": "3d-N4",
+     "finding": "The stored-label-versus-declaration rule has an edge the test pins: a registered codec that CLAIMS the carrier label (`U8`) would claim the bank, because the bytes' own label wins whenever it names a codec. The prepared image's record is immune — it names MXFP4 with MXFP4's identity — so `ensure_providers_in` on a registry that adds a `U8` claimant changes nothing."
+    },
+    {
+     "id": "3d-N5",
+     "finding": "The refusal witnesses changed WHICH refusal fires, not whether: a bank declared BF16 whose op still carries a scales operand is refused as `UnexpectedStream` (BF16 declares no `group_scales`) before any length check; a packed bank declared `PerExpert` is refused as undecodable (its carrier label names no codec and the plan declares none) where it was refused as 'not a packed projection'; an unaligned `k` cites the codec's declared row alignment. None of these read a dtype name."
+    },
+    {
+     "id": "3d-N6",
+     "finding": "Shared expert, inventoried not built: the CPU loader refuses `ExpertBank::PerExpert` before it could reach a shared projection, and every real shared-expert model plans per-expert banks, so the two missing CPU realizations are the per-expert bank binding and the shared-expert projection; the 3b refusal (`MissingRealization`, before any byte) stands and its witness is unchanged."
+    },
+    {
+     "id": "3d-N7",
+     "finding": "Aliased object, noted only: the Gemma-4 miniature binds one tensor as two projections in one layer and ties the head to the embedding; both load twice today. Shared materialization (one bound object, two operation instances) is the safe first step; projection CSE needs a semantic proof that the two operations consume identical inputs, which the plan does not yet carry."
+    }
+   ],
+   "gates": {
+    "run": "2026-09-05, worktree .claude/worktrees/represent-rung3, toolchain 1.98.0 (rust-toolchain.toml)",
+    "cargo test -p larql-vindex": "4500 passed, 0 failed, 7 ignored (lib 4193 + integration tests incl. external_codec_provider 2/2)",
+    "cargo clippy --workspace --all-targets -D warnings": "clean (only the pre-existing future-incompat note on the external `block` crate)",
+    "cargo check --workspace --all-targets --target x86_64-apple-darwin": "clean",
+    "cargo llvm-cov -p larql-vindex + scripts/check_coverage_policy.py": "passed: total 93.77% lines, 429 files checked, 368 at the 90% default, 61 debt baselines; touched files — realization.rs 98.80, planned.rs 98.77, lyrw2.rs 100.00, decode.rs 94.64, experts.rs 91.76, operands.rs 91.74, prepared.rs 90.58; exec/mod.rs 87.31 on its pre-existing debt baseline (the change there is one call and one comment)",
+    "scripts/check_doc_links.py / check_doc_references.py --strict": "855 links resolve; no broken references",
+    "cargo fmt --all -- --check": "clean, run last",
+    "grep gate (non-test exec/)": "no DTYPE_U8, no expect_dtype, no stored_* boolean, no load_in; CodecRegistry::builtin() remains only as the store's documented constructor default and inside the #[cfg(test)] RepresentationFacts::resolve"
+   },
+   "kernel_plane_blocker": {
+    "measured": "2026-09-05, non-test files under opplan/exec/ and represent/ naming a variant of each closed enum",
+    "PhysicalProjectionPlan": 11,
+    "WeightFormat": 11,
+    "WeightSlice": 6,
+    "WeightRows": 13,
+    "LoadedWeight": 7,
+    "files_naming_at_least_one": 33,
+    "exhaustive_matches_over_PhysicalProjectionPlan_by_qualified_path": [
+     "exec/cpu/cost.rs",
+     "exec/cpu/ledger.rs"
+    ],
+    "reading": "The forecast's 'four named files' (ledger, cost, arithmetic, physical) is the set that matches the plan exhaustively; the surface a provider-supplied plan must thread through — the weight-format, slice, rows and loaded-weight enums it would also need a variant in — is 33 files. Opening one enum is not the work; the work is that a kernel identity is five enums wide."
+   },
+   "claim_earned": "LARQL can accept a representation implementation through exported API, carry its registry through preparation and execution, select and account for it before I/O, execute it bit-exactly, and invalidate prepared state when that provider disappears — without privileged dtype control flow. (User's wording, 2026-09-05.)",
+   "wording_boundaries": [
+    "The integration test proves external-crate compatibility (Rust integration tests compile as separate crates against exported API). It does not claim runtime discovery or distributed package loading.",
+    "'Stored label wins' makes the stored representation AUTHORITATIVE; the expert-format declaration is a legacy default consulted only when the stored label names no codec. One rule with a fallback, not two competing semantic truths.",
+    "Region exactness (each stream ≥ its declared minimum, all streams total the declared size, hence no unclaimed bytes) is a rule for FIXED-SIZE codecs; an instance-sized codec takes its exact length from the bound container record, never a shape-derived declaration, and cannot be bound as a region."
+   ],
+   "after_merge": "Stop codec/plugin architecture work. The five closed kernel enums across 33 files are measured debt. Next programme: residency into K3 — bind a real K3 plan through this selection/accounting machinery, let it name every missing realization before bytes are touched, resolve the per-expert-bank/shared-expert CPU refusal as a concrete execution requirement, price direct/decoded/packed-bank paths from observed residency, one-layer → miniature → full K3 parity, feed real costs back into REPRESENT."
   }
  }
 }

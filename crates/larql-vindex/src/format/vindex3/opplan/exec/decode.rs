@@ -164,9 +164,7 @@ impl<'a, B: PlanBackend> DecodeSession<'a, B> {
         backend: &'a B,
         mut kv: KvSlot<'a>,
     ) -> Result<Self, VindexError> {
-        ops.get().ensure_providers_in(
-            crate::format::vindex3::represent::codec::CodecRegistry::builtin(),
-        )?;
+        ops.get().ensure_providers_in(ops.get().registry())?;
         // The FULL continuation geometry, KV and recurrent alike.
         // `plan_kv_geometry` is the KV-only adapter and refuses a hybrid
         // plan; a session over one needs both forms announced.
