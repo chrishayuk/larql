@@ -9,7 +9,7 @@
 
 use std::sync::OnceLock;
 
-use super::codecs::{float, kquant, mxfp4, nvfp4};
+use super::codecs::{bf16_zlib, float, kquant, mxfp4, nvfp4};
 use super::error::CodecError;
 use super::RepresentationCodec;
 use crate::format::vindex3::represent::nvfp4_pack::CodecIdentity;
@@ -54,6 +54,7 @@ impl CodecRegistry {
                 .and_then(|r| r.register(Box::new(kquant::Q8_0)))
                 .and_then(|r| r.register(Box::new(nvfp4::NVFP4)))
                 .and_then(|r| r.register(Box::new(mxfp4::MXFP4)))
+                .and_then(|r| r.register(Box::new(bf16_zlib::BF16_ZLIB)))
                 .expect("the built-in codecs carry distinct labels and families")
         })
     }

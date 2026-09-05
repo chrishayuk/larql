@@ -38,6 +38,12 @@ tokenizers = "0.21"
 # Checksums
 sha2 = "0.10"
 
+# zlib (RFC 1950 over RFC 1951) inflate/deflate for the entropy-coded
+# bf16 codec — the representation that is sequential by construction.
+# Default backend is the pure-Rust miniz_oxide, already in the lock via
+# hf-hub's ureq, so no new crate and nothing target-gated.
+flate2 = "1"
+
 # base64 encoding for the HF preupload file-sample field.
 base64 = "0.22"
 

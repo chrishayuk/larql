@@ -32,6 +32,20 @@ use super::encode::encode_system;
 
 /// Deterministic small weights: LCG over the flat index, scaled to
 /// ±0.05 so activations stay in a well-conditioned range.
+/// One RFC 1950 stream over the row-major little-endian bf16 image of
+/// `values` — the only `BF16_ZLIB` encoder in the tree, and it lives with
+/// the fixtures deliberately: the representation contract is decode-only,
+/// and a compile-path encoder is a later rung's claim, not this one's.
+pub fn encode_bf16_zlib(values: &[f32]) -> Vec<u8> {
+    use std::io::Write;
+    let image = larql_models::quant::half::encode_bf16(values);
+    let mut encoder = flate2::write::ZlibEncoder::new(Vec::new(), flate2::Compression::best());
+    encoder
+        .write_all(&image)
+        .expect("a Vec never refuses a write");
+    encoder.finish().expect("a Vec never refuses a write")
+}
+
 pub fn lcg_values(n: usize, seed: u64) -> Vec<f32> {
     let mut state = seed
         .wrapping_mul(6364136223846793005)

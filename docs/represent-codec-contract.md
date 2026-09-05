@@ -122,3 +122,45 @@ the extracted contract preserved an mmap / random-access assumption. Then
 progressive. Then VQ. If those three arrive without changing the trait, it
 is frozen, and LARQL no longer knows what quantisation formats exist — only
 what properties an executable representation must declare.
+
+## Rung 2 — entropy-coded bf16, the hostile sixth codec: HELD
+
+Preregistered before any code in
+[`represent/forecasts/rung2-entropy-coded-bf16.json`](represent/forecasts/rung2-entropy-coded-bf16.json)
+(frozen, unedited); scored in
+[`represent/forecasts/rung2-execution-notes.json`](represent/forecasts/rung2-execution-notes.json).
+Code: `codec/codecs/bf16_zlib.rs`, the ninth registered codec.
+
+`BF16_ZLIB` is one RFC 1950 stream per tensor inflating to the row-major
+little-endian bf16 image — sequential by construction, with a stored
+length that is instance-dependent (a repetitive tensor stores fewer bytes
+than raw bf16, a noise tensor more) while the decoded length stays
+shape-derived, and with no direct realization registered. The identity names
+the wire format and the element grid, never the library; the lossless
+claim is proved at the bit level against a stream written by a *different*
+implementation (Python's zlib, `scripts/gen_bf16_zlib_fixture.py`).
+
+| Property | Result |
+| --- | --- |
+| executable through registration alone | one `.register` line; prepared / production / physical / weights / operands untouched; candidate logits **bit-exact** to a raw-bf16 control under the production backend |
+| the contract leak | exactly the one forecast — `stored_bytes(shape)` — costing one refusal variant, `InstanceSized`; every other contract file byte-identical to `f92fac65` |
+| sequential, refused by class | the packed-bank preflight asks the registry `require(RowRandom)` **before** reading; refusal names `sequential` vs `row-random`, and `load_count` does not move |
+| no direct realization | `accelerations()` empty; the executor observes `BlasF32` over an f32 image |
+| residency | the census agrees with `decode_residency()` for every transcoded site, and a mutated declaration would break the agreement — a check with teeth, not two readings of the f32 default |
+| source touch vs working set | the container's recorded length (≠ 2·elements, either direction) vs 4·elements resident |
+| pre-registration control | the eight-codec registry refuses the label naming the eight; the same bytes under an unregistered label are refused at load, by name |
+
+Seven whole-registry gates collided, not the six forecast: each was
+classified in place — accidental universals (row access for every codec,
+size from shape, validate-by-length) generalised **by declaration, not by
+label**; the genuine requirement (a codec with an acceleration provides
+rows) retained; rosters extended. The generalised short-stream gate then
+caught a real gap in the first implementation: a reader adapter that
+reports a missing Adler-32 trailer as end-of-file. Whole decodes now
+require a positively witnessed stream end.
+
+What this earns, in the user's wording: LARQL supports plug-in
+representations with different storage and access semantics.
+"Representation-open" waits on VQ and progressive; pluggable *lowering
+targets* are enabled by the seam but not delivered — rung 3 (planner
+admission, realization trace) is their prerequisite.
