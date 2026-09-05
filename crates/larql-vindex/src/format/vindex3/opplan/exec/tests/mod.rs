@@ -13,6 +13,7 @@ mod attention_kv_parity;
 mod backend_rows;
 mod bf16_gemv_bench;
 mod bf16_residency;
+mod bf16_zlib_execution;
 mod compact_consumption;
 mod continuation;
 mod controls;

@@ -63,6 +63,12 @@ pub enum CodecError {
         have: usize,
     },
 
+    #[error(
+        "tensor `{tensor}`: `{label}` is entropy-coded, so its stored size is a property of \
+         the instance and not of its shape; read the operand length the container records"
+    )]
+    InstanceSized { tensor: String, label: String },
+
     #[error("tensor `{tensor}`: shape {shape:?} cannot hold `{label}`: {why}")]
     Geometry {
         tensor: String,

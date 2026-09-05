@@ -19,8 +19,9 @@ use super::operands::{widen, OperandSource};
 use super::weights::{load_weight, quantize_mxfp4, quantize_nvfp4, AlignedBytes, LoadedWeight};
 use crate::error::VindexError;
 use crate::format::vindex3::opplan::{
-    ExpertBank, FfnOp, LayerFfn, NormOp, PackedProjection, RoutedFfnOp,
+    ExpertBank, FfnOp, LayerFfn, NormOp, OperandRef, PackedProjection, RoutedFfnOp,
 };
+use crate::format::vindex3::represent::codec::{CodecRegistry, RequiredAccess};
 
 /// Stored dtype of MXFP4 block and scale streams.
 const DTYPE_U8: &str = "U8";
@@ -425,6 +426,7 @@ fn load_packed(
             "`{name}`: k={k} is not a multiple of the MXFP4 group"
         )));
     }
+    require_row_access(store, &projection.weights)?;
     let raw = store.load_raw(&projection.weights)?;
     match op.expert_format {
         ExpertFormat::PackedMxfp4 => {
@@ -529,6 +531,27 @@ fn from_f32(
              has already widened to f32"
         ))),
     }
+}
+
+/// A packed bank is sliced per expert — arbitrary rows of the stored
+/// bytes. Ask the representation whether it can be addressed that way
+/// BEFORE its bytes are read, so a sequential codec is refused by its
+/// access class, which is the planner's question, and not by dtype name
+/// after the read was paid for.
+///
+/// Only a registered codec can answer. The MXFP4 bank's `U8` streams are
+/// a dialect this loader judges itself below, and an unregistered label
+/// keeps taking that path unchanged.
+fn require_row_access(store: OperandSource<'_>, operand: &OperandRef) -> Result<(), VindexError> {
+    let Some(dtype) = store.store().stored_dtype(operand) else {
+        return Ok(());
+    };
+    if let Some(codec) = CodecRegistry::builtin().by_label(dtype) {
+        codec
+            .capabilities()
+            .require(RequiredAccess::RowRandom, codec.encoding_label())?;
+    }
+    Ok(())
 }
 
 fn expect_dtype(found: &str, expected: &str, name: &str) -> Result<(), VindexError> {

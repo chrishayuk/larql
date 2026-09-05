@@ -145,6 +145,7 @@ fn decode_packed_is_bind_then_validate_then_decode_for_every_packed_codec() {
 
 #[test]
 fn every_fixture_validates_and_is_the_size_the_codec_declares() {
+    let mut instance_sized = 0;
     for fixture in fixtures() {
         let operands = fixture.operands();
         fixture
@@ -156,11 +157,20 @@ fn every_fixture_validates_and_is_the_size_the_codec_declares() {
                 TENSOR,
             )
             .unwrap_or_else(|e| panic!("{}: {e}", fixture.label()));
-        let declared = fixture
+        let held: usize = fixture.buffers.iter().map(Vec::len).sum();
+        match fixture
             .codec
             .stored_bytes(&fixture.shape, RepresentationExtent::TERMINAL, TENSOR)
-            .unwrap();
-        let held: usize = fixture.buffers.iter().map(Vec::len).sum();
-        assert_eq!(held as u64, declared, "{}", fixture.label());
+        {
+            Ok(declared) => assert_eq!(held as u64, declared, "{}", fixture.label()),
+            // An instance-sized fixture is whatever its stream came to;
+            // the size lives in the operand and the codec says so.
+            Err(CodecError::InstanceSized { .. }) => {
+                assert!(held > 0, "{}", fixture.label());
+                instance_sized += 1;
+            }
+            Err(other) => panic!("{}: {other}", fixture.label()),
+        }
     }
+    assert_eq!(instance_sized, 1, "the instance-sized arm ran");
 }

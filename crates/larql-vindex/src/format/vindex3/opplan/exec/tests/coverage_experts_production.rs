@@ -18,6 +18,7 @@
 //! MXFP4 packing holds — the BF16 → MXFP4 arm is checked byte for byte,
 //! not against a tolerance.
 
+mod bf16_zlib_bank;
 mod fixture;
 
 use crate::format::vindex3::opplan::{ExpertBank, OperandRef, PackedProjection};

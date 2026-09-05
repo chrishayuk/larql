@@ -85,6 +85,7 @@ fn a_destination_of_the_wrong_size_is_refused_before_any_byte_is_read() {
 
 #[test]
 fn a_stream_shorter_than_the_shape_implies_is_refused_by_stream_name() {
+    let mut at_decode = 0;
     for fixture in fixtures() {
         let label = fixture.label();
         let mut streams = NamedStreams::new();
@@ -105,9 +106,32 @@ fn a_stream_shorter_than_the_shape_implies_is_refused_by_stream_name() {
             continue;
         }
         let operands = CodecOperands::from_streams(streams);
+        let validation = fixture.codec.validate(
+            &operands,
+            &fixture.shape,
+            RepresentationExtent::TERMINAL,
+            TENSOR,
+        );
+        // Keyed to what the codec DECLARES, not to its label: a codec that
+        // prices a shape can judge a short stream before reading it; one
+        // whose size is an instance property can only find out by
+        // inflating, and refuses at decode naming the tensor and itself.
+        let prices_from_shape = fixture
+            .codec
+            .stored_bytes(&fixture.shape, RepresentationExtent::TERMINAL, TENSOR)
+            .is_ok();
+        if prices_from_shape {
+            let err = validation.unwrap_err();
+            assert!(
+                matches!(&err, CodecError::StreamLength { stream, .. } if stream == "values"),
+                "{label}: {err}"
+            );
+            continue;
+        }
+        validation.unwrap_or_else(|e| panic!("{label}: a header is all validate can judge: {e}"));
         let err = fixture
             .codec
-            .validate(
+            .decode_all(
                 &operands,
                 &fixture.shape,
                 RepresentationExtent::TERMINAL,
@@ -115,10 +139,12 @@ fn a_stream_shorter_than_the_shape_implies_is_refused_by_stream_name() {
             )
             .unwrap_err();
         assert!(
-            matches!(&err, CodecError::StreamLength { stream, .. } if stream == "values"),
+            matches!(&err, CodecError::Decode { label: l, tensor, .. } if l == label && tensor == TENSOR),
             "{label}: {err}"
         );
+        at_decode += 1;
     }
+    assert_eq!(at_decode, 1, "the decode-time arm ran");
 }
 
 #[test]
@@ -130,11 +156,20 @@ fn a_row_the_codec_cannot_block_is_refused_by_group() {
         let result = codec.stored_bytes(&[2, 100], RepresentationExtent::TERMINAL, TENSOR);
         let group = codec.capabilities().row_align_elems;
         if group == 1 {
-            assert_eq!(
-                result.unwrap(),
-                200 * codec.capabilities().physical_align_bytes as u64,
-                "{label}"
-            );
+            // The subject here is the GROUPED refusal; for an ungrouped
+            // codec the price was asserted as a side statement, and that
+            // side statement assumed shape-derived size. (The seventh
+            // gate rung 2's forecast did not name — see its execution
+            // notes.)
+            match result {
+                Ok(bytes) => assert_eq!(
+                    bytes,
+                    200 * codec.capabilities().physical_align_bytes as u64,
+                    "{label}"
+                ),
+                Err(CodecError::InstanceSized { .. }) => {}
+                Err(other) => panic!("{label}: {other}"),
+            }
             continue;
         }
         let err = result.unwrap_err();
