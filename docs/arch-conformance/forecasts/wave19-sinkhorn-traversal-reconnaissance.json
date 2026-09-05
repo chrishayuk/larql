@@ -1,0 +1,195 @@
+{
+  "wave": 19,
+  "name": "sinkhorn-traversal-reconnaissance",
+  "artifact_kind": "reconnaissance",
+  "written": "2026-09-05, against origin/main f8c2cd5a, before any forecast and before any capability code",
+  "rule_this_follows": "reconnaissance -> freeze -> implementation (feedback_measure_baseline_forecast_intervention). This artefact establishes the baseline only: authority boundaries, current traversal structure, current refusal paths, fixture census, what is and is not observable, existing metrics. It implements nothing and forecasts nothing. The sibling forecast, when frozen, may only predict the TRANSITION.",
+  "scope_as_set_by_the_user": "Six questions and a placement diagram, nothing else. The HC sites are already carried (LayerPlan.hyper_connection, ComponentOpPlan.hyper_connection_head, residual_topology); the wave-17 operation exists (exec::hyper_connection::{sublayer_forward, head_reduce, expand_embedding}). No new role vocabulary, no new placement semantics, no representation work. Lifting PreparedOperands::load's refusal is the LAST step. The refusal stays until an intermediate-state witness exists AND can fail.",
+
+  "baseline_measured": {
+    "commit": "f8c2cd5a (origin/main; merge of PR #421)",
+    "existing_hc_tests": "44 pass, 0 fail — `cargo test -p larql-vindex --lib -- hyper_connection wave18_hc` (graph roles 3, exec stages 16, opplan refusal 5, wave18 baseline 5, wave18 carriage 15)",
+    "sweep": {
+      "scored": 109,
+      "verdicts": "GREEN 41 / AMBER 3 / RED 65 / BUG 0; whole-model admissible 32",
+      "text_closure_blockers_total": 1031,
+      "derivation": "sum of capabilities[text_generation].blocking over ~/chris-models/_conformance/plans/*.json with ok=true — self-derived here, agrees with the wave-18 record",
+      "subjects": {
+        "zai-org/GLM-5.3-Flash": {"blocking": 31, "hc_cluster": 5, "hc_finding_ids": [24, 25, 26, 50, 111], "note": "3 config keys (hc_eps, hc_mult, hc_sinkhorn_iters) + text_config.mhc UNKNOWN (id 50) + target.execution_surface UnsupportedComponent (id 111, the topology refusal). Plan carries residual_topology=HyperConnection{streams:4, iters:20, eps:1e-6} and NO hyper_connection_head."},
+        "deepseek-ai/DeepSeek-V4-Flash": {"blocking": 31, "hc_cluster": 3, "hc_finding_ids": [16, 17, 18], "note": "3 config keys only. The execution-surface topology refusal is NEVER REACHED: finding 72 says the surface is incomplete on norm placement (pre_attn false, post_attn true, pre_ffn false, post_ffn false) — the base dialect, as wave 18 recorded. 28 non-HC blockers (sparse indexer 7, MoE routing 5, quantization 4, MTP 2, ...)."},
+        "deepseek-ai/DeepSeek-V4-Pro": {"blocking": 31, "hc_cluster": 3, "note": "same shape as Flash"},
+        "Qwen/Qwen3-0.6B": {"blocking": 0, "role": "control, must not move"}
+      },
+      "arithmetic_ceiling_not_a_forecast": "If every HC refusal reader below lifted and nothing else moved: GLM 31 -> 27 (mhc stays unknown), each DeepSeek row 31 -> 28, total 1031 -> 1021. Which readers the rung actually lifts is a freeze decision; this line only records the count each reader owns."
+    },
+    "measurement_caveat": "The PARETO-1 sweep (PID 3908, larql-exec-v3-2e5ce84b at ~1270% CPU) ran throughout; nothing here is a timing measurement, so it does not contaminate these numbers."
+  },
+
+  "q1_where_the_one_vector_traversal_enters_and_exits_each_sublayer": {
+    "state_shape_today": "batch: `h: Vec<Vec<f32>>`, one `[hidden]` row per position (opplan/exec/mod.rs:457-460); decode: `h: Vec<f32>`, one `[hidden]` vector (decode.rs:306-308). `hidden = embedding.table.shape[1]` (mod.rs:356).",
+    "batch_path_opplan_exec_mod_rs": {
+      "entry": "traverse (341): embed rows 457-460 -> embedding norm 466-476 -> `sink(PlaneEvent::Embedded(&h))` 477 -> layer loop 483-498 calling execute_layer (546).",
+      "attention_sublayer": "inputs = pre_attention(h) over ALL positions BEFORE dispatch (565-568); operator dispatch on PreparedAttention (586-765) consumes `inputs` — softmax: one call over the whole batch (729-738 / 754-761), MLA: per position (674-688), KDA: the batch flattened into one sequential call (640-655), ConvQkv: whole batch (707-716); then per row: post_attention norm -> scale_residual_delta -> `backend.residual_add(row, &out)` (766-776); tap `post_attention = h.to_vec()` (777).",
+      "ffn_sublayer": "presence gate on (prepared.ffn, layer.ffn) (785); ffn_inputs = pre_ffn(h) (795-801); `finish` = post_ffn norm -> scale_residual_delta -> residual_add -> layer_scale (805-816); dispatch: `apply_from_residual_many(ffn_op, backend, &residuals, &normed, hidden)` (833, CPU-7C2 default) or per-row `apply_from_residual` (852); LayerTrace {post_attention, ffn_input, post_layer} (856-860).",
+      "exit": "`h.last()` (500) -> final_norm (503-506) -> output_head (507-520)."
+    },
+    "decode_path_opplan_exec_decode_rs": {
+      "entry": "step_observed (282): embed 306-308, embedding norm 309-317, StepEvent::Embedded 320.",
+      "attention_sublayer": "inputs = [pre_attention(h)] 331-334; observer tap InputSite::Attention 338-342; operator 349-458 (recurrences read `kv.recurrent_state`, softmax `attention_step` + `kv.append`); post_attention 459-462; scale 463; `residual_add(&mut h, &attn_out)` 464; StepEvent::AttentionDone 465.",
+      "ffn_sublayer": "presence gate 479; normed = pre_ffn(h) 480-483; tap InputSite::Ffn 484; `ffn.apply_from_residual(ffn_op, backend, &h, &normed, hidden)` 486; tap InputSite::FfnOutput 487-491; post_ffn 492-495; scale 496; residual_add 497; layer_scale 498-500; StepEvent::FfnDone 502.",
+      "exit": "final_norm 505-508 -> output_head 509-519 -> set_position 525.",
+      "step_many": "229-276 goes through the batch `traverse` — it is not a third traversal."
+    },
+    "the_residual_add_is_the_seam": "Both paths express the residual as `backend.residual_add(row, &delta)` = `h += delta`. In the hyper-connection topology there is no add: stage 5 `expand_streams` computes `out[k] = post[k]*b + sum_j comb[j,k]*x[j]` — the carry (comb term) and the add (post term) are ONE operation. So the two residual_add call sites (batch 774, 811; decode 464, 497) are exactly what the traversal replaces; nothing upstream of the operator dispatch and nothing inside it changes.",
+    "the_ffn_reads_the_raw_residual_on_one_arm": "experts.rs:175-205 apply_from_residual — on the Hybrid arm the router and `pre_experts_norm` read `residual` directly (189-193); dense/routed use only `pre_ffn_normed`. Under a bundle the `residual` argument must be the REDUCED vector (stage 3 output), never the bundle."
+  },
+
+  "q2_what_hc_site_data_is_already_available_there": {
+    "on_the_plan": {
+      "ComponentOpPlan.residual_topology": "opplan/mod.rs:694 — `ResidualTopology::HyperConnection(HyperConnection { streams, sinkhorn_iters, sinkhorn_eps })` (larql-models config/residual_topology.rs:46-71). Serialised only when not SingleStream.",
+      "LayerPlan.hyper_connection": "opplan/mod.rs:593 — `Option<HyperConnectionLayerOp { attention: HcSiteOp, ffn: HcSiteOp }>` (653-657); `HcSiteOp { mix_fn, base, scale }: OperandRef` (645-649). Present on EVERY layer iff the component declares the topology (closure requires all six; build.rs:1422-1427). Geometry checked at closure against the declared stream count: mix_fn `[(2+hc)·hc, hc·hidden]`, base `[(2+hc)·hc]`, scale `[3]` (build.rs:1861-1878 via HyperConnectionWeights::mix_rows_for; HC_SCALE_LEN from exec::hyper_connection). Dtype travels on the OperandRef (F32 on DeepSeek-V4, BF16 on GLM-5.3-Flash).",
+      "ComponentOpPlan.hyper_connection_head": "opplan/mod.rs:704 — `Option<HyperConnectionHeadOp { reduce_fn [hc, hc·hidden], base [hc], scale [1] }>` (678-682), bound by hyper_connection_head_closure (build.rs:1224) only under the declaration. None on GLM-5.3-Flash (declares the topology, ships no head operands, `mhc` unexplained).",
+      "LayerPlan.declared_norm_eps": "opplan/mod.rs — the component's rms_norm_eps, carried per layer; this is stage 1's `norm_eps` (hyper_connection.rs:88-99 — the COMPONENT's eps, not sinkhorn_eps)."
+    },
+    "on_the_executor_nothing": {
+      "PreparedLayer": "prepared.rs:180-193 has no hyper-connection field; PreparedOperands::load (720-) loads no site or head operand. `SiteWeights`/`HeadWeights` (hyper_connection.rs:351-369) are constructed only inside exec/tests/hyper_connection.rs.",
+      "only_touch_point": "the sole non-test read of the topology anywhere in opplan/exec is the refusal at prepared.rs:741. continuation::plan_continuation_geometry does not read it — KV/recurrent geometry is topology-blind, correctly, because the branch stays one `[hidden]` vector per position.",
+      "no_matrix_class_for_mix_fn": "backend::MatrixClass has AttentionProjection / FfnProjection / RoutedExpertBank / OutputHead. A site's mix_fn (`[24, 256]` on the fixture; `[(2+hc)·hc, hc·hidden]` generally) fits none, and wave-17 stage 1 runs it through `kernels::matvec` in f32, not `backend.project`. Whether the mix projection is f32 glue (like norms, loaded via `store.load`) or a backend-formatted matrix is a freeze decision; the recon records that the resolver has no answer today."
+    },
+    "the_ready_instruments": {
+      "synthetic_container": "opplan/tests/wave18_hc_carriage.rs `plan()` (170-189) via the doctored `encode_graph` seam (180): hidden 64, 2 layers, 4 streams, iters 20, eps 1e-6, mix rows 24, bundle width 256; two-norm Llama estate + six site operands per layer; NO head operands. Operand bytes are the fixture pattern `(i·31+7) mod 251` as BF16 (plan/tests_support.rs:40-41) — deterministic, meaningless, and able to encode NaN/Inf (high byte 0x7F is in range); the single-stream control executes on them (carriage.rs:519-527), so NaN does not fail execution.",
+      "oracle": "opplan/exec/tests/hyper_connection_oracle.json (from scripts/hyper_connection_oracle_export.py): streams 4, hidden 5, positions 3, iters 20, hc_eps 1e-6, norm_eps 1e-6; stages {mix_projection, sinkhorn_pre, sinkhorn_post, sinkhorn_comb, reduced, branched, expanded}; head {reduced}; controls {single_stream_residual, expanded_transposed_comb, comb_one_iteration, comb_two_iterations, expanded_one_iteration, mix_projection_wrong_eps}.",
+      "geometry_mismatch": "The oracle is hidden 5; the synthetic container is hidden 64 with pattern bytes. An end-to-end NUMERIC comparison through the traversal needs one of: a container whose site operands and dense operands are written from oracle-generated values, or the oracle regenerated at the container's geometry. Neither exists today. The oracle CAN reject (its single_stream_residual control differs), which is the property the witness needs."
+    }
+  },
+
+  "q3_where_expansion_the_two_mixes_and_head_reduction_sit_relative_to_the_existing_residual_updates": {
+    "derived_by": "tracing execute_layer (mod.rs:546-861) and step_observed (decode.rs:282-527) against the five stages (hyper_connection.rs:99-302) and head_reduce (317-335). Not by mapping wave 17's composition onto the loop.",
+    "entry_expansion": "After the embedding norm and before layer 0: batch between mod.rs:476 and 477, decode between decode.rs:317 and 320. `expand_embedding(h, streams)` replicates the `[hidden]` row into `[streams·hidden]`. Only when the slice carries the input end (ExecutionSlice::is_whole_stack, prepared.rs:109 — Full and Draft); a LayerRange slice takes bundles in.",
+    "attention_wrap": [
+      "today:   inputs = pre_attention(h)  ->  operator  ->  post_attention  ->  residual_scale  ->  h += out",
+      "bundle:  mixes = mix_projection(x, streams, hidden, site.mix_fn, mix_rows, declared_norm_eps)   [stage 1]",
+      "         split = split_sinkhorn(mixes, site.scale, site.base, hc)                                [stage 2]",
+      "         v     = reduce_streams(split.pre, x, streams, hidden)                                   [stage 3]",
+      "         inputs = pre_attention(v)          <- the pre-norm MOVES inside the branch: it normalises v, not the bundle",
+      "         out    = operator(inputs)          <- unchanged, one [hidden] per position, KV/recurrent state unchanged",
+      "         b      = residual_scale(post_attention(out))",
+      "         x'     = expand_streams(b, x, &split, streams, hidden)                                  [stage 5] REPLACES `h += out`"
+    ],
+    "ffn_wrap": [
+      "same shape around the FFN with site = layer.hyper_connection.ffn, on x' :",
+      "         v_ffn = reduce(pre_ffn_split, x');  normed = pre_ffn(v_ffn);",
+      "         ffn_out = apply_from_residual(ffn_op, backend, residual = v_ffn, normed, hidden)   <- the Hybrid arm's `residual` is v_ffn, never the bundle",
+      "         b = residual_scale(post_ffn(ffn_out));  x'' = expand_streams(b, x', &ffn_split)     REPLACES `finish`'s residual_add",
+      "         layer_scale: `scale_row` after the add today (mod.rs:812-814, decode.rs:498-500). No hyper-connected checkpoint declares one (Gemma 4 only). Its meaning on a bundle is unjudged — a freeze decision, with `refuse the combination` as the honest default, mirroring the mixer-only-under-HC refusal (build.rs:500)."
+    ],
+    "why_sublayer_forward_does_not_drop_in_on_the_batch_path": "sublayer_forward (hyper_connection.rs:377-399) composes stages 1-5 around `branch: FnOnce(&[f32]) -> Vec<f32>` — ONE position, ONE vector. The batch traversal runs the operator over ALL positions in one call (softmax 729, ConvQkv 707, FFN-many 833) or as one sequential flat call (KDA 640). So the batch path must run stages 1-3 per position, the operator over the batch, then stage 5 per position; every stage is `pub` on its own, so this costs no new arithmetic, and `sublayer_forward` stays the single-position reference the decode path can call directly. This is the concrete way wave 17's reference does NOT map 1:1 onto traversal structure.",
+    "exit_reduction": "After the last layer the state is a bundle. When ComponentOpPlan.hyper_connection_head is Some: `head_reduce(x, streams, hidden, HeadWeights{reduce_fn, base, scale}, norm_eps, hc.sinkhorn_eps)` -> `[hidden]` -> final_norm -> output_head, unchanged from there. head_reduce takes a `norm_eps`; the plan carries it per LAYER (declared_norm_eps), not per component — the executor must name its source (a freeze decision; equal on both real checkpoints). Only on a whole-stack slice.",
+    "when_no_head_is_declared_glm": "The layers ran and the bundle exists; there is no declared reduction and this build must not invent one. Two honest shapes exist today: (a) ExecutionSlice::LayerRange (prepared.rs:70-73) — bundle in, bundle out, no entry expansion, no exit reduction, no head needed — which is the per-layer contract the GLM constraint asks for and already exists as a seam; (b) a whole-stack run that emits every layer plane and then refuses at the exit with a named reason. (b) conflicts with the refuse-before-any-output doctrine at traverse:358-364 unless the refusal is decided up front and the caller asked for planes only. Which shape the witness uses is a freeze decision; the recon records that (a) needs no new contract.",
+    "diagram": [
+      "tokens -> embed -> [embedding norm] -> single residual [hidden]",
+      "                                        |",
+      "                                        v   HC expansion (expand_embedding; Full/Draft only)",
+      "                                   bundle x [streams, hidden]",
+      "   +--------------------------- layer L (LayerPlan.hyper_connection = {attention, ffn}) ---------------------------+",
+      "   |  attention site:  mix_projection -> split_sinkhorn -> reduce  ==> v [hidden]                                    |",
+      "   |                   pre_attention(v) -> ATTENTION (unchanged; KV/recurrent state unchanged) -> post_attention      |",
+      "   |                   -> residual_scale  ==> b ;   x' = expand_streams(b, x, split)      <- HC attn mix, no add      |",
+      "   |  ffn site:        mix_projection -> split_sinkhorn -> reduce  ==> v_ffn                                            |",
+      "   |                   pre_ffn(v_ffn) -> FFN (residual arg = v_ffn) -> post_ffn -> residual_scale ==> b                |",
+      "   |                   x'' = expand_streams(b, x', split)                                <- HC FFN mix, no add       |",
+      "   |                   [layer_scale: unjudged on a bundle]                                                             |",
+      "   +------------------------------------------------------------------------------------------------------------------+",
+      "                                        |  bundle -> next layer (LayerRange: bundle out, stop here)",
+      "                                        v",
+      "               optional head reduction ONLY if hyper_connection_head is declared/present (head_reduce, no Sinkhorn)",
+      "                                        |  [hidden]",
+      "                                        v",
+      "                              final_norm -> output head -> logits   (unchanged)",
+      "   GLM-5.3-Flash: no head object exists; the per-layer contract above runs without one and the exit is a separate concern."
+    ]
+  },
+
+  "q4_which_intermediate_state_can_be_tapped_so_the_witness_proves_the_hc_path_ran": {
+    "existing_taps": {
+      "batch": "LayerTrace {post_attention, ffn_input, post_layer} per position (mod.rs:79-90); PlaneEvent::{Embedded, Layer} (122-128); ExecutionTrace.embedded/executed_layers (94-116). Consumed by larql-cli vindex3_cmd/exec.rs:283-291 (writes trace.post_layer planes) and read back as ResumePoint (367).",
+      "decode": "StepObserver::event(StepEvent::{Embedded, AttentionDone, FfnDone, Logits}) and operand_input(layer, InputSite::{Attention, Ffn, FfnOutput}, values) (observe.rs:22-71)."
+    },
+    "why_none_of_them_is_a_witness": "Every existing tap is a `[hidden]`-wide residual or sublayer input. A single-stream traversal of the same plan produces all of them. Width `streams·hidden` would prove a bundle EXISTS, not that the split ran: a traversal that replicated the residual and averaged it back would carry a bundle and produce these taps too.",
+    "state_that_exists_only_if_the_path_ran": {
+      "SinkhornSplit": "hyper_connection.rs:71-79 — `pre [streams]`, `post [streams]`, `comb [streams·streams]` per layer, per site, per position. Produced by stage 2, consumed by 3 and 5, and no single-stream traversal has an object like it.",
+      "reduced_v": "stage 3 output, the one vector the branch actually saw."
+    },
+    "assertions_that_can_fail": [
+      "comb columns sum to one per site per position (already pinned on the oracle by stage_2_leaves_every_column_summing_to_one) — fails if the split was skipped or run once",
+      "pre != post and neither is uniform on a real-valued fixture — fails if the mix projection was bypassed",
+      "the streams of x' differ after layer 0 — fails for a replicate-and-average traversal, which is the plausible wrong implementation",
+      "width of every plane is streams·hidden — fails for the single-stream traversal, i.e. today",
+      "numeric: the tapped split/reduced/expanded equal the oracle's stages and DIFFER from oracle controls.single_stream_residual — requires a container whose operands carry oracle values (see q2.geometry_mismatch); without it the witness is structural, not numeric"
+    ],
+    "delivery_surfaces_that_already_exist": "the batch sink (`PlaneEvent`) and the decode observer (`StepEvent` / `operand_input`) are the two boundaries the executor already emits on, so a per-site split/reduced tap has a home on each without a third instrument. Whether the tap is a new PlaneEvent/StepEvent variant or a widening of LayerTrace is a freeze decision; the recon records that the CLI plane writer and ResumePoint validation (traverse:442, `row.len() != hidden`) both assume width `hidden` today."
+  },
+
+  "q5_which_conditions_are_layer_local_versus_head_global": {
+    "layer_local": [
+      "the two HcSiteOps (attention, ffn) and their loaded SiteWeights",
+      "declared_norm_eps (stage 1's eps) — per layer on the plan",
+      "the branch operators and their continuation regions (unchanged; the branch is one [hidden] vector per position)",
+      "post_attention / post_ffn norms and residual_scale (act on b before expansion)",
+      "layer_scale (absent on every HC checkpoint; unjudged on a bundle)",
+      "the Hybrid FFN's raw-residual reads (router, pre_experts_norm) — must see v_ffn"
+    ],
+    "component_global_consumed_per_layer": [
+      "streams, sinkhorn_iters, sinkhorn_eps from ComponentOpPlan.residual_topology — one declaration the executor, embedding and head all read",
+      "bundle width streams·hidden of every plane, resume row and trace row"
+    ],
+    "stack_ends_only": [
+      "expand_embedding at entry — only when the slice carries the input end (Full, Draft)",
+      "head_reduce at exit — only when the slice carries the output end AND hyper_connection_head is Some; final_norm/output_head unchanged after it",
+      "ResumePoint / plane persistence (CLI exec.rs) — width contract",
+      "the two traversals (batch mod.rs, decode decode.rs) are pinned by parity tests: both change together, or decode refuses the topology explicitly with its own named reason — never one silently single-stream"
+    ],
+    "unaffected_by_construction": [
+      "continuation::plan_continuation_geometry and every KvState region — topology-blind, and correctly so",
+      "AttentionOperands / FfnOperands loading and the call builders",
+      "the plan itself — no schema, role or placement change (scope rule)"
+    ],
+    "the_glm_shape": "ExecutionSlice::LayerRange is exactly 'layer-local only': no entry expansion, no exit reduction, no head object consulted. A layer traversal witness on a plan with hyper_connection_head = None can run under it today's slicing contract without inventing anything."
+  },
+
+  "q6_exactly_what_makes_preparation_and_execution_refuse_today": {
+    "text_authority": "larql-models config/residual_topology.rs:123-140 `ResidualTopology::unimplemented_reason` — names the TRAVERSAL as what is missing (wave 18 text), explicitly not the arithmetic (wave 17) nor the addressing (wave 18). Unit-pinned at residual_topology.rs:177-206 ('must refuse', 'still refuses').",
+    "readers": {
+      "1_executor_preparation": "opplan/exec/prepared.rs:741-747 in PreparedOperands::load, after slice.validate and BEFORE any store.load. Message: `component X: residual topology HyperConnection(..) is represented and its operands are bound, but this build cannot execute it — <reason>`. Every execution entry funnels here: mod.rs:194 (execute_slice), :229 (execute_plan_streaming), :297 (prefill_plan); decode.rs:157 (DecodeSession::new/with_kv_state; over_prepared needs an image only load produces); larql-cli bank.rs:57, teacher_force.rs:54, run_cmd_vindex3/mod.rs:231; larql-inference vindex3/runtime.rs:378. Pinned by wave18_hc_carriage::an_addressable_topology_is_still_refused_at_the_executors_door (asserts 'cannot execute it', 'traversal', 'HyperConnection', 'the arithmetic is not what is missing', and NOT 'no placement rule').",
+      "2_plan_report": "plan/mod.rs:931-940 — asks the topology FIRST, then norm placement; emits Finding{Unrepresented, UnsupportedComponent, subject `{component}.execution_surface`}. Reaches GLM-5.3-Flash (finding 111). Does NOT reach DeepSeek-V4-Flash/Pro: their surface is incomplete on norm placement (finding 72, execution_semantic) so the topology question is never asked of them — the dialect gap wave 18 named. Pinned by opplan/tests/hyper_connection_refusal::the_report_names_the_refusal_as_an_unsupported_component and the semantics-version 15 pin (plan/report.rs:60; plan/tests/identity.rs).",
+      "3_config_key_table_INDEPENDENT": "plan/semantics.rs:595-597 UNSUPPORTED_COMPONENT_KEYS lists hc_eps, hc_mult, hc_sinkhorn_iters -> SemanticClass::UnsupportedComponent (semantics.rs:1186) -> three Unrepresented findings per row worded at plan/mod.rs:603 ('recognised, and not implemented by this build'). This table does NOT read unimplemented_reason. Lifting readers 1 and 2 leaves three blockers on every HC row unless the entries are retired — a refusal needs every authority surface.",
+      "4_admission_and_encode": "plan/capability.rs:300 admissible_for counts the blockers from 2 and 3; encode/checkpoint.rs:110 refuses 'an inadmissible plan'. Consequence today: no production-encoded hyper-connected container can exist (pinned by wave18_hc_carriage::the_production_encode_gate_refuses_a_hyper_connected_container, 538-564); the synthetic subject exists only through encode_graph (carriage.rs:180). A real-weight witness (later) will meet this gate.",
+      "5_opplan_build_structural_not_traversal": "opplan/build.rs:500 refuses HC sites on a mixer-only or conv-QKV layer as unjudged (HC_ON_MIXER_FACT), on every such layer. Pinned by a_hyper_connected_mixer_only_stack_is_refused_as_unjudged_on_every_layer. Not a traversal refusal; must stay."
+    },
+    "independent_blockers_the_rung_must_not_touch": [
+      "GLM text_config.mhc — Unknown (finding 50), read by no parser; the head's absence on GLM is unexplained and stays so",
+      "DeepSeek-V4's 28 non-HC blockers and its norm-placement surface gap (finding 72)",
+      "Hy4-preview's pre/post variant (a different, Sinkhorn-free operation)"
+    ],
+    "fixtures_that_pin_the_refusal_and_would_migrate_with_it": [
+      "opplan/tests/hyper_connection_refusal::{the_single_stream_residual_programme_refuses_to_lower_it, the_report_names_the_refusal_as_an_unsupported_component, the_two_refusal_defects_do_not_read_alike, an_unjudged_declaration_refuses_rather_than_defaulting_to_one_stream, the_topology_is_represented_with_its_declared_parameters}",
+      "wave18_hc_carriage::{an_addressable_topology_is_still_refused_at_the_executors_door, the_production_encode_gate_refuses_a_hyper_connected_container}",
+      "larql-models residual_topology.rs unit tests (177-206)",
+      "plan/tests/identity.rs semantics version 15 (report.rs:60)"
+    ],
+    "order_the_scope_fixes": "operands loaded into PreparedLayer -> traversal runs the stages -> tap emitted -> witness asserts and is shown to FAIL on a deliberately wrong traversal -> only then reader 1 lifts; readers 2/3/4 are plan-level and are a separate decision in the freeze, because lifting them changes the sweep's verdict for GLM while DeepSeek cannot move (reader 2 never reaches it)."
+  },
+
+  "decisions_the_freeze_must_settle_not_decided_here": [
+    "batch decomposition: stages 1-3 per position, operator over the batch, stage 5 per position (the only shape the batch dispatch admits) vs restructuring the dispatch to per-position — the recon records the former needs no dispatch change",
+    "plane and trace width under a bundle: widen LayerTrace/PlaneEvent rows to streams·hidden, or tap reduced v at width hidden and add a separate bundle/split tap",
+    "where mix_fn lives: f32 glue via store.load (as norms) or a backend-formatted matrix with a new MatrixClass",
+    "head_reduce's norm_eps source: the plan carries it per layer",
+    "layer_scale on a bundle: refuse the combination (mirrors build.rs:500) or define it",
+    "the GLM witness shape: LayerRange slice (no new contract) vs whole-stack with an exit refusal",
+    "which refusal readers the rung lifts: 1 alone (executor, the scope rule) or 1+2+3 (sweep moves: GLM 31->27, DeepSeek 31->28 each, 1031->1021 ceiling)",
+    "the numeric witness's substrate: a container written from oracle values, or an oracle regenerated at the fixture's geometry"
+  ],
+
+  "what_this_reconnaissance_did_not_do": "No executor, plan, or test code was changed. No forecast was written. The refusal at prepared.rs:741 is untouched. The sweep was re-derived from cached plans, not re-run over the network."
+}
