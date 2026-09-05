@@ -25,12 +25,19 @@
 
 use std::borrow::Cow;
 
+use super::attention_residual;
 use super::backend::{AttentionStepCall, NormCall, PlanBackend};
 use super::hyper_connection::{self, Bundle, Mutation, SiteReduction};
 use super::kv::{KvState, RowKvState};
-use super::observe::{HcSite, HcSiteRecord, InputSite, NoopObserver, StepEvent, StepObserver};
+use super::observe::{
+    AttnResBoundaryRecord, AttnResSiteRecord, HcSite, HcSiteRecord, InputSite, NoopObserver,
+    StepEvent, StepObserver,
+};
 use super::operands::OperandSource;
-use super::prepared::{ExecutionSlice, PreparedHcSite, PreparedOperands};
+use super::prepared::{
+    ExecutionSlice, PreparedAttentionResidual, PreparedAttnResSite, PreparedHcSite,
+    PreparedOperands,
+};
 use crate::error::VindexError;
 use larql_models::config::HyperConnection;
 
@@ -112,6 +119,13 @@ enum Entry {
 enum Carrier {
     Single(Vec<f32>),
     Bundle(Bundle),
+    /// One prefix vector plus an ordered history of block-boundary
+    /// snapshots (K3-ATTNRES-1, 2a). Not a `Bundle` with a growing
+    /// stream count: a bundle's streams are interchangeable parallel
+    /// residuals whose count is DECLARED once, and these are ordered
+    /// historical states of the prefix produced by boundary EVENTS,
+    /// whose count is a function of depth.
+    History(attention_residual::History),
 }
 
 /// What entering one site produced: the `[hidden]` vector the branch
@@ -120,6 +134,53 @@ enum Carrier {
 struct SiteEntry {
     branch_input: Vec<f32>,
     reduction: Option<SiteReduction>,
+    /// The attention-residual site's entry state, `None` on every other
+    /// topology. Distinct from `reduction` above because the two
+    /// topologies' reductions produce different objects — a Sinkhorn
+    /// split against a distribution over candidates — and a shared field
+    /// would have been a union with two empty halves.
+    attn_res: Option<AttnResEntry>,
+}
+
+/// What entering one attention-residual site produced.
+///
+/// `reduction` is `None` exactly where the reference does not reduce:
+/// layer 0's attention site, whose snapshot set is empty. That absence
+/// travels to `leave_site`, which then emits NO record — and the missing
+/// record is the observation, because the oracle measured this defect at
+/// a divergence of exactly zero.
+struct AttnResEntry {
+    reduction: Option<attention_residual::Reduction>,
+    prefix_before: Vec<f32>,
+    snapshot_count_before: usize,
+    candidate_count: usize,
+}
+
+/// Which point of a layer the block-boundary event is being offered at.
+///
+/// The event is the THIRD contract point of an attention-residual site,
+/// and it has to be one: it happens between the attention site's
+/// reduction and the attention branch, it mutates the HISTORY rather
+/// than the prefix, and it changes what leaving that site means — a
+/// reset prefix is ASSIGNED the branch output, not added to. Wave 19's
+/// two-point `enter`/`leave` seam can express none of that, and hiding
+/// the event inside either would make ordering an implementation side
+/// effect rather than part of the topology's contract.
+///
+/// Named phases rather than a bool so the two controls that move the
+/// event read as MOVING it, at sites the reference does not use.
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum BoundaryPhase {
+    /// Before the attention site's reduction — where
+    /// `AttnResSiteOverNewSnapshots` puts it, so the reduction sees the
+    /// new set instead of the old one.
+    BeforeAttentionReduce,
+    /// Between the attention site's reduction and the attention branch.
+    /// **Where the reference puts it.**
+    AfterAttentionReduce,
+    /// After the attention branch — where `AttnResSnapshotAfterAttention`
+    /// puts it, so the snapshot carries the post-attention prefix.
+    AfterAttentionBranch,
 }
 
 /// One step's result before it is narrowed to [`StepOutput`]. The
@@ -386,6 +447,10 @@ impl<'a, B: PlanBackend> DecodeSession<'a, B> {
         let ops = self.ops.get();
         let hidden = ops.hidden();
         let topology = ops.hyper_connection();
+        // The ONE declared fact the attention-residual schedule needs:
+        // which layers carry the boundary event. `None` on every other
+        // topology.
+        let block_size = ops.attention_residual_block_size();
         let position = self.kv.state().position();
         let mut carrier = match entry {
             Entry::Token(token) => {
@@ -422,9 +487,16 @@ impl<'a, B: PlanBackend> DecodeSession<'a, B> {
                 // The embedding enters a hyper-connected stack replicated
                 // into every stream (`Transformer.forward`'s repeat) —
                 // after its scale and norm, which belong to the lookup.
-                match topology {
-                    Some(hc) => Carrier::Bundle(Bundle::replicate(&h, hc.streams)),
-                    None => Carrier::Single(h),
+                match (topology, block_size) {
+                    (Some(hc), _) => Carrier::Bundle(Bundle::replicate(&h, hc.streams)),
+                    // The embedding enters an attention-residual stack as
+                    // the FIRST PREFIX, with an EMPTY history — the
+                    // reference starts `block_residual` at
+                    // `new_zeros(tokens, 0, hidden)` and nothing is
+                    // replicated. That emptiness is what gives layer 0's
+                    // attention site nothing to read.
+                    (None, Some(_)) => Carrier::History(attention_residual::History::new(h)),
+                    (None, None) => Carrier::Single(h),
                 }
             }
             #[cfg(test)]
@@ -458,13 +530,65 @@ impl<'a, B: PlanBackend> DecodeSession<'a, B> {
             // pre-attention norm — the norm normalises what the branch
             // sees, never the bundle. On the single stream the "reduced"
             // vector is the residual itself, as it always was.
-            let attention_site = enter_site(
+            // The entering prefix state, captured BEFORE the site reads
+            // anything: it is what the boundary event snapshots, and
+            // capturing it later would snapshot whatever the site had
+            // already done to the carrier.
+            let entering_prefix: Option<Vec<f32>> = match &carrier {
+                Carrier::History(history) => history.prefix().map(<[f32]>::to_vec),
+                _ => None,
+            };
+            let boundary = match (block_size, &carrier) {
+                (Some(size), Carrier::History(_)) => {
+                    attention_residual::is_block_boundary(index, size)
+                }
+                _ => false,
+            };
+            let boundary_context = SiteContext {
+                layer: index,
+                site: HcSite::Attention,
+                position,
+                mutation,
+            };
+            // Phase one of three: before the attention site reads. The
+            // reference does NOTHING here; one control moves the
+            // snapshot to this point so the reduction below sees the new
+            // set instead of the old one.
+            if boundary {
+                let entering = entering_prefix.as_deref().unwrap_or_default();
+                boundary_event(
+                    &mut carrier,
+                    BoundaryPhase::BeforeAttentionReduce,
+                    entering,
+                    entering,
+                    boundary_context,
+                    observer,
+                );
+            }
+            let attention_site = enter(
                 &carrier,
                 state.hyper_connection.as_ref().map(|hc| &hc.attention),
+                state.attention_residual.as_ref(),
+                HcSite::Attention,
                 topology,
                 layer.declared_norm_eps,
+                index,
                 mutation,
             )?;
+            // Phase two: between the attention site's reduction and the
+            // attention branch. **Where the reference puts it** — the
+            // point wave 19's two-point seam cannot express.
+            if boundary {
+                let entering = entering_prefix.as_deref().unwrap_or_default();
+                boundary_event(
+                    &mut carrier,
+                    BoundaryPhase::AfterAttentionReduce,
+                    entering,
+                    &attention_site.branch_input,
+                    boundary_context,
+                    observer,
+                );
+            }
             // Under post-norm placement there is no pre-attention norm and
             // the sublayer reads the RAW vector — the norm applies to its
             // output, below, before the update. Cloning rather than
@@ -608,6 +732,7 @@ impl<'a, B: PlanBackend> DecodeSession<'a, B> {
                 &mut carrier,
                 attn_out,
                 attention_site.reduction,
+                attention_site.attn_res,
                 SiteContext {
                     layer: index,
                     site: HcSite::Attention,
@@ -616,6 +741,21 @@ impl<'a, B: PlanBackend> DecodeSession<'a, B> {
                 },
                 observer,
             )?;
+            // Phase three: after the attention branch. The reference does
+            // NOTHING here; one control moves the snapshot to this point
+            // so it carries the post-attention prefix instead of the
+            // entering state.
+            if boundary {
+                let entering = entering_prefix.as_deref().unwrap_or_default();
+                boundary_event(
+                    &mut carrier,
+                    BoundaryPhase::AfterAttentionBranch,
+                    entering,
+                    entering,
+                    boundary_context,
+                    observer,
+                );
+            }
             observer.event(StepEvent::AttentionDone { layer: index });
 
             // A mixer-only (Mamba2) layer carries no FFN program: its one
@@ -631,11 +771,14 @@ impl<'a, B: PlanBackend> DecodeSession<'a, B> {
             // fixture, because a stack missing every FFN still produces
             // fluent-looking planes.
             if let (Some(ffn), Some(ffn_op)) = (&state.ffn, &layer.ffn) {
-                let ffn_site = enter_site(
+                let ffn_site = enter(
                     &carrier,
                     state.hyper_connection.as_ref().map(|hc| &hc.ffn),
+                    state.attention_residual.as_ref(),
+                    HcSite::Ffn,
                     topology,
                     layer.declared_norm_eps,
+                    index,
                     mutation,
                 )?;
                 let normed = match &state.pre_ffn {
@@ -670,6 +813,7 @@ impl<'a, B: PlanBackend> DecodeSession<'a, B> {
                     &mut carrier,
                     ffn_out,
                     ffn_site.reduction,
+                    ffn_site.attn_res,
                     SiteContext {
                         layer: index,
                         site: HcSite::Ffn,
@@ -683,10 +827,12 @@ impl<'a, B: PlanBackend> DecodeSession<'a, B> {
                         Carrier::Single(h) => self.backend.scale_row(h, scale),
                         // Preparation refuses this combination; reaching
                         // it is an executor bug, not a model.
-                        Carrier::Bundle(_) => {
+                        // Preparation refuses both of these; reaching
+                        // one is an executor bug, not a model.
+                        Carrier::Bundle(_) | Carrier::History(_) => {
                             return Err(VindexError::Parse(format!(
-                                "layer {index} carries a layer scale on a hyper-connected \
-                                 component; preparation should have refused it"
+                                "layer {index} carries a layer scale on a component whose \
+                                 residual is not one vector; preparation should have refused it"
                             )))
                         }
                     }
@@ -709,6 +855,50 @@ impl<'a, B: PlanBackend> DecodeSession<'a, B> {
                 #[cfg(test)]
                 bundle: None,
             },
+            // The attention-residual exit: the same reduction a site
+            // runs, once, over the WHOLE snapshot history plus the
+            // prefix, before the final norm. Required by the
+            // declaration — preparation refuses a whole-stack image
+            // without one — so a layer-range image is the only way to
+            // reach the `None` arm, and its output is the history it
+            // hands on rather than a `[hidden]` vector.
+            Carrier::History(history) => {
+                let reduced = match ops.attention_residual_exit() {
+                    Some(exit) if mutation != Mutation::AttnResExitSkipped => {
+                        let pair = match mutation {
+                            // The control that makes "the SHIPPED pair" a
+                            // claim: reduce with a layer's pair instead.
+                            Mutation::AttnResExitUsesALayerPair => ops.layers()[0]
+                                .attention_residual
+                                .as_ref()
+                                .map(|sites| sites.ffn.pair())
+                                .unwrap_or_else(|| exit.pair()),
+                            _ => exit.pair(),
+                        };
+                        let reduction =
+                            attention_residual::reduce(&history, pair, exit.norm_eps(), mutation)?;
+                        observer.attention_residual_site(AttnResSiteRecord {
+                            layer: self.plan.layers.len(),
+                            site: HcSite::Ffn,
+                            position,
+                            candidate_count: history.candidate_count(),
+                            snapshot_count_before: history.snapshot_count(),
+                            probs: &reduction.probs,
+                            mixed_vector: &reduction.mixed,
+                            prefix_before: history.prefix().unwrap_or(&reduction.mixed),
+                            prefix_after: &reduction.mixed,
+                        });
+                        Some(reduction.mixed)
+                    }
+                    Some(_) => Some(history.clone().into_prefix()?),
+                    None => None,
+                };
+                Exit {
+                    hidden: reduced,
+                    #[cfg(test)]
+                    bundle: None,
+                }
+            }
             Carrier::Bundle(x) => {
                 let reduced = match (ops.hyper_connection_head(), topology) {
                     (Some(head), Some(hc)) => Some(hyper_connection::head_reduce(
@@ -807,6 +997,7 @@ fn enter_site(
         (Carrier::Single(h), None, None) => Ok(SiteEntry {
             branch_input: h.clone(),
             reduction: None,
+            attn_res: None,
         }),
         (Carrier::Bundle(x), Some(site), Some(hc)) => {
             if mutation == Mutation::BypassComposition {
@@ -815,12 +1006,14 @@ fn enter_site(
                 return Ok(SiteEntry {
                     branch_input: x.stream(0).to_vec(),
                     reduction: None,
+                    attn_res: None,
                 });
             }
             let reduction = hyper_connection::reduce(x, &site.weights(), hc, norm_eps, mutation);
             Ok(SiteEntry {
                 branch_input: reduction.reduced.clone(),
                 reduction: Some(reduction),
+                attn_res: None,
             })
         }
         _ => Err(VindexError::Parse(
@@ -828,6 +1021,151 @@ fn enter_site(
              disagree; preparation should have refused the image"
                 .to_string(),
         )),
+    }
+}
+
+/// Enter one site, on whichever residual programme the carrier runs.
+///
+/// One call site per sublayer in the layer loop, so the loop reads the
+/// same on every topology and the difference lives here.
+#[allow(clippy::too_many_arguments)]
+fn enter(
+    carrier: &Carrier,
+    hc_site: Option<&PreparedHcSite>,
+    attn_res: Option<&PreparedAttentionResidual>,
+    which: HcSite,
+    topology: Option<HyperConnection>,
+    norm_eps: f64,
+    layer: usize,
+    mutation: Mutation,
+) -> Result<SiteEntry, VindexError> {
+    match (carrier, attn_res) {
+        (Carrier::History(history), Some(sites)) => {
+            let site = match which {
+                HcSite::Attention => &sites.attention,
+                HcSite::Ffn => &sites.ffn,
+            };
+            enter_attention_residual_site(history, site, which, norm_eps, layer, mutation)
+        }
+        (Carrier::History(_), None) => Err(VindexError::Parse(format!(
+            "layer {layer} carries a residual history and no attention-residual sites; \
+             preparation should have refused the image"
+        ))),
+        _ => enter_site(carrier, hc_site, topology, norm_eps, mutation),
+    }
+}
+
+/// Enter one attention-residual site.
+///
+/// The reduction is GUARDED at the attention site and UNCONDITIONAL at
+/// the mlp site, which is the reference's own asymmetry
+/// (`if block_residual is not None and block_residual.shape[1] > 0`
+/// around the first, nothing around the second). Where it does not
+/// reduce, the branch input is the prefix itself and no record will be
+/// emitted — the reference's guard and a regularised always-run site
+/// compute the same vector, so only the absence distinguishes them.
+fn enter_attention_residual_site(
+    history: &attention_residual::History,
+    site: &PreparedAttnResSite,
+    which: HcSite,
+    norm_eps: f64,
+    layer: usize,
+    mutation: Mutation,
+) -> Result<SiteEntry, VindexError> {
+    let prefix = history.prefix().ok_or_else(|| {
+        VindexError::Parse(format!(
+            "layer {layer} entered a site with no prefix; a boundary reset it and no branch \
+             has supplied one"
+        ))
+    })?;
+    let guarded = match which {
+        // The reference's guard, and the one control that drops it.
+        HcSite::Attention => {
+            history.snapshot_count() > 0 || mutation == Mutation::AttnResLayer0AttentionSiteRuns
+        }
+        // Unconditional in the reference; the control gives it the
+        // attention site's guard, and a second skips it at layer 0.
+        HcSite::Ffn => match mutation {
+            Mutation::AttnResMlpSiteGuardedOnNonEmpty => history.snapshot_count() > 0,
+            Mutation::AttnResMlpSiteSkippedAtLayer0 if layer == 0 => false,
+            _ => true,
+        },
+    };
+    let entry = AttnResEntry {
+        prefix_before: prefix.to_vec(),
+        snapshot_count_before: history.snapshot_count(),
+        candidate_count: history.candidate_count(),
+        reduction: None,
+    };
+    if !guarded {
+        return Ok(SiteEntry {
+            branch_input: prefix.to_vec(),
+            reduction: None,
+            attn_res: Some(entry),
+        });
+    }
+    let reduction = attention_residual::reduce(history, site.pair(), norm_eps, mutation)?;
+    Ok(SiteEntry {
+        branch_input: reduction.mixed.clone(),
+        reduction: None,
+        attn_res: Some(AttnResEntry {
+            reduction: Some(reduction),
+            ..entry
+        }),
+    })
+}
+
+/// The block-boundary event, offered at each of the three points a
+/// snapshot could be taken. Does something only at the point this run's
+/// control selects; the reference's point is
+/// [`BoundaryPhase::AfterAttentionReduce`].
+///
+/// The prefix RESET always happens at the reference's point, whatever
+/// the snapshot's phase — the reference resets in the same statement it
+/// appends, and a control that moved the append must not silently move
+/// the reset with it.
+fn boundary_event(
+    carrier: &mut Carrier,
+    phase: BoundaryPhase,
+    entering_prefix: &[f32],
+    mixed_vector: &[f32],
+    context: SiteContext,
+    observer: &mut dyn StepObserver,
+) {
+    let Carrier::History(history) = carrier else {
+        return;
+    };
+    let snapshot_phase = match context.mutation {
+        Mutation::AttnResSiteOverNewSnapshots => BoundaryPhase::BeforeAttentionReduce,
+        Mutation::AttnResSnapshotAfterAttention => BoundaryPhase::AfterAttentionBranch,
+        _ => BoundaryPhase::AfterAttentionReduce,
+    };
+    if phase == snapshot_phase {
+        // WHICH vector is snapshotted is the other thing a control
+        // perturbs, and the reference's answer is the ENTERING prefix
+        // state — not the attention site's output, and not the
+        // post-attention prefix.
+        let value: Vec<f32> = match (context.mutation, phase) {
+            (Mutation::AttnResSnapshotIsMixedVector, _) => mixed_vector.to_vec(),
+            (_, BoundaryPhase::AfterAttentionBranch) => history
+                .prefix()
+                .map(<[f32]>::to_vec)
+                .unwrap_or_else(|| entering_prefix.to_vec()),
+            _ => entering_prefix.to_vec(),
+        };
+        let before = history.snapshot_count();
+        history.push_snapshot(value.clone());
+        observer.attention_residual_boundary(AttnResBoundaryRecord {
+            layer: context.layer,
+            position: context.position,
+            snapshots_before: before,
+            snapshots_after: history.snapshot_count(),
+            value: &value,
+            entering_prefix,
+        });
+    }
+    if phase == BoundaryPhase::AfterAttentionReduce {
+        history.reset_prefix();
     }
 }
 
@@ -841,9 +1179,35 @@ fn leave_site<B: PlanBackend + ?Sized>(
     carrier: &mut Carrier,
     delta: Vec<f32>,
     reduction: Option<SiteReduction>,
+    attn_res: Option<AttnResEntry>,
     context: SiteContext,
     observer: &mut dyn StepObserver,
 ) -> Result<(), VindexError> {
+    // The attention-residual write, and it is NOT always an add: a
+    // boundary reset this prefix, and then the branch's output BECOMES
+    // the prefix rather than being added to one. `History::write` is one
+    // method for that reason — the reference is one expression, and
+    // splitting it would let a caller forget the second arm.
+    if let (Carrier::History(history), Some(entry)) = (&mut *carrier, attn_res) {
+        history.write(&delta);
+        // Emitted only where the reference REDUCED. Layer 0's attention
+        // site emits nothing, and that absence is the observation.
+        if let Some(reduction) = &entry.reduction {
+            let prefix_after = history.prefix().unwrap_or(&delta);
+            observer.attention_residual_site(AttnResSiteRecord {
+                layer: context.layer,
+                site: context.site,
+                position: context.position,
+                candidate_count: entry.candidate_count,
+                snapshot_count_before: entry.snapshot_count_before,
+                probs: &reduction.probs,
+                mixed_vector: &reduction.mixed,
+                prefix_before: &entry.prefix_before,
+                prefix_after,
+            });
+        }
+        return Ok(());
+    }
     match (carrier, reduction) {
         (Carrier::Single(h), None) => {
             backend.residual_add(h, &delta);
@@ -871,6 +1235,13 @@ fn leave_site<B: PlanBackend + ?Sized>(
             backend.residual_add(x.stream_mut(0), &delta);
             Ok(())
         }
+        // A history carrier reaches this match only if its entry was
+        // lost on the way in; the arm above returns before it otherwise.
+        (Carrier::History(_), _) => Err(VindexError::Parse(
+            "an attention-residual carrier left a site with no site entry; the traversal built \
+             one at every site it entered"
+                .to_string(),
+        )),
         (Carrier::Single(_), Some(_)) => Err(VindexError::Parse(
             "a single-stream carrier received a site reduction; preparation should have refused \
              the image"

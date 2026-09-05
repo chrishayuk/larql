@@ -11,6 +11,7 @@
 
 mod accounting;
 mod attention_kv_parity;
+mod attn_res_2a_decode;
 mod backend_rows;
 mod bf16_gemv_bench;
 mod bf16_residency;

@@ -608,6 +608,19 @@ pub struct LayerPlan {
     /// and reads the same authority the plan report does.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub hyper_connection: Option<HyperConnectionLayerOp>,
+    /// The two attention-residual sites this layer wraps its sublayers
+    /// in — present iff the component declares
+    /// [`ResidualTopology::AttentionResidual`], and then on every layer
+    /// (closure requires all four operands). `None` otherwise, so a
+    /// plan without the topology serialises exactly as it did.
+    ///
+    /// The pair is bound at BOTH sites even though the reference's
+    /// attention site does not reduce at layer 0. Absence of a
+    /// REDUCTION is a schedule fact, decided per layer by the snapshot
+    /// set; absence of an OPERAND would be an estate fact, and the
+    /// checkpoint ships all four on every layer.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub attention_residual: Option<AttentionResidualLayerOp>,
     /// Residual-stream scaling: the attention/FFN sublayer's own output
     /// (after any post-norm above) is multiplied by this immediately
     /// before its residual add, at both sites with the same value.
@@ -698,6 +711,42 @@ pub struct HyperConnectionHeadOp {
     pub scale: OperandRef,
 }
 
+/// One attention-residual site's operand pair: a `[hidden]` norm weight
+/// and a `[1, hidden]` projection, multiplied elementwise into ONE
+/// learned score vector. There is no query and no per-token projection
+/// of the state, which is why the site stores two vectors rather than a
+/// mix projection.
+#[derive(Debug, Clone, PartialEq, Serialize)]
+pub struct AttnResSiteOp {
+    pub norm: OperandRef,
+    pub proj: OperandRef,
+}
+
+/// The two attention-residual sites of one layer.
+#[derive(Debug, Clone, PartialEq, Serialize)]
+pub struct AttentionResidualLayerOp {
+    /// The site before attention. The reference guards its reduction on
+    /// a non-empty snapshot set, so layer 0 binds this pair and reduces
+    /// with it on no layer where the set is empty.
+    pub attention: AttnResSiteOp,
+    /// The site before the FFN. UNCONDITIONAL in the reference.
+    pub ffn: AttnResSiteOp,
+}
+
+/// The attention-residual EXIT's pair, bound from the component's
+/// `attention_residual_exit` object.
+///
+/// A site's geometry and a site's arithmetic, and still not a site: it
+/// runs once, at the stack's end, over the whole snapshot history, and
+/// the declaration REQUIRES it — unlike the hyper-connection head, which
+/// GLM-5.3-Flash declines to ship. A component that declares the period
+/// and owns no exit object is refused before this field could be filled.
+#[derive(Debug, Clone, PartialEq, Serialize)]
+pub struct AttentionResidualExitOp {
+    pub norm: OperandRef,
+    pub proj: OperandRef,
+}
+
 /// The complete generic program of one component.
 #[derive(Debug, Clone, PartialEq, Serialize)]
 pub struct ComponentOpPlan {
@@ -719,6 +768,11 @@ pub struct ComponentOpPlan {
     /// under the topology.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub hyper_connection_head: Option<HyperConnectionHeadOp>,
+    /// The attention-residual exit reduction, present iff the component
+    /// declares the topology — where the hyper-connection head is
+    /// optional under its own topology, this is not.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub attention_residual_exit: Option<AttentionResidualExitOp>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub output: Option<OutputOp>,
 }

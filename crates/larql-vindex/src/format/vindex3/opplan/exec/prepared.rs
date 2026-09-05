@@ -66,9 +66,10 @@ use crate::format::vindex3::represent::nvfp4_pack::CodecIdentity;
 
 use super::super::conv_qkv::ConvQkvOp;
 use super::super::{
-    ComponentOpPlan, GatedDeltaOp, HcSiteOp, HyperConnectionLayerOp, KdaOp, LayerAttention,
-    LayerPlan, Mamba2Op, MlaOp, NormOp, OperandRef, OutputOp,
+    AttnResSiteOp, ComponentOpPlan, GatedDeltaOp, HcSiteOp, HyperConnectionLayerOp, KdaOp,
+    LayerAttention, LayerPlan, Mamba2Op, MlaOp, NormOp, OperandRef, OutputOp,
 };
+use super::attention_residual;
 use larql_models::config::{HyperConnection, HyperConnectionWeights, ResidualTopology};
 
 /// Which part of a component's program to prepare.
@@ -274,6 +275,179 @@ pub(super) struct PreparedHyperConnection {
     pub(super) ffn: PreparedHcSite,
 }
 
+/// Why a whole-stack image cannot be prepared over an attention-residual
+/// component that owns no exit object.
+///
+/// Unlike the hyper-connection head — which GLM-5.3-Flash declines to
+/// ship, so its absence is a checkpoint's choice — the exit reduction is
+/// REQUIRED by this declaration: the stack's last layer leaves a prefix
+/// and a snapshot history, and something has to collapse them before the
+/// final norm. The plan report refuses such a component one step
+/// earlier, by the exit's own name; this states the same fact where the
+/// operands are read.
+const ATTN_RES_EXITLESS_WHOLE_STACK: &str = "declares the attention-residual topology and owns no \
+     attention_residual_exit object: a whole-stack image has no declared reduction from the \
+     snapshot history to the one vector the final norm reads, and the declaration requires one";
+
+/// A per-layer output scalar has one judged meaning — multiply the
+/// `[hidden]` residual after the FFN add — and the topology carries a
+/// history beside that residual which the scalar says nothing about.
+/// No attention-residual checkpoint declares one.
+const ATTN_RES_WITH_LAYER_SCALE: &str = "carries a layer scale under the attention-residual \
+     residual topology; whether it also scales the snapshot history is unjudged, and no \
+     attention-residual checkpoint declares one";
+
+/// One attention-residual site's operand pair, resident as f32 glue —
+/// two `[hidden]` vectors, counted beside the norms for the same reason
+/// the hyper-connection sites are.
+pub(super) struct PreparedAttnResSite {
+    norm: Vec<f32>,
+    proj: Vec<f32>,
+}
+
+impl PreparedAttnResSite {
+    fn load(
+        op: &AttnResSiteOp,
+        store: OperandSource<'_>,
+        hidden: usize,
+        what: &str,
+    ) -> Result<Self, VindexError> {
+        let norm = store.load(&op.norm)?;
+        let proj = store.load(&op.proj)?;
+        // Closure checked `[hidden]` and `[1, hidden]` at plan time; the
+        // loaded lengths are checked again so a store answering with a
+        // different tensor cannot reach the reduction.
+        for (name, got) in [("norm", norm.len()), ("proj", proj.len())] {
+            if got != hidden {
+                return Err(VindexError::Parse(format!(
+                    "{what}: {name} holds {got} values, the component's width is {hidden}"
+                )));
+            }
+        }
+        Ok(Self { norm, proj })
+    }
+
+    pub(super) fn pair(&self) -> attention_residual::SitePair<'_> {
+        attention_residual::SitePair {
+            norm: &self.norm,
+            proj: &self.proj,
+        }
+    }
+
+    fn glue_bytes(&self) -> usize {
+        std::mem::size_of_val(&self.norm[..]) + std::mem::size_of_val(&self.proj[..])
+    }
+}
+
+/// One layer's two attention-residual sites.
+pub(super) struct PreparedAttentionResidual {
+    pub(super) attention: PreparedAttnResSite,
+    pub(super) ffn: PreparedAttnResSite,
+}
+
+impl PreparedAttentionResidual {
+    fn for_layer(
+        layer: &LayerPlan,
+        declared: bool,
+        hidden: usize,
+        store: OperandSource<'_>,
+    ) -> Result<Option<Self>, VindexError> {
+        match (&layer.attention_residual, declared) {
+            (None, false) => Ok(None),
+            (Some(sites), true) => {
+                if layer.layer_scale.is_some() {
+                    return Err(VindexError::Parse(format!(
+                        "layer {} {ATTN_RES_WITH_LAYER_SCALE}",
+                        layer.layer
+                    )));
+                }
+                let l = layer.layer;
+                Ok(Some(Self {
+                    attention: PreparedAttnResSite::load(
+                        &sites.attention,
+                        store,
+                        hidden,
+                        &format!("layer {l}'s attention-residual attention site"),
+                    )?,
+                    ffn: PreparedAttnResSite::load(
+                        &sites.ffn,
+                        store,
+                        hidden,
+                        &format!("layer {l}'s attention-residual mlp site"),
+                    )?,
+                }))
+            }
+            (Some(_), false) => Err(VindexError::Parse(format!(
+                "layer {} carries attention-residual sites but the component declares no block \
+                 size; the op plan never produces this",
+                layer.layer
+            ))),
+            (None, true) => Err(VindexError::Parse(format!(
+                "layer {} carries no attention-residual sites under a component that declares \
+                 the topology; closure requires all four operands on every layer",
+                layer.layer
+            ))),
+        }
+    }
+
+    fn glue_bytes(&self) -> usize {
+        self.attention.glue_bytes() + self.ffn.glue_bytes()
+    }
+}
+
+/// The stack's exit reduction: the same operation as a site's, run once
+/// over the whole snapshot history before the final norm.
+pub(super) struct PreparedAttnResExit {
+    site: PreparedAttnResSite,
+    norm_eps: f64,
+}
+
+impl PreparedAttnResExit {
+    /// Present only on a whole-stack image of an attention-residual
+    /// component, and REQUIRED there: see [`ATTN_RES_EXITLESS_WHOLE_STACK`].
+    fn load(
+        plan: &ComponentOpPlan,
+        hidden: usize,
+        store: OperandSource<'_>,
+    ) -> Result<Self, VindexError> {
+        let Some(op) = &plan.attention_residual_exit else {
+            return Err(VindexError::Parse(format!(
+                "component `{}` {ATTN_RES_EXITLESS_WHOLE_STACK}",
+                plan.component
+            )));
+        };
+        Ok(Self {
+            site: PreparedAttnResSite::load(
+                &AttnResSiteOp {
+                    norm: op.norm.clone(),
+                    proj: op.proj.clone(),
+                },
+                store,
+                hidden,
+                "the attention-residual exit",
+            )?,
+            // The exit's RMSNorm is constructed from the component's
+            // `rms_norm_eps`, exactly as every site's is, so it is ONE
+            // component value — read through the same derivation the
+            // hyper-connection head uses, which refuses a stack whose
+            // layers disagree rather than picking one of them. Taking
+            // the first layer's would have been a silent choice on
+            // exactly the plan that needed a loud one.
+            norm_eps: component_norm_eps(plan)?,
+        })
+    }
+
+    pub(super) fn pair(&self) -> attention_residual::SitePair<'_> {
+        self.site.pair()
+    }
+
+    /// The component's declared norm epsilon, which the exit reduction
+    /// scores at.
+    pub(super) fn norm_eps(&self) -> f64 {
+        self.norm_eps
+    }
+}
+
 impl PreparedHyperConnection {
     /// The layer's sites under the component's topology — present
     /// exactly when both agree, and a plan where they disagree is one
@@ -455,6 +629,9 @@ pub(super) struct PreparedLayer {
     /// The two Sinkhorn sites, present exactly when the component
     /// declares the topology (wave 19a).
     pub(super) hyper_connection: Option<PreparedHyperConnection>,
+    /// The two attention-residual sites, present exactly when the
+    /// component declares the topology.
+    pub(super) attention_residual: Option<PreparedAttentionResidual>,
 }
 
 impl PreparedLayer {
@@ -468,6 +645,10 @@ impl PreparedLayer {
             + self.pre_ffn.as_ref().map_or(0, norm)
             + self.post_attention.as_ref().map_or(0, norm)
             + self.post_ffn.as_ref().map_or(0, norm)
+            + self
+                .attention_residual
+                .as_ref()
+                .map_or(0, PreparedAttentionResidual::glue_bytes)
             + self
                 .hyper_connection
                 .as_ref()
@@ -1331,6 +1512,9 @@ pub struct PreparedOperands {
     /// The head's reduction — present only on a whole-stack image of a
     /// hyper-connected component.
     hyper_connection_head: Option<PreparedHcHead>,
+    /// The exit reduction — present only on a whole-stack image of an
+    /// attention-residual component, and required there.
+    attention_residual_exit: Option<PreparedAttnResExit>,
 }
 
 impl PreparedOperands {
@@ -1388,6 +1572,42 @@ impl PreparedOperands {
         Self::load_validated(plan, store, backend, slice, budget)
     }
 
+    /// **The 2a witness seam.** Prepares an attention-residual plan
+    /// WITHOUT the public topology refusal, so the decode traversal can
+    /// be proven against the oracle while [`Self::load`] keeps refusing.
+    ///
+    /// Test-only by construction (`cfg(test)`), crate-internal, and
+    /// attention-residual plans only: a plan of any other topology is
+    /// sent back to the public path, so nothing prepared here is ever
+    /// the thing a caller could have prepared without the seam.
+    /// Everything below the refusal is the production loader — this is
+    /// the refusal removed, not a second loader. Removed at the lift,
+    /// when the authority itself lifts.
+    #[cfg(test)]
+    pub(super) fn load_for_attention_residual_witness<'s, B: PlanBackend + ?Sized>(
+        plan: &ComponentOpPlan,
+        store: impl Into<OperandSource<'s>>,
+        backend: &B,
+        slice: ExecutionSlice,
+    ) -> Result<Self, VindexError> {
+        let store = store.into();
+        slice.validate(plan)?;
+        if !matches!(
+            plan.residual_topology,
+            ResidualTopology::AttentionResidual { .. }
+        ) {
+            return Err(VindexError::Parse(format!(
+                "component `{}` declares {:?}; the witness seam prepares attention-residual \
+                 plans only, and this plan takes the public path",
+                plan.component, plan.residual_topology
+            )));
+        }
+        // The same budget the public `load` passes. This seam is that
+        // loader with the topology refusal removed and nothing else
+        // changed, so it must not acquire a residency policy of its own.
+        Self::load_validated(plan, store, backend, slice, &ResidencyBudget::UNBOUNDED)
+    }
+
     /// The loader proper, past slice validation. Every operand the slice
     /// needs is loaded here, and none of it is loaded again.
     fn load_validated<B: PlanBackend + ?Sized>(
@@ -1425,6 +1645,10 @@ impl PreparedOperands {
             // rather than restating that refusal.
             ResidualTopology::SingleStream | ResidualTopology::AttentionResidual { .. } => None,
         };
+        // The other topology's declaration, as a flag: its sites need no
+        // parameter from it (the pair's geometry closes over the width
+        // alone), only the fact that the component declares it.
+        let attention_residual = matches!(topology, ResidualTopology::AttentionResidual { .. });
 
         // The loaders ask by operand and class; the answer is the pin.
         let pinned = |op: &OperandRef, operation: Operation| {
@@ -1542,6 +1766,12 @@ impl PreparedOperands {
                     hidden,
                     store,
                 )?,
+                attention_residual: PreparedAttentionResidual::for_layer(
+                    layer,
+                    attention_residual,
+                    hidden,
+                    store,
+                )?,
             });
         }
 
@@ -1575,6 +1805,16 @@ impl PreparedOperands {
             (true, Some(hc)) => Some(PreparedHcHead::load(plan, hc, hidden, store)?),
             _ => None,
         };
+        // The exit reduction belongs to the stack's END for the same
+        // reason the head's does — and unlike the head it is REQUIRED
+        // under its declaration, so a whole-stack image without one
+        // refuses here rather than running a stack whose history nothing
+        // collapses. A layer-range image must not consult one: its
+        // output IS the history it hands on.
+        let attention_residual_exit = match (whole, attention_residual) {
+            (true, true) => Some(PreparedAttnResExit::load(plan, hidden, store)?),
+            _ => None,
+        };
         let prepared = Self {
             stamp,
             slice,
@@ -1588,6 +1828,7 @@ impl PreparedOperands {
             realizations,
             topology,
             hyper_connection_head,
+            attention_residual_exit,
         };
         // **The executor runs what was pinned.** Every resident matrix
         // holds the representation its record named, checked here so a
@@ -2051,6 +2292,26 @@ impl PreparedOperands {
 
     pub(super) fn hyper_connection_head(&self) -> Option<&PreparedHcHead> {
         self.hyper_connection_head.as_ref()
+    }
+
+    /// The declared block period, `None` on every other topology. The
+    /// traversal reads it to decide which layers carry the boundary
+    /// event, and it is the ONE declared fact the schedule needs.
+    pub(super) fn attention_residual_block_size(&self) -> Option<usize> {
+        match self.topology {
+            ResidualTopology::AttentionResidual { block_size } => Some(block_size),
+            ResidualTopology::SingleStream | ResidualTopology::HyperConnection(_) => None,
+        }
+    }
+
+    pub(super) fn attention_residual_exit(&self) -> Option<&PreparedAttnResExit> {
+        self.attention_residual_exit.as_ref()
+    }
+
+    /// Whether this image holds attention-residual site operands — i.e.
+    /// whether the residual it executes carries a snapshot history.
+    pub fn carries_attention_residual(&self) -> bool {
+        self.attention_residual_block_size().is_some()
     }
 }
 

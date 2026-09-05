@@ -36,11 +36,11 @@ use super::super::graph::{LogicalObject, NormPlacement, ObjectKind, OperandRole}
 use super::super::inspect::SystemInspection;
 use super::exec::hyper_connection::{HC_HEAD_SCALE_LEN, HC_SCALE_LEN};
 use super::{
-    AttentionOp, ClosureDefect, ComponentOpPlan, EmbeddingOp, ExpertBank, FfnIdentity, FfnOp,
-    GateOp, GatedDeltaOp, HcSiteOp, HybridFfnOp, HyperConnectionHeadOp, HyperConnectionLayerOp,
-    KdaOp, LayerAttention, LayerFfn, LayerPlan, Mamba2Op, MlaOp, NormOp, OpPlanOutcome, OperandRef,
-    OutputOp, PackedProjection, QkNormOp, RoutedFfnOp, SharedExpertBranchGateOp, SharedExpertOp,
-    SinkOp,
+    AttentionOp, AttentionResidualExitOp, AttentionResidualLayerOp, AttnResSiteOp, ClosureDefect,
+    ComponentOpPlan, EmbeddingOp, ExpertBank, FfnIdentity, FfnOp, GateOp, GatedDeltaOp, HcSiteOp,
+    HybridFfnOp, HyperConnectionHeadOp, HyperConnectionLayerOp, KdaOp, LayerAttention, LayerFfn,
+    LayerPlan, Mamba2Op, MlaOp, NormOp, OpPlanOutcome, OperandRef, OutputOp, PackedProjection,
+    QkNormOp, RoutedFfnOp, SharedExpertBranchGateOp, SharedExpertOp, SinkOp,
 };
 use crate::error::VindexError;
 use larql_models::config::ExpertFormat;
@@ -720,9 +720,18 @@ pub fn plan_component_ops(
             });
 
     // ── The attention-residual exit ──
-    if let Some((object, tensors)) = tables.get(&ObjectKind::AttentionResidualExit) {
-        attention_residual_exit_closure(object, tensors, attention_residual, hidden, &mut defects);
-    }
+    let attn_res_exit_tensors =
+        tables
+            .get(&ObjectKind::AttentionResidualExit)
+            .and_then(|(object, tensors)| {
+                attention_residual_exit_closure(
+                    object,
+                    tensors,
+                    attention_residual,
+                    hidden,
+                    &mut defects,
+                )
+            });
 
     if !defects.is_empty() {
         return Ok(OpPlanOutcome {
@@ -802,6 +811,10 @@ pub fn plan_component_ops(
                 post_ffn_norm: None,
                 layer_scale: None,
                 hyper_connection: None,
+                // A one-sublayer block carries neither of the topology's
+                // two sites; `absent_op` refuses the operands on it by
+                // name rather than planning a layer with none.
+                attention_residual: None,
                 residual_scale: surface.residual_scale,
                 operands_accounted: consumed,
                 operands_present: consumed,
@@ -845,6 +858,10 @@ pub fn plan_component_ops(
                 post_ffn_norm: None,
                 layer_scale: None,
                 hyper_connection: None,
+                // A one-sublayer block carries neither of the topology's
+                // two sites; `absent_op` refuses the operands on it by
+                // name rather than planning a layer with none.
+                attention_residual: None,
                 residual_scale: surface.residual_scale,
                 operands_accounted: consumed,
                 operands_present: consumed,
@@ -1064,6 +1081,22 @@ pub fn plan_component_ops(
             base: operand(&stack_id, get(base)),
             scale: operand(&stack_id, get(scale)),
         };
+        // The topology's two site pairs, bound iff the component declares
+        // the period. Built HERE for the same reason the hyper-connection
+        // sites are: closure required all four on every transformer
+        // layer, so the lookups are total for this layer kind, and a
+        // mixer layer under the topology never reaches this point.
+        let attn_res_site = |norm: OperandRole, proj: OperandRole| AttnResSiteOp {
+            norm: operand(&stack_id, get(norm)),
+            proj: operand(&stack_id, get(proj)),
+        };
+        let attention_residual_sites = attention_residual.then(|| AttentionResidualLayerOp {
+            attention: attn_res_site(
+                OperandRole::AttnResAttentionNorm,
+                OperandRole::AttnResAttentionProj,
+            ),
+            ffn: attn_res_site(OperandRole::AttnResMlpNorm, OperandRole::AttnResMlpProj),
+        });
         let hyper_connection_sites = hyper_connection.map(|_| HyperConnectionLayerOp {
             attention: hc_site(
                 OperandRole::HcAttnMixFn,
@@ -1272,6 +1305,7 @@ pub fn plan_component_ops(
             post_ffn_norm,
             layer_scale,
             hyper_connection: hyper_connection_sites,
+            attention_residual: attention_residual_sites,
             residual_scale: surface.residual_scale,
             operands_accounted: consumed,
             operands_present: consumed,
@@ -1281,6 +1315,12 @@ pub fn plan_component_ops(
     let plan = ComponentOpPlan {
         component: component.id.clone(),
         residual_topology: surface.residual_topology,
+        attention_residual_exit: attn_res_exit_tensors.map(|(object, norm, proj)| {
+            AttentionResidualExitOp {
+                norm: operand(&object, &norm),
+                proj: operand(&object, &proj),
+            }
+        }),
         hyper_connection_head: hc_head_tensors.map(|(object, reduce_fn, base, scale)| {
             HyperConnectionHeadOp {
                 reduce_fn: operand(&object, &reduce_fn),
@@ -1399,14 +1439,11 @@ fn hyper_connection_head_closure(
 /// present exactly once, each classified, each at the pair's geometry,
 /// and the component declaring the topology the exit reduces.
 ///
-/// **Nothing is returned to bind.** The pair is owned and addressed at
-/// this transition and no further: there is no traversal to carry the
-/// snapshot history it reduces, and no oracle against which one could be
-/// judged, so binding it into an op would be building the argument list
-/// of an operation that does not exist. What closure gives is the
-/// guarantee that when that operation IS built, the object it reads is
-/// the pair the checkpoint declares and not whatever a name fragment
-/// swept together.
+/// Returns the pair for binding when all of that holds. Transition 1
+/// deliberately returned nothing — there was no operation to bind into,
+/// and building the argument list of one that does not exist is
+/// scaffolding ahead of the oracle. The oracle exists now (`ec7da08d`)
+/// and the traversal reads this pair, so the closure hands it over.
 ///
 /// The exit's geometry is a site's — `[hidden]` and `[1, hidden]`,
 /// because it is the same reduction run once over the whole history —
@@ -1418,7 +1455,7 @@ fn attention_residual_exit_closure(
     attention_residual: bool,
     hidden: usize,
     defects: &mut Vec<ClosureDefect>,
-) {
+) -> Option<(String, SegmentTensor, SegmentTensor)> {
     // The graph only places this object under the declaration, so this
     // arm states the invariant for a container whose graph was edited
     // rather than built; it is the operand-level form of the same
@@ -1431,7 +1468,7 @@ fn attention_residual_exit_closure(
                 required_primitive: ATTN_RES_EXIT_WITHOUT_DECLARATION.to_string(),
             });
         }
-        return;
+        return None;
     }
     let mut bound: BTreeMap<AttentionResidualExitOperand, SegmentTensor> = BTreeMap::new();
     for tensor in tensors {
@@ -1471,6 +1508,13 @@ fn attention_residual_exit_closure(
             });
         }
     }
+    let (Some(norm), Some(proj)) = (
+        bound.remove(&AttentionResidualExitOperand::Norm),
+        bound.remove(&AttentionResidualExitOperand::Proj),
+    ) else {
+        return None;
+    };
+    Some((object.id.clone(), norm, proj))
 }
 
 /// Tensor table of one object's canonical segment.

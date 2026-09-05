@@ -499,50 +499,14 @@ impl Bundle {
     }
 }
 
-/// Deliberate defects, for the negative controls (wave 19a).
-///
-/// Test-only in use, but each perturbs the REAL composition or the real
-/// traversal rather than a copy: a control that mutates a duplicate
-/// proves only that the duplicate is detectable. Three live in the
-/// arithmetic here ([`reduce`] and [`update`] read them); the rest are
-/// SEQUENCING defects the traversal applies, because the thing they
-/// break — which vector reaches which operator — is decided there.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum Mutation {
-    None,
-    /// (a) Run the sublayer single-stream on stream 0 and add its output
-    /// back into stream 0: no split, no reduction, no expansion. The
-    /// plausible way to "support" the topology without running it.
-    BypassComposition,
-    /// (b) One Sinkhorn pass instead of the declared count.
-    SingleIteration,
-    /// (b) Reduce with uniform weights instead of the split's `pre`.
-    UniformReduction,
-    /// (b) Expand with `comb` transposed — source and destination
-    /// streams swapped. The split reported is still the correct one, so
-    /// only the expansion disagrees.
-    TransposedCombination,
-    /// (c) Feed the pre-attention norm stream 0 instead of the reduced
-    /// vector.
-    PreNormOnStreamZero,
-    /// (c) Feed the pre-attention norm the stream mean instead of the
-    /// reduced vector.
-    PreNormOnStreamMean,
-    /// (d) Hand the hybrid FFN stream 0 as its raw residual instead of
-    /// the reduced vector — the router and the expert pre-norm read it.
-    HybridResidualFromStreamZero,
-    /// (d) The same with the stream mean.
-    HybridResidualFromStreamMean,
-    /// (e, batch only) Apply position 0's split and reduced vector to
-    /// every position. Invisible at batch size one; the batch witness
-    /// runs three distinguishable positions so it is not.
-    SplitFromPositionZero,
-    /// (batch only) Exchange positions 0 and 1's bundles between the
-    /// reduction and the update, so each position's update carries the
-    /// other's state forward. A witness that cannot see per-position
-    /// state passes this.
-    SwapPositionsBeforeUpdate,
-}
+// The control vocabulary moved to `super::controls` when a SECOND
+// residual topology needed its own defects: one value threads through
+// one traversal, so the enum is one type, but it stopped belonging to
+// hyper-connections the moment it stopped being only about them.
+// Re-exported here so every `hyper_connection::Mutation` path — and
+// there are hundreds, nearly all `Mutation::None` in test call sites —
+// keeps resolving.
+pub use super::controls::Mutation;
 
 /// What one site's reduction produced: the split (stages one and two,
 /// kept because stage five needs it and because it is the state a
