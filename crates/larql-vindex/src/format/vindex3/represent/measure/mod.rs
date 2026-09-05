@@ -37,6 +37,39 @@
 //! 48 B model to run.
 
 pub mod outcome;
+#[cfg(all(feature = "gpu", target_os = "macos"))]
+pub mod teacher_forced;
+
+#[cfg(not(all(feature = "gpu", target_os = "macos")))]
+use outcome::ExecutionFailure;
+use outcome::MeasurementRefusal;
+
+/// **Run the procedure a request names, or refuse because this binary
+/// cannot.**
+///
+/// The teacher-forced runner needs Metal and macOS, so on any other
+/// build it does not exist. That absence must reach a caller as a
+/// REFUSAL and not as a compile-time hole: `PreparedExperiment` has to
+/// decide whether something is executable on the machine in front of
+/// it, and "the symbol is missing" is not an answer it can act on.
+#[cfg(all(feature = "gpu", target_os = "macos"))]
+pub fn run(
+    request: &TeacherForcedRequest,
+) -> Result<teacher_forced::MeasurementReceipt, MeasurementRefusal> {
+    teacher_forced::measure_teacher_forced(request)
+}
+
+/// The same entry point on a build that cannot perform it.
+#[cfg(not(all(feature = "gpu", target_os = "macos")))]
+pub fn run(request: &TeacherForcedRequest) -> Result<(), MeasurementRefusal> {
+    Err(ExecutionFailure::BackendUnavailable {
+        detail: format!(
+            "`{}` needs a macOS build with the `gpu` feature, and this binary is neither",
+            request.procedure.name()
+        ),
+    }
+    .into())
+}
 
 use std::path::{Path, PathBuf};
 

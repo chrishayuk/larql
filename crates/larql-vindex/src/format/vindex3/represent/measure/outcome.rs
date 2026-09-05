@@ -73,7 +73,11 @@
 //! 535            neighbour pointer identity       Inadmissible::ProtectedOperandChanged
 //! 506,512        identity vs table addressing     Inadmissible::AddressingMismatch
 //! 542            reads match seals                Inadmissible::SealMismatch
-//! 741            the routed operand was sealed    Inadmissible::OperandNotSealed
+//! 741            the routed operand was sealed    STAYS IN THE TEST — it is how the
+//!                                                 operand-removal control FINDS a seal to
+//!                                                 remove, not a condition of the run. The
+//!                                                 audit caught this: the variant the first
+//!                                                 inventory assigned here went unused.
 //! 571,613        position counts                  Inadmissible::PositionCountMismatch
 //! 575,579,583-6  the null arm is exactly zero     Inadmissible::NullArmNotZero
 //! (5a-0a)        the gate evaluated is the one
@@ -198,8 +202,6 @@ pub enum Inadmissible {
     /// `verify_reads_match_seals`. Without it, "the candidate" is
     /// whatever is on disk under a path the overlay names.
     SealMismatch { layer: u32, detail: String },
-    /// A routed operand carries no seal to check against.
-    OperandNotSealed { tensor: String },
     /// The bank does not hold the positions the request asked for.
     ///
     /// `assert_eq!(bank.positions, sequences * positions_per_seq)`. A
