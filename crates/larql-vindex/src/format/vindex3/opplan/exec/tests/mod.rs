@@ -88,6 +88,7 @@ mod generate_metal;
 mod generate_real;
 mod golden;
 mod kernels;
+mod kimi_per_expert_prepared;
 mod kquant_projection;
 mod kquant_projection_real;
 mod kv;

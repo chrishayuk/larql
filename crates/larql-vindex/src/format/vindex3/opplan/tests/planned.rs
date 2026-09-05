@@ -102,9 +102,11 @@ fn every_operation_declares_its_access_and_every_extent_is_terminal() {
             assert_eq!(p.extent, RepresentationExtent::TERMINAL, "{name}");
             let expected = match p.operation {
                 Operation::Embed | Operation::ExpertBankSlice => RequiredAccess::RowRandom,
-                Operation::Project(_) | Operation::OutputHead | Operation::SharedExpertProject => {
-                    RequiredAccess::Sequential
-                }
+                Operation::Project(_)
+                | Operation::OutputHead
+                | Operation::SharedExpertProject
+                | Operation::SharedExpertBranchGate
+                | Operation::ExpertProject { .. } => RequiredAccess::Sequential,
             };
             assert_eq!(p.access, expected, "{name}: {}", p.operation.name());
         }

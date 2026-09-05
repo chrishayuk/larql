@@ -16,6 +16,10 @@ fn encoded_fixture() -> (tempfile::TempDir, std::path::PathBuf) {
 }
 
 fn ops(container: &std::path::Path, budget_gib: Option<f64>) -> Vindex3Command {
+    ops_binding(container, budget_gib, false)
+}
+
+fn ops_binding(container: &std::path::Path, budget_gib: Option<f64>, bind: bool) -> Vindex3Command {
     Vindex3Command::Ops(OpsArgs {
         container: container.to_path_buf(),
         component: "target".to_string(),
@@ -23,7 +27,20 @@ fn ops(container: &std::path::Path, budget_gib: Option<f64>) -> Vindex3Command {
         json: false,
         realizations: true,
         budget_gib,
+        bind,
     })
+}
+
+/// `--bind` prepares the plan for real and reconciles what was bound
+/// against what was declared — and does so only inside the budget.
+#[test]
+fn bind_reconciles_within_budget_and_is_never_reached_over_it() {
+    let (_dir, out) = encoded_fixture();
+    run(ops_binding(&out, Some(1024.0), true)).expect("the miniature binds and reconciles");
+    let err = run(ops_binding(&out, Some(1e-9), true))
+        .unwrap_err()
+        .to_string();
+    assert!(err.contains("exceeds the budget"), "{err}");
 }
 
 /// A closable fixture pins every planned operand and its declared working

@@ -190,6 +190,11 @@ pub enum RealizationForm {
     SliceStored { convert: WeightFormat },
     /// The whole table decoded, one row gathered per token.
     DecodedGather,
+    /// The STORED bytes bound as a mapping of the container's segment —
+    /// bound once, never copied or converted — and executed in place in
+    /// their stored form. A bank's realization: one physical object
+    /// serving every logical expert access, paged in as touched.
+    MappedStored { format: WeightFormat },
     /// A device backend's resident form, declared per class by that
     /// backend for its own target.
     DeviceResident(WeightFormat),
@@ -218,6 +223,7 @@ impl RealizationId {
             | RealizationForm::Requantise(plan) => plan.format(),
             RealizationForm::SliceStored { convert } => convert,
             RealizationForm::DecodedGather => WeightFormat::F32,
+            RealizationForm::MappedStored { format } => format,
             RealizationForm::DeviceResident(format) => format,
         }
     }
@@ -239,6 +245,7 @@ impl RealizationId {
             RealizationForm::Requantise(plan) => format!("requantise/{plan:?}"),
             RealizationForm::SliceStored { convert } => format!("slice-stored→{convert:?}"),
             RealizationForm::DecodedGather => "decode-f32+gather".to_string(),
+            RealizationForm::MappedStored { format } => format!("mapped-stored/{format:?}"),
             RealizationForm::DeviceResident(format) => format!("device-resident/{format:?}"),
         };
         match self.backend {
@@ -268,6 +275,9 @@ pub enum SelectionReason {
     SizePolicy,
     /// A packed bank is sliced per expert from stored rows at load.
     BankSlicedAtLoad,
+    /// A per-expert bank's matrices bound as a mapping of the stored
+    /// bytes, in their stored form — one physical binding per bank.
+    BankMappedAsStored,
     /// The device backend's class table names its resident form.
     DeviceClassTable,
     /// An embedding table is decoded whole and gathered per token.
@@ -286,6 +296,7 @@ impl SelectionReason {
             Self::ArmPrefersDecode => "the process arm prefers decoding",
             Self::SizePolicy => "size policy over a float source",
             Self::BankSlicedAtLoad => "packed bank sliced per expert at load",
+            Self::BankMappedAsStored => "per-expert bank mapped as stored, bound once",
             Self::DeviceClassTable => "device class table",
             Self::EmbeddingGather => "table decoded whole, gathered per token",
             Self::ReferenceOracle => "reference oracle",
@@ -482,10 +493,72 @@ pub fn common_selection(
                 )),
             })
         }
-        Operation::SharedExpertProject => {
+        // Nothing executes the scalar gate on a shared branch yet; a plan
+        // that carries one is refused by name rather than run unscaled.
+        Operation::SharedExpertBranchGate => {
             Some(Err(refuse(RefusalKind::MissingRealization, vec![])))
         }
-        Operation::Project(_) | Operation::OutputHead => None,
+        // A per-expert bank: the stored bytes are bound as a mapping and
+        // executed in their stored form when the executor has a kernel
+        // for that form over a whole matrix; nothing is copied or
+        // converted, so there is exactly one candidate.
+        Operation::ExpertProject { .. } => {
+            let Some(registered) = &facts.registered else {
+                return Some(Err(refuse(RefusalKind::UnregisteredRepresentation, vec![])));
+            };
+            let format = mapped_format(&facts.label);
+            let id = RealizationId::cpu(RealizationForm::MappedStored {
+                format: format.unwrap_or(WeightFormat::F32),
+            });
+            Some(
+                match (
+                    format,
+                    registered
+                        .capabilities
+                        .require(operand.access, &facts.label),
+                ) {
+                    (Some(format), Ok(())) => Ok(Selection {
+                        realization: id,
+                        residency: resident_profile(format),
+                        reason: SelectionReason::BankMappedAsStored,
+                        candidates: vec![id],
+                    }),
+                    (Some(_), Err(e)) => Err(refuse(
+                        RefusalKind::AccessRefused,
+                        vec![(id, e.to_string())],
+                    )),
+                    (None, _) => Err(refuse(
+                        RefusalKind::MissingRealization,
+                        vec![(
+                            id,
+                            format!(
+                            "`{}` has no in-place kernel over a whole matrix; a per-expert bank \
+                             is never decoded or copied",
+                            facts.label
+                        ),
+                        )],
+                    )),
+                },
+            )
+        }
+        // A shared expert's projections are whole matrices: the same
+        // candidates as any dense FFN projection, chosen by the backend.
+        Operation::Project(_) | Operation::OutputHead | Operation::SharedExpertProject => None,
+    }
+}
+
+/// The resident form a stored label executes in WITHOUT conversion, when
+/// the CPU executor has a whole-matrix kernel for it: bf16 through the
+/// fused bf16 matvec, f32 through BLAS. Every other stored form would need
+/// a decode, which a mapped binding by definition does not do.
+fn mapped_format(label: &str) -> Option<WeightFormat> {
+    use crate::format::vindex3::represent::codec::codecs::float::FloatDtype;
+    if label == FloatDtype::Bf16.label() {
+        Some(WeightFormat::Bf16)
+    } else if label == FloatDtype::F32.label() {
+        Some(WeightFormat::F32)
+    } else {
+        None
     }
 }
 
@@ -523,6 +596,10 @@ pub fn class_of(operation: Operation) -> Option<MatrixClass> {
     match operation {
         Operation::Project(class) => Some(class),
         Operation::OutputHead => Some(MatrixClass::OutputHead),
-        Operation::Embed | Operation::ExpertBankSlice | Operation::SharedExpertProject => None,
+        Operation::SharedExpertProject => Some(MatrixClass::FfnProjection),
+        Operation::Embed
+        | Operation::ExpertBankSlice
+        | Operation::SharedExpertBranchGate
+        | Operation::ExpertProject { .. } => None,
     }
 }

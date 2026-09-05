@@ -22,6 +22,7 @@ mod bf16_zlib_bank;
 mod fixture;
 mod planned_bank;
 
+use crate::format::vindex3::opplan::exec::backend::ExpertSlices;
 use crate::format::vindex3::opplan::{ExpertBank, OperandRef, PackedProjection};
 use larql_models::config::{
     Activation, ExpertFormat, MoeRouterKind, NormType, ParameterFreeQkNorm, PositionPolicy,
@@ -311,6 +312,7 @@ fn a_gate_less_dense_op_binds_two_operands_and_runs_ungated() {
         (&store).into(),
         &|_: &OperandRef| Ok(WeightFormat::F32),
         WeightFormat::F32,
+        &|_: &OperandRef| Ok(WeightFormat::F32),
     )
     .unwrap();
     assert_eq!(operands.weight_slices().len(), 2, "up and down only");
@@ -511,12 +513,14 @@ fn routed_call<'a>(x: &'a [f32], router: &'a [f32], bias: Option<&'a [f32]>) -> 
         routing_policy: larql_models::config::ExpertRoutingPolicy::NormalisedOverSelected,
         activation: Activation::Silu,
         gate_policy: ExpertGatePolicy::Gated,
-        gate_up_layout: larql_models::config::GateUpLayout::Interleaved,
         router,
         router_bias: bias,
-        gate_up: &[],
+        weights: ExpertSlices::Fused {
+            gate_up: &[],
+            down: &[],
+            layout: larql_models::config::GateUpLayout::Interleaved,
+        },
         gate_up_bias: None,
-        down: &[],
         down_bias: None,
         router_input: None,
         router_scale: None,

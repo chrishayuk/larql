@@ -33,12 +33,13 @@ use larql_compute::residual::{
     layer_norm_eps, rms_norm_eps, rms_norm_heads_no_weight_eps, rms_norm_qk_eps,
 };
 use larql_compute::MoeGateRule;
+use larql_models::config::GateUpLayout;
 
 use super::super::super::graph::policy::AttentionSpan;
 use super::backend::{
-    AttentionCall, AttentionOut, AttentionStepCall, AttentionStepOut, FfnCall, FfnManyCall,
-    GateCall, NormCall, PlanBackend, ProjectCall, ProjectedQkv, QkNormCall, RoutedFfnCall,
-    WeightFormat,
+    AttentionCall, AttentionOut, AttentionStepCall, AttentionStepOut, ExpertSlices, FfnCall,
+    FfnManyCall, GateCall, NormCall, PlanBackend, ProjectCall, ProjectedQkv, QkNormCall,
+    RoutedFfnCall, WeightFormat,
 };
 use super::cpu::physical::{
     kquant_execution, project_matrix, project_matrix_many, ExecutorProjections, KQuantExecution,
@@ -489,16 +490,16 @@ pub(super) fn select_experts(
 /// One selected expert's inner activation from its fused gate/up output
 /// (bias already added): rows read through the declared layout, combined
 /// by the served gate rule.
-pub(super) fn expert_inner(call: &RoutedFfnCall<'_>, fused: &[f32]) -> Vec<f32> {
+pub(super) fn expert_inner(
+    call: &RoutedFfnCall<'_>,
+    layout: GateUpLayout,
+    fused: &[f32],
+) -> Vec<f32> {
     let rule = MoeGateRule::from_arch(call.gate_policy, call.activation);
     (0..call.intermediate)
         .map(|i| {
-            let g = fused[call
-                .gate_up_layout
-                .row(GateUpBranch::Gate, i, call.intermediate)];
-            let u = fused[call
-                .gate_up_layout
-                .row(GateUpBranch::Up, i, call.intermediate)];
+            let g = fused[layout.row(GateUpBranch::Gate, i, call.intermediate)];
+            let u = fused[layout.row(GateUpBranch::Up, i, call.intermediate)];
             rule.combine(g, u)
         })
         .collect()
@@ -1010,26 +1011,59 @@ impl PlanBackend for ProductionBackend {
         let routed_input = router_input(&call)?;
         let mut logits = matmul_vec(&routed_input, call.router, call.experts, call.hidden);
         let selected = select_experts(&call, &mut logits)?;
-        let two_inter = FUSED_BRANCHES * call.intermediate;
         let mut out = vec![0.0f32; call.hidden];
-        for (expert, weight) in selected {
-            let mut fused = matmul_vec(
-                call.x,
-                call.gate_up[expert].as_f32()?,
-                two_inter,
-                call.hidden,
-            );
-            add_expert_bias(&mut fused, call.gate_up_bias, expert);
-            let inner = expert_inner(&call, &fused);
-            let mut expert_out = matmul_vec(
-                &inner,
-                call.down[expert].as_f32()?,
-                call.hidden,
-                call.intermediate,
-            );
-            add_expert_bias(&mut expert_out, call.down_bias, expert);
-            for (acc, v) in out.iter_mut().zip(&expert_out) {
-                *acc += weight * v;
+        match call.weights {
+            ExpertSlices::Fused {
+                gate_up,
+                down,
+                layout,
+            } => {
+                let two_inter = FUSED_BRANCHES * call.intermediate;
+                for (expert, weight) in selected {
+                    let mut fused =
+                        matmul_vec(call.x, gate_up[expert].as_f32()?, two_inter, call.hidden);
+                    add_expert_bias(&mut fused, call.gate_up_bias, expert);
+                    let inner = expert_inner(&call, layout, &fused);
+                    let mut expert_out = matmul_vec(
+                        &inner,
+                        down[expert].as_f32()?,
+                        call.hidden,
+                        call.intermediate,
+                    );
+                    add_expert_bias(&mut expert_out, call.down_bias, expert);
+                    for (acc, v) in out.iter_mut().zip(&expert_out) {
+                        *acc += weight * v;
+                    }
+                }
+            }
+            // A per-expert bank: each selected expert's three whole
+            // matrices run through the SAME production projection
+            // kernels a dense FFN uses — bf16 in place, f32 through BLAS
+            // — so the bank stays in its stored form. No bias layout is
+            // defined for separate experts, and none is planned; one
+            // arriving here is a plan the executor does not know.
+            ExpertSlices::Separate { gate, up, down } => {
+                if call.gate_up_bias.is_some() || call.down_bias.is_some() {
+                    return Err(VindexError::Parse(
+                        "a per-expert bank carries no expert bias; the call declares one"
+                            .to_string(),
+                    ));
+                }
+                let rule = MoeGateRule::from_arch(call.gate_policy, call.activation);
+                for (expert, weight) in selected {
+                    let g = project_matrix(&gate[expert], call.x, call.intermediate, call.hidden)?;
+                    let u = project_matrix(&up[expert], call.x, call.intermediate, call.hidden)?;
+                    let inner: Vec<f32> = g
+                        .iter()
+                        .zip(&u)
+                        .map(|(g, u)| rule.combine(*g, *u))
+                        .collect();
+                    let expert_out =
+                        project_matrix(&down[expert], &inner, call.hidden, call.intermediate)?;
+                    for (acc, v) in out.iter_mut().zip(&expert_out) {
+                        *acc += weight * v;
+                    }
+                }
             }
         }
         Ok(out)

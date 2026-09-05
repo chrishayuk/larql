@@ -63,7 +63,7 @@ use crate::format::vindex3::represent::nvfp4_pack::CodecIdentity;
 use super::super::conv_qkv::ConvQkvOp;
 use super::super::{
     ComponentOpPlan, GatedDeltaOp, HcSiteOp, HyperConnectionLayerOp, KdaOp, LayerAttention,
-    LayerFfn, LayerPlan, Mamba2Op, MlaOp, NormOp, OperandRef, OutputOp,
+    LayerPlan, Mamba2Op, MlaOp, NormOp, OperandRef, OutputOp,
 };
 use larql_models::config::{HyperConnection, HyperConnectionWeights, ResidualTopology};
 
@@ -1107,20 +1107,34 @@ fn pinned_format(
     )))
 }
 
-/// The resident form pinned for layer `index`'s packed bank.
+/// The resident form pinned for layer `index`'s bank: a packed bank's
+/// one slice pin, or the one form every matrix of a per-expert bank was
+/// pinned to — a bank whose experts were pinned differently is a plan
+/// the loader cannot bind, and is refused by name.
 fn bank_pin(records: &[RealizationRecord], index: usize) -> Result<WeightFormat, VindexError> {
-    records
+    let mut pins = records
         .iter()
-        .find(|r| {
-            r.planned.layer == Some(index) && r.planned.operation == Operation::ExpertBankSlice
+        .filter(|r| {
+            r.planned.layer == Some(index)
+                && matches!(
+                    r.planned.operation,
+                    Operation::ExpertBankSlice | Operation::ExpertProject { .. }
+                )
         })
-        .map(|r| r.selection.realization.format())
-        .ok_or_else(|| {
-            VindexError::Parse(format!(
-                "layer {index}: a routed FFN with no pinned bank realization — planned_operands() \
-                 and the loader disagree"
-            ))
-        })
+        .map(|r| r.selection.realization.format());
+    let Some(first) = pins.next() else {
+        return Err(VindexError::Parse(format!(
+            "layer {index}: a routed FFN with no pinned bank realization — planned_operands() \
+             and the loader disagree"
+        )));
+    };
+    if let Some(other) = pins.find(|f| *f != first) {
+        return Err(VindexError::Parse(format!(
+            "layer {index}: the bank's experts were pinned to {first:?} and {other:?}; one bank \
+             binds in one form"
+        )));
+    }
+    Ok(first)
 }
 
 /// A component's operands, lowered once for a given slice and backend.
@@ -1220,6 +1234,7 @@ impl PreparedOperands {
             |op: &OperandRef| pinned(op, Operation::Project(MatrixClass::AttentionProjection));
         let ffn_format =
             |op: &OperandRef| pinned(op, Operation::Project(MatrixClass::FfnProjection));
+        let shared_format = |op: &OperandRef| pinned(op, Operation::SharedExpertProject);
         let head_format = |op: &OperandRef| pinned(op, Operation::OutputHead);
 
         let range = slice.layers(plan);
@@ -1307,7 +1322,9 @@ impl PreparedOperands {
                 ffn: layer
                     .ffn
                     .as_ref()
-                    .map(|ffn| FfnOperands::load(ffn, store, &ffn_format, bank_format))
+                    .map(|ffn| {
+                        FfnOperands::load(ffn, store, &ffn_format, bank_format, &shared_format)
+                    })
                     .transpose()?,
                 post_ffn: layer
                     .post_ffn_norm
@@ -1515,21 +1532,8 @@ impl PreparedOperands {
                 )?);
             }
             if let (Some(ffn), Some(op)) = (&prepared.ffn, &layer.ffn) {
-                for bound in ffn.bound(op)? {
-                    let operation = match op {
-                        LayerFfn::Routed(_) => Operation::ExpertBankSlice,
-                        LayerFfn::Dense(_) => Operation::Project(MatrixClass::FfnProjection),
-                        // A hybrid binds its dense projections one each
-                        // and its banks over their experts; the pairing
-                        // says which by how many objects it holds.
-                        LayerFfn::Hybrid(_) => {
-                            if bound.weights.len() == 1 {
-                                Operation::Project(MatrixClass::FfnProjection)
-                            } else {
-                                Operation::ExpertBankSlice
-                            }
-                        }
-                    };
+                // The loader names the operation it bound each object for.
+                for (operation, bound) in ffn.bound(op)? {
                     out.push(bound.observed(operation, Some(index))?);
                 }
             }

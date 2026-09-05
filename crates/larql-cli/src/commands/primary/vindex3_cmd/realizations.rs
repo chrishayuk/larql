@@ -29,10 +29,49 @@ pub(super) fn report(
     container: &Path,
     inspection: &SystemInspection,
     budget_gib: Option<f64>,
+    bind: bool,
 ) -> Result<(), Box<dyn std::error::Error>> {
     // Tensor tables only: `open` reads segment headers, never a payload.
     let store = OperandStore::open(container, inspection)?;
-    report_through(plan, &store, budget_gib)
+    report_through(plan, &store, budget_gib)?;
+    if bind {
+        bind_and_reconcile(plan, &store)?;
+    }
+    Ok(())
+}
+
+/// Prepare the plan for real — every pin bound to its object — and hold
+/// what the loader bound against what the pins declared. Runs only after
+/// the declared working set was found within budget, so the binding is
+/// one the machine can hold; a mapped bank is bound, not read, and the
+/// report says how many objects were mapped and how many payload reads
+/// the rest of the plan cost.
+fn bind_and_reconcile(
+    plan: &ComponentOpPlan,
+    store: &OperandStore,
+) -> Result<(), Box<dyn std::error::Error>> {
+    use larql_vindex::format::vindex3::opplan::exec::prepared::PreparedOperands;
+    let started = std::time::Instant::now();
+    let ops = PreparedOperands::load(plan, store, &ProductionBackend::new(), ExecutionSlice::Full)?;
+    let bound_in = started.elapsed().as_secs_f64();
+    let reconciled = ops.reconcile(plan, store.into())?;
+    println!("bound, from the container:");
+    println!("  prepared in           {bound_in:>10.1} s");
+    println!(
+        "  objects mapped        {:>10}  ({} regions bound, none read)",
+        store.mapped_objects(),
+        store.mapped_regions()
+    );
+    println!("  payload reads         {:>10}", store.load_count());
+    println!("  pins reconciled       {:>10}", reconciled.matched);
+    println!(
+        "  declared resident     {:>10.2} GB  observed {:.2} GB  padding {:.3} GB",
+        reconciled.declared_resident as f64 / GB,
+        reconciled.observed_resident as f64 / GB,
+        reconciled.padding as f64 / GB
+    );
+    println!("  verdict               RECONCILED");
+    Ok(())
 }
 
 /// The report over a store the caller opened — the registry it decodes

@@ -640,16 +640,76 @@ fn the_common_selections_cover_the_table_the_bank_and_the_shared_expert() {
     assert_eq!(refused.kind, RefusalKind::AccessRefused);
     assert_eq!(refused.considered.len(), 1);
 
-    let shared = synthetic(Operation::SharedExpertProject, SMALL);
-    let refused = common_selection(&shared, &registered, WeightFormat::F32)
+    // A shared expert's projections are whole matrices: the backend
+    // chooses, as for any dense projection (V1). The scalar branch gate
+    // has no executor and is refused here, for every backend.
+    let gate = synthetic(Operation::SharedExpertBranchGate, SMALL);
+    let refused = common_selection(&gate, &registered, WeightFormat::F32)
         .unwrap()
         .unwrap_err();
     assert_eq!(refused.kind, RefusalKind::MissingRealization);
     assert!(refused.considered.is_empty());
 
+    // A per-expert bank binds its stored bytes as a mapping, in the stored
+    // form, when the CPU runs that form in place: bf16 and f32 do, an
+    // entropy-coded or quantised form does not, and an unregistered
+    // label cannot be mapped at all.
+    let bank = synthetic(
+        Operation::ExpertProject {
+            experts: 4,
+            top_k: 2,
+        },
+        SMALL,
+    );
+    let mapped = common_selection(&bank, &registered, WeightFormat::F32)
+        .unwrap()
+        .unwrap();
+    assert_eq!(
+        mapped.realization.form,
+        RealizationForm::MappedStored {
+            format: WeightFormat::Bf16
+        }
+    );
+    assert_eq!(mapped.reason, SelectionReason::BankMappedAsStored);
+    assert_eq!(mapped.residency, resident_profile(WeightFormat::Bf16));
+    assert_eq!(mapped.candidates, vec![mapped.realization]);
+    let f32 = common_selection(
+        &bank,
+        &RepresentationFacts::resolve("F32"),
+        WeightFormat::F32,
+    )
+    .unwrap()
+    .unwrap();
+    assert_eq!(
+        f32.realization.form,
+        RealizationForm::MappedStored {
+            format: WeightFormat::F32
+        }
+    );
+    for label in ["Q8_0", "BF16_ZLIB"] {
+        let refused = common_selection(
+            &bank,
+            &RepresentationFacts::resolve(label),
+            WeightFormat::F32,
+        )
+        .unwrap()
+        .unwrap_err();
+        assert_eq!(refused.kind, RefusalKind::MissingRealization, "{label}");
+        assert_eq!(refused.considered.len(), 1, "{label}");
+        assert!(
+            refused.considered[0].1.contains("never decoded or copied"),
+            "{label}"
+        );
+    }
+    let refused = common_selection(&bank, &unregistered, WeightFormat::F32)
+        .unwrap()
+        .unwrap_err();
+    assert_eq!(refused.kind, RefusalKind::UnregisteredRepresentation);
+
     for projection in [
         Operation::Project(MatrixClass::AttentionProjection),
         Operation::OutputHead,
+        Operation::SharedExpertProject,
     ] {
         assert!(common_selection(
             &synthetic(projection, SMALL),
@@ -662,11 +722,22 @@ fn the_common_selections_cover_the_table_the_bank_and_the_shared_expert() {
         class_of(Operation::OutputHead),
         Some(MatrixClass::OutputHead)
     );
+    assert_eq!(
+        class_of(Operation::SharedExpertProject),
+        Some(MatrixClass::FfnProjection)
+    );
     assert_eq!(class_of(Operation::Embed), None);
+    assert_eq!(
+        class_of(Operation::ExpertProject {
+            experts: 4,
+            top_k: 2
+        }),
+        None
+    );
 }
 
 #[test]
-fn the_cpu_selector_refuses_an_unregistered_projection_and_a_shared_expert() {
+fn the_cpu_selector_refuses_an_unregistered_projection_and_a_branch_gate() {
     let unregistered = RepresentationFacts::resolve("U8");
     let refused = select_cpu(
         &synthetic(Operation::Project(MatrixClass::FfnProjection), SMALL),
@@ -675,8 +746,21 @@ fn the_cpu_selector_refuses_an_unregistered_projection_and_a_shared_expert() {
     )
     .unwrap_err();
     assert_eq!(refused.kind, RefusalKind::UnregisteredRepresentation);
-    let refused = select_cpu(
+    // A shared expert's projection is any dense FFN projection to the
+    // CPU: chosen by the size policy like the routed layer's neighbours.
+    let shared = select_cpu(
         &synthetic(Operation::SharedExpertProject, SMALL),
+        &RepresentationFacts::resolve("BF16"),
+        KQuantExecution::Direct,
+    )
+    .unwrap();
+    assert_eq!(
+        shared.realization.form,
+        RealizationForm::Decode(PhysicalProjectionPlan::BlasF32)
+    );
+    assert_eq!(shared.reason, SelectionReason::SizePolicy);
+    let refused = select_cpu(
+        &synthetic(Operation::SharedExpertBranchGate, SMALL),
         &RepresentationFacts::resolve("BF16"),
         KQuantExecution::Direct,
     )

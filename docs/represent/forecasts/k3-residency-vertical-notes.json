@@ -1,0 +1,72 @@
+{
+ "programme": "residency-into-k3",
+ "forecast": "k3-residency-vertical.json (frozen at a5028458; not edited)",
+ "waves": {
+  "V1_semantic_truth": {
+   "started": "2026-09-05",
+   "D1_shared_expert": {
+    "result": "HELD (P1). The closure and the builder resolve a shared branch declared by count alone from the stored gate tensor's shape (`resolve_shared_expert_width`), and the shape check holds up and down to that width. On the real container: planned operands 20081 → 20159 (+78), and `ops --realizations` refuses before I/O with exactly 78 `SharedExpertProject → MissingRealization` lines, one per shared projection on each of the 26 routed layers — the refusal 3b wrote and no real model had ever reached. Three closure witnesses: a legacy graph plans the same `SharedExpertOp` as a declaring graph; a legacy graph whose `up` disagrees refuses as `GeometryMismatch` naming the tensor and both shapes; a declared width stays the authority against disagreeing tensors.",
+    "finding_V1-N1": "The width is read from the container's own tensor table, not derived from the routed width by a lineage convention: the builder's earlier refusal to re-derive (Qwen1.5-MoE's fourfold disagreement) stands, and no convention is assumed. A graph that declares the width keeps it as the authority.",
+    "finding_V1-N2": "The refusal line read `requires sequential access` for a shared projection. That is correct, not a placeholder: a shared projection is a whole matrix read sequentially, exactly like a dense FFN projection, and D5 realizes it as one."
+   },
+   "D2_D4_D5_bank_and_shared_realizations": {
+    "result": "HELD (P2, P4). `Operation::ExpertProject { experts, top_k }` replaces `Project(FfnProjection)` for every per-expert matrix — multiplicity preserved (19,968 planned operands on the real container), the bank named on each. `RealizationForm::MappedStored { format }` with reason `BankMappedAsStored` is the bank's realization on the CPU: the stored bytes bound as regions of the object's ONE mapping (`OperandStore::map_region`, `PhysicalStore::map_segment` once per object, `LoadedWeight::Mapped`), executed in place through the production projection kernels the dense path already runs (bf16 fused matvec, f32 BLAS) — no new kernel. A stored form the CPU cannot run in place (Q8_0, BF16_ZLIB) is refused as `MissingRealization` with the reason spelled; the device backend refuses the host mapping by name. The shared expert's three projections are ordinary dense projections to the selector (size policy) and to the loader (`DenseOperands`), summed unscaled by the executor once for every backend; a gated branch (Qwen MoE's form) is planned as `SharedExpertBranchGate` and refused before any byte. The routed-FFN call carries its experts as `ExpertSlices::{Fused, Separate}` — the shape the bank stores — with the fused gate/up layout on the fused operand where it belongs.",
+    "real_container_no_payload_read": {
+     "planned": 20159,
+     "pinned": 20159,
+     "refused": 0,
+     "mapped_stored_bf16_operands": 19968,
+     "shared_and_small_blasf32_operands": 85,
+     "requantise_q8_operands": 98,
+     "direct_fusedbf16_operands": 7,
+     "embedding_gather": 1,
+     "stored_footprint_gb": 98.14,
+     "declared_resident_gb": 98.01,
+     "declared_resident_gib": 91.28,
+     "working_set_gib": 92.68,
+     "budget_gib": 128.0,
+     "verdict": "WITHIN BUDGET",
+     "forecast_P4": "≈98.0 GB ≈ 91.3 GiB — held to the decimal"
+    },
+    "witnesses": [
+     "exec/tests/kimi_per_expert_prepared.rs over the new bytes-backed miniature `fixtures_kimi::kimi_per_expert_moe_f32_model` (softmax attention, one dense prefix layer, two routed layers of four experts top-2, one shared expert): the bank binds once (1 object mapped, 24 regions, none read), every expert pins to MappedStored{F32} for BankMappedAsStored, declared == stored == observed with zero padded allocations, the reconciliation matches every expectation; production equals the reference's transcription to 2e-5 over four tokens; a twin container in which expert 1 holds expert 0's bytes moves the logits by more than 1e-3",
+     "planned_bank: a shared expert prepares, pins under SizePolicy, binds three projections and reconciles; a shared branch with a scalar gate is refused before any byte, naming `shared-expert-branch-gate`",
+     "realization: ExpertProject → MappedStored{Bf16|F32}; Q8_0 and BF16_ZLIB → MissingRealization naming `never decoded or copied`; unregistered → Unregistered; the device refuses ExpertProject and SharedExpertProject; SharedExpertProject classes as an FFN projection",
+     "the 3b witness `a_per_expert_bank_is_a_set_of_whole_projections` became `..._is_one_bank_scoped_operation_per_matrix`; `a_plan_with_a_shared_expert_is_refused_before_any_byte_is_read` became `..._prepares_and_pins_its_projections`"
+    ],
+    "finding_V1-N3": "The prepared plan's ACCOUNTING guessed each bound object's operation from the plan's FFN variant and the object count (`LayerFfn::Routed → ExpertBankSlice`), so the first reconciliation over a per-expert bank refused every expert (`pinned mapped-stored but nothing is resident for it`) and every shared projection: the observations were filed under the wrong operation. The loader now names the operation it bound each object for (`FfnOperands::bound` returns `(Operation, Bound)` pairs) and the accounting never infers it. The reconciliation caught its own assumption — the four-way correspondence is doing the job it was built for.",
+    "finding_V1-N4": "The routed call required a fused gate/up layout even for a bank that has no fused operand, so the first execution over a per-expert bank refused (`carries no gate_up layout`). The layout is a property of the FUSED operand and now travels on `ExpertSlices::Fused`; a per-expert bank carries none and needs none.",
+    "finding_V1-N5": "KDA and MLA layers are PREPARED (bound) by the prepared plan but not EXECUTED by it — the recurrent and latent operators run only through the Kimi-specific stack (`exec/stack.rs`, `exec/kda.rs`, `exec/mla.rs`). So the real Kimi-Linear container now selects, pins, prices and (with `--bind`) binds and reconciles through the prepared plan within budget, but cannot produce a token through it until those two operators are bound as realizations the same way the bank was. That is V3's first prerequisite, which the forecast's D7 did not name; the bytes-backed miniature uses softmax attention so that V1's execution proof does not wait for it.",
+    "finding_V1-N6": "The reference backend's per-expert arm widens bf16 exactly and refuses any other stored form by name; the production arm runs the stored form in place. The two agree to reassociation noise (2e-5) on the f32 miniature; a bf16 miniature is the next parity subject once the bf16 fused kernel's tolerance is stated beside it."
+   },
+   "D6_reconciliation_on_the_real_container": {
+    "instrument": "`larql vindex3 ops <container> --realizations --bind`: after the pins are found within budget, PREPARE the plan for real and reconcile what the loader bound against what the pins declared",
+    "result": "HELD (P7 in substance). The real Kimi-Linear-48B container binds through the prepared plan on this 128 GiB machine: 20,159 pins reconciled, declared resident 98.01 GB == observed 98.01 GB, padding 0.000 GB; ONE object mapped (the expert bank) serving 19,968 bound regions, none read; 525 payload reads for everything else (dense stack widened, head requantised, embedding decoded); prepared in 194 s; peak RSS 7.9 GB — the mapped bank costs no resident memory until touched, which is the whole point of binding it as stored. This is V1 step 4 measured on the subject, not on a miniature.",
+    "numbers": {
+     "pins_reconciled": 20159,
+     "declared_resident_gb": 98.01,
+     "observed_resident_gb": 98.01,
+     "padding_gb": 0.0,
+     "objects_mapped": 1,
+     "regions_bound": 19968,
+     "payload_reads": 525,
+     "prepared_seconds": 194.4,
+     "peak_rss_gb": 7.92,
+     "budget_gib": 128.0
+    }
+   },
+   "finding_V1-N7": "The first full gate run read the whole exec/ directory at ~46–60% line coverage while every test passed — denominators near double their real size (prepared.rs 1441 lines against 961). Cause: profile data accumulated in this worktree's llvm-cov target across the two larql-cli coverage runs that preceded it, exactly the artifact the coverage memory records. `cargo llvm-cov clean --workspace` and one clean run restored the true reading (TOTAL 93.72%; build.rs 93.29, experts.rs 93.30, prepared.rs 90.53, production.rs 91.07). The two genuine shortfalls it left — operands.rs 88.35 and reference.rs 87.80, the refusal arms this wave added — got witnesses rather than baselines. Rule kept: re-measure clean before explaining a coverage drop.",
+   "gates": {
+    "run": "2026-09-05 evening, worktree .claude/worktrees/k3-residency, toolchain 1.98.0",
+    "cargo test -p larql-vindex": "all green (4,228 lib tests + integration tests); the staging-arena counter test is order-dependent under a narrow filter and green in the full run",
+    "cargo test -p larql-cli --no-default-features": "green, including the six instrument tests (within budget, over budget, machine budget, registry refusal, --bind reconciliation)",
+    "clippy --workspace --all-targets -D warnings (1.98)": "clean after boxing the dense and routed FFN operands",
+    "clippy -p larql-cli --no-default-features": "clean",
+    "cross-target x86_64-apple-darwin": "clean",
+    "llvm-cov -p larql-vindex (clean profile) + policy": "passed: 93.78% total, 431 files, 370 at the 90% default; touched files — build.rs 93.29, planned.rs 98.86, realization.rs 96.93, accounting.rs 94.17, prepared.rs 90.43, experts.rs 93.33, operands.rs 92.48, backend.rs 99.43, production.rs 91.63, reference.rs 91.28, device.rs 91.08, fixtures_kimi.rs 100.00; weights/mod.rs 88.41 on its 84.0 baseline",
+    "llvm-cov -p larql-cli (clean profile) + policy": "passed; vindex3_cmd/realizations.rs 96.81%",
+    "doc links / doc references --strict / fmt": "clean"
+   }
+  }
+ }
+}

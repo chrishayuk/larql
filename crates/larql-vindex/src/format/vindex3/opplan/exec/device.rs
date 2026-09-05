@@ -46,10 +46,11 @@ use std::sync::Mutex;
 use larql_compute::backend::MatMul;
 use larql_models::config::{Activation, GateActivation, GateCombine, GatePlacement, GateSource};
 
+use super::super::planned::Operation;
 use super::backend::{
-    AttentionCall, AttentionOut, AttentionStepCall, AttentionStepOut, DispatchStats, FfnCall,
-    GateCall, MatrixClass, NormCall, PlanBackend, ProjectCall, ProjectedQkv, RoutedFfnCall,
-    WeightFormat, WeightFormats, WeightSlice,
+    AttentionCall, AttentionOut, AttentionStepCall, AttentionStepOut, DispatchStats, ExpertSlices,
+    FfnCall, GateCall, MatrixClass, NormCall, PlanBackend, ProjectCall, ProjectedQkv,
+    RoutedFfnCall, WeightFormat, WeightFormats, WeightSlice,
 };
 use super::production::{
     add_expert_bias, add_output_bias, add_projection_biases, aggregate_heads,
@@ -362,10 +363,6 @@ impl<M: MatMul + Send> PlanBackend for DevicePlanBackend<M> {
         operand: &PlannedOperand,
         facts: &RepresentationFacts,
     ) -> Result<Selection, Box<SelectionRefusal>> {
-        let bank = self.formats.for_class(MatrixClass::RoutedExpertBank);
-        if let Some(common) = common_selection(operand, facts, bank) {
-            return common;
-        }
         let refuse = |kind| {
             Box::new(SelectionRefusal {
                 operand: operand.operand.clone(),
@@ -376,6 +373,20 @@ impl<M: MatMul + Send> PlanBackend for DevicePlanBackend<M> {
                 considered: vec![],
             })
         };
+        // A mapped host bank is a CPU realization; the device path binds
+        // packed banks only, and its routed FFN sums no shared branch.
+        // Both are refused by name before the common arms could admit a
+        // host binding on the device's behalf.
+        if matches!(
+            operand.operation,
+            Operation::ExpertProject { .. } | Operation::SharedExpertProject
+        ) {
+            return Err(refuse(RefusalKind::MissingRealization));
+        }
+        let bank = self.formats.for_class(MatrixClass::RoutedExpertBank);
+        if let Some(common) = common_selection(operand, facts, bank) {
+            return common;
+        }
         let Some(class) = class_of(operand.operation) else {
             return Err(refuse(RefusalKind::MissingRealization));
         };
@@ -608,14 +619,25 @@ impl<M: MatMul + Send> PlanBackend for DevicePlanBackend<M> {
             &routed_input,
         )?;
         let selected = select_experts(&call, &mut logits)?;
+        let ExpertSlices::Fused {
+            gate_up,
+            down,
+            layout,
+        } = call.weights
+        else {
+            return Err(VindexError::Parse(
+                "the device backend binds packed expert banks; a per-expert bank has no device \
+                 realization"
+                    .to_string(),
+            ));
+        };
         let two_inter = FUSED_BRANCHES * call.intermediate;
         let mut out = vec![0.0f32; call.hidden];
         for (expert, weight) in selected {
-            let mut fused = self.gemv(call.gate_up[expert], two_inter, call.hidden, call.x)?;
+            let mut fused = self.gemv(gate_up[expert], two_inter, call.hidden, call.x)?;
             add_expert_bias(&mut fused, call.gate_up_bias, expert);
-            let inner = expert_inner(&call, &fused);
-            let mut expert_out =
-                self.gemv(call.down[expert], call.hidden, call.intermediate, &inner)?;
+            let inner = expert_inner(&call, layout, &fused);
+            let mut expert_out = self.gemv(down[expert], call.hidden, call.intermediate, &inner)?;
             add_expert_bias(&mut expert_out, call.down_bias, expert);
             for (acc, v) in out.iter_mut().zip(&expert_out) {
                 *acc += weight * v;

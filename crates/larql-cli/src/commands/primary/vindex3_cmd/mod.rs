@@ -283,6 +283,13 @@ pub struct OpsArgs {
     /// (with `--realizations`). Omitted: the machine's physical memory.
     #[arg(long)]
     pub budget_gib: Option<f64>,
+
+    /// With `--realizations`, and only when the declared working set is
+    /// within budget: PREPARE the plan — bind every pin to its object —
+    /// and reconcile what the loader bound against what the pins
+    /// declared, reporting what was mapped and what was read.
+    #[arg(long)]
+    pub bind: bool,
 }
 
 #[derive(Args)]

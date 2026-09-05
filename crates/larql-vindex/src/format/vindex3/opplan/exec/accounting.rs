@@ -170,9 +170,12 @@ pub fn expectations(
                     resident_profile_with(realization.format(), geometry)
                 }
                 RealizationForm::DecodedGather => ResidencyProfile::DECODED_F32,
+                // Mapped as stored: resident exactly as the container
+                // holds it, nothing staged on the way.
+                RealizationForm::MappedStored { format } => resident_profile_with(format, geometry),
             };
             let staging = match realization.form {
-                RealizationForm::Direct(_) => 0,
+                RealizationForm::Direct(_) | RealizationForm::MappedStored { .. } => 0,
                 RealizationForm::Decode(_)
                 | RealizationForm::Requantise(_)
                 | RealizationForm::DecodedGather => (logical as f64 * F32_WIDTH).round() as u64,

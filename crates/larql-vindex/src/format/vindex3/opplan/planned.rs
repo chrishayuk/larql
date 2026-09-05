@@ -47,6 +47,17 @@ pub enum Operation {
     /// operation, because whether a backend can bind it is a question the
     /// prepared plan must be able to refuse by name (rung 3b).
     SharedExpertProject,
+    /// The scalar gate on a shared-expert branch (Qwen MoE's
+    /// `sigmoid(shared_expert_gate(x))`): planned so that a plan carrying
+    /// one is refused by name rather than executed with the branch
+    /// summed unscaled.
+    SharedExpertBranchGate,
+    /// One expert's OWN matrix of a per-expert bank, read whole when the
+    /// router selects it: `top_k` of `experts` per token. The operation
+    /// carries the bank's geometry so a plan can price touch per token
+    /// and a backend can bind the bank ONCE as shared physical storage
+    /// serving every logical access (K3-RESIDENCY-VERTICAL-1, V1).
+    ExpertProject { experts: usize, top_k: usize },
 }
 
 impl Operation {
@@ -54,9 +65,13 @@ impl Operation {
     pub const fn access(self) -> RequiredAccess {
         match self {
             Self::Embed | Self::ExpertBankSlice => RequiredAccess::RowRandom,
-            Self::Project(_) | Self::OutputHead | Self::SharedExpertProject => {
-                RequiredAccess::Sequential
-            }
+            // An expert's matrix is read whole once selected, and a shared
+            // projection is a whole matrix: sequential over the operand.
+            Self::Project(_)
+            | Self::OutputHead
+            | Self::SharedExpertProject
+            | Self::SharedExpertBranchGate
+            | Self::ExpertProject { .. } => RequiredAccess::Sequential,
         }
     }
 
@@ -70,6 +85,8 @@ impl Operation {
             Self::ExpertBankSlice => "expert-bank-slice",
             Self::OutputHead => "output-head",
             Self::SharedExpertProject => "shared-expert-project",
+            Self::SharedExpertBranchGate => "shared-expert-branch-gate",
+            Self::ExpertProject { .. } => "expert-project",
         }
     }
 }
@@ -269,8 +286,15 @@ fn routed(op: &RoutedFfnOp, layer: usize, out: &mut Vec<PlannedOperand>) {
             );
         }
         ExpertBank::PerExpert { gate, up, down } => {
+            // Multiplicity is preserved — one planned operand per expert
+            // matrix, so execution touch counts every logical access —
+            // while the operation names the bank the matrices share.
+            let bank = Operation::ExpertProject {
+                experts: op.experts,
+                top_k: op.top_k,
+            };
             for operand in gate.iter().chain(up).chain(down) {
-                out.push(PlannedOperand::new(operand, FFN, Some(layer)));
+                out.push(PlannedOperand::new(operand, bank, Some(layer)));
             }
         }
     }
@@ -284,6 +308,13 @@ fn routed(op: &RoutedFfnOp, layer: usize, out: &mut Vec<PlannedOperand>) {
             out.push(PlannedOperand::new(
                 operand,
                 Operation::SharedExpertProject,
+                Some(layer),
+            ));
+        }
+        if let Some(gate) = &shared.branch_gate {
+            out.push(PlannedOperand::new(
+                &gate.weight,
+                Operation::SharedExpertBranchGate,
                 Some(layer),
             ));
         }

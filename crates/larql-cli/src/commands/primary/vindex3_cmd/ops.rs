@@ -17,7 +17,13 @@ pub(super) fn run_ops(args: OpsArgs) -> Result<(), Box<dyn std::error::Error>> {
             .plan
             .as_ref()
             .ok_or("the component did not close; nothing to prepare")?;
-        return realizations::report(plan, &args.container, &inspection, args.budget_gib);
+        return realizations::report(
+            plan,
+            &args.container,
+            &inspection,
+            args.budget_gib,
+            args.bind,
+        );
     }
     if args.json {
         println!("{}", serde_json::to_string_pretty(&outcome)?);
