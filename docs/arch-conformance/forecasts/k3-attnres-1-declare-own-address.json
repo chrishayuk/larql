@@ -1,0 +1,67 @@
+{
+  "rung": "K3-ATTNRES-1",
+  "transition": "1 of the rung — declare, own, address",
+  "name": "attention-residual-declare-own-address",
+  "artifact_kind": "forecast (frozen)",
+  "written": "2026-09-05",
+  "written_before": "any capability code. Frozen against the reconnaissance commit; immutable from here. Execution-time falsifications go in a sibling k3-attnres-1-execution-notes.json.",
+  "baseline": {
+    "commit": "9cd681a1 — docs(arch-conformance): record the K3-ATTNRES-1 reconnaissance (on main b2596f25)",
+    "artefact": "k3-attnres-1-reconnaissance.json",
+    "cache": "uniformly current: 109 scored rows at semantics 16 from one binary (checked before measurement)",
+    "state": "K3 at 33 text-closure blockers of 152 required. The topology is read from the reference and not represented anywhere: `text_config.attn_res_block_size` (declared 12) is an Unknown key (finding 23); `language_model.model.output_attn_res_proj` is an unplaced group (finding 176); `output_attn_res_norm` is silently swept into the FinalNorm object, which binds two tensors; the four per-layer `*_res_*` operands are unclassified on the KDA layer (four of K3-ARCH-1's five deltas). K3's text execution surface is complete and representable. No other cached row declares the block size or ships a residual pair — measured over all 109 plans — so every other row is a control.",
+    "what_the_reconnaissance_already_changed": [
+      "the mechanism is a third topology: prefix sum + periodic entering-state snapshots -> softmax read over history -> ordinary sublayer -> plain-add update -> required exit reduction; it is not forced through the Sinkhorn abstraction",
+      "byte placement can be complete while semantic ownership is wrong: the generic `norm` fragment owns the output residual norm, and only the op plan has the context to see the malformed object, a plane K3 never reaches today",
+      "the order details a transcription would get wrong are pinned: old snapshots read before the boundary snapshot lands; the snapshot is the entering state; layer 0 skips the attention-site mix and runs the mlp-site mix over one candidate"
+    ]
+  },
+
+  "why_this_transition_and_not_the_whole_rung": "The rung has seven planes (semantics/parser, graph ownership, role classification, carrier + oracle, decode traversal, batch traversal, public lift). Only the first three can be measured on the real checkpoint today — K3's headers are in the cache, its payload is 2.8 T — and they are the planes the reconnaissance found broken or silent. The traversal planes need an oracle that does not exist yet; that oracle is the next artefact, built before any arithmetic is written, and the traversal transition gets its own freeze against the oracle's commit. Freezing the whole roadmap now would forecast baseline mechanics the oracle has not yet revealed.",
+
+  "the_transition": {
+    "intervention": "Give the attention residual its own semantic form and let the plan own and address its operands: a distinct residual-topology variant with a block size and a required exit reduction, read from the declaration or not at all; graph ownership of the output pair as one explicit object under the declaration, with the generic norm fragment no longer swallowing the output residual norm; four per-layer roles of this topology, required on every layer under the declaration and refused as strays without it; and the executor's refusal of the topology by name, read by the report through one authority, so the declaration cannot run as a single stream.",
+    "success": "K3's declaration, ownership and addressing findings move exactly as scored below, its execution-surface finding turns from representable into an honest refusal, no other row moves, the swept norm leaves the final-norm object, and the four per-layer operands classify only under the declaration.",
+    "non_claim": "No execution: no carrier, no traversal, no oracle-backed arithmetic in this transition. No g_proj (K3-REP-GATE-1), no LatentMoE (K3-LATENTMOE-1), no quantization, no vision tower. No real-payload claim now or later in the rung — the execution witness, when it comes, is synthetic by construction."
+  },
+
+  "the_six_decisions_settled": {
+    "1_distinct_variant": "`ResidualTopology::AttentionResidual { block_size }` beside SingleStream and HyperConnection. Parsed from `text_config.attn_res_block_size` as declared or not at all — never defaulted, never inferred from the presence of `*_res_*` tensors (identity is declared, not inferred from operands). The exit reduction is part of the variant's contract: a component declaring the topology must ship the output pair.",
+    "2_ownership_before_execution": "one explicit object, `attention_residual_exit`, owning `output_attn_res_norm` [hidden] and `output_attn_res_proj` [1, hidden] together, placed only on a component that declares the topology (the HC head's ownership rule). The `norm` fragment stops sweeping the output norm: the exit group's fragments precede the generic norm fragment in the vocabulary, so ownership is decided by the specific rule and never by substring luck. A component that declares the topology and ships no exit pair keeps a blocking execution-surface finding naming the exit — the analogue of GLM's headless finding.",
+    "3_roles_after_the_topology": "four roles of this topology — the attention-site norm and projection, the mlp-site norm and projection — classified on the layer under the declaration (any operator: KDA, MLA, softmax), geometry checked at [hidden] and [1, hidden], required on every layer by closure, refused as strays on a single-stream component. Not aliases of the generic norm role.",
+    "4_carrier_not_reused_blindly": "deferred to the traversal transition, with the decision recorded now: the carrier's semantic type encodes history (prefix [hidden] + snapshots [history, hidden]), not streams; it may share the enter/leave site infrastructure wave 19 built, but it is not a Bundle with a different stream count.",
+    "5_oracle_before_implementation": "the next artefact after this transition lands, and before any Rust arithmetic: a torch transcription of `_apply_attn_res` and the block schedule at a small geometry (as scripts/hyper_connection_oracle_export.py did for HC), exporting per-site probs, mixed vectors, snapshot events and the exit, with REJECTING controls for each ordering mistake: attention-site reduction over the old snapshots before the boundary snapshot is appended; the snapshot is the entering prefix state, not the mixed vector; layer 0's attention reduction is skipped; layer 0's mlp reduction runs over one candidate; the exit reduction is mandatory; mixing over raw candidates, not normalised ones.",
+    "6_synthetic_execution_witness_only": "K3's headers move plan-level findings; its payload is not an execution witness and the rung will never claim one. The traversal transition's witness is a hidden-5-style substrate on an ordinary stack carrying the oracle's weights."
+  },
+
+  "predictions_scored_individually": {
+    "rule": "Each line is scored on its own from a re-plan of the K3 row (and the controls) with a release build of the finished code, into a separate cache, the canonical cache untouched until merge. No aggregate is a prediction.",
+    "P1_declaration_finding_23": "`text_config.attn_res_block_size` moves from Unrepresented/Unknown to Representable/ExecutionSemantic, carried to `Component.execution.residual_topology (ResidualTopology::AttentionResidual.block_size)` by a carriage rule whose probe reads the BUILT surface and answers 12 — K3's text surface builds, unlike DeepSeek's, so the rule can attest it (the lesson of wave 19's falsified P8, applied). K3 −1 on this reader.",
+    "P2_ownership_finding_176": "`language_model.model.output_attn_res_proj` moves from an unplaced group to a placed object `target.attention_residual_exit` binding exactly two tensors (the norm and the projection). K3 −1 on this reader. The FinalNorm object `target.norm` binds exactly ONE tensor afterwards — the swept norm has left it.",
+    "P3_execution_surface_becomes_an_honest_refusal": "`target.execution_surface` moves from Representable/ExecutionSemantic ('complete') to Unrepresented/UnsupportedComponent: the topology is represented, its operands owned and addressed, and this build has no traversal for it. K3 +1 on this reader. The refusal is read from ONE authority by the executor's preparation step and the report, so a plan the report calls executable is one the executor prepares — the seam wave 19 retired returns beside the variant that needs it, as its documentation said it must.",
+    "P4_net_on_the_k3_row": "33 -> 32 (−1 −1 +1). A reading of 31 is the fail-open: a topology represented without a traversal and not refused — scored as a BUG, not a success. Derived, not a claim.",
+    "P5_roles_on_the_kda_layer": "the header-fixture witness in plan/tests/k3_representable.rs moves from five unaddressed operands to ONE (`self_attn.g_proj`, K3-REP-GATE-1's): the four `*_res_*` operands classify to the four roles. Plan-level counts do not move on this reader — role classification is the op-plan stage, and the recon recorded that the plan stage is silent about it.",
+    "P6_the_op_plan_still_does_not_close": "K3's op plan still returns no plan (g_proj unclassified; LatentMoE off this layer), so the executor is never reached for K3 and the masked `single(FinalNorm)` defect cannot be observed on K3 itself. It IS observed on the synthetic stray fixture below.",
+    "P7_strays_and_absences_refuse_by_name": "on synthetic estates: residual pairs on a single-stream component are refused as strays (closure defects naming the role); a component declaring the block size with a layer missing one of the four operands is a named closure defect; a component declaring the block size and shipping no exit pair keeps a blocking execution-surface finding naming the exit; a component declaring the block size with every operand present closes, carries the topology on the plan, and is refused at the executor's door by the topology's own reason.",
+    "P8_controls": "every other scored row unchanged: Kimi-Linear-48B-A3B (same modeling file, no block size declared, no pairs shipped) 0 movement; the four hyper-connection rows unchanged; Qwen3-0.6B stays 0; GREEN 41 / AMBER 3 / RED 65 / BUG 0 unchanged; K3 stays RED.",
+    "P9_semantics_version": "16 -> 17, with the identity pin gaining this transition's verdict pair: a synthetic attention-residual estate with every operand and the exit pair is representable and not executable (blocked by the refusal alone), the same estate without the exit pair is blocked by the exit finding.",
+    "P10_fixture_migration_named": "plan/tests/k3_representable.rs KDA_LAYER_UNADDRESSED 5 -> 1 and its comment; plan/tests/identity.rs version 17; wave18_hc_carriage::k3s_residual_operands_are_not_sinkhorn_sites_under_any_stream_count UNCHANGED (it pins what these are not); graph placement tests for the norm fragment gain the exit group's precedence case. No other test changes meaning."
+  },
+
+  "falsifiers": [
+    "`target.norm` still binds two tensors after the transition -> the sweep persists and ownership was not fixed at the graph; the transition fails regardless of finding counts",
+    "K3 reads 31 -> the topology was represented without a refusal: fail-open, a BUG",
+    "any row other than K3 moves -> a rule reached an estate it does not describe",
+    "the four roles classify on a component that does not declare the block size -> identity inferred from operands, the wave-1 mistake",
+    "the executor prepares an AttentionResidual plan -> capability advertised with nothing behind it",
+    "P1 reads carried on a component whose surface does not build -> carriage attested from the declaration, not the graph"
+  ],
+
+  "how_this_transition_can_be_wrong_in_a_way_the_tests_would_not_catch": [
+    "Everything here is representation: the tests can prove the declaration, the ownership and the roles agree with the headers, not that the mechanism they describe is the one the reference runs. That is the oracle's job, and the oracle does not exist until the next artefact.",
+    "The exit object's two tensors are matched by name fragments; a checkpoint that spelled the exit pair another way would be unplaced again, not mis-owned, which is the honest failure but still a failure the synthetic fixtures do not exercise.",
+    "K3's own op plan never closes in this transition, so the one place the malformed FinalNorm object would have been caught stays masked on the real row; it is exercised only on synthetic estates."
+  ],
+
+  "sequence_after_this_transition": "oracle (torch, rejecting controls) -> freeze the traversal transition against the oracle's commit -> carrier + decode -> batch -> lift, each measured, each its own commit. Then the centre of gravity moves back to REPRESENT, residency and the K3 physical execution plan."
+}
