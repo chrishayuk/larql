@@ -122,3 +122,15 @@ the extracted contract preserved an mmap / random-access assumption. Then
 progressive. Then VQ. If those three arrive without changing the trait, it
 is frozen, and LARQL no longer knows what quantisation formats exist — only
 what properties an executable representation must declare.
+
+## Rung 2 — preregistered, not yet built
+
+Entropy-coded bf16 is frozen as a forecast before any code:
+[`represent/forecasts/rung2-entropy-coded-bf16.json`](represent/forecasts/rung2-entropy-coded-bf16.json).
+It records the baseline *measured* at `f92fac65` (which surfaces consult the
+contract, which do not, where a stored dtype is first judged), the codec's
+declaration, the eight hostile properties as witnesses with falsifiers, the
+exact touch set the change is allowed, and the six whole-registry gates
+predicted to collide because they pinned a random-access or shape-derived-size
+assumption. Execution-time falsifications go in a sibling
+`rung2-execution-notes.json`; the forecast itself is immutable once committed.
