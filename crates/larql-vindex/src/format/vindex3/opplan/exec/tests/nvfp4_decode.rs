@@ -13,7 +13,8 @@
 //! plumbing, not the format's accuracy. What must be exact is the
 //! SHAPE: the same count of values, in the same order.
 
-use crate::format::vindex3::opplan::exec::operands::decode_nvfp4_operand;
+use crate::format::vindex3::represent::codec::codecs::nvfp4::NVFP4;
+use crate::format::vindex3::represent::codec::{RepresentationCodec, RepresentationExtent};
 use crate::format::vindex3::represent::nvfp4_pack::{encode, PackLayout};
 
 const ROWS: usize = 3;
@@ -46,7 +47,14 @@ fn a_pack_round_trips_through_its_own_layout() {
         "the framed pack is exactly the layout's size"
     );
 
-    let decoded = decode_nvfp4_operand(&stored, &shape, "round-trip").expect("decode");
+    let decoded = NVFP4
+        .decode_packed(
+            &stored,
+            &shape,
+            RepresentationExtent::TERMINAL,
+            "round-trip",
+        )
+        .expect("decode");
     assert_eq!(
         decoded.len(),
         original.len(),
@@ -93,7 +101,9 @@ fn a_truncated_pack_refuses_rather_than_decoding_what_is_there() {
 
     let short = &stored[..stored.len() - 1];
     assert!(
-        decode_nvfp4_operand(short, &shape, "truncated").is_err(),
+        NVFP4
+            .decode_packed(short, &shape, RepresentationExtent::TERMINAL, "truncated")
+            .is_err(),
         "one byte short is still short"
     );
 }

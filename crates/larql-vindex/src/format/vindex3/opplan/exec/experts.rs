@@ -380,6 +380,11 @@ impl RoutedOperands {
         };
         let hidden = op.router.shape.get(1).copied().unwrap_or(0);
         let inter = op.expert_intermediate_size;
+        // The bank first: its geometry is DECLARED — `k` follows from the
+        // router's declared width — and a stray width refuses on the
+        // declaration, before any operand's bytes are read.
+        let gate_up_bank = load_packed(store, gate_up, op, FUSED_BRANCHES * inter, hidden, format)?;
+        let down_bank = load_packed(store, down, op, hidden, inter, format)?;
         Ok(Self {
             router: store.load(&op.router)?,
             router_bias: op.router_bias.as_ref().map(|b| store.load(b)).transpose()?,
@@ -394,9 +399,9 @@ impl RoutedOperands {
                 .map(|s| store.load(s))
                 .transpose()?,
             router_norm_eps: op.router_norm_eps,
-            gate_up: load_packed(store, gate_up, op, FUSED_BRANCHES * inter, hidden, format)?,
+            gate_up: gate_up_bank,
             gate_up_bias: gate_up.bias.as_ref().map(|b| store.load(b)).transpose()?,
-            down: load_packed(store, down, op, hidden, inter, format)?,
+            down: down_bank,
             down_bias: down.bias.as_ref().map(|b| store.load(b)).transpose()?,
         })
     }
@@ -413,6 +418,13 @@ fn load_packed(
     format: WeightFormat,
 ) -> Result<Vec<LoadedWeight>, VindexError> {
     let name = projection.weights.tensor.as_str();
+    // Declared geometry before bytes: a `k` the group cannot tile is a
+    // fact about the op, and refusing it costs no read.
+    if op.expert_format == ExpertFormat::PackedMxfp4 && !k.is_multiple_of(MXFP4_GROUP_ELEMS) {
+        return Err(VindexError::Parse(format!(
+            "`{name}`: k={k} is not a multiple of the MXFP4 group"
+        )));
+    }
     let raw = store.load_raw(&projection.weights)?;
     match op.expert_format {
         ExpertFormat::PackedMxfp4 => {
@@ -424,11 +436,6 @@ fn load_packed(
             let scales = store.load_raw(scales_ref)?;
             expect_dtype(&raw.dtype, DTYPE_U8, name)?;
             expect_dtype(&scales.dtype, DTYPE_U8, &scales_ref.tensor)?;
-            if !k.is_multiple_of(MXFP4_GROUP_ELEMS) {
-                return Err(VindexError::Parse(format!(
-                    "`{name}`: k={k} is not a multiple of the MXFP4 group"
-                )));
-            }
             let groups = k / MXFP4_GROUP_ELEMS;
             let block_stride = rows * groups * MXFP4_GROUP_BYTES;
             let scale_stride = rows * groups;

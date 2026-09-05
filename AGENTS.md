@@ -191,6 +191,7 @@ Or via the Makefile: `make python-setup | python-build | python-test | python-cl
 - LQL language spec: [crates/larql-lql/docs/spec.md](crates/larql-lql/docs/spec.md) (v0.4)
 - Vindex file format: [crates/larql-vindex/docs/format-spec.md](crates/larql-vindex/docs/format-spec.md) (VINDEX2); VINDEX3: [crates/larql-vindex/docs/vindex3-format-spec.md](crates/larql-vindex/docs/vindex3-format-spec.md) (container ABI) + [docs/vindex3-format.md](docs/vindex3-format.md) (model-system spec) + [docs/vindex3-runtime.md](docs/vindex3-runtime.md) (runtime/serving)
 - Operations + patches: [crates/larql-vindex/docs/operations-spec.md](crates/larql-vindex/docs/operations-spec.md)
+- Representation/execution contract (`RepresentationCodec`, the codec registry, the four-proofs programme): [docs/represent-codec-contract.md](docs/represent-codec-contract.md)
 - Ecosystem (HF publish, Vindexfile): [crates/larql-vindex/docs/ecosystem-spec.md](crates/larql-vindex/docs/ecosystem-spec.md)
 - Inference engine internals: [docs/inference-engine.md](docs/inference-engine.md), [docs/ffn-graph-layer.md](docs/ffn-graph-layer.md)
 - Trace format (.bin/.bndx/.ctxt): [crates/larql-inference/docs/trace-format.md](crates/larql-inference/docs/trace-format.md), [docs/residual-trace.md](docs/residual-trace.md)

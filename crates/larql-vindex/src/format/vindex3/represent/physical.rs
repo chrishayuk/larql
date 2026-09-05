@@ -427,6 +427,10 @@ impl ExpertLayout {
     }
 }
 
+/// What a bank-pricing refusal names as its operand: a bank is priced
+/// per projection, not per named tensor.
+const EXPERT_BANK_OPERAND: &str = "expert-bank";
+
 /// A physical representation a grouped kernel can execute.
 ///
 /// The backend's job is to answer whether it can run one of these, never
@@ -464,32 +468,14 @@ impl ExpertEncoding {
     }
 
     /// Bytes an `[n, k]` matrix occupies in this encoding.
+    ///
+    /// Priced by the codec the encoding names, so the block geometry has
+    /// one home: a table here that repeated it was the drift the codec
+    /// contract exists to remove.
     pub fn matrix_bytes(self, n: usize, k: usize) -> Result<u64, VindexError> {
-        match self {
-            ExpertEncoding::Bf16 => Ok((n * k) as u64 * 2),
-            ExpertEncoding::Q80 => {
-                if !k.is_multiple_of(32) {
-                    return Err(VindexError::Parse(format!(
-                        "k={k} is not a whole number of 32-element blocks for Q8_0"
-                    )));
-                }
-                Ok((n * k / 32) as u64 * 34)
-            }
-            ExpertEncoding::Q6K | ExpertEncoding::Q4K => {
-                if !k.is_multiple_of(256) {
-                    return Err(VindexError::Parse(format!(
-                        "k={k} is not a whole number of 256-element superblocks for {}",
-                        self.name()
-                    )));
-                }
-                let per = if self == ExpertEncoding::Q6K {
-                    210
-                } else {
-                    144
-                };
-                Ok((n * k / 256) as u64 * per)
-            }
-        }
+        use super::codec::{CodecRegistry, RepresentationExtent};
+        let codec = CodecRegistry::builtin().resolve(self.name(), EXPERT_BANK_OPERAND)?;
+        Ok(codec.stored_bytes(&[n, k], RepresentationExtent::TERMINAL, EXPERT_BANK_OPERAND)?)
     }
 }
 

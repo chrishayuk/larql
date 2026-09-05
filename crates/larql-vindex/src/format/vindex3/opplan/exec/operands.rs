@@ -375,44 +375,30 @@ impl OperandStore {
         Ok(())
     }
 
-    /// Load one operand as f32 values.
+    /// Load one operand as f32 values — the mandatory decode realization
+    /// of whichever codec the stored dtype names.
     ///
-    /// A compiled NVFP4 pack decodes here rather than in [`widen`],
-    /// because decoding it needs the operand's SHAPE — the group stream
-    /// is indexed per row — and `widen` sees only bytes and a dtype
-    /// label. Consumers that want the compact form for a kernel take
-    /// [`Self::load_raw`]; this is for the ones that need values, which
-    /// on a recurrence is most of them.
+    /// One dispatch, through the codec registry, for every encoding a
+    /// segment can hold: a float widens, a K-quant or an NVFP4 pack
+    /// decodes through its own layout, and a dtype no codec is registered
+    /// for is refused naming the ones that are. Consumers that want the
+    /// compact form for a kernel take [`Self::load_raw`]; this is for the
+    /// ones that need values, which on a recurrence is most of them.
     ///
-    /// The decode is lossy in exactly the way the pack is: these are the
-    /// 4-bit values, widened, not the checkpoint's originals. That is
-    /// the point — it is what makes an NVFP4 representation measurable
-    /// on a stack the device cannot run.
+    /// The decode is lossy in exactly the way the representation is:
+    /// a pack's 4-bit values widened, not the checkpoint's originals.
+    /// That is the point — it is what makes a compact representation
+    /// measurable on a stack the device cannot run.
     pub fn load(&self, operand: &OperandRef) -> Result<Vec<f32>, VindexError> {
+        use crate::format::vindex3::represent::codec::{CodecRegistry, RepresentationExtent};
         let raw = self.load_raw(operand)?;
-        if raw.dtype == crate::format::vindex3::represent::nvfp4_pack::DTYPE_NVFP4 {
-            return decode_nvfp4_operand(&raw.bytes, &operand.shape, &operand.tensor);
-        }
-        // A K-quant decodes here for the same reason NVFP4 does: the
-        // block count comes from the operand's SHAPE, and `widen` sees
-        // only bytes and a dtype label. It stays out of `widen` rather
-        // than growing a shape parameter there, so the one function that
-        // answers "what does this dtype mean as f32, from bytes alone"
-        // keeps meaning exactly that.
-        if let Some(k) = crate::format::vindex3::represent::kquant::lookup(&raw.dtype) {
-            let elements = operand
-                .shape
-                .iter()
-                .try_fold(1usize, |a, d| a.checked_mul(*d))
-                .ok_or_else(|| {
-                    VindexError::Parse(format!(
-                        "tensor `{}`: shape {:?} overflows an element count",
-                        operand.tensor, operand.shape
-                    ))
-                })?;
-            return k.decode(&raw.bytes, elements, &operand.tensor);
-        }
-        widen(&raw.dtype, &raw.bytes, &operand.tensor)
+        let codec = CodecRegistry::builtin().resolve(&raw.dtype, &operand.tensor)?;
+        Ok(codec.decode_packed(
+            &raw.bytes,
+            &operand.shape,
+            RepresentationExtent::TERMINAL,
+            &operand.tensor,
+        )?)
     }
 
     /// This store's process-unique identity.
@@ -505,27 +491,6 @@ impl OperandStore {
 pub struct RawOperand {
     pub dtype: String,
     pub bytes: Vec<u8>,
-}
-
-/// Decode a stored NVFP4 pack to f32, through the format's own layout
-/// and the reference decoder — no second opinion about the arithmetic.
-pub(crate) fn decode_nvfp4_operand(
-    bytes: &[u8],
-    shape: &[usize],
-    name: &str,
-) -> Result<Vec<f32>, VindexError> {
-    use crate::format::vindex3::represent::nvfp4_pack::{split, PackLayout};
-    let layout = PackLayout::derive(shape, name)?;
-    let (packed, scales, tensor_scale) = split(bytes, &layout, name)?;
-    let mut out = vec![0.0f32; layout.rows * layout.k];
-    let matrix = larql_models::quant::nvfp4::Nvfp4Matrix {
-        packed: packed.to_vec(),
-        scales: scales.to_vec(),
-        tensor_scale,
-    };
-    larql_models::quant::nvfp4::dequantize_into(&matrix, layout.rows, layout.k, &mut out)
-        .map_err(|e| VindexError::Parse(format!("tensor `{name}`: NVFP4 decode: {e}")))?;
-    Ok(out)
 }
 
 /// Widen stored bytes to f32 — judged dtypes only, fail-closed.
