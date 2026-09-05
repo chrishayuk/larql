@@ -16,6 +16,7 @@ use super::super::super::encode::REPRESENTATION_ID_SEP;
 use super::super::super::inspect::SystemInspection;
 use super::super::OperandRef;
 use crate::error::VindexError;
+use crate::format::vindex3::represent::codec::CodecRegistry;
 
 /// Safetensors dtype labels this reference executor can widen to f32.
 const DTYPE_F32: &str = "F32";
@@ -31,6 +32,10 @@ struct SegmentMap {
 
 /// Operand store over one container.
 pub struct OperandStore {
+    /// The codecs this store decodes through — the built-in registry
+    /// unless a caller binds another, which is how a representation this
+    /// build does not ship becomes executable through registration alone.
+    registry: &'static CodecRegistry,
     segments: BTreeMap<String, SegmentMap>,
     /// Which representation each object was bound to.
     selected: BTreeMap<String, SelectedRepresentation>,
@@ -246,6 +251,7 @@ impl OperandStore {
             );
         }
         Ok(Self {
+            registry: CodecRegistry::builtin(),
             segments,
             absent,
             selected,
@@ -261,6 +267,20 @@ impl OperandStore {
             stored_precision: std::sync::atomic::AtomicU64::new(0),
             touched: std::sync::Mutex::new(std::collections::BTreeSet::new()),
         })
+    }
+
+    /// The same store, decoding through `registry` instead of the built-in
+    /// one. Selection, provider identity and decode all read this one
+    /// registry, so a codec registered here is executable end to end and a
+    /// codec absent from it is refused everywhere.
+    pub fn with_registry(mut self, registry: &'static CodecRegistry) -> Self {
+        self.registry = registry;
+        self
+    }
+
+    /// The codecs this store decodes through.
+    pub fn registry(&self) -> &'static CodecRegistry {
+        self.registry
     }
 
     /// What each object was bound to.
@@ -390,9 +410,9 @@ impl OperandStore {
     /// That is the point — it is what makes a compact representation
     /// measurable on a stack the device cannot run.
     pub fn load(&self, operand: &OperandRef) -> Result<Vec<f32>, VindexError> {
-        use crate::format::vindex3::represent::codec::{CodecRegistry, RepresentationExtent};
+        use crate::format::vindex3::represent::codec::RepresentationExtent;
         let raw = self.load_raw(operand)?;
-        let codec = CodecRegistry::builtin().resolve(&raw.dtype, &operand.tensor)?;
+        let codec = self.registry.resolve(&raw.dtype, &operand.tensor)?;
         Ok(codec.decode_packed(
             &raw.bytes,
             &operand.shape,
@@ -450,6 +470,19 @@ impl OperandStore {
             .tensors
             .get(&operand.tensor)
             .map(|t| t.dtype.as_str())
+    }
+
+    /// The length the container RECORDS for this operand's stored bytes —
+    /// tensor-table metadata only, no payload read. An instance fact: for
+    /// an entropy-coded operand it is not a function of the shape, which
+    /// is exactly why the stored footprint reads it here and never from
+    /// a codec.
+    pub fn stored_len(&self, operand: &OperandRef) -> Option<u64> {
+        self.segments
+            .get(&operand.object)?
+            .tensors
+            .get(&operand.tensor)
+            .map(|t| t.len)
     }
 
     /// Load one operand's stored bytes and dtype, unwidened — for a
@@ -703,6 +736,11 @@ impl<'a> OperandSource<'a> {
         self.base
     }
 
+    /// The codecs this source decodes through.
+    pub fn registry(&self) -> &'static CodecRegistry {
+        self.base.registry()
+    }
+
     /// This source's identity, for stamping derived artefacts.
     pub fn stamp(&self) -> SourceStamp {
         SourceStamp {
@@ -720,51 +758,19 @@ impl<'a> OperandSource<'a> {
         Ok(values)
     }
 
-    /// Whether this operand can be held in the checkpoint's own compact
-    /// bytes.
-    ///
-    /// Two conditions, and the second is easy to forget: the container
-    /// must store bf16, AND no overlay edit may stand in the way. An edit
-    /// is an f32-space fact with no representation in stored bytes, so an
-    /// edited operand has to be widened to be honoured at all — see
-    /// [`Self::load_raw`], which refuses it.
-    ///
-    /// False on anything it cannot establish. This decides how many bytes
-    /// a weight occupies, never what it means, so an unknown answers
-    /// "widen it" and the load path reports any real problem a moment
-    /// later with the tensor's name.
-    pub fn is_stored_bf16(&self, operand: &OperandRef) -> bool {
-        if self.overrides.is_some_and(|o| o.is_overridden(operand)) {
-            return false;
-        }
-        self.base.stored_dtype(operand) == Some(DTYPE_BF16)
+    /// Whether an overlay edit stands on this operand. An edit is an
+    /// f32-space fact with no representation in stored bytes, so the only
+    /// realization that can honour it decodes — the selector reads this
+    /// beside the registry's facts, and [`Self::load_raw`] refuses it.
+    pub fn is_overridden(&self, operand: &OperandRef) -> bool {
+        self.overrides.is_some_and(|o| o.is_overridden(operand))
     }
 
-    /// Whether this operand is held as a compiled NVFP4 pack.
-    ///
-    /// Overlay edits are f32-space facts with no compact form, so an
-    /// overridden operand answers `false` and is served widened — the
-    /// same rule [`Self::is_stored_bf16`] follows, for the same reason.
-    pub fn is_stored_nvfp4(&self, operand: &OperandRef) -> bool {
-        if self.overrides.is_some_and(|o| o.is_overridden(operand)) {
-            return false;
-        }
-        self.base.stored_dtype(operand)
-            == Some(crate::format::vindex3::represent::nvfp4_pack::DTYPE_NVFP4)
-    }
-
-    /// Whether this operand is held as a compiled K-quant pack — any
-    /// encoding `represent::kquant::lookup` names.
-    ///
-    /// The same overlay rule as [`Self::is_stored_bf16`], for the same
-    /// reason: an edited operand has no compact form and answers `false`.
-    pub fn is_stored_kquant(&self, operand: &OperandRef) -> bool {
-        if self.overrides.is_some_and(|o| o.is_overridden(operand)) {
-            return false;
-        }
-        self.base
-            .stored_dtype(operand)
-            .is_some_and(|d| crate::format::vindex3::represent::kquant::lookup(d).is_some())
+    /// The container's recorded length for an operand's stored bytes —
+    /// the base store's record; an overlay edit changes values, not what
+    /// the container holds.
+    pub fn stored_len(&self, operand: &OperandRef) -> Option<u64> {
+        self.base.stored_len(operand)
     }
 
     /// Load one operand's stored bytes unwidened. Overlay edits are

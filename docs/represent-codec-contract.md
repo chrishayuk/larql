@@ -164,3 +164,86 @@ representations with different storage and access semantics.
 "Representation-open" waits on VQ and progressive; pluggable *lowering
 targets* are enabled by the seam but not delivered — rung 3 (planner
 admission, realization trace) is their prerequisite.
+
+## Rung 3 — planned execution realizations: preregistered, not yet built
+
+Frozen before any code in
+[`represent/forecasts/rung3-planned-realizations.json`](represent/forecasts/rung3-planned-realizations.json),
+with the baseline measured at the rung-2 merge: the seam between plan and
+backend is three stored-dtype booleans, selection is a boolean ladder over
+them, the kernel is observed from resident bytes rather than pinned, MXFP4
+banks enter through a `U8` label nobody registered, and realization identity
+is a closed enum. The forecast fixes the contract-level design — a
+hardware-independent `PlannedOperand`, a derived candidate set, one pinned
+`RealizationId` with its reason and resource profile — and predicts the
+transition per wave (3a requirements, 3b admission and selection, 3c trace
+and accounting, 3d privileged paths removed), including the blocker an
+external provider is expected to hit. Execution notes go in a sibling
+`rung3-execution-notes.json`; the forecast is immutable once committed.
+
+### Rung 3 — built and held, with the falsifier that fired
+
+All four waves ran on branch `represent-rung3`; the execution record, wave by
+wave with every finding the forecast did not contain, is
+[`represent/forecasts/rung3-execution-notes.json`](represent/forecasts/rung3-execution-notes.json).
+What the rung leaves behind:
+
+- **A plan is a set of hardware-independent planned operands** (`PlannedOperand`:
+  operation, required access, logical extent, logical elements, and — since 3d —
+  the codec the plan *declares* when a container's label is a carrier dialect
+  rather than a codec). Nothing in it names a dtype or a kernel.
+- **Admission and selection happen at preparation, before any byte.** The
+  backend derives a candidate set from the codec's declarations, pins one
+  `RealizationId` with its reason, or refuses with every reason. The three
+  stored-dtype booleans, the `U8` bank dialect and every dtype-name judgement
+  under `exec/` are gone; `ExpertFormat` keys exactly one thing, the declared
+  codec of a packed bank.
+- **The declaration is bound against the census, not into it.** An expectation
+  is priced from the pin, the codec's declared residency and the container's
+  recorded length; an observation is read off the bound objects; the two are
+  reconciled, and a mutated declaration breaks the reconciliation of exactly
+  the forms it prices.
+- **The registry is a value, not a default.** The store carries the registry it
+  decodes through, the prepared image records the one it was prepared through,
+  and execution checks its providers against that one. This is the
+  falsifier that fired (F8): the first run of the provider proof was refused at
+  *execution* by three hidden built-in registries that registration could not
+  reach, after selection had already succeeded.
+- **The acceptance test is external.**
+  [`crates/larql-vindex/tests/external_codec_provider.rs`](../crates/larql-vindex/tests/external_codec_provider.rs)
+  is an integration test — a separate crate in cargo's model — that registers a
+  representation this build does not ship and executes a container stored in
+  it: the same selection as the shipped label, bit-exact logits, refusal by name
+  without the provider, invalidation of an image that loses it. It touches only
+  exported API.
+
+**The claim rung 3 earns:** LARQL can accept a representation implementation
+through exported API, carry its registry through preparation and execution,
+select and account for it before I/O, execute it bit-exactly, and invalidate
+prepared state when that provider disappears, without privileged dtype control
+flow.
+
+Two wording boundaries stay explicit:
+
+- The integration test proves *external-crate compatibility*, because Rust
+  integration tests compile as separate crates against exported API. It does
+  not claim runtime discovery or distributed package loading; a plugin here
+  is an external crate linked at compile time.
+- "Stored label wins" makes the **stored representation authoritative**. The
+  expert-format declaration is a legacy default consulted only for a carrier
+  dialect whose label names no codec. They are one rule with a fallback, not
+  two competing semantic truths.
+
+The region exactness rule is correct for fixed-size codecs — each stream
+satisfies its declared minimum, all stream lengths total the declared
+representation size, so no stream can contain unclaimed bytes — and an
+instance-sized codec keeps taking its exact length from the bound container
+record, never from a shape-derived declaration.
+
+What it does not claim: a CPU shared-expert realization (the hard refusal is
+preserved; the missing realizations are inventoried), a provider that brings
+its own *kernel* (the kernel-plane blocker was measured at five closed enums
+across 33 files and is measured debt, not the next task), or any
+performance. The architecture phase has turned K3 failures from
+format-specific surprises into named missing realizations with physical
+costs; the next work binds a real K3 plan through this machinery.

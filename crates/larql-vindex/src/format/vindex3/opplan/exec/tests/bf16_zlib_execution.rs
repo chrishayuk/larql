@@ -277,18 +277,35 @@ fn without_registration_the_label_is_refused_naming_the_eight_that_are() {
 }
 
 #[test]
-fn the_same_bytes_under_an_unregistered_label_are_refused_at_load_by_name() {
+fn the_same_bytes_under_an_unregistered_label_are_refused_before_any_byte_by_name() {
     let alien = Witness::build(Transcode::Unregistered);
     let (plan, store) = alien.open();
+    // Rung 3b moved the refusal from the load to the preparation: the
+    // selector resolves the label against the registry before any byte
+    // is read, and names every operand it refused.
+    let before = store.load_count();
     let Err(err) = execute_plan(&plan, &store, &TOKENS, &ProductionBackend::new()) else {
         panic!("nothing is registered for the label");
     };
     let msg = err.to_string();
     assert!(
+        msg.contains("unregistered representation") && msg.contains(UNREGISTERED_LABEL),
+        "the refusal names the kind and the label: {msg}"
+    );
+    assert_eq!(
+        store.load_count(),
+        before,
+        "refused before any byte was read"
+    );
+    // The registry's own refusal still stands behind it, listing what IS
+    // registered — reached by asking the store directly.
+    let operand = alien.transcoded[0].operand();
+    let msg = store.load(&operand).unwrap_err().to_string();
+    assert!(
         msg.contains(&format!(
             "representation `{UNREGISTERED_LABEL}` is not registered"
         )) && msg.contains(DTYPE_BF16_ZLIB),
-        "the refusal names the label and lists the registered ones: {msg}"
+        "{msg}"
     );
 }
 

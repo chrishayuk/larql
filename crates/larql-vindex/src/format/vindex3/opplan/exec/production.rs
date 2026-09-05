@@ -37,8 +37,8 @@ use larql_compute::MoeGateRule;
 use super::super::super::graph::policy::AttentionSpan;
 use super::backend::{
     AttentionCall, AttentionOut, AttentionStepCall, AttentionStepOut, FfnCall, FfnManyCall,
-    GateCall, MatrixClass, MatrixOperand, NormCall, PlanBackend, ProjectCall, ProjectedQkv,
-    QkNormCall, RoutedFfnCall, WeightFormat,
+    GateCall, NormCall, PlanBackend, ProjectCall, ProjectedQkv, QkNormCall, RoutedFfnCall,
+    WeightFormat,
 };
 use super::cpu::physical::{
     kquant_execution, project_matrix, project_matrix_many, ExecutorProjections, KQuantExecution,
@@ -47,7 +47,12 @@ use super::cpu::PhysicalProjectionPlan;
 use super::kernels::{
     gather_fused_half, mrope_rotate_scaled, rope_rotate, rope_rotate_scaled, FusedHalf,
 };
+use super::realization::{
+    class_of, common_selection, cpu_projection_candidates, resident_profile, RealizationForm,
+    RealizationId, RefusalKind, RepresentationFacts, Selection, SelectionReason, SelectionRefusal,
+};
 use super::timing::{timed, OpClass};
+use crate::format::vindex3::opplan::planned::PlannedOperand;
 use larql_compute::attention::rope::{
     rope_freq_plan, rope_freq_plan_proportional, RopeFreqScaling,
 };
@@ -697,35 +702,122 @@ impl ProductionBackend {
     }
 }
 
-/// [`ProductionBackend::weight_format`]'s decision, with the K-quant
-/// execution arm passed in rather than read from the environment — so
-/// both arms are testable in one process without touching it.
-pub(crate) fn declared_format(operand: MatrixOperand, kquant: KQuantExecution) -> WeightFormat {
-    match operand.class {
-        // The packed bank is widened to f32 on the way in and sliced
-        // into per-expert matrices; there are no stored bytes left to
-        // keep by the time a format could apply.
-        MatrixClass::RoutedExpertBank => WeightFormat::F32,
-        // A compiled pack outranks the size policy. `choose_for`
-        // decides what to MAKE an operand resident as, from its size;
-        // an operand that is already NVFP4 has had that decision made
-        // for it deliberately, and re-deciding here would widen 4-bit
-        // bytes to f32 to satisfy a policy about bf16.
-        _ if operand.stored_nvfp4 => WeightFormat::Nvfp4,
-        // The same for a stored K-quant, under one condition: the arm.
-        // `Widen` is rung A's authority path (decode to f32, BLAS) and
-        // falls through to the size policy exactly as before this arm
-        // existed — with `stored_bf16` false, that is `BlasF32`.
-        _ if operand.stored_kquant && kquant == KQuantExecution::Direct => WeightFormat::KQuant,
-        MatrixClass::AttentionProjection | MatrixClass::FfnProjection | MatrixClass::OutputHead => {
-            PhysicalProjectionPlan::choose_for(
-                Some(operand.class),
-                operand.elements,
-                operand.stored_bf16,
-            )
-            .format()
-        }
+/// The CPU executor's own re-quantised resident forms, offered as
+/// candidates for a float source it knows how to narrow — which a codec
+/// declares by naming the direct bf16 kernel.
+const REQUANTISE: [PhysicalProjectionPlan; 4] = [
+    PhysicalProjectionPlan::FusedQ8,
+    PhysicalProjectionPlan::Q8xQ8,
+    PhysicalProjectionPlan::Q4xQ8,
+    PhysicalProjectionPlan::FusedQ4,
+];
+
+/// [`ProductionBackend::select`]'s decision, with the K-quant execution
+/// arm passed in rather than read from the environment — so both arms are
+/// testable in one process without touching it.
+///
+/// **The policy, over a derived candidate set.** The candidates come from
+/// the codec's declarations and the executor's own compact forms; the
+/// ladder below only ORDERS them, and can answer nothing that is not a
+/// candidate. A compiled NVFP4 pack outranks everything; a stored K-quant
+/// runs in place or widens by the arm; a float source goes to the size
+/// policy, which keeps a large bf16 image compact and widens a small one;
+/// a codec with no direct realization decodes, and says so.
+pub(crate) fn select_cpu(
+    operand: &PlannedOperand,
+    facts: &RepresentationFacts,
+    kquant: KQuantExecution,
+) -> Result<Selection, Box<SelectionRefusal>> {
+    use RealizationForm::{Decode, Direct, Requantise};
+    if let Some(common) = common_selection(operand, facts, WeightFormat::F32) {
+        return common;
     }
+    let refuse = |kind, considered| {
+        Box::new(SelectionRefusal {
+            operand: operand.operand.clone(),
+            operation: operand.operation,
+            representation: facts.label.clone(),
+            requested: operand.access,
+            kind,
+            considered,
+        })
+    };
+    let Some(class) = class_of(operand.operation) else {
+        return Err(refuse(RefusalKind::MissingRealization, vec![]));
+    };
+    let Some(registered) = &facts.registered else {
+        return Err(refuse(RefusalKind::UnregisteredRepresentation, vec![]));
+    };
+    let candidates = cpu_projection_candidates(facts, PhysicalProjectionPlan::BlasF32, &REQUANTISE);
+    let has = |form: RealizationForm| candidates.iter().any(|c| c.form == form);
+    let decode = RealizationId::cpu(Decode(PhysicalProjectionPlan::BlasF32));
+    let pick = |id: RealizationId, reason: SelectionReason| {
+        let residency = match id.form {
+            Direct(plan) => facts
+                .direct_residency(plan)
+                .unwrap_or(registered.decode_residency),
+            Decode(_) => registered.decode_residency,
+            _ => resident_profile(id.format()),
+        };
+        Ok(Selection {
+            realization: id,
+            residency,
+            reason,
+            candidates: candidates.clone(),
+        })
+    };
+    if has(Direct(PhysicalProjectionPlan::FusedNvfp4)) {
+        return pick(
+            RealizationId::cpu(Direct(PhysicalProjectionPlan::FusedNvfp4)),
+            SelectionReason::DirectDeclared,
+        );
+    }
+    if has(Direct(PhysicalProjectionPlan::FusedKQuant)) {
+        return match kquant {
+            KQuantExecution::Direct => pick(
+                RealizationId::cpu(Direct(PhysicalProjectionPlan::FusedKQuant)),
+                SelectionReason::DirectDeclared,
+            ),
+            KQuantExecution::Widen => pick(decode, SelectionReason::ArmPrefersDecode),
+        };
+    }
+    // The size policy is asked whether a bf16 image is worth keeping
+    // compact — and the fact it is asked about is the codec DECLARING the
+    // direct bf16 kernel, not a dtype the loader compared.
+    let bf16_kernel_declared = has(Direct(PhysicalProjectionPlan::FusedBf16));
+    let plan = PhysicalProjectionPlan::choose_for(
+        Some(class),
+        operand.logical_elements,
+        bf16_kernel_declared,
+    );
+    let form = if has(Direct(plan)) {
+        Direct(plan)
+    } else if plan.format() == WeightFormat::F32 {
+        Decode(plan)
+    } else {
+        Requantise(plan)
+    };
+    if !has(form) {
+        return Err(refuse(
+            RefusalKind::MissingRealization,
+            candidates
+                .iter()
+                .map(|c| {
+                    (
+                        *c,
+                        "not the resident form the size policy chose".to_string(),
+                    )
+                })
+                .collect(),
+        ));
+    }
+    let reason = match form {
+        _ if facts.overlaid => SelectionReason::OverlaidEdit,
+        Direct(_) if !bf16_kernel_declared => SelectionReason::DirectDeclared,
+        Decode(_) if !bf16_kernel_declared => SelectionReason::NoDirectRealization,
+        _ => SelectionReason::SizePolicy,
+    };
+    pick(RealizationId::cpu(form), reason)
 }
 
 impl PlanBackend for ProductionBackend {
@@ -733,11 +825,15 @@ impl PlanBackend for ProductionBackend {
         &ExecutorProjections
     }
 
-    /// **The policy.** One decision per matrix, producing the format here
-    /// and the kernel at [`project_rows`] — see
-    /// [`PhysicalProjectionPlan`].
-    fn weight_format(&self, operand: MatrixOperand) -> WeightFormat {
-        declared_format(operand, kquant_execution())
+    /// **The policy.** One decision per matrix, producing the resident
+    /// form here and the kernel at [`project_rows`] — see
+    /// [`PhysicalProjectionPlan`] and [`select_cpu`].
+    fn select(
+        &self,
+        operand: &PlannedOperand,
+        facts: &RepresentationFacts,
+    ) -> Result<Selection, Box<SelectionRefusal>> {
+        select_cpu(operand, facts, kquant_execution())
     }
 
     fn name(&self) -> &str {

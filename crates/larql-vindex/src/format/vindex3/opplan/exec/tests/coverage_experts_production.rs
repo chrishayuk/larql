@@ -20,6 +20,7 @@
 
 mod bf16_zlib_bank;
 mod fixture;
+mod planned_bank;
 
 use crate::format::vindex3::opplan::{ExpertBank, OperandRef, PackedProjection};
 use larql_models::config::{
@@ -96,14 +97,15 @@ fn operands_loaded_for_one_ffn_kind_refuse_the_other_at_apply() {
 }
 
 /// An MXFP4 projection whose op carries no scales operand refuses,
-/// naming the projection — the blocks alone are not a matrix.
+/// naming the projection: the codec stores its streams apart, and the
+/// blocks alone cannot be bound to it.
 #[test]
 fn an_mxfp4_projection_without_scales_refuses() {
     let fx = routed_fixture();
     let mut op = fx.op.clone();
     packed_mut(&mut op.bank).0.scales = None;
     let err = load_err(&op, &fx.store, WeightFormat::F32);
-    assert!(err.contains("no scales operand"), "{err}");
+    assert!(err.contains("stores its streams apart"), "{err}");
     assert!(err.contains(GATE_UP_BLOCKS), "{err}");
 }
 
@@ -118,21 +120,26 @@ fn packed_mut(bank: &mut ExpertBank) -> (&mut PackedProjection, &mut PackedProje
     }
 }
 
-/// An MXFP4 projection whose `k` is not a multiple of the 32-element
-/// group refuses before touching the bytes: `k` follows from the router's
-/// declared width, and a stray width must not be silently grouped.
+/// An MXFP4 projection whose `k` is not a multiple of the codec's
+/// declared 32-element row alignment refuses before touching the bytes:
+/// `k` follows from the router's declared width, and a stray width must
+/// not be silently grouped. The alignment is the codec's declaration,
+/// not a constant the loader knows.
 #[test]
 fn an_mxfp4_projection_with_an_unaligned_k_refuses() {
     let fx = routed_fixture();
     let mut op = fx.op.clone();
     op.router.shape[1] = HIDDEN + 1;
     let err = load_err(&op, &fx.store, WeightFormat::F32);
-    assert!(err.contains("not a multiple of the MXFP4 group"), "{err}");
+    assert!(
+        err.contains("not a whole number of `MXFP4` row alignments of 32 elements"),
+        "{err}"
+    );
 }
 
 /// A scales stream of the wrong length for the declared expert geometry
-/// refuses, naming the scales tensor: here gate_up's scales are pointed
-/// at down's (half the size).
+/// refuses, naming the projection and the stream: here gate_up's scales
+/// are pointed at down's (half the size).
 #[test]
 fn a_scales_stream_of_the_wrong_length_refuses() {
     let fx = routed_fixture();
@@ -140,11 +147,9 @@ fn a_scales_stream_of_the_wrong_length_refuses() {
     let (gate_up, down) = packed_mut(&mut op.bank);
     gate_up.scales = down.scales.clone();
     let err = load_err(&op, &fx.store, WeightFormat::F32);
-    assert!(err.contains("stored bytes, expected"), "{err}");
-    assert!(
-        err.contains(DOWN_BLOCKS.replace(BLOCKS_SUFFIX, SCALES_SUFFIX).as_str()),
-        "{err}"
-    );
+    assert!(err.contains("stream `group_scales`"), "{err}");
+    assert!(err.contains("needed"), "{err}");
+    assert!(err.contains(GATE_UP_BLOCKS), "{err}");
 }
 
 /// A block stream whose byte count disagrees with the declared expert
@@ -156,40 +161,52 @@ fn a_block_stream_disagreeing_with_the_declared_geometry_refuses() {
     let mut op = fx.op.clone();
     op.expert_intermediate_size = INTER + MXFP4_GROUP_ELEMS;
     let err = load_err(&op, &fx.store, WeightFormat::F32);
-    assert!(err.contains("stored bytes, expected"), "{err}");
+    assert!(err.contains("`MXFP4` stream `values`"), "{err}");
+    assert!(err.contains("needed"), "{err}");
     assert!(err.contains(GATE_UP_BLOCKS), "{err}");
 }
 
-/// A stream stored in a dtype other than the one its format demands
-/// refuses, naming both dtypes: an MXFP4 scales operand pointed at the
-/// F32 bias, and a BF16 projection pointed at the U8 blocks.
+/// A bank whose streams disagree with the declared codec refuses on the
+/// codec's own terms, with no dtype name judged: an MXFP4 scales operand
+/// pointed at the F32 bias is a region LONGER than its shape, which the
+/// contract's per-stream minimum alone would accept; and a bank declared
+/// BF16 whose op still carries a scales operand offers a stream the codec
+/// declares no place for.
 #[test]
-fn a_stream_stored_in_the_wrong_dtype_refuses() {
+fn a_bank_disagreeing_with_its_declared_codec_refuses_on_the_codec_s_terms() {
     let fx = routed_fixture();
     let mut op = fx.op.clone();
     let (gate_up, _) = packed_mut(&mut op.bank);
     gate_up.scales = gate_up.bias.clone();
     let err = load_err(&op, &fx.store, WeightFormat::F32);
-    assert!(err.contains("expected stored dtype U8, found F32"), "{err}");
+    assert!(err.contains("streams total"), "{err}");
+    assert!(err.contains("declared geometry disagree"), "{err}");
+    assert!(err.contains(GATE_UP_BLOCKS), "{err}");
 
     let mut op = fx.op.clone();
     op.expert_format = ExpertFormat::PackedBF16;
     let err = load_err(&op, &fx.store, WeightFormat::F32);
     assert!(
-        err.contains("expected stored dtype BF16, found U8"),
+        err.contains("`BF16` declares no stream `group_scales`"),
         "{err}"
     );
+    assert!(err.contains(GATE_UP_BLOCKS), "{err}");
 }
 
-/// `PerExpert` is not a packed projection; closure never plans one, and
-/// the loader refuses rather than guessing a layout.
+/// A packed bank whose op declares `PerExpert` declares no codec for its
+/// streams, and the carrier label `U8` names none: the loader refuses
+/// rather than guessing a layout. Closure never plans this pairing.
 #[test]
-fn a_per_expert_format_is_refused_as_not_packed() {
+fn a_packed_bank_declared_per_expert_is_refused_as_undecodable() {
     let fx = routed_fixture();
     let mut op = fx.op.clone();
     op.expert_format = ExpertFormat::PerExpert;
     let err = load_err(&op, &fx.store, WeightFormat::F32);
-    assert!(err.contains("not a packed projection"), "{err}");
+    assert!(
+        err.contains("`U8` names no registered codec, so the bank cannot be decoded"),
+        "{err}"
+    );
+    assert!(err.contains(GATE_UP_BLOCKS), "{err}");
 }
 
 /// A backend that declares f16 for the FFN class receives the MXFP4 bank
@@ -266,7 +283,8 @@ fn a_bf16_bank_disagreeing_with_the_declared_geometry_refuses() {
     let mut op = bf16_op(&fx.op);
     op.expert_intermediate_size = INTER + 1;
     let err = load_err(&op, &store, WeightFormat::F32);
-    assert!(err.contains("stored bytes, expected"), "{err}");
+    assert!(err.contains("`BF16` stream `values`"), "{err}");
+    assert!(err.contains("needed"), "{err}");
     assert!(err.contains(GATE_UP_BF16), "{err}");
 }
 
@@ -291,7 +309,7 @@ fn a_gate_less_dense_op_binds_two_operands_and_runs_ungated() {
     let operands = FfnOperands::load(
         &ffn,
         (&store).into(),
-        &|_: &OperandRef| WeightFormat::F32,
+        &|_: &OperandRef| Ok(WeightFormat::F32),
         WeightFormat::F32,
     )
     .unwrap();

@@ -471,3 +471,91 @@ fn bytes_under_another_codec_are_refused_not_reinterpreted() {
     };
     assert_eq!(cut.len(), out_dim * Q6_K.row_bytes(in_dim).unwrap());
 }
+
+/// Rung 3c: one stored Q6_K pack, two realizations. The STORED footprint
+/// is the container's recorded length under both — a property of the
+/// representation instance, not of how it runs — while the resident,
+/// staging and working-set accounting differ, and each reconciles with
+/// the object the loader actually binds.
+#[test]
+#[serial]
+fn a_stored_pack_has_one_stored_footprint_and_two_realization_costs() {
+    use crate::format::vindex3::opplan::exec::accounting::{
+        expectations, reconcile, stored_footprint, BlockGeometry, Bound,
+    };
+    use crate::format::vindex3::opplan::exec::backend::MatrixClass;
+    use crate::format::vindex3::opplan::exec::cpu::physical::KQuantExecution;
+    use crate::format::vindex3::opplan::exec::production::select_cpu;
+    use crate::format::vindex3::opplan::exec::realization::{
+        RealizationForm, RealizationRecord, RepresentationFacts,
+    };
+    use crate::format::vindex3::opplan::planned::{Operation, PlannedOperand};
+    use crate::format::vindex3::represent::codec::RepresentationExtent;
+
+    let tmp = tempfile::tempdir().unwrap();
+    let (_src, out) = compiled(&tmp, Q6_K);
+    let op = a_stored_matrix(&out, Q6_K);
+    let store = open(&out, Q6_K);
+    let operation = Operation::Project(MatrixClass::FfnProjection);
+    let planned = PlannedOperand {
+        operand: op.clone(),
+        operation,
+        access: operation.access(),
+        extent: RepresentationExtent::TERMINAL,
+        layer: Some(0),
+        declared_representation: None,
+        logical_elements: op.shape.iter().product(),
+    };
+    let facts = RepresentationFacts::resolve(Q6_K.name);
+    let mut costs = Vec::new();
+    for (arm, format) in [
+        (KQuantExecution::Direct, WeightFormat::KQuant),
+        (KQuantExecution::Widen, WeightFormat::F32),
+    ] {
+        let selection = select_cpu(&planned, &facts, arm).unwrap();
+        assert_eq!(selection.realization.format(), format);
+        let record = RealizationRecord {
+            planned: planned.clone(),
+            representation: Q6_K.name.to_string(),
+            provider: facts.registered.as_ref().map(|r| r.identity.clone()),
+            selection,
+        };
+        let expected = expectations(
+            std::slice::from_ref(&record),
+            |o| store.stored_len(o),
+            BlockGeometry::executor(),
+        );
+        let loaded = load_weight((&store).into(), &op, format).unwrap();
+        let observed = vec![Bound::one(&op, &loaded)
+            .observed(operation, Some(0))
+            .unwrap()];
+        reconcile(&expected, &observed).unwrap_or_else(|e| panic!("{arm:?}: {e}"));
+        costs.push((
+            arm,
+            stored_footprint(&expected).bytes,
+            expected[0].declared_resident,
+            expected[0].staging,
+            expected[0].working_set(),
+        ));
+    }
+    let (direct, decode) = (&costs[0], &costs[1]);
+    assert_eq!(
+        direct.1, decode.1,
+        "one stored footprint: {direct:?} vs {decode:?}"
+    );
+    assert_eq!(direct.1, store.stored_len(&op).unwrap());
+    assert!(
+        direct.2 < decode.2,
+        "direct holds the pack; decode holds an f32 image"
+    );
+    assert_eq!(direct.3, 0, "direct stages nothing");
+    assert_eq!(decode.3, decode.2, "decode stages the image it then holds");
+    assert!(direct.4 < decode.4);
+    assert!(matches!(
+        select_cpu(&planned, &facts, KQuantExecution::Direct)
+            .unwrap()
+            .realization
+            .form,
+        RealizationForm::Direct(PhysicalProjectionPlan::FusedKQuant)
+    ));
+}

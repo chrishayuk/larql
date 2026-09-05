@@ -18,6 +18,7 @@
 //! after the FFN residual add) so parity can compare layer by layer
 //! against a checkpoint-driven oracle.
 
+pub mod accounting;
 pub mod backend;
 pub mod continuation;
 pub mod conv_qkv;
@@ -46,6 +47,7 @@ pub mod operands;
 pub mod prepared;
 pub mod production;
 pub mod quantise;
+pub mod realization;
 pub mod reference;
 pub mod requirements;
 pub mod stack;
@@ -403,6 +405,10 @@ fn execute_prepared_streaming_with<B: PlanBackend + ?Sized>(
     sink: &mut dyn FnMut(PlaneEvent) -> Result<(), VindexError>,
     mutation: Mutation,
 ) -> Result<FinalOutput, VindexError> {
+    // A pin whose provider has gone or changed invalidates the image;
+    // nothing here falls back to another realization. The registry is
+    // the image's own — the store's — never a built-in default.
+    ops.ensure_providers_in(ops.registry())?;
     // A one-shot forward owns whatever continuation state the plan needs.
     //
     // For a wholly-softmax stack that is nothing: `None` keeps the
@@ -1442,10 +1448,10 @@ impl AttentionOperands {
         // V before conditioning Q/K, and apply the parameter-free V norm
         // to it when the op carries one.
         Ok(Self {
-            w_q: load_weight(store, &op.q, format(&op.q))?,
-            w_k: load_weight(store, &op.k, format(&op.k))?,
-            w_v: load_weight(store, &op.v, format(&op.v))?,
-            w_o: load_weight(store, &op.o, format(&op.o))?,
+            w_q: load_weight(store, &op.q, format(&op.q)?)?,
+            w_k: load_weight(store, &op.k, format(&op.k)?)?,
+            w_v: load_weight(store, &op.v, format(&op.v)?)?,
+            w_o: load_weight(store, &op.o, format(&op.o)?)?,
             qk_weights: match &op.qk_norm {
                 Some(qk) => Some((store.load(&qk.q)?, store.load(&qk.k)?)),
                 None => None,
@@ -1465,7 +1471,7 @@ impl AttentionOperands {
             // unrelated loader change broke the aliasing.
             gate: match &op.output_gate {
                 Some(gate) if gate.spec.source != GateSource::FusedQueryProjection => Some(
-                    load_weight(store, &gate.projection, format(&gate.projection))?,
+                    load_weight(store, &gate.projection, format(&gate.projection)?)?,
                 ),
                 _ => None,
             },
@@ -1497,6 +1503,20 @@ impl AttentionOperands {
     /// Every matrix operand this attention holds, for residency
     /// preparation.
     /// Every matrix operand, for residency accounting.
+    /// Each matrix paired with the operand it binds, field by field.
+    pub(super) fn bound<'a>(&'a self, op: &'a AttentionOp) -> Vec<accounting::Bound<'a>> {
+        let mut out = vec![
+            accounting::Bound::one(&op.q, &self.w_q),
+            accounting::Bound::one(&op.k, &self.w_k),
+            accounting::Bound::one(&op.v, &self.w_v),
+            accounting::Bound::one(&op.o, &self.w_o),
+        ];
+        if let (Some(gate), Some(weight)) = (&op.output_gate, &self.gate) {
+            out.push(accounting::Bound::one(&gate.projection, weight));
+        }
+        out
+    }
+
     pub(super) fn loaded_matrices(&self) -> Vec<&LoadedWeight> {
         let mut all = vec![&self.w_q, &self.w_k, &self.w_v, &self.w_o];
         if let Some(gate) = &self.gate {

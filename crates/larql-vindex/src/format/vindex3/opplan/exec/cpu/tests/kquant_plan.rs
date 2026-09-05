@@ -12,8 +12,14 @@
 use super::super::kernels::ScalarF32;
 use super::super::physical::{KQuantExecution, PhysicalProjectionPlan, KQUANT_EXEC_WIDEN};
 use super::super::projector::{DenseProjector, WeightRows};
-use crate::format::vindex3::opplan::exec::backend::{MatrixClass, MatrixOperand, WeightFormat};
-use crate::format::vindex3::opplan::exec::production::declared_format;
+use crate::format::vindex3::opplan::exec::backend::{MatrixClass, WeightFormat};
+use crate::format::vindex3::opplan::exec::production::select_cpu;
+use crate::format::vindex3::opplan::exec::realization::{
+    RealizationForm, RealizationId, RepresentationFacts, SelectionReason,
+};
+use crate::format::vindex3::opplan::planned::{Operation, PlannedOperand};
+use crate::format::vindex3::opplan::OperandRef;
+use crate::format::vindex3::represent::codec::{RepresentationExtent, RequiredAccess};
 use crate::format::vindex3::represent::kquant::{KQuant, COMPILABLE, Q4_K, Q6_K, Q8_0};
 
 /// Rows and a width every codec's block divides: 512 is 16 Q8_0 blocks
@@ -209,66 +215,100 @@ fn the_env_value_selects_the_arm_exactly() {
     assert_eq!(KQuantExecution::default(), KQuantExecution::Direct);
 }
 
-fn operand(class: MatrixClass, stored_kquant: bool, stored_nvfp4: bool) -> MatrixOperand {
-    MatrixOperand {
-        class,
-        // Large enough to stream, so the size policy would have had an
-        // opinion if it were consulted.
-        elements: 17408 * 5120,
-        stored_bf16: false,
-        stored_nvfp4,
-        stored_kquant,
+/// A planned projection large enough to stream, so the size policy would
+/// have had an opinion if it were consulted.
+fn planned(operation: Operation) -> PlannedOperand {
+    PlannedOperand {
+        operand: OperandRef {
+            object: "target.decoder_stack".into(),
+            tensor: "0.mlp.up_proj.weight".into(),
+            dtype: String::new(),
+            shape: vec![17408, 5120],
+        },
+        operation,
+        access: operation.access(),
+        extent: RepresentationExtent::TERMINAL,
+        layer: Some(0),
+        declared_representation: None,
+        logical_elements: 17408 * 5120,
     }
 }
 
-/// The production policy binds a stored K-quant in place under the direct
-/// arm and widens it under the other — and answers exactly as it did
-/// before the arm existed for everything that is not a stored K-quant.
+fn facts(label: &str) -> RepresentationFacts {
+    RepresentationFacts::resolve(label)
+}
+
+/// The production selector binds a stored K-quant in place under the
+/// direct arm and widens it under the other — and answers exactly as the
+/// boolean ladder did before it, for everything that is not a stored
+/// K-quant. The candidates come from the codec's declarations: a K-quant
+/// label offers Direct(FusedKQuant) because the codec declares it, and an
+/// F16 label offers no direct realization at all.
 #[test]
 fn the_policy_answers_the_pack_under_direct_and_f32_under_widen() {
-    for class in [
-        MatrixClass::AttentionProjection,
-        MatrixClass::FfnProjection,
-        MatrixClass::OutputHead,
+    for operation in [
+        Operation::Project(MatrixClass::AttentionProjection),
+        Operation::Project(MatrixClass::FfnProjection),
+        Operation::OutputHead,
     ] {
-        assert_eq!(
-            declared_format(operand(class, true, false), KQuantExecution::Direct),
-            WeightFormat::KQuant,
-            "{class:?} direct"
-        );
-        // The widened arm is the v2 authority path: stored_bf16 is false
-        // for a K-quant, so the size policy lands on BLAS f32 exactly as
-        // it did before this arm existed.
-        assert_eq!(
-            declared_format(operand(class, true, false), KQuantExecution::Widen),
-            WeightFormat::F32,
-            "{class:?} widen"
-        );
-        // Not a stored K-quant: the arm is irrelevant and the answer is
-        // the size policy's.
-        for arm in [KQuantExecution::Direct, KQuantExecution::Widen] {
+        for label in ["Q4_K", "Q6_K", "Q8_0"] {
+            let direct =
+                select_cpu(&planned(operation), &facts(label), KQuantExecution::Direct).unwrap();
             assert_eq!(
-                declared_format(operand(class, false, false), arm),
-                WeightFormat::F32,
-                "{class:?} {arm:?} without a pack"
+                direct.realization,
+                RealizationId::cpu(RealizationForm::Direct(PhysicalProjectionPlan::FusedKQuant)),
+                "{operation:?} {label} direct"
             );
+            assert_eq!(direct.realization.format(), WeightFormat::KQuant);
+            assert_eq!(direct.reason, SelectionReason::DirectDeclared);
+            assert!(direct.candidates.contains(&direct.realization));
+            // The widened arm is the v2 authority path: decode, then BLAS.
+            let widened =
+                select_cpu(&planned(operation), &facts(label), KQuantExecution::Widen).unwrap();
+            assert_eq!(
+                widened.realization,
+                RealizationId::cpu(RealizationForm::Decode(PhysicalProjectionPlan::BlasF32)),
+                "{operation:?} {label} widen"
+            );
+            assert_eq!(widened.realization.format(), WeightFormat::F32);
+            assert_eq!(widened.reason, SelectionReason::ArmPrefersDecode);
+            // Both arms saw the same candidates; the arm only orders them.
+            assert_eq!(direct.candidates, widened.candidates);
+        }
+        // Not a stored K-quant: the arm is irrelevant and the answer is
+        // decode, because F16 declares no direct realization.
+        for arm in [KQuantExecution::Direct, KQuantExecution::Widen] {
+            let plain = select_cpu(&planned(operation), &facts("F16"), arm).unwrap();
+            assert_eq!(
+                plain.realization.format(),
+                WeightFormat::F32,
+                "{operation:?} {arm:?}"
+            );
+            assert_eq!(plain.reason, SelectionReason::NoDirectRealization);
         }
     }
-    // The bank is widened on the way in; no pack survives to bind.
+    // The bank is sliced at load; a K-quant bank provides the row access
+    // that slicing needs, and no pack survives to bind.
+    let bank = PlannedOperand {
+        operation: Operation::ExpertBankSlice,
+        access: RequiredAccess::RowRandom,
+        ..planned(Operation::ExpertBankSlice)
+    };
+    let sliced = select_cpu(&bank, &facts("Q4_K"), KQuantExecution::Direct).unwrap();
     assert_eq!(
-        declared_format(
-            operand(MatrixClass::RoutedExpertBank, true, false),
-            KQuantExecution::Direct
-        ),
-        WeightFormat::F32
+        sliced.realization,
+        RealizationId::cpu(RealizationForm::SliceStored {
+            convert: WeightFormat::F32
+        })
     );
-    // A stored NVFP4 pack keeps precedence; the two cannot both be true
-    // of one operand, and the order says which claim would win.
-    assert_eq!(
-        declared_format(
-            operand(MatrixClass::FfnProjection, true, true),
-            KQuantExecution::Direct
-        ),
-        WeightFormat::Nvfp4
-    );
+    // A stored NVFP4 pack keeps precedence over the arm: one label names
+    // one codec, so the two claims cannot meet on one operand any more,
+    // and the ladder's order is what says NVFP4 wins where it is declared.
+    let pack = select_cpu(
+        &planned(Operation::Project(MatrixClass::FfnProjection)),
+        &facts("NVFP4"),
+        KQuantExecution::Direct,
+    )
+    .unwrap();
+    assert_eq!(pack.realization.format(), WeightFormat::Nvfp4);
 }

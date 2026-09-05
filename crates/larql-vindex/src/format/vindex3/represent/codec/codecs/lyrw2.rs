@@ -70,6 +70,18 @@ pub fn region_binding(packing: Packing) -> Option<RegionBinding> {
 /// codec whose streams are stored apart then refuses by name. With one,
 /// the two regions are the codes and group-scale streams, and a codec
 /// that declares no scales stream refuses a partner it cannot consume.
+///
+/// A region is the WHOLE of a tensor of `shape`, so its streams must
+/// total exactly what the codec declares for that shape. For a fixed-size
+/// codec the rule is: each stream satisfies its declared minimum, all
+/// stream lengths total the declared representation size, therefore no
+/// stream can contain unclaimed bytes. A region longer than its shape is
+/// a container disagreeing with the declared geometry — a scales operand
+/// pointed at some other tensor — not spare bytes. An instance-sized
+/// codec has no shape-derived size (`stored_bytes` refuses with
+/// `InstanceSized`), so it cannot be bound as a region here at all; its
+/// exact length is the bound container record's, read through the
+/// operand store, never a declaration.
 pub fn bind_region<'a>(
     codec: &dyn RepresentationCodec,
     shape: &[usize],
@@ -93,5 +105,18 @@ pub fn bind_region<'a>(
     };
     let operands = CodecOperands::from_streams(streams);
     codec.validate(&operands, shape, RepresentationExtent::TERMINAL, tensor)?;
+    let have = values.len() + scales.map_or(0, <[u8]>::len);
+    let need = codec.stored_bytes(shape, RepresentationExtent::TERMINAL, tensor)?;
+    if have as u64 != need {
+        return Err(CodecError::Geometry {
+            tensor: tensor.into(),
+            label: codec.encoding_label().into(),
+            shape: shape.to_vec(),
+            why: format!(
+                "its streams total {have} bytes and the shape declares {need}; the container \
+                 and the declared geometry disagree"
+            ),
+        });
+    }
     Ok(operands)
 }

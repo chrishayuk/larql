@@ -292,6 +292,7 @@ pub(super) struct RoutedFixture {
     _container: tempfile::TempDir,
     pub(super) store: OperandStore,
     pub(super) op: RoutedFfnOp,
+    pub(super) plan: ComponentOpPlan,
 }
 
 pub(super) fn routed_fixture() -> RoutedFixture {
@@ -311,6 +312,7 @@ pub(super) fn routed_fixture() -> RoutedFixture {
         _container: container,
         store,
         op,
+        plan,
     }
 }
 
@@ -348,14 +350,25 @@ pub(super) fn routed(op: &RoutedFfnOp) -> LayerFfn {
 }
 
 pub(super) fn load(op: &RoutedFfnOp, store: &OperandStore, format: WeightFormat) -> FfnOperands {
-    FfnOperands::load(&routed(op), store.into(), &|_: &OperandRef| format, format).unwrap()
+    FfnOperands::load(
+        &routed(op),
+        store.into(),
+        &|_: &OperandRef| Ok(format),
+        format,
+    )
+    .unwrap()
 }
 
 pub(super) fn load_err(op: &RoutedFfnOp, store: &OperandStore, format: WeightFormat) -> String {
-    FfnOperands::load(&routed(op), store.into(), &|_: &OperandRef| format, format)
-        .err()
-        .expect("loading must refuse")
-        .to_string()
+    FfnOperands::load(
+        &routed(op),
+        store.into(),
+        &|_: &OperandRef| Ok(format),
+        format,
+    )
+    .err()
+    .expect("loading must refuse")
+    .to_string()
 }
 
 /// A device backend that binds the FFN class in `format` and everything

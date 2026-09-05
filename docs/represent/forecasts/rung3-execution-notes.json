@@ -1,0 +1,233 @@
+{
+ "programme": "represent-codec-contract",
+ "rung": 3,
+ "forecast": "rung3-planned-realizations.json (frozen at 5007bb77; not edited)",
+ "waves": {
+  "3a_requirements": {
+   "executed": "2026-09-05",
+   "result": "HELD. `ComponentOpPlan::planned_operands()` (opplan/planned.rs) is a derived, hardware-independent view: one `PlannedOperand { operand, operation, access, extent, logical_elements }` per matrix operand per operation, with `Operation ∈ { Embed, Project(MatrixClass), ExpertBankSlice, OutputHead }`. Embed and ExpertBankSlice require RowRandom; Project and OutputHead require Sequential; every extent is TERMINAL. Nothing under exec/ outside tests/ changed; the plan's wire shape is unchanged.",
+   "witnesses": [
+    "bytes-level cross-check: over the Glimmer target (softmax + output gate), the LLLF hybrid (gated delta), the OuteAI miniature (Mamba2 + conv-QKV) and the Kimi miniature (KDA + MLA), the reference loader's census holds exactly four bytes per planned element at the embedding, head and FFN sites, and at attention + delta together; compact is zero — so nothing the loader binds is missing from the view and nothing in the view is a matrix the loader does not bind (opplan/tests/planned.rs)",
+    "per-variant counts pinned against the plan's own structure and the loader's rule for the output gate (a gate fused into the query projection has no operand)",
+    "a tied head is two operations over one operand, and the loader binds it twice — the residency census, which is a BINDING census (execution touch per operation), says so in bytes. The stored physical footprint is a different instrument and counts the shared object once.",
+    "the wire shape carries none of it: the serialised plan has no planned_operands / operation / required_access / extent field",
+    "routed miniature: a packed bank is two RowRandom expert-bank slices per routed layer (never the router or a bias); the production loader's FFN census equals the view's logical bytes; a per-expert bank is a set of Sequential whole projections (exec/tests/coverage_experts_production/planned_bank.rs)"
+   ],
+   "falsifiers_scored": {
+    "F1_behaviour_delta": "NO by construction — no non-test file under exec/ changed; the wire-shape guard passes on every fixture; full-suite and coverage results below",
+    "touch_set_vs_forecast": "the forecast named opplan/mod.rs (+types, +method) and opplan/tests (+1 file). Actual: opplan/planned.rs (a new module — one file per concern, not a larger mod.rs), opplan/mod.rs (+1 mod line), opplan/tests/planned.rs, AND three test-side files under exec/tests/coverage_experts_production/ (planned_bank.rs new; fixture.rs keeps the plan it already built; the mod file +1 line) because the only packed-bank fixture is scoped there. Zero non-test exec changes, as forecast."
+   },
+   "findings_not_in_the_forecast": [
+    {
+     "id": "3a-N1",
+     "finding": "A packed bank's OperandRef shape is the STORED tensor's shape, not the logical matrices: for MXFP4 blocks it is [experts, rows, k/32, 16] (build.rs packed_shape), so its product is half the weight count. The first bytes-level bank check failed at exactly 2× (census 98304 vs view 49152).",
+     "resolution": "PlannedOperand carries `logical_elements`, sized for a packed bank from the op's declared geometry — experts × (FUSED_HALVES × intermediate) × hidden for gate/up, experts × hidden × intermediate for down, hidden from the router's width — the same three facts load_packed is handed. Every other operand's count is its shape.",
+     "for_3b": "the logical extent of an operand is an op-level fact for banks; RepresentationFacts must not derive element counts from OperandRef.shape for them."
+    },
+    {
+     "id": "3a-N2",
+     "finding": "The CPU loader never binds a routed op's SHARED expert: `.shared` is read only by stack_metal.rs (the Metal stack binds it) and kimi_source.rs (which sets it). On the CPU path a plan with a shared expert prepares and runs without it.",
+     "resolution": "The view lists the shared expert's gate/up/down as Project(FfnProjection), because the PLAN executes them; the routed test pins the gap in bytes (view exceeds the CPU binding census by exactly the shared expert) so a CPU loader that binds it changes that assertion deliberately.",
+     "for_3b_3d": "PROMOTED TO A HARD 3b INVARIANT (user, on review of 3a): a planned shared-expert projection with no CPU binding/realization is an explicit MissingRealization refusal at preparation — 3b must not admit such a plan, and a provider claiming generic projection support is insufficient unless preparation can bind the actual shared-expert operand. Until 3d supplies a correct CPU realization the CPU path is semantically incomplete for models with shared experts. Consequence for the record: previous CPU-path measurements of affected Qwen-MoE, Kimi and DeepSeek paths are measurements of a REDUCED computation, not full-model execution — preserved, labelled as such, and not used as parity or final performance evidence."
+    }
+   ],
+   "gates": {
+    "full_crate": "cargo test -p larql-vindex: 4160 lib tests passed, 0 failed, 7 ignored (pre-existing); every integration binary green",
+    "workspace_check": "cargo check --workspace --all-targets: green",
+    "clippy": "clean on rustc 1.98, --all-targets -D warnings",
+    "fmt": "clean, run last",
+    "coverage": "policy passed, total 93.78% over 427 files; opplan/planned.rs 94.44% (119/126), no debt entry",
+    "docs": "check_doc_links.py + check_doc_references.py --strict: green"
+   }
+  },
+  "3b_admission_and_selection": {
+   "executed": "2026-09-05",
+   "result": "HELD, with one refinement to the view. `exec/realization.rs` is the vocabulary: `RepresentationFacts` (resolved from the registry per operand, plus an `overlaid` fact for overlay edits), `RealizationId { backend, form }` with forms Direct / Decode / Requantise / SliceStored / DecodedGather / DeviceResident, `Selection { realization, residency (declared), reason, candidates }`, `SelectionRefusal { operand, operation, representation, requested, kind, considered }`, `RealizationRecord`. `PlanBackend::weight_format(MatrixOperand)` is gone; `PlanBackend::select(&PlannedOperand, &RepresentationFacts)` replaces it, defaulting to the reference oracle. `PreparedOperands::load` selects EVERY planned operand of the slice before reading any byte (`select_realizations`), collects every refusal, pins one realization per operand in `realizations()`, hands the loaders the pinned format through a fallible resolver, and verifies after loading that every resident matrix holds its pinned representation (`verify_pins`, a per-site multiset over formats).",
+   "the_three_booleans": "DELETED, not wrapped: `MatrixOperand { stored_bf16, stored_nvfp4, stored_kquant }` and `OperandSource::is_stored_bf16 / is_stored_nvfp4 / is_stored_kquant` no longer exist; grep for `stored_bf16|stored_nvfp4|stored_kquant|is_stored_|MatrixOperand|declared_format|fn weight_format` under exec/ outside tests returns nothing. The only per-operand physical fact left beside the registry's declarations is `is_overridden` (an overlay edit), which is not a dtype.",
+   "the_selector_is_the_old_policy_over_a_derived_set": "`production::select_cpu` derives candidates from `facts.accelerations()` (Direct), the universal decode (Decode(BlasF32)), and the executor's own re-quantised forms offered only when the codec declares the direct bf16 kernel (Requantise), then orders them with the old ladder: NVFP4 pack first, K-quant by the process arm, then `choose_for` over the float source. An oracle test copies the pre-rung-3 boolean ladder verbatim and compares the selected resident format for every label × class × size × arm (108 cases): identical.",
+   "invariants_witnessed": [
+    "refusal before bytes: an unregistered label is refused at preparation naming every refused operand with load_count unchanged (the rung-2 test moved from the load to the preparation and asserts both layers); a BF16_ZLIB packed bank is refused by access class through the same admission the bank loader still applies",
+    "direct and decode are distinct realizations: a stored Q6_K under the two arms pins Direct(FusedKQuant) vs Decode(BlasF32) with different declared residencies over one candidate set",
+    "the executor cannot silently change the pin: `verify_pins` runs at the end of every preparation, and a tampered record is refused naming both sides",
+    "the shared expert is refused: `Operation::SharedExpertProject` (new in the view) has no realization on any PlanBackend, so a plan whose routed op carries a shared expert the container holds is refused at preparation with `missing realization`, before any byte — the hard invariant from the 3a review",
+    "the reference backend pins Decode(ScalarF32) for every projection with a single-candidate set — the oracle stays the oracle",
+    "the entropy-coded container pins Decode(BlasF32) with reason `no direct realization registered` and a one-element candidate set; its declared residency is DECODED_F32",
+    "an overlay edit pins decode with its own reason (`OverlaidEdit`): facts carry `overlaid`, which empties the direct candidates — the overlay tests are unchanged and green",
+    "the device backend's class table is its own single candidate (`DeviceResident(format)`, reason `device class table`); the NVFP4 device coverage test now asks it through select"
+   ],
+   "refinements_to_the_3a_view": [
+    "`Operation::SharedExpertProject` replaces `Project(FfnProjection)` for a shared expert's three projections, so the missing realization is refusable by name rather than by tensor-name inspection; the 3a bank test that pinned the CPU census as short by the shared expert is replaced by the refusal test",
+    "`PlannedOperand.layer: Option<usize>` — the prepared plan selects only the operands its slice loads, and pins banks per layer"
+   ],
+   "falsifiers_scored": {
+    "F2_label_or_boolean_survives": "NO — see the grep gate above",
+    "F3_selection_changed_without_a_reason": "NO — the 108-case oracle comparison is exact; the full suite (below) is green, every parity oracle included",
+    "F4_pin_mismatch_executes": "NO — verify_pins at preparation; the tampered pin is refused",
+    "F5_contract_change_needed": "NO — `git diff c52497a7 -- represent/codec/` is empty; the rung-1/2 declarations were sufficient",
+    "F9_parity_oracle_moved": "NO — 4168 lib tests green on the final tree, every parity oracle included",
+    "touch_set_vs_forecast": "as forecast, plus: `exec/realization.rs` (new module — the vocabulary lives in one file rather than in backend.rs), `weights/mod.rs` gains `LoadedWeight::format()` for the pin check, `experts.rs` gains `dense_matrices()` for it and its bank preflight now calls the facts' `admit_row_slicing` (one derivation, two call sites), and every `FormatFor` resolver is fallible so a loader asking for an operand the view does not list is refused rather than defaulted (five per-variant loaders, the attention loader, the dense FFN loader and five test closures changed mechanically). opplan/planned.rs changed for the two refinements above. Tests moved off the old API: cpu/tests/kquant_plan.rs, tests/coverage_device.rs.",
+    "F10_new_file_under_floor": "NO after the vocabulary and device-selector tests were added — the first coverage run had realization.rs at 74.90% and device.rs at 89.57%; both are above the floor on the final tree"
+   },
+   "findings_not_in_the_forecast": [
+    {
+     "id": "3b-N1",
+     "finding": "The forecast's W3 said the bank's admission (rung 2's `require_row_access`) would be 'folded into the SliceStored candidate'. It is — the selector calls `RepresentationFacts::admit_row_slicing` — but the bank loader keeps calling the same function, because `FfnOperands::load` is reachable directly (three tests do) and a direct caller must get the same refusal rather than a read followed by a dtype-name refusal. One derivation, two call sites, recorded rather than pretended away."
+    },
+    {
+     "id": "3b-N2",
+     "finding": "`resident_profile(WeightFormat)` prices the executor's re-quantised and device forms from its own block constants (Q8: 1 + 4/Q8_BLOCK bytes per weight; Q4: 0.5 + 4/Q4_BLOCK; F16: 2, requantised; KQuant: the widest of the three codecs). These are DECLARATIONS made by the executor about its own resident forms and are not yet checked against what the loader holds; 3c binds them into the census and will find out where they are wrong."
+    },
+    {
+     "id": "3b-N3",
+     "finding": "Absent operands (partial hydration) are skipped by the selector and refused by the loader by name exactly as before; a resolver asked for such an operand answers the widened form, which the loader never reads because `load_raw` refuses first. Recorded so nobody reads that answer as a selection."
+    }
+   ],
+   "gates": {
+    "affected_suites": "opplan: 636 tests green (the one failure was the rung-2 refusal test, moved); realization + planned + bf16_zlib: 19 green",
+    "full_crate": "cargo test -p larql-vindex on the final tree: 4168 lib tests passed, 0 failed, 7 ignored (pre-existing); every integration binary green",
+    "workspace_check": "cargo check --workspace --all-targets: green (the trait method change reaches every backend and every crate that names one)",
+    "clippy": "clean on rustc 1.98, --all-targets -D warnings (the refusal type is boxed to satisfy result_large_err)",
+    "fmt": "clean, run last",
+    "coverage": "policy passed on the final tree: 93.79% total over 428 files; realization.rs 99.22%, device.rs 91.91%, prepared.rs 93.56%, production.rs 91.35%, planned.rs 98.61%; no debt entry added. The first coverage attempt's instrumented test phase reported one failure whose name my output filter dropped; it did not recur in three subsequent full runs (two instrumented, one plain), so it is recorded as an unnamed flake, not as a pass.",
+    "docs": "check_doc_links.py + check_doc_references.py --strict: green",
+    "grep": "stored_bf16|stored_nvfp4|stored_kquant|is_stored_*|MatrixOperand|declared_format|fn weight_format under exec/ outside tests: none; the size policy's parameter was renamed to bf16_kernel_declared, which is what the selector now feeds it"
+   },
+   "the_oracle_is_transitional": "The copied boolean ladder in exec/tests/realization.rs is a migration oracle, not the new semantic authority (user, on review). Once 3c establishes independent accounting and 3d real provider inventories, new behaviour may diverge from it deliberately; the test is then narrowed or retired rather than preserving old mistakes.",
+   "what_this_closes": "The silent-fallback problem, structurally: all operands selected → all refusals collected → no bytes read unless the complete plan is admissible → exact realization pinned → loaded state verified against the pin. The shared-expert refusal is the operational consequence: LARQL refuses an incomplete CPU computation instead of producing plausible but semantically invalid output."
+  },
+  "3c_trace_and_accounting": {
+   "executed": "2026-09-05",
+   "wording": "Bind the realization declaration AGAINST the census, not INTO it (user). `exec/accounting.rs` keeps two instruments apart: an Expectation is priced from the pin, the codec's declared residency, the executor's own block geometry and the container's RECORDED operand length, and reads no loaded object; an Observed is read off the objects the loader bound, paired operand-by-operand by each loader naming its own fields. `reconcile` holds one against the other. The residency census is a third reading and is checked against the observed sum.",
+   "result": "HELD. Every decisive test the review named is in place and green: same Q6_K pack → one stored footprint (the recorded length) under direct and decode, with different resident/staging/working-set accounting, each reconciled against the object the loader binds; the entropy-coded container's stored bytes are the recorded instance length (≠ 2 × logical elements) and its staging is the f32 image over `logical_elements`; every pin of a prepared dense plan reconciles with exactly one resident object and the census equals the observed sum; a mutated block geometry breaks the reconciliation of exactly the forms it prices (Q8, Q4) and none of the others; a tied head counts once in the stored footprint and once per operation in the execution touch; the selection summary is presentation over structured records (one line per representation × realization × reason, nothing added); a provider that disappears from the registry invalidates the preparation (`ensure_providers_in`, checked at the streaming executor and at session assembly) and preparing against it refuses outright; planned operands × pins × bound objects × ledger correspond exactly — in POSITIONS.",
+   "surfaces": [
+    "`PreparedOperands::bound(plan)`, `expectations(store, geometry)`, `reconcile(plan, store)`, `providers()`, `ensure_providers_in(registry)`, `load_in(.., registry)`; `select_realizations` takes the registry; `RealizationRecord.provider` carries the identity the label resolved to",
+    "`LoadedWeight::padded_allocations()` — the reconciliation is exact for vector-backed forms and tolerates less than one page per page-aligned allocation, never less than declared",
+    "`OperandStore::stored_len` / `OperandSource::stored_len` — the container's recorded length, tensor-table metadata, no payload read",
+    "`DecodeSession::realizations()`; `vindex3 generate` prints `render_selection_summary` beside the residency report",
+    "`resident_profile` now delegates to `accounting::resident_profile_with(format, BlockGeometry::executor())`; the Q8 pricing includes the i16 code sum per block when the executor's weight index is on — the same predicate the loader reads"
+   ],
+   "findings_not_in_the_forecast": [
+    {
+     "id": "3c-N1",
+     "finding": "The ledger's CALLS are not the unit that corresponds to pins: the executor batches a projection's positions differently per site (per position at the attention, all at once in the FFN), and threads them, so a thread-local count sees only a share. POSITIONS are exact: on the dense fixture over three tokens, 15 pinned BlasF32 projections tallied 31 calls, 31 slabs and 43 positions = 14 layer projections × 3 tokens + the head × 1 (the head processes the last position only). `ledger_correspondence` therefore returns the tally per pinned plan and enforces set equality (every pinned plan ran, no unpinned plan ran); the test asserts the positions identity."
+    },
+    {
+     "id": "3c-N2",
+     "finding": "The first reconciliation refused every exact match: the tolerance was written as `resident < declared + allocations × page` with a strict inequality, which is empty for an object with no padded allocation. Fixed to exact equality for vector-backed forms and a half-open page window per aligned allocation. Recorded because a tolerance rule is itself a declaration that needed its own witness."
+    },
+    {
+     "id": "3c-N3",
+     "finding": "The bf16 loader refuses an f32-stored operand rather than converting, so the disagreeing-form witness uses the executor's own Q8 re-quantisation of an f32 source; the F16 device form is exercised as a narrowing of f32 (the only f16 path there is)."
+    },
+    {
+     "id": "3c-N4",
+     "finding": "The widened-f32 staging arena (exec/weights/staged.rs, from PR #420) is a process singleton initialised through OnceLock::get_or_init behind a bare `get()` check, and its file was named by process id alone: two threads widening at once both found the arena unset, both tried `create_new` on the same `larql-f32-stage-<pid>.bin`, and the second failed with `File exists`. Reproduced in a PLAIN full run (routed::router_and_expert_operands_are_load_bearing), not only under instrumentation — so the earlier unnamed flake almost certainly had this cause. Fixed by a per-open serial in the file name (the loser's file is unlinked on open as before). Recorded because the kept log is what named it; the earlier filtered run could not."
+    },
+    {
+     "id": "3c-N5",
+     "finding": "The projection ledger is process-global, and every test that executes a plan lands in it, so the exact four-way correspondence is only observable in a process that runs nothing else. The witness re-launches the test binary on itself with a marker (`LARQL_LEDGER_WITNESS`, `--exact`, `--test-threads=1`) and asserts in the child; `#[serial]` was insufficient because non-serial tests keep executing. The library check (`ledger_correspondence`) is the production instrument and is unaffected."
+    },
+    {
+     "id": "3c-N6",
+     "finding": "The Gemma-4 miniature binds layer 3's key projection tensor as BOTH its key and its value projection, and ties its head to the embedding table. The first reconciliation refused the repeat as 'expected twice'. The pairing now matches by COUNT per (operand, operation, layer) instance: two expectations meet two objects. Consequence made visible: the CPU loader holds the aliased projection resident TWICE — one stored operand, two operation instances, two f32 images — which the stored footprint counts once and the execution touch and residency count twice, exactly as the tied head is counted. A shared-object realization (bind once, reference twice) is a missing CPU realization for 3d's inventory, beside the shared expert."
+    }
+   ],
+   "gates": {
+    "affected_suites": "accounting + planned_bank + kquant_projection: 38 tests green; opplan: 656 green in the parallel run",
+    "full_crate": "cargo test -p larql-vindex on the final tree: 4193 lib tests passed, 0 failed, 7 ignored (pre-existing); every integration binary green; the log was kept in full",
+    "workspace_check": "cargo check --workspace --all-targets: green",
+    "clippy": "clean on rustc 1.98, --all-targets -D warnings",
+    "fmt": "clean, run last",
+    "coverage": "policy passed on the final tree: 93.77% total over 429 files; accounting.rs 94.14%, realization.rs 99.16%, prepared.rs 90.69% (back above the floor after the pairing and provider witnesses were added — it had slipped to 89.23% on a debt baseline), weights/staged.rs 91.67%; no debt entry added; the instrumented test phase ran clean with its log kept",
+    "docs": "check_doc_links.py + check_doc_references.py --strict: green"
+   }
+  },
+  "3d_remove_privileged_paths": {
+   "executed": "2026-09-05",
+   "wording": "Split the inventory by consequence (user): shared expert = correctness gap, implement a CPU realization or preserve the hard refusal; MXFP4 dialect = architectural gap, remove its label/boolean bypass and admit it through registry semantics; external provider = extensibility proof, a separate crate adds a provider without changing planner or executor selection; aliased object = optimisation gap, shared materialization first, projection CSE only with semantic proof, and it must not delay the first three.",
+   "result": "HELD, with one falsifier fired and recorded (F8). (1) Shared expert: the hard refusal is PRESERVED, not replaced — every real shared-expert model (Kimi, DeepSeek, Qwen-MoE) plans `ExpertBank::PerExpert` banks, which the CPU loader refuses before the shared projection is reached, so a CPU shared-expert realization has no executable container to be qualified on yet; the inventory names two missing CPU realizations, the per-expert bank binding and the shared-expert projection (the Metal stack binds both). (2) MXFP4: the packed bank's planned operand DECLARES its codec (`PlannedOperand.declared_representation`, from `ExpertFormat` through one function); the selector and the loader resolve the bank's facts through one rule, `RepresentationFacts::resolve_declared` — the container's label wins whenever it names a codec, the declaration answers only when the label names none — and the loader binds the whole bank ONCE as the codec's named streams over `[experts × rows, k]` through `lyrw2::bind_region`, decodes each expert as a row range through `decode_rows`, and keeps the device's native MXFP4 slab as a copy of the bound streams. `DTYPE_U8`, `DTYPE_BF16`, `expect_dtype`, `expect_len` and `require_row_access` are deleted; the k-alignment refusal reads the codec's `row_align_elems`; the routed parity oracles did not move (the codec's `decode_rows` IS `dequantize_expert`). The prepared image's record for a bank names `MXFP4` with the MXFP4 identity, and a registry without MXFP4 invalidates it. (3) External provider: PROVED at the codec plane by `crates/larql-vindex/tests/external_codec_provider.rs` — an integration test, a separate crate in cargo's model that sees only exported API — which registers `F32X` (f32 under another label, declaring the shipped `BlasF32`/`ScalarF32` plans) into a scratch registry, relabels the dense fixture's projections in place, and executes: bit-exact logits and hidden state against the control, every selection identical to the shipped label's (only the record's representation and provider differ), refusal by name before any byte without the provider, and invalidation of an image prepared with it. The forecast's kernel-plane blocker was MEASURED, not opened (see 3d-N3). (4) Aliased object: noted, not built.",
+   "surfaces": [
+    "`PlannedOperand.declared_representation: Option<&'static str>` and `planned::declared_bank_representation(ExpertFormat)` — the plan's declaration of a packed bank's codec (PackedMxfp4 → MXFP4, PackedBF16 → BF16, PerExpert → none)",
+    "`RepresentationFacts::resolve_declared(registry, stored, declared)` — the one rule the selector and the bank loader share; `RepresentationFacts::resolve` (built-in registry) is now test-only",
+    "`OperandStore::with_registry` / `registry()`, `OperandSource::registry()` — the store carries the registry it decodes through; `OperandStore::load` resolves through it, never through the built-in registry",
+    "`PreparedOperands::registry()` — the image carries the registry it was prepared through; `select_realizations(plan, store, backend, slice)` reads the store's; `execute_prepared_streaming` and `DecodeSession::assemble` check providers against `ops.registry()`; `load_in` is gone",
+    "`experts::load_packed` — bank bound once through `lyrw2::bind_region` over `[experts × rows, k]`, experts decoded as row ranges through the codec, `from_f32` unchanged; `experts::bank_facts` resolves the bank the way the selector did; the selector's bank arm refuses an unregistered label as `UnregisteredRepresentation` like every other operation",
+    "`lyrw2::bind_region` — a region's streams must total exactly `stored_bytes(shape)` (3d-N1)",
+    "`tests/external_codec_provider.rs` (integration) — the acceptance test; `planned_bank::a_packed_bank_s_provider_is_the_declared_codec_and_its_loss_invalidates` replaces the 3c dialect test; the routed refusal witnesses now assert the codec's own terms"
+   ],
+   "forecast_scored": {
+    "P1 DTYPE_U8 leaves experts.rs; bank binds through the MXFP4 codec's two named streams; parity bit-exact": "HELD. The bank binds as one region of `experts × rows` rows rather than expert by expert — one validation, one exactness check, per-expert row ranges.",
+    "P2 KQuantExecution a selector preference; stored_kquant gone; Direct(FusedKQuant) iff declared": "HELD in 3b (recorded there); nothing remained for 3d.",
+    "P3 the predicted blocker (RealizationId closed over PhysicalProjectionPlan; four named files)": "The proof passed WITHOUT opening the enum — the forecast's own 'surprise to record' branch — because it was run at the CODEC plane: a representation provider declaring a SHIPPED plan needs no new kernel identity. The KERNEL-plane blocker stands and was measured, not estimated: see 3d-N3.",
+    "P4 zero edits under exec/ other than registration": "FALSIFIED in letter (F8 fired), see 3d-N2: the executor held three hidden built-in registries that registration could not reach. After they became values carried by the store and the image, the provider needed zero edits, and the acceptance test proves it from outside the crate."
+   },
+   "falsifiers": {
+    "F7 DTYPE_U8 or ExpertFormat-keyed dtype expectations survive": "not fired — both constants and both expect_* helpers are deleted; `ExpertFormat` keys one thing, the DECLARED CODEC of a packed bank, and no dtype name is judged anywhere under exec/",
+    "F8 the provider needs an exec/ edit beyond registration": "FIRED — three `CodecRegistry::builtin()` defaults under exec/ (store decode, selector, execution-time provider check ×2) were edited into explicit registries; recorded as 3d-N2 rather than smoothed over",
+    "F9 a parity oracle moves": "not fired — routed and dense oracles green, external provider bit-exact",
+    "F10 a new file lands under 90% line coverage": "not fired — no new source file; the new file is an integration test outside the policy's scope, and every touched source file above the floor except exec/mod.rs on its pre-existing baseline"
+   },
+   "findings_not_in_the_forecast": [
+    {
+     "id": "3d-N1",
+     "finding": "The contract validates a LOWER BOUND, never an exact length: `validate` proves each stream at least as long as the shape implies (`stream_of_len`), so binding the bank through the codec ACCEPTED a scales operand pointed at the f32 bias (1024 bytes where 256 were needed) that the old loader's exact `expect_len` refused — the routed coverage test caught it on the first codec-driven run. Fixed in `lyrw2::bind_region`, the storage-arrangement helper: a region is the whole of a tensor of `shape`, so its streams must total exactly `stored_bytes(shape)`; with each stream already at least its minimum and the minima summing to the total, every stream is exact. Recorded as a contract finding — a codec validates what it can decode from, a REGION is exact — and left at the helper rather than widened into the trait."
+    },
+    {
+     "id": "3d-N2",
+     "finding": "'Executable through registration alone' held at selection and FAILED at execution on the first run of the provider proof: the image prepared through the scratch registry was refused as 'prepared against external-f32x r1 and the registry now offers no registered codec', because `execute_prepared_streaming` and `DecodeSession::assemble` checked providers against `CodecRegistry::builtin()`, and `OperandStore::load` decoded through it too — three hidden registries no registration could reach. The negative arm (refusal without the provider) had passed, which is exactly the false-green shape a positive arm exists to catch. The registry is now a value: the store carries it, the selector reads the store's, the image records the one it was prepared through, and execution checks against the image's own. With immutable `&'static` registries that execution-time check is a consistency assertion; the meaningful invalidation is the explicit `ensure_providers_in(other)` a caller runs when it switches registries, which the proof exercises."
+    },
+    {
+     "id": "3d-N3",
+     "finding": "The kernel-plane blocker, measured: a provider that brings its OWN plan (not a shipped `PhysicalProjectionPlan`) meets five closed enums — `PhysicalProjectionPlan`, `WeightFormat`, `WeightSlice`, `WeightRows`, `LoadedWeight` — matched exhaustively across the non-test files counted at the end of this wave (see `kernel_plane_blocker`), more than the forecast's four named files. Not opened here: the plugin-planes staging puts it in the ExecutionTargetRegistry stage, and 3d's remit ended at removing privileged paths and proving the codec plane."
+    },
+    {
+     "id": "3d-N4",
+     "finding": "The stored-label-versus-declaration rule has an edge the test pins: a registered codec that CLAIMS the carrier label (`U8`) would claim the bank, because the bytes' own label wins whenever it names a codec. The prepared image's record is immune — it names MXFP4 with MXFP4's identity — so `ensure_providers_in` on a registry that adds a `U8` claimant changes nothing."
+    },
+    {
+     "id": "3d-N5",
+     "finding": "The refusal witnesses changed WHICH refusal fires, not whether: a bank declared BF16 whose op still carries a scales operand is refused as `UnexpectedStream` (BF16 declares no `group_scales`) before any length check; a packed bank declared `PerExpert` is refused as undecodable (its carrier label names no codec and the plan declares none) where it was refused as 'not a packed projection'; an unaligned `k` cites the codec's declared row alignment. None of these read a dtype name."
+    },
+    {
+     "id": "3d-N6",
+     "finding": "Shared expert, inventoried not built: the CPU loader refuses `ExpertBank::PerExpert` before it could reach a shared projection, and every real shared-expert model plans per-expert banks, so the two missing CPU realizations are the per-expert bank binding and the shared-expert projection; the 3b refusal (`MissingRealization`, before any byte) stands and its witness is unchanged."
+    },
+    {
+     "id": "3d-N7",
+     "finding": "Aliased object, noted only: the Gemma-4 miniature binds one tensor as two projections in one layer and ties the head to the embedding; both load twice today. Shared materialization (one bound object, two operation instances) is the safe first step; projection CSE needs a semantic proof that the two operations consume identical inputs, which the plan does not yet carry."
+    }
+   ],
+   "gates": {
+    "run": "2026-09-05, worktree .claude/worktrees/represent-rung3, toolchain 1.98.0 (rust-toolchain.toml)",
+    "cargo test -p larql-vindex": "4500 passed, 0 failed, 7 ignored (lib 4193 + integration tests incl. external_codec_provider 2/2)",
+    "cargo clippy --workspace --all-targets -D warnings": "clean (only the pre-existing future-incompat note on the external `block` crate)",
+    "cargo check --workspace --all-targets --target x86_64-apple-darwin": "clean",
+    "cargo llvm-cov -p larql-vindex + scripts/check_coverage_policy.py": "passed: total 93.77% lines, 429 files checked, 368 at the 90% default, 61 debt baselines; touched files — realization.rs 98.80, planned.rs 98.77, lyrw2.rs 100.00, decode.rs 94.64, experts.rs 91.76, operands.rs 91.74, prepared.rs 90.58; exec/mod.rs 87.31 on its pre-existing debt baseline (the change there is one call and one comment)",
+    "scripts/check_doc_links.py / check_doc_references.py --strict": "855 links resolve; no broken references",
+    "cargo fmt --all -- --check": "clean, run last",
+    "grep gate (non-test exec/)": "no DTYPE_U8, no expect_dtype, no stored_* boolean, no load_in; CodecRegistry::builtin() remains only as the store's documented constructor default and inside the #[cfg(test)] RepresentationFacts::resolve"
+   },
+   "kernel_plane_blocker": {
+    "measured": "2026-09-05, non-test files under opplan/exec/ and represent/ naming a variant of each closed enum",
+    "PhysicalProjectionPlan": 11,
+    "WeightFormat": 11,
+    "WeightSlice": 6,
+    "WeightRows": 13,
+    "LoadedWeight": 7,
+    "files_naming_at_least_one": 33,
+    "exhaustive_matches_over_PhysicalProjectionPlan_by_qualified_path": [
+     "exec/cpu/cost.rs",
+     "exec/cpu/ledger.rs"
+    ],
+    "reading": "The forecast's 'four named files' (ledger, cost, arithmetic, physical) is the set that matches the plan exhaustively; the surface a provider-supplied plan must thread through — the weight-format, slice, rows and loaded-weight enums it would also need a variant in — is 33 files. Opening one enum is not the work; the work is that a kernel identity is five enums wide."
+   },
+   "claim_earned": "LARQL can accept a representation implementation through exported API, carry its registry through preparation and execution, select and account for it before I/O, execute it bit-exactly, and invalidate prepared state when that provider disappears — without privileged dtype control flow. (User's wording, 2026-09-05.)",
+   "wording_boundaries": [
+    "The integration test proves external-crate compatibility (Rust integration tests compile as separate crates against exported API). It does not claim runtime discovery or distributed package loading.",
+    "'Stored label wins' makes the stored representation AUTHORITATIVE; the expert-format declaration is a legacy default consulted only when the stored label names no codec. One rule with a fallback, not two competing semantic truths.",
+    "Region exactness (each stream ≥ its declared minimum, all streams total the declared size, hence no unclaimed bytes) is a rule for FIXED-SIZE codecs; an instance-sized codec takes its exact length from the bound container record, never a shape-derived declaration, and cannot be bound as a region."
+   ],
+   "after_merge": "Stop codec/plugin architecture work. The five closed kernel enums across 33 files are measured debt. Next programme: residency into K3 — bind a real K3 plan through this selection/accounting machinery, let it name every missing realization before bytes are touched, resolve the per-expert-bank/shared-expert CPU refusal as a concrete execution requirement, price direct/decoded/packed-bank paths from observed residency, one-layer → miniature → full K3 parity, feed real costs back into REPRESENT."
+  }
+ }
+}

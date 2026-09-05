@@ -29,7 +29,9 @@ use larql_models::config::{
 use super::super::super::graph::policy::AttentionSpan;
 use super::cpu::WeightRows;
 use super::quantise::SUM_BLOCK;
+use super::realization::{RepresentationFacts, Selection, SelectionRefusal};
 use crate::error::VindexError;
+use crate::format::vindex3::opplan::planned::PlannedOperand;
 use crate::format::vindex3::represent::kquant::KQuant;
 
 /// The numerical representation a backend wants matrix operands in.
@@ -143,43 +145,6 @@ pub enum MatrixClass {
     /// question about "how big is this matrix" has no answer here, which
     /// is exactly why answering it as an `FfnProjection` would be wrong.
     RoutedExpertBank,
-}
-
-/// What the interpreter knows about one matrix operand before loading
-/// it: enough to choose a representation, never enough to reinterpret
-/// the tensor.
-///
-/// The class alone stopped being sufficient at Qwen3.8. Its `48 x 5120`
-/// delta gates and its `10240 x 5120` fused projection are both
-/// attention-class operands separated by a factor of 213 in size, and
-/// the measured answer for one is the wrong answer for the other by
-/// 3.8x. A per-class declaration cannot express that; a per-operand one
-/// can.
-#[derive(Clone, Copy, PartialEq, Eq, Debug)]
-pub struct MatrixOperand {
-    pub class: MatrixClass,
-    /// The matrix's element count — `out_dim * in_dim`.
-    pub elements: usize,
-    /// Whether the container holds this operand as bf16 AND it can be
-    /// read unwidened. A physical fact about the checkpoint, not a
-    /// preference: a backend that wants compact bytes where there are
-    /// none would have to quantise to get them.
-    pub stored_bf16: bool,
-    /// Whether the container holds this operand as a compiled NVFP4
-    /// pack. The same kind of fact as [`Self::stored_bf16`] — physical,
-    /// not a preference — and it outranks the size policy: a pack exists
-    /// because someone compiled it deliberately, so a backend asking for
-    /// anything else would widen bytes that are already in the shape a
-    /// kernel wants.
-    pub stored_nvfp4: bool,
-    /// Whether the container holds this operand as a compiled K-quant
-    /// pack — Q8_0, Q6_K or Q4_K. The same kind of fact as
-    /// [`Self::stored_nvfp4`], with one difference in how it is acted
-    /// on: a stored K-quant has TWO execution routes, in place or
-    /// widened to f32, and which one runs is the process's
-    /// [`super::cpu::physical::KQuantExecution`] arm rather than a
-    /// consequence of the bytes alone.
-    pub stored_kquant: bool,
 }
 
 /// A backend's declared format per matrix class.
@@ -728,11 +693,21 @@ pub trait PlanBackend: Sync {
         None
     }
 
-    /// The representation this backend wants one matrix operand loaded
-    /// in. A capability, asked per operand at load time — not a per-call
-    /// decision, and not a per-model one.
-    fn weight_format(&self, _operand: MatrixOperand) -> WeightFormat {
-        WeightFormat::F32
+    /// The realization this backend takes for one planned operand, given
+    /// what the registry declares for its stored representation.
+    ///
+    /// Chosen from candidates the backend derives from those declarations,
+    /// or refused naming every candidate considered. Asked per operand at
+    /// preparation, BEFORE any byte is read, and pinned in the prepared
+    /// plan: the executor runs what was pinned or refuses. The default is
+    /// the reference oracle — the literal f32 transcription — so a backend
+    /// that says nothing inherits the arithmetic that defines correctness.
+    fn select(
+        &self,
+        operand: &PlannedOperand,
+        facts: &RepresentationFacts,
+    ) -> Result<Selection, Box<SelectionRefusal>> {
+        super::realization::reference_selection(operand, facts)
     }
 
     /// How this backend performs a Gated DeltaNet layer's dense

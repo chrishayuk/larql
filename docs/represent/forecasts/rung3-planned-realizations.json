@@ -1,0 +1,128 @@
+{
+ "programme": "represent-codec-contract",
+ "rung": 3,
+ "name": "planned-execution-realizations",
+ "written": "2026-09-05",
+ "written_before": "any code. Baseline measured by reading origin/main after PR #422 (rung 2) merged — coordinates below are from that tree. Predictions are about the transition only, per wave.",
+ "base_commit": "c52497a7 (merge of PR #422)",
+ "branch": "represent-rung3",
+ "worktree": ".claude/worktrees/represent-rung3",
+ "predecessors": ["rung2-entropy-coded-bf16.json", "rung2-execution-notes.json"],
+
+ "the_claim": "LARQL can discover representations and execution providers, determine whether they satisfy an operation, select an explicit realization, account for it, and execute it without format-specific control flow. Concretely: a hardware-independent OperationPlan states what each operand needs; a PreparedExecutionPlan, bound to registry, device and physical facts, records the representation it resolved, the realizations it considered, the one RealizationId it pinned, that realization's resource profile, and the reason; and the executor runs exactly the pinned realization or refuses.",
+
+ "what_the_entropy_codec_exposed": "Rung 2 executed BF16_ZLIB through registration because the residency policy already routes every non-bf16 dtype to widened f32 — a silent, well-defined fallback with no record. The same silence is why capability admission had to be bolted onto the packed-bank loader (experts.rs require_row_access), why MXFP4 banks enter through a `U8` label nobody registered, and why #420's direct K-quant arrived as a THIRD stored-dtype boolean at the seam rather than as a declared realization. Rung 3 replaces the booleans, the silence and the bypass with candidates, a pin and a trace.",
+
+ "baseline_measured": {
+  "semantic_plan_is_requirement_blind": "opplan/mod.rs: OperandRef { object, tensor, dtype, shape } (mod.rs:54); RoutedFfnOp carries `expert_format: ExpertFormat` (a larql-models config enum: PerExpert | PackedMxfp4 | PackedBF16) and `bank: ExpertBank::{Packed{gate_up, down}, PerExpert}`; PackedProjection { weights, scales: Option, bias }. No op carries a required access, an operation kind, or an extent. Nothing in opplan/build.rs or opplan/mod.rs reads OperandRef.dtype (grep: zero). The plan is serialised by `vindex3 plan` (larql-cli vindex3_cmd/mod.rs:981) and round-tripped by opplan/tests/plan.rs:147, plan/tests/identity.rs:73, plan/tests/system.rs:212.",
+  "the_seam_is_three_booleans": "exec/backend.rs:159 MatrixOperand { class: MatrixClass (AttentionProjection | FfnProjection | OutputHead | RoutedExpertBank), elements, stored_bf16, stored_nvfp4, stored_kquant }. Filled by exec/prepared.rs:684 `resolve` from operands.rs is_stored_bf16 / is_stored_nvfp4 (label compares) / is_stored_kquant (kquant::lookup on the label, operands.rs:761). The bank is asked once with all three false and elements 0 (prepared.rs:770).",
+  "selection_is_a_boolean_ladder": "exec/production.rs:703 declared_format(operand, kquant_execution()): RoutedExpertBank → F32; stored_nvfp4 → Nvfp4; stored_kquant && KQuantExecution::Direct → KQuant; else PhysicalProjectionPlan::choose_for(class, elements, stored_bf16).format() (cpu/physical.rs:329 — BlasF32 unless stored bf16 and the f32 image exceeds compact_threshold_bytes(), then FusedBf16 / FusedQ8 / integer arms by arithmetic_arm() and q8_permitted()). The reference backend uses the trait default: F32 (backend.rs:734). The device backend answers `self.formats.for_class(operand.class)` (exec/device.rs:355) — a class table that reads none of the stored facts.",
+  "process_globals_are_policy_inputs": "KQuantExecution from env LARQL_KQUANT_EXEC, read per operand at load (physical.rs:629, deliberately uncached); ArithmeticArm read once per process; Q4Classes; q8_permitted(). None is recorded in the prepared image.",
+  "the_loader_matches_the_format": "exec/weights/mod.rs load_weight(store, operand, WeightFormat) — 8 formats (F32, Bf16, Q8, Q4, F16, Mxfp4, Nvfp4, KQuant), each arm with its own stored-dtype expectations (the Bf16 arm refuses non-BF16 by name; the F16 arm narrows from BF16/F32 only). Decode-to-f32 realizations go through OperandStore::load → CodecRegistry (rung 1); direct realizations bind bytes per arm.",
+  "the_kernel_is_observed_not_pinned": "cpu/physical.rs for_resident(WeightRows, in_dim) → PhysicalProjectionPlan (10 variants: ScalarF32, FusedQ8, FusedQ4, FusedNvfp4, FusedKQuant, BlasF32, FusedBf16, Q8xQ8, Q4xQ8, Bf16xQ8), read off the resident bytes plus the process arm. There is no pin for the executor to violate, and no record of what was decided at load. cpu/ledger.rs ProjectionLedger tallies calls / bytes / nanos per plan and per site — the only execution-side observation of which realization ran.",
+  "accounting_is_observed_only": "exec/prepared.rs:937 residency_census(): SiteResidency { widened_f32, compact } per site from LoadedWeight::is_widened_f32 and resident_bytes(). No declared profile is bound; no per-operand record exists. Reported by `vindex3 generate` report_residency (larql-cli vindex3_cmd/generate.rs:129) and DecodeSession::residency_census (exec/decode.rs:183).",
+  "declarations_exist_and_have_one_consumer": "Every codec declares capabilities(), accelerations() (backend Cpu, a PhysicalProjectionPlan, a ResidencyProfile, requires RowRandom) and decode_residency(). After rung 2 the ONLY consumer outside represent/codec/ is exec/experts.rs require_row_access. Declared direct realizations today: BF16 → FusedBf16, Bf16xQ8; F32 → BlasF32, ScalarF32; NVFP4 → FusedNvfp4; Q4_K/Q6_K/Q8_0 → FusedKQuant (#420); F16, MXFP4, BF16_ZLIB → none.",
+  "the_mxfp4_bank_bypass": "exec/experts.rs load_packed: ExpertFormat::PackedMxfp4 expects stored dtype `U8` for both the blocks and the scales operand (experts.rs:437-438) — labels outside the registry — then binds natively for a WeightFormat::Mxfp4 backend or dequantises per expert; ExpertFormat::PackedBF16 expects `BF16` (experts.rs:470). RoutedExpertBank is widened to f32 unconditionally on the CPU backend (declared_format). The bank's per-expert slicing is a realization that reads STORED rows — which is why rung 2's require_row_access is a genuine requirement of that realization, not of the operation.",
+  "realization_identity_is_a_closed_enum": "PhysicalProjectionPlan is matched exhaustively in cpu/physical.rs (format, arithmetic, kernel, for_resident), cpu/ledger.rs (tallies), cpu/cost.rs and cpu/arithmetic.rs. A provider outside the crate cannot add a variant; this is the central match an external provider will collide with.",
+  "controls": "4152 lib tests green on the rebased rung-2 tree; every parity oracle under exec/tests is bit-exact against its fixture; rung 2's witnesses (bf16_zlib_execution.rs, bf16_zlib_bank.rs) pin the pre-rung-3 behaviour of the paths this rung rewires."
+ },
+
+ "design_frozen_at_the_contract_level": {
+  "OperationPlan (3a)": "opplan gains a derived, total, hardware-independent view: `PlannedOperand { operand: OperandRef, operation: Operation, access: RequiredAccess, extent: RepresentationExtent }` with `Operation ∈ { Embed, Project(MatrixClass), ExpertBankSlice, OutputHead }`, produced by `ComponentOpPlan::planned_operands()`. Access is what the OPERATION needs over the operand as executed: Embed and ExpertBankSlice need RowRandom (a token's row; an expert's slot), Project and OutputHead need Sequential (the whole matrix). Extent is TERMINAL for every operand this rung. It is derived from the op structure and NOT serialised into the plan JSON; the plan's wire shape is byte-identical.",
+  "RealizationId (3b)": "`RealizationId { backend: AccelerationBackend, form: RealizationForm }` with `RealizationForm ∈ { Direct(PhysicalProjectionPlan), Decode(PhysicalProjectionPlan), Requantise(PhysicalProjectionPlan), SliceStored { convert: WeightFormat } }`. Direct = the codec's declared acceleration; Decode = the universal decode-to-f32 realization then an f32 plan (BlasF32 in production, ScalarF32 under the reference backend); Requantise = decode then a lossy re-quantisation (today's FusedQ8 / integer arms for large bf16); SliceStored = the packed-bank realization that slices stored rows per expert and converts. The candidate set for an operand is DERIVED: the codec's accelerations() filtered to the backend, plus Decode (always, for a codec whose decode is admissible), plus Requantise (policy-gated), plus SliceStored for banks (requires RowRandom over the stored bytes). No candidate may come from a label compare.",
+  "selection (3b)": "The existing policy (`choose_for`, KQuantExecution, ArithmeticArm, Q4Classes) becomes a SELECTOR over the candidate set and may only answer with a member of it. `PlanBackend::weight_format(MatrixOperand)` is replaced by `PlanBackend::select(&PlannedOperand, &RepresentationFacts) -> Result<Selection, SelectionRefusal>` where `RepresentationFacts { label, identity, capabilities, accelerations, decode_residency }` is resolved from the registry by the prepared plan — the three booleans and the three `is_stored_*` queries are deleted. The device backend's class table survives as that backend's own candidate answer (it is a provider for its target) and is not rewired to codec declarations in this rung.",
+  "pin and refusal (3b)": "`PreparedOperands` records one `RealizationRecord { operand, representation: label, requested: RequiredAccess, candidates: Vec<RealizationId>, selected: RealizationId, reason: SelectionReason, residency: ResidencyProfile }` per matrix operand. A refusal is `SelectionRefusal { operand, representation, requested, considered: Vec<(RealizationId, why rejected)> }` raised BEFORE load_raw. At execute time `for_resident` is checked against the pinned plan per operand; disagreement is a refusal, never a fallback.",
+  "trace and accounting (3c)": "`SiteResidency` gains `declared: usize` (Σ selected.residency.bytes_per_weight × elements) beside the observed pair; `ResidencyCensus` exposes agreement per site. `vindex3 generate` and the decode session print a selection summary (per class: representation → selected, reason, candidates). The ProjectionLedger is cross-checked against the pins after a run: every tallied plan for a site must be a pinned realization for that site.",
+  "privileged paths removed (3d)": "The MXFP4 bank enters through the MXFP4 codec's declared streams (blocks = values, scales = group_scales) and its candidates (Decode on CPU; the device backend's grouped kernel as the device provider's own candidate); `DTYPE_U8` leaves experts.rs. The K-quant direct path — the one existing direct codec taken through the mechanism — arrives as Direct(FusedKQuant) from the K-quant codecs' accelerations(), with KQuantExecution now a selector preference between Direct(FusedKQuant) and Decode(BlasF32); `stored_kquant` is deleted. The provider proof: a test-only codec with a test-only acceleration, registered into a scratch CodecRegistry, appears in an operand's candidate set and is selected, with zero edits under exec/ other than registration."
+ },
+
+ "predictions_per_wave": {
+  "3a_requirements": {
+   "intervention": "planned_operands() over the plan; nothing else changes.",
+   "predicted": [
+    "zero behaviour delta: every exec parity test, both rung-2 witnesses, the residency census and the ProjectionLedger tallies are unchanged; the plan JSON emitted by `vindex3 plan` is byte-identical on the dense, routed and hybrid fixtures (a serialisation change is a falsifier)",
+    "every operand the loader touches through load_weight or load_packed appears exactly once in planned_operands(); counts per fixture are pinned (dense: 7 per layer + embed + head; routed: bank operands per layer)",
+    "routed banks are RowRandom; Embed is RowRandom; Project and OutputHead are Sequential; every extent is TERMINAL",
+    "touch set: opplan/mod.rs (+types, +method), opplan/tests (+1 file); nothing under exec/"
+   ]
+  },
+  "3b_admission_and_selection": {
+   "intervention": "RepresentationFacts from the registry; candidates; selector; pin; refusal before bytes; executor pin check.",
+   "predicted": [
+    "the three booleans and is_stored_bf16 / is_stored_nvfp4 / is_stored_kquant are DELETED, not wrapped — grep for `stored_bf16|stored_nvfp4|stored_kquant` under exec/ outside tests/ returns zero",
+    "on every existing fixture the SELECTED realization equals what declared_format + for_resident chose before (the selector is the old policy over a derived set): BF16 small → Decode(BlasF32); BF16 large → Direct(FusedBf16) or Requantise(FusedQ8) by arm; NVFP4 → Direct(FusedNvfp4); K-quant → Direct(FusedKQuant) under Direct, Decode(BlasF32) under Widen; F16 / MXFP4-dense / BF16_ZLIB → Decode(BlasF32) with reason NoDirectRealization; banks → SliceStored; logits bit-exact everywhere",
+    "rung 2's bank refusal is re-issued by the selector: BF16_ZLIB bank → SelectionRefusal considering [SliceStored: needs row-random, codec provides sequential] with load_count unchanged; the rung-2 test is kept and its assertion tightened to the refusal type (a DecodeWholeThenSlice bank realization is a legitimate future candidate and is NOT added in this rung — recorded so its later addition cannot be mistaken for a fallback)",
+    "the executor pin check refuses a prepared image whose resident bytes disagree with its pin (witness: a constructed mismatch); no existing fixture trips it",
+    "the reference backend selects Decode(ScalarF32) for every operand — the oracle stays the oracle",
+    "the device backend is untouched except for the trait method rename; its class table is wrapped as its own candidate answer",
+    "touch set: exec/backend.rs (MatrixOperand → PlannedOperand + RepresentationFacts; PlanBackend::select), exec/prepared.rs (resolve, records, refusal), exec/production.rs (declared_format → selector), exec/reference.rs (default), exec/device.rs (rename), exec/weights/mod.rs (load by RealizationId → WeightFormat mapping, arms unchanged), exec/experts.rs (require_row_access folded into the SliceStored candidate), cpu/physical.rs (pin check beside for_resident), operands.rs (−3 queries), tests. NOT touched: opplan/ (3a's view is consumed, not changed), represent/codec/ (declarations are sufficient — any change there is a contract finding)"
+   ]
+  },
+  "3c_trace_and_accounting": {
+   "intervention": "declared residency bound into the census; selection summary printed; ledger cross-check.",
+   "predicted": [
+    "declared == observed for every site on every fixture (bf16, f32, nvfp4, kquant direct and widened, bf16_zlib); the F16 and MXFP4-dense sites agree through Decode's DECODED_F32",
+    "mutation: a scratch-registry codec whose selected realization declares ResidencyProfile::stored(16.0) while the loader widens it makes declared ≠ observed for its site, and the witness fails as it should",
+    "the ProjectionLedger after a run over the bf16_zlib container shows BlasF32 (and nothing else) at the transcoded sites, matching the pins; over a K-quant container under Direct it shows FusedKQuant only",
+    "touch set: exec/prepared.rs (census fields, summary), larql-cli generate.rs (print), cpu/ledger.rs (read-only cross-check helper), tests"
+   ]
+  },
+  "3d_remove_privileged_paths": {
+   "intervention": "MXFP4 bank via declared streams; K-quant via declared acceleration; external provider proof.",
+   "predicted": [
+    "DTYPE_U8 leaves experts.rs; the MXFP4 bank's operands bind through the MXFP4 codec (two named streams) and its candidates; the routed parity oracles are bit-exact",
+    "KQuantExecution survives as a selector preference; `stored_kquant` is gone; the #420 gate that admits a stored K-quant becomes 'Direct(FusedKQuant) is a candidate iff the codec declares it' — the K-quant codecs already do",
+    "THE PREDICTED BLOCKER: an external provider cannot be selected without opening RealizationId beyond the closed PhysicalProjectionPlan enum, because ledger.rs, cost.rs, arithmetic.rs and physical.rs match it exhaustively. The minimal opening is `RealizationForm::Provider { id: ProviderRealizationId, projector: &'static dyn DenseProjector, residency, requires }` registered in an ExecutionProviderRegistry beside the CodecRegistry, with the ledger tallying unknown providers under their id. If the proof passes WITHOUT opening the enum, that is the surprise to record; if opening it takes more than the four named files, that is the finding.",
+    "the proof: a test-only codec + test-only provider registered in scratch registries appear in the candidate set, are selected under a test policy, execute (the provider's projector runs — witnessed by its own counter), and disappear from the candidate set when unregistered; zero edits under exec/ other than registration for the proof itself"
+   ]
+  }
+ },
+
+ "invariants_and_their_witnesses": [
+  {"invariant": "Capability refusal occurs before operand bytes are read", "witness": "SelectionRefusal raised with store.load_count() unchanged (3b), on the BF16_ZLIB bank and on a constructed operand whose only candidates require row access"},
+  {"invariant": "Direct and decode-reference paths are distinct realizations", "witness": "RealizationId::Direct(FusedKQuant) vs Decode(BlasF32) for the same K-quant operand under the two KQuantExecution arms; the record names which (3b)"},
+  {"invariant": "The executor cannot silently change the pinned realization", "witness": "for_resident checked against the pin; a constructed mismatch refuses (3b)"},
+  {"invariant": "Runtime disappearance causes refusal/replanning, never fallback", "witness": "a provider unregistered between prepare and execute → refusal naming the pin (3d); a KQuantExecution arm changed between prepare and execute → the pin wins or refuses, never re-decides (3b)"},
+  {"invariant": "Stored Footprint remains representation-state-specific", "witness": "stored bytes read from the container's record per operand are unchanged by selection; BF16_ZLIB's InstanceSized refusal is unchanged (3b)"},
+  {"invariant": "Working set and touch accounting come from the selected realization", "witness": "declared residency bound from selected.residency (3c)"},
+  {"invariant": "Mutating the selected realization's resource declaration breaks the census witness", "witness": "the scratch-registry mutation (3c)"},
+  {"invariant": "MXFP4 enters through declared capabilities instead of hardcoded dtype booleans", "witness": "grep gates: no DTYPE_U8, no stored_* booleans (3d)"},
+  {"invariant": "Adding a provider changes the candidate set without modifying planner or executor matches", "witness": "the external-provider proof (3d)"}
+ ],
+
+ "falsifiers": [
+  "F1 3a changes any logits, census, ledger tally or plan JSON byte",
+  "F2 after 3b a label compare or a stored_* boolean remains under exec/ outside tests/",
+  "F3 any fixture's selected realization differs from its pre-rung-3 behaviour without a recorded reason",
+  "F4 an operand loads in a form other than its pin, or a pin mismatch executes",
+  "F5 represent/codec/ needs a change to serve 3b or 3c (the declarations rung 1–2 froze are insufficient — a contract finding)",
+  "F6 declared ≠ observed residency on any fixture, or the mutation fails to break the agreement",
+  "F7 DTYPE_U8 or ExpertFormat-keyed dtype expectations survive 3d",
+  "F8 the external provider needs an edit under exec/ beyond registration and the predicted enum opening",
+  "F9 any parity oracle moves",
+  "F10 a new file lands under 90% line coverage"
+ ],
+
+ "explicitly_not_claimed": [
+  "no plan-BUILD-time admission: the OperationPlan stays portable and registry-free; admission happens at preparation, bound to registry and device",
+  "no new realizations: DecodeWholeThenSlice for banks, a fused BF16_ZLIB kernel, device declarations from codecs — all later",
+  "no rewiring of the Metal backend's class table to codec declarations; it is wrapped as its own candidate answer",
+  "no runtime plugin loading; the provider proof is a compile-time-linked, test-only crate-internal provider",
+  "no performance claim; the selector is the old policy over a derived set",
+  "the artifact-target registry (GGUF, MLX packages) is not started"
+ ],
+
+ "coordination_risks_measured": [
+  "worktree `optimizer-mcp-facade` / branch `stage5a0-executor-contract` (stage 5, PreparedExperiment as the unit of execution authority) sits on the same prepared-plan seam. Rung 3's RealizationRecord is the identity stage 5 should consume as 'the plan that RAN' — the two must agree on who owns PreparedOperands' record fields before 3b lands; raised at freeze, not discovered at merge",
+  "PR #420's KQuantExecution and the `larql-exec-v3-2e5ce84b` PARETO-1 campaign binary read LARQL_KQUANT_EXEC; 3b keeps the env variable's meaning (selector preference) so the running campaign's arms stay identifiable"
+ ],
+
+ "gates_before_each_push": [
+  "cargo fmt --all --check last", "cargo clippy -p larql-vindex --all-targets -- -D warnings on CI's stable, plus --target x86_64-apple-darwin",
+  "cargo test -p larql-vindex (every suite; count the lib line)", "cargo check --workspace --all-targets (a trait method rename reaches every backend)",
+  "cargo llvm-cov one crate per run + check_coverage_policy.py", "check_doc_links.py + check_doc_references.py --strict",
+  "the grep gates named above, run from the base commit"
+ ],
+
+ "immutability": "Frozen at its commit. Per-wave falsifications go in rung3-execution-notes.json; if the design above must change during a wave, the change is written there with the reason and this file is not edited."
+}

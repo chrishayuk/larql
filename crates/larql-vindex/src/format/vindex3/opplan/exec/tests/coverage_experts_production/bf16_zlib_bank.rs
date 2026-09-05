@@ -23,7 +23,7 @@ const BANKS_PER_LAYER: usize = 2;
 fn a_sequential_bank_is_refused_by_access_class_before_any_byte_is_read() {
     let op = bf16_op(&routed_fixture().op);
     let ffn = LayerFfn::Routed(Box::new(op));
-    let f32_for = |_: &OperandRef| WeightFormat::F32;
+    let f32_for = |_: &OperandRef| Ok(WeightFormat::F32);
 
     // Control: the raw bf16 carrier loads through the same preflight.
     let (_dir, _container, control) = bf16_carrier_store();

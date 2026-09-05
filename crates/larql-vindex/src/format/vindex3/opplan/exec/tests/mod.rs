@@ -9,6 +9,7 @@
 //! about *semantics* — plan interpretation, operand binding, norm
 //! placement, RoPE convention, residual order — not shared arithmetic.
 
+mod accounting;
 mod attention_kv_parity;
 mod backend_rows;
 mod bf16_gemv_bench;
@@ -58,6 +59,7 @@ mod nvfp4_projection;
 mod output_gate_fused;
 mod plan_fixtures;
 mod projection_bench;
+mod realization;
 // Each module carries its OWN cfg: inserting a bare `mod` line above a
 // gated one hands the attribute to the newcomer and silently un-gates
 // the original — that exact capture broke six CI jobs on PR #346.

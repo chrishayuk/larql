@@ -48,7 +48,7 @@ use larql_models::config::{Activation, GateActivation, GateCombine, GatePlacemen
 
 use super::backend::{
     AttentionCall, AttentionOut, AttentionStepCall, AttentionStepOut, DispatchStats, FfnCall,
-    GateCall, MatrixOperand, NormCall, PlanBackend, ProjectCall, ProjectedQkv, RoutedFfnCall,
+    GateCall, MatrixClass, NormCall, PlanBackend, ProjectCall, ProjectedQkv, RoutedFfnCall,
     WeightFormat, WeightFormats, WeightSlice,
 };
 use super::production::{
@@ -62,6 +62,11 @@ use ndarray::ArrayView2;
 use rayon::prelude::*;
 
 use super::production::unsupported_activation;
+use super::realization::{
+    class_of, common_selection, resident_profile, RealizationBackend, RealizationForm,
+    RealizationId, RefusalKind, RepresentationFacts, Selection, SelectionReason, SelectionRefusal,
+};
+use crate::format::vindex3::opplan::planned::PlannedOperand;
 use larql_compute::ffn::gelu_tanh;
 
 /// One MXFP4 matrix as the device trait consumes it:
@@ -352,8 +357,44 @@ impl<M: MatMul + Send> PlanBackend for DevicePlanBackend<M> {
     /// resident in device memory, and neither of those turns on a host
     /// cache boundary. The operand's size is available and ignored on
     /// purpose.
-    fn weight_format(&self, operand: MatrixOperand) -> WeightFormat {
-        self.formats.for_class(operand.class)
+    fn select(
+        &self,
+        operand: &PlannedOperand,
+        facts: &RepresentationFacts,
+    ) -> Result<Selection, Box<SelectionRefusal>> {
+        let bank = self.formats.for_class(MatrixClass::RoutedExpertBank);
+        if let Some(common) = common_selection(operand, facts, bank) {
+            return common;
+        }
+        let refuse = |kind| {
+            Box::new(SelectionRefusal {
+                operand: operand.operand.clone(),
+                operation: operand.operation,
+                representation: facts.label.clone(),
+                requested: operand.access,
+                kind,
+                considered: vec![],
+            })
+        };
+        let Some(class) = class_of(operand.operation) else {
+            return Err(refuse(RefusalKind::MissingRealization));
+        };
+        if facts.registered.is_none() {
+            return Err(refuse(RefusalKind::UnregisteredRepresentation));
+        }
+        // This backend's class table is its own declaration for its own
+        // target: the one candidate it offers, named as such.
+        let format = self.formats.for_class(class);
+        let id = RealizationId {
+            backend: RealizationBackend::Device,
+            form: RealizationForm::DeviceResident(format),
+        };
+        Ok(Selection {
+            realization: id,
+            residency: resident_profile(format),
+            reason: SelectionReason::DeviceClassTable,
+            candidates: vec![id],
+        })
     }
 
     fn prepare(&self, weights: &[WeightSlice<'_>]) {

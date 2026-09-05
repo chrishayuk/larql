@@ -163,7 +163,7 @@ mod mutation_table {
             op,
             (&store).into(),
             &|_: &crate::format::vindex3::opplan::OperandRef| {
-                crate::format::vindex3::opplan::exec::backend::WeightFormat::F32
+                Ok(crate::format::vindex3::opplan::exec::backend::WeightFormat::F32)
             },
         )
         .unwrap();
