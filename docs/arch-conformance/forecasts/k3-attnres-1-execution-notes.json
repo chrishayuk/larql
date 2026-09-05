@@ -126,5 +126,73 @@
     "what_this_transition_does_not_claim": "No traversal, no carrier, no arithmetic, no oracle. Nothing here shows that the mechanism these roles describe is the one the reference runs — the tests prove the declaration, the ownership and the roles agree with the headers, and that is all representation can prove. K3 is not plannable: it stays blocked on `self_attn.g_proj` (K3-REP-GATE-1), its `routed_expert_*` bank (K3-LATENTMOE-1), 14 quantization findings, 14 unclustered ones and the vision tower. No real-payload witness now or later in this rung.",
 
     "next": "the torch oracle for `_apply_attn_res` and the block schedule, with a rejecting control for each ordering mistake the reconnaissance named, built BEFORE any Rust arithmetic; then the traversal transition freezes against the oracle's commit."
+  },
+
+  "oracle": {
+    "written": "2026-09-05, after transition 1 merged to the branch (f45129ca / 9a55bccc) and BEFORE any Rust arithmetic for the topology exists. Decision 5 of the freeze: the oracle is the next artefact, built before an implementation, so that the first implementation cannot become its own reference.",
+    "artefacts": {
+      "generator": "scripts/attn_res_oracle_export.py",
+      "fixture": "crates/larql-vindex/src/format/vindex3/opplan/exec/tests/attn_res_oracle.json",
+      "source_transcribed": "moonshotai/Kimi-K3 modeling_kimi_linear.py \u2014 `_apply_attn_res` (~L1075), `KimiDecoderLayer._forward_attn_residual` (~L973), `KimiLinearModel.forward` (~L1188) and `_apply_output_attn_res` (~L1226). Fetched and READ verbatim before a line of the oracle was written; every ordering claim below is observed in that file, not inferred from the reconnaissance's diagram.",
+      "geometry": "hidden 5, positions 3, layers 7, block_size 3 -> boundaries at layers 0, 3, 6; three snapshots; the exit mixes four candidates. Two boundary layers AFTER layer 0, which is what makes the snapshot-source controls observable at all. Deterministic: two runs are byte-identical.",
+      "self_checking": "the generator asserts every property and every control before it writes anything, and exits non-zero if its own claims are false. `--explain` prints the observed schedule."
+    },
+    "FALSIFIED_decision_5_one_candidate": {
+      "what_the_freeze_said": "decision 5 listed among the rejecting controls: 'layer 0's mlp reduction runs over one candidate'. The reconnaissance said the same in its layer-forward diagram: '[always, even at N == 0 where it is a softmax over one candidate = identity]'.",
+      "what_the_source_says": "at layer 0 the mlp-site reduction runs over TWO candidates. The order in `_forward_attn_residual` is: attention-site reduce (guarded on a non-empty set, so skipped at layer 0), THEN the boundary snapshot appends the entering state, THEN the sublayer, THEN the mlp-site reduce. Layer 0 is a boundary (`0 % B == 0`), so by the time the mlp site runs the set already holds one snapshot and the candidates are {snapshot, prefix} = 2.",
+      "and_it_never_occurs": "no site in this schedule EVER reduces over one candidate. The set starts empty (`new_zeros(tokens, 0, hidden)`), layer 0 always snapshots, and the set only grows \u2014 so the empty-set case exists at exactly one site in the whole stack, layer 0's ATTENTION site, where the reference's guard skips the reduction rather than running it over one candidate. Measured in the fixture: candidate counts are 2, 2, 2, 2/3, 3, 3, 3/4 and 4 at the exit; the minimum anywhere is 2.",
+      "why_it_matters": "a transcription written from the freeze rather than from the source would have built a one-candidate arm and then found nothing to exercise it. The reconnaissance's diagram was RIGHT about the ordering (`blocks.push(h_in)` before the attention sublayer); its parenthetical about N == 0 at the mlp site was the error, and the freeze inherited it. Read the source, not the summary of the source \u2014 even a good summary written three commits ago.",
+      "what_survives": "the property the freeze was reaching for holds and is provable: the mlp site is UNCONDITIONAL where the attention site is guarded. The control `mlp_site_skipped_at_layer_0` moves the final vector by 4.50e-01."
+    },
+    "the_six_properties_and_their_controls": {
+      "_comment": "`max |delta|` is on the stack's final vector, against the reference run. A control at 0.0 is not a weak control: it is the honest statement that the property cannot be caught by comparing outputs.",
+      "1_attention_site_reduces_over_the_OLD_snapshot_set": {
+        "proved_by": "at every boundary layer the attention site's `snapshots_reduced_over` equals `snapshots_before`, and `snapshots_after == snapshots_before + 1`. Visible in the schedule: layer 3 reduces over 1 snapshot, then the snapshot event takes it 1 -> 2.",
+        "control": "attn_site_over_new_snapshots (append before the reduce)",
+        "max_abs_delta": 0.4624587
+      },
+      "2_the_boundary_snapshot_is_the_ENTERING_prefix_state": {
+        "proved_by": "the recorded snapshot value is bitwise equal to the layer's `prefix_in`, at all three boundaries.",
+        "controls": {
+          "snapshot_is_mixed_vector": 0.9110258,
+          "snapshot_after_attention": 1.71815
+        },
+        "note": "neither control is observable at layer 0 \u2014 the attention site is skipped there, so the mixed vector IS the entering state. The fixture needs a boundary after layer 0 for this property to be testable at all, which is why block_size 3 over 7 layers and not, say, 7 over 7."
+      },
+      "3_layer_0_skips_the_attention_reduction": {
+        "proved_by": "STRUCTURE ONLY. Layer 0's witness records `ran: false, candidate_count: 0`; every other layer records `ran: true`.",
+        "control": "layer0_attention_site_runs (drop the guard)",
+        "max_abs_delta": 0.0,
+        "why_zero": "softmax over ONE candidate is exactly [1.0], so the mix is the identity and running the site at layer 0 computes precisely what skipping it computes. This property is not observable by any numerical oracle, at any geometry, ever. It is a witness-structural claim, and a Rust implementation can only be checked against it by comparing the per-site witness \u2014 not by comparing outputs."
+      },
+      "4_layer_0_still_performs_the_mlp_reduction": {
+        "proved_by": "every layer's witness records `mlp_site.ran: true`, layer 0 included \u2014 over two candidates, not one (see the falsification above).",
+        "control": "mlp_site_skipped_at_layer_0",
+        "max_abs_delta": 0.4500171,
+        "second_control": "mlp_site_guarded_on_nonempty (give the mlp site the attention site's guard) \u2014 0.0, because the guard NEVER FIRES: no mlp site in this schedule sees an empty set. Recorded so a reader knows this particular misreading is undetectable by output comparison, and why."
+      },
+      "5_mixing_uses_RAW_candidates_RMS_norm_scores_only": {
+        "proved_by": "the reference computes `probs @ v_float` while `k` (the RMS-normalised form) is read by the score and by nothing else.",
+        "controls": {
+          "mix_over_normalised_candidates": 1.296426,
+          "score_without_rmsnorm": 0.5834151
+        }
+      },
+      "6_the_exit_is_mandatory_and_uses_the_SHIPPED_output_pair": {
+        "proved_by": "the exit runs over all three snapshots plus the prefix (4 candidates) before the final norm.",
+        "controls": {
+          "exit_skipped": 2.257818,
+          "exit_uses_a_layer_pair": 0.5907323
+        },
+        "note": "the second control is what makes 'the SHIPPED pair' a claim rather than a description: an implementation that reduced with any pair at all would pass the first."
+      }
+    },
+    "observed_while_building": [
+      "**The first draft of this oracle rejected nothing, and looked like it was passing.** Its score pairs were drawn at the layer scales (up to 4.0), so `score = sum_h k_h * (norm_h * proj_h)` over an RMS-normalised `k` produced probabilities of `[1.0, 4.2e-11]` \u2014 a softmax saturated to one-hot. On a saturated distribution every candidate-set control is INVISIBLE: a candidate carrying 4e-11 of the mass can be added, removed or duplicated without moving the mix, so `attn_site_over_new_snapshots` measured exactly 0.0 while the mutation was demonstrably taking effect (its witness showed 2 candidates where the reference had none, and 3 where the reference had 2). The structure changed and the numbers did not. Fixed by drawing the score pair small (0.15) and the branch weights at the layer scales \u2014 two roles that the first draft had conflated: the score pair decides whether the softmax can DISCRIMINATE, the branch weights decide whether the candidates are worth discriminating between.",
+      "**The fixture now asserts its own ability to see.** `_verify` checks, FIRST, that no site's probability distribution is flatter than 5e-3 or more peaked than 0.98, and the measured band (0.112 .. 0.756) ships in the JSON. Without that assertion a future regeneration could re-saturate the fixture and every control would go quiet without a single test failing \u2014 the instrument would keep reporting success while measuring nothing. This is the [[feedback_verification_needs_verification]] shape applied to an oracle: if a check returns the answer you wanted, prove it could have returned the other.",
+      "Two of the ten controls are exactly 0.0 and both are mathematically necessary rather than fixture artefacts \u2014 softmax over one candidate is the identity, and the mlp site's guard never fires. They are reported as `numerically_inert` in the JSON with the reason, so the traversal transition can see up front that two of its six properties need a WITNESS comparison and cannot be checked by output parity alone."
+    ],
+    "what_the_oracle_does_not_claim": "It is a transcription, and a transcription can be faithful to the wrong file or faithful in the wrong dtype. It runs the reference's own f32-internal reduction on f32 inputs; a bf16 checkpoint would enter `_apply_attn_res` at bf16 and leave it cast back, which this fixture does not exercise. It uses a stand-in sublayer (pre-norm, linear, tanh), so nothing here checks KDA, MLA or MoE. And no Rust reads it yet: this boundary adds an instrument, not a capability.",
+    "next": "freeze the traversal transition AGAINST this oracle's commit \u2014 carrier type, the two witness-structural properties that output parity cannot reach, and the decode/batch assertions \u2014 then implement."
   }
 }
