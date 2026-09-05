@@ -464,11 +464,15 @@ pub fn build_from_inventories(named: &[(String, ArchitectureInventory)]) -> Buil
                             "no placement rule owns this group — judge it before conversion"
                                 .to_string()
                         }
-                        GroupClass::HyperConnectionHead
-                            if !declares_sinkhorn_hyper_connection(inventory) =>
-                        {
-                            HC_HEAD_UNDECLARED_REASON.to_string()
-                        }
+                        // Unguarded on purpose. Pass 1 gives every artifact a
+                        // non-perception component, so `text_component` is
+                        // always `Some` and a head group lands here for ONE
+                        // reason: the placement arm found no declared
+                        // topology. Re-asking `declares_sinkhorn_hyper_connection`
+                        // here was a second derivation of that fact, and the
+                        // CI mutation run on this wave's diff proved it dead —
+                        // replacing the guard with `true` changed nothing.
+                        GroupClass::HyperConnectionHead => HC_HEAD_UNDECLARED_REASON.to_string(),
                         _ => {
                             "classified for a component this artifact does not declare".to_string()
                         }
