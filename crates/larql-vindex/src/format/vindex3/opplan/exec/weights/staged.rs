@@ -34,6 +34,15 @@
 //! the file is removed the moment it is created, so the bytes live
 //! exactly as long as the process holds the handle, including if it is
 //! killed.
+//!
+//! The file's NAME is unique per arena, not per process. Two callers
+//! can race the process-wide initialisation and each open an arena
+//! before either wins it, and a process can inherit the pid of one that
+//! died inside the create-to-unlink window; a pid-only name made both
+//! collide on `create_new` ("File exists"), which a test suite running
+//! two stagings at once reproduced. A per-process counter beside the
+//! pid keeps every arena's name its own, and the loser of the race is
+//! simply dropped — its file was already unlinked.
 
 use std::io::{Seek, SeekFrom, Write};
 use std::ops::Deref;
@@ -126,6 +135,22 @@ pub(super) struct Arena {
 
 static ARENA: OnceLock<Mutex<Arena>> = OnceLock::new();
 
+/// Distinguishes arenas opened by ONE process: the pid alone named two
+/// concurrent opens the same file.
+static ARENA_SEQUENCE: AtomicU64 = AtomicU64::new(0);
+
+/// The path the next arena under `dir` is created at — unique per call
+/// within this process (pid plus a counter), and distinct from any
+/// other process's by the pid. Separate from [`open_arena`] so the
+/// naming contract is testable without touching the file system.
+pub(super) fn arena_path(dir: &std::path::Path) -> std::path::PathBuf {
+    let sequence = ARENA_SEQUENCE.fetch_add(1, Ordering::Relaxed);
+    dir.join(format!(
+        "larql-f32-stage-{}-{sequence}.bin",
+        std::process::id()
+    ))
+}
+
 fn arena() -> Result<&'static Mutex<Arena>, VindexError> {
     // `OnceLock::get_or_init` cannot fail, so the fallible open happens
     // first and its error is reported rather than swallowed into a
@@ -148,16 +173,7 @@ fn arena() -> Result<&'static Mutex<Arena>, VindexError> {
 /// of the failure path through `arena()` would depend on whether any
 /// other test had staged an image first.
 pub(super) fn open_arena(dir: &std::path::Path) -> Result<Arena, VindexError> {
-    // Unique per OPEN, not per process: two operands widened on two
-    // threads at once would otherwise race to `create_new` one file
-    // (observed as "File exists" under a parallel test run), and a
-    // process id recycled after a crash would find its predecessor's.
-    static NEXT: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
-    let serial = NEXT.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
-    let path = dir.join(format!(
-        "larql-f32-stage-{}-{serial}.bin",
-        std::process::id()
-    ));
+    let path = arena_path(dir);
     let file = std::fs::OpenOptions::new()
         .create_new(true)
         .read(true)
