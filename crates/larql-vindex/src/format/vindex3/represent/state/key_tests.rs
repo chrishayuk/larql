@@ -7,8 +7,6 @@
 //! reading of one state are two experiments, and a key that could not
 //! tell them apart would forbid the escalation the ladder is built on.
 
-use std::collections::BTreeMap;
-
 use super::super::compiler::SourceIdentity;
 use super::super::map::{Exception, PrecisionMap};
 use super::super::measurement::EvidenceScale;
@@ -20,11 +18,11 @@ use super::*;
 // ---------------------------------------------------------------- fixtures
 
 fn model() -> SourceIdentity {
-    SourceIdentity {
-        manifest_hash: "manifest-aaaa".into(),
-        graph_hash: "graph-1111".into(),
-        segments: BTreeMap::from([("target.decoder_stack".to_string(), "seg-dddd".to_string())]),
-    }
+    SourceIdentity::synthetic(
+        "manifest-aaaa",
+        "graph-1111",
+        [("target.decoder_stack".to_string(), "seg-dddd".to_string())],
+    )
 }
 
 fn tensor(projection: &str, shape: Vec<usize>) -> SurfaceTensor {

@@ -41,6 +41,7 @@ use super::super::quality::{
     kimi_logit_balanced_v1, Distribution, LogitEvidence, QualityBank, RoutingEvidence,
 };
 use super::super::search_evidence::SearchCalibrationRegistry;
+use super::resolved::PACK_LAYOUT_ADMISSION;
 use super::*;
 
 const MODEL: &str = "kimi-linear-48b";
@@ -48,11 +49,11 @@ const MODEL: &str = "kimi-linear-48b";
 // ---------------------------------------------------------------- fixtures
 
 fn model() -> SourceIdentity {
-    SourceIdentity {
-        manifest_hash: MODEL.into(),
-        graph_hash: "aligned-vindex3".into(),
-        segments: BTreeMap::from([("target.decoder_stack".to_string(), "seg-dddd".to_string())]),
-    }
+    SourceIdentity::synthetic(
+        MODEL,
+        "aligned-vindex3",
+        [("target.decoder_stack".to_string(), "seg-dddd".to_string())],
+    )
 }
 
 fn surface() -> TensorSurface {
@@ -98,6 +99,7 @@ fn space() -> SearchSpace {
             MapEdit::new("M26", compile("m_proj")),
         ])
         .expect("distinct names"),
+        applied: BTreeSet::new(),
     }
 }
 
@@ -296,8 +298,10 @@ fn recorded() -> SearchSnapshot {
                 "decide-promotion-ordinal/v1",
                 "physical-prize-first/v1",
                 "logical-bytes/v1",
+                PACK_LAYOUT_ADMISSION,
             ),
             ranking: RankingSemantics::new(RankingRule::PhysicalPrizeFirst),
+            standing_intent: intent(EvidenceScale::Authority),
         },
         SearchFacts {
             graph,
@@ -313,6 +317,7 @@ fn recorded() -> SearchSnapshot {
                 ),
             ]),
             execution_cost: cost_model(),
+            accounting: None,
         },
     )
 }
@@ -347,7 +352,7 @@ fn the_action_space_is_derived_from_the_snapshot_alone() {
 fn the_next_experiment_is_derived_end_to_end() {
     let snap = reloaded();
     let selection = snap
-        .next_experiment(
+        .next_experiment_under(
             &applied(&[]),
             &intent(EvidenceScale::Diagnostic),
             &PackLayoutAdmission,

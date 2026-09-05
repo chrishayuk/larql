@@ -50,6 +50,18 @@ pub enum EvidenceScale {
     Authority,
 }
 
+impl EvidenceScale {
+    /// Every scale, in the order a reader should be shown them:
+    /// cheapest evidence first.
+    ///
+    /// Exists so that a caller asking "at which scales has this been
+    /// measured" does not have to name the variants itself and quietly
+    /// go stale when a third appears. `every_scale_is_listed` matches
+    /// exhaustively over this array, so adding a variant without adding
+    /// it here fails to compile.
+    pub const ALL: [EvidenceScale; 2] = [EvidenceScale::Diagnostic, EvidenceScale::Authority];
+}
+
 /// Whether a reported statistic is supported by its evidence.
 ///
 /// The three states are distinct in the way that matters to a search:

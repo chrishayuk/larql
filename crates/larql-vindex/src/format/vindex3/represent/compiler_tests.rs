@@ -2,7 +2,9 @@
 
 use super::*;
 use crate::format::vindex3::represent::arena::StoredOperand;
-use crate::format::vindex3::represent::compiler::{SourceDependency, SourceIdentity};
+use crate::format::vindex3::represent::compiler::{
+    ContainerArtifactDigest, SourceDependency, SourceIdentity,
+};
 use crate::format::vindex3::represent::experiment::RoleScope;
 use crate::format::vindex3::represent::map::Exception;
 use crate::format::vindex3::represent::selection::{Refusal, Verdict};
@@ -80,11 +82,11 @@ fn index(map: PrecisionMap) -> CandidateIndex {
     CandidateIndex::new(
         "Kimi-Linear-48B-A3B-Instruct",
         SourceDependency {
-            identity: SourceIdentity {
-                manifest_hash: "m".repeat(64),
-                graph_hash: "g".repeat(64),
-                segments: BTreeMap::from([("target.expert_bank.bin".into(), "a".repeat(64))]),
-            },
+            identity: SourceIdentity::synthetic(
+                "m".repeat(64),
+                "g".repeat(64),
+                [("target.expert_bank.bin".into(), "a".repeat(64))],
+            ),
             locator_hint: "/somewhere/source.vindex3".into(),
         },
         "target.expert_bank",
@@ -369,26 +371,48 @@ fn a_candidate_refuses_a_source_it_was_not_compiled_against() {
     // Payloads identical, SEMANTICS different — the case payload hashes
     // alone would wave through.
     let mut other_graph = good.clone();
-    other_graph.graph_hash = "z".repeat(64);
+    other_graph.semantic.graph_hash = "z".repeat(64);
     let err = idx.source.verify(&other_graph).expect_err("must refuse");
     assert!(format!("{err}").contains("semantic graph"), "{err}");
 
-    let mut other_manifest = good.clone();
-    other_manifest.manifest_hash = "z".repeat(64);
-    let err = idx.source.verify(&other_manifest).expect_err("must refuse");
-    assert!(format!("{err}").contains("manifest"), "{err}");
-
     let mut moved_bytes = good.clone();
-    moved_bytes
-        .segments
-        .insert("target.expert_bank.bin".into(), "b".repeat(64));
+    moved_bytes.semantic.representations[0].payload_sha256 = "b".repeat(64);
     let err = idx.source.verify(&moved_bytes).expect_err("must refuse");
     assert!(format!("{err}").contains("DIFFERENT container"), "{err}");
 
     let mut absent = good.clone();
-    absent.segments.clear();
+    absent.semantic.representations.clear();
     let err = idx.source.verify(&absent).expect_err("must refuse");
     assert!(format!("{err}").contains("missing segment"), "{err}");
+
+    // The graph agrees and every payload agrees, and the container is
+    // still not the one this was compiled against: a restated segment
+    // header table moves `segment_sha256` and nothing else. No check
+    // above can see it, and it is exactly the fact a physical optimiser
+    // prices a PROTECTED decision from.
+    let mut restated_table = good.clone();
+    restated_table.semantic.representations[0].segment_sha256 = "z".repeat(64);
+    let err = idx.source.verify(&restated_table).expect_err("must refuse");
+    assert!(format!("{err}").contains("catalogue"), "{err}");
+}
+
+/// **A byte-different export of the same container is the same
+/// source.** The overlay depends on what the container IS; re-writing
+/// its index with the same values in a different serialisation changes
+/// nothing an operand resolves through, and refusing it would
+/// invalidate a candidate over formatting.
+#[test]
+fn a_reserialised_source_container_still_verifies() {
+    let idx = index(map_for(vec![]));
+    let mut reserialised = idx.source.identity.clone();
+    reserialised.artifact = ContainerArtifactDigest::new("z".repeat(64));
+    assert_ne!(
+        reserialised.artifact, idx.source.identity.artifact,
+        "the exported bytes differ, which is the whole premise"
+    );
+    idx.source
+        .verify(&reserialised)
+        .expect("a re-export is the same source");
 }
 
 /// **Identity is content, not location.** Both artifacts must survive
@@ -409,21 +433,54 @@ fn a_moved_source_container_still_verifies() {
 /// different identity.
 #[test]
 fn identity_is_read_from_the_containers_own_metadata() {
+    use crate::format::vindex3::index::{RepresentationEntry, Vindex3Index};
+
+    // Built through the container's OWN schema rather than as a hand
+    // written fragment. `read_source_identity` parses through
+    // `Vindex3Index`, so a fragment that the schema would refuse is not
+    // a container this test may claim anything about — that asymmetry
+    // is what `state::tests::source_identity` closed.
+    let entry = |object: &str, segment: &str, payload: &str| RepresentationEntry {
+        object: object.into(),
+        encoding: "BF16".into(),
+        segment: segment.into(),
+        tensor_count: 1,
+        payload_bytes: 16,
+        payload_sha256: payload.into(),
+        segment_sha256: format!("file-{payload}"),
+        compiled_from: None,
+        codec: None,
+        source_representation_digest: None,
+        encoder: None,
+    };
+    let index_json = {
+        let mut index = Vindex3Index::new("m", "llama", 64, 2, "", BTreeMap::new());
+        index.system_graph = Some("system_graph.json".into());
+        index.representations = BTreeMap::from([
+            (
+                "target.expert_bank@BF16".to_string(),
+                entry("target.expert_bank", "target.expert_bank", "aaaa"),
+            ),
+            (
+                "target.decoder_stack@BF16".to_string(),
+                entry("target.decoder_stack", "target.decoder_stack", "bbbb"),
+            ),
+        ]);
+        serde_json::to_string(&index).expect("index")
+    };
+
     let dir = std::env::temp_dir().join(format!("larql-identity-{}", std::process::id()));
     let write = |root: &std::path::Path, index: &str, graph: &str| {
         std::fs::create_dir_all(root).expect("dir");
         std::fs::write(root.join("index.json"), index).expect("index");
         std::fs::write(root.join("system_graph.json"), graph).expect("graph");
     };
-    let index_json = r#"{"system_graph":"system_graph.json","representations":{
-        "target.expert_bank@BF16":{"segment":"target.expert_bank","payload_sha256":"aaaa"},
-        "target.decoder_stack@BF16":{"segment":"target.decoder_stack","payload_sha256":"bbbb"}}}"#;
     let a = dir.join("a");
-    write(&a, index_json, r#"{"components":[]}"#);
+    write(&a, &index_json, r#"{"components":[]}"#);
     let id = read_source_identity(&a).expect("identity");
-    assert_eq!(id.segments.len(), 2, "one entry per representation");
-    assert_eq!(id.segments["target.expert_bank"], "aaaa");
-    assert!(!id.manifest_hash.is_empty() && !id.graph_hash.is_empty());
+    assert_eq!(id.segments().len(), 2, "one entry per representation");
+    assert_eq!(id.segments()["target.expert_bank"], "aaaa");
+    assert!(!id.artifact.as_str().is_empty() && !id.graph_hash().is_empty());
 
     // Re-reading the same container gives the same identity.
     assert_eq!(read_source_identity(&a).expect("again"), id);
@@ -431,16 +488,22 @@ fn identity_is_read_from_the_containers_own_metadata() {
     // A different GRAPH under byte-identical payload hashes is a
     // different model, and the identity says so.
     let b = dir.join("b");
-    write(&b, index_json, r#"{"components":[{"id":"target"}]}"#);
+    write(&b, &index_json, r#"{"components":[{"id":"target"}]}"#);
     let other = read_source_identity(&b).expect("identity");
-    assert_eq!(other.segments, id.segments, "same payload hashes");
-    assert_eq!(other.manifest_hash, id.manifest_hash, "same index");
-    assert_ne!(other.graph_hash, id.graph_hash, "different graph");
+    assert_eq!(other.segments(), id.segments(), "same payload hashes");
+    assert_eq!(other.artifact, id.artifact, "same index bytes");
+    assert_ne!(other.graph_hash(), id.graph_hash(), "different graph");
+    assert_ne!(
+        other.semantic_digest(),
+        id.semantic_digest(),
+        "and a different model"
+    );
 
     // An index naming a non-default graph file is followed.
     let c = dir.join("c");
     std::fs::create_dir_all(&c).expect("dir");
-    std::fs::write(c.join("index.json"), r#"{"system_graph":"other.json"}"#).expect("index");
+    let renamed = index_json.replace("system_graph.json", "other.json");
+    std::fs::write(c.join("index.json"), &renamed).expect("index");
     std::fs::write(c.join("other.json"), "{}").expect("graph");
     read_source_identity(&c).expect("a named graph file is followed");
 

@@ -21,7 +21,6 @@
 //! that when the evidence does arrive, **the exact bytes that were
 //! measured become the selected bytes**, with no post-validation rebuild.
 
-use std::collections::BTreeMap;
 use std::io::{Seek, SeekFrom, Write};
 use std::path::Path;
 
@@ -59,53 +58,12 @@ pub struct CompileOutcome {
     pub bytes_written: u64,
 }
 
-/// What a source container IS, by content.
-///
-/// Three levels, because a sparse overlay depends on all three and they
-/// can disagree independently:
-///
-/// * `manifest_hash` — the index: which objects exist, at which
-///   encodings, in which segments.
-/// * `graph_hash` — the semantic graph: operand identities, shapes,
-///   roles. Two containers could carry byte-identical payload segments
-///   under different semantic metadata, and an overlay composed against
-///   one would be silently wrong on the other.
-/// * `segments` — the payload bytes themselves.
-///
-/// Verifying only the payloads would close the narrowest of the three.
-#[derive(Debug, Clone, PartialEq, Eq, Default, Serialize, Deserialize)]
-pub struct SourceIdentity {
-    pub manifest_hash: String,
-    pub graph_hash: String,
-    /// Segment name → the source index's own `payload_sha256`.
-    pub segments: BTreeMap<String, String>,
-}
-
-/// Read a container's identity from its own metadata.
-pub fn read_source_identity(container: &Path) -> Result<SourceIdentity, VindexError> {
-    let index_bytes = std::fs::read(container.join("index.json"))?;
-    let index: serde_json::Value = serde_json::from_slice(&index_bytes)
-        .map_err(|e| VindexError::Parse(format!("source index: {e}")))?;
-    let graph_name = index["system_graph"]
-        .as_str()
-        .unwrap_or("system_graph.json");
-    let graph_bytes = std::fs::read(container.join(graph_name))?;
-    let mut segments = BTreeMap::new();
-    if let Some(reps) = index["representations"].as_object() {
-        for entry in reps.values() {
-            if let (Some(seg), Some(hash)) =
-                (entry["segment"].as_str(), entry["payload_sha256"].as_str())
-            {
-                segments.insert(seg.to_string(), hash.to_string());
-            }
-        }
-    }
-    Ok(SourceIdentity {
-        manifest_hash: hash_bytes(&index_bytes),
-        graph_hash: hash_bytes(&graph_bytes),
-        segments,
-    })
-}
+// Identity lives in `super::source_identity`: what a container IS,
+// separated from what it was exported as.
+pub use super::source_identity::{
+    read_source_identity, CanonicalRepresentationAuthority, ContainerArtifactDigest,
+    SourceIdentity, SourceSemanticIdentity, SOURCE_SEMANTIC_ID_VERSION,
+};
 
 /// The source container a sparse candidate cannot execute without.
 ///
@@ -137,41 +95,55 @@ pub struct SourceDependency {
 impl SourceDependency {
     /// Refuse a source that is not the one compiled against.
     ///
-    /// Checked semantic-first: a manifest or graph mismatch is reported
-    /// as such rather than as whichever segment happened to differ, so
-    /// the reader learns the container is a different MODEL rather than
-    /// hunting a byte difference.
+    /// Resolved on the SEMANTIC identity alone. A byte-different export
+    /// of the same container — a re-serialised index, a reordered key —
+    /// is the same source, and refusing it would invalidate an overlay
+    /// over formatting.
+    ///
+    /// Checked semantic-first: a graph mismatch is reported as such
+    /// rather than as whichever segment happened to differ, so the
+    /// reader learns the container is a different MODEL rather than
+    /// hunting a byte difference. The catalogue check comes last
+    /// because it is the one with nothing specific to say, and it is
+    /// taken from the same digest the search identifies states by, so
+    /// verification and identity cannot give two answers.
     pub fn verify(&self, actual: &SourceIdentity) -> Result<(), VindexError> {
-        if actual.manifest_hash != self.identity.manifest_hash {
+        if actual.graph_hash() != self.identity.graph_hash() {
             return Err(VindexError::Parse(format!(
-                "source manifest is {} but this candidate was compiled against {} — a                  different container index, so its object/encoding layout may not match",
-                short(&actual.manifest_hash),
-                short(&self.identity.manifest_hash)
+                "source semantic graph is {} but this candidate was compiled against {} — \
+                 identical payloads under a different graph are still a different model",
+                short(actual.graph_hash()),
+                short(self.identity.graph_hash())
             )));
         }
-        if actual.graph_hash != self.identity.graph_hash {
-            return Err(VindexError::Parse(format!(
-                "source semantic graph is {} but this candidate was compiled against {} —                  identical payloads under a different graph are still a different model",
-                short(&actual.graph_hash),
-                short(&self.identity.graph_hash)
-            )));
-        }
-        for (segment, want) in &self.identity.segments {
-            match actual.segments.get(segment) {
-                Some(got) if got == want => {}
+        let present = actual.segments();
+        for (segment, want) in self.identity.segments() {
+            match present.get(segment) {
+                Some(got) if *got == want => {}
                 Some(got) => {
                     return Err(VindexError::Parse(format!(
-                        "source segment `{segment}` has payload {} but this candidate was                          compiled against {} — it is an overlay on a DIFFERENT container",
+                        "source segment `{segment}` has payload {} but this candidate was \
+                         compiled against {} — it is an overlay on a DIFFERENT container",
                         short(got),
                         short(want)
                     )))
                 }
                 None => {
                     return Err(VindexError::Parse(format!(
-                        "source container is missing segment `{segment}`, which this candidate                          depends on for every operand it left at source precision"
+                        "source container is missing segment `{segment}`, which this candidate \
+                         depends on for every operand it left at source precision"
                     )))
                 }
             }
+        }
+        if actual.semantic_digest() != self.identity.semantic_digest() {
+            return Err(VindexError::Parse(format!(
+                "source container catalogue is {} but this candidate was compiled against {} — \
+                 the graph and every payload agree, so what moved is a segment's header table, \
+                 a codec revision, a profile, or another fact the index declares",
+                short(&actual.semantic_digest()),
+                short(&self.identity.semantic_digest())
+            )));
         }
         Ok(())
     }

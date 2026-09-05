@@ -70,10 +70,13 @@
 //! generation (unprotecting is a move, un-refusing is not). Identity
 //! collapses them; explanation does not.
 
+pub mod accounting;
 pub mod action_space;
 pub mod assess;
+pub mod bind;
 pub mod candidate;
 pub mod evidence_bank;
+pub mod footprint;
 pub mod graph;
 pub mod identity;
 pub mod instrument;
@@ -86,16 +89,23 @@ pub mod snapshot;
 pub mod surface;
 pub mod transition;
 
+pub use accounting::{
+    read_source_storage, PhysicalAccountingFacts, PhysicalAccountingSemantics,
+    PhysicalAccountingSemanticsId, SourceDType, SourceStorageFact, TensorIdentity,
+    PHYSICAL_ACCOUNTING_PROCEDURE,
+};
 pub use action_space::{ActionVocabulary, MapEdit};
 pub use assess::{
     Assessment, NothingMeasured, ParentStanding, RankingRule, RankingSemantics, RankingSemanticsId,
     Score, RANKING_SEMANTICS_ID_VERSION,
 };
+pub use bind::{AccountingBindError, AccountingIncomplete, BoundPhysicalAccounting};
 pub use candidate::{
     Candidate, CandidateDisposition, CandidateSet, Census, Footprint, Generator, MeasurementIntent,
     PreMeasurementPrune,
 };
 pub use evidence_bank::{EvidenceBank, EvidenceBankId, EVIDENCE_BANK_ID_VERSION};
+pub use footprint::{CompiledBytes, FootprintError, PackCompiledBytes, SurfaceFootprint};
 pub use graph::{RepresentationStateGraph, StateNode, TransitionPolicy};
 pub use identity::{RepresentationState, RepresentationStateId, STATE_ID_VERSION};
 pub use instrument::{InstrumentSemantics, InstrumentSemanticsId, INSTRUMENT_SEMANTICS_ID_VERSION};
@@ -116,6 +126,9 @@ pub use transition::{Action, Provenance, Transition};
 
 #[cfg(test)]
 mod candidate_tests;
+/// The Rung 5 record, shared by every test that needs a real search.
+#[cfg(any(test, feature = "test-utils"))]
+pub mod fixtures;
 #[cfg(test)]
 mod graph_tests;
 #[cfg(test)]
@@ -127,4 +140,4 @@ mod search_policy_tests;
 #[cfg(test)]
 mod snapshot_tests;
 #[cfg(test)]
-mod tests;
+pub(crate) mod tests;

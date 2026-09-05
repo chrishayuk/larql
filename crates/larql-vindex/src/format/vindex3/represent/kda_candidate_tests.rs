@@ -81,11 +81,11 @@ fn index(map: PrecisionMap) -> CandidateIndex {
     CandidateIndex::new(
         "Kimi-Linear-48B-A3B-Instruct",
         SourceDependency {
-            identity: SourceIdentity {
-                manifest_hash: "m".repeat(64),
-                graph_hash: "g".repeat(64),
-                segments: BTreeMap::from([("target.decoder_stack.bin".into(), "a".repeat(64))]),
-            },
+            identity: SourceIdentity::synthetic(
+                "m".repeat(64),
+                "g".repeat(64),
+                [("target.decoder_stack.bin".into(), "a".repeat(64))],
+            ),
             locator_hint: "/somewhere/source.vindex3".into(),
         },
         OBJECT,

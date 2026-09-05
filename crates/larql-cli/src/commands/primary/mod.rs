@@ -16,6 +16,7 @@ pub mod k3_ledger;
 pub mod link_cmd;
 pub mod list_cmd;
 pub mod model_cmd;
+pub mod optimizer_mcp;
 pub mod publish_cmd;
 pub mod pull_cmd;
 pub mod recipe_cmd;

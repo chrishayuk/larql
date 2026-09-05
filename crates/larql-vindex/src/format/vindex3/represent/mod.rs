@@ -76,8 +76,10 @@ pub mod reference_encoder;
 pub mod search_evidence;
 pub mod selection;
 pub mod source_bank;
+pub mod source_identity;
 pub mod state;
 pub mod statistic;
+pub mod view;
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::io::{Read, Seek, SeekFrom};

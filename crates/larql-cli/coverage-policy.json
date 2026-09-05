@@ -1,9 +1,10 @@
 {
-  "policy_note": "CLI is a binary crate with most code under `commands/` doing CLI parsing, dispatch, or I/O against live models/servers. This policy is scoped to the `bench/` and `dec_bench/` subtrees: pure helpers are gated at the 90% default; I/O-wrapper runtime files (`*_runtime.rs`) and the top-level orchestrators (`run.rs`, `mod.rs`, `args.rs`) are excluded because they're thin glue around `larql_inference` / `larql_compute` / `LayerShardedBackend` / `RemoteMoeBackend` / `reqwest` calls that need live shards and real model weights to exercise. The split keeps every byte of testable post-processing logic under the gate. Baseline measured 2026-05-15; dec_bench added 2026-07-22.",
+  "policy_note": "CLI is a binary crate with most code under `commands/` doing CLI parsing, dispatch, or I/O against live models/servers. This policy is scoped to the `bench/` and `dec_bench/` subtrees: pure helpers are gated at the 90% default; I/O-wrapper runtime files (`*_runtime.rs`) and the top-level orchestrators (`run.rs`, `mod.rs`, `args.rs`) are excluded because they're thin glue around `larql_inference` / `larql_compute` / `LayerShardedBackend` / `RemoteMoeBackend` / `reqwest` calls that need live shards and real model weights to exercise. The split keeps every byte of testable post-processing logic under the gate. Baseline measured 2026-05-15; dec_bench added 2026-07-22. 2026-09-03 (optimizer MCP facade, stage 4): the `optimizer_mcp/` subtree is brought UNDER the gate rather than left outside it \u2014 protocol.rs and tools.rs at 100%, server.rs at 97.2%, all measured against the real Rung 5 record. The one baseline entry is mod.rs: `run` locks the process's own stdin and stdout, so its six lines cannot be reached in-process. Everything below it was split out as `dispatch`/`declare`/`serve`/`load`, which take their reader and writer and are driven end to end from a record on disk. Raise this if `run` ever grows logic; it should not.",
   "include_globs": [
     "crates/larql-cli/src/commands/primary/bench/*.rs",
     "crates/larql-cli/src/commands/primary/bench/**/*.rs",
-    "crates/larql-cli/src/commands/primary/dec_bench/*.rs"
+    "crates/larql-cli/src/commands/primary/dec_bench/*.rs",
+    "crates/larql-cli/src/commands/primary/optimizer_mcp/*.rs"
   ],
   "exclude_globs": [
     "crates/larql-cli/src/commands/primary/bench/run.rs",
@@ -21,5 +22,7 @@
   ],
   "default_line_min_percent": 90.0,
   "total_line_min_percent": 7.0,
-  "per_file_line_min_percent": {}
+  "per_file_line_min_percent": {
+    "crates/larql-cli/src/commands/primary/optimizer_mcp/mod.rs": 84.0
+  }
 }

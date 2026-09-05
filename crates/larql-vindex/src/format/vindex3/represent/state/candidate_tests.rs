@@ -11,7 +11,7 @@
 //! answer comes from a deterministic partition and not from a language
 //! model reconstructing a rationale.
 
-use std::collections::{BTreeMap, BTreeSet};
+use std::collections::BTreeSet;
 
 use super::super::compiler::SourceIdentity;
 use super::super::map::{Exception, PrecisionMap};
@@ -24,11 +24,11 @@ use super::*;
 // ---------------------------------------------------------------- fixtures
 
 fn model() -> SourceIdentity {
-    SourceIdentity {
-        manifest_hash: "kimi-linear-48b".into(),
-        graph_hash: "aligned-vindex3".into(),
-        segments: BTreeMap::from([("target.decoder_stack".to_string(), "seg-dddd".to_string())]),
-    }
+    SourceIdentity::synthetic(
+        "kimi-linear-48b",
+        "aligned-vindex3",
+        [("target.decoder_stack".to_string(), "seg-dddd".to_string())],
+    )
 }
 
 /// Four projections at one depth. `no_proj` is 1-D, so no layout can

@@ -70,6 +70,11 @@ gpu = ["dep:larql-compute-metal"]
 # LARQL_GGML_REVISION. A production-side dependency: nothing that reads
 # or executes a container needs it. See represent/reference_encoder.rs.
 reference-encoder = []
+# The Rung 5 search record, for downstream test suites that need a real
+# optimiser snapshot to read. Off by default so production builds never
+# compile fixture code. Enable from a consumer's `[dev-dependencies]`,
+# e.g. `larql-vindex = { path = "../larql-vindex", features = ["test-utils"] }`.
+test-utils = []
 
 [dev-dependencies]
 larql-inference = { path = "../larql-inference" }

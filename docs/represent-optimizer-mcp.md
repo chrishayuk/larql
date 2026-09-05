@@ -1,8 +1,8 @@
 # The LARQL Physical Optimizer — evidence-constrained physical-plan search
 
-**Branch `worktree-represent-optimizer-mcp`, based on `origin/main` at
-`8f647872`.** Stages 1 (a-d), 2, 3 and 3b are implemented and green;
-everything below them is design.
+**Stages 1 (a-d), 2, 3 and 3b landed on `main` in #409; stage 4 is on
+`worktree-optimizer-mcp-facade`, based on `origin/main` at `474a0392`.**
+Everything below stage 4 is design.
 
 The abstraction is not "quantization search". It is **evidence-
 constrained physical-plan search**, and it is the query optimiser the
@@ -227,9 +227,10 @@ killing exactly its own tests and nothing else:
 | model identity dropped from the digest | `the_same_map_on_a_different_model…` (1) |
 | `LayoutRefused` no longer collapses to source | `a_layout_refusal_presents_source…` (1) |
 
-The canonical form is versioned (`represent-state-id/v1`) so a persisted
-DAG that outlives a change to it is recognisably stale rather than
-silently colliding.
+The canonical form is versioned so a persisted DAG that outlives a
+change to it is recognisably stale rather than silently colliding. It is
+now `represent-state-id/v2`: §4i removed a false split and that changed
+which containers are the same state.
 
 ---
 
@@ -823,6 +824,664 @@ calling it recorded would be worse than saying so.
 
 ---
 
+## 4h. Stage 4 — the read-only facade (IMPLEMENTED)
+
+> **Anything an agent can learn through the facade is already derivable
+> from the deterministic optimiser substrate.**
+
+Everything an agent is shown is a projection of a stored record.
+Nothing in the facade orders what the optimiser did not order, draws a
+verdict the contract did not draw, or prices a byte a footprint did not
+price. Two layers, and the theorem lives entirely in the first:
+
+```text
+larql-vindex  represent::view      the seven questions, as pure projections
+larql-cli     optimizer_mcp        JSON-RPC on stdio: dispatch and serde
+```
+
+### The seven, and what each one is allowed to call
+
+```text
+optimizer.describe          schema, model, surface, contract, policies,
+                            the six decision procedures, the vocabulary
+optimizer.current           root, graph shape, the incumbent, admitted,
+                            what is still dark per evidence scale
+optimizer.frontier          every state's standing, every adjudication
+optimizer.explain           identity  ·  discovery path  ·  standing
+optimizer.compare           two standings and one physical delta
+optimizer.evidence          the raw banks beside their verdicts
+optimizer.next_experiment   a refusal, and what is missing (below)
+```
+
+Absent, and not "not yet": `record`, `apply`, `expand`, `promote`,
+and above all `accept_candidate`. A test parses the facade's own source
+and fails if an eighth method appears or if any method's name contains a
+writing verb, so the surface is checked against the code rather than
+against a list in a comment.
+
+### Rendering a derived verdict is not storing one
+
+[`Adjudication`] and [`FrontierEntry`] withhold `Serialize` on purpose:
+1d forbids storing a conclusion. Rendering one is a different act — the
+agent is shown a verdict the optimiser reached just now, from facts —
+but it is the act with the most room to lie. So the split is:
+
+```text
+substrate type derives Serialize    render the type itself
+substrate answers via a method      one view field, naming the method
+```
+
+Rendering the type is the stronger option wherever it is available: a
+reshaped `Margin` is a second `Margin` that can disagree with the first.
+
+### The anti-cheat, pointed the other way
+
+1d walks a STORED snapshot and fails on any key that names a
+conclusion. Stage 4 walks a RENDERED response and fails on any leaf that
+names nothing at all. Every field declares the call behind it, and the
+walk checks both directions:
+
+```text
+undeclared leaf        a value the facade invented
+unreached declaration  a registry entry that has stopped describing the
+                       code, and the next field added under it would
+                       inherit its alibi
+```
+
+Descent stops at a declared path, so an embedded substrate type is
+covered whole and the registry does not have to restate `Margin`'s
+fields. An absent field or an empty collection is excused by a
+declaration beneath it and by nothing else.
+
+Eight mutations, each killed by exactly its own tests: drop an origin →
+1; declare a dead one → 1; render an undeclared `recommendation` → 2;
+grow a writer → 2; order the admitted set in the facade → 1; treat a
+diagnostic pass as an admission → 1; subtract the wrong way round → 1;
+serve a write tool → 3.
+
+**The ordering test could not have failed.** Rung 5 admitted exactly one
+state, so `first()` and `last()` were the same element and "the
+incumbent is position zero" asserted nothing. It now runs against an
+openly counterfactual fixture that gives S1 a passing authority reading
+it never had — labelled as not the record — purely so the claim has two
+elements to order.
+
+### The transport carries; it does not derive
+
+`Server` is handed an `OptimizerView` and never a `SearchSnapshot`, so
+"derive nothing in transport" is a matter of what is reachable rather
+than of what a reviewer noticed. The load-bearing test compares each
+tool's payload against the view's own serialisation character for
+character: a transport that reshaped, ordered, summarised or annotated
+an answer fails rather than being noticed later.
+
+An id the record does not hold comes back as a tool error carrying
+WHICH id was wrong, not as a protocol failure and not as an empty
+success.
+
+### What stage 4 found: `next_experiment` cannot be served
+
+The one tool of the seven that does not answer, and the refusal is the
+stage's real finding.
+
+`SearchSnapshot::next_experiment` derives the whole chain from stored
+facts, but takes two arguments that are CODE and not data: a
+`LayoutAdmission` and a `Footprint`. The first has production
+implementations. **The second has none** — `Footprint`'s own contract is
+*"supplied, never derived here"*, and the only implementations in the
+tree are three copies of a test fixture, identical up to variable names.
+
+Nor can the facade write one:
+
+```text
+declared   SearchSemantics.physical_accounting = "logical-bytes/v1"
+held       a version id, which names a procedure and is not one
+missing    a Footprint oracle the snapshot can name
+missing    a source dtype on TensorSurface
+```
+
+Pricing a decision the map PROTECTS needs the source dtype, and
+`TensorSurface` carries object, tensor, role and shape and no dtype at
+all. The three fixtures close that gap by multiplying by two, which is
+bf16 asserted rather than read. Promoting an assertion about a dtype
+into production is exactly the move that makes a search price bytes it
+never saved — and adding a dtype to `TensorSurface` re-opens 1a, since
+the surface feeds every `RepresentationStateId`.
+
+So the tool refuses and names both missing facts, and still serves what
+needs no oracle: the move vocabulary (R5-F6 was a vocabulary failure and
+cost two ~430 MB moves) and the unmeasured states, which are already in
+the graph and already priced.
+
+Closing this is a substrate question and not a transport one. A stored
+price table keyed by state id is the obvious shape — an INPUT, the same
+move stages 3 and 3b made twice — but `Footprint::logical_bytes` returns
+`LogicalBytes` with no channel for a miss, and an unpriced candidate
+that is neither eligible nor pruned breaks the census conservation law.
+That is a stage of its own, not a line in this one.
+
+### Coverage and the fixture
+
+100 % line coverage on all nine `view/` files; `protocol.rs` and
+`tools.rs` at 100 %, `server.rs` at 97.2 %. The `optimizer_mcp/` subtree
+is brought UNDER the CLI coverage policy rather than left outside it,
+with one baseline: `run` locks the process's own stdin and stdout, so
+its six lines cannot be reached in-process. Everything below it was
+split out as `dispatch`/`declare`/`serve`/`load`, which take their
+reader and writer and are driven end to end from a record on disk.
+
+The Rung 5 record is now ONE fixture, shared by the 1d replay gate and
+the stage-4 views and exposed to downstream test suites behind
+`larql-vindex`'s `test-utils` feature. Two copies of those numbers would
+be two records, and the second would drift.
+
+[`Adjudication`]: #4d-stage-1d--the-replay-gate-implemented
+[`FrontierEntry`]: #4d-stage-1d--the-replay-gate-implemented
+
+---
+
+## 4i. Stage 4b — the source identity the optimizer prices from
+
+Stage 4 could not serve `next_experiment`: pricing a PROTECTED decision
+needs the source `dtype` and `len`, and `TensorSurface` carries neither.
+The obvious fix — add a `source_dtype` to `TensorSurface` — re-opens 1a,
+because the surface feeds every `RepresentationStateId`. 4b asks the
+prior question instead: **does the container already seal those facts,
+and is that seal load-bearing in the identity?**
+
+```text
+4b-a   prove the physical seal                    done
+4b-b1  refuse incomplete/contradictory identity   done
+4b-b2  identity semantic, not formatting-sensitive  done
+4b-c   read sealed SourceStorageFacts              done
+4b-d   require whole-surface accounting completeness  done
+4b-e   production Footprint over a bound surface       done
+4b-f   next_experiment answers, transport unchanged   done
+```
+
+### 4b-a — the seal exists, and it is the segment's own table
+
+The facts a footprint needs live in the segment header, not the payload:
+
+```text
+SegmentTensor { name, dtype, shape, offset, len }
+```
+
+and `len` is the authority, **not** `shape × width(dtype)` — a packed or
+padded tensor has a length the naive product does not predict, which is
+exactly why stage 4 refused to price a `Source` decision by multiplying
+by two.
+
+Two adversarial tests on a real encoded container move one field of that
+table — `dtype` in one, `len` in the other — copy the payload verbatim,
+recompute `segment_sha256`, and require the state id to move while the
+effective decision vector stays byte-identical. A control restates the
+table unchanged and requires the id to hold. The invariant:
+
+> A `RepresentationStateId` must never be reusable across two
+> physical-accounting realities that price the same effective decision
+> vector differently.
+
+**So B holds and `TensorSurface` gains nothing.** The container seals
+bytes AND table, which is strictly stronger than a dtype on the surface,
+and 1a stays closed.
+
+### 4b-b1 — identity construction is typed, total and refusing
+
+`read_source_identity` walked `index.json` as untyped JSON and took what
+it found, while the container parser refused the same document. Every
+one of these returned `Ok`, over facts it had silently dropped:
+
+```text
+no `representations` key      an identity sealing NO payload at all
+entry missing segment/digest  that segment left out of the seal
+two entries, one segment      last writer wins, the other discarded
+no `system_graph`             a filename assumed, and hashed as authority
+```
+
+Now parsed through `Vindex3Index` — the same validated schema the other
+seven readers use — and refusing, naming the entry and the field.
+
+> **An identity function may be stricter than the consumer it
+> identifies. It must never be looser.**
+
+Two representations may share a segment; what they may not do is
+disagree about its digests. Eight tests on an **eight**-representation
+container: a one-entry fixture cannot tell "refused" from "identified
+over what was left", because nothing is left. The historical walk,
+restored verbatim, is killed by six of them.
+
+b1 changed no equivalence relation on purpose, and left the false split
+below standing so it could be its own step.
+
+### 4b-b2 — semantic identity, and an equivalence relation that moved
+
+`manifest_hash` was `hash_bytes(index.json)`. So:
+
+```text
+same container semantics
+same graph, payload and segment table
+different index.json formatting
+        ↓  different manifest_hash
+        ↓  different RepresentationStateId
+```
+
+A re-exported container was a different search state carrying none of
+its own evidence — 1a's SPLIT direction. Two digests now, and only one
+of them identifies:
+
+```text
+index.json raw bytes
+        → ContainerArtifactDigest      provenance; MAY move on re-export
+
+typed Vindex3Index
++ graph authority (by content)
++ representation → segment/header/payload associations
+        → SourceSemanticIdentity      what the container IS
+        → RepresentationStateId
+```
+
+**The non-negotiable invariant.** Byte-hashing the index sealed the
+segment header table by accident. When those bytes left, `segment_sha256`
+had to enter the semantic identity **explicitly**, or b2 would have
+severed exactly what 4b-a had just proved. It is
+`CanonicalRepresentationAuthority::segment_sha256`, and a test asserts
+the canonical form writes it.
+
+**Associations, not a multiset.** Each authority is one record binding an
+entry's identity to its own digests, ordered by that identity rather than
+by input order. Hashing a sorted multiset of `segment_sha256`s would be
+blind to two entries exchanging which segment file seals them — the
+multiset survives and the model changes.
+
+**A purpose-built projection, not a normalised document.** What counts is
+decided by typed structures; canonical JSON is only the encoding of the
+container-level tail, which is *sealed* rather than enumerated so that a
+field the index gains next is IN by default. Dropping a fact is the MERGE
+direction, so leaving one out takes a deliberate, named, tested removal:
+
+```text
+system_graph         a FILENAME; the graph is sealed by CONTENT
+derived_from_model   an operator's hint for finding the authority
+encoder              the encode RECIPE; its bytes are already sealed
+compiled_from        lineage; the bytes are sealed either way
+source_representation_digest
+```
+
+`codec` stays IN: `encoding` names a family, the codec names the decode
+contract, and the same bytes under a revision a reader implements
+differently are different bytes.
+
+**The three siblings**, on one real encoded container:
+
+```text
+A  original
+B  semantically identical index, differently serialised
+C  identical index and payload, one segment-table `len` changed
+
+artifact(A) != artifact(B)      a re-export IS a different file
+semantic(A) == semantic(B)      and the same source
+state(A)    == state(B)
+semantic(A) != semantic(C)      a different physical reality
+state(A)    != state(C)
+```
+
+C is checked to have moved in exactly one field — `segment_sha256` —
+so the test cannot pass on a projection that threw itself away. The full
+relation:
+
+```text
+presentation bytes changed only     SAME physical state
+header/storage reality changed      DIFFERENT physical state
+payload reality changed             DIFFERENT physical state
+graph reality changed               DIFFERENT physical state
+```
+
+`SourceDependency::verify` moved to the same footing: a byte-different
+export of the container a candidate was compiled against now verifies,
+and the catch-all reads the same digest the search identifies states by,
+so verification and identity cannot give two answers.
+
+**Verified they can fail.** Seven mutations, each killed by exactly its
+own tests:
+
+| Mutation | Killed |
+|---|---|
+| the artifact digest reaches the state id again | `three_siblings…`, `a_provenance_only_change…` (2) |
+| the authority stops writing `segment_sha256` | both 4b-a header tests, `the_semantic_identity_carries…`, `three_siblings…`, `swapping_two_authorities…`, `a_candidate_refuses_a_source…` (6) |
+| the canonical form drops the catalogue | `a_catalogue_fact_no_authority_carries…` (1) |
+| associations collapse to a sorted multiset | `swapping_two_authorities…` (1) |
+| the projection stops removing `derived_from_model` | `a_provenance_only_change…` (1) |
+| the catalogue is hashed from the index TEXT | `three_siblings…`, `a_provenance_only_change…` (2) |
+| `canonical_json` sorts array items | `the_order_the_profiles_are_declared_in…` (1) |
+
+**Versioned, because the equality changed.** `source-semantic-id/v1`
+feeds `represent-state-id/v2`. v1 and v2 answer differently for
+containers that already exist, which is precisely what 1a versioned the
+canonical form to make visible.
+
+> v2 removes an identified false-split failure while retaining
+> sensitivity to graph, header and payload authority.
+
+### 4b-c — the accounting facts, from the same authority
+
+> **Accounting does not discover new source facts. It projects
+> accounting facts from the same validated authority already used to
+> establish source identity.**
+
+```text
+CanonicalRepresentationAuthority     segment, segment_sha256, tensor_count
+        ↓ opens exactly that segment, recomputes exactly that digest
+SegmentTensor { name, dtype, shape, offset, len }
+        ↓
+SourceStorageFact { logical_bytes = len, dtype }
+```
+
+**A dereference, not a second parse.** The per-tensor table is not in
+`index.json` — it is inside the segment file, which is exactly why
+`segment_sha256` had to enter `SourceSemanticIdentity` explicitly in
+4b-b2. `read_source_storage` opens the file the authority names,
+recomputes the digest the authority seals, and refuses before reading a
+number if they differ. Without that check, accounting would be pricing
+whatever happens to be on disk under a path an index mentions, next to a
+state id built on something else. The header itself is parsed by the
+writer's own `read_segment_header` — a second header parser here would
+be 4b-b1's untyped walk one level down.
+
+**`len` is the byte count; `dtype` explains it.** `SourceDType` is
+deliberately opaque: no `width`, no `size_of`, no conversion to a
+number. The moment one exists, `numel × width` is one refactor away, and
+that is precisely the shape stage 4's three fixture footprints had — all
+three multiplying by two and calling it bf16.
+
+4b-a moved `dtype` and `len` in two SEPARATE adversarial tests so that
+this asymmetry could be asserted:
+
+```text
+same shape, same dtype, changed len     → the price changes
+same shape, changed dtype, same len     → the price does NOT change
+changed shape, same len                 → the price does NOT change
+```
+
+**What it refuses**, rather than omitting: a segment that is not the
+sealed one; a segment that cannot be read; a sealed segment whose header
+does not parse; a table contradicting the `tensor_count` the index
+declares (two sealed facts about one segment disagreeing); and one
+`(object, tensor)` stored twice. That last is a container holding a
+source pack and a compiled pack for one object — `compiled_from` is the
+obvious discriminator and adopting it is a decision with its own
+evidence, so the collision is named rather than resolved.
+
+Aliases stay two facts: `(object, tensor)` is the optimizer's tensor
+identity, now a named `TensorIdentity` because 4b-d has to hand back the
+exact identities a bind is missing.
+
+**The declaration became the code.** Stage 4 refused `next_experiment`
+because `SearchSemantics.physical_accounting` named a procedure that did
+not exist. `PhysicalAccountingSemantics` digests the declared MEANING —
+byte authority, seal verification, and what the dtype is permitted to do
+— and `read_source_storage` stamps it, with no other constructor for
+`PhysicalAccountingFacts`. 1c had to state that a declaration can lie and
+that the module could not enforce otherwise; here it can. The procedure
+keeps the name stage 1d already declares (`logical-bytes/v1`): renaming
+it would move `SearchSemanticsId` for every stored snapshot and announce
+a changed procedure, and the procedure did not change — it started
+existing.
+
+`PhysicalAccountingFacts` carries the `SourceSemanticIdentity` digest it
+was read from, so `describe(model)` is checkable rather than assumed —
+and it resolves on the semantic digest, so a re-export does not orphan a
+footprint. It carries no `TensorSurfaceId`: the facts describe what the
+CONTAINER stores and the surface is what REPRESENT enumerated. Those are
+different populations, and finding where they disagree is 4b-d's whole
+job.
+
+**Verified they can fail.** Six mutations, each killed by exactly its own
+tests:
+
+| Mutation | Killed |
+|---|---|
+| price computed as `numel × width(dtype)` | all three arithmetic tests (3) |
+| the seal is not verified | `a_segment_that_is_not_the_sealed_one…`, `another_containers_identity…`, `a_missing_segment…` (3) |
+| keyed on the tensor name alone | `two_objects_sharing_a_tensor_name…`, `the_facts_come_from_the_segment…` (2) |
+| the declared `tensor_count` is not cross-checked | `a_table_that_contradicts_its_own_declared_count…` (1) |
+| a repeated `(object, tensor)` is last-writer-wins | `one_object_stored_twice…` (1) |
+| `describe()` resolves on the artifact digest | `a_reserialised_container_is_still_the_source…` (1) |
+
+The first is the one that matters: it is the regression this step exists
+to foreclose, and it dies against three independent tests.
+
+### 4b-d — can this surface be priced authoritatively at all?
+
+One question. No cost is computed, nothing is ranked and nothing is
+pruned.
+
+```text
+PhysicalAccountingFacts
++ TensorSurface
+        ↓ bind()
+BoundPhysicalAccounting
+or
+AccountingIncomplete { missing: [TensorIdentity, …] }
+```
+
+> **READY means every tensor on the REPRESENT surface has exactly one
+> authoritative source price from the sealed container facts.**
+
+The two populations are genuinely different — `PhysicalAccountingFacts`
+is what the CONTAINER stores, a `TensorSurface` is what REPRESENT
+*enumerated* under one role classification — and only one direction of
+disagreement matters:
+
+```text
+surface tensor with no stored fact   → cannot be priced. INCOMPLETE.
+stored fact no surface tensor names  → not this surface's business
+```
+
+An extra stored fact neither satisfies nor damages completeness. Letting
+it do either is how a missing price gets papered over by an unrelated
+one that happened to be present.
+
+**Incompleteness is a failure to bind, not a fourth prune.** Stage 2's
+register holds exactly THREE usable pre-measurement prunes and "cannot
+be priced" is not among them; an unpriceable candidate arriving neither
+eligible nor pruned would break the census conservation law (§4e). So
+the search does not start. `BoundPhysicalAccounting` is constructed only
+by `bind`, so holding one IS the proof — which is what lets 4b-e
+implement `Footprint` with no `Option`, no fallback and no missing-data
+branch. `prices_for(surface)` makes ONE check, that this is the surface
+that was bound, and then pairs every tensor with its price totally.
+
+**Blind to role and shape**, asserted rather than assumed: a
+reclassified role moves the surface identity and is a different search
+problem (1a), and a shape is not what anything is priced by (4b-c), so
+neither may change whether a model can be priced at all.
+
+Two failures, kept apart because they call for different actions:
+`ForeignSource` is the wrong facts entirely and re-reading fixes it;
+`Incomplete` is a real gap. A foreign source is reported as foreign even
+though every surface tensor is also, incidentally, unpriceable. The
+source check resolves on the SEMANTIC digest, so a re-exported container
+still binds.
+
+**Verified they can fail.** Seven mutations, each killed by exactly its
+own tests:
+
+| Mutation | Killed |
+|---|---|
+| a missing tensor is skipped instead of collected | 4 |
+| binding stops at the FIRST missing tensor | `several_missing…` (1) |
+| keyed on the tensor NAME, so an alias is satisfied by its twin | `an_alias_is_two_entries…`, `a_surface_the_container_stores_entirely_binds` (2) |
+| the source is not checked | `facts_from_another_container…` (1) |
+| the source check resolves on the artifact digest | 9 |
+| `prices_for` answers over any surface | `a_bound_accounting_refuses_a_surface…` (1) |
+| the missing list is not ordered | `several_missing…` (1) |
+
+**The open question 4b-d recorded**, settled in 4b-e: a container may
+store tensors the surface does not enumerate, so summing the bound
+prices is the SURFACE's footprint and not the container's.
+
+### 4b-e — the production `Footprint`
+
+> **`Footprint` is the complete footprint of the bound REPRESENT surface
+> under a representation state — not the byte size of the whole
+> container.**
+
+```text
+container footprint        everything physically stored in the container
+representation footprint   every tensor in the bound TensorSurface,
+                           priced under one resolved state        ← this
+```
+
+A map resolves over a `TensorSurface`, so its domain is that surface.
+Anything outside it has no representation decision in this search
+problem, and counting it would make the optimiser account for bytes it
+cannot transform. 4b-d's asymmetry is the proof: an extra stored fact
+neither satisfies nor damages surface completeness, so it must not
+reappear in the state's footprint either. `LogicalBytes`' doc comment
+said "whole-map footprint", which reads either way; it now says what it
+means, and whole-container accounting gets its own type when it is
+needed rather than a second meaning for this one.
+
+```text
+effective == source      → the sealed SourceStorageFact
+effective == encoding    → the pack layout's stored length
+```
+
+`effective()` and not the declared encoding: a protected tensor and a
+layout-refused one present the same bytes, and pricing the refusal as
+compiled would book a saving the container never made. Two realizations
+of one `RepresentationStateId` therefore cost the same, which is a
+cross-stage invariant `physical_delta` depends on.
+
+**Misses are made impossible, not handled.** `Footprint` returns
+`LogicalBytes` with no channel for "I could not price that", and
+inventing one would break stage 2's census — an unpriced candidate is
+neither eligible nor pruned. So the constructor enumerates the finite
+problem instead: every bound tensor × every encoding the search may
+select.
+
+```text
+layout REFUSES (tensor, encoding)   → resolves to source; no price needed
+layout ADMITS  (tensor, encoding)   → a compiled price is REQUIRED
+```
+
+Using the same `LayoutAdmission` the resolver uses, so the price table
+and the decision vector cannot disagree about which tensors are
+compiled. What remains is a state resolved against another surface,
+which `try_logical_bytes` reports and the trait method — by contract,
+loudly — cannot.
+
+**A substrate fact this surfaces:** `PackCompiledBytes` prices NVFP4 from
+`PackLayout::derive`, the same call the compiler and `PackLayoutAdmission`
+make, and declares nothing about any other encoding. `PackLayoutAdmission`
+admits Q6_K (it holds no rule for it) and nothing prices a Q6_K pack in
+this build, so a search whose vocabulary names Q6_K is refused at
+construction, naming the tensor and the encoding — before the first
+candidate rather than at it.
+
+**Verified they can fail.** Five mutations, each killed by exactly its
+own tests:
+
+| Mutation | Killed |
+|---|---|
+| prices the DECLARED encoding, not what is presented | `a_layout_refusal_is_priced_as_source…`, `two_realizations_of_one_state…` (2) |
+| the compiled price is `numel × 2`, not the pack layout | `a_compiled_state_costs…`, `nothing_but_nvfp4_is_priced…` (2) |
+| an unpriceable admitted encoding is skipped, not refused | 2 |
+| the surface check is dropped | 3 |
+| the source price is used for every decision | `a_compiled_state_costs…` (1) |
+
+**One survived the first attempt and is worth recording.** Replacing the
+pack layout with `numel × 2` passed, because the compiled-price test
+asked `PackCompiledBytes` what `PackCompiledBytes` said — a
+self-normalising test over the very arithmetic under test. It now
+asserts against a figure derived from the FORMAT: a `[64, 64]` NVFP4
+pack is `64×4×8` code bytes + `64×4` scale bytes + one f32 = 2308, and
+`numel × 2` is 8192.
+
+### 4b-f — the record answers, and the transport did not change
+
+```text
+SearchFacts.accounting          ← the only new stored input
+        │ reload
+        ▼
+bind(surface)  →  BoundPhysicalAccounting
+        ▼
+SurfaceFootprint, under the record's OWN declared policies
+        ▼
+candidate generation → assessment → best-first
+        ▼
+NextExperiment::Available(…)
+```
+
+Everything below `PhysicalAccountingFacts` is derived on every call and
+cached nowhere. 1d's theorem is intact rather than weakened to make a
+tool answer.
+
+**Three answers, because an agent takes three actions.** `Available`,
+`Exhausted` and `Unavailable{reason, detail}`. Collapsing the middle
+into the last would say "nothing to do" and "I cannot tell you" in the
+same words. `Available` means the deterministic optimiser had the
+factual authority to SELECT the next unresolved experiment — not that it
+has been run, admitted or promoted.
+
+**The question is stored too.** `SearchSpace.applied` (where the search
+stands — a position, never a verdict) and `SearchConfig.standing_intent`
+(which corpus, scale and instrument the next run would be). Without them
+the caller would supply the question and the answer would stop being a
+property of the record — and the tool would need arguments, which is a
+transport change.
+
+**One layout truth.** `SearchSemantics` gained a seventh field,
+`layout_admission`, and it was missing: a layout refusal removes a
+tensor from the action space and collapses its state onto the protected
+one, so a record that did not name its layout policy could be replayed
+under another and produce different states with nothing failing. The
+snapshot resolves the NAME to the one implementation and hands the SAME
+reference to state resolution and to price-table construction.
+`compiled_bytes(procedure)` does the same on the compiled side. An
+unknown name is refused, never defaulted.
+
+The cross-test: the same `k = 24` tensor under `no-layout-constraint/v1`
+is ADMITTED, so a compiled price becomes required and nothing prices it
+— refused; under `pack-layout-admission/v1` it is refused by the layout,
+resolves to source, and needs none — answered. Only the declared policy
+differs between the two records.
+
+**Two defects this step found:**
+
+* `PhysicalAccountingFacts` could not be serialised at all.
+  `source_storage` was a `BTreeMap` keyed by a STRUCT, which derives
+  `Serialize` happily and fails at runtime — *key must be a string* —
+  the moment it holds anything. Every 4b-c test read the facts in
+  memory, so nothing noticed. It is `Role::deserialize`'s
+  borrowed-string bug one level up. Now an ordered sequence, with a
+  round-trip test through both `from_str` and `from_value`.
+* The view anti-cheat caught 20 declarations no rendering reached. A
+  type with alternative shapes can only describe all of them across all
+  of them, so coverage is now the UNION over the three variants —
+  which needs a record that can actually answer.
+
+**The acceptance test.** Two records through ONE view method:
+
+```text
+no accounting authority   → Unavailable(no-accounting-authority)
+sealed container facts    → Available(a real experiment)
+```
+
+and the answer survives a round trip through stored JSON — serialise,
+drop everything, reload, ask again, same experiment. Derivation, not
+recall.
+
+**What changed under `optimizer_mcp/`: one test assertion.**
+`protocol.rs`, `server.rs` and `tools.rs` are untouched. The dispatch
+still calls one view method and serialises whatever it returns; the test
+that asserted the payload named `NoFootprintOracle` now asserts it names
+`Unavailable{reason}`. MCP was complete when it refused, and supplying
+the missing substrate truth made the existing transport answer.
+
+---
+
 ## 5. The reward, which must not be diagnostic KL
 
 Rung 4/5 established that diagnostic KL supplies neither magnitude, sign,
@@ -918,7 +1577,8 @@ Deliberately boring, so MCTS is a policy swap and not a rewrite.
 | 2 | Deterministic action generator (§4e) | **done** |
 | 3 | Best-first; the objective API and the search/evidence boundary (§4f) | **done** |
 | 3b | Promotion-input closure — the chain runs from a snapshot (§4g) | **done** |
-| 4 | MCP facade — inspect state, hypotheses, frontier; request experiments | next |
+| 4 | MCP facade — read-only; seven intent-level tools (§4h) | **done** |
+| 4b | The source identity the optimizer prices from (§4i) | **done** |
 | 5 | PUCT as another `SearchPolicy`; same states, actions, evidence | |
 | 6 | Extend `PhysicalState` with residency; optimise measured tok/s | |
 
