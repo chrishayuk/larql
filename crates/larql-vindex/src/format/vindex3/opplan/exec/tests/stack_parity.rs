@@ -17,6 +17,7 @@
 //! needs. Agreement despite the different order is a stronger gate than
 //! reproducing one order twice.
 
+use larql_models::config::KdaGateForm;
 use std::collections::BTreeMap;
 
 use larql_models::config::{KdaGeometry, MlaGeometry};
@@ -274,6 +275,7 @@ impl Fixture {
         let attention = if l.kind == "kda" {
             LayerAttention::Kda(
                 KdaWeights {
+                    gate_form: KdaGateForm::Softplus, // Kimi-derived fixture: the reference reads `gate_lower_bound` nowhere.
                     q_proj: WeightRows::Bf16(&l.kda_bf16["q_proj"]),
                     k_proj: WeightRows::Bf16(&l.kda_bf16["k_proj"]),
                     v_proj: WeightRows::Bf16(&l.kda_bf16["v_proj"]),

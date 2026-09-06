@@ -653,3 +653,40 @@ fn a_situ_layer_with_expert_biases_is_refused_at_admission() {
         "the same layer without biases is exactly what this arm serves"
     );
 }
+
+/// The GPU route's own admission arm for the same fact: GLM-5.3-Flash's
+/// `ClampedGated` is refused before a command buffer is touched, so the
+/// caller falls back to the CPU arm with nothing to roll back.
+///
+/// Paired, like the SiTU refusal above — the identical layer under a
+/// combine the route serves must be admitted, or the assertion is about
+/// the fixture rather than about the rule.
+#[test]
+fn a_clamped_gated_layer_is_refused_at_admission() {
+    let Some(metal) = MetalBackend::new() else {
+        return;
+    };
+    let f = build_fixture(&metal);
+    let s = scratch_for(&metal);
+    let no_bias: Vec<f32> = Vec::new();
+
+    let mut glm = f.moe();
+    glm.experts_gate_up_bias = &no_bias;
+    glm.gate_rule = MoeGateRule::ClampedGated {
+        limit: 7.0,
+        activation: larql_compute::Activation::Silu,
+    };
+    assert!(
+        !metal.gpu_route_supported(&glm, &s),
+        "GLM's clamped SwiGLU has no Metal kernel and must be refused at admission, \
+         not served by the ClampedGlu shader"
+    );
+
+    let mut served = f.moe();
+    served.experts_gate_up_bias = &no_bias;
+    served.gate_rule = MoeGateRule::Gated(larql_compute::Activation::Silu);
+    assert!(
+        metal.gpu_route_supported(&served, &s),
+        "the same layer under a served combine is exactly what this route admits"
+    );
+}

@@ -167,6 +167,11 @@ pub(super) fn require_executable_gate(
              gating to a clamped-GLU FFN"
             )))
         }
+        larql_models::ExpertGatePolicy::ClampedGated { limit } => Err(VindexError::Parse(format!(
+            "the {backend} backend does not execute ExpertGatePolicy::ClampedGated {{ limit: \
+             {limit} }} yet; refusing rather than applying plain gating to a CLAMPED FFN, \
+             whose clamp is one-sided on the gate and symmetric on the up branch"
+        ))),
     }
 }
 

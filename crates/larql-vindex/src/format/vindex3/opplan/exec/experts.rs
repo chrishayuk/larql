@@ -796,6 +796,15 @@ fn from_f32(
         // CPU compact formats have no stored bytes to keep here — the
         // same reason `Bf16` is refused below. Naming them explicitly
         // rather than falling through keeps the refusal a decision.
+        // Same refusal as Q4 and Bf16 below, and for a sharper reason:
+        // fine-grained FP8's stored form is the CHECKPOINT's, so a bank
+        // that has already been widened to f32 has irreversibly left it.
+        // Re-quantising here would manufacture codes and scales nothing
+        // declared — a different tensor wearing the format's name.
+        WeightFormat::Fp8Block => Err(VindexError::Parse(format!(
+            "expert bank `{name}` cannot be made FP8-resident: the bank is widened to f32 on \
+             the way in, and fine-grained FP8 is a stored form this build never manufactures"
+        ))),
         WeightFormat::Q4 => Err(VindexError::Parse(format!(
             "expert bank `{name}` cannot be made q4-resident: the bank is widened to f32 on \
              the way in, so there is nothing compact left to keep"

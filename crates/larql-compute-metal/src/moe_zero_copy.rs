@@ -369,6 +369,15 @@ impl MetalBackend {
             let g_offset = (e * inter * 4) as u64;
             let a_offset = (e * inter_padded * 4) as u64;
             match moe.gate_rule {
+                // Refused at admission by
+                // `kernels::ffn::expert_activation_supported`, which
+                // owns the reason. The backstop stays for any path that
+                // does not come through that gate — and must never be
+                // the thing that reports it, because a panic here
+                // leaves the encoder unended.
+                larql_compute::MoeGateRule::ClampedGated { .. } => {
+                    unreachable!("{}", crate::kernels::ffn::CLAMPED_GATED_REFUSAL)
+                }
                 larql_compute::MoeGateRule::ClampedGlu { limit, alpha } => {
                     let has_bias: u32 = u32::from(stage_biases);
                     let b_offset = (e * inter * 4) as u64;

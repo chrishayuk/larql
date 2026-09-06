@@ -10,6 +10,7 @@
 //! state threading across positions — with a one-layer dense stack so
 //! the already-gated attention and FFN arithmetic is not re-derived.
 
+use larql_models::config::KdaGateForm;
 use larql_models::config::{KdaGeometry, NormType};
 
 use crate::format::vindex3::opplan::exec::cpu::projector::WeightRows;
@@ -112,6 +113,7 @@ impl Tiny {
         LayerSpec {
             attention: LayerAttention::Kda(
                 KdaWeights {
+                    gate_form: KdaGateForm::Softplus, // Kimi-derived fixture: the reference reads `gate_lower_bound` nowhere.
                     q_proj: WeightRows::Bf16(&self.q),
                     k_proj: WeightRows::Bf16(&self.k),
                     v_proj: WeightRows::Bf16(&self.v),

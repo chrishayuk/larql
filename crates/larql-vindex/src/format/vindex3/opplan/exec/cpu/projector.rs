@@ -174,6 +174,47 @@ pub enum WeightRows<'a> {
         blocks: &'a [u8],
         codec: KQuant,
     },
+    /// Fine-grained (block-wise) FP8 straight from the checkpoint: E4M3
+    /// codes in an ordinary row-major matrix, against a **two-dimensional**
+    /// grid of f32 scales, one per `block_rows x block_cols` tile.
+    ///
+    /// **The only variant here whose scale spans ROWS.** Every other
+    /// blocked format above tiles along the input axis alone, so a row's
+    /// scales are private to it; this one shares a scale across
+    /// `block_rows` consecutive output rows, which is why the slab has to
+    /// remember where it starts.
+    ///
+    /// Reaches the kernel compact, like every variant here. That is not a
+    /// throughput preference on this format — it is the programme: GLM-5.3
+    /// -Flash is 95.8 % FP8, and widening at rest would take 306 GB to
+    /// 612 GB and destroy the residency question the container exists to
+    /// answer.
+    ///
+    /// The tile is carried, never re-derived from
+    /// `quantization_config.weight_block_size`: one checkpoint may ship
+    /// several grids, so the authority is per tensor (see
+    /// [`larql_models::quant::fp8_finegrained`]).
+    Fp8Block {
+        /// Row-major `[rows, cols]` E4M3 bytes.
+        codes: &'a [u8],
+        /// Row-major scales for the grid rows this slab spans — sliced
+        /// alongside `codes`, as every other blocked variant's are.
+        scales: &'a [f32],
+        /// Rows per tile.
+        block_rows: usize,
+        /// Columns per tile.
+        block_cols: usize,
+        /// Entries per scale-grid row, for the FULL matrix.
+        scale_cols: usize,
+        /// Where this slab's first row sits WITHIN its first tile.
+        ///
+        /// A row partition does not have to fall on a tile boundary, and
+        /// a slab that assumed it did would read row 0 of its scale slice
+        /// for rows that belong to the previous tile — plausible numbers,
+        /// silently wrong. This offset is what makes an arbitrary
+        /// partition safe.
+        row_in_tile: usize,
+    },
 }
 
 impl WeightRows<'_> {
@@ -190,6 +231,7 @@ impl WeightRows<'_> {
             Self::Q4 { packed, .. } => packed.as_ptr() as usize,
             Self::Nvfp4 { packed, .. } => packed.as_ptr() as usize,
             Self::KQuant { blocks, .. } => blocks.as_ptr() as usize,
+            Self::Fp8Block { codes, .. } => codes.as_ptr() as usize,
         }
     }
 
@@ -207,6 +249,8 @@ impl WeightRows<'_> {
             Self::KQuant { blocks, codec } => codec
                 .row_bytes(in_dim)
                 .map_or(0, |per_row| blocks.len() / per_row),
+            // One byte per element, so the row stride is the width.
+            Self::Fp8Block { codes, .. } => codes.len() / in_dim,
         }
     }
 
@@ -284,6 +328,32 @@ impl WeightRows<'_> {
                     codec: *codec,
                 }
             }
+            Self::Fp8Block {
+                codes,
+                scales,
+                block_rows,
+                block_cols,
+                scale_cols,
+                row_in_tile,
+            } => {
+                // The scales are cut ALONGSIDE the codes, for the reason
+                // the Q8 arm above states — but the cut lands on TILE
+                // boundaries, not row boundaries, because one scale row
+                // serves `block_rows` weight rows. The slab keeps its
+                // offset within the first tile so an arbitrary partition
+                // still indexes the grid correctly.
+                let first = row_in_tile + start;
+                let grid_first = first / block_rows;
+                let grid_last = (first + count - 1) / block_rows;
+                Self::Fp8Block {
+                    codes: &codes[start * in_dim..(start + count) * in_dim],
+                    scales: &scales[grid_first * scale_cols..(grid_last + 1) * scale_cols],
+                    block_rows: *block_rows,
+                    block_cols: *block_cols,
+                    scale_cols: *scale_cols,
+                    row_in_tile: first - grid_first * block_rows,
+                }
+            }
         }
     }
 
@@ -309,6 +379,10 @@ impl WeightRows<'_> {
             // The scales are inside the blocks, so the stream is the
             // whole cost.
             Self::KQuant { blocks, .. } => blocks.len(),
+            // One byte per code plus the f32 scales this slab spans.
+            // Counted, like Q8's, so the format is not flattered by the
+            // exact amount its metadata costs.
+            Self::Fp8Block { codes, scales, .. } => codes.len() + scales.len() * 4,
         }
     }
 }

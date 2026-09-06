@@ -217,11 +217,15 @@ impl ActivationDeclaration {
 /// [`ExpertGatePolicy::ClampedGlu`] returns `None` deliberately: no HF
 /// word names it (GPT-OSS declares `silu` beside a `swiglu_limit`), so
 /// there is nothing to answer with and the caller keeps its existing
-/// behaviour.
+/// behaviour. [`ExpertGatePolicy::ClampedGated`] answers `None` for the
+/// same reason and lands on the right answer for a second reason:
+/// GLM-5.3-Flash also declares `hidden_act: "silu"` beside its own
+/// `swiglu_limit`, and its combine IS silu-based, so falling through to
+/// the activation's own name is what makes the leaf agree.
 pub fn hf_combine_name(policy: ExpertGatePolicy, activation: Activation) -> Option<String> {
     match policy {
         ExpertGatePolicy::SituGlu { .. } => Some(SITU_NAME.to_string()),
-        ExpertGatePolicy::ClampedGlu { .. } => None,
+        ExpertGatePolicy::ClampedGlu { .. } | ExpertGatePolicy::ClampedGated { .. } => None,
         ExpertGatePolicy::Gated => activation.hf_name().map(str::to_string),
     }
 }

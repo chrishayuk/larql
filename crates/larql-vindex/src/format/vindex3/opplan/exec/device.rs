@@ -156,7 +156,8 @@ impl<M: MatMul + Send> DevicePlanBackend<M> {
             WeightSlice::Bf16(_)
             | WeightSlice::Q8 { .. }
             | WeightSlice::Q4 { .. }
-            | WeightSlice::KQuant { .. } => {
+            | WeightSlice::KQuant { .. }
+            | WeightSlice::Fp8Block { .. } => {
                 return Err(VindexError::Parse(format!(
                     "the device backend has no {} kernel; declare F16 or F32 for it",
                     weight.representation()
@@ -423,7 +424,8 @@ impl<M: MatMul + Send> PlanBackend for DevicePlanBackend<M> {
                 WeightSlice::Bf16(_)
                 | WeightSlice::Q8 { .. }
                 | WeightSlice::Q4 { .. }
-                | WeightSlice::KQuant { .. } => continue,
+                | WeightSlice::KQuant { .. }
+                | WeightSlice::Fp8Block { .. } => continue,
                 WeightSlice::F16(bytes) => streams.push(bytes),
                 WeightSlice::Mxfp4 { packed, scales }
                 | WeightSlice::Nvfp4 { packed, scales, .. } => {

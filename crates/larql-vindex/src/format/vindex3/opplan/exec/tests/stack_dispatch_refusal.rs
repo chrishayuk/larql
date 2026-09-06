@@ -9,6 +9,7 @@
 //! ever runs, so what the slices CONTAIN is irrelevant — only that a
 //! well-typed `LayerSpec`/`LayerState` pair exists to mismatch.
 
+use larql_models::config::KdaGateForm;
 use larql_models::config::{KdaGeometry, MlaGeometry};
 
 use crate::format::vindex3::opplan::exec::kda::{zero_state, KdaOutputGateWeights, KdaWeights};
@@ -20,6 +21,7 @@ use crate::format::vindex3::opplan::exec::stack::{
 
 fn kda_weights<'a>(empty: &'a [f32], empty_bf16: &'a [u16]) -> KdaWeights<'a> {
     KdaWeights {
+        gate_form: KdaGateForm::Softplus, // Kimi-derived fixture: the reference reads `gate_lower_bound` nowhere.
         q_proj: WeightRows::Bf16(empty_bf16),
         k_proj: WeightRows::Bf16(empty_bf16),
         v_proj: WeightRows::Bf16(empty_bf16),

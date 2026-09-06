@@ -264,6 +264,7 @@ pub struct ProjectionLedger {
     q8_x_q8: Tally,
     fused_nvfp4: Tally,
     fused_kquant: Tally,
+    fused_fp8_block: Tally,
     q4_x_q8: Tally,
     bf16_x_q8: Tally,
     /// The same time, cut by operator class instead of by arithmetic.
@@ -280,6 +281,7 @@ impl ProjectionLedger {
             PhysicalProjectionPlan::FusedQ4 => &self.fused_q4,
             PhysicalProjectionPlan::FusedNvfp4 => &self.fused_nvfp4,
             PhysicalProjectionPlan::FusedKQuant => &self.fused_kquant,
+            PhysicalProjectionPlan::FusedFp8Block => &self.fused_fp8_block,
             PhysicalProjectionPlan::Q8xQ8 => &self.q8_x_q8,
             PhysicalProjectionPlan::Q4xQ8 => &self.q4_x_q8,
             PhysicalProjectionPlan::Bf16xQ8 => &self.bf16_x_q8,
@@ -332,7 +334,7 @@ impl ProjectionLedger {
     /// Every plan, so a reader enumerates rather than remembers. A caller
     /// that listed the plans itself would stop covering a new one on the
     /// day it was added.
-    pub fn all(&self) -> [(PhysicalProjectionPlan, PlanTally); 10] {
+    pub fn all(&self) -> [(PhysicalProjectionPlan, PlanTally); 11] {
         [
             PhysicalProjectionPlan::ScalarF32,
             PhysicalProjectionPlan::BlasF32,
@@ -345,6 +347,7 @@ impl ProjectionLedger {
             // this method's doc comment says it exists to prevent.
             PhysicalProjectionPlan::FusedNvfp4,
             PhysicalProjectionPlan::FusedKQuant,
+            PhysicalProjectionPlan::FusedFp8Block,
             PhysicalProjectionPlan::Q8xQ8,
             PhysicalProjectionPlan::Q4xQ8,
             PhysicalProjectionPlan::Bf16xQ8,
@@ -398,6 +401,7 @@ impl ProjectionLedger {
         // survived every reset, so a priced step could carry the load.
         self.fused_nvfp4.reset();
         self.fused_kquant.reset();
+        self.fused_fp8_block.reset();
         self.q8_x_q8.reset();
         self.q4_x_q8.reset();
         self.bf16_x_q8.reset();
@@ -430,6 +434,7 @@ impl ProjectionLedger {
             fused_q4: ZERO,
             fused_nvfp4: ZERO,
             fused_kquant: ZERO,
+            fused_fp8_block: ZERO,
             q8_x_q8: ZERO,
             q4_x_q8: ZERO,
             bf16_x_q8: ZERO,

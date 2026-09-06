@@ -64,7 +64,9 @@ pub use layer_types::{
     LAYER_TYPE_FULL_ATTENTION, LAYER_TYPE_LINEAR_ATTENTION, LAYER_TYPE_SLIDING_ATTENTION,
     LAYER_TYPE_WINDOW_ATTENTION,
 };
-pub use linear_attn::{KdaGeometry, LAYER_TYPE_UNRESOLVED_INTERLEAVE};
+pub use linear_attn::{
+    KdaGateForm, KdaGeometry, GLM5_DEFAULT_GATE_LOWER_BOUND, LAYER_TYPE_UNRESOLVED_INTERLEAVE,
+};
 pub use mamba2::{DtBound, Mamba2Dialect, Mamba2FamilyDefault, Mamba2Geometry, Mamba2Provenance};
 pub use mla::{MlaGeometry, MlaQueryForm};
 pub use model_config::ModelConfig;

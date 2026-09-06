@@ -918,6 +918,13 @@ fn ffn_activation(
                  it as plain gating"
             )))
         }
+        larql_models::ExpertGatePolicy::ClampedGated { limit } => {
+            return Err(VindexError::Parse(format!(
+                "the lowering has no gate/up kernel for ExpertGatePolicy::ClampedGated \
+                 {{ limit: {limit} }}; refusing rather than lowering it as plain gating, \
+                 whose clamp is one-sided on the gate and symmetric on the up branch"
+            )))
+        }
         larql_models::ExpertGatePolicy::Gated => {}
     }
     match activation {

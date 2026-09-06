@@ -357,6 +357,15 @@ pub struct ModelConfig {
     /// never invented, because a wrong one changes the decay envelope
     /// without changing any shape.
     pub kda_gate_lower_bound: Option<f32>,
+
+    /// `linear_attn_config.safe_gate` — whether the family's clamped gate
+    /// branch is enabled when no bound is declared.
+    ///
+    /// `None` means the checkpoint said nothing, which is NOT the same as
+    /// `Some(false)`: GLM-5.3-Flash's reference treats an absent key as
+    /// `True`. Carried so [`ModelArchitecture::kda_gate_form`] can apply
+    /// the family's own rule to a checked value instead of an assumed one.
+    pub kda_safe_gate: Option<bool>,
     /// The FORM of KDA's output gate (`linear_attn_config.use_full_rank_gate`):
     /// `Some(true)` = one full-rank `g_proj` of `[Hv·Dv, hidden]` (Kimi-K3);
     /// `Some(false)` = the low-rank `g_a_proj`/`g_b_proj` pair; `None` =

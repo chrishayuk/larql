@@ -59,6 +59,8 @@ const MXFP4_BITS_PER_WEIGHT: f64 = 4.25;
 const KQUANT_WIDEST_BITS_PER_WEIGHT: f64 = 8.5;
 /// One f32 scale per block of a re-quantised image.
 const SCALE_WIDTH: f64 = F32_WIDTH;
+/// Fine-grained FP8's element width: E4M3 is one byte, exactly.
+const FP8_BITS_PER_WEIGHT: f64 = 8.0;
 /// One i16 code sum per block, when the weight-code index is on.
 const SUM_WIDTH: f64 = std::mem::size_of::<i16>() as f64;
 
@@ -111,6 +113,31 @@ pub fn resident_profile_with(format: WeightFormat, geometry: BlockGeometry) -> R
         WeightFormat::Nvfp4 => ResidencyProfile::rebound(NVFP4_BITS_PER_WEIGHT),
         WeightFormat::Mxfp4 => ResidencyProfile::stored(MXFP4_BITS_PER_WEIGHT),
         WeightFormat::KQuant => ResidencyProfile::stored(KQUANT_WIDEST_BITS_PER_WEIGHT),
+        // Bound AS STORED, like a K-quant pack: the checkpoint's own
+        // bytes, never widened at rest. That is the whole reason the
+        // format is carried natively — a widened GLM-5.3-Flash would be
+        // 612 GB of a 306 GB checkpoint, and the residency question this
+        // ledger exists to answer would have no subject.
+        //
+        // The scales are counted with the codes: 8 bits per weight plus
+        // one f32 per tile, which at the 128x128 grid GLM ships is
+        // 32/16384 of a bit and rounds to nothing — but it is derived,
+        // not waved away, because a [1, 32] grid (which the same scheme
+        // permits) costs a full bit per weight.
+        //
+        // Priced at the CODES alone. The scale grid is a per-TENSOR fact
+        // from the checkpoint — one scheme legally ships `[128, 128]` and
+        // `[1, 32]` grids in one file — and `BlockGeometry` is by its own
+        // definition the executor's geometry, not the codec's, so the
+        // tile is not knowable here. The scales are accounted where the
+        // tile IS known, on the bound operand
+        // (`WeightRows::Fp8Block::bytes`, which counts them).
+        //
+        // The gap this leaves is stated rather than hidden: at GLM's
+        // 128x128 grid it is one f32 per 16,384 weights — 0.02 bits per
+        // weight, 0.2 % — but at a `[1, 32]` grid it would be a full bit,
+        // and a forecast that silently omitted it would be 12 % light.
+        WeightFormat::Fp8Block => ResidencyProfile::stored(FP8_BITS_PER_WEIGHT),
     }
 }
 
@@ -157,7 +184,9 @@ pub fn requantised_image_bytes(
         | WeightFormat::F16
         | WeightFormat::Nvfp4
         | WeightFormat::Mxfp4
-        | WeightFormat::KQuant => None,
+        | WeightFormat::KQuant
+        // Stored as-is: there is no re-quantised image, so no bytes to price.
+        | WeightFormat::Fp8Block => None,
     }
 }
 

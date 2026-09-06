@@ -496,6 +496,38 @@ pub fn plan_component_ops(
             if auxiliary_stream_of(&tensor.name, &names).is_some() {
                 continue;
             }
+            // A quantisation SCALE is part of the operand it accompanies
+            // rather than an operand of its own: fine-grained FP8 stores
+            // a matrix as `*.weight` plus `*.weight_scale_inv`, and
+            // `load_weight` binds the pair. This is a different
+            // relationship from `auxiliary_stream_of` above, which asks
+            // whether the base before the last `.` is itself a tensor —
+            // for `…gate_proj.weight_scale_inv` that base is
+            // `…gate_proj`, and the tensor is `…gate_proj.weight`.
+            //
+            // Skipped only when its weight is HERE. An orphaned scale is
+            // still a defect: a split pair leaves neither half bindable.
+            if larql_models::quant::fp8_finegrained::is_scale_sibling(&tensor.name) {
+                let base = tensor
+                    .name
+                    .strip_suffix(".weight_scale_inv")
+                    .map(|stem| format!("{stem}.weight"))
+                    .or_else(|| {
+                        tensor
+                            .name
+                            .strip_suffix("_scale_inv")
+                            .map(|stem| stem.to_string())
+                    })
+                    .filter(|w| names.contains(w.as_str()));
+                if base.is_some() {
+                    continue;
+                }
+                defects.push(ClosureDefect::UnclassifiedOperand {
+                    object: object.id.clone(),
+                    tensor: tensor.name.clone(),
+                });
+                continue;
+            }
             // Referenced by something: its fate is its owner's requirement.
             if references.is_referenced(&object.id, &tensor.name) {
                 continue;
@@ -1238,6 +1270,7 @@ pub fn plan_component_ops(
                     conv_kernel: k.conv_kernel,
                     gate_rank,
                     gate_lower_bound: surface.kda_gate_lower_bound,
+                    gate_form: surface.kda_gate_form,
                     q_proj: operand(&stack_id, get(OperandRole::KdaQProj)),
                     k_proj: operand(&stack_id, get(OperandRole::KdaKProj)),
                     v_proj: operand(&stack_id, get(OperandRole::KdaVProj)),

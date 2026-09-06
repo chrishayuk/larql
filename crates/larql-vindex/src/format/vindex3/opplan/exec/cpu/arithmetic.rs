@@ -64,6 +64,15 @@ pub enum WeightRep {
     /// f32 activation and accumulates f32, so this is one representation
     /// with three layouts rather than three representations.
     KQuant,
+    /// Fine-grained FP8 read in place: E4M3 codes with one f32 scale per
+    /// `block_rows x block_cols` tile.
+    ///
+    /// Listed beside [`Self::KQuant`] rather than [`Self::Q8`] because,
+    /// like a stored K-quant and unlike Q8/Q4, these are the
+    /// CHECKPOINT's bytes — nothing here chose the quantiser, so the
+    /// arithmetic is exact against what the reference loader would have
+    /// materialised.
+    Fp8Block,
 }
 
 /// Over how many elements ONE activation scale applies.
@@ -121,6 +130,7 @@ impl fmt::Display for WeightRep {
             Self::Q4 { block } => write!(f, "Q4[{block}]"),
             Self::Nvfp4 => write!(f, "NVFP4"),
             Self::KQuant => write!(f, "KQUANT"),
+            Self::Fp8Block => write!(f, "FP8_BLOCK"),
         }
     }
 }
@@ -181,6 +191,10 @@ pub fn plans_possible_for(rep: WeightRep) -> &'static [PhysicalProjectionPlan] {
         // invariant this function exists to expose, satisfied trivially.
         WeightRep::Nvfp4 => &[PhysicalProjectionPlan::FusedNvfp4],
         WeightRep::KQuant => &[PhysicalProjectionPlan::FusedKQuant],
+        // One kernel, for a stronger reason than NVFP4's: these are the
+        // checkpoint's own bytes, so no policy produced them and none can
+        // choose otherwise.
+        WeightRep::Fp8Block => &[PhysicalProjectionPlan::FusedFp8Block],
         WeightRep::Q8 { .. } => &[
             PhysicalProjectionPlan::FusedQ8,
             PhysicalProjectionPlan::Q8xQ8,

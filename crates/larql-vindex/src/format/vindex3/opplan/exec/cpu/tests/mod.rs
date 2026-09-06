@@ -5,6 +5,7 @@ mod arithmetic;
 mod arm_selection;
 mod cost;
 mod executor;
+mod fp8_slab;
 mod integer;
 mod kernels;
 mod kquant_plan;

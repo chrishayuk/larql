@@ -10,6 +10,7 @@
 use crate::format::vindex3::opplan::{
     KdaOutputGate, LayerAttention, MlaOp, MlaQueryProjection, OperandRef,
 };
+use larql_models::config::KdaGateForm;
 
 const HIDDEN: usize = 2304;
 const NUM_HEADS: usize = 32;
@@ -115,6 +116,7 @@ fn the_mla_variant_never_answers_for_another_operator() {
     // The reverse direction: `.mla()` itself must refuse every OTHER
     // variant, not just be correct when called on its own.
     let kda_stub = LayerAttention::Kda(Box::new(crate::format::vindex3::opplan::KdaOp {
+        gate_form: Some(KdaGateForm::Softplus),
         num_heads: 1,
         head_dim: 1,
         conv_kernel: 1,

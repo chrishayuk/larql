@@ -31,6 +31,7 @@
 //!   cargo test -p larql-vindex --features gpu --release --lib kda_metal -- --nocapture
 //! ```
 
+use larql_models::config::KdaGateForm;
 use std::path::{Path, PathBuf};
 use std::time::Instant;
 
@@ -115,6 +116,7 @@ struct Fixture {
 impl Fixture {
     fn weights(&self) -> KdaWeights<'_> {
         KdaWeights {
+            gate_form: KdaGateForm::Softplus, // Kimi-derived fixture: the reference reads `gate_lower_bound` nowhere.
             q_proj: WeightRows::Bf16(&self.q),
             k_proj: WeightRows::Bf16(&self.k),
             v_proj: WeightRows::Bf16(&self.v),

@@ -21,7 +21,9 @@
 
 use super::arithmetic::{AccumulatorRep, ActivationRep, Arithmetic, WeightRep};
 use super::integer::{activation_scaling, Bf16xQ8, Q4xQ8, Q8xQ8};
-use super::kernels::{BlasF32, FusedBf16, FusedKQuant, FusedNvfp4, FusedQ4, FusedQ8, ScalarF32};
+use super::kernels::{
+    BlasF32, FusedBf16, FusedFp8Block, FusedKQuant, FusedNvfp4, FusedQ4, FusedQ8, ScalarF32,
+};
 use super::projector::{DenseProjector, WeightRows};
 use crate::error::VindexError;
 use crate::format::vindex3::opplan::exec::backend::{MatrixClass, WeightFormat, WeightSlice};
@@ -75,6 +77,14 @@ pub enum PhysicalProjectionPlan {
     /// policy's only say is whether a stored pack executes in place at
     /// all — [`kquant_execution`] — never which codec.
     FusedKQuant,
+    /// Fine-grained FP8 resident, decoded and tile-scaled in registers.
+    ///
+    /// Reached by OBSERVATION like [`Self::FusedKQuant`], and with less
+    /// ambiguity than any arm here: these are the CHECKPOINT's bytes in
+    /// the checkpoint's own format, so there is no policy that could have
+    /// produced them and none that can choose otherwise. Not lossy — it
+    /// decodes what the loader would have materialised, later.
+    FusedFp8Block,
     /// f32 resident, BLAS `sgemv`, threaded by the library.
     ///
     /// The right answer for a matrix whose widened image still fits
@@ -241,6 +251,7 @@ impl PhysicalProjectionPlan {
             Self::FusedQ4 | Self::Q4xQ8 => WeightFormat::Q4,
             Self::FusedNvfp4 => WeightFormat::Nvfp4,
             Self::FusedKQuant => WeightFormat::KQuant,
+            Self::FusedFp8Block => WeightFormat::Fp8Block,
         }
     }
 
@@ -289,6 +300,11 @@ impl PhysicalProjectionPlan {
                 activation: ActivationRep::F32,
                 accumulator: AccumulatorRep::F32,
             },
+            Self::FusedFp8Block => Arithmetic {
+                weight: WeightRep::Fp8Block,
+                activation: ActivationRep::F32,
+                accumulator: AccumulatorRep::F32,
+            },
             // The control holds EXACT weights and an f32 dot; only the
             // activation is quantised, which is the whole of its job.
             Self::Bf16xQ8 => Arithmetic {
@@ -324,6 +340,7 @@ impl PhysicalProjectionPlan {
             Self::FusedQ4 => &FusedQ4,
             Self::FusedNvfp4 => &FusedNvfp4,
             Self::FusedKQuant => &FusedKQuant,
+            Self::FusedFp8Block => &FusedFp8Block,
             Self::Q8xQ8 => &Q8xQ8,
             Self::Q4xQ8 => &Q4xQ8,
             Self::Bf16xQ8 => &Bf16xQ8,
@@ -456,6 +473,11 @@ impl PhysicalProjectionPlan {
             // determine execution outright — and the codec they name
             // travels with them rather than with the plan.
             WeightRows::KQuant { .. } => Self::FusedKQuant,
+            // Fine-grained FP8 has exactly one arm: the format is the
+            // checkpoint's own and there is no policy choice to make —
+            // unlike bf16 above, whose bytes are ambiguous between two
+            // provenances.
+            WeightRows::Fp8Block { .. } => Self::FusedFp8Block,
         }
     }
 }

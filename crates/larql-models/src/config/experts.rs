@@ -160,6 +160,29 @@ pub enum ExpertGatePolicy {
         /// verbatim and does zero the up branch.
         linear_beta: Option<f32>,
     },
+    /// The plain gated form **with GPT-OSS's clamp** and none of its
+    /// other arithmetic — GLM-5.3-Flash:
+    ///
+    /// ```text
+    /// g   = gate.clamp(max = limit)          // upper bound only
+    /// u   = up.clamp(-limit, limit)          // symmetric
+    /// out = activation(g) * u
+    /// ```
+    ///
+    /// A third variant rather than a flag on [`Self::ClampedGlu`],
+    /// because the difference is not the clamp: it is `(u + 1) * glu`
+    /// against `glu * u`. `Glm5NextTextExperts._apply_gate` carries the
+    /// comment *"Simple swiglu instead of alpha"* over exactly this line.
+    ///
+    /// **Measured cost of confusing the two**, on GLM layer 3's real
+    /// 288-expert bank against the pinned reference: relative **31.7**.
+    /// The ratio is not incidental — at a residual-scale activation
+    /// `(u + 1) ≈ 1` while `u ≈ 0.03`, so the GPT-OSS form is larger by
+    /// roughly `1/|u|` and every shape still closes.
+    ClampedGated {
+        /// Clamp bound (`swiglu_limit`, 10.0 on GLM-5.3-Flash).
+        limit: f32,
+    },
 }
 
 impl Default for ExpertGatePolicy {

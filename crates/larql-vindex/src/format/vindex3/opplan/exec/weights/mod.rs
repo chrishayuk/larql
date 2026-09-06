@@ -18,7 +18,7 @@
 
 use super::backend::{WeightFormat, WeightSlice};
 use super::narrow::{bf16_bytes_to_f16, f32_bytes_to_f16};
-use super::operands::{OperandSource, RepresentationSource};
+use super::operands::{OperandSource, RawOperand, RepresentationSource};
 use super::quantise::{quantise_q4, quantise_q8, Q4_BLOCK, Q8_BLOCK};
 use crate::error::VindexError;
 use crate::format::vindex3::opplan::OperandRef;
@@ -204,6 +204,25 @@ pub enum LoadedWeight {
         scales: AlignedBytes,
         tensor_scale: f32,
     },
+    /// Fine-grained FP8 as the CHECKPOINT stores it: E4M3 codes and the
+    /// f32 scale grid, both byte-for-byte, neither widened.
+    ///
+    /// The only variant here bound from TWO container tensors. Every
+    /// other compact form keeps its scales in a stream this build
+    /// produced (`Q8`, `Q4`) or inside the blocks (`KQuant`); this one's
+    /// scales are a separate tensor the checkpoint shipped, reached
+    /// through [`OperandSource::companion`].
+    Fp8Block {
+        codes: AlignedBytes,
+        scales: Vec<f32>,
+        /// The tile, DERIVED from the two tensors' shapes at load and
+        /// carried thereafter — never re-read from
+        /// `quantization_config.weight_block_size`, which one checkpoint
+        /// may contradict per tensor.
+        block_rows: usize,
+        block_cols: usize,
+        scale_cols: usize,
+    },
     /// A compiled ggml K-quant pack, byte-for-byte as the container holds
     /// it, with the codec that names its layout.
     ///
@@ -254,6 +273,12 @@ impl LoadedWeight {
                 packed.as_slice().len() + scales.as_slice().len()
             }
             LoadedWeight::KQuant { blocks, .. } => blocks.len(),
+            // Codes and scales both: the scales are read on every
+            // projection, so a footprint that omitted them would flatter
+            // the format by exactly what its metadata costs.
+            LoadedWeight::Fp8Block { codes, scales, .. } => {
+                codes.as_slice().len() + scales.len() * 4
+            }
         }
     }
 
@@ -299,6 +324,10 @@ impl LoadedWeight {
                 ]
             }
             LoadedWeight::KQuant { blocks, .. } => vec![of(blocks.as_ptr(), blocks.len())],
+            LoadedWeight::Fp8Block { codes, scales, .. } => vec![
+                of(codes.as_slice().as_ptr(), codes.as_slice().len()),
+                of(scales.as_ptr().cast::<u8>(), scales.len() * 4),
+            ],
         }
     }
 
@@ -315,7 +344,8 @@ impl LoadedWeight {
             | LoadedWeight::F16(_)
             | LoadedWeight::Mxfp4 { .. }
             | LoadedWeight::Nvfp4 { .. }
-            | LoadedWeight::KQuant { .. } => 0,
+            | LoadedWeight::KQuant { .. }
+            | LoadedWeight::Fp8Block { .. } => 0,
         }
     }
 
@@ -342,6 +372,9 @@ impl LoadedWeight {
             LoadedWeight::Bf16(_) | LoadedWeight::F16(_) => 1,
             LoadedWeight::Mxfp4 { .. } | LoadedWeight::Nvfp4 { .. } => 2,
             LoadedWeight::KQuant { .. } => 0,
+            // Only the codes are an `AlignedBytes`; the scales are a
+            // plain `Vec<f32>` and are not page-padded.
+            LoadedWeight::Fp8Block { .. } => 1,
         }
     }
 
@@ -358,6 +391,7 @@ impl LoadedWeight {
             LoadedWeight::Mxfp4 { .. } => WeightFormat::Mxfp4,
             LoadedWeight::Nvfp4 { .. } => WeightFormat::Nvfp4,
             LoadedWeight::KQuant { .. } => WeightFormat::KQuant,
+            LoadedWeight::Fp8Block { .. } => WeightFormat::Fp8Block,
         }
     }
 
@@ -388,6 +422,23 @@ impl LoadedWeight {
                     std::slice::from_raw_parts(bytes.as_ptr().cast::<u16>(), bytes.len() / 2)
                 })
             }
+            LoadedWeight::Fp8Block {
+                codes,
+                scales,
+                block_rows,
+                block_cols,
+                scale_cols,
+            } => WeightSlice::Fp8Block {
+                // `logical_slice`, not `as_slice`: the page padding is
+                // allocation, not matrix, and a slab whose length
+                // included it would fail the geometry check below for a
+                // reason that has nothing to do with the checkpoint.
+                codes: &codes.as_slice()[..codes.logical_len()],
+                scales,
+                block_rows: *block_rows,
+                block_cols: *block_cols,
+                scale_cols: *scale_cols,
+            },
             LoadedWeight::F16(b) => WeightSlice::F16(b.as_slice()),
             // SAFETY: a segment's payload offsets are multiples of
             // `WEIGHT_BINDING_ALIGN` (4) over a page-aligned mapping, and
@@ -425,6 +476,90 @@ impl LoadedWeight {
     }
 }
 
+/// Bind a fine-grained FP8 pair, with every disagreement between the two
+/// tensors refused rather than reconciled.
+///
+/// The tile is DERIVED here, from the two shapes, and carried on the
+/// loaded weight. `quantization_config.weight_block_size` is not
+/// consulted: it is a whole-checkpoint summary, and the scheme permits
+/// per-tensor grids that contradict it.
+fn load_fp8_block(
+    operand: &OperandRef,
+    codes: RawOperand,
+    sibling: &str,
+    scale_shape: &[usize],
+    scales: RawOperand,
+) -> Result<LoadedWeight, VindexError> {
+    use larql_models::quant::fp8_finegrained::Fp8Grid;
+
+    let refuse = |what: String| VindexError::Parse(what);
+    if scales.dtype != DTYPE_F32 {
+        // E8M0 scales (`float8_e8m0fnu`, stored as `U8`) are a real
+        // variant of this scheme and decode as `2^(byte-127)`. Refused
+        // rather than guessed: reading those bytes as f32 would not even
+        // have the right length, and reading them as scalars would be
+        // silently wrong by many orders of magnitude.
+        return Err(refuse(format!(
+            "operand `{}`: scale sibling `{sibling}` is `{}`, and this build reads only              F32 fine-grained FP8 scales",
+            operand.tensor, scales.dtype
+        )));
+    }
+    let (rows, cols) = match operand.shape.as_slice() {
+        [r, c] => (*r, *c),
+        other => {
+            return Err(refuse(format!(
+                "operand `{}` has shape {other:?}; fine-grained FP8 tiles a `[out, in]`                  matrix and has no reading of any other rank",
+                operand.tensor
+            )))
+        }
+    };
+    let (scale_rows, scale_cols) = match scale_shape {
+        [r, c] => (*r, *c),
+        other => {
+            return Err(refuse(format!(
+                "operand `{}`: scale sibling `{sibling}` has shape {other:?}, which is not                  a two-dimensional grid",
+                operand.tensor
+            )))
+        }
+    };
+    let grid = Fp8Grid {
+        rows,
+        cols,
+        scale_rows,
+        scale_cols,
+    };
+    let (block_rows, block_cols) = grid
+        .tile()
+        .map_err(|e| refuse(format!("operand `{}`: {e}", operand.tensor)))?;
+
+    if codes.bytes.len() != grid.elements() {
+        return Err(refuse(format!(
+            "operand `{}` declares {rows}x{cols} but its segment holds {} E4M3 bytes",
+            operand.tensor,
+            codes.bytes.len()
+        )));
+    }
+    let values: Vec<f32> = scales
+        .bytes
+        .chunks_exact(4)
+        .map(|c| f32::from_le_bytes([c[0], c[1], c[2], c[3]]))
+        .collect();
+    if values.len() != grid.scales() {
+        return Err(refuse(format!(
+            "operand `{}`: scale sibling `{sibling}` declares {scale_rows}x{scale_cols} but              its segment holds {} f32 values",
+            operand.tensor,
+            values.len()
+        )));
+    }
+    Ok(LoadedWeight::Fp8Block {
+        codes: AlignedBytes::from_bytes(&codes.bytes),
+        scales: values,
+        block_rows,
+        block_cols,
+        scale_cols,
+    })
+}
+
 /// Load one matrix operand in `format`, through the closure-verified
 /// path only.
 pub fn load_weight(
@@ -434,6 +569,17 @@ pub fn load_weight(
 ) -> Result<LoadedWeight, VindexError> {
     match format {
         WeightFormat::F32 => Ok(LoadedWeight::F32(StagedF32::stage(store.load(operand)?)?)),
+        // Fine-grained FP8 binds TWO container tensors: the E4M3 codes
+        // and the `weight_scale_inv` grid the checkpoint shipped beside
+        // them. Neither is widened — that is the point of the format on
+        // this programme, since a widened GLM-5.3-Flash would be 612 GB
+        // of a 306 GB checkpoint.
+        WeightFormat::Fp8Block => {
+            let raw = store.load_raw(operand)?;
+            let sibling = larql_models::quant::fp8_finegrained::scale_sibling_name(&operand.tensor);
+            let (scale_shape, scale_raw) = store.companion(operand, &sibling)?;
+            load_fp8_block(operand, raw, &sibling, &scale_shape, scale_raw)
+        }
         WeightFormat::Q8 => {
             let in_dim = operand.shape.get(1).copied().ok_or_else(|| {
                 VindexError::Parse(format!(

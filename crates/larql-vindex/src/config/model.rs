@@ -386,6 +386,19 @@ mod tests {
             "top_k_experts",
             "moe_intermediate_size",
         ];
+        // Read only to RESOLVE another field that IS carried, and
+        // deliberately not persisted itself: persisting both the input and
+        // the conclusion would give one fact two sources of truth, and a
+        // reader would have to know which one the executor honours.
+        const RESOLVED_INTO_ANOTHER_FIELD: &[&str] = &[
+            // `linear_attn_config.safe_gate` is an input to
+            // `ModelArchitecture::kda_gate_form`, whose CONCLUSION —
+            // `ExecutionSurface.kda_gate_form`, and `KdaOp.gate_form` —
+            // is what the container carries and the executor reads. The
+            // form is the forward-affecting fact; `safe_gate` is one of
+            // two config values the family combines to reach it.
+            "kda_safe_gate",
+        ];
         // Genuinely not persisted yet. Each entry is a known gap, not an
         // exemption: no vindex-served model can use these today.
         const KNOWN_GAPS: &[&str] = &[
@@ -570,6 +583,7 @@ mod tests {
             let known = persisted.contains(f)
                 || CARRIED_AT_TOP_LEVEL.contains(f)
                 || CARRIED_IN_MOE.contains(f)
+                || RESOLVED_INTO_ANOTHER_FIELD.contains(f)
                 || KNOWN_GAPS.contains(f)
                 // `model_type` / geometry share names across both structs.
                 || ["model_type", "head_dim", "num_q_heads", "num_kv_heads",

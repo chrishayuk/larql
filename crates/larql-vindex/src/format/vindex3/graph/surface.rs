@@ -329,6 +329,13 @@ pub struct ExecutionSurface {
     /// never a silently-chosen default.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub kda_gate_lower_bound: Option<f32>,
+    /// Which decay gate the KDA operator computes — the family's judgment
+    /// of what its reference does with
+    /// [`Self::kda_gate_lower_bound`], which the value alone cannot
+    /// answer (two checkpoints declare `-5.0` and disagree). `None` is
+    /// unjudged and must reach a refusal, never a chosen form.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub kda_gate_form: Option<larql_models::config::KdaGateForm>,
     /// The FORM of KDA's output gate (`linear_attn_config.use_full_rank_gate`):
     /// `Some(true)` = one full-rank `g_proj` of `[Hv·Dv, hidden]` (Kimi-K3),
     /// `Some(false)` = the low-rank `g_a_proj`/`g_b_proj` pair, `None` =
@@ -576,6 +583,7 @@ pub fn surface_from_resolved(
         }),
         kda: resolved.kda,
         kda_gate_lower_bound: resolved.kda_gate_lower_bound,
+        kda_gate_form: resolved.kda_gate_form,
         kda_use_full_rank_gate: resolved.kda_use_full_rank_gate,
         mamba2: resolved.mamba2.map(|geometry| Mamba2Surface {
             geometry,
@@ -882,6 +890,7 @@ pub fn surface_from_nested(
         linear_attention: None,
         kda: None,
         kda_gate_lower_bound: None,
+        kda_gate_form: None,
         kda_use_full_rank_gate: None,
         mla: None,
         mamba2: None,

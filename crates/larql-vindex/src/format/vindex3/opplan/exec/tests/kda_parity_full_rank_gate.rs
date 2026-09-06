@@ -18,6 +18,7 @@
 //! for it, and it must EQUAL the oracle's own wrong answer for the same
 //! defect — so a Rust mutant is the same defect the reference measured,
 //! not merely "something different".
+use larql_models::config::KdaGateForm;
 use larql_models::config::KdaGeometry;
 use serde_json::Value;
 
@@ -101,6 +102,7 @@ impl Fixture {
         let g = |n: &str| self.weights.get(n).expect(n).as_slice();
         let b = |n: &str| self.bf16.get(n).expect(n).as_slice();
         KdaWeights {
+            gate_form: KdaGateForm::Softplus, // Kimi-derived fixture: the reference reads `gate_lower_bound` nowhere.
             q_proj: WeightRows::Bf16(b("q_proj")),
             k_proj: WeightRows::Bf16(b("k_proj")),
             v_proj: WeightRows::Bf16(b("v_proj")),

@@ -26,6 +26,7 @@
 //!     cargo test -p larql-vindex --lib stack_real --release
 //! ```
 
+use larql_models::config::KdaGateForm;
 use std::path::{Path, PathBuf};
 
 use larql_models::config::{KdaGeometry, MlaGeometry};
@@ -257,6 +258,7 @@ pub(super) fn spec<'a>(
         };
         LayerAttention::Kda(
             KdaWeights {
+                gate_form: KdaGateForm::Softplus, // Kimi-derived fixture: the reference reads `gate_lower_bound` nowhere.
                 q_proj: WeightRows::Bf16(fb("q_proj")),
                 k_proj: WeightRows::Bf16(fb("k_proj")),
                 v_proj: WeightRows::Bf16(fb("v_proj")),

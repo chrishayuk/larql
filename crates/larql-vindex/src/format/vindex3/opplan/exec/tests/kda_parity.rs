@@ -17,6 +17,7 @@
 //! one factor still produces a plausible final tensor, and the point of a
 //! ladder is to name which stage moved.
 
+use larql_models::config::KdaGateForm;
 use larql_models::config::KdaGeometry;
 use serde_json::Value;
 
@@ -99,10 +100,13 @@ fn load() -> Fixture {
 }
 
 impl Fixture {
-    fn weights(&self) -> KdaWeights<'_> {
+    /// The same operands under a DECLARED gate form, so the form can be
+    /// varied without varying anything else.
+    fn weights_as(&self, gate_form: KdaGateForm) -> KdaWeights<'_> {
         let g = |n: &str| self.weights.get(n).expect(n).as_slice();
         let b = |n: &str| self.bf16.get(n).expect(n).as_slice();
         KdaWeights {
+            gate_form,
             q_proj: WeightRows::Bf16(b("q_proj")),
             k_proj: WeightRows::Bf16(b("k_proj")),
             v_proj: WeightRows::Bf16(b("v_proj")),
@@ -129,7 +133,19 @@ impl Fixture {
         }
     }
 
+    /// This fixture's oracle is Kimi Linear, whose reference reads
+    /// `gate_lower_bound` nowhere — so the parity runs and every control
+    /// but the mirror declare [`KdaGateForm::Softplus`].
     fn run(&self, n: usize, mutation: Mutation) -> (KdaPlanes, RecurrentState) {
+        self.run_as(n, mutation, KdaGateForm::Softplus)
+    }
+
+    fn run_as(
+        &self,
+        n: usize,
+        mutation: Mutation,
+        gate_form: KdaGateForm,
+    ) -> (KdaPlanes, RecurrentState) {
         let run = &self.runs[n.to_string()];
         let x: Vec<f32> = run["input"]
             .as_array()
@@ -141,7 +157,7 @@ impl Fixture {
         let planes = layer_forward(
             &x,
             self.hidden,
-            self.weights(),
+            self.weights_as(gate_form),
             self.geometry,
             &mut state,
             mutation,
@@ -251,6 +267,72 @@ fn applying_the_declared_decay_clamp_changes_the_result() {
     let (out, state) = control(Mutation::ApplyGateLowerBound(-5.0));
     assert!(out > 1e-2, "output Δ {out:e}");
     assert!(state > 1e-2, "state Δ {state:e}");
+}
+
+/// **The mirror, and the half that matters for GLM-5.3-Flash.**
+///
+/// The control above proves the clamp is *not* applied on a checkpoint
+/// declaring [`KdaGateForm::Softplus`]. This one starts from a checkpoint
+/// declaring [`KdaGateForm::ClampedSigmoid`] — GLM's form, with GLM's
+/// declared `-5.0` — and forces the softplus branch, which is exactly what
+/// running the Kimi-shaped executor unchanged on GLM would compute.
+///
+/// Both directions are asserted because a one-sided control cannot
+/// distinguish "the form is declared and honoured" from "the form is
+/// declared and ignored in favour of the one hard-coded here". Only the
+/// pair shows that the declaration is what the executor reads.
+///
+/// Measured on the real GLM layer 0 against the pinned `transformers`
+/// reference (`scripts/glm_gate_control.py`), the same swap moves the
+/// layer output by relative 2.50e-2 and the decay gate's mean from -0.906
+/// to -2.528.
+#[test]
+fn forcing_softplus_on_a_clamped_checkpoint_changes_the_result() {
+    const N: usize = 8;
+    let f = load();
+    let clamped = KdaGateForm::ClampedSigmoid { lower_bound: -5.0 };
+    let (base, base_state) = f.run_as(N, Mutation::None, clamped);
+    let (changed, changed_state) = f.run_as(N, Mutation::ForceSoftplusGate, clamped);
+    let out = max_abs_diff(&base.output, &changed.output);
+    let state = max_abs_diff(
+        base_state.buffer(kda::RECURRENT).cells(),
+        changed_state.buffer(kda::RECURRENT).cells(),
+    );
+    assert!(out > 1e-2, "output Δ {out:e}");
+    assert!(state > 1e-2, "state Δ {state:e}");
+}
+
+/// The declared form is what the executor reads — nothing else in the
+/// operand set changes with it.
+///
+/// Without this, the control above could pass simply because
+/// `ForceSoftplusGate` perturbs *something*; this shows the two forms are
+/// genuinely different functions of the same operands, and that declaring
+/// the form (with no mutation at all) already selects between them.
+#[test]
+fn the_declared_gate_form_alone_selects_the_arithmetic() {
+    const N: usize = 8;
+    let f = load();
+    let (soft, _) = f.run_as(N, Mutation::None, KdaGateForm::Softplus);
+    let (clamped, _) = f.run_as(
+        N,
+        Mutation::None,
+        KdaGateForm::ClampedSigmoid { lower_bound: -5.0 },
+    );
+    let delta = max_abs_diff(&soft.output, &clamped.output);
+    assert!(
+        delta > 1e-2,
+        "declared form must change the output, Δ {delta:e}"
+    );
+
+    // And the identity arm: the same declared form twice must agree
+    // exactly, so a non-zero above is the form and not run-to-run noise.
+    let (again, _) = f.run_as(N, Mutation::None, KdaGateForm::Softplus);
+    assert_eq!(
+        max_abs_diff(&soft.output, &again.output),
+        0.0,
+        "the same declared form must be bit-identical across runs"
+    );
 }
 
 /// The q normalisation moves the output and leaves the state **exactly**

@@ -32,6 +32,17 @@ pub fn apply(
         ExpertGatePolicy::SituGlu { beta, linear_beta } => {
             elementwise(gate, up, crate::MoeGateRule::SituGlu { beta, linear_beta })
         }
+        // GLM-5.3-Flash: GPT-OSS's clamp, then ORDINARY SwiGLU.
+        // Through the scalar rule, like SiTU-GLU above, so the combine
+        // math has one authority.
+        ExpertGatePolicy::ClampedGated { limit } => elementwise(
+            gate,
+            up,
+            crate::MoeGateRule::ClampedGated {
+                limit,
+                activation: activation.into(),
+            },
+        ),
     }
 }
 
@@ -216,5 +227,128 @@ mod tests {
             apply(&gate, &up, clamped(), Activation::Silu).shape(),
             &[3, 5]
         );
+    }
+}
+
+#[cfg(test)]
+mod clamped_gated_tests {
+    use super::*;
+    use crate::MoeGateRule;
+    use ndarray::arr2;
+
+    const LIMIT: f32 = 10.0;
+
+    fn silu(x: f32) -> f32 {
+        x / (1.0 + (-x).exp())
+    }
+
+    /// GLM-5.3-Flash's combine: GPT-OSS's clamp, then ORDINARY SwiGLU.
+    ///
+    /// Pinned against a scalar definition written here, so the rule is
+    /// checked against the formula rather than against itself.
+    #[test]
+    fn the_rule_computes_clamped_plain_swiglu() {
+        let rule = MoeGateRule::ClampedGated {
+            limit: LIMIT,
+            activation: crate::Activation::Silu,
+        };
+        for (g, u) in [
+            (0.5f32, 0.25f32),
+            (-0.5, 0.25),
+            (25.0, 0.5),  // gate above the cap
+            (-25.0, 0.5), // gate BELOW -cap: not clamped, one-sided
+            (0.5, 25.0),  // up above the cap
+            (0.5, -25.0), // up below -cap: clamped, symmetric
+        ] {
+            let want = silu(g.min(LIMIT)) * u.clamp(-LIMIT, LIMIT);
+            let got = rule.combine(g, u);
+            assert!((got - want).abs() <= 1e-6, "g={g} u={u}: {got} vs {want}");
+        }
+    }
+
+    /// **The clamp is ASYMMETRIC**, and the two halves are separated:
+    /// the gate is bounded above only, the up branch on both sides. A
+    /// symmetric gate clamp would agree on every input whose gate stays
+    /// above `-limit`, which is why the control uses one that does not.
+    #[test]
+    fn the_gate_is_capped_above_only_and_the_up_branch_on_both_sides() {
+        let rule = MoeGateRule::ClampedGated {
+            limit: LIMIT,
+            activation: crate::Activation::Silu,
+        };
+        // A gate far below -limit is NOT clamped.
+        let deep = rule.combine(-40.0, 1.0);
+        assert!(
+            (deep - silu(-40.0)).abs() <= 1e-6,
+            "the gate must not be clamped from below: {deep}"
+        );
+        assert_ne!(
+            deep,
+            silu(-LIMIT),
+            "clamping the gate below would collapse this to silu(-limit)"
+        );
+        // The up branch IS clamped from below.
+        assert_eq!(rule.combine(1.0, -40.0), rule.combine(1.0, -LIMIT));
+    }
+
+    /// It is NOT `ClampedGlu`. Same clamp, different arithmetic — the
+    /// defect this variant exists to prevent, and the one that measured
+    /// relative 31.7 on GLM's real 288-expert bank.
+    #[test]
+    fn it_differs_from_gpt_oss_clamped_glu_at_a_residual_scale_activation() {
+        let gated = MoeGateRule::ClampedGated {
+            limit: LIMIT,
+            activation: crate::Activation::Silu,
+        };
+        let glu = MoeGateRule::ClampedGlu {
+            limit: LIMIT,
+            alpha: 1.0,
+        };
+        // `(u + 1) ~ 1` while `u ~ 0.03`, so the GPT-OSS form is larger
+        // by roughly `1/|u|` — the ratio the real-bank measurement saw.
+        let (g, u) = (0.2f32, 0.03f32);
+        let a = gated.combine(g, u);
+        let b = glu.combine(g, u);
+        assert!(
+            (b / a).abs() > 20.0,
+            "the two forms must diverge by ~1/|u|: {a} vs {b}"
+        );
+    }
+
+    /// The `Array2` tier delegates to the scalar rule, so the two agree
+    /// by construction — asserted rather than assumed, because that
+    /// delegation is what keeps one authority for the math.
+    #[test]
+    fn the_matrix_tier_agrees_with_the_scalar_rule() {
+        let gate = arr2(&[[0.5f32, 25.0], [-25.0, 0.1]]);
+        let up = arr2(&[[0.25f32, -25.0], [0.5, 2.0]]);
+        let out = apply(
+            &gate,
+            &up,
+            ExpertGatePolicy::ClampedGated { limit: LIMIT },
+            Activation::Silu,
+        );
+        let rule = MoeGateRule::ClampedGated {
+            limit: LIMIT,
+            activation: crate::Activation::Silu,
+        };
+        for (o, (&g, &u)) in out.iter().zip(gate.iter().zip(up.iter())) {
+            assert!((o - rule.combine(g, u)).abs() <= 1e-6, "g={g} u={u}");
+        }
+    }
+
+    /// A GeLU-tanh family takes its own branch — the activation is not
+    /// hard-coded to SiLU inside the rule.
+    #[test]
+    fn the_activation_is_read_rather_than_assumed() {
+        let silu_rule = MoeGateRule::ClampedGated {
+            limit: LIMIT,
+            activation: crate::Activation::Silu,
+        };
+        let gelu_rule = MoeGateRule::ClampedGated {
+            limit: LIMIT,
+            activation: crate::Activation::GeluTanh,
+        };
+        assert_ne!(silu_rule.combine(0.7, 1.3), gelu_rule.combine(0.7, 1.3));
     }
 }

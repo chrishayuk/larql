@@ -19,6 +19,7 @@ use crate::architectures::gemma2::Gemma2Arch;
 use crate::architectures::gemma3::Gemma3Arch;
 use crate::architectures::gemma4::Gemma4Arch;
 use crate::architectures::generic::GenericArch;
+use crate::architectures::glm5_next::Glm5NextArch;
 use crate::architectures::gpt2::Gpt2Arch;
 use crate::architectures::gpt_oss::GptOssArch;
 use crate::architectures::granite::GraniteArch;
@@ -193,6 +194,14 @@ pub fn detect_from_json(config: &serde_json::Value) -> Box<dyn ModelArchitecture
         // collapse into the generic fallback — and NOT routed to
         // `KimiLinearArch`, which would assert K3 executes as its
         // ancestor.
+        // GLM-5.3-Flash — KDA/MLA-NoPE interleave, 288-expert sigmoid MoE,
+        // four-stream mHC residual. Both spellings match: the outer config
+        // says `glm5_next` and its text sub-config says `glm5_next_text`,
+        // and the planner dispatches on whichever it is handed. Matched by
+        // prefix rather than exact string for that reason, but kept ahead
+        // of any future bare `glm` prefix so a GLM-4 config cannot capture
+        // it.
+        t if t.starts_with("glm5_next") => Box::new(Glm5NextArch::from_config(model_config)),
         "kimi_k3" => Box::new(KimiK3Arch::from_config(model_config)),
         "kimi_linear" => Box::new(KimiLinearArch::from_config(model_config)),
         // StarCoder 2

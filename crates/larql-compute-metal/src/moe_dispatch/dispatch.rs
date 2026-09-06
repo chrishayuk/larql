@@ -46,6 +46,16 @@ impl MetalBackend {
             "Metal MoE dispatch has no biased-Gated expert kernel; this \
              layer's biased experts must run on the CPU path"
         );
+        // Checked HERE, at the top of the body, because everything below
+        // it — this dispatch and the zero-copy fast path it delegates to
+        // — encodes. Both carry a backstop arm on the combine match; a
+        // refusal that reached one of those would abort the process
+        // rather than report itself.
+        assert!(
+            crate::kernels::ffn::expert_activation_supported(&moe.gate_rule),
+            "{}",
+            crate::kernels::ffn::CLAMPED_GATED_REFUSAL
+        );
         debug_assert_eq!(
             moe.gate_up_cols(hidden),
             scratch.weight_cols,
@@ -250,6 +260,15 @@ impl MetalBackend {
             let u_offset = (e * inter * 4) as u64;
             let a_offset = (e * inter_padded * 4) as u64;
             match moe.gate_rule {
+                // Refused at admission by
+                // `kernels::ffn::expert_activation_supported`, which
+                // owns the reason. The backstop stays for any path that
+                // does not come through that gate — and must never be
+                // the thing that reports it, because a panic here
+                // leaves the encoder unended.
+                larql_compute::MoeGateRule::ClampedGated { .. } => {
+                    unreachable!("{}", crate::kernels::ffn::CLAMPED_GATED_REFUSAL)
+                }
                 larql_compute::MoeGateRule::ClampedGlu { limit, alpha } => {
                     let has_bias: u32 = u32::from(stage_biases);
                     let b_offset = (e * inter * 4) as u64;
