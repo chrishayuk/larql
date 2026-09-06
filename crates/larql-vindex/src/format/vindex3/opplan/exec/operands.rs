@@ -10,6 +10,7 @@
 use std::collections::BTreeMap;
 use std::io::{Read, Seek, SeekFrom};
 use std::path::{Path, PathBuf};
+use std::sync::Arc;
 
 use super::super::super::encode::segment::{read_segment_header, SegmentTensor};
 use super::super::super::encode::REPRESENTATION_ID_SEP;
@@ -17,6 +18,7 @@ use super::super::super::inspect::SystemInspection;
 use super::super::OperandRef;
 use crate::error::VindexError;
 use crate::format::vindex3::represent::codec::CodecRegistry;
+use crate::format::vindex3::represent::physical::{PhysicalStore, WeightRegion};
 
 /// Safetensors dtype labels this reference executor can widen to f32.
 const DTYPE_F32: &str = "F32";
@@ -37,6 +39,12 @@ pub struct OperandStore {
     /// build does not ship becomes executable through registration alone.
     registry: &'static CodecRegistry,
     segments: BTreeMap<String, SegmentMap>,
+    /// Each object's segment mapped at most once, however many operands
+    /// bind regions of it — the one physical binding a bank shares.
+    mapped: std::sync::Mutex<BTreeMap<String, Arc<PhysicalStore>>>,
+    /// Regions bound through `map_region`, counted beside `loads` so a
+    /// test can prove a bank was bound and not read.
+    regions: std::sync::atomic::AtomicUsize,
     /// Which representation each object was bound to.
     selected: BTreeMap<String, SelectedRepresentation>,
     /// Under `transient`, the encoding each tensor has in the compiled
@@ -252,6 +260,8 @@ impl OperandStore {
         }
         Ok(Self {
             registry: CodecRegistry::builtin(),
+            mapped: std::sync::Mutex::new(BTreeMap::new()),
+            regions: std::sync::atomic::AtomicUsize::new(0),
             segments,
             absent,
             selected,
@@ -281,6 +291,19 @@ impl OperandStore {
     /// The codecs this store decodes through.
     pub fn registry(&self) -> &'static CodecRegistry {
         self.registry
+    }
+
+    /// How many objects' segments this store has mapped — the physical
+    /// bindings a prepared image holds, one per object however many
+    /// regions were taken from it.
+    pub fn mapped_objects(&self) -> usize {
+        self.mapped.lock().unwrap().len()
+    }
+
+    /// How many regions were bound through [`Self::map_region`]: the
+    /// logical operands served by the mappings, none of them read.
+    pub fn mapped_regions(&self) -> usize {
+        self.regions.load(std::sync::atomic::Ordering::Relaxed)
     }
 
     /// What each object was bound to.
@@ -516,6 +539,56 @@ impl OperandStore {
             dtype: tensor.dtype.clone(),
             bytes,
         })
+    }
+}
+
+impl OperandStore {
+    /// One operand's stored bytes as a region of its object's mapped
+    /// segment — bound, not read: no payload byte is copied, and the
+    /// object's segment is mapped once for every region taken from it.
+    /// `expected_len` is the byte count the plan's declared geometry
+    /// implies; a region of any other length is a container disagreeing
+    /// with the declaration and is refused rather than sliced.
+    pub fn map_region(
+        &self,
+        operand: &OperandRef,
+        expected_len: u64,
+    ) -> Result<WeightRegion, VindexError> {
+        let segment = self.segments.get(&operand.object).ok_or_else(|| {
+            VindexError::Parse(format!("no segment for object `{}`", operand.object))
+        })?;
+        self.touched.lock().unwrap().insert(operand.object.clone());
+        let store = {
+            let mut mapped = self.mapped.lock().unwrap();
+            match mapped.get(&operand.object) {
+                Some(store) => store.clone(),
+                None => {
+                    let store = Arc::new(PhysicalStore::map_segment(
+                        operand.object.clone(),
+                        &segment.path,
+                    )?);
+                    mapped.insert(operand.object.clone(), store.clone());
+                    store
+                }
+            }
+        };
+        let region = store.whole(&operand.tensor).ok_or_else(|| {
+            VindexError::Parse(format!(
+                "no tensor `{}` in `{}`'s segment",
+                operand.tensor, operand.object
+            ))
+        })?;
+        if region.len() != expected_len {
+            return Err(VindexError::Parse(format!(
+                "`{}`: {} stored bytes, the declared geometry implies {expected_len}; the \
+                 container and the plan disagree",
+                operand.tensor,
+                region.len()
+            )));
+        }
+        self.regions
+            .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+        Ok(region)
     }
 }
 

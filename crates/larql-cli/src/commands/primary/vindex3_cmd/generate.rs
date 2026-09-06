@@ -413,3 +413,232 @@ const NON_PROJECTION_FLOOR_MS: [f64; 2] = [17.0, 24.0];
 fn join_ids(ids: &[u32]) -> String {
     ids.iter().map(u32::to_string).collect::<Vec<_>>().join(",")
 }
+
+// ── The residency curve: predicted before a byte, observed between tokens ──
+
+/// What the process has been charged so far, from `getrusage`: peak RSS
+/// and page faults. Deltas between two readings are what one token
+/// cost; the absolute peak is a fact about the whole run.
+#[derive(Debug, Clone, Copy, Default)]
+struct ProcessResources {
+    max_rss: u64,
+    minor_faults: u64,
+    major_faults: u64,
+}
+
+fn process_resources() -> ProcessResources {
+    #[cfg(unix)]
+    {
+        // SAFETY: `usage` is read only after `getrusage` returns 0, which
+        // is documented to fully populate the struct.
+        let usage = unsafe {
+            let mut usage = std::mem::MaybeUninit::<libc::rusage>::uninit();
+            if libc::getrusage(libc::RUSAGE_SELF, usage.as_mut_ptr()) != 0 {
+                return ProcessResources::default();
+            }
+            usage.assume_init()
+        };
+        // macOS reports ru_maxrss in bytes; other POSIX targets in KiB.
+        let unit: u64 = if cfg!(target_os = "macos") { 1 } else { 1024 };
+        ProcessResources {
+            max_rss: usage.ru_maxrss.max(0) as u64 * unit,
+            minor_faults: usage.ru_minflt.max(0) as u64,
+            major_faults: usage.ru_majflt.max(0) as u64,
+        }
+    }
+    #[cfg(not(unix))]
+    {
+        ProcessResources::default()
+    }
+}
+
+const GB: f64 = 1e9;
+const GIB: f64 = 1024.0 * 1024.0 * 1024.0;
+
+/// The K3 vertical's rung 7: one prepared image, `repeat` passes of the
+/// same prompt and greedy decode, each pass with fresh continuation
+/// state, and between every token the OBSERVED residency beside what the
+/// plan PREDICTED before any byte was read — the mapping's address space
+/// against the pages of it resident, page faults, peak RSS, and where the
+/// token's time went by timing class. The first pass is cold; the later
+/// passes are what the page cache kept.
+#[allow(clippy::too_many_arguments)]
+pub(super) fn run_residency_curve<B: PlanBackend>(
+    backend: &B,
+    engine: &str,
+    prompt: &[u32],
+    new_tokens: usize,
+    plan: &ComponentOpPlan,
+    store: &OperandStore,
+    repeat: usize,
+) -> Result<(), Box<dyn std::error::Error>> {
+    use larql_vindex::format::vindex3::opplan::exec::accounting::{
+        expectations, BlockGeometry, ResourceLedger,
+    };
+    use larql_vindex::format::vindex3::opplan::exec::kv::RowKvState;
+    use larql_vindex::format::vindex3::opplan::exec::prepared::{ExecutionSlice, PreparedOperands};
+    use larql_vindex::format::vindex3::opplan::exec::timing::OpClass;
+
+    if prompt.is_empty() {
+        return Err("prompt holds no tokens — nothing to condition on".into());
+    }
+    let loading = Instant::now();
+    let ops = PreparedOperands::load(plan, store, backend, ExecutionSlice::Full)?;
+    let load_seconds = loading.elapsed().as_secs_f64();
+    println!("engine: {engine}");
+    println!("weights bound in {load_seconds:.1} s (once, for {repeat} pass(es))");
+
+    // PREDICTED, from the pins and the tensor tables.
+    let priced = expectations(
+        ops.realizations(),
+        |op| store.stored_len(op),
+        BlockGeometry::executor(),
+    );
+    let ledger = ResourceLedger::aggregate(&priced);
+    println!("predicted, before any payload byte:");
+    println!(
+        "  mapped address space  {:>10.2} GB",
+        ledger.mapped as f64 / GB
+    );
+    println!(
+        "  persistent resident   {:>10.2} GB",
+        ledger.resident as f64 / GB
+    );
+    println!(
+        "  transient peak        {:>10.2} GB",
+        ledger.transient_peak as f64 / GB
+    );
+    println!(
+        "  touch per token       {:>10.3} GB",
+        ledger.touch_per_token as f64 / GB
+    );
+    println!(
+        "  cold page-in / token  {:>10.3} GB",
+        ledger.page_in_per_token as f64 / GB
+    );
+    println!(
+        "  physical working set  {:>10.2} GiB",
+        ledger.physical_working_set() as f64 / GIB
+    );
+
+    // OBSERVED, at binding.
+    let census = ops.residency_census();
+    let mapped = ops.mapped_residency();
+    let base = process_resources();
+    println!("observed, after binding:");
+    println!(
+        "  committed             {:>10.2} GB",
+        census.total() as f64 / GB
+    );
+    println!(
+        "  mapped                {:>10.2} GB address space over {} regions, {:.3} GB resident",
+        mapped.mapped_bytes as f64 / GB,
+        mapped.regions,
+        mapped.resident_bytes as f64 / GB
+    );
+    println!(
+        "  peak rss              {:>10.2} GB   faults minor {} major {}",
+        base.max_rss as f64 / GB,
+        base.minor_faults,
+        base.major_faults
+    );
+
+    let classes = [
+        OpClass::Kda,
+        OpClass::Mla,
+        OpClass::AttentionCore,
+        OpClass::MoeRoutedExpert,
+        OpClass::Projection,
+        OpClass::Norm,
+        OpClass::Logits,
+    ];
+    for pass in 1..=repeat.max(1) {
+        let mut kv = RowKvState::default();
+        let mut session = DecodeSession::over_prepared(plan, &ops, backend, &mut kv)?;
+        let label = if pass == 1 { "cold" } else { "warm" };
+        println!("pass {pass} ({label}):");
+        println!(
+            "  {:<8} {:>9} {:>12} {:>12} {:>10} {:>10} {:>9}  time by class (ms)",
+            "step", "ms", "mapped res", "Δ res (GB)", "minor Δ", "major Δ", "rss GB"
+        );
+        let mut before_res = session.mapped_residency();
+        let mut before_proc = process_resources();
+        let observe = |name: String,
+                           elapsed: f64,
+                           session: &DecodeSession<'_, B>,
+                           before_res: &mut larql_vindex::format::vindex3::opplan::exec::prepared::MappedResidency,
+                           before_proc: &mut ProcessResources| {
+            let now_res = session.mapped_residency();
+            let now_proc = process_resources();
+            let ledger = timing::ledger();
+            let by_class: Vec<String> = classes
+                .iter()
+                .map(|c| (c, ledger.get(*c)))
+                .filter(|(_, t)| t.calls > 0)
+                .map(|(c, t)| format!("{}={:.0}", c.name(), t.nanos as f64 / 1e6))
+                .collect();
+            println!(
+                "  {:<8} {:>9.0} {:>9.3} GB {:>12.3} {:>10} {:>10} {:>9.2}  {}",
+                name,
+                elapsed * 1e3,
+                now_res.resident_bytes as f64 / GB,
+                now_res.resident_bytes.saturating_sub(before_res.resident_bytes) as f64 / GB,
+                now_proc.minor_faults.saturating_sub(before_proc.minor_faults),
+                now_proc.major_faults.saturating_sub(before_proc.major_faults),
+                now_proc.max_rss as f64 / GB,
+                by_class.join(" ")
+            );
+            *before_res = now_res;
+            *before_proc = now_proc;
+        };
+        // Prompt: every position through the stack, timed as one step.
+        timing::ledger().reset();
+        let started = Instant::now();
+        let mut logits = None;
+        for &token in prompt {
+            logits = session.step(token)?.logits;
+        }
+        observe(
+            format!("prompt×{}", prompt.len()),
+            started.elapsed().as_secs_f64(),
+            &session,
+            &mut before_res,
+            &mut before_proc,
+        );
+        let mut logits = logits.ok_or("plan carries no output head — cannot generate")?;
+        let mut generated = Vec::with_capacity(new_tokens);
+        for step in 0..new_tokens {
+            let (next, _) = argmax(&logits).ok_or("output head produced no logits")?;
+            let id = u32::try_from(next)?;
+            generated.push(id);
+            if step + 1 == new_tokens {
+                break;
+            }
+            timing::ledger().reset();
+            let started = Instant::now();
+            logits = session
+                .step(id)?
+                .logits
+                .ok_or("plan carries no output head — cannot generate")?;
+            observe(
+                format!("token {}", step + 1),
+                started.elapsed().as_secs_f64(),
+                &session,
+                &mut before_res,
+                &mut before_proc,
+            );
+        }
+        println!("  generated ids: {}", join_ids(&generated));
+    }
+    Ok(())
+}
+
+fn argmax(v: &[f32]) -> Option<(usize, f32)> {
+    v.iter()
+        .copied()
+        .enumerate()
+        .fold(None, |best, (i, x)| match best {
+            Some((_, b)) if b >= x => best,
+            _ => Some((i, x)),
+        })
+}

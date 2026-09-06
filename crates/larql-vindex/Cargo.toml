@@ -65,6 +65,10 @@ reqwest = { version = "0.12", default-features = false, features = ["blocking", 
 [target.'cfg(unix)'.dependencies]
 libc = "0.2"
 
+[target.'cfg(windows)'.dependencies]
+# The machine's physical memory, for the residency budget's machine arm.
+windows-sys = { version = "0.61", features = ["Win32_System_SystemInformation"] }
+
 [features]
 default = []
 # Activating `gpu` pulls in the `larql-compute-metal` sibling crate

@@ -147,6 +147,18 @@ fn plan_variant_with(
     config: serde_json::Value,
     mutate: impl FnOnce(&mut Vec<(String, Vec<usize>)>),
 ) -> OpPlanOutcome {
+    plan_variant_editing_graph(config, mutate, |_| {})
+}
+
+/// [`plan_variant_with`], with the encoded container's graph edited
+/// before it is planned — how a container written by an OLDER encoder is
+/// put in front of this planner: the tensors are today's, the graph says
+/// what a schema-6 graph said.
+fn plan_variant_editing_graph(
+    config: serde_json::Value,
+    mutate: impl FnOnce(&mut Vec<(String, Vec<usize>)>),
+    edit_graph: impl FnOnce(&mut serde_json::Value),
+) -> OpPlanOutcome {
     let dir = tempfile::tempdir().unwrap();
     let mut tensors = kimi_tensors();
     mutate(&mut tensors);
@@ -158,8 +170,35 @@ fn plan_variant_with(
     let named = vec![("kimi-artifact".to_string(), inventory)];
     let out = tempfile::tempdir().unwrap();
     encode_system(&named, out.path()).unwrap();
+    let graph_path = out.path().join("system_graph.json");
+    let mut graph: serde_json::Value =
+        serde_json::from_str(&std::fs::read_to_string(&graph_path).unwrap()).unwrap();
+    edit_graph(&mut graph);
+    std::fs::write(&graph_path, graph.to_string()).unwrap();
     let inspection = inspect_container(out.path(), false).unwrap();
     plan_component_ops(&inspection, out.path(), "target").unwrap()
+}
+
+/// The routed-FFN surface of the graph's one component, as JSON.
+fn moe_surface(graph: &mut serde_json::Value) -> &mut serde_json::Value {
+    &mut graph["components"][0]["execution"]["ffn"]["moe"]
+}
+
+/// Strip the shared-expert width the way a graph written before
+/// 2026-09-03 (semantics 9) never carried it, keeping the count.
+fn strip_shared_width(graph: &mut serde_json::Value) {
+    let moe = moe_surface(graph);
+    assert_eq!(
+        moe["shared_experts"], SHARED_EXPERTS,
+        "the fixture declares one"
+    );
+    assert!(
+        moe.as_object_mut()
+            .unwrap()
+            .remove("shared_expert_intermediate_size")
+            .is_some(),
+        "today's encoder writes the width; the edit must actually remove it"
+    );
 }
 
 /// The whole point of this rung: a `PerExpert` MoE bank — router,
@@ -208,6 +247,48 @@ fn the_per_expert_bank_carves_out_of_the_decoder_stack() {
     };
     assert_eq!(gate[0].object, "target.expert_bank");
     assert_ne!(gate[0].object, "target.decoder_stack");
+}
+
+/// The routed op transcribes the surface's whole routing rule: the
+/// sigmoid scoring function, renormalisation, AND the branch scale — the
+/// one an executor cannot recover from the operands, so a plan that
+/// dropped it would execute a routed sum 2.446× too small in silence.
+#[test]
+fn the_routed_op_carries_the_declared_sigmoid_rule_and_branch_scale() {
+    use larql_models::config::{ExpertRoutingPolicy, MoeRouterKind};
+    let outcome = plan_variant(|_| {});
+    let plan = outcome.plan.unwrap();
+    let Some(LayerFfn::Routed(op)) = &plan.layers[0].ffn else {
+        panic!("planned non-routed");
+    };
+    assert_eq!(op.router_kind, MoeRouterKind::Sigmoid);
+    assert_eq!(
+        op.routing_policy,
+        ExpertRoutingPolicy::NormalisedOverSelected
+    );
+    assert_eq!(op.branch_scale, Some(2.446));
+}
+
+/// A surface that declares no branch scale plans none, and the executor
+/// reads that as exactly 1: the absent declaration is the identity, not
+/// a zero and not a default borrowed from another model.
+#[test]
+fn an_undeclared_branch_scale_plans_as_none_and_executes_as_one() {
+    let outcome = plan_variant_editing_graph(
+        kimi_config(),
+        |_| {},
+        |graph| {
+            let moe = moe_surface(graph);
+            assert_eq!(moe["branch_scale"], 2.446, "the fixture declares one");
+            moe.as_object_mut().unwrap().remove("branch_scale");
+        },
+    );
+    let plan = outcome.plan.unwrap();
+    let Some(LayerFfn::Routed(op)) = &plan.layers[0].ffn else {
+        panic!("planned non-routed");
+    };
+    assert_eq!(op.branch_scale, None);
+    assert_eq!(op.executed_branch_scale(), 1.0);
 }
 
 /// Removing one expert's `w1` — the 256-tensor set closure the carving
@@ -524,6 +605,92 @@ fn a_dense_prefix_layer_carrying_routed_operands_is_refused() {
         outcome
             .defects
             .contains(&identity_defect(0, FfnIdentity::Dense, FfnIdentity::Routed)),
+        "{:?}",
+        outcome.defects
+    );
+}
+
+// ── K3-RESIDENCY-VERTICAL-1 / V1: the shared expert is planned or refused, never dropped ──
+
+/// A graph that declares the shared branch by COUNT alone — every real
+/// container encoded before the width joined the surface — plans the
+/// branch at the width its own gate tensor stores, identically to a
+/// graph that declares the width.
+#[test]
+fn a_legacy_graph_without_the_shared_width_plans_the_shared_expert_from_its_tensors() {
+    let declared = plan_variant(|_| {});
+    let legacy = plan_variant_editing_graph(kimi_config(), |_| {}, strip_shared_width);
+    assert!(legacy.closed(), "{:?}", legacy.defects);
+    let (declared, legacy) = (declared.plan.unwrap(), legacy.plan.unwrap());
+    for (d, l) in declared.layers.iter().zip(&legacy.layers) {
+        let (Some(LayerFfn::Routed(d)), Some(LayerFfn::Routed(l))) = (&d.ffn, &l.ffn) else {
+            panic!("both plans route every layer");
+        };
+        let shared = l
+            .shared
+            .as_ref()
+            .expect("the legacy graph's shared expert is planned, not dropped");
+        assert_eq!(shared.intermediate_size, MOE_INTER * SHARED_EXPERTS);
+        assert_eq!(d.shared, l.shared, "same op from either graph");
+    }
+    assert_eq!(
+        declared.planned_operands().len(),
+        legacy.planned_operands().len(),
+        "the shared projections are planned operands under either graph"
+    );
+}
+
+/// The width read from the gate holds the other two tensors to it: a
+/// legacy graph whose `up` disagrees is refused at closure, naming the
+/// tensor and both shapes — never planned at whichever width came first.
+#[test]
+fn a_legacy_graph_whose_shared_tensors_disagree_on_width_refuses_by_name() {
+    let outcome = plan_variant_editing_graph(
+        kimi_config(),
+        |tensors| {
+            let up = tensors
+                .iter_mut()
+                .find(|(name, _)| {
+                    name.ends_with("layers.0.block_sparse_moe.shared_experts.up_proj.weight")
+                })
+                .expect("the fixture spells the shared up projection");
+            up.1 = vec![MOE_INTER * SHARED_EXPERTS + 8, HIDDEN];
+        },
+        strip_shared_width,
+    );
+    assert!(!outcome.closed(), "a disagreeing branch must not close");
+    let named = outcome.defects.iter().any(|d| {
+        matches!(
+            d,
+            ClosureDefect::GeometryMismatch { tensor, expected, actual }
+                if tensor.ends_with("0.block_sparse_moe.shared_experts.up_proj.weight")
+                    && *expected == vec![MOE_INTER * SHARED_EXPERTS, HIDDEN]
+                    && *actual == vec![MOE_INTER * SHARED_EXPERTS + 8, HIDDEN]
+        )
+    });
+    assert!(named, "{:?}", outcome.defects);
+}
+
+/// A graph that DECLARES the width keeps it as the authority: tensors
+/// that disagree with the declaration are refused against the
+/// declaration, not against each other.
+#[test]
+fn a_declared_shared_width_is_held_against_the_tensors() {
+    let outcome = plan_variant(|tensors| {
+        for (name, shape) in tensors.iter_mut() {
+            if name.ends_with("layers.1.block_sparse_moe.shared_experts.gate_proj.weight") {
+                *shape = vec![MOE_INTER * SHARED_EXPERTS * 2, HIDDEN];
+            }
+        }
+    });
+    assert!(!outcome.closed());
+    assert!(
+        outcome.defects.iter().any(|d| matches!(
+            d,
+            ClosureDefect::GeometryMismatch { tensor, expected, .. }
+                if tensor.ends_with("1.block_sparse_moe.shared_experts.gate_proj.weight")
+                    && *expected == vec![MOE_INTER * SHARED_EXPERTS, HIDDEN]
+        )),
         "{:?}",
         outcome.defects
     );

@@ -206,6 +206,21 @@ pub struct ExecArgs {
     #[arg(long, conflicts_with_all = ["dump_layers", "resume"])]
     pub generate: Option<usize>,
 
+    /// With `--generate`: observe the prepared image's residency BETWEEN
+    /// tokens — mapped address space against the pages of it physically
+    /// resident, page faults, peak RSS, and where each token's time went
+    /// (attention against FFN) — beside what the plan predicted before a
+    /// byte was read. The residency curve of the K3 vertical's rung 7.
+    #[arg(long, requires = "generate")]
+    pub residency_curve: bool,
+
+    /// With `--residency-curve`: run the same prompt and decode this many
+    /// times on ONE prepared image, each pass with fresh continuation
+    /// state. The first pass is cold; every later pass is what the page
+    /// cache kept — the warm number the cold one is compared against.
+    #[arg(long, default_value_t = 1, requires = "residency_curve")]
+    pub repeat: usize,
+
     /// Teacher-force a whole quality bank through ONE resident model,
     /// writing `<--dump-dir>/<id>.f32` per entry.
     ///
@@ -270,6 +285,36 @@ pub struct OpsArgs {
     /// Print the full plan as JSON instead of the summary.
     #[arg(long)]
     pub json: bool,
+
+    /// Prepare the plan against the production CPU backend WITHOUT
+    /// reading a payload byte: select and pin a realization per planned
+    /// operand, or print every refusal; then price the pins — declared
+    /// resident bytes, staging, stored footprint, execution touch — from
+    /// the container's tensor tables alone.
+    #[arg(long)]
+    pub realizations: bool,
+
+    /// A memory budget in GiB to hold the declared working set against
+    /// (with `--realizations`). Omitted: the machine's physical memory.
+    #[arg(long)]
+    pub budget_gib: Option<f64>,
+
+    /// With `--realizations`, and only when the plan fits the budget:
+    /// PREPARE the plan — bind every pin to its object — and reconcile
+    /// what the loader bound against what the pins declared, reporting
+    /// what was mapped, what is physically resident, and what was read.
+    #[arg(long)]
+    pub bind: bool,
+
+    /// Host bandwidth in GB/s the plan may stream per second (with
+    /// `--target-tok-s`, a per-token touch budget). Omitted: no
+    /// throughput constraint.
+    #[arg(long)]
+    pub bandwidth_gbs: Option<f64>,
+
+    /// The token rate the throughput budget is held at.
+    #[arg(long, default_value_t = 20.0)]
+    pub target_tok_s: f64,
 }
 
 #[derive(Args)]
@@ -468,6 +513,7 @@ mod lowered;
 mod ops;
 mod optional_op;
 pub(crate) mod prepare;
+mod realizations;
 mod sensitivity;
 mod teacher_force;
 use exec::run_exec;

@@ -522,6 +522,14 @@ pub fn plan_component_ops(
                     _ => {}
                 }
             }
+            // A shared branch declared by count alone takes its width from
+            // its own stored gate tensor, so up and down are held to it.
+            let ffn_moe = ffn_moe.map(|m| {
+                resolve_shared_expert_width(
+                    m,
+                    present.and_then(|slot| slot.get(&OperandRole::SharedExpertGate)),
+                )
+            });
             let stack_operands = present
                 .into_iter()
                 .flatten()
@@ -845,6 +853,8 @@ pub fn plan_component_ops(
             // the plan); a declared-routed layer with no bank plans dense
             // only as a placeholder behind its own defect.
             (Some(moe), Some(bank)) if declared_routed(ffn_moe.as_ref(), layer) == Some(true) => {
+                let moe =
+                    resolve_shared_expert_width(moe, slot.get(&OperandRole::SharedExpertGate));
                 let bank_operand = |role: OperandRole| operand(&bank_id, &bank[&role]);
                 let optional = |role: OperandRole| bank.get(&role).map(|t| operand(&bank_id, t));
                 let gemma4_router = moe.router_kind == MoeRouterKind::Gemma4Hybrid;
@@ -901,6 +911,7 @@ pub fn plan_component_ops(
                     expert_intermediate_size: moe.expert_intermediate_size,
                     router_kind: moe.router_kind,
                     routing_policy: moe.routing_policy,
+                    branch_scale: moe.branch_scale,
                     activation: ffn_s.activation,
                     gate_policy: ffn_s.gate_policy,
                     expert_format: moe.expert_format,
@@ -2093,9 +2104,44 @@ const SCALAR_GATE_ROWS: usize = 1;
 /// size the branch differently and the architecture already resolved
 /// which applies (`ModelArchitecture::shared_expert_intermediate_size`);
 /// re-deriving it here from the routed width would put a second answer
-/// beside that one, and on Qwen1.5-MoE the two differ fourfold.
+/// beside that one, and on Qwen1.5-MoE the two differ fourfold. A graph
+/// that declares the branch by count alone has had its width filled from
+/// the stored gate tensor by [`resolve_shared_expert_width`] before this
+/// is asked, so a declared branch never answers `None` here.
 fn shared_expert_width(moe: &MoeSurface) -> Option<usize> {
     (moe.shared_experts > 0).then_some(moe.shared_expert_intermediate_size)?
+}
+
+/// A routed-FFN judgment whose shared branch has a width, wherever the
+/// graph left it: the graph's own declaration when it carries one, else
+/// the stored shape of the branch's gate tensor, `[width, hidden]`.
+///
+/// Graphs written before the width was part of the surface (schema 6,
+/// before 2026-09-03) declare the branch by count only. Reading a missing
+/// optional as "no branch" planned those models WITHOUT the shared expert
+/// their graph declares and their closure counted — a silent omission
+/// that every later parity and residency number would have inherited.
+/// The gate tensor is the container's own authority on the width: this
+/// is not a re-derivation from the routed width and assumes no lineage
+/// convention. The shape check then holds up and down to the same width,
+/// and refuses a branch whose three tensors disagree. A declared branch
+/// whose gate is absent is refused by [`required_roles`] before any of
+/// this matters.
+fn resolve_shared_expert_width(moe: MoeSurface, gate: Option<&SegmentTensor>) -> MoeSurface {
+    if moe.shared_experts == 0 || moe.shared_expert_intermediate_size.is_some() {
+        return moe;
+    }
+    let Some(gate) = gate else {
+        return moe;
+    };
+    let width = match gate.shape.as_slice() {
+        [width, _hidden] => Some(*width),
+        _ => None,
+    };
+    MoeSurface {
+        shared_expert_intermediate_size: width,
+        ..moe
+    }
 }
 
 /// Stored shape of a packed `[experts, rows, k]` projection under the

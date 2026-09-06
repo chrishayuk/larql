@@ -24,6 +24,7 @@ use crate::error::VindexError;
 use crate::format::vindex3::opplan::OperandRef;
 use crate::format::vindex3::represent::kquant::{self, KQuant};
 use crate::format::vindex3::represent::nvfp4_pack::DTYPE_NVFP4;
+use crate::format::vindex3::represent::physical::WeightRegion;
 // MXFP4 group geometry — per row, `k/32` groups of 16 packed bytes (lo
 // nibble first) plus one e8m0 scale byte each — is the models crate's,
 // so the kernel's layout contract and the codec's have one definition.
@@ -120,6 +121,42 @@ impl Drop for AlignedBytes {
     }
 }
 
+/// The stored forms the CPU executor runs in place over a whole matrix,
+/// and therefore the only forms a mapped binding can take: bf16 through
+/// the fused bf16 matvec, f32 through BLAS. A stored form outside this
+/// enum needs a decode, which a mapping by definition does not do.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum MappedForm {
+    Bf16,
+    F32,
+}
+
+impl MappedForm {
+    pub fn format(self) -> WeightFormat {
+        match self {
+            Self::Bf16 => WeightFormat::Bf16,
+            Self::F32 => WeightFormat::F32,
+        }
+    }
+
+    /// Bytes per element of the stored form.
+    pub fn width(self) -> usize {
+        match self {
+            Self::Bf16 => std::mem::size_of::<u16>(),
+            Self::F32 => std::mem::size_of::<f32>(),
+        }
+    }
+
+    /// The form a resident representation maps as, when it maps at all.
+    pub fn of(format: WeightFormat) -> Option<Self> {
+        match format {
+            WeightFormat::Bf16 => Some(Self::Bf16),
+            WeightFormat::F32 => Some(Self::F32),
+            _ => None,
+        }
+    }
+}
+
 /// One loaded matrix operand, owning its bytes in the format the
 /// backend declared.
 #[derive(Debug)]
@@ -148,6 +185,15 @@ pub enum LoadedWeight {
     /// Stored bf16 code units, byte-for-byte as the checkpoint holds
     /// them. The cheapest possible load: no conversion at all.
     Bf16(AlignedBytes),
+    /// The stored bytes themselves, bound as a region of the container's
+    /// mapped segment: nothing copied, nothing converted, paged in as
+    /// touched. Only the two forms the CPU executes in place over a
+    /// whole matrix can be mapped, and the form is part of the variant so
+    /// no other can be constructed.
+    Mapped {
+        region: WeightRegion,
+        form: MappedForm,
+    },
     F16(AlignedBytes),
     Mxfp4 {
         packed: AlignedBytes,
@@ -197,6 +243,10 @@ impl LoadedWeight {
                 packed.len() + std::mem::size_of_val(&scales[..])
             }
             LoadedWeight::Bf16(b) | LoadedWeight::F16(b) => b.as_slice().len(),
+            // The committed half of a mapping: its pages resident now.
+            // Address space is `mapped_bytes`, and the two are never
+            // summed into one figure.
+            LoadedWeight::Mapped { region, .. } => region.resident_bytes().unwrap_or(0) as usize,
             LoadedWeight::Mxfp4 { packed, scales } => {
                 packed.as_slice().len() + scales.as_slice().len()
             }
@@ -236,6 +286,9 @@ impl LoadedWeight {
                 of(packed.as_ptr().cast(), packed.len()),
                 of(scales.as_ptr().cast(), std::mem::size_of_val(&scales[..])),
             ],
+            // A mapping is the OS's page cache, not an allocation of this
+            // process; `mapped_bytes` and `resident_bytes` account for it.
+            LoadedWeight::Mapped { .. } => Vec::new(),
             LoadedWeight::Bf16(b) | LoadedWeight::F16(b) => {
                 vec![of(b.as_slice().as_ptr(), b.as_slice().len())]
             }
@@ -246,6 +299,23 @@ impl LoadedWeight {
                 ]
             }
             LoadedWeight::KQuant { blocks, .. } => vec![of(blocks.as_ptr(), blocks.len())],
+        }
+    }
+
+    /// Address space this weight occupies as a mapping of the container's
+    /// segment — zero for every owned form. Pages of it become resident
+    /// only as touched; `resident_bytes` reports those.
+    pub fn mapped_bytes(&self) -> usize {
+        match self {
+            LoadedWeight::Mapped { region, .. } => region.len() as usize,
+            LoadedWeight::F32(_)
+            | LoadedWeight::Q8 { .. }
+            | LoadedWeight::Q4 { .. }
+            | LoadedWeight::Bf16(_)
+            | LoadedWeight::F16(_)
+            | LoadedWeight::Mxfp4 { .. }
+            | LoadedWeight::Nvfp4 { .. }
+            | LoadedWeight::KQuant { .. } => 0,
         }
     }
 
@@ -265,7 +335,10 @@ impl LoadedWeight {
     /// page of padding per such allocation and nothing for the rest.
     pub fn padded_allocations(&self) -> usize {
         match self {
-            LoadedWeight::F32(_) | LoadedWeight::Q8 { .. } | LoadedWeight::Q4 { .. } => 0,
+            LoadedWeight::F32(_)
+            | LoadedWeight::Q8 { .. }
+            | LoadedWeight::Q4 { .. }
+            | LoadedWeight::Mapped { .. } => 0,
             LoadedWeight::Bf16(_) | LoadedWeight::F16(_) => 1,
             LoadedWeight::Mxfp4 { .. } | LoadedWeight::Nvfp4 { .. } => 2,
             LoadedWeight::KQuant { .. } => 0,
@@ -278,6 +351,7 @@ impl LoadedWeight {
         match self {
             LoadedWeight::F32(_) => WeightFormat::F32,
             LoadedWeight::Bf16(_) => WeightFormat::Bf16,
+            LoadedWeight::Mapped { form, .. } => form.format(),
             LoadedWeight::F16(_) => WeightFormat::F16,
             LoadedWeight::Q8 { .. } => WeightFormat::Q8,
             LoadedWeight::Q4 { .. } => WeightFormat::Q4,
@@ -315,6 +389,21 @@ impl LoadedWeight {
                 })
             }
             LoadedWeight::F16(b) => WeightSlice::F16(b.as_slice()),
+            // SAFETY: a segment's payload offsets are multiples of
+            // `WEIGHT_BINDING_ALIGN` (4) over a page-aligned mapping, and
+            // `map_region` refused a length that is not a whole number of
+            // elements, so both casts are aligned and exact.
+            LoadedWeight::Mapped { region, form } => {
+                let bytes = region.bytes();
+                match form {
+                    MappedForm::Bf16 => WeightSlice::Bf16(unsafe {
+                        std::slice::from_raw_parts(bytes.as_ptr().cast::<u16>(), bytes.len() / 2)
+                    }),
+                    MappedForm::F32 => WeightSlice::F32(unsafe {
+                        std::slice::from_raw_parts(bytes.as_ptr().cast::<f32>(), bytes.len() / 4)
+                    }),
+                }
+            }
             LoadedWeight::Mxfp4 { packed, scales } => WeightSlice::Mxfp4 {
                 packed: packed.as_slice(),
                 scales: scales.as_slice(),

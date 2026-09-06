@@ -34,11 +34,12 @@ use super::backend::WeightFormat;
 use super::cpu::integer::weight_index_enabled;
 use super::cpu::ledger::{PlanTally, ProjectionLedger};
 use super::cpu::physical::PhysicalProjectionPlan;
-use super::quantise::{Q4_BLOCK, Q8_BLOCK};
+use super::quantise::{Q4_BLOCK, Q8_BLOCK, SUM_BLOCK};
 use super::realization::{RealizationForm, RealizationId, RealizationRecord};
 use super::weights::{LoadedWeight, DEVICE_PAGE_ALIGN};
 use crate::error::VindexError;
 use crate::format::vindex3::opplan::planned::Operation;
+use crate::format::vindex3::opplan::planned::PlannedOperand;
 use crate::format::vindex3::opplan::OperandRef;
 use crate::format::vindex3::represent::codec::{ResidencyClass, ResidencyProfile};
 
@@ -111,6 +112,80 @@ pub fn resident_profile_with(format: WeightFormat, geometry: BlockGeometry) -> R
     }
 }
 
+/// The stored width a block runs along: the operand's inner dimension,
+/// which for a packed bank of `[experts, rows, ...]` is the logical
+/// elements per expert row rather than the packed shape's last axis.
+fn inner_width(operation: Operation, shape: &[usize], logical: usize) -> usize {
+    match operation {
+        Operation::ExpertBankSlice if shape.len() >= 2 => logical / (shape[0] * shape[1]).max(1),
+        _ => shape.last().copied().unwrap_or(logical),
+    }
+}
+
+/// Bytes the executor's re-quantised image of `format` occupies over a
+/// matrix of `rows × k` — EXACT, by the loader's own rule: codes per
+/// element, one f32 scale per block, one i16 sum per sum-block when the
+/// weight index is on, and blocks that never straddle a row, so a row
+/// whose width is not a whole number of blocks carries a short last
+/// block with its own scale. `None` for a format that is not a
+/// re-quantised image, whose profile prices it per weight.
+pub fn requantised_image_bytes(
+    format: WeightFormat,
+    rows: usize,
+    k: usize,
+    geometry: BlockGeometry,
+) -> Option<u64> {
+    let elements = (rows * k) as u64;
+    match format {
+        WeightFormat::Q8 => {
+            let scales = (rows * k.div_ceil(geometry.q8_block)) as u64 * SCALE_WIDTH as u64;
+            let sums = if geometry.q8_indexed {
+                (rows * k.div_ceil(SUM_BLOCK)) as u64 * SUM_WIDTH as u64
+            } else {
+                0
+            };
+            Some(elements + scales + sums)
+        }
+        WeightFormat::Q4 => {
+            let scales = (rows * k.div_ceil(geometry.q4_block)) as u64 * SCALE_WIDTH as u64;
+            Some(elements / 2 + scales)
+        }
+        WeightFormat::F32
+        | WeightFormat::Bf16
+        | WeightFormat::F16
+        | WeightFormat::Nvfp4
+        | WeightFormat::Mxfp4
+        | WeightFormat::KQuant => None,
+    }
+}
+
+/// What `realization` declares it makes resident for `planned`: the
+/// profile's bytes per weight over the logical elements, except that a
+/// re-quantised image is priced by the loader's exact per-row rule. The
+/// ONE pricing the ledger and the budget's re-selection share.
+pub fn declared_resident_for(
+    planned: &PlannedOperand,
+    realization: RealizationId,
+    profile: ResidencyProfile,
+    geometry: BlockGeometry,
+) -> u64 {
+    let logical = planned.logical_elements;
+    let exact = match realization.form {
+        RealizationForm::Requantise(_)
+        | RealizationForm::SliceStored { .. }
+        | RealizationForm::DeviceResident(_) => {
+            let k = inner_width(planned.operation, &planned.operand.shape, logical);
+            let rows = logical.checked_div(k).unwrap_or(0);
+            requantised_image_bytes(realization.format(), rows, k, geometry)
+        }
+        RealizationForm::Direct(_)
+        | RealizationForm::Decode(_)
+        | RealizationForm::DecodedGather
+        | RealizationForm::MappedStored { .. } => None,
+    };
+    exact.unwrap_or_else(|| (profile.bytes_per_weight * logical as f64).round() as u64)
+}
+
 /// What one pinned realization declares it will cost. Every field is
 /// derived from the pin and the container's record; none from a loaded
 /// object.
@@ -126,7 +201,9 @@ pub struct Expectation {
     pub stored_bytes: u64,
     pub logical_elements: usize,
     /// The declared resident image: the realization's residency profile
-    /// over the logical elements.
+    /// over the logical elements — ADDRESSABLE bytes, whatever their
+    /// physical form. [`Expectation::resources`] splits it into what is
+    /// committed and what is merely mapped.
     pub declared_resident: u64,
     /// Bytes materialised transiently on the way to residency: the f32
     /// image a decode or re-quantisation passes through, none for a
@@ -144,6 +221,256 @@ impl Expectation {
     /// whatever it staged to get there.
     pub fn working_set(&self) -> u64 {
         self.declared_resident + self.staging
+    }
+
+    /// This expectation's demand on each resource, in the vocabulary a
+    /// budget decision needs. A mapped realization's bytes are ADDRESS
+    /// SPACE and page in per token as touched; a decoded, re-quantised,
+    /// rebound or direct-copied realization's bytes are COMMITTED memory
+    /// kept resident; a device realization's bytes live on its target.
+    /// Touch is per operation instance per position, and it is the IMAGE
+    /// the executor streams — the resident bytes of a decoded or
+    /// re-quantised projection, the mapped bytes of a bank — not the
+    /// stored bytes read once at load: a whole matrix for a projection,
+    /// `top_k / experts` of an expert's matrix for a bank access, because
+    /// a token selects that fraction of the bank.
+    pub fn resources(&self) -> Resources {
+        let per_token = match self.operation {
+            Operation::ExpertProject { experts, top_k } if experts > 0 => {
+                self.declared_resident as f64 * top_k as f64 / experts as f64
+            }
+            _ => self.declared_resident as f64,
+        };
+        let touch_per_token = per_token.round() as u64;
+        match self.realization.form {
+            RealizationForm::MappedStored { .. } => Resources {
+                stored: self.stored_bytes,
+                mapped: self.declared_resident,
+                resident: 0,
+                transient: self.staging,
+                touch_per_token,
+                page_in_per_token: touch_per_token,
+                device: 0,
+            },
+            // On-device traffic is the device's; the host streams nothing.
+            RealizationForm::DeviceResident(_) => Resources {
+                stored: self.stored_bytes,
+                mapped: 0,
+                resident: 0,
+                transient: self.staging,
+                touch_per_token: 0,
+                page_in_per_token: 0,
+                device: self.declared_resident,
+            },
+            RealizationForm::Direct(_)
+            | RealizationForm::Decode(_)
+            | RealizationForm::Requantise(_)
+            | RealizationForm::SliceStored { .. }
+            | RealizationForm::DecodedGather => Resources {
+                stored: self.stored_bytes,
+                mapped: 0,
+                resident: self.declared_resident,
+                transient: self.staging,
+                touch_per_token,
+                page_in_per_token: 0,
+                device: 0,
+            },
+        }
+    }
+}
+
+/// What a preparation may hold and stream: the constraint selection
+/// answers to. `None` on a dimension means unconstrained there.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct ResidencyBudget {
+    /// Physical host memory the plan's working set — committed
+    /// allocations, the staging peak, and a token's page-in — may reach.
+    /// Never the address space a mapping occupies.
+    pub physical_bytes: Option<u64>,
+    /// Bytes the host may stream per token to reach a target rate.
+    pub throughput: Option<ThroughputBudget>,
+}
+
+/// A rate constraint: a plan can fit in memory and still be unusably
+/// slow, so bytes touched per token are held against what the machine
+/// moves per token at the rate the caller wants.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct ThroughputBudget {
+    pub bytes_per_second: u64,
+    pub target_tokens_per_second: f64,
+}
+
+impl ThroughputBudget {
+    /// Bytes a token may touch at the target rate.
+    pub fn bytes_per_token(&self) -> u64 {
+        (self.bytes_per_second as f64 / self.target_tokens_per_second).round() as u64
+    }
+}
+
+impl ResidencyBudget {
+    /// No constraint on either dimension — every selection is the
+    /// backend's own preference, exactly as before a budget existed.
+    pub const UNBOUNDED: Self = Self {
+        physical_bytes: None,
+        throughput: None,
+    };
+
+    /// This machine's physical memory as the budget, read from the OS;
+    /// unconstrained where the OS does not say.
+    pub fn machine() -> Self {
+        Self {
+            physical_bytes: physical_memory_bytes(),
+            throughput: None,
+        }
+    }
+
+    pub fn physical(bytes: u64) -> Self {
+        Self {
+            physical_bytes: Some(bytes),
+            throughput: None,
+        }
+    }
+
+    pub fn with_throughput(mut self, throughput: ThroughputBudget) -> Self {
+        self.throughput = Some(throughput);
+        self
+    }
+
+    /// Whether `ledger` fits, and by how much it does not: the physical
+    /// deficit and the per-token touch deficit, zero where it fits.
+    pub fn deficit(&self, ledger: &ResourceLedger) -> BudgetDeficit {
+        BudgetDeficit {
+            physical: self
+                .physical_bytes
+                .map(|b| ledger.physical_working_set().saturating_sub(b))
+                .unwrap_or(0),
+            touch_per_token: self
+                .throughput
+                .map(|t| ledger.touch_per_token.saturating_sub(t.bytes_per_token()))
+                .unwrap_or(0),
+        }
+    }
+}
+
+/// How far a ledger overshoots a budget, per constrained dimension.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub struct BudgetDeficit {
+    pub physical: u64,
+    pub touch_per_token: u64,
+}
+
+impl BudgetDeficit {
+    pub fn is_zero(&self) -> bool {
+        self.physical == 0 && self.touch_per_token == 0
+    }
+}
+
+/// The machine's physical memory, from the OS.
+pub fn physical_memory_bytes() -> Option<u64> {
+    #[cfg(unix)]
+    {
+        // SAFETY: sysconf reads two process-independent constants.
+        let pages = unsafe { libc::sysconf(libc::_SC_PHYS_PAGES) };
+        let page = unsafe { libc::sysconf(libc::_SC_PAGESIZE) };
+        if pages > 0 && page > 0 {
+            return Some(pages as u64 * page as u64);
+        }
+        None
+    }
+    #[cfg(windows)]
+    {
+        use windows_sys::Win32::System::SystemInformation::{GlobalMemoryStatusEx, MEMORYSTATUSEX};
+        // SAFETY: MEMORYSTATUSEX is a plain C struct, so all-zero is a valid
+        // value; `dwLength` is set as the API requires before the call, and
+        // the struct outlives it.
+        let mut status: MEMORYSTATUSEX = unsafe { std::mem::zeroed() };
+        status.dwLength = std::mem::size_of::<MEMORYSTATUSEX>() as u32;
+        let ok = unsafe { GlobalMemoryStatusEx(&mut status) };
+        if ok != 0 && status.ullTotalPhys > 0 {
+            return Some(status.ullTotalPhys);
+        }
+        None
+    }
+    #[cfg(not(any(unix, windows)))]
+    {
+        None
+    }
+}
+
+/// One expectation's demand on each resource a budget decision reads.
+/// Seven numbers because they aggregate by SEVEN different rules — see
+/// [`ResourceLedger::aggregate`] — and a single "resident" figure had
+/// conflated a 98 GB mapping with 8 GB of committed memory.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub struct Resources {
+    /// Bytes the container stores for the operand.
+    pub stored: u64,
+    /// Address space a mapping of the stored bytes occupies; pages become
+    /// resident only as touched.
+    pub mapped: u64,
+    /// Committed memory the realization keeps physically resident.
+    pub resident: u64,
+    /// Bytes materialised transiently on the way to residency.
+    pub transient: u64,
+    /// Bytes the host streams for this operation per position: the
+    /// resident image, or the touched fraction of a mapping.
+    pub touch_per_token: u64,
+    /// Bytes a token is expected to page in cold from a mapping.
+    pub page_in_per_token: u64,
+    /// Bytes held on a device target.
+    pub device: u64,
+}
+
+/// A plan's demand on each resource, each aggregated by its own rule.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub struct ResourceLedger {
+    /// Stored footprint: once per physical object (an operand bound
+    /// under two operations is stored once).
+    pub stored: u64,
+    /// Mapped address space: once per mapping.
+    pub mapped: u64,
+    /// Persistent resident memory: every committed allocation, summed.
+    pub resident: u64,
+    /// Transient decode or staging: the MAXIMUM overlapping lifetime —
+    /// the loader stages one operand at a time, so the peak is the
+    /// largest, never the total.
+    pub transient_peak: u64,
+    /// Execution touch per token: summed over every operation instance.
+    pub touch_per_token: u64,
+    /// Expected cold page-in per token from mappings, summed.
+    pub page_in_per_token: u64,
+    /// Device memory, summed per target.
+    pub device: u64,
+}
+
+impl ResourceLedger {
+    /// Aggregate every expectation by the rule its resource carries.
+    pub fn aggregate(expected: &[Expectation]) -> Self {
+        let mut ledger = Self::default();
+        let mut stored_seen = BTreeSet::new();
+        let mut mapped_seen = BTreeSet::new();
+        for e in expected {
+            let r = e.resources();
+            let object = (e.operand.object.clone(), e.operand.tensor.clone());
+            if stored_seen.insert(object.clone()) {
+                ledger.stored += r.stored;
+            }
+            if r.mapped > 0 && mapped_seen.insert(object) {
+                ledger.mapped += r.mapped;
+            }
+            ledger.resident += r.resident;
+            ledger.transient_peak = ledger.transient_peak.max(r.transient);
+            ledger.touch_per_token += r.touch_per_token;
+            ledger.page_in_per_token += r.page_in_per_token;
+            ledger.device += r.device;
+        }
+        ledger
+    }
+
+    /// The physical working set a token needs on the host: committed
+    /// memory, the staging peak, and the mapped bytes a token pages in.
+    pub fn physical_working_set(&self) -> u64 {
+        self.resident + self.transient_peak + self.page_in_per_token
     }
 }
 
@@ -170,9 +497,12 @@ pub fn expectations(
                     resident_profile_with(realization.format(), geometry)
                 }
                 RealizationForm::DecodedGather => ResidencyProfile::DECODED_F32,
+                // Mapped as stored: resident exactly as the container
+                // holds it, nothing staged on the way.
+                RealizationForm::MappedStored { format } => resident_profile_with(format, geometry),
             };
             let staging = match realization.form {
-                RealizationForm::Direct(_) => 0,
+                RealizationForm::Direct(_) | RealizationForm::MappedStored { .. } => 0,
                 RealizationForm::Decode(_)
                 | RealizationForm::Requantise(_)
                 | RealizationForm::DecodedGather => (logical as f64 * F32_WIDTH).round() as u64,
@@ -192,7 +522,12 @@ pub fn expectations(
                 realization,
                 stored_bytes: stored_len(&r.planned.operand).unwrap_or(0),
                 logical_elements: logical,
-                declared_resident: (profile.bytes_per_weight * logical as f64).round() as u64,
+                declared_resident: declared_resident_for(
+                    &r.planned,
+                    realization,
+                    profile,
+                    geometry,
+                ),
                 staging,
             }
         })
@@ -241,6 +576,7 @@ impl<'a> Bound<'a> {
             layer,
             format,
             resident_bytes: self.weights.iter().map(|w| w.resident_bytes() as u64).sum(),
+            mapped_bytes: self.weights.iter().map(|w| w.mapped_bytes() as u64).sum(),
             allocations: self.weights.iter().map(|w| w.padded_allocations()).sum(),
         })
     }
@@ -253,8 +589,13 @@ pub struct Observed {
     pub operation: Operation,
     pub layer: Option<usize>,
     pub format: WeightFormat,
-    /// Bytes held, allocation padding included.
+    /// Bytes physically held, allocation padding included: committed
+    /// allocations in full, a mapping's pages resident at the moment of
+    /// observation.
     pub resident_bytes: u64,
+    /// Address space held as a mapping of the container's segment; zero
+    /// for an owned object.
+    pub mapped_bytes: u64,
     /// Allocations the bytes live in: one for a matrix, one per expert
     /// for a bank.
     pub allocations: usize,
@@ -264,11 +605,19 @@ pub struct Observed {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub struct Reconciliation {
     pub matched: usize,
+    /// Committed bytes declared and observed, over the owned objects.
     pub declared_resident: u64,
     pub observed_resident: u64,
     /// Observed minus declared — allocation padding, bounded per
     /// allocation by the page.
     pub padding: u64,
+    /// Address space declared for mappings, held exactly against the
+    /// mappings observed.
+    pub mapped: u64,
+    /// Pages of those mappings physically resident at observation — a
+    /// fact about this moment, reported beside the declaration and never
+    /// reconciled against it.
+    pub mapped_resident: u64,
 }
 
 /// Every expectation must meet one observation for its operand and
@@ -317,6 +666,36 @@ pub fn reconcile(
                 e.operand.tensor,
                 e.operation.name(),
                 o.format
+            )));
+        }
+        // A mapping is held to its ADDRESS SPACE exactly; the pages of it
+        // resident at this moment are a fact reported beside the
+        // declaration, never reconciled against it.
+        if e.resources().mapped > 0 {
+            if o.mapped_bytes != e.declared_resident {
+                return Err(VindexError::Parse(format!(
+                    "operand `{}` ({}): {} declares {} mapped bytes over {} elements; {} are \
+                     mapped — the declaration and the loader disagree",
+                    e.operand.tensor,
+                    e.operation.name(),
+                    e.realization.name(),
+                    e.declared_resident,
+                    e.logical_elements,
+                    o.mapped_bytes
+                )));
+            }
+            out.matched += 1;
+            out.mapped += e.declared_resident;
+            out.mapped_resident += o.resident_bytes;
+            continue;
+        }
+        if o.mapped_bytes != 0 {
+            return Err(VindexError::Parse(format!(
+                "operand `{}` ({}): pinned {} but a mapping of {} bytes is bound for it",
+                e.operand.tensor,
+                e.operation.name(),
+                e.realization.name(),
+                o.mapped_bytes
             )));
         }
         // Exact for an object held in plain vectors; up to a page of

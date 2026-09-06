@@ -52,6 +52,7 @@ fn routed_layer() -> LayerFfn {
         expert_intermediate_size: ROUTED_INTER,
         router_kind: MoeRouterKind::TopKSoftmax,
         routing_policy: ExpertRoutingPolicy::SoftmaxThenSelect,
+        branch_scale: None,
         activation: Activation::Silu,
         gate_policy: ExpertGatePolicy::Gated,
         expert_format: ExpertFormat::PackedBF16,

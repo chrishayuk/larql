@@ -259,6 +259,50 @@ impl WeightRegion {
         self.len == 0
     }
 
+    /// Bytes of this region whose pages are physically resident NOW, as
+    /// the OS reports them — the committed half of a mapping, distinct
+    /// from its address space. `None` where the OS offers no such
+    /// report, never a guess.
+    pub fn resident_bytes(&self) -> Option<u64> {
+        #[cfg(unix)]
+        {
+            let bytes = self.bytes();
+            if bytes.is_empty() {
+                return Some(0);
+            }
+            // SAFETY: sysconf reads a process-independent constant.
+            let page = unsafe { libc::sysconf(libc::_SC_PAGESIZE) };
+            if page <= 0 {
+                return None;
+            }
+            let page = page as usize;
+            let start = bytes.as_ptr() as usize;
+            let first = start & !(page - 1);
+            let end = start + bytes.len();
+            let pages = end.div_ceil(page) - first / page;
+            let mut vec = vec![0u8; pages];
+            // SAFETY: `[first, first + pages*page)` covers the region's
+            // pages within a live mapping this region borrows from, and
+            // `vec` holds one byte per page as `mincore` requires.
+            let rc = unsafe {
+                libc::mincore(
+                    first as *mut libc::c_void,
+                    pages * page,
+                    vec.as_mut_ptr().cast(),
+                )
+            };
+            if rc != 0 {
+                return None;
+            }
+            let resident_pages = vec.iter().filter(|b| **b & 1 == 1).count();
+            Some((resident_pages * page).min(bytes.len()) as u64)
+        }
+        #[cfg(not(unix))]
+        {
+            None
+        }
+    }
+
     /// Byte offset of these bytes within their store's backing
     /// allocation.
     ///

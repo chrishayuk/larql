@@ -588,22 +588,22 @@ pub struct RoutedFfnCall<'a> {
     pub top_k: usize,
     pub router_kind: MoeRouterKind,
     pub routing_policy: ExpertRoutingPolicy,
+    /// Multiplier on every selected expert's weight — the plan's declared
+    /// `branch_scale`, 1 when it declares none. The shared expert is not
+    /// under it.
+    pub branch_scale: f32,
     pub activation: Activation,
     pub gate_policy: larql_models::ExpertGatePolicy,
-    /// How each expert's fused `gate_up` rows split into gate and up.
-    pub gate_up_layout: GateUpLayout,
     /// Router logits matrix `[experts, hidden]`, row-major.
     pub router: &'a [f32],
     /// Additive router bias `[experts]`.
     pub router_bias: Option<&'a [f32]>,
-    /// One `[2·intermediate, hidden]` matrix per expert.
-    pub gate_up: &'a [WeightSlice<'a>],
+    /// The experts' matrices, in the shape their bank stores them.
+    pub weights: ExpertSlices<'a>,
     /// Fused gate/up bias, `[experts · 2·intermediate]` flat, in the
-    /// operand's own row layout.
+    /// operand's own row layout. Packed banks only.
     pub gate_up_bias: Option<&'a [f32]>,
-    /// One `[hidden, intermediate]` matrix per expert.
-    pub down: &'a [WeightSlice<'a>],
-    /// Down bias, `[experts · hidden]` flat.
+    /// Down bias, `[experts · hidden]` flat. Packed banks only.
     pub down_bias: Option<&'a [f32]>,
     /// What the router reads. Every family but Gemma 4 routes on the same
     /// vector the experts consume (`x`); Gemma 4's router reads the RAW
@@ -617,6 +617,29 @@ pub struct RoutedFfnCall<'a> {
     pub router_scale: Option<&'a [f32]>,
     pub router_per_expert_scale: Option<&'a [f32]>,
     pub router_norm_eps: Option<f64>,
+}
+
+/// How a routed layer's expert matrices are handed to a backend: the
+/// shape the bank STORES them in, never converted to the other.
+pub enum ExpertSlices<'a> {
+    /// A packed bank: one fused `[2·intermediate, hidden]` gate/up per
+    /// expert, split by the call's `gate_up_layout`, and one
+    /// `[hidden, intermediate]` down.
+    Fused {
+        gate_up: &'a [WeightSlice<'a>],
+        down: &'a [WeightSlice<'a>],
+        /// How each expert's fused rows split into gate and up — a
+        /// property of the fused operand, so it travels with it.
+        layout: GateUpLayout,
+    },
+    /// A per-expert bank: gate `[intermediate, hidden]`, up
+    /// `[intermediate, hidden]` and down `[hidden, intermediate]` as three
+    /// whole matrices per expert — each one the stored operand it is.
+    Separate {
+        gate: &'a [WeightSlice<'a>],
+        up: &'a [WeightSlice<'a>],
+        down: &'a [WeightSlice<'a>],
+    },
 }
 
 /// One position's attention against interpreter-owned K/V state — the

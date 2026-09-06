@@ -355,6 +355,7 @@ pub(super) fn load(op: &RoutedFfnOp, store: &OperandStore, format: WeightFormat)
         store.into(),
         &|_: &OperandRef| Ok(format),
         format,
+        &|_: &OperandRef| Ok(format),
     )
     .unwrap()
 }
@@ -365,6 +366,7 @@ pub(super) fn load_err(op: &RoutedFfnOp, store: &OperandStore, format: WeightFor
         store.into(),
         &|_: &OperandRef| Ok(format),
         format,
+        &|_: &OperandRef| Ok(format),
     )
     .err()
     .expect("loading must refuse")

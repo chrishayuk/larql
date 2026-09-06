@@ -46,13 +46,17 @@
 //! slice the plan cannot satisfy rather than silently preparing less.
 
 use super::accounting::{
-    expectations, reconcile, BlockGeometry, Bound, Expectation, Observed, Reconciliation,
+    declared_resident_for, expectations, reconcile, BlockGeometry, Bound, Expectation, Observed,
+    Reconciliation, ResidencyBudget, ResourceLedger,
 };
 use super::backend::{MatrixClass, NormCall, PlanBackend, WeightFormat, WeightSlice};
 use super::experts::FfnOperands;
 use super::hyper_connection::{HeadWeights, SiteWeights, HC_HEAD_SCALE_LEN, HC_SCALE_LEN};
 use super::operands::{OperandSource, SourceStamp};
-use super::realization::{RealizationRecord, RepresentationFacts, SelectionRefusals};
+use super::realization::{
+    realization_residency, RealizationId, RealizationRecord, RepresentationFacts, SelectionReason,
+    SelectionRefusals,
+};
 use super::weights::{load_weight, LoadedWeight};
 use super::AttentionOperands;
 use crate::error::VindexError;
@@ -63,7 +67,7 @@ use crate::format::vindex3::represent::nvfp4_pack::CodecIdentity;
 use super::super::conv_qkv::ConvQkvOp;
 use super::super::{
     ComponentOpPlan, GatedDeltaOp, HcSiteOp, HyperConnectionLayerOp, KdaOp, LayerAttention,
-    LayerFfn, LayerPlan, Mamba2Op, MlaOp, NormOp, OperandRef, OutputOp,
+    LayerPlan, Mamba2Op, MlaOp, NormOp, OperandRef, OutputOp,
 };
 use larql_models::config::{HyperConnection, HyperConnectionWeights, ResidualTopology};
 
@@ -1033,6 +1037,162 @@ pub fn select_realizations<B: PlanBackend + ?Sized>(
     backend: &B,
     slice: &ExecutionSlice,
 ) -> Result<Vec<RealizationRecord>, VindexError> {
+    Ok(select_records(plan, store, backend, slice)?
+        .into_iter()
+        .map(|(record, _)| record)
+        .collect())
+}
+
+/// [`select_realizations`], then held against `budget`: while the plan's
+/// PHYSICAL working set or per-token touch exceeds it, the record with
+/// the largest resident saving among its own candidates is re-selected
+/// to the cheaper-resident one the backend had considered, with reason
+/// [`SelectionReason::BudgetPolicy`]; when no candidate can bring the
+/// plan inside, the whole preparation is refused BEFORE any payload byte
+/// with the irreducible deficit and the alternatives that were tried.
+/// Under [`ResidencyBudget::UNBOUNDED`] this is exactly
+/// [`select_realizations`].
+pub fn select_realizations_within<B: PlanBackend + ?Sized>(
+    plan: &ComponentOpPlan,
+    store: OperandSource<'_>,
+    backend: &B,
+    slice: &ExecutionSlice,
+    budget: &ResidencyBudget,
+) -> Result<Vec<RealizationRecord>, VindexError> {
+    let mut selected = select_records(plan, store, backend, slice)?;
+    let geometry = BlockGeometry::executor();
+    let stored_len = |op: &OperandRef| store.stored_len(op);
+    let mut switches: Vec<String> = Vec::new();
+    loop {
+        let records: Vec<RealizationRecord> = selected.iter().map(|(r, _)| r.clone()).collect();
+        let priced = expectations(&records, stored_len, geometry);
+        let ledger = ResourceLedger::aggregate(&priced);
+        let deficit = budget.deficit(&ledger);
+        if deficit.is_zero() {
+            return Ok(records);
+        }
+        // The best switch: the largest resident saving any record can make
+        // by moving to another of ITS OWN candidates.
+        let mut best: Option<(usize, RealizationId, u64)> = None;
+        for (i, (record, facts)) in selected.iter().enumerate() {
+            let current = record.selection.realization;
+            let now = declared_resident_for(
+                &record.planned,
+                current,
+                record.selection.residency,
+                geometry,
+            );
+            for candidate in &record.selection.candidates {
+                if *candidate == current {
+                    continue;
+                }
+                let then = declared_resident_for(
+                    &record.planned,
+                    *candidate,
+                    realization_residency(facts, *candidate),
+                    geometry,
+                );
+                if then < now {
+                    let saving = now - then;
+                    if best.is_none_or(|(_, _, s)| saving > s) {
+                        best = Some((i, *candidate, saving));
+                    }
+                }
+            }
+        }
+        let Some((i, candidate, saving)) = best else {
+            return Err(VindexError::Parse(budget_refusal(
+                budget, &ledger, &deficit, &priced, &switches,
+            )));
+        };
+        let (record, facts) = &mut selected[i];
+        switches.push(format!(
+            "`{}` {} → {} (saves {:.2} GB resident)",
+            record.planned.operand.tensor,
+            record.selection.realization.name(),
+            candidate.name(),
+            saving as f64 / 1e9
+        ));
+        record.selection.residency = realization_residency(facts, candidate);
+        record.selection.realization = candidate;
+        record.selection.reason = SelectionReason::BudgetPolicy;
+    }
+}
+
+/// The refusal a budget produces: what the plan demands, what the budget
+/// allows, the irreducible deficit, the largest committed operands that
+/// have nowhere cheaper to go, and every alternative already taken.
+fn budget_refusal(
+    budget: &ResidencyBudget,
+    ledger: &ResourceLedger,
+    deficit: &super::accounting::BudgetDeficit,
+    priced: &[Expectation],
+    switches: &[String],
+) -> String {
+    const GB: f64 = 1e9;
+    const LARGEST: usize = 5;
+    let mut out = format!(
+        "the plan cannot be prepared within the residency budget before any payload byte: \
+         physical working set {:.2} GB (resident {:.2} + staging peak {:.2} + page-in per \
+         token {:.2}) against {}; touch per token {:.2} GB against {}; irreducible deficit: \
+         {:.2} GB physical, {:.2} GB per token",
+        ledger.physical_working_set() as f64 / GB,
+        ledger.resident as f64 / GB,
+        ledger.transient_peak as f64 / GB,
+        ledger.page_in_per_token as f64 / GB,
+        budget
+            .physical_bytes
+            .map(|b| format!("{:.2} GB", b as f64 / GB))
+            .unwrap_or_else(|| "no physical limit".to_string()),
+        ledger.touch_per_token as f64 / GB,
+        budget
+            .throughput
+            .map(|t| format!("{:.2} GB per token", t.bytes_per_token() as f64 / GB))
+            .unwrap_or_else(|| "no throughput limit".to_string()),
+        deficit.physical as f64 / GB,
+        deficit.touch_per_token as f64 / GB,
+    );
+    let mut largest: Vec<&Expectation> = priced
+        .iter()
+        .filter(|e| e.resources().resident > 0)
+        .collect();
+    largest.sort_by_key(|e| std::cmp::Reverse(e.resources().resident));
+    out.push_str("; largest committed operands with no cheaper candidate: ");
+    out.push_str(
+        &largest
+            .iter()
+            .take(LARGEST)
+            .map(|e| {
+                format!(
+                    "`{}` {} {:.2} GB",
+                    e.operand.tensor,
+                    e.realization.name(),
+                    e.resources().resident as f64 / GB
+                )
+            })
+            .collect::<Vec<_>>()
+            .join(", "),
+    );
+    if switches.is_empty() {
+        out.push_str("; no alternative was cheaper");
+    } else {
+        out.push_str(&format!(
+            "; alternatives already taken ({}): {}",
+            switches.len(),
+            switches.join(", ")
+        ));
+    }
+    out
+}
+
+/// Every planned operand in `slice` with its representation facts and
+/// the backend's selection, or the complete list of refusals.
+fn select_records<B: PlanBackend + ?Sized>(
+    plan: &ComponentOpPlan,
+    store: OperandSource<'_>,
+    backend: &B,
+    slice: &ExecutionSlice,
+) -> Result<Vec<(RealizationRecord, RepresentationFacts)>, VindexError> {
     let registry = store.registry();
     let whole = slice.is_whole_stack();
     let range = slice.layers(plan);
@@ -1060,12 +1220,15 @@ pub fn select_realizations<B: PlanBackend + ?Sized>(
         }
         let provider = facts.registered.as_ref().map(|r| r.identity.clone());
         match backend.select(&planned, &facts) {
-            Ok(selection) => records.push(RealizationRecord {
-                representation: label.to_string(),
-                provider,
-                planned,
-                selection,
-            }),
+            Ok(selection) => records.push((
+                RealizationRecord {
+                    representation: label.to_string(),
+                    provider,
+                    planned,
+                    selection,
+                },
+                facts,
+            )),
             Err(refusal) => refusals.push(*refusal),
         }
     }
@@ -1107,20 +1270,34 @@ fn pinned_format(
     )))
 }
 
-/// The resident form pinned for layer `index`'s packed bank.
+/// The resident form pinned for layer `index`'s bank: a packed bank's
+/// one slice pin, or the one form every matrix of a per-expert bank was
+/// pinned to — a bank whose experts were pinned differently is a plan
+/// the loader cannot bind, and is refused by name.
 fn bank_pin(records: &[RealizationRecord], index: usize) -> Result<WeightFormat, VindexError> {
-    records
+    let mut pins = records
         .iter()
-        .find(|r| {
-            r.planned.layer == Some(index) && r.planned.operation == Operation::ExpertBankSlice
+        .filter(|r| {
+            r.planned.layer == Some(index)
+                && matches!(
+                    r.planned.operation,
+                    Operation::ExpertBankSlice | Operation::ExpertProject { .. }
+                )
         })
-        .map(|r| r.selection.realization.format())
-        .ok_or_else(|| {
-            VindexError::Parse(format!(
-                "layer {index}: a routed FFN with no pinned bank realization — planned_operands() \
-                 and the loader disagree"
-            ))
-        })
+        .map(|r| r.selection.realization.format());
+    let Some(first) = pins.next() else {
+        return Err(VindexError::Parse(format!(
+            "layer {index}: a routed FFN with no pinned bank realization — planned_operands() \
+             and the loader disagree"
+        )));
+    };
+    if let Some(other) = pins.find(|f| *f != first) {
+        return Err(VindexError::Parse(format!(
+            "layer {index}: the bank's experts were pinned to {first:?} and {other:?}; one bank \
+             binds in one form"
+        )));
+    }
+    Ok(first)
 }
 
 /// A component's operands, lowered once for a given slice and backend.
@@ -1167,6 +1344,21 @@ impl PreparedOperands {
         backend: &B,
         slice: ExecutionSlice,
     ) -> Result<Self, VindexError> {
+        Self::load_within(plan, store, backend, slice, &ResidencyBudget::UNBOUNDED)
+    }
+
+    /// [`Self::load`] under a residency budget: the pins are chosen so the
+    /// plan's physical working set and per-token touch fit `budget`, or
+    /// the preparation is refused before any payload byte with the
+    /// deficit and the alternatives considered — see
+    /// [`select_realizations_within`].
+    pub fn load_within<'s, B: PlanBackend + ?Sized>(
+        plan: &ComponentOpPlan,
+        store: impl Into<OperandSource<'s>>,
+        backend: &B,
+        slice: ExecutionSlice,
+        budget: &ResidencyBudget,
+    ) -> Result<Self, VindexError> {
         let store = store.into();
         slice.validate(plan)?;
         // No topology refusal stands here any more (wave 19): the decode
@@ -1176,7 +1368,7 @@ impl PreparedOperands {
         // name — a whole-stack image with no declared head reduction, a
         // layer scale under the topology — and the plan report reads the
         // same facts, so a plan it calls executable is one prepared here.
-        Self::load_validated(plan, store, backend, slice)
+        Self::load_validated(plan, store, backend, slice, budget)
     }
 
     /// The loader proper, past slice validation. Every operand the slice
@@ -1186,6 +1378,7 @@ impl PreparedOperands {
         store: OperandSource<'_>,
         backend: &B,
         slice: ExecutionSlice,
+        budget: &ResidencyBudget,
     ) -> Result<Self, VindexError> {
         let stamp = store.stamp();
         let whole = slice.is_whole_stack();
@@ -1193,7 +1386,7 @@ impl PreparedOperands {
         // this slice executes is resolved against the registry, admitted,
         // and pinned to one realization — or the whole plan is refused
         // with every reason — before a byte of any of them is read.
-        let realizations = select_realizations(plan, store, backend, &slice)?;
+        let realizations = select_realizations_within(plan, store, backend, &slice, budget)?;
         let embedding = plan.embedding.as_ref().ok_or_else(|| {
             VindexError::Parse(format!(
                 "component `{}` has no embedding op — external hidden-state input is a later rung",
@@ -1220,6 +1413,7 @@ impl PreparedOperands {
             |op: &OperandRef| pinned(op, Operation::Project(MatrixClass::AttentionProjection));
         let ffn_format =
             |op: &OperandRef| pinned(op, Operation::Project(MatrixClass::FfnProjection));
+        let shared_format = |op: &OperandRef| pinned(op, Operation::SharedExpertProject);
         let head_format = |op: &OperandRef| pinned(op, Operation::OutputHead);
 
         let range = slice.layers(plan);
@@ -1307,7 +1501,9 @@ impl PreparedOperands {
                 ffn: layer
                     .ffn
                     .as_ref()
-                    .map(|ffn| FfnOperands::load(ffn, store, &ffn_format, bank_format))
+                    .map(|ffn| {
+                        FfnOperands::load(ffn, store, &ffn_format, bank_format, &shared_format)
+                    })
                     .transpose()?,
                 post_ffn: layer
                     .post_ffn_norm
@@ -1500,6 +1696,7 @@ impl PreparedOperands {
                 layer: None,
                 format: WeightFormat::F32,
                 resident_bytes: std::mem::size_of_val(&table[..]) as u64,
+                mapped_bytes: 0,
                 allocations: 0,
             });
         }
@@ -1515,21 +1712,8 @@ impl PreparedOperands {
                 )?);
             }
             if let (Some(ffn), Some(op)) = (&prepared.ffn, &layer.ffn) {
-                for bound in ffn.bound(op)? {
-                    let operation = match op {
-                        LayerFfn::Routed(_) => Operation::ExpertBankSlice,
-                        LayerFfn::Dense(_) => Operation::Project(MatrixClass::FfnProjection),
-                        // A hybrid binds its dense projections one each
-                        // and its banks over their experts; the pairing
-                        // says which by how many objects it holds.
-                        LayerFfn::Hybrid(_) => {
-                            if bound.weights.len() == 1 {
-                                Operation::Project(MatrixClass::FfnProjection)
-                            } else {
-                                Operation::ExpertBankSlice
-                            }
-                        }
-                    };
+                // The loader names the operation it bound each object for.
+                for (operation, bound) in ffn.bound(op)? {
                     out.push(bound.observed(operation, Some(index))?);
                 }
             }
@@ -1676,6 +1860,45 @@ impl PreparedOperands {
     }
 
     /// Where this image's allocations landed. See [`AllocationCensus`].
+    /// The image's mappings, and how much of them is physically resident
+    /// at this moment: address space summed once per bound region, pages
+    /// resident as the OS reports them now. Cheap enough to ask between
+    /// tokens, which is what a residency curve is.
+    pub fn mapped_residency(&self) -> MappedResidency {
+        let mut out = MappedResidency::default();
+        let mut add = |w: &LoadedWeight| {
+            let mapped = w.mapped_bytes() as u64;
+            if mapped > 0 {
+                out.mapped_bytes += mapped;
+                out.resident_bytes += w.resident_bytes() as u64;
+                out.regions += 1;
+            }
+        };
+        for layer in &self.layers {
+            match &layer.attention {
+                PreparedAttention::Softmax(ops) => {
+                    ops.loaded_matrices().iter().for_each(|w| add(w))
+                }
+                PreparedAttention::GatedDelta(ops) => {
+                    ops.loaded_matrices().iter().for_each(|w| add(w))
+                }
+                PreparedAttention::Mamba2(ops) => ops.loaded_matrices().iter().for_each(|w| add(w)),
+                PreparedAttention::ConvQkv(ops) => {
+                    ops.loaded_matrices().iter().for_each(|w| add(w))
+                }
+                PreparedAttention::Kda(ops) => ops.loaded_matrices().iter().for_each(|w| add(w)),
+                PreparedAttention::Mla(ops) => ops.loaded_matrices().iter().for_each(|w| add(w)),
+            }
+            if let Some(ffn) = &layer.ffn {
+                ffn.loaded_matrices().iter().for_each(|w| add(w));
+            }
+        }
+        if let Some((_, projection)) = &self.output {
+            add(projection);
+        }
+        out
+    }
+
     pub fn allocation_census(&self) -> AllocationCensus {
         let mut census = AllocationCensus::default();
         let mut add = |w: &LoadedWeight| {
@@ -1849,24 +2072,42 @@ impl AllocationCensus {
     }
 }
 
-/// One site's resident bytes, split by whether the loader widened.
+/// A prepared image's mappings at one moment: their address space and the
+/// pages of it physically resident — the two figures a mapping must never
+/// be reported as one of.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub struct MappedResidency {
+    pub regions: usize,
+    pub mapped_bytes: u64,
+    pub resident_bytes: u64,
+}
+
+/// One site's bytes, split by whether the loader widened — and, apart
+/// from both, what it MAPPED: address space over the container's own
+/// segment, resident only as touched, never counted as committed.
 #[derive(Default, Clone, Copy, Debug)]
 pub struct SiteResidency {
     /// Bytes held as f32 — doubled, when the checkpoint stored bf16.
     pub widened_f32: usize,
-    /// Bytes held exactly as the checkpoint holds them.
+    /// Bytes held exactly as the checkpoint holds them, committed.
     pub compact: usize,
+    /// Bytes bound as a mapping of the container's segment.
+    pub mapped: usize,
 }
 
 impl SiteResidency {
     fn add(&mut self, w: &LoadedWeight) {
-        if w.is_widened_f32() {
+        let mapped = w.mapped_bytes();
+        if mapped > 0 {
+            self.mapped += mapped;
+        } else if w.is_widened_f32() {
             self.widened_f32 += w.resident_bytes();
         } else {
             self.compact += w.resident_bytes();
         }
     }
 
+    /// Committed bytes: what the process holds, mappings excluded.
     pub fn total(&self) -> usize {
         self.widened_f32 + self.compact
     }
@@ -1905,6 +2146,11 @@ impl ResidencyCensus {
 
     pub fn widened_f32(&self) -> usize {
         self.sites().iter().map(|(_, s)| s.widened_f32).sum()
+    }
+
+    /// Address space held as mappings, across every site.
+    pub fn mapped(&self) -> usize {
+        self.sites().iter().map(|(_, s)| s.mapped).sum()
     }
 
     pub fn compact(&self) -> usize {

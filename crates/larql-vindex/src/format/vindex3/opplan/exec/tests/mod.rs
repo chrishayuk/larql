@@ -88,6 +88,7 @@ mod generate_metal;
 mod generate_real;
 mod golden;
 mod kernels;
+mod kimi_per_expert_prepared;
 mod kquant_projection;
 mod kquant_projection_real;
 mod kv;
@@ -100,6 +101,7 @@ mod recurrence_shape;
 mod replay_capture;
 mod requirements;
 mod residency;
+mod residency_budget;
 mod residency_census;
 mod routed;
 mod seam;
@@ -119,6 +121,7 @@ pub(super) use crate::format::vindex3::fixtures::{
     DENSE_HIDDEN as HIDDEN, DENSE_INTERMEDIATE as INTERMEDIATE, DENSE_LAYERS as LAYERS,
     DENSE_Q_HEADS as Q_HEADS, DENSE_VOCAB as VOCAB,
 };
+mod sigmoid_router;
 mod step_many;
 
 /// `step_many`'s gates run on the same encoded hybrid stack the

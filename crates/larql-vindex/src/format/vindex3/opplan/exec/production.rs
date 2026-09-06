@@ -33,22 +33,23 @@ use larql_compute::residual::{
     layer_norm_eps, rms_norm_eps, rms_norm_heads_no_weight_eps, rms_norm_qk_eps,
 };
 use larql_compute::MoeGateRule;
+use larql_models::config::GateUpLayout;
 
 use super::super::super::graph::policy::AttentionSpan;
 use super::backend::{
-    AttentionCall, AttentionOut, AttentionStepCall, AttentionStepOut, FfnCall, FfnManyCall,
-    GateCall, NormCall, PlanBackend, ProjectCall, ProjectedQkv, QkNormCall, RoutedFfnCall,
-    WeightFormat,
+    AttentionCall, AttentionOut, AttentionStepCall, AttentionStepOut, ExpertSlices, FfnCall,
+    FfnManyCall, GateCall, NormCall, PlanBackend, ProjectCall, ProjectedQkv, QkNormCall,
+    RoutedFfnCall, WeightFormat,
 };
 use super::cpu::physical::{
     kquant_execution, project_matrix, project_matrix_many, ExecutorProjections, KQuantExecution,
 };
 use super::cpu::PhysicalProjectionPlan;
 use super::kernels::{
-    gather_fused_half, mrope_rotate_scaled, rope_rotate, rope_rotate_scaled, FusedHalf,
+    gather_fused_half, mrope_rotate_scaled, rope_rotate, rope_rotate_scaled, sigmoid, FusedHalf,
 };
 use super::realization::{
-    class_of, common_selection, cpu_projection_candidates, resident_profile, RealizationForm,
+    class_of, common_selection, cpu_projection_candidates, realization_residency, RealizationForm,
     RealizationId, RefusalKind, RepresentationFacts, Selection, SelectionReason, SelectionRefusal,
 };
 use super::timing::{timed, OpClass};
@@ -478,27 +479,76 @@ pub(super) fn select_experts(
         }
         return Ok(selected);
     }
-    if let Some(bias) = call.router_bias {
-        for (l, b) in logits.iter_mut().zip(bias) {
-            *l += b;
+    let mut selected = if call.router_kind == MoeRouterKind::Sigmoid {
+        sigmoid_select(logits, call.router_bias, call.top_k, call.routing_policy)
+    } else {
+        if let Some(bias) = call.router_bias {
+            for (l, b) in logits.iter_mut().zip(bias) {
+                *l += b;
+            }
+        }
+        router::select(logits, call.top_k, call.routing_policy)
+    };
+    if call.branch_scale != 1.0 {
+        for (_, w) in &mut selected {
+            *w *= call.branch_scale;
         }
     }
-    Ok(router::select(logits, call.top_k, call.routing_policy))
+    Ok(selected)
+}
+
+/// The reference's renormalisation guard: `weights / (sum + 1e-20)`, so a
+/// selection whose scores all underflow divides by something.
+const SIGMOID_RENORM_EPS: f32 = 1e-20;
+
+/// The sigmoid router (DeepSeek-V3, Kimi, GLM-5.3-Flash): every expert's
+/// score is `sigmoid(logit)`, independent of the others; the correction
+/// bias moves which experts are SELECTED and never what they WEIGH; the
+/// selected raw scores are the weights, renormalised to sum to one under
+/// [`ExpertRoutingPolicy::NormalisedOverSelected`] and kept raw otherwise.
+/// Ties rank by first index, as `torch.topk` does.
+pub(super) fn sigmoid_select(
+    logits: &[f32],
+    bias: Option<&[f32]>,
+    top_k: usize,
+    policy: ExpertRoutingPolicy,
+) -> Vec<(usize, f32)> {
+    let scores: Vec<f32> = logits.iter().map(|&l| sigmoid(l)).collect();
+    let keys: Vec<f32> = match bias {
+        Some(bias) => scores.iter().zip(bias).map(|(s, b)| s + b).collect(),
+        None => scores.clone(),
+    };
+    let mut ranked: Vec<usize> = (0..logits.len()).collect();
+    // A stable sort on the key keeps equal keys in index order.
+    ranked.sort_by(|&a, &b| {
+        keys[b]
+            .partial_cmp(&keys[a])
+            .unwrap_or(std::cmp::Ordering::Equal)
+    });
+    ranked.truncate(top_k.min(logits.len()));
+    let mut selected: Vec<(usize, f32)> = ranked.iter().map(|&e| (e, scores[e])).collect();
+    if policy == ExpertRoutingPolicy::NormalisedOverSelected && selected.len() > 1 {
+        let sum = selected.iter().map(|(_, w)| w).sum::<f32>() + SIGMOID_RENORM_EPS;
+        for (_, w) in &mut selected {
+            *w /= sum;
+        }
+    }
+    selected
 }
 
 /// One selected expert's inner activation from its fused gate/up output
 /// (bias already added): rows read through the declared layout, combined
 /// by the served gate rule.
-pub(super) fn expert_inner(call: &RoutedFfnCall<'_>, fused: &[f32]) -> Vec<f32> {
+pub(super) fn expert_inner(
+    call: &RoutedFfnCall<'_>,
+    layout: GateUpLayout,
+    fused: &[f32],
+) -> Vec<f32> {
     let rule = MoeGateRule::from_arch(call.gate_policy, call.activation);
     (0..call.intermediate)
         .map(|i| {
-            let g = fused[call
-                .gate_up_layout
-                .row(GateUpBranch::Gate, i, call.intermediate)];
-            let u = fused[call
-                .gate_up_layout
-                .row(GateUpBranch::Up, i, call.intermediate)];
+            let g = fused[layout.row(GateUpBranch::Gate, i, call.intermediate)];
+            let u = fused[layout.row(GateUpBranch::Up, i, call.intermediate)];
             rule.combine(g, u)
         })
         .collect()
@@ -745,23 +795,16 @@ pub(crate) fn select_cpu(
     let Some(class) = class_of(operand.operation) else {
         return Err(refuse(RefusalKind::MissingRealization, vec![]));
     };
-    let Some(registered) = &facts.registered else {
+    if facts.registered.is_none() {
         return Err(refuse(RefusalKind::UnregisteredRepresentation, vec![]));
-    };
+    }
     let candidates = cpu_projection_candidates(facts, PhysicalProjectionPlan::BlasF32, &REQUANTISE);
     let has = |form: RealizationForm| candidates.iter().any(|c| c.form == form);
     let decode = RealizationId::cpu(Decode(PhysicalProjectionPlan::BlasF32));
     let pick = |id: RealizationId, reason: SelectionReason| {
-        let residency = match id.form {
-            Direct(plan) => facts
-                .direct_residency(plan)
-                .unwrap_or(registered.decode_residency),
-            Decode(_) => registered.decode_residency,
-            _ => resident_profile(id.format()),
-        };
         Ok(Selection {
             realization: id,
-            residency,
+            residency: realization_residency(facts, id),
             reason,
             candidates: candidates.clone(),
         })
@@ -1010,26 +1053,60 @@ impl PlanBackend for ProductionBackend {
         let routed_input = router_input(&call)?;
         let mut logits = matmul_vec(&routed_input, call.router, call.experts, call.hidden);
         let selected = select_experts(&call, &mut logits)?;
-        let two_inter = FUSED_BRANCHES * call.intermediate;
         let mut out = vec![0.0f32; call.hidden];
-        for (expert, weight) in selected {
-            let mut fused = matmul_vec(
-                call.x,
-                call.gate_up[expert].as_f32()?,
-                two_inter,
-                call.hidden,
-            );
-            add_expert_bias(&mut fused, call.gate_up_bias, expert);
-            let inner = expert_inner(&call, &fused);
-            let mut expert_out = matmul_vec(
-                &inner,
-                call.down[expert].as_f32()?,
-                call.hidden,
-                call.intermediate,
-            );
-            add_expert_bias(&mut expert_out, call.down_bias, expert);
-            for (acc, v) in out.iter_mut().zip(&expert_out) {
-                *acc += weight * v;
+        match call.weights {
+            ExpertSlices::Fused {
+                gate_up,
+                down,
+                layout,
+            } => {
+                let two_inter = FUSED_BRANCHES * call.intermediate;
+                for (expert, weight) in selected {
+                    let mut fused =
+                        matmul_vec(call.x, gate_up[expert].as_f32()?, two_inter, call.hidden);
+                    add_expert_bias(&mut fused, call.gate_up_bias, expert);
+                    let inner = expert_inner(&call, layout, &fused);
+                    let mut expert_out = matmul_vec(
+                        &inner,
+                        down[expert].as_f32()?,
+                        call.hidden,
+                        call.intermediate,
+                    );
+                    add_expert_bias(&mut expert_out, call.down_bias, expert);
+                    for (acc, v) in out.iter_mut().zip(&expert_out) {
+                        *acc += weight * v;
+                    }
+                }
+            }
+            // A per-expert bank: each selected expert's three whole
+            // matrices run through the SAME production projection
+            // kernels a dense FFN uses — bf16 in place, f32 through BLAS
+            // — so the bank stays in its stored form. No bias layout is
+            // defined for separate experts, and none is planned; one
+            // arriving here is a plan the executor does not know.
+            ExpertSlices::Separate { gate, up, down } => {
+                if call.gate_up_bias.is_some() || call.down_bias.is_some() {
+                    return Err(VindexError::Parse(
+                        "a per-expert bank carries no expert bias; the call declares one"
+                            .to_string(),
+                    ));
+                }
+                let rule = MoeGateRule::from_arch(call.gate_policy, call.activation);
+                let _t = timed(OpClass::MoeRoutedExpert);
+                for (expert, weight) in selected {
+                    let g = project_matrix(&gate[expert], call.x, call.intermediate, call.hidden)?;
+                    let u = project_matrix(&up[expert], call.x, call.intermediate, call.hidden)?;
+                    let inner: Vec<f32> = g
+                        .iter()
+                        .zip(&u)
+                        .map(|(g, u)| rule.combine(*g, *u))
+                        .collect();
+                    let expert_out =
+                        project_matrix(&down[expert], &inner, call.hidden, call.intermediate)?;
+                    for (acc, v) in out.iter_mut().zip(&expert_out) {
+                        *acc += weight * v;
+                    }
+                }
             }
         }
         Ok(out)

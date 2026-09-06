@@ -8,6 +8,7 @@ use super::fixture::{bf16_carrier_store, routed_fixture, BF16_SUFFIX, BLOCKS_SUF
 use crate::format::vindex3::opplan::exec::backend::MatrixClass;
 use crate::format::vindex3::opplan::exec::prepared::{ExecutionSlice, PreparedOperands};
 use crate::format::vindex3::opplan::exec::production::ProductionBackend;
+use crate::format::vindex3::opplan::exec::realization::SelectionReason;
 use crate::format::vindex3::opplan::planned::Operation;
 use crate::format::vindex3::opplan::{ExpertBank, LayerFfn, OperandRef, SharedExpertOp};
 use crate::format::vindex3::represent::codec::RequiredAccess;
@@ -67,7 +68,7 @@ fn a_packed_bank_is_two_row_random_slices_and_the_census_agrees() {
 }
 
 #[test]
-fn a_per_expert_bank_is_a_set_of_whole_projections() {
+fn a_per_expert_bank_is_one_bank_scoped_operation_per_matrix() {
     let fixture = routed_fixture();
     let mut plan = fixture.plan.clone();
     let synthetic = |name: &str| OperandRef {
@@ -95,32 +96,38 @@ fn a_per_expert_bank_is_a_set_of_whole_projections() {
         .into_iter()
         .filter(|p| p.operand.tensor.starts_with("experts."))
         .collect();
+    // Multiplicity for touch — every matrix is listed — under the one
+    // bank-scoped operation that names what they share.
     assert_eq!(listed.len(), 3 * EXPERTS);
-    assert!(listed.iter().all(
-        |p| p.operation == Operation::Project(MatrixClass::FfnProjection)
-            && p.access == RequiredAccess::Sequential
-    ));
+    let bank = Operation::ExpertProject {
+        experts: EXPERTS,
+        top_k: fixture.op.top_k,
+    };
+    assert!(listed
+        .iter()
+        .all(|p| p.operation == bank && p.access == RequiredAccess::Sequential));
+    assert_eq!(bank.name(), "expert-project");
 }
 
 /// The plan executes a shared expert beside the routed ones, so the view
-/// lists its three projections under their own operation. No backend
-/// binds them through the prepared plan yet, and the plan is REFUSED at
-/// preparation — before any byte is read — rather than prepared without
-/// its shared expert (rung 3b's hard invariant). When a CPU realization
-/// for the shared expert arrives (3d), this is the test that changes.
+/// lists its three projections under their own operation — and since V1
+/// of the K3 residency vertical the CPU path PREPARES them: whole
+/// projections under the size policy, pinned and bound like any dense
+/// FFN, summed unscaled by the executor. Nothing is prepared without its
+/// shared expert, and nothing is silently dropped.
 #[test]
-fn a_plan_with_a_shared_expert_is_refused_before_any_byte_is_read() {
+fn a_plan_with_a_shared_expert_prepares_and_pins_its_projections() {
     let fixture = routed_fixture();
     let mut plan = fixture.plan.clone();
     let mut op = fixture.op.clone();
+    let hidden = op.router.shape[1];
+    let inter = 16;
     let synthetic = |name: &str, shape: Vec<usize>| OperandRef {
         object: op.router.object.clone(),
         tensor: name.to_string(),
         dtype: "F32".into(),
         shape,
     };
-    let hidden = op.router.shape[1];
-    let inter = 16;
     op.shared = Some(SharedExpertOp {
         intermediate_size: inter,
         activation: op.activation,
@@ -142,11 +149,10 @@ fn a_plan_with_a_shared_expert_is_refused_before_any_byte_is_read() {
         .all(|p| p.operation == Operation::SharedExpertProject
             && p.access == RequiredAccess::Sequential));
 
-    // The synthetic operands are not in the container, so the selector
-    // skips them (the loader would refuse them by name); the refusal has
-    // to come from a shared expert the container DOES hold. Point the
-    // shared projections at the dense-shaped bf16 copies the carrier
-    // stores, which exist and are registered.
+    // The synthetic operands are not in the container (the selector skips
+    // them); point the shared projections at the dense-shaped bf16 copies
+    // the carrier stores, which exist and are registered, so the whole
+    // routed layer prepares and binds.
     let (_dir, _container, carrier) = bf16_carrier_store();
     let mut op = fixture.op.clone();
     let ExpertBank::Packed { gate_up, down } = &op.bank else {
@@ -171,6 +177,77 @@ fn a_plan_with_a_shared_expert_is_refused_before_any_byte_is_read() {
         branch_gate: None,
     });
     plan.layers[0].ffn = Some(LayerFfn::Routed(Box::new(op)));
+    let ops = PreparedOperands::load(
+        &plan,
+        &carrier,
+        &ProductionBackend::new(),
+        ExecutionSlice::Full,
+    )
+    .expect("a shared expert is a dense projection to the CPU path");
+    let shared_records: Vec<_> = ops
+        .realizations()
+        .iter()
+        .filter(|r| r.planned.operation == Operation::SharedExpertProject)
+        .collect();
+    assert_eq!(shared_records.len(), 3);
+    assert!(shared_records
+        .iter()
+        .all(|r| r.selection.reason == SelectionReason::SizePolicy));
+    // Bound like any projection: three more observations, reconciled.
+    let bound = ops.bound(&plan).unwrap();
+    assert_eq!(
+        bound
+            .iter()
+            .filter(|b| b.operand.tensor.ends_with(BF16_SUFFIX))
+            .count(),
+        3,
+        "the three shared projections are bound"
+    );
+    ops.reconcile(&plan, (&carrier).into()).unwrap();
+}
+
+/// A shared branch with a scalar GATE (Qwen MoE's form) has no executor
+/// yet: the plan is refused at preparation, before any byte, naming the
+/// gate — never prepared with the branch summed unscaled.
+#[test]
+fn a_shared_expert_branch_gate_is_refused_before_any_byte_is_read() {
+    use crate::format::vindex3::opplan::SharedExpertBranchGateOp;
+    use larql_models::config::{
+        GateActivation, GateCombine, SharedExpertGateSource, SharedExpertGateSpec,
+    };
+    let fixture = routed_fixture();
+    let mut plan = fixture.plan.clone();
+    let (_dir, _container, carrier) = bf16_carrier_store();
+    let mut op = fixture.op.clone();
+    let ExpertBank::Packed { gate_up, down } = &op.bank else {
+        panic!("packed");
+    };
+    let existing = |projection: &crate::format::vindex3::opplan::PackedProjection| OperandRef {
+        object: projection.weights.object.clone(),
+        tensor: projection
+            .weights
+            .tensor
+            .replace(BLOCKS_SUFFIX, BF16_SUFFIX),
+        dtype: "BF16".into(),
+        shape: projection.weights.shape.clone(),
+    };
+    op.shared = Some(SharedExpertOp {
+        intermediate_size: 16,
+        activation: op.activation,
+        gate_policy: op.gate_policy,
+        gate: existing(gate_up),
+        up: existing(gate_up),
+        down: existing(down),
+        branch_gate: Some(SharedExpertBranchGateOp {
+            spec: SharedExpertGateSpec {
+                source: SharedExpertGateSource::HiddenStateToScalar,
+                activation: GateActivation::Sigmoid,
+                combine: GateCombine::ElementwiseMultiply,
+            },
+            weight: existing(down),
+        }),
+    });
+    plan.layers[0].ffn = Some(LayerFfn::Routed(Box::new(op)));
     let before = carrier.load_count();
     let err = PreparedOperands::load(
         &plan,
@@ -180,9 +257,9 @@ fn a_plan_with_a_shared_expert_is_refused_before_any_byte_is_read() {
     )
     .err()
     .map(|e| e.to_string())
-    .expect("a plan with a shared expert has no realization on the CPU path");
+    .expect("a gated shared branch has no realization on the CPU path");
     assert!(err.contains("missing realization"), "{err}");
-    assert!(err.contains("shared-expert-project"), "{err}");
+    assert!(err.contains("shared-expert-branch-gate"), "{err}");
     assert_eq!(
         carrier.load_count(),
         before,

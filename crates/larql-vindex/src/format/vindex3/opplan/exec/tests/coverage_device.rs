@@ -11,6 +11,7 @@
 //! and unsupported-activation FFN arms. Each test here drives one of
 //! those arms directly and asserts what the arm is *for*.
 
+use crate::format::vindex3::opplan::exec::backend::ExpertSlices;
 use std::sync::{Arc, Mutex};
 
 use larql_compute::backend::MatMul;
@@ -532,14 +533,17 @@ fn a_routed_ffn_whose_router_dispatch_is_refused_fails_closed() {
             top_k: TOP_K,
             router_kind: MoeRouterKind::TopKSoftmax,
             routing_policy: ExpertRoutingPolicy::SoftmaxThenSelect,
+            branch_scale: 1.0,
             activation: Activation::Silu,
             gate_policy: ExpertGatePolicy::Gated,
-            gate_up_layout: GateUpLayout::ContiguousHalves,
             router: &router,
             router_bias: None,
-            gate_up: &gate_up,
+            weights: ExpertSlices::Fused {
+                gate_up: &gate_up,
+                down: &down,
+                layout: GateUpLayout::ContiguousHalves,
+            },
             gate_up_bias: None,
-            down: &down,
             down_bias: None,
             router_input: None,
             router_scale: None,
@@ -774,4 +778,17 @@ fn the_device_backend_selects_by_its_class_table_and_refuses_what_it_cannot_bind
         .select(&planned(Operation::SharedExpertProject), &bf16)
         .unwrap_err();
     assert_eq!(refused.kind, RefusalKind::MissingRealization);
+    // A per-expert bank is a HOST mapping; the device binds packed banks
+    // only, and says so before any common arm could admit it.
+    let refused = backend
+        .select(
+            &planned(Operation::ExpertProject {
+                experts: 4,
+                top_k: 2,
+            }),
+            &bf16,
+        )
+        .unwrap_err();
+    assert_eq!(refused.kind, RefusalKind::MissingRealization);
+    assert!(refused.considered.is_empty());
 }

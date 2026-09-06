@@ -18,8 +18,9 @@ use larql_models::config::{
 
 use super::super::super::graph::policy::AttentionSpan;
 use super::backend::{
-    AttentionCall, AttentionOut, AttentionStepCall, AttentionStepOut, FfnCall, GateCall, NormCall,
-    PlanBackend, ProjectCall, ProjectedQkv, QkNormCall, RoutedFfnCall,
+    AttentionCall, AttentionOut, AttentionStepCall, AttentionStepOut, ExpertSlices, FfnCall,
+    GateCall, NormCall, PlanBackend, ProjectCall, ProjectedQkv, QkNormCall, RoutedFfnCall,
+    WeightSlice,
 };
 use super::kernels::{
     activate, gather_fused_half_mutated, llama3_frequencies, matvec, mrope_rotate, norm,
@@ -466,10 +467,54 @@ const FUSED_BRANCHES: usize = larql_models::quant::mxfp4::FUSED_HALVES;
 /// RMS-normalised without a weight, times `scale`, times `hidden^-0.5`;
 /// softmax over every expert; top-k; the selected weights renormalised to
 /// sum to one; then each multiplied by `per_expert_scale[expert]`.
-fn select_experts_reference(call: &RoutedFfnCall<'_>) -> Result<Vec<(usize, f32)>, VindexError> {
-    if call.router_kind == MoeRouterKind::Gemma4Hybrid {
-        return select_experts_gemma4_reference(call);
+pub(super) fn select_experts_reference(
+    call: &RoutedFfnCall<'_>,
+) -> Result<Vec<(usize, f32)>, VindexError> {
+    let mut selected = if call.router_kind == MoeRouterKind::Gemma4Hybrid {
+        select_experts_gemma4_reference(call)?
+    } else if call.router_kind == MoeRouterKind::Sigmoid {
+        select_experts_sigmoid_reference(call)
+    } else {
+        select_experts_softmax_reference(call)
+    };
+    // `routed_scaling_factor`: the reference multiplies the routed sum;
+    // multiplying each weight is the same sum.
+    for (_, w) in &mut selected {
+        *w *= call.branch_scale;
     }
+    Ok(selected)
+}
+
+/// `weights / (weights.sum() + 1e-20)` — the reference's literal.
+const RENORM_EPS: f32 = 1e-20;
+
+/// DeepSeek-V3's `MoEGate` with `scoring_func = "sigmoid"`, literal: scores
+/// are sigmoids of the logits; `topk` runs over `scores +
+/// e_score_correction_bias`; the gathered weights are the UNCORRECTED
+/// scores, renormalised when `norm_topk_prob`.
+fn select_experts_sigmoid_reference(call: &RoutedFfnCall<'_>) -> Vec<(usize, f32)> {
+    let logits = matvec(call.router, call.experts, call.hidden, call.x);
+    let scores: Vec<f32> = logits.iter().map(|l| 1.0 / (1.0 + (-l).exp())).collect();
+    let mut ranked: Vec<(usize, f32)> = scores
+        .iter()
+        .enumerate()
+        .map(|(e, &s)| (e, s + call.router_bias.map_or(0.0, |b| b[e])))
+        .collect();
+    ranked.sort_by(|a, b| b.1.total_cmp(&a.1).then(a.0.cmp(&b.0)));
+    let k = call.top_k.min(ranked.len());
+    let mut selected: Vec<(usize, f32)> =
+        ranked[..k].iter().map(|&(e, _)| (e, scores[e])).collect();
+    if call.routing_policy == ExpertRoutingPolicy::NormalisedOverSelected && k > 1 {
+        let denominator = selected.iter().map(|(_, w)| w).sum::<f32>() + RENORM_EPS;
+        for (_, w) in &mut selected {
+            *w /= denominator;
+        }
+    }
+    selected
+}
+
+/// The softmax routers, literal (see [`select_experts_reference`]).
+fn select_experts_softmax_reference(call: &RoutedFfnCall<'_>) -> Vec<(usize, f32)> {
     let mut logits = matvec(call.router, call.experts, call.hidden, call.x);
     if let Some(bias) = call.router_bias {
         for (l, b) in logits.iter_mut().zip(bias) {
@@ -487,11 +532,11 @@ fn select_experts_reference(call: &RoutedFfnCall<'_>) -> Result<Vec<(usize, f32)
             ranked.iter().take(k).map(|r| (r.1 - max).exp()).sum()
         }
     };
-    Ok(ranked
+    ranked
         .into_iter()
         .take(k)
         .map(|(e, l)| (e, (l - max).exp() / denominator))
-        .collect())
+        .collect()
 }
 
 /// Gemma 4's router, literal (see [`select_experts_reference`]). Every
@@ -544,6 +589,40 @@ fn select_experts_gemma4_reference(
 /// the family definitions: plain gating is `activation(gate) · up`;
 /// GPT-OSS's clamped GLU clamps gate above and up both ways at `limit`,
 /// scales the sigmoid argument by `alpha` and adds one to up.
+/// The exact f32 image of a slice the reference can transcribe: f32 as
+/// it is, bf16 widened bit-exactly. Any other form needs a decode the
+/// reference does not perform, and is refused by name.
+fn widen_reference<'a>(
+    slice: &WeightSlice<'a>,
+) -> Result<std::borrow::Cow<'a, [f32]>, VindexError> {
+    match slice {
+        WeightSlice::F32(w) => Ok(std::borrow::Cow::Borrowed(w)),
+        WeightSlice::Bf16(w) => Ok(std::borrow::Cow::Owned(
+            w.iter()
+                .map(|b| f32::from_bits(u32::from(*b) << 16))
+                .collect(),
+        )),
+        other => Err(VindexError::Parse(format!(
+            "the reference transcribes f32 and bf16 experts; a {} expert was handed to it",
+            slice_form(other)
+        ))),
+    }
+}
+
+/// The stored form a slice is in, named for a refusal — never its bytes.
+fn slice_form(slice: &WeightSlice<'_>) -> &'static str {
+    match slice {
+        WeightSlice::F32(_) => "f32",
+        WeightSlice::Bf16(_) => "bf16",
+        WeightSlice::F16(_) => "f16",
+        WeightSlice::Q8 { .. } => "q8",
+        WeightSlice::Q4 { .. } => "q4",
+        WeightSlice::Mxfp4 { .. } => "mxfp4",
+        WeightSlice::Nvfp4 { .. } => "nvfp4",
+        WeightSlice::KQuant { .. } => "k-quant",
+    }
+}
+
 fn combine_gate_up_reference(
     policy: larql_models::ExpertGatePolicy,
     activation: larql_models::config::Activation,
@@ -667,51 +746,91 @@ impl PlanBackend for ReferenceBackend {
     /// MoE path — plain loops over widened f32 operands.
     fn routed_ffn(&self, call: RoutedFfnCall<'_>) -> Result<Vec<f32>, VindexError> {
         let selected = select_experts_reference(&call)?;
-        let two_inter = FUSED_BRANCHES * call.intermediate;
         let mut out = vec![0.0f32; call.hidden];
-        for (expert, weight) in selected {
-            let mut fused = matvec(
-                call.gate_up[expert].as_f32()?,
-                two_inter,
-                call.hidden,
-                call.x,
-            );
-            if let Some(bias) = call.gate_up_bias {
-                for (f, b) in fused
-                    .iter_mut()
-                    .zip(&bias[expert * two_inter..(expert + 1) * two_inter])
-                {
-                    *f += b;
+        match call.weights {
+            ExpertSlices::Fused {
+                gate_up,
+                down,
+                layout,
+            } => {
+                let two_inter = FUSED_BRANCHES * call.intermediate;
+                for (expert, weight) in selected {
+                    let mut fused =
+                        matvec(gate_up[expert].as_f32()?, two_inter, call.hidden, call.x);
+                    if let Some(bias) = call.gate_up_bias {
+                        for (f, b) in fused
+                            .iter_mut()
+                            .zip(&bias[expert * two_inter..(expert + 1) * two_inter])
+                        {
+                            *f += b;
+                        }
+                    }
+                    let inner: Vec<f32> = (0..call.intermediate)
+                        .map(|i| {
+                            let g = fused[layout.row(GateUpBranch::Gate, i, call.intermediate)];
+                            let u = fused[layout.row(GateUpBranch::Up, i, call.intermediate)];
+                            combine_gate_up_reference(call.gate_policy, call.activation, g, u)
+                        })
+                        .collect();
+                    let mut expert_out = matvec(
+                        down[expert].as_f32()?,
+                        call.hidden,
+                        call.intermediate,
+                        &inner,
+                    );
+                    if let Some(bias) = call.down_bias {
+                        for (o, b) in expert_out
+                            .iter_mut()
+                            .zip(&bias[expert * call.hidden..(expert + 1) * call.hidden])
+                        {
+                            *o += b;
+                        }
+                    }
+                    for (acc, v) in out.iter_mut().zip(&expert_out) {
+                        *acc += weight * v;
+                    }
                 }
             }
-            let inner: Vec<f32> = (0..call.intermediate)
-                .map(|i| {
-                    let g =
-                        fused[call
-                            .gate_up_layout
-                            .row(GateUpBranch::Gate, i, call.intermediate)];
-                    let u = fused[call
-                        .gate_up_layout
-                        .row(GateUpBranch::Up, i, call.intermediate)];
-                    combine_gate_up_reference(call.gate_policy, call.activation, g, u)
-                })
-                .collect();
-            let mut expert_out = matvec(
-                call.down[expert].as_f32()?,
-                call.hidden,
-                call.intermediate,
-                &inner,
-            );
-            if let Some(bias) = call.down_bias {
-                for (o, b) in expert_out
-                    .iter_mut()
-                    .zip(&bias[expert * call.hidden..(expert + 1) * call.hidden])
-                {
-                    *o += b;
+            // A per-expert bank, transcribed literally: each matrix
+            // widened to f32 exactly (bf16 is the top half of the f32 it
+            // denotes), three matvecs, the declared combine.
+            ExpertSlices::Separate { gate, up, down } => {
+                if call.gate_up_bias.is_some() || call.down_bias.is_some() {
+                    return Err(VindexError::Parse(
+                        "a per-expert bank carries no expert bias; the call declares one"
+                            .to_string(),
+                    ));
                 }
-            }
-            for (acc, v) in out.iter_mut().zip(&expert_out) {
-                *acc += weight * v;
+                for (expert, weight) in selected {
+                    let g = matvec(
+                        &widen_reference(&gate[expert])?,
+                        call.intermediate,
+                        call.hidden,
+                        call.x,
+                    );
+                    let u = matvec(
+                        &widen_reference(&up[expert])?,
+                        call.intermediate,
+                        call.hidden,
+                        call.x,
+                    );
+                    let inner: Vec<f32> = g
+                        .iter()
+                        .zip(&u)
+                        .map(|(g, u)| {
+                            combine_gate_up_reference(call.gate_policy, call.activation, *g, *u)
+                        })
+                        .collect();
+                    let expert_out = matvec(
+                        &widen_reference(&down[expert])?,
+                        call.hidden,
+                        call.intermediate,
+                        &inner,
+                    );
+                    for (acc, v) in out.iter_mut().zip(&expert_out) {
+                        *acc += weight * v;
+                    }
+                }
             }
         }
         Ok(out)

@@ -17,13 +17,17 @@
 use larql_models::quant::mxfp4::{MXFP4_GROUP_BYTES, MXFP4_GROUP_ELEMS};
 
 use super::accounting::Bound;
-use super::backend::{FfnCall, NormCall, RoutedFfnCall, WeightFormat, WeightSlice};
+use super::backend::{
+    ExpertSlices, FfnCall, MatrixClass, NormCall, RoutedFfnCall, WeightFormat, WeightSlice,
+};
 use super::narrow::f32_bytes_to_f16;
 use super::operands::OperandSource;
 use super::realization::RepresentationFacts;
-use super::weights::{load_weight, quantize_mxfp4, quantize_nvfp4, AlignedBytes, LoadedWeight};
+use super::weights::{
+    load_weight, quantize_mxfp4, quantize_nvfp4, AlignedBytes, LoadedWeight, MappedForm,
+};
 use crate::error::VindexError;
-use crate::format::vindex3::opplan::planned::declared_bank_representation;
+use crate::format::vindex3::opplan::planned::{declared_bank_representation, Operation};
 use crate::format::vindex3::opplan::{
     ExpertBank, FfnOp, LayerFfn, NormOp, OperandRef, PackedProjection, RoutedFfnOp,
 };
@@ -37,8 +41,11 @@ const FUSED_BRANCHES: usize = larql_models::quant::mxfp4::FUSED_HALVES;
 
 /// A layer's FFN operands, loaded once in the backend's declared format.
 pub(super) enum FfnOperands {
-    Dense(DenseOperands),
-    Routed(RoutedOperands),
+    /// Every variant boxed: the routed operands carry a bank and a shared
+    /// branch, the hybrid both programs, and the dense one is then the odd
+    /// one out — one pointer each keeps the enum the size of a word.
+    Dense(Box<DenseOperands>),
+    Routed(Box<RoutedOperands>),
     /// Gemma 4: both, plus the three branch norms (f32 glue) — see
     /// [`super::HybridFfnOp`] for the program. Boxed: it is the sum of
     /// the other two plus three norms, several-fold the dense variant.
@@ -86,18 +93,55 @@ impl LoadedNormWeight {
     }
 }
 
-/// A routed layer's operands: router (f32 glue) and per-expert matrices,
-/// plus Gemma 4's router conditioning when the op carries it.
+/// A routed layer's operands: router (f32 glue), the experts' matrices in
+/// the shape their bank stores them, the shared branch when the plan
+/// carries one, plus Gemma 4's router conditioning when the op carries it.
 pub(super) struct RoutedOperands {
     router: Vec<f32>,
     router_bias: Option<Vec<f32>>,
     router_scale: Option<Vec<f32>>,
     router_per_expert_scale: Option<Vec<f32>>,
     router_norm_eps: Option<f64>,
-    gate_up: Vec<LoadedWeight>,
+    experts: ExpertMatrices,
     gate_up_bias: Option<Vec<f32>>,
-    down: Vec<LoadedWeight>,
     down_bias: Option<Vec<f32>>,
+    /// The always-active shared expert: three whole projections under
+    /// the dense-FFN program, summed unscaled onto the routed output
+    /// (`KimiSparseMoeBlock.forward`). The op the loader built for it is
+    /// kept beside the operands so `apply` and `bound` read one program.
+    shared: Option<(FfnOp, DenseOperands)>,
+}
+
+/// The experts' matrices, in the shape their bank stores them.
+enum ExpertMatrices {
+    /// A packed bank sliced per expert at load: one fused gate/up and one
+    /// down per expert, in the backend's declared form.
+    Fused {
+        gate_up: Vec<LoadedWeight>,
+        down: Vec<LoadedWeight>,
+    },
+    /// A per-expert bank bound as mapped regions of the stored bytes —
+    /// one physical mapping per object, one region per matrix, nothing
+    /// copied.
+    Separate {
+        gate: Vec<LoadedWeight>,
+        up: Vec<LoadedWeight>,
+        down: Vec<LoadedWeight>,
+    },
+}
+
+/// Every matrix's slice, in order.
+fn slices(w: &[LoadedWeight]) -> Vec<WeightSlice<'_>> {
+    w.iter().map(LoadedWeight::slice).collect()
+}
+
+impl ExpertMatrices {
+    fn all(&self) -> Vec<&LoadedWeight> {
+        match self {
+            Self::Fused { gate_up, down } => gate_up.iter().chain(down).collect(),
+            Self::Separate { gate, up, down } => gate.iter().chain(up).chain(down).collect(),
+        }
+    }
 }
 
 impl FfnOperands {
@@ -106,13 +150,18 @@ impl FfnOperands {
         store: OperandSource<'_>,
         format: super::prepared::FormatFor<'_>,
         bank: WeightFormat,
+        shared: super::prepared::FormatFor<'_>,
     ) -> Result<Self, VindexError> {
         match ffn {
-            LayerFfn::Dense(op) => Ok(Self::Dense(DenseOperands::load(op, store, format)?)),
-            LayerFfn::Routed(op) => Ok(Self::Routed(RoutedOperands::load(op, store, bank)?)),
+            LayerFfn::Dense(op) => Ok(Self::Dense(Box::new(DenseOperands::load(
+                op, store, format,
+            )?))),
+            LayerFfn::Routed(op) => Ok(Self::Routed(Box::new(RoutedOperands::load(
+                op, store, bank, shared,
+            )?))),
             LayerFfn::Hybrid(op) => Ok(Self::Hybrid(Box::new(HybridOperands {
                 dense: DenseOperands::load(&op.dense, store, format)?,
-                routed: RoutedOperands::load(&op.routed, store, bank)?,
+                routed: RoutedOperands::load(&op.routed, store, bank, shared)?,
                 pre_experts_norm: LoadedNormWeight::load(&op.pre_experts_norm, store)?,
                 post_dense_norm: LoadedNormWeight::load(&op.post_dense_norm, store)?,
                 post_experts_norm: LoadedNormWeight::load(&op.post_experts_norm, store)?,
@@ -120,14 +169,26 @@ impl FfnOperands {
         }
     }
 
-    /// Every bound operand of this FFN: the dense projections one each,
-    /// a packed bank as one operand over its per-expert objects.
-    pub(super) fn bound<'a>(&'a self, ffn: &'a LayerFfn) -> Result<Vec<Bound<'a>>, VindexError> {
+    /// Every bound operand of this FFN, each under the OPERATION the
+    /// loader bound it for — the dense projections one each, a packed
+    /// bank as one operand over its per-expert objects, a per-expert bank
+    /// one region per matrix, the shared branch as three projections.
+    /// The loader names the operation because only it knows which object
+    /// it bound for what; the accounting must not guess from counts.
+    pub(super) fn bound<'a>(
+        &'a self,
+        ffn: &'a LayerFfn,
+    ) -> Result<Vec<(Operation, Bound<'a>)>, VindexError> {
+        let dense = |bounds: Vec<Bound<'a>>| {
+            bounds
+                .into_iter()
+                .map(|b| (Operation::Project(MatrixClass::FfnProjection), b))
+        };
         match (self, ffn) {
-            (Self::Dense(d), LayerFfn::Dense(op)) => Ok(d.bound(op)),
+            (Self::Dense(d), LayerFfn::Dense(op)) => Ok(dense(d.bound(op)).collect()),
             (Self::Routed(r), LayerFfn::Routed(op)) => Ok(r.bound(op)),
             (Self::Hybrid(h), LayerFfn::Hybrid(op)) => {
-                let mut out = h.dense.bound(&op.dense);
+                let mut out: Vec<_> = dense(h.dense.bound(&op.dense)).collect();
                 out.extend(h.routed.bound(&op.routed));
                 Ok(out)
             }
@@ -355,32 +416,80 @@ impl DenseOperands {
 impl RoutedOperands {
     /// The two banks, each one operand over its per-expert objects. A
     /// per-expert bank is refused before it is loaded, so it binds nothing.
-    pub(super) fn bound<'a>(&'a self, op: &'a RoutedFfnOp) -> Vec<Bound<'a>> {
-        match &op.bank {
-            ExpertBank::Packed { gate_up, down } => vec![
-                Bound {
-                    operand: &gate_up.weights,
-                    weights: self.gate_up.iter().collect(),
+    pub(super) fn bound<'a>(&'a self, op: &'a RoutedFfnOp) -> Vec<(Operation, Bound<'a>)> {
+        let mut out: Vec<(Operation, Bound<'a>)> = match (&op.bank, &self.experts) {
+            (
+                ExpertBank::Packed { gate_up, down },
+                ExpertMatrices::Fused {
+                    gate_up: g,
+                    down: d,
                 },
-                Bound {
-                    operand: &down.weights,
-                    weights: self.down.iter().collect(),
-                },
+            ) => vec![
+                (
+                    Operation::ExpertBankSlice,
+                    Bound {
+                        operand: &gate_up.weights,
+                        weights: g.iter().collect(),
+                    },
+                ),
+                (
+                    Operation::ExpertBankSlice,
+                    Bound {
+                        operand: &down.weights,
+                        weights: d.iter().collect(),
+                    },
+                ),
             ],
-            ExpertBank::PerExpert { .. } => Vec::new(),
+            // One planned operand per expert matrix, one mapped region
+            // each: multiplicity for touch, the mapping shared underneath.
+            (
+                ExpertBank::PerExpert { gate, up, down },
+                ExpertMatrices::Separate {
+                    gate: g,
+                    up: u,
+                    down: d,
+                },
+            ) => {
+                let bank = Operation::ExpertProject {
+                    experts: op.experts,
+                    top_k: op.top_k,
+                };
+                gate.iter()
+                    .zip(g)
+                    .chain(up.iter().zip(u))
+                    .chain(down.iter().zip(d))
+                    .map(|(operand, weight)| (bank, Bound::one(operand, weight)))
+                    .collect()
+            }
+            // The loader binds the shape the plan declares; the other
+            // pairing cannot be constructed.
+            (ExpertBank::Packed { .. }, ExpertMatrices::Separate { .. })
+            | (ExpertBank::PerExpert { .. }, ExpertMatrices::Fused { .. }) => Vec::new(),
+        };
+        if let Some((ffn, dense)) = &self.shared {
+            out.extend(
+                dense
+                    .bound(ffn)
+                    .into_iter()
+                    .map(|b| (Operation::SharedExpertProject, b)),
+            );
         }
+        out
     }
 
     /// Every expert matrix, for residency accounting. The router itself
     /// is f32 glue and is counted with the norms.
     fn loaded_matrices(&self) -> Vec<&LoadedWeight> {
-        self.gate_up.iter().chain(&self.down).collect()
+        let mut out = self.experts.all();
+        if let Some((_, dense)) = &self.shared {
+            out.extend(dense.loaded_matrices());
+        }
+        out
     }
 
     fn weight_slices(&self) -> Vec<WeightSlice<'_>> {
-        self.gate_up
-            .iter()
-            .chain(&self.down)
+        self.loaded_matrices()
+            .into_iter()
             .map(LoadedWeight::slice)
             .collect()
     }
@@ -395,9 +504,42 @@ impl RoutedOperands {
         router_input: &[f32],
         hidden: usize,
     ) -> Result<Vec<f32>, VindexError> {
-        let gate_up: Vec<WeightSlice<'_>> = self.gate_up.iter().map(LoadedWeight::slice).collect();
-        let down: Vec<WeightSlice<'_>> = self.down.iter().map(LoadedWeight::slice).collect();
-        backend.routed_ffn(RoutedFfnCall {
+        let (gate_up, down, gate, up);
+        let weights = match &self.experts {
+            ExpertMatrices::Fused {
+                gate_up: g,
+                down: d,
+            } => {
+                gate_up = slices(g);
+                down = slices(d);
+                ExpertSlices::Fused {
+                    gate_up: &gate_up,
+                    down: &down,
+                    layout: op.gate_up_layout.ok_or_else(|| {
+                        VindexError::Parse(
+                            "routed FFN op carries a packed bank and no gate_up layout; closure \
+                             requires one"
+                                .to_string(),
+                        )
+                    })?,
+                }
+            }
+            ExpertMatrices::Separate {
+                gate: g,
+                up: u,
+                down: d,
+            } => {
+                gate = slices(g);
+                up = slices(u);
+                down = slices(d);
+                ExpertSlices::Separate {
+                    gate: &gate,
+                    up: &up,
+                    down: &down,
+                }
+            }
+        };
+        let mut routed = backend.routed_ffn(RoutedFfnCall {
             x,
             hidden,
             intermediate: op.expert_intermediate_size,
@@ -405,49 +547,106 @@ impl RoutedOperands {
             top_k: op.top_k,
             router_kind: op.router_kind,
             routing_policy: op.routing_policy,
+            branch_scale: op.executed_branch_scale(),
             activation: op.activation,
             gate_policy: op.gate_policy,
-            gate_up_layout: op.gate_up_layout.ok_or_else(|| {
-                VindexError::Parse(
-                    "routed FFN op carries no gate_up layout; closure requires one".to_string(),
-                )
-            })?,
             router: &self.router,
             router_bias: self.router_bias.as_deref(),
-            gate_up: &gate_up,
+            weights,
             gate_up_bias: self.gate_up_bias.as_deref(),
-            down: &down,
             down_bias: self.down_bias.as_deref(),
             router_input: (!std::ptr::eq(router_input, x)).then_some(router_input),
             router_scale: self.router_scale.as_deref(),
             router_per_expert_scale: self.router_per_expert_scale.as_deref(),
             router_norm_eps: self.router_norm_eps,
-        })
+        })?;
+        // `y = moe(x) + shared_experts(x)` — the always-active branch is a
+        // dense FFN over the same input, summed unscaled: composed here,
+        // once, for every backend. A gated branch is refused at selection.
+        if let Some((ffn, dense)) = &self.shared {
+            let shared = dense.apply(ffn, backend, x, hidden)?;
+            for (acc, v) in routed.iter_mut().zip(&shared) {
+                *acc += v;
+            }
+        }
+        Ok(routed)
     }
 
     fn load(
         op: &RoutedFfnOp,
         store: OperandSource<'_>,
         format: WeightFormat,
+        shared_format: super::prepared::FormatFor<'_>,
     ) -> Result<Self, VindexError> {
-        // `ExpertBank::PerExpert` (Kimi Linear, Mixtral, DeepSeek): closure
-        // plans the operand set (`opplan::build`), but no executor
-        // consumes it yet — refuse loudly rather than misread `experts`
-        // separate tensors as one packed bank of one.
-        let ExpertBank::Packed { gate_up, down } = &op.bank else {
-            return Err(VindexError::Parse(
-                "routed FFN op carries a per-expert (unfused) bank; execution for \
-                 `ExpertFormat::PerExpert` is not built yet"
-                    .to_string(),
-            ));
-        };
         let hidden = op.router.shape.get(1).copied().unwrap_or(0);
         let inter = op.expert_intermediate_size;
         // The bank first: its geometry is DECLARED — `k` follows from the
         // router's declared width — and a stray width refuses on the
         // declaration, before any operand's bytes are read.
-        let gate_up_bank = load_packed(store, gate_up, op, FUSED_BRANCHES * inter, hidden, format)?;
-        let down_bank = load_packed(store, down, op, hidden, inter, format)?;
+        let (experts, gate_up_bias, down_bias) = match &op.bank {
+            ExpertBank::Packed { gate_up, down } => (
+                ExpertMatrices::Fused {
+                    gate_up: load_packed(
+                        store,
+                        gate_up,
+                        op,
+                        FUSED_BRANCHES * inter,
+                        hidden,
+                        format,
+                    )?,
+                    down: load_packed(store, down, op, hidden, inter, format)?,
+                },
+                gate_up.bias.as_ref().map(|b| store.load(b)).transpose()?,
+                down.bias.as_ref().map(|b| store.load(b)).transpose()?,
+            ),
+            // A per-expert bank is never read: each matrix is a region of
+            // its object's one mapping, in the form the pin declares, and a
+            // pin that is not a mapped form is the plan and the loader
+            // disagreeing.
+            ExpertBank::PerExpert { gate, up, down } => {
+                let form = MappedForm::of(format).ok_or_else(|| {
+                    VindexError::Parse(format!(
+                        "a per-expert bank pinned to {format:?}: only a mapped stored form \
+                         (bf16, f32) binds a bank; planned_operands() and the loader disagree"
+                    ))
+                })?;
+                let map = |operands: &[OperandRef], rows: usize, k: usize| {
+                    operands
+                        .iter()
+                        .map(|operand| {
+                            let region = store
+                                .store()
+                                .map_region(operand, (rows * k * form.width()) as u64)?;
+                            Ok(LoadedWeight::Mapped { region, form })
+                        })
+                        .collect::<Result<Vec<_>, VindexError>>()
+                };
+                (
+                    ExpertMatrices::Separate {
+                        gate: map(gate, inter, hidden)?,
+                        up: map(up, inter, hidden)?,
+                        down: map(down, hidden, inter)?,
+                    },
+                    None,
+                    None,
+                )
+            }
+        };
+        let shared = match &op.shared {
+            Some(shared) => {
+                let ffn = FfnOp {
+                    intermediate_size: shared.intermediate_size,
+                    activation: shared.activation,
+                    gate_policy: shared.gate_policy,
+                    gate: Some(shared.gate.clone()),
+                    up: shared.up.clone(),
+                    down: shared.down.clone(),
+                };
+                let dense = DenseOperands::load(&ffn, store, shared_format)?;
+                Some((ffn, dense))
+            }
+            None => None,
+        };
         Ok(Self {
             router: store.load(&op.router)?,
             router_bias: op.router_bias.as_ref().map(|b| store.load(b)).transpose()?,
@@ -462,10 +661,10 @@ impl RoutedOperands {
                 .map(|s| store.load(s))
                 .transpose()?,
             router_norm_eps: op.router_norm_eps,
-            gate_up: gate_up_bank,
-            gate_up_bias: gate_up.bias.as_ref().map(|b| store.load(b)).transpose()?,
-            down: down_bank,
-            down_bias: down.bias.as_ref().map(|b| store.load(b)).transpose()?,
+            experts,
+            gate_up_bias,
+            down_bias,
+            shared,
         })
     }
 }
