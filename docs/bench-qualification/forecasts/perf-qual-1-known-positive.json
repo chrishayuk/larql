@@ -1,0 +1,99 @@
+{
+  "rung": "PERF-QUAL-1",
+  "transition": "2 of the rung — the known-positive control",
+  "name": "bench-instrument-detection-curve",
+  "artifact_kind": "forecast (frozen)",
+  "written": "2026-09-06",
+  "written_before": "Any slowdown-injection code exists, and before any arm has been run. Transition 1 (the no-op control) is already MEASURED and is the baseline below. These predictions are recorded so the detection curve cannot be read backwards into whatever threshold the results happen to permit.",
+
+  "baseline": {
+    "commit": "6bc5215b066bb06b5117cbde0f833a0a1934e5e9",
+    "branch": "ci/bench-same-runner-qualification",
+    "run": "https://github.com/chrishayuk/larql/actions/runs/34035301273",
+    "what_transition_1_measured": {
+      "design": "sequential base->head, both arms one macos-14 runner, base==head (true no-op)",
+      "result": "FAILED. 25 cells compared: 13 regressed, 10 improved, 2 within noise.",
+      "worst_spurious_regression": "quant_matvec_q4_0/metal/decode_2560, median +59.69%, CI lower bound +43.65%",
+      "max_observed_lower_bound_on_identical_code": 43.65,
+      "sign_distribution": "15 of 25 head-slower (60%), 10 head-faster (40%); median of medians +8.46%, mean +3.77%",
+      "mechanism": "Order/thermal bias is real but MINOR (~+8% lean). The dominant term is bidirectional variance reaching +/-60%.",
+      "structural_cause": "37 of 43 benched cells run at criterion sample_size(20); detection fires at criterion's default noise_threshold of 1%. Twenty samples cannot resolve a 1% effect."
+    },
+    "what_transition_1_retired": [
+      "Cross-runner comparison is NOT the whole story: a dedicated runner on identical code produced MORE spurious regressions (13) than a contended local box in the same shape (9).",
+      "Sequential base->head is falsified as a fine-grained grading design, on magnitude rather than on systematic direction.",
+      "Order-balanced blocks (B H | H B) are demoted: they attack the ~8% ordering term and leave the ~60% variance intact. Not the next move."
+    ]
+  },
+
+  "the_transition": {
+    "claim_boundary": "This transition establishes what effect sizes this benchmark family can DETECT on the LARQL macos-14 runner. It does not build a gate, does not merge one, and does not tune any threshold.",
+    "success": "A detection curve exists for four workload classes at four predeclared effect sizes, measured against arms fixed before any of them ran.",
+    "non_claim": "Nothing here establishes that a detected slowdown was CAUSED by a change under review. Detection capability and causal attribution are separate claims; only the first is at stake.",
+    "objective_change": "PERF-QUAL supersedes #370's original objective. #370 asked for a reliable fine-grained regression gate. Transition 1 showed this surface cannot support one at 1%. The objective is now a QUALIFIED CATASTROPHIC GUARDRAIL plus an empirical statement of resolution."
+  },
+
+  "the_predeclared_arms": {
+    "rule": "All four arms are declared here and run as a set. The detector is NOT tuned after seeing any individual arm. If an arm surprises, that is a result, not an invitation to adjust the next arm.",
+    "injection": "A deterministic work multiplier applied to the HEAD arm only, via a dispatch input. Base and head remain the SAME COMMIT, so the only difference between arms is the injected work — the no-op machinery from transition 1 with one term added.",
+    "arms": [
+      {"id": "A25",  "multiplier": 1.25, "nominal_effect_pct": 25},
+      {"id": "A50",  "multiplier": 1.50, "nominal_effect_pct": 50},
+      {"id": "A100", "multiplier": 2.00, "nominal_effect_pct": 100},
+      {"id": "A300", "multiplier": 4.00, "nominal_effect_pct": 300}
+    ],
+    "workload_classes_reported_separately": [
+      "metal decode  (quant_matvec_*/metal/decode_2560)",
+      "cpu decode    (quant_matvec_*/cpu/decode_2560)",
+      "prefill/matmul (quant_matvec_*/prefill_10240, matmul_transb/*, f32_gemv_lmhead/*)",
+      "long decomposition (ridge_decomposition_solve/*)"
+    ]
+  },
+
+  "the_statistic_under_test": {
+    "decision_variable": "The CI LOWER BOUND of the change, never the median alone.",
+    "why": "Transition 1's worst spurious cell had median +59.69% but lower bound +43.65%. The lower bound is the conservative end and is what a guardrail should be built on; using the median would import ~16 points of optimism at exactly the wrong moment.",
+    "candidate_catastrophe_criterion": "lower_bound > +100%",
+    "why_100": "The failure this gate exists for is the q4_matvec_v4 row-drop, an approximately 4x throughput cliff. The task is preventing an architectural accident, not distinguishing 4.8ms from 5.0ms. +100% also sits far above the +43.65% maximum lower bound observed on identical code, so the daylight is measured rather than assumed."
+  },
+
+  "predictions": {
+    "note": "Stated as falsifiable expectations. Being wrong is the useful outcome; these exist so that cannot be quietly re-narrated afterwards.",
+    "P1_noop_under_catastrophe_criterion": {
+      "prediction": "The transition-1 no-op data produces ZERO cells with lower_bound > +100%. Max observed was +43.65%.",
+      "falsified_if": "Any identical-code cell reaches a lower bound above 100%. That would kill the +100% guardrail outright, not merely shift it."
+    },
+    "P2_A25_is_NOT_reliably_detected": {
+      "prediction": "At +25% injection, fewer than half of cells show lower_bound > +25%. The no-op noise floor already reaches +43.65%, so a 25% signal is inside the noise for this instrument.",
+      "falsified_if": "A25 is detected in most cells, which would mean the instrument is far better than transition 1 implied and the whole variance diagnosis needs revisiting."
+    },
+    "P3_A50_is_partial": {
+      "prediction": "At +50%, detection is real but incomplete and CLASS-DEPENDENT — I expect the long decomposition cells to do better than metal decode, because the worst transition-1 offenders were the small fast decode cells.",
+      "falsified_if": "Detection is uniform across classes, which would say the variance is not workload-class-structured and sample count alone explains everything."
+    },
+    "P4_A100_mostly_detected": {
+      "prediction": "At +100%, most cells exceed a +50% lower bound, but NOT all exceed +100%. I expect the +100% criterion to be marginal at exactly +100% injection.",
+      "falsified_if": "A100 fires the +100% criterion in essentially every cell — that would mean the guardrail could be set materially lower than 100%."
+    },
+    "P5_A300_is_caught_everywhere": {
+      "prediction": "At +300%, every class fires lower_bound > +100%. This is the arm the guardrail exists to catch.",
+      "falsified_if": "ANY class fails to fire at +300%. That falsifies the catastrophic-guardrail concept itself for this surface, and PERF-SAFETY should not then be merged."
+    },
+    "P6_the_separation_exists": {
+      "prediction": "There is a threshold T with no-op(max lower bound) < T < A300(min lower bound) — i.e. the instrument can separate catastrophe from silence even though it cannot separate 25% from silence.",
+      "falsified_if": "No such T exists. That is the single most important thing this transition can discover, and it would mean the surface supports no blocking perf gate at any threshold."
+    }
+  },
+
+  "acceptance_before_anything_merges": {
+    "PERF_SAFETY_blocking": "fail only when lower_bound > catastrophe threshold, the threshold chosen from THIS curve and never below the observed no-op maximum plus margin",
+    "PERF_SIGNAL_informational": "report +10/+20/+50% movements as telemetry, never block, because the instrument has not demonstrated it can adjudicate them in one invocation",
+    "qualification_is_a_precondition_not_a_report": [
+      "noop must produce ZERO hard-gate failures",
+      "the known-positive catastrophe arm must FAIL the hard gate",
+      "both must be re-run and still hold after any substantial change to the gate"
+    ]
+  },
+
+  "the_doctrine_this_rung_is_really_about": "A benchmark is not automatically a measuring instrument merely because it emits confidence intervals. Its discrimination threshold has to be qualified before its verdicts are given authority. Authority proportional to demonstrated resolution — the same rule the rest of the estate already applies to oracles and conformance readers."
+}
