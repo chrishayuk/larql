@@ -1171,22 +1171,42 @@ pub trait ModelArchitecture: Send + Sync {
     /// two. Recognising that variant needs positive evidence this build
     /// does not yet parse; until then the honest statement is that the
     /// combination is unjudged, not that it is half-written.
+    ///
+    /// The third judged topology, attention residuals, is read from ONE
+    /// key — `attn_res_block_size` — because the reference takes only
+    /// one: the snapshot schedule, every layer's read of the history and
+    /// the stack's exit reduction all follow from the period. Declaring
+    /// it BESIDE the hyper-connection keys is a third thing again, and
+    /// refuses for the same reason a partial Sinkhorn declaration does:
+    /// a component runs ONE residual programme, and reading either would
+    /// discard what the other declares.
     fn residual_topology(&self) -> Result<ResidualTopology, String> {
         let cfg = self.config();
-        match (cfg.hc_streams, cfg.hc_sinkhorn_iters, cfg.hc_eps) {
-            (None, None, None) => Ok(ResidualTopology::SingleStream),
-            (Some(streams), Some(sinkhorn_iters), Some(sinkhorn_eps)) => {
+        let sinkhorn = (cfg.hc_streams, cfg.hc_sinkhorn_iters, cfg.hc_eps);
+        match (cfg.attn_res_block_size, sinkhorn) {
+            (Some(block_size), (None, None, None)) => {
+                Ok(ResidualTopology::AttentionResidual { block_size })
+            }
+            (Some(block_size), (streams, iters, eps)) => Err(format!(
+                "two residual topologies declared together (attn_res_block_size \
+                 {block_size}, hc_mult {streams:?}, hc_sinkhorn_iters {iters:?}, hc_eps \
+                 {eps:?}) — a component runs ONE residual programme, and reading either \
+                 would discard what the other declares, so this build chooses neither"
+            )),
+            (None, (None, None, None)) => Ok(ResidualTopology::SingleStream),
+            (None, (Some(streams), Some(sinkhorn_iters), Some(sinkhorn_eps))) => {
                 Ok(ResidualTopology::HyperConnection(HyperConnection {
                     streams,
                     sinkhorn_iters,
                     sinkhorn_eps,
                 }))
             }
-            (streams, iters, eps) => Err(format!(
+            (None, (streams, iters, eps)) => Err(format!(
                 "unjudged hyper-connection declaration (hc_mult {streams:?}, \
-                 hc_sinkhorn_iters {iters:?}, hc_eps {eps:?}) — the Sinkhorn-split form \
-                 reads all three together, and declaring them apart may mean a different \
-                 topology rather than an incomplete one, so this build chooses neither"
+                 hc_sinkhorn_iters {iters:?}, hc_eps {eps:?}) — this build lowers only the \
+                 Sinkhorn-split form, which reads all three together, and declaring them \
+                 apart may mean a DIFFERENT topology rather than an incomplete one, so this \
+                 build chooses neither"
             )),
         }
     }

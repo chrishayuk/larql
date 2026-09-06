@@ -425,6 +425,24 @@ pub struct ResolvedExecution {
     /// the surface refuses to build instead.
     #[serde(default = "single_stream_topology")]
     pub residual_topology: Option<crate::config::ResidualTopology>,
+    /// Why [`Self::residual_topology`] is absent, verbatim from the one
+    /// authority that decided it
+    /// ([`ModelArchitecture::residual_topology`](crate::config::ModelArchitecture::residual_topology)).
+    ///
+    /// Two different declarations resolve to nothing and they mean
+    /// opposite things to whoever acts on them: a Sinkhorn declaration
+    /// missing a parameter may be a topology this build has not judged,
+    /// while a checkpoint declaring TWO topologies has told this build
+    /// two incompatible things about one residual. A single hardcoded
+    /// reason downstream sent a reader of the second case to look for a
+    /// missing iteration count, so the reason travels with the absence
+    /// rather than being re-invented where it is printed.
+    ///
+    /// `Some` exactly when [`Self::residual_topology`] is `None` on an
+    /// inventory this build resolved; both `None` on a pre-existing
+    /// inventory JSON written before the field existed.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub residual_topology_refusal: Option<String>,
     /// Whether a missing standalone output-head tensor means "tied to the
     /// embedding matrix" rather than "lost". See
     /// [`ModelArchitecture::output_head_reuses_embedding`](crate::config::ModelArchitecture::output_head_reuses_embedding).

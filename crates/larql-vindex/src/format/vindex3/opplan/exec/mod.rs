@@ -19,8 +19,10 @@
 //! against a checkpoint-driven oracle.
 
 pub mod accounting;
+pub mod attention_residual;
 pub mod backend;
 pub mod continuation;
+pub mod controls;
 pub mod conv_qkv;
 pub mod cpu;
 pub mod decode;
@@ -536,6 +538,23 @@ fn traverse<B: PlanBackend + ?Sized, K: KvState + ?Sized>(
     })?;
     let hidden = embedding.table.shape[1];
     let topology = ops.hyper_connection();
+
+    // **The batch path does not carry a residual history yet (2a).**
+    // Refused by name, up front, so the decode seam that proves the
+    // traversal cannot make this path look supported: the plane here is
+    // one `[hidden]` row per position, and running an attention-residual
+    // component over it would drop every snapshot and every boundary
+    // event silently. 2b builds the per-position history and this
+    // refusal goes with it.
+    if ops.carries_attention_residual() {
+        return Err(VindexError::Parse(format!(
+            "component `{}` declares the attention-residual residual topology; the batch \
+             traversal carries one [hidden] row per position and no snapshot history, so it \
+             would run the component as an ordinary residual. The decode traversal carries \
+             the history (K3-ATTNRES-1 2a); the batch one follows in 2b",
+            plan.component
+        )));
+    }
 
     // **Refuse before any output.** A recurrence needs durable buffers,
     // and discovering at layer 63 that nobody can hold them would mean

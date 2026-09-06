@@ -437,6 +437,16 @@ pub struct ModelConfig {
     /// projection's RMS uses `norm_eps`, the split uses this), and
     /// merging them would run a different model.
     pub hc_eps: Option<f64>,
+    /// `attn_res_block_size` — the layer period at which the ENTERING
+    /// residual state is snapshotted into the history every sublayer
+    /// then reads (Kimi-K3 declares 12). `None` = the key was never
+    /// declared, which is the ordinary residual.
+    ///
+    /// A COMPONENT fact for the same reason `hc_mult` is: the snapshot
+    /// schedule, every layer's read of the history and the stack's own
+    /// exit reduction must agree about it. Read as declared or not at
+    /// all — a defaulted period silently changes which layers snapshot.
+    pub attn_res_block_size: Option<usize>,
     /// Whether attention output is gated before `o_proj` (`attn_output_gate`).
     /// Distinct from the judged [`AttentionGateSpec`](super::AttentionGateSpec)
     /// an architecture returns from `attention_output_gate()` — this is the

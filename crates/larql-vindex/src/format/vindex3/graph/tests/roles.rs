@@ -338,6 +338,171 @@ fn hyper_connection_head_operands_classify_by_bare_name_only() {
     assert!(!is_hyper_connection_head_group("hc_head"));
 }
 
+/// **K3-ATTNRES-1: the four site operands classify under the DECLARATION
+/// and under nothing else.**
+///
+/// Two halves, and the second is the whole point. A checkpoint that
+/// declares `attn_res_block_size` gets the four roles on every operator
+/// — K3 carries them on its KDA layers and its MLA layers alike. A
+/// checkpoint that merely ships the four spellings gets nothing, on
+/// every operator and under every other topology, so no component can
+/// acquire a residual programme from its tensor names.
+#[test]
+fn attention_residual_site_operands_classify_only_under_the_declaration() {
+    use crate::format::vindex3::graph::roles::classify_stack_tensor_under;
+    use larql_models::config::{HyperConnection, ResidualTopology};
+
+    let declared = ResidualTopology::AttentionResidual { block_size: 12 };
+    let expected = [
+        (
+            "self_attention_res_norm.weight",
+            OperandRole::AttnResAttentionNorm,
+        ),
+        (
+            "self_attention_res_proj.weight",
+            OperandRole::AttnResAttentionProj,
+        ),
+        ("mlp_res_norm.weight", OperandRole::AttnResMlpNorm),
+        ("mlp_res_proj.weight", OperandRole::AttnResMlpProj),
+    ];
+    for op in [
+        LayerOperator::Softmax,
+        LayerOperator::Kda,
+        LayerOperator::Mla,
+    ] {
+        for (leaf, role) in expected {
+            assert_eq!(
+                classify_stack_tensor_under(&format!("7.{leaf}"), op, declared),
+                Some((7, role)),
+                "{leaf} on {op:?}"
+            );
+        }
+    }
+
+    // Half two: without the declaration, nothing. Every other topology,
+    // and the operator-only classifier the norm-placement readers use.
+    let hc = ResidualTopology::HyperConnection(HyperConnection {
+        streams: 4,
+        sinkhorn_iters: 20,
+        sinkhorn_eps: 1e-6,
+    });
+    for topology in [ResidualTopology::SingleStream, hc] {
+        for op in [
+            LayerOperator::Softmax,
+            LayerOperator::Kda,
+            LayerOperator::Mla,
+        ] {
+            for (leaf, _) in expected {
+                assert_eq!(
+                    classify_stack_tensor_under(&format!("7.{leaf}"), op, topology),
+                    None,
+                    "{leaf} on {op:?} under {topology:?}"
+                );
+                assert_eq!(classify_stack_tensor_on(&format!("7.{leaf}"), op), None);
+            }
+        }
+    }
+
+    // The exit pair is not a stack operand, even layer-prefixed, and even
+    // under the declaration: it is the stack's END, not a site.
+    for leaf in ["output_attn_res_norm.weight", "output_attn_res_proj.weight"] {
+        assert_eq!(
+            classify_stack_tensor_under(&format!("0.{leaf}"), LayerOperator::Kda, declared),
+            None,
+            "{leaf}"
+        );
+    }
+    // Near misses refuse rather than fuzzy-match.
+    for leaf in [
+        "self_attention_res_norm",
+        "mlp_res_proj",
+        "res_norm.weight",
+        "self_attn_res_norm.weight",
+    ] {
+        assert_eq!(
+            classify_stack_tensor_under(&format!("0.{leaf}"), LayerOperator::Kda, declared),
+            None,
+            "{leaf}"
+        );
+    }
+}
+
+/// The op plan's one recogniser of these spellings WITHOUT the
+/// declaration, used to tell a stray from an unjudged name — and it
+/// answers about the same four suffixes the role table holds, so the two
+/// cannot drift.
+#[test]
+fn the_bare_site_spellings_are_recognised_for_the_refusal_only() {
+    use crate::format::vindex3::graph::roles::is_attention_residual_site_operand;
+    for leaf in [
+        "self_attention_res_norm.weight",
+        "self_attention_res_proj.weight",
+        "mlp_res_norm.weight",
+        "mlp_res_proj.weight",
+    ] {
+        assert!(is_attention_residual_site_operand(&format!("3.{leaf}")));
+    }
+    // Not layer-shaped, so not a site operand of any layer.
+    assert!(!is_attention_residual_site_operand(
+        "self_attention_res_norm.weight"
+    ));
+    // Nothing else, including the exit pair and the hyper-connection
+    // sites.
+    for leaf in [
+        "output_attn_res_norm.weight",
+        "hc_attn_fn",
+        "input_layernorm.weight",
+    ] {
+        assert!(!is_attention_residual_site_operand(&format!("3.{leaf}")));
+    }
+}
+
+/// The exit's two operands classify by their object-relative spelling
+/// only, and the builder's placement vocabulary reads the SAME leaves —
+/// so a name the graph places is a name the op plan can classify, and a
+/// drift in either direction fails here.
+#[test]
+fn the_exit_pair_classifies_and_places_from_one_vocabulary() {
+    use crate::format::vindex3::graph::roles::{
+        classify_attention_residual_exit_tensor, AttentionResidualExitOperand,
+        ATTENTION_RESIDUAL_EXIT_LEAVES,
+    };
+    assert_eq!(
+        classify_attention_residual_exit_tensor("output_attn_res_norm.weight"),
+        Some(AttentionResidualExitOperand::Norm)
+    );
+    assert_eq!(
+        classify_attention_residual_exit_tensor("output_attn_res_proj.weight"),
+        Some(AttentionResidualExitOperand::Proj)
+    );
+    // The artifact-global name never survives into the container, so the
+    // classifier must not accept one — it would mean the strip rule
+    // changed underneath it.
+    assert_eq!(
+        classify_attention_residual_exit_tensor("language_model.model.output_attn_res_norm.weight"),
+        None
+    );
+    assert_eq!(
+        classify_attention_residual_exit_tensor("output_attn_res_norm"),
+        None
+    );
+    assert_eq!(
+        classify_attention_residual_exit_tensor("mlp_res_norm.weight"),
+        None
+    );
+
+    // One vocabulary, two consumers: every leaf the builder matches has
+    // exactly one classifier row under it, and no row exists for a leaf
+    // the builder would never place.
+    assert_eq!(ATTENTION_RESIDUAL_EXIT_LEAVES.len(), 2);
+    for leaf in ATTENTION_RESIDUAL_EXIT_LEAVES {
+        assert!(
+            classify_attention_residual_exit_tensor(&format!("{leaf}.weight")).is_some(),
+            "{leaf}"
+        );
+    }
+}
+
 /// The site operands are not norms: norm-placement evidence must read
 /// straight past them. A hyper-connected two-norm stack is still a
 /// two-norm stack.

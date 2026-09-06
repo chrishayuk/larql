@@ -229,6 +229,7 @@ mod tests {
             hc_streams: None,
             hc_sinkhorn_iters: None,
             hc_eps: None,
+            attn_res_block_size: None,
             enable_moe_block: false,
             top_k_experts: None,
             moe_intermediate_size: None,

@@ -218,6 +218,21 @@ pub const CARRIAGE_RULES: &[CarriageRule] = &[
         site: "Component.execution.residual_topology (ResidualTopology::HyperConnection.sinkhorn_eps) → hc_split_sinkhorn's epsilon",
         probe: Some(probe_hc_eps),
     },
+    // The attention-residual period (K3-ATTNRES-1). ONE declared
+    // component fact, carried to the component's residual topology —
+    // and it stops there ON PURPOSE. `Represented`, not `Lowered`: no
+    // traversal reads a snapshot history, so the executor refuses the
+    // topology by name at preparation and a `Lowered` claim would say a
+    // backend receives this period when nothing does. The probe reads
+    // the BUILT surface, so a checkpoint whose surface does not build
+    // answers nothing here and the row keeps its blocker — the lesson
+    // wave 19 learned when DeepSeek-V4's rows did not move.
+    CarriageRule {
+        leaf: "attn_res_block_size",
+        reaches: Carriage::Represented,
+        site: "Component.execution.residual_topology (ResidualTopology::AttentionResidual.block_size) — and no further: this build has no traversal that carries the snapshot history, so the executor refuses the topology at preparation",
+        probe: Some(probe_attn_res_block_size),
+    },
     // ── Position ────────────────────────────────────────────────────
     CarriageRule {
         leaf: "rope_theta",
@@ -1332,7 +1347,8 @@ fn probe_unrepresented(_component: &Component, _ctx: &ProbeContext<'_>) -> Optio
 fn probe_hc(component: &Component) -> Option<larql_models::config::HyperConnection> {
     match component.execution.as_ref()?.residual_topology {
         larql_models::config::ResidualTopology::HyperConnection(hc) => Some(hc),
-        larql_models::config::ResidualTopology::SingleStream => None,
+        larql_models::config::ResidualTopology::SingleStream
+        | larql_models::config::ResidualTopology::AttentionResidual { .. } => None,
     }
 }
 
@@ -1346,6 +1362,20 @@ fn probe_hc_sinkhorn_iters(component: &Component, _ctx: &ProbeContext<'_>) -> Op
 
 fn probe_hc_eps(component: &Component, _ctx: &ProbeContext<'_>) -> Option<Value> {
     Some(json!(probe_hc(component)?.sinkhorn_eps))
+}
+
+/// The declared attention-residual period, read back off the BUILT
+/// surface. `None` on any other topology (the leaf would not be
+/// declared) and on a component with no surface — which is the honest
+/// answer, and the one that keeps a row blocked until its surface builds.
+fn probe_attn_res_block_size(component: &Component, _ctx: &ProbeContext<'_>) -> Option<Value> {
+    match component.execution.as_ref()?.residual_topology {
+        larql_models::config::ResidualTopology::AttentionResidual { block_size } => {
+            Some(json!(block_size))
+        }
+        larql_models::config::ResidualTopology::SingleStream
+        | larql_models::config::ResidualTopology::HyperConnection(_) => None,
+    }
 }
 
 fn probe_rope_theta(component: &Component, ctx: &ProbeContext<'_>) -> Option<Value> {

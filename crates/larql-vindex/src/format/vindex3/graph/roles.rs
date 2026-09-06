@@ -297,6 +297,46 @@ pub enum OperandRole {
     HcFfnMixFn,
     HcFfnBase,
     HcFfnScale,
+
+    /// Attention-residual SITE operands (K3-ATTNRES-1). A layer whose
+    /// component declares
+    /// [`ResidualTopology::AttentionResidual`](larql_models::config::ResidualTopology::AttentionResidual)
+    /// carries two sites — one before attention, one before the FFN —
+    /// and each owns a PAIR:
+    ///
+    /// ```text
+    /// norm   [hidden]        the score vector's first factor
+    /// proj   [1, hidden]     its second — ONE row, not a matrix
+    /// ```
+    ///
+    /// `_apply_attn_res` multiplies the two elementwise into a single
+    /// learned score vector, dots it against the RMS-normalised
+    /// candidates and softmaxes over them. There is no query and no
+    /// per-token projection of the state, which is why the pair is two
+    /// stored vectors rather than a mix projection.
+    ///
+    /// **Not aliases of the generic norm role.** A `[hidden]` tensor
+    /// classified as `PreAttentionNorm` would be applied to the branch
+    /// input by an executor that reads norms; this one is half of a
+    /// score and is never applied as a norm at all.
+    ///
+    /// **Not hyper-connection sites either**, and no stream count makes
+    /// them so: a Sinkhorn site's mix is `[(2 + hc)·hc, hc·hidden]`,
+    /// which is `[1, hidden]` for no `hc`, and its base is
+    /// `[(2 + hc)·hc]`, never `[hidden]`. Pinned in
+    /// `opplan::tests::wave18_hc_carriage::k3s_residual_operands_are_not_sinkhorn_sites_under_any_stream_count`.
+    ///
+    /// These roles are reachable ONLY through
+    /// [`classify_stack_tensor_under`], which is given the component's
+    /// declared topology. [`classify_stack_tensor_on`] — the
+    /// operator-only classifier — answers `None` for their spellings on
+    /// every operator, so a checkpoint that ships the operands without
+    /// declaring the period never acquires the topology from its tensor
+    /// names. Identity is declared, not inferred from operands.
+    AttnResAttentionNorm,
+    AttnResAttentionProj,
+    AttnResMlpNorm,
+    AttnResMlpProj,
 }
 
 impl OperandRole {
@@ -571,6 +611,114 @@ const ROLE_TABLE: &[(&str, OperandRole)] = &[
     ("hc_ffn_scale", OperandRole::HcFfnScale),
 ];
 
+/// Suffix → role **under the attention-residual topology**, consulted
+/// before every other table by [`classify_stack_tensor_under`] and by
+/// NOTHING else.
+///
+/// K3 spells all four as `.weight` leaves directly under the layer
+/// (`language_model.model.layers.{L}.self_attention_res_norm.weight`),
+/// read from the checkpoint's own safetensors headers rather than from a
+/// reference implementation. The stack prefix is what differs between
+/// checkpoints of this dialect, never the suffix — the same argument the
+/// hyper-connection site spellings carry.
+///
+/// The table is gated on the DECLARATION rather than on the operator,
+/// which is the one structural difference from [`KDA_ROLE_TABLE`] and
+/// friends. The operator cannot answer here: K3 carries these four on
+/// its KDA layers and its MLA layers alike, and a softmax stack of the
+/// same dialect would carry them too. What decides whether they are
+/// site operands is whether the component declares
+/// `attn_res_block_size` — and a build that read the topology off the
+/// names instead would let any checkpoint acquire a residual programme
+/// by spelling.
+const ATTENTION_RESIDUAL_ROLE_TABLE: &[(&str, OperandRole)] = &[
+    (
+        "self_attention_res_norm.weight",
+        OperandRole::AttnResAttentionNorm,
+    ),
+    (
+        "self_attention_res_proj.weight",
+        OperandRole::AttnResAttentionProj,
+    ),
+    ("mlp_res_norm.weight", OperandRole::AttnResMlpNorm),
+    ("mlp_res_proj.weight", OperandRole::AttnResMlpProj),
+];
+
+/// The attention-residual EXIT's two tensor groups, as K3 spells them
+/// (`language_model.model.output_attn_res_{norm,proj}`).
+///
+/// Held here, beside the roles, because two independent consumers ask
+/// about them and must never disagree: the graph builder's placement
+/// vocabulary matches these as name fragments (ordered BEFORE its
+/// generic `norm` fragment, which otherwise swallows the exit norm into
+/// the component's final-norm object), and the op plan classifies the
+/// object's tensors through [`ATTENTION_RESIDUAL_EXIT_TABLE`].
+pub const ATTENTION_RESIDUAL_EXIT_LEAVES: &[&str] =
+    &["output_attn_res_norm", "output_attn_res_proj"];
+
+/// The attention-residual exit's own operands — a component-level
+/// object, not a stack operand.
+///
+/// The stack's last layer leaves a prefix sum and a history of
+/// snapshots; `_apply_output_attn_res` reduces them to the ONE vector
+/// the final norm and the head read. Its pair has a site's geometry and
+/// a site's arithmetic, and is still not a site: it runs once, at the
+/// stack's end, over the whole history, and a component declaring the
+/// topology must ship it (K3 does). That is why it is its own object
+/// with its own closure rather than a third pair on some layer.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum AttentionResidualExitOperand {
+    /// `output_attn_res_norm.weight`, `[hidden]`.
+    Norm,
+    /// `output_attn_res_proj.weight`, `[1, hidden]`.
+    Proj,
+}
+
+/// The exit's spellings, object-relative. Two groups under one common
+/// segment prefix means the container names them `output_attn_res_*.
+/// weight`, whatever the checkpoint's stack prefix was.
+const ATTENTION_RESIDUAL_EXIT_TABLE: &[(&str, AttentionResidualExitOperand)] = &[
+    (
+        "output_attn_res_norm.weight",
+        AttentionResidualExitOperand::Norm,
+    ),
+    (
+        "output_attn_res_proj.weight",
+        AttentionResidualExitOperand::Proj,
+    ),
+];
+
+/// Classify one tensor of the attention-residual exit object by its
+/// object-relative name. Exact, like every classifier in this module: a
+/// spelling not in the table is `None` and blocks.
+pub fn classify_attention_residual_exit_tensor(
+    relative_name: &str,
+) -> Option<AttentionResidualExitOperand> {
+    ATTENTION_RESIDUAL_EXIT_TABLE
+        .iter()
+        .find(|(name, _)| *name == relative_name)
+        .map(|(_, operand)| *operand)
+}
+
+/// Whether `relative_name` is one of the four attention-residual SITE
+/// operands, asked WITHOUT the declaration.
+///
+/// The graph builder never calls this — placement of the per-layer pairs
+/// is the decoder stack's, as it already was. The op plan calls it in
+/// exactly one place: to tell a stray from an unrecognised spelling when
+/// a component that does NOT declare the topology ships these names, so
+/// the defect can say what the operand implies instead of only that
+/// nothing classified it. Recognition is not ownership — the same
+/// separation the hyper-connection head's placement arm makes.
+pub fn is_attention_residual_site_operand(relative_name: &str) -> bool {
+    layer_and_suffix(relative_name).is_some_and(|(_, suffix)| {
+        ATTENTION_RESIDUAL_ROLE_TABLE
+            .iter()
+            .any(|(name, _)| *name == suffix)
+    })
+}
+
 /// The hyper-connection HEAD's own operands — a component-level object,
 /// not a stack operand, and a different operation from a site's.
 ///
@@ -772,6 +920,53 @@ const CONV_QKV_ROLE_TABLE: &[(&str, OperandRole)] = &[
     ("norm.weight", OperandRole::Mamba2PreMixerNorm),
 ];
 
+/// Split a stack tensor's object-relative name into its layer index and
+/// the suffix every role table matches on. `None` when the name is not
+/// layer-shaped, which is what makes a bare top-level tensor under a
+/// stack binding a blocking fact rather than a layer-0 operand.
+fn layer_and_suffix(relative_name: &str) -> Option<(usize, &str)> {
+    let (layer, suffix) = relative_name.split_once('.')?;
+    Some((layer.parse().ok()?, suffix))
+}
+
+/// Classify one stack tensor under the component's declared residual
+/// topology as well as its layer's operator.
+///
+/// **The op plan's entry point.** Two authorities gate a role here and
+/// they answer different questions: the OPERATOR separates spellings two
+/// attention families share (`self_attn.o_proj.weight` on a KDA layer
+/// and on an MLA layer of the same checkpoint), and the TOPOLOGY decides
+/// whether a residual programme's operands exist at all.
+///
+/// The topology cannot be inferred from the operands, and this is the
+/// site where that rule is enforced: a checkpoint shipping
+/// `mlp_res_norm.weight` without declaring `attn_res_block_size`
+/// classifies as NOTHING here, exactly as it did before this rung, and
+/// the op plan reports it as an operand implying an absent op. Grading
+/// it a site role would let a component acquire a residual topology by
+/// spelling — the same failure as reading hyper-connections off an
+/// `hc_`-prefixed name.
+pub fn classify_stack_tensor_under(
+    relative_name: &str,
+    operator: LayerOperator,
+    topology: larql_models::config::ResidualTopology,
+) -> Option<(usize, OperandRole)> {
+    if matches!(
+        topology,
+        larql_models::config::ResidualTopology::AttentionResidual { .. }
+    ) {
+        if let Some((layer, suffix)) = layer_and_suffix(relative_name) {
+            if let Some((_, role)) = ATTENTION_RESIDUAL_ROLE_TABLE
+                .iter()
+                .find(|(name, _)| *name == suffix)
+            {
+                return Some((layer, *role));
+            }
+        }
+    }
+    classify_stack_tensor_on(relative_name, operator)
+}
+
 /// Classify one stack tensor, given the operator its layer runs.
 ///
 /// The operator is required, not optional, because a name alone cannot
@@ -787,8 +982,7 @@ pub fn classify_stack_tensor_on(
     relative_name: &str,
     operator: LayerOperator,
 ) -> Option<(usize, OperandRole)> {
-    let (layer, suffix) = relative_name.split_once('.')?;
-    let layer: usize = layer.parse().ok()?;
+    let (layer, suffix) = layer_and_suffix(relative_name)?;
     if operator.is_kda() {
         if let Some((_, role)) = KDA_ROLE_TABLE.iter().find(|(name, _)| *name == suffix) {
             return Some((layer, *role));

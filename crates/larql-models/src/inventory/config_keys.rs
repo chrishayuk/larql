@@ -110,6 +110,10 @@ pub const CONSUMED_LEAF_KEYS: &[&str] = &[
     "hc_mult",
     "hc_sinkhorn_iters",
     "hc_eps",
+    // Attention residuals (Kimi-K3): the residual is one vector plus a
+    // history of block-boundary snapshots of it, taken every
+    // `attn_res_block_size` layers and read by every sublayer.
+    "attn_res_block_size",
     "enable_moe_block",
     "top_k_experts",
     "moe_intermediate_size",

@@ -37,6 +37,51 @@
 //! its own reduction (`hc_head_{fn,base,scale}`). A per-layer flag would
 //! let a stack claim hyper-connections while its embedding and head
 //! silently assumed one stream.
+//!
+//! The third judged topology is **attention residuals**, read from
+//! Kimi-K3's own `modeling_kimi_linear.py` (`KimiDecoderLayer.
+//! _forward_attn_residual`, `_apply_attn_res`, `KimiLinearModel.forward`):
+//!
+//! ```text
+//! prefix_sum = h_in;  blocks = []            // state: ONE vector + a history
+//! per layer L:
+//!   if blocks:  h = apply(prefix_sum, blocks, self_attention_res_*)
+//!   if L % B == 0:  blocks.push(h_in); prefix_sum = None
+//!   a = attention(input_layernorm(h));  prefix_sum = prefix_sum + a (or a)
+//!   h = apply(prefix_sum, blocks, mlp_res_*)              // ALWAYS
+//!   m = ffn(post_attention_layernorm(h)); prefix_sum += m
+//! exit:  h = apply(prefix_sum, blocks, output_attn_res_*)  // REQUIRED
+//!
+//! apply(prefix, blocks, proj, norm):
+//!   v      = cat(blocks, prefix)                   // [N + 1, hidden]
+//!   score  = rmsnorm(v, no weight) . (norm.weight * proj.weight)
+//!   out    = softmax(score) @ v                    // over the RAW candidates
+//! ```
+//!
+//! **It is neither of the two above**, and the difference is structural
+//! rather than parametric:
+//!
+//! 1. the state is one vector PLUS a history of block-boundary
+//!    snapshots — not a fixed bundle of parallel streams, and not one
+//!    vector alone;
+//! 2. the reduce is a softmax over that history against a single learned
+//!    score vector (no query, no per-token projection of the state), and
+//!    the update is a plain add, not an expansion;
+//! 3. the snapshot schedule is periodic in the layer index (`L % B == 0`)
+//!    and the exit reduction over the whole history is REQUIRED.
+//!
+//! A `SingleStream` programme lowers this by discarding the history and
+//! every read of it, which computes a different model rather than
+//! failing. A `HyperConnection` programme cannot express it at all: no
+//! stream count makes a `[1, hidden]` projection a Sinkhorn site's
+//! `[(2 + hc)·hc, hc·hidden]` mix, nor a `[hidden]` norm any site
+//! operand of one.
+//!
+//! **The block size is a COMPONENT fact** for the same reason the stream
+//! count is: the snapshot schedule, every layer's read of the history,
+//! and the stack's own exit reduction all have to agree about it, and a
+//! per-layer flag would let one layer snapshot into a history another
+//! layer does not read.
 
 use serde::{Deserialize, Serialize};
 
@@ -50,6 +95,22 @@ pub enum ResidualTopology {
     /// A bundle of parallel residual streams, reduced to one vector for
     /// each sublayer and expanded back afterwards, with per-token weights.
     HyperConnection(HyperConnection),
+    /// One residual vector plus a history of block-boundary snapshots of
+    /// it; each sublayer READS a softmax-weighted mix over that history
+    /// and the current vector, and WRITES by plain addition into the
+    /// vector. Kimi-K3's `attn_res_block_size`.
+    AttentionResidual {
+        /// `attn_res_block_size` — the layer period at which the state
+        /// ENTERING a layer is snapshotted into the history (K3 declares
+        /// 12 over 93 layers, so eight snapshots exist and the exit
+        /// reduction mixes nine candidates).
+        ///
+        /// Read as declared or not at all. A defaulted block size would
+        /// silently change which layers snapshot, which is a different
+        /// model rather than a failure — the same reason `hc_mult` is
+        /// never defaulted.
+        block_size: usize,
+    },
 }
 
 /// The declared parameters of a hyper-connection topology. Every field is
@@ -73,9 +134,28 @@ pub struct HyperConnection {
 impl ResidualTopology {
     /// The number of parallel residual streams the state carries. One for
     /// every topology but hyper-connections.
+    ///
+    /// One for attention residuals too, and that is a statement rather
+    /// than a fallthrough: the prefix sum IS a single vector, and what
+    /// the topology adds beside it is a HISTORY of snapshots, whose
+    /// length is a function of the position in the stack rather than a
+    /// declared width. A caller sizing a buffer from this number gets the
+    /// prefix sum right and must ask the topology itself about the
+    /// history — which is why the carrier is the traversal transition's
+    /// question and not this one's.
+    ///
+    /// **Decided now, built later**: that carrier's semantic type
+    /// encodes a HISTORY (a `[hidden]` prefix beside `[N, hidden]`
+    /// snapshots, `N` growing with depth), not streams. It may share the
+    /// enter/leave site seam wave 19 built for the bundle, but it is not
+    /// a bundle with a different stream count — a bundle's width is
+    /// declared once and fixed for the whole stack, and this one is
+    /// neither. Reaching for the existing type because it also holds
+    /// more than one vector is how a second topology becomes a wrong
+    /// dialect of the first.
     pub fn streams(self) -> usize {
         match self {
-            Self::SingleStream => 1,
+            Self::SingleStream | Self::AttentionResidual { .. } => 1,
             Self::HyperConnection(hc) => hc.streams,
         }
     }
@@ -84,8 +164,67 @@ impl ResidualTopology {
     /// hyper-connections carries. Serde reads it to leave a single-stream
     /// plan's serialisation byte-identical to what it was before the
     /// topology travelled on the plan at all.
+    ///
+    /// `false` for attention residuals even though [`Self::streams`]
+    /// answers one: the residual PROGRAMME differs, and a serialisation
+    /// that dropped the field would leave a container claiming the
+    /// ordinary residual it does not run.
     pub fn is_single_stream(&self) -> bool {
         matches!(self, Self::SingleStream)
+    }
+
+    /// Why this build cannot EXECUTE this topology, when it cannot.
+    ///
+    /// ONE authority, two readers: the executor's preparation step
+    /// (`larql-vindex`'s `opplan::exec::prepared`), which refuses before a
+    /// single operand is loaded, and the plan report, which must say so.
+    /// Wave 11 established that a refusal only one consumer can see is
+    /// not a refusal, and that two lists of what cannot be lowered drift
+    /// into exactly that state.
+    ///
+    /// **The op plan is deliberately NOT a reader.** Wave 18 settled that
+    /// for hyper-connections and the same argument holds here: the
+    /// topology is a CLOSURE question at that stage — the per-layer site
+    /// operands classify, are required, are checked against the
+    /// topology's own geometry — and refusing there would hide the
+    /// addressability answer behind the traversal gap, which is the
+    /// structural silence a baseline with no `UnclassifiedOperand` at all
+    /// records.
+    ///
+    /// **This function returned `None` for everything between wave 19 and
+    /// K3-ATTNRES-1, and was deleted with its last reader.** Its own
+    /// documentation said a variant that refuses again must bring the
+    /// readers back beside it; that is what this is. Hyper-connections do
+    /// not refuse here — both their traversals were witnessed against the
+    /// reference — and attention residuals do, because no traversal for
+    /// them exists at all.
+    ///
+    /// Saying so precisely matters more than it looks. A stale reason
+    /// sends the next wave to build something that exists; a build that
+    /// lifted the refusal because the operands are addressable would be
+    /// claiming execution from addressing — the same mistake as grading a
+    /// config key representable because a parser read it.
+    pub fn unimplemented_reason(self) -> Option<&'static str> {
+        match self {
+            // Every judged traversal lowers. Hyper-connections joined
+            // them in wave 19, when the decode step and the batch
+            // traversal were each witnessed carrying the bundle against
+            // the reference's own oracle.
+            Self::SingleStream | Self::HyperConnection(_) => None,
+            Self::AttentionResidual { .. } => Some(
+                "the residual is one vector PLUS a history of block-boundary snapshots, and \
+                 every sublayer reads a softmax-weighted mix over that history before it runs \
+                 and adds its result back into the vector; the single-stream residual \
+                 programme cannot lower it without discarding the history, every read of it, \
+                 the periodic snapshot event and the required exit reduction. The declaration \
+                 is represented, the exit pair is owned as one object and the four per-layer \
+                 operands are addressed by role, so neither representation nor addressing is \
+                 what is missing. What is missing is the traversal AND the reference that \
+                 would judge it: this build carries no history in its carrier, and no oracle \
+                 for `_apply_attn_res` exists yet, so there is nothing an implementation could \
+                 be checked against",
+            ),
+        }
     }
 }
 
@@ -119,15 +258,19 @@ impl HyperConnectionWeights {
 mod tests {
     use super::*;
 
-    /// Both judged topologies lower: the refusal that lived here through
-    /// waves 16-18 was retired in wave 19, after the decode and batch
-    /// traversals were each witnessed against the reference's oracle.
-    /// What the type still says is the stream count and which of the two
-    /// residual programmes a component runs.
+    /// The two traversals this build runs lower; the third refuses.
+    ///
+    /// The refusal that lived here through waves 16-18 was retired in
+    /// wave 19, after the decode and batch traversals were each witnessed
+    /// against the reference's oracle — and returns for attention
+    /// residuals, which have neither a traversal nor an oracle. Both arms
+    /// are pinned: the second is what keeps the first from having been
+    /// implemented as "stop refusing topologies".
     #[test]
-    fn both_judged_topologies_lower() {
+    fn the_witnessed_traversals_lower_and_the_unwitnessed_one_refuses() {
         assert_eq!(ResidualTopology::SingleStream.streams(), 1);
         assert!(ResidualTopology::SingleStream.is_single_stream());
+        assert_eq!(ResidualTopology::SingleStream.unimplemented_reason(), None);
 
         let hc = ResidualTopology::HyperConnection(HyperConnection {
             streams: 4,
@@ -136,6 +279,31 @@ mod tests {
         });
         assert_eq!(hc.streams(), 4);
         assert!(!hc.is_single_stream());
+        assert_eq!(hc.unimplemented_reason(), None);
+
+        let attn_res = ResidualTopology::AttentionResidual { block_size: 12 };
+        // ONE prefix sum, and a history beside it that no width declares.
+        assert_eq!(attn_res.streams(), 1);
+        // ...and still not the ordinary residual: the programme differs,
+        // so a plan carrying it must serialise the field.
+        assert!(!attn_res.is_single_stream());
+        assert!(attn_res
+            .unimplemented_reason()
+            .is_some_and(|reason| reason.contains("traversal")));
+    }
+
+    /// The block size is read as declared and never re-derived: two
+    /// components declaring different periods are different topologies,
+    /// and the value travels inside the variant rather than beside it.
+    #[test]
+    fn the_block_size_travels_inside_the_variant() {
+        let k3 = ResidualTopology::AttentionResidual { block_size: 12 };
+        assert_ne!(k3, ResidualTopology::AttentionResidual { block_size: 6 });
+        assert_ne!(k3, ResidualTopology::SingleStream);
+        let ResidualTopology::AttentionResidual { block_size } = k3 else {
+            panic!("the variant is what carries K3's declared period");
+        };
+        assert_eq!(block_size, 12);
     }
 
     /// The mix projection's row count is derived from the stream count,

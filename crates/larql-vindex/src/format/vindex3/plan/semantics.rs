@@ -20,6 +20,11 @@ pub const EXECUTION_SEMANTIC_KEYS: &[&str] = &[
     "hc_mult",
     "hc_sinkhorn_iters",
     "hc_eps",
+    // The attention-residual period (K3-ATTNRES-1): it decides which
+    // layers snapshot the entering residual into the history every
+    // sublayer then reads, so a build that ignored it would compute a
+    // different model at every layer past the first block.
+    "attn_res_block_size",
     "layer_rope_theta",
     // E30 static shards: the per-layer dense-FFN width a derived checkpoint
     // declares. Execution semantics of the plainest kind — it is the row

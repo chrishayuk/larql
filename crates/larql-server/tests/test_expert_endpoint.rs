@@ -88,6 +88,7 @@ impl TestMoeArch {
                 hc_streams: None,
                 hc_sinkhorn_iters: None,
                 hc_eps: None,
+                attn_res_block_size: None,
                 enable_moe_block: true,
                 top_k_experts: Some(TOP_K),
                 moe_intermediate_size: Some(INTER),

@@ -61,11 +61,87 @@ pub enum InputSite {
     FfnOutput,
 }
 
-/// Which of a layer's two hyper-connection sites a record came from.
+/// Which of a transformer block's two sublayers a residual site wraps.
+///
+/// Topology-neutral on purpose: hyper-connections and attention
+/// residuals both put a site at each of these two places, and a name
+/// belonging to one of them would have had to be duplicated for the
+/// other. `HcSite` remains as an alias so wave 19's call sites read as
+/// they did.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum HcSite {
+pub enum SublayerSite {
     Attention,
     Ffn,
+}
+
+pub use SublayerSite as HcSite;
+
+/// One block-boundary event of the attention-residual topology
+/// (K3-ATTNRES-1, transition 2a) — the THIRD contract point of a site.
+///
+/// Its own record, and not a field of the site record beside it, for two
+/// reasons the freeze names. Layer 0 emits no attention-site record at
+/// all, so an event carried on that record would be invisible exactly
+/// where the schedule's first event happens; and the claim under test is
+/// an ORDERING one — the attention site reads the set this event has not
+/// yet extended, and the mlp site reads the set it has — which needs the
+/// event to be a thing in the stream rather than an annotation on
+/// something else.
+#[derive(Debug, Clone, Copy)]
+pub struct AttnResBoundaryRecord<'a> {
+    pub layer: usize,
+    pub position: usize,
+    pub snapshots_before: usize,
+    pub snapshots_after: usize,
+    /// The vector appended. The reference snapshots the ENTERING prefix
+    /// state, and two of the rung's controls perturb exactly this, so it
+    /// is recorded rather than assumed.
+    pub value: &'a [f32],
+    /// The layer's entering prefix, so a witness can assert the equality
+    /// rather than trusting the caller passed the right vector.
+    pub entering_prefix: &'a [f32],
+}
+
+/// One attention-residual site's intermediate state at one position.
+///
+/// Distinct from [`HcSiteRecord`] rather than a generalisation of it:
+/// that record carries a `SinkhornSplit`, which this topology has no
+/// analogue of, and this one carries candidate counts and a snapshot
+/// count, which that topology has no analogue of. A shared record would
+/// have been a union with two empty halves.
+///
+/// **The counts are load-bearing, not diagnostics.** The rung's oracle
+/// measured two of the topology's six properties at a divergence of
+/// EXACTLY zero — softmax over one candidate is the identity, so layer
+/// 0's skipped attention site computes what a regularised always-run
+/// site computes; and the mlp site's guard never fires because no site
+/// in the schedule ever sees an empty set. Neither can be caught by any
+/// value comparison at any geometry. They are caught HERE, by which
+/// records exist and what they count, or they are not caught at all.
+#[derive(Debug, Clone, Copy)]
+pub struct AttnResSiteRecord<'a> {
+    pub layer: usize,
+    pub site: SublayerSite,
+    pub position: usize,
+    /// Snapshots plus the prefix — never fewer than two anywhere in the
+    /// reference's schedule.
+    pub candidate_count: usize,
+    /// The size of the set this reduction ACTUALLY read. At a boundary
+    /// layer's attention site this is the count before the event, which
+    /// is the whole ordering claim of the topology.
+    pub snapshot_count_before: usize,
+    /// The distribution over candidates. A single-stream traversal has
+    /// no such object, so its existence is what says the topology ran.
+    pub probs: &'a [f32],
+    /// `probs @ candidates` over the RAW candidates — the vector the
+    /// branch consumes, before the site's pre-norm.
+    pub mixed_vector: &'a [f32],
+    /// The prefix entering the site, and the prefix after the branch's
+    /// delta was written. At a boundary layer's attention site the
+    /// second is the branch output alone, because the event reset the
+    /// first.
+    pub prefix_before: &'a [f32],
+    pub prefix_after: &'a [f32],
 }
 
 /// One hyper-connection site's intermediate state at one position
@@ -114,6 +190,19 @@ pub trait StepObserver {
     /// step, immediately after the site's update and before the
     /// sublayer's completion event. Default: ignore.
     fn hyper_connection_site(&mut self, _record: HcSiteRecord<'_>) {}
+
+    /// Observe one attention-residual site's intermediate state. Fired
+    /// only on a component that declares the topology, and only where
+    /// the reference REDUCES: layer 0's attention site emits nothing,
+    /// because the reference does not reduce there. That absence is the
+    /// observation. Default: ignore.
+    fn attention_residual_site(&mut self, _record: AttnResSiteRecord<'_>) {}
+
+    /// Observe one block-boundary event, fired between the attention
+    /// site's reduction and the attention branch — the point in the
+    /// schedule that wave 19's two-point site seam cannot express.
+    /// Default: ignore.
+    fn attention_residual_boundary(&mut self, _record: AttnResBoundaryRecord<'_>) {}
 }
 
 /// The default subscriber: observes nothing. [`DecodeSession::step`]
