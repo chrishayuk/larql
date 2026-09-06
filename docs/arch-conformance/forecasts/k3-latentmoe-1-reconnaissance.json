@@ -1,0 +1,195 @@
+{
+  "rung": "K3-LATENTMOE-1",
+  "name": "latent-moe-reconnaissance",
+  "artifact_kind": "reconnaissance (measured; decides nothing)",
+  "written": "2026-09-06",
+  "rule_this_follows": "Reconnaissance -> freeze -> oracle -> declare/address -> execute -> fresh two-arm measurement, the sequence the four preceding K3 rungs ran. Nothing here is a decision; every fact is read from the reference source, the checkpoint's own config, its real headers, this repository, or the MEASURED q-LoRA candidate arm, and each is marked observed or derived.",
+  "opened_by": "the user, 2026-09-06, immediately after K3-MLA-Q-LORA-1 was committed (`ef6a101e`): the first remaining cell that should move K3's blocker count again, scoped tightly to `routed_expert_hidden_size` and `latent_moe_use_norm`.",
+
+  "base": {
+    "worktree": ".claude/worktrees/k3-latentmoe-1, branch `k3-latentmoe-1`",
+    "base_commit": "`ef6a101e` — the q-LoRA rung, semantics 21, K3 26/152 RED. Two commits ahead of origin/main and neither pushed; if either is amended or rebased before this rung is measured, the baseline moves with it and BOTH arms must be re-measured."
+  },
+
+  "q1_what_latent_moe_actually_changes": {
+    "source": "https://huggingface.co/moonshotai/Kimi-K3/resolve/main/modeling_kimi_linear.py, `KimiSparseMoeBlock` L769-841, read verbatim 2026-09-06.",
+    "the_answer_to_the_question_asked": "**Both, and the distinction matters.** LatentMoE is a WRAPPER — two new projections and an optional norm around the routed branch — AND it changes the stored geometry of the expert bank itself, because the experts are constructed at the latent width rather than at `hidden_size`. It is not merely different stored geometry around an existing kernel, and it is not a different expert OPERATOR either: each expert is still the same `KimiBlockSparseMLP` (SiTU-GLU gate/up/down) that K3-ACT-1 already executes. What changed is the SPACE it runs in.",
+    "init_L776_813": [
+      "use_latent_moe   = getattr(config, 'routed_expert_hidden_size', None) is not None      (L776)",
+      "moe_hidden_size  = routed_expert_hidden_size if use_latent_moe else config.hidden_size (L777-780)",
+      "latent_moe_use_norm = getattr(config, 'latent_moe_use_norm', False)                    (L781)",
+      "experts = [KimiBlockSparseMLP(config, hidden_size=moe_hidden_size,",
+      "                              intermediate_size=moe_intermediate_size) x num_experts]  (L786-795)",
+      "shared_experts = KimiMLP(config, intermediate_size=moe_intermediate_size*num_shared)   (L797-801)",
+      "if use_latent_moe:",
+      "    routed_expert_down_proj = Linear(hidden_size, moe_hidden_size, bias=False)          (L804-806)",
+      "    routed_expert_up_proj   = Linear(moe_hidden_size, hidden_size, bias=False)          (L807-809)",
+      "    if latent_moe_use_norm:",
+      "        routed_expert_norm  = KimiRMSNorm(moe_hidden_size, eps=config.rms_norm_eps)     (L810-813)"
+    ],
+    "forward_L815_838": [
+      "identity = hidden_states",
+      "topk_idx, topk_weight = self.gate(hidden_states)     # ROUTES ON THE FULL HIDDEN, before any down-projection",
+      "hidden_states = hidden_states.view(-1, hidden)",
+      "if use_latent_moe: hidden_states = routed_expert_down_proj(hidden_states)   # [T, latent]",
+      "y = self.moe_infer(hidden_states, topk_idx, topk_weight)                    # experts + weighted sum, IN LATENT SPACE",
+      "if use_latent_moe:",
+      "    if latent_moe_use_norm: y = routed_expert_norm(y)                       # AFTER the weighted sum",
+      "    y = routed_expert_up_proj(y)                                            # [T, hidden]",
+      "y = y.view(*orig_shape)",
+      "if num_shared_experts is not None: y = y + shared_experts(identity)         # SHARED RUNS ON THE FULL HIDDEN"
+    ],
+    "the_three_orderings_that_are_easy_to_get_wrong_and_each_changes_the_model": [
+      "**The router reads the UN-projected hidden.** `self.gate(hidden_states)` is called at L818, BEFORE the down-projection at L822. Routing in the latent space would be a different model with every shape still closing.",
+      "**The norm is applied to the WEIGHTED SUM, not to each expert's output.** `moe_infer` already multiplied by `topk_weight` and summed (L866-873); the norm sees one vector per token, after aggregation. Normalising per expert before the sum is a different function.",
+      "**The shared experts run in the FULL hidden space and are added AFTER the up-projection.** `shared_experts(identity)` reads the block input, not the latent, and its result is added to the already-expanded `y`. So the latent bottleneck applies to the ROUTED branch only."
+    ]
+  },
+
+  "q2_declaration_authority_OBSERVED": {
+    "the_form_selector": "`routed_expert_hidden_size`, and nothing else. L776 is `getattr(config, 'routed_expert_hidden_size', None) is not None` — a PRESENCE test, the same shape as `q_lora_rank`'s.",
+    "the_norm_selector": "`latent_moe_use_norm`, L781, `getattr(config, 'latent_moe_use_norm', False)` — a truthiness test with a declared default of `False`.",
+    "the_two_are_independent_but_ordered": "the norm is only constructed `if self.use_latent_moe` AND `if self.latent_moe_use_norm` (L803, L810). So `latent_moe_use_norm: true` with no `routed_expert_hidden_size` builds NO norm — the flag is inert without the wrapper. A build that read the norm flag alone would create a norm the reference never constructs.",
+    "absence": "`routed_expert_hidden_size` absent -> `moe_hidden_size = config.hidden_size`, no wrapper projections, no norm: ordinary routed MoE. That is a CHECKED default read from L777-780, not an assumed one. `latent_moe_use_norm` absent -> `False`, read from the `getattr` default.",
+    "zero_and_null_TRACED_NOT_ASSUMED": {
+      "routed_expert_hidden_size = 0": "`0 is not None` is TRUE, so zero SELECTS the wrapper and then builds `Linear(hidden, 0)`, `Linear(0, hidden)` and a zero-width norm. Same rule as `q_lora_rank`, opposite of `activation_situ_beta`'s `beta or 1.0`. **Three adjacent fields in one config, and this is now the second to follow the presence rule — which is a reason to state it, not a reason to assume the next one does.**",
+      "routed_expert_hidden_size = null": "identical to absent — `None is not None` is False.",
+      "latent_moe_use_norm = false": "explicitly no norm; distinguishable from absent only in the plan's `declared` field, not in behaviour.",
+      "latent_moe_use_norm = null": "`getattr` returns `None`, which is falsy in the `if` at L810 — so null behaves as False. NOT the same as `q_lora_rank`'s null, which is compared with `is not None`. Two nearby fields, two different null semantics, and the difference is `is not None` against plain truthiness."
+    },
+    "the_rule_this_rung_must_hold": "**A routed-expert tensor shape may confirm a declaration; it must never select the declaration.** The wrapper's operands are unmistakably spelled (`routed_expert_down_proj`, `routed_expert_norm`, `routed_expert_up_proj`) so the temptation is smaller than q-LoRA's identical-row-count trap — but the EXPERT BANK's own shapes are the same trap in a subtler form: the bank's stored width is `routed_expert_hidden_size` when the wrapper exists and `hidden_size` when it does not, so a build that sized the bank from the tensors would be reading the form out of the geometry the form decides."
+  },
+
+  "q3_operand_inventory_from_the_real_headers_OBSERVED": {
+    "source": "`plan/tests/fixtures/k3_two_layer_headers.json` — the verbatim safetensors headers of two real K3 shards. Tensor layer 3 is the routed one (config layer 4; `first_k_dense_replace: 1` makes tensor layer 0 dense).",
+    "the_latent_wrapper_this_rung_addresses": [
+      "block_sparse_moe.routed_expert_down_proj.weight   [3584, 7168]  BF16   x1",
+      "block_sparse_moe.routed_expert_norm.weight        [3584]        BF16   x1",
+      "block_sparse_moe.routed_expert_up_proj.weight     [7168, 3584]  BF16   x1"
+    ],
+    "the_expert_bank_this_rung_does_NOT_address": [
+      "block_sparse_moe.experts.N.w1.weight_packed  [3072, 1792]  U8   x896",
+      "block_sparse_moe.experts.N.w1.weight_scale   [3072, 112]   U8   x896",
+      "block_sparse_moe.experts.N.w2.weight_packed  [3584, 1536]  U8   x896",
+      "block_sparse_moe.experts.N.w2.weight_scale   [3584, 96]    U8   x896",
+      "block_sparse_moe.experts.N.w3.weight_packed  [3072, 1792]  U8   x896",
+      "block_sparse_moe.experts.N.w3.weight_scale   [3072, 112]   U8   x896"
+    ],
+    "already_addressed_on_the_same_layer": "`block_sparse_moe.gate.weight [896, 7168]`, `gate.e_score_correction_bias [896]`, and the three `shared_experts.*` projections at `[6144, 7168]` / `[7168, 6144]` — none of them unaddressed, none of them this rung's.",
+    "the_conservation_statement": {
+      "current_MEASURED": "K3's estate pin reads 5421 tensors, 5379 unclassified, 9 distinct unaddressed spellings (after the q-LoRA rung).",
+      "the_decomposition_OBSERVED": "9 = 6 expert-bank spellings (the 896-way MXFP4 compressed-tensors dialect, 5376 tensors) + **3 LatentMoE wrapper spellings (3 tensors)**. Enumerated directly from the test's own report, not inferred.",
+      "expected_after_this_rung_DERIVED": "unclassified 5379 -> 5376, distinct spellings 9 -> 6, and every operand K3 still cannot name is the expert bank's compressed-tensors dialect — one cell, `weight_packed`/`weight_scale` on `w1`/`w2`/`w3`.",
+      "why_this_is_worth_stating_separately_from_the_blockers": "the user's instruction: separate blocker movement from operand-plane movement. Here they happen to be small on both axes (2 blockers, 3 tensors), but they are different claims and the freeze must forecast them independently."
+    }
+  },
+
+  "q4_routed_expert_hidden_size_geometry_OBSERVED": {
+    "what_it_controls": [
+      "`routed_expert_down_proj` rows — `[3584, 7168]` = `[latent, hidden]`",
+      "`routed_expert_up_proj` columns — `[7168, 3584]` = `[hidden, latent]`",
+      "`routed_expert_norm` width — `[3584]`",
+      "**every expert's INPUT width**: `w1`/`w3` are `[moe_intermediate_size, latent]`. Stored `[3072, 1792]` because MXFP4 packs two values per byte: 1792*2 = 3584 = latent.",
+      "**every expert's OUTPUT width**: `w2` is `[latent, moe_intermediate_size]`. Stored `[3584, 1536]`, 1536*2 = 3072.",
+      "the scale streams follow: `w1`/`w3` `[3072, 112]` with 112 = 3584/32, `w2` `[3584, 96]` with 96 = 3072/32 (MXFP4 group size 32)."
+    ],
+    "distinguished_from_its_neighbours": {
+      "routed_expert_hidden_size": "3584 — the latent the ROUTED branch runs in",
+      "hidden_size": "7168 — the residual stream, what the router reads and what the shared experts run in. Exactly 2x the latent on K3, which is a coincidence of this checkpoint and must not become a derivation.",
+      "moe_intermediate_size": "3072 — each expert's own inner width, unchanged by the wrapper",
+      "shared expert width": "6144 = moe_intermediate_size * num_shared_experts, and the shared experts' outer width is `hidden_size` (7168), not the latent"
+    },
+    "the_shape_bug_this_build_would_have_today_DERIVED": "`opplan/build.rs` sizes the packed bank against the COMPONENT's hidden: `ExpertGateUp -> packed_shape(m, 2*expert_intermediate_size, hidden)` (L2438-2442) and `ExpertDown -> packed_shape(m, hidden, expert_intermediate_size)` (L2458-2461). On K3 that expects `[896, 6144, 224, 16]` and `[896, 7168, 96, 16]` against real tensors whose latent axis is 3584. So the bank would be refused on shape — loudly, which is the right failure — but the refusal would name the OPERAND rather than the missing `routed_expert_hidden_size`, sending a reader to the wrong place. Derived from the code, not observed: no K3 op plan has ever been built.",
+    "and_the_mutant_it_implies": "`latent width read from moe_intermediate_size` (3072 against 3584) and `routed-expert width read from hidden_size` (7168 against 3584) are BOTH shape-detectable on K3's real widths, because all three numbers differ. A synthetic fixture must keep them distinct or those two controls go blind — the freeze must say so."
+  },
+
+  "q5_latent_moe_use_norm_THE_EXACT_SEMANTICS_OBSERVED": {
+    "the_construction": "`routed_expert_norm = KimiRMSNorm(self.moe_hidden_size, eps=config.rms_norm_eps)` — L811-813.",
+    "kind": "RMSNorm — `KimiRMSNorm`, the same class every other norm in this file uses. Not LayerNorm: no mean subtraction, no bias.",
+    "epsilon_authority_AND_THIS_IS_THE_OPPOSITE_OF_THE_q_LORA_FINDING": {
+      "the_fact": "it passes `eps=config.rms_norm_eps` EXPLICITLY. On K3 that is **1e-5**, the layer epsilon — NOT `KimiRMSNorm`'s class default `1e-6`.",
+      "how_it_was_checked": "every `KimiRMSNorm(` construction site in the file was enumerated. Exactly TWO omit `eps` — L368 `q_a_layernorm` and L383 `kv_a_layernorm`, the two the previous two rungs found. Every other site (L811 here, L901, L903, L910, L912, L1100, L1105) passes `config.rms_norm_eps`.",
+      "why_this_matters_more_than_it_looks": "K3-MLA-Q-LORA-1 established that a low-rank norm's epsilon has its own authority and must not be borrowed. The intuition that would carry forward — 'the latent norms in this family run at the class default' — is WRONG here. The reference is explicit, and the correct answer is the layer epsilon. `feedback_coincidental_invariant` in the other direction: the previous rung's finding is not a pattern to generalise, it is a fact about two specific constructor calls.",
+      "the_rule_the_user_stated_holds_exactly": "'do not let it inherit an adjacent norm epsilon unless the reference explicitly does'. Here it explicitly does — so inheriting is correct, and inventing a class-default constant would be the error."
+    },
+    "affine": "YES. `KimiRMSNorm.__init__` creates `self.weight = nn.Parameter(torch.ones(hidden_size))`, and the real checkpoint ships `routed_expert_norm.weight [3584]` in BF16. A parameter-free treatment is wrong.",
+    "what_it_normalises": "the routed branch's WEIGHTED SUM, `[latent]` per token, after `moe_infer` has multiplied by the top-k weights and summed, and before `routed_expert_up_proj`.",
+    "placement": "strictly between the aggregation and the up-projection: `y = norm(y); y = up_proj(y)` (L830-832). Not per expert, not before the down-projection, not after the up-projection, and not on the shared branch.",
+    "precision": "`KimiRMSNorm.forward` upcasts to f32, normalises, casts back to the input dtype, and applies the affine weight in THAT dtype — `self.weight * x.to(dtype)` (L232-236). The same ordering the previous rung recorded; whether it is observable at these widths is for the ORACLE to measure, not for the freeze to assert."
+  },
+
+  "q6_zero_null_absent_the_three_precedents_side_by_side": {
+    "the_table": [
+      "activation_situ_beta   0.0  -> 1.0        (`beta or 1.0`, Python truthiness)   [K3-ACT-1]",
+      "q_lora_rank            0    -> the FORM   (`is not None`)                      [K3-MLA-Q-LORA-1]",
+      "routed_expert_hidden_size 0 -> the FORM   (`is not None`)                      [this rung, TRACED]",
+      "latent_moe_use_norm    null -> False      (plain truthiness in an `if`)        [this rung, TRACED]"
+    ],
+    "why_the_table_is_in_the_reconnaissance": "four adjacent fields of one config, three different rules. Each was read from its own line rather than inferred from a neighbour, and the freeze should carry a witness that asserts at least two of them together so a future reader cannot merge them by intuition — the shape K3-MLA-Q-LORA-1 used for the beta/rank pair."
+  },
+
+  "q7_oracle_boundaries_proposed_not_decided": {
+    "the_ladder_the_user_asked_for": [
+      "`router_input` — the block input the gate reads, BEFORE any projection (the ordering control)",
+      "`router_weights` / `selected` — top-k ids and weights, so a routing defect is separated from a latent one",
+      "`latent` — `routed_expert_down_proj(x)`, `[latent]`",
+      "`expert_out` — one expert's contribution in latent space (at least one expert, so the SiTU combine is visible at the new width)",
+      "`routed_sum` — the top-k weighted sum, `[latent]`, BEFORE the norm",
+      "`routed_normed` — after `routed_expert_norm`, `[latent]` — `None` when the flag is off",
+      "`routed_out` — `routed_expert_up_proj(...)`, `[hidden]`",
+      "`shared_out` — the shared branch on the block input, `[hidden]`, which must be independent of everything above",
+      "`output` — `routed_out + shared_out`"
+    ],
+    "why_router_weights_are_a_boundary_and_not_just_a_check": "the router reads the un-projected hidden, so `router_weights` must be BIT-identical between a latent arm and an ordinary arm on the same input and the same gate weights. That is the cheapest possible witness for the first of the three orderings, and it is free."
+  },
+
+  "q8_controls_the_freeze_should_carry": {
+    "numeric": [
+      "`norm_omitted` — the flag declared but the norm skipped",
+      "`norm_after_up_proj` — applied to `[hidden]` after expansion instead of `[latent]` before it. Shape-expressible only if latent == hidden; K3's are 3584 vs 7168, so on a fixture that keeps them distinct this is structurally unreachable and must be RECORDED as such, not claimed",
+      "`norm_before_down_proj` — applied to the block input instead of the aggregate; same shape question",
+      "`norm_per_expert_before_sum` — each expert's output normalised, then weighted and summed. Shape-reachable and numerically distinct: this is the placement mutant that matters",
+      "`class_default_eps` — 1e-6 instead of the declared `rms_norm_eps`. **The inverse of the q-LoRA epsilon mutant**, and expected to be small; it must be scored at the boundary it is caught at (`routed_normed`), as the previous rung's controls were, or it will read as inert at `output`",
+      "`latent_from_moe_intermediate_size` — the wrapper built at 3072 instead of 3584",
+      "`latent_from_hidden_size` — built at 7168 instead of 3584, i.e. no bottleneck at all",
+      "`down_up_swapped` — `[latent, hidden]` and `[hidden, latent]` transposed into each other's slots. Shape-reachable only if the fixture's latent and hidden differ, which they must",
+      "`router_reads_the_latent` — routing computed after the down-projection. The first ordering, made numeric",
+      "`shared_reads_the_latent` — the shared branch fed the projected input instead of the block input"
+    ],
+    "structural": [
+      "`routed_expert_hidden_size` declared, wrapper operands absent -> each named by role",
+      "wrapper operands present, no declaration -> refused (identity declared, not inferred)",
+      "`latent_moe_use_norm: true` with no `routed_expert_hidden_size` -> the flag is INERT in the reference (L803 gates L810); the plan must say so rather than build a norm",
+      "`latent_moe_use_norm: true` declared and `routed_expert_norm.weight` absent -> named",
+      "`routed_expert_norm.weight` present with the flag false or absent -> refused",
+      "the expert bank's stored width disagreeing with the declared latent -> refused naming the DECLARATION, not just the operand"
+    ]
+  },
+
+  "q9_other_estate_rows_MEASURED": {
+    "the_answer": "**None.** Of the 117 cached rows, exactly ONE declares `routed_expert_hidden_size` or `latent_moe_use_norm`: moonshotai/Kimi-K3. Every other row is a zero-movement control by construction, for both leaves.",
+    "why_the_user_asked": "the q-LoRA rung's most valuable side-result came from four DeepSeek rows that declared the same fact and exposed how the form generalises while an adjacent authority does not. That lever is NOT available here — there is no second specimen — so this rung's controls have to come from synthetic fixtures and from the ancestor.",
+    "the_ancestor_is_still_the_sharpest_control": "moonshotai/Kimi-Linear-48B-A3B-Instruct declares NEITHER key (verified: `routed_expert_hidden_size` absent, `latent_moe_use_norm` absent from its config.json). Same family, same architecture entry, a real container and a running executor. It exercises the checked default on both leaves and must be unmoved on every plane."
+  },
+
+  "q10_the_count_forecast_IS_NOT_MADE_HERE": {
+    "what_is_measured": "on the q-LoRA candidate arm (semantics 21), K3 reads 26/152 and BOTH leaves block: #55 `text_config.latent_moe_use_norm`, unrepresented/unknown, declared `true`, resolved null; #121 `text_config.routed_expert_hidden_size`, unrepresented/unknown, declared 3584, resolved null.",
+    "what_would_have_to_be_true_for_minus_two": "each leaf must become representable AND carried. `latent_moe_use_norm` is the easier half — a boolean with a home on the MoE surface. `routed_expert_hidden_size` is harder: it must reach a home that the expert bank's SHAPE contracts also read, or the leaf will be carried while the bank is still sized against `hidden` and the op plan still refuses. A leaf that is representable while the operand it governs is refused would be a carriage claim the operand plane contradicts.",
+    "so_the_forecast_is_the_freeze_s": "-2 is plausible and is NOT assumed here. The freeze must state it only after deciding where the latent width lives and whether the bank's shape contracts read it in the same transition. If the answer is 'the width is carried but the bank is a separate cell', the honest forecast may be -1 or -2 with the operand plane unmoved — and that must be written down before measuring, not after.",
+    "the_third_blocker_on_the_same_object": "#134 `topk_method` (`noaux_tc`) also blocks and is also router-side. It is NOT this rung's — the user scoped this to the two leaves — and the freeze must fence it explicitly so a reader is not surprised that K3 still has a routing blocker afterwards."
+  },
+
+  "the_two_lessons_carried_forward_as_explicit_falsifiers": {
+    "first": "**Understanding the LatentMoE form must not grant permission to invent its norm semantics.** The form is `routed_expert_hidden_size`'s; the norm's epsilon, placement, affinity and precision are separate facts, each read from L811-813 and L232-236 rather than derived from the form. Note the trap runs the other way here than in the previous rung: the correct epsilon IS the adjacent one, and the previous rung's finding is the thing that would mislead.",
+    "second": "**A routed-expert tensor shape may confirm a declaration; it must never select the declaration.** The wrapper's spellings are distinctive, but the expert bank's stored width is exactly the quantity the declaration decides — so sizing the bank from its tensors, or inferring the wrapper from the bank's width, is the same defect in the place where it is hardest to see."
+  },
+
+  "what_this_reconnaissance_did_not_do": [
+    "no code, no test, no oracle, no freeze",
+    "no plan re-measured — the q-LoRA candidate arm was READ, not re-run; both arms are the freeze's to measure fresh against `ef6a101e`",
+    "did not decide where the latent width lives on the surface, nor whether the expert bank's shape contracts move in this transition — q10 names that as the decision the count forecast waits on",
+    "did not fetch or touch any K3 weight byte; the reference `.py`, the public config, and the committed header fixture only",
+    "did not examine DeepSeek's or any other family's MoE for a second specimen beyond confirming that no cached row declares either leaf",
+    "did not read `moe_infer`'s dispatch for anything beyond the ordering facts in q1 — expert-selection mechanics are `topk_method`'s cell, not this one's"
+  ]
+}
