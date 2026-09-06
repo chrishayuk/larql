@@ -40,7 +40,10 @@ pub mod rope;
 pub mod rope_types;
 pub mod shared_expert_gate;
 
-pub use activation::{ffn_shape_from_hf_name, ffn_shape_hf_name, Activation, FfnType};
+pub use activation::{
+    ffn_shape_from_hf_name, ffn_shape_hf_name, hf_combine_name, Activation, ActivationDeclaration,
+    FfnType, SITU_NAME,
+};
 pub use architecture::{
     default_position_policy_for_layer, score_scale_from_query_pre_attn_scalar, ModelArchitecture,
 };

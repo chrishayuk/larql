@@ -148,6 +148,18 @@ pub struct VindexModelConfig {
     /// FFN activation name, verbatim (`hidden_act`).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub hidden_act: Option<String>,
+    /// SiTU-GLU's two softcaps (`activation_situ_beta`,
+    /// `activation_situ_linear_beta`), verbatim.
+    ///
+    /// They are parameters of the combine `hidden_act: "situ"` names, and
+    /// a container that carried the name without them would rebuild the
+    /// FFN at the reference's `beta or 1.0` fallback — a different
+    /// function, with every shape still closing and no parity arm able to
+    /// see it, since both arms would read the same index.json.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub activation_situ_beta: Option<f64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub activation_situ_linear_beta: Option<f64>,
     /// One FFN intermediate width per layer (`larql_ffn_intermediate_size_by_layer`),
     /// verbatim, for checkpoints whose gate/up/down projections were sliced
     /// to different widths in different layers. A vindex that dropped it
@@ -319,6 +331,8 @@ impl VindexModelConfig {
             post_norm_eps: cfg.post_norm_eps,
             attention_bias: cfg.attention_bias,
             hidden_act: cfg.hidden_act.clone(),
+            activation_situ_beta: cfg.activation_situ_beta,
+            activation_situ_linear_beta: cfg.activation_situ_linear_beta,
             ffn_intermediate_size_by_layer: cfg.ffn_intermediate_size_by_layer.clone(),
             max_position_embeddings: cfg.max_position_embeddings,
             final_logit_softcapping: cfg.final_logit_softcapping,
@@ -868,6 +882,8 @@ mod tests {
         cfg.post_norm_eps = Some(1e-8);
         cfg.attention_bias = Some(false);
         cfg.hidden_act = Some("silu".to_string());
+        cfg.activation_situ_beta = Some(4.0);
+        cfg.activation_situ_linear_beta = Some(25.0);
         cfg.max_position_embeddings = Some(131072);
 
         let json = serde_json::to_string(&cfg).unwrap();
@@ -877,6 +893,8 @@ mod tests {
         assert_eq!(back.post_norm_eps, Some(1e-8));
         assert_eq!(back.attention_bias, Some(false));
         assert_eq!(back.hidden_act.as_deref(), Some("silu"));
+        assert_eq!(back.activation_situ_beta, Some(4.0));
+        assert_eq!(back.activation_situ_linear_beta, Some(25.0));
         assert_eq!(back.max_position_embeddings, Some(131072));
     }
 

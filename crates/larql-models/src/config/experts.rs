@@ -122,6 +122,44 @@ pub enum ExpertGatePolicy {
         /// Multiplier on the sigmoid argument (1.702 in the reference).
         alpha: f32,
     },
+    /// Kimi-K3's SiTU-GLU, from `SituAndMul.forward`
+    /// (`modeling_kimi_linear.py` L75-82):
+    ///
+    /// ```text
+    /// situ_a = beta * tanh(gate / beta) * sigmoid(gate)
+    /// u      = linear_beta * tanh(up / linear_beta)   // only if declared
+    /// out    = situ_a * u
+    /// ```
+    ///
+    /// A *softcapped* SwiGLU: the gate branch is SiLU bounded by a tanh at
+    /// `beta`, the up branch is a bare tanh bound at `linear_beta`. It
+    /// degenerates to plain SwiGLU as both bounds grow — which is exactly
+    /// why substituting SiLU for it produces a forward pass that looks
+    /// healthy. At K3's declared `beta = 4.0` / `linear_beta = 25.0` the
+    /// substitution reads rel-L2 7.37 against the reference
+    /// (`situ_oracle.json`, arm `k3`, control `swiglu`).
+    ///
+    /// Named by the checkpoint's `hidden_act: "situ"` — the reference
+    /// registers it as `ACT2FN["situ"] = SituAndMul`, so this is a
+    /// declared operator NAME, not a parameter something else infers an
+    /// operator from.
+    SituGlu {
+        /// `activation_situ_beta`, the gate branch's softcap.
+        ///
+        /// Already resolved through the reference's `beta or 1.0`
+        /// (`_get_situ_activation_params`, L91): an absent, null or `0.0`
+        /// declaration arrives here as `1.0`. Nothing downstream repeats
+        /// that rule, and nothing downstream may divide by a zero it
+        /// could have been handed.
+        beta: f32,
+        /// `activation_situ_linear_beta`, the up branch's softcap.
+        ///
+        /// `None` = the up branch is untouched, which is a DIFFERENT
+        /// function and not `linear_beta = infinity`. The reference gives
+        /// this parameter no `or` fallback, so a declared `0.0` is carried
+        /// verbatim and does zero the up branch.
+        linear_beta: Option<f32>,
+    },
 }
 
 impl Default for ExpertGatePolicy {

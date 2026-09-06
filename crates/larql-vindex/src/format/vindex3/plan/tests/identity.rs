@@ -102,7 +102,7 @@ fn identity_survives_a_round_trip_and_parse_refuses_other_schemas_by_name() {
 /// witness is re-recorded.
 #[test]
 fn the_semantics_version_is_pinned_to_known_verdicts() {
-    assert_eq!(PLANNER_SEMANTICS_VERSION, 19);
+    assert_eq!(PLANNER_SEMANTICS_VERSION, 20);
 
     let dir = tempfile::tempdir().unwrap();
     let admissible = plan_system(&one_glimmer(dir.path()));
@@ -406,6 +406,34 @@ fn the_semantics_version_is_pinned_to_known_verdicts() {
             "`{key}` on a component with no KDA/MLA block must stay blocked, uncarried: {blocking:?}"
         );
     }
+
+    // Version 20's verdict (K3-ACT-1): `hidden_act: "situ"` with its two
+    // softcaps is a carried declaration, where at version 19 the name
+    // resolved to `silu` (a MISMATCH that blocked) and both softcaps were
+    // Unknown. The control beside it is the second specimen of the class:
+    // `relu2` names no activation this build has judged and no gate
+    // policy, so it must STILL block — which is what keeps the first arm
+    // from having been implemented as "resolve every unknown name to
+    // itself".
+    let situ_declared = |act: &'static str, betas: bool| {
+        let dir = tempfile::tempdir().unwrap();
+        let inventory = glimmer_shaped_target_with(dir.path(), |config| {
+            config["text_config"]["hidden_act"] = serde_json::json!(act);
+            if betas {
+                config["text_config"]["activation_situ_beta"] = serde_json::json!(4.0);
+                config["text_config"]["activation_situ_linear_beta"] = serde_json::json!(25.0);
+            }
+        });
+        plan_system(&[(ARTIFACT.to_string(), inventory)])
+    };
+    let situ = situ_declared("situ", true);
+    assert!(situ.admissible, "{:?}", situ.summary);
+    let unjudged_act = situ_declared("relu2", false);
+    assert!(
+        !unjudged_act.admissible,
+        "an activation this build has never judged must still block: {:?}",
+        unjudged_act.summary
+    );
 
     let complete = attn_res_stack(true);
     assert!(

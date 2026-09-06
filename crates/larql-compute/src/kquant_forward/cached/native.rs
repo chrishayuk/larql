@@ -344,7 +344,7 @@ pub(crate) fn run_ffn_decode_step_q4k_direct(
     // scalar pass serial on the main thread while the workers slept.
     let mut activated = vec![0.0f32; intermediate];
     {
-        let gelu = arch.activation().uses_gelu_tanh_gate_up();
+        let gelu = arch.gate_up_is_gelu_tanh();
         let sqrt_2_over_pi = (2.0f32 / std::f32::consts::PI).sqrt();
         let gate_ref = &gate_vec[..];
         let up_ref = &up_vec[..];

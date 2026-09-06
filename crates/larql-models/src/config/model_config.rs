@@ -255,6 +255,19 @@ pub struct ModelConfig {
     /// `ModelArchitecture::activation`; an unrecognised spelling must fail
     /// there, not default.
     pub hidden_act: Option<String>,
+    /// SiTU-GLU's gate softcap (`activation_situ_beta`), verbatim.
+    ///
+    /// Read only as a parameter OF the activation `hidden_act` names —
+    /// declaring it beside any other activation configures a combine the
+    /// checkpoint says it does not use, and the plan reports that rather
+    /// than the value being quietly applied. `f64` because the config
+    /// declares a JSON number; the resolution to `f32` (and the
+    /// reference's `beta or 1.0`) happens once, on the architecture.
+    pub activation_situ_beta: Option<f64>,
+    /// SiTU-GLU's up-branch softcap (`activation_situ_linear_beta`),
+    /// verbatim. Absent means the up branch is untouched — a different
+    /// function, not an infinite bound.
+    pub activation_situ_linear_beta: Option<f64>,
     /// Declared context bound (`max_position_embeddings`).
     pub max_position_embeddings: Option<usize>,
 

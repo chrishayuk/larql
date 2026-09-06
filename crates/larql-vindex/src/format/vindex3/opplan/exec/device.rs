@@ -647,7 +647,7 @@ impl<M: MatMul + Send> PlanBackend for DevicePlanBackend<M> {
     }
 
     fn ffn(&self, call: FfnCall<'_>) -> Result<Vec<f32>, VindexError> {
-        super::production::require_plain_gate("device", call.gate_policy)?;
+        super::production::require_executable_gate("device", call.gate_policy)?;
         let inner = match call.gate {
             Some(gate_weight) => {
                 // Up and gate read the same input: one submission.
@@ -660,14 +660,27 @@ impl<M: MatMul + Send> PlanBackend for DevicePlanBackend<M> {
                 )?;
                 let gate = pair.pop().expect("two matrices in, two vectors out");
                 let up = pair.pop().expect("two matrices in, two vectors out");
-                match call.activation {
-                    Activation::Silu => geglu_silu_alloc(&gate, &up),
-                    Activation::GeluTanh => gate
-                        .iter()
+                // A non-plain gate policy owns the whole combine; the
+                // nonlinearity beside it is inert (K3-ACT-1). Checked
+                // first so the two are never applied together.
+                if let larql_models::ExpertGatePolicy::SituGlu { beta, linear_beta } =
+                    call.gate_policy
+                {
+                    let rule = larql_compute::MoeGateRule::SituGlu { beta, linear_beta };
+                    gate.iter()
                         .zip(&up)
-                        .map(|(g, u)| gelu_tanh(*g) * u)
-                        .collect(),
-                    other => return Err(unsupported_activation("gated", other)),
+                        .map(|(g, u)| rule.combine(*g, *u))
+                        .collect()
+                } else {
+                    match call.activation {
+                        Activation::Silu => geglu_silu_alloc(&gate, &up),
+                        Activation::GeluTanh => gate
+                            .iter()
+                            .zip(&up)
+                            .map(|(g, u)| gelu_tanh(*g) * u)
+                            .collect(),
+                        other => return Err(unsupported_activation("gated", other)),
+                    }
                 }
             }
             None => {

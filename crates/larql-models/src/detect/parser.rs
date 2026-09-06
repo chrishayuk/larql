@@ -576,6 +576,11 @@ pub(super) fn parse_model_config(config: &serde_json::Value) -> ModelConfig {
         .as_str()
         .or_else(|| text_config["hidden_activation"].as_str())
         .map(str::to_string);
+    // SiTU-GLU's two softcaps. Read verbatim beside the name that selects
+    // them; whether they are the parameters of an activation this
+    // checkpoint actually uses is judged on the architecture, not here.
+    let activation_situ_beta = text_config["activation_situ_beta"].as_f64();
+    let activation_situ_linear_beta = text_config["activation_situ_linear_beta"].as_f64();
     let max_position_embeddings = text_config["max_position_embeddings"]
         .as_u64()
         .map(|v| v as usize);
@@ -786,6 +791,8 @@ pub(super) fn parse_model_config(config: &serde_json::Value) -> ModelConfig {
         attention_bias,
         mlp_bias,
         hidden_act,
+        activation_situ_beta,
+        activation_situ_linear_beta,
         max_position_embeddings,
         image_token_id,
         video_token_id,

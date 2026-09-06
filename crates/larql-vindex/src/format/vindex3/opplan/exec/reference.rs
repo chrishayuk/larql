@@ -636,6 +636,14 @@ fn combine_gate_up_reference(
             let u = u.clamp(-limit, limit);
             (u + 1.0) * (g * sigmoid(alpha * g))
         }
+        // Delegated, not transcribed a third time. SiTU has exactly one
+        // formula and `MoeGateRule::combine` is where it lives — unlike
+        // the `Gated` arm above, which deliberately differs from the
+        // production tier (exact erf-GELU here, the tanh approximation
+        // there) and therefore has to be spelled out.
+        larql_models::ExpertGatePolicy::SituGlu { beta, linear_beta } => {
+            larql_compute::MoeGateRule::SituGlu { beta, linear_beta }.combine(g, u)
+        }
     }
 }
 
@@ -714,7 +722,7 @@ impl PlanBackend for ReferenceBackend {
     }
 
     fn ffn(&self, call: FfnCall<'_>) -> Result<Vec<f32>, VindexError> {
-        super::production::require_plain_gate("reference", call.gate_policy)?;
+        super::production::require_executable_gate("reference", call.gate_policy)?;
         let up = matvec(call.up.as_f32()?, call.intermediate, call.hidden, call.x);
         let inner: Vec<f32> = match call.gate {
             Some(gate_weight) => {
@@ -724,9 +732,14 @@ impl PlanBackend for ReferenceBackend {
                     call.hidden,
                     call.x,
                 );
+                // Through the same combine the routed path uses, so this
+                // backend has ONE answer for what a gate policy means
+                // rather than a dense answer and a routed one.
                 gate.iter()
                     .zip(&up)
-                    .map(|(g, u)| activate(call.activation, *g) * u)
+                    .map(|(g, u)| {
+                        combine_gate_up_reference(call.gate_policy, call.activation, *g, *u)
+                    })
                     .collect()
             }
             None => up.iter().map(|u| activate(call.activation, *u)).collect(),

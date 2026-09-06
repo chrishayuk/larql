@@ -118,6 +118,10 @@ pub const CONSUMED_LEAF_KEYS: &[&str] = &[
     "top_k_experts",
     "moe_intermediate_size",
     "swiglu_limit",
+    // SiTU-GLU's two softcaps (K3-ACT-1). Parameters of the combine
+    // `hidden_act: "situ"` names, read into `ModelConfig` beside it.
+    "activation_situ_beta",
+    "activation_situ_linear_beta",
     "norm_topk_prob",
     // MLA
     "kv_lora_rank",

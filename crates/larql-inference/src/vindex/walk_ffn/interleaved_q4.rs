@@ -48,7 +48,7 @@ impl<'a> WalkFfn<'a> {
         self.index.prefetch_interleaved_q4_layer(layer + 1);
 
         let arch = &*self.weights.arch;
-        let use_gelu = arch.activation().uses_gelu_tanh_gate_up();
+        let use_gelu = arch.gate_up_is_gelu_tanh();
 
         let mut out = Array2::<f32>::zeros((seq_len, hidden));
         let mut full_activation = Array2::<f32>::zeros((seq_len, intermediate));

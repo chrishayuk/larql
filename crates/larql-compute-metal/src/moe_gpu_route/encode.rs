@@ -253,6 +253,19 @@ impl MetalBackend {
                     enc.set_bytes(7, 4, &limit as *const f32 as *const c_void);
                     enc.set_bytes(8, 4, &alpha as *const f32 as *const c_void);
                 }
+                larql_compute::MoeGateRule::SituGlu { beta, linear_beta } => {
+                    crate::kernels::ffn::bind_situ_glu(
+                        enc,
+                        &self.ffn.situ_glu_pipeline,
+                        (&scratch.g_out, g_offset),
+                        (&scratch.u_out, g_offset),
+                        (&scratch.act_buf, a_offset),
+                        inter_u32,
+                        beta,
+                        linear_beta,
+                        stage_gate_up_bias,
+                    );
+                }
                 larql_compute::MoeGateRule::Gated(activation) => {
                     let pipeline = if activation.gate_up_is_gelu_tanh() {
                         &self.ffn.geglu_gelu_tanh_pipeline
@@ -478,7 +491,18 @@ impl MetalBackend {
             }
             _ => false,
         };
-        router_input_transform(moe).is_some()
+        // SiTU-GLU has no bias form in the reference (K3's experts are
+        // bias-free `nn.Linear`s) and `situ_glu` has no bias slots, so a
+        // layer staging per-expert gate/up biases under it is refused
+        // HERE — at admission, before an encoder exists — rather than at
+        // the dispatch. `bind_situ_glu` still asserts, as the backstop for
+        // any path that does not come through this gate, but a refusal
+        // raised mid-encode leaves the encoder unended and Metal aborts
+        // the process instead of reporting it.
+        let situ_bias_ok = !matches!(moe.gate_rule, larql_compute::MoeGateRule::SituGlu { .. })
+            || moe.experts_gate_up_bias.is_empty();
+        situ_bias_ok
+            && router_input_transform(moe).is_some()
             && format_ok
             && matches!(
                 moe.routing_policy.post_expert_norm,

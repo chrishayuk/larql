@@ -384,7 +384,7 @@ fn run_smoke_test() {
     println!("=== phase 0: harness smoke test (synthetic TinyModel, 2 layers) ===");
     let weights = make_test_weights();
     let ffn = WeightFfn { weights: &weights };
-    let gelu_tanh = weights.arch.activation().uses_gelu_tanh_gate_up();
+    let gelu_tanh = weights.arch.gate_up_is_gelu_tanh();
     let prompt: Vec<u32> = vec![1, 2, 3, 4, 5];
     let last_layer = weights.num_layers - 1;
 
@@ -469,7 +469,7 @@ fn run_real_gemma_sweep(vindex_path: &str) {
         larql_inference::encode_prompt(&tokenizer, &*weights.arch, "The capital of France is")
             .expect("tokenize prompt");
     let ffn = WeightFfn { weights: &weights };
-    let gelu_tanh = weights.arch.activation().uses_gelu_tanh_gate_up();
+    let gelu_tanh = weights.arch.gate_up_is_gelu_tanh();
     let last_layer = weights.num_layers - 1;
 
     let pairs = build_pairs(weights.num_layers);

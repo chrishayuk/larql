@@ -57,6 +57,29 @@ pub const PLAN_SCHEMA: u32 = 6;
 /// `plan/tests/identity.rs` pins fixture verdicts against this value, so
 /// a change that flips one fails there until the version is bumped.
 ///
+/// **20** — Kimi-K3's FFN combine, and the end of silent activation
+/// substitution (K3-ACT-1). `hidden_act: "situ"` names SiTU-GLU,
+/// `beta*tanh(g/beta)*sigmoid(g) * linear_beta*tanh(u/linear_beta)` — a
+/// softcapped SwiGLU — and is carried as an
+/// `ExpertGatePolicy::SituGlu { beta, linear_beta }` rather than an
+/// `Activation` variant, on the reasoning that enum already states for
+/// GPT-OSS's clamped GLU. `activation_situ_beta` and
+/// `activation_situ_linear_beta` move from Unknown to its parameters,
+/// carried `Lowered`; `hidden_act` stops reading `mismatched` because the
+/// activation probe now answers from the COMBINE the FFN computes rather
+/// than from a nonlinearity field a non-plain policy never reads.
+///
+/// The second half is not K3's. `ModelArchitecture::activation` used to
+/// read `.and_then(from_hf_name).unwrap_or(Silu)`, which gave the same
+/// answer to *the config is silent* and *the config declared something
+/// this build has never judged* — so a checkpoint declaring `situ`, or
+/// BitNet declaring `relu2`, was executed as SwiGLU. The four states are
+/// now told apart by `ActivationDeclaration`, and every gate/up kernel
+/// selection refuses an unjudged declaration by name instead of
+/// substituting one. This moves no finding on any row but K3: the planner
+/// was already reporting both specimens honestly, and what changed is
+/// what an executor does with them.
+///
 /// **19** — the two K3 attention output gates, DECLARED (K3-REP-GATE-1).
 /// `linear_attn_config.use_full_rank_gate` (the KDA output gate's FORM:
 /// one full-rank `g_proj` in place of the low-rank `g_a_proj`/`g_b_proj`
@@ -339,7 +362,7 @@ pub const PLAN_SCHEMA: u32 = 6;
 /// architectures, now block instead of passing silently into
 /// `GenericArch`'s Llama-shaped defaults. Measured on the conformance
 /// corpus: 15 of 42 declared `model_type` strings, across 30 checkpoints.
-pub const PLANNER_SEMANTICS_VERSION: u32 = 19;
+pub const PLANNER_SEMANTICS_VERSION: u32 = 20;
 
 /// Who judged a plan.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]

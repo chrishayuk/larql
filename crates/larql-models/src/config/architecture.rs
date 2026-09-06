@@ -17,10 +17,11 @@
 use crate::validation::ConfigValidationResult;
 
 use super::{
-    layer_types, rope_types, Activation, DeclaredRopeScaling, EmbeddingNorm, ExpertFormat,
-    ExpertGatePolicy, ExpertRoutingPolicy, FfnType, GateUpLayout, HyperConnection, LayerKind,
-    Llama3RopeScaling, ModelConfig, NormSpec, NormType, PositionPolicy, PostNormEps, QkNormScope,
-    ResidualTopology, RotaryFrequencyBasis, SharedExpertGateSpec, YarnRopeScaling,
+    layer_types, rope_types, Activation, ActivationDeclaration, DeclaredRopeScaling, EmbeddingNorm,
+    ExpertFormat, ExpertGatePolicy, ExpertRoutingPolicy, FfnType, GateUpLayout, HyperConnection,
+    LayerKind, Llama3RopeScaling, ModelConfig, NormSpec, NormType, PositionPolicy, PostNormEps,
+    QkNormScope, ResidualTopology, RotaryFrequencyBasis, SharedExpertGateSpec, YarnRopeScaling,
+    SITU_NAME,
 };
 
 /// The multiplier that leaves a value unchanged.
@@ -29,6 +30,12 @@ use super::{
 /// as the deliberate identity it is, and cannot be mistaken for a magic
 /// constant standing in for an unread config fact.
 const IDENTITY_SCALE: f32 = 1.0;
+
+/// SiTU-GLU's gate softcap when the checkpoint declares none — the
+/// reference's `beta or 1.0` (`modeling_kimi_linear.py` L91). Named
+/// because `1.0` here is a transcribed fallback from one line of one
+/// file, not a neutral scale that happens to be one.
+const SITU_DEFAULT_BETA: f32 = 1.0;
 
 /// Attention score scale from a declared `query_pre_attn_scalar` (or any
 /// other scalar the score is `1/sqrt` of, e.g. `head_dim`).
@@ -387,20 +394,106 @@ pub trait ModelArchitecture: Send + Sync {
         None
     }
 
+    /// What this checkpoint's `hidden_act` declaration says — silent, a
+    /// judged nonlinearity, the name of a gate policy, or a name this
+    /// build has never judged.
+    ///
+    /// The judgment every FFN decision reads. Overriding it is asserting
+    /// the architecture knows better than its own checkpoint.
+    fn activation_declaration(&self) -> ActivationDeclaration {
+        ActivationDeclaration::judge(self.config().hidden_act.as_deref())
+    }
+
     /// Activation function for the FFN.
     ///
-    /// The default reads the checkpoint's declared `hidden_act` /
-    /// `hidden_activation` name when present (through the one mapping in
-    /// [`Activation::from_hf_name`]) and falls back to SiLU only when the
-    /// config is silent. A family override that ignores the config is
-    /// asserting it knows better than the checkpoint — every current
-    /// override's family also declares the matching name.
+    /// SiLU when the config is **silent** — that is a checked default,
+    /// and the only branch that takes it. A judged name maps through the
+    /// one table in [`Activation::from_hf_name`].
+    ///
+    /// The two remaining declarations have no nonlinearity to return, and
+    /// this method deliberately does not invent one:
+    ///
+    /// - [`ActivationDeclaration::NamesGatePolicy`] — the whole combine is
+    ///   named, not just the gate's nonlinearity, and
+    ///   [`Self::expert_gate_policy`] carries it. The value returned here
+    ///   is INERT: [`ExpertGatePolicy`]'s non-`Gated` arms consume no
+    ///   `Activation` at all, which
+    ///   `situ_policy_makes_the_activation_field_inert` pins.
+    /// - [`ActivationDeclaration::Unjudged`] — nothing in this build knows
+    ///   what the name means. The value returned here is likewise never
+    ///   executed: [`Self::gate_up_is_gelu_tanh`] refuses by name before
+    ///   any kernel is selected, which is where the refusal belongs.
+    ///
+    /// Before K3-ACT-1 this method collapsed *silent* and *unjudged* into
+    /// one `unwrap_or(Silu)`, so a checkpoint declaring `situ` or `relu2`
+    /// was silently executed as SwiGLU. Two rows in the conformance
+    /// estate were in exactly that state.
     fn activation(&self) -> Activation {
-        self.config()
-            .hidden_act
-            .as_deref()
-            .and_then(Activation::from_hf_name)
-            .unwrap_or(Activation::Silu)
+        match self.activation_declaration() {
+            ActivationDeclaration::Nonlinearity(activation) => activation,
+            ActivationDeclaration::Absent
+            | ActivationDeclaration::NamesGatePolicy(_)
+            | ActivationDeclaration::Unjudged(_) => Activation::Silu,
+        }
+    }
+
+    /// Which of the two gate/up kernel families this checkpoint's FFN uses
+    /// on the walk / kquant / dense-weight paths — the ONE call those
+    /// paths make.
+    ///
+    /// **Panics, by name, when the declaration cannot be served there**:
+    /// a gate policy that is not plain gating
+    /// ([`ExpertGatePolicy::SituGlu`], [`ExpertGatePolicy::ClampedGlu`]),
+    /// or an activation name this build has never judged. Those paths
+    /// compute `act(gate) * up` and nothing else, and handing them a bool
+    /// for a declaration they cannot serve is precisely the silent
+    /// substitution this refuses.
+    ///
+    /// A panic rather than a `Result` because that is already the
+    /// established contract at this exact seam —
+    /// [`Activation::uses_gelu_tanh_gate_up`] panics for
+    /// [`Activation::Relu`] with the same reasoning — and because these
+    /// paths are reached only after a plan has admitted the model. The
+    /// planner refuses both known specimens, so this is a backstop, which
+    /// is what it should be.
+    fn gate_up_is_gelu_tanh(&self) -> bool {
+        let policy = self.expert_gate_policy();
+        assert!(
+            matches!(policy, ExpertGatePolicy::Gated),
+            "the walk/kquant gate-up paths compute `act(gate) * up` and have no kernel for              {policy:?}; refusing rather than substituting plain gating for it"
+        );
+        // The DECLARATION decides whether to refuse; [`Self::activation`]
+        // supplies the answer. Those are two different questions and
+        // answering both from the declaration was a real defect: StarCoder2
+        // overrides `activation()` to tanh-GELU and declares no
+        // `hidden_act` at all, so a derivation reading the config alone
+        // silently replaced a family's own judgment with the SiLU
+        // fallback — the same shape of bug this rung exists to remove, one
+        // level up.
+        match self.activation_declaration() {
+            ActivationDeclaration::Absent | ActivationDeclaration::Nonlinearity(_) => {
+                self.activation().uses_gelu_tanh_gate_up()
+            }
+            // Unreachable while the policy is `Gated` (a policy name
+            // resolves to a non-`Gated` policy above), but stated rather
+            // than collapsed into the arm below: the two declarations are
+            // different facts and a future policy name must not silently
+            // inherit an `unjudged` message.
+            ActivationDeclaration::NamesGatePolicy(name) => panic!(
+                "`hidden_act: \"{name}\"` names a gate policy, and the walk/kquant gate-up \
+                 paths have no kernel for it; refusing rather than substituting plain gating"
+            ),
+            // Refused even where a family overrides `activation()`: the
+            // checkpoint declared a name this build cannot read, the
+            // family's answer and the declaration disagree, and the plan
+            // already grades that leaf `mismatched`. Computing anything
+            // here would be picking a side silently. No in-tree
+            // architecture is in this state.
+            ActivationDeclaration::Unjudged(name) => panic!(
+                "`hidden_act: \"{name}\"` is an activation this build has never judged; the \
+                 walk/kquant gate-up paths refuse it rather than computing SiLU in its place"
+            ),
+        }
     }
 
     /// FFN type (gated vs standard).
@@ -1079,7 +1172,45 @@ pub trait ModelArchitecture: Send + Sync {
         // for the same reason: a declared parameter is not evidence of the
         // operator that consumes it. An architecture that has been judged
         // against its own reference overrides this.
-        ExpertGatePolicy::Gated
+        //
+        // `situ` IS read here, and the distinction is exactly the one the
+        // paragraph above draws. `swiglu_limit` is a PARAMETER, and a
+        // parameter names no operator. `hidden_act: "situ"` is the
+        // operator's own NAME — the checkpoint's own module registers it
+        // as `ACT2FN["situ"] = SituAndMul` — which is the standing `silu`
+        // and `gelu_pytorch_tanh` already have in `HF_ACTIVATION_NAMES`,
+        // and the standing `swiglu`/`geglu` already have in
+        // `HF_GLU_NAMES`, where one word names a shape AND a
+        // nonlinearity. Reading a declared name is not inferring an
+        // operator from an adjacent value.
+        match self.activation_declaration() {
+            ActivationDeclaration::NamesGatePolicy(SITU_NAME) => self.situ_gate_policy(),
+            _ => ExpertGatePolicy::Gated,
+        }
+    }
+
+    /// SiTU-GLU's two softcaps, resolved from the config exactly once.
+    ///
+    /// `beta` goes through the reference's `beta or 1.0`
+    /// (`_get_situ_activation_params`, `modeling_kimi_linear.py` L91),
+    /// which is Python truthiness — absent, null AND `0.0` all resolve to
+    /// `1.0`. Every consumer downstream therefore receives a `beta` it can
+    /// divide by, and none of them repeats this rule.
+    ///
+    /// `linear_beta` has no such fallback in the reference (L80 branches
+    /// on `is not None`), so absence is carried as `None` — the up branch
+    /// untouched, a different function from an infinite bound — and a
+    /// declared `0.0` is carried verbatim.
+    fn situ_gate_policy(&self) -> ExpertGatePolicy {
+        let config = self.config();
+        let beta = match config.activation_situ_beta {
+            Some(declared) if declared != 0.0 => declared as f32,
+            _ => SITU_DEFAULT_BETA,
+        };
+        ExpertGatePolicy::SituGlu {
+            beta,
+            linear_beta: config.activation_situ_linear_beta.map(|v| v as f32),
+        }
     }
 
     /// How the router's top-k weights are normalised.

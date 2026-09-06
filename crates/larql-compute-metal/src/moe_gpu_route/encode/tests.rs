@@ -513,10 +513,143 @@ fn gpu_route_layer_honours_the_weight_and_scale_policies() {
         "renormalising the top-k weights must change the combine"
     );
 
-    let per_expert: Vec<f32> = (0..NUM_EXPERTS).map(|e| 1.0 + e as f32 * 0.01).collect();
+    let per_expert_scales: Vec<f32> = (0..NUM_EXPERTS).map(|e| 1.0 + e as f32 * 0.01).collect();
     let mut scaled = f.moe();
     scaled.routing_policy.expert_scale = MoeExpertScalePolicy::PerExpert;
-    scaled.router_per_expert_scale = &per_expert;
+    scaled.router_per_expert_scale = &per_expert_scales;
     let scaled_out = run_gpu_route(&metal, &scaled, &x);
     assert!(scaled_out.iter().all(|v| v.is_finite()));
+}
+
+/// **K3-ACT-1.** SiTU-GLU is the third combine rule the routed activation
+/// dispatch has to serve, and this drives all THREE routed entry points
+/// that select it, because each reaches the dispatch by its own route:
+///
+/// ```text
+/// run_gpu_route                 -> encode_moe_layer_gpu_route
+/// moe_layer_forward_descriptor  -> encode_experts_and_combine_descriptor
+/// moe_layer_forward_control     -> the zero-copy arm (moe_zero_copy.rs)
+/// ```
+///
+/// The middle one matters more than it looks: it stages `x` itself and
+/// then calls the same core, so the core's SiTU arm is compiled a second
+/// time behind it. Driving only the first two entry points leaves that
+/// copy unexecuted, and the file's coverage says so.
+///
+/// All three must agree with each other and NOT with plain gating — the
+/// second half is what shows the SiTU arm was reached, rather than the
+/// dispatch quietly falling through to a `geglu` pipeline.
+///
+/// The fixture is stripped of its expert gate/up biases first, because
+/// `situ_glu` has no bias slots: the reference gives no composition of a
+/// bias with SiTU, and such a layer is refused at admission (below).
+#[test]
+fn gpu_route_layer_serves_situ_glu_on_every_routed_arm() {
+    let Some(metal) = MetalBackend::new() else {
+        return;
+    };
+    let f = build_fixture(&metal);
+    let x = residual(53);
+    let no_bias: Vec<f32> = Vec::new();
+
+    let situ_rule = MoeGateRule::SituGlu {
+        beta: 4.0,
+        linear_beta: Some(25.0),
+    };
+    let mut situ = f.moe();
+    situ.experts_gate_up_bias = &no_bias;
+    situ.gate_rule = situ_rule;
+
+    let descriptor = run_gpu_route(&metal, &situ, &x);
+    let zero_copy = metal
+        .moe_layer_forward_control(&x, &situ, &x)
+        .expect("the CPU-routed control runs on this device");
+    let table = metal
+        .descriptor_table_for_layer(0, &situ, INTER, HIDDEN)
+        .expect("table");
+    let staged = metal
+        .moe_layer_forward_descriptor(&x, &situ, &table, &x, false)
+        .expect("the descriptor forward runs on this device");
+
+    assert!(descriptor.iter().all(|v| v.is_finite()));
+    let agree = |a: &[f32], b: &[f32], what: &str| {
+        let max_rel = a
+            .iter()
+            .zip(b)
+            .map(|(p, q)| (p - q).abs() / q.abs().max(1e-3))
+            .fold(0.0f32, f32::max);
+        assert!(
+            max_rel < 1e-3,
+            "{what} disagree under SiTU: max rel {max_rel:.3e}"
+        );
+    };
+    agree(&descriptor, &zero_copy, "the gpu-route and zero-copy arms");
+    agree(
+        &descriptor,
+        &staged,
+        "the gpu-route and staged-descriptor arms",
+    );
+
+    // The control: plain gating on the identical fixture. If the SiTU arm
+    // were not reached, these would coincide.
+    let mut swiglu = f.moe();
+    swiglu.experts_gate_up_bias = &no_bias;
+    swiglu.gate_rule = MoeGateRule::Gated(larql_compute::Activation::Silu);
+    let plain = run_gpu_route(&metal, &swiglu, &x);
+    let differs = descriptor
+        .iter()
+        .zip(&plain)
+        .map(|(a, b)| (a - b).abs())
+        .fold(0.0f32, f32::max);
+    assert!(
+        differs > 1e-4,
+        "SiTU and plain gating produced the same output ({differs:.3e}) — the SiTU \
+         dispatch is not being reached"
+    );
+}
+
+/// The refusal the bias-free fixture above exists to avoid, reached on
+/// purpose: a layer that stages per-expert gate/up biases under a SiTU
+/// combine is refused rather than served with its biases dropped.
+///
+/// Refused at ADMISSION rather than at the dispatch. `situ_glu` has no
+/// bias slots, and the reference gives no composition of a bias with SiTU
+/// to transcribe — but a refusal raised mid-encode leaves the command
+/// encoder unended, and Metal aborts the process rather than reporting
+/// it, so the caller never sees which layer was at fault.
+///
+/// Paired with its positive arm, because a gate that only ever refuses
+/// proves nothing about what it admits.
+#[test]
+fn a_situ_layer_with_expert_biases_is_refused_at_admission() {
+    let Some(metal) = MetalBackend::new() else {
+        return;
+    };
+    let f = build_fixture(&metal);
+    let s = scratch_for(&metal);
+    let situ = MoeGateRule::SituGlu {
+        beta: 4.0,
+        linear_beta: Some(25.0),
+    };
+
+    let mut biased = f.moe();
+    biased.gate_rule = situ;
+    assert!(
+        !biased.experts_gate_up_bias.is_empty(),
+        "the fixture must actually stage biases, or this refusal is vacuous"
+    );
+    assert!(
+        !metal.gpu_route_supported(&biased, &s),
+        "a SiTU layer staging expert gate/up biases must be refused, not served \
+         with the biases silently dropped"
+    );
+
+    let no_bias: Vec<f32> = Vec::new();
+    let mut bias_free = f.moe();
+    bias_free.gate_rule = situ;
+    bias_free.experts_gate_up_bias = &no_bias;
+    assert!(
+        metal.gpu_route_supported(&bias_free, &s),
+        "the same layer without biases is exactly what this arm serves"
+    );
 }

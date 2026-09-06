@@ -207,7 +207,7 @@ fn run_map1_on(
         .tensors
         .get(&arch.ffn_down_key(layer))
         .expect("down tensor present");
-    let gelu_tanh = arch.activation().uses_gelu_tanh_gate_up();
+    let gelu_tanh = arch.gate_up_is_gelu_tanh();
 
     // Sanity gate: our hand-rolled forward must match the library's dense
     // FFN forward exactly (unpermuted) before trusting anything built on it.

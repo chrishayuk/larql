@@ -535,7 +535,11 @@ impl MetalBackend {
 
 /// One thread per element, threadgroups sized from the pipeline's own
 /// limit rather than a shader constant.
-pub(crate) fn dispatch_linear(
+///
+/// Public so an out-of-crate parity test can dispatch a bound kernel with
+/// the SAME geometry production uses: a test that computed its own
+/// threadgroup size would be checking a dispatch this crate never issues.
+pub fn dispatch_linear(
     enc: &ComputeCommandEncoderRef,
     pipeline: &metal::ComputePipelineState,
     len: usize,
