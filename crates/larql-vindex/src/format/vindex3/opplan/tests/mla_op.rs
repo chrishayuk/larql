@@ -7,7 +7,9 @@
 //! shapes (`q_proj [6144, 2304]`, `kv_a_proj_with_mqa [576, 2304]`,
 //! `kv_b_proj [8192, 512]`, `o_proj [2304, 4096]`), not invented.
 
-use crate::format::vindex3::opplan::{KdaOutputGate, LayerAttention, MlaOp, OperandRef};
+use crate::format::vindex3::opplan::{
+    KdaOutputGate, LayerAttention, MlaOp, MlaQueryProjection, OperandRef,
+};
 
 const HIDDEN: usize = 2304;
 const NUM_HEADS: usize = 32;
@@ -36,7 +38,9 @@ fn mla_op() -> MlaOp {
         qk_nope_head_dim: QK_NOPE_HEAD_DIM,
         qk_rope_head_dim: QK_ROPE_HEAD_DIM,
         v_head_dim: V_HEAD_DIM,
-        q_proj: operand("q_proj.weight", vec![NUM_HEADS * q_head_dim, HIDDEN]),
+        query: MlaQueryProjection::Direct {
+            q_proj: operand("q_proj.weight", vec![NUM_HEADS * q_head_dim, HIDDEN]),
+        },
         kv_a_proj: operand(
             "kv_a_proj_with_mqa.weight",
             vec![KV_LORA_RANK + QK_ROPE_HEAD_DIM, HIDDEN],
@@ -57,8 +61,12 @@ fn mla_op() -> MlaOp {
 fn the_geometry_closes_against_every_operand_at_kimis_real_widths() {
     let op = mla_op();
     assert_eq!(op.q_head_dim(), 192, "128 nope + 64 rope");
-    assert_eq!(op.q_proj.shape, vec![NUM_HEADS * 192, HIDDEN]);
-    assert_eq!(op.q_proj.shape, vec![6144, 2304], "the real q_proj shape");
+    let query = op.query.operands();
+    assert_eq!(query.len(), 1, "the direct form is one operand");
+    let (name, q_proj) = query[0];
+    assert_eq!(name, "q_proj");
+    assert_eq!(q_proj.shape, vec![NUM_HEADS * 192, HIDDEN]);
+    assert_eq!(q_proj.shape, vec![6144, 2304], "the real q_proj shape");
     assert_eq!(
         op.kv_a_proj.shape,
         vec![576, 2304],

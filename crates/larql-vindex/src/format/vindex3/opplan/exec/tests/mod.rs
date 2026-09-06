@@ -60,6 +60,7 @@ mod mamba2_exec;
 mod mla_metal;
 mod mla_parity;
 mod mla_parity_output_gate;
+mod mla_parity_q_lora;
 mod mla_state;
 mod mrope_parity;
 mod nvfp4_decode;

@@ -2,6 +2,17 @@
 
 use serde::{Deserialize, Serialize};
 
+use super::ExpertGatePolicy;
+
+/// The HF `hidden_act` spelling that names a gate POLICY rather than a
+/// bare nonlinearity: Kimi-K3's SiTU-GLU, registered by the checkpoint's
+/// own module as `ACT2FN["situ"] = SituAndMul`.
+///
+/// One constant, read by [`ActivationDeclaration::judge`] and by
+/// [`hf_combine_name`], so the name a config declares and the name a plan
+/// resolves cannot be spelled by two different string literals.
+pub const SITU_NAME: &str = "situ";
+
 /// Activation function used in the FFN.
 #[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
@@ -126,6 +137,93 @@ pub fn ffn_shape_hf_name(ffn_type: FfnType, activation: Activation) -> Option<St
             .map_or_else(|| format!("gated-{name}"), str::to_string),
         FfnType::Standard => name.to_string(),
     })
+}
+
+/// What a checkpoint's `hidden_act` / `hidden_activation` declaration
+/// actually says — the distinction the FFN's execution path turns on.
+///
+/// Before this existed, [`ModelArchitecture::activation`] read
+/// `.and_then(Activation::from_hf_name).unwrap_or(Activation::Silu)`,
+/// which collapses two different states into one branch: *the config is
+/// silent* and *the config declared something this build has never
+/// judged*. Two checkpoints in the conformance estate sit in the second
+/// state — Kimi-K3's `situ` and BitNet's `relu2` — and both were told
+/// they compute SiLU. That is the failure this enum exists to make
+/// unrepresentable:
+///
+/// ```text
+/// checkpoint silent                    -> default permitted
+/// checkpoint declares a known thing    -> execute that thing
+/// checkpoint declares an unknown thing -> refuse, or report unknown
+/// checkpoint declares an unknown thing -> silently execute a default   NEVER
+/// ```
+///
+/// [`ModelArchitecture::activation`]: super::ModelArchitecture::activation
+#[derive(Debug, Clone, PartialEq)]
+pub enum ActivationDeclaration {
+    /// No `hidden_act` / `hidden_activation` key. The family default
+    /// answers, and that is a checked default rather than an assumed one:
+    /// the checkpoint asked no question.
+    Absent,
+    /// A name this build has judged, and the variant it names.
+    Nonlinearity(Activation),
+    /// A name that names a gate POLICY — the whole combine, not just the
+    /// nonlinearity on the gate branch. Carries the declared spelling, so
+    /// a caller reports the checkpoint's own word.
+    NamesGatePolicy(&'static str),
+    /// A name this build has never judged, carried verbatim. Execution
+    /// paths must refuse on this; the planner already reports it (the
+    /// leaf grades `mismatched` because the probe and the declaration
+    /// disagree).
+    Unjudged(String),
+}
+
+impl ActivationDeclaration {
+    /// Judge one `hidden_act` declaration. The single place the four
+    /// states are told apart.
+    pub fn judge(hidden_act: Option<&str>) -> Self {
+        match hidden_act {
+            None => Self::Absent,
+            Some(name) if name.eq_ignore_ascii_case(SITU_NAME) => Self::NamesGatePolicy(SITU_NAME),
+            Some(name) => match Activation::from_hf_name(name) {
+                Some(activation) => Self::Nonlinearity(activation),
+                None => Self::Unjudged(name.to_string()),
+            },
+        }
+    }
+
+    /// The declared name, for a refusal message. `None` when the config
+    /// was silent — there is no name to quote.
+    pub fn declared_name(&self) -> Option<&str> {
+        match self {
+            Self::Absent => None,
+            Self::Nonlinearity(activation) => activation.hf_name(),
+            Self::NamesGatePolicy(name) => Some(name),
+            Self::Unjudged(name) => Some(name),
+        }
+    }
+}
+
+/// The HF spelling of the combine a component actually computes: the gate
+/// policy's own name when the policy is not plain gating, the
+/// nonlinearity's name otherwise.
+///
+/// This is what makes a correct SiTU model *report* as correct. The
+/// plan's activation probe compares a declared `hidden_act` against what
+/// the built surface carries; comparing against the surface's
+/// [`Activation`] alone would answer `silu` to a declared `situ` even
+/// with the policy right, and the leaf would read `mismatched` forever.
+///
+/// [`ExpertGatePolicy::ClampedGlu`] returns `None` deliberately: no HF
+/// word names it (GPT-OSS declares `silu` beside a `swiglu_limit`), so
+/// there is nothing to answer with and the caller keeps its existing
+/// behaviour.
+pub fn hf_combine_name(policy: ExpertGatePolicy, activation: Activation) -> Option<String> {
+    match policy {
+        ExpertGatePolicy::SituGlu { .. } => Some(SITU_NAME.to_string()),
+        ExpertGatePolicy::ClampedGlu { .. } => None,
+        ExpertGatePolicy::Gated => activation.hf_name().map(str::to_string),
+    }
 }
 
 /// Whether the FFN uses a gated architecture.

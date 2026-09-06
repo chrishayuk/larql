@@ -153,7 +153,7 @@ fn walk_loop(
     let seq_len = x.shape()[0];
     let arch = &*weights.arch;
     let is_gated = arch.ffn_type() == larql_models::FfnType::Gated;
-    let use_gelu = arch.activation().uses_gelu_tanh_gate_up();
+    let use_gelu = arch.gate_up_is_gelu_tanh();
     let up_view = index.up_layer_matrix(layer).expect("up mmap");
     let down_view = index.down_layer_matrix(layer).expect("down mmap");
 

@@ -1,0 +1,109 @@
+{
+  "rung": "K3-ACT-1",
+  "name": "situ-activation",
+  "artifact_kind": "freeze (pre-registration; written BEFORE any code, oracle or measurement)",
+  "written": "2026-09-06",
+  "base": "origin/main 1e57b6d1 (the #439 / K3-REP-GATE-1 merge), semantics 19, K3 29/152 RED",
+  "worktree": ".claude/worktrees/k3-act-1, branch k3-act-1",
+  "reconnaissance": "docs/arch-conformance/forecasts/k3-act-1-reconnaissance.json",
+
+  "claim": "Kimi-K3's declared FFN combine — `hidden_act: \"situ\"` with `activation_situ_beta: 4.0` and `activation_situ_linear_beta: 25.0` — is DECLARED as a gate policy, CARRIED to the op plan, and EXECUTED on both the interpreter/CPU combine seam and the Metal lowering; and no execution path in this build can see a combine it cannot compute and silently compute plain gating instead.",
+
+  "non_claim": "K3 does not execute. Its MLA layers still carry the q-LoRA triple, its latent-MoE wrapper is still unrepresented, its MXFP4 declaration is still unjudged, and its op plan still does not close. No witness here runs on a K3 container (none exists). Nothing is claimed about `topk_method`/`noaux_tc`, `moe_router_activation_func`, `latent_moe_use_norm`, `routed_expert_*`, `A_log [128]`, or the vision tower. No throughput, latency or quality claim of any kind. SiTU is not implemented on the walk / kquant / dense-weight paths — those REFUSE.",
+
+  "user_decisions_this_freeze_implements": {
+    "scope_of_the_default_repair": "FIX THE CLASS (the user, 2026-09-06). The defect is `a declared-but-unrecognised activation is treated identically to no activation declaration and silently becomes SiLU`, observed twice (K3 `situ`, BitNet `relu2`). The contract the user wrote out: checkpoint silent -> default permitted; declares a known thing -> execute it; declares an unknown thing -> REFUSE / report unknown; declares an unknown thing -> silently execute a default = NEVER.",
+    "execution_depth": "Combine seam AND a Metal kernel (the user's selection). Reconciled with the user's own prose constraint — `I would not turn K3-ACT-1 into a campaign to implement SiTU kernels in all 17 places` — as: ONE Metal kernel on the production lowered path (the direct sibling of the `clamped_glu_bias` kernel that already exists), and the 17 boolean-dispatch sites REFUSE BY NAME rather than gain implementations. This was stated back to the user before the freeze was written; if they meant the no-Metal option, the Metal arm is severable and the rest of this freeze stands unchanged.",
+    "transitions": "ONE. The user: `there isn't really an equivalent middle plane ... structurally it is an existing combine-policy mechanism receiving a new variant`. So declare + execute + refuse in a single transition, with no intermediate `unsupported_component` and therefore no RED -> AMBER flip."
+  },
+
+  "decisions_settled": {
+    "D1_representation": {
+      "decision": "`ExpertGatePolicy::SituGlu { beta: f32, linear_beta: Option<f32> }` — a new arm on the existing policy enum. NOT an `Activation` variant.",
+      "authority": "config/experts.rs L98-105, the enum's own doc, written about GPT-OSS and true word for word of SiTU: `Modelling that as \"SiLU with extra steps\" is how a forward pass ends up plausibly wrong — hence an explicit policy rather than an Activation variant.` An `Activation::Situ` would additionally have to carry two parameters through a table (`HF_ACTIVATION_NAMES`) whose rows are parameterless, and would land in 17 sites that reduce `Activation` to a bool.",
+      "linear_beta_is_Option_not_f32": "the reference's `_get_situ_activation_params` returns `linear_beta` with NO fallback (L91), and L80 branches on `is not None`. Absent means the up branch is untouched — a different function, not `linear_beta = infinity`. `Option` is the type that says so."
+    },
+    "D2_where_the_policy_is_resolved": {
+      "decision": "the `expert_gate_policy()` TRAIT DEFAULT (config/architecture.rs L1066), reading `hidden_act == \"situ\"` plus the two beta keys off `ModelConfig`. No architecture override.",
+      "why_this_does_not_contradict_the_standing_comment": "architecture.rs L1067-1082 refuses to derive the policy from `swiglu_limit` because `a declared parameter is not evidence of the operator that consumes it`. That reasoning is about a PARAMETER. `hidden_act` is the operator's NAME — the checkpoint's own module registers it as `ACT2FN[\"situ\"] = SituAndMul` (modeling_kimi_linear.py L85), exactly the status `silu` and `gelu_pytorch_tanh` have, and exactly the status `swiglu`/`geglu` already have in `HF_GLU_NAMES` where a single word names a shape AND a nonlinearity. The comment is extended, not overruled, and the extension is written into it.",
+      "why_the_default_and_not_KimiLinearArch": "`feedback_config_fact_belongs_in_trait_default`. The fact is a config fact, readable by any architecture; K3's text component is `kimi_linear`, shared with the 48B ancestor which declares `silu` — an override there would have to read `hidden_act` anyway, and would then be an architecture claiming to know better than a checkpoint that does not need correcting."
+    },
+    "D3_the_activation_field_under_a_situ_policy": {
+      "decision": "`ExecutionSurface.ffn.activation` keeps holding an `Activation`, and under any non-`Gated` policy it is INERT BY CONSTRUCTION — `MoeGateRule::from_arch`'s match consumes `activation` only in the `Gated` arm, as it already does for `ClampedGlu`. A witness pins the inertness rather than asserting it: flipping the surface's activation from `Silu` to `GeluTanh` under a `SituGlu` policy must leave every combine output bit-identical.",
+      "the_probe_answers_from_the_combine_not_the_nonlinearity": "one new function, `larql_models::config::activation::hf_combine_name(policy, activation) -> Option<String>` — `SituGlu{..} => Some(\"situ\")`, `Gated(a) => a.hf_name()`, `ClampedGlu{..} => None` (no HF word names it; GPT-OSS declares `silu` beside `swiglu_limit`, and returning `None` leaves that row on today's code path unchanged). `probe_activation` consults it. This is the decision that actually retires finding 44: without it the model would be correct and the plan would still read `mismatched`.",
+      "one_rule_owns_each_fact": "carriage.rs L1316-1321 records why `hidden_act` was REMOVED from `canonical_declared` — normalising both sides made them disagree in opposite directions. `hf_combine_name` is added on the PROBE side only; `canonical_declared` is not touched."
+    },
+    "D4_carriage_of_the_two_beta_keys": {
+      "decision": "two new `CarriageRule`s, `reaches: Carriage::Lowered`, site `ExecutionSurface.ffn.gate_policy (ExpertGatePolicy::SituGlu.beta / .linear_beta) -> FfnOp.gate_policy`, each with a probe that reads the value back off the built component's policy (the `probe_swiglu_limit` shape).",
+      "why_Lowered_and_not_Represented": "`swiglu_limit` claims `Represented` because the interpreter and the lowering both REFUSE a ClampedGlu FFN. Both execute SiTU after this rung, so `Lowered` is the congruent claim (`feedback_gate_claim_congruence`). `hidden_act` itself already claims `Lowered`; the parameters of the combine it names cannot honestly claim less.",
+      "cluster": "`SemanticCluster::FfnActivation` for both betas — the cluster `hidden_act` already carries (semantics.rs L997-1001). They are parameters of the activation the same cluster names; leaving them `Unclustered` would put a fact and its parameters in different clusters."
+    },
+    "D5_the_beta_or_1_transcription": {
+      "decision": "normalised ONCE, at the point the policy is constructed (`expert_gate_policy()`'s default), and nowhere else. `beta` absent, null, or 0.0 -> 1.0; the reference's `beta or 1.0` (L91) is Python truthiness and 0.0 is falsy. `linear_beta` absent or null -> `None`; a declared 0.0 for `linear_beta` is NOT normalised (the reference has no `or` on it) and is carried verbatim — it makes the up branch identically zero, which is what the checkpoint would then be asking for.",
+      "witnessed": "as its own test with all four inputs (absent, null, 0.0, 4.0), because a plausible implementation reads 0.0 literally and divides by zero, and no magnitude assertion elsewhere would catch it."
+    },
+    "D6_the_seventeen_boolean_dispatch_sites": {
+      "decision": "REFUSE BY NAME. No SiTU implementation on the walk / kquant / dense-weight paths.",
+      "mechanism": "one new trait method, `ModelArchitecture::gate_up_is_gelu_tanh(&self) -> bool`, which is the ONLY call those 17 sites make (each site changes from `arch.activation().uses_gelu_tanh_gate_up()` to `arch.gate_up_is_gelu_tanh()` — one token, no signature changes anywhere). Its default panics BY NAME when the declaration cannot be served there: a gate policy that is not plain gating (`SituGlu`, `ClampedGlu`), or an activation name this build has never judged (`relu2`).",
+      "why_a_panic_is_the_right_refusal_here": "`Activation::uses_gelu_tanh_gate_up` ALREADY panics at this exact seam for `Activation::Relu`, with the message `has no gate/up FFN kernel on the walk/kquant paths (only gelu-tanh and SiLU are implemented)`. This extends an established contract rather than inventing one. These paths are reached only after a plan admits the model, and the plan refuses both specimens (K3 and BitNet are blocking today and stay blocking), so the panic is a backstop — which is what it should be. A `Result` here would change 17 signatures to defend against a state the planner already excludes."
+    },
+    "D7_the_class_repair": {
+      "decision": "taken, in this rung, as the user directed.",
+      "what_changes": "one new judgment function, `larql_models::config::activation::ActivationDeclaration::judge(hidden_act: Option<&str>)`, with four arms and NO fifth: `Absent` (the documented SiLU default, unchanged), `Nonlinearity(Activation)`, `NamesGatePolicy(&'static str)` (today: `situ` only), `Unjudged(String)` (today: `relu2` and anything else). `activation()`'s default is rewritten in terms of it, so `the config is silent` and `the config said something I cannot read` stop being the same branch — the divergence between that function's doc and its code (recon, `step_3_the_defect`) is closed by making the code match the doc.",
+      "where_the_refusal_actually_bites": "`ActivationDeclaration::Unjudged` makes the executor refuse (D6's panic reads it), not the planner report differently. The planner ALREADY reports both specimens honestly — finding 44's `mismatched`/`execution_semantic`/blocking is the plan telling the truth. So the class repair's evidence is executor-side.",
+      "the_consequence_for_the_forecast_stated_plainly": "BitNet DOES NOT MOVE on the plan plane. `relu2` names no policy and no judged nonlinearity, so `hf_combine_name` never sees it, `probe_activation` behaves exactly as today, and its finding stays `mismatched`/`execution_semantic`/blocking with identical text. The 101-row activation blast radius the user accepted turns out to be SMALLER than feared: every plan-plane change is additive and reachable only under a `SituGlu` policy, which exactly one of the 117 rows declares. This is stated here, before measuring, so that a BitNet row that DOES move is a falsification of this freeze and not a discovery."
+    },
+    "D8_transitions": "ONE. Declare + carry + execute + refuse, in one transition. No `unsupported_component` is introduced on `target.execution_surface`, so K3 does not flip RED -> AMBER (`feedback_verdict_moves_on_class_not_count`). K3 stays RED throughout, on a smaller number.",
+    "D9_oracle": {
+      "decision": "`scripts/situ_reference.py` (a verbatim transcription of `SituAndMul.forward`, L75-82, including the f32 upcast and the single final round) + `scripts/situ_oracle_export.py` -> `crates/larql-compute/src/ffn/expert_weight/tests/situ_oracle.json`, consumed by a parity test. Two ARMS, both legitimate configurations: `(beta = 4.0, linear_beta = 25.0)` = K3's, and `(beta = 4.0, linear_beta = None)` = the reference's own supported form.",
+      "the_oracle_carries_its_own_controls": "each control is exported as a named arm with its measured rel-L2 against the true arm, so a control that reads ~0 is visible in the fixture rather than absent from the test: `swiglu` (the actual defect on main), `gate_cap_omitted`, `up_cap_omitted`, `betas_swapped` (4.0 <-> 25.0), `sigmoid_omitted`, `tanh_omitted` (must agree with `swiglu` to within f32 — a check on the oracle itself), `cap_on_product`, `bf16_throughout` (measures whether L77-78's precision statement is observable; if it reads small it is RECORDED as small).",
+      "the_saturation_gate": "the fixture's (gate, up) band is ASSERTED to straddle the transition — at least one pair with |gate| < 1 (tanh nearly linear), one in 3..6, and one saturated — and the assertion is a test, not a comment. `feedback_saturated_softmax_blinds_an_oracle`: in the saturated regime SiTU degenerates to `+-beta * step(g) * u` and several controls above go numerically invisible. A control reading 0.0 because the fixture saturated is a blind instrument.",
+      "why_not_the_hardcoded_style": "`ffn/expert_weight/gate.rs::clamped_glu_matches_reference_implementation` hardcodes four PyTorch values. That is adequate for one arm and one control; it does not scale to two arms and eight controls, and it cannot assert a band. The hardcoded ClampedGlu test is NOT replaced."
+    },
+    "D10_semantics_version": "PLANNER_SEMANTICS_VERSION 19 -> 20, with the identity pin's verdict pair extended: a synthetic estate declaring `situ` with both betas is admissible and executes; the same declaration on a path with no SiTU kernel is refused BY NAME; an estate declaring `relu2` is refused by name on the walk seam; the ancestor's `silu` estate is unchanged on every plane.",
+    "D11_metal_scope": {
+      "in": [
+        "one kernel `situ_glu` in `shaders/geglu.rs`, the direct sibling of `clamped_glu_bias` (same file, same elementwise shape, scalar constants for beta / linear_beta and a `has_linear` flag, the same `g / (1 + exp(-g))` sigmoid form that limits to 0 instead of NaN)",
+        "its pipeline in `kernels/ffn.rs`",
+        "the three routed dispatch sites that match exhaustively on `MoeGateRule` — `moe_zero_copy.rs` L375, `moe_gpu_route/encode.rs` L245, `moe_dispatch/dispatch.rs` L256 — each gaining a `SituGlu` arm (they fail to compile until they do, which is the gate working)",
+        "the dense lowering: `lowering/ffn.rs`'s `FfnActivation` gains `SituGlu { beta, linear_beta }` (that enum is already lowering-local and documented as `the gate nonlinearity the lowering has a kernel for`, i.e. it is the lowering's combine rule, the same fold `MoeGateRule` performs), the one match at `encode_gate_up_act_from_normed` L279-283 gains an arm, and `vindex3_cmd/lowered/mod.rs`'s `ffn_activation` maps the policy",
+        "`lowered/mod.rs` L220-236's dense non-`Gated` refusal is narrowed to admit `SituGlu` and keep refusing `ClampedGlu` BY NAME"
+      ],
+      "out": [
+        "no fused / grouped / quantised SiTU variant (`bf16_grouped_gate_up_silu`, `q4k_ffn_gate_up*`, `q6k_geglu_*`, `mxfp4_grouped_experts` and every other fused gate+up+activation kernel keeps its SiLU/GELU contract and refuses a SiTU plan by name rather than gaining an arm)",
+        "no performance claim, no bench, no shape sweep"
+      ],
+      "the_hazard_named_before_it_bites": "the fused kernels above bake the activation INTO the gate/up dispatch. A plan that is admitted for the unfused path and then routed to a fused kernel would compute SwiGLU silently — the same defect one layer down. The refusal must be at the point the fused kernel is SELECTED, not only where the unfused one is encoded, and a witness must prove a SiTU plan cannot reach a fused arm."
+    },
+    "D12_scope_fences": "MLA q-LoRA, latent MoE (`routed_expert_{down,up}_proj`, `latent_moe_use_norm`, `routed_expert_hidden_size`), the MXFP4 declaration, `topk_method`/`noaux_tc`, `use_grouped_topk`, `moe_router_activation_func`, `num_expert_group`/`topk_group`, `A_log [128]`, `mla_use_nope`, vision — all untouched. No operand, role, shape or estate count moves; this rung has no operand plane (recon, `operand_plane_today`)."
+  },
+
+  "forecast": {
+    "measured_how": "two arms, both re-planned FRESH from the same protocol (`vindex plan hf://<repo> --json`, scored through `scripts/arch_sweep.py::classify`, capability `text_generation`). Baseline = a detached worktree at the merge-base `1e57b6d1` building its own `vindex` release binary; candidate = this worktree. The canonical cache is at semantics 16 and is NOT the baseline (`feedback_uniform_cache_before_baseline`).",
+    "P1_k3_blockers": "29 -> 26",
+    "P2_k3_verdict": "RED before and RED after. No AMBER excursion. `unsupported_component` count 0 -> 0.",
+    "P3_findings_retired": [
+      "#19 `text_config.activation_situ_beta` — unrepresented/unknown -> representable, carried, resolved non-null, carriage `lowered`",
+      "#20 `text_config.activation_situ_linear_beta` — same",
+      "#44 `text_config.hidden_act` — mismatched/execution_semantic -> representable, declared `situ`, resolved `situ`"
+    ],
+    "P4_findings_added": "none. If any finding is ADDED to the K3 row this freeze is falsified, whatever the net count does.",
+    "P5_the_ancestor": "moonshotai/Kimi-Linear-48B-A3B-Instruct — byte-identical plan JSON between arms. Not `same blocker count`: identical bytes. It declares `silu`, no betas, resolves plain `Gated`, and is the one family member with a container and a running executor.",
+    "P6_bitnet": "microsoft/bitnet-b1.58-2B-4T-bf16 — byte-identical plan JSON between arms; its `hidden_act` finding stays `mismatched`/`execution_semantic`/blocking with identical text. Its repair in this rung is executor-side only (D7).",
+    "P7_the_other_114_rows": "byte-identical plan JSON between arms. 116 of 117 rows unmoved in total.",
+    "P8_gpt_oss": "openai/gpt-oss-20b — byte-identical. `hf_combine_name` returns `None` for `ClampedGlu`, leaving that row on today's exact code path. Named separately from P7 because it is the only other non-`Gated` policy in the estate and the only row that could be moved by a careless `hf_combine_name`.",
+    "P9_execution_parity": "the interpreter/CPU combine reproduces the oracle's K3 arm within the fixture's stated tolerance at every exported point, and the `linear_beta = None` arm likewise; every one of the eight controls reads its exported delta.",
+    "P10_metal_parity": "the Metal `situ_glu` kernel agrees with `MoeGateRule::combine` on the same inputs to f32 tolerance, on the dense lowered path and on the routed dispatch path.",
+    "P11_inertness": "flipping `ExecutionSurface.ffn.activation` from `Silu` to `GeluTanh` under a `SituGlu` policy leaves every combine output bit-identical, on both tiers.",
+    "P12_refusals_are_reachable_and_named": "each refusal added by this rung is witnessed by a test that reaches it and asserts the message names the policy or the declared activation — `feedback_untested_gate_success_path`, and its converse: a refusal no test reaches is not a refusal.",
+    "P13_no_silent_substitution_survives": "the rung's central invariant, witnessed rather than asserted: for every execution entry point in the workspace that selects a gate/up kernel, a `SituGlu` policy and an `Unjudged` activation each produce EITHER the correct SiTU numbers OR a named refusal. Enumerated from the 17 call sites plus the Metal selection points, each with its witness named in the execution notes.",
+    "P14_the_existing_arms_are_untouched": "GPT-OSS's ClampedGlu parity tests, every SiLU/GELU gate-up test, and `clamped_glu_matches_reference_implementation` all pass unchanged and unedited.",
+    "P15_semantics_version": "19 -> 20, and the identity pin fails until it is bumped."
+  },
+
+  "falsification": "Any of the following falsifies this freeze and is recorded as such rather than reinterpreted: K3 not landing exactly on 26; any finding added to the K3 row; any of P5-P8 moving by one byte; a control reading 0.0 without the fixture proving it could have read otherwise; a SiTU plan reaching a fused Metal kernel; or an execution entry point found after the fact that neither computes SiTU nor refuses by name. `feedback_unsatisfiable_gate_invites_reinterpretation`: none of these thresholds is adjusted after measurement.",
+
+  "sequence_after_this_transition": "K3-ACT-1 closes. K3's remaining architecture seams in the user's order: the MLA q-LoRA cell (`q_a_proj`/`q_a_layernorm`/`q_b_proj`, `q_lora_rank`), then K3-LATENTMOE-1 (`routed_expert_hidden_size` <-> the `routed_expert_*` bank, `latent_moe_use_norm`), then the MXFP4 declaration. Fused-kernel SiTU coverage and the Metal carriage of K3-REP-GATE-1's two gates are follow-ups against this rung's refusals.",
+
+  "commit_order": "recon -> freeze -> oracle (reference + export script + fixture) -> code + tests + execution notes. The oracle is committed BEFORE any Rust arithmetic, as K3-ATTNRES-1 and K3-REP-GATE-1 both did."
+}

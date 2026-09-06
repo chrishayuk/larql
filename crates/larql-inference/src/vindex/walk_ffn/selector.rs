@@ -623,7 +623,7 @@ mod tests {
             .expect("up scores");
         // Gemma-3 fixture → GeluTanh activation, matching the selector's
         // `use_gelu` branch for ActXUpScoreXDownNorm.
-        assert!(weights.arch.activation().uses_gelu_tanh_gate_up());
+        assert!(weights.arch.gate_up_is_gelu_tanh());
 
         let cases: Vec<(FeatureSelector, Vec<f32>, &str)> = vec![
             (

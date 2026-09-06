@@ -15,6 +15,7 @@ mod recurrence_identification;
 mod registration_grants_nothing;
 mod relative_position;
 mod semantics;
+mod situ;
 mod system;
 
 /// Fixtures live one level up so the graph tests share them.

@@ -1,0 +1,161 @@
+{
+ "rung": "K3-MLA-Q-LORA-1",
+ "name": "mla-query-factorisation-execution-notes",
+ "artifact_kind": "execution notes (measured AFTER the freeze; scores it and records every deviation, including two falsified properties)",
+ "written": "2026-09-06",
+ "freeze": "docs/arch-conformance/forecasts/k3-mla-q-lora-1-query-factorisation.json",
+ "reconnaissance": "docs/arch-conformance/forecasts/k3-mla-q-lora-1-reconnaissance.json",
+ "how_it_was_measured": {
+  "baseline_arm": "detached worktree `.claude/worktrees/qlora-baseline` at `777dcb51` (the K3-ACT-1 commit), building its own `target/release/vindex`",
+  "candidate_arm": "`.claude/worktrees/k3-mla-qlora-1`, same protocol, its own release binary",
+  "protocol": "`scripts/arch_sweep.py --out <arm> run` over the 117-row matrix, scored through that script's own `classify`",
+  "comparison": "the SET OF JSON PATHS at which the two arms differ, not bytes \u2014 `plan.planner.semantics_version` is stamped into every row and is pre-registered to change (P11)",
+  "rows_excluded": "the same 8 unreachable from this network in BOTH arms (Cohere x3, TinyLlama, Jamba-Mini-1.7, Baichuan2, Mistral-Large-3, mamba2-780m)"
+ },
+ "the_headline_held": "**K3 26/152 -> 26/152, RED -> RED, unsupported_component 0 -> 0.** The count did not move, exactly as frozen, and the rung's result is the operand plane and the executor. After it, no remaining K3 text-generation blocker is an attention-semantic blocker.",
+ "scored": {
+  "P1_k3_blockers": {
+   "forecast": "26 -> 26 UNCHANGED",
+   "measured": "26/152 -> 26/152",
+   "verdict": "HELD"
+  },
+  "P2_k3_verdict": {
+   "forecast": "RED both sides, unsupported_component 0 -> 0",
+   "measured": "RED -> RED, 0 -> 0",
+   "verdict": "HELD"
+  },
+  "P3_the_operand_plane": {
+   "forecast": "`MLA_LAYER_UNADDRESSED` 3 -> 0",
+   "measured": "3 -> 0. The pin failed on the old value and was migrated, as its own doc requires \u2014 `left: [], right: [q_a_layernorm, q_a_proj, q_b_proj]`. Both of K3's attention layers are now fully addressed.",
+   "verdict": "HELD \u2014 the rung's primary claim"
+  },
+  "P4_the_estate": {
+   "forecast": "rows 5421 unchanged; unclassified 5382 -> 5379; distinct spellings 12 -> 9",
+   "measured": "5421 unchanged; unclassified 5382 -> 5379; spellings 12 -> 9. Exactly the three q-LoRA operands on the one MLA layer.",
+   "verdict": "HELD"
+  },
+  "P5_the_ancestor": {
+   "forecast": "differs at exactly one path, `plan.planner.semantics_version`",
+   "measured": "differs at TWO: the semantics stamp AND `plan.graph.components[0].execution.mla.query`, which now reads `{form: direct}`. Blockers 0 -> 0; no verdict, category, class or count moved.",
+   "verdict": "**FALSIFIED as written** \u2014 see `the_two_falsified_properties` below"
+  },
+  "P6_carriage": {
+   "forecast": "`q_lora_rank` carriage `parsed` -> `lowered`, with a probe reading the form back",
+   "measured": "NOT DONE. `q_lora_rank` still reads `representable/tensor_semantic/parsed` on every row that declares it.",
+   "verdict": "**NOT MET, deliberately** \u2014 see `the_carriage_rule_that_was_not_added`"
+  },
+  "P7_every_other_row": {
+   "forecast": "116 of 117 rows differ at exactly one path; only K3 carries any other difference",
+   "measured": "103 of 109 comparable rows differ only in the semantics stamp. SIX carry another difference \u2014 and it is the same single path on all six, `execution.mla.query`: Kimi-K3, Kimi-Linear-48B, and DeepSeek V2-Lite / V2.5 / V3.1 / V3.2. Every one of them is verdict-neutral: blockers 6->6, 9->9, 11->11, 14->14, 26->26, 0->0.",
+   "verdict": "**FALSIFIED as written**"
+  },
+  "P8_gpt_oss": {
+   "forecast": "one path",
+   "measured": "openai/gpt-oss-20b differs at exactly the semantics stamp \u2014 it builds no MLA surface",
+   "verdict": "HELD"
+  },
+  "P9_bitnet_and_the_rest": {
+   "measured": "microsoft/bitnet-b1.58-2B-4T-bf16 differs at exactly the semantics stamp; `hidden_act` still mismatched/execution_semantic, unchanged by this rung as it should be",
+   "verdict": "HELD"
+  },
+  "P10_execution_and_controls": {
+   "forecast": "the interpreter reproduces the oracle's `q_lora` arm at every boundary; existing arms byte-identical apart from one renamed key; every mutant reads its exported delta",
+   "measured": "`mla_parity_q_lora.rs`, 10 tests green \u2014 every boundary at three positions, the trace control, the epsilon, the rank's distinctness, and the fixture's position count. The two pre-existing arms regenerated with exactly ONE key renamed (`q_proj` -> `q_states`) and ZERO values moved, proved by a checker over the committed fixtures.",
+   "verdict": "HELD \u2014 the rung's third claim"
+  },
+  "P11_semantics_version": {
+   "forecast": "20 -> 21",
+   "measured": "baseline 20, candidate 21; the identity pin failed until bumped and gained a version-21 arm",
+   "verdict": "HELD"
+  },
+  "P12_the_epsilon_falsifier": {
+   "forecast": "a declared LowRank form with an architecture-supplied `mla_q_a_norm_eps` != 1e-6 is executed at the override, with the KV one shown unchanged",
+   "measured": "the accessor exists with its own authority and its `None` = unjudged contract is witnessed (`an_unjudged_q_a_epsilon_does_not_borrow_a_plausible_one`), and the executor refuses an unjudged epsilon by name. The OVERRIDE arm \u2014 a family answering something other than 1e-6 \u2014 is NOT yet written.",
+   "verdict": "PARTIAL \u2014 see the deviations"
+  },
+  "P13_backends_refuse": {
+   "forecast": "every device path refuses the LowRank form by name, at weight-build time",
+   "measured": "`declared_gate_refusal` gained the arm and refuses naming both the key and the rank (`q_lora_rank: 1536`) and what it would otherwise do (`binding q_b_proj into the q_proj slot`), before any tensor is bound. Three witnesses: the refusal, that it does not fire on KDA layers, and that an undeclared rank is not refused.",
+   "verdict": "HELD"
+  },
+  "P14_nothing_else_in_the_block_moves": {
+   "forecast": "the KV path, NoPE, shared rope-K, attention, gate and o_proj bit-identical between the query forms",
+   "measured": "the oracle asserts BIT equality on `compressed_kv`, `kv_a_normed`, `kv_b` and `output_gate` across the two forms, and MEASURES the query-dependent residuals (q_states 1.9e-7, attn_weights 6.0e-8, attn_value 6.9e-8, output 7.2e-8). The executor side is covered by every query mutant leaving the KV boundaries untouched, asserted at export.",
+   "verdict": "HELD, with the wording corrected \u2014 see D-1"
+  }
+ },
+ "the_two_falsified_properties": {
+  "what_happened": "P5 and P7 both said the non-K3 rows would differ at exactly one path, the semantics stamp. Six rows differ at two, and the second path is the same on all six: `plan.graph.components[0].execution.mla.query`, the surface field this rung adds.",
+  "why_it_is_a_forecast_error_and_not_an_implementation_error": "adding a field to `MlaSurface` necessarily makes it appear in the serialised graph of EVERY component that has an MLA surface. The rung's own design requires that field. The freeze should have forecast 'every MLA-bearing row gains `execution.mla.query`, verdict-neutral' and instead forecast byte-identity it could not have. Recorded as falsified rather than reinterpreted (`feedback_unsatisfiable_gate_invites_reinterpretation` cuts both ways: a gate that was WRONG must be reported wrong, not renegotiated after the fact).",
+  "what_the_movement_actually_is": [
+   "moonshotai/Kimi-K3 -> `{form: low_rank, rank: 1536, norm_eps: 1e-06}`",
+   "moonshotai/Kimi-Linear-48B-A3B-Instruct -> `{form: direct}` (the ancestor, which declares no rank \u2014 the checked default)",
+   "deepseek-ai/DeepSeek-V2-Lite -> `{form: direct}` (it declares `q_lora_rank: null`, which the presence test reads as the direct form)",
+   "deepseek-ai/DeepSeek-V2.5, V3.1, V3.2 -> `{form: low_rank, rank: 1536, norm_eps: null}`"
+  ],
+  "the_result_worth_reading_twice": "the three DeepSeek rows carry the FORM and a NULL epsilon. The form generalises from the declaration to a family this rung never judged, and the epsilon does not: nobody has read DeepSeek's reference for `q_a_layernorm`, so it stays unjudged and an executor refuses rather than borrowing Kimi's `1e-6` or the layer's `rms_norm_eps`. That is the `None` = unjudged contract holding on a family that was not designed for \u2014 and it is the strongest available evidence that the epsilon has its own authority rather than a shared one.",
+  "no_verdict_moved": "blockers on the six: 26->26, 0->0, 6->6, 9->9, 11->11, 14->14. Nothing in the estate changed class, category or count."
+ },
+ "the_carriage_rule_that_was_not_added": {
+  "what_the_freeze_promised": "D7 and P6: a `CarriageRule` for `q_lora_rank`, moving it `parsed` -> `lowered` with a probe reading the form off the built component. The freeze called it 'the only plan-plane movement this rung should promise'.",
+  "what_implementation_found": "**18 of the 117 cached rows declare `q_lora_rank`** \u2014 DeepSeek x5, GLM x4, Kimi K2 x4, Kimi-K3, Kimi-Linear, Mistral-Small-4, Hy4-preview. A carriage rule for that leaf reaches every one of them.",
+  "why_it_was_not_added": "the measurement then showed only SIX rows build an MLA surface at all. A probe reading the form off the surface would answer `None` for the other twelve, and `carriage_finding` grades a declared leaf whose probe cannot answer as UNREPRESENTED \u2014 turning twelve rows from `representable` to `unrepresented` and adding blockers across the estate. That is either a large unforecast movement (falsifying P7 far more seriously) or a regression, depending on how one reads it, and neither belongs in a rung frozen at 26 -> 26.",
+  "the_honest_status": "P6 is NOT MET. `q_lora_rank` still grades `parsed`. The rung's plan-plane claim is therefore withdrawn, and its claims are the operand plane, the op plan and the executor \u2014 which were always the substantive ones.",
+  "what_it_owes": "its own transition, with a forecast that measures the leaf's blast radius first: which of the 18 build MLA surfaces, what the other 12 should say, and whether `carriage_finding`'s unrepresented grading is right for a leaf whose component has no surface to carry it. The same shape as K3-ACT-1's D-1 (`hidden_act`'s carriage site), and owed for the same reason."
+ },
+ "deviations": [
+  {
+   "id": "D-1",
+   "what": "P14 said the non-query boundaries would be 'bit-identical' between the two query forms. The equivalence construction cannot deliver that for the query-DEPENDENT ones.",
+   "why": "the direct arm's `q_proj` is solved as `q_states.T @ pinv(x.T)`, which reproduces `q_states` to a pseudoinverse residual (~1.9e-7), not to bits. Everything downstream of the query inherits that residual.",
+   "what_was_done": "split the claim rather than restate it. The oracle asserts BIT equality (`torch.equal`) on the boundaries that read the block input alone \u2014 `compressed_kv`, `kv_a_normed`, `kv_b`, `output_gate` \u2014 and MEASURES and exports the residual on `q_states`, `attn_weights`, `attn_value`, `output`. Stronger than the original wording, and true.",
+   "the_gate_arm_is_a_bonus": "the equivalence block also runs a GATED pair, showing the output gate is bit-identical across query forms. K3's real MLA layer carries both, and this is direct evidence they are independent rather than an assumption."
+  },
+  {
+   "id": "D-2",
+   "what": "The `MlaTrace` boundary `q_proj` is renamed `q_states`, changing one key in the two pre-existing oracle fixtures.",
+   "why": "under the factorised form nothing computes a `q_proj`, and `q_states` is the reference's own variable name for the query leaving either form (L419/421).",
+   "how_it_was_kept_honest": "a checker regenerated both arms and proved exactly one key renamed and zero values changed, top-level fields included \u2014 `7 and 9 boundaries respectively, all values identical`. Three fixture-key references in `mla_parity.rs` / `mla_parity_output_gate.rs` moved with it; the `weights` map still keys `q_proj`, correctly, because the operand is still called that under the direct form."
+  },
+  {
+   "id": "D-3",
+   "what": "`MlaQueryForm::LowRank.norm_eps` is `Option<f64>`, not the `f64`-with-NaN-sentinel the first draft used.",
+   "why": "caught before it propagated. `mla_kv_a_norm_eps` already establishes `Option<f64>` for exactly this contract \u2014 `None` = unjudged, refuse rather than borrow \u2014 and a NaN sentinel would have been a second way of saying the same thing, one that arithmetic could silently consume."
+  },
+  {
+   "id": "D-4",
+   "what": "The version-21 identity arm asserts the disagreeing estate PLANS ADMISSIBLY, where the freeze's D13 said it would be refused.",
+   "why": "the refusal is an OPERAND fact and `plan_system` judges config leaves. `q_lora_rank` is representable whichever operands ship, so the plan stage is silent by design \u2014 the same distinction `the_plan_stage_places_bytes_and_classifies_no_operand` already draws for K3. The refusal lives in op-plan closure and is witnessed there (`k3_q_lora_closure.rs`, 6 arms). The identity test now pins the plan stage's silence as a recorded property rather than leaving it as an oversight."
+  },
+  {
+   "id": "D-5",
+   "what": "P12's override arm is not written: no test supplies an `mla_q_a_norm_eps` other than 1e-6 and asserts the executor uses it.",
+   "why_it_matters": "it is the falsifier the user asked for by name \u2014 'if that cannot be made to pass, then the epsilon is not truly carried'. What IS witnessed: the accessor is separate from the KV one, `None` reaches the form as `None`, the executor refuses an unjudged epsilon by name, and the parity fixture reads the q-side key rather than the KV one. What is NOT witnessed: an architecture overriding it to a third value and the executor following.",
+   "the_measurement_that_partly_covers_it": "the DeepSeek rows carry `{form: low_rank, norm_eps: null}` while Kimi-K3 carries `1e-6` \u2014 two families, same field, different answers, from the same code path. That is evidence the value is routed rather than baked, but it is not the override test.",
+   "owed": "a `DefaultsArch`-style architecture overriding `mla_q_a_norm_eps` to a distinguishable value, asserting the executor's `q_a_normed` moves with it and that `mla_kv_a_norm_eps` does not."
+  },
+  {
+   "id": "D-6",
+   "what": "`MlaQueryProjection` carries `#[allow(clippy::large_enum_variant)]`.",
+   "why": "the variants differ by two `OperandRef`s and an epsilon. `MlaOp` is already `Box`ed inside `LayerAttention::Mla`, so the difference costs one slightly larger allocation per MLA LAYER and nothing per token. A second box would put an indirection between a reader and the operands \u2014 which is what `ExpertBank` boxes to avoid, its `PerExpert` variant being three `Vec`s otherwise carried on every packed value. Documented at the type."
+  }
+ ],
+ "a_latent_test_defect_found_and_not_fixed": {
+  "what": "`exec::weights::staged_tests::the_counters_only_move_for_mapped_images` failed once during a full-workspace run (98428 against an expected 98348, 80 bytes) and passes in isolation, within its own module, and on re-run.",
+  "the_mechanism": "`load_weight` stages on EVERY F32 operand load (`weights/mod.rs`), so any test in the same binary that loads an F32 operand bumps the process-global counter. `staged_tests.rs` has 17 tests and 11 `#[serial]` attributes, and `#[serial]` serialises only against other `#[serial]` tests \u2014 not against the thousands of non-serial tests in the same binary. The test reads a global `before` and asserts an absolute delta across that window.",
+  "whether_this_rung_caused_it": "no. The defect is the test's. This rung makes it MORE LIKELY to fire, because the query form adds operand loads \u2014 so it is recorded here rather than left for whoever meets it in CI.",
+  "not_fixed_here": "it is not this rung's, and fixing it means either making the counter test hermetic or serialising every stager, both of which are changes to a shared instrument that deserve their own reasoning.",
+  "a_second_specimen": "`exec::tests::stages_and_routing::a_stage_records_its_extent_and_a_reset_clears_it` failed once under llvm-cov with `router.calls` reading 6 instead of 1, and passed on re-run. Same class, and this file's own doc states the cause: 'The ledger is process-wide, so these tests hold one lock between them rather than race each other's counters.' The lock serialises them against EACH OTHER and not against the thousands of executor tests in the same binary that record stages. Two specimens now, in two different process-global instruments, both made more likely to fire by this rung's added executor traffic and neither caused by it."
+ },
+ "gates": {
+  "fmt": "cargo fmt --all \u2014 clean",
+  "clippy": "cargo clippy --workspace --all-targets -- -D warnings \u2014 clean",
+  "tests": "cargo test --workspace \u2014 no failures",
+  "cross_target": "cargo check --workspace --all-targets --exclude larql-compute-metal --locked \u2014 clean",
+  "cfg_gated": "`-p larql-vindex --features gpu --all-targets` \u2014 clean",
+  "metal": "`-p larql-compute-metal --lib -- --test-threads=1` \u2014 526 passed",
+  "coverage": "RUN. larql-vindex 93.57%, larql-models 91.56%, larql-compute 95.41% \u2014 all policies passed. `opplan/mla.rs` failed at 83.87% until `MlaQueryProjection::norm_eps` was DELETED: nothing called it (`prepared.rs` pattern-matches the variant where it needs the value), so it was speculative API, and removing it is the honest fix rather than writing a test to justify keeping it."
+ },
+ "rung_status": "K3-MLA-Q-LORA-1's three claims: `MLA_LAYER_UNADDRESSED` 3 -> 0 (HELD), the real MLA op plan closing on the declared form (HELD, witnessed on the synthetic hybrid \u2014 no K3 container exists), and executor parity against the third oracle arm (HELD). The conformance count is unchanged at 26 -> 26 as frozen. P6's carriage claim is withdrawn and owed its own transition; P5 and P7 are falsified as written by a surface field the rung's own design requires. Remaining on K3: K3-LATENTMOE-1, the MXFP4/quantization declaration, `topk_method`, the container leaves.",
+ "commit_order": "recon -> freeze -> oracle -> code + tests -> execution notes."
+}

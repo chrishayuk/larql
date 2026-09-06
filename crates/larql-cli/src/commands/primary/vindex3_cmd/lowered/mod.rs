@@ -216,25 +216,17 @@ impl<'a> LoweredSession<'a> {
         // amplitude rides slot 6 of the rope kernel, the sinks slot 10/11
         // of the attention kernel, the biases the `bias_add` kernel after
         // each projection, and a routed FFN through the served descriptor
-        // MoE path (build_routed). A dense clamped-GLU FFN: the
-        // lowering encodes plain gated FFNs only, and running the clamped
-        // policy as plain gating would be a different model (A-9.4).
-        if let Some(l) = plan.layers.iter().find(|l| {
-            l.ffn
-                .as_ref()
-                .and_then(|f| f.dense())
-                .is_some_and(|f| !matches!(f.gate_policy, larql_models::ExpertGatePolicy::Gated))
-        }) {
-            return Err(VindexError::Parse(format!(
-                "layer {} carries {:?}, which the Metal lowering does not execute yet (A-9.4); \
-                 refusing rather than lowering it as plain gating",
-                l.layer,
-                l.ffn
-                    .as_ref()
-                    .and_then(|f| f.dense())
-                    .map(|f| f.gate_policy)
-            )));
-        }
+        // MoE path (build_routed).
+        //
+        // The dense gate policy is checked by `ffn_activation`, layer by
+        // layer, in the loop below — not by a blanket "is it plain
+        // gating" scan here. That scan predated any dense policy having a
+        // kernel; since K3-ACT-1 one does (`SituGlu` → the `situ_glu`
+        // kernel) and one still does not (`ClampedGlu`, A-9.4), so the
+        // question is no longer whether the policy is plain but whether
+        // its combine has a kernel — which `ffn_activation` answers, in
+        // one place, for both this pre-check and the encode. A policy
+        // with no kernel still refuses BY NAME, naming its parameters.
         // Gemma 4's semantics are lowered (G4.3): K≡V binds the K matrix
         // as V, the V norm and the weighted Q/K norms ride the served
         // norm kernels, the proportional partial rotary rides a per-layer
@@ -288,15 +280,15 @@ impl<'a> LoweredSession<'a> {
         for l in &plan.layers {
             let activation = match &l.ffn {
                 Some(larql_vindex::format::vindex3::opplan::LayerFfn::Dense(op)) => {
-                    Some(op.activation)
+                    Some((op.activation, op.gate_policy))
                 }
                 Some(larql_vindex::format::vindex3::opplan::LayerFfn::Hybrid(op)) => {
-                    Some(op.dense.activation)
+                    Some((op.dense.activation, op.dense.gate_policy))
                 }
                 Some(larql_vindex::format::vindex3::opplan::LayerFfn::Routed(_)) | None => None,
             };
-            if let Some(activation) = activation {
-                ffn_activation(activation)
+            if let Some((activation, gate_policy)) = activation {
+                ffn_activation(activation, gate_policy)
                     .map_err(|e| VindexError::Parse(format!("layer {}: {e}", l.layer)))?;
             }
         }
@@ -755,13 +747,13 @@ impl<'a> LoweredSession<'a> {
                             .as_ref()
                             .expect("dense resident implies a pre-FFN norm")
                             .weight_offset,
-                        activation: plan_layer
-                            .ffn
-                            .as_ref()
-                            .and_then(|f| f.dense())
-                            .map_or(FfnActivation::Silu, |f| {
-                                ffn_activation(f.activation).expect("checked in `new`")
-                            }),
+                        activation: plan_layer.ffn.as_ref().and_then(|f| f.dense()).map_or(
+                            FfnActivation::Silu,
+                            |f| {
+                                ffn_activation(f.activation, f.gate_policy)
+                                    .expect("checked in `new`")
+                            },
+                        ),
                     },
                 },
                 FfnResident::Routed(routed) => {
@@ -801,7 +793,7 @@ impl<'a> LoweredSession<'a> {
                                 .as_ref()
                                 .expect("hybrid resident implies a pre-FFN norm")
                                 .weight_offset,
-                            activation: ffn_activation(op.dense.activation)
+                            activation: ffn_activation(op.dense.activation, op.dense.gate_policy)
                                 .expect("checked in `new`"),
                         },
                         routed: RoutedFfnLowering {
@@ -905,11 +897,29 @@ impl<'a> LoweredSession<'a> {
 /// are the head's vocabulary-sized pair).
 const HYBRID_SCRATCH_BASE: usize = 18;
 
-/// The lowering's gate activation for the plan's, or why there is none.
+/// The lowering's gate/up combine for the plan's, or why there is none.
+///
+/// Reads the POLICY first: a policy that is not plain gating owns the
+/// whole combine and the nonlinearity beside it is inert, so asking the
+/// activation first would answer for a field the layer never reads.
 fn ffn_activation(
     activation: larql_models::config::Activation,
+    gate_policy: larql_models::ExpertGatePolicy,
 ) -> Result<FfnActivation, VindexError> {
     use larql_models::config::Activation;
+    match gate_policy {
+        larql_models::ExpertGatePolicy::SituGlu { beta, linear_beta } => {
+            return Ok(FfnActivation::SituGlu { beta, linear_beta })
+        }
+        larql_models::ExpertGatePolicy::ClampedGlu { limit, alpha } => {
+            return Err(VindexError::Parse(format!(
+                "the lowering has no gate/up kernel for ExpertGatePolicy::ClampedGlu \
+                 {{ limit: {limit}, alpha: {alpha} }} (A-9.4); refusing rather than lowering \
+                 it as plain gating"
+            )))
+        }
+        larql_models::ExpertGatePolicy::Gated => {}
+    }
     match activation {
         Activation::Silu => Ok(FfnActivation::Silu),
         Activation::GeluTanh => Ok(FfnActivation::GeluTanh),

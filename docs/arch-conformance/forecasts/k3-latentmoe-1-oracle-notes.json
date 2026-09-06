@@ -1,0 +1,72 @@
+{
+  "artifact_kind": "oracle-notes",
+  "rung": "K3-LATENTMOE-1",
+  "name": "latent routed branch — oracle, and one correction to the freeze",
+  "written": "2026-09-06",
+  "worktree": ".claude/worktrees/k3-latentmoe-1",
+  "base": "ef6a101e",
+  "commit_order": "reconnaissance -> freeze -> ORACLE (this) -> implementation. No Rust arithmetic exists for this rung yet; that is deliberate.",
+
+  "what_was_built": {
+    "reference": "scripts/kimi_moe_reference.py, EXTENDED not rewritten — 204 insertions, 0 deletions, so every downstream generator (kimi_moe_export, kimi_mla_layer_export, kimi_kda_layer_export, kimi_stack_export, kimi_two_layer_export) is bit-unaffected.",
+    "export": "scripts/kimi_latent_moe_oracle_export.py",
+    "fixture": "crates/larql-vindex/src/format/vindex3/opplan/exec/tests/kimi_latent_moe_oracle.json",
+    "form_is_stated_never_inferred": "latent_moe_block_forward takes form='ordinary'|'latent' as an argument and raises if the operands disagree with it. Presence of a routed_expert_down_proj never selects the form. This is the reconnaissance rule 'a routed-expert tensor shape may confirm a declaration; it must never select the declaration', enforced in the oracle itself."
+  },
+
+  "geometry_chosen_to_be_hostile": {
+    "hidden": 10,
+    "latent": 7,
+    "intermediate": 4,
+    "experts": 5,
+    "top_k": 2,
+    "why": "hidden // 2 = 5 != 7 = latent, and latent != intermediate != hidden pairwise. A latent width silently derived from hidden/2 or from moe_intermediate_size cannot pass this fixture."
+  },
+
+  "bands_frozen_before_any_mutant_was_scored": {
+    "routed_sum_mean_square": {"measured": 3.5267e-4, "band": [1e-5, 1e-2], "in_band": true},
+    "router_weights": {"max": 0.5884, "min": 0.4117, "band": [0.1, 0.9], "in_band": true, "why": "a saturated router would make the weighted aggregate a copy of one expert, and the 'norm applied per expert' mutant would then be nearly invisible for the wrong reason."},
+    "epsilons_exported": {"layer_rms_norm_eps_USED": 1e-5, "class_default_eps_NOT_used_here": 1e-6}
+  },
+
+  "controls_measured": {
+    "norm_per_expert": {"caught_at": "routed_sum", "rel_l2_there": 4.9924e+1, "rel_l2_at_output": 3.7442e-1},
+    "norm_after_weighting": {"caught_at": "routed_sum", "rel_l2_there": 8.4609e+1, "rel_l2_at_output": 5.0454e-1},
+    "norm_omitted": {"caught_at": "routed_out", "rel_l2_there": 9.8372e-1, "rel_l2_at_output": 9.7155e-1},
+    "class_default_eps": {"caught_at": "routed_normed", "rel_l2_there": 1.2644e-2, "rel_l2_at_output": 1.2488e-2},
+    "scoring_rule": "each control is scored at the boundary it is CAUGHT at, not at output. The output column is recorded so the attenuation is visible, never so a control can be judged by it."
+  },
+
+  "the_anti_memory_control": {
+    "control": "class_default_eps",
+    "what_it_tests": "K3-ACT-1 and K3-MLA-Q-LORA-1 both found a 1e-6 class-default epsilon. This rung's routed-expert norm uses the LAYER's rms_norm_eps (1e-5) instead — the opposite finding.",
+    "measured": "substituting 1e-6 for 1e-5 moves routed_normed by 1.26e-2 rel-L2, so an implementation that reaches for the previous two rungs' epsilon out of habit is caught at the norm's own boundary rather than surviving into the output."
+  },
+
+  "THE_CORRECTION_TO_THE_FREEZE": {
+    "status": "the freeze is frozen; this is recorded as a deviation, not edited into it.",
+    "the_frozen_claim": "the_operator_frozen.why_they_are_claims_and_not_notes said: 'every tensor shape in this block stays valid while each one of them is wrong. A router fed the latent, a norm applied per expert, a shared branch inside the bottleneck — each computes a different model with no shape, arity or bounds check able to see it.'",
+    "what_measurement_showed": "false for two of the three. At the reference's own geometry only the NORM's placement is a silent defect.",
+    "evidence": [
+      "router fed the latent: the router matrix is [experts, hidden]; a [latent] vector fails on shape.",
+      "shared branch inside the bottleneck: the shared expert's w1 is [inter, hidden]; a [latent] vector fails on shape, and summing a [7] routed aggregate with a [10] shared contribution does not add.",
+      "down/up swapped and norm-after-up-proj were reached for as additional mutants and are shape-protected too, whenever latent != hidden."
+    ],
+    "what_was_done_instead": "the two shape-protected placement facts are recorded in structurally_unreachable WITH their reasons, and get POSITIVE witnesses rather than mutants: cross_form asserts router_weights, router_ids, shared_input and shared_output are bit-identical between the ordinary and latent arms (torch.equal at export). That proves the router saw the un-projected hidden and the shared branch was outside the bottleneck, which is what the claim was for.",
+    "why_this_matters_beyond_this_rung": "'no shape check can see it' is a claim about the operand geometry, and it has to be measured on the geometry, not asserted from the diagram. The freeze reasoned about all three facts uniformly because they are all placement facts; they are not uniformly silent. The oracle caught it before any Rust was written, which is the whole reason the oracle precedes the arithmetic.",
+    "what_this_does_NOT_change": "the forecast (26 -> 24), the primary falsifier requiring both planes to agree, the geometry decision that routed_expert_hidden_size becomes the routed-bank authority, or the epsilon rule. Those stand exactly as frozen."
+  },
+
+  "structurally_unreachable_recorded_not_covered": [
+    "router_reads_the_latent",
+    "shared_reads_the_latent",
+    "shared_added_before_up_proj",
+    "down_up_swapped",
+    "norm_after_up_proj"
+  ],
+
+  "what_this_oracle_does_not_do": [
+    "It does not encode any LARQL representation choice. It knows the operator and the two forms; it knows nothing about op plans, carriage states or semantics versions.",
+    "It does not close the rung. Declaration, addressing and execution are all still unwritten. The blocker count is untouched at 26."
+  ]
+}

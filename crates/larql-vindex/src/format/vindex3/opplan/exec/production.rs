@@ -92,8 +92,27 @@ fn ffn_activation(
     gate: Option<&[f32]>,
     up: &[f32],
     activation: Activation,
+    policy: larql_models::ExpertGatePolicy,
 ) -> Result<Vec<f32>, VindexError> {
     let _t = timed(OpClass::FfnActivation);
+    // A gate POLICY that is not plain gating owns the whole combine, and
+    // the nonlinearity beside it is inert. Handled before the activation
+    // match so the two facts cannot be applied at once.
+    if let larql_models::ExpertGatePolicy::SituGlu { beta, linear_beta } = policy {
+        let Some(gate) = gate else {
+            return Err(VindexError::Parse(
+                "SiTU-GLU is a gated combine and this FFN has no gate projection; refusing \
+                 rather than computing it on the up branch alone"
+                    .to_string(),
+            ));
+        };
+        let rule = larql_compute::MoeGateRule::SituGlu { beta, linear_beta };
+        return Ok(gate
+            .iter()
+            .zip(up)
+            .map(|(g, u)| rule.combine(*g, *u))
+            .collect());
+    }
     match gate {
         Some(gate) => match activation {
             Activation::Silu => Ok(geglu_silu_alloc(gate, up)),
@@ -130,12 +149,17 @@ pub(super) fn unsupported_activation(shape: &str, activation: Activation) -> Vin
 /// (GPT-OSS's `swiglu_limit`) is carried by the container and refused
 /// until A-9.3 executes it — computing `activation(gate) * up` for it
 /// would run a different model without saying so.
-pub(super) fn require_plain_gate(
+pub(super) fn require_executable_gate(
     backend: &str,
     policy: larql_models::ExpertGatePolicy,
 ) -> Result<(), VindexError> {
     match policy {
         larql_models::ExpertGatePolicy::Gated => Ok(()),
+        // K3-ACT-1: both CPU-glue backends compute SiTU elementwise
+        // through `MoeGateRule::combine` — the same authority the routed
+        // path already uses — so admitting it here is a statement about
+        // what they execute, not a relaxation of what they check.
+        larql_models::ExpertGatePolicy::SituGlu { .. } => Ok(()),
         larql_models::ExpertGatePolicy::ClampedGlu { limit, alpha } => {
             Err(VindexError::Parse(format!(
                 "the {backend} backend does not execute ExpertGatePolicy::ClampedGlu {{ limit: \
@@ -1004,13 +1028,13 @@ impl PlanBackend for ProductionBackend {
     }
 
     fn ffn(&self, call: FfnCall<'_>) -> Result<Vec<f32>, VindexError> {
-        require_plain_gate("production", call.gate_policy)?;
+        require_executable_gate("production", call.gate_policy)?;
         let up = project_matrix(&call.up, call.x, call.intermediate, call.hidden)?;
         let gate = match call.gate {
             Some(w) => Some(project_matrix(&w, call.x, call.intermediate, call.hidden)?),
             None => None,
         };
-        let inner = ffn_activation(gate.as_deref(), &up, call.activation)?;
+        let inner = ffn_activation(gate.as_deref(), &up, call.activation, call.gate_policy)?;
         project_matrix(&call.down, &inner, call.hidden, call.intermediate)
     }
 
@@ -1028,7 +1052,7 @@ impl PlanBackend for ProductionBackend {
     /// projection to a single worker — CPU-7C1 measured that as
     /// `slabs/call` 5.03 -> 2.81 and a 42% loss against serial decode.
     fn ffn_many(&self, call: FfnManyCall<'_>) -> Result<Vec<Vec<f32>>, VindexError> {
-        require_plain_gate("production", call.gate_policy)?;
+        require_executable_gate("production", call.gate_policy)?;
         let ups = project_matrix_many(&call.up, call.xs, call.intermediate, call.hidden)?;
         let gates = match &call.gate {
             Some(w) => Some(project_matrix_many(
@@ -1045,6 +1069,7 @@ impl PlanBackend for ProductionBackend {
                     gates.as_ref().map(|g| g[p].as_slice()),
                     &ups[p],
                     call.activation,
+                    call.gate_policy,
                 )
             })
             .collect::<Result<_, _>>()?;

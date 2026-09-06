@@ -264,6 +264,8 @@ mod tests {
             attention_bias: None,
             mlp_bias: None,
             hidden_act: None,
+            activation_situ_beta: None,
+            activation_situ_linear_beta: None,
             max_position_embeddings: None,
             image_token_id: None,
             video_token_id: None,

@@ -588,11 +588,14 @@ pub struct MoeExecution {
 ///
 /// Kimi Linear ships no `q_lora_rank` (`assert self.q_lora_rank is None`
 /// in the checkpoint's own `modeling_kimi.py` — Q is one dense
-/// projection, only K/V are low-rank compressed), so this carries no
-/// `q_lora_rank` field; a family that DOES compress Q needs its own
-/// extension here, not a guess from this one.
+/// projection, only K/V are low-rank compressed). A family that DOES
+/// compress Q needed its own extension rather than a guess from this
+/// one; [`MlaQueryForm`](crate::config::MlaQueryForm) is that extension,
+/// carried in [`Self::query`] as a form rather than as a bare rank, so
+/// that a layer without the factorisation cannot describe one.
 #[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
 pub struct MlaExecution {
+    // (`query`'s serde default lives at `direct_query`, below.)
     /// Query/output head count (`num_attention_heads`) — the decompressed
     /// K/V side always produces this many heads' worth of output, not
     /// `num_key_value_heads`: MLA's compression is the efficiency
@@ -618,6 +621,18 @@ pub struct MlaExecution {
     /// Defaults for inventories written before it was recorded.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub kv_a_norm_eps: Option<f64>,
+    /// Which query these layers build — one dense `q_proj`, or Kimi-K3's
+    /// `q_a_proj` -> `q_a_layernorm` -> `q_b_proj` factorisation under a
+    /// declared `q_lora_rank`.
+    ///
+    /// Resolved from the DECLARATION
+    /// ([`ModelArchitecture::mla_query_form`](crate::config::ModelArchitecture::mla_query_form)),
+    /// never from which operands the checkpoint ships: `q_proj` and
+    /// `q_b_proj` share a row count and differ only in their columns.
+    /// Defaults to `Direct` for inventories written before it was
+    /// recorded, which is what those checkpoints declared.
+    #[serde(default = "direct_query")]
+    pub query: crate::config::MlaQueryForm,
     /// The output gate the checkpoint declares on its MLA layers
     /// (`mla_use_output_gate: true`), as the generic gated-attention
     /// operation it implements — the same spec the softmax family's
@@ -704,6 +719,12 @@ pub struct TensorFact {
 /// stream, which is what every family judged then used.
 fn single_stream_topology() -> Option<crate::config::ResidualTopology> {
     Some(crate::config::ResidualTopology::SingleStream)
+}
+
+/// `serde` default for [`MlaExecution::query`]: what every inventory
+/// written before the query form was recorded declared.
+fn direct_query() -> crate::config::MlaQueryForm {
+    crate::config::MlaQueryForm::Direct
 }
 
 #[cfg(test)]

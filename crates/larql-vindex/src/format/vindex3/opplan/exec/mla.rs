@@ -53,9 +53,8 @@ use super::kernels::{norm, rope_rotate, softmax};
 /// silently coinciding.
 #[derive(Clone, Copy)]
 pub struct MlaWeights<'a> {
-    /// `[Hq·q_head_dim, hidden]`, at whatever representation it is
-    /// resident as — the plan binds it like any other matrix.
-    pub q_proj: WeightRows<'a>,
+    /// How this layer builds its query.
+    pub query: MlaQueryWeights<'a>,
     /// `[kv_lora_rank+rope, hidden]`.
     pub kv_a_proj: WeightRows<'a>,
     /// `[kv_lora_rank]` — RMSNorm weight over the latent ONLY, never the
@@ -95,8 +94,26 @@ pub type MlaState = LatentKvRows;
 /// disagreement against the oracle names its own stage.
 #[derive(Debug, Clone, PartialEq)]
 pub struct MlaTrace {
-    /// `q_proj(x)`, fused nope+rope per head, `[Hq·q_head_dim]`.
-    pub q_proj: Vec<f32>,
+    /// The query leaving whichever form the layer declared, fused
+    /// nope+rope per head, `[Hq·q_head_dim]`.
+    ///
+    /// Named `q_states` after the reference's own variable, because under
+    /// the factorised form nothing computes a `q_proj` at all and the
+    /// boundary would otherwise name an operand the layer does not have.
+    pub q_states: Vec<f32>,
+    /// `q_a_proj(x)`, `[rank]` — `None` under the direct form.
+    pub q_a: Option<Vec<f32>>,
+    /// `q_a_layernorm(q_a)`, `[rank]` — `None` under the direct form.
+    ///
+    /// Reported even when a mutation feeds `q_b` something else: this is
+    /// the value the norm PRODUCED, and `Mutation::QbFedPreNorm` exists
+    /// to prove the executor's next stage consumed it rather than
+    /// recomputing something equivalent for display.
+    pub q_a_normed: Option<Vec<f32>>,
+    /// `q_b_proj(q_a_normed)`, `[Hq·q_head_dim]` — `None` under the
+    /// direct form, and equal to [`Self::q_states`] under the low-rank
+    /// one.
+    pub q_b: Option<Vec<f32>>,
     /// `kv_a_proj_with_mqa(x)`, RAW, `[kv_lora_rank+rope]` — what gets
     /// cached.
     pub compressed_kv: Vec<f32>,
@@ -145,6 +162,50 @@ pub enum Mutation {
     /// The raw gate pre-activation multiplied in, no sigmoid. Caught at
     /// `output_gate`.
     SigmoidOmitted,
+    /// `q_b_proj` fed the UN-normed `q_a`, while `q_a_layernorm`'s output
+    /// is still computed and still reported on the trace.
+    ///
+    /// Output-identical to skipping the norm and trace-DIFFERENT, which
+    /// is the entire point: it is the control for the TRACE, and the only
+    /// thing that distinguishes "the boundary this executor reports is
+    /// the value its next stage consumed" from "the boundary is a
+    /// separately-computed display that happens to look right". Caught at
+    /// `q_b`, with `q_a_normed` unmoved.
+    ///
+    /// Meaningless on a direct-form layer, which has no norm to bypass;
+    /// `layer_forward` ignores it there, and the parity test asserts that
+    /// rather than leaving it to be assumed.
+    QbFedPreNorm,
+}
+
+/// The query's operands, in whichever form the layer declared.
+///
+/// `Direct` is Kimi Linear's one dense projection; `LowRank` is Kimi-K3's
+/// `q_a_proj -> q_a_layernorm -> q_b_proj` under a declared
+/// `q_lora_rank`. The two produce the same object and are consumed
+/// identically from the head split onward — which is exactly why the form
+/// is carried rather than deduced from the operands' shapes.
+#[derive(Clone, Copy)]
+pub enum MlaQueryWeights<'a> {
+    Direct {
+        /// `[Hq·q_head_dim, hidden]`.
+        q_proj: WeightRows<'a>,
+    },
+    LowRank {
+        /// `[rank, hidden]`.
+        q_a_proj: WeightRows<'a>,
+        /// RMSNorm weight over the query latent, `[rank]`.
+        q_a_norm: &'a [f32],
+        /// `[Hq·q_head_dim, rank]` — the SAME row count as `Direct`'s
+        /// `q_proj`, a different column count.
+        q_b_proj: WeightRows<'a>,
+        /// `q_a_norm`'s epsilon. `KimiRMSNorm(self.q_lora_rank)` passes
+        /// none, so it runs at the class default `1e-6` while the layer's
+        /// own norms run at `rms_norm_eps` — the same property
+        /// [`MlaWeights::kv_a_norm_eps`] carries, arrived at by the same
+        /// cause and NOT by sharing that field's authority.
+        q_a_norm_eps: f64,
+    },
 }
 
 /// One token through Multi-Latent Attention. `x` is the ALREADY-NORMED
@@ -220,7 +281,30 @@ pub fn mla_forward_with(
     let scaling = (q_head_dim as f64).powf(-0.5) as f32;
     let omit_kv_a_norm = matches!(mutation, Mutation::OmitKvANorm);
 
-    let q_proj = matvec(weights.q_proj, x, heads * q_head_dim);
+    let (q_states, q_a, q_a_normed, q_b) = match weights.query {
+        MlaQueryWeights::Direct { q_proj } => {
+            (matvec(q_proj, x, heads * q_head_dim), None, None, None)
+        }
+        MlaQueryWeights::LowRank {
+            q_a_proj,
+            q_a_norm,
+            q_b_proj,
+            q_a_norm_eps,
+        } => {
+            // L419: q_b_proj(q_a_layernorm(q_a_proj(hidden_states))).
+            let rank = q_a_norm.len();
+            let q_a = matvec(q_a_proj, x, rank);
+            let normed = norm(NormType::RmsNorm, &q_a, q_a_norm, 0.0, q_a_norm_eps);
+            // The norm is reported whatever the mutation does; only its
+            // CONSUMER changes, which is the whole of `QbFedPreNorm`.
+            let into_b = match mutation {
+                Mutation::QbFedPreNorm => &q_a,
+                _ => &normed,
+            };
+            let q_b = matvec(q_b_proj, into_b, heads * q_head_dim);
+            (q_b.clone(), Some(q_a), Some(normed), Some(q_b))
+        }
+    };
     let compressed_kv = matvec(weights.kv_a_proj, x, geometry.compressed_kv_width());
 
     state.append(compressed_kv.clone());
@@ -265,8 +349,8 @@ pub fn mla_forward_with(
     let mut attn_weights = vec![0.0f32; heads * visible];
     let mut attn_value = vec![0.0f32; heads * v_dim];
     for h in 0..heads {
-        let q_nope = &q_proj[h * q_head_dim..h * q_head_dim + nope];
-        let q_rope = &q_proj[h * q_head_dim + nope..h * q_head_dim + nope + rope];
+        let q_nope = &q_states[h * q_head_dim..h * q_head_dim + nope];
+        let q_rope = &q_states[h * q_head_dim + nope..h * q_head_dim + nope + rope];
 
         let mut scores = vec![0.0f32; visible];
         for (p, score) in scores.iter_mut().enumerate() {
@@ -314,7 +398,10 @@ pub fn mla_forward_with(
     );
 
     MlaTrace {
-        q_proj,
+        q_states,
+        q_a,
+        q_a_normed,
+        q_b,
         compressed_kv,
         kv_a_normed: cur_kv_a_normed,
         kv_b: cur_kv_b,

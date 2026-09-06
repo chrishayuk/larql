@@ -46,7 +46,7 @@ fn main() {
     let hidden = weights.hidden_size;
     let intermediate = gate_index.num_features(14);
     let arch = &*weights.arch;
-    let use_gelu = arch.activation().uses_gelu_tanh_gate_up();
+    let use_gelu = arch.gate_up_is_gelu_tanh();
     let is_gated = arch.ffn_type() == larql_models::FfnType::Gated;
 
     println!("  hidden={hidden}, intermediate={intermediate}");

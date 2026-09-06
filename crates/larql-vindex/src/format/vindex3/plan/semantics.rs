@@ -174,6 +174,16 @@ pub const EXECUTION_SEMANTIC_KEYS: &[&str] = &[
     // ±this value before the GLU. It changes what the FFN computes, so
     // it is execution-semantic wherever it is declared.
     "swiglu_limit",
+    // Kimi-K3's SiTU-GLU softcaps bound the gate and up branches before
+    // they multiply. Like `swiglu_limit` they change what the FFN
+    // computes, so they are execution-semantic wherever they are
+    // declared, and each is judged against `ExpertGatePolicy::SituGlu` by
+    // its own carriage rule rather than credited for being parsed. Beside
+    // an activation that is not `situ`, the probes answer `None` and the
+    // leaves report unrepresented — which is the truth: the checkpoint
+    // configured a combine it says it does not use.
+    "activation_situ_beta",
+    "activation_situ_linear_beta",
     // GPT-2's spelling of the norm epsilon `rms_norm_eps` etc. already
     // cover — same fact, fourth name; `parser.rs` folds all four into one
     // `norm_eps` read, so this shares `rms_norm_eps`'s carriage rule.
@@ -1001,6 +1011,12 @@ const CLUSTER_KEYS: &[(SemanticCluster, &[&str])] = &[
             "activation",
             "activation_function",
             "swiglu_limit",
+            // SiTU-GLU's two softcaps. Beside `hidden_act`, which is the
+            // key that selects them: a fact and its parameters in
+            // different clusters would make the cluster map lie about
+            // where the leverage is.
+            "activation_situ_beta",
+            "activation_situ_linear_beta",
             "mlp_type",
             "mlp_expansion_factor",
             "use_double_wide_mlp",

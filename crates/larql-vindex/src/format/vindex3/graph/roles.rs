@@ -128,7 +128,32 @@ pub enum OperandRole {
     /// operator does — see [`classify_stack_tensor_on`].
     ///
     /// Query projection, fused nope+rope per head, `[Hq·(nope+rope), hidden]`.
+    ///
+    /// Present only under [`MlaQueryForm::Direct`]; a layer that
+    /// factorises its query has no `q_proj` at all, and closure refuses
+    /// one that ships both.
+    ///
+    /// [`MlaQueryForm::Direct`]: larql_models::config::MlaQueryForm::Direct
     MlaQProj,
+    /// Query DOWN-projection, `[q_lora_rank, hidden]` — Kimi-K3's
+    /// factorised query (`q_lora_rank: 1536`).
+    MlaQAProj,
+    /// RMSNorm weight over the compressed query latent, applied between
+    /// the down- and up-projections, `[q_lora_rank]`.
+    ///
+    /// Its epsilon is the family's own and is NOT the layer's
+    /// `rms_norm_eps` — nor, though the numbers agree today, is it
+    /// derived from [`Self::MlaKvANorm`]'s.
+    MlaQANorm,
+    /// Query UP-projection, `[Hq·(nope+rope), q_lora_rank]`.
+    ///
+    /// **Same ROW count as [`Self::MlaQProj`]** — `Hq·(nope+rope)` is
+    /// 18432 on K3 either way — and a different COLUMN count: the rank
+    /// against `hidden`. Anything discriminating these two by rows
+    /// accepts either for the other, so the column count is what
+    /// closure checks and the declared form is what says which to
+    /// expect.
+    MlaQBProj,
     /// Shared (MQA-style) compressed KV projection: latent + one rope-K,
     /// `[kv_lora_rank + rope, hidden]`.
     MlaKvAProj,
@@ -896,6 +921,13 @@ const KDA_ROLE_TABLE: &[(&str, OperandRole)] = &[
 const MLA_ROLE_TABLE: &[(&str, OperandRole)] = &[
     // Collides with the softmax set — same suffix, different geometry.
     ("self_attn.q_proj.weight", OperandRole::MlaQProj),
+    // Kimi-K3's factorised query. Named unconditionally here — the table
+    // answers for the OPERATOR, as its siblings do — and held to the
+    // declared form by closure, which is where "declared Direct but
+    // shipped a triple" is refused.
+    ("self_attn.q_a_proj.weight", OperandRole::MlaQAProj),
+    ("self_attn.q_a_layernorm.weight", OperandRole::MlaQANorm),
+    ("self_attn.q_b_proj.weight", OperandRole::MlaQBProj),
     ("self_attn.o_proj.weight", OperandRole::MlaOutProj),
     // MLA-only spellings.
     (

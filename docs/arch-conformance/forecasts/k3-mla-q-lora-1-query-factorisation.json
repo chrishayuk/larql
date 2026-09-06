@@ -1,0 +1,146 @@
+{
+  "rung": "K3-MLA-Q-LORA-1",
+  "name": "mla-query-factorisation",
+  "artifact_kind": "freeze (pre-registration; written BEFORE any code, oracle or measurement)",
+  "written": "2026-09-06",
+  "base": "`777dcb51` — the K3-ACT-1 commit, semantics 20, K3 26/152 RED. NOT origin/main `1e57b6d1`; see the reconnaissance for why, and note that if K3-ACT-1 is amended or rebased before this rung is measured, the baseline moves with it and BOTH arms must be re-measured.",
+  "worktree": ".claude/worktrees/k3-mla-qlora-1, branch `k3-mla-qlora-1`",
+  "reconnaissance": "docs/arch-conformance/forecasts/k3-mla-q-lora-1-reconnaissance.json",
+
+  "claim": "Kimi-K3's factorised MLA query projection — `q_a_proj → q_a_layernorm → q_b_proj` under `q_lora_rank: 1536` — is DECLARED as an operator form, ADDRESSED as three operands whose form the declaration chooses and the operand plane must agree with from both sides, and EXECUTED on the interpreter to per-boundary parity against a reference-transcribed oracle. Every path that cannot express the form refuses it by name rather than binding `q_b_proj` into a `q_proj` slot.",
+
+  "the_headline_this_rung_is_measured_by": "**After K3-MLA-Q-LORA-1, no remaining K3 text-generation blocker is an attention-semantic blocker.** The 26 that remain are 14 quantization_config, 2 latent MoE, 1 `topk_method`, 3 multimodal container and 6 HF boilerplate leaves — traced, not assumed (reconnaissance q7).",
+
+  "the_sentence_this_rung_should_read_as": "No blocker count moved because the planner already understood the declaration. What changed is that the executor finally learned the operation the declaration described.",
+
+  "non_claim": "K3 does not execute. Its latent-MoE wrapper is still unrepresented, its MXFP4 declaration unjudged, `topk_method` unread, and no witness here runs on a K3 container (none exists). No Metal or device execution of the factorised form — those paths REFUSE. Nothing is claimed about the KV side, NoPE, the shared rope-K, the attention itself, the output gate or `o_proj`, all of which are identical in both query forms and must come out of this rung untouched. No throughput, latency or quality claim.",
+
+  "user_decisions_this_freeze_implements": {
+    "success_metric": "The user, 2026-09-06: 'the success metric is not blocker-count movement'. **26 -> 26 is FROZEN as the expected result and is success-compatible.** The three real claims are the operand plane, the op plan, and one carriage change.",
+    "zero": "'Do not normalize zero away.' `q_lora_rank: 0` selects the q-LoRA FORM, exactly as the reference's `is not None` does.",
+    "discriminator": "'make the column count the operand-form discriminator ... That should be a closure witness, not just an arithmetic assertion.'",
+    "epsilon": "'Do not solve this by introducing a generic MLA low-rank norm epsilon accessor just because both q-A and kv-A happen to be 1e-6 today. Same value is not same authority.'",
+    "primary_falsifier": "operand-plane based, so that 'nothing moved' can never look acceptable."
+  },
+
+  "decisions_settled": {
+    "D1_representation_of_the_form": {
+      "decision": "`MlaQueryProjection` — a typed enum on the op: `Direct { q_proj }` | `LowRank { q_a, q_a_norm, q_b }`. NOT optional fields.",
+      "why": "the typed form makes `both present` and `neither present` UNREPRESENTABLE rather than merely refused. `KdaOutputGate::{LowRank, FullRank}` is the precedent K3-REP-GATE-1 set for exactly this shape of choice, and `KdaOp`'s doc gives the reasoning: a second form belongs in its own field rather than changing what the first one means.",
+      "the_surface": "`MlaSurface` gains `query: MlaQueryForm`, where `MlaQueryForm::Direct` or `MlaQueryForm::LowRank { rank: usize, norm_eps: f64 }`. Absent on containers written before this rung reads back as `Direct`, which is the checked default from the reference's own signature (`q_lora_rank: Optional[int] = None`) and not an assumed one.",
+      "why_norm_eps_lives_INSIDE_the_variant": "it makes `a q-A epsilon with no q-A norm` unrepresentable. `kv_a_norm_eps` is a flat `Option<f64>` on the same struct because the KV latent norm is unconditional; the query norm is not, and copying the flat shape would carry an epsilon for a norm that may not exist."
+    },
+    "D2_the_operator_form_rule": {
+      "frozen_verbatim": [
+        "q_lora_rank absent or null  ->  Direct: one `q_proj [num_heads*q_head_dim, hidden]`",
+        "q_lora_rank = Some(rank)    ->  LowRank: q_a_proj [rank, hidden] -> q_a_layernorm [rank] -> q_b_proj [num_heads*q_head_dim, rank]",
+        "q_lora_rank = 0             ->  LowRank form SELECTED (0 is not None), then REFUSED by name on its degenerate geometry"
+      ],
+      "the_zero_arm_stated_precisely": "the form is chosen by presence, matching the reference's `is not None` exactly; a rank of 0 then shapes `[0, hidden]` and `[.., 0]`, which closure refuses BY NAME, naming the rank. Refusing the GEOMETRY is a different act from refusing the FORM, and treating zero as ordinary MLA is the defect the mutant below exists to catch.",
+      "the_adversarial_control_the_user_named": "K3-ACT-1's `activation_situ_beta` resolves 0.0 -> 1.0 (`beta or 1.0`, Python truthiness). `q_lora_rank: 0` does the OPPOSITE — it selects the branch. Same checkpoint, adjacent fields, opposite treatments of zero. A witness asserts BOTH in one test so the two rules cannot bleed into each other later (`feedback_semantic_fixture_migration` in reverse: the risk is a shared intuition, not a shared identifier)."
+    },
+    "D3_the_column_count_is_the_discriminator": {
+      "the_trap": "`q_proj` would be `[18432, 7168]` and `q_b_proj` IS `[18432, 1536]` — identical row counts, because both are `num_heads * q_head_dim`. Anything keying on rows accepts either.",
+      "decision": "the DECLARATION chooses the form; the operand's COLUMN count is what the closure check holds it to. `MlaQProj` expects `[num_heads*q_head_dim, hidden]`; `MlaQBProj` expects `[num_heads*q_head_dim, q_lora_rank]`. Both come from the same accessors the executor reads, never re-derived at the check site.",
+      "as_a_closure_witness_not_an_assertion": "a synthetic estate declaring `q_lora_rank` and shipping a `q_b_proj` whose columns are `hidden` instead of the rank is REFUSED, naming the operand and both widths; and the mirror, an estate declaring no rank and shipping a `q_proj` whose columns are 1536. Neither may be caught by a downstream arity error at matmul time — the refusal must name the operand."
+    },
+    "D4_the_epsilon_is_an_independent_execution_fact": {
+      "frozen": "**The q-A RMSNorm epsilon is not inherited from the block norm.** `q_a_layernorm = KimiRMSNorm(self.q_lora_rank)` passes no eps, so it is the class default `1e-6`, while the layer's own two norms read `config.rms_norm_eps` (`1e-5` on K3).",
+      "its_own_accessor": "`ModelArchitecture::mla_q_a_norm_eps() -> Option<f64>`, distinct from `mla_kv_a_norm_eps`. `None` = unjudged for this family, and closure REFUSES rather than borrowing either the layer eps or the KV one.",
+      "explicitly_NOT_done": "no shared `mla_low_rank_norm_eps`, no default that reads the kv accessor, no constant shared between the two sites. They are both `1e-6` today because they are both `KimiRMSNorm`'s class default, which is a shared CAUSE and not a shared AUTHORITY; a family that overrode one and not the other would be silently wrong under a shared accessor. `feedback_coincidental_invariant`.",
+      "the_falsifier_that_proves_it_is_carried": "a witness in which the checkpoint declares q-LoRA and an architecture supplies `mla_q_a_norm_eps` != 1e-6, asserting the EXECUTOR uses the resolved override — and, in the same test, that `mla_kv_a_norm_eps` is unchanged at 1e-6, so the two are shown to be independently routed. If this cannot be made to pass, the epsilon is not carried, it is baked, and the rung has recreated F6 on the query side."
+    },
+    "D5_the_norm_semantics_transcribed_not_inferred": {
+      "affine": "YES. `q_a_layernorm.weight` is a real `[rank]` operand with role `MlaQANorm`; a parameter-free treatment is wrong.",
+      "axis": "over the RANK axis, between A and B. Not over hidden, not over head width.",
+      "precision_and_order": "the reference computes in f32 and applies the gain AFTER the cast back — `self.weight * x.to(dtype)`, not `(self.weight * x).to(dtype)`. Whether that ordering is observable at these widths is for the ORACLE to measure and record at whatever size it reads; the freeze asserts only that the transcription follows the reference's order, and forbids recording a small reading as zero."
+    },
+    "D6_roles_and_closure": {
+      "new_roles": "`MlaQAProj`, `MlaQANorm`, `MlaQBProj` in `MLA_ROLE_TABLE`, operator-gated as its siblings are.",
+      "MlaQProj_becomes_conditional": "`opplan/build.rs` requires `MlaQProj` unconditionally today (L1784). It becomes required iff the form is `Direct`, and the triple required iff `LowRank` — required roles following the DECLARATION, the shape K3-REP-GATE-1 established for the two gates.",
+      "both_sides": "declared LowRank + a `q_proj` shipped -> refused by name; declared Direct + any of the triple shipped -> refused by name; declared LowRank + any ONE member absent -> `MissingOperand` naming that role; the triple shipped with no declaration -> refused (`feedback_identity_is_declared_not_inferred_from_operands`)."
+    },
+    "D7_carriage": {
+      "decision": "`q_lora_rank`'s carriage rule moves `parsed` -> `lowered`, site `ExecutionSurface.mla.query (MlaQueryForm::LowRank.rank) → MlaOp.query`, with a probe that reads the FORM back off the built component.",
+      "why_this_is_the_only_plan_plane_claim": "the leaf already grades `representable` and does not block (measured: finding #92). Its category will not change. What changes is that the fact stops being merely parsed and starts reaching the op — which is exactly what `Carriage` exists to distinguish, and the honest thing to promise (`feedback_gate_claim_congruence`, `feedback_parsing_proves_recognition_not_carriage`)."
+    },
+    "D8_oracle": {
+      "boundaries_frozen": ["input (the already-normed block input)", "q_a", "q_a_normed", "q_b", "q_pass", "q_rot", "q_states (the query entering attention)"],
+      "the_rename": "`MlaTrace`'s existing `q_proj` boundary is RENAMED to `q_states`, the reference's own variable name (L419/421), present in BOTH forms; `q_a`/`q_a_normed`/`q_b` are `Option`, `None` under `Direct`. The existing fixture arms are regenerated: their VALUES must be byte-identical and exactly one KEY changes name. Both halves of that are asserted — a rename that also moved a value would be a silent regression wearing a refactor's clothes.",
+      "the_third_arm": "`scripts/kimi_mla_reference.py` and `kimi_mla_oracle_export.py` gain the query form as a parameter and export a third fixture arm (`q_lora`), beside Kimi-Linear's ungated direct arm and K3-REP-GATE-1's gated arm. The existing two keep their parameters and their values.",
+      "the_band_gate": "the fixture's attention weights must be asserted OUT of saturation before any parity is scored. A saturated softmax makes every downstream control read the same number (`feedback_saturated_softmax_blinds_an_oracle`); the query path is upstream of it, so a blind attention band would hide every query defect below."
+    },
+    "D9_mutants_frozen": [
+      "`q_a_norm_omitted` — the triple with the norm skipped",
+      "`layer_eps_for_q_a` — 1e-5 (the block norm's) instead of 1e-6. The likeliest silent defect; measured and recorded at whatever size it reads, never dropped for being small",
+      "`norm_before_q_a` — the norm applied to the block input before `q_a_proj`. Expressible only where hidden == rank; the fixture keeps them DISTINCT, so this is recorded as structurally unreachable rather than claimed as covered",
+      "`q_b_fed_pre_norm` — the norm computed and TRACED but `q_b` consuming the un-normed value. Output-identical to `q_a_norm_omitted` and trace-DIFFERENT: it is the control for the trace itself, proving the recorded boundary is the value consumed and not a separately-computed display (`feedback_execution_witness_needs_an_intermediate_tap`)",
+      "`q_proj_substituted` — one direct projection of the same output width standing in for the factorisation; the arm that shows the factorisation is not a reparameterisation of the same map",
+      "`q_b_columns_from_hidden` — `q_b` interpreted at width `hidden` instead of `q_lora_rank`; the column-count trap as a numeric arm where shapes permit",
+      "`wrong_rank` — the triple built at a rank other than the declared one",
+      "`split_rope_first` and `split_flat` — the two wrong query decompositions",
+      "`gain_in_f32` — the norm's weight applied before the cast back instead of after (D5)"
+    ],
+    "D10_structural_controls_frozen": [
+      "triple present, declaration absent -> refused",
+      "declaration present, `q_a_proj` absent -> `MissingOperand { MlaQAProj }`; likewise `MlaQANorm`, `MlaQBProj` (three arms)",
+      "declaration present, `q_proj` also shipped -> refused by name",
+      "declaration absent, triple shipped -> refused by name",
+      "`q_lora_rank: 0` treated as ordinary MLA -> the build must NOT do this; the form is selected and the geometry refused by name",
+      "`q_b_proj` columns != rank, or rows != num_heads*q_head_dim -> refused naming the operand and both widths",
+      "`mla_q_a_norm_eps` returning None under a declared LowRank form -> refused, never borrowing the layer or KV epsilon"
+    ],
+    "D11_backend_honesty": {
+      "executes": "`opplan/exec/mla.rs` — the interpreter, which already owns `kv_a_layernorm` at a family-specific epsilon; the query side is the same operation one operand over.",
+      "refuses_by_name": [
+        "`larql-compute-metal::trait_impl::mla` — `MlaDeviceWeights` has one `q_proj` slot, and binding `q_b_proj` into it is the silent substitution to design against",
+        "`trait_impl/kimi_layer` — same weights type",
+        "any prepared/lowered glue listing MLA operands, including `planned_operands()`"
+      ],
+      "where_the_refusal_must_fire": "at WEIGHT-BUILD time, before any command encoder exists. K3-ACT-1's D-6: a refusal raised inside an open Metal encoder makes the process abort on `Command encoder released without endEncoding` instead of reporting which layer was at fault.",
+      "workspace_scope": "`MlaSurface`/`MlaOp` are workspace-visible and `MlaDeviceWeights` is a compute-metal type, so this needs workspace gates (`feedback_workspace_wide_change_needs_workspace_gates`)."
+    },
+    "D12_the_ACT_1_lesson_as_a_standing_rule": {
+      "frozen": "The declaration chooses the operator FORM; architecture overrides still choose the resolved semantics WITHIN that form.",
+      "what_it_forbids_here": "deriving `mla_q_a_norm_eps` from `config.rms_norm_eps`, from `q_lora_rank`'s presence, or from the KV accessor; and shaping `MlaQBProj` from config fields when an architecture may override the head geometry — the shape check and the executor must read the same accessor or they will disagree and refuse naming the wrong thing.",
+      "why_it_is_frozen_rather_than_assumed": "K3-ACT-1 repaired a silent-default bug at one level and recreated it one level above in the same rung, and it was caught by an unrelated cross-tier parity test rather than by design (`feedback_declaration_decides_refusal_answer_comes_from_the_override`)."
+    },
+    "D13_semantics_version": "PLANNER_SEMANTICS_VERSION 20 -> 21, with the identity pin's verdict pair: a Kimi-shaped estate declaring `q_lora_rank` and shipping the triple is admissible; the same estate declaring it and shipping `q_proj` is refused by name; Kimi-Linear's own direct form, declaring no rank, is admissible at both versions.",
+    "D14_scope_fences": "latent MoE (`routed_expert_*`, `latent_moe_use_norm`), the MXFP4/quantization_config leaves, `topk_method`, the multimodal container leaves, vision, the KDA `A_log [128]` parameterisation — all untouched. K3's op plan still will not close after this rung: the routed FFN's latent wrapper and the expert bank's compressed-tensors dialect both remain."
+  },
+
+  "forecast": {
+    "measured_how": "two arms, both re-planned FRESH: baseline = a detached worktree at `777dcb51` building its own `target/release/vindex`; candidate = this worktree. `scripts/arch_sweep.py --out <arm> run` over the 117-row matrix, scored through that script's own `classify`. Rows compared by the SET OF JSON PATHS at which they differ, not by bytes, because `plan.planner.semantics_version` is stamped into every row and is pre-registered to change (P11) — the comparison K3-ACT-1's execution notes established.",
+
+    "P1_k3_blockers": "**26 -> 26. UNCHANGED, and this is the predicted result, not a disappointment.** Not one of the remaining blockers is a q-LoRA leaf (reconnaissance q7, traced against the measured ACT-1 arm). A movement here would mean something OTHER than q-LoRA moved and must be investigated before the rung is claimed.",
+    "P2_k3_verdict": "RED before and after; `unsupported_component` 0 -> 0; no AMBER excursion.",
+    "P3_the_operand_plane": "`MLA_LAYER_UNADDRESSED` 3 -> 0. The KDA list stays empty. This is the rung's primary claim.",
+    "P4_the_estate": "`k3_estate_reports_every_unaddressed_spelling`: rows 5421 unchanged; unclassified 5382 -> 5379 (three operands on the one MLA layer); distinct unaddressed spellings 12 -> 9. The test is the notification that scope changed and MUST be migrated, not silenced.",
+    "P5_the_op_plan_closes": "on the real two-layer header fixture, K3's MLA layer yields NO `UnclassifiedOperand` and NO `MissingOperand`. Observed for the first time by this rung — the reconnaissance could only derive it from the tables.",
+    "P6_carriage": "`text_config.q_lora_rank` (finding #92): category `representable` before and after (it never blocked), `resolved` null -> 1536, carriage `parsed` -> `lowered`.",
+    "P7_no_finding_added_or_removed_on_K3": "the row's finding set is identical; #92 changes fields. Any addition falsifies this freeze whatever the count does.",
+    "P8_the_ancestor": "moonshotai/Kimi-Linear-48B-A3B-Instruct — differs from its baseline arm at exactly one path, `plan.planner.semantics_version`. It declares NO `q_lora_rank` (the reference asserts `q_lora_rank is None` for that family), so it exercises the `Direct` arm and the checked default, and is the one family member with a container and a running executor.",
+    "P9_every_other_row": "116 of 117 rows differ at exactly one path, the semantics stamp. Exactly one row — Kimi-K3 — carries any other difference. Rows unreachable from the network in either arm are excluded and named, never counted as agreement.",
+    "P10_execution_and_controls": "the interpreter reproduces the oracle's `q_lora` arm at every boundary within the fixture's stated tolerance; the existing two arms reproduce byte-identically apart from the one renamed key; every mutant in D9 reads its exported delta, and every structural control in D10 refuses with a message naming the operand, the role or the rank.",
+    "P11_semantics_version": "20 -> 21; the identity pin fails until bumped and gains the D13 verdict pair.",
+    "P12_the_epsilon_falsifier": "the D4 witness passes: a declared LowRank form with an architecture-supplied `mla_q_a_norm_eps` != 1e-6 is executed at the override, with `mla_kv_a_norm_eps` shown unchanged in the same test.",
+    "P13_backends_refuse": "every Metal/device path listed in D11 refuses the LowRank form by name, at weight-build time, witnessed by a test that reaches the refusal and asserts the message names the form.",
+    "P14_nothing_else_in_the_block_moves": "the KV path, NoPE, the shared rope-K, the attention, the output gate and `o_proj` are bit-identical between the two query forms on a fixture where the two forms are constructed to produce the same `q_states`. This is the arm that proves the rung touched only the query."
+  },
+
+  "primary_falsifier": "**If any member of the q-LoRA triple remains unaddressed on K3, or the real MLA op plan does not close, the rung FAILS — even if every conformance count reads exactly 26 as predicted.** The count is frozen as invariant precisely so it cannot be mistaken for the result; the operand plane and the op plan are the result. `feedback_unsatisfiable_gate_invites_reinterpretation` cuts both ways, and a gate that cannot fail is the same defect as one that cannot pass.",
+
+  "secondary_falsifiers": [
+    "K3's blocker count moving in either direction — it would mean something other than q-LoRA moved",
+    "any finding added to or removed from the K3 row",
+    "any control row differing at a path other than the semantics stamp",
+    "a mutant reading 0.0 without the fixture proving it could have read otherwise",
+    "the D4 epsilon witness being unwritable, or written in a form that cannot fail",
+    "the two existing oracle arms changing any VALUE under the boundary rename",
+    "a device path binding `q_b_proj` where `q_proj` is expected, at any tolerance"
+  ],
+
+  "sequence_after_this_transition": "K3-MLA-Q-LORA-1 closes, and with it the last architecture cell in K3's attention stack. Remaining, in the user's order: K3-LATENTMOE-1 (`routed_expert_hidden_size` <-> the `routed_expert_*` bank, `latent_moe_use_norm`), then the MXFP4/quantization declaration, then `topk_method` and the container leaves — after which the real K3 op plan can be asked to close. Follow-ups owed against this rung: Metal carriage of the factorised query, and K3-ACT-1's own two open items (the `hidden_act` carriage-site wording, and the `encode.rs` coverage baseline, which must NOT be cosmetically recovered).",
+
+  "commit_order": "recon -> freeze -> oracle (reference + export + third arm) -> code + tests -> execution notes. The oracle is committed BEFORE any Rust arithmetic, as the three preceding rungs did."
+}

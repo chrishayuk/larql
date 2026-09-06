@@ -153,7 +153,7 @@ impl<'a> WalkFfn<'a> {
         let (mut out, base_activation) = self.forward_unpatched_whole_layer(layer, x)?;
         let mut activation = observe.recording().then_some(base_activation);
 
-        let use_gelu = self.weights.arch.activation().uses_gelu_tanh_gate_up();
+        let use_gelu = self.weights.arch.gate_up_is_gelu_tanh();
         let phi = |g: f32| {
             if use_gelu {
                 crate::ffn::gelu_tanh(g)

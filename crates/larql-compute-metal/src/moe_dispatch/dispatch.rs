@@ -264,6 +264,19 @@ impl MetalBackend {
                     enc.set_bytes(7, 4, &limit as *const f32 as *const c_void);
                     enc.set_bytes(8, 4, &alpha as *const f32 as *const c_void);
                 }
+                larql_compute::MoeGateRule::SituGlu { beta, linear_beta } => {
+                    crate::kernels::ffn::bind_situ_glu(
+                        enc,
+                        &self.ffn.situ_glu_pipeline,
+                        (&scratch.g_out, g_offset),
+                        (&scratch.u_out, u_offset),
+                        (&scratch.act_buf, a_offset),
+                        inter_u32,
+                        beta,
+                        linear_beta,
+                        stage_biases,
+                    );
+                }
                 larql_compute::MoeGateRule::Gated(activation) => {
                     let pipeline = if activation.gate_up_is_gelu_tanh() {
                         &self.ffn.geglu_gelu_tanh_pipeline

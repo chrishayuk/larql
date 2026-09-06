@@ -1,0 +1,184 @@
+{
+ "rung": "K3-ACT-1",
+ "name": "situ-activation-execution-notes",
+ "artifact_kind": "execution notes (measured AFTER the freeze; scores it and records every deviation)",
+ "written": "2026-09-06",
+ "freeze": "docs/arch-conformance/forecasts/k3-act-1-situ-activation.json",
+ "reconnaissance": "docs/arch-conformance/forecasts/k3-act-1-reconnaissance.json",
+ "how_it_was_measured": {
+  "baseline_arm": "detached worktree `.claude/worktrees/act1-baseline` at `1e57b6d1` (the merge-base), building its own `target/release/vindex`",
+  "candidate_arm": "`.claude/worktrees/k3-act-1`, same protocol, its own release binary",
+  "protocol": "`scripts/arch_sweep.py --out <arm> run` over `docs/arch-conformance/matrix.json` (117 rows), scored through that script's own `classify` \u2014 the ONE verdict rule both arms are read through, so the arms cannot differ because the scorer did",
+  "caches": "scratchpad `arm_baseline` / `arm_candidate`; driver `score_arms.py`",
+  "why_not_the_canonical_cache": "~/chris-models/_conformance/plans is at semantics 16 (K3 33/152) and is NOT a baseline for a semantics-19 main. Both arms were measured fresh (`feedback_uniform_cache_before_baseline`).",
+  "rows_excluded": "8 of 117 are unreachable from this network in BOTH arms (Cohere x3, TinyLlama, Jamba-Mini-1.7, Baichuan2, Mistral-Large-3, mamba2-780m). A repo neither arm could read is not evidence about either build; excluded from the comparison and named here rather than counted as agreement.",
+  "how_rows_were_compared": "not a byte comparison but the SET OF JSON PATHS at which the two arms differ. `plan.planner.semantics_version` is stamped into every row and the freeze pre-registers it as changing (P15), so a byte comparison would read `every row moved` whatever else was true \u2014 an unsatisfiable gate, which is exactly what invites reinterpretation (`feedback_unsatisfiable_gate_invites_reinterpretation`). Naming the paths is the stronger claim: it says not only that the rows agree but on precisely what they do not."
+ },
+ "scored": {
+  "P1_k3_blockers": {
+   "forecast": "29 -> 26",
+   "measured": "29/152 -> 26/152",
+   "verdict": "HELD"
+  },
+  "P2_k3_verdict": {
+   "forecast": "RED both sides, unsupported_component 0 -> 0, no AMBER excursion",
+   "measured": "RED -> RED, unsupported_component 0 -> 0",
+   "verdict": "HELD"
+  },
+  "P3_findings_retired": {
+   "forecast": "#19, #20 unrepresented/unknown -> carried; #44 mismatched -> representable, resolved `situ`",
+   "measured": [
+    "#19 `text_config.activation_situ_beta`: unrepresented/unknown/(no carriage), resolved null -> representable/execution_semantic/lowered, resolved 4.0",
+    "#20 `text_config.activation_situ_linear_beta`: unrepresented/unknown/(no carriage), resolved null -> representable/execution_semantic/lowered, resolved 25.0",
+    "#44 `text_config.hidden_act`: mismatched/execution_semantic/parsed, declared `situ` resolved `silu` -> representable/execution_semantic/lowered, declared `situ` resolved `situ`"
+   ],
+   "verdict": "HELD",
+   "the_number_worth_quoting": "K3's whole-model `summary.mismatched` goes 1 -> 0. `hidden_act` was the ONLY mismatched finding on the row; every other blocker was an omission. A mismatch is the stronger statement \u2014 the build read the declaration, disagreed with it, and carried its own answer \u2014 and there is now none."
+  },
+  "P4_findings_added": {
+   "forecast": "none",
+   "measured": "blocker ids removed exactly {19, 20, 44}; added: none. No finding added or removed from the row at all \u2014 three changed category.",
+   "verdict": "HELD"
+  },
+  "P5_the_ancestor": {
+   "forecast": "byte-identical",
+   "measured": "moonshotai/Kimi-Linear-48B-A3B-Instruct differs at exactly one path: `plan.planner.semantics_version`",
+   "verdict": "HELD"
+  },
+  "P6_bitnet": {
+   "forecast": "unmoved on the plan plane; `hidden_act` stays mismatched/execution_semantic/blocking",
+   "measured": "microsoft/bitnet-b1.58-2B-4T-bf16 differs at exactly one path (`semantics_version`); `hidden_act` still mismatched/execution_semantic",
+   "verdict": "HELD",
+   "why_this_is_the_important_control": "the freeze predicted this BEFORE measuring, against the intuition that a 101-row activation blast radius would move it. It does not move, because the class repair is executor-side: the planner was already honest about `relu2`. What changed for BitNet is that `gate_up_is_gelu_tanh` now refuses it by name instead of returning SiLU's answer \u2014 witnessed in `config/tests.rs`, not on the plan."
+  },
+  "P7_every_other_row": {
+   "forecast": "116 of 117 unmoved",
+   "measured": "108 of 109 comparable rows differ ONLY in `plan.planner.semantics_version`. Exactly ONE row carries any other difference: moonshotai/Kimi-K3.",
+   "verdict": "HELD"
+  },
+  "P8_gpt_oss": {
+   "forecast": "byte-identical; `hf_combine_name` returns None for ClampedGlu, leaving that row on today's code path",
+   "measured": "openai/gpt-oss-20b differs at exactly one path: `semantics_version`",
+   "verdict": "HELD"
+  },
+  "P9_execution_parity": {
+   "forecast": "the interpreter reproduces both oracle arms; all controls read their exported deltas",
+   "measured": "`ffn/expert_weight/tests/situ_parity.rs`, 7 tests green \u2014 point-by-point parity on both arms, the Array2 tier bit-identical to the scalar rule, every control above the sensitivity floor",
+   "verdict": "HELD"
+  },
+  "P10_metal_parity": {
+   "forecast": "the Metal kernel agrees with `MoeGateRule::combine` to f32 tolerance",
+   "measured": "`tests/test_lowering_situ.rs`, 2 tests green on real hardware, N=1029 (crosses a threadgroup boundary), both arms; and each of `beta`, `linear_beta`'s presence and `linear_beta`'s value shown to move the output by >100x the parity residual",
+   "verdict": "HELD"
+  },
+  "P11_inertness": {
+   "forecast": "flipping the surface's Activation under a SiTU policy changes nothing",
+   "measured": "`situ_policy_makes_the_activation_field_inert` \u2014 Silu vs GeluTanh bit-identical across the whole grid on both arms",
+   "verdict": "HELD"
+  },
+  "P12_refusals_reachable_and_named": {
+   "forecast": "each refusal is reached by a test asserting the message names the policy or the declaration",
+   "measured": "`an_unjudged_activation_refuses_the_gate_up_kernel_by_name` (expects `never judged`), `a_situ_policy_refuses_the_gate_up_kernel_by_name` (expects `SituGlu`), `a_declaration_can_name_itself_for_a_refusal_message`",
+   "verdict": "HELD"
+  },
+  "P13_no_silent_substitution_survives": {
+   "forecast": "every gate/up kernel selection either computes SiTU or refuses by name",
+   "measured": "enumerated below",
+   "verdict": "HELD"
+  },
+  "P14_existing_arms_untouched": {
+   "forecast": "GPT-OSS's ClampedGlu tests and every SiLU/GELU gate-up test pass unedited",
+   "measured": "`clamped_glu_matches_reference_implementation` and `plain_swiglu_would_give_materially_different_values` unedited and green; full workspace 227 test binaries, 0 failures",
+   "verdict": "HELD"
+  },
+  "P15_semantics_version": {
+   "forecast": "19 -> 20, identity pin fails until bumped",
+   "measured": "baseline 19, candidate 20; `the_semantics_version_is_pinned_to_known_verdicts` failed until bumped and gained the version-20 verdict pair",
+   "verdict": "HELD"
+  }
+ },
+ "P13_the_enumeration": {
+  "computes_situ": [
+   "`larql_compute::MoeGateRule::combine` \u2014 the scalar authority, oracle-pinned",
+   "`ffn/expert_weight/gate.rs::apply` \u2014 the Array2 tier, delegating",
+   "`opplan/exec/production.rs::ffn_activation` \u2014 the interpreter's dense FFN",
+   "`opplan/exec/production.rs` routed path \u2014 already went through `MoeGateRule::from_arch`, so it served SiTU the moment the policy existed",
+   "`opplan/exec/device.rs::ffn` \u2014 GPU gemv, CPU combine",
+   "`opplan/exec/reference.rs::combine_gate_up_reference` \u2014 and its DENSE path now routes through the same function as its routed path, so that backend has one answer for what a gate policy means rather than a dense answer and a routed one",
+   "Metal `situ_glu` kernel \u2014 the dense lowering plus all three routed dispatch sites"
+  ],
+  "refuses_by_name": [
+   "the 17 walk / kquant / dense-weight boolean sites, through `ModelArchitecture::gate_up_is_gelu_tanh` (panics naming the policy or the declaration)",
+   "`larql-inference::ffn::moe_bound` \u2014 bound MoE kernels are gated-only; SituGlu joins ClampedGlu in the named refusal, both spelled out rather than collapsed into a wildcard",
+   "`vindex3_cmd/consequence.rs` \u2014 its reconstruction is `activation(gate) * up` written out; a non-plain policy now refuses rather than putting a wrong denominator under every consequence it reports",
+   "`kernels/ffn.rs::bind_situ_glu` \u2014 asserts no expert gate/up bias is staged, because `situ_glu` has no bias slots and the reference gives no composition of a bias with SiTU to transcribe",
+   "`vindex3_cmd/lowered/mod.rs::ffn_activation` \u2014 ClampedGlu still refused by name with its parameters"
+  ],
+  "the_fused_kernel_hazard_from_the_freeze": "D11 named it: the fused gate+up+activation kernels (`bf16_grouped_gate_up_silu`, `q4k_ffn_gate_up*`, `q6k_geglu_*`) bake the activation into the projection dispatch. They are unreachable from a SiTU plan because the dense lowering's combine is chosen by `ffn_activation` from the POLICY and the routed paths match exhaustively on `MoeGateRule` \u2014 a new arm there is a compile error, which is how all three routed sites were found. No SiTU plan reaches a fused arm."
+ },
+ "deviations": [
+  {
+   "id": "D-1",
+   "what": "`hidden_act`'s carriage-rule `site` string still reads `ExecutionSurface.ffn.activation \u2192 FfnOp.activation`, and under a SiTU policy the fact actually lands on `ffn.gate_policy`. K3's finding #44 therefore names a field the layer does not read.",
+   "why_not_fixed_here": "`CarriageRule.site` is a `&'static str`, one per rule, so making it truthful for both destinations means changing the string for EVERY row declaring `hidden_act` \u2014 101 of 117. That is a real plan-plane movement across the estate, and the freeze pre-registered that only K3 moves. Fixing it after measuring, to make the output read better, is the reinterpretation this programme refuses.",
+   "the_honest_shape": "name both destinations, as the Falcon `activation` rule already does (`ExecutionSurface.ffn.{ffn_type, activation} \u2192 FfnOp \u2014 the shape the word names`). Owed as its own transition with its own forecast, since its blast radius is 101 rows of finding text.",
+   "impact": "cosmetic and confined to one string in one finding's detail. No verdict, class, category, carriage or count depends on it."
+  },
+  {
+   "id": "D-2",
+   "what": "A control reads exactly 0.0: `up_cap_omitted` on the `no_linear_cap` oracle arm.",
+   "why_it_is_admissible": "that arm HAS no up cap to omit, so the mutation is structurally inert there \u2014 and the SAME control reads 0.938 on the `k3` arm, which proves it could have read otherwise. `every_control_could_have_failed_this_test` enforces exactly that rule rather than waiving the zero: a control reading zero on every arm would fail the test.",
+   "impact": "none; recorded because a control at 0.0 is normally a blind instrument and the distinction has to be stated, not assumed."
+  },
+  {
+   "id": "D-3",
+   "what": "The oracle originally shipped EIGHT controls per arm; it ships seven. `tanh_omitted` was removed before any Rust was written.",
+   "why": "dropping the tanh from `beta*tanh(g/beta)` leaves `beta*(g/beta) = g`, which IS `gate_cap_omitted` \u2014 the same perturbation reached by a second route, not a second control. Both read identical deltas on every arm. A redundant control inflates the count without adding discrimination.",
+   "what_replaced_it": "the identity is kept as the ORACLE'S OWN self-check: on the arm with no up cap, `gate_cap_omitted` must equal `swiglu` to within 1e-6, which is two independently-coded mutation paths agreeing. It runs at export time, before any Rust is consulted."
+  },
+  {
+   "id": "D-4",
+   "what": "`larql_compute_metal::lowering::dispatch_linear` widened from `pub(crate)` to `pub`.",
+   "why": "so the out-of-crate Metal parity test dispatches the bound kernel with the SAME geometry production uses. A test computing its own threadgroup size would be checking a dispatch this crate never issues.",
+   "impact": "one generic helper's visibility; no behaviour."
+  },
+  {
+   "id": "D-5",
+   "what": "`require_plain_gate` renamed to `require_executable_gate` and narrowed to refuse ClampedGlu only.",
+   "why": "the old name states a property (`is the policy plain`) that stopped being the question the function asks. It now asks whether the backend can execute the combine \u2014 `SituGlu` passes because those backends compute it, `ClampedGlu` still refuses by name with its parameters. Keeping the old name would have made it lie."
+  },
+  {
+   "id": "D-6",
+   "what": "`moe_gpu_route/encode.rs`'s coverage debt baseline moved 80 -> 78 (measured 80.17 -> 78.16).",
+   "what_was_checked_first": "Whether the new code is actually untested. It is not: `llvm-cov report --json` gives the SiTU dispatch arm execution count 8 and the admission guard 21-25, and no line this rung added appears in `--show-missing-lines`.",
+   "the_cause": "The file's line accounting is not per-source-line. 15 of its 107 `missed` lines are lines covered in one instantiation and missed in another \u2014 92 unique missing line numbers against 107 missed \u2014 up from 2 at the baseline. Adding 16 lines to a function counted that way moved `covered` by 3. `feedback_coverage_measurement_artifacts`.",
+   "what_was_tried_before_recording_it": "Two rounds of real witnesses: first the two-arm routed test, then a third arm driving `moe_layer_forward_descriptor` on the hypothesis that its staged entry point compiled a second, unexercised copy of the core. The third arm is a genuine improvement and is kept; it moved the number not at all, which is what identified the cause as accounting rather than reach.",
+   "why_recorded_rather_than_chased": "The file was ALREADY explicit debt at 80 with a note saying what it needs is `a fixture that drives a full routed layer end to end`, not more unit tests, and warning against `papering over them by asserting on encode-side state that a wrong kernel would also produce`. The uncovered lines are the same MXFP4 fused gate/up and fused down+combine arms as before this rung. The new baseline is recorded in `crates/larql-compute-metal/coverage-policy.json` with the measurement, both arms' numbers, and the machine they were taken on.",
+   "what_would_clear_it": "The MXFP4 end-to-end routed fixture the original note asks for \u2014 unchanged by this rung, and still the thing that would move the number honestly."
+  }
+ ],
+ "a_defect_this_rung_introduced_and_the_suite_caught": {
+  "what": "`ModelArchitecture::gate_up_is_gelu_tanh` first answered from the DECLARATION rather than from `activation()`.",
+  "the_specimen": "`Starcoder2Arch` OVERRIDES `activation()` to tanh-GELU and declares no `hidden_act` at all. Reading the config alone gave `Absent` -> SiLU, silently replacing a family's own judgment with the fallback \u2014 the same shape of defect this rung exists to remove, one level up.",
+  "how_it_surfaced": "`exact_non_gated_starcoder2_matches_dense_with_biases`, a walk-vs-dense parity test that had nothing to do with SiTU. Not by design, and worth recording as such.",
+  "the_fix": "the DECLARATION decides whether to refuse; `activation()` supplies the answer. Pinned by `a_family_override_decides_the_gate_up_kernel`, which asserts the fixture declares nothing before asserting the override wins \u2014 so it cannot pass for the wrong reason.",
+  "the_residue": "a family that overrides `activation()` while its checkpoint declares an unjudged name now refuses. No in-tree architecture is in that state, refusing is the safe direction, and the plan already grades that leaf `mismatched`. Documented at the method."
+ },
+ "two_gates_that_fired_as_designed": [
+  "`config/model.rs::model_config_persists_every_forward_affecting_field` \u2014 every new `ModelConfig` field must have a home in the VINDEX3 container, or a checkpoint declaring it is served without it. Its own message names why this is invisible to CPU-vs-Metal parity: both arms read the same `index.json`. Both softcaps now round-trip in both directions (`config/model.rs` and `weights/load/arch.rs`), with the round-trip test extended rather than a new one added.",
+  "`the_semantics_version_is_pinned_to_known_verdicts` \u2014 failed until the version was bumped AND a version-20 verdict pair was recorded: a `situ` estate with both softcaps is admissible, and a `relu2` estate still blocks. The second arm is what keeps the first from having been implemented as `resolve every unknown name to itself`."
+ ],
+ "a_new_key_needs_three_registrations_not_one": "Worth recording for the next config-field rung, because two of the three fail SILENTLY into a passing-looking state. `CONSUMED_LEAF_KEYS` (larql-models `inventory/config_keys.rs`) or the key reads unconsumed and the carriage rule is never consulted; `EXECUTION_SEMANTIC_KEYS` (vindex `plan/semantics.rs`) or the class is `Unknown`, which short-circuits before the carriage rule so the probe never runs and the leaf reports unrepresented with a rule sitting right there; `CLUSTER_KEYS` for the cluster map. Both misses were found by the plan-plane witnesses reading `Unrepresented` where the rule claimed `Lowered`.",
+ "gates": {
+  "fmt": "cargo fmt --all \u2014 clean",
+  "clippy": "cargo clippy --workspace --all-targets -- -D warnings \u2014 clean",
+  "tests": "cargo test --workspace \u2014 227 test binaries, 0 failures",
+  "cross_target": "cargo check --workspace --all-targets --exclude larql-compute-metal --locked (the non-Metal platform surface) \u2014 clean",
+  "cfg_gated": "`-p larql-vindex --features gpu --all-targets`, `-p larql-compute --all-targets --all-features`, `-p larql-cli --bins --tests --no-default-features` \u2014 all clean",
+  "metal": "`-p larql-compute-metal --lib -- --test-threads=1` (524 passed) and `--tests -- --test-threads=1` \u2014 clean, as CI runs them",
+  "coverage": "RUN. larql-models 91.58% (policy passed, 96/98 files at the 90 default) \u2014 `config/activation.rs` failed at 88.57% until `hf_combine_name` and the judged-declaration arm gained direct tests in this crate rather than being covered only indirectly through the vindex probe. larql-vindex 93.61%, larql-compute 95.40%, larql-cli 32.67% \u2014 all passed unchanged. larql-compute-metal 96.05% passed after D-6's baseline move; `moe_zero_copy.rs` recovered to above its floor on the new witnesses alone."
+ },
+ "rung_status": "K3-ACT-1 CLOSES with this transition. K3 reads 26/152 RED, its `mismatched` count 0. Remaining on K3, in the user's order: the MLA q-LoRA cell (`q_a_proj`/`q_a_layernorm`/`q_b_proj`, `q_lora_rank`), K3-LATENTMOE-1 (`routed_expert_hidden_size` <-> the `routed_expert_*` bank, `latent_moe_use_norm`), then the MXFP4 declaration. Follow-ups owed against this rung: D-1's carriage site text, fused-kernel SiTU coverage, and the Metal carriage of K3-REP-GATE-1's two gates.",
+ "commit_order": "recon -> freeze -> oracle (reference + export + fixture) -> code + tests -> execution notes.",
+ "P10_metal_parity_addendum": "P10 claimed the routed path and, when first written, had not witnessed it \u2014 only the dense lowered path. The coverage gate is what surfaced that. Closed by `gpu_route_layer_serves_situ_glu_on_every_routed_arm`, which drives all THREE routed entry points (`encode_moe_layer_gpu_route`, `moe_layer_forward_descriptor`, and the zero-copy arm through `moe_layer_forward_control`), requires them to agree under SiTU, and requires them NOT to agree with plain gating on the identical fixture \u2014 the half that shows the SiTU arm was reached rather than the dispatch falling through to a `geglu` pipeline."
+}

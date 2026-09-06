@@ -744,6 +744,24 @@ pub const CARRIAGE_RULES: &[CarriageRule] = &[
         site: "ExecutionSurface.ffn.gate_policy (ExpertGatePolicy::ClampedGlu.limit) → FfnOp.gate_policy",
         probe: Some(probe_swiglu_limit),
     },
+    // Kimi-K3's SiTU-GLU softcaps. Parameters of the combine that
+    // `hidden_act: "situ"` names — carried as a gate POLICY, for the same
+    // reason `swiglu_limit` is: the bound changes the model, not the
+    // nonlinearity. Lowered rather than represented, because unlike
+    // ClampedGlu both the interpreter and the Metal lowering execute this
+    // one, and a fact's claimed carriage must be the carriage witnessed.
+    CarriageRule {
+        leaf: "activation_situ_beta",
+        reaches: Carriage::Lowered,
+        site: "ExecutionSurface.ffn.gate_policy (ExpertGatePolicy::SituGlu.beta) → FfnOp.gate_policy",
+        probe: Some(probe_situ_beta),
+    },
+    CarriageRule {
+        leaf: "activation_situ_linear_beta",
+        reaches: Carriage::Lowered,
+        site: "ExecutionSurface.ffn.gate_policy (ExpertGatePolicy::SituGlu.linear_beta) → FfnOp.gate_policy",
+        probe: Some(probe_situ_linear_beta),
+    },
     // ── Attention/output scaling ────────────────────────────────────
     CarriageRule {
         leaf: "qk_scale_factor",
@@ -2050,10 +2068,25 @@ fn probe_activation(component: &Component, ctx: &ProbeContext<'_>) -> Option<Val
         (None, Some(mixer)) => mixer.activation,
         (None, None) => return None,
     };
+    // `hidden_act` can name the whole COMBINE rather than the gate's
+    // nonlinearity (`situ`), and then the surface's `Activation` is inert
+    // and cannot answer for it. Asking the FFN's gate policy first is what
+    // lets a correctly-carried SiTU FFN report as carried instead of
+    // reading `mismatched` forever against a field it never used.
     if let Some(declared) = ctx.declared.as_str() {
+        let combine = surface
+            .ffn
+            .as_ref()
+            .and_then(|ffn| larql_models::config::hf_combine_name(ffn.gate_policy, activation));
+        if combine.as_deref() == Some(declared) {
+            return Some(json!(declared));
+        }
         if larql_models::config::Activation::from_hf_name(declared) == Some(activation) {
             return Some(json!(declared));
         }
+        // The FFN computes a combine no HF word names (`ClampedGlu`), or
+        // there is no FFN. Fall through to the schema's own spelling, so
+        // a genuine disagreement still reads as one.
     }
     serde_json::to_value(activation).ok()
 }
@@ -2094,7 +2127,44 @@ fn probe_is_llama_config(_component: &Component, ctx: &ProbeContext<'_>) -> Opti
 fn probe_swiglu_limit(component: &Component, _ctx: &ProbeContext<'_>) -> Option<Value> {
     match component.execution.as_ref()?.ffn.as_ref()?.gate_policy {
         larql_models::ExpertGatePolicy::ClampedGlu { limit, .. } => Some(json!(limit)),
-        larql_models::ExpertGatePolicy::Gated => None,
+        // A checkpoint declaring `swiglu_limit` whose FFN resolved to
+        // some OTHER policy has no limit to answer with, and is reported
+        // unrepresented — which is the truth for both of these.
+        larql_models::ExpertGatePolicy::Gated | larql_models::ExpertGatePolicy::SituGlu { .. } => {
+            None
+        }
+    }
+}
+
+/// SiTU-GLU's gate softcap, when the FFN's policy is SiTU.
+///
+/// Reads the value off the BUILT surface rather than off the config, so
+/// the finding says whether the declaration reached the op plan, not
+/// whether it was declared. A component whose FFN resolved to any other
+/// policy has no beta to answer with and the leaf reports unrepresented.
+fn probe_situ_beta(component: &Component, _ctx: &ProbeContext<'_>) -> Option<Value> {
+    match component.execution.as_ref()?.ffn.as_ref()?.gate_policy {
+        larql_models::ExpertGatePolicy::SituGlu { beta, .. } => Some(json!(beta)),
+        larql_models::ExpertGatePolicy::Gated
+        | larql_models::ExpertGatePolicy::ClampedGlu { .. } => None,
+    }
+}
+
+/// SiTU-GLU's up-branch softcap, when the FFN's policy is SiTU and the
+/// checkpoint declared one.
+///
+/// `None` covers two different states on purpose — the policy is not SiTU,
+/// or it is SiTU with no up cap — because in both the checkpoint's
+/// declared `activation_situ_linear_beta` found no home, which is exactly
+/// what an unrepresented finding says. A SiTU policy that DID carry the
+/// value answers with it.
+fn probe_situ_linear_beta(component: &Component, _ctx: &ProbeContext<'_>) -> Option<Value> {
+    match component.execution.as_ref()?.ffn.as_ref()?.gate_policy {
+        larql_models::ExpertGatePolicy::SituGlu { linear_beta, .. } => {
+            linear_beta.map(|v| json!(v))
+        }
+        larql_models::ExpertGatePolicy::Gated
+        | larql_models::ExpertGatePolicy::ClampedGlu { .. } => None,
     }
 }
 

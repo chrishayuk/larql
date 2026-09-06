@@ -24,6 +24,12 @@ pub(crate) mod gate;
 /// Expert selection — public because the VINDEX3 production backend runs
 /// the served selection rule rather than a second transcription of it.
 pub mod router;
+/// SiTU-GLU parity against the committed oracle. Its own file beside the
+/// fixture it reads, since `mod tests` below is this module's inline unit
+/// tests and the two are different things.
+#[cfg(test)]
+#[path = "tests/situ_parity.rs"]
+mod situ_parity;
 // Public for the `tests/test_moe_route_trace_*.rs` end-to-end exercises:
 // the env-resolved sink is process-global (`OnceLock`), so each scenario
 // needs its own test binary, and those binaries can only reach a `pub` path.

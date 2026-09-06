@@ -171,13 +171,31 @@ pub fn operands(operator: LayerOperator, layer: &LayerPlan) -> MixerOperands {
         // byte-identical suffixes to the softmax pair at a different
         // width — named by role here, which is the distinction.
         (LayerOperator::Mla, LayerAttention::Mla(m)) => MixerOperands::Named({
-            let mut named = vec![
-                ("query projection", m.q_proj.clone()),
+            // The query FIRST, in whichever form the layer declared: one
+            // dense projection, or Kimi-K3's factorisation. Named by the
+            // operand's own role — `q_b_proj` and `q_proj` have the same
+            // row count, and only the name and the column width separate
+            // them.
+            let mut named: Vec<_> = m
+                .query
+                .operands()
+                .into_iter()
+                .map(|(operand, reference)| {
+                    let role = match operand {
+                        "q_a_proj" => "query down-projection",
+                        "q_a_layernorm" => "query latent norm",
+                        "q_b_proj" => "query up-projection",
+                        _ => "query projection",
+                    };
+                    (role, reference.clone())
+                })
+                .collect();
+            named.extend([
                 ("compressed kv projection", m.kv_a_proj.clone()),
                 ("kv latent norm", m.kv_a_norm.clone()),
                 ("kv decompression", m.kv_b_proj.clone()),
                 ("output projection", m.out_proj.clone()),
-            ];
+            ]);
             // Kimi-K3's declared MLA output gate, when the container
             // carries one; an ungated layer lists nothing here.
             if let Some(g) = &m.output_gate {

@@ -29,6 +29,9 @@ pub fn apply(
             }
         }
         ExpertGatePolicy::ClampedGlu { limit, alpha } => clamped_glu(gate, up, limit, alpha),
+        ExpertGatePolicy::SituGlu { beta, linear_beta } => {
+            elementwise(gate, up, crate::MoeGateRule::SituGlu { beta, linear_beta })
+        }
     }
 }
 
@@ -51,7 +54,16 @@ pub fn apply(
 /// quantised slice paths use directly — this wrapper only shapes it over
 /// `Array2`, so the PyTorch-pinned tests below cover both tiers.
 fn clamped_glu(gate: &Array2<f32>, up: &Array2<f32>, limit: f32, alpha: f32) -> Array2<f32> {
-    let rule = crate::MoeGateRule::ClampedGlu { limit, alpha };
+    elementwise(gate, up, crate::MoeGateRule::ClampedGlu { limit, alpha })
+}
+
+/// Shape one scalar combine rule over `[tokens, intermediate]`.
+///
+/// Every non-plain policy routes through here rather than reimplementing
+/// its formula on `Array2`: the arithmetic authority is
+/// [`crate::MoeGateRule::combine`] and this only iterates, so the tests
+/// that pin the scalar rule against its reference cover this tier too.
+fn elementwise(gate: &Array2<f32>, up: &Array2<f32>, rule: crate::MoeGateRule) -> Array2<f32> {
     let mut out = Array2::<f32>::zeros(gate.raw_dim());
     for ((o, &g), &u) in out.iter_mut().zip(gate.iter()).zip(up.iter()) {
         *o = rule.combine(g, u);

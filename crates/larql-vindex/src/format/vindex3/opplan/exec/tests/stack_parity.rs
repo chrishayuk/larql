@@ -25,7 +25,7 @@ use serde_json::Value;
 use crate::format::vindex3::opplan::exec::cpu::projector::WeightRows;
 use crate::format::vindex3::opplan::exec::kda::{zero_state, KdaOutputGateWeights, KdaWeights};
 use crate::format::vindex3::opplan::exec::kimi_moe_block::ExpertWeights;
-use crate::format::vindex3::opplan::exec::mla::{MlaState, MlaWeights};
+use crate::format::vindex3::opplan::exec::mla::{MlaQueryWeights, MlaState, MlaWeights};
 use crate::format::vindex3::opplan::exec::stack::{
     stack_forward, AttentionKind, LayerAttention, LayerFfn, LayerSpec, LayerState, LoadedExpert,
 };
@@ -302,7 +302,9 @@ impl Fixture {
             LayerAttention::Mla(
                 MlaWeights {
                     output_gate: None,
-                    q_proj: WeightRows::F32(&l.mla["q_proj"]),
+                    query: MlaQueryWeights::Direct {
+                        q_proj: WeightRows::F32(&l.mla["q_proj"]),
+                    },
                     kv_a_proj: WeightRows::F32(&l.mla["kv_a_proj"]),
                     kv_a_norm: &l.mla["kv_a_norm"],
                     kv_b_proj: WeightRows::F32(&l.mla["kv_b_proj"]),

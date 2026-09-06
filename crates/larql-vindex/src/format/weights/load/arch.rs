@@ -96,6 +96,16 @@ pub(super) fn build_arch_json(
     if let Some(ref v) = model_cfg.hidden_act {
         obj.insert("hidden_act".into(), v.clone().into());
     }
+    // The softcaps of the combine `hidden_act` may name. Reinserted beside
+    // it, because the name alone rebuilds a SiTU FFN at the reference's
+    // `beta or 1.0` fallback — a different function that closes every
+    // shape.
+    if let Some(v) = model_cfg.activation_situ_beta {
+        obj.insert("activation_situ_beta".into(), v.into());
+    }
+    if let Some(v) = model_cfg.activation_situ_linear_beta {
+        obj.insert("activation_situ_linear_beta".into(), v.into());
+    }
     if let Some(v) = model_cfg.max_position_embeddings {
         obj.insert("max_position_embeddings".into(), v.into());
     }

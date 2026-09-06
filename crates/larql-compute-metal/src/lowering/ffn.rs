@@ -76,11 +76,25 @@ pub struct FfnShape {
     pub activation: FfnActivation,
 }
 
-/// The gate nonlinearity the lowering has a kernel for.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+/// The gate/up COMBINE the lowering has a kernel for.
+///
+/// Named for the nonlinearity because for two of its three arms that is
+/// all it is. The third is a whole combine — Kimi-K3's SiTU-GLU carries
+/// its own parameters and does not read a nonlinearity beside it — which
+/// is the same fold `larql_compute::MoeGateRule` performs, and for the
+/// same reason: a layer must carry ONE combine rule rather than a policy
+/// and an activation that can disagree.
+#[derive(Debug, Clone, Copy, PartialEq)]
 pub enum FfnActivation {
     Silu,
     GeluTanh,
+    /// `beta*tanh(g/beta)*sigmoid(g) * linear_beta*tanh(u/linear_beta)`,
+    /// the `situ_glu` kernel. `linear_beta: None` leaves the up branch
+    /// untouched — a different function, not an infinite bound.
+    SituGlu {
+        beta: f32,
+        linear_beta: Option<f32>,
+    },
 }
 
 impl MetalBackend {
@@ -275,12 +289,35 @@ impl MetalBackend {
                 );
             }
         }
-        // 3. the gated nonlinearity, by the plan's activation.
-        let geglu = match shape.activation {
-            FfnActivation::Silu => &self.ffn.geglu_pipeline,
-            FfnActivation::GeluTanh => &self.ffn.geglu_gelu_tanh_pipeline,
-        };
-        encode_elementwise(enc, geglu, &[s.gate, s.up, s.act], shape.intermediate);
+        // 3. the gated combine, by the plan's own rule.
+        match shape.activation {
+            FfnActivation::SituGlu { beta, linear_beta } => {
+                crate::kernels::ffn::bind_situ_glu(
+                    enc,
+                    &self.ffn.situ_glu_pipeline,
+                    (s.gate, 0),
+                    (s.up, 0),
+                    (s.act, 0),
+                    shape.intermediate as u32,
+                    beta,
+                    linear_beta,
+                    // The dense FFN's biases, when it has any, are already
+                    // in `s.gate`/`s.up` — this lowering adds them through
+                    // the `bias_add` kernel after each projection, not in
+                    // the combine — so there is nothing staged for the
+                    // combine to drop.
+                    false,
+                );
+                super::dispatch_linear(enc, &self.ffn.situ_glu_pipeline, shape.intermediate);
+            }
+            FfnActivation::Silu | FfnActivation::GeluTanh => {
+                let geglu = match shape.activation {
+                    FfnActivation::GeluTanh => &self.ffn.geglu_gelu_tanh_pipeline,
+                    _ => &self.ffn.geglu_pipeline,
+                };
+                encode_elementwise(enc, geglu, &[s.gate, s.up, s.act], shape.intermediate);
+            }
+        }
     }
 }
 

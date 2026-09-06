@@ -47,7 +47,7 @@ pub fn kquant_ffn_forward_layer(
         let w_up = dequantize_matrix(ffn[1].0, ffn[1].1, intermediate, hidden);
         dot_proj(x, &w_up)
     };
-    let activation = if arch.activation().uses_gelu_tanh_gate_up() {
+    let activation = if arch.gate_up_is_gelu_tanh() {
         gelu_tanh_gate_up(&gate, &up)
     } else {
         silu_gate_up(&gate, &up)
@@ -123,7 +123,7 @@ pub fn kquant_ffn_forward_layer_q8k(
     let gate = Array2::from_shape_vec((1, intermediate), gate_flat).expect("gate shape");
     let up = Array2::from_shape_vec((1, intermediate), up_flat).expect("up shape");
 
-    let activation = if arch.activation().uses_gelu_tanh_gate_up() {
+    let activation = if arch.gate_up_is_gelu_tanh() {
         gelu_tanh_gate_up(&gate, &up)
     } else {
         silu_gate_up(&gate, &up)

@@ -33,7 +33,9 @@ use larql_models::config::MlaGeometry;
 use serde_json::Value;
 
 use crate::format::vindex3::opplan::exec::cpu::projector::WeightRows;
-use crate::format::vindex3::opplan::exec::mla::{mla_forward, MlaState, MlaWeights, Mutation};
+use crate::format::vindex3::opplan::exec::mla::{
+    mla_forward, MlaQueryWeights, MlaState, MlaWeights, Mutation,
+};
 
 const FIXTURE_ENV: &str = "LARQL_KIMI_MLA_LAYER_FIXTURE";
 /// The same ceiling every real-weight Kimi gate uses.
@@ -97,7 +99,9 @@ impl Fixture {
     fn host(&self) -> MlaWeights<'_> {
         MlaWeights {
             output_gate: None,
-            q_proj: WeightRows::F32(&self.q_proj),
+            query: MlaQueryWeights::Direct {
+                q_proj: WeightRows::F32(&self.q_proj),
+            },
             kv_a_proj: WeightRows::F32(&self.kv_a_proj),
             kv_a_norm: &self.kv_a_norm,
             kv_b_proj: WeightRows::F32(&self.kv_b_proj),
@@ -228,7 +232,10 @@ fn device_mla_matches_the_cpu_operator_across_positions() {
             .expect("device mla step");
 
         for (name, a, b) in [
-            ("q_proj", &got.q_proj, &want.q_proj),
+            // The device plane is still named `q_proj`: the Metal path
+            // has only the direct query form and refuses the factorised
+            // one by name, so its plane names the operand it binds.
+            ("q_states", &got.q_proj, &want.q_states),
             ("compressed_kv", &got.compressed_kv, &want.compressed_kv),
             ("kv_a_normed", &got.kv_a_normed, &want.kv_a_normed),
             ("kv_b", &got.kv_b, &want.kv_b),

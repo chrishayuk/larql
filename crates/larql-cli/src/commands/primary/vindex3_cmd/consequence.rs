@@ -550,11 +550,27 @@ fn ffn_activation(
 ) -> Result<larql_models::config::activation::Activation, Box<dyn std::error::Error>> {
     use larql_vindex::format::vindex3::opplan::LayerFfn;
     for layer in &plan.layers {
-        match &layer.ffn {
-            Some(LayerFfn::Dense(f)) => return Ok(f.activation),
-            Some(LayerFfn::Routed(r)) => return Ok(r.activation),
+        let (activation, gate_policy) = match &layer.ffn {
+            Some(LayerFfn::Dense(f)) => (f.activation, f.gate_policy),
+            Some(LayerFfn::Routed(r)) => (r.activation, r.gate_policy),
             Some(LayerFfn::Hybrid(_)) | None => continue,
+        };
+        // This command's reconstruction is `activate(gate) * up`, written
+        // out at `down_input`. A gate policy that is not plain gating
+        // computes something else entirely, and reconstructing it as
+        // plain gating would put a wrong denominator under every
+        // consequence this command reports — quietly, and with every
+        // shape still closing. Refuse by name instead.
+        if !matches!(gate_policy, larql_models::ExpertGatePolicy::Gated) {
+            return Err(format!(
+                "layer {} carries {gate_policy:?}; this command reconstructs the FFN as \
+                 `activation(gate) * up` and has no form for that combine, so it refuses \
+                 rather than reporting consequences computed from the wrong one",
+                layer.layer,
+            )
+            .into());
         }
+        return Ok(activation);
     }
     Err("plan carries no FFN op to read an activation from".into())
 }

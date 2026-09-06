@@ -164,6 +164,26 @@ impl ModelArchitecture for KimiLinearArch {
         Some(1e-6)
     }
 
+    /// `q_a_layernorm`'s epsilon on the families that factorise the query
+    /// (Kimi-K3, `q_lora_rank: 1536`). The SAME number as the KV latent
+    /// norm's, and answered separately on purpose.
+    ///
+    /// `q_a_layernorm = KimiRMSNorm(self.q_lora_rank)`
+    /// (`modeling_kimi_linear.py` L368) passes no `eps`, exactly as
+    /// `kv_a_layernorm = KimiRMSNorm(self.kv_lora_rank)` (L383) does not.
+    /// Both therefore run at `KimiRMSNorm.__init__`'s class default while
+    /// every other norm in the same layer reads `config.rms_norm_eps`.
+    ///
+    /// They agree because they share that one CAUSE, not because one is
+    /// derived from the other. Answering this by calling
+    /// [`Self::mla_kv_a_norm_eps`], or by a shared constant, would make
+    /// today's coincidence into tomorrow's contract — and the first
+    /// family to override one and not the other would be served the wrong
+    /// epsilon on a norm whose every shape still closed.
+    fn mla_q_a_norm_eps(&self) -> Option<f64> {
+        Some(1e-6)
+    }
+
     fn mla_kv_a_key(&self, layer: usize) -> Option<String> {
         Some(format!(
             "{}self_attn.kv_a_proj_with_mqa.weight",
