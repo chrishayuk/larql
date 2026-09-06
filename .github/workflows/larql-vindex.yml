@@ -161,7 +161,18 @@ jobs:
       - name: Tests
         run: cargo test -p larql-vindex
 
+      # Linux only. These are generic criterion targets with no
+      # platform-specific code path, so compiling them a second and third
+      # time buys no correctness evidence — and on Windows it cost 8m43 of
+      # a 31m13 leg on a recent run, on the critical path of every PR that
+      # touches this crate.
+      #
+      # What the other two platforms keep: `cargo check --all-targets`
+      # above type-checks the bench targets on all three. What they give
+      # up is link-and-run evidence for benches specifically, which for
+      # portable criterion harnesses is not a platform-sensitive claim.
       - name: Benchmark compile/tests
+        if: runner.os == 'Linux'
         run: cargo test -p larql-vindex --benches
 
   coverage:
