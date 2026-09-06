@@ -1,0 +1,291 @@
+{
+  "n_prompts": 194,
+  "entities": [
+    "Brazil",
+    "China",
+    "Cuba",
+    "Egypt",
+    "France",
+    "Germany",
+    "Greece",
+    "Italy",
+    "Japan",
+    "Norway",
+    "Peru",
+    "Russia",
+    "Spain",
+    "Sweden"
+  ],
+  "relations": [
+    "capital",
+    "language"
+  ],
+  "n_bindings": 20,
+  "layers": [
+    8,
+    12,
+    16,
+    20,
+    24,
+    28,
+    30
+  ],
+  "folds": [
+    [
+      [
+        0,
+        1,
+        2,
+        3,
+        4,
+        5,
+        6,
+        7
+      ],
+      [
+        8,
+        9,
+        10,
+        11
+      ]
+    ],
+    [
+      [
+        4,
+        5,
+        6,
+        7,
+        8,
+        9,
+        10,
+        11
+      ],
+      [
+        0,
+        1,
+        2,
+        3
+      ]
+    ],
+    [
+      [
+        0,
+        1,
+        2,
+        3,
+        8,
+        9,
+        10,
+        11
+      ],
+      [
+        4,
+        5,
+        6,
+        7
+      ]
+    ]
+  ],
+  "pca_dim": 128,
+  "ridge": 1.0,
+  "gate_thresholds": {
+    "relation": 0.85,
+    "entity": 0.4,
+    "binding": 0.3
+  },
+  "kept_per_relation": {
+    "capital": [
+      "China",
+      "Cuba",
+      "Egypt",
+      "France",
+      "Germany",
+      "Greece",
+      "Italy",
+      "Japan",
+      "Norway",
+      "Peru",
+      "Russia",
+      "Spain"
+    ],
+    "language": [
+      "Brazil",
+      "France",
+      "Germany",
+      "Greece",
+      "Italy",
+      "Russia",
+      "Spain",
+      "Sweden"
+    ]
+  },
+  "same_layer_readability": {
+    "relation": {
+      "L8": 0.8954822954822955,
+      "L12": 0.9365079365079364,
+      "L16": 1.0,
+      "L20": 1.0,
+      "L24": 1.0,
+      "L28": 1.0,
+      "L30": 1.0
+    },
+    "entity": {
+      "L8": 0.16512376512376511,
+      "L12": 0.13883153883153884,
+      "L16": 0.19084989084989087,
+      "L20": 0.16447996447996446,
+      "L24": 0.2991378991378991,
+      "L28": 1.0,
+      "L30": 1.0
+    },
+    "binding": {
+      "L8": 0.1752950752950753,
+      "L12": 0.18026788026788024,
+      "L16": 0.2318052318052318,
+      "L20": 0.18587708587708587,
+      "L24": 0.4544788544788545,
+      "L28": 1.0,
+      "L30": 1.0
+    }
+  },
+  "gate": {
+    "relation": {
+      "best": 1.0,
+      "best_layer": "L16",
+      "required": 0.85,
+      "chance": 0.5,
+      "pass": true
+    },
+    "entity": {
+      "best": 1.0,
+      "best_layer": "L28",
+      "required": 0.4,
+      "chance": 0.071,
+      "pass": true
+    },
+    "binding": {
+      "best": 1.0,
+      "best_layer": "L28",
+      "required": 0.3,
+      "chance": 0.05,
+      "pass": true
+    }
+  },
+  "cross_layer_transfer": {
+    "relation": {
+      "L8->L12": {
+        "identity": 0.3870758870758871,
+        "procrustes": 0.8954822954822955,
+        "norm_only": 0.3870758870758871,
+        "same_layer_reference": 0.9365079365079364
+      },
+      "L12->L16": {
+        "identity": 0.8954822954822955,
+        "procrustes": 0.9313797313797313,
+        "norm_only": 0.8954822954822955,
+        "same_layer_reference": 1.0
+      },
+      "L16->L20": {
+        "identity": 0.8800976800976801,
+        "procrustes": 0.9948717948717949,
+        "norm_only": 0.8800976800976801,
+        "same_layer_reference": 1.0
+      },
+      "L20->L24": {
+        "identity": 0.4587930587930588,
+        "procrustes": 1.0,
+        "norm_only": 0.4587930587930588,
+        "same_layer_reference": 1.0
+      },
+      "L24->L28": {
+        "identity": 0.9741961741961743,
+        "procrustes": 1.0,
+        "norm_only": 0.9741961741961743,
+        "same_layer_reference": 1.0
+      },
+      "L28->L30": {
+        "identity": 1.0,
+        "procrustes": 1.0,
+        "norm_only": 1.0,
+        "same_layer_reference": 1.0
+      }
+    },
+    "entity": {
+      "L8->L12": {
+        "identity": 0.0771931771931772,
+        "procrustes": 0.14893254893254895,
+        "norm_only": 0.0771931771931772,
+        "same_layer_reference": 0.13883153883153884
+      },
+      "L12->L16": {
+        "identity": 0.1599030599030599,
+        "procrustes": 0.13393643393643392,
+        "norm_only": 0.1599030599030599,
+        "same_layer_reference": 0.19084989084989087
+      },
+      "L16->L20": {
+        "identity": 0.14900284900284902,
+        "procrustes": 0.18019018019018018,
+        "norm_only": 0.14900284900284902,
+        "same_layer_reference": 0.16447996447996446
+      },
+      "L20->L24": {
+        "identity": 0.08232138232138232,
+        "procrustes": 0.20624190624190622,
+        "norm_only": 0.08232138232138232,
+        "same_layer_reference": 0.2991378991378991
+      },
+      "L24->L28": {
+        "identity": 0.48389758389758386,
+        "procrustes": 0.47981647981647974,
+        "norm_only": 0.48389758389758386,
+        "same_layer_reference": 1.0
+      },
+      "L28->L30": {
+        "identity": 1.0,
+        "procrustes": 1.0,
+        "norm_only": 1.0,
+        "same_layer_reference": 1.0
+      }
+    },
+    "binding": {
+      "L8->L12": {
+        "identity": 0.06164576164576165,
+        "procrustes": 0.18507788507788506,
+        "norm_only": 0.06164576164576165,
+        "same_layer_reference": 0.18026788026788024
+      },
+      "L12->L16": {
+        "identity": 0.1550930550930551,
+        "procrustes": 0.19541199541199542,
+        "norm_only": 0.1550930550930551,
+        "same_layer_reference": 0.2318052318052318
+      },
+      "L16->L20": {
+        "identity": 0.17016687016687015,
+        "procrustes": 0.22171162171162173,
+        "norm_only": 0.17016687016687015,
+        "same_layer_reference": 0.18587708587708587
+      },
+      "L20->L24": {
+        "identity": 0.0775113775113775,
+        "procrustes": 0.2885558885558886,
+        "norm_only": 0.0775113775113775,
+        "same_layer_reference": 0.4544788544788545
+      },
+      "L24->L28": {
+        "identity": 0.577034077034077,
+        "procrustes": 0.6446072446072447,
+        "norm_only": 0.577034077034077,
+        "same_layer_reference": 1.0
+      },
+      "L28->L30": {
+        "identity": 1.0,
+        "procrustes": 1.0,
+        "norm_only": 1.0,
+        "same_layer_reference": 1.0
+      }
+    }
+  },
+  "result_sha256": "516bd1139a73622080890958b5488261cad3e9e889642364ed65b2b450fdcebf"
+}

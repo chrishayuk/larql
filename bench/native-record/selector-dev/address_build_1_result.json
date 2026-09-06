@@ -1,0 +1,207 @@
+{
+  "layers": [
+    8,
+    12,
+    16,
+    20,
+    24,
+    28,
+    30
+  ],
+  "seed": 20260906,
+  "splice_floor_max_logit_delta": 0.0,
+  "n_prompts_kept": 48,
+  "n_transplants": 1169,
+  "summary": {
+    "L8": {
+      "T1_same_binding": {
+        "n": 48,
+        "median_kl": 1.517539202531711,
+        "retention": 0.5625,
+        "donor_answer_rate": null
+      },
+      "T2_diff_entity": {
+        "n": 48,
+        "median_kl": 1.5118826892791755,
+        "retention": 0.5416666666666666,
+        "donor_answer_rate": 0.0
+      },
+      "T3_diff_relation": {
+        "n": 23,
+        "median_kl": 6.108949048031154,
+        "retention": 0.21739130434782608,
+        "donor_answer_rate": 0.30434782608695654
+      },
+      "T4_unrelated": {
+        "n": 48,
+        "median_kl": 6.680090519420235,
+        "retention": 0.16666666666666666,
+        "donor_answer_rate": 0.020833333333333332
+      },
+      "G_l": 2.292876666123454
+    },
+    "L12": {
+      "T1_same_binding": {
+        "n": 48,
+        "median_kl": 1.0962450770817673,
+        "retention": 0.5833333333333334,
+        "donor_answer_rate": null
+      },
+      "T2_diff_entity": {
+        "n": 48,
+        "median_kl": 1.1212601126814794,
+        "retention": 0.6041666666666666,
+        "donor_answer_rate": 0.0
+      },
+      "T3_diff_relation": {
+        "n": 23,
+        "median_kl": 6.483641317937797,
+        "retention": 0.21739130434782608,
+        "donor_answer_rate": 0.391304347826087
+      },
+      "T4_unrelated": {
+        "n": 48,
+        "median_kl": 7.161515648886406,
+        "retention": 0.14583333333333334,
+        "donor_answer_rate": 0.041666666666666664
+      },
+      "G_l": 2.706205638227871
+    },
+    "L16": {
+      "T1_same_binding": {
+        "n": 48,
+        "median_kl": 0.726972207981786,
+        "retention": 0.9583333333333334,
+        "donor_answer_rate": null
+      },
+      "T2_diff_entity": {
+        "n": 48,
+        "median_kl": 0.7545597785609571,
+        "retention": 0.9583333333333334,
+        "donor_answer_rate": 0.0
+      },
+      "T3_diff_relation": {
+        "n": 23,
+        "median_kl": 7.326913245134098,
+        "retention": 0.21739130434782608,
+        "donor_answer_rate": 0.6086956521739131
+      },
+      "T4_unrelated": {
+        "n": 48,
+        "median_kl": 8.066178812491081,
+        "retention": 0.14583333333333334,
+        "donor_answer_rate": 0.041666666666666664
+      },
+      "G_l": 3.313764303865742
+    },
+    "L20": {
+      "T1_same_binding": {
+        "n": 48,
+        "median_kl": 0.6467324135961827,
+        "retention": 1.0,
+        "donor_answer_rate": null
+      },
+      "T2_diff_entity": {
+        "n": 48,
+        "median_kl": 0.6923949954707607,
+        "retention": 0.9583333333333334,
+        "donor_answer_rate": 0.0
+      },
+      "T3_diff_relation": {
+        "n": 23,
+        "median_kl": 8.401662630242994,
+        "retention": 0.0,
+        "donor_answer_rate": 0.8260869565217391
+      },
+      "T4_unrelated": {
+        "n": 48,
+        "median_kl": 8.40349893525699,
+        "retention": 0.0,
+        "donor_answer_rate": 0.041666666666666664
+      },
+      "G_l": 3.9002963992606943
+    },
+    "L24": {
+      "T1_same_binding": {
+        "n": 48,
+        "median_kl": 0.6434772144507787,
+        "retention": 0.9583333333333334,
+        "donor_answer_rate": null
+      },
+      "T2_diff_entity": {
+        "n": 48,
+        "median_kl": 1.170628725663224,
+        "retention": 0.6875,
+        "donor_answer_rate": 0.125
+      },
+      "T3_diff_relation": {
+        "n": 23,
+        "median_kl": 10.088382532665122,
+        "retention": 0.0,
+        "donor_answer_rate": 1.0
+      },
+      "T4_unrelated": {
+        "n": 48,
+        "median_kl": 10.067364530084387,
+        "retention": 0.0,
+        "donor_answer_rate": 0.0625
+      },
+      "G_l": 4.986028414713394
+    },
+    "L28": {
+      "T1_same_binding": {
+        "n": 48,
+        "median_kl": 0.6751263336045144,
+        "retention": 0.9791666666666666,
+        "donor_answer_rate": null
+      },
+      "T2_diff_entity": {
+        "n": 48,
+        "median_kl": 9.412043941960329,
+        "retention": 0.0,
+        "donor_answer_rate": 1.0
+      },
+      "T3_diff_relation": {
+        "n": 23,
+        "median_kl": 10.466547290433756,
+        "retention": 0.0,
+        "donor_answer_rate": 0.9565217391304348
+      },
+      "T4_unrelated": {
+        "n": 48,
+        "median_kl": 16.715077209279826,
+        "retention": 0.0,
+        "donor_answer_rate": 1.0
+      },
+      "G_l": 9.26416928259253
+    },
+    "L30": {
+      "T1_same_binding": {
+        "n": 48,
+        "median_kl": 0.6933575809532624,
+        "retention": 0.9583333333333334,
+        "donor_answer_rate": null
+      },
+      "T2_diff_entity": {
+        "n": 48,
+        "median_kl": 10.00769742286041,
+        "retention": 0.0,
+        "donor_answer_rate": 1.0
+      },
+      "T3_diff_relation": {
+        "n": 23,
+        "median_kl": 10.693158007420266,
+        "retention": 0.0,
+        "donor_answer_rate": 0.9565217391304348
+      },
+      "T4_unrelated": {
+        "n": 48,
+        "median_kl": 17.05639385289134,
+        "retention": 0.0,
+        "donor_answer_rate": 1.0
+      },
+      "G_l": 9.657070134187075
+    }
+  },
+  "rows_sha256": "9e039cc98dda26749773df55b468ced2bc522d592b8eb72a73dae9e29924a7ba"
+}

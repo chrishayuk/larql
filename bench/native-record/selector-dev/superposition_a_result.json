@@ -1,0 +1,635 @@
+{
+  "material": "discrimination-v1 development (fit) -> evaluation (score); disjoint entities AND forms",
+  "ranks": [
+    4,
+    8,
+    16,
+    32
+  ],
+  "seed": 20260906,
+  "gate": {
+    "gain_points": 10.0,
+    "relation_tolerance": 5.0,
+    "ranks_required": 2
+  },
+  "results": [
+    {
+      "layer": 22,
+      "arm": "A0_raw",
+      "rank": 0,
+      "n": 72,
+      "relation": 64,
+      "entity": 33,
+      "binding": 30
+    },
+    {
+      "layer": 22,
+      "arm": "A1_form_removed",
+      "rank": 4,
+      "n": 72,
+      "relation": 70,
+      "entity": 35,
+      "binding": 34
+    },
+    {
+      "layer": 22,
+      "arm": "A2_random_removed",
+      "rank": 4,
+      "n": 72,
+      "relation": 64,
+      "entity": 33,
+      "binding": 30
+    },
+    {
+      "layer": 22,
+      "arm": "A3_entity_removed",
+      "rank": 4,
+      "n": 72,
+      "relation": 68,
+      "entity": 36,
+      "binding": 35
+    },
+    {
+      "layer": 22,
+      "arm": "A1_form_removed",
+      "rank": 8,
+      "n": 72,
+      "relation": 70,
+      "entity": 40,
+      "binding": 39
+    },
+    {
+      "layer": 22,
+      "arm": "A2_random_removed",
+      "rank": 8,
+      "n": 72,
+      "relation": 64,
+      "entity": 34,
+      "binding": 31
+    },
+    {
+      "layer": 22,
+      "arm": "A3_entity_removed",
+      "rank": 8,
+      "n": 72,
+      "relation": 72,
+      "entity": 34,
+      "binding": 34
+    },
+    {
+      "layer": 22,
+      "arm": "A1_form_removed",
+      "rank": 16,
+      "n": 72,
+      "relation": 69,
+      "entity": 37,
+      "binding": 36
+    },
+    {
+      "layer": 22,
+      "arm": "A2_random_removed",
+      "rank": 16,
+      "n": 72,
+      "relation": 64,
+      "entity": 33,
+      "binding": 30
+    },
+    {
+      "layer": 22,
+      "arm": "A3_entity_removed",
+      "rank": 16,
+      "n": 72,
+      "relation": 69,
+      "entity": 39,
+      "binding": 38
+    },
+    {
+      "layer": 22,
+      "arm": "A1_form_removed",
+      "rank": 32,
+      "n": 72,
+      "relation": 69,
+      "entity": 34,
+      "binding": 32
+    },
+    {
+      "layer": 22,
+      "arm": "A2_random_removed",
+      "rank": 32,
+      "n": 72,
+      "relation": 64,
+      "entity": 33,
+      "binding": 30
+    },
+    {
+      "layer": 22,
+      "arm": "A3_entity_removed",
+      "rank": 32,
+      "n": 72,
+      "relation": 69,
+      "entity": 36,
+      "binding": 34
+    },
+    {
+      "layer": 24,
+      "arm": "A0_raw",
+      "rank": 0,
+      "n": 72,
+      "relation": 67,
+      "entity": 40,
+      "binding": 38
+    },
+    {
+      "layer": 24,
+      "arm": "A1_form_removed",
+      "rank": 4,
+      "n": 72,
+      "relation": 67,
+      "entity": 37,
+      "binding": 36
+    },
+    {
+      "layer": 24,
+      "arm": "A2_random_removed",
+      "rank": 4,
+      "n": 72,
+      "relation": 68,
+      "entity": 40,
+      "binding": 38
+    },
+    {
+      "layer": 24,
+      "arm": "A3_entity_removed",
+      "rank": 4,
+      "n": 72,
+      "relation": 69,
+      "entity": 37,
+      "binding": 36
+    },
+    {
+      "layer": 24,
+      "arm": "A1_form_removed",
+      "rank": 8,
+      "n": 72,
+      "relation": 71,
+      "entity": 42,
+      "binding": 42
+    },
+    {
+      "layer": 24,
+      "arm": "A2_random_removed",
+      "rank": 8,
+      "n": 72,
+      "relation": 68,
+      "entity": 40,
+      "binding": 38
+    },
+    {
+      "layer": 24,
+      "arm": "A3_entity_removed",
+      "rank": 8,
+      "n": 72,
+      "relation": 71,
+      "entity": 35,
+      "binding": 34
+    },
+    {
+      "layer": 24,
+      "arm": "A1_form_removed",
+      "rank": 16,
+      "n": 72,
+      "relation": 69,
+      "entity": 48,
+      "binding": 47
+    },
+    {
+      "layer": 24,
+      "arm": "A2_random_removed",
+      "rank": 16,
+      "n": 72,
+      "relation": 67,
+      "entity": 40,
+      "binding": 38
+    },
+    {
+      "layer": 24,
+      "arm": "A3_entity_removed",
+      "rank": 16,
+      "n": 72,
+      "relation": 69,
+      "entity": 42,
+      "binding": 41
+    },
+    {
+      "layer": 24,
+      "arm": "A1_form_removed",
+      "rank": 32,
+      "n": 72,
+      "relation": 69,
+      "entity": 41,
+      "binding": 41
+    },
+    {
+      "layer": 24,
+      "arm": "A2_random_removed",
+      "rank": 32,
+      "n": 72,
+      "relation": 67,
+      "entity": 40,
+      "binding": 38
+    },
+    {
+      "layer": 24,
+      "arm": "A3_entity_removed",
+      "rank": 32,
+      "n": 72,
+      "relation": 69,
+      "entity": 40,
+      "binding": 39
+    },
+    {
+      "layer": 26,
+      "arm": "A0_raw",
+      "rank": 0,
+      "n": 72,
+      "relation": 66,
+      "entity": 38,
+      "binding": 36
+    },
+    {
+      "layer": 26,
+      "arm": "A1_form_removed",
+      "rank": 4,
+      "n": 72,
+      "relation": 69,
+      "entity": 40,
+      "binding": 40
+    },
+    {
+      "layer": 26,
+      "arm": "A2_random_removed",
+      "rank": 4,
+      "n": 72,
+      "relation": 66,
+      "entity": 38,
+      "binding": 36
+    },
+    {
+      "layer": 26,
+      "arm": "A3_entity_removed",
+      "rank": 4,
+      "n": 72,
+      "relation": 68,
+      "entity": 37,
+      "binding": 36
+    },
+    {
+      "layer": 26,
+      "arm": "A1_form_removed",
+      "rank": 8,
+      "n": 72,
+      "relation": 69,
+      "entity": 41,
+      "binding": 40
+    },
+    {
+      "layer": 26,
+      "arm": "A2_random_removed",
+      "rank": 8,
+      "n": 72,
+      "relation": 66,
+      "entity": 39,
+      "binding": 36
+    },
+    {
+      "layer": 26,
+      "arm": "A3_entity_removed",
+      "rank": 8,
+      "n": 72,
+      "relation": 69,
+      "entity": 39,
+      "binding": 38
+    },
+    {
+      "layer": 26,
+      "arm": "A1_form_removed",
+      "rank": 16,
+      "n": 72,
+      "relation": 69,
+      "entity": 42,
+      "binding": 42
+    },
+    {
+      "layer": 26,
+      "arm": "A2_random_removed",
+      "rank": 16,
+      "n": 72,
+      "relation": 66,
+      "entity": 39,
+      "binding": 36
+    },
+    {
+      "layer": 26,
+      "arm": "A3_entity_removed",
+      "rank": 16,
+      "n": 72,
+      "relation": 69,
+      "entity": 45,
+      "binding": 44
+    },
+    {
+      "layer": 26,
+      "arm": "A1_form_removed",
+      "rank": 32,
+      "n": 72,
+      "relation": 69,
+      "entity": 40,
+      "binding": 40
+    },
+    {
+      "layer": 26,
+      "arm": "A2_random_removed",
+      "rank": 32,
+      "n": 72,
+      "relation": 66,
+      "entity": 39,
+      "binding": 36
+    },
+    {
+      "layer": 26,
+      "arm": "A3_entity_removed",
+      "rank": 32,
+      "n": 72,
+      "relation": 69,
+      "entity": 40,
+      "binding": 39
+    },
+    {
+      "layer": 28,
+      "arm": "A0_raw",
+      "rank": 0,
+      "n": 72,
+      "relation": 67,
+      "entity": 38,
+      "binding": 35
+    },
+    {
+      "layer": 28,
+      "arm": "A1_form_removed",
+      "rank": 4,
+      "n": 72,
+      "relation": 68,
+      "entity": 36,
+      "binding": 36
+    },
+    {
+      "layer": 28,
+      "arm": "A2_random_removed",
+      "rank": 4,
+      "n": 72,
+      "relation": 67,
+      "entity": 38,
+      "binding": 35
+    },
+    {
+      "layer": 28,
+      "arm": "A3_entity_removed",
+      "rank": 4,
+      "n": 72,
+      "relation": 72,
+      "entity": 34,
+      "binding": 34
+    },
+    {
+      "layer": 28,
+      "arm": "A1_form_removed",
+      "rank": 8,
+      "n": 72,
+      "relation": 70,
+      "entity": 35,
+      "binding": 35
+    },
+    {
+      "layer": 28,
+      "arm": "A2_random_removed",
+      "rank": 8,
+      "n": 72,
+      "relation": 67,
+      "entity": 38,
+      "binding": 35
+    },
+    {
+      "layer": 28,
+      "arm": "A3_entity_removed",
+      "rank": 8,
+      "n": 72,
+      "relation": 72,
+      "entity": 36,
+      "binding": 36
+    },
+    {
+      "layer": 28,
+      "arm": "A1_form_removed",
+      "rank": 16,
+      "n": 72,
+      "relation": 70,
+      "entity": 36,
+      "binding": 36
+    },
+    {
+      "layer": 28,
+      "arm": "A2_random_removed",
+      "rank": 16,
+      "n": 72,
+      "relation": 67,
+      "entity": 37,
+      "binding": 34
+    },
+    {
+      "layer": 28,
+      "arm": "A3_entity_removed",
+      "rank": 16,
+      "n": 72,
+      "relation": 69,
+      "entity": 40,
+      "binding": 39
+    },
+    {
+      "layer": 28,
+      "arm": "A1_form_removed",
+      "rank": 32,
+      "n": 72,
+      "relation": 70,
+      "entity": 36,
+      "binding": 36
+    },
+    {
+      "layer": 28,
+      "arm": "A2_random_removed",
+      "rank": 32,
+      "n": 72,
+      "relation": 67,
+      "entity": 37,
+      "binding": 34
+    },
+    {
+      "layer": 28,
+      "arm": "A3_entity_removed",
+      "rank": 32,
+      "n": 72,
+      "relation": 70,
+      "entity": 39,
+      "binding": 38
+    },
+    {
+      "layer": 30,
+      "arm": "A0_raw",
+      "rank": 0,
+      "n": 72,
+      "relation": 67,
+      "entity": 45,
+      "binding": 43
+    },
+    {
+      "layer": 30,
+      "arm": "A1_form_removed",
+      "rank": 4,
+      "n": 72,
+      "relation": 68,
+      "entity": 42,
+      "binding": 41
+    },
+    {
+      "layer": 30,
+      "arm": "A2_random_removed",
+      "rank": 4,
+      "n": 72,
+      "relation": 67,
+      "entity": 45,
+      "binding": 43
+    },
+    {
+      "layer": 30,
+      "arm": "A3_entity_removed",
+      "rank": 4,
+      "n": 72,
+      "relation": 70,
+      "entity": 49,
+      "binding": 47
+    },
+    {
+      "layer": 30,
+      "arm": "A1_form_removed",
+      "rank": 8,
+      "n": 72,
+      "relation": 70,
+      "entity": 47,
+      "binding": 47
+    },
+    {
+      "layer": 30,
+      "arm": "A2_random_removed",
+      "rank": 8,
+      "n": 72,
+      "relation": 67,
+      "entity": 45,
+      "binding": 43
+    },
+    {
+      "layer": 30,
+      "arm": "A3_entity_removed",
+      "rank": 8,
+      "n": 72,
+      "relation": 72,
+      "entity": 51,
+      "binding": 51
+    },
+    {
+      "layer": 30,
+      "arm": "A1_form_removed",
+      "rank": 16,
+      "n": 72,
+      "relation": 70,
+      "entity": 50,
+      "binding": 50
+    },
+    {
+      "layer": 30,
+      "arm": "A2_random_removed",
+      "rank": 16,
+      "n": 72,
+      "relation": 67,
+      "entity": 44,
+      "binding": 42
+    },
+    {
+      "layer": 30,
+      "arm": "A3_entity_removed",
+      "rank": 16,
+      "n": 72,
+      "relation": 69,
+      "entity": 51,
+      "binding": 50
+    },
+    {
+      "layer": 30,
+      "arm": "A1_form_removed",
+      "rank": 32,
+      "n": 72,
+      "relation": 69,
+      "entity": 49,
+      "binding": 49
+    },
+    {
+      "layer": 30,
+      "arm": "A2_random_removed",
+      "rank": 32,
+      "n": 72,
+      "relation": 67,
+      "entity": 46,
+      "binding": 44
+    },
+    {
+      "layer": 30,
+      "arm": "A3_entity_removed",
+      "rank": 32,
+      "n": 72,
+      "relation": 69,
+      "entity": 49,
+      "binding": 48
+    }
+  ],
+  "verdict": {
+    "L22": {
+      "ranks_clearing": [
+        8
+      ],
+      "rank_stable_pass": false,
+      "destructive_control_degrades": false
+    },
+    "L24": {
+      "ranks_clearing": [
+        16
+      ],
+      "rank_stable_pass": false,
+      "destructive_control_degrades": false
+    },
+    "L26": {
+      "ranks_clearing": [],
+      "rank_stable_pass": false,
+      "destructive_control_degrades": false
+    },
+    "L28": {
+      "ranks_clearing": [],
+      "rank_stable_pass": false,
+      "destructive_control_degrades": false
+    },
+    "L30": {
+      "ranks_clearing": [],
+      "rank_stable_pass": false,
+      "destructive_control_degrades": false
+    }
+  },
+  "GATE": "FAIL",
+  "results_sha256": "abb37d6f30195de31750d2a58b0a95f17edddc891aabe8a09eb404a86b63fef4"
+}
