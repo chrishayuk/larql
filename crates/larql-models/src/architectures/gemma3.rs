@@ -204,6 +204,7 @@ mod tests {
             num_layers: 34,
             hidden_size: 2560,
             intermediate_size: 10240,
+            ffn_intermediate_size_by_layer: None,
             head_dim: 256,
             num_q_heads: 8,
             num_kv_heads: 4,

@@ -36,6 +36,7 @@ pub fn qwen_shaped_surface() -> ExecutionSurface {
         }),
         ffn: Some(FfnSurface {
             intermediate_size: Some(17408),
+            intermediate_size_by_layer: None,
             activation: Activation::Silu,
             ffn_type: FfnType::Gated,
             gate_policy: larql_models::ExpertGatePolicy::default(),

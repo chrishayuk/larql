@@ -691,6 +691,16 @@ pub const CARRIAGE_RULES: &[CarriageRule] = &[
         site: "ExecutionSurface.ffn.{ffn_type, activation} → FfnOp — the shape the word names",
         probe: Some(probe_ffn_shape_name),
     },
+    // E30 static shards: a derived checkpoint declares each layer's dense
+    // FFN width. Lowered: the planner shapes every layer's gate/up/down
+    // against it and states it on that layer's `FfnOp`, which the CPU
+    // paths and the Metal lowering read as the layer's intermediate width.
+    CarriageRule {
+        leaf: "larql_ffn_intermediate_size_by_layer",
+        reaches: Carriage::Lowered,
+        site: "ExecutionSurface.ffn.intermediate_size_by_layer → FfnOp.intermediate_size, per layer",
+        probe: Some(probe_ffn_width_by_layer),
+    },
     CarriageRule {
         leaf: "swiglu_limit",
         reaches: Carriage::Represented,
@@ -1964,6 +1974,13 @@ fn probe_post_norm_eps(component: &Component, _ctx: &ProbeContext<'_>) -> Option
 /// spelling is an alias of the judged variant (`gelu_pytorch_tanh` →
 /// `GeluTanh`); the schema's spelling otherwise, so a genuine
 /// disagreement still reads as one.
+/// The per-layer dense-FFN widths the surface carries, as the array the
+/// checkpoint declared them in.
+fn probe_ffn_width_by_layer(component: &Component, _ctx: &ProbeContext<'_>) -> Option<Value> {
+    let ffn = component.execution.as_ref()?.ffn.as_ref()?;
+    serde_json::to_value(ffn.intermediate_size_by_layer.as_ref()?).ok()
+}
+
 fn probe_activation(component: &Component, ctx: &ProbeContext<'_>) -> Option<Value> {
     // The FFN's activation on an FFN-bearing component; the MIXER's on a
     // mixer-only one — `hidden_act` is one declared fact, and whichever

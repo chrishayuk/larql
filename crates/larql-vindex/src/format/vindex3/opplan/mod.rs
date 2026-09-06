@@ -776,6 +776,12 @@ pub enum ClosureDefect {
     },
     /// A non-stack executable object with an unexpected tensor estate.
     ObjectShape { object: String, detail: String },
+    /// The per-layer dense-FFN width declaration cannot be honoured: it
+    /// covers the wrong number of layers, or names a width of zero or
+    /// wider than the component's dense width. Refused before any layer
+    /// is shaped against it — a width nobody can hold must not become a
+    /// silently uniform plan.
+    FfnWidthDeclaration { component: String, detail: String },
     /// The structure requires a semantic fact nothing has established.
     ///
     /// Distinct from [`Self::MissingOperand`]: no tensor is absent, and
@@ -819,6 +825,10 @@ pub enum ClosureDefect {
 impl std::fmt::Display for ClosureDefect {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
+            Self::FfnWidthDeclaration { component, detail } => write!(
+                f,
+                "component {component}: per-layer FFN width declaration refused: {detail}"
+            ),
             Self::MissingSurface { component } => {
                 write!(f, "component `{component}` has no complete execution surface")
             }

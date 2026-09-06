@@ -148,6 +148,12 @@ pub struct VindexModelConfig {
     /// FFN activation name, verbatim (`hidden_act`).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub hidden_act: Option<String>,
+    /// One FFN intermediate width per layer (`larql_ffn_intermediate_size_by_layer`),
+    /// verbatim, for checkpoints whose gate/up/down projections were sliced
+    /// to different widths in different layers. A vindex that dropped it
+    /// would rebuild every layer at the dense width and refuse its own tensors.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub ffn_intermediate_size_by_layer: Option<Vec<usize>>,
     /// Declared context bound (`max_position_embeddings`).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub max_position_embeddings: Option<usize>,
@@ -313,6 +319,7 @@ impl VindexModelConfig {
             post_norm_eps: cfg.post_norm_eps,
             attention_bias: cfg.attention_bias,
             hidden_act: cfg.hidden_act.clone(),
+            ffn_intermediate_size_by_layer: cfg.ffn_intermediate_size_by_layer.clone(),
             max_position_embeddings: cfg.max_position_embeddings,
             final_logit_softcapping: cfg.final_logit_softcapping,
             attention_multiplier: cfg.attention_multiplier,

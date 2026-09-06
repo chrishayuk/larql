@@ -276,6 +276,39 @@ pub fn plan_component_ops(
     // component does not have is already zero (see the attention
     // geometry above); the dense FFN op reads the checked value.
     let inter = ffn_surface.and_then(|f| f.intermediate_size);
+    // A derived static-shard container declares each layer's dense width.
+    // The declaration must cover every layer and name a width the
+    // component can hold; otherwise the plan refuses here, before any
+    // layer's tensors are shaped against it.
+    if let Some(widths) = ffn_surface.and_then(|f| f.intermediate_size_by_layer.as_ref()) {
+        let refuse = |detail: String| ClosureDefect::FfnWidthDeclaration {
+            component: component.id.clone(),
+            detail,
+        };
+        if widths.len() != component.num_layers {
+            defects.push(refuse(format!(
+                "declares {} per-layer FFN widths for a {}-layer component",
+                widths.len(),
+                component.num_layers
+            )));
+        }
+        for (layer, &width) in widths.iter().enumerate() {
+            if width == 0 || inter.is_some_and(|dense| width > dense) {
+                defects.push(refuse(format!(
+                    "layer {layer} declares FFN width {width} against a dense width of {}",
+                    inter.map_or_else(|| "none".to_string(), |d| d.to_string())
+                )));
+            }
+        }
+    }
+    // The width a layer's FFN op runs at: the declared per-layer value
+    // when the container carries one, else the component's dense width.
+    let inter_for = |layer: usize| -> Option<usize> {
+        ffn_surface
+            .and_then(|f| f.intermediate_size_by_layer.as_ref())
+            .and_then(|widths| widths.get(layer).copied())
+            .or(inter)
+    };
     let gated_ffn = ffn_surface.is_some_and(|f| f.ffn_type == FfnType::Gated);
     let ffn_moe = ffn_surface.and_then(|f| f.moe);
     // Head geometry is a per-layer fact when the family varies it
@@ -308,7 +341,7 @@ pub fn plan_component_ops(
                     1
                 },
             kv_rows: num_kv_heads * head_dim,
-            intermediate: inter.unwrap_or(0),
+            intermediate: inter_for(layer).unwrap_or(0),
             head_dim,
             num_q_heads,
             num_kv_heads,
@@ -826,7 +859,7 @@ pub fn plan_component_ops(
             .map(|(o, _)| o.id.clone())
             .unwrap_or_default();
         let dense_op = || FfnOp {
-            intermediate_size: inter.unwrap_or_else(|| {
+            intermediate_size: inter_for(layer).unwrap_or_else(|| {
                 panic!(
                     "component {} plans a dense FFN layer with no declared dense width; \
                      closure should have refused this before the plan was built",

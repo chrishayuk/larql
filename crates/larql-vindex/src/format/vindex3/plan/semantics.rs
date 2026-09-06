@@ -21,6 +21,11 @@ pub const EXECUTION_SEMANTIC_KEYS: &[&str] = &[
     "hc_sinkhorn_iters",
     "hc_eps",
     "layer_rope_theta",
+    // E30 static shards: the per-layer dense-FFN width a derived checkpoint
+    // declares. Execution semantics of the plainest kind — it is the row
+    // count every layer's gate/up projections run at — carried to the
+    // layer's `FfnOp` and checked against the stored tensors.
+    "larql_ffn_intermediate_size_by_layer",
     "qk_scale_factor",
     "output_multiplier",
     "post_norm_eps",

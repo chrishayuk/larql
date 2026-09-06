@@ -20,6 +20,14 @@ pub struct ModelConfig {
     pub num_layers: usize,
     pub hidden_size: usize,
     pub intermediate_size: usize,
+    /// Per-layer dense-FFN width declared by a derived checkpoint
+    /// (`larql_ffn_intermediate_size_by_layer`, one entry per layer),
+    /// verbatim. `None` means every layer runs at
+    /// [`Self::intermediate_size`] — the only meaning an undeclared key
+    /// has. The planner checks each layer's gate/up/down shapes against
+    /// this and states the width on that layer's op; nothing else may
+    /// read a layer's width off a tensor.
+    pub ffn_intermediate_size_by_layer: Option<Vec<usize>>,
     pub head_dim: usize,
     pub num_q_heads: usize,
     pub num_kv_heads: usize,

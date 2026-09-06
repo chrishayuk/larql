@@ -9,9 +9,9 @@
 use crate::config::{ModelConfig, RopeScaling};
 
 use super::config_io::{
-    CONFIG_KEY_HIDDEN_SIZE_ALIASES, CONFIG_KEY_INTERMEDIATE_SIZE_ALIASES,
-    CONFIG_KEY_NUM_ATTENTION_HEADS_ALIASES, CONFIG_KEY_NUM_HIDDEN_LAYERS_ALIASES,
-    CONFIG_KEY_TEXT_CONFIG,
+    CONFIG_KEY_FFN_INTERMEDIATE_SIZE_BY_LAYER, CONFIG_KEY_HIDDEN_SIZE_ALIASES,
+    CONFIG_KEY_INTERMEDIATE_SIZE_ALIASES, CONFIG_KEY_NUM_ATTENTION_HEADS_ALIASES,
+    CONFIG_KEY_NUM_HIDDEN_LAYERS_ALIASES, CONFIG_KEY_TEXT_CONFIG,
 };
 
 // ── RoPE base defaults ───────────────────────────────────────────────────────
@@ -153,6 +153,20 @@ pub(super) fn parse_model_config(config: &serde_json::Value) -> ModelConfig {
     if intermediate_size == 0 && model_type == "gpt2" && hidden_size > 0 {
         intermediate_size = 4 * hidden_size;
     }
+    // A derived static-shard checkpoint declares each layer's dense-FFN
+    // width; kept verbatim (the planner validates length and range, and
+    // refuses there rather than here, so the reason lands beside the
+    // tensors it disagrees with). Absent = uniform, bit-identical to a
+    // checkpoint that never carried the key.
+    let ffn_intermediate_size_by_layer = text_config
+        .get(CONFIG_KEY_FFN_INTERMEDIATE_SIZE_BY_LAYER)
+        .or_else(|| config.get(CONFIG_KEY_FFN_INTERMEDIATE_SIZE_BY_LAYER))
+        .and_then(serde_json::Value::as_array)
+        .map(|arr| {
+            arr.iter()
+                .filter_map(|v| v.as_u64().map(|k| k as usize))
+                .collect::<Vec<_>>()
+        });
     // The Mamba2 mixer's declared geometry, all fields or none. Read
     // before the attention-shape fields because it changes what their
     // absence means (below).
@@ -697,6 +711,7 @@ pub(super) fn parse_model_config(config: &serde_json::Value) -> ModelConfig {
         num_layers,
         hidden_size,
         intermediate_size,
+        ffn_intermediate_size_by_layer,
         head_dim,
         num_q_heads,
         num_kv_heads,

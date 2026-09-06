@@ -154,6 +154,11 @@ pub struct ResolvedTopology {
     pub num_layers: usize,
     pub hidden_size: usize,
     pub intermediate_size: usize,
+    /// Per-layer dense-FFN width a derived checkpoint declares; `None`
+    /// means every layer runs at `intermediate_size`. Additive: an
+    /// inventory JSON written before it reads as `None`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub ffn_intermediate_size_by_layer: Option<Vec<usize>>,
     pub num_q_heads: usize,
     pub num_kv_heads: usize,
     pub head_dim: usize,

@@ -99,6 +99,12 @@ pub(super) fn build_arch_json(
     if let Some(v) = model_cfg.max_position_embeddings {
         obj.insert("max_position_embeddings".into(), v.into());
     }
+    if let Some(ref v) = model_cfg.ffn_intermediate_size_by_layer {
+        obj.insert(
+            "larql_ffn_intermediate_size_by_layer".into(),
+            serde_json::json!(v),
+        );
+    }
     if let Some(v) = model_cfg.final_logit_softcapping {
         obj.insert("final_logit_softcapping".into(), v.into());
     }
@@ -231,6 +237,60 @@ mod tests {
         }
         // Named explicitly: the global layers are the whole point.
         assert_eq!(rebuilt.rope_position_divisor_for_layer(5), 8.0);
+    }
+
+    /// A declared per-layer FFN width survives the vindex round-trip
+    /// verbatim: `from_arch` persists it, the emitter writes it under its
+    /// config key, and the detector reads it back. Without all three a
+    /// sliced checkpoint would be rebuilt at the dense width and refuse
+    /// its own tensors.
+    #[test]
+    fn per_layer_ffn_width_round_trips_verbatim() {
+        let widths = vec![2048usize, 640, 2048, 1536];
+        let source = larql_models::detect_from_json(&serde_json::json!({
+            "model_type": "llama",
+            "hidden_size": 512,
+            "num_hidden_layers": 4,
+            "intermediate_size": 2048,
+            "num_attention_heads": 8,
+            "num_key_value_heads": 8,
+            "larql_ffn_intermediate_size_by_layer": widths,
+        }));
+        let model_cfg = VindexModelConfig::from_arch(&*source);
+        assert_eq!(
+            model_cfg.ffn_intermediate_size_by_layer,
+            Some(widths.clone())
+        );
+        let json = build_arch_json(&minimal_config(model_cfg.clone()), &model_cfg);
+        assert_eq!(
+            json["larql_ffn_intermediate_size_by_layer"],
+            serde_json::json!(widths)
+        );
+        let rebuilt = larql_models::detect_from_json(&json);
+        assert_eq!(
+            rebuilt.config().ffn_intermediate_size_by_layer,
+            Some(widths)
+        );
+    }
+
+    /// A model without the declaration must not acquire one: the emitter
+    /// writes the key only when the source carried it.
+    #[test]
+    fn absent_per_layer_ffn_width_stays_absent_across_the_round_trip() {
+        let source = larql_models::detect_from_json(&serde_json::json!({
+            "model_type": "llama",
+            "hidden_size": 512,
+            "num_hidden_layers": 4,
+            "intermediate_size": 2048,
+            "num_attention_heads": 8,
+            "num_key_value_heads": 8,
+        }));
+        let model_cfg = VindexModelConfig::from_arch(&*source);
+        assert!(model_cfg.ffn_intermediate_size_by_layer.is_none());
+        let json = build_arch_json(&minimal_config(model_cfg.clone()), &model_cfg);
+        assert!(json.get("larql_ffn_intermediate_size_by_layer").is_none());
+        let rebuilt = larql_models::detect_from_json(&json);
+        assert!(rebuilt.config().ffn_intermediate_size_by_layer.is_none());
     }
 
     /// A model with no `rope_scaling` must not acquire one. The emitter

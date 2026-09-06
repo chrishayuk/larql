@@ -310,6 +310,7 @@ pub fn resolve_with_tensor_evidence(
         num_layers: cfg.num_layers,
         hidden_size: cfg.hidden_size,
         intermediate_size: cfg.intermediate_size,
+        ffn_intermediate_size_by_layer: cfg.ffn_intermediate_size_by_layer.clone(),
         num_q_heads: cfg.num_q_heads,
         num_kv_heads: cfg.num_kv_heads,
         head_dim: cfg.head_dim,
