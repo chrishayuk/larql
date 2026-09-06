@@ -191,6 +191,13 @@ pub struct ResolvedTopology {
     /// KDA's decay-gate lower bound (`linear_attn_config.gate_lower_bound`).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub kda_gate_lower_bound: Option<f32>,
+    /// The FORM of KDA's output gate (`linear_attn_config.use_full_rank_gate`),
+    /// verbatim: `Some(true)` = one full-rank `g_proj`, `Some(false)` = the
+    /// low-rank pair, `None` = undeclared (the reference's own default is the
+    /// pair). Carried as declared so an executor can hold the shipped
+    /// operands to it rather than infer the form from them. K3-REP-GATE-1.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub kda_use_full_rank_gate: Option<bool>,
     /// The Mamba2 mixer's declared geometry, when the checkpoint declares
     /// one. Disjoint from [`Self::linear_attention`] and [`Self::kda`] in
     /// every observed checkpoint — a third recurrence family, and the
@@ -611,6 +618,15 @@ pub struct MlaExecution {
     /// Defaults for inventories written before it was recorded.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub kv_a_norm_eps: Option<f64>,
+    /// The output gate the checkpoint declares on its MLA layers
+    /// (`mla_use_output_gate: true`), as the generic gated-attention
+    /// operation it implements — the same spec the softmax family's
+    /// `attn_output_gate` resolves to, judged from Kimi-K3's own reference
+    /// ([`AttentionGateSpec::from_attention_input_sigmoid_before_output_projection`]).
+    /// `None` = no gate: undeclared, or declared `false`. Defaults for
+    /// inventories written before it was recorded. K3-REP-GATE-1.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub output_gate: Option<crate::config::AttentionGateSpec>,
 }
 
 /// One flattened `config.json` leaf.

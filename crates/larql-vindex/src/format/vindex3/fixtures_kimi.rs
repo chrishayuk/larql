@@ -64,11 +64,72 @@ fn mla_q_head_dim() -> usize {
     MLA_QK_NOPE_HEAD_DIM + MLA_QK_ROPE_HEAD_DIM
 }
 
-/// The `KKKM` hybrid: three KDA layers, then one MLA layer.
+/// Which output-gate operands a synthetic KDA layer ships — independent
+/// of what the config DECLARES, so the closure witnesses can stage every
+/// agreement and every disagreement between the two (K3-REP-GATE-1).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum KdaGateShipped {
+    /// The low-rank `g_a_proj`/`g_b_proj` pair (Kimi Linear).
+    LowRankPair,
+    /// One full-rank `g_proj` of `[Hv·Dv, hidden]` (Kimi-K3).
+    FullRank,
+    /// No output-gate operand at all.
+    None,
+}
+
+/// The gate declarations and shipped operands of the `KKKM` hybrid.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct HybridGateForms {
+    /// `linear_attn_config.use_full_rank_gate`, verbatim; `None` leaves
+    /// the key out (the reference's default is the low-rank pair).
+    pub kda_declared_full_rank: Option<bool>,
+    /// What the KDA layers actually ship.
+    pub kda_shipped: KdaGateShipped,
+    /// `mla_use_output_gate`, verbatim; `None` leaves the key out.
+    pub mla_declared_gate: Option<bool>,
+    /// Whether the MLA layer ships `self_attn.g_proj.weight`.
+    pub mla_shipped_gate: bool,
+}
+
+impl HybridGateForms {
+    /// Kimi Linear's own shape: the pair, no MLA gate, neither key declared.
+    pub const KIMI_LINEAR: Self = Self {
+        kda_declared_full_rank: None,
+        kda_shipped: KdaGateShipped::LowRankPair,
+        mla_declared_gate: None,
+        mla_shipped_gate: false,
+    };
+    /// Kimi-K3's shape: both gates declared and shipped.
+    pub const KIMI_K3: Self = Self {
+        kda_declared_full_rank: Some(true),
+        kda_shipped: KdaGateShipped::FullRank,
+        mla_declared_gate: Some(true),
+        mla_shipped_gate: true,
+    };
+}
+
+/// The `KKKM` hybrid: three KDA layers, then one MLA layer — Kimi Linear's
+/// own gate forms.
 pub fn hybrid_kda_mla_f32_model(dir: &Path) {
-    std::fs::write(
-        dir.join("config.json"),
-        serde_json::json!({
+    hybrid_kda_mla_f32_model_with(dir, HybridGateForms::KIMI_LINEAR)
+}
+
+/// The `KKKM` hybrid with the output gates declared and shipped as
+/// `forms` says. Every other operand and value is identical to
+/// [`hybrid_kda_mla_f32_model`], so a difference between two plans of it
+/// is the gates' and nothing else's.
+pub fn hybrid_kda_mla_f32_model_with(dir: &Path, forms: HybridGateForms) {
+    let mut linear_attn_config = serde_json::json!({
+        "kda_layers": kda_layers(),
+        "full_attn_layers": full_attn_layers(),
+        "num_heads": KDA_HEADS,
+        "head_dim": KDA_HEAD_DIM,
+        "short_conv_kernel_size": KDA_CONV_KERNEL,
+    });
+    if let Some(full_rank) = forms.kda_declared_full_rank {
+        linear_attn_config["use_full_rank_gate"] = serde_json::json!(full_rank);
+    }
+    let mut config = serde_json::json!({
             "architectures": ["KimiLinearForCausalLM"],
             "model_type": "kimi_linear",
             "torch_dtype": "float32",
@@ -88,17 +149,12 @@ pub fn hybrid_kda_mla_f32_model(dir: &Path) {
             "qk_rope_head_dim": MLA_QK_ROPE_HEAD_DIM,
             "v_head_dim": MLA_V_HEAD_DIM,
             "mla_use_nope": true,
-            "linear_attn_config": {
-                "kda_layers": kda_layers(),
-                "full_attn_layers": full_attn_layers(),
-                "num_heads": KDA_HEADS,
-                "head_dim": KDA_HEAD_DIM,
-                "short_conv_kernel_size": KDA_CONV_KERNEL,
-            },
-        })
-        .to_string(),
-    )
-    .unwrap();
+            "linear_attn_config": linear_attn_config,
+    });
+    if let Some(gate) = forms.mla_declared_gate {
+        config["mla_use_output_gate"] = serde_json::json!(gate);
+    }
+    std::fs::write(dir.join("config.json"), config.to_string()).unwrap();
 
     let mut shard = ShardBuilder::new();
     shard.push(
@@ -116,9 +172,9 @@ pub fn hybrid_kda_mla_f32_model(dir: &Path) {
         let seed = 200 + layer as u64 * 32;
         let prefix = format!("model.layers.{layer}");
         if layer % 4 == 3 {
-            push_mla_layer(&mut shard, &prefix, seed);
+            push_mla_layer(&mut shard, &prefix, seed, forms.mla_shipped_gate);
         } else {
-            push_kda_layer(&mut shard, &prefix, seed);
+            push_kda_layer(&mut shard, &prefix, seed, forms.kda_shipped);
         }
         for (name, s) in [
             ("input_layernorm", seed + 20),
@@ -146,8 +202,10 @@ pub fn hybrid_kda_mla_f32_model(dir: &Path) {
 }
 
 /// KDA's fifteen operands. Three projections, three convs, two
-/// low-rank gate pairs — none of which a Gated DeltaNet layer has.
-fn push_kda_layer(shard: &mut ShardBuilder, prefix: &str, seed: u64) {
+/// low-rank gate pairs — none of which a Gated DeltaNet layer has. The
+/// output gate ships in the form `gate` names (Kimi-K3's full-rank
+/// `g_proj` in place of the pair, or nothing).
+fn push_kda_layer(shard: &mut ShardBuilder, prefix: &str, seed: u64, gate: KdaGateShipped) {
     let w = kda_width();
     for (name, s) in [("q_proj", seed), ("k_proj", seed + 1), ("v_proj", seed + 2)] {
         shard.push(
@@ -167,14 +225,28 @@ fn push_kda_layer(shard: &mut ShardBuilder, prefix: &str, seed: u64) {
             &lcg_values(w * KDA_CONV_KERNEL, s),
         );
     }
-    for (name, s) in [("f_a_proj", seed + 6), ("g_a_proj", seed + 7)] {
+    let mut down = vec![("f_a_proj", seed + 6)];
+    let mut up = vec![("f_b_proj", seed + 8)];
+    match gate {
+        KdaGateShipped::LowRankPair => {
+            down.push(("g_a_proj", seed + 7));
+            up.push(("g_b_proj", seed + 9));
+        }
+        KdaGateShipped::FullRank => shard.push(
+            &format!("{prefix}.self_attn.g_proj.weight"),
+            &[w, HIDDEN],
+            &lcg_values(w * HIDDEN, seed + 7),
+        ),
+        KdaGateShipped::None => {}
+    }
+    for (name, s) in down {
         shard.push(
             &format!("{prefix}.self_attn.{name}.weight"),
             &[KDA_GATE_RANK, HIDDEN],
             &lcg_values(KDA_GATE_RANK * HIDDEN, s),
         );
     }
-    for (name, s) in [("f_b_proj", seed + 8), ("g_b_proj", seed + 9)] {
+    for (name, s) in up {
         shard.push(
             &format!("{prefix}.self_attn.{name}.weight"),
             &[w, KDA_GATE_RANK],
@@ -210,8 +282,17 @@ fn push_kda_layer(shard: &mut ShardBuilder, prefix: &str, seed: u64) {
 
 /// MLA's five. `q_proj` and `o_proj` are the same spellings a softmax
 /// layer uses, at a width only the operator explains.
-fn push_mla_layer(shard: &mut ShardBuilder, prefix: &str, seed: u64) {
+fn push_mla_layer(shard: &mut ShardBuilder, prefix: &str, seed: u64, gate: bool) {
     let q_rows = MLA_HEADS * mla_q_head_dim();
+    if gate {
+        // Kimi-K3's MLA output gate: `[Hq·v_head_dim, hidden]`, the same
+        // spelling a full-rank KDA gate has.
+        shard.push(
+            &format!("{prefix}.self_attn.g_proj.weight"),
+            &[MLA_HEADS * MLA_V_HEAD_DIM, HIDDEN],
+            &lcg_values(MLA_HEADS * MLA_V_HEAD_DIM * HIDDEN, seed + 5),
+        );
+    }
     shard.push(
         &format!("{prefix}.self_attn.q_proj.weight"),
         &[q_rows, HIDDEN],

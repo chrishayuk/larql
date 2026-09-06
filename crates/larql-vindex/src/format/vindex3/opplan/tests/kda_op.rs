@@ -4,7 +4,7 @@
 //! The geometries are the two real ones — Kimi Linear 32×128 and
 //! GLM-5.3-Flash 64×128 — so a width baked in for either is visible here.
 
-use crate::format::vindex3::opplan::{KdaOp, LayerAttention, OperandRef};
+use crate::format::vindex3::opplan::{KdaOp, KdaOutputGate, LayerAttention, OperandRef};
 
 const KIMI_HIDDEN: usize = 2304;
 const KIMI_HEADS: usize = 32;
@@ -44,8 +44,10 @@ fn kda_op(hidden: usize, num_heads: usize) -> KdaOp {
         v_conv1d: conv("v_conv1d.weight"),
         f_a_proj: operand("f_a_proj.weight", vec![GATE_RANK, hidden]),
         f_b_proj: operand("f_b_proj.weight", vec![width, GATE_RANK]),
-        g_a_proj: operand("g_a_proj.weight", vec![GATE_RANK, hidden]),
-        g_b_proj: operand("g_b_proj.weight", vec![width, GATE_RANK]),
+        output_gate: KdaOutputGate::LowRank {
+            g_a_proj: operand("g_a_proj.weight", vec![GATE_RANK, hidden]),
+            g_b_proj: operand("g_b_proj.weight", vec![width, GATE_RANK]),
+        },
         b_proj: operand("b_proj.weight", vec![num_heads, hidden]),
         a_log: operand("A_log", vec![num_heads]),
         dt_bias: operand("dt_bias", vec![width]),
@@ -78,8 +80,15 @@ fn the_geometry_closes_against_every_operand_on_both_checkpoints() {
         // per-operand shape contract can state.
         assert_eq!(op.f_a_proj.shape[0], op.gate_rank, "{name}");
         assert_eq!(op.f_b_proj.shape[1], op.gate_rank, "{name}");
-        assert_eq!(op.g_a_proj.shape[0], op.gate_rank, "{name}");
-        assert_eq!(op.g_b_proj.shape[1], op.gate_rank, "{name}");
+        match &op.output_gate {
+            KdaOutputGate::LowRank { g_a_proj, g_b_proj } => {
+                assert_eq!(g_a_proj.shape[0], op.gate_rank, "{name}");
+                assert_eq!(g_b_proj.shape[1], op.gate_rank, "{name}");
+            }
+            KdaOutputGate::FullRank { .. } => {
+                unreachable!("{name}: both observed checkpoints declare the low-rank form")
+            }
+        }
         // The discriminator: per channel, not per head.
         assert_eq!(op.dt_bias.shape, vec![width], "{name}");
         assert_eq!(op.a_log.shape, vec![op.num_heads], "{name}");
@@ -189,4 +198,37 @@ fn a_vector_contract_accepts_broadcast_singletons_and_nothing_else() {
     // A matrix contract gets no equivalence at all: only 1-D contracts do.
     assert!(!shape_satisfies(&[1, 4096, 128], &[4096, 128]));
     assert!(shape_satisfies(&[4096, 128], &[4096, 128]));
+}
+
+/// **The gate form is a type, and every reader matches on it.** Both
+/// forms name their operands and their form the way the reference
+/// spells the declaration, so a consumer that iterates operands (the CLI,
+/// the explainer, the representation roles) lists exactly the operands
+/// the form carries — two for the pair, one for K3's full-rank gate.
+#[test]
+fn the_output_gate_form_names_exactly_its_operands() {
+    let op = kda_op(KIMI_HIDDEN, KIMI_HEADS);
+    let KdaOutputGate::LowRank { g_a_proj, g_b_proj } = &op.output_gate else {
+        panic!("the observed checkpoints declare the pair");
+    };
+    assert_eq!(op.output_gate.form(), "low_rank");
+    let named = op.output_gate.operands();
+    assert_eq!(
+        named,
+        vec![("g_a_proj", g_a_proj), ("g_b_proj", g_b_proj)],
+        "the pair, down then up"
+    );
+
+    let width = op.value_width();
+    let g_proj = OperandRef {
+        object: g_a_proj.object.clone(),
+        tensor: "0.self_attn.g_proj.weight".into(),
+        shape: vec![width, KIMI_HIDDEN],
+        dtype: g_a_proj.dtype.clone(),
+    };
+    let full = KdaOutputGate::FullRank {
+        g_proj: g_proj.clone(),
+    };
+    assert_eq!(full.form(), "full_rank");
+    assert_eq!(full.operands(), vec![("g_proj", &g_proj)]);
 }

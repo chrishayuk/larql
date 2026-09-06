@@ -22,7 +22,8 @@ use larql_models::quant::mxfp4::FUSED_HALVES;
 
 use super::exec::backend::MatrixClass;
 use super::{
-    ComponentOpPlan, ExpertBank, FfnOp, LayerAttention, LayerFfn, OperandRef, RoutedFfnOp,
+    ComponentOpPlan, ExpertBank, FfnOp, KdaOutputGate, LayerAttention, LayerFfn, OperandRef,
+    RoutedFfnOp,
 };
 use crate::format::vindex3::represent::codec::codecs::float::FloatDtype;
 use crate::format::vindex3::represent::codec::codecs::mxfp4::DTYPE_MXFP4;
@@ -235,10 +236,20 @@ fn attention(attention: &LayerAttention, layer: usize, out: &mut Vec<PlannedOper
             for operand in [&op.q_proj, &op.k_proj, &op.v_proj, &op.out_proj] {
                 push(operand);
             }
+            // The full-rank output gate is a matrix the size of the four
+            // above and is projected like them; the low-rank pair is glue
+            // and, like the other glue, is not listed here (K3-REP-GATE-1).
+            if let KdaOutputGate::FullRank { g_proj } = &op.output_gate {
+                push(g_proj);
+            }
         }
         LayerAttention::Mla(op) => {
             for operand in [&op.q_proj, &op.kv_a_proj, &op.kv_b_proj, &op.out_proj] {
                 push(operand);
+            }
+            // The declared output gate, a matrix the size of `out_proj`.
+            if let Some(gate) = &op.output_gate {
+                push(gate);
             }
         }
     }

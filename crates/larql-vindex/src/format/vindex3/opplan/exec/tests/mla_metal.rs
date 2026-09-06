@@ -96,6 +96,7 @@ struct Fixture {
 impl Fixture {
     fn host(&self) -> MlaWeights<'_> {
         MlaWeights {
+            output_gate: None,
             q_proj: WeightRows::F32(&self.q_proj),
             kv_a_proj: WeightRows::F32(&self.kv_a_proj),
             kv_a_norm: &self.kv_a_norm,

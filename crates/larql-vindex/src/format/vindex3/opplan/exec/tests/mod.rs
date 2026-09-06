@@ -27,6 +27,7 @@ mod coverage_device;
 mod coverage_experts_production;
 mod decode;
 mod device;
+mod device_gate_refusal;
 mod draft_slice;
 mod gated_delta_parity;
 mod gated_delta_tiny;
@@ -37,6 +38,7 @@ mod kda_metal;
 #[cfg(all(feature = "gpu", target_os = "macos"))]
 mod kda_native_parity;
 mod kda_parity;
+mod kda_parity_full_rank_gate;
 mod kda_parity_real;
 #[cfg(all(feature = "gpu", target_os = "macos"))]
 mod kda_q8_real;
@@ -56,6 +58,7 @@ mod mamba2_exec;
 #[cfg(all(feature = "gpu", target_os = "macos"))]
 mod mla_metal;
 mod mla_parity;
+mod mla_parity_output_gate;
 mod mla_state;
 mod mrope_parity;
 mod nvfp4_decode;

@@ -24,7 +24,7 @@ use crate::format::vindex3::opplan::exec::continuation::RecurrentState;
 use crate::format::vindex3::opplan::exec::cpu::projector::WeightRows;
 use crate::format::vindex3::opplan::exec::kda;
 use crate::format::vindex3::opplan::exec::kda::{
-    layer_forward, zero_state, KdaPlanes, KdaWeights, Mutation,
+    layer_forward, zero_state, KdaOutputGateWeights, KdaPlanes, KdaWeights, Mutation,
 };
 
 const ORACLE: &str = include_str!("kda_oracle.json");
@@ -111,8 +111,10 @@ impl Fixture {
             v_conv1d: g("v_conv1d"),
             f_a_proj: g("f_a_proj"),
             f_b_proj: g("f_b_proj"),
-            g_a_proj: g("g_a_proj"),
-            g_b_proj: g("g_b_proj"),
+            output_gate: KdaOutputGateWeights::LowRank {
+                g_a_proj: g("g_a_proj"),
+                g_b_proj: g("g_b_proj"),
+            },
             b_proj: g("b_proj"),
             a_log: g("a_log"),
             dt_bias: g("dt_bias"),

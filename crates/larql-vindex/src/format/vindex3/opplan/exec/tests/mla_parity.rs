@@ -79,6 +79,7 @@ impl Fixture {
     fn weights(&self) -> MlaWeights<'_> {
         let g = |n: &str| self.weights.get(n).expect(n).as_slice();
         MlaWeights {
+            output_gate: None,
             q_proj: WeightRows::F32(g("q_proj")),
             kv_a_proj: WeightRows::F32(g("kv_a_proj")),
             kv_a_norm: g("kv_a_norm"),

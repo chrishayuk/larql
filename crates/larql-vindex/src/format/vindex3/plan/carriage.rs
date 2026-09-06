@@ -585,6 +585,16 @@ pub const CARRIAGE_RULES: &[CarriageRule] = &[
         site: "ExecutionSurface.kda.conv_kernel → KdaOp.conv_kernel",
         probe: Some(probe_kda_conv_kernel),
     },
+    // The KDA output gate's FORM (K3-REP-GATE-1). Lowered: the op carries
+    // the form as a type, the executor projects the gate from whichever
+    // operand the form names, and closure holds the shipped operands to
+    // the declaration from both sides.
+    CarriageRule {
+        leaf: "use_full_rank_gate",
+        reaches: Carriage::Lowered,
+        site: "ExecutionSurface.kda_use_full_rank_gate → KdaOp.output_gate (KdaOutputGate::{LowRank,FullRank}) → exec::kda output-gate projection",
+        probe: Some(probe_kda_use_full_rank_gate),
+    },
     // A rescale of the whole routed branch, which this schema's MoE
     // surface has no field for. Refuses — and refusing for a stated reason
     // is the point of reading it: a key nothing reads blocks with no
@@ -1237,6 +1247,18 @@ pub const CARRIAGE_RULES: &[CarriageRule] = &[
         reaches: Carriage::Lowered,
         site: "ExecutionSurface.attention.output_gate → GateOp → the gated attention op",
         probe: Some(probe_attn_output_gate),
+    },
+    // MLA's output gate (K3-REP-GATE-1): the same generic gate the softmax
+    // rule above carries, on the MLA surface. Lowered: the op carries the
+    // gate operand, and the executor gates the aggregated value before
+    // `o_proj`. The probe answers from the BUILT surface, as the softmax
+    // one does — a declared `false` reads as "no gate", which is what the
+    // surface says, so declaration and carriage agree on both values.
+    CarriageRule {
+        leaf: "mla_use_output_gate",
+        reaches: Carriage::Lowered,
+        site: "MlaSurface.output_gate (AttentionGateSpec) → MlaOp.output_gate → exec::mla gated_value",
+        probe: Some(probe_mla_use_output_gate),
     },
     CarriageRule {
         leaf: "output_gate_type",
@@ -2342,6 +2364,27 @@ fn probe_sliding_layer_set(component: &Component, ctx: &ProbeContext<'_>) -> Opt
 }
 
 /// The KDA decay clamp the surface carries.
+fn probe_kda_use_full_rank_gate(component: &Component, _ctx: &ProbeContext<'_>) -> Option<Value> {
+    let execution = component.execution.as_ref()?;
+    // A gate FORM is carried only where there is a KDA block whose gate it
+    // describes; declared on a component with no KDA geometry it reaches
+    // nothing, and saying so is the honest answer.
+    execution.kda.as_ref()?;
+    execution
+        .kda_use_full_rank_gate
+        .map(|full_rank| json!(full_rank))
+}
+
+fn probe_mla_use_output_gate(component: &Component, _ctx: &ProbeContext<'_>) -> Option<Value> {
+    Some(json!(component
+        .execution
+        .as_ref()?
+        .mla
+        .as_ref()?
+        .output_gate
+        .is_some()))
+}
+
 fn probe_kda_gate_lower_bound(component: &Component, _ctx: &ProbeContext<'_>) -> Option<Value> {
     component
         .execution

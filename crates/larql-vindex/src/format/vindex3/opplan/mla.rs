@@ -57,6 +57,14 @@ pub struct MlaOp {
     pub kv_a_norm: OperandRef,
     /// Output projection, `[hidden, Hq·v_head_dim]`.
     pub out_proj: OperandRef,
+    /// The output gate's projection, `[Hq·v_head_dim, hidden]`, when the
+    /// checkpoint declares `mla_use_output_gate` (Kimi-K3):
+    /// `sigmoid(g_proj(x)) ⊙ attn_value` before [`Self::out_proj`], with
+    /// `x` the block's normalised input. `None` = no gate, the reference's
+    /// own default. Present only under the declaration — an undeclared
+    /// `g_proj` on an MLA layer is refused at closure, never adopted.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub output_gate: Option<OperandRef>,
 
     /// Epsilon for [`Self::kv_a_norm`] — the family's own value, which on
     /// Kimi Linear is `KimiRMSNorm`'s class default `1e-6` while the

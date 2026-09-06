@@ -7,7 +7,7 @@
 //! shapes (`q_proj [6144, 2304]`, `kv_a_proj_with_mqa [576, 2304]`,
 //! `kv_b_proj [8192, 512]`, `o_proj [2304, 4096]`), not invented.
 
-use crate::format::vindex3::opplan::{LayerAttention, MlaOp, OperandRef};
+use crate::format::vindex3::opplan::{KdaOutputGate, LayerAttention, MlaOp, OperandRef};
 
 const HIDDEN: usize = 2304;
 const NUM_HEADS: usize = 32;
@@ -30,6 +30,7 @@ fn operand(name: &str, shape: Vec<usize>) -> OperandRef {
 fn mla_op() -> MlaOp {
     let q_head_dim = QK_NOPE_HEAD_DIM + QK_ROPE_HEAD_DIM;
     MlaOp {
+        output_gate: None,
         num_heads: NUM_HEADS,
         kv_lora_rank: KV_LORA_RANK,
         qk_nope_head_dim: QK_NOPE_HEAD_DIM,
@@ -119,8 +120,10 @@ fn the_mla_variant_never_answers_for_another_operator() {
         v_conv1d: operand("v_conv1d.weight", vec![1, 1, 1]),
         f_a_proj: operand("f_a_proj.weight", vec![1, 1]),
         f_b_proj: operand("f_b_proj.weight", vec![1, 1]),
-        g_a_proj: operand("g_a_proj.weight", vec![1, 1]),
-        g_b_proj: operand("g_b_proj.weight", vec![1, 1]),
+        output_gate: KdaOutputGate::LowRank {
+            g_a_proj: operand("g_a_proj.weight", vec![1, 1]),
+            g_b_proj: operand("g_b_proj.weight", vec![1, 1]),
+        },
         b_proj: operand("b_proj.weight", vec![1, 1]),
         a_log: operand("A_log", vec![1]),
         dt_bias: operand("dt_bias", vec![1]),

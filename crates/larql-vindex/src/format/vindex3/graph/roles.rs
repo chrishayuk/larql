@@ -97,6 +97,15 @@ pub enum OperandRole {
     KdaGAProj,
     /// Output-gate up-projection, `[Hv·Dv, rank]`.
     KdaGBProj,
+    /// The output gate's FULL-RANK form, `[Hv·Dv, hidden]` — one
+    /// projection where [`Self::KdaGAProj`]/[`Self::KdaGBProj`] are two.
+    /// Kimi-K3 declares it (`linear_attn_config.use_full_rank_gate`) and
+    /// ships no pair. Only the gate's projection differs between the
+    /// forms; the sigmoid and the gated norm do not. Spelled
+    /// `self_attn.g_proj.weight` — the SAME spelling and, on K3, the same
+    /// shape as [`Self::MlaOutputGate`]; the layer's operator is what
+    /// separates them, exactly as it separates `o_proj`.
+    KdaGProj,
     /// Per-head write-strength projection, `[Hv, hidden]`.
     KdaBProj,
     /// Per-head log decay, `[Hv]`.
@@ -131,6 +140,13 @@ pub enum OperandRole {
     MlaKvANorm,
     /// Output projection, `[hidden, Hq·v_head_dim]`.
     MlaOutProj,
+    /// The output gate's projection, `[Hq·v_head_dim, hidden]`, on a
+    /// family that declares `mla_use_output_gate` (Kimi-K3):
+    /// `sigmoid(g_proj(x)) ⊙ attn_value` before `o_proj`, the same
+    /// generic operation [`Self::AttnOutputGate`] is for the softmax
+    /// family. Spelled `self_attn.g_proj.weight`, colliding with
+    /// [`Self::KdaGProj`] in name and (on K3) in shape.
+    MlaOutputGate,
     /// Mamba2/SSD mixer operands. Nine, sharing nothing with any set
     /// above: one fused five-way input projection where DeltaNet splits
     /// qkv|a|b|z and KDA splits q|k|v entirely; a conv that runs over the
@@ -863,6 +879,10 @@ const KDA_ROLE_TABLE: &[(&str, OperandRole)] = &[
     ("self_attn.f_b_proj.weight", OperandRole::KdaFBProj),
     ("self_attn.g_a_proj.weight", OperandRole::KdaGAProj),
     ("self_attn.g_b_proj.weight", OperandRole::KdaGBProj),
+    // The full-rank form of the same gate. Which form the layer is
+    // EXPECTED to ship is the declaration's question, answered at closure;
+    // the table only says what the spelling is on this operator.
+    ("self_attn.g_proj.weight", OperandRole::KdaGProj),
     ("self_attn.b_proj.weight", OperandRole::KdaBProj),
     ("self_attn.A_log", OperandRole::KdaALog),
     ("self_attn.dt_bias", OperandRole::KdaDtBias),
@@ -884,6 +904,10 @@ const MLA_ROLE_TABLE: &[(&str, OperandRole)] = &[
     ),
     ("self_attn.kv_b_proj.weight", OperandRole::MlaKvBProj),
     ("self_attn.kv_a_layernorm.weight", OperandRole::MlaKvANorm),
+    // Same spelling as the KDA full-rank gate, different operator, different
+    // operation. Expected only under `mla_use_output_gate`, which closure
+    // checks; the table answers for the operator alone.
+    ("self_attn.g_proj.weight", OperandRole::MlaOutputGate),
 ];
 
 /// Suffix → role **on a Mamba2 layer**, consulted before [`ROLE_TABLE`]

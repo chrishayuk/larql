@@ -329,6 +329,15 @@ pub struct ExecutionSurface {
     /// never a silently-chosen default.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub kda_gate_lower_bound: Option<f32>,
+    /// The FORM of KDA's output gate (`linear_attn_config.use_full_rank_gate`):
+    /// `Some(true)` = one full-rank `g_proj` of `[Hv·Dv, hidden]` (Kimi-K3),
+    /// `Some(false)` = the low-rank `g_a_proj`/`g_b_proj` pair, `None` =
+    /// undeclared, which the reference reads as the pair. Carried beside the
+    /// geometry, not inside it: the geometry is all-three-or-none, and the
+    /// form is a separate declared fact the op plan holds the shipped
+    /// operands to. Only the gate's projection changes with it.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub kda_use_full_rank_gate: Option<bool>,
     /// Geometry the Multi-Latent Attention operator consumes, on a
     /// component whose full-attention layers run it. `None` otherwise —
     /// including a family that DECLARES `uses_mla` but whose geometry did
@@ -452,6 +461,15 @@ pub struct MlaSurface {
     /// it was recorded, which is the same state.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub kv_a_norm_eps: Option<f64>,
+    /// The output gate the checkpoint declares on its MLA layers
+    /// (`mla_use_output_gate: true`): `sigmoid(g_proj(x)) ⊙ attn_value`
+    /// before `o_proj`, the same generic operation
+    /// [`AttentionSurface::output_gate`] carries for the softmax family, at
+    /// width `Hq·v_head_dim`. `None` = no gate (undeclared, or declared
+    /// `false`; the reference's default is none). Absent on containers
+    /// written before it was recorded, which is the same state.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub output_gate: Option<AttentionGateSpec>,
 }
 
 impl MlaSurface {
@@ -543,6 +561,7 @@ pub fn surface_from_resolved(
         }),
         kda: resolved.kda,
         kda_gate_lower_bound: resolved.kda_gate_lower_bound,
+        kda_use_full_rank_gate: resolved.kda_use_full_rank_gate,
         mamba2: resolved.mamba2.map(|geometry| Mamba2Surface {
             geometry,
             activation: execution.activation,
@@ -588,6 +607,7 @@ pub fn surface_from_resolved(
             qk_rope_head_dim: m.qk_rope_head_dim,
             v_head_dim: m.v_head_dim,
             kv_a_norm_eps: m.kv_a_norm_eps,
+            output_gate: m.output_gate,
         }),
         attention: attends.then_some(AttentionSurface {
             num_q_heads: resolved.num_q_heads,
@@ -846,6 +866,7 @@ pub fn surface_from_nested(
         linear_attention: None,
         kda: None,
         kda_gate_lower_bound: None,
+        kda_use_full_rank_gate: None,
         mla: None,
         mamba2: None,
         conv_qkv: None,

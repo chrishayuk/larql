@@ -86,6 +86,15 @@ pub const EXECUTION_SEMANTIC_KEYS: &[&str] = &[
     // The KDA decay clamp, which changes the decay envelope without
     // changing any shape.
     "gate_lower_bound",
+    // The KDA output gate's FORM (Kimi-K3): one full-rank projection or
+    // the low-rank pair. Execution-semantic because it decides which
+    // operands the gate is computed from; carried to the op and held
+    // against the shipped tensors.
+    "use_full_rank_gate",
+    // MLA's output gate (Kimi-K3): a sigmoid gate on the aggregated value
+    // before `o_proj`, absent everywhere else. A build that ignored it
+    // would run every MLA layer ungated with every shape still closing.
+    "mla_use_output_gate",
     // Expert grouping. Declared by Kimi Linear and GLM-5.3-Flash alike,
     // and at one group it selects over every expert — the same thing an
     // ungrouped router does.

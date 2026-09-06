@@ -45,6 +45,7 @@
 //! seam the decoupled surfaces grow from, and preparation refuses a
 //! slice the plan cannot satisfy rather than silently preparing less.
 
+use super::super::KdaOutputGate;
 use super::accounting::{
     declared_resident_for, expectations, reconcile, BlockGeometry, Bound, Expectation, Observed,
     Reconciliation, ResidencyBudget, ResourceLedger,
@@ -52,6 +53,7 @@ use super::accounting::{
 use super::backend::{MatrixClass, NormCall, PlanBackend, WeightFormat, WeightSlice};
 use super::experts::FfnOperands;
 use super::hyper_connection::{HeadWeights, SiteWeights, HC_HEAD_SCALE_LEN, HC_SCALE_LEN};
+use super::kda::KdaOutputGateWeights;
 use super::operands::{OperandSource, SourceStamp};
 use super::realization::{
     realization_residency, RealizationId, RealizationRecord, RepresentationFacts, SelectionReason,
@@ -993,8 +995,7 @@ pub(super) struct KdaOperands {
     v_conv1d: Vec<f32>,
     f_a_proj: Vec<f32>,
     f_b_proj: Vec<f32>,
-    g_a_proj: Vec<f32>,
-    g_b_proj: Vec<f32>,
+    output_gate: KdaGateOperands,
     b_proj: Vec<f32>,
     a_log: Vec<f32>,
     dt_bias: Vec<f32>,
@@ -1002,14 +1003,33 @@ pub(super) struct KdaOperands {
     norm_eps: f32,
 }
 
+/// The output gate's loaded operands, one variant per declared form: the
+/// low-rank pair is glue, the full-rank projection is a matrix like the
+/// four wide ones (on Kimi-K3 it is their size).
+enum KdaGateOperands {
+    LowRank {
+        g_a_proj: Vec<f32>,
+        g_b_proj: Vec<f32>,
+    },
+    FullRank {
+        g_proj: LoadedWeight,
+    },
+}
+
 impl KdaOperands {
     pub(super) fn bound<'a>(&'a self, op: &'a KdaOp) -> Vec<Bound<'a>> {
-        vec![
+        let mut bound = vec![
             Bound::one(&op.q_proj, &self.q_proj),
             Bound::one(&op.k_proj, &self.k_proj),
             Bound::one(&op.v_proj, &self.v_proj),
             Bound::one(&op.out_proj, &self.o_proj),
-        ]
+        ];
+        if let (KdaOutputGate::FullRank { g_proj: r }, KdaGateOperands::FullRank { g_proj: w }) =
+            (&op.output_gate, &self.output_gate)
+        {
+            bound.push(Bound::one(r, w));
+        }
+        bound
     }
 
     fn load(
@@ -1031,8 +1051,15 @@ impl KdaOperands {
             v_conv1d: glue(&op.v_conv1d)?,
             f_a_proj: glue(&op.f_a_proj)?,
             f_b_proj: glue(&op.f_b_proj)?,
-            g_a_proj: glue(&op.g_a_proj)?,
-            g_b_proj: glue(&op.g_b_proj)?,
+            output_gate: match &op.output_gate {
+                KdaOutputGate::LowRank { g_a_proj, g_b_proj } => KdaGateOperands::LowRank {
+                    g_a_proj: glue(g_a_proj)?,
+                    g_b_proj: glue(g_b_proj)?,
+                },
+                KdaOutputGate::FullRank { g_proj } => KdaGateOperands::FullRank {
+                    g_proj: matrix(g_proj)?,
+                },
+            },
             b_proj: glue(&op.b_proj)?,
             a_log: glue(&op.a_log)?,
             dt_bias: glue(&op.dt_bias)?,
@@ -1042,8 +1069,12 @@ impl KdaOperands {
     }
 
     /// The four matrices, for residency accounting.
-    pub(super) fn loaded_matrices(&self) -> [&LoadedWeight; 4] {
-        [&self.q_proj, &self.k_proj, &self.v_proj, &self.o_proj]
+    pub(super) fn loaded_matrices(&self) -> Vec<&LoadedWeight> {
+        let mut matrices = vec![&self.q_proj, &self.k_proj, &self.v_proj, &self.o_proj];
+        if let KdaGateOperands::FullRank { g_proj } = &self.output_gate {
+            matrices.push(g_proj);
+        }
+        matrices
     }
 
     /// The f32 operands that are not matrix traffic.
@@ -1054,14 +1085,16 @@ impl KdaOperands {
             &self.v_conv1d,
             &self.f_a_proj,
             &self.f_b_proj,
-            &self.g_a_proj,
-            &self.g_b_proj,
             &self.b_proj,
             &self.a_log,
             &self.dt_bias,
             &self.o_norm,
         ]
-        .iter()
+        .into_iter()
+        .chain(match &self.output_gate {
+            KdaGateOperands::LowRank { g_a_proj, g_b_proj } => vec![g_a_proj, g_b_proj],
+            KdaGateOperands::FullRank { .. } => vec![],
+        })
         .map(|v| std::mem::size_of_val(&v[..]))
         .sum()
     }
@@ -1077,8 +1110,21 @@ impl KdaOperands {
             v_conv1d: &self.v_conv1d,
             f_a_proj: &self.f_a_proj,
             f_b_proj: &self.f_b_proj,
-            g_a_proj: &self.g_a_proj,
-            g_b_proj: &self.g_b_proj,
+            output_gate: match (&self.output_gate, &self.op.output_gate) {
+                (
+                    KdaGateOperands::LowRank { g_a_proj, g_b_proj },
+                    KdaOutputGate::LowRank { .. },
+                ) => KdaOutputGateWeights::LowRank { g_a_proj, g_b_proj },
+                (KdaGateOperands::FullRank { g_proj }, KdaOutputGate::FullRank { g_proj: r }) => {
+                    KdaOutputGateWeights::FullRank {
+                        g_proj: matrix_rows(g_proj, r)?,
+                    }
+                }
+                // `load` builds the operands FROM the op's form, so the two
+                // cannot disagree; this is a construction error, never a
+                // runtime condition.
+                _ => unreachable!("KDA gate operands loaded for a form the op does not declare"),
+            },
             b_proj: &self.b_proj,
             a_log: &self.a_log,
             dt_bias: &self.dt_bias,
@@ -1108,16 +1154,23 @@ pub(super) struct MlaOperands {
     o_proj: LoadedWeight,
     kv_a_norm: Vec<f32>,
     kv_a_norm_eps: f64,
+    /// The declared output gate's projection (K3-REP-GATE-1), a matrix
+    /// the size of `o_proj`; `None` on an ungated layer.
+    output_gate: Option<LoadedWeight>,
 }
 
 impl MlaOperands {
     pub(super) fn bound<'a>(&'a self, op: &'a MlaOp) -> Vec<Bound<'a>> {
-        vec![
+        let mut bound = vec![
             Bound::one(&op.q_proj, &self.q_proj),
             Bound::one(&op.kv_a_proj, &self.kv_a_proj),
             Bound::one(&op.kv_b_proj, &self.kv_b_proj),
             Bound::one(&op.out_proj, &self.o_proj),
-        ]
+        ];
+        if let (Some(r), Some(w)) = (&op.output_gate, &self.output_gate) {
+            bound.push(Bound::one(r, w));
+        }
+        bound
     }
 
     fn load(
@@ -1142,12 +1195,15 @@ impl MlaOperands {
             o_proj: matrix(&op.out_proj)?,
             kv_a_norm: store.load(&op.kv_a_norm)?,
             kv_a_norm_eps,
+            output_gate: op.output_gate.as_ref().map(matrix).transpose()?,
         })
     }
 
     /// The four matrices, for residency accounting.
-    pub(super) fn loaded_matrices(&self) -> [&LoadedWeight; 4] {
-        [&self.q_proj, &self.kv_a_proj, &self.kv_b_proj, &self.o_proj]
+    pub(super) fn loaded_matrices(&self) -> Vec<&LoadedWeight> {
+        let mut matrices = vec![&self.q_proj, &self.kv_a_proj, &self.kv_b_proj, &self.o_proj];
+        matrices.extend(self.output_gate.as_ref());
+        matrices
     }
 
     /// The one f32 operand that is not matrix traffic.
@@ -1163,6 +1219,11 @@ impl MlaOperands {
             o_proj: matrix_rows(&self.o_proj, &self.op.out_proj)?,
             kv_a_norm: &self.kv_a_norm,
             kv_a_norm_eps: self.kv_a_norm_eps,
+            output_gate: match (&self.output_gate, &self.op.output_gate) {
+                (Some(w), Some(r)) => Some(matrix_rows(w, r)?),
+                (None, None) => None,
+                _ => unreachable!("MLA gate operand loaded for an op that does not declare it"),
+            },
         })
     }
 }

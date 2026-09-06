@@ -64,8 +64,12 @@ pub struct KdaWeights<'a> {
     pub v_conv1d: &'a [f32],
     pub f_a_proj: &'a [f32],
     pub f_b_proj: &'a [f32],
-    pub g_a_proj: &'a [f32],
-    pub g_b_proj: &'a [f32],
+    /// The output gate's projection in its DECLARED form. The low-rank
+    /// pair is glue (f32, narrow); Kimi-K3's full-rank `g_proj` is a
+    /// `[Hv·Dv, hidden]` matrix and rides the same row representation the
+    /// four wide projections do. Only this projection differs between
+    /// forms — its sigmoid and the gated norm below are the same code.
+    pub output_gate: KdaOutputGateWeights<'a>,
     pub b_proj: &'a [f32],
     pub a_log: &'a [f32],
     pub dt_bias: &'a [f32],
@@ -182,6 +186,24 @@ pub struct KdaPlanes {
 /// These perturb the REAL function rather than a copy of it: a control
 /// that mutates a duplicate proves only that the duplicate is detectable.
 /// Same posture as Gated DeltaNet's `Mutation`, and the same reason.
+/// The output gate's projection weights, one variant per declared form
+/// ([`KdaOutputGate`](super::super::kda::KdaOutputGate)).
+#[derive(Clone, Copy)]
+pub enum KdaOutputGateWeights<'a> {
+    /// `g = g_b_proj · (g_a_proj · x)` — Kimi Linear, GLM-5.3-Flash.
+    LowRank {
+        /// `[rank, hidden]`.
+        g_a_proj: &'a [f32],
+        /// `[Hv·Dv, rank]`.
+        g_b_proj: &'a [f32],
+    },
+    /// `g = g_proj · x` — Kimi-K3 (`use_full_rank_gate: true`).
+    FullRank {
+        /// `[Hv·Dv, hidden]`, at whatever representation it is resident as.
+        g_proj: WeightRows<'a>,
+    },
+}
+
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum Mutation {
     None,
@@ -203,6 +225,20 @@ pub enum Mutation {
     NoDecay,
     /// Drop beta from the delta rule.
     NoBeta,
+    /// The output gate skipped: `sigmoid(0) = 0.5` on every channel.
+    /// K3-REP-GATE-1's first gate control; caught at `o_norm`.
+    GateSkipped,
+    /// The gate applied to the recurrent output BEFORE the RMS norm
+    /// instead of after it (`FusedRMSNormGated`'s norm-then-gate order
+    /// inverted). Caught at `o_norm`.
+    GateBeforeNorm,
+    /// The raw pre-activation multiplied in, no sigmoid. Caught at
+    /// `o_norm`.
+    SigmoidOmitted,
+    /// The gate applied to `v` before the recurrence and not after it —
+    /// a placement defect, since the reference gates the aggregate.
+    /// Caught at `o_norm` (and everything downstream of the recurrence).
+    GateOnValueBeforeRecurrence,
     /// Write `v` instead of the prediction error `v - kᵀS` — the single
     /// most plausible wrong transcription of a delta rule, and one that
     /// agrees at `T = 1` from a zero state.
@@ -518,7 +554,7 @@ pub fn step_with(
     }
     planes.k_norm.extend_from_slice(&k);
 
-    let v = {
+    let mut v = {
         let _t = timed(OpClass::KdaConv);
         short_conv(
             &v_p,
@@ -558,12 +594,27 @@ pub fn step_with(
         decay
     };
 
-    let gate = {
-        let _t = timed(OpClass::KdaOutputGate);
-        let gate = matvec(w.g_b_proj, &matvec(w.g_a_proj, x, w.gate_rank), width);
-        planes.o_gate.extend_from_slice(&gate);
-        gate
+    // The output gate's PROJECTION, in the declared form. `project` times
+    // the full-rank matvec itself under the same class, so only the
+    // low-rank composition is timed here.
+    let mut gate = match w.output_gate {
+        KdaOutputGateWeights::LowRank { g_a_proj, g_b_proj } => {
+            let _t = timed(OpClass::KdaOutputGate);
+            matvec(g_b_proj, &matvec(g_a_proj, x, w.gate_rank), width)
+        }
+        KdaOutputGateWeights::FullRank { g_proj } => {
+            project(OpClass::KdaOutputGate, g_proj, x, width)
+        }
     };
+    if mutation == Mutation::GateSkipped {
+        gate.iter_mut().for_each(|g| *g = 0.0);
+    }
+    planes.o_gate.extend_from_slice(&gate);
+    if mutation == Mutation::GateOnValueBeforeRecurrence {
+        for (vi, gi) in v.iter_mut().zip(&gate) {
+            *vi /= 1.0 + (-gi).exp();
+        }
+    }
 
     let beta: Vec<f32> = {
         let _t = timed(OpClass::KdaBProj);
@@ -679,13 +730,28 @@ pub fn step_with(
     let normed = {
         let _t = timed(OpClass::KdaGatedNorm);
         let mut normed = vec![0.0f32; width];
+        // `GateBeforeNorm` gates `out` first and norms the gated vector;
+        // every other arm norms `out` and applies the gate factor after.
+        let pre: Vec<f32> = if mutation == Mutation::GateBeforeNorm {
+            out.iter()
+                .zip(&gate)
+                .map(|(o, g)| o / (1.0 + (-g).exp()))
+                .collect()
+        } else {
+            out.clone()
+        };
         for h in 0..heads {
-            let slice = &out[h * dim..(h + 1) * dim];
+            let slice = &pre[h * dim..(h + 1) * dim];
             let ms = slice.iter().map(|v| v * v).sum::<f32>() / dim as f32;
             let inv = (ms + w.norm_eps).sqrt().recip();
             for (d, (sv, nv)) in slice.iter().zip(w.o_norm).enumerate() {
                 let i = h * dim + d;
-                normed[i] = sv * inv * nv / (1.0 + (-gate[i]).exp());
+                let factor = match mutation {
+                    Mutation::GateBeforeNorm | Mutation::GateOnValueBeforeRecurrence => 1.0,
+                    Mutation::SigmoidOmitted => gate[i],
+                    _ => 1.0 / (1.0 + (-gate[i]).exp()),
+                };
+                normed[i] = sv * inv * nv * factor;
             }
         }
         planes.o_norm.extend_from_slice(&normed);

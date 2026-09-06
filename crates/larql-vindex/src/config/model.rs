@@ -390,6 +390,11 @@ mod tests {
             // it. Persisting the period in the legacy model config would
             // claim a serving path that refuses.
             "attn_res_block_size",
+            // The two K3 attention output gates (K3-REP-GATE-1): the KDA
+            // gate's FORM and MLA's gate reach VINDEX3 through the
+            // execution surface, never through this legacy round-trip.
+            "use_full_rank_gate",
+            "mla_use_output_gate",
             // Multi-head latent attention (DeepSeek V2/V3). No MLA model
             // is served from a vindex yet; serving one without these
             // would silently rebuild the wrong attention geometry.
@@ -490,6 +495,8 @@ mod tests {
             // execution surface, not through this legacy round-trip.
             "kda_geometry",
             "kda_gate_lower_bound",
+            "kda_use_full_rank_gate",
+            "mla_use_output_gate",
             "linear_conv_kernel_dim",
             "linear_key_head_dim",
             "linear_value_head_dim",

@@ -9,7 +9,7 @@
 //! | q/k/v | one fused projection | three separate projections |
 //! | short conv | one, over fused channels | **three**, one per stream |
 //! | decay gate | `in_proj_a`, full rank `[Hv, hidden]` | `f_a`·`f_b`, **low rank** |
-//! | output gate | `in_proj_z`, full rank | `g_a`·`g_b`, **low rank** |
+//! | output gate | `in_proj_z`, full rank | `g_a`·`g_b` low rank, OR `g_proj` full rank — **declared** |
 //! | `dt_bias` | `[Hv]`, per head | `[Hv·Dv]`, **per channel** |
 //! | head counts | key and value sides differ | one head count |
 //!
@@ -105,10 +105,11 @@ pub struct KdaOp {
     pub f_a_proj: OperandRef,
     /// Decay-gate up-projection, `[Hv·Dv, rank]`.
     pub f_b_proj: OperandRef,
-    /// Output-gate down-projection, `[rank, hidden]`.
-    pub g_a_proj: OperandRef,
-    /// Output-gate up-projection, `[Hv·Dv, rank]`.
-    pub g_b_proj: OperandRef,
+    /// The output gate's projection, in the FORM the checkpoint declares
+    /// (`linear_attn_config.use_full_rank_gate`). Only this projection
+    /// differs between the forms: its sigmoid and the gated norm that
+    /// consumes it are the same operation either way.
+    pub output_gate: KdaOutputGate,
     /// Per-head write-strength projection, `[Hv, hidden]`.
     pub b_proj: OperandRef,
     /// Per-head log decay, `[Hv]`.
@@ -119,6 +120,52 @@ pub struct KdaOp {
     pub o_norm: OperandRef,
     /// Output projection, `[hidden, Hv·Dv]`.
     pub out_proj: OperandRef,
+}
+
+/// The two forms of KDA's output-gate projection, a DECLARED fact
+/// (`use_full_rank_gate`) the op plan holds the shipped operands to —
+/// never inferred from which operands happen to be present.
+///
+/// A type rather than two optional fields, so a consumer cannot hold a
+/// `g_proj` and a `g_a_proj` at once or neither, and so every reader
+/// (executor, glue accounting, representation roles, the CLI) matches on
+/// the form and is forced to answer for a new one.
+#[derive(Debug, Clone, PartialEq, Serialize)]
+#[serde(tag = "form", rename_all = "snake_case")]
+pub enum KdaOutputGate {
+    /// `g = g_b_proj(g_a_proj(x))` — Kimi Linear, GLM-5.3-Flash.
+    LowRank {
+        /// Down-projection, `[rank, hidden]`.
+        g_a_proj: OperandRef,
+        /// Up-projection, `[Hv·Dv, rank]`.
+        g_b_proj: OperandRef,
+    },
+    /// `g = g_proj(x)` — Kimi-K3 (`use_full_rank_gate: true`).
+    FullRank {
+        /// One projection, `[Hv·Dv, hidden]`.
+        g_proj: OperandRef,
+    },
+}
+
+impl KdaOutputGate {
+    /// Every operand of the form, for readers that iterate the op's
+    /// operands without caring which form it is.
+    pub fn operands(&self) -> Vec<(&'static str, &OperandRef)> {
+        match self {
+            Self::LowRank { g_a_proj, g_b_proj } => {
+                vec![("g_a_proj", g_a_proj), ("g_b_proj", g_b_proj)]
+            }
+            Self::FullRank { g_proj } => vec![("g_proj", g_proj)],
+        }
+    }
+
+    /// The form's name as the reference spells the declaration.
+    pub fn form(&self) -> &'static str {
+        match self {
+            Self::LowRank { .. } => "low_rank",
+            Self::FullRank { .. } => "full_rank",
+        }
+    }
 }
 
 impl KdaOp {

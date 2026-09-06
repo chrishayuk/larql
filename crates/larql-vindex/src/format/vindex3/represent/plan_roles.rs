@@ -128,14 +128,14 @@ fn collect_attention(attention: &LayerAttention, roles: &mut PlanRoles) {
                 put(roles, Role::RecurrenceProjection, op);
             }
             // The gate factorisations and the write-strength projection
-            // are this operator's control path, low-rank and narrow.
-            for op in [
-                &k.f_a_proj,
-                &k.f_b_proj,
-                &k.g_a_proj,
-                &k.g_b_proj,
-                &k.b_proj,
-            ] {
+            // are this operator's control path — narrow when low-rank,
+            // and still the control path when Kimi-K3 declares the output
+            // gate full-rank: the operand's ROLE is what it drives, not its
+            // width.
+            for op in [&k.f_a_proj, &k.f_b_proj, &k.b_proj] {
+                put(roles, Role::RecurrenceControl, op);
+            }
+            for (_, op) in k.output_gate.operands() {
                 put(roles, Role::RecurrenceControl, op);
             }
             for op in [&k.q_conv1d, &k.k_conv1d, &k.v_conv1d, &k.a_log, &k.dt_bias] {

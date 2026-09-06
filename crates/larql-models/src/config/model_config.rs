@@ -344,6 +344,23 @@ pub struct ModelConfig {
     /// never invented, because a wrong one changes the decay envelope
     /// without changing any shape.
     pub kda_gate_lower_bound: Option<f32>,
+    /// The FORM of KDA's output gate (`linear_attn_config.use_full_rank_gate`):
+    /// `Some(true)` = one full-rank `g_proj` of `[Hv·Dv, hidden]` (Kimi-K3);
+    /// `Some(false)` = the low-rank `g_a_proj`/`g_b_proj` pair; `None` =
+    /// undeclared, which the reference reads as the pair
+    /// (`config.linear_attn_config.get("use_full_rank_gate", False)`) — a
+    /// CHECKED default, carried as an option so "undeclared" stays
+    /// distinguishable from "declared low rank". Only the gate's
+    /// projection changes with the form; its sigmoid and the gated norm
+    /// do not. K3-REP-GATE-1.
+    pub kda_use_full_rank_gate: Option<bool>,
+    /// Whether MLA gates its aggregated value before `o_proj`
+    /// (`mla_use_output_gate`): `sigmoid(g_proj(x)) ⊙ attn_value`, the
+    /// same generic operation the softmax family's `attn_output_gate`
+    /// declares, at width `Hq·v_head_dim`. `None` = undeclared, which the
+    /// reference reads as no gate (`getattr(config, "mla_use_output_gate",
+    /// False)`). K3-REP-GATE-1.
+    pub mla_use_output_gate: Option<bool>,
     /// Width of the learned relative-position term (`d_rel`), and the
     /// bounded distance it spans (`rel_extent`). Declared together or not
     /// at all; a checkpoint declaring them uses a relative scheme and no

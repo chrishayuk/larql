@@ -44,8 +44,8 @@ use serde_json::Value;
 use crate::format::vindex3::opplan::exec::cpu::projector::WeightRows;
 use crate::format::vindex3::opplan::exec::kda;
 use crate::format::vindex3::opplan::exec::kda::{
-    layer_forward_with, zero_state, CpuKdaProjections, KdaPlanes, KdaProjections, KdaWeights,
-    Mutation,
+    layer_forward_with, zero_state, CpuKdaProjections, KdaOutputGateWeights, KdaPlanes,
+    KdaProjections, KdaWeights, Mutation,
 };
 use crate::format::vindex3::opplan::exec::kda_metal::{MetalKdaProjections, QkvSubmission};
 use crate::format::vindex3::opplan::exec::kernels::norm;
@@ -123,8 +123,10 @@ impl Fixture {
             v_conv1d: &self.vc,
             f_a_proj: &self.fa,
             f_b_proj: &self.fb,
-            g_a_proj: &self.ga,
-            g_b_proj: &self.gb,
+            output_gate: KdaOutputGateWeights::LowRank {
+                g_a_proj: &self.ga,
+                g_b_proj: &self.gb,
+            },
             b_proj: &self.bp,
             a_log: &self.al,
             dt_bias: &self.dt,
@@ -517,6 +519,7 @@ impl DeviceWeights {
             f_a_proj: &fx.fa,
             f_b_proj: &fx.fb,
             g_a_proj: &fx.ga,
+
             g_b_proj: &fx.gb,
             b_proj: &fx.bp,
             a_log: &fx.al,

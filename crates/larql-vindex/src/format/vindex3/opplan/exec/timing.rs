@@ -155,8 +155,9 @@ pub enum OpClass {
     /// (`-a_log.exp() * softplus(f_low + dt_bias)`) — the projection and
     /// the nonlinearity that turns it into a per-head decay, together.
     KdaDecayGate,
-    /// `g_a_proj → g_b_proj` — the output gate's PROJECTION only; its
-    /// sigmoid and elementwise apply happen later, fused into
+    /// The output gate's PROJECTION only — `g_a_proj → g_b_proj` in the
+    /// low-rank form, one `g_proj` matvec in Kimi-K3's declared full-rank
+    /// form; its sigmoid and elementwise apply happen later, fused into
     /// [`OpClass::KdaGatedNorm`], not here.
     KdaOutputGate,
     /// `b_proj` through the sigmoid that turns it into `beta`.

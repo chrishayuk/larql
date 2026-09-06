@@ -267,3 +267,51 @@ fn an_explicit_multiplier_is_not_inverted() {
     }));
     assert_eq!(arch.logit_scale(), Some(0.25));
 }
+
+/// K3-REP-GATE-1: the two attention output-gate declarations are read
+/// verbatim, as options — absent stays `None` (the reference's own default
+/// is the low-rank pair / no gate), and `false` is a declaration too.
+#[test]
+fn the_k3_output_gate_declarations_are_read_verbatim() {
+    let kimi_shaped = |gates: serde_json::Value| {
+        let mut config = serde_json::json!({
+            "model_type": "kimi_linear",
+            "hidden_size": 64,
+            "num_hidden_layers": 2,
+            "intermediate_size": 256,
+            "num_attention_heads": 8,
+            "num_key_value_heads": 8,
+            "linear_attn_config": {
+                "kda_layers": [1],
+                "full_attn_layers": [2],
+                "num_heads": 8,
+                "head_dim": 8,
+                "short_conv_kernel_size": 4,
+            },
+        });
+        if let Some(full_rank) = gates["use_full_rank_gate"].as_bool() {
+            config["linear_attn_config"]["use_full_rank_gate"] = serde_json::json!(full_rank);
+        }
+        if let Some(gate) = gates["mla_use_output_gate"].as_bool() {
+            config["mla_use_output_gate"] = serde_json::json!(gate);
+        }
+        detect_from_json(&config)
+    };
+    let declared = kimi_shaped(serde_json::json!({
+        "use_full_rank_gate": true,
+        "mla_use_output_gate": true,
+    }));
+    assert_eq!(declared.config().kda_use_full_rank_gate, Some(true));
+    assert_eq!(declared.config().mla_use_output_gate, Some(true));
+
+    let denied = kimi_shaped(serde_json::json!({
+        "use_full_rank_gate": false,
+        "mla_use_output_gate": false,
+    }));
+    assert_eq!(denied.config().kda_use_full_rank_gate, Some(false));
+    assert_eq!(denied.config().mla_use_output_gate, Some(false));
+
+    let absent = kimi_shaped(serde_json::json!({}));
+    assert_eq!(absent.config().kda_use_full_rank_gate, None);
+    assert_eq!(absent.config().mla_use_output_gate, None);
+}
