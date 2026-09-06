@@ -234,6 +234,8 @@ fn run_on<B: PlanBackend>(
                     plan,
                     store,
                     args.repeat,
+                    args.warmup,
+                    args.unquiet_ok,
                 );
             }
             super::generate::run_generate(backend, &engine, tokens, new_tokens, plan, store)

@@ -1,0 +1,33 @@
+{
+  "programme": "residency-into-k3",
+  "wave": "V4 deterministic warm-latency characterisation",
+  "frozen": "2026-09-06, before implementation, on main 43228c97 (PR #428)",
+  "why": "V3 measured the warm Kimi-Linear token at 140 ms and 430 ms in two runs with 0 major faults in both. A 3× spread on identical work is not a throughput figure; 0 major faults rules out cold storage and nothing else. V4 characterises the warm token deterministically before any representation or access move is priced against it.",
+  "subject": "~/chris-models/Kimi-Linear-48B-A3B-Instruct.lift2.vindex3, production backend, prompt [1008, 10484, 318], the first generated token (276) after the prompt, fresh continuation state per pass so the token state is identical by construction",
+  "instrument": {
+    "reuse": "`vindex3 exec … --generate 2 --residency-curve --repeat N` (V3): per pass and step, elapsed, mincore-resident delta, minor/major fault deltas, peak RSS.",
+    "add": [
+      "`--warmup K`: passes excluded from the statistics; the report names how many.",
+      "stage ledger, disjoint at its own level and allowed to contain leaf timers: Attention (the layer's attention operator, KDA/MLA/softmax), Router (router projection + selection), RoutedExperts (the per-expert loop), SharedExpert (the always-on branch); Other = wall − the four. The V3 leaf timer around the routed loop is REMOVED: it nested the projection leaves and voided the leaf ledger's reconciliation.",
+      "routing trace: the selected expert ids of every routed layer for the timed token, captured per pass; a fingerprint and equality across passes are reported.",
+      "determinism: generated ids per pass; max |Δ| of the token's logits against pass 1.",
+      "scheduling: the CPU pool's worker count, available parallelism, and the environment probe (power, load, background CPU, busiest process) at start and per pass.",
+      "boundary: the production CPU backend is synchronous — the pool joins inside the step and nothing runs past the step's return; the report states this and the device backend is out of scope.",
+      "statistics: p50, p95, min, max of the token step and of every stage over the counted passes (nearest-rank)."
+    ]
+  },
+  "arms": {
+    "A_quiet": "n = 30 passes, warmup 3, on a machine the probe calls quiet (background CPU < 10%, load average < 4).",
+    "B_contended": "the same command while four `yes > /dev/null` processes run — a control for the instrument, not a measurement of the model: the probe must NAME the contention and the statistics must move."
+  },
+  "predictions": {
+    "P1": "Quiet arm: token p50 ≤ 180 ms and p95/p50 ≤ 1.3. (The 430 ms V3 run was contention.)",
+    "P2": "Selected experts are identical in every pass (one fingerprint), and so are the generated ids.",
+    "P3": "Quiet-arm stage split of the token p50: RoutedExperts 40–55%, Attention 25–40%, SharedExpert 3–8%, Router < 3%, Other ≤ 15%.",
+    "P4": "Every counted pass: 0 major faults, 0 resident-page delta, ≤ 10 minor faults.",
+    "P5": "Logits max |Δ| against pass 1 ≤ 1e-4 (reduction-order noise only).",
+    "P6": "Contended arm: token p50 ≥ 1.5× the quiet p50 and p95/p50 > 1.3; the probe reports background CPU > 50% and names `yes` as the busiest process."
+  },
+  "falsification": "P1 false → the warm floor is not ~140 ms and the spread is intrinsic (then the stage split says where). P2 false → routing is not deterministic across passes and every latency figure is over different work. P3 false → the stage model is wrong and prefetch is priced against the wrong denominator. P6 false → the instrument cannot see contention and V3's spread stays unexplained.",
+  "not_claimed": "No tokens-per-second figure. No comparison across representations. No prefetch — V4 only fixes the denominator the prefetch arms will be measured against."
+}
