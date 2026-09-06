@@ -539,36 +539,32 @@ fn the_two_numerically_inert_mutations_are_caught_by_the_witness_alone() {
 
 // ── What has NOT lifted ─────────────────────────────────────────────
 
-/// 2a proves the decode traversal and lifts nothing PUBLIC. The loader
-/// every ordinary caller reaches still refuses the topology by name, so
-/// the witness seam that proves the traversal cannot make the component
-/// look supported.
+/// **What 2a and 2b refused, the lift now prepares — through the public
+/// loader, which is the one every witness in this rung reaches.**
 ///
-/// The batch half of this test is GONE, and its absence is the record
-/// of a real change rather than a deletion of inconvenient evidence:
-/// 2a asserted that the batch traversal refused an attention-residual
-/// image by name, and 2b builds the per-position history that refusal
-/// was standing in for. What replaces it lives in `attn_res_2b_batch`,
-/// where the batch path is required to RUN and to be caught by three
-/// positional controls — a stronger obligation than the refusal it
-/// retires. The public refusal here is untouched, and it is the one
-/// that gates the rung.
+/// This test asserted the opposite through both traversal transitions:
+/// the public loader refused the topology by name, and the witnesses
+/// prepared through a test-only seam so that proving the traversal could
+/// not be mistaken for lifting it. At the lift the refusal went and the
+/// seam went with it, so `prepare` in `attn_res_substrate` is now this
+/// same call — every assertion in this file and in `attn_res_2b_batch`
+/// scores the path a real caller takes.
+///
+/// Kept as its own test rather than left implicit in `prepare` because
+/// the claim is about the PUBLIC surface, and a change that reintroduced
+/// a refusal there would otherwise surface as thirteen confusing
+/// failures instead of one clear one.
 #[test]
-fn the_public_loader_still_refuses() {
+fn the_public_loader_prepares_what_it_used_to_refuse() {
     let sub = substrate();
     let store = OperandStore::open(sub.container.path(), &sub.inspection).unwrap();
-
-    let public = match PreparedOperands::load(
+    PreparedOperands::load(
         &sub.plan,
         &store,
         &ReferenceBackend::new(),
         ExecutionSlice::Full,
-    ) {
-        Ok(_) => panic!("the public loader must still refuse an attention-residual plan"),
-        Err(err) => err.to_string(),
-    };
-    assert!(public.contains("cannot execute it"), "{public}");
-    assert!(public.contains("traversal"), "{public}");
+    )
+    .expect("the public loader prepares an attention-residual plan");
 }
 
 /// **Observation is optional, and the traversal must not depend on being

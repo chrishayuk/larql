@@ -219,18 +219,25 @@ pub const CARRIAGE_RULES: &[CarriageRule] = &[
         probe: Some(probe_hc_eps),
     },
     // The attention-residual period (K3-ATTNRES-1). ONE declared
-    // component fact, carried to the component's residual topology —
-    // and it stops there ON PURPOSE. `Represented`, not `Lowered`: no
-    // traversal reads a snapshot history, so the executor refuses the
-    // topology by name at preparation and a `Lowered` claim would say a
-    // backend receives this period when nothing does. The probe reads
-    // the BUILT surface, so a checkpoint whose surface does not build
-    // answers nothing here and the row keeps its blocker — the lesson
-    // wave 19 learned when DeepSeek-V4's rows did not move.
+    // component fact, carried to the component's residual topology and
+    // now all the way to a traversal that reads it. `Lowered` since
+    // K3-ATTNRES-1: the executor's history carrier asks this period
+    // which layers take a block-boundary snapshot, on the decode path
+    // (2a) and the batch path (2b), each witnessed against a Torch
+    // oracle transcribed from the reference. Before that it stopped at
+    // `Represented` on purpose, because a `Lowered` claim would have
+    // said a backend receives this period when nothing did.
+    //
+    // The COUNT does not move on this reader — the leaf was already
+    // Representable/ExecutionSemantic and non-blocking — and that is
+    // the point: a count that changed here would mean the stage name was
+    // doing work it should not. The probe still reads the BUILT surface,
+    // so a checkpoint whose surface does not build answers nothing here
+    // and keeps its blocker, the lesson wave 19 learned on DeepSeek-V4.
     CarriageRule {
         leaf: "attn_res_block_size",
-        reaches: Carriage::Represented,
-        site: "Component.execution.residual_topology (ResidualTopology::AttentionResidual.block_size) — and no further: this build has no traversal that carries the snapshot history, so the executor refuses the topology at preparation",
+        reaches: Carriage::Lowered,
+        site: "Component.execution.residual_topology (ResidualTopology::AttentionResidual.block_size) → the executor's attention-residual history carrier, which reads the period to decide which layers take a block-boundary snapshot (opplan::exec::attention_residual::is_block_boundary, on the decode and batch traversals alike)",
         probe: Some(probe_attn_res_block_size),
     },
     // ── Position ────────────────────────────────────────────────────

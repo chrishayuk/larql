@@ -101,7 +101,7 @@ fn identity_survives_a_round_trip_and_parse_refuses_other_schemas_by_name() {
 /// witness is re-recorded.
 #[test]
 fn the_semantics_version_is_pinned_to_known_verdicts() {
-    assert_eq!(PLANNER_SEMANTICS_VERSION, 17);
+    assert_eq!(PLANNER_SEMANTICS_VERSION, 18);
 
     let dir = tempfile::tempdir().unwrap();
     let admissible = plan_system(&one_glimmer(dir.path()));
@@ -300,16 +300,22 @@ fn the_semantics_version_is_pinned_to_known_verdicts() {
         blockers[0]
     );
 
-    // Version 17's verdict (K3-ATTNRES-1, transition 1): an
+    // Version 18's verdict (K3-ATTNRES-1, transition 2): an
     // attention-residual stack with every site operand AND the exit pair
-    // is REPRESENTED — its period is carried, its exit is one placed
-    // object, its four per-layer operands are addressed — and blocked by
-    // ONE finding, the topology's own refusal, because no traversal for
-    // it exists. The same stack without the exit pair is blocked by the
-    // exit's finding instead. Both arms pinned: the second is what keeps
-    // the first from having been implemented as "refuse anything that
-    // declares a period", and a plan that BLOCKED on neither would be
-    // the fail-open this rung exists to make impossible.
+    // is ADMISSIBLE — its period is carried to a traversal that reads
+    // it, its exit is one placed object, its four per-layer operands are
+    // addressed, and the decode (2a) and batch (2b) traversals have each
+    // been witnessed against a Torch oracle. At version 17 this same
+    // estate was blocked by ONE finding, the topology's own refusal,
+    // because no traversal existed; that refusal and both its readers
+    // are now deleted.
+    //
+    // The same stack WITHOUT the exit pair is still blocked, by the
+    // exit's own finding. That arm is what keeps the first from having
+    // been implemented as "stop refusing anything that declares a
+    // period": capability was granted to a traversal, not to the
+    // declaration. A plan that blocked on NEITHER would be the fail-open
+    // this rung exists to make impossible.
     let attn_res_stack = |exit: bool| -> SystemPlan {
         let dir = tempfile::tempdir().unwrap();
         let mut config = serde_json::json!({
@@ -352,23 +358,36 @@ fn the_semantics_version_is_pinned_to_known_verdicts() {
         let inventory = custom_artifact(dir.path(), &config, &tensors);
         plan_system(&[(ARTIFACT.to_string(), inventory)])
     };
-    for (exit, expected) in [(true, "traversal"), (false, "attention_residual_exit")] {
-        let plan = attn_res_stack(exit);
-        assert!(!plan.admissible, "exit={exit}: {:?}", plan.summary);
-        let blockers: Vec<_> = plan
-            .artifacts
-            .iter()
-            .flat_map(|a| &a.findings)
-            .filter(|f| f.blocks())
-            .collect();
-        assert_eq!(blockers.len(), 1, "exit={exit}: {blockers:?}");
-        assert!(
-            blockers[0].subject.ends_with("execution_surface")
-                && blockers[0].detail.contains(expected),
-            "exit={exit}: {:?}",
-            blockers[0]
-        );
-    }
+    let complete = attn_res_stack(true);
+    assert!(
+        complete.admissible,
+        "a complete attention-residual estate is admissible at semantics 18: {:?}",
+        complete.summary
+    );
+    assert_eq!(complete.summary.blocking, 0, "{:?}", complete.summary);
+
+    let no_exit = attn_res_stack(false);
+    assert!(!no_exit.admissible, "{:?}", no_exit.summary);
+    let blockers: Vec<_> = no_exit
+        .artifacts
+        .iter()
+        .flat_map(|a| &a.findings)
+        .filter(|f| f.blocks())
+        .collect();
+    assert_eq!(blockers.len(), 1, "{blockers:?}");
+    assert!(
+        blockers[0].subject.ends_with("execution_surface")
+            && blockers[0].detail.contains("attention_residual_exit"),
+        "{:?}",
+        blockers[0]
+    );
+    // ...and it is blocked by the EXIT, not by a traversal refusal that
+    // should no longer exist anywhere in the report.
+    assert!(
+        !blockers[0].detail.contains("NOT executable"),
+        "the traversal refusal must be gone from the report: {:?}",
+        blockers[0]
+    );
 }
 
 fn pinned(commit: &str) -> ArtifactSource {

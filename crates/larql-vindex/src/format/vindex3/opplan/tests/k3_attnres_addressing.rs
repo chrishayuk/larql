@@ -41,6 +41,7 @@ use crate::format::vindex3::inspect::inspect_container;
 use crate::format::vindex3::opplan::exec::execute_text;
 use crate::format::vindex3::opplan::exec::operands::OperandStore;
 use crate::format::vindex3::opplan::{plan_component_ops, ClosureDefect, OpPlanOutcome};
+use crate::format::vindex3::plan::carriage::Carriage;
 use crate::format::vindex3::plan::plan_system;
 use crate::format::vindex3::plan::tests_support::{custom_artifact, glimmer_shaped_target_with};
 use larql_models::config::ResidualTopology;
@@ -488,21 +489,37 @@ fn a_declaration_with_no_exit_pair_blocks_by_the_exit_s_own_name() {
     );
 }
 
-/// **One authority, two readers.** The report calls a complete
-/// attention-residual surface not executable, and the executor refuses
-/// to prepare the same plan — both from
-/// [`ResidualTopology::unimplemented_reason`], so a plan the report
-/// calls executable can never be one the executor rejects, nor the
-/// reverse.
+/// **One authority, two readers — and at the lift both stop refusing
+/// together.**
 ///
-/// The seam that read this was retired in wave 19 when every judged
-/// topology lowered; its own documentation required that a variant which
-/// refuses again bring the readers back beside it, and this is that
-/// variant. The single-stream control keeps the arm honest: the same
-/// estate minus the topology executes end to end, so what is being
-/// witnessed is the refusal and not a broken fixture.
+/// Through K3-ATTNRES-1's first transition this test asserted the
+/// mirror image: the report called a complete attention-residual surface
+/// not executable and the executor refused the same plan, both reading
+/// `ResidualTopology::unimplemented_reason`. That function is now
+/// deleted, along with both readers, because the decode traversal (2a)
+/// and the batch traversal (2b) were each witnessed against a Torch
+/// oracle transcribed from the reference.
+///
+/// So the test is inverted rather than removed, and it is the same
+/// claim from the other side: what one reader admits, the other must
+/// prepare AND run. A lift that moved the report without the executor
+/// would be exactly the drift the single-authority rule exists to
+/// prevent, and it would be invisible to a test that only checked the
+/// report.
+///
+/// Two arms keep this from having been implemented as "stop refusing
+/// attention residuals":
+///
+///   - the SINGLE-STREAM control, unchanged from the refusing version:
+///     the same estate minus the topology still executes, so what is
+///     being witnessed is the topology and not a fixture that got
+///     easier.
+///   - the EXIT-PAIR arm, in the test immediately above this one: the
+///     same estate without an `attention_residual_exit` object is still
+///     blocked by that object's absence. Capability was granted to a
+///     traversal, not to the declaration.
 #[test]
-fn the_report_and_the_executor_refuse_the_topology_through_one_authority() {
+fn the_report_admits_the_topology_and_the_executor_runs_it() {
     let source = tempfile::tempdir().unwrap();
     let tensors = full_tensors();
     let borrowed: Vec<(&str, &[usize])> = tensors
@@ -511,37 +528,29 @@ fn the_report_and_the_executor_refuse_the_topology_through_one_authority() {
         .collect();
     let inventory = custom_artifact(source.path(), &config(true), &borrowed);
     let system = plan_system(&[(ARTIFACT.to_string(), inventory)]);
-    assert!(!system.admissible, "{:?}", system.summary);
     let blockers: Vec<_> = system
         .artifacts
         .iter()
         .flat_map(|a| &a.findings)
         .filter(|f| f.blocks())
         .collect();
-    assert_eq!(blockers.len(), 1, "{blockers:?}");
     assert!(
-        blockers[0].subject.ends_with("execution_surface")
-            && blockers[0].detail.contains("NOT executable"),
-        "{:?}",
-        blockers[0]
+        blockers.is_empty(),
+        "a complete attention-residual surface must no longer block: {blockers:?}"
     );
-    // The report says the topology is represented and its operands
-    // addressed — the gap is the traversal, not the representation.
-    assert!(
-        blockers[0].detail.contains("traversal"),
-        "{:?}",
-        blockers[0]
-    );
+    assert!(system.admissible, "{:?}", system.summary);
 
-    // The executor, on the very same facts.
+    // The executor, on the very same facts: it prepares, and it runs the
+    // whole stack rather than merely accepting the plan.
     let planned = plan(config(true), full_tensors());
     let attn_res_plan = planned.outcome.plan.as_ref().unwrap();
+    assert!(matches!(
+        attn_res_plan.residual_topology,
+        ResidualTopology::AttentionResidual { .. }
+    ));
     let store = OperandStore::open(planned.container.path(), &planned.inspection).unwrap();
-    let err = execute_text(attn_res_plan, &store, &[1, 2, 3])
-        .expect_err("an attention-residual plan must not prepare")
-        .to_string();
-    assert!(err.contains("cannot execute it"), "{err}");
-    assert!(err.contains("traversal"), "{err}");
+    execute_text(attn_res_plan, &store, &[1, 2, 3])
+        .expect("an attention-residual plan prepares and executes");
 
     // The control: one stream, the same estate minus the topology and
     // its operands, executes.
@@ -642,7 +651,16 @@ fn the_period_is_carried_only_where_the_surface_actually_builds() {
     });
     assert!(!builds.blocks(), "{builds:?}");
     assert_eq!(builds.resolved, Some(serde_json::json!(BLOCK)));
-    assert!(builds.detail.contains("represented"), "{builds:?}");
+    // **`Lowered` since the lift, and the stage is asserted rather than
+    // matched as a substring of the prose.** The period now reaches a
+    // traversal that reads it, so `Represented` would understate what
+    // this build does with the key.
+    //
+    // The key did NOT change whether it blocks, and that half is scored
+    // here too: it was already Representable/ExecutionSemantic and
+    // non-blocking at `Represented`, so a COUNT that moved when the
+    // stage did would mean the stage name was doing work it should not.
+    assert_eq!(builds.carriage, Some(Carriage::Lowered), "{builds:?}");
 
     let refuses = finding_for(|config| {
         config["text_config"]["attn_res_block_size"] = serde_json::json!(BLOCK);

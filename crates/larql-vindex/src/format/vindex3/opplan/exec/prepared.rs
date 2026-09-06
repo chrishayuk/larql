@@ -1545,67 +1545,23 @@ impl PreparedOperands {
     ) -> Result<Self, VindexError> {
         let store = store.into();
         slice.validate(plan)?;
-        // **Refuse before any operand is loaded.** The plan may carry a
-        // residual topology this build cannot traverse. Hyper-connections
-        // are not that any more — wave 19 witnessed the bundle on both
-        // the decode step and the batch traversal — but attention
-        // residuals are: the carrier holds one vector and no snapshot
-        // history, so an attention-residual plan prepared here would run
-        // a K3-shaped model as an ordinary one and produce fluent wrong
-        // output rather than a failure.
+        // **Every declared residual topology is traversable here.**
+        // Single-stream always was; hyper-connections joined it in wave
+        // 19 when the bundle was witnessed on both the decode step and
+        // the batch traversal; attention residuals join it now, their
+        // decode (2a) and batch (2b) traversals each witnessed against a
+        // Torch oracle transcribed from the reference. The authority
+        // this used to consult — `ResidualTopology::unimplemented_reason`
+        // — is deleted rather than left answering `None`, so there is no
+        // dead refusal here for a reader to consult and conclude from.
+        // A topology that cannot be traversed again must bring both the
+        // authority and its readers back together.
         //
-        // Read from the same authority the plan report refuses on, so a
-        // plan the report calls not executable can never be prepared
-        // here. The authority lifts only when a traversal exists AND an
-        // oracle has judged it.
-        if let Some(reason) = plan.residual_topology.unimplemented_reason() {
-            return Err(VindexError::Parse(format!(
-                "component `{}`: residual topology {:?} is represented and its operands are \
-                 addressed, but this build cannot execute it — {reason}",
-                plan.component, plan.residual_topology
-            )));
-        }
         // What a hyper-connected image still cannot be is said below by
         // name — a whole-stack image with no declared head reduction, a
         // layer scale under the topology — and the plan report reads the
         // same facts, so a plan it calls executable is one prepared here.
         Self::load_validated(plan, store, backend, slice, budget)
-    }
-
-    /// **The 2a witness seam.** Prepares an attention-residual plan
-    /// WITHOUT the public topology refusal, so the decode traversal can
-    /// be proven against the oracle while [`Self::load`] keeps refusing.
-    ///
-    /// Test-only by construction (`cfg(test)`), crate-internal, and
-    /// attention-residual plans only: a plan of any other topology is
-    /// sent back to the public path, so nothing prepared here is ever
-    /// the thing a caller could have prepared without the seam.
-    /// Everything below the refusal is the production loader — this is
-    /// the refusal removed, not a second loader. Removed at the lift,
-    /// when the authority itself lifts.
-    #[cfg(test)]
-    pub(super) fn load_for_attention_residual_witness<'s, B: PlanBackend + ?Sized>(
-        plan: &ComponentOpPlan,
-        store: impl Into<OperandSource<'s>>,
-        backend: &B,
-        slice: ExecutionSlice,
-    ) -> Result<Self, VindexError> {
-        let store = store.into();
-        slice.validate(plan)?;
-        if !matches!(
-            plan.residual_topology,
-            ResidualTopology::AttentionResidual { .. }
-        ) {
-            return Err(VindexError::Parse(format!(
-                "component `{}` declares {:?}; the witness seam prepares attention-residual \
-                 plans only, and this plan takes the public path",
-                plan.component, plan.residual_topology
-            )));
-        }
-        // The same budget the public `load` passes. This seam is that
-        // loader with the topology refusal removed and nothing else
-        // changed, so it must not acquire a residency policy of its own.
-        Self::load_validated(plan, store, backend, slice, &ResidencyBudget::UNBOUNDED)
     }
 
     /// The loader proper, past slice validation. Every operand the slice

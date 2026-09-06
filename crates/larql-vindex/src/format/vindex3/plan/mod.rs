@@ -943,15 +943,23 @@ fn execution_surface_findings(artifact: &str, built: &BuiltGraph) -> Vec<Finding
                 o.component == component.id
                     && matches!(o.kind, super::graph::ObjectKind::AttentionResidualExit)
             });
-            // Second: a topology this build represents and cannot
-            // traverse. The seam that read this was retired in wave 19,
-            // when every judged topology lowered and it had nothing left
-            // to read; its own documentation said a variant that refuses
-            // again must bring the reader back beside it, and K3-ATTNRES-1
-            // is that variant. `None` for hyper-connections, whose
-            // traversals were witnessed.
-            let unlowerable = surface.residual_topology.unimplemented_reason();
-            // Third: a hyper-connected component with no head object
+            // **There is no longer a "cannot traverse this topology"
+            // refusal here, and its absence is deliberate.** It read
+            // `ResidualTopology::unimplemented_reason`, which is deleted:
+            // single-stream always lowered, hyper-connections joined it in
+            // wave 19, and attention residuals join it in K3-ATTNRES-1
+            // now that the decode (2a) and batch (2b) traversals have each
+            // been witnessed against a Torch oracle. A topology that
+            // cannot be traversed again brings both the authority and this
+            // reader back together, which is the contract the deleted
+            // function stated for itself twice.
+            //
+            // The two refusals that remain are NOT about traversal, and
+            // retiring the third must not quietly retire them: they are
+            // missing DECLARED objects, and a component that ships no exit
+            // pair or no head is blocked whatever this build can traverse.
+            //
+            // Second: a hyper-connected component with no head object
             // (GLM-5.3-Flash: `mhc` unexplained, no `hc_head_*` shipped)
             // runs layer by layer but has no declared reduction from the
             // bundle to the one vector the final norm reads, and this
@@ -971,11 +979,6 @@ fn execution_surface_findings(artifact: &str, built: &BuiltGraph) -> Vec<Finding
                      component declares no attention_residual_exit object: the topology's own \
                      reduction from the snapshot history to the one vector the final norm \
                      reads is required by the declaration, and this build does not invent one",
-                    surface.residual_topology
-                ))
-            } else if let Some(reason) = unlowerable {
-                Some(format!(
-                    "{:?} is representable but NOT executable by this build — {reason}",
                     surface.residual_topology
                 ))
             } else if headless {
