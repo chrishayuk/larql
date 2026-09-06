@@ -25,6 +25,21 @@ on:
       - '.github/workflows/larql-core.yml'
   workflow_dispatch: {}
 
+# Supersede in-flight pull-request runs: pushing a new commit to a PR
+# cancels the runs still compiling the previous one.
+#
+# Non-PR runs (main pushes, schedules, manual dispatch) are keyed by
+# `run_id`, which is unique per run, so they are each alone in their
+# group. That is deliberate and not the same as `cancel-in-progress:
+# false`: a concurrency group holds at most one running and one pending
+# run, and a newer pending run EVICTS the older pending one. Grouping
+# every main push under `refs/heads/main` would therefore still destroy
+# the CI record for an intermediate main commit when merges land close
+# together, with cancellation disabled or not.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.run_id }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
 jobs:
   test:
     name: test · ${{ matrix.os }}
@@ -33,8 +48,22 @@ jobs:
 
     strategy:
       fail-fast: false
+      # macOS runs on pushes to main, not on pull requests.
+      #
+      # This crate has no macOS-specific surface to exercise: no
+      # `cfg(target_os = ...)`, no `cfg(unix)`/`cfg(windows)` split that
+      # Linux and Windows do not already cover between them, and no
+      # `blas-src`/Accelerate linkage (contrast larql-compute, -inference,
+      # -kv, -demos and -cli, which take `features = ["accelerate"]` under
+      # a macOS cfg and therefore keep their macOS PR leg). The macOS leg
+      # here was compiling the same portable code a third time.
+      #
+      # macOS runner availability is what sets this repo's PR wall clock —
+      # queue waits of 19-24 minutes for jobs that run in under a minute —
+      # so the generic cross-platform record is kept on main rather than
+      # paid for on every pull request.
       matrix:
-        os: [ubuntu-latest, windows-latest, macos-14]
+        os: ${{ fromJSON(github.event_name == 'pull_request' && '["ubuntu-latest", "windows-latest"]' || '["ubuntu-latest", "windows-latest", "macos-14"]') }}
 
     steps:
       - uses: actions/checkout@v7

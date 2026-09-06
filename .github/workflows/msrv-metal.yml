@@ -1,0 +1,151 @@
+# MSRV gate for `larql-compute-metal` — the one crate the Linux MSRV leg
+# in `quality.yml` cannot check.
+#
+# Why it lives here rather than as a second matrix entry in `quality.yml`:
+# that workflow deliberately carries no `paths:` filter (it has a weekly
+# `schedule:` that must scan an unchanged lockfile), so its macOS leg was
+# requested on EVERY pull request. Measured on a recent run it waited
+# 19m25 for a macos-14 runner to execute a 44-second `cargo check`, and
+# macOS runner availability — not Ubuntu job count — is what sets the
+# wall clock on this repo's PR loop.
+#
+# Split out, the same gate runs only when something can actually change
+# its answer: the crate itself, the dependency graph, or the toolchain
+# pin.
+#
+# KEEP IN SYNC with the `msrv` job in `quality.yml`. The two share the
+# read-rust-version step, the no-restored-target guard and — most
+# importantly — the `RUSTUP_TOOLCHAIN` handling described below. If you
+# change the mechanism in one, change it in the other.
+
+name: msrv-metal
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'crates/larql-compute-metal/**'
+      - 'Cargo.toml'
+      - 'Cargo.lock'
+      - 'rust-toolchain.toml'
+      - '.github/workflows/msrv-metal.yml'
+  pull_request:
+    branches: [main]
+    paths:
+      - 'crates/larql-compute-metal/**'
+      - 'Cargo.toml'
+      - 'Cargo.lock'
+      - 'rust-toolchain.toml'
+      - '.github/workflows/msrv-metal.yml'
+  workflow_dispatch: {}
+
+# Supersede in-flight pull-request runs: pushing a new commit to a PR
+# cancels the runs still compiling the previous one.
+#
+# Non-PR runs (main pushes, schedules, manual dispatch) are keyed by
+# `run_id`, which is unique per run, so they are each alone in their
+# group. That is deliberate and not the same as `cancel-in-progress:
+# false`: a concurrency group holds at most one running and one pending
+# run, and a newer pending run EVICTS the older pending one. Grouping
+# every main push under `refs/heads/main` would therefore still destroy
+# the CI record for an intermediate main commit when merges land close
+# together, with cancellation disabled or not.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.run_id }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+permissions:
+  contents: read
+
+jobs:
+  msrv-metal:
+    # Named without the version: a job-level `name` cannot reference `steps`,
+    # and hardcoding a number here would be a second place to forget to bump.
+    name: MSRV · larql-compute-metal
+    # macOS because `larql-compute-metal` takes `blas-src` only under
+    # `cfg(target_os = "macos")` while its examples `extern crate blas_src`
+    # unconditionally — on Linux they fail to resolve at *any* toolchain,
+    # which has nothing to do with the MSRV.
+    runs-on: macos-14
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v7
+
+      # Read the declared MSRV out of Cargo.toml rather than hardcoding it
+      # here, so bumping rust-version in one place updates the gate too.
+      - name: Read declared rust-version
+        id: msrv
+        run: |
+          version=$(sed -n 's/^rust-version = "\(.*\)"/\1/p' Cargo.toml | head -1)
+          if [ -z "$version" ]; then
+            echo "::error::no rust-version found in workspace Cargo.toml"
+            exit 1
+          fi
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          echo "declared MSRV: $version"
+
+      - name: Install Rust ${{ steps.msrv.outputs.version }}
+        uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: ${{ steps.msrv.outputs.version }}
+
+      - name: Cache cargo registry (downloads only, never target/)
+        uses: actions/cache@v6
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+          key: ${{ runner.os }}-cargo-reg2-msrv-${{ steps.msrv.outputs.version }}-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-cargo-reg2-msrv-${{ steps.msrv.outputs.version }}-
+
+      - name: No compiled workspace artefacts may be restored
+        shell: bash
+        run: |
+          # The cache above carries downloads only. A target/ restored from
+          # another commit can satisfy a link against stale code, so a green
+          # matrix would be evidence about an artefact that is not in this
+          # commit. Fail loudly rather than build on one.
+          if [ -e target ]; then
+            echo "::error::target/ was restored from cache - the cache key or path is wrong"
+            exit 1
+          fi
+
+      # This is `cargo check` at the pinned toolchain rather than
+      # `cargo msrv verify`. cargo-msrv bisects across many toolchains to
+      # *discover* the minimum; we already know what we claim, and the only
+      # question CI needs answered is whether the claim is true. One pinned
+      # check answers it in a fraction of the time.
+      #
+      # `--locked` matters: without it cargo may resolve a newer dependency
+      # than Cargo.lock pins and the job would test a graph nobody ships.
+      #
+      # `RUSTUP_TOOLCHAIN` matters more. `rust-toolchain.toml` pins the
+      # DEVELOPMENT toolchain and rustup honours that file over whatever
+      # `dtolnay/rust-toolchain` installed, so from the day the pin landed
+      # (2026-08-22) this step silently checked at the development version
+      # and the gate was hollow. The env var outranks the file, and the
+      # step before the check refuses to run it under any other compiler.
+      - name: Report the compiler running the gate
+        env:
+          RUSTUP_TOOLCHAIN: ${{ steps.msrv.outputs.version }}
+        run: |
+          rustc --version
+          cargo --version
+          # `rust-version` may be two components ("1.98"); rustc reports
+          # three ("1.98.0"). The declared version must equal the running
+          # one or be its major.minor prefix.
+          declared="${{ steps.msrv.outputs.version }}"
+          actual=$(rustc --version | awk '{print $2}')
+          case "$actual" in
+            "$declared"|"$declared".*) echo "MSRV gate runs rustc $actual (declared $declared)" ;;
+            *)
+              echo "::error::MSRV gate would run rustc $actual, not the declared $declared"
+              exit 1
+              ;;
+          esac
+
+      - name: Check at declared MSRV
+        env:
+          RUSTUP_TOOLCHAIN: ${{ steps.msrv.outputs.version }}
+        run: cargo check -p larql-compute-metal --all-targets --locked

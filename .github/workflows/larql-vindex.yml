@@ -30,6 +30,21 @@ on:
       - '.github/workflows/larql-vindex.yml'
   workflow_dispatch: {}
 
+# Supersede in-flight pull-request runs: pushing a new commit to a PR
+# cancels the runs still compiling the previous one.
+#
+# Non-PR runs (main pushes, schedules, manual dispatch) are keyed by
+# `run_id`, which is unique per run, so they are each alone in their
+# group. That is deliberate and not the same as `cancel-in-progress:
+# false`: a concurrency group holds at most one running and one pending
+# run, and a newer pending run EVICTS the older pending one. Grouping
+# every main push under `refs/heads/main` would therefore still destroy
+# the CI record for an intermediate main commit when merges land close
+# together, with cancellation disabled or not.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.run_id }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
 env:
   LARQL_VINDEX_COVERAGE_MIN: 71
   # Fail extraction on any source tensor no `ModelArchitecture` accessor
@@ -146,7 +161,18 @@ jobs:
       - name: Tests
         run: cargo test -p larql-vindex
 
+      # Linux only. These are generic criterion targets with no
+      # platform-specific code path, so compiling them a second and third
+      # time buys no correctness evidence — and on Windows it cost 8m43 of
+      # a 31m13 leg on a recent run, on the critical path of every PR that
+      # touches this crate.
+      #
+      # What the other two platforms keep: `cargo check --all-targets`
+      # above type-checks the bench targets on all three. What they give
+      # up is link-and-run evidence for benches specifically, which for
+      # portable criterion harnesses is not a platform-sensitive claim.
       - name: Benchmark compile/tests
+        if: runner.os == 'Linux'
         run: cargo test -p larql-vindex --benches
 
   coverage:
