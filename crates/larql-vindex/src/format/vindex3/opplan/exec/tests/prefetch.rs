@@ -45,7 +45,9 @@ fn resident_bytes(range: Range) -> usize {
         libc::mincore(
             start as *mut libc::c_void,
             end - start,
-            vec.as_mut_ptr() as *mut libc::c_char,
+            // The vector's element type is the platform's: `c_char` on
+            // macOS, `c_uchar` on Linux. `cast` lets each say which.
+            vec.as_mut_ptr().cast(),
         )
     };
     assert_eq!(rc, 0, "mincore failed");
