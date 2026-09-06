@@ -18,6 +18,7 @@
 //! bank sliced per expert from stored rows, a decoded table gathered per
 //! token, or a device backend's own resident form.
 
+use serde::Serialize;
 use std::fmt;
 
 use super::backend::{MatrixClass, WeightFormat};
@@ -194,10 +195,62 @@ pub enum RealizationForm {
     /// bound once, never copied or converted — and executed in place in
     /// their stored form. A bank's realization: one physical object
     /// serving every logical expert access, paged in as touched.
-    MappedStored { format: WeightFormat },
+    MappedStored {
+        format: WeightFormat,
+        /// How the selected experts' pages are brought in for a token.
+        access: MappedAccess,
+    },
     /// A device backend's resident form, declared per class by that
     /// backend for its own target.
     DeviceResident(WeightFormat),
+}
+
+/// How a mapped bank's selected experts are brought into memory for one
+/// token — an ACCESS realization of the same lossless bytes. The bytes,
+/// the mapping and the touch are identical across variants; only the
+/// request shape differs.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default, Serialize)]
+pub enum MappedAccess {
+    /// The projection loop faults each page as it reaches it: one page
+    /// per fault, serially, in row order.
+    #[default]
+    Demand,
+    /// `madvise(MADV_WILLNEED)` over the selected experts' regions before
+    /// the loop; the kernel decides how much it reads ahead.
+    Advise,
+    /// The selected experts' pages are touched concurrently, ordered by
+    /// address, before the loop; every fault is taken in parallel and
+    /// the loop then finds resident pages.
+    Touch,
+}
+
+impl MappedAccess {
+    pub const ALL: [MappedAccess; 3] = [
+        MappedAccess::Demand,
+        MappedAccess::Advise,
+        MappedAccess::Touch,
+    ];
+
+    pub fn name(self) -> &'static str {
+        match self {
+            MappedAccess::Demand => "demand",
+            MappedAccess::Advise => "advise",
+            MappedAccess::Touch => "touch",
+        }
+    }
+
+    /// The policy named by a flag, or the names it does accept.
+    pub fn parse(name: &str) -> Result<Self, String> {
+        Self::ALL
+            .into_iter()
+            .find(|a| a.name() == name)
+            .ok_or_else(|| {
+                format!(
+                    "unknown expert access `{name}`; one of {}",
+                    Self::ALL.map(|a| a.name()).join(", ")
+                )
+            })
+    }
 }
 
 /// One realization, named so a plan can pin it and a trace can say it.
@@ -223,8 +276,29 @@ impl RealizationId {
             | RealizationForm::Requantise(plan) => plan.format(),
             RealizationForm::SliceStored { convert } => convert,
             RealizationForm::DecodedGather => WeightFormat::F32,
-            RealizationForm::MappedStored { format } => format,
+            RealizationForm::MappedStored { format, .. } => format,
             RealizationForm::DeviceResident(format) => format,
+        }
+    }
+
+    /// The access realization of a mapped form; every other form is
+    /// brought in whole at binding and has none.
+    pub fn access(self) -> MappedAccess {
+        match self.form {
+            RealizationForm::MappedStored { access, .. } => access,
+            _ => MappedAccess::Demand,
+        }
+    }
+
+    /// The same realization under another access policy — only a mapped
+    /// form changes; every other form is returned as it is.
+    pub fn with_access(self, access: MappedAccess) -> Self {
+        match self.form {
+            RealizationForm::MappedStored { format, .. } => Self {
+                backend: self.backend,
+                form: RealizationForm::MappedStored { format, access },
+            },
+            _ => self,
         }
     }
 
@@ -245,7 +319,9 @@ impl RealizationId {
             RealizationForm::Requantise(plan) => format!("requantise/{plan:?}"),
             RealizationForm::SliceStored { convert } => format!("slice-stored→{convert:?}"),
             RealizationForm::DecodedGather => "decode-f32+gather".to_string(),
-            RealizationForm::MappedStored { format } => format!("mapped-stored/{format:?}"),
+            RealizationForm::MappedStored { format, access } => {
+                format!("mapped-stored/{format:?}/{}", access.name())
+            }
             RealizationForm::DeviceResident(format) => format!("device-resident/{format:?}"),
         };
         match self.backend {
@@ -514,6 +590,7 @@ pub fn common_selection(
             let format = mapped_format(&facts.label);
             let id = RealizationId::cpu(RealizationForm::MappedStored {
                 format: format.unwrap_or(WeightFormat::F32),
+                access: MappedAccess::Demand,
             });
             Some(
                 match (

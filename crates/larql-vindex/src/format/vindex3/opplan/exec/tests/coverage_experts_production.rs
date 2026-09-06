@@ -311,7 +311,7 @@ fn a_gate_less_dense_op_binds_two_operands_and_runs_ungated() {
         &ffn,
         (&store).into(),
         &|_: &OperandRef| Ok(WeightFormat::F32),
-        WeightFormat::F32,
+        WeightFormat::F32.into(),
         &|_: &OperandRef| Ok(WeightFormat::F32),
     )
     .unwrap();

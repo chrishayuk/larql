@@ -31,7 +31,7 @@ fn a_sequential_bank_is_refused_by_access_class_before_any_byte_is_read() {
         &ffn,
         (&control).into(),
         &f32_for,
-        WeightFormat::F32,
+        WeightFormat::F32.into(),
         &f32_for,
     )
     .expect("a bf16 bank is row-addressable");
@@ -50,8 +50,13 @@ fn a_sequential_bank_is_refused_by_access_class_before_any_byte_is_read() {
     let store = OperandStore::open(container.path(), &inspection).unwrap();
 
     let before = store.load_count();
-    let Err(err) = FfnOperands::load(&ffn, (&store).into(), &f32_for, WeightFormat::F32, &f32_for)
-    else {
+    let Err(err) = FfnOperands::load(
+        &ffn,
+        (&store).into(),
+        &f32_for,
+        WeightFormat::F32.into(),
+        &f32_for,
+    ) else {
         panic!("a sequential bank cannot be sliced per expert");
     };
     let msg = err.to_string();

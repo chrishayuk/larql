@@ -230,6 +230,12 @@ pub struct ExecArgs {
     /// machine is refused before any weight is bound.
     #[arg(long, requires = "residency_curve")]
     pub unquiet_ok: bool,
+    /// How a mapped expert bank's selected experts are brought in per
+    /// token: `demand` (the loop faults each page), `advise` (the kernel
+    /// is told ahead), `touch` (pages are faulted concurrently ahead of
+    /// the loop). The same lossless bytes under every policy.
+    #[arg(long, default_value = "demand", requires = "residency_curve")]
+    pub expert_access: String,
 
     /// Teacher-force a whole quality bank through ONE resident model,
     /// writing `<--dump-dir>/<id>.f32` per entry.

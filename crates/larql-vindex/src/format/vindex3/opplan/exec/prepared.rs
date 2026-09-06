@@ -1241,6 +1241,14 @@ pub fn select_realizations_within<B: PlanBackend + ?Sized>(
     budget: &ResidencyBudget,
 ) -> Result<Vec<RealizationRecord>, VindexError> {
     let mut selected = select_records(plan, store, backend, slice)?;
+    // The access policy is the budget's, not the candidate's: every mapped
+    // pin executes under the one the caller declared.
+    for (record, _) in &mut selected {
+        record.selection.realization = record
+            .selection
+            .realization
+            .with_access(budget.expert_access);
+    }
     let geometry = BlockGeometry::executor();
     let stored_len = |op: &OperandRef| store.stored_len(op);
     let mut switches: Vec<String> = Vec::new();
@@ -1455,7 +1463,27 @@ fn pinned_format(
 /// one slice pin, or the one form every matrix of a per-expert bank was
 /// pinned to — a bank whose experts were pinned differently is a plan
 /// the loader cannot bind, and is refused by name.
-fn bank_pin(records: &[RealizationRecord], index: usize) -> Result<WeightFormat, VindexError> {
+/// What the bank's pins agree on: the resident form, and how a mapped
+/// form is accessed per token.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct BankPin {
+    pub format: WeightFormat,
+    pub access: super::realization::MappedAccess,
+}
+
+impl From<WeightFormat> for BankPin {
+    /// A format alone is a pin under demand access — the loader's
+    /// behaviour before access was a declared policy, and the one every
+    /// non-mapped form has.
+    fn from(format: WeightFormat) -> Self {
+        Self {
+            format,
+            access: super::realization::MappedAccess::Demand,
+        }
+    }
+}
+
+fn bank_pin(records: &[RealizationRecord], index: usize) -> Result<BankPin, VindexError> {
     let mut pins = records
         .iter()
         .filter(|r| {
@@ -1465,7 +1493,10 @@ fn bank_pin(records: &[RealizationRecord], index: usize) -> Result<WeightFormat,
                     Operation::ExpertBankSlice | Operation::ExpertProject { .. }
                 )
         })
-        .map(|r| r.selection.realization.format());
+        .map(|r| BankPin {
+            format: r.selection.realization.format(),
+            access: r.selection.realization.access(),
+        });
     let Some(first) = pins.next() else {
         return Err(VindexError::Parse(format!(
             "layer {index}: a routed FFN with no pinned bank realization — planned_operands() \
@@ -1671,7 +1702,10 @@ impl PreparedOperands {
             // form so nothing compact is implied.
             let bank_format = match layer.ffn.as_ref().and_then(|f| f.routed()) {
                 Some(_) => bank_pin(&realizations, index)?,
-                None => WeightFormat::F32,
+                None => BankPin {
+                    format: WeightFormat::F32,
+                    access: super::realization::MappedAccess::Demand,
+                },
             };
             layers.push(PreparedLayer {
                 // Absent under post-norm placement: the sublayer reads

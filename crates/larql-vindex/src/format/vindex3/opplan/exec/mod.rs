@@ -46,6 +46,7 @@ pub mod mla;
 pub mod narrow;
 pub mod observe;
 pub mod operands;
+pub mod prefetch;
 pub mod prepared;
 pub mod production;
 pub mod quantise;

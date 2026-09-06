@@ -289,6 +289,10 @@ pub struct ResidencyBudget {
     pub physical_bytes: Option<u64>,
     /// Bytes the host may stream per token to reach a target rate.
     pub throughput: Option<ThroughputBudget>,
+    /// How a mapped bank's selected experts are brought in per token —
+    /// a policy on the ACCESS realization, stamped on every mapped pin
+    /// the selection makes.
+    pub expert_access: super::realization::MappedAccess,
 }
 
 /// A rate constraint: a plan can fit in memory and still be unusably
@@ -313,6 +317,7 @@ impl ResidencyBudget {
     pub const UNBOUNDED: Self = Self {
         physical_bytes: None,
         throughput: None,
+        expert_access: super::realization::MappedAccess::Demand,
     };
 
     /// This machine's physical memory as the budget, read from the OS;
@@ -321,6 +326,7 @@ impl ResidencyBudget {
         Self {
             physical_bytes: physical_memory_bytes(),
             throughput: None,
+            expert_access: super::realization::MappedAccess::Demand,
         }
     }
 
@@ -328,11 +334,17 @@ impl ResidencyBudget {
         Self {
             physical_bytes: Some(bytes),
             throughput: None,
+            expert_access: super::realization::MappedAccess::Demand,
         }
     }
 
     pub fn with_throughput(mut self, throughput: ThroughputBudget) -> Self {
         self.throughput = Some(throughput);
+        self
+    }
+
+    pub fn with_expert_access(mut self, access: super::realization::MappedAccess) -> Self {
+        self.expert_access = access;
         self
     }
 
@@ -499,7 +511,9 @@ pub fn expectations(
                 RealizationForm::DecodedGather => ResidencyProfile::DECODED_F32,
                 // Mapped as stored: resident exactly as the container
                 // holds it, nothing staged on the way.
-                RealizationForm::MappedStored { format } => resident_profile_with(format, geometry),
+                RealizationForm::MappedStored { format, .. } => {
+                    resident_profile_with(format, geometry)
+                }
             };
             let staging = match realization.form {
                 RealizationForm::Direct(_) | RealizationForm::MappedStored { .. } => 0,

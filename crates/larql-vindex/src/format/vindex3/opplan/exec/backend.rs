@@ -639,6 +639,8 @@ pub enum ExpertSlices<'a> {
         gate: &'a [WeightSlice<'a>],
         up: &'a [WeightSlice<'a>],
         down: &'a [WeightSlice<'a>],
+        /// How the selected experts' pages are brought in for this call.
+        access: super::realization::MappedAccess,
     },
 }
 

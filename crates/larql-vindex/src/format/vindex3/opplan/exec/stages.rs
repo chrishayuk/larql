@@ -26,14 +26,17 @@ pub enum Stage {
     RoutedExperts,
     /// The always-active shared expert.
     SharedExpert,
+    /// Bringing the selected experts' pages in ahead of the routed loop.
+    Prefetch,
 }
 
 impl Stage {
-    pub const ALL: [Stage; 4] = [
+    pub const ALL: [Stage; 5] = [
         Stage::Attention,
         Stage::Router,
         Stage::RoutedExperts,
         Stage::SharedExpert,
+        Stage::Prefetch,
     ];
 
     pub fn name(self) -> &'static str {
@@ -42,6 +45,7 @@ impl Stage {
             Stage::Router => "router",
             Stage::RoutedExperts => "routed_experts",
             Stage::SharedExpert => "shared_expert",
+            Stage::Prefetch => "prefetch",
         }
     }
 
@@ -51,6 +55,7 @@ impl Stage {
             Stage::Router => 1,
             Stage::RoutedExperts => 2,
             Stage::SharedExpert => 3,
+            Stage::Prefetch => 4,
         }
     }
 }
@@ -70,7 +75,7 @@ struct Slot {
 /// Every stage's tally, and the count of stages that started inside
 /// another on the same thread.
 pub struct StageLedger {
-    slots: [Slot; 4],
+    slots: [Slot; 5],
     nested: AtomicU64,
 }
 
@@ -86,7 +91,7 @@ impl StageLedger {
             nanos: AtomicU64::new(0),
         };
         Self {
-            slots: [ZERO; 4],
+            slots: [ZERO; 5],
             nested: AtomicU64::new(0),
         }
     }
@@ -105,7 +110,7 @@ impl StageLedger {
         }
     }
 
-    pub fn all(&self) -> [(Stage, StageTally); 4] {
+    pub fn all(&self) -> [(Stage, StageTally); 5] {
         Stage::ALL.map(|s| (s, self.get(s)))
     }
 

@@ -1,0 +1,66 @@
+{
+  "programme": "residency-into-k3",
+  "wave": "PREFETCH-1: lossless selected-expert prefetch as an access realization",
+  "forecast": "k3-prefetch.json (frozen before implementation; not edited)",
+  "built": "`MappedAccess::{Demand, Advise, Touch}` on `RealizationForm::MappedStored` (part of the realization's identity and name, e.g. `mapped-stored/Bf16/advise`); a policy on `ResidencyBudget.expert_access`, stamped on every mapped pin at selection; carried by `BankPin { format, access }` through the loader to `ExpertSlices::Separate { access }`; `exec/prefetch.rs` (`Range`, `prefetch(access, ranges, parallelism)`: Advise = page-aligned `madvise(MADV_WILLNEED)` per range in address order; Touch = scoped threads touching one byte per page over address-ordered ranges); the hook in the production routed call after routing, in its own `Stage::Prefetch`; CLI `--expert-access demand|advise|touch`.",
+  "witnesses": "exec/tests/prefetch.rs: Demand reports nothing; Advise and Touch cover exactly the ranges, page-rounded, and change no byte; touched pages are mincore-resident at every parallelism; the budget's policy lands on every mapped pin and on nothing else, and the realization names it; ALL THREE policies execute the miniature's token to the same bits; an unknown policy is refused by name. CLI: an unknown `--expert-access` is refused before binding.",
+  "cold_state_protocol": "`evict-bank.sh` streams the HF checkpoint (92 GB) and the .s6 container (92 GB) through the page cache; every arm's binding line then read `94.22 GB address space over 19968 regions, 0.000 GB resident` — cold, witnessed by mincore, three times out of three.",
+  "arms": {
+    "machine": "AC power (plugged in between V4 and this wave), load 5–13 from Spotlight indexing what the eviction stream had just read (`mds_stores`), labelled UNQUALIFIED by the probe; the cold figures are I/O-bound and the warm pass of every arm sits within V4's modal cluster.",
+    "A_demand": {
+      "cold_token_ms": 1253,
+      "prefetch_ms": 0.0,
+      "routed_loop_ms": 1213.6,
+      "major_faults": 73516,
+      "minor_faults": 52,
+      "resident_delta_gb": 1.199,
+      "warm_token_ms": 76,
+      "warm_prefetch_ms": 0.0
+    },
+    "B_advise": {
+      "cold_token_ms": 598,
+      "prefetch_ms": 504.5,
+      "routed_loop_ms": 47.0,
+      "major_faults": 73519,
+      "minor_faults": 1378,
+      "resident_delta_gb": 1.206,
+      "warm_token_ms": 87,
+      "warm_prefetch_ms": 8.0
+    },
+    "C_touch": {
+      "cold_token_ms": 1358,
+      "prefetch_ms": 1279.1,
+      "routed_loop_ms": 36.5,
+      "major_faults": 73518,
+      "minor_faults": 341,
+      "resident_delta_gb": 1.205,
+      "warm_token_ms": 80,
+      "warm_prefetch_ms": 2.8
+    },
+    "D_warm": "pass 2 of each arm: 76 / 87 / 80 ms against V4's p50 79.5 ms",
+    "determinism": "routing fingerprint ebe045dc40cce5b1 (the same as V4) in every arm and pass; logits bit-identical pass to pass; generated ids [276, 6690] in every arm.",
+    "cold_prompt_three_positions": {
+      "demand_ms": 6535,
+      "advise_ms": 3300,
+      "touch_ms": 6394,
+      "resident_delta_gb": "7.72 in every arm",
+      "major_faults": "≈470,500 in every arm",
+      "reading": "the same 2× for advise over three positions and 7.7 GB — the effect is the request shape, not the token."
+    }
+  },
+  "predictions_scored": {
+    "P1": "HELD: demand 1253 ms (1.0–1.6 predicted), 73,516 major faults (55k–65k predicted — MORE, because this run paged 1.199 GB where V3's token paged 0.976 GB; 16.3 KB per fault, one page each, as before), resident delta 1.199 GB ✓.",
+    "P2": "FALSIFIED: touch took 1279 ms in its own stage — the same ≈0.94 GB/s as demand's loop — and the loop then ran at 36.5 ms. Faults were MOVED exactly as predicted (loop 36.5 ms, resident delta unchanged), but concurrency bought nothing: page-ins of one mapping are serialised by the kernel, and six threads faulting in parallel wait on each other. The 'device serialises' clause of the falsification applies; a pread-based pool is the untested alternative.",
+    "P3": "HELD, at the fast end: advise 598 ms — 2.1× faster than demand — with the prefetch stage at 504 ms (2.39 GB/s effective, still under the device's ≈3.8 GB/s) and the loop at 47 ms, within 10 ms of warm. The kernel honours WILLNEED with real read-ahead; the fault count is unchanged (73,519) because the pages still arrive through the fault path, just clustered.",
+    "P4": "HELD for touch (80 ms, +1%) and demand (76 ms); BORDERLINE for advise: 87 ms (+9% vs V4's p50, +14% vs this run's demand) — 24 `madvise` calls over 1.2 GB of already-resident pages cost 8 ms. The falsification clause applies: the advise must be gated on residency (skip ranges mincore reports resident) before it is the default.",
+    "P5": "HELD: predicted mapped / page-in / touch identical across arms (the plan does not change); observed resident delta 1.199 / 1.206 / 1.205 GB (±0.6%); only the fault SPLIT (loop vs prefetch stage) and the wall time moved.",
+    "P6": "HELD: one routing fingerprint, bit-identical logits, the same generated ids in every arm."
+  },
+  "findings": {
+    "PF-N1": "The cold routed-expert cost on this machine is a request-shape cost the kernel can halve when told: `madvise(MADV_WILLNEED)` over the selected experts' 24 regions takes the cold token from 1.25 s to 0.60 s with the same bytes, the same faults and the same bits. The remaining 0.5 s is 2.4 GB/s against a 3.8 GB/s device — the next step on this axis is a read path that issues larger requests (pread into the page cache, or fewer, larger advised ranges), not more threads.",
+    "PF-N2": "Concurrent faulting does not parallelise page-in of one file mapping on macOS: six threads touching disjoint ranges of the bank achieved demand's rate. Parallelism must come from the request size, not the requester count.",
+    "PF-N3": "An access realization has a warm cost: 24 advise calls on resident pages cost 8 ms of an 80 ms token. The realization must be conditioned on the mapping's residency (the instrument's own mincore reader), which is exactly the reconciliation V2 built — the prefetch should consult it, not repeat it."
+  },
+  "next": "(1) Gate the advise on residency and re-measure the warm token (P4 to hold cleanly). (2) One arm of larger requests: advise per contiguous run rather than per tensor, and a pread-into-cache variant, to see whether 2.4 GB/s → 3.8 GB/s. (3) Then the resident quantised expert-bank arms (Q6_K, Q4_K) against these numbers: cold 0.60 s advised vs a resident bank's 0 s cold, priced by resident footprint and HF divergence.",
+  "not_claimed": "No tokens-per-second. The AC-power quiet arm of V4 with 30 passes has still not run under a quiet load (Spotlight was indexing after the eviction stream)."
+}
