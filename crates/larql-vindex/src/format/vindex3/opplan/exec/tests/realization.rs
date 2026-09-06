@@ -10,7 +10,7 @@ use super::super::operands::OperandStore;
 use super::super::prepared::{ExecutionSlice, PreparedOperands};
 use super::super::production::{select_cpu, ProductionBackend};
 use super::super::realization::{
-    RealizationForm, RealizationId, RepresentationFacts, SelectionReason,
+    MappedAccess, RealizationForm, RealizationId, RepresentationFacts, SelectionReason,
 };
 use super::super::reference::ReferenceBackend;
 use super::bf16_zlib_execution::{transcode, Transcode};
@@ -667,7 +667,8 @@ fn the_common_selections_cover_the_table_the_bank_and_the_shared_expert() {
     assert_eq!(
         mapped.realization.form,
         RealizationForm::MappedStored {
-            format: WeightFormat::Bf16
+            format: WeightFormat::Bf16,
+            access: MappedAccess::Demand,
         }
     );
     assert_eq!(mapped.reason, SelectionReason::BankMappedAsStored);
@@ -683,7 +684,8 @@ fn the_common_selections_cover_the_table_the_bank_and_the_shared_expert() {
     assert_eq!(
         f32.realization.form,
         RealizationForm::MappedStored {
-            format: WeightFormat::F32
+            format: WeightFormat::F32,
+            access: MappedAccess::Demand,
         }
     );
     for label in ["Q8_0", "BF16_ZLIB"] {

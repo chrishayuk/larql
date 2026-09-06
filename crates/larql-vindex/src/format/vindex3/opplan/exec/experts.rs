@@ -127,6 +127,8 @@ enum ExpertMatrices {
         gate: Vec<LoadedWeight>,
         up: Vec<LoadedWeight>,
         down: Vec<LoadedWeight>,
+        /// How the selected experts' pages are brought in per token.
+        access: super::realization::MappedAccess,
     },
 }
 
@@ -139,7 +141,7 @@ impl ExpertMatrices {
     fn all(&self) -> Vec<&LoadedWeight> {
         match self {
             Self::Fused { gate_up, down } => gate_up.iter().chain(down).collect(),
-            Self::Separate { gate, up, down } => gate.iter().chain(up).chain(down).collect(),
+            Self::Separate { gate, up, down, .. } => gate.iter().chain(up).chain(down).collect(),
         }
     }
 }
@@ -149,7 +151,7 @@ impl FfnOperands {
         ffn: &LayerFfn,
         store: OperandSource<'_>,
         format: super::prepared::FormatFor<'_>,
-        bank: WeightFormat,
+        bank: super::prepared::BankPin,
         shared: super::prepared::FormatFor<'_>,
     ) -> Result<Self, VindexError> {
         match ffn {
@@ -448,6 +450,7 @@ impl RoutedOperands {
                     gate: g,
                     up: u,
                     down: d,
+                    ..
                 },
             ) => {
                 let bank = Operation::ExpertProject {
@@ -528,6 +531,7 @@ impl RoutedOperands {
                 gate: g,
                 up: u,
                 down: d,
+                access,
             } => {
                 gate = slices(g);
                 up = slices(u);
@@ -536,6 +540,7 @@ impl RoutedOperands {
                     gate: &gate,
                     up: &up,
                     down: &down,
+                    access: *access,
                 }
             }
         };
@@ -576,9 +581,10 @@ impl RoutedOperands {
     fn load(
         op: &RoutedFfnOp,
         store: OperandSource<'_>,
-        format: WeightFormat,
+        bank: super::prepared::BankPin,
         shared_format: super::prepared::FormatFor<'_>,
     ) -> Result<Self, VindexError> {
+        let format = bank.format;
         let hidden = op.router.shape.get(1).copied().unwrap_or(0);
         let inter = op.expert_intermediate_size;
         // The bank first: its geometry is DECLARED — `k` follows from the
@@ -627,6 +633,7 @@ impl RoutedOperands {
                         gate: map(gate, inter, hidden)?,
                         up: map(up, inter, hidden)?,
                         down: map(down, hidden, inter)?,
+                        access: bank.access,
                     },
                     None,
                     None,

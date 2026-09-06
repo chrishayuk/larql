@@ -39,7 +39,7 @@ use super::super::super::graph::policy::AttentionSpan;
 use super::backend::{
     AttentionCall, AttentionOut, AttentionStepCall, AttentionStepOut, ExpertSlices, FfnCall,
     FfnManyCall, GateCall, NormCall, PlanBackend, ProjectCall, ProjectedQkv, QkNormCall,
-    RoutedFfnCall, WeightFormat,
+    RoutedFfnCall, WeightFormat, WeightSlice,
 };
 use super::cpu::physical::{
     kquant_execution, project_matrix, project_matrix_many, ExecutorProjections, KQuantExecution,
@@ -48,6 +48,7 @@ use super::cpu::PhysicalProjectionPlan;
 use super::kernels::{
     gather_fused_half, mrope_rotate_scaled, rope_rotate, rope_rotate_scaled, sigmoid, FusedHalf,
 };
+use super::prefetch;
 use super::realization::{
     class_of, common_selection, cpu_projection_candidates, realization_residency, RealizationForm,
     RealizationId, RefusalKind, RepresentationFacts, Selection, SelectionReason, SelectionRefusal,
@@ -1059,6 +1060,29 @@ impl PlanBackend for ProductionBackend {
             select_experts(&call, &mut logits)?
         };
         routing_trace::record(&selected);
+        if let ExpertSlices::Separate {
+            gate,
+            up,
+            down,
+            access,
+        } = &call.weights
+        {
+            // The selected experts' pages, ahead of the loop that reads
+            // them — the access realization, timed apart from the loop
+            // so a fault moved is a fault moved, not a fault removed.
+            let _prefetch = stage(Stage::Prefetch);
+            let ranges: Vec<prefetch::Range> = selected
+                .iter()
+                .flat_map(|(e, _)| [&gate[*e], &up[*e], &down[*e]])
+                .filter_map(|w| match w {
+                    WeightSlice::Bf16(rows) => Some(prefetch::Range::of(rows)),
+                    WeightSlice::F32(rows) => Some(prefetch::Range::of(rows)),
+                    _ => None,
+                })
+                .collect();
+            let parallelism = super::cpu::shared().map(|e| e.workers()).unwrap_or(1);
+            prefetch::prefetch(*access, &ranges, parallelism);
+        }
         let _stage = stage(Stage::RoutedExperts);
         let mut out = vec![0.0f32; call.hidden];
         match call.weights {
@@ -1091,7 +1115,7 @@ impl PlanBackend for ProductionBackend {
             // — so the bank stays in its stored form. No bias layout is
             // defined for separate experts, and none is planned; one
             // arriving here is a plan the executor does not know.
-            ExpertSlices::Separate { gate, up, down } => {
+            ExpertSlices::Separate { gate, up, down, .. } => {
                 if call.gate_up_bias.is_some() || call.down_bias.is_some() {
                     return Err(VindexError::Parse(
                         "a per-expert bank carries no expert bias; the call declares one"

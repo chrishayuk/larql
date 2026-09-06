@@ -354,7 +354,7 @@ pub(super) fn load(op: &RoutedFfnOp, store: &OperandStore, format: WeightFormat)
         &routed(op),
         store.into(),
         &|_: &OperandRef| Ok(format),
-        format,
+        format.into(),
         &|_: &OperandRef| Ok(format),
     )
     .unwrap()
@@ -365,7 +365,7 @@ pub(super) fn load_err(op: &RoutedFfnOp, store: &OperandStore, format: WeightFor
         &routed(op),
         store.into(),
         &|_: &OperandRef| Ok(format),
-        format,
+        format.into(),
         &|_: &OperandRef| Ok(format),
     )
     .err()

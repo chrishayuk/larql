@@ -794,7 +794,7 @@ impl PlanBackend for ReferenceBackend {
             // A per-expert bank, transcribed literally: each matrix
             // widened to f32 exactly (bf16 is the top half of the f32 it
             // denotes), three matvecs, the declared combine.
-            ExpertSlices::Separate { gate, up, down } => {
+            ExpertSlices::Separate { gate, up, down, .. } => {
                 if call.gate_up_bias.is_some() || call.down_bias.is_some() {
                     return Err(VindexError::Parse(
                         "a per-expert bank carries no expert bias; the call declares one"

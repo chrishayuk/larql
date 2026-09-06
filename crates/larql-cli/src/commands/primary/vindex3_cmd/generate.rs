@@ -23,6 +23,7 @@ use larql_vindex::format::vindex3::opplan::exec::cpu::{self, PhysicalProjectionP
 use larql_vindex::format::vindex3::opplan::exec::decode::DecodeSession;
 use larql_vindex::format::vindex3::opplan::exec::operands::OperandStore;
 use larql_vindex::format::vindex3::opplan::exec::prepared::{AllocationCensus, ResidencyCensus};
+use larql_vindex::format::vindex3::opplan::exec::stages;
 use larql_vindex::format::vindex3::opplan::exec::timing;
 use larql_vindex::format::vindex3::opplan::ComponentOpPlan;
 
@@ -473,18 +474,22 @@ pub(super) fn run_residency_curve<B: PlanBackend>(
     repeat: usize,
     warmup: usize,
     unquiet_ok: bool,
+    expert_access: &str,
 ) -> Result<(), Box<dyn std::error::Error>> {
     use larql_vindex::format::vindex3::opplan::exec::accounting::{
         expectations, BlockGeometry, ResourceLedger,
     };
     use larql_vindex::format::vindex3::opplan::exec::kv::RowKvState;
     use larql_vindex::format::vindex3::opplan::exec::prepared::{ExecutionSlice, PreparedOperands};
+    use larql_vindex::format::vindex3::opplan::exec::routing_trace;
     use larql_vindex::format::vindex3::opplan::exec::timing::OpClass;
-    use larql_vindex::format::vindex3::opplan::exec::{routing_trace, stages};
 
     if prompt.is_empty() {
         return Err("prompt holds no tokens — nothing to condition on".into());
     }
+    let access = larql_vindex::format::vindex3::opplan::exec::realization::MappedAccess::parse(
+        expert_access,
+    )?;
     if warmup >= repeat.max(1) {
         return Err(format!("warmup {warmup} leaves no counted pass out of {repeat}").into());
     }
@@ -516,10 +521,16 @@ pub(super) fn run_residency_curve<B: PlanBackend>(
     };
     println!("qualification: {qualification}");
     let loading = Instant::now();
-    let ops = PreparedOperands::load(plan, store, backend, ExecutionSlice::Full)?;
+    let budget =
+        larql_vindex::format::vindex3::opplan::exec::accounting::ResidencyBudget::UNBOUNDED
+            .with_expert_access(access);
+    let ops = PreparedOperands::load_within(plan, store, backend, ExecutionSlice::Full, &budget)?;
     let load_seconds = loading.elapsed().as_secs_f64();
     println!("engine: {engine}");
-    println!("weights bound in {load_seconds:.1} s (once, for {repeat} pass(es))");
+    println!(
+        "weights bound in {load_seconds:.1} s (once, for {repeat} pass(es)); expert access: {}",
+        access.name()
+    );
 
     // PREDICTED, from the pins and the tensor tables.
     let priced = expectations(
@@ -744,7 +755,7 @@ struct StepObservation {
     minor_faults: u64,
     major_faults: u64,
     /// Milliseconds per [`stages::Stage::ALL`] entry, in that order.
-    stage_ms: [f64; 4],
+    stage_ms: [f64; stages::Stage::ALL.len()],
     stages_nested: u64,
 }
 

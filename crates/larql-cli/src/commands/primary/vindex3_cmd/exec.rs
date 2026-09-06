@@ -236,6 +236,7 @@ fn run_on<B: PlanBackend>(
                     args.repeat,
                     args.warmup,
                     args.unquiet_ok,
+                    &args.expert_access,
                 );
             }
             super::generate::run_generate(backend, &engine, tokens, new_tokens, plan, store)

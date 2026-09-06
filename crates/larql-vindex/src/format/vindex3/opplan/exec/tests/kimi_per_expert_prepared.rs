@@ -19,7 +19,7 @@ use super::super::execute_plan;
 use super::super::operands::OperandStore;
 use super::super::prepared::{ExecutionSlice, PreparedOperands};
 use super::super::production::ProductionBackend;
-use super::super::realization::{RealizationForm, SelectionReason};
+use super::super::realization::{MappedAccess, RealizationForm, SelectionReason};
 use super::super::reference::ReferenceBackend;
 use crate::format::vindex3::fixtures::encode_fixture_container;
 use crate::format::vindex3::fixtures_kimi::{
@@ -41,13 +41,13 @@ const ROUTED_LAYERS: usize = MOE_LAYERS - MOE_DENSE_PREFIX;
 const MATRICES_PER_EXPERT: usize = 3;
 const SHARED_PROJECTIONS: usize = 3;
 
-struct Subject {
+pub(super) struct Subject {
     _src: tempfile::TempDir,
     container: tempfile::TempDir,
 }
 
 impl Subject {
-    fn build(write: fn(&Path)) -> Self {
+    pub(super) fn build(write: fn(&Path)) -> Self {
         let src = tempfile::tempdir().unwrap();
         let container = tempfile::tempdir().unwrap();
         encode_fixture_container(write, src.path(), container.path(), "kimi-moe");
@@ -57,7 +57,7 @@ impl Subject {
         }
     }
 
-    fn open(&self) -> (ComponentOpPlan, OperandStore) {
+    pub(super) fn open(&self) -> (ComponentOpPlan, OperandStore) {
         let inspection = inspect_container(self.container.path(), false).unwrap();
         let plan = plan_component_ops(&inspection, self.container.path(), "target")
             .unwrap()
@@ -144,7 +144,8 @@ fn the_bank_is_bound_once_as_a_mapping_and_reconciles_exactly() {
         assert_eq!(
             r.selection.realization.form,
             RealizationForm::MappedStored {
-                format: WeightFormat::F32
+                format: WeightFormat::F32,
+                access: MappedAccess::Demand,
             },
             "{}",
             r.planned.operand.tensor
@@ -483,6 +484,7 @@ fn a_separate_expert_call_is_refused_where_it_cannot_be_executed() {
         gate: &gate,
         up: &gate,
         down: &down,
+        access: MappedAccess::Demand,
     };
     // Executes, on both, once nothing is refusable.
     let production = ProductionBackend::new()
@@ -534,6 +536,7 @@ fn a_separate_expert_call_is_refused_where_it_cannot_be_executed() {
                 gate: &q8,
                 up: &q8,
                 down: &down,
+                access: MappedAccess::Demand,
             },
             None,
             inter,
@@ -569,6 +572,7 @@ fn the_reference_widens_bf16_experts_exactly_and_names_every_other_form() {
         gate: &gate,
         up: &gate,
         down: &down,
+        access: MappedAccess::Demand,
     };
     let production = ProductionBackend::new()
         .routed_ffn(separate_call(&x, &router, bf16(), None, inter, experts))
@@ -628,6 +632,7 @@ fn the_reference_widens_bf16_experts_exactly_and_names_every_other_form() {
                     gate: slices,
                     up: slices,
                     down: &down_f32_slices,
+                    access: MappedAccess::Demand,
                 },
                 None,
                 inter,

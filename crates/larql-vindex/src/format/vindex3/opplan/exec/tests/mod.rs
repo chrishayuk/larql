@@ -125,6 +125,7 @@ pub(super) use crate::format::vindex3::fixtures::{
     DENSE_HIDDEN as HIDDEN, DENSE_INTERMEDIATE as INTERMEDIATE, DENSE_LAYERS as LAYERS,
     DENSE_Q_HEADS as Q_HEADS, DENSE_VOCAB as VOCAB,
 };
+mod prefetch;
 mod sigmoid_router;
 mod stages_and_routing;
 mod step_many;
