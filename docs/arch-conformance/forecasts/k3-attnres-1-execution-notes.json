@@ -288,5 +288,68 @@
     "gates": "cargo fmt --check clean; cargo clippy -p larql-vindex --all-targets -D warnings clean; cargo clippy -p larql-cli --bins --tests -D warnings clean in both its default and --no-default-features forms; cargo check --workspace --all-targets clean \u2014 run because `Plane` is a public type and a crate-scoped gate cannot see its readers; the full larql-vindex suite green; larql-vindex coverage measured against its own policy after a clean of stale profdata.",
     "what_this_transition_does_not_claim": "nothing about K3 itself. K3's op plan still does not close, so no assertion here has ever run on the real row; the substrate is synthetic by construction and its branch is an ordinary attention and FFN, not KDA or MLA. This shows the topology traverses correctly around an ordinary branch, per position, in batch \u2014 and that is all it shows.",
     "next": "the lift, as its own step: `unimplemented_reason` returns None for AttentionResidual, its two readers follow, the carriage rule moves from `represented` to `lowered`, and P3 to P10 are scored from a re-plan \u2014 the verdict FORECAST FROM THE CLASSIFIER rather than from blocker arithmetic, which is the lesson transition 1's P8 was falsified by."
+  },
+
+  "transition_2c_the_lift": {
+    "written": "2026-09-06",
+    "scored_against": "docs/arch-conformance/forecasts/k3-attnres-1-traverse.json \u2014 the LIFT half of that freeze's `2b_batch_and_lift` split, taken as its own transition so the batch witness could be shown to fail before any reader moved.",
+    "what_landed": [
+      "`ResidualTopology::unimplemented_reason` DELETED, not left returning `None` for everything \u2014 the state it sat in between wave 19 and this rung. A dead authority that still answers invites a reader to consult it and conclude something.",
+      "both readers deleted with it, together: the plan report's traversal refusal and the executor's preparation refusal. The single-authority rule is what made that a two-line change rather than a search.",
+      "the `#[cfg(test)]` witness seam `load_for_attention_residual_witness` REMOVED. Its own documentation asked for exactly that at the lift. Both witnesses now prepare through the public `PreparedOperands::load`, so they score the path an ordinary caller reaches and there is no second loader that could drift from the first.",
+      "`attn_res_block_size` carriage `Represented` -> `Lowered`, its site naming the history carrier that reads the period.",
+      "semantics 17 -> 18, with the changelog entry stating what lifted and what did not.",
+      "three fixture migrations, each inverted rather than deleted: the models-side topology test, `k3_attnres_addressing`'s one-authority test (now: the report admits AND the executor runs), and the identity pin's version-17 arm (now version 18's verdict pair)."
+    ],
+    "measurement": {
+      "protocol": "release `vindex` built per arm from that arm's sources; `vindex plan hf://<repo> --json` for K3 and the eight controls into two separate caches; scored by importing `scripts/arch_sweep.py` and calling its own `classify`, so the verdict is the classifier's and not arithmetic of mine.",
+      "THE_CANONICAL_CACHE_COULD_NOT_BE_THE_BASELINE": "It sits at semantics 16, and this transition is 17 -> 18. Scoring 18 against 16 would have folded transition 1's movement into the lift's score \u2014 the 'uniform cache before baseline' failure, in its cross-transition form. So BOTH arms were measured here: baseline = merged main (3e6e76f4, semantics 17), candidate = this branch (semantics 18), same nine rows, same protocol, same machine.",
+      "the_baseline_arm_reproduces_transition_1_exactly": "All eight controls came back at the numbers transition 1 recorded \u2014 Kimi-Linear 0/64, GLM-5.3-Flash 28/91, GLM-5.3 19/76, DeepSeek-V4-Flash 31/73, DeepSeek-V4-Pro 31/73, Hy4-preview 32/76, Qwen3-0.6B 0/40, Qwen3.8-Flash-Next 36/80 \u2014 and K3 at 32/152. An independently rebuilt baseline landing on the previously recorded numbers is what makes the candidate arm's single difference readable as this transition's effect."
+    },
+    "predictions_scored": {
+      "P3_execution_surface_finding_178": {
+        "result": "HELD",
+        "evidence": "`target.execution_surface`, finding id 178, unrepresented/unsupported_component in the baseline arm and ABSENT in the candidate. K3 -1 on this reader. The `execution_surface` cluster goes 1 -> 0."
+      },
+      "P4_net_on_the_k3_row": {
+        "result": "HELD",
+        "evidence": "text_generation blocking 32/152 -> 31/152. A reading of 30 was scored in advance as the fail-open; it did not occur. The blocker-subject delta is exactly one REMOVAL and zero additions, so the lift retired the traversal refusal and granted no other capability."
+      },
+      "P5_the_k3_VERDICT": {
+        "result": "HELD",
+        "evidence": "AMBER -> RED, read from `arch_sweep.classify` rather than from blocker arithmetic \u2014 the discipline transition 1's falsified P8 taught. `unsupported_component` findings 1 -> 0, which empties the class and makes the classifier's AMBER arm unreachable for the row. The baseline reason was 'component identified, no implementation'; the candidate's is '31 blocking on text closure'.",
+        "why_this_is_success_not_regression": "AMBER meant 'identified component, no implementation'. Once the component IS implemented that reason must disappear, even though K3 stays blocked on 31 other things. A row that stayed AMBER here would have meant an unaccounted `unsupported_component` was still standing."
+      },
+      "P6_carriage_stage_moves_and_the_count_does_not": {
+        "result": "HELD on both halves",
+        "evidence": "`text_config.attn_res_block_size` carriage `represented` -> `lowered`; class execution_semantic, category representable, blocking False in BOTH arms. The count did not move on this reader, which is what says the stage name is not doing work it should not."
+      },
+      "P7_op_plan_unchanged": {
+        "result": "HELD",
+        "evidence": "K3's text capability is inadmissible in both arms (31 of 152 still blocking), so its executor is never reached and every witness in this rung remains on the synthetic substrate. No finding in the ResidualWiring / LayerRole / ObjectBinding clusters moved."
+      },
+      "P8_controls": {
+        "result": "HELD, and this time on the verdict line too",
+        "evidence": "Zero movement on all eight controls across blockers, unsupported_component count and verdict. Kimi-Linear-48B-A3B-Instruct GREEN 0/64, GLM-5.3-Flash RED 28/91, GLM-5.3 RED 19/76, DeepSeek-V4-Flash AMBER 31/73, DeepSeek-V4-Pro AMBER 31/73, Hy4-preview RED 32/76, Qwen3-0.6B GREEN 0/40, Qwen3.8-Flash-Next RED 36/80.",
+        "the_other_108_rows": "not re-planned, and the argument was CHECKED rather than assumed, the way transition 1 checked it. All 117 cached plans were scanned on two planes: exactly ONE mentions `attn_res_block_size` and exactly ONE binds an `attn_res` operand group \u2014 Kimi-K3 both times. Every rule this transition touches is gated on `ResidualTopology::AttentionResidual`, which only that declaration produces, so no other row can move."
+      },
+      "P9_semantics_version": {
+        "result": "HELD",
+        "evidence": "17 -> 18, stamped on every plan in the candidate arm. The identity pin gained this transition's verdict PAIR: a synthetic attention-residual estate with every operand and the exit pair is now ADMISSIBLE, and the same estate without the exit pair stays blocked by the exit's own finding \u2014 asserted, plus an explicit assertion that the traversal refusal's wording is gone from that report. The second arm is what keeps the first from having been implemented as 'stop refusing attention residuals'."
+      },
+      "P10_fixture_migration_named": {
+        "result": "HELD",
+        "evidence": "Exactly the three the freeze named, and no others: `plan/tests/identity.rs` (version 18, first arm flipped blocked -> admissible), `opplan/tests/k3_attnres_addressing.rs::the_report_and_the_executor_refuse_the_topology_through_one_authority` rewritten as `the_report_admits_the_topology_and_the_executor_runs_it` keeping its single-stream control, and `larql-models`'s topology test. Two tests failed on the first full run and they were these; nothing else in 4363 changed meaning."
+      }
+    },
+    "falsifiers_checked": {
+      "k3_reads_30_or_fewer": "did not occur. 31, the forecast value. 30 was the pre-declared fail-open.",
+      "k3_stays_AMBER": "did not occur. RED, from the classifier. Had it stayed AMBER the instruction was to stop and find the extra `unsupported_component` rather than rationalise it \u2014 there was none to find.",
+      "any_row_other_than_k3_moves": "did not occur, on nine measured rows and on a structural scan of all 117.",
+      "capability_granted_past_the_boundary": "did not occur. The exit-missing refusal and the hyper-connection headless refusal both survive in the report by name; only the traversal refusal was retired. The blocker delta on K3 is one removal, zero additions."
+    },
+    "what_this_transition_does_not_claim": "that K3 runs. Its text closure still names 31 blockers across representation_quantization (14), unclustered (14), ffn_activation, moe_routing and modality_vision. The row moved at the plan level only, and the traversal it thereby stops refusing has never executed on it \u2014 every witness in this rung is on a synthetic substrate whose branch is an ordinary attention and FFN, not KDA or MLA.",
+    "gates": "fmt; clippy on larql-vindex, larql-models and larql-cli; `cargo check --workspace --all-targets`; larql-models 799 + 100, larql-vindex 4363, larql-server 591, all green.",
+    "rung_status": "K3-ATTNRES-1 is CLOSED with this transition. What remains of K3 is not this rung: `self_attn.g_proj` is K3-REP-GATE-1 and the routed-expert bank is K3-LATENTMOE-1."
   }
 }

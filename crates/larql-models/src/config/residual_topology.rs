@@ -172,60 +172,6 @@ impl ResidualTopology {
     pub fn is_single_stream(&self) -> bool {
         matches!(self, Self::SingleStream)
     }
-
-    /// Why this build cannot EXECUTE this topology, when it cannot.
-    ///
-    /// ONE authority, two readers: the executor's preparation step
-    /// (`larql-vindex`'s `opplan::exec::prepared`), which refuses before a
-    /// single operand is loaded, and the plan report, which must say so.
-    /// Wave 11 established that a refusal only one consumer can see is
-    /// not a refusal, and that two lists of what cannot be lowered drift
-    /// into exactly that state.
-    ///
-    /// **The op plan is deliberately NOT a reader.** Wave 18 settled that
-    /// for hyper-connections and the same argument holds here: the
-    /// topology is a CLOSURE question at that stage — the per-layer site
-    /// operands classify, are required, are checked against the
-    /// topology's own geometry — and refusing there would hide the
-    /// addressability answer behind the traversal gap, which is the
-    /// structural silence a baseline with no `UnclassifiedOperand` at all
-    /// records.
-    ///
-    /// **This function returned `None` for everything between wave 19 and
-    /// K3-ATTNRES-1, and was deleted with its last reader.** Its own
-    /// documentation said a variant that refuses again must bring the
-    /// readers back beside it; that is what this is. Hyper-connections do
-    /// not refuse here — both their traversals were witnessed against the
-    /// reference — and attention residuals do, because no traversal for
-    /// them exists at all.
-    ///
-    /// Saying so precisely matters more than it looks. A stale reason
-    /// sends the next wave to build something that exists; a build that
-    /// lifted the refusal because the operands are addressable would be
-    /// claiming execution from addressing — the same mistake as grading a
-    /// config key representable because a parser read it.
-    pub fn unimplemented_reason(self) -> Option<&'static str> {
-        match self {
-            // Every judged traversal lowers. Hyper-connections joined
-            // them in wave 19, when the decode step and the batch
-            // traversal were each witnessed carrying the bundle against
-            // the reference's own oracle.
-            Self::SingleStream | Self::HyperConnection(_) => None,
-            Self::AttentionResidual { .. } => Some(
-                "the residual is one vector PLUS a history of block-boundary snapshots, and \
-                 every sublayer reads a softmax-weighted mix over that history before it runs \
-                 and adds its result back into the vector; the single-stream residual \
-                 programme cannot lower it without discarding the history, every read of it, \
-                 the periodic snapshot event and the required exit reduction. The declaration \
-                 is represented, the exit pair is owned as one object and the four per-layer \
-                 operands are addressed by role, so neither representation nor addressing is \
-                 what is missing. What is missing is the traversal AND the reference that \
-                 would judge it: this build carries no history in its carrier, and no oracle \
-                 for `_apply_attn_res` exists yet, so there is nothing an implementation could \
-                 be checked against",
-            ),
-        }
-    }
 }
 
 /// One operation in the execution language, named separately rather than
@@ -258,19 +204,30 @@ impl HyperConnectionWeights {
 mod tests {
     use super::*;
 
-    /// The two traversals this build runs lower; the third refuses.
+    /// **Every declared topology now lowers, and this build has no
+    /// `unimplemented_reason` to ask.**
     ///
     /// The refusal that lived here through waves 16-18 was retired in
-    /// wave 19, after the decode and batch traversals were each witnessed
-    /// against the reference's oracle — and returns for attention
-    /// residuals, which have neither a traversal nor an oracle. Both arms
-    /// are pinned: the second is what keeps the first from having been
-    /// implemented as "stop refusing topologies".
+    /// wave 19; it returned for attention residuals in K3-ATTNRES-1's
+    /// first transition, and is retired again here — its readers gone
+    /// with it — now that the decode traversal (2a) and the batch
+    /// traversal (2b) have each been witnessed against a Torch oracle
+    /// transcribed from the reference.
+    ///
+    /// The function is DELETED rather than left returning `None` for
+    /// everything, which is what it did between wave 19 and this rung.
+    /// A dead authority that still answers invites a reader to consult
+    /// it and conclude something; its own documentation asked that a
+    /// variant which refuses again bring the readers back beside it, and
+    /// that remains the contract for the next topology.
+    ///
+    /// What this test can still pin is the part that never depended on
+    /// the refusal: an attention residual carries ONE prefix sum, and is
+    /// still not the ordinary single-stream residual.
     #[test]
-    fn the_witnessed_traversals_lower_and_the_unwitnessed_one_refuses() {
+    fn every_declared_topology_lowers_and_attention_residuals_are_not_single_stream() {
         assert_eq!(ResidualTopology::SingleStream.streams(), 1);
         assert!(ResidualTopology::SingleStream.is_single_stream());
-        assert_eq!(ResidualTopology::SingleStream.unimplemented_reason(), None);
 
         let hc = ResidualTopology::HyperConnection(HyperConnection {
             streams: 4,
@@ -279,7 +236,6 @@ mod tests {
         });
         assert_eq!(hc.streams(), 4);
         assert!(!hc.is_single_stream());
-        assert_eq!(hc.unimplemented_reason(), None);
 
         let attn_res = ResidualTopology::AttentionResidual { block_size: 12 };
         // ONE prefix sum, and a history beside it that no width declares.
@@ -287,9 +243,6 @@ mod tests {
         // ...and still not the ordinary residual: the programme differs,
         // so a plan carrying it must serialise the field.
         assert!(!attn_res.is_single_stream());
-        assert!(attn_res
-            .unimplemented_reason()
-            .is_some_and(|reason| reason.contains("traversal")));
     }
 
     /// The block size is read as declared and never re-derived: two

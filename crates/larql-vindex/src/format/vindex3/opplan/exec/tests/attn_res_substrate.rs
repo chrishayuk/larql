@@ -340,17 +340,26 @@ pub(super) fn substrate() -> Substrate {
     }
 }
 
-/// Prepare through the 2a WITNESS SEAM — the public loader still
-/// refuses, and a test that reached the traversal through it would be
-/// proving the refusal had already lifted.
+/// Prepare through the PUBLIC loader.
+///
+/// Through 2a and 2b this went via a test-only witness seam, because the
+/// public loader refused the topology by name and a test that reached
+/// the traversal through it would have been proving the refusal had
+/// already lifted. At the lift the refusal went and the seam went with
+/// it — its own documentation asked for exactly that — so every witness
+/// in this rung now prepares the way an ordinary caller does.
+///
+/// That is a strengthening of the two witnesses, not a convenience: they
+/// score the traversal a real caller reaches, and there is no longer a
+/// second loader that could drift from the first.
 pub(super) fn prepare(sub: &Substrate) -> (OperandStore, PreparedOperands) {
     let store = OperandStore::open(sub.container.path(), &sub.inspection).unwrap();
-    let ops = PreparedOperands::load_for_attention_residual_witness(
+    let ops = PreparedOperands::load(
         &sub.plan,
         &store,
         &ReferenceBackend::new(),
         ExecutionSlice::Full,
     )
-    .expect("the witness seam prepares an attention-residual plan");
+    .expect("the public loader prepares an attention-residual plan");
     (store, ops)
 }

@@ -57,6 +57,37 @@ pub const PLAN_SCHEMA: u32 = 6;
 /// `plan/tests/identity.rs` pins fixture verdicts against this value, so
 /// a change that flips one fails there until the version is bumped.
 ///
+/// **18** — attention-residual TRAVERSAL (K3-ATTNRES-1, transition 2).
+/// The topology is executed, not merely addressed: the executor carries
+/// an explicit prefix-plus-snapshots state through the decode traversal
+/// (2a) and one such state PER POSITION through the batch traversal
+/// (2b), each witnessed against a Torch oracle transcribed from
+/// `modeling_kimi_linear.py` before any Rust arithmetic was written.
+///
+/// Two readers move together, as they did at 17 and for the same
+/// reason. `ResidualTopology::unimplemented_reason` is DELETED rather
+/// than left answering `None` — the state it sat in between wave 19 and
+/// this rung — and both the plan report's traversal refusal and the
+/// executor's preparation refusal go with it. A dead authority that
+/// still answers invites a reader to consult it; the contract for the
+/// next topology that cannot be traversed is to bring the authority and
+/// its readers back together.
+///
+/// `attn_res_block_size` moves `Represented` -> `Lowered`, its site now
+/// naming the history carrier that reads the period. That reader's
+/// COUNT does not move: the leaf was already non-blocking, and a count
+/// that changed there would mean the stage name was doing work it
+/// should not.
+///
+/// What does NOT lift: a component declaring the topology and shipping
+/// no `attention_residual_exit` object is still blocked by that object's
+/// absence, which is the arm that keeps this from having been
+/// implemented as "stop refusing attention residuals". Nor does anything
+/// else about K3 — its op plan still does not close on `self_attn.g_proj`
+/// (K3-REP-GATE-1) and the routed-expert bank is its own rung, so the
+/// row moves at the plan level only and the traversal it thereby stops
+/// refusing has never run on it.
+///
 /// **17** — attention residuals are a declared RESIDUAL TOPOLOGY, owned
 /// and addressed, and explicitly not traversable (K3-ATTNRES-1,
 /// transition 1). Read from Kimi-K3's own `modeling_kimi_linear.py`
@@ -287,7 +318,7 @@ pub const PLAN_SCHEMA: u32 = 6;
 /// architectures, now block instead of passing silently into
 /// `GenericArch`'s Llama-shaped defaults. Measured on the conformance
 /// corpus: 15 of 42 declared `model_type` strings, across 30 checkpoints.
-pub const PLANNER_SEMANTICS_VERSION: u32 = 17;
+pub const PLANNER_SEMANTICS_VERSION: u32 = 18;
 
 /// Who judged a plan.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
