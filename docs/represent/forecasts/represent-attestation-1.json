@@ -1,0 +1,91 @@
+{
+  "programme": "represent-plugin-planes",
+  "wave": "REPRESENT-ATTESTATION-1: fidelity authority as a plane of its own",
+  "frozen": "2026-09-07, before any implementation, against the VERIFIED merge commit of VQ-1: main `4598b260` (merge of PR #441), with the wave's own commit `85b46061` confirmed as its parent. Branch `represent-attestation-1`, worktree `.claude/worktrees/represent-attestation-1`. The user's layer table, binding tuple, terminal-baseline rule, staleness rule, trust rule and sidecar placement were all given BEFORE this freeze and are folded in below; the reconnaissance was read against this tree AFTER those instructions and BEFORE freezing, and two of its findings changed the shape of the wave. The branch was subsequently rebased onto `9e2e37d9`; see B7 for the re-verification. Any contract movement from now on is a FINDING, not a redesign.",
+  "lane": "Semantic/plugin lane. The performance lane stays PAUSED.",
+  "why": "VQ-1 closed with a split verdict: the dependency mechanism works and a real lossy VQ artifact still cannot satisfy a quality floor, because a vector quantiser's assignment error is a property of a FITTED codebook against ACTUAL weights. A codec can state what its SCHEME guarantees; only an artifact can state what an INSTANCE achieved. Until something carries the second kind of statement, every lossy representation LARQL ships is either unusable under a floor or usable under a guarantee nobody measured. `RepresentationCodec` v1 must not freeze with that hole in it.",
+  "the_four_layers": {
+    "note": "Given by the user, and the organising decision of this wave: fidelity is not one authority but four, and they compose. VQ-1 built the second row only.",
+    "artifact_attestation": "Error introduced by this exact represented operand at this extent. THIS WAVE.",
+    "auxiliary_composition": "Additional error from selected dependency extents. Built in VQ-1.",
+    "realization_qualification": "Numerical error introduced by a particular kernel or backend. A separate future rung; unnecessary for canonical/reference execution, necessary once accelerated kernels make fidelity claims.",
+    "final_guarantee": "The composition of all applicable certificates."
+  },
+  "binding": {
+    "attaches_to": "The REPRESENTED OPERAND INSTANCE AT AN EXTENT \u2014 never to a realization. A realization's numerical error is a different layer with a different authority, and conflating them would make a kernel change silently invalidate an artifact's measured error, or worse, not invalidate it.",
+    "tuple": [
+      "owner operand (object, tensor) and parent extent",
+      "codec family and revision",
+      "logical shape",
+      "exact codes/content digest",
+      "exact referenced-codebook BASELINE \u2014 normally its terminal semantic identity/digest",
+      "source tensor digest",
+      "encoder recipe, and attestation method and version"
+    ],
+    "the_baseline_rule": {
+      "instruction": "The attestation must NOT bind to the currently selected shallow codebook extent.",
+      "why": "Otherwise every parent x dependency-depth combination needs a separate attestation \u2014 a combinatorial explosion that also makes an attestation stale for a reason that has nothing to do with the measurement.",
+      "shape": "attested VQ assignment error against the TERMINAL codebook, PLUS the certificate for the selected codebook extent, composes to the derived parent certificate. The attestation is a fixed point measured once; the dependency's depth is a selection made per plan; only the composition is per-plan."
+    },
+    "staleness": "A changed codebook, codes, codec revision, source or recipe makes the attestation STALE AND UNUSABLE \u2014 unavailable, never zero, never 'probably still fine'.",
+    "trust": "Presence alone must not imply trust. Admission policy must RECOGNISE the attestation authority and method; an attestation by a method this build does not know leaves the certificate UNAVAILABLE. This is the same discipline VQ-1 applied to metric and domain ids: unknown-but-well-formed is expressible and refused by name, never silently honoured."
+  },
+  "placement": "Its own OPTIONAL, VERSIONED `representation_attestations` sidecar, declared by the index the way `auxiliary_references` is. NOT in the codec (a codec states scheme guarantees, not instance measurements), NOT in the auxiliary-reference table (that establishes dependency identity, a different question), NOT in the realization record (wrong layer entirely, per the binding rule above).",
+  "reconnaissance_2026_09_07": {
+    "note": "Read against `4598b260`. B3 and B4 are the two that changed the wave's shape.",
+    "B1": "VERIFIED. `FidelityCertificate::new(metric: MetricId, domain: DomainId, radius: f64)` with accessors `metric()`, `domain()`, `radius()` and `widened_by()` composition exists (`represent/codec/fidelity.rs`). An attestation must PRODUCE one of these, not a parallel vocabulary, or composition acquires two algebras.",
+    "B2": "VERIFIED. The index already carries one optional versioned sidecar pointer, `auxiliary_references: Option<String>` (`index.rs:140`), defaulting to `None`. `representation_attestations` is the same shape of declaration, so the mechanism generalises and the wave should prove it does rather than inventing a second one.",
+    "B3_THE_FLOOR_NEVER_SEES_A_COMPOSITION": {
+      "finding": "`composed_certificate` HAS NO PRODUCTION CALLER. Every call site is in `represent/codec/tests/composition.rs`. The floor that actually gates selection is `RepresentationFloor::admits(option, terminal)` (`opplan/exec/accounting.rs`), whose single production caller is the extent-downgrade loop in `PreparedOperands` selection (`opplan/exec/prepared.rs`, the `budget.fidelity.admits(option, terminal)` guard), and it reads `option.certificate.radius` \u2014 the CODEC'S OWN DECLARED extent certificate, with no knowledge of any dependency. Cited by function rather than by line: the line moved between the freeze and the rebase below, and the fact did not.",
+      "why_it_has_not_bitten": "It is LATENT, not live. To bite, a codec must declare a radius AND require an auxiliary with a movable extent. `VQ8_SHARED` is the only shipped codec with a dependency (asserted by `exactly_one_shipped_codec_depends_on_another_object`) and it declares no radius, so it can only ever be admitted as terminal. `F32_PLANES` declares a radius and has no dependency.",
+      "why_it_matters_HERE": "**ATTESTATION-1 is exactly what makes it live.** The moment an attestation gives a VQ operand a radius, `admits` will consult the parent's own number and ignore the codebook's selected extent \u2014 silently over-promising, which is the precise failure VQ-1's forecast named ('selecting the codebook's extent purely by what the codebook alone certifies would silently degrade every operand that depends on it'). Wiring composition into selection is therefore INSIDE this wave's blast radius, not optional follow-up. The wave must not ship an attested radius without it.",
+      "scored_as": "A pre-registered structural blocker, in the same class as VQ-1's V6 and PROGRESSIVE-1's sibling-fate blocker: predicted here so it is met as a scheduled step."
+    },
+    "B4_THERE_IS_NO_PER_TENSOR_DIGEST": {
+      "finding": "`SegmentTensor { name, dtype, shape, offset, len }` carries no digest (`encode/segment.rs:64`). Digests exist only at SEGMENT granularity \u2014 `payload_sha256` and `segment_sha256` in the index. The user's binding tuple requires an exact per-operand content digest and a source tensor digest; the container holds neither.",
+      "consequence_for_admission": "This breaks the metadata-only admission property VQ-1 established. An auxiliary closure can be admitted from metadata alone because identity is declared; an attestation that binds to CONTENT cannot be verified without reading the content. That is not a defect to design around \u2014 it is what binding to bytes MEANS.",
+      "planned_resolution": "TWO-STAGE ADMISSION, pre-registered: (1) the TUPLE check \u2014 operand, extent, codec family and revision, shape, recipe, method, authority \u2014 is metadata-only and happens before any payload read, exactly as the closure does; (2) the DIGEST check happens at preparation, when the operand's bytes are being read anyway, and a mismatch refuses the prepared image rather than the plan. An attestation that passes stage one and fails stage two is STALE, and stale is unavailable.",
+      "rejected_alternative": "Adding per-tensor digests to the segment header would bump `SEGMENT_HEADER_SCHEMA` and touch every container ever written, to serve one optional sidecar. The attestation carrying the digest it was measured against is self-describing and costs the format nothing."
+    },
+    "B5": "VERIFIED. `certificate_at(extent, tensor)` is a CODEC method with no access to the operand instance, the container, or any digest \u2014 and 18 of its 19 call sites discard the result, using it purely as an extent-validity check. **An attested claim cannot enter through `certificate_at`.** The draft written during VQ-1 assumed it could; that assumption is wrong and is corrected here before the freeze. The attested radius must enter where an operand instance is in scope, which is the extent-option construction in `prepared.rs`, not the codec trait.",
+    "B6": "VERIFIED. `ExtentOption { certificate: ExtentCertificate, stored_bytes: Option<u64> }` (`realization.rs:558`) is the object the floor judges. It is per-operand and constructed in the planner, so it is the natural place for a derived certificate to land \u2014 which supports B3's resolution without a new decision point.",
+    "B7_REBASE_RECHECK": "The branch was cut from `4598b260` and REBASED onto `9e2e37d9` (merge of PR #442, K3-LATENTMOE-1, landed by a peer session while this forecast was being written). #442 touched `opplan/exec/prepared.rs`, which is the file B3 rests on, so B3 and B4 were RE-VERIFIED against `9e2e37d9` before this forecast was pushed: `composed_certificate` still has zero production callers, `admits` still has no dependency awareness, and `SegmentTensor` still carries no digest. Only the line number moved. Recorded because a forecast that cites a tree it was not finally based on is a forecast nobody can check."
+  },
+  "predictions": {
+    "P1": "An attestation is expressible as a versioned sidecar producing a `FidelityCertificate`, with NO new certificate vocabulary. FALSIFIED if an attested claim needs fields a declared claim does not have, which would mean fidelity has two algebras and every consumer must know which kind it holds.",
+    "P2": "The index's optional-versioned-sidecar mechanism generalises to a second sidecar with no change to how the first is read, and a container holding neither, either, or both is well-formed in all four combinations. FALSIFIED if the two sidecars need to know about each other.",
+    "P3": "Two-stage admission holds: the tuple check is metadata-only and pre-I/O, the digest check is at preparation, and no third stage is needed. FALSIFIED if a stale attestation can reach execution, or if the tuple check turns out to need a byte read.",
+    "P4": "Wiring composition into selection (B3) requires NO new decision point: the extent option carries a DERIVED certificate \u2014 the codec's declared one, or the attested one, composed with the resolved auxiliaries' \u2014 and `RepresentationFloor::admits` is unchanged. FALSIFIED if selection must branch on whether a certificate was declared, attested or composed. The whole point is that a floor asks one question.",
+    "P5": "A shallow codebook extent measurably changes whether an attested VQ operand satisfies a floor, and the wave can demonstrate the forcing case: a floor that a terminal codebook satisfies and a shallow one does not, with the shallow selection REFUSED rather than silently admitted. FALSIFIED if no such pair exists, which would mean the composition is decorative.",
+    "P6": "Trust is a tuple check, not a trust model: recognising an authority and a method id is enough to make presence-not-imply-trust real, with no signing, no key material and no chain. FALSIFIED if an unrecognised authority cannot be refused without one.",
+    "P7": "An external provider can supply and consume an attestation through exported API alone, proved by the same comment-stripped grep discipline VQ-1 used. FALSIFIED if any attestation handling needs a match arm in core."
+  },
+  "witnesses": {
+    "X1_tuple_before_bytes": "The tuple check \u2014 operand, extent, codec family and revision, shape, recipe, method, authority \u2014 is performed from metadata only, before any payload read, witnessed on the store's read counter.",
+    "X2_digest_at_preparation": "A tampered payload whose tuple still matches is refused at preparation, naming the operand and the digest that did not match. The control: the SAME operand untampered prepares successfully, so the refusal is the digest and not the path.",
+    "X3_staleness_by_name": "Each of the six staleness causes \u2014 changed codes, changed codebook baseline, changed codec revision, changed shape, changed source, changed recipe \u2014 is refused by name and leaves the certificate UNAVAILABLE rather than zero. Six arms, one per cause, because a single arm cannot show which check fired.",
+    "X4_presence_is_not_trust": "An attestation that is well-formed, current and bound to the right bytes, by an authority or method this build does not recognise, leaves the certificate unavailable \u2014 named as unrecognised, not as absent, not as stale. And the discriminating control: the same attestation under a recognised method is available, so the refusal is the recognition and nothing else.",
+    "X5_terminal_baseline": "The attestation binds to the TERMINAL codebook and is unchanged across codebook extents: one attestation serves every dependency depth, and selecting a shallower codebook does not invalidate it. Asserted by holding the attestation fixed while the auxiliary extent moves.",
+    "X6_composition_reaches_the_floor": "The forcing case of B3: an attested VQ operand whose floor is satisfied against a terminal codebook and NOT satisfied against a shallow one, with the shallow option refused by the floor. Plus the regression witness that B3 exists at all \u2014 a test that FAILS against `4598b260`'s selection logic and passes after, so the gap is demonstrated rather than asserted.",
+    "X7_out_of_tree": "An external crate supplies an attestation for its own codec's operand and consumes it through exported API, with the comment-stripped grep proving no core file names its authority, method or label in code.",
+    "X8_four_combinations": "A container with neither sidecar, with only references, with only attestations, and with both, each reads correctly \u2014 the second sidecar does not change how the first behaves."
+  },
+  "implementation_order": [
+    "1. The versioned `representation_attestations` sidecar and its record type, with the full binding tuple.",
+    "2. The tuple check: metadata-only, pre-I/O, refusing each staleness cause by name.",
+    "3. Authority and method recognition, with unrecognised refused distinctly from absent and from stale.",
+    "4. The digest check at preparation, with the tamper arm and its untampered control.",
+    "5. B3: the derived certificate reaching `ExtentOption`, with the failing-first regression witness.",
+    "6. The forcing case \u2014 a floor met against a terminal codebook and missed against a shallow one.",
+    "7. The out-of-tree provider acceptance test."
+  ],
+  "boundary": "No signing, no key material, no trust chain, no provenance graph. No attestation-producing encoder for any real model. No realization-error certificates \u2014 that is the fourth layer and a separate rung. No dependency cache and no execution-scoped stage ledger: both are named debts (below), both are execution/accounting work, and neither is a reason to reopen the codec trait's shape. The wave asks whether an artifact can CARRY a measured claim, be refused when the claim does not match it, and have that claim reach a selection decision \u2014 not whether anyone should believe the claim.",
+  "debts_this_wave_does_not_pay": {
+    "D1_shared_dependency_materialisation": "Decode or cache a dependency once per representation instance and extent, or price the current per-owner reads honestly. VQ1-N1 measured the mismatch (1 owner -> 1 read, 2 owners -> 2 reads, ledger prices 1). The present ledger/read mismatch cannot remain, and until it is paid, no claim of the form 'preparing this plan reads N bytes' is sound.",
+    "D2_realization_error_certificates": "The fourth layer. Unnecessary for canonical and reference execution; necessary once accelerated kernels make fidelity claims.",
+    "D3_execution_scoped_stage_ledger": "PR1-N5, still open, still owed before any further qualified performance claim.",
+    "relation_to_the_freeze": "The codec trait itself may be ready to freeze after this wave. D1, D2 and D3 are surrounding execution and accounting work, not reasons to reopen its fundamental shape."
+  },
+  "not_claimed": "No timing, no throughput, no kernel. No claim that any attested number is CORRECT \u2014 only that it is carried, bound, checked, recognised and composed. Trust is a different plane again, and mixing it in would confound this one exactly as attestation would have confounded VQ-1.",
+  "exit_claim": "A represented operand instance can carry a measured error for its own extent, bound to the exact bytes, source, recipe and codec revision that produced it and to its dependency's terminal baseline rather than to any selected depth; stale or unrecognised attestations leave the guarantee unavailable rather than optimistic; and the resulting certificate \u2014 composed with the certificates of the dependency extents actually selected \u2014 reaches the floor that gates selection, so that a lossy artifact can satisfy a quality requirement without anyone having invented a number."
+}
