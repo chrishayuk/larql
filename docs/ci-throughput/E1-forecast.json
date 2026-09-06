@@ -1,0 +1,158 @@
+{
+  "experiment": "E1",
+  "title": "PR-run cancellation, macOS PR occupancy, VINDEX bench placement",
+  "frozen_at": "2026-09-06",
+  "frozen_against": {
+    "baseline_snapshot": "docs/ci-throughput/before-e1.json",
+    "workflows_sha": "f7805b66",
+    "note": ".github/workflows at HEAD is identical to origin/main f7805b66"
+  },
+  "instrument": "scripts/ci_throughput.py",
+  "baseline": {
+    "attempts": 33,
+    "branches": 20,
+    "window": "2026-08-15 onward",
+    "merge_ready_p50_s": 3683,
+    "merge_ready_p95_s": 5707,
+    "first_green_p50_s": 130,
+    "first_green_p95_s": 1338,
+    "macos_queue_max_p50_s": 1218,
+    "macos_queue_max_p95_s": 4089,
+    "vindex_windows_exec_p50_s": 1781,
+    "superseded_exec_total_min": 931.6,
+    "superseded_exec_mean_min": 28.2,
+    "queued_min_by_os": {
+      "linux": 8984.0,
+      "windows": 1632.4,
+      "macos": 4526.6
+    },
+    "executed_min_by_os": {
+      "linux": 5037.1,
+      "windows": 3793.8,
+      "macos": 3034.9
+    }
+  },
+  "mechanism_measured_from_baseline": {
+    "c2_macos_jobs_removed_from_prs": 74,
+    "c2_macos_jobs_total": 328,
+    "c2_macos_queue_min_removed_pct": 27.9,
+    "c2_macos_exec_min_removed_pct": 5.2,
+    "reading": "c2 removes jobs that are cheap to RUN and expensive to SCHEDULE (quality's msrv-macOS leg: 33 jobs, 544 queue-min, 22 exec-min). The intended mechanism is relief of contention for a scarce runner pool, NOT a reduction in macOS compute. larql-compute-metal alone is 35.3% of macOS execution and c2 does not touch it."
+  },
+  "predictions": [
+    {
+      "id": "P1",
+      "scores": "c1",
+      "claim": "superseded_exec_total falls from 931.6 min to <= 300 min",
+      "reason": "cancellation fires within seconds of the superseding push, collapsing the overlap window to teardown time",
+      "falsifier": "superseded_exec_total > 600 min means cancellation is not firing as intended",
+      "mechanism": "c1",
+      "kind": "effect",
+      "metric": "superseded_exec_total",
+      "held_if": {
+        "after": {
+          "lte": 300
+        }
+      },
+      "falsified_if": {
+        "after": {
+          "gte": 600
+        }
+      }
+    },
+    {
+      "id": "P2",
+      "scores": "c2",
+      "claim": "total macOS queued runner-minutes fall by 30-55%",
+      "reason": "27.9% is removed directly; the remainder is second-order relief for the macOS jobs that stay",
+      "falsifier": "< 20% means the removed jobs were not the ones contending",
+      "mechanism": "c2",
+      "kind": "effect",
+      "metric": "queued.macos",
+      "held_if": {
+        "delta_pct": {
+          "lte": -30
+        }
+      },
+      "falsified_if": {
+        "delta_pct": {
+          "gt": -20
+        }
+      }
+    },
+    {
+      "id": "P3",
+      "scores": "c2",
+      "claim": "macOS EXECUTED runner-minutes fall by no more than 10%",
+      "reason": "only 5.2% of macOS execution is removed; this prediction exists to catch a composition change masquerading as an effect",
+      "falsifier": "a drop > 20% means the AFTER period is not comparable, and P2 must not be read as an effect",
+      "mechanism": "c2",
+      "kind": "validity",
+      "metric": "executed.macos",
+      "held_if": {
+        "delta_pct": {
+          "gte": -10
+        }
+      },
+      "falsified_if": {
+        "delta_pct": {
+          "lt": -20
+        }
+      }
+    },
+    {
+      "id": "P4",
+      "scores": "c3",
+      "claim": "vindex Windows execution p50 falls from 29m41s to 20-24 min",
+      "reason": "the removed bench step measured 8m43 of a 31m13 leg",
+      "falsifier": "no movement means the bench step was not on the measured path",
+      "mechanism": "c3",
+      "kind": "effect",
+      "metric": "windows_vindex_exec.p50",
+      "held_if": {
+        "after": {
+          "lte": 24
+        }
+      },
+      "falsified_if": {
+        "after": {
+          "gte": 28
+        }
+      }
+    },
+    {
+      "id": "P5",
+      "scores": "c1+c2+c3",
+      "claim": "merge-ready p50 falls from 61m23s to 30-45 min",
+      "reason": "headline; driven mostly by superseded runs releasing runners (c1) and macOS queue relief (c2)",
+      "falsifier": "merge-ready p50 > 55 min means the tranche did not deliver",
+      "mechanism": "system",
+      "kind": "effect",
+      "metric": "merge_ready.p50",
+      "held_if": {
+        "after": {
+          "lte": 45
+        }
+      },
+      "falsified_if": {
+        "after": {
+          "gt": 55
+        }
+      }
+    }
+  ],
+  "confounds": [
+    "GitHub's hosted runner pool availability varies independently of this repository",
+    "AFTER attempts must be comparable in workflow composition; the report prints composition for exactly this reason",
+    "merge-ready is only defined for attempts where every blocking workflow succeeded (21 of 33 in the baseline)",
+    "'blocking' is a stated convention here (everything except mutants); the main ruleset carries no required status checks"
+  ],
+  "scoring": "scripts/ci_throughput.py report --before docs/ci-throughput/before-e1.json --after <after.json>",
+  "adjudication_note": "Thresholds are machine-readable and frozen with the forecast, so scoring cannot reinterpret them once the AFTER data exists. All thresholds are in MINUTES; delta_pct is (after - before) / before * 100, so a reduction is negative. A prediction HOLDS if every held_if condition is true and no falsified_if condition is true. A 'validity' prediction does not score an effect: if it fails, its mechanism is reported as INVALID COMPARISON and its effect predictions are not interpreted.",
+  "mechanisms": {
+    "c1": "cancel superseded pull-request runs",
+    "c2": "reduce macOS PR scheduling contention",
+    "c3": "VINDEX benches Linux-only",
+    "system": "the tranche as a whole"
+  }
+}
