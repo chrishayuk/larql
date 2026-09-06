@@ -377,7 +377,21 @@ pub fn physical_memory_bytes() -> Option<u64> {
         }
         None
     }
-    #[cfg(not(unix))]
+    #[cfg(windows)]
+    {
+        use windows_sys::Win32::System::SystemInformation::{GlobalMemoryStatusEx, MEMORYSTATUSEX};
+        // SAFETY: MEMORYSTATUSEX is a plain C struct, so all-zero is a valid
+        // value; `dwLength` is set as the API requires before the call, and
+        // the struct outlives it.
+        let mut status: MEMORYSTATUSEX = unsafe { std::mem::zeroed() };
+        status.dwLength = std::mem::size_of::<MEMORYSTATUSEX>() as u32;
+        let ok = unsafe { GlobalMemoryStatusEx(&mut status) };
+        if ok != 0 && status.ullTotalPhys > 0 {
+            return Some(status.ullTotalPhys);
+        }
+        None
+    }
+    #[cfg(not(any(unix, windows)))]
     {
         None
     }
