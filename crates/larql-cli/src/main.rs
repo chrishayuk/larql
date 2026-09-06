@@ -63,6 +63,11 @@ enum Commands {
     /// Interactive chat — alias for `run <model>` with no prompt.
     Chat(ChatArgs),
 
+    /// Keep a speech model resident and synthesise utterance after
+    /// utterance against it — `run --speak` without re-paying the load
+    /// and quantisation bill every time.
+    SpeakServe(speak_serve::SpeakServeArgs),
+
     /// Download a vindex from HuggingFace and cache it locally.
     Pull(pull_cmd::PullArgs),
 
@@ -620,6 +625,7 @@ fn real_main() -> i32 {
         // ── Primary ──
         Commands::Run(args) => run_cmd::run(args),
         Commands::Chat(args) => run_cmd::run(args.into()),
+        Commands::SpeakServe(args) => speak_serve::run(args),
         Commands::Bench(args) => bench::run(args),
         Commands::DecBench(args) => dec_bench::run(args),
         Commands::K3Ledger(args) => k3_ledger::run(args),
