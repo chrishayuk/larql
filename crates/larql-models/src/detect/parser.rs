@@ -669,6 +669,8 @@ pub(super) fn parse_model_config(config: &serde_json::Value) -> ModelConfig {
     let kda_gate_lower_bound = text_config["linear_attn_config"]["gate_lower_bound"]
         .as_f64()
         .map(|v| v as f32);
+    let kda_use_full_rank_gate = text_config["linear_attn_config"]["use_full_rank_gate"].as_bool();
+    let mla_use_output_gate = text_config["mla_use_output_gate"].as_bool();
     let d_rel = text_config["d_rel"].as_u64().map(|v| v as usize);
     let rel_extent = text_config["rel_extent"].as_u64().map(|v| v as usize);
     let mamba_ssm_dtype = text_config["mamba_ssm_dtype"].as_str().map(str::to_string);
@@ -804,6 +806,8 @@ pub(super) fn parse_model_config(config: &serde_json::Value) -> ModelConfig {
         mtp_interleave,
         kda_geometry,
         kda_gate_lower_bound,
+        kda_use_full_rank_gate,
+        mla_use_output_gate,
         d_rel,
         rel_extent,
         mamba_ssm_dtype,

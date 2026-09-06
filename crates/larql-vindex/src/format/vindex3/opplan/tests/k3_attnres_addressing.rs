@@ -13,9 +13,12 @@
 //! transcription of the reference is the next artefact of the rung — so
 //! an implementation would have nothing to be judged against, and the
 //! honest state is a topology that is represented and refused. It also
-//! does not make Kimi-K3 plannable: K3 stays blocked by
-//! `self_attn.g_proj` (K3-REP-GATE-1) and its `routed_expert_*` bank
-//! (K3-LATENTMOE-1), neither of which is this rung's.
+//! does not make Kimi-K3 plannable: K3 stays blocked by its MLA layers'
+//! q-LoRA triple (`q_a_proj`/`q_a_layernorm`/`q_b_proj`, its own cell)
+//! and its `routed_expert_*` bank (K3-LATENTMOE-1), neither of which is
+//! this rung's. (`self_attn.g_proj`, named here as K3-REP-GATE-1 when
+//! this was written, has since been addressed on both attention
+//! families — see `k3_rep_gate_closure`.)
 //!
 //! # Evidence
 //!

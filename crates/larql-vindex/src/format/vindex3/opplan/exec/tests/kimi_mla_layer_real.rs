@@ -144,6 +144,7 @@ fn one_complete_mla_layer_matches_the_oracle_at_kimis_real_geometry() {
         read_f32(&dir, "mla_o_proj"),
     );
     let mla_weights = MlaWeights {
+        output_gate: None,
         q_proj: WeightRows::F32(&qp),
         kv_a_proj: WeightRows::F32(&kap),
         kv_a_norm: &kan,

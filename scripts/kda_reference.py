@@ -64,8 +64,15 @@ class KdaWeights:
     v_conv1d: torch.Tensor
     f_a_proj: torch.Tensor    # [D, hidden]
     f_b_proj: torch.Tensor    # [H*D, D]
-    g_a_proj: torch.Tensor
-    g_b_proj: torch.Tensor
+    #: The output gate's LOW-RANK pair (Kimi Linear, GLM-5.3-Flash). `None`
+    #: on both when the layer carries the FULL-RANK form instead — Kimi-K3's
+    #: `linear_attn_config.use_full_rank_gate: true`, one `g_proj` of
+    #: `[H*D, hidden]` (`modeling_kimi_linear.py` L531-537, L651-654). The
+    #: form is passed to `kda_forward` as `g_proj=`; the dataclass keeps its
+    #: fifteen named operands so every exporter that iterates its fields
+    #: stays valid.
+    g_a_proj: torch.Tensor | None
+    g_b_proj: torch.Tensor | None
     b_proj: torch.Tensor      # [H, hidden]
     a_log: torch.Tensor       # [H] (stored [1,1,H,1])
     dt_bias: torch.Tensor     # [H*D]
@@ -138,8 +145,47 @@ def recurrent_kda(q, k, v, g, beta, state=None):
     return out, S
 
 
-def kda_forward(x: torch.Tensor, w: KdaWeights, state=None, conv_state=None) -> dict:
-    """One KDA attention block. Returns every boundary in `BOUNDARIES`."""
+#: Named defects of the OUTPUT GATE, for K3-REP-GATE-1's controls. Each
+#: perturbs the real forward below at exactly one point — never a
+#: hand-rolled copy — so the reference and its controls cannot drift.
+GATE_MUTATIONS = (
+    "none",
+    # `o_gate := 0` — sigmoid(0) = 0.5 everywhere: the gate is skipped.
+    "gate_skipped",
+    # gate applied to the recurrent output BEFORE the RMS norm instead of
+    # after it (`FusedRMSNormGated`'s norm-then-gate order inverted).
+    "gate_before_norm",
+    # the raw pre-activation multiplied in, no sigmoid.
+    "sigmoid_omitted",
+    # the gate applied to `v` before the recurrence and not after it — a
+    # placement defect: the gate belongs after aggregation.
+    "gate_on_value_before_recurrence",
+)
+
+
+def kda_forward(
+    x: torch.Tensor,
+    w: KdaWeights,
+    state=None,
+    conv_state=None,
+    *,
+    g_proj: torch.Tensor | None = None,
+    mutation: str = "none",
+) -> dict:
+    """One KDA attention block. Returns every boundary in `BOUNDARIES`.
+
+    `g_proj` selects the output gate's FORM: `None` runs the low-rank pair
+    `w.g_a_proj`/`w.g_b_proj` (Kimi Linear); a `[H*D, hidden]` tensor runs
+    Kimi-K3's full-rank gate, `g = g_proj(x)` (`modeling_kimi_linear.py`
+    L651-654), and the pair must then be absent. Nothing else in the block
+    changes between the two forms — the sigmoid, the gated RMS norm and
+    `o_proj` are identical — which is what the full-rank fixture exists to
+    pin. `mutation` names one of `GATE_MUTATIONS`.
+    """
+    if mutation not in GATE_MUTATIONS:
+        raise ValueError(f"unknown gate mutation {mutation!r}")
+    if (g_proj is None) == (w.g_a_proj is None or w.g_b_proj is None):
+        raise ValueError("exactly one output-gate form: the g_a/g_b pair OR g_proj")
     H, D = w.num_heads, w.head_dim
     b = {}
     b["q_proj"] = x @ w.q_proj.T
@@ -163,12 +209,34 @@ def kda_forward(x: torch.Tensor, w: KdaWeights, state=None, conv_state=None) -> 
     b["g_decay"] = kda_gate(b["f_lowrank"], w.a_log, w.dt_bias, H, D)
     b["beta"] = torch.sigmoid((x @ w.b_proj.T).float())
 
+    # The output gate depends on `x` alone, so it is computed here, before
+    # the recurrence, exactly as the executor does; the reference applies
+    # it after (L651-654 sit after the recurrence call, but read only
+    # `hidden_states`).
+    if g_proj is None:
+        o_gate = ((x @ w.g_a_proj.T) @ w.g_b_proj.T).view(-1, H, D)
+    else:
+        o_gate = (x @ g_proj.T).view(-1, H, D)
+    if mutation == "gate_skipped":
+        o_gate = torch.zeros_like(o_gate)
+    b["o_gate"] = o_gate
+    if mutation == "gate_on_value_before_recurrence":
+        v = v * torch.sigmoid(o_gate.float())
+
     b["recurrent_out"], final_state = recurrent_kda(q, k, v, b["g_decay"], b["beta"], state)
 
-    b["o_gate"] = ((x @ w.g_a_proj.T) @ w.g_b_proj.T).view(-1, H, D)
-    normed = b["recurrent_out"] * torch.rsqrt(
-        b["recurrent_out"].pow(2).mean(-1, keepdim=True) + RMS_EPS)
-    b["o_norm"] = normed * w.o_norm * torch.sigmoid(b["o_gate"].float())
+    if mutation == "gate_before_norm":
+        gated = b["recurrent_out"] * torch.sigmoid(b["o_gate"].float())
+        b["o_norm"] = gated * torch.rsqrt(gated.pow(2).mean(-1, keepdim=True) + RMS_EPS) * w.o_norm
+    else:
+        normed = b["recurrent_out"] * torch.rsqrt(
+            b["recurrent_out"].pow(2).mean(-1, keepdim=True) + RMS_EPS)
+        if mutation == "sigmoid_omitted":
+            b["o_norm"] = normed * w.o_norm * b["o_gate"].float()
+        elif mutation == "gate_on_value_before_recurrence":
+            b["o_norm"] = normed * w.o_norm
+        else:
+            b["o_norm"] = normed * w.o_norm * torch.sigmoid(b["o_gate"].float())
     b["output"] = b["o_norm"].reshape(-1, H * D) @ w.o_proj.T
 
     b["_state"] = final_state

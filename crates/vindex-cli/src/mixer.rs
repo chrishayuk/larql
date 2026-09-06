@@ -22,7 +22,7 @@
 
 use larql_vindex::format::vindex3::graph::policy::LayerOperator;
 use larql_vindex::format::vindex3::graph::Component;
-use larql_vindex::format::vindex3::opplan::{LayerAttention, LayerPlan, OperandRef};
+use larql_vindex::format::vindex3::opplan::{KdaOutputGate, LayerAttention, LayerPlan, OperandRef};
 
 /// The operator this layer's policy declares, or the reason the
 /// container cannot say.
@@ -136,33 +136,55 @@ pub fn operands(operator: LayerOperator, layer: &LayerPlan) -> MixerOperands {
         ]),
         // Fifteen roles, split where Gated DeltaNet fuses: three
         // projections through three convs, two low-rank gate pairs.
-        (LayerOperator::Kda, LayerAttention::Kda(k)) => MixerOperands::Named(vec![
-            ("query projection", k.q_proj.clone()),
-            ("key projection", k.k_proj.clone()),
-            ("value projection", k.v_proj.clone()),
-            ("causal conv over q", k.q_conv1d.clone()),
-            ("causal conv over k", k.k_conv1d.clone()),
-            ("causal conv over v", k.v_conv1d.clone()),
-            ("decay gate down", k.f_a_proj.clone()),
-            ("decay gate up", k.f_b_proj.clone()),
-            ("output gate down", k.g_a_proj.clone()),
-            ("output gate up", k.g_b_proj.clone()),
-            ("write-strength projection", k.b_proj.clone()),
-            ("log decay", k.a_log.clone()),
-            ("timestep bias", k.dt_bias.clone()),
-            ("gated norm", k.o_norm.clone()),
-            ("output projection", k.out_proj.clone()),
-        ]),
+        (LayerOperator::Kda, LayerAttention::Kda(k)) => MixerOperands::Named({
+            let mut named = vec![
+                ("query projection", k.q_proj.clone()),
+                ("key projection", k.k_proj.clone()),
+                ("value projection", k.v_proj.clone()),
+                ("causal conv over q", k.q_conv1d.clone()),
+                ("causal conv over k", k.k_conv1d.clone()),
+                ("causal conv over v", k.v_conv1d.clone()),
+                ("decay gate down", k.f_a_proj.clone()),
+                ("decay gate up", k.f_b_proj.clone()),
+            ];
+            // The output gate in its DECLARED form: the low-rank pair, or
+            // Kimi-K3's one full-rank projection.
+            match &k.output_gate {
+                KdaOutputGate::LowRank { g_a_proj, g_b_proj } => named.extend([
+                    ("output gate down", g_a_proj.clone()),
+                    ("output gate up", g_b_proj.clone()),
+                ]),
+                KdaOutputGate::FullRank { g_proj } => {
+                    named.push(("output gate (full rank, declared)", g_proj.clone()))
+                }
+            }
+            named.extend([
+                ("write-strength projection", k.b_proj.clone()),
+                ("log decay", k.a_log.clone()),
+                ("timestep bias", k.dt_bias.clone()),
+                ("gated norm", k.o_norm.clone()),
+                ("output projection", k.out_proj.clone()),
+            ]);
+            named
+        }),
         // The compressed-KV set. `query`/`output projection` are
         // byte-identical suffixes to the softmax pair at a different
         // width — named by role here, which is the distinction.
-        (LayerOperator::Mla, LayerAttention::Mla(m)) => MixerOperands::Named(vec![
-            ("query projection", m.q_proj.clone()),
-            ("compressed kv projection", m.kv_a_proj.clone()),
-            ("kv latent norm", m.kv_a_norm.clone()),
-            ("kv decompression", m.kv_b_proj.clone()),
-            ("output projection", m.out_proj.clone()),
-        ]),
+        (LayerOperator::Mla, LayerAttention::Mla(m)) => MixerOperands::Named({
+            let mut named = vec![
+                ("query projection", m.q_proj.clone()),
+                ("compressed kv projection", m.kv_a_proj.clone()),
+                ("kv latent norm", m.kv_a_norm.clone()),
+                ("kv decompression", m.kv_b_proj.clone()),
+                ("output projection", m.out_proj.clone()),
+            ];
+            // Kimi-K3's declared MLA output gate, when the container
+            // carries one; an ungated layer lists nothing here.
+            if let Some(g) = &m.output_gate {
+                named.push(("output gate (declared)", g.clone()));
+            }
+            named
+        }),
         (LayerOperator::Mamba2, LayerAttention::Mamba2(m)) => {
             let mut ops = vec![
                 ("fused in-projection z|x|B|C|dt", m.in_proj.clone()),

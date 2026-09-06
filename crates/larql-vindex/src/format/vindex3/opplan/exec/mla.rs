@@ -66,6 +66,11 @@ pub struct MlaWeights<'a> {
     /// `[hidden, Hq·v_head_dim]`.
     pub o_proj: WeightRows<'a>,
     pub kv_a_norm_eps: f64,
+    /// The output gate's projection, `[Hq·v_head_dim, hidden]`, when the
+    /// layer declares one (Kimi-K3's `mla_use_output_gate`):
+    /// `sigmoid(g_proj(x)) ⊙ attn_value` before `o_proj`, `x` the block's
+    /// normalised input. `None` = no gate, the reference's own default.
+    pub output_gate: Option<WeightRows<'a>>,
 }
 
 /// The per-position cache MLA actually carries: the COMPRESSED latent
@@ -106,7 +111,13 @@ pub struct MlaTrace {
     pub attn_weights: Vec<f32>,
     /// Weighted sum of visible `v`, pre-`o_proj`, `[Hq·v_head_dim]`.
     pub attn_value: Vec<f32>,
-    /// `o_proj(attn_value)`, `[hidden]`.
+    /// `sigmoid(g_proj(x))`, `[Hq·v_head_dim]` — `None` on an ungated
+    /// layer. Under [`Mutation::SigmoidOmitted`] the raw pre-activation.
+    pub output_gate: Option<Vec<f32>>,
+    /// `attn_value ⊙ output_gate`, what `o_proj` actually consumed —
+    /// `None` on an ungated layer, where `o_proj` reads `attn_value`.
+    pub gated_value: Option<Vec<f32>>,
+    /// `o_proj(gated_value)` (or `o_proj(attn_value)` ungated), `[hidden]`.
     pub output: Vec<f32>,
 }
 
@@ -128,6 +139,12 @@ pub enum Mutation {
     /// feed the raw latent straight to `kv_b_proj`. Must move the
     /// output: the norm's own gain is not the identity at real weights.
     OmitKvANorm,
+    /// The declared output gate not applied: `o_proj` reads `attn_value`.
+    /// K3-REP-GATE-1; caught at `gated_value`.
+    GateOmitted,
+    /// The raw gate pre-activation multiplied in, no sigmoid. Caught at
+    /// `output_gate`.
+    SigmoidOmitted,
 }
 
 /// One token through Multi-Latent Attention. `x` is the ALREADY-NORMED
@@ -270,7 +287,31 @@ pub fn mla_forward_with(
         }
     }
 
-    let output = matvec(weights.o_proj, &attn_value, hidden);
+    // The output gate (K3-REP-GATE-1), read from the block INPUT `x` and
+    // applied to the AGGREGATE — never to the per-position values, which
+    // this executor decompresses from the latent cache at read time and
+    // could not gate by their own positions' gates without retaining a
+    // gate per cached position it never had.
+    let (output_gate, gated_value) = match weights.output_gate {
+        None => (None, None),
+        Some(g_proj) => {
+            let mut gate = matvec(g_proj, x, heads * v_dim);
+            if mutation != Mutation::SigmoidOmitted {
+                gate.iter_mut().for_each(|g| *g = 1.0 / (1.0 + (-*g).exp()));
+            }
+            let gated: Vec<f32> = if mutation == Mutation::GateOmitted {
+                attn_value.clone()
+            } else {
+                attn_value.iter().zip(&gate).map(|(a, g)| a * g).collect()
+            };
+            (Some(gate), Some(gated))
+        }
+    };
+    let output = matvec(
+        weights.o_proj,
+        gated_value.as_deref().unwrap_or(&attn_value),
+        hidden,
+    );
 
     MlaTrace {
         q_proj,
@@ -279,6 +320,8 @@ pub fn mla_forward_with(
         kv_b: cur_kv_b,
         attn_weights,
         attn_value,
+        output_gate,
+        gated_value,
         output,
     }
 }

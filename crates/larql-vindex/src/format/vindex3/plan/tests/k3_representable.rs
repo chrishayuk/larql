@@ -113,6 +113,7 @@ fn k3_config() -> serde_json::Value {
             "vocab_size": 163840,
             "rms_norm_eps": 1e-5,
             "attn_res_block_size": 12,
+            "mla_use_output_gate": true,
             "linear_attn_config": {
                 "full_attn_layers": layers(&FULL_ATTN_LAYERS),
                 "kda_layers": layers(&KDA_LAYERS),
@@ -331,7 +332,7 @@ fn classified(inventory: ArchitectureInventory) -> Vec<(String, Option<OperandRo
 
 /// The KDA layer's operands that the role vocabulary DOES name — K3's
 /// recurrence, addressed at its real spellings.
-const KDA_ROLES_ADDRESSED: [OperandRole; 13] = [
+const KDA_ROLES_ADDRESSED: [OperandRole; 14] = [
     OperandRole::KdaQProj,
     OperandRole::KdaKProj,
     OperandRole::KdaVProj,
@@ -341,25 +342,28 @@ const KDA_ROLES_ADDRESSED: [OperandRole; 13] = [
     OperandRole::KdaVConv1d,
     OperandRole::KdaFAProj,
     OperandRole::KdaFBProj,
+    // K3-REP-GATE-1: the full-rank output gate, at the spelling K3 ships
+    // and the MLA layer shares.
+    OperandRole::KdaGProj,
     OperandRole::KdaBProj,
     OperandRole::KdaALog,
     OperandRole::KdaDtBias,
     OperandRole::KdaONorm,
 ];
 
-/// The KDA layer's operand the vocabulary does NOT name, exactly.
+/// The KDA layer's operands the vocabulary does NOT name, exactly.
 ///
-/// One left, and it is a K3 delta with a config twin rather than a shape
-/// problem:
+/// **None, since K3-REP-GATE-1.** The last one was `self_attn.g_proj`,
+/// the FULL-RANK output gate — twin of the config blocker
+/// `use_full_rank_gate`, the same fact refused on both planes — and the
+/// rung addressed both planes together: the key is carried to the op as
+/// the gate's declared FORM, and the operand classifies to
+/// [`OperandRole::KdaGProj`] under the KDA operator. The list is kept,
+/// empty, so that a K3 delta appearing on this layer again fails here by
+/// name rather than being absorbed.
 ///
 /// ```text
-/// self_attn.g_proj        the FULL-RANK output gate. The table carries
-///                         `g_a_proj`/`g_b_proj`, Kimi-Linear's low-rank
-///                         pair. Twin of the config blocker
-///                         `use_full_rank_gate` — the same fact refused
-///                         on both planes, which is the agreement that
-///                         makes it a real gap and not a parser slip.
-///                         K3-REP-GATE-1, not started.
+/// (none)
 /// ```
 ///
 /// # This list was a cross-programme tripwire, and it fired twice
@@ -391,10 +395,24 @@ const KDA_ROLES_ADDRESSED: [OperandRole; 13] = [
 /// a checkpoint shipping the spellings without the period gains no
 /// topology from its tensor names.
 ///
-/// 5 -> 1, and the one that stays is its own rung. `K3-LATENTMOE-1`
+/// 5 -> 1 at K3-ATTNRES-1, and 1 -> 0 at K3-REP-GATE-1. `K3-LATENTMOE-1`
 /// (`routed_expert_hidden_size` ↔ the `routed_expert_*` operands) is off
-/// this layer and unaffected.
-const KDA_LAYER_UNADDRESSED: [&str; 1] = ["self_attn.g_proj.weight"];
+/// this layer and unaffected; the MLA layer's own remaining delta is
+/// pinned in [`MLA_LAYER_UNADDRESSED`].
+const KDA_LAYER_UNADDRESSED: [&str; 0] = [];
+
+/// The MLA layer's operands the vocabulary does NOT name, exactly: the
+/// q-LoRA triple. K3 factorises MLA's query where Kimi Linear did not
+/// (`q_lora_rank: 1536`); `config/mla.rs` deliberately carries no such
+/// rank, and this is its own capability cell, not this rung's. The MLA
+/// layer's `g_proj` left this list at K3-REP-GATE-1: it classifies to
+/// [`OperandRole::MlaOutputGate`] under the MLA operator and K3's own
+/// `mla_use_output_gate`.
+const MLA_LAYER_UNADDRESSED: [&str; 3] = [
+    "self_attn.q_a_layernorm.weight",
+    "self_attn.q_a_proj.weight",
+    "self_attn.q_b_proj.weight",
+];
 
 /// **The tensor-address witness.** Which of K3's real operands does the
 /// role vocabulary actually name?
@@ -442,6 +460,50 @@ fn k3_kda_operands_are_addressed_except_the_one_named_delta() {
     );
 }
 
+/// **The MLA layer's tensor-address witness**, pinned both ways like the
+/// KDA one: the gate is addressed under K3's own `mla_use_output_gate`,
+/// and the q-LoRA triple is the exact remainder.
+#[test]
+fn k3_mla_layer_addresses_the_gate_and_leaves_the_q_lora_triple() {
+    let dir = tempfile::tempdir().unwrap();
+    let rows = classified(k3_inventory(dir.path()));
+
+    let layer_prefix = format!("{KDA_SHARD_PREFIX}.layers.{MLA_LAYER}.");
+    let on_mla_layer = |name: &String| name.starts_with(&layer_prefix);
+
+    let addressed: Vec<(String, OperandRole)> = rows
+        .iter()
+        .filter(|(name, _)| on_mla_layer(name) && name.contains(".self_attn."))
+        .filter_map(|(name, role)| role.map(|r| (name.clone(), r)))
+        .collect();
+    assert!(
+        addressed
+            .iter()
+            .any(|(name, role)| name.ends_with("self_attn.g_proj.weight")
+                && *role == OperandRole::MlaOutputGate),
+        "the MLA layer's g_proj is the output gate, not the KDA form: {addressed:?}"
+    );
+    assert!(
+        !addressed
+            .iter()
+            .any(|(_, role)| *role == OperandRole::KdaGProj),
+        "the shared spelling must not classify as a KDA operand on the MLA layer"
+    );
+
+    // The attention block only: layer 3 is also a routed layer, and its
+    // 896-way MXFP4 expert bank is its own rung's list, not this one's.
+    let mut unaddressed: Vec<&str> = rows
+        .iter()
+        .filter(|(name, role)| on_mla_layer(name) && name.contains(".self_attn.") && role.is_none())
+        .map(|(name, _)| name.strip_prefix(&layer_prefix).unwrap())
+        .collect();
+    unaddressed.sort_unstable();
+    assert_eq!(
+        unaddressed, MLA_LAYER_UNADDRESSED,
+        "the MLA layer's unaddressed attention operands are the q-LoRA triple, no more and no fewer"
+    );
+}
+
 /// The whole estate, reported and counted.
 ///
 /// The count is what keeps the pin above honest about scope: 5,376 of the
@@ -452,7 +514,9 @@ fn k3_kda_operands_are_addressed_except_the_one_named_delta() {
 /// K3-ATTNRES-1 moved eight of these: the four `*_res_*` operands on each
 /// of the two layers now classify to the attention-residual site roles,
 /// under K3's own declared `attn_res_block_size`. 5,392 -> 5,384, and
-/// eight distinct spellings out of the list.
+/// eight distinct spellings out of the list. K3-REP-GATE-1 moved two
+/// more — `self_attn.g_proj` on each layer, one spelling per layer —
+/// 5,384 -> 5,382 and 14 -> 12.
 ///
 /// Deliberately OUT of the KDA-Q8 critical path, exposed by the fixture
 /// and left alone on purpose — implementing what a fixture happens to
@@ -494,12 +558,12 @@ fn k3_estate_reports_every_unaddressed_spelling() {
 
     assert_eq!(rows.len(), 5421, "the fixture's two real layers");
     assert_eq!(
-        unclassified, 5384,
-        "5,376 expert-bank operands + 8 distinct dense spellings"
+        unclassified, 5382,
+        "5,376 expert-bank operands + 6 distinct dense spellings"
     );
     assert_eq!(
         spellings.len(),
-        14,
+        12,
         "distinct unaddressed spellings across both layers"
     );
 }
@@ -578,7 +642,8 @@ fn the_plan_stage_places_bytes_and_classifies_no_operand() {
     assert_eq!(
         blocking,
         [
-            "text_config.linear_attn_config.use_full_rank_gate",
+            // `use_full_rank_gate` left this list at K3-REP-GATE-1: it is
+            // carried to the KDA op as the gate's declared form.
             "text_config.routed_expert_hidden_size",
             // Not an operand refusal: the two-shard slice carries no
             // model-level exit pair for the topology it declares. See

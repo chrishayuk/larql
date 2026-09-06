@@ -1,6 +1,7 @@
 //! Plan schema 4: who judged, what was judged, and whether two verdicts
 //! are comparable.
 
+use larql_models::inventory::build_inventory;
 use larql_models::inventory::ArchitectureInventory;
 
 use super::support::{custom_artifact, glimmer_shaped_target, glimmer_shaped_target_with};
@@ -101,7 +102,7 @@ fn identity_survives_a_round_trip_and_parse_refuses_other_schemas_by_name() {
 /// witness is re-recorded.
 #[test]
 fn the_semantics_version_is_pinned_to_known_verdicts() {
-    assert_eq!(PLANNER_SEMANTICS_VERSION, 18);
+    assert_eq!(PLANNER_SEMANTICS_VERSION, 19);
 
     let dir = tempfile::tempdir().unwrap();
     let admissible = plan_system(&one_glimmer(dir.path()));
@@ -358,6 +359,54 @@ fn the_semantics_version_is_pinned_to_known_verdicts() {
         let inventory = custom_artifact(dir.path(), &config, &tensors);
         plan_system(&[(ARTIFACT.to_string(), inventory)])
     };
+    // Version 19's verdict (K3-REP-GATE-1): the two K3 attention output
+    // gates are DECLARED facts the plan carries. A Kimi-shaped estate
+    // declaring `linear_attn_config.use_full_rank_gate` and
+    // `mla_use_output_gate` is ADMISSIBLE — both keys judged
+    // ExecutionSemantic and carried to the KDA op's gate form and the MLA
+    // op's gate operand — where at version 18 the same estate was blocked
+    // by two Unknown findings. The control beside it: Kimi Linear's own
+    // forms, neither key declared, admissible at both versions.
+    //
+    // The same two keys on a component with NO KDA and no MLA block stay
+    // blocked, uncarried: a gate form with no gate to describe reaches
+    // nothing, and the probe says so. That arm is what keeps the first
+    // from having been implemented as "stop reading these keys".
+    let kimi_shaped = |forms: crate::format::vindex3::fixtures_kimi::HybridGateForms| {
+        let dir = tempfile::tempdir().unwrap();
+        crate::format::vindex3::fixtures_kimi::hybrid_kda_mla_f32_model_with(dir.path(), forms);
+        let inventory = build_inventory(dir.path()).unwrap();
+        plan_system(&[(ARTIFACT.to_string(), inventory)])
+    };
+    let gated = kimi_shaped(crate::format::vindex3::fixtures_kimi::HybridGateForms::KIMI_K3);
+    assert!(gated.admissible, "{:?}", gated.summary);
+    let ungated = kimi_shaped(crate::format::vindex3::fixtures_kimi::HybridGateForms::KIMI_LINEAR);
+    assert!(ungated.admissible, "{:?}", ungated.summary);
+    let dir = tempfile::tempdir().unwrap();
+    let homeless = glimmer_shaped_target_with(dir.path(), |config| {
+        config["text_config"]["linear_attn_config"] =
+            serde_json::json!({ "use_full_rank_gate": true });
+        config["text_config"]["mla_use_output_gate"] = serde_json::json!(true);
+    });
+    let blocked = plan_system(&[(ARTIFACT.to_string(), homeless)]);
+    assert!(!blocked.admissible, "{:?}", blocked.summary);
+    let blocking: Vec<String> = blocked
+        .artifacts
+        .iter()
+        .flat_map(|a| &a.findings)
+        .filter(|f| f.blocks())
+        .map(|f| f.subject.clone())
+        .collect();
+    for key in [
+        "text_config.linear_attn_config.use_full_rank_gate",
+        "text_config.mla_use_output_gate",
+    ] {
+        assert!(
+            blocking.iter().any(|s| s == key),
+            "`{key}` on a component with no KDA/MLA block must stay blocked, uncarried: {blocking:?}"
+        );
+    }
+
     let complete = attn_res_stack(true);
     assert!(
         complete.admissible,

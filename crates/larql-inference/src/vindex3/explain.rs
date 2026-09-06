@@ -290,23 +290,34 @@ fn explain_layer(
             qk_norm: false,
             sinks: false,
             biased: false,
-            operands: vec![
-                operand("q_proj", &op.q_proj),
-                operand("k_proj", &op.k_proj),
-                operand("v_proj", &op.v_proj),
-                operand("q_conv1d", &op.q_conv1d),
-                operand("k_conv1d", &op.k_conv1d),
-                operand("v_conv1d", &op.v_conv1d),
-                operand("f_a_proj", &op.f_a_proj),
-                operand("f_b_proj", &op.f_b_proj),
-                operand("g_a_proj", &op.g_a_proj),
-                operand("g_b_proj", &op.g_b_proj),
-                operand("b_proj", &op.b_proj),
-                operand("a_log", &op.a_log),
-                operand("dt_bias", &op.dt_bias),
-                operand("o_norm", &op.o_norm),
-                operand("out_proj", &op.out_proj),
-            ],
+            operands: {
+                let mut operands = vec![
+                    operand("q_proj", &op.q_proj),
+                    operand("k_proj", &op.k_proj),
+                    operand("v_proj", &op.v_proj),
+                    operand("q_conv1d", &op.q_conv1d),
+                    operand("k_conv1d", &op.k_conv1d),
+                    operand("v_conv1d", &op.v_conv1d),
+                    operand("f_a_proj", &op.f_a_proj),
+                    operand("f_b_proj", &op.f_b_proj),
+                ];
+                // The output gate's operands follow its DECLARED form —
+                // the low-rank pair, or Kimi-K3's one full-rank `g_proj`.
+                operands.extend(
+                    op.output_gate
+                        .operands()
+                        .into_iter()
+                        .map(|(name, r)| operand(name, r)),
+                );
+                operands.extend([
+                    operand("b_proj", &op.b_proj),
+                    operand("a_log", &op.a_log),
+                    operand("dt_bias", &op.dt_bias),
+                    operand("o_norm", &op.o_norm),
+                    operand("out_proj", &op.out_proj),
+                ]);
+                operands
+            },
         },
         // Named specifically: this layer attends, but NOT by plain
         // softmax — the conv over the fused QKV and the partial rotary

@@ -1,0 +1,144 @@
+{
+ "rung": "K3-REP-GATE-1",
+ "name": "output-gate-reconnaissance",
+ "artifact_kind": "reconnaissance (measured; decides nothing)",
+ "written": "2026-09-06",
+ "rule_this_follows": "Reconnaissance -> freeze -> oracle -> implementation, the sequence K3-ATTNRES-1 ran. Nothing here is a decision; every fact is read from the reference source, the checkpoint's own config and headers, or this repository, and each is marked observed or derived.",
+ "opened_by": "the user, 2026-09-06 ~14:35, after K3-ATTNRES-1 completed (2b merged #431, lift PR #435): 'K3-REP-GATE-1, both gates' — the output gate as a declared fact on both of K3's attention families, ahead of the situ activation, latent MoE and the MXFP4 declaration.",
+ "uniform_cache_check": {
+  "canonical_cache": "~/chris-models/_conformance/plans at semantics 16 (K3 33/152). NOT uniform with main: main is semantics 17 (K3 32) and PR #435 (`515e2a77`) is semantics 18 (K3 31, RED, unsupported_component 0).",
+  "consequence": "no prediction of this rung may be scored against the canonical cache. Both arms are measured into fresh caches from the same protocol the lift used (`vindex plan hf://<repo> --json`, scored through `scripts/arch_sweep.py::classify`), baseline = main after #435 merges (or #435's head if it has not).",
+  "worktree": ".claude/worktrees/k3-rep-gate-1, branch k3-rep-gate-1 from origin/main 85baf3a9 (post #434). Rebase onto #435's merge before any code that touches report.rs / identity.rs / k3_representable.rs, which #435 also edits."
+ },
+ "the_first_question_answered_what_the_two_gates_are": {
+  "source": "https://huggingface.co/moonshotai/Kimi-K3/resolve/main/modeling_kimi_linear.py (the TEXT model's file), read verbatim 2026-09-06; line numbers below are that file's.",
+  "kda_full_rank_output_gate": {
+   "declaration": "`config.linear_attn_config.get('use_full_rank_gate', False)` (L531). K3 declares `true`. Reference default when absent: False = the low-rank pair.",
+   "init": "L533-537: full-rank -> `g_proj = Linear(hidden, projection_size)`; else `g_a_proj = Linear(hidden, head_dim)`, `g_b_proj = Linear(head_dim, projection_size)`; projection_size = num_heads * head_dim.",
+   "forward": "L651-654: `g = g_proj(hidden_states)` or `g = g_b_proj(g_a_proj(hidden_states))`; then `g = rearrange(g, '... (h d) -> ... h d')`; `o = o_norm(o, g)` where `o_norm = FusedRMSNormGated(head_dim, eps, activation='sigmoid')` (L539); `o = o_proj(o)`.",
+   "what_changes": "ONLY the projection that produces the gate pre-activation. The sigmoid, the gated RMSNorm, and `o_proj` are identical in both forms. `hidden_states` is the attention block's input (post input_layernorm).",
+   "what_it_is_not": "not a new gate and not a second gate: KDA has always had this output gate; K3 changes its FORM from rank-128 to full rank. `KdaOp`'s own doc lists 'output gate low rank' among the structural discriminators between KDA and Gated DeltaNet — under full rank that ONE row of the table no longer discriminates; the other five (three projections, three convs, low-rank f gate, per-channel dt_bias, one head count) still do, and identity is DECLARED by `linear_attn_config`/`kda_layers` in any case."
+  },
+  "mla_output_gate": {
+   "declaration": "`getattr(config, 'mla_use_output_gate', False)` (L398). K3 declares `true`. Reference default when absent: False = no gate.",
+   "init": "L399-401: `g_proj = Linear(hidden, num_heads * v_head_dim)`.",
+   "forward": "L470-472: after aggregation and reshape to `[B, T, Hq*v_head_dim]`: `g = g_proj(hidden_states).sigmoid(); attn_output = attn_output * g`; then `o_proj`.",
+   "what_it_is": "exactly the softmax family's `attn_output_gate` this build already represents: `AttentionGateSpec { source: AttentionInput, activation: Sigmoid, combine: ElementwiseMultiply, placement: AfterAggregationBeforeOutputProjection }`, at width `Hq * v_head_dim` instead of `Hq * head_dim`. `hidden_states` is the MLA block's input (post input_layernorm).",
+   "what_it_is_not": "not a gate on the KV latent, not a gate on the query; nothing about the compressed cache changes."
+  },
+  "the_trap_already_documented": "on K3 both operands are spelled `self_attn.g_proj.weight` at IDENTICAL shape `[12288, 7168]` — KDA's `Hv*Dv = 96*128` and MLA's `Hq*v_head_dim = 96*128` coincide. `plan/tests/k3_representable.rs` pins this collision (`the_two_layers_share_the_g_proj_o_proj_trap`); only the layer's declared operator separates them, exactly as it separates `o_proj`."
+ },
+ "baseline_measured": {
+  "k3_config_observed": {
+   "text_config.linear_attn_config": "{use_full_rank_gate: true, gate_lower_bound: -5.0, head_dim: 128, num_heads: 96, short_conv_kernel_size: 4, kda_layers: 69 entries, full_attn_layers: 24 entries ([4,8,...,92,93], 1-indexed)}",
+   "text_config.mla_use_output_gate": true,
+   "mla_geometry": "num_attention_heads 96, v_head_dim 128, qk_nope_head_dim 128, qk_rope_head_dim 64, kv_lora_rank 512, q_lora_rank 1536",
+   "layers": "93 = 69 KDA + 24 MLA; hidden 7168"
+  },
+  "k3_headers_observed": {
+   "fixture": "crates/larql-vindex/src/format/vindex3/plan/tests/fixtures/k3_two_layer_headers.json (real shard headers, layers 0 and 3)",
+   "layer_0_kda": "q/k/v_proj [12288,7168]; q/k/v_conv1d [12288,1,4]; f_a_proj [128,7168]; f_b_proj [12288,128]; **g_proj [12288,7168]** and NO g_a_proj/g_b_proj; b_proj [96,7168]; A_log [128]; dt_bias [12288]; o_norm [128]; o_proj [7168,12288]",
+   "layer_3_mla": "**g_proj [12288,7168]**; q_a_proj [1536,7168]; q_a_layernorm [1536]; q_b_proj [18432,1536]; kv_a_proj_with_mqa [576,7168]; kv_a_layernorm [512]; kv_b_proj [24576,512]; o_proj [7168,12288] — NO q_proj",
+   "note_on_A_log": "K3 ships `A_log [128]` on a 96-head KDA layer. Not this rung's; recorded because a reader of `KdaALog`'s `[Hv]` contract will trip on it. To be checked against the reference's `A_log` shape before K3-KDA execution is claimed anywhere."
+  },
+  "plan_plane_today": {
+   "finding_63": "`text_config.linear_attn_config.use_full_rank_gate` — cluster Unclustered / class unknown / category unrepresented — 'declared by the checkpoint, read by nothing in any registered parser'. Blocking text closure.",
+   "finding_68": "`text_config.mla_use_output_gate` — same cluster/class/category. Blocking.",
+   "precedent_cluster": "the softmax family's `attn_output_gate` and `output_gate_type` are ALSO `SemanticCluster::Unclustered` today (semantics.rs CLUSTER_KEYS) — there is no attention-gating cluster.",
+   "k3_row": "31/152 blocking at semantics 18 (the lift's measurement), verdict RED ('31 blocking on text closure'), unsupported_component 0.",
+   "rows_declaring_either_key": "exactly ONE of the 117 cached plans mentions `use_full_rank_gate` or `mla_use_output_gate`: Kimi-K3. Every other row is a zero-movement control by construction."
+  },
+  "operand_plane_today": {
+   "kda": "`KDA_ROLE_TABLE` names `g_a_proj`/`g_b_proj` (roles KdaGAProj/KdaGBProj) and nothing for `g_proj`. `plan/tests/k3_representable.rs::KDA_LAYER_UNADDRESSED = ['self_attn.g_proj.weight']` — pinned both ways since ATTNRES-1 transition 1 (5 -> 1).",
+   "mla": "`MLA_ROLE_TABLE` names q_proj, kv_a_proj_with_mqa, kv_b_proj, kv_a_layernorm, o_proj — no gate, no q-LoRA. On K3's MLA layer FOUR operands are unaddressed: `g_proj` (this rung) and `q_a_proj`/`q_a_layernorm`/`q_b_proj` (a NAMED, separate MLA cell — `k3_representable.rs` doc: 'K3 factorises MLA's Q where Kimi-Linear did not. MLA is a DIFFERENT capability-matrix cell; it gets its own'; `config/mla.rs`: 'Deliberately no q_lora_rank field ... A family that DOES compress Q needs its own extension').",
+   "estate_pin": "`k3_estate_reports_every_unaddressed_spelling`: 5421 tensors, 5384 unclassified = 5376 expert-bank operands + 8 distinct dense spellings; 14 distinct unaddressed spellings. This rung moves the dense count by exactly 2 (g_proj on each layer) and the spelling count by 1 (one shared spelling) — the test is the notification and MUST be migrated, not silenced."
+  },
+  "op_plan_plane_today_DERIVED_not_observed": {
+   "why_derived": "no K3 container exists, so no op plan has ever been built for the real row; these are read from `opplan/build.rs` (required roles L1685-1745, classification L450/456, missing-operand L576-604) and will be OBSERVED by this rung's synthetic witnesses.",
+   "kda_layer": "`UnclassifiedOperand { g_proj }` + `MissingOperand { KdaGAProj }` + `MissingOperand { KdaGBProj }`; `gate_rank` is still resolved from `f_a_proj` rows (128) and stays meaningful for the f gate.",
+   "mla_layer": "`UnclassifiedOperand` x4 (g_proj, q_a_proj, q_a_layernorm, q_b_proj) + `MissingOperand { MlaQProj }`. After this rung: x3 + MlaQProj — the MLA layer does NOT close on K3 until the q-LoRA cell is done."
+  },
+  "executor_plane_today": {
+   "kda_cpu": "`exec/kda.rs` L563: `gate = matvec(g_b_proj, matvec(g_a_proj, x, gate_rank), width)` under `OpClass::KdaOutputGate` ('the output gate's PROJECTION only'); L686-688 the gated norm `sv * inv * nv / (1 + exp(-gate[i]))` under `OpClass::KdaGatedNorm` — form-independent. Witness plane `KdaPlanes.o_gate` already recorded; `kda_reference.py` BOUNDARIES include `o_gate`.",
+   "kda_metal": "`larql_compute_metal::trait_impl::kda::KdaDeviceWeights { g_a_proj, g_b_proj, ... }` (mod.rs L100-101) with two f32 gemvs (L538-539); `stack_metal.rs` binds them from `f32s[5]`/`[6]`; `kimi_source.rs::kda_f32s` lists eleven f32 operands including both. A WORKSPACE type — any form change here is gated at workspace scope (the lift's third finding).",
+   "kda_other_consumers": "`prepared.rs::KdaOperands` glues both; `represent/plan_roles.rs` classes both as `Role::RecurrenceControl`; `timing.rs::KdaOutputGate` doc names `g_a_proj -> g_b_proj`.",
+   "mla_cpu": "`exec/mla.rs` L273: `output = matvec(o_proj, attn_value, hidden)` — no gate, no place for one; `MlaTrace` has seven boundaries (q_proj, compressed_kv, kv_a_normed, kv_b, attn_weights, attn_value, output); `Mutation` has three arms. `timing.rs` has one `OpClass::Mla`, no per-stage classes.",
+   "mla_metal": "`MlaDeviceWeights { q_proj, kv_a_proj, kv_a_norm, kv_b_proj, o_proj, kv_a_norm_eps }` — no gate.",
+   "softmax_precedent_end_to_end": "`ModelConfig.attn_output_gate: Option<bool>` + `output_gate_type` (parser.rs L698) -> `Architecture::attention_output_gate() -> Option<AttentionGateSpec>` (qwen.rs L103) -> `ExecutionSurface.attention.output_gate` -> role `AttnOutputGate` `[q_rows, hidden]` -> carriage `Lowered` 'ExecutionSurface.attention.output_gate -> GateOp -> the gated attention op', probe `component.execution.attention.output_gate.is_some()`. The MLA gate can follow this path field for field; the KDA form change cannot, because it is not a gate's presence but a gate's factorisation."
+  },
+  "oracles_available": {
+   "kda": "`scripts/kda_reference.py` (`o_gate = (x @ g_a.T) @ g_b.T` L168; `o_norm = normed * w * sigmoid(o_gate)` L171; `output = o_norm @ o_proj.T` L172) -> `scripts/kda_oracle_export.py` -> `exec/tests/kda_oracle.json` (2 heads x 4, hidden 6, runs 1/2/8, bf16-exact projections) consumed per boundary by `exec/tests/kda_parity.rs`.",
+   "mla": "`scripts/kimi_mla_reference.py` (`output = attn_value @ o_proj.T` L113) -> `scripts/kimi_mla_oracle_export.py` -> `exec/tests/kimi_mla_oracle.json` (2 heads, asymmetric widths, 3 positions) consumed by `exec/tests/mla_parity.rs` (tolerance 2e-5).",
+   "gap": "neither reference parametrises the gate form / gate presence. Both must gain it, transcribed from `modeling_kimi_linear.py` L651-654 and L470-472, and export a SECOND fixture arm rather than overwrite the low-rank/no-gate arm the existing parity tests pin (those arms are Kimi-Linear's and stay).",
+   "real_weight_gates": "`kimi_kda_layer_real.rs` / `kimi_mla_layer_real.rs` are env-gated on the Kimi-Linear-48B container; there is no K3 container and this rung does not make one."
+  }
+ },
+ "q1_where_each_gate_enters_and_exits": {
+  "kda": "enters at the SAME point the low-rank gate does — `x` = the block input — and exits into the SAME consumer, the gated norm. One projection replaces two; nothing else moves.",
+  "mla": "enters at the block input `x` (same source as q_proj and kv_a_proj) and exits between `attn_value` and `o_proj`: a new stage, `gated_value = attn_value * sigmoid(g_proj(x))`, which `o_proj` then consumes instead of `attn_value`."
+ },
+ "q2_what_the_plan_carries_today": "nothing on either plane: both keys are Unknown/unrepresented; both operands are unaddressed; both gate forms are absent from every surface, op, executor and oracle. Softmax attention's gate is the only represented output gate.",
+ "q3_placement_relative_to_existing_operations": {
+  "kda": "inside `OpClass::KdaOutputGate`; `KdaGatedNorm`, `KdaOProj`, the recurrence and the f gate are untouched.",
+  "mla": "a new boundary after `attn_value`, before `output`. The trace gains `output_gate` (post-sigmoid) and `gated_value`; the oracle's BOUNDARIES gain the same two names in the same order so a disagreement names its stage."
+ },
+ "q4_which_intermediate_state_can_witness_each_gate": {
+  "kda": "`KdaPlanes.o_gate` (already emitted) compared per boundary against the reference's `o_gate` under the full-rank form; plus `o_norm` and `output`.",
+  "mla": "`MlaTrace.output_gate` and `MlaTrace.gated_value` (new) against the reference's; plus `output`.",
+  "controls_the_oracle_can_measure_numerically": [
+   "kda: gate skipped (sigmoid(0) = 0.5 everywhere) — large delta",
+   "kda: gate applied BEFORE the RMS norm instead of after (`norm_before_gate` inverted) — measurable only if the fixture's o_norm weight is not near-uniform; the fixture must be built so this reads non-zero",
+   "kda: gate read from the post-conv query stream instead of the block input — measurable",
+   "mla: gate omitted — large delta",
+   "mla: sigmoid omitted (raw gate) — measurable",
+   "mla: gate source = attention output instead of block input — measurable",
+   "mla: gate applied AFTER o_proj — only expressible when hidden == Hq*v_head_dim; the fixture keeps them distinct so this mutant is structurally impossible rather than numerically caught (awkward shapes are instruments); recorded as unreachable, not as covered"
+  ],
+  "controls_that_are_structural_not_numerical": [
+   "declared full-rank + g_a/g_b shipped -> refused by name (operand plane disagrees with the declaration)",
+   "g_proj shipped + no declaration (KDA) -> refused: identity declared, not inferred from operands",
+   "g_proj shipped + no `mla_use_output_gate` (MLA) -> refused, same rule",
+   "declared + no operand -> `MissingOperand` naming the new role",
+   "the shared spelling on the wrong operator -> the negative discriminator in `k3_representable.rs` must keep passing"
+  ],
+  "saturation_hazard_carried_from_attnres": "a sigmoid gate saturated at 0/1 blinds every gate mutant (the softmax-band lesson). The fixture's gate pre-activations must be asserted inside a non-saturated band before any parity is scored."
+ },
+ "q5_layer_local_versus_global": "both gates are per-layer and operator-local; no state crosses layers, no residual/topology interaction, no traversal change. The two config keys are component-level and apply to EVERY layer of their operator (69 KDA, 24 MLA on K3).",
+ "q6_exactly_what_refuses_today": {
+  "plan": "findings 63 and 68 block text closure (Unknown class).",
+  "op_plan": "derived: KDA layer 1 unclassified + 2 missing; MLA layer 4 unclassified + 1 missing (see above). Never observed on K3.",
+  "executor": "never reached for K3. For a synthetic KDA estate shipping `g_proj`, the op plan refuses before any executor runs; for a synthetic MLA estate likewise.",
+  "metal": "no refusal exists because no representation exists; after the CPU path lands, the Metal path must either carry the form or refuse it BY NAME — silently binding `f32s[5]`/`[6]` to a full-rank layer is the failure to design against."
+ },
+ "bytes_observed_not_a_claim": "g_proj at `[12288, 7168]` bf16 = 176.2 MB per layer: 12.16 GB across 69 KDA layers + 4.23 GB across 24 MLA layers = 16.4 GB of dense-side BF16 (vs Kimi-Linear's low-rank pair at (128*hidden + width*128)*2 bytes). The K3 ledger (`larql-cli k3_ledger/kda_graph.rs`) already prices it. A REPRESENT target once the operand has a role; not this rung's concern.",
+ "diagram": [
+  "KDA layer (K3):   x --input_layernorm--> h",
+  "                  h --q/k/v_proj+conv+norm--> recurrence --> o [Hv,Dv]",
+  "                  h --g_proj [Hv*Dv,hidden]--> g [Hv,Dv]        (was: g_b(g_a(h)))",
+  "                  o_norm(o, g) = rmsnorm(o)*w*sigmoid(g) --> o_proj --> +residual",
+  "MLA layer (K3):   x --input_layernorm--> h",
+  "                  h --q_a/q_b (q-LoRA, NOT this rung)--> q ; h --kv_a--> latent --kv_b--> k,v",
+  "                  attention --> attn_value [Hq*v_head_dim]",
+  "                  h --g_proj [Hq*v_head_dim,hidden]--> sigmoid --> * attn_value   (NEW stage)",
+  "                  o_proj --> +residual"
+ ],
+ "decisions_the_freeze_must_settle_not_decided_here": [
+  "1 REPRESENTATION OF THE KDA FORM: an enum on `KdaOp` (`KdaOutputGate::LowRank { g_a, g_b } | FullRank { g_proj }`) versus two optional fields. `KdaOp`'s own doc ('a second gate form ... belongs in its own field rather than changing what this one means') argues for a typed form; `KdaWeights`, `KdaDeviceWeights`, `KdaOperands`, `kda_f32s`, `plan_roles` all follow the type.",
+  "2 REPRESENTATION OF THE MLA GATE: reuse `AttentionGateSpec` on `MlaSurface`/`MlaOp.output_gate: Option<OperandRef>` (the softmax precedent, field for field) versus an MLA-specific type. The spec's four enums already say exactly what L470-472 does.",
+  "3 DECLARATION SEMANTICS: absent key = the reference's own default (low-rank / no gate) — a CHECKED default read from L531 and L398, not an assumed one — carried as `Option<bool>` so 'undeclared' stays distinguishable, with the operand plane REQUIRED to agree and every disagreement refused by name (identity declared, not inferred).",
+  "4 ROLES: `KdaGProj` in `KDA_ROLE_TABLE` and `MlaOutputGate` in `MLA_ROLE_TABLE`, same spelling, operator-gated (the o_proj precedent), expected shapes `[Hv*Dv, hidden]` and `[Hq*v_head_dim, hidden]` from each geometry; whether the table entry is ALSO gated on the declaration (as `ATTENTION_RESIDUAL_ROLE_TABLE` is) or the declaration is checked at closure.",
+  "5 SEMANTIC CLUSTER: introduce an attention-output-gate cluster taking `attn_output_gate`, `output_gate_type`, `use_full_rank_gate`, `mla_use_output_gate`, or leave all four Unclustered as the precedent is. Clustering changes finding text, not counts.",
+  "6 CARRIAGE: `Lowered` for both once the CPU executor consumes them; what the Metal plane does in the same PR (carry the form / refuse by name) and whether a Metal refusal is an `unsupported_component` finding.",
+  "7 THE VERDICT TRAP: if declare/own/address lands WITHOUT execution, the honest state is 'represented, executor refuses by name' = a NEW unsupported_component finding on `target.execution_surface` -> K3 flips RED -> AMBER again (a verdict moves on CLASS, not count; ATTNRES-1 transition 1 did exactly this, then the lift undid it). The freeze must choose: one transition that declares AND executes (no flip), or two with the flip forecast and scored.",
+  "8 SCOPE FENCES: the MLA q-LoRA cell (`q_a_proj`/`q_a_layernorm`/`q_b_proj`, `q_lora_rank`) is NOT this rung's — named as the reason K3's MLA layer still does not close after it; `situ`, latent MoE, MXFP4, `topk_method`, vision, `A_log [128]` untouched.",
+  "9 ORACLES: extend `kda_reference.py`/`kimi_mla_reference.py` with the gate form as a parameter and export SECOND fixture arms (full-rank / gated) beside the existing ones; controls measured and recorded with deltas; the gate band asserted; the existing low-rank/no-gate parity tests unchanged.",
+  "10 SEMANTICS VERSION 18 -> 19 and the identity pin's verdict pair (a synthetic KDA estate declaring full rank with `g_proj` is admissible; the same estate declaring full rank with `g_a`/`g_b` is refused by name; a synthetic MLA estate declaring the gate with `g_proj` is admissible; shipping `g_proj` undeclared is refused).",
+  "11 FORECAST SHAPE (to be frozen, not claimed): K3 31 -> 29 with -1 -1 on findings 63 and 68 (Unknown -> ExecutionSemantic, carried), 0 verdict movement if decision 7 takes the single-transition route, `KDA_LAYER_UNADDRESSED` 1 -> 0, MLA-layer unaddressed 4 -> 3, estate spellings 14 -> 13, dense unclassified 8 -> 6, eight controls at 0, no other row moves."
+ ],
+ "what_this_reconnaissance_did_not_do": [
+  "no code, no test, no oracle; no plan re-measured (the cache is non-uniform and #435 is unmerged)",
+  "did not read `fla`'s `FusedRMSNormGated` source: the norm-then-gate order is taken from `kda_reference.py` L171, which `kda_parity.rs` already pins against Kimi-Linear",
+  "did not examine DeepSeek's MLA q-LoRA or decide anything about it",
+  "did not build or fetch a K3 container; every witness of this rung is synthetic by construction, and nothing here claims K3 executes"
+ ]
+}

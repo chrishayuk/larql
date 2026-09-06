@@ -47,7 +47,7 @@ use super::graph::{ObjectKind, OperandRole};
 
 pub use build::plan_component_ops;
 pub use gated_delta::GatedDeltaOp;
-pub use kda::KdaOp;
+pub use kda::{KdaOp, KdaOutputGate};
 pub use mamba2::Mamba2Op;
 pub use mla::MlaOp;
 

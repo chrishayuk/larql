@@ -24,7 +24,7 @@ use larql_models::config::KdaGeometry;
 use serde_json::Value;
 
 use crate::format::vindex3::opplan::exec::cpu::projector::WeightRows;
-use crate::format::vindex3::opplan::exec::kda::{zero_state, KdaWeights};
+use crate::format::vindex3::opplan::exec::kda::{zero_state, KdaOutputGateWeights, KdaWeights};
 use crate::format::vindex3::opplan::exec::kimi_kda_layer::kda_decoder_layer_forward;
 use crate::format::vindex3::opplan::exec::kimi_moe_block::ExpertWeights;
 
@@ -129,8 +129,10 @@ fn one_complete_kda_layer_matches_the_oracle_at_kimis_real_geometry() {
         v_conv1d: &vc,
         f_a_proj: &fa,
         f_b_proj: &fb,
-        g_a_proj: &ga,
-        g_b_proj: &gb,
+        output_gate: KdaOutputGateWeights::LowRank {
+            g_a_proj: &ga,
+            g_b_proj: &gb,
+        },
         b_proj: &bp,
         a_log: &al,
         dt_bias: &dt,

@@ -258,6 +258,10 @@ pub const CONSUMED_LEAF_KEYS: &[&str] = &[
     "residual_in_fp32",
     "attn_output_gate",
     "output_gate_type",
+    // MLA's output gate (Kimi-K3): declared at the text level, beside the
+    // softmax family's `attn_output_gate`, and read into the MLA execution
+    // record as the same generic gate spec.
+    "mla_use_output_gate",
     "mtp_num_hidden_layers",
     "mtp_use_dedicated_embeddings",
     "mrope_interleaved",
@@ -296,6 +300,10 @@ pub const PATH_READ_LEAF_KEYS: &[&str] = &[
     "head_dim",
     "short_conv_kernel_size",
     "gate_lower_bound",
+    // The output gate's FORM (Kimi-K3's `use_full_rank_gate`): full-rank
+    // `g_proj` or the low-rank pair. A leaf of `linear_attn_config`, so
+    // by-path like the three above.
+    "use_full_rank_gate",
     // The mamba_ssm-native nested blocks: `ssm_cfg.layer` is the
     // package's identity declaration; the rest are the geometry keys
     // its dialect reads (`Mamba2Geometry::read_mamba_ssm_native`,

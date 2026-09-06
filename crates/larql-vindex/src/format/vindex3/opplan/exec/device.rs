@@ -707,3 +707,37 @@ impl<M: MatMul + Send> PlanBackend for DevicePlanBackend<M> {
         self.glue.residual_add(acc, delta);
     }
 }
+
+/// Why a DEVICE attention path must refuse `layer`, if it must — named
+/// before any tensor is bound, from declared facts alone (K3-REP-GATE-1,
+/// freeze D6).
+///
+/// Neither of Kimi-K3's declared output gates is carried by the device
+/// paths yet: the KDA device path binds the low-rank `g_a_proj`/`g_b_proj`
+/// pair by NAME, so a full-rank layer would fail on a missing name (or, on
+/// a container shipping both, bind the wrong one); the MLA device path
+/// has no gate at all, so a gated layer would run ungated with every shape
+/// still closing. `None` = nothing stands in the way. A pure function so
+/// a test without a GPU can witness both refusals (freeze P8).
+pub fn declared_gate_refusal(
+    layer: usize,
+    mla_layer: bool,
+    kda_full_rank_gate: bool,
+    mla_output_gate: bool,
+) -> Option<String> {
+    if mla_layer && mla_output_gate {
+        return Some(format!(
+            "layer {layer}: the container declares an MLA output gate (`mla_use_output_gate`), \
+             which the Metal MLA path does not carry; refusing rather than running the layer \
+             ungated"
+        ));
+    }
+    if !mla_layer && kda_full_rank_gate {
+        return Some(format!(
+            "layer {layer}: the container declares a full-rank KDA output gate \
+             (`use_full_rank_gate`), which the Metal KDA path does not carry (it binds the \
+             low-rank g_a_proj/g_b_proj pair); refusing rather than binding the wrong form"
+        ));
+    }
+    None
+}

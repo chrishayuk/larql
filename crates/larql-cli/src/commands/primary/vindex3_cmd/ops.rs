@@ -333,7 +333,8 @@ fn print_kda(op: &larql_vindex::format::vindex3::opplan::KdaOp) {
         "    state: {} elements/layer — constant in sequence length",
         op.state_elements()
     );
-    for (name, operand) in [
+    println!("    output gate: {} (declared)", op.output_gate.form());
+    let mut operands: Vec<(&str, &larql_vindex::format::vindex3::opplan::OperandRef)> = vec![
         ("q_proj", &op.q_proj),
         ("k_proj", &op.k_proj),
         ("v_proj", &op.v_proj),
@@ -342,14 +343,16 @@ fn print_kda(op: &larql_vindex::format::vindex3::opplan::KdaOp) {
         ("v_conv1d", &op.v_conv1d),
         ("f_a_proj", &op.f_a_proj),
         ("f_b_proj", &op.f_b_proj),
-        ("g_a_proj", &op.g_a_proj),
-        ("g_b_proj", &op.g_b_proj),
+    ];
+    operands.extend(op.output_gate.operands());
+    operands.extend([
         ("b_proj", &op.b_proj),
         ("a_log", &op.a_log),
         ("dt_bias", &op.dt_bias),
         ("o_norm", &op.o_norm),
         ("out_proj", &op.out_proj),
-    ] {
+    ]);
+    for (name, operand) in operands {
         println!("    {name}: {}/{}", operand.object, operand.tensor);
     }
 }

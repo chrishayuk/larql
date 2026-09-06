@@ -287,6 +287,13 @@ pub fn resolve_with_tensor_evidence(
                 // a factor of ten, and the resolved record must not
                 // manufacture the agreement.
                 kv_a_norm_eps: arch.mla_kv_a_norm_eps(),
+                // Declared, never read off the operand: `g_proj` on an MLA
+                // layer has the same spelling and — on K3 — the same shape
+                // as the KDA layers' full-rank gate, so only the config can
+                // say that this one is an output gate.
+                output_gate: cfg.mla_use_output_gate.filter(|on| *on).map(|_| {
+                    crate::config::AttentionGateSpec::from_attention_input_sigmoid_before_output_projection()
+                }),
             })
         }),
         activation: arch.activation(),
@@ -337,6 +344,7 @@ pub fn resolve_with_tensor_evidence(
         linear_attention: crate::inventory::report::LinearAttentionTopology::from_config(cfg),
         kda: cfg.kda_geometry,
         kda_gate_lower_bound: cfg.kda_gate_lower_bound,
+        kda_use_full_rank_gate: cfg.kda_use_full_rank_gate,
         mamba2: cfg.mamba2_geometry,
         mamba2_provenance: cfg.mamba2_provenance.clone(),
         conv_qkv_attn: cfg.conv_qkv_attn,

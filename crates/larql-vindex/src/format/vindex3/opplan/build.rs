@@ -38,9 +38,10 @@ use super::exec::hyper_connection::{HC_HEAD_SCALE_LEN, HC_SCALE_LEN};
 use super::{
     AttentionOp, AttentionResidualExitOp, AttentionResidualLayerOp, AttnResSiteOp, ClosureDefect,
     ComponentOpPlan, EmbeddingOp, ExpertBank, FfnIdentity, FfnOp, GateOp, GatedDeltaOp, HcSiteOp,
-    HybridFfnOp, HyperConnectionHeadOp, HyperConnectionLayerOp, KdaOp, LayerAttention, LayerFfn,
-    LayerPlan, Mamba2Op, MlaOp, NormOp, OpPlanOutcome, OperandRef, OutputOp, PackedProjection,
-    QkNormOp, RoutedFfnOp, SharedExpertBranchGateOp, SharedExpertOp, SinkOp,
+    HybridFfnOp, HyperConnectionHeadOp, HyperConnectionLayerOp, KdaOp, KdaOutputGate,
+    LayerAttention, LayerFfn, LayerPlan, Mamba2Op, MlaOp, NormOp, OpPlanOutcome, OperandRef,
+    OutputOp, PackedProjection, QkNormOp, RoutedFfnOp, SharedExpertBranchGateOp, SharedExpertOp,
+    SinkOp,
 };
 use crate::error::VindexError;
 use larql_models::config::ExpertFormat;
@@ -95,6 +96,26 @@ const ATTN_RES_SITE_WITHOUT_DECLARATION: &str =
 const ATTN_RES_SITE_ON_MIXER_LAYER: &str =
     "an attention-residual transformer layer (a mixer-only program has no attention and FFN \
      sublayers to carry the topology's two sites)";
+/// `self_attn.g_proj` on a KDA layer whose component does not declare the
+/// full-rank form: the operand implies a gate projection the declaration
+/// never chose. Identity is declared, not inferred from operands — a
+/// checkpoint does not acquire a gate form by shipping a tensor spelled
+/// for it (K3-REP-GATE-1).
+const KDA_FULL_RANK_GATE_UNDECLARED: &str =
+    "a full-rank KDA output gate (the component declares no `use_full_rank_gate`, so its gate \
+     is the low-rank g_a_proj/g_b_proj pair)";
+/// The low-rank pair on a KDA layer whose component declares the full-rank
+/// form: the same disagreement from the other side.
+const KDA_LOW_RANK_GATE_UNDER_FULL_RANK: &str =
+    "a low-rank KDA output gate (the component declares `use_full_rank_gate`, so its gate is \
+     one full-rank g_proj)";
+/// `self_attn.g_proj` on an MLA layer whose component declares no output
+/// gate: the same spelling as the KDA full-rank gate, and on Kimi-K3 the
+/// same shape, so only the declaration can say the layer gates its
+/// aggregated value.
+const MLA_OUTPUT_GATE_UNDECLARED: &str =
+    "an MLA output gate (the component declares no `mla_use_output_gate`, so the aggregated \
+     value goes to o_proj ungated)";
 /// The primitive the exit pair implies on a component that declares no
 /// block size.
 const ATTN_RES_EXIT_WITHOUT_DECLARATION: &str =
@@ -544,6 +565,12 @@ pub fn plan_component_ops(
                 ),
                 attention_bias: attn.and_then(|a| a.attention_bias) == Some(true),
                 sinks: attn.is_some_and(|a| a.sinks.is_some()),
+                // Both gates are DECLARED facts (K3-REP-GATE-1): the KDA
+                // gate's form and the MLA gate's presence come from the
+                // surface, never from which `g_proj` spelling the layer
+                // happens to ship — the operands are held to them below.
+                kda_full_rank_gate: surface.kda_use_full_rank_gate == Some(true),
+                mla_output_gate: surface.mla.is_some_and(|m| m.output_gate.is_some()),
                 routed,
                 hybrid,
                 moe: ffn_moe,
@@ -1158,8 +1185,19 @@ pub fn plan_component_ops(
                     v_conv1d: operand(&stack_id, get(OperandRole::KdaVConv1d)),
                     f_a_proj: operand(&stack_id, get(OperandRole::KdaFAProj)),
                     f_b_proj: operand(&stack_id, get(OperandRole::KdaFBProj)),
-                    g_a_proj: operand(&stack_id, get(OperandRole::KdaGAProj)),
-                    g_b_proj: operand(&stack_id, get(OperandRole::KdaGBProj)),
+                    // The form is the DECLARATION's; closure has already
+                    // held the shipped operands to it, so the role read
+                    // here is the one the declaration made required.
+                    output_gate: if surface.kda_use_full_rank_gate == Some(true) {
+                        KdaOutputGate::FullRank {
+                            g_proj: operand(&stack_id, get(OperandRole::KdaGProj)),
+                        }
+                    } else {
+                        KdaOutputGate::LowRank {
+                            g_a_proj: operand(&stack_id, get(OperandRole::KdaGAProj)),
+                            g_b_proj: operand(&stack_id, get(OperandRole::KdaGBProj)),
+                        }
+                    },
                     b_proj: operand(&stack_id, get(OperandRole::KdaBProj)),
                     a_log: operand(&stack_id, get(OperandRole::KdaALog)),
                     dt_bias: operand(&stack_id, get(OperandRole::KdaDtBias)),
@@ -1216,6 +1254,12 @@ pub fn plan_component_ops(
                     kv_b_proj: operand(&stack_id, get(OperandRole::MlaKvBProj)),
                     kv_a_norm: operand(&stack_id, get(OperandRole::MlaKvANorm)),
                     out_proj: operand(&stack_id, get(OperandRole::MlaOutProj)),
+                    // Present exactly when the surface declares the gate;
+                    // an undeclared `g_proj` never reaches here (closure
+                    // refuses it by name).
+                    output_gate: m
+                        .output_gate
+                        .map(|_| operand(&stack_id, get(OperandRole::MlaOutputGate))),
                     kv_a_norm_eps: m.kv_a_norm_eps,
                 }))
             } else {
@@ -1546,6 +1590,11 @@ struct LayerOps {
     placement: NormPlacement,
     gated_ffn: bool,
     output_gate: bool,
+    /// The KDA output gate's declared FORM: full-rank `g_proj` (true) or
+    /// the low-rank pair (false, the reference's default when undeclared).
+    kda_full_rank_gate: bool,
+    /// Whether the component declares an MLA output gate.
+    mla_output_gate: bool,
     attention_bias: bool,
     sinks: bool,
     /// This layer's FFN is routed (bank/router evidence under a MoE
@@ -1694,14 +1743,20 @@ fn required_roles(ops: &LayerOps) -> Vec<OperandRole> {
             OperandRole::KdaVConv1d,
             OperandRole::KdaFAProj,
             OperandRole::KdaFBProj,
-            OperandRole::KdaGAProj,
-            OperandRole::KdaGBProj,
             OperandRole::KdaBProj,
             OperandRole::KdaALog,
             OperandRole::KdaDtBias,
             OperandRole::KdaONorm,
             OperandRole::KdaOutProj,
         ]);
+        // The output gate's operands follow its DECLARED form, so a layer
+        // shipping the other form reports the declared one missing (and
+        // the shipped one as implying an absent op — see `absent_op`).
+        if ops.kda_full_rank_gate {
+            roles.push(OperandRole::KdaGProj);
+        } else {
+            roles.extend([OperandRole::KdaGAProj, OperandRole::KdaGBProj]);
+        }
     } else if ops.operator.is_gated_delta() {
         // A recurrence has no query, key, value or output projection —
         // demanding them made all 48 of Qwen3.8's linear layers report
@@ -1732,6 +1787,9 @@ fn required_roles(ops: &LayerOps) -> Vec<OperandRole> {
             OperandRole::MlaKvANorm,
             OperandRole::MlaOutProj,
         ]);
+        if ops.mla_output_gate {
+            roles.push(OperandRole::MlaOutputGate);
+        }
     } else {
         roles.extend([OperandRole::AttnQ, OperandRole::AttnK, OperandRole::AttnO]);
         if !ops.v_from_k {
@@ -1904,6 +1962,15 @@ fn absent_op(role: OperandRole, ops: &LayerOps) -> Option<&'static str> {
         OperandRole::AttnOutputGate if !ops.output_gate => {
             Some("attention output gate (judged semantics)")
         }
+        // The two K3 gates, each held to its declaration from both sides:
+        // the undeclared form is an operand implying an op the component
+        // never chose, and the declared form's absence is reported by
+        // `required_roles` as a missing operand.
+        OperandRole::KdaGProj if !ops.kda_full_rank_gate => Some(KDA_FULL_RANK_GATE_UNDECLARED),
+        OperandRole::KdaGAProj | OperandRole::KdaGBProj if ops.kda_full_rank_gate => {
+            Some(KDA_LOW_RANK_GATE_UNDER_FULL_RANK)
+        }
+        OperandRole::MlaOutputGate if !ops.mla_output_gate => Some(MLA_OUTPUT_GATE_UNDECLARED),
         OperandRole::AttnQBias
         | OperandRole::AttnKBias
         | OperandRole::AttnVBias
@@ -2254,6 +2321,10 @@ fn expected_shape(
         OperandRole::KdaDtBias => Some(vec![kda?.value_width()]),
         OperandRole::KdaONorm => Some(vec![kda?.head_dim]),
         OperandRole::KdaOutProj => Some(vec![hidden, kda?.value_width()]),
+        // The full-rank gate is pinned by geometry alone — one projection
+        // from `hidden` to the value width — unlike the low-rank pair,
+        // whose rank no config declares.
+        OperandRole::KdaGProj => Some(vec![kda?.value_width(), hidden]),
         // The f and g gates are low-rank and the config declares no rank,
         // so no per-operand contract can be stated from geometry alone.
         // Their agreement is a CLOSURE fact between the pair — `f_a` is
@@ -2282,6 +2353,11 @@ fn expected_shape(
         }
         OperandRole::MlaKvANorm => Some(vec![mla?.kv_lora_rank]),
         OperandRole::MlaOutProj => Some(vec![hidden, mla?.num_heads * mla?.v_head_dim]),
+        // Same numbers as `MlaOutProj`, transposed: the gate reads `hidden`
+        // and writes the aggregated value's width. Identical to
+        // `KdaGProj`'s contract on Kimi-K3, which is why only the layer's
+        // operator can tell the two spellings apart.
+        OperandRole::MlaOutputGate => Some(vec![mla?.num_heads * mla?.v_head_dim, hidden]),
         OperandRole::FfnGate | OperandRole::FfnUp => Some(vec![intermediate, hidden]),
         OperandRole::FfnDown => Some(vec![hidden, intermediate]),
         // Linear(hidden -> q_heads*head_dim), per the judged spec.
@@ -2451,6 +2527,8 @@ mod tests {
             hyper_connection: false,
             attention_residual: false,
             output_gate: false,
+            kda_full_rank_gate: false,
+            mla_output_gate: false,
             attention_bias: false,
             sinks: false,
             routed: false,

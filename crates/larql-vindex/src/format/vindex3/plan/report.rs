@@ -57,6 +57,27 @@ pub const PLAN_SCHEMA: u32 = 6;
 /// `plan/tests/identity.rs` pins fixture verdicts against this value, so
 /// a change that flips one fails there until the version is bumped.
 ///
+/// **19** — the two K3 attention output gates, DECLARED (K3-REP-GATE-1).
+/// `linear_attn_config.use_full_rank_gate` (the KDA output gate's FORM:
+/// one full-rank `g_proj` in place of the low-rank `g_a_proj`/`g_b_proj`
+/// pair) and `mla_use_output_gate` (a sigmoid gate on MLA's aggregated
+/// value before `o_proj`, the same generic operation the softmax family's
+/// `attn_output_gate` resolves to) move from Unknown to ExecutionSemantic,
+/// carried `Lowered`: the op plan carries the KDA form as a type and the
+/// MLA gate as an optional operand, closure holds the shipped `g_proj` /
+/// pair to the declaration from both sides, and the CPU executors compute
+/// both gates to per-boundary parity with second oracle arms transcribed
+/// from `modeling_kimi_linear.py`. The gate's projection is the ONLY thing
+/// the KDA form changes; the MLA gate is a new stage between aggregation
+/// and `o_proj`. Every Metal path refuses either declared gate by name.
+///
+/// Verdicts pinned: a Kimi-shaped estate declaring both keys is
+/// admissible where it was blocked by two Unknown findings; the same keys
+/// on a component with no KDA / MLA block stay blocked, uncarried — the
+/// keys were judged, not waved through. `self_attn.g_proj` gains a role on
+/// each attention family under that family's operator; K3's MLA layers
+/// still carry the unaddressed q-LoRA triple, which is its own cell.
+///
 /// **18** — attention-residual TRAVERSAL (K3-ATTNRES-1, transition 2).
 /// The topology is executed, not merely addressed: the executor carries
 /// an explicit prefix-plus-snapshots state through the decode traversal
@@ -318,7 +339,7 @@ pub const PLAN_SCHEMA: u32 = 6;
 /// architectures, now block instead of passing silently into
 /// `GenericArch`'s Llama-shaped defaults. Measured on the conformance
 /// corpus: 15 of 42 declared `model_type` strings, across 30 checkpoints.
-pub const PLANNER_SEMANTICS_VERSION: u32 = 18;
+pub const PLANNER_SEMANTICS_VERSION: u32 = 19;
 
 /// Who judged a plan.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]

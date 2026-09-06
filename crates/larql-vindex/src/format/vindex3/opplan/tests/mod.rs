@@ -8,6 +8,7 @@ mod gemma4_closure;
 mod heterogeneous_ffn_width;
 mod hyper_connection_refusal;
 mod k3_attnres_addressing;
+mod k3_rep_gate_closure;
 mod kda_mla_exec;
 mod kda_op;
 mod kimi_mla_closure;

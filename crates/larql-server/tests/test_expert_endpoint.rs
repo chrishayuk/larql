@@ -143,6 +143,8 @@ impl TestMoeArch {
                 mtp_interleave: larql_models::config::DeclaredInterleave::Absent,
                 kda_geometry: None,
                 kda_gate_lower_bound: None,
+                kda_use_full_rank_gate: None,
+                mla_use_output_gate: None,
                 router_activation: None,
                 routed_scaling_factor: None,
                 expert_groups: None,

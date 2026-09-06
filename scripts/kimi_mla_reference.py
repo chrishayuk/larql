@@ -41,6 +41,27 @@ BOUNDARIES = (
     "attn_weights", "attn_value", "output",
 )
 
+#: The same ladder with Kimi-K3's OUTPUT GATE in it
+#: (`mla_use_output_gate: true`, `modeling_kimi_linear.py` L398-401,
+#: L470-472): `output_gate = sigmoid(g_proj(x))` and
+#: `gated_value = attn_value * output_gate`, both between the aggregation
+#: and `o_proj`. Kimi Linear's ungated ladder above is unchanged.
+GATED_BOUNDARIES = BOUNDARIES[:-1] + ("output_gate", "gated_value", "output")
+
+#: Named defects of the output gate, for K3-REP-GATE-1's controls — each
+#: perturbs the real forward at one point, never a copy of it.
+GATE_MUTATIONS = (
+    "none",
+    # `gated_value := attn_value`: the gate is not applied.
+    "gate_omitted",
+    # the raw pre-activation multiplied in, no sigmoid.
+    "sigmoid_omitted",
+    # every cached position's `v` gated by ITS OWN position's gate before
+    # the weighted sum, and nothing gated after — a placement defect: the
+    # reference gates the AGGREGATE by the query position's gate.
+    "gate_on_values_before_aggregation",
+)
+
 
 @dataclass
 class MlaWeights:
@@ -75,11 +96,27 @@ def rms_norm(x: torch.Tensor, weight: torch.Tensor, eps: float) -> torch.Tensor:
     return weight.float() * (x * torch.rsqrt(variance + eps))
 
 
-def mla_forward(x: torch.Tensor, w: MlaWeights, g: MlaGeometry) -> dict:
+def mla_forward(
+    x: torch.Tensor,
+    w: MlaWeights,
+    g: MlaGeometry,
+    *,
+    g_proj: torch.Tensor | None = None,
+    mutation: str = "none",
+) -> dict:
     """`x` is `[T, hidden]`. Returns every boundary, per position, plus
     the final `[T, hidden]` output — causal, `mla_use_nope` (no rotation
     anywhere), exactly `KimiMLAAttention.forward` at batch size 1.
+
+    `g_proj` (`[Hq*v_head_dim, hidden]`) adds Kimi-K3's output gate
+    (`GATED_BOUNDARIES`); `None` is Kimi Linear's ungated block and
+    returns exactly `BOUNDARIES`. `mutation` names one of
+    `GATE_MUTATIONS` and is only meaningful with a gate.
     """
+    if mutation not in GATE_MUTATIONS:
+        raise ValueError(f"unknown gate mutation {mutation!r}")
+    if g_proj is None and mutation != "none":
+        raise ValueError("gate mutations need a gate")
     t, hidden = x.shape
     h, nope, rope, v_hd, lora = (
         g.num_heads, g.qk_nope_head_dim, g.qk_rope_head_dim, g.v_head_dim, g.kv_lora_rank,
@@ -108,11 +145,25 @@ def mla_forward(x: torch.Tensor, w: MlaWeights, g: MlaGeometry) -> dict:
     causal = torch.full((t, t), float("-inf")).triu(diagonal=1)
     scores = scores + causal
     weights = torch.softmax(scores, dim=-1)  # [h,T,T]
+    gated = {}
+    if g_proj is not None:
+        # L470-472: the gate reads the block INPUT `hidden_states`, never
+        # the attention output; its sigmoid multiplies the AGGREGATE.
+        pre = (x @ g_proj.T).float()  # [T, h*v_hd]
+        output_gate = pre if mutation == "sigmoid_omitted" else torch.sigmoid(pre)
+        if mutation == "gate_on_values_before_aggregation":
+            v = v * output_gate.view(t, h, v_hd)
     attn_value = torch.einsum("hts,shd->thd", weights, v)  # [T,h,v_hd]
 
-    output = attn_value.reshape(t, h * v_hd) @ w.o_proj.T  # [T, hidden]
+    pre_o_proj = attn_value.reshape(t, h * v_hd)
+    if g_proj is not None:
+        if mutation not in ("gate_omitted", "gate_on_values_before_aggregation"):
+            pre_o_proj = pre_o_proj * output_gate
+        gated = {"output_gate": output_gate, "gated_value": pre_o_proj}
+    output = pre_o_proj @ w.o_proj.T  # [T, hidden]
 
     return {
+        **gated,
         "q_proj": q_full,
         "compressed_kv": compressed_kv,
         "kv_a_normed": kv_a_normed,

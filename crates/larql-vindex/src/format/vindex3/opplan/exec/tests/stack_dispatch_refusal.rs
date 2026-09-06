@@ -11,7 +11,7 @@
 
 use larql_models::config::{KdaGeometry, MlaGeometry};
 
-use crate::format::vindex3::opplan::exec::kda::{zero_state, KdaWeights};
+use crate::format::vindex3::opplan::exec::kda::{zero_state, KdaOutputGateWeights, KdaWeights};
 use crate::format::vindex3::opplan::exec::kimi_moe_block::ExpertWeights;
 use crate::format::vindex3::opplan::exec::mla::{MlaState, MlaWeights};
 use crate::format::vindex3::opplan::exec::stack::{
@@ -28,8 +28,10 @@ fn kda_weights<'a>(empty: &'a [f32], empty_bf16: &'a [u16]) -> KdaWeights<'a> {
         v_conv1d: empty,
         f_a_proj: empty,
         f_b_proj: empty,
-        g_a_proj: empty,
-        g_b_proj: empty,
+        output_gate: KdaOutputGateWeights::LowRank {
+            g_a_proj: empty,
+            g_b_proj: empty,
+        },
         b_proj: empty,
         a_log: empty,
         dt_bias: empty,
@@ -44,6 +46,7 @@ fn kda_weights<'a>(empty: &'a [f32], empty_bf16: &'a [u16]) -> KdaWeights<'a> {
 
 fn mla_weights(empty: &[f32]) -> MlaWeights<'_> {
     MlaWeights {
+        output_gate: None,
         q_proj: WeightRows::F32(empty),
         kv_a_proj: WeightRows::F32(empty),
         kv_a_norm: empty,

@@ -40,6 +40,7 @@ fn stub_operand() -> OperandRef {
 fn stub_mla() -> MlaOp {
     let o = stub_operand;
     MlaOp {
+        output_gate: None,
         num_heads: NUM_HEADS,
         kv_lora_rank: KV_LORA_RANK,
         qk_nope_head_dim: QK_NOPE_HEAD_DIM,

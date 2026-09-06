@@ -32,7 +32,7 @@ use larql_models::config::{KdaGeometry, MlaGeometry};
 use serde_json::Value;
 
 use crate::format::vindex3::opplan::exec::cpu::projector::WeightRows;
-use crate::format::vindex3::opplan::exec::kda::{zero_state, KdaWeights};
+use crate::format::vindex3::opplan::exec::kda::{zero_state, KdaOutputGateWeights, KdaWeights};
 use crate::format::vindex3::opplan::exec::kimi_moe_block::ExpertWeights;
 use crate::format::vindex3::opplan::exec::mla::{MlaState, MlaWeights};
 use crate::format::vindex3::opplan::exec::stack::{
@@ -265,8 +265,10 @@ pub(super) fn spec<'a>(
                 v_conv1d: f("v_conv1d"),
                 f_a_proj: f("f_a_proj"),
                 f_b_proj: f("f_b_proj"),
-                g_a_proj: f("g_a_proj"),
-                g_b_proj: f("g_b_proj"),
+                output_gate: KdaOutputGateWeights::LowRank {
+                    g_a_proj: f("g_a_proj"),
+                    g_b_proj: f("g_b_proj"),
+                },
                 b_proj: f("b_proj"),
                 a_log: f("a_log"),
                 dt_bias: f("dt_bias"),
@@ -286,6 +288,7 @@ pub(super) fn spec<'a>(
         };
         LayerAttention::Mla(
             MlaWeights {
+                output_gate: None,
                 q_proj: WeightRows::F32(f("q_proj")),
                 kv_a_proj: WeightRows::F32(f("kv_a_proj")),
                 kv_a_norm: f("kv_a_norm"),
